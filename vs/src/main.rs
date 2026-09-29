@@ -375,7 +375,7 @@ async fn main() -> std::process::ExitCode {
         let admin_key = cfg.core.admin_key.clone();
         let admin_cert = cfg.core.admin_cert.clone();
         let admin_listen = SocketAddr::new(
-            cfg.get_vs_addr(),
+            cfg.get_admin_addr(),
             cfg.core.admin_port.unwrap_or(config::ADMIN_HTTPS_PORT),
         );
         let admin_asm = asm.clone();

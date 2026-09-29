@@ -122,6 +122,9 @@ pub struct CoreSection {
     /// The visa service bind address - this is a constant baked into entire ZPR system only override for testing.
     pub vs_addr: Option<IpAddr>,
 
+    /// Optional separate bind address for the HTTPS admin API. Defaults to `vs_addr`.
+    pub admin_addr: Option<IpAddr>,
+
     /// VSAPI port used by nodes to talk to the visa service VS API.
     /// Must be kept in sync with the compiler.
     pub vsapi_port: Option<u16>,
@@ -162,6 +165,7 @@ impl Default for CoreSection {
     fn default() -> Self {
         CoreSection {
             vs_addr: Some(IpAddr::V6(VS_ZPR_ADDR)),
+            admin_addr: None,
             vsapi_port: Some(VSAPI_PORT),
             admin_port: Some(ADMIN_HTTPS_PORT),
             admin_cert: PathBuf::from("admin-tls-cert.pem"),
@@ -209,6 +213,10 @@ impl VSConfig {
 
     pub fn get_vs_addr(&self) -> IpAddr {
         self.core.vs_addr.unwrap_or(IpAddr::V6(VS_ZPR_ADDR))
+    }
+
+    pub fn get_admin_addr(&self) -> IpAddr {
+        self.core.admin_addr.unwrap_or_else(|| self.get_vs_addr())
     }
 }
 
@@ -377,6 +385,33 @@ mod test {
         assert_eq!(cfg.core.admin_key, base.join("admin-tls-key.pem"));
         assert_eq!(cfg.core.api_keys, Some(base.join(DEFAULT_API_KEYS_FILE)));
         assert_eq!(cfg.core.file_ts_dir, Some(base.join(".")));
+    }
+
+    #[test]
+    fn test_admin_addr_defaults_to_vs_addr_and_can_be_overridden() {
+        let (default_cfg, _dir) = load_from_temp_dir(
+            r#"
+        [core]
+        vs_addr = "fd5a:5052::1"
+        "#,
+        );
+        assert_eq!(default_cfg.get_admin_addr(), default_cfg.get_vs_addr());
+
+        let (override_cfg, _dir) = load_from_temp_dir(
+            r#"
+        [core]
+        vs_addr = "fd5a:5052::1"
+        admin_addr = "127.0.0.1"
+        "#,
+        );
+        assert_eq!(
+            override_cfg.get_admin_addr(),
+            "127.0.0.1".parse::<IpAddr>().unwrap()
+        );
+        assert_eq!(
+            override_cfg.get_vs_addr(),
+            "fd5a:5052::1".parse::<IpAddr>().unwrap()
+        );
     }
 
     #[test]
