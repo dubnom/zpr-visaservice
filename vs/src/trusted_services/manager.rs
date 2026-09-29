@@ -6,6 +6,9 @@ use futures::future::join_all;
 use std::collections::HashMap;
 use std::net::IpAddr;
 use std::sync::Arc;
+use std::time::{SystemTime, UNIX_EPOCH};
+
+use serde::Serialize;
 
 use libeval::attribute::Attribute;
 
@@ -16,6 +19,7 @@ use super::TrustedServiceInterface;
 /// Coordinates concurrent access to the configured trusted-service implementations.
 pub struct TrustedServicesMgr {
     services: ArcSwap<Vec<Arc<dyn TrustedServiceInterface>>>,
+    lookup_outcomes: DashMap<String, LookupOutcome>,
     /// Per actor (keyed by ZPR address) and source, the revision from which attributes
     /// were last refreshed. ZPR addresses are recycled from a pool, so entries MUST be
     /// purged on disconnect ([TrustedServicesMgr::forget_actor_revisions]) before the
@@ -23,11 +27,27 @@ pub struct TrustedServicesMgr {
     actor_revisions: DashMap<IpAddr, HashMap<String, u64>>,
 }
 
+#[derive(Clone, Serialize)]
+pub struct TrustedServiceStatus {
+    pub name: String,
+    pub health: &'static str,
+    pub last_lookup_ms: Option<u64>,
+    pub last_success_ms: Option<u64>,
+}
+
+#[derive(Clone)]
+struct LookupOutcome {
+    succeeded: bool,
+    last_lookup_ms: u64,
+    last_success_ms: Option<u64>,
+}
+
 impl TrustedServicesMgr {
     /// Create a manager with no configured services.
     pub fn new() -> Self {
         Self {
             services: ArcSwap::new(Arc::new(Vec::new())),
+            lookup_outcomes: DashMap::new(),
             actor_revisions: DashMap::new(),
         }
     }
@@ -71,7 +91,54 @@ impl TrustedServicesMgr {
 
     /// Atomically replace the entire trusted-service list.
     pub fn update_services(&self, services: Vec<Arc<dyn TrustedServiceInterface>>) {
+        self.lookup_outcomes.clear();
         self.services.store(Arc::new(services));
+    }
+
+    pub fn statuses(&self) -> Vec<TrustedServiceStatus> {
+        let mut statuses: Vec<_> = self
+            .services
+            .load()
+            .iter()
+            .map(|service| {
+                let name = service.get_source_id().to_string();
+                let outcome = self.lookup_outcomes.get(&name);
+                TrustedServiceStatus {
+                    name,
+                    health: match outcome.as_ref() {
+                        None => "unverified",
+                        Some(value) if value.succeeded => "working",
+                        Some(_) => "failed",
+                    },
+                    last_lookup_ms: outcome.as_ref().map(|value| value.last_lookup_ms),
+                    last_success_ms: outcome.as_ref().and_then(|value| value.last_success_ms),
+                }
+            })
+            .collect();
+        statuses.sort_by(|a, b| a.name.cmp(&b.name));
+        statuses
+    }
+
+    fn record_lookup(&self, name: &str, succeeded: bool) {
+        let now = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .map(|duration| u64::try_from(duration.as_millis()).unwrap_or(u64::MAX))
+            .unwrap_or(0);
+        let last_success_ms = if succeeded {
+            Some(now)
+        } else {
+            self.lookup_outcomes
+                .get(name)
+                .and_then(|outcome| outcome.last_success_ms)
+        };
+        self.lookup_outcomes.insert(
+            name.to_string(),
+            LookupOutcome {
+                succeeded,
+                last_lookup_ms: now,
+                last_success_ms,
+            },
+        );
     }
 
     /// Query every trusted service concurrently for an actor's attributes.
@@ -90,10 +157,10 @@ impl TrustedServicesMgr {
         let futures = snapshot.iter().map(|service| {
             let service = service.clone();
             async move {
-                (
-                    service.get_source_id().to_string(),
-                    service.get_attributes_for_actor(identities).await,
-                )
+                let name = service.get_source_id().to_string();
+                let result = service.get_attributes_for_actor(identities).await;
+                self.record_lookup(&name, result.is_ok());
+                (name, result)
             }
         });
         join_all(futures).await
@@ -114,7 +181,9 @@ impl TrustedServicesMgr {
             .find(|service| service.get_source_id() == source_ident)
         {
             let service = service.clone();
-            return vec![service.get_attributes_for_actor(identities).await];
+            let result = service.get_attributes_for_actor(identities).await;
+            self.record_lookup(source_ident, result.is_ok());
+            return vec![result];
         }
 
         vec![Err(ServiceError::TrustedServiceNotFound(
@@ -156,7 +225,34 @@ mod tests {
     use crate::trusted_services::file_attribute_store::FileAttributeStore;
     use crate::trusted_services::test_support::{test_mapper, write_fixture};
     use std::fs;
+    use std::sync::atomic::{AtomicBool, Ordering};
     use std::time::Duration;
+
+    struct FlakyService(AtomicBool);
+
+    #[async_trait::async_trait]
+    impl TrustedServiceInterface for FlakyService {
+        async fn get_attributes_for_actor(
+            &self,
+            _identities: &[(String, String)],
+        ) -> Result<Vec<Attribute>, ServiceError> {
+            if self.0.load(Ordering::Relaxed) {
+                Err(ServiceError::AttributesIndeterminate("unavailable".into()))
+            } else {
+                Ok(Vec::new())
+            }
+        }
+
+        async fn flush(&self) -> Result<(), ServiceError> {
+            Ok(())
+        }
+        fn current_revision(&self) -> u64 {
+            1
+        }
+        fn get_source_id(&self) -> &str {
+            "test"
+        }
+    }
 
     /// Flushing all services reaches each registered implementation.
     #[tokio::test]
@@ -232,5 +328,38 @@ mod tests {
         );
 
         fs::remove_file(&fp).unwrap();
+    }
+
+    #[tokio::test]
+    async fn test_status_reflects_actual_lookups() {
+        let manager = TrustedServicesMgr::new();
+        let store = Arc::new(FlakyService(AtomicBool::new(false)));
+        manager.update_services(vec![store.clone()]);
+        assert_eq!(manager.statuses()[0].health, "unverified");
+
+        let identities = [("device.zpr.adapter.cn".into(), "alice".into())];
+        assert!(
+            manager
+                .get_attributes_from_source_for_actor("test", &identities)
+                .await[0]
+                .is_ok()
+        );
+        let working = manager.statuses().pop().unwrap();
+        assert_eq!(working.health, "working");
+        assert!(working.last_success_ms.is_some());
+
+        store.0.store(true, Ordering::Relaxed);
+        assert!(
+            manager.get_attributes_for_actor(&identities).await[0]
+                .1
+                .is_err()
+        );
+        let failed = manager.statuses().pop().unwrap();
+        assert_eq!(failed.health, "failed");
+        assert_eq!(failed.last_success_ms, working.last_success_ms);
+        assert!(failed.last_lookup_ms.is_some());
+
+        manager.update_services(Vec::new());
+        assert!(manager.statuses().is_empty());
     }
 }

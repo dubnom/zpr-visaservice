@@ -210,6 +210,7 @@ function renderInspector() {
     kindLabel = isTrusted ? "TRUSTED SOURCE" : "REGISTERED SERVICE";
     title = service.service_name;
     const actor = data.actors.find((item) => item.cn === service.actor_cn);
+    const source = data.trusted_sources.find((item) => item.name === service.service_name);
     sections.push(detailSection("Configuration", [
       detailField("Kind", service.service_kind), detailField("Actor", service.actor_cn, "mono"),
       detailField("ZPR address", service.zpr_addr, "mono"),
@@ -217,8 +218,8 @@ function renderInspector() {
     ]));
     sections.push(detailSection("Live state", [
       detailField("Actor present", actor ? "Present in Visa Service" : "Not returned"),
-      detailField("Provider health", isTrusted ? "Not exposed by admin API" : "Not applicable"),
-      detailField("Health source", isTrusted ? "No trusted-source status endpoint is available" : "Service descriptors report configured state only"),
+      detailField("Last lookup", isTrusted ? (source?.health || "Unreported") : "Not applicable"),
+      detailField("Observed at", source?.last_lookup_ms ? new Date(source.last_lookup_ms).toLocaleString() : "Not reported"),
     ]));
   } else if (state.selection.kind === "source") {
     const source = data.trusted_sources.find((item) => item.name === state.selection.key);
@@ -226,7 +227,15 @@ function renderInspector() {
     kindLabel = "TRUSTED SOURCE";
     title = source.name;
     sections.push(detailSection("Configuration", [detailField("Provider", source.provider), detailField("Actor", source.actor_cn, "mono")]));
-    sections.push(detailSection("Live state", [detailField("Connection health", "Unreported"), detailField("Health source", "Not exposed by the admin API")]));
+    sections.push(detailSection("Lookup status", [
+      detailField("Last outcome", source.health || "Unreported"),
+      detailField("Last lookup", source.last_lookup_ms ? new Date(source.last_lookup_ms).toLocaleString() : "Never observed"),
+      detailField("Last success", source.last_success_ms ? new Date(source.last_success_ms).toLocaleString() : "Never observed"),
+      detailField("Basis", source.health_note || "No lookup status from the admin API"),
+    ]));
+    if (source.editor_url) {
+      sections.push(`<div class="inspector-actions"><a class="button button-refresh" href="${escapeHTML(source.editor_url)}" target="_blank" rel="noopener noreferrer">Open LDAP editor ↗</a></div>`);
+    }
   } else if (state.selection.kind === "link") {
     const [kind, fromName, toName] = state.selection.key.split("|");
     const from = data.actors.find((actor) => actor.cn === fromName);
@@ -488,11 +497,14 @@ function renderActors(data) {
 function renderTrusted(data) {
   const sources = data.trusted_sources || [];
   byId("trusted-count").textContent = `${formatNumber(sources.length)} Trusted Services`;
-  const columns = { name: (source) => source.name, provider: (source) => source.provider, actor: (source) => source.actor_cn, health: () => "UNREPORTED" };
+  const columns = { name: (source) => source.name, provider: (source) => source.provider, actor: (source) => source.actor_cn, health: (source) => source.health, last_lookup: (source) => source.last_lookup_ms || 0 };
   const shown = visibleRows("sources", sources, columns);
-  byId("trusted-list").innerHTML = shown.length ? shown.map((source) =>
-    `<tr class="selectable-row" data-inspect-source="${escapeHTML(source.name)}" tabindex="0" role="button" aria-label="Inspect trusted source ${escapeHTML(source.name)}"><td>${escapeHTML(source.name)}</td><td>${escapeHTML(source.provider || "—")}</td><td>${escapeHTML(source.actor_cn || "—")}</td><td><span class="health-badge">UNREPORTED</span></td></tr>`
-  ).join("") : `<tr><td colspan="4" class="empty-row">${sources.length ? "No matching trusted sources" : "No trusted-source descriptors returned by the admin API."}</td></tr>`;
+  byId("trusted-list").innerHTML = shown.length ? shown.map((source) => {
+    const name = source.editor_url
+      ? `<a class="source-editor-link" href="${escapeHTML(source.editor_url)}" target="_blank" rel="noopener noreferrer" title="Open ${escapeHTML(source.name)} in LDAP editor">${escapeHTML(source.name)} ↗</a>`
+      : escapeHTML(source.name);
+    return `<tr class="selectable-row" data-inspect-source="${escapeHTML(source.name)}" tabindex="0" role="button" aria-label="Inspect trusted source ${escapeHTML(source.name)}"><td>${name}</td><td>${escapeHTML(source.provider || "—")}</td><td>${escapeHTML(source.actor_cn || "—")}</td><td><span class="health-badge ${["working", "failed"].includes(source.health) ? source.health : ""}">${escapeHTML((source.health || "unreported").toUpperCase())}</span></td><td class="mono">${source.last_lookup_ms ? escapeHTML(new Date(source.last_lookup_ms).toLocaleString()) : "—"}</td></tr>`;
+  }).join("") : `<tr><td colspan="5" class="empty-row">${sources.length ? "No matching trusted sources" : "No trusted services reported by the Visa Service."}</td></tr>`;
 }
 
 function renderServices(data) {
@@ -616,6 +628,7 @@ window.addEventListener("hashchange", () => {
 showPage();
 
 document.addEventListener("click", (event) => {
+  if (event.target.closest(".source-editor-link")) return;
   const target = event.target.closest("[data-inspect-actor], [data-inspect-service], [data-inspect-source], [data-inspect-link]");
   if (!target) return;
   if (target.dataset.inspectActor) openInspector("actor", target.dataset.inspectActor);
@@ -625,6 +638,7 @@ document.addEventListener("click", (event) => {
 });
 
 document.addEventListener("keydown", (event) => {
+  if (event.target.closest(".source-editor-link")) return;
   const target = event.target.closest("[data-inspect-actor], [data-inspect-service], [data-inspect-source], [data-inspect-link]");
   if (!target || (event.key !== "Enter" && event.key !== " ")) return;
   event.preventDefault();

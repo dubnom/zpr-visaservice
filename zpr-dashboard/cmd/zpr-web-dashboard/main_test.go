@@ -4,8 +4,25 @@ import (
 	"context"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 )
+
+func TestDemoLDAPEditorURL(t *testing.T) {
+	services := []service{{Name: "demo_ldap", Kind: `Trusted("rest/1")`}}
+	statuses := []trustedStatus{{Name: "demo_ldap", Health: "working"}, {Name: "other", Health: "unverified"}}
+	for _, raw := range []string{"https://example.com/editor", "http://localhost:8788/", "http://127.0.0.1:8788@evil.test/"} {
+		t.Setenv("ZPR_DEMO_LDAP_EDITOR_URL", raw)
+		if got := trustedSourcesFromStatus(statuses, services)[0].EditorURL; got != "" {
+			t.Fatalf("unsafe editor URL %q accepted as %q", raw, got)
+		}
+	}
+	t.Setenv("ZPR_DEMO_LDAP_EDITOR_URL", "http://127.0.0.1:8788/phpldapadmin/")
+	items := trustedSourcesFromStatus(statuses, services)
+	if !strings.HasPrefix(items[0].EditorURL, "http://127.0.0.1:8788/") || items[1].EditorURL != "" {
+		t.Fatalf("editor link leaked to another source: %+v", items)
+	}
+}
 
 func TestFetchSnapshotAggregatesLiveAdminData(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -25,6 +42,8 @@ func TestFetchSnapshotAggregatesLiveAdminData(t *testing.T) {
 			_, _ = w.Write([]byte(`[{"id":"directory"}]`))
 		case "/admin/services/directory":
 			_, _ = w.Write([]byte(`{"service_name":"directory","actor_cn":"directory-service","service_kind":"Trusted(\"file\")"}`))
+		case "/admin/trusted-services":
+			_, _ = w.Write([]byte(`[{"name":"directory","health":"working","last_lookup_ms":1780000000000,"last_success_ms":1780000000000},{"name":"remote","health":"unverified","last_lookup_ms":null,"last_success_ms":null}]`))
 		case "/admin/visas":
 			_, _ = w.Write([]byte(`[{"id":42}]`))
 		case "/admin/visas/42":
@@ -51,8 +70,41 @@ func TestFetchSnapshotAggregatesLiveAdminData(t *testing.T) {
 	if data.Stats["uptime"] != "120" {
 		t.Fatalf("uptime = %v; want 120", data.Stats["uptime"])
 	}
-	if len(data.Trusted) != 1 || data.Trusted[0].Provider != "file" || data.Trusted[0].Health != "unreported" {
+	if len(data.Trusted) != 2 || data.Trusted[0].Provider != "file" || data.Trusted[0].Health != "working" || data.Trusted[0].LastSuccessMS == nil || data.Trusted[1].Name != "remote" || data.Trusted[1].Health != "unverified" {
 		t.Fatalf("trusted source status is misleading or missing: %+v", data.Trusted)
+	}
+}
+
+func TestTrustedStatusFallbackToDescriptors(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/admin/trusted-services" {
+			http.NotFound(w, r)
+			return
+		}
+		w.Header().Set("Content-Type", "application/json")
+		if r.URL.Path == "/admin/stats" {
+			_, _ = w.Write([]byte(`{"stats":{}}`))
+			return
+		}
+		if r.URL.Path == "/admin/network" {
+			_, _ = w.Write([]byte(`{"network":[]}`))
+			return
+		}
+		if r.URL.Path == "/admin/services" {
+			_, _ = w.Write([]byte(`[{"id":"directory"}]`))
+			return
+		}
+		if r.URL.Path == "/admin/services/directory" {
+			_, _ = w.Write([]byte(`{"service_name":"directory","service_kind":"Trusted(\"file\")"}`))
+			return
+		}
+		_, _ = w.Write([]byte(`[]`))
+	}))
+	defer server.Close()
+	app := &application{admin: &adminClient{baseURL: server.URL, apiKey: "test-key", http: server.Client()}}
+	data := app.fetchSnapshot(context.Background())
+	if len(data.Trusted) != 1 || data.Trusted[0].Health != "unreported" || len(data.Errors) != 0 {
+		t.Fatalf("legacy API fallback: %+v", data)
 	}
 }
 

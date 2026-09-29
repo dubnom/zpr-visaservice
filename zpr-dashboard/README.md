@@ -40,8 +40,8 @@ make run                                # Start admin panel
 The read-only browser dashboard lives in `cmd/zpr-web-dashboard`. It polls the
 Visa Service admin API for counters, nodes and links, actors, registered
 services, active visas, and recent policy denials. Trusted-source connection
-health is shown as unreported because the current admin API does not expose
-that state.
+status is based on the Visa Service's last real lookup when available;
+older admin APIs report it as unreported.
 
 Configure the HTTPS admin API and read-only credentials with `ZPR_ADMIN_URL`,
 `ZPR_ADMIN_CA_FILE`, and `ZPR_ADMIN_KEY_FILE`, then run:

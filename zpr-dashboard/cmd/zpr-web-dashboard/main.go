@@ -108,12 +108,41 @@ type service struct {
 }
 
 type trustedSource struct {
-	Name       string `json:"name"`
-	ActorCN    string `json:"actor_cn"`
-	Provider   string `json:"provider"`
-	Health     string `json:"health"`
-	HealthNote string `json:"health_note"`
+	Name          string  `json:"name"`
+	ActorCN       string  `json:"actor_cn"`
+	Provider      string  `json:"provider"`
+	Health        string  `json:"health"`
+	HealthNote    string  `json:"health_note"`
+	LastLookupMS  *uint64 `json:"last_lookup_ms"`
+	LastSuccessMS *uint64 `json:"last_success_ms"`
+	EditorURL     string  `json:"editor_url,omitempty"`
 }
+
+func localLDAPEditorURL() string {
+	raw := os.Getenv("ZPR_DEMO_LDAP_EDITOR_URL")
+	if raw == "" {
+		return ""
+	}
+	parsed, err := url.Parse(raw)
+	if err != nil || parsed.Scheme != "http" || parsed.Hostname() != "127.0.0.1" || parsed.Port() == "" || parsed.User != nil || parsed.Fragment != "" {
+		return ""
+	}
+	return parsed.String()
+}
+
+type trustedStatus struct {
+	Name          string  `json:"name"`
+	Health        string  `json:"health"`
+	LastLookupMS  *uint64 `json:"last_lookup_ms"`
+	LastSuccessMS *uint64 `json:"last_success_ms"`
+}
+
+type adminStatusError struct {
+	code   int
+	status string
+}
+
+func (e adminStatusError) Error() string { return "admin API returned " + e.status }
 
 type visaEntry struct {
 	ID int64 `json:"id"`
@@ -284,7 +313,7 @@ func (c *adminClient) getJSON(ctx context.Context, path string, target any) erro
 	defer resp.Body.Close()
 	if resp.StatusCode != http.StatusOK {
 		_, _ = io.Copy(io.Discard, io.LimitReader(resp.Body, 4096))
-		return fmt.Errorf("admin API returned %s", resp.Status)
+		return adminStatusError{resp.StatusCode, resp.Status}
 	}
 	if err := json.NewDecoder(io.LimitReader(resp.Body, 2<<20)).Decode(target); err != nil {
 		return fmt.Errorf("decode admin response: %w", err)
@@ -337,7 +366,7 @@ func (a *application) fetchSnapshot(ctx context.Context) snapshot {
 		value any
 		err   error
 	}
-	results := make(chan result, 6)
+	results := make(chan result, 7)
 	go func() {
 		var value statsResponse
 		err := a.admin.getJSON(ctx, "/admin/stats", &value)
@@ -361,6 +390,11 @@ func (a *application) fetchSnapshot(ctx context.Context) snapshot {
 		results <- result{"services", value, err}
 	}()
 	go func() {
+		var value []trustedStatus
+		err := a.admin.getJSON(ctx, "/admin/trusted-services", &value)
+		results <- result{"trusted", value, err}
+	}()
+	go func() {
 		var value []visaEntry
 		err := a.admin.getJSON(ctx, "/admin/visas", &value)
 		results <- result{"visas", value, err}
@@ -372,9 +406,15 @@ func (a *application) fetchSnapshot(ctx context.Context) snapshot {
 	}()
 	var mu sync.Mutex
 	successfulEndpoints := 0
-	for i := 0; i < 6; i++ {
+	var statuses []trustedStatus
+	haveStatuses := false
+	for i := 0; i < 7; i++ {
 		res := <-results
 		if res.err != nil {
+			var statusErr adminStatusError
+			if res.name == "trusted" && errors.As(res.err, &statusErr) && statusErr.code == http.StatusNotFound {
+				continue
+			}
 			mu.Lock()
 			out.Errors = append(out.Errors, res.name+": "+res.err.Error())
 			mu.Unlock()
@@ -392,7 +432,8 @@ func (a *application) fetchSnapshot(ctx context.Context) snapshot {
 		case "services":
 			entries := res.value.([]serviceEntry)
 			out.Services = a.fetchServices(ctx, entries, &out.Errors, &mu)
-			out.Trusted = trustedSourcesFrom(out.Services)
+		case "trusted":
+			statuses, haveStatuses = res.value.([]trustedStatus), true
 		case "visas":
 			entries := res.value.([]visaEntry)
 			out.VisaCount = len(entries)
@@ -400,6 +441,11 @@ func (a *application) fetchSnapshot(ctx context.Context) snapshot {
 		case "denies":
 			out.RecentDenies = res.value.([]deny)
 		}
+	}
+	if haveStatuses {
+		out.Trusted = trustedSourcesFromStatus(statuses, out.Services)
+	} else {
+		out.Trusted = trustedSourcesFrom(out.Services)
 	}
 	if successfulEndpoints == 0 {
 		out.APIStatus = "disconnected"
@@ -472,6 +518,42 @@ func trustedSourcesFrom(services []service) []trustedSource {
 			HealthNote: "The admin API exposes no live connection or source-health signal.",
 		})
 	}
+	return trusted
+}
+
+func trustedSourcesFromStatus(statuses []trustedStatus, services []service) []trustedSource {
+	byName := make(map[string]service, len(services))
+	for _, item := range services {
+		byName[item.Name] = item
+	}
+	trusted := make([]trustedSource, 0, len(statuses))
+	for _, status := range statuses {
+		provider := "trusted source"
+		actor := ""
+		if descriptor, ok := byName[status.Name]; ok {
+			actor = descriptor.ActorCN
+			provider = strings.TrimSuffix(strings.TrimPrefix(descriptor.Kind, "Trusted(\""), "\")")
+			if provider == descriptor.Kind {
+				provider = "trusted source"
+			}
+		}
+		health := status.Health
+		if health != "working" && health != "failed" {
+			health = "unverified"
+		}
+		trusted = append(trusted, trustedSource{
+			Name: status.Name, ActorCN: actor, Provider: provider, Health: health,
+			HealthNote:   "Based on the most recent real attribute lookup, not a live probe.",
+			LastLookupMS: status.LastLookupMS, LastSuccessMS: status.LastSuccessMS,
+			EditorURL: func() string {
+				if status.Name == "demo_ldap" && provider == "rest/1" {
+					return localLDAPEditorURL()
+				}
+				return ""
+			}(),
+		})
+	}
+	sort.Slice(trusted, func(i, j int) bool { return trusted[i].Name < trusted[j].Name })
 	return trusted
 }
 

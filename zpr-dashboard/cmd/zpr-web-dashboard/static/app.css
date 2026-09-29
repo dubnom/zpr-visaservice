@@ -169,6 +169,10 @@ td:first-child { color: var(--ink); font-weight: 600; }
 .source-name { display: block; color: var(--ink); font-size: 11px; font-weight: 600; }
 .source-meta { display: block; margin-top: 5px; color: #8a958e; font: 9px var(--mono); }
 .health-badge { padding: 4px 6px; border: 1px solid #e7d5bf; background: #fff8ef; color: #8c6333; font: 8px var(--mono); white-space: nowrap; }
+.health-badge.working { border-color: #aecdb2; background: #e6f3e8; color: #176038; }
+.health-badge.failed { border-color: #e2ada5; background: #fff0ed; color: #a43830; }
+.source-editor-link { color: var(--forest); text-decoration: underline; text-underline-offset: 2px; }
+.source-editor-link:hover, .source-editor-link:focus-visible { color: #235e9a; }
 
 .activity-grid { display: grid; grid-template-columns: minmax(0, 1.3fr) minmax(330px, .8fr); gap: 32px; }
 .denials-column { padding-left: 24px; border-left: 1px solid var(--line); }
@@ -236,6 +240,8 @@ td:first-child { color: var(--ink); font-weight: 600; }
 .detail-item strong { color: var(--ink-soft); font: 10px var(--mono); }
 .detail-item span { color: #89958d; font-size: 10px; line-height: 1.4; }
 .detail-item:hover strong { color: var(--forest); }
+.inspector-actions { padding: 16px 0; }
+.inspector-actions .button { display: inline-flex; align-items: center; text-decoration: none; }
 
 @media (max-width: 700px) {
   .topbar { flex-direction: column; align-items: stretch; gap: 4px; padding-top: 5px; padding-bottom: 5px; }

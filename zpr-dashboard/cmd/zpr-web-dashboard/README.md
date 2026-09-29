@@ -5,9 +5,17 @@ API and displays Visa Service counters, node/link state, actors, services,
 active visas, and recent denials. It uses the existing admin API and does not
 add write operations.
 
-Trusted service descriptors are shown separately. The current admin API does
-not report trusted-source connection or health state, so the monitor labels
-that health as **unreported** instead of inferring it from configuration.
+The Trusted sources page lists active providers from the read-only admin
+status API. **Working** means the latest real attribute lookup succeeded;
+**failed** means it failed, and **unverified** means no lookup has occurred.
+The last-lookup and last-success times are shown, but this is not a live
+connection probe. Older Visa Service versions without this endpoint fall back
+to policy service descriptors and show **unreported** rather than guessing.
+The local `demo_ldap` source optionally links to a separate phpLDAPadmin tab if
+`ZPR_DEMO_LDAP_EDITOR_URL` is set to a `http://127.0.0.1:<port>/` URL. No other
+source receives an editor link; the browser authenticates directly to the
+editor with a separate LDAP admin login. The monitor does not proxy LDAP edits
+or store the admin password.
 
 ## Configure and run
 

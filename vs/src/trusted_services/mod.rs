@@ -19,6 +19,7 @@ mod test_support;
 pub use factory::{
     TrustedServiceDefinition, build_services_with_http, trusted_service_definitions,
 };
+pub use manager::TrustedServiceStatus;
 pub use manager::TrustedServicesMgr;
 
 /// A revision no snapshot will ever carry (the counter starts at 1). Recording it for
