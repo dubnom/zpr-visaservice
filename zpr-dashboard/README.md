@@ -37,11 +37,19 @@ make run                                # Start admin panel
 
 ## Web monitor
 
-The read-only browser dashboard lives in `cmd/zpr-web-dashboard`. It polls the
-Visa Service admin API for counters, nodes and links, actors, registered
-services, active visas, and recent policy denials. Trusted-source connection
-status is based on the Visa Service's last real lookup when available;
-older admin APIs report it as unreported.
+The browser Control Room lives in `cmd/zpr-web-dashboard`. It polls the Visa
+Service admin API for counters, nodes and links, actors, registered services,
+active visas, and recent policy denials. Policy organizes generic records by
+named categories and stores each content change as an immutable SQLite
+revision; ZPL records are checked with the ZPLC compiler before a version is
+appended. It does not install policy into the running service. The
+trusted-source view associates providers with actors and reports the latest
+real lookup outcome when available; it does not browse provider records.
+In the ZPL service model, attribute providers, authentication, logging/audit,
+and the Policy Repository are distinct trusted-service classes with separate
+REST contracts. The current policy-record REST interface is mounted in the
+Control Room process as a local-development implementation; it is not yet a
+separately deployed or permissioned ZPR trusted service.
 
 Configure the HTTPS admin API and read-only credentials with `ZPR_ADMIN_URL`,
 `ZPR_ADMIN_CA_FILE`, and `ZPR_ADMIN_KEY_FILE`, then run:

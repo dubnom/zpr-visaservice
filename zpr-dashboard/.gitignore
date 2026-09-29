@@ -8,3 +8,4 @@ bin/*
 *.zpt
 
 config.toml
+policy-records.db*

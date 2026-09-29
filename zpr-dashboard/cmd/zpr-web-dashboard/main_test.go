@@ -41,7 +41,7 @@ func TestFetchSnapshotAggregatesLiveAdminData(t *testing.T) {
 		case "/admin/services":
 			_, _ = w.Write([]byte(`[{"id":"directory"}]`))
 		case "/admin/services/directory":
-			_, _ = w.Write([]byte(`{"service_name":"directory","actor_cn":"directory-service","service_kind":"Trusted(\"file\")"}`))
+			_, _ = w.Write([]byte(`{"service_name":"directory","actor_cn":"directory-service","zpr_addr":"fd5a::12","service_endpoints":"ldaps://directory:636","service_kind":"Trusted(\"file\")"}`))
 		case "/admin/trusted-services":
 			_, _ = w.Write([]byte(`[{"name":"directory","health":"working","last_lookup_ms":1780000000000,"last_success_ms":1780000000000},{"name":"remote","health":"unverified","last_lookup_ms":null,"last_success_ms":null}]`))
 		case "/admin/visas":
@@ -70,7 +70,7 @@ func TestFetchSnapshotAggregatesLiveAdminData(t *testing.T) {
 	if data.Stats["uptime"] != "120" {
 		t.Fatalf("uptime = %v; want 120", data.Stats["uptime"])
 	}
-	if len(data.Trusted) != 2 || data.Trusted[0].Provider != "file" || data.Trusted[0].Health != "working" || data.Trusted[0].LastSuccessMS == nil || data.Trusted[1].Name != "remote" || data.Trusted[1].Health != "unverified" {
+	if len(data.Trusted) != 2 || data.Trusted[0].Provider != "file" || data.Trusted[0].Health != "working" || data.Trusted[0].LastSuccessMS == nil || data.Trusted[0].ActorCN != "directory-service" || data.Trusted[0].Endpoints != "ldaps://directory:636" || data.Trusted[1].Name != "remote" || data.Trusted[1].Health != "unverified" {
 		t.Fatalf("trusted source status is misleading or missing: %+v", data.Trusted)
 	}
 }

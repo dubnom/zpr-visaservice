@@ -1,5 +1,5 @@
 const byId = (id) => document.getElementById(id);
-const state = { snapshot: null, timer: null, paused: false, pending: false, graphCamera: null, graphNodeSlots: new Map(), graphAdapterSlots: new Map(), selection: null, sorts: {} };
+const state = { snapshot: null, timer: null, paused: false, pending: false, graphCamera: null, graphNodeSlots: new Map(), graphAdapterSlots: new Map(), selection: null, sorts: {}, policy: { loaded: false, configured: false, categories: [], records: [], categoryID: "", record: null, source: "", savedSource: "", revision: 0, browsingRevision: 0, saveAs: false, compilerReady: false, assistantReady: false, validSource: null, revisions: [], messages: [], assistantPending: false, assistantError: "" } };
 
 const pages = {
   map: "MAP",
@@ -7,6 +7,7 @@ const pages = {
   actors: "ACTORS",
   services: "SERVICES",
   sources: "TRUSTED SOURCES",
+  policy: "POLICY",
   visas: "VISAS",
   denies: "DENIALS",
 };
@@ -27,6 +28,7 @@ function showPage(page = currentPage()) {
     if (active) link.setAttribute("aria-current", "page");
     else link.removeAttribute("aria-current");
   }
+  if (page === "policy") loadPolicyWorkspace();
 }
 
 function escapeHTML(value) {
@@ -169,11 +171,10 @@ function renderInspector() {
     const relatedVisas = data.recent_visas.filter((visa) => visa.source_addr === actor.zpr_addr || visa.dest_addr === actor.zpr_addr);
     kindLabel = actor.node ? "FORWARDING NODE" : services.some((item) => item.service_kind === "Visa") ? "VISA SERVICE ADAPTER" : "ADAPTER";
     title = actor.cn;
-    sections.push(detailSection("Identity", [
+    sections.push(detailSection("Actor", [
       detailField("Role", actor.node ? "Node / forwarder" : kindLabel === "VISA SERVICE ADAPTER" ? "Visa Service adapter" : "Adapter"),
       detailField("Common name", actor.cn, "mono"),
       detailField("ZPR address", actor.zpr_addr, "mono"),
-      detailField("Identity", actor.ident, "mono"),
       detailField("Authentication expires", actor.auth_exp ? new Date(actor.auth_exp * 1000).toLocaleString() : "No expiry reported"),
     ]));
     if (actor.node && actor.node_details) {
@@ -226,9 +227,14 @@ function renderInspector() {
     if (!source) return closeInspector();
     kindLabel = "TRUSTED SOURCE";
     title = source.name;
-    sections.push(detailSection("Configuration", [detailField("Provider", source.provider), detailField("Actor", source.actor_cn, "mono")]));
+    sections.push(detailSection("Who uses it", [
+      detailField("Actor", source.actor_cn, "mono"),
+      detailField("Provider", providerDescription(source.provider)),
+      detailField("Service address", source.zpr_addr, "mono"),
+      detailField("Configured endpoint", source.service_endpoints || (source.provider === "rest/1" ? "Managed by Visa Service" : "No network endpoint"), "mono"),
+    ]));
     sections.push(detailSection("Lookup status", [
-      detailField("Last outcome", source.health || "Unreported"),
+      detailField("Last outcome", lookupOutcome(source.health)),
       detailField("Last lookup", source.last_lookup_ms ? new Date(source.last_lookup_ms).toLocaleString() : "Never observed"),
       detailField("Last success", source.last_success_ms ? new Date(source.last_success_ms).toLocaleString() : "Never observed"),
       detailField("Basis", source.health_note || "No lookup status from the admin API"),
@@ -483,7 +489,7 @@ function nodeState(actor, data) {
 
 function renderActors(data) {
   byId("actor-count").textContent = `${formatNumber(data.actors.length)} Actors`;
-  const columns = { cn: (actor) => actor.cn, role: (actor) => actor.node ? "node" : "adapter", address: (actor) => actor.zpr_addr, state: (actor) => nodeState(actor, data), identity: (actor) => actor.ident };
+  const columns = { cn: (actor) => actor.cn, role: (actor) => actor.node ? "node" : "adapter", address: (actor) => actor.zpr_addr, state: (actor) => nodeState(actor, data) };
   const actors = visibleRows("actors", data.actors, columns);
   byId("actor-rows").innerHTML = actors.length ? actors.map((actor) => {
     const role = actor.node ? "node" : "adapter";
@@ -496,15 +502,461 @@ function renderActors(data) {
 
 function renderTrusted(data) {
   const sources = data.trusted_sources || [];
-  byId("trusted-count").textContent = `${formatNumber(sources.length)} Trusted Services`;
+  byId("trusted-count").textContent = `${formatNumber(sources.length)} attribute sources`;
   const columns = { name: (source) => source.name, provider: (source) => source.provider, actor: (source) => source.actor_cn, health: (source) => source.health, last_lookup: (source) => source.last_lookup_ms || 0 };
   const shown = visibleRows("sources", sources, columns);
   byId("trusted-list").innerHTML = shown.length ? shown.map((source) => {
-    const name = source.editor_url
-      ? `<a class="source-editor-link" href="${escapeHTML(source.editor_url)}" target="_blank" rel="noopener noreferrer" title="Open ${escapeHTML(source.name)} in LDAP editor">${escapeHTML(source.name)} ↗</a>`
-      : escapeHTML(source.name);
-    return `<tr class="selectable-row" data-inspect-source="${escapeHTML(source.name)}" tabindex="0" role="button" aria-label="Inspect trusted source ${escapeHTML(source.name)}"><td>${name}</td><td>${escapeHTML(source.provider || "—")}</td><td>${escapeHTML(source.actor_cn || "—")}</td><td><span class="health-badge ${["working", "failed"].includes(source.health) ? source.health : ""}">${escapeHTML((source.health || "unreported").toUpperCase())}</span></td><td class="mono">${source.last_lookup_ms ? escapeHTML(new Date(source.last_lookup_ms).toLocaleString()) : "—"}</td></tr>`;
+    const sourceName = `<strong>${escapeHTML(source.name)}</strong><small>${escapeHTML(providerDescription(source.provider))}</small>`;
+    const actorLabel = source.actor_cn || "No actor reported";
+      const statusText = lookupOutcome(source.health);
+    const editorAction = source.editor_url ? `<a class="source-editor-link" href="${escapeHTML(source.editor_url)}" target="_blank" rel="noopener noreferrer" title="Open ${escapeHTML(source.name)} in LDAP editor">Open directory ↗</a>` : "";
+    return `<tr class="selectable-row" data-inspect-source="${escapeHTML(source.name)}" tabindex="0" role="button" aria-label="Inspect trusted source ${escapeHTML(source.name)}"><td class="source-primary">${sourceName}</td><td>${escapeHTML(providerDescription(source.provider))}</td><td>${escapeHTML(actorLabel)}</td><td><span class="health-badge ${["working", "failed"].includes(source.health) ? source.health : ""}">${escapeHTML(statusText)}</span></td><td><span class="source-time">${source.last_lookup_ms ? escapeHTML(new Date(source.last_lookup_ms).toLocaleString()) : "No lookup recorded"}</span>${source.last_success_ms ? `<small class="source-secondary">Last success ${escapeHTML(new Date(source.last_success_ms).toLocaleString())}</small>` : ""}${editorAction ? `<small class="source-secondary">${editorAction}</small>` : ""}</td></tr>`;
   }).join("") : `<tr><td colspan="5" class="empty-row">${sources.length ? "No matching trusted sources" : "No trusted services reported by the Visa Service."}</td></tr>`;
+}
+
+function providerDescription(provider) {
+  if (provider === "file") return "Local attribute file";
+  if (provider === "rest/1") return "HTTPS attribute service";
+  if (provider === "validation/2") return "Authentication service";
+  return "Trusted attribute provider";
+}
+
+function lookupOutcome(health) {
+  if (health === "working") return "Lookup succeeded";
+  if (health === "failed") return "Lookup failed";
+  if (health === "unverified") return "Not queried";
+  return "Status unavailable";
+}
+async function loadPolicyWorkspace() {
+  const policy = state.policy;
+  if (policy.loaded) return;
+  const selectedRecordID = policy.record?.id;
+  const editorSource = byId("policy-source").value;
+  const hasUnsavedChanges = Boolean(policy.record && editorSource !== policy.savedSource);
+  try {
+    const response = await fetch("/api/policy", { cache: "no-store", headers: { Accept: "application/json" } });
+    const data = await response.json();
+    if (!response.ok) throw new Error(data.error || `Policy server responded ${response.status}`);
+    Object.assign(policy, {
+      loaded: true,
+      configured: data.configured,
+      categories: data.categories || [],
+      records: data.records || [],
+      compilerReady: data.compiler_ready,
+      assistantReady: data.assistant_ready,
+    });
+    if (!policy.categories.some((category) => category.id === policy.categoryID)) {
+      policy.categoryID = policy.categories.find((category) => !category.parent_id)?.id || policy.categories[0]?.id || "";
+    }
+    if (policy.record && !policy.records.some((record) => record.id === policy.record.id)) policy.record = null;
+    renderPolicyCatalog();
+    if (policy.record && hasUnsavedChanges) {
+      byId("policy-check-result").textContent = "Unsaved edits retained. Evaluate before saving.";
+    } else if (policy.record) await selectPolicyRecord(policy.record.id, true, true);
+    else clearPolicySelection();
+    byId("policy-check").disabled = !policy.configured || !policy.compilerReady;
+    byId("new-category").disabled = !policy.configured;
+    byId("new-policy-record").disabled = !policy.configured || !policy.categoryID;
+    byId("assistant-state").textContent = policy.assistantReady ? "Ready" : "Not configured";
+    byId("assistant-state").classList.toggle("ready", policy.assistantReady);
+    byId("assistant-question").disabled = !policy.configured || !policy.assistantReady;
+    byId("assistant-send").disabled = !policy.configured || !policy.assistantReady;
+    byId("assistant-disclosure").textContent = policy.assistantReady
+      ? "Submitting sends the current policy and chat history to Anthropic. Suggestions are not applied automatically."
+      : "Claude is off. Set ANTHROPIC_API_KEY on the server to enable it.";
+  } catch (error) {
+    policy.loaded = false;
+    byId("policy-check-result").textContent = error.message;
+  }
+}
+
+function renderPolicyCatalog() {
+  const policy = state.policy;
+  const categories = new Map(policy.categories.map((category) => [category.id, category]));
+  const children = new Map();
+  for (const category of policy.categories) {
+    const key = category.parent_id || "";
+    if (!children.has(key)) children.set(key, []);
+    children.get(key).push(category);
+  }
+  for (const items of children.values()) items.sort((a, b) => a.name.localeCompare(b.name));
+  const tree = byId("policy-category-tree");
+  tree.replaceChildren();
+  if (!policy.categories.length) {
+    const empty = document.createElement("p"); empty.className = "catalog-empty"; empty.textContent = "No categories yet."; tree.append(empty);
+  } else {
+    const renderBranch = (parentID = "", depth = 0) => {
+      for (const category of children.get(parentID) || []) {
+        const button = document.createElement("button");
+        button.type = "button"; button.className = "category-tree-item";
+        button.dataset.categoryId = category.id;
+        button.setAttribute("role", "treeitem");
+        button.setAttribute("aria-selected", String(policy.categoryID === category.id));
+        button.style.setProperty("--tree-depth", depth);
+        const marker = document.createElement("span"); marker.className = "tree-marker"; marker.setAttribute("aria-hidden", "true");
+        const name = document.createElement("span"); name.textContent = category.name;
+        const count = policy.records.filter((record) => record.category_id === category.id).length;
+        const tally = document.createElement("small"); tally.textContent = String(count);
+        button.append(marker, name, tally);
+        tree.append(button);
+        renderBranch(category.id, depth + 1);
+      }
+    };
+    renderBranch();
+  }
+  const selected = categories.get(policy.categoryID);
+  byId("new-policy-record").disabled = !policy.configured || !selected;
+  const list = byId("policy-record-list");
+  list.replaceChildren();
+  const records = policy.records.filter((record) => record.category_id === policy.categoryID).sort((a, b) => a.name.localeCompare(b.name));
+  if (!selected) {
+    const empty = document.createElement("p"); empty.className = "catalog-empty"; empty.textContent = "Create or select a category."; list.append(empty);
+  } else if (!records.length) {
+    const empty = document.createElement("p"); empty.className = "catalog-empty"; empty.textContent = "No records in this category."; list.append(empty);
+  } else {
+    for (const record of records) {
+      const button = document.createElement("button"); button.type = "button"; button.className = "policy-record-item";
+      button.dataset.recordId = record.id; button.setAttribute("aria-pressed", String(policy.record?.id === record.id));
+      const name = document.createElement("strong"); name.textContent = record.name;
+      const meta = document.createElement("small"); meta.textContent = `${record.kind} · v${record.current_revision}`;
+      button.append(name, meta); list.append(button);
+    }
+  }
+}
+
+function clearPolicySelection() {
+  const policy = state.policy;
+  policy.record = null; policy.source = ""; policy.savedSource = ""; policy.revision = 0; policy.revisions = []; policy.validSource = null;
+  policy.browsingRevision = 0;
+  byId("policy-source").value = ""; byId("policy-source").disabled = true;
+  renderPolicyIdentity(null);
+  byId("policy-check").disabled = true; byId("policy-save").disabled = true; byId("policy-save-as").disabled = true; byId("policy-refresh").disabled = true;
+  byId("policy-check-result").textContent = "Policy source is not loaded.";
+  byId("policy-history-count").textContent = "—";
+  byId("policy-history").innerHTML = '<p class="catalog-empty">Select a policy to browse versions.</p>';
+  byId("assistant-question").disabled = true; byId("assistant-send").disabled = true;
+  renderPolicyCatalog();
+}
+
+async function selectPolicyRecord(id, fetchRecord = true, discardEdits = false) {
+  const policy = state.policy;
+  const summary = policy.records.find((record) => record.id === id);
+  if (!summary) return clearPolicySelection();
+  if (!discardEdits && byId("policy-source").value !== policy.savedSource && !window.confirm("Discard unsaved changes or leave this historical version?")) return;
+  try {
+    let record = summary;
+    if (fetchRecord) {
+      const response = await fetch(`/api/policy/records/${encodeURIComponent(id)}`, { cache: "no-store" });
+      record = await response.json();
+      if (!response.ok) throw new Error(record.error || `Record load failed (${response.status})`);
+    }
+    policy.record = record; policy.source = record.content || ""; policy.savedSource = policy.source; policy.revision = record.current_revision; policy.validSource = null;
+    policy.browsingRevision = 0;
+    byId("policy-source").value = policy.source; byId("policy-source").disabled = record.kind !== "policy";
+    renderPolicyIdentity(record, record.current_revision, record.content_hash);
+    byId("policy-check").disabled = record.kind !== "policy" || !policy.compilerReady;
+    byId("policy-save").disabled = true;
+    byId("policy-check-result").textContent = record.kind === "policy" ? "Evaluate the current policy before saving." : `Record type: ${record.kind}`;
+    byId("policy-check-result").dataset.state = "";
+    byId("assistant-question").disabled = record.kind !== "policy" || !policy.assistantReady;
+    byId("assistant-send").disabled = record.kind !== "policy" || !policy.assistantReady;
+    policy.messages = []; policy.assistantError = ""; renderAssistantMessages();
+    renderPolicyCatalog(); await loadPolicyHistory(record.id);
+    updatePolicyDirtyState();
+  } catch (error) {
+    byId("policy-check-result").textContent = error.message;
+  }
+}
+
+function renderPolicyIdentity(record = state.policy.record, version = state.policy.revision, hash = record?.content_hash) {
+  const title = byId("policy-record-title");
+  if (!record) {
+    title.textContent = "Select a policy";
+    title.removeAttribute("title");
+    byId("policy-revision-label").textContent = "";
+    return;
+  }
+  const category = state.policy.categories.find((item) => item.id === record.category_id);
+  const path = [category?.path, record.name].filter(Boolean).join("/");
+  title.textContent = record.name;
+  title.title = path;
+  byId("policy-revision-label").textContent = `Version ${version} [${hash ? hash.slice(0, 12) : "hash unavailable"}]`;
+  byId("policy-revision-label").title = `${path} · ${hash || "hash unavailable"}`;
+}
+
+async function loadPolicyHistory(recordID) {
+  const response = await fetch(`/api/policy/records/${encodeURIComponent(recordID)}/revisions`, { cache: "no-store" });
+  const revisions = await response.json();
+  if (!response.ok) throw new Error(revisions.error || `Version history failed (${response.status})`);
+  state.policy.revisions = revisions;
+  byId("policy-history-count").textContent = `${revisions.length} versions`;
+  const history = byId("policy-history"); history.replaceChildren();
+  for (const revision of revisions) {
+    const button = document.createElement("button"); button.type = "button"; button.className = "history-item";
+    button.dataset.revision = String(revision.number); button.setAttribute("aria-current", String(revision.number === state.policy.revision));
+    const title = document.createElement("strong"); title.textContent = `Version ${revision.number}`;
+    const summary = document.createElement("span"); summary.textContent = revision.summary || "No change summary";
+    const meta = document.createElement("small"); meta.textContent = `${revision.author} · ${new Date(revision.created_at).toLocaleString()}`;
+    button.append(title, summary, meta); history.append(button);
+  }
+}
+
+async function refreshPolicyCatalog() {
+  state.policy.loaded = false;
+  await loadPolicyWorkspace();
+}
+
+async function browsePolicyRevision(number) {
+  const policy = state.policy;
+  if (!policy.record) return;
+  try {
+    const response = await fetch(`/api/policy/records/${encodeURIComponent(policy.record.id)}/revisions/${number}`, { cache: "no-store" });
+    const revision = await response.json();
+    if (!response.ok) throw new Error(revision.error || `Version load failed (${response.status})`);
+    if (byId("policy-source").value !== policy.savedSource && !window.confirm("Discard unsaved edits and browse this version?")) return;
+    policy.validSource = null;
+    policy.browsingRevision = revision.number;
+    byId("policy-source").value = revision.content;
+    renderPolicyIdentity(policy.record, revision.number, revision.content_hash);
+    byId("policy-source").disabled = true;
+    byId("policy-check").disabled = true;
+    byId("policy-save").disabled = true;
+    byId("policy-save-as").disabled = true;
+    byId("policy-refresh").disabled = false;
+    byId("policy-check-result").textContent = revision.summary || "Historical version";
+    byId("policy-check-result").dataset.state = "";
+    for (const item of byId("policy-history").querySelectorAll("[data-revision]")) item.setAttribute("aria-current", String(Number(item.dataset.revision) === revision.number));
+    updatePolicyDirtyState();
+  } catch (error) {
+    byId("policy-check-result").textContent = error.message;
+  }
+}
+
+function openCategoryDialog() {
+  const options = byId("category-parent"); options.replaceChildren();
+  const root = document.createElement("option"); root.value = ""; root.textContent = "Top level"; options.append(root);
+  for (const category of state.policy.categories) {
+    const option = document.createElement("option"); option.value = category.id; option.textContent = category.path; option.selected = category.id === state.policy.categoryID; options.append(option);
+  }
+  byId("category-name").value = ""; byId("category-error").textContent = "";
+  byId("category-dialog").showModal(); byId("category-name").focus();
+}
+
+function openRecordDialog(saveAs = false) {
+  const options = byId("record-category"); options.replaceChildren();
+  for (const category of state.policy.categories) {
+    const option = document.createElement("option"); option.value = category.id; option.textContent = category.path; option.selected = category.id === state.policy.categoryID; options.append(option);
+  }
+  state.policy.saveAs = saveAs;
+  byId("record-dialog-title").textContent = saveAs ? "Save policy as" : "New policy";
+  byId("record-submit").textContent = saveAs ? "Save As..." : "Create record";
+  byId("record-name").value = saveAs && state.policy.record ? `${state.policy.record.name} copy` : "";
+  byId("record-error").textContent = "";
+  byId("record-dialog").showModal(); byId("record-name").focus();
+}
+
+async function createPolicyCategory(event) {
+  event.preventDefault();
+  const name = byId("category-name").value.trim();
+  const parentID = byId("category-parent").value || null;
+  try {
+    const response = await fetch("/api/policy/categories", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ name, parent_id: parentID }) });
+    const result = await response.json();
+    if (!response.ok) throw new Error(result.error || `Category creation failed (${response.status})`);
+    if (!state.policy.categoryID) state.policy.categoryID = result.id;
+    byId("category-dialog").close();
+    await refreshPolicyCatalog();
+  } catch (error) { byId("category-error").textContent = error.message; }
+}
+
+async function createPolicyRecord(event) {
+  event.preventDefault();
+  const name = byId("record-name").value.trim();
+  const categoryID = byId("record-category").value;
+  try {
+    const saveAs = state.policy.saveAs;
+    const content = saveAs ? byId("policy-source").value : "";
+    if (saveAs && state.policy.validSource !== content) throw new Error("Evaluate the current policy before saving a copy.");
+    const response = await fetch("/api/policy/records", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        category_id: categoryID, name, kind: "policy", content_type: "text/vnd.zpr.zpl",
+        metadata: { language: "zpl" }, content,
+        summary: saveAs ? `Copied from ${state.policy.record?.name || "policy"}` : "Created policy record",
+      }),
+    });
+    const result = await response.json();
+    if (!response.ok) throw new Error(result.error || result.diagnostics || `Record creation failed (${response.status})`);
+    state.policy.categoryID = categoryID;
+    byId("record-dialog").close();
+    await refreshPolicyCatalog();
+    await selectPolicyRecord(result.id, true, saveAs);
+  } catch (error) { byId("record-error").textContent = error.message; }
+}
+
+function updatePolicyDirtyState() {
+  const policy = state.policy;
+  const source = byId("policy-source").value;
+  const dirty = !policy.browsingRevision && source !== policy.savedSource;
+  const checked = policy.validSource === source;
+  const canEdit = policy.configured && policy.record?.kind === "policy" && !policy.browsingRevision;
+  byId("policy-save").disabled = !canEdit || !dirty || !checked;
+  byId("policy-save-as").disabled = !canEdit || !checked;
+  byId("policy-check").disabled = !canEdit || !policy.compilerReady;
+  byId("policy-refresh").disabled = !policy.record || (!dirty && !policy.browsingRevision);
+  byId("policy-check").classList.toggle("button-next-evaluate", canEdit && !checked);
+  byId("policy-save").classList.toggle("button-save-next", !(canEdit && dirty && checked));
+  byId("policy-save").classList.toggle("button-next-save", canEdit && dirty && checked);
+  byId("policy-save-as").classList.toggle("button-save-as-ready", canEdit && checked);
+  renderPolicyIdentity(policy.record, policy.browsingRevision || policy.revision);
+  const result = byId("policy-check-result");
+  if (dirty && !checked && result.dataset.state !== "invalid") {
+    result.dataset.state = "";
+    result.textContent = "Evaluate the current policy before saving.";
+  }
+}
+
+async function reloadPolicyWorkspace() {
+  if ((byId("policy-source").value !== state.policy.savedSource || state.policy.browsingRevision) && !window.confirm("Discard changes and return to the latest saved version?")) return;
+  if (!state.policy.record) return loadPolicyWorkspace();
+  await selectPolicyRecord(state.policy.record.id, true, true);
+}
+
+async function checkPolicy() {
+  const button = byId("policy-check");
+  const source = byId("policy-source").value;
+  button.disabled = true;
+  byId("policy-check-result").textContent = "Checking with ZPLC…";
+  try {
+    const response = await fetch("/api/policy/check", {
+      method: "POST", headers: { "Content-Type": "application/json", Accept: "application/json" },
+      body: JSON.stringify({ source }),
+    });
+    const result = await response.json();
+    policySetCheckResult(response.ok && result.valid, result.diagnostics || result.error || "No compiler diagnostics.", source);
+  } catch (error) {
+    policySetCheckResult(false, error.message, source);
+  } finally {
+    updatePolicyDirtyState();
+  }
+}
+
+function policySetCheckResult(valid, diagnostics, source) {
+  const policy = state.policy;
+  policy.validSource = valid ? source : null;
+  const result = byId("policy-check-result");
+  result.textContent = diagnostics;
+  result.dataset.state = valid ? "valid" : "invalid";
+  updatePolicyDirtyState();
+}
+
+async function savePolicy() {
+  byId("version-note").value = "";
+  byId("version-error").textContent = "";
+  byId("version-dialog").showModal();
+  byId("version-note").focus();
+}
+
+async function appendPolicyVersion(summary) {
+  const policy = state.policy;
+  const button = byId("policy-save");
+  const submittedSource = byId("policy-source").value;
+  const recordID = policy.record.id;
+  const expectedRevision = policy.revision;
+  button.disabled = true;
+  byId("version-dialog").close();
+  byId("policy-check-result").textContent = "Saving version…";
+  try {
+    const response = await fetch(`/api/policy/records/${encodeURIComponent(recordID)}/revisions`, {
+      method: "POST", headers: { "Content-Type": "application/json", Accept: "application/json" },
+      body: JSON.stringify({ content: submittedSource, expected_revision: expectedRevision, summary }),
+    });
+    const result = await response.json();
+    if (!response.ok) throw new Error(result.error || result.diagnostics || `Version save failed (${response.status})`);
+    policy.revision = result.number;
+    policy.savedSource = submittedSource;
+    policy.validSource = policy.savedSource;
+    policy.record.current_revision = result.number;
+    policy.record.content = submittedSource;
+    policy.record.content_hash = result.content_hash;
+    policy.browsingRevision = 0;
+    renderPolicyIdentity(policy.record, result.number, result.content_hash);
+    byId("policy-check-result").textContent = result.diagnostics;
+    byId("policy-check-result").dataset.state = "valid";
+    await loadPolicyHistory(recordID);
+    await refreshPolicyCatalog();
+    updatePolicyDirtyState();
+  } catch (error) {
+    policy.validSource = null;
+    updatePolicyDirtyState();
+    byId("version-dialog").showModal();
+    byId("version-error").textContent = error.message;
+  }
+}
+
+byId("version-form").addEventListener("submit", (event) => {
+  event.preventDefault();
+  appendPolicyVersion(byId("version-note").value.trim());
+});
+
+function renderAssistantMessages() {
+  const list = byId("assistant-messages");
+  list.replaceChildren();
+  if (!state.policy.messages.length && !state.policy.assistantError) {
+    const empty = document.createElement("p");
+    empty.className = "assistant-empty";
+    empty.textContent = "No conversation yet.";
+    list.append(empty);
+  }
+  for (const message of state.policy.messages) {
+    const entry = document.createElement("article");
+    entry.className = `assistant-message ${message.role}`;
+    const label = document.createElement("strong");
+    label.textContent = message.role === "user" ? "YOU" : "CLAUDE";
+    const content = document.createElement("pre");
+    content.textContent = message.content;
+    entry.append(label, content);
+    list.append(entry);
+  }
+  if (state.policy.assistantError) {
+    const error = document.createElement("p");
+    error.className = "assistant-error";
+    error.textContent = state.policy.assistantError;
+    list.append(error);
+  }
+  if (state.policy.assistantPending) {
+    const pending = document.createElement("p");
+    pending.className = "assistant-pending";
+    pending.textContent = "Claude is responding…";
+    list.append(pending);
+  }
+  list.scrollTop = list.scrollHeight;
+}
+
+async function askPolicyAssistant(question) {
+  const policy = state.policy;
+  policy.messages = policy.messages.slice(-18);
+  policy.messages.push({ role: "user", content: question });
+  policy.assistantPending = true;
+  policy.assistantError = "";
+  byId("assistant-send").disabled = true;
+  renderAssistantMessages();
+  try {
+    const response = await fetch("/api/policy/assistant", {
+      method: "POST", headers: { "Content-Type": "application/json", Accept: "application/json" },
+      body: JSON.stringify({ source: byId("policy-source").value, messages: policy.messages }),
+    });
+    const result = await response.json();
+    if (!response.ok) throw new Error(result.error || `Claude request failed (${response.status})`);
+    policy.messages.push({ role: "assistant", content: result.answer });
+  } catch (error) {
+    policy.assistantError = error.message;
+  } finally {
+    policy.assistantPending = false;
+    byId("assistant-send").disabled = !policy.assistantReady;
+    renderAssistantMessages();
+  }
 }
 
 function renderServices(data) {
@@ -582,6 +1034,36 @@ function setPollTimer() {
 }
 
 byId("refresh-now").addEventListener("click", refresh);
+byId("policy-refresh").addEventListener("click", reloadPolicyWorkspace);
+byId("new-category").addEventListener("click", openCategoryDialog);
+byId("new-policy-record").addEventListener("click", openRecordDialog);
+byId("policy-save-as").addEventListener("click", () => openRecordDialog(true));
+byId("category-form").addEventListener("submit", createPolicyCategory);
+byId("record-form").addEventListener("submit", createPolicyRecord);
+document.addEventListener("click", (event) => {
+  const close = event.target.closest("[data-close-dialog]");
+  if (close) byId(close.dataset.closeDialog).close();
+  const category = event.target.closest("[data-category-id]");
+  if (category) { state.policy.categoryID = category.dataset.categoryId; renderPolicyCatalog(); }
+  const record = event.target.closest("[data-record-id]");
+  if (record) selectPolicyRecord(record.dataset.recordId);
+  const revision = event.target.closest("[data-revision]");
+  if (revision) browsePolicyRevision(Number(revision.dataset.revision));
+});
+byId("policy-source").addEventListener("input", () => {
+  state.policy.validSource = null;
+  byId("policy-check-result").dataset.state = "";
+  updatePolicyDirtyState();
+});
+byId("policy-check").addEventListener("click", checkPolicy);
+byId("policy-save").addEventListener("click", savePolicy);
+byId("assistant-form").addEventListener("submit", (event) => {
+  event.preventDefault();
+  const question = byId("assistant-question").value.trim();
+  if (!question || !state.policy.assistantReady || state.policy.assistantPending) return;
+  byId("assistant-question").value = "";
+  askPolicyAssistant(question);
+});
 byId("pause-poll").addEventListener("click", (event) => {
   state.paused = !state.paused;
   event.currentTarget.textContent = state.paused ? "Resume updates" : "Pause updates";

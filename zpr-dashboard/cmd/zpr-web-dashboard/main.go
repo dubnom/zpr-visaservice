@@ -41,6 +41,9 @@ type adminClient struct {
 type application struct {
 	admin      *adminClient
 	configErr  string
+	policy     *policyWorkspace
+	policyErr  string
+	assistant  *claudeAssistant
 	staticRoot http.Handler
 }
 
@@ -67,7 +70,6 @@ type actor struct {
 	CN          string      `json:"cn"`
 	Node        bool        `json:"node"`
 	ZPRAddress  string      `json:"zpr_addr"`
-	Identity    string      `json:"ident"`
 	AuthExpires *int64      `json:"auth_exp"`
 	NodeDetails *nodeDetail `json:"node_details"`
 }
@@ -111,6 +113,8 @@ type trustedSource struct {
 	Name          string  `json:"name"`
 	ActorCN       string  `json:"actor_cn"`
 	Provider      string  `json:"provider"`
+	ZPRAddress    string  `json:"zpr_addr,omitempty"`
+	Endpoints     string  `json:"service_endpoints,omitempty"`
 	Health        string  `json:"health"`
 	HealthNote    string  `json:"health_note"`
 	LastLookupMS  *uint64 `json:"last_lookup_ms"`
@@ -185,14 +189,27 @@ func main() {
 	if err != nil {
 		log.Fatal(err)
 	}
+	policy, policyErr := newPolicyWorkspace()
 	app := &application{
 		admin:      admin,
 		configErr:  configErr,
+		policy:     policy,
+		policyErr:  policyErr,
+		assistant:  newClaudeAssistant(),
 		staticRoot: http.FileServer(http.FS(staticRoot)),
 	}
 
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /api/snapshot", app.handleSnapshot)
+	mux.HandleFunc("GET /api/policy", app.handleGetPolicy)
+	mux.HandleFunc("POST /api/policy/check", app.handleCheckPolicy)
+	mux.HandleFunc("POST /api/policy/categories", app.handleCreatePolicyCategory)
+	mux.HandleFunc("POST /api/policy/records", app.handleCreatePolicyRecord)
+	mux.HandleFunc("GET /api/policy/records/{id}", app.handleGetPolicyRecord)
+	mux.HandleFunc("GET /api/policy/records/{id}/revisions", app.handlePolicyRecordRevisions)
+	mux.HandleFunc("POST /api/policy/records/{id}/revisions", app.handlePolicyRecordRevisions)
+	mux.HandleFunc("GET /api/policy/records/{id}/revisions/{revision}", app.handleGetPolicyRevision)
+	mux.HandleFunc("POST /api/policy/assistant", app.handlePolicyAssistant)
 	mux.Handle("GET /", app.staticRoot)
 
 	server := &http.Server{
@@ -511,11 +528,9 @@ func trustedSourcesFrom(services []service) []trustedSource {
 			provider = "trusted"
 		}
 		trusted = append(trusted, trustedSource{
-			Name:       item.Name,
-			ActorCN:    item.ActorCN,
-			Provider:   provider,
-			Health:     "unreported",
-			HealthNote: "The admin API exposes no live connection or source-health signal.",
+			Name: item.Name, ActorCN: item.ActorCN, Provider: provider,
+			ZPRAddress: item.Address, Endpoints: item.Endpoints,
+			Health: "unreported", HealthNote: "The admin API exposes no live connection or source-health signal.",
 		})
 	}
 	return trusted
@@ -530,8 +545,12 @@ func trustedSourcesFromStatus(statuses []trustedStatus, services []service) []tr
 	for _, status := range statuses {
 		provider := "trusted source"
 		actor := ""
+		address := ""
+		endpoints := ""
 		if descriptor, ok := byName[status.Name]; ok {
 			actor = descriptor.ActorCN
+			address = descriptor.Address
+			endpoints = descriptor.Endpoints
 			provider = strings.TrimSuffix(strings.TrimPrefix(descriptor.Kind, "Trusted(\""), "\")")
 			if provider == descriptor.Kind {
 				provider = "trusted source"
@@ -543,6 +562,7 @@ func trustedSourcesFromStatus(statuses []trustedStatus, services []service) []tr
 		}
 		trusted = append(trusted, trustedSource{
 			Name: status.Name, ActorCN: actor, Provider: provider, Health: health,
+			ZPRAddress: address, Endpoints: endpoints,
 			HealthNote:   "Based on the most recent real attribute lookup, not a live probe.",
 			LastLookupMS: status.LastLookupMS, LastSuccessMS: status.LastSuccessMS,
 			EditorURL: func() string {
