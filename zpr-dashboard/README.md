@@ -35,3 +35,21 @@ Copy `config.toml.example` to `config.toml` and edit it.
 make run                                # Start admin panel
 ```
 
+## Web monitor
+
+The read-only browser dashboard lives in `cmd/zpr-web-dashboard`. It polls the
+Visa Service admin API for counters, nodes and links, actors, registered
+services, active visas, and recent policy denials. Trusted-source connection
+health is shown as unreported because the current admin API does not expose
+that state.
+
+Configure the HTTPS admin API and read-only credentials with `ZPR_ADMIN_URL`,
+`ZPR_ADMIN_CA_FILE`, and `ZPR_ADMIN_KEY_FILE`, then run:
+
+```sh
+go run ./cmd/zpr-web-dashboard
+```
+
+Open `http://127.0.0.1:8787`. Full instructions are in
+[`cmd/zpr-web-dashboard/README.md`](cmd/zpr-web-dashboard/README.md).
+
