@@ -29,8 +29,8 @@ use crate::error::{ResolverError, ServiceError, StoreError, TopologyError};
 use crate::loaded_policy::LoadedPolicy;
 use crate::logging::targets::MAIN;
 use crate::trusted_services::{
-    TrustedServiceDefinition, TrustedServiceInterface, TrustedServicesMgr, build_services,
-    trusted_service_definitions,
+    TrustedServiceDefinition, TrustedServiceInterface, TrustedServicesMgr,
+    build_services_with_http, trusted_service_definitions,
 };
 
 /// Abstracts DNS hostname resolution so it can be swapped out in tests.
@@ -74,6 +74,7 @@ pub struct PolicyMgr {
     ts_mgr: Arc<TrustedServicesMgr>,
     /// Directory holding the `<service-id>.json` files for `api=file` trusted services.
     file_ts_dir: PathBuf,
+    http_services: std::collections::BTreeMap<String, config::TrustedServiceHttpConfig>,
 }
 
 /// A consistent, owned snapshot of policy, source container, and resolved topology,
@@ -153,12 +154,32 @@ impl PolicyMgr {
     /// This also runs DNS lookups on all the peerings in the policy. Will throw a
     /// [ResolverError] if any of the peerings fail to resolve.  We may revisit this
     /// later if we decide to eventually pass DNS names down to nodes.
+    #[cfg(test)]
     pub async fn new_with_initial_policy(
         container_bytes: Vec<u8>,
         repo: db::PolicyRepo,
         resolver: Arc<dyn DnsResolver>,
         ts_mgr: Arc<TrustedServicesMgr>,
         file_ts_dir: PathBuf,
+    ) -> Result<Self, ServiceError> {
+        Self::new_with_initial_policy_and_http(
+            container_bytes,
+            repo,
+            resolver,
+            ts_mgr,
+            file_ts_dir,
+            Default::default(),
+        )
+        .await
+    }
+
+    pub async fn new_with_initial_policy_and_http(
+        container_bytes: Vec<u8>,
+        repo: db::PolicyRepo,
+        resolver: Arc<dyn DnsResolver>,
+        ts_mgr: Arc<TrustedServicesMgr>,
+        file_ts_dir: PathBuf,
+        http_services: std::collections::BTreeMap<String, config::TrustedServiceHttpConfig>,
     ) -> Result<Self, ServiceError> {
         debug!(target: MAIN, "initializing policy manager");
 
@@ -187,11 +208,19 @@ impl PolicyMgr {
         // Resolve topology before persisting so a policy that cannot initialize is never
         // stored as the current policy. build_state borrows `loaded`, leaving it
         // available for the post-resolution persist below.
-        let state = Self::build_state(&resolver, &loaded, &file_ts_dir, None).await?;
+        let state =
+            Self::build_state(&resolver, &loaded, &file_ts_dir, &http_services, None).await?;
         repo.set_current_policy(&loaded, false).await?;
 
         debug!(target: MAIN, "policy manager initialized successfully");
-        Ok(Self::from_state(state, repo, resolver, ts_mgr, file_ts_dir))
+        Ok(Self::from_state(
+            state,
+            repo,
+            resolver,
+            ts_mgr,
+            file_ts_dir,
+            http_services,
+        ))
     }
 
     /// Create a new policy manager, initializing it with the current policy in
@@ -202,11 +231,23 @@ impl PolicyMgr {
     ///
     /// If the policy contains hostnames and DNS is not working, this returns an
     /// error.
+    #[cfg(test)]
     pub async fn new_from_state(
         repo: db::PolicyRepo,
         resolver: Arc<dyn DnsResolver>,
         ts_mgr: Arc<TrustedServicesMgr>,
         file_ts_dir: PathBuf,
+    ) -> Result<Self, ServiceError> {
+        Self::new_from_state_with_http(repo, resolver, ts_mgr, file_ts_dir, Default::default())
+            .await
+    }
+
+    pub async fn new_from_state_with_http(
+        repo: db::PolicyRepo,
+        resolver: Arc<dyn DnsResolver>,
+        ts_mgr: Arc<TrustedServicesMgr>,
+        file_ts_dir: PathBuf,
+        http_services: std::collections::BTreeMap<String, config::TrustedServiceHttpConfig>,
     ) -> Result<Self, ServiceError> {
         debug!(target: MAIN, "initializing policy manager from state");
         let mut loaded = repo
@@ -223,10 +264,18 @@ impl PolicyMgr {
         let resolver = PolicyResolver::new(resolver);
         // A trusted service the policy declares but that cannot be configured (e.g. its
         // attribute file is missing) fails startup; the error names the service and file.
-        let state = Self::build_state(&resolver, &loaded, &file_ts_dir, None).await?;
+        let state =
+            Self::build_state(&resolver, &loaded, &file_ts_dir, &http_services, None).await?;
 
         debug!(target: MAIN, "policy manager initialized successfully");
-        Ok(Self::from_state(state, repo, resolver, ts_mgr, file_ts_dir))
+        Ok(Self::from_state(
+            state,
+            repo,
+            resolver,
+            ts_mgr,
+            file_ts_dir,
+            http_services,
+        ))
     }
 
     /// This is the placeholder "update policy" function. It only replaces the current policy
@@ -257,6 +306,7 @@ impl PolicyMgr {
         resolver: &PolicyResolver,
         loaded: &LoadedPolicy,
         file_ts_dir: &Path,
+        http_services: &std::collections::BTreeMap<String, config::TrustedServiceHttpConfig>,
         previous: Option<&PolicyState>,
     ) -> Result<PolicyState, ServiceError> {
         let policy = loaded.policy();
@@ -268,7 +318,7 @@ impl PolicyMgr {
             // makes every actor revision-stale against every source. Cached
             // attribute data now only moves on a TTL reload or an admin flush.
             Some(prev) if prev.ts_definitions == ts_definitions => prev.trusted_services.clone(),
-            _ => build_services(&ts_definitions, file_ts_dir)?,
+            _ => build_services_with_http(&ts_definitions, file_ts_dir, http_services)?,
         };
         Ok(PolicyState {
             policy,
@@ -286,6 +336,7 @@ impl PolicyMgr {
         resolver: PolicyResolver,
         ts_mgr: Arc<TrustedServicesMgr>,
         file_ts_dir: PathBuf,
+        http_services: std::collections::BTreeMap<String, config::TrustedServiceHttpConfig>,
     ) -> Self {
         ts_mgr.update_services(state.trusted_services.clone());
         PolicyMgr {
@@ -295,6 +346,7 @@ impl PolicyMgr {
             resolver,
             ts_mgr,
             file_ts_dir,
+            http_services,
         }
     }
 
@@ -333,8 +385,14 @@ impl PolicyMgr {
         // passed in so trusted-service stores whose declaration did not change are
         // carried over rather than rebuilt with a fresh revision.
         let previous = self.state.load_full();
-        let state =
-            Self::build_state(&self.resolver, &loaded, &self.file_ts_dir, Some(&previous)).await?;
+        let state = Self::build_state(
+            &self.resolver,
+            &loaded,
+            &self.file_ts_dir,
+            &self.http_services,
+            Some(&previous),
+        )
+        .await?;
         self.repo.set_current_policy(&loaded, false).await?;
 
         self.publish(state);

@@ -3884,6 +3884,7 @@ dependencies = [
  "rcgen",
  "redis",
  "regex",
+ "reqwest",
  "rustls",
  "rustls-pemfile",
  "serde",

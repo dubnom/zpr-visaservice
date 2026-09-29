@@ -10,12 +10,15 @@ use crate::error::ServiceError;
 mod attribute_mapper;
 mod factory;
 mod file_attribute_store;
+mod http_attribute_store;
 mod manager;
 
 #[cfg(test)]
 mod test_support;
 
-pub use factory::{TrustedServiceDefinition, build_services, trusted_service_definitions};
+pub use factory::{
+    TrustedServiceDefinition, build_services_with_http, trusted_service_definitions,
+};
 pub use manager::TrustedServicesMgr;
 
 /// A revision no snapshot will ever carry (the counter starts at 1). Recording it for

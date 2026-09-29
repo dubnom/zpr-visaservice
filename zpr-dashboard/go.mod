@@ -5,15 +5,22 @@ go 1.26.1
 require (
 	charm.land/bubbletea/v2 v2.0.2
 	charm.land/lipgloss/v2 v2.0.2
+	github.com/BurntSushi/toml v1.6.0
+	github.com/go-ldap/ldap/v3 v3.4.12
 )
 
-require github.com/BurntSushi/toml v1.6.0 // indirect
+require (
+	github.com/Azure/go-ntlmssp v0.0.0-20221128193559-754e69321358 // indirect
+	github.com/go-asn1-ber/asn1-ber v1.5.8-0.20250403174932-29230038a667 // indirect
+	github.com/google/uuid v1.6.0 // indirect
+	golang.org/x/crypto v0.36.0 // indirect
+)
 
 require (
 	charm.land/bubbles/v2 v2.1.0
 	github.com/charmbracelet/colorprofile v0.4.2 // indirect
 	github.com/charmbracelet/ultraviolet v0.0.0-20260205113103-524a6607adb8 // indirect
-	github.com/charmbracelet/x/ansi v0.11.6 // indirect
+	github.com/charmbracelet/x/ansi v0.11.6
 	github.com/charmbracelet/x/term v0.2.2 // indirect
 	github.com/charmbracelet/x/termios v0.1.1 // indirect
 	github.com/charmbracelet/x/windows v0.2.2 // indirect

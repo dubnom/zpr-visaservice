@@ -1,5 +1,6 @@
 //! Construction of trusted-service implementations from policy declarations.
 
+use std::collections::BTreeMap;
 use std::path::Path;
 use std::sync::Arc;
 use std::time::Duration;
@@ -12,9 +13,12 @@ use crate::error::ServiceError;
 use super::TrustedServiceInterface;
 use super::attribute_mapper::AttributeMapper;
 use super::file_attribute_store::FileAttributeStore;
+use super::http_attribute_store::HttpAttributeStore;
+use crate::config::TrustedServiceHttpConfig;
 
 /// API name used by file-backed trusted services.
 const TS_API_FILE: &str = "file";
+const TS_API_HTTP: &str = "rest/1";
 
 /// One policy-declared trusted service, reduced to the inputs that determine its store
 /// instance. Comparing these across policies tells us whether the live stores are still
@@ -36,7 +40,7 @@ pub fn trusted_service_definitions(
         let ServiceType::Trusted(api) = &service.kind else {
             continue;
         };
-        if api != TS_API_FILE {
+        if api != TS_API_FILE && api != TS_API_HTTP {
             return Err(ServiceError::Param(format!(
                 "trusted service '{}': unsupported api '{api}'",
                 service.id
@@ -66,22 +70,49 @@ pub fn trusted_service_definitions(
 }
 
 /// Build one store per declaration, loading each initial attribute snapshot.
+#[cfg(test)]
 pub fn build_services(
     definitions: &[TrustedServiceDefinition],
     file_ts_dir: &Path,
 ) -> Result<Vec<Arc<dyn TrustedServiceInterface>>, ServiceError> {
+    build_services_with_http(definitions, file_ts_dir, &BTreeMap::new())
+}
+
+pub fn build_services_with_http(
+    definitions: &[TrustedServiceDefinition],
+    file_ts_dir: &Path,
+    http: &BTreeMap<String, TrustedServiceHttpConfig>,
+) -> Result<Vec<Arc<dyn TrustedServiceInterface>>, ServiceError> {
     definitions
         .iter()
         .map(|definition| {
-            let store = FileAttributeStore::new(
-                definition.id.clone(),
-                AttributeMapper {
-                    mappings: definition.record.returns_attrs.clone(),
-                },
-                Duration::from_secs(definition.record.expiration_seconds as u64),
-                &file_ts_dir.join(format!("{}.json", definition.id)),
-            )?;
-            Ok(Arc::new(store) as Arc<dyn TrustedServiceInterface>)
+            let mapper = AttributeMapper {
+                mappings: definition.record.returns_attrs.clone(),
+            };
+            let ttl = Duration::from_secs(definition.record.expiration_seconds as u64);
+            match definition.api.as_str() {
+                TS_API_FILE => Ok(Arc::new(FileAttributeStore::new(
+                    definition.id.clone(),
+                    mapper,
+                    ttl,
+                    &file_ts_dir.join(format!("{}.json", definition.id)),
+                )?) as Arc<dyn TrustedServiceInterface>),
+                TS_API_HTTP => {
+                    let config = http.get(&definition.id).ok_or_else(|| {
+                        ServiceError::TrustedServiceInit(format!(
+                            "trusted service '{}': missing [trusted_service_http.{}] configuration",
+                            definition.id, definition.id
+                        ))
+                    })?;
+                    Ok(Arc::new(HttpAttributeStore::new(
+                        definition.id.clone(),
+                        mapper,
+                        ttl,
+                        config,
+                    )?) as Arc<dyn TrustedServiceInterface>)
+                }
+                _ => unreachable!("validated trusted-service API"),
+            }
         })
         .collect()
 }
@@ -166,5 +197,56 @@ mod tests {
         }
 
         std::fs::remove_dir_all(&dir).unwrap();
+    }
+
+    #[test]
+    fn test_rest_service_requires_explicit_https_configuration() {
+        let dir = tempfile::tempdir().unwrap();
+        let policy = policy_from_container(make_trusted_service_policy(
+            "directory",
+            "rest/1",
+            Some(3600),
+            &["department -> user.department"],
+        ));
+        let definitions = trusted_service_definitions(&policy).unwrap();
+        let error = build_services_with_http(&definitions, dir.path(), &BTreeMap::new())
+            .err()
+            .expect("missing REST endpoint must reject policy");
+        assert!(error.to_string().contains("directory"));
+    }
+
+    #[test]
+    fn test_rest_service_constructs_from_policy_and_tls_configuration() {
+        let dir = tempfile::tempdir().unwrap();
+        let certified = rcgen::generate_simple_self_signed(vec!["localhost".into()]).unwrap();
+        let ca_cert = dir.path().join("ca.pem");
+        let client_cert = dir.path().join("client.pem");
+        let client_key = dir.path().join("client.key");
+        std::fs::write(&ca_cert, certified.cert.pem()).unwrap();
+        std::fs::write(&client_cert, certified.cert.pem()).unwrap();
+        std::fs::write(&client_key, certified.signing_key.serialize_pem()).unwrap();
+        let policy = policy_from_container(make_trusted_service_policy(
+            "directory",
+            "rest/1",
+            Some(3600),
+            &["department -> user.department"],
+        ));
+        let config = BTreeMap::from([(
+            "directory".to_string(),
+            TrustedServiceHttpConfig {
+                url: "https://localhost:8443".into(),
+                ca_cert,
+                client_cert,
+                client_key,
+            },
+        )]);
+        let stores = build_services_with_http(
+            &trusted_service_definitions(&policy).unwrap(),
+            dir.path(),
+            &config,
+        )
+        .unwrap();
+        assert_eq!(stores.len(), 1);
+        assert_eq!(stores[0].get_source_id(), "directory");
     }
 }

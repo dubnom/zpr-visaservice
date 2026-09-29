@@ -255,21 +255,23 @@ async fn main() -> std::process::ExitCode {
     let policy_mgr = {
         let policy_mgr_res = match initial_policy_bytes {
             Some(p) => {
-                PolicyMgr::new_with_initial_policy(
+                PolicyMgr::new_with_initial_policy_and_http(
                     p,
                     db::PolicyRepo::new(db_handle.clone()),
                     Arc::new(SystemResolver),
                     ts_mgr.clone(),
                     file_ts_dir,
+                    cfg.trusted_service_http.clone(),
                 )
                 .await
             }
             None => {
-                PolicyMgr::new_from_state(
+                PolicyMgr::new_from_state_with_http(
                     db::PolicyRepo::new(db_handle.clone()),
                     Arc::new(SystemResolver),
                     ts_mgr.clone(),
                     file_ts_dir,
+                    cfg.trusted_service_http.clone(),
                 )
                 .await
             }

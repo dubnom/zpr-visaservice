@@ -114,6 +114,16 @@ pub const DENY_LOG_SIZE: usize = 500;
 #[serde(deny_unknown_fields, default)]
 pub struct VSConfig {
     pub core: CoreSection,
+    pub trusted_service_http: std::collections::BTreeMap<String, TrustedServiceHttpConfig>,
+}
+
+#[derive(Deserialize, Serialize, Debug, Clone)]
+#[serde(deny_unknown_fields)]
+pub struct TrustedServiceHttpConfig {
+    pub url: String,
+    pub ca_cert: PathBuf,
+    pub client_cert: PathBuf,
+    pub client_key: PathBuf,
 }
 
 #[derive(Deserialize, Serialize, Debug, Clone)]
@@ -158,6 +168,7 @@ impl Default for VSConfig {
     fn default() -> Self {
         VSConfig {
             core: CoreSection::default(),
+            trusted_service_http: std::collections::BTreeMap::new(),
         }
     }
 }
@@ -208,6 +219,11 @@ impl VSConfig {
         }
         if let Some(p) = self.core.file_ts_dir.as_mut() {
             rebase(base, p);
+        }
+        for service in self.trusted_service_http.values_mut() {
+            rebase(base, &mut service.ca_cert);
+            rebase(base, &mut service.client_cert);
+            rebase(base, &mut service.client_key);
         }
     }
 
@@ -323,6 +339,24 @@ mod test {
         .unwrap();
         assert_eq!(cfg.core.vk_uri, Some(VALKEY_URI.to_string()));
         assert_eq!(cfg.core.vsapi_port, Some(9999));
+    }
+
+    #[test]
+    fn test_rest_trusted_service_tls_paths_resolve_relative_to_config() {
+        let (cfg, dir) = load_from_temp_dir(
+            r#"
+        [trusted_service_http.directory]
+        url = "https://localhost:8443"
+        ca_cert = "certs/ca.pem"
+        client_cert = "certs/client.pem"
+        client_key = "certs/client.key"
+        "#,
+        );
+        let http = &cfg.trusted_service_http["directory"];
+        assert_eq!(http.url, "https://localhost:8443");
+        assert_eq!(http.ca_cert, dir.path().join("certs/ca.pem"));
+        assert_eq!(http.client_cert, dir.path().join("certs/client.pem"));
+        assert_eq!(http.client_key, dir.path().join("certs/client.key"));
     }
 
     // Write `contents` into a temp dir as vs.toml and load it via from_file,
