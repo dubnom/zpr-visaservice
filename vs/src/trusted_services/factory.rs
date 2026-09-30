@@ -19,6 +19,7 @@ use crate::config::TrustedServiceHttpConfig;
 /// API name used by file-backed trusted services.
 const TS_API_FILE: &str = "file";
 const TS_API_HTTP: &str = "rest/1";
+const TS_API_VALIDATION_2: &str = "validation/2";
 
 /// One policy-declared trusted service, reduced to the inputs that determine its store
 /// instance. Comparing these across policies tells us whether the live stores are still
@@ -40,6 +41,12 @@ pub fn trusted_service_definitions(
         let ServiceType::Trusted(api) = &service.kind else {
             continue;
         };
+        // validation/2 is the Visa Service-facing side of an authentication service.
+        // Its records are consumed while admitting auth-code connections, not as
+        // ordinary post-join identity lookups through this store interface.
+        if api == TS_API_VALIDATION_2 {
+            continue;
+        }
         if api != TS_API_FILE && api != TS_API_HTTP {
             return Err(ServiceError::Param(format!(
                 "trusted service '{}': unsupported api '{api}'",
@@ -200,6 +207,20 @@ mod tests {
     }
 
     #[test]
+    fn test_validation2_is_not_an_ordinary_attribute_store() {
+        let policy = policy_from_container(make_trusted_service_policy(
+            "bas",
+            TS_API_VALIDATION_2,
+            Some(3600),
+            &["color -> user.color"],
+        ));
+
+        let definitions = trusted_service_definitions(&policy).unwrap();
+        assert!(definitions.is_empty());
+        assert!(policy.trusted_service_by_id("bas").is_some());
+    }
+
+    #[test]
     fn test_rest_service_requires_explicit_https_configuration() {
         let dir = tempfile::tempdir().unwrap();
         let policy = policy_from_container(make_trusted_service_policy(
@@ -238,6 +259,7 @@ mod tests {
                 ca_cert,
                 client_cert,
                 client_key,
+                token_verification_key_file: None,
             },
         )]);
         let stores = build_services_with_http(

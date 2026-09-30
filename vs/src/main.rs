@@ -21,6 +21,7 @@ mod admin_service;
 mod apikey;
 mod assembly;
 mod auth;
+mod auth_service;
 mod config;
 mod connection_control;
 mod counters;

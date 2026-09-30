@@ -288,6 +288,7 @@ mod tests {
             ca_cert: cert_path.clone(),
             client_cert: cert_path,
             client_key: key_path,
+            token_verification_key_file: None,
         };
         let client = HttpAttributeStore::new(
             "directory".into(),

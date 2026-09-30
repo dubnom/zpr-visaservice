@@ -222,9 +222,11 @@ impl ConnectionControl {
             return Err(ServiceError::Param("expected exactly one auth blob".into()));
         }
 
-        check_required_claims(&req.claims, &[key::CN])?;
+        if matches!(&req.blobs[0], AuthBlob::SS(_)) {
+            check_required_claims(&req.claims, &[key::CN])?;
+        }
 
-        let scrubbed_claims = scrub_adapter_claims(req.claims)?;
+        let mut scrubbed_claims = scrub_adapter_claims(req.claims)?;
 
         let mut authd_claims = Vec::new();
         authd_claims.push(Attribute::builder(key::CONNECT_VIA).value(connect_via.to_string()));
@@ -255,10 +257,51 @@ impl ConnectionControl {
                     .await?
                 }
             },
-            AuthBlob::AC(_acb) => {
-                return Err(ServiceError::Internal(
-                    "external auth not yet supported".into(),
-                ));
+            AuthBlob::AC(auth_code) => {
+                remove_unverified_cn(&mut scrubbed_claims);
+                let authenticated = crate::auth_service::authenticate(&asm, auth_code).await?;
+                authd_claims
+                    .push(Attribute::builder(key::CN).value(authenticated.client_id.clone()));
+                authd_claims.push(
+                    Attribute::builder(key::DEVICE_AUTHORITY)
+                        .expires(authenticated.expires_at)
+                        .value(format!("zpr-auth/{}", authenticated.auth_service_id)),
+                );
+                if let Some(authority) =
+                    derive_user_authority(&authenticated.auth_service_id, &authenticated.claims)
+                {
+                    authd_claims.push(authority);
+                }
+                authd_claims.extend(authenticated.claims);
+
+                let policy = asm.policy_mgr.get_current();
+                let mut actor = self
+                    .authorize_connection(
+                        asm,
+                        &policy,
+                        &authenticated.client_id,
+                        scrubbed_claims,
+                        authd_claims,
+                        req.dock_interface,
+                    )
+                    .await?;
+                let auth_lifetime = authenticated
+                    .expires_at
+                    .duration_since(SystemTime::now())
+                    .unwrap_or_default();
+                let actor_subject = if actor.is_node() {
+                    format!("node/{}", authenticated.client_id)
+                } else {
+                    format!("adapter/{}", authenticated.client_id)
+                };
+                let actor_jwt = self.gen_jwt(actor_subject, auth_lifetime)?;
+                actor.add_attribute(
+                    Attribute::builder(ATTR_KEY_VS_IDENT)
+                        .expires(authenticated.expires_at)
+                        .value(actor_jwt),
+                )?;
+                actor.add_identity_key(0, ATTR_KEY_VS_IDENT)?;
+                actor
             }
         };
 
@@ -743,6 +786,10 @@ fn scrub_adapter_claims(claims: Vec<Claim>) -> Result<Vec<Attribute>, ServiceErr
     Ok(scrubbed_claims)
 }
 
+fn remove_unverified_cn(claims: &mut Vec<Attribute>) {
+    claims.retain(|claim| claim.get_key() != key::CN);
+}
+
 /// The A2A DH public key as an attribute claim, or None if it is not a usable X25519 key.
 fn a2a_dh_pubkey_claim(key: &PublicKey) -> Option<Attribute> {
     (key.public_key.len() == 32).then(|| {
@@ -866,6 +913,17 @@ mod tests {
         let scrubbed = scrub_adapter_claims(claims).expect("scrub should succeed");
 
         assert_eq!(keys(&scrubbed), vec![key::ZPR_ADDR, key::CN]);
+    }
+
+    #[test]
+    fn auth_code_path_discards_unverified_cn_claims() {
+        let mut claims = vec![
+            Attribute::builder(key::CN).value("spoofed.adapter"),
+            Attribute::builder("user.color").value("green"),
+        ];
+        remove_unverified_cn(&mut claims);
+        assert_eq!(claims.len(), 1);
+        assert_eq!(claims[0].get_key(), "user.color");
     }
 
     #[test]

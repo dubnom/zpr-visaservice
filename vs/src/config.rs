@@ -125,6 +125,8 @@ pub struct TrustedServiceHttpConfig {
     pub ca_cert: PathBuf,
     pub client_cert: PathBuf,
     pub client_key: PathBuf,
+    #[serde(default)]
+    pub token_verification_key_file: Option<PathBuf>,
 }
 
 #[derive(Deserialize, Serialize, Debug, Clone)]
@@ -255,6 +257,9 @@ impl VSConfig {
             rebase(base, &mut service.ca_cert);
             rebase(base, &mut service.client_cert);
             rebase(base, &mut service.client_key);
+            if let Some(path) = service.token_verification_key_file.as_mut() {
+                rebase(base, path);
+            }
         }
         if let Some(dns_update) = self.dns_update.as_mut() {
             rebase(base, &mut dns_update.tsig_key_file);
