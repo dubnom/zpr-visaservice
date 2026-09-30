@@ -67,6 +67,21 @@ type policyRecordRequest struct {
 	Summary     string          `json:"summary"`
 }
 
+type demoPolicyCatalog struct {
+	Categories []string               `json:"categories"`
+	Records    []demoPolicySeedRecord `json:"records"`
+}
+
+type demoPolicySeedRecord struct {
+	Category    string          `json:"category"`
+	Name        string          `json:"name"`
+	Kind        string          `json:"kind"`
+	ContentType string          `json:"content_type"`
+	Metadata    json.RawMessage `json:"metadata"`
+	Content     string          `json:"content"`
+	Summary     string          `json:"summary"`
+}
+
 type policyCheckResponse struct {
 	Valid       bool   `json:"valid"`
 	Diagnostics string `json:"diagnostics"`
@@ -124,7 +139,108 @@ func newPolicyWorkspace() (*policyWorkspace, string) {
 		_ = store.Close()
 		return nil, "Unable to import the initial policy record."
 	}
+	if err := seedDemoPolicyCatalog(context.Background(), workspace); err != nil {
+		_ = store.Close()
+		return nil, "Unable to import the configured demo policy catalog."
+	}
 	return workspace, ""
+}
+
+func seedDemoPolicyCatalog(ctx context.Context, workspace *policyWorkspace) error {
+	path := strings.TrimSpace(os.Getenv("ZPR_POLICY_DEMO_CATALOG_FILE"))
+	if path == "" {
+		return nil
+	}
+	path, err := resolvedRegularFile(path)
+	if err != nil {
+		return err
+	}
+	file, err := os.Open(path)
+	if err != nil {
+		return err
+	}
+	defer file.Close()
+	var catalog demoPolicyCatalog
+	decoder := json.NewDecoder(io.LimitReader(file, 2<<20))
+	decoder.DisallowUnknownFields()
+	if err := decoder.Decode(&catalog); err != nil {
+		return fmt.Errorf("decode demo catalog: %w", err)
+	}
+	existingCategories, existingRecords, err := workspace.store.Catalog(ctx)
+	if err != nil {
+		return err
+	}
+	categoryIDs := make(map[string]string, len(existingCategories))
+	for _, category := range existingCategories {
+		categoryIDs[category.Path] = category.ID
+	}
+	ensureCategory := func(path string) (string, error) {
+		parent := ""
+		builtPath := ""
+		for _, component := range strings.Split(path, "/") {
+			if component == "" {
+				return "", errors.New("demo category paths cannot contain empty components")
+			}
+			if builtPath == "" {
+				builtPath = component
+			} else {
+				builtPath += "/" + component
+			}
+			if id, ok := categoryIDs[builtPath]; ok {
+				parent = id
+				continue
+			}
+			var parentID *string
+			if parent != "" {
+				parentID = &parent
+			}
+			created, err := workspace.store.CreateCategory(ctx, parentID, component)
+			if err != nil {
+				return "", err
+			}
+			categoryIDs[created.Path] = created.ID
+			parent = created.ID
+		}
+		return parent, nil
+	}
+	for _, path := range catalog.Categories {
+		if _, err := ensureCategory(path); err != nil {
+			return err
+		}
+	}
+	existing := make(map[string]struct{}, len(existingRecords))
+	for _, record := range existingRecords {
+		existing[record.CategoryID+"\x00"+record.Name] = struct{}{}
+	}
+	for _, seeded := range catalog.Records {
+		categoryID, err := ensureCategory(seeded.Category)
+		if err != nil {
+			return err
+		}
+		key := categoryID + "\x00" + seeded.Name
+		if _, ok := existing[key]; ok {
+			continue
+		}
+		kind := seeded.Kind
+		if kind == "" {
+			kind = "policy"
+		}
+		if kind == "policy" {
+			if len(seeded.Content) > maxPolicySourceBytes {
+				return fmt.Errorf("demo policy %q exceeds the source size limit", seeded.Name)
+			}
+			result := workspace.check(ctx, seeded.Content)
+			if !result.Valid {
+				return fmt.Errorf("demo policy %q failed ZPLC validation: %s", seeded.Name, result.Diagnostics)
+			}
+		}
+		_, err = workspace.store.CreateRecord(ctx, categoryID, seeded.Name, kind, seeded.ContentType, seeded.Metadata, seeded.Content, policyAuthor(), seeded.Summary)
+		if err != nil {
+			return fmt.Errorf("seed demo record %q: %w", seeded.Name, err)
+		}
+		existing[key] = struct{}{}
+	}
+	return nil
 }
 
 func seedPolicyDatabase(ctx context.Context, workspace *policyWorkspace) error {
@@ -465,6 +581,9 @@ func decodePolicyRequest(w http.ResponseWriter, r *http.Request, maxBytes int64,
 }
 
 func localEditorRequest(w http.ResponseWriter, r *http.Request) bool {
+	if r.TLS != nil && len(r.TLS.VerifiedChains) > 0 {
+		return true
+	}
 	remoteHost, _, err := net.SplitHostPort(r.RemoteAddr)
 	remoteIP := net.ParseIP(remoteHost)
 	if err != nil || remoteIP == nil || !remoteIP.IsLoopback() {
@@ -523,8 +642,8 @@ func (a *application) handlePolicyAssistant(w http.ResponseWriter, r *http.Reque
 	if !localEditorRequest(w, r) {
 		return
 	}
-	if a.policy == nil || a.assistant == nil {
-		writePolicyError(w, http.StatusServiceUnavailable, "Configure the policy workspace and ANTHROPIC_API_KEY to enable Claude.")
+	if a.assistant == nil {
+		writePolicyError(w, http.StatusServiceUnavailable, "Configure ANTHROPIC_API_KEY to enable Claude.")
 		return
 	}
 	var request assistantRequest

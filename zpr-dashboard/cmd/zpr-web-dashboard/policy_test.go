@@ -2,13 +2,171 @@ package main
 
 import (
 	"context"
+	"crypto/tls"
+	"crypto/x509"
 	"encoding/json"
+	"encoding/pem"
 	"net/http"
 	"net/http/httptest"
+	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
 )
+
+func TestControlServiceProxiesPolicyOverTLSAndKeepsAssistantInControlLayer(t *testing.T) {
+	var sawClientCertificate bool
+	var sawBrowserSecrets bool
+	upstream := httptest.NewUnstartedServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		sawClientCertificate = r.TLS != nil && len(r.TLS.PeerCertificates) > 0
+		sawBrowserSecrets = r.Header.Get("Origin") != "" || r.Header.Get("Cookie") != "" || r.Header.Get("Authorization") != ""
+		if r.URL.Path == "/api/policy" {
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = w.Write([]byte(`{"configured":true,"categories":[],"records":[],"compiler_ready":true,"assistant_ready":false}`))
+			return
+		}
+		if r.URL.Path == "/api/policy/categories" && r.Method == http.MethodPost {
+			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(http.StatusCreated)
+			_, _ = w.Write([]byte(`{"id":"created"}`))
+			return
+		}
+		http.NotFound(w, r)
+	}))
+	upstream.TLS = &tls.Config{ClientAuth: tls.RequestClientCert}
+	upstream.StartTLS()
+	defer upstream.Close()
+
+	certificate := upstream.TLS.Certificates[0]
+	certFile := filepath.Join(t.TempDir(), "client.crt")
+	keyFile := filepath.Join(t.TempDir(), "client.key")
+	caFile := filepath.Join(t.TempDir(), "service-ca.crt")
+	certPEM := pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: certificate.Certificate[0]})
+	keyDER, err := x509.MarshalPKCS8PrivateKey(certificate.PrivateKey)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(certFile, certPEM, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(keyFile, pem.EncodeToMemory(&pem.Block{Type: "PRIVATE KEY", Bytes: keyDER}), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(caFile, certPEM, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("ZPR_POLICY_SERVICE_URL", upstream.URL)
+	t.Setenv("ZPR_POLICY_CLIENT_CERT_FILE", certFile)
+	t.Setenv("ZPR_POLICY_CLIENT_KEY_FILE", keyFile)
+	t.Setenv("ZPR_POLICY_SERVICE_CA_FILE", caFile)
+	t.Setenv("ANTHROPIC_API_KEY", "configured-for-control-service")
+	proxy, message := newPolicyServiceProxy()
+	if proxy == nil {
+		t.Fatalf("newPolicyServiceProxy: %s", message)
+	}
+
+	request := httptest.NewRequest(http.MethodGet, "/api/policy", nil)
+	request.RemoteAddr = "127.0.0.1:12345"
+	request.Header.Set("Origin", "http://127.0.0.1:8787")
+	request.Header.Set("Cookie", "session=browser")
+	request.Header.Set("Authorization", "browser-token")
+	response := httptest.NewRecorder()
+	proxy.ServeHTTP(response, request)
+	if response.Code != http.StatusOK {
+		t.Fatalf("GET proxy status=%d body=%s", response.Code, response.Body)
+	}
+	var status policyStatus
+	if err := json.Unmarshal(response.Body.Bytes(), &status); err != nil {
+		t.Fatal(err)
+	}
+	if !status.AssistantReady {
+		t.Fatal("control service did not augment status with its optional assistant state")
+	}
+	if !sawClientCertificate {
+		t.Fatal("Policy Repository did not receive the Control Service client certificate")
+	}
+	if sawBrowserSecrets {
+		t.Fatal("browser origin/cookie/authorization headers were forwarded to Policy Repository")
+	}
+	post := httptest.NewRecorder()
+	create := httptest.NewRequest(http.MethodPost, "/api/policy/categories", strings.NewReader(`{"name":"Test"}`))
+	proxy.ServeHTTP(post, create)
+	if post.Code != http.StatusCreated || !strings.Contains(post.Body.String(), "created") {
+		t.Fatalf("POST proxy status=%d body=%s", post.Code, post.Body)
+	}
+}
+
+func TestNorthstarDemoCatalogImportsIdempotently(t *testing.T) {
+	databasePath := filepath.Join(privatePolicyTestDir(t), "northstar.db")
+	store, err := openSQLitePolicyRepository(databasePath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer store.Close()
+	catalogPath, err := filepath.Abs("examples/northstar/demo-policy-catalog.json")
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("ZPR_POLICY_DEMO_CATALOG_FILE", catalogPath)
+	workspace := &policyWorkspace{
+		store: store,
+		checkSource: func(context.Context, string) policyCheckResponse {
+			return policyCheckResponse{Valid: true, Diagnostics: "stub compiler accepted source"}
+		},
+	}
+	if err := seedDemoPolicyCatalog(context.Background(), workspace); err != nil {
+		t.Fatal(err)
+	}
+	if err := seedDemoPolicyCatalog(context.Background(), workspace); err != nil {
+		t.Fatal(err)
+	}
+	categories, records, err := store.Catalog(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(categories) != 15 || len(records) != 13 {
+		t.Fatalf("catalog contains %d categories and %d records, want 15 and 13", len(categories), len(records))
+	}
+}
+
+func TestNorthstarDemoPoliciesPassConfiguredZPLC(t *testing.T) {
+	configPath := os.Getenv("ZPR_POLICY_CONFIG_FILE")
+	if configPath == "" {
+		t.Skip("set ZPR_POLICY_CONFIG_FILE to run the Northstar ZPLC fixture check")
+	}
+	compiler := os.Getenv("ZPR_ZPLC_BIN")
+	if compiler == "" {
+		var err error
+		compiler, err = exec.LookPath("zplc")
+		if err != nil {
+			t.Skip("zplc is not on PATH; set ZPR_ZPLC_BIN to run the Northstar fixture check")
+		}
+	}
+	configPath, err := filepath.EvalSymlinks(configPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	catalogPath := filepath.Join("examples", "northstar", "demo-policy-catalog.json")
+	contents, err := os.ReadFile(catalogPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var catalog demoPolicyCatalog
+	if err := json.Unmarshal(contents, &catalog); err != nil {
+		t.Fatal(err)
+	}
+	workspace := &policyWorkspace{configPath: configPath, compiler: compiler}
+	for _, record := range catalog.Records {
+		if record.Kind != "policy" {
+			continue
+		}
+		result := workspace.check(context.Background(), record.Content)
+		if !result.Valid {
+			t.Errorf("policy %q did not pass ZPLC: %s", record.Name, result.Diagnostics)
+		}
+	}
+}
 
 func TestPolicyCategoriesVersionHistoryAndPersistence(t *testing.T) {
 	databasePath := filepath.Join(privatePolicyTestDir(t), "policy.db")

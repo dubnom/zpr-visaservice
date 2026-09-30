@@ -35,29 +35,30 @@ Copy `config.toml.example` to `config.toml` and edit it.
 make run                                # Start admin panel
 ```
 
-## Web monitor
+## Control Room and Policy Service
 
-The browser Control Room lives in `cmd/zpr-web-dashboard`. It polls the Visa
-Service admin API for counters, nodes and links, actors, registered services,
-active visas, and recent policy denials. Policy organizes generic records by
-named categories and stores each content change as an immutable SQLite
-revision; ZPL records are checked with the ZPLC compiler before a version is
-appended. It does not install policy into the running service. The
-trusted-source view associates providers with actors and reports the latest
-real lookup outcome when available; it does not browse provider records.
+The browser Control Room lives in `cmd/zpr-web-dashboard` and calls only
+same-origin `/api/*` endpoints. The Control-Room process proxies those requests
+to Control-Service using mutual TLS and holds no upstream API credentials.
+Control-Service aggregates Visa Service Admin data and proxies Policy
+Repository requests to a separate Policy-Service process using mutual TLS.
+The Policy-Service owns its SQLite journal and ZPLC configuration. It stores
+generic categorized records with immutable revisions; ZPL records are
+compiler-checked before a version is written, and are not automatically
+installed into the running Visa Service. Per-user policy-record authorization
+is not implemented yet.
+
 In the ZPL service model, attribute providers, authentication, logging/audit,
 and the Policy Repository are distinct trusted-service classes with separate
-REST contracts. The current policy-record REST interface is mounted in the
-Control Room process as a local-development implementation; it is not yet a
-separately deployed or permissioned ZPR trusted service.
+REST contracts. The trusted-source view associates providers with actors and
+reports the latest real lookup outcome when available; it does not browse
+provider records.
 
-Configure the HTTPS admin API and read-only credentials with `ZPR_ADMIN_URL`,
-`ZPR_ADMIN_CA_FILE`, and `ZPR_ADMIN_KEY_FILE`, then run:
+Configure and start all three processes as described in
+[`cmd/zpr-web-dashboard/README.md`](cmd/zpr-web-dashboard/README.md): first
+`go run ./cmd/zpr-web-dashboard -mode policy-service`, then
+`go run ./cmd/zpr-web-dashboard -mode control-service`, and finally
+`go run ./cmd/zpr-web-dashboard -mode control-room` for the browser-facing UI.
 
-```sh
-go run ./cmd/zpr-web-dashboard
-```
-
-Open `http://127.0.0.1:8787`. Full instructions are in
-[`cmd/zpr-web-dashboard/README.md`](cmd/zpr-web-dashboard/README.md).
+Open `http://127.0.0.1:8787` for the Control Room UI.
 

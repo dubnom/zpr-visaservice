@@ -10,7 +10,6 @@ import (
 	"flag"
 	"fmt"
 	"io"
-	"io/fs"
 	"log"
 	"net/http"
 	"net/url"
@@ -43,6 +42,7 @@ type application struct {
 	configErr  string
 	policy     *policyWorkspace
 	policyErr  string
+	policyAPI  http.Handler
 	assistant  *claudeAssistant
 	staticRoot http.Handler
 }
@@ -181,50 +181,24 @@ type statsResponse struct {
 }
 
 func main() {
+	mode := flag.String("mode", envOr("ZPR_WEB_MODE", "control-room"), "Run mode: control-room, control-service, or policy-service")
 	listen := flag.String("listen", envOr("ZPR_WEB_LISTEN", defaultListen), "HTTP listen address")
 	flag.Parse()
-
-	admin, configErr := newAdminClient()
-	staticRoot, err := fs.Sub(staticFiles, "static")
-	if err != nil {
-		log.Fatal(err)
-	}
-	policy, policyErr := newPolicyWorkspace()
-	app := &application{
-		admin:      admin,
-		configErr:  configErr,
-		policy:     policy,
-		policyErr:  policyErr,
-		assistant:  newClaudeAssistant(),
-		staticRoot: http.FileServer(http.FS(staticRoot)),
-	}
-
-	mux := http.NewServeMux()
-	mux.HandleFunc("GET /api/snapshot", app.handleSnapshot)
-	mux.HandleFunc("GET /api/policy", app.handleGetPolicy)
-	mux.HandleFunc("POST /api/policy/check", app.handleCheckPolicy)
-	mux.HandleFunc("POST /api/policy/categories", app.handleCreatePolicyCategory)
-	mux.HandleFunc("POST /api/policy/records", app.handleCreatePolicyRecord)
-	mux.HandleFunc("GET /api/policy/records/{id}", app.handleGetPolicyRecord)
-	mux.HandleFunc("GET /api/policy/records/{id}/revisions", app.handlePolicyRecordRevisions)
-	mux.HandleFunc("POST /api/policy/records/{id}/revisions", app.handlePolicyRecordRevisions)
-	mux.HandleFunc("GET /api/policy/records/{id}/revisions/{revision}", app.handleGetPolicyRevision)
-	mux.HandleFunc("POST /api/policy/assistant", app.handlePolicyAssistant)
-	mux.Handle("GET /", app.staticRoot)
-
-	server := &http.Server{
-		Addr:              *listen,
-		Handler:           securityHeaders(mux),
-		ReadHeaderTimeout: 5 * time.Second,
-		IdleTimeout:       60 * time.Second,
-	}
-
-	log.Printf("ZPR web monitor listening at http://%s", *listen)
-	if configErr != "" {
-		log.Printf("admin API is not configured: %s", configErr)
-	}
-	if err := server.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
-		log.Fatal(err)
+	switch *mode {
+	case "policy-service":
+		if err := runPolicyService(); err != nil {
+			log.Fatal(err)
+		}
+	case "control-service":
+		if err := runControlService(); err != nil {
+			log.Fatal(err)
+		}
+	case "control-room":
+		if err := runControlRoom(*listen); err != nil {
+			log.Fatal(err)
+		}
+	default:
+		log.Fatalf("unknown run mode %q", *mode)
 	}
 }
 

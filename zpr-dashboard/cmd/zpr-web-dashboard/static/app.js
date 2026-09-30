@@ -1,5 +1,6 @@
 const byId = (id) => document.getElementById(id);
-const state = { snapshot: null, timer: null, paused: false, pending: false, graphCamera: null, graphNodeSlots: new Map(), graphAdapterSlots: new Map(), selection: null, sorts: {}, policy: { loaded: false, configured: false, categories: [], records: [], categoryID: "", record: null, source: "", savedSource: "", revision: 0, browsingRevision: 0, saveAs: false, compilerReady: false, assistantReady: false, validSource: null, revisions: [], messages: [], assistantPending: false, assistantError: "" } };
+const zplKeywords = new Set(["allow", "never", "define", "with", "to", "access", "and", "as", "aka", "tag", "tags", "on", "optional", "multiple", "signal", "over"]);
+const state = { snapshot: null, timer: null, paused: false, pending: false, graphCamera: null, graphNodeSlots: new Map(), graphAdapterSlots: new Map(), selection: null, sorts: {}, policy: { loaded: false, configured: false, categories: [], records: [], categoryID: "", record: null, source: "", savedSource: "", revision: 0, browsingRevision: 0, saveAs: false, compilerReady: false, assistantReady: false, validSource: null, errorOffsets: [], revisions: [], messages: [], assistantPending: false, assistantError: "" } };
 
 const pages = {
   map: "MAP",
@@ -290,6 +291,14 @@ function renderTopology(data) {
 
   const stage = byId("topology-stage");
   const positions = new Map();
+  const adapterOrigins = new Map();
+  const servicesByActor = new Map();
+  for (const service of data.services || []) {
+    if (!service.actor_cn) continue;
+    const registered = servicesByActor.get(service.actor_cn) || [];
+    registered.push(service);
+    servicesByActor.set(service.actor_cn, registered);
+  }
   const dockEdges = edges.filter((edge) => edge.kind === "dock");
   const networkEdges = edges.filter((edge) => edge.kind === "network");
   const unconnected = adapters.filter((adapter) => !dockEdges.some((edge) => edge.to.cn === adapter.cn));
@@ -324,7 +333,7 @@ function renderTopology(data) {
   const height = Math.max(460, 460 + maxRow * 500 + 240);
   const visaServices = new Set((data.services || []).filter((service) => service.service_kind === "Visa").map((service) => service.actor_cn));
   const query = byId("topology-search").value.trim().toLowerCase();
-  const matches = (actor) => !query || `${actor.cn} ${actor.zpr_addr || ""} ${visaServices.has(actor.cn) ? "visa service" : ""}`.toLowerCase().includes(query);
+  const matches = (actor) => !query || `${actor.cn} ${actor.zpr_addr || ""} ${visaServices.has(actor.cn) ? "visa service" : ""} ${(servicesByActor.get(actor.cn) || []).map((service) => `${service.service_name} ${service.service_kind}`).join(" ")}`.toLowerCase().includes(query);
 
   nodes.forEach((node) => {
     const slot = state.graphNodeSlots.get(node.cn);
@@ -356,6 +365,7 @@ function renderTopology(data) {
         x: center.x + Math.cos(adapterAngle) * adapterRadius,
         y: center.y + Math.sin(adapterAngle) * adapterRadius,
       });
+      adapterOrigins.set(adapter.cn, center);
     });
   });
 
@@ -364,6 +374,7 @@ function renderTopology(data) {
     const angle = -Math.PI / 2 + (2 * Math.PI * (index % 8)) / 8;
     const center = { x: 380 + (index % columns) * 520, y: 230 + Math.floor(index / columns) * 500 };
     positions.set(adapter.cn, { x: center.x + Math.cos(angle) * 125, y: center.y + Math.sin(angle) * 125 });
+    adapterOrigins.set(adapter.cn, center);
   });
 
   const edgeMarkup = edges.map((edge) => {
@@ -391,7 +402,49 @@ function renderTopology(data) {
     return `<g class="graph-vertex ${query && !matches(actor) ? "filtered" : ""}" data-inspect-actor="${escapeHTML(actor.cn)}" tabindex="0" role="button" aria-label="Inspect ${escapeHTML(actor.cn)}"><title>${escapeHTML(actor.cn)} · ${escapeHTML(actor.zpr_addr || "address pending")}</title>${glyph}<text class="graph-label" x="${pos.x}" y="${pos.y + 3}">${escapeHTML(shortName)}</text></g>`;
   }).join("");
 
-  stage.innerHTML = `<div class="graph-controls" aria-label="Topology graph controls"><button class="graph-control" data-graph-action="in" type="button" aria-label="Zoom in" title="Zoom in">+</button><button class="graph-control" data-graph-action="out" type="button" aria-label="Zoom out" title="Zoom out">−</button><button class="graph-control graph-fit" data-graph-action="fit" type="button" aria-label="Fit graph" title="Fit graph">Fit</button><span class="graph-hint">DRAG TO PAN · SCROLL TO ZOOM</span></div><svg class="topology-graph" viewBox="0 0 ${width} ${height}" role="img" aria-label="Topology graph with ${nodes.length} nodes, ${adapters.length} adapters, ${dockEdges.length} dock connections, and ${networkEdges.length} inter-node links"><g id="graph-world">${edgeMarkup}${vertexMarkup}</g></svg>`;
+  const serviceMarkup = adapters.flatMap((adapter) => {
+    const services = servicesByActor.get(adapter.cn) || [];
+    if (!services.length) return [];
+    const pos = positions.get(adapter.cn);
+    const origin = adapterOrigins.get(adapter.cn) || { x: 380, y: 230 };
+    const dx = pos.x - origin.x, dy = pos.y - origin.y;
+    const magnitude = Math.hypot(dx, dy) || 1;
+    const outwardX = dx / magnitude, outwardY = dy / magnitude;
+    const visible = services.slice(0, 2);
+    const entries = visible.map((service) => ({ service, overflow: false }));
+    if (services.length > visible.length) entries.push({ service: null, overflow: services.length - visible.length });
+    const badgeLayouts = entries.map(({ service, overflow }) => {
+      const label = overflow ? `+${overflow}` : `${service.service_name} · ${service.service_kind.startsWith("Trusted(") ? "TRUSTED" : service.service_kind}`;
+      const shortLabel = label.length > 19 ? `${label.slice(0, 18)}…` : label;
+      const badgeWidth = Math.max(46, Math.min(132, shortLabel.length * 5.6 + 16));
+      return { label, shortLabel, badgeWidth };
+    });
+    const maxBadgeWidth = Math.max(...badgeLayouts.map(({ badgeWidth }) => badgeWidth));
+    const stackHeight = badgeLayouts.length * 20 + (badgeLayouts.length - 1) * 8;
+    const glyphRadius = visaServices.has(adapter.cn) ? 35 : 29;
+    const radialOffset = glyphRadius + Math.abs(outwardX) * maxBadgeWidth / 2 + Math.abs(outwardY) * stackHeight / 2 + 7;
+    const stackCenterX = pos.x + outwardX * radialOffset;
+    const stackCenterY = pos.y + outwardY * radialOffset;
+    return entries.map(({ service, index, overflow }, entryIndex) => {
+      const { label, shortLabel, badgeWidth } = badgeLayouts[entryIndex];
+      const trustedType = service?.service_kind.match(/^Trusted\("([^\"]+)"\)$/)?.[1];
+      const trustedClass = trustedType ? ` trusted-${trustedType.toLowerCase().replace(/[^a-z0-9]+/g, "-")}` : "";
+      const stackOffset = (entryIndex - (entries.length - 1) / 2) * 28;
+      const x = stackCenterX;
+      const y = stackCenterY + stackOffset;
+      const filtered = query && service && !`${service.service_name} ${service.service_kind}`.toLowerCase().includes(query) ? "filtered" : "";
+      const inspect = overflow ? `data-inspect-actor="${escapeHTML(adapter.cn)}"` : `data-inspect-service="${escapeHTML(service.service_name)}"`;
+      const title = overflow
+        ? `${overflow} more services registered by ${adapter.cn}`
+        : `${service.service_name} · ${service.service_kind} · registered by ${adapter.cn}`;
+      const labelForScreenReader = overflow
+        ? `Inspect ${overflow} more services registered by ${adapter.cn}`
+        : `Inspect service ${service.service_name}, kind ${service.service_kind}, registered by ${adapter.cn}`;
+      return `<g class="graph-service-badge${trustedClass} ${filtered}" ${inspect} tabindex="0" role="button" aria-label="${escapeHTML(labelForScreenReader)}"><title>${escapeHTML(title)}</title><rect x="${x - badgeWidth / 2}" y="${y - 10}" width="${badgeWidth}" height="20" rx="4"/><text x="${x}" y="${y + 3}">${escapeHTML(shortLabel)}</text></g>`;
+    });
+  }).join("");
+
+  stage.innerHTML = `<div class="graph-controls" aria-label="Topology graph controls"><button class="graph-control" data-graph-action="in" type="button" aria-label="Zoom in" title="Zoom in">+</button><button class="graph-control" data-graph-action="out" type="button" aria-label="Zoom out" title="Zoom out">−</button><button class="graph-control graph-fit" data-graph-action="fit" type="button" aria-label="Fit graph" title="Fit graph">Fit</button><span class="graph-hint">DRAG TO PAN · SCROLL TO ZOOM</span></div><svg class="topology-graph" viewBox="0 0 ${width} ${height}" role="img" aria-label="Topology graph with ${nodes.length} nodes, ${adapters.length} adapters, ${dockEdges.length} dock connections, ${networkEdges.length} inter-node links, and ${(data.services || []).filter((service) => servicesByActor.has(service.actor_cn)).length} registered services"><g id="graph-world">${edgeMarkup}${vertexMarkup}${serviceMarkup}</g></svg>`;
 
   setupGraphControls(stage, width, height);
 }
@@ -459,7 +512,7 @@ function setupGraphControls(stage, width, height) {
   let drag = null;
   svg.addEventListener("pointerdown", (event) => {
     if (event.button !== 0) return;
-    if (event.target.closest("[data-inspect-actor], [data-inspect-link]")) return;
+    if (event.target.closest("[data-inspect-actor], [data-inspect-service], [data-inspect-link]")) return;
     drag = { pointerId: event.pointerId, clientX: event.clientX, clientY: event.clientY, x: camera.x, y: camera.y };
     svg.classList.add("panning");
     svg.setPointerCapture(event.pointerId);
@@ -532,7 +585,7 @@ async function loadPolicyWorkspace() {
   if (policy.loaded) return;
   const selectedRecordID = policy.record?.id;
   const editorSource = byId("policy-source").value;
-  const hasUnsavedChanges = Boolean(policy.record && editorSource !== policy.savedSource);
+  const hasUnsavedChanges = hasUnsavedPolicyChanges(policy, editorSource);
   try {
     const response = await fetch("/api/policy", { cache: "no-store", headers: { Accept: "application/json" } });
     const data = await response.json();
@@ -546,14 +599,26 @@ async function loadPolicyWorkspace() {
       assistantReady: data.assistant_ready,
     });
     if (!policy.categories.some((category) => category.id === policy.categoryID)) {
-      policy.categoryID = policy.categories.find((category) => !category.parent_id)?.id || policy.categories[0]?.id || "";
+      const policyCategories = new Set(policy.records.filter((record) => record.kind === "policy").map((record) => record.category_id));
+      policy.categoryID = policy.categories.find((category) => policyCategories.has(category.id))?.id
+        || policy.categories.find((category) => !category.parent_id)?.id
+        || policy.categories[0]?.id
+        || "";
     }
-    if (policy.record && !policy.records.some((record) => record.id === policy.record.id)) policy.record = null;
+    if (policy.record && !policy.record.isDraft && !policy.records.some((record) => record.id === policy.record.id)) policy.record = null;
     renderPolicyCatalog();
-    if (policy.record && hasUnsavedChanges) {
+    if (policy.record?.isDraft) {
+      byId("policy-source").disabled = false;
+      renderPolicyIdentity(policy.record, 0, "");
+      updatePolicyDirtyState();
+    } else if (policy.record && hasUnsavedChanges) {
       byId("policy-check-result").textContent = "Unsaved edits retained. Evaluate before saving.";
     } else if (policy.record) await selectPolicyRecord(policy.record.id, true, true);
-    else clearPolicySelection();
+    else {
+      const firstPolicy = policy.records.find((record) => record.category_id === policy.categoryID && record.kind === "policy");
+      if (firstPolicy) await selectPolicyRecord(firstPolicy.id, true, true);
+      else clearPolicySelection();
+    }
     byId("policy-check").disabled = !policy.configured || !policy.compilerReady;
     byId("new-category").disabled = !policy.configured;
     byId("new-policy-record").disabled = !policy.configured || !policy.categoryID;
@@ -591,6 +656,8 @@ function renderPolicyCatalog() {
         button.type = "button"; button.className = "category-tree-item";
         button.dataset.categoryId = category.id;
         button.setAttribute("role", "treeitem");
+        button.setAttribute("aria-label", category.path);
+        button.title = category.path;
         button.setAttribute("aria-selected", String(policy.categoryID === category.id));
         button.style.setProperty("--tree-depth", depth);
         const marker = document.createElement("span"); marker.className = "tree-marker"; marker.setAttribute("aria-hidden", "true");
@@ -627,9 +694,14 @@ function renderPolicyCatalog() {
 function clearPolicySelection() {
   const policy = state.policy;
   policy.record = null; policy.source = ""; policy.savedSource = ""; policy.revision = 0; policy.revisions = []; policy.validSource = null;
+  policy.errorOffsets = [];
   policy.browsingRevision = 0;
   byId("policy-source").value = ""; byId("policy-source").disabled = true;
+  updatePolicyHighlight(); hidePolicyCompletions();
   renderPolicyIdentity(null);
+  byId("policy-record-title").hidden = false;
+  byId("policy-draft-name").hidden = true;
+  byId("policy-draft-name").value = "";
   byId("policy-check").disabled = true; byId("policy-save").disabled = true; byId("policy-save-as").disabled = true; byId("policy-refresh").disabled = true;
   byId("policy-check-result").textContent = "Policy source is not loaded.";
   byId("policy-history-count").textContent = "—";
@@ -642,7 +714,7 @@ async function selectPolicyRecord(id, fetchRecord = true, discardEdits = false) 
   const policy = state.policy;
   const summary = policy.records.find((record) => record.id === id);
   if (!summary) return clearPolicySelection();
-  if (!discardEdits && byId("policy-source").value !== policy.savedSource && !window.confirm("Discard unsaved changes or leave this historical version?")) return;
+  if (!discardEdits && hasUnsavedPolicyChanges(policy) && !window.confirm("Discard unsaved changes or leave this historical version?")) return;
   try {
     let record = summary;
     if (fetchRecord) {
@@ -651,8 +723,12 @@ async function selectPolicyRecord(id, fetchRecord = true, discardEdits = false) 
       if (!response.ok) throw new Error(record.error || `Record load failed (${response.status})`);
     }
     policy.record = record; policy.source = record.content || ""; policy.savedSource = policy.source; policy.revision = record.current_revision; policy.validSource = null;
+    policy.errorOffsets = [];
     policy.browsingRevision = 0;
+    byId("policy-draft-name").hidden = true;
+    byId("policy-draft-name").value = "";
     byId("policy-source").value = policy.source; byId("policy-source").disabled = record.kind !== "policy";
+    updatePolicyHighlight(); hidePolicyCompletions();
     renderPolicyIdentity(record, record.current_revision, record.content_hash);
     byId("policy-check").disabled = record.kind !== "policy" || !policy.compilerReady;
     byId("policy-save").disabled = true;
@@ -670,18 +746,195 @@ async function selectPolicyRecord(id, fetchRecord = true, discardEdits = false) 
 
 function renderPolicyIdentity(record = state.policy.record, version = state.policy.revision, hash = record?.content_hash) {
   const title = byId("policy-record-title");
+  const draftName = byId("policy-draft-name");
+  draftName.hidden = !record?.isDraft;
   if (!record) {
     title.textContent = "Select a policy";
+    title.hidden = false;
     title.removeAttribute("title");
     byId("policy-revision-label").textContent = "";
     return;
   }
   const category = state.policy.categories.find((item) => item.id === record.category_id);
   const path = [category?.path, record.name].filter(Boolean).join("/");
-  title.textContent = record.name;
+  title.hidden = Boolean(record.isDraft);
+  const draftNameValue = record.isDraft ? record.name : "";
+  if (draftName.value !== draftNameValue) draftName.value = draftNameValue;
+  title.textContent = record.isDraft ? "" : record.name;
   title.title = path;
-  byId("policy-revision-label").textContent = `Version ${version} [${hash ? hash.slice(0, 12) : "hash unavailable"}]`;
-  byId("policy-revision-label").title = `${path} · ${hash || "hash unavailable"}`;
+  byId("policy-revision-label").textContent = record.isDraft ? "New · unsaved" : `Version ${version} [${hash ? hash.slice(0, 12) : "hash unavailable"}]`;
+  byId("policy-revision-label").title = record.isDraft ? "In-memory policy draft" : `${path} · ${hash || "hash unavailable"}`;
+}
+
+function hasUnsavedPolicyChanges(policy = state.policy, source = byId("policy-source").value) {
+  return Boolean(policy.record && (policy.record.isDraft || source !== policy.savedSource));
+}
+
+function definedPolicyClasses(source) {
+  return [...source.matchAll(/^[ \t]*define[ \t]+([\p{L}\p{N}_-]+)/gimu)].map((match) => match[1]);
+}
+
+function pluralPolicyClass(name) {
+  return /(?:s|x|z|ch|sh)$/i.test(name) ? `${name}es` : `${name}s`;
+}
+
+function policyClassReferences(source) {
+  const names = definedPolicyClasses(source);
+  const forms = names.flatMap((name) => [name, pluralPolicyClass(name)]);
+  return [...new Set(forms)];
+}
+
+function highlightZPL(source, errorOffsets = []) {
+  const tokens = /#.*$|\/\/.*$|'(?:\\.|[^'\\])*'?|"(?:\\.|[^"\\])*"?|`(?:\\.|[^`\\])*`?|[\p{L}\p{N}_-]+|[^\s]/gmu;
+  let output = "";
+  let previousEnd = 0;
+  for (const match of source.matchAll(tokens)) {
+    const token = match[0];
+    const start = match.index;
+    output += escapeHTML(source.slice(previousEnd, start));
+    let className = "";
+    if (token.startsWith("#") || token.startsWith("//")) className = "zpl-comment";
+    else if (/^[`'\"]/.test(token)) className = "zpl-string";
+    else if (zplKeywords.has(token.toLowerCase())) className = "zpl-keyword";
+    else if (/^[\p{L}\p{N}_-]+$/u.test(token)) {
+      const before = source.slice(0, start).match(/([^\s]+\s*)$/)?.[0] || "";
+      if (/^\s*define\s*$/i.test(before)) className = "zpl-class-definition";
+      else if (!["a", "an"].includes(token.toLowerCase()) && /^\s*define\s+[^\s]+\s+(?:aka\s+[^\s]+\s+)?as\s*$/i.test(source.slice(0, start))) className = "zpl-class";
+      else if (/^\s*[^\s]+\s*:\s*$/.test(before)) className = "zpl-value";
+      else if (source.slice(start + token.length).startsWith(":")) className = "zpl-attribute";
+      else if (policyClassReferences(source).some((name) => name.toLowerCase() === token.toLowerCase())) className = "zpl-class";
+      else if (["user", "device", "service", "link"].includes(token.toLowerCase())) className = "zpl-class";
+    } else if (token === ":" || token === "." || token === "," || token === "{" || token === "}") className = "zpl-punctuation";
+    const isError = errorOffsets.some((offset) => offset >= start && offset < start + token.length);
+    if (isError) className = className ? `${className} zpl-error` : "zpl-error";
+    output += className ? `<span class="${className}">${escapeHTML(token)}</span>` : escapeHTML(token);
+    previousEnd = start + token.length;
+  }
+  output += escapeHTML(source.slice(previousEnd));
+  return output + (source.endsWith("\n") ? " " : "\n");
+}
+
+function extractZPLErrorOffsets(diagnostics, source) {
+  const offsets = [];
+  const lineStarts = [0];
+  for (let index = 0; index < source.length; index += 1) {
+    if (source[index] === "\n") lineStarts.push(index + 1);
+  }
+  for (const diagnostic of String(diagnostics || "").split(/\r?\n/)) {
+    if (!/\berror\b/i.test(diagnostic)) continue;
+    for (const match of diagnostic.matchAll(/\[\s*line\s+(\d+)\s*,\s*column\s+(\d+)\s*\]/gi)) {
+      const line = Number(match[1]);
+      const column = Number(match[2]);
+      if (lineStarts[line - 1] === undefined || source.length === 0) continue;
+      let offset = Math.min(source.length - 1, lineStarts[line - 1] + column - 1);
+      if (offset < 0) continue;
+      while (offset < source.length && source[offset] !== "\n" && /\s/.test(source[offset])) offset += 1;
+      if (offset >= source.length || source[offset] === "\n") {
+        offset = Math.min(source.length - 1, lineStarts[line - 1] + column - 2);
+        while (offset >= lineStarts[line - 1] && /\s/.test(source[offset])) offset -= 1;
+      }
+      if (offset >= 0) offsets.push(offset);
+    }
+  }
+  return [...new Set(offsets)];
+}
+
+function updatePolicyHighlight() {
+  const textarea = byId("policy-source");
+  const highlight = byId("policy-highlight");
+  highlight.innerHTML = highlightZPL(textarea.value, state.policy.errorOffsets);
+  highlight.scrollTop = textarea.scrollTop;
+  highlight.scrollLeft = textarea.scrollLeft;
+}
+
+function completionCandidates(source, cursor) {
+  const prefix = source.slice(0, cursor);
+  const line = prefix.slice(prefix.lastIndexOf("\n") + 1);
+  const wordMatch = line.match(/[\p{L}\p{N}_-]+$/u);
+  const word = wordMatch?.[0] || "";
+  const trimmed = line.trimStart();
+  let candidates;
+  let filterPrefix = word;
+  if (/^[\p{L}\p{N}_-]*$/u.test(trimmed)) {
+    candidates = ["allow", "never allow", "define"];
+    filterPrefix = trimmed;
+  } else if (/^never\s+[\p{L}\p{N}_-]*$/i.test(trimmed)) {
+    candidates = ["allow"];
+  } else if (/^define\s+\S+\s+(?:aka\s+\S+\s+)?as\s+(?:a\s+|an\s+)?[\p{L}\p{N}_-]*$/i.test(trimmed)) {
+    candidates = ["user", "device", "service", ...definedPolicyClasses(source)];
+  } else if (/^define\s+\S+\s+(?:aka\s+\S+\s+)?$/i.test(trimmed)) {
+    candidates = ["as"];
+  } else if (/\bto\s*[^\s]*$/i.test(line)) {
+    candidates = ["access"];
+  } else if (/\baccess\s+[^\s]*$/i.test(line)) {
+    candidates = [...policyClassReferences(source), "services", "on", "over"];
+  } else if (/^\s*(?:allow|never\s+allow)\s+[^\n]*$/i.test(line) && !/\bto\b/i.test(line)) {
+    candidates = ["users", "devices", "services", ...definedPolicyClasses(source).flatMap((name) => [pluralPolicyClass(name), name]), "to"];
+  } else {
+    candidates = ["with", "and", "to", "access", "on", "over", "signal", "tag", "tags", "optional", "multiple"];
+  }
+  const unique = [...new Set(candidates)];
+  const filtered = filterPrefix ? unique.filter((item) => item.toLowerCase().startsWith(filterPrefix.toLowerCase()) && item.toLowerCase() !== filterPrefix.toLowerCase()) : unique;
+  return { word, start: cursor - word.length, items: filtered.slice(0, 8) };
+}
+
+function hidePolicyCompletions() {
+  const menu = byId("policy-completions");
+  menu.hidden = true;
+  menu.replaceChildren();
+  menu.removeAttribute("data-start");
+  menu.removeAttribute("data-end");
+}
+
+function showPolicyCompletions(force = false) {
+  const textarea = byId("policy-source");
+  if (textarea.disabled || textarea.selectionStart !== textarea.selectionEnd) return hidePolicyCompletions();
+  const suggestions = completionCandidates(textarea.value, textarea.selectionStart);
+  if (!suggestions.items.length && !force) return hidePolicyCompletions();
+  if (!suggestions.items.length) return hidePolicyCompletions();
+  const menu = byId("policy-completions");
+  menu.replaceChildren();
+  menu.dataset.start = String(suggestions.start);
+  menu.dataset.end = String(textarea.selectionStart);
+  suggestions.items.forEach((item, index) => {
+    const option = document.createElement("button");
+    option.type = "button";
+    option.className = "completion-option";
+    option.setAttribute("role", "option");
+    option.setAttribute("aria-selected", String(index === 0));
+    option.textContent = item;
+    option.addEventListener("mousedown", (event) => event.preventDefault());
+    option.addEventListener("click", () => acceptPolicyCompletion(index));
+    menu.append(option);
+  });
+  menu.hidden = false;
+}
+
+function acceptPolicyCompletion(index = 0) {
+  const textarea = byId("policy-source");
+  const menu = byId("policy-completions");
+  const options = [...menu.querySelectorAll(".completion-option")];
+  const option = options[index];
+  if (!option) return;
+  const start = Number(menu.dataset.start);
+  const end = Number(menu.dataset.end);
+  const insertion = option.textContent;
+  textarea.setRangeText(insertion, start, end, "end");
+  textarea.focus();
+  state.policy.validSource = null;
+  updatePolicyHighlight();
+  updatePolicyDirtyState();
+  hidePolicyCompletions();
+}
+
+function movePolicyCompletion(delta) {
+  const options = [...byId("policy-completions").querySelectorAll(".completion-option")];
+  if (!options.length) return false;
+  const current = options.findIndex((option) => option.getAttribute("aria-selected") === "true");
+  const next = (current + delta + options.length) % options.length;
+  options.forEach((option, index) => option.setAttribute("aria-selected", String(index === next)));
+  options[next].scrollIntoView({ block: "nearest" });
+  return true;
 }
 
 async function loadPolicyHistory(recordID) {
@@ -715,8 +968,10 @@ async function browsePolicyRevision(number) {
     if (!response.ok) throw new Error(revision.error || `Version load failed (${response.status})`);
     if (byId("policy-source").value !== policy.savedSource && !window.confirm("Discard unsaved edits and browse this version?")) return;
     policy.validSource = null;
+    policy.errorOffsets = [];
     policy.browsingRevision = revision.number;
     byId("policy-source").value = revision.content;
+    updatePolicyHighlight();
     renderPolicyIdentity(policy.record, revision.number, revision.content_hash);
     byId("policy-source").disabled = true;
     byId("policy-check").disabled = true;
@@ -742,7 +997,7 @@ function openCategoryDialog() {
   byId("category-dialog").showModal(); byId("category-name").focus();
 }
 
-function openRecordDialog(saveAs = false) {
+function openRecordDialog(saveAs = true) {
   const options = byId("record-category"); options.replaceChildren();
   for (const category of state.policy.categories) {
     const option = document.createElement("option"); option.value = category.id; option.textContent = category.path; option.selected = category.id === state.policy.categoryID; options.append(option);
@@ -753,6 +1008,49 @@ function openRecordDialog(saveAs = false) {
   byId("record-name").value = saveAs && state.policy.record ? `${state.policy.record.name} copy` : "";
   byId("record-error").textContent = "";
   byId("record-dialog").showModal(); byId("record-name").focus();
+}
+
+function beginNewPolicyDraft() {
+  const policy = state.policy;
+  if (!policy.categoryID || !policy.configured) return;
+  if (hasUnsavedPolicyChanges(policy) && !window.confirm("Discard the current edits and start a new policy draft?")) return;
+  const draft = {
+    id: "",
+    category_id: policy.categoryID,
+    name: "",
+    kind: "policy",
+    content_type: "text/vnd.zpr.zpl",
+    metadata: { language: "zpl" },
+    current_revision: 0,
+    content_hash: "",
+    isDraft: true,
+  };
+  policy.record = draft;
+  policy.source = "";
+  policy.savedSource = "";
+  policy.revision = 0;
+  policy.validSource = null;
+  policy.errorOffsets = [];
+  policy.browsingRevision = 0;
+  policy.revisions = [];
+  byId("policy-source").value = "";
+  byId("policy-source").disabled = false;
+  updatePolicyHighlight();
+  hidePolicyCompletions();
+  renderPolicyIdentity(draft, 0, "");
+  byId("policy-check-result").textContent = "Name this policy, add ZPL, then Evaluate before saving.";
+  byId("policy-check-result").dataset.state = "";
+  byId("policy-history-count").textContent = "0 versions";
+  byId("policy-history").innerHTML = '<p class="catalog-empty">The first version is created when this policy is saved.</p>';
+  byId("policy-check").disabled = !policy.compilerReady;
+  byId("policy-save").disabled = true;
+  byId("policy-save-as").disabled = true;
+  byId("policy-refresh").disabled = false;
+  byId("assistant-question").disabled = !policy.assistantReady;
+  byId("assistant-send").disabled = !policy.assistantReady;
+  renderPolicyCatalog();
+  updatePolicyDirtyState();
+  byId("policy-source").focus();
 }
 
 async function createPolicyCategory(event) {
@@ -798,34 +1096,47 @@ async function createPolicyRecord(event) {
 function updatePolicyDirtyState() {
   const policy = state.policy;
   const source = byId("policy-source").value;
-  const dirty = !policy.browsingRevision && source !== policy.savedSource;
+  const contentDirty = source !== policy.savedSource;
+  const dirty = !policy.browsingRevision && contentDirty;
   const checked = policy.validSource === source;
   const canEdit = policy.configured && policy.record?.kind === "policy" && !policy.browsingRevision;
-  byId("policy-save").disabled = !canEdit || !dirty || !checked;
-  byId("policy-save-as").disabled = !canEdit || !checked;
+  const isDraft = Boolean(policy.record?.isDraft);
+  const canSave = canEdit && checked && (isDraft ? Boolean(policy.record.name.trim()) && source.trim() !== "" : contentDirty);
+  byId("policy-save").disabled = !canSave;
+  byId("policy-save-as").disabled = !canEdit || isDraft || !checked;
   byId("policy-check").disabled = !canEdit || !policy.compilerReady;
-  byId("policy-refresh").disabled = !policy.record || (!dirty && !policy.browsingRevision);
+  byId("policy-refresh").disabled = !policy.record || (!dirty && !policy.browsingRevision && !isDraft);
   byId("policy-check").classList.toggle("button-next-evaluate", canEdit && !checked);
-  byId("policy-save").classList.toggle("button-save-next", !(canEdit && dirty && checked));
-  byId("policy-save").classList.toggle("button-next-save", canEdit && dirty && checked);
-  byId("policy-save-as").classList.toggle("button-save-as-ready", canEdit && checked);
+  byId("policy-save").classList.toggle("button-save-next", !canSave);
+  byId("policy-save").classList.toggle("button-next-save", canSave);
+  byId("policy-save-as").classList.toggle("button-save-as-ready", canEdit && !isDraft && checked);
   renderPolicyIdentity(policy.record, policy.browsingRevision || policy.revision);
   const result = byId("policy-check-result");
-  if (dirty && !checked && result.dataset.state !== "invalid") {
+  if (isDraft && !source.trim() && result.dataset.state !== "invalid") {
+    result.textContent = "Name this policy, add ZPL, then Evaluate before saving.";
+  } else if (isDraft && !policy.record.name.trim()) {
+    result.textContent = checked ? "Add a policy name before saving its first version." : "Name this policy and Evaluate before saving.";
+  } else if ((dirty || isDraft) && !checked && result.dataset.state !== "invalid") {
     result.dataset.state = "";
     result.textContent = "Evaluate the current policy before saving.";
   }
 }
 
 async function reloadPolicyWorkspace() {
-  if ((byId("policy-source").value !== state.policy.savedSource || state.policy.browsingRevision) && !window.confirm("Discard changes and return to the latest saved version?")) return;
+  if ((hasUnsavedPolicyChanges(state.policy) || state.policy.browsingRevision || state.policy.record?.isDraft) && !window.confirm("Discard changes and return to the last saved policy?")) return;
   if (!state.policy.record) return loadPolicyWorkspace();
+  if (state.policy.record.isDraft) {
+    clearPolicySelection();
+    return;
+  }
   await selectPolicyRecord(state.policy.record.id, true, true);
 }
 
 async function checkPolicy() {
   const button = byId("policy-check");
   const source = byId("policy-source").value;
+  state.policy.errorOffsets = [];
+  updatePolicyHighlight();
   button.disabled = true;
   byId("policy-check-result").textContent = "Checking with ZPLC…";
   try {
@@ -845,9 +1156,18 @@ async function checkPolicy() {
 function policySetCheckResult(valid, diagnostics, source) {
   const policy = state.policy;
   policy.validSource = valid ? source : null;
+  policy.errorOffsets = valid ? [] : extractZPLErrorOffsets(diagnostics, source);
+  updatePolicyHighlight();
   const result = byId("policy-check-result");
   result.textContent = diagnostics;
   result.dataset.state = valid ? "valid" : "invalid";
+  if (policy.errorOffsets.length) {
+    const beforeError = source.slice(0, policy.errorOffsets[0]);
+    const line = beforeError.split("\n").length - 1;
+    const lineHeight = Number.parseFloat(getComputedStyle(byId("policy-source")).lineHeight) || 20;
+    byId("policy-source").scrollTop = Math.max(0, line * lineHeight - lineHeight * 2);
+    updatePolicyHighlight();
+  }
   updatePolicyDirtyState();
 }
 
@@ -862,29 +1182,62 @@ async function appendPolicyVersion(summary) {
   const policy = state.policy;
   const button = byId("policy-save");
   const submittedSource = byId("policy-source").value;
+  const isDraft = Boolean(policy.record.isDraft);
+  const recordName = policy.record.name.trim();
+  if (isDraft && !recordName) {
+    byId("version-error").textContent = "Enter a policy name before saving.";
+    return;
+  }
+  if (policy.validSource !== submittedSource) {
+    byId("version-error").textContent = "Evaluate this exact buffer before saving.";
+    return;
+  }
   const recordID = policy.record.id;
   const expectedRevision = policy.revision;
   button.disabled = true;
   byId("version-dialog").close();
   byId("policy-check-result").textContent = "Saving version…";
   try {
-    const response = await fetch(`/api/policy/records/${encodeURIComponent(recordID)}/revisions`, {
-      method: "POST", headers: { "Content-Type": "application/json", Accept: "application/json" },
-      body: JSON.stringify({ content: submittedSource, expected_revision: expectedRevision, summary }),
-    });
-    const result = await response.json();
-    if (!response.ok) throw new Error(result.error || result.diagnostics || `Version save failed (${response.status})`);
-    policy.revision = result.number;
+    let response;
+    let result;
+    let nextRevision;
+    let contentHash;
+    if (isDraft) {
+      response = await fetch("/api/policy/records", {
+        method: "POST", headers: { "Content-Type": "application/json", Accept: "application/json" },
+        body: JSON.stringify({
+          category_id: policy.record.category_id, name: recordName, kind: "policy",
+          content_type: policy.record.content_type, metadata: policy.record.metadata,
+          content: submittedSource, summary,
+        }),
+      });
+      result = await response.json();
+      if (!response.ok) throw new Error(result.error || result.diagnostics || `Policy save failed (${response.status})`);
+      nextRevision = result.current_revision;
+      contentHash = result.content_hash;
+      policy.record = { ...result, isDraft: false };
+      policy.records.push(policy.record);
+    } else {
+      response = await fetch(`/api/policy/records/${encodeURIComponent(recordID)}/revisions`, {
+        method: "POST", headers: { "Content-Type": "application/json", Accept: "application/json" },
+        body: JSON.stringify({ content: submittedSource, expected_revision: expectedRevision, summary }),
+      });
+      result = await response.json();
+      if (!response.ok) throw new Error(result.error || result.diagnostics || `Version save failed (${response.status})`);
+      nextRevision = result.number;
+      contentHash = result.content_hash;
+    }
+    policy.revision = nextRevision;
     policy.savedSource = submittedSource;
     policy.validSource = policy.savedSource;
-    policy.record.current_revision = result.number;
+    policy.record.current_revision = nextRevision;
     policy.record.content = submittedSource;
-    policy.record.content_hash = result.content_hash;
+    policy.record.content_hash = contentHash;
     policy.browsingRevision = 0;
-    renderPolicyIdentity(policy.record, result.number, result.content_hash);
-    byId("policy-check-result").textContent = result.diagnostics;
+    renderPolicyIdentity(policy.record, nextRevision, contentHash);
+    byId("policy-check-result").textContent = result.diagnostics || `Created Version ${nextRevision}.`;
     byId("policy-check-result").dataset.state = "valid";
-    await loadPolicyHistory(recordID);
+    await loadPolicyHistory(policy.record.id);
     await refreshPolicyCatalog();
     updatePolicyDirtyState();
   } catch (error) {
@@ -965,9 +1318,11 @@ function renderServices(data) {
   const columns = { name: (service) => service.service_name, kind: (service) => service.service_kind, actor: (service) => service.actor_cn, address: (service) => service.zpr_addr, endpoints: (service) => service.service_endpoints };
   const shown = visibleRows("services", services, columns);
   byId("service-rows").innerHTML = shown.length ? shown.map((service) => {
-    const trusted = (service.service_kind || "").startsWith("Trusted(");
+    const trustedType = (service.service_kind || "").match(/^Trusted\("([^"]+)"\)$/)?.[1];
+    const trustedClass = trustedType ? ` trusted-${trustedType.toLowerCase().replace(/[^a-z0-9]+/g, "-")}` : "";
     const kind = service.service_kind || "Not in current policy";
-    return `<tr class="selectable-row" data-inspect-service="${escapeHTML(service.service_name)}" tabindex="0" role="button" aria-label="Inspect service ${escapeHTML(service.service_name)}"><td>${escapeHTML(service.service_name || "—")}</td><td><span class="role-chip ${trusted ? "node" : ""}">${escapeHTML(trusted ? "TRUSTED SOURCE" : kind)}</span></td><td>${escapeHTML(service.actor_cn || "—")}</td><td class="mono">${escapeHTML(service.zpr_addr || "—")}</td><td>${escapeHTML(service.service_endpoints || "—")}</td></tr>`;
+    const kindLabel = trustedType ? `TRUSTED ${trustedType.toUpperCase()}` : kind;
+    return `<tr class="selectable-row" data-inspect-service="${escapeHTML(service.service_name)}" tabindex="0" role="button" aria-label="Inspect service ${escapeHTML(service.service_name)}"><td>${escapeHTML(service.service_name || "—")}</td><td><span class="role-chip${trustedClass}">${escapeHTML(kindLabel)}</span></td><td>${escapeHTML(service.actor_cn || "—")}</td><td class="mono">${escapeHTML(service.zpr_addr || "—")}</td><td>${escapeHTML(service.service_endpoints || "—")}</td></tr>`;
   }).join("") : `<tr><td colspan="5" class="empty-row">${services.length ? "No matching services" : "No network services returned"}</td></tr>`;
 }
 
@@ -1036,7 +1391,7 @@ function setPollTimer() {
 byId("refresh-now").addEventListener("click", refresh);
 byId("policy-refresh").addEventListener("click", reloadPolicyWorkspace);
 byId("new-category").addEventListener("click", openCategoryDialog);
-byId("new-policy-record").addEventListener("click", openRecordDialog);
+byId("new-policy-record").addEventListener("click", beginNewPolicyDraft);
 byId("policy-save-as").addEventListener("click", () => openRecordDialog(true));
 byId("category-form").addEventListener("submit", createPolicyCategory);
 byId("record-form").addEventListener("submit", createPolicyRecord);
@@ -1052,8 +1407,48 @@ document.addEventListener("click", (event) => {
 });
 byId("policy-source").addEventListener("input", () => {
   state.policy.validSource = null;
+  state.policy.errorOffsets = [];
   byId("policy-check-result").dataset.state = "";
+  updatePolicyHighlight();
   updatePolicyDirtyState();
+  showPolicyCompletions();
+});
+byId("policy-draft-name").addEventListener("input", () => {
+  if (!state.policy.record?.isDraft) return;
+  state.policy.record.name = byId("policy-draft-name").value;
+  renderPolicyIdentity(state.policy.record, 0, "");
+  updatePolicyDirtyState();
+});
+byId("policy-source").addEventListener("scroll", () => {
+  const textarea = byId("policy-source");
+  const highlight = byId("policy-highlight");
+  highlight.scrollTop = textarea.scrollTop;
+  highlight.scrollLeft = textarea.scrollLeft;
+});
+byId("policy-source").addEventListener("click", () => showPolicyCompletions());
+byId("policy-source").addEventListener("keydown", (event) => {
+  const menu = byId("policy-completions");
+  const open = !menu.hidden;
+  if ((event.ctrlKey || event.metaKey) && event.code === "Space") {
+    event.preventDefault(); showPolicyCompletions(true); return;
+  }
+  if (open && event.key === "ArrowDown") { event.preventDefault(); movePolicyCompletion(1); return; }
+  if (open && event.key === "ArrowUp") { event.preventDefault(); movePolicyCompletion(-1); return; }
+  if (open && (event.key === "Tab" || event.key === "Enter")) {
+    event.preventDefault();
+    const selected = [...menu.querySelectorAll(".completion-option")].findIndex((option) => option.getAttribute("aria-selected") === "true");
+    acceptPolicyCompletion(selected < 0 ? 0 : selected); return;
+  }
+  if (event.key === "Escape" && open) { event.preventDefault(); hidePolicyCompletions(); return; }
+  if (event.key === "Tab") {
+    event.preventDefault();
+    const start = byId("policy-source").selectionStart;
+    byId("policy-source").setRangeText("  ", start, byId("policy-source").selectionEnd, "end");
+    byId("policy-source").dispatchEvent(new Event("input", { bubbles: true }));
+  }
+});
+byId("policy-source").addEventListener("blur", (event) => {
+  if (!event.relatedTarget?.closest("#policy-completions")) hidePolicyCompletions();
 });
 byId("policy-check").addEventListener("click", checkPolicy);
 byId("policy-save").addEventListener("click", savePolicy);

@@ -1,0 +1,135 @@
+{
+  "categories": [
+    "Northstar/Services/Finance",
+    "Northstar/Services/Engineering",
+    "Northstar/Services/People Operations",
+    "Northstar/Services/Security",
+    "Northstar/Services/Sales",
+    "Northstar/Services/Legal",
+    "Northstar/Policies/Finance",
+    "Northstar/Policies/Engineering",
+    "Northstar/Policies/People Operations",
+    "Northstar/Policies/Security",
+    "Northstar/Policies/Sales",
+    "Northstar/Policies/Legal"
+  ],
+  "records": [
+    {
+      "category": "Northstar/Services/Finance",
+      "name": "Finance Workspace",
+      "kind": "service",
+      "content_type": "application/json",
+      "metadata": {"demo": true, "actor_cn": "finance-workspace", "departments": ["Accounting", "Finance"], "live": false},
+      "content": "{\"service_class\":\"FinanceWorkspace\",\"actor_cn\":\"finance-workspace\",\"summary\":\"Illustrative finance reporting and ledger workspace.\",\"endpoint\":\"zpr://finance-workspace\",\"status\":\"example only; not deployed\"}",
+      "summary": "Illustrative department service"
+    },
+    {
+      "category": "Northstar/Services/Finance",
+      "name": "Payroll Records",
+      "kind": "service",
+      "content_type": "application/json",
+      "metadata": {"demo": true, "actor_cn": "payroll-records", "departments": ["Payroll", "Accounting"], "live": false},
+      "content": "{\"service_class\":\"PayrollRecords\",\"actor_cn\":\"payroll-records\",\"summary\":\"Illustrative payroll records service.\",\"endpoint\":\"zpr://payroll-records\",\"status\":\"example only; not deployed\"}",
+      "summary": "Illustrative department service"
+    },
+    {
+      "category": "Northstar/Services/Engineering",
+      "name": "Engineering Build Farm",
+      "kind": "service",
+      "content_type": "application/json",
+      "metadata": {"demo": true, "actor_cn": "engineering-build", "departments": ["Platform", "Product"], "live": false},
+      "content": "{\"service_class\":\"EngineeringBuildFarm\",\"actor_cn\":\"engineering-build\",\"summary\":\"Illustrative build and release system.\",\"endpoint\":\"zpr://engineering-build\",\"status\":\"example only; not deployed\"}",
+      "summary": "Illustrative department service"
+    },
+    {
+      "category": "Northstar/Services/People Operations",
+      "name": "People Operations Hub",
+      "kind": "service",
+      "content_type": "application/json",
+      "metadata": {"demo": true, "actor_cn": "people-operations", "departments": ["HR", "Talent"], "live": false},
+      "content": "{\"service_class\":\"PeopleOperationsHub\",\"actor_cn\":\"people-operations\",\"summary\":\"Illustrative HR case and talent operations service.\",\"endpoint\":\"zpr://people-operations\",\"status\":\"example only; not deployed\"}",
+      "summary": "Illustrative department service"
+    },
+    {
+      "category": "Northstar/Services/Security",
+      "name": "Security Incident Console",
+      "kind": "service",
+      "content_type": "application/json",
+      "metadata": {"demo": true, "actor_cn": "security-console", "departments": ["Security", "Compliance"], "live": false},
+      "content": "{\"service_class\":\"SecurityIncidentConsole\",\"actor_cn\":\"security-console\",\"summary\":\"Illustrative incident response and review console.\",\"endpoint\":\"zpr://security-console\",\"status\":\"example only; not deployed\"}",
+      "summary": "Illustrative department service"
+    },
+    {
+      "category": "Northstar/Services/Sales",
+      "name": "Sales CRM",
+      "kind": "service",
+      "content_type": "application/json",
+      "metadata": {"demo": true, "actor_cn": "sales-crm", "departments": ["Field", "Customer Success"], "live": false},
+      "content": "{\"service_class\":\"SalesCRM\",\"actor_cn\":\"sales-crm\",\"summary\":\"Illustrative account and customer success workspace.\",\"endpoint\":\"zpr://sales-crm\",\"status\":\"example only; not deployed\"}",
+      "summary": "Illustrative department service"
+    },
+    {
+      "category": "Northstar/Services/Legal",
+      "name": "Legal Matter Files",
+      "kind": "service",
+      "content_type": "application/json",
+      "metadata": {"demo": true, "actor_cn": "legal-matters", "departments": ["Legal", "Compliance"], "live": false},
+      "content": "{\"service_class\":\"LegalMatterFiles\",\"actor_cn\":\"legal-matters\",\"summary\":\"Illustrative legal matter document store.\",\"endpoint\":\"zpr://legal-matters\",\"status\":\"example only; not deployed\"}",
+      "summary": "Illustrative department service"
+    },
+    {
+      "category": "Northstar/Policies/Finance",
+      "name": "Finance department access",
+      "kind": "policy",
+      "content_type": "text/vnd.zpr.zpl",
+      "metadata": {"demo": true, "ldap_attributes": ["ou -> device.demo.department"], "live": false},
+      "content": "# Uses department attributes currently mapped by demo_ldap.\ndefine AccountingStaff as a device with demo.department:Accounting.\ndefine FinanceStaff as a device with demo.department:Finance.\ndefine PayrollStaff as a device with demo.department:Payroll.\ndefine FinanceWorkspace as a service with device.zpr.adapter.cn:finance-workspace.\ndefine PayrollRecords as a service with device.zpr.adapter.cn:payroll-records.\nallow AccountingStaff to access FinanceWorkspace.\nallow FinanceStaff to access FinanceWorkspace.\nallow PayrollStaff to access PayrollRecords.",
+      "summary": "Department-based finance workspace and payroll access"
+    },
+    {
+      "category": "Northstar/Policies/Engineering",
+      "name": "Engineering build access",
+      "kind": "policy",
+      "content_type": "text/vnd.zpr.zpl",
+      "metadata": {"demo": true, "ldap_attributes": ["ou -> device.demo.department"], "live": false},
+      "content": "# Platform and Product map to LDAP organizational-unit values.\ndefine PlatformStaff as a device with demo.department:Platform.\ndefine ProductStaff as a device with demo.department:Product.\ndefine EngineeringBuildFarm as a service with device.zpr.adapter.cn:engineering-build.\nallow PlatformStaff to access EngineeringBuildFarm.\nallow ProductStaff to access EngineeringBuildFarm.",
+      "summary": "Platform and Product access to the illustrative build farm"
+    },
+    {
+      "category": "Northstar/Policies/People Operations",
+      "name": "People operations access",
+      "kind": "policy",
+      "content_type": "text/vnd.zpr.zpl",
+      "metadata": {"demo": true, "ldap_attributes": ["ou -> device.demo.department"], "live": false},
+      "content": "# HR and Talent are separate LDAP department values.\ndefine HRStaff as a device with demo.department:HR.\ndefine TalentStaff as a device with demo.department:Talent.\ndefine PeopleOperationsHub as a service with device.zpr.adapter.cn:people-operations.\nallow HRStaff to access PeopleOperationsHub.\nallow TalentStaff to access PeopleOperationsHub.",
+      "summary": "HR and Talent access to the illustrative people hub"
+    },
+    {
+      "category": "Northstar/Policies/Security",
+      "name": "Security and compliance access",
+      "kind": "policy",
+      "content_type": "text/vnd.zpr.zpl",
+      "metadata": {"demo": true, "ldap_attributes": ["ou -> device.demo.department", "title -> device.demo.title"], "live": false},
+      "content": "# Department/title predicates are available; LDAP groupOfNames membership is not mapped into actor attributes.\ndefine SecurityStaff as a device with demo.department:Security.\ndefine ComplianceStaff as a device with demo.department:Compliance.\ndefine SecurityIncidentConsole as a service with device.zpr.adapter.cn:security-console.\nallow SecurityStaff to access SecurityIncidentConsole.\nallow ComplianceStaff to access SecurityIncidentConsole.",
+      "summary": "Department-based access; role memberships are not yet consumed"
+    },
+    {
+      "category": "Northstar/Policies/Sales",
+      "name": "Sales and customer success access",
+      "kind": "policy",
+      "content_type": "text/vnd.zpr.zpl",
+      "metadata": {"demo": true, "ldap_attributes": ["ou -> device.demo.department"], "live": false},
+      "content": "# Customer Success is quoted because its LDAP value contains a space.\ndefine FieldSales as a device with demo.department:Field.\ndefine CustomerSuccess as a device with demo.department:'Customer Success'.\ndefine SalesCRM as a service with device.zpr.adapter.cn:sales-crm.\nallow FieldSales to access SalesCRM.\nallow CustomerSuccess to access SalesCRM.",
+      "summary": "Field and Customer Success access to the illustrative CRM"
+    },
+    {
+      "category": "Northstar/Policies/Legal",
+      "name": "Legal matter access",
+      "kind": "policy",
+      "content_type": "text/vnd.zpr.zpl",
+      "metadata": {"demo": true, "ldap_attributes": ["ou -> device.demo.department"], "live": false},
+      "content": "define LegalStaff as a device with demo.department:Legal.\ndefine LegalMatterFiles as a service with device.zpr.adapter.cn:legal-matters.\nallow LegalStaff to access LegalMatterFiles.",
+      "summary": "Legal department access to illustrative matter files"
+    }
+  ]
+}
