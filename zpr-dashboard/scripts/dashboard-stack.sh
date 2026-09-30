@@ -12,6 +12,7 @@ BIN="$STATE_DIR/zpr-web-dashboard"
 POLICY_PID="$STATE_DIR/policy-service.pid"
 CONTROL_PID="$STATE_DIR/control-service.pid"
 ROOM_PID="$STATE_DIR/control-room.pid"
+SIMULATOR_PID="$STATE_DIR/simulator.pid"
 
 pid_running() {
     [ -f "$1" ] && kill -0 "$(cat "$1")" 2>/dev/null
@@ -42,6 +43,7 @@ stop_service() {
 }
 
 stop_stack() {
+    stop_service "$SIMULATOR_PID"
     stop_service "$ROOM_PID"
     stop_service "$CONTROL_PID"
     stop_service "$POLICY_PID"
@@ -104,11 +106,18 @@ start_stack() {
         ZPR_CONTROL_CLIENT_KEY_FILE="$SERVICE_CERTS/control-room-client.key" \
         "$BIN" -mode control-room -listen 127.0.0.1:8787
     wait_for_url http://127.0.0.1:8787/ control-room
+    start_service simulator "$SIMULATOR_PID" env \
+        SIMULATION_MANIFEST="$SIMULATION_MANIFEST" \
+        SIMULATION_STACK_SCRIPT="$SCRIPT_DIR/dashboard-stack.sh" \
+        SIMULATION_AGENT_SCRIPT="$SCRIPT_DIR/simulation-agent.sh" \
+        "$BIN" -mode simulator -listen 127.0.0.1:8788
+    wait_for_url http://127.0.0.1:8788/ simulator
     echo "Control Room ready at http://127.0.0.1:8787"
+    echo "Simulator ready at http://127.0.0.1:8788"
 }
 
 status_stack() {
-    for entry in "policy-service:$POLICY_PID:8789" "control-service:$CONTROL_PID:8790" "control-room:$ROOM_PID:8787"; do
+    for entry in "policy-service:$POLICY_PID:8789" "control-service:$CONTROL_PID:8790" "control-room:$ROOM_PID:8787" "simulator:$SIMULATOR_PID:8788"; do
         name=${entry%%:*}
         rest=${entry#*:}
         pid_file=${rest%%:*}

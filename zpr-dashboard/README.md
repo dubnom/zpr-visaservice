@@ -35,6 +35,13 @@ Copy `config.toml.example` to `config.toml` and edit it.
 make run                                # Start admin panel
 ```
 
+The same lifecycle starts a separate simulation operator site at
+`http://127.0.0.1:8788`. It is intentionally simulation-only and provides
+manifest-backed agent/service inventory, start/stop/restart controls, Docker
+agent controls, fake client/service controls, and recent managed-service logs.
+Its Activity page shows recent visas and denials from Control Room. Control
+Room remains the read-only network and policy monitor at
+`http://127.0.0.1:8787`.
 ## Control Room and Policy Service
 
 The browser Control Room lives in `cmd/zpr-web-dashboard` and calls only

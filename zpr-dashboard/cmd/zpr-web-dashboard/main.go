@@ -195,7 +195,7 @@ type statsResponse struct {
 }
 
 func main() {
-	mode := flag.String("mode", envOr("ZPR_WEB_MODE", "control-room"), "Run mode: control-room, control-service, or policy-service")
+	mode := flag.String("mode", envOr("ZPR_WEB_MODE", "control-room"), "Run mode: control-room, simulator, control-service, or policy-service")
 	listen := flag.String("listen", envOr("ZPR_WEB_LISTEN", defaultListen), "HTTP listen address")
 	flag.Parse()
 	switch *mode {
@@ -209,6 +209,10 @@ func main() {
 		}
 	case "control-room":
 		if err := runControlRoom(*listen); err != nil {
+			log.Fatal(err)
+		}
+	case "simulator":
+		if err := runSimulator(*listen); err != nil {
 			log.Fatal(err)
 		}
 	default:

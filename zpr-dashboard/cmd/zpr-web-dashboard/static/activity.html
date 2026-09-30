@@ -1,0 +1,12 @@
+<!doctype html>
+<html lang="en">
+<head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>ZPR Simulator Activity</title><link rel="stylesheet" href="/app.css"><link rel="stylesheet" href="/simulator.css"></head>
+<body>
+<div class="app-shell">
+<aside class="sidebar"><a class="brand" data-simulator-nav href="/" aria-label="ZPR Simulator components"><span class="brand-mark"><i></i><i></i><i></i></span><span><strong>ZPR</strong><small>SIMULATOR</small></span></a><nav class="primary-nav" aria-label="Simulator navigation"><a class="nav-link" data-simulator-nav href="/">ZPR Components</a><a class="nav-link" data-simulator-nav href="/agents.html">Agents</a><a class="nav-link active" data-simulator-nav href="/activity.html">Activity</a></nav><div class="sidebar-foot"><span class="tiny-dot"></span><span>SIMULATION CONTROL</span></div></aside>
+<main class="main-content"><header class="topbar"><div class="topbar-status"><div class="connection-state"><span class="state-lamp"></span><div><strong>Simulation activity</strong><small id="activity-time">Live Control Room feed</small></div></div><div class="uptime-status"><span>STREAM</span><strong id="activity-state">LIVE</strong></div></div></header>
+<section class="metrics-grid"><article class="metric"><div class="metric-head"><span>REQUESTS</span></div><strong class="metric-value" id="requests">—</strong></article><article class="metric"><div class="metric-head"><span>APPROVED</span></div><strong class="metric-value" id="approved">—</strong></article><article class="metric"><div class="metric-head"><span>DENIED</span></div><strong class="metric-value" id="denied">—</strong></article><article class="metric"><div class="metric-head"><span>VISAS</span></div><strong class="metric-value" id="visa-count">—</strong></article></section>
+<section class="logs"><div class="section-head"><div><p class="eyebrow">DECISIONS</p><h2>Recent visas</h2></div><button class="quiet" id="refresh">Refresh</button></div><div id="visas" class="log-grid"></div></section>
+<section class="logs"><div class="section-head"><div><p class="eyebrow">BLOCKED FLOWS</p><h2>Recent denials</h2></div></div><div id="denies" class="log-grid"></div></section>
+</main></div><script src="/simulator-nav.js?v=3"></script><script src="/activity.js?v=3"></script>
+</body></html>
