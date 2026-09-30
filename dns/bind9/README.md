@@ -1,22 +1,27 @@
 # ZPR DNS with BIND 9
 
-This profile uses BIND 9 (ISC-licensed) as the DNS service itself. The named
-process joins ZPR as the `zpr-dns` actor and binds its query listener only to
-that actor's ZPR address. The Visa Service sends RFC 2136 updates with TSIG
-through `nsupdate` over ZPR; BIND never opens a public/underlay DNS listener or
-accepts unauthenticated dynamic updates. Service identity and client
-permissions are ordinary ZPL policy, not DNS ACLs alone.
+This profile uses BIND 9 (ISC-licensed) as the DNS service implementation
+behind a normal ZPR adapter. The adapter joins as the `zpr-dns` actor and
+provides the DNS service; BIND listens on the adapter's ZPR interface address.
+The Visa Service sends RFC 2136 updates with TSIG through `nsupdate` over a
+separately policy-authorized ZPR flow. BIND never opens a public/underlay DNS
+listener or accepts unauthenticated dynamic updates. Service identity and
+client permissions are ordinary ZPL policy, not DNS ACLs alone.
 
 ## ZPR policy
 
 Compile [`zpr-dns.zpl`](zpr-dns.zpl) with the network policy. It declares
 `dns.svc.zpr` on TCP port 53 and permits authenticated device actors, identified
-by the ZPR-provided `device.zpr.adapter.cn` attribute, to access it. BIND only
-binds the service actor's ZPR address, so the query socket is not exposed on the
-substrate or host interfaces. The client adapters do not yet contain the ZPR
-DNS resolver; implementing client-side query routing is the next phase. The
-initial policy publishes TCP/53 only; query clients must use DNS over TCP until
-the compiler can express both TCP and UDP scopes in one service contract.
+by the ZPR-provided `device.zpr.adapter.cn` attribute, to access it. The DNS
+adapter binds the service actor's ZPR address, so the query socket is not
+exposed on the substrate or host interfaces. Adapters can optionally run a
+loopback-only DNS stub that accepts local UDP/TCP requests and forwards them to
+the bootstrapped ZPR DNS address over TCP. Configure the host resolver to use
+that loopback listener; the adapter does not edit system resolver settings.
+Upstream TCP sockets are bound to the adapter TUN, so they cannot fall through
+to the host's default interface. The stub uses only the configured server and
+never falls back to an underlay resolver. The initial policy publishes TCP/53
+only, so its upstream queries use DNS over TCP.
 The example also permits the device whose authenticated adapter CN is `vs.zpr`
 to access DNS; this is the policy gate for Visa Service's TSIG update flow.
 TSIG remains a separate publisher credential and does not replace ZPR
@@ -24,10 +29,14 @@ authorization.
 
 The DNS service's ZPR address and identity are bootstrap inputs: clients cannot
 use DNS to discover the DNS server itself. Put its address in the initial file
-policy/bootstrap data. Once the Visa Service and DNS service are connected,
-service records are published from policy-authorized actor registrations.
-The `zpr.addr` pinned on the ZPL service class must exactly match BIND's
-`listen-on-v6` address and the `[dns_update].server` address.
+policy/bootstrap data. Once the Visa Service and DNS adapter are connected, the
+adapter's registered `dns.svc.zpr` service appears on the Control Room map under
+the `zpr-dns` actor. Service records are then published from policy-authorized
+actor registrations.
+
+The `zpr.addr` pinned on the ZPL service class must exactly match the adapter's
+ZPR interface address, BIND's `listen-on-v6` address, and the
+`[dns_update].server` address.
 
 ## BIND
 

@@ -4,11 +4,12 @@ acl zpr_clients {
     fd5a:5052:adda:1::/64;
 };
 
-include "/etc/bind/keys/zpr-vs-publisher.key";
+include "/run/named/zpr-vs-publisher.key";
 
 options {
     directory "/var/cache/bind";
     recursion no;
+    dnssec-validation no;
     allow-recursion { none; };
     allow-query-cache { none; };
     allow-query { zpr_clients; };
