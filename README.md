@@ -59,4 +59,11 @@ The `vs-admin` command line tool consumes this API.
 
 See [admin-http-api.txt](admin-http-api.txt) for full endpoint documentation.
 
+## ZPR DNS service
+
+The BIND 9 deployment profile runs DNS on a ZPR service address, uses ZPL to
+authorize authenticated query clients, and accepts service-record updates from
+the Visa Service only through TSIG over ZPR. BIND is not exposed as a public or
+underlay DNS service. See the [BIND 9 ZPR DNS guide](dns/bind9/README.md).
+
 

@@ -115,6 +115,7 @@ pub const DENY_LOG_SIZE: usize = 500;
 pub struct VSConfig {
     pub core: CoreSection,
     pub trusted_service_http: std::collections::BTreeMap<String, TrustedServiceHttpConfig>,
+    pub dns_update: Option<DnsUpdateConfig>,
 }
 
 #[derive(Deserialize, Serialize, Debug, Clone)]
@@ -124,6 +125,35 @@ pub struct TrustedServiceHttpConfig {
     pub ca_cert: PathBuf,
     pub client_cert: PathBuf,
     pub client_key: PathBuf,
+}
+
+#[derive(Deserialize, Serialize, Debug, Clone)]
+#[serde(deny_unknown_fields)]
+pub struct DnsUpdateConfig {
+    /// ZPR address of the policy-gated DNS service, not its substrate address.
+    pub server: IpAddr,
+    #[serde(default = "default_dns_port")]
+    pub port: u16,
+    /// Absolute DNS zone, for example `svc.zpr.`.
+    pub zone: String,
+    /// BIND-format TSIG key file restricted to this publisher's DNS owner zone.
+    pub tsig_key_file: PathBuf,
+    #[serde(default = "default_dns_ttl")]
+    pub ttl_seconds: u32,
+    #[serde(default = "default_nsupdate_bin")]
+    pub nsupdate_bin: PathBuf,
+}
+
+fn default_dns_port() -> u16 {
+    53
+}
+
+fn default_dns_ttl() -> u32 {
+    30
+}
+
+fn default_nsupdate_bin() -> PathBuf {
+    PathBuf::from("nsupdate")
 }
 
 #[derive(Deserialize, Serialize, Debug, Clone)]
@@ -169,6 +199,7 @@ impl Default for VSConfig {
         VSConfig {
             core: CoreSection::default(),
             trusted_service_http: std::collections::BTreeMap::new(),
+            dns_update: None,
         }
     }
 }
@@ -224,6 +255,12 @@ impl VSConfig {
             rebase(base, &mut service.ca_cert);
             rebase(base, &mut service.client_cert);
             rebase(base, &mut service.client_key);
+        }
+        if let Some(dns_update) = self.dns_update.as_mut() {
+            rebase(base, &mut dns_update.tsig_key_file);
+            if dns_update.nsupdate_bin.components().count() > 1 {
+                rebase(base, &mut dns_update.nsupdate_bin);
+            }
         }
     }
 
@@ -461,5 +498,25 @@ mod test {
         .unwrap();
         cfg.resolve_paths(std::path::Path::new("vs.toml").parent().unwrap());
         assert_eq!(cfg.core.admin_cert, PathBuf::from("cert.pem"));
+    }
+
+    #[test]
+    fn test_dns_update_config_is_optional_and_key_path_resolves_relative_to_config() {
+        let (default_cfg, _dir) = load_from_temp_dir("");
+        assert!(default_cfg.dns_update.is_none());
+
+        let (cfg, dir) = load_from_temp_dir(
+            r#"
+        [dns_update]
+        server = "fd5a:5052:adda:1::53"
+        zone = "svc.zpr."
+        tsig_key_file = "keys/dns-publisher.key"
+        "#,
+        );
+        let dns = cfg.dns_update.expect("dns update configuration");
+        assert_eq!(dns.port, 53);
+        assert_eq!(dns.ttl_seconds, 30);
+        assert_eq!(dns.tsig_key_file, dir.path().join("keys/dns-publisher.key"));
+        assert_eq!(dns.nsupdate_bin, PathBuf::from("nsupdate"));
     }
 }

@@ -27,6 +27,7 @@ mod counters;
 mod db;
 mod db_worker;
 mod deny_log;
+mod dns_publisher;
 mod error;
 mod event_mgr;
 mod loaded_policy;
@@ -364,6 +365,12 @@ async fn main() -> std::process::ExitCode {
 
     js.spawn_local(signal_worker::launch(asm.clone()));
     js.spawn_local(event_mgr::launch(asm.clone(), event_rx));
+    let dns_asm = asm.clone();
+    js.spawn_local(async move {
+        if let Err(error) = event_mgr::reconcile_dns_providers(&dns_asm).await {
+            error!(target: MAIN, "initial DNS provider reconciliation failed: {}", error);
+        }
+    });
 
     js.spawn_local(vsapi_worker::launch(
         asm.clone(),

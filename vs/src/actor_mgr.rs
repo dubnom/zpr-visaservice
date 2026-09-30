@@ -452,6 +452,24 @@ impl ActorMgr {
             .collect())
     }
 
+    /// Return all connected actor/service pairs for policy-aware directory reconciliation.
+    pub async fn list_registered_service_providers(
+        &self,
+    ) -> Result<Vec<ServiceEntry>, ServiceError> {
+        Ok(self.actor_db.list_services().await?)
+    }
+
+    /// Return service IDs currently offered by one connected actor.
+    pub async fn list_services_for_actor(
+        &self,
+        actor_zpr_addr: &IpAddr,
+    ) -> Result<Vec<String>, ServiceError> {
+        Ok(self
+            .actor_db
+            .list_services_for_actor(actor_zpr_addr)
+            .await?)
+    }
+
     /// Get the list of connectioned actor CN values, optionally filtered by role.
     pub async fn list_actor_cns(
         &self,

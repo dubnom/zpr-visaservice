@@ -86,6 +86,9 @@ pub enum ServiceError {
 
     #[error("trusted service attributes indeterminate: {0}")]
     AttributesIndeterminate(String),
+
+    #[error("DNS update failed: {0}")]
+    DnsUpdate(String),
 }
 
 #[derive(Debug, Error)]
