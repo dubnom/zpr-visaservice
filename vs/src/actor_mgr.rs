@@ -445,7 +445,11 @@ impl ActorMgr {
 
     pub async fn get_services_list(&self) -> Result<Vec<ServiceEntry>, ServiceError> {
         let services = self.actor_db.list_services().await?;
-        Ok(services)
+        let mut seen = HashSet::new();
+        Ok(services
+            .into_iter()
+            .filter(|service| seen.insert(service.name.clone()))
+            .collect())
     }
 
     /// Get the list of connectioned actor CN values, optionally filtered by role.
