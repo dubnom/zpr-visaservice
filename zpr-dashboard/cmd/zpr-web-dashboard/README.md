@@ -154,6 +154,11 @@ go run ./cmd/zpr-web-dashboard -mode control-room
 Open `http://127.0.0.1:8787`. To choose another local port, pass
 `-listen 127.0.0.1:9000`. The server defaults to localhost so the browser UI
 and its same-origin API proxy are not exposed to the LAN.
+
+For the local runtime, use `scripts/dashboard-stack.sh` instead of launching
+the three modes independently. It builds one binary, starts the services in
+dependency order, stores logs and PIDs under `.local-runtime/dashboard-stack`,
+and performs protocol-aware readiness checks.
 The Map is the default page. A compact row of live visa, node, decision, and
 actor/dock metrics remains above the active page; Visa Service health and
 uptime appear alongside the refresh controls.

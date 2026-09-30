@@ -126,6 +126,7 @@ function renderMetrics(data) {
   byId("metric-denied").textContent = formatNumber(denied);
   byId("metric-actors").textContent = formatNumber(data.actors.length);
   byId("metric-adapters").textContent = formatNumber(data.actors.filter((actor) => !actor.node && dockedNames.has(actor.cn)).length);
+  byId("metric-services").textContent = formatNumber(data.services.length);
   byId("metric-uptime").textContent = stats.uptime == null ? "—" : formatDuration(stats.uptime);
   for (const id of ["metric-visas-note", "metric-nodes-note"]) {
     byId(id).parentElement.title = byId(id).textContent;
@@ -271,8 +272,10 @@ function renderInspector() {
 
 function renderTopology(data) {
   const nodes = data.actors.filter((actor) => actor.node).sort((a, b) => a.cn.localeCompare(b.cn));
-  const adapters = data.actors.filter((actor) => !actor.node).sort((a, b) => a.cn.localeCompare(b.cn));
-  const actors = [...nodes, ...adapters];
+  const adapters = data.actors.filter((actor) => !actor.node && !actor.platform).sort((a, b) => a.cn.localeCompare(b.cn));
+  const platformActors = data.actors.filter((actor) => actor.platform).sort((a, b) => a.cn.localeCompare(b.cn));
+  const serviceHosts = [...adapters, ...platformActors];
+  const actors = [...nodes, ...serviceHosts];
   const actorsByName = new Map(actors.map((actor) => [actor.cn, actor]));
   const actorsByAddress = new Map(actors.map((actor) => [actor.zpr_addr, actor]));
   const edges = [];
@@ -329,8 +332,11 @@ function renderTopology(data) {
   }
   const maxColumn = Math.max(0, ...[...state.graphNodeSlots.values()].map((position) => position.column));
   const maxRow = Math.max(0, ...[...state.graphNodeSlots.values()].map((position) => position.row));
-  const width = Math.max(760, 520 + maxColumn * 520 + 280);
-  const height = Math.max(460, 460 + maxRow * 500 + 240);
+  const unconnectedHosts = serviceHosts.filter((host) => !positions.has(host.cn));
+  const unconnectedColumns = Math.max(1, Math.min(3, unconnectedHosts.length));
+  const unconnectedRows = Math.ceil(unconnectedHosts.length / unconnectedColumns);
+  const width = Math.max(760, 520 + maxColumn * 520 + 280, 160 + unconnectedColumns * 260);
+  const height = Math.max(460, 460 + maxRow * 500 + 240, 520 + unconnectedRows * 190);
   const visaServices = new Set((data.services || []).filter((service) => service.service_kind === "Visa").map((service) => service.actor_cn));
   const query = byId("topology-search").value.trim().toLowerCase();
   const matches = (actor) => !query || `${actor.cn} ${actor.zpr_addr || ""} ${visaServices.has(actor.cn) ? "visa service" : ""} ${(servicesByActor.get(actor.cn) || []).map((service) => `${service.service_name} ${service.service_kind}`).join(" ")}`.toLowerCase().includes(query);
@@ -369,11 +375,12 @@ function renderTopology(data) {
     });
   });
 
-  const unplaced = adapters.filter((adapter) => !positions.has(adapter.cn));
+  const unplaced = unconnectedHosts;
   unplaced.forEach((adapter, index) => {
-    const angle = -Math.PI / 2 + (2 * Math.PI * (index % 8)) / 8;
-    const center = { x: 380 + (index % columns) * 520, y: 230 + Math.floor(index / columns) * 500 };
-    positions.set(adapter.cn, { x: center.x + Math.cos(angle) * 125, y: center.y + Math.sin(angle) * 125 });
+    const column = index % unconnectedColumns;
+    const row = Math.floor(index / unconnectedColumns);
+    const center = { x: 160 + column * 260, y: 520 + row * 190 };
+    positions.set(adapter.cn, center);
     adapterOrigins.set(adapter.cn, center);
   });
 
@@ -398,18 +405,19 @@ function renderTopology(data) {
       ? `<rect class="graph-node ${synced ? "synced" : ""}" x="${pos.x - 46}" y="${pos.y - 25}" width="92" height="50" rx="7"/>`
       : isVisaService
         ? `<polygon class="graph-visa" points="${pos.x},${pos.y - 35} ${pos.x + 35},${pos.y} ${pos.x},${pos.y + 35} ${pos.x - 35},${pos.y}"/>`
-        : `<circle class="graph-adapter" cx="${pos.x}" cy="${pos.y}" r="29"/>`;
+        : `<circle class="${actor.platform ? "graph-platform" : "graph-adapter"}" cx="${pos.x}" cy="${pos.y}" r="29"/>`;
     return `<g class="graph-vertex ${query && !matches(actor) ? "filtered" : ""}" data-inspect-actor="${escapeHTML(actor.cn)}" tabindex="0" role="button" aria-label="Inspect ${escapeHTML(actor.cn)}"><title>${escapeHTML(actor.cn)} · ${escapeHTML(actor.zpr_addr || "address pending")}</title>${glyph}<text class="graph-label" x="${pos.x}" y="${pos.y + 3}">${escapeHTML(shortName)}</text></g>`;
   }).join("");
 
-  const serviceMarkup = adapters.flatMap((adapter) => {
+  const serviceMarkup = actors.flatMap((adapter) => {
     const services = servicesByActor.get(adapter.cn) || [];
     if (!services.length) return [];
     const pos = positions.get(adapter.cn);
-    const origin = adapterOrigins.get(adapter.cn) || { x: 380, y: 230 };
+    const origin = adapterOrigins.get(adapter.cn) || pos;
     const dx = pos.x - origin.x, dy = pos.y - origin.y;
-    const magnitude = Math.hypot(dx, dy) || 1;
-    const outwardX = dx / magnitude, outwardY = dy / magnitude;
+    const magnitude = Math.hypot(dx, dy);
+    const outwardX = magnitude ? dx / magnitude : 0;
+    const outwardY = magnitude ? dy / magnitude : -1;
     const visible = services.slice(0, 2);
     const entries = visible.map((service) => ({ service, overflow: false }));
     if (services.length > visible.length) entries.push({ service: null, overflow: services.length - visible.length });
@@ -444,7 +452,7 @@ function renderTopology(data) {
     });
   }).join("");
 
-  stage.innerHTML = `<div class="graph-controls" aria-label="Topology graph controls"><button class="graph-control" data-graph-action="in" type="button" aria-label="Zoom in" title="Zoom in">+</button><button class="graph-control" data-graph-action="out" type="button" aria-label="Zoom out" title="Zoom out">−</button><button class="graph-control graph-fit" data-graph-action="fit" type="button" aria-label="Fit graph" title="Fit graph">Fit</button><span class="graph-hint">DRAG TO PAN · SCROLL TO ZOOM</span></div><svg class="topology-graph" viewBox="0 0 ${width} ${height}" role="img" aria-label="Topology graph with ${nodes.length} nodes, ${adapters.length} adapters, ${dockEdges.length} dock connections, ${networkEdges.length} inter-node links, and ${(data.services || []).filter((service) => servicesByActor.has(service.actor_cn)).length} registered services"><g id="graph-world">${edgeMarkup}${vertexMarkup}${serviceMarkup}</g></svg>`;
+  stage.innerHTML = `<div class="graph-controls" aria-label="Topology graph controls"><button class="graph-control" data-graph-action="in" type="button" aria-label="Zoom in" title="Zoom in">+</button><button class="graph-control" data-graph-action="out" type="button" aria-label="Zoom out" title="Zoom out">−</button><button class="graph-control graph-fit" data-graph-action="fit" type="button" aria-label="Fit graph" title="Fit graph">Fit</button><span class="graph-hint">DRAG TO PAN · SCROLL TO ZOOM</span></div><svg class="topology-graph" viewBox="0 0 ${width} ${height}" role="img" aria-label="Topology graph with ${nodes.length} nodes, ${adapters.length} adapters, ${platformActors.length} service hosts, ${dockEdges.length} dock connections, ${networkEdges.length} inter-node links, and ${(data.services || []).filter((service) => servicesByActor.has(service.actor_cn)).length} registered services"><g id="graph-world">${edgeMarkup}${vertexMarkup}${serviceMarkup}</g></svg>`;
 
   setupGraphControls(stage, width, height);
 }

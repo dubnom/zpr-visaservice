@@ -118,3 +118,22 @@ func TestTrustedSourcesIgnoresApplicationServices(t *testing.T) {
 		t.Fatalf("trusted sources = %+v; want only directory", sources)
 	}
 }
+
+func TestMergePlatformServicesAddsActorsAndSkipsDuplicates(t *testing.T) {
+	t.Setenv("ZPR_PLATFORM_SERVICES", `[
+		{"service_name":"/zpr/policy","actor_cn":"policy-service","service_kind":"Policy"},
+		{"service_name":"directory","actor_cn":"platform-directory","service_kind":"Directory"},
+		{"service_name":"","actor_cn":"ignored","service_kind":"Invalid"}
+	]`)
+	out := snapshot{
+		Actors:   []actor{{CN: "node", Node: true}},
+		Services: []service{{Name: "directory", ActorCN: "directory-service"}},
+	}
+	mergePlatformServices(&out)
+	if len(out.Services) != 2 || out.Services[0].Name != "/zpr/policy" {
+		t.Fatalf("services = %+v; want live service plus policy", out.Services)
+	}
+	if len(out.Actors) != 2 || out.Actors[1].CN != "policy-service" {
+		t.Fatalf("actors = %+v; want node plus policy-service", out.Actors)
+	}
+}

@@ -127,6 +127,7 @@ h1 { margin-bottom: 6px; font-size: 28px; line-height: 1.15; letter-spacing: 0; 
 .graph-node { fill: #e7f0e4; stroke: #426453; stroke-width: 2; }
 .graph-node.synced { fill: #eaf4d9; stroke: #367453; }
 .graph-adapter { fill: #f0f5f7; stroke: #7c9aaa; stroke-width: 1.5; }
+.graph-platform { fill: #f6f1e5; stroke: #b49762; stroke-width: 1.5; }
 .graph-visa { fill: #f7d8ad; stroke: #b86b30; stroke-width: 2.5; }
 .graph-label { fill: #23332c; font: 11px var(--mono); text-anchor: middle; }
 .graph-service-badge { cursor: pointer; transition: opacity .14s ease; }
@@ -310,6 +311,7 @@ td:first-child { color: var(--ink); font-weight: 600; }
 .status-banner .metric-glyph { display: none; }
 .status-banner .metric-value { margin: 0; font-size: 17px; white-space: nowrap; }
 .metric-pair { display: flex; align-items: baseline; gap: 12px; color: var(--ink-soft); font: 10px var(--mono); white-space: nowrap; }
+.metric-population { gap: 8px; justify-content: space-between; }
 .metric-pair strong { font-size: 16px; font-weight: 650; font-variant-numeric: tabular-nums; }
 .decision-allowed, .decision-allowed strong { color: var(--forest); }
 .decision-denied, .decision-denied strong { color: var(--red); }
@@ -327,6 +329,7 @@ td:first-child { color: var(--ink); font-weight: 600; }
 .graph-edge:hover .graph-link, .graph-edge:focus .graph-link { stroke-width: 4; }
 .graph-vertex:hover .graph-node, .graph-vertex:focus .graph-node { stroke: var(--orange); stroke-width: 3; }
 .graph-vertex:hover .graph-adapter, .graph-vertex:focus .graph-adapter { stroke: var(--orange); stroke-width: 3; }
+.graph-vertex:hover .graph-platform, .graph-vertex:focus .graph-platform { stroke: var(--orange); stroke-width: 3; }
 .graph-vertex:hover .graph-visa, .graph-vertex:focus .graph-visa { stroke: var(--orange); stroke-width: 3; }
 .selectable-row { cursor: pointer; outline: none; }
 .selectable-row:hover, .selectable-row:focus { background: #f4f8ef; }

@@ -69,6 +69,7 @@ type actorEntry struct {
 type actor struct {
 	CN          string      `json:"cn"`
 	Node        bool        `json:"node"`
+	Platform    bool        `json:"platform,omitempty"`
 	ZPRAddress  string      `json:"zpr_addr"`
 	AuthExpires *int64      `json:"auth_exp"`
 	NodeDetails *nodeDetail `json:"node_details"`
@@ -107,6 +108,19 @@ type service struct {
 	Address   string `json:"zpr_addr"`
 	Kind      string `json:"service_kind"`
 	Endpoints string `json:"service_endpoints"`
+}
+
+func platformServices() []service {
+	raw := strings.TrimSpace(os.Getenv("ZPR_PLATFORM_SERVICES"))
+	if raw == "" {
+		return nil
+	}
+	var services []service
+	if err := json.Unmarshal([]byte(raw), &services); err != nil {
+		log.Printf("invalid ZPR_PLATFORM_SERVICES: %v", err)
+		return nil
+	}
+	return services
 }
 
 type trustedSource struct {
@@ -438,6 +452,7 @@ func (a *application) fetchSnapshot(ctx context.Context) snapshot {
 	} else {
 		out.Trusted = trustedSourcesFrom(out.Services)
 	}
+	mergePlatformServices(&out)
 	if successfulEndpoints == 0 {
 		out.APIStatus = "disconnected"
 	} else if len(out.Errors) > 0 {
@@ -445,6 +460,33 @@ func (a *application) fetchSnapshot(ctx context.Context) snapshot {
 	}
 	sort.Slice(out.Errors, func(i, j int) bool { return out.Errors[i] < out.Errors[j] })
 	return out
+}
+
+func mergePlatformServices(out *snapshot) {
+	knownServices := make(map[string]struct{}, len(out.Services))
+	knownActors := make(map[string]struct{}, len(out.Actors))
+	for _, item := range out.Services {
+		knownServices[item.Name] = struct{}{}
+	}
+	for _, item := range out.Actors {
+		knownActors[item.CN] = struct{}{}
+	}
+	for _, item := range platformServices() {
+		if item.Name == "" || item.ActorCN == "" {
+			continue
+		}
+		if _, exists := knownServices[item.Name]; exists {
+			continue
+		}
+		out.Services = append(out.Services, item)
+		knownServices[item.Name] = struct{}{}
+		if _, exists := knownActors[item.ActorCN]; !exists {
+			out.Actors = append(out.Actors, actor{CN: item.ActorCN, Platform: true, ZPRAddress: item.Address})
+			knownActors[item.ActorCN] = struct{}{}
+		}
+	}
+	sort.Slice(out.Services, func(i, j int) bool { return out.Services[i].Name < out.Services[j].Name })
+	sort.Slice(out.Actors, func(i, j int) bool { return out.Actors[i].CN < out.Actors[j].CN })
 }
 
 func (a *application) fetchActors(ctx context.Context, entries []actorEntry, errs *[]string, mu *sync.Mutex) []actor {

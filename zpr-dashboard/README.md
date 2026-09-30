@@ -54,11 +54,39 @@ REST contracts. The trusted-source view associates providers with actors and
 reports the latest real lookup outcome when available; it does not browse
 provider records.
 
-Configure and start all three processes as described in
-[`cmd/zpr-web-dashboard/README.md`](cmd/zpr-web-dashboard/README.md): first
-`go run ./cmd/zpr-web-dashboard -mode policy-service`, then
-`go run ./cmd/zpr-web-dashboard -mode control-service`, and finally
-`go run ./cmd/zpr-web-dashboard -mode control-room` for the browser-facing UI.
+Foundational services are registered during the extended node boot through the
+Visa Service adapter. The boot passes their names in `ZPR_ADAPTER_SERVICES`;
+the adapter includes repeated `zpr.services` claims in its real
+`authorize_connect` request. Visa Service then persists those services against
+the adapter actor and the Control Room reads them from `/admin/services`.
+
+The simulation environment declares these services in
+`.local-runtime/simulation-environment.json`. Set `SIMULATION_MANIFEST` to use
+a different environment manifest. The manifest is the source for service
+registration names, kinds, endpoints, and simulated ownership; boot does not
+maintain a second hard-coded service list.
+
+The reusable base contract lives in `.local-runtime/generic-zpr-base.json` and
+is validated separately by the installer.
+
+The manifest extends the generic ZPR base and describes the complete bootstrap:
+required packages, Rust toolchain, ZPR artifacts, base trusted services, and
+boot agents. A scenario adds services and actors on top of that base rather
+than replacing the installation contract.
+
+The containerized simulated environment installs the ZPR binaries with
+`.local-runtime/build-and-run-linux-node.sh`; it validates and passes the same
+manifest into the extended boot. A generic simulation uses the default
+manifest, while a scenario-specific simulation sets `SIMULATION_MANIFEST`.
+
+For the local runtime, configure and start the complete stack with
+`cmd/zpr-web-dashboard/scripts/dashboard-stack.sh`. It builds one binary,
+starts the services in dependency order, records their PIDs and logs, and
+supports `start`, `stop`, `restart`, and `status`.
+
+The individual process environment is documented in
+[`cmd/zpr-web-dashboard/README.md`](cmd/zpr-web-dashboard/README.md) for
+non-local deployments.
 
 Open `http://127.0.0.1:8787` for the Control Room UI.
 
