@@ -93,7 +93,78 @@ pre { margin: 0; padding: 14px; min-height: 110px; max-height: 180px; overflow: 
 @media (max-width: 700px) { .sidebar { position: static; width: 100%; padding: 9px 12px 6px; }.brand { padding: 0 5px 8px; }.sidebar-foot { display: none; }.primary-nav { display: flex; gap: 3px; overflow-x: auto; }.nav-link { flex: 0 0 auto; padding: 7px 9px; font-size: 11px; }.main-content { margin-left: 0; padding: 0 15px 24px; }.main-content .topbar { position: static; min-height: 42px; margin: 0 -15px; padding: 0 15px; }.main-content .uptime-status { display: none; }.main-content .hero { margin-top: 18px; } }
 .uptime-status small { display: block; margin-top: 3px; color: var(--muted); font: 9px var(--mono); }
 .metrics-grid { grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 10px; margin: 18px 0 26px; }
+.machine-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(100%, 250px), 1fr)); gap: 12px; }
+.machine-card { min-width: 0; padding: 14px; border: 1px solid var(--line); border-radius: 6px; background: var(--panel); }
+.machine-card-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; }
+.machine-card-head > div { display: grid; gap: 5px; }
+.machine-card-identity { min-width: 0; }
+.machine-card-status { display: grid; justify-items: end; gap: 7px; }
+.controller-indicator { display: inline-flex; align-items: center; gap: 6px; color: var(--muted); font: 9px var(--mono); text-transform: uppercase; white-space: nowrap; }
+.controller-indicator i { width: 7px; height: 7px; border-radius: 50%; background: var(--orange); }
+.controller-indicator.connected { color: #21845b; }
+.controller-indicator.connected i { background: #21845b; }
+.machine-card-head strong { overflow-wrap: anywhere; }
+.machine-runtime-control { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin-top: 13px; padding: 9px 0; border-top: 1px solid var(--line); border-bottom: 1px solid var(--line); }
+.machine-runtime-control > span { display: grid; gap: 4px; }
+.machine-runtime-control small { color: var(--muted); font: 9px var(--mono); }
+.machine-runtime-control button { flex: 0 0 auto; padding: 7px 9px; font-size: 10px; }
+.machine-runtime-control button:disabled { cursor: not-allowed; opacity: .5; }
+.machine-details { padding: 8px 0; border-bottom: 1px solid var(--line); }
+.machine-details summary { color: var(--teal); font-size: 11px; font-weight: 600; cursor: pointer; }
+.machine-details dl { margin: 10px 0 2px; }
+.machine-card dl { display: grid; gap: 8px; margin: 14px 0; }
+.machine-card dl > div { display: grid; grid-template-columns: 70px minmax(0, 1fr); gap: 8px; font-size: 12px; }
+.machine-card dt { color: var(--muted); }
+.machine-card dd { margin: 0; overflow-wrap: anywhere; }
+.controller-state { display: flex; align-items: center; gap: 6px; }
+.controller-state::before { width: 7px; height: 7px; border-radius: 50%; background: var(--orange); content: ""; }
+.controller-state.connected::before { background: #21845b; }
+.machine-container-state { text-transform: capitalize; }
+.machine-container-state.running { color: #21845b; }
+.machine-container-state.stopped, .machine-container-state.exited, .machine-container-state.missing { color: #bd5b38; }
+.machine-workloads { display: grid; gap: 9px; padding-top: 10px; border-top: 1px solid var(--line); }
+.machine-workloads > span { font-size: 10px; color: var(--muted); }
+.machine-session { display: flex; align-items: end; justify-content: space-between; gap: 10px; padding: 10px 0; border-bottom: 1px solid var(--line); }
+.machine-session > .session-label { align-self: center; }
+.machine-session > div { display: grid; gap: 4px; }
+.session-label { color: var(--muted); font: 9px var(--mono); }
+.machine-session strong { font-size: 12px; font-weight: 550; overflow-wrap: anywhere; }
+.user-select { display: grid; gap: 5px; min-width: 0; color: var(--muted); font: 9px var(--mono); }
+.user-select select { max-width: 170px; min-width: 0; padding: 6px; border: 1px solid var(--line); background: var(--panel); color: var(--ink); font: 11px var(--sans); }
+.machine-session button { flex: 0 0 auto; padding: 7px 9px; font-size: 10px; }
+.machine-session button:disabled { cursor: not-allowed; opacity: .5; }
+.machine-login-dialog { width: min(400px, calc(100% - 28px)); padding: 22px; border: 1px solid var(--line); border-radius: 6px; background: var(--panel); color: var(--ink); box-shadow: 0 18px 60px #17211e35; }
+.machine-login-dialog::backdrop { background: #17211e77; }
+.machine-login-dialog form { display: grid; gap: 14px; }
+.machine-login-dialog .eyebrow { margin: 0; }
+.machine-login-dialog h2 { margin: -8px 0 0; font-size: 20px; font-weight: 500; }
+.machine-login-dialog .user-select select { width: 100%; max-width: none; padding: 9px; font-size: 13px; }
+.machine-login-actions { display: flex; justify-content: flex-end; gap: 8px; }
+.workload-picker { position: relative; padding: 8px 0; border-bottom: 1px solid var(--line); }
+.workload-picker summary { display: flex; justify-content: space-between; gap: 10px; color: var(--teal); font-size: 12px; font-weight: 600; cursor: pointer; }
+.workload-picker summary span { color: var(--muted); font: 10px var(--mono); font-weight: 400; }
+.workload-picker-menu { position: absolute; z-index: 6; top: calc(100% - 1px); left: -8px; right: -8px; padding: 10px; border: 1px solid var(--line); border-radius: 4px; background: var(--panel); box-shadow: 0 8px 20px #17211e22; }
+.workload-picker fieldset { display: grid; gap: 2px; max-height: 220px; margin: 0 0 8px; padding: 0; overflow: auto; border: 0; }
+.workload-picker legend { margin-bottom: 5px; color: var(--muted); font: 9px var(--mono); text-transform: uppercase; }
+.workload-picker fieldset label { display: flex; align-items: center; gap: 8px; min-width: 0; padding: 5px 3px; cursor: pointer; }
+.workload-picker input { accent-color: var(--teal); }
+.workload-picker fieldset label span { display: flex; flex: 1; justify-content: space-between; gap: 6px; font-size: 11px; overflow-wrap: anywhere; }
+.workload-picker fieldset small { flex: 0 0 auto; color: var(--muted); font-size: 9px; }
+.workload-picker-menu > button { width: 100%; padding: 7px; font-size: 10px; }
+.machine-workload { display: grid; grid-template-columns: minmax(0, 1fr) auto 44px; align-items: center; gap: 9px; min-width: 0; }
+.machine-workload-label { display: grid; gap: 3px; min-width: 0; }
+.machine-workload-label strong { font-size: 12px; font-weight: 550; overflow-wrap: anywhere; }
+.machine-workload-label small { color: var(--muted); font: 9px var(--mono); overflow-wrap: anywhere; }
+.machine-workload .pill { white-space: nowrap; font-size: 9px; }
+.empty-workloads { margin: 0; color: var(--muted); font-size: 12px; }
+.workload-toggle { position: relative; width: 42px; height: 24px; padding: 0; border: 0; border-radius: 12px; background: #9ba7a0; cursor: pointer; }
+.workload-toggle::after { position: absolute; top: 3px; left: 3px; width: 18px; height: 18px; border-radius: 50%; background: #fff; content: ""; transition: transform .15s ease; }
+.workload-toggle[aria-checked="true"] { background: #21845b; }
+.workload-toggle[aria-checked="true"]::after { transform: translateX(18px); }
+.workload-toggle:focus-visible { outline: 2px solid var(--orange); outline-offset: 2px; }
+.workload-toggle:disabled { cursor: not-allowed; opacity: .45; }
 .metrics-grid .metric { min-height: 0; height: 58px; padding: 0 14px; display: flex; align-items: center; justify-content: space-between; }
 .metrics-grid .metric-head { color: var(--muted); font: 9px var(--mono); letter-spacing: .08em; }
 .metrics-grid .metric-value { margin: 0; font: 650 16px var(--mono); font-variant-numeric: tabular-nums; }
 @media (max-width: 700px) { .metrics-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+@media (max-width: 380px) { .machine-session { flex-wrap: wrap; }.user-select { flex: 1 1 150px; }.user-select select { max-width: 100%; width: 100%; } }

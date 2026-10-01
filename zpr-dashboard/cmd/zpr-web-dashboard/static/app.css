@@ -124,6 +124,8 @@ h1 { margin-bottom: 6px; font-size: 28px; line-height: 1.15; letter-spacing: 0; 
 .graph-link.up { stroke: #428967; }
 .graph-link.down { stroke: #db935f; stroke-dasharray: 5 5; }
 .graph-link.dock-link { stroke: #5786a0; stroke-width: 1.5; stroke-dasharray: 3 3; }
+.graph-link.service-link { stroke: #b8753f; stroke-width: 1.5; stroke-dasharray: 2 4; }
+.legend-service-link { width: 14px !important; height: 0; border-top: 2px dashed #b8753f; }
 .graph-node { fill: #e7f0e4; stroke: #426453; stroke-width: 2; }
 .graph-node.synced { fill: #eaf4d9; stroke: #367453; }
 .graph-adapter { fill: #f0f5f7; stroke: #7c9aaa; stroke-width: 1.5; }
@@ -190,6 +192,7 @@ td:first-child { color: var(--ink); font-weight: 600; }
 .source-row { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 10px; align-items: center; padding: 12px 0; border-top: 1px solid var(--line); }
 .source-name { display: block; color: var(--ink); font-size: 11px; font-weight: 600; }
 .source-meta { display: block; margin-top: 5px; color: #8a958e; font: 9px var(--mono); }
+.actor-common-name { display: block; margin-top: 3px; color: #8a958e; font: 9px var(--mono); letter-spacing: 0; text-transform: none; }
 .health-badge { padding: 4px 6px; border: 1px solid #e7d5bf; background: #fff8ef; color: #8c6333; font: 8px var(--mono); white-space: nowrap; }
 .health-badge.working { border-color: #aecdb2; background: #e6f3e8; color: #176038; }
 .health-badge.failed { border-color: #e2ada5; background: #fff0ed; color: #a43830; }

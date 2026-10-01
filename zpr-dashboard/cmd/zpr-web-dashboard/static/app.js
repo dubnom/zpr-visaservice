@@ -1,6 +1,6 @@
 const byId = (id) => document.getElementById(id);
 const zplKeywords = new Set(["allow", "never", "define", "with", "to", "access", "and", "as", "aka", "tag", "tags", "on", "optional", "multiple", "signal", "over"]);
-const state = { snapshot: null, timer: null, paused: false, pending: false, graphCamera: null, graphNodeSlots: new Map(), graphAdapterSlots: new Map(), selection: null, sorts: {}, policy: { loaded: false, configured: false, categories: [], records: [], categoryID: "", record: null, source: "", savedSource: "", revision: 0, browsingRevision: 0, saveAs: false, compilerReady: false, assistantReady: false, validSource: null, errorOffsets: [], revisions: [], messages: [], assistantPending: false, assistantError: "" } };
+const state = { snapshot: null, timer: null, paused: false, pending: false, graphCamera: null, selection: null, sorts: {}, policy: { loaded: false, configured: false, categories: [], records: [], categoryID: "", record: null, source: "", savedSource: "", revision: 0, browsingRevision: 0, saveAs: false, compilerReady: false, assistantReady: false, validSource: null, errorOffsets: [], revisions: [], messages: [], assistantPending: false, assistantError: "" } };
 
 const pages = {
   map: "MAP",
@@ -36,6 +36,12 @@ function escapeHTML(value) {
   return String(value ?? "").replace(/[&<>"']/g, (char) => ({
     "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;"
   })[char]);
+}
+
+function actorDisplayName(actor) {
+  if (!actor?.machine_id) return actor?.cn || "—";
+  const adapterKind = actor.adapter_kind === "service" ? "service" : actor.adapter_kind === "client" ? "client" : "workload";
+  return `${actor.machine_id} ${adapterKind} adapter`;
 }
 
 function num(value) {
@@ -114,7 +120,6 @@ function renderMetrics(data) {
   const upLinks = countUpLinks(data.network);
   const nodes = data.actors.filter((item) => item.node);
   const inSync = nodes.filter((node) => node.node_details?.in_sync).length;
-  const dockedNames = new Set(nodes.flatMap((node) => node.node_details?.adapters || []));
   const approved = num(stats.visa_requests_approved);
   const denied = num(stats.visa_requests_denied);
 
@@ -125,7 +130,7 @@ function renderMetrics(data) {
   byId("metric-allowed").textContent = formatNumber(approved);
   byId("metric-denied").textContent = formatNumber(denied);
   byId("metric-actors").textContent = formatNumber(data.actors.length);
-  byId("metric-adapters").textContent = formatNumber(data.actors.filter((actor) => !actor.node && dockedNames.has(actor.cn)).length);
+  byId("metric-adapters").textContent = formatNumber(data.actors.filter((actor) => !actor.node).length);
   byId("metric-services").textContent = formatNumber(data.services.length);
   byId("metric-uptime").textContent = stats.uptime == null ? "—" : formatDuration(stats.uptime);
   for (const id of ["metric-visas-note", "metric-nodes-note"]) {
@@ -172,9 +177,10 @@ function renderInspector() {
     const services = data.services.filter((item) => item.actor_cn === actor.cn);
     const relatedVisas = data.recent_visas.filter((visa) => visa.source_addr === actor.zpr_addr || visa.dest_addr === actor.zpr_addr);
     kindLabel = actor.node ? "FORWARDING NODE" : services.some((item) => item.service_kind === "Visa") ? "VISA SERVICE ADAPTER" : "ADAPTER";
-    title = actor.cn;
+    title = actorDisplayName(actor);
     sections.push(detailSection("Actor", [
-      detailField("Role", actor.node ? "Node / forwarder" : kindLabel === "VISA SERVICE ADAPTER" ? "Visa Service adapter" : "Adapter"),
+      detailField("Role", actor.node ? "Node / forwarder" : actor.machine_id ? `${actor.adapter_kind || "workload"} adapter` : kindLabel === "VISA SERVICE ADAPTER" ? "Visa Service adapter" : "Adapter"),
+      ...(actor.machine_id ? [detailField("Machine", actor.machine_id)] : []),
       detailField("Common name", actor.cn, "mono"),
       detailField("ZPR address", actor.zpr_addr, "mono"),
       detailField("Authentication expires", actor.auth_exp ? new Date(actor.auth_exp * 1000).toLocaleString() : "No expiry reported"),
@@ -182,7 +188,10 @@ function renderInspector() {
     if (actor.node && actor.node_details) {
       const details = actor.node_details;
       const attached = details.adapters || [];
-      const outgoing = (details.links || []).map((name) => `<button class="detail-link" type="button" data-inspect-actor="${escapeHTML(name)}">${escapeHTML(name)}</button>`).join(" ");
+      const outgoing = (details.links || []).map((name) => {
+        const linkedActor = data.actors.find((item) => item.cn === name);
+        return `<button class="detail-link" type="button" data-inspect-actor="${escapeHTML(name)}">${escapeHTML(actorDisplayName(linkedActor || { cn: name }))}</button>`;
+      }).join(" ");
       sections.push(detailSection("Live node state", [
         detailField("Synchronization", details.in_sync ? "In sync" : "Not in sync"),
         detailField("Last contact", since(details.last_contact)),
@@ -191,7 +200,10 @@ function renderInspector() {
         detailField("Visa requests", details.visa_requests),
         detailField("Approved / denied", `${details.approved_vreqs} / ${details.denied_vreqs}`),
         detailField("Installed visas", (details.visas || []).length),
-        detailHTMLField("Docked adapters", attached.map((name) => `<button class="detail-link" type="button" data-inspect-actor="${escapeHTML(name)}">${escapeHTML(name)}</button>`).join(" ")),
+        detailHTMLField("Docked adapters", attached.map((name) => {
+          const linkedActor = data.actors.find((item) => item.cn === name);
+          return `<button class="detail-link" type="button" data-inspect-actor="${escapeHTML(name)}">${escapeHTML(actorDisplayName(linkedActor || { cn: name }))}</button>`;
+        }).join(" ")),
         detailHTMLField("Node links", outgoing),
       ]));
     } else {
@@ -215,7 +227,8 @@ function renderInspector() {
     const actor = data.actors.find((item) => item.cn === service.actor_cn);
     const source = data.trusted_sources.find((item) => item.name === service.service_name);
     sections.push(detailSection("Configuration", [
-      detailField("Kind", service.service_kind), detailField("Actor", service.actor_cn, "mono"),
+      detailField("Kind", service.service_kind), detailField("Provider adapter", actorDisplayName(actor), "mono"),
+      detailField("Provider common name", service.actor_cn, "mono"),
       detailField("ZPR address", service.zpr_addr, "mono"),
       detailField("Endpoints", service.service_endpoints),
     ]));
@@ -272,10 +285,9 @@ function renderInspector() {
 
 function renderTopology(data) {
   const nodes = data.actors.filter((actor) => actor.node).sort((a, b) => a.cn.localeCompare(b.cn));
-  const adapters = data.actors.filter((actor) => !actor.node && !actor.platform).sort((a, b) => a.cn.localeCompare(b.cn));
-  const platformActors = data.actors.filter((actor) => actor.platform).sort((a, b) => a.cn.localeCompare(b.cn));
-  const serviceHosts = [...adapters, ...platformActors];
-  const actors = [...nodes, ...serviceHosts];
+  const adapters = data.actors.filter((actor) => !actor.node).sort((a, b) => a.cn.localeCompare(b.cn));
+  const actors = [...nodes, ...adapters];
+  const displayNames = new Map(actors.map((actor) => [actor.cn, actorDisplayName(actor)]));
   const actorsByName = new Map(actors.map((actor) => [actor.cn, actor]));
   const actorsByAddress = new Map(actors.map((actor) => [actor.zpr_addr, actor]));
   const edges = [];
@@ -294,7 +306,7 @@ function renderTopology(data) {
 
   const stage = byId("topology-stage");
   const positions = new Map();
-  const adapterOrigins = new Map();
+  const servicePositions = new Map();
   const servicesByActor = new Map();
   for (const service of data.services || []) {
     if (!service.actor_cn) continue;
@@ -312,84 +324,90 @@ function renderTopology(data) {
     return;
   }
 
-  const columns = Math.max(1, Math.ceil(Math.sqrt(nodes.length)));
-  const activeNodes = new Set(nodes.map((node) => node.cn));
-  for (const name of state.graphNodeSlots.keys()) {
-    if (!activeNodes.has(name)) state.graphNodeSlots.delete(name);
-  }
-  const activeAdapters = new Set(adapters.map((adapter) => adapter.cn));
-  for (const name of state.graphAdapterSlots.keys()) {
-    if (!activeAdapters.has(name)) state.graphAdapterSlots.delete(name);
-  }
-  const usedSlots = new Set([...state.graphNodeSlots.values()].map(({ column, row }) => `${column}:${row}`));
-  for (const node of nodes) {
-    if (state.graphNodeSlots.has(node.cn)) continue;
-    let slot = 0;
-    while (usedSlots.has(`${slot % columns}:${Math.floor(slot / columns)}`)) slot++;
-    const position = { column: slot % columns, row: Math.floor(slot / columns) };
-    state.graphNodeSlots.set(node.cn, position);
-    usedSlots.add(`${position.column}:${position.row}`);
-  }
-  const maxColumn = Math.max(0, ...[...state.graphNodeSlots.values()].map((position) => position.column));
-  const maxRow = Math.max(0, ...[...state.graphNodeSlots.values()].map((position) => position.row));
-  const unconnectedHosts = serviceHosts.filter((host) => !positions.has(host.cn));
-  const unconnectedColumns = Math.max(1, Math.min(3, unconnectedHosts.length));
-  const unconnectedRows = Math.ceil(unconnectedHosts.length / unconnectedColumns);
-  const width = Math.max(760, 520 + maxColumn * 520 + 280, 160 + unconnectedColumns * 260);
-  const height = Math.max(460, 460 + maxRow * 500 + 240, 520 + unconnectedRows * 190);
   const visaServices = new Set((data.services || []).filter((service) => service.service_kind === "Visa").map((service) => service.actor_cn));
-  const query = byId("topology-search").value.trim().toLowerCase();
-  const matches = (actor) => !query || `${actor.cn} ${actor.zpr_addr || ""} ${visaServices.has(actor.cn) ? "visa service" : ""} ${(servicesByActor.get(actor.cn) || []).map((service) => `${service.service_name} ${service.service_kind}`).join(" ")}`.toLowerCase().includes(query);
-
-  nodes.forEach((node) => {
-    const slot = state.graphNodeSlots.get(node.cn);
-    const center = {
-      x: 380 + slot.column * 520,
-      y: 230 + slot.row * 500,
-    };
-    positions.set(node.cn, center);
-    const attached = (node.node_details?.adapters || [])
-      .map((name) => actors.find((actor) => !actor.node && actor.cn === name))
+  const services = data.services || [];
+  const badgeWidthForService = (service) => Math.max(46, Math.min(132, Math.min(service.service_name.length, 22) * 5.6 + 16));
+  const serviceRingRadius = (actorName) => {
+    const registered = servicesByActor.get(actorName) || [];
+    if (!registered.length) return 0;
+    const circumference = registered.reduce((sum, service) => sum + badgeWidthForService(service) + 14, 0);
+    return Math.max(64, circumference / (2 * Math.PI));
+  };
+  const actorRadius = (actor) => actor.node ? 54 : visaServices.has(actor.cn) ? 39 : 32;
+  const attachedByNode = new Map(nodes.map((node) => [
+    node.cn,
+    (node.node_details?.adapters || [])
+      .map((name) => actorsByName.get(name))
       .filter(Boolean)
-      .sort((a, b) => a.cn.localeCompare(b.cn));
-    const usedAdapterSlots = new Set(attached.map((adapter) => state.graphAdapterSlots.get(adapter.cn)).filter((slot) => slot !== undefined));
-    attached.forEach((adapter) => {
-      if (!state.graphAdapterSlots.has(adapter.cn)) {
-        const order = [0, 4, 2, 6, 1, 3, 5, 7];
-        let slot = order.find((candidate) => !usedAdapterSlots.has(candidate));
-        if (slot === undefined) {
-          slot = 8;
-          while (usedAdapterSlots.has(slot)) slot++;
-        }
-        state.graphAdapterSlots.set(adapter.cn, slot);
-        usedAdapterSlots.add(slot);
-      }
-      const slotIndex = state.graphAdapterSlots.get(adapter.cn);
-      const adapterAngle = -Math.PI / 2 + (2 * Math.PI * (slotIndex % 8)) / 8;
-      const adapterRadius = 140 + Math.floor(slotIndex / 8) * 90;
-      positions.set(adapter.cn, {
-        x: center.x + Math.cos(adapterAngle) * adapterRadius,
-        y: center.y + Math.sin(adapterAngle) * adapterRadius,
-      });
-      adapterOrigins.set(adapter.cn, center);
+      .sort((a, b) => a.cn.localeCompare(b.cn)),
+  ]));
+  const clusterRadius = (node) => {
+    const attached = attachedByNode.get(node.cn) || [];
+    const extentSum = attached.reduce((sum, actor) => sum + actorRadius(actor) + serviceRingRadius(actor.cn) + 18, 0);
+    const ringRequirement = attached.length ? (2 * extentSum + attached.length * 20) / (2 * Math.PI) + 26 : 280;
+    return Math.max(340, ringRequirement);
+  };
+  const nodeColumns = Math.max(1, Math.ceil(Math.sqrt(nodes.length)));
+  const nodeRows = Math.ceil(nodes.length / nodeColumns);
+  const maximumClusterRadius = Math.max(340, ...nodes.map(clusterRadius));
+  const margin = maximumClusterRadius + 150;
+  const nodeSpacing = maximumClusterRadius * 2 + 180;
+  nodes.forEach((node, index) => {
+    const attached = attachedByNode.get(node.cn) || [];
+    const maxChildExtent = Math.max(0, ...attached.map((actor) => actorRadius(actor) + serviceRingRadius(actor.cn)));
+    const nodeCenter = {
+      x: margin + maxChildExtent + (index % nodeColumns) * nodeSpacing,
+      y: margin + maxChildExtent + Math.floor(index / nodeColumns) * nodeSpacing,
+    };
+    positions.set(node.cn, nodeCenter);
+    if (!attached.length) return;
+    const radius = clusterRadius(node);
+    const extents = attached.map((actor) => actorRadius(actor) + serviceRingRadius(actor.cn) + 18);
+    const gaps = attached.map((_, slot) => {
+      const next = (slot + 1) % attached.length;
+      return (extents[slot] + extents[next] + 20) / radius;
+    });
+    const spareAngle = Math.max(0, 2 * Math.PI - gaps.reduce((sum, gap) => sum + gap, 0)) / attached.length;
+    let angle = -Math.PI / 2;
+    attached.forEach((adapter, slot) => {
+      positions.set(adapter.cn, { x: nodeCenter.x + Math.cos(angle) * radius, y: nodeCenter.y + Math.sin(angle) * radius });
+      angle += gaps[slot] + spareAngle;
     });
   });
-
-  const unplaced = unconnectedHosts;
-  unplaced.forEach((adapter, index) => {
+  const unconnectedHosts = adapters.filter((host) => !positions.has(host.cn));
+  const unconnectedColumns = Math.max(1, Math.min(4, unconnectedHosts.length));
+  const hostRingRadius = Math.max(64, ...unconnectedHosts.map((host) => serviceRingRadius(host.cn) + actorRadius(host) + 18));
+  unconnectedHosts.forEach((host, index) => {
     const column = index % unconnectedColumns;
     const row = Math.floor(index / unconnectedColumns);
-    const center = { x: 160 + column * 260, y: 520 + row * 190 };
-    positions.set(adapter.cn, center);
-    adapterOrigins.set(adapter.cn, center);
+    positions.set(host.cn, {
+      x: margin + column * (hostRingRadius * 2 + 100),
+      y: margin + nodeRows * nodeSpacing + row * (hostRingRadius * 2 + 100),
+    });
   });
+  for (const service of services) {
+    const ownerPosition = positions.get(service.actor_cn);
+    const registered = servicesByActor.get(service.actor_cn) || [];
+    if (!ownerPosition || !registered.length) continue;
+    const index = registered.indexOf(service);
+    const angle = -Math.PI / 2 + (2 * Math.PI * index) / registered.length;
+    const radius = serviceRingRadius(service.actor_cn);
+    servicePositions.set(service, {
+      x: ownerPosition.x + Math.cos(angle) * radius,
+      y: ownerPosition.y + Math.sin(angle) * radius,
+    });
+  }
+  const width = Math.max(760, 2 * margin + 2 * maximumClusterRadius + (nodeColumns - 1) * nodeSpacing, margin * 2 + (unconnectedColumns - 1) * (hostRingRadius * 2 + 100));
+  const height = Math.max(460, 2 * margin + 2 * maximumClusterRadius + (nodeRows - 1) * nodeSpacing, margin + nodeRows * nodeSpacing + unconnectedHosts.length * (hostRingRadius * 2 + 100));
+  const query = byId("topology-search").value.trim().toLowerCase();
+  const matches = (actor) => !query || `${displayNames.get(actor.cn)} ${actor.cn} ${actor.zpr_addr || ""} ${visaServices.has(actor.cn) ? "visa service" : ""} ${(servicesByActor.get(actor.cn) || []).map((service) => `${service.service_name} ${service.service_kind}`).join(" ")}`.toLowerCase().includes(query);
 
   const edgeMarkup = edges.map((edge) => {
     const from = positions.get(edge.from.cn), to = positions.get(edge.to.cn);
     const docked = edge.kind === "dock";
     const up = docked || edge.state === "UP";
     const cls = docked ? "dock-link" : up ? "up" : "down";
-    const title = docked ? `${edge.to.cn} docked to ${edge.from.cn}` : `${edge.from.cn} to ${edge.to.cn}: ${edge.state}`;
+    const title = docked ? `${displayNames.get(edge.to.cn)} docked to ${displayNames.get(edge.from.cn)}` : `${displayNames.get(edge.from.cn)} to ${displayNames.get(edge.to.cn)}: ${edge.state}`;
     const filtered = query && !matches(edge.from) && !matches(edge.to) ? "filtered" : "";
     const key = `${edge.kind}|${edge.from.cn}|${edge.to.cn}`;
     return `<g class="graph-edge ${filtered}" data-inspect-link="${escapeHTML(key)}" tabindex="0" role="button" aria-label="Inspect ${escapeHTML(title)}"><title>${escapeHTML(title)}</title><line class="graph-link ${cls}" x1="${from.x}" y1="${from.y}" x2="${to.x}" y2="${to.y}"/><line class="graph-link-hit" x1="${from.x}" y1="${from.y}" x2="${to.x}" y2="${to.y}"/></g>`;
@@ -397,7 +415,8 @@ function renderTopology(data) {
 
   const vertexMarkup = actors.map((actor) => {
     const pos = positions.get(actor.cn);
-    const shortName = actor.cn.length > 20 ? `${actor.cn.slice(0, 18)}…` : actor.cn;
+    const displayName = displayNames.get(actor.cn) || actor.cn;
+    const shortName = displayName.length > 20 ? `${displayName.slice(0, 18)}…` : displayName;
     const isNode = actor.node;
     const isVisaService = !isNode && visaServices.has(actor.cn);
     const synced = isNode && actor.node_details?.in_sync;
@@ -405,54 +424,40 @@ function renderTopology(data) {
       ? `<rect class="graph-node ${synced ? "synced" : ""}" x="${pos.x - 46}" y="${pos.y - 25}" width="92" height="50" rx="7"/>`
       : isVisaService
         ? `<polygon class="graph-visa" points="${pos.x},${pos.y - 35} ${pos.x + 35},${pos.y} ${pos.x},${pos.y + 35} ${pos.x - 35},${pos.y}"/>`
-        : `<circle class="${actor.platform ? "graph-platform" : "graph-adapter"}" cx="${pos.x}" cy="${pos.y}" r="29"/>`;
-    return `<g class="graph-vertex ${query && !matches(actor) ? "filtered" : ""}" data-inspect-actor="${escapeHTML(actor.cn)}" tabindex="0" role="button" aria-label="Inspect ${escapeHTML(actor.cn)}"><title>${escapeHTML(actor.cn)} · ${escapeHTML(actor.zpr_addr || "address pending")}</title>${glyph}<text class="graph-label" x="${pos.x}" y="${pos.y + 3}">${escapeHTML(shortName)}</text></g>`;
+        : `<circle class="graph-adapter" cx="${pos.x}" cy="${pos.y}" r="29"/>`;
+    return `<g class="graph-vertex ${query && !matches(actor) ? "filtered" : ""}" data-inspect-actor="${escapeHTML(actor.cn)}" tabindex="0" role="button" aria-label="Inspect ${escapeHTML(displayName)}"><title>${escapeHTML(displayName)} · ${escapeHTML(actor.cn)} · ${escapeHTML(actor.zpr_addr || "address pending")}</title>${glyph}<text class="graph-label" x="${pos.x}" y="${pos.y + 3}">${escapeHTML(shortName)}</text></g>`;
   }).join("");
 
-  const serviceMarkup = actors.flatMap((adapter) => {
-    const services = servicesByActor.get(adapter.cn) || [];
-    if (!services.length) return [];
-    const pos = positions.get(adapter.cn);
-    const origin = adapterOrigins.get(adapter.cn) || pos;
-    const dx = pos.x - origin.x, dy = pos.y - origin.y;
-    const magnitude = Math.hypot(dx, dy);
-    const outwardX = magnitude ? dx / magnitude : 0;
-    const outwardY = magnitude ? dy / magnitude : -1;
-    const visible = services.slice(0, 2);
-    const entries = visible.map((service) => ({ service, overflow: false }));
-    if (services.length > visible.length) entries.push({ service: null, overflow: services.length - visible.length });
-    const badgeLayouts = entries.map(({ service, overflow }) => {
-      const label = overflow ? `+${overflow}` : `${service.service_name} · ${service.service_kind.startsWith("Trusted(") ? "TRUSTED" : service.service_kind}`;
-      const shortLabel = label.length > 19 ? `${label.slice(0, 18)}…` : label;
-      const badgeWidth = Math.max(46, Math.min(132, shortLabel.length * 5.6 + 16));
-      return { label, shortLabel, badgeWidth };
-    });
-    const maxBadgeWidth = Math.max(...badgeLayouts.map(({ badgeWidth }) => badgeWidth));
-    const stackHeight = badgeLayouts.length * 20 + (badgeLayouts.length - 1) * 8;
-    const glyphRadius = visaServices.has(adapter.cn) ? 35 : 29;
-    const radialOffset = glyphRadius + Math.abs(outwardX) * maxBadgeWidth / 2 + Math.abs(outwardY) * stackHeight / 2 + 7;
-    const stackCenterX = pos.x + outwardX * radialOffset;
-    const stackCenterY = pos.y + outwardY * radialOffset;
-    return entries.map(({ service, index, overflow }, entryIndex) => {
-      const { label, shortLabel, badgeWidth } = badgeLayouts[entryIndex];
-      const trustedType = service?.service_kind.match(/^Trusted\("([^\"]+)"\)$/)?.[1];
-      const trustedClass = trustedType ? ` trusted-${trustedType.toLowerCase().replace(/[^a-z0-9]+/g, "-")}` : "";
-      const stackOffset = (entryIndex - (entries.length - 1) / 2) * 28;
-      const x = stackCenterX;
-      const y = stackCenterY + stackOffset;
-      const filtered = query && service && !`${service.service_name} ${service.service_kind}`.toLowerCase().includes(query) ? "filtered" : "";
-      const inspect = overflow ? `data-inspect-actor="${escapeHTML(adapter.cn)}"` : `data-inspect-service="${escapeHTML(service.service_name)}"`;
-      const title = overflow
-        ? `${overflow} more services registered by ${adapter.cn}`
-        : `${service.service_name} · ${service.service_kind} · registered by ${adapter.cn}`;
-      const labelForScreenReader = overflow
-        ? `Inspect ${overflow} more services registered by ${adapter.cn}`
-        : `Inspect service ${service.service_name}, kind ${service.service_kind}, registered by ${adapter.cn}`;
-      return `<g class="graph-service-badge${trustedClass} ${filtered}" ${inspect} tabindex="0" role="button" aria-label="${escapeHTML(labelForScreenReader)}"><title>${escapeHTML(title)}</title><rect x="${x - badgeWidth / 2}" y="${y - 10}" width="${badgeWidth}" height="20" rx="4"/><text x="${x}" y="${y + 3}">${escapeHTML(shortLabel)}</text></g>`;
-    });
+  const serviceEdgeMarkup = [];
+  const serviceMarkup = services.map((service) => {
+    const owner = actorsByName.get(service.actor_cn);
+    const ownerPosition = positions.get(service.actor_cn);
+    const position = servicePositions.get(service);
+    if (!owner || !ownerPosition || !position) return "";
+    const label = service.service_name;
+    const shortLabel = label.length > 22 ? `${label.slice(0, 21)}…` : label;
+    const badgeWidth = Math.max(46, Math.min(132, shortLabel.length * 5.6 + 16));
+    const dx = position.x - ownerPosition.x;
+    const dy = position.y - ownerPosition.y;
+    const distance = Math.hypot(dx, dy) || 1;
+    const outwardX = dx / distance;
+    const outwardY = dy / distance;
+    const actorRadius = owner.node ? 49 : visaServices.has(owner.cn) ? 39 : 32;
+    const startX = ownerPosition.x + outwardX * actorRadius;
+    const startY = ownerPosition.y + outwardY * actorRadius;
+    const endX = position.x - outwardX * (badgeWidth / 2);
+    const endY = position.y - outwardY * 10;
+    const trustedType = service.service_kind.match(/^Trusted\("([^\"]+)"\)$/)?.[1];
+    const trustedClass = trustedType ? ` trusted-${trustedType.toLowerCase().replace(/[^a-z0-9]+/g, "-")}` : "";
+    const filtered = query && !`${service.service_name} ${service.service_kind}`.toLowerCase().includes(query) && !matches(owner) ? "filtered" : "";
+    serviceEdgeMarkup.push(`<g class="graph-service-edge ${filtered}" aria-hidden="true"><line class="graph-link service-link" x1="${startX}" y1="${startY}" x2="${endX}" y2="${endY}"/></g>`);
+    const providerName = displayNames.get(owner.cn) || owner.cn;
+    const title = `${service.service_name} registered by ${providerName} (${owner.cn})`;
+    const labelForScreenReader = `Inspect service ${service.service_name}, registered by ${providerName}`;
+    return `<g class="graph-service-badge${trustedClass} ${filtered}" data-inspect-service="${escapeHTML(service.service_name)}" tabindex="0" role="button" aria-label="${escapeHTML(labelForScreenReader)}"><title>${escapeHTML(title)}</title><rect x="${position.x - badgeWidth / 2}" y="${position.y - 10}" width="${badgeWidth}" height="20" rx="4"/><text x="${position.x}" y="${position.y + 3}">${escapeHTML(shortLabel)}</text></g>`;
   }).join("");
 
-  stage.innerHTML = `<div class="graph-controls" aria-label="Topology graph controls"><button class="graph-control" data-graph-action="in" type="button" aria-label="Zoom in" title="Zoom in">+</button><button class="graph-control" data-graph-action="out" type="button" aria-label="Zoom out" title="Zoom out">−</button><button class="graph-control graph-fit" data-graph-action="fit" type="button" aria-label="Fit graph" title="Fit graph">Fit</button><span class="graph-hint">DRAG TO PAN · SCROLL TO ZOOM</span></div><svg class="topology-graph" viewBox="0 0 ${width} ${height}" role="img" aria-label="Topology graph with ${nodes.length} nodes, ${adapters.length} adapters, ${platformActors.length} service hosts, ${dockEdges.length} dock connections, ${networkEdges.length} inter-node links, and ${(data.services || []).filter((service) => servicesByActor.has(service.actor_cn)).length} registered services"><g id="graph-world">${edgeMarkup}${vertexMarkup}${serviceMarkup}</g></svg>`;
+  stage.innerHTML = `<div class="graph-controls" aria-label="Topology graph controls"><button class="graph-control" data-graph-action="in" type="button" aria-label="Zoom in" title="Zoom in">+</button><button class="graph-control" data-graph-action="out" type="button" aria-label="Zoom out" title="Zoom out">−</button><button class="graph-control graph-fit" data-graph-action="fit" type="button" aria-label="Fit graph" title="Fit graph">Fit</button><span class="graph-hint">DRAG TO PAN · SCROLL TO ZOOM</span></div><svg class="topology-graph" viewBox="0 0 ${width} ${height}" role="img" aria-label="Topology graph with ${nodes.length} nodes, ${adapters.length} adapters, ${dockEdges.length} dock connections, ${networkEdges.length} inter-node links, and ${(data.services || []).filter((service) => servicesByActor.has(service.actor_cn)).length} registered services"><g id="graph-world">${edgeMarkup}${serviceEdgeMarkup.join("")}${vertexMarkup}${serviceMarkup}</g></svg>`;
 
   setupGraphControls(stage, width, height);
 }
@@ -461,7 +466,7 @@ function renderConnections(edges, unconnected) {
   byId("connection-count").textContent = `${formatNumber(edges.length)} Connections`;
   const rows = [
     ...edges.map((edge) => ({
-      from: edge.from.cn, to: edge.to.cn,
+      from: actorDisplayName(edge.from), to: actorDisplayName(edge.to),
       type: edge.kind === "dock" ? "DOCK" : "INTER-NODE",
       address: edge.kind === "dock"
         ? `${edge.from.zpr_addr || "Address not assigned"} ↔ ${edge.to.zpr_addr || "Address not assigned"}`
@@ -469,7 +474,7 @@ function renderConnections(edges, unconnected) {
       state: edge.kind === "dock" ? "DOCKED" : edge.state,
       key: `${edge.kind}|${edge.from.cn}|${edge.to.cn}`,
     })),
-    ...unconnected.map((actor) => ({ from: "—", to: actor.cn, type: "ADAPTER", address: actor.zpr_addr || "Address not assigned", state: "NO NODE", actor: actor.cn })),
+    ...unconnected.map((actor) => ({ from: "—", to: actorDisplayName(actor), type: "ADAPTER", address: actor.zpr_addr || "Address not assigned", state: "NO NODE", actor: actor.cn })),
   ];
   const columns = { from: (row) => row.from, to: (row) => row.to, type: (row) => row.type, address: (row) => row.address, state: (row) => row.state };
   const shown = visibleRows("connections", rows, columns);
@@ -484,9 +489,10 @@ function setupGraphControls(stage, width, height) {
   const world = stage.querySelector("#graph-world");
   if (!state.graphCamera) state.graphCamera = { x: 0, y: 0, scale: 1 };
   const camera = state.graphCamera;
+  const maxZoom = 8;
   const apply = () => world.setAttribute("transform", `translate(${camera.x} ${camera.y}) scale(${camera.scale})`);
   const zoomAt = (nextScale, x = width / 2, y = height / 2) => {
-    const scale = Math.max(0.55, Math.min(2.8, nextScale));
+    const scale = Math.max(0.55, Math.min(maxZoom, nextScale));
     const ratio = scale / camera.scale;
     camera.x = x - (x - camera.x) * ratio;
     camera.y = y - (y - camera.y) * ratio;
@@ -502,8 +508,8 @@ function setupGraphControls(stage, width, height) {
 
   stage.querySelectorAll("[data-graph-action]").forEach((button) => button.addEventListener("click", () => {
     const action = button.dataset.graphAction;
-    if (action === "in") zoomAt(camera.scale * 1.2);
-    if (action === "out") zoomAt(camera.scale / 1.2);
+    if (action === "in") zoomAt(camera.scale * 1.25);
+    if (action === "out") zoomAt(camera.scale / 1.25);
     if (action === "fit") {
       camera.x = 0;
       camera.y = 0;
@@ -550,14 +556,14 @@ function nodeState(actor, data) {
 
 function renderActors(data) {
   byId("actor-count").textContent = `${formatNumber(data.actors.length)} Actors`;
-  const columns = { cn: (actor) => actor.cn, role: (actor) => actor.node ? "node" : "adapter", address: (actor) => actor.zpr_addr, state: (actor) => nodeState(actor, data) };
+  const columns = { cn: (actor) => `${actorDisplayName(actor)} ${actor.cn}`, role: (actor) => actor.node ? "node" : "adapter", address: (actor) => actor.zpr_addr, state: (actor) => nodeState(actor, data) };
   const actors = visibleRows("actors", data.actors, columns);
   byId("actor-rows").innerHTML = actors.length ? actors.map((actor) => {
     const role = actor.node ? "node" : "adapter";
     const stateText = nodeState(actor, data);
     const up = stateText === "LINK UP" || stateText === "IN SYNC";
     const last = actor.node && actor.node_details ? ` · seen ${since(actor.node_details.last_contact)}` : "";
-    return `<tr class="selectable-row" data-inspect-actor="${escapeHTML(actor.cn)}" tabindex="0" role="button" aria-label="Inspect actor ${escapeHTML(actor.cn)}"><td>${escapeHTML(actor.cn)}</td><td><span class="role-chip ${role}">${role}</span></td><td class="mono">${escapeHTML(actor.zpr_addr || "—")}</td><td><span class="mini-state ${up ? "up" : ""}">${stateText}${last}</span></td></tr>`;
+    return `<tr class="selectable-row" data-inspect-actor="${escapeHTML(actor.cn)}" tabindex="0" role="button" aria-label="Inspect actor ${escapeHTML(actorDisplayName(actor))}"><td>${escapeHTML(actorDisplayName(actor))}${actor.machine_id ? `<small class="actor-common-name">${escapeHTML(actor.cn)}</small>` : ""}</td><td><span class="role-chip ${role}">${role}</span></td><td class="mono">${escapeHTML(actor.zpr_addr || "—")}</td><td><span class="mini-state ${up ? "up" : ""}">${stateText}${last}</span></td></tr>`;
   }).join("") : `<tr><td colspan="4" class="empty-row">No matching actors</td></tr>`;
 }
 
@@ -1323,14 +1329,17 @@ async function askPolicyAssistant(question) {
 function renderServices(data) {
   const services = data.services || [];
   byId("service-count").textContent = `${formatNumber(services.length)} Services`;
-  const columns = { name: (service) => service.service_name, kind: (service) => service.service_kind, actor: (service) => service.actor_cn, address: (service) => service.zpr_addr, endpoints: (service) => service.service_endpoints };
+  const providerFor = (service) => data.actors.find((actor) => actor.cn === service.actor_cn);
+  const columns = { name: (service) => service.service_name, kind: (service) => service.service_kind, actor: (service) => `${actorDisplayName(providerFor(service))} ${service.actor_cn || ""}`, address: (service) => service.zpr_addr, endpoints: (service) => service.service_endpoints };
   const shown = visibleRows("services", services, columns);
   byId("service-rows").innerHTML = shown.length ? shown.map((service) => {
     const trustedType = (service.service_kind || "").match(/^Trusted\("([^"]+)"\)$/)?.[1];
     const trustedClass = trustedType ? ` trusted-${trustedType.toLowerCase().replace(/[^a-z0-9]+/g, "-")}` : "";
     const kind = service.service_kind || "Not in current policy";
     const kindLabel = trustedType ? `TRUSTED ${trustedType.toUpperCase()}` : kind;
-    return `<tr class="selectable-row" data-inspect-service="${escapeHTML(service.service_name)}" tabindex="0" role="button" aria-label="Inspect service ${escapeHTML(service.service_name)}"><td>${escapeHTML(service.service_name || "—")}</td><td><span class="role-chip${trustedClass}">${escapeHTML(kindLabel)}</span></td><td>${escapeHTML(service.actor_cn || "—")}</td><td class="mono">${escapeHTML(service.zpr_addr || "—")}</td><td>${escapeHTML(service.service_endpoints || "—")}</td></tr>`;
+    const provider = providerFor(service);
+    const providerLabel = actorDisplayName(provider || { cn: service.actor_cn });
+    return `<tr class="selectable-row" data-inspect-service="${escapeHTML(service.service_name)}" tabindex="0" role="button" aria-label="Inspect service ${escapeHTML(service.service_name)}"><td>${escapeHTML(service.service_name || "—")}</td><td><span class="role-chip${trustedClass}">${escapeHTML(kindLabel)}</span></td><td>${escapeHTML(providerLabel)}${provider?.machine_id ? `<small class="actor-common-name">${escapeHTML(service.actor_cn)}</small>` : ""}</td><td class="mono">${escapeHTML(service.zpr_addr || "—")}</td><td>${escapeHTML(service.service_endpoints || "—")}</td></tr>`;
   }).join("") : `<tr><td colspan="5" class="empty-row">${services.length ? "No matching services" : "No network services returned"}</td></tr>`;
 }
 

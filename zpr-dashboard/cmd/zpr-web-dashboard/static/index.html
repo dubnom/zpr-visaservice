@@ -5,7 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <meta name="theme-color" content="#17211e">
     <title>ZPR Control Room</title>
-    <link rel="stylesheet" href="/app.css">
+    <link rel="stylesheet" href="/app.css?v=2">
   </head>
   <body>
     <div class="app-shell">
@@ -86,7 +86,7 @@
         <section class="page-view" id="page-map" data-page="map" aria-label="Map">
           <section class="section-block topology-page">
           <div class="section-heading">
-            <div class="legend"><input id="topology-search" class="topology-search" type="search" placeholder="Highlight" aria-label="Highlight topology graph"><span><i class="legend-node"></i>NODE</span><span><i class="legend-visa"></i>VISA SERVICE</span><span><i class="legend-adapter"></i>ADAPTER</span><span><i class="legend-platform"></i>SERVICE HOST</span><span><i class="legend-service"></i>SERVICE</span><span><i class="legend-trusted-file"></i>TRUSTED FILE</span><span><i class="legend-trusted-rest"></i>TRUSTED REST/1</span><span><i class="legend-dock"></i>DOCKED</span><span><i class="legend-up"></i>INTER-NODE</span></div>
+            <div class="legend"><input id="topology-search" class="topology-search" type="search" placeholder="Highlight" aria-label="Highlight topology graph"><span><i class="legend-node"></i>NODE</span><span><i class="legend-visa"></i>VISA SERVICE</span><span><i class="legend-adapter"></i>ADAPTER</span><span><i class="legend-service"></i>SERVICE</span><span><i class="legend-service-link"></i>REGISTRATION</span><span><i class="legend-trusted-file"></i>TRUSTED FILE</span><span><i class="legend-trusted-rest"></i>TRUSTED REST/1</span><span><i class="legend-dock"></i>DOCKED</span><span><i class="legend-up"></i>INTER-NODE</span></div>
           </div>
           <div class="topology-layout topology-only">
             <div class="topology-stage" id="topology-stage">
@@ -115,7 +115,7 @@
         <section class="page-view" id="page-services" data-page="services" aria-label="Services">
           <section class="section-block">
             <div class="table-tools"><div class="filter-group"><input id="services-filter" type="search" placeholder="Filter" aria-label="Filter services"><span class="count-label" id="service-count">—</span></div></div>
-            <div class="table-scroll"><table data-sort-page="services"><thead><tr><th data-sort-key="name">SERVICE</th><th data-sort-key="kind">TYPE</th><th data-sort-key="actor">ACTOR</th><th data-sort-key="address">ZPR ADDRESS</th><th data-sort-key="endpoints">ENDPOINTS</th></tr></thead><tbody id="service-rows"><tr><td colspan="5" class="empty-row">Waiting for service data…</td></tr></tbody></table></div>
+            <div class="table-scroll"><table data-sort-page="services"><thead><tr><th data-sort-key="name">SERVICE</th><th data-sort-key="kind">TYPE</th><th data-sort-key="actor">PROVIDER ACTOR</th><th data-sort-key="address">ZPR ADDRESS</th><th data-sort-key="endpoints">ENDPOINTS</th></tr></thead><tbody id="service-rows"><tr><td colspan="5" class="empty-row">Waiting for service data…</td></tr></tbody></table></div>
           </section>
         </section>
 
@@ -223,6 +223,6 @@
         <footer class="page-footer"><span>ZPR CONTROL ROOM <b>·</b> LIVE MONITOR / POLICY RECORDS</span><span id="footer-poll">Auto-refresh every 5 seconds</span></footer>
       </main>
     </div>
-    <script src="/app.js" defer></script>
+    <script src="/app.js?v=7" defer></script>
   </body>
 </html>

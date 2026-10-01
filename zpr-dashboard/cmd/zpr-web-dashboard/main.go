@@ -69,10 +69,30 @@ type actorEntry struct {
 type actor struct {
 	CN          string      `json:"cn"`
 	Node        bool        `json:"node"`
-	Platform    bool        `json:"platform,omitempty"`
 	ZPRAddress  string      `json:"zpr_addr"`
+	MachineID   string      `json:"machine_id,omitempty"`
+	AdapterKind string      `json:"adapter_kind,omitempty"`
 	AuthExpires *int64      `json:"auth_exp"`
 	NodeDetails *nodeDetail `json:"node_details"`
+}
+
+type simulatorAdapterAssignment struct {
+	MachineID string
+	Kind      string
+}
+
+type simulatorAssignmentResponse struct {
+	Manifest struct {
+		Components []struct {
+			Name  string `json:"name"`
+			Agent string `json:"agent"`
+			Kind  string `json:"kind"`
+		} `json:"components"`
+	} `json:"manifest"`
+	Sessions map[string]struct {
+		Authenticated bool     `json:"authenticated"`
+		Workloads     []string `json:"workloads"`
+	} `json:"sessions"`
 }
 
 type nodeDetail struct {
@@ -197,6 +217,17 @@ type statsResponse struct {
 func main() {
 	mode := flag.String("mode", envOr("ZPR_WEB_MODE", "control-room"), "Run mode: control-room, simulator, control-service, or policy-service")
 	listen := flag.String("listen", envOr("ZPR_WEB_LISTEN", defaultListen), "HTTP listen address")
+	machineID := flag.String("machine-id", "", "Machine identity for machine-controller mode")
+	controlURL := flag.String("control-url", "", "Simulator mTLS heartbeat URL")
+	controlCA := flag.String("control-ca", "", "Simulator control CA certificate")
+	clientCert := flag.String("client-cert", "", "Machine controller client certificate")
+	clientKey := flag.String("client-key", "", "Machine controller client key")
+	zprPH := flag.String("zpr-ph", "", "PH adapter executable for machine controller ZPR link")
+	zprBootstrapKey := flag.String("zpr-bootstrap-key", "", "Machine controller ZPR bootstrap private key")
+	zprNodeAddress := flag.String("zpr-node-addr", "", "ZPR node substrate address")
+	zprAddress := flag.String("zpr-addr", "", "Machine controller ZPR address")
+	proxyListen := flag.String("proxy-listen", "", "Listen address for the ZPR machine-control TCP proxy")
+	proxyUpstream := flag.String("proxy-upstream", "", "Upstream machine-control TLS listener address")
 	flag.Parse()
 	switch *mode {
 	case "policy-service":
@@ -213,6 +244,14 @@ func main() {
 		}
 	case "simulator":
 		if err := runSimulator(*listen); err != nil {
+			log.Fatal(err)
+		}
+	case "machine-controller":
+		if err := runMachineController(*machineID, *controlURL, *controlCA, *clientCert, *clientKey, *zprPH, *zprBootstrapKey, *zprNodeAddress, *zprAddress); err != nil {
+			log.Fatal(err)
+		}
+	case "machine-control-proxy":
+		if err := runMachineControlProxy(*proxyListen, *proxyUpstream); err != nil {
 			log.Fatal(err)
 		}
 	default:
@@ -457,6 +496,7 @@ func (a *application) fetchSnapshot(ctx context.Context) snapshot {
 		out.Trusted = trustedSourcesFrom(out.Services)
 	}
 	mergePlatformServices(&out)
+	enrichActorsWithSimulatorAssignments(out.Actors, fetchSimulatorAdapterAssignments(ctx))
 	if successfulEndpoints == 0 {
 		out.APIStatus = "disconnected"
 	} else if len(out.Errors) > 0 {
@@ -466,14 +506,72 @@ func (a *application) fetchSnapshot(ctx context.Context) snapshot {
 	return out
 }
 
+func fetchSimulatorAdapterAssignments(ctx context.Context) map[string]simulatorAdapterAssignment {
+	endpoint := strings.TrimSpace(os.Getenv("SIMULATOR_STATUS_URL"))
+	if endpoint == "" {
+		return nil
+	}
+	requestCtx, cancel := context.WithTimeout(ctx, time.Second)
+	defer cancel()
+	request, err := http.NewRequestWithContext(requestCtx, http.MethodGet, endpoint, nil)
+	if err != nil {
+		return nil
+	}
+	response, err := (&http.Client{Timeout: time.Second}).Do(request)
+	if err != nil {
+		return nil
+	}
+	defer response.Body.Close()
+	if response.StatusCode != http.StatusOK {
+		return nil
+	}
+	var data simulatorAssignmentResponse
+	if err := json.NewDecoder(io.LimitReader(response.Body, 1<<20)).Decode(&data); err != nil {
+		return nil
+	}
+	components := make(map[string]struct {
+		ActorName string
+		Kind      string
+	}, len(data.Manifest.Components))
+	for _, component := range data.Manifest.Components {
+		actorName := component.Agent
+		if actorName == "" {
+			actorName = component.Name
+		}
+		components[component.Name] = struct {
+			ActorName string
+			Kind      string
+		}{ActorName: actorName, Kind: component.Kind}
+	}
+	assignments := make(map[string]simulatorAdapterAssignment)
+	for machineID, session := range data.Sessions {
+		if !session.Authenticated {
+			continue
+		}
+		for _, workload := range session.Workloads {
+			component, exists := components[workload]
+			if !exists {
+				continue
+			}
+			assignments[component.ActorName] = simulatorAdapterAssignment{MachineID: machineID, Kind: component.Kind}
+		}
+	}
+	return assignments
+}
+
+func enrichActorsWithSimulatorAssignments(actors []actor, assignments map[string]simulatorAdapterAssignment) {
+	for index := range actors {
+		if assignment, exists := assignments[actors[index].CN]; exists {
+			actors[index].MachineID = assignment.MachineID
+			actors[index].AdapterKind = assignment.Kind
+		}
+	}
+}
+
 func mergePlatformServices(out *snapshot) {
 	knownServices := make(map[string]struct{}, len(out.Services))
-	knownActors := make(map[string]struct{}, len(out.Actors))
 	for _, item := range out.Services {
 		knownServices[item.Name] = struct{}{}
-	}
-	for _, item := range out.Actors {
-		knownActors[item.CN] = struct{}{}
 	}
 	for _, item := range platformServices() {
 		if item.Name == "" || item.ActorCN == "" {
@@ -484,10 +582,6 @@ func mergePlatformServices(out *snapshot) {
 		}
 		out.Services = append(out.Services, item)
 		knownServices[item.Name] = struct{}{}
-		if _, exists := knownActors[item.ActorCN]; !exists {
-			out.Actors = append(out.Actors, actor{CN: item.ActorCN, Platform: true, ZPRAddress: item.Address})
-			knownActors[item.ActorCN] = struct{}{}
-		}
 	}
 	sort.Slice(out.Services, func(i, j int) bool { return out.Services[i].Name < out.Services[j].Name })
 	sort.Slice(out.Actors, func(i, j int) bool { return out.Actors[i].CN < out.Actors[j].CN })

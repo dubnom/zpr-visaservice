@@ -37,16 +37,63 @@ make run                                # Start admin panel
 
 The same lifecycle starts a separate simulation operator site at
 `http://127.0.0.1:8788`. It is intentionally simulation-only and provides
-manifest-backed agent/service inventory, start/stop/restart controls, Docker
-agent controls, fake client/service controls, and recent managed-service logs.
+manifest-backed agent/service inventory, a fixed fleet of 20 machine profiles,
+workload placement, and recent managed-service logs. The fleet has 12 laptops
+and 8 desktops; machine type, model, location, owner, and secure posture are
+seeded into the local demo LDAP directory when the disposable Linux rig starts.
 Its Activity page shows recent visas and denials from Control Room. Control
 Room remains the read-only network and policy monitor at
 `http://127.0.0.1:8787`.
+
+The simulator defines 20 Docker machine profiles but initially creates only
+`zpr-machine-01`, from the `debian:trixie` image. Starting another machine in
+the Agents page creates it on demand. Each running container has its own
+Linux/ARM64 machine controller and PH adapter with a unique bootstrapped ZPR
+identity. Machine adapters use dynamic `fd5a:5052::/32` addresses; the
+simulator-control provider uses a reserved `fd5a:5052:adda:1::/64` address so
+it is reachable through the PH-advertised overlay route.
+Controllers reach the TCP `SimulatorControlService`
+(`[fd5a:5052:adda:1:ffff:ffff:ffff:fffe]:8792`) over
+ZPR. The service is published by the dedicated `simulator-control` actor and
+only the 20 machine identities are authorized to access it. The service
+gateway forwards the mutually authenticated TLS protocol to the simulator's
+local listener; the ZPR adapter link and per-machine TLS client certificate
+are both required.
+
+Machine Login/Logout writes/removes the selected simulated user in that
+machine container at `/run/zpr-simulator/user`. It does not start or stop
+workloads. User choices come from the machine owners in the demo manifest;
+sessions are simulator state and reset when the stack restarts. This is not a
+password check or ZPR user authentication: controller mTLS is a separate
+machine identity, and the existing BAS auth-code flow authenticates an adapter
+key rather than a human.
+
+The Agents page starts with no clients or services assigned. While logged in,
+an operator can select any configured workload for a machine and then
+individually start/stop it. Selections are simulator control state and a given
+workload can be selected on only one logged-in machine at a time. Login/logout
+and workload start/stop commands are queued by the simulator and executed by
+the machine controller over its ZPR service connection; PH workload adapters
+run inside the selected machine container. The selected workload remains
+stopped until its individual Start control is used. Docker container Start/Stop
+remains a local host operation because an offline container cannot receive a
+ZPR command. Stopping a machine stops its workloads and clears its
+simulated login session; starting it restores its route but does not log a user
+in or restart workloads. Controller connectivity is shown separately from
+Docker state.
+
+For local LDAP schema and seed changes, the runtime consumes
+`../../.local-runtime/linux-integration/pregen/zpr-machine.schema` and
+`demo-machines.ldif`; the 20 profile definitions are in
+`../../.local-runtime/simulation-environment.json`.
 ## Control Room and Policy Service
 
 The browser Control Room lives in `cmd/zpr-web-dashboard` and calls only
 same-origin `/api/*` endpoints. The Control-Room process proxies those requests
 to Control-Service using mutual TLS and holds no upstream API credentials.
+Its topology draws only actors returned by the live admin API; service
+registrations remain service badges attached to their provider actor, and a
+missing provider does not create a synthetic adapter vertex.
 Control-Service aggregates Visa Service Admin data and proxies Policy
 Repository requests to a separate Policy-Service process using mutual TLS.
 The Policy-Service owns its SQLite journal and ZPLC configuration. It stores

@@ -1,26 +1,50 @@
 #!/bin/sh
 set -eu
 
+action=${1:-}
 agent=${2:-}
-container=${SIMULATION_CONTAINER:-zpr-local-linux-node}
+machine=${3:-}
+rig=${SIMULATION_CONTAINER:-zpr-local-linux-node}
+runtime=/run/zpr-workloads
+assets=/opt/zpr-workloads
 case "$agent" in
-  adapter1) namespace=zpr-a; address=10.0.1.2; node=10.0.1.1; zpr=fd00:1:1::1; key=actor1-rsa.key; engine='--io-engine io_uring' ;;
-  adapter2) namespace=zpr-b; address=10.0.2.2; node=10.0.2.1; zpr=fd00:1:2::1; key=actor2-rsa.key; engine='--io-engine posix_unbatched' ;;
-  adapter3) namespace=zpr-c; address=10.0.3.2; node=10.0.3.129; zpr=fd00:1:3::1; key=actor3-rsa.key; engine='' ;;
-  finance-client) namespace=zpr-client-a; address=10.0.4.2; node=10.0.4.1; zpr=fd00:1:4::1; key=client-finance-rsa.key; engine='' ;;
-  operations-client) namespace=zpr-client-b; address=10.0.5.2; node=10.0.5.1; zpr=fd00:1:5::1; key=client-operations-rsa.key; engine='' ;;
-  telemetry-client) namespace=zpr-client-c; address=10.0.6.2; node=10.0.6.1; zpr=fd00:1:6::1; key=client-telemetry-rsa.key; engine='' ;;
-  echo-service) namespace=zpr-service-a; address=10.0.7.2; node=10.0.7.1; zpr=fd00:1:7::1; key=service-echo-rsa.key; engine='' ;;
-  metrics-service) namespace=zpr-service-b; address=10.0.8.2; node=10.0.8.1; zpr=fd00:1:8::1; key=service-metrics-rsa.key; engine='' ;;
-  *) echo "unknown simulation agent: $agent" >&2; exit 2 ;;
+  finance-client) zpr=fd00:1:4::1; node=10.0.0.1; key=client-finance-rsa.key; tun=tun0; services='' ;;
+  operations-client) zpr=fd00:1:5::1; node=10.0.0.1; key=client-operations-rsa.key; tun=tun1; services='' ;;
+  telemetry-client) zpr=fd00:1:6::1; node=10.0.0.1; key=client-telemetry-rsa.key; tun=tun2; services='' ;;
+  echo-service) zpr=fd00:1:7::1; node=10.0.0.1; key=service-echo-rsa.key; tun=tun3; services=EchoService ;;
+  metrics-service) zpr=fd00:1:8::1; node=10.0.0.1; key=service-metrics-rsa.key; tun=tun4; services=MetricsService ;;
+  *) echo "unknown simulated workload: $agent" >&2; exit 2 ;;
+esac
+case "$machine" in
+  machine-[0-9][0-9]) container="zpr-$machine" ;;
+  *) echo "valid machine id required" >&2; exit 2 ;;
 esac
 
-case "$1" in
+socket="$runtime/$agent.sock"
+case "$action" in
   stop)
-    docker exec "$container" sh -lc "pkill -TERM -f 'ph adapter.*--name $agent' || true"
+    link_id=$(docker exec "$container" "$assets/ph-cli" -p "$socket" link show 2>/dev/null | awk '/^[[:space:]]*[0-9]+:/ { sub(":", "", $1); print $1; exit }' || true)
+    if [ -n "$link_id" ]; then
+      docker exec "$container" "$assets/ph-cli" -p "$socket" link stop "$link_id" 2>/dev/null || true
+    fi
+    docker exec "$container" pkill -TERM -f "[p]h adapter.*--name $agent" 2>/dev/null || true
+    docker exec "$container" rm -f "$socket" "$runtime/${agent}_cap.sock"
     ;;
   start)
-    docker exec "$container" sh -lc "sudo -E ip netns exec $namespace sudo -E -u root /tmp/zpr-core-target/debug/ph adapter --logging all=INFO --control-path $agent.sock --capture-path ${agent}_cap.sock --self-addr $address --ca-file ca.crt --bootstrap-key $key --name $agent --km-impl noise --tun-if tun0 $engine --node-addr $node --zpr-addr $zpr >/tmp/$agent.log 2>&1 &"
+    machine_ip=$(docker inspect -f '{{range .NetworkSettings.Networks}}{{.IPAddress}}{{end}}' "$container")
+    if [ -z "$machine_ip" ] || [ -z "$node" ]; then
+      echo "machine or node substrate address is unavailable" >&2
+      exit 1
+    fi
+    link_summary=$(docker exec "$container" "$assets/ph-cli" -p "$socket" link show 2>/dev/null || true)
+    case "$link_summary" in
+      *"(Active)"*) echo "$agent is already connected on $machine"; exit 0 ;;
+    esac
+    docker exec "$container" pkill -TERM -f "[p]h adapter.*--name $agent" 2>/dev/null || true
+    docker exec "$container" rm -f "$socket" "$runtime/${agent}_cap.sock"
+    docker exec -d -e "ZPR_ADAPTER_SERVICES=$services" "$container" sh -c \
+      'exec "$1" adapter --logging all=INFO --control-path "$2" --capture-path "$3" --self-addr "$4" --ca-file "$5" --bootstrap-key "$6" --name "$7" --km-impl noise --tun-if "$8" --node-addr "$9" --zpr-addr "${10}" >>"/tmp/$7.log" 2>&1' \
+      machine-agent "$assets/ph" "$socket" "$runtime/${agent}_cap.sock" "$machine_ip" "$assets/ca.crt" "$assets/$key" "$agent" "$tun" "$node:5000" "$zpr"
     ;;
-  *) echo "usage: $0 {start|stop} {adapter1|adapter2|adapter3}" >&2; exit 2 ;;
+  *) echo "usage: $0 {start|stop} {finance-client|operations-client|telemetry-client|echo-service|metrics-service} machine-NN" >&2; exit 2 ;;
 esac

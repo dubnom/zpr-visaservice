@@ -1,6 +1,12 @@
 package main
 
-import "testing"
+import (
+	"context"
+	"fmt"
+	"strings"
+	"testing"
+	"time"
+)
 
 func TestSimulatorComponentStatesUsesLiveAgentNames(t *testing.T) {
 	manifest := simulatorManifest{Components: []simulatorComponent{
@@ -19,5 +25,182 @@ func TestSimulatorComponentStatesUsesLiveAgentNames(t *testing.T) {
 	}
 	if states["offline"] != "stopped" {
 		t.Errorf("offline state = %q, want stopped", states["offline"])
+	}
+}
+
+func TestSimulatorRuntimeComponentStatesUsesLinkStatusInsteadOfStaleActor(t *testing.T) {
+	manifest := simulatorManifest{Components: []simulatorComponent{
+		{Name: "client", Kind: "client", Agent: "client-agent"},
+		{Name: "service", Kind: "service", Agent: "service-agent"},
+	}}
+	actors := []actor{{CN: "client-agent"}, {CN: "service-agent"}}
+	states := simulatorRuntimeComponentStates(manifest, actors, map[string]string{
+		"client-agent":  "stopped",
+		"service-agent": "starting",
+	})
+	if states["client"] != "stopped" || states["service"] != "starting" {
+		t.Fatalf("unexpected live link states: %#v", states)
+	}
+}
+
+func TestValidateSimulatorManifestRequiresTwentyMachinesButNoWorkloadPlacement(t *testing.T) {
+	manifest := simulatorManifest{Machines: make([]simulatorMachine, 20)}
+	for index := range manifest.Machines {
+		manifest.Machines[index] = simulatorMachine{ID: fmt.Sprintf("machine-%02d", index+1), Type: "laptop", Model: "Test", Location: "Test"}
+	}
+	manifest.Components = []simulatorComponent{{Name: "client", Kind: "client"}}
+	if err := validateSimulatorManifest(manifest); err != nil {
+		t.Fatalf("valid machine manifest: %v", err)
+	}
+	manifest.Machines = manifest.Machines[:19]
+	if err := validateSimulatorManifest(manifest); err == nil {
+		t.Fatal("expected a non-20 machine inventory to fail")
+	}
+}
+
+func TestSimulatorMachineLifecycleCommand(t *testing.T) {
+	manifest := simulatorManifest{Machines: make([]simulatorMachine, 20)}
+	for index := range manifest.Machines {
+		manifest.Machines[index] = simulatorMachine{ID: fmt.Sprintf("machine-%02d", index+1), Type: "laptop", Model: "Test", Location: "Test"}
+	}
+	command, err := simulatorMachineLifecycleCommand(manifest, "machine-06", "stop")
+	if err != nil {
+		t.Fatalf("valid machine stop command: %v", err)
+	}
+	if got := strings.Join(command.Args, " "); got != "docker stop zpr-machine-06" {
+		t.Fatalf("command args = %q, want %q", got, "docker stop zpr-machine-06")
+	}
+	if _, err := simulatorMachineLifecycleCommand(manifest, "machine-21", "start"); err == nil {
+		t.Fatal("unknown machine should be rejected")
+	}
+	if _, err := simulatorMachineLifecycleCommand(manifest, "machine-06", "restart"); err == nil {
+		t.Fatal("unsupported lifecycle action should be rejected")
+	}
+	routeCommand, err := simulatorMachineSubstrateRouteCommand(manifest, "machine-06", "172.17.0.2")
+	if err != nil {
+		t.Fatalf("valid substrate route command: %v", err)
+	}
+	if got := strings.Join(routeCommand.Args, " "); got != "docker exec zpr-machine-06 ip route replace 10.0.0.0/8 via 172.17.0.2" {
+		t.Fatalf("route command args = %q", got)
+	}
+	if _, err := simulatorMachineSubstrateRouteCommand(manifest, "machine-06", "invalid"); err == nil {
+		t.Fatal("invalid rig IP should be rejected")
+	}
+}
+
+func TestSimulatorMachineContainerStatesPreservesPartialFleet(t *testing.T) {
+	states := parseSimulatorMachineContainerStates([]byte("zpr-machine-01=running\nzpr-machine-03=exited\n"), []string{"machine-01", "machine-02", "machine-03"})
+	if states["machine-01"] != "running" || states["machine-02"] != "missing" || states["machine-03"] != "exited" {
+		t.Fatalf("unexpected partial fleet states: %#v", states)
+	}
+}
+
+func TestSimulatorMachineContainerStatesUsesSharedDockerListing(t *testing.T) {
+	dockerStates := map[string]string{
+		"zpr-local-linux-node": "running",
+		"zpr-machine-01":       "running",
+		"zpr-machine-02":       "exited",
+	}
+	states := simulatorMachineContainerStatesFromDocker([]string{"machine-01", "machine-02", "machine-03"}, dockerStates)
+	if states["machine-01"] != "running" || states["machine-02"] != "exited" || states["machine-03"] != "missing" {
+		t.Fatalf("unexpected shared Docker state projection: %#v", states)
+	}
+}
+
+func TestSimulatorStackRuntimeStatusKeepsMissingMachinesIndependent(t *testing.T) {
+	status := simulatorStackRuntimeStatus([]string{"machine-01", "machine-02"}, map[string]string{
+		"machine-01": "running",
+		"machine-02": "missing",
+	})
+	if !strings.Contains(status, "machine-01: container running") || !strings.Contains(status, "machine-02: container missing") {
+		t.Fatalf("partial machine fleet state not represented independently: %s", status)
+	}
+}
+
+func TestMachineCommandQueueCorrelatesPerMachineResults(t *testing.T) {
+	registry := machineCommandRegistry{queues: make(map[string]chan machineControlCommand), pending: make(map[string]chan machineControlCommandResult)}
+	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+	defer cancel()
+	completed := make(chan error, 1)
+	go func() {
+		_, err := registry.enqueueAndWait(ctx, "machine-06", machineControlCommand{Action: "login", User: "zoe.carter"})
+		completed <- err
+	}()
+	command, received := registry.next(ctx, "machine-06")
+	if !received || command.Action != "login" || command.User != "zoe.carter" {
+		t.Fatalf("unexpected dispatched machine command: %+v, received=%t", command, received)
+	}
+	if registry.complete("machine-07", machineControlCommandResult{ID: command.ID}) {
+		t.Fatal("a different machine must not complete this command")
+	}
+	if !registry.complete("machine-06", machineControlCommandResult{ID: command.ID, Output: "logged in"}) {
+		t.Fatal("expected the owning machine to complete its command")
+	}
+	if err := <-completed; err != nil {
+		t.Fatalf("command completion returned error: %v", err)
+	}
+}
+
+func TestMachineWorkloadZPRConfiguration(t *testing.T) {
+	service, ok := machineWorkload("echo-service")
+	if !ok || service.address != "fd00:1:7::1" || service.key != "service-echo-rsa.key" || service.services != "EchoService" {
+		t.Fatalf("unexpected service workload config: %+v, found=%t", service, ok)
+	}
+	if _, ok := machineWorkload("not-a-workload"); ok {
+		t.Fatal("unknown workload must not be dispatchable")
+	}
+}
+
+func TestMachineControllerRegistryExpiresStaleHeartbeats(t *testing.T) {
+	now := time.Date(2026, 9, 30, 12, 0, 0, 0, time.UTC)
+	registry := machineControllerRegistry{lastSeen: map[string]time.Time{}}
+	registry.record("machine-01", now.Add(-machineHeartbeatInterval))
+	registry.record("machine-02", now.Add(-machineHeartbeatTimeout-time.Second))
+
+	statuses := registry.snapshot([]string{"machine-01", "machine-02", "machine-03"}, now)
+	if !statuses["machine-01"].Connected || statuses["machine-02"].Connected || statuses["machine-03"].Connected {
+		t.Fatalf("unexpected controller statuses: %#v", statuses)
+	}
+}
+
+func TestSimulatorManifestHasUserRejectsSharedPoolAndUnknownUsers(t *testing.T) {
+	manifest := simulatorManifest{Machines: []simulatorMachine{
+		{ID: "machine-01", Owner: "elena.park"},
+		{ID: "machine-02", Owner: "it-pool"},
+	}}
+	if !simulatorManifestHasUser(manifest, "elena.park") {
+		t.Fatal("expected listed machine owner to be a simulated user")
+	}
+	if simulatorManifestHasUser(manifest, "it-pool") || simulatorManifestHasUser(manifest, "unknown") {
+		t.Fatal("shared-pool and unknown identities must not authenticate")
+	}
+}
+
+func TestSimulatorSessionsAreIndependentPerMachine(t *testing.T) {
+	sessions := simulatorSessionRegistry{byMachine: make(map[string]simulatorUserSession)}
+	sessions.set("machine-01", simulatorUserSession{User: "elena.park", Authenticated: true, Authentication: "simulated-directory"})
+	first := sessions.snapshot([]string{"machine-01", "machine-02"})
+	if !first["machine-01"].Authenticated || first["machine-02"].Authenticated {
+		t.Fatalf("unexpected machine sessions: %#v", first)
+	}
+	sessions.clear("machine-01")
+	if sessions.snapshot([]string{"machine-01"})["machine-01"].Authenticated {
+		t.Fatal("logout should clear only the selected machine session")
+	}
+}
+
+func TestValidateMachineWorkloadSelectionAllowsAnyConfiguredClientOrService(t *testing.T) {
+	manifest := simulatorManifest{Components: []simulatorComponent{
+		{Name: "client-a", Kind: "client", Machine: "machine-01"},
+		{Name: "service-a", Kind: "service", Machine: "machine-02"},
+	}}
+	if err := validateMachineWorkloadSelection(manifest, []string{"client-a", "service-a"}); err != nil {
+		t.Fatalf("selection spanning workload types/machines should be allowed: %v", err)
+	}
+	if err := validateMachineWorkloadSelection(manifest, []string{"unknown"}); err == nil {
+		t.Fatal("unknown workload should be rejected")
+	}
+	if err := validateMachineWorkloadSelection(manifest, []string{"client-a", "client-a"}); err == nil {
+		t.Fatal("duplicate workload should be rejected")
 	}
 }

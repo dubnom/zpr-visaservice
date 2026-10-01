@@ -119,7 +119,7 @@ func TestTrustedSourcesIgnoresApplicationServices(t *testing.T) {
 	}
 }
 
-func TestMergePlatformServicesAddsActorsAndSkipsDuplicates(t *testing.T) {
+func TestMergePlatformServicesDoesNotInventActors(t *testing.T) {
 	t.Setenv("ZPR_PLATFORM_SERVICES", `[
 		{"service_name":"/zpr/policy","actor_cn":"policy-service","service_kind":"Policy"},
 		{"service_name":"directory","actor_cn":"platform-directory","service_kind":"Directory"},
@@ -133,7 +133,24 @@ func TestMergePlatformServicesAddsActorsAndSkipsDuplicates(t *testing.T) {
 	if len(out.Services) != 2 || out.Services[0].Name != "/zpr/policy" {
 		t.Fatalf("services = %+v; want live service plus policy", out.Services)
 	}
-	if len(out.Actors) != 2 || out.Actors[1].CN != "policy-service" {
-		t.Fatalf("actors = %+v; want node plus policy-service", out.Actors)
+	if len(out.Actors) != 1 || out.Actors[0].CN != "node" {
+		t.Fatalf("actors = %+v; configured services must not create actors", out.Actors)
+	}
+}
+
+func TestEnrichActorsWithSimulatorAssignments(t *testing.T) {
+	actors := []actor{{CN: "finance-client"}, {CN: "echo-service"}, {CN: "adapter1"}}
+	enrichActorsWithSimulatorAssignments(actors, map[string]simulatorAdapterAssignment{
+		"finance-client": {MachineID: "machine-06", Kind: "client"},
+		"echo-service":   {MachineID: "machine-06", Kind: "service"},
+	})
+	if actors[0].MachineID != "machine-06" || actors[0].AdapterKind != "client" {
+		t.Fatalf("finance assignment = %+v", actors[0])
+	}
+	if actors[1].MachineID != "machine-06" || actors[1].AdapterKind != "service" {
+		t.Fatalf("service assignment = %+v", actors[1])
+	}
+	if actors[2].MachineID != "" {
+		t.Fatalf("unassigned actor unexpectedly mapped to a machine: %+v", actors[2])
 	}
 }
