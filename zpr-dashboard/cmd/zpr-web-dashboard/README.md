@@ -90,20 +90,16 @@ source.
 Claude is optional and disabled unless the server has an Anthropic key:
 
 ```sh
-read -rs 'ANTHROPIC_API_KEY?Anthropic API key: ' # zsh; enter it in your own terminal
-print
-export ANTHROPIC_API_KEY
-# export ANTHROPIC_MODEL='claude-sonnet-4-5-20250929' # optional server default
-sh scripts/dashboard-stack.sh restart-control-service
-unset ANTHROPIC_API_KEY
+zsh scripts/configure-assistant.sh
 ```
 
 When Claude is configured, the UI discloses that submitting a question sends
 the current policy and chat history to Anthropic. The key stays server-side;
 assistant responses are suggestions and are never applied automatically.
-Run the commands from the dashboard module directory. Restarting Control-Service
-does not restart the
-simulator or Policy-Service. Do not put the key in browser storage, the Policy
+Run this from the dashboard module directory; the script prompts for the key
+without echoing it and restarts only Control-Service. It does not store the key
+for future restarts, so run it again if the stack is restarted. Do not put the
+key in browser storage, the Policy
 Repository, shell history, or this repository. The Policy page offers a
 session-only on/off control, the server default model or Haiku 4.5, and
 per-request output limits of 300, 600, 1200, or 2400 tokens. The displayed

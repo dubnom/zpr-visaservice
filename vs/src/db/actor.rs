@@ -580,21 +580,35 @@ impl ActorRepo {
         }
     }
 
-    /// Look up actor by CN attribute. Uses our cache.
+    /// Look up actor by CN attribute, recovering from persisted actors if the cache is stale.
     ///
     /// ## Errors
     // - Returns `StoreError::NotFound` if no actor found for the given CN.
     pub async fn get_actor_by_cn(&self, cn: &str) -> Result<Actor, StoreError> {
-        let actor_addr = match self.cn_idx.get(cn) {
-            Some(addr) => addr.clone(),
-            None => {
-                return Err(StoreError::NotFound(format!(
-                    "actor not found for CN: {}",
-                    cn
-                )));
+        if let Some(addr) = self.cn_idx.get(cn).map(|entry| *entry) {
+            match self.get_actor_by_zpr_addr(&addr).await {
+                Ok(actor) if actor.get_cn() == Some(cn) => return Ok(actor),
+                Ok(_) | Err(StoreError::NotFound(_)) => {
+                    self.cn_idx.remove(cn);
+                }
+                Err(err) => return Err(err),
             }
-        };
-        self.get_actor_by_zpr_addr(&actor_addr).await
+        }
+
+        for addr in self.list_zpr_addrs().await? {
+            match self.get_actor_by_zpr_addr(&addr).await {
+                Ok(actor) if actor.get_cn() == Some(cn) => {
+                    self.cn_idx.insert(cn.to_string(), addr);
+                    return Ok(actor);
+                }
+                Ok(_) | Err(StoreError::NotFound(_)) => {}
+                Err(err) => return Err(err),
+            }
+        }
+        Err(StoreError::NotFound(format!(
+            "actor not found for CN: {}",
+            cn
+        )))
     }
 
     /// This uses our "nodes" and "adapters" sets to list the CN values of all connected actors.
@@ -957,6 +971,46 @@ mod test {
             StoreError::NotFound(_) => {}
             other => panic!("unexpected error: {other:?}"),
         }
+    }
+
+    #[tokio::test]
+    async fn test_get_actor_by_cn_after_cache_loss() {
+        let db = Arc::new(FakeDb::new());
+        let repo = ActorRepo::new(db.clone());
+        let actor =
+            make_actor_with_services_defexp(ROLE_ADAPTER, "fd5a:5052::51", &[], "machine-01");
+        repo.add_actor(&actor).await.unwrap();
+
+        let recovered = ActorRepo::new(db);
+        assert!(
+            recovered
+                .list_actor_cns(None)
+                .await
+                .unwrap()
+                .contains(&"machine-01".to_string())
+        );
+        let loaded = recovered.get_actor_by_cn("machine-01").await.unwrap();
+        assert_eq!(loaded.get_zpr_addr(), actor.get_zpr_addr());
+    }
+
+    #[tokio::test]
+    async fn test_get_actor_by_cn_repairs_stale_mapping() {
+        let db = Arc::new(FakeDb::new());
+        let repo = ActorRepo::new(db);
+        let machine =
+            make_actor_with_services_defexp(ROLE_ADAPTER, "fd5a:5052::51", &[], "machine-01");
+        let other = make_actor_with_services_defexp(ROLE_ADAPTER, "fd5a:5052::52", &[], "other");
+        repo.add_actor(&machine).await.unwrap();
+        repo.add_actor(&other).await.unwrap();
+        repo.cn_idx
+            .insert("machine-01".into(), *other.get_zpr_addr().unwrap());
+
+        let loaded = repo.get_actor_by_cn("machine-01").await.unwrap();
+        assert_eq!(loaded.get_zpr_addr(), machine.get_zpr_addr());
+        assert_eq!(
+            repo.cn_idx.get("machine-01").map(|entry| *entry),
+            machine.get_zpr_addr().copied()
+        );
     }
 
     #[tokio::test]

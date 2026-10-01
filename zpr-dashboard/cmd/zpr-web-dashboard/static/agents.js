@@ -2,6 +2,7 @@ var $ = (s) => document.querySelector(s);
 var esc = (v) => String(v ?? "").replace(/[&<>\"]/g, (c) => ({"&":"&amp;","<":"&lt;",">":"&gt;","\"":"&quot;"}[c]));
 function toast(message) { const node = $("#toast"); node.textContent = message; node.hidden = false; setTimeout(() => { node.hidden = true; }, 2600); }
 let data;
+let previousSimulatorFields = null;
 let openWorkloadPickerMachine = null;
 let pendingLoginMachine = "";
 const workloadDrafts = new Map();
@@ -14,6 +15,30 @@ function render(snapshot) {
   renderMachines(snapshot.manifest.machines || [], components, snapshot.controllers || {}, snapshot.components || {}, snapshot.sessions || {}, snapshot.machine_containers || {});
   $("#manifest-name").textContent = snapshot.manifest.name; $("#manifest-base").textContent = `extends ${snapshot.manifest.extends || "generic base"}`; $("#runtime-state").textContent = `${running}/${components.length} agents running`; $("#agent-count").textContent = components.length; $("#running-count").textContent = running; $("#service-count").textContent = snapshot.manifest.services.length; $("#stack-count").textContent = snapshot.stack.includes("running") ? "UP" : "DOWN";
   $("#log-grid").innerHTML = Object.entries(snapshot.logs).map(([name, log]) => `<article><div class="log-title">${esc(name)}</div><pre>${esc(log || "No log yet")}</pre></article>`).join("");
+  highlightChangedSimulatorFields();
+}
+
+function highlightChangedSimulatorFields() {
+  const fields = new Map();
+  for (const id of ["runtime-state", "agent-count", "running-count", "service-count", "stack-count", "machine-count"]) {
+    const node = document.getElementById(id);
+    if (node) fields.set(`summary:${id}`, { node, value: node.textContent.trim() });
+  }
+  for (const node of document.querySelectorAll("[data-poll-field]")) {
+    const machine = node.closest("[data-machine-card]")?.dataset.machineCard || "";
+    fields.set(`machine:${machine}:${node.dataset.pollField}`, { node, value: node.textContent.trim() });
+  }
+  if (previousSimulatorFields) {
+    for (const [key, field] of fields) {
+      if (previousSimulatorFields.has(key) && previousSimulatorFields.get(key) !== field.value) {
+        field.node.classList.remove("poll-changed");
+        void field.node.offsetWidth;
+        field.node.classList.add("poll-changed");
+        window.setTimeout(() => field.node.classList.remove("poll-changed"), 1800);
+      }
+    }
+  }
+  previousSimulatorFields = new Map([...fields].map(([key, field]) => [key, field.value]));
 }
 function renderMachines(machines, components, controllers, componentStates, sessions, machineContainers) {
   const filter = $("#machine-type-filter").value;
@@ -45,11 +70,11 @@ function renderMachines(machines, components, controllers, componentStates, sess
       const feedKey = `${machine.id}:${component.name}`;
       if (!active || !machineRunning) openLogFeeds.delete(feedKey);
       const viewing = active && machineRunning && openLogFeeds.has(feedKey);
-      return `<div class="machine-workload-unit"><div class="machine-workload"><div class="machine-workload-label"><span class="component-kind">${kind}</span><strong>${esc(component.name)}</strong><small>${esc(component.agent || "agent pending")} · ${esc(component.address || "address pending")}</small></div><span class="pill ${active ? "on" : "off"}">${pending ? "starting" : active ? "running" : "stopped"}</span><button type="button" class="workload-toggle" role="switch" aria-checked="${active}" aria-label="${label}" data-workload-name="${esc(component.name)}" ${connected && !pending ? "" : "disabled"}></button></div><label class="machine-log-toggle"><input type="checkbox" data-log-machine="${esc(machine.id)}" data-log-workload="${esc(component.name)}" ${viewing ? "checked" : ""} ${active && machineRunning ? "" : "disabled"}> View logs</label>${viewing ? `<div class="machine-log-feed" data-log-panel="${esc(feedKey)}" role="log" aria-label="${esc(component.name)} logs">${workloadLogMarkup.get(feedKey) || "Waiting for events"}</div>` : ""}</div>`;
+      return `<div class="machine-workload-unit"><div class="machine-workload"><div class="machine-workload-label"><span class="component-kind">${kind}</span><strong>${esc(component.name)}</strong><small>${esc(component.agent || "agent pending")} · ${esc(component.address || "address pending")}</small></div><span class="pill ${active ? "on" : "off"}" data-poll-field="workload:${esc(component.name)}">${pending ? "starting" : active ? "running" : "stopped"}</span><button type="button" class="workload-toggle" role="switch" aria-checked="${active}" aria-label="${label}" data-workload-name="${esc(component.name)}" ${connected && !pending ? "" : "disabled"}></button></div><label class="machine-log-toggle"><input type="checkbox" data-log-machine="${esc(machine.id)}" data-log-workload="${esc(component.name)}" ${viewing ? "checked" : ""} ${active && machineRunning ? "" : "disabled"}> View logs</label>${viewing ? `<div class="machine-log-feed" data-log-panel="${esc(feedKey)}" role="log" aria-label="${esc(component.name)} logs">${workloadLogMarkup.get(feedKey) || "Waiting for events"}</div>` : ""}</div>`;
     }).join("") : `<p class="empty-workloads">No workloads selected</p>`;
     const lifecycleAction = machineRunning ? "stop" : "start";
     const lifecycleLabel = machineRunning ? "Stop machine" : "Start machine";
-    return `<article class="machine-card"><div class="machine-card-head"><div class="machine-card-identity"><span class="component-kind">${esc(machine.type)}</span><strong>${esc(machine.id)}</strong></div><div class="machine-card-status"><span class="controller-indicator ${connected ? "connected" : "offline"}"><i></i>${controllerLabel}</span><span class="pill ${machine.secure ? "on" : "off"}">${posture}</span></div></div><div class="machine-runtime-control"><span><small>CONTAINER</small><strong class="machine-container-state ${machineRunning ? "running" : "stopped"}">${esc(containerState)}</strong></span><button type="button" class="quiet" data-machine-action="${lifecycleAction}" data-machine="${esc(machine.id)}">${lifecycleLabel}</button></div><details class="machine-details"><summary>Machine details</summary><dl><div><dt>Model</dt><dd>${esc(machine.model)}</dd></div><div><dt>Location</dt><dd>${esc(machine.location)}</dd></div><div><dt>Owner</dt><dd>${esc(machine.owner)}</dd></div></dl></details>${sessionControl}${workloadPicker}<div class="machine-workloads"><span>WORKLOADS</span>${workloadRows}</div></article>`;
+    return `<article class="machine-card" data-machine-card="${esc(machine.id)}"><div class="machine-card-head"><div class="machine-card-identity"><span class="component-kind">${esc(machine.type)}</span><strong>${esc(machine.id)}</strong></div><div class="machine-card-status"><span class="controller-indicator ${connected ? "connected" : "offline"}" data-poll-field="controller"><i></i>${controllerLabel}</span><span class="pill ${machine.secure ? "on" : "off"}">${posture}</span></div></div><div class="machine-runtime-control"><span><small>CONTAINER</small><strong class="machine-container-state ${machineRunning ? "running" : "stopped"}" data-poll-field="container">${esc(containerState)}</strong></span><button type="button" class="quiet" data-machine-action="${lifecycleAction}" data-machine="${esc(machine.id)}">${lifecycleLabel}</button></div><details class="machine-details"><summary>Machine details</summary><dl><div><dt>Model</dt><dd>${esc(machine.model)}</dd></div><div><dt>Location</dt><dd>${esc(machine.location)}</dd></div><div><dt>Owner</dt><dd>${esc(machine.owner)}</dd></div></dl></details>${sessionControl}${workloadPicker}<div class="machine-workloads"><span>WORKLOADS</span>${workloadRows}</div></article>`;
   }).join("");
 }
 async function refreshWorkloadLogs() {

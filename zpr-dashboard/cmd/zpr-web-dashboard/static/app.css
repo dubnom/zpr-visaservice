@@ -127,18 +127,23 @@ h1 { margin-bottom: 6px; font-size: 28px; line-height: 1.15; letter-spacing: 0; 
 .graph-animation-toggle input { width: 13px; height: 13px; margin: 0; accent-color: #668d46; }
 .graph-hint { margin-left: 3px; color: #738178; font: 8px var(--mono); letter-spacing: .04em; white-space: nowrap; }
 .graph-arrival-marker { pointer-events: none; }
-.graph-arrival-ring { fill: none; stroke: #d6ff38; stroke-width: 6; opacity: 0; filter: drop-shadow(0 0 5px #b5e34f); transform-box: fill-box; transform-origin: center; }
-.graph-arrival-tag rect { fill: #f2ff3d; stroke: #17211e; stroke-width: 1.5; }
-.graph-arrival-tag text { fill: #17211e; text-anchor: middle; font: 800 10px var(--mono); opacity: 0; }
+.graph-arrival-ring { fill: none; stroke: var(--arrival-accent, #43be69); stroke-width: 6; opacity: 0; filter: drop-shadow(0 0 5px var(--arrival-accent, #43be69)); transform-box: fill-box; transform-origin: center; }
+.graph-vertex.arriving, .graph-service-badge.arriving, .graph-exiting { transform-box: fill-box; transform-origin: center; }
 .graph-exit-layer, .graph-exiting { pointer-events: none; }
-.graph-exiting { transform-box: fill-box; transform-origin: center; }
-.graph-exiting .graph-node, .graph-exiting .graph-adapter, .graph-exiting .graph-visa { fill: #f4c2b8; stroke: #8e3024; stroke-width: 3; filter: drop-shadow(0 0 5px #bc493d); }
-.graph-exiting.graph-service-badge rect { fill: #f4c2b8; stroke: #8e3024; stroke-width: 2.5; filter: drop-shadow(0 0 5px #bc493d); }
-.graph-exiting .graph-exit-label { fill: #8e3024; stroke: #fff; stroke-width: 3px; paint-order: stroke; text-anchor: middle; font: 800 10px var(--mono); pointer-events: none; }
-.graph-vertex.arriving .graph-node, .graph-vertex.arriving .graph-adapter { fill: #d9fa55; stroke: #17211e; stroke-width: 3.5; filter: drop-shadow(0 0 6px #a7cf39); }
-.graph-vertex.arriving .graph-visa { fill: #ffd166; stroke: #17211e; stroke-width: 4; filter: drop-shadow(0 0 6px #e5a52c); }
-.graph-service-badge.arriving rect { fill: #d9fa55; stroke: #17211e; stroke-width: 2.5; filter: drop-shadow(0 0 6px #a7cf39); }
-.graph-service-badge.arriving > text { fill: #17211e; font-size: 9px; font-weight: 800; }
+.graph-exiting .graph-exit-label { fill: var(--arrival-accent, #43be69); stroke: #fff; stroke-width: 3px; paint-order: stroke; text-anchor: middle; font: 800 10px var(--mono); pointer-events: none; }
+.graph-vertex:is(.arriving, .graph-exiting).node { --arrival-accent: #43be69; }
+.graph-vertex:is(.arriving, .graph-exiting).adapter { --arrival-accent: #279bcc; }
+.graph-vertex:is(.arriving, .graph-exiting).visa { --arrival-accent: #f0a132; }
+.graph-vertex:is(.arriving, .graph-exiting) .graph-node { fill: #b6f28a; stroke: #23813f; stroke-width: 3.5; filter: drop-shadow(0 0 6px #43be69); }
+.graph-vertex:is(.arriving, .graph-exiting) .graph-adapter { fill: #b1e5ff; stroke: #1678ad; stroke-width: 3.5; filter: drop-shadow(0 0 6px #279bcc); }
+.graph-vertex:is(.arriving, .graph-exiting) .graph-visa { fill: #ffbf5f; stroke: #b8581d; stroke-width: 4; filter: drop-shadow(0 0 6px #f0a132); }
+.graph-service-badge:is(.arriving, .graph-exiting) { --arrival-accent: #238966; }
+.graph-service-badge:is(.arriving, .graph-exiting) rect { fill: #fff; stroke: #238966; stroke-width: 3.5; filter: drop-shadow(0 0 6px #238966); }
+.graph-service-badge.trusted-file:is(.arriving, .graph-exiting) { --arrival-accent: #20aab3; }
+.graph-service-badge.trusted-file:is(.arriving, .graph-exiting) rect { fill: #b8f3f7; stroke: #147a82; filter: drop-shadow(0 0 6px #20aab3); }
+.graph-service-badge.trusted-rest-1:is(.arriving, .graph-exiting) { --arrival-accent: #e69326; }
+.graph-service-badge.trusted-rest-1:is(.arriving, .graph-exiting) rect { fill: #ffe1a6; stroke: #bd6315; filter: drop-shadow(0 0 6px #e69326); }
+.graph-service-badge:is(.arriving, .graph-exiting) > text { fill: #17211e; font-size: 9px; font-weight: 800; }
 .graph-link { stroke: #aebbb1; stroke-width: 2; }
 .graph-link.up { stroke: #428967; }
 .graph-link.down { stroke: #db935f; stroke-dasharray: 5 5; }
@@ -331,6 +336,8 @@ td:first-child { color: var(--ink); font-weight: 600; }
 .deny-count { align-self: center; color: var(--red); font: 11px var(--mono); }
 .empty-state, .empty-row { color: #89958d; font-size: 11px; text-align: center; }
 .empty-row { padding: 16px 10px; }
+.poll-changed { border-radius: 3px; animation: poll-field-flash 1800ms ease-out both; }
+@keyframes poll-field-flash { 0% { color: #17211e; background-color: #d9fa55; box-shadow: 0 0 0 3px #d9fa55; } 100% { background-color: transparent; box-shadow: 0 0 0 0 transparent; } }
 .page-footer { display: flex; justify-content: space-between; gap: 15px; margin-top: 30px; padding: 13px 0; border-top: 1px solid var(--line); color: #8a958e; font: 8px var(--mono); letter-spacing: .07em; }
 .page-footer b { color: var(--leaf); }
 

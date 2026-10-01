@@ -1,9 +1,11 @@
 const byId = (id) => document.getElementById(id);
 const zplKeywords = new Set(["allow", "never", "define", "with", "to", "access", "and", "as", "aka", "tag", "tags", "on", "optional", "multiple", "signal", "over"]);
 const GRAPH_ARRIVAL_DURATION = 2800;
-const GRAPH_REMOVAL_DURATION = 1100;
+const GRAPH_REMOVAL_DURATION = 900;
 const reducedMotion = window.matchMedia?.("(prefers-reduced-motion: reduce)").matches ?? false;
 const state = { snapshot: null, timer: null, paused: false, pending: false, graphCamera: null, graphAnimations: !reducedMotion, topologyComponents: null, topologyNewComponents: new Map(), selection: null, sorts: {}, dnsPending: false, policy: { loaded: false, configured: false, categories: [], records: [], attributes: [], categoryID: "", collapsedCategories: new Set(), treeInitialized: false, record: null, source: "", savedSource: "", revision: 0, browsingRevision: 0, saveAs: false, compilerReady: false, assistantReady: false, assistantEnabled: false, assistantUsage: { input: 0, output: 0 }, validSource: null, errorOffsets: [], revisions: [], messages: [], assistantPending: false, assistantError: "" } };
+
+let previousPolledValues = null;
 
 const pages = {
   map: "MAP",
@@ -393,7 +395,7 @@ function renderTopology(data, exitComponents = []) {
   const unconnected = adapters.filter((adapter) => !dockEdges.some((edge) => edge.to.cn === adapter.cn));
   renderConnections(edges, unconnected);
 
-  if (!actors.length) {
+  if (!actors.length && !exitComponents.length) {
     stage.innerHTML = `<div class="empty-state">No nodes or adapters reported.</div>`;
     return;
   }
@@ -471,8 +473,9 @@ function renderTopology(data, exitComponents = []) {
       y: ownerPosition.y + Math.sin(angle) * radius,
     });
   }
-  const width = Math.max(760, 2 * margin + 2 * maximumClusterRadius + (nodeColumns - 1) * nodeSpacing, margin * 2 + (unconnectedColumns - 1) * (hostRingRadius * 2 + 100));
-  const height = Math.max(460, 2 * margin + 2 * maximumClusterRadius + (nodeRows - 1) * nodeSpacing, margin + nodeRows * nodeSpacing + unconnectedHosts.length * (hostRingRadius * 2 + 100));
+  const oldViewBox = exitComponents.length ? stage.querySelector(".topology-graph")?.viewBox.baseVal : null;
+  const width = Math.max(760, oldViewBox?.width || 0, 2 * margin + 2 * maximumClusterRadius + (nodeColumns - 1) * nodeSpacing, margin * 2 + (unconnectedColumns - 1) * (hostRingRadius * 2 + 100));
+  const height = Math.max(460, oldViewBox?.height || 0, 2 * margin + 2 * maximumClusterRadius + (nodeRows - 1) * nodeSpacing, margin + nodeRows * nodeSpacing + unconnectedHosts.length * (hostRingRadius * 2 + 100));
   const query = byId("topology-search").value.trim().toLowerCase();
   const matches = (actor) => !query || `${displayNames.get(actor.cn)} ${actor.cn} ${actor.zpr_addr || ""} ${visaServices.has(actor.cn) ? "visa service" : ""} ${(servicesByActor.get(actor.cn) || []).map((service) => `${service.service_name} ${service.service_kind}`).join(" ")}`.toLowerCase().includes(query);
 
@@ -496,8 +499,19 @@ function renderTopology(data, exitComponents = []) {
       state.topologyNewComponents.delete(key);
       return "";
     }
-    return `<g class="graph-arrival-marker" data-arrival-age="${elapsed}" aria-hidden="true"><circle class="graph-arrival-ring" cx="${x}" cy="${y}" r="${radius}"/><g class="graph-arrival-tag" transform="translate(${x} ${y - radius - 14})"><rect x="-25" y="-10" width="50" height="20" rx="4"/><text y="4">NEW</text></g></g>`;
+    return `<g class="graph-arrival-marker" data-arrival-age="${elapsed}" aria-hidden="true"><circle class="graph-arrival-ring" cx="${x}" cy="${y}" r="${radius}"/></g>`;
   };
+  const arrivalOffset = (parent, target) => {
+    if (!parent) return null;
+    return { x: parent.x - target.x, y: parent.y - target.y };
+  };
+  const previousMovement = new Map([...stage.querySelectorAll("#graph-world > [data-topology-component]")].map((component) => {
+    const transform = getComputedStyle(component).transform;
+    const matrix = transform === "none" ? new DOMMatrixReadOnly() : new DOMMatrixReadOnly(transform);
+    return [component.dataset.topologyComponent, { x: matrix.m41, y: matrix.m42 }];
+  }));
+  const enteringOffsets = new Map();
+  const offsetAttributes = (offset, parentKey, enteringOffset) => `${parentKey ? ` data-topology-parent="${escapeHTML(parentKey)}"` : ""}${offset ? ` data-arrival-dx="${offset.x}" data-arrival-dy="${offset.y}"` : ""}${enteringOffset ? ` data-entry-dx="${enteringOffset.x}" data-entry-dy="${enteringOffset.y}"` : ""}`;
   const vertexMarkup = actors.map((actor) => {
     const pos = positions.get(actor.cn);
     const displayName = displayNames.get(actor.cn) || actor.cn;
@@ -513,8 +527,15 @@ function renderTopology(data, exitComponents = []) {
     const componentKey = `actor:${JSON.stringify(actor.cn)}`;
     const marker = arrivalMarker(componentKey, pos.x, pos.y, actorRadius(actor) + 8);
     const arrivingClass = marker ? " arriving" : "";
-    return `<g class="graph-vertex${arrivingClass} ${query && !matches(actor) ? "filtered" : ""}" data-topology-component="${escapeHTML(componentKey)}" data-inspect-actor="${escapeHTML(actor.cn)}" tabindex="0" role="button" aria-label="Inspect ${escapeHTML(displayName)}"><title>${escapeHTML(displayName)} · ${escapeHTML(actor.cn)} · ${escapeHTML(actor.zpr_addr || "address pending")}</title>${glyph}${marker}<text class="graph-label" x="${pos.x}" y="${pos.y + 3}">${escapeHTML(shortName)}</text></g>`;
-  }).join("");
+    const parentNode = edges.find((edge) => edge.kind === "dock" && edge.to.cn === actor.cn)?.from;
+    const parentKey = parentNode ? `actor:${JSON.stringify(parentNode.cn)}` : "";
+    const offset = parentNode ? arrivalOffset(positions.get(parentNode.cn), pos) : null;
+    const parentMovement = marker ? enteringOffsets.get(parentKey) || previousMovement.get(parentKey) : null;
+    const entry = marker && offset && parentMovement ? { x: offset.x + parentMovement.x, y: offset.y + parentMovement.y } : null;
+    if (marker && offset && !previousMovement.has(componentKey) && Date.now() - state.topologyNewComponents.get(componentKey) < 900) enteringOffsets.set(componentKey, entry || offset);
+    const positionAttributes = offsetAttributes(offset, parentKey, entry);
+    return `<g class="graph-vertex ${isNode ? "node" : isVisaService ? "visa" : "adapter"}${arrivingClass} ${query && !matches(actor) ? "filtered" : ""}" data-topology-component="${escapeHTML(componentKey)}"${positionAttributes} data-inspect-actor="${escapeHTML(actor.cn)}" tabindex="0" role="button" aria-label="Inspect ${escapeHTML(displayName)}"><title>${escapeHTML(displayName)} · ${escapeHTML(actor.cn)} · ${escapeHTML(actor.zpr_addr || "address pending")}</title>${glyph}${marker}<text class="graph-label" x="${pos.x}" y="${pos.y + 3}">${escapeHTML(shortName)}</text></g>`;
+  });
 
   const serviceEdgeMarkup = [];
   const serviceMarkup = services.map((service) => {
@@ -545,10 +566,16 @@ function renderTopology(data, exitComponents = []) {
     const componentKey = `service:${JSON.stringify([service.actor_cn, service.service_name])}`;
     const marker = arrivalMarker(componentKey, position.x, position.y, badgeWidth / 2 + 8);
     const arrivingClass = marker ? " arriving" : "";
-    return `<g class="graph-service-badge${trustedClass}${arrivingClass} ${filtered}" data-topology-component="${escapeHTML(componentKey)}" data-inspect-service="${escapeHTML(service.service_name)}" tabindex="0" role="button" aria-label="${escapeHTML(labelForScreenReader)}"><title>${escapeHTML(title)}</title><rect x="${position.x - badgeWidth / 2}" y="${position.y - 10}" width="${badgeWidth}" height="20" rx="4"/>${marker}<text x="${position.x}" y="${position.y + 3}">${escapeHTML(shortLabel)}</text></g>`;
-  }).join("");
+    const parentKey = `actor:${JSON.stringify(service.actor_cn)}`;
+    const offset = arrivalOffset(ownerPosition, position);
+    const parentMovement = marker ? enteringOffsets.get(parentKey) || previousMovement.get(parentKey) : null;
+    const entry = marker && parentMovement ? { x: offset.x + parentMovement.x, y: offset.y + parentMovement.y } : null;
+    const positionAttributes = offsetAttributes(offset, parentKey, entry);
+    return `<g class="graph-service-badge${trustedClass}${arrivingClass} ${filtered}" data-topology-component="${escapeHTML(componentKey)}"${positionAttributes} data-inspect-service="${escapeHTML(service.service_name)}" tabindex="0" role="button" aria-label="${escapeHTML(labelForScreenReader)}"><title>${escapeHTML(title)}</title><rect x="${position.x - badgeWidth / 2}" y="${position.y - 10}" width="${badgeWidth}" height="20" rx="4"/>${marker}<text x="${position.x}" y="${position.y + 3}">${escapeHTML(shortLabel)}</text></g>`;
+  });
 
-  stage.innerHTML = `<div class="graph-controls" aria-label="Topology graph controls"><button class="graph-control" data-graph-action="in" type="button" aria-label="Zoom in" title="Zoom in">+</button><button class="graph-control" data-graph-action="out" type="button" aria-label="Zoom out" title="Zoom out">−</button><button class="graph-control graph-fit" data-graph-action="fit" type="button" aria-label="Fit graph" title="Fit graph">Fit</button><label class="graph-animation-toggle" title="Highlight newly added components"><input id="graph-animation-toggle" type="checkbox" aria-label="Animate newly added components"><span>Animate</span></label><span class="graph-hint">DRAG TO PAN · SCROLL TO ZOOM</span></div><svg class="topology-graph" viewBox="0 0 ${width} ${height}" role="img" aria-label="Topology graph with ${nodes.length} nodes, ${adapters.length} adapters, ${dockEdges.length} dock connections, ${networkEdges.length} inter-node links, and ${(data.services || []).filter((service) => servicesByActor.has(service.actor_cn)).length} registered services"><g id="graph-world">${edgeMarkup}${serviceEdgeMarkup.join("")}<g id="graph-exit-layer" aria-hidden="true">${exitComponents.join("")}</g>${vertexMarkup}${serviceMarkup}</g></svg>`;
+  const exiting = (kind) => exitComponents.filter((component) => component.kind === kind).map((component) => component.markup).join("");
+  stage.innerHTML = `<div class="graph-controls" aria-label="Topology graph controls"><button class="graph-control" data-graph-action="in" type="button" aria-label="Zoom in" title="Zoom in">+</button><button class="graph-control" data-graph-action="out" type="button" aria-label="Zoom out" title="Zoom out">−</button><button class="graph-control graph-fit" data-graph-action="fit" type="button" aria-label="Fit graph" title="Fit graph">Fit</button><label class="graph-animation-toggle" title="Highlight newly added components"><input id="graph-animation-toggle" type="checkbox" aria-label="Animate newly added components"><span>Animate</span></label><span class="graph-hint">DRAG TO PAN · SCROLL TO ZOOM</span></div><svg class="topology-graph" viewBox="0 0 ${width} ${height}" role="img" aria-label="Topology graph with ${nodes.length} nodes, ${adapters.length} adapters, ${dockEdges.length} dock connections, ${networkEdges.length} inter-node links, and ${(data.services || []).filter((service) => servicesByActor.has(service.actor_cn)).length} registered services"><g id="graph-world">${edgeMarkup}${serviceEdgeMarkup.join("")}${serviceMarkup.join("")}<g class="graph-exit-layer" aria-hidden="true">${exiting("service")}</g>${vertexMarkup.slice(nodes.length).join("")}<g class="graph-exit-layer" aria-hidden="true">${exiting("adapter")}</g>${vertexMarkup.slice(0, nodes.length).join("")}<g class="graph-exit-layer" aria-hidden="true">${exiting("node")}</g></g></svg>`;
 
   setupGraphControls(stage, width, height);
 }
@@ -580,7 +607,7 @@ function setupGraphControls(stage, width, height) {
   const world = stage.querySelector("#graph-world");
   if (!state.graphCamera) state.graphCamera = { x: 0, y: 0, scale: 1 };
   const camera = state.graphCamera;
-  const maxZoom = 8;
+  const maxZoom = 1e6;
   const apply = () => world.setAttribute("transform", `translate(${camera.x} ${camera.y}) scale(${camera.scale})`);
   const zoomAt = (nextScale, x = width / 2, y = height / 2) => {
     const scale = Math.max(0.55, Math.min(maxZoom, nextScale));
@@ -643,10 +670,15 @@ function setupGraphControls(stage, width, height) {
   svg.addEventListener("pointerup", endDrag);
   svg.addEventListener("pointercancel", endDrag);
   apply();
-  stage.querySelectorAll("#graph-exit-layer .graph-exiting").forEach((component) => {
+  stage.querySelectorAll(".graph-exit-layer .graph-exiting").forEach((component) => {
+    const moving = component.hasAttribute("data-arrival-dx");
+    const exitX = component.dataset.exitDx ?? component.dataset.arrivalDx;
+    const exitY = component.dataset.exitDy ?? component.dataset.arrivalDy;
+    const destination = moving ? `translate(${exitX}px, ${exitY}px)` : "translate(0px, 0px)";
     const animation = component.animate([
-      { opacity: 1, transform: "scale(1)" },
-      { opacity: 0, transform: "scale(.45)" },
+      { opacity: 1, transform: component.dataset.exitStart || "translate(0px, 0px)" },
+      { opacity: 0.65, transform: `${destination} scale(.1)`, offset: 0.8 },
+      { opacity: 0, transform: `${destination} scale(.1)` },
     ], { duration: GRAPH_REMOVAL_DURATION, easing: "ease-in", fill: "forwards" });
     const removalTimer = window.setTimeout(() => component.remove(), GRAPH_REMOVAL_DURATION + 150);
     animation.onfinish = () => {
@@ -664,21 +696,29 @@ function setupGraphControls(stage, width, height) {
         { opacity: 0, transform: "scale(1.18)" },
       ], { duration: GRAPH_ARRIVAL_DURATION, easing: "ease-out", fill: "both" });
       ringAnimation.currentTime = elapsed;
-      const labelAnimation = marker.querySelector(".graph-arrival-tag text").animate([
-        { opacity: 0 },
-        { opacity: 1, offset: 0.08 },
-        { opacity: 1, offset: 0.72 },
-        { opacity: 0 },
-      ], { duration: GRAPH_ARRIVAL_DURATION, easing: "ease-out", fill: "both" });
-      labelAnimation.currentTime = elapsed;
-      const component = marker.previousElementSibling;
-      if (component) {
-        const componentAnimation = component.animate([
-          { transform: "scale(.88)" },
-          { transform: "scale(1.07)", offset: 0.12 },
-          { transform: "scale(1)" },
-        ], { duration: 900, easing: "ease-out", fill: "both" });
+      const entrant = marker.parentElement;
+      if (entrant) {
+        const moving = entrant.hasAttribute("data-arrival-dx");
+        const entryX = entrant.dataset.entryDx ?? entrant.dataset.arrivalDx;
+        const entryY = entrant.dataset.entryDy ?? entrant.dataset.arrivalDy;
+        const componentAnimation = entrant.animate(moving ? [
+          { transform: `translate(${entryX}px, ${entryY}px) scale(.1)`, opacity: 0.65 },
+          { transform: "translate(0px, 0px) scale(1)", opacity: 1 },
+        ] : [
+          { transform: "scale(.1)", opacity: 0.45 }, { transform: "scale(1)", opacity: 1 },
+        ], { duration: 900, easing: "cubic-bezier(.2, .7, .25, 1)", fill: "both" });
         componentAnimation.currentTime = Math.min(elapsed, 900);
+        const glyph = entrant.querySelector(".graph-node, .graph-adapter, .graph-visa, rect");
+        if (glyph) {
+          const highlighted = getComputedStyle(glyph);
+          const start = { fill: highlighted.fill, stroke: highlighted.stroke, strokeWidth: highlighted.strokeWidth, filter: highlighted.filter };
+          entrant.classList.remove("arriving");
+          const normal = getComputedStyle(glyph);
+          const end = { fill: normal.fill, stroke: normal.stroke, strokeWidth: normal.strokeWidth, filter: normal.filter };
+          entrant.classList.add("arriving");
+          const colorAnimation = glyph.animate([start, end], { duration: 900, easing: "ease-out", fill: "forwards" });
+          colorAnimation.currentTime = Math.min(elapsed, 900);
+        }
       }
     });
   }
@@ -1567,16 +1607,90 @@ function renderDenies(data) {
   ).join("") : `<tr><td colspan="5" class="empty-row">${denies.length ? "No matching denials" : "No recent policy denials"}</td></tr>`;
 }
 
+function flashPolledChange(node) {
+  node.classList.remove("poll-changed");
+  void node.offsetWidth;
+  node.classList.add("poll-changed");
+  window.setTimeout(() => node.classList.remove("poll-changed"), 1800);
+}
+
+function capturePolledFields() {
+  const fields = new Map();
+  const summaryIDs = [
+    "metric-actors", "metric-adapters", "metric-services", "metric-allowed", "metric-denied", "metric-visas", "metric-nodes", "metric-nodes-note",
+    "connection-count", "actor-count", "service-count", "trusted-count", "visa-total", "deny-total",
+    "dns-stat-requests", "dns-stat-success", "dns-stat-nxdomain", "dns-stat-servfail",
+  ];
+  for (const id of summaryIDs) {
+    const node = byId(id);
+    if (node) fields.set(`summary:${id}`, { node, value: node.textContent.trim() });
+  }
+  for (const body of document.querySelectorAll("#link-list, #actor-rows, #service-rows, #trusted-list, #visa-rows, #deny-list, #dns-counter-rows, #dns-zone-rows, #dns-record-rows")) {
+    for (const row of body.querySelectorAll("tr")) {
+      if (row.querySelector(".empty-row")) continue;
+      const identity = row.dataset.inspectActor || row.dataset.inspectService || row.dataset.inspectSource || row.dataset.inspectLink
+        || [...row.cells].slice(0, Math.min(3, row.cells.length)).map((cell) => cell.textContent.trim()).join("|");
+      [...row.cells].forEach((cell, index) => fields.set(`row:${body.id}:${identity}:${index}`, { node: cell, value: cell.textContent.trim() }));
+    }
+  }
+  return fields;
+}
+
+function highlightChangedPolledFields() {
+  const current = capturePolledFields();
+  if (previousPolledValues) {
+    for (const [key, field] of current) {
+      if (previousPolledValues.has(key) && previousPolledValues.get(key) !== field.value) flashPolledChange(field.node);
+    }
+  }
+  previousPolledValues = new Map([...current].map(([key, field]) => [key, field.value]));
+}
+
 function snapshotRemovedTopologyComponents(keys) {
   if (!keys.length) return [];
   const world = byId("topology-stage").querySelector("#graph-world");
   if (!world) return [];
   const removed = new Set(keys);
-  return [...world.querySelectorAll("[data-topology-component]")]
+  const components = new Map([...world.children]
+    .filter((component) => component.hasAttribute("data-topology-component"))
+    .map((component) => [component.dataset.topologyComponent, component]));
+  const exitOffset = (component) => {
+    let x = 0, y = 0;
+    const visited = new Set();
+    while (component?.hasAttribute("data-arrival-dx")) {
+      x += Number(component.dataset.arrivalDx);
+      y += Number(component.dataset.arrivalDy);
+      const parentKey = component.dataset.topologyParent;
+      if (!parentKey || visited.has(parentKey)) break;
+      if (!removed.has(parentKey)) {
+        const parent = components.get(parentKey);
+        if (parent) {
+          const transform = getComputedStyle(parent).transform;
+          if (transform !== "none") {
+            const matrix = new DOMMatrixReadOnly(transform);
+            x += matrix.m41;
+            y += matrix.m42;
+          }
+        }
+        break;
+      }
+      visited.add(parentKey);
+      component = components.get(parentKey);
+    }
+    return { x, y };
+  };
+  return [...components.values()]
     .filter((component) => removed.has(component.dataset.topologyComponent))
     .map((component) => {
       const bounds = component.getBBox();
       const clone = component.cloneNode(true);
+      const currentTransform = getComputedStyle(component).transform;
+      if (currentTransform !== "none") clone.dataset.exitStart = currentTransform;
+      if (component.hasAttribute("data-arrival-dx")) {
+        const offset = exitOffset(component);
+        clone.dataset.exitDx = String(offset.x);
+        clone.dataset.exitDy = String(offset.y);
+      }
       clone.classList.remove("filtered", "arriving");
       clone.classList.add("graph-exiting");
       clone.removeAttribute("tabindex");
@@ -1591,7 +1705,8 @@ function snapshotRemovedTopologyComponents(keys) {
       label.setAttribute("y", String(bounds.y - 7));
       label.textContent = "REMOVED";
       clone.append(label);
-      return clone.outerHTML;
+      const kind = component.classList.contains("graph-service-badge") ? "service" : component.classList.contains("node") ? "node" : "adapter";
+      return { kind, markup: clone.outerHTML };
     });
 }
 
@@ -1624,6 +1739,7 @@ function render(data) {
   renderVisas(data);
   renderDenies(data);
   if (state.selection) renderInspector();
+  highlightChangedPolledFields();
 }
 
 async function refresh() {
