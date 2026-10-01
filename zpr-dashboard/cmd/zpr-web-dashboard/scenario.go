@@ -156,8 +156,8 @@ func validateSimulatorScenario(scenario simulatorScenario, manifest simulatorMan
 		}
 	}
 	for index, step := range scenario.Cleanup {
-		if step.Action != "stop_workload" && step.Action != "logout" && step.Action != "stop_machine" {
-			return fmt.Errorf("cleanup step %d must stop a workload, log out, or stop a machine", index+1)
+		if step.Action != "stop_test_service" && step.Action != "stop_workload" && step.Action != "logout" && step.Action != "stop_machine" {
+			return fmt.Errorf("cleanup step %d must stop a test service or workload, log out, or stop a machine", index+1)
 		}
 		if err := validateSimulatorScenarioStep(step, manifest, true); err != nil {
 			return fmt.Errorf("cleanup step %d: %w", index+1, err)
@@ -199,10 +199,27 @@ func validateSimulatorScenarioStep(step simulatorScenarioStep, manifest simulato
 		if _, ok := machineWorkload(agent); !ok {
 			return fmt.Errorf("component %q has no machine workload implementation", step.Component)
 		}
+	case "start_test_service", "stop_test_service":
+		if !manifestHasMachine(manifest, step.Machine) || testServicePorts[step.Component] == "" {
+			return errors.New("test service requires a known machine and supported service component")
+		}
+		if _, err := readSimulatorComponent(manifest, step.Component); err != nil {
+			return err
+		}
+	case "request_test_service":
+		if !manifestHasMachine(manifest, step.Machine) || !testClientWorkloads[step.Component] {
+			return errors.New("test request requires a known machine and supported client component")
+		}
+		if _, err := readSimulatorComponent(manifest, step.Component); err != nil {
+			return err
+		}
+		if testServicePorts[step.Target] == "" {
+			return errors.New("test request target must be a supported service")
+		}
 	case "traffic":
 		component, err := readSimulatorComponent(manifest, step.Component)
-		if err != nil || component.Namespace == "" || component.Target == "" {
-			return errors.New("traffic requires a component with a namespace and target")
+		if err != nil || (step.Target == "" && component.Target == "") {
+			return errors.New("traffic requires a component with a target")
 		}
 		if step.Machine != "" {
 			if !manifestHasMachine(manifest, step.Machine) {
@@ -215,6 +232,8 @@ func validateSimulatorScenarioStep(step simulatorScenarioStep, manifest simulato
 			if _, ok := machineWorkload(agent); !ok {
 				return fmt.Errorf("component %q has no machine workload implementation", step.Component)
 			}
+		} else if component.Namespace == "" {
+			return errors.New("harness traffic requires a component namespace")
 		}
 		if step.Target != "" {
 			ip := net.ParseIP(step.Target)
@@ -238,8 +257,8 @@ func validateSimulatorScenarioStep(step simulatorScenarioStep, manifest simulato
 	if !cleanup {
 		switch step.Action {
 		case "login":
-			if !simulatorManifestHasUser(manifest, step.User) {
-				return errors.New("login requires a user listed as a machine owner")
+			if !simulatorMachineAllowsUser(manifest, step.Machine, step.User) {
+				return errors.New("login requires a user permitted on the machine")
 			}
 		case "select_workloads":
 			if len(step.Workloads) == 0 {
@@ -331,6 +350,8 @@ func (manager *simulatorScenarioManager) executeStep(parent context.Context, man
 	timeout := time.Duration(step.TimeoutSeconds) * time.Second
 	if timeout == 0 {
 		timeout = 90 * time.Second
+	} else if step.Action == "delay" {
+		timeout += time.Second
 	}
 	ctx, cancel := context.WithTimeout(parent, timeout)
 	defer cancel()
@@ -462,6 +483,35 @@ func simulatorScenarioExecutorForManifest(ctx context.Context, manifest simulato
 			}
 		}
 		return agent + " " + strings.TrimSuffix(strings.TrimPrefix(operation, "stop_"), "_workload"), nil
+	case "start_test_service":
+		if err := requireScenarioWorkload(step.Machine, step.Component); err != nil {
+			return "", err
+		}
+		address := net.JoinHostPort(machineWorkloadAddress(step.Component), testServicePorts[step.Component])
+		if _, err := scenarioCommand(ctx, "docker", "exec", "-d", machineContainerName(step.Machine), "/usr/local/bin/zpr-machine-controller", "-mode", "test-service", "-listen", address, "-log-workload", step.Component); err != nil {
+			return "", err
+		}
+		return "test service started on " + address, nil
+	case "stop_test_service":
+		if simulatorMachineContainerStates([]string{step.Machine})[step.Machine] != "running" {
+			return "test service machine already stopped", nil
+		}
+		output, err := scenarioCommand(ctx, "docker", "exec", machineContainerName(step.Machine), "pkill", "-f", "[z]pr-machine-controller -mode test-service .* -log-workload "+step.Component)
+		var exitError *exec.ExitError
+		if errors.As(err, &exitError) && exitError.ExitCode() == 1 {
+			return "test service already stopped", nil
+		}
+		return output, err
+	case "request_test_service":
+		if err := requireScenarioWorkload(step.Machine, step.Component); err != nil {
+			return "", err
+		}
+		sourceAddress, err := scenarioClientAddress(ctx, step.Machine, step.Component)
+		if err != nil {
+			return "", err
+		}
+		address := net.JoinHostPort(machineWorkloadAddress(step.Target), testServicePorts[step.Target])
+		return scenarioCommand(ctx, "docker", "exec", machineContainerName(step.Machine), "/usr/local/bin/zpr-machine-controller", "-mode", "test-client", "-listen", address, "-zpr-addr", sourceAddress, "-client-id", step.Machine, "-log-workload", step.Component, "-test-service-name", step.Target)
 	case "traffic":
 		component, _ := readSimulatorComponent(manifest, step.Component)
 		target := component.Target
@@ -529,6 +579,53 @@ func simulatorScenarioExecutorForManifest(ctx context.Context, manifest simulato
 	}
 }
 
+func machineWorkloadAddress(agent string) string {
+	config, _ := machineWorkload(agent)
+	return config.address
+}
+
+func scenarioClientAddress(ctx context.Context, machineID, agent string) (string, error) {
+	config, _ := machineWorkload(agent)
+	output, err := scenarioCommand(ctx, "docker", "exec", machineContainerName(machineID), "ip", "-j", "-6", "addr", "show", "dev", config.tun)
+	if err != nil {
+		return "", fmt.Errorf("read client ZPR address: %w", err)
+	}
+	return grantedScenarioClientAddress(output, agent)
+}
+
+func grantedScenarioClientAddress(output, agent string) (string, error) {
+	var interfaces []struct {
+		Addresses []struct {
+			Local string `json:"local"`
+			Scope string `json:"scope"`
+		} `json:"addr_info"`
+	}
+	if err := json.Unmarshal([]byte(output), &interfaces); err != nil {
+		return "", fmt.Errorf("parse client ZPR address: %w", err)
+	}
+	for _, networkInterface := range interfaces {
+		for _, address := range networkInterface.Addresses {
+			if address.Scope == "global" && strings.HasPrefix(address.Local, "fd5a:5052:") {
+				return address.Local, nil
+			}
+		}
+	}
+	return "", fmt.Errorf("workload %q has no granted ZPR address", agent)
+}
+
+func requireScenarioWorkload(machineID, component string) error {
+	session := simulatorSessions.snapshot([]string{machineID})[machineID]
+	if !session.Authenticated {
+		return errors.New("log in before using a test workload")
+	}
+	for _, selected := range session.Workloads {
+		if selected == component {
+			return nil
+		}
+	}
+	return fmt.Errorf("test workload %q is not selected on %s", component, machineID)
+}
+
 func waitForMachineWorkloadLink(ctx context.Context, machineID, agent string, active bool) error {
 	ticker := time.NewTicker(250 * time.Millisecond)
 	defer ticker.Stop()
@@ -541,8 +638,24 @@ func waitForMachineWorkloadLink(ctx context.Context, machineID, agent string, ac
 			if !configured {
 				return fmt.Errorf("workload %q has no TUN configuration", agent)
 			}
-			if _, err := scenarioCommand(ctx, "docker", "exec", container, "ip", "-6", "addr", "replace", workloadConfig.address+"/32", "dev", workloadConfig.tun); err != nil {
-				return fmt.Errorf("configure workload ZPR TUN address: %w", err)
+			if workloadConfig.services == "" {
+				if _, err := scenarioCommand(ctx, "docker", "exec", container, "ip", "-6", "route", "replace", "fd00:1::/32", "dev", workloadConfig.tun); err != nil {
+					return fmt.Errorf("configure client service route: %w", err)
+				}
+			} else {
+				if _, err := scenarioCommand(ctx, "docker", "exec", container, "ip", "-6", "addr", "replace", workloadConfig.address+"/32", "dev", workloadConfig.tun); err != nil {
+					return fmt.Errorf("configure service ZPR TUN address: %w", err)
+				}
+				table := "10" + strings.TrimPrefix(workloadConfig.tun, "tun")
+				for _, prefix := range []string{"fd5a:5052::/32", "fd00:1::/32"} {
+					if _, err := scenarioCommand(ctx, "docker", "exec", container, "ip", "-6", "route", "replace", prefix, "dev", workloadConfig.tun, "table", table); err != nil {
+						return fmt.Errorf("configure service reply route: %w", err)
+					}
+				}
+				_, _ = scenarioCommand(ctx, "docker", "exec", container, "ip", "-6", "rule", "del", "from", workloadConfig.address+"/128", "table", table)
+				if _, err := scenarioCommand(ctx, "docker", "exec", container, "ip", "-6", "rule", "add", "from", workloadConfig.address+"/128", "table", table); err != nil {
+					return fmt.Errorf("configure service source rule: %w", err)
+				}
 			}
 			return nil
 		}
@@ -572,6 +685,8 @@ func startScenarioMachine(ctx context.Context, manifest simulatorManifest, machi
 		if err := ensureScenarioMachineCapacity(manifest, true); err != nil {
 			return "", err
 		}
+		simulatorControllers.clear(machineID)
+		simulatorMachineCommands.clear(machineID)
 		output, err = scenarioCommand(ctx, startCommand.Path, startCommand.Args[1:]...)
 	} else {
 		output = "machine already running"
@@ -624,6 +739,8 @@ func stopScenarioMachine(ctx context.Context, machineID string) (string, error) 
 	states := simulatorMachineContainerStates([]string{machineID})
 	if states[machineID] == "missing" || states[machineID] == "exited" {
 		simulatorSessions.clear(machineID)
+		simulatorControllers.clear(machineID)
+		simulatorMachineCommands.clear(machineID)
 		return "machine already stopped", nil
 	}
 	if err := clearMachineLogin(machineID); err != nil {
@@ -634,6 +751,8 @@ func stopScenarioMachine(ctx context.Context, machineID string) (string, error) 
 		return output, err
 	}
 	simulatorSessions.clear(machineID)
+	simulatorControllers.clear(machineID)
+	simulatorMachineCommands.clear(machineID)
 	return output, nil
 }
 

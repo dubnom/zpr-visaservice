@@ -152,6 +152,7 @@ func runSimulator(listen string) error {
 	mux.HandleFunc("GET /api/simulator/status", handleSimulatorStatus)
 	mux.HandleFunc("GET /api/simulator/activity", handleSimulatorActivity)
 	mux.HandleFunc("GET /api/simulator/scenarios", handleSimulatorScenarioCatalog)
+	mux.HandleFunc("GET /api/simulator/logs/{machine}/{workload}", handleSimulatorWorkloadLogs)
 	mux.HandleFunc("POST /api/simulator/scenarios/cancel", handleSimulatorScenarioCancel)
 	mux.HandleFunc("POST /api/simulator/scenarios/{scenario}/run", handleSimulatorScenarioRun)
 	mux.HandleFunc("/agents.html", func(w http.ResponseWriter, r *http.Request) { serveStaticPage(staticRoot, "agents.html", w) })
@@ -303,6 +304,8 @@ func handleSimulatorMachineSession(w http.ResponseWriter, r *http.Request) {
 				return
 			}
 			if startCommand != nil {
+				simulatorControllers.clear(machineID)
+				simulatorMachineCommands.clear(machineID)
 				output, runErr = startCommand.CombinedOutput()
 			} else {
 				output = []byte("machine already running")
@@ -337,6 +340,8 @@ func handleSimulatorMachineSession(w http.ResponseWriter, r *http.Request) {
 		}
 		if action == "stop" {
 			simulatorSessions.clear(machineID)
+			simulatorControllers.clear(machineID)
+			simulatorMachineCommands.clear(machineID)
 		}
 		writeSimulatorJSON(w, map[string]string{"action": action, "machine": machineID, "output": strings.TrimSpace(string(output))})
 		return
@@ -356,8 +361,8 @@ func handleSimulatorMachineSession(w http.ResponseWriter, r *http.Request) {
 			http.Error(w, "invalid simulated login request", http.StatusBadRequest)
 			return
 		}
-		if !simulatorManifestHasUser(manifest, request.User) {
-			http.Error(w, "user is not in the simulator directory", http.StatusBadRequest)
+		if !simulatorMachineAllowsUser(manifest, machineID, request.User) {
+			http.Error(w, "user is not permitted on this machine", http.StatusBadRequest)
 			return
 		}
 		if current := simulatorSessions.snapshot([]string{machineID})[machineID]; current.Authenticated {
@@ -546,6 +551,18 @@ func simulatorManifestHasUser(manifest simulatorManifest, user string) bool {
 	for _, machine := range manifest.Machines {
 		if machine.Owner == user {
 			return true
+		}
+	}
+	return false
+}
+
+func simulatorMachineAllowsUser(manifest simulatorManifest, machineID, user string) bool {
+	if !simulatorManifestHasUser(manifest, user) {
+		return false
+	}
+	for _, machine := range manifest.Machines {
+		if machine.ID == machineID {
+			return machine.Owner == "it-pool" || machine.Owner == user
 		}
 	}
 	return false
@@ -766,9 +783,7 @@ func simulatorRuntimeComponentStates(manifest simulatorManifest, actors []actor,
 		case "starting":
 			states[component.Name] = "starting"
 		case "active":
-			if states[component.Name] != "running" {
-				states[component.Name] = "starting"
-			}
+			states[component.Name] = "running"
 		}
 	}
 	return states

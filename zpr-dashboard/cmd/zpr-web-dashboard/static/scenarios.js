@@ -82,6 +82,7 @@ async function postScenarioAction(url) {
   await refreshScenarios();
 }
 
+
 document.getElementById("scenario-refresh").addEventListener("click", refreshScenarios);
 document.getElementById("scenario-list").addEventListener("click", async (event) => {
   const button = event.target.closest("[data-run-scenario]");

@@ -45,6 +45,14 @@ func TestSimulatorRuntimeComponentStatesUsesLinkStatusInsteadOfStaleActor(t *tes
 	}
 }
 
+func TestSimulatorRuntimeComponentStatesActiveLinkWithoutActorSnapshot(t *testing.T) {
+	manifest := simulatorManifest{Components: []simulatorComponent{{Name: "echo-service", Agent: "echo-service"}}}
+	states := simulatorRuntimeComponentStates(manifest, nil, map[string]string{"echo-service": "active"})
+	if states["echo-service"] != "running" {
+		t.Fatalf("active workload state = %q, want running", states["echo-service"])
+	}
+}
+
 func TestValidateSimulatorManifestRequiresTwentyMachinesButNoWorkloadPlacement(t *testing.T) {
 	manifest := simulatorManifest{Machines: make([]simulatorMachine, 20)}
 	for index := range manifest.Machines {
@@ -200,6 +208,41 @@ func TestMachineCommandQueueCorrelatesPerMachineResults(t *testing.T) {
 	}
 }
 
+func TestMachineCommandQueueClearReplacesStalePollQueue(t *testing.T) {
+	oldQueue := make(chan machineControlCommand, 1)
+	registry := machineCommandRegistry{
+		queues:  map[string]chan machineControlCommand{"machine-06": oldQueue},
+		pending: make(map[string]chan machineControlCommandResult),
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+	defer cancel()
+	oldDone := make(chan error, 1)
+	go func() {
+		_, err := registry.enqueueAndWait(ctx, "machine-06", machineControlCommand{Action: "logout"})
+		oldDone <- err
+	}()
+	oldCommand := <-oldQueue
+	registry.clear("machine-06")
+	if err := <-oldDone; err == nil || err.Error() != "machine controller restarted" {
+		t.Fatalf("stale command was not cancelled: %v", err)
+	}
+	newDone := make(chan error, 1)
+	go func() {
+		_, err := registry.enqueueAndWait(ctx, "machine-06", machineControlCommand{Action: "login", User: "zoe.carter"})
+		newDone <- err
+	}()
+	command, received := registry.next(ctx, "machine-06")
+	if !received || command.ID == oldCommand.ID || command.Action != "login" {
+		t.Fatalf("fresh command = %+v, received=%t", command, received)
+	}
+	if !registry.complete("machine-06", machineControlCommandResult{ID: command.ID}) {
+		t.Fatal("fresh command result was not accepted")
+	}
+	if err := <-newDone; err != nil {
+		t.Fatalf("fresh command failed: %v", err)
+	}
+}
+
 func TestMachineWorkloadZPRConfiguration(t *testing.T) {
 	service, ok := machineWorkload("echo-service")
 	if !ok || service.address != "fd00:1:7::1" || service.key != "service-echo-rsa.key" || service.services != "EchoService" {
@@ -222,6 +265,17 @@ func TestMachineControllerRegistryExpiresStaleHeartbeats(t *testing.T) {
 	}
 }
 
+func TestMachineControllerRegistryClearForcesReconnect(t *testing.T) {
+	now := time.Date(2026, 10, 1, 12, 0, 0, 0, time.UTC)
+	registry := machineControllerRegistry{lastSeen: map[string]time.Time{}}
+	registry.record("machine-06", now)
+	registry.clear("machine-06")
+	status := registry.snapshot([]string{"machine-06"}, now)["machine-06"]
+	if status.Connected || !status.LastSeen.IsZero() {
+		t.Fatalf("cleared controller status = %+v, want offline with no prior heartbeat", status)
+	}
+}
+
 func TestSimulatorManifestHasUserRejectsSharedPoolAndUnknownUsers(t *testing.T) {
 	manifest := simulatorManifest{Machines: []simulatorMachine{
 		{ID: "machine-01", Owner: "elena.park"},
@@ -232,6 +286,29 @@ func TestSimulatorManifestHasUserRejectsSharedPoolAndUnknownUsers(t *testing.T) 
 	}
 	if simulatorManifestHasUser(manifest, "it-pool") || simulatorManifestHasUser(manifest, "unknown") {
 		t.Fatal("shared-pool and unknown identities must not authenticate")
+	}
+}
+
+func TestSimulatorMachineAllowsOwnerOrSharedPoolUser(t *testing.T) {
+	manifest := simulatorManifest{Machines: []simulatorMachine{
+		{ID: "machine-01", Owner: "elena.park"},
+		{ID: "machine-02", Owner: "jamal.brooks"},
+		{ID: "machine-13", Owner: "it-pool"},
+	}}
+	for _, test := range []struct {
+		machine string
+		user    string
+		want    bool
+	}{
+		{"machine-01", "elena.park", true},
+		{"machine-01", "jamal.brooks", false},
+		{"machine-13", "jamal.brooks", true},
+		{"machine-13", "it-pool", false},
+		{"machine-99", "elena.park", false},
+	} {
+		if got := simulatorMachineAllowsUser(manifest, test.machine, test.user); got != test.want {
+			t.Errorf("machine %s user %s permitted = %t, want %t", test.machine, test.user, got, test.want)
+		}
 	}
 }
 

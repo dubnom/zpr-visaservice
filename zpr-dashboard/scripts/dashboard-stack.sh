@@ -25,6 +25,10 @@ DNS_CONTAINER="${ZPR_DNS_CONTAINER:-zpr-dns-bind9}"
 DNS_IMAGE="${ZPR_DNS_IMAGE:-zpr-dns-bind9:local}"
 DNS_STATS_RELAY_PID="$STATE_DIR/dns-stats-relay.pid"
 DNS_STATS_RELAY_PORT="${ZPR_DNS_STATS_RELAY_PORT:-8054}"
+DNS_RECORDS_RELAY_PID="$STATE_DIR/dns-records-relay.pid"
+DNS_RECORDS_RELAY_PORT="${ZPR_DNS_RECORDS_RELAY_PORT:-8055}"
+DNS_SERVICE_ADDRESS="${ZPR_DNS_SERVICE_ADDRESS:-fd00:1:1::1}"
+DNS_VIEWER_KEY_FILE="${ZPR_DNS_TRANSFER_TSIG_KEY_FILE:-$DNS_RUNTIME_DIR/zpr-dns-viewer.key}"
 
 POLICY_PID="$STATE_DIR/policy-service.pid"
 CONTROL_PID="$STATE_DIR/control-service.pid"
@@ -32,6 +36,11 @@ ROOM_PID="$STATE_DIR/control-room.pid"
 SIMULATOR_PID="$STATE_DIR/simulator.pid"
 ADMIN_RELAY_PID="$STATE_DIR/admin-relay.pid"
 ADMIN_RELAY_PORT=8184
+LDAP_UI_RELAY_PID="$STATE_DIR/ldap-ui-relay.pid"
+LDAP_UI_RELAY_PORT="${ZPR_LDAP_UI_RELAY_PORT:-8797}"
+OBSERVABILITY_UI_RELAY_PID="$STATE_DIR/observability-ui-relay.pid"
+OBSERVABILITY_UI_RELAY_PORT="${ZPR_OBSERVABILITY_UI_RELAY_PORT:-8798}"
+OBSERVABILITY_ADDRESS="${ZPR_OBSERVABILITY_ADDR:-fd5a:5052:adda:1::54}"
 
 pid_running() {
     [ -f "$1" ] && kill -0 "$(cat "$1")" 2>/dev/null
@@ -85,6 +94,7 @@ stop_stack() {
     stop_service "$ROOM_PID"
     stop_service "$CONTROL_PID"
     stop_service "$ADMIN_RELAY_PID"
+    stop_ui_relays
     stop_service "$POLICY_PID"
     stop_dns_service
 }
@@ -109,8 +119,23 @@ start_admin_relay() {
 start_dns_service() {
     config=${ZPR_DNS_NAMED_CONF:-$DNS_PROFILE_DIR/named.conf.simulator}
     key_file=${ZPR_DNS_TSIG_KEY_FILE:-$DNS_RUNTIME_DIR/zpr-vs-publisher.key}
-    zone_file=${ZPR_DNS_ZONE_FILE:-$DNS_RUNTIME_DIR/db.svc.zpr}
-    for file in "$config" "$key_file" "$zone_file"; do
+    zone_file=${ZPR_DNS_ZONE_FILE:-$DNS_RUNTIME_DIR/zone/db.svc.zpr}
+    zone_dir=${ZPR_DNS_ZONE_DIR:-$(dirname "$zone_file")}
+    legacy_zone_file="$DNS_RUNTIME_DIR/db.svc.zpr"
+    mkdir -p "$zone_dir"
+    if [ ! -r "$zone_file" ] && [ -r "$legacy_zone_file" ]; then
+        cp "$legacy_zone_file" "$zone_file"
+    fi
+    if [ ! -r "$DNS_VIEWER_KEY_FILE" ]; then
+        mkdir -p "$(dirname "$DNS_VIEWER_KEY_FILE")"
+        (
+            umask 077
+            viewer_secret=$(openssl rand -base64 32 | tr -d '\n')
+            printf 'key "zpr-dns-viewer" {\n    algorithm hmac-sha256;\n    secret "%s";\n};\n' "$viewer_secret" >"$DNS_VIEWER_KEY_FILE"
+            chmod 600 "$DNS_VIEWER_KEY_FILE"
+        )
+    fi
+    for file in "$config" "$key_file" "$zone_file" "$DNS_VIEWER_KEY_FILE"; do
         if [ ! -r "$file" ]; then
             echo "DNS simulator asset is missing or unreadable: $file" >&2
             return 1
@@ -122,18 +147,38 @@ start_dns_service() {
     docker run -d --name "$DNS_CONTAINER" --network none --privileged --pid="container:$SIMULATION_CONTAINER" \
         -v "$config:/etc/bind/named.conf:ro" \
         -v "$key_file:/run/secrets/zpr-vs-publisher.key:ro" \
-        -v "$zone_file:/var/lib/bind/db.svc.zpr" \
+        -v "$DNS_VIEWER_KEY_FILE:/run/secrets/zpr-dns-viewer.key:ro" \
+        -v "$zone_dir:/var/lib/bind" \
         "$DNS_IMAGE" >/dev/null
 
     start_service dns-stats-relay "$DNS_STATS_RELAY_PID" socat \
         "TCP-LISTEN:$DNS_STATS_RELAY_PORT,bind=127.0.0.1,reuseaddr,fork" \
         "SYSTEM:\"docker exec -i $SIMULATION_CONTAINER ip netns exec zpr-a socat STDIO TCP:127.0.0.1:8053\""
     wait_for_url "http://127.0.0.1:$DNS_STATS_RELAY_PORT/json/v1/status" dns-stats-relay
+
+    start_service dns-records-relay "$DNS_RECORDS_RELAY_PID" socat \
+        "TCP-LISTEN:$DNS_RECORDS_RELAY_PORT,bind=127.0.0.1,reuseaddr,fork" \
+        "SYSTEM:\"docker exec -i $SIMULATION_CONTAINER ip netns exec zpr-a socat STDIO TCP:[$DNS_SERVICE_ADDRESS]:53\""
 }
 
 stop_dns_service() {
+    stop_service "$DNS_RECORDS_RELAY_PID"
     stop_service "$DNS_STATS_RELAY_PID"
     docker rm -f "$DNS_CONTAINER" >/dev/null 2>&1 || true
+}
+
+start_ui_relays() {
+    start_service ldap-ui-relay "$LDAP_UI_RELAY_PID" socat \
+        "TCP-LISTEN:$LDAP_UI_RELAY_PORT,bind=127.0.0.1,reuseaddr,fork" \
+        "SYSTEM:\"docker exec -i $SIMULATION_CONTAINER ip netns exec zpr-vs socat STDIO TCP:127.0.0.1:8080\""
+    start_service observability-ui-relay "$OBSERVABILITY_UI_RELAY_PID" socat \
+        "TCP-LISTEN:$OBSERVABILITY_UI_RELAY_PORT,bind=127.0.0.1,reuseaddr,fork" \
+        "SYSTEM:\"docker exec -i $SIMULATION_CONTAINER ip netns exec zpr-vs socat STDIO TCP:[$OBSERVABILITY_ADDRESS]:5080\""
+}
+
+stop_ui_relays() {
+    stop_service "$OBSERVABILITY_UI_RELAY_PID"
+    stop_service "$LDAP_UI_RELAY_PID"
 }
 
 start_control_service() {
@@ -146,6 +191,9 @@ start_control_service() {
         ZPR_ADMIN_CA_FILE="$RUNTIME_DIR/local-admin-cert.pem" \
         ZPR_ADMIN_KEY_FILE="$RUNTIME_DIR/admin-read.key" \
         ZPR_DNS_STATS_URL="${ZPR_DNS_STATS_URL:-http://127.0.0.1:$DNS_STATS_RELAY_PORT}" \
+        ZPR_DNS_TRANSFER_ADDR="127.0.0.1:$DNS_RECORDS_RELAY_PORT" \
+        ZPR_DNS_TRANSFER_TSIG_KEY_FILE="$DNS_VIEWER_KEY_FILE" \
+        ZPR_DEMO_LDAP_EDITOR_URL="http://127.0.0.1:$LDAP_UI_RELAY_PORT/" \
         ZPR_POLICY_SERVICE_URL=https://127.0.0.1:8789 \
         ZPR_POLICY_SERVICE_CA_FILE="$SERVICE_CERTS/service-ca.crt" \
         ZPR_POLICY_CLIENT_CERT_FILE="$SERVICE_CERTS/control-policy-client.crt" \
@@ -375,6 +423,7 @@ start_stack() {
 
     start_admin_relay
     start_dns_service
+    start_ui_relays
     start_control_service
 
     start_service control-room "$ROOM_PID" env \
@@ -401,12 +450,14 @@ start_stack() {
 		--key "$CONTROL_DIR/machine-01.key"
 	start_machine_controllers
     echo "Control Room ready at http://127.0.0.1:8787"
+    echo "OpenObserve GUI relay at http://127.0.0.1:$OBSERVABILITY_UI_RELAY_PORT"
+    echo "LDAP editor relay at http://127.0.0.1:$LDAP_UI_RELAY_PORT/phpldapadmin/"
     echo "Simulator ready at http://127.0.0.1:8788"
     echo "Machine control mTLS listener ready at https://127.0.0.1:8791"
 }
 
 status_stack() {
-    for entry in "policy-service:$POLICY_PID:8789" "admin-relay:$ADMIN_RELAY_PID:$ADMIN_RELAY_PORT" "control-service:$CONTROL_PID:8790" "control-room:$ROOM_PID:8787" "simulator:$SIMULATOR_PID:8788"; do
+    for entry in "policy-service:$POLICY_PID:8789" "admin-relay:$ADMIN_RELAY_PID:$ADMIN_RELAY_PORT" "ldap-ui-relay:$LDAP_UI_RELAY_PID:$LDAP_UI_RELAY_PORT" "observability-ui-relay:$OBSERVABILITY_UI_RELAY_PID:$OBSERVABILITY_UI_RELAY_PORT" "control-service:$CONTROL_PID:8790" "control-room:$ROOM_PID:8787" "simulator:$SIMULATOR_PID:8788"; do
         name=${entry%%:*}
         rest=${entry#*:}
         pid_file=${rest%%:*}
@@ -423,6 +474,11 @@ status_stack() {
         echo "dns-stats-relay: running (pid $(cat "$DNS_STATS_RELAY_PID"), port $DNS_STATS_RELAY_PORT)"
     else
         echo "dns-stats-relay: stopped"
+    fi
+    if pid_running "$DNS_RECORDS_RELAY_PID"; then
+        echo "dns-records-relay: running (pid $(cat "$DNS_RECORDS_RELAY_PID"), port $DNS_RECORDS_RELAY_PORT)"
+    else
+        echo "dns-records-relay: stopped"
     fi
     for number in $(seq -w 1 20); do
         container="zpr-machine-$number"
@@ -442,9 +498,11 @@ case "${1:-start}" in
     status) status_stack ;;
     start-dns) start_dns_service ;;
     stop-dns) stop_dns_service ;;
+    start-ui-relays) start_ui_relays ;;
+    stop-ui-relays) stop_ui_relays ;;
     restart-control-service)
         stop_service "$CONTROL_PID"
         start_control_service
         ;;
-    *) echo "usage: $0 {start|stop|restart|status|start-dns|stop-dns|restart-control-service}" >&2; exit 2 ;;
+    *) echo "usage: $0 {start|stop|restart|status|start-dns|stop-dns|start-ui-relays|stop-ui-relays|restart-control-service}" >&2; exit 2 ;;
 esac

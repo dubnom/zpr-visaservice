@@ -1,0 +1,32 @@
+{
+  "id": "client-service",
+  "name": "Client calls echo service",
+  "description": "Run a real HTTP request from the finance client through ZPR to an echo service on another machine.",
+  "steps": [
+    {"action": "start_machine", "machine": "machine-03"},
+    {"action": "start_machine", "machine": "machine-05"},
+    {"action": "wait_controller", "machine": "machine-03", "timeout_seconds": 90},
+    {"action": "wait_controller", "machine": "machine-05", "timeout_seconds": 90},
+    {"action": "login", "machine": "machine-03", "user": "sophie.nguyen"},
+    {"action": "login", "machine": "machine-05", "user": "arjun.patel"},
+    {"action": "select_workloads", "machine": "machine-03", "workloads": ["finance-client"]},
+    {"action": "select_workloads", "machine": "machine-05", "workloads": ["echo-service"]},
+    {"action": "start_workload", "machine": "machine-03", "component": "finance-client"},
+    {"action": "start_workload", "machine": "machine-05", "component": "echo-service"},
+    {"action": "start_test_service", "machine": "machine-05", "component": "echo-service"},
+    {"action": "request_test_service", "machine": "machine-03", "component": "finance-client", "target": "echo-service"},
+    {"action": "delay", "timeout_seconds": 2},
+    {"action": "request_test_service", "machine": "machine-03", "component": "finance-client", "target": "echo-service"},
+    {"action": "delay", "timeout_seconds": 2},
+    {"action": "request_test_service", "machine": "machine-03", "component": "finance-client", "target": "echo-service"}
+  ],
+  "cleanup": [
+    {"action": "stop_test_service", "machine": "machine-05", "component": "echo-service"},
+    {"action": "stop_workload", "machine": "machine-03", "component": "finance-client"},
+    {"action": "stop_workload", "machine": "machine-05", "component": "echo-service"},
+    {"action": "logout", "machine": "machine-03"},
+    {"action": "logout", "machine": "machine-05"},
+    {"action": "stop_machine", "machine": "machine-03"},
+    {"action": "stop_machine", "machine": "machine-05"}
+  ]
+}

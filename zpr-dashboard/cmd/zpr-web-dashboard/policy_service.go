@@ -84,6 +84,10 @@ func newPolicyServiceProxy() (http.Handler, string) {
 			return err
 		}
 		status.AssistantReady = strings.TrimSpace(os.Getenv("ANTHROPIC_API_KEY")) != ""
+		if status.AssistantReady {
+			status.AssistantModel = envOr("ANTHROPIC_MODEL", defaultAssistantModel)
+			status.AssistantModels = assistantModels(status.AssistantModel)
+		}
 		body, err = json.Marshal(status)
 		if err != nil {
 			return err

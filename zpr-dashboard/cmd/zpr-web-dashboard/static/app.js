@@ -1,6 +1,9 @@
 const byId = (id) => document.getElementById(id);
 const zplKeywords = new Set(["allow", "never", "define", "with", "to", "access", "and", "as", "aka", "tag", "tags", "on", "optional", "multiple", "signal", "over"]);
-const state = { snapshot: null, timer: null, paused: false, pending: false, graphCamera: null, selection: null, sorts: {}, dnsPending: false, policy: { loaded: false, configured: false, categories: [], records: [], categoryID: "", collapsedCategories: new Set(), treeInitialized: false, record: null, source: "", savedSource: "", revision: 0, browsingRevision: 0, saveAs: false, compilerReady: false, assistantReady: false, validSource: null, errorOffsets: [], revisions: [], messages: [], assistantPending: false, assistantError: "" } };
+const GRAPH_ARRIVAL_DURATION = 2800;
+const GRAPH_REMOVAL_DURATION = 1100;
+const reducedMotion = window.matchMedia?.("(prefers-reduced-motion: reduce)").matches ?? false;
+const state = { snapshot: null, timer: null, paused: false, pending: false, graphCamera: null, graphAnimations: !reducedMotion, topologyComponents: null, topologyNewComponents: new Map(), selection: null, sorts: {}, dnsPending: false, policy: { loaded: false, configured: false, categories: [], records: [], attributes: [], categoryID: "", collapsedCategories: new Set(), treeInitialized: false, record: null, source: "", savedSource: "", revision: 0, browsingRevision: 0, saveAs: false, compilerReady: false, assistantReady: false, assistantEnabled: false, assistantUsage: { input: 0, output: 0 }, validSource: null, errorOffsets: [], revisions: [], messages: [], assistantPending: false, assistantError: "" } };
 
 const pages = {
   map: "MAP",
@@ -88,9 +91,8 @@ function renderDNSStats(status, server, zones) {
 async function loadDNSStats() {
   if (state.dnsPending) return;
   state.dnsPending = true;
-  const button = byId("dns-stats-refresh");
-  button.disabled = true;
-  byId("dns-stats-status").textContent = "Loading BIND statistics…";
+  if (byId("dns-stats-status").textContent.startsWith("Waiting")) byId("dns-stats-status").textContent = "Loading BIND statistics…";
+  const recordsRequest = loadDNSRecords();
   try {
     const paths = ["status", "server", "zones"];
     const responses = await Promise.all(paths.map((path) => fetch(`/api/dns/stats/json/v1/${path}`, { cache: "no-store", headers: { Accept: "application/json" } })));
@@ -103,8 +105,27 @@ async function loadDNSStats() {
     byId("dns-counter-rows").innerHTML = `<tr><td colspan="2" class="empty-row">Unable to load DNS counters</td></tr>`;
     byId("dns-zone-rows").innerHTML = `<tr><td colspan="6" class="empty-row">Unable to load zone statistics</td></tr>`;
   } finally {
+    await recordsRequest;
     state.dnsPending = false;
-    button.disabled = false;
+  }
+}
+
+async function loadDNSRecords() {
+  const status = byId("dns-record-status");
+  const rows = byId("dns-record-rows");
+  if (status.textContent.startsWith("Waiting")) status.textContent = "Loading zone records…";
+  try {
+    const response = await fetch("/api/dns/records", { cache: "no-store", headers: { Accept: "application/json" } });
+    if (!response.ok) throw new Error(`HTTP ${response.status}`);
+    const result = await response.json();
+    const records = Array.isArray(result.records) ? result.records : [];
+    status.textContent = `${escapeHTML(result.zone || "DNS zone")} · ${formatNumber(records.length)} records`;
+    rows.innerHTML = records.length ? records.map((record) =>
+      `<tr><td class="mono">${escapeHTML(record.name || "—")}</td><td class="mono">${escapeHTML(record.ttl ?? "—")}</td><td>${escapeHTML(record.type || "—")}</td><td class="mono dns-record-value">${escapeHTML(record.value || "—")}</td></tr>`
+    ).join("") : `<tr><td colspan="4" class="empty-row">No records returned</td></tr>`;
+  } catch (error) {
+    status.textContent = `DNS records unavailable (${error.message})`;
+    rows.innerHTML = `<tr><td colspan="4" class="empty-row">Unable to load zone records</td></tr>`;
   }
 }
 
@@ -336,7 +357,7 @@ function renderInspector() {
   panel.setAttribute("aria-hidden", "false");
 }
 
-function renderTopology(data) {
+function renderTopology(data, exitComponents = []) {
   const nodes = data.actors.filter((actor) => actor.node).sort((a, b) => a.cn.localeCompare(b.cn));
   const adapters = data.actors.filter((actor) => !actor.node).sort((a, b) => a.cn.localeCompare(b.cn));
   const actors = [...nodes, ...adapters];
@@ -466,6 +487,17 @@ function renderTopology(data) {
     return `<g class="graph-edge ${filtered}" data-inspect-link="${escapeHTML(key)}" tabindex="0" role="button" aria-label="Inspect ${escapeHTML(title)}"><title>${escapeHTML(title)}</title><line class="graph-link ${cls}" x1="${from.x}" y1="${from.y}" x2="${to.x}" y2="${to.y}"/><line class="graph-link-hit" x1="${from.x}" y1="${from.y}" x2="${to.x}" y2="${to.y}"/></g>`;
   }).join("");
 
+  const arrivalMarker = (key, x, y, radius) => {
+    if (!state.graphAnimations) return "";
+    const startedAt = state.topologyNewComponents.get(key);
+    if (startedAt == null) return "";
+    const elapsed = Date.now() - startedAt;
+    if (elapsed >= GRAPH_ARRIVAL_DURATION) {
+      state.topologyNewComponents.delete(key);
+      return "";
+    }
+    return `<g class="graph-arrival-marker" data-arrival-age="${elapsed}" aria-hidden="true"><circle class="graph-arrival-ring" cx="${x}" cy="${y}" r="${radius}"/><g class="graph-arrival-tag" transform="translate(${x} ${y - radius - 14})"><rect x="-25" y="-10" width="50" height="20" rx="4"/><text y="4">NEW</text></g></g>`;
+  };
   const vertexMarkup = actors.map((actor) => {
     const pos = positions.get(actor.cn);
     const displayName = displayNames.get(actor.cn) || actor.cn;
@@ -478,7 +510,10 @@ function renderTopology(data) {
       : isVisaService
         ? `<polygon class="graph-visa" points="${pos.x},${pos.y - 35} ${pos.x + 35},${pos.y} ${pos.x},${pos.y + 35} ${pos.x - 35},${pos.y}"/>`
         : `<circle class="graph-adapter" cx="${pos.x}" cy="${pos.y}" r="29"/>`;
-    return `<g class="graph-vertex ${query && !matches(actor) ? "filtered" : ""}" data-inspect-actor="${escapeHTML(actor.cn)}" tabindex="0" role="button" aria-label="Inspect ${escapeHTML(displayName)}"><title>${escapeHTML(displayName)} · ${escapeHTML(actor.cn)} · ${escapeHTML(actor.zpr_addr || "address pending")}</title>${glyph}<text class="graph-label" x="${pos.x}" y="${pos.y + 3}">${escapeHTML(shortName)}</text></g>`;
+    const componentKey = `actor:${JSON.stringify(actor.cn)}`;
+    const marker = arrivalMarker(componentKey, pos.x, pos.y, actorRadius(actor) + 8);
+    const arrivingClass = marker ? " arriving" : "";
+    return `<g class="graph-vertex${arrivingClass} ${query && !matches(actor) ? "filtered" : ""}" data-topology-component="${escapeHTML(componentKey)}" data-inspect-actor="${escapeHTML(actor.cn)}" tabindex="0" role="button" aria-label="Inspect ${escapeHTML(displayName)}"><title>${escapeHTML(displayName)} · ${escapeHTML(actor.cn)} · ${escapeHTML(actor.zpr_addr || "address pending")}</title>${glyph}${marker}<text class="graph-label" x="${pos.x}" y="${pos.y + 3}">${escapeHTML(shortName)}</text></g>`;
   }).join("");
 
   const serviceEdgeMarkup = [];
@@ -507,10 +542,13 @@ function renderTopology(data) {
     const providerName = displayNames.get(owner.cn) || owner.cn;
     const title = `${service.service_name} registered by ${providerName} (${owner.cn})`;
     const labelForScreenReader = `Inspect service ${service.service_name}, registered by ${providerName}`;
-    return `<g class="graph-service-badge${trustedClass} ${filtered}" data-inspect-service="${escapeHTML(service.service_name)}" tabindex="0" role="button" aria-label="${escapeHTML(labelForScreenReader)}"><title>${escapeHTML(title)}</title><rect x="${position.x - badgeWidth / 2}" y="${position.y - 10}" width="${badgeWidth}" height="20" rx="4"/><text x="${position.x}" y="${position.y + 3}">${escapeHTML(shortLabel)}</text></g>`;
+    const componentKey = `service:${JSON.stringify([service.actor_cn, service.service_name])}`;
+    const marker = arrivalMarker(componentKey, position.x, position.y, badgeWidth / 2 + 8);
+    const arrivingClass = marker ? " arriving" : "";
+    return `<g class="graph-service-badge${trustedClass}${arrivingClass} ${filtered}" data-topology-component="${escapeHTML(componentKey)}" data-inspect-service="${escapeHTML(service.service_name)}" tabindex="0" role="button" aria-label="${escapeHTML(labelForScreenReader)}"><title>${escapeHTML(title)}</title><rect x="${position.x - badgeWidth / 2}" y="${position.y - 10}" width="${badgeWidth}" height="20" rx="4"/>${marker}<text x="${position.x}" y="${position.y + 3}">${escapeHTML(shortLabel)}</text></g>`;
   }).join("");
 
-  stage.innerHTML = `<div class="graph-controls" aria-label="Topology graph controls"><button class="graph-control" data-graph-action="in" type="button" aria-label="Zoom in" title="Zoom in">+</button><button class="graph-control" data-graph-action="out" type="button" aria-label="Zoom out" title="Zoom out">−</button><button class="graph-control graph-fit" data-graph-action="fit" type="button" aria-label="Fit graph" title="Fit graph">Fit</button><span class="graph-hint">DRAG TO PAN · SCROLL TO ZOOM</span></div><svg class="topology-graph" viewBox="0 0 ${width} ${height}" role="img" aria-label="Topology graph with ${nodes.length} nodes, ${adapters.length} adapters, ${dockEdges.length} dock connections, ${networkEdges.length} inter-node links, and ${(data.services || []).filter((service) => servicesByActor.has(service.actor_cn)).length} registered services"><g id="graph-world">${edgeMarkup}${serviceEdgeMarkup.join("")}${vertexMarkup}${serviceMarkup}</g></svg>`;
+  stage.innerHTML = `<div class="graph-controls" aria-label="Topology graph controls"><button class="graph-control" data-graph-action="in" type="button" aria-label="Zoom in" title="Zoom in">+</button><button class="graph-control" data-graph-action="out" type="button" aria-label="Zoom out" title="Zoom out">−</button><button class="graph-control graph-fit" data-graph-action="fit" type="button" aria-label="Fit graph" title="Fit graph">Fit</button><label class="graph-animation-toggle" title="Highlight newly added components"><input id="graph-animation-toggle" type="checkbox" aria-label="Animate newly added components"><span>Animate</span></label><span class="graph-hint">DRAG TO PAN · SCROLL TO ZOOM</span></div><svg class="topology-graph" viewBox="0 0 ${width} ${height}" role="img" aria-label="Topology graph with ${nodes.length} nodes, ${adapters.length} adapters, ${dockEdges.length} dock connections, ${networkEdges.length} inter-node links, and ${(data.services || []).filter((service) => servicesByActor.has(service.actor_cn)).length} registered services"><g id="graph-world">${edgeMarkup}${serviceEdgeMarkup.join("")}<g id="graph-exit-layer" aria-hidden="true">${exitComponents.join("")}</g>${vertexMarkup}${serviceMarkup}</g></svg>`;
 
   setupGraphControls(stage, width, height);
 }
@@ -570,6 +608,13 @@ function setupGraphControls(stage, width, height) {
       apply();
     }
   }));
+  const animationToggle = stage.querySelector("#graph-animation-toggle");
+  animationToggle.checked = state.graphAnimations;
+  animationToggle.addEventListener("change", () => {
+    state.graphAnimations = animationToggle.checked;
+    if (!state.graphAnimations) state.topologyNewComponents.clear();
+    if (state.snapshot) renderTopology(state.snapshot);
+  });
   svg.addEventListener("wheel", (event) => {
     event.preventDefault();
     const point = pointAt(event);
@@ -598,6 +643,45 @@ function setupGraphControls(stage, width, height) {
   svg.addEventListener("pointerup", endDrag);
   svg.addEventListener("pointercancel", endDrag);
   apply();
+  stage.querySelectorAll("#graph-exit-layer .graph-exiting").forEach((component) => {
+    const animation = component.animate([
+      { opacity: 1, transform: "scale(1)" },
+      { opacity: 0, transform: "scale(.45)" },
+    ], { duration: GRAPH_REMOVAL_DURATION, easing: "ease-in", fill: "forwards" });
+    const removalTimer = window.setTimeout(() => component.remove(), GRAPH_REMOVAL_DURATION + 150);
+    animation.onfinish = () => {
+      window.clearTimeout(removalTimer);
+      component.remove();
+    };
+  });
+  if (state.graphAnimations) {
+    stage.querySelectorAll(".graph-arrival-marker").forEach((marker) => {
+      const elapsed = Number(marker.dataset.arrivalAge) || 0;
+      const ring = marker.querySelector(".graph-arrival-ring");
+      const ringAnimation = ring.animate([
+        { opacity: 0, transform: "scale(.72)" },
+        { opacity: 1, offset: 0.1 },
+        { opacity: 0, transform: "scale(1.18)" },
+      ], { duration: GRAPH_ARRIVAL_DURATION, easing: "ease-out", fill: "both" });
+      ringAnimation.currentTime = elapsed;
+      const labelAnimation = marker.querySelector(".graph-arrival-tag text").animate([
+        { opacity: 0 },
+        { opacity: 1, offset: 0.08 },
+        { opacity: 1, offset: 0.72 },
+        { opacity: 0 },
+      ], { duration: GRAPH_ARRIVAL_DURATION, easing: "ease-out", fill: "both" });
+      labelAnimation.currentTime = elapsed;
+      const component = marker.previousElementSibling;
+      if (component) {
+        const componentAnimation = component.animate([
+          { transform: "scale(.88)" },
+          { transform: "scale(1.07)", offset: 0.12 },
+          { transform: "scale(1)" },
+        ], { duration: 900, easing: "ease-out", fill: "both" });
+        componentAnimation.currentTime = Math.min(elapsed, 900);
+      }
+    });
+  }
 }
 
 function nodeState(actor, data) {
@@ -662,9 +746,11 @@ async function loadPolicyWorkspace() {
       configured: data.configured,
       categories: data.categories || [],
       records: data.records || [],
+      attributes: data.attributes || [],
       compilerReady: data.compiler_ready,
       assistantReady: data.assistant_ready,
     });
+    renderPolicyAttributes();
     if (!policy.categories.some((category) => category.id === policy.categoryID)) {
       const policyCategories = new Set(policy.records.filter((record) => record.kind === "policy").map((record) => record.category_id));
       policy.categoryID = policy.categories.find((category) => policyCategories.has(category.id))?.id
@@ -681,6 +767,7 @@ async function loadPolicyWorkspace() {
     if (policy.record?.isDraft) {
       byId("policy-source").disabled = false;
       renderPolicyIdentity(policy.record, 0, "");
+      renderPolicyAttributes();
       updatePolicyDirtyState();
     } else if (policy.record && hasUnsavedChanges) {
       byId("policy-check-result").textContent = "Unsaved edits retained. Evaluate before saving.";
@@ -695,15 +782,66 @@ async function loadPolicyWorkspace() {
     byId("new-policy-record").disabled = !policy.configured || !policy.categoryID;
     byId("assistant-state").textContent = policy.assistantReady ? "Ready" : "Not configured";
     byId("assistant-state").classList.toggle("ready", policy.assistantReady);
-    byId("assistant-question").disabled = !policy.configured || !policy.assistantReady;
-    byId("assistant-send").disabled = !policy.configured || !policy.assistantReady;
+    const modelSelect = byId("assistant-model");
+    const selectedModel = modelSelect.value || data.assistant_model;
+    modelSelect.replaceChildren();
+    for (const model of data.assistant_models || []) {
+      const option = document.createElement("option");
+      option.value = model;
+      option.textContent = model;
+      modelSelect.append(option);
+    }
+    modelSelect.value = (data.assistant_models || []).includes(selectedModel) ? selectedModel : data.assistant_model || "";
+    updateAssistantControls();
     byId("assistant-disclosure").textContent = policy.assistantReady
-      ? "Submitting sends the current policy and chat history to Anthropic. Suggestions are not applied automatically."
+      ? "Submitting sends the current policy, configured attribute catalog, and chat history to Anthropic. Suggestions are not applied automatically."
       : "Claude is off. Set ANTHROPIC_API_KEY on the server to enable it.";
   } catch (error) {
     policy.loaded = false;
     byId("policy-check-result").textContent = error.message;
   }
+}
+
+function updateAssistantControls() {
+  const policy = state.policy;
+  const available = Boolean(policy.configured && policy.assistantReady);
+  const enabled = available && policy.assistantEnabled;
+  byId("assistant-enabled").disabled = !available;
+  byId("assistant-enabled").checked = enabled;
+  byId("assistant-model").disabled = !enabled;
+  byId("assistant-max-tokens").disabled = !enabled;
+  byId("assistant-question").disabled = !enabled || policy.record?.kind !== "policy";
+  byId("assistant-send").disabled = !enabled || policy.record?.kind !== "policy" || policy.assistantPending;
+  byId("assistant-usage").textContent = `Session: ${formatNumber(policy.assistantUsage.input)} input · ${formatNumber(policy.assistantUsage.output)} output tokens`;
+}
+
+function renderPolicyAttributes() {
+  const select = byId("policy-attribute-picker");
+  const insert = byId("policy-attribute-insert");
+  const textarea = byId("policy-source");
+  const attributes = state.policy.attributes || [];
+  select.replaceChildren();
+  const placeholder = document.createElement("option");
+  placeholder.value = "";
+  placeholder.textContent = attributes.length ? "Choose an attribute…" : "No attributes configured";
+  select.append(placeholder);
+  for (const item of attributes) {
+    const option = document.createElement("option");
+    option.value = item.attribute;
+    option.textContent = `${item.attribute} · ${item.source}`;
+    select.append(option);
+  }
+  select.disabled = textarea.disabled || attributes.length === 0;
+  insert.disabled = select.disabled || !select.value;
+}
+
+function insertPolicyAttribute() {
+  const textarea = byId("policy-source");
+  const attribute = byId("policy-attribute-picker").value;
+  if (textarea.disabled || !attribute) return;
+  textarea.setRangeText(`${attribute}:`, textarea.selectionStart, textarea.selectionEnd, "end");
+  textarea.focus();
+  textarea.dispatchEvent(new Event("input", { bubbles: true }));
 }
 
 function renderPolicyCatalog() {
@@ -769,6 +907,7 @@ function clearPolicySelection() {
   policy.errorOffsets = [];
   policy.browsingRevision = 0;
   byId("policy-source").value = ""; byId("policy-source").disabled = true;
+  renderPolicyAttributes();
   updatePolicyHighlight(); hidePolicyCompletions();
   renderPolicyIdentity(null);
   byId("policy-record-title").hidden = false;
@@ -800,14 +939,14 @@ async function selectPolicyRecord(id, fetchRecord = true, discardEdits = false) 
     byId("policy-draft-name").hidden = true;
     byId("policy-draft-name").value = "";
     byId("policy-source").value = policy.source; byId("policy-source").disabled = record.kind !== "policy";
+    renderPolicyAttributes();
     updatePolicyHighlight(); hidePolicyCompletions();
     renderPolicyIdentity(record, record.current_revision, record.content_hash);
     byId("policy-check").disabled = record.kind !== "policy" || !policy.compilerReady;
     byId("policy-save").disabled = true;
     byId("policy-check-result").textContent = record.kind === "policy" ? "Evaluate the current policy before saving." : `Record type: ${record.kind}`;
     byId("policy-check-result").dataset.state = "";
-    byId("assistant-question").disabled = record.kind !== "policy" || !policy.assistantReady;
-    byId("assistant-send").disabled = record.kind !== "policy" || !policy.assistantReady;
+    updateAssistantControls();
     policy.messages = []; policy.assistantError = ""; renderAssistantMessages();
     renderPolicyCatalog(); await loadPolicyHistory(record.id);
     updatePolicyDirtyState();
@@ -1118,8 +1257,7 @@ function beginNewPolicyDraft() {
   byId("policy-save").disabled = true;
   byId("policy-save-as").disabled = true;
   byId("policy-refresh").disabled = false;
-  byId("assistant-question").disabled = !policy.assistantReady;
-  byId("assistant-send").disabled = !policy.assistantReady;
+  updateAssistantControls();
   renderPolicyCatalog();
   updatePolicyDirtyState();
   byId("policy-source").focus();
@@ -1370,16 +1508,18 @@ async function askPolicyAssistant(question) {
   try {
     const response = await fetch("/api/policy/assistant", {
       method: "POST", headers: { "Content-Type": "application/json", Accept: "application/json" },
-      body: JSON.stringify({ source: byId("policy-source").value, messages: policy.messages }),
+      body: JSON.stringify({ source: byId("policy-source").value, messages: policy.messages, model: byId("assistant-model").value, max_tokens: Number(byId("assistant-max-tokens").value) }),
     });
     const result = await response.json();
     if (!response.ok) throw new Error(result.error || `Claude request failed (${response.status})`);
     policy.messages.push({ role: "assistant", content: result.answer });
+    policy.assistantUsage.input += Number(result.input_tokens) || 0;
+    policy.assistantUsage.output += Number(result.output_tokens) || 0;
   } catch (error) {
     policy.assistantError = error.message;
   } finally {
     policy.assistantPending = false;
-    byId("assistant-send").disabled = !policy.assistantReady;
+    updateAssistantControls();
     renderAssistantMessages();
   }
 }
@@ -1427,11 +1567,57 @@ function renderDenies(data) {
   ).join("") : `<tr><td colspan="5" class="empty-row">${denies.length ? "No matching denials" : "No recent policy denials"}</td></tr>`;
 }
 
+function snapshotRemovedTopologyComponents(keys) {
+  if (!keys.length) return [];
+  const world = byId("topology-stage").querySelector("#graph-world");
+  if (!world) return [];
+  const removed = new Set(keys);
+  return [...world.querySelectorAll("[data-topology-component]")]
+    .filter((component) => removed.has(component.dataset.topologyComponent))
+    .map((component) => {
+      const bounds = component.getBBox();
+      const clone = component.cloneNode(true);
+      clone.classList.remove("filtered", "arriving");
+      clone.classList.add("graph-exiting");
+      clone.removeAttribute("tabindex");
+      clone.removeAttribute("role");
+      clone.removeAttribute("data-inspect-actor");
+      clone.removeAttribute("data-inspect-service");
+      clone.setAttribute("aria-hidden", "true");
+      clone.querySelectorAll(".graph-arrival-marker").forEach((marker) => marker.remove());
+      const label = document.createElementNS("http://www.w3.org/2000/svg", "text");
+      label.setAttribute("class", "graph-exit-label");
+      label.setAttribute("x", String(bounds.x + bounds.width / 2));
+      label.setAttribute("y", String(bounds.y - 7));
+      label.textContent = "REMOVED";
+      clone.append(label);
+      return clone.outerHTML;
+    });
+}
+
 function render(data) {
+  const componentKeys = new Set([
+    ...data.actors.map((actor) => `actor:${JSON.stringify(actor.cn)}`),
+    ...(data.services || []).map((service) => `service:${JSON.stringify([service.actor_cn, service.service_name])}`),
+  ]);
+  const now = Date.now();
+  const removedKeys = state.topologyComponents
+    ? [...state.topologyComponents].filter((key) => !componentKeys.has(key))
+    : [];
+  const exitComponents = state.graphAnimations ? snapshotRemovedTopologyComponents(removedKeys) : [];
+  for (const [key, startedAt] of state.topologyNewComponents) {
+    if (now - startedAt >= GRAPH_ARRIVAL_DURATION) state.topologyNewComponents.delete(key);
+  }
+  if (state.topologyComponents && state.graphAnimations) {
+    for (const key of componentKeys) {
+      if (!state.topologyComponents.has(key)) state.topologyNewComponents.set(key, now);
+    }
+  }
+  state.topologyComponents = componentKeys;
   state.snapshot = data;
   updateConnection(data);
   renderMetrics(data);
-  renderTopology(data);
+  renderTopology(data, exitComponents);
   renderActors(data);
   renderServices(data);
   renderTrusted(data);
@@ -1444,6 +1630,7 @@ async function refresh() {
   if (state.pending) return;
   state.pending = true;
   byId("refresh-now").disabled = true;
+  if (currentPage() === "dns") void loadDNSStats();
   try {
     const response = await fetch("/api/snapshot", { cache: "no-store", headers: { Accept: "application/json" } });
     if (!response.ok) throw new Error(`Monitor server responded ${response.status}`);
@@ -1464,7 +1651,6 @@ function setPollTimer() {
 }
 
 byId("refresh-now").addEventListener("click", refresh);
-byId("dns-stats-refresh").addEventListener("click", loadDNSStats);
 byId("policy-refresh").addEventListener("click", reloadPolicyWorkspace);
 byId("new-category").addEventListener("click", openCategoryDialog);
 byId("new-policy-record").addEventListener("click", beginNewPolicyDraft);
@@ -1495,6 +1681,10 @@ byId("policy-source").addEventListener("input", () => {
   updatePolicyDirtyState();
   showPolicyCompletions();
 });
+byId("policy-attribute-picker").addEventListener("change", () => {
+  byId("policy-attribute-insert").disabled = !byId("policy-attribute-picker").value || byId("policy-source").disabled;
+});
+byId("policy-attribute-insert").addEventListener("click", insertPolicyAttribute);
 byId("policy-draft-name").addEventListener("input", () => {
   if (!state.policy.record?.isDraft) return;
   state.policy.record.name = byId("policy-draft-name").value;
@@ -1534,10 +1724,14 @@ byId("policy-source").addEventListener("blur", (event) => {
 });
 byId("policy-check").addEventListener("click", checkPolicy);
 byId("policy-save").addEventListener("click", savePolicy);
+byId("assistant-enabled").addEventListener("change", (event) => {
+  state.policy.assistantEnabled = event.target.checked;
+  updateAssistantControls();
+});
 byId("assistant-form").addEventListener("submit", (event) => {
   event.preventDefault();
   const question = byId("assistant-question").value.trim();
-  if (!question || !state.policy.assistantReady || state.policy.assistantPending) return;
+  if (!question || !state.policy.assistantEnabled || !state.policy.assistantReady || state.policy.assistantPending) return;
   byId("assistant-question").value = "";
   askPolicyAssistant(question);
 });

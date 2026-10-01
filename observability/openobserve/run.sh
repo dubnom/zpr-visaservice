@@ -28,12 +28,15 @@ case "${1:-}" in
             -e ZPR_OBSERVABILITY_ADAPTER_NAME="$ZPR_OBSERVABILITY_ADAPTER_NAME" \
             -e ZPR_OBSERVABILITY_ADDR="$ZPR_OBSERVABILITY_ADDR" \
             -v "$volume:/data" "$image"
+        sh "$profile_dir/collector.sh" start
         ;;
     stop)
+        sh "$profile_dir/collector.sh" stop
         docker rm -f "$container"
         ;;
     status)
         docker inspect -f '{{.State.Status}}' "$container"
+        sh "$profile_dir/collector.sh" status || true
         ;;
     *)
         echo "usage: $0 {build|start|stop|status}" >&2

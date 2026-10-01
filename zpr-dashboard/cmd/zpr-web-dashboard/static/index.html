@@ -5,7 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <meta name="theme-color" content="#17211e">
     <title>ZPR Control Room</title>
-    <link rel="stylesheet" href="/app.css?v=4">
+    <link rel="stylesheet" href="/app.css?v=12">
   </head>
   <body>
     <div class="app-shell">
@@ -25,6 +25,11 @@
           <a class="nav-link" href="#visas" data-page-link="visas">Visas</a>
           <a class="nav-link" href="#denies" data-page-link="denies">Denials</a>
         </nav>
+        <div class="sidebar-external-tools">
+          <p class="sidebar-tools-label">TOOLS</p>
+          <a class="nav-link sidebar-external-link" href="http://127.0.0.1:8798/" target="_blank" rel="noopener noreferrer"><span>Logging server</span><span aria-hidden="true">↗</span></a>
+          <a class="nav-link sidebar-external-link" href="http://127.0.0.1:8797/" target="_blank" rel="noopener noreferrer"><span>LDAP server</span><span aria-hidden="true">↗</span></a>
+        </div>
         <div class="sidebar-foot">
           <span class="tiny-dot"></span>
           <span>LIVE STATE + POLICY RECORDS</span>
@@ -116,12 +121,8 @@
           </section>
         </section>
 
-        <section class="page-view" id="page-dns" data-page="dns" aria-label="DNS statistics">
+        <section class="page-view" id="page-dns" data-page="dns" aria-label="DNS data">
           <section class="section-block dns-statistics-page">
-            <div class="section-heading">
-              <div><p class="eyebrow">ZPR DNS / BIND 9</p><h2>DNS statistics</h2></div>
-              <button id="dns-stats-refresh" class="button button-refresh" type="button">Refresh statistics</button>
-            </div>
             <p id="dns-stats-status" class="dns-stats-status" role="status">Waiting for BIND statistics…</p>
             <div class="metrics-grid dns-stats-metrics">
               <article class="metric metric-dark"><div class="metric-head"><span>REQUESTS</span></div><strong class="metric-value" id="dns-stat-requests">—</strong></article>
@@ -139,6 +140,10 @@
                 <div class="table-scroll"><table><thead><tr><th>ZONE</th><th>TYPE</th><th>SERIAL</th><th>SUCCESS</th><th>NXDOMAIN</th><th>AAAA</th></tr></thead><tbody id="dns-zone-rows"><tr><td colspan="6" class="empty-row">Waiting for zone statistics…</td></tr></tbody></table></div>
               </section>
             </div>
+            <section class="dns-statistics-section dns-records-section" aria-label="DNS resource records">
+              <div class="section-heading"><div><p class="eyebrow">AUTHENTICATED ZONE TRANSFER</p><h2>Resource records</h2></div><p id="dns-record-status" class="dns-record-status" role="status">Waiting for zone records…</p></div>
+              <div class="table-scroll"><table><thead><tr><th>NAME</th><th>TTL</th><th>TYPE</th><th>VALUE</th></tr></thead><tbody id="dns-record-rows"><tr><td colspan="4" class="empty-row">Waiting for zone records…</td></tr></tbody></table></div>
+            </section>
           </section>
         </section>
 
@@ -166,18 +171,29 @@
                 <div id="policy-category-tree" class="policy-category-tree" role="tree"><p class="catalog-empty">No categories yet.</p></div>
               </aside>
               <section class="policy-editor-pane" aria-label="Policy source editor">
+                <div class="policy-attribute-toolbar">
+                  <label for="policy-attribute-picker">Attribute</label>
+                  <select id="policy-attribute-picker" aria-label="Configured policy attributes" disabled><option value="">Loading attributes…</option></select>
+                  <button id="policy-attribute-insert" class="button button-refresh" type="button" disabled>Insert</button>
+                </div>
                 <div id="policy-code-editor" class="policy-code-editor">
                   <pre id="policy-highlight" class="policy-highlight" aria-hidden="true"></pre>
                   <textarea id="policy-source" aria-label="ZPL policy source" aria-describedby="policy-editor-help" spellcheck="false" autocapitalize="off" autocomplete="off" autocorrect="off" wrap="off" disabled></textarea>
                   <div id="policy-completions" class="policy-completions" role="listbox" aria-label="ZPL completions" hidden></div>
                 </div>
-                <span id="policy-editor-help" class="sr-only">ZPL syntax is highlighted. Press Control-Space for suggestions; use arrow keys to choose and Tab or Enter to insert.</span>
+                <span id="policy-editor-help" class="sr-only">ZPL syntax is highlighted. Choose an attribute and press Insert to place it at the cursor. Press Control-Space for suggestions; use arrow keys to choose and Tab or Enter to insert.</span>
                 <div id="policy-check-result" class="policy-check-result" role="status" aria-live="polite">Policy source is not loaded.</div>
                 <div class="policy-history-heading"><strong>Version history</strong><span id="policy-history-count">—</span></div>
                 <div id="policy-history" class="policy-history"><p class="catalog-empty">Select a policy to browse versions.</p></div>
               </section>
               <aside class="policy-assistant-pane" aria-label="Claude Assistant">
                 <div class="assistant-heading"><h3>Claude Assistant</h3><span id="assistant-state" class="assistant-state">Not configured</span></div>
+                <div class="assistant-settings">
+                  <label class="assistant-enable" for="assistant-enabled"><input id="assistant-enabled" type="checkbox" disabled> Use assistant</label>
+                  <label for="assistant-model">Model<select id="assistant-model" disabled></select></label>
+                  <label for="assistant-max-tokens">Max output<select id="assistant-max-tokens" disabled><option value="300">300 tokens</option><option value="600">600 tokens</option><option value="1200" selected>1,200 tokens</option><option value="2400">2,400 tokens</option></select></label>
+                  <span id="assistant-usage" class="assistant-usage" role="status">Session: 0 input · 0 output tokens</span>
+                </div>
                 <p id="assistant-disclosure" class="assistant-disclosure">When enabled, submitting a question sends the current policy and chat history to Anthropic.</p>
                 <div id="assistant-messages" class="assistant-messages" role="log" aria-live="polite"><p class="assistant-empty">No conversation yet.</p></div>
                 <form id="assistant-form" class="assistant-form">
@@ -242,6 +258,6 @@
         <footer class="page-footer"><span>ZPR CONTROL ROOM <b>·</b> LIVE MONITOR / POLICY RECORDS</span><span id="footer-poll">Auto-refresh every 5 seconds</span></footer>
       </main>
     </div>
-    <script src="/app.js?v=9" defer></script>
+    <script src="/app.js?v=17" defer></script>
   </body>
 </html>

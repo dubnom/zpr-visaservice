@@ -5,6 +5,8 @@ adapter_name=${ZPR_DNS_ADAPTER_NAME:-adapter1}
 config_file=${ZPR_DNS_NAMED_CONF:-/etc/bind/named.conf}
 key_source=${ZPR_DNS_TSIG_KEY_FILE:-/run/secrets/zpr-vs-publisher.key}
 key_runtime=/run/named/zpr-vs-publisher.key
+viewer_key_source=${ZPR_DNS_TRANSFER_TSIG_KEY_FILE:-/run/secrets/zpr-dns-viewer.key}
+viewer_key_runtime=/run/named/zpr-dns-viewer.key
 zone_file=${ZPR_DNS_ZONE_FILE:-/var/lib/bind/db.svc.zpr}
 
 if [ ! -r "$key_source" ]; then
@@ -17,6 +19,14 @@ chmod 0750 /run/named
 cp "$key_source" "$key_runtime"
 chown bind:bind "$key_runtime"
 chmod 0640 "$key_runtime"
+if [ -r "$viewer_key_source" ]; then
+    cp "$viewer_key_source" "$viewer_key_runtime"
+    chown bind:bind "$viewer_key_runtime"
+    chmod 0640 "$viewer_key_runtime"
+fi
+zone_directory=$(dirname "$zone_file")
+chown bind:bind "$zone_directory"
+chmod 0750 "$zone_directory"
 if [ -e "$zone_file" ]; then
     chown bind:bind "$zone_file"
     chmod 0640 "$zone_file"

@@ -197,6 +197,9 @@ func main() {
 	mode := flag.String("mode", envOr("ZPR_WEB_MODE", "control-room"), "Run mode: control-room, simulator, control-service, or policy-service")
 	listen := flag.String("listen", envOr("ZPR_WEB_LISTEN", defaultListen), "HTTP listen address")
 	machineID := flag.String("machine-id", "", "Machine identity for machine-controller mode")
+	clientID := flag.String("client-id", "", "Client identifier for test-client mode")
+	logWorkload := flag.String("log-workload", "", "Workload for test log reader mode")
+	testService := flag.String("test-service-name", "", "Expected service for test-client mode")
 	controlURL := flag.String("control-url", "", "Simulator mTLS heartbeat URL")
 	controlCA := flag.String("control-ca", "", "Simulator control CA certificate")
 	clientCert := flag.String("client-cert", "", "Machine controller client certificate")
@@ -227,6 +230,18 @@ func main() {
 		}
 	case "machine-controller":
 		if err := runMachineController(*machineID, *controlURL, *controlCA, *clientCert, *clientKey, *zprPH, *zprBootstrapKey, *zprNodeAddress, *zprAddress); err != nil {
+			log.Fatal(err)
+		}
+	case "test-service":
+		if err := runTestService(*listen, *logWorkload); err != nil {
+			log.Fatal(err)
+		}
+	case "test-client":
+		if err := runTestClient(*listen, *zprAddress, *clientID, *logWorkload, *testService); err != nil {
+			log.Fatal(err)
+		}
+	case "test-log-read":
+		if err := readTestLogService(*logWorkload); err != nil {
 			log.Fatal(err)
 		}
 	case "machine-control-proxy":

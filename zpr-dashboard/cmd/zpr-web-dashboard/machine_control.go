@@ -134,6 +134,18 @@ func (registry *machineCommandRegistry) removePending(id string) {
 	registry.mu.Unlock()
 }
 
+func (registry *machineCommandRegistry) clear(machineID string) {
+	registry.mu.Lock()
+	delete(registry.queues, machineID)
+	for id, response := range registry.pending {
+		if strings.HasPrefix(id, machineID+"-") {
+			delete(registry.pending, id)
+			response <- machineControlCommandResult{ID: id, Error: "machine controller restarted"}
+		}
+	}
+	registry.mu.Unlock()
+}
+
 func dispatchMachineControlCommand(machineID string, command machineControlCommand) (machineControlCommandResult, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
 	defer cancel()
@@ -143,6 +155,12 @@ func dispatchMachineControlCommand(machineID string, command machineControlComma
 func (registry *machineControllerRegistry) record(machineID string, seenAt time.Time) {
 	registry.mu.Lock()
 	registry.lastSeen[machineID] = seenAt
+	registry.mu.Unlock()
+}
+
+func (registry *machineControllerRegistry) clear(machineID string) {
+	registry.mu.Lock()
+	delete(registry.lastSeen, machineID)
 	registry.mu.Unlock()
 }
 
@@ -388,7 +406,7 @@ func startMachineWorkload(agent string) error {
 	socket := filepath.Join(runtimeDir, agent+".sock")
 	linkSummary, _ := exec.Command(filepath.Join(assets, "ph-cli"), "-p", socket, "link", "show").CombinedOutput()
 	if strings.Contains(string(linkSummary), "(Active)") {
-		return nil
+		return startTestLogServer(agent)
 	}
 	_ = exec.Command("pkill", "-TERM", "-f", "[p]h adapter.*--name "+agent).Run()
 	_ = os.Remove(socket)
@@ -427,13 +445,14 @@ func startMachineWorkload(agent string) error {
 		_ = command.Wait()
 		_ = logFile.Close()
 	}()
-	return nil
+	return startTestLogServer(agent)
 }
 
 func stopMachineWorkload(agent string) error {
 	if _, ok := machineWorkload(agent); !ok {
 		return fmt.Errorf("unknown machine workload %q", agent)
 	}
+	stopTestLogServer(agent)
 	assets := "/opt/zpr-workloads"
 	runtimeDir := "/run/zpr-workloads"
 	socket := filepath.Join(runtimeDir, agent+".sock")

@@ -320,8 +320,9 @@ func TestClaudeAssistantKeepsCredentialsServerSide(t *testing.T) {
 			t.Errorf("missing required Anthropic headers")
 		}
 		var body struct {
-			Model    string `json:"model"`
-			System   string `json:"system"`
+			Model     string `json:"model"`
+			MaxTokens int    `json:"max_tokens"`
+			System    string `json:"system"`
 			Messages []struct {
 				Role    string `json:"role"`
 				Content string `json:"content"`
@@ -330,18 +331,74 @@ func TestClaudeAssistantKeepsCredentialsServerSide(t *testing.T) {
 		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
 			t.Errorf("decode Claude request: %v", err)
 		}
-		if body.Model != "test-model" || !strings.Contains(body.System, "allow team.") || len(body.Messages) != 1 || body.Messages[0].Content != "Explain this rule" {
+		if body.Model != "test-model" || body.MaxTokens != 600 || !strings.Contains(body.System, "allow team.") || !strings.Contains(body.System, "ou -> device.demo.department") || len(body.Messages) != 1 || body.Messages[0].Content != "Explain this rule" {
 			t.Errorf("unexpected Claude request body: %+v", body)
 		}
 		w.Header().Set("Content-Type", "application/json")
-		_, _ = w.Write([]byte(`{"content":[{"type":"text","text":"It grants access."}]}`))
+		_, _ = w.Write([]byte(`{"content":[{"type":"text","text":"It grants access."}],"usage":{"input_tokens":123,"output_tokens":17}}`))
 	}))
 	defer server.Close()
 
 	assistant := &claudeAssistant{apiKey: "test-secret", model: "test-model", url: server.URL + "/v1/messages", http: server.Client()}
-	answer, err := assistant.reply(context.Background(), "allow team.", []assistantMessage{{Role: "user", Content: "Explain this rule"}})
-	if err != nil || answer != "It grants access." {
-		t.Fatalf("reply = %q, err = %v", answer, err)
+	attributes := []policyAttribute{{Source: "ou", Attribute: "device.demo.department"}}
+	app := &application{assistant: assistant, policy: &policyWorkspace{attributes: attributes}}
+	request := localPolicyRequest(http.MethodPost, "/api/policy/assistant", `{"source":"allow team.","messages":[{"role":"user","content":"Explain this rule"}],"model":"test-model","max_tokens":600}`)
+	response := httptest.NewRecorder()
+	app.handlePolicyAssistant(response, request)
+	if response.Code != http.StatusOK {
+		t.Fatalf("assistant status=%d body=%s", response.Code, response.Body)
+	}
+	var result assistantReply
+	if err := json.NewDecoder(response.Body).Decode(&result); err != nil {
+		t.Fatal(err)
+	}
+	if result.Answer != "It grants access." {
+		t.Fatalf("answer = %q", result.Answer)
+	}
+	if result.InputTokens != 123 || result.OutputTokens != 17 {
+		t.Fatalf("assistant usage = %d/%d, want 123/17", result.InputTokens, result.OutputTokens)
+	}
+}
+
+func TestClaudeAssistantRejectsUnapprovedSettings(t *testing.T) {
+	app := &application{assistant: &claudeAssistant{model: "test-model"}, policy: &policyWorkspace{}}
+	for _, requestBody := range []string{
+		`{"source":"allow users to access services.","messages":[{"role":"user","content":"Check this"}],"model":"unknown","max_tokens":600}`,
+		`{"source":"allow users to access services.","messages":[{"role":"user","content":"Check this"}],"model":"test-model","max_tokens":100000}`,
+	} {
+		response := httptest.NewRecorder()
+		app.handlePolicyAssistant(response, localPolicyRequest(http.MethodPost, "/api/policy/assistant", requestBody))
+		if response.Code != http.StatusBadRequest {
+			t.Errorf("assistant settings status = %d, want 400: %s", response.Code, response.Body.String())
+		}
+	}
+}
+
+func TestLoadPolicyAttributesFromTrustedServiceMappings(t *testing.T) {
+	configPath := filepath.Join(t.TempDir(), "policy.zplc")
+	config := `[trusted_services.demo_ldap]
+returns_attributes = ["ou -> device.demo.department", "title -> device.demo.title"]
+
+[trusted_services.demo_rest]
+returns_attributes = ["role -> device.demo.role", "ou -> device.demo.department"]
+`
+	if err := os.WriteFile(configPath, []byte(config), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	attributes := loadPolicyAttributes(configPath)
+	if len(attributes) != 3 {
+		t.Fatalf("got %d attributes, want 3: %#v", len(attributes), attributes)
+	}
+	want := []policyAttribute{
+		{Source: "ou", Attribute: "device.demo.department"},
+		{Source: "title", Attribute: "device.demo.title"},
+		{Source: "role", Attribute: "device.demo.role"},
+	}
+	for index, attribute := range want {
+		if attributes[index] != attribute {
+			t.Fatalf("attribute %d = %#v, want %#v", index, attributes[index], attribute)
+		}
 	}
 }
 

@@ -109,6 +109,9 @@ func TestControlServiceProxiesPolicyRepositoryOverMutualTLS(t *testing.T) {
 	if !status.AssistantReady {
 		t.Fatal("Control Service did not add its own Claude availability to the proxied status")
 	}
+	if status.AssistantModel != defaultAssistantModel || len(status.AssistantModels) != 2 || strings.Contains(getResponse.Body.String(), "control-service-key") {
+		t.Fatalf("assistant model choices or secret handling are incorrect: model=%q choices=%v", status.AssistantModel, status.AssistantModels)
+	}
 	if !clientCertificateSeen {
 		t.Fatal("Policy Service did not receive a Control Service client certificate")
 	}

@@ -62,6 +62,14 @@ to an HTTP origin that can reach the ZPR statistics listener, for example
 the ZPR network, use an authorized ZPR-connected relay as the origin. The
 browser accesses only the same-origin Control Room proxy, never BIND directly.
 
+The Control Room also lists the `svc.zpr` resource records using an AXFR signed
+with a separate read-only TSIG key. The simulator stack generates and mounts
+that key, permits transfers only when it is presented, and connects it to
+Control-Service over a loopback-only DNS/TCP relay. Do not reuse the Visa
+Service publisher key or enable unauthenticated zone transfers. For other
+deployments, configure a dedicated TSIG key with transfer-only access and set
+`ZPR_DNS_TRANSFER_ADDR` and `ZPR_DNS_TRANSFER_TSIG_KEY_FILE` for Control-Service.
+
 ```sh
 sudo install -d -m 700 /etc/bind/keys
 sudo tsig-keygen -a hmac-sha256 zpr-vs-publisher \

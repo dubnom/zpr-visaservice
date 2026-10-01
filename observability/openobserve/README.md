@@ -1,6 +1,6 @@
 # ZPR observability service
 
-**Deployment profile, not an active simulator service.** This profile runs the
+**Optional deployment profile.** This profile runs the
 AGPL-3.0 open-source edition of [OpenObserve](https://github.com/openobserve/openobserve)
 as a single-node logging and metrics store. The Dockerfile pins its upstream
 image by digest. It does not vendor or modify OpenObserve. There is no host
@@ -18,8 +18,10 @@ address to an authenticated adapter before using the profile. The adapter
 must advertise `ZprObservability` in its service claims. Compile the policy
 with the network's other ZPL and install the signed result through the normal
 policy-update process; do not replace a running policy with this fragment.
-The example grants access only to publisher adapter CN `vs.zpr` and reader
-adapter CN `ops-observer`. Adapt these to real provisioned identities; a
+The example grants access only to publisher adapter CN `telemetry-publisher`
+and reader adapter CN `ops-observer`. The telemetry publisher needs read-only
+Visa Service admin access and TCP/5080 ingest access; it does not install policy.
+Adapt these to real provisioned identities; a
 Control Room process running on the host does not become a ZPR reader by
 virtue of its name. DNS publication follows the existing service-directory
 rules and does not itself grant access.
@@ -48,8 +50,9 @@ password to collectors or browsers.
 | Optional Prometheus sender | Remote write `POST /api/zpr/prometheus/api/v1/write` | Publisher credential; not a public scrape endpoint. |
 | Search and dashboards | OpenObserve UI and authenticated query API on TCP/5080 | ZPR-authorized reader via the dedicated reader adapter; do not expose browser credentials through a public proxy. |
 
-`zpr` is the organization in these paths; create it and provision users before
-ingestion. OTLP clients must send current timestamps, resource attributes
+The organization identifier is the path segment in these endpoints; use the
+identifier returned by OpenObserve's organization API, not its display name.
+OTLP clients must send current timestamps, resource attributes
 `service.name`, `service.instance.id` and `zpr.net`, and the signal-specific
 fields below. The collection side should batch with bounded memory and retry
 transient failures without granting access or blocking visa issuance. Avoid
@@ -73,12 +76,16 @@ passwords, private keys, authentication tokens and full packet payloads.
   but does not deliver them to a destination today. Treat signal delivery as
   a separate future producer interface, not as an implemented audit stream.
 
-No exporter for the existing Visa Service counters/denials or tracing output
-is wired by this profile yet: deploying OpenObserve alone creates an empty
-store. Collection must run on an authorized ZPR actor and keep the admin API
-key separate from the OpenObserve ingestion credential. The service must stay
-independent of Visa Service availability; telemetry failure must never relax
-policy or stall the authorization path.
+The profile's `collector.py` polls the authenticated Visa Service admin stats
+and denial endpoints, and tails the Visa Service process log in the local
+simulator. It exports numeric counters and uptime as OTLP metrics, denials and
+redacted process lines as OTLP logs. `collector.sh` runs it inside the dedicated
+`telemetry-publisher` adapter namespace and pins only the OpenObserve `/128`
+route to that adapter. The collector uses a read-only Visa admin key and an
+organization-scoped OpenObserve ingestion token; it never receives the root
+password. Polling/export failures are logged locally and do not block Visa
+issuance. Denial history remains the Visa Service's bounded in-memory window,
+not a durable audit source.
 
 ## Deployment
 
@@ -105,7 +112,22 @@ sh observability/openobserve/run.sh status
 
 Run these from the `zpr-visaservice` checkout. `run.sh` uses the existing
 `zpr-local-linux-node` rig's PID namespace, the same arrangement as the BIND
-profile. It waits up to 60 seconds for the named adapter and verifies the
-address is actually assigned before starting. If either prerequisite fails,
-the container exits; inspect its logs with `docker logs zpr-observability`.
-The root credentials are bootstrap-only. No host port mapping is performed.
+profile. Provision the policy and public bootstrap keys for both
+`zpr-observability` and `telemetry-publisher` first; the latter uses `tun6` and
+the dedicated ZPR identity in `zpr-observability.zpl`. Create a private
+`collector.env` with the `OPENOBSERVE_ORG` identifier and
+`OPENOBSERVE_EMAIL=telemetry-publisher@zpr.local`, and store the one-time
+ingestion token in `ingestion.token`, both mode `0600` under the local runtime
+observability directory. Set `ZPR_OBSERVABILITY_ENV_FILE` to a private env file
+containing `ZO_ROOT_USER_EMAIL` and `ZO_ROOT_USER_PASSWORD`; root credentials are
+bootstrap-only. `run.sh start` waits for the service adapter and starts the
+collector; `run.sh stop` stops both. No host port mapping is performed.
+
+`run.sh status` reports OpenObserve and collector state. To restart only the
+collector after changing its code or credentials, run its `stop` and `start`
+commands from the checkout. The
+collector is best-effort: if the Visa Admin API or OpenObserve is unavailable,
+it logs a local warning and retries on the next poll; it never blocks the
+Visa Service authorization path. The simulator profile uses the existing
+`telemetry-client` identity as a network reader; provision a separate reader
+identity and non-root query account before exposing dashboards to other users.

@@ -5,6 +5,10 @@ let data;
 let openWorkloadPickerMachine = null;
 let pendingLoginMachine = "";
 const workloadDrafts = new Map();
+const openLogFeeds = new Set();
+const workloadLogMarkup = new Map();
+let workloadLogRefreshTimer;
+let workloadLogsRefreshing = false;
 function render(snapshot) {
   data = snapshot; const components = snapshot.manifest.components || []; const running = Object.values(snapshot.components).filter((value) => value.startsWith("running")).length;
   renderMachines(snapshot.manifest.machines || [], components, snapshot.controllers || {}, snapshot.components || {}, snapshot.sessions || {}, snapshot.machine_containers || {});
@@ -38,12 +42,40 @@ function renderMachines(machines, components, controllers, componentStates, sess
       const pending = state === "starting";
       const kind = component.kind === "client" ? "Client" : "Service";
       const label = `${active ? "Stop" : "Start"} ${component.name}`;
-      return `<div class="machine-workload"><div class="machine-workload-label"><span class="component-kind">${kind}</span><strong>${esc(component.name)}</strong><small>${esc(component.agent || "agent pending")} · ${esc(component.address || "address pending")}</small></div><span class="pill ${active ? "on" : "off"}">${pending ? "starting" : active ? "running" : "stopped"}</span><button type="button" class="workload-toggle" role="switch" aria-checked="${active}" aria-label="${label}" data-workload-name="${esc(component.name)}" ${connected && !pending ? "" : "disabled"}></button></div>`;
+      const feedKey = `${machine.id}:${component.name}`;
+      if (!active || !machineRunning) openLogFeeds.delete(feedKey);
+      const viewing = active && machineRunning && openLogFeeds.has(feedKey);
+      return `<div class="machine-workload-unit"><div class="machine-workload"><div class="machine-workload-label"><span class="component-kind">${kind}</span><strong>${esc(component.name)}</strong><small>${esc(component.agent || "agent pending")} · ${esc(component.address || "address pending")}</small></div><span class="pill ${active ? "on" : "off"}">${pending ? "starting" : active ? "running" : "stopped"}</span><button type="button" class="workload-toggle" role="switch" aria-checked="${active}" aria-label="${label}" data-workload-name="${esc(component.name)}" ${connected && !pending ? "" : "disabled"}></button></div><label class="machine-log-toggle"><input type="checkbox" data-log-machine="${esc(machine.id)}" data-log-workload="${esc(component.name)}" ${viewing ? "checked" : ""} ${active && machineRunning ? "" : "disabled"}> View logs</label>${viewing ? `<div class="machine-log-feed" data-log-panel="${esc(feedKey)}" role="log" aria-label="${esc(component.name)} logs">${workloadLogMarkup.get(feedKey) || "Waiting for events"}</div>` : ""}</div>`;
     }).join("") : `<p class="empty-workloads">No workloads selected</p>`;
     const lifecycleAction = machineRunning ? "stop" : "start";
     const lifecycleLabel = machineRunning ? "Stop machine" : "Start machine";
     return `<article class="machine-card"><div class="machine-card-head"><div class="machine-card-identity"><span class="component-kind">${esc(machine.type)}</span><strong>${esc(machine.id)}</strong></div><div class="machine-card-status"><span class="controller-indicator ${connected ? "connected" : "offline"}"><i></i>${controllerLabel}</span><span class="pill ${machine.secure ? "on" : "off"}">${posture}</span></div></div><div class="machine-runtime-control"><span><small>CONTAINER</small><strong class="machine-container-state ${machineRunning ? "running" : "stopped"}">${esc(containerState)}</strong></span><button type="button" class="quiet" data-machine-action="${lifecycleAction}" data-machine="${esc(machine.id)}">${lifecycleLabel}</button></div><details class="machine-details"><summary>Machine details</summary><dl><div><dt>Model</dt><dd>${esc(machine.model)}</dd></div><div><dt>Location</dt><dd>${esc(machine.location)}</dd></div><div><dt>Owner</dt><dd>${esc(machine.owner)}</dd></div></dl></details>${sessionControl}${workloadPicker}<div class="machine-workloads"><span>WORKLOADS</span>${workloadRows}</div></article>`;
   }).join("");
+}
+async function refreshWorkloadLogs() {
+  if (workloadLogsRefreshing || !agentsRefreshTimer || !openLogFeeds.size) return;
+  workloadLogsRefreshing = true;
+  try {
+    await Promise.all([...openLogFeeds].map(async (key) => {
+      const [machine, workload] = key.split(":");
+      let markup;
+      try {
+        const response = await fetch(`/api/simulator/logs/${encodeURIComponent(machine)}/${encodeURIComponent(workload)}`, { cache: "no-store" });
+        if (!response.ok) throw new Error("Log service unavailable");
+        const data = await response.json();
+        markup = (data.events || []).slice(-30).map((event) =>
+          `<div class="machine-log-event"><time>${esc(new Date(event.time).toLocaleTimeString())}</time><strong>${esc(event.direction)}</strong><span>${esc(event.client_id || "—")}</span><span>${esc(event.path)} ${esc(event.status || "")}</span></div>`).join("") || `<span>No events yet · port ${esc(data.port)}</span>`;
+      } catch (error) {
+        markup = `<span>${esc(error.message || "Log service unavailable")}</span>`;
+      }
+      if (!openLogFeeds.has(key)) return;
+      workloadLogMarkup.set(key, markup);
+      const panel = [...document.querySelectorAll("[data-log-panel]")].find((node) => node.dataset.logPanel === key);
+      if (panel && panel.innerHTML !== markup) panel.innerHTML = markup;
+    }));
+  } finally {
+    workloadLogsRefreshing = false;
+  }
 }
 let agentsRefreshPromise;
 async function agentsRefresh() {
@@ -62,16 +94,6 @@ async function agentsRefresh() {
 }
 async function action(name, component = "") { toast(`${name} requested`); const query = component ? `?name=${encodeURIComponent(component)}` : ""; const response = await fetch(`/api/simulator/action/${name}${query}`, { method: "POST" }); const body = await response.text(); let result; try { result = JSON.parse(body); } catch { result = { output: body }; } if (!response.ok) throw new Error(result.output || `${name} failed`); toast(result.output || `${name} complete`); await agentsRefresh(); }
 let agentsRefreshTimer;
-document.querySelectorAll("[data-action]").forEach((button) => button.addEventListener("click", async () => {
-  button.disabled = true;
-  try {
-    await action(button.dataset.action);
-  } catch (error) {
-    toast(error.message || "Simulator action failed");
-  } finally {
-    button.disabled = false;
-  }
-}));
 $("#refresh").addEventListener("click", agentsRefresh);
 $("#machine-type-filter").addEventListener("change", () => renderMachines(data?.manifest.machines || [], data?.manifest.components || [], data?.controllers || {}, data?.components || {}, data?.sessions || {}, data?.machine_containers || {}));
 $("#machine-grid").addEventListener("click", async (event) => {
@@ -100,7 +122,9 @@ $("#machine-grid").addEventListener("click", async (event) => {
   } else if (loginButton) {
     pendingLoginMachine = loginButton.dataset.loginMachine;
     const userSelect = $("#machine-login-user");
-    const availableUsers = [...new Set((data.manifest.machines || []).map((machine) => machine.owner).filter((user) => user && user !== "it-pool"))].sort();
+    const availableUsers = loginButton.dataset.owner === "it-pool"
+      ? [...new Set((data.manifest.machines || []).map((machine) => machine.owner).filter((user) => user && user !== "it-pool"))].sort()
+      : [loginButton.dataset.owner];
     userSelect.innerHTML = availableUsers.map((user) => `<option value="${esc(user)}">${esc(user)}</option>`).join("");
     userSelect.value = availableUsers.includes(loginButton.dataset.owner) ? loginButton.dataset.owner : availableUsers[0] || "";
     $("#machine-login-title").textContent = `Log in to ${pendingLoginMachine}`;
@@ -190,6 +214,18 @@ $("#machine-grid").addEventListener("toggle", (event) => {
   openWorkloadPickerMachine = picker.open ? picker.dataset.workloadPicker : null;
 }, true);
 $("#machine-grid").addEventListener("change", (event) => {
+  const logToggle = event.target.closest("[data-log-workload]");
+  if (logToggle) {
+    const key = `${logToggle.dataset.logMachine}:${logToggle.dataset.logWorkload}`;
+    if (logToggle.checked) openLogFeeds.add(key);
+    else {
+      openLogFeeds.delete(key);
+      workloadLogMarkup.delete(key);
+    }
+    renderMachines(data?.manifest.machines || [], data?.manifest.components || [], data?.controllers || {}, data?.components || {}, data?.sessions || {}, data?.machine_containers || {});
+    if (logToggle.checked) refreshWorkloadLogs();
+    return;
+  }
   const choice = event.target.closest("[data-workload-choice]");
   if (!choice) return;
   const machineID = choice.dataset.workloadChoice;
@@ -200,9 +236,13 @@ document.addEventListener("simulator:activate", (event) => {
   if (event.detail.path !== "/agents.html" || agentsRefreshTimer) return;
   agentsRefresh();
   agentsRefreshTimer = setInterval(agentsRefresh, 8000);
+  workloadLogRefreshTimer = setInterval(refreshWorkloadLogs, 2000);
+  refreshWorkloadLogs();
 });
 document.addEventListener("simulator:deactivate", (event) => {
   if (event.detail.path !== "/agents.html") return;
   clearInterval(agentsRefreshTimer);
   agentsRefreshTimer = undefined;
+  clearInterval(workloadLogRefreshTimer);
+  workloadLogRefreshTimer = undefined;
 });

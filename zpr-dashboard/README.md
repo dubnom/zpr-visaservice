@@ -46,7 +46,8 @@ Room remains the read-only network and policy monitor at
 `http://127.0.0.1:8787`.
 
 The Simulator opens on Agents. Shared ZPR actors, links, and service inventory
-remain in Control Room; stack lifecycle controls are available from Agents.
+remain in Control Room; Agents provides per-machine controls without stack-wide
+lifecycle buttons.
 
 The local stack also starts the BIND 9 DNS container from `../dns/bind9` using
 The local stack also starts the BIND 9 DNS container from `../dns/bind9` using
@@ -79,7 +80,9 @@ are both required.
 Machine Login/Logout writes/removes the selected simulated user in that
 machine container at `/run/zpr-simulator/user`. It does not start or stop
 workloads. User choices come from the machine owners in the demo manifest;
-sessions are simulator state and reset when the stack restarts. This is not a
+owner-assigned machines accept only their assigned user, while shared
+`it-pool` machines accept any listed simulated user. The same rule applies to
+scenario logins. Sessions are simulator state and reset when the stack restarts. This is not a
 password check or ZPR user authentication: controller mTLS is a separate
 machine identity, and the existing BAS auth-code flow authenticates an adapter
 key rather than a human.
