@@ -1,3 +1,4 @@
+
 # ZPR DNS with BIND 9
 
 This profile uses BIND 9 (ISC-licensed) as the DNS service implementation
@@ -38,12 +39,28 @@ The `zpr.addr` pinned on the ZPL service class must exactly match the adapter's
 ZPR interface address, BIND's `listen-on-v6` address, and the
 `[dns_update].server` address.
 
+The DNS adapter must advertise both `ZprDNS` and `ZprDNSStatistics` in its
+comma-separated `ZPR_ADAPTER_SERVICES` value. The optional statistics channel
+listens on TCP/8053 at the same ZPR address and is published as
+`dns-stats.svc.zpr`. It exposes BIND's native statistics page and JSON
+endpoints, including per-zone counters. The sample policy permits only the
+`vs.zpr` adapter identity to query this service.
+
 ## BIND
 
-Install BIND 9 and its `nsupdate` utility on the DNS-service host/container.
-Copy [`named.conf.example`](named.conf.example), replace the ZPR address,
-client prefix, and zone file path. Generate one shared BIND-format TSIG key
-file and include it in `named.conf` and the Visa Service config:
+The container image installs [`named.conf.example`](named.conf.example) as
+`/etc/bind/named.conf`, which is the default used by `entrypoint.sh`. For a
+deployment with different values, mount a customized configuration there or
+set `ZPR_DNS_NAMED_CONF`. Replace the ZPR address, client prefix, and zone file
+path as needed. Generate one shared BIND-format TSIG key file and include it
+in `named.conf` and the Visa Service config:
+
+Do not publish TCP/8053 on the host or underlay. To display the statistics
+page in the Control Room's DNS tab, set `ZPR_DNS_STATS_URL` for Control-Service
+to an HTTP origin that can reach the ZPR statistics listener, for example
+`http://[fd5a:5052:adda:1::53]:8053`. If Control-Service is not attached to
+the ZPR network, use an authorized ZPR-connected relay as the origin. The
+browser accesses only the same-origin Control Room proxy, never BIND directly.
 
 ```sh
 sudo install -d -m 700 /etc/bind/keys

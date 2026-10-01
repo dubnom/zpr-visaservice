@@ -743,6 +743,7 @@ fn check_required_claims(claims: &[Claim], required: &[&str]) -> Result<(), Serv
 //
 // Generally no claims that start with "zpr." are allowed except:
 //   - zpr.addr -> which is interpreted as a request adapter ZPR address.
+//   - zpr.services -> authenticated service names offered by the actor.
 //
 // Also cannot have <class>.zpr.* except:
 //   - device.zpr.adapter.cn -> which is the CN of the adapter as told to the node.
@@ -759,7 +760,7 @@ fn scrub_adapter_claims(claims: Vec<Claim>) -> Result<Vec<Attribute>, ServiceErr
             continue;
         }
 
-        if claim.key.starts_with("zpr.") {
+        if claim.key.starts_with("zpr.") && claim.key != key::SERVICES {
             warn!(target: CC, "adapter claim key '{}' not allowed", claim.key);
             continue;
         }
@@ -937,7 +938,7 @@ mod tests {
 
         let scrubbed = scrub_adapter_claims(claims).expect("scrub should succeed");
 
-        assert_eq!(keys(&scrubbed), vec![key::ZPR_ADDR, "device.label"]);
+        assert_eq!(keys(&scrubbed), vec![key::SERVICES, key::ZPR_ADDR, "device.label"]);
     }
 
     #[test]

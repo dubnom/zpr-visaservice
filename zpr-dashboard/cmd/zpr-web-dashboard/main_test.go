@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"encoding/json"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -25,9 +26,13 @@ func TestDemoLDAPEditorURL(t *testing.T) {
 }
 
 func TestFetchSnapshotAggregatesLiveAdminData(t *testing.T) {
+	simulatorRequests := make(chan struct{}, 1)
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		switch r.URL.Path {
+		case "/api/simulator/status":
+			simulatorRequests <- struct{}{}
+			http.NotFound(w, r)
 		case "/admin/stats":
 			_, _ = w.Write([]byte(`{"stats":{"uptime":"120","visa_requests":"7","visa_requests_approved":"5","visa_requests_denied":"2"}}`))
 		case "/admin/actors":
@@ -56,6 +61,7 @@ func TestFetchSnapshotAggregatesLiveAdminData(t *testing.T) {
 	}))
 	defer server.Close()
 
+	t.Setenv("SIMULATOR_STATUS_URL", server.URL+"/api/simulator/status")
 	app := &application{admin: &adminClient{baseURL: server.URL, apiKey: "test-key", http: server.Client()}}
 	data := app.fetchSnapshot(context.Background())
 	if data.APIStatus != "connected" {
@@ -72,6 +78,11 @@ func TestFetchSnapshotAggregatesLiveAdminData(t *testing.T) {
 	}
 	if len(data.Trusted) != 2 || data.Trusted[0].Provider != "file" || data.Trusted[0].Health != "working" || data.Trusted[0].LastSuccessMS == nil || data.Trusted[0].ActorCN != "directory-service" || data.Trusted[0].Endpoints != "ldaps://directory:636" || data.Trusted[1].Name != "remote" || data.Trusted[1].Health != "unverified" {
 		t.Fatalf("trusted source status is misleading or missing: %+v", data.Trusted)
+	}
+	select {
+	case <-simulatorRequests:
+		t.Fatal("snapshot requested Simulator status")
+	default:
 	}
 }
 
@@ -138,19 +149,14 @@ func TestMergePlatformServicesDoesNotInventActors(t *testing.T) {
 	}
 }
 
-func TestEnrichActorsWithSimulatorAssignments(t *testing.T) {
-	actors := []actor{{CN: "finance-client"}, {CN: "echo-service"}, {CN: "adapter1"}}
-	enrichActorsWithSimulatorAssignments(actors, map[string]simulatorAdapterAssignment{
-		"finance-client": {MachineID: "machine-06", Kind: "client"},
-		"echo-service":   {MachineID: "machine-06", Kind: "service"},
-	})
-	if actors[0].MachineID != "machine-06" || actors[0].AdapterKind != "client" {
-		t.Fatalf("finance assignment = %+v", actors[0])
+func TestActorSnapshotOmitsSimulatorMetadata(t *testing.T) {
+	encoded, err := json.Marshal(actor{CN: "adapter"})
+	if err != nil {
+		t.Fatal(err)
 	}
-	if actors[1].MachineID != "machine-06" || actors[1].AdapterKind != "service" {
-		t.Fatalf("service assignment = %+v", actors[1])
-	}
-	if actors[2].MachineID != "" {
-		t.Fatalf("unassigned actor unexpectedly mapped to a machine: %+v", actors[2])
+	for _, field := range []string{`"machine_id"`, `"adapter_kind"`} {
+		if strings.Contains(string(encoded), field) {
+			t.Fatalf("actor JSON includes simulator field %s: %s", field, encoded)
+		}
 	}
 }

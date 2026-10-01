@@ -24,6 +24,8 @@ POLICY_PID="$STATE_DIR/policy-service.pid"
 CONTROL_PID="$STATE_DIR/control-service.pid"
 ROOM_PID="$STATE_DIR/control-room.pid"
 SIMULATOR_PID="$STATE_DIR/simulator.pid"
+ADMIN_RELAY_PID="$STATE_DIR/admin-relay.pid"
+ADMIN_RELAY_PORT=8184
 
 pid_running() {
     [ -f "$1" ] && kill -0 "$(cat "$1")" 2>/dev/null
@@ -45,6 +47,22 @@ wait_for_url() {
     return 1
 }
 
+wait_for_response() {
+    url=$1
+    label=$2
+    shift 2
+    attempts=0
+    while [ "$attempts" -lt 50 ]; do
+        if curl --silent --show-error --connect-timeout 1 --max-time 2 "$@" "$url" >/dev/null 2>&1; then
+            return 0
+        fi
+        attempts=$((attempts + 1))
+        sleep 0.2
+    done
+    echo "$label did not respond at $url" >&2
+    return 1
+}
+
 stop_service() {
     pid_file=$1
     if pid_running "$pid_file"; then
@@ -60,6 +78,7 @@ stop_stack() {
     stop_service "$SIMULATOR_PID"
     stop_service "$ROOM_PID"
     stop_service "$CONTROL_PID"
+    stop_service "$ADMIN_RELAY_PID"
     stop_service "$POLICY_PID"
 }
 
@@ -70,6 +89,14 @@ start_service() {
     shift 2
     "$@" >"$log_file" 2>&1 < /dev/null &
     echo $! >"$pid_file"
+}
+
+start_admin_relay() {
+    start_service admin-relay "$ADMIN_RELAY_PID" socat \
+        "TCP-LISTEN:$ADMIN_RELAY_PORT,bind=127.0.0.1,reuseaddr,fork" \
+        "SYSTEM:\"/usr/local/bin/docker exec -i $SIMULATION_CONTAINER ip netns exec zpr-vs socat STDIO TCP:[fd5a:5052::1]:8182\""
+    wait_for_response "https://127.0.0.1:$ADMIN_RELAY_PORT/admin/stats" admin-relay \
+        --cacert "$RUNTIME_DIR/local-admin-cert.pem"
 }
 
 create_control_certificate() {
@@ -287,15 +314,16 @@ start_stack() {
         --cert "$SERVICE_CERTS/control-policy-client.crt" \
         --key "$SERVICE_CERTS/control-policy-client.key"
 
+    start_admin_relay
     start_service control-service "$CONTROL_PID" env \
         ZPR_CONTROL_SERVICE_LISTEN=127.0.0.1:8790 \
         ZPR_CONTROL_SERVICE_CERT_FILE="$SERVICE_CERTS/control-service.crt" \
         ZPR_CONTROL_SERVICE_KEY_FILE="$SERVICE_CERTS/control-service.key" \
         ZPR_CONTROL_SERVICE_CLIENT_CA_FILE="$SERVICE_CERTS/service-ca.crt" \
-        ZPR_ADMIN_URL=https://127.0.0.1:8183 \
+        ZPR_ADMIN_URL="https://127.0.0.1:$ADMIN_RELAY_PORT" \
         ZPR_ADMIN_CA_FILE="$RUNTIME_DIR/local-admin-cert.pem" \
         ZPR_ADMIN_KEY_FILE="$RUNTIME_DIR/admin-read.key" \
-        SIMULATOR_STATUS_URL=http://127.0.0.1:8788/api/simulator/status \
+        ZPR_DNS_STATS_URL="${ZPR_DNS_STATS_URL:-}" \
         ZPR_POLICY_SERVICE_URL=https://127.0.0.1:8789 \
         ZPR_POLICY_SERVICE_CA_FILE="$SERVICE_CERTS/service-ca.crt" \
         ZPR_POLICY_CLIENT_CERT_FILE="$SERVICE_CERTS/control-policy-client.crt" \
@@ -334,7 +362,7 @@ start_stack() {
 }
 
 status_stack() {
-    for entry in "policy-service:$POLICY_PID:8789" "control-service:$CONTROL_PID:8790" "control-room:$ROOM_PID:8787" "simulator:$SIMULATOR_PID:8788"; do
+    for entry in "policy-service:$POLICY_PID:8789" "admin-relay:$ADMIN_RELAY_PID:$ADMIN_RELAY_PORT" "control-service:$CONTROL_PID:8790" "control-room:$ROOM_PID:8787" "simulator:$SIMULATOR_PID:8788"; do
         name=${entry%%:*}
         rest=${entry#*:}
         pid_file=${rest%%:*}

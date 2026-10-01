@@ -70,29 +70,8 @@ type actor struct {
 	CN          string      `json:"cn"`
 	Node        bool        `json:"node"`
 	ZPRAddress  string      `json:"zpr_addr"`
-	MachineID   string      `json:"machine_id,omitempty"`
-	AdapterKind string      `json:"adapter_kind,omitempty"`
 	AuthExpires *int64      `json:"auth_exp"`
 	NodeDetails *nodeDetail `json:"node_details"`
-}
-
-type simulatorAdapterAssignment struct {
-	MachineID string
-	Kind      string
-}
-
-type simulatorAssignmentResponse struct {
-	Manifest struct {
-		Components []struct {
-			Name  string `json:"name"`
-			Agent string `json:"agent"`
-			Kind  string `json:"kind"`
-		} `json:"components"`
-	} `json:"manifest"`
-	Sessions map[string]struct {
-		Authenticated bool     `json:"authenticated"`
-		Workloads     []string `json:"workloads"`
-	} `json:"sessions"`
 }
 
 type nodeDetail struct {
@@ -496,7 +475,6 @@ func (a *application) fetchSnapshot(ctx context.Context) snapshot {
 		out.Trusted = trustedSourcesFrom(out.Services)
 	}
 	mergePlatformServices(&out)
-	enrichActorsWithSimulatorAssignments(out.Actors, fetchSimulatorAdapterAssignments(ctx))
 	if successfulEndpoints == 0 {
 		out.APIStatus = "disconnected"
 	} else if len(out.Errors) > 0 {
@@ -504,68 +482,6 @@ func (a *application) fetchSnapshot(ctx context.Context) snapshot {
 	}
 	sort.Slice(out.Errors, func(i, j int) bool { return out.Errors[i] < out.Errors[j] })
 	return out
-}
-
-func fetchSimulatorAdapterAssignments(ctx context.Context) map[string]simulatorAdapterAssignment {
-	endpoint := strings.TrimSpace(os.Getenv("SIMULATOR_STATUS_URL"))
-	if endpoint == "" {
-		return nil
-	}
-	requestCtx, cancel := context.WithTimeout(ctx, time.Second)
-	defer cancel()
-	request, err := http.NewRequestWithContext(requestCtx, http.MethodGet, endpoint, nil)
-	if err != nil {
-		return nil
-	}
-	response, err := (&http.Client{Timeout: time.Second}).Do(request)
-	if err != nil {
-		return nil
-	}
-	defer response.Body.Close()
-	if response.StatusCode != http.StatusOK {
-		return nil
-	}
-	var data simulatorAssignmentResponse
-	if err := json.NewDecoder(io.LimitReader(response.Body, 1<<20)).Decode(&data); err != nil {
-		return nil
-	}
-	components := make(map[string]struct {
-		ActorName string
-		Kind      string
-	}, len(data.Manifest.Components))
-	for _, component := range data.Manifest.Components {
-		actorName := component.Agent
-		if actorName == "" {
-			actorName = component.Name
-		}
-		components[component.Name] = struct {
-			ActorName string
-			Kind      string
-		}{ActorName: actorName, Kind: component.Kind}
-	}
-	assignments := make(map[string]simulatorAdapterAssignment)
-	for machineID, session := range data.Sessions {
-		if !session.Authenticated {
-			continue
-		}
-		for _, workload := range session.Workloads {
-			component, exists := components[workload]
-			if !exists {
-				continue
-			}
-			assignments[component.ActorName] = simulatorAdapterAssignment{MachineID: machineID, Kind: component.Kind}
-		}
-	}
-	return assignments
-}
-
-func enrichActorsWithSimulatorAssignments(actors []actor, assignments map[string]simulatorAdapterAssignment) {
-	for index := range actors {
-		if assignment, exists := assignments[actors[index].CN]; exists {
-			actors[index].MachineID = assignment.MachineID
-			actors[index].AdapterKind = assignment.Kind
-		}
-	}
 }
 
 func mergePlatformServices(out *snapshot) {

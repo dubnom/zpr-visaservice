@@ -1,9 +1,8 @@
 # Northstar Policy Studio Demo
 
-This fixture seeds an illustrative service catalog and department-based ZPL
-examples into the Policy Repository. The seven service records are fake catalog
-entries; they are not deployed endpoints or services in the running ZPR test
-network.
+This fixture seeds six department-based ZPL policy examples into the Policy
+Repository. Their seven embedded JSON service definitions are illustrative;
+they are not deployed endpoints or services in the running ZPR test network.
 
 The six policy examples correspond to LDAP `ou` values such as `Accounting`,
 `Platform`, `HR`, `Security`, `Field`, and `Legal`. The current `demo_ldap`
@@ -28,5 +27,7 @@ export ZPR_POLICY_DEMO_CATALOG_FILE="$PWD/cmd/zpr-web-dashboard/examples/northst
 ```
 
 The catalog import is idempotent: existing categories and records with the
-same names are left untouched, so it is safe to restart the demo. `Save As...`
-can be used to create editable copies of the examples.
+same names are left untouched, so it is safe to restart the demo. To see the
+new policy-only tree after a previous import, use a fresh demo database; the
+import does not delete existing service records or overwrite existing policies.
+`Save As...` can be used to create editable copies of the examples.

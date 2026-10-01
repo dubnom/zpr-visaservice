@@ -7,6 +7,7 @@ const pages = {
   connections: "CONNECTIONS",
   actors: "ACTORS",
   services: "SERVICES",
+  dns: "DNS",
   sources: "TRUSTED SOURCES",
   policy: "POLICY",
   visas: "VISAS",
@@ -30,6 +31,13 @@ function showPage(page = currentPage()) {
     else link.removeAttribute("aria-current");
   }
   if (page === "policy") loadPolicyWorkspace();
+  if (page === "dns") {
+    const frame = byId("dns-stats-frame");
+    if (frame.dataset.loaded !== "true") {
+      frame.dataset.loaded = "true";
+      frame.src = frame.dataset.src;
+    }
+  }
 }
 
 function escapeHTML(value) {
@@ -39,9 +47,7 @@ function escapeHTML(value) {
 }
 
 function actorDisplayName(actor) {
-  if (!actor?.machine_id) return actor?.cn || "—";
-  const adapterKind = actor.adapter_kind === "service" ? "service" : actor.adapter_kind === "client" ? "client" : "workload";
-  return `${actor.machine_id} ${adapterKind} adapter`;
+  return actor?.cn || "—";
 }
 
 function num(value) {
@@ -179,8 +185,7 @@ function renderInspector() {
     kindLabel = actor.node ? "FORWARDING NODE" : services.some((item) => item.service_kind === "Visa") ? "VISA SERVICE ADAPTER" : "ADAPTER";
     title = actorDisplayName(actor);
     sections.push(detailSection("Actor", [
-      detailField("Role", actor.node ? "Node / forwarder" : actor.machine_id ? `${actor.adapter_kind || "workload"} adapter` : kindLabel === "VISA SERVICE ADAPTER" ? "Visa Service adapter" : "Adapter"),
-      ...(actor.machine_id ? [detailField("Machine", actor.machine_id)] : []),
+		detailField("Role", actor.node ? "Node / forwarder" : kindLabel === "VISA SERVICE ADAPTER" ? "Visa Service adapter" : "Adapter"),
       detailField("Common name", actor.cn, "mono"),
       detailField("ZPR address", actor.zpr_addr, "mono"),
       detailField("Authentication expires", actor.auth_exp ? new Date(actor.auth_exp * 1000).toLocaleString() : "No expiry reported"),
@@ -563,7 +568,7 @@ function renderActors(data) {
     const stateText = nodeState(actor, data);
     const up = stateText === "LINK UP" || stateText === "IN SYNC";
     const last = actor.node && actor.node_details ? ` · seen ${since(actor.node_details.last_contact)}` : "";
-    return `<tr class="selectable-row" data-inspect-actor="${escapeHTML(actor.cn)}" tabindex="0" role="button" aria-label="Inspect actor ${escapeHTML(actorDisplayName(actor))}"><td>${escapeHTML(actorDisplayName(actor))}${actor.machine_id ? `<small class="actor-common-name">${escapeHTML(actor.cn)}</small>` : ""}</td><td><span class="role-chip ${role}">${role}</span></td><td class="mono">${escapeHTML(actor.zpr_addr || "—")}</td><td><span class="mini-state ${up ? "up" : ""}">${stateText}${last}</span></td></tr>`;
+    return `<tr class="selectable-row" data-inspect-actor="${escapeHTML(actor.cn)}" tabindex="0" role="button" aria-label="Inspect actor ${escapeHTML(actorDisplayName(actor))}"><td>${escapeHTML(actorDisplayName(actor))}</td><td><span class="role-chip ${role}">${role}</span></td><td class="mono">${escapeHTML(actor.zpr_addr || "—")}</td><td><span class="mini-state ${up ? "up" : ""}">${stateText}${last}</span></td></tr>`;
   }).join("") : `<tr><td colspan="4" class="empty-row">No matching actors</td></tr>`;
 }
 
@@ -1339,7 +1344,7 @@ function renderServices(data) {
     const kindLabel = trustedType ? `TRUSTED ${trustedType.toUpperCase()}` : kind;
     const provider = providerFor(service);
     const providerLabel = actorDisplayName(provider || { cn: service.actor_cn });
-    return `<tr class="selectable-row" data-inspect-service="${escapeHTML(service.service_name)}" tabindex="0" role="button" aria-label="Inspect service ${escapeHTML(service.service_name)}"><td>${escapeHTML(service.service_name || "—")}</td><td><span class="role-chip${trustedClass}">${escapeHTML(kindLabel)}</span></td><td>${escapeHTML(providerLabel)}${provider?.machine_id ? `<small class="actor-common-name">${escapeHTML(service.actor_cn)}</small>` : ""}</td><td class="mono">${escapeHTML(service.zpr_addr || "—")}</td><td>${escapeHTML(service.service_endpoints || "—")}</td></tr>`;
+    return `<tr class="selectable-row" data-inspect-service="${escapeHTML(service.service_name)}" tabindex="0" role="button" aria-label="Inspect service ${escapeHTML(service.service_name)}"><td>${escapeHTML(service.service_name || "—")}</td><td><span class="role-chip${trustedClass}">${escapeHTML(kindLabel)}</span></td><td>${escapeHTML(providerLabel)}</td><td class="mono">${escapeHTML(service.zpr_addr || "—")}</td><td>${escapeHTML(service.service_endpoints || "—")}</td></tr>`;
   }).join("") : `<tr><td colspan="5" class="empty-row">${services.length ? "No matching services" : "No network services returned"}</td></tr>`;
 }
 
@@ -1406,6 +1411,10 @@ function setPollTimer() {
 }
 
 byId("refresh-now").addEventListener("click", refresh);
+byId("dns-stats-refresh").addEventListener("click", () => {
+  const frame = byId("dns-stats-frame");
+  frame.src = `${frame.dataset.src}?refresh=${Date.now()}`;
+});
 byId("policy-refresh").addEventListener("click", reloadPolicyWorkspace);
 byId("new-category").addEventListener("click", openCategoryDialog);
 byId("new-policy-record").addEventListener("click", beginNewPolicyDraft);

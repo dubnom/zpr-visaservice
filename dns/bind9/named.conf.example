@@ -15,6 +15,11 @@ options {
     allow-query { zpr_clients; };
     listen-on port 53 { none; };
     listen-on-v6 port 53 { fd5a:5052:adda:1::53; };
+    zone-statistics full;
+};
+
+statistics-channels {
+    inet fd5a:5052:adda:1::53 port 8053 allow { zpr_clients; };
 };
 
 zone "svc.zpr" {

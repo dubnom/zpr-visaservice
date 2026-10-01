@@ -105,3 +105,53 @@ func TestControlRoomProxiesToControlServiceOverMutualTLS(t *testing.T) {
 		t.Fatal("browser credentials or forwarding headers reached Control-Service")
 	}
 }
+
+func TestDNSStatsProxyForwardsPathWithoutBrowserCredentials(t *testing.T) {
+	observed := make(chan string, 2)
+	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Header.Get("Authorization") != "" || r.Header.Get("Cookie") != "" || r.Header.Get("Origin") != "" {
+			t.Error("browser credentials reached DNS statistics service")
+		}
+		observed <- r.URL.Path
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"status":"ok"}`))
+	}))
+	defer upstream.Close()
+	t.Setenv("ZPR_DNS_STATS_URL", upstream.URL)
+
+	request := httptest.NewRequest(http.MethodGet, dnsStatsPath+"/json/v1/server", nil)
+	request.Header.Set("Authorization", "browser-token")
+	request.Header.Set("Cookie", "session=browser")
+	request.Header.Set("Origin", "http://127.0.0.1:8787")
+	response := httptest.NewRecorder()
+	newDNSStatsProxy().ServeHTTP(response, request)
+
+	if response.Code != http.StatusOK || response.Body.String() != `{"status":"ok"}` {
+		t.Fatalf("DNS statistics proxy status=%d body=%s", response.Code, response.Body)
+	}
+	if got := <-observed; got != "/json/v1/server" {
+		t.Fatalf("upstream path=%q, want /json/v1/server", got)
+	}
+	if response.Header().Get("Cache-Control") != "no-store" {
+		t.Fatalf("Cache-Control=%q, want no-store", response.Header().Get("Cache-Control"))
+	}
+
+	assetRequest := httptest.NewRequest(http.MethodGet, "/bind9.xsl", nil)
+	assetResponse := httptest.NewRecorder()
+	newDNSStatsAssetProxy().ServeHTTP(assetResponse, assetRequest)
+	if assetResponse.Code != http.StatusOK {
+		t.Fatalf("DNS statistics asset status=%d", assetResponse.Code)
+	}
+	if got := <-observed; got != "/bind9.xsl" {
+		t.Fatalf("upstream asset path=%q, want /bind9.xsl", got)
+	}
+}
+
+func TestDNSStatsProxyRequiresConfiguredOrigin(t *testing.T) {
+	t.Setenv("ZPR_DNS_STATS_URL", "")
+	response := httptest.NewRecorder()
+	newDNSStatsProxy().ServeHTTP(response, httptest.NewRequest(http.MethodGet, dnsStatsPath+"/", nil))
+	if response.Code != http.StatusServiceUnavailable {
+		t.Fatalf("status=%d, want %d", response.Code, http.StatusServiceUnavailable)
+	}
+}

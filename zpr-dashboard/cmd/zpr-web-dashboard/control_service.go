@@ -28,6 +28,7 @@ func runControlRoom(listen string) error {
 	}
 	mux := http.NewServeMux()
 	mux.Handle("/api/", localControlRoomProxy(proxy))
+	mux.Handle("GET /bind9.xsl", localControlRoomProxy(proxy))
 	mux.Handle("/", http.FileServer(http.FS(staticRoot)))
 	server := &http.Server{
 		Addr: listen, Handler: securityHeaders(mux), ReadHeaderTimeout: 5 * time.Second, IdleTimeout: 60 * time.Second,
@@ -101,6 +102,8 @@ func runControlService() error {
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /api/snapshot", app.handleSnapshot)
 	mux.HandleFunc("POST /api/policy/assistant", app.handlePolicyAssistant)
+	mux.Handle("/api/dns/stats/", newDNSStatsProxy())
+	mux.Handle("GET /bind9.xsl", newDNSStatsAssetProxy())
 	mux.Handle("/api/policy", app.policyProxyHandler())
 	mux.Handle("/api/policy/", app.policyProxyHandler())
 	server := &http.Server{

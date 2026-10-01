@@ -125,8 +125,24 @@ func TestNorthstarDemoCatalogImportsIdempotently(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(categories) != 15 || len(records) != 13 {
-		t.Fatalf("catalog contains %d categories and %d records, want 15 and 13", len(categories), len(records))
+	if len(categories) != 8 || len(records) != 6 {
+		t.Fatalf("catalog contains %d categories and %d records, want 8 and 6", len(categories), len(records))
+	}
+	for _, category := range categories {
+		if strings.Contains(category.Path, "/Services") {
+			t.Fatalf("obsolete service category remains: %s", category.Path)
+		}
+	}
+	serviceCount := 0
+	for _, record := range records {
+		stored, err := store.GetRecord(context.Background(), record.ID)
+		if err != nil {
+			t.Fatal(err)
+		}
+		serviceCount += strings.Count(stored.Content, " as json {")
+	}
+	if serviceCount != 7 {
+		t.Fatalf("policy records contain %d service definitions, want 7", serviceCount)
 	}
 }
 
