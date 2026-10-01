@@ -23,8 +23,8 @@ Upstream TCP sockets are bound to the adapter TUN, so they cannot fall through
 to the host's default interface. The stub uses only the configured server and
 never falls back to an underlay resolver. The initial policy publishes TCP/53
 only, so its upstream queries use DNS over TCP.
-The example also permits the device whose authenticated adapter CN is `vs.zpr`
-to access DNS; this is the policy gate for Visa Service's TSIG update flow.
+The example also permits the authenticated `vs.zpr` adapter identity to access
+DNS; this is the policy gate for Visa Service's TSIG update flow.
 TSIG remains a separate publisher credential and does not replace ZPR
 authorization.
 

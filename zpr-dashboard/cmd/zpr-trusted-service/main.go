@@ -14,6 +14,7 @@ import (
 	"net/http"
 	"net/url"
 	"os"
+	"sort"
 	"strings"
 	"time"
 
@@ -90,6 +91,17 @@ type ldapProvider struct {
 	ca                            *x509.CertPool
 	identityKeys                  map[string]string
 	attributes                    []string
+	groupsBaseDN                  string
+}
+
+type ldapSearcher interface {
+	Search(*ldap.SearchRequest) (*ldap.SearchResult, error)
+}
+
+type ldapSearcherFunc func(*ldap.SearchRequest) (*ldap.SearchResult, error)
+
+func (searcher ldapSearcherFunc) Search(request *ldap.SearchRequest) (*ldap.SearchResult, error) {
+	return searcher(request)
 }
 
 func (p ldapProvider) lookup(ctx context.Context, identities []identity) (map[string][]string, error) {
@@ -117,22 +129,56 @@ func (p ldapProvider) lookup(ctx context.Context, identities []identity) (map[st
 		if !ok {
 			continue
 		}
-		filter := ldapFilter(key, ident.Value)
-		search := ldap.NewSearchRequest(p.baseDN, ldap.ScopeWholeSubtree, ldap.NeverDerefAliases, 100, 5, false, filter, p.attributes, nil)
-		entries, err := conn.Search(search)
+		attributes, err := ldapIdentityAttributes(ctx, conn, p.baseDN, p.groupsBaseDN, key, ident.Value, p.attributes)
 		if err != nil {
 			return nil, err
 		}
-		for _, entry := range entries.Entries {
-			values := make(map[string][]string)
-			for _, name := range p.attributes {
-				if attribute := entry.GetAttributeValues(name); len(attribute) > 0 {
-					values[name] = attribute
-				}
+		if err := merge(result, attributes); err != nil {
+			return nil, err
+		}
+	}
+	return result, nil
+}
+
+func ldapIdentityAttributes(ctx context.Context, searcher ldapSearcher, peopleBaseDN, groupsBaseDN, identityAttribute, identityValue string, attributes []string) (map[string][]string, error) {
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
+	peopleSearch := ldap.NewSearchRequest(peopleBaseDN, ldap.ScopeWholeSubtree, ldap.NeverDerefAliases, 100, 5, false, ldapFilter(identityAttribute, identityValue), attributes, nil)
+	people, err := searcher.Search(peopleSearch)
+	if err != nil {
+		return nil, err
+	}
+	result := make(map[string][]string)
+	for _, person := range people.Entries {
+		values := make(map[string][]string)
+		for _, name := range attributes {
+			if attribute := person.GetAttributeValues(name); len(attribute) > 0 {
+				values[name] = attribute
 			}
-			if err := merge(result, values); err != nil {
+		}
+		if groupsBaseDN != "" {
+			if err := ctx.Err(); err != nil {
 				return nil, err
 			}
+			groupsSearch := ldap.NewSearchRequest(groupsBaseDN, ldap.ScopeWholeSubtree, ldap.NeverDerefAliases, 100, 5, false, ldapFilter("member", person.DN), []string{"cn"}, nil)
+			groups, err := searcher.Search(groupsSearch)
+			if err != nil {
+				return nil, err
+			}
+			roles := make([]string, 0, len(groups.Entries))
+			for _, group := range groups.Entries {
+				if name := group.GetAttributeValue("cn"); name != "" {
+					roles = append(roles, name)
+				}
+			}
+			sort.Strings(roles)
+			if len(roles) > 0 {
+				values["role"] = roles
+			}
+		}
+		if err := merge(result, values); err != nil {
+			return nil, err
 		}
 	}
 	return result, nil
@@ -189,6 +235,7 @@ func main() {
 	ldapPasswordFile := flag.String("ldap-password-file", "", "path to LDAP bind password")
 	ldapIdentities := flag.String("ldap-identities", "", "JSON map of ZPR identity key to LDAP search attribute")
 	ldapAttributes := flag.String("ldap-attributes", "", "comma-separated LDAP attributes to return")
+	ldapGroupsBase := flag.String("ldap-groups-base", "", "optional LDAP group search base DN for groupOfNames role membership")
 	flag.Parse()
 	if *cert == "" || *key == "" || *clientCA == "" || (*file == "") == (*ldapURI == "") {
 		log.Fatal("require -cert, -key, -client-ca, and exactly one of -file or -ldap-uri")
@@ -234,7 +281,10 @@ func main() {
 				log.Fatal("invalid LDAP attribute name")
 			}
 		}
-		store = ldapProvider{*ldapURI, *ldapBase, *ldapBind, strings.TrimSuffix(string(password), "\n"), roots, keys, attributes}
+		store = ldapProvider{
+			uri: *ldapURI, baseDN: *ldapBase, bindDN: *ldapBind, password: strings.TrimSuffix(string(password), "\n"),
+			ca: roots, identityKeys: keys, attributes: attributes, groupsBaseDN: *ldapGroupsBase,
+		}
 	}
 	server := http.Server{Addr: *listen, Handler: handler(store), ReadHeaderTimeout: 5 * time.Second, TLSConfig: &tls.Config{
 		MinVersion: tls.VersionTLS13, ClientAuth: tls.RequireAndVerifyClientCert, ClientCAs: clients,

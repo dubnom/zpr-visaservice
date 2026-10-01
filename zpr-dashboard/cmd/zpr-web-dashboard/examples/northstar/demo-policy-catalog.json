@@ -40,9 +40,18 @@
       "name": "Security and compliance access",
       "kind": "policy",
       "content_type": "text/vnd.zpr.zpl",
-      "metadata": {"demo": true, "ldap_attributes": ["ou -> device.demo.department", "title -> device.demo.title"], "live": false},
-      "content": "# Department/title predicates are available; LDAP groupOfNames membership is not mapped into actor attributes.\ndefine SecurityStaff as a device with demo.department:Security.\ndefine ComplianceStaff as a device with demo.department:Compliance.\ndefine SecurityIncidentConsole as a service with device.zpr.adapter.cn:security-console.\nservice SecurityIncidentConsole as json {\"service_class\":\"SecurityIncidentConsole\",\"actor_cn\":\"security-console\",\"summary\":\"Illustrative incident response and review console.\",\"endpoint\":\"zpr://security-console\",\"status\":\"example only; not deployed\"}.\nallow SecurityStaff to access SecurityIncidentConsole.\nallow ComplianceStaff to access SecurityIncidentConsole.",
-      "summary": "Department-based access; role memberships are not yet consumed"
+      "metadata": {"demo": true, "ldap_attributes": ["ou -> device.demo.department"], "live": false},
+      "content": "# Department-based security and compliance policy.\ndefine SecurityStaff as a device with demo.department:Security.\ndefine ComplianceStaff as a device with demo.department:Compliance.\ndefine SecurityIncidentConsole as a service with device.zpr.adapter.cn:security-console.\nservice SecurityIncidentConsole as json {\"service_class\":\"SecurityIncidentConsole\",\"actor_cn\":\"security-console\",\"summary\":\"Illustrative incident response and review console.\",\"endpoint\":\"zpr://security-console\",\"status\":\"example only; not deployed\"}.\nallow SecurityStaff to access SecurityIncidentConsole.\nallow ComplianceStaff to access SecurityIncidentConsole.",
+      "summary": "Department-based security and compliance access"
+    },
+    {
+      "category": "Northstar/Policies/Security",
+      "name": "Security role-group access",
+      "kind": "policy",
+      "content_type": "text/vnd.zpr.zpl",
+      "metadata": {"demo": true, "ldap_attributes": ["role -> device.demo.role"], "live": false},
+      "content": "# These predicates use populated groupOfNames memberships from demo_ldap.\ndefine IncidentResponders as a device with demo.role:'Incident Responder'.\ndefine SecurityReviewers as a device with demo.role:'Security Reviewer'.\ndefine Approvers as a device with demo.role:Approver.\ndefine SecurityIncidentConsole as a service with device.zpr.adapter.cn:security-console.\nservice SecurityIncidentConsole as json {\"service_class\":\"SecurityIncidentConsole\",\"actor_cn\":\"security-console\",\"summary\":\"Illustrative incident response and review console.\",\"endpoint\":\"zpr://security-console\",\"status\":\"example only; not deployed\"}.\nallow IncidentResponders to access SecurityIncidentConsole.\nallow SecurityReviewers to access SecurityIncidentConsole.\nallow Approvers to access SecurityIncidentConsole.",
+      "summary": "Role-group access to the illustrative security console"
     },
     {
       "category": "Northstar/Policies/Sales",

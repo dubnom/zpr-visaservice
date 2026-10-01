@@ -18,6 +18,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/go-ldap/ldap/v3"
 )
 
 func TestFileLookupAndConflict(t *testing.T) {
@@ -161,5 +163,42 @@ func TestLDAPFilterEscapesIdentityAndRejectsUnsafeNames(t *testing.T) {
 	}
 	if got := ldapFilter("uid", "a*)(uid=*)"); got != `(uid=a\2a\29\28uid=\2a\29)` {
 		t.Fatalf("unsafe filter: %s", got)
+	}
+}
+
+func TestLDAPIdentityAttributesIncludeGroupNamesAsRoles(t *testing.T) {
+	const personDN = "uid=alice,ou=People,dc=example,dc=org"
+	searcher := ldapSearcherFunc(func(request *ldap.SearchRequest) (*ldap.SearchResult, error) {
+		switch request.BaseDN {
+		case "ou=People,dc=example,dc=org":
+			if request.Filter != "(uid=alice)" {
+				t.Fatalf("person filter = %q", request.Filter)
+			}
+			return &ldap.SearchResult{Entries: []*ldap.Entry{
+				ldap.NewEntry(personDN, map[string][]string{"ou": {"Platform"}, "title": {"Engineer"}}),
+			}}, nil
+		case "ou=Roles,dc=example,dc=org":
+			if request.Filter != "(member="+personDN+")" {
+				t.Fatalf("group filter = %q", request.Filter)
+			}
+			return &ldap.SearchResult{Entries: []*ldap.Entry{
+				ldap.NewEntry("cn=Security Reviewer,ou=Roles,dc=example,dc=org", map[string][]string{"cn": {"Security Reviewer"}}),
+				ldap.NewEntry("cn=Approver,ou=Roles,dc=example,dc=org", map[string][]string{"cn": {"Approver"}}),
+			}}, nil
+		default:
+			t.Fatalf("unexpected LDAP base DN %q", request.BaseDN)
+			return nil, nil
+		}
+	})
+
+	attributes, err := ldapIdentityAttributes(context.Background(), searcher, "ou=People,dc=example,dc=org", "ou=Roles,dc=example,dc=org", "uid", "alice", []string{"ou", "title"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Join(attributes["role"], ",") != "Approver,Security Reviewer" {
+		t.Fatalf("role attributes = %v", attributes["role"])
+	}
+	if strings.Join(attributes["ou"], ",") != "Platform" || strings.Join(attributes["title"], ",") != "Engineer" {
+		t.Fatalf("direct attributes = %v", attributes)
 	}
 }

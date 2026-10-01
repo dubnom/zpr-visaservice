@@ -125,8 +125,8 @@ func TestNorthstarDemoCatalogImportsIdempotently(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(categories) != 8 || len(records) != 6 {
-		t.Fatalf("catalog contains %d categories and %d records, want 8 and 6", len(categories), len(records))
+	if len(categories) != 8 || len(records) != 7 {
+		t.Fatalf("catalog contains %d categories and %d records, want 8 and 7", len(categories), len(records))
 	}
 	for _, category := range categories {
 		if strings.Contains(category.Path, "/Services") {
@@ -141,8 +141,8 @@ func TestNorthstarDemoCatalogImportsIdempotently(t *testing.T) {
 		}
 		serviceCount += strings.Count(stored.Content, " as json {")
 	}
-	if serviceCount != 7 {
-		t.Fatalf("policy records contain %d service definitions, want 7", serviceCount)
+	if serviceCount != 8 {
+		t.Fatalf("policy records contain %d service definitions, want 8", serviceCount)
 	}
 }
 

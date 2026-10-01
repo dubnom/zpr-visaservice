@@ -1,0 +1,19 @@
+{
+  "id": "machine-policy-deny",
+  "name": "Managed laptop: policy denial",
+  "description": "Ensure machine-01 is online, authenticate its owner, start the finance workload, probe a peer not allowed by the demo policy, then remove the workload and log out.",
+  "steps": [
+    {"action": "start_machine", "machine": "machine-01"},
+    {"action": "wait_controller", "machine": "machine-01", "timeout_seconds": 90},
+    {"action": "login", "machine": "machine-01", "user": "elena.park"},
+    {"action": "select_workloads", "machine": "machine-01", "workloads": ["finance-client"]},
+    {"action": "start_workload", "machine": "machine-01", "component": "finance-client"},
+    {"action": "traffic", "machine": "machine-01", "component": "finance-client", "target": "fd00:1:2::1", "expected": "deny"},
+    {"action": "stop_workload", "machine": "machine-01", "component": "finance-client"},
+    {"action": "logout", "machine": "machine-01"}
+  ],
+  "cleanup": [
+    {"action": "stop_workload", "machine": "machine-01", "component": "finance-client"},
+    {"action": "logout", "machine": "machine-01"}
+  ]
+}

@@ -22,6 +22,7 @@ import (
 type simulatorManifest struct {
 	Name            string               `json:"name"`
 	Extends         string               `json:"extends"`
+	DNSServer       string               `json:"dns_server"`
 	Bootstrap       json.RawMessage      `json:"bootstrap"`
 	TrustedServices []json.RawMessage    `json:"trusted_services"`
 	Agents          []simulatorAgent     `json:"agents"`
@@ -150,21 +151,19 @@ func runSimulator(listen string) error {
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /api/simulator/status", handleSimulatorStatus)
 	mux.HandleFunc("GET /api/simulator/activity", handleSimulatorActivity)
+	mux.HandleFunc("GET /api/simulator/scenarios", handleSimulatorScenarioCatalog)
+	mux.HandleFunc("POST /api/simulator/scenarios/cancel", handleSimulatorScenarioCancel)
+	mux.HandleFunc("POST /api/simulator/scenarios/{scenario}/run", handleSimulatorScenarioRun)
 	mux.HandleFunc("/agents.html", func(w http.ResponseWriter, r *http.Request) { serveStaticPage(staticRoot, "agents.html", w) })
 	mux.HandleFunc("/activity.html", func(w http.ResponseWriter, r *http.Request) { serveStaticPage(staticRoot, "activity.html", w) })
+	mux.HandleFunc("/scenarios.html", func(w http.ResponseWriter, r *http.Request) { serveStaticPage(staticRoot, "scenarios.html", w) })
 	mux.HandleFunc("POST /api/simulator/action/{action}", handleSimulatorAction)
 	mux.HandleFunc("POST /api/simulator/machines/{machine}/{action}", handleSimulatorMachineSession)
 	mux.HandleFunc("PUT /api/simulator/machines/{machine}/workloads", handleSimulatorMachineWorkloads)
 	staticServer := http.FileServer(http.FS(staticRoot))
 	mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path == "/" {
-			content, readErr := fs.ReadFile(staticRoot, "simulator.html")
-			if readErr != nil {
-				http.Error(w, "simulator UI unavailable", http.StatusInternalServerError)
-				return
-			}
-			w.Header().Set("Content-Type", "text/html; charset=utf-8")
-			_, _ = w.Write(content)
+			http.Redirect(w, r, "/agents.html", http.StatusFound)
 			return
 		}
 		staticServer.ServeHTTP(w, r)
@@ -224,6 +223,7 @@ func handleSimulatorStatus(w http.ResponseWriter, _ *http.Request) {
 		}
 	}
 	runtimeDir := filepath.Clean("../../.local-runtime/dashboard-stack")
+	status.Agents["control-room"] = simulatorStackServiceState(runtimeDir, "control-room")
 	for _, name := range []string{"policy-service", "control-service", "control-room"} {
 		content, readErr := os.ReadFile(filepath.Join(runtimeDir, name+".log"))
 		if readErr == nil {
@@ -241,17 +241,7 @@ func simulatorStackRuntimeStatus(machineIDs []string, containers map[string]stri
 	var lines []string
 	runtimeDir := filepath.Clean("../../.local-runtime/dashboard-stack")
 	for _, service := range []string{"policy-service", "control-service", "control-room", "simulator"} {
-		state := "stopped"
-		pidBytes, err := os.ReadFile(filepath.Join(runtimeDir, service+".pid"))
-		if err == nil {
-			pid, parseErr := strconv.Atoi(strings.TrimSpace(string(pidBytes)))
-			if parseErr == nil {
-				if process, findErr := os.FindProcess(pid); findErr == nil && process.Signal(syscall.Signal(0)) == nil {
-					state = "running"
-				}
-			}
-		}
-		lines = append(lines, service+": "+state)
+		lines = append(lines, service+": "+simulatorStackServiceState(runtimeDir, service))
 	}
 	for _, machineID := range machineIDs {
 		state := containers[machineID]
@@ -261,6 +251,22 @@ func simulatorStackRuntimeStatus(machineIDs []string, containers map[string]stri
 		lines = append(lines, machineID+": container "+state)
 	}
 	return strings.Join(lines, "\n")
+}
+
+func simulatorStackServiceState(runtimeDir, service string) string {
+	pidBytes, err := os.ReadFile(filepath.Join(runtimeDir, service+".pid"))
+	if err != nil {
+		return "stopped"
+	}
+	pid, err := strconv.Atoi(strings.TrimSpace(string(pidBytes)))
+	if err != nil || pid <= 0 {
+		return "stopped"
+	}
+	process, err := os.FindProcess(pid)
+	if err != nil || process.Signal(syscall.Signal(0)) != nil {
+		return "stopped"
+	}
+	return "running"
 }
 
 func handleSimulatorMachineSession(w http.ResponseWriter, r *http.Request) {
@@ -289,8 +295,18 @@ func handleSimulatorMachineSession(w http.ResponseWriter, r *http.Request) {
 		}
 		var output []byte
 		var runErr error
-		if action == "start" && simulatorMachineContainerStates([]string{machineID})[machineID] == "missing" {
-			output, runErr = exec.Command("sh", simulatorScript(), "start-machine", machineID).CombinedOutput()
+		containerState := simulatorMachineContainerStates([]string{machineID})[machineID]
+		if action == "start" {
+			startCommand, startErr := simulatorMachineStartCommand(manifest, machineID, containerState)
+			if startErr != nil {
+				http.Error(w, startErr.Error(), http.StatusBadGateway)
+				return
+			}
+			if startCommand != nil {
+				output, runErr = startCommand.CombinedOutput()
+			} else {
+				output = []byte("machine already running")
+			}
 		} else {
 			output, runErr = command.CombinedOutput()
 		}
@@ -389,6 +405,22 @@ func simulatorMachineSubstrateRouteCommand(manifest simulatorManifest, machineID
 
 func machineContainerName(machineID string) string {
 	return "zpr-" + machineID
+}
+
+func simulatorMachineStartCommand(manifest simulatorManifest, machineID, state string) (*exec.Cmd, error) {
+	if !manifestHasMachine(manifest, machineID) {
+		return nil, errors.New("unknown machine")
+	}
+	switch state {
+	case "running":
+		return nil, nil
+	case "paused":
+		return exec.Command("docker", "unpause", machineContainerName(machineID)), nil
+	case "missing", "exited", "created":
+		return exec.Command("sh", simulatorScript(), "start-machine", machineID), nil
+	default:
+		return exec.Command("docker", "start", machineContainerName(machineID)), nil
+	}
 }
 
 func clearMachineLogin(machineID string) error {
@@ -648,7 +680,23 @@ func handleSimulatorAction(w http.ResponseWriter, r *http.Request) {
 						auth = profile.Auth
 					}
 				}
-				output = fmt.Sprintf("identity=%s auth=%s\n%s", identity, auth, commandOutput("docker", "exec", "zpr-local-linux-node", "ip", "netns", "exec", component.Namespace, "ping6", "-c", "2", "-W", "1", component.Target))
+				target := component.Target
+				if net.ParseIP(target) == nil {
+					if net.ParseIP(manifest.DNSServer) == nil {
+						output = "DNS bootstrap server is not configured"
+						break
+					}
+					lookup := commandOutput("docker", "exec", "zpr-local-linux-node", "ip", "netns", "exec", component.Namespace, "dig", "+tcp", "@"+manifest.DNSServer, target, "AAAA", "+short")
+					address := firstIPv6Address(lookup)
+					if address == "" {
+						output = fmt.Sprintf("DNS lookup for %s failed:\n%s", target, lookup)
+						break
+					}
+					target = address
+					output = fmt.Sprintf("identity=%s auth=%s\nDNS %s -> %s via %s\n%s", identity, auth, component.Target, target, manifest.DNSServer, commandOutput("docker", "exec", "zpr-local-linux-node", "ip", "netns", "exec", component.Namespace, "ping6", "-c", "2", "-W", "1", target))
+					break
+				}
+				output = fmt.Sprintf("identity=%s auth=%s\n%s", identity, auth, commandOutput("docker", "exec", "zpr-local-linux-node", "ip", "netns", "exec", component.Namespace, "ping6", "-c", "2", "-W", "1", target))
 				break
 			}
 		}
@@ -660,6 +708,16 @@ func handleSimulatorAction(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeSimulatorJSON(w, map[string]string{"action": action, "output": output})
+}
+
+func firstIPv6Address(output string) string {
+	for _, field := range strings.Fields(output) {
+		address := net.ParseIP(strings.TrimSpace(field))
+		if address != nil && address.To4() == nil {
+			return address.String()
+		}
+	}
+	return ""
 }
 
 func readSimulatorComponent(manifest simulatorManifest, name string) (simulatorComponent, error) {

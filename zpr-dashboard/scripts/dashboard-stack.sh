@@ -19,6 +19,12 @@ MACHINE_CONTROL_PROXY_BIN="$STATE_DIR/zpr-machine-control-proxy-linux-arm64"
 MACHINE_WORKLOAD_DIR="$STATE_DIR/machine-workloads"
 MACHINE_IMAGE="${SIMULATOR_MACHINE_IMAGE:-zpr-sim-machine:local}"
 SIMULATION_CONTAINER="${SIMULATION_CONTAINER:-zpr-local-linux-node}"
+DNS_PROFILE_DIR="$DASHBOARD_DIR/../dns/bind9"
+DNS_RUNTIME_DIR="$RUNTIME_DIR/dns-bind"
+DNS_CONTAINER="${ZPR_DNS_CONTAINER:-zpr-dns-bind9}"
+DNS_IMAGE="${ZPR_DNS_IMAGE:-zpr-dns-bind9:local}"
+DNS_STATS_RELAY_PID="$STATE_DIR/dns-stats-relay.pid"
+DNS_STATS_RELAY_PORT="${ZPR_DNS_STATS_RELAY_PORT:-8054}"
 
 POLICY_PID="$STATE_DIR/policy-service.pid"
 CONTROL_PID="$STATE_DIR/control-service.pid"
@@ -80,6 +86,7 @@ stop_stack() {
     stop_service "$CONTROL_PID"
     stop_service "$ADMIN_RELAY_PID"
     stop_service "$POLICY_PID"
+    stop_dns_service
 }
 
 start_service() {
@@ -97,6 +104,57 @@ start_admin_relay() {
         "SYSTEM:\"/usr/local/bin/docker exec -i $SIMULATION_CONTAINER ip netns exec zpr-vs socat STDIO TCP:[fd5a:5052::1]:8182\""
     wait_for_response "https://127.0.0.1:$ADMIN_RELAY_PORT/admin/stats" admin-relay \
         --cacert "$RUNTIME_DIR/local-admin-cert.pem"
+}
+
+start_dns_service() {
+    config=${ZPR_DNS_NAMED_CONF:-$DNS_PROFILE_DIR/named.conf.simulator}
+    key_file=${ZPR_DNS_TSIG_KEY_FILE:-$DNS_RUNTIME_DIR/zpr-vs-publisher.key}
+    zone_file=${ZPR_DNS_ZONE_FILE:-$DNS_RUNTIME_DIR/db.svc.zpr}
+    for file in "$config" "$key_file" "$zone_file"; do
+        if [ ! -r "$file" ]; then
+            echo "DNS simulator asset is missing or unreadable: $file" >&2
+            return 1
+        fi
+    done
+
+    stop_dns_service
+    docker build -t "$DNS_IMAGE" "$DNS_PROFILE_DIR"
+    docker run -d --name "$DNS_CONTAINER" --network none --privileged --pid="container:$SIMULATION_CONTAINER" \
+        -v "$config:/etc/bind/named.conf:ro" \
+        -v "$key_file:/run/secrets/zpr-vs-publisher.key:ro" \
+        -v "$zone_file:/var/lib/bind/db.svc.zpr" \
+        "$DNS_IMAGE" >/dev/null
+
+    start_service dns-stats-relay "$DNS_STATS_RELAY_PID" socat \
+        "TCP-LISTEN:$DNS_STATS_RELAY_PORT,bind=127.0.0.1,reuseaddr,fork" \
+        "SYSTEM:\"docker exec -i $SIMULATION_CONTAINER ip netns exec zpr-a socat STDIO TCP:127.0.0.1:8053\""
+    wait_for_url "http://127.0.0.1:$DNS_STATS_RELAY_PORT/json/v1/status" dns-stats-relay
+}
+
+stop_dns_service() {
+    stop_service "$DNS_STATS_RELAY_PID"
+    docker rm -f "$DNS_CONTAINER" >/dev/null 2>&1 || true
+}
+
+start_control_service() {
+    start_service control-service "$CONTROL_PID" env \
+        ZPR_CONTROL_SERVICE_LISTEN=127.0.0.1:8790 \
+        ZPR_CONTROL_SERVICE_CERT_FILE="$SERVICE_CERTS/control-service.crt" \
+        ZPR_CONTROL_SERVICE_KEY_FILE="$SERVICE_CERTS/control-service.key" \
+        ZPR_CONTROL_SERVICE_CLIENT_CA_FILE="$SERVICE_CERTS/service-ca.crt" \
+        ZPR_ADMIN_URL="https://127.0.0.1:$ADMIN_RELAY_PORT" \
+        ZPR_ADMIN_CA_FILE="$RUNTIME_DIR/local-admin-cert.pem" \
+        ZPR_ADMIN_KEY_FILE="$RUNTIME_DIR/admin-read.key" \
+        ZPR_DNS_STATS_URL="${ZPR_DNS_STATS_URL:-http://127.0.0.1:$DNS_STATS_RELAY_PORT}" \
+        ZPR_POLICY_SERVICE_URL=https://127.0.0.1:8789 \
+        ZPR_POLICY_SERVICE_CA_FILE="$SERVICE_CERTS/service-ca.crt" \
+        ZPR_POLICY_CLIENT_CERT_FILE="$SERVICE_CERTS/control-policy-client.crt" \
+        ZPR_POLICY_CLIENT_KEY_FILE="$SERVICE_CERTS/control-policy-client.key" \
+        "$BIN" -mode control-service
+    wait_for_url https://127.0.0.1:8790/api/snapshot control-service \
+        --cacert "$SERVICE_CERTS/service-ca.crt" \
+        --cert "$SERVICE_CERTS/control-room-client.crt" \
+        --key "$SERVICE_CERTS/control-room-client.key"
 }
 
 create_control_certificate() {
@@ -302,6 +360,7 @@ start_stack() {
 
     start_service policy-service "$POLICY_PID" env \
         ZPR_POLICY_SERVICE_LISTEN=127.0.0.1:8789 \
+        ZPR_POLICY_DB_FILE="$STATE_DIR/policy-private/northstar-policy-only.db" \
         ZPR_POLICY_SERVICE_CERT_FILE="$SERVICE_CERTS/policy-service.crt" \
         ZPR_POLICY_SERVICE_KEY_FILE="$SERVICE_CERTS/policy-service.key" \
         ZPR_POLICY_SERVICE_CLIENT_CA_FILE="$SERVICE_CERTS/service-ca.crt" \
@@ -315,24 +374,8 @@ start_stack() {
         --key "$SERVICE_CERTS/control-policy-client.key"
 
     start_admin_relay
-    start_service control-service "$CONTROL_PID" env \
-        ZPR_CONTROL_SERVICE_LISTEN=127.0.0.1:8790 \
-        ZPR_CONTROL_SERVICE_CERT_FILE="$SERVICE_CERTS/control-service.crt" \
-        ZPR_CONTROL_SERVICE_KEY_FILE="$SERVICE_CERTS/control-service.key" \
-        ZPR_CONTROL_SERVICE_CLIENT_CA_FILE="$SERVICE_CERTS/service-ca.crt" \
-        ZPR_ADMIN_URL="https://127.0.0.1:$ADMIN_RELAY_PORT" \
-        ZPR_ADMIN_CA_FILE="$RUNTIME_DIR/local-admin-cert.pem" \
-        ZPR_ADMIN_KEY_FILE="$RUNTIME_DIR/admin-read.key" \
-        ZPR_DNS_STATS_URL="${ZPR_DNS_STATS_URL:-}" \
-        ZPR_POLICY_SERVICE_URL=https://127.0.0.1:8789 \
-        ZPR_POLICY_SERVICE_CA_FILE="$SERVICE_CERTS/service-ca.crt" \
-        ZPR_POLICY_CLIENT_CERT_FILE="$SERVICE_CERTS/control-policy-client.crt" \
-        ZPR_POLICY_CLIENT_KEY_FILE="$SERVICE_CERTS/control-policy-client.key" \
-        "$BIN" -mode control-service
-    wait_for_url https://127.0.0.1:8790/api/snapshot control-service \
-        --cacert "$SERVICE_CERTS/service-ca.crt" \
-        --cert "$SERVICE_CERTS/control-room-client.crt" \
-        --key "$SERVICE_CERTS/control-room-client.key"
+    start_dns_service
+    start_control_service
 
     start_service control-room "$ROOM_PID" env \
         ZPR_CONTROL_SERVICE_URL=https://127.0.0.1:8790 \
@@ -343,6 +386,7 @@ start_stack() {
     wait_for_url http://127.0.0.1:8787/ control-room
     start_service simulator "$SIMULATOR_PID" env \
         SIMULATION_MANIFEST="$SIMULATION_MANIFEST" \
+        SIMULATION_SCENARIOS_DIR="$DASHBOARD_DIR/cmd/zpr-web-dashboard/examples/scenarios" \
         SIMULATION_STACK_SCRIPT="$SCRIPT_DIR/dashboard-stack.sh" \
         SIMULATION_AGENT_SCRIPT="$SCRIPT_DIR/simulation-agent.sh" \
         SIMULATOR_CONTROL_TLS_CERT="$CONTROL_SERVER_CERT" \
@@ -373,6 +417,13 @@ status_stack() {
             echo "$name: stopped"
         fi
     done
+    dns_state=$(docker inspect -f '{{.State.Status}}' "$DNS_CONTAINER" 2>/dev/null || printf stopped)
+    echo "dns-bind9: container $dns_state"
+    if pid_running "$DNS_STATS_RELAY_PID"; then
+        echo "dns-stats-relay: running (pid $(cat "$DNS_STATS_RELAY_PID"), port $DNS_STATS_RELAY_PORT)"
+    else
+        echo "dns-stats-relay: stopped"
+    fi
     for number in $(seq -w 1 20); do
         container="zpr-machine-$number"
         state=$(docker inspect -f '{{.State.Status}}' "$container" 2>/dev/null || printf stopped)
@@ -389,5 +440,11 @@ case "${1:-start}" in
     stop) stop_stack ;;
     restart) start_stack ;;
     status) status_stack ;;
-    *) echo "usage: $0 {start|stop|restart|status}" >&2; exit 2 ;;
+    start-dns) start_dns_service ;;
+    stop-dns) stop_dns_service ;;
+    restart-control-service)
+        stop_service "$CONTROL_PID"
+        start_control_service
+        ;;
+    *) echo "usage: $0 {start|stop|restart|status|start-dns|stop-dns|restart-control-service}" >&2; exit 2 ;;
 esac

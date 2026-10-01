@@ -42,7 +42,7 @@ function renderMachines(machines, components, controllers, componentStates, sess
     }).join("") : `<p class="empty-workloads">No workloads selected</p>`;
     const lifecycleAction = machineRunning ? "stop" : "start";
     const lifecycleLabel = machineRunning ? "Stop machine" : "Start machine";
-    return `<article class="machine-card"><div class="machine-card-head"><div class="machine-card-identity"><span class="component-kind">${esc(machine.type)}</span><strong>${esc(machine.id)}</strong></div><div class="machine-card-status"><span class="controller-indicator ${connected ? "connected" : "offline"}"><i></i>${controllerLabel}</span><span class="pill ${machine.secure ? "on" : "off"}">${posture}</span></div></div><div class="machine-runtime-control"><span><small>CONTAINER</small><strong class="machine-container-state ${machineRunning ? "running" : "stopped"}">${esc(containerState)}</strong></span><button type="button" class="quiet" data-machine-action="${lifecycleAction}" data-machine="${esc(machine.id)}" ${containerState === "missing" ? "disabled" : ""}>${lifecycleLabel}</button></div><details class="machine-details"><summary>Machine details</summary><dl><div><dt>Model</dt><dd>${esc(machine.model)}</dd></div><div><dt>Location</dt><dd>${esc(machine.location)}</dd></div><div><dt>Owner</dt><dd>${esc(machine.owner)}</dd></div></dl></details>${sessionControl}${workloadPicker}<div class="machine-workloads"><span>WORKLOADS</span>${workloadRows}</div></article>`;
+    return `<article class="machine-card"><div class="machine-card-head"><div class="machine-card-identity"><span class="component-kind">${esc(machine.type)}</span><strong>${esc(machine.id)}</strong></div><div class="machine-card-status"><span class="controller-indicator ${connected ? "connected" : "offline"}"><i></i>${controllerLabel}</span><span class="pill ${machine.secure ? "on" : "off"}">${posture}</span></div></div><div class="machine-runtime-control"><span><small>CONTAINER</small><strong class="machine-container-state ${machineRunning ? "running" : "stopped"}">${esc(containerState)}</strong></span><button type="button" class="quiet" data-machine-action="${lifecycleAction}" data-machine="${esc(machine.id)}">${lifecycleLabel}</button></div><details class="machine-details"><summary>Machine details</summary><dl><div><dt>Model</dt><dd>${esc(machine.model)}</dd></div><div><dt>Location</dt><dd>${esc(machine.location)}</dd></div><div><dt>Owner</dt><dd>${esc(machine.owner)}</dd></div></dl></details>${sessionControl}${workloadPicker}<div class="machine-workloads"><span>WORKLOADS</span>${workloadRows}</div></article>`;
   }).join("");
 }
 let agentsRefreshPromise;
@@ -62,6 +62,16 @@ async function agentsRefresh() {
 }
 async function action(name, component = "") { toast(`${name} requested`); const query = component ? `?name=${encodeURIComponent(component)}` : ""; const response = await fetch(`/api/simulator/action/${name}${query}`, { method: "POST" }); const body = await response.text(); let result; try { result = JSON.parse(body); } catch { result = { output: body }; } if (!response.ok) throw new Error(result.output || `${name} failed`); toast(result.output || `${name} complete`); await agentsRefresh(); }
 let agentsRefreshTimer;
+document.querySelectorAll("[data-action]").forEach((button) => button.addEventListener("click", async () => {
+  button.disabled = true;
+  try {
+    await action(button.dataset.action);
+  } catch (error) {
+    toast(error.message || "Simulator action failed");
+  } finally {
+    button.disabled = false;
+  }
+}));
 $("#refresh").addEventListener("click", agentsRefresh);
 $("#machine-type-filter").addEventListener("change", () => renderMachines(data?.manifest.machines || [], data?.manifest.components || [], data?.controllers || {}, data?.components || {}, data?.sessions || {}, data?.machine_containers || {}));
 $("#machine-grid").addEventListener("click", async (event) => {

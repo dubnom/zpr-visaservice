@@ -5,7 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <meta name="theme-color" content="#17211e">
     <title>ZPR Control Room</title>
-    <link rel="stylesheet" href="/app.css?v=3">
+    <link rel="stylesheet" href="/app.css?v=4">
   </head>
   <body>
     <div class="app-shell">
@@ -57,30 +57,26 @@
         <section class="status-banner" aria-label="Live network overview">
           <div id="alert-strip" class="alert-strip" hidden role="status"></div>
           <div class="metrics-grid" aria-label="Key metrics">
-          <article class="metric metric-dark">
-            <div class="metric-head"><span>ACTIVE VISAS</span><span class="metric-glyph">V</span></div>
-            <strong class="metric-value" id="metric-visas">—</strong>
-            <small id="metric-visas-note">Current installed grants</small>
-          </article>
-          <article class="metric">
-            <div class="metric-head"><span>NODES IN SYNC</span><span class="metric-glyph glyph-green">N</span></div>
-            <strong class="metric-value" id="metric-nodes">—</strong>
-            <small id="metric-nodes-note">Waiting for topology</small>
-          </article>
-          <article class="metric">
-            <div class="metric-head"><span>VISAS</span><span class="metric-glyph glyph-orange">Σ</span></div>
-            <div class="metric-pair">
-              <span class="decision-allowed"><strong id="metric-allowed">—</strong> allow</span>
-              <span class="decision-denied"><strong id="metric-denied">—</strong> deny</span>
-            </div>
-          </article>
-          <article class="metric">
-            <div class="metric-pair metric-population">
-              <span><strong id="metric-actors">—</strong> actors</span>
-              <span><strong id="metric-adapters">—</strong> docked</span>
-              <span><strong id="metric-services">—</strong> services</span>
-            </div>
-          </article>
+            <article class="metric metric-dark">
+              <div class="metric-pair metric-population">
+                <span><strong id="metric-actors">—</strong> actors</span>
+                <span><strong id="metric-adapters">—</strong> docked</span>
+                <span><strong id="metric-services">—</strong> services</span>
+              </div>
+            </article>
+            <article class="metric">
+              <div class="metric-head"><span>VISAS</span><span class="metric-glyph glyph-orange">Σ</span></div>
+              <div class="metric-pair">
+                <span class="decision-allowed"><strong id="metric-allowed">—</strong> allow</span>
+                <span class="decision-denied"><strong id="metric-denied">—</strong> deny</span>
+                <span><strong id="metric-visas">—</strong> # active</span>
+              </div>
+            </article>
+            <article class="metric">
+              <div class="metric-head"><span>NODES IN SYNC</span><span class="metric-glyph glyph-green">N</span></div>
+              <strong class="metric-value" id="metric-nodes">—</strong>
+              <small id="metric-nodes-note">Waiting for topology</small>
+            </article>
           </div>
         </section>
 
@@ -126,7 +122,23 @@
               <div><p class="eyebrow">ZPR DNS / BIND 9</p><h2>DNS statistics</h2></div>
               <button id="dns-stats-refresh" class="button button-refresh" type="button">Refresh statistics</button>
             </div>
-            <iframe id="dns-stats-frame" class="dns-stats-frame" title="BIND 9 DNS statistics" data-src="/api/dns/stats/" sandbox="allow-scripts" loading="lazy"></iframe>
+            <p id="dns-stats-status" class="dns-stats-status" role="status">Waiting for BIND statistics…</p>
+            <div class="metrics-grid dns-stats-metrics">
+              <article class="metric metric-dark"><div class="metric-head"><span>REQUESTS</span></div><strong class="metric-value" id="dns-stat-requests">—</strong></article>
+              <article class="metric"><div class="metric-head"><span>SUCCESSFUL</span></div><strong class="metric-value" id="dns-stat-success">—</strong></article>
+              <article class="metric"><div class="metric-head"><span>NXDOMAIN</span></div><strong class="metric-value" id="dns-stat-nxdomain">—</strong></article>
+              <article class="metric"><div class="metric-head"><span>SERVFAIL</span></div><strong class="metric-value" id="dns-stat-servfail">—</strong></article>
+            </div>
+            <div class="dns-statistics-grid">
+              <section class="dns-statistics-section" aria-label="DNS request counters">
+                <div class="section-heading"><div><p class="eyebrow">BIND 9</p><h2>Request counters</h2></div></div>
+                <div class="table-scroll"><table><thead><tr><th>COUNTER</th><th>VALUE</th></tr></thead><tbody id="dns-counter-rows"><tr><td colspan="2" class="empty-row">Waiting for statistics…</td></tr></tbody></table></div>
+              </section>
+              <section class="dns-statistics-section" aria-label="DNS zones">
+                <div class="section-heading"><div><p class="eyebrow">AUTHORITATIVE DATA</p><h2>Zones</h2></div></div>
+                <div class="table-scroll"><table><thead><tr><th>ZONE</th><th>TYPE</th><th>SERIAL</th><th>SUCCESS</th><th>NXDOMAIN</th><th>AAAA</th></tr></thead><tbody id="dns-zone-rows"><tr><td colspan="6" class="empty-row">Waiting for zone statistics…</td></tr></tbody></table></div>
+              </section>
+            </div>
           </section>
         </section>
 
@@ -149,14 +161,10 @@
               <div class="policy-actions"><button id="policy-refresh" class="button" type="button" disabled>Discard</button><button id="policy-check" class="button" type="button" disabled>Evaluate</button><button id="policy-save" class="button button-save-next" type="button" disabled>Save</button><button id="policy-save-as" class="button" type="button" disabled>Save As...</button></div>
             </div>
             <div class="policy-workbench">
-              <aside class="policy-catalog-pane" aria-label="Policy categories">
-                <div class="catalog-pane-heading"><button id="new-category" class="button" type="button" title="Create category">+ Category</button></div>
+              <aside class="policy-catalog-pane" aria-label="Policy picker">
+                <div class="catalog-pane-heading"><button id="new-category" class="button" type="button" title="Create category">+ Category</button><button id="new-policy-record" class="button" type="button" disabled>+ Policy</button></div>
                 <div id="policy-category-tree" class="policy-category-tree" role="tree"><p class="catalog-empty">No categories yet.</p></div>
               </aside>
-              <section class="policy-records-pane" aria-label="Records in selected category">
-                <div class="catalog-pane-heading"><button id="new-policy-record" class="button" type="button" disabled>+ Policy</button></div>
-                <div id="policy-record-list" class="policy-record-list"><p class="catalog-empty">Select a category.</p></div>
-              </section>
               <section class="policy-editor-pane" aria-label="Policy source editor">
                 <div id="policy-code-editor" class="policy-code-editor">
                   <pre id="policy-highlight" class="policy-highlight" aria-hidden="true"></pre>
@@ -234,6 +242,6 @@
         <footer class="page-footer"><span>ZPR CONTROL ROOM <b>·</b> LIVE MONITOR / POLICY RECORDS</span><span id="footer-poll">Auto-refresh every 5 seconds</span></footer>
       </main>
     </div>
-    <script src="/app.js?v=8" defer></script>
+    <script src="/app.js?v=9" defer></script>
   </body>
 </html>

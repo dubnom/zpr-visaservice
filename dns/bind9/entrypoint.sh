@@ -5,6 +5,7 @@ adapter_name=${ZPR_DNS_ADAPTER_NAME:-adapter1}
 config_file=${ZPR_DNS_NAMED_CONF:-/etc/bind/named.conf}
 key_source=${ZPR_DNS_TSIG_KEY_FILE:-/run/secrets/zpr-vs-publisher.key}
 key_runtime=/run/named/zpr-vs-publisher.key
+zone_file=${ZPR_DNS_ZONE_FILE:-/var/lib/bind/db.svc.zpr}
 
 if [ ! -r "$key_source" ]; then
     echo "ZPR DNS TSIG key is not readable: $key_source" >&2
@@ -16,6 +17,10 @@ chmod 0750 /run/named
 cp "$key_source" "$key_runtime"
 chown bind:bind "$key_runtime"
 chmod 0640 "$key_runtime"
+if [ -e "$zone_file" ]; then
+    chown bind:bind "$zone_file"
+    chmod 0640 "$zone_file"
+fi
 
 adapter_pid=
 while [ -z "$adapter_pid" ]; do

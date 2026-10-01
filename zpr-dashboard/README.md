@@ -45,6 +45,22 @@ Its Activity page shows recent visas and denials from Control Room. Control
 Room remains the read-only network and policy monitor at
 `http://127.0.0.1:8787`.
 
+The Simulator opens on Agents. Shared ZPR actors, links, and service inventory
+remain in Control Room; stack lifecycle controls are available from Agents.
+
+The local stack also starts the BIND 9 DNS container from `../dns/bind9` using
+The local stack also starts the BIND 9 DNS container from `../dns/bind9` using
+the adapter1 ZPR network namespace. It expects the publisher TSIG key and
+`svc.zpr` zone file under `.local-runtime/dns-bind/`. BIND's HTTP statistics
+channel is loopback-only in the adapter namespace; a host-loopback `socat`
+relay feeds the Control Room DNS tab and is removed when the stack stops.
+The standard simulator's Exercise action resolves each component's FQDN target
+through the bootstrap DNS server in the manifest, then pings the returned ZPR
+address. Provider aliases are reconciled into `svc.zpr` by Visa Service using
+the configured TSIG publisher key.
+Use `scripts/dashboard-stack.sh start-dns` or `stop-dns` to manage DNS without
+restarting the simulator's machine fleet.
+
 The simulator defines 20 Docker machine profiles but initially creates only
 `zpr-machine-01`, from the `debian:trixie` image. Starting another machine in
 the Agents page creates it on demand. Each running container has its own

@@ -41,9 +41,14 @@ For LDAPS, replace `-file` with `-ldap-uri ldaps://directory.example:636`,
 `-ldap-ca /secure/ldap-ca.crt`, `-ldap-base 'dc=example,dc=org'`,
 `-ldap-bind 'cn=reader,dc=example,dc=org'`, `-ldap-password-file /secure/bind-password`,
 `-ldap-identities '{"user.sub":"uid"}'`, and `-ldap-attributes 'department,role'`.
-Only listed attributes are returned. LDAP identity values are escaped in equality filters;
-attribute names are restricted to LDAP-safe names. The bind account should have read-only
-access, and its password file must be readable only by the service account.
+Only listed person attributes are returned. To resolve `groupOfNames` membership, also set
+`-ldap-groups-base 'ou=Roles,dc=example,dc=org'`. The provider searches that subtree for
+groups whose `member` matches the person's DN and returns each matching group's `cn` in the
+multivalued source-side `role` attribute. Map it with `role -> device.demo.role` in the
+Visa Service policy. Omitting the flag disables group lookups. LDAP identity values are
+escaped in equality filters; attribute names are restricted to LDAP-safe names. The bind
+account should have read-only access, and its password file must be readable only by the
+service account.
 LDAP connectivity requires a reachable TLS-enabled directory; the automated
 tests cover the filter and provider contract but do not use a live directory.
 

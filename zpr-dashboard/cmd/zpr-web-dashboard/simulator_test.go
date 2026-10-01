@@ -3,6 +3,8 @@ package main
 import (
 	"context"
 	"fmt"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 	"time"
@@ -58,6 +60,15 @@ func TestValidateSimulatorManifestRequiresTwentyMachinesButNoWorkloadPlacement(t
 	}
 }
 
+func TestFirstIPv6Address(t *testing.T) {
+	if got := firstIPv6Address("CNAME adapter2.svc.zpr.\nfd00:1:2::1\n"); got != "fd00:1:2::1" {
+		t.Fatalf("firstIPv6Address() = %q, want fd00:1:2::1", got)
+	}
+	if got := firstIPv6Address(";; no AAAA records found"); got != "" {
+		t.Fatalf("firstIPv6Address() = %q, want empty", got)
+	}
+}
+
 func TestSimulatorMachineLifecycleCommand(t *testing.T) {
 	manifest := simulatorManifest{Machines: make([]simulatorMachine, 20)}
 	for index := range manifest.Machines {
@@ -88,6 +99,41 @@ func TestSimulatorMachineLifecycleCommand(t *testing.T) {
 	}
 }
 
+func TestSimulatorMachineStartRecreatesStoppedContainers(t *testing.T) {
+	manifest := simulatorManifest{Machines: make([]simulatorMachine, 20)}
+	for index := range manifest.Machines {
+		manifest.Machines[index] = simulatorMachine{ID: fmt.Sprintf("machine-%02d", index+1), Type: "laptop", Model: "Test", Location: "Test"}
+	}
+	t.Setenv("SIMULATION_STACK_SCRIPT", "scripts/dashboard-stack.sh")
+	tests := []struct {
+		state string
+		want  string
+	}{
+		{state: "missing", want: "sh scripts/dashboard-stack.sh start-machine machine-06"},
+		{state: "exited", want: "sh scripts/dashboard-stack.sh start-machine machine-06"},
+		{state: "created", want: "sh scripts/dashboard-stack.sh start-machine machine-06"},
+		{state: "paused", want: "docker unpause zpr-machine-06"},
+		{state: "created-by-test", want: "docker start zpr-machine-06"},
+	}
+	for _, test := range tests {
+		t.Run(test.state, func(t *testing.T) {
+			command, err := simulatorMachineStartCommand(manifest, "machine-06", test.state)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if command == nil {
+				t.Fatal("expected a start command")
+			}
+			if got := strings.Join(command.Args, " "); got != test.want {
+				t.Fatalf("start command = %q, want %q", got, test.want)
+			}
+		})
+	}
+	if command, err := simulatorMachineStartCommand(manifest, "machine-06", "running"); err != nil || command != nil {
+		t.Fatalf("running machine start = %v, %v; want no command", command, err)
+	}
+}
+
 func TestSimulatorMachineContainerStatesPreservesPartialFleet(t *testing.T) {
 	states := parseSimulatorMachineContainerStates([]byte("zpr-machine-01=running\nzpr-machine-03=exited\n"), []string{"machine-01", "machine-02", "machine-03"})
 	if states["machine-01"] != "running" || states["machine-02"] != "missing" || states["machine-03"] != "exited" {
@@ -114,6 +160,19 @@ func TestSimulatorStackRuntimeStatusKeepsMissingMachinesIndependent(t *testing.T
 	})
 	if !strings.Contains(status, "machine-01: container running") || !strings.Contains(status, "machine-02: container missing") {
 		t.Fatalf("partial machine fleet state not represented independently: %s", status)
+	}
+}
+
+func TestSimulatorStackServiceState(t *testing.T) {
+	runtimeDir := t.TempDir()
+	if got := simulatorStackServiceState(runtimeDir, "control-room"); got != "stopped" {
+		t.Fatalf("missing PID state = %q, want stopped", got)
+	}
+	if err := os.WriteFile(filepath.Join(runtimeDir, "control-room.pid"), []byte(fmt.Sprint(os.Getpid())), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if got := simulatorStackServiceState(runtimeDir, "control-room"); got != "running" {
+		t.Fatalf("live PID state = %q, want running", got)
 	}
 }
 

@@ -1,6 +1,6 @@
 const byId = (id) => document.getElementById(id);
 const zplKeywords = new Set(["allow", "never", "define", "with", "to", "access", "and", "as", "aka", "tag", "tags", "on", "optional", "multiple", "signal", "over"]);
-const state = { snapshot: null, timer: null, paused: false, pending: false, graphCamera: null, selection: null, sorts: {}, policy: { loaded: false, configured: false, categories: [], records: [], categoryID: "", record: null, source: "", savedSource: "", revision: 0, browsingRevision: 0, saveAs: false, compilerReady: false, assistantReady: false, validSource: null, errorOffsets: [], revisions: [], messages: [], assistantPending: false, assistantError: "" } };
+const state = { snapshot: null, timer: null, paused: false, pending: false, graphCamera: null, selection: null, sorts: {}, dnsPending: false, policy: { loaded: false, configured: false, categories: [], records: [], categoryID: "", collapsedCategories: new Set(), treeInitialized: false, record: null, source: "", savedSource: "", revision: 0, browsingRevision: 0, saveAs: false, compilerReady: false, assistantReady: false, validSource: null, errorOffsets: [], revisions: [], messages: [], assistantPending: false, assistantError: "" } };
 
 const pages = {
   map: "MAP",
@@ -31,13 +31,7 @@ function showPage(page = currentPage()) {
     else link.removeAttribute("aria-current");
   }
   if (page === "policy") loadPolicyWorkspace();
-  if (page === "dns") {
-    const frame = byId("dns-stats-frame");
-    if (frame.dataset.loaded !== "true") {
-      frame.dataset.loaded = "true";
-      frame.src = frame.dataset.src;
-    }
-  }
+  if (page === "dns") loadDNSStats();
 }
 
 function escapeHTML(value) {
@@ -57,6 +51,61 @@ function num(value) {
 
 function formatNumber(value) {
   return num(value).toLocaleString();
+}
+
+function dnsNumber(counters, key) {
+  return formatNumber(counters?.[key] || 0);
+}
+
+function renderDNSStats(status, server, zones) {
+  const counters = server.nsstats || {};
+  const requests = num(counters.Requestv4) + num(counters.Requestv6);
+  byId("dns-stats-status").textContent = `BIND ${server.version || "9"} · Updated ${new Date(status["current-time"]).toLocaleTimeString()}`;
+  byId("dns-stat-requests").textContent = formatNumber(requests);
+  byId("dns-stat-success").textContent = dnsNumber(counters, "QrySuccess");
+  byId("dns-stat-nxdomain").textContent = dnsNumber(counters, "QryNXDOMAIN");
+  byId("dns-stat-servfail").textContent = dnsNumber(counters, "QrySERVFAIL");
+
+  const counterRows = [
+    ["IPv4 requests", "Requestv4"], ["IPv6 requests", "Requestv6"],
+    ["UDP queries", "QryUDP"], ["TCP queries", "QryTCP"],
+    ["Authoritative answers", "QryAuthAns"], ["Successful queries", "QrySuccess"],
+    ["NXDOMAIN", "QryNXDOMAIN"], ["SERVFAIL", "QrySERVFAIL"],
+    ["Updates completed", "UpdateDone"], ["Updates failed", "UpdateFail"],
+  ];
+  byId("dns-counter-rows").innerHTML = counterRows.map(([label, key]) =>
+    `<tr><td>${label}</td><td class="mono">${dnsNumber(counters, key)}</td></tr>`
+  ).join("");
+
+  const zoneRows = Object.entries(zones.views || {}).flatMap(([viewName, view]) =>
+    (view.zones || []).map((zone) => ({ ...zone, view: viewName }))
+  );
+  byId("dns-zone-rows").innerHTML = zoneRows.length ? zoneRows.map((zone) =>
+    `<tr><td>${escapeHTML(zone.name || "—")}<small class="dns-zone-view">${escapeHTML(zone.view)}</small></td><td>${escapeHTML(zone.type || "—")}</td><td class="mono">${escapeHTML(zone.serial ?? "—")}</td><td class="mono">${dnsNumber(zone.rcodes, "QrySuccess")}</td><td class="mono">${dnsNumber(zone.rcodes, "QryNXDOMAIN")}</td><td class="mono">${dnsNumber(zone.qtypes, "AAAA")}</td></tr>`
+  ).join("") : `<tr><td colspan="6" class="empty-row">No zone statistics returned</td></tr>`;
+}
+
+async function loadDNSStats() {
+  if (state.dnsPending) return;
+  state.dnsPending = true;
+  const button = byId("dns-stats-refresh");
+  button.disabled = true;
+  byId("dns-stats-status").textContent = "Loading BIND statistics…";
+  try {
+    const paths = ["status", "server", "zones"];
+    const responses = await Promise.all(paths.map((path) => fetch(`/api/dns/stats/json/v1/${path}`, { cache: "no-store", headers: { Accept: "application/json" } })));
+    const failed = responses.find((response) => !response.ok);
+    if (failed) throw new Error(`HTTP ${failed.status}`);
+    const [status, server, zones] = await Promise.all(responses.map((response) => response.json()));
+    renderDNSStats(status, server, zones);
+  } catch (error) {
+    byId("dns-stats-status").textContent = `DNS statistics unavailable (${error.message})`;
+    byId("dns-counter-rows").innerHTML = `<tr><td colspan="2" class="empty-row">Unable to load DNS counters</td></tr>`;
+    byId("dns-zone-rows").innerHTML = `<tr><td colspan="6" class="empty-row">Unable to load zone statistics</td></tr>`;
+  } finally {
+    state.dnsPending = false;
+    button.disabled = false;
+  }
 }
 
 function visibleRows(page, rows, columns) {
@@ -130,7 +179,6 @@ function renderMetrics(data) {
   const denied = num(stats.visa_requests_denied);
 
   byId("metric-visas").textContent = formatNumber(data.visa_count);
-  byId("metric-visas-note").textContent = `${formatNumber(data.recent_visas.length)} shown below`;
   byId("metric-nodes").textContent = `${inSync} / ${nodes.length}`;
   byId("metric-nodes-note").textContent = `${upLinks} inter-node links reported UP`;
   byId("metric-allowed").textContent = formatNumber(approved);
@@ -139,7 +187,7 @@ function renderMetrics(data) {
   byId("metric-adapters").textContent = formatNumber(data.actors.filter((actor) => !actor.node).length);
   byId("metric-services").textContent = formatNumber(data.services.length);
   byId("metric-uptime").textContent = stats.uptime == null ? "—" : formatDuration(stats.uptime);
-  for (const id of ["metric-visas-note", "metric-nodes-note"]) {
+  for (const id of ["metric-nodes-note"]) {
     byId(id).parentElement.title = byId(id).textContent;
   }
 }
@@ -624,6 +672,10 @@ async function loadPolicyWorkspace() {
         || policy.categories[0]?.id
         || "";
     }
+    if (!policy.treeInitialized) {
+      policy.collapsedCategories = new Set(policy.categories.filter((category) => category.id !== policy.categoryID && policy.records.some((record) => record.category_id === category.id)).map((category) => category.id));
+      policy.treeInitialized = true;
+    }
     if (policy.record && !policy.record.isDraft && !policy.records.some((record) => record.id === policy.record.id)) policy.record = null;
     renderPolicyCatalog();
     if (policy.record?.isDraft) {
@@ -656,20 +708,25 @@ async function loadPolicyWorkspace() {
 
 function renderPolicyCatalog() {
   const policy = state.policy;
-  const categories = new Map(policy.categories.map((category) => [category.id, category]));
   const children = new Map();
+  const records = new Map();
   for (const category of policy.categories) {
     const key = category.parent_id || "";
     if (!children.has(key)) children.set(key, []);
     children.get(key).push(category);
   }
   for (const items of children.values()) items.sort((a, b) => a.name.localeCompare(b.name));
+  for (const record of policy.records) {
+    if (!records.has(record.category_id)) records.set(record.category_id, []);
+    records.get(record.category_id).push(record);
+  }
+  for (const items of records.values()) items.sort((a, b) => a.name.localeCompare(b.name));
   const tree = byId("policy-category-tree");
   tree.replaceChildren();
   if (!policy.categories.length) {
     const empty = document.createElement("p"); empty.className = "catalog-empty"; empty.textContent = "No categories yet."; tree.append(empty);
   } else {
-    const renderBranch = (parentID = "", depth = 0) => {
+    const renderBranch = (container, parentID = "", depth = 0) => {
       for (const category of children.get(parentID) || []) {
         const button = document.createElement("button");
         button.type = "button"; button.className = "category-tree-item";
@@ -678,36 +735,32 @@ function renderPolicyCatalog() {
         button.setAttribute("aria-label", category.path);
         button.title = category.path;
         button.setAttribute("aria-selected", String(policy.categoryID === category.id));
+        button.setAttribute("aria-expanded", String(!policy.collapsedCategories.has(category.id)));
         button.style.setProperty("--tree-depth", depth);
         const marker = document.createElement("span"); marker.className = "tree-marker"; marker.setAttribute("aria-hidden", "true");
         const name = document.createElement("span"); name.textContent = category.name;
-        const count = policy.records.filter((record) => record.category_id === category.id).length;
-        const tally = document.createElement("small"); tally.textContent = String(count);
+        const count = (records.get(category.id) || []).length;
+        const tally = document.createElement("small"); tally.textContent = count ? String(count) : "";
         button.append(marker, name, tally);
-        tree.append(button);
-        renderBranch(category.id, depth + 1);
+        container.append(button);
+        if (policy.collapsedCategories.has(category.id)) continue;
+        const group = document.createElement("div"); group.className = "policy-tree-group"; group.setAttribute("role", "group");
+        for (const record of records.get(category.id) || []) {
+          const item = document.createElement("button"); item.type = "button"; item.className = "policy-record-item";
+          item.dataset.recordId = record.id; item.setAttribute("role", "treeitem");
+          item.setAttribute("aria-selected", String(policy.record?.id === record.id));
+          item.style.setProperty("--tree-depth", depth + 1);
+          const label = document.createElement("strong"); label.textContent = record.name;
+          const meta = document.createElement("small"); meta.textContent = `v${record.current_revision}`;
+          item.append(label, meta); group.append(item);
+        }
+        renderBranch(group, category.id, depth + 1);
+        container.append(group);
       }
     };
-    renderBranch();
+    renderBranch(tree);
   }
-  const selected = categories.get(policy.categoryID);
-  byId("new-policy-record").disabled = !policy.configured || !selected;
-  const list = byId("policy-record-list");
-  list.replaceChildren();
-  const records = policy.records.filter((record) => record.category_id === policy.categoryID).sort((a, b) => a.name.localeCompare(b.name));
-  if (!selected) {
-    const empty = document.createElement("p"); empty.className = "catalog-empty"; empty.textContent = "Create or select a category."; list.append(empty);
-  } else if (!records.length) {
-    const empty = document.createElement("p"); empty.className = "catalog-empty"; empty.textContent = "No records in this category."; list.append(empty);
-  } else {
-    for (const record of records) {
-      const button = document.createElement("button"); button.type = "button"; button.className = "policy-record-item";
-      button.dataset.recordId = record.id; button.setAttribute("aria-pressed", String(policy.record?.id === record.id));
-      const name = document.createElement("strong"); name.textContent = record.name;
-      const meta = document.createElement("small"); meta.textContent = `${record.kind} · v${record.current_revision}`;
-      button.append(name, meta); list.append(button);
-    }
-  }
+  byId("new-policy-record").disabled = !policy.configured || !policy.categories.some((category) => category.id === policy.categoryID);
 }
 
 function clearPolicySelection() {
@@ -741,7 +794,7 @@ async function selectPolicyRecord(id, fetchRecord = true, discardEdits = false) 
       record = await response.json();
       if (!response.ok) throw new Error(record.error || `Record load failed (${response.status})`);
     }
-    policy.record = record; policy.source = record.content || ""; policy.savedSource = policy.source; policy.revision = record.current_revision; policy.validSource = null;
+    policy.record = record; policy.categoryID = record.category_id; policy.source = record.content || ""; policy.savedSource = policy.source; policy.revision = record.current_revision; policy.validSource = null;
     policy.errorOffsets = [];
     policy.browsingRevision = 0;
     byId("policy-draft-name").hidden = true;
@@ -1411,10 +1464,7 @@ function setPollTimer() {
 }
 
 byId("refresh-now").addEventListener("click", refresh);
-byId("dns-stats-refresh").addEventListener("click", () => {
-  const frame = byId("dns-stats-frame");
-  frame.src = `${frame.dataset.src}?refresh=${Date.now()}`;
-});
+byId("dns-stats-refresh").addEventListener("click", loadDNSStats);
 byId("policy-refresh").addEventListener("click", reloadPolicyWorkspace);
 byId("new-category").addEventListener("click", openCategoryDialog);
 byId("new-policy-record").addEventListener("click", beginNewPolicyDraft);
@@ -1425,7 +1475,13 @@ document.addEventListener("click", (event) => {
   const close = event.target.closest("[data-close-dialog]");
   if (close) byId(close.dataset.closeDialog).close();
   const category = event.target.closest("[data-category-id]");
-  if (category) { state.policy.categoryID = category.dataset.categoryId; renderPolicyCatalog(); }
+  if (category) {
+    const id = category.dataset.categoryId;
+    state.policy.categoryID = id;
+    if (state.policy.collapsedCategories.has(id)) state.policy.collapsedCategories.delete(id);
+    else state.policy.collapsedCategories.add(id);
+    renderPolicyCatalog();
+  }
   const record = event.target.closest("[data-record-id]");
   if (record) selectPolicyRecord(record.dataset.recordId);
   const revision = event.target.closest("[data-revision]");

@@ -1,15 +1,15 @@
 # Northstar Policy Studio Demo
 
-This fixture seeds six department-based ZPL policy examples into the Policy
-Repository. Their seven embedded JSON service definitions are illustrative;
-they are not deployed endpoints or services in the running ZPR test network.
+This fixture seeds seven ZPL policy examples into the Policy Repository. Their
+eight embedded JSON service definitions are illustrative; they are not deployed
+endpoints or services in the running ZPR test network.
 
-The six policy examples correspond to LDAP `ou` values such as `Accounting`,
-`Platform`, `HR`, `Security`, `Field`, and `Legal`. The current `demo_ldap`
-connector maps LDAP `ou` and `title` to `device.demo.department` and
-`device.demo.title`. It does **not** map `groupOfNames` memberships, so these
-examples intentionally do not claim that LDAP roles such as `Approver` or
-`Incident Responder` are available as ZPL attributes.
+The policy examples use LDAP `ou` values such as `Accounting`, `Platform`, `HR`,
+`Security`, `Field`, and `Legal`. The `demo_ldap` connector maps LDAP `ou` and
+`title` to `device.demo.department` and `device.demo.title`. It also resolves
+`groupOfNames.member` links and maps each matching group `cn` to the multivalued
+`device.demo.role` attribute, so the role-based Security example can test roles such as
+`Approver`, `Incident Responder`, and `Security Reviewer`.
 
 The demo ZPLC config declares each fake service class and the same LDAP
 attribute mappings. ZPLC validation checks the examples against this config;
@@ -30,4 +30,6 @@ The catalog import is idempotent: existing categories and records with the
 same names are left untouched, so it is safe to restart the demo. To see the
 new policy-only tree after a previous import, use a fresh demo database; the
 import does not delete existing service records or overwrite existing policies.
+The simulator stack uses `.local-runtime/dashboard-stack/policy-private/northstar-policy-only.db`
+for this purpose and leaves the earlier default Policy Studio database intact.
 `Save As...` can be used to create editable copies of the examples.
