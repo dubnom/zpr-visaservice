@@ -451,7 +451,7 @@ start_stack() {
 	start_machine_controllers
     echo "Control Room ready at http://127.0.0.1:8787"
     echo "OpenObserve GUI relay at http://127.0.0.1:$OBSERVABILITY_UI_RELAY_PORT"
-    echo "LDAP editor relay at http://127.0.0.1:$LDAP_UI_RELAY_PORT/phpldapadmin/"
+    echo "LDAP editor relay at http://127.0.0.1:$LDAP_UI_RELAY_PORT/"
     echo "Simulator ready at http://127.0.0.1:8788"
     echo "Machine control mTLS listener ready at https://127.0.0.1:8791"
 }
