@@ -1,0 +1,65 @@
+# Northstar Labs illustrative service catalog for Policy Studio examples.
+# These service entries are not deployed into the running Visa Service.
+# The topology is synthetic and only supports compiler evaluation of examples.
+
+[resolver]
+order = ["hosts", "dns"]
+
+[resolver.hosts]
+"n0.zpr" = "fd5a:5052::2"
+
+[nodes."node"]
+provider = [["device.zpr.adapter.cn", "node"]]
+zpr_address = "n0.zpr"
+
+[visa_service]
+dock_node = "node"
+
+[trusted_services.demo_auth]
+api = "validation/2"
+client = "AuthService"
+returns_attributes = ["sub -> user.sub"]
+identity_attributes = ["sub"]
+provider = [["device.zpr.adapter.cn", "auth-service"]]
+
+[trusted_services.demo_ldap]
+api = "rest/1"
+returns_attributes = ["ou -> device.demo.department", "title -> device.demo.title", "zprMachineId -> device.demo.machine_id", "zprMachineType -> device.demo.machine_type", "zprMachineModel -> device.demo.model", "zprMachineLocation -> device.demo.location", "zprMachineSecure -> device.demo.secure", "zprMachineOwner -> device.demo.owner"]
+expiration_seconds = 3600
+
+[trusted_services.demo_user_ldap]
+api = "rest/1"
+returns_attributes = ["cn -> user.name", "mail -> user.email", "ou -> user.department", "title -> user.title", "role -> user.role{}"]
+expiration_seconds = 3600
+
+[protocols.ping]
+l4protocol = "iana.ICMP6"
+icmp_type = "request-response"
+icmp_codes = [128, 129]
+
+[services.FinanceWorkspace]
+protocol = "ping"
+
+[services.PayrollRecords]
+protocol = "ping"
+
+[services.EngineeringBuildFarm]
+protocol = "ping"
+
+[services.PeopleOperationsHub]
+protocol = "ping"
+
+[services.SecurityIncidentConsole]
+protocol = "ping"
+
+[services.SalesCRM]
+protocol = "ping"
+
+[services.LegalMatterFiles]
+protocol = "ping"
+
+[services.SecureDeviceOperations]
+protocol = "ping"
+
+[services.UserRecords]
+protocol = "ping"

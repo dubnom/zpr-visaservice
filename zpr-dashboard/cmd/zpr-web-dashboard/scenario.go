@@ -27,6 +27,7 @@ var errScenarioAlreadyRunning = errors.New("a scenario is already running")
 type simulatorScenario struct {
 	ID             string                     `json:"id"`
 	OrganizationID string                     `json:"organization_id,omitempty"`
+	Folder         string                     `json:"folder,omitempty"`
 	Name           string                     `json:"name"`
 	Parallel       bool                       `json:"parallel,omitempty"`
 	Description    string                     `json:"description"`
@@ -332,7 +333,7 @@ func validateSimulatorScenarioStep(step simulatorScenarioStep, manifest simulato
 		if _, err := readSimulatorComponent(manifest, step.Component); err != nil {
 			return err
 		}
-	case "request_test_service":
+	case "request_test_service", "benchmark_test_service":
 		if !manifestHasMachine(manifest, step.Machine) || !testClientWorkloads[step.Component] {
 			return errors.New("test request requires a known machine and supported client component")
 		}
@@ -682,8 +683,20 @@ func simulatorScenarioExecutorForManifest(ctx context.Context, manifest simulato
 		if err := requireScenarioWorkload(step.Machine, step.Component); err != nil {
 			return "", err
 		}
+		component, err := readSimulatorComponent(manifest, step.Component)
+		if err != nil {
+			return "", err
+		}
 		address := net.JoinHostPort(machineWorkloadAddress(step.Component), testServicePorts[step.Component])
-		if _, err := scenarioCommand(ctx, "docker", "exec", "-d", machineContainerName(step.Machine), "/usr/local/bin/zpr-machine-controller", "-mode", "test-service", "-listen", address, "-log-workload", step.Component); err != nil {
+		mode := "test-service"
+		arguments := []string{"exec", "-d", machineContainerName(step.Machine), "/usr/local/bin/zpr-machine-controller"}
+		if component.GatewayUpstream != "" {
+			mode = "gateway-service"
+			arguments = append(arguments, "-mode", mode, "-listen", address, "-log-workload", step.Component, "-gateway-upstream", component.GatewayUpstream)
+		} else {
+			arguments = append(arguments, "-mode", mode, "-listen", address, "-log-workload", step.Component)
+		}
+		if _, err := scenarioCommand(ctx, "docker", arguments...); err != nil {
 			return "", err
 		}
 		return "test service started on " + address, nil
@@ -691,13 +704,18 @@ func simulatorScenarioExecutorForManifest(ctx context.Context, manifest simulato
 		if simulatorMachineContainerStates([]string{step.Machine})[step.Machine] != "running" {
 			return "test service machine already stopped", nil
 		}
-		output, err := scenarioCommand(ctx, "docker", "exec", machineContainerName(step.Machine), "pkill", "-f", "[z]pr-machine-controller -mode test-service .* -log-workload "+step.Component)
+		component, _ := readSimulatorComponent(manifest, step.Component)
+		mode := "test-service"
+		if component.GatewayUpstream != "" {
+			mode = "gateway-service"
+		}
+		output, err := scenarioCommand(ctx, "docker", "exec", machineContainerName(step.Machine), "pkill", "-f", "[z]pr-machine-controller -mode "+mode+" .* -log-workload "+step.Component)
 		var exitError *exec.ExitError
 		if errors.As(err, &exitError) && exitError.ExitCode() == 1 {
 			return "test service already stopped", nil
 		}
 		return output, err
-	case "request_test_service":
+	case "request_test_service", "benchmark_test_service":
 		if err := requireScenarioWorkload(step.Machine, step.Component); err != nil {
 			return "", err
 		}
@@ -706,6 +724,9 @@ func simulatorScenarioExecutorForManifest(ctx context.Context, manifest simulato
 			return "", err
 		}
 		address := net.JoinHostPort(machineWorkloadAddress(step.Target), testServicePorts[step.Target])
+		if step.Action == "benchmark_test_service" {
+			return scenarioCommand(ctx, "docker", "exec", machineContainerName(step.Machine), "/usr/local/bin/zpr-machine-controller", "-mode", "benchmark-client", "-listen", address, "-zpr-addr", sourceAddress)
+		}
 		return scenarioCommand(ctx, "docker", "exec", machineContainerName(step.Machine), "/usr/local/bin/zpr-machine-controller", "-mode", "test-client", "-listen", address, "-zpr-addr", sourceAddress, "-client-id", step.Machine, "-log-workload", step.Component, "-test-service-name", step.Target)
 	case "traffic":
 		component, _ := readSimulatorComponent(manifest, step.Component)

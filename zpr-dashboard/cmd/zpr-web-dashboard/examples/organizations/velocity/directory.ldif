@@ -1,0 +1,94 @@
+dn: dc=velocity,dc=test
+objectClass: top
+objectClass: dcObject
+objectClass: organization
+dc: velocity
+o: Velocity Labs
+
+dn: ou=People,dc=velocity,dc=test
+objectClass: top
+objectClass: organizationalUnit
+ou: People
+
+dn: ou=Machines,dc=velocity,dc=test
+objectClass: top
+objectClass: organizationalUnit
+ou: Machines
+
+dn: ou=Departments,dc=velocity,dc=test
+objectClass: top
+objectClass: organizationalUnit
+ou: Departments
+
+dn: ou=Performance,ou=Departments,dc=velocity,dc=test
+objectClass: top
+objectClass: organizationalUnit
+ou: Performance
+
+dn: ou=Roles,dc=velocity,dc=test
+objectClass: top
+objectClass: organizationalUnit
+ou: Roles
+
+dn: ou=Service Accounts,dc=velocity,dc=test
+objectClass: top
+objectClass: organizationalUnit
+ou: Service Accounts
+
+dn: uid=alex.rivera,ou=People,dc=velocity,dc=test
+objectClass: inetOrgPerson
+uid: alex.rivera
+cn: Alex Rivera
+sn: Rivera
+mail: alex.rivera@velocity.example
+ou: Performance
+title: Client Benchmark Operator
+
+dn: uid=sam.chen,ou=People,dc=velocity,dc=test
+objectClass: inetOrgPerson
+uid: sam.chen
+cn: Sam Chen
+sn: Chen
+mail: sam.chen@velocity.example
+ou: Performance
+title: Service Benchmark Operator
+
+dn: uid=machine-03,ou=Machines,dc=velocity,dc=test
+objectClass: inetOrgPerson
+objectClass: zprMachine
+uid: machine-03
+cn: machine-03
+sn: Endpoint
+zprMachineId: machine-03
+zprMachineType: laptop
+zprMachineModel: Benchmark Client
+zprMachineLocation: Performance Lab
+zprMachineOwner: alex.rivera
+zprMachineSecure: TRUE
+
+dn: uid=machine-05,ou=Machines,dc=velocity,dc=test
+objectClass: inetOrgPerson
+objectClass: zprMachine
+uid: machine-05
+cn: machine-05
+sn: Endpoint
+zprMachineId: machine-05
+zprMachineType: desktop
+zprMachineModel: Benchmark Server
+zprMachineLocation: Performance Lab
+zprMachineOwner: sam.chen
+zprMachineSecure: TRUE
+
+dn: cn=BenchmarkOperators,ou=Roles,dc=velocity,dc=test
+objectClass: top
+objectClass: groupOfNames
+cn: BenchmarkOperators
+member: uid=alex.rivera,ou=People,dc=velocity,dc=test
+member: uid=sam.chen,ou=People,dc=velocity,dc=test
+
+dn: cn=zpr-reader,ou=Service Accounts,dc=velocity,dc=test
+objectClass: top
+objectClass: simpleSecurityObject
+objectClass: organizationalRole
+cn: zpr-reader
+userPassword: DEMO_BIND_PASSWORD_HASH

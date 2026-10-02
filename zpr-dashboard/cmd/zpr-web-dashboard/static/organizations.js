@@ -38,12 +38,13 @@ function renderOrganizationDetails(organization) {
   document.getElementById("organization-active-name").textContent = organizationCatalog.find((item) => item.id === activeOrganizationID)?.name || "Unavailable";
   document.getElementById("organization-active-id").textContent = activeOrganizationID;
   document.getElementById("organization-detail").innerHTML = `
-    <div class="organization-summary"><span class="scenario-state ${isActive ? "completed" : "idle"}">${isActive ? "Active" : "Profile"}</span><span>${organizationEscape(organization.description)}</span></div>
+    <div class="organization-summary"><span class="scenario-state ${isActive ? "completed" : "idle"}">${isActive ? "Active" : "Profile"}</span>${isActive ? "" : `<button type="button" data-activate-organization="${organizationEscape(organization.id)}">Activate organization</button>`}<span>${organizationEscape(organization.description)}</span></div>
     <div class="organization-sections">
-      <section class="organization-section"><div class="organization-directory-heading"><h3>Directory · ${organizationEscape(directory.base_dn)}</h3><button class="quiet" type="button" data-edit-directory="${organizationEscape(organization.id)}">Edit LDAP seed</button></div><div class="organization-summary"><span>${(directory.departments || []).length} departments</span><span>${(directory.people || []).length} people</span><span>${(directory.groups || []).length} groups</span><span>LDAP seed: ${organizationEscape(directory.seed_mode)}</span></div>${organizationItems((directory.departments || []).map((item) => ({ name: item.name, description: item.parent ? `Under ${item.parent}` : "Department" })), "Structure", "departments")}${organizationItems(directory.people || [], "People", "people")}${organizationItems(directory.groups || [], "Groups", "groups")}</section>
+      <section class="organization-section"><div class="organization-directory-heading"><h3>Directory · ${organizationEscape(directory.base_dn)}</h3><button class="quiet" type="button" data-edit-directory="${organizationEscape(organization.id)}">Edit LDAP seed</button></div><div class="organization-summary"><span>${(directory.departments || []).length} departments</span><span>${(directory.people || []).length} people</span><span>${(directory.groups || []).length} groups</span><span>LDAP seed: ${organizationEscape(directory.seed_mode)}</span></div><ldap-org-graph></ldap-org-graph></section>
       ${organizationItems(organization.policies || [], "Policies", "policy records")}
       ${organizationItems(organization.services || [], "Services", "services")}
     </div>`;
+  document.querySelector("#organization-detail ldap-org-graph").directory = directory;
   renderOrganizationListSelection();
 }
 
@@ -170,6 +171,51 @@ async function refreshOrganizations() {
   try { await organizationRefreshPromise; } finally { organizationRefreshPromise = undefined; }
 }
 
+const designButton = document.createElement("button");
+designButton.className = "quiet";
+designButton.id = "organization-design-assistant";
+designButton.type = "button";
+designButton.textContent = "Design with Claude";
+const refreshButton = document.getElementById("organization-refresh");
+const topActions = document.createElement("div");
+topActions.className = "organization-top-actions";
+refreshButton.before(topActions);
+topActions.append(designButton, refreshButton);
+
+const organizationDesignDialog = document.createElement("dialog");
+organizationDesignDialog.id = "organization-design-dialog";
+organizationDesignDialog.className = "design-assistant-dialog";
+organizationDesignDialog.setAttribute("aria-labelledby", "organization-design-title");
+organizationDesignDialog.innerHTML = `<header class="design-assistant-dialog-head"><div><p class="eyebrow">ORGANIZATION DESIGN</p><h2 id="organization-design-title">Design with Claude</h2></div><button class="quiet" type="button" aria-label="Close assistant" data-close-design-assistant>×</button></header><p class="design-assistant-dialog-context" id="organization-design-context"></p><div id="organization-assistant-slot"></div>`;
+document.body.append(organizationDesignDialog);
+let organizationAssistantID = "";
+const organizationAssistant = window.mountSimulatorDesignAssistant("organization-assistant-slot", {
+  scope: "organization",
+  applyLabel: "Apply LDIF draft",
+  emptyMessage: "Ask for organization, identity, group, service, or LDAP seed design advice.",
+  getContext: () => ({ organization_id: organizationAssistantID }),
+  onApply: async (proposal) => {
+    if (!proposal.directory_ldif) throw new Error("Claude did not return an LDIF proposal.");
+    await openDirectoryEditor(organizationAssistantID);
+    const source = document.getElementById("directory-editor-source");
+    source.value = proposal.directory_ldif;
+    source.dispatchEvent(new Event("input", { bubbles: true }));
+    document.getElementById("directory-editor-summary").value = "Claude-assisted directory draft";
+    setDirectoryEditorStatus("Claude proposal loaded. Review it before saving or publishing.");
+  },
+});
+
+designButton.addEventListener("click", () => {
+  organizationAssistantID = selectedOrganizationID || activeOrganizationID;
+  const organization = organizationCatalog.find((item) => item.id === organizationAssistantID);
+  document.getElementById("organization-design-context").textContent = organization
+    ? `${organization.name} · ${organization.directory.base_dn}`
+    : "Select an organization profile first.";
+  organizationAssistant.reset();
+  organizationDesignDialog.showModal();
+});
+organizationDesignDialog.querySelector("[data-close-design-assistant]").addEventListener("click", () => organizationDesignDialog.close());
+
 document.getElementById("organization-refresh").addEventListener("click", refreshOrganizations);
 document.getElementById("organization-list").addEventListener("click", (event) => {
   const button = event.target.closest("[data-organization-id]");
@@ -177,6 +223,23 @@ document.getElementById("organization-list").addEventListener("click", (event) =
   if (organization) renderOrganizationDetails(organization);
 });
 document.getElementById("organization-detail").addEventListener("click", async (event) => {
+  const activate = event.target.closest("[data-activate-organization]");
+  if (activate) {
+    activate.disabled = true;
+    try {
+      const response = await fetch(`/api/simulator/organizations/${encodeURIComponent(activate.dataset.activateOrganization)}/activate`, { method: "POST" });
+      const result = await response.json();
+      if (!response.ok) throw new Error(result.error || `HTTP ${response.status}`);
+      await refreshOrganizations();
+    } catch (error) {
+      const message = document.getElementById("organization-error");
+      message.textContent = error.message || "Could not activate organization";
+      message.hidden = false;
+    } finally {
+      activate.disabled = false;
+    }
+    return;
+  }
   const button = event.target.closest("[data-edit-directory]");
   if (!button) return;
   try { await openDirectoryEditor(button.dataset.editDirectory); }

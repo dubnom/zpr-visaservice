@@ -326,6 +326,38 @@ func handleWorkspaceScenarioPublish(w http.ResponseWriter, r *http.Request) {
 	writeSimulatorJSON(w, revision)
 }
 
+func handleWorkspaceScenarioArchive(w http.ResponseWriter, r *http.Request) {
+	organizationID, scenarioID := r.PathValue("organization"), r.PathValue("scenario")
+	run := activeSimulatorScenario.snapshot()
+	if run.OrganizationID == organizationID && run.ScenarioID == scenarioID && (run.State == "running" || run.State == "cleaning") {
+		writeWorkspaceError(w, http.StatusConflict, "stop the active scenario before deleting it")
+		return
+	}
+	var request workspacePublishRequest
+	decoder := json.NewDecoder(http.MaxBytesReader(w, r.Body, 1024))
+	if err := decoder.Decode(&request); err != nil || request.ExpectedRevision < 1 {
+		writeWorkspaceError(w, http.StatusBadRequest, "a valid expected_revision is required")
+		return
+	}
+	store, ok := workspaceForRequest(w, r)
+	if !ok {
+		return
+	}
+	defer store.Close()
+	if err := store.Archive(r.Context(), organizationID, workspaceScenarioKind, scenarioID, request.ExpectedRevision); err != nil {
+		switch {
+		case errors.Is(err, errWorkspaceArtifactNotFound):
+			writeWorkspaceError(w, http.StatusNotFound, "scenario not found")
+		case errors.Is(err, errWorkspaceRevisionConflict):
+			writeWorkspaceError(w, http.StatusConflict, "scenario changed; refresh before deleting")
+		default:
+			writeWorkspaceError(w, http.StatusInternalServerError, "scenario could not be deleted")
+		}
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
+}
+
 func handleWorkspaceScenarioRun(w http.ResponseWriter, r *http.Request) {
 	manifest, err := readSimulatorManifest()
 	if err != nil {

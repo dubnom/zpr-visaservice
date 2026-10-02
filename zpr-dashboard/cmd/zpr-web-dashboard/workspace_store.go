@@ -143,6 +143,15 @@ CREATE TABLE IF NOT EXISTS workspace_artifact_revisions (
 	FOREIGN KEY (organization_id, kind, artifact_id)
 		REFERENCES workspace_artifacts(organization_id, kind, artifact_id)
 );
+CREATE TABLE IF NOT EXISTS workspace_artifact_archives (
+	organization_id TEXT NOT NULL,
+	kind TEXT NOT NULL,
+	artifact_id TEXT NOT NULL,
+	archived_at TEXT NOT NULL,
+	PRIMARY KEY (organization_id, kind, artifact_id),
+	FOREIGN KEY (organization_id, kind, artifact_id)
+		REFERENCES workspace_artifacts(organization_id, kind, artifact_id)
+);
 CREATE TRIGGER IF NOT EXISTS workspace_artifact_revisions_no_update
 BEFORE UPDATE ON workspace_artifact_revisions
 BEGIN
@@ -170,7 +179,9 @@ func (r *workspaceRepository) List(ctx context.Context, organizationID, kind str
 		       v.content,v.content_hash,v.author,v.summary
 		FROM workspace_artifacts a
 		JOIN workspace_artifact_revisions v ON v.organization_id=a.organization_id AND v.kind=a.kind AND v.artifact_id=a.artifact_id AND v.revision=a.current_revision
-		WHERE a.organization_id=? AND a.kind=? ORDER BY a.artifact_id COLLATE NOCASE`, organizationID, kind)
+		WHERE a.organization_id=? AND a.kind=?
+		  AND NOT EXISTS (SELECT 1 FROM workspace_artifact_archives x WHERE x.organization_id=a.organization_id AND x.kind=a.kind AND x.artifact_id=a.artifact_id)
+		ORDER BY a.artifact_id COLLATE NOCASE`, organizationID, kind)
 	if err != nil {
 		return nil, err
 	}
@@ -192,7 +203,8 @@ func (r *workspaceRepository) Get(ctx context.Context, organizationID, kind, id 
 		       v.content,v.content_hash,v.author,v.summary
 		FROM workspace_artifacts a
 		JOIN workspace_artifact_revisions v ON v.organization_id=a.organization_id AND v.kind=a.kind AND v.artifact_id=a.artifact_id AND v.revision=a.current_revision
-		WHERE a.organization_id=? AND a.kind=? AND a.artifact_id=?`, organizationID, kind, id)
+		WHERE a.organization_id=? AND a.kind=? AND a.artifact_id=?
+		  AND NOT EXISTS (SELECT 1 FROM workspace_artifact_archives x WHERE x.organization_id=a.organization_id AND x.kind=a.kind AND x.artifact_id=a.artifact_id)`, organizationID, kind, id)
 	return scanWorkspaceArtifact(row)
 }
 
@@ -236,7 +248,7 @@ func (r *workspaceRepository) AppendRevision(ctx context.Context, organizationID
 	}
 	defer tx.Rollback()
 	now := time.Now().UTC()
-	result, err := tx.ExecContext(ctx, `UPDATE workspace_artifacts SET current_revision=current_revision+1,updated_at=? WHERE organization_id=? AND kind=? AND artifact_id=? AND current_revision=?`, formatWorkspaceTime(now), organizationID, kind, id, expected)
+	result, err := tx.ExecContext(ctx, `UPDATE workspace_artifacts SET current_revision=current_revision+1,updated_at=? WHERE organization_id=? AND kind=? AND artifact_id=? AND current_revision=? AND NOT EXISTS (SELECT 1 FROM workspace_artifact_archives x WHERE x.organization_id=workspace_artifacts.organization_id AND x.kind=workspace_artifacts.kind AND x.artifact_id=workspace_artifacts.artifact_id)`, formatWorkspaceTime(now), organizationID, kind, id, expected)
 	if err != nil {
 		return workspaceArtifactRevision{}, err
 	}
@@ -246,7 +258,7 @@ func (r *workspaceRepository) AppendRevision(ctx context.Context, organizationID
 	}
 	if changed == 0 {
 		var exists int
-		if err := tx.QueryRowContext(ctx, `SELECT COUNT(*) FROM workspace_artifacts WHERE organization_id=? AND kind=? AND artifact_id=?`, organizationID, kind, id).Scan(&exists); err != nil {
+		if err := tx.QueryRowContext(ctx, `SELECT COUNT(*) FROM workspace_artifacts a WHERE organization_id=? AND kind=? AND artifact_id=? AND NOT EXISTS (SELECT 1 FROM workspace_artifact_archives x WHERE x.organization_id=a.organization_id AND x.kind=a.kind AND x.artifact_id=a.artifact_id)`, organizationID, kind, id).Scan(&exists); err != nil {
 			return workspaceArtifactRevision{}, err
 		}
 		if exists == 0 {
@@ -266,7 +278,7 @@ func (r *workspaceRepository) AppendRevision(ctx context.Context, organizationID
 }
 
 func (r *workspaceRepository) Publish(ctx context.Context, organizationID, kind, id string, expected int) (workspaceArtifact, error) {
-	result, err := r.db.ExecContext(ctx, `UPDATE workspace_artifacts SET published_revision=?,published_at=? WHERE organization_id=? AND kind=? AND artifact_id=? AND current_revision=?`, expected, formatWorkspaceTime(time.Now().UTC()), organizationID, kind, id, expected)
+	result, err := r.db.ExecContext(ctx, `UPDATE workspace_artifacts SET published_revision=?,published_at=? WHERE organization_id=? AND kind=? AND artifact_id=? AND current_revision=? AND NOT EXISTS (SELECT 1 FROM workspace_artifact_archives x WHERE x.organization_id=workspace_artifacts.organization_id AND x.kind=workspace_artifacts.kind AND x.artifact_id=workspace_artifacts.artifact_id)`, expected, formatWorkspaceTime(time.Now().UTC()), organizationID, kind, id, expected)
 	if err != nil {
 		return workspaceArtifact{}, err
 	}
@@ -283,6 +295,30 @@ func (r *workspaceRepository) Publish(ctx context.Context, organizationID, kind,
 		return workspaceArtifact{}, errWorkspaceRevisionConflict
 	}
 	return r.Get(ctx, organizationID, kind, id)
+}
+
+func (r *workspaceRepository) Archive(ctx context.Context, organizationID, kind, id string, expected int) error {
+	result, err := r.db.ExecContext(ctx, `INSERT INTO workspace_artifact_archives(organization_id,kind,artifact_id,archived_at)
+		SELECT organization_id,kind,artifact_id,? FROM workspace_artifacts a
+		WHERE organization_id=? AND kind=? AND artifact_id=? AND current_revision=?
+		  AND NOT EXISTS (SELECT 1 FROM workspace_artifact_archives x WHERE x.organization_id=a.organization_id AND x.kind=a.kind AND x.artifact_id=a.artifact_id)`,
+		formatWorkspaceTime(time.Now().UTC()), organizationID, kind, id, expected)
+	if err != nil {
+		return err
+	}
+	changed, err := result.RowsAffected()
+	if err != nil {
+		return err
+	}
+	if changed == 1 {
+		return nil
+	}
+	if _, err := r.Get(ctx, organizationID, kind, id); errors.Is(err, errWorkspaceArtifactNotFound) {
+		return errWorkspaceArtifactNotFound
+	} else if err != nil {
+		return err
+	}
+	return errWorkspaceRevisionConflict
 }
 
 func (r *workspaceRepository) ListRevisions(ctx context.Context, organizationID, kind, id string) ([]workspaceArtifactSummary, error) {

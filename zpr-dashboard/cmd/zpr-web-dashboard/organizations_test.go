@@ -13,8 +13,8 @@ func TestBundledOrganizationsHaveSeparateIdentityAndPolicyCatalogs(t *testing.T)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(organizations) != 2 {
-		t.Fatalf("loaded %d organizations, want 2", len(organizations))
+	if len(organizations) != 3 {
+		t.Fatalf("loaded %d organizations, want 3", len(organizations))
 	}
 	northstar, err := loadSimulatorOrganization(filepath.Join("examples", "organizations"), "northstar")
 	if err != nil {
@@ -40,8 +40,13 @@ func TestSimulatorOrganizationsEndpointReturnsActiveCatalog(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	activePath := filepath.Join(t.TempDir(), "active.txt")
+	if err := os.WriteFile(activePath, []byte("northstar\n"), 0600); err != nil {
+		t.Fatal(err)
+	}
 	t.Setenv("SIMULATION_MANIFEST", manifestPath)
 	t.Setenv("SIMULATION_ORGANIZATIONS_DIR", filepath.Join("examples", "organizations"))
+	t.Setenv("SIMULATION_ACTIVE_ORGANIZATION_FILE", activePath)
 	request := httptest.NewRequest("GET", "/api/simulator/organizations", nil)
 	response := httptest.NewRecorder()
 	handleSimulatorOrganizations(response, request)
@@ -55,7 +60,7 @@ func TestSimulatorOrganizationsEndpointReturnsActiveCatalog(t *testing.T) {
 	if err := json.Unmarshal(response.Body.Bytes(), &body); err != nil {
 		t.Fatal(err)
 	}
-	if body.ActiveID != "northstar" || len(body.Organizations) != 2 {
+	if body.ActiveID != "northstar" || len(body.Organizations) != 3 {
 		t.Fatalf("organization catalog = active %q, %d organizations", body.ActiveID, len(body.Organizations))
 	}
 }
@@ -166,6 +171,96 @@ func TestLoadSimulatorScenariosFiltersByOrganization(t *testing.T) {
 	}
 	if len(scenarios) != 1 || scenarios[0].ID != "northstar-flow" {
 		t.Fatalf("Northstar scenario catalog = %#v", scenarios)
+	}
+}
+
+func TestSimulatorOrganizationActivationPersistsSelection(t *testing.T) {
+	manifestPath := filepath.Join(t.TempDir(), "manifest.json")
+	manifest := scenarioTestManifest()
+	content, err := json.Marshal(manifest)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(manifestPath, content, 0600); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("SIMULATION_MANIFEST", manifestPath)
+	t.Setenv("SIMULATION_ORGANIZATION_ID", "northstar")
+	t.Setenv("SIMULATION_ACTIVE_ORGANIZATION_FILE", filepath.Join(t.TempDir(), "active.txt"))
+	t.Setenv("SIMULATION_ORGANIZATIONS_DIR", filepath.Join("examples", "organizations"))
+	request := httptest.NewRequest("POST", "/api/simulator/organizations/velocity/activate", nil)
+	request.SetPathValue("organization", "velocity")
+	response := httptest.NewRecorder()
+	handleSimulatorOrganizationActivate(response, request)
+	if response.Code != 200 {
+		t.Fatalf("activation failed: %d %s", response.Code, response.Body.String())
+	}
+	selected, err := readSimulatorManifest()
+	if err != nil || selected.OrganizationID != "velocity" {
+		t.Fatalf("selected organization = %q, error %v", selected.OrganizationID, err)
+	}
+	request.SetPathValue("organization", "missing")
+	response = httptest.NewRecorder()
+	handleSimulatorOrganizationActivate(response, request)
+	if response.Code != 404 {
+		t.Fatalf("unknown organization activation status = %d", response.Code)
+	}
+	activeSimulatorScenario.mu.Lock()
+	previous := activeSimulatorScenario.run.State
+	activeSimulatorScenario.run.State = "running"
+	activeSimulatorScenario.mu.Unlock()
+	t.Cleanup(func() {
+		activeSimulatorScenario.mu.Lock()
+		activeSimulatorScenario.run.State = previous
+		activeSimulatorScenario.mu.Unlock()
+	})
+	request.SetPathValue("organization", "redwood")
+	response = httptest.NewRecorder()
+	handleSimulatorOrganizationActivate(response, request)
+	if response.Code != 409 {
+		t.Fatalf("running scenario activation status = %d", response.Code)
+	}
+	activeSimulatorScenario.mu.Lock()
+	activeSimulatorScenario.run.State = previous
+	activeSimulatorScenario.mu.Unlock()
+	simulatorSessions.set("activation-test-machine", simulatorUserSession{Authenticated: true})
+	t.Cleanup(func() { simulatorSessions.clear("activation-test-machine") })
+	response = httptest.NewRecorder()
+	handleSimulatorOrganizationActivate(response, request)
+	if response.Code != 409 {
+		t.Fatalf("authenticated session activation status = %d", response.Code)
+	}
+}
+
+func TestVelocityBenchmarkScenarioUsesTwoMachines(t *testing.T) {
+	manifest := scenarioTestManifest()
+	manifest.OrganizationID = "velocity"
+	scenarios, err := loadSimulatorScenarios(filepath.Join("examples", "scenarios"), manifest)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(scenarios) != 1 || scenarios[0].ID != "velocity-single-node" || !scenarios[0].Parallel {
+		t.Fatalf("Velocity scenario catalog = %#v", scenarios)
+	}
+	machines := make(map[string]bool)
+	benchmarks := 0
+	for _, step := range scenarios[0].Steps {
+		if step.Machine != "" {
+			machines[step.Machine] = true
+		}
+		if step.Action == "benchmark_test_service" {
+			benchmarks++
+		}
+	}
+	if len(machines) != 2 || benchmarks != 1 {
+		t.Fatalf("benchmark uses %d machines and %d measurements", len(machines), benchmarks)
+	}
+	organization, err := loadSimulatorOrganization(filepath.Join("examples", "organizations"), "velocity")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !simulatorOrganizationAllowsUser(manifest, organization, "machine-03", "alex.rivera") || simulatorOrganizationAllowsUser(manifest, organization, "machine-03", "sophie.nguyen") {
+		t.Fatal("benchmark machine must admit its Velocity operator only")
 	}
 }
 

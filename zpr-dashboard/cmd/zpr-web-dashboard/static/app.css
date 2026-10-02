@@ -110,6 +110,7 @@ h1 { margin-bottom: 6px; font-size: 28px; line-height: 1.15; letter-spacing: 0; 
 .legend-dock { background: #5786a0; }
 .legend-node { width: 8px !important; height: 8px !important; border: 1px solid #426453; border-radius: 2px !important; background: #eaf4d9; }
 .legend-visa { width: 8px !important; height: 8px !important; border: 1px solid #b86b30; background: #f3b36f; transform: rotate(45deg); }
+.legend-gateway { width: 9px !important; height: 9px !important; border: 1px solid #754000; background: #ffd36a; clip-path: polygon(25% 0, 75% 0, 100% 50%, 75% 100%, 25% 100%, 0 50%); }
 .legend-adapter { width: 8px !important; height: 8px !important; border: 1px solid #7c9aaa; background: #f0f5f7; }
 .legend-service { width: 11px !important; height: 7px; border: 1px solid #879989; border-radius: 2px !important; background: #fff; }
 .legend-trusted-file { width: 11px !important; height: 7px; border: 1px solid #4e8790; border-radius: 2px !important; background: #e7f1f3; }
@@ -132,9 +133,11 @@ h1 { margin-bottom: 6px; font-size: 28px; line-height: 1.15; letter-spacing: 0; 
 .graph-exiting .graph-exit-label { fill: var(--arrival-accent, #43be69); stroke: #fff; stroke-width: 3px; paint-order: stroke; text-anchor: middle; font: 800 10px var(--mono); pointer-events: none; }
 .graph-vertex:is(.arriving, .graph-exiting).node { --arrival-accent: #43be69; }
 .graph-vertex:is(.arriving, .graph-exiting).adapter { --arrival-accent: #279bcc; }
+.graph-vertex:is(.arriving, .graph-exiting).gateway { --arrival-accent: #d18a1d; }
 .graph-vertex:is(.arriving, .graph-exiting).visa { --arrival-accent: #f0a132; }
 .graph-vertex:is(.arriving, .graph-exiting) .graph-node { fill: #b6f28a; stroke: #23813f; stroke-width: 3.5; filter: drop-shadow(0 0 6px #43be69); }
 .graph-vertex:is(.arriving, .graph-exiting) .graph-adapter { fill: #b1e5ff; stroke: #1678ad; stroke-width: 3.5; filter: drop-shadow(0 0 6px #279bcc); }
+.graph-vertex:is(.arriving, .graph-exiting) .graph-gateway { fill: #ffcf64; stroke: #754000; stroke-width: 4; filter: drop-shadow(0 0 7px #d18a1d); }
 .graph-vertex:is(.arriving, .graph-exiting) .graph-visa { fill: #ffbf5f; stroke: #b8581d; stroke-width: 4; filter: drop-shadow(0 0 6px #f0a132); }
 .graph-service-badge:is(.arriving, .graph-exiting) { --arrival-accent: #238966; }
 .graph-service-badge:is(.arriving, .graph-exiting) rect { fill: #fff; stroke: #238966; stroke-width: 3.5; filter: drop-shadow(0 0 6px #238966); }
@@ -152,17 +155,23 @@ h1 { margin-bottom: 6px; font-size: 28px; line-height: 1.15; letter-spacing: 0; 
 .graph-node { fill: #e7f0e4; stroke: #426453; stroke-width: 2; }
 .graph-node.synced { fill: #eaf4d9; stroke: #367453; }
 .graph-adapter { fill: #f0f5f7; stroke: #7c9aaa; stroke-width: 1.5; }
+.graph-gateway { fill: #ffd36a; stroke: #754000; stroke-width: 3; filter: drop-shadow(0 0 4px #d18a1d88); }
+.graph-cloud { fill: #454545; stroke: #2e2e2e; stroke-width: 2; }
+.graph-link.gateway-cloud-link { stroke: #606060; stroke-width: 2; }
 .graph-platform { fill: #f6f1e5; stroke: #b49762; stroke-width: 1.5; }
 .graph-visa { fill: #f7d8ad; stroke: #b86b30; stroke-width: 2.5; }
 .graph-label { fill: #23332c; font: 11px var(--mono); text-anchor: middle; }
 .graph-service-badge { cursor: pointer; transition: opacity .14s ease; }
 .graph-service-badge rect { fill: #fff; stroke: #879989; stroke-width: 1; }
+.graph-service-badge.gateway rect { fill: #fff1c8; stroke: #9b5b08; stroke-width: 2; }
+.graph-service-badge.gateway text { fill: #593400; font-weight: 800; }
 .graph-service-badge text { fill: #34483a; font: 8px var(--mono); text-anchor: middle; pointer-events: none; }
 .graph-service-badge.trusted-file rect { fill: #e7f1f3; stroke: #4e8790; }
 .graph-service-badge.trusted-file text { fill: #285d64; }
 .graph-service-badge.trusted-rest-1 rect { fill: #fff0df; stroke: #b8753f; }
 .graph-service-badge.trusted-rest-1 text { fill: #754820; }
 .graph-service-badge:hover rect, .graph-service-badge:focus rect { fill: #eaf4d9; stroke: #426453; stroke-width: 1.5; }
+.graph-service-badge.gateway:hover rect, .graph-service-badge.gateway:focus rect { fill: #ffe3a0; stroke: #754000; stroke-width: 2.5; }
 .graph-service-badge.filtered { opacity: .14; }
 .graph-link-label { fill: #78857d; font: 8px var(--mono); text-anchor: middle; }
 .graph-vertex { cursor: grab; }
@@ -254,10 +263,12 @@ td:first-child { color: var(--ink); font-weight: 600; }
 .policy-record-item small { color: var(--muted); font: 8px var(--mono); }
 .catalog-empty { margin: 8px 4px; color: var(--muted); font-size: 10px; line-height: 1.45; }
 .policy-editor-pane { display: flex; min-width: 0; flex-direction: column; padding: 12px 20px 12px 0; }
-.policy-attribute-toolbar { display: grid; grid-template-columns: auto minmax(0, 1fr) auto; align-items: center; gap: 8px; margin-bottom: 7px; }
+.policy-attribute-toolbar { display: grid; grid-template-columns: auto minmax(0, 1fr) auto auto; align-items: center; gap: 8px; margin-bottom: 3px; }
 .policy-attribute-toolbar label { color: var(--muted); font: 9px var(--mono); }
 .policy-attribute-toolbar select { min-width: 0; min-height: 30px; padding: 4px 8px; border: 1px solid var(--line); border-radius: 2px; background: white; color: var(--ink); font: 10px var(--mono); }
 .policy-attribute-toolbar select:disabled, .policy-attribute-toolbar .button:disabled { cursor: not-allowed; opacity: .55; }
+.policy-attribute-status { min-height: 14px; margin: 0 0 7px; color: var(--muted); font: 9px var(--mono); }
+.policy-attribute-status[data-state="error"] { color: var(--danger, #b42318); }
 .policy-code-editor { position: relative; min-width: 0; min-height: 56vh; flex: 1; overflow: hidden; border: 1px solid #344a40; border-radius: 2px; background: #17211e; }
 .policy-code-editor:focus-within { border-color: #7ea65b; box-shadow: 0 0 0 2px #b5e34f30; }
 .policy-highlight, #policy-source { position: absolute; inset: 0; width: 100%; height: 100%; margin: 0; padding: 15px; border: 0; border-radius: 0; font: 12px/1.65 var(--mono); tab-size: 2; white-space: pre; overflow: auto; }
@@ -385,6 +396,7 @@ td:first-child { color: var(--ink); font-weight: 600; }
 .graph-edge:hover .graph-link, .graph-edge:focus .graph-link { stroke-width: 4; }
 .graph-vertex:hover .graph-node, .graph-vertex:focus .graph-node { stroke: var(--orange); stroke-width: 3; }
 .graph-vertex:hover .graph-adapter, .graph-vertex:focus .graph-adapter { stroke: var(--orange); stroke-width: 3; }
+.graph-vertex:hover .graph-gateway, .graph-vertex:focus .graph-gateway { fill: #ffbf3f; stroke: #603600; stroke-width: 4; }
 .graph-vertex:hover .graph-platform, .graph-vertex:focus .graph-platform { stroke: var(--orange); stroke-width: 3; }
 .graph-vertex:hover .graph-visa, .graph-vertex:focus .graph-visa { stroke: var(--orange); stroke-width: 3; }
 .selectable-row { cursor: pointer; outline: none; }

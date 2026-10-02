@@ -3,11 +3,77 @@ package main
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"strings"
 	"testing"
+	"time"
 )
+
+func TestActorVisasIncludesOlderCurrentGrants(t *testing.T) {
+	entries := make([]visaEntry, 0)
+	details := make(map[string]visa)
+	for index := 1; index <= maxRecentVisas+2; index++ {
+		id := int64(index)
+		entries = append(entries, visaEntry{ID: id})
+		details[fmt.Sprint(id)] = visa{ID: id, Expires: time.Now().Unix() + 60, Source: "fd00:0:0:0:0:0:0:1", Destination: "fd00::2"}
+	}
+	details["2"] = visa{ID: 2, Expires: time.Now().Unix() + 60, Source: "fd00::2", Destination: "fd00::1"}
+	entries = append(entries, visaEntry{ID: 100}, visaEntry{ID: 101}, visaEntry{ID: 102})
+	details["100"] = visa{ID: 100, Expires: 1, Source: "fd00::1", Destination: "fd00::2"}
+	details["101"] = visa{ID: 101, Expires: time.Now().Unix() + 60, Source: "fd00::3", Destination: "fd00::4"}
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Header.Get("X-API-Key") != "read-only" {
+			t.Error("missing server-side admin credential")
+		}
+		switch r.URL.Path {
+		case "/admin/actors/adapter":
+			_, _ = w.Write([]byte(`{"cn":"adapter","zpr_addr":"fd00::1"}`))
+		case "/admin/visas":
+			_ = json.NewEncoder(w).Encode(entries)
+		default:
+			item, exists := details[strings.TrimPrefix(r.URL.Path, "/admin/visas/")]
+			if !exists {
+				http.NotFound(w, r)
+				return
+			}
+			_ = json.NewEncoder(w).Encode(item)
+		}
+	}))
+	defer server.Close()
+	app := application{admin: &adminClient{baseURL: server.URL, apiKey: "read-only", http: server.Client()}}
+	request := httptest.NewRequest("GET", "/api/actors/adapter/visas", nil)
+	request.SetPathValue("actor", "adapter")
+	response := httptest.NewRecorder()
+	app.handleActorVisas(response, request)
+	var items []visa
+	if response.Code != http.StatusOK || json.Unmarshal(response.Body.Bytes(), &items) != nil {
+		t.Fatalf("visa response = %d %s", response.Code, response.Body.String())
+	}
+	if len(items) != maxRecentVisas+2 || items[0].ID != maxRecentVisas+2 || items[len(items)-1].ID != 1 {
+		t.Fatalf("missing current grants or incorrect filtering: %+v", items)
+	}
+}
+
+func TestActorVisasDoesNotReportFetchFailureAsEmpty(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if strings.HasPrefix(r.URL.Path, "/admin/actors/") {
+			_, _ = w.Write([]byte(`{"cn":"adapter","zpr_addr":"fd00::1"}`))
+			return
+		}
+		http.Error(w, "unavailable", http.StatusServiceUnavailable)
+	}))
+	defer server.Close()
+	app := application{admin: &adminClient{baseURL: server.URL, http: server.Client()}}
+	request := httptest.NewRequest("GET", "/api/actors/adapter/visas", nil)
+	request.SetPathValue("actor", "adapter")
+	response := httptest.NewRecorder()
+	app.handleActorVisas(response, request)
+	if response.Code != http.StatusBadGateway {
+		t.Fatalf("failed request status = %d", response.Code)
+	}
+}
 
 func TestDemoLDAPEditorURL(t *testing.T) {
 	services := []service{{Name: "demo_ldap", Kind: `Trusted("rest/1")`}}
@@ -146,6 +212,20 @@ func TestMergePlatformServicesDoesNotInventActors(t *testing.T) {
 	}
 	if len(out.Actors) != 1 || out.Actors[0].CN != "node" {
 		t.Fatalf("actors = %+v; configured services must not create actors", out.Actors)
+	}
+}
+
+func TestMergePlatformGatewayMetadataMarksRegisteredService(t *testing.T) {
+	t.Setenv("ZPR_PLATFORM_SERVICES", `[
+		{"service_name":"InternetGatewayWeb","actor_cn":"internet-gateway","service_kind":"Gateway","external_network_connection":"public-internet"}
+	]`)
+	out := snapshot{
+		Actors:   []actor{{CN: "internet-gateway"}},
+		Services: []service{{Name: "InternetGatewayWeb", ActorCN: "internet-gateway", Kind: "Regular", Endpoints: "TCP/8082"}},
+	}
+	mergePlatformServices(&out)
+	if len(out.Services) != 1 || out.Services[0].Kind != "Gateway" || out.Services[0].ExternalNetworkConnection != "public-internet" {
+		t.Fatalf("gateway service metadata = %+v", out.Services)
 	}
 }
 

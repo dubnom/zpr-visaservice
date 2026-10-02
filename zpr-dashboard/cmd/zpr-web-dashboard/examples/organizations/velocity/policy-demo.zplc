@@ -1,0 +1,19 @@
+[resolver]
+order = ["hosts", "dns"]
+
+[resolver.hosts]
+"n0.zpr" = "fd5a:5052::2"
+
+[nodes."node"]
+provider = [["device.zpr.adapter.cn", "node"]]
+zpr_address = "n0.zpr"
+
+[visa_service]
+dock_node = "node"
+
+[protocols.benchmark_http]
+l4protocol = "iana.TCP"
+port = 8080
+
+[services.EchoWeb]
+protocol = "benchmark_http"

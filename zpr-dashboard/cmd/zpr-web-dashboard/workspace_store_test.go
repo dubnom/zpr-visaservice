@@ -88,3 +88,43 @@ func TestWorkspaceRepositoryKeepsRevisionsImmutable(t *testing.T) {
 		t.Fatal("workspace revision deletion unexpectedly succeeded")
 	}
 }
+
+func TestWorkspaceRepositoryArchivesArtifactsWithoutDeletingRevisions(t *testing.T) {
+	directory := filepath.Join(t.TempDir(), "private")
+	if err := os.Mkdir(directory, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	store, err := openWorkspaceRepository(filepath.Join(directory, "workspace.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer store.Close()
+	ctx := context.Background()
+	content := json.RawMessage(`{"name":"Archive me"}`)
+	if _, err := store.Create(ctx, "northstar", "scenario", "archive-me", content, "test", "Initial"); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := store.AppendRevision(ctx, "northstar", "scenario", "archive-me", 1, content, "test", "Update"); err != nil {
+		t.Fatal(err)
+	}
+	if err := store.Archive(ctx, "northstar", "scenario", "archive-me", 1); !errors.Is(err, errWorkspaceRevisionConflict) {
+		t.Fatalf("stale archive error = %v", err)
+	}
+	if err := store.Archive(ctx, "northstar", "scenario", "archive-me", 2); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := store.Get(ctx, "northstar", "scenario", "archive-me"); !errors.Is(err, errWorkspaceArtifactNotFound) {
+		t.Fatalf("archived artifact lookup error = %v", err)
+	}
+	artifacts, err := store.List(ctx, "northstar", "scenario")
+	if err != nil || len(artifacts) != 0 {
+		t.Fatalf("listed artifacts = %+v, %v", artifacts, err)
+	}
+	var revisions int
+	if err := store.db.QueryRow(`SELECT COUNT(*) FROM workspace_artifact_revisions WHERE organization_id='northstar' AND artifact_id='archive-me'`).Scan(&revisions); err != nil || revisions != 2 {
+		t.Fatalf("retained revisions = %d, %v; want 2", revisions, err)
+	}
+	if _, err := store.Create(ctx, "northstar", "scenario", "archive-me", content, "test", "Reuse ID"); !errors.Is(err, errWorkspaceArtifactExists) {
+		t.Fatalf("reused archived ID error = %v", err)
+	}
+}

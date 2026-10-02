@@ -85,6 +85,53 @@ func activeSimulatorOrganizationID(manifest simulatorManifest) string {
 	return defaultSimulatorOrganizationID
 }
 
+func simulatorActiveOrganizationPath() string {
+	if path := strings.TrimSpace(os.Getenv("SIMULATION_ACTIVE_ORGANIZATION_FILE")); path != "" {
+		return path
+	}
+	return filepath.Join(filepath.Dir(simulatorManifestPath()), "active-organization.txt")
+}
+
+func handleSimulatorOrganizationActivate(w http.ResponseWriter, r *http.Request) {
+	organizationID := r.PathValue("organization")
+	if _, err := loadSimulatorOrganization(simulatorOrganizationsDirectory(), organizationID); err != nil {
+		writeWorkspaceError(w, http.StatusNotFound, "unknown organization")
+		return
+	}
+	activeSimulatorScenario.mu.Lock()
+	defer activeSimulatorScenario.mu.Unlock()
+	if activeSimulatorScenario.run.State == "running" || activeSimulatorScenario.run.State == "cleaning" {
+		writeWorkspaceError(w, http.StatusConflict, "Finish or cancel the running scenario before activating another organization.")
+		return
+	}
+	simulatorSessions.RLock()
+	defer simulatorSessions.RUnlock()
+	for _, session := range simulatorSessions.byMachine {
+		if session.Authenticated {
+			writeWorkspaceError(w, http.StatusConflict, "Log out all machine users before activating another organization.")
+			return
+		}
+	}
+	path := simulatorActiveOrganizationPath()
+	file, err := os.CreateTemp(filepath.Dir(path), ".active-organization-*")
+	if err != nil {
+		writeWorkspaceError(w, http.StatusInternalServerError, "could not save active organization")
+		return
+	}
+	defer os.Remove(file.Name())
+	_, writeErr := file.WriteString(organizationID + "\n")
+	closeErr := file.Close()
+	if writeErr != nil || closeErr != nil {
+		writeWorkspaceError(w, http.StatusInternalServerError, "could not save active organization")
+		return
+	}
+	if err := os.Rename(file.Name(), path); err != nil {
+		writeWorkspaceError(w, http.StatusInternalServerError, "could not save active organization")
+		return
+	}
+	writeSimulatorJSON(w, map[string]string{"active_id": organizationID})
+}
+
 func loadSimulatorOrganizations(directory string) ([]simulatorOrganization, error) {
 	entries, err := os.ReadDir(directory)
 	if err != nil {

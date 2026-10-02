@@ -41,6 +41,31 @@ func TestTestClientCallsRealService(t *testing.T) {
 	}
 }
 
+func TestBenchmarkHTTPMeasurements(t *testing.T) {
+	server := httptest.NewServer(testServiceHandler("echo-service", func(testAppEvent) {}))
+	defer server.Close()
+	result, err := benchmarkHTTP(t.Context(), server.Client(), server.URL)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if result.Samples != 100 || result.Bytes != 16<<20 || result.ThroughputMbps <= 0 || result.LatencyP50MS <= 0 || result.LatencyP95MS < result.LatencyP50MS || result.LatencyP99MS < result.LatencyP95MS {
+		t.Fatalf("invalid measurements: %+v", result)
+	}
+	if !strings.Contains(result.VisaGrantTiming, "not measured") {
+		t.Fatal("HTTP timing must not be presented as visa grant timing")
+	}
+}
+
+func TestBenchmarkHTTPRejectsFailedResponse(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, request *http.Request) {
+		http.Error(w, "unavailable", http.StatusServiceUnavailable)
+	}))
+	defer server.Close()
+	if _, err := benchmarkHTTP(t.Context(), server.Client(), server.URL); err == nil {
+		t.Fatal("failed response accepted as a measurement")
+	}
+}
+
 func TestMetricsServiceIdentifiesOperationsClient(t *testing.T) {
 	var events []testAppEvent
 	server := httptest.NewUnstartedServer(testServiceHandler("metrics-service", func(event testAppEvent) {

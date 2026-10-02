@@ -18,6 +18,7 @@ func scenarioTestManifest() simulatorManifest {
 		{Name: "operations-client", Kind: "client", Agent: "operations-client", Namespace: "zpr-b", Target: "fd00:1:3::1"},
 		{Name: "echo-service", Kind: "service", Agent: "echo-service", Namespace: "zpr-service-a", Target: "fd00:1:2::1"},
 		{Name: "metrics-service", Kind: "service", Agent: "metrics-service", Namespace: "zpr-c", Target: "fd00:1:8::1"},
+		{Name: "internet-gateway", Kind: "service", Agent: "internet-gateway", GatewayUpstream: "https://example.com/"},
 	}}
 	owners := []string{"elena.park", "jamal.brooks", "sophie.nguyen", "theo.martin", "arjun.patel", "zoe.carter", "omar.hassan", "nina.ross", "ben.torres", "grace.lee", "hana.kim", "daniel.okafor"}
 	for index := range manifest.Machines {
@@ -61,8 +62,24 @@ func TestBundledSimulatorScenariosLoad(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(scenarios) != 4 {
-		t.Fatalf("loaded %d bundled scenarios, want 4", len(scenarios))
+	if len(scenarios) != 5 {
+		t.Fatalf("loaded %d bundled scenarios, want 5", len(scenarios))
+	}
+	var gatewayScenario *simulatorScenario
+	for index := range scenarios {
+		if scenarios[index].ID == "internet-gateway-egress" {
+			gatewayScenario = &scenarios[index]
+			break
+		}
+	}
+	if gatewayScenario == nil {
+		t.Fatal("internet-gateway-egress scenario is missing")
+	}
+	if len(gatewayScenario.Steps) < 11 || gatewayScenario.Steps[10].Action != "start_test_service" {
+		t.Fatalf("gateway scenario service startup step = %#v", gatewayScenario.Steps)
+	}
+	if err := validateSimulatorScenarioStep(gatewayScenario.Steps[10], scenarioTestManifest(), simulatorOrganization{}, false); err != nil {
+		t.Fatalf("gateway service startup step is invalid: %v", err)
 	}
 	var activeTeam *simulatorScenario
 	for index := range scenarios {

@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"crypto/ecdsa"
 	"crypto/elliptic"
 	"crypto/rand"
@@ -17,6 +18,7 @@ import (
 	"net/url"
 	"os"
 	"path/filepath"
+	"reflect"
 	"strings"
 	"testing"
 	"time"
@@ -137,6 +139,61 @@ func TestControlServiceProxiesPolicyRepositoryOverMutualTLS(t *testing.T) {
 	proxy.ServeHTTP(post, create)
 	if post.Code != http.StatusCreated || !strings.Contains(post.Body.String(), "created") {
 		t.Fatalf("POST /api/policy/categories status=%d body=%s", post.Code, post.Body)
+	}
+}
+
+func TestPolicyServiceMuxRescansLDAPAttributeCatalog(t *testing.T) {
+	workspace := &policyWorkspace{
+		attributeMappings: []policyAttributeMapping{
+			{policyAttribute: policyAttribute{Source: "ou", Attribute: "device.demo.department"}, requiresLDAP: true},
+			{policyAttribute: policyAttribute{Source: "title", Attribute: "device.demo.title"}, requiresLDAP: true},
+			{policyAttribute: policyAttribute{Source: "sub", Attribute: "user.sub"}},
+		},
+		ldapAttributeScanner: func(context.Context) (map[string]struct{}, error) {
+			return map[string]struct{}{"ou": {}, "cn": {}}, nil
+		},
+	}
+	request := localPolicyRequest(http.MethodPost, "/api/policy/attributes/rescan", "")
+	response := httptest.NewRecorder()
+	policyServiceMux(workspace).ServeHTTP(response, request)
+	if response.Code != http.StatusOK {
+		t.Fatalf("rescan status = %d: %s", response.Code, response.Body.String())
+	}
+	var catalog policyAttributeCatalog
+	if err := json.Unmarshal(response.Body.Bytes(), &catalog); err != nil {
+		t.Fatal(err)
+	}
+	want := []policyAttribute{
+		{Source: "ou", Attribute: "device.demo.department"},
+		{Source: "sub", Attribute: "user.sub"},
+	}
+	if !reflect.DeepEqual(catalog.Attributes, want) || catalog.LDAPAttributeCount != 2 || catalog.Error != "" {
+		t.Fatalf("rescan catalog = %+v, want attributes %#v and 2 LDAP names", catalog, want)
+	}
+}
+
+func TestPolicyServiceMuxFailsClosedWhenLDAPScanFails(t *testing.T) {
+	workspace := &policyWorkspace{
+		attributeMappings: []policyAttributeMapping{
+			{policyAttribute: policyAttribute{Source: "ou", Attribute: "device.demo.department"}, requiresLDAP: true},
+			{policyAttribute: policyAttribute{Source: "sub", Attribute: "user.sub"}},
+		},
+		ldapAttributeScanner: func(context.Context) (map[string]struct{}, error) {
+			return nil, errors.New("sensitive command details")
+		},
+	}
+	request := localPolicyRequest(http.MethodPost, "/api/policy/attributes/rescan", "")
+	response := httptest.NewRecorder()
+	policyServiceMux(workspace).ServeHTTP(response, request)
+	if response.Code != http.StatusServiceUnavailable {
+		t.Fatalf("rescan failure status = %d, want 503: %s", response.Code, response.Body.String())
+	}
+	var catalog policyAttributeCatalog
+	if err := json.Unmarshal(response.Body.Bytes(), &catalog); err != nil {
+		t.Fatal(err)
+	}
+	if len(catalog.Attributes) != 1 || catalog.Attributes[0].Attribute != "user.sub" || strings.Contains(response.Body.String(), "sensitive command details") {
+		t.Fatalf("failed scan response exposed LDAP mappings or command details: %s", response.Body.String())
 	}
 }
 

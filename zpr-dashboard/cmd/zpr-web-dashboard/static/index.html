@@ -88,7 +88,7 @@
         <section class="page-view" id="page-map" data-page="map" aria-label="Map">
           <section class="section-block topology-page">
           <div class="section-heading">
-            <div class="legend"><input id="topology-search" class="topology-search" type="search" placeholder="Highlight" aria-label="Highlight topology graph"><span><i class="legend-node"></i>NODE</span><span><i class="legend-visa"></i>VISA SERVICE</span><span><i class="legend-adapter"></i>ADAPTER</span><span><i class="legend-service"></i>SERVICE</span><span><i class="legend-service-link"></i>REGISTRATION</span><span><i class="legend-trusted-file"></i>TRUSTED FILE</span><span><i class="legend-trusted-rest"></i>TRUSTED REST/1</span><span><i class="legend-dock"></i>DOCKED</span><span><i class="legend-up"></i>INTER-NODE</span></div>
+            <div class="legend"><input id="topology-search" class="topology-search" type="search" placeholder="Highlight" aria-label="Highlight topology graph"><span><i class="legend-node"></i>NODE</span><span><i class="legend-visa"></i>VISA SERVICE</span><span><i class="legend-gateway"></i>GATEWAY</span><span><i class="legend-adapter"></i>ADAPTER</span><span><i class="legend-service"></i>SERVICE</span><span><i class="legend-service-link"></i>REGISTRATION</span><span><i class="legend-trusted-file"></i>TRUSTED FILE</span><span><i class="legend-trusted-rest"></i>TRUSTED REST/1</span><span><i class="legend-dock"></i>DOCKED</span><span><i class="legend-up"></i>INTER-NODE</span></div>
           </div>
           <div class="topology-layout topology-only">
             <div class="topology-stage" id="topology-stage">
@@ -175,7 +175,9 @@
                   <label for="policy-attribute-picker">Attribute</label>
                   <select id="policy-attribute-picker" aria-label="Configured policy attributes" disabled><option value="">Loading attributes…</option></select>
                   <button id="policy-attribute-insert" class="button button-refresh" type="button" disabled>Insert</button>
+                  <button id="policy-attribute-rescan" class="button button-refresh" type="button" disabled>Rescan LDAP</button>
                 </div>
+                <div id="policy-attribute-status" class="policy-attribute-status" role="status" aria-live="polite"></div>
                 <div id="policy-code-editor" class="policy-code-editor">
                   <pre id="policy-highlight" class="policy-highlight" aria-hidden="true"></pre>
                   <textarea id="policy-source" aria-label="ZPL policy source" aria-describedby="policy-editor-help" spellcheck="false" autocapitalize="off" autocomplete="off" autocorrect="off" wrap="off" disabled></textarea>
@@ -258,6 +260,6 @@
         <footer class="page-footer"><span>ZPR CONTROL ROOM <b>·</b> LIVE MONITOR / POLICY RECORDS</span><span id="footer-poll">Auto-refresh every 5 seconds</span></footer>
       </main>
     </div>
-    <script src="/app.js?v=27" defer></script>
+    <script src="/app.js?v=28" defer></script>
   </body>
 </html>

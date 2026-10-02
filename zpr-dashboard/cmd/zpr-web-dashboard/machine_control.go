@@ -391,6 +391,7 @@ func machineWorkload(agent string) (machineWorkloadConfig, bool) {
 		"telemetry-client":  {address: "fd00:1:6::1", key: "client-telemetry-rsa.key", tun: "tun2"},
 		"echo-service":      {address: "fd00:1:7::1", key: "service-echo-rsa.key", tun: "tun3", services: "EchoService"},
 		"metrics-service":   {address: "fd00:1:8::1", key: "service-metrics-rsa.key", tun: "tun4", services: "MetricsService"},
+		"internet-gateway":  {address: "fd00:1:9::1", key: "internet-gateway-rsa.key", tun: "tun5", services: "internet-gateway"},
 	}
 	config, ok := workloads[agent]
 	return config, ok

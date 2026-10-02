@@ -101,6 +101,7 @@ func runControlService() error {
 	}
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /api/snapshot", app.handleSnapshot)
+	mux.HandleFunc("GET /api/actors/{actor}/visas", app.handleActorVisas)
 	mux.Handle("GET /api/dns/records", newDNSRecordsHandler())
 	mux.HandleFunc("POST /api/policy/assistant", app.handlePolicyAssistant)
 	mux.Handle("/api/dns/stats/", newDNSStatsProxy())

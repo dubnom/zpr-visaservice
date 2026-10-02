@@ -11,6 +11,7 @@ import (
 	"fmt"
 	"io"
 	"log"
+	"net"
 	"net/http"
 	"net/url"
 	"os"
@@ -102,11 +103,12 @@ type serviceEntry struct {
 }
 
 type service struct {
-	Name      string `json:"service_name"`
-	ActorCN   string `json:"actor_cn"`
-	Address   string `json:"zpr_addr"`
-	Kind      string `json:"service_kind"`
-	Endpoints string `json:"service_endpoints"`
+	Name                      string `json:"service_name"`
+	ActorCN                   string `json:"actor_cn"`
+	Address                   string `json:"zpr_addr"`
+	Kind                      string `json:"service_kind"`
+	Endpoints                 string `json:"service_endpoints"`
+	ExternalNetworkConnection string `json:"external_network_connection,omitempty"`
 }
 
 func platformServices() []service {
@@ -194,12 +196,14 @@ type statsResponse struct {
 }
 
 func main() {
-	mode := flag.String("mode", envOr("ZPR_WEB_MODE", "control-room"), "Run mode: control-room, simulator, control-service, or policy-service")
+	mode := flag.String("mode", envOr("ZPR_WEB_MODE", "control-room"), "Run mode: control-room, simulator, browser-gateway, control-service, or policy-service")
 	listen := flag.String("listen", envOr("ZPR_WEB_LISTEN", defaultListen), "HTTP listen address")
+	browserGatewayListen := flag.String("gateway-listen", envOr("ZPR_ACCESS_GATEWAY_LISTEN", defaultBrowserGatewayListen), "Listen address for browser-gateway mode")
 	machineID := flag.String("machine-id", "", "Machine identity for machine-controller mode")
 	clientID := flag.String("client-id", "", "Client identifier for test-client mode")
 	logWorkload := flag.String("log-workload", "", "Workload for test log reader mode")
 	testService := flag.String("test-service-name", "", "Expected service for test-client mode")
+	gatewayUpstream := flag.String("gateway-upstream", "", "Fixed HTTPS upstream for the internet-gateway test service")
 	controlURL := flag.String("control-url", "", "Simulator mTLS heartbeat URL")
 	controlCA := flag.String("control-ca", "", "Simulator control CA certificate")
 	clientCert := flag.String("client-cert", "", "Machine controller client certificate")
@@ -228,6 +232,10 @@ func main() {
 		if err := runSimulator(*listen); err != nil {
 			log.Fatal(err)
 		}
+	case "browser-gateway":
+		if err := runBrowserAccessGateway(*browserGatewayListen); err != nil {
+			log.Fatal(err)
+		}
 	case "machine-controller":
 		if err := runMachineController(*machineID, *controlURL, *controlCA, *clientCert, *clientKey, *zprPH, *zprBootstrapKey, *zprNodeAddress, *zprAddress); err != nil {
 			log.Fatal(err)
@@ -236,8 +244,16 @@ func main() {
 		if err := runTestService(*listen, *logWorkload); err != nil {
 			log.Fatal(err)
 		}
+	case "gateway-service":
+		if err := runInternetGatewayService(*listen, *logWorkload, *gatewayUpstream); err != nil {
+			log.Fatal(err)
+		}
 	case "test-client":
 		if err := runTestClient(*listen, *zprAddress, *clientID, *logWorkload, *testService); err != nil {
+			log.Fatal(err)
+		}
+	case "benchmark-client":
+		if err := runBenchmarkClient(*listen, *zprAddress); err != nil {
 			log.Fatal(err)
 		}
 	case "test-log-read":
@@ -500,19 +516,23 @@ func (a *application) fetchSnapshot(ctx context.Context) snapshot {
 }
 
 func mergePlatformServices(out *snapshot) {
-	knownServices := make(map[string]struct{}, len(out.Services))
-	for _, item := range out.Services {
-		knownServices[item.Name] = struct{}{}
+	serviceIndexes := make(map[string]int, len(out.Services))
+	for index, item := range out.Services {
+		serviceIndexes[item.Name] = index
 	}
 	for _, item := range platformServices() {
 		if item.Name == "" || item.ActorCN == "" {
 			continue
 		}
-		if _, exists := knownServices[item.Name]; exists {
+		if index, exists := serviceIndexes[item.Name]; exists {
+			if strings.EqualFold(item.Kind, "Gateway") || item.ExternalNetworkConnection != "" {
+				out.Services[index].Kind = "Gateway"
+				out.Services[index].ExternalNetworkConnection = item.ExternalNetworkConnection
+			}
 			continue
 		}
 		out.Services = append(out.Services, item)
-		knownServices[item.Name] = struct{}{}
+		serviceIndexes[item.Name] = len(out.Services) - 1
 	}
 	sort.Slice(out.Services, func(i, j int) bool { return out.Services[i].Name < out.Services[j].Name })
 	sort.Slice(out.Actors, func(i, j int) bool { return out.Actors[i].CN < out.Actors[j].CN })
@@ -643,4 +663,47 @@ func (a *application) fetchRecentVisas(ctx context.Context, entries []visaEntry,
 	}
 	wg.Wait()
 	return items
+}
+
+func (a *application) handleActorVisas(w http.ResponseWriter, r *http.Request) {
+	if a.admin == nil {
+		http.Error(w, "Visa Service unavailable", http.StatusServiceUnavailable)
+		return
+	}
+	ctx, cancel := context.WithTimeout(r.Context(), 15*time.Second)
+	defer cancel()
+	var selected actor
+	if err := a.admin.getJSON(ctx, "/admin/actors/"+url.PathEscape(r.PathValue("actor")), &selected); err != nil {
+		http.Error(w, "adapter details unavailable", http.StatusBadGateway)
+		return
+	}
+	address := net.ParseIP(selected.ZPRAddress)
+	if address == nil {
+		http.Error(w, "adapter has no valid ZPR address", http.StatusBadGateway)
+		return
+	}
+	var entries []visaEntry
+	if err := a.admin.getJSON(ctx, "/admin/visas", &entries); err != nil {
+		http.Error(w, "current visas unavailable", http.StatusBadGateway)
+		return
+	}
+	items := make([]visa, 0)
+	for _, entry := range entries {
+		var item visa
+		if err := a.admin.getJSON(ctx, "/admin/visas/"+fmt.Sprint(entry.ID), &item); err != nil {
+			var statusError adminStatusError
+			if errors.As(err, &statusError) && statusError.code == http.StatusNotFound {
+				continue
+			}
+			http.Error(w, "current visa details unavailable", http.StatusBadGateway)
+			return
+		}
+		if item.Expires > time.Now().Unix() && (address.Equal(net.ParseIP(item.Source)) || address.Equal(net.ParseIP(item.Destination))) {
+			items = append(items, item)
+		}
+	}
+	sort.Slice(items, func(left, right int) bool { return items[left].ID > items[right].ID })
+	w.Header().Set("Content-Type", "application/json")
+	w.Header().Set("Cache-Control", "no-store")
+	_ = json.NewEncoder(w).Encode(items)
 }

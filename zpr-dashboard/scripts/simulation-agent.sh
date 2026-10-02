@@ -13,6 +13,7 @@ case "$agent" in
   telemetry-client) zpr=fd00:1:6::1; node=10.0.0.1; key=client-telemetry-rsa.key; tun=tun2; services='' ;;
   echo-service) zpr=fd00:1:7::1; node=10.0.0.1; key=service-echo-rsa.key; tun=tun3; services=EchoService ;;
   metrics-service) zpr=fd00:1:8::1; node=10.0.0.1; key=service-metrics-rsa.key; tun=tun4; services=MetricsService ;;
+  internet-gateway) zpr=fd00:1:9::1; node=10.0.0.1; key=internet-gateway-rsa.key; tun=tun5; services=internet-gateway ;;
   *) echo "unknown simulated workload: $agent" >&2; exit 2 ;;
 esac
 case "$machine" in
@@ -46,5 +47,5 @@ case "$action" in
       'exec "$1" adapter --logging all=INFO --control-path "$2" --capture-path "$3" --self-addr "$4" --ca-file "$5" --bootstrap-key "$6" --name "$7" --km-impl noise --tun-if "$8" --node-addr "$9" --zpr-addr "${10}" >>"/tmp/$7.log" 2>&1' \
       machine-agent "$assets/ph" "$socket" "$runtime/${agent}_cap.sock" "$machine_ip" "$assets/ca.crt" "$assets/$key" "$agent" "$tun" "$node:5000" "$zpr"
     ;;
-  *) echo "usage: $0 {start|stop} {finance-client|operations-client|telemetry-client|echo-service|metrics-service} machine-NN" >&2; exit 2 ;;
+  *) echo "usage: $0 {start|stop} {finance-client|operations-client|telemetry-client|echo-service|metrics-service|internet-gateway} machine-NN" >&2; exit 2 ;;
 esac

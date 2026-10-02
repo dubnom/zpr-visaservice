@@ -35,6 +35,7 @@ POLICY_PID="$STATE_DIR/policy-service.pid"
 CONTROL_PID="$STATE_DIR/control-service.pid"
 ROOM_PID="$STATE_DIR/control-room.pid"
 SIMULATOR_PID="$STATE_DIR/simulator.pid"
+BROWSER_GATEWAY_PID="$STATE_DIR/browser-gateway.pid"
 ADMIN_RELAY_PID="$STATE_DIR/admin-relay.pid"
 ADMIN_RELAY_PORT=8184
 LDAP_UI_RELAY_PID="$STATE_DIR/ldap-ui-relay.pid"
@@ -91,6 +92,7 @@ stop_stack() {
     for number in $(seq -w 1 20); do
         docker rm -f "zpr-machine-$number" >/dev/null 2>&1 || true
     done
+    stop_service "$BROWSER_GATEWAY_PID"
     stop_service "$SIMULATOR_PID"
     stop_service "$ROOM_PID"
     stop_service "$CONTROL_PID"
@@ -107,6 +109,36 @@ start_service() {
     shift 2
     "$@" >"$log_file" 2>&1 < /dev/null &
     echo $! >"$pid_file"
+}
+
+start_browser_gateway() {
+    if pid_running "$BROWSER_GATEWAY_PID"; then
+        echo "browser gateway is already running (pid $(cat "$BROWSER_GATEWAY_PID"))"
+        return 0
+    fi
+    cert_file=${ZPR_ACCESS_GATEWAY_TLS_CERT_FILE:-}
+    key_file=${ZPR_ACCESS_GATEWAY_TLS_KEY_FILE:-}
+    client_ca_file=${ZPR_ACCESS_GATEWAY_CLIENT_CA_FILE:-}
+    if [ -z "$cert_file" ] || [ -z "$key_file" ] || [ -z "$client_ca_file" ]; then
+        echo 'browser gateway requires ZPR_ACCESS_GATEWAY_TLS_CERT_FILE, ZPR_ACCESS_GATEWAY_TLS_KEY_FILE, and ZPR_ACCESS_GATEWAY_CLIENT_CA_FILE' >&2
+        return 1
+    fi
+    if [ ! -r "$cert_file" ] || [ ! -r "$key_file" ] || [ ! -r "$client_ca_file" ]; then
+        echo 'browser gateway certificate or client CA file is unreadable' >&2
+        return 1
+    fi
+    gateway_listen=${ZPR_ACCESS_GATEWAY_LISTEN:-127.0.0.1:8443}
+    go -C "$DASHBOARD_DIR" build -trimpath -o "$BIN" ./cmd/zpr-web-dashboard
+    start_service browser-gateway "$BROWSER_GATEWAY_PID" env \
+        ZPR_ACCESS_GATEWAY_TLS_CERT_FILE="$cert_file" \
+        ZPR_ACCESS_GATEWAY_TLS_KEY_FILE="$key_file" \
+        ZPR_ACCESS_GATEWAY_CLIENT_CA_FILE="$client_ca_file" \
+        ZPR_ACCESS_GATEWAY_CONTROL_HOST="${ZPR_ACCESS_GATEWAY_CONTROL_HOST:-control.localhost}" \
+        ZPR_ACCESS_GATEWAY_CONTROL_UPSTREAM="${ZPR_ACCESS_GATEWAY_CONTROL_UPSTREAM:-http://127.0.0.1:8787}" \
+        ZPR_ACCESS_GATEWAY_SIMULATOR_HOST="${ZPR_ACCESS_GATEWAY_SIMULATOR_HOST:-simulator.localhost}" \
+        ZPR_ACCESS_GATEWAY_SIMULATOR_UPSTREAM="${ZPR_ACCESS_GATEWAY_SIMULATOR_UPSTREAM:-http://127.0.0.1:8788}" \
+        "$BIN" -mode browser-gateway -gateway-listen "$gateway_listen"
+    echo "mTLS browser gateway started at https://$gateway_listen"
 }
 
 start_admin_relay() {
@@ -188,6 +220,7 @@ start_control_service() {
         ZPR_CONTROL_SERVICE_CERT_FILE="$SERVICE_CERTS/control-service.crt" \
         ZPR_CONTROL_SERVICE_KEY_FILE="$SERVICE_CERTS/control-service.key" \
         ZPR_CONTROL_SERVICE_CLIENT_CA_FILE="$SERVICE_CERTS/service-ca.crt" \
+        ZPR_PLATFORM_SERVICES="$(jq -c '[.services[] | select(.kind == "Gateway") | {service_name: .name, actor_cn: .provider, zpr_addr: .address, service_kind: .kind, service_endpoints: .endpoint, external_network_connection: .external_network_connection}]' "$SIMULATION_MANIFEST")" \
         ZPR_ADMIN_URL="https://127.0.0.1:$ADMIN_RELAY_PORT" \
         ZPR_ADMIN_CA_FILE="$RUNTIME_DIR/local-admin-cert.pem" \
         ZPR_ADMIN_KEY_FILE="$RUNTIME_DIR/admin-read.key" \
@@ -329,6 +362,18 @@ start_zpr_machine_control_service() {
         echo "simulator-control PH adapter did not become active" >&2
         return 1
     fi
+    docker exec "$SIMULATION_CONTAINER" ip netns exec zpr-vs sh -c '
+        ip -6 route show fd5a:5052::/32 |
+        while read -r prefix device_keyword device rest; do
+            case "$rest" in
+                *linkdown*)
+                    if [ "$device_keyword" = dev ] && [ "$device" != tun5 ]; then
+                        ip -6 route del "$prefix" dev "$device" 2>/dev/null || true
+                    fi
+                    ;;
+            esac
+        done
+    '
     docker exec "$SIMULATION_CONTAINER" ip netns exec zpr-vs ip route replace 10.254.0.0/30 via 10.0.0.1 dev veth0
     docker exec -d "$SIMULATION_CONTAINER" sh -c \
         'exec "$1" --mode machine-control-proxy --proxy-listen 10.254.0.1:8793 --proxy-upstream host.docker.internal:8791 >>"$2" 2>&1' \
@@ -339,7 +384,7 @@ start_zpr_machine_control_service() {
 }
 
 stop_legacy_named_workloads() {
-    for agent in finance-client operations-client telemetry-client echo-service metrics-service; do
+    for agent in finance-client operations-client telemetry-client echo-service metrics-service internet-gateway; do
         socket=$(docker exec "$SIMULATION_CONTAINER" sh -c "find /tmp -maxdepth 3 -type s -name '$agent.sock' -print -quit" 2>/dev/null || true)
         if [ -n "$socket" ]; then
             link_id=$(docker exec "$SIMULATION_CONTAINER" /tmp/zpr-core-target/debug/ph-cli -p "$socket" link show 2>/dev/null | awk '/^[[:space:]]*[0-9]+:/ { sub(":", "", $1); print $1; exit }' || true)
@@ -364,7 +409,7 @@ prepare_machine_workloads() {
     DOCKER_SUBNET=$(docker network inspect bridge --format '{{(index .IPAM.Config 0).Subnet}}')
     docker cp "$SIMULATION_CONTAINER:/tmp/zpr-core-target/debug/ph" "$MACHINE_WORKLOAD_DIR/ph"
     docker cp "$SIMULATION_CONTAINER:/tmp/zpr-core-target/debug/ph-cli" "$MACHINE_WORKLOAD_DIR/ph-cli"
-    for file in ca.crt client-finance-rsa.key client-operations-rsa.key client-telemetry-rsa.key service-echo-rsa.key service-metrics-rsa.key; do
+    for file in ca.crt client-finance-rsa.key client-operations-rsa.key client-telemetry-rsa.key service-echo-rsa.key service-metrics-rsa.key internet-gateway-rsa.key; do
         docker cp "$SIMULATION_CONTAINER:$rig_dir/$file" "$MACHINE_WORKLOAD_DIR/$file"
     done
     for number in $(seq -w 1 20); do
@@ -416,6 +461,8 @@ start_stack() {
     fi
     policy_config_relative=$(jq -er '.policy_config' "$organization_file")
     policy_catalog_relative=$(jq -er '.policy_catalog' "$organization_file")
+    ldap_base_dn=$(jq -er '.directory.base_dn' "$organization_file")
+    ldap_bind_dn="cn=zpr-reader,ou=Service Accounts,$ldap_base_dn"
     policy_config="$DASHBOARD_DIR/cmd/zpr-web-dashboard/examples/$policy_config_relative"
     policy_catalog="$DASHBOARD_DIR/cmd/zpr-web-dashboard/examples/$policy_catalog_relative"
     if [ ! -r "$policy_config" ] || [ ! -r "$policy_catalog" ]; then
@@ -432,6 +479,9 @@ start_stack() {
         ZPR_POLICY_SERVICE_CLIENT_CA_FILE="$SERVICE_CERTS/service-ca.crt" \
         ZPR_POLICY_CONFIG_FILE="$policy_config" \
         ZPR_POLICY_DEMO_CATALOG_FILE="$policy_catalog" \
+        ZPR_POLICY_LDAP_CONTAINER="$SIMULATION_CONTAINER" \
+        ZPR_POLICY_LDAP_BASE_DN="$ldap_base_dn" \
+        ZPR_POLICY_LDAP_BIND_DN="$ldap_bind_dn" \
         ZPR_ZPLC_BIN="$DASHBOARD_DIR/../../zpr-compiler/target/debug/zplc" \
         "$BIN" -mode policy-service
     wait_for_url https://127.0.0.1:8789/api/policy policy-service \
@@ -481,7 +531,7 @@ start_stack() {
 }
 
 status_stack() {
-    for entry in "policy-service:$POLICY_PID:8789" "admin-relay:$ADMIN_RELAY_PID:$ADMIN_RELAY_PORT" "ldap-ui-relay:$LDAP_UI_RELAY_PID:$LDAP_UI_RELAY_PORT" "observability-ui-relay:$OBSERVABILITY_UI_RELAY_PID:$OBSERVABILITY_UI_RELAY_PORT" "control-service:$CONTROL_PID:8790" "control-room:$ROOM_PID:8787" "simulator:$SIMULATOR_PID:8788"; do
+    for entry in "policy-service:$POLICY_PID:8789" "admin-relay:$ADMIN_RELAY_PID:$ADMIN_RELAY_PORT" "ldap-ui-relay:$LDAP_UI_RELAY_PID:$LDAP_UI_RELAY_PORT" "observability-ui-relay:$OBSERVABILITY_UI_RELAY_PID:$OBSERVABILITY_UI_RELAY_PORT" "control-service:$CONTROL_PID:8790" "control-room:$ROOM_PID:8787" "simulator:$SIMULATOR_PID:8788" "browser-gateway:$BROWSER_GATEWAY_PID:8443"; do
         name=${entry%%:*}
         rest=${entry#*:}
         pid_file=${rest%%:*}
@@ -524,9 +574,12 @@ case "${1:-start}" in
     stop-dns) stop_dns_service ;;
     start-ui-relays) start_ui_relays ;;
     stop-ui-relays) stop_ui_relays ;;
+    start-browser-gateway) start_browser_gateway ;;
+    stop-browser-gateway) stop_service "$BROWSER_GATEWAY_PID" ;;
     restart-control-service)
         stop_service "$CONTROL_PID"
         start_control_service
         ;;
-    *) echo "usage: $0 {start|stop|restart|status|start-dns|stop-dns|start-ui-relays|stop-ui-relays|restart-control-service}" >&2; exit 2 ;;
+    restart-simulator-control) start_zpr_machine_control_service ;;
+    *) echo "usage: $0 {start|stop|restart|status|start-dns|stop-dns|start-ui-relays|stop-ui-relays|start-browser-gateway|stop-browser-gateway|restart-control-service|restart-simulator-control}" >&2; exit 2 ;;
 esac

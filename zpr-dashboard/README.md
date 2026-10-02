@@ -45,6 +45,89 @@ Its Activity page shows recent visas and denials from Control Room. Control
 Room remains the read-only network and policy monitor at
 `http://127.0.0.1:8787`.
 
+Selecting an adapter in the Control Room map shows its current unexpired visas,
+including inbound and outbound flows, protocol, expiry, node, and policy ID.
+The panel refreshes with polling and queries the complete Visa Service list,
+not the recent-ten snapshot. These are current grants involving the adapter's
+ZPR address, not confirmations that its PH has installed each grant. Loading
+and upstream failures are distinguished from an empty current-visa list.
+Refreshes keep the last successful visa list visible, including after a failed
+request; switching adapters still loads that adapter's own list. Visa flows in
+the inspector and Visas table show matching DNS names alongside the original
+addresses, including aliases from the configured `svc.zpr.` zone. The zone
+records are cached and refreshed once per minute during normal polling;
+unmatched addresses remain numeric, and DNS failures retain cached names.
+
+The IPv6 simulator policy also defines a ZPR `internet-gateway` service at
+`[fd00:1:9::1]:8082`. Its identity uses a dedicated pre-generated bootstrap key,
+and the trusted file service assigns its `public-internet` network label. The
+Finance workload alone is allowed to use the service. The bundled
+`internet-gateway-egress` scenario sends an HTTP health probe through ZPR to a
+fixed `https://example.com/` upstream; it is not an arbitrary-host proxy. Rebuild
+and restart the disposable Linux rig to load the updated signed policy and
+gateway key before running this scenario.
+
+In the Control Room map, each gateway is connected to a dark gray cloud
+representing its external network. Hover over the cloud to see the declared
+network label.
+
+## LDAP Organization Graph
+
+The simulator's Organizations page uses the reusable `<ldap-org-graph>` custom
+element from `cmd/zpr-web-dashboard/static/ldap-org-graph.js` and its scoped
+stylesheet `ldap-org-graph.css`. Load both assets and assign a directory profile:
+
+```javascript
+const graph = document.createElement("ldap-org-graph");
+graph.directory = {
+  base_dn: "dc=example,dc=test",
+  departments: [{ name: "Engineering" }, { name: "Platform", parent: "Engineering" }],
+  people: [{ uid: "alex", name: "Alex", department: "Platform", title: "Engineer" }],
+  groups: [{ name: "Operators", members: ["alex"] }],
+};
+container.append(graph);
+graph.addEventListener("ldap-node-select", (event) => console.log(event.detail));
+```
+
+Each instance owns its camera, search, and selection. Reassign `directory` to
+replace the data. Department names are unique parent keys and group members use
+person UIDs. Missing parents and cyclic department references attach to the
+directory root. Selecting a person or group displays dashed membership edges
+and full node details; node labels are text, not interpreted HTML. The graph
+shows organizational relationships from profile data, not a live LDAP query or
+an LDIF parser, and does not imply that people are physically stored beneath
+their department DN. It supports keyboard node selection, pan, zoom, and fit.
+
+## Browser Access Gateway
+
+The optional browser gateway exposes only the Control Room and simulator over
+mutually authenticated HTTPS. It routes `control.localhost` to
+`127.0.0.1:8787` and `simulator.localhost` to `127.0.0.1:8788`; upstreams must
+remain loopback origins. LDAP and OpenObserve remain separate local-only tools
+in this first version.
+
+With the default hostnames and port, use `https://control.localhost:8443` for
+Control Room and `https://simulator.localhost:8443` for the Simulator.
+
+Provision a server certificate/key and a dedicated browser-client CA. Do not
+reuse the machine-control CA. Start the gateway without restarting the rest of
+the stack:
+
+```sh
+ZPR_ACCESS_GATEWAY_TLS_CERT_FILE=/path/to/gateway.crt \
+ZPR_ACCESS_GATEWAY_TLS_KEY_FILE=/path/to/gateway.key \
+ZPR_ACCESS_GATEWAY_CLIENT_CA_FILE=/path/to/browser-client-ca.crt \
+scripts/dashboard-stack.sh start-browser-gateway
+```
+
+The listener defaults to `127.0.0.1:8443`. Browsers must trust the server
+certificate and present a client certificate issued by the configured client
+CA. To publish beyond loopback, explicitly set `ZPR_ACCESS_GATEWAY_LISTEN`, use
+a server certificate matching the configured hostnames, and apply network
+firewall policy. This first version has no OIDC integration or per-certificate
+revocation list; rotate the client CA to revoke all issued browser certificates.
+Use `scripts/dashboard-stack.sh stop-browser-gateway` to stop it independently.
+
 The Simulator opens on Agents. Shared ZPR actors, links, and service inventory
 remain in Control Room; Agents provides per-machine controls without stack-wide
 lifecycle buttons.
@@ -76,6 +159,13 @@ only the 20 machine identities are authorized to access it. The service
 gateway forwards the mutually authenticated TLS protocol to the simulator's
 local listener; the ZPR adapter link and per-machine TLS client certificate
 are both required.
+
+The simulator-control adapter currently uses the Visa Service's default
+four-hour adapter authentication lifetime. If machine containers are running
+but their controllers remain offline, refresh only that service with
+`scripts/dashboard-stack.sh restart-simulator-control`; this does not restart
+the machine fleet. Startup also removes stale link-down ZPR routes that can
+otherwise shadow the active control adapter's return path.
 
 Machine Login/Logout writes/removes the selected simulated user in that
 machine container at `/run/zpr-simulator/user`. It does not start or stop
@@ -144,15 +234,24 @@ manifest's `organization_id`); it defaults to `northstar`. The Organizations
 page includes an organization-scoped LDAP seed editor. Scenario definitions,
 directory LDIF drafts, their immutable revisions, and existing policy records
 share the per-organization SQLite file under
-`.local-runtime/dashboard-stack/policy-private/`. The scenario editor validates
-and versions drafts; only published scenarios can run, and each run records the
-organization and published revision it used. Directory edits are drafts until
-explicitly published. Publishing stages a private LDIF at
+`.local-runtime/dashboard-stack/policy-private/`. The scenario editor provides
+form-based metadata, repeatable step and cleanup controls, optional parallel
+dependencies, advanced JSON for topology-specific fields, and virtual folders
+grouped in the catalog. Drafts are validated and versioned; only published
+scenarios can run, and each run records the organization and published revision
+it used. Deleting a scenario archives it from the catalog while retaining its
+immutable revision history. Directory edits are drafts until explicitly
+published. Publishing stages a private LDIF at
 `.local-runtime/published-directories/<organization>.ldif`; the running
 directory is unchanged, and the new seed applies on the next explicit LDAP
 reseed or rig restart. Restart the stack to activate another profile so LDAP,
 policy, and service seeds remain consistent. Set `SIMULATION_MANIFEST` to use a
 different machine/runtime manifest.
+
+The Simulator's Claude design assistant can review scenario drafts and
+organization profiles. It keeps `ANTHROPIC_API_KEY` server-side and only applies
+validated scenario or LDIF proposals to the open draft; saving and publishing
+remain explicit operator actions.
 
 The reusable base contract lives in `.local-runtime/generic-zpr-base.json` and
 is validated separately by the installer.

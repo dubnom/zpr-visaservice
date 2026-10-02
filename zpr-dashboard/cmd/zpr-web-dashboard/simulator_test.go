@@ -340,3 +340,13 @@ func TestValidateMachineWorkloadSelectionAllowsAnyConfiguredClientOrService(t *t
 		t.Fatal("duplicate workload should be rejected")
 	}
 }
+
+func TestSimulatorManifestRejectsUnsafeGatewayUpstream(t *testing.T) {
+	manifest := scenarioTestManifest()
+	manifest.Components = append(manifest.Components, simulatorComponent{
+		Name: "internet-gateway", Agent: "internet-gateway", GatewayUpstream: "http://127.0.0.1:8080",
+	})
+	if err := validateSimulatorManifest(manifest); err == nil {
+		t.Fatal("unsafe gateway upstream was accepted")
+	}
+}

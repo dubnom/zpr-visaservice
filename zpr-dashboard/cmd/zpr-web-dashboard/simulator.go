@@ -39,10 +39,13 @@ type simulatorAgent struct {
 }
 
 type simulatorService struct {
-	Name     string `json:"name"`
-	Kind     string `json:"kind"`
-	Endpoint string `json:"endpoint"`
-	Command  string `json:"command"`
+	Name                      string `json:"name"`
+	Kind                      string `json:"kind"`
+	Endpoint                  string `json:"endpoint"`
+	Command                   string `json:"command"`
+	Provider                  string `json:"provider,omitempty"`
+	Address                   string `json:"address,omitempty"`
+	ExternalNetworkConnection string `json:"external_network_connection,omitempty"`
 }
 
 type simulatorMachine struct {
@@ -55,15 +58,16 @@ type simulatorMachine struct {
 }
 
 type simulatorComponent struct {
-	Name          string              `json:"name"`
-	Kind          string              `json:"kind"`
-	NodeSubstrate string              `json:"node_substrate"`
-	Machine       string              `json:"machine"`
-	Namespace     string              `json:"namespace"`
-	Address       string              `json:"address"`
-	Target        string              `json:"target"`
-	Agent         string              `json:"agent"`
-	Identities    []simulatorIdentity `json:"identities"`
+	Name            string              `json:"name"`
+	Kind            string              `json:"kind"`
+	NodeSubstrate   string              `json:"node_substrate"`
+	Machine         string              `json:"machine"`
+	Namespace       string              `json:"namespace"`
+	Address         string              `json:"address"`
+	Target          string              `json:"target"`
+	Agent           string              `json:"agent"`
+	GatewayUpstream string              `json:"gateway_upstream,omitempty"`
+	Identities      []simulatorIdentity `json:"identities"`
 }
 
 type simulatorIdentity struct {
@@ -116,6 +120,11 @@ func readSimulatorManifest() (simulatorManifest, error) {
 		if organizationID := strings.TrimSpace(os.Getenv("SIMULATION_ORGANIZATION_ID")); organizationID != "" {
 			manifest.OrganizationID = organizationID
 		}
+		if selected, selectionErr := os.ReadFile(simulatorActiveOrganizationPath()); selectionErr == nil {
+			manifest.OrganizationID = strings.TrimSpace(string(selected))
+		} else if !os.IsNotExist(selectionErr) {
+			return manifest, selectionErr
+		}
 		if manifest.OrganizationID == "" {
 			manifest.OrganizationID = defaultSimulatorOrganizationID
 		}
@@ -144,6 +153,16 @@ func validateSimulatorManifest(manifest simulatorManifest) error {
 		}
 		machineIDs[machine.ID] = struct{}{}
 	}
+	for _, component := range manifest.Components {
+		if component.GatewayUpstream != "" {
+			if component.Name != "internet-gateway" || component.Agent != "internet-gateway" {
+				return errors.New("gateway upstream is only allowed on the internet-gateway component")
+			}
+			if _, err := parseGatewayUpstream(component.GatewayUpstream); err != nil {
+				return fmt.Errorf("internet-gateway upstream: %w", err)
+			}
+		}
+	}
 	return nil
 }
 
@@ -160,7 +179,10 @@ func runSimulator(listen string) error {
 		return err
 	}
 	mux := http.NewServeMux()
+	mux.HandleFunc("POST /api/simulator/organizations/{organization}/activate", handleSimulatorOrganizationActivate)
 	mux.HandleFunc("GET /api/simulator/status", handleSimulatorStatus)
+	mux.HandleFunc("GET /api/simulator/assistant/status", handleSimulatorAssistantStatus)
+	mux.HandleFunc("POST /api/simulator/design-assistant", simulatorDesignAssistantHandler(newClaudeAssistant()))
 	mux.HandleFunc("GET /api/simulator/organizations", handleSimulatorOrganizations)
 	mux.HandleFunc("GET /api/simulator/organizations/{organization}/directory/revisions/{revision}", handleWorkspaceDirectoryRevisionGet)
 	mux.HandleFunc("GET /api/simulator/organizations/{organization}/directory/revisions", handleWorkspaceDirectoryRevisions)
@@ -173,6 +195,7 @@ func runSimulator(listen string) error {
 	mux.HandleFunc("GET /api/simulator/organizations/{organization}/scenarios/{scenario}/revisions", handleWorkspaceScenarioRevisions)
 	mux.HandleFunc("GET /api/simulator/organizations/{organization}/scenarios/{scenario}", handleWorkspaceScenarioGet)
 	mux.HandleFunc("POST /api/simulator/organizations/{organization}/scenarios/{scenario}/publish", handleWorkspaceScenarioPublish)
+	mux.HandleFunc("DELETE /api/simulator/organizations/{organization}/scenarios/{scenario}", handleWorkspaceScenarioArchive)
 	mux.HandleFunc("PUT /api/simulator/organizations/{organization}/scenarios/{scenario}", handleWorkspaceScenarioSave)
 	mux.HandleFunc("POST /api/simulator/organizations/{organization}/scenarios", handleWorkspaceScenarioCreate)
 	mux.HandleFunc("GET /api/simulator/logs/{machine}/{workload}", handleSimulatorWorkloadLogs)

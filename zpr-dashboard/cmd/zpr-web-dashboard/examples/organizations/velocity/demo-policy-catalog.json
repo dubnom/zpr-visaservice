@@ -1,0 +1,12 @@
+{
+  "categories": ["Velocity/Performance"],
+  "records": [{
+    "category": "Velocity/Performance",
+    "name": "Single-node benchmark access",
+    "kind": "policy",
+    "content_type": "text/vnd.zpr.zpl",
+    "metadata": {"demo": true, "live": false},
+    "content": "define BenchmarkClient as a device with zpr.adapter.cn:finance-client.\ndefine EchoWeb as a service with device.zpr.adapter.cn:echo-service.\nallow BenchmarkClient to access EchoWeb.",
+    "summary": "Benchmark client to echo server on TCP 8080; install the equivalent runtime grant before testing."
+  }]
+}

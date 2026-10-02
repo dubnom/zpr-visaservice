@@ -28,10 +28,10 @@ type testAppEvent struct {
 
 var testLogPorts = map[string]int{
 	"finance-client": 18081, "operations-client": 18082, "telemetry-client": 18083,
-	"echo-service": 18084, "metrics-service": 18085,
+	"echo-service": 18084, "metrics-service": 18085, "internet-gateway": 18086,
 }
 
-var testServicePorts = map[string]string{"echo-service": "8080", "metrics-service": "8081"}
+var testServicePorts = map[string]string{"echo-service": "8080", "metrics-service": "8081", "internet-gateway": "8082"}
 var testClientWorkloads = map[string]bool{"finance-client": true, "operations-client": true}
 
 var testLogServers = struct {
@@ -189,6 +189,12 @@ func readTestLogService(workload string) error {
 
 func testServiceHandler(workload string, logEvent func(testAppEvent)) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, request *http.Request) {
+		if request.Method == http.MethodGet && request.URL.Path == "/benchmark" {
+			w.Header().Set("Content-Type", "application/octet-stream")
+			w.Header().Set("Content-Length", "16777216")
+			_, _ = io.CopyN(w, strings.NewReader(strings.Repeat("x", 16<<20)), 16<<20)
+			return
+		}
 		if request.Method != http.MethodGet || request.URL.Path != "/health" {
 			http.NotFound(w, request)
 			return
@@ -277,4 +283,81 @@ func runTestClient(address, sourceAddress, clientID, workload, service string) e
 		return err
 	}
 	return json.NewEncoder(os.Stdout).Encode(event)
+}
+
+type benchmarkResult struct {
+	Samples         int     `json:"samples"`
+	LatencyP50MS    float64 `json:"latency_p50_ms"`
+	LatencyP95MS    float64 `json:"latency_p95_ms"`
+	LatencyP99MS    float64 `json:"latency_p99_ms"`
+	Bytes           int64   `json:"bytes"`
+	ThroughputMbps  float64 `json:"throughput_mbps"`
+	VisaGrantTiming string  `json:"visa_grant_timing"`
+}
+
+func benchmarkHTTP(ctx context.Context, client *http.Client, baseURL string) (benchmarkResult, error) {
+	result := benchmarkResult{Samples: 100, VisaGrantTiming: "not measured; requires authorization-only instrumentation"}
+	latencies := make([]float64, 0, result.Samples)
+	for sample := -1; sample < result.Samples; sample++ {
+		request, err := http.NewRequestWithContext(ctx, http.MethodGet, baseURL+"/health", nil)
+		if err != nil {
+			return result, err
+		}
+		started := time.Now()
+		response, err := client.Do(request)
+		if err != nil {
+			return result, err
+		}
+		_, readErr := io.Copy(io.Discard, response.Body)
+		response.Body.Close()
+		if readErr != nil {
+			return result, readErr
+		}
+		if response.StatusCode != http.StatusOK {
+			return result, fmt.Errorf("benchmark health returned %s", response.Status)
+		}
+		if sample >= 0 {
+			latencies = append(latencies, float64(time.Since(started))/float64(time.Millisecond))
+		}
+	}
+	sort.Float64s(latencies)
+	result.LatencyP50MS, result.LatencyP95MS, result.LatencyP99MS = latencies[49], latencies[94], latencies[98]
+	request, err := http.NewRequestWithContext(ctx, http.MethodGet, baseURL+"/benchmark", nil)
+	if err != nil {
+		return result, err
+	}
+	started := time.Now()
+	response, err := client.Do(request)
+	if err != nil {
+		return result, err
+	}
+	defer response.Body.Close()
+	if response.StatusCode != http.StatusOK {
+		return result, fmt.Errorf("benchmark transfer returned %s", response.Status)
+	}
+	result.Bytes, err = io.Copy(io.Discard, io.LimitReader(response.Body, (16<<20)+1))
+	if err != nil {
+		return result, err
+	}
+	if result.Bytes != 16<<20 {
+		return result, fmt.Errorf("benchmark transferred %d bytes, want %d", result.Bytes, 16<<20)
+	}
+	result.ThroughputMbps = float64(result.Bytes) * 8 / time.Since(started).Seconds() / 1e6
+	return result, nil
+}
+
+func runBenchmarkClient(address, sourceAddress string) error {
+	source := net.ParseIP(sourceAddress)
+	if source == nil || source.To4() != nil {
+		return fmt.Errorf("benchmark requires an IPv6 source address")
+	}
+	transport := &http.Transport{DisableCompression: true, DialContext: (&net.Dialer{Timeout: 5 * time.Second, LocalAddr: &net.TCPAddr{IP: source}}).DialContext}
+	defer transport.CloseIdleConnections()
+	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
+	defer cancel()
+	result, err := benchmarkHTTP(ctx, &http.Client{Transport: transport, Timeout: 10 * time.Second}, "http://"+address)
+	if err != nil {
+		return err
+	}
+	return json.NewEncoder(os.Stdout).Encode(result)
 }

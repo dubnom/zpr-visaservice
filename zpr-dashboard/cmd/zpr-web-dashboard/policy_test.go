@@ -11,6 +11,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"reflect"
 	"strings"
 	"testing"
 )
@@ -399,6 +400,38 @@ returns_attributes = ["role -> device.demo.role", "ou -> device.demo.department"
 		if attributes[index] != attribute {
 			t.Fatalf("attribute %d = %#v, want %#v", index, attributes[index], attribute)
 		}
+	}
+}
+
+func TestFilterPolicyAttributeMappingsUsesScannedLDAPNames(t *testing.T) {
+	mappings := []policyAttributeMapping{
+		{policyAttribute: policyAttribute{Source: "ou", Attribute: "device.demo.department"}, requiresLDAP: true},
+		{policyAttribute: policyAttribute{Source: "title", Attribute: "device.demo.title"}, requiresLDAP: true},
+		{policyAttribute: policyAttribute{Source: "sub", Attribute: "user.sub"}},
+	}
+	got := filterPolicyAttributeMappings(mappings, map[string]struct{}{"OU": {}})
+	want := []policyAttribute{
+		{Source: "ou", Attribute: "device.demo.department"},
+		{Source: "sub", Attribute: "user.sub"},
+	}
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("filtered attributes = %#v, want %#v", got, want)
+	}
+}
+
+func TestParseLDAPAttributeNamesOmitsDNAndValues(t *testing.T) {
+	output := []byte("dn: uid=marisol.vega,ou=People,dc=redwood,dc=test\nobjectClass:\nuid:\nou:\ncn:\ntitle:\n")
+	got := parseLDAPAttributeNames(output)
+	for _, name := range []string{"objectclass", "uid", "ou", "cn", "title"} {
+		if _, ok := got[name]; !ok {
+			t.Errorf("LDAP attribute %q missing from %#v", name, got)
+		}
+	}
+	if _, ok := got["dn"]; ok {
+		t.Fatalf("dn must not be treated as an LDAP attribute: %#v", got)
+	}
+	if len(got) != 5 {
+		t.Fatalf("got %d attribute names, want 5: %#v", len(got), got)
 	}
 }
 
