@@ -1,5 +1,6 @@
 {
   "id": "machine-policy-deny",
+  "organization_id": "northstar",
   "name": "Managed laptop: policy denial",
   "description": "Ensure machine-01 is online, authenticate its owner, start the finance workload, probe a peer not allowed by the demo policy, then remove the workload and log out.",
   "steps": [

@@ -1,5 +1,6 @@
 {
   "id": "active-team-cycle",
+  "organization_id": "northstar",
   "name": "Active team: service rotation",
   "description": "Run a five-minute active-team session with four users, live HTTP clients and services, traffic bursts and quiet windows, plus a machine-06 shutdown and restart.",
   "steps": [

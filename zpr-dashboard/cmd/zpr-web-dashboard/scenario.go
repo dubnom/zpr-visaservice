@@ -25,14 +25,37 @@ const (
 var errScenarioAlreadyRunning = errors.New("a scenario is already running")
 
 type simulatorScenario struct {
-	ID          string                  `json:"id"`
-	Name        string                  `json:"name"`
-	Description string                  `json:"description"`
-	Steps       []simulatorScenarioStep `json:"steps"`
-	Cleanup     []simulatorScenarioStep `json:"cleanup,omitempty"`
+	ID             string                     `json:"id"`
+	OrganizationID string                     `json:"organization_id,omitempty"`
+	Name           string                     `json:"name"`
+	Parallel       bool                       `json:"parallel,omitempty"`
+	Description    string                     `json:"description"`
+	Topology       *simulatorScenarioTopology `json:"topology,omitempty"`
+	Steps          []simulatorScenarioStep    `json:"steps"`
+	Cleanup        []simulatorScenarioStep    `json:"cleanup,omitempty"`
+}
+
+type simulatorScenarioTopology struct {
+	Nodes      []simulatorTopologyNode `json:"nodes"`
+	Links      []simulatorTopologyLink `json:"links"`
+	Components []simulatorComponent    `json:"components,omitempty"`
+}
+
+type simulatorTopologyNode struct {
+	ID         string `json:"id"`
+	ZPRAddress string `json:"zpr_address"`
+	Substrate  string `json:"substrate"`
+}
+
+type simulatorTopologyLink struct {
+	ID   string `json:"id"`
+	From string `json:"from"`
+	To   string `json:"to"`
 }
 
 type simulatorScenarioStep struct {
+	ID             string   `json:"id,omitempty"`
+	After          []string `json:"after,omitempty"`
 	Action         string   `json:"action"`
 	Machine        string   `json:"machine,omitempty"`
 	User           string   `json:"user,omitempty"`
@@ -44,6 +67,7 @@ type simulatorScenarioStep struct {
 }
 
 type simulatorScenarioStepResult struct {
+	Number     int       `json:"number"`
 	Phase      string    `json:"phase"`
 	Action     string    `json:"action"`
 	Machine    string    `json:"machine,omitempty"`
@@ -56,15 +80,19 @@ type simulatorScenarioStepResult struct {
 }
 
 type simulatorScenarioRun struct {
-	ScenarioID   string                        `json:"scenario_id,omitempty"`
-	ScenarioName string                        `json:"scenario_name,omitempty"`
-	State        string                        `json:"state"`
-	CurrentStep  int                           `json:"current_step"`
-	TotalSteps   int                           `json:"total_steps"`
-	StartedAt    *time.Time                    `json:"started_at,omitempty"`
-	FinishedAt   *time.Time                    `json:"finished_at,omitempty"`
-	Error        string                        `json:"error,omitempty"`
-	Steps        []simulatorScenarioStepResult `json:"steps"`
+	ScenarioID        string                        `json:"scenario_id,omitempty"`
+	ScenarioName      string                        `json:"scenario_name,omitempty"`
+	Scenario          *simulatorScenario            `json:"scenario,omitempty"`
+	OrganizationID    string                        `json:"organization_id,omitempty"`
+	WorkspaceRevision int                           `json:"workspace_revision,omitempty"`
+	State             string                        `json:"state"`
+	CurrentStep       int                           `json:"current_step"`
+	ActiveSteps       []int                         `json:"active_steps,omitempty"`
+	TotalSteps        int                           `json:"total_steps"`
+	StartedAt         *time.Time                    `json:"started_at,omitempty"`
+	FinishedAt        *time.Time                    `json:"finished_at,omitempty"`
+	Error             string                        `json:"error,omitempty"`
+	Steps             []simulatorScenarioStepResult `json:"steps"`
 }
 
 type simulatorScenarioExecutor func(context.Context, simulatorManifest, simulatorScenarioStep) (string, error)
@@ -121,6 +149,12 @@ func loadSimulatorScenarios(directory string, manifest simulatorManifest) ([]sim
 		if scenario.ID != fileID {
 			return nil, fmt.Errorf("scenario %q id must match its filename", entry.Name())
 		}
+		if scenario.OrganizationID == "" {
+			scenario.OrganizationID = activeSimulatorOrganizationID(manifest)
+		}
+		if manifest.OrganizationID != "" && scenario.OrganizationID != manifest.OrganizationID {
+			continue
+		}
 		if _, exists := ids[scenario.ID]; exists {
 			return nil, fmt.Errorf("duplicate scenario id %q", scenario.ID)
 		}
@@ -141,6 +175,26 @@ func validateSimulatorScenario(scenario simulatorScenario, manifest simulatorMan
 	if len(scenario.Steps) == 0 {
 		return errors.New("at least one step is required")
 	}
+	if scenario.OrganizationID != "" && manifest.OrganizationID != "" && scenario.OrganizationID != manifest.OrganizationID {
+		return fmt.Errorf("scenario belongs to organization %q, not %q", scenario.OrganizationID, manifest.OrganizationID)
+	}
+	organizationID := scenario.OrganizationID
+	if organizationID == "" {
+		organizationID = activeSimulatorOrganizationID(manifest)
+	}
+	organization, err := loadSimulatorOrganization(simulatorOrganizationsDirectory(), organizationID)
+	if err != nil {
+		return fmt.Errorf("load scenario organization: %w", err)
+	}
+	scenarioManifest := manifest
+	if scenario.Topology != nil {
+		if err := validateSimulatorScenarioTopology(*scenario.Topology); err != nil {
+			return fmt.Errorf("topology: %w", err)
+		}
+		if scenario.Topology.Components != nil {
+			scenarioManifest.Components = scenario.Topology.Components
+		}
+	}
 	machines := make(map[string]struct{})
 	for _, step := range append(append([]simulatorScenarioStep(nil), scenario.Steps...), scenario.Cleanup...) {
 		if step.Machine != "" {
@@ -151,17 +205,89 @@ func validateSimulatorScenario(scenario simulatorScenario, manifest simulatorMan
 		return fmt.Errorf("scenario references %d machines; the limit is %d", len(machines), maxScenarioMachines)
 	}
 	for index, step := range scenario.Steps {
-		if err := validateSimulatorScenarioStep(step, manifest, false); err != nil {
+		if err := validateSimulatorScenarioStep(step, scenarioManifest, organization, false); err != nil {
 			return fmt.Errorf("step %d: %w", index+1, err)
 		}
 	}
+	stepIDs := make(map[string]struct{}, len(scenario.Steps))
+	for index, step := range scenario.Steps {
+		if !scenario.Parallel {
+			if step.ID != "" || len(step.After) != 0 {
+				return fmt.Errorf("step %d: id and after require parallel mode", index+1)
+			}
+			continue
+		}
+		if !validScenarioID(step.ID) {
+			return fmt.Errorf("step %d: valid id is required in parallel mode", index+1)
+		}
+		if _, exists := stepIDs[step.ID]; exists {
+			return fmt.Errorf("step %d: duplicate id %q", index+1, step.ID)
+		}
+		seen := make(map[string]struct{}, len(step.After))
+		for _, dependency := range step.After {
+			if _, exists := stepIDs[dependency]; !exists {
+				return fmt.Errorf("step %d: dependency %q must refer to an earlier step", index+1, dependency)
+			}
+			if _, exists := seen[dependency]; exists {
+				return fmt.Errorf("step %d: duplicate dependency %q", index+1, dependency)
+			}
+			seen[dependency] = struct{}{}
+		}
+		stepIDs[step.ID] = struct{}{}
+	}
 	for index, step := range scenario.Cleanup {
+		if step.ID != "" || len(step.After) != 0 {
+			return fmt.Errorf("cleanup step %d cannot have id or after", index+1)
+		}
 		if step.Action != "stop_test_service" && step.Action != "stop_workload" && step.Action != "logout" && step.Action != "stop_machine" {
 			return fmt.Errorf("cleanup step %d must stop a test service or workload, log out, or stop a machine", index+1)
 		}
-		if err := validateSimulatorScenarioStep(step, manifest, true); err != nil {
+		if err := validateSimulatorScenarioStep(step, scenarioManifest, organization, true); err != nil {
 			return fmt.Errorf("cleanup step %d: %w", index+1, err)
 		}
+	}
+	return nil
+}
+
+func validateSimulatorScenarioTopology(topology simulatorScenarioTopology) error {
+	if len(topology.Nodes) == 0 {
+		return errors.New("at least one node is required")
+	}
+	nodes := make(map[string]struct{}, len(topology.Nodes))
+	for _, node := range topology.Nodes {
+		if !validScenarioID(node.ID) || net.ParseIP(node.ZPRAddress) == nil || net.ParseIP(node.Substrate) == nil {
+			return fmt.Errorf("node %q requires a valid id, ZPR address, and substrate IP", node.ID)
+		}
+		if _, exists := nodes[node.ID]; exists {
+			return fmt.Errorf("duplicate node id %q", node.ID)
+		}
+		nodes[node.ID] = struct{}{}
+	}
+	links := make(map[string]struct{}, len(topology.Links))
+	for _, link := range topology.Links {
+		if !validScenarioID(link.ID) || link.From == link.To {
+			return fmt.Errorf("link %q requires a valid id and distinct endpoints", link.ID)
+		}
+		if _, exists := links[link.ID]; exists {
+			return fmt.Errorf("duplicate link id %q", link.ID)
+		}
+		if _, exists := nodes[link.From]; !exists {
+			return fmt.Errorf("link %q references unknown node %q", link.ID, link.From)
+		}
+		if _, exists := nodes[link.To]; !exists {
+			return fmt.Errorf("link %q references unknown node %q", link.ID, link.To)
+		}
+		links[link.ID] = struct{}{}
+	}
+	components := make(map[string]struct{}, len(topology.Components))
+	for _, component := range topology.Components {
+		if component.Name == "" || (component.Kind != "client" && component.Kind != "service") {
+			return fmt.Errorf("component %q requires a name and supported kind", component.Name)
+		}
+		if _, exists := components[component.Name]; exists {
+			return fmt.Errorf("duplicate topology component %q", component.Name)
+		}
+		components[component.Name] = struct{}{}
 	}
 	return nil
 }
@@ -178,7 +304,7 @@ func validScenarioID(id string) bool {
 	return true
 }
 
-func validateSimulatorScenarioStep(step simulatorScenarioStep, manifest simulatorManifest, cleanup bool) error {
+func validateSimulatorScenarioStep(step simulatorScenarioStep, manifest simulatorManifest, organization simulatorOrganization, cleanup bool) error {
 	switch step.Action {
 	case "start_machine", "wait_controller", "login", "select_workloads", "logout", "stop_machine":
 		if !manifestHasMachine(manifest, step.Machine) {
@@ -257,7 +383,7 @@ func validateSimulatorScenarioStep(step simulatorScenarioStep, manifest simulato
 	if !cleanup {
 		switch step.Action {
 		case "login":
-			if !simulatorMachineAllowsUser(manifest, step.Machine, step.User) {
+			if !simulatorOrganizationAllowsUser(manifest, organization, step.Machine, step.User) {
 				return errors.New("login requires a user permitted on the machine")
 			}
 		case "select_workloads":
@@ -273,17 +399,24 @@ func validateSimulatorScenarioStep(step simulatorScenarioStep, manifest simulato
 }
 
 func (manager *simulatorScenarioManager) start(scenario simulatorScenario, manifest simulatorManifest, execute simulatorScenarioExecutor) error {
+	return manager.startVersioned(scenario, manifest, execute, scenario.OrganizationID, 0)
+}
+
+func (manager *simulatorScenarioManager) startVersioned(scenario simulatorScenario, manifest simulatorManifest, execute simulatorScenarioExecutor, organizationID string, revision int) error {
 	manager.mu.Lock()
 	defer manager.mu.Unlock()
 	if manager.run.State == "running" || manager.run.State == "cleaning" {
 		return errScenarioAlreadyRunning
 	}
 	ctx, cancel := context.WithCancel(context.Background())
+	if scenario.Topology != nil && scenario.Topology.Components != nil {
+		manifest.Components = append([]simulatorComponent(nil), scenario.Topology.Components...)
+	}
 	now := time.Now()
 	manager.cancel = cancel
 	manager.done = make(chan struct{})
 	manager.run = simulatorScenarioRun{
-		ScenarioID: scenario.ID, ScenarioName: scenario.Name, State: "running",
+		ScenarioID: scenario.ID, ScenarioName: scenario.Name, Scenario: &scenario, OrganizationID: organizationID, WorkspaceRevision: revision, State: "running",
 		TotalSteps: len(scenario.Steps) + len(scenario.Cleanup), StartedAt: &now,
 		Steps: []simulatorScenarioStepResult{},
 	}
@@ -308,6 +441,7 @@ func (manager *simulatorScenarioManager) snapshot() simulatorScenarioRun {
 	defer manager.mu.RUnlock()
 	run := manager.run
 	run.Steps = append([]simulatorScenarioStepResult(nil), manager.run.Steps...)
+	run.ActiveSteps = append([]int(nil), manager.run.ActiveSteps...)
 	return run
 }
 
@@ -315,23 +449,26 @@ func (manager *simulatorScenarioManager) execute(ctx context.Context, scenario s
 	defer close(done)
 	var runErr error
 	stepNumber := 0
-	for _, step := range scenario.Steps {
-		if ctx.Err() != nil {
-			runErr = ctx.Err()
-			break
-		}
-		stepNumber++
-		if err := manager.executeStep(ctx, manifest, step, execute, "run", stepNumber); err != nil {
-			runErr = err
-			break
+	if scenario.Parallel {
+		runErr = manager.executeParallel(ctx, scenario.Steps, manifest, execute)
+	} else {
+		for _, step := range scenario.Steps {
+			if ctx.Err() != nil {
+				runErr = ctx.Err()
+				break
+			}
+			stepNumber++
+			if err := manager.executeStep(ctx, manifest, step, execute, "run", stepNumber, false); err != nil {
+				runErr = err
+				break
+			}
 		}
 	}
-	if len(scenario.Cleanup) > 0 && (runErr != nil || ctx.Err() != nil || stepNumber == len(scenario.Steps)) {
+	if len(scenario.Cleanup) > 0 {
 		manager.setState("cleaning", "")
 		cleanupCtx, cancel := context.WithTimeout(context.Background(), 3*time.Minute)
-		for _, step := range scenario.Cleanup {
-			stepNumber++
-			if err := manager.executeStep(cleanupCtx, manifest, step, execute, "cleanup", stepNumber); err != nil && runErr == nil {
+		for index, step := range scenario.Cleanup {
+			if err := manager.executeStep(cleanupCtx, manifest, step, execute, "cleanup", len(scenario.Steps)+index+1, false); err != nil && runErr == nil {
 				runErr = err
 			}
 		}
@@ -346,7 +483,54 @@ func (manager *simulatorScenarioManager) execute(ctx context.Context, scenario s
 	manager.finish(state, runErr)
 }
 
-func (manager *simulatorScenarioManager) executeStep(parent context.Context, manifest simulatorManifest, step simulatorScenarioStep, execute simulatorScenarioExecutor, phase string, number int) error {
+func (manager *simulatorScenarioManager) executeParallel(ctx context.Context, steps []simulatorScenarioStep, manifest simulatorManifest, execute simulatorScenarioExecutor) error {
+	type plannedStep struct {
+		step   simulatorScenarioStep
+		number int
+	}
+	lanes := make(map[string][]plannedStep)
+	completed := make(map[string]chan struct{}, len(steps))
+	for index, step := range steps {
+		lane := step.Machine
+		lanes[lane] = append(lanes[lane], plannedStep{step, index + 1})
+		completed[step.ID] = make(chan struct{})
+	}
+	ctx, cancel := context.WithCancel(ctx)
+	defer cancel()
+	var workers sync.WaitGroup
+	var firstError error
+	var failOnce sync.Once
+	for _, lane := range lanes {
+		workers.Add(1)
+		go func(lane []plannedStep) {
+			defer workers.Done()
+			for _, item := range lane {
+				for _, dependency := range item.step.After {
+					select {
+					case <-completed[dependency]:
+					case <-ctx.Done():
+						return
+					}
+				}
+				if ctx.Err() != nil {
+					return
+				}
+				if err := manager.executeStep(ctx, manifest, item.step, execute, "run", item.number, true); err != nil {
+					failOnce.Do(func() { firstError = err; cancel() })
+					return
+				}
+				close(completed[item.step.ID])
+			}
+		}(lane)
+	}
+	workers.Wait()
+	if firstError != nil {
+		return firstError
+	}
+	return ctx.Err()
+}
+
+func (manager *simulatorScenarioManager) executeStep(parent context.Context, manifest simulatorManifest, step simulatorScenarioStep, execute simulatorScenarioExecutor, phase string, number int, parallel bool) error {
 	timeout := time.Duration(step.TimeoutSeconds) * time.Second
 	if timeout == 0 {
 		timeout = 90 * time.Second
@@ -356,11 +540,11 @@ func (manager *simulatorScenarioManager) executeStep(parent context.Context, man
 	ctx, cancel := context.WithTimeout(parent, timeout)
 	defer cancel()
 	started := time.Now()
-	manager.setCurrentStep(number)
+	manager.beginStep(number, parallel)
 	output, err := execute(ctx, manifest, step)
 	finished := time.Now()
 	result := simulatorScenarioStepResult{
-		Phase: phase, Action: step.Action, Machine: step.Machine, Component: step.Component,
+		Number: number, Phase: phase, Action: step.Action, Machine: step.Machine, Component: step.Component,
 		Status: "completed", StartedAt: started, FinishedAt: finished, Output: strings.TrimSpace(output),
 	}
 	if err != nil {
@@ -371,15 +555,26 @@ func (manager *simulatorScenarioManager) executeStep(parent context.Context, man
 	return err
 }
 
-func (manager *simulatorScenarioManager) setCurrentStep(number int) {
+func (manager *simulatorScenarioManager) beginStep(number int, parallel bool) {
 	manager.mu.Lock()
-	manager.run.CurrentStep = number
+	if parallel {
+		manager.run.CurrentStep++
+	} else {
+		manager.run.CurrentStep = number
+	}
+	manager.run.ActiveSteps = append(manager.run.ActiveSteps, number)
 	manager.mu.Unlock()
 }
 
 func (manager *simulatorScenarioManager) appendStep(result simulatorScenarioStepResult) {
 	manager.mu.Lock()
 	manager.run.Steps = append(manager.run.Steps, result)
+	for index, number := range manager.run.ActiveSteps {
+		if number == result.Number {
+			manager.run.ActiveSteps = append(manager.run.ActiveSteps[:index], manager.run.ActiveSteps[index+1:]...)
+			break
+		}
+	}
 	manager.mu.Unlock()
 }
 
@@ -673,7 +868,11 @@ func waitForMachineWorkloadLink(ctx context.Context, machineID, agent string, ac
 	}
 }
 
+var scenarioMachineStartMu sync.Mutex
+
 func startScenarioMachine(ctx context.Context, manifest simulatorManifest, machineID string) (string, error) {
+	scenarioMachineStartMu.Lock()
+	defer scenarioMachineStartMu.Unlock()
 	states := simulatorMachineContainerStates([]string{machineID})
 	var output string
 	var err error
@@ -767,7 +966,12 @@ func handleSimulatorScenarioCatalog(w http.ResponseWriter, _ *http.Request) {
 		http.Error(w, "scenario catalog unavailable: "+err.Error(), http.StatusServiceUnavailable)
 		return
 	}
-	writeSimulatorJSON(w, map[string]any{"scenarios": scenarios, "run": activeSimulatorScenario.snapshot(), "max_machines": maxScenarioMachines})
+	organization, err := loadSimulatorOrganization(simulatorOrganizationsDirectory(), manifest.OrganizationID)
+	if err != nil {
+		http.Error(w, "organization profile unavailable", http.StatusServiceUnavailable)
+		return
+	}
+	writeSimulatorJSON(w, map[string]any{"organization": organization, "scenarios": scenarios, "run": activeSimulatorScenario.snapshot(), "max_machines": maxScenarioMachines})
 }
 
 func handleSimulatorScenarioRun(w http.ResponseWriter, r *http.Request) {

@@ -6,8 +6,9 @@
 //! be rebuilt on restart (see [TopologyMgr::restore_from_state]). Nodes themselves are
 //! persisted by `ActorMgr`/`NodeRepo`; only the edges (links) are persisted here.
 //!
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 use std::net::IpAddr;
+use std::sync::Mutex;
 use tracing::{debug, error, info, warn};
 
 use crate::actor_mgr::ActorMgr;
@@ -26,6 +27,7 @@ use libeval::route::{LinkId, NodeId, Route};
 pub struct TopologyMgr {
     router: Router,
     link_repo: LinkRepo,
+    peer_link_status: Mutex<HashMap<(LinkId, IpAddr), (u64, bool)>>,
 }
 
 /// The fate of a persisted/live edge when validated against the current policy.
@@ -82,6 +84,7 @@ impl TopologyMgr {
         Self {
             router: Router::new(),
             link_repo,
+            peer_link_status: Mutex::new(HashMap::new()),
         }
     }
 
@@ -210,6 +213,80 @@ impl TopologyMgr {
         Ok(())
     }
 
+    /// Gate a policy edge on fresh liveness reports from both endpoint Nodes.
+    pub async fn report_peer_link_status(
+        &self,
+        snapshot: &PolicySnapshot,
+        actor_mgr: &ActorMgr,
+        local_addr: &IpAddr,
+        peer_addr: &IpAddr,
+        policy_link_id: &str,
+        is_up: bool,
+        generation: u64,
+    ) -> Result<(), ServiceError> {
+        if local_addr == peer_addr || generation == 0 {
+            return Err(ServiceError::Param(
+                "link status requires distinct Node Addresses and a non-zero generation".into(),
+            ));
+        }
+
+        let link_desc = snapshot.describe_link(local_addr, peer_addr)?;
+        if link_desc.link_id != policy_link_id {
+            return Err(ServiceError::Param(format!(
+                "reported link ID {policy_link_id} does not match policy link {}",
+                link_desc.link_id
+            )));
+        }
+
+        let link_id = LinkId(policy_link_id.to_owned());
+        let both_up = {
+            let mut statuses = self.peer_link_status.lock().unwrap();
+            let local_key = (link_id.clone(), *local_addr);
+            if let Some((last_generation, last_state)) = statuses.get(&local_key) {
+                if generation < *last_generation
+                    || (generation == *last_generation && is_up != *last_state)
+                {
+                    return Ok(());
+                }
+                if generation > *last_generation {
+                    statuses.insert(local_key, (generation, is_up));
+                }
+            } else {
+                statuses.insert(local_key, (generation, is_up));
+            }
+
+            statuses
+                .get(&(link_id.clone(), *local_addr))
+                .is_some_and(|(_, up)| *up)
+                && statuses
+                    .get(&(link_id.clone(), *peer_addr))
+                    .is_some_and(|(_, up)| *up)
+        };
+
+        if !is_up {
+            self.router.remove_link(&link_id);
+            self.link_repo.remove_edge(local_addr, peer_addr).await?;
+            return Ok(());
+        }
+        if !both_up {
+            return Ok(());
+        }
+
+        let Some(peer_actor) = actor_mgr.get_actor_by_zpr_addr(peer_addr).await? else {
+            return Ok(());
+        };
+        self.add_node_if_not_exists(*local_addr);
+        self.add_node_if_not_exists(*peer_addr);
+        self.add_linked_node(snapshot, actor_mgr, &peer_actor, local_addr, peer_addr)
+            .await
+            .map_err(|error| match error {
+                AddLinkedNodeError::NewNodeFailed(error)
+                | AddLinkedNodeError::ExistingNodeFailed(error) => error,
+            })?;
+
+        Ok(())
+    }
+
     /// Rebuild the router graph from persisted state. Nodes come from `node_addrs`
     /// (the surviving node set after actor-state refresh); edges come from the
     /// [LinkRepo]. Edge attributes/cost are re-derived from the current policy.
@@ -254,6 +331,43 @@ impl TopologyMgr {
             }
         }
 
+        Ok(())
+    }
+
+    /// Clear restored adjacency so startup only exposes links confirmed live by both Nodes.
+    pub async fn clear_unconfirmed_links(&self) -> Result<(), ServiceError> {
+        for link in self.router.link_snapshot() {
+            self.router.remove_link(&link.id);
+        }
+        for (a, b) in self.link_repo.list_edges().await? {
+            self.link_repo.remove_edge(&a, &b).await?;
+        }
+        self.peer_link_status.lock().unwrap().clear();
+        Ok(())
+    }
+
+    /// Remove incident live edges and status reports when a Node leaves the Visa Service.
+    pub async fn clear_peer_link_status_for_node(
+        &self,
+        node_addr: &IpAddr,
+    ) -> Result<(), ServiceError> {
+        let affected_link_ids: HashSet<LinkId> = {
+            let mut statuses = self.peer_link_status.lock().unwrap();
+            let link_ids: HashSet<LinkId> = statuses
+                .keys()
+                .filter(|(_, endpoint)| endpoint == node_addr)
+                .map(|(link_id, _)| link_id.clone())
+                .collect();
+            statuses.retain(|(link_id, _), _| !link_ids.contains(link_id));
+            link_ids
+        };
+
+        for link in self.router.link_snapshot() {
+            if affected_link_ids.contains(&link.id) {
+                self.router.remove_link(&link.id);
+                self.link_repo.remove_edge(&link.a, &link.b).await?;
+            }
+        }
         Ok(())
     }
 
@@ -1314,5 +1428,82 @@ mod tests {
             topo.add_node(c).is_err(),
             "orphaned node must remain in the topology"
         );
+    }
+
+    #[tokio::test]
+    async fn test_peer_link_requires_both_fresh_endpoint_reports() {
+        let db = Arc::new(FakeDb::new());
+        let a = ip("fd5a:5052::1");
+        let b = ip("fd5a:5052::2");
+        let policy_mgr = make_policy_mgr(db.clone(), a, b, "link-ab").await;
+        let actor_mgr = make_actor_mgr(db.clone());
+        actor_mgr
+            .add_node(
+                &make_node_actor_defexp(&a.to_string(), "node-a", "[fd5a:5052::100]:1001"),
+                false,
+            )
+            .await
+            .unwrap();
+        actor_mgr
+            .add_node(
+                &make_node_actor_defexp(&b.to_string(), "node-b", "[fd5a:5052::100]:1002"),
+                false,
+            )
+            .await
+            .unwrap();
+        let topo = TopologyMgr::new(LinkRepo::new(db.clone()));
+        let snapshot = policy_mgr.get_current_snapshot();
+
+        topo.report_peer_link_status(&snapshot, &actor_mgr, &a, &b, "link-ab", true, 1)
+            .await
+            .unwrap();
+        assert!(topo.get_best_route(&a, &b).is_none());
+
+        topo.report_peer_link_status(&snapshot, &actor_mgr, &b, &a, "link-ab", true, 1)
+            .await
+            .unwrap();
+        assert!(topo.get_best_route(&a, &b).is_some());
+        assert_eq!(
+            LinkRepo::new(db.clone()).list_edges().await.unwrap().len(),
+            1
+        );
+
+        topo.report_peer_link_status(&snapshot, &actor_mgr, &a, &b, "link-ab", false, 2)
+            .await
+            .unwrap();
+        assert!(topo.get_best_route(&a, &b).is_none());
+        assert!(
+            LinkRepo::new(db.clone())
+                .list_edges()
+                .await
+                .unwrap()
+                .is_empty()
+        );
+
+        topo.report_peer_link_status(&snapshot, &actor_mgr, &a, &b, "link-ab", true, 1)
+            .await
+            .unwrap();
+        assert!(topo.get_best_route(&a, &b).is_none());
+
+        topo.report_peer_link_status(&snapshot, &actor_mgr, &a, &b, "link-ab", true, 3)
+            .await
+            .unwrap();
+        assert!(topo.get_best_route(&a, &b).is_some());
+        topo.clear_peer_link_status_for_node(&a).await.unwrap();
+        assert!(topo.get_best_route(&a, &b).is_none());
+        assert!(
+            LinkRepo::new(db.clone())
+                .list_edges()
+                .await
+                .unwrap()
+                .is_empty()
+        );
+
+        // Reconnection requires fresh reports from both endpoints; the neighbor's prior
+        // up report was invalidated with the disconnected Node's status.
+        topo.report_peer_link_status(&snapshot, &actor_mgr, &a, &b, "link-ab", true, 4)
+            .await
+            .unwrap();
+        assert!(topo.get_best_route(&a, &b).is_none());
     }
 }

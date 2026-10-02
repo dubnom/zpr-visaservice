@@ -127,8 +127,7 @@ h1 { margin-bottom: 6px; font-size: 28px; line-height: 1.15; letter-spacing: 0; 
 .graph-animation-toggle input { width: 13px; height: 13px; margin: 0; accent-color: #668d46; }
 .graph-hint { margin-left: 3px; color: #738178; font: 8px var(--mono); letter-spacing: .04em; white-space: nowrap; }
 .graph-arrival-marker { pointer-events: none; }
-.graph-arrival-ring { fill: none; stroke: var(--arrival-accent, #43be69); stroke-width: 6; opacity: 0; filter: drop-shadow(0 0 5px var(--arrival-accent, #43be69)); transform-box: fill-box; transform-origin: center; }
-.graph-vertex.arriving, .graph-service-badge.arriving, .graph-exiting { transform-box: fill-box; transform-origin: center; }
+.graph-arrival-ring { fill: none; stroke: var(--arrival-accent, #43be69); stroke-width: 6; opacity: 0; filter: drop-shadow(0 0 5px var(--arrival-accent, #43be69)); }
 .graph-exit-layer, .graph-exiting { pointer-events: none; }
 .graph-exiting .graph-exit-label { fill: var(--arrival-accent, #43be69); stroke: #fff; stroke-width: 3px; paint-order: stroke; text-anchor: middle; font: 800 10px var(--mono); pointer-events: none; }
 .graph-vertex:is(.arriving, .graph-exiting).node { --arrival-accent: #43be69; }

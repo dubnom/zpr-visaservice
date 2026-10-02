@@ -79,10 +79,10 @@ are both required.
 
 Machine Login/Logout writes/removes the selected simulated user in that
 machine container at `/run/zpr-simulator/user`. It does not start or stop
-workloads. User choices come from the machine owners in the demo manifest;
-owner-assigned machines accept only their assigned user, while shared
-`it-pool` machines accept any listed simulated user. The same rule applies to
-scenario logins. Sessions are simulator state and reset when the stack restarts. This is not a
+workloads. User choices come from the active Organization's people and
+machine-owner assignments; organizations without overrides retain the
+manifest-owner behavior. The same rule applies to scenario logins. Sessions
+are simulator state and reset when the stack restarts. This is not a
 password check or ZPR user authentication: controller mTLS is a separate
 machine identity, and the existing BAS auth-code flow authenticates an adapter
 key rather than a human.
@@ -133,11 +133,26 @@ the adapter includes repeated `zpr.services` claims in its real
 `authorize_connect` request. Visa Service then persists those services against
 the adapter actor and the Control Room reads them from `/admin/services`.
 
-The simulation environment declares these services in
-`.local-runtime/simulation-environment.json`. Set `SIMULATION_MANIFEST` to use
-a different environment manifest. The manifest is the source for service
-registration names, kinds, endpoints, and simulated ownership; boot does not
-maintain a second hard-coded service list.
+The simulation environment declares machine and runtime components in
+`.local-runtime/simulation-environment.json`. Organization profiles under
+`cmd/zpr-web-dashboard/examples/organizations/` own the LDAP base DN and seed
+files, people, groups, machine ownership, policy compiler config/catalog, and
+service catalog. Scenarios reference an `organization_id` and may declare an
+independent `topology` of nodes, links, and component overrides. The active
+profile is selected at stack startup with `SIMULATION_ORGANIZATION_ID` (or the
+manifest's `organization_id`); it defaults to `northstar`. The Organizations
+page includes an organization-scoped LDAP seed editor. Scenario definitions,
+directory LDIF drafts, their immutable revisions, and existing policy records
+share the per-organization SQLite file under
+`.local-runtime/dashboard-stack/policy-private/`. The scenario editor validates
+and versions drafts; only published scenarios can run, and each run records the
+organization and published revision it used. Directory edits are drafts until
+explicitly published. Publishing stages a private LDIF at
+`.local-runtime/published-directories/<organization>.ldif`; the running
+directory is unchanged, and the new seed applies on the next explicit LDAP
+reseed or rig restart. Restart the stack to activate another profile so LDAP,
+policy, and service seeds remain consistent. Set `SIMULATION_MANIFEST` to use a
+different machine/runtime manifest.
 
 The reusable base contract lives in `.local-runtime/generic-zpr-base.json` and
 is validated separately by the installer.

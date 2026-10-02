@@ -13,7 +13,8 @@ let workloadLogsRefreshing = false;
 function render(snapshot) {
   data = snapshot; const components = snapshot.manifest.components || []; const running = Object.values(snapshot.components).filter((value) => value.startsWith("running")).length;
   renderMachines(snapshot.manifest.machines || [], components, snapshot.controllers || {}, snapshot.components || {}, snapshot.sessions || {}, snapshot.machine_containers || {});
-  $("#manifest-name").textContent = snapshot.manifest.name; $("#manifest-base").textContent = `extends ${snapshot.manifest.extends || "generic base"}`; $("#runtime-state").textContent = `${running}/${components.length} agents running`; $("#agent-count").textContent = components.length; $("#running-count").textContent = running; $("#service-count").textContent = snapshot.manifest.services.length; $("#stack-count").textContent = snapshot.stack.includes("running") ? "UP" : "DOWN";
+  const organization = snapshot.organization || {};
+  $("#manifest-name").textContent = organization.name || snapshot.manifest.name; $("#manifest-base").textContent = organization.directory?.base_dn || `extends ${snapshot.manifest.extends || "generic base"}`; $("#runtime-state").textContent = `${running}/${components.length} agents running`; $("#agent-count").textContent = components.length; $("#running-count").textContent = running; $("#service-count").textContent = (organization.services || snapshot.manifest.services || []).length; $("#stack-count").textContent = snapshot.stack.includes("running") ? "UP" : "DOWN";
   $("#log-grid").innerHTML = Object.entries(snapshot.logs).map(([name, log]) => `<article><div class="log-title">${esc(name)}</div><pre>${esc(log || "No log yet")}</pre></article>`).join("");
   highlightChangedSimulatorFields();
 }
@@ -147,9 +148,12 @@ $("#machine-grid").addEventListener("click", async (event) => {
   } else if (loginButton) {
     pendingLoginMachine = loginButton.dataset.loginMachine;
     const userSelect = $("#machine-login-user");
-    const availableUsers = loginButton.dataset.owner === "it-pool"
-      ? [...new Set((data.manifest.machines || []).map((machine) => machine.owner).filter((user) => user && user !== "it-pool"))].sort()
-      : [loginButton.dataset.owner];
+    const organizationOwners = data.organization?.machine_owners?.[pendingLoginMachine];
+    const availableUsers = organizationOwners
+      ? [...organizationOwners]
+      : loginButton.dataset.owner === "it-pool"
+        ? [...new Set((data.manifest.machines || []).map((machine) => machine.owner).filter((user) => user && user !== "it-pool"))].sort()
+        : [loginButton.dataset.owner];
     userSelect.innerHTML = availableUsers.map((user) => `<option value="${esc(user)}">${esc(user)}</option>`).join("");
     userSelect.value = availableUsers.includes(loginButton.dataset.owner) ? loginButton.dataset.owner : availableUsers[0] || "";
     $("#machine-login-title").textContent = `Log in to ${pendingLoginMachine}`;

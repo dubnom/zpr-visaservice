@@ -1,0 +1,26 @@
+{
+  "id": "redwood-dispatch-login",
+  "organization_id": "redwood",
+  "name": "Redwood dispatcher identity",
+  "description": "Start a simulated workstation and authenticate a Redwood dispatcher against the Redwood organization profile.",
+  "topology": {
+    "nodes": [
+      {"id": "north-hub", "zpr_address": "fd5a:5052:90de:1::21", "substrate": "10.21.0.1"},
+      {"id": "regional-yard", "zpr_address": "fd5a:5052:90de:1::22", "substrate": "10.22.0.1"}
+    ],
+    "links": [
+      {"id": "north-hub-yard", "from": "north-hub", "to": "regional-yard"}
+    ]
+  },
+  "steps": [
+    {"action": "start_machine", "machine": "machine-01"},
+    {"action": "wait_controller", "machine": "machine-01", "timeout_seconds": 90},
+    {"action": "login", "machine": "machine-01", "user": "marisol.vega"},
+    {"action": "logout", "machine": "machine-01"},
+    {"action": "stop_machine", "machine": "machine-01"}
+  ],
+  "cleanup": [
+    {"action": "logout", "machine": "machine-01"},
+    {"action": "stop_machine", "machine": "machine-01"}
+  ]
+}

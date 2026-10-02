@@ -8,6 +8,23 @@
 
   const pageKey = (url) => new URL(url, location.href).pathname;
   const dispatchPageEvent = (name, path) => document.dispatchEvent(new CustomEvent(name, { detail: { path } }));
+  const syncNavigation = () => {
+    const nav = document.querySelector(".primary-nav");
+    if (!nav) return;
+    let organizationLink = nav.querySelector('a[href="/organizations.html"]');
+    if (!organizationLink) {
+      organizationLink = document.createElement("a");
+      organizationLink.className = "nav-link";
+      organizationLink.dataset.simulatorNav = "";
+      organizationLink.href = "/organizations.html";
+      organizationLink.textContent = "Organizations";
+      const scenarioLink = nav.querySelector('a[href="/scenarios.html"]');
+      nav.insertBefore(organizationLink, scenarioLink || null);
+    }
+    nav.querySelectorAll("a[data-simulator-nav]").forEach((link) => {
+      link.classList.toggle("active", pageKey(link.href) === currentPath);
+    });
+  };
 
   const fetchPage = async (url) => {
     const key = pageKey(url);
@@ -57,6 +74,7 @@
       }
     }
     currentPath = nextPath;
+    syncNavigation();
     if (push) history.pushState({}, "", url);
     dispatchPageEvent("simulator:activate", currentPath);
   };
@@ -69,6 +87,7 @@
   });
   window.addEventListener("popstate", () => loadPage(window.location.href, false));
   window.addEventListener("load", () => {
+    syncNavigation();
     pageCache.set(currentPath, Promise.resolve(document.documentElement.outerHTML));
     pageTitles.set(currentPath, document.title);
     document.querySelectorAll("a[data-simulator-nav]").forEach((link) => { fetchPage(link.href).catch(() => {}); });

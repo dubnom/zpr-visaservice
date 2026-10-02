@@ -1,0 +1,49 @@
+{
+  "id": "redwood",
+  "name": "Redwood Freight Cooperative",
+  "description": "Federated logistics organization with regional operations, fleet, and partner services.",
+  "directory": {
+    "base_dn": "dc=redwood,dc=test",
+    "seed_mode": "ldif",
+    "ldif_files": ["directory.ldif"],
+    "health_uid": "marisol.vega",
+    "identity_mappings": {"device.zpr.adapter.cn": "uid"},
+    "attributes": ["ou", "title", "zprMachineId", "zprMachineType", "zprMachineModel", "zprMachineLocation", "zprMachineSecure", "zprMachineOwner"],
+    "user_identity_mappings": {"user.sub": "uid"},
+    "user_attributes": ["cn", "mail", "ou", "title"],
+    "departments": [
+      {"name": "Operations"},
+      {"name": "Dispatch", "parent": "Operations"},
+      {"name": "Fleet", "parent": "Operations"},
+      {"name": "Partners"},
+      {"name": "Auditors", "parent": "Partners"}
+    ],
+    "people": [
+      {"uid": "marisol.vega", "name": "Marisol Vega", "email": "marisol.vega@redwood.example", "department": "Dispatch", "title": "Regional Dispatcher"},
+      {"uid": "darius.cole", "name": "Darius Cole", "email": "darius.cole@redwood.example", "department": "Fleet", "title": "Fleet Operations Lead"},
+      {"uid": "priya.shah", "name": "Priya Shah", "email": "priya.shah@redwood.example", "department": "Auditors", "title": "Partner Auditor"}
+    ],
+    "groups": [
+      {"name": "DispatchOperators", "members": ["marisol.vega"]},
+      {"name": "FleetManagers", "members": ["darius.cole"]},
+      {"name": "PartnerAuditors", "members": ["priya.shah"]}
+    ]
+  },
+  "policy_config": "organizations/redwood/policy-demo.zplc",
+  "policy_catalog": "organizations/redwood/demo-policy-catalog.json",
+  "machine_owners": {
+    "machine-01": ["marisol.vega"],
+    "machine-02": ["darius.cole"],
+    "machine-03": ["priya.shah"]
+  },
+  "policies": [
+    {"id": "dispatch-routing", "name": "Dispatch routing", "description": "Dispatchers may coordinate only assigned regional routes."},
+    {"id": "fleet-maintenance", "name": "Fleet maintenance", "description": "Fleet operators may reach maintenance services for assigned vehicles."},
+    {"id": "partner-audit", "name": "Partner audit", "description": "Auditors receive time-limited access to shipment records."}
+  ],
+  "services": [
+    {"name": "RouteExchange", "kind": "Application", "endpoint": "ZPR/HTTPS", "description": "Regional route coordination."},
+    {"name": "FleetTelemetry", "kind": "Application", "endpoint": "ZPR/UDP", "description": "Vehicle telemetry ingestion."},
+    {"name": "ShipmentLedger", "kind": "Application", "endpoint": "ZPR/HTTPS", "description": "Partner shipment records."}
+  ]
+}

@@ -5,7 +5,9 @@
     "Northstar/Policies/People Operations",
     "Northstar/Policies/Security",
     "Northstar/Policies/Sales",
-    "Northstar/Policies/Legal"
+    "Northstar/Policies/Legal",
+    "Northstar/Policies/Device Posture",
+    "Northstar/Policies/User Access"
   ],
   "records": [
     {
@@ -49,8 +51,8 @@
       "name": "Security role-group access",
       "kind": "policy",
       "content_type": "text/vnd.zpr.zpl",
-      "metadata": {"demo": true, "ldap_attributes": ["role -> device.demo.role"], "live": false},
-      "content": "# These predicates use populated groupOfNames memberships from demo_ldap.\ndefine IncidentResponders as a device with demo.role:'Incident Responder'.\ndefine SecurityReviewers as a device with demo.role:'Security Reviewer'.\ndefine Approvers as a device with demo.role:Approver.\ndefine SecurityIncidentConsole as a service with device.zpr.adapter.cn:security-console.\nservice SecurityIncidentConsole as json {\"service_class\":\"SecurityIncidentConsole\",\"actor_cn\":\"security-console\",\"summary\":\"Illustrative incident response and review console.\",\"endpoint\":\"zpr://security-console\",\"status\":\"example only; not deployed\"}.\nallow IncidentResponders to access SecurityIncidentConsole.\nallow SecurityReviewers to access SecurityIncidentConsole.\nallow Approvers to access SecurityIncidentConsole.",
+      "metadata": {"demo": true, "ldap_attributes": ["role -> user.role{}"], "requires_user_identity": "user.sub from AuthService", "live": false},
+      "content": "# These predicates use LDAP groupOfNames memberships on the authenticated user.\ndefine IncidentResponders as a user with user.role:'Incident Responder'.\ndefine SecurityReviewers as a user with user.role:'Security Reviewer'.\ndefine Approvers as a user with user.role:Approver.\ndefine SecurityIncidentConsole as a service with device.zpr.adapter.cn:security-console.\nservice SecurityIncidentConsole as json {\"service_class\":\"SecurityIncidentConsole\",\"actor_cn\":\"security-console\",\"summary\":\"Illustrative incident response and review console.\",\"endpoint\":\"zpr://security-console\",\"status\":\"example only; not deployed\"}.\nallow IncidentResponders to access SecurityIncidentConsole.\nallow SecurityReviewers to access SecurityIncidentConsole.\nallow Approvers to access SecurityIncidentConsole.",
       "summary": "Role-group access to the illustrative security console"
     },
     {
@@ -70,6 +72,24 @@
       "metadata": {"demo": true, "ldap_attributes": ["ou -> device.demo.department"], "live": false},
       "content": "define LegalStaff as a device with demo.department:Legal.\ndefine LegalMatterFiles as a service with device.zpr.adapter.cn:legal-matters.\nservice LegalMatterFiles as json {\"service_class\":\"LegalMatterFiles\",\"actor_cn\":\"legal-matters\",\"summary\":\"Illustrative legal matter document store.\",\"endpoint\":\"zpr://legal-matters\",\"status\":\"example only; not deployed\"}.\nallow LegalStaff to access LegalMatterFiles.",
       "summary": "Legal department access to illustrative matter files"
+    },
+    {
+      "category": "Northstar/Policies/Device Posture",
+      "name": "Secure device posture",
+      "kind": "policy",
+      "content_type": "text/vnd.zpr.zpl",
+      "metadata": {"demo": true, "ldap_attributes": ["zprMachineType -> device.demo.machine_type", "zprMachineLocation -> device.demo.location", "zprMachineSecure -> device.demo.secure"], "live": false},
+      "content": "# Machine posture comes from the LDAP zprMachine schema.\ndefine Laptops as a device with demo.machine_type:laptop.\ndefine NorthCampusDevices as a device with demo.location:'North Campus'.\ndefine SecureDevices as a device with demo.secure:TRUE.\ndefine SecureDeviceOperations as a service with device.zpr.adapter.cn:secure-device-operations.\nservice SecureDeviceOperations as json {\"service_class\":\"SecureDeviceOperations\",\"actor_cn\":\"secure-device-operations\",\"summary\":\"Illustrative posture-gated device operations.\",\"endpoint\":\"zpr://secure-device-operations\",\"status\":\"example only; not deployed\"}.\nallow SecureDevices to access SecureDeviceOperations.",
+      "summary": "Device type, location, and secure status predicates"
+    },
+    {
+      "category": "Northstar/Policies/User Access",
+      "name": "User department and role access",
+      "kind": "policy",
+      "content_type": "text/vnd.zpr.zpl",
+      "metadata": {"demo": true, "ldap_attributes": ["ou -> user.department", "title -> user.title", "cn -> user.name", "mail -> user.email", "role -> user.role{}"], "requires_user_identity": "user.sub from AuthService", "live": false},
+      "content": "# User fields and group roles require an authenticated user.sub identity.\ndefine FinanceUsers as a user with user.department:Finance.\ndefine SecurityReviewers as a user with user.role:'Security Reviewer'.\ndefine UserRecords as a service with device.zpr.adapter.cn:user-records.\nservice UserRecords as json {\"service_class\":\"UserRecords\",\"actor_cn\":\"user-records\",\"summary\":\"Illustrative user-scoped records.\",\"endpoint\":\"zpr://user-records\",\"status\":\"example only; not deployed\"}.\nallow FinanceUsers to access UserRecords.\nallow SecurityReviewers to access UserRecords.",
+      "summary": "User LDAP profile and group-role predicates"
     }
   ]
 }

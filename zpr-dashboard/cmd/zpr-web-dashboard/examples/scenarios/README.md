@@ -17,6 +17,20 @@ to `stop_test_service`, `stop_workload`, `logout`, and `stop_machine` actions so
 not leave simulated sessions or workloads behind. Scenario files cannot run
 arbitrary shell commands. Step timeouts are optional and capped by the runner.
 
+Scenarios run sequentially by default. Set `"parallel": true` to run each
+machine's steps on its own timeline. Every run step then needs a unique `id`;
+use `"after": ["earlier-step-id"]` to wait for a step on another machine (or
+the Shared lane). References must point to earlier steps in the JSON file.
+Steps on the same machine always retain their listed order, and steps without
+a machine share one ordered lane. A failed step cancels all lanes; cleanup runs
+in its listed order after the lanes stop. Cleanup steps do not use `id` or
+`after`. See `client-service.json` for a client waiting on a service and shared
+pauses between requests.
+
+The Scenarios page groups planned steps and results by machine, with a Shared
+lane for steps without a machine. Step numbers retain the scenario's original
+order, even when parallel steps complete out of order.
+
 See `machine-policy-deny.json` for a machine/login/workload flow and
 `default-deny.json` for a policy-denial probe.
 

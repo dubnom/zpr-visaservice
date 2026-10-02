@@ -5,7 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <meta name="theme-color" content="#17211e">
     <title>ZPR Control Room</title>
-    <link rel="stylesheet" href="/app.css?v=17">
+    <link rel="stylesheet" href="/app.css?v=19">
   </head>
   <body>
     <div class="app-shell">
@@ -181,7 +181,7 @@
                   <textarea id="policy-source" aria-label="ZPL policy source" aria-describedby="policy-editor-help" spellcheck="false" autocapitalize="off" autocomplete="off" autocorrect="off" wrap="off" disabled></textarea>
                   <div id="policy-completions" class="policy-completions" role="listbox" aria-label="ZPL completions" hidden></div>
                 </div>
-                <span id="policy-editor-help" class="sr-only">ZPL syntax is highlighted. Choose an attribute and press Insert to place it at the cursor. Press Control-Space for suggestions; use arrow keys to choose and Tab or Enter to insert.</span>
+                <span id="policy-editor-help" class="sr-only">ZPL syntax is highlighted. Choose an attribute and press Insert to place it at the cursor. Press Control-Space for suggestions; use arrow keys and Tab to insert a completion. Enter starts a new line.</span>
                 <div id="policy-check-result" class="policy-check-result" role="status" aria-live="polite">Policy source is not loaded.</div>
                 <div class="policy-history-heading"><strong>Version history</strong><span id="policy-history-count">—</span></div>
                 <div id="policy-history" class="policy-history"><p class="catalog-empty">Select a policy to browse versions.</p></div>
@@ -258,6 +258,6 @@
         <footer class="page-footer"><span>ZPR CONTROL ROOM <b>·</b> LIVE MONITOR / POLICY RECORDS</span><span id="footer-poll">Auto-refresh every 5 seconds</span></footer>
       </main>
     </div>
-    <script src="/app.js?v=25" defer></script>
+    <script src="/app.js?v=27" defer></script>
   </body>
 </html>

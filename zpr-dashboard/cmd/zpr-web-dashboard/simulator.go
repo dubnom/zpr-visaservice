@@ -21,6 +21,7 @@ import (
 
 type simulatorManifest struct {
 	Name            string               `json:"name"`
+	OrganizationID  string               `json:"organization_id,omitempty"`
 	Extends         string               `json:"extends"`
 	DNSServer       string               `json:"dns_server"`
 	Bootstrap       json.RawMessage      `json:"bootstrap"`
@@ -71,14 +72,15 @@ type simulatorIdentity struct {
 }
 
 type simulatorStatus struct {
-	Manifest    simulatorManifest                  `json:"manifest"`
-	Stack       string                             `json:"stack"`
-	Agents      map[string]string                  `json:"agents"`
-	Logs        map[string]string                  `json:"logs"`
-	Components  map[string]string                  `json:"components"`
-	Controllers map[string]machineControllerStatus `json:"controllers"`
-	Containers  map[string]string                  `json:"machine_containers"`
-	Sessions    map[string]simulatorUserSession    `json:"sessions"`
+	Manifest     simulatorManifest                  `json:"manifest"`
+	Organization simulatorOrganization              `json:"organization"`
+	Stack        string                             `json:"stack"`
+	Agents       map[string]string                  `json:"agents"`
+	Logs         map[string]string                  `json:"logs"`
+	Components   map[string]string                  `json:"components"`
+	Controllers  map[string]machineControllerStatus `json:"controllers"`
+	Containers   map[string]string                  `json:"machine_containers"`
+	Sessions     map[string]simulatorUserSession    `json:"sessions"`
 }
 
 type simulatorUserSession struct {
@@ -111,7 +113,16 @@ func readSimulatorManifest() (simulatorManifest, error) {
 	}
 	err = json.Unmarshal(content, &manifest)
 	if err == nil {
+		if organizationID := strings.TrimSpace(os.Getenv("SIMULATION_ORGANIZATION_ID")); organizationID != "" {
+			manifest.OrganizationID = organizationID
+		}
+		if manifest.OrganizationID == "" {
+			manifest.OrganizationID = defaultSimulatorOrganizationID
+		}
 		err = validateSimulatorManifest(manifest)
+	}
+	if err == nil {
+		_, err = loadSimulatorOrganization(simulatorOrganizationsDirectory(), manifest.OrganizationID)
 	}
 	return manifest, err
 }
@@ -150,11 +161,23 @@ func runSimulator(listen string) error {
 	}
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /api/simulator/status", handleSimulatorStatus)
+	mux.HandleFunc("GET /api/simulator/organizations", handleSimulatorOrganizations)
+	mux.HandleFunc("GET /api/simulator/organizations/{organization}/directory/revisions/{revision}", handleWorkspaceDirectoryRevisionGet)
+	mux.HandleFunc("GET /api/simulator/organizations/{organization}/directory/revisions", handleWorkspaceDirectoryRevisions)
+	mux.HandleFunc("GET /api/simulator/organizations/{organization}/directory", handleWorkspaceDirectoryGet)
+	mux.HandleFunc("PUT /api/simulator/organizations/{organization}/directory", handleWorkspaceDirectorySave)
+	mux.HandleFunc("POST /api/simulator/organizations/{organization}/directory/publish", handleWorkspaceDirectoryPublish)
 	mux.HandleFunc("GET /api/simulator/activity", handleSimulatorActivity)
-	mux.HandleFunc("GET /api/simulator/scenarios", handleSimulatorScenarioCatalog)
+	mux.HandleFunc("GET /api/simulator/scenarios", handleWorkspaceScenarioCatalog)
+	mux.HandleFunc("GET /api/simulator/organizations/{organization}/scenarios/{scenario}/revisions/{revision}", handleWorkspaceScenarioRevisionGet)
+	mux.HandleFunc("GET /api/simulator/organizations/{organization}/scenarios/{scenario}/revisions", handleWorkspaceScenarioRevisions)
+	mux.HandleFunc("GET /api/simulator/organizations/{organization}/scenarios/{scenario}", handleWorkspaceScenarioGet)
+	mux.HandleFunc("POST /api/simulator/organizations/{organization}/scenarios/{scenario}/publish", handleWorkspaceScenarioPublish)
+	mux.HandleFunc("PUT /api/simulator/organizations/{organization}/scenarios/{scenario}", handleWorkspaceScenarioSave)
+	mux.HandleFunc("POST /api/simulator/organizations/{organization}/scenarios", handleWorkspaceScenarioCreate)
 	mux.HandleFunc("GET /api/simulator/logs/{machine}/{workload}", handleSimulatorWorkloadLogs)
 	mux.HandleFunc("POST /api/simulator/scenarios/cancel", handleSimulatorScenarioCancel)
-	mux.HandleFunc("POST /api/simulator/scenarios/{scenario}/run", handleSimulatorScenarioRun)
+	mux.HandleFunc("POST /api/simulator/scenarios/{scenario}/run", handleWorkspaceScenarioRun)
 	mux.HandleFunc("/agents.html", func(w http.ResponseWriter, r *http.Request) { serveStaticPage(staticRoot, "agents.html", w) })
 	mux.HandleFunc("/activity.html", func(w http.ResponseWriter, r *http.Request) { serveStaticPage(staticRoot, "activity.html", w) })
 	mux.HandleFunc("/scenarios.html", func(w http.ResponseWriter, r *http.Request) { serveStaticPage(staticRoot, "scenarios.html", w) })
@@ -208,6 +231,11 @@ func handleSimulatorStatus(w http.ResponseWriter, _ *http.Request) {
 		http.Error(w, "simulation manifest unavailable", http.StatusServiceUnavailable)
 		return
 	}
+	organization, err := loadSimulatorOrganization(simulatorOrganizationsDirectory(), manifest.OrganizationID)
+	if err != nil {
+		http.Error(w, "organization profile unavailable", http.StatusServiceUnavailable)
+		return
+	}
 	machineIDs := make([]string, 0, len(manifest.Machines))
 	for _, machine := range manifest.Machines {
 		machineIDs = append(machineIDs, machine.ID)
@@ -216,7 +244,7 @@ func handleSimulatorStatus(w http.ResponseWriter, _ *http.Request) {
 	dockerStates := simulatorDockerContainerStates()
 	containers := simulatorMachineContainerStatesFromDocker(machineIDs, dockerStates)
 	componentStates := simulatorRuntimeComponentStates(manifest, nil, simulatorSelectedAgentLinkStates(manifest, sessions))
-	status := simulatorStatus{Manifest: manifest, Stack: simulatorStackRuntimeStatus(machineIDs, containers), Agents: map[string]string{}, Logs: map[string]string{}, Components: componentStates, Controllers: simulatorControllers.snapshot(machineIDs, time.Now()), Containers: containers, Sessions: sessions}
+	status := simulatorStatus{Manifest: manifest, Organization: organization, Stack: simulatorStackRuntimeStatus(machineIDs, containers), Agents: map[string]string{}, Logs: map[string]string{}, Components: componentStates, Controllers: simulatorControllers.snapshot(machineIDs, time.Now()), Containers: containers, Sessions: sessions}
 	for _, name := range []string{"zpr-local-linux-node", "zpr-auth-sandbox", "zpr-dns-bind9"} {
 		status.Agents[name] = dockerStates[name]
 		if status.Agents[name] == "" {
@@ -361,7 +389,15 @@ func handleSimulatorMachineSession(w http.ResponseWriter, r *http.Request) {
 			http.Error(w, "invalid simulated login request", http.StatusBadRequest)
 			return
 		}
-		if !simulatorMachineAllowsUser(manifest, machineID, request.User) {
+		organization, organizationErr := loadSimulatorOrganization(
+			simulatorOrganizationsDirectory(),
+			activeSimulatorOrganizationID(manifest),
+		)
+		if organizationErr != nil {
+			http.Error(w, "organization profile unavailable", http.StatusServiceUnavailable)
+			return
+		}
+		if !simulatorOrganizationAllowsUser(manifest, organization, machineID, request.User) {
 			http.Error(w, "user is not permitted on this machine", http.StatusBadRequest)
 			return
 		}

@@ -125,8 +125,8 @@ func TestNorthstarDemoCatalogImportsIdempotently(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(categories) != 8 || len(records) != 7 {
-		t.Fatalf("catalog contains %d categories and %d records, want 8 and 7", len(categories), len(records))
+	if len(categories) != 10 || len(records) != 9 {
+		t.Fatalf("catalog contains %d categories and %d records, want 10 and 9", len(categories), len(records))
 	}
 	for _, category := range categories {
 		if strings.Contains(category.Path, "/Services") {
@@ -141,8 +141,8 @@ func TestNorthstarDemoCatalogImportsIdempotently(t *testing.T) {
 		}
 		serviceCount += strings.Count(stored.Content, " as json {")
 	}
-	if serviceCount != 8 {
-		t.Fatalf("policy records contain %d service definitions, want 8", serviceCount)
+	if serviceCount != 10 {
+		t.Fatalf("policy records contain %d service definitions, want 10", serviceCount)
 	}
 }
 
@@ -323,7 +323,7 @@ func TestClaudeAssistantKeepsCredentialsServerSide(t *testing.T) {
 			Model     string `json:"model"`
 			MaxTokens int    `json:"max_tokens"`
 			System    string `json:"system"`
-			Messages []struct {
+			Messages  []struct {
 				Role    string `json:"role"`
 				Content string `json:"content"`
 			} `json:"messages"`

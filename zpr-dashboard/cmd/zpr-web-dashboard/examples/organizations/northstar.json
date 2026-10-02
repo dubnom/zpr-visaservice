@@ -1,0 +1,71 @@
+{
+  "id": "northstar",
+  "name": "Northstar Labs",
+  "description": "Research and engineering organization with campus and remote teams.",
+  "directory": {
+    "base_dn": "dc=northstar,dc=test",
+    "seed_mode": "pregen",
+    "ldif_files": ["demo-company.ldif", "demo-employees.ldif", "demo-roles.ldif", "demo-machines.ldif"],
+    "health_uid": "adapter1",
+    "identity_mappings": {"device.zpr.adapter.cn": "uid"},
+    "attributes": ["ou", "title", "zprMachineId", "zprMachineType", "zprMachineModel", "zprMachineLocation", "zprMachineSecure", "zprMachineOwner"],
+    "user_identity_mappings": {"user.sub": "uid"},
+    "user_attributes": ["cn", "mail", "ou", "title"],
+    "departments": [
+      {"name": "Engineering"},
+      {"name": "Platform", "parent": "Engineering"},
+      {"name": "Product", "parent": "Engineering"},
+      {"name": "Operations"},
+      {"name": "IT", "parent": "Operations"},
+      {"name": "Support", "parent": "Operations"},
+      {"name": "Research"},
+      {"name": "Security", "parent": "Research"},
+      {"name": "Data Science", "parent": "Research"},
+      {"name": "Finance"},
+      {"name": "Accounting", "parent": "Finance"},
+      {"name": "Payroll", "parent": "Finance"},
+      {"name": "Sales"},
+      {"name": "Field", "parent": "Sales"},
+      {"name": "People Operations"},
+      {"name": "Talent", "parent": "People Operations"},
+      {"name": "HR", "parent": "People Operations"}
+    ],
+    "people": [
+      {"uid": "elena.park", "name": "Elena Park", "email": "elena.park@northstar.example", "department": "Platform", "title": "Platform Engineering Manager"},
+      {"uid": "jamal.brooks", "name": "Jamal Brooks", "email": "jamal.brooks@northstar.example", "department": "Platform", "title": "Site Reliability Engineer"},
+      {"uid": "sophie.nguyen", "name": "Sophie Nguyen", "email": "sophie.nguyen@northstar.example", "department": "Platform", "title": "Infrastructure Engineer"},
+      {"uid": "theo.martin", "name": "Theo Martin", "email": "theo.martin@northstar.example", "department": "Platform", "title": "Systems Engineer"},
+      {"uid": "arjun.patel", "name": "Arjun Patel", "email": "arjun.patel@northstar.example", "department": "Product", "title": "Product Engineering Lead"},
+      {"uid": "zoe.carter", "name": "Zoe Carter", "email": "zoe.carter@northstar.example", "department": "Product", "title": "Frontend Engineer"},
+      {"uid": "omar.hassan", "name": "Omar Hassan", "email": "omar.hassan@northstar.example", "department": "Product", "title": "Backend Engineer"},
+      {"uid": "nina.ross", "name": "Nina Ross", "email": "nina.ross@northstar.example", "department": "IT", "title": "IT Manager"},
+      {"uid": "ben.torres", "name": "Ben Torres", "email": "ben.torres@northstar.example", "department": "IT", "title": "Systems Administrator"},
+      {"uid": "grace.lee", "name": "Grace Lee", "email": "grace.lee@northstar.example", "department": "IT", "title": "Network Administrator"},
+      {"uid": "hana.kim", "name": "Hana Kim", "email": "hana.kim@northstar.example", "department": "Security", "title": "Security Research Lead"},
+      {"uid": "daniel.okafor", "name": "Daniel Okafor", "email": "daniel.okafor@northstar.example", "department": "Security", "title": "Threat Researcher"}
+    ],
+    "groups": [
+      {"name": "FinanceReaders", "members": ["elena.park"]},
+      {"name": "OperationsAdmins", "members": ["nina.ross", "ben.torres"]},
+      {"name": "SecurityReviewers", "members": ["hana.kim", "daniel.okafor"]}
+    ]
+  },
+  "policy_config": "northstar/policy-demo.zplc",
+  "policy_catalog": "northstar/demo-policy-catalog.json",
+  "policies": [
+    {"id": "finance-records", "name": "Finance records", "description": "Accounting access bound to Northstar department and role attributes."},
+    {"id": "platform-operations", "name": "Platform operations", "description": "Engineering access for managed Northstar infrastructure."},
+    {"id": "security-review", "name": "Security review", "description": "Restricted review access for security roles."},
+    {"id": "device-posture", "name": "Device posture", "description": "Type, location, and secure-state predicates for managed machines."},
+    {"id": "user-access", "name": "User access", "description": "Department and LDAP group-role predicates for authenticated users."}
+  ],
+  "services": [
+    {"name": "PolicyService", "kind": "Policy", "endpoint": "HTTPS/8789", "description": "Policy evaluation and catalog."},
+    {"name": "ControlService", "kind": "Control", "endpoint": "HTTPS/8790", "description": "Administration and telemetry APIs."},
+    {"name": "AuthService", "kind": "Auth", "endpoint": "HTTPS/8183", "description": "Bootstrap authentication."},
+    {"name": "AttributeService", "kind": "Attribute", "endpoint": "HTTPS/8443", "description": "LDAP-backed device attributes."},
+    {"name": "UserAttributeService", "kind": "Attribute", "endpoint": "HTTPS/8444", "description": "LDAP-backed user profile and group-role attributes."},
+    {"name": "EchoService", "kind": "Application", "endpoint": "ZPR/HTTP", "description": "Demo application endpoint."},
+    {"name": "MetricsService", "kind": "Application", "endpoint": "ZPR/HTTP", "description": "Demo telemetry endpoint."}
+  ]
+}

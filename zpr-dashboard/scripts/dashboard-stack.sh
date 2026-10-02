@@ -19,6 +19,7 @@ MACHINE_CONTROL_PROXY_BIN="$STATE_DIR/zpr-machine-control-proxy-linux-arm64"
 MACHINE_WORKLOAD_DIR="$STATE_DIR/machine-workloads"
 MACHINE_IMAGE="${SIMULATOR_MACHINE_IMAGE:-zpr-sim-machine:local}"
 SIMULATION_CONTAINER="${SIMULATION_CONTAINER:-zpr-local-linux-node}"
+ORGANIZATIONS_DIR="$DASHBOARD_DIR/cmd/zpr-web-dashboard/examples/organizations"
 DNS_PROFILE_DIR="$DASHBOARD_DIR/../dns/bind9"
 DNS_RUNTIME_DIR="$RUNTIME_DIR/dns-bind"
 DNS_CONTAINER="${ZPR_DNS_CONTAINER:-zpr-dns-bind9}"
@@ -404,16 +405,33 @@ start_stack() {
         echo "simulation manifest not found: $SIMULATION_MANIFEST" >&2
         return 1
     fi
+    organization_id=${SIMULATION_ORGANIZATION_ID:-$(jq -r '.organization_id // "northstar"' "$SIMULATION_MANIFEST")}
+    case "$organization_id" in
+        ''|*[!a-z0-9-]*) echo "invalid simulation organization id: $organization_id" >&2; return 1 ;;
+    esac
+    organization_file="$ORGANIZATIONS_DIR/$organization_id.json"
+    if [ ! -r "$organization_file" ]; then
+        echo "simulation organization profile not found: $organization_file" >&2
+        return 1
+    fi
+    policy_config_relative=$(jq -er '.policy_config' "$organization_file")
+    policy_catalog_relative=$(jq -er '.policy_catalog' "$organization_file")
+    policy_config="$DASHBOARD_DIR/cmd/zpr-web-dashboard/examples/$policy_config_relative"
+    policy_catalog="$DASHBOARD_DIR/cmd/zpr-web-dashboard/examples/$policy_catalog_relative"
+    if [ ! -r "$policy_config" ] || [ ! -r "$policy_catalog" ]; then
+        echo "policy assets for organization $organization_id are missing" >&2
+        return 1
+    fi
     go -C "$DASHBOARD_DIR" build -trimpath -o "$BIN" ./cmd/zpr-web-dashboard
 
     start_service policy-service "$POLICY_PID" env \
         ZPR_POLICY_SERVICE_LISTEN=127.0.0.1:8789 \
-        ZPR_POLICY_DB_FILE="$STATE_DIR/policy-private/northstar-policy-only.db" \
+        ZPR_POLICY_DB_FILE="$STATE_DIR/policy-private/$organization_id-policy-only.db" \
         ZPR_POLICY_SERVICE_CERT_FILE="$SERVICE_CERTS/policy-service.crt" \
         ZPR_POLICY_SERVICE_KEY_FILE="$SERVICE_CERTS/policy-service.key" \
         ZPR_POLICY_SERVICE_CLIENT_CA_FILE="$SERVICE_CERTS/service-ca.crt" \
-        ZPR_POLICY_CONFIG_FILE="$DASHBOARD_DIR/cmd/zpr-web-dashboard/examples/northstar/policy-demo.zplc" \
-        ZPR_POLICY_DEMO_CATALOG_FILE="$DASHBOARD_DIR/cmd/zpr-web-dashboard/examples/northstar/demo-policy-catalog.json" \
+        ZPR_POLICY_CONFIG_FILE="$policy_config" \
+        ZPR_POLICY_DEMO_CATALOG_FILE="$policy_catalog" \
         ZPR_ZPLC_BIN="$DASHBOARD_DIR/../../zpr-compiler/target/debug/zplc" \
         "$BIN" -mode policy-service
     wait_for_url https://127.0.0.1:8789/api/policy policy-service \
@@ -435,6 +453,11 @@ start_stack() {
     wait_for_url http://127.0.0.1:8787/ control-room
     start_service simulator "$SIMULATOR_PID" env \
         SIMULATION_MANIFEST="$SIMULATION_MANIFEST" \
+        SIMULATION_ORGANIZATION_ID="$organization_id" \
+        SIMULATION_ORGANIZATIONS_DIR="$ORGANIZATIONS_DIR" \
+        SIMULATION_WORKSPACE_DB_DIR="$STATE_DIR/policy-private" \
+        SIMULATION_PREGEN_DIR="$RUNTIME_DIR/linux-integration/pregen" \
+        SIMULATION_PUBLISHED_DIRECTORY_DIR="$RUNTIME_DIR/published-directories" \
         SIMULATION_SCENARIOS_DIR="$DASHBOARD_DIR/cmd/zpr-web-dashboard/examples/scenarios" \
         SIMULATION_STACK_SCRIPT="$SCRIPT_DIR/dashboard-stack.sh" \
         SIMULATION_AGENT_SCRIPT="$SCRIPT_DIR/simulation-agent.sh" \
@@ -453,6 +476,7 @@ start_stack() {
     echo "OpenObserve GUI relay at http://127.0.0.1:$OBSERVABILITY_UI_RELAY_PORT"
     echo "LDAP editor relay at http://127.0.0.1:$LDAP_UI_RELAY_PORT/"
     echo "Simulator ready at http://127.0.0.1:8788"
+    echo "Active organization: $organization_id"
     echo "Machine control mTLS listener ready at https://127.0.0.1:8791"
 }
 

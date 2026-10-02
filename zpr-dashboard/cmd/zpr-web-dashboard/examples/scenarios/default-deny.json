@@ -1,5 +1,6 @@
 {
   "id": "default-deny",
+  "organization_id": "northstar",
   "name": "Default-deny policy probe",
   "description": "Probe the metrics service from the finance-client test namespace; the current demo policy should deny this flow.",
   "steps": [

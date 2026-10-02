@@ -1,15 +1,21 @@
 # Northstar Policy Studio Demo
 
-This fixture seeds seven ZPL policy examples into the Policy Repository. Their
-eight embedded JSON service definitions are illustrative; they are not deployed
+This fixture seeds nine ZPL policy examples into the Policy Repository. Their
+ten embedded JSON service definitions are illustrative; they are not deployed
 endpoints or services in the running ZPR test network.
 
 The policy examples use LDAP `ou` values such as `Accounting`, `Platform`, `HR`,
 `Security`, `Field`, and `Legal`. The `demo_ldap` connector maps LDAP `ou` and
-`title` to `device.demo.department` and `device.demo.title`. It also resolves
-`groupOfNames.member` links and maps each matching group `cn` to the multivalued
-`device.demo.role` attribute, so the role-based Security example can test roles such as
-`Approver`, `Incident Responder`, and `Security Reviewer`.
+`title` plus machine fields to `device.demo.*` attributes such as `machine_type`,
+`location`, and `secure`. The separate `demo_ldap_user` connector maps user
+`cn`, `mail`, `ou`, and `title` to `user.*`, and maps matching LDAP group `cn`
+values to multivalued `user.role`. It resolves people by `user.sub -> uid`,
+which must be supplied by AuthService (`sub -> user.sub`).
+
+The simulator's current Log in control only records a mock machine session; it
+does not mint an AuthService user identity. Thus device-posture examples use
+device attributes, while user-role examples are compiler-checked demonstrations
+that require a real `user.sub` identity to evaluate at runtime.
 
 The demo ZPLC config declares each fake service class and the same LDAP
 attribute mappings. ZPLC validation checks the examples against this config;

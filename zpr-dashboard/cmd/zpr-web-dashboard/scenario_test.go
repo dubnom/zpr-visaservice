@@ -13,7 +13,7 @@ import (
 )
 
 func scenarioTestManifest() simulatorManifest {
-	manifest := simulatorManifest{Machines: make([]simulatorMachine, 20), Components: []simulatorComponent{
+	manifest := simulatorManifest{OrganizationID: "northstar", Machines: make([]simulatorMachine, 20), Components: []simulatorComponent{
 		{Name: "finance-client", Kind: "client", Agent: "finance-client", Namespace: "zpr-a", Target: "fd00:1:2::1"},
 		{Name: "operations-client", Kind: "client", Agent: "operations-client", Namespace: "zpr-b", Target: "fd00:1:3::1"},
 		{Name: "echo-service", Kind: "service", Agent: "echo-service", Namespace: "zpr-service-a", Target: "fd00:1:2::1"},
@@ -159,6 +159,152 @@ func TestSimulatorScenarioMachineLimit(t *testing.T) {
 	}
 	if err := validateScenarioMachineCapacity(maxScenarioMachines, false); err != nil {
 		t.Fatalf("already-running machine should not count as a new start: %v", err)
+	}
+}
+
+func TestParallelScenarioDependenciesValidated(t *testing.T) {
+	base := simulatorScenario{ID: "parallel", Name: "Parallel", Description: "Machine lanes", Parallel: true, Steps: []simulatorScenarioStep{
+		{ID: "start-a", Action: "start_machine", Machine: "machine-01"},
+		{ID: "start-b", After: []string{"start-a"}, Action: "start_machine", Machine: "machine-02"},
+	}}
+	if err := validateSimulatorScenario(base, scenarioTestManifest()); err != nil {
+		t.Fatalf("valid parallel scenario: %v", err)
+	}
+	for _, test := range []struct {
+		name   string
+		change func(*simulatorScenario)
+	}{
+		{"missing id", func(s *simulatorScenario) { s.Steps[1].ID = "" }},
+		{"duplicate id", func(s *simulatorScenario) { s.Steps[1].ID = "start-a" }},
+		{"forward dependency", func(s *simulatorScenario) { s.Steps[0].After = []string{"start-b"} }},
+		{"unknown dependency", func(s *simulatorScenario) { s.Steps[1].After = []string{"missing"} }},
+		{"duplicate dependency", func(s *simulatorScenario) { s.Steps[1].After = []string{"start-a", "start-a"} }},
+		{"legacy dependency", func(s *simulatorScenario) { s.Parallel = false }},
+		{"cleanup dependency", func(s *simulatorScenario) {
+			s.Cleanup = []simulatorScenarioStep{{ID: "cleanup", Action: "stop_machine", Machine: "machine-01"}}
+		}},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			scenario := base
+			scenario.Steps = append([]simulatorScenarioStep(nil), base.Steps...)
+			test.change(&scenario)
+			if err := validateSimulatorScenario(scenario, scenarioTestManifest()); err == nil {
+				t.Fatal("invalid dependency plan was accepted")
+			}
+		})
+	}
+}
+
+func TestSimulatorScenarioManagerRunsParallelLanesWithDependencies(t *testing.T) {
+	manager := newSimulatorScenarioManager()
+	started := make(chan string, 4)
+	releaseA, releaseB := make(chan struct{}), make(chan struct{})
+	scenario := simulatorScenario{ID: "parallel", Name: "Parallel", Parallel: true, Steps: []simulatorScenarioStep{
+		{ID: "start-a", Action: "login", Machine: "machine-01"},
+		{ID: "start-b", Action: "login", Machine: "machine-02"},
+		{ID: "after-b", After: []string{"start-b"}, Action: "traffic", Machine: "machine-01"},
+		{ID: "after-a", After: []string{"start-a"}, Action: "traffic", Machine: "machine-02"},
+	}, Cleanup: []simulatorScenarioStep{{Action: "logout", Machine: "machine-01"}}}
+	execute := func(ctx context.Context, _ simulatorManifest, step simulatorScenarioStep) (string, error) {
+		started <- step.ID
+		switch step.ID {
+		case "start-a":
+			select {
+			case <-releaseA:
+			case <-ctx.Done():
+				return "", ctx.Err()
+			}
+		case "start-b":
+			select {
+			case <-releaseB:
+			case <-ctx.Done():
+				return "", ctx.Err()
+			}
+		}
+		return "done", nil
+	}
+	if err := manager.start(scenario, scenarioTestManifest(), execute); err != nil {
+		t.Fatal(err)
+	}
+	readStarted := func() string {
+		t.Helper()
+		select {
+		case id := <-started:
+			return id
+		case <-time.After(time.Second):
+			t.Fatal("lane did not start")
+			return ""
+		}
+	}
+	first, second := readStarted(), readStarted()
+	if first == second || (first != "start-a" && first != "start-b") || (second != "start-a" && second != "start-b") {
+		t.Fatalf("independent lanes did not start together: %q, %q", first, second)
+	}
+	if active := manager.snapshot().ActiveSteps; len(active) != 2 {
+		t.Fatalf("active steps = %v, want two machine lanes", active)
+	}
+	close(releaseA)
+	select {
+	case early := <-started:
+		t.Fatalf("step started before start-b finished: %q", early)
+	default:
+	}
+	close(releaseB)
+	third, fourth := readStarted(), readStarted()
+	if third == fourth || (third != "after-a" && third != "after-b") || (fourth != "after-a" && fourth != "after-b") {
+		t.Fatalf("dependent steps = %q, %q", third, fourth)
+	}
+	waitScenario(t, manager)
+	run := manager.snapshot()
+	if run.State != "completed" || run.CurrentStep != 5 || len(run.Steps) != 5 || len(run.ActiveSteps) != 0 {
+		t.Fatalf("unexpected parallel run: %+v", run)
+	}
+	seen := make(map[int]bool)
+	for _, result := range run.Steps {
+		seen[result.Number] = true
+	}
+	if len(seen) != 5 || run.Steps[4].Phase != "cleanup" || run.Steps[4].Number != 5 {
+		t.Fatalf("step identities or cleanup order lost: %+v", run.Steps)
+	}
+}
+
+func TestSimulatorScenarioManagerParallelFailureCancelsLanesBeforeCleanup(t *testing.T) {
+	manager := newSimulatorScenarioManager()
+	blocked := make(chan struct{})
+	stopped := make(chan struct{})
+	scenario := simulatorScenario{ID: "parallel-failure", Name: "Failure", Parallel: true, Steps: []simulatorScenarioStep{
+		{ID: "fail", Action: "traffic", Machine: "machine-01"},
+		{ID: "block", Action: "wait_controller", Machine: "machine-02"},
+		{ID: "skip", Action: "login", Machine: "machine-01"},
+	}, Cleanup: []simulatorScenarioStep{{Action: "logout", Machine: "machine-02"}}}
+	execute := func(ctx context.Context, _ simulatorManifest, step simulatorScenarioStep) (string, error) {
+		switch step.ID {
+		case "fail":
+			<-blocked
+			return "", errors.New("probe failed")
+		case "block":
+			close(blocked)
+			<-ctx.Done()
+			close(stopped)
+			return "", ctx.Err()
+		case "skip":
+			t.Error("step after failure should not start")
+		case "":
+			select {
+			case <-stopped:
+			default:
+				t.Error("cleanup ran before the other lane stopped")
+			}
+		}
+		return "", nil
+	}
+	if err := manager.start(scenario, scenarioTestManifest(), execute); err != nil {
+		t.Fatal(err)
+	}
+	waitScenario(t, manager)
+	run := manager.snapshot()
+	if run.State != "failed" || len(run.Steps) != 3 || len(run.ActiveSteps) != 0 || run.Steps[2].Number != 4 || run.Steps[2].Phase != "cleanup" {
+		t.Fatalf("unexpected failed parallel run: %+v", run)
 	}
 }
 

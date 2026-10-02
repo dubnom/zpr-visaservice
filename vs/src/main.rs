@@ -363,6 +363,10 @@ async fn main() -> std::process::ExitCode {
         error!(target: MAIN, "failed to restore topology state: {}", e);
         return std::process::ExitCode::FAILURE;
     }
+    if let Err(e) = asm.topo_mgr.clear_unconfirmed_links().await {
+        error!(target: MAIN, "failed to clear unconfirmed topology links: {}", e);
+        return std::process::ExitCode::FAILURE;
+    }
 
     js.spawn_local(signal_worker::launch(asm.clone()));
     js.spawn_local(event_mgr::launch(asm.clone(), event_rx));

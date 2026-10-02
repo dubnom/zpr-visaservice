@@ -359,6 +359,29 @@ function renderInspector() {
   panel.setAttribute("aria-hidden", "false");
 }
 
+function graphMotionAt(component) {
+  const motion = component.graphMotion;
+  if (!motion) return { x: 0, y: 0, scale: 1 };
+  const progress = Math.min(1, (motion.animation.effect.getComputedTiming().progress ?? 1) / motion.endAt);
+  return {
+    x: motion.from.x + (motion.to.x - motion.from.x) * progress,
+    y: motion.from.y + (motion.to.y - motion.from.y) * progress,
+    scale: motion.from.scale + (motion.to.scale - motion.from.scale) * progress,
+  };
+}
+
+function animateGraphMotion(component, animation, from, to, endAt = 1) {
+  component.graphMotion = { animation, from, to, endAt };
+  const update = () => {
+    if (!component.isConnected) return;
+    const { x, y, scale } = graphMotionAt(component);
+    const centerX = Number(component.dataset.originX), centerY = Number(component.dataset.originY);
+    component.setAttribute("transform", `translate(${x} ${y}) translate(${centerX} ${centerY}) scale(${scale}) translate(${-centerX} ${-centerY})`);
+    if (animation.playState === "running") requestAnimationFrame(update);
+  };
+  update();
+}
+
 function renderTopology(data, exitComponents = []) {
   const nodes = data.actors.filter((actor) => actor.node).sort((a, b) => a.cn.localeCompare(b.cn));
   const adapters = data.actors.filter((actor) => !actor.node).sort((a, b) => a.cn.localeCompare(b.cn));
@@ -499,17 +522,13 @@ function renderTopology(data, exitComponents = []) {
       state.topologyNewComponents.delete(key);
       return "";
     }
-    return `<g class="graph-arrival-marker" data-arrival-age="${elapsed}" aria-hidden="true"><circle class="graph-arrival-ring" cx="${x}" cy="${y}" r="${radius}"/></g>`;
+    return `<g class="graph-arrival-marker" data-arrival-age="${elapsed}" aria-hidden="true"><circle class="graph-arrival-ring" data-origin-x="${x}" data-origin-y="${y}" cx="${x}" cy="${y}" r="${radius}"/></g>`;
   };
   const arrivalOffset = (parent, target) => {
     if (!parent) return null;
     return { x: parent.x - target.x, y: parent.y - target.y };
   };
-  const previousMovement = new Map([...stage.querySelectorAll("#graph-world > [data-topology-component]")].map((component) => {
-    const transform = getComputedStyle(component).transform;
-    const matrix = transform === "none" ? new DOMMatrixReadOnly() : new DOMMatrixReadOnly(transform);
-    return [component.dataset.topologyComponent, { x: matrix.m41, y: matrix.m42 }];
-  }));
+  const previousMovement = new Map([...stage.querySelectorAll("#graph-world > [data-topology-component]")].map((component) => [component.dataset.topologyComponent, graphMotionAt(component)]));
   const enteringOffsets = new Map();
   const offsetAttributes = (offset, parentKey, enteringOffset) => `${parentKey ? ` data-topology-parent="${escapeHTML(parentKey)}"` : ""}${offset ? ` data-arrival-dx="${offset.x}" data-arrival-dy="${offset.y}"` : ""}${enteringOffset ? ` data-entry-dx="${enteringOffset.x}" data-entry-dy="${enteringOffset.y}"` : ""}`;
   const vertexMarkup = actors.map((actor) => {
@@ -534,7 +553,7 @@ function renderTopology(data, exitComponents = []) {
     const entry = marker && offset && parentMovement ? { x: offset.x + parentMovement.x, y: offset.y + parentMovement.y } : null;
     if (marker && offset && !previousMovement.has(componentKey) && Date.now() - state.topologyNewComponents.get(componentKey) < 900) enteringOffsets.set(componentKey, entry || offset);
     const positionAttributes = offsetAttributes(offset, parentKey, entry);
-    return `<g class="graph-vertex ${isNode ? "node" : isVisaService ? "visa" : "adapter"}${arrivingClass} ${query && !matches(actor) ? "filtered" : ""}" data-topology-component="${escapeHTML(componentKey)}"${positionAttributes} data-inspect-actor="${escapeHTML(actor.cn)}" tabindex="0" role="button" aria-label="Inspect ${escapeHTML(displayName)}"><title>${escapeHTML(displayName)} · ${escapeHTML(actor.cn)} · ${escapeHTML(actor.zpr_addr || "address pending")}</title>${glyph}${marker}<text class="graph-label" x="${pos.x}" y="${pos.y + 3}">${escapeHTML(shortName)}</text></g>`;
+    return `<g class="graph-vertex ${isNode ? "node" : isVisaService ? "visa" : "adapter"}${arrivingClass} ${query && !matches(actor) ? "filtered" : ""}" data-topology-component="${escapeHTML(componentKey)}" data-origin-x="${pos.x}" data-origin-y="${pos.y}"${positionAttributes} data-inspect-actor="${escapeHTML(actor.cn)}" tabindex="0" role="button" aria-label="Inspect ${escapeHTML(displayName)}"><title>${escapeHTML(displayName)} · ${escapeHTML(actor.cn)} · ${escapeHTML(actor.zpr_addr || "address pending")}</title>${glyph}${marker}<text class="graph-label" x="${pos.x}" y="${pos.y + 3}">${escapeHTML(shortName)}</text></g>`;
   });
 
   const serviceEdgeMarkup = [];
@@ -571,7 +590,7 @@ function renderTopology(data, exitComponents = []) {
     const parentMovement = marker ? enteringOffsets.get(parentKey) || previousMovement.get(parentKey) : null;
     const entry = marker && parentMovement ? { x: offset.x + parentMovement.x, y: offset.y + parentMovement.y } : null;
     const positionAttributes = offsetAttributes(offset, parentKey, entry);
-    return `<g class="graph-service-badge${trustedClass}${arrivingClass} ${filtered}" data-topology-component="${escapeHTML(componentKey)}"${positionAttributes} data-inspect-service="${escapeHTML(service.service_name)}" tabindex="0" role="button" aria-label="${escapeHTML(labelForScreenReader)}"><title>${escapeHTML(title)}</title><rect x="${position.x - badgeWidth / 2}" y="${position.y - 10}" width="${badgeWidth}" height="20" rx="4"/>${marker}<text x="${position.x}" y="${position.y + 3}">${escapeHTML(shortLabel)}</text></g>`;
+    return `<g class="graph-service-badge${trustedClass}${arrivingClass} ${filtered}" data-topology-component="${escapeHTML(componentKey)}" data-origin-x="${position.x}" data-origin-y="${position.y}"${positionAttributes} data-inspect-service="${escapeHTML(service.service_name)}" tabindex="0" role="button" aria-label="${escapeHTML(labelForScreenReader)}"><title>${escapeHTML(title)}</title><rect x="${position.x - badgeWidth / 2}" y="${position.y - 10}" width="${badgeWidth}" height="20" rx="4"/>${marker}<text x="${position.x}" y="${position.y + 3}">${escapeHTML(shortLabel)}</text></g>`;
   });
 
   const exiting = (kind) => exitComponents.filter((component) => component.kind === kind).map((component) => component.markup).join("");
@@ -674,12 +693,14 @@ function setupGraphControls(stage, width, height) {
     const moving = component.hasAttribute("data-arrival-dx");
     const exitX = component.dataset.exitDx ?? component.dataset.arrivalDx;
     const exitY = component.dataset.exitDy ?? component.dataset.arrivalDy;
-    const destination = moving ? `translate(${exitX}px, ${exitY}px)` : "translate(0px, 0px)";
     const animation = component.animate([
-      { opacity: 1, transform: component.dataset.exitStart || "translate(0px, 0px)" },
-      { opacity: 0.65, transform: `${destination} scale(.1)`, offset: 0.8 },
-      { opacity: 0, transform: `${destination} scale(.1)` },
+      { opacity: 1 },
+      { opacity: 0.65, offset: 0.8 },
+      { opacity: 0 },
     ], { duration: GRAPH_REMOVAL_DURATION, easing: "ease-in", fill: "forwards" });
+    animateGraphMotion(component, animation,
+      { x: Number(component.dataset.exitStartX || 0), y: Number(component.dataset.exitStartY || 0), scale: Number(component.dataset.exitStartScale || 1) },
+      { x: moving ? Number(exitX) : 0, y: moving ? Number(exitY) : 0, scale: 0.1 }, 0.8);
     const removalTimer = window.setTimeout(() => component.remove(), GRAPH_REMOVAL_DURATION + 150);
     animation.onfinish = () => {
       window.clearTimeout(removalTimer);
@@ -691,23 +712,22 @@ function setupGraphControls(stage, width, height) {
       const elapsed = Number(marker.dataset.arrivalAge) || 0;
       const ring = marker.querySelector(".graph-arrival-ring");
       const ringAnimation = ring.animate([
-        { opacity: 0, transform: "scale(.72)" },
+        { opacity: 0 },
         { opacity: 1, offset: 0.1 },
-        { opacity: 0, transform: "scale(1.18)" },
+        { opacity: 0 },
       ], { duration: GRAPH_ARRIVAL_DURATION, easing: "ease-out", fill: "both" });
       ringAnimation.currentTime = elapsed;
+      animateGraphMotion(ring, ringAnimation, { x: 0, y: 0, scale: 0.72 }, { x: 0, y: 0, scale: 1.18 });
       const entrant = marker.parentElement;
       if (entrant) {
         const moving = entrant.hasAttribute("data-arrival-dx");
         const entryX = entrant.dataset.entryDx ?? entrant.dataset.arrivalDx;
         const entryY = entrant.dataset.entryDy ?? entrant.dataset.arrivalDy;
-        const componentAnimation = entrant.animate(moving ? [
-          { transform: `translate(${entryX}px, ${entryY}px) scale(.1)`, opacity: 0.65 },
-          { transform: "translate(0px, 0px) scale(1)", opacity: 1 },
-        ] : [
-          { transform: "scale(.1)", opacity: 0.45 }, { transform: "scale(1)", opacity: 1 },
-        ], { duration: 900, easing: "cubic-bezier(.2, .7, .25, 1)", fill: "both" });
+        const componentAnimation = entrant.animate([{ opacity: moving ? 0.65 : 0.45 }, { opacity: 1 }], { duration: 900, easing: "cubic-bezier(.2, .7, .25, 1)", fill: "both" });
         componentAnimation.currentTime = Math.min(elapsed, 900);
+        animateGraphMotion(entrant, componentAnimation,
+          { x: moving ? Number(entryX) : 0, y: moving ? Number(entryY) : 0, scale: 0.1 },
+          { x: 0, y: 0, scale: 1 });
         const glyph = entrant.querySelector(".graph-node, .graph-adapter, .graph-visa, rect");
         if (glyph) {
           const highlighted = getComputedStyle(glyph);
@@ -1140,6 +1160,8 @@ function hidePolicyCompletions() {
 function showPolicyCompletions(force = false) {
   const textarea = byId("policy-source");
   if (textarea.disabled || textarea.selectionStart !== textarea.selectionEnd) return hidePolicyCompletions();
+  const lineStart = textarea.value.lastIndexOf("\n", textarea.selectionStart - 1) + 1;
+  if (!force && !textarea.value.slice(lineStart, textarea.selectionStart).trim()) return hidePolicyCompletions();
   const suggestions = completionCandidates(textarea.value, textarea.selectionStart);
   if (!suggestions.items.length && !force) return hidePolicyCompletions();
   if (!suggestions.items.length) return hidePolicyCompletions();
@@ -1665,12 +1687,9 @@ function snapshotRemovedTopologyComponents(keys) {
       if (!removed.has(parentKey)) {
         const parent = components.get(parentKey);
         if (parent) {
-          const transform = getComputedStyle(parent).transform;
-          if (transform !== "none") {
-            const matrix = new DOMMatrixReadOnly(transform);
-            x += matrix.m41;
-            y += matrix.m42;
-          }
+          const movement = graphMotionAt(parent);
+          x += movement.x;
+          y += movement.y;
         }
         break;
       }
@@ -1684,8 +1703,10 @@ function snapshotRemovedTopologyComponents(keys) {
     .map((component) => {
       const bounds = component.getBBox();
       const clone = component.cloneNode(true);
-      const currentTransform = getComputedStyle(component).transform;
-      if (currentTransform !== "none") clone.dataset.exitStart = currentTransform;
+      const currentMotion = graphMotionAt(component);
+      clone.dataset.exitStartX = String(currentMotion.x);
+      clone.dataset.exitStartY = String(currentMotion.y);
+      clone.dataset.exitStartScale = String(currentMotion.scale);
       if (component.hasAttribute("data-arrival-dx")) {
         const offset = exitOffset(component);
         clone.dataset.exitDx = String(offset.x);
@@ -1822,7 +1843,7 @@ byId("policy-source").addEventListener("keydown", (event) => {
   }
   if (open && event.key === "ArrowDown") { event.preventDefault(); movePolicyCompletion(1); return; }
   if (open && event.key === "ArrowUp") { event.preventDefault(); movePolicyCompletion(-1); return; }
-  if (open && (event.key === "Tab" || event.key === "Enter")) {
+  if (open && event.key === "Tab") {
     event.preventDefault();
     const selected = [...menu.querySelectorAll(".completion-option")].findIndex((option) => option.getAttribute("aria-selected") === "true");
     acceptPolicyCompletion(selected < 0 ? 0 : selected); return;
