@@ -29,3 +29,9 @@ zone "svc.zpr" {
         grant zpr-vs-publisher zonesub A AAAA;
     };
 };
+
+zone "2.5.0.5.a.5.d.f.ip6.arpa" {
+    type primary;
+    file "/var/lib/bind/db.fd5a-5052.ip6";
+    update-policy { grant zpr-vs-publisher zonesub PTR; };
+};

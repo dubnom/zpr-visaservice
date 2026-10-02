@@ -478,7 +478,12 @@ start_stack() {
         ZPR_POLICY_SERVICE_KEY_FILE="$SERVICE_CERTS/policy-service.key" \
         ZPR_POLICY_SERVICE_CLIENT_CA_FILE="$SERVICE_CERTS/service-ca.crt" \
         ZPR_POLICY_CONFIG_FILE="$policy_config" \
+        ZPR_POLICY_SOURCE_FILE="$RUNTIME_DIR/linux-integration/pregen/v4-1node-3actor-ping.zpl" \
+        ZPR_POLICY_SEED_CATEGORY="Simulator/Runtime" \
+        ZPR_POLICY_SEED_NAME="Simulator runtime policy" \
         ZPR_POLICY_DEMO_CATALOG_FILE="$policy_catalog" \
+        ZPR_POLICY_STAGE_DIR="$STATE_DIR/staged-policy" \
+        ZPR_POLICY_STAGE_SIGNING_KEY_FILE="$RUNTIME_DIR/linux-integration/pregen/zpr-rsa-key.pem" \
         ZPR_POLICY_LDAP_CONTAINER="$SIMULATION_CONTAINER" \
         ZPR_POLICY_LDAP_BASE_DN="$ldap_base_dn" \
         ZPR_POLICY_LDAP_BIND_DN="$ldap_bind_dn" \

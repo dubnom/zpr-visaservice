@@ -117,6 +117,7 @@ func policyServiceMux(workspace *policyWorkspace) http.Handler {
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /api/policy", app.handleGetPolicy)
 	mux.HandleFunc("POST /api/policy/attributes/rescan", app.handleRescanPolicyAttributes)
+	mux.HandleFunc("POST /api/policy/records/{id}/stage", app.handleStagePolicyRecord)
 	mux.HandleFunc("POST /api/policy/check", app.handleCheckPolicy)
 	mux.HandleFunc("POST /api/policy/categories", app.handleCreatePolicyCategory)
 	mux.HandleFunc("POST /api/policy/records", app.handleCreatePolicyRecord)

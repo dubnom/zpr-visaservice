@@ -115,12 +115,41 @@ ZPR address, not an underlay address:
 server = "fd5a:5052:adda:1::53" # DNS service's ZPR address
 port = 53
 zone = "svc.zpr."
+reverse_zones = ["2.5.0.5.a.5.d.f.ip6.arpa."]
+adapter_state_file = "/var/lib/zpr/dns-adapters.json"
 tsig_key_file = "/etc/zpr/dns-publisher.key"
 ttl_seconds = 30
 nsupdate_bin = "/usr/bin/nsupdate"
 ```
 
-The publisher accepts only policy-declared service names inside the configured
+Every admitted, unexpired adapter is also published as
+`<common-name>.adapters.svc.zpr.` with an A/AAAA record and a PTR in the configured
+reverse zone. Invalid DNS common names use an `adapter-<address-hex>` fallback.
+The `adapters` namespace is reserved; it cannot be used as a service alias.
+Nodes are not included. Reverse lookup returns the adapter identity, not one of
+its service aliases. DNS publication does not grant network access.
+
+Configure the authoritative reverse zones in BIND and grant the publisher only
+PTR updates there. The simulator includes `fd00:1::/32`, `fd5a:5052::/32`, and
+`10.0.0.0/8` reverse zones. Set `reverse_zones` to their reverse DNS names in the
+Visa Service configuration. Without `reverse_zones`, adapter forward records
+are published but reverse publication is disabled for compatibility.
+
+For the simulator's mixed address prefixes, the Visa Service namespace needs
+`fd00:1::/32` routed through its ZPR TUN, and the legacy DNS adapter namespace
+needs `fd5a:5052::/32` through its own TUN for replies. BIND's simulator ACL
+allows both ZPR prefixes. Neither route is an underlay resolver fallback.
+The local rig bootstrap restores these routes after its TUNs become ready.
+
+The adapter journal is written atomically before DNS changes and retains failed
+withdrawals for retry. Its directory must be writable by Visa Service. If
+`adapter_state_file` is omitted, it is stored beside the TSIG key as
+`dns-adapters-<zone>.json`. Preserve this file across restarts so removed actors
+can be withdrawn. Reconciliation runs on joins, leaves, policy changes, startup,
+and every 30 seconds. Authoritative records are withdrawn after removal or
+authentication expiry; resolver caches may retain them for the record TTL.
+
+The publisher accepts only policy-declared service aliases inside the configured
 zone. It derives records from actor ZPR addresses assigned during authenticated
 admission; callers cannot choose record addresses or transport scopes. Startup,
 actor join/leave, and policy-update events reconcile each owner RRset to the set

@@ -44,20 +44,27 @@ type policyWorkspace struct {
 	compilerErr          string
 	checkSource          func(context.Context, string) policyCheckResponse
 	mu                   sync.Mutex
+	stageMu              sync.Mutex
+	stageDirectory       string
+	stageConfigPath      string
+	stageSigningKeyPath  string
+	stagedCandidate      *stagedPolicyCandidate
 }
 
 type policyStatus struct {
-	Configured         bool              `json:"configured"`
-	Categories         []policyCategory  `json:"categories"`
-	Records            []policyRecord    `json:"records"`
-	Attributes         []policyAttribute `json:"attributes"`
-	LDAPAttributeCount int               `json:"ldap_attribute_count"`
-	AttributeScanError string            `json:"attribute_scan_error,omitempty"`
-	CompilerReady      bool              `json:"compiler_ready"`
-	AssistantReady     bool              `json:"assistant_ready"`
-	AssistantModel     string            `json:"assistant_model"`
-	AssistantModels    []string          `json:"assistant_models"`
-	Message            string            `json:"message,omitempty"`
+	Configured         bool                   `json:"configured"`
+	Categories         []policyCategory       `json:"categories"`
+	Records            []policyRecord         `json:"records"`
+	Attributes         []policyAttribute      `json:"attributes"`
+	LDAPAttributeCount int                    `json:"ldap_attribute_count"`
+	AttributeScanError string                 `json:"attribute_scan_error,omitempty"`
+	StagingReady       bool                   `json:"staging_ready"`
+	StagedCandidate    *stagedPolicyCandidate `json:"staged_candidate,omitempty"`
+	CompilerReady      bool                   `json:"compiler_ready"`
+	AssistantReady     bool                   `json:"assistant_ready"`
+	AssistantModel     string                 `json:"assistant_model"`
+	AssistantModels    []string               `json:"assistant_models"`
+	Message            string                 `json:"message,omitempty"`
 }
 
 type policyAttribute struct {
@@ -78,6 +85,10 @@ type policyAttributeCatalog struct {
 
 type policySourceRequest struct {
 	Source string `json:"source"`
+}
+
+type policyStageRequest struct {
+	ExpectedRevision int `json:"expected_revision"`
 }
 
 type policySaveRequest struct {
@@ -199,6 +210,7 @@ func newPolicyWorkspace() (*policyWorkspace, string) {
 		return nil, "Unable to import the configured demo policy catalog."
 	}
 	workspace.configureLDAPScan()
+	workspace.configurePolicyStaging()
 	return workspace, ""
 }
 
@@ -351,11 +363,7 @@ func seedPolicyDatabase(ctx context.Context, workspace *policyWorkspace) error {
 	if sourcePath == "" {
 		return nil
 	}
-	empty, err := workspace.store.Empty(ctx)
-	if err != nil || !empty {
-		return err
-	}
-	sourcePath, err = resolvedRegularFile(sourcePath)
+	sourcePath, err := resolvedRegularFile(sourcePath)
 	if err != nil {
 		return err
 	}
@@ -367,10 +375,28 @@ func seedPolicyDatabase(ctx context.Context, workspace *policyWorkspace) error {
 		return errors.New("initial policy source exceeds size limit")
 	}
 	categoryPath := strings.TrimSpace(envOr("ZPR_POLICY_SEED_CATEGORY", "Policies"))
+	categories, records, err := workspace.store.Catalog(ctx)
+	if err != nil {
+		return err
+	}
+	categoryIDs := make(map[string]string, len(categories))
+	for _, category := range categories {
+		categoryIDs[category.Path] = category.ID
+	}
 	var parentID *string
+	builtPath := ""
 	for _, name := range strings.Split(categoryPath, "/") {
 		if name == "" {
 			return errors.New("invalid seed category path")
+		}
+		if builtPath == "" {
+			builtPath = name
+		} else {
+			builtPath += "/" + name
+		}
+		if id, exists := categoryIDs[builtPath]; exists {
+			parentID = &id
+			continue
 		}
 		category, err := workspace.store.CreateCategory(ctx, parentID, name)
 		if err != nil {
@@ -378,8 +404,22 @@ func seedPolicyDatabase(ctx context.Context, workspace *policyWorkspace) error {
 		}
 		parentID = &category.ID
 	}
-	name := strings.TrimSuffix(filepath.Base(sourcePath), filepath.Ext(sourcePath))
-	_, err = workspace.store.CreateRecord(ctx, *parentID, name, "policy", "text/vnd.zpr.zpl", json.RawMessage(`{"language":"zpl"}`), string(source), policyAuthor(), "Imported configured policy source")
+	name := envOr("ZPR_POLICY_SEED_NAME", strings.TrimSuffix(filepath.Base(sourcePath), filepath.Ext(sourcePath)))
+	for _, record := range records {
+		if record.CategoryID != *parentID || record.Name != name {
+			continue
+		}
+		current, err := workspace.store.GetRevision(ctx, record.ID, record.CurrentRevision)
+		if err != nil {
+			return err
+		}
+		if current.Content == string(source) || current.Author != "configured-source-import" {
+			return nil
+		}
+		_, err = workspace.store.AppendRevision(ctx, record.ID, record.CurrentRevision, string(source), "configured-source-import", "Refreshed configured simulator source; not an installation acknowledgement")
+		return err
+	}
+	_, err = workspace.store.CreateRecord(ctx, *parentID, name, "policy", "text/vnd.zpr.zpl", json.RawMessage(`{"language":"zpl","origin":"configured-source","installed":false}`), string(source), "configured-source-import", "Imported configured simulator source; not an installation acknowledgement")
 	return err
 }
 
@@ -432,7 +472,14 @@ func (a *application) handleGetPolicy(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	status.Configured = true
+	a.policy.mu.Lock()
+	sourceErr := seedPolicyDatabase(r.Context(), a.policy)
+	a.policy.mu.Unlock()
+	if sourceErr != nil {
+		status.Message = "Configured simulator policy source could not be refreshed; repository records are retained."
+	}
 	status.CompilerReady = a.policy.compiler != ""
+	status.StagingReady = a.policy.stagingReady()
 	if !status.CompilerReady {
 		status.Message = a.policy.compilerErr
 	}
@@ -446,9 +493,52 @@ func (a *application) handleGetPolicy(w http.ResponseWriter, r *http.Request) {
 	status.Attributes = append([]policyAttribute(nil), a.policy.attributes...)
 	status.LDAPAttributeCount = a.policy.ldapAttributeCount
 	status.AttributeScanError = a.policy.attributeScanError
+	if a.policy.stagedCandidate != nil {
+		candidate := *a.policy.stagedCandidate
+		status.StagedCandidate = &candidate
+	}
 	a.policy.mu.Unlock()
 	w.Header().Set("Cache-Control", "no-store")
 	writeJSON(w, http.StatusOK, status)
+}
+
+func (a *application) handleStagePolicyRecord(w http.ResponseWriter, r *http.Request) {
+	if !localEditorRequest(w, r) {
+		return
+	}
+	if a.policy == nil {
+		writePolicyError(w, http.StatusServiceUnavailable, a.policyErr)
+		return
+	}
+	var request policyStageRequest
+	if !decodePolicyRequest(w, r, 4096, &request) {
+		return
+	}
+	if request.ExpectedRevision <= 0 {
+		writePolicyError(w, http.StatusBadRequest, "A saved policy revision is required for staging.")
+		return
+	}
+	recordID := r.PathValue("id")
+	record, err := a.policy.store.GetRecord(r.Context(), recordID)
+	if err != nil {
+		writePolicyStoreError(w, err)
+		return
+	}
+	if record.Kind != "policy" {
+		writePolicyError(w, http.StatusBadRequest, "Only policy records can be compiled and staged.")
+		return
+	}
+	if record.CurrentRevision != request.ExpectedRevision {
+		writePolicyError(w, http.StatusConflict, "This policy changed in another editor. Reload its latest revision before staging.")
+		return
+	}
+	candidate, err := a.policy.compileAndStagePolicyRecord(r.Context(), record)
+	if err != nil {
+		writePolicyError(w, http.StatusUnprocessableEntity, err.Error())
+		return
+	}
+	w.Header().Set("Cache-Control", "no-store")
+	writeJSON(w, http.StatusCreated, candidate)
 }
 
 func (a *application) handleRescanPolicyAttributes(w http.ResponseWriter, r *http.Request) {

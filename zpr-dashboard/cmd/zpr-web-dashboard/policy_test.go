@@ -2,8 +2,10 @@ package main
 
 import (
 	"context"
+	"crypto/sha256"
 	"crypto/tls"
 	"crypto/x509"
+	"encoding/hex"
 	"encoding/json"
 	"encoding/pem"
 	"net/http"
@@ -95,6 +97,77 @@ func TestControlServiceProxiesPolicyOverTLSAndKeepsAssistantInControlLayer(t *te
 	proxy.ServeHTTP(post, create)
 	if post.Code != http.StatusCreated || !strings.Contains(post.Body.String(), "created") {
 		t.Fatalf("POST proxy status=%d body=%s", post.Code, post.Body)
+	}
+}
+
+func TestConfiguredPolicyImportRefreshesWithoutOverwritingEdits(t *testing.T) {
+	directory := privatePolicyTestDir(t)
+	store, err := openSQLitePolicyRepository(filepath.Join(directory, "policies.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer store.Close()
+	ctx := t.Context()
+	category, err := store.CreateCategory(ctx, nil, "Operator")
+	if err != nil {
+		t.Fatal(err)
+	}
+	operator, err := store.CreateRecord(ctx, category.ID, "Keep my edits", "policy", "text/vnd.zpr.zpl", json.RawMessage(`{}`), "operator content", "operator", "Local edit")
+	if err != nil {
+		t.Fatal(err)
+	}
+	sourcePath := filepath.Join(directory, "simulator.zpl")
+	if err := os.WriteFile(sourcePath, []byte("first source"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("ZPR_POLICY_SOURCE_FILE", sourcePath)
+	t.Setenv("ZPR_POLICY_SEED_CATEGORY", "Simulator/Runtime")
+	t.Setenv("ZPR_POLICY_SEED_NAME", "Simulator runtime policy")
+	workspace := &policyWorkspace{store: store}
+	for attempt := 0; attempt < 2; attempt++ {
+		if err := seedPolicyDatabase(ctx, workspace); err != nil {
+			t.Fatal(err)
+		}
+	}
+	_, records, err := store.Catalog(ctx)
+	if err != nil || len(records) != 2 {
+		t.Fatalf("catalog: records=%d error=%v", len(records), err)
+	}
+	var imported policyRecord
+	for _, record := range records {
+		if record.Name == "Simulator runtime policy" {
+			imported = record
+		}
+	}
+	if imported.CurrentRevision != 1 {
+		t.Fatalf("initial import revision = %d", imported.CurrentRevision)
+	}
+	if err := os.WriteFile(sourcePath, []byte("updated simulator source"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	if err := seedPolicyDatabase(ctx, workspace); err != nil {
+		t.Fatal(err)
+	}
+	refreshed, err := store.GetRecord(ctx, imported.ID)
+	if err != nil || refreshed.CurrentRevision != 2 || refreshed.Content != "updated simulator source" {
+		t.Fatalf("source was not refreshed: %+v %v", refreshed, err)
+	}
+	if _, err := store.AppendRevision(ctx, imported.ID, 2, "my runtime edit", "operator", "Manual edit"); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(sourcePath, []byte("third simulator source"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	if err := seedPolicyDatabase(ctx, workspace); err != nil {
+		t.Fatal(err)
+	}
+	preserved, err := store.GetRecord(ctx, imported.ID)
+	if err != nil || preserved.CurrentRevision != 3 || preserved.Content != "my runtime edit" {
+		t.Fatalf("operator revision changed: %+v %v", preserved, err)
+	}
+	untouched, err := store.GetRecord(ctx, operator.ID)
+	if err != nil || untouched.Content != "operator content" {
+		t.Fatalf("unrelated record changed: %+v %v", untouched, err)
 	}
 }
 
@@ -400,6 +473,55 @@ returns_attributes = ["role -> device.demo.role", "ou -> device.demo.department"
 		if attributes[index] != attribute {
 			t.Fatalf("attribute %d = %#v, want %#v", index, attributes[index], attribute)
 		}
+	}
+}
+
+func TestCompileAndStagePolicyRecordStagesSignedCandidateWithoutPush(t *testing.T) {
+	root := t.TempDir()
+	stageDirectory := filepath.Join(root, "private-stage")
+	if err := os.Mkdir(stageDirectory, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	configPath := filepath.Join(root, "runtime.zplc")
+	signingKeyPath := filepath.Join(root, "signing-key.pem")
+	for path, content := range map[string]string{
+		configPath:     "runtime config",
+		signingKeyPath: "test signing key",
+	} {
+		if err := os.WriteFile(path, []byte(content), 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	compilerPath := filepath.Join(root, "fake-zplc")
+	compiler := "#!/bin/sh\nset -eu\noutput=\nwhile [ \"$#\" -gt 0 ]; do\n  if [ \"$1\" = \"-o\" ]; then output=$2; shift 2; else shift; fi\ndone\nprintf 'signed test candidate' > \"$output\"\n"
+	if err := os.WriteFile(compilerPath, []byte(compiler), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	workspace := &policyWorkspace{
+		compiler:            compilerPath,
+		stageDirectory:      stageDirectory,
+		stageConfigPath:     configPath,
+		stageSigningKeyPath: signingKeyPath,
+	}
+	record := policyRecord{ID: "record-1", Name: "Selected policy", Kind: "policy", CurrentRevision: 3, Content: "allow Finance to access InternetGatewayWeb."}
+	candidate, err := workspace.compileAndStagePolicyRecord(context.Background(), record)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if candidate.RecordID != record.ID || candidate.RecordRevision != record.CurrentRevision || candidate.BundleSize == 0 {
+		t.Fatalf("staged candidate = %+v", candidate)
+	}
+	sourceHash := sha256.Sum256([]byte(record.Content))
+	if candidate.SourceSHA256 != hex.EncodeToString(sourceHash[:]) {
+		t.Fatalf("staged source hash = %s", candidate.SourceSHA256)
+	}
+	bundle, err := os.ReadFile(candidate.bundlePath)
+	if err != nil || string(bundle) != "signed test candidate" {
+		t.Fatalf("staged bundle = %q, err=%v", bundle, err)
+	}
+	metadata, err := os.ReadFile(filepath.Join(stageDirectory, "latest.json"))
+	if err != nil || !strings.Contains(string(metadata), candidate.BundleSHA256) {
+		t.Fatalf("staged metadata = %s, err=%v", metadata, err)
 	}
 }
 

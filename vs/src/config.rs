@@ -138,6 +138,10 @@ pub struct DnsUpdateConfig {
     pub port: u16,
     /// Absolute DNS zone, for example `svc.zpr.`.
     pub zone: String,
+    #[serde(default)]
+    pub reverse_zones: Vec<String>,
+    #[serde(default)]
+    pub adapter_state_file: Option<PathBuf>,
     /// BIND-format TSIG key file restricted to this publisher's DNS owner zone.
     pub tsig_key_file: PathBuf,
     #[serde(default = "default_dns_ttl")]

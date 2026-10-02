@@ -63,7 +63,9 @@ func newControlServiceProxy() (http.Handler, string) {
 		return nil, message
 	}
 	proxy := httputil.NewSingleHostReverseProxy(baseURL)
-	proxy.Transport = transport
+	logTransport := transport.Clone()
+	logTransport.ResponseHeaderTimeout = 20 * time.Second
+	proxy.Transport = controlRoomTransport{standard: transport, logs: logTransport}
 	proxy.FlushInterval = 100 * time.Millisecond
 	proxy.ErrorHandler = func(w http.ResponseWriter, _ *http.Request, err error) {
 		log.Printf("Control Service request failed: %T", err)
@@ -80,6 +82,18 @@ func newControlServiceProxy() (http.Handler, string) {
 		request.Header["X-Forwarded-For"] = nil
 	}
 	return proxy, ""
+}
+
+type controlRoomTransport struct {
+	standard http.RoundTripper
+	logs     http.RoundTripper
+}
+
+func (transport controlRoomTransport) RoundTrip(request *http.Request) (*http.Response, error) {
+	if request.URL.Path == "/api/adapter-logs" {
+		return transport.logs.RoundTrip(request)
+	}
+	return transport.standard.RoundTrip(request)
 }
 
 func runControlService() error {
@@ -102,6 +116,7 @@ func runControlService() error {
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /api/snapshot", app.handleSnapshot)
 	mux.HandleFunc("GET /api/actors/{actor}/visas", app.handleActorVisas)
+	mux.Handle("GET /api/adapter-logs", newAdapterLogsProxy())
 	mux.Handle("GET /api/dns/records", newDNSRecordsHandler())
 	mux.HandleFunc("POST /api/policy/assistant", app.handlePolicyAssistant)
 	mux.Handle("/api/dns/stats/", newDNSStatsProxy())
@@ -120,6 +135,48 @@ func runControlService() error {
 		log.Printf("Policy Service is not configured: %s", policyErr)
 	}
 	return server.ListenAndServeTLS(certFile, keyFile)
+}
+
+func newAdapterLogsProxy() http.Handler {
+	endpoint, err := url.Parse(envOr("ZPR_SIMULATOR_URL", "http://127.0.0.1:8788"))
+	valid := err == nil && endpoint.Scheme == "http" && endpoint.User == nil && endpoint.Path == "" && endpoint.RawQuery == "" && endpoint.Fragment == ""
+	if valid {
+		address := net.ParseIP(endpoint.Hostname())
+		valid = address != nil && address.IsLoopback()
+	}
+	if !valid {
+		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			writePolicyError(w, http.StatusServiceUnavailable, "Adapter log collection is not configured with a loopback simulator origin.")
+		})
+	}
+	proxy := httputil.NewSingleHostReverseProxy(endpoint)
+	proxy.Transport = &http.Transport{
+		DialContext:           (&net.Dialer{Timeout: 5 * time.Second}).DialContext,
+		ResponseHeaderTimeout: 15 * time.Second,
+		IdleConnTimeout:       60 * time.Second,
+	}
+	proxy.Director = func(request *http.Request) {
+		request.URL.Scheme = endpoint.Scheme
+		request.URL.Host = endpoint.Host
+		request.URL.Path = "/api/simulator/adapter-logs"
+		request.URL.RawPath = ""
+		request.URL.RawQuery = ""
+		request.Host = endpoint.Host
+		request.Header.Del("Authorization")
+		request.Header.Del("Cookie")
+		request.Header.Del("Origin")
+		request.Header["X-Forwarded-For"] = nil
+	}
+	proxy.ErrorHandler = func(w http.ResponseWriter, r *http.Request, err error) {
+		writePolicyError(w, http.StatusBadGateway, "Adapter log collection is unavailable.")
+	}
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodGet {
+			writePolicyError(w, http.StatusMethodNotAllowed, "Adapter logs are read-only.")
+			return
+		}
+		proxy.ServeHTTP(w, r)
+	})
 }
 
 func mutualTLSClientTransport(certFile, keyFile, caFile, serverName string) (*http.Transport, string) {

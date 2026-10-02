@@ -4,11 +4,15 @@ class LDAPOrgGraph extends HTMLElement {
     this._directory = {};
     this._camera = { x: 0, y: 0, scale: 1 };
     this._selected = null;
+    this._collapsed = new Set();
+    this._query = "";
   }
 
   set directory(value) {
     this._directory = value || {};
     this._selected = null;
+    this._collapsed.clear();
+    this._query = "";
     this._camera = { x: 0, y: 0, scale: 1 };
     if (this.isConnected) this.render();
   }
@@ -23,7 +27,8 @@ class LDAPOrgGraph extends HTMLElement {
 
   render() {
     const directory = this._directory;
-    const root = { id: "root", kind: "directory", label: directory.base_dn || "Directory", value: {}, children: [] };
+    const rootValue = Object.fromEntries(Object.entries(directory).filter(([key]) => !["departments", "people", "groups"].includes(key)));
+    const root = { id: "root", kind: "directory", label: directory.base_dn || "Directory", value: rootValue, children: [] };
     const nodes = [root];
     const departments = new Map();
     const people = new Map();
@@ -66,10 +71,12 @@ class LDAPOrgGraph extends HTMLElement {
     }
     let row = 0;
     let depth = 0;
+    const visible = [];
     const layout = (node, level) => {
+      visible.push(node);
       depth = Math.max(depth, level);
       node.x = 24 + level * 224;
-      if (!node.children.length) node.y = 24 + row++ * 72;
+      if (!node.children.length || this._collapsed.has(node.id)) node.y = 24 + row++ * 72;
       else {
         node.children.forEach((child) => layout(child, level + 1));
         node.y = (node.children[0].y + node.children.at(-1).y) / 2;
@@ -80,12 +87,14 @@ class LDAPOrgGraph extends HTMLElement {
     this._memberships = memberships;
     this._width = Math.max(450, (depth + 1) * 224 + 24);
     this._height = Math.max(180, row * 72 + 24);
+    if (this._dialog?.open) this._dialog.close();
     this.replaceChildren();
     this.classList.add("ldap-org-graph");
     const toolbar = document.createElement("div");
     toolbar.className = "ldap-graph-toolbar";
     const search = document.createElement("input");
     search.type = "search";
+    search.value = this._query;
     search.placeholder = "Search directory";
     search.setAttribute("aria-label", "Search directory graph");
     toolbar.append(search);
@@ -101,6 +110,11 @@ class LDAPOrgGraph extends HTMLElement {
     command("Zoom in", "+", () => this.zoom(this._camera.scale * 1.25));
     command("Zoom out", "-", () => this.zoom(this._camera.scale / 1.25));
     command("Fit graph", "Fit", () => { this._camera = { x: 0, y: 0, scale: 1 }; this.applyCamera(); });
+    command("Expand all branches", "Expand all", () => { this._collapsed.clear(); this.render(); });
+    command("Collapse all branches", "Collapse all", () => {
+      this._collapsed = new Set(nodes.filter((node) => node.children.length && node !== root).map((node) => node.id));
+      this.render();
+    });
     const svg = this.svgElement("svg", { viewBox: `0 0 ${this._width} ${this._height}`, role: "group", "aria-label": "LDAP organizational relationships" });
     this._svg = svg;
     const world = this.svgElement("g");
@@ -110,37 +124,87 @@ class LDAPOrgGraph extends HTMLElement {
       d: `M ${from.x + 190} ${from.y + 24} C ${from.x + 207} ${from.y + 24}, ${to.x - 17} ${to.y + 24}, ${to.x} ${to.y + 24}`,
       class: className,
     });
-    for (const node of nodes) for (const child of node.children) world.append(edge(node, child, "ldap-graph-edge"));
+    const visibleNodes = new Set(visible);
+    for (const node of visible) for (const child of node.children) if (visibleNodes.has(child)) world.append(edge(node, child, "ldap-graph-edge"));
     for (const membership of memberships) {
+      if (!visibleNodes.has(membership.from) || !visibleNodes.has(membership.to)) continue;
       membership.element = edge(membership.from, membership.to, "ldap-graph-membership");
       membership.element.setAttribute("hidden", "");
       world.append(membership.element);
     }
-    for (const node of nodes) {
+    for (const node of visible) {
       const element = this.svgElement("g", { class: `ldap-graph-node ${node.kind}`, transform: `translate(${node.x} ${node.y})`, tabindex: "0", role: "button", "aria-label": `${node.kind}: ${node.label}` });
       const title = this.svgElement("title");
       title.textContent = node.label;
       const rect = this.svgElement("rect", { width: "190", height: "48", rx: "5" });
       const label = this.svgElement("text", { x: "10", y: "19" });
-      label.textContent = node.label.length > 24 ? node.label.slice(0, 21) + "..." : node.label;
+      const labelLimit = node.children.length ? 20 : 24;
+      label.textContent = node.label.length > labelLimit ? node.label.slice(0, labelLimit - 3) + "..." : node.label;
       const subtitle = this.svgElement("text", { x: "10", y: "36", class: "ldap-graph-kind" });
-      subtitle.textContent = node.kind === "branch" ? "Group membership" : node.kind;
+      subtitle.textContent = this._collapsed.has(node.id) ? `${node.children.length} hidden items` : node.kind === "branch" ? "Group membership" : node.kind;
       element.append(title, rect, label, subtitle);
       element.addEventListener("click", () => this.select(node));
       element.addEventListener("keydown", (event) => {
         if (event.key === "Enter" || event.key === " ") { event.preventDefault(); this.select(node); }
+        if (node.children.length && ["ArrowLeft", "ArrowRight"].includes(event.key)) {
+          event.preventDefault();
+          this.toggleBranch(node, event.key === "ArrowLeft");
+        }
       });
       node.element = element;
       world.append(element);
+      if (node.children.length) {
+        const expanded = !this._collapsed.has(node.id);
+        const toggle = this.svgElement("g", { class: "ldap-graph-toggle", transform: `translate(${node.x + 172} ${node.y + 24})`, tabindex: "0", role: "button", "aria-expanded": String(expanded), "aria-label": `${expanded ? "Collapse" : "Expand"} ${node.label}`, "data-branch-id": node.id });
+        const toggleTitle = this.svgElement("title");
+        toggleTitle.textContent = `${expanded ? "Collapse" : "Expand"} ${node.label}`;
+        const symbol = this.svgElement("text", { x: "0", y: "4", "text-anchor": "middle" });
+        symbol.textContent = expanded ? "-" : "+";
+        toggle.append(toggleTitle, this.svgElement("circle", { r: "11" }), symbol);
+        toggle.addEventListener("click", () => this.toggleBranch(node));
+        toggle.addEventListener("keydown", (event) => {
+          if (event.key === "Enter" || event.key === " ") { event.preventDefault(); this.toggleBranch(node); }
+          if (["ArrowLeft", "ArrowRight"].includes(event.key)) {
+            event.preventDefault();
+            this.toggleBranch(node, event.key === "ArrowLeft");
+          }
+        });
+        world.append(toggle);
+      }
     }
+    const dialog = document.createElement("dialog");
+    dialog.className = "ldap-graph-dialog";
+    const header = document.createElement("header");
+    header.className = "ldap-graph-dialog-header";
+    const heading = document.createElement("h2");
+    this._detailHeading = heading;
+    const close = document.createElement("button");
+    close.type = "button";
+    close.textContent = "\u00d7";
+    close.title = "Close component info";
+    close.setAttribute("aria-label", "Close component info");
+    close.setAttribute("autofocus", "");
+    close.addEventListener("click", () => dialog.close());
+    header.append(heading, close);
     const detail = document.createElement("div");
     detail.className = "ldap-graph-details";
     detail.setAttribute("aria-live", "polite");
     this._detail = detail;
-    search.addEventListener("input", () => {
-      const query = search.value.trim().toLowerCase();
-      for (const node of nodes) node.element.classList.toggle("dimmed", !!query && ![node.label, ...Object.values(node.value).flat()].join(" ").toLowerCase().includes(query));
+    dialog.append(header, detail);
+    dialog.addEventListener("click", (event) => {
+      if (event.target !== dialog) return;
+      const bounds = dialog.getBoundingClientRect();
+      if (event.clientX < bounds.left || event.clientX > bounds.right || event.clientY < bounds.top || event.clientY > bounds.bottom) dialog.close();
     });
+    dialog.addEventListener("close", () => this._nodes.find((node) => node.id === this._selected)?.element?.focus({ preventScroll: true }));
+    this._dialog = dialog;
+    const applySearch = () => {
+      this._query = search.value;
+      const query = this._query.trim().toLowerCase();
+      for (const node of visible) node.element.classList.toggle("dimmed", !!query && !`${node.label} ${JSON.stringify(node.value)}`.toLowerCase().includes(query));
+    };
+    search.addEventListener("input", applySearch);
+    applySearch();
     let drag;
     const pointAt = (event) => new DOMPoint(event.clientX, event.clientY).matrixTransform(svg.getScreenCTM().inverse());
     svg.addEventListener("wheel", (event) => {
@@ -149,7 +213,7 @@ class LDAPOrgGraph extends HTMLElement {
       this.zoom(this._camera.scale * (event.deltaY < 0 ? 1.15 : 1 / 1.15), point.x, point.y);
     }, { passive: false });
     svg.addEventListener("pointerdown", (event) => {
-      if (event.button !== 0 || event.target.closest(".ldap-graph-node")) return;
+      if (event.button !== 0 || event.target.closest(".ldap-graph-node, .ldap-graph-toggle")) return;
       drag = { point: pointAt(event), x: this._camera.x, y: this._camera.y, pointerId: event.pointerId };
       svg.setPointerCapture(event.pointerId);
     });
@@ -163,9 +227,19 @@ class LDAPOrgGraph extends HTMLElement {
     const stopDrag = () => { drag = null; };
     svg.addEventListener("pointerup", stopDrag);
     svg.addEventListener("pointercancel", stopDrag);
-    this.append(toolbar, svg, detail);
+    this.append(toolbar, svg, dialog);
     this.applyCamera();
-    this.select(root, false);
+    this.select(visible.find((node) => node.id === this._selected) || root, false);
+  }
+
+  toggleBranch(node, collapsed = !this._collapsed.has(node.id)) {
+    if (collapsed) {
+      this._collapsed.add(node.id);
+      const containsSelection = (item) => item.id === this._selected || item.children.some(containsSelection);
+      if (node.children.some(containsSelection)) this._selected = node.id;
+    } else this._collapsed.delete(node.id);
+    this.render();
+    this.querySelector(`[data-branch-id="${node.id}"]`)?.focus({ preventScroll: true });
   }
 
   svgElement(tag, attributes = {}) {
@@ -190,24 +264,37 @@ class LDAPOrgGraph extends HTMLElement {
   select(node, notify = true) {
     this._selected = node.id;
     for (const item of this._nodes) {
-      item.element.classList.toggle("selected", item === node);
-      item.element.setAttribute("aria-pressed", String(item === node));
+      item.element?.classList.toggle("selected", item === node);
+      item.element?.setAttribute("aria-pressed", String(item === node));
     }
-    for (const edge of this._memberships) edge.element.toggleAttribute("hidden", edge.from !== node && edge.to !== node);
-    const heading = document.createElement("strong");
-    heading.textContent = node.label;
+    for (const edge of this._memberships) edge.element?.toggleAttribute("hidden", edge.from !== node && edge.to !== node);
+    this._detailHeading.textContent = node.label;
+    this._dialog.setAttribute("aria-label", `${node.label} component info`);
     const list = document.createElement("dl");
     const fields = { Type: node.kind, ...node.value };
-    if (node.kind === "person") fields.Groups = this._memberships.filter((edge) => edge.to === node).map((edge) => edge.from.label);
-    for (const [key, value] of Object.entries(fields)) {
-      if (value == null || value === "") continue;
+    if (node.kind === "person") fields.Groups = (this._directory.groups || []).filter((group) => (group.members || []).includes(node.value.uid)).map((group) => group.name);
+    if (node.kind === "group") fields.Members = (node.value.members || []).map((uid) => {
+      const person = (this._directory.people || []).find((item) => item.uid === uid);
+      return person?.name ? `${person.name} (${uid})` : uid;
+    });
+    if (node.children.length) fields.Children = node.children.map((child) => child.label);
+    const appendField = (key, value) => {
+      if (value == null || value === "") return;
+      if (typeof value === "object" && !Array.isArray(value)) {
+        for (const [attribute, entry] of Object.entries(value)) appendField(`${key}.${attribute}`, entry);
+        return;
+      }
       const term = document.createElement("dt"), description = document.createElement("dd");
       term.textContent = key;
-      description.textContent = Array.isArray(value) ? value.join(", ") || "None" : String(value);
+      description.textContent = Array.isArray(value) ? value.map((entry) => typeof entry === "object" ? JSON.stringify(entry) : String(entry)).join(", ") || "None" : String(value);
       list.append(term, description);
+    };
+    for (const [key, value] of Object.entries(fields)) appendField(key, value);
+    this._detail.replaceChildren(list);
+    if (notify) {
+      if (!this._dialog.open) this._dialog.showModal();
+      this.dispatchEvent(new CustomEvent("ldap-node-select", { detail: { kind: node.kind, label: node.label, value: node.value }, bubbles: true, composed: true }));
     }
-    this._detail.replaceChildren(heading, list);
-    if (notify) this.dispatchEvent(new CustomEvent("ldap-node-select", { detail: { kind: node.kind, label: node.label, value: node.value }, bubbles: true, composed: true }));
   }
 }
 

@@ -6,6 +6,7 @@
     <meta name="theme-color" content="#17211e">
     <title>ZPR Control Room</title>
     <link rel="stylesheet" href="/app.css?v=19">
+    <link rel="stylesheet" href="/machine-logs.css?v=7">
   </head>
   <body>
     <div class="app-shell">
@@ -18,6 +19,7 @@
           <a class="nav-link active" href="#map" data-page-link="map">Map</a>
           <a class="nav-link" href="#connections" data-page-link="connections">Connections</a>
           <a class="nav-link" href="#actors" data-page-link="actors">Actors</a>
+          <a class="nav-link" href="#adapter-logs" data-page-link="adapter-logs">Adapter Logs</a>
           <a class="nav-link" href="#services" data-page-link="services">Services</a>
           <a class="nav-link" href="#dns" data-page-link="dns">DNS</a>
           <a class="nav-link" href="#sources" data-page-link="sources">Trusted sources</a>
@@ -101,7 +103,7 @@
         <section class="page-view" id="page-connections" data-page="connections" aria-label="Connections">
           <section class="section-block">
             <div class="table-tools"><div class="filter-group"><input id="connections-filter" type="search" placeholder="Filter" aria-label="Filter connections"><span class="count-label" id="connection-count">—</span></div></div>
-            <div class="table-scroll"><table data-sort-page="connections"><thead><tr><th data-sort-key="from">FROM</th><th data-sort-key="to">TO</th><th data-sort-key="type">TYPE</th><th data-sort-key="address">ADDRESS / SUBSTRATE</th><th data-sort-key="state">STATE</th></tr></thead><tbody id="link-list"><tr><td colspan="5" class="empty-row">Waiting for connection data…</td></tr></tbody></table></div>
+            <div class="table-scroll"><table data-sort-page="connections"><thead><tr><th data-sort-key="from">FROM</th><th data-sort-key="to">TO</th><th data-sort-key="type">TYPE</th><th data-sort-key="address">DNS NAMES</th><th data-sort-key="state">STATE</th></tr></thead><tbody id="link-list"><tr><td colspan="5" class="empty-row">Waiting for connection data…</td></tr></tbody></table></div>
           </section>
         </section>
 
@@ -109,15 +111,25 @@
           <section class="section-block">
           <div id="actors">
             <div class="table-tools"><div class="filter-group"><input id="actor-search" type="search" placeholder="Filter" aria-label="Filter actors"><span class="count-label" id="actor-count">—</span></div></div>
-            <div class="table-scroll"><table data-sort-page="actors"><thead><tr><th data-sort-key="cn">ACTOR</th><th data-sort-key="role">ROLE</th><th data-sort-key="address">ZPR ADDRESS</th><th data-sort-key="state">NODE STATE</th></tr></thead><tbody id="actor-rows"><tr><td colspan="4" class="empty-row">Waiting for actor data…</td></tr></tbody></table></div>
+            <div class="table-scroll"><table data-sort-page="actors"><thead><tr><th data-sort-key="cn">ACTOR</th><th data-sort-key="role">ROLE</th><th data-sort-key="address">DNS NAME</th><th data-sort-key="state">NODE STATE</th></tr></thead><tbody id="actor-rows"><tr><td colspan="4" class="empty-row">Waiting for actor data…</td></tr></tbody></table></div>
           </div>
+          </section>
+        </section>
+
+        <section class="page-view" id="page-adapter-logs" data-page="adapter-logs" aria-label="Adapter Logs">
+          <section class="section-block">
+            <div class="adapter-logs-heading"><h2>Adapter Logs</h2><div class="machine-logs-actions"><button id="machine-logs-pause" type="button">Pause</button><button id="machine-logs-refresh" type="button" aria-label="Refresh adapter logs" title="Refresh adapter logs">Refresh</button></div></div>
+            <div class="adapter-logs-meta"><span id="machine-logs-status">Connecting</span><span>Updated <time id="machine-logs-time">-</time></span></div>
+            <div id="machine-logs-error" class="machine-logs-error" role="alert" hidden></div>
+            <div class="machine-logs-toolbar"><input id="machine-logs-search" type="search" placeholder="Search machines or logs" aria-label="Search adapter logs"><label><input id="machine-logs-running" type="checkbox">Running only</label><label><input id="machine-logs-follow" type="checkbox" checked>Follow logs</label><span id="machine-logs-count"></span></div>
+            <div id="machine-logs-grid" class="machine-logs-grid" data-site="control-room" data-endpoint="/api/adapter-logs"></div>
           </section>
         </section>
 
         <section class="page-view" id="page-services" data-page="services" aria-label="Services">
           <section class="section-block">
-            <div class="table-tools"><div class="filter-group"><input id="services-filter" type="search" placeholder="Filter" aria-label="Filter services"><span class="count-label" id="service-count">—</span></div></div>
-            <div class="table-scroll"><table data-sort-page="services"><thead><tr><th data-sort-key="name">SERVICE</th><th data-sort-key="kind">TYPE</th><th data-sort-key="actor">PROVIDER ACTOR</th><th data-sort-key="address">ZPR ADDRESS</th><th data-sort-key="endpoints">ENDPOINTS</th></tr></thead><tbody id="service-rows"><tr><td colspan="5" class="empty-row">Waiting for service data…</td></tr></tbody></table></div>
+            <div class="table-tools service-table-tools"><div class="filter-group"><input id="services-filter" type="search" placeholder="Filter" aria-label="Filter services"><span class="count-label" id="service-count">—</span></div><details class="service-type-key"><summary aria-label="Show service type colors">Type colors</summary><div id="service-type-legend" class="service-type-legend" role="list" aria-label="Service type color mapping"></div></details></div>
+            <div class="table-scroll"><table data-sort-page="services"><thead><tr><th data-sort-key="name">SERVICE</th><th data-sort-key="kind">TYPE</th><th data-sort-key="actor">PROVIDER ACTOR</th><th data-sort-key="address">DNS NAME</th><th data-sort-key="endpoints">ENDPOINTS</th></tr></thead><tbody id="service-rows"><tr><td colspan="5" class="empty-row">Waiting for service data…</td></tr></tbody></table></div>
           </section>
         </section>
 
@@ -163,8 +175,9 @@
                 <strong id="policy-record-title">Select a policy</strong><span id="policy-revision-label"></span>
                 <input id="policy-draft-name" type="text" maxlength="100" autocomplete="off" aria-label="New policy name" placeholder="Name this policy" hidden>
               </div>
-              <div class="policy-actions"><button id="policy-refresh" class="button" type="button" disabled>Discard</button><button id="policy-check" class="button" type="button" disabled>Evaluate</button><button id="policy-save" class="button button-save-next" type="button" disabled>Save</button><button id="policy-save-as" class="button" type="button" disabled>Save As...</button></div>
+              <div class="policy-actions"><button id="policy-refresh" class="button" type="button" disabled>Discard</button><button id="policy-check" class="button" type="button" disabled>Evaluate</button><button id="policy-save" class="button button-save-next" type="button" disabled>Save</button><button id="policy-save-as" class="button" type="button" disabled>Save As...</button><button id="policy-stage" class="button" type="button" disabled>Compile &amp; Stage</button></div>
             </div>
+            <div id="policy-stage-status" class="policy-stage-status" role="status" aria-live="polite">Select a saved policy revision to stage.</div>
             <div class="policy-workbench">
               <aside class="policy-catalog-pane" aria-label="Policy picker">
                 <div class="catalog-pane-heading"><button id="new-category" class="button" type="button" title="Create category">+ Category</button><button id="new-policy-record" class="button" type="button" disabled>+ Policy</button></div>
@@ -180,7 +193,7 @@
                 <div id="policy-attribute-status" class="policy-attribute-status" role="status" aria-live="polite"></div>
                 <div id="policy-code-editor" class="policy-code-editor">
                   <pre id="policy-highlight" class="policy-highlight" aria-hidden="true"></pre>
-                  <textarea id="policy-source" aria-label="ZPL policy source" aria-describedby="policy-editor-help" spellcheck="false" autocapitalize="off" autocomplete="off" autocorrect="off" wrap="off" disabled></textarea>
+                  <textarea id="policy-source" aria-label="ZPL policy source" aria-describedby="policy-editor-help" aria-controls="policy-completions" aria-autocomplete="list" aria-expanded="false" spellcheck="false" autocapitalize="off" autocomplete="off" autocorrect="off" wrap="off" disabled></textarea>
                   <div id="policy-completions" class="policy-completions" role="listbox" aria-label="ZPL completions" hidden></div>
                 </div>
                 <span id="policy-editor-help" class="sr-only">ZPL syntax is highlighted. Choose an attribute and press Insert to place it at the cursor. Press Control-Space for suggestions; use arrow keys and Tab to insert a completion. Enter starts a new line.</span>
@@ -261,5 +274,6 @@
       </main>
     </div>
     <script src="/app.js?v=28" defer></script>
+    <script src="/machine-logs.js?v=7" defer></script>
   </body>
 </html>

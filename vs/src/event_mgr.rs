@@ -24,6 +24,8 @@ use crate::logging::targets::EVENT;
 use crate::policy_mgr::PolicySnapshot;
 use crate::visa_reconciler::{SweepReason, revalidate_visas};
 
+static DNS_PUBLICATION_LOCK: tokio::sync::Mutex<()> = tokio::sync::Mutex::const_new(());
+
 #[derive(Debug)]
 pub enum VsEvent {
     /// Use _after_ actor has been authenticated and the datastore updated.
@@ -70,7 +72,18 @@ impl EventMgr {
 
 pub async fn launch(asm: Arc<Assembly>, mut event_rx: mpsc::Receiver<VsEvent>) {
     debug!(target: EVENT, "event manager worker started");
-    while let Some(event) = event_rx.recv().await {
+    let mut dns_refresh = tokio::time::interval(std::time::Duration::from_secs(30));
+    dns_refresh.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
+    loop {
+        let event = tokio::select! {
+            event = event_rx.recv() => match event { Some(event) => event, None => break },
+            _ = dns_refresh.tick(), if asm.config.dns_update.is_some() => {
+                if let Err(error) = reconcile_dns_providers(&asm).await {
+                    error!(target: EVENT, "periodic DNS reconciliation failed: {}", error);
+                }
+                continue;
+            }
+        };
         match event {
             VsEvent::ActorJoins(actor) => {
                 if let Err(e) = handle_actor_joins(&asm, actor).await {
@@ -121,10 +134,30 @@ pub async fn reconcile_dns_providers(asm: &Arc<Assembly>) -> Result<(), ServiceE
     let Some(config) = asm.config.dns_update.clone() else {
         return Ok(());
     };
+    let _publication_guard = DNS_PUBLICATION_LOCK.lock().await;
     let publisher = DnsPublisher::new(config)?;
     let snapshot = asm.policy_mgr.get_current_snapshot();
     let policy = snapshot.policy_arc();
     let eval_context = EvalContext::new(policy.clone());
+    let mut adapters = HashSet::new();
+    for common_name in asm.actor_mgr.list_actor_cns(None).await? {
+        let Some(actor) = asm.actor_mgr.get_actor_by_cn(&common_name).await? else {
+            continue;
+        };
+        if actor.is_node()
+            || actor
+                .get_authentication_expiration()
+                .is_some_and(|expires| expires <= std::time::SystemTime::now())
+        {
+            continue;
+        }
+        if let Some(address) = actor.get_zpr_addr() {
+            adapters.insert((*address, publisher.adapter_name(&common_name, *address)));
+        }
+    }
+    if let Err(error) = publisher.reconcile_adapters(&adapters).await {
+        error!(target: EVENT, "failed to reconcile adapter DNS records: {}", error);
+    }
     let registrations = asm.actor_mgr.list_registered_service_providers().await?;
 
     let mut service_ids = policy

@@ -11,6 +11,7 @@ const pages = {
   map: "MAP",
   connections: "CONNECTIONS",
   actors: "ACTORS",
+  "adapter-logs": "ADAPTER LOGS",
   services: "SERVICES",
   dns: "DNS",
   sources: "TRUSTED SOURCES",
@@ -46,7 +47,7 @@ function escapeHTML(value) {
 }
 
 function actorDisplayName(actor) {
-  return actor?.cn || "—";
+  return dnsNameForAddress(actor?.zpr_addr) || actor?.cn || "—";
 }
 
 function isGatewayService(service) {
@@ -130,6 +131,21 @@ function dnsAddressKey(address) {
   }
 }
 
+function dnsNameForAddress(address) {
+  if (!address) return "";
+  const names = dnsAddressNames.get(dnsAddressKey(address)) || [];
+  const preferred = names.find((name) => !name.includes(".adapters.svc.zpr.")) || names[0];
+  return preferred ? preferred.replace(/\.$/, "") : "";
+}
+
+function dnsAddressLabel(address, fallback = "No DNS name") {
+  return address ? dnsNameForAddress(address) || fallback : "—";
+}
+
+function dnsAddressTitle(address, prefix = "IP address") {
+  return address ? `${prefix}: ${address}` : "";
+}
+
 function indexDNSAddresses(records) {
   const byName = new Map();
   for (const record of records) {
@@ -175,8 +191,7 @@ async function loadDNSRecords(force = false) {
       `<tr><td class="mono">${escapeHTML(record.name || "—")}</td><td class="mono">${escapeHTML(record.ttl ?? "—")}</td><td>${escapeHTML(record.type || "—")}</td><td class="mono dns-record-value">${escapeHTML(record.value || "—")}</td></tr>`
     ).join("") : `<tr><td colspan="4" class="empty-row">No records returned</td></tr>`;
     if (state.snapshot) {
-      renderVisas(state.snapshot);
-      renderInspector();
+      render(state.snapshot);
     }
   } catch (error) {
     status.textContent = `DNS records unavailable (${error.message})`;
@@ -225,11 +240,11 @@ function endpoint(source, port, destination, destPort) {
 }
 
 function visaEndpoint(source, port, destination, destPort) {
-  const label = (address) => {
-    const names = dnsAddressNames.get(dnsAddressKey(address));
-    return names?.length ? `${names.join(", ")} (${address})` : address;
-  };
-  return endpoint(label(source), port, label(destination), destPort);
+  return endpoint(dnsAddressLabel(source), port, dnsAddressLabel(destination), destPort);
+}
+
+function visaEndpointTitle(source, destination) {
+	return [dnsAddressTitle(source, "Source IP"), dnsAddressTitle(destination, "Destination IP")].filter(Boolean).join(" · ");
 }
 
 function updateConnection(snapshot) {
@@ -278,10 +293,14 @@ function renderMetrics(data) {
   }
 }
 
-function detailField(label, value, className = "") {
-  return `<div class="detail-field"><dt>${escapeHTML(label)}</dt><dd class="${className}">${escapeHTML(value == null || value === "" ? "—" : value)}</dd></div>`;
+function detailField(label, value, className = "", title = "") {
+  const titleAttribute = title ? ` title="${escapeHTML(title)}"` : "";
+  return `<div class="detail-field"><dt>${escapeHTML(label)}</dt><dd class="${className}"${titleAttribute}>${escapeHTML(value == null || value === "" ? "—" : value)}</dd></div>`;
 }
 
+function detailDNSAddressField(label, address, fallback = "No DNS name", titlePrefix = "IP address") {
+  return detailField(label, dnsAddressLabel(address, fallback), "mono", dnsAddressTitle(address, titlePrefix));
+}
 function detailHTMLField(label, markup) {
   return `<div class="detail-field"><dt>${escapeHTML(label)}</dt><dd>${markup || "—"}</dd></div>`;
 }
@@ -355,7 +374,7 @@ function renderInspector() {
     sections.push(detailSection("Actor", [
 		 detailField("Role", actor.node ? "Node / forwarder" : gatewayService ? "External-network gateway" : kindLabel === "VISA SERVICE ADAPTER" ? "Visa Service adapter" : "Adapter"),
       detailField("Common name", actor.cn, "mono"),
-      detailField("ZPR address", actor.zpr_addr, "mono"),
+      detailDNSAddressField("DNS name", actor.zpr_addr, actor.cn),
       detailField("Authentication expires", actor.auth_exp ? new Date(actor.auth_exp * 1000).toLocaleString() : "No expiry reported"),
     ]));
     if (gatewayService) {
@@ -400,10 +419,10 @@ function renderInspector() {
     }
     if (!actor.node) {
       const current = adapterVisaDetails.items.filter((visa) => num(visa.expires) > Date.now() / 1000);
-      const content = !adapterVisaDetails.loaded ? adapterVisaDetails.pending ? `<p>Loading current visas...</p>` : "" : current.length ? `<div class="detail-list">${current.map((visa) => `<div class="detail-item"><strong>Visa ${escapeHTML(visa.id)} · ${escapeHTML(visa.proto)}</strong><span>${escapeHTML(visaEndpoint(visa.source_addr, visa.source_port, visa.dest_addr, visa.dest_port))}</span><span>Direction: ${escapeHTML(visa.direction || "Not reported")}</span><span>Expires: ${escapeHTML(new Date(num(visa.expires) * 1000).toLocaleString())}</span><span>Node: ${escapeHTML(visa.requesting_node || "Not reported")} · Policy: ${escapeHTML(visa.policy_id || "Not reported")}</span></div>`).join("")}</div>` : `<p>No current visas.</p>`;
+      const content = !adapterVisaDetails.loaded ? adapterVisaDetails.pending ? `<p>Loading current visas...</p>` : "" : current.length ? `<div class="detail-list">${current.map((visa) => `<div class="detail-item"><strong>Visa ${escapeHTML(visa.id)} · ${escapeHTML(visa.proto)}</strong><span title="${escapeHTML(visaEndpointTitle(visa.source_addr, visa.dest_addr))}">${escapeHTML(visaEndpoint(visa.source_addr, visa.source_port, visa.dest_addr, visa.dest_port))}</span><span>Direction: ${escapeHTML(visa.direction || "Not reported")}</span><span>Expires: ${escapeHTML(new Date(num(visa.expires) * 1000).toLocaleString())}</span><span>Node: ${escapeHTML(visa.requesting_node || "Not reported")} · Policy: ${escapeHTML(visa.policy_id || "Not reported")}</span></div>`).join("")}</div>` : `<p>No current visas.</p>`;
       const error = adapterVisaDetails.error ? `<p role="status">${escapeHTML(adapterVisaDetails.error)}${adapterVisaDetails.loaded ? "; showing last successful result." : ""}</p>` : "";
       sections.push(`<section class="detail-section"><h3>Current visas</h3>${error}${content}</section>`);
-    } else if (relatedVisas.length) sections.push(`<section class="detail-section"><h3>Recent visas</h3><div class="detail-list">${relatedVisas.slice(0, 6).map((visa) => `<div class="detail-item"><strong>Visa ${escapeHTML(visa.id)} · ${escapeHTML(visa.proto)}</strong><span>${escapeHTML(visaEndpoint(visa.source_addr, visa.source_port, visa.dest_addr, visa.dest_port))}</span></div>`).join("")}</div></section>`);
+    } else if (relatedVisas.length) sections.push(`<section class="detail-section"><h3>Recent visas</h3><div class="detail-list">${relatedVisas.slice(0, 6).map((visa) => `<div class="detail-item"><strong>Visa ${escapeHTML(visa.id)} · ${escapeHTML(visa.proto)}</strong><span title="${escapeHTML(visaEndpointTitle(visa.source_addr, visa.dest_addr))}">${escapeHTML(visaEndpoint(visa.source_addr, visa.source_port, visa.dest_addr, visa.dest_port))}</span></div>`).join("")}</div></section>`);
   } else if (state.selection.kind === "service") {
     const service = data.services.find((item) => item.service_name === state.selection.key);
     if (!service) return closeInspector();
@@ -417,7 +436,7 @@ function renderInspector() {
       detailField("Kind", service.service_kind), detailField("Provider adapter", actorDisplayName(actor), "mono"),
       detailField("Provider common name", service.actor_cn, "mono"),
       ...(isGateway ? [detailField("External network", service.external_network_connection || "Gateway") ] : []),
-      detailField("ZPR address", service.zpr_addr, "mono"),
+      detailDNSAddressField("DNS name", service.zpr_addr),
       detailField("Endpoints", service.service_endpoints),
     ]));
     sections.push(detailSection("Live state", [
@@ -433,7 +452,7 @@ function renderInspector() {
     sections.push(detailSection("Who uses it", [
       detailField("Actor", source.actor_cn, "mono"),
       detailField("Provider", providerDescription(source.provider)),
-      detailField("Service address", source.zpr_addr, "mono"),
+      detailDNSAddressField("DNS name", source.zpr_addr),
       detailField("Configured endpoint", source.service_endpoints || (source.provider === "rest/1" ? "Managed by Visa Service" : "No network endpoint"), "mono"),
     ]));
     sections.push(detailSection("Lookup status", [
@@ -455,12 +474,12 @@ function renderInspector() {
     if (kind === "network" && !link) return closeInspector();
     kindLabel = kind === "dock" ? "DOCK CONNECTION" : "INTER-NODE LINK";
     title = `${fromName} ↔ ${toName}`;
-    sections.push(detailSection("Endpoints", [detailField("From", fromName), detailField("From address", from.zpr_addr, "mono"), detailField("To", toName), detailField("To address", to.zpr_addr, "mono")]));
+    sections.push(detailSection("Endpoints", [detailField("From", actorDisplayName(from)), detailDNSAddressField("From DNS name", from.zpr_addr, fromName), detailField("To", actorDisplayName(to)), detailDNSAddressField("To DNS name", to.zpr_addr, toName)]));
     sections.push(detailSection("Live state", kind === "dock" ? [
       detailField("Attachment", (from.node_details?.adapters || []).includes(toName) ? "Docked" : "Unreported"),
     ] : [
       detailField("Status", link.ctype), detailField("Link ID", link.link_id), detailField("Cost", link.link_cost),
-      detailField("Substrate A", link.node_a_substrate, "mono"), detailField("Substrate B", link.node_b_substrate, "mono"),
+      detailDNSAddressField("Node A DNS name", from.zpr_addr, fromName, `Node/substrate IP: ${from.zpr_addr || "not reported"} / ${link.node_a_substrate || "not reported"}`), detailDNSAddressField("Node B DNS name", to.zpr_addr, toName, `Node/substrate IP: ${to.zpr_addr || "not reported"} / ${link.node_b_substrate || "not reported"}`),
     ]));
   }
 
@@ -622,7 +641,9 @@ function renderTopology(data, exitComponents = []) {
     const docked = edge.kind === "dock";
     const up = docked || edge.state === "UP";
     const cls = docked ? "dock-link" : up ? "up" : "down";
-    const title = docked ? `${displayNames.get(edge.to.cn)} docked to ${displayNames.get(edge.from.cn)}` : `${displayNames.get(edge.from.cn)} to ${displayNames.get(edge.to.cn)}: ${edge.state}`;
+    const title = docked
+      ? `${displayNames.get(edge.to.cn)} docked to ${displayNames.get(edge.from.cn)} · ${dnsAddressTitle(edge.to.zpr_addr, "Adapter IP")} · ${dnsAddressTitle(edge.from.zpr_addr, "Node IP")}`
+      : `${displayNames.get(edge.from.cn)} to ${displayNames.get(edge.to.cn)}: ${edge.state} · ${dnsAddressTitle(edge.from.zpr_addr, "Node A IP")} · ${dnsAddressTitle(edge.to.zpr_addr, "Node B IP")}`;
     const filtered = query && !matches(edge.from) && !matches(edge.to) ? "filtered" : "";
     const key = `${edge.kind}|${edge.from.cn}|${edge.to.cn}`;
     return `<g class="graph-edge ${filtered}" data-inspect-link="${escapeHTML(key)}" tabindex="0" role="button" aria-label="Inspect ${escapeHTML(title)}"><title>${escapeHTML(title)}</title><line class="graph-link ${cls}" x1="${from.x}" y1="${from.y}" x2="${to.x}" y2="${to.y}"/><line class="graph-link-hit" x1="${from.x}" y1="${from.y}" x2="${to.x}" y2="${to.y}"/></g>`;
@@ -681,7 +702,7 @@ function renderTopology(data, exitComponents = []) {
       const externalNetworks = [...new Set((servicesByActor.get(actor.cn) || []).filter(isGatewayService).map((service) => service.external_network_connection || "External network"))].join(", ");
       cloudMarkup = `<g class="graph-external-network"><title>${escapeHTML(externalNetworks)}</title><line class="graph-link gateway-cloud-link" x1="${pos.x}" y1="${pos.y}" x2="${cloudX}" y2="${cloudY}"/><path class="graph-cloud" transform="translate(${cloudX} ${cloudY})" d="M -34 22 C -60 22 -62 -12 -39 -17 C -40 -43 -2 -49 9 -28 C 31 -42 52 -22 46 -5 C 68 0 62 22 42 22 Z"/></g>`;
     }
-    return `<g class="graph-vertex ${isNode ? "node" : isGateway ? "gateway" : isVisaService ? "visa" : "adapter"}${arrivingClass} ${query && !matches(actor) ? "filtered" : ""}" data-topology-component="${escapeHTML(componentKey)}" data-origin-x="${pos.x}" data-origin-y="${pos.y}"${positionAttributes} data-inspect-actor="${escapeHTML(actor.cn)}" tabindex="0" role="button" aria-label="Inspect ${escapeHTML(isGateway ? "gateway " : "")}${escapeHTML(displayName)}"><title>${escapeHTML(isGateway ? "ZPR gateway · " : "")}${escapeHTML(displayName)} · ${escapeHTML(actor.cn)} · ${escapeHTML(actor.zpr_addr || "address pending")}</title>${cloudMarkup}${glyph}${marker}<text class="graph-label" x="${pos.x}" y="${pos.y + 3}">${escapeHTML(shortName)}</text></g>`;
+    return `<g class="graph-vertex ${isNode ? "node" : isGateway ? "gateway" : isVisaService ? "visa" : "adapter"}${arrivingClass} ${query && !matches(actor) ? "filtered" : ""}" data-topology-component="${escapeHTML(componentKey)}" data-origin-x="${pos.x}" data-origin-y="${pos.y}"${positionAttributes} data-inspect-actor="${escapeHTML(actor.cn)}" tabindex="0" role="button" aria-label="Inspect ${escapeHTML(isGateway ? "gateway " : "")}${escapeHTML(displayName)}"><title>${escapeHTML(isGateway ? "ZPR gateway · " : "")}${escapeHTML(displayName)} · ${escapeHTML(actor.cn)} · ${escapeHTML(dnsAddressTitle(actor.zpr_addr))}</title>${cloudMarkup}${glyph}${marker}<text class="graph-label" x="${pos.x}" y="${pos.y + 3}">${escapeHTML(shortName)}</text></g>`;
   });
 
   const serviceEdgeMarkup = [];
@@ -703,13 +724,14 @@ function renderTopology(data, exitComponents = []) {
     const startY = ownerPosition.y + outwardY * actorRadius;
     const endX = position.x - outwardX * (badgeWidth / 2);
     const endY = position.y - outwardY * 10;
-    const trustedType = service.service_kind.match(/^Trusted\("([^\"]+)"\)$/)?.[1];
+    const type = serviceTypeAppearance(isGatewayService(service) ? "Gateway" : service.service_kind);
+    const trustedType = (service.service_kind || "").match(/^Trusted\("([^\"]+)"\)$/)?.[1];
     const trustedClass = trustedType ? ` trusted-${trustedType.toLowerCase().replace(/[^a-z0-9]+/g, "-")}` : "";
     const gatewayClass = isGatewayService(service) ? " gateway" : "";
     const filtered = query && !`${service.service_name} ${service.service_kind}`.toLowerCase().includes(query) && !matches(owner) ? "filtered" : "";
     serviceEdgeMarkup.push(`<g class="graph-service-edge ${filtered}" aria-hidden="true"><line class="graph-link service-link" x1="${startX}" y1="${startY}" x2="${endX}" y2="${endY}"/></g>`);
     const providerName = displayNames.get(owner.cn) || owner.cn;
-    const title = `${isGatewayService(service) ? "Gateway · " : ""}${service.service_name} registered by ${providerName} (${owner.cn})${service.external_network_connection ? ` · external network: ${service.external_network_connection}` : ""}`;
+    const title = `${isGatewayService(service) ? "Gateway · " : ""}${service.service_name} registered by ${providerName} (${owner.cn})${service.external_network_connection ? ` · external network: ${service.external_network_connection}` : ""}${service.zpr_addr ? ` · ${dnsAddressTitle(service.zpr_addr)}` : ""}`;
     const labelForScreenReader = `Inspect service ${service.service_name}, registered by ${providerName}`;
     const componentKey = `service:${JSON.stringify([service.actor_cn, service.service_name])}`;
     const marker = arrivalMarker(componentKey, position.x, position.y, badgeWidth / 2 + 8);
@@ -719,7 +741,7 @@ function renderTopology(data, exitComponents = []) {
     const parentMovement = marker ? enteringOffsets.get(parentKey) || previousMovement.get(parentKey) : null;
     const entry = marker && parentMovement ? { x: offset.x + parentMovement.x, y: offset.y + parentMovement.y } : null;
     const positionAttributes = offsetAttributes(offset, parentKey, entry);
-    return `<g class="graph-service-badge${gatewayClass}${trustedClass}${arrivingClass} ${filtered}" data-topology-component="${escapeHTML(componentKey)}" data-origin-x="${position.x}" data-origin-y="${position.y}"${positionAttributes} data-inspect-service="${escapeHTML(service.service_name)}" tabindex="0" role="button" aria-label="${escapeHTML(labelForScreenReader)}"><title>${escapeHTML(title)}</title><rect x="${position.x - badgeWidth / 2}" y="${position.y - 10}" width="${badgeWidth}" height="20" rx="4"/>${marker}<text x="${position.x}" y="${position.y + 3}">${escapeHTML(shortLabel)}</text></g>`;
+    return `<g class="graph-service-badge${gatewayClass}${trustedClass}${arrivingClass} ${filtered}" data-service-type="${escapeHTML(type.key)}" fill="${escapeHTML(type.background)}" stroke="${escapeHTML(type.border)}" color="${escapeHTML(type.color)}" data-topology-component="${escapeHTML(componentKey)}" data-origin-x="${position.x}" data-origin-y="${position.y}"${positionAttributes} data-inspect-service="${escapeHTML(service.service_name)}" tabindex="0" role="button" aria-label="${escapeHTML(labelForScreenReader)}"><title>${escapeHTML(title)}</title><rect x="${position.x - badgeWidth / 2}" y="${position.y - 10}" width="${badgeWidth}" height="20" rx="4"/>${marker}<text x="${position.x}" y="${position.y + 3}">${escapeHTML(shortLabel)}</text></g>`;
   });
 
   const exiting = (kind) => exitComponents.filter((component) => component.kind === kind).map((component) => component.markup).join("");
@@ -734,19 +756,20 @@ function renderConnections(edges, unconnected) {
     ...edges.map((edge) => ({
       from: actorDisplayName(edge.from), to: actorDisplayName(edge.to),
       type: edge.kind === "dock" ? "DOCK" : "INTER-NODE",
-      address: edge.kind === "dock"
-        ? `${edge.from.zpr_addr || "Address not assigned"} ↔ ${edge.to.zpr_addr || "Address not assigned"}`
-        : [edge.detail.node_a_substrate, edge.detail.node_b_substrate].filter(Boolean).join(" ↔ ") || edge.detail.link_id || "No substrate details",
+      address: `${dnsAddressLabel(edge.from.zpr_addr)} ↔ ${dnsAddressLabel(edge.to.zpr_addr)}`,
+      addressTitle: edge.kind === "dock"
+        ? `${dnsAddressTitle(edge.from.zpr_addr, "From IP")} · ${dnsAddressTitle(edge.to.zpr_addr, "To IP")}`
+        : `Node IPs: ${edge.from.zpr_addr || "not reported"} ↔ ${edge.to.zpr_addr || "not reported"} · Substrate IPs: ${edge.detail.node_a_substrate || "not reported"} ↔ ${edge.detail.node_b_substrate || "not reported"}`,
       state: edge.kind === "dock" ? "DOCKED" : edge.state,
       key: `${edge.kind}|${edge.from.cn}|${edge.to.cn}`,
     })),
-    ...unconnected.map((actor) => ({ from: "—", to: actorDisplayName(actor), type: "ADAPTER", address: actor.zpr_addr || "Address not assigned", state: "NO NODE", actor: actor.cn })),
+    ...unconnected.map((actor) => ({ from: "—", to: actorDisplayName(actor), type: "ADAPTER", address: dnsAddressLabel(actor.zpr_addr), addressTitle: dnsAddressTitle(actor.zpr_addr), state: "NO NODE", actor: actor.cn })),
   ];
-  const columns = { from: (row) => row.from, to: (row) => row.to, type: (row) => row.type, address: (row) => row.address, state: (row) => row.state };
+  const columns = { from: (row) => row.from, to: (row) => row.to, type: (row) => row.type, address: (row) => `${row.address} ${row.addressTitle}`, state: (row) => row.state };
   const shown = visibleRows("connections", rows, columns);
   byId("link-list").innerHTML = shown.length ? shown.map((row) => {
     const target = row.actor ? `data-inspect-actor="${escapeHTML(row.actor)}"` : `data-inspect-link="${escapeHTML(row.key)}"`;
-    return `<tr class="selectable-row" ${target} tabindex="0" role="button" aria-label="Inspect ${escapeHTML(row.from)} to ${escapeHTML(row.to)}"><td>${escapeHTML(row.from)}</td><td>${escapeHTML(row.to)}</td><td><span class="role-chip ${row.type === "INTER-NODE" ? "node" : ""}">${row.type}</span></td><td class="mono">${escapeHTML(row.address)}</td><td><span class="mini-state ${["UP", "DOCKED"].includes(row.state) ? "up" : ""}">${escapeHTML(row.state)}</span></td></tr>`;
+    return `<tr class="selectable-row" ${target} tabindex="0" role="button" aria-label="Inspect ${escapeHTML(row.from)} to ${escapeHTML(row.to)}"><td>${escapeHTML(row.from)}</td><td>${escapeHTML(row.to)}</td><td><span class="role-chip ${row.type === "INTER-NODE" ? "node" : ""}">${row.type}</span></td><td class="mono" title="${escapeHTML(row.addressTitle || "")}">${escapeHTML(row.address)}</td><td><span class="mini-state ${["UP", "DOCKED"].includes(row.state) ? "up" : ""}">${escapeHTML(row.state)}</span></td></tr>`;
   }).join("") : `<tr><td colspan="5" class="empty-row">${rows.length ? "No matching connections" : "No dock or inter-node connections reported"}</td></tr>`;
 }
 
@@ -882,14 +905,14 @@ function nodeState(actor, data) {
 
 function renderActors(data) {
   byId("actor-count").textContent = `${formatNumber(data.actors.length)} Actors`;
-  const columns = { cn: (actor) => `${actorDisplayName(actor)} ${actor.cn}`, role: (actor) => actor.node ? "node" : "adapter", address: (actor) => actor.zpr_addr, state: (actor) => nodeState(actor, data) };
+  const columns = { cn: (actor) => `${actorDisplayName(actor)} ${actor.cn}`, role: (actor) => actor.node ? "node" : "adapter", address: (actor) => `${dnsAddressLabel(actor.zpr_addr, actor.cn)} ${actor.zpr_addr || ""}`, state: (actor) => nodeState(actor, data) };
   const actors = visibleRows("actors", data.actors, columns);
   byId("actor-rows").innerHTML = actors.length ? actors.map((actor) => {
     const role = actor.node ? "node" : "adapter";
     const stateText = nodeState(actor, data);
     const up = stateText === "LINK UP" || stateText === "IN SYNC";
     const last = actor.node && actor.node_details ? ` · seen ${since(actor.node_details.last_contact)}` : "";
-    return `<tr class="selectable-row" data-inspect-actor="${escapeHTML(actor.cn)}" tabindex="0" role="button" aria-label="Inspect actor ${escapeHTML(actorDisplayName(actor))}"><td>${escapeHTML(actorDisplayName(actor))}</td><td><span class="role-chip ${role}">${role}</span></td><td class="mono">${escapeHTML(actor.zpr_addr || "—")}</td><td><span class="mini-state ${up ? "up" : ""}">${stateText}${last}</span></td></tr>`;
+    return `<tr class="selectable-row" data-inspect-actor="${escapeHTML(actor.cn)}" tabindex="0" role="button" aria-label="Inspect actor ${escapeHTML(actorDisplayName(actor))}"><td>${escapeHTML(actorDisplayName(actor))}</td><td><span class="role-chip ${role}">${role}</span></td><td class="mono" title="${escapeHTML(dnsAddressTitle(actor.zpr_addr))}">${escapeHTML(dnsAddressLabel(actor.zpr_addr, actor.cn))}</td><td><span class="mini-state ${up ? "up" : ""}">${stateText}${last}</span></td></tr>`;
   }).join("") : `<tr><td colspan="4" class="empty-row">No matching actors</td></tr>`;
 }
 
@@ -939,6 +962,8 @@ async function loadPolicyWorkspace() {
       ldapAttributeCount: data.ldap_attribute_count || 0,
       attributeScanError: data.attribute_scan_error || "",
       compilerReady: data.compiler_ready,
+      stagingReady: data.staging_ready,
+      stagedCandidate: data.staged_candidate || null,
       assistantReady: data.assistant_ready,
     });
     renderPolicyAttributes();
@@ -1283,33 +1308,56 @@ function updatePolicyHighlight() {
 
 function completionCandidates(source, cursor) {
   const prefix = source.slice(0, cursor);
-  const line = prefix.slice(prefix.lastIndexOf("\n") + 1);
-  const wordMatch = line.match(/[\p{L}\p{N}_-]+$/u);
+  let blocked = false;
+  const context = prefix.replace(/#.*$|\/\/.*$|'(?:\\.|[^'\\])*'?|"(?:\\.|[^"\\])*"?|`(?:\\.|[^`\\])*`?/gmu, (token, offset) => {
+    if (offset + token.length === cursor) blocked = true;
+    return token.replace(/[^\n]/g, " ");
+  });
+  const wordMatch = context.match(/[\p{L}\p{N}_-]+(?:\.[\p{L}\p{N}_-]*)*$/u);
   const word = wordMatch?.[0] || "";
+  const empty = { word, start: cursor - word.length, items: [] };
+  if (blocked) return empty;
+  const boundaries = [...context.matchAll(/\.[ \t]*(?:\r?\n|$)/g)];
+  const boundary = boundaries.at(-1);
+  const qualifiedAttribute = /^(?:user|device|service|link)\.$/i.test(word) && /\bdefine\b[\s\S]*\bwith\b/i.test(context.slice(boundaries.at(-2)?.index + 1 || 0));
+  if (boundary && !context.slice(boundary.index).includes("\n") && !qualifiedAttribute) return empty;
+  const statementStart = boundary && !qualifiedAttribute ? boundary.index + boundary[0].length : boundaries.at(-2)?.index + 1 || 0;
+  const line = context.slice(statementStart).replace(/\s+/g, " ");
   const trimmed = line.trimStart();
   let candidates;
+  let attributeMode = false;
   let filterPrefix = word;
-  if (/^[\p{L}\p{N}_-]*$/u.test(trimmed)) {
+  if (/^define\s+/i.test(trimmed) && /\bwith\b/i.test(trimmed)) {
+    attributeMode = true;
+    const attributes = trimmed.slice(trimmed.search(/\bwith\b/i) + 4);
+    if (!/(?:^|\band\s+(?:with\s+)?|,)\s*(?:(?:optional|multiple|tag|tags)\s+)*[\p{L}\p{N}_.-]*$/iu.test(attributes)) return empty;
+    const parent = trimmed.match(/^define\s+\S+\s+(?:aka\s+\S+\s+)?as\s+(?:a\s+|an\s+)?(user|device|service)\b/i)?.[1]?.toLowerCase();
+    candidates = (state.policy.attributes || []).map((item) => item.attribute).filter((attribute) => !parent || !/^(user|device|service|link)\./i.test(attribute) || attribute.toLowerCase().startsWith(`${parent}.`)).map((attribute) => `${attribute}:`);
+  } else if (/^[\p{L}\p{N}_-]*$/u.test(trimmed)) {
     candidates = ["allow", "never allow", "define"];
     filterPrefix = trimmed;
-  } else if (/^never\s+[\p{L}\p{N}_-]*$/i.test(trimmed)) {
+  } else if (/^never\s+[\p{L}\p{N}_-]*$/iu.test(trimmed)) {
     candidates = ["allow"];
-  } else if (/^define\s+\S+\s+(?:aka\s+\S+\s+)?as\s+(?:a\s+|an\s+)?[\p{L}\p{N}_-]*$/i.test(trimmed)) {
+  } else if (/^define\s+\S+\s+(?:aka\s+\S+\s+)?as\s+(?:a\s+|an\s+)?[\p{L}\p{N}_-]*$/iu.test(trimmed)) {
     candidates = ["user", "device", "service", ...definedPolicyClasses(source)];
   } else if (/^define\s+\S+\s+(?:aka\s+\S+\s+)?$/i.test(trimmed)) {
     candidates = ["as"];
+  } else if (/^define\s+\S+\s+(?:aka\s+\S+\s+)?as\s+(?:a\s+|an\s+)?\S+\s+[\p{L}\p{N}_-]*$/iu.test(trimmed)) {
+    candidates = ["with"];
   } else if (/\bto\s*[^\s]*$/i.test(line)) {
     candidates = ["access"];
   } else if (/\baccess\s+[^\s]*$/i.test(line)) {
     candidates = [...policyClassReferences(source), "services", "on", "over"];
   } else if (/^\s*(?:allow|never\s+allow)\s+[^\n]*$/i.test(line) && !/\bto\b/i.test(line)) {
     candidates = ["users", "devices", "services", ...definedPolicyClasses(source).flatMap((name) => [pluralPolicyClass(name), name]), "to"];
-  } else {
+  } else if (/^(?:allow|never\s+allow|define)\s+/i.test(trimmed)) {
     candidates = ["with", "and", "to", "access", "on", "over", "signal", "tag", "tags", "optional", "multiple"];
-  }
+  } else return empty;
   const unique = [...new Set(candidates)];
-  const filtered = filterPrefix ? unique.filter((item) => item.toLowerCase().startsWith(filterPrefix.toLowerCase()) && item.toLowerCase() !== filterPrefix.toLowerCase()) : unique;
-  return { word, start: cursor - word.length, items: filtered.slice(0, 8) };
+  const filtered = filterPrefix ? unique.filter((item) => (item.toLowerCase().startsWith(filterPrefix.toLowerCase()) || attributeMode && !filterPrefix.includes(".") && item.split(".").at(-1).toLowerCase().startsWith(filterPrefix.toLowerCase())) && item.toLowerCase() !== filterPrefix.toLowerCase()) : unique;
+  let end = cursor + (source.slice(cursor).match(/^[\p{L}\p{N}_-]*(?:\.[\p{L}\p{N}_-]+)*/u)?.[0].length || 0);
+  if (attributeMode && source[end] === ":") end++;
+  return { word, start: cursor - word.length, end, items: filtered.slice(0, 8) };
 }
 
 function hidePolicyCompletions() {
@@ -1318,6 +1366,33 @@ function hidePolicyCompletions() {
   menu.replaceChildren();
   menu.removeAttribute("data-start");
   menu.removeAttribute("data-end");
+  byId("policy-source").setAttribute("aria-expanded", "false");
+  byId("policy-source").removeAttribute("aria-activedescendant");
+}
+
+function positionPolicyCompletions() {
+  const menu = byId("policy-completions");
+  if (menu.hidden) return;
+  const textarea = byId("policy-source");
+  const editor = textarea.parentElement;
+  const mirror = document.createElement("div");
+  mirror.className = "policy-caret-mirror";
+  mirror.setAttribute("aria-hidden", "true");
+  const marker = document.createElement("span");
+  marker.textContent = ".";
+  mirror.append(document.createTextNode(textarea.value.slice(0, textarea.selectionStart)), marker, document.createTextNode(textarea.value.slice(textarea.selectionStart)));
+  editor.append(mirror);
+  mirror.scrollTop = textarea.scrollTop;
+  mirror.scrollLeft = textarea.scrollLeft;
+  const caret = marker.getBoundingClientRect();
+  const bounds = editor.getBoundingClientRect();
+  mirror.remove();
+  if (caret.bottom < bounds.top + 8 || caret.top > bounds.bottom - 8 || caret.left < bounds.left || caret.left > bounds.right) return hidePolicyCompletions();
+  const left = Math.max(8, Math.min(caret.left - bounds.left, editor.clientWidth - menu.offsetWidth - 8));
+  const below = caret.bottom - bounds.top + 4;
+  const top = below + menu.offsetHeight <= editor.clientHeight - 8 ? below : Math.max(8, caret.top - bounds.top - menu.offsetHeight - 4);
+  menu.style.left = `${left}px`;
+  menu.style.top = `${top}px`;
 }
 
 function showPolicyCompletions(force = false) {
@@ -1331,19 +1406,33 @@ function showPolicyCompletions(force = false) {
   const menu = byId("policy-completions");
   menu.replaceChildren();
   menu.dataset.start = String(suggestions.start);
-  menu.dataset.end = String(textarea.selectionStart);
+  menu.dataset.end = String(suggestions.end ?? textarea.selectionStart);
   suggestions.items.forEach((item, index) => {
     const option = document.createElement("button");
     option.type = "button";
     option.className = "completion-option";
+    option.id = `policy-completion-${index}`;
+    option.dataset.insertion = item;
     option.setAttribute("role", "option");
     option.setAttribute("aria-selected", String(index === 0));
-    option.textContent = item;
+    const label = document.createElement("span");
+    label.textContent = item;
+    option.append(label);
+    const attribute = item.endsWith(":") ? state.policy.attributes.find((entry) => `${entry.attribute}:` === item) : null;
+    if (attribute) {
+      option.classList.add("completion-attribute");
+      const source = document.createElement("small");
+      source.textContent = attribute.source || "attribute";
+      option.append(source);
+    }
     option.addEventListener("mousedown", (event) => event.preventDefault());
     option.addEventListener("click", () => acceptPolicyCompletion(index));
     menu.append(option);
   });
   menu.hidden = false;
+  textarea.setAttribute("aria-expanded", "true");
+  textarea.setAttribute("aria-activedescendant", "policy-completion-0");
+  positionPolicyCompletions();
 }
 
 function acceptPolicyCompletion(index = 0) {
@@ -1354,7 +1443,7 @@ function acceptPolicyCompletion(index = 0) {
   if (!option) return;
   const start = Number(menu.dataset.start);
   const end = Number(menu.dataset.end);
-  const insertion = option.textContent;
+  const insertion = option.dataset.insertion;
   textarea.setRangeText(insertion, start, end, "end");
   textarea.focus();
   state.policy.validSource = null;
@@ -1369,6 +1458,7 @@ function movePolicyCompletion(delta) {
   const current = options.findIndex((option) => option.getAttribute("aria-selected") === "true");
   const next = (current + delta + options.length) % options.length;
   options.forEach((option, index) => option.setAttribute("aria-selected", String(index === next)));
+  byId("policy-source").setAttribute("aria-activedescendant", options[next].id);
   options[next].scrollIntoView({ block: "nearest" });
   return true;
 }
@@ -1537,14 +1627,17 @@ function updatePolicyDirtyState() {
   const canEdit = policy.configured && policy.record?.kind === "policy" && !policy.browsingRevision;
   const isDraft = Boolean(policy.record?.isDraft);
   const canSave = canEdit && checked && (isDraft ? Boolean(policy.record.name.trim()) && source.trim() !== "" : contentDirty);
+  const canStage = Boolean(policy.stagingReady && policy.record?.kind === "policy" && !isDraft && !policy.browsingRevision && !contentDirty && !policy.stagePending);
   byId("policy-save").disabled = !canSave;
   byId("policy-save-as").disabled = !canEdit || isDraft || !checked;
+  byId("policy-stage").disabled = !canStage;
   byId("policy-check").disabled = !canEdit || !policy.compilerReady;
   byId("policy-refresh").disabled = !policy.record || (!dirty && !policy.browsingRevision && !isDraft);
   byId("policy-check").classList.toggle("button-next-evaluate", canEdit && !checked);
   byId("policy-save").classList.toggle("button-save-next", !canSave);
   byId("policy-save").classList.toggle("button-next-save", canSave);
   byId("policy-save-as").classList.toggle("button-save-as-ready", canEdit && !isDraft && checked);
+  renderPolicyStageStatus();
   renderPolicyIdentity(policy.record, policy.browsingRevision || policy.revision);
   const result = byId("policy-check-result");
   if (isDraft && !source.trim() && result.dataset.state !== "invalid") {
@@ -1554,6 +1647,51 @@ function updatePolicyDirtyState() {
   } else if ((dirty || isDraft) && !checked && result.dataset.state !== "invalid") {
     result.dataset.state = "";
     result.textContent = "Evaluate the current policy before saving.";
+  }
+}
+
+function renderPolicyStageStatus() {
+  const policy = state.policy;
+  const status = byId("policy-stage-status");
+  if (policy.stagePending) {
+    status.textContent = "Compiling and staging candidate…";
+    status.dataset.state = "pending";
+  } else if (policy.stageError) {
+    status.textContent = policy.stageError;
+    status.dataset.state = "error";
+  } else if (policy.stagedCandidate) {
+    const candidate = policy.stagedCandidate;
+    status.textContent = `Staged ${candidate.record_name} r${candidate.record_revision} · SHA-256 ${candidate.bundle_sha256.slice(0, 12)} · not pushed`;
+    status.dataset.state = "staged";
+  } else if (!policy.stagingReady) {
+    status.textContent = "Policy staging is not configured.";
+    status.dataset.state = "error";
+  } else {
+    status.textContent = policy.record?.kind === "policy" ? "Saved revision can be staged; live policy will not change." : "Select a saved policy revision to stage.";
+    status.dataset.state = "";
+  }
+}
+
+async function stageSelectedPolicy() {
+  const policy = state.policy;
+  if (!policy.record || policy.record.kind !== "policy" || policy.record.isDraft || policy.browsingRevision || byId("policy-source").value !== policy.savedSource || !policy.stagingReady || policy.stagePending) return;
+  policy.stagePending = true;
+  policy.stageError = "";
+  updatePolicyDirtyState();
+  try {
+    const response = await fetch(`/api/policy/records/${encodeURIComponent(policy.record.id)}/stage`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", Accept: "application/json" },
+      body: JSON.stringify({ expected_revision: policy.record.current_revision }),
+    });
+    const result = await response.json();
+    if (!response.ok) throw new Error(result.error || `Staging failed (${response.status})`);
+    policy.stagedCandidate = result;
+  } catch (error) {
+    policy.stageError = error.message || "Could not stage policy candidate.";
+  } finally {
+    policy.stagePending = false;
+    updatePolicyDirtyState();
   }
 }
 
@@ -1749,31 +1887,96 @@ async function askPolicyAssistant(question) {
   }
 }
 
+const serviceTypePalette = new Map([
+  ["BuiltIn", { color: "#294879", background: "#e8edf9", border: "#8da4cb" }],
+  ["Regular", { color: "#285b3a", background: "#e8f3e9", border: "#80ad8a" }],
+  ["Visa", { color: "#873c2b", background: "#ffe5df", border: "#d89480" }],
+  ["Gateway", { color: "#754000", background: "#fff1c8", border: "#cc963d" }],
+  ['Trusted("file")', { color: "#285d64", background: "#e7f1f3", border: "#4e8790" }],
+  ['Trusted("rest/1")', { color: "#754820", background: "#fff0df", border: "#b8753f" }],
+  ["Not in current policy", { color: "#55616b", background: "#edf0f2", border: "#a5aeb6" }],
+]);
+
+document.addEventListener("click", (event) => {
+  const key = document.querySelector(".service-type-key");
+  if (key.open && !key.contains(event.target)) key.open = false;
+});
+document.addEventListener("keydown", (event) => {
+  const key = document.querySelector(".service-type-key");
+  if (event.key === "Escape" && key.open) {
+    key.open = false;
+    key.querySelector("summary").focus();
+  }
+});
+
+function serviceTypeAppearance(kind) {
+  const key = String(kind || "Not in current policy");
+  const trusted = key.match(/^Trusted\("([^" ]+)"\)$/)?.[1];
+  const label = trusted ? `TRUSTED ${trusted.toUpperCase()}` : key;
+  let palette = serviceTypePalette.get(key);
+  if (!palette) {
+    let hash = 0;
+    for (const character of key) hash = (Math.imul(hash, 31) + character.codePointAt(0)) >>> 0;
+    const hue = hash % 360;
+    palette = { color: `hsl(${hue} 50% 25%)`, background: `hsl(${hue} 55% 94%)`, border: `hsl(${hue} 35% 55%)` };
+  }
+  return { key, label, ...palette };
+}
+
+function applyServiceTypeColor(element, type) {
+  element.style.color = type.color;
+  element.style.backgroundColor = type.background;
+  element.style.borderColor = type.border;
+}
+
+function renderServiceTypeLegend(services) {
+  const legend = byId("service-type-legend");
+  const kinds = [...new Set([...serviceTypePalette.keys(), ...services.map((service) => isGatewayService(service) ? "Gateway" : service.service_kind || "Not in current policy")])];
+  const signature = JSON.stringify(kinds);
+  if (legend.dataset.types === signature) return;
+  legend.replaceChildren();
+  for (const kind of kinds) {
+    const type = serviceTypeAppearance(kind);
+    const item = document.createElement("div");
+    item.className = "service-type-legend-item";
+    item.setAttribute("role", "listitem");
+    const swatch = document.createElement("span");
+    swatch.className = "service-type-swatch";
+    swatch.setAttribute("aria-hidden", "true");
+    applyServiceTypeColor(swatch, type);
+    swatch.style.backgroundColor = type.color;
+    const label = document.createElement("span");
+    label.textContent = type.label;
+    item.append(swatch, label);
+    legend.append(item);
+  }
+  legend.dataset.types = signature;
+}
+
 function renderServices(data) {
   const services = data.services || [];
+  renderServiceTypeLegend(services);
   byId("service-count").textContent = `${formatNumber(services.length)} Services`;
   const providerFor = (service) => data.actors.find((actor) => actor.cn === service.actor_cn);
-  const columns = { name: (service) => service.service_name, kind: (service) => service.service_kind, actor: (service) => `${actorDisplayName(providerFor(service))} ${service.actor_cn || ""}`, address: (service) => service.zpr_addr, endpoints: (service) => service.service_endpoints };
+  const columns = { name: (service) => service.service_name, kind: (service) => service.service_kind, actor: (service) => `${actorDisplayName(providerFor(service))} ${service.actor_cn || ""}`, address: (service) => `${dnsAddressLabel(service.zpr_addr)} ${service.zpr_addr || ""}`, endpoints: (service) => service.service_endpoints };
   const shown = visibleRows("services", services, columns);
   byId("service-rows").innerHTML = shown.length ? shown.map((service) => {
-    const trustedType = (service.service_kind || "").match(/^Trusted\("([^"]+)"\)$/)?.[1];
-    const trustedClass = trustedType ? ` trusted-${trustedType.toLowerCase().replace(/[^a-z0-9]+/g, "-")}` : "";
-    const kind = service.service_kind || "Not in current policy";
-    const kindLabel = trustedType ? `TRUSTED ${trustedType.toUpperCase()}` : kind;
+    const type = serviceTypeAppearance(isGatewayService(service) ? "Gateway" : service.service_kind);
     const provider = providerFor(service);
     const providerLabel = actorDisplayName(provider || { cn: service.actor_cn });
-    return `<tr class="selectable-row" data-inspect-service="${escapeHTML(service.service_name)}" tabindex="0" role="button" aria-label="Inspect service ${escapeHTML(service.service_name)}"><td>${escapeHTML(service.service_name || "—")}</td><td><span class="role-chip${trustedClass}">${escapeHTML(kindLabel)}</span></td><td>${escapeHTML(providerLabel)}</td><td class="mono">${escapeHTML(service.zpr_addr || "—")}</td><td>${escapeHTML(service.service_endpoints || "—")}</td></tr>`;
+    return `<tr class="selectable-row" data-inspect-service="${escapeHTML(service.service_name)}" tabindex="0" role="button" aria-label="Inspect service ${escapeHTML(service.service_name)}"><td>${escapeHTML(service.service_name || "—")}</td><td><span class="role-chip service-type-chip" data-service-type="${escapeHTML(type.key)}">${escapeHTML(type.label)}</span></td><td>${escapeHTML(providerLabel)}</td><td class="mono" title="${escapeHTML(dnsAddressTitle(service.zpr_addr))}">${escapeHTML(dnsAddressLabel(service.zpr_addr))}</td><td>${escapeHTML(service.service_endpoints || "—")}</td></tr>`;
   }).join("") : `<tr><td colspan="5" class="empty-row">${services.length ? "No matching services" : "No network services returned"}</td></tr>`;
+  for (const chip of byId("service-rows").querySelectorAll("[data-service-type]")) applyServiceTypeColor(chip, serviceTypeAppearance(chip.dataset.serviceType));
 }
 
 function renderVisas(data) {
   byId("visa-total").textContent = `${formatNumber(data.visa_count)} Visas`;
   const rows = data.recent_visas || [];
-  const columns = { id: (visa) => num(visa.id), flow: (visa) => visaEndpoint(visa.source_addr, visa.source_port, visa.dest_addr, visa.dest_port), proto: (visa) => visa.proto, node: (visa) => visa.requesting_node, expires: (visa) => num(visa.expires) };
+  const columns = { id: (visa) => num(visa.id), flow: (visa) => `${visaEndpoint(visa.source_addr, visa.source_port, visa.dest_addr, visa.dest_port)} ${visa.source_addr || ""} ${visa.dest_addr || ""}`, proto: (visa) => visa.proto, node: (visa) => visa.requesting_node, expires: (visa) => num(visa.expires) };
   const shown = visibleRows("visas", rows, columns);
   byId("visa-rows").innerHTML = shown.length ? shown.map((visa) => {
     const flow = visaEndpoint(visa.source_addr, visa.source_port, visa.dest_addr, visa.dest_port);
-    return `<tr><td class="mono">${escapeHTML(visa.id)}</td><td class="mono">${escapeHTML(flow)}</td><td>${escapeHTML(visa.proto || "—")}</td><td>${escapeHTML(visa.requesting_node || "—")}</td><td class="mono">${escapeHTML(new Date(num(visa.expires) * 1000).toLocaleTimeString())}</td></tr>`;
+    return `<tr><td class="mono">${escapeHTML(visa.id)}</td><td class="mono" title="${escapeHTML(visaEndpointTitle(visa.source_addr, visa.dest_addr))}">${escapeHTML(flow)}</td><td>${escapeHTML(visa.proto || "—")}</td><td>${escapeHTML(visa.requesting_node || "—")}</td><td class="mono">${escapeHTML(new Date(num(visa.expires) * 1000).toLocaleTimeString())}</td></tr>`;
   }).join("") : `<tr><td colspan="5" class="empty-row">${rows.length ? "No matching visas" : "No active visas returned"}</td></tr>`;
 }
 
@@ -1785,10 +1988,10 @@ function renderDenies(data) {
   const denies = data.recent_denies || [];
   const total = denies.reduce((sum, record) => sum + num(record.count), 0);
   byId("deny-total").textContent = `${formatNumber(total)} Denys`;
-  const columns = { source: (record) => record.source_addr, destination: (record) => record.dest_addr, protocol: (record) => `${protocolName(record.protocol)}/${record.dest_port}`, reason: (record) => record.deny_code, count: (record) => num(record.count) };
+  const columns = { source: (record) => `${dnsAddressLabel(record.source_addr)} ${record.source_addr || ""}`, destination: (record) => `${dnsAddressLabel(record.dest_addr)} ${record.dest_addr || ""}`, protocol: (record) => `${protocolName(record.protocol)}/${record.dest_port}`, reason: (record) => record.deny_code, count: (record) => num(record.count) };
   const shown = visibleRows("denies", denies, columns);
   byId("deny-list").innerHTML = shown.length ? shown.map((record) =>
-    `<tr><td class="mono">${escapeHTML(record.source_addr)}</td><td class="mono">${escapeHTML(record.dest_addr)}</td><td>${escapeHTML(columns.protocol(record))}</td><td>${escapeHTML(record.deny_code)}</td><td class="mono deny-count">${formatNumber(record.count)}</td></tr>`
+    `<tr><td class="mono" title="${escapeHTML(dnsAddressTitle(record.source_addr))}">${escapeHTML(dnsAddressLabel(record.source_addr))}</td><td class="mono" title="${escapeHTML(dnsAddressTitle(record.dest_addr))}">${escapeHTML(dnsAddressLabel(record.dest_addr))}</td><td>${escapeHTML(columns.protocol(record))}</td><td>${escapeHTML(record.deny_code)}</td><td class="mono deny-count">${formatNumber(record.count)}</td></tr>`
   ).join("") : `<tr><td colspan="5" class="empty-row">${denies.length ? "No matching denials" : "No recent policy denials"}</td></tr>`;
 }
 
@@ -1998,14 +2201,20 @@ byId("policy-source").addEventListener("scroll", () => {
   const highlight = byId("policy-highlight");
   highlight.scrollTop = textarea.scrollTop;
   highlight.scrollLeft = textarea.scrollLeft;
+  positionPolicyCompletions();
 });
 byId("policy-source").addEventListener("click", () => showPolicyCompletions());
+byId("policy-source").addEventListener("keyup", (event) => {
+  if (["ArrowLeft", "ArrowRight", "Home", "End"].includes(event.key)) showPolicyCompletions();
+});
+window.addEventListener("resize", positionPolicyCompletions);
 byId("policy-source").addEventListener("keydown", (event) => {
   const menu = byId("policy-completions");
   const open = !menu.hidden;
   if ((event.ctrlKey || event.metaKey) && event.code === "Space") {
     event.preventDefault(); showPolicyCompletions(true); return;
   }
+  if (event.key === "Tab" && event.shiftKey) { hidePolicyCompletions(); return; }
   if (open && event.key === "ArrowDown") { event.preventDefault(); movePolicyCompletion(1); return; }
   if (open && event.key === "ArrowUp") { event.preventDefault(); movePolicyCompletion(-1); return; }
   if (open && event.key === "Tab") {
@@ -2026,6 +2235,7 @@ byId("policy-source").addEventListener("blur", (event) => {
 });
 byId("policy-check").addEventListener("click", checkPolicy);
 byId("policy-save").addEventListener("click", savePolicy);
+byId("policy-stage").addEventListener("click", stageSelectedPolicy);
 byId("assistant-enabled").addEventListener("change", (event) => {
   state.policy.assistantEnabled = event.target.checked;
   updateAssistantControls();

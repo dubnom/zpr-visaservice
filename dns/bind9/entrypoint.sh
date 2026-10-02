@@ -31,6 +31,14 @@ if [ -e "$zone_file" ]; then
     chown bind:bind "$zone_file"
     chmod 0640 "$zone_file"
 fi
+for reverse_file in db.fd00-1.ip6 db.fd5a-5052.ip6 db.10.in-addr; do
+    reverse_file="$zone_directory/$reverse_file"
+    if [ ! -e "$reverse_file" ]; then
+        printf '%s\n' '$TTL 30' '@ IN SOA dns.svc.zpr. hostmaster.svc.zpr. (1 60 60 86400 30)' '  IN NS dns.svc.zpr.' > "$reverse_file"
+    fi
+    chown bind:bind "$reverse_file"
+    chmod 0640 "$reverse_file"
+done
 
 adapter_pid=
 while [ -z "$adapter_pid" ]; do

@@ -58,6 +58,21 @@ addresses, including aliases from the configured `svc.zpr.` zone. The zone
 records are cached and refreshed once per minute during normal polling;
 unmatched addresses remain numeric, and DNS failures retain cached names.
 
+The policy editor offers compact completions beside the cursor. Inside a
+`define` statement's `with` clause, the same menu includes configured attributes
+and their sources, including multiline clauses. Suggestions are suppressed
+after terminating periods and inside comments, quoted strings, and attribute
+values. Control-Space requests suggestions, arrow keys select, Tab accepts,
+and Escape dismisses; Enter remains a newline and Shift-Tab moves focus out.
+
+The Control Room Services page uses distinct type colors for BuiltIn, Regular,
+Visa, Gateway, trusted file, trusted REST, and services not in the current
+policy. The upper-right **Type colors** dropdown shows the mapping and includes
+stable colors for any additional reported types. Labels remain visible alongside
+colors; the key stays open during polling and closes on outside click or Escape.
+Map service badges use the same background, border, and text colors, including
+while hovered or highlighted as arriving or exiting.
+
 The IPv6 simulator policy also defines a ZPR `internet-gateway` service at
 `[fd00:1:9::1]:8082`. Its identity uses a dedicated pre-generated bootstrap key,
 and the trusted file service assigns its `public-internet` network label. The
@@ -70,6 +85,47 @@ gateway key before running this scenario.
 In the Control Room map, each gateway is connected to a dark gray cloud
 representing its external network. Hover over the cloud to see the declared
 network label.
+
+## Simulator Policy Source
+
+Control Room's Policy tree includes **Simulator / Runtime / Simulator runtime
+policy** when the local stack configures `ZPR_POLICY_SOURCE_FILE`. This is the
+simulator ZPL source, separate from the editable Northstar demonstration catalog
+and from acknowledgement of a signed policy installed in Visa Service.
+
+The configured source is imported even when the repository already has records.
+Importer-owned records gain a revision when the file changes; identical reads
+are idempotent. Manual edits to the imported record and unrelated policies are
+never overwritten. `ZPR_POLICY_SEED_CATEGORY` and `ZPR_POLICY_SEED_NAME` control
+its location. This view does not install or activate a policy.
+
+## Machine Logs
+
+The Simulator's **Machine logs** page shows the entire manifest fleet with
+machine state and live controller, control-adapter, and selected-workload logs.
+It polls again two seconds after each collection completes, without overlapping
+requests. Pause/resume, manual refresh, search, running-only filtering, and
+follow-tail controls operate independently of machine lifecycle actions.
+Each machine window follows the newest entries by default. Scrolling back pauses
+following for that window without affecting the others; scrolling to the bottom
+resumes it. Re-enabling **Follow logs** resumes all windows. Each window's **Log**
+selector switches between Controller and Control adapter, plus any available
+workload logs, showing one source at a time. Selection survives polling, and
+each source remembers its scroll position and follow state when switching back.
+The selector also works in maximized windows; a disappeared source falls back
+to the first available source.
+Polling is cancelled when navigating away from the page. ANSI foreground and
+background colors (standard, bright, 256-color, and RGB), bold, faint, italic,
+and underline are rendered using the vendored MIT-licensed `ansi_up` 6.0.6
+browser module. Log text is HTML-escaped, terminal hyperlinks stay inert, and
+only approved color and text-emphasis styles are applied without relaxing CSP.
+
+Each source returns at most 100 lines and 64 KiB. Collection runs for at most
+12 seconds with four concurrent machines; empty and unavailable sources are
+shown separately. The page reads Docker controller output, PH log files, and
+workload JSON event files. It does not generate traffic or start log-producing
+workloads. Recognized credentials are redacted before sending logs to the
+browser. This is a bounded live tail, not a durable audit archive.
 
 ## LDAP Organization Graph
 
@@ -92,8 +148,17 @@ graph.addEventListener("ldap-node-select", (event) => console.log(event.detail))
 Each instance owns its camera, search, and selection. Reassign `directory` to
 replace the data. Department names are unique parent keys and group members use
 person UIDs. Missing parents and cyclic department references attach to the
-directory root. Selecting a person or group displays dashed membership edges
-and full node details; node labels are text, not interpreted HTML. The graph
+directory root. The +/- control on a directory, department, or Groups branch
+collapses or expands its descendants and compacts the layout. Expand all and
+Collapse all operate across branches; Left/Right arrow keys collapse or expand
+the focused branch. Selection and search survive branch changes.
+Clicking a node opens a component-info popup with its profile attributes,
+including structured values. Close it with the close button, Escape, or a
+click outside the popup; focus returns to the selected node.
+People list their groups, and groups list member names and UIDs. Selecting a
+person or group displays dashed membership edges to visible nodes; memberships
+remain listed when related branches are collapsed. Node labels and attributes
+are text, not interpreted HTML. The graph
 shows organizational relationships from profile data, not a live LDAP query or
 an LDIF parser, and does not imply that people are physically stored beneath
 their department DN. It supports keyboard node selection, pan, zoom, and fit.

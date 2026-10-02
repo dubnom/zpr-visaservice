@@ -1,5 +1,6 @@
 acl zpr_clients {
     fd00:1::/32;
+    fd5a:5052::/32;
 };
 
 include "/run/named/zpr-vs-publisher.key";
@@ -29,4 +30,25 @@ zone "svc.zpr" {
     update-policy {
         grant zpr-vs-publisher zonesub A AAAA;
     };
+};
+
+zone "1.0.0.0.0.0.d.f.ip6.arpa" {
+    type primary;
+    file "/var/lib/bind/db.fd00-1.ip6";
+    allow-transfer { key "zpr-dns-viewer"; };
+    update-policy { grant zpr-vs-publisher zonesub PTR; };
+};
+
+zone "2.5.0.5.a.5.d.f.ip6.arpa" {
+    type primary;
+    file "/var/lib/bind/db.fd5a-5052.ip6";
+    allow-transfer { key "zpr-dns-viewer"; };
+    update-policy { grant zpr-vs-publisher zonesub PTR; };
+};
+
+zone "10.in-addr.arpa" {
+    type primary;
+    file "/var/lib/bind/db.10.in-addr";
+    allow-transfer { key "zpr-dns-viewer"; };
+    update-policy { grant zpr-vs-publisher zonesub PTR; };
 };

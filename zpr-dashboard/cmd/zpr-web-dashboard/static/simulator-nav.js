@@ -21,6 +21,16 @@
       const scenarioLink = nav.querySelector('a[href="/scenarios.html"]');
       nav.insertBefore(organizationLink, scenarioLink || null);
     }
+    let logsLink = nav.querySelector('a[href="/machine-logs.html"]');
+    if (!logsLink) {
+      logsLink = document.createElement("a");
+      logsLink.className = "nav-link";
+      logsLink.dataset.simulatorNav = "";
+      logsLink.href = "/machine-logs.html";
+      logsLink.textContent = "Workload logs";
+      nav.insertBefore(logsLink, nav.querySelector('a[href="/activity.html"]'));
+    }
+    logsLink.textContent = "Workload logs";
     nav.querySelectorAll("a[data-simulator-nav]").forEach((link) => {
       link.classList.toggle("active", pageKey(link.href) === currentPath);
     });
@@ -59,6 +69,15 @@
       document.title = pageTitles.get(nextPath) || document.title;
     } else {
       const parsed = new DOMParser().parseFromString(html, "text/html");
+      for (const stylesheet of parsed.head.querySelectorAll('link[rel="stylesheet"]')) {
+        const href = new URL(stylesheet.getAttribute("href"), location.href).href;
+        if (![...document.head.querySelectorAll('link[rel="stylesheet"]')].some((link) => link.href === href)) {
+          const link = document.createElement("link");
+          link.rel = "stylesheet";
+          link.href = href;
+          document.head.append(link);
+        }
+      }
       document.title = parsed.title;
       pageTitles.set(nextPath, parsed.title);
       const scripts = [...parsed.body.querySelectorAll("script[src]")];
