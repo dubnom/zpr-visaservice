@@ -15,16 +15,17 @@ import (
 const defaultSimulatorOrganizationID = "northstar"
 
 type simulatorOrganization struct {
-	ID            string                         `json:"id"`
-	Name          string                         `json:"name"`
-	Description   string                         `json:"description"`
-	Directory     simulatorOrganizationDirectory `json:"directory"`
-	MachineOwners map[string][]string            `json:"machine_owners,omitempty"`
-	PolicyConfig  string                         `json:"policy_config"`
-	PolicyCatalog string                         `json:"policy_catalog"`
-	RuntimePolicy string                         `json:"runtime_policy,omitempty"`
-	Policies      []simulatorOrganizationPolicy  `json:"policies"`
-	Services      []simulatorOrganizationService `json:"services"`
+	ID                 string                         `json:"id"`
+	Name               string                         `json:"name"`
+	Description        string                         `json:"description"`
+	Directory          simulatorOrganizationDirectory `json:"directory"`
+	MachineOwners      map[string][]string            `json:"machine_owners,omitempty"`
+	PolicyConfig       string                         `json:"policy_config"`
+	PolicyCatalog      string                         `json:"policy_catalog"`
+	RuntimePolicy      string                         `json:"runtime_policy,omitempty"`
+	Policies           []simulatorOrganizationPolicy  `json:"policies"`
+	Services           []simulatorOrganizationService `json:"services"`
+	PolicyTestServices []simulatorPolicyTestService   `json:"policy_test_services,omitempty"`
 }
 
 type simulatorOrganizationDirectory struct {
@@ -70,6 +71,18 @@ type simulatorOrganizationService struct {
 	Kind        string `json:"kind"`
 	Endpoint    string `json:"endpoint"`
 	Description string `json:"description"`
+	PolicyID    string `json:"policy_id,omitempty"`
+	ActorCN     string `json:"actor_cn,omitempty"`
+}
+
+type simulatorPolicyTestService struct {
+	ID       string `json:"id"`
+	Name     string `json:"name"`
+	ActorCN  string `json:"actor_cn"`
+	Protocol string `json:"protocol"`
+	Port     int    `json:"port,omitempty"`
+	ICMPType int    `json:"icmp_type,omitempty"`
+	ICMPCode int    `json:"icmp_code,omitempty"`
 }
 
 func simulatorOrganizationsDirectory() string {
@@ -222,6 +235,34 @@ func validateSimulatorOrganization(organization simulatorOrganization) error {
 		if service.Name == "" || service.Kind == "" || service.Endpoint == "" {
 			return errors.New("services require name, kind, and endpoint")
 		}
+		if service.PolicyID != "" && (!policyTestValueSafe(service.PolicyID) || len(service.PolicyID) > 200) {
+			return fmt.Errorf("service %q has an invalid policy service id", service.Name)
+		}
+		if service.ActorCN != "" && (!policyTestValueSafe(service.ActorCN) || len(service.ActorCN) > 200) {
+			return fmt.Errorf("service %q has an invalid provider actor identity", service.Name)
+		}
+	}
+	testServiceIDs := make(map[string]bool, len(organization.PolicyTestServices))
+	for _, service := range organization.PolicyTestServices {
+		if !policyTestValueSafe(service.ID) || strings.TrimSpace(service.ID) == "" || testServiceIDs[service.ID] {
+			return errors.New("policy test service ids must be unique and valid")
+		}
+		if strings.TrimSpace(service.Name) == "" || strings.TrimSpace(service.ActorCN) == "" || !policyTestValueSafe(service.ActorCN) {
+			return fmt.Errorf("policy test service %q requires a name and provider identity", service.ID)
+		}
+		switch strings.ToUpper(service.Protocol) {
+		case "TCP", "UDP":
+			if service.Port < 1 || service.Port > 65535 {
+				return fmt.Errorf("policy test service %q has an invalid port", service.ID)
+			}
+		case "ICMP6":
+			if service.ICMPType < 0 || service.ICMPType > 255 || service.ICMPCode < 0 || service.ICMPCode > 255 {
+				return fmt.Errorf("policy test service %q has an invalid ICMPv6 type or code", service.ID)
+			}
+		default:
+			return fmt.Errorf("policy test service %q uses an unsupported protocol", service.ID)
+		}
+		testServiceIDs[service.ID] = true
 	}
 	for machineID, owners := range organization.MachineOwners {
 		if !validScenarioID(machineID) || len(owners) == 0 {

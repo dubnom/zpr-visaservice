@@ -8,6 +8,7 @@ SERVICE_CERTS="$RUNTIME_DIR/service-certs"
 SIMULATION_MANIFEST="${SIMULATION_MANIFEST:-$RUNTIME_DIR/simulation-environment.json}"
 STATE_DIR="$RUNTIME_DIR/dashboard-stack"
 BIN="$STATE_DIR/zpr-web-dashboard"
+POLICY_TESTER_BIN="${ZPR_ZPT_BIN:-$DASHBOARD_DIR/../target/debug/zpt}"
 CONTROL_DIR="$STATE_DIR/machine-control"
 MACHINE_CERT_DIR="$CONTROL_DIR/machine-certs"
 CONTROL_CA="$CONTROL_DIR/control-ca.crt"
@@ -215,12 +216,6 @@ stop_ui_relays() {
 }
 
 start_control_service() {
-    assertion_profile=${SIMULATION_ORGANIZATION_ID:-$(jq -r '.organization_id // empty' "$SIMULATION_MANIFEST")}
-    assertion_base_dn=${ZPR_ASSERTION_LDAP_BASE_DN:-$(jq -r '.directory.base_dn // empty' "$ORGANIZATIONS_DIR/$assertion_profile.json" 2>/dev/null || true)}
-    assertion_bind_dn=${ZPR_ASSERTION_LDAP_BIND_DN:-}
-    if [ -z "$assertion_bind_dn" ] && [ -n "$assertion_base_dn" ]; then
-        assertion_bind_dn="cn=zpr-reader,ou=Service Accounts,$assertion_base_dn"
-    fi
     start_service control-service "$CONTROL_PID" env \
         ZPR_CONTROL_SERVICE_LISTEN=127.0.0.1:8790 \
         ZPR_CONTROL_SERVICE_CERT_FILE="$SERVICE_CERTS/control-service.crt" \
@@ -228,8 +223,6 @@ start_control_service() {
         ZPR_CONTROL_SERVICE_CLIENT_CA_FILE="$SERVICE_CERTS/service-ca.crt" \
         ZPR_ASSERTION_STORE_FILE="${ZPR_ASSERTION_STORE_FILE:-$STATE_DIR/assertions/global.json}" \
         ZPR_ASSERTION_LDAP_CONTAINER="${ZPR_ASSERTION_LDAP_CONTAINER:-$SIMULATION_CONTAINER}" \
-        ZPR_ASSERTION_LDAP_BASE_DN="$assertion_base_dn" \
-        ZPR_ASSERTION_LDAP_BIND_DN="$assertion_bind_dn" \
         ZPR_PLATFORM_SERVICES="$(jq -c '[.services[] | select(.kind == "Gateway") | {service_name: .name, actor_cn: .provider, zpr_addr: .address, service_kind: .kind, service_endpoints: .endpoint, external_network_connection: .external_network_connection}]' "$SIMULATION_MANIFEST")" \
         ZPR_ADMIN_URL="https://127.0.0.1:$ADMIN_RELAY_PORT" \
         ZPR_ADMIN_CA_FILE="$RUNTIME_DIR/local-admin-cert.pem" \
@@ -462,6 +455,7 @@ restart_policy_context() {
     context_catalog="$DASHBOARD_DIR/cmd/zpr-web-dashboard/examples/$(jq -er '.policy_catalog' "$context_profile")"
     context_base_dn=$(jq -er '.directory.base_dn' "$context_profile")
     [ -r "$context_config" ] && [ -r "$context_catalog" ] || { echo "policy profile assets unavailable" >&2; return 1; }
+    prepare_policy_tester
     if pid_running "$POLICY_PID"; then
         context_listener=$(lsof -tiTCP:8789 -sTCP:LISTEN)
         [ "$context_listener" = "$(cat "$POLICY_PID")" ] || { echo "Policy Service PID mismatch" >&2; return 1; }
@@ -473,8 +467,10 @@ restart_policy_context() {
         ZPR_POLICY_SERVICE_CERT_FILE="$SERVICE_CERTS/policy-service.crt" \
         ZPR_POLICY_SERVICE_KEY_FILE="$SERVICE_CERTS/policy-service.key" \
         ZPR_POLICY_SERVICE_CLIENT_CA_FILE="$SERVICE_CERTS/service-ca.crt" \
+        ZPR_POLICY_STAGE_CONFIG_FILE="$RUNTIME_DIR/linux-integration/pregen/v6-1node-3actor-ping.zplc" \
         ZPR_POLICY_ORGANIZATION_ID="$context_organization" \
         ZPR_POLICY_ORGANIZATION_NAME="$(jq -er '.name' "$context_profile")" \
+        ZPR_POLICY_ORGANIZATION_BASE_DN="$context_base_dn" \
         ZPR_POLICY_CONFIG_FILE="$context_config" \
         ZPR_POLICY_SOURCE_FILE="$context_source" \
         ZPR_POLICY_SEED_CATEGORY="Network/Effective" \
@@ -485,12 +481,32 @@ restart_policy_context() {
         ZPR_POLICY_LDAP_CONTAINER="$SIMULATION_CONTAINER" \
         ZPR_POLICY_LDAP_BASE_DN="$context_base_dn" \
         ZPR_POLICY_LDAP_BIND_DN="cn=zpr-reader,ou=Service Accounts,$context_base_dn" \
+        SIMULATION_MANIFEST="$SIMULATION_MANIFEST" \
+        SIMULATION_ORGANIZATIONS_DIR="$ORGANIZATIONS_DIR" \
+        ZPR_ZPT_BIN="$POLICY_TESTER_BIN" \
         ZPR_ZPLC_BIN="$DASHBOARD_DIR/../../zpr-compiler/target/debug/zplc" \
         "$BIN" -mode policy-service
     wait_for_url https://127.0.0.1:8789/api/policy/context policy-context \
         --cacert "$SERVICE_CERTS/service-ca.crt" \
         --cert "$SERVICE_CERTS/control-policy-client.crt" \
         --key "$SERVICE_CERTS/control-policy-client.key"
+}
+
+prepare_policy_tester() {
+    if [ -n "${ZPR_ZPT_BIN:-}" ]; then
+        POLICY_TESTER_BIN=$ZPR_ZPT_BIN
+        if [ ! -x "$POLICY_TESTER_BIN" ]; then
+            echo "ZPT evaluator is not executable: $POLICY_TESTER_BIN" >&2
+            return 1
+        fi
+        return 0
+    fi
+    POLICY_TESTER_BIN="$DASHBOARD_DIR/../target/debug/zpt"
+    cargo build --manifest-path "$DASHBOARD_DIR/../zpt/Cargo.toml" --bin zpt
+    if [ ! -x "$POLICY_TESTER_BIN" ]; then
+        echo "ZPT evaluator build did not produce $POLICY_TESTER_BIN" >&2
+        return 1
+    fi
 }
 
 start_stack() {
@@ -520,6 +536,7 @@ start_stack() {
         echo "policy assets for organization $organization_id are missing" >&2
         return 1
     fi
+    prepare_policy_tester
     go -C "$DASHBOARD_DIR" build -trimpath -o "$BIN" ./cmd/zpr-web-dashboard
 
     start_service policy-service "$POLICY_PID" env \
@@ -528,6 +545,10 @@ start_stack() {
         ZPR_POLICY_SERVICE_CERT_FILE="$SERVICE_CERTS/policy-service.crt" \
         ZPR_POLICY_SERVICE_KEY_FILE="$SERVICE_CERTS/policy-service.key" \
         ZPR_POLICY_SERVICE_CLIENT_CA_FILE="$SERVICE_CERTS/service-ca.crt" \
+        ZPR_POLICY_STAGE_CONFIG_FILE="$RUNTIME_DIR/linux-integration/pregen/v6-1node-3actor-ping.zplc" \
+        ZPR_POLICY_ORGANIZATION_ID="$organization_id" \
+        ZPR_POLICY_ORGANIZATION_NAME="$(jq -er '.name' "$organization_file")" \
+        ZPR_POLICY_ORGANIZATION_BASE_DN="$ldap_base_dn" \
         ZPR_POLICY_CONFIG_FILE="$policy_config" \
         ZPR_POLICY_SOURCE_FILE="$RUNTIME_DIR/linux-integration/pregen/v4-1node-3actor-ping.zpl" \
         ZPR_POLICY_SEED_CATEGORY="Simulator/Runtime" \
@@ -538,6 +559,9 @@ start_stack() {
         ZPR_POLICY_LDAP_CONTAINER="$SIMULATION_CONTAINER" \
         ZPR_POLICY_LDAP_BASE_DN="$ldap_base_dn" \
         ZPR_POLICY_LDAP_BIND_DN="$ldap_bind_dn" \
+        SIMULATION_MANIFEST="$SIMULATION_MANIFEST" \
+        SIMULATION_ORGANIZATIONS_DIR="$ORGANIZATIONS_DIR" \
+        ZPR_ZPT_BIN="$POLICY_TESTER_BIN" \
         ZPR_ZPLC_BIN="$DASHBOARD_DIR/../../zpr-compiler/target/debug/zplc" \
         "$BIN" -mode policy-service
     wait_for_url https://127.0.0.1:8789/api/policy policy-service \

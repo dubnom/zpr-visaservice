@@ -8,8 +8,8 @@ define AuthenticatedDevice as a device with device.zpr.adapter.cn.
 define VisaDnsPublisher as an adapter with zpr.adapter.cn:'vs.zpr'.
 
 provide ZprDNS at dns.svc.zpr over TCP 53.
-allow AuthenticatedDevice.
-allow VisaDnsPublisher.
+  allow AuthenticatedDevice.
+  allow VisaDnsPublisher.
 
 provide ZprDNSStatistics at dns-stats.svc.zpr over TCP 8053.
-allow VisaDnsPublisher.
+  allow VisaDnsPublisher.

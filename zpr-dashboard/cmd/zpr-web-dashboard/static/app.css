@@ -277,6 +277,11 @@ td:first-child { color: var(--ink); font-weight: 600; }
 .policy-stage-status[data-state="staged"] { color: #1e6b4f; }
 .policy-stage-status[data-state="error"] { color: var(--danger, #b42318); }
 .policy-workbench { display: grid; grid-template-columns: minmax(180px, .65fr) minmax(330px, 1.7fr) minmax(245px, .8fr); min-height: 62vh; border-top: 1px solid var(--line); }
+.policy-workbench[data-record-kind="assertions"] { grid-template-columns: minmax(180px, .65fr) minmax(330px, 1.7fr); }
+.policy-workbench[data-test-mode="true"] { grid-template-columns: minmax(0, 1.8fr) minmax(245px, .8fr); }
+.policy-workbench[data-test-mode="true"] .policy-catalog-pane { display: none; }
+.policy-workbench[data-record-kind="assertions"] { grid-template-columns: minmax(180px, .65fr) minmax(330px, 1.7fr); }
+.policy-assertion-editor { min-width: 0; width: 100%; }
 .policy-catalog-pane { min-width: 0; padding: 12px 12px 12px 0; border-right: 1px solid var(--line); }
 .catalog-pane-heading { display: flex; min-height: 30px; align-items: center; justify-content: space-between; gap: 6px; margin-bottom: 8px; color: var(--ink-soft); font-size: 11px; }
 .catalog-pane-heading .button { min-height: 26px; flex: 0 0 auto; padding: 0 7px; font-size: 9px; }
@@ -301,12 +306,20 @@ td:first-child { color: var(--ink); font-weight: 600; }
 .policy-attribute-status { min-height: 14px; margin: 0 0 7px; color: var(--muted); font: 9px var(--mono); }
 .policy-attribute-status[data-state="error"] { color: var(--danger, #b42318); }
 .policy-code-editor { position: relative; min-width: 0; min-height: 56vh; flex: 1; overflow: hidden; border: 1px solid #344a40; border-radius: 2px; background: #17211e; }
+.policy-code-editor[data-test-mode="true"] .policy-highlight, .policy-code-editor[data-test-mode="true"] #policy-source { padding-left: 132px; }
 .policy-code-editor:focus-within { border-color: #7ea65b; box-shadow: 0 0 0 2px #b5e34f30; }
 .policy-highlight, #policy-source, .policy-caret-mirror { position: absolute; inset: 0; width: 100%; height: 100%; margin: 0; padding: 15px; border: 0; border-radius: 0; font: 12px/1.65 var(--mono); tab-size: 2; white-space: pre; overflow: auto; }
 .policy-caret-mirror { visibility: hidden; pointer-events: none; }
 .policy-highlight { pointer-events: none; color: #e4ebe5; }
 #policy-source { z-index: 1; resize: none; outline: none; background: transparent; color: transparent; caret-color: #f4f7f2; -webkit-text-fill-color: transparent; }
 #policy-source::selection { background: #709a6a88; color: transparent; -webkit-text-fill-color: transparent; }
+.policy-test-gutter { position: absolute; z-index: 2; top: 15px; bottom: 15px; left: 10px; width: 112px; overflow: visible; pointer-events: none; }
+.policy-test-gutter[hidden] { display: none; }
+.policy-test-line { display: flex; height: 19.8px; align-items: center; gap: 2px; overflow: visible; }
+.policy-test-line-result { max-width: 108px; overflow: hidden; padding: 1px 3px; border: 1px solid #6c8671; border-radius: 2px; background: #23362b; color: #d2e7d1; font: 8px/1.4 var(--mono); text-overflow: ellipsis; white-space: nowrap; pointer-events: auto; cursor: pointer; }
+.policy-test-line-result[data-effect="deny"] { border-color: #a96358; background: #402a29; color: #ffc0b5; }
+.policy-test-line-result:disabled { border-color: #68746c; background: #303a34; color: #a4aea6; cursor: not-allowed; }
+.policy-test-line-result:hover { filter: brightness(1.2); }
 .zpl-keyword { color: #e5a66c; }
 .zpl-class { color: #92c5df; }
 .zpl-class-definition { color: #c2d88a; font-weight: 700; }
@@ -372,6 +385,16 @@ td:first-child { color: var(--ink); font-weight: 600; }
 .optional-note { margin-left: 5px; color: var(--muted); font-size: 8px; }
 .dialog-actions { display: flex; justify-content: flex-end; gap: 7px; margin-top: 6px; }
 .dialog-error { min-height: 14px; margin: 0; color: var(--red); font-size: 10px; }
+.policy-test-dialog { width: min(480px, calc(100vw - 24px)); max-height: calc(100dvh - 24px); overflow: hidden; }
+.policy-test-modal { display: grid; grid-template-rows: auto auto minmax(0, 1fr) auto; gap: 8px; min-height: 0; max-height: calc(100dvh - 24px); padding: 16px; }
+.policy-test-status { min-height: 14px; margin: 3px 0; color: var(--muted); font: 10px/1.45 var(--mono); }
+.policy-test-status[data-state="pending"] { color: var(--blue); }
+.policy-test-status[data-state="error"] { color: var(--red); }
+.policy-test-subject-title { margin: 0; color: var(--ink-soft); font-size: 12px; overflow-wrap: anywhere; }
+.policy-test-subjects { display: grid; min-width: 0; max-height: 60vh; align-content: start; overflow: auto; }
+.policy-test-subject { padding: 7px 2px; border-bottom: 1px solid #e5eae5; color: var(--ink-soft); font-size: 10px; overflow-wrap: anywhere; }
+.policy-test-subject small { display: block; margin-top: 3px; color: var(--muted); font: 9px var(--mono); }
+.policy-test-empty { margin: 8px 0; color: var(--muted); font-size: 10px; }
 
 .activity-grid { display: grid; grid-template-columns: minmax(0, 1.3fr) minmax(330px, .8fr); gap: 32px; }
 .denials-column { padding-left: 24px; border-left: 1px solid var(--line); }
@@ -494,6 +517,8 @@ td:first-child { color: var(--ink); font-weight: 600; }
 
 @media (max-width: 600px) {
   .policy-workbench { grid-template-columns: minmax(0, 1fr); }
+  .policy-workbench[data-record-kind="assertions"] { grid-template-columns: minmax(0, 1fr); }
+  .policy-workbench[data-test-mode="true"] { grid-template-columns: minmax(0, 1fr); }
   .policy-catalog-pane { padding-right: 0; border-right: 0; }
   .policy-category-tree { max-height: 260px; }
   .policy-editor-pane, .policy-assistant-pane { grid-column: 1 / -1; }
@@ -502,6 +527,10 @@ td:first-child { color: var(--ink); font-weight: 600; }
   #policy-draft-name:not([hidden]) { width: 100%; min-width: 0; flex: 1 1 100%; }
   .policy-actions { width: 100%; justify-content: flex-start; }
   .policy-actions .button { min-height: 34px; }
+  .policy-test-dialog { width: calc(100vw - 16px); max-height: calc(100dvh - 16px); }
+  .policy-test-modal { max-height: calc(100dvh - 16px); padding: 11px; }
+  .policy-test-subjects { max-height: 45vh; }
+  .policy-test-line-result { max-width: 96px; }
 }
 
 @media (min-width: 1500px) { .main-content { padding-right: 55px; padding-left: 55px; } .topbar { margin-right: -55px; margin-left: -55px; padding-right: 55px; padding-left: 55px; } }

@@ -5,6 +5,7 @@ use std::sync::Arc;
 
 use bytes::{Buf, Bytes};
 use openssl::pkey::{PKey, Public};
+use serde::Serialize;
 use thiserror::Error;
 
 use crate::attribute::{Attribute, key};
@@ -19,6 +20,14 @@ use zpr::policy_types::{
 
 /// The default and the minimum.
 pub const DEFAULT_LINK_COST: u32 = 1;
+
+#[derive(Debug, Clone, Serialize)]
+pub struct CommunicationPolicySummary {
+    pub index: usize,
+    pub source: Option<String>,
+    pub service_id: String,
+    pub allow: bool,
+}
 
 #[derive(Debug, Error)]
 pub enum PolicyError {
@@ -307,6 +316,33 @@ impl Policy {
     /// Get the ZPL source for the communication policy by policy index.
     pub fn get_cpol_source(&self, idx: usize) -> Option<&str> {
         self.cpol_sources.get(idx).map(|s| s.as_str())
+    }
+
+    pub fn communication_policy_summaries(&self) -> Vec<CommunicationPolicySummary> {
+        let Some(reader) = self.policy_rdr.as_ref() else {
+            return Vec::new();
+        };
+        let Ok(policy) = reader.get_root::<policy_capnp::policy::Reader>() else {
+            return Vec::new();
+        };
+        let Ok(policies) = policy.get_com_policies() else {
+            return Vec::new();
+        };
+        policies
+            .iter()
+            .enumerate()
+            .map(|(index, policy)| CommunicationPolicySummary {
+                index,
+                source: self.get_cpol_source(index).map(str::to_owned),
+                service_id: policy
+                    .get_service_id()
+                    .ok()
+                    .and_then(|service| service.to_str().ok())
+                    .unwrap_or_default()
+                    .to_owned(),
+                allow: policy.get_allow(),
+            })
+            .collect()
     }
 
     /// Get the attribute keys for the `client` and `service` conditions of the

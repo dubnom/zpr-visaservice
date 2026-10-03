@@ -3,7 +3,7 @@ const zplKeywords = new Set(["allow", "never", "define", "with", "to", "access",
 const GRAPH_ARRIVAL_DURATION = 2800;
 const GRAPH_REMOVAL_DURATION = 900;
 const reducedMotion = window.matchMedia?.("(prefers-reduced-motion: reduce)").matches ?? false;
-const state = { snapshot: null, timer: null, paused: false, pending: false, graphCamera: null, graphAnimations: !reducedMotion, topologyComponents: null, topologyNewComponents: new Map(), selection: null, sorts: {}, dnsPending: false, policy: { loaded: false, configured: false, categories: [], records: [], attributes: [], categoryID: "", collapsedCategories: new Set(), treeInitialized: false, record: null, source: "", savedSource: "", revision: 0, browsingRevision: 0, saveAs: false, compilerReady: false, assistantReady: false, assistantEnabled: false, assistantUsage: { input: 0, output: 0 }, validSource: null, errorOffsets: [], revisions: [], messages: [], assistantPending: false, assistantError: "" } };
+const state = { snapshot: null, timer: null, paused: false, pending: false, graphCamera: null, graphAnimations: !reducedMotion, topologyComponents: null, topologyNodeColumns: null, topologyNodeSlots: new Map(), topologyNewComponents: new Map(), selection: null, sorts: {}, dnsPending: false, policy: { loaded: false, configured: false, categories: [], records: [], attributes: [], categoryID: "", collapsedCategories: new Set(), treeInitialized: false, record: null, source: "", savedSource: "", revision: 0, browsingRevision: 0, saveAs: false, compilerReady: false, testerReady: false, testMode: false, testPending: false, testAbort: null, testResult: null, testSource: "", testDimensions: [], assistantReady: false, assistantEnabled: false, assistantUsage: { input: 0, output: 0 }, validSource: null, errorOffsets: [], revisions: [], messages: [], assistantPending: false, assistantError: "" } };
 
 let previousPolledValues = null;
 
@@ -15,7 +15,6 @@ const pages = {
   services: "SERVICES",
   dns: "DNS",
   sources: "TRUSTED SOURCES",
-  assertions: "ASSERTIONS",
   policy: "POLICY",
   visas: "VISAS",
   denies: "DENIALS",
@@ -24,6 +23,16 @@ const pages = {
 function currentPage() {
   const page = location.hash.replace(/^#/, "") || "map";
   return Object.hasOwn(pages, page) ? page : "map";
+}
+
+function mountPolicyAssertionEditor() {
+  const assertionEditor = byId("policy-assertion-editor");
+  const editorPane = byId("policy-editor-pane");
+  const historyHeading = byId("policy-history-heading");
+  if (assertionEditor && editorPane && assertionEditor.parentElement !== editorPane) {
+    if (historyHeading?.parentElement === editorPane) editorPane.insertBefore(assertionEditor, historyHeading);
+    else editorPane.append(assertionEditor);
+  }
 }
 
 function showPage(page = currentPage()) {
@@ -581,17 +590,23 @@ function renderTopology(data, exitComponents = []) {
     const ringRequirement = attached.length ? (2 * extentSum + attached.length * 20) / (2 * Math.PI) + 26 : 280;
     return Math.max(340, ringRequirement);
   };
-  const nodeColumns = Math.max(1, Math.ceil(Math.sqrt(nodes.length)));
-  const nodeRows = Math.ceil(nodes.length / nodeColumns);
+  if (nodes.length && !state.topologyNodeColumns) state.topologyNodeColumns = Math.ceil(Math.sqrt(nodes.length));
+  const nodeColumns = Math.max(1, state.topologyNodeColumns || Math.ceil(Math.sqrt(nodes.length)));
+  let nextNodeSlot = Math.max(-1, ...state.topologyNodeSlots.values()) + 1;
+  for (const node of nodes) {
+    if (!state.topologyNodeSlots.has(node.cn)) state.topologyNodeSlots.set(node.cn, nextNodeSlot++);
+  }
+  const nodeRows = Math.max(1, ...nodes.map((node) => Math.floor(state.topologyNodeSlots.get(node.cn) / nodeColumns) + 1));
   const maximumClusterRadius = Math.max(340, ...nodes.map(clusterRadius));
   const margin = maximumClusterRadius + 150;
   const nodeSpacing = maximumClusterRadius * 2 + 180;
-  nodes.forEach((node, index) => {
+  nodes.forEach((node) => {
     const attached = attachedByNode.get(node.cn) || [];
     const maxChildExtent = Math.max(0, ...attached.map(actorExtent));
+    const slot = state.topologyNodeSlots.get(node.cn);
     const nodeCenter = {
-      x: margin + maxChildExtent + (index % nodeColumns) * nodeSpacing,
-      y: margin + maxChildExtent + Math.floor(index / nodeColumns) * nodeSpacing,
+      x: margin + maxChildExtent + (slot % nodeColumns) * nodeSpacing,
+      y: margin + maxChildExtent + Math.floor(slot / nodeColumns) * nodeSpacing,
     };
     positions.set(node.cn, nodeCenter);
     if (!attached.length) return;
@@ -631,7 +646,14 @@ function renderTopology(data, exitComponents = []) {
       y: ownerPosition.y + Math.sin(angle) * radius,
     });
   }
-  const oldViewBox = exitComponents.length ? stage.querySelector(".topology-graph")?.viewBox.baseVal : null;
+  const oldGraph = stage.querySelector(".topology-graph");
+  const oldViewBox = oldGraph?.viewBox.baseVal;
+  const previousViewport = oldGraph ? {
+    width: oldViewBox.width,
+    height: oldViewBox.height,
+    clientWidth: oldGraph.clientWidth,
+    clientHeight: oldGraph.clientHeight,
+  } : null;
   const width = Math.max(760, oldViewBox?.width || 0, 2 * margin + 2 * maximumClusterRadius + (nodeColumns - 1) * nodeSpacing, margin * 2 + (unconnectedColumns - 1) * (hostRingRadius * 2 + 100));
   const height = Math.max(460, oldViewBox?.height || 0, 2 * margin + 2 * maximumClusterRadius + (nodeRows - 1) * nodeSpacing, margin + nodeRows * nodeSpacing + unconnectedHosts.length * (hostRingRadius * 2 + 100));
   const query = byId("topology-search").value.trim().toLowerCase();
@@ -752,7 +774,7 @@ function renderTopology(data, exitComponents = []) {
   const exiting = (kind) => exitComponents.filter((component) => component.kind === kind).map((component) => component.markup).join("");
   stage.innerHTML = `<div class="graph-controls" aria-label="Topology graph controls"><button class="graph-control" data-graph-action="in" type="button" aria-label="Zoom in" title="Zoom in">+</button><button class="graph-control" data-graph-action="out" type="button" aria-label="Zoom out" title="Zoom out">−</button><button class="graph-control graph-fit" data-graph-action="fit" type="button" aria-label="Fit graph" title="Fit graph">Fit</button></div><svg class="topology-graph" viewBox="0 0 ${width} ${height}" role="img" aria-label="Topology graph with ${nodes.length} nodes, ${adapters.length} adapters, ${dockEdges.length} dock connections, ${networkEdges.length} inter-node links, and ${(data.services || []).filter((service) => servicesByActor.has(service.actor_cn)).length} registered services"><g id="graph-world">${edgeMarkup}${serviceEdgeMarkup.join("")}${serviceMarkup.join("")}<g class="graph-exit-layer" aria-hidden="true">${exiting("service")}</g>${vertexMarkup.slice(nodes.length).join("")}<g class="graph-exit-layer" aria-hidden="true">${exiting("adapter")}</g>${vertexMarkup.slice(0, nodes.length).join("")}<g class="graph-exit-layer" aria-hidden="true">${exiting("node")}</g></g></svg>`;
 
-  setupGraphControls(stage, width, height);
+  setupGraphControls(stage, width, height, previousViewport);
 }
 
 function renderConnections(edges, unconnected) {
@@ -778,13 +800,34 @@ function renderConnections(edges, unconnected) {
   }).join("") : `<tr><td colspan="5" class="empty-row">${rows.length ? "No matching connections" : "No dock or inter-node connections reported"}</td></tr>`;
 }
 
-function setupGraphControls(stage, width, height) {
+function setupGraphControls(stage, width, height, previousViewport) {
   const svg = stage.querySelector(".topology-graph");
   const world = stage.querySelector("#graph-world");
   if (!state.graphCamera) state.graphCamera = { x: 0, y: 0, scale: 1 };
   const camera = state.graphCamera;
   const maxZoom = 1e6;
   const apply = () => world.setAttribute("transform", `translate(${camera.x} ${camera.y}) scale(${camera.scale})`);
+  if (previousViewport?.clientWidth > 0 && previousViewport?.clientHeight > 0 && svg.clientWidth > 0 && svg.clientHeight > 0) {
+    const previousScale = Math.min(previousViewport.clientWidth / previousViewport.width, previousViewport.clientHeight / previousViewport.height);
+    const nextScale = Math.min(svg.clientWidth / width, svg.clientHeight / height);
+    if (previousScale > 0 && nextScale > 0 && Math.abs(previousScale - nextScale) > 0.0001) {
+      const ratio = previousScale / nextScale;
+      const previousOffsetX = (previousViewport.clientWidth - previousScale * previousViewport.width) / 2;
+      const previousOffsetY = (previousViewport.clientHeight - previousScale * previousViewport.height) / 2;
+      const nextOffsetX = (svg.clientWidth - nextScale * width) / 2;
+      const nextOffsetY = (svg.clientHeight - nextScale * height) / 2;
+      const initialTransform = `translate(${previousOffsetX - ratio * nextOffsetX}px, ${previousOffsetY - ratio * nextOffsetY}px) scale(${ratio})`;
+      if (reducedMotion) {
+        svg.style.transformOrigin = "0 0";
+        svg.style.transform = initialTransform;
+      } else {
+        svg.animate([
+          { transformOrigin: "0 0", transform: initialTransform },
+          { transformOrigin: "0 0", transform: "none" },
+        ], { duration: 700, easing: "ease-in-out", fill: "both" });
+      }
+    }
+  }
   const zoomAt = (nextScale, x = width / 2, y = height / 2) => {
     const scale = Math.max(0.55, Math.min(maxZoom, nextScale));
     const ratio = scale / camera.scale;
@@ -808,6 +851,9 @@ function setupGraphControls(stage, width, height) {
       camera.x = 0;
       camera.y = 0;
       camera.scale = 1;
+      svg.getAnimations().filter((animation) => animation.effect?.target === svg).forEach((animation) => animation.cancel());
+      svg.style.transform = "none";
+      svg.style.transformOrigin = "";
       apply();
     }
   }));
@@ -960,6 +1006,42 @@ async function refreshPolicyContext() {
   }
 }
 
+function organizationPolicyCategoryID(policy = state.policy) {
+  const categories = policy.categories || [];
+  const records = policy.records || [];
+  const organizationID = (policy.organizationID || "").toLowerCase();
+  const organizationCategories = categories.filter((category) => category.path.split("/")[0].toLowerCase() === organizationID);
+  const explicitPolicies = organizationCategories.find((category) => category.path.split("/").at(-1).toLowerCase() === "policies");
+  if (explicitPolicies) return explicitPolicies.id;
+  for (const category of organizationCategories) {
+    const path = category.path;
+    const containsPolicy = records.some((record) => {
+      if (record.kind !== "policy") return false;
+      const recordPath = categories.find((item) => item.id === record.category_id)?.path || "";
+      return recordPath === path || recordPath.startsWith(`${path}/`);
+    });
+    if (containsPolicy) return category.id;
+  }
+  return categories.find((category) => records.some((record) => record.kind === "policy" && record.category_id === category.id))?.id
+    || categories.find((category) => !category.parent_id)?.id
+    || categories[0]?.id
+    || "";
+}
+
+function categoryContainsRecord(policy, category, record) {
+  const recordCategory = policy.categories.find((item) => item.id === record.category_id);
+  return Boolean(recordCategory && (recordCategory.path === category.path || recordCategory.path.startsWith(`${category.path}/`)));
+}
+
+function policyCategoriesInUnifiedHierarchy(policy = state.policy) {
+  return policy.categories.filter((category) => {
+    if (category.path !== "Assertions") return true;
+    const records = policy.records.filter((record) => record.category_id === category.id);
+    const hasChildren = policy.categories.some((item) => item.parent_id === category.id);
+    return hasChildren || !records.length || records.some((record) => record.kind !== "assertions");
+  });
+}
+
 async function loadPolicyWorkspace() {
   const policy = state.policy;
   if (policy.loaded) return;
@@ -971,6 +1053,7 @@ async function loadPolicyWorkspace() {
     const data = await response.json();
     if (!response.ok) throw new Error(data.error || `Policy server responded ${response.status}`);
     const organizationChanged = policy.organizationID && data.organization_id && policy.organizationID !== data.organization_id;
+    if (organizationChanged && policy.testMode) stopPolicyTest();
     Object.assign(policy, {
       organizationID: data.organization_id || "",
       organizationName: data.organization_name || "",
@@ -982,6 +1065,7 @@ async function loadPolicyWorkspace() {
       ldapAttributeCount: data.ldap_attribute_count || 0,
       attributeScanError: data.attribute_scan_error || "",
       compilerReady: data.compiler_ready,
+      testerReady: data.tester_ready,
       stagingReady: data.staging_ready,
       stagedCandidate: data.staged_candidate || null,
       assistantReady: data.assistant_ready,
@@ -989,17 +1073,16 @@ async function loadPolicyWorkspace() {
     renderPolicyAttributes();
     if (organizationChanged) {
       policy.treeInitialized = false;
+      policy.testResult = null;
+      policy.testSource = "";
+      policy.testDimensions = [];
       policy.record = hasUnsavedChanges ? { isDraft: true, name: "Retained draft from previous organization", kind: "policy", category_id: "", content: editorSource } : null;
       policy.savedSource = "";
       policy.validSource = "";
       policy.browsingRevision = 0;
     }
     if (!policy.categories.some((category) => category.id === policy.categoryID)) {
-      const policyCategories = new Set(policy.records.filter((record) => record.kind === "policy").map((record) => record.category_id));
-      policy.categoryID = policy.categories.find((category) => policyCategories.has(category.id))?.id
-        || policy.categories.find((category) => !category.parent_id)?.id
-        || policy.categories[0]?.id
-        || "";
+      policy.categoryID = organizationPolicyCategoryID(policy);
     }
     if (!policy.treeInitialized) {
       policy.collapsedCategories = new Set(policy.categories.filter((category) => category.id !== policy.categoryID && policy.records.some((record) => record.category_id === category.id)).map((category) => category.id));
@@ -1017,7 +1100,8 @@ async function loadPolicyWorkspace() {
       byId("policy-check-result").textContent = "Unsaved edits retained. Evaluate before saving.";
     } else if (policy.record) await selectPolicyRecord(policy.record.id, true, true);
     else {
-      const firstPolicy = policy.records.find((record) => record.category_id === policy.categoryID && record.kind === "policy");
+      const selectedCategory = policy.categories.find((category) => category.id === policy.categoryID);
+      const firstPolicy = policy.records.find((record) => record.kind === "policy" && (!selectedCategory || categoryContainsRecord(policy, selectedCategory, record)));
       if (firstPolicy) await selectPolicyRecord(firstPolicy.id, true, true);
       else clearPolicySelection();
     }
@@ -1125,18 +1209,22 @@ function formatZPL(source) {
   let formatted = "";
   let previousLineIsBlank = true;
   let isFirstLine = true;
+  let permissionBlockIsOpen = false;
 
   for (const line of lines) {
     const content = line.replace(/\r?\n$/, "");
     const startsWith = (keyword) => new RegExp(`^\\s*${keyword}(?:\\s|$)`, "i").test(content);
     const isServiceDeclaration = startsWith("provide") || startsWith("service");
+    const endsPermissionBlock = ["define", "provide", "service"].some(startsWith);
     const isPolicyStatement = ["allow", "deny", "never"].some(startsWith);
 
-    if (!isFirstLine && isServiceDeclaration && !previousLineIsBlank) {
+    if (!isFirstLine && !previousLineIsBlank && (isServiceDeclaration || (permissionBlockIsOpen && endsPermissionBlock))) {
       formatted += line.endsWith("\r\n") || formatted.endsWith("\r\n") ? "\r\n" : "\n";
     }
 
+    if (endsPermissionBlock) permissionBlockIsOpen = false;
     formatted += isPolicyStatement ? `  ${line.trimStart()}` : line;
+    if (isPolicyStatement) permissionBlockIsOpen = true;
     previousLineIsBlank = content.trim() === "";
     isFirstLine = false;
   }
@@ -1157,15 +1245,16 @@ function renderPolicyCatalog() {
   const policy = state.policy;
   const children = new Map();
   const records = new Map();
-  for (const category of policy.categories) {
+  for (const category of policyCategoriesInUnifiedHierarchy(policy)) {
     const key = category.parent_id || "";
     if (!children.has(key)) children.set(key, []);
     children.get(key).push(category);
   }
   for (const items of children.values()) items.sort((a, b) => a.name.localeCompare(b.name));
   for (const record of policy.records) {
-    if (!records.has(record.category_id)) records.set(record.category_id, []);
-    records.get(record.category_id).push(record);
+    const categoryID = record.kind === "assertions" ? organizationPolicyCategoryID(policy) || record.category_id : record.category_id;
+    if (!records.has(categoryID)) records.set(categoryID, []);
+    records.get(categoryID).push(record);
   }
   for (const items of records.values()) items.sort((a, b) => a.name.localeCompare(b.name));
   const tree = byId("policy-category-tree");
@@ -1198,7 +1287,7 @@ function renderPolicyCatalog() {
           item.setAttribute("aria-selected", String(policy.record?.id === record.id));
           item.style.setProperty("--tree-depth", depth + 1);
           const label = document.createElement("strong"); label.textContent = record.name;
-          const meta = document.createElement("small"); meta.textContent = `v${record.current_revision}`;
+          const meta = document.createElement("small"); meta.textContent = record.kind === "assertions" ? `Assertions · r${record.current_revision}` : `v${record.current_revision}`;
           item.append(label, meta); group.append(item);
         }
         renderBranch(group, category.id, depth + 1);
@@ -1212,6 +1301,11 @@ function renderPolicyCatalog() {
 
 function clearPolicySelection() {
   const policy = state.policy;
+  setPolicyRecordSurface("");
+  if (policy.testAbort) policy.testAbort.abort();
+  policy.testAbort = null;
+  policy.testMode = false;
+  policy.testPending = false;
   policy.record = null; policy.source = ""; policy.savedSource = ""; policy.revision = 0; policy.revisions = []; policy.validSource = null;
   policy.errorOffsets = [];
   policy.browsingRevision = 0;
@@ -1224,6 +1318,17 @@ function clearPolicySelection() {
   byId("policy-draft-name").value = "";
   byId("policy-check").disabled = true; byId("policy-save").disabled = true; byId("policy-save-as").disabled = true; byId("policy-refresh").disabled = true;
   byId("policy-format").disabled = true;
+  byId("policy-test").disabled = true;
+  byId("policy-test").textContent = "Test";
+  byId("policy-test").setAttribute("aria-pressed", "false");
+  byId("policy-workbench").dataset.testMode = "false";
+  byId("policy-code-editor").dataset.testMode = "false";
+  state.policy.testResult = null;
+  state.policy.testSource = "";
+  byId("policy-test-gutter").replaceChildren();
+  byId("policy-test-gutter").hidden = true;
+  byId("policy-test-status").hidden = true;
+  if (byId("policy-test-dialog").open) byId("policy-test-dialog").close();
   byId("policy-check-result").textContent = "Policy source is not loaded.";
   byId("policy-history-count").textContent = "—";
   byId("policy-history").innerHTML = '<p class="catalog-empty">Select a policy to browse versions.</p>';
@@ -1243,7 +1348,10 @@ async function selectPolicyRecord(id, fetchRecord = true, discardEdits = false) 
       record = await response.json();
       if (!response.ok) throw new Error(record.error || `Record load failed (${response.status})`);
     }
-    policy.record = record; policy.categoryID = record.category_id; policy.source = record.content || ""; policy.savedSource = policy.source; policy.revision = record.current_revision; policy.validSource = null;
+    policy.record = record;
+    policy.categoryID = record.kind === "assertions" ? organizationPolicyCategoryID(policy) || record.category_id : record.category_id;
+    policy.source = record.content || ""; policy.savedSource = policy.source; policy.revision = record.current_revision; policy.validSource = null;
+    setPolicyRecordSurface(record.kind);
     policy.errorOffsets = [];
     policy.browsingRevision = 0;
     byId("policy-draft-name").hidden = true;
@@ -1265,6 +1373,19 @@ async function selectPolicyRecord(id, fetchRecord = true, discardEdits = false) 
   }
 }
 
+function setPolicyRecordSurface(kind) {
+  const assertionsSelected = kind === "assertions";
+  const policy = state.policy;
+  if (assertionsSelected && policy.testMode) stopPolicyTest();
+  byId("policy-assertion-editor").hidden = !assertionsSelected;
+  byId("policy-source-surface").hidden = assertionsSelected;
+  byId("policy-actions").hidden = assertionsSelected;
+  byId("policy-stage-status").hidden = assertionsSelected;
+  byId("policy-assistant-pane").hidden = assertionsSelected;
+  byId("policy-workbench").dataset.recordKind = kind || "";
+  window.dispatchEvent(new Event("policy-record-kind-changed"));
+}
+
 function renderPolicyIdentity(record = state.policy.record, version = state.policy.revision, hash = record?.content_hash) {
   const title = byId("policy-record-title");
   const draftName = byId("policy-draft-name");
@@ -1276,7 +1397,8 @@ function renderPolicyIdentity(record = state.policy.record, version = state.poli
     byId("policy-revision-label").textContent = "";
     return;
   }
-  const category = state.policy.categories.find((item) => item.id === record.category_id);
+  const categoryID = record.kind === "assertions" ? organizationPolicyCategoryID(state.policy) : record.category_id;
+  const category = state.policy.categories.find((item) => item.id === categoryID);
   const path = [category?.path, record.name].filter(Boolean).join("/");
   title.hidden = Boolean(record.isDraft);
   const draftNameValue = record.isDraft ? record.name : "";
@@ -1286,6 +1408,12 @@ function renderPolicyIdentity(record = state.policy.record, version = state.poli
   byId("policy-revision-label").textContent = record.isDraft ? "New · unsaved" : `Version ${version} [${hash ? hash.slice(0, 12) : "hash unavailable"}]`;
   byId("policy-revision-label").title = record.isDraft ? "In-memory policy draft" : `${path} · ${hash || "hash unavailable"}`;
 }
+
+window.addEventListener("policy-assertion-saved", () => {
+  if (state.policy.record?.kind !== "assertions") return;
+  state.policy.loaded = false;
+  loadPolicyWorkspace();
+});
 
 function hasUnsavedPolicyChanges(policy = state.policy, source = byId("policy-source").value) {
   return Boolean(policy.record && (policy.record.isDraft || source !== policy.savedSource));
@@ -1576,7 +1704,7 @@ async function browsePolicyRevision(number) {
 function openCategoryDialog() {
   const options = byId("category-parent"); options.replaceChildren();
   const root = document.createElement("option"); root.value = ""; root.textContent = "Top level"; options.append(root);
-  for (const category of state.policy.categories) {
+  for (const category of policyCategoriesInUnifiedHierarchy()) {
     const option = document.createElement("option"); option.value = category.id; option.textContent = category.path; option.selected = category.id === state.policy.categoryID; options.append(option);
   }
   byId("category-name").value = ""; byId("category-error").textContent = "";
@@ -1585,7 +1713,7 @@ function openCategoryDialog() {
 
 function openRecordDialog(saveAs = true) {
   const options = byId("record-category"); options.replaceChildren();
-  for (const category of state.policy.categories) {
+  for (const category of policyCategoriesInUnifiedHierarchy()) {
     const option = document.createElement("option"); option.value = category.id; option.textContent = category.path; option.selected = category.id === state.policy.categoryID; options.append(option);
   }
   state.policy.saveAs = saveAs;
@@ -1612,6 +1740,7 @@ function beginNewPolicyDraft() {
     isDraft: true,
   };
   policy.record = draft;
+  setPolicyRecordSurface("policy");
   policy.source = "";
   policy.savedSource = "";
   policy.revision = 0;
@@ -1684,16 +1813,30 @@ function updatePolicyDirtyState() {
   const contentDirty = source !== policy.savedSource;
   const dirty = !policy.browsingRevision && contentDirty;
   const checked = policy.validSource === source;
-  const canEdit = policy.configured && policy.record?.kind === "policy" && !policy.browsingRevision;
+  const canEdit = policy.configured && policy.record?.kind === "policy" && !policy.browsingRevision && !policy.testMode;
+  const canViewSource = policy.configured && policy.record?.kind === "policy" && !policy.browsingRevision;
+  const canTest = policy.configured && policy.record?.kind === "policy" && !policy.browsingRevision && Boolean(source.trim());
   const isDraft = Boolean(policy.record?.isDraft);
   const canSave = canEdit && checked && (isDraft ? Boolean(policy.record.name.trim()) && source.trim() !== "" : contentDirty);
-  const canStage = Boolean(policy.stagingReady && policy.record?.kind === "policy" && !isDraft && !policy.browsingRevision && !contentDirty && !policy.stagePending);
+  const canStage = Boolean(!policy.testMode && policy.stagingReady && policy.record?.kind === "policy" && !isDraft && !policy.browsingRevision && !contentDirty && !policy.stagePending);
   byId("policy-save").disabled = !canSave;
   byId("policy-save-as").disabled = !canEdit || isDraft || !checked;
   byId("policy-stage").disabled = !canStage;
   byId("policy-check").disabled = !canEdit || !policy.compilerReady;
   byId("policy-format").disabled = !canEdit;
-  byId("policy-refresh").disabled = !policy.record || (!dirty && !policy.browsingRevision && !isDraft);
+  byId("policy-source").disabled = !canViewSource;
+  byId("policy-source").readOnly = policy.testMode;
+  byId("policy-source").setAttribute("aria-readonly", String(policy.testMode));
+  byId("policy-test").disabled = policy.testMode ? false : !canTest || !policy.compilerReady || !policy.testerReady || policy.testPending;
+  byId("policy-test").textContent = policy.testMode ? "Exit test" : "Test";
+  byId("policy-test").setAttribute("aria-pressed", String(policy.testMode));
+  byId("policy-workbench").dataset.testMode = String(policy.testMode);
+  byId("policy-code-editor").dataset.testMode = String(policy.testMode);
+  byId("policy-test-gutter").hidden = !policy.testMode || !policy.testResult;
+  byId("policy-test-status").hidden = !policy.testMode;
+  byId("policy-attribute-insert").disabled = !canEdit || !byId("policy-attribute-picker").value;
+  byId("policy-attribute-rescan").disabled = !canEdit;
+  byId("policy-refresh").disabled = policy.testMode || !policy.record || (!dirty && !policy.browsingRevision && !isDraft);
   byId("policy-check").classList.toggle("button-next-evaluate", canEdit && !checked);
   byId("policy-save").classList.toggle("button-save-next", !canSave);
   byId("policy-save").classList.toggle("button-next-save", canSave);
@@ -1709,6 +1852,158 @@ function updatePolicyDirtyState() {
     result.dataset.state = "";
     result.textContent = "Evaluate the current policy before saving.";
   }
+}
+
+async function runPolicyTest() {
+  const policy = state.policy;
+  if (policy.testMode) {
+    stopPolicyTest();
+    return;
+  }
+  const source = byId("policy-source").value;
+  if (policy.testPending || !source.trim()) return;
+  const controller = new AbortController();
+  policy.testMode = true;
+  policy.testPending = true;
+  policy.testAbort = controller;
+  policy.testResult = null;
+  policy.testSource = "";
+  byId("policy-test-gutter").replaceChildren();
+  byId("policy-test-gutter").hidden = true;
+  byId("policy-test-status").hidden = false;
+  byId("policy-test-status").textContent = "Preparing test cases and evaluating candidate…";
+  byId("policy-test-status").dataset.state = "pending";
+  closePolicyTestSubjects();
+  updatePolicyDirtyState();
+  try {
+    const fixtureResponse = await fetch("/api/policy/test/fixtures", { cache: "no-store", signal: controller.signal });
+    const fixtures = await fixtureResponse.json();
+    if (!fixtureResponse.ok) throw new Error(fixtures.error || `Test fixture request failed (${fixtureResponse.status})`);
+    policy.testDimensions = Array.from(new Set((fixtures.actors || []).flatMap((actor) => Object.keys(actor.dimensions || {})))).sort();
+    const response = await fetch("/api/policy/test", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ source, actors: fixtures.actors, services: fixtures.services }),
+      signal: controller.signal,
+    });
+    const result = await response.json();
+    if (!response.ok) throw new Error(result.error || `Policy test failed (${response.status})`);
+    if (!policy.testMode) return;
+    policy.testResult = result;
+    policy.testSource = source;
+    renderPolicyTestGutter(result);
+    const warnings = fixtures.warnings || [];
+    byId("policy-test-status").textContent = `${result.actor_count} actor samples · ${result.services.length} services tested${warnings.length ? ` · ${warnings.join(" ")}` : ""}`;
+    byId("policy-test-status").dataset.state = "complete";
+  } catch (error) {
+    if (error.name !== "AbortError" && policy.testMode) {
+      byId("policy-test-status").textContent = error.message;
+      byId("policy-test-status").dataset.state = "error";
+    }
+  } finally {
+    if (policy.testAbort === controller) {
+      policy.testAbort = null;
+      policy.testPending = false;
+      updatePolicyDirtyState();
+    }
+  }
+}
+
+function renderPolicyTestGutter(result) {
+  const gutter = byId("policy-test-gutter");
+  const lineCount = byId("policy-source").value.split("\n").length;
+  const rulesByLine = new Map();
+  for (const service of result.services || []) {
+    for (const rule of service.rules || []) {
+      if (rule.line < 1 || rule.line > lineCount) continue;
+      if (!rulesByLine.has(rule.line)) rulesByLine.set(rule.line, []);
+      rulesByLine.get(rule.line).push({ service, rule });
+    }
+  }
+
+  const fragment = document.createDocumentFragment();
+  for (let line = 1; line <= lineCount; line++) {
+    const row = document.createElement("div");
+    row.className = "policy-test-line";
+    row.dataset.line = String(line);
+    for (const { service, rule } of rulesByLine.get(line) || []) {
+      const summary = rule.matched || { count: 0, by_dimension: {}, subjects: [] };
+      const countLabel = state.policy.testDimensions.map((dimension) => `${dimension[0].toUpperCase()}${summary.by_dimension?.[dimension] || 0}`).join(" ") || String(summary.count || 0);
+      const effect = rule.effect === "allow" ? "Allow" : "Deny";
+      const button = document.createElement("button");
+      button.type = "button";
+      button.className = "policy-test-line-result";
+      button.dataset.effect = rule.effect || "deny";
+      button.disabled = !service.supported;
+      button.textContent = service.supported ? countLabel : "N/A";
+      button.title = service.supported
+        ? `Line ${line} · ${service.name || service.id} · ${effect} · ${countLabel}`
+        : `Line ${line} · ${service.name || service.id} was not tested: ${service.reason || "No test endpoint is configured."}`;
+      button.setAttribute("aria-label", button.title + "; show matching identities");
+      const fullCountLabel = state.policy.testDimensions.map((dimension) => `${policyTestDimensionLabel(dimension)} ${summary.by_dimension?.[dimension] || 0}`).join(" · ") || String(summary.count || 0);
+      if (service.supported) button.addEventListener("click", () => showPolicyTestSubjects(summary.subjects || [], "", `Line ${line} · ${service.name || service.id} · ${effect} · ${fullCountLabel}`));
+      row.append(button);
+    }
+    fragment.append(row);
+  }
+  gutter.replaceChildren(fragment);
+  gutter.hidden = false;
+  gutter.style.transform = `translateY(${-byId("policy-source").scrollTop}px)`;
+}
+
+function policyTestDimensionLabel(name) {
+  return String(name).split("_").map((word) => word.charAt(0).toUpperCase() + word.slice(1)).join(" ");
+}
+
+function showPolicyTestSubjects(subjects, dimension, title) {
+  const list = byId("policy-test-subjects");
+  const unique = new Map();
+  for (const subject of subjects) {
+    const key = dimension ? subject.dimensions?.[dimension] : subject.id;
+    if (!key || unique.has(key)) continue;
+    unique.set(key, subject);
+  }
+  list.replaceChildren();
+  byId("policy-test-title").textContent = "Policy test results";
+  byId("policy-test-subject-title").textContent = `${title} · ${unique.size} ${unique.size === 1 ? "member" : "members"}${unique.size > 100 ? " · First 100 shown" : ""}`;
+  if (!unique.size) {
+    const empty = document.createElement("p");
+    empty.className = "policy-test-empty";
+    empty.textContent = "No matching identities.";
+    list.append(empty);
+  } else {
+    for (const subject of [...unique.values()].slice(0, 100)) {
+      const item = document.createElement("div");
+      item.className = "policy-test-subject";
+      item.append(document.createTextNode(subject.label || subject.id));
+      const meta = document.createElement("small");
+      meta.textContent = Object.entries(subject.dimensions || {}).map(([name, value]) => `${policyTestDimensionLabel(name)}: ${value}`).join(" · ") || policyTestDimensionLabel(subject.kind || "actor");
+      item.append(meta);
+      list.append(item);
+    }
+  }
+  byId("policy-test-dialog").showModal();
+}
+
+function closePolicyTestSubjects() {
+  if (byId("policy-test-dialog").open) byId("policy-test-dialog").close();
+}
+
+function stopPolicyTest() {
+  const policy = state.policy;
+  if (policy.testAbort) policy.testAbort.abort();
+  policy.testAbort = null;
+  policy.testPending = false;
+  policy.testMode = false;
+  policy.testResult = null;
+  policy.testSource = "";
+  policy.testDimensions = [];
+  closePolicyTestSubjects();
+  byId("policy-test-gutter").replaceChildren();
+  byId("policy-test-gutter").hidden = true;
+  byId("policy-test-status").hidden = true;
+  byId("policy-test-status").textContent = "";
+  updatePolicyDirtyState();
 }
 
 function renderPolicyStageStatus() {
@@ -2242,6 +2537,10 @@ document.addEventListener("click", (event) => {
 byId("policy-source").addEventListener("input", () => {
   state.policy.validSource = null;
   state.policy.errorOffsets = [];
+  if (state.policy.testResult && byId("policy-test-dialog").open) {
+    byId("policy-test-status").textContent = "Source changed since these results were produced.";
+    byId("policy-test-status").dataset.state = "stale";
+  }
   byId("policy-check-result").dataset.state = "";
   updatePolicyHighlight();
   updatePolicyDirtyState();
@@ -2252,6 +2551,7 @@ byId("policy-attribute-picker").addEventListener("change", () => {
 });
 byId("policy-attribute-insert").addEventListener("click", insertPolicyAttribute);
 byId("policy-format").addEventListener("click", formatPolicySource);
+byId("policy-test").addEventListener("click", runPolicyTest);
 byId("policy-attribute-rescan").addEventListener("click", rescanPolicyAttributes);
 byId("policy-draft-name").addEventListener("input", () => {
   if (!state.policy.record?.isDraft) return;
@@ -2264,6 +2564,7 @@ byId("policy-source").addEventListener("scroll", () => {
   const highlight = byId("policy-highlight");
   highlight.scrollTop = textarea.scrollTop;
   highlight.scrollLeft = textarea.scrollLeft;
+  byId("policy-test-gutter").style.transform = `translateY(${-textarea.scrollTop}px)`;
   positionPolicyCompletions();
 });
 byId("policy-source").addEventListener("click", () => showPolicyCompletions());
@@ -2349,6 +2650,7 @@ for (const [page, renderPage] of Object.entries(pageRenderers)) {
   }
 }
 
+mountPolicyAssertionEditor();
 window.addEventListener("hashchange", () => {
   showPage();
   closeInspector();

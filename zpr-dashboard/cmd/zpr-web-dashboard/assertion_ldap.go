@@ -15,27 +15,64 @@ import (
 
 var assertionLDIFURL = regexp.MustCompile(`:\s*<`)
 
-func readAssertionLDAP(ctx context.Context, container, bindDN, baseDN string) (assertionDirectory, error) {
+const defaultAssertionAttributeNames = "uid,cn,sn,givenName,displayName,mail,title,departmentNumber,employeeType,employeeNumber,uidNumber,gidNumber,description,o,ou,l,st,c,postalCode,telephoneNumber,objectClass"
+
+func approvedAssertionAttributes(configured string) ([]string, error) {
+	if strings.TrimSpace(configured) == "" {
+		configured = defaultAssertionAttributeNames
+	}
+	names := make(map[string]bool)
+	for _, raw := range strings.Split(configured, ",") {
+		name := strings.ToLower(strings.TrimSpace(raw))
+		if !validLDAPAttributeName(name) || assertionSensitiveAttribute(name) || strings.Contains(name, ";") {
+			return nil, errors.New("Assertion LDAP attributes contain an invalid or excluded name")
+		}
+		names[name] = true
+	}
+	if len(names) > 64 {
+		return nil, errors.New("At most 64 assertion LDAP attributes may be configured")
+	}
+	result := make([]string, 0, len(names))
+	for name := range names {
+		result = append(result, name)
+	}
+	sort.Strings(result)
+	return result, nil
+}
+
+func readAssertionLDAP(ctx context.Context, container, bindDN, baseDN string, attributes []string) (assertionDirectory, error) {
 	const script = `set -eu
 pid=$(pgrep -xo slapd)
 config=$(tr '\000' '\n' < "/proc/$pid/cmdline" | awk 'previous == "-f" { print; exit } { previous = $0 }')
 test -n "$config"
 directory=${config%/*}
+bind=$1
+base=$2
+shift 2
 sudo -n ip netns exec zpr-vs env LDAPTLS_REQCERT=demand LDAPTLS_CACERT="$directory/ca.crt" ldapsearch -LLL -x \
-  -H ldaps://127.0.0.1:1636 -D "$1" -y "$directory/ldap-password" \
-  -b "$2" -s sub '(|(objectClass=person)(objectClass=inetOrgPerson)(objectClass=posixAccount)(objectClass=posixGroup)(objectClass=groupOfNames)(objectClass=groupOfUniqueNames))' \
-  objectClass uid cn memberUid member uniqueMember
+	-H ldaps://127.0.0.1:1636 -D "$bind" -y "$directory/ldap-password" \
+	-b "$base" -s sub '(|(objectClass=person)(objectClass=inetOrgPerson)(objectClass=posixAccount)(objectClass=posixGroup)(objectClass=groupOfNames)(objectClass=groupOfUniqueNames))' \
+	objectClass uid cn memberUid member uniqueMember "$@"
 `
-	command := exec.CommandContext(ctx, "docker", "exec", container, "sh", "-c", script, "assertion-ldap-read", bindDN, baseDN)
+	args := append([]string{"exec", container, "sh", "-c", script, "assertion-ldap-read", bindDN, baseDN}, attributes...)
+	command := exec.CommandContext(ctx, "docker", args...)
 	var output policyLDAPScanOutput
 	command.Stdout, command.Stderr = &output, io.Discard
 	if err := command.Run(); err != nil {
 		return assertionDirectory{}, errors.New("Trusted LDAP read failed; no assertions were evaluated")
 	}
-	return parseAssertionLDAP(output.buffer.String())
+	return parseAssertionLDAPAttributes(output.buffer.String(), attributes)
 }
 
 func parseAssertionLDAP(source string) (assertionDirectory, error) {
+	attributes, err := approvedAssertionAttributes("")
+	if err != nil {
+		return assertionDirectory{}, err
+	}
+	return parseAssertionLDAPAttributes(source, attributes)
+}
+
+func parseAssertionLDAPAttributes(source string, attributes []string) (assertionDirectory, error) {
 	if len(source) > maxPolicyLDAPScanOutput || assertionLDIFURL.MatchString(source) {
 		return assertionDirectory{}, errors.New("LDAP snapshot exceeds limits or contains unsupported URL values")
 	}
@@ -45,6 +82,7 @@ func parseAssertionLDAP(source string) (assertionDirectory, error) {
 	}
 	peopleByDN := make(map[string]string)
 	people := make(map[string]bool)
+	personAttributes := make(map[string]map[string][]string)
 	groupEntries := make(map[string]*ldap.Entry)
 	for _, record := range data.Entries {
 		entry := record.Entry
@@ -55,6 +93,13 @@ func parseAssertionLDAP(source string) (assertionDirectory, error) {
 			name, options, found := strings.Cut(strings.ToLower(attribute.Name), ";")
 			if found && options != "" && (name == "member" || name == "uniquemember" || name == "memberuid" || name == "uid") {
 				return assertionDirectory{}, errors.New("LDAP ranged or option-qualified memberships are not supported")
+			}
+			if found && options != "" {
+				for _, approved := range attributes {
+					if name == approved {
+						return assertionDirectory{}, errors.New("Option-qualified assertion attributes are not supported")
+					}
+				}
 			}
 		}
 		classes := make(map[string]bool)
@@ -76,14 +121,22 @@ func parseAssertionLDAP(source string) (assertionDirectory, error) {
 				return assertionDirectory{}, errors.New("LDAP people must have unique UID and distinguished-name identities")
 			}
 			people[uids[0]], peopleByDN[dn.String()] = true, uids[0]
+			personAttributes[uids[0]], err = assertionLDAPAttributes(entry, attributes)
+			if err != nil {
+				return assertionDirectory{}, err
+			}
 		}
 	}
-	directory := assertionDirectory{People: []string{}, Groups: make(map[string][]string)}
+	directory := assertionDirectory{People: []string{}, Groups: make(map[string][]string), Attributes: attributes, PersonAttributes: personAttributes, GroupAttributes: make(map[string]map[string][]string)}
 	for uid := range people {
 		directory.People = append(directory.People, uid)
 	}
 	sort.Strings(directory.People)
 	for name, entry := range groupEntries {
+		directory.GroupAttributes[name], err = assertionLDAPAttributes(entry, attributes)
+		if err != nil {
+			return assertionDirectory{}, err
+		}
 		members := make(map[string]bool)
 		for _, uid := range entry.GetEqualFoldAttributeValues("memberUid") {
 			if !people[uid] {
@@ -110,4 +163,29 @@ func parseAssertionLDAP(source string) (assertionDirectory, error) {
 		return assertionDirectory{}, errors.New("Trusted LDAP returned no people or groups; no assertions were evaluated")
 	}
 	return directory, nil
+}
+
+func assertionLDAPAttributes(entry *ldap.Entry, approved []string) (map[string][]string, error) {
+	result := make(map[string][]string)
+	for _, name := range approved {
+		values := entry.GetEqualFoldAttributeValues(name)
+		if len(values) > 256 {
+			return nil, errors.New("LDAP assertion attribute exceeds the value-count limit")
+		}
+		unique := make(map[string]bool)
+		for _, value := range values {
+			if len(value) > 4096 {
+				return nil, errors.New("LDAP assertion attribute exceeds the value-size limit")
+			}
+			if strings.TrimSpace(value) != "" {
+				unique[value] = true
+			}
+		}
+		result[name] = []string{}
+		for value := range unique {
+			result[name] = append(result[name], value)
+		}
+		sort.Strings(result[name])
+	}
+	return result, nil
 }

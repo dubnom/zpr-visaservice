@@ -41,6 +41,11 @@
     {"id": "fleet-maintenance", "name": "Fleet maintenance", "description": "Fleet operators may reach maintenance services for assigned vehicles."},
     {"id": "partner-audit", "name": "Partner audit", "description": "Auditors receive time-limited access to shipment records."}
   ],
+  "policy_test_services": [
+    {"id":"RouteExchange","name":"Route Exchange","actor_cn":"route-exchange","protocol":"ICMP6","icmp_type":128,"icmp_code":0},
+    {"id":"FleetTelemetry","name":"Fleet Telemetry","actor_cn":"fleet-telemetry","protocol":"ICMP6","icmp_type":128,"icmp_code":0},
+    {"id":"ShipmentLedger","name":"Shipment Ledger","actor_cn":"shipment-ledger","protocol":"ICMP6","icmp_type":128,"icmp_code":0}
+  ],
   "services": [
     {"name": "RouteExchange", "kind": "Application", "endpoint": "ZPR/HTTPS", "description": "Regional route coordination."},
     {"name": "FleetTelemetry", "kind": "Application", "endpoint": "ZPR/UDP", "description": "Vehicle telemetry ingestion."},

@@ -63,6 +63,7 @@ type policyStatus struct {
 	StagingReady       bool                   `json:"staging_ready"`
 	StagedCandidate    *stagedPolicyCandidate `json:"staged_candidate,omitempty"`
 	CompilerReady      bool                   `json:"compiler_ready"`
+	TesterReady        bool                   `json:"tester_ready"`
 	AssistantReady     bool                   `json:"assistant_ready"`
 	AssistantModel     string                 `json:"assistant_model"`
 	AssistantModels    []string               `json:"assistant_models"`
@@ -210,6 +211,10 @@ func newPolicyWorkspace() (*policyWorkspace, string) {
 	if err := seedDemoPolicyCatalog(context.Background(), workspace); err != nil {
 		_ = store.Close()
 		return nil, "Unable to import the configured demo policy catalog."
+	}
+	if err := seedOrganizationAssertions(context.Background(), store); err != nil {
+		_ = store.Close()
+		return nil, "Unable to initialize organization assertions."
 	}
 	workspace.configureLDAPScan()
 	workspace.configurePolicyStaging()
@@ -483,6 +488,7 @@ func (a *application) handleGetPolicy(w http.ResponseWriter, r *http.Request) {
 		status.Message = "Configured simulator policy source could not be refreshed; repository records are retained."
 	}
 	status.CompilerReady = a.policy.compiler != ""
+	status.TesterReady = policyTesterAvailable()
 	status.StagingReady = a.policy.stagingReady()
 	if !status.CompilerReady {
 		status.Message = a.policy.compilerErr

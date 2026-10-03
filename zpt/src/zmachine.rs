@@ -99,6 +99,9 @@ impl ZMachine {
                     path.to_path_buf()
                 };
                 state.load_policy(&path)?;
+                if let Some(context) = state.get_ctx() {
+                    outfmt.write_policy_rules(&context.communication_policy_summaries());
+                }
                 Ok(())
             }
             Instruction::Set { name, key, value } => {

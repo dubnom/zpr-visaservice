@@ -5,9 +5,9 @@
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <meta name="theme-color" content="#17211e">
     <title>ZPR Control Room</title>
-    <link rel="stylesheet" href="/app.css?v=19">
+    <link rel="stylesheet" href="/app.css?v=25">
     <link rel="stylesheet" href="/machine-logs.css?v=7">
-    <link rel="stylesheet" href="/assertions.css?v=2">
+    <link rel="stylesheet" href="/assertions.css?v=5">
   </head>
   <body>
     <div class="app-shell">
@@ -21,11 +21,11 @@
           <a class="nav-link" href="#connections" data-page-link="connections">Connections</a>
           <a class="nav-link" href="#actors" data-page-link="actors">Actors</a>
           <a class="nav-link" href="#adapter-logs" data-page-link="adapter-logs">Adapter Logs</a>
-          <a class="nav-link" href="#assertions" data-page-link="assertions">Assertions</a>
           <a class="nav-link" href="#services" data-page-link="services">Services</a>
           <a class="nav-link" href="#dns" data-page-link="dns">DNS</a>
           <a class="nav-link" href="#sources" data-page-link="sources">Trusted sources</a>
           <a class="nav-link" href="#policy" data-page-link="policy">Policy</a>
+          <a class="nav-link" href="/policy-browser.html">Browse policy &amp; assertions</a>
           <a class="nav-link" href="#visas" data-page-link="visas">Visas</a>
           <a class="nav-link" href="#denies" data-page-link="denies">Denials</a>
         </nav>
@@ -161,14 +161,18 @@
           </section>
         </section>
 
-        <section class="page-view" id="page-assertions" data-page="assertions" aria-label="Assertions">
+        <section id="policy-assertion-editor" class="policy-assertion-editor" aria-label="Assertion editor" hidden>
           <section class="section-block">
             <div class="assertion-heading"><div><h2>Assertions</h2><small id="assertion-revision">Global</small></div><div class="assertion-actions"><label><input id="assertion-enabled" type="checkbox" disabled>Periodic checks</label><label>Interval (s)<input id="assertion-interval" type="number" min="30" max="3600" value="60"></label><button id="assertion-reload" class="button" type="button" disabled>Reload</button><button id="assertion-save" class="button" type="button" disabled>Save</button><button id="assertion-evaluate" class="button" type="button" disabled>Evaluate</button></div></div>
             <div id="assertion-message" class="assertion-message" role="status" aria-live="polite"></div>
-            <div class="assertion-workbench"><div><div class="assertion-editor"><pre id="assertion-highlight" aria-hidden="true"></pre><textarea id="assertion-source" aria-label="Data assertion source" maxlength="65536" spellcheck="false" autocapitalize="off" autocomplete="off" wrap="off" disabled></textarea></div><details class="assertion-syntax"><summary>Syntax</summary><pre>group "Operators" members &gt;= 2;
+            <div class="assertion-workbench"><div><div id="assertion-editor" class="assertion-editor"><div id="assertion-result-gutter" class="assertion-result-gutter" aria-label="Assertion results by source line" hidden></div><pre id="assertion-highlight" aria-hidden="true"></pre><textarea id="assertion-source" aria-label="Data assertion source" maxlength="65536" spellcheck="false" autocapitalize="off" autocomplete="off" wrap="off" disabled></textarea></div><details class="assertion-syntax"><summary>Syntax</summary><pre>group "Operators" members &gt;= 2;
 each group members &gt; 3;
 people exactly_one ["Employees", "Contractors"];
-people in "Employees" not_both ["Administrators", "Auditors"];</pre></details></div><aside class="assertion-catalog"><div class="assertion-heading"><h3>Trusted source</h3><button id="assertion-read-source" class="button" type="button" disabled>Read source</button></div><p id="assertion-source-status" class="assertion-source-meta">Loading</p><p id="assertion-source-summary" class="assertion-source-meta">Not read</p><div class="table-scroll"><table><thead><tr><th>GROUP</th><th>MEMBERS</th><th></th></tr></thead><tbody id="assertion-group-rows"></tbody></table></div></aside></div>
+people in "Employees" not_both ["Administrators", "Auditors"];
+people attribute "mail" present;
+people in "Operators" attribute "title" == "Engineer";
+people attribute "employeeType" in ["Employee", "Contractor"];
+each group attribute "gidNumber" &gt;= 1000;</pre></details></div><aside class="assertion-catalog"><div class="assertion-heading"><h3>Trusted source</h3><button id="assertion-read-source" class="button" type="button" disabled>Read source</button></div><p id="assertion-source-status" class="assertion-source-meta">Loading</p><p id="assertion-source-summary" class="assertion-source-meta">Not read</p><div class="assertion-catalog-tabs" role="tablist" aria-label="Trusted source catalog"><button id="assertion-groups-tab" type="button" role="tab" data-assertion-catalog-tab aria-controls="assertion-groups-panel" aria-selected="true">Groups</button><button id="assertion-attributes-tab" type="button" role="tab" data-assertion-catalog-tab aria-controls="assertion-attributes-panel" aria-selected="false" tabindex="-1">Attributes</button></div><div id="assertion-groups-panel" role="tabpanel" aria-labelledby="assertion-groups-tab"><div class="table-scroll"><table><thead><tr><th>GROUP</th><th>MEMBERS</th><th></th></tr></thead><tbody id="assertion-group-rows"></tbody></table></div></div><div id="assertion-attributes-panel" role="tabpanel" aria-labelledby="assertion-attributes-tab" hidden><div class="table-scroll"><table><thead><tr><th>ATTRIBUTE</th><th>PEOPLE</th><th>GROUPS</th><th></th></tr></thead><tbody id="assertion-attribute-rows"></tbody></table></div></div></aside></div>
             <section class="assertion-results"><h3>Results</h3><p id="assertion-run-status">Not evaluated</p><p id="assertion-run-error" role="status"></p><div class="table-scroll"><table><thead><tr><th>LINE</th><th>ASSERTION</th><th>RESULT</th><th>CHECKED</th><th>VIOLATIONS</th></tr></thead><tbody id="assertion-result-rows"></tbody></table></div></section>
           </section>
         </section>
@@ -188,34 +192,39 @@ people in "Employees" not_both ["Administrators", "Auditors"];</pre></details></
                 <strong id="policy-record-title">Select a policy</strong><span id="policy-revision-label"></span>
                 <input id="policy-draft-name" type="text" maxlength="100" autocomplete="off" aria-label="New policy name" placeholder="Name this policy" hidden>
               </div>
-              <div class="policy-actions"><button id="policy-refresh" class="button" type="button" disabled>Discard</button><button id="policy-check" class="button" type="button" disabled>Evaluate</button><button id="policy-save" class="button button-save-next" type="button" disabled>Save</button><button id="policy-save-as" class="button" type="button" disabled>Save As...</button><button id="policy-stage" class="button" type="button" disabled>Compile &amp; Stage</button></div>
+              <div class="policy-actions" id="policy-actions"><button id="policy-refresh" class="button" type="button" disabled>Discard</button><button id="policy-check" class="button" type="button" disabled>Evaluate</button><button id="policy-save" class="button button-save-next" type="button" disabled>Save</button><button id="policy-save-as" class="button" type="button" disabled>Save As...</button><button id="policy-stage" class="button" type="button" disabled>Compile &amp; Stage</button></div>
             </div>
             <div id="policy-stage-status" class="policy-stage-status" role="status" aria-live="polite">Select a saved policy revision to stage.</div>
-            <div class="policy-workbench">
+            <div id="policy-workbench" class="policy-workbench" data-test-mode="false">
               <aside class="policy-catalog-pane" aria-label="Policy picker">
                 <div class="catalog-pane-heading"><button id="new-category" class="button" type="button" title="Create category">+ Category</button><button id="new-policy-record" class="button" type="button" disabled>+ Policy</button></div>
                 <div id="policy-category-tree" class="policy-category-tree" role="tree"><p class="catalog-empty">No categories yet.</p></div>
               </aside>
-              <section class="policy-editor-pane" aria-label="Policy source editor">
+              <section class="policy-editor-pane" id="policy-editor-pane" aria-label="Policy source editor">
+                <div id="policy-source-surface">
                 <div class="policy-attribute-toolbar">
                   <label for="policy-attribute-picker">Attribute</label>
                   <select id="policy-attribute-picker" aria-label="Configured policy attributes" disabled><option value="">Loading attributes…</option></select>
                   <button id="policy-attribute-insert" class="button button-refresh" type="button" disabled>Insert</button>
                   <button id="policy-attribute-rescan" class="button button-refresh" type="button" disabled>Rescan LDAP</button>
                   <button id="policy-format" class="button button-refresh" type="button" title="Format policy source" aria-label="Format policy source" disabled>Format</button>
+                  <button id="policy-test" class="button button-refresh" type="button" disabled>Test</button>
                 </div>
                 <div id="policy-attribute-status" class="policy-attribute-status" role="status" aria-live="polite"></div>
-                <div id="policy-code-editor" class="policy-code-editor">
+                <div id="policy-code-editor" class="policy-code-editor" data-test-mode="false">
+                  <div id="policy-test-gutter" class="policy-test-gutter" aria-label="Test results by policy line" hidden></div>
                   <pre id="policy-highlight" class="policy-highlight" aria-hidden="true"></pre>
                   <textarea id="policy-source" aria-label="ZPL policy source" aria-describedby="policy-editor-help" aria-controls="policy-completions" aria-autocomplete="list" aria-expanded="false" spellcheck="false" autocapitalize="off" autocomplete="off" autocorrect="off" wrap="off" disabled></textarea>
                   <div id="policy-completions" class="policy-completions" role="listbox" aria-label="ZPL completions" hidden></div>
                 </div>
+                <div id="policy-test-status" class="policy-test-status" role="status" aria-live="polite" hidden></div>
                 <span id="policy-editor-help" class="sr-only">ZPL syntax is highlighted. Choose an attribute and press Insert to place it at the cursor. Press Control-Space for suggestions; use arrow keys and Tab to insert a completion. Enter starts a new line.</span>
                 <div id="policy-check-result" class="policy-check-result" role="status" aria-live="polite">Policy source is not loaded.</div>
-                <div class="policy-history-heading"><strong>Version history</strong><span id="policy-history-count">—</span></div>
+                </div>
+                <div class="policy-history-heading" id="policy-history-heading"><strong>Version history</strong><span id="policy-history-count">—</span></div>
                 <div id="policy-history" class="policy-history"><p class="catalog-empty">Select a policy to browse versions.</p></div>
               </section>
-              <aside class="policy-assistant-pane" aria-label="Claude Assistant">
+              <aside class="policy-assistant-pane" id="policy-assistant-pane" aria-label="Claude Assistant">
                 <div class="assistant-heading"><h3>Claude Assistant</h3><span id="assistant-state" class="assistant-state">Not configured</span></div>
                 <div class="assistant-settings">
                   <label class="assistant-enable" for="assistant-enabled"><input id="assistant-enabled" type="checkbox" disabled> Use assistant</label>
@@ -265,6 +274,15 @@ people in "Employees" not_both ["Administrators", "Auditors"];</pre></details></
           </form>
         </dialog>
 
+        <dialog id="policy-test-dialog" class="policy-dialog policy-test-dialog" aria-labelledby="policy-test-title">
+          <div class="policy-test-modal">
+            <div class="dialog-heading"><h2 id="policy-test-title">Policy test results</h2><button class="inspector-close" type="button" data-close-dialog="policy-test-dialog" aria-label="Close">×</button></div>
+            <h3 id="policy-test-subject-title" class="policy-test-subject-title">Matching identities</h3>
+            <div id="policy-test-subjects" class="policy-test-subjects"></div>
+            <div class="dialog-actions"><button class="button" type="button" data-close-dialog="policy-test-dialog">Close</button></div>
+          </div>
+        </dialog>
+
         <section class="page-view" id="page-visas" data-page="visas" aria-label="Visas">
           <section class="section-block">
             <div class="table-tools"><div class="filter-group"><input id="visas-filter" type="search" placeholder="Filter" aria-label="Filter visas"><span class="count-label" id="visa-total">— total</span></div></div>
@@ -287,8 +305,8 @@ people in "Employees" not_both ["Administrators", "Auditors"];</pre></details></
         <footer class="page-footer"><span>ZPR CONTROL ROOM <b>·</b> LIVE MONITOR / POLICY RECORDS</span><span id="footer-poll">Auto-refresh every 5 seconds</span></footer>
       </main>
     </div>
-    <script src="/app.js?v=29" defer></script>
+    <script src="/app.js?v=38" defer></script>
     <script src="/machine-logs.js?v=7" defer></script>
-    <script src="/assertions.js?v=1" defer></script>
+    <script src="/assertions.js?v=4" defer></script>
   </body>
 </html>

@@ -12,6 +12,8 @@ esac
 case "$organization" in ''|*[!a-z0-9-]*) echo "invalid organization id" >&2; exit 2 ;; esac
 profile="$dashboard_dir/cmd/zpr-web-dashboard/examples/organizations/$organization.json"
 [ -r "$profile" ] || { echo "organization profile missing" >&2; exit 1; }
+organization_base_dn=$(jq -er '.directory.base_dn' "$profile")
+organization_bind_dn="cn=zpr-reader,ou=Service Accounts,$organization_base_dn"
 binary="$runtime_dir/dashboard-stack/zpr-web-dashboard"
 compiler=${ZPR_ZPLC_BIN:-$dashboard_dir/../../zpr-compiler/target/debug/zplc}
 pregen="$runtime_dir/linux-integration/pregen"
@@ -31,7 +33,11 @@ had_request=no
 if [ -f "$request_file" ]; then cp "$request_file" "$backup"; had_request=yes; fi
 changed=no
 policy_changed=no
+control_changed=no
 previous_organization=$(curl -fsS --max-time 5 http://127.0.0.1:8788/api/simulator/organizations | jq -er '.active_id')
+previous_profile="$dashboard_dir/cmd/zpr-web-dashboard/examples/organizations/$previous_organization.json"
+previous_base_dn=$(jq -er '.directory.base_dn' "$previous_profile")
+previous_bind_dn="cn=zpr-reader,ou=Service Accounts,$previous_base_dn"
 rollback() {
     result=$?
     trap - EXIT HUP INT TERM
@@ -43,6 +49,12 @@ rollback() {
             previous_source="$runtime_dir/organization-policy/$previous_organization/runtime.zpl"
             if [ ! -r "$previous_source" ]; then previous_source="$pregen/v4-1node-3actor-ping.zpl"; fi
             "$script_dir/dashboard-stack.sh" restart-policy-context "$previous_organization" "$previous_source" || true
+        fi
+        if [ "$control_changed" = yes ]; then
+            SIMULATION_ORGANIZATION_ID="$previous_organization" \
+            ZPR_ASSERTION_LDAP_BASE_DN="$previous_base_dn" \
+            ZPR_ASSERTION_LDAP_BIND_DN="$previous_bind_dn" \
+                "$script_dir/dashboard-stack.sh" restart-control-service || true
         fi
     fi
     rm -f "$backup"
@@ -80,4 +92,10 @@ fi
 policy_changed=yes
 "$script_dir/dashboard-stack.sh" restart-policy-context "$organization" "$bundle_dir/runtime.zpl"
 curl -fsS --max-time 10 http://127.0.0.1:8787/api/policy/context | jq -e --arg id "$organization" '.organization_id==$id' >/dev/null
+control_changed=yes
+SIMULATION_ORGANIZATION_ID="$organization" \
+ZPR_ASSERTION_LDAP_BASE_DN="$organization_base_dn" \
+ZPR_ASSERTION_LDAP_BIND_DN="$organization_bind_dn" \
+    "$script_dir/dashboard-stack.sh" restart-control-service
+curl -fsS --max-time 15 http://127.0.0.1:8787/api/assertions/source >/dev/null
 echo "Organization policy, directory, and ZPR context ready"

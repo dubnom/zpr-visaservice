@@ -14,18 +14,25 @@ const maxAssertionSource = 64 << 10
 const maxAssertionRules = 200
 
 type assertionDirectory struct {
-	People []string            `json:"people"`
-	Groups map[string][]string `json:"groups"`
+	People           []string                       `json:"people"`
+	Groups           map[string][]string            `json:"groups"`
+	Attributes       []string                       `json:"attributes,omitempty"`
+	PersonAttributes map[string]map[string][]string `json:"person_attributes,omitempty"`
+	GroupAttributes  map[string]map[string][]string `json:"group_attributes,omitempty"`
 }
 
 type assertionRule struct {
-	Line     int      `json:"line"`
-	Kind     string   `json:"kind"`
-	Group    string   `json:"group,omitempty"`
-	Groups   []string `json:"groups,omitempty"`
-	Scope    string   `json:"scope,omitempty"`
-	Operator string   `json:"operator,omitempty"`
-	Limit    int      `json:"limit,omitempty"`
+	Line      int      `json:"line"`
+	Kind      string   `json:"kind"`
+	Group     string   `json:"group,omitempty"`
+	Groups    []string `json:"groups,omitempty"`
+	Scope     string   `json:"scope,omitempty"`
+	Operator  string   `json:"operator,omitempty"`
+	Limit     int      `json:"limit,omitempty"`
+	Attribute string   `json:"attribute,omitempty"`
+	Value     string   `json:"value,omitempty"`
+	Values    []string `json:"values,omitempty"`
+	Number    *int64   `json:"number,omitempty"`
 }
 
 type assertionResult struct {
@@ -38,13 +45,14 @@ type assertionResult struct {
 }
 
 type assertionRun struct {
-	Revision   int               `json:"revision"`
-	Draft      bool              `json:"draft"`
-	StartedAt  time.Time         `json:"started_at"`
-	FinishedAt time.Time         `json:"finished_at"`
-	Status     string            `json:"status"`
-	Error      string            `json:"error,omitempty"`
-	Results    []assertionResult `json:"results"`
+	OrganizationID string            `json:"organization_id,omitempty"`
+	Revision       int               `json:"revision"`
+	Draft          bool              `json:"draft"`
+	StartedAt      time.Time         `json:"started_at"`
+	FinishedAt     time.Time         `json:"finished_at"`
+	Status         string            `json:"status"`
+	Error          string            `json:"error,omitempty"`
+	Results        []assertionResult `json:"results"`
 }
 
 type assertionParser struct {
@@ -77,19 +85,34 @@ func parseAssertions(source string) ([]assertionRule, error) {
 		case "group":
 			parser.next()
 			rule.Kind, rule.Group = "group", parser.name()
-			parser.expect("members")
-			parser.cardinality(&rule)
+			if parser.text == "attribute" {
+				rule.Kind = "group_attribute"
+				parser.attribute(&rule)
+			} else {
+				parser.expect("members")
+				parser.cardinality(&rule)
+			}
 		case "each":
 			parser.next()
 			parser.expect("group")
-			parser.expect("members")
 			rule.Kind = "each_group"
-			parser.cardinality(&rule)
+			if parser.text == "attribute" {
+				rule.Kind = "each_group_attribute"
+				parser.attribute(&rule)
+			} else {
+				parser.expect("members")
+				parser.cardinality(&rule)
+			}
 		case "people":
 			parser.next()
 			if parser.text == "in" {
 				parser.next()
 				rule.Scope = parser.name()
+			}
+			if parser.text == "attribute" {
+				rule.Kind = "people_attribute"
+				parser.attribute(&rule)
+				break
 			}
 			if parser.text != "exactly_one" && parser.text != "not_both" {
 				parser.fail("expected exactly_one or not_both")
@@ -137,7 +160,7 @@ func (parser *assertionParser) name() string {
 		return ""
 	}
 	if parser.token != scanner.String {
-		parser.fail("expected a double-quoted group name")
+		parser.fail("expected a double-quoted name")
 		return ""
 	}
 	name, err := strconv.Unquote(parser.text)
@@ -202,6 +225,145 @@ func (parser *assertionParser) groupList() []string {
 	return groups
 }
 
+func (parser *assertionParser) attribute(rule *assertionRule) {
+	parser.expect("attribute")
+	rule.Attribute = strings.ToLower(parser.name())
+	if !validLDAPAttributeName(rule.Attribute) || assertionSensitiveAttribute(rule.Attribute) {
+		parser.fail("attribute name is invalid or excluded for security")
+		return
+	}
+	operator := parser.text
+	parser.next()
+	if operator == "present" || operator == "absent" {
+		rule.Operator = operator
+		return
+	}
+	if operator == "in" {
+		rule.Operator = operator
+		rule.Values = parser.groupList()
+		return
+	}
+	if parser.text == "=" {
+		operator += "="
+		parser.next()
+	}
+	switch operator {
+	case "==", "!=", ">", ">=", "<", "<=", "contains":
+		rule.Operator = operator
+	default:
+		parser.fail("expected present, absent, ==, !=, >, >=, <, <=, in, or contains")
+		return
+	}
+	if parser.token == scanner.String {
+		value, err := strconv.Unquote(parser.text)
+		if err != nil || len(value) > 4096 {
+			parser.fail("attribute value exceeds limits")
+			return
+		}
+		if operator != "==" && operator != "!=" && operator != "contains" {
+			parser.fail("ordered attribute comparisons require an integer")
+			return
+		}
+		rule.Value = value
+		parser.next()
+		return
+	}
+	if operator == "contains" {
+		parser.fail("contains requires a double-quoted value")
+		return
+	}
+	sign := ""
+	if parser.text == "-" {
+		sign = "-"
+		parser.next()
+	}
+	number, err := strconv.ParseInt(sign+parser.text, 10, 64)
+	if parser.token != scanner.Int || err != nil || number < -9007199254740991 || number > 9007199254740991 {
+		parser.fail("attribute comparison requires a quoted value or safe integer")
+		return
+	}
+	rule.Number = &number
+	parser.next()
+}
+
+func assertionSensitiveAttribute(name string) bool {
+	name = strings.ToLower(name)
+	for _, excluded := range []string{"password", "passwd", "pwd", "token", "secret", "credential", "private", "key", "auth", "certificate"} {
+		if strings.Contains(name, excluded) {
+			return true
+		}
+	}
+	return false
+}
+
+func compareAssertionAttribute(values []string, rule assertionRule) (bool, error) {
+	if rule.Number != nil {
+		for _, value := range values {
+			if _, err := strconv.ParseInt(value, 10, 64); err != nil {
+				return false, errors.New("Attribute has a non-integer value")
+			}
+		}
+	}
+	if rule.Operator == "present" {
+		return len(values) > 0, nil
+	}
+	if rule.Operator == "absent" {
+		return len(values) == 0, nil
+	}
+	if len(values) == 0 {
+		return false, nil
+	}
+	if rule.Operator == "contains" {
+		for _, value := range values {
+			if value == rule.Value {
+				return true, nil
+			}
+		}
+		return false, nil
+	}
+	for _, value := range values {
+		valid := false
+		if rule.Number != nil {
+			number, err := strconv.ParseInt(value, 10, 64)
+			if err != nil {
+				return false, errors.New("Attribute has a non-integer value")
+			}
+			switch rule.Operator {
+			case "==":
+				valid = number == *rule.Number
+			case "!=":
+				valid = number != *rule.Number
+			case ">":
+				valid = number > *rule.Number
+			case ">=":
+				valid = number >= *rule.Number
+			case "<":
+				valid = number < *rule.Number
+			case "<=":
+				valid = number <= *rule.Number
+			}
+		} else {
+			switch rule.Operator {
+			case "==":
+				valid = value == rule.Value
+			case "!=":
+				valid = value != rule.Value
+			case "in":
+				for _, allowed := range rule.Values {
+					if value == allowed {
+						valid = true
+						break
+					}
+				}
+			}
+		}
+		if !valid {
+			return false, nil
+		}
+	}
+	return true, nil
+}
+
 func evaluateAssertions(rules []assertionRule, directory assertionDirectory) []assertionResult {
 	people := make(map[string]bool)
 	for _, person := range directory.People {
@@ -218,7 +380,7 @@ func evaluateAssertions(rules []assertionRule, directory assertionDirectory) []a
 	for _, rule := range rules {
 		result := assertionResult{Rule: rule, Status: "pass", Subjects: []string{}}
 		required := append([]string(nil), rule.Groups...)
-		if rule.Kind == "group" {
+		if rule.Kind == "group" || rule.Kind == "group_attribute" {
 			required = append(required, rule.Group)
 		}
 		if rule.Scope != "" {
@@ -234,6 +396,20 @@ func evaluateAssertions(rules []assertionRule, directory assertionDirectory) []a
 			results = append(results, result)
 			continue
 		}
+		if rule.Attribute != "" {
+			known := false
+			for _, name := range directory.Attributes {
+				if strings.EqualFold(name, rule.Attribute) {
+					known = true
+					break
+				}
+			}
+			if !known {
+				result.Status, result.Message = "error", "Attribute is not available from the approved source: "+rule.Attribute
+				results = append(results, result)
+				continue
+			}
+		}
 		check := func(subject string, valid bool) {
 			result.Checked++
 			if !valid {
@@ -244,7 +420,37 @@ func evaluateAssertions(rules []assertionRule, directory assertionDirectory) []a
 				}
 			}
 		}
-		if rule.Kind == "group" || rule.Kind == "each_group" {
+		if rule.Attribute != "" {
+			selected := people
+			attributes := directory.PersonAttributes
+			if rule.Kind == "group_attribute" {
+				selected = map[string]bool{rule.Group: true}
+				attributes = directory.GroupAttributes
+			}
+			if rule.Kind == "each_group_attribute" {
+				selected = make(map[string]bool)
+				for name := range groups {
+					selected[name] = true
+				}
+				attributes = directory.GroupAttributes
+			}
+			if rule.Scope != "" {
+				selected = groups[rule.Scope]
+			}
+			names := make([]string, 0, len(selected))
+			for name := range selected {
+				names = append(names, name)
+			}
+			sort.Strings(names)
+			for _, name := range names {
+				valid, err := compareAssertionAttribute(attributes[name][rule.Attribute], rule)
+				if err != nil {
+					result.Status, result.Message = "error", err.Error()+" for "+name
+					break
+				}
+				check(name, valid)
+			}
+		} else if rule.Kind == "group" || rule.Kind == "each_group" {
 			names := []string{rule.Group}
 			if rule.Kind == "each_group" {
 				names = make([]string, 0, len(groups))
@@ -292,7 +498,7 @@ func evaluateAssertions(rules []assertionRule, directory assertionDirectory) []a
 				check(person, rule.Kind == "exactly_one" && count == 1 || rule.Kind == "not_both" && count < 2)
 			}
 		}
-		if result.Checked == 0 {
+		if result.Checked == 0 && result.Status != "error" {
 			result.Status, result.Message = "error", "No subjects found in the selected scope"
 		} else if result.Message == "" {
 			result.Message = fmt.Sprintf("%d checked; %d violations", result.Checked, result.Violations)

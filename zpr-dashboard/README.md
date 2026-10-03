@@ -197,9 +197,11 @@ browser. This is a bounded live tail, not a durable audit archive.
 
 ## Trusted Data Assertions
 
-Control Room's **Assertions** page edits one global, report-only assertion set,
-independent of access policy. It evaluates live trusted LDAP membership data with
-group cardinality, exact-one membership, and mutual-exclusion rules. Manual draft
+Control Room's **Assertions** page edits a per-organization, report-only assertion
+record in the Policy Repository, independent of ZPL compilation and access policy.
+It evaluates live trusted LDAP membership data with
+group cardinality, exact-one membership, mutual exclusion, and approved LDAP
+attribute presence/value/integer checks. Manual draft
 evaluation and opt-in periodic checks are available; source failures and missing
 groups are errors, never successful checks. See [ASSERTIONS.md](ASSERTIONS.md)
 for syntax, source configuration, API contracts, and current limits.

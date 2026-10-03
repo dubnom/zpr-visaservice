@@ -114,6 +114,19 @@ func runControlService() error {
 	if err != nil {
 		return err
 	}
+	assertionStore, assertionStoreErr := newPolicyServiceAssertionSettingsStore()
+	if assertionStoreErr != "" {
+		log.Printf("Policy Repository assertion settings are unavailable: %s", assertionStoreErr)
+	} else {
+		assertions.settingsStore = assertionStore
+		refreshCtx, cancel := context.WithTimeout(context.Background(), 12*time.Second)
+		if err := assertions.refreshSettings(refreshCtx); err != nil {
+			log.Printf("Policy Repository assertion settings are unavailable: %T", err)
+		} else if err := assertions.migrateLegacySettings(refreshCtx); err != nil {
+			log.Printf("Legacy assertions were not migrated: %T", err)
+		}
+		cancel()
+	}
 	assertionContext, stopAssertions := context.WithCancel(context.Background())
 	defer stopAssertions()
 	assertions.start(assertionContext)

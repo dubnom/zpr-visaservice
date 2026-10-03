@@ -59,6 +59,20 @@
     {"id": "device-posture", "name": "Device posture", "description": "Type, location, and secure-state predicates for managed machines."},
     {"id": "user-access", "name": "User access", "description": "Department and LDAP group-role predicates for authenticated users."}
   ],
+  "policy_test_services": [
+    {"id":"echo-web.svc.zpr","name":"EchoWeb","actor_cn":"echo-service","protocol":"TCP","port":8080},
+    {"id":"metrics-web.svc.zpr","name":"MetricsWeb","actor_cn":"metrics-service","protocol":"TCP","port":8081},
+    {"id":"internet-gateway.svc.zpr","name":"InternetGatewayWeb","actor_cn":"internet-gateway","protocol":"TCP","port":8082},
+    {"id":"FinanceWorkspace","name":"Finance Workspace","actor_cn":"finance-workspace","protocol":"ICMP6","icmp_type":128,"icmp_code":0},
+    {"id":"PayrollRecords","name":"Payroll Records","actor_cn":"payroll-records","protocol":"ICMP6","icmp_type":128,"icmp_code":0},
+    {"id":"EngineeringBuildFarm","name":"Engineering Build Farm","actor_cn":"engineering-build","protocol":"ICMP6","icmp_type":128,"icmp_code":0},
+    {"id":"PeopleOperationsHub","name":"People Operations Hub","actor_cn":"people-operations","protocol":"ICMP6","icmp_type":128,"icmp_code":0},
+    {"id":"SecurityIncidentConsole","name":"Security Incident Console","actor_cn":"security-console","protocol":"ICMP6","icmp_type":128,"icmp_code":0},
+    {"id":"SalesCRM","name":"Sales CRM","actor_cn":"sales-crm","protocol":"ICMP6","icmp_type":128,"icmp_code":0},
+    {"id":"LegalMatterFiles","name":"Legal Matter Files","actor_cn":"legal-matters","protocol":"ICMP6","icmp_type":128,"icmp_code":0},
+    {"id":"SecureDeviceOperations","name":"Secure Device Operations","actor_cn":"secure-device-operations","protocol":"ICMP6","icmp_type":128,"icmp_code":0},
+    {"id":"UserRecords","name":"User Records","actor_cn":"user-records","protocol":"ICMP6","icmp_type":128,"icmp_code":0}
+  ],
   "services": [
     {"name": "PolicyService", "kind": "Policy", "endpoint": "HTTPS/8789", "description": "Policy evaluation and catalog."},
     {"name": "ControlService", "kind": "Control", "endpoint": "HTTPS/8790", "description": "Administration and telemetry APIs."},

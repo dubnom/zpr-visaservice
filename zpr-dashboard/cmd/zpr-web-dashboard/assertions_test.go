@@ -1,8 +1,10 @@
 package main
 
 import (
+	"encoding/json"
 	"strings"
 	"testing"
+	"time"
 )
 
 func TestAssertionExamplesParseAndEvaluateIndependently(t *testing.T) {
@@ -51,6 +53,80 @@ func TestAssertionComparatorsAndMissingMembership(t *testing.T) {
 	results := evaluateAssertions(rules, directory)
 	if results[0].Violations != 1 || results[0].Subjects[0] != "unassigned" || results[1].Status != "pass" {
 		t.Fatalf("zero-membership semantics: %+v", results)
+	}
+}
+
+func TestAssertionAttributeRulesAndMissingValues(t *testing.T) {
+	directory := assertionDirectory{
+		People: []string{"alice", "bob"}, Groups: map[string][]string{"Staff": {"alice", "bob"}},
+		Attributes:       []string{"mail", "title", "uidnumber", "description"},
+		PersonAttributes: map[string]map[string][]string{"alice": {"mail": {"alice@example.test"}, "title": {"Engineer"}, "uidnumber": {"1001"}}, "bob": {"title": {"Engineer", "Reviewer"}, "uidnumber": {"1002"}}},
+		GroupAttributes:  map[string]map[string][]string{"Staff": {"description": {"All employees"}}},
+	}
+	for _, test := range []struct{ source, status string }{
+		{`people attribute "mail" present;`, "fail"},
+		{`people attribute "mail" != "forbidden";`, "fail"},
+		{`people attribute "title" == "Engineer";`, "fail"},
+		{`people in "Staff" attribute "title" in ["Engineer", "Reviewer"];`, "pass"},
+		{`people attribute "title" contains "Engineer";`, "pass"},
+		{`people attribute "uidNumber" >= 1000;`, "pass"},
+		{`people attribute "uidNumber" > 1001;`, "fail"},
+		{`group "Staff" attribute "description" present;`, "pass"},
+		{`each group attribute "mail" absent;`, "pass"},
+		{`people attribute "unknown" absent;`, "error"},
+		{`people in "Missing" attribute "mail" present;`, "error"},
+	} {
+		rules, err := parseAssertions(test.source)
+		if err != nil {
+			t.Fatalf("parse %s: %v", test.source, err)
+		}
+		result := evaluateAssertions(rules, directory)[0]
+		if result.Status != test.status {
+			t.Fatalf("%s: %+v", test.source, result)
+		}
+	}
+	for _, source := range []string{`people attribute "userPassword" present;`, `people attribute "privateKey" absent;`, `people attribute "title" > "Engineer";`, `people attribute "title" in [];`, `people attribute "uidNumber" == 1.5;`} {
+		if _, err := parseAssertions(source); err == nil {
+			t.Fatalf("accepted malformed/sensitive attribute rule %s", source)
+		}
+	}
+	directory.PersonAttributes["alice"]["uidnumber"] = []string{"1", "invalid"}
+	rules, _ := parseAssertions(`people attribute "uidNumber" > 10;`)
+	if result := evaluateAssertions(rules, directory)[0]; result.Status != "error" {
+		t.Fatalf("invalid numeric data must be an error: %+v", result)
+	}
+}
+
+func TestAssertionLDAPAttributesAreApprovedBoundedAndPrivate(t *testing.T) {
+	approved, err := approvedAssertionAttributes("mail,title,uidNumber,description,MAIL")
+	if err != nil || len(approved) != 4 {
+		t.Fatalf("attribute allowlist: %v %v", approved, err)
+	}
+	for _, names := range []string{"userPassword", "mail,accessToken", "privateKey", "*", "mail;range=0-1"} {
+		if _, err := approvedAssertionAttributes(names); err == nil {
+			t.Fatalf("accepted unsafe allowlist %q", names)
+		}
+	}
+	input := "dn: uid=alice,dc=test\nobjectClass: inetOrgPerson\nuid: alice\ncn: Alice\nmail: alice@example.test\ntitle: Engineer\ntitle: Reviewer\nuidNumber: 1001\nuserPassword: private-value\n\n" +
+		"dn: cn=Staff,dc=test\nobjectClass: posixGroup\ncn: Staff\nmemberUid: alice\ndescription: Employees\n"
+	directory, err := parseAssertionLDAPAttributes(input, approved)
+	if err != nil || len(directory.PersonAttributes["alice"]["title"]) != 2 || directory.GroupAttributes["Staff"]["description"][0] != "Employees" {
+		t.Fatalf("attribute snapshot: %+v %v", directory, err)
+	}
+	if _, exists := directory.PersonAttributes["alice"]["userpassword"]; exists {
+		t.Fatal("unrequested credential retained in snapshot")
+	}
+	summary, _ := json.Marshal(assertionSourceSummary(directory, time.Now()))
+	if strings.Contains(string(summary), "alice@example.test") || strings.Contains(string(summary), "private-value") || strings.Contains(string(summary), "Engineer") {
+		t.Fatal("source catalog exposed attribute values")
+	}
+	for _, invalid := range []string{
+		strings.Replace(input, "title: Engineer", "title;range=0-0: Engineer", 1),
+		strings.Replace(input, "mail: alice@example.test", "mail: "+strings.Repeat("x", 4097), 1),
+	} {
+		if _, err := parseAssertionLDAPAttributes(invalid, approved); err == nil {
+			t.Fatal("partial/unbounded attribute snapshot accepted")
+		}
 	}
 }
 

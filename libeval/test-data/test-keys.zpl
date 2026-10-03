@@ -1,3 +1,5 @@
 define webs as a service.
-allow users to access webs.
+
+service webs as json {"service_class":"webs"}.
+  allow users.
 

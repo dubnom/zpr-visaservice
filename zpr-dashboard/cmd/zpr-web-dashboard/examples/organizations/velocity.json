@@ -22,5 +22,5 @@
   "policy_config": "organizations/velocity/policy-demo.zplc",
   "policy_catalog": "organizations/velocity/demo-policy-catalog.json",
   "policies": [{"id": "benchmark-access", "name": "Benchmark access", "description": "The benchmark client may reach the echo server on TCP 8080."}],
-  "services": [{"name": "EchoWeb", "kind": "Benchmark HTTP", "endpoint": "ZPR/TCP/8080", "description": "Warmed request latency and a bounded 16 MiB download on one forwarding node."}]
+  "services": [{"name": "EchoWeb", "kind": "Benchmark HTTP", "endpoint": "ZPR/TCP/8080", "description": "Warmed request latency and a bounded 16 MiB download on one forwarding node.", "policy_id": "echo-web.svc.zpr", "actor_cn": "echo-service"}]
 }

@@ -40,6 +40,29 @@ Repository is not an attribute source queried during ZPL policy evaluation.
 
 ## Policy records
 
+The standalone `/policy-browser.html` page browses policy and assertion records
+without editing or evaluation controls. It supports name/category search,
+type/category filtering, syntax-highlighted source, saved revisions, and assertion
+schedule metadata. Organization changes clear the previous selection; fetch
+failures retain the last successfully loaded source and show an error. All viewer
+requests are GETs. This is a read-only UI, not a new authorization boundary;
+the existing Control-Service authentication still applies.
+
+The page uses a reusable `<zpr-policy-browser>` custom element. Include the
+shared styles and component script, then supply the repository API base:
+
+```html
+<link rel="stylesheet" href="/app.css">
+<link rel="stylesheet" href="/policy-browser.css">
+<script src="/policy-browser.js" defer></script>
+<zpr-policy-browser api-base="/api/policy"></zpr-policy-browser>
+```
+
+Each instance has independent filtering, selection, requests, and refresh timers.
+The component refreshes the catalog every ten seconds while the page is visible
+and releases its timers and requests when removed. Its API base must expose the
+existing catalog, record, and revision GET routes. No editor scripts are needed.
+
 The Policy page organizes named categories and records. Records have a kind,
 content type, JSON metadata, and append-only numbered content revisions. The
 Policy-Service owns this data. The schema is intentionally generic so later
@@ -86,6 +109,25 @@ the listener requires a trusted Control-Service client certificate, but
 records do not yet have per-user permissions. There is no deploy action; the
 Visa Service Admin API exposes compiled policy bundles, not editable ZPL
 source.
+
+## Policy test API
+
+`POST /api/policy/test` is a reusable, non-deploying evaluator API. Its request
+contains candidate `source`, `actors`, and `services`; it has no organization,
+directory, or simulator fields. The evaluator compiles the candidate with the
+configured policy ZPLC settings, tests every actor/service pair with ZPT, and
+returns source-authored compiled rule lines, per-service allow/deny/default-deny summaries,
+and matching subject IDs and labels. The response includes `api_version` and
+the candidate source hash. Actor `dimensions` (for example `user` and `device`)
+allow clients to report unique identity counts without changing evaluator
+semantics. Requests are limited to 500 actors, 100 services, and 2,000 pairs.
+
+The editor uses `GET /api/policy/test/fixtures` as a separate demo adapter to
+construct the generic actor/service request from its current test data. Other
+clients can supply their own fixtures directly to `POST /api/policy/test`.
+Candidate bundles are written only to a private temporary directory and are
+never installed. Route-constrained rules currently return an explicit error
+because ZPT does not yet resolve route-dependent decisions.
 
 Claude is optional and disabled unless the server has an Anthropic key:
 

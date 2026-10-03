@@ -4,17 +4,21 @@ define signalService as a service.
 define pingy as a service.
 define web1 as a service.
 define Webby as a service.
+define SalesDatabase as a database with device.tint:sales.
 
-allow color:red employees to access databases and signal "red employee" to signalService.
+service database as json {"service_class":"database"}.
+  allow color:red employees and signal "red employee" to signalService.
+  allow employees and signal "employee" to signalService.
+  allow employees on hardened devices and signal "accessed" to signalService.
 
-allow employees to access databases and signal "employee" to signalService.
+service SalesDatabase as json {"service_class":"SalesDatabase"}.
+  allow color:red employees and signal "red tint access" to signalService.
 
-allow color:red employees to access databases on tint:sales devices and signal "red tint access" to signalService.
+service pingy as json {"service_class":"pingy"}.
+  allow color:red employees.
 
-allow employees on hardened devices to access databases and signal "accessed" to signalService.
+service web1 as json {"service_class":"web1"}.
+  allow color:red employees on hardened devices.
 
-allow color:red employees to access pingy.
-
-allow color:red employees on hardened devices to access web1.
-
-allow users to access Webby.
+service Webby as json {"service_class":"Webby"}.
+  allow users.

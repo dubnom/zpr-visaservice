@@ -32,36 +32,9 @@ func (a *application) policyProxyHandler() http.Handler {
 }
 
 func newPolicyServiceProxy() (http.Handler, string) {
-	endpoint := strings.TrimRight(strings.TrimSpace(os.Getenv("ZPR_POLICY_SERVICE_URL")), "/")
-	clientCert := strings.TrimSpace(os.Getenv("ZPR_POLICY_CLIENT_CERT_FILE"))
-	clientKey := strings.TrimSpace(os.Getenv("ZPR_POLICY_CLIENT_KEY_FILE"))
-	caFile := strings.TrimSpace(os.Getenv("ZPR_POLICY_SERVICE_CA_FILE"))
-	if endpoint == "" || clientCert == "" || clientKey == "" || caFile == "" {
-		return nil, "Configure ZPR_POLICY_SERVICE_URL, ZPR_POLICY_CLIENT_CERT_FILE, ZPR_POLICY_CLIENT_KEY_FILE, and ZPR_POLICY_SERVICE_CA_FILE."
-	}
-	baseURL, err := url.Parse(endpoint)
-	if err != nil || baseURL.Scheme != "https" || baseURL.Host == "" || baseURL.Path != "" || baseURL.User != nil || baseURL.RawQuery != "" || baseURL.Fragment != "" {
-		return nil, "ZPR_POLICY_SERVICE_URL must be an HTTPS origin without a path."
-	}
-	certificate, err := tls.LoadX509KeyPair(clientCert, clientKey)
-	if err != nil {
-		return nil, fmt.Sprintf("read Policy Service client certificate: %v", err)
-	}
-	caPEM, err := os.ReadFile(filepath.Clean(caFile))
-	if err != nil {
-		return nil, fmt.Sprintf("read Policy Service CA file: %v", err)
-	}
-	roots := x509.NewCertPool()
-	if !roots.AppendCertsFromPEM(caPEM) {
-		return nil, "Policy Service CA file contains no certificates."
-	}
-	transport := &http.Transport{
-		TLSClientConfig: &tls.Config{
-			MinVersion: tls.VersionTLS13, RootCAs: roots, Certificates: []tls.Certificate{certificate}, ServerName: baseURL.Hostname(),
-		},
-		DialContext:         (&net.Dialer{Timeout: 5 * time.Second, KeepAlive: 30 * time.Second}).DialContext,
-		TLSHandshakeTimeout: 5 * time.Second, ResponseHeaderTimeout: 10 * time.Second,
-		IdleConnTimeout: 60 * time.Second,
+	baseURL, transport, message := newPolicyServiceTransport()
+	if message != "" {
+		return nil, message
 	}
 	proxy := httputil.NewSingleHostReverseProxy(baseURL)
 	proxy.Transport = transport
@@ -112,6 +85,41 @@ func newPolicyServiceProxy() (http.Handler, string) {
 	return proxy, ""
 }
 
+func newPolicyServiceTransport() (*url.URL, *http.Transport, string) {
+	endpoint := strings.TrimRight(strings.TrimSpace(os.Getenv("ZPR_POLICY_SERVICE_URL")), "/")
+	clientCert := strings.TrimSpace(os.Getenv("ZPR_POLICY_CLIENT_CERT_FILE"))
+	clientKey := strings.TrimSpace(os.Getenv("ZPR_POLICY_CLIENT_KEY_FILE"))
+	caFile := strings.TrimSpace(os.Getenv("ZPR_POLICY_SERVICE_CA_FILE"))
+	if endpoint == "" || clientCert == "" || clientKey == "" || caFile == "" {
+		return nil, nil, "Configure ZPR_POLICY_SERVICE_URL, ZPR_POLICY_CLIENT_CERT_FILE, ZPR_POLICY_CLIENT_KEY_FILE, and ZPR_POLICY_SERVICE_CA_FILE."
+	}
+	baseURL, err := url.Parse(endpoint)
+	if err != nil || baseURL.Scheme != "https" || baseURL.Host == "" || baseURL.Path != "" || baseURL.User != nil || baseURL.RawQuery != "" || baseURL.Fragment != "" {
+		return nil, nil, "ZPR_POLICY_SERVICE_URL must be an HTTPS origin without a path."
+	}
+	certificate, err := tls.LoadX509KeyPair(clientCert, clientKey)
+	if err != nil {
+		return nil, nil, fmt.Sprintf("read Policy Service client certificate: %v", err)
+	}
+	caPEM, err := os.ReadFile(filepath.Clean(caFile))
+	if err != nil {
+		return nil, nil, fmt.Sprintf("read Policy Service CA file: %v", err)
+	}
+	roots := x509.NewCertPool()
+	if !roots.AppendCertsFromPEM(caPEM) {
+		return nil, nil, "Policy Service CA file contains no certificates."
+	}
+	transport := &http.Transport{
+		TLSClientConfig: &tls.Config{
+			MinVersion: tls.VersionTLS13, RootCAs: roots, Certificates: []tls.Certificate{certificate}, ServerName: baseURL.Hostname(),
+		},
+		DialContext:         (&net.Dialer{Timeout: 5 * time.Second, KeepAlive: 30 * time.Second}).DialContext,
+		TLSHandshakeTimeout: 5 * time.Second, ResponseHeaderTimeout: 10 * time.Second,
+		IdleConnTimeout: 60 * time.Second,
+	}
+	return baseURL, transport, ""
+}
+
 func policyServiceMux(workspace *policyWorkspace) http.Handler {
 	app := &application{policy: workspace, assistant: nil}
 	mux := http.NewServeMux()
@@ -123,7 +131,11 @@ func policyServiceMux(workspace *policyWorkspace) http.Handler {
 		w.Header().Set("Cache-Control", "no-store")
 		writeJSON(w, http.StatusOK, map[string]string{"organization_id": os.Getenv("ZPR_POLICY_ORGANIZATION_ID"), "organization_name": os.Getenv("ZPR_POLICY_ORGANIZATION_NAME")})
 	})
+	mux.HandleFunc("GET /api/assertions/settings", app.handleGetAssertionSettings)
+	mux.HandleFunc("PUT /api/assertions/settings", app.handleSaveAssertionSettings)
 	mux.HandleFunc("POST /api/policy/attributes/rescan", app.handleRescanPolicyAttributes)
+	mux.HandleFunc("POST /api/policy/test", app.handlePolicyTest)
+	mux.HandleFunc("GET /api/policy/test/fixtures", app.handlePolicyTestFixtures)
 	mux.HandleFunc("POST /api/policy/records/{id}/stage", app.handleStagePolicyRecord)
 	mux.HandleFunc("POST /api/policy/check", app.handleCheckPolicy)
 	mux.HandleFunc("POST /api/policy/categories", app.handleCreatePolicyCategory)

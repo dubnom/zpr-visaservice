@@ -7,6 +7,7 @@ use colored::Colorize;
 use libeval::actor::Actor;
 use libeval::error::EvalError;
 use libeval::eval_result::Hit;
+use libeval::policy::CommunicationPolicySummary;
 use libeval::visa::VisaProps;
 
 /// The OutputFormatter defines a bunch of very specific output functions
@@ -37,6 +38,8 @@ pub trait OutputFormatter {
 
     fn write_connection_approved(&mut self, actor: &Actor);
     fn write_connection_denied(&mut self, error: &EvalError);
+
+    fn write_policy_rules(&mut self, _rules: &[CommunicationPolicySummary]) {}
 }
 
 pub struct JsonFormatter<WOut: Write> {
@@ -221,6 +224,7 @@ mod json {
         Eval,
         DumpDb,
         ApproveConnection,
+        PolicyRules,
     }
 
     #[derive(Serialize)]
@@ -265,6 +269,12 @@ mod json {
     pub struct JActorDB<'a> {
         pub kind: MsgType,
         pub actors: &'a HashMap<String, Actor>,
+    }
+
+    #[derive(Serialize)]
+    pub struct JPolicyRules<'a> {
+        pub kind: MsgType,
+        pub rules: &'a [CommunicationPolicySummary],
     }
 
     #[derive(Serialize)]
@@ -360,6 +370,15 @@ impl<WOut: Write> OutputFormatter for JsonFormatter<WOut> {
             error: error.to_string(),
         };
         let _ = serde_json::to_writer(&mut self.out, &e);
+        let _ = writeln!(self.out);
+    }
+
+    fn write_policy_rules(&mut self, rules: &[CommunicationPolicySummary]) {
+        let output = json::JPolicyRules {
+            kind: json::MsgType::PolicyRules,
+            rules,
+        };
+        let _ = serde_json::to_writer(&mut self.out, &output);
         let _ = writeln!(self.out);
     }
 }

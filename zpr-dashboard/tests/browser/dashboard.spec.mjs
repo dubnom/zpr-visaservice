@@ -1,10 +1,24 @@
+async function openAssertionRecord(page, appURL) {
+  await page.goto(appURL + "/#policy");
+  await expect(page.locator('[data-page-link="assertions"]')).toHaveCount(0);
+  await expect(page.locator('[data-category-id="test"]')).toHaveAttribute("aria-selected", "true");
+  await expect(page.getByRole("treeitem", { name: "Assertions", exact: true })).toHaveCount(0);
+  const record = page.locator('[data-record-id="test-assertions"]');
+  await expect(record).toBeVisible();
+  await record.click();
+  await expect(page.locator("#policy-assertion-editor")).toBeVisible();
+}
+
 function registerAssertionBrowserTests() {
-test("global assertions author, save and evaluate without policy coupling", async ({ page, appURL, api }) => {
+test("organization assertions author, save and evaluate without policy compilation", async ({ page, appURL, api }) => {
   api.handlers.set("/api/assertions", async (route) => {
     if (route.request().method() === "PUT") {
       const request = route.request().postDataJSON();
       expect(request.expected_revision).toBe(api.assertions.settings.revision);
       api.assertions.settings = { revision: request.expected_revision + 1, source: request.source, enabled: request.enabled, interval_seconds: request.interval_seconds };
+      const assertionRecord = api.policy.records.find((record) => record.id === "test-assertions");
+      assertionRecord.current_revision = request.expected_revision + 1;
+      assertionRecord.content = JSON.stringify({ source: request.source, enabled: request.enabled, interval_seconds: request.interval_seconds });
     }
     await route.fulfill({ json: api.assertions });
   });
@@ -18,7 +32,7 @@ test("global assertions author, save and evaluate without policy coupling", asyn
     };
     await route.fulfill({ json: api.assertions.last_run });
   });
-  await page.goto(appURL + "/#assertions");
+  await openAssertionRecord(page, appURL);
   const editor = page.getByRole("textbox", { name: "Data assertion source", exact: true });
   await expect(editor).toBeEnabled();
   await expect(page.locator("#assertion-enabled")).not.toBeChecked();
@@ -29,20 +43,76 @@ test("global assertions author, save and evaluate without policy coupling", asyn
   await expect(editor).toHaveValue('group "Operators" members >= 2;\n');
   await page.locator("#assertion-evaluate").click();
   await expect(page.locator("#assertion-run-status")).toContainText("Draft r0");
+  const resultGutterStyle = await page.locator("#assertion-result-gutter").evaluate((gutter) => ({
+    width: gutter.getBoundingClientRect().width,
+    border: getComputedStyle(gutter).borderRightStyle,
+    background: getComputedStyle(gutter).backgroundColor,
+  }));
+  expect(resultGutterStyle.width).toBeLessThan(90);
+  expect(resultGutterStyle.border).toBe("solid");
+  expect(resultGutterStyle.background).not.toBe("rgba(0, 0, 0, 0)");
+  const passMarker = page.locator('#assertion-result-gutter [data-line="1"] .assertion-result-marker');
+  await expect(passMarker).toHaveAttribute("data-state", "pass");
+  await passMarker.click();
+  const passDetails = page.getByRole("dialog", { name: "Assertion pass" });
+  await expect(passDetails).toContainText('group "Operators" members >= 2');
+  await expect(passDetails).toContainText("1 checked; 0 violations");
+  await passDetails.locator(".dialog-actions .button").click();
   expect(api.assertions.settings.source).toBe("");
   await page.locator("#assertion-save").click();
-  await expect(page.locator("#assertion-revision")).toHaveText("Global / r1");
+  await expect(page.locator("#assertion-revision")).toHaveText("Alpha Labs / r1");
   expect(api.assertions.settings.enabled).toBe(false);
   await page.locator("#assertion-enabled").check();
   await page.locator("#assertion-interval").fill("300");
   await page.locator("#assertion-save").click();
-  await expect(page.locator("#assertion-revision")).toHaveText("Global / r2");
+  await expect(page.locator("#assertion-revision")).toHaveText("Alpha Labs / r2");
+  await expect(page.locator('[data-record-id="test-assertions"]')).toContainText("Assertions · r2");
   expect(api.assertions.settings.enabled).toBe(true);
   expect(api.assertions.settings.interval_seconds).toBe(300);
   await page.locator("#assertion-evaluate").click();
   await expect(page.locator("#assertion-result-rows")).toContainText("PASS");
   await expect(page.locator("#assertion-run-status")).toContainText("Saved r2");
-  expect(api.counts.get("/api/policy") || 0).toBe(0);
+  expect(api.counts.get("/api/policy/test") || 0).toBe(0);
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBeTruthy();
+});
+
+test("assertion attribute catalog inserts rules and renders typed comparisons", async ({ page, appURL, api }) => {
+  api.assertionSource.attributes = [{ name: "mail", people: 2, groups: 0 }, { name: "gidnumber", people: 2, groups: 1 }];
+  api.handlers.set("/api/assertions/evaluate", async (route) => {
+    const request = route.request().postDataJSON();
+    expect(Object.keys(request).sort()).toEqual(["expected_revision", "source"]);
+    const numeric = request.source.includes("gidNumber");
+    api.assertions.last_run = {
+      revision: 0, draft: true, status: numeric ? "pass" : "fail", finished_at: "2026-10-02T12:00:00Z",
+      results: [{ rule: numeric ? { line: 1, kind: "each_group_attribute", attribute: "gidnumber", operator: ">=", number: 1000 } : { line: 1, kind: "people_attribute", attribute: "mail", operator: "present" }, status: numeric ? "pass" : "fail", checked: 2, violations: numeric ? 0 : 1, subjects: numeric ? [] : ["bob"], message: numeric ? "2 checked; 0 violations" : "2 checked; 1 violations" }],
+    };
+    await route.fulfill({ json: api.assertions.last_run });
+  });
+  await openAssertionRecord(page, appURL);
+  await expect(page.locator("#assertion-read-source")).toBeEnabled();
+  await page.locator("#assertion-read-source").click();
+  await page.getByRole("tab", { name: "Attributes", exact: true }).click();
+  await expect(page.locator("#assertion-attribute-rows tr")).toHaveCount(2);
+  await page.getByRole("button", { name: "Insert presence assertion for mail", exact: true }).click();
+  await expect(page.locator("#assertion-source")).toHaveValue('people attribute "mail" present;\n');
+  await page.locator("#assertion-evaluate").click();
+  await expect(page.locator("#assertion-result-rows")).toContainText('people attribute "mail" present');
+  await expect(page.locator("#assertion-result-rows")).toContainText("bob");
+  const failMarker = page.locator('#assertion-result-gutter [data-line="1"] .assertion-result-marker');
+  await expect(failMarker).toHaveAttribute("data-state", "fail");
+  await failMarker.click();
+  const failDetails = page.getByRole("dialog", { name: "Assertion fail" });
+  await expect(failDetails).toContainText("2 checked; 1 violations");
+  await expect(failDetails).toContainText("bob");
+  await failDetails.locator(".dialog-actions .button").click();
+  await page.locator("#assertion-source").fill('each group attribute "gidNumber" >= 1000;');
+  await page.locator("#assertion-evaluate").click();
+  await expect(page.locator("#assertion-result-rows")).toContainText('each group attribute "gidnumber" >= 1000');
+  await expect(page.locator("#assertion-run-status")).toContainText("PASS");
+  await page.getByRole("tab", { name: "Attributes", exact: true }).focus();
+  await page.keyboard.press("ArrowLeft");
+  await expect(page.getByRole("tab", { name: "Groups", exact: true })).toHaveAttribute("aria-selected", "true");
+  await expect(page.locator("#assertion-attributes-panel")).toBeHidden();
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBeTruthy();
 });
 
@@ -52,11 +122,17 @@ test("assertion source failures are errors and never successful checks", async (
     api.assertions.last_run = { revision: 0, draft: false, status: "error", error: "Trusted LDAP read failed; no assertions were evaluated", results: [], finished_at: "2026-10-02T12:00:00Z" };
     await route.fulfill({ json: api.assertions.last_run });
   });
-  await page.goto(appURL + "/#assertions");
+  await openAssertionRecord(page, appURL);
   await expect(page.locator("#assertion-evaluate")).toBeEnabled();
   await page.locator("#assertion-evaluate").click();
   await expect(page.locator("#assertion-run-status")).toContainText("ERROR");
   await expect(page.locator("#assertion-run-error")).toContainText("no assertions were evaluated");
+  const errorMarker = page.locator('#assertion-result-gutter [data-line="1"] .assertion-result-marker');
+  await expect(errorMarker).toHaveAttribute("data-state", "error");
+  await errorMarker.click();
+  const errorDetails = page.getByRole("dialog", { name: "Assertion error" });
+  await expect(errorDetails).toContainText("Trusted LDAP read failed");
+  await errorDetails.locator(".dialog-actions .button").click();
   await expect(page.locator("#assertion-result-rows tr")).toHaveCount(0);
   api.assertions.configured = false;
   await page.locator("#assertion-reload").click();
@@ -66,7 +142,7 @@ test("assertion source failures are errors and never successful checks", async (
 
 test("assertion polling preserves dirty drafts and blocks stale revisions", async ({ page, appURL, api }) => {
   await page.clock.install();
-  await page.goto(appURL + "/#assertions");
+  await openAssertionRecord(page, appURL);
   const editor = page.locator("#assertion-source");
   await expect(editor).toBeEnabled();
   await editor.fill('group "Operators" members > 1;');
@@ -79,7 +155,29 @@ test("assertion polling preserves dirty drafts and blocks stale revisions", asyn
   page.once("dialog", (dialog) => dialog.accept());
   await page.locator("#assertion-reload").click();
   await expect(editor).toHaveValue('group "Operators" members >= 2;');
-  await expect(page.locator("#assertion-revision")).toHaveText("Global / r1");
+  await expect(page.locator("#assertion-revision")).toHaveText("Alpha Labs / r1");
+});
+
+test("organization switch reloads that organization's assertions and protects dirty drafts", async ({ page, appURL, api }) => {
+  await page.clock.install();
+  await openAssertionRecord(page, appURL);
+  const editor = page.locator("#assertion-source");
+  await editor.fill('group "Local draft" members > 0;');
+  api.assertions.organization_id = "beta";
+  api.assertions.organization_name = "Beta Labs";
+  api.assertions.base_dn = "dc=beta,dc=test";
+  api.assertions.settings = { revision: 3, source: 'group "Beta Operators" members >= 2;', enabled: true, interval_seconds: 120 };
+  api.assertions.last_run = null;
+  await page.clock.runFor(5100);
+  await expect(editor).toHaveValue('group "Local draft" members > 0;');
+  await expect(page.locator("#assertion-revision")).toHaveText("Beta Labs / r0 / Unsaved / Reload required");
+  await expect(page.locator("#assertion-save")).toBeDisabled();
+  await expect(page.locator("#assertion-evaluate")).toBeDisabled();
+  page.once("dialog", (dialog) => dialog.accept());
+  await page.locator("#assertion-reload").click();
+  await expect(editor).toHaveValue('group "Beta Operators" members >= 2;');
+  await expect(page.locator("#assertion-revision")).toHaveText("Beta Labs / r3");
+  await expect(page.locator("#assertion-enabled")).toBeChecked();
 });
 }
 import { test as base, expect } from "@playwright/test";
@@ -157,9 +255,12 @@ const test = base.extend({
       dnsRecords: { zone: "svc.zpr.", records: [] },
       visas: [{ id: 41, source_addr: "fd00::1", dest_addr: "fd00::2", proto: "TCP", expires: Math.floor(Date.now() / 1000) + 600 }],
       policy: {
-        configured: true, compiler_ready: true, assistant_ready: false,
-        categories: [{ id: "test", name: "Tests", path: "Tests" }],
-        records: [{ id: "test-policy", category_id: "test", name: "Test policy", kind: "policy", current_revision: 1, content: "define Employee as user.\n", content_hash: "fixture" }],
+        configured: true, organization_id: "alpha", organization_name: "Alpha Labs", compiler_ready: true, tester_ready: true, assistant_ready: false,
+        categories: [{ id: "legacy-assertions", name: "Assertions", path: "Assertions" }, { id: "test", name: "Policies", path: "Alpha/Policies" }],
+        records: [
+          { id: "test-policy", category_id: "test", name: "Test policy", kind: "policy", current_revision: 1, content: "define Employee as user.\n", content_hash: "fixture" },
+          { id: "test-assertions", category_id: "legacy-assertions", name: "Organization assertions", kind: "assertions", current_revision: 1, content: '{"source":"","enabled":false,"interval_seconds":60}', content_hash: "fixture" },
+        ],
         attributes: [{ attribute: "user.department", source: "LDAP" }, { attribute: "user.title", source: "LDAP" }, { attribute: "device.secure", source: "LDAP" }],
       },
       organizations: {
@@ -171,7 +272,7 @@ const test = base.extend({
         })),
       },
       assertions: {
-        scope: "global", configured: true, source_kind: "ldap", base_dn: "dc=test",
+        scope: "organization", organization_id: "alpha", organization_name: "Alpha Labs", configured: true, source_kind: "ldap", base_dn: "dc=alpha,dc=test",
         settings: { revision: 0, source: "", enabled: false, interval_seconds: 60 },
         running: false, last_run: null, source_summary: null,
       },
@@ -196,6 +297,8 @@ const test = base.extend({
         "/api/policy": data.policy,
         "/api/policy/records/test-policy": data.policy.records[0],
         "/api/policy/records/test-policy/revisions": [],
+        "/api/policy/records/test-assertions": data.policy.records[1],
+        "/api/policy/records/test-assertions/revisions": [],
         "/api/simulator/organizations": data.organizations,
         "/api/assertions": data.assertions,
         "/api/assertions/source": data.assertionSource,
@@ -213,6 +316,159 @@ const test = base.extend({
 });
 
 registerAssertionBrowserTests();
+
+test("read-only browser filters policy and assertion records and shows saved revisions", async ({ page, appURL, api }, testInfo) => {
+  const methods = [];
+  page.on("request", (request) => { if (new URL(request.url()).pathname.startsWith("/api/")) methods.push(request.method()); });
+  api.policy.organization_id = "alpha";
+  api.policy.organization_name = "Alpha Labs";
+  api.policy.records[0].current_revision = 2;
+  api.policy.records[0].content = "define Employee as user.\nprovide Payroll at payroll.svc.zpr over TCP 443.\nallow Employee.\n";
+  api.policy.records[1].content = JSON.stringify({ source: 'group "Operators" members >= 2;\n// <img src=x onerror=alert(1)>', enabled: true, interval_seconds: 120 });
+  api.handlers.set("/api/policy/records/test-policy/revisions", async (route) => route.fulfill({ json: [
+    { number: 2, summary: "Payroll access", author: "operator" }, { number: 1, summary: "Initial definition", author: "operator" },
+  ] }));
+  api.handlers.set("/api/policy/records/test-policy/revisions/1", async (route) => route.fulfill({ json: {
+    number: 1, content: "define Employee as user.\n", summary: "Initial definition", author: "operator",
+  } }));
+  await page.goto(appURL + "/policy-browser.html");
+  const viewer = page.locator("zpr-policy-browser");
+  await expect(viewer.locator(".pb-organization")).toHaveText("Alpha Labs");
+  await expect(viewer.locator(".pb-record")).toHaveCount(2);
+  await viewer.locator('[data-record-id="test-policy"]').click();
+  await expect(viewer.locator(".pb-source")).toContainText("allow Employee.");
+  await viewer.getByLabel("Revision", { exact: true }).selectOption("1");
+  await expect(viewer.locator(".pb-source")).toHaveText("define Employee as user.\n");
+  await expect(viewer.locator(".pb-meta")).toContainText("Initial definition");
+  await viewer.getByLabel("Type", { exact: true }).selectOption("assertions");
+  await expect(viewer.locator(".pb-record")).toHaveCount(1);
+  await viewer.locator('[data-record-id="test-assertions"]').click();
+  await expect(viewer.locator(".pb-source")).toContainText('group "Operators" members >= 2;');
+  await expect(viewer.locator(".pb-schedule")).toHaveText("Periodic checks: Enabled / Interval: 120 seconds");
+  await expect(viewer.locator("img, textarea, [contenteditable=true]")).toHaveCount(0);
+  await viewer.getByLabel("Search", { exact: true }).fill("missing");
+  await expect(viewer.locator(".pb-records")).toHaveText("No matching records");
+  await viewer.getByLabel("Search", { exact: true }).fill("Operators");
+  await expect(viewer.locator(".pb-record")).toHaveCount(0);
+  await viewer.getByLabel("Search", { exact: true }).fill("Organization");
+  await expect(viewer.locator(".pb-record")).toHaveCount(1);
+  await viewer.getByLabel("Category", { exact: true }).selectOption("test");
+  await viewer.getByLabel("Wrap lines", { exact: true }).uncheck();
+  await expect(viewer.locator(".pb-source")).toHaveAttribute("data-wrap", "false");
+  expect(methods.length).toBeGreaterThan(0);
+  expect(methods.every((method) => method === "GET")).toBeTruthy();
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBeTruthy();
+  await page.screenshot({ path: testInfo.outputPath("policy-browser.png"), fullPage: true });
+});
+
+test("read-only browser keeps last good source on failures and clears it on an organization switch", async ({ page, appURL, api }) => {
+  api.policy.organization_id = "alpha";
+  api.policy.organization_name = "Alpha Labs";
+  await page.goto(appURL + "/policy-browser.html");
+  const viewer = page.locator("zpr-policy-browser");
+  await viewer.locator('[data-record-id="test-policy"]').click();
+  await expect(viewer.locator(".pb-source")).toContainText("define Employee as user.");
+  api.statuses.set("/api/policy", 503);
+  await viewer.getByRole("button", { name: "Refresh", exact: true }).click();
+  await expect(viewer.locator(".pb-error")).not.toBeEmpty();
+  await expect(viewer.locator(".pb-source")).toContainText("define Employee as user.");
+  api.statuses.delete("/api/policy");
+  api.policy.organization_id = "beta";
+  api.policy.organization_name = "Beta Labs";
+  api.policy.records = [];
+  await viewer.getByRole("button", { name: "Refresh", exact: true }).click();
+  await expect(viewer.locator(".pb-organization")).toHaveText("Beta Labs");
+  await expect(viewer.locator(".pb-source code")).toBeEmpty();
+  await expect(viewer.locator(".pb-title")).toHaveText("Select a record");
+});
+
+test("read-only browser can be embedded twice with independent filters and API bases", async ({ page, appURL, api }) => {
+  api.handlers.set("/api/archive", async (route) => route.fulfill({ json: { ...api.policy, organization_name: "Archive" } }));
+  api.handlers.set("/api/archive/records/test-policy", async (route) => route.fulfill({ json: api.policy.records[0] }));
+  api.handlers.set("/api/archive/records/test-policy/revisions", async (route) => route.fulfill({ json: [] }));
+  await page.goto(appURL + "/policy-browser.html");
+  await page.evaluate(() => {
+    const viewer = document.createElement("zpr-policy-browser");
+    viewer.setAttribute("api-base", "/api/archive");
+    document.querySelector("main").append(viewer);
+  });
+  const viewers = page.locator("zpr-policy-browser");
+  await expect(viewers.nth(0).locator(".pb-record")).toHaveCount(2);
+  await expect(viewers.nth(1).locator(".pb-record")).toHaveCount(2);
+  await expect(viewers.nth(1).locator(".pb-organization")).toHaveText("Archive");
+  await viewers.nth(0).getByLabel("Type", { exact: true }).selectOption("assertions");
+  await expect(viewers.nth(0).locator(".pb-record")).toHaveCount(1);
+  await expect(viewers.nth(1).locator(".pb-record")).toHaveCount(2);
+  await viewers.nth(1).locator('[data-record-id="test-policy"]').click();
+  await expect(viewers.nth(1).locator(".pb-source")).toContainText("define Employee as user.");
+  await expect(viewers.nth(0).locator(".pb-title")).toHaveText("Select a record");
+});
+
+test("policy Test opens per-line counts and matching identities in the editor modal", async ({ page, appURL, api }) => {
+  api.handlers.set("/api/policy/test/fixtures", async (route) => {
+    await route.fulfill({ json: {
+      actors: [
+        { id: "alice", label: "Alice Rivera", kind: "user", dimensions: { user: "alice" }, attributes: [{ key: "user.zpr.authority", values: ["demo"] }] },
+        { id: "alice-machine", label: "Alice Rivera on machine-1", kind: "user_device", dimensions: { user: "alice", device: "machine-1" }, attributes: [{ key: "device.zpr.authority", values: ["zpr-bootstrap"] }] },
+      ],
+      services: [{ id: "EchoWeb", name: "EchoWeb", protocol: "TCP", port: 8080, attributes: [] }],
+      warnings: [],
+    } });
+  });
+  api.handlers.set("/api/policy/test", async (route) => {
+    const request = route.request().postDataJSON();
+    expect(Object.keys(request).sort()).toEqual(["actors", "services", "source"]);
+    expect(request.source).toBe("define Employee as user.\n");
+    await route.fulfill({ json: {
+      api_version: 1, source_sha256: "fixture", tested_at: "2026-10-03T12:00:00Z", actor_count: 2,
+      services: [{
+        id: "EchoWeb", name: "EchoWeb", protocol: "TCP", port: 8080, supported: true, evaluated_actors: 2,
+        allowed: { count: 1, by_kind: { user_device: 1 }, by_dimension: { user: 1, device: 1 }, subjects: [{ id: "alice-machine", label: "Alice Rivera on machine-1", kind: "user_device", dimensions: { user: "alice", device: "machine-1" } }] },
+        denied: { count: 1, by_kind: { user: 1 }, by_dimension: { user: 1 }, subjects: [{ id: "alice", label: "Alice Rivera", kind: "user", dimensions: { user: "alice" } }] },
+        default_denied: { count: 0, by_kind: {}, by_dimension: {}, subjects: [] },
+        rules: [
+          { indexes: [2], line: 2, source: "allow users to access EchoWeb", effect: "allow", matched: { count: 1, by_kind: { user_device: 1 }, by_dimension: { user: 1, device: 1 }, subjects: [{ id: "alice-machine", label: "Alice Rivera on machine-1", kind: "user_device", dimensions: { user: "alice", device: "machine-1" } }] } },
+          { indexes: [3], line: 3, source: "never allow users to access EchoWeb", effect: "deny", matched: { count: 1, by_kind: { user: 1 }, by_dimension: { user: 1 }, subjects: [{ id: "alice", label: "Alice Rivera", kind: "user", dimensions: { user: "alice" } }] } },
+        ],
+      }],
+    } });
+  });
+  await page.goto(appURL + "/#policy");
+  await expect(page.locator("#policy-test")).toBeEnabled();
+  await page.locator("#policy-test").click();
+  await expect(page.locator("#policy-test")).toHaveText("Exit test");
+  await expect(page.locator("#policy-test")).toBeVisible();
+  await expect(page.locator("#policy-test")).toBeEnabled();
+  await expect(page.locator("#policy-source")).toBeEnabled();
+  await expect(page.locator("#policy-source")).not.toBeEditable();
+  await expect(page.locator(".policy-catalog-pane")).toBeHidden();
+  await expect(page.locator("#policy-test-gutter")).toBeVisible();
+  const lineResult = page.locator('#policy-test-gutter [data-line="2"] .policy-test-line-result');
+  await expect(lineResult).toContainText("U1");
+  await expect(lineResult).toContainText("D1");
+  await lineResult.click();
+  const dialog = page.getByRole("dialog", { name: "Policy test" });
+  await expect(dialog).toBeVisible();
+  await expect(dialog.locator("#policy-test-subjects")).toContainText("Alice Rivera on machine-1");
+  await expect(dialog.locator("#policy-test-subject-title")).toContainText("User 1");
+  await expect(dialog.locator("#policy-test-subject-title")).toContainText("Device 1");
+  await expect(dialog.locator("#policy-test-subjects")).toContainText("Device: machine-1");
+  await page.evaluate(() => showPolicyTestSubjects(Array.from({ length: 105 }, (_, index) => ({ id: `member-${index}`, label: `Member ${index}`, dimensions: { device: `device-${index}` } })), "", "Device matches"));
+  await expect(dialog.locator(".policy-test-subject")).toHaveCount(100);
+  await expect(dialog.locator("#policy-test-subject-title")).toContainText("105 members · First 100 shown");
+  await expect(dialog.locator(".policy-test-subject").last()).toContainText("Member 99");
+  await dialog.locator(".dialog-actions .button").click();
+  await page.locator("#policy-test").click();
+  await expect(page.locator("#policy-test")).toHaveText("Test");
+  await expect(page.locator("#policy-source")).toBeEnabled();
+  await expect(page.locator(".policy-catalog-pane")).toBeVisible();
+  await expect(page.locator("#policy-test-gutter")).toBeHidden();
+  if ((page.viewportSize()?.width || 1000) <= 600) {
+    const gridColumns = await page.locator("#policy-workbench").evaluate((element) => getComputedStyle(element).gridTemplateColumns.trim().split(/\s+/).length);
+    expect(gridColumns).toBe(1);
+  }
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBeTruthy();
+});
 
 for (const view of [
   { name: "Adapter Logs", path: "/#adapter-logs", names: ["Controller", "Control adapter", "finance-client adapter"] },
@@ -429,6 +685,34 @@ test("service types share table and map colors and gateways have clouds", async 
   await expect(page.locator(".graph-cloud")).toHaveCount(1);
   await expect(page.locator(".graph-cloud")).toHaveCSS("fill", "rgb(69, 69, 69)");
   await expect(page.locator(".gateway-cloud-link")).toHaveCount(1);
+});
+
+test("adding topology parents keeps existing nodes at the same screen position", async ({ page, appURL, api }) => {
+  await page.emulateMedia({ reducedMotion: "no-preference" });
+  const parent = (index) => ({ cn: `node-${index}`, node: true, zpr_addr: `fd00::${index + 1}`, node_details: { adapters: [], in_sync: true } });
+  api.snapshot.actors = [0, 1, 2, 3].map(parent);
+  await page.goto(appURL + "/#map");
+  const existing = page.locator('.graph-vertex.node[data-inspect-actor="node-0"]');
+  await expect(existing).toBeVisible();
+  const before = await existing.boundingBox();
+
+  api.snapshot.actors.push(parent(4));
+  await page.locator("#refresh-now").click();
+  await expect(page.locator('.graph-vertex.node[data-inspect-actor="node-4"]')).toBeVisible();
+  const graph = page.locator(".topology-graph");
+  expect(await graph.evaluate((svg) => svg.getAnimations().some((candidate) => candidate.effect?.target === svg))).toBeTruthy();
+  await graph.evaluate((svg) => { const candidate = svg.getAnimations().find((animation) => animation.effect?.target === svg); candidate.pause(); candidate.currentTime = 0; });
+  const atStart = await page.locator('.graph-vertex.node[data-inspect-actor="node-0"]').boundingBox();
+  expect(atStart.x).toBeCloseTo(before.x, 1);
+  expect(atStart.y).toBeCloseTo(before.y, 1);
+  await graph.evaluate((svg) => { svg.getAnimations().find((animation) => animation.effect?.target === svg).currentTime = 350; });
+  const midway = await page.locator('.graph-vertex.node[data-inspect-actor="node-0"]').boundingBox();
+  await graph.evaluate((svg) => { svg.getAnimations().find((animation) => animation.effect?.target === svg).finish(); });
+  const afterNode = page.locator('.graph-vertex.node[data-inspect-actor="node-0"]');
+  const after = await afterNode.boundingBox();
+  expect(Math.abs(midway.x - before.x)).toBeGreaterThan(1);
+  expect(Math.abs(midway.x - before.x)).toBeLessThan(Math.abs(after.x - before.x));
+  expect(after.x).not.toBeCloseTo(before.x, 1);
 });
 
 test("visa refresh preserves current grants and resolves DNS labels", async ({ page, appURL, api }) => {

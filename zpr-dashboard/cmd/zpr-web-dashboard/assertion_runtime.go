@@ -10,6 +10,7 @@ import (
 	"os"
 	"path/filepath"
 	"sort"
+	"strings"
 	"sync"
 	"time"
 )
@@ -22,64 +23,155 @@ type assertionSettings struct {
 }
 
 type assertionRuntime struct {
-	mu         sync.Mutex
-	settings   assertionSettings
-	path       string
-	baseDN     string
-	reader     func(context.Context) (assertionDirectory, error)
-	running    bool
-	nextRun    time.Time
-	lastRun    *assertionRun
-	lastSource map[string]any
+	mu               sync.Mutex
+	settingsSyncMu   sync.Mutex
+	settings         assertionSettings
+	settingsStore    assertionSettingsStore
+	legacyPath       string
+	legacySettings   *assertionSettings
+	settingsReady    bool
+	settingsError    string
+	lastSettingsSync time.Time
+	organizationID   string
+	organizationName string
+	baseDN           string
+	bindDN           string
+	reader           func(context.Context, string, string) (assertionDirectory, error)
+	running          bool
+	nextRun          time.Time
+	lastRun          *assertionRun
+	lastSource       map[string]any
 }
 
 var errAssertionBusy = errors.New("An assertion evaluation is already running")
-var errAssertionRevision = errors.New("The global assertion set changed; reload before saving or evaluating")
 
-const maxAssertionStoreBytes = maxAssertionSource*6 + 4096
+var errAssertionRevision = errors.New("The organization's assertion set changed; reload before saving or evaluating")
+
+func (runtime *assertionRuntime) ldapConfigured() bool {
+	return runtime.reader != nil && runtime.baseDN != "" && runtime.bindDN != ""
+}
 
 func newAssertionRuntime() (*assertionRuntime, error) {
-	path := os.Getenv("ZPR_ASSERTION_STORE_FILE")
-	if path == "" {
-		directory, err := os.UserConfigDir()
+	runtime := &assertionRuntime{settings: assertionSettings{IntervalSeconds: 60}}
+	runtime.legacyPath = strings.TrimSpace(os.Getenv("ZPR_ASSERTION_STORE_FILE"))
+	if runtime.legacyPath != "" {
+		file, err := os.Open(runtime.legacyPath)
+		if err == nil {
+			data, readErr := io.ReadAll(io.LimitReader(file, maxAssertionSource*6+4097))
+			_ = file.Close()
+			var settings assertionSettings
+			if readErr != nil || len(data) > maxAssertionSource*6+4096 || json.Unmarshal(data, &settings) != nil || settings.Revision < 0 || settings.IntervalSeconds < 30 || settings.IntervalSeconds > 3600 {
+				return nil, errors.New("Legacy assertion settings are invalid")
+			}
+			if _, err := parseAssertions(settings.Source); err != nil {
+				return nil, err
+			}
+			runtime.legacySettings = &settings
+		} else if !os.IsNotExist(err) {
+			return nil, err
+		}
+	}
+	container := os.Getenv("ZPR_ASSERTION_LDAP_CONTAINER")
+	runtime.baseDN = os.Getenv("ZPR_ASSERTION_LDAP_BASE_DN")
+	runtime.bindDN = os.Getenv("ZPR_ASSERTION_LDAP_BIND_DN")
+	if container != "" {
+		attributes, err := approvedAssertionAttributes(os.Getenv("ZPR_ASSERTION_LDAP_ATTRIBUTES"))
 		if err != nil {
 			return nil, err
 		}
-		path = filepath.Join(directory, "zpr-assertions", "global.json")
-	}
-	runtime := &assertionRuntime{path: path, settings: assertionSettings{IntervalSeconds: 60}}
-	if file, err := os.Open(path); err == nil {
-		data, readErr := io.ReadAll(io.LimitReader(file, maxAssertionStoreBytes+1))
-		_ = file.Close()
-		if readErr != nil || len(data) > maxAssertionStoreBytes || json.Unmarshal(data, &runtime.settings) != nil || runtime.settings.Revision < 0 {
-			return nil, errors.New("Global assertion store is invalid")
-		}
-		if _, err := parseAssertions(runtime.settings.Source); err != nil {
-			return nil, err
-		}
-		if runtime.settings.IntervalSeconds < 30 || runtime.settings.IntervalSeconds > 3600 {
-			return nil, errors.New("Global assertion interval is invalid")
-		}
-	} else if !os.IsNotExist(err) {
-		return nil, err
-	}
-	container := os.Getenv("ZPR_ASSERTION_LDAP_CONTAINER")
-	bindDN := os.Getenv("ZPR_ASSERTION_LDAP_BIND_DN")
-	runtime.baseDN = os.Getenv("ZPR_ASSERTION_LDAP_BASE_DN")
-	if container != "" && bindDN != "" && runtime.baseDN != "" {
-		runtime.reader = func(ctx context.Context) (assertionDirectory, error) {
-			return readAssertionLDAP(ctx, container, bindDN, runtime.baseDN)
+		runtime.reader = func(ctx context.Context, baseDN, bindDN string) (assertionDirectory, error) {
+			if baseDN == "" || bindDN == "" {
+				return assertionDirectory{}, errors.New("Trusted LDAP organization context is unavailable")
+			}
+			return readAssertionLDAP(ctx, container, bindDN, baseDN, attributes)
 		}
 	}
 	return runtime, nil
+}
+
+func (runtime *assertionRuntime) migrateLegacySettings(ctx context.Context) error {
+	runtime.settingsSyncMu.Lock()
+	defer runtime.settingsSyncMu.Unlock()
+	if runtime.legacySettings == nil || runtime.settingsStore == nil {
+		return nil
+	}
+	response, err := runtime.settingsStore.Load(ctx)
+	if err != nil {
+		return err
+	}
+	current := response.Settings
+	if current.Revision == 1 && current.Source == "" && !current.Enabled && current.IntervalSeconds == 60 {
+		migrated, err := runtime.settingsStore.Save(ctx, *runtime.legacySettings, current.Revision, response.OrganizationID)
+		if err != nil {
+			return err
+		}
+		response = migrated
+	} else if current.Source != runtime.legacySettings.Source || current.Enabled != runtime.legacySettings.Enabled || current.IntervalSeconds != runtime.legacySettings.IntervalSeconds {
+		return errors.New("Existing organization assertions differ; legacy assertion file was preserved")
+	}
+	runtime.mu.Lock()
+	runtime.applySettingsLocked(response)
+	runtime.mu.Unlock()
+	backupPath := runtime.legacyPath + ".migrated"
+	if _, err := os.Stat(backupPath); err == nil {
+		return errors.New("Legacy assertion backup already exists")
+	}
+	if err := os.Rename(filepath.Clean(runtime.legacyPath), backupPath); err != nil {
+		return err
+	}
+	runtime.legacyPath = ""
+	runtime.legacySettings = nil
+	return nil
 }
 
 func (runtime *assertionRuntime) status() map[string]any {
 	runtime.mu.Lock()
 	defer runtime.mu.Unlock()
 	return map[string]any{
-		"scope": "global", "configured": runtime.reader != nil, "source_kind": "ldap", "base_dn": runtime.baseDN,
-		"settings": runtime.settings, "running": runtime.running, "last_run": runtime.lastRun, "source_summary": runtime.lastSource,
+		"scope": "organization", "organization_id": runtime.organizationID, "organization_name": runtime.organizationName,
+		"configured": runtime.ldapConfigured(), "source_kind": "ldap", "base_dn": runtime.baseDN,
+		"settings": runtime.settings, "settings_error": runtime.settingsError, "running": runtime.running,
+		"last_run": runtime.lastRun, "source_summary": runtime.lastSource,
+	}
+}
+
+func (runtime *assertionRuntime) refreshSettings(ctx context.Context) error {
+	runtime.settingsSyncMu.Lock()
+	defer runtime.settingsSyncMu.Unlock()
+	if runtime.settingsStore == nil {
+		return errors.New("Policy Repository is unavailable")
+	}
+	response, err := runtime.settingsStore.Load(ctx)
+	runtime.mu.Lock()
+	defer runtime.mu.Unlock()
+	if err != nil {
+		runtime.settingsReady = false
+		runtime.settingsError = "Policy Repository assertion settings are unavailable"
+		return err
+	}
+	runtime.applySettingsLocked(response)
+	return nil
+}
+
+func (runtime *assertionRuntime) applySettingsLocked(response assertionSettingsResponse) {
+	organizationChanged := runtime.organizationID != "" && response.OrganizationID != "" && runtime.organizationID != response.OrganizationID
+	revisionChanged := runtime.settings.Revision != response.Settings.Revision
+	if organizationChanged {
+		runtime.lastRun = nil
+		runtime.lastSource = nil
+	}
+	runtime.organizationID = response.OrganizationID
+	runtime.organizationName = response.OrganizationName
+	if response.BaseDN != "" && response.BaseDN != runtime.baseDN {
+		runtime.baseDN = response.BaseDN
+		runtime.bindDN = "cn=zpr-reader,ou=Service Accounts," + response.BaseDN
+	}
+	runtime.settings = response.Settings
+	runtime.settingsReady = true
+	runtime.settingsError = ""
+	runtime.lastSettingsSync = time.Now()
+	if organizationChanged || revisionChanged {
+		runtime.nextRun = time.Now()
 	}
 }
 
@@ -93,10 +185,25 @@ func assertionSourceSummary(directory assertionDirectory, observed time.Time) ma
 	for _, name := range names {
 		groups = append(groups, map[string]any{"name": name, "members": len(directory.Groups[name])})
 	}
-	return map[string]any{"observed_at": observed, "people": len(directory.People), "groups": groups}
+	attributes := make([]map[string]any, 0, len(directory.Attributes))
+	for _, name := range directory.Attributes {
+		peopleCount, groupCount := 0, 0
+		for _, values := range directory.PersonAttributes {
+			if len(values[name]) > 0 {
+				peopleCount++
+			}
+		}
+		for _, values := range directory.GroupAttributes {
+			if len(values[name]) > 0 {
+				groupCount++
+			}
+		}
+		attributes = append(attributes, map[string]any{"name": name, "people": peopleCount, "groups": groupCount})
+	}
+	return map[string]any{"observed_at": observed, "people": len(directory.People), "groups": groups, "attributes": attributes}
 }
 
-func (runtime *assertionRuntime) save(settings assertionSettings, expected int) error {
+func (runtime *assertionRuntime) save(ctx context.Context, settings assertionSettings, expected int) error {
 	rules, err := parseAssertions(settings.Source)
 	if err != nil {
 		return err
@@ -104,42 +211,35 @@ func (runtime *assertionRuntime) save(settings assertionSettings, expected int) 
 	if settings.IntervalSeconds < 30 || settings.IntervalSeconds > 3600 {
 		return errors.New("Interval must be between 30 and 3600 seconds")
 	}
-	if settings.Enabled && (len(rules) == 0 || runtime.reader == nil) {
+	runtime.mu.Lock()
+	ldapConfigured := runtime.ldapConfigured()
+	runtime.mu.Unlock()
+	if settings.Enabled && (len(rules) == 0 || !ldapConfigured) {
 		return errors.New("Periodic checks require assertions and a configured trusted LDAP source")
 	}
+	runtime.settingsSyncMu.Lock()
+	defer runtime.settingsSyncMu.Unlock()
 	runtime.mu.Lock()
-	defer runtime.mu.Unlock()
+	if !runtime.settingsReady {
+		runtime.mu.Unlock()
+		return errors.New("Policy Repository assertion settings are unavailable")
+	}
 	if expected != runtime.settings.Revision {
+		runtime.mu.Unlock()
 		return errAssertionRevision
 	}
-	settings.Revision = expected + 1
-	data, err := json.MarshalIndent(settings, "", "  ")
+	store, organizationID := runtime.settingsStore, runtime.organizationID
+	runtime.mu.Unlock()
+	if store == nil {
+		return errors.New("Policy Repository is unavailable")
+	}
+	response, err := store.Save(ctx, settings, expected, organizationID)
 	if err != nil {
 		return err
 	}
-	if err := ensureParentDirectory(runtime.path); err != nil {
-		return err
-	}
-	file, err := os.CreateTemp(filepath.Dir(runtime.path), ".assertions-*")
-	if err != nil {
-		return err
-	}
-	defer os.Remove(file.Name())
-	if _, err = file.Write(data); err == nil {
-		err = file.Sync()
-	}
-	closeErr := file.Close()
-	if err != nil {
-		return err
-	}
-	if closeErr != nil {
-		return closeErr
-	}
-	if err := os.Rename(file.Name(), runtime.path); err != nil {
-		return err
-	}
-	runtime.settings = settings
-	runtime.nextRun = time.Now()
+	runtime.mu.Lock()
+	runtime.applySettingsLocked(response)
+	runtime.mu.Unlock()
 	return nil
 }
 
@@ -160,17 +260,18 @@ func (runtime *assertionRuntime) evaluate(ctx context.Context, source string, ex
 		runtime.mu.Unlock()
 		return nil, errAssertionRevision
 	}
-	if runtime.reader == nil {
+	if !runtime.ldapConfigured() {
 		runtime.mu.Unlock()
 		return nil, errors.New("A trusted LDAP source is not configured")
 	}
 	runtime.running = true
-	run := &assertionRun{Revision: expected, Draft: source != runtime.settings.Source, StartedAt: time.Now().UTC(), Status: "pass", Results: []assertionResult{}}
+	organizationID, baseDN, bindDN := runtime.organizationID, runtime.baseDN, runtime.bindDN
+	run := &assertionRun{OrganizationID: organizationID, Revision: expected, Draft: source != runtime.settings.Source, StartedAt: time.Now().UTC(), Status: "pass", Results: []assertionResult{}}
 	runtime.nextRun = time.Now().Add(time.Duration(runtime.settings.IntervalSeconds) * time.Second)
 	runtime.mu.Unlock()
 	readContext, cancel := context.WithTimeout(ctx, 10*time.Second)
 	defer cancel()
-	directory, readErr := runtime.reader(readContext)
+	directory, readErr := runtime.reader(readContext, baseDN, bindDN)
 	if readErr != nil {
 		run.Status, run.Error = "error", readErr.Error()
 	} else {
@@ -188,8 +289,16 @@ func (runtime *assertionRuntime) evaluate(ctx context.Context, source string, ex
 	run.FinishedAt = time.Now().UTC()
 	runtime.mu.Lock()
 	runtime.running = false
-	runtime.lastRun = run
-	if readErr == nil {
+	if runtime.organizationID != organizationID {
+		run.Status = "error"
+		run.Error = "Organization changed during evaluation; no assertion result was recorded"
+		run.Results = nil
+		runtime.lastRun = nil
+		runtime.lastSource = nil
+	} else {
+		runtime.lastRun = run
+	}
+	if readErr == nil && runtime.organizationID == organizationID {
 		runtime.lastSource = assertionSourceSummary(directory, run.FinishedAt)
 	}
 	runtime.mu.Unlock()
@@ -198,8 +307,22 @@ func (runtime *assertionRuntime) evaluate(ctx context.Context, source string, ex
 
 func (runtime *assertionRuntime) tick(ctx context.Context, now time.Time) {
 	runtime.mu.Lock()
+	refreshDue := now.Sub(runtime.lastSettingsSync) >= 5*time.Second
+	if refreshDue {
+		runtime.lastSettingsSync = now
+	}
+	runtime.mu.Unlock()
+	if refreshDue {
+		refreshCtx, cancel := context.WithTimeout(ctx, 12*time.Second)
+		err := runtime.refreshSettings(refreshCtx)
+		cancel()
+		if err != nil {
+			return
+		}
+	}
+	runtime.mu.Lock()
 	settings := runtime.settings
-	due := settings.Enabled && !runtime.running && runtime.reader != nil && !now.Before(runtime.nextRun)
+	due := runtime.settingsReady && settings.Enabled && !runtime.running && runtime.reader != nil && !now.Before(runtime.nextRun)
 	if due {
 		runtime.nextRun = now.Add(time.Duration(settings.IntervalSeconds) * time.Second)
 	}
@@ -241,19 +364,27 @@ func (runtime *assertionRuntime) register(mux *http.ServeMux) {
 		if !localEditorRequest(w, r) {
 			return
 		}
+		if err := runtime.refreshSettings(r.Context()); err != nil {
+			writeJSON(w, http.StatusBadGateway, map[string]string{"error": "Policy Repository assertion settings are unavailable"})
+			return
+		}
 		runtime.mu.Lock()
-		if runtime.running || runtime.reader == nil {
+		if runtime.running || !runtime.ldapConfigured() {
 			runtime.mu.Unlock()
 			writeJSON(w, http.StatusConflict, map[string]string{"error": "Trusted LDAP is unavailable or an evaluation is already running"})
 			return
 		}
+		baseDN, bindDN := runtime.baseDN, runtime.bindDN
 		runtime.running = true
 		runtime.mu.Unlock()
 		ctx, cancel := context.WithTimeout(r.Context(), 10*time.Second)
 		defer cancel()
-		directory, err := runtime.reader(ctx)
+		directory, err := runtime.reader(ctx, baseDN, bindDN)
 		runtime.mu.Lock()
 		runtime.running = false
+		if err == nil && (runtime.baseDN != baseDN || runtime.bindDN != bindDN) {
+			err = errors.New("Organization changed during source read; reload and try again")
+		}
 		if err == nil {
 			runtime.lastSource = assertionSourceSummary(directory, time.Now().UTC())
 		}
@@ -268,6 +399,10 @@ func (runtime *assertionRuntime) register(mux *http.ServeMux) {
 	})
 	mux.HandleFunc("GET /api/assertions", func(w http.ResponseWriter, r *http.Request) {
 		if !localEditorRequest(w, r) {
+			return
+		}
+		if err := runtime.refreshSettings(r.Context()); err != nil {
+			writeJSON(w, http.StatusBadGateway, map[string]string{"error": "Policy Repository assertion settings are unavailable"})
 			return
 		}
 		w.Header().Set("Cache-Control", "no-store")
@@ -285,7 +420,10 @@ func (runtime *assertionRuntime) register(mux *http.ServeMux) {
 		}
 		err := decodeAssertionRequest(w, r, &request)
 		if err == nil {
-			err = runtime.save(assertionSettings{Source: request.Source, Enabled: request.Enabled, IntervalSeconds: request.IntervalSeconds}, request.ExpectedRevision)
+			err = runtime.refreshSettings(r.Context())
+		}
+		if err == nil {
+			err = runtime.save(r.Context(), assertionSettings{Source: request.Source, Enabled: request.Enabled, IntervalSeconds: request.IntervalSeconds}, request.ExpectedRevision)
 		}
 		if err != nil {
 			assertionHTTPError(w, err)
@@ -303,6 +441,10 @@ func (runtime *assertionRuntime) register(mux *http.ServeMux) {
 		}
 		if err := decodeAssertionRequest(w, r, &request); err != nil {
 			assertionHTTPError(w, err)
+			return
+		}
+		if err := runtime.refreshSettings(r.Context()); err != nil {
+			writeJSON(w, http.StatusBadGateway, map[string]string{"error": "Policy Repository assertion settings are unavailable"})
 			return
 		}
 		run, err := runtime.evaluate(r.Context(), request.Source, request.ExpectedRevision)
