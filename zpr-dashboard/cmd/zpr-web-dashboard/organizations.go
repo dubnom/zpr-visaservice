@@ -22,6 +22,7 @@ type simulatorOrganization struct {
 	MachineOwners map[string][]string            `json:"machine_owners,omitempty"`
 	PolicyConfig  string                         `json:"policy_config"`
 	PolicyCatalog string                         `json:"policy_catalog"`
+	RuntimePolicy string                         `json:"runtime_policy,omitempty"`
 	Policies      []simulatorOrganizationPolicy  `json:"policies"`
 	Services      []simulatorOrganizationService `json:"services"`
 }
@@ -112,24 +113,12 @@ func handleSimulatorOrganizationActivate(w http.ResponseWriter, r *http.Request)
 			return
 		}
 	}
-	path := simulatorActiveOrganizationPath()
-	file, err := os.CreateTemp(filepath.Dir(path), ".active-organization-*")
-	if err != nil {
-		writeWorkspaceError(w, http.StatusInternalServerError, "could not save active organization")
+	if !activeOrganizationActivation.start(organizationID, simulatorActiveOrganizationPath()) {
+		writeWorkspaceError(w, http.StatusConflict, "An organization activation is already in progress.")
 		return
 	}
-	defer os.Remove(file.Name())
-	_, writeErr := file.WriteString(organizationID + "\n")
-	closeErr := file.Close()
-	if writeErr != nil || closeErr != nil {
-		writeWorkspaceError(w, http.StatusInternalServerError, "could not save active organization")
-		return
-	}
-	if err := os.Rename(file.Name(), path); err != nil {
-		writeWorkspaceError(w, http.StatusInternalServerError, "could not save active organization")
-		return
-	}
-	writeSimulatorJSON(w, map[string]string{"active_id": organizationID})
+	w.WriteHeader(http.StatusAccepted)
+	writeSimulatorJSON(w, map[string]any{"activation": activeOrganizationActivation.snapshot()})
 }
 
 func loadSimulatorOrganizations(directory string) ([]simulatorOrganization, error) {
@@ -315,5 +304,6 @@ func handleSimulatorOrganizations(w http.ResponseWriter, _ *http.Request) {
 	writeSimulatorJSON(w, map[string]any{
 		"active_id":     manifest.OrganizationID,
 		"organizations": organizations,
+		"activation":    activeOrganizationActivation.snapshot(),
 	})
 }

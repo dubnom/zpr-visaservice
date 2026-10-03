@@ -6,6 +6,11 @@ bin/*
 *.zpl
 *.zplc
 *.zpt
+!cmd/zpr-web-dashboard/examples/policy-layers/*.zpl
+!cmd/zpr-web-dashboard/examples/organizations/*/runtime-policy.zpl
 
 config.toml
 policy-records.db*
+node_modules/
+test-results/
+playwright-report/

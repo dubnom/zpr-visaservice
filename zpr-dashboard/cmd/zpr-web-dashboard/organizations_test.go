@@ -1,7 +1,9 @@
 package main
 
 import (
+	"context"
 	"encoding/json"
+	"net/http"
 	"net/http/httptest"
 	"os"
 	"path/filepath"
@@ -175,6 +177,9 @@ func TestLoadSimulatorScenariosFiltersByOrganization(t *testing.T) {
 }
 
 func TestSimulatorOrganizationActivationPersistsSelection(t *testing.T) {
+	previousActivation := activeOrganizationActivation
+	activeOrganizationActivation = &organizationActivationManager{run: organizationActivation{State: "idle"}, reset: func(context.Context, string) error { return nil }}
+	t.Cleanup(func() { activeOrganizationActivation = previousActivation })
 	manifestPath := filepath.Join(t.TempDir(), "manifest.json")
 	manifest := scenarioTestManifest()
 	content, err := json.Marshal(manifest)
@@ -192,9 +197,10 @@ func TestSimulatorOrganizationActivationPersistsSelection(t *testing.T) {
 	request.SetPathValue("organization", "velocity")
 	response := httptest.NewRecorder()
 	handleSimulatorOrganizationActivate(response, request)
-	if response.Code != 200 {
+	if response.Code != http.StatusAccepted {
 		t.Fatalf("activation failed: %d %s", response.Code, response.Body.String())
 	}
+	<-activeOrganizationActivation.done
 	selected, err := readSimulatorManifest()
 	if err != nil || selected.OrganizationID != "velocity" {
 		t.Fatalf("selected organization = %q, error %v", selected.OrganizationID, err)

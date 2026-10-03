@@ -1,3 +1,10 @@
+.organization-switch-dialog { box-sizing: border-box; width: min(520px, calc(100vw - 32px)); max-height: 85vh; overflow: auto; padding: 22px; border: 1px solid var(--line); border-radius: 5px; background: var(--panel); color: var(--ink); }
+.organization-switch-dialog::backdrop { background: #17211e88; }
+.organization-switch-dialog h2 { margin: 0 0 14px; font-size: 18px; }
+.organization-switch-dialog p { margin: 0 0 14px; font-size: 13px; line-height: 1.6; overflow-wrap: anywhere; }
+#organization-switch-target { font-weight: 600; }
+#organization-switch-error { color: #a43830; }
+.organization-switch-actions { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 8px; margin-top: 18px; }
 :root {
   --ink: #17211e;
   --muted: #77837d;
@@ -227,8 +234,12 @@ pre { margin: 0; padding: 14px; min-height: 110px; max-height: 180px; overflow: 
 .scenario-state.completed { background: #e6f1bc; color: #3e642f; }
 .scenario-progress { margin-left: auto; font: 10px var(--mono); font-variant-numeric: tabular-nums; }
 .scenario-run-error { flex-basis: 100%; margin: 0; color: #9e4a2a; overflow-wrap: anywhere; }
-.scenario-track-frame { max-width: 100%; margin-top: 16px; padding: 12px; overflow-x: auto; overscroll-behavior-x: contain; border: 1px solid var(--line); border-radius: 5px; background: var(--panel); }
-.scenario-track-frame:focus-visible { outline: 2px solid var(--teal); outline-offset: 2px; }
+.scenario-track-frame { max-width: 100%; margin-top: 16px; padding: 12px; overflow: hidden; border: 1px solid var(--line); border-radius: 5px; background: var(--panel); }
+.scenario-track-scrollbar { height: 14px; margin-bottom: 8px; overflow-x: auto; overflow-y: hidden; overscroll-behavior-x: contain; }
+.scenario-track-scrollbar > div { height: 1px; }
+.scenario-track-viewport { max-width: 100%; overflow-x: auto; overscroll-behavior-x: contain; scrollbar-width: none; }
+.scenario-track-viewport::-webkit-scrollbar { display: none; }
+.scenario-track-scrollbar:focus-visible, .scenario-track-viewport:focus-visible { outline: 2px solid var(--teal); outline-offset: 2px; }
 .scenario-lanes { display: grid; grid-auto-flow: column; grid-auto-columns: 280px; align-items: start; justify-content: start; gap: 18px; }
 .scenario-lane { min-width: 0; border-top: 2px solid var(--teal); }
 .scenario-lane h3 { margin: 0; padding: 10px 2px 4px; font: 600 11px var(--mono); }

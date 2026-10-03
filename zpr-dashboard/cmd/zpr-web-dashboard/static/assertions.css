@@ -1,0 +1,36 @@
+.assertion-heading, .assertion-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+.assertion-heading { justify-content: space-between; margin-bottom: 12px; }
+.assertion-heading h2 { margin: 0; font-size: 18px; }
+.assertion-heading small, .assertion-source-meta { color: var(--muted); font: 10px/1.6 var(--mono); }
+.assertion-actions label { display: flex; align-items: center; gap: 5px; color: var(--ink); font: 10px var(--mono); }
+.assertion-actions input[type="number"] { width: 78px; min-height: 29px; border: 1px solid var(--line); border-radius: 3px; background: var(--panel); color: var(--ink); padding: 3px 6px; }
+.assertion-actions input[type="checkbox"] { accent-color: var(--forest); }
+.assertion-workbench { display: grid; grid-template-columns: minmax(0, 1fr) minmax(230px, 300px); gap: 20px; }
+.assertion-editor { position: relative; min-width: 0; height: 360px; border: 1px solid #344a40; border-radius: 3px; background: #17211e; }
+#assertion-source, #assertion-highlight { position: absolute; inset: 0; width: 100%; height: 100%; margin: 0; padding: 14px; border: 0; font: 12px/1.7 var(--mono); white-space: pre; tab-size: 2; overflow: auto; }
+#assertion-highlight { pointer-events: none; color: #e4ebe5; }
+#assertion-source { background: transparent; color: transparent; caret-color: white; -webkit-text-fill-color: transparent; outline: none; resize: none; }
+#assertion-source:focus { box-shadow: inset 0 0 0 2px #7ea65b; }
+#assertion-source::selection { background: #709a6a88; }
+.assertion-token-keyword { color: #e5a66c; }
+.assertion-token-string { color: #b8d78b; }
+.assertion-token-number { color: #92c5df; }
+.assertion-token-comment { color: #829188; }
+.assertion-catalog { min-width: 0; }
+.assertion-catalog h3 { margin: 0 0 8px; font-size: 13px; }
+.assertion-catalog td { white-space: normal; overflow-wrap: anywhere; }
+.assertion-catalog .table-scroll { max-height: 320px; overflow: auto; }
+.assertion-catalog td button { display: grid; width: 26px; height: 26px; place-items: center; padding: 0; border: 1px solid var(--line); background: var(--panel); color: var(--ink); cursor: pointer; }
+.assertion-syntax { margin-top: 10px; font: 11px var(--mono); }
+.assertion-syntax summary { cursor: pointer; }
+.assertion-syntax pre { overflow: auto; margin: 8px 0; padding: 10px; background: #edf2ee; font: 11px/1.7 var(--mono); }
+.assertion-message { min-height: 24px; margin: 8px 0; font: 11px/1.6 var(--mono); overflow-wrap: anywhere; }
+.assertion-message[data-state="error"], #assertion-run-error { color: #a43830; }
+.assertion-results { margin-top: 20px; padding-top: 14px; border-top: 1px solid var(--line); }
+.assertion-results h3 { margin: 0 0 8px; font-size: 14px; }
+#assertion-run-status { font: 11px/1.6 var(--mono); }
+#assertion-run-status[data-state="pass"] { color: #285b3a; }
+#assertion-run-status[data-state="fail"], #assertion-result-rows tr[data-state="fail"] td:nth-child(3) { color: #a43830; }
+#assertion-run-status[data-state="error"], #assertion-result-rows tr[data-state="error"] td:nth-child(3) { color: #9b5b08; }
+.assertion-results td { white-space: normal; overflow-wrap: anywhere; font: 11px/1.5 var(--mono); }
+@media (max-width: 850px) { .assertion-workbench { grid-template-columns: minmax(0, 1fr); } }

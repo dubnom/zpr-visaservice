@@ -214,8 +214,15 @@ func main() {
 	zprAddress := flag.String("zpr-addr", "", "Machine controller ZPR address")
 	proxyListen := flag.String("proxy-listen", "", "Listen address for the ZPR machine-control TCP proxy")
 	proxyUpstream := flag.String("proxy-upstream", "", "Upstream machine-control TLS listener address")
+	policyRoot := flag.String("policy-root", "", "Root directory of policy layer sources and organization profiles")
+	policyOrganization := flag.String("policy-organization", "", "Organization policy layer to compose")
+	policyOutput := flag.String("policy-output", "", "Output file for the composed policy source")
 	flag.Parse()
 	switch *mode {
+	case "compose-policy":
+		if err := writeOrganizationPolicy(*policyRoot, *policyOrganization, *policyOutput); err != nil {
+			log.Fatal(err)
+		}
 	case "policy-service":
 		if err := runPolicyService(); err != nil {
 			log.Fatal(err)

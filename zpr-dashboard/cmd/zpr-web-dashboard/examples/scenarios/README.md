@@ -21,6 +21,15 @@ component's manifest namespace and target, or an explicit IPv6 `target`, and
 requires `expected` to be `allow` or `deny`.
 
 An optional `cleanup` list runs after success, failure, or cancellation. Keep it
+ordered so workload stops and logout precede machine shutdown. Each cleanup
+step gets an independent share of the three-minute cleanup budget, so early
+timeouts cannot starve final shutdown. Machine shutdown uses bounded best-effort
+logout and still stops the container if its controller is unreachable.
+The managed local rig does not boot standalone copies of machine workloads;
+after recovery from older rigs, `scripts/dashboard-stack.sh stop-legacy-workloads`
+withdraws those copies without stopping DNS or platform infrastructure.
+
+Keep cleanup
 to `stop_test_service`, `stop_workload`, `logout`, and `stop_machine` actions so partial scenarios do
 not leave simulated sessions or workloads behind. Scenario files cannot run
 arbitrary shell commands. Step timeouts are optional and capped by the runner.

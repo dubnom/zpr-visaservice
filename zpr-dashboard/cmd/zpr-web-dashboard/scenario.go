@@ -406,6 +406,9 @@ func (manager *simulatorScenarioManager) start(scenario simulatorScenario, manif
 func (manager *simulatorScenarioManager) startVersioned(scenario simulatorScenario, manifest simulatorManifest, execute simulatorScenarioExecutor, organizationID string, revision int) error {
 	manager.mu.Lock()
 	defer manager.mu.Unlock()
+	if activeOrganizationActivation.snapshot().State == "resetting" {
+		return errors.New("organization activation is in progress")
+	}
 	if manager.run.State == "running" || manager.run.State == "cleaning" {
 		return errScenarioAlreadyRunning
 	}
@@ -467,13 +470,9 @@ func (manager *simulatorScenarioManager) execute(ctx context.Context, scenario s
 	}
 	if len(scenario.Cleanup) > 0 {
 		manager.setState("cleaning", "")
-		cleanupCtx, cancel := context.WithTimeout(context.Background(), 3*time.Minute)
-		for index, step := range scenario.Cleanup {
-			if err := manager.executeStep(cleanupCtx, manifest, step, execute, "cleanup", len(scenario.Steps)+index+1, false); err != nil && runErr == nil {
-				runErr = err
-			}
+		if err := manager.executeCleanup(scenario.Cleanup, manifest, execute, len(scenario.Steps), 3*time.Minute); err != nil && runErr == nil {
+			runErr = err
 		}
-		cancel()
 	}
 	state := "completed"
 	if ctx.Err() != nil {
@@ -482,6 +481,22 @@ func (manager *simulatorScenarioManager) execute(ctx context.Context, scenario s
 		state = "failed"
 	}
 	manager.finish(state, runErr)
+}
+
+func (manager *simulatorScenarioManager) executeCleanup(steps []simulatorScenarioStep, manifest simulatorManifest, execute simulatorScenarioExecutor, offset int, budget time.Duration) error {
+	if len(steps) == 0 {
+		return nil
+	}
+	var firstError error
+	for index, step := range steps {
+		ctx, cancel := context.WithTimeout(context.Background(), budget/time.Duration(len(steps)))
+		err := manager.executeStep(ctx, manifest, step, execute, "cleanup", offset+index+1, false)
+		cancel()
+		if err != nil && firstError == nil {
+			firstError = err
+		}
+	}
+	return firstError
 }
 
 func (manager *simulatorScenarioManager) executeParallel(ctx context.Context, steps []simulatorScenarioStep, manifest simulatorManifest, execute simulatorScenarioExecutor) error {
@@ -963,10 +978,12 @@ func stopScenarioMachine(ctx context.Context, machineID string) (string, error) 
 		simulatorMachineCommands.clear(machineID)
 		return "machine already stopped", nil
 	}
-	if err := clearMachineLogin(machineID); err != nil {
-		return "", err
+	if simulatorSessions.snapshot([]string{machineID})[machineID].Authenticated {
+		logoutCtx, cancel := context.WithTimeout(ctx, 2*time.Second)
+		_, _ = simulatorMachineCommands.enqueueAndWait(logoutCtx, machineID, machineControlCommand{Action: "logout"})
+		cancel()
 	}
-	output, err := scenarioCommand(ctx, "docker", "stop", machineContainerName(machineID))
+	output, err := scenarioCommand(ctx, "docker", "stop", "--time", "5", machineContainerName(machineID))
 	if err != nil {
 		return output, err
 	}

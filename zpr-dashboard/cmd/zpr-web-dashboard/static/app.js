@@ -15,6 +15,7 @@ const pages = {
   services: "SERVICES",
   dns: "DNS",
   sources: "TRUSTED SOURCES",
+  assertions: "ASSERTIONS",
   policy: "POLICY",
   visas: "VISAS",
   denies: "DENIALS",
@@ -644,9 +645,10 @@ function renderTopology(data, exitComponents = []) {
     const title = docked
       ? `${displayNames.get(edge.to.cn)} docked to ${displayNames.get(edge.from.cn)} · ${dnsAddressTitle(edge.to.zpr_addr, "Adapter IP")} · ${dnsAddressTitle(edge.from.zpr_addr, "Node IP")}`
       : `${displayNames.get(edge.from.cn)} to ${displayNames.get(edge.to.cn)}: ${edge.state} · ${dnsAddressTitle(edge.from.zpr_addr, "Node A IP")} · ${dnsAddressTitle(edge.to.zpr_addr, "Node B IP")}`;
-    const filtered = query && !matches(edge.from) && !matches(edge.to) ? "filtered" : "";
+    const highlighted = query && (matches(edge.from) || matches(edge.to)) ? "highlighted" : "";
+    const filtered = query && !highlighted ? "filtered" : "";
     const key = `${edge.kind}|${edge.from.cn}|${edge.to.cn}`;
-    return `<g class="graph-edge ${filtered}" data-inspect-link="${escapeHTML(key)}" tabindex="0" role="button" aria-label="Inspect ${escapeHTML(title)}"><title>${escapeHTML(title)}</title><line class="graph-link ${cls}" x1="${from.x}" y1="${from.y}" x2="${to.x}" y2="${to.y}"/><line class="graph-link-hit" x1="${from.x}" y1="${from.y}" x2="${to.x}" y2="${to.y}"/></g>`;
+    return `<g class="graph-edge ${highlighted} ${filtered}" data-inspect-link="${escapeHTML(key)}" tabindex="0" role="button" aria-label="Inspect ${escapeHTML(title)}"><title>${escapeHTML(title)}</title><line class="graph-link ${cls}" x1="${from.x}" y1="${from.y}" x2="${to.x}" y2="${to.y}"/><line class="graph-link-hit" x1="${from.x}" y1="${from.y}" x2="${to.x}" y2="${to.y}"/></g>`;
   }).join("");
 
   const arrivalMarker = (key, x, y, radius) => {
@@ -702,7 +704,8 @@ function renderTopology(data, exitComponents = []) {
       const externalNetworks = [...new Set((servicesByActor.get(actor.cn) || []).filter(isGatewayService).map((service) => service.external_network_connection || "External network"))].join(", ");
       cloudMarkup = `<g class="graph-external-network"><title>${escapeHTML(externalNetworks)}</title><line class="graph-link gateway-cloud-link" x1="${pos.x}" y1="${pos.y}" x2="${cloudX}" y2="${cloudY}"/><path class="graph-cloud" transform="translate(${cloudX} ${cloudY})" d="M -34 22 C -60 22 -62 -12 -39 -17 C -40 -43 -2 -49 9 -28 C 31 -42 52 -22 46 -5 C 68 0 62 22 42 22 Z"/></g>`;
     }
-    return `<g class="graph-vertex ${isNode ? "node" : isGateway ? "gateway" : isVisaService ? "visa" : "adapter"}${arrivingClass} ${query && !matches(actor) ? "filtered" : ""}" data-topology-component="${escapeHTML(componentKey)}" data-origin-x="${pos.x}" data-origin-y="${pos.y}"${positionAttributes} data-inspect-actor="${escapeHTML(actor.cn)}" tabindex="0" role="button" aria-label="Inspect ${escapeHTML(isGateway ? "gateway " : "")}${escapeHTML(displayName)}"><title>${escapeHTML(isGateway ? "ZPR gateway · " : "")}${escapeHTML(displayName)} · ${escapeHTML(actor.cn)} · ${escapeHTML(dnsAddressTitle(actor.zpr_addr))}</title>${cloudMarkup}${glyph}${marker}<text class="graph-label" x="${pos.x}" y="${pos.y + 3}">${escapeHTML(shortName)}</text></g>`;
+    const highlighted = query && matches(actor) ? "highlighted" : "";
+    return `<g class="graph-vertex ${isNode ? "node" : isGateway ? "gateway" : isVisaService ? "visa" : "adapter"}${arrivingClass} ${highlighted} ${query && !matches(actor) ? "filtered" : ""}" data-topology-component="${escapeHTML(componentKey)}" data-origin-x="${pos.x}" data-origin-y="${pos.y}"${positionAttributes} data-inspect-actor="${escapeHTML(actor.cn)}" tabindex="0" role="button" aria-label="Inspect ${escapeHTML(isGateway ? "gateway " : "")}${escapeHTML(displayName)}"><title>${escapeHTML(isGateway ? "ZPR gateway · " : "")}${escapeHTML(displayName)} · ${escapeHTML(actor.cn)} · ${escapeHTML(dnsAddressTitle(actor.zpr_addr))}</title>${cloudMarkup}${glyph}${marker}<text class="graph-label" x="${pos.x}" y="${pos.y + 3}">${escapeHTML(shortName)}</text></g>`;
   });
 
   const serviceEdgeMarkup = [];
@@ -728,8 +731,10 @@ function renderTopology(data, exitComponents = []) {
     const trustedType = (service.service_kind || "").match(/^Trusted\("([^\"]+)"\)$/)?.[1];
     const trustedClass = trustedType ? ` trusted-${trustedType.toLowerCase().replace(/[^a-z0-9]+/g, "-")}` : "";
     const gatewayClass = isGatewayService(service) ? " gateway" : "";
-    const filtered = query && !`${service.service_name} ${service.service_kind}`.toLowerCase().includes(query) && !matches(owner) ? "filtered" : "";
-    serviceEdgeMarkup.push(`<g class="graph-service-edge ${filtered}" aria-hidden="true"><line class="graph-link service-link" x1="${startX}" y1="${startY}" x2="${endX}" y2="${endY}"/></g>`);
+    const serviceMatches = `${service.service_name} ${service.service_kind} ${service.external_network_connection || ""}`.toLowerCase().includes(query);
+    const highlighted = query && (serviceMatches || matches(owner)) ? "highlighted" : "";
+    const filtered = query && !highlighted ? "filtered" : "";
+    serviceEdgeMarkup.push(`<g class="graph-service-edge ${highlighted} ${filtered}" aria-hidden="true"><line class="graph-link service-link" x1="${startX}" y1="${startY}" x2="${endX}" y2="${endY}"/></g>`);
     const providerName = displayNames.get(owner.cn) || owner.cn;
     const title = `${isGatewayService(service) ? "Gateway · " : ""}${service.service_name} registered by ${providerName} (${owner.cn})${service.external_network_connection ? ` · external network: ${service.external_network_connection}` : ""}${service.zpr_addr ? ` · ${dnsAddressTitle(service.zpr_addr)}` : ""}`;
     const labelForScreenReader = `Inspect service ${service.service_name}, registered by ${providerName}`;
@@ -741,11 +746,11 @@ function renderTopology(data, exitComponents = []) {
     const parentMovement = marker ? enteringOffsets.get(parentKey) || previousMovement.get(parentKey) : null;
     const entry = marker && parentMovement ? { x: offset.x + parentMovement.x, y: offset.y + parentMovement.y } : null;
     const positionAttributes = offsetAttributes(offset, parentKey, entry);
-    return `<g class="graph-service-badge${gatewayClass}${trustedClass}${arrivingClass} ${filtered}" data-service-type="${escapeHTML(type.key)}" fill="${escapeHTML(type.background)}" stroke="${escapeHTML(type.border)}" color="${escapeHTML(type.color)}" data-topology-component="${escapeHTML(componentKey)}" data-origin-x="${position.x}" data-origin-y="${position.y}"${positionAttributes} data-inspect-service="${escapeHTML(service.service_name)}" tabindex="0" role="button" aria-label="${escapeHTML(labelForScreenReader)}"><title>${escapeHTML(title)}</title><rect x="${position.x - badgeWidth / 2}" y="${position.y - 10}" width="${badgeWidth}" height="20" rx="4"/>${marker}<text x="${position.x}" y="${position.y + 3}">${escapeHTML(shortLabel)}</text></g>`;
+    return `<g class="graph-service-badge${gatewayClass}${trustedClass}${arrivingClass} ${highlighted} ${filtered}" data-service-type="${escapeHTML(type.key)}" fill="${escapeHTML(type.background)}" stroke="${escapeHTML(type.border)}" color="${escapeHTML(type.color)}" data-topology-component="${escapeHTML(componentKey)}" data-origin-x="${position.x}" data-origin-y="${position.y}"${positionAttributes} data-inspect-service="${escapeHTML(service.service_name)}" tabindex="0" role="button" aria-label="${escapeHTML(labelForScreenReader)}"><title>${escapeHTML(title)}</title><rect x="${position.x - badgeWidth / 2}" y="${position.y - 10}" width="${badgeWidth}" height="20" rx="4"/>${marker}<text x="${position.x}" y="${position.y + 3}">${escapeHTML(shortLabel)}</text></g>`;
   });
 
   const exiting = (kind) => exitComponents.filter((component) => component.kind === kind).map((component) => component.markup).join("");
-  stage.innerHTML = `<div class="graph-controls" aria-label="Topology graph controls"><button class="graph-control" data-graph-action="in" type="button" aria-label="Zoom in" title="Zoom in">+</button><button class="graph-control" data-graph-action="out" type="button" aria-label="Zoom out" title="Zoom out">−</button><button class="graph-control graph-fit" data-graph-action="fit" type="button" aria-label="Fit graph" title="Fit graph">Fit</button><label class="graph-animation-toggle" title="Highlight newly added components"><input id="graph-animation-toggle" type="checkbox" aria-label="Animate newly added components"><span>Animate</span></label><span class="graph-hint">DRAG TO PAN · SCROLL TO ZOOM</span></div><svg class="topology-graph" viewBox="0 0 ${width} ${height}" role="img" aria-label="Topology graph with ${nodes.length} nodes, ${adapters.length} adapters, ${dockEdges.length} dock connections, ${networkEdges.length} inter-node links, and ${(data.services || []).filter((service) => servicesByActor.has(service.actor_cn)).length} registered services"><g id="graph-world">${edgeMarkup}${serviceEdgeMarkup.join("")}${serviceMarkup.join("")}<g class="graph-exit-layer" aria-hidden="true">${exiting("service")}</g>${vertexMarkup.slice(nodes.length).join("")}<g class="graph-exit-layer" aria-hidden="true">${exiting("adapter")}</g>${vertexMarkup.slice(0, nodes.length).join("")}<g class="graph-exit-layer" aria-hidden="true">${exiting("node")}</g></g></svg>`;
+  stage.innerHTML = `<div class="graph-controls" aria-label="Topology graph controls"><button class="graph-control" data-graph-action="in" type="button" aria-label="Zoom in" title="Zoom in">+</button><button class="graph-control" data-graph-action="out" type="button" aria-label="Zoom out" title="Zoom out">−</button><button class="graph-control graph-fit" data-graph-action="fit" type="button" aria-label="Fit graph" title="Fit graph">Fit</button></div><svg class="topology-graph" viewBox="0 0 ${width} ${height}" role="img" aria-label="Topology graph with ${nodes.length} nodes, ${adapters.length} adapters, ${dockEdges.length} dock connections, ${networkEdges.length} inter-node links, and ${(data.services || []).filter((service) => servicesByActor.has(service.actor_cn)).length} registered services"><g id="graph-world">${edgeMarkup}${serviceEdgeMarkup.join("")}${serviceMarkup.join("")}<g class="graph-exit-layer" aria-hidden="true">${exiting("service")}</g>${vertexMarkup.slice(nodes.length).join("")}<g class="graph-exit-layer" aria-hidden="true">${exiting("adapter")}</g>${vertexMarkup.slice(0, nodes.length).join("")}<g class="graph-exit-layer" aria-hidden="true">${exiting("node")}</g></g></svg>`;
 
   setupGraphControls(stage, width, height);
 }
@@ -806,13 +811,6 @@ function setupGraphControls(stage, width, height) {
       apply();
     }
   }));
-  const animationToggle = stage.querySelector("#graph-animation-toggle");
-  animationToggle.checked = state.graphAnimations;
-  animationToggle.addEventListener("change", () => {
-    state.graphAnimations = animationToggle.checked;
-    if (!state.graphAnimations) state.topologyNewComponents.clear();
-    if (state.snapshot) renderTopology(state.snapshot);
-  });
   svg.addEventListener("wheel", (event) => {
     event.preventDefault();
     const point = pointAt(event);
@@ -943,6 +941,25 @@ function lookupOutcome(health) {
   if (health === "unverified") return "Not queried";
   return "Status unavailable";
 }
+async function refreshPolicyContext() {
+  const policy = state.policy;
+  if (location.hash !== "#policy" || !policy.loaded || policy.contextPending) return;
+  policy.contextPending = true;
+  try {
+    const response = await fetch("/api/policy/context", { cache: "no-store" });
+    if (!response.ok) return;
+    const context = await response.json();
+    if (context.organization_id && context.organization_id !== policy.organizationID) {
+      policy.loaded = false;
+      await loadPolicyWorkspace();
+    }
+  } catch {
+    // Retain the current editor while the backend context is restarting.
+  } finally {
+    policy.contextPending = false;
+  }
+}
+
 async function loadPolicyWorkspace() {
   const policy = state.policy;
   if (policy.loaded) return;
@@ -953,7 +970,10 @@ async function loadPolicyWorkspace() {
     const response = await fetch("/api/policy", { cache: "no-store", headers: { Accept: "application/json" } });
     const data = await response.json();
     if (!response.ok) throw new Error(data.error || `Policy server responded ${response.status}`);
+    const organizationChanged = policy.organizationID && data.organization_id && policy.organizationID !== data.organization_id;
     Object.assign(policy, {
+      organizationID: data.organization_id || "",
+      organizationName: data.organization_name || "",
       loaded: true,
       configured: data.configured,
       categories: data.categories || [],
@@ -967,6 +987,13 @@ async function loadPolicyWorkspace() {
       assistantReady: data.assistant_ready,
     });
     renderPolicyAttributes();
+    if (organizationChanged) {
+      policy.treeInitialized = false;
+      policy.record = hasUnsavedChanges ? { isDraft: true, name: "Retained draft from previous organization", kind: "policy", category_id: "", content: editorSource } : null;
+      policy.savedSource = "";
+      policy.validSource = "";
+      policy.browsingRevision = 0;
+    }
     if (!policy.categories.some((category) => category.id === policy.categoryID)) {
       const policyCategories = new Set(policy.records.filter((record) => record.kind === "policy").map((record) => record.category_id));
       policy.categoryID = policy.categories.find((category) => policyCategories.has(category.id))?.id
@@ -981,6 +1008,7 @@ async function loadPolicyWorkspace() {
     if (policy.record && !policy.record.isDraft && !policy.records.some((record) => record.id === policy.record.id)) policy.record = null;
     renderPolicyCatalog();
     if (policy.record?.isDraft) {
+      if (organizationChanged) policy.record.category_id = policy.categoryID;
       byId("policy-source").disabled = false;
       renderPolicyIdentity(policy.record, 0, "");
       renderPolicyAttributes();
@@ -1092,6 +1120,39 @@ function insertPolicyAttribute() {
   textarea.dispatchEvent(new Event("input", { bubbles: true }));
 }
 
+function formatZPL(source) {
+  const lines = source.match(/[^\n]*\n|[^\n]+$/g) || [];
+  let formatted = "";
+  let previousLineIsBlank = true;
+  let isFirstLine = true;
+
+  for (const line of lines) {
+    const content = line.replace(/\r?\n$/, "");
+    const startsWith = (keyword) => new RegExp(`^\\s*${keyword}(?:\\s|$)`, "i").test(content);
+    const isServiceDeclaration = startsWith("provide") || startsWith("service");
+    const isPolicyStatement = ["allow", "deny", "never"].some(startsWith);
+
+    if (!isFirstLine && isServiceDeclaration && !previousLineIsBlank) {
+      formatted += line.endsWith("\r\n") || formatted.endsWith("\r\n") ? "\r\n" : "\n";
+    }
+
+    formatted += isPolicyStatement ? `  ${line.trimStart()}` : line;
+    previousLineIsBlank = content.trim() === "";
+    isFirstLine = false;
+  }
+
+  return formatted;
+}
+
+function formatPolicySource() {
+  const textarea = byId("policy-source");
+  if (textarea.disabled) return;
+  const formatted = formatZPL(textarea.value);
+  if (formatted === textarea.value) return;
+  textarea.value = formatted;
+  textarea.dispatchEvent(new Event("input", { bubbles: true }));
+}
+
 function renderPolicyCatalog() {
   const policy = state.policy;
   const children = new Map();
@@ -1162,6 +1223,7 @@ function clearPolicySelection() {
   byId("policy-draft-name").hidden = true;
   byId("policy-draft-name").value = "";
   byId("policy-check").disabled = true; byId("policy-save").disabled = true; byId("policy-save-as").disabled = true; byId("policy-refresh").disabled = true;
+  byId("policy-format").disabled = true;
   byId("policy-check-result").textContent = "Policy source is not loaded.";
   byId("policy-history-count").textContent = "—";
   byId("policy-history").innerHTML = '<p class="catalog-empty">Select a policy to browse versions.</p>';
@@ -1281,7 +1343,7 @@ function extractZPLErrorOffsets(diagnostics, source) {
   }
   for (const diagnostic of String(diagnostics || "").split(/\r?\n/)) {
     if (!/\berror\b/i.test(diagnostic)) continue;
-    for (const match of diagnostic.matchAll(/\[\s*line\s+(\d+)\s*,\s*column\s+(\d+)\s*\]/gi)) {
+    for (const match of diagnostic.matchAll(/\bline\s+(\d+)\s*,\s*column\s+(\d+)\b/gi)) {
       const line = Number(match[1]);
       const column = Number(match[2]);
       if (lineStarts[line - 1] === undefined || source.length === 0) continue;
@@ -1344,14 +1406,12 @@ function completionCandidates(source, cursor) {
     candidates = ["as"];
   } else if (/^define\s+\S+\s+(?:aka\s+\S+\s+)?as\s+(?:a\s+|an\s+)?\S+\s+[\p{L}\p{N}_-]*$/iu.test(trimmed)) {
     candidates = ["with"];
-  } else if (/\bto\s*[^\s]*$/i.test(line)) {
-    candidates = ["access"];
-  } else if (/\baccess\s+[^\s]*$/i.test(line)) {
-    candidates = [...policyClassReferences(source), "services", "on", "over"];
+  } else if (/\bsignal\b[\s\S]*\bto\s*[^\s]*$/i.test(line)) {
+    candidates = policyClassReferences(source);
   } else if (/^\s*(?:allow|never\s+allow)\s+[^\n]*$/i.test(line) && !/\bto\b/i.test(line)) {
-    candidates = ["users", "devices", "services", ...definedPolicyClasses(source).flatMap((name) => [pluralPolicyClass(name), name]), "to"];
+    candidates = ["users", "devices", "services", ...definedPolicyClasses(source).flatMap((name) => [pluralPolicyClass(name), name]), "on", "over", "and", "signal"];
   } else if (/^(?:allow|never\s+allow|define)\s+/i.test(trimmed)) {
-    candidates = ["with", "and", "to", "access", "on", "over", "signal", "tag", "tags", "optional", "multiple"];
+    candidates = ["with", "and", "on", "over", "signal", "tag", "tags", "optional", "multiple"];
   } else return empty;
   const unique = [...new Set(candidates)];
   const filtered = filterPrefix ? unique.filter((item) => (item.toLowerCase().startsWith(filterPrefix.toLowerCase()) || attributeMode && !filterPrefix.includes(".") && item.split(".").at(-1).toLowerCase().startsWith(filterPrefix.toLowerCase())) && item.toLowerCase() !== filterPrefix.toLowerCase()) : unique;
@@ -1632,6 +1692,7 @@ function updatePolicyDirtyState() {
   byId("policy-save-as").disabled = !canEdit || isDraft || !checked;
   byId("policy-stage").disabled = !canStage;
   byId("policy-check").disabled = !canEdit || !policy.compilerReady;
+  byId("policy-format").disabled = !canEdit;
   byId("policy-refresh").disabled = !policy.record || (!dirty && !policy.browsingRevision && !isDraft);
   byId("policy-check").classList.toggle("button-next-evaluate", canEdit && !checked);
   byId("policy-save").classList.toggle("button-save-next", !canSave);
@@ -2126,6 +2187,7 @@ function render(data) {
   renderVisas(data);
   renderDenies(data);
   if (state.selection) renderInspector();
+  void refreshPolicyContext();
   highlightChangedPolledFields();
   void loadDNSRecords();
 }
@@ -2189,6 +2251,7 @@ byId("policy-attribute-picker").addEventListener("change", () => {
   byId("policy-attribute-insert").disabled = !byId("policy-attribute-picker").value || byId("policy-source").disabled;
 });
 byId("policy-attribute-insert").addEventListener("click", insertPolicyAttribute);
+byId("policy-format").addEventListener("click", formatPolicySource);
 byId("policy-attribute-rescan").addEventListener("click", rescanPolicyAttributes);
 byId("policy-draft-name").addEventListener("input", () => {
   if (!state.policy.record?.isDraft) return;

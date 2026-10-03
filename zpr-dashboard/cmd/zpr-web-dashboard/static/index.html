@@ -7,6 +7,7 @@
     <title>ZPR Control Room</title>
     <link rel="stylesheet" href="/app.css?v=19">
     <link rel="stylesheet" href="/machine-logs.css?v=7">
+    <link rel="stylesheet" href="/assertions.css?v=2">
   </head>
   <body>
     <div class="app-shell">
@@ -20,6 +21,7 @@
           <a class="nav-link" href="#connections" data-page-link="connections">Connections</a>
           <a class="nav-link" href="#actors" data-page-link="actors">Actors</a>
           <a class="nav-link" href="#adapter-logs" data-page-link="adapter-logs">Adapter Logs</a>
+          <a class="nav-link" href="#assertions" data-page-link="assertions">Assertions</a>
           <a class="nav-link" href="#services" data-page-link="services">Services</a>
           <a class="nav-link" href="#dns" data-page-link="dns">DNS</a>
           <a class="nav-link" href="#sources" data-page-link="sources">Trusted sources</a>
@@ -159,6 +161,17 @@
           </section>
         </section>
 
+        <section class="page-view" id="page-assertions" data-page="assertions" aria-label="Assertions">
+          <section class="section-block">
+            <div class="assertion-heading"><div><h2>Assertions</h2><small id="assertion-revision">Global</small></div><div class="assertion-actions"><label><input id="assertion-enabled" type="checkbox" disabled>Periodic checks</label><label>Interval (s)<input id="assertion-interval" type="number" min="30" max="3600" value="60"></label><button id="assertion-reload" class="button" type="button" disabled>Reload</button><button id="assertion-save" class="button" type="button" disabled>Save</button><button id="assertion-evaluate" class="button" type="button" disabled>Evaluate</button></div></div>
+            <div id="assertion-message" class="assertion-message" role="status" aria-live="polite"></div>
+            <div class="assertion-workbench"><div><div class="assertion-editor"><pre id="assertion-highlight" aria-hidden="true"></pre><textarea id="assertion-source" aria-label="Data assertion source" maxlength="65536" spellcheck="false" autocapitalize="off" autocomplete="off" wrap="off" disabled></textarea></div><details class="assertion-syntax"><summary>Syntax</summary><pre>group "Operators" members &gt;= 2;
+each group members &gt; 3;
+people exactly_one ["Employees", "Contractors"];
+people in "Employees" not_both ["Administrators", "Auditors"];</pre></details></div><aside class="assertion-catalog"><div class="assertion-heading"><h3>Trusted source</h3><button id="assertion-read-source" class="button" type="button" disabled>Read source</button></div><p id="assertion-source-status" class="assertion-source-meta">Loading</p><p id="assertion-source-summary" class="assertion-source-meta">Not read</p><div class="table-scroll"><table><thead><tr><th>GROUP</th><th>MEMBERS</th><th></th></tr></thead><tbody id="assertion-group-rows"></tbody></table></div></aside></div>
+            <section class="assertion-results"><h3>Results</h3><p id="assertion-run-status">Not evaluated</p><p id="assertion-run-error" role="status"></p><div class="table-scroll"><table><thead><tr><th>LINE</th><th>ASSERTION</th><th>RESULT</th><th>CHECKED</th><th>VIOLATIONS</th></tr></thead><tbody id="assertion-result-rows"></tbody></table></div></section>
+          </section>
+        </section>
         <section class="page-view" id="page-sources" data-page="sources" aria-label="Trusted sources">
           <section class="section-block">
             <div class="section-heading"><div><p class="eyebrow">ATTRIBUTE PROVIDERS</p><h2>Who supplies trusted attributes</h2></div></div>
@@ -189,6 +202,7 @@
                   <select id="policy-attribute-picker" aria-label="Configured policy attributes" disabled><option value="">Loading attributes…</option></select>
                   <button id="policy-attribute-insert" class="button button-refresh" type="button" disabled>Insert</button>
                   <button id="policy-attribute-rescan" class="button button-refresh" type="button" disabled>Rescan LDAP</button>
+                  <button id="policy-format" class="button button-refresh" type="button" title="Format policy source" aria-label="Format policy source" disabled>Format</button>
                 </div>
                 <div id="policy-attribute-status" class="policy-attribute-status" role="status" aria-live="polite"></div>
                 <div id="policy-code-editor" class="policy-code-editor">
@@ -273,7 +287,8 @@
         <footer class="page-footer"><span>ZPR CONTROL ROOM <b>·</b> LIVE MONITOR / POLICY RECORDS</span><span id="footer-poll">Auto-refresh every 5 seconds</span></footer>
       </main>
     </div>
-    <script src="/app.js?v=28" defer></script>
+    <script src="/app.js?v=29" defer></script>
     <script src="/machine-logs.js?v=7" defer></script>
+    <script src="/assertions.js?v=1" defer></script>
   </body>
 </html>

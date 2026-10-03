@@ -48,6 +48,47 @@ function renderScenarioList(scenarios, maxMachines) {
   }).join("");
 }
 
+function updateScenarioTrackScroll() {
+  const frame = document.querySelector(".scenario-track-frame");
+  const steps = document.getElementById("scenario-steps");
+  let scrollbar = frame.querySelector(".scenario-track-scrollbar");
+  let viewport = frame.querySelector(".scenario-track-viewport");
+  if (!viewport) {
+    scrollbar = document.createElement("div");
+    scrollbar.className = "scenario-track-scrollbar";
+    scrollbar.setAttribute("role", "region");
+    scrollbar.setAttribute("aria-label", "Scroll scenario tracks horizontally");
+    scrollbar.tabIndex = 0;
+    scrollbar.append(document.createElement("div"));
+
+    viewport = document.createElement("div");
+    viewport.className = "scenario-track-viewport";
+    viewport.setAttribute("role", "region");
+    viewport.setAttribute("aria-label", "Scenario machine tracks");
+    viewport.tabIndex = 0;
+    frame.removeAttribute("role");
+    frame.removeAttribute("aria-label");
+    frame.removeAttribute("tabindex");
+    frame.insertBefore(scrollbar, steps);
+    frame.insertBefore(viewport, steps);
+    viewport.append(steps);
+
+    let syncing = false;
+    const syncScroll = (source, target) => {
+      if (syncing) return;
+      syncing = true;
+      target.scrollLeft = source.scrollLeft;
+      syncing = false;
+    };
+    scrollbar.addEventListener("scroll", () => syncScroll(scrollbar, viewport), { passive: true });
+    viewport.addEventListener("scroll", () => syncScroll(viewport, scrollbar), { passive: true });
+    window.addEventListener("resize", updateScenarioTrackScroll);
+  }
+  scrollbar.firstElementChild.style.width = `${steps.scrollWidth}px`;
+  scrollbar.hidden = steps.scrollWidth <= viewport.clientWidth + 1;
+  scrollbar.scrollLeft = viewport.scrollLeft;
+}
+
 function renderScenarioRun(run) {
   scenarioRun = run || { state: "idle", steps: [] };
   const busy = scenarioRun.state === "running" || scenarioRun.state === "cleaning";
@@ -84,6 +125,7 @@ function renderScenarioRun(run) {
     lanes.set(machine, lane);
   });
   document.getElementById("scenario-steps").innerHTML = [...lanes].map(([machine, steps]) => `<section class="scenario-lane"><h3>${scenarioEscape(machine)}</h3><ol class="scenario-steps">${steps.join("")}</ol></section>`).join("");
+  updateScenarioTrackScroll();
   for (const button of document.querySelectorAll("[data-run-scenario]")) {
     button.disabled = busy || button.dataset.runOrganization !== activeScenarioOrganization || button.dataset.runPublished !== "true";
   }

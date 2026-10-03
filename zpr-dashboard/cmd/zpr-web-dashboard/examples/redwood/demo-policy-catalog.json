@@ -10,8 +10,16 @@
       "name": "Fleet device posture",
       "kind": "policy",
       "content_type": "text/vnd.zpr.zpl",
-      "metadata": {"demo": true, "ldap_attributes": ["zprMachineType -> device.redwood.machine_type", "zprMachineLocation -> device.redwood.location", "zprMachineSecure -> device.redwood.secure"], "live": false},
-      "content": "# Machine posture comes from the LDAP zprMachine schema.\ndefine SecureFleetLaptops as a device with redwood.machine_type:laptop.\ndefine RemoteFleetDevices as a device with redwood.location:Remote.\ndefine SecureDevices as a device with redwood.secure:TRUE.\ndefine FleetSafety as a service with device.zpr.adapter.cn:fleet-safety.\nservice FleetSafety as json {\"service_class\":\"FleetSafety\",\"actor_cn\":\"fleet-safety\",\"summary\":\"Illustrative fleet safety service.\",\"endpoint\":\"zpr://fleet-safety\",\"status\":\"example only; not deployed\"}.\nallow SecureDevices to access FleetSafety.",
+      "metadata": {
+        "demo": true,
+        "ldap_attributes": [
+          "zprMachineType -> device.redwood.machine_type",
+          "zprMachineLocation -> device.redwood.location",
+          "zprMachineSecure -> device.redwood.secure"
+        ],
+        "live": false
+      },
+      "content": "# Machine posture comes from the LDAP zprMachine schema.\ndefine SecureFleetLaptops as a device with redwood.machine_type:laptop.\ndefine RemoteFleetDevices as a device with redwood.location:Remote.\ndefine SecureDevices as a device with redwood.secure:TRUE.\ndefine FleetSafety as a service with device.zpr.adapter.cn:fleet-safety.\n\nservice FleetSafety as json {\"service_class\":\"FleetSafety\",\"actor_cn\":\"fleet-safety\",\"summary\":\"Illustrative fleet safety service.\",\"endpoint\":\"zpr://fleet-safety\",\"status\":\"example only; not deployed\"}.\n  allow SecureDevices.",
       "summary": "Device type, location, and secure status predicates"
     },
     {
@@ -19,8 +27,19 @@
       "name": "Fleet operator access",
       "kind": "policy",
       "content_type": "text/vnd.zpr.zpl",
-      "metadata": {"demo": true, "ldap_attributes": ["ou -> user.department", "title -> user.title", "cn -> user.name", "mail -> user.email", "role -> user.role{}"], "requires_user_identity": "user.sub from AuthService", "live": false},
-      "content": "# User LDAP attributes require an AuthService user.sub identity.\ndefine FleetManagers as a user with user.role:FleetManagers.\ndefine RouteExchange as a service with device.zpr.adapter.cn:route-exchange.\nservice RouteExchange as json {\"service_class\":\"RouteExchange\",\"actor_cn\":\"route-exchange\",\"summary\":\"Illustrative route exchange service.\",\"endpoint\":\"zpr://route-exchange\",\"status\":\"example only; not deployed\"}.\nallow FleetManagers to access RouteExchange.",
+      "metadata": {
+        "demo": true,
+        "ldap_attributes": [
+          "ou -> user.department",
+          "title -> user.title",
+          "cn -> user.name",
+          "mail -> user.email",
+          "role -> user.role{}"
+        ],
+        "requires_user_identity": "user.sub from AuthService",
+        "live": false
+      },
+      "content": "# User LDAP attributes require an AuthService user.sub identity.\ndefine FleetManagers as a user with user.role:FleetManagers.\ndefine RouteExchange as a service with device.zpr.adapter.cn:route-exchange.\n\nservice RouteExchange as json {\"service_class\":\"RouteExchange\",\"actor_cn\":\"route-exchange\",\"summary\":\"Illustrative route exchange service.\",\"endpoint\":\"zpr://route-exchange\",\"status\":\"example only; not deployed\"}.\n  allow FleetManagers.",
       "summary": "User role-group access to route coordination"
     },
     {
@@ -28,8 +47,15 @@
       "name": "Partner auditor access",
       "kind": "policy",
       "content_type": "text/vnd.zpr.zpl",
-      "metadata": {"demo": true, "ldap_attributes": ["role -> user.role{}"], "requires_user_identity": "user.sub from AuthService", "live": false},
-      "content": "define PartnerAuditors as a user with user.role:PartnerAuditors.\ndefine ShipmentLedger as a service with device.zpr.adapter.cn:shipment-ledger.\nservice ShipmentLedger as json {\"service_class\":\"ShipmentLedger\",\"actor_cn\":\"shipment-ledger\",\"summary\":\"Illustrative shipment ledger.\",\"endpoint\":\"zpr://shipment-ledger\",\"status\":\"example only; not deployed\"}.\nallow PartnerAuditors to access ShipmentLedger.",
+      "metadata": {
+        "demo": true,
+        "ldap_attributes": [
+          "role -> user.role{}"
+        ],
+        "requires_user_identity": "user.sub from AuthService",
+        "live": false
+      },
+      "content": "define PartnerAuditors as a user with user.role:PartnerAuditors.\ndefine ShipmentLedger as a service with device.zpr.adapter.cn:shipment-ledger.\n\nservice ShipmentLedger as json {\"service_class\":\"ShipmentLedger\",\"actor_cn\":\"shipment-ledger\",\"summary\":\"Illustrative shipment ledger.\",\"endpoint\":\"zpr://shipment-ledger\",\"status\":\"example only; not deployed\"}.\n  allow PartnerAuditors.",
       "summary": "Partner role-group access to shipment records"
     }
   ]

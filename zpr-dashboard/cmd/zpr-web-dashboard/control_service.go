@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"crypto/tls"
 	"crypto/x509"
 	"errors"
@@ -90,7 +91,7 @@ type controlRoomTransport struct {
 }
 
 func (transport controlRoomTransport) RoundTrip(request *http.Request) (*http.Response, error) {
-	if request.URL.Path == "/api/adapter-logs" {
+	if request.URL.Path == "/api/adapter-logs" || request.URL.Path == "/api/assertions/evaluate" || request.URL.Path == "/api/assertions/source" {
 		return transport.logs.RoundTrip(request)
 	}
 	return transport.standard.RoundTrip(request)
@@ -109,11 +110,19 @@ func runControlService() error {
 		return err
 	}
 	admin, configErr := newAdminClient()
+	assertions, err := newAssertionRuntime()
+	if err != nil {
+		return err
+	}
+	assertionContext, stopAssertions := context.WithCancel(context.Background())
+	defer stopAssertions()
+	assertions.start(assertionContext)
 	policyAPI, policyErr := newPolicyServiceProxy()
 	app := &application{
 		admin: admin, configErr: configErr, policyAPI: policyAPI, policyErr: policyErr, assistant: newClaudeAssistant(),
 	}
 	mux := http.NewServeMux()
+	assertions.register(mux)
 	mux.HandleFunc("GET /api/snapshot", app.handleSnapshot)
 	mux.HandleFunc("GET /api/actors/{actor}/visas", app.handleActorVisas)
 	mux.Handle("GET /api/adapter-logs", newAdapterLogsProxy())

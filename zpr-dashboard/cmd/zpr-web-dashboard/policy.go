@@ -52,6 +52,8 @@ type policyWorkspace struct {
 }
 
 type policyStatus struct {
+	OrganizationID     string                 `json:"organization_id,omitempty"`
+	OrganizationName   string                 `json:"organization_name,omitempty"`
 	Configured         bool                   `json:"configured"`
 	Categories         []policyCategory       `json:"categories"`
 	Records            []policyRecord         `json:"records"`
@@ -472,6 +474,8 @@ func (a *application) handleGetPolicy(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	status.Configured = true
+	status.OrganizationID = os.Getenv("ZPR_POLICY_ORGANIZATION_ID")
+	status.OrganizationName = os.Getenv("ZPR_POLICY_ORGANIZATION_NAME")
 	a.policy.mu.Lock()
 	sourceErr := seedPolicyDatabase(r.Context(), a.policy)
 	a.policy.mu.Unlock()

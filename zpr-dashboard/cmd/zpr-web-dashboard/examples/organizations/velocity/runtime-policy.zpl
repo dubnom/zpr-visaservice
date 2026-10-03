@@ -1,0 +1,13 @@
+service A2Svc as json {"service_class":"A2Svc"}.
+  allow A1.
+  allow A3.
+
+define FinanceClient as adapter with zpr.adapter.cn:'finance-client'.
+define OperationsClient as adapter with zpr.adapter.cn:'operations-client'.
+define TelemetryClient as adapter with zpr.adapter.cn:'telemetry-client'.
+define EchoService as service with device.zpr.adapter.cn:'echo-service'.
+define EchoWeb as service with device.zpr.adapter.cn:'echo-service'.
+define MetricsService as service with device.zpr.adapter.cn:'metrics-service'.
+
+provide EchoWeb at echo-web.svc.zpr over TCP 8080.
+  allow FinanceClient.

@@ -215,11 +215,21 @@ stop_ui_relays() {
 }
 
 start_control_service() {
+    assertion_profile=${SIMULATION_ORGANIZATION_ID:-$(jq -r '.organization_id // empty' "$SIMULATION_MANIFEST")}
+    assertion_base_dn=${ZPR_ASSERTION_LDAP_BASE_DN:-$(jq -r '.directory.base_dn // empty' "$ORGANIZATIONS_DIR/$assertion_profile.json" 2>/dev/null || true)}
+    assertion_bind_dn=${ZPR_ASSERTION_LDAP_BIND_DN:-}
+    if [ -z "$assertion_bind_dn" ] && [ -n "$assertion_base_dn" ]; then
+        assertion_bind_dn="cn=zpr-reader,ou=Service Accounts,$assertion_base_dn"
+    fi
     start_service control-service "$CONTROL_PID" env \
         ZPR_CONTROL_SERVICE_LISTEN=127.0.0.1:8790 \
         ZPR_CONTROL_SERVICE_CERT_FILE="$SERVICE_CERTS/control-service.crt" \
         ZPR_CONTROL_SERVICE_KEY_FILE="$SERVICE_CERTS/control-service.key" \
         ZPR_CONTROL_SERVICE_CLIENT_CA_FILE="$SERVICE_CERTS/service-ca.crt" \
+        ZPR_ASSERTION_STORE_FILE="${ZPR_ASSERTION_STORE_FILE:-$STATE_DIR/assertions/global.json}" \
+        ZPR_ASSERTION_LDAP_CONTAINER="${ZPR_ASSERTION_LDAP_CONTAINER:-$SIMULATION_CONTAINER}" \
+        ZPR_ASSERTION_LDAP_BASE_DN="$assertion_base_dn" \
+        ZPR_ASSERTION_LDAP_BIND_DN="$assertion_bind_dn" \
         ZPR_PLATFORM_SERVICES="$(jq -c '[.services[] | select(.kind == "Gateway") | {service_name: .name, actor_cn: .provider, zpr_addr: .address, service_kind: .kind, service_endpoints: .endpoint, external_network_connection: .external_network_connection}]' "$SIMULATION_MANIFEST")" \
         ZPR_ADMIN_URL="https://127.0.0.1:$ADMIN_RELAY_PORT" \
         ZPR_ADMIN_CA_FILE="$RUNTIME_DIR/local-admin-cert.pem" \
@@ -392,7 +402,7 @@ stop_legacy_named_workloads() {
                 docker exec "$SIMULATION_CONTAINER" /tmp/zpr-core-target/debug/ph-cli -p "$socket" link stop "$link_id" >/dev/null 2>&1 || true
             fi
         fi
-        docker exec "$SIMULATION_CONTAINER" pkill -TERM -f "[p]h adapter.*--name $agent" 2>/dev/null || true
+        docker exec "$SIMULATION_CONTAINER" pkill -TERM -f "[p]h adapter.*--name $agent( |$)" 2>/dev/null || true
     done
 }
 
@@ -440,6 +450,47 @@ prepare_machine_workloads() {
             iptables -D FORWARD -i sim-host0 -o eth0 -s 10.0.0.0/8 -d '$DOCKER_SUBNET' -p udp -j ACCEPT 2>/dev/null || true
             iptables -D FORWARD -i eth0 -o sim-host0 -d 10.0.0.0/8 -m conntrack --ctstate ESTABLISHED,RELATED -j ACCEPT 2>/dev/null || true
         fi"
+}
+
+restart_policy_context() {
+    context_organization=$1
+    context_source=$2
+    case "$context_organization" in ''|*[!a-z0-9-]*) echo "invalid organization context" >&2; return 1 ;; esac
+    context_profile="$ORGANIZATIONS_DIR/$context_organization.json"
+    [ -r "$context_profile" ] && [ -r "$context_source" ] || { echo "policy context assets unavailable" >&2; return 1; }
+    context_config="$DASHBOARD_DIR/cmd/zpr-web-dashboard/examples/$(jq -er '.policy_config' "$context_profile")"
+    context_catalog="$DASHBOARD_DIR/cmd/zpr-web-dashboard/examples/$(jq -er '.policy_catalog' "$context_profile")"
+    context_base_dn=$(jq -er '.directory.base_dn' "$context_profile")
+    [ -r "$context_config" ] && [ -r "$context_catalog" ] || { echo "policy profile assets unavailable" >&2; return 1; }
+    if pid_running "$POLICY_PID"; then
+        context_listener=$(lsof -tiTCP:8789 -sTCP:LISTEN)
+        [ "$context_listener" = "$(cat "$POLICY_PID")" ] || { echo "Policy Service PID mismatch" >&2; return 1; }
+        stop_service "$POLICY_PID"
+    fi
+    start_service policy-service "$POLICY_PID" env \
+        ZPR_POLICY_SERVICE_LISTEN=127.0.0.1:8789 \
+        ZPR_POLICY_DB_FILE="$STATE_DIR/policy-private/$context_organization-policy-only.db" \
+        ZPR_POLICY_SERVICE_CERT_FILE="$SERVICE_CERTS/policy-service.crt" \
+        ZPR_POLICY_SERVICE_KEY_FILE="$SERVICE_CERTS/policy-service.key" \
+        ZPR_POLICY_SERVICE_CLIENT_CA_FILE="$SERVICE_CERTS/service-ca.crt" \
+        ZPR_POLICY_ORGANIZATION_ID="$context_organization" \
+        ZPR_POLICY_ORGANIZATION_NAME="$(jq -er '.name' "$context_profile")" \
+        ZPR_POLICY_CONFIG_FILE="$context_config" \
+        ZPR_POLICY_SOURCE_FILE="$context_source" \
+        ZPR_POLICY_SEED_CATEGORY="Network/Effective" \
+        ZPR_POLICY_SEED_NAME="Effective network policy" \
+        ZPR_POLICY_DEMO_CATALOG_FILE="$context_catalog" \
+        ZPR_POLICY_STAGE_DIR="$STATE_DIR/staged-policy/$context_organization" \
+        ZPR_POLICY_STAGE_SIGNING_KEY_FILE="$RUNTIME_DIR/linux-integration/pregen/zpr-rsa-key.pem" \
+        ZPR_POLICY_LDAP_CONTAINER="$SIMULATION_CONTAINER" \
+        ZPR_POLICY_LDAP_BASE_DN="$context_base_dn" \
+        ZPR_POLICY_LDAP_BIND_DN="cn=zpr-reader,ou=Service Accounts,$context_base_dn" \
+        ZPR_ZPLC_BIN="$DASHBOARD_DIR/../../zpr-compiler/target/debug/zplc" \
+        "$BIN" -mode policy-service
+    wait_for_url https://127.0.0.1:8789/api/policy/context policy-context \
+        --cacert "$SERVICE_CERTS/service-ca.crt" \
+        --cert "$SERVICE_CERTS/control-policy-client.crt" \
+        --key "$SERVICE_CERTS/control-policy-client.key"
 }
 
 start_stack() {
@@ -515,6 +566,7 @@ start_stack() {
         SIMULATION_PUBLISHED_DIRECTORY_DIR="$RUNTIME_DIR/published-directories" \
         SIMULATION_SCENARIOS_DIR="$DASHBOARD_DIR/cmd/zpr-web-dashboard/examples/scenarios" \
         SIMULATION_STACK_SCRIPT="$SCRIPT_DIR/dashboard-stack.sh" \
+        SIMULATION_ORGANIZATION_RESET_SCRIPT="$SCRIPT_DIR/activate-organization.sh" \
         SIMULATION_AGENT_SCRIPT="$SCRIPT_DIR/simulation-agent.sh" \
         SIMULATOR_CONTROL_TLS_CERT="$CONTROL_SERVER_CERT" \
         SIMULATOR_CONTROL_TLS_KEY="$CONTROL_SERVER_KEY" \
@@ -586,5 +638,11 @@ case "${1:-start}" in
         start_control_service
         ;;
     restart-simulator-control) start_zpr_machine_control_service ;;
+    stop-legacy-workloads) stop_legacy_named_workloads ;;
+    reset-organization) exec sh "$SCRIPT_DIR/activate-organization.sh" "$@" ;;
+    restart-policy-context)
+        [ "$#" -eq 3 ] || { echo "usage: $0 restart-policy-context organization source" >&2; exit 2; }
+        restart_policy_context "$2" "$3"
+        ;;
     *) echo "usage: $0 {start|stop|restart|status|start-dns|stop-dns|start-ui-relays|stop-ui-relays|start-browser-gateway|stop-browser-gateway|restart-control-service|restart-simulator-control}" >&2; exit 2 ;;
 esac

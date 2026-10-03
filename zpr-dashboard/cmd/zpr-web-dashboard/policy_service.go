@@ -116,6 +116,13 @@ func policyServiceMux(workspace *policyWorkspace) http.Handler {
 	app := &application{policy: workspace, assistant: nil}
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /api/policy", app.handleGetPolicy)
+	mux.HandleFunc("GET /api/policy/context", func(w http.ResponseWriter, r *http.Request) {
+		if !localEditorRequest(w, r) {
+			return
+		}
+		w.Header().Set("Cache-Control", "no-store")
+		writeJSON(w, http.StatusOK, map[string]string{"organization_id": os.Getenv("ZPR_POLICY_ORGANIZATION_ID"), "organization_name": os.Getenv("ZPR_POLICY_ORGANIZATION_NAME")})
+	})
 	mux.HandleFunc("POST /api/policy/attributes/rescan", app.handleRescanPolicyAttributes)
 	mux.HandleFunc("POST /api/policy/records/{id}/stage", app.handleStagePolicyRecord)
 	mux.HandleFunc("POST /api/policy/check", app.handleCheckPolicy)

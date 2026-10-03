@@ -325,6 +325,30 @@ func TestSimulatorScenarioManagerParallelFailureCancelsLanesBeforeCleanup(t *tes
 	}
 }
 
+func TestScenarioCleanupTimeoutDoesNotStarveMachineShutdown(t *testing.T) {
+	manager := newSimulatorScenarioManager()
+	stopped := false
+	execute := func(ctx context.Context, _ simulatorManifest, step simulatorScenarioStep) (string, error) {
+		if step.Action == "stop_workload" {
+			<-ctx.Done()
+			return "", ctx.Err()
+		}
+		if ctx.Err() != nil {
+			return "", ctx.Err()
+		}
+		stopped = true
+		return "stopped", nil
+	}
+	err := manager.executeCleanup([]simulatorScenarioStep{{Action: "stop_workload"}, {Action: "stop_machine"}}, scenarioTestManifest(), execute, 5, 40*time.Millisecond)
+	if !errors.Is(err, context.DeadlineExceeded) || !stopped {
+		t.Fatalf("cleanup did not preserve final shutdown: stopped=%v error=%v", stopped, err)
+	}
+	run := manager.snapshot()
+	if len(run.Steps) != 2 || run.Steps[0].Status != "failed" || run.Steps[1].Status != "completed" || run.Steps[1].Number != 7 {
+		t.Fatalf("cleanup result = %+v", run.Steps)
+	}
+}
+
 func TestSimulatorScenarioManagerRunsStepsAndCleanupInOrder(t *testing.T) {
 	manager := newSimulatorScenarioManager()
 	var got []string

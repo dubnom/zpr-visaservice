@@ -6,6 +6,32 @@ This repository contains the Zero-Trust Packet Routing (ZPR) Terminal User Inter
 
 To setup your development environment, run `go mod download` to install the local dependencies. Finally, run `make run` to start the TUI.
 
+## Tests
+
+`make test` runs the Go unit and component suites. Browser regressions require
+Node.js 20 or newer (CI uses 22) and the pinned development dependencies:
+
+```sh
+npm ci
+npx playwright install chromium
+make test-browser
+make test-all
+```
+
+On Linux, use `npx playwright install --with-deps chromium` when installing
+the browser's system dependencies. CI runs both the Go and browser suites;
+failed browser tests retain screenshots and traces as artifacts.
+
+The browser suite runs regressions on desktop and mobile Chromium. It
+serves the real static assets with the dashboard's CSP and fixture APIs, without
+Docker, running services, certificates, or private credentials. Coverage includes
+radio log selection, per-source scroll/follow memory, errors and polling lifecycle,
+ANSI/HTML safety, policy completions, map/table colors and gateway clouds, visa
+refresh/DNS labels, LDAP popups, attributes, memberships, branch collapse, and
+explicit organization-switch approval/cancellation and stale-approval handling.
+These are deterministic UI regressions, not live network or multi-node acceptance
+tests; unfinished protocol, teardown, and recovery work remains separate.
+
 ## Project layout
 
 ```
@@ -86,6 +112,42 @@ In the Control Room map, each gateway is connected to a dark gray cloud
 representing its external network. Hover over the cloud to see the declared
 network label.
 
+## Policy Layers
+
+Runtime policy is composed from three ordered source tiers:
+
+1. `examples/policy-layers/bootstrap.zpl`: node, Visa Service, and essential
+   bootstrap/administration grants.
+2. `examples/policy-layers/platform.zpl`: shared simulator control, DNS,
+   observability, and baseline fixture services/grants.
+3. `examples/organizations/<id>/runtime-policy.zpl`: company application policy.
+
+The composer always uses the same first two tiers and selects one company tier.
+It rejects missing/empty tiers, duplicate sources, path traversal, symlink
+escapes, and oversized bundles. This is source composition, not a new precedence
+or authorization model: the normal compiler and evaluator still determine
+policy semantics. The company runtime layer is separate from its Policy Studio
+example catalog; Redwood's illustrative business endpoints are not deployed by
+its login-only runtime scenario.
+
+Generate a candidate without changing the running network:
+
+```sh
+go run ./cmd/zpr-web-dashboard -mode compose-policy \
+  -policy-root cmd/zpr-web-dashboard/examples \
+  -policy-organization velocity \
+  -policy-output /tmp/velocity-runtime.zpl
+```
+
+Compile/sign the generated source with the complete runtime `.zplc` configuration
+and the normal protected signing key, not the company's editor-only config.
+Northstar, Redwood, and Velocity candidates have been compiler-checked. The
+running monolithic rig policy is not replaced by this command. Layer-aware
+activation must still coordinate actor/visa reset, company LDAP, Policy-Service
+workspace selection, health checks, and DNS-data retention before live rollout.
+Control Room consumes generic Policy-Service APIs; it must not call simulator
+APIs to select a company or orchestrate reset.
+
 ## Simulator Policy Source
 
 Control Room's Policy tree includes **Simulator / Runtime / Simulator runtime
@@ -99,18 +161,23 @@ are idempotent. Manual edits to the imported record and unrelated policies are
 never overwritten. `ZPR_POLICY_SEED_CATEGORY` and `ZPR_POLICY_SEED_NAME` control
 its location. This view does not install or activate a policy.
 
-## Machine Logs
+## Log Views
 
-The Simulator's **Machine logs** page shows the entire manifest fleet with
-machine state and live controller, control-adapter, and selected-workload logs.
-It polls again two seconds after each collection completes, without overlapping
+Control Room's **Adapter Logs** page shows the manifest fleet with Controller,
+Control adapter, and assigned-workload adapter logs. Its read-only API passes
+through the authenticated Control Service to the simulator's adapter collector.
+The Simulator's **Workload logs** page shows only assigned application/service
+event logs, not Controller or adapter logs. Running machines with no supported
+workload logs have an explicit empty state.
+
+Both views poll two seconds after each collection completes, without overlapping
 requests. Pause/resume, manual refresh, search, running-only filtering, and
 follow-tail controls operate independently of machine lifecycle actions.
 Each machine window follows the newest entries by default. Scrolling back pauses
 following for that window without affecting the others; scrolling to the bottom
 resumes it. Re-enabling **Follow logs** resumes all windows. Each window's **Log**
-selector switches between Controller and Control adapter, plus any available
-workload logs, showing one source at a time. Selection survives polling, and
+radio controls switch between its available sources, showing one at a time.
+Selection survives polling, and
 each source remembers its scroll position and follow state when switching back.
 The selector also works in maximized windows; a disappeared source falls back
 to the first available source.
@@ -122,10 +189,31 @@ only approved color and text-emphasis styles are applied without relaxing CSP.
 
 Each source returns at most 100 lines and 64 KiB. Collection runs for at most
 12 seconds with four concurrent machines; empty and unavailable sources are
-shown separately. The page reads Docker controller output, PH log files, and
-workload JSON event files. It does not generate traffic or start log-producing
+shown separately. Adapter Logs reads Docker controller output and PH log files;
+Workload logs reads application/service JSON event files. Neither view generates
+traffic or starts log-producing
 workloads. Recognized credentials are redacted before sending logs to the
 browser. This is a bounded live tail, not a durable audit archive.
+
+## Trusted Data Assertions
+
+Control Room's **Assertions** page edits one global, report-only assertion set,
+independent of access policy. It evaluates live trusted LDAP membership data with
+group cardinality, exact-one membership, and mutual-exclusion rules. Manual draft
+evaluation and opt-in periodic checks are available; source failures and missing
+groups are errors, never successful checks. See [ASSERTIONS.md](ASSERTIONS.md)
+for syntax, source configuration, API contracts, and current limits.
+
+## Organization Activation
+
+Selecting a profile does not activate it. **Activate organization** opens a
+warning naming the current and target organizations: activation resets the
+simulated ZPR environment and can interrupt connections and workloads. Cancel
+is focused by default; Cancel or Escape sends no activation request. Only
+**Switch organization** approves the reset. If the active organization changes
+while the dialog is open, cancel and review the new state before trying again.
+The backend still requires scenarios to be finished/cancelled and machine users
+to be logged out.
 
 ## LDAP Organization Graph
 

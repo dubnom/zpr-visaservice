@@ -15,8 +15,14 @@
       "name": "Finance department access",
       "kind": "policy",
       "content_type": "text/vnd.zpr.zpl",
-      "metadata": {"demo": true, "ldap_attributes": ["ou -> device.demo.department"], "live": false},
-      "content": "# Uses department attributes currently mapped by demo_ldap.\ndefine AccountingStaff as a device with demo.department:Accounting.\ndefine FinanceStaff as a device with demo.department:Finance.\ndefine PayrollStaff as a device with demo.department:Payroll.\ndefine FinanceWorkspace as a service with device.zpr.adapter.cn:finance-workspace.\ndefine PayrollRecords as a service with device.zpr.adapter.cn:payroll-records.\nservice FinanceWorkspace as json {\"service_class\":\"FinanceWorkspace\",\"actor_cn\":\"finance-workspace\",\"summary\":\"Illustrative finance reporting and ledger workspace.\",\"endpoint\":\"zpr://finance-workspace\",\"status\":\"example only; not deployed\"}.\nservice PayrollRecords as json {\"service_class\":\"PayrollRecords\",\"actor_cn\":\"payroll-records\",\"summary\":\"Illustrative payroll records service.\",\"endpoint\":\"zpr://payroll-records\",\"status\":\"example only; not deployed\"}.\nallow AccountingStaff to access FinanceWorkspace.\nallow FinanceStaff to access FinanceWorkspace.\nallow PayrollStaff to access PayrollRecords.",
+      "metadata": {
+        "demo": true,
+        "ldap_attributes": [
+          "ou -> device.demo.department"
+        ],
+        "live": false
+      },
+      "content": "# Uses department attributes currently mapped by demo_ldap.\ndefine AccountingStaff as a device with demo.department:Accounting.\ndefine FinanceStaff as a device with demo.department:Finance.\ndefine PayrollStaff as a device with demo.department:Payroll.\ndefine FinanceWorkspace as a service with device.zpr.adapter.cn:finance-workspace.\ndefine PayrollRecords as a service with device.zpr.adapter.cn:payroll-records.\n\nservice FinanceWorkspace as json {\"service_class\":\"FinanceWorkspace\",\"actor_cn\":\"finance-workspace\",\"summary\":\"Illustrative finance reporting and ledger workspace.\",\"endpoint\":\"zpr://finance-workspace\",\"status\":\"example only; not deployed\"}.\n\nservice PayrollRecords as json {\"service_class\":\"PayrollRecords\",\"actor_cn\":\"payroll-records\",\"summary\":\"Illustrative payroll records service.\",\"endpoint\":\"zpr://payroll-records\",\"status\":\"example only; not deployed\"}.\n  allow AccountingStaff.\n  allow FinanceStaff.\n  allow PayrollStaff.",
       "summary": "Department-based finance workspace and payroll access"
     },
     {
@@ -24,8 +30,14 @@
       "name": "Engineering build access",
       "kind": "policy",
       "content_type": "text/vnd.zpr.zpl",
-      "metadata": {"demo": true, "ldap_attributes": ["ou -> device.demo.department"], "live": false},
-      "content": "# Platform and Product map to LDAP organizational-unit values.\ndefine PlatformStaff as a device with demo.department:Platform.\ndefine ProductStaff as a device with demo.department:Product.\ndefine EngineeringBuildFarm as a service with device.zpr.adapter.cn:engineering-build.\nservice EngineeringBuildFarm as json {\"service_class\":\"EngineeringBuildFarm\",\"actor_cn\":\"engineering-build\",\"summary\":\"Illustrative build and release system.\",\"endpoint\":\"zpr://engineering-build\",\"status\":\"example only; not deployed\"}.\nallow PlatformStaff to access EngineeringBuildFarm.\nallow ProductStaff to access EngineeringBuildFarm.",
+      "metadata": {
+        "demo": true,
+        "ldap_attributes": [
+          "ou -> device.demo.department"
+        ],
+        "live": false
+      },
+      "content": "# Platform and Product map to LDAP organizational-unit values.\ndefine PlatformStaff as a device with demo.department:Platform.\ndefine ProductStaff as a device with demo.department:Product.\ndefine EngineeringBuildFarm as a service with device.zpr.adapter.cn:engineering-build.\n\nservice EngineeringBuildFarm as json {\"service_class\":\"EngineeringBuildFarm\",\"actor_cn\":\"engineering-build\",\"summary\":\"Illustrative build and release system.\",\"endpoint\":\"zpr://engineering-build\",\"status\":\"example only; not deployed\"}.\n  allow PlatformStaff.\n  allow ProductStaff.",
       "summary": "Platform and Product access to the illustrative build farm"
     },
     {
@@ -33,8 +45,14 @@
       "name": "People operations access",
       "kind": "policy",
       "content_type": "text/vnd.zpr.zpl",
-      "metadata": {"demo": true, "ldap_attributes": ["ou -> device.demo.department"], "live": false},
-      "content": "# HR and Talent are separate LDAP department values.\ndefine HRStaff as a device with demo.department:HR.\ndefine TalentStaff as a device with demo.department:Talent.\ndefine PeopleOperationsHub as a service with device.zpr.adapter.cn:people-operations.\nservice PeopleOperationsHub as json {\"service_class\":\"PeopleOperationsHub\",\"actor_cn\":\"people-operations\",\"summary\":\"Illustrative HR case and talent operations service.\",\"endpoint\":\"zpr://people-operations\",\"status\":\"example only; not deployed\"}.\nallow HRStaff to access PeopleOperationsHub.\nallow TalentStaff to access PeopleOperationsHub.",
+      "metadata": {
+        "demo": true,
+        "ldap_attributes": [
+          "ou -> device.demo.department"
+        ],
+        "live": false
+      },
+      "content": "# HR and Talent are separate LDAP department values.\ndefine HRStaff as a device with demo.department:HR.\ndefine TalentStaff as a device with demo.department:Talent.\ndefine PeopleOperationsHub as a service with device.zpr.adapter.cn:people-operations.\n\nservice PeopleOperationsHub as json {\"service_class\":\"PeopleOperationsHub\",\"actor_cn\":\"people-operations\",\"summary\":\"Illustrative HR case and talent operations service.\",\"endpoint\":\"zpr://people-operations\",\"status\":\"example only; not deployed\"}.\n  allow HRStaff.\n  allow TalentStaff.",
       "summary": "HR and Talent access to the illustrative people hub"
     },
     {
@@ -42,8 +60,14 @@
       "name": "Security and compliance access",
       "kind": "policy",
       "content_type": "text/vnd.zpr.zpl",
-      "metadata": {"demo": true, "ldap_attributes": ["ou -> device.demo.department"], "live": false},
-      "content": "# Department-based security and compliance policy.\ndefine SecurityStaff as a device with demo.department:Security.\ndefine ComplianceStaff as a device with demo.department:Compliance.\ndefine SecurityIncidentConsole as a service with device.zpr.adapter.cn:security-console.\nservice SecurityIncidentConsole as json {\"service_class\":\"SecurityIncidentConsole\",\"actor_cn\":\"security-console\",\"summary\":\"Illustrative incident response and review console.\",\"endpoint\":\"zpr://security-console\",\"status\":\"example only; not deployed\"}.\nallow SecurityStaff to access SecurityIncidentConsole.\nallow ComplianceStaff to access SecurityIncidentConsole.",
+      "metadata": {
+        "demo": true,
+        "ldap_attributes": [
+          "ou -> device.demo.department"
+        ],
+        "live": false
+      },
+      "content": "# Department-based security and compliance policy.\ndefine SecurityStaff as a device with demo.department:Security.\ndefine ComplianceStaff as a device with demo.department:Compliance.\ndefine SecurityIncidentConsole as a service with device.zpr.adapter.cn:security-console.\n\nservice SecurityIncidentConsole as json {\"service_class\":\"SecurityIncidentConsole\",\"actor_cn\":\"security-console\",\"summary\":\"Illustrative incident response and review console.\",\"endpoint\":\"zpr://security-console\",\"status\":\"example only; not deployed\"}.\n  allow SecurityStaff.\n  allow ComplianceStaff.",
       "summary": "Department-based security and compliance access"
     },
     {
@@ -51,8 +75,15 @@
       "name": "Security role-group access",
       "kind": "policy",
       "content_type": "text/vnd.zpr.zpl",
-      "metadata": {"demo": true, "ldap_attributes": ["role -> user.role{}"], "requires_user_identity": "user.sub from AuthService", "live": false},
-      "content": "# These predicates use LDAP groupOfNames memberships on the authenticated user.\ndefine IncidentResponders as a user with user.role:'Incident Responder'.\ndefine SecurityReviewers as a user with user.role:'Security Reviewer'.\ndefine Approvers as a user with user.role:Approver.\ndefine SecurityIncidentConsole as a service with device.zpr.adapter.cn:security-console.\nservice SecurityIncidentConsole as json {\"service_class\":\"SecurityIncidentConsole\",\"actor_cn\":\"security-console\",\"summary\":\"Illustrative incident response and review console.\",\"endpoint\":\"zpr://security-console\",\"status\":\"example only; not deployed\"}.\nallow IncidentResponders to access SecurityIncidentConsole.\nallow SecurityReviewers to access SecurityIncidentConsole.\nallow Approvers to access SecurityIncidentConsole.",
+      "metadata": {
+        "demo": true,
+        "ldap_attributes": [
+          "role -> user.role{}"
+        ],
+        "requires_user_identity": "user.sub from AuthService",
+        "live": false
+      },
+      "content": "# These predicates use LDAP groupOfNames memberships on the authenticated user.\ndefine IncidentResponders as a user with user.role:'Incident Responder'.\ndefine SecurityReviewers as a user with user.role:'Security Reviewer'.\ndefine Approvers as a user with user.role:Approver.\ndefine SecurityIncidentConsole as a service with device.zpr.adapter.cn:security-console.\n\nservice SecurityIncidentConsole as json {\"service_class\":\"SecurityIncidentConsole\",\"actor_cn\":\"security-console\",\"summary\":\"Illustrative incident response and review console.\",\"endpoint\":\"zpr://security-console\",\"status\":\"example only; not deployed\"}.\n  allow IncidentResponders.\n  allow SecurityReviewers.\n  allow Approvers.",
       "summary": "Role-group access to the illustrative security console"
     },
     {
@@ -60,8 +91,14 @@
       "name": "Sales and customer success access",
       "kind": "policy",
       "content_type": "text/vnd.zpr.zpl",
-      "metadata": {"demo": true, "ldap_attributes": ["ou -> device.demo.department"], "live": false},
-      "content": "# Customer Success is quoted because its LDAP value contains a space.\ndefine FieldSales as a device with demo.department:Field.\ndefine CustomerSuccess as a device with demo.department:'Customer Success'.\ndefine SalesCRM as a service with device.zpr.adapter.cn:sales-crm.\nservice SalesCRM as json {\"service_class\":\"SalesCRM\",\"actor_cn\":\"sales-crm\",\"summary\":\"Illustrative account and customer success workspace.\",\"endpoint\":\"zpr://sales-crm\",\"status\":\"example only; not deployed\"}.\nallow FieldSales to access SalesCRM.\nallow CustomerSuccess to access SalesCRM.",
+      "metadata": {
+        "demo": true,
+        "ldap_attributes": [
+          "ou -> device.demo.department"
+        ],
+        "live": false
+      },
+      "content": "# Customer Success is quoted because its LDAP value contains a space.\ndefine FieldSales as a device with demo.department:Field.\ndefine CustomerSuccess as a device with demo.department:'Customer Success'.\ndefine SalesCRM as a service with device.zpr.adapter.cn:sales-crm.\n\nservice SalesCRM as json {\"service_class\":\"SalesCRM\",\"actor_cn\":\"sales-crm\",\"summary\":\"Illustrative account and customer success workspace.\",\"endpoint\":\"zpr://sales-crm\",\"status\":\"example only; not deployed\"}.\n  allow FieldSales.\n  allow CustomerSuccess.",
       "summary": "Field and Customer Success access to the illustrative CRM"
     },
     {
@@ -69,8 +106,14 @@
       "name": "Legal matter access",
       "kind": "policy",
       "content_type": "text/vnd.zpr.zpl",
-      "metadata": {"demo": true, "ldap_attributes": ["ou -> device.demo.department"], "live": false},
-      "content": "define LegalStaff as a device with demo.department:Legal.\ndefine LegalMatterFiles as a service with device.zpr.adapter.cn:legal-matters.\nservice LegalMatterFiles as json {\"service_class\":\"LegalMatterFiles\",\"actor_cn\":\"legal-matters\",\"summary\":\"Illustrative legal matter document store.\",\"endpoint\":\"zpr://legal-matters\",\"status\":\"example only; not deployed\"}.\nallow LegalStaff to access LegalMatterFiles.",
+      "metadata": {
+        "demo": true,
+        "ldap_attributes": [
+          "ou -> device.demo.department"
+        ],
+        "live": false
+      },
+      "content": "define LegalStaff as a device with demo.department:Legal.\ndefine LegalMatterFiles as a service with device.zpr.adapter.cn:legal-matters.\n\nservice LegalMatterFiles as json {\"service_class\":\"LegalMatterFiles\",\"actor_cn\":\"legal-matters\",\"summary\":\"Illustrative legal matter document store.\",\"endpoint\":\"zpr://legal-matters\",\"status\":\"example only; not deployed\"}.\n  allow LegalStaff.",
       "summary": "Legal department access to illustrative matter files"
     },
     {
@@ -78,8 +121,16 @@
       "name": "Secure device posture",
       "kind": "policy",
       "content_type": "text/vnd.zpr.zpl",
-      "metadata": {"demo": true, "ldap_attributes": ["zprMachineType -> device.demo.machine_type", "zprMachineLocation -> device.demo.location", "zprMachineSecure -> device.demo.secure"], "live": false},
-      "content": "# Machine posture comes from the LDAP zprMachine schema.\ndefine Laptops as a device with demo.machine_type:laptop.\ndefine NorthCampusDevices as a device with demo.location:'North Campus'.\ndefine SecureDevices as a device with demo.secure:TRUE.\ndefine SecureDeviceOperations as a service with device.zpr.adapter.cn:secure-device-operations.\nservice SecureDeviceOperations as json {\"service_class\":\"SecureDeviceOperations\",\"actor_cn\":\"secure-device-operations\",\"summary\":\"Illustrative posture-gated device operations.\",\"endpoint\":\"zpr://secure-device-operations\",\"status\":\"example only; not deployed\"}.\nallow SecureDevices to access SecureDeviceOperations.",
+      "metadata": {
+        "demo": true,
+        "ldap_attributes": [
+          "zprMachineType -> device.demo.machine_type",
+          "zprMachineLocation -> device.demo.location",
+          "zprMachineSecure -> device.demo.secure"
+        ],
+        "live": false
+      },
+      "content": "# Machine posture comes from the LDAP zprMachine schema.\ndefine Laptops as a device with demo.machine_type:laptop.\ndefine NorthCampusDevices as a device with demo.location:'North Campus'.\ndefine SecureDevices as a device with demo.secure:TRUE.\ndefine SecureDeviceOperations as a service with device.zpr.adapter.cn:secure-device-operations.\n\nservice SecureDeviceOperations as json {\"service_class\":\"SecureDeviceOperations\",\"actor_cn\":\"secure-device-operations\",\"summary\":\"Illustrative posture-gated device operations.\",\"endpoint\":\"zpr://secure-device-operations\",\"status\":\"example only; not deployed\"}.\n  allow SecureDevices.",
       "summary": "Device type, location, and secure status predicates"
     },
     {
@@ -87,8 +138,19 @@
       "name": "User department and role access",
       "kind": "policy",
       "content_type": "text/vnd.zpr.zpl",
-      "metadata": {"demo": true, "ldap_attributes": ["ou -> user.department", "title -> user.title", "cn -> user.name", "mail -> user.email", "role -> user.role{}"], "requires_user_identity": "user.sub from AuthService", "live": false},
-      "content": "# User fields and group roles require an authenticated user.sub identity.\ndefine FinanceUsers as a user with user.department:Finance.\ndefine SecurityReviewers as a user with user.role:'Security Reviewer'.\ndefine UserRecords as a service with device.zpr.adapter.cn:user-records.\nservice UserRecords as json {\"service_class\":\"UserRecords\",\"actor_cn\":\"user-records\",\"summary\":\"Illustrative user-scoped records.\",\"endpoint\":\"zpr://user-records\",\"status\":\"example only; not deployed\"}.\nallow FinanceUsers to access UserRecords.\nallow SecurityReviewers to access UserRecords.",
+      "metadata": {
+        "demo": true,
+        "ldap_attributes": [
+          "ou -> user.department",
+          "title -> user.title",
+          "cn -> user.name",
+          "mail -> user.email",
+          "role -> user.role{}"
+        ],
+        "requires_user_identity": "user.sub from AuthService",
+        "live": false
+      },
+      "content": "# User fields and group roles require an authenticated user.sub identity.\ndefine FinanceUsers as a user with user.department:Finance.\ndefine SecurityReviewers as a user with user.role:'Security Reviewer'.\ndefine UserRecords as a service with device.zpr.adapter.cn:user-records.\n\nservice UserRecords as json {\"service_class\":\"UserRecords\",\"actor_cn\":\"user-records\",\"summary\":\"Illustrative user-scoped records.\",\"endpoint\":\"zpr://user-records\",\"status\":\"example only; not deployed\"}.\n  allow FinanceUsers.\n  allow SecurityReviewers.",
       "summary": "User LDAP profile and group-role predicates"
     }
   ]

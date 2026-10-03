@@ -6,6 +6,7 @@ BIN         := $(BIN_DIR)/$(BINARY)
 GO          := go
 GOFLAGS     :=
 LDFLAGS     := -s -w
+NPM         ?= npm
 
 .DEFAULT_GOAL := build
 
@@ -26,6 +27,13 @@ run:
 .PHONY: test
 test:
 	$(GO) test ./...
+
+.PHONY: test-browser
+test-browser:
+	$(NPM) run test:browser
+
+.PHONY: test-all
+test-all: test test-browser
 
 .PHONY: status
 status:

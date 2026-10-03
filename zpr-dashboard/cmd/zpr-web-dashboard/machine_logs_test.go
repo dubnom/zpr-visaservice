@@ -120,7 +120,7 @@ func (transport logTestTransport) RoundTrip(request *http.Request) (*http.Respon
 	return transport(request)
 }
 
-func TestControlRoomUsesLogTransportOnlyForAdapterLogs(t *testing.T) {
+func TestControlRoomUsesSlowTransportForLogsAndAssertionReads(t *testing.T) {
 	var selected string
 	transport := controlRoomTransport{
 		standard: logTestTransport(func(request *http.Request) (*http.Response, error) {
@@ -134,6 +134,9 @@ func TestControlRoomUsesLogTransportOnlyForAdapterLogs(t *testing.T) {
 	}
 	for _, test := range []struct{ route, want string }{
 		{"/api/adapter-logs", "logs"},
+		{"/api/assertions/evaluate", "logs"},
+		{"/api/assertions/source", "logs"},
+		{"/api/assertions", "standard"},
 		{"/api/snapshot", "standard"},
 		{"/api/policy", "standard"},
 	} {

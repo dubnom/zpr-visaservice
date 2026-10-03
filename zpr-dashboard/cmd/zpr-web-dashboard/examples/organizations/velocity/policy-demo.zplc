@@ -11,6 +11,9 @@ zpr_address = "n0.zpr"
 [visa_service]
 dock_node = "node"
 
+[trusted_services.default]
+cert_path = ""
+
 [protocols.benchmark_http]
 l4protocol = "iana.TCP"
 port = 8080
