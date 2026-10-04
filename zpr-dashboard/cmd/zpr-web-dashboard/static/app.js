@@ -7,6 +7,20 @@ const state = { snapshot: null, timer: null, paused: false, pending: false, grap
 
 let previousPolledValues = null;
 
+const defaultTableSorts = {
+  connections: { key: "from", direction: 1 },
+  actors: { key: "cn", direction: 1 },
+  services: { key: "name", direction: 1 },
+  sources: { key: "name", direction: 1 },
+  visas: { key: "id", direction: -1 },
+  denies: { key: "count", direction: -1 },
+  "dns-counters": { key: "counter", direction: 1 },
+  "dns-zones": { key: "zone", direction: 1 },
+  "dns-records": { key: "name", direction: 1 },
+  "security-review": { key: "observed", direction: -1 },
+};
+for (const [page, sort] of Object.entries(defaultTableSorts)) state.sorts[page] = { ...sort };
+
 state.policy.fileClipboard = null;
 state.policy.showArchived = false;
 
@@ -21,6 +35,7 @@ const pages = {
   policy: "POLICY",
   visas: "VISAS",
   denies: "DENIALS",
+  "security-review": "SECURITY REVIEW",
 };
 
 function currentPage() {
@@ -51,6 +66,7 @@ function showPage(page = currentPage()) {
   }
   if (page === "policy") loadPolicyWorkspace();
   if (page === "dns") loadDNSStats();
+  if (page === "security-review" && !state.paused) void refresh();
 }
 
 function escapeHTML(value) {
@@ -105,8 +121,10 @@ function renderDNSStats(status, server, zones) {
     (view.zones || []).map((zone) => ({ ...zone, view: viewName }))
   );
   byId("dns-zone-rows").innerHTML = zoneRows.length ? zoneRows.map((zone) =>
-    `<tr><td>${escapeHTML(zone.name || "—")}<small class="dns-zone-view">${escapeHTML(zone.view)}</small></td><td>${escapeHTML(zone.type || "—")}</td><td class="mono">${escapeHTML(zone.serial ?? "—")}</td><td class="mono">${dnsNumber(zone.rcodes, "QrySuccess")}</td><td class="mono">${dnsNumber(zone.rcodes, "QryNXDOMAIN")}</td><td class="mono">${dnsNumber(zone.qtypes, "AAAA")}</td></tr>`
+    `<tr><td data-sort-value="${escapeHTML(zone.name || "—")}">${escapeHTML(zone.name || "—")}<small class="dns-zone-view">${escapeHTML(zone.view)}</small></td><td>${escapeHTML(zone.type || "—")}</td><td class="mono" data-sort-value="${escapeHTML(zone.serial ?? "")}">${escapeHTML(zone.serial ?? "—")}</td><td class="mono">${dnsNumber(zone.rcodes, "QrySuccess")}</td><td class="mono">${dnsNumber(zone.rcodes, "QryNXDOMAIN")}</td><td class="mono">${dnsNumber(zone.qtypes, "AAAA")}</td></tr>`
   ).join("") : `<tr><td colspan="6" class="empty-row">No zone statistics returned</td></tr>`;
+  sortControlRoomTableRows("dns-counters");
+  sortControlRoomTableRows("dns-zones");
 }
 
 async function loadDNSStats() {
@@ -199,10 +217,12 @@ async function loadDNSRecords(force = false) {
     const result = await response.json();
     const records = Array.isArray(result.records) ? result.records : [];
     dnsAddressNames = indexDNSAddresses(records);
+    document.dispatchEvent(new CustomEvent("control-room:dns-updated"));
     status.textContent = `${escapeHTML(result.zone || "DNS zone")} · ${formatNumber(records.length)} records`;
     rows.innerHTML = records.length ? records.map((record) =>
-      `<tr><td class="mono">${escapeHTML(record.name || "—")}</td><td class="mono">${escapeHTML(record.ttl ?? "—")}</td><td>${escapeHTML(record.type || "—")}</td><td class="mono dns-record-value">${escapeHTML(record.value || "—")}</td></tr>`
+      `<tr><td class="mono">${escapeHTML(record.name || "—")}</td><td class="mono" data-sort-value="${escapeHTML(record.ttl ?? "")}">${escapeHTML(record.ttl ?? "—")}</td><td>${escapeHTML(record.type || "—")}</td><td class="mono dns-record-value">${escapeHTML(record.value || "—")}</td></tr>`
     ).join("") : `<tr><td colspan="4" class="empty-row">No records returned</td></tr>`;
+    sortControlRoomTableRows("dns-records");
     if (state.snapshot) {
       render(state.snapshot);
     }
@@ -227,6 +247,30 @@ function visibleRows(page, rows, columns) {
     return comparison * sort.direction;
   });
 }
+
+function sortControlRoomTableRows(page) {
+  const table = document.querySelector(`table[data-sort-page="${page}"]`);
+  const sort = state.sorts[page];
+  const body = table?.tBodies[0];
+  if (!table || !sort || !body) return;
+  const columnIndex = [...table.tHead.rows[0].cells].findIndex((cell) => cell.dataset.sortKey === sort.key);
+  if (columnIndex < 0) return;
+  const rows = [...body.rows].filter((row) => !row.querySelector(".empty-row"));
+  rows.sort((left, right) => {
+    const value = (row) => row.cells[columnIndex]?.dataset.sortValue ?? row.cells[columnIndex]?.textContent.trim() ?? "";
+    const a = String(value(left));
+    const b = String(value(right));
+    const numericA = Number(a.replaceAll(",", ""));
+    const numericB = Number(b.replaceAll(",", ""));
+    const comparison = a !== "" && b !== "" && Number.isFinite(numericA) && Number.isFinite(numericB)
+      ? numericA - numericB
+      : a.localeCompare(b, undefined, { numeric: true, sensitivity: "base" });
+    return comparison * sort.direction;
+  });
+  for (const row of rows) body.append(row);
+}
+
+window.sortControlRoomTableRows = sortControlRoomTableRows;
 
 function formatDuration(seconds) {
   let remaining = Math.max(0, Math.floor(num(seconds)));
@@ -2829,6 +2873,10 @@ function render(data) {
   void loadDNSRecords();
 }
 
+function controlRoomSnapshot() {
+  return state.snapshot;
+}
+
 async function refresh() {
   if (state.pending) return;
   state.pending = true;
@@ -2837,7 +2885,9 @@ async function refresh() {
   try {
     const response = await fetch("/api/snapshot", { cache: "no-store", headers: { Accept: "application/json" } });
     if (!response.ok) throw new Error(`Monitor server responded ${response.status}`);
-    render(await response.json());
+    const snapshot = await response.json();
+    render(snapshot);
+    document.dispatchEvent(new CustomEvent("control-room:refreshed", { detail: snapshot }));
   } catch (error) {
     updateConnection({ api_status: "disconnected", errors: [error.message] });
   } finally {
@@ -2912,7 +2962,7 @@ function setPolicyPaneCollapsed(name, collapsed) {
   const workbench = byId("policy-workbench");
   const pane = byId(name === "picker" ? "policy-catalog-pane" : "policy-assistant-pane");
   const button = byId(name === "picker" ? "policy-picker-toggle" : "policy-assistant-toggle");
-  const label = name === "picker" ? "policy picker" : "Claude assistant";
+  const label = name === "picker" ? "Policy Picker" : "AI Assistant";
   workbench.dataset[`${name}Collapsed`] = String(collapsed);
   pane.dataset.collapsed = String(collapsed);
   button.setAttribute("aria-expanded", String(!collapsed));
@@ -3089,21 +3139,38 @@ const pageRenderers = {
 for (const [page, renderPage] of Object.entries(pageRenderers)) {
   const filterId = page === "actors" ? "actor-search" : `${page}-filter`;
   byId(filterId).addEventListener("input", () => state.snapshot && renderPage(state.snapshot));
-  const table = document.querySelector(`table[data-sort-page="${page}"]`);
+}
+
+for (const table of document.querySelectorAll("table[data-sort-page]")) {
+  const page = table.dataset.sortPage;
+  const renderPage = pageRenderers[page];
   for (const header of table.querySelectorAll("th[data-sort-key]")) {
     const button = document.createElement("button");
     button.type = "button";
     button.className = "sort-button";
     button.textContent = header.textContent;
+    header.classList.add("sortable-heading");
     header.replaceChildren(button);
-    button.addEventListener("click", () => {
+    const sort = state.sorts[page];
+    const active = sort.key === header.dataset.sortKey;
+    header.setAttribute("aria-sort", active ? sort.direction === 1 ? "ascending" : "descending" : "none");
+    button.setAttribute("aria-label", active
+      ? `Sort by ${button.textContent}, currently ${sort.direction === 1 ? "ascending" : "descending"}`
+      : `Sort by ${button.textContent}, ascending`);
+    header.addEventListener("click", () => {
       const previous = state.sorts[page];
-      const direction = previous?.key === header.dataset.sortKey && previous.direction === 1 ? -1 : 1;
+      const direction = previous.key === header.dataset.sortKey ? previous.direction * -1 : 1;
       state.sorts[page] = { key: header.dataset.sortKey, direction };
       for (const column of table.querySelectorAll("th[data-sort-key]")) {
-        column.setAttribute("aria-sort", column === header ? direction === 1 ? "ascending" : "descending" : "none");
+        const selected = column === header;
+        const selectedDirection = direction === 1 ? "ascending" : "descending";
+        column.setAttribute("aria-sort", selected ? selectedDirection : "none");
+        column.querySelector(".sort-button").setAttribute("aria-label", selected
+          ? `Sort by ${column.textContent}, currently ${selectedDirection}`
+          : `Sort by ${column.textContent}, ascending`);
       }
-      if (state.snapshot) renderPage(state.snapshot);
+      if (renderPage && state.snapshot) renderPage(state.snapshot);
+      else sortControlRoomTableRows(page);
     });
   }
 }

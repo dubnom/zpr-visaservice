@@ -419,6 +419,197 @@ const test = base.extend({
 
 registerAssertionBrowserTests();
 
+test("Security Review reports denial and log evidence and compares new inventory to its local baseline", async ({ page, appURL, api }) => {
+  api.snapshot.actors = [{ cn: "adapter-a", node: false, zpr_addr: "fd00::1" }];
+  api.snapshot.services = [{ service_name: "base-service", actor_cn: "adapter-a", service_kind: "Regular" }];
+  api.snapshot.recent_denies = [{ source_addr: "fd00::bad", dest_addr: "fd00::1", protocol: 6, dest_port: 443, count: 5, last_deny_ms: Date.now(), deny_code: "Denied" }];
+  api.snapshot.actors.push({ cn: "node-a", node: true, zpr_addr: "fd00::3", node_details: { in_sync: false, last_contact: Math.floor(Date.now() / 1000) - 600, pending_install: 1 } });
+  api.snapshot.actors.push({ cn: "node-b", node: true, zpr_addr: "fd00::4", node_details: { in_sync: true, last_contact: Math.floor(Date.now() / 1000) - 600 } });
+  api.snapshot.trusted_sources = [{ name: "directory", health: "failed", health_note: "The most recent attribute lookup failed.", last_lookup_ms: Date.now() }];
+  api.adapterLogs = { machines: [{ machine: { id: "machine-01" }, sources: [{ name: "Controller", lines: ["authentication failed for unknown identity"] }] }] };
+  const mutations = [];
+  page.on("request", (request) => { if (request.method() !== "GET") mutations.push(request.method()); });
+  await page.goto(appURL + "/#security-review");
+  const findings = page.locator("#security-review-findings");
+  await expect(findings).toContainText("Repeated policy denials");
+  await expect(findings).toContainText("5 denied requests");
+  await expect(findings).toContainText("Security-related log message");
+  await expect(findings).toContainText("authentication failed for unknown identity");
+  await expect(findings).toContainText("Trusted-source lookup failed");
+  await expect(findings).toContainText("The most recent attribute lookup failed.");
+  await expect(findings).toContainText("Node out of sync");
+  await expect(findings).toContainText("1 pending installs");
+  await expect(findings).toContainText("Node contact stale");
+  await expect(page.locator("#security-review-baseline")).toContainText("3 actors · 1 services");
+  await expect(findings).not.toContainText("Actor first observed since baseline");
+  await expect(findings).not.toContainText("Service first observed since baseline");
+
+  api.snapshot.actors.push({ cn: "new-actor", node: false, zpr_addr: "fd00::2" });
+  api.snapshot.services.push({ service_name: "new-service", actor_cn: "new-actor", service_kind: "Regular" });
+  await page.locator("#refresh-now").click();
+  await expect(findings).toContainText("Actor first observed since baseline");
+  await expect(findings).toContainText("Service first observed since baseline");
+  expect(mutations).toEqual([]);
+});
+
+test("Security Review dismisses individual, selected and all findings and can restore them", async ({ page, appURL, api }) => {
+  api.snapshot.actors = [{ cn: "adapter-a", node: false, zpr_addr: "fd00::1" }];
+  api.snapshot.trusted_sources = [{ name: "directory", health: "failed", health_note: "Lookup failed", last_lookup_ms: Date.now() }];
+  api.snapshot.recent_denies = [{ source_addr: "fd00::bad", dest_addr: "fd00::1", count: 5, deny_code: "Denied" }];
+  await page.goto(appURL + "/#security-review");
+  const findings = page.locator("#security-review-findings");
+  const denial = findings.locator("tr").filter({ hasText: "Repeated policy denials" });
+  const sourceFailure = findings.locator("tr").filter({ hasText: "Trusted-source lookup failed" });
+  await expect(denial).toBeVisible();
+  await expect(sourceFailure).toBeVisible();
+  await expect(page.locator(".security-review-baseline-help")).toContainText("Only later changes are flagged");
+  await expect(page.locator(".security-review-baseline-help")).toContainText("Dismissals are separate");
+
+  await denial.getByRole("button", { name: /^Dismiss/ }).click();
+  await expect(findings).not.toContainText("Repeated policy denials");
+  await sourceFailure.getByRole("checkbox").check();
+  await page.getByRole("button", { name: "Dismiss selected", exact: true }).click();
+  await expect(findings).toContainText("No active findings match this filter.");
+  await page.getByRole("checkbox", { name: "Show dismissed" }).check();
+  await expect(findings).toContainText("Repeated policy denials");
+  await expect(findings).toContainText("Trusted-source lookup failed");
+
+  const dismissedDenial = findings.locator("tr").filter({ hasText: "Repeated policy denials" });
+  await dismissedDenial.getByRole("button", { name: /^Restore/ }).click();
+  await expect(dismissedDenial).toHaveAttribute("data-dismissed", "false");
+  await page.getByRole("button", { name: "Dismiss all", exact: true }).click();
+  await expect(findings.locator('tr[data-dismissed="false"]')).toHaveCount(0);
+  await page.reload();
+  await page.getByRole("checkbox", { name: "Show dismissed" }).check();
+  await expect(findings).toContainText("Repeated policy denials");
+  await expect(findings).toContainText("Trusted-source lookup failed");
+});
+
+test("Security Review uses Control Room polling, pause, interval and manual refresh", async ({ page, appURL, api }) => {
+  await page.clock.install();
+  api.snapshot.actors = [{ cn: "adapter", node: false, zpr_addr: "fd00::1" }];
+  await page.goto(appURL + "/#security-review");
+  await expect(page.locator("#security-review-baseline")).toContainText("1 actors");
+  await expect(page.locator("#security-review-scan")).toHaveCount(0);
+  expect(api.counts.get("/api/snapshot")).toBe(1);
+  expect(api.counts.get("/api/adapter-logs")).toBe(1);
+  await page.locator("#poll-rate").selectOption("3");
+  await page.clock.runFor(3100);
+  await expect.poll(() => api.counts.get("/api/snapshot")).toBe(2);
+  await expect.poll(() => api.counts.get("/api/adapter-logs")).toBe(2);
+  await page.locator("#pause-poll").click();
+  const snapshots = api.counts.get("/api/snapshot");
+  const logs = api.counts.get("/api/adapter-logs");
+  await page.clock.runFor(10000);
+  expect(api.counts.get("/api/snapshot")).toBe(snapshots);
+  expect(api.counts.get("/api/adapter-logs")).toBe(logs);
+  api.snapshot.recent_denies = [{ source_addr: "fd00::2", dest_addr: "fd00::1", count: 5, deny_code: "Denied" }];
+  await page.locator("#refresh-now").click();
+  await expect(page.locator("#security-review-findings")).toContainText("Repeated policy denials");
+  await expect.poll(() => api.counts.get("/api/snapshot")).toBe(snapshots + 1);
+  await page.getByRole("link", { name: "Services", exact: true }).click();
+  await page.locator("#pause-poll").click();
+  const before = api.counts.get("/api/adapter-logs");
+  await page.clock.runFor(3100);
+  expect(api.counts.get("/api/adapter-logs")).toBe(before);
+});
+
+test("Security Review resolves entity and evidence addresses with IP hover details", async ({ page, appURL, api }) => {
+  api.snapshot.actors = [{ cn: "adapter", node: false, zpr_addr: "fd00::1" }];
+  api.snapshot.recent_denies = [{ source_addr: "fd00:0:0:0:0:0:0:bad", dest_addr: "fd00::1", count: 5, deny_code: "Denied" }];
+  api.dnsRecords.records = [
+    { name: "caller.svc.zpr.", type: "AAAA", value: "fd00::bad" },
+    { name: "database.svc.zpr.", type: "AAAA", value: "fd00::1" },
+    { name: "new-actor.svc.zpr.", type: "AAAA", value: "fd00::2" },
+  ];
+  api.adapterLogs.machines[0].sources[0].lines = ["authentication failed from fd00::bad to fd00::1 <img src=x>"];
+  await page.goto(appURL + "/#security-review");
+  const findings = page.locator("#security-review-findings");
+  const denial = findings.locator("tr").filter({ hasText: "Repeated policy denials" });
+  await expect(denial.locator("td").nth(3)).toHaveText("caller.svc.zpr");
+  await expect(denial.locator("td").nth(3).locator(".security-address")).toHaveAttribute("title", "IP address: fd00:0:0:0:0:0:0:bad");
+  await expect(denial.locator("td").nth(4)).toContainText("database.svc.zpr");
+  await expect(denial.locator("td").nth(4).locator(".security-address")).toHaveAttribute("title", "IP address: fd00::1");
+  await expect(findings).toContainText("authentication failed from caller.svc.zpr to database.svc.zpr <img src=x>");
+  await expect(findings.locator("img")).toHaveCount(0);
+  api.snapshot.actors.push({ cn: "new-actor", node: false, zpr_addr: "fd00::2" });
+  await page.locator("#refresh-now").click();
+  const actor = findings.locator("tr").filter({ hasText: "Actor first observed since baseline" });
+  await expect(actor.locator("td").nth(3)).toHaveText("new-actor.svc.zpr");
+  await expect(actor.locator("td").nth(3).locator(".security-address")).toHaveAttribute("title", "IP address: fd00::2");
+  await page.locator("#security-review-filter").fill("caller.svc.zpr");
+  await expect(denial).toBeVisible();
+  await page.locator("#security-review-filter").fill("");
+  await page.locator("#pause-poll").click();
+  const collections = api.counts.get("/api/adapter-logs");
+  api.dnsRecords.records[0].name = "renamed-caller.svc.zpr.";
+  await page.evaluate(() => loadDNSRecords(true));
+  await expect(denial.locator("td").nth(3)).toHaveText("renamed-caller.svc.zpr");
+  expect(api.counts.get("/api/adapter-logs")).toBe(collections);
+});
+
+test("sortable tables show defaults and clicks select then reverse a column", async ({ page, appURL, api }) => {
+  api.handlers.set("/api/dns/stats/json/v1/status", async (route) => route.fulfill({ json: { "current-time": "2026-10-04T12:00:00Z" } }));
+  api.handlers.set("/api/dns/stats/json/v1/server", async (route) => route.fulfill({ json: { version: "9.18", nsstats: { Requestv4: 20, Requestv6: 1, QryUDP: 20, QryTCP: 20, QryAuthAns: 20, QrySuccess: 20, QryNXDOMAIN: 20, QrySERVFAIL: 20, UpdateDone: 20, UpdateFail: 20 } } }));
+  api.handlers.set("/api/dns/stats/json/v1/zones", async (route) => route.fulfill({ json: { views: { default: { zones: [
+    { name: "alpha.svc.zpr.", type: "master", serial: 10, rcodes: { QrySuccess: 20, QryNXDOMAIN: 2 }, qtypes: { AAAA: 12 } },
+    { name: "zeta.svc.zpr.", type: "master", serial: 2, rcodes: { QrySuccess: 15, QryNXDOMAIN: 1 }, qtypes: { AAAA: 8 } },
+  ] } } } }));
+  api.dnsRecords.records = [
+    { name: "zeta.svc.zpr.", ttl: 100, type: "AAAA", value: "fd00::2" },
+    { name: "alpha.svc.zpr.", ttl: 300, type: "AAAA", value: "fd00::1" },
+  ];
+  api.snapshot.recent_denies = [
+    { source_addr: "fd00::a", dest_addr: "fd00::1", count: 5, last_deny_ms: 1000, deny_code: "Denied" },
+    { source_addr: "fd00::b", dest_addr: "fd00::1", count: 5, last_deny_ms: 2000, deny_code: "Denied" },
+  ];
+  const tables = [
+    ["connections", "connections", "from", "ascending", "to"],
+    ["actors", "actors", "cn", "ascending", "role"],
+    ["services", "services", "name", "ascending", "kind"],
+    ["sources", "sources", "name", "ascending", "provider"],
+    ["visas", "visas", "id", "descending", "flow"],
+    ["denies", "denies", "count", "descending", "source"],
+    ["dns", "dns-counters", "counter", "ascending", "value"],
+    ["dns", "dns-zones", "zone", "ascending", "serial"],
+    ["dns", "dns-records", "name", "ascending", "ttl"],
+    ["security-review", "security-review", "observed", "descending", "indicator"],
+  ];
+  for (const [route, pageName, defaultKey, defaultDirection, nextKey] of tables) {
+    await page.goto(`${appURL}/#${route}`);
+    const table = page.locator(`table[data-sort-page="${pageName}"]`);
+    if (pageName === "dns-counters") await expect(table.locator("tbody tr")).toHaveCount(10);
+    if (pageName === "dns-zones") await expect(table.locator("tbody tr")).toHaveCount(2);
+    if (pageName === "dns-records") await expect(table.locator("tbody tr")).toHaveCount(2);
+    if (pageName === "security-review") await expect(table.locator("tbody tr")).toHaveCount(2);
+    const selected = table.locator(`th[data-sort-key="${defaultKey}"]`);
+    await expect(selected).toHaveAttribute("aria-sort", defaultDirection);
+    const expectedArrow = defaultDirection === "ascending" ? '"↑"' : '"↓"';
+    await expect.poll(() => selected.locator(".sort-button").evaluate((button) => getComputedStyle(button, "::after").content)).toBe(expectedArrow);
+    const selectedBackground = await selected.evaluate((header) => getComputedStyle(header).backgroundColor);
+    const inactiveBackground = await table.locator(`th[data-sort-key="${nextKey}"]`).evaluate((header) => getComputedStyle(header).backgroundColor);
+    expect(selectedBackground).not.toBe(inactiveBackground);
+    const next = table.locator(`th[data-sort-key="${nextKey}"]`);
+    const box = await next.boundingBox();
+    await next.click({ position: { x: 2, y: (box?.height || 34) / 2 } });
+    await expect(next).toHaveAttribute("aria-sort", "ascending");
+    await expect.poll(() => next.locator(".sort-button").evaluate((button) => getComputedStyle(button, "::after").content)).toBe('"↑"');
+    await next.getByRole("button").click();
+    await expect(next).toHaveAttribute("aria-sort", "descending");
+    await expect.poll(() => next.locator(".sort-button").evaluate((button) => getComputedStyle(button, "::after").content)).toBe('"↓"');
+  }
+  await page.goto(`${appURL}/#dns`);
+  await expect(page.locator("#dns-record-rows tr").first().locator("td").first()).toHaveText("alpha.svc.zpr.");
+  await page.locator('table[data-sort-page="dns-records"] th[data-sort-key="ttl"]').click();
+  await expect(page.locator("#dns-record-rows tr").first().locator("td").first()).toHaveText("zeta.svc.zpr.");
+  await page.goto(`${appURL}/#security-review`);
+  await expect(page.locator("#security-review-findings tr")).toHaveCount(2);
+  await expect(page.locator("#security-review-findings tr").first().locator("td").nth(2)).toHaveText("fd00::b");
+  await page.locator('table[data-sort-page="security-review"] th[data-sort-key="entity"]').click();
+  await expect(page.locator("#security-review-findings tr").first().locator("td").nth(2)).toHaveText("fd00::a");
+  expect(api.counts.get("/api/snapshot")).toBeGreaterThan(0);
+});
+
 test("Trusted Sources omits explanatory headings and counts while retaining source controls", async ({ page, appURL, api }) => {
   await page.goto(appURL + "/#sources");
   const sources = page.locator("#page-sources");
@@ -560,15 +751,20 @@ for (const navigation of [
     const activeLink = page.locator(".primary-nav .nav-link.active");
     await expect(activeLink).toHaveText(navigation.label);
     if (navigation.app === "Control Room") {
-      const brand = page.locator('.sidebar-header .brand[aria-label="ZPR Control Room map"]');
+      await expect(page.getByRole("link", { name: "Browse policy & assertions", exact: true })).toHaveCount(0);
+    }
+    {
+      const brand = page.locator(".sidebar-header .brand");
       await expect(brand).toBeVisible();
       await expect(brand).toContainText("ZPR");
-      await expect(brand).toContainText("CONTROL ROOM");
+      await expect(brand).toContainText(navigation.app === "Control Room" ? "CONTROL ROOM" : "SIMULATOR");
       await expect(brand.locator(".brand-mark")).toBeVisible();
       const alignedBesideToggle = () => brand.evaluate((element) => {
         const brandRect = element.getBoundingClientRect();
+        const headerRect = element.parentElement.getBoundingClientRect();
         const toggleRect = element.parentElement.querySelector(".sidebar-toggle").getBoundingClientRect();
-        return Math.abs((brandRect.top + brandRect.bottom) / 2 - (toggleRect.top + toggleRect.bottom) / 2) <= 2
+        return Math.abs(brandRect.left - headerRect.left) <= 1
+          && Math.abs((brandRect.top + brandRect.bottom) / 2 - (toggleRect.top + toggleRect.bottom) / 2) <= 2
           && toggleRect.left >= brandRect.right
           && toggleRect.left - brandRect.right <= 12;
       });
@@ -577,13 +773,15 @@ for (const navigation of [
     await page.getByRole("button", { name: "Condense side menu", exact: true }).click();
     await expect(page.locator("body")).toHaveClass(/sidebar-condensed/);
     await expect(activeLink).toBeVisible();
-    if (navigation.app === "Control Room") {
-      const brand = page.locator('.sidebar-header .brand[aria-label="ZPR Control Room map"]');
+    {
+      const brand = page.locator(".sidebar-header .brand");
       await expect(brand).toBeVisible();
       const alignedBesideToggle = await brand.evaluate((element) => {
         const brandRect = element.getBoundingClientRect();
+        const headerRect = element.parentElement.getBoundingClientRect();
         const toggleRect = element.parentElement.querySelector(".sidebar-toggle").getBoundingClientRect();
-        return Math.abs((brandRect.top + brandRect.bottom) / 2 - (toggleRect.top + toggleRect.bottom) / 2) <= 2
+        return Math.abs(brandRect.left - headerRect.left) <= 1
+          && Math.abs((brandRect.top + brandRect.bottom) / 2 - (toggleRect.top + toggleRect.bottom) / 2) <= 2
           && toggleRect.left >= brandRect.right
           && toggleRect.left - brandRect.right <= 12;
       });
@@ -641,7 +839,7 @@ test("policy Format removes leading whitespace and gaps inside definition and se
   expect(crlf).toBe("service Api as json {}.\r\n  allow Employee.\r\n");
 });
 
-test("policy picker and Claude assistant collapse independently and preserve their state", async ({ page, appURL, api }) => {
+test("policy picker and AI assistant collapse independently with readable vertical labels", async ({ page, appURL, api }, testInfo) => {
   await page.goto(appURL + "/#policy");
   await expect(page.locator("#policy-record-title")).toHaveText("Test policy");
   const workbench = page.locator("#policy-workbench");
@@ -657,9 +855,11 @@ test("policy picker and Claude assistant collapse independently and preserve the
   await expect(pickerToggle).toHaveAttribute("aria-expanded", "false");
   await expect(page.locator("#policy-category-tree")).toBeHidden();
   const pickerLabel = pickerToggle.locator(".pane-toggle-label");
-  await expect(pickerLabel).toHaveText("Picker");
-  await expect(pickerLabel).toHaveCSS("writing-mode", (page.viewportSize()?.width || 1000) <= 600 ? "horizontal-tb" : "vertical-rl");
-  if ((page.viewportSize()?.width || 1000) > 600) await expect(pickerLabel).toHaveCSS("text-orientation", "upright");
+  await expect(pickerLabel).toHaveText("Policy Picker");
+  await expect(pickerLabel).toHaveCSS("writing-mode", "vertical-rl");
+  await expect(pickerLabel).toHaveCSS("text-orientation", "mixed");
+  await expect(pickerLabel).toHaveCSS("transform", "matrix(-1, 0, 0, -1, 0, 0)");
+  await expect(pickerLabel).toHaveCSS("font-size", "14px");
   const pickerCollapsedWidth = await editor.evaluate((element) => element.getBoundingClientRect().width);
   if ((page.viewportSize()?.width || 1000) > 900) {
     await expect.poll(() => editor.evaluate((element) => element.getBoundingClientRect().width)).toBeGreaterThan(initialEditorWidth);
@@ -670,9 +870,20 @@ test("policy picker and Claude assistant collapse independently and preserve the
   await expect(assistantToggle).toHaveAttribute("aria-expanded", "false");
   await expect(page.locator(".assistant-settings")).toBeHidden();
   const assistantLabel = assistantToggle.locator(".pane-toggle-label");
-  await expect(assistantLabel).toHaveText("Claude");
-  await expect(assistantLabel).toHaveCSS("writing-mode", (page.viewportSize()?.width || 1000) <= 600 ? "horizontal-tb" : "vertical-rl");
-  if ((page.viewportSize()?.width || 1000) > 600) await expect(assistantLabel).toHaveCSS("text-orientation", "upright");
+  await expect(assistantLabel).toHaveText("AI Assistant");
+  await expect(assistantLabel).toHaveCSS("writing-mode", "vertical-rl");
+  await expect(assistantLabel).toHaveCSS("text-orientation", "mixed");
+  await expect(assistantLabel).toHaveCSS("transform", "matrix(-1, 0, 0, -1, 0, 0)");
+  await expect(assistantLabel).toHaveCSS("font-size", "14px");
+  for (const [button, label] of [[pickerToggle, pickerLabel], [assistantToggle, assistantLabel]]) {
+    const outer = await button.boundingBox();
+    const inner = await label.boundingBox();
+    expect(inner.x).toBeGreaterThanOrEqual(outer.x);
+    expect(inner.y).toBeGreaterThanOrEqual(outer.y);
+    expect(inner.x + inner.width).toBeLessThanOrEqual(outer.x + outer.width);
+    expect(inner.y + inner.height).toBeLessThanOrEqual(outer.y + outer.height);
+  }
+  await page.screenshot({ path: testInfo.outputPath("policy-pane-labels.png"), fullPage: true });
   const bothCollapsedWidth = await editor.evaluate((element) => element.getBoundingClientRect().width);
   if ((page.viewportSize()?.width || 1000) > 900) {
     await expect.poll(() => editor.evaluate((element) => element.getBoundingClientRect().width)).toBeGreaterThan(pickerCollapsedWidth);
@@ -1036,12 +1247,62 @@ test("log errors, empty workloads and removed sources are explicit", async ({ pa
   await expect(first.locator(".machine-log-error")).toHaveText("Log source unavailable");
   api.workloadLogs.machines[0].sources.splice(1, 1);
   await refreshLogs(page);
-  await expect(first.getByRole("radio", { name: "finance-client events", exact: true })).toBeChecked();
-  await expect(first.getByRole("radio")).toHaveCount(1);
+  await expect(first.getByRole("radio", { name: "echo-service events", exact: true })).toBeChecked();
+  await expect(first.getByRole("radio")).toHaveCount(2);
+  await expect(first.locator(".machine-log-output")).toContainText("echo-service events entry 79");
+  await expect(first).not.toHaveClass(/running/);
   api.statuses.set("/api/simulator/machine-logs", 503);
   await refreshLogs(page);
   await expect(page.locator("#machine-logs-error")).toBeVisible();
-  await expect(first.locator(".machine-log-output")).toContainText("finance-client events entry 79");
+  await expect(first.locator(".machine-log-output")).toContainText("echo-service events entry 79");
+});
+
+for (const view of [
+  { name: "adapter", path: "/#adapter-logs", data: "adapterLogs", source: "Control adapter", columns: true },
+  { name: "controller", path: "/#adapter-logs", data: "adapterLogs", source: "Controller", columns: true },
+  { name: "application/service", path: "/machine-logs.html", data: "workloadLogs", source: "finance-client events", columns: false },
+]) {
+  test(`${view.name} log panel retains its tail and turns white when disconnected`, async ({ page, appURL, api }) => {
+    await page.goto(appURL + view.path);
+    const panels = page.locator(view.columns ? ".adapter-log-column" : ".machine-log-panel");
+    await expect(panels.first()).toBeVisible();
+    await page.locator("#machine-logs-pause").click();
+    if (view.name === "controller") await page.getByRole("button", { name: "Controller logs", exact: true }).click();
+    const first = panels.first();
+    const output = first.locator(".machine-log-output");
+    await expect(output).toContainText(`${view.source} entry 79`);
+    const tail = await output.locator("pre").textContent();
+    await output.evaluate((element) => { element.scrollTop = 0; element.dispatchEvent(new Event("scroll")); });
+    const source = api[view.data].machines[0].sources.find((source) => source.name === view.source);
+    api[view.data].machines[0].state = "stopped";
+    api[view.data].machines[0].sources = [];
+    await refreshLogs(page);
+    await expect(output.locator("pre")).toHaveText(tail);
+    await expect(output).toContainText("Disconnected");
+    await expect(first).not.toHaveClass(/running/);
+    await expect(first).toHaveCSS("background-color", "rgb(255, 255, 255)");
+    expect(await output.evaluate((element) => element.scrollTop)).toBe(0);
+    api[view.data].machines[0].state = "running";
+    api[view.data].machines[0].sources = [{ ...source, lines: ["Reconnected with a new tail"] }];
+    await refreshLogs(page);
+    await expect(output.locator("pre")).toHaveText("Reconnected with a new tail");
+    await expect(first).toHaveClass(/running/);
+    await expect(output).toHaveCSS("background-color", "rgb(0, 0, 0)");
+  });
+}
+
+test("log tail retention is cleared when the organization changes", async ({ page, appURL, api }) => {
+  await page.goto(appURL + "/#adapter-logs");
+  const first = page.locator(".adapter-log-column").first();
+  await expect(first.locator(".machine-log-output")).toContainText("Control adapter entry 79");
+  await page.locator("#machine-logs-pause").click();
+  api.adapterLogs.organization_id = "different-organization";
+  api.adapterLogs.machines[0].state = "stopped";
+  api.adapterLogs.machines[0].sources = [];
+  api.adapterLogs.machines[1].sources = [];
+  await refreshLogs(page);
+  await expect(first.locator(".machine-log-output")).not.toContainText("Control adapter entry 79");
+  await expect(first.locator(".machine-log-output")).toContainText("No adapter logs available");
 });
 
 test("Adapter Logs polls only while its Control Room page is active", async ({ page, appURL, api }) => {

@@ -30,6 +30,34 @@ source receives an editor link; the browser authenticates directly to the
 editor with a separate LDAP admin login. The monitor does not proxy LDAP edits
 or store the admin password.
 
+## Security Review
+
+The Control Room Security Review is a read-only triage view using the normal
+Control Room Refresh, Pause, and refresh-interval controls. It consumes the
+shared inventory snapshot and collects adapter logs only while its page is
+active, without overlapping log reads or a separate polling timer. It groups
+recent policy denials by source, flags counts of five or more, compares actors
+and service identities/endpoints with a baseline stored in the current browser,
+reports failed trusted-source lookups and nodes that are out of sync or have
+not contacted the service in five minutes, and looks for explicit
+authentication, certificate, and authorization failure phrases in adapter
+logs. New identities and matching log lines are leads for operator review, not
+proof of intrusion. The view does not block traffic or change policy, actors,
+services, or logs; it only sees events exposed by the current snapshot and
+available adapter logs.
+
+Dismissals are stored separately in the current browser. Operators can dismiss
+one finding, selected findings, or all active findings, then show and restore
+dismissed items. Changed evidence creates a new finding identity, so updated
+activity can reappear. The inventory baseline is also browser-local, but
+resetting it does not clear dismissals, and dismissing findings does not change
+the baseline.
+
+Entity and evidence IPs use the shared DNS record cache for display names, with
+raw addresses on hover. Filtering matches both names and original addresses.
+DNS-cache updates relabel existing findings without another log collection;
+unresolved addresses remain visible rather than inventing a name.
+
 ## Trusted-service model
 
 In ZPL, trusted services are service classes/contracts, not a synonym for

@@ -7,6 +7,8 @@
   const pageActive = () => controlRoom ? location.hash === "#adapter-logs" : location.pathname === "/machine-logs.html";
   const refreshButton = document.getElementById("machine-logs-refresh");
   const cards = new Map();
+  const sourceCache = new Map();
+  let organizationID;
   const adapterColumns = [];
   let nextAdapterColumnID = 1;
   let adapterColumnsInitialized = false;
@@ -16,6 +18,50 @@
   let active = pageActive();
   let timer;
   let pending;
+
+  function retainSourceTails(result) {
+    if (organizationID !== result.organization_id) sourceCache.clear();
+    organizationID = result.organization_id;
+    const present = new Set();
+    const retained = (result.machines || []).map((entry) => {
+      present.add(entry.machine.id);
+      const cached = sourceCache.get(entry.machine.id) || { entry, sources: new Map() };
+      const names = new Set();
+      const sources = (entry.sources || []).map((source) => {
+        names.add(source.name);
+        const previous = cached.sources.get(source.name);
+        const disconnected = entry.state !== "running" || Boolean(source.error);
+        const lines = Array.isArray(source.lines) ? source.lines : [];
+        if (!source.error && !disconnected) cached.sources.set(source.name, { ...source, lines });
+        return { ...source, lines: disconnected && previous ? previous.lines : lines, disconnected };
+      });
+      for (const [name, source] of cached.sources) {
+        if (!names.has(name)) sources.push({ ...source, disconnected: true });
+      }
+      cached.entry = entry;
+      sourceCache.set(entry.machine.id, cached);
+      return { ...entry, sources };
+    });
+    for (const [id, cached] of sourceCache) {
+      if (!present.has(id)) retained.push({ ...cached.entry, state: "missing", sources: [...cached.sources.values()].map((source) => ({ ...source, disconnected: true })) });
+    }
+    return retained;
+  }
+
+  function renderSource(output, source, emptyMessage) {
+    output.replaceChildren();
+    if (!source || source.disconnected || source.error) {
+      const status = document.createElement("p");
+      status.className = "machine-log-error";
+      status.textContent = source?.error || (source?.disconnected ? "Disconnected" : emptyMessage);
+      output.append(status);
+    }
+    if (source && (source.lines.length || !source.disconnected && !source.error)) {
+      const content = document.createElement("pre");
+      renderColoredLog(content, source.lines.join("\n") || "No log entries.");
+      output.append(content);
+    }
+  }
 
   function renderColoredLog(target, text) {
     const ansi = new AnsiUp();
@@ -216,23 +262,14 @@
       const selected = choices.find((choice) => choice.key === column.selectedKey);
       const entry = selected?.machine;
       const source = selected?.source;
-      column.panel.classList.toggle("running", entry?.state === "running");
+      column.panel.classList.toggle("running", entry?.state === "running" && !source?.disconnected);
       column.title.textContent = selected ? `${source.name} · ${entry.machine.id}` : `${type === "controller" ? "Controller" : "Adapter"} logs`;
       column.output.setAttribute("aria-label", selected ? `${entry.machine.id} ${source.name} logs` : `${type} logs`);
       const contentSignature = JSON.stringify({ state: entry?.state || "missing", source });
       if (contentSignature !== column.signature) {
         const scrollTop = column.nextScrollTop ?? column.output.scrollTop;
         column.nextScrollTop = undefined;
-        column.output.replaceChildren();
-        const content = document.createElement(source?.error ? "p" : "pre");
-        if (!selected) {
-          content.textContent = `No ${type} logs available.`;
-          content.className = "machine-log-error";
-        } else if (source.error) {
-          content.textContent = source.error;
-          content.className = "machine-log-error";
-        } else renderColoredLog(content, source.lines.join("\n") || "No log entries.");
-        column.output.append(content);
+        renderSource(column.output, source, `No ${type} logs available.`);
         column.signature = contentSignature;
         column.output.scrollTop = scrollTop;
       }
@@ -306,7 +343,6 @@
         });
         cards.set(machine.id, card);
       }
-      card.panel.classList.toggle("running", entry.state === "running");
       card.name.textContent = machine.id;
       card.meta.textContent = [machine.model, machine.location, entry.user].filter(Boolean).join(" / ");
       card.status.textContent = entry.state || "missing";
@@ -345,25 +381,14 @@
         radio.disabled = sources.length < 2;
       }
       const source = sources.find((source) => source.name === card.selectedSource);
+      card.panel.classList.toggle("running", entry.state === "running" && !source?.disconnected);
+      if (source?.disconnected) card.status.textContent = "disconnected";
       card.output.setAttribute("aria-label", `${machine.id} ${card.selectedSource || "machine"} logs`);
       const signature = JSON.stringify({ state: entry.state, source });
       if (signature !== card.signature) {
         const scrollTop = card.nextScrollTop ?? card.output.scrollTop;
         card.nextScrollTop = undefined;
-        card.output.replaceChildren();
-        if (!source) {
-          const empty = document.createElement("p");
-          empty.textContent = entry.state === "running" ? controlRoom ? "No adapter logs available." : "No application/service logs assigned." : "Machine is not running.";
-          card.output.append(empty);
-        }
-        if (source) {
-          const lines = document.createElement(source.error ? "p" : "pre");
-          if (source.error) {
-            lines.textContent = source.error;
-            lines.className = "machine-log-error";
-          } else renderColoredLog(lines, source.lines.join("\n") || "No log entries.");
-          card.output.append(lines);
-        }
+        renderSource(card.output, source, entry.state === "running" ? "No application/service logs assigned." : "Machine is not running.");
         card.signature = signature;
         card.output.scrollTop = scrollTop;
       }
@@ -394,13 +419,15 @@
       const result = await response.json();
       if (!response.ok) throw new Error(result.error || `HTTP ${response.status}`);
       if (!active) return;
-      machines = result.machines || [];
+      machines = retainSourceTails(result);
       render();
       document.getElementById("machine-logs-error").hidden = true;
       document.getElementById("machine-logs-time").textContent = new Date(result.updated_at).toLocaleTimeString();
       document.getElementById("machine-logs-status").textContent = `${result.organization_id} / ${paused ? "Paused" : "Live"}`;
     } catch (error) {
       if (error.name !== "AbortError" && active) {
+        machines = machines.map((entry) => ({ ...entry, state: "disconnected", sources: (entry.sources || []).map((source) => ({ ...source, disconnected: true })) }));
+        render();
         const message = document.getElementById("machine-logs-error");
         message.textContent = error.message || "Machine logs unavailable";
         message.hidden = false;

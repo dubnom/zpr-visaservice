@@ -23,7 +23,7 @@ case "${1:-}" in
         fi
         docker volume create "$volume" >/dev/null
         docker run --rm -v "$volume:/data" --entrypoint chown "$image" 10001:10001 /data
-        docker run -d --name "$container" --network none --pid "container:$rig" --privileged \
+        docker run -d --name "$container" --restart unless-stopped --network none --pid "container:$rig" --privileged \
             --env-file "$ZPR_OBSERVABILITY_ENV_FILE" \
             -e ZPR_OBSERVABILITY_ADAPTER_NAME="$ZPR_OBSERVABILITY_ADAPTER_NAME" \
             -e ZPR_OBSERVABILITY_ADDR="$ZPR_OBSERVABILITY_ADDR" \

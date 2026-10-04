@@ -49,10 +49,10 @@
       header.append(button);
       sidebar.prepend(header);
     }
-    const brand = sidebar.querySelector('.brand[aria-label="ZPR Control Room map"]');
+    const brand = sidebar.querySelector(".brand");
     const header = sidebar.querySelector(".sidebar-header");
     if (brand) {
-      sidebar.classList.add("sidebar-control-room");
+      sidebar.classList.add("sidebar-brand-header");
       if (header && brand.parentElement !== header) header.prepend(brand);
     }
     const navigation = sidebar.querySelector(".primary-nav");

@@ -131,3 +131,17 @@ it logs a local warning and retries on the next poll; it never blocks the
 Visa Service authorization path. The simulator profile uses the existing
 `telemetry-client` identity as a network reader; provision a separate reader
 identity and non-root query account before exposing dashboards to other users.
+
+The logger waits up to approximately 60 seconds for both the named adapter
+process and its configured ZPR address before starting. Finding a process alone
+is not sufficient: address assignment can lag behind adapter startup. New
+containers use Docker's `unless-stopped` restart policy, so a failed startup or
+OpenObserve process exit is retried unless the operator explicitly stopped it.
+This is process recovery, not a guarantee of backend or network health.
+
+If Control Room's Logging server link returns an empty reply, check
+`run.sh status` and the container logs before restarting the whole stack. The
+host-loopback GUI relay may remain listening while OpenObserve is stopped;
+an open relay port does not prove that the logger is available. Startup and
+recovery retain the existing data volume and credentials; do not remove the
+volume or reseed credentials to fix a readiness failure.

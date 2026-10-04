@@ -163,6 +163,14 @@ its location. This view does not install or activate a policy.
 
 ## Log Views
 
+Log panels retain each source's last successful bounded tail when an adapter,
+controller, application, or service disconnects. The selected source remains
+available, its panel turns white, and a disconnect/read-error status appears
+without replacing the log text. Reconnection replaces the tail with fresh data
+and restores the running style. Retained tails are browser-memory only, scoped
+to the active organization, and cleared when organizations change or the page
+is reloaded; they are not a durable archive.
+
 Control Room's **Adapter Logs** page shows the manifest fleet with Controller,
 Control adapter, and assigned-workload adapter logs. Its read-only API passes
 through the authenticated Control Service to the simulator's adapter collector.

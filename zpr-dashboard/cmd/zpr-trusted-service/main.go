@@ -14,8 +14,10 @@ import (
 	"net/http"
 	"net/url"
 	"os"
+	"os/signal"
 	"sort"
 	"strings"
+	"syscall"
 	"time"
 
 	"github.com/go-ldap/ldap/v3"
@@ -236,7 +238,16 @@ func main() {
 	ldapIdentities := flag.String("ldap-identities", "", "JSON map of ZPR identity key to LDAP search attribute")
 	ldapAttributes := flag.String("ldap-attributes", "", "comma-separated LDAP attributes to return")
 	ldapGroupsBase := flag.String("ldap-groups-base", "", "optional LDAP group search base DN for groupOfNames role membership")
+	ldapWatch := flag.Bool("ldap-watch", false, "consume LDAP sync changes as metadata-only JSON lines on stdout instead of serving HTTPS")
 	flag.Parse()
+	if *ldapWatch {
+		ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+		defer cancel()
+		if err := watchLDAP(ctx, *ldapURI, *ldapCA, *ldapBase, *ldapBind, *ldapPasswordFile, os.Stdout); err != nil {
+			log.Fatal("LDAP change consumer stopped: ", err)
+		}
+		return
+	}
 	if *cert == "" || *key == "" || *clientCA == "" || (*file == "") == (*ldapURI == "") {
 		log.Fatal("require -cert, -key, -client-ca, and exactly one of -file or -ldap-uri")
 	}

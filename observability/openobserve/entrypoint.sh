@@ -22,8 +22,10 @@ while [ -z "$adapter_pid" ] && [ "$attempt" -lt 30 ]; do
         args=$(tr '\000' ' ' < "$cmdline" 2>/dev/null || true)
         case "$args" in
             *"adapter "*"--name $ZPR_OBSERVABILITY_ADAPTER_NAME"*)
-                adapter_pid=$pid
-                break
+                if nsenter --target "$pid" --net ip -6 addr show 2>/dev/null | grep -Fq "inet6 $ZPR_OBSERVABILITY_ADDR/"; then
+                    adapter_pid=$pid
+                    break
+                fi
                 ;;
         esac
     done
@@ -34,11 +36,7 @@ while [ -z "$adapter_pid" ] && [ "$attempt" -lt 30 ]; do
 done
 
 if [ -z "$adapter_pid" ]; then
-    echo "ZPR observability adapter not found in the shared PID namespace" >&2
-    exit 1
-fi
-if ! nsenter --target "$adapter_pid" --net ip -6 addr show | grep -Fq "inet6 $ZPR_OBSERVABILITY_ADDR/"; then
-    echo "ZPR observability address is not assigned to the adapter" >&2
+    echo "ZPR observability adapter or its assigned address did not become ready" >&2
     exit 1
 fi
 
