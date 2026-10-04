@@ -58,6 +58,11 @@ test("organization assertions author, save and evaluate without policy compilati
   await expect(passDetails).toContainText('group "Operators" members >= 2');
   await expect(passDetails).toContainText("1 checked; 0 violations");
   await passDetails.locator(".dialog-actions .button").click();
+  await expect(page.locator("#assertion-evaluate")).toHaveText("Exit test");
+  await expect(editor).not.toBeEditable();
+  await page.locator("#assertion-evaluate").click();
+  await expect(page.locator("#assertion-evaluate")).toHaveText("Test");
+  await expect(editor).toBeEditable();
   expect(api.assertions.settings.source).toBe("");
   await page.locator("#assertion-save").click();
   await expect(page.locator("#assertion-revision")).toHaveText("Alpha Labs / r1");
@@ -72,6 +77,7 @@ test("organization assertions author, save and evaluate without policy compilati
   await page.locator("#assertion-evaluate").click();
   await expect(page.locator("#assertion-result-rows")).toContainText("PASS");
   await expect(page.locator("#assertion-run-status")).toContainText("Saved r2");
+  await page.locator("#assertion-evaluate").click();
   expect(api.counts.get("/api/policy/test") || 0).toBe(0);
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBeTruthy();
 });
@@ -105,10 +111,12 @@ test("assertion attribute catalog inserts rules and renders typed comparisons", 
   await expect(failDetails).toContainText("2 checked; 1 violations");
   await expect(failDetails).toContainText("bob");
   await failDetails.locator(".dialog-actions .button").click();
+  await page.locator("#assertion-evaluate").click();
   await page.locator("#assertion-source").fill('each group attribute "gidNumber" >= 1000;');
   await page.locator("#assertion-evaluate").click();
   await expect(page.locator("#assertion-result-rows")).toContainText('each group attribute "gidnumber" >= 1000');
   await expect(page.locator("#assertion-run-status")).toContainText("PASS");
+  await page.locator("#assertion-evaluate").click();
   await page.getByRole("tab", { name: "Attributes", exact: true }).focus();
   await page.keyboard.press("ArrowLeft");
   await expect(page.getByRole("tab", { name: "Groups", exact: true })).toHaveAttribute("aria-selected", "true");
@@ -133,6 +141,7 @@ test("assertion source failures are errors and never successful checks", async (
   const errorDetails = page.getByRole("dialog", { name: "Assertion error" });
   await expect(errorDetails).toContainText("Trusted LDAP read failed");
   await errorDetails.locator(".dialog-actions .button").click();
+  await page.locator("#assertion-evaluate").click();
   await expect(page.locator("#assertion-result-rows tr")).toHaveCount(0);
   api.assertions.configured = false;
   await page.locator("#assertion-reload").click();
@@ -178,6 +187,88 @@ test("organization switch reloads that organization's assertions and protects di
   await expect(editor).toHaveValue('group "Beta Operators" members >= 2;');
   await expect(page.locator("#assertion-revision")).toHaveText("Beta Labs / r3");
   await expect(page.locator("#assertion-enabled")).toBeChecked();
+});
+
+test("new assertion records support copy, paste, duplicate, and protect built-in settings", async ({ page, appURL, api }) => {
+  let nextRecordID = 1;
+  const addRecord = (name, content) => {
+    const record = {
+      id: `custom-assertions-${nextRecordID++}`, category_id: "test", name,
+      kind: "assertions", content_type: "text/vnd.zpr.assertions",
+      metadata: { language: "assertions" }, current_revision: 1, content,
+      content_hash: "custom-fixture", archived: false,
+    };
+    api.policy.records.push(record);
+    api.handlers.set(`/api/policy/records/${record.id}`, async (route) => {
+      if (route.request().method() === "DELETE") {
+        record.archived = true;
+        await route.fulfill({ json: { id: record.id, archived: true } });
+        return;
+      }
+      await route.fulfill({ json: record });
+    });
+    api.handlers.set(`/api/policy/records/${record.id}/revisions`, async (route) => route.fulfill({ json: [] }));
+    api.handlers.set(`/api/policy/records/${record.id}/restore`, async (route) => {
+      record.archived = false;
+      await route.fulfill({ json: { id: record.id, archived: false } });
+    });
+    api.handlers.set(`/api/policy/records/${record.id}/duplicate`, async (route) => {
+      const request = route.request().postDataJSON();
+      expect(request.category_id).toBe("test");
+      await route.fulfill({ status: 201, json: addRecord(request.name, record.content) });
+    });
+    return record;
+  };
+  api.handlers.set("/api/policy/records", async (route) => {
+    const request = route.request().postDataJSON();
+    expect(request.kind).toBe("assertions");
+    expect(request.content_type).toBe("text/vnd.zpr.assertions");
+    expect(request.content).toBe('group "Operators" members >= 2;');
+    await route.fulfill({ status: 201, json: addRecord(request.name, request.content) });
+  });
+
+  await page.goto(appURL + "/#policy");
+  await expect(page.locator("#new-assertion-record")).toBeEnabled();
+  const policyMarkerColor = await page.locator('[data-record-id="test-policy"]').evaluate((item) => getComputedStyle(item, "::before").backgroundColor);
+  const assertionMarkerColor = await page.locator('[data-record-id="test-assertions"]').evaluate((item) => getComputedStyle(item, "::before").backgroundColor);
+  expect(assertionMarkerColor).not.toBe(policyMarkerColor);
+  await page.locator('[data-category-id="test"]').click({ button: "right" });
+  await page.locator("#new-assertion-record").click();
+  await page.locator("#policy-draft-name").fill("Operator assertions");
+  await page.locator("#assertion-source").fill('group "Operators" members >= 2;');
+  await page.locator("#assertion-save").click();
+  await expect(page.locator('[data-record-id="custom-assertions-1"]')).toBeVisible();
+  await expect(page.locator("#policy-revision-label")).toContainText("Version 1");
+
+  await page.locator('[data-record-id="custom-assertions-1"]').click({ button: "right" });
+  await page.locator("#policy-copy").click();
+  await page.locator('[data-category-id="test"]').click({ button: "right" });
+  await page.locator("#policy-paste").click();
+  await expect(page.locator('[data-record-id="custom-assertions-2"]')).toBeVisible();
+  await expect(page.locator('[data-record-id="custom-assertions-2"] strong')).toHaveText("Operator assertions copy");
+
+  await page.locator('[data-record-id="custom-assertions-2"]').click({ button: "right" });
+  await page.locator("#policy-duplicate").click();
+  await expect(page.locator('[data-record-id="custom-assertions-3"]')).toBeVisible();
+  await expect(page.locator('[data-record-id="custom-assertions-3"] strong')).toHaveText("Operator assertions copy 2");
+
+  page.once("dialog", (dialog) => dialog.accept());
+  await page.locator('[data-record-id="custom-assertions-3"]').click({ button: "right" });
+  await page.locator("#policy-delete").click();
+  await expect(page.locator('[data-record-id="custom-assertions-3"]')).toHaveCount(0);
+  await page.locator('[data-category-id="test"]').click({ button: "right" });
+  await page.locator("#policy-show-archived").click();
+  await expect(page.locator('[data-record-id="custom-assertions-3"]')).toBeVisible();
+  await page.locator('[data-record-id="custom-assertions-3"]').click();
+  await page.locator('[data-record-id="custom-assertions-3"]').click({ button: "right" });
+  await page.locator("#policy-restore").click();
+  await expect(page.locator("#policy-file-status")).toContainText("Restored Operator assertions copy 2");
+  expect(api.policy.records.find((record) => record.id === "custom-assertions-3").archived).toBe(false);
+
+  await page.locator('[data-record-id="test-assertions"]').click();
+  await expect(page.locator("#policy-copy")).toBeDisabled();
+  await expect(page.locator("#policy-duplicate")).toBeDisabled();
+  await expect(page.locator("#policy-delete")).toBeDisabled();
 });
 }
 import { test as base, expect } from "@playwright/test";
@@ -259,7 +350,7 @@ const test = base.extend({
         categories: [{ id: "legacy-assertions", name: "Assertions", path: "Assertions" }, { id: "test", name: "Policies", path: "Alpha/Policies" }],
         records: [
           { id: "test-policy", category_id: "test", name: "Test policy", kind: "policy", current_revision: 1, content: "define Employee as user.\n", content_hash: "fixture" },
-          { id: "test-assertions", category_id: "legacy-assertions", name: "Organization assertions", kind: "assertions", current_revision: 1, content: '{"source":"","enabled":false,"interval_seconds":60}', content_hash: "fixture" },
+          { id: "test-assertions", category_id: "legacy-assertions", name: "Organization assertions", kind: "assertions", content_type: "application/vnd.zpr.assertions+json", current_revision: 1, content: '{"source":"","enabled":false,"interval_seconds":60}', content_hash: "fixture" },
         ],
         attributes: [{ attribute: "user.department", source: "LDAP" }, { attribute: "user.title", source: "LDAP" }, { attribute: "device.secure", source: "LDAP" }],
       },
@@ -276,7 +367,17 @@ const test = base.extend({
         settings: { revision: 0, source: "", enabled: false, interval_seconds: 60 },
         running: false, last_run: null, source_summary: null,
       },
-      assertionSource: { observed_at: "2026-10-02T12:00:00Z", people: 2, groups: [{ name: "Operators", members: 2 }] },
+      assertionSource: {
+        source_name: "Trusted LDAP", organization_id: "alpha", organization_name: "Alpha Labs", base_dn: "dc=alpha,dc=test",
+        observed_at: "2026-10-02T12:00:00Z", people: 2,
+        groups: [{ name: "Operators", members: 2 }],
+        attributes: [{ name: "description", people: 0, groups: 1 }, { name: "mail", people: 2, groups: 0 }, { name: "title", people: 2, groups: 0 }],
+        directory: {
+          people: ["alice", "bob"], groups: { Operators: ["alice", "bob"] }, attributes: ["description", "mail", "title"],
+          person_attributes: { alice: { mail: ["alice@example.test"], title: ["Engineer"] }, bob: { mail: ["bob@example.test"], title: ["Reviewer"] } },
+          group_attributes: { Operators: { description: ["Directory operators"] } },
+        },
+      },
       counts: new Map(),
       handlers: new Map(),
       statuses: new Map(),
@@ -302,6 +403,7 @@ const test = base.extend({
         "/api/simulator/organizations": data.organizations,
         "/api/assertions": data.assertions,
         "/api/assertions/source": data.assertionSource,
+        "/api/simulator/trusted-source": { ...data.assertionSource, source_name: "Organization LDAP" },
       };
       if (!Object.hasOwn(bodies, path)) {
         await route.fulfill({ status: 503, json: { error: "Not configured in this test" } });
@@ -316,6 +418,274 @@ const test = base.extend({
 });
 
 registerAssertionBrowserTests();
+
+test("Trusted Sources omits explanatory headings and counts while retaining source controls", async ({ page, appURL, api }) => {
+  await page.goto(appURL + "/#sources");
+  const sources = page.locator("#page-sources");
+  await expect(sources).toBeVisible();
+  await expect(sources).not.toContainText("ATTRIBUTE PROVIDERS");
+  await expect(sources).not.toContainText("Who supplies trusted attributes");
+  await expect(sources).not.toContainText("attribute sources");
+  await expect(sources).not.toContainText("Lookup labels reflect actual attribute requests");
+  await expect(page.locator("#trusted-count")).toHaveCount(0);
+  await expect(page.getByRole("searchbox", { name: "Filter trusted sources", exact: true })).toBeVisible();
+  await expect(sources.locator("table[data-sort-page=sources]")).toBeVisible();
+});
+
+test("Control Room trusted source panel browses records read-only", async ({ page, appURL, api }) => {
+  await page.goto(appURL + "/#sources");
+  const browser = page.locator("trusted-source-browser");
+  await expect(browser.locator("[data-source-title]")).toHaveText("Trusted LDAP");
+  await expect(browser.locator("[data-source-meta]")).toContainText("dc=alpha,dc=test");
+  await expect(browser.locator(".trusted-source-table")).toContainText("alice");
+  await browser.getByRole("tab", { name: "Groups" }).click();
+  await expect(browser.locator(".trusted-source-table")).toContainText("Operators");
+  await browser.getByRole("tab", { name: "Attributes" }).click();
+  const filter = browser.getByRole("searchbox", { name: "Filter trusted source records" });
+  await filter.fill("mail");
+  await expect(browser.locator(".trusted-source-table")).toContainText("mail");
+  await expect(browser.locator(".trusted-source-table")).not.toContainText("title");
+  await expect(browser.getByRole("button", { name: /Save|Edit|Delete|Publish/ })).toHaveCount(0);
+  expect(api.counts.get("/api/assertions/source")).toBeGreaterThan(0);
+});
+
+test("Simulator trusted source page uses the same read-only browser", async ({ page, appURL, api }) => {
+  await page.goto(appURL + "/trusted-source.html");
+  const browser = page.locator("trusted-source-browser");
+  await expect(page.locator('.primary-nav a[href="/trusted-source.html"]')).toHaveClass(/active/);
+  await expect(browser.locator("[data-source-title]")).toHaveText("Organization LDAP");
+  await expect(browser.locator(".trusted-source-table")).toContainText("alice@example.test");
+  await browser.getByRole("tab", { name: "Groups" }).click();
+  await expect(browser.locator(".trusted-source-table")).toContainText("Operators");
+  await expect(browser.getByRole("button", { name: /Save|Edit|Delete|Publish/ })).toHaveCount(0);
+  expect(api.counts.get("/api/simulator/trusted-source")).toBeGreaterThan(0);
+});
+
+test("policy picker right-click menu targets records and categories without visible action rows", async ({ page, appURL, api }, testInfo) => {
+  await page.goto(appURL + "/#policy");
+  const category = page.locator('[data-category-id="test"]');
+  const menu = page.getByRole("menu", { name: /./ });
+  await expect(category).toBeVisible();
+  await expect(page.locator("#policy-picker-actions")).toHaveCount(0);
+  await expect(page.locator(".catalog-pane-heading button")).toHaveCount(1);
+  await expect(page.locator("#policy-picker-toggle")).toBeVisible();
+  await expect(page.locator(".policy-file-actions")).toHaveCount(0);
+  await expect(page.locator("#new-category")).toBeHidden();
+  await category.click({ button: "right" });
+  await expect(menu).toBeVisible();
+  await expect(menu.getByRole("menuitem", { name: "New policy", exact: true })).toBeEnabled();
+  await expect(menu.getByRole("menuitem", { name: "New subcategory", exact: true })).toBeEnabled();
+  await expect(page.locator("#policy-copy")).toBeHidden();
+  await page.keyboard.press("Escape");
+  await expect(menu).toBeHidden();
+  await expect(category).toBeFocused();
+
+  await page.locator('[data-record-id="test-assertions"]').click({ button: "right" });
+  await expect(menu).toBeVisible();
+  await expect(page.locator("#policy-picker-menu-title")).toHaveText("Organization assertions");
+  await expect(menu.getByRole("menuitem", { name: "Delete", exact: true })).toBeDisabled();
+  await page.keyboard.press("Escape");
+
+  await page.locator('[data-record-id="test-policy"]').click({ button: "right" });
+  await expect(menu).toBeVisible();
+  await expect(page.locator("#policy-picker-menu-title")).toHaveText("Test policy");
+  await expect(menu.getByRole("menuitem", { name: "Copy", exact: true })).toBeEnabled();
+  await expect(page.locator("#new-policy-record")).toBeHidden();
+  const bounds = await menu.boundingBox();
+  const viewport = page.viewportSize();
+  expect(bounds.x).toBeGreaterThanOrEqual(0);
+  expect(bounds.y).toBeGreaterThanOrEqual(0);
+  expect(bounds.x + bounds.width).toBeLessThanOrEqual(viewport.width);
+  expect(bounds.y + bounds.height).toBeLessThanOrEqual(viewport.height);
+  await page.screenshot({ path: testInfo.outputPath("policy-picker-menu.png") });
+  await menu.getByRole("menuitem", { name: "Copy", exact: true }).click();
+  await expect(menu).toBeHidden();
+  await expect(page.locator("#policy-file-status")).toHaveText("Copied Test policy");
+});
+
+test("policy picker actions support keyboard opening, navigation and dismissal", async ({ page, appURL, api }) => {
+  await page.goto(appURL + "/#policy");
+  const record = page.locator('[data-record-id="test-policy"]');
+  await record.focus();
+  await record.press("Shift+F10");
+  const menu = page.locator("#policy-picker-menu");
+  await expect(menu).toBeVisible();
+  await expect(page.locator("#policy-copy")).toBeFocused();
+  await page.keyboard.press("ArrowDown");
+  await expect(page.locator("#policy-duplicate")).toBeFocused();
+  await page.keyboard.press("Escape");
+  await expect(menu).toBeHidden();
+  await expect(record).toBeFocused();
+  await record.press("Shift+F10");
+  await expect(menu).toBeVisible();
+  await page.locator("#policy-record-title").click();
+  await expect(menu).toBeHidden();
+  await page.locator("#policy-category-tree").focus();
+  await page.locator("#policy-category-tree").press("Shift+F10");
+  await expect(menu).toBeVisible();
+  await page.keyboard.press("Escape");
+  await expect(page.locator("#policy-category-tree")).toBeFocused();
+});
+
+test("each picker row opens its own menu from labels and metadata", async ({ page, appURL, api }) => {
+  await page.goto(appURL + "/#policy");
+  const category = page.locator('[data-category-id="test"]');
+  await expect(category).toBeVisible();
+  await expect(category).toHaveAttribute("aria-haspopup", "menu");
+  await category.locator("span").nth(1).click({ button: "right" });
+  const menu = page.locator("#policy-picker-menu");
+  await expect(menu).toHaveAttribute("data-context", "category");
+  await expect(menu).toBeVisible();
+  await expect(page.locator("#policy-duplicate")).toBeHidden();
+  await page.keyboard.press("Escape");
+  for (const [id, name] of [["test-policy", "Test policy"], ["test-assertions", "Organization assertions"]]) {
+    const row = page.locator(`[data-record-id="${id}"]`);
+    await expect(row).toHaveAttribute("aria-controls", "policy-picker-menu");
+    await row.locator("small").click({ button: "right" });
+    await expect(menu).toBeVisible();
+    await expect(menu).toHaveAttribute("data-context", "record");
+    await expect(page.locator("#policy-picker-menu-title")).toHaveText(name);
+    await expect(page.locator("#new-category")).toBeHidden();
+    await page.keyboard.press("Escape");
+    await expect(row).toBeFocused();
+  }
+});
+
+for (const navigation of [
+  { app: "Control Room", path: "/#services", label: "Services", next: "Visas", nextPath: "/#visas" },
+  { app: "Simulator", path: "/organizations.html", label: "Organizations", next: "Workload logs", nextPath: "/machine-logs.html" },
+]) {
+  test(`${navigation.app} side menu condenses, remembers its state and keeps the active tab visible`, async ({ page, appURL, api }, testInfo) => {
+    await page.goto(appURL + navigation.path);
+    const activeLink = page.locator(".primary-nav .nav-link.active");
+    await expect(activeLink).toHaveText(navigation.label);
+    if (navigation.app === "Control Room") {
+      const brand = page.locator('.sidebar-header .brand[aria-label="ZPR Control Room map"]');
+      await expect(brand).toBeVisible();
+      await expect(brand).toContainText("ZPR");
+      await expect(brand).toContainText("CONTROL ROOM");
+      await expect(brand.locator(".brand-mark")).toBeVisible();
+      const alignedBesideToggle = () => brand.evaluate((element) => {
+        const brandRect = element.getBoundingClientRect();
+        const toggleRect = element.parentElement.querySelector(".sidebar-toggle").getBoundingClientRect();
+        return Math.abs((brandRect.top + brandRect.bottom) / 2 - (toggleRect.top + toggleRect.bottom) / 2) <= 2
+          && toggleRect.left >= brandRect.right
+          && toggleRect.left - brandRect.right <= 12;
+      });
+      expect(await alignedBesideToggle()).toBeTruthy();
+    }
+    await page.getByRole("button", { name: "Condense side menu", exact: true }).click();
+    await expect(page.locator("body")).toHaveClass(/sidebar-condensed/);
+    await expect(activeLink).toBeVisible();
+    if (navigation.app === "Control Room") {
+      const brand = page.locator('.sidebar-header .brand[aria-label="ZPR Control Room map"]');
+      await expect(brand).toBeVisible();
+      const alignedBesideToggle = await brand.evaluate((element) => {
+        const brandRect = element.getBoundingClientRect();
+        const toggleRect = element.parentElement.querySelector(".sidebar-toggle").getBoundingClientRect();
+        return Math.abs((brandRect.top + brandRect.bottom) / 2 - (toggleRect.top + toggleRect.bottom) / 2) <= 2
+          && toggleRect.left >= brandRect.right
+          && toggleRect.left - brandRect.right <= 12;
+      });
+      expect(alignedBesideToggle).toBeTruthy();
+    }
+    await expect(page.getByRole("button", { name: "Expand side menu", exact: true })).toHaveAttribute("aria-expanded", "false");
+    await page.reload();
+    await expect(page.locator("body")).toHaveClass(/sidebar-condensed/);
+    await expect(page.locator(".primary-nav .nav-link.active")).toHaveText(navigation.label);
+    if (testInfo.project.name === "desktop") {
+      await expect(page.locator(".sidebar")).toHaveCSS("width", "104px");
+      await expect(page.locator(".main-content")).toHaveCSS("margin-left", "104px");
+    }
+    await page.screenshot({ path: testInfo.outputPath("sidebar-condensed.png"), fullPage: true });
+    await page.getByRole("button", { name: "Expand side menu", exact: true }).click();
+    await page.getByRole("link", { name: navigation.next, exact: true }).click();
+    await expect(page).toHaveURL(appURL + navigation.nextPath);
+    await expect(page.locator(".primary-nav .nav-link.active")).toHaveText(navigation.next);
+    await page.getByRole("button", { name: "Condense side menu", exact: true }).click();
+    await page.goBack();
+    await expect(page.locator(".primary-nav .nav-link.active")).toHaveText(navigation.label);
+    await expect(page.locator("body")).toHaveClass(/sidebar-condensed/);
+    expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBeTruthy();
+  });
+}
+
+test("policy Format condenses repeated blank lines including trailing whitespace", async ({ page, appURL, api }) => {
+  await page.goto(appURL + "/#policy");
+  await page.locator('[data-record-id="test-policy"]').click();
+  const editor = page.locator("#policy-source");
+  await expect(editor).toHaveValue("define Employee as user.\n");
+  await editor.fill("# Heading\n\n \n\ndefine Employee as user.\n\n\nprovide Api at api.example over TCP 443.\n\nallow Employee.\n\n\n");
+  const expected = "# Heading\n\ndefine Employee as user.\n\nprovide Api at api.example over TCP 443.\n  allow Employee.\n\n";
+  await page.locator("#policy-format").click();
+  await expect(editor).toHaveValue(expected);
+  await page.locator("#policy-format").click();
+  await expect(editor).toHaveValue(expected);
+  const crlf = await page.evaluate(() => formatZPL("# Heading\r\n\r\n \r\n\r\ndefine Employee as user.\r\n\r\n\r\n"));
+  expect(crlf).toBe("# Heading\r\n\r\ndefine Employee as user.\r\n\r\n");
+});
+
+test("policy Format removes leading whitespace and gaps inside definition and service groups", async ({ page, appURL, api }) => {
+  await page.goto(appURL + "/#policy");
+  await page.locator('[data-record-id="test-policy"]').click();
+  const editor = page.locator("#policy-source");
+  await expect(editor).toHaveValue("define Employee as user.\n");
+  const source = " \n\t\n  define Employee as user.\n\n# Staff\n\ndefine Guest as user.\nprovide Api at api.example over TCP 443.\n\n# Callers\n\nallow Employee.\n\ndeny Guest.\n\nnever allow Guest.\n";
+  const expected = "define Employee as user.\n# Staff\ndefine Guest as user.\n\nprovide Api at api.example over TCP 443.\n# Callers\n  allow Employee.\n  deny Guest.\n  never allow Guest.\n";
+  await editor.fill(source);
+  await page.locator("#policy-format").click();
+  await expect(editor).toHaveValue(expected);
+  await page.locator("#policy-format").click();
+  await expect(editor).toHaveValue(expected);
+  const crlf = await page.evaluate((text) => formatZPL(text), "\r\nservice Api as json {}.\r\n\r\nallow Employee.\r\n");
+  expect(crlf).toBe("service Api as json {}.\r\n  allow Employee.\r\n");
+});
+
+test("policy picker and Claude assistant collapse independently and preserve their state", async ({ page, appURL, api }) => {
+  await page.goto(appURL + "/#policy");
+  await expect(page.locator("#policy-record-title")).toHaveText("Test policy");
+  const workbench = page.locator("#policy-workbench");
+  const editor = page.locator("#policy-editor-pane");
+  const picker = page.locator("#policy-catalog-pane");
+  const assistant = page.locator("#policy-assistant-pane");
+  const pickerToggle = page.locator("#policy-picker-toggle");
+  const assistantToggle = page.locator("#policy-assistant-toggle");
+  const initialEditorWidth = await editor.evaluate((element) => element.getBoundingClientRect().width);
+
+  await pickerToggle.click();
+  await expect(picker).toHaveAttribute("data-collapsed", "true");
+  await expect(pickerToggle).toHaveAttribute("aria-expanded", "false");
+  await expect(page.locator("#policy-category-tree")).toBeHidden();
+  const pickerLabel = pickerToggle.locator(".pane-toggle-label");
+  await expect(pickerLabel).toHaveText("Picker");
+  await expect(pickerLabel).toHaveCSS("writing-mode", (page.viewportSize()?.width || 1000) <= 600 ? "horizontal-tb" : "vertical-rl");
+  if ((page.viewportSize()?.width || 1000) > 600) await expect(pickerLabel).toHaveCSS("text-orientation", "upright");
+  const pickerCollapsedWidth = await editor.evaluate((element) => element.getBoundingClientRect().width);
+  if ((page.viewportSize()?.width || 1000) > 900) {
+    await expect.poll(() => editor.evaluate((element) => element.getBoundingClientRect().width)).toBeGreaterThan(initialEditorWidth);
+  }
+
+  await assistantToggle.click();
+  await expect(assistant).toHaveAttribute("data-collapsed", "true");
+  await expect(assistantToggle).toHaveAttribute("aria-expanded", "false");
+  await expect(page.locator(".assistant-settings")).toBeHidden();
+  const assistantLabel = assistantToggle.locator(".pane-toggle-label");
+  await expect(assistantLabel).toHaveText("Claude");
+  await expect(assistantLabel).toHaveCSS("writing-mode", (page.viewportSize()?.width || 1000) <= 600 ? "horizontal-tb" : "vertical-rl");
+  if ((page.viewportSize()?.width || 1000) > 600) await expect(assistantLabel).toHaveCSS("text-orientation", "upright");
+  const bothCollapsedWidth = await editor.evaluate((element) => element.getBoundingClientRect().width);
+  if ((page.viewportSize()?.width || 1000) > 900) {
+    await expect.poll(() => editor.evaluate((element) => element.getBoundingClientRect().width)).toBeGreaterThan(pickerCollapsedWidth);
+  }
+
+  await page.reload();
+  await expect(workbench).toHaveAttribute("data-picker-collapsed", "true");
+  await expect(workbench).toHaveAttribute("data-assistant-collapsed", "true");
+  await pickerToggle.click();
+  await assistantToggle.click();
+  await expect(picker).toHaveAttribute("data-collapsed", "false");
+  await expect(assistant).toHaveAttribute("data-collapsed", "false");
+});
 
 test("read-only browser filters policy and assertion records and shows saved revisions", async ({ page, appURL, api }, testInfo) => {
   const methods = [];
@@ -428,6 +798,7 @@ test("policy Test opens per-line counts and matching identities in the editor mo
         default_denied: { count: 0, by_kind: {}, by_dimension: {}, subjects: [] },
         rules: [
           { indexes: [2], line: 2, source: "allow users to access EchoWeb", effect: "allow", matched: { count: 1, by_kind: { user_device: 1 }, by_dimension: { user: 1, device: 1 }, subjects: [{ id: "alice-machine", label: "Alice Rivera on machine-1", kind: "user_device", dimensions: { user: "alice", device: "machine-1" } }] } },
+          { indexes: [4], line: 2, source: "allow users to access EchoWeb", effect: "allow", matched: { count: 0, by_kind: {}, by_dimension: { user: 0, device: 0 }, subjects: [] } },
           { indexes: [3], line: 3, source: "never allow users to access EchoWeb", effect: "deny", matched: { count: 1, by_kind: { user: 1 }, by_dimension: { user: 1 }, subjects: [{ id: "alice", label: "Alice Rivera", kind: "user", dimensions: { user: "alice" } }] } },
         ],
       }],
@@ -444,14 +815,15 @@ test("policy Test opens per-line counts and matching identities in the editor mo
   await expect(page.locator(".policy-catalog-pane")).toBeHidden();
   await expect(page.locator("#policy-test-gutter")).toBeVisible();
   const lineResult = page.locator('#policy-test-gutter [data-line="2"] .policy-test-line-result');
-  await expect(lineResult).toContainText("U1");
-  await expect(lineResult).toContainText("D1");
-  await lineResult.click();
+  await expect(lineResult.nth(0)).toHaveText("1 Device · 1 User");
+  await expect(lineResult.nth(0).locator(".policy-test-count-number").first()).toHaveCSS("font-weight", "800");
+  await expect(lineResult.nth(1)).toHaveText("None");
+  await lineResult.nth(0).click();
   const dialog = page.getByRole("dialog", { name: "Policy test" });
   await expect(dialog).toBeVisible();
   await expect(dialog.locator("#policy-test-subjects")).toContainText("Alice Rivera on machine-1");
-  await expect(dialog.locator("#policy-test-subject-title")).toContainText("User 1");
-  await expect(dialog.locator("#policy-test-subject-title")).toContainText("Device 1");
+  await expect(dialog.locator("#policy-test-subject-title")).toContainText("1 Device");
+  await expect(dialog.locator("#policy-test-subject-title")).toContainText("1 User");
   await expect(dialog.locator("#policy-test-subjects")).toContainText("Device: machine-1");
   await page.evaluate(() => showPolicyTestSubjects(Array.from({ length: 105 }, (_, index) => ({ id: `member-${index}`, label: `Member ${index}`, dimensions: { device: `device-${index}` } })), "", "Device matches"));
   await expect(dialog.locator(".policy-test-subject")).toHaveCount(100);
@@ -470,28 +842,127 @@ test("policy Test opens per-line counts and matching identities in the editor mo
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBeTruthy();
 });
 
+test("policy Test shows compiler diagnostics as clickable line error markers", async ({ page, appURL, api }) => {
+  api.handlers.set("/api/policy/test/fixtures", async (route) => route.fulfill({ json: {
+    actors: [{ id: "alice", label: "Alice Rivera", kind: "user", dimensions: { user: "alice" }, attributes: [] }],
+    services: [{ id: "EchoWeb", name: "EchoWeb", protocol: "TCP", port: 8080, attributes: [] }],
+    warnings: [],
+  } }));
+  api.handlers.set("/api/policy/test", async (route) => route.fulfill({
+    status: 422,
+    json: { error: "Candidate policy compilation failed: error: [ line 2, column 1 ] explicit service targets are rejected" },
+  }));
+  await page.goto(appURL + "/#policy");
+  await page.locator("#policy-test").click();
+  const errorMarker = page.locator('#policy-test-gutter [data-line="2"] .policy-test-line-result[data-effect="error"]');
+  await expect(errorMarker).toHaveText("ERR");
+  await expect(page.locator("#policy-test-status")).toContainText("Click ERR for details");
+  await errorMarker.click();
+  const dialog = page.getByRole("dialog", { name: "Policy test error" });
+  await expect(dialog.locator("#policy-test-subject-title")).toHaveText("Line 2 diagnostic");
+  await expect(dialog.locator("#policy-test-subjects")).toContainText("explicit service targets are rejected");
+});
+
 for (const view of [
-  { name: "Adapter Logs", path: "/#adapter-logs", names: ["Controller", "Control adapter", "finance-client adapter"] },
+  { name: "Adapter Logs", path: "/#adapter-logs", names: ["Control adapter", "finance-client adapter"], columns: true },
   { name: "Workload logs", path: "/machine-logs.html", names: ["finance-client events", "echo-service events"] },
 ]) {
   test(`${view.name} supports independent radio source selection`, async ({ page, appURL, api }) => {
     await page.goto(appURL + view.path);
-    const panels = page.locator(".machine-log-panel");
-    await expect(panels).toHaveCount(2);
-    const first = panels.nth(0);
-    const second = panels.nth(1);
-    await expect(first.getByRole("radio")).toHaveCount(view.names.length);
-    await first.getByRole("radio", { name: view.names[1], exact: true }).check();
-    await expect(first.locator(".machine-log-output")).toContainText(`${view.names[1]} entry 79`);
-    await expect(first.locator(".machine-log-output")).not.toContainText(`${view.names[0]} entry`);
-    await expect(second.getByRole("radio", { name: view.names[0], exact: true })).toBeChecked();
-    await first.getByRole("button", { name: /Maximize/ }).click();
-    await expect(first).toHaveClass(/maximized/);
-    await page.keyboard.press("Escape");
-    await expect(first).not.toHaveClass(/maximized/);
+    if (view.columns) {
+      const columns = page.locator(".adapter-log-column");
+      await expect(columns).toHaveCount(1);
+      const first = columns.nth(0);
+      const firstPicker = first.getByRole("combobox", { name: /Select adapter/ });
+      await expect(firstPicker.locator("option")).toHaveCount(4);
+      await firstPicker.selectOption({ label: "finance-client adapter · machine-first" });
+      await expect(first.locator(".machine-log-output")).toContainText("finance-client adapter entry 79");
+      await page.getByRole("button", { name: "Add adapter panel" }).click();
+      await expect(columns).toHaveCount(2);
+      const second = columns.nth(1);
+      await expect(second.getByRole("combobox", { name: /Select adapter/ })).toHaveValue("machine-first\u001fControl adapter");
+      await firstPicker.selectOption({ label: "Control adapter · machine-second" });
+      await expect(first.locator(".machine-log-output")).toContainText("Control adapter entry 79");
+      await expect(second.locator(".machine-log-output")).toContainText("Control adapter entry 79");
+      await expect(second.getByRole("combobox", { name: /Select adapter/ })).toHaveValue("machine-first\u001fControl adapter");
+      await second.getByRole("button", { name: "Remove adapter panel" }).click();
+      await expect(columns).toHaveCount(1);
+      await first.getByRole("button", { name: /Maximize/ }).click();
+      await expect(first).toHaveClass(/maximized/);
+      await page.keyboard.press("Escape");
+      await expect(first).not.toHaveClass(/maximized/);
+    } else {
+      const panels = page.locator(".machine-log-panel");
+      await expect(panels).toHaveCount(2);
+      const first = panels.nth(0);
+      const second = panels.nth(1);
+      await expect(first.getByRole("radio")).toHaveCount(view.names.length);
+      await first.getByRole("radio", { name: view.names[1], exact: true }).check();
+      await expect(first.locator(".machine-log-output")).toContainText(`${view.names[1]} entry 79`);
+      await expect(first.locator(".machine-log-output")).not.toContainText(`${view.names[0]} entry`);
+      await expect(second.getByRole("radio", { name: view.names[0], exact: true })).toBeChecked();
+      await first.getByRole("button", { name: /Maximize/ }).click();
+      await expect(first).toHaveClass(/maximized/);
+      await page.keyboard.press("Escape");
+      await expect(first).not.toHaveClass(/maximized/);
+    }
     expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBeTruthy();
   });
 }
+
+test("Adapter Logs grows horizontally and removes only the selected column", async ({ page, appURL, api }) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.goto(appURL + "/#adapter-logs");
+  const columns = page.locator(".adapter-log-column");
+  await expect(columns).toHaveCount(1);
+  const grid = page.locator("#machine-logs-grid");
+  await page.getByRole("button", { name: "Add adapter panel" }).click();
+  await page.getByRole("button", { name: "Add adapter panel" }).click();
+  await expect(columns).toHaveCount(3);
+  expect(await grid.evaluate((element) => element.scrollWidth > element.clientWidth)).toBeTruthy();
+  await columns.nth(1).getByRole("button", { name: "Remove adapter panel" }).click();
+  await expect(columns).toHaveCount(2);
+  await columns.nth(0).getByRole("combobox", { name: /Select adapter/ }).selectOption({ label: "finance-client adapter · machine-first" });
+  await expect(columns.nth(1).locator(".machine-log-output")).toContainText("Control adapter entry 79");
+  await expect(columns.nth(0).locator(".machine-log-output")).toContainText("finance-client adapter entry 79");
+});
+
+test("Control Room top buttons switch adapter and controller logs using the same panels", async ({ page, appURL, api }, testInfo) => {
+  await page.goto(appURL + "/#adapter-logs");
+  const columns = page.locator(".adapter-log-column");
+  await expect(columns).toHaveCount(1);
+  await expect(page.locator("#machine-logs-follow")).toHaveCount(0);
+  await expect(page.locator("#adapter-log-count")).toHaveCount(0);
+  await expect(columns.locator("header h2")).toHaveCount(0);
+  await page.locator("#machine-logs-pause").click();
+  const first = columns.nth(0);
+  await first.getByRole("combobox", { name: /Select adapter/ }).selectOption({ label: "finance-client adapter · machine-first" });
+  const output = first.locator(".machine-log-output");
+  await output.evaluate((element) => { element.scrollTop = 0; element.dispatchEvent(new Event("scroll")); });
+  await page.getByRole("button", { name: "Add adapter panel", exact: true }).click();
+  await expect(columns).toHaveCount(2);
+  const second = columns.nth(1);
+  const originalPanel = await first.elementHandle();
+  await page.getByRole("button", { name: "Controller logs", exact: true }).click();
+  await expect(page.getByRole("button", { name: "Controller logs", exact: true })).toHaveAttribute("aria-pressed", "true");
+  await expect(first.getByRole("combobox", { name: /Select controller/ }).locator("option")).toHaveCount(2);
+  await first.getByRole("combobox", { name: /Select controller/ }).selectOption({ label: "Controller · machine-second" });
+  await expect(first.locator(".machine-log-output")).toContainText("Controller entry 79");
+  await expect(second.getByRole("combobox", { name: /Select controller/ })).toHaveValue("machine-first\u001fController");
+  await expect(columns).toHaveCount(2);
+  expect(await originalPanel.evaluate((panel) => panel.isConnected)).toBeTruthy();
+  await output.evaluate((element) => { element.scrollTop = 0; element.dispatchEvent(new Event("scroll")); });
+  await page.getByRole("button", { name: "Adapter logs", exact: true }).click();
+  await expect(first.getByRole("combobox", { name: /Select adapter/ })).toHaveValue("machine-first\u001ffinance-client adapter");
+  await expect(first.locator(".machine-log-output")).toContainText("finance-client adapter entry 79");
+  expect(await output.evaluate((element) => element.scrollTop)).toBe(0);
+  await page.getByRole("button", { name: "Controller logs", exact: true }).click();
+  await expect(first.getByRole("combobox", { name: /Select controller/ })).toHaveValue("machine-second\u001fController");
+  expect(await output.evaluate((element) => element.scrollTop)).toBe(0);
+  expect(api.counts.get("/api/adapter-logs")).toBe(1);
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBeTruthy();
+  await page.screenshot({ path: testInfo.outputPath("control-room-log-types.png"), fullPage: true });
+});
 
 async function refreshLogs(page) {
   const button = page.locator("#machine-logs-refresh");
@@ -505,36 +976,36 @@ async function expectAtBottom(output) {
 
 test("log sources remember reader positions and follow independently", async ({ page, appURL, api }) => {
   await page.goto(appURL + "/#adapter-logs");
-  const panels = page.locator(".machine-log-panel");
-  await expect(panels).toHaveCount(2);
+  const panels = page.locator(".adapter-log-column");
+  await expect(panels).toHaveCount(1);
   await page.locator("#machine-logs-pause").click();
   const first = panels.nth(0);
   const output = first.locator(".machine-log-output");
-  const secondOutput = panels.nth(1).locator(".machine-log-output");
   await expectAtBottom(output);
   await output.evaluate((element) => { element.scrollTop = 0; element.dispatchEvent(new Event("scroll")); });
-  api.adapterLogs = logFixture(["Controller", "Control adapter"], 95);
+  api.adapterLogs = logFixture(["Controller", "Control adapter", "finance-client adapter"], 95);
   await refreshLogs(page);
-  await expect(output).toContainText("Controller entry 94");
+  await expect(output).toContainText("Control adapter entry 94");
   expect(await output.evaluate((element) => element.scrollTop)).toBe(0);
-  await expectAtBottom(secondOutput);
-  await first.getByRole("radio", { name: "Control adapter", exact: true }).check();
+  const picker = first.getByRole("combobox", { name: "Select adapter" });
+  await picker.selectOption({ label: "finance-client adapter · machine-first" });
   await expectAtBottom(output);
-  await first.getByRole("radio", { name: "Controller", exact: true }).check();
+  await picker.selectOption({ label: "Control adapter · machine-first" });
   expect(await output.evaluate((element) => element.scrollTop)).toBe(0);
   await output.evaluate((element) => { element.scrollTop = element.scrollHeight; element.dispatchEvent(new Event("scroll")); });
-  api.adapterLogs = logFixture(["Controller", "Control adapter"], 100);
+  api.adapterLogs = logFixture(["Controller", "Control adapter", "finance-client adapter"], 100);
   await refreshLogs(page);
-  await expect(output).toContainText("Controller entry 99");
+  await expect(output).toContainText("Control adapter entry 99");
   await expectAtBottom(output);
-  await page.locator("#machine-logs-follow").uncheck();
   await output.evaluate((element) => { element.scrollTop = 0; element.dispatchEvent(new Event("scroll")); });
-  await page.locator("#machine-logs-follow").check();
+  await output.evaluate((element) => { element.scrollTop = element.scrollHeight; element.dispatchEvent(new Event("scroll")); });
+  api.adapterLogs = logFixture(["Controller", "Control adapter", "finance-client adapter"], 105);
+  await refreshLogs(page);
   await expectAtBottom(output);
 });
 
 test("log rendering preserves ANSI colors without interpreting HTML", async ({ page, appURL, api }) => {
-  api.adapterLogs.machines[0].sources[0].lines = [
+  api.adapterLogs.machines[0].sources.find((source) => source.name === "Control adapter").lines = [
     "\u001b[31mred\u001b[0m plain",
     "\u001b[38;2;10;20;30mRGB\u001b[0m",
     "<img src=x onerror=window.logInjected=true>",
@@ -579,7 +1050,8 @@ test("Adapter Logs polls only while its Control Room page is active", async ({ p
   await expect(page.locator("#page-services")).toBeVisible();
   expect(api.counts.get("/api/adapter-logs") || 0).toBe(0);
   await page.getByRole("link", { name: "Adapter Logs", exact: true }).click();
-  await expect(page.locator(".machine-log-panel")).toHaveCount(2);
+  await page.getByRole("button", { name: "Add adapter panel" }).click();
+  await expect(page.locator(".adapter-log-column")).toHaveCount(2);
   await page.clock.runFor(2100);
   await expect.poll(() => api.counts.get("/api/adapter-logs")).toBeGreaterThanOrEqual(2);
   await page.getByRole("link", { name: "Services", exact: true }).click();
@@ -590,6 +1062,19 @@ test("Adapter Logs polls only while its Control Room page is active", async ({ p
   expect(api.counts.get("/api/adapter-logs")).toBe(before);
   await page.getByRole("link", { name: "Adapter Logs", exact: true }).click();
   await expect.poll(() => api.counts.get("/api/adapter-logs")).toBeGreaterThan(before);
+});
+
+test("policy editor has no attribute picker and retains attribute completions", async ({ page, appURL, api }) => {
+  await page.goto(appURL + "/#policy");
+  await page.locator('[data-record-id="test-policy"]').click();
+  const editor = page.locator("#policy-source");
+  await expect(editor).toHaveValue("define Employee as user.\n");
+  await expect(page.locator("#policy-attribute-picker, #policy-attribute-insert")).toHaveCount(0);
+  await expect(page.locator("#policy-format")).toBeVisible();
+  await expect(page.locator("#policy-test")).toBeVisible();
+  await expect(page.locator("#policy-attribute-rescan")).toBeVisible();
+  await editor.fill("define Employee as user with user.");
+  await expect(page.locator("#policy-completions")).toContainText("user.department:");
 });
 
 test("policy completions respect statements, define attributes and punctuation", async ({ page, appURL, api }) => {
@@ -649,12 +1134,13 @@ test("policy compiler errors highlight their source token", async ({ page, appUR
 });
 
 test("service types share table and map colors and gateways have clouds", async ({ page, appURL, api }) => {
-  const kinds = ["BuiltIn", "Regular", "Visa", "Gateway", 'Trusted("file")', 'Trusted("rest/1")', null, 'Trusted("custom")'];
+  const kinds = ["BuiltIn", "Regular", "Visa", "Gateway", "ZPR", "Policy", "Control", "Auth", "Attribute", "Application", "Node", "Logger", 'Trusted("file")', 'Trusted("rest/1")', null, 'Trusted("custom")'];
   api.snapshot.actors = [{ cn: "adapter", node: false, zpr_addr: "fd00::1" }];
   api.snapshot.services = kinds.map((kind, index) => ({ service_name: `service-${index}`, service_kind: kind, actor_cn: "adapter", zpr_addr: "fd00::1", service_endpoints: "tcp:8080" }));
   await page.goto(appURL + "/#services");
   const chips = page.locator(".service-type-chip");
   await expect(chips).toHaveCount(kinds.length);
+  await expect(page.locator('.service-type-chip[data-service-type="ZPR"]')).toHaveText("ZPR service");
   const colors = await chips.evaluateAll((elements) => Object.fromEntries(elements.map((element) => [element.dataset.serviceType, {
     fill: getComputedStyle(element).backgroundColor,
     stroke: getComputedStyle(element).borderColor,
@@ -663,6 +1149,9 @@ test("service types share table and map colors and gateways have clouds", async 
   expect(new Set(Object.values(colors).map((color) => color.fill)).size).toBe(kinds.length);
   await page.getByText("Type colors", { exact: true }).click();
   await expect(page.locator(".service-type-legend-item")).toHaveCount(kinds.length);
+  for (const label of ["ZPR service", "Policy service", "Control service", "Authentication service", "Attribute service", "Application service", "Node", "Logger"]) {
+    await expect(page.locator(".service-type-legend")).toContainText(label);
+  }
   await page.keyboard.press("Escape");
   await expect(page.locator(".service-type-key")).not.toHaveAttribute("open", "");
   await page.getByRole("link", { name: "Map", exact: true }).click();

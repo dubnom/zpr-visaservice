@@ -31,6 +31,15 @@
       nav.insertBefore(logsLink, nav.querySelector('a[href="/activity.html"]'));
     }
     logsLink.textContent = "Workload logs";
+    let sourceLink = nav.querySelector('a[href="/trusted-source.html"]');
+    if (!sourceLink) {
+      sourceLink = document.createElement("a");
+      sourceLink.className = "nav-link";
+      sourceLink.dataset.simulatorNav = "";
+      sourceLink.href = "/trusted-source.html";
+      sourceLink.textContent = "Trusted source";
+      nav.insertBefore(sourceLink, nav.querySelector('a[href="/activity.html"]'));
+    }
     nav.querySelectorAll("a[data-simulator-nav]").forEach((link) => {
       link.classList.toggle("active", pageKey(link.href) === currentPath);
     });

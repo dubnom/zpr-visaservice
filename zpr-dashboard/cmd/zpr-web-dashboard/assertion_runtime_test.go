@@ -182,7 +182,11 @@ func TestAssertionAPIRejectsUntrustedDataAndConcurrentRuns(t *testing.T) {
 	started, release := make(chan struct{}), make(chan struct{})
 	store := &memoryAssertionSettingsStore{response: assertionSettingsResponse{OrganizationID: "alpha", Settings: assertionSettings{IntervalSeconds: 60}}}
 	runtime := &assertionRuntime{settingsStore: store, settingsReady: true, settings: store.response.Settings, organizationID: "alpha", lastSettingsSync: time.Now(), baseDN: "dc=alpha", bindDN: "cn=reader,dc=alpha", reader: func(context.Context, string, string) (assertionDirectory, error) {
-		close(started)
+		select {
+		case <-started:
+		default:
+			close(started)
+		}
 		<-release
 		return assertionDirectory{People: []string{"alice"}, Groups: map[string][]string{"A": {"alice"}}}, nil
 	}}
@@ -208,4 +212,19 @@ func TestAssertionAPIRejectsUntrustedDataAndConcurrentRuns(t *testing.T) {
 	}
 	close(release)
 	<-done
+	response = httptest.NewRecorder()
+	request = httptest.NewRequest(http.MethodGet, "http://127.0.0.1/api/assertions/source", nil)
+	request.RemoteAddr = "127.0.0.1:1234"
+	mux.ServeHTTP(response, request)
+	if response.Code != http.StatusOK {
+		t.Fatalf("source read failed: %d %s", response.Code, response.Body.String())
+	}
+	var source map[string]any
+	if err := json.Unmarshal(response.Body.Bytes(), &source); err != nil {
+		t.Fatal(err)
+	}
+	directory, ok := source["directory"].(map[string]any)
+	if !ok || len(directory["people"].([]any)) != 1 || source["base_dn"] != "dc=alpha" {
+		t.Fatalf("source browser response missing filtered directory data: %+v", source)
+	}
 }

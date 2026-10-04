@@ -10,10 +10,20 @@
   let savedEnabled = false;
   let savedInterval = 60;
   let pending = false;
+  let testPending = false;
+  let testMode = false;
+  let testAbort = null;
+  let selectedRecord = null;
+  let recordMode = false;
+  let recordStale = false;
+  let recordLastRun = null;
+  let loadedRecordID = "";
   let timer;
   const active = () => location.hash === "#policy" && !element("policy-assertion-editor")?.hidden;
-  const dirty = () => source.value !== savedSource || enabled.checked !== savedEnabled || Number(interval.value) !== savedInterval;
-  const stale = () => status && (status.settings.revision !== loadedRevision || (status.organization_id && status.organization_id !== loadedOrganizationID));
+  const dirty = () => recordMode
+    ? selectedRecord?.isDraft ? Boolean(source.value.trim() || element("policy-draft-name").value.trim()) : source.value !== savedSource
+    : source.value !== savedSource || enabled.checked !== savedEnabled || Number(interval.value) !== savedInterval;
+  const stale = () => Boolean(status && (recordMode ? recordStale || status.organization_id !== loadedOrganizationID : status.settings.revision !== loadedRevision || (status.organization_id && status.organization_id !== loadedOrganizationID)));
   const escape = (text) => String(text ?? "").replace(/[&<>"']/g, (character) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[character]);
 
   function highlight() {
@@ -30,13 +40,23 @@
   function actions() {
     const organization = status?.organization_name || status?.organization_id || "Organization";
     element("assertion-revision").textContent = `${organization} / r${loadedRevision}${dirty() ? " / Unsaved" : ""}${stale() ? " / Reload required" : ""}`;
-    element("assertion-save").disabled = pending || !status || !dirty() || stale();
-    element("assertion-evaluate").disabled = pending || !status?.configured || status?.running || stale() || !source.value.trim();
-    element("assertion-read-source").disabled = pending || !status?.configured || status?.running;
-    element("assertion-reload").disabled = pending || !status;
-    enabled.disabled = pending || !status?.configured;
-    interval.disabled = pending;
-    source.disabled = pending || !status;
+    const hasDraftName = !recordMode || !selectedRecord?.isDraft || Boolean(element("policy-draft-name").value.trim());
+    element("assertion-save").disabled = pending || testMode || !status || !dirty() || stale() || !hasDraftName || (recordMode && (!source.value.trim() || selectedRecord?.archived));
+    element("assertion-evaluate").disabled = testMode ? false : pending || testPending || !status?.configured || status?.running || stale() || !source.value.trim();
+    element("assertion-evaluate").textContent = testMode ? "Exit test" : "Test";
+    element("assertion-evaluate").setAttribute("aria-pressed", String(testMode));
+    element("assertion-read-source").disabled = pending || testMode || recordMode || !status?.configured || status?.running;
+    element("assertion-reload").disabled = pending || testMode || !status || (recordMode && selectedRecord?.isDraft);
+    element("assertion-periodic-control").hidden = recordMode;
+    element("assertion-interval-control").hidden = recordMode;
+    enabled.disabled = pending || testMode || recordMode || !status?.configured;
+    interval.disabled = pending || testMode || recordMode;
+    source.disabled = !status || Boolean(selectedRecord?.archived);
+    source.readOnly = testMode || Boolean(selectedRecord?.archived);
+    const catalog = document.querySelector(".assertion-catalog");
+    if (catalog) catalog.dataset.testMode = String(testMode || recordMode);
+    element("policy-workbench").dataset.assertionTestMode = String(testMode);
+    window.policyWorkbenchLayoutChanged?.();
   }
 
   function message(text, state = "") {
@@ -126,6 +146,59 @@
     }
   }
 
+  async function toggleTest() {
+    if (testMode) {
+      stopTest();
+      return;
+    }
+    if (pending || testPending || !status?.configured || stale() || !source.value.trim()) return;
+    const controller = new AbortController();
+    testMode = true;
+    testPending = true;
+    testAbort = controller;
+    renderRun(null);
+    message("Evaluating assertions…");
+    actions();
+    try {
+      const run = await request("/api/assertions/evaluate", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ source: source.value, expected_revision: recordMode ? status.settings.revision : loadedRevision }),
+        signal: controller.signal,
+      });
+      if (!testMode) return;
+      if (recordMode) {
+        run.revision = loadedRevision;
+        run.draft = dirty();
+        recordLastRun = run;
+      }
+      renderRun(run);
+      message(run.status === "error" ? run.error || "Assertion evaluation failed." : "");
+    } catch (error) {
+      if (error.name !== "AbortError" && testMode) {
+        const failure = { status: "error", error: error.message, revision: loadedRevision, draft: source.value !== savedSource, finished_at: new Date().toISOString(), results: [] };
+        renderRun(failure);
+        message(error.message, "error");
+      }
+    } finally {
+      if (testAbort === controller) {
+        testAbort = null;
+        testPending = false;
+        actions();
+      }
+    }
+  }
+
+  function stopTest() {
+    testAbort?.abort();
+    testAbort = null;
+    testPending = false;
+    testMode = false;
+    renderRun(null);
+    message("");
+    actions();
+  }
+
   function renderResultGutter(run) {
     const gutter = element("assertion-result-gutter");
     const editor = element("assertion-editor");
@@ -211,6 +284,7 @@
 
   function applyStatus(data, replace = false) {
     const organizationChanged = Boolean(loadedOrganizationID && data.organization_id && loadedOrganizationID !== data.organization_id);
+    if (organizationChanged && testMode) stopTest();
     const keepDraft = organizationChanged && dirty() && !replace;
     status = data;
     if (replace || !keepDraft && (organizationChanged || !source.dataset.loaded)) {
@@ -232,9 +306,85 @@
     actions();
   }
 
+  async function loadRecordStatus(data, replace = false) {
+    status = data;
+    let record = selectedRecord;
+    if (record && !record.isDraft) record = await request(`/api/policy/records/${encodeURIComponent(record.id)}`);
+    if (!record) return;
+    const organizationChanged = Boolean(loadedOrganizationID && data.organization_id && loadedOrganizationID !== data.organization_id);
+    const recordChanged = loadedRecordID !== (record.id || "");
+    if (replace || organizationChanged || recordChanged) {
+      source.value = record.content || "";
+      savedSource = source.value;
+      loadedRevision = record.current_revision || 0;
+      loadedRecordID = record.id || "";
+      recordStale = false;
+      recordLastRun = null;
+      source.dataset.loaded = "true";
+      if (organizationChanged) message(`Loaded assertions for ${data.organization_name || data.organization_id}`);
+    } else if (!record.isDraft && record.current_revision !== loadedRevision) {
+      if (dirty()) {
+        recordStale = true;
+        message("This assertion record changed elsewhere. Reload before saving or testing.", "error");
+      } else {
+        selectedRecord = record;
+        source.value = savedSource = record.content || "";
+        loadedRevision = record.current_revision;
+        recordLastRun = null;
+      }
+    }
+    selectedRecord = record;
+    loadedOrganizationID = data.organization_id || "";
+    element("assertion-source-status").textContent = data.configured ? `Live LDAP / ${data.base_dn}` : "Trusted LDAP source not configured";
+    renderSummary(data.source_summary);
+    renderRun(recordLastRun);
+    actions();
+  }
+
   async function load(replace = false) {
-    try { applyStatus(await request("/api/assertions"), replace); }
-    catch (error) { message(error.message, "error"); }
+    try {
+      const data = await request("/api/assertions");
+      if (recordMode) await loadRecordStatus(data, replace);
+      else applyStatus(data, replace);
+    } catch (error) { message(error.message, "error"); }
+  }
+
+  async function saveAssertionRecord() {
+    if (selectedRecord.isDraft) {
+      const name = element("policy-draft-name").value.trim();
+      if (!name) throw new Error("Name this assertion set before saving.");
+      const record = await request("/api/policy/records", {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          category_id: selectedRecord.category_id, name, kind: "assertions",
+          content_type: "text/vnd.zpr.assertions", metadata: { language: "assertions" },
+          content: source.value, summary: "Created assertion set",
+        }),
+      });
+      record.isDraft = false;
+      selectedRecord = record;
+      loadedRecordID = record.id;
+      loadedRevision = record.current_revision;
+      savedSource = source.value;
+      source.dataset.loaded = "true";
+      recordStale = false;
+      recordLastRun = null;
+      window.dispatchEvent(new CustomEvent("policy-assertion-created", { detail: { record } }));
+      return record;
+    }
+    const recordID = selectedRecord.id;
+    await request(`/api/policy/records/${encodeURIComponent(recordID)}/revisions`, {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ content: source.value, expected_revision: loadedRevision, summary: "Updated assertion set" }),
+    });
+    const record = await request(`/api/policy/records/${encodeURIComponent(recordID)}`);
+    selectedRecord = record;
+    loadedRevision = record.current_revision;
+    savedSource = source.value;
+    recordStale = false;
+    recordLastRun = null;
+    window.dispatchEvent(new Event("policy-assertion-saved"));
+    return record;
   }
 
   async function command(action) {
@@ -242,13 +392,26 @@
     pending = true; actions(); message("");
     try {
       if (action === "save") {
-        const data = await request("/api/assertions", { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ source: source.value, expected_revision: loadedRevision, enabled: enabled.checked, interval_seconds: Number(interval.value) }) });
-        applyStatus(data, true);
-        message(`Saved ${status.organization_name || status.organization_id || "organization"} revision ${loadedRevision}`);
-        window.dispatchEvent(new Event("policy-assertion-saved"));
+        if (recordMode) {
+          const record = await saveAssertionRecord();
+          message(`Saved ${record.name} / r${loadedRevision}`);
+        } else {
+          const data = await request("/api/assertions", { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ source: source.value, expected_revision: loadedRevision, enabled: enabled.checked, interval_seconds: Number(interval.value) }) });
+          applyStatus(data, true);
+          message(`Saved ${status.organization_name || status.organization_id || "organization"} revision ${loadedRevision}`);
+          window.dispatchEvent(new Event("policy-assertion-saved"));
+        }
       } else if (action === "evaluate") {
-        renderRun(await request("/api/assertions/evaluate", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ source: source.value, expected_revision: loadedRevision }) }));
-        await load();
+        const run = await request("/api/assertions/evaluate", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ source: source.value, expected_revision: recordMode ? status.settings.revision : loadedRevision }) });
+        if (recordMode) {
+          run.revision = loadedRevision;
+          run.draft = dirty();
+          recordLastRun = run;
+          renderRun(run);
+        } else {
+          renderRun(run);
+          await load();
+        }
       } else {
         renderSummary(await request("/api/assertions/source"));
       }
@@ -259,19 +422,39 @@
     finally { pending = false; actions(); }
   }
 
-  for (const control of [source, enabled, interval]) control.addEventListener("input", () => {
-    highlight();
-    renderRun(null);
-    actions();
-  });
+  for (const control of [source, enabled, interval]) control.addEventListener("input", () => { highlight(); renderRun(null); actions(); });
   source.addEventListener("scroll", highlight);
   source.addEventListener("keydown", (event) => {
     if (event.key === "Tab") { event.preventDefault(); source.setRangeText("  ", source.selectionStart, source.selectionEnd, "end"); highlight(); actions(); }
   });
   element("assertion-save").addEventListener("click", () => command("save"));
-  element("assertion-evaluate").addEventListener("click", () => command("evaluate"));
+  element("assertion-evaluate").addEventListener("click", toggleTest);
   element("assertion-read-source").addEventListener("click", () => command("read"));
   element("assertion-reload").addEventListener("click", () => { if (!dirty() || window.confirm("Discard unsaved assertion changes?")) load(true); });
+  element("policy-draft-name").addEventListener("input", actions);
+  window.policyAssertionDirty = () => recordMode ? dirty() : false;
+  window.addEventListener("policy-record-kind-changed", (event) => {
+    const { kind, record } = event.detail || {};
+    const nextRecordMode = kind === "assertions" && record && (record.isDraft || record.content_type === "text/vnd.zpr.assertions");
+    if (testMode && (!nextRecordMode || selectedRecord?.id !== record?.id)) stopTest();
+    selectedRecord = nextRecordMode ? record : null;
+    recordMode = Boolean(nextRecordMode);
+    recordStale = false;
+    recordLastRun = null;
+    loadedRecordID = recordMode ? record.id || "" : "";
+    if (recordMode) {
+      source.value = record.content || "";
+      savedSource = source.value;
+      loadedRevision = record.current_revision || 0;
+      source.dataset.loaded = "true";
+      enabled.checked = false;
+      interval.value = "60";
+    }
+    highlight();
+    renderRun(null);
+    message("");
+    navigation();
+  });
   const catalogTabs = [...document.querySelectorAll("[data-assertion-catalog-tab]")];
   const selectCatalog = (selected) => {
     for (const tab of catalogTabs) {
@@ -291,11 +474,36 @@
       selectCatalog(catalogTabs[next]); catalogTabs[next].focus();
     });
   }
+  window.policyAssertionDirty = () => recordMode ? dirty() : false;
+  window.addEventListener("policy-record-kind-changed", (event) => {
+    const { kind, record } = event.detail || {};
+    const nextRecordMode = kind === "assertions" && record && (record.isDraft || record.content_type === "text/vnd.zpr.assertions");
+    if (testMode && (!nextRecordMode || selectedRecord?.id !== record?.id)) stopTest();
+    selectedRecord = nextRecordMode ? record : null;
+    recordMode = Boolean(nextRecordMode);
+    recordStale = false;
+    recordLastRun = null;
+    loadedRecordID = recordMode ? record.id || "" : "";
+    if (recordMode) {
+      source.value = record.content || "";
+      savedSource = source.value;
+      loadedRevision = record.current_revision || 0;
+      source.dataset.loaded = "true";
+      enabled.checked = false;
+      interval.value = "60";
+    }
+    highlight();
+    renderRun(null);
+    message("");
+    actions();
+    navigation();
+  });
+  element("policy-draft-name").addEventListener("input", actions);
   const navigation = () => {
     clearInterval(timer);
+    if (!active() && testMode) stopTest();
     if (active()) { load(); timer = setInterval(() => { if (!pending) load(); }, 5000); }
   };
   window.addEventListener("hashchange", navigation);
-  window.addEventListener("policy-record-kind-changed", navigation);
   actions(); navigation();
 })();

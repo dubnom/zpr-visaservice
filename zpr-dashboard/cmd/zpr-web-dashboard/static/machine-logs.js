@@ -2,10 +2,15 @@
   const { AnsiUp } = await import("/ansi_up.js?v=6.0.6");
   const grid = document.getElementById("machine-logs-grid");
   const controlRoom = grid.dataset.site === "control-room";
+  const followLogs = () => controlRoom || document.getElementById("machine-logs-follow").checked;
   const endpoint = grid.dataset.endpoint || "/api/simulator/machine-logs";
   const pageActive = () => controlRoom ? location.hash === "#adapter-logs" : location.pathname === "/machine-logs.html";
   const refreshButton = document.getElementById("machine-logs-refresh");
   const cards = new Map();
+  const adapterColumns = [];
+  let nextAdapterColumnID = 1;
+  let adapterColumnsInitialized = false;
+  let adapterLogType = "adapter";
   let machines = [];
   let paused = false;
   let active = pageActive();
@@ -35,10 +40,10 @@
   function setMaximized(card, maximized) {
     card.panel.classList.toggle("maximized", maximized);
     card.maximizeButton.textContent = maximized ? "Restore" : "Maximize";
-    card.maximizeButton.setAttribute("aria-label", `${maximized ? "Restore" : "Maximize"} logs for ${card.name.textContent}`);
+    card.maximizeButton.setAttribute("aria-label", `${maximized ? "Restore" : "Maximize"} logs for ${card.name?.textContent || card.title?.textContent || "adapter"}`);
     card.maximizeButton.setAttribute("aria-pressed", String(maximized));
     document.body.classList.toggle("machine-log-maximized", maximized);
-    if (document.getElementById("machine-logs-follow").checked && card.following) card.output.scrollTop = card.output.scrollHeight;
+    if (followLogs() && card.following) card.output.scrollTop = card.output.scrollHeight;
   }
 
   function maximizeCard(card, maximized) {
@@ -59,7 +64,196 @@
     card.nextScrollTop = saved?.scrollTop ?? 0;
   }
 
+  function adapterSources() {
+    return machines.flatMap((entry) => (entry.sources || [])
+      .filter((source) => adapterLogType === "controller" ? source.name === "Controller" : /adapter$/i.test(source.name))
+      .map((source) => ({ key: `${entry.machine.id}\u001f${source.name}`, machine: entry, source, label: `${source.name} · ${entry.machine.id}` })));
+  }
+
+  function switchAdapterLogType(type) {
+    if (type === adapterLogType || !["adapter", "controller"].includes(type)) return;
+    for (const column of adapterColumns) {
+      saveAdapterColumnPosition(column);
+      column.selectedKeys.set(adapterLogType, column.selectedKey);
+    }
+    adapterLogType = type;
+    for (const column of adapterColumns) {
+      column.selectedKey = column.selectedKeys.get(type) || "";
+      const saved = column.sourceViews.get(column.selectedKey);
+      column.following = saved?.following ?? true;
+      column.nextScrollTop = saved?.scrollTop ?? 0;
+      column.signature = "";
+    }
+    for (const button of document.querySelectorAll("[data-adapter-log-type]")) {
+      button.setAttribute("aria-pressed", String(button.dataset.adapterLogType === type));
+    }
+    renderAdapterColumns();
+  }
+
+  function makeAdapterColumn() {
+    grid.querySelector(".adapter-columns-empty")?.remove();
+    const panel = document.createElement("article");
+    panel.className = "machine-log-panel adapter-log-column";
+    const header = document.createElement("header");
+    const title = document.createElement("h2");
+    title.textContent = "Adapter logs";
+    const actions = document.createElement("div");
+    actions.className = "machine-log-panel-actions";
+    const maximizeButton = document.createElement("button");
+    maximizeButton.className = "quiet";
+    maximizeButton.type = "button";
+    maximizeButton.textContent = "Maximize";
+    maximizeButton.setAttribute("aria-pressed", "false");
+    const removeButton = document.createElement("button");
+    removeButton.type = "button";
+    removeButton.className = "adapter-column-remove";
+    removeButton.textContent = "−";
+    removeButton.title = "Remove adapter panel";
+    removeButton.setAttribute("aria-label", "Remove adapter panel");
+    const select = document.createElement("select");
+    select.setAttribute("aria-label", "Select adapter");
+    const toolbar = document.createElement("div");
+    toolbar.className = "machine-log-source-toolbar adapter-column-picker";
+    const label = document.createElement("label");
+    label.textContent = "Adapter";
+    label.htmlFor = `adapter-log-picker-${nextAdapterColumnID}`;
+    select.id = label.htmlFor;
+    select.setAttribute("aria-label", `Select adapter for panel ${nextAdapterColumnID}`);
+    const output = document.createElement("div");
+    output.className = "machine-log-output";
+    output.tabIndex = 0;
+    const column = {
+      id: nextAdapterColumnID++, panel, title, maximizeButton, removeButton, select,
+      toolbar, label, output, selectedKey: "", selectedKeys: new Map(), choices: "", signature: "", sourceViews: new Map(),
+      following: true, nextScrollTop: undefined,
+    };
+    maximizeButton.setAttribute("aria-label", `Maximize adapter panel ${column.id}`);
+    maximizeButton.addEventListener("click", () => maximizeAdapterColumn(column, !panel.classList.contains("maximized")));
+    removeButton.addEventListener("click", () => removeAdapterColumn(column));
+    select.addEventListener("change", () => {
+      saveAdapterColumnPosition(column);
+      column.selectedKey = select.value;
+      const saved = column.sourceViews.get(column.selectedKey);
+      column.following = saved?.following ?? true;
+      column.nextScrollTop = saved?.scrollTop ?? 0;
+      renderAdapterColumns();
+    });
+    output.addEventListener("scroll", () => {
+      if (output.clientHeight) column.following = output.scrollHeight - output.clientHeight - output.scrollTop <= 8;
+    });
+    actions.append(removeButton, maximizeButton);
+    header.append(actions);
+    toolbar.append(label, select);
+    panel.append(header, toolbar, output);
+    grid.append(panel);
+    adapterColumns.push(column);
+    return column;
+  }
+
+  function saveAdapterColumnPosition(column) {
+    if (column.selectedKey) column.sourceViews.set(column.selectedKey, { scrollTop: column.output.scrollTop, following: column.following });
+  }
+
+  function removeAdapterColumn(column) {
+    saveAdapterColumnPosition(column);
+    if (column.panel.classList.contains("maximized")) setMaximized(column, false);
+    column.panel.remove();
+    const index = adapterColumns.indexOf(column);
+    if (index >= 0) adapterColumns.splice(index, 1);
+    renderAdapterColumns();
+  }
+
+  function maximizeAdapterColumn(column, maximized) {
+    if (maximized) for (const other of adapterColumns) {
+      if (other !== column && other.panel.classList.contains("maximized")) setMaximized(other, false);
+    }
+    setMaximized(column, maximized);
+  }
+
+  function renderAdapterColumns() {
+    const choices = adapterSources();
+    const type = adapterLogType === "controller" ? "controller" : "adapter";
+    const addButton = document.getElementById("adapter-log-add");
+    addButton.setAttribute("aria-label", `Add ${type} panel`);
+    addButton.title = `Add ${type} panel`;
+    if (!adapterColumnsInitialized) {
+      adapterColumnsInitialized = true;
+      makeAdapterColumn();
+    }
+    if (!adapterColumns.length) {
+      grid.replaceChildren();
+      const empty = document.createElement("p");
+      empty.className = "adapter-columns-empty";
+      empty.textContent = `No ${type} panels. Use + to add one.`;
+      grid.append(empty);
+    }
+    for (const column of adapterColumns) {
+      column.label.textContent = type === "controller" ? "Machine" : "Adapter";
+      column.select.setAttribute("aria-label", `Select ${type} for panel ${column.id}`);
+      column.removeButton.setAttribute("aria-label", `Remove ${type} panel`);
+      column.removeButton.title = `Remove ${type} panel`;
+      const choicesSignature = JSON.stringify(choices.map(({ key, label }) => [key, label]));
+      if (choicesSignature !== column.choices) {
+        column.select.replaceChildren();
+        for (const choice of choices) {
+          const option = document.createElement("option");
+          option.value = choice.key;
+          option.textContent = choice.label;
+          column.select.append(option);
+        }
+        column.choices = choicesSignature;
+      }
+      if (!choices.some((choice) => choice.key === column.selectedKey)) {
+        const previous = column.selectedKey;
+        column.selectedKey = choices[0]?.key || "";
+        const saved = column.sourceViews.get(column.selectedKey);
+        column.following = saved?.following ?? true;
+        column.nextScrollTop = saved?.scrollTop ?? 0;
+        if (previous && column.selectedKey !== previous) column.signature = "";
+      }
+      column.select.value = column.selectedKey;
+      column.select.disabled = choices.length === 0;
+      const selected = choices.find((choice) => choice.key === column.selectedKey);
+      const entry = selected?.machine;
+      const source = selected?.source;
+      column.panel.classList.toggle("running", entry?.state === "running");
+      column.title.textContent = selected ? `${source.name} · ${entry.machine.id}` : `${type === "controller" ? "Controller" : "Adapter"} logs`;
+      column.output.setAttribute("aria-label", selected ? `${entry.machine.id} ${source.name} logs` : `${type} logs`);
+      const contentSignature = JSON.stringify({ state: entry?.state || "missing", source });
+      if (contentSignature !== column.signature) {
+        const scrollTop = column.nextScrollTop ?? column.output.scrollTop;
+        column.nextScrollTop = undefined;
+        column.output.replaceChildren();
+        const content = document.createElement(source?.error ? "p" : "pre");
+        if (!selected) {
+          content.textContent = `No ${type} logs available.`;
+          content.className = "machine-log-error";
+        } else if (source.error) {
+          content.textContent = source.error;
+          content.className = "machine-log-error";
+        } else renderColoredLog(content, source.lines.join("\n") || "No log entries.");
+        column.output.append(content);
+        column.signature = contentSignature;
+        column.output.scrollTop = scrollTop;
+      }
+    }
+    if (followLogs()) for (const column of adapterColumns) {
+      if (column.following && column.selectedKey) column.output.scrollTop = column.output.scrollHeight;
+    }
+  }
+
+  function addAdapterColumn() {
+    const choices = adapterSources();
+    const used = new Set(adapterColumns.map((column) => column.selectedKey));
+    const next = choices.find((choice) => !used.has(choice.key)) || choices[0];
+    const column = makeAdapterColumn();
+    if (next) column.selectedKey = next.key;
+    renderAdapterColumns();
+    column.select.focus();
+  }
+
   function render() {
+    if (controlRoom) { renderAdapterColumns(); return; }
     const query = document.getElementById("machine-logs-search").value.trim().toLowerCase();
     const runningOnly = document.getElementById("machine-logs-running").checked;
     const follow = document.getElementById("machine-logs-follow").checked;
@@ -244,11 +438,21 @@
     } else start();
   });
   document.getElementById("machine-logs-refresh").addEventListener("click", () => { clearTimeout(timer); refresh(); });
-  for (const id of ["machine-logs-search", "machine-logs-running"]) document.getElementById(id).addEventListener("input", render);
-  document.getElementById("machine-logs-follow").addEventListener("input", (event) => {
+  if (controlRoom) {
+    document.getElementById("adapter-log-add").addEventListener("click", addAdapterColumn);
+    for (const button of document.querySelectorAll("[data-adapter-log-type]")) {
+      button.addEventListener("click", () => switchAdapterLogType(button.dataset.adapterLogType));
+    }
+  }
+  if (!controlRoom) for (const id of ["machine-logs-search", "machine-logs-running"]) document.getElementById(id).addEventListener("input", render);
+  document.getElementById("machine-logs-follow")?.addEventListener("input", (event) => {
     if (event.target.checked) for (const card of cards.values()) {
       card.following = true;
       for (const view of card.sourceViews.values()) view.following = true;
+    }
+    if (event.target.checked) for (const column of adapterColumns) {
+      column.following = true;
+      for (const view of column.sourceViews.values()) view.following = true;
     }
     render();
   });
@@ -257,6 +461,7 @@
     for (const card of cards.values()) {
       if (card.panel.classList.contains("maximized")) maximizeCard(card, false);
     }
+    for (const column of adapterColumns) if (column.panel.classList.contains("maximized")) maximizeAdapterColumn(column, false);
   });
   if (controlRoom) {
     window.addEventListener("hashchange", () => { if (pageActive()) start(); else stop(); });

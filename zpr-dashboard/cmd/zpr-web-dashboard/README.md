@@ -9,12 +9,21 @@ owns its REST listener, SQLite journal, and ZPLC configuration. All three
 processes use the same Go executable with different `-mode` values and remain
 separate processes and trust boundaries.
 
+Control Room and Simulator side menus can be condensed with the arrow button
+and reopened with the same control. The active page name stays visible. Desktop
+keeps a narrow menu with readable tab labels; mobile collapses to a current-page
+bar. Each app saves its own menu preference in browser storage, including across
+Simulator page transitions and browser Back/Forward navigation.
+
 The Trusted sources page explains each provider in terms of its owning actor,
 service endpoint, and most recent real attribute lookup. **Working** means the
 latest lookup succeeded; **failed** means it failed, and **unverified** means
-no lookup has occurred. This is not a live connection probe. The page does not
-browse provider records. Older Visa Service versions without the status
-endpoint fall back to policy service descriptors and show **unreported**.
+no lookup has occurred. This is not a live connection probe. The page also
+offers a read-only browser for the configured LDAP directory, showing people,
+groups, and approved attribute values. The Simulator exposes the same browser
+for its active organization's directory. Neither view edits or publishes source
+data. Older Visa Service versions without the status endpoint fall back to
+policy service descriptors and show **unreported**.
 The local `demo_ldap` source optionally links to a separate phpLDAPadmin tab if
 `ZPR_DEMO_LDAP_EDITOR_URL` is set to a `http://127.0.0.1:<port>/` URL. No other
 source receives an editor link; the browser authenticates directly to the
@@ -39,6 +48,15 @@ Control Room operators still share the Control-Service identity. The Policy
 Repository is not an attribute source queried during ZPL policy evaluation.
 
 ## Policy records
+
+The editor's picker uses a context menu for category/record creation, copy,
+paste, duplicate, delete, and archive/restore actions. Right-click a category
+or record, or press Shift+F10 or the Menu key on a focused item. The picker
+tree itself supports the same shortcut when no row is selected. Every row supports the menu, including
+its label and revision metadata. Category rows offer creation and paste;
+policy/assertion rows offer record actions with protected/archive restrictions.
+Arrow keys navigate the menu; Escape closes it
+and restores focus. Existing unsaved-edit and protected-record checks still apply.
 
 The standalone `/policy-browser.html` page browses policy and assertion records
 without editing or evaluation controls. It supports name/category search,

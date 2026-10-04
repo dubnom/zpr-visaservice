@@ -385,6 +385,94 @@ func TestPolicyEditorRejectsNonLoopbackAndCrossOriginRequests(t *testing.T) {
 	}
 }
 
+func TestAssertionPolicyRecordLifecycleAndProtectsOrganizationSettings(t *testing.T) {
+	store, err := openSQLitePolicyRepository(filepath.Join(privatePolicyTestDir(t), "assertion-records.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer store.Close()
+	ctx := context.Background()
+	category, err := store.CreateCategory(ctx, nil, "Policies")
+	if err != nil {
+		t.Fatal(err)
+	}
+	app := &application{policy: &policyWorkspace{store: store}}
+	content := `group "Operators" members >= 2;`
+	createBody, _ := json.Marshal(policyRecordRequest{
+		CategoryID: category.ID, Name: "Operator assertions", Kind: organizationAssertionsKind,
+		ContentType: assertionRecordSourceContentType, Metadata: json.RawMessage(`{"language":"assertions"}`), Content: content,
+	})
+	created := httptest.NewRecorder()
+	app.handleCreatePolicyRecord(created, localPolicyRequest(http.MethodPost, "/api/policy/records", string(createBody)))
+	if created.Code != http.StatusCreated {
+		t.Fatalf("create assertion record status=%d body=%s", created.Code, created.Body)
+	}
+	var record policyRecord
+	if err := json.Unmarshal(created.Body.Bytes(), &record); err != nil {
+		t.Fatal(err)
+	}
+	if record.Kind != organizationAssertionsKind || record.CurrentRevision != 1 || record.Content != content {
+		t.Fatalf("created assertion record = %+v", record)
+	}
+
+	duplicateBody := `{"category_id":"` + category.ID + `","name":"Operator assertions copy"}`
+	duplicateRequest := localPolicyRequest(http.MethodPost, "/api/policy/records/"+record.ID+"/duplicate", duplicateBody)
+	duplicateRequest.SetPathValue("id", record.ID)
+	duplicateResponse := httptest.NewRecorder()
+	app.handleDuplicatePolicyRecord(duplicateResponse, duplicateRequest)
+	if duplicateResponse.Code != http.StatusCreated {
+		t.Fatalf("duplicate assertion record status=%d body=%s", duplicateResponse.Code, duplicateResponse.Body)
+	}
+	var duplicate policyRecord
+	if err := json.Unmarshal(duplicateResponse.Body.Bytes(), &duplicate); err != nil || duplicate.Content != content || duplicate.ID == record.ID {
+		t.Fatalf("duplicate assertion record = %+v, err=%v", duplicate, err)
+	}
+
+	archiveBody, _ := json.Marshal(policyRecordArchiveRequest{ExpectedRevision: record.CurrentRevision})
+	archiveRequest := localPolicyRequest(http.MethodDelete, "/api/policy/records/"+record.ID, string(archiveBody))
+	archiveRequest.SetPathValue("id", record.ID)
+	archived := httptest.NewRecorder()
+	app.handleArchivePolicyRecord(archived, archiveRequest)
+	if archived.Code != http.StatusOK {
+		t.Fatalf("archive assertion record status=%d body=%s", archived.Code, archived.Body)
+	}
+	restoredRequest := localPolicyRequest(http.MethodPost, "/api/policy/records/"+record.ID+"/restore", string(archiveBody))
+	restoredRequest.SetPathValue("id", record.ID)
+	restored := httptest.NewRecorder()
+	app.handleArchivePolicyRecord(restored, restoredRequest)
+	if restored.Code != http.StatusOK {
+		t.Fatalf("restore assertion record status=%d body=%s", restored.Code, restored.Body)
+	}
+	restoredRecord, err := store.GetRecord(ctx, record.ID)
+	if err != nil || restoredRecord.Archived || restoredRecord.CurrentRevision != 1 {
+		t.Fatalf("restored assertion record=%+v err=%v", restoredRecord, err)
+	}
+	revisions, err := store.ListRevisions(ctx, record.ID)
+	if err != nil || len(revisions) != 1 {
+		t.Fatalf("assertion revisions=%+v err=%v", revisions, err)
+	}
+
+	builtIn, err := store.CreateRecord(ctx, category.ID, organizationAssertionsName, organizationAssertionsKind, "application/vnd.zpr.assertions+json", json.RawMessage(`{"language":"json"}`), `{"source":"","enabled":false,"interval_seconds":60}`, "tester", "Built-in")
+	if err != nil {
+		t.Fatal(err)
+	}
+	protectedDuplicate := localPolicyRequest(http.MethodPost, "/api/policy/records/"+builtIn.ID+"/duplicate", `{}`)
+	protectedDuplicate.SetPathValue("id", builtIn.ID)
+	duplicateRejected := httptest.NewRecorder()
+	app.handleDuplicatePolicyRecord(duplicateRejected, protectedDuplicate)
+	if duplicateRejected.Code != http.StatusConflict {
+		t.Fatalf("built-in duplicate status=%d body=%s", duplicateRejected.Code, duplicateRejected.Body)
+	}
+	protectedArchiveBody, _ := json.Marshal(policyRecordArchiveRequest{ExpectedRevision: builtIn.CurrentRevision})
+	protectedArchive := localPolicyRequest(http.MethodDelete, "/api/policy/records/"+builtIn.ID, string(protectedArchiveBody))
+	protectedArchive.SetPathValue("id", builtIn.ID)
+	archiveRejected := httptest.NewRecorder()
+	app.handleArchivePolicyRecord(archiveRejected, protectedArchive)
+	if archiveRejected.Code != http.StatusConflict {
+		t.Fatalf("built-in archive status=%d body=%s", archiveRejected.Code, archiveRejected.Body)
+	}
+}
+
 func TestClaudeAssistantKeepsCredentialsServerSide(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodPost || r.URL.Path != "/v1/messages" {

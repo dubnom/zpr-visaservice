@@ -23,9 +23,10 @@ import (
 )
 
 const (
-	maxPolicySourceBytes = 1 << 20
-	maxPolicyOutputBytes = 16 << 10
-	maxAssistantBody     = 2 << 20
+	maxPolicySourceBytes             = 1 << 20
+	maxPolicyOutputBytes             = 16 << 10
+	maxAssistantBody                 = 2 << 20
+	assertionRecordSourceContentType = "text/vnd.zpr.assertions"
 )
 
 type policyWorkspace struct {
@@ -113,6 +114,15 @@ type policyRecordRequest struct {
 	Metadata    json.RawMessage `json:"metadata"`
 	Content     string          `json:"content"`
 	Summary     string          `json:"summary"`
+}
+
+type policyRecordDuplicateRequest struct {
+	CategoryID string `json:"category_id"`
+	Name       string `json:"name"`
+}
+
+type policyRecordArchiveRequest struct {
+	ExpectedRevision int `json:"expected_revision"`
 }
 
 type demoPolicyCatalog struct {
@@ -534,6 +544,10 @@ func (a *application) handleStagePolicyRecord(w http.ResponseWriter, r *http.Req
 		writePolicyStoreError(w, err)
 		return
 	}
+	if record.Archived {
+		writePolicyError(w, http.StatusConflict, "Restore the archived policy before staging it.")
+		return
+	}
 	if record.Kind != "policy" {
 		writePolicyError(w, http.StatusBadRequest, "Only policy records can be compiled and staged.")
 		return
@@ -623,16 +637,13 @@ func (a *application) handleCreatePolicyRecord(w http.ResponseWriter, r *http.Re
 	if request.Kind == "" {
 		request.Kind = "policy"
 	}
-	if request.Kind == "policy" && request.Content != "" {
-		if len(request.Content) > maxPolicySourceBytes {
-			writePolicyError(w, http.StatusRequestEntityTooLarge, "Policy content exceeds the 1 MiB limit.")
-			return
-		}
-		result := a.policy.check(r.Context(), request.Content)
-		if !result.Valid {
-			writeJSON(w, http.StatusUnprocessableEntity, result)
-			return
-		}
+	if len(request.Content) > maxPolicySourceBytes {
+		writePolicyError(w, http.StatusRequestEntityTooLarge, "Record content exceeds the 1 MiB limit.")
+		return
+	}
+	if validation := a.validatePolicyRecordContent(r.Context(), request.Kind, request.ContentType, request.Content); validation != nil {
+		writeJSON(w, http.StatusUnprocessableEntity, validation)
+		return
 	}
 	record, err := a.policy.store.CreateRecord(r.Context(), request.CategoryID, request.Name, request.Kind, request.ContentType, request.Metadata, request.Content, policyAuthor(), request.Summary)
 	if err != nil {
@@ -640,6 +651,111 @@ func (a *application) handleCreatePolicyRecord(w http.ResponseWriter, r *http.Re
 		return
 	}
 	writeJSON(w, http.StatusCreated, record)
+}
+
+func (a *application) validatePolicyRecordContent(ctx context.Context, kind, contentType, content string) *policyCheckResponse {
+	switch kind {
+	case "policy":
+		if strings.TrimSpace(content) == "" {
+			return nil
+		}
+		result := a.policy.check(ctx, content)
+		if !result.Valid {
+			return &result
+		}
+	case organizationAssertionsKind:
+		if contentType != assertionRecordSourceContentType {
+			return &policyCheckResponse{Diagnostics: "Assertion records must use the assertion source content type."}
+		}
+		rules, err := parseAssertions(content)
+		if err != nil {
+			return &policyCheckResponse{Diagnostics: err.Error()}
+		}
+		if len(rules) == 0 {
+			return &policyCheckResponse{Diagnostics: "Write at least one assertion before saving."}
+		}
+	}
+	return nil
+}
+
+func (a *application) handleDuplicatePolicyRecord(w http.ResponseWriter, r *http.Request) {
+	if !localEditorRequest(w, r) {
+		return
+	}
+	if a.policy == nil {
+		writePolicyError(w, http.StatusServiceUnavailable, a.policyErr)
+		return
+	}
+	var request policyRecordDuplicateRequest
+	if !decodePolicyRequest(w, r, 4096, &request) {
+		return
+	}
+	record, err := a.policy.store.GetRecord(r.Context(), r.PathValue("id"))
+	if err != nil {
+		writePolicyStoreError(w, err)
+		return
+	}
+	if record.Archived {
+		writePolicyError(w, http.StatusConflict, "Restore the archived record before duplicating it.")
+		return
+	}
+	if protectedOrganizationAssertionRecord(record) {
+		writePolicyError(w, http.StatusConflict, "The organization assertion settings record cannot be duplicated.")
+		return
+	}
+	categoryID := request.CategoryID
+	if categoryID == "" {
+		categoryID = record.CategoryID
+	}
+	name := strings.TrimSpace(request.Name)
+	if name == "" {
+		name = "Copy of " + record.Name
+	}
+	if validation := a.validatePolicyRecordContent(r.Context(), record.Kind, record.ContentType, record.Content); validation != nil {
+		writeJSON(w, http.StatusUnprocessableEntity, validation)
+		return
+	}
+	duplicate, err := a.policy.store.CreateRecord(r.Context(), categoryID, name, record.Kind, record.ContentType, record.Metadata, record.Content, policyAuthor(), "Duplicated from "+record.Name)
+	if err != nil {
+		writePolicyStoreError(w, err)
+		return
+	}
+	w.WriteHeader(http.StatusCreated)
+	writeJSON(w, http.StatusCreated, duplicate)
+}
+
+func protectedOrganizationAssertionRecord(record policyRecord) bool {
+	return record.Kind == organizationAssertionsKind && record.Name == organizationAssertionsName && record.ContentType == "application/vnd.zpr.assertions+json"
+}
+
+func (a *application) handleArchivePolicyRecord(w http.ResponseWriter, r *http.Request) {
+	if !localEditorRequest(w, r) {
+		return
+	}
+	if a.policy == nil {
+		writePolicyError(w, http.StatusServiceUnavailable, a.policyErr)
+		return
+	}
+	var request policyRecordArchiveRequest
+	if !decodePolicyRequest(w, r, 4096, &request) || request.ExpectedRevision <= 0 {
+		writePolicyError(w, http.StatusBadRequest, "The current record revision is required.")
+		return
+	}
+	record, err := a.policy.store.GetRecord(r.Context(), r.PathValue("id"))
+	if err != nil {
+		writePolicyStoreError(w, err)
+		return
+	}
+	if protectedOrganizationAssertionRecord(record) {
+		writePolicyError(w, http.StatusConflict, "The organization assertion settings record cannot be deleted.")
+		return
+	}
+	if err := a.policy.store.SetRecordArchived(r.Context(), record.ID, request.ExpectedRevision, r.Method == http.MethodDelete); err != nil {
+		writePolicyStoreError(w, err)
+		return
+	}
+	w.Header().Set("Cache-Control", "no-store")
+	writeJSON(w, http.StatusOK, map[string]any{"id": record.ID, "archived": r.Method == http.MethodDelete})
 }
 
 func (a *application) handleGetPolicyRecord(w http.ResponseWriter, r *http.Request) {
@@ -695,12 +811,19 @@ func (a *application) handlePolicyRecordRevisions(w http.ResponseWriter, r *http
 		writePolicyStoreError(w, err)
 		return
 	}
+	if record.Archived {
+		writePolicyError(w, http.StatusConflict, "Restore the archived record before editing it.")
+		return
+	}
 	if record.Kind == "policy" {
 		result := a.policy.checkUnlocked(r.Context(), request.Content)
 		if !result.Valid {
 			writeJSON(w, http.StatusUnprocessableEntity, result)
 			return
 		}
+	} else if validation := a.validatePolicyRecordContent(r.Context(), record.Kind, record.ContentType, request.Content); validation != nil {
+		writeJSON(w, http.StatusUnprocessableEntity, validation)
+		return
 	}
 	revision, err := a.policy.store.AppendRevision(r.Context(), recordID, request.ExpectedRevision, request.Content, policyAuthor(), request.Summary)
 	if err != nil {

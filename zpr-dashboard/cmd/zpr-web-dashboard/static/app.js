@@ -7,6 +7,9 @@ const state = { snapshot: null, timer: null, paused: false, pending: false, grap
 
 let previousPolledValues = null;
 
+state.policy.fileClipboard = null;
+state.policy.showArchived = false;
+
 const pages = {
   map: "MAP",
   connections: "CONNECTIONS",
@@ -962,7 +965,6 @@ function renderActors(data) {
 
 function renderTrusted(data) {
   const sources = data.trusted_sources || [];
-  byId("trusted-count").textContent = `${formatNumber(sources.length)} attribute sources`;
   const columns = { name: (source) => source.name, provider: (source) => source.provider, actor: (source) => source.actor_cn, health: (source) => source.health, last_lookup: (source) => source.last_lookup_ms || 0 };
   const shown = visibleRows("sources", sources, columns);
   byId("trusted-list").innerHTML = shown.length ? shown.map((source) => {
@@ -1016,13 +1018,13 @@ function organizationPolicyCategoryID(policy = state.policy) {
   for (const category of organizationCategories) {
     const path = category.path;
     const containsPolicy = records.some((record) => {
-      if (record.kind !== "policy") return false;
+      if (record.kind !== "policy" || record.archived) return false;
       const recordPath = categories.find((item) => item.id === record.category_id)?.path || "";
       return recordPath === path || recordPath.startsWith(`${path}/`);
     });
     if (containsPolicy) return category.id;
   }
-  return categories.find((category) => records.some((record) => record.kind === "policy" && record.category_id === category.id))?.id
+  return categories.find((category) => records.some((record) => record.kind === "policy" && !record.archived && record.category_id === category.id))?.id
     || categories.find((category) => !category.parent_id)?.id
     || categories[0]?.id
     || "";
@@ -1144,25 +1146,8 @@ function updateAssistantControls() {
 }
 
 function renderPolicyAttributes() {
-  const select = byId("policy-attribute-picker");
-  const insert = byId("policy-attribute-insert");
   const rescan = byId("policy-attribute-rescan");
   const status = byId("policy-attribute-status");
-  const textarea = byId("policy-source");
-  const attributes = state.policy.attributes || [];
-  select.replaceChildren();
-  const placeholder = document.createElement("option");
-  placeholder.value = "";
-  placeholder.textContent = attributes.length ? "Choose an attribute…" : "No attributes configured";
-  select.append(placeholder);
-  for (const item of attributes) {
-    const option = document.createElement("option");
-    option.value = item.attribute;
-    option.textContent = `${item.attribute} · ${item.source}`;
-    select.append(option);
-  }
-  select.disabled = textarea.disabled || attributes.length === 0;
-  insert.disabled = select.disabled || !select.value;
   rescan.disabled = !state.policy.configured || Boolean(state.policy.attributeScanPending);
   if (state.policy.attributeScanPending) {
     status.textContent = "Scanning LDAP…";
@@ -1195,40 +1180,60 @@ async function rescanPolicyAttributes() {
   }
 }
 
-function insertPolicyAttribute() {
-  const textarea = byId("policy-source");
-  const attribute = byId("policy-attribute-picker").value;
-  if (textarea.disabled || !attribute) return;
-  textarea.setRangeText(`${attribute}:`, textarea.selectionStart, textarea.selectionEnd, "end");
-  textarea.focus();
-  textarea.dispatchEvent(new Event("input", { bubbles: true }));
-}
-
 function formatZPL(source) {
-  const lines = source.match(/[^\n]*\n|[^\n]+$/g) || [];
+  const lines = source.trimStart().match(/[^\n]*\n|[^\n]+$/g) || [];
   let formatted = "";
   let previousLineIsBlank = true;
   let isFirstLine = true;
   let permissionBlockIsOpen = false;
+  let previousStatementWasDefine = false;
+  let serviceBlockIsOpen = false;
+  let pendingLines = [];
 
   for (const line of lines) {
     const content = line.replace(/\r?\n$/, "");
+    if (!content.trim() || /^\s*(?:#|\/\/)/.test(content)) {
+      pendingLines.push(line);
+      continue;
+    }
     const startsWith = (keyword) => new RegExp(`^\\s*${keyword}(?:\\s|$)`, "i").test(content);
+    const isDefine = startsWith("define");
     const isServiceDeclaration = startsWith("provide") || startsWith("service");
     const endsPermissionBlock = ["define", "provide", "service"].some(startsWith);
     const isPolicyStatement = ["allow", "deny", "never"].some(startsWith);
+    const removeBlankLines = isDefine && previousStatementWasDefine || isPolicyStatement && serviceBlockIsOpen;
+    for (const pendingLine of pendingLines) {
+      if (!pendingLine.trim() && (removeBlankLines || previousLineIsBlank)) continue;
+      formatted += pendingLine;
+      previousLineIsBlank = !pendingLine.trim();
+      isFirstLine = false;
+    }
+    pendingLines = [];
 
     if (!isFirstLine && !previousLineIsBlank && (isServiceDeclaration || (permissionBlockIsOpen && endsPermissionBlock))) {
       formatted += line.endsWith("\r\n") || formatted.endsWith("\r\n") ? "\r\n" : "\n";
     }
 
-    if (endsPermissionBlock) permissionBlockIsOpen = false;
+    if (endsPermissionBlock) {
+      permissionBlockIsOpen = false;
+      previousStatementWasDefine = isDefine;
+      serviceBlockIsOpen = isServiceDeclaration;
+    }
     formatted += isPolicyStatement ? `  ${line.trimStart()}` : line;
-    if (isPolicyStatement) permissionBlockIsOpen = true;
+    if (isPolicyStatement) {
+      permissionBlockIsOpen = true;
+      previousStatementWasDefine = false;
+      serviceBlockIsOpen = true;
+    }
     previousLineIsBlank = content.trim() === "";
     isFirstLine = false;
   }
 
+  for (const pendingLine of pendingLines) {
+    if (!pendingLine.trim() && previousLineIsBlank) continue;
+    formatted += pendingLine;
+    previousLineIsBlank = !pendingLine.trim();
+  }
   return formatted;
 }
 
@@ -1242,6 +1247,7 @@ function formatPolicySource() {
 }
 
 function renderPolicyCatalog() {
+  closePolicyPickerMenu();
   const policy = state.policy;
   const children = new Map();
   const records = new Map();
@@ -1252,6 +1258,7 @@ function renderPolicyCatalog() {
   }
   for (const items of children.values()) items.sort((a, b) => a.name.localeCompare(b.name));
   for (const record of policy.records) {
+    if (record.archived && !policy.showArchived) continue;
     const categoryID = record.kind === "assertions" ? organizationPolicyCategoryID(policy) || record.category_id : record.category_id;
     if (!records.has(categoryID)) records.set(categoryID, []);
     records.get(categoryID).push(record);
@@ -1268,6 +1275,8 @@ function renderPolicyCatalog() {
         button.type = "button"; button.className = "category-tree-item";
         button.dataset.categoryId = category.id;
         button.setAttribute("role", "treeitem");
+        button.setAttribute("aria-haspopup", "menu");
+        button.setAttribute("aria-controls", "policy-picker-menu");
         button.setAttribute("aria-label", category.path);
         button.title = category.path;
         button.setAttribute("aria-selected", String(policy.categoryID === category.id));
@@ -1283,7 +1292,9 @@ function renderPolicyCatalog() {
         const group = document.createElement("div"); group.className = "policy-tree-group"; group.setAttribute("role", "group");
         for (const record of records.get(category.id) || []) {
           const item = document.createElement("button"); item.type = "button"; item.className = "policy-record-item";
-          item.dataset.recordId = record.id; item.setAttribute("role", "treeitem");
+          item.dataset.recordId = record.id; item.dataset.kind = record.kind; item.setAttribute("role", "treeitem");
+          item.setAttribute("aria-haspopup", "menu");
+          item.setAttribute("aria-controls", "policy-picker-menu");
           item.setAttribute("aria-selected", String(policy.record?.id === record.id));
           item.style.setProperty("--tree-depth", depth + 1);
           const label = document.createElement("strong"); label.textContent = record.name;
@@ -1297,6 +1308,76 @@ function renderPolicyCatalog() {
     renderBranch(tree);
   }
   byId("new-policy-record").disabled = !policy.configured || !policy.categories.some((category) => category.id === policy.categoryID);
+  byId("new-assertion-record").disabled = !policy.configured || !policy.categoryID;
+  renderPolicyFileActions();
+}
+
+function renderPolicyFileActions() {
+  const policy = state.policy;
+  const record = policy.record;
+  const saved = Boolean(record && !record.isDraft);
+  const protectedRecord = record?.kind === "assertions" && record.name === "Organization assertions" && record.content_type === "application/vnd.zpr.assertions+json";
+  const archived = Boolean(record?.archived);
+  const menu = byId("policy-picker-menu");
+  const context = menu.hidden ? "picker" : menu.dataset.context;
+  const categoryContext = context === "category";
+  const recordContext = context === "record";
+  for (const id of ["new-category", "new-policy-record", "new-assertion-record"]) byId(id).hidden = recordContext;
+  byId("new-category").textContent = categoryContext ? "New subcategory" : "New category";
+  byId("policy-copy").hidden = categoryContext;
+  byId("policy-duplicate").hidden = categoryContext;
+  byId("policy-copy").disabled = !saved || archived || protectedRecord;
+  byId("policy-paste").disabled = !policy.fileClipboard || !policy.categoryID;
+  byId("policy-duplicate").disabled = !saved || archived || protectedRecord;
+  byId("policy-delete").disabled = !saved || archived || protectedRecord;
+  byId("policy-delete").hidden = archived || categoryContext;
+  byId("policy-restore").hidden = !archived || categoryContext;
+  byId("policy-restore").disabled = !archived;
+  byId("policy-show-archived").setAttribute("aria-pressed", String(policy.showArchived));
+  byId("policy-show-archived").setAttribute("aria-checked", String(policy.showArchived));
+  byId("policy-show-archived").textContent = policy.showArchived ? "Hide archived" : "Show archived";
+}
+
+function closePolicyPickerMenu(restoreFocus = false) {
+  const menu = byId("policy-picker-menu");
+  if (menu.hidden) return;
+  menu.hidden = true;
+  if (restoreFocus) {
+    const record = state.policy.pickerMenuRecordID;
+    const category = state.policy.pickerMenuCategoryID;
+    const origin = [...byId("policy-category-tree").querySelectorAll("[data-record-id], [data-category-id]")]
+      .find((item) => record ? item.dataset.recordId === record : category && item.dataset.categoryId === category);
+    (origin || byId("policy-category-tree")).focus();
+  }
+  renderPolicyFileActions();
+}
+
+async function openPolicyPickerMenu(target, x, y) {
+  closePolicyPickerMenu();
+  const policy = state.policy;
+  const record = target.closest("[data-record-id]");
+  const category = target.closest("[data-category-id]");
+  if (record && record.dataset.recordId !== policy.record?.id) {
+    await selectPolicyRecord(record.dataset.recordId);
+    if (policy.record?.id !== record.dataset.recordId || currentPage() !== "policy") return;
+  }
+  if (category) {
+    policy.categoryID = category.dataset.categoryId;
+    renderPolicyCatalog();
+  }
+  if (currentPage() !== "policy") return;
+  policy.pickerMenuRecordID = record?.dataset.recordId || "";
+  policy.pickerMenuCategoryID = category?.dataset.categoryId || "";
+  const categoryName = policyCategoriesInUnifiedHierarchy().find((item) => item.id === category?.dataset.categoryId)?.path;
+  byId("policy-picker-menu-title").textContent = record ? policy.record.name : categoryName || "Policy picker";
+  byId("new-category").disabled = !policy.configured;
+  const menu = byId("policy-picker-menu");
+  menu.dataset.context = record ? "record" : category ? "category" : "picker";
+  menu.hidden = false;
+  renderPolicyFileActions();
+  menu.style.left = `${Math.max(8, Math.min(x, innerWidth - menu.offsetWidth - 8))}px`;
+  menu.style.top = `${Math.max(8, Math.min(y, innerHeight - menu.offsetHeight - 8))}px`;
+  menu.querySelector("button:not(:disabled):not([hidden])")?.focus();
 }
 
 function clearPolicySelection() {
@@ -1351,7 +1432,7 @@ async function selectPolicyRecord(id, fetchRecord = true, discardEdits = false) 
     policy.record = record;
     policy.categoryID = record.kind === "assertions" ? organizationPolicyCategoryID(policy) || record.category_id : record.category_id;
     policy.source = record.content || ""; policy.savedSource = policy.source; policy.revision = record.current_revision; policy.validSource = null;
-    setPolicyRecordSurface(record.kind);
+    setPolicyRecordSurface(record.kind, record);
     policy.errorOffsets = [];
     policy.browsingRevision = 0;
     byId("policy-draft-name").hidden = true;
@@ -1373,7 +1454,7 @@ async function selectPolicyRecord(id, fetchRecord = true, discardEdits = false) 
   }
 }
 
-function setPolicyRecordSurface(kind) {
+function setPolicyRecordSurface(kind, record = state.policy.record) {
   const assertionsSelected = kind === "assertions";
   const policy = state.policy;
   if (assertionsSelected && policy.testMode) stopPolicyTest();
@@ -1383,7 +1464,8 @@ function setPolicyRecordSurface(kind) {
   byId("policy-stage-status").hidden = assertionsSelected;
   byId("policy-assistant-pane").hidden = assertionsSelected;
   byId("policy-workbench").dataset.recordKind = kind || "";
-  window.dispatchEvent(new Event("policy-record-kind-changed"));
+  updatePolicyWorkbenchLayout();
+  window.dispatchEvent(new CustomEvent("policy-record-kind-changed", { detail: { kind, record } }));
 }
 
 function renderPolicyIdentity(record = state.policy.record, version = state.policy.revision, hash = record?.content_hash) {
@@ -1415,7 +1497,29 @@ window.addEventListener("policy-assertion-saved", () => {
   loadPolicyWorkspace();
 });
 
+window.addEventListener("policy-assertion-created", async (event) => {
+  const record = event.detail?.record;
+  if (!record || record.kind !== "assertions") return;
+  const policy = state.policy;
+  policy.record = record;
+  policy.records = [...policy.records.filter((item) => item.id !== record.id), record];
+  policy.categoryID = organizationPolicyCategoryID(policy) || record.category_id;
+  policy.source = record.content || "";
+  policy.savedSource = policy.source;
+  policy.revision = record.current_revision;
+  policy.validSource = null;
+  policy.browsingRevision = 0;
+  policy.revisions = [];
+  setPolicyRecordSurface("assertions", record);
+  renderPolicyIdentity(record, record.current_revision, record.content_hash);
+  renderPolicyCatalog();
+  try { await loadPolicyHistory(record.id); }
+  catch (error) { byId("policy-file-status").textContent = error.message; }
+  updatePolicyDirtyState();
+});
+
 function hasUnsavedPolicyChanges(policy = state.policy, source = byId("policy-source").value) {
+  if (policy.record?.kind === "assertions") return Boolean(policy.record.isDraft || window.policyAssertionDirty?.());
   return Boolean(policy.record && (policy.record.isDraft || source !== policy.savedSource));
 }
 
@@ -1740,7 +1844,7 @@ function beginNewPolicyDraft() {
     isDraft: true,
   };
   policy.record = draft;
-  setPolicyRecordSurface("policy");
+  setPolicyRecordSurface("policy", draft);
   policy.source = "";
   policy.savedSource = "";
   policy.revision = 0;
@@ -1765,6 +1869,131 @@ function beginNewPolicyDraft() {
   renderPolicyCatalog();
   updatePolicyDirtyState();
   byId("policy-source").focus();
+}
+
+function beginNewAssertionDraft() {
+  const policy = state.policy;
+  const categoryID = organizationPolicyCategoryID(policy) || policy.categoryID;
+  if (!categoryID || !policy.configured) return;
+  if (hasUnsavedPolicyChanges(policy) && !window.confirm("Discard the current edits and start a new assertion set?")) return;
+  const draft = {
+    id: "", category_id: categoryID, name: "", kind: "assertions",
+    content_type: "text/vnd.zpr.assertions", metadata: { language: "assertions" },
+    current_revision: 0, content: "", content_hash: "", isDraft: true,
+  };
+  policy.record = draft;
+  policy.categoryID = categoryID;
+  policy.source = "";
+  policy.savedSource = "";
+  policy.revision = 0;
+  policy.validSource = null;
+  policy.browsingRevision = 0;
+  policy.revisions = [];
+  setPolicyRecordSurface("assertions", draft);
+  renderPolicyIdentity(draft, 0, "");
+  byId("policy-history-count").textContent = "0 versions";
+  byId("policy-history").innerHTML = '<p class="catalog-empty">The first version is created when this assertion set is saved.</p>';
+  renderPolicyCatalog();
+  updatePolicyDirtyState();
+  byId("assertion-source").focus();
+}
+
+function setPolicyFileStatus(text, isError = false) {
+  const status = byId("policy-file-status");
+  status.textContent = text;
+  status.dataset.state = isError ? "error" : "";
+}
+
+function nextRecordCopyName(record, categoryID) {
+  const existing = new Set(state.policy.records.filter((item) => item.category_id === categoryID).map((item) => item.name.toLowerCase()));
+  const base = `${record.name.replace(/ copy(?: \d+)?$/i, "")} copy`;
+  let candidate = base;
+  let suffix = 2;
+  while (existing.has(candidate.toLowerCase())) candidate = `${base} ${suffix++}`;
+  return candidate.slice(0, 100);
+}
+
+async function pastePolicyRecord(sourceRecord, duplicate = false) {
+  const policy = state.policy;
+  if (!sourceRecord || !policy.categoryID) return;
+  const name = nextRecordCopyName(sourceRecord, policy.categoryID);
+  setPolicyFileStatus(`Creating ${name}…`);
+  try {
+    const path = duplicate
+      ? `/api/policy/records/${encodeURIComponent(sourceRecord.id)}/duplicate`
+      : "/api/policy/records";
+    const body = duplicate
+      ? { category_id: policy.categoryID, name }
+      : {
+        category_id: policy.categoryID, name, kind: sourceRecord.kind,
+        content_type: sourceRecord.content_type, metadata: sourceRecord.metadata || {},
+        content: sourceRecord.content || "", summary: `Copied from ${sourceRecord.name}`,
+      };
+    const response = await fetch(path, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body),
+    });
+    const result = await response.json();
+    if (!response.ok) throw new Error(result.error || result.diagnostics || `Paste failed (${response.status})`);
+    policy.record = null;
+    policy.categoryID = result.category_id;
+    await refreshPolicyCatalog();
+    await selectPolicyRecord(result.id, true, true);
+    setPolicyFileStatus(`Created ${result.name}`);
+  } catch (error) {
+    setPolicyFileStatus(error.message, true);
+  }
+}
+
+async function managePolicyFile(action) {
+  const policy = state.policy;
+  const record = policy.record;
+  if (action === "show-archived") {
+    policy.showArchived = !policy.showArchived;
+    renderPolicyCatalog();
+    return;
+  }
+  if (action === "copy") {
+    if (!record || record.isDraft || record.archived || (record.kind === "assertions" && record.name === "Organization assertions" && record.content_type === "application/vnd.zpr.assertions+json")) return;
+    policy.fileClipboard = {
+      name: record.name, kind: record.kind, content_type: record.content_type,
+      metadata: record.metadata, content: record.content,
+    };
+    setPolicyFileStatus(`Copied ${record.name}`);
+    renderPolicyFileActions();
+    return;
+  }
+  if (action === "paste") {
+    await pastePolicyRecord(policy.fileClipboard);
+    return;
+  }
+  if (action === "duplicate") {
+    if (!record || record.isDraft || record.archived) return;
+    await pastePolicyRecord(record, true);
+    return;
+  }
+  if (!record || record.isDraft || !record.id) return;
+  if (action === "delete") {
+    if (!window.confirm(`Delete ${record.name}? Its revision history will be retained in Archived records.`)) return;
+  }
+  if (action !== "delete" && action !== "restore") return;
+  try {
+    const response = await fetch(`/api/policy/records/${encodeURIComponent(record.id)}${action === "restore" ? "/restore" : ""}`, {
+      method: action === "delete" ? "DELETE" : "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ expected_revision: record.current_revision }),
+    });
+    const result = await response.json();
+    if (!response.ok) throw new Error(result.error || `${action} failed (${response.status})`);
+    const name = record.name;
+    policy.record = null;
+    if (action === "restore") policy.showArchived = true;
+    await refreshPolicyCatalog();
+    setPolicyFileStatus(action === "delete" ? `Archived ${name}` : `Restored ${name}`);
+  } catch (error) {
+    setPolicyFileStatus(error.message, true);
+  }
 }
 
 async function createPolicyCategory(event) {
@@ -1813,12 +2042,12 @@ function updatePolicyDirtyState() {
   const contentDirty = source !== policy.savedSource;
   const dirty = !policy.browsingRevision && contentDirty;
   const checked = policy.validSource === source;
-  const canEdit = policy.configured && policy.record?.kind === "policy" && !policy.browsingRevision && !policy.testMode;
+  const canEdit = policy.configured && policy.record?.kind === "policy" && !policy.record?.archived && !policy.browsingRevision && !policy.testMode;
   const canViewSource = policy.configured && policy.record?.kind === "policy" && !policy.browsingRevision;
   const canTest = policy.configured && policy.record?.kind === "policy" && !policy.browsingRevision && Boolean(source.trim());
   const isDraft = Boolean(policy.record?.isDraft);
   const canSave = canEdit && checked && (isDraft ? Boolean(policy.record.name.trim()) && source.trim() !== "" : contentDirty);
-  const canStage = Boolean(!policy.testMode && policy.stagingReady && policy.record?.kind === "policy" && !isDraft && !policy.browsingRevision && !contentDirty && !policy.stagePending);
+  const canStage = Boolean(!policy.testMode && policy.stagingReady && policy.record?.kind === "policy" && !policy.record?.archived && !isDraft && !policy.browsingRevision && !contentDirty && !policy.stagePending);
   byId("policy-save").disabled = !canSave;
   byId("policy-save-as").disabled = !canEdit || isDraft || !checked;
   byId("policy-stage").disabled = !canStage;
@@ -1832,9 +2061,9 @@ function updatePolicyDirtyState() {
   byId("policy-test").setAttribute("aria-pressed", String(policy.testMode));
   byId("policy-workbench").dataset.testMode = String(policy.testMode);
   byId("policy-code-editor").dataset.testMode = String(policy.testMode);
+  updatePolicyWorkbenchLayout();
   byId("policy-test-gutter").hidden = !policy.testMode || !policy.testResult;
   byId("policy-test-status").hidden = !policy.testMode;
-  byId("policy-attribute-insert").disabled = !canEdit || !byId("policy-attribute-picker").value;
   byId("policy-attribute-rescan").disabled = !canEdit;
   byId("policy-refresh").disabled = policy.testMode || !policy.record || (!dirty && !policy.browsingRevision && !isDraft);
   byId("policy-check").classList.toggle("button-next-evaluate", canEdit && !checked);
@@ -1897,7 +2126,15 @@ async function runPolicyTest() {
     byId("policy-test-status").dataset.state = "complete";
   } catch (error) {
     if (error.name !== "AbortError" && policy.testMode) {
-      byId("policy-test-status").textContent = error.message;
+      const errorLines = policyTestErrorLines(error.message, source.split("\n").length);
+      if (errorLines.length) {
+        policy.testResult = { error: error.message };
+        policy.testSource = source;
+        renderPolicyTestErrorGutter(error.message, errorLines);
+        byId("policy-test-status").textContent = `Policy test failed on ${errorLines.length} source ${errorLines.length === 1 ? "line" : "lines"}. Click ERR for details.`;
+      } else {
+        byId("policy-test-status").textContent = error.message;
+      }
       byId("policy-test-status").dataset.state = "error";
     }
   } finally {
@@ -1928,19 +2165,20 @@ function renderPolicyTestGutter(result) {
     row.dataset.line = String(line);
     for (const { service, rule } of rulesByLine.get(line) || []) {
       const summary = rule.matched || { count: 0, by_dimension: {}, subjects: [] };
-      const countLabel = state.policy.testDimensions.map((dimension) => `${dimension[0].toUpperCase()}${summary.by_dimension?.[dimension] || 0}`).join(" ") || String(summary.count || 0);
+      const countLabel = policyTestCountLabel(summary);
       const effect = rule.effect === "allow" ? "Allow" : "Deny";
       const button = document.createElement("button");
       button.type = "button";
       button.className = "policy-test-line-result";
       button.dataset.effect = rule.effect || "deny";
       button.disabled = !service.supported;
-      button.textContent = service.supported ? countLabel : "N/A";
+      if (!service.supported) button.textContent = "N/A";
+      else renderPolicyTestCount(button, summary, countLabel);
       button.title = service.supported
         ? `Line ${line} · ${service.name || service.id} · ${effect} · ${countLabel}`
         : `Line ${line} · ${service.name || service.id} was not tested: ${service.reason || "No test endpoint is configured."}`;
       button.setAttribute("aria-label", button.title + "; show matching identities");
-      const fullCountLabel = state.policy.testDimensions.map((dimension) => `${policyTestDimensionLabel(dimension)} ${summary.by_dimension?.[dimension] || 0}`).join(" · ") || String(summary.count || 0);
+      const fullCountLabel = countLabel;
       if (service.supported) button.addEventListener("click", () => showPolicyTestSubjects(summary.subjects || [], "", `Line ${line} · ${service.name || service.id} · ${effect} · ${fullCountLabel}`));
       row.append(button);
     }
@@ -1949,6 +2187,91 @@ function renderPolicyTestGutter(result) {
   gutter.replaceChildren(fragment);
   gutter.hidden = false;
   gutter.style.transform = `translateY(${-byId("policy-source").scrollTop}px)`;
+}
+
+function policyTestErrorLines(message, lineCount) {
+  return [...new Set(Array.from(String(message).matchAll(/\bline\s+(\d+)(?:\s*,\s*column\s+\d+)?\b/gi), (match) => Number(match[1]))) ]
+    .filter((line) => line >= 1 && line <= lineCount)
+    .sort((left, right) => left - right);
+}
+
+function renderPolicyTestErrorGutter(message, errorLines) {
+  const gutter = byId("policy-test-gutter");
+  const errorLineSet = new Set(errorLines);
+  const fragment = document.createDocumentFragment();
+  const lineCount = byId("policy-source").value.split("\n").length;
+  for (let line = 1; line <= lineCount; line += 1) {
+    const row = document.createElement("div");
+    row.className = "policy-test-line";
+    row.dataset.line = String(line);
+    if (errorLineSet.has(line)) {
+      const button = document.createElement("button");
+      button.type = "button";
+      button.className = "policy-test-line-result";
+      button.dataset.effect = "error";
+      button.textContent = "ERR";
+      button.title = `Line ${line} · Policy test error · Show diagnostic`;
+      button.setAttribute("aria-label", button.title);
+      button.addEventListener("click", () => showPolicyTestError(line, message));
+      row.append(button);
+    }
+    fragment.append(row);
+  }
+  gutter.replaceChildren(fragment);
+  gutter.hidden = false;
+  gutter.style.transform = `translateY(${-byId("policy-source").scrollTop}px)`;
+}
+
+function policyTestDimensionCounts(summary) {
+  return state.policy.testDimensions
+    .map((dimension) => ({ dimension, count: Number(summary.by_dimension?.[dimension]) || 0 }))
+    .filter(({ count }) => count > 0);
+}
+
+function policyTestCountLabel(summary) {
+  const dimensions = policyTestDimensionCounts(summary);
+  if (!(Number(summary.count) > 0) && !dimensions.length) return "None";
+  if (dimensions.length) {
+    return dimensions.map(({ dimension, count }) => `${count} ${pluralPolicyTestDimensionLabel(dimension, count)}`).join(" · ");
+  }
+  const count = Number(summary.count) || 0;
+  return `${count} ${count === 1 ? "Match" : "Matches"}`;
+}
+
+function renderPolicyTestCount(button, summary, countLabel) {
+  if (countLabel === "None") {
+    button.textContent = countLabel;
+    return;
+  }
+  const dimensions = policyTestDimensionCounts(summary);
+  if (!dimensions.length) {
+    const number = document.createElement("strong");
+    number.className = "policy-test-count-number";
+    number.textContent = String(summary.count);
+    button.append(number, document.createTextNode(` ${Number(summary.count) === 1 ? "Match" : "Matches"}`));
+    return;
+  }
+  dimensions.forEach(({ dimension, count }, index) => {
+    if (index) button.append(document.createTextNode(" · "));
+    const item = document.createElement("span");
+    item.className = "policy-test-count";
+    const number = document.createElement("strong");
+    number.className = "policy-test-count-number";
+    number.textContent = String(count);
+    const label = document.createElement("span");
+    label.className = "policy-test-count-label";
+    label.textContent = pluralPolicyTestDimensionLabel(dimension, count);
+    item.append(number, document.createTextNode(" "), label);
+    button.append(item);
+  });
+}
+
+function pluralPolicyTestDimensionLabel(dimension, count) {
+  const label = policyTestDimensionLabel(dimension);
+  if (count === 1) return label;
+  if (/(s|x|z|ch|sh)$/i.test(label)) return `${label}es`;
+  if (/[^aeiou]y$/i.test(label)) return `${label.slice(0, -1)}ies`;
+  return `${label}s`;
 }
 
 function policyTestDimensionLabel(name) {
@@ -1982,6 +2305,17 @@ function showPolicyTestSubjects(subjects, dimension, title) {
       list.append(item);
     }
   }
+  byId("policy-test-dialog").showModal();
+}
+
+function showPolicyTestError(line, error) {
+  const list = byId("policy-test-subjects");
+  byId("policy-test-title").textContent = "Policy test error";
+  byId("policy-test-subject-title").textContent = `Line ${line} diagnostic`;
+  const detail = document.createElement("div");
+  detail.className = "policy-test-subject";
+  detail.textContent = error;
+  list.replaceChildren(detail);
   byId("policy-test-dialog").showModal();
 }
 
@@ -2248,6 +2582,14 @@ const serviceTypePalette = new Map([
   ["Regular", { color: "#285b3a", background: "#e8f3e9", border: "#80ad8a" }],
   ["Visa", { color: "#873c2b", background: "#ffe5df", border: "#d89480" }],
   ["Gateway", { color: "#754000", background: "#fff1c8", border: "#cc963d" }],
+  ["ZPR", { label: "ZPR service", color: "#124e78", background: "#e3eff8", border: "#598cb4" }],
+  ["Policy", { label: "Policy service", color: "#214e68", background: "#e4f0f6", border: "#6395ae" }],
+  ["Control", { label: "Control service", color: "#66521e", background: "#f4f0da", border: "#ab963e" }],
+  ["Auth", { label: "Authentication service", color: "#793947", background: "#f7e8eb", border: "#bd7c88" }],
+  ["Attribute", { label: "Attribute service", color: "#31594c", background: "#e6f1ec", border: "#78a591" }],
+  ["Application", { label: "Application service", color: "#47525a", background: "#e8ebf0", border: "#909ba3" }],
+  ["Node", { color: "#42613b", background: "#ecf1df", border: "#91a875" }],
+  ["Logger", { color: "#6c3e1f", background: "#f5ece4", border: "#b68657" }],
   ['Trusted("file")', { color: "#285d64", background: "#e7f1f3", border: "#4e8790" }],
   ['Trusted("rest/1")', { color: "#754820", background: "#fff0df", border: "#b8753f" }],
   ["Not in current policy", { color: "#55616b", background: "#edf0f2", border: "#a5aeb6" }],
@@ -2276,7 +2618,7 @@ function serviceTypeAppearance(kind) {
     const hue = hash % 360;
     palette = { color: `hsl(${hue} 50% 25%)`, background: `hsl(${hue} 55% 94%)`, border: `hsl(${hue} 35% 55%)` };
   }
-  return { key, label, ...palette };
+  return { key, ...palette, label: palette.label || label };
 }
 
 function applyServiceTypeColor(element, type) {
@@ -2362,7 +2704,7 @@ function capturePolledFields() {
   const fields = new Map();
   const summaryIDs = [
     "metric-actors", "metric-adapters", "metric-services", "metric-allowed", "metric-denied", "metric-visas", "metric-nodes", "metric-nodes-note",
-    "connection-count", "actor-count", "service-count", "trusted-count", "visa-total", "deny-total",
+    "connection-count", "actor-count", "service-count", "visa-total", "deny-total",
     "dns-stat-requests", "dns-stat-success", "dns-stat-nxdomain", "dns-stat-servfail",
   ];
   for (const id of summaryIDs) {
@@ -2512,9 +2854,129 @@ function setPollTimer() {
 }
 
 byId("refresh-now").addEventListener("click", refresh);
+function updatePolicyWorkbenchLayout() {
+  const workbench = byId("policy-workbench");
+  const pickerCollapsed = workbench.dataset.pickerCollapsed === "true";
+  const assistantCollapsed = workbench.dataset.assistantCollapsed === "true";
+  const assertionsSelected = workbench.dataset.recordKind === "assertions";
+  const testMode = workbench.dataset.testMode === "true";
+  const assertionTestMode = workbench.dataset.assertionTestMode === "true";
+  const mobile = window.matchMedia("(max-width: 600px)").matches;
+  const tablet = window.matchMedia("(max-width: 900px)").matches;
+  let columns;
+
+  if (!tablet && !mobile) {
+    const picker = byId("policy-catalog-pane");
+    const editor = byId("policy-editor-pane");
+    const assistant = byId("policy-assistant-pane");
+    workbench.style.display = "flex";
+    workbench.style.removeProperty("grid-template-columns");
+    picker.style.flex = `0 0 ${pickerCollapsed ? "42px" : "23%"}`;
+    editor.style.flex = "1 1 0";
+    assistant.style.flex = `0 0 ${assistantCollapsed ? "42px" : "27%"}`;
+    return;
+  }
+
+  workbench.style.removeProperty("display");
+  for (const id of ["policy-catalog-pane", "policy-editor-pane", "policy-assistant-pane"]) {
+    byId(id).style.removeProperty("flex");
+  }
+  if (mobile || (assertionsSelected && assertionTestMode)) {
+    columns = "minmax(0, 1fr)";
+  } else if (testMode) {
+    columns = assistantCollapsed ? "minmax(0, 1fr) 42px" : "minmax(0, 1.8fr) minmax(245px, .8fr)";
+  } else if (assertionsSelected) {
+    columns = pickerCollapsed ? "42px minmax(0, 1fr)" : "minmax(180px, .65fr) minmax(330px, 1.7fr)";
+  } else if (tablet) {
+    columns = pickerCollapsed ? "42px minmax(0, 1fr)" : "minmax(175px, .6fr) minmax(0, 1.6fr)";
+  } else if (pickerCollapsed && assistantCollapsed) {
+    columns = "42px minmax(0, 1fr) 42px";
+  } else if (pickerCollapsed) {
+    columns = "42px minmax(330px, 1.7fr) minmax(245px, .8fr)";
+  } else if (assistantCollapsed) {
+    columns = "minmax(180px, .65fr) minmax(330px, 1.7fr) 42px";
+  } else {
+    columns = "minmax(180px, .65fr) minmax(330px, 1.7fr) minmax(245px, .8fr)";
+  }
+  workbench.style.gridTemplateColumns = columns;
+}
+
+window.policyWorkbenchLayoutChanged = updatePolicyWorkbenchLayout;
+
+function policyPaneCollapsed(name) {
+  try { return localStorage.getItem(`zpr-policy-pane-${name}-collapsed`) === "true"; }
+  catch { return false; }
+}
+
+function setPolicyPaneCollapsed(name, collapsed) {
+  const workbench = byId("policy-workbench");
+  const pane = byId(name === "picker" ? "policy-catalog-pane" : "policy-assistant-pane");
+  const button = byId(name === "picker" ? "policy-picker-toggle" : "policy-assistant-toggle");
+  const label = name === "picker" ? "policy picker" : "Claude assistant";
+  workbench.dataset[`${name}Collapsed`] = String(collapsed);
+  pane.dataset.collapsed = String(collapsed);
+  button.setAttribute("aria-expanded", String(!collapsed));
+  button.setAttribute("aria-label", `${collapsed ? "Expand" : "Collapse"} ${label}`);
+  button.title = `${collapsed ? "Expand" : "Collapse"} ${label}`;
+  updatePolicyWorkbenchLayout();
+  try { localStorage.setItem(`zpr-policy-pane-${name}-collapsed`, String(collapsed)); }
+  catch { /* The pane still works when browser storage is unavailable. */ }
+}
+
+for (const name of ["picker", "assistant"]) {
+  setPolicyPaneCollapsed(name, policyPaneCollapsed(name));
+  byId(`policy-${name === "picker" ? "picker" : "assistant"}-toggle`).addEventListener("click", () => {
+    const button = byId(`policy-${name === "picker" ? "picker" : "assistant"}-toggle`);
+    setPolicyPaneCollapsed(name, button.getAttribute("aria-expanded") === "true");
+    closePolicyPickerMenu();
+  });
+}
+const policyPicker = document.querySelector(".policy-catalog-pane");
+policyPicker.addEventListener("contextmenu", (event) => {
+  if (event.target.closest("#policy-picker-menu")) return;
+  event.preventDefault();
+  void openPolicyPickerMenu(event.target, event.clientX, event.clientY);
+});
+policyPicker.addEventListener("keydown", (event) => {
+  if (event.key !== "ContextMenu" && !(event.shiftKey && event.key === "F10")) return;
+  event.preventDefault();
+  const bounds = event.target.getBoundingClientRect();
+  void openPolicyPickerMenu(event.target, bounds.left, bounds.bottom);
+});
+byId("policy-picker-menu").addEventListener("click", (event) => {
+  if (event.target.closest("button:not(:disabled)")) closePolicyPickerMenu();
+});
+document.addEventListener("pointerdown", (event) => {
+  if (!event.target.closest("#policy-picker-menu")) closePolicyPickerMenu();
+});
+document.addEventListener("keydown", (event) => {
+  const menu = byId("policy-picker-menu");
+  if (menu.hidden) return;
+  if (event.key === "Escape" || event.key === "Tab") {
+    if (event.key === "Escape") event.preventDefault();
+    closePolicyPickerMenu(true);
+    return;
+  }
+  if (!["ArrowDown", "ArrowUp", "Home", "End"].includes(event.key)) return;
+  event.preventDefault();
+  const items = [...menu.querySelectorAll("button:not(:disabled):not([hidden])")];
+  if (!items.length) return;
+  const index = items.indexOf(document.activeElement);
+  const next = event.key === "Home" ? 0 : event.key === "End" ? items.length - 1 : (index + (event.key === "ArrowDown" ? 1 : -1) + items.length) % items.length;
+  items[next].focus();
+});
+window.addEventListener("hashchange", () => closePolicyPickerMenu());
+window.addEventListener("resize", () => { closePolicyPickerMenu(); updatePolicyWorkbenchLayout(); });
 byId("policy-refresh").addEventListener("click", reloadPolicyWorkspace);
 byId("new-category").addEventListener("click", openCategoryDialog);
 byId("new-policy-record").addEventListener("click", beginNewPolicyDraft);
+byId("new-assertion-record").addEventListener("click", beginNewAssertionDraft);
+byId("policy-copy").addEventListener("click", () => managePolicyFile("copy"));
+byId("policy-paste").addEventListener("click", () => managePolicyFile("paste"));
+byId("policy-duplicate").addEventListener("click", () => managePolicyFile("duplicate"));
+byId("policy-delete").addEventListener("click", () => managePolicyFile("delete"));
+byId("policy-restore").addEventListener("click", () => managePolicyFile("restore"));
+byId("policy-show-archived").addEventListener("click", () => managePolicyFile("show-archived"));
 byId("policy-save-as").addEventListener("click", () => openRecordDialog(true));
 byId("category-form").addEventListener("submit", createPolicyCategory);
 byId("record-form").addEventListener("submit", createPolicyRecord);
@@ -2546,10 +3008,6 @@ byId("policy-source").addEventListener("input", () => {
   updatePolicyDirtyState();
   showPolicyCompletions();
 });
-byId("policy-attribute-picker").addEventListener("change", () => {
-  byId("policy-attribute-insert").disabled = !byId("policy-attribute-picker").value || byId("policy-source").disabled;
-});
-byId("policy-attribute-insert").addEventListener("click", insertPolicyAttribute);
 byId("policy-format").addEventListener("click", formatPolicySource);
 byId("policy-test").addEventListener("click", runPolicyTest);
 byId("policy-attribute-rescan").addEventListener("click", rescanPolicyAttributes);

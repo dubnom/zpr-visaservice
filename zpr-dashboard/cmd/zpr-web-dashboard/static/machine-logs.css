@@ -10,6 +10,21 @@
 .machine-logs-toolbar input[type="checkbox"] { accent-color: var(--teal); }
 .machine-logs-toolbar > span { color: var(--muted); font: 11px var(--mono); }
 .machine-logs-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 340px), 1fr)); gap: 16px; padding-bottom: 22px; }
+.adapter-logs-toolbar { justify-content: flex-end; }
+.adapter-logs-toolbar > span { margin-right: auto; }
+.machine-log-type-toggle { display: flex; max-width: 100%; gap: 0; border: 1px solid var(--line); border-radius: 3px; overflow: hidden; }
+.machine-log-type-toggle button { min-height: 32px; padding: 5px 10px; border: 0; background: var(--panel); color: var(--ink); font: 11px var(--mono); cursor: pointer; }
+.machine-log-type-toggle button + button { border-left: 1px solid var(--line); }
+.machine-log-type-toggle button[aria-pressed="true"] { background: var(--forest, #174d3d); color: white; }
+.machine-log-type-toggle button:focus-visible { outline: 2px solid #62856f; outline-offset: -3px; }
+.adapter-column-add, .adapter-column-remove { display: grid; flex: 0 0 32px; width: 32px; height: 32px; place-items: center; padding: 0; border: 1px solid var(--line); border-radius: 3px; background: var(--panel); color: var(--ink); font: 19px var(--mono); cursor: pointer; }
+.adapter-column-add:hover, .adapter-column-remove:hover { border-color: #62856f; background: #eaf4d9; }
+.adapter-log-columns { display: flex; align-items: stretch; gap: 12px; overflow-x: auto; padding: 0 2px 18px; scroll-snap-type: x proximity; }
+.adapter-log-column { flex: 0 0 min(420px, calc(100vw - 48px)); scroll-snap-align: start; }
+.adapter-column-picker { align-items: center; }
+.adapter-column-picker > label { flex: 0 0 auto; padding-top: 0; }
+.adapter-column-picker select { flex: 1; min-width: 0; min-height: 30px; padding: 4px 7px; border: 1px solid var(--line); border-radius: 3px; background: var(--panel); color: var(--ink); font: 10px var(--mono); }
+.adapter-columns-empty { flex: 1 0 100%; padding: 24px; border: 1px dashed var(--line); color: var(--muted); text-align: center; font: 11px var(--mono); }
 .machine-log-panel { min-width: 0; border: 1px solid var(--line); border-radius: 5px; background: var(--panel); }
 .machine-log-panel header { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 12px; border-bottom: 1px solid var(--line); }
 .machine-log-panel-actions { display: flex; align-items: center; gap: 10px; }
@@ -41,6 +56,7 @@ body.machine-log-maximized { overflow: hidden; }
 .machine-log-panel.maximized { position: fixed; inset: 12px; z-index: 1000; display: flex; flex-direction: column; box-shadow: 0 18px 70px rgb(0 0 0 / 42%); }
 .machine-log-panel.maximized .machine-log-output { height: auto; min-height: 0; flex: 1; }
 @media (max-width: 600px) {
+	.adapter-log-column { flex-basis: min(360px, calc(100vw - 40px)); }
 	.machine-log-panel.maximized { inset: 4px; }
 	.machine-log-panel.maximized header { padding: 8px; }
 }

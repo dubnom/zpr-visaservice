@@ -5,9 +5,13 @@
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <meta name="theme-color" content="#17211e">
     <title>ZPR Control Room</title>
-    <link rel="stylesheet" href="/app.css?v=25">
-    <link rel="stylesheet" href="/machine-logs.css?v=7">
+    <link rel="stylesheet" href="/app.css?v=29">
+    <link rel="stylesheet" href="/machine-logs.css?v=9">
     <link rel="stylesheet" href="/assertions.css?v=5">
+    <link rel="stylesheet" href="/sidebar.css?v=3">
+    <link rel="stylesheet" href="/trusted-source.css?v=1">
+    <script src="/sidebar.js?v=3" defer></script>
+    <script src="/trusted-source.js?v=1" defer></script>
   </head>
   <body>
     <div class="app-shell">
@@ -123,8 +127,8 @@
             <div class="adapter-logs-heading"><h2>Adapter Logs</h2><div class="machine-logs-actions"><button id="machine-logs-pause" type="button">Pause</button><button id="machine-logs-refresh" type="button" aria-label="Refresh adapter logs" title="Refresh adapter logs">Refresh</button></div></div>
             <div class="adapter-logs-meta"><span id="machine-logs-status">Connecting</span><span>Updated <time id="machine-logs-time">-</time></span></div>
             <div id="machine-logs-error" class="machine-logs-error" role="alert" hidden></div>
-            <div class="machine-logs-toolbar"><input id="machine-logs-search" type="search" placeholder="Search machines or logs" aria-label="Search adapter logs"><label><input id="machine-logs-running" type="checkbox">Running only</label><label><input id="machine-logs-follow" type="checkbox" checked>Follow logs</label><span id="machine-logs-count"></span></div>
-            <div id="machine-logs-grid" class="machine-logs-grid" data-site="control-room" data-endpoint="/api/adapter-logs"></div>
+            <div class="machine-logs-toolbar adapter-logs-toolbar"><div class="machine-log-type-toggle" role="group" aria-label="Log type"><button type="button" data-adapter-log-type="adapter" aria-pressed="true">Adapter logs</button><button type="button" data-adapter-log-type="controller" aria-pressed="false">Controller logs</button></div><button id="adapter-log-add" class="adapter-column-add" type="button" aria-label="Add adapter panel" title="Add adapter panel">+</button></div>
+            <div id="machine-logs-grid" class="machine-logs-grid adapter-log-columns" data-site="control-room" data-endpoint="/api/adapter-logs"></div>
           </section>
         </section>
 
@@ -163,7 +167,7 @@
 
         <section id="policy-assertion-editor" class="policy-assertion-editor" aria-label="Assertion editor" hidden>
           <section class="section-block">
-            <div class="assertion-heading"><div><h2>Assertions</h2><small id="assertion-revision">Global</small></div><div class="assertion-actions"><label><input id="assertion-enabled" type="checkbox" disabled>Periodic checks</label><label>Interval (s)<input id="assertion-interval" type="number" min="30" max="3600" value="60"></label><button id="assertion-reload" class="button" type="button" disabled>Reload</button><button id="assertion-save" class="button" type="button" disabled>Save</button><button id="assertion-evaluate" class="button" type="button" disabled>Evaluate</button></div></div>
+            <div class="assertion-heading"><div><h2>Assertions</h2><small id="assertion-revision">Global</small></div><div class="assertion-actions"><label id="assertion-periodic-control"><input id="assertion-enabled" type="checkbox" disabled>Periodic checks</label><label id="assertion-interval-control">Interval (s)<input id="assertion-interval" type="number" min="30" max="3600" value="60"></label><button id="assertion-reload" class="button" type="button" disabled>Reload</button><button id="assertion-save" class="button" type="button" disabled>Save</button><button id="assertion-evaluate" class="button" type="button" disabled>Test</button></div></div>
             <div id="assertion-message" class="assertion-message" role="status" aria-live="polite"></div>
             <div class="assertion-workbench"><div><div id="assertion-editor" class="assertion-editor"><div id="assertion-result-gutter" class="assertion-result-gutter" aria-label="Assertion results by source line" hidden></div><pre id="assertion-highlight" aria-hidden="true"></pre><textarea id="assertion-source" aria-label="Data assertion source" maxlength="65536" spellcheck="false" autocapitalize="off" autocomplete="off" wrap="off" disabled></textarea></div><details class="assertion-syntax"><summary>Syntax</summary><pre>group "Operators" members &gt;= 2;
 each group members &gt; 3;
@@ -178,10 +182,9 @@ each group attribute "gidNumber" &gt;= 1000;</pre></details></div><aside class="
         </section>
         <section class="page-view" id="page-sources" data-page="sources" aria-label="Trusted sources">
           <section class="section-block">
-            <div class="section-heading"><div><p class="eyebrow">ATTRIBUTE PROVIDERS</p><h2>Who supplies trusted attributes</h2></div></div>
-            <div class="table-tools"><div class="filter-group"><input id="sources-filter" type="search" placeholder="Filter" aria-label="Filter trusted sources"><span class="count-label" id="trusted-count">—</span></div></div>
-            <p class="section-note">Lookup labels reflect actual attribute requests. “Not queried” is not a health check.</p>
+            <div class="table-tools"><div class="filter-group"><input id="sources-filter" type="search" placeholder="Filter" aria-label="Filter trusted sources"></div></div>
             <div class="table-scroll"><table data-sort-page="sources"><thead><tr><th data-sort-key="name">SOURCE</th><th data-sort-key="provider">HOW IT SUPPLIES</th><th data-sort-key="actor">USED BY</th><th data-sort-key="health">LAST RESULT</th><th data-sort-key="last_lookup">LAST CHECKED</th></tr></thead><tbody id="trusted-list"><tr><td colspan="5" class="empty-row">Waiting for service data…</td></tr></tbody></table></div>
+            <trusted-source-browser data-endpoint="/api/assertions/source"></trusted-source-browser>
           </section>
         </section>
 
@@ -196,16 +199,26 @@ each group attribute "gidNumber" &gt;= 1000;</pre></details></div><aside class="
             </div>
             <div id="policy-stage-status" class="policy-stage-status" role="status" aria-live="polite">Select a saved policy revision to stage.</div>
             <div id="policy-workbench" class="policy-workbench" data-test-mode="false">
-              <aside class="policy-catalog-pane" aria-label="Policy picker">
-                <div class="catalog-pane-heading"><button id="new-category" class="button" type="button" title="Create category">+ Category</button><button id="new-policy-record" class="button" type="button" disabled>+ Policy</button></div>
-                <div id="policy-category-tree" class="policy-category-tree" role="tree"><p class="catalog-empty">No categories yet.</p></div>
+              <aside class="policy-catalog-pane" id="policy-catalog-pane" aria-label="Policy picker">
+                <div class="catalog-pane-heading"><strong>Policies &amp; assertions</strong><button id="policy-picker-toggle" class="pane-collapse-toggle" type="button" aria-label="Collapse policy picker" aria-controls="policy-category-tree" aria-expanded="true" title="Collapse policy picker"><span class="pane-toggle-icon" aria-hidden="true"></span><span class="pane-toggle-label" aria-hidden="true">Picker</span></button></div>
+                <div id="policy-picker-menu" class="policy-picker-menu" role="menu" aria-labelledby="policy-picker-menu-title" hidden>
+                  <strong id="policy-picker-menu-title" class="policy-picker-menu-title">Policy picker</strong>
+                  <button id="new-category" type="button" role="menuitem">New category</button>
+                  <button id="new-policy-record" type="button" role="menuitem" disabled>New policy</button>
+                  <button id="new-assertion-record" type="button" role="menuitem" disabled>New assertion</button>
+                  <hr class="policy-picker-create-separator">
+                  <button id="policy-copy" type="button" role="menuitem" disabled>Copy</button><button id="policy-paste" type="button" role="menuitem" disabled>Paste</button>
+                  <button id="policy-duplicate" type="button" role="menuitem" disabled>Duplicate</button><button id="policy-delete" type="button" role="menuitem" disabled>Delete</button>
+                  <button id="policy-restore" type="button" role="menuitem" hidden>Restore</button>
+                  <hr>
+                  <button id="policy-show-archived" type="button" role="menuitemcheckbox" aria-checked="false" aria-pressed="false">Show archived</button>
+                </div>
+                <p id="policy-file-status" class="policy-file-status" role="status" aria-live="polite"></p>
+                <div id="policy-category-tree" class="policy-category-tree" role="tree" tabindex="0"><p class="catalog-empty">No categories yet.</p></div>
               </aside>
               <section class="policy-editor-pane" id="policy-editor-pane" aria-label="Policy source editor">
                 <div id="policy-source-surface">
                 <div class="policy-attribute-toolbar">
-                  <label for="policy-attribute-picker">Attribute</label>
-                  <select id="policy-attribute-picker" aria-label="Configured policy attributes" disabled><option value="">Loading attributes…</option></select>
-                  <button id="policy-attribute-insert" class="button button-refresh" type="button" disabled>Insert</button>
                   <button id="policy-attribute-rescan" class="button button-refresh" type="button" disabled>Rescan LDAP</button>
                   <button id="policy-format" class="button button-refresh" type="button" title="Format policy source" aria-label="Format policy source" disabled>Format</button>
                   <button id="policy-test" class="button button-refresh" type="button" disabled>Test</button>
@@ -218,14 +231,14 @@ each group attribute "gidNumber" &gt;= 1000;</pre></details></div><aside class="
                   <div id="policy-completions" class="policy-completions" role="listbox" aria-label="ZPL completions" hidden></div>
                 </div>
                 <div id="policy-test-status" class="policy-test-status" role="status" aria-live="polite" hidden></div>
-                <span id="policy-editor-help" class="sr-only">ZPL syntax is highlighted. Choose an attribute and press Insert to place it at the cursor. Press Control-Space for suggestions; use arrow keys and Tab to insert a completion. Enter starts a new line.</span>
+                <span id="policy-editor-help" class="sr-only">ZPL syntax is highlighted. Press Control-Space for suggestions; use arrow keys and Tab to insert a completion. Enter starts a new line.</span>
                 <div id="policy-check-result" class="policy-check-result" role="status" aria-live="polite">Policy source is not loaded.</div>
                 </div>
                 <div class="policy-history-heading" id="policy-history-heading"><strong>Version history</strong><span id="policy-history-count">—</span></div>
                 <div id="policy-history" class="policy-history"><p class="catalog-empty">Select a policy to browse versions.</p></div>
               </section>
               <aside class="policy-assistant-pane" id="policy-assistant-pane" aria-label="Claude Assistant">
-                <div class="assistant-heading"><h3>Claude Assistant</h3><span id="assistant-state" class="assistant-state">Not configured</span></div>
+                <div class="assistant-heading"><h3>Claude Assistant</h3><span id="assistant-state" class="assistant-state">Not configured</span><button id="policy-assistant-toggle" class="pane-collapse-toggle" type="button" aria-label="Collapse Claude assistant" aria-controls="assistant-messages" aria-expanded="true" title="Collapse Claude assistant"><span class="pane-toggle-icon" aria-hidden="true"></span><span class="pane-toggle-label" aria-hidden="true">Claude</span></button></div>
                 <div class="assistant-settings">
                   <label class="assistant-enable" for="assistant-enabled"><input id="assistant-enabled" type="checkbox" disabled> Use assistant</label>
                   <label for="assistant-model">Model<select id="assistant-model" disabled></select></label>
@@ -305,8 +318,8 @@ each group attribute "gidNumber" &gt;= 1000;</pre></details></div><aside class="
         <footer class="page-footer"><span>ZPR CONTROL ROOM <b>·</b> LIVE MONITOR / POLICY RECORDS</span><span id="footer-poll">Auto-refresh every 5 seconds</span></footer>
       </main>
     </div>
-    <script src="/app.js?v=38" defer></script>
-    <script src="/machine-logs.js?v=7" defer></script>
-    <script src="/assertions.js?v=4" defer></script>
+    <script src="/app.js?v=45" defer></script>
+    <script src="/machine-logs.js?v=9" defer></script>
+    <script src="/assertions.js?v=5" defer></script>
   </body>
 </html>

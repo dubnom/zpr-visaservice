@@ -30,6 +30,7 @@ type policyRepository interface {
 	CreateCategory(context.Context, *string, string) (policyCategory, error)
 	CreateRecord(context.Context, string, string, string, string, json.RawMessage, string, string, string) (policyRecord, error)
 	GetRecord(context.Context, string) (policyRecord, error)
+	SetRecordArchived(context.Context, string, int, bool) error
 	AppendRevision(context.Context, string, int, string, string, string) (policyRevision, error)
 	ListRevisions(context.Context, string) ([]policyRevisionSummary, error)
 	GetRevision(context.Context, string, int) (policyRevision, error)
@@ -54,6 +55,7 @@ type policyRecord struct {
 	CurrentRevision int             `json:"current_revision"`
 	Content         string          `json:"content,omitempty"`
 	ContentHash     string          `json:"content_hash,omitempty"`
+	Archived        bool            `json:"archived,omitempty"`
 	CreatedAt       time.Time       `json:"created_at"`
 	UpdatedAt       time.Time       `json:"updated_at"`
 }
@@ -133,7 +135,7 @@ func migratePolicySchema(ctx context.Context, db *sql.DB) error {
 		return fmt.Errorf("policy database schema version %d is newer than this server supports", version)
 	}
 	if version == 2 {
-		return nil
+		return ensurePolicyArchiveTable(ctx, db)
 	}
 	const schema = `
 CREATE TABLE IF NOT EXISTS policy_categories (
@@ -183,7 +185,15 @@ PRAGMA user_version = 2;
 	if _, err := db.ExecContext(ctx, schema); err != nil {
 		return fmt.Errorf("initialize policy database schema: %w", err)
 	}
-	return nil
+	return ensurePolicyArchiveTable(ctx, db)
+}
+
+func ensurePolicyArchiveTable(ctx context.Context, db *sql.DB) error {
+	_, err := db.ExecContext(ctx, `CREATE TABLE IF NOT EXISTS policy_record_archive (
+		record_id TEXT PRIMARY KEY REFERENCES policy_records(record_id),
+		archived_at TEXT NOT NULL
+	)`)
+	return err
 }
 
 func (r *sqlitePolicyRepository) Close() error { return r.db.Close() }
@@ -237,6 +247,32 @@ func (r *sqlitePolicyRepository) Catalog(ctx context.Context) ([]policyCategory,
 	}
 	if err := recordRows.Err(); err != nil {
 		return nil, nil, err
+	}
+	if err := recordRows.Close(); err != nil {
+		return nil, nil, err
+	}
+	archivedRows, err := r.db.QueryContext(ctx, `SELECT record_id FROM policy_record_archive`)
+	if err != nil {
+		return nil, nil, err
+	}
+	archivedIDs := make(map[string]bool)
+	for archivedRows.Next() {
+		var id string
+		if err := archivedRows.Scan(&id); err != nil {
+			archivedRows.Close()
+			return nil, nil, err
+		}
+		archivedIDs[id] = true
+	}
+	if err := archivedRows.Err(); err != nil {
+		archivedRows.Close()
+		return nil, nil, err
+	}
+	if err := archivedRows.Close(); err != nil {
+		return nil, nil, err
+	}
+	for index := range records {
+		records[index].Archived = archivedIDs[records[index].ID]
 	}
 	return categories, records, nil
 }
@@ -325,7 +361,43 @@ func (r *sqlitePolicyRepository) GetRecord(ctx context.Context, id string) (poli
 	if errors.Is(err, sql.ErrNoRows) {
 		return policyRecord{}, errRecordNotFound
 	}
+	if err != nil {
+		return policyRecord{}, err
+	}
+	record.Archived, err = r.policyRecordArchived(ctx, id)
 	return record, err
+}
+
+func (r *sqlitePolicyRepository) policyRecordArchived(ctx context.Context, id string) (bool, error) {
+	var archived bool
+	err := r.db.QueryRowContext(ctx, `SELECT EXISTS(SELECT 1 FROM policy_record_archive WHERE record_id=?)`, id).Scan(&archived)
+	return archived, err
+}
+
+func (r *sqlitePolicyRepository) SetRecordArchived(ctx context.Context, id string, expected int, archived bool) error {
+	tx, err := r.db.BeginTx(ctx, nil)
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+	var current int
+	if err := tx.QueryRowContext(ctx, `SELECT current_revision FROM policy_records WHERE record_id=?`, id).Scan(&current); errors.Is(err, sql.ErrNoRows) {
+		return errRecordNotFound
+	} else if err != nil {
+		return err
+	}
+	if current != expected {
+		return errRevisionConflict
+	}
+	if archived {
+		_, err = tx.ExecContext(ctx, `INSERT INTO policy_record_archive(record_id,archived_at) VALUES(?,?) ON CONFLICT(record_id) DO NOTHING`, id, formatPolicyTime(time.Now().UTC()))
+	} else {
+		_, err = tx.ExecContext(ctx, `DELETE FROM policy_record_archive WHERE record_id=?`, id)
+	}
+	if err != nil {
+		return err
+	}
+	return tx.Commit()
 }
 
 func (r *sqlitePolicyRepository) AppendRevision(ctx context.Context, id string, expected int, content, author, summary string) (policyRevision, error) {
@@ -334,7 +406,7 @@ func (r *sqlitePolicyRepository) AppendRevision(ctx context.Context, id string, 
 		return policyRevision{}, err
 	}
 	defer tx.Rollback()
-	result, err := tx.ExecContext(ctx, `UPDATE policy_records SET current_revision=current_revision+1,updated_at=? WHERE record_id=? AND current_revision=?`, formatPolicyTime(time.Now().UTC()), id, expected)
+	result, err := tx.ExecContext(ctx, `UPDATE policy_records SET current_revision=current_revision+1,updated_at=? WHERE record_id=? AND current_revision=? AND NOT EXISTS(SELECT 1 FROM policy_record_archive WHERE record_id=?)`, formatPolicyTime(time.Now().UTC()), id, expected, id)
 	if err != nil {
 		return policyRevision{}, err
 	}

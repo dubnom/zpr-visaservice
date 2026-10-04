@@ -50,6 +50,43 @@ func TestSQLitePolicyDatabaseAndWALFilesArePrivate(t *testing.T) {
 	}
 }
 
+func TestSQLitePolicyRecordArchivePreservesImmutableRevisions(t *testing.T) {
+	repository, err := openSQLitePolicyRepository(filepath.Join(privatePolicyTestDir(t), "archive.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer repository.Close()
+	category, err := repository.CreateCategory(context.Background(), nil, "Policies")
+	if err != nil {
+		t.Fatal(err)
+	}
+	record, err := repository.CreateRecord(context.Background(), category.ID, "Keep history", "policy", "text/vnd.zpr.zpl", json.RawMessage(`{"language":"zpl"}`), "allow team.", "tester", "Initial")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := repository.SetRecordArchived(context.Background(), record.ID, record.CurrentRevision, true); err != nil {
+		t.Fatal(err)
+	}
+	archived, err := repository.GetRecord(context.Background(), record.ID)
+	if err != nil || !archived.Archived {
+		t.Fatalf("archived record = %+v, err = %v", archived, err)
+	}
+	if _, err := repository.AppendRevision(context.Background(), record.ID, record.CurrentRevision, "allow changed.", "tester", "Must not update archived record"); err == nil {
+		t.Fatal("archived record accepted a new revision")
+	}
+	if err := repository.SetRecordArchived(context.Background(), record.ID, record.CurrentRevision, false); err != nil {
+		t.Fatal(err)
+	}
+	restored, err := repository.GetRecord(context.Background(), record.ID)
+	if err != nil || restored.Archived {
+		t.Fatalf("restored record = %+v, err = %v", restored, err)
+	}
+	revisions, err := repository.ListRevisions(context.Background(), record.ID)
+	if err != nil || len(revisions) != 1 {
+		t.Fatalf("revision history = %+v, err = %v", revisions, err)
+	}
+}
+
 func TestSQLiteRevisionRowsRemainImmutableAcrossSchemaUpgrade(t *testing.T) {
 	databasePath := filepath.Join(privatePolicyTestDir(t), "policy.db")
 	repository, err := openSQLitePolicyRepository(databasePath)

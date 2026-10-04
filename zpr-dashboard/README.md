@@ -166,6 +166,11 @@ its location. This view does not install or activate a policy.
 Control Room's **Adapter Logs** page shows the manifest fleet with Controller,
 Control adapter, and assigned-workload adapter logs. Its read-only API passes
 through the authenticated Control Service to the simulator's adapter collector.
+The **Adapter logs** and **Controller logs** buttons at the top switch log types
+using the same horizontal panels. Each panel remembers its adapter/controller
+selection and source scroll/follow state; changing types needs no additional
+collection request. The machine/adapter selectors and add/remove panel controls
+apply to the selected type.
 The Simulator's **Workload logs** page shows only assigned application/service
 event logs, not Controller or adapter logs. Running machines with no supported
 workload logs have an explicit empty state.
@@ -175,8 +180,8 @@ requests. Pause/resume, manual refresh, search, running-only filtering, and
 follow-tail controls operate independently of machine lifecycle actions.
 Each machine window follows the newest entries by default. Scrolling back pauses
 following for that window without affecting the others; scrolling to the bottom
-resumes it. Re-enabling **Follow logs** resumes all windows. Each window's **Log**
-radio controls switch between its available sources, showing one at a time.
+resumes it. Re-enabling **Follow logs** resumes all windows. The Simulator's **Log**
+radio controls switch between its workload sources, showing one at a time.
 Selection survives polling, and
 each source remembers its scroll position and follow state when switching back.
 The selector also works in maximized windows; a disappeared source falls back

@@ -385,17 +385,18 @@ func (runtime *assertionRuntime) register(mux *http.ServeMux) {
 		if err == nil && (runtime.baseDN != baseDN || runtime.bindDN != bindDN) {
 			err = errors.New("Organization changed during source read; reload and try again")
 		}
+		observedAt := time.Now().UTC()
 		if err == nil {
-			runtime.lastSource = assertionSourceSummary(directory, time.Now().UTC())
+			runtime.lastSource = assertionSourceSummary(directory, observedAt)
 		}
-		summary := runtime.lastSource
+		organizationID, organizationName := runtime.organizationID, runtime.organizationName
 		runtime.mu.Unlock()
 		if err != nil {
 			writeJSON(w, http.StatusBadGateway, map[string]string{"error": err.Error()})
 			return
 		}
 		w.Header().Set("Cache-Control", "no-store")
-		writeJSON(w, http.StatusOK, summary)
+		writeJSON(w, http.StatusOK, trustedSourceBrowserResponse("Trusted LDAP", organizationID, organizationName, baseDN, directory, observedAt))
 	})
 	mux.HandleFunc("GET /api/assertions", func(w http.ResponseWriter, r *http.Request) {
 		if !localEditorRequest(w, r) {
