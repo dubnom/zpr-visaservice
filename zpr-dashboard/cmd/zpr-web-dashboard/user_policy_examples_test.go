@@ -9,6 +9,18 @@ import (
 	"testing"
 )
 
+func TestPolicyUserFixturesIncludeMappedLDAPGroupRoles(t *testing.T) {
+	mappings := []policyAttributeMapping{{policyAttribute: policyAttribute{Source: "role", Attribute: "user.role{}"}}}
+	groups := map[string][]string{"Approver": {"alice"}, "Security Reviewer": {"bob"}}
+	attributes := policyTestUserAttributes("alice", nil, simulatorOrganization{}, mappings, groups)
+	if roles := attributes["user.role"]; len(roles) != 1 || roles[0] != "Approver" {
+		t.Fatalf("mapped LDAP roles = %v, want only Approver", roles)
+	}
+	if unmapped := policyTestUserAttributes("alice", nil, simulatorOrganization{}, nil, groups); len(unmapped["user.role"]) != 0 {
+		t.Fatal("unconfigured role attribute was synthesized")
+	}
+}
+
 func TestUserAndDevicePolicyExamplesParseWithZPLC(t *testing.T) {
 	compiler := os.Getenv("ZPR_ZPLC_BIN")
 	if compiler == "" {

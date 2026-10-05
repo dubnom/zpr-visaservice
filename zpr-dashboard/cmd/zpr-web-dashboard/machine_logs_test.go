@@ -2,10 +2,14 @@ package main
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"net/http"
 	"net/http/httptest"
+	"os"
+	"path/filepath"
 	"strings"
+	"sync/atomic"
 	"testing"
 )
 
@@ -82,30 +86,49 @@ func TestMachineLogSourcesAreSeparatedByCategory(t *testing.T) {
 	}
 }
 
-func TestAdapterLogsProxyIsReadOnlyAndDropsCredentials(t *testing.T) {
-	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.URL.Path != "/api/simulator/adapter-logs" || r.URL.RawQuery != "" {
-			t.Errorf("unexpected upstream URL: %s", r.URL)
-		}
-		for _, name := range []string{"Authorization", "Cookie", "Origin"} {
-			if r.Header.Get(name) != "" {
-				t.Errorf("forwarded private header %s", name)
-			}
-		}
-		w.Header().Set("Content-Type", "application/json")
-		_, _ = w.Write([]byte(`{"machines":[]}`))
+func TestControlRoomAdapterLogsDoNotContactSimulator(t *testing.T) {
+	var calls atomic.Int32
+	simulator := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		calls.Add(1)
+		http.Error(w, "simulation manifest unavailable", http.StatusServiceUnavailable)
 	}))
-	defer upstream.Close()
-	t.Setenv("ZPR_SIMULATOR_URL", upstream.URL)
-	handler := newAdapterLogsProxy()
+	defer simulator.Close()
+	t.Setenv("ZPR_SIMULATOR_URL", simulator.URL)
+	t.Setenv("SIMULATION_MANIFEST", "/missing/simulation-manifest.json")
+	t.Setenv("ZPR_ADAPTER_LOG_CONFIG_FILE", "")
+	response := httptest.NewRecorder()
+	newAdapterLogsHandler().ServeHTTP(response, httptest.NewRequest(http.MethodGet, "/api/adapter-logs", nil))
+	if calls.Load() != 0 || strings.Contains(response.Body.String(), "simulation") {
+		t.Fatalf("Control Room contacted the simulator: %d calls, %s", calls.Load(), response.Body)
+	}
+}
+
+func TestAdapterLogsInventoryIsReadOnlyBoundedAndRedacted(t *testing.T) {
+	directory := t.TempDir()
+	logPath := filepath.Join(directory, "adapter.log")
+	if err := os.WriteFile(logPath, []byte("connected\npassword=private-password\n"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	configPath := filepath.Join(directory, "logs.json")
+	inventory := adapterLogInventory{Adapters: []adapterLogTarget{{ID: "adapter-1", Name: "Adapter 1", Sources: []adapterLogSourceConfig{{Name: "Link", Kind: "adapter", File: logPath}, {Name: "Controller", Kind: "controller", File: filepath.Join(directory, "missing.log")}}}}}
+	content, err := json.Marshal(inventory)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(configPath, content, 0600); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("ZPR_ADAPTER_LOG_CONFIG_FILE", configPath)
+	t.Setenv("SIMULATION_MANIFEST", "/missing/manifest.json")
+	handler := newAdapterLogsHandler()
 	request := httptest.NewRequest(http.MethodGet, "/api/adapter-logs?ignored=yes", nil)
 	request.Header.Set("Authorization", "Bearer private")
 	request.Header.Set("Cookie", "private=value")
 	request.Header.Set("Origin", "http://control.local")
 	response := httptest.NewRecorder()
 	handler.ServeHTTP(response, request)
-	if response.Code != http.StatusOK || !strings.Contains(response.Body.String(), `"machines"`) {
-		t.Fatalf("unexpected proxy response: %d %s", response.Code, response.Body)
+	if response.Code != http.StatusOK || !strings.Contains(response.Body.String(), `"adapters"`) || !strings.Contains(response.Body.String(), "connected") || strings.Contains(response.Body.String(), "private-") || strings.Contains(response.Body.String(), `"machines"`) {
+		t.Fatalf("unexpected log response: %d %s", response.Code, response.Body)
 	}
 	response = httptest.NewRecorder()
 	handler.ServeHTTP(response, httptest.NewRequest(http.MethodPost, "/api/adapter-logs", nil))
@@ -147,15 +170,38 @@ func TestControlRoomUsesSlowTransportForLogsAndAssertionReads(t *testing.T) {
 	}
 }
 
-func TestAdapterLogsProxyRejectsNonLoopbackAndPathOrigins(t *testing.T) {
-	for _, endpoint := range []string{"http://example.com", "http://127.0.0.1/private", "https://127.0.0.1", "http://user:pass@127.0.0.1"} {
-		t.Run(endpoint, func(t *testing.T) {
-			t.Setenv("ZPR_SIMULATOR_URL", endpoint)
-			response := httptest.NewRecorder()
-			newAdapterLogsProxy().ServeHTTP(response, httptest.NewRequest(http.MethodGet, "/api/adapter-logs", nil))
-			if response.Code != http.StatusServiceUnavailable {
-				t.Fatalf("unsafe origin status = %d", response.Code)
+func TestOperatorLogComponentsDoNotReferenceSimulatorContracts(t *testing.T) {
+	for _, path := range []string{"control_service.go", "adapter_logs.go"} {
+		source, err := os.ReadFile(path)
+		if err != nil {
+			t.Fatal(err)
+		}
+		for _, forbidden := range []string{"ZPR_SIMULATOR_", "SIMULATION_", "/api/simulator/", "readSimulatorManifest", "simulatorMachine"} {
+			if strings.Contains(string(source), forbidden) {
+				t.Errorf("%s violates the operator boundary with %q", path, forbidden)
 			}
-		})
+		}
+	}
+}
+
+func TestAdapterLogInventoryRejectsInvalidSources(t *testing.T) {
+	for _, source := range []adapterLogSourceConfig{
+		{Name: "Log", Kind: "adapter", File: "relative.log"},
+		{Name: "Log", Kind: "adapter", Container: "--privileged"},
+		{Name: "Log", Kind: "adapter", Container: "adapter-1", Path: "relative.log"},
+		{Name: "Log", Kind: "workload", File: "/tmp/log"},
+		{Name: "Log", Kind: "adapter", File: "/tmp/log", Container: "adapter-1"},
+	} {
+		content, err := json.Marshal(adapterLogInventory{Adapters: []adapterLogTarget{{ID: "adapter-1", Name: "Adapter 1", Sources: []adapterLogSourceConfig{source}}}})
+		if err != nil {
+			t.Fatal(err)
+		}
+		path := filepath.Join(t.TempDir(), "logs.json")
+		if err := os.WriteFile(path, content, 0600); err != nil {
+			t.Fatal(err)
+		}
+		if _, err := readAdapterLogInventory(path); err == nil {
+			t.Fatalf("invalid source accepted: %+v", source)
+		}
 	}
 }

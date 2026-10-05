@@ -1,5 +1,6 @@
 {
   "id": "velocity",
+  "assertions_source": "// Velocity Labs directory integrity; human fields are group-scoped.\npeople attribute \"uid\" present;\npeople attribute \"cn\" present;\ngroup \"BenchmarkOperators\" members >= 2;\npeople in \"BenchmarkOperators\" attribute \"mail\" present;\npeople in \"BenchmarkOperators\" attribute \"title\" present;\npeople in \"BenchmarkOperators\" attribute \"ou\" == \"Performance\";\n",
   "name": "Velocity Labs",
   "description": "Single-node performance laboratory: two machines measure application throughput and warmed request latency. Direct visa-grant timing requires separate instrumentation.",
   "runtime": {

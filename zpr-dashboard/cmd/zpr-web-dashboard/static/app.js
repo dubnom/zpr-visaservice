@@ -720,7 +720,7 @@ function renderTopology(data, exitComponents = []) {
     const highlighted = query && (matches(edge.from) || matches(edge.to)) ? "highlighted" : "";
     const filtered = query && !highlighted ? "filtered" : "";
     const key = `${edge.kind}|${edge.from.cn}|${edge.to.cn}`;
-    return `<g class="graph-edge ${highlighted} ${filtered}" data-inspect-link="${escapeHTML(key)}" tabindex="0" role="button" aria-label="Inspect ${escapeHTML(title)}"><title>${escapeHTML(title)}</title><line class="graph-link ${cls}" x1="${from.x}" y1="${from.y}" x2="${to.x}" y2="${to.y}"/><line class="graph-link-hit" x1="${from.x}" y1="${from.y}" x2="${to.x}" y2="${to.y}"/></g>`;
+    return `<g class="graph-edge ${highlighted} ${filtered}" data-inspect-link="${escapeHTML(key)}"${docked ? ` data-dock-adapter="${escapeHTML(edge.to.cn)}"` : ""} tabindex="0" role="button" aria-label="Inspect ${escapeHTML(title)}"><title>${escapeHTML(title)}</title><line class="graph-link ${cls}" x1="${from.x}" y1="${from.y}" x2="${to.x}" y2="${to.y}"/><line class="graph-link-hit" x1="${from.x}" y1="${from.y}" x2="${to.x}" y2="${to.y}"/></g>`;
   }).join("");
 
   const arrivalMarker = (key, x, y, radius) => {
@@ -825,6 +825,7 @@ function renderTopology(data, exitComponents = []) {
   stage.innerHTML = `<div class="graph-controls" aria-label="Topology graph controls"><button class="graph-control" data-graph-action="in" type="button" aria-label="Zoom in" title="Zoom in">+</button><button class="graph-control" data-graph-action="out" type="button" aria-label="Zoom out" title="Zoom out">−</button><button class="graph-control graph-fit" data-graph-action="fit" type="button" aria-label="Fit graph" title="Fit graph">Fit</button></div><svg class="topology-graph" viewBox="0 0 ${width} ${height}" role="img" aria-label="Topology graph with ${nodes.length} nodes, ${adapters.length} adapters, ${dockEdges.length} dock connections, ${networkEdges.length} inter-node links, and ${(data.services || []).filter((service) => servicesByActor.has(service.actor_cn)).length} registered services"><g id="graph-world">${edgeMarkup}${serviceEdgeMarkup.join("")}${serviceMarkup.join("")}<g class="graph-exit-layer" aria-hidden="true">${exiting("service")}</g>${vertexMarkup.slice(nodes.length).join("")}<g class="graph-exit-layer" aria-hidden="true">${exiting("adapter")}</g>${vertexMarkup.slice(0, nodes.length).join("")}<g class="graph-exit-layer" aria-hidden="true">${exiting("node")}</g></g></svg>`;
 
   setupGraphControls(stage, width, height, previousViewport);
+  pulseAdapterDecisions(data);
 }
 
 function renderConnections(edges, unconnected) {
@@ -1197,6 +1198,7 @@ function renderPolicyAttributes() {
   const rescan = byId("policy-attribute-rescan");
   const status = byId("policy-attribute-status");
   rescan.disabled = !state.policy.configured || Boolean(state.policy.attributeScanPending);
+  rescan.classList.toggle("button-save-as-ready", !rescan.disabled);
   if (state.policy.attributeScanPending) {
     status.hidden = false;
     status.textContent = "Scanning LDAP…";
@@ -1461,7 +1463,7 @@ function clearPolicySelection() {
   state.policy.testResult = null;
   state.policy.testSource = "";
   state.policy.checkDiagnostics = "";
-  byId("policy-test-gutter").replaceChildren();
+  byId("policy-test-gutter-content").replaceChildren();
   byId("policy-test-gutter").hidden = false;
   byId("policy-test-status").hidden = true;
   hidePolicyTestDetails();
@@ -1530,10 +1532,12 @@ function setPolicyRecordSurface(kind, record = state.policy.record) {
   const assertionsSelected = kind === "assertions";
   const policy = state.policy;
   if (assertionsSelected && policy.testPending) stopPolicyTest();
+  if (assertionsSelected) setPolicyFileMenuOpen(false);
   byId("policy-assertion-editor").hidden = !assertionsSelected;
   byId("policy-source-surface").hidden = assertionsSelected;
   byId("policy-attribute-toolbar").hidden = assertionsSelected;
   byId("policy-actions").hidden = assertionsSelected;
+  byId("policy-editor-utilities").hidden = assertionsSelected;
   byId("policy-stage-status").hidden = assertionsSelected;
   byId("policy-assistant-pane").hidden = assertionsSelected;
   byId("policy-workbench").dataset.recordKind = kind || "";
@@ -2181,6 +2185,7 @@ function updatePolicyDirtyState() {
   byId("policy-check").textContent = "Analyze";
   if (!checked && !policy.testPending) byId("policy-check").removeAttribute("data-analysis-state");
   byId("policy-format").disabled = !canEdit;
+  byId("policy-format").classList.toggle("button-save-as-ready", canEdit);
   byId("policy-source").disabled = !canViewSource;
   byId("policy-source").readOnly = policy.saveTestPending;
   byId("policy-source").setAttribute("aria-readonly", String(policy.saveTestPending));
@@ -2189,6 +2194,7 @@ function updatePolicyDirtyState() {
   byId("policy-test-status").hidden = true;
   byId("policy-check-result").hidden = true;
   byId("policy-attribute-rescan").disabled = !canEdit;
+  byId("policy-attribute-rescan").classList.toggle("button-save-as-ready", canEdit && !policy.attributeScanPending);
   byId("policy-refresh").disabled = policy.testPending || !policy.record || (!dirty && !policy.browsingRevision && !isDraft);
   byId("policy-check").classList.toggle("button-next-evaluate", canEdit && !checked);
   byId("policy-save").classList.toggle("button-save-next", !canSave);
@@ -2235,6 +2241,8 @@ async function runPolicyTest(source = byId("policy-source").value) {
     if (controller.signal.aborted) return { passed: false, cancelled: true };
     policy.testResult = result;
     policy.testSource = source;
+    policy.testWarnings = result.warnings || [];
+    renderPolicyLintWarnings();
     byId("policy-check").dataset.analysisState = "success";
     renderPolicyTestGutter(result);
     outcome = { passed: true, result };
@@ -2263,6 +2271,7 @@ async function runPolicyTest(source = byId("policy-source").value) {
 
 function renderPolicyTestGutter(result) {
   const gutter = byId("policy-test-gutter");
+  const content = byId("policy-test-gutter-content");
   const lineCount = byId("policy-source").value.split("\n").length;
   const resultsByLine = new Map();
   for (const service of result.services || []) {
@@ -2304,9 +2313,9 @@ function renderPolicyTestGutter(result) {
     }
     fragment.append(row);
   }
-  gutter.replaceChildren(fragment);
+  content.replaceChildren(fragment);
   gutter.hidden = false;
-  gutter.style.transform = `translateY(${-byId("policy-source").scrollTop}px)`;
+  content.style.transform = `translateY(${-byId("policy-source").scrollTop}px)`;
 }
 
 function policyTestErrorLines(message, lineCount) {
@@ -2317,6 +2326,7 @@ function policyTestErrorLines(message, lineCount) {
 
 function renderPolicyTestErrorGutter(message, errorLines, errorTitle = "Policy test error") {
   const gutter = byId("policy-test-gutter");
+  const content = byId("policy-test-gutter-content");
   const errorLineSet = new Set(errorLines);
   const fragment = document.createDocumentFragment();
   const lineCount = byId("policy-source").value.split("\n").length;
@@ -2337,9 +2347,9 @@ function renderPolicyTestErrorGutter(message, errorLines, errorTitle = "Policy t
     }
     fragment.append(row);
   }
-  gutter.replaceChildren(fragment);
+  content.replaceChildren(fragment);
   gutter.hidden = false;
-  gutter.style.transform = `translateY(${-byId("policy-source").scrollTop}px)`;
+  content.style.transform = `translateY(${-byId("policy-source").scrollTop}px)`;
 }
 
 function policyTestDimensionLabel(name) {
@@ -2402,10 +2412,11 @@ function hidePolicyTestDetails() {
 
 function clearPolicyTestResults() {
   const policy = state.policy;
+  policy.testWarnings = [];
   policy.testResult = null;
   policy.testSource = "";
   policy.testDimensions = [];
-  byId("policy-test-gutter").replaceChildren();
+  byId("policy-test-gutter-content").replaceChildren();
   byId("policy-test-gutter").hidden = false;
   byId("policy-check-result").hidden = true;
   byId("policy-check-result").textContent = "";
@@ -2413,6 +2424,7 @@ function clearPolicyTestResults() {
   byId("policy-test-status").textContent = "";
   byId("policy-test-status").dataset.state = "";
   hidePolicyTestDetails();
+  renderPolicyLintWarnings();
 }
 
 function stopPolicyTest() {
@@ -2424,7 +2436,7 @@ function stopPolicyTest() {
   if (byId("policy-check").dataset.analysisState === "pending") {
     byId("policy-check").dataset.analysisState = policy.validSource === policy.evaluatedSource ? "success" : "";
   }
-  byId("policy-test-gutter").replaceChildren();
+  byId("policy-test-gutter-content").replaceChildren();
   byId("policy-test-gutter").hidden = false;
   byId("policy-test-status").hidden = true;
   byId("policy-test-status").textContent = "";
@@ -2534,6 +2546,9 @@ async function checkPolicy(source = byId("policy-source").value) {
   const generation = (state.policy.checkGeneration || 0) + 1;
   state.policy.checkGeneration = generation;
   state.policy.checkPending = true;
+  state.policy.lintWarnings = [];
+  state.policy.testWarnings = [];
+  renderPolicyLintWarnings();
     state.policy.checkDiagnostics = "";
   state.policy.errorOffsets = [];
   updatePolicyHighlight();
@@ -2550,7 +2565,7 @@ async function checkPolicy(source = byId("policy-source").value) {
     const result = await response.json();
     if (generation !== state.policy.checkGeneration || source !== byId("policy-source").value) return false;
     valid = response.ok && result.valid;
-    policySetCheckResult(valid, result.diagnostics || result.error || "No compiler diagnostics.", source);
+    policySetCheckResult(valid, result.diagnostics || result.error || "No compiler diagnostics.", source, result.warnings || []);
   } catch (error) {
     if (generation !== state.policy.checkGeneration || source !== byId("policy-source").value) return false;
     policySetCheckResult(false, error.message, source);
@@ -2574,9 +2589,31 @@ async function evaluateAndTestPolicy() {
   await analyzePolicySource(byId("policy-source").value);
 }
 
-function policySetCheckResult(valid, diagnostics, source) {
+function renderPolicyLintWarnings() {
+  let list = byId("policy-lint-warnings");
+  if (!list) {
+    list = document.createElement("ul");
+    list.id = "policy-lint-warnings";
+    list.className = "lint-warning-list";
+    list.setAttribute("aria-label", "Policy lint warnings");
+    byId("policy-check-result").after(list);
+  }
+  list.replaceChildren();
+  const warnings = state.policy.evaluatedSource === byId("policy-source").value
+    ? [...state.policy.lintWarnings || [], ...state.policy.testWarnings || []] : [];
+  for (const warning of warnings) {
+    const item = document.createElement("li");
+    item.textContent = `Line ${warning.line} · Warning [${warning.code}]: ${warning.message}`;
+    list.append(item);
+  }
+  list.hidden = !warnings.length;
+}
+
+function policySetCheckResult(valid, diagnostics, source, warnings = []) {
   const policy = state.policy;
   policy.evaluatedSource = source;
+  policy.lintWarnings = warnings;
+  renderPolicyLintWarnings();
   policy.validSource = valid ? source : null;
   policy.errorOffsets = valid ? [] : extractZPLErrorOffsets(diagnostics, source);
   updatePolicyHighlight();
@@ -3002,7 +3039,134 @@ function snapshotRemovedTopologyComponents(keys) {
     });
 }
 
+const adapterDecisionPulses = new Map();
+const serviceGrantPulses = new Map();
+const ADAPTER_DECISION_DURATION = 1200;
+
+function decisionPulseFrames(reducedMotion) {
+  return [
+    { opacity: 0, ...(reducedMotion ? {} : { transform: "scale(1)" }) },
+    { opacity: 0.95, offset: 0.4, ...(reducedMotion ? {} : { transform: "scale(1.25)" }) },
+    { opacity: 0, ...(reducedMotion ? {} : { transform: "scale(1)" }) },
+  ];
+}
+
+function serviceMatchesVisa(service, visa, actors) {
+  const reverse = String(visa.direction || "").toLowerCase() === "reverse";
+  const address = reverse ? visa.source_addr : visa.dest_addr;
+  const providerAddress = service.zpr_addr || actors.find((actor) => actor.cn === service.actor_cn)?.zpr_addr;
+  if (!address || !providerAddress || dnsAddressKey(address) !== dnsAddressKey(providerAddress)) return false;
+  const normalizeProtocol = (protocol) => String(protocol || "").toUpperCase().replace(/^(IPV6_ICMP|ICMPV6)$/, "ICMP6");
+  const protocol = normalizeProtocol(visa.proto);
+  const port = reverse ? visa.source_port : visa.dest_port;
+  return [...String(service.service_endpoints || "").matchAll(/([A-Z0-9_]+)\/(\d+)(?:-(\d+))?/gi)].some((endpoint) => {
+    if (normalizeProtocol(endpoint[1]) !== protocol) return false;
+    if (protocol === "ICMP6") return true;
+    return port != null && num(port) >= Number(endpoint[2]) && num(port) <= Number(endpoint[3] || endpoint[2]);
+  });
+}
+
+function recordAdapterDecisions(data, previous) {
+  if (!previous || data === previous) return;
+  const decisions = new Map();
+  const visaIDs = new Set((previous.recent_visas || []).map((visa) => String(visa.id)));
+  for (const visa of data.recent_visas || []) {
+    const requester = String(visa.direction || "").toLowerCase() === "reverse" ? visa.dest_addr : visa.source_addr;
+    if (!visaIDs.has(String(visa.id))) {
+      if (requester) decisions.set(dnsAddressKey(requester), "grant");
+      for (const service of data.services || []) {
+        if (serviceMatchesVisa(service, visa, data.actors)) {
+          serviceGrantPulses.set(`service:${JSON.stringify([service.actor_cn, service.service_name])}`, { startedAt: Date.now() });
+        }
+      }
+    }
+  }
+  const denyKey = (denial) => JSON.stringify([dnsAddressKey(denial.source_addr), dnsAddressKey(denial.dest_addr), denial.protocol, denial.dest_port, denial.deny_code]);
+  const previousDenials = new Map((previous.recent_denies || []).map((denial) => [denyKey(denial), denial]));
+  for (const denial of data.recent_denies || []) {
+    const prior = previousDenials.get(denyKey(denial));
+    if (denial.source_addr && num(denial.count) > 0 && (num(denial.count) > num(prior?.count) || num(denial.last_deny_ms) > num(prior?.last_deny_ms))) decisions.set(dnsAddressKey(denial.source_addr), "deny");
+  }
+  const now = Date.now();
+  for (const [address, decision] of decisions) adapterDecisionPulses.set(address, { decision, startedAt: now });
+}
+
+function pulseAdapterDecisions(data) {
+  const now = Date.now();
+  for (const [address, pulse] of adapterDecisionPulses) {
+    if (now - pulse.startedAt >= ADAPTER_DECISION_DURATION) adapterDecisionPulses.delete(address);
+  }
+  for (const [key, pulse] of serviceGrantPulses) {
+    if (now - pulse.startedAt >= ADAPTER_DECISION_DURATION) serviceGrantPulses.delete(key);
+  }
+  if (!["map", "connections"].includes(currentPage())) return;
+  const reducedMotion = matchMedia("(prefers-reduced-motion: reduce)").matches;
+  for (const badge of document.querySelectorAll(".graph-service-badge[data-topology-component]")) {
+    const pulse = serviceGrantPulses.get(badge.dataset.topologyComponent);
+    const glyph = badge.querySelector("rect:not(.graph-service-decision-ring)");
+    if (!pulse || !glyph) continue;
+    const elapsed = now - pulse.startedAt;
+    const outline = document.createElementNS("http://www.w3.org/2000/svg", "rect");
+    outline.classList.add("graph-service-decision-ring", "graph-decision-glyph");
+    outline.setAttribute("x", String(Number(glyph.getAttribute("x")) - 3));
+    outline.setAttribute("y", String(Number(glyph.getAttribute("y")) - 3));
+    outline.setAttribute("width", String(Number(glyph.getAttribute("width")) + 6));
+    outline.setAttribute("height", String(Number(glyph.getAttribute("height")) + 6));
+    outline.setAttribute("rx", "6");
+    outline.setAttribute("aria-hidden", "true");
+    badge.insertBefore(outline, glyph);
+    const animation = outline.animate(decisionPulseFrames(reducedMotion), { duration: ADAPTER_DECISION_DURATION, easing: "ease-in-out" });
+    animation.onfinish = () => outline.remove();
+    animation.currentTime = elapsed;
+    if (!reducedMotion) {
+      glyph.classList.add("graph-decision-glyph");
+      const expansion = glyph.animate([{ transform: "scale(1)" }, { transform: "scale(1.12)", offset: 0.4 }, { transform: "scale(1)" }], { duration: ADAPTER_DECISION_DURATION, easing: "ease-in-out" });
+      expansion.onfinish = () => glyph.classList.remove("graph-decision-glyph");
+      expansion.currentTime = elapsed;
+    }
+  }
+  for (const actor of data.actors.filter((actor) => !actor.node)) {
+    const pulse = actor.zpr_addr && adapterDecisionPulses.get(dnsAddressKey(actor.zpr_addr));
+    if (!pulse) continue;
+    const { decision } = pulse;
+    const elapsed = now - pulse.startedAt;
+    const vertex = [...document.querySelectorAll(".graph-vertex[data-inspect-actor]")].find((element) => element.dataset.inspectActor === actor.cn);
+    const glyph = vertex?.querySelector(".graph-adapter, .graph-gateway, .graph-visa");
+    if (!vertex || !glyph) continue;
+    const ring = document.createElementNS("http://www.w3.org/2000/svg", "circle");
+    ring.classList.add("graph-decision-ring", "graph-decision-glyph");
+    ring.dataset.decision = decision;
+    ring.setAttribute("cx", vertex.dataset.originX);
+    ring.setAttribute("cy", vertex.dataset.originY);
+    ring.setAttribute("r", glyph.classList.contains("graph-adapter") ? "34" : "41");
+    ring.setAttribute("aria-hidden", "true");
+    vertex.insertBefore(ring, glyph);
+    const ringAnimation = ring.animate(decisionPulseFrames(reducedMotion), { duration: ADAPTER_DECISION_DURATION, easing: "ease-in-out" });
+    ringAnimation.onfinish = () => ring.remove();
+    ringAnimation.currentTime = elapsed;
+    const color = getComputedStyle(ring).stroke;
+    for (const edge of document.querySelectorAll(".graph-edge[data-dock-adapter]")) {
+      if (edge.dataset.dockAdapter !== actor.cn) continue;
+      const wire = edge.querySelector(".graph-link");
+      const normal = getComputedStyle(wire);
+      const base = { stroke: normal.stroke, strokeWidth: normal.strokeWidth };
+      wire.dataset.decision = decision;
+      const wireAnimation = wire.animate([base, { stroke: color, strokeWidth: `${Number.parseFloat(normal.strokeWidth) + 1}px`, offset: 0.35 }, base], { duration: ADAPTER_DECISION_DURATION, easing: "ease-in-out" });
+      wireAnimation.onfinish = () => delete wire.dataset.decision;
+      wireAnimation.currentTime = elapsed;
+    }
+    if (!reducedMotion) {
+      glyph.classList.add("graph-decision-glyph");
+      const expansion = glyph.animate([{ transform: "scale(1)" }, { transform: "scale(1.12)", offset: 0.4 }, { transform: "scale(1)" }], { duration: ADAPTER_DECISION_DURATION, easing: "ease-in-out" });
+      expansion.onfinish = () => glyph.classList.remove("graph-decision-glyph");
+      expansion.currentTime = elapsed;
+    }
+  }
+}
+
 function render(data) {
+  const previousSnapshot = state.snapshot;
+  recordAdapterDecisions(data, previousSnapshot);
   const componentKeys = new Set([
     ...data.actors.map((actor) => `actor:${JSON.stringify(actor.cn)}`),
     ...(data.services || []).map((service) => `service:${JSON.stringify([service.actor_cn, service.service_name])}`),
@@ -3062,7 +3226,6 @@ async function refresh() {
 function setPollTimer() {
   if (state.timer) clearInterval(state.timer);
   const seconds = Number(byId("poll-rate").value);
-  byId("footer-poll").textContent = state.paused ? "Auto-refresh paused" : `Auto-refresh every ${seconds} seconds`;
   if (!state.paused) state.timer = setInterval(refresh, seconds * 1000);
 }
 
@@ -3109,8 +3272,51 @@ function setPolicyPickerOpen(open, restoreFocus = false) {
   else if (restoreFocus) button.focus();
 }
 
+function setPolicyFileMenuOpen(open, restoreFocus = false) {
+  const menu = byId("policy-file-menu");
+  const toggle = byId("policy-files-toggle");
+  menu.hidden = !open;
+  toggle.setAttribute("aria-expanded", String(open));
+  if (open) menu.querySelector("button:not(:disabled)")?.focus();
+  else if (restoreFocus) toggle.focus();
+}
+
 byId("policy-picker-toggle").addEventListener("click", () => setPolicyPickerOpen(byId("policy-catalog-pane").hidden));
 byId("policy-picker-close").addEventListener("click", () => setPolicyPickerOpen(false, true));
+byId("policy-files-toggle").addEventListener("click", () => setPolicyFileMenuOpen(byId("policy-file-menu").hidden));
+byId("policy-file-menu").addEventListener("click", (event) => {
+  if (event.target.closest("button:not(:disabled)")) setPolicyFileMenuOpen(false);
+});
+document.addEventListener("pointerdown", (event) => {
+  if (!byId("policy-file-menu").hidden && !event.target.closest("#policy-actions")) setPolicyFileMenuOpen(false);
+});
+document.addEventListener("keydown", (event) => {
+  const menu = byId("policy-file-menu");
+  if (menu.hidden) return;
+  if (event.key === "Escape") {
+    event.preventDefault();
+    setPolicyFileMenuOpen(false, true);
+    return;
+  }
+  if (! ["ArrowDown", "ArrowUp", "Home", "End"].includes(event.key)) return;
+  const items = [...menu.querySelectorAll("button:not(:disabled)")];
+  if (!items.length) return;
+  event.preventDefault();
+  const current = items.indexOf(document.activeElement);
+  const next = event.key === "Home" ? 0 : event.key === "End" ? items.length - 1 : (current + (event.key === "ArrowDown" ? 1 : -1) + items.length) % items.length;
+  items[next].focus();
+});
+document.addEventListener("pointerdown", (event) => {
+  const history = byId("policy-history-menu");
+  if (history.open && !event.target.closest("#policy-history-menu")) history.open = false;
+});
+document.addEventListener("keydown", (event) => {
+  const history = byId("policy-history-menu");
+  if (event.key !== "Escape" || !history.open) return;
+  event.preventDefault();
+  history.open = false;
+  history.querySelector("summary").focus();
+});
 setPolicyPickerOpen(false);
 setAssistantPaneCollapsed(policyPaneCollapsed("assistant"));
 byId("policy-assistant-toggle").addEventListener("click", () => {
@@ -3189,7 +3395,10 @@ document.addEventListener("click", (event) => {
   const record = event.target.closest("[data-record-id]");
   if (record) selectPolicyRecord(record.dataset.recordId);
   const revision = event.target.closest("[data-revision]");
-  if (revision) browsePolicyRevision(Number(revision.dataset.revision));
+  if (revision) {
+    if (revision.closest("#policy-history")) byId("policy-history-menu").open = false;
+    browsePolicyRevision(Number(revision.dataset.revision));
+  }
 });
 byId("policy-source").addEventListener("input", () => {
   state.policy.checkGeneration = (state.policy.checkGeneration || 0) + 1;
@@ -3228,7 +3437,7 @@ byId("policy-source").addEventListener("scroll", () => {
   const highlight = byId("policy-highlight");
   highlight.scrollTop = textarea.scrollTop;
   highlight.scrollLeft = textarea.scrollLeft;
-  byId("policy-test-gutter").style.transform = `translateY(${-textarea.scrollTop}px)`;
+  byId("policy-test-gutter-content").style.transform = `translateY(${-textarea.scrollTop}px)`;
   positionPolicyCompletions();
 });
 byId("policy-source").addEventListener("click", () => showPolicyCompletions());

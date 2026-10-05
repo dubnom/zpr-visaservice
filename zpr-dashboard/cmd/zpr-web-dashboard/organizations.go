@@ -24,6 +24,7 @@ type simulatorOrganization struct {
 	PolicyConfig       string                         `json:"policy_config"`
 	PolicyCatalog      string                         `json:"policy_catalog"`
 	RuntimePolicy      string                         `json:"runtime_policy,omitempty"`
+	AssertionsSource   string                         `json:"assertions_source,omitempty"`
 	Policies           []simulatorOrganizationPolicy  `json:"policies"`
 	Services           []simulatorOrganizationService `json:"services"`
 	PolicyTestServices []simulatorPolicyTestService   `json:"policy_test_services,omitempty"`

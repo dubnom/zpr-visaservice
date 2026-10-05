@@ -311,6 +311,9 @@ func simulatorStackRuntimeStatus(machineIDs []string, containers map[string]stri
 }
 
 func simulatorStackServiceState(runtimeDir, service string) string {
+	if service == "simulator" && strings.TrimSpace(os.Getenv("SIMULATOR_DOCKER_CONTAINER")) != "" {
+		return "running"
+	}
 	pidBytes, err := os.ReadFile(filepath.Join(runtimeDir, service+".pid"))
 	if err != nil {
 		return "stopped"
@@ -393,6 +396,10 @@ func handleSimulatorMachineSession(w http.ResponseWriter, r *http.Request) {
 				http.Error(w, fmt.Sprintf("could not restore machine substrate route: %s", strings.TrimSpace(string(routeOutput))), http.StatusBadGateway)
 				return
 			}
+			if err := configureSimulatorMachineControlReturnRoute(r.Context(), manifest, machineID, rig); err != nil {
+				http.Error(w, fmt.Sprintf("could not restore machine-control ZPR return route: %v", err), http.StatusGatewayTimeout)
+				return
+			}
 		}
 		if action == "stop" {
 			simulatorSessions.clear(machineID)
@@ -470,6 +477,62 @@ func simulatorMachineSubstrateRouteCommand(manifest simulatorManifest, machineID
 		return nil, errors.New("invalid ZPR rig IP address")
 	}
 	return exec.Command("docker", "exec", machineContainerName(machineID), "ip", "route", "replace", "10.0.0.0/8", "via", rigIP), nil
+}
+
+func simulatorMachineControlReturnRouteCommand(manifest simulatorManifest, machineID, rig, address string) (*exec.Cmd, error) {
+	if !manifestHasMachine(manifest, machineID) {
+		return nil, errors.New("unknown machine")
+	}
+	if strings.TrimSpace(rig) == "" {
+		return nil, errors.New("ZPR rig container is required")
+	}
+	parsedAddress := net.ParseIP(address)
+	if parsedAddress == nil || parsedAddress.To4() != nil {
+		return nil, errors.New("invalid machine ZPR IPv6 address")
+	}
+	return exec.Command("docker", "exec", rig, "ip", "netns", "exec", "zpr-vs", "ip", "-6", "route", "replace", parsedAddress.String()+"/128", "dev", "tun5"), nil
+}
+
+func firstIPv6InterfaceAddress(output string) string {
+	for _, field := range strings.Fields(output) {
+		if address, _, err := net.ParseCIDR(field); err == nil && address.To4() == nil {
+			return address.String()
+		}
+		if address := net.ParseIP(field); address != nil && address.To4() == nil {
+			return address.String()
+		}
+	}
+	return ""
+}
+
+func configureSimulatorMachineControlReturnRoute(ctx context.Context, manifest simulatorManifest, machineID, rig string) error {
+	if !manifestHasMachine(manifest, machineID) {
+		return errors.New("unknown machine")
+	}
+	waitContext, cancel := context.WithTimeout(ctx, 45*time.Second)
+	defer cancel()
+	ticker := time.NewTicker(250 * time.Millisecond)
+	defer ticker.Stop()
+	for {
+		output, err := scenarioCommand(waitContext, "docker", "exec", machineContainerName(machineID), "ip", "-6", "-o", "addr", "show", "dev", "tun5", "scope", "global")
+		if err == nil {
+			address := firstIPv6InterfaceAddress(output)
+			if address != "" {
+				routeCommand, commandErr := simulatorMachineControlReturnRouteCommand(manifest, machineID, rig, address)
+				if commandErr != nil {
+					return commandErr
+				}
+				if _, routeErr := scenarioCommand(waitContext, routeCommand.Path, routeCommand.Args[1:]...); routeErr == nil {
+					return nil
+				}
+			}
+		}
+		select {
+		case <-waitContext.Done():
+			return fmt.Errorf("machine %s ZPR control return route did not become ready: %w", machineID, waitContext.Err())
+		case <-ticker.C:
+		}
+	}
 }
 
 func machineContainerName(machineID string) string {
@@ -918,9 +981,13 @@ func readControlRoomSnapshot() (snapshot, error) {
 	var snapshotData snapshot
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
 	defer cancel()
-	request, err := http.NewRequestWithContext(ctx, http.MethodGet, "http://127.0.0.1:8787/api/snapshot", nil)
+	endpoint := strings.TrimRight(envOr("SIMULATOR_CONTROL_ROOM_URL", "http://127.0.0.1:8787"), "/")
+	request, err := http.NewRequestWithContext(ctx, http.MethodGet, endpoint+"/api/snapshot", nil)
 	if err != nil {
 		return snapshotData, err
+	}
+	if host := strings.TrimSpace(os.Getenv("SIMULATOR_CONTROL_ROOM_HOST")); host != "" {
+		request.Host = host
 	}
 	response, err := (&http.Client{Timeout: 2 * time.Second}).Do(request)
 	if err != nil {

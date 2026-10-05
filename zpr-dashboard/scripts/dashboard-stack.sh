@@ -42,6 +42,8 @@ POLICY_PID="$STATE_DIR/policy-service.pid"
 CONTROL_PID="$STATE_DIR/control-service.pid"
 ROOM_PID="$STATE_DIR/control-room.pid"
 SIMULATOR_PID="$STATE_DIR/simulator.pid"
+SIMULATOR_DOCKER_CONTAINER="${ZPR_SIMULATOR_CONTAINER:-zpr-simulator}"
+SIMULATOR_IMAGE="${ZPR_SIMULATOR_IMAGE:-zpr-simulator:local}"
 BROWSER_GATEWAY_PID="$STATE_DIR/browser-gateway.pid"
 ADMIN_RELAY_PID="$STATE_DIR/admin-relay.pid"
 ADMIN_RELAY_PORT=8184
@@ -95,12 +97,23 @@ stop_service() {
     rm -f "$pid_file"
 }
 
+docker_socket_path() {
+    printf '%s\n' "${ZPR_DOCKER_SOCKET:-/var/run/docker.sock}"
+}
+
+stop_simulator() {
+    stop_service "$SIMULATOR_PID"
+    if docker inspect "$SIMULATOR_DOCKER_CONTAINER" >/dev/null 2>&1; then
+        docker rm -f "$SIMULATOR_DOCKER_CONTAINER" >/dev/null
+    fi
+}
+
 stop_stack() {
     for number in $(seq -w 1 20); do
         docker rm -f "zpr-machine-$number" >/dev/null 2>&1 || true
     done
     stop_service "$BROWSER_GATEWAY_PID"
-    stop_service "$SIMULATOR_PID"
+    stop_simulator
     stop_service "$ROOM_PID"
     stop_service "$CONTROL_PID"
     stop_service "$ADMIN_RELAY_PID"
@@ -116,6 +129,52 @@ start_service() {
     shift 2
     "$@" >"$log_file" 2>&1 < /dev/null &
     echo $! >"$pid_file"
+}
+
+start_simulator() {
+    if [ "$(docker inspect -f '{{.State.Running}}' "$SIMULATOR_DOCKER_CONTAINER" 2>/dev/null || true)" = true ]; then
+        return 0
+    fi
+    docker rm -f "$SIMULATOR_DOCKER_CONTAINER" >/dev/null 2>&1 || true
+    docker build -f "$SCRIPT_DIR/Dockerfile.simulator" -t "$SIMULATOR_IMAGE" "$DASHBOARD_DIR"
+    simulator_socket=$(docker_socket_path)
+    organization_id=${SIMULATION_ORGANIZATION_ID:-$(jq -r '.organization_id // "northstar"' "$SIMULATION_MANIFEST")}
+    docker run -d --name "$SIMULATOR_DOCKER_CONTAINER" \
+        --label zpr.simulator=true \
+        -v "$simulator_socket:/var/run/docker.sock" \
+        -v "$DASHBOARD_DIR:$DASHBOARD_DIR:ro" \
+        -v "$RUNTIME_DIR:$RUNTIME_DIR" \
+        -p 127.0.0.1:8788:8788 \
+        -p 0.0.0.0:8791:8791 \
+        -e SIMULATION_MANIFEST="$SIMULATION_MANIFEST" \
+        -e SIMULATION_ORGANIZATION_ID="$organization_id" \
+        -e SIMULATION_ORGANIZATIONS_DIR="$ORGANIZATIONS_DIR" \
+        -e SIMULATION_WORKSPACE_DB_DIR="$STATE_DIR/policy-private" \
+        -e SIMULATION_PREGEN_DIR="$RUNTIME_DIR/linux-integration/pregen" \
+        -e SIMULATION_PUBLISHED_DIRECTORY_DIR="$RUNTIME_DIR/published-directories" \
+        -e SIMULATION_SCENARIOS_DIR="$DASHBOARD_DIR/cmd/zpr-web-dashboard/examples/scenarios" \
+        -e SIMULATION_STACK_SCRIPT="$SCRIPT_DIR/dashboard-stack.sh" \
+        -e SIMULATION_ORGANIZATION_RESET_SCRIPT="$SCRIPT_DIR/activate-organization.sh" \
+        -e SIMULATION_AGENT_SCRIPT="$SCRIPT_DIR/simulation-agent.sh" \
+        -e SIMULATION_CONTAINER="$SIMULATION_CONTAINER" \
+        -e SIMULATOR_CONTROL_TLS_CERT="$CONTROL_SERVER_CERT" \
+        -e SIMULATOR_CONTROL_TLS_KEY="$CONTROL_SERVER_KEY" \
+        -e SIMULATOR_CONTROL_CLIENT_CA="$CONTROL_CA" \
+        -e SIMULATOR_CONTROL_LISTEN=0.0.0.0:8791 \
+        -e SIMULATOR_CONTROL_ROOM_URL=http://host.docker.internal:8787 \
+        -e SIMULATOR_CONTROL_ROOM_HOST=127.0.0.1:8787 \
+        -e SIMULATOR_DOCKER_CONTAINER="$SIMULATOR_DOCKER_CONTAINER" \
+        "$SIMULATOR_IMAGE" >/dev/null
+    wait_for_url http://127.0.0.1:8788/api/simulator/status simulator
+    wait_for_url https://127.0.0.1:8791/internal/ping 'machine-control listener' \
+        --cacert "$CONTROL_CA" \
+        --cert "$MACHINE_CERT_DIR/machine-01/client.crt" \
+        --key "$MACHINE_CERT_DIR/machine-01/client.key"
+}
+
+restart_simulator() {
+    stop_simulator
+    start_simulator
 }
 
 start_browser_gateway() {
@@ -242,6 +301,7 @@ start_control_service() {
         ZPR_CONTROL_SERVICE_CLIENT_CA_FILE="$SERVICE_CERTS/service-ca.crt" \
         ZPR_ASSERTION_STORE_FILE="${ZPR_ASSERTION_STORE_FILE:-$STATE_DIR/assertions/global.json}" \
         ZPR_ASSERTION_LDAP_CONTAINER="$control_ldap_container" \
+        ZPR_ADAPTER_LOG_CONFIG_FILE="${ZPR_ADAPTER_LOG_CONFIG_FILE:-$STATE_DIR/adapter-logs.json}" \
         ZPR_PLATFORM_SERVICES="${ZPR_PLATFORM_SERVICES:-$(jq -c '[.services[] | select(.kind == "Gateway") | {service_name: .name, actor_cn: .provider, zpr_addr: .address, service_kind: .kind, service_endpoints: .endpoint, external_network_connection: .external_network_connection}]' "$SIMULATION_MANIFEST")}" \
         ZPR_ADMIN_URL="${ZPR_ADMIN_URL:-https://127.0.0.1:$ADMIN_RELAY_PORT}" \
         ZPR_ADMIN_CA_FILE="${ZPR_ADMIN_CA_FILE:-$RUNTIME_DIR/local-admin-cert.pem}" \
@@ -626,27 +686,7 @@ start_stack() {
         ZPR_CONTROL_CLIENT_KEY_FILE="$SERVICE_CERTS/control-room-client.key" \
         "$BIN" -mode control-room -listen 127.0.0.1:8787
     wait_for_url http://127.0.0.1:8787/ control-room
-    start_service simulator "$SIMULATOR_PID" env \
-        SIMULATION_MANIFEST="$SIMULATION_MANIFEST" \
-        SIMULATION_ORGANIZATION_ID="$organization_id" \
-        SIMULATION_ORGANIZATIONS_DIR="$ORGANIZATIONS_DIR" \
-        SIMULATION_WORKSPACE_DB_DIR="$STATE_DIR/policy-private" \
-        SIMULATION_PREGEN_DIR="$RUNTIME_DIR/linux-integration/pregen" \
-        SIMULATION_PUBLISHED_DIRECTORY_DIR="$RUNTIME_DIR/published-directories" \
-        SIMULATION_SCENARIOS_DIR="$DASHBOARD_DIR/cmd/zpr-web-dashboard/examples/scenarios" \
-        SIMULATION_STACK_SCRIPT="$SCRIPT_DIR/dashboard-stack.sh" \
-        SIMULATION_ORGANIZATION_RESET_SCRIPT="$SCRIPT_DIR/activate-organization.sh" \
-        SIMULATION_AGENT_SCRIPT="$SCRIPT_DIR/simulation-agent.sh" \
-        SIMULATOR_CONTROL_TLS_CERT="$CONTROL_SERVER_CERT" \
-        SIMULATOR_CONTROL_TLS_KEY="$CONTROL_SERVER_KEY" \
-        SIMULATOR_CONTROL_CLIENT_CA="$CONTROL_CA" \
-        SIMULATOR_CONTROL_LISTEN=0.0.0.0:8791 \
-        "$BIN" -mode simulator -listen 127.0.0.1:8788
-    wait_for_url http://127.0.0.1:8788/ simulator
-    wait_for_url https://127.0.0.1:8791/internal/ping 'machine-control listener' \
-		--cacert "$CONTROL_CA" \
-		--cert "$CONTROL_DIR/machine-01.crt" \
-		--key "$CONTROL_DIR/machine-01.key"
+	start_simulator
 	start_machine_controllers
     echo "Control Room ready at http://127.0.0.1:8787"
     echo "OpenObserve GUI relay at http://127.0.0.1:$OBSERVABILITY_UI_RELAY_PORT"
@@ -657,7 +697,7 @@ start_stack() {
 }
 
 status_stack() {
-    for entry in "policy-service:$POLICY_PID:8789" "admin-relay:$ADMIN_RELAY_PID:$ADMIN_RELAY_PORT" "ldap-ui-relay:$LDAP_UI_RELAY_PID:$LDAP_UI_RELAY_PORT" "observability-ui-relay:$OBSERVABILITY_UI_RELAY_PID:$OBSERVABILITY_UI_RELAY_PORT" "control-service:$CONTROL_PID:8790" "control-room:$ROOM_PID:8787" "simulator:$SIMULATOR_PID:8788" "browser-gateway:$BROWSER_GATEWAY_PID:8443"; do
+    for entry in "policy-service:$POLICY_PID:8789" "admin-relay:$ADMIN_RELAY_PID:$ADMIN_RELAY_PORT" "ldap-ui-relay:$LDAP_UI_RELAY_PID:$LDAP_UI_RELAY_PORT" "observability-ui-relay:$OBSERVABILITY_UI_RELAY_PID:$OBSERVABILITY_UI_RELAY_PORT" "control-service:$CONTROL_PID:8790" "control-room:$ROOM_PID:8787" "browser-gateway:$BROWSER_GATEWAY_PID:8443"; do
         name=${entry%%:*}
         rest=${entry#*:}
         pid_file=${rest%%:*}
@@ -668,6 +708,8 @@ status_stack() {
             echo "$name: stopped"
         fi
     done
+    simulator_state=$(docker inspect -f '{{.State.Status}}' "$SIMULATOR_DOCKER_CONTAINER" 2>/dev/null || printf stopped)
+    echo "simulator: container $simulator_state"
     dns_state=$(docker inspect -f '{{.State.Status}}' "$DNS_CONTAINER" 2>/dev/null || printf stopped)
     echo "dns-bind9: container $dns_state"
     if pid_running "$DNS_STATS_RELAY_PID"; then
@@ -704,6 +746,7 @@ case "${1:-start}" in
     stop-ui-relays) stop_ui_relays ;;
     start-browser-gateway) start_browser_gateway ;;
     stop-browser-gateway) stop_service "$BROWSER_GATEWAY_PID" ;;
+    restart-simulator) restart_simulator ;;
     restart-control-service)
         stop_service "$CONTROL_PID"
         start_control_service
@@ -716,5 +759,5 @@ case "${1:-start}" in
         [ "$#" -eq 3 ] || { echo "usage: $0 restart-policy-context organization source" >&2; exit 2; }
         restart_policy_context "$2" "$3"
         ;;
-    *) echo "usage: $0 {start|stop|restart|status|start-admin-relay|stop-admin-relay|start-dns|stop-dns|start-ui-relays|stop-ui-relays|start-browser-gateway|stop-browser-gateway|restart-control-service|restart-policy-service|restart-simulator-control}" >&2; exit 2 ;;
+    *) echo "usage: $0 {start|stop|restart|status|start-admin-relay|stop-admin-relay|start-dns|stop-dns|start-ui-relays|stop-ui-relays|start-browser-gateway|stop-browser-gateway|restart-simulator|restart-control-service|restart-policy-service|restart-simulator-control}" >&2; exit 2 ;;
 esac

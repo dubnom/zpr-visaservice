@@ -1146,6 +1146,9 @@ func startScenarioMachine(ctx context.Context, manifest simulatorManifest, machi
 	if err != nil {
 		return output + "\n" + routeOutput, fmt.Errorf("restore machine substrate route: %w", err)
 	}
+	if err := configureSimulatorMachineControlReturnRoute(ctx, manifest, machineID, rig); err != nil {
+		return output + "\n" + routeOutput, fmt.Errorf("restore machine-control ZPR return route: %w", err)
+	}
 	return strings.TrimSpace(output + "\n" + routeOutput), nil
 }
 

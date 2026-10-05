@@ -12,6 +12,12 @@ The policy examples use LDAP `ou` values such as `Accounting`, `Platform`, `HR`,
 values to multivalued `user.role`. It resolves people by `user.sub -> uid`,
 which must be supplied by AuthService (`sub -> user.sub`).
 
+Department access examples target authenticated people through `user.department`,
+not their devices. Role-group grants are independent of department, so Approvers,
+Incident Responders, and Security Reviewers can receive cross-department access
+according to their actual LDAP memberships. Candidate-test fixtures expose these
+configured group-role mappings as well as membership tags.
+
 The simulator's current Log in control only records a mock machine session; it
 does not mint an AuthService user identity. Thus device-posture examples use
 device attributes, while user-role examples are compiler-checked demonstrations
@@ -21,6 +27,13 @@ The demo ZPLC config declares each fake service class and the same LDAP
 attribute mappings. ZPLC validation checks the examples against this config;
 it does not deploy the fake services or modify the Visa Service's active
 policy.
+
+Analyze and candidate tests try the organization's demo configuration first and
+the configured runtime/staging configuration when needed. This allows the same
+editor to validate both illustrative department policies and shared Network or
+Simulator infrastructure policies. Both contexts use the compiler; invalid
+syntax does not become valid through a configuration fallback. Infrastructure
+rules remain device-oriented and need not match LDAP users.
 
 To populate a local Control Room database, set these environment variables
 when starting `zpr-web-dashboard`:

@@ -23,6 +23,8 @@ type assertionSettings struct {
 }
 
 type assertionRuntime struct {
+	sources          map[string]assertionNamedSource
+	defaultSource    string
 	mu               sync.Mutex
 	settingsSyncMu   sync.Mutex
 	settings         assertionSettings
@@ -48,11 +50,11 @@ var errAssertionBusy = errors.New("An assertion evaluation is already running")
 var errAssertionRevision = errors.New("The organization's assertion set changed; reload before saving or evaluating")
 
 func (runtime *assertionRuntime) ldapConfigured() bool {
-	return runtime.reader != nil && runtime.baseDN != "" && runtime.bindDN != ""
+	return len(runtime.sources) > 0 || runtime.reader != nil && runtime.baseDN != "" && runtime.bindDN != ""
 }
 
 func newAssertionRuntime() (*assertionRuntime, error) {
-	runtime := &assertionRuntime{settings: assertionSettings{IntervalSeconds: 60}}
+	runtime := &assertionRuntime{settings: assertionSettings{IntervalSeconds: 60}, defaultSource: "ldap"}
 	runtime.legacyPath = strings.TrimSpace(os.Getenv("ZPR_ASSERTION_STORE_FILE"))
 	if runtime.legacyPath != "" {
 		file, err := os.Open(runtime.legacyPath)
@@ -85,6 +87,9 @@ func newAssertionRuntime() (*assertionRuntime, error) {
 			}
 			return readAssertionLDAP(ctx, container, bindDN, baseDN, attributes)
 		}
+	}
+	if err := runtime.configureSources(strings.TrimSpace(os.Getenv("ZPR_ASSERTION_SOURCES_FILE"))); err != nil {
+		return nil, err
 	}
 	return runtime, nil
 }
@@ -127,9 +132,13 @@ func (runtime *assertionRuntime) migrateLegacySettings(ctx context.Context) erro
 func (runtime *assertionRuntime) status() map[string]any {
 	runtime.mu.Lock()
 	defer runtime.mu.Unlock()
+	sourceKind := "ldap"
+	if len(runtime.sources) > 0 {
+		sourceKind = "multiple"
+	}
 	return map[string]any{
 		"scope": "organization", "organization_id": runtime.organizationID, "organization_name": runtime.organizationName,
-		"configured": runtime.ldapConfigured(), "source_kind": "ldap", "base_dn": runtime.baseDN,
+		"configured": runtime.ldapConfigured(), "source_kind": sourceKind, "base_dn": runtime.baseDN, "default_source": runtime.defaultSource, "sources": runtime.sourceMetadata(),
 		"settings": runtime.settings, "settings_error": runtime.settingsError, "running": runtime.running,
 		"last_run": runtime.lastRun, "source_summary": runtime.lastSource,
 	}
@@ -200,7 +209,7 @@ func assertionSourceSummary(directory assertionDirectory, observed time.Time) ma
 		}
 		attributes = append(attributes, map[string]any{"name": name, "people": peopleCount, "groups": groupCount})
 	}
-	return map[string]any{"observed_at": observed, "people": len(directory.People), "groups": groups, "attributes": attributes}
+	return map[string]any{"observed_at": observed, "people": len(directory.People), "groups": groups, "attributes": attributes, "sources": assertionSourceSummaries(directory, observed)}
 }
 
 func (runtime *assertionRuntime) save(ctx context.Context, settings assertionSettings, expected int) error {
@@ -215,7 +224,7 @@ func (runtime *assertionRuntime) save(ctx context.Context, settings assertionSet
 	ldapConfigured := runtime.ldapConfigured()
 	runtime.mu.Unlock()
 	if settings.Enabled && (len(rules) == 0 || !ldapConfigured) {
-		return errors.New("Periodic checks require assertions and a configured trusted LDAP source")
+		return errors.New("Periodic checks require assertions and configured trusted sources")
 	}
 	runtime.settingsSyncMu.Lock()
 	defer runtime.settingsSyncMu.Unlock()
@@ -262,16 +271,16 @@ func (runtime *assertionRuntime) evaluate(ctx context.Context, source string, ex
 	}
 	if !runtime.ldapConfigured() {
 		runtime.mu.Unlock()
-		return nil, errors.New("A trusted LDAP source is not configured")
+		return nil, errors.New("A trusted source is not configured")
 	}
 	runtime.running = true
 	organizationID, baseDN, bindDN := runtime.organizationID, runtime.baseDN, runtime.bindDN
-	run := &assertionRun{OrganizationID: organizationID, Revision: expected, Draft: source != runtime.settings.Source, StartedAt: time.Now().UTC(), Status: "pass", Results: []assertionResult{}}
+	run := &assertionRun{OrganizationID: organizationID, Revision: expected, Draft: source != runtime.settings.Source, StartedAt: time.Now().UTC(), Status: "pass", Results: []assertionResult{}, Warnings: lintAssertions(rules)}
 	runtime.nextRun = time.Now().Add(time.Duration(runtime.settings.IntervalSeconds) * time.Second)
 	runtime.mu.Unlock()
 	readContext, cancel := context.WithTimeout(ctx, 10*time.Second)
 	defer cancel()
-	directory, readErr := runtime.reader(readContext, baseDN, bindDN)
+	directory, readErr := runtime.readDirectory(readContext, organizationID, baseDN, bindDN)
 	if readErr != nil {
 		run.Status, run.Error = "error", readErr.Error()
 	} else {
@@ -371,18 +380,18 @@ func (runtime *assertionRuntime) register(mux *http.ServeMux) {
 		runtime.mu.Lock()
 		if runtime.running || !runtime.ldapConfigured() {
 			runtime.mu.Unlock()
-			writeJSON(w, http.StatusConflict, map[string]string{"error": "Trusted LDAP is unavailable or an evaluation is already running"})
+			writeJSON(w, http.StatusConflict, map[string]string{"error": "Trusted sources are unavailable or an evaluation is already running"})
 			return
 		}
-		baseDN, bindDN := runtime.baseDN, runtime.bindDN
+		readOrganizationID, baseDN, bindDN := runtime.organizationID, runtime.baseDN, runtime.bindDN
 		runtime.running = true
 		runtime.mu.Unlock()
 		ctx, cancel := context.WithTimeout(r.Context(), 10*time.Second)
 		defer cancel()
-		directory, err := runtime.reader(ctx, baseDN, bindDN)
+		directory, err := runtime.readDirectory(ctx, readOrganizationID, baseDN, bindDN)
 		runtime.mu.Lock()
 		runtime.running = false
-		if err == nil && (runtime.baseDN != baseDN || runtime.bindDN != bindDN) {
+		if err == nil && (runtime.organizationID != readOrganizationID || runtime.baseDN != baseDN || runtime.bindDN != bindDN) {
 			err = errors.New("Organization changed during source read; reload and try again")
 		}
 		observedAt := time.Now().UTC()
@@ -396,7 +405,10 @@ func (runtime *assertionRuntime) register(mux *http.ServeMux) {
 			return
 		}
 		w.Header().Set("Cache-Control", "no-store")
-		writeJSON(w, http.StatusOK, trustedSourceBrowserResponse("Trusted LDAP", organizationID, organizationName, baseDN, directory, observedAt))
+		response := trustedSourceBrowserResponse("Trusted sources", organizationID, organizationName, baseDN, directory, observedAt)
+		response["sources"] = assertionSourceSummaries(directory, observedAt)
+		response["default_source"] = runtime.defaultSource
+		writeJSON(w, http.StatusOK, response)
 	})
 	mux.HandleFunc("GET /api/assertions", func(w http.ResponseWriter, r *http.Request) {
 		if !localEditorRequest(w, r) {

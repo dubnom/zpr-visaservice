@@ -7,6 +7,78 @@ import (
 	"time"
 )
 
+func TestAssertionExpressionEvaluation(t *testing.T) {
+	staff := assertionDirectory{People: []string{"alice", "bob"}, Groups: map[string][]string{"Operators": {"alice", "bob", "alice"}}, Attributes: []string{"salary", "title"}, PersonAttributes: map[string]map[string][]string{"alice": {"salary": {"50000"}, "title": {"Engineer"}}, "bob": {"salary": {"40000"}, "title": {"Reviewer"}}}}
+	hr := assertionDirectory{People: []string{"alice", "bob"}, Groups: map[string][]string{"Operators": {"alice", "bob"}}, Attributes: []string{"salary", "bonus"}, PersonAttributes: map[string]map[string][]string{"alice": {"salary": {"50000"}, "bonus": {"10000"}}, "bob": {"salary": {"40000"}, "bonus": {"1000"}}}}
+	directory := staff
+	directory.Sources = map[string]assertionDirectory{"staff": staff, "hr": hr}
+	for _, test := range []struct {
+		source, status      string
+		checked, violations int
+	}{
+		{`assert source("staff").group("Operators").members == source("hr").group("Operators").members;`, "pass", 1, 0},
+		{`people from "staff" where source("hr").attribute("salary") + source("hr").attribute("bonus") >= 50000;`, "fail", 2, 1},
+		{`people from "staff" where source("hr").attribute("salary") == source("staff").attribute("salary");`, "pass", 2, 0},
+		{`assert 1 + 2 * 3 == 7 and (1 + 2) * 3 == 9;`, "pass", 1, 0},
+		{`assert 1 == 1 OR 1 == 2 AND 3 == 4;`, "pass", 1, 0},
+		{`assert (1 == 1 or 1 == 2) and 3 == 4;`, "fail", 1, 1},
+		{`assert -2 * -3 == 6 and 0.1 + 0.2 == 0.3 and 1 / 3 * 3 == 1 and 7 % 3 == 1;`, "pass", 1, 0},
+		{`assert 1 == 1 or source("missing").group("X").members == 0;`, "error", 0, 0},
+		{`assert 1 / 0 == 0;`, "error", 0, 0},
+		{`assert 1 % 0 == 0;`, "error", 0, 0},
+		{`assert 1.5 % 1 == 0;`, "error", 0, 0},
+		{`people from "staff" in "Operators" where source("staff").attribute("title") == "Engineer" or source("staff").attribute("title") == "Reviewer";`, "pass", 2, 0},
+		{`assert source("hr").group("Missing").members > 0;`, "error", 0, 0},
+		{`assert 9007199254740991 + 1 > 0;`, "error", 0, 0},
+		{`assert source("hr").person("missing").attribute("salary") > 0;`, "error", 0, 0},
+		{`assert source("hr").person("alice").attribute("title") == "Engineer";`, "error", 0, 0},
+		{`group "Operators" from "hr" members == 2;`, "pass", 1, 0},
+		{`people from "hr" attribute "salary" >= 40000;`, "pass", 2, 0},
+	} {
+		rules, err := parseAssertions(test.source)
+		if err != nil {
+			t.Fatalf("parse %s: %v", test.source, err)
+		}
+		result := evaluateAssertions(rules, directory)[0]
+		if result.Status != test.status || result.Checked != test.checked || result.Violations != test.violations {
+			t.Errorf("%s: got %+v", test.source, result)
+		}
+	}
+	for _, values := range [][]string{nil, {""}, {"50000", "60000"}, {"not-a-number"}} {
+		hr.PersonAttributes["alice"]["salary"] = values
+		rules, err := parseAssertions(`people from "staff" where source("hr").attribute("salary") > 0;`)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if result := evaluateAssertions(rules, directory)[0]; result.Status != "error" {
+			t.Fatalf("invalid scalar values: %+v", result)
+		}
+	}
+}
+
+func TestAssertionExpressionParsing(t *testing.T) {
+	for _, source := range []string{
+		`assert (source("staff").group("Operators").members + 2) * 3 >= source("hr").group("Operators").members and 1 < 2 or 3 == 4;`,
+		`people from "staff" in "Operators" where source("hr").attribute("salary") / 12 > 5000 AND source("staff").attribute("title") == "Engineer";`,
+		`assert source("hr").person("alice").attribute("salary") >= 100.50;`,
+	} {
+		rules, err := parseAssertions(source)
+		if err != nil || len(rules) != 1 || rules[0].Expression == nil || rules[0].ExpressionText == "" {
+			t.Fatalf("parse %q: rules=%v error=%v", source, rules, err)
+		}
+	}
+	for _, source := range []string{`assert not (1 == 2);`, `assert !(1 == 2);`, `assert (1 + 2;`, `assert 1 + ;`, `assert source("hr").attribute("password") == "x";`, `assert 1 + 2;`, `assert 1 and 2;`, `assert "x" + 1 == 2;`, `assert 1e999999999 > 0;`, `assert source("hr").attribute("title") == "Engineer";`} {
+		if _, err := parseAssertions(source); err == nil {
+			t.Fatalf("accepted invalid expression: %s", source)
+		}
+	}
+	for _, source := range []string{"assert " + strings.Repeat("(", 65) + "1 == 1" + strings.Repeat(")", 65) + ";", "assert " + strings.Repeat("1 + ", 1025) + "1 == 1;"} {
+		if _, err := parseAssertions(source); err == nil {
+			t.Fatal("accepted an expression beyond complexity limits")
+		}
+	}
+}
+
 func TestAssertionExamplesParseAndEvaluateIndependently(t *testing.T) {
 	source := `// Data assertions, not ZPL permissions.
 group "Operators" members >= 2;
@@ -94,6 +166,44 @@ func TestAssertionAttributeRulesAndMissingValues(t *testing.T) {
 	rules, _ := parseAssertions(`people attribute "uidNumber" > 10;`)
 	if result := evaluateAssertions(rules, directory)[0]; result.Status != "error" {
 		t.Fatalf("invalid numeric data must be an error: %+v", result)
+	}
+}
+
+func TestAssertionLintWarningsAreAdvisory(t *testing.T) {
+	source := "group \"Operators\" members >= 0;\npeople attribute \"mail\" present;\npeople attribute \"mail\" present;\nassert " + strings.Repeat("1 + ", 13) + "1 > 0;"
+	rules, err := parseAssertions(source)
+	if err != nil {
+		t.Fatal(err)
+	}
+	warnings := lintAssertions(rules)
+	codes := make(map[string]bool)
+	for _, warning := range warnings {
+		if warning.Line < 1 || warning.Severity != "warning" {
+			t.Fatalf("invalid warning: %+v", warning)
+		}
+		codes[warning.Code] = true
+	}
+	for _, code := range []string{"ASSERT_TRIVIAL", "ASSERT_HUMAN_SCOPE", "ASSERT_DUPLICATE", "ASSERT_COMPLEXITY"} {
+		if !codes[code] {
+			t.Errorf("missing lint warning %s", code)
+		}
+	}
+	clean, err := parseAssertions(`people in "Operators" attribute "mail" present; group "Operators" members >= 2;`)
+	if err != nil || len(lintAssertions(clean)) != 0 {
+		t.Fatalf("ordinary group assertions should not warn: %v", err)
+	}
+	numeric, err := parseAssertions(`people in "Operators" attribute "uidNumber" == 10; people in "Operators" attribute "uidNumber" == 10; people in "Operators" attribute "uidNumber" == 11;`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	contradictions := 0
+	for _, warning := range lintAssertions(numeric) {
+		if warning.Code == "ASSERT_CONTRADICTION" {
+			contradictions++
+		}
+	}
+	if contradictions != 1 {
+		t.Fatalf("numeric equality contradictions = %d, want one", contradictions)
 	}
 }
 

@@ -9,6 +9,40 @@ owns its REST listener, SQLite journal, and ZPLC configuration. All three
 processes use the same Go executable with different `-mode` values and remain
 separate processes and trust boundaries.
 
+## Operator Boundary
+
+Control Room and Control-Service are production-facing operator components.
+They must not call Simulator endpoints, read simulation manifests or profiles,
+interpret Simulator sessions/workloads, or require Simulator to run. Simulator
+may provision and exercise the normal ZPR services, but operator dependencies
+must never point back to Simulator. Test new operator features with Simulator
+unavailable; shared UI utilities must keep independent endpoints/data contracts.
+
+Adapter Logs reads `ZPR_ADAPTER_LOG_CONFIG_FILE` on Control-Service. This is an
+operator-owned JSON inventory, independent of any test environment:
+
+```json
+{
+	"adapters": [
+		{
+			"id": "office-adapter",
+			"name": "Office adapter",
+			"sources": [
+				{"name": "Link", "kind": "adapter", "file": "/var/log/zpr/office-adapter.log"},
+				{"name": "Controller", "kind": "controller", "container": "office-controller"}
+			]
+		}
+	]
+}
+```
+
+A source selects an absolute regular-file path, a configured container's log
+stream, or a container plus an absolute `path`. Browser requests cannot choose
+files, containers, commands, or upstream URLs. Reads are bounded/redacted and
+read-only; unavailable sources are reported separately. The endpoint returns
+`adapters` with identities and typed sources, never Simulator machine/session
+objects. Missing inventory is a log-configuration error, not a Simulator error.
+
 The ZPR browser-based GUIs, including Control Room and Simulator, support desktop
 and iPad-like tablet devices when the available viewport resolution is sufficient
 to use the interface comfortably. Phone-sized mobile devices are not supported.
@@ -38,6 +72,28 @@ editor with a separate LDAP admin login. The monitor does not proxy LDAP edits
 or store the admin password.
 
 ## Security Review
+
+Policy Analyze displays advisory warnings separately from compiler errors and
+test decisions. The compiler's parsed-policy lint flags individual accessor
+identities, duplicate/redundant or unrestricted grants, and empty service
+groups. Group/role predicates are preferred; intentional infrastructure pins
+remain valid. Candidate tests also warn about rules receiving no hits in the
+evaluated population, which may reflect shadowing or incomplete fixture coverage
+rather than a universally ineffective rule. No lint path depends on Simulator.
+
+On the Map, newly observed visa grants pulse the requesting adapter with a green
+ring and briefly expand/restore its glyph; new denials use red. Its dock wire
+pulses the same color at the same time, then restores its original appearance.
+Matching destination service badges pulse blue using the visa's address,
+protocol and service-side port, including reverse visas. Colored outlines grow
+25% and contract over 1.2 seconds, while glyphs expand 12% and restore. Pulse
+lifetimes survive DNS/search redraws without restarting. Services sharing an
+identical endpoint cannot be distinguished by the current visa feed.
+Initial history and unchanged snapshots do not replay decisions. Multiple
+decisions for an adapter in one snapshot coalesce, with denial taking precedence.
+Reduced-motion mode keeps colored feedback without glyph scaling. These are
+snapshot observations from the normal operator API, not a complete event stream
+or a Simulator dependency.
 
 The Control Room Security Review is a read-only triage view using the normal
 Control Room Refresh, Pause, and refresh-interval controls. It consumes the

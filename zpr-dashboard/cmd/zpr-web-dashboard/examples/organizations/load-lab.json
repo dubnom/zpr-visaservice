@@ -1,5 +1,6 @@
 {
   "id": "load-lab",
+  "assertions_source": "// Load Lab directory integrity; human fields are group-scoped.\npeople attribute \"uid\" present;\npeople attribute \"cn\" present;\ngroup \"LoadOperators\" members >= 2;\npeople in \"LoadOperators\" attribute \"mail\" present;\npeople in \"LoadOperators\" attribute \"title\" present;\npeople in \"LoadOperators\" attribute \"ou\" == \"Performance\";\n",
   "name": "Load Lab",
   "description": "Bounded service-fanout and randomized-flow exercise for Visa Service and Control Room monitoring.",
   "runtime": {

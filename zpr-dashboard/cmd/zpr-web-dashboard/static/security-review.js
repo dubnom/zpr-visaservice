@@ -179,12 +179,12 @@
 
   function logFindings(logs) {
     const findings = [];
-    for (const machine of logs.machines || []) {
-      const machineID = machine.machine?.id || "Unknown machine";
-      for (const source of machine.sources || []) {
+    for (const adapter of logs.adapters || []) {
+      const adapterID = adapter.id || "Unknown adapter";
+      for (const source of adapter.sources || []) {
         for (const line of source.lines || []) {
           if (!suspiciousLogLine.test(line)) continue;
-          findings.push(makeFinding("Security-related log message", `${machineID} · ${source.name}`, line.slice(0, 600), "review"));
+          findings.push(makeFinding("Security-related log message", `${adapterID} · ${source.name}`, line.slice(0, 600), "review"));
         }
       }
     }

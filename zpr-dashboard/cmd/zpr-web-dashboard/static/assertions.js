@@ -3,6 +3,19 @@
   const source = element("assertion-source");
   const enabled = element("assertion-enabled");
   const interval = element("assertion-interval");
+  const lintWarnings = document.createElement("ul");
+  lintWarnings.id = "assertion-lint-warnings";
+  lintWarnings.className = "lint-warning-list";
+  lintWarnings.setAttribute("aria-label", "Assertion lint warnings");
+  lintWarnings.hidden = true;
+  element("assertion-run-error").after(lintWarnings);
+  source.addEventListener("input", () => { lintWarnings.replaceChildren(); lintWarnings.hidden = true; });
+  const catalogSource = document.createElement("select");
+  catalogSource.id = "assertion-catalog-source";
+  catalogSource.setAttribute("aria-label", "Assertion trusted source");
+  catalogSource.hidden = true;
+  element("assertion-source-status").before(catalogSource);
+  let catalogSummary;
   let status;
   let loadedRevision = 0;
   let loadedOrganizationID = "";
@@ -27,14 +40,14 @@
   const escape = (text) => String(text ?? "").replace(/[&<>"']/g, (character) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[character]);
 
   function highlight() {
-    const keywords = new Set(["group", "each", "members", "people", "in", "exactly_one", "not_both", "attribute", "present", "absent", "contains"]);
+    const keywords = new Set(["assert", "source", "from", "where", "and", "or", "person", "group", "each", "members", "people", "in", "exactly_one", "not_both", "attribute", "present", "absent", "contains"]);
     element("assertion-highlight").innerHTML = source.value.replace(/\/\/[^\n]*|"(?:\\.|[^"\\])*"?|[a-z_]+|\d+|[^a-z_\d]/g, (token) => {
-      const kind = token.startsWith("//") ? "comment" : token.startsWith('"') ? "string" : keywords.has(token) ? "keyword" : /^\d+$/.test(token) ? "number" : "";
+      const kind = token.startsWith("//") ? "comment" : token.startsWith('"') ? "string" : keywords.has(token.toLowerCase()) ? "keyword" : /^\d+$/.test(token) ? "number" : "";
       return kind ? `<span class="assertion-token-${kind}">${escape(token)}</span>` : escape(token);
     }) + "\n";
     element("assertion-highlight").scrollTop = source.scrollTop;
     element("assertion-highlight").scrollLeft = source.scrollLeft;
-    element("assertion-result-gutter").style.transform = `translateY(${-source.scrollTop}px)`;
+    element("assertion-result-lines").style.transform = `translateY(${-source.scrollTop}px)`;
   }
 
   function actions() {
@@ -65,6 +78,15 @@
   }
 
   function renderSummary(summary) {
+    catalogSummary = summary;
+    const previous = catalogSource.value;
+    const catalogs = summary?.sources || [];
+    catalogSource.replaceChildren(...catalogs.map((catalog) => new Option(catalog.name, catalog.name)));
+    catalogSource.hidden = !catalogs.length;
+    catalogSource.value = catalogs.some((catalog) => catalog.name === previous) ? previous : summary?.default_source || status?.default_source || catalogs[0]?.name || "";
+    const selected = catalogs.find((catalog) => catalog.name === catalogSource.value);
+    const qualifier = selected ? ` from ${JSON.stringify(selected.name)}` : "";
+    summary = selected || summary;
     element("assertion-source-summary").textContent = summary ? `${summary.people} people / ${summary.groups.length} groups / ${new Date(summary.observed_at).toLocaleString()}` : "Not read";
     const rows = element("assertion-group-rows");
     rows.replaceChildren();
@@ -81,7 +103,7 @@
       insert.title = `Insert a cardinality assertion for ${group.name}`;
       insert.setAttribute("aria-label", insert.title);
       insert.addEventListener("click", () => {
-        source.setRangeText(`group ${JSON.stringify(group.name)} members >= 2;\n`, source.selectionStart, source.selectionEnd, "end");
+        source.setRangeText(`group ${JSON.stringify(group.name)}${qualifier} members >= 2;\n`, source.selectionStart, source.selectionEnd, "end");
         source.focus();
         highlight(); actions();
       });
@@ -106,7 +128,7 @@
       insert.setAttribute("aria-label", insert.title);
       insert.addEventListener("click", () => {
         const target = attribute.people === 0 && attribute.groups > 0 ? "each group" : "people";
-        source.setRangeText(`${target} attribute ${JSON.stringify(attribute.name)} present;\n`, source.selectionStart, source.selectionEnd, "end");
+        source.setRangeText(`${target}${qualifier} attribute ${JSON.stringify(attribute.name)} present;\n`, source.selectionStart, source.selectionEnd, "end");
         source.focus(); highlight(); actions();
       });
       cell.append(insert);
@@ -116,14 +138,16 @@
   }
 
   function ruleLabel(rule) {
+    const qualifier = rule.source ? ` from ${JSON.stringify(rule.source)}` : "";
+    if (rule.expression) return rule.kind === "people_expression" ? `people${qualifier}${rule.scope ? ` in ${JSON.stringify(rule.scope)}` : ""} where ${rule.expression}` : `assert ${rule.expression}`;
     if (rule.attribute) {
-      const target = rule.kind === "group_attribute" ? `group ${JSON.stringify(rule.group)}` : rule.kind === "each_group_attribute" ? "each group" : `people${rule.scope ? ` in ${JSON.stringify(rule.scope)}` : ""}`;
+      const target = rule.kind === "group_attribute" ? `group ${JSON.stringify(rule.group)}${qualifier}` : rule.kind === "each_group_attribute" ? `each group${qualifier}` : `people${qualifier}${rule.scope ? ` in ${JSON.stringify(rule.scope)}` : ""}`;
       const operand = ["present", "absent"].includes(rule.operator) ? "" : ` ${rule.operator === "in" ? JSON.stringify(rule.values) : rule.number != null ? rule.number : JSON.stringify(rule.value || "")}`;
       return `${target} attribute ${JSON.stringify(rule.attribute)} ${rule.operator}${operand}`;
     }
-    if (rule.kind === "group") return `group ${JSON.stringify(rule.group)} members ${rule.operator} ${rule.limit}`;
-    if (rule.kind === "each_group") return `each group members ${rule.operator} ${rule.limit}`;
-    return `people${rule.scope ? ` in ${JSON.stringify(rule.scope)}` : ""} ${rule.kind} ${JSON.stringify(rule.groups)}`;
+    if (rule.kind === "group") return `group ${JSON.stringify(rule.group)}${qualifier} members ${rule.operator} ${rule.limit}`;
+    if (rule.kind === "each_group") return `each group${qualifier} members ${rule.operator} ${rule.limit}`;
+    return `people${qualifier}${rule.scope ? ` in ${JSON.stringify(rule.scope)}` : ""} ${rule.kind} ${JSON.stringify(rule.groups)}`;
   }
 
   function renderRun(run) {
@@ -133,6 +157,13 @@
     heading.dataset.state = run?.status || "";
     heading.textContent = run ? `${run.status.toUpperCase()} / ${run.draft ? "Draft" : "Saved"} r${run.revision} / ${new Date(run.finished_at).toLocaleString()}${run.revision !== loadedRevision ? " / Stale revision" : ""}` : "Not evaluated";
     element("assertion-run-error").textContent = run?.error || "";
+    lintWarnings.replaceChildren();
+    for (const warning of run?.warnings || []) {
+      const item = document.createElement("li");
+      item.textContent = `Line ${warning.line} · Warning [${warning.code}]: ${warning.message}`;
+      lintWarnings.append(item);
+    }
+    lintWarnings.hidden = !run?.warnings?.length;
     renderResultGutter(run);
     for (const result of run?.results || []) {
       const row = document.createElement("tr");
@@ -201,8 +232,9 @@
 
   function renderResultGutter(run) {
     const gutter = element("assertion-result-gutter");
+    const resultLines = element("assertion-result-lines");
     const editor = element("assertion-editor");
-    gutter.replaceChildren();
+    resultLines.replaceChildren();
     if (!run) {
       gutter.hidden = true;
       editor.dataset.resultState = "false";
@@ -242,10 +274,10 @@
       }
       fragment.append(row);
     }
-    gutter.replaceChildren(fragment);
+    resultLines.replaceChildren(fragment);
     gutter.hidden = false;
     editor.dataset.resultState = "true";
-    gutter.style.transform = `translateY(${-source.scrollTop}px)`;
+    resultLines.style.transform = `translateY(${-source.scrollTop}px)`;
   }
 
   function showResultDetail(line, result, error) {
@@ -300,7 +332,7 @@
     } else if (keepDraft) {
       message(`Organization changed to ${data.organization_name || data.organization_id}. Reload to discard this draft.`, "error");
     }
-    element("assertion-source-status").textContent = data.configured ? `Live LDAP / ${data.base_dn}` : "Trusted LDAP source not configured";
+    element("assertion-source-status").textContent = data.configured ? data.sources?.length ? data.sources.map((source) => `${source.name} / ${source.kind}`).join(" · ") : `Live LDAP / ${data.base_dn}` : "Trusted sources not configured";
     renderSummary(data.source_summary);
     renderRun(data.last_run);
     actions();
@@ -335,7 +367,7 @@
     }
     selectedRecord = record;
     loadedOrganizationID = data.organization_id || "";
-    element("assertion-source-status").textContent = data.configured ? `Live LDAP / ${data.base_dn}` : "Trusted LDAP source not configured";
+    element("assertion-source-status").textContent = data.configured ? data.sources?.length ? data.sources.map((source) => `${source.name} / ${source.kind}`).join(" · ") : `Live LDAP / ${data.base_dn}` : "Trusted sources not configured";
     renderSummary(data.source_summary);
     renderRun(recordLastRun);
     actions();
@@ -456,6 +488,7 @@
     navigation();
   });
   const catalogTabs = [...document.querySelectorAll("[data-assertion-catalog-tab]")];
+  catalogSource.addEventListener("change", () => renderSummary(catalogSummary));
   const selectCatalog = (selected) => {
     for (const tab of catalogTabs) {
       const active = tab === selected;

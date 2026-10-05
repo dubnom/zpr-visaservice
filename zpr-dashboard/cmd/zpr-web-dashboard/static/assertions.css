@@ -6,9 +6,15 @@
 .assertion-actions input[type="number"] { width: 78px; min-height: 29px; border: 1px solid var(--line); border-radius: 3px; background: var(--panel); color: var(--ink); padding: 3px 6px; }
 .assertion-actions input[type="checkbox"] { accent-color: var(--forest); }
 .assertion-workbench { display: grid; grid-template-columns: minmax(0, 1fr) minmax(230px, 300px); gap: 20px; }
+.policy-assertion-editor:not([hidden]) { display: flex; flex: 1; flex-direction: column; }
+.policy-assertion-editor > .section-block { display: flex; flex: 1; flex-direction: column; }
+.policy-assertion-editor .assertion-workbench { flex: 1; }
+.policy-assertion-editor .assertion-workbench > div { display: flex; flex-direction: column; }
+.policy-assertion-editor .assertion-editor { min-height: 360px; flex: 1; }
 .assertion-editor { position: relative; min-width: 0; height: 360px; border: 1px solid #344a40; border-radius: 3px; background: #17211e; }
 .assertion-editor[data-result-state="true"] #assertion-source, .assertion-editor[data-result-state="true"] #assertion-highlight { padding-left: 88px; }
-.assertion-result-gutter { position: absolute; z-index: 2; top: 0; bottom: 0; left: 0; width: 78px; padding: 14px 3px 14px 7px; overflow: visible; border-right: 1px solid #53675b; background: #202e2899; pointer-events: none; }
+.assertion-result-gutter { position: absolute; z-index: 2; top: 0; bottom: 0; left: 0; width: 78px; padding: 14px 3px 14px 7px; overflow: hidden; border-right: 1px solid #53675b; background: #202e2899; pointer-events: none; }
+.assertion-result-lines { width: 100%; }
 .assertion-result-gutter[hidden] { display: none; }
 .assertion-result-line { display: flex; height: 20.4px; align-items: center; }
 .assertion-result-marker { width: 66px; overflow: hidden; padding: 1px 3px; border: 1px solid #6c8671; border-radius: 2px; background: #23362b; color: #d2e7d1; font: 8px/1.4 var(--mono); text-overflow: ellipsis; white-space: nowrap; pointer-events: auto; cursor: pointer; }
@@ -26,6 +32,7 @@
 .assertion-token-number { color: #92c5df; }
 .assertion-token-comment { color: #829188; }
 .assertion-catalog { min-width: 0; }
+.assertion-catalog > select { width: 100%; min-height: 31px; padding: 4px 7px; border: 1px solid var(--line); border-radius: 3px; background: var(--panel); color: var(--ink); font: 11px var(--mono); }
 .assertion-catalog h3 { margin: 0 0 8px; font-size: 13px; }
 .assertion-catalog-tabs { display: flex; gap: 4px; margin-bottom: 8px; }
 .assertion-catalog-tabs button { padding: 6px 9px; border: 1px solid var(--line); border-radius: 3px; background: var(--panel); color: var(--ink); font: 10px var(--mono); cursor: pointer; }

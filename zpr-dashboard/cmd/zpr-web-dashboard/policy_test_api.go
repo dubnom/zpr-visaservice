@@ -107,6 +107,7 @@ type policyTestResult struct {
 	TestedAt     time.Time                 `json:"tested_at"`
 	ActorCount   int                       `json:"actor_count"`
 	Services     []policyTestServiceResult `json:"services"`
+	Warnings     []lintDiagnostic          `json:"warnings,omitempty"`
 }
 
 type policyTestCompiledRule struct {
@@ -349,8 +350,7 @@ func (workspace *policyWorkspace) testCandidate(ctx context.Context, request pol
 }
 
 func (workspace *policyWorkspace) compilePolicyTestCandidate(ctx context.Context, directory, source string) (string, error) {
-	configPath, err := resolvedRegularFile(workspace.configPath)
-	if err != nil {
+	if _, err := resolvedRegularFile(workspace.configPath); err != nil {
 		return "", errors.New("Policy ZPLC configuration is unavailable.")
 	}
 	keyPath, err := resolvedRegularFile(workspace.stageSigningKeyPath)
@@ -364,14 +364,25 @@ func (workspace *policyWorkspace) compilePolicyTestCandidate(ctx context.Context
 	}
 	compileContext, cancel := context.WithTimeout(ctx, policyStageTimeout)
 	defer cancel()
-	command := exec.CommandContext(compileContext, workspace.compiler, "-c", configPath, "-k", keyPath, "-f", "v2", "-o", candidatePath, sourcePath)
-	command.Dir = filepath.Dir(configPath)
-	output := &limitedBuffer{limit: maxPolicyOutputBytes}
-	command.Stdout, command.Stderr = output, output
-	if err := command.Run(); err != nil {
-		diagnostics := strings.TrimSpace(strings.ReplaceAll(output.String(), directory, "policy-test"))
+	diagnostics := ""
+	compiled := false
+	for _, configPath := range workspace.policyConfigPaths() {
+		if err := os.Remove(candidatePath); err != nil && !os.IsNotExist(err) {
+			return "", errors.New("Unable to reset the candidate policy output.")
+		}
+		command := exec.CommandContext(compileContext, workspace.compiler, "-c", configPath, "-k", keyPath, "-f", "v2", "-o", candidatePath, sourcePath)
+		command.Dir = filepath.Dir(configPath)
+		output := &limitedBuffer{limit: maxPolicyOutputBytes}
+		command.Stdout, command.Stderr = output, output
+		if err := command.Run(); err == nil {
+			compiled = true
+			break
+		}
+		diagnostics = strings.TrimSpace(strings.ReplaceAll(output.String(), directory, "policy-test"))
+	}
+	if !compiled {
 		if diagnostics == "" {
-			return "", errors.New("ZPLC could not compile the candidate policy with the active runtime configuration.")
+			diagnostics = "ZPLC could not compile the candidate policy with the configured policy contexts."
 		}
 		return "", fmt.Errorf("Candidate policy compilation failed: %s", diagnostics)
 	}
@@ -546,6 +557,13 @@ func summarizePolicyTest(request policyTestRequest, targets []policyTestEvalTarg
 		result.Services = append(result.Services, service.result)
 	}
 	sort.Slice(result.Services, func(i, j int) bool { return result.Services[i].ID < result.Services[j].ID })
+	for _, service := range result.Services {
+		for _, rule := range service.Rules {
+			if rule.Matched.Count == 0 && service.Supported && service.EvaluatedActors > 0 {
+				result.Warnings = append(result.Warnings, lintDiagnostic{Code: "POLICY_NO_HITS", Severity: "warning", Line: max(1, rule.Line), Message: "No rule hits in the evaluated population for " + service.Name + "; the rule may be shadowed, unused or outside the test population's coverage."})
+			}
+		}
+	}
 	return result, nil
 }
 

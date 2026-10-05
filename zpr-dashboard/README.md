@@ -337,12 +337,20 @@ gateway forwards the mutually authenticated TLS protocol to the simulator's
 local listener; the ZPR adapter link and per-machine TLS client certificate
 are both required.
 
-The simulator-control adapter currently uses the Visa Service's default
-four-hour adapter authentication lifetime. If machine containers are running
-but their controllers remain offline, refresh only that service with
-`scripts/dashboard-stack.sh restart-simulator-control`; this does not restart
-the machine fleet. Startup also removes stale link-down ZPR routes that can
-otherwise shadow the active control adapter's return path.
+Simulator mode runs in the Linux `zpr-simulator` container, built from source
+with a containerized Go toolchain. Its UI is published on `127.0.0.1:8788` and
+its mTLS machine-control listener on `8791`; the Docker socket is mounted so it
+can manage machine containers. Use
+`scripts/dashboard-stack.sh restart-simulator` to rebuild and replace only
+Simulator mode without resetting the active ZPR rig or organization.
+
+On each machine start, the Simulator installs a host route for that machine's
+assigned ZPR address through the control adapter. This avoids ambiguous return
+routing when multiple adapters advertise the same overlay prefix. Startup
+also removes stale link-down ZPR routes. The simulator-control adapter uses the
+Visa Service's default four-hour adapter authentication lifetime; if its actor
+expires, refresh only that adapter with
+`scripts/dashboard-stack.sh restart-simulator-control`.
 
 Machine Login/Logout writes/removes the selected simulated user in that
 machine container at `/run/zpr-simulator/user`. It does not start or stop

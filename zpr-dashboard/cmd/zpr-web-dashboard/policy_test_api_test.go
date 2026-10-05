@@ -92,6 +92,53 @@ func TestPolicyTestScriptSupportsICMP6Services(t *testing.T) {
 	}
 }
 
+func TestPolicyValidationSupportsRuntimeConfiguration(t *testing.T) {
+	directory := t.TempDir()
+	demoConfig := filepath.Join(directory, "demo.zplc")
+	runtimeConfig := filepath.Join(directory, "runtime.zplc")
+	keyPath := filepath.Join(directory, "signing.key")
+	compilerPath := filepath.Join(directory, "zplc")
+	for _, path := range []string{demoConfig, runtimeConfig, keyPath} {
+		if err := os.WriteFile(path, []byte("fixture"), 0600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	compiler := `#!/bin/sh
+set -eu
+config=
+output=
+source=
+while [ "$#" -gt 0 ]; do
+  case "$1" in
+    -c|--config) config=$2; shift 2 ;;
+    -k|-f) shift 2 ;;
+    -o) output=$2; shift 2 ;;
+    --parse-only) shift ;;
+    *) source=$1; shift ;;
+  esac
+done
+if /usr/bin/grep -q 'invalid policy' "$source"; then echo 'invalid policy' >&2; exit 1; fi
+case "$config" in */demo.zplc) echo 'missing runtime service' >&2; exit 1 ;; esac
+if [ -n "$output" ]; then printf candidate > "$output"; fi
+`
+	if err := os.WriteFile(compilerPath, []byte(compiler), 0700); err != nil {
+		t.Fatal(err)
+	}
+	workspace := &policyWorkspace{compiler: compilerPath, configPath: demoConfig, stageConfigPath: runtimeConfig, stageSigningKeyPath: keyPath}
+	if result := workspace.check(context.Background(), "runtime policy"); !result.Valid {
+		t.Fatal(result.Diagnostics)
+	}
+	if _, err := workspace.compilePolicyTestCandidate(context.Background(), directory, "runtime policy"); err != nil {
+		t.Fatal(err)
+	}
+	if result := workspace.check(context.Background(), "invalid policy"); result.Valid {
+		t.Fatal("invalid policy accepted through runtime fallback")
+	}
+	if _, err := workspace.compilePolicyTestCandidate(context.Background(), directory, "invalid policy"); err == nil {
+		t.Fatal("invalid candidate compiled through runtime fallback")
+	}
+}
+
 func TestPolicyTestRunsGenericCompilerAndEvaluatorPipeline(t *testing.T) {
 	directory := t.TempDir()
 	configPath := filepath.Join(directory, "runtime.zplc")

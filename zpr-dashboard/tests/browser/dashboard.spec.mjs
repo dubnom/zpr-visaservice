@@ -4,6 +4,12 @@ async function openPolicyPicker(page) {
   await expect(page.locator("#policy-catalog-pane")).toBeVisible();
 }
 
+async function openPolicyFiles(page) {
+  const toggle = page.locator("#policy-files-toggle");
+  if (await toggle.getAttribute("aria-expanded") !== "true") await toggle.click();
+  await expect(page.locator("#policy-file-menu")).toBeVisible();
+}
+
 async function openAssertionRecord(page, appURL) {
   await page.goto(appURL + "/#policy");
   await openPolicyPicker(page);
@@ -17,6 +23,26 @@ async function openAssertionRecord(page, appURL) {
 }
 
 function registerAssertionBrowserTests() {
+test("assertion lint warns on complexity without changing a passing result", async ({ page, appURL, api }) => {
+  api.handlers.set("/api/assertions/evaluate", async (route) => {
+    const request = route.request().postDataJSON();
+    await route.fulfill({ json: {
+      revision: request.expected_revision, draft: true, status: "pass", finished_at: "2026-10-05T12:00:00Z", results: [],
+      warnings: [{ code: "ASSERT_COMPLEXITY", severity: "warning", line: 1, message: "Split this complex assertion into smaller checks." }],
+    } });
+  });
+  await openAssertionRecord(page, appURL);
+  const editor = page.getByRole("textbox", { name: "Data assertion source", exact: true });
+  await editor.fill(`assert ${"1 + ".repeat(13)}1 > 0;`);
+  await page.locator("#assertion-evaluate").click();
+  await expect(page.locator("#assertion-run-status")).toContainText("PASS");
+  await expect(page.locator("#assertion-lint-warnings")).toContainText("ASSERT_COMPLEXITY");
+  await expect(page.locator("#assertion-run-error")).toBeEmpty();
+  await page.getByRole("button", { name: "Exit test", exact: true }).click();
+  await editor.fill('group "Operators" members >= 2;');
+  await expect(page.locator("#assertion-lint-warnings")).toBeHidden();
+});
+
 test("organization assertions author, save and evaluate without policy compilation", async ({ page, appURL, api }) => {
   api.handlers.set("/api/assertions", async (route) => {
     if (route.request().method() === "PUT") {
@@ -89,6 +115,73 @@ test("organization assertions author, save and evaluate without policy compilati
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBeTruthy();
 });
 
+test("assertion result gutter clips long documents and follows editor scroll", async ({ page, appURL, api }) => {
+  api.handlers.set("/api/assertions/evaluate", async (route) => {
+    const request = route.request().postDataJSON();
+    api.assertions.last_run = {
+      revision: request.expected_revision, draft: true, status: "pass", finished_at: "2026-10-02T12:00:00Z",
+      results: [{ rule: { line: 90, kind: "group", group: "Operators", operator: ">=", limit: 2 }, status: "pass", checked: 1, violations: 0, subjects: [], message: "1 checked; 0 violations" }],
+    };
+    await route.fulfill({ json: api.assertions.last_run });
+  });
+  await openAssertionRecord(page, appURL);
+  const source = page.locator("#assertion-source");
+  await source.fill(Array.from({ length: 100 }, (_, index) => `group "Operators${index}" members >= 2;`).join("\n"));
+  await page.locator("#assertion-evaluate").click();
+  const gutter = page.locator("#assertion-result-gutter");
+  const marker = page.locator('#assertion-result-gutter [data-line="90"] .assertion-result-marker');
+  await expect(marker).toHaveCount(1);
+  await source.evaluate((element) => { element.scrollTop = 0; element.dispatchEvent(new Event("scroll")); });
+  const initial = await page.evaluate(() => {
+    const gutter = document.querySelector("#assertion-result-gutter");
+    const rows = document.querySelector("#assertion-result-lines");
+    const gutterBounds = gutter.getBoundingClientRect();
+    return { overflow: getComputedStyle(gutter).overflowY, gutterHeight: gutterBounds.height, rowsHeight: rows.getBoundingClientRect().height };
+  });
+  expect(initial.overflow).toBe("hidden");
+  expect(initial.rowsHeight).toBeGreaterThan(initial.gutterHeight);
+  await source.evaluate((element) => { element.scrollTop = element.scrollHeight; element.dispatchEvent(new Event("scroll")); });
+  await expect.poll(() => page.evaluate(() => {
+    const source = document.querySelector("#assertion-source");
+    return document.querySelector("#assertion-result-lines").style.transform === `translateY(${-source.scrollTop}px)`;
+  })).toBeTruthy();
+  await expect.poll(() => page.evaluate(() => {
+    const bounds = document.querySelector("#assertion-result-gutter").getBoundingClientRect();
+    const marker = document.querySelector('#assertion-result-gutter [data-line="90"] .assertion-result-marker').getBoundingClientRect();
+    return marker.top >= bounds.top && marker.bottom <= bounds.bottom;
+  })).toBeTruthy();
+  const scrolled = await page.evaluate(() => {
+    const source = document.querySelector("#assertion-source");
+    const gutterBounds = document.querySelector("#assertion-result-gutter").getBoundingClientRect();
+    const rows = document.querySelector("#assertion-result-lines");
+    const markerBounds = document.querySelector('#assertion-result-gutter [data-line="90"] .assertion-result-marker').getBoundingClientRect();
+    return { markerTop: markerBounds.top, markerBottom: markerBounds.bottom, gutterTop: gutterBounds.top, gutterBottom: gutterBounds.bottom, scrollTop: source.scrollTop, scrollHeight: source.scrollHeight, clientHeight: source.clientHeight, transform: getComputedStyle(rows).transform };
+  });
+  expect(scrolled.markerTop).toBeGreaterThanOrEqual(scrolled.gutterTop);
+  expect(scrolled.markerBottom, JSON.stringify(scrolled)).toBeLessThanOrEqual(scrolled.gutterBottom);
+  await expect(gutter).toBeVisible();
+});
+
+test("policy and assertion editors fill the available page height", async ({ page, appURL, api }) => {
+  for (const width of [1440, 834]) {
+    await page.setViewportSize({ width, height: 1200 });
+    await page.goto(appURL + "/#policy");
+    await openPolicyPicker(page);
+    await page.locator(`[data-record-id="${api.policy.records[0].id}"]`).click();
+    await expect(page.locator("#policy-source")).toBeEnabled();
+    const policy = await page.locator("#policy-code-editor").boundingBox();
+    const policyPane = await page.locator("#policy-editor-pane").boundingBox();
+    expect(policy.y + policy.height).toBeGreaterThanOrEqual(policyPane.y + policyPane.height - 13);
+    if (width > 900) expect(policy.y + policy.height).toBeGreaterThanOrEqual(1150);
+    await openAssertionRecord(page, appURL);
+    await expect(page.locator("#assertion-source")).toBeEnabled();
+    const assertion = await page.locator("#assertion-editor").boundingBox();
+    const assertionPanel = await page.locator("#policy-assertion-editor").boundingBox();
+    expect(assertionPanel.y + assertionPanel.height).toBeGreaterThanOrEqual(1150);
+    expect(assertion.height).toBeGreaterThan(360);
+  }
+});
+
 test("assertion attribute catalog inserts rules and renders typed comparisons", async ({ page, appURL, api }) => {
   api.assertionSource.attributes = [{ name: "mail", people: 2, groups: 0 }, { name: "gidnumber", people: 2, groups: 1 }];
   api.handlers.set("/api/assertions/evaluate", async (route) => {
@@ -129,6 +222,29 @@ test("assertion attribute catalog inserts rules and renders typed comparisons", 
   await expect(page.getByRole("tab", { name: "Groups", exact: true })).toHaveAttribute("aria-selected", "true");
   await expect(page.locator("#assertion-attributes-panel")).toBeHidden();
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBeTruthy();
+});
+
+test("assertion catalogs insert named sources and expression results show their text", async ({ page, appURL, api }) => {
+  api.assertionSource.sources = [
+    { name: "staff", people: 2, groups: [{ name: "Operators", members: 2 }], attributes: [{ name: "mail", people: 2, groups: 0 }], observed_at: "2026-10-05T12:00:00Z" },
+    { name: "hr", people: 2, groups: [{ name: "Employees", members: 2 }], attributes: [{ name: "salary", people: 2, groups: 0 }], observed_at: "2026-10-05T12:00:00Z" },
+  ];
+  api.assertionSource.default_source = "staff";
+  api.handlers.set("/api/assertions/evaluate", async (route) => {
+    await route.fulfill({ json: { revision: 0, draft: true, status: "pass", finished_at: "2026-10-05T12:00:00Z", results: [{ rule: { line: 1, kind: "expression", expression: 'source("staff").group("Operators").members == source("hr").group("Employees").members' }, status: "pass", checked: 1, violations: 0, subjects: [], message: "1 checked; 0 violations" }] } });
+  });
+  await openAssertionRecord(page, appURL);
+  await page.locator("#assertion-read-source").click();
+  await expect(page.getByLabel("Assertion trusted source")).toHaveValue("staff");
+  await page.getByLabel("Assertion trusted source").selectOption("hr");
+  await expect(page.locator("#assertion-group-rows")).toContainText("Employees");
+  await page.getByRole("button", { name: "Insert a cardinality assertion for Employees", exact: true }).click();
+  await expect(page.locator("#assertion-source")).toHaveValue('group "Employees" from "hr" members >= 2;\n');
+  await page.locator("#assertion-source").fill('assert source("staff").group("Operators").members == source("hr").group("Employees").members;');
+  await page.locator("#assertion-evaluate").click();
+  await expect(page.locator("#assertion-result-rows")).toContainText('assert source("staff").group("Operators").members == source("hr").group("Employees").members');
+  await page.locator(".assertion-result-marker").click();
+  await expect(page.getByRole("dialog", { name: "Assertion pass" })).toContainText('source("hr").group("Employees").members');
 });
 
 test("assertion source failures are errors and never successful checks", async ({ page, appURL, api }) => {
@@ -404,7 +520,13 @@ const test = base.extend({
         return;
       }
       const bodies = {
-        "/api/adapter-logs": data.adapterLogs,
+        "/api/adapter-logs": {
+          updated_at: data.adapterLogs.updated_at,
+          adapters: (data.adapterLogs.machines || []).map((entry) => ({
+            id: entry.machine.id, name: entry.machine.id, state: entry.state,
+            sources: entry.sources.map((source) => ({ ...source, kind: source.name === "Controller" ? "controller" : "adapter" })),
+          })),
+        },
         "/api/simulator/machine-logs": data.workloadLogs,
         "/api/snapshot": data.snapshot,
         "/api/dns/records": data.dnsRecords,
@@ -879,45 +1001,102 @@ test("policy Format removes leading whitespace and gaps inside definition and se
 });
 
 test("policy actions share a non-overlapping responsive toolbar", async ({ page, appURL, api }) => {
+  api.handlers.set("/api/policy/records/test-policy/revisions", async (route) => route.fulfill({ json: [
+    { number: 1, content_hash: "fixture-revision", summary: "Saved fixture revision", author: "tester", created_at: "2026-10-01T12:00:00Z" },
+  ] }));
   await page.goto(appURL + "/#policy");
   await openPolicyPicker(page);
   await page.locator('[data-record-id="test-policy"]').click();
   const actions = page.locator("#policy-actions");
   const browse = page.locator("#policy-picker-toggle");
+  const files = page.locator("#policy-files-toggle");
+  const filesMenu = page.locator("#policy-file-menu");
   const rescan = page.locator("#policy-attribute-rescan");
+  const analyze = page.locator("#policy-check");
+  const format = page.locator("#policy-format");
+  const history = page.locator("#policy-history-menu");
   await expect(browse).toHaveText("Browse...⌄");
-  await expect(page.locator("#policy-check")).toHaveText("Analyze");
-  await expect(page.locator("#policy-check").locator("xpath=../..")).toHaveClass(/policy-attribute-toolbar/);
+  await expect(files).toHaveText("File...⌄");
+  await expect(analyze).toHaveText("Analyze");
+  await expect(analyze.locator("xpath=..")).toHaveClass(/policy-attribute-toolbar/);
+  await expect(browse).toHaveCSS("background-color", "rgb(23, 33, 30)");
+  await expect(files).toHaveCSS("background-color", "rgb(23, 33, 30)");
+  await expect(page.locator("#policy-history-heading")).toHaveCount(0);
+  await expect(history).toBeVisible();
+  await expect(page.locator("#policy-history")).toBeHidden();
+  await history.locator("summary").click();
+  await expect(page.locator("#policy-history")).toBeVisible();
+  await expect(page.locator("#policy-history .history-item")).toHaveCount(1);
+  await page.keyboard.press("Escape");
+  await expect(page.locator("#policy-history")).toBeHidden();
+  await expect(history.locator("summary")).toBeFocused();
+  const saveAsColor = await page.locator("#policy-save-as").evaluate((button) => getComputedStyle(button).backgroundColor);
+  await expect(format).toHaveCSS("background-color", saveAsColor);
+  await expect(rescan).toHaveCSS("background-color", saveAsColor);
+  await openPolicyFiles(page);
+  await expect(await actions.getByRole("menuitem").allTextContents()).toEqual(["Save", "Save As...", "Stage", "Discard"]);
+  await page.keyboard.press("Escape");
+  await expect(filesMenu).toBeHidden();
+  await expect(files).toBeFocused();
   for (const width of [834, 768]) {
     await page.setViewportSize({ width, height: 900 });
     const layout = await page.evaluate(() => {
       const toolbar = document.querySelector(".policy-attribute-toolbar").getBoundingClientRect();
       const editor = document.querySelector("#policy-code-editor").getBoundingClientRect();
-      const actionsRect = document.querySelector("#policy-actions").getBoundingClientRect();
+      const tools = document.querySelector(".policy-editor-tools").getBoundingClientRect();
+      const utilities = document.querySelector("#policy-editor-utilities").getBoundingClientRect();
+      const rescanRect = document.querySelector("#policy-attribute-rescan").getBoundingClientRect();
+      const historyRect = document.querySelector("#policy-history-menu summary").getBoundingClientRect();
+      const analyzeRect = document.querySelector("#policy-check").getBoundingClientRect();
+      const formatRect = document.querySelector("#policy-format").getBoundingClientRect();
+      const pane = document.querySelector("#policy-editor-pane").getBoundingClientRect();
+      const toolsStyle = getComputedStyle(document.querySelector(".policy-editor-tools"));
       const buttons = [...document.querySelectorAll(".policy-attribute-toolbar .button")].map((button) => button.getBoundingClientRect());
       return {
         toolbarBottom: toolbar.bottom,
         editorTop: editor.top,
-        actionsBottom: actionsRect.bottom,
+        utilitiesRight: utilities.right,
+        utilitiesLeft: utilities.left,
+        utilitiesWidth: utilities.width,
+        toolsRight: tools.right,
+        toolsLeft: tools.left,
+        toolsWidth: tools.width,
+        toolsCssWidth: toolsStyle.width,
+        toolsAlignSelf: toolsStyle.alignSelf,
+        paneRight: pane.right,
+        paneLeft: pane.left,
+        paneWidth: pane.width,
+        rescanTop: rescanRect.top,
+        historyTop: historyRect.top,
+        analyzeTop: analyzeRect.top,
+        formatTop: formatRect.top,
+        analyzeRight: analyzeRect.right,
+        formatLeft: formatRect.left,
+        order: ["#policy-picker-toggle", "#policy-files-toggle", "#policy-check", "#policy-format", "#policy-attribute-rescan", "#policy-history-menu"].map((selector) => [...document.querySelectorAll("#policy-editor-pane *")].indexOf(document.querySelector(selector))),
         overlaps: buttons.some((first, index) => buttons.slice(index + 1).some((second) => first.left < second.right && first.right > second.left && first.top < second.bottom && first.bottom > second.top)),
       };
     });
-    expect(layout.actionsBottom).toBeLessThanOrEqual(layout.editorTop);
     expect(layout.toolbarBottom).toBeLessThanOrEqual(layout.editorTop);
+    expect(Math.abs(layout.utilitiesRight - layout.toolsRight), JSON.stringify(layout)).toBeLessThanOrEqual(1);
+    expect(Math.abs(layout.rescanTop - layout.historyTop)).toBeLessThanOrEqual(1);
+    expect(layout.analyzeTop).toBe(layout.formatTop);
+    expect(layout.analyzeRight).toBeLessThanOrEqual(layout.formatLeft);
+    expect(layout.order).toEqual([...layout.order].sort((left, right) => left - right));
     expect(layout.overlaps).toBeFalsy();
-    const { browseBounds, rescanBounds } = await page.evaluate(() => {
+    const { browseBounds, filesBounds } = await page.evaluate(() => {
       const bounds = (element) => {
         const rect = element.getBoundingClientRect();
         return { x: rect.x, width: rect.width };
       };
       return {
         browseBounds: bounds(document.querySelector("#policy-picker-toggle")),
-        rescanBounds: bounds(document.querySelector("#policy-attribute-rescan")),
+        filesBounds: bounds(document.querySelector("#policy-files-toggle")),
       };
     });
-    expect(browseBounds.x + browseBounds.width).toBeLessThanOrEqual(rescanBounds.x);
+    expect(browseBounds.x + browseBounds.width).toBeLessThanOrEqual(filesBounds.x);
   }
-  await expect(actions.getByRole("button", { name: "Stage", exact: true })).toBeEnabled();
+  await openPolicyFiles(page);
+  await expect(actions.getByRole("menuitem", { name: "Stage", exact: true })).toBeEnabled();
 });
 
 test("Save is dirty-gated and uses the Save As color", async ({ page, appURL, api }) => {
@@ -932,6 +1111,9 @@ test("Save is dirty-gated and uses the Save As color", async ({ page, appURL, ap
   await page.locator("#policy-source").fill(`${await page.locator("#policy-source").inputValue()}\n# unsaved change\n`);
   await expect(save).toBeEnabled();
   await expect(save).toHaveCSS("background-color", saveAsColor);
+  await openPolicyFiles(page);
+  await expect(page.locator("#policy-save")).toBeEnabled();
+  await expect(page.locator("#policy-file-menu")).toBeVisible();
 });
 
 test("Stage analyzes, blocks errors, and requires confirmation", async ({ page, appURL, api }) => {
@@ -960,6 +1142,7 @@ test("Stage analyzes, blocks errors, and requires confirmation", async ({ page, 
   const dialog = page.locator("#policy-stage-dialog");
   await expect(stage).toHaveText("Stage");
   await expect(stage).toBeEnabled();
+  await openPolicyFiles(page);
   await stage.click();
   await expect(page.locator("#policy-check")).toHaveAttribute("data-analysis-state", "error");
   await expect(dialog).toBeHidden();
@@ -967,6 +1150,7 @@ test("Stage analyzes, blocks errors, and requires confirmation", async ({ page, 
   expect(testCalls).toBe(0);
   expect(stageCalls).toBe(0);
 
+  await openPolicyFiles(page);
   await stage.click();
   await expect(dialog).toBeVisible();
   await expect(dialog).toContainText("Test policy · Version 1");
@@ -1014,6 +1198,7 @@ test("policy source with evaluation errors can be saved with warning but cannot 
   await expect(page.locator("#policy-check")).toHaveCSS("background-color", "rgb(184, 59, 59)");
   await expect(page.locator("#policy-check-result")).toBeHidden();
   await expect(page.locator("#policy-save")).toBeEnabled();
+  await openPolicyFiles(page);
   await page.locator("#policy-save").click();
   await expect(page.locator("#version-warning")).toBeVisible();
   await expect(page.locator("#version-warning")).toContainText("Policy test failed");
@@ -1033,6 +1218,7 @@ test("policy source with evaluation errors can be saved with warning but cannot 
   });
   api.handlers.set("/api/policy/records/invalid-policy-copy", async (route) => route.fulfill({ json: copiedRecord }));
   api.handlers.set("/api/policy/records/invalid-policy-copy/revisions", async (route) => route.fulfill({ json: [] }));
+  await openPolicyFiles(page);
   await page.locator("#policy-save-as").click();
   await expect(page.locator("#record-warning")).toBeVisible();
   await expect(page.locator("#record-warning")).toContainText("cannot be staged");
@@ -1251,6 +1437,7 @@ test("Analyze gutter opens a dialog and resets when switching policies", async (
   const gutter = page.locator("#policy-test-gutter");
   await expect(gutter).toBeVisible();
   await expect(gutter).toHaveCSS("width", "48px");
+  await expect(gutter).toHaveCSS("overflow-y", "hidden");
   await expect(page.locator("#policy-source")).toHaveCSS("padding-left", "0px");
   const scrollGeometry = await page.locator("#policy-code-editor").evaluate((editor) => {
     const source = editor.querySelector("#policy-source");
@@ -1456,8 +1643,25 @@ test("Control Room top buttons switch adapter and controller logs using the same
   await expect(columns).toHaveCount(1);
   await expect(page.locator("#machine-logs-follow")).toHaveCount(0);
   await expect(page.locator("#adapter-log-count")).toHaveCount(0);
-  await expect(columns.locator("header h2")).toHaveCount(0);
+  await expect(page.locator("#machine-logs-refresh")).toHaveCount(0);
+  const toolbar = page.locator(".adapter-logs-toolbar");
+  await expect(toolbar.locator("#machine-logs-pause")).toHaveAttribute("aria-pressed", "false");
+  await expect(toolbar.locator("[data-adapter-log-type]")).toHaveCount(2);
+  await expect(toolbar.locator("#adapter-log-add")).toHaveCount(1);
+  const toolbarTops = await toolbar.evaluate((element) => [...element.children].map((child) => Math.round(child.getBoundingClientRect().top)));
+  expect(Math.max(...toolbarTops) - Math.min(...toolbarTops)).toBeLessThanOrEqual(3);
+  await expect(columns.locator("header h2")).toHaveCount(1);
+  const panelHeader = columns.locator("header").first();
+  const headerGeometry = await panelHeader.evaluate((header) => {
+    const title = header.querySelector("h2").getBoundingClientRect();
+    const actions = header.querySelector(".machine-log-panel-actions").getBoundingClientRect();
+    const bounds = header.getBoundingClientRect();
+    return { titleRight: title.right, actionsLeft: actions.left, actionsRight: actions.right, headerRight: bounds.right };
+  });
+  expect(headerGeometry.actionsLeft).toBeGreaterThan(headerGeometry.titleRight);
+  expect(headerGeometry.headerRight - headerGeometry.actionsRight).toBeLessThanOrEqual(16);
   await page.locator("#machine-logs-pause").click();
+  await expect(page.locator("#machine-logs-pause")).toHaveAttribute("aria-pressed", "true");
   const first = columns.nth(0);
   await first.getByRole("combobox", { name: /Select adapter/ }).selectOption({ label: "finance-client adapter · machine-first" });
   const output = first.locator(".machine-log-output");
@@ -1489,8 +1693,18 @@ test("Control Room top buttons switch adapter and controller logs using the same
 
 async function refreshLogs(page) {
   const button = page.locator("#machine-logs-refresh");
-  await button.click();
-  await expect(button).toBeEnabled();
+  if (await button.count()) {
+    await button.click();
+    await expect(button).toBeEnabled();
+    return;
+  }
+  const pause = page.locator("#machine-logs-pause");
+  const wasPaused = await pause.getAttribute("aria-pressed") === "true";
+  if (!wasPaused) await pause.click();
+  const response = page.waitForResponse((item) => item.url().includes("/api/adapter-logs"));
+  await pause.click();
+  await response;
+  if (wasPaused) await pause.click();
 }
 
 async function expectAtBottom(output) {
@@ -1623,6 +1837,8 @@ test("Adapter Logs polls only while its Control Room page is active", async ({ p
   await expect(page.locator("#page-services")).toBeVisible();
   expect(api.counts.get("/api/adapter-logs") || 0).toBe(0);
   await page.getByRole("link", { name: "Adapter Logs", exact: true }).click();
+  await expect(page.locator("#machine-logs-status")).toHaveText("Live");
+  expect(api.counts.get("/api/simulator/adapter-logs") || 0).toBe(0);
   await page.getByRole("button", { name: "Add adapter panel" }).click();
   await expect(page.locator(".adapter-log-column")).toHaveCount(2);
   await page.clock.runFor(2100);
@@ -1710,6 +1926,97 @@ test("policy compiler errors highlight their source token", async ({ page, appUR
   await page.locator("#policy-check").click();
   await expect(page.locator("#policy-highlight .zpl-error")).toHaveText("allow");
 });
+
+test("policy lint warns about specific identities without failing Analyze", async ({ page, appURL, api }) => {
+  api.handlers.set("/api/policy/check", async (route) => route.fulfill({ json: {
+    valid: true, diagnostics: "Compiled successfully.",
+    warnings: [{ code: "POLICY_SPECIFIC_IDENTITY", severity: "warning", line: 1, message: "Prefer groups instead of individual devices or users." }],
+  } }));
+  api.handlers.set("/api/policy/test/fixtures", async (route) => route.fulfill({ json: { actors: [], services: [] } }));
+  api.handlers.set("/api/policy/test", async (route) => route.fulfill({ json: {
+    actor_count: 0, services: [], warnings: [{ code: "POLICY_NO_HITS", severity: "warning", line: 2, message: "No hits in this test population." }],
+  } }));
+  await page.goto(appURL + "/#policy");
+  await openPolicyPicker(page);
+  await page.locator('[data-record-id="test-policy"]').click();
+  await page.getByRole("button", { name: "Analyze", exact: true }).click();
+  await expect(page.locator("#policy-check")).toHaveAttribute("data-analysis-state", "success");
+  await expect(page.locator("#policy-lint-warnings")).toContainText("POLICY_SPECIFIC_IDENTITY");
+  await expect(page.locator("#policy-lint-warnings")).toContainText("POLICY_NO_HITS");
+  await page.locator("#policy-source").fill("define Operators as user with user.role:Operator.");
+  await expect(page.locator("#policy-lint-warnings")).toBeHidden();
+});
+
+for (const reducedMotion of ["no-preference", "reduce"]) {
+test(`map pulses only the requesting adapter for new grants and denials (${reducedMotion})`, async ({ page, appURL, api }) => {
+  await page.emulateMedia({ reducedMotion });
+  api.snapshot.actors = [
+    { cn: "node", node: true, zpr_addr: "fd00::ff", node_details: { adapters: ["requester", "target"], in_sync: true } },
+    { cn: "requester", node: false, zpr_addr: "fd00::1" },
+    { cn: "target", node: false, zpr_addr: "fd00::2" },
+  ];
+  api.snapshot.recent_visas = [{ id: 1, source_addr: "fd00::1", dest_addr: "fd00::2" }];
+  api.snapshot.services = [
+    { service_name: "API", service_kind: "Application", actor_cn: "target", zpr_addr: "fd00::2", service_endpoints: "TCP/443" },
+    { service_name: "OtherAPI", service_kind: "Application", actor_cn: "target", zpr_addr: "fd00::2", service_endpoints: "TCP/444" },
+  ];
+  await page.goto(appURL + "/#map");
+  await expect(page.locator(".graph-vertex.adapter")).toHaveCount(2);
+  await page.getByRole("button", { name: "Pause updates", exact: true }).click();
+  const requester = page.locator('.graph-vertex[data-inspect-actor="requester"]');
+  const target = page.locator('.graph-vertex[data-inspect-actor="target"]');
+  const wire = page.locator('.graph-edge[data-dock-adapter="requester"] .graph-link');
+  const targetWire = page.locator('.graph-edge[data-dock-adapter="target"] .graph-link');
+  await expect(page.locator(".graph-decision-ring")).toHaveCount(0);
+  api.snapshot.recent_visas.push(
+    { id: 2, source_addr: "fd00:0:0:0:0:0:0:1", dest_addr: "fd00::2", dest_port: 443, proto: "TCP", direction: "forward" },
+    { id: 3, source_addr: "fd00::2", dest_addr: "fd00::1", source_port: 443, proto: "TCP", direction: "reverse" },
+  );
+  await page.getByRole("button", { name: "Refresh", exact: true }).click();
+  await expect(requester.locator('.graph-decision-ring[data-decision="grant"]')).toHaveCount(1);
+  await page.evaluate(() => render(state.snapshot));
+  await expect(requester.locator('.graph-decision-ring[data-decision="grant"]')).toHaveCount(1);
+  const service = page.locator('.graph-service-badge[data-inspect-service="API"]');
+  await expect(service.locator(".graph-service-decision-ring")).toHaveCount(1);
+  await expect(service.locator(".graph-service-decision-ring")).toHaveCSS("stroke", "rgb(40, 124, 199)");
+  for (const outline of [service.locator(".graph-service-decision-ring"), requester.locator(".graph-decision-ring")]) {
+    const transforms = await outline.evaluate((element) => element.getAnimations().flatMap((animation) => animation.effect.getKeyframes().map((frame) => frame.transform).filter(Boolean)));
+    if (reducedMotion === "reduce") expect(transforms).toEqual([]);
+    else expect(transforms).toEqual(["scale(1)", "scale(1.25)", "scale(1)"]);
+  }
+  await expect(page.locator('.graph-service-badge[data-inspect-service="OtherAPI"] .graph-service-decision-ring')).toHaveCount(0);
+  await expect(requester.locator('.graph-decision-ring')).toHaveCSS("stroke", "rgb(24, 137, 75)");
+  await expect(wire).toHaveAttribute("data-decision", "grant");
+  await expect(targetWire).not.toHaveAttribute("data-decision");
+  if (reducedMotion === "reduce") await expect(requester.locator('.graph-adapter')).not.toHaveClass(/graph-decision-glyph/);
+  else await expect(requester.locator('.graph-adapter')).toHaveClass(/graph-decision-glyph/);
+  await expect(target.locator(".graph-decision-ring")).toHaveCount(0);
+  await expect(page.locator(".graph-decision-ring")).toHaveCount(0);
+  await expect(page.locator(".graph-service-decision-ring")).toHaveCount(0);
+  await expect(wire).not.toHaveAttribute("data-decision");
+  await expect(requester.locator('.graph-adapter')).not.toHaveClass(/graph-decision-glyph/);
+  await page.getByRole("button", { name: "Refresh", exact: true }).click();
+  await expect(page.locator(".graph-decision-ring")).toHaveCount(0);
+  api.snapshot.recent_denies = [{ source_addr: "fd00::1", dest_addr: "fd00::2", protocol: 6, dest_port: 443, count: 1, last_deny_ms: Date.now() }];
+  await page.getByRole("button", { name: "Refresh", exact: true }).click();
+  await expect(requester.locator('.graph-decision-ring[data-decision="deny"]')).toHaveCount(1);
+  await expect(requester.locator('.graph-decision-ring')).toHaveCSS("stroke", "rgb(208, 50, 50)");
+  await expect(wire).toHaveAttribute("data-decision", "deny");
+  await expect(target.locator(".graph-decision-ring")).toHaveCount(0);
+  await expect(page.locator(".graph-decision-ring")).toHaveCount(0);
+  api.snapshot.recent_denies[0].count = 2;
+  await page.getByRole("button", { name: "Refresh", exact: true }).click();
+  await expect(requester.locator('.graph-decision-ring[data-decision="deny"]')).toHaveCount(1);
+  await expect(page.locator(".graph-decision-ring")).toHaveCount(0);
+  api.snapshot.recent_denies = [];
+  api.snapshot.recent_visas.push({ id: 4, source_addr: "fd00::2", dest_addr: "fd00::1", source_port: 443, proto: "TCP", direction: "reverse" });
+  await page.getByRole("button", { name: "Refresh", exact: true }).click();
+  await expect(requester.locator('.graph-decision-ring[data-decision="grant"]')).toHaveCount(1);
+  await expect(target.locator(".graph-decision-ring")).toHaveCount(0);
+  await expect(wire).toHaveAttribute("data-decision", "grant");
+  await expect(service.locator(".graph-service-decision-ring")).toHaveCount(1);
+});
+}
 
 test("service types share table and map colors and gateways have clouds", async ({ page, appURL, api }) => {
   const kinds = ["BuiltIn", "Regular", "Visa", "Gateway", "ZPR", "Policy", "Control", "Auth", "Attribute", "Application", "Node", "Logger", 'Trusted("file")', 'Trusted("rest/1")', null, 'Trusted("custom")'];

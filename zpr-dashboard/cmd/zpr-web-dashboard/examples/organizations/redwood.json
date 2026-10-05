@@ -1,5 +1,6 @@
 {
   "id": "redwood",
+  "assertions_source": "// Redwood Freight Cooperative directory integrity; human fields are group-scoped.\npeople attribute \"uid\" present;\npeople attribute \"cn\" present;\ngroup \"DispatchOperators\" members >= 1;\npeople in \"DispatchOperators\" attribute \"mail\" present;\npeople in \"DispatchOperators\" attribute \"title\" present;\npeople in \"DispatchOperators\" attribute \"ou\" == \"Dispatch\";\npeople in \"DispatchOperators\" exactly_one [\"DispatchOperators\",\"FleetManagers\",\"PartnerAuditors\"];\ngroup \"FleetManagers\" members >= 1;\npeople in \"FleetManagers\" attribute \"mail\" present;\npeople in \"FleetManagers\" attribute \"title\" present;\npeople in \"FleetManagers\" attribute \"ou\" == \"Fleet\";\npeople in \"FleetManagers\" exactly_one [\"DispatchOperators\",\"FleetManagers\",\"PartnerAuditors\"];\ngroup \"PartnerAuditors\" members >= 1;\npeople in \"PartnerAuditors\" attribute \"mail\" present;\npeople in \"PartnerAuditors\" attribute \"title\" present;\npeople in \"PartnerAuditors\" attribute \"ou\" == \"Auditors\";\npeople in \"PartnerAuditors\" exactly_one [\"DispatchOperators\",\"FleetManagers\",\"PartnerAuditors\"];\n",
   "name": "Redwood Freight Cooperative",
   "description": "Federated logistics organization with regional operations, fleet, and partner services.",
   "runtime": {

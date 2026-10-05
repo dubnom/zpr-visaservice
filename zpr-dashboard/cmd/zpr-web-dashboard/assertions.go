@@ -14,6 +14,9 @@ const maxAssertionSource = 64 << 10
 const maxAssertionRules = 200
 
 type assertionDirectory struct {
+	peopleLookup     map[string]bool
+	memberCounts     map[string]int
+	Sources          map[string]assertionDirectory  `json:"-"`
 	People           []string                       `json:"people"`
 	Groups           map[string][]string            `json:"groups"`
 	Attributes       []string                       `json:"attributes,omitempty"`
@@ -22,17 +25,20 @@ type assertionDirectory struct {
 }
 
 type assertionRule struct {
-	Line      int      `json:"line"`
-	Kind      string   `json:"kind"`
-	Group     string   `json:"group,omitempty"`
-	Groups    []string `json:"groups,omitempty"`
-	Scope     string   `json:"scope,omitempty"`
-	Operator  string   `json:"operator,omitempty"`
-	Limit     int      `json:"limit,omitempty"`
-	Attribute string   `json:"attribute,omitempty"`
-	Value     string   `json:"value,omitempty"`
-	Values    []string `json:"values,omitempty"`
-	Number    *int64   `json:"number,omitempty"`
+	Source         string               `json:"source,omitempty"`
+	ExpressionText string               `json:"expression,omitempty"`
+	Expression     *assertionExpression `json:"-"`
+	Line           int                  `json:"line"`
+	Kind           string               `json:"kind"`
+	Group          string               `json:"group,omitempty"`
+	Groups         []string             `json:"groups,omitempty"`
+	Scope          string               `json:"scope,omitempty"`
+	Operator       string               `json:"operator,omitempty"`
+	Limit          int                  `json:"limit,omitempty"`
+	Attribute      string               `json:"attribute,omitempty"`
+	Value          string               `json:"value,omitempty"`
+	Values         []string             `json:"values,omitempty"`
+	Number         *int64               `json:"number,omitempty"`
 }
 
 type assertionResult struct {
@@ -53,13 +59,16 @@ type assertionRun struct {
 	Status         string            `json:"status"`
 	Error          string            `json:"error,omitempty"`
 	Results        []assertionResult `json:"results"`
+	Warnings       []lintDiagnostic  `json:"warnings,omitempty"`
 }
 
 type assertionParser struct {
-	scanner scanner.Scanner
-	token   rune
-	text    string
-	err     error
+	expressionNodes int
+	expressionDepth int
+	scanner         scanner.Scanner
+	token           rune
+	text            string
+	err             error
 }
 
 func parseAssertions(source string) ([]assertionRule, error) {
@@ -68,7 +77,7 @@ func parseAssertions(source string) ([]assertionRule, error) {
 	}
 	parser := &assertionParser{}
 	parser.scanner.Init(strings.NewReader(source))
-	parser.scanner.Mode = scanner.ScanIdents | scanner.ScanInts | scanner.ScanStrings | scanner.ScanComments | scanner.SkipComments
+	parser.scanner.Mode = scanner.ScanIdents | scanner.ScanInts | scanner.ScanFloats | scanner.ScanStrings | scanner.ScanComments | scanner.SkipComments
 	parser.scanner.Error = func(input *scanner.Scanner, message string) {
 		if parser.err == nil {
 			parser.err = fmt.Errorf("line %d: %s", input.Position.Line, message)
@@ -82,9 +91,21 @@ func parseAssertions(source string) ([]assertionRule, error) {
 		}
 		rule := assertionRule{Line: parser.scanner.Position.Line}
 		switch parser.text {
+		case "assert":
+			parser.next()
+			start := parser.scanner.Position.Offset
+			rule.Kind = "expression"
+			rule.Expression = parser.expression(1)
+			if parser.err == nil {
+				rule.ExpressionText = strings.TrimSpace(source[start:parser.scanner.Position.Offset])
+			}
 		case "group":
 			parser.next()
 			rule.Kind, rule.Group = "group", parser.name()
+			if parser.text == "from" {
+				parser.next()
+				rule.Source = parser.name()
+			}
 			if parser.text == "attribute" {
 				rule.Kind = "group_attribute"
 				parser.attribute(&rule)
@@ -96,6 +117,10 @@ func parseAssertions(source string) ([]assertionRule, error) {
 			parser.next()
 			parser.expect("group")
 			rule.Kind = "each_group"
+			if parser.text == "from" {
+				parser.next()
+				rule.Source = parser.name()
+			}
 			if parser.text == "attribute" {
 				rule.Kind = "each_group_attribute"
 				parser.attribute(&rule)
@@ -105,9 +130,23 @@ func parseAssertions(source string) ([]assertionRule, error) {
 			}
 		case "people":
 			parser.next()
+			if parser.text == "from" {
+				parser.next()
+				rule.Source = parser.name()
+			}
 			if parser.text == "in" {
 				parser.next()
 				rule.Scope = parser.name()
+			}
+			if parser.text == "where" {
+				parser.next()
+				start := parser.scanner.Position.Offset
+				rule.Kind = "people_expression"
+				rule.Expression = parser.expression(1)
+				if parser.err == nil {
+					rule.ExpressionText = strings.TrimSpace(source[start:parser.scanner.Position.Offset])
+				}
+				break
 			}
 			if parser.text == "attribute" {
 				rule.Kind = "people_attribute"
@@ -125,7 +164,15 @@ func parseAssertions(source string) ([]assertionRule, error) {
 				parser.fail("not_both requires exactly two groups")
 			}
 		default:
-			parser.fail("expected group, each group, or people")
+			parser.fail("expected assert, group, each group, or people")
+		}
+		if rule.Expression != nil && parser.err == nil {
+			kind, err := validateAssertionExpression(rule.Expression, rule.Kind == "people_expression")
+			if err != nil {
+				parser.fail(err.Error())
+			} else if kind != "boolean" {
+				parser.fail("assertion expression must return a boolean comparison")
+			}
 		}
 		parser.expect(";")
 		rules = append(rules, rule)
@@ -365,6 +412,14 @@ func compareAssertionAttribute(values []string, rule assertionRule) (bool, error
 }
 
 func evaluateAssertions(rules []assertionRule, directory assertionDirectory) []assertionResult {
+	directory = indexAssertionDirectory(directory)
+	if directory.Sources != nil {
+		sources := make(map[string]assertionDirectory, len(directory.Sources))
+		for name, selected := range directory.Sources {
+			sources[name] = indexAssertionDirectory(selected)
+		}
+		directory.Sources = sources
+	}
 	people := make(map[string]bool)
 	for _, person := range directory.People {
 		people[person] = true
@@ -378,6 +433,23 @@ func evaluateAssertions(rules []assertionRule, directory assertionDirectory) []a
 	}
 	results := make([]assertionResult, 0, len(rules))
 	for _, rule := range rules {
+		if rule.Expression != nil {
+			results = append(results, evaluateAssertionExpression(rule, directory))
+			continue
+		}
+		if rule.Source != "" {
+			selected, err := assertionExpressionDirectory(directory, rule.Source)
+			if err != nil {
+				results = append(results, assertionResult{Rule: rule, Status: "error", Message: err.Error(), Subjects: []string{}})
+			} else {
+				original := rule
+				rule.Source = ""
+				result := evaluateAssertions([]assertionRule{rule}, selected)[0]
+				result.Rule = original
+				results = append(results, result)
+			}
+			continue
+		}
 		result := assertionResult{Rule: rule, Status: "pass", Subjects: []string{}}
 		required := append([]string(nil), rule.Groups...)
 		if rule.Kind == "group" || rule.Kind == "group_attribute" {
@@ -506,4 +578,20 @@ func evaluateAssertions(rules []assertionRule, directory assertionDirectory) []a
 		results = append(results, result)
 	}
 	return results
+}
+
+func indexAssertionDirectory(directory assertionDirectory) assertionDirectory {
+	directory.peopleLookup = make(map[string]bool, len(directory.People))
+	for _, person := range directory.People {
+		directory.peopleLookup[person] = true
+	}
+	directory.memberCounts = make(map[string]int, len(directory.Groups))
+	for name, members := range directory.Groups {
+		distinct := make(map[string]bool, len(members))
+		for _, member := range members {
+			distinct[member] = true
+		}
+		directory.memberCounts[name] = len(distinct)
+	}
+	return directory
 }

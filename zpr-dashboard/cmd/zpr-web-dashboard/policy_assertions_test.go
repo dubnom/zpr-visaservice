@@ -6,9 +6,105 @@ import (
 	"errors"
 	"net/http"
 	"net/http/httptest"
+	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 )
+
+func TestOrganizationAssertionDefaultsPreserveOperatorRules(t *testing.T) {
+	store, err := openSQLitePolicyRepository(filepath.Join(privatePolicyTestDir(t), "defaults.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer store.Close()
+	ctx := context.Background()
+	if err := seedOrganizationAssertions(ctx, store); err != nil {
+		t.Fatal(err)
+	}
+	initial, err := loadOrganizationAssertionSettings(ctx, store)
+	if err != nil {
+		t.Fatal(err)
+	}
+	initial.IntervalSeconds = 120
+	initial, err = saveOrganizationAssertionSettings(ctx, store, initial, initial.Revision)
+	if err != nil {
+		t.Fatal(err)
+	}
+	source := `people attribute "mail" present;`
+	if err := seedOrganizationAssertions(ctx, store, source); err != nil {
+		t.Fatal(err)
+	}
+	seeded, err := loadOrganizationAssertionSettings(ctx, store)
+	if err != nil || seeded.Source != source || seeded.Enabled || seeded.IntervalSeconds != 120 {
+		t.Fatalf("seeded defaults = %+v, %v", seeded, err)
+	}
+	custom := `people attribute "uid" present;`
+	seeded.Source = custom
+	if _, err := saveOrganizationAssertionSettings(ctx, store, seeded, seeded.Revision); err != nil {
+		t.Fatal(err)
+	}
+	if err := seedOrganizationAssertions(ctx, store, source); err != nil {
+		t.Fatal(err)
+	}
+	retained, err := loadOrganizationAssertionSettings(ctx, store)
+	if err != nil || retained.Source != custom {
+		t.Fatalf("operator assertions were overwritten: %+v, %v", retained, err)
+	}
+}
+
+func TestBundledOrganizationAssertionsMatchDirectorySeeds(t *testing.T) {
+	directory := filepath.Join("examples", "organizations")
+	t.Setenv("SIMULATION_ORGANIZATIONS_DIR", directory)
+	profiles, err := filepath.Glob(filepath.Join(directory, "*.json"))
+	if err != nil || len(profiles) == 0 {
+		t.Fatalf("organization profiles unavailable: %v", err)
+	}
+	for _, profile := range profiles {
+		organizationID := strings.TrimSuffix(filepath.Base(profile), ".json")
+		t.Run(organizationID, func(t *testing.T) {
+			organization, err := loadSimulatorOrganization(directory, organizationID)
+			if err != nil {
+				t.Fatal(err)
+			}
+			rules, err := parseAssertions(organization.AssertionsSource)
+			if err != nil || len(rules) == 0 {
+				t.Fatalf("default assertion rules = %d, %v", len(rules), err)
+			}
+			database := filepath.Join(privatePolicyTestDir(t), organizationID+".db")
+			if err := populateOrganizationAssertions(directory, organizationID, database); err != nil {
+				t.Fatal(err)
+			}
+			store, err := openSQLitePolicyRepository(database)
+			if err != nil {
+				t.Fatal(err)
+			}
+			defer store.Close()
+			settings, err := loadOrganizationAssertionSettings(context.Background(), store)
+			if err != nil || settings.Source != organization.AssertionsSource || settings.Enabled {
+				t.Fatalf("default settings = %+v, %v", settings, err)
+			}
+			t.Run("seed-directory", func(t *testing.T) {
+				if organization.Directory.SeedMode == "pregen" && os.Getenv("SIMULATION_PREGEN_DIR") == "" {
+					t.Skip("set SIMULATION_PREGEN_DIR to check the generated directory seed")
+				}
+				ldif, err := readOrganizationLDIFSeed(organization)
+				if err != nil {
+					t.Fatal(err)
+				}
+				snapshot, err := parseAssertionLDAP(ldif)
+				if err != nil {
+					t.Fatal(err)
+				}
+				for _, result := range evaluateAssertions(rules, snapshot) {
+					if result.Status != "pass" {
+						t.Errorf("assertion line %d: %+v", result.Rule.Line, result)
+					}
+				}
+			})
+		})
+	}
+}
 
 func TestOrganizationAssertionsAreVersionedPerPolicyDatabase(t *testing.T) {
 	openStore := func(name string) *sqlitePolicyRepository {

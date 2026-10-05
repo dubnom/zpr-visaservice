@@ -3,12 +3,31 @@ package main
 import (
 	"context"
 	"fmt"
+	"net/http"
+	"net/http/httptest"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
 	"time"
 )
+
+func TestReadControlRoomSnapshotUsesConfiguredEndpointAndHost(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/api/snapshot" || r.Host != "127.0.0.1:8787" {
+			http.Error(w, "unexpected Control Room request", http.StatusForbidden)
+			return
+		}
+		_, _ = w.Write([]byte(`{"api_status":"connected"}`))
+	}))
+	defer server.Close()
+	t.Setenv("SIMULATOR_CONTROL_ROOM_URL", server.URL)
+	t.Setenv("SIMULATOR_CONTROL_ROOM_HOST", "127.0.0.1:8787")
+
+	if _, err := readControlRoomSnapshot(); err != nil {
+		t.Fatalf("readControlRoomSnapshot() error = %v", err)
+	}
+}
 
 func TestSimulatorComponentStatesUsesLiveAgentNames(t *testing.T) {
 	manifest := simulatorManifest{Components: []simulatorComponent{
@@ -105,6 +124,31 @@ func TestSimulatorMachineLifecycleCommand(t *testing.T) {
 	if _, err := simulatorMachineSubstrateRouteCommand(manifest, "machine-06", "invalid"); err == nil {
 		t.Fatal("invalid rig IP should be rejected")
 	}
+	controlRoute, err := simulatorMachineControlReturnRouteCommand(manifest, "machine-06", "zpr-local-linux-node", "fd5a:5052:adda:1:8ff3:d714:7e5f:82df")
+	if err != nil {
+		t.Fatalf("valid machine-control return route: %v", err)
+	}
+	if got := strings.Join(controlRoute.Args, " "); got != "docker exec zpr-local-linux-node ip netns exec zpr-vs ip -6 route replace fd5a:5052:adda:1:8ff3:d714:7e5f:82df/128 dev tun5" {
+		t.Fatalf("machine-control route args = %q", got)
+	}
+	if _, err := simulatorMachineControlReturnRouteCommand(manifest, "machine-21", "zpr-local-linux-node", "fd5a:5052::1"); err == nil {
+		t.Fatal("unknown machine should be rejected for machine-control routing")
+	}
+	if _, err := simulatorMachineControlReturnRouteCommand(manifest, "machine-06", "zpr-local-linux-node", "192.0.2.1"); err == nil {
+		t.Fatal("IPv4 address should be rejected for machine-control routing")
+	}
+}
+
+func TestFirstIPv6InterfaceAddress(t *testing.T) {
+	if got := firstIPv6InterfaceAddress("2: tun5 inet6 fd5a:5052:adda:1:8ff3:d714:7e5f:82df/32 scope global"); got != "fd5a:5052:adda:1:8ff3:d714:7e5f:82df" {
+		t.Fatalf("firstIPv6InterfaceAddress() = %q", got)
+	}
+	if got := firstIPv6InterfaceAddress("2: tun5 inet6 fe80::1/64 scope link"); got != "fe80::1" {
+		t.Fatalf("firstIPv6InterfaceAddress() = %q", got)
+	}
+	if got := firstIPv6InterfaceAddress("no IPv6 address"); got != "" {
+		t.Fatalf("firstIPv6InterfaceAddress() = %q, want empty", got)
+	}
 }
 
 func TestSimulatorMachineStartRecreatesStoppedContainers(t *testing.T) {
@@ -176,6 +220,11 @@ func TestSimulatorStackServiceState(t *testing.T) {
 	if got := simulatorStackServiceState(runtimeDir, "control-room"); got != "stopped" {
 		t.Fatalf("missing PID state = %q, want stopped", got)
 	}
+	t.Setenv("SIMULATOR_DOCKER_CONTAINER", "zpr-simulator")
+	if got := simulatorStackServiceState(runtimeDir, "simulator"); got != "running" {
+		t.Fatalf("containerized Simulator state = %q, want running", got)
+	}
+	t.Setenv("SIMULATOR_DOCKER_CONTAINER", "")
 	if err := os.WriteFile(filepath.Join(runtimeDir, "control-room.pid"), []byte(fmt.Sprint(os.Getpid())), 0o600); err != nil {
 		t.Fatal(err)
 	}

@@ -113,7 +113,14 @@ func (store *policyServiceAssertionSettingsStore) do(request *http.Request) (ass
 	return result, nil
 }
 
-func seedOrganizationAssertions(ctx context.Context, repository policyRepository) error {
+func seedOrganizationAssertions(ctx context.Context, repository policyRepository, defaults ...string) error {
+	source := ""
+	if len(defaults) > 0 {
+		source = defaults[0]
+	}
+	if _, err := parseAssertions(source); err != nil {
+		return err
+	}
 	categories, records, err := repository.Catalog(ctx)
 	if err != nil {
 		return err
@@ -137,15 +144,45 @@ func seedOrganizationAssertions(ctx context.Context, repository policyRepository
 			if record.Kind != organizationAssertionsKind {
 				return errors.New("organization assertion record has an incompatible kind")
 			}
+			if strings.TrimSpace(source) != "" {
+				settings, err := loadOrganizationAssertionSettings(ctx, repository)
+				if err != nil {
+					return err
+				}
+				if strings.TrimSpace(settings.Source) == "" {
+					settings.Source = source
+					_, err = saveOrganizationAssertionSettings(ctx, repository, settings, settings.Revision)
+					return err
+				}
+			}
 			return nil
 		}
 	}
-	content, err := json.Marshal(storedAssertionSettings{IntervalSeconds: 60})
+	content, err := json.Marshal(storedAssertionSettings{Source: source, IntervalSeconds: 60})
 	if err != nil {
 		return err
 	}
 	_, err = repository.CreateRecord(ctx, categoryID, organizationAssertionsName, organizationAssertionsKind, "application/vnd.zpr.assertions+json", json.RawMessage(`{"scope":"organization"}`), string(content), "system", "Initial organization assertion settings")
 	return err
+}
+
+func populateOrganizationAssertions(directory, organizationID, databasePath string) error {
+	organization, err := loadSimulatorOrganization(directory, organizationID)
+	if err != nil {
+		return err
+	}
+	if strings.TrimSpace(organization.AssertionsSource) == "" {
+		return errors.New("organization has no default assertions")
+	}
+	if _, err := parseAssertions(organization.AssertionsSource); err != nil {
+		return err
+	}
+	repository, err := openSQLitePolicyRepository(databasePath)
+	if err != nil {
+		return err
+	}
+	defer repository.Close()
+	return seedOrganizationAssertions(context.Background(), repository, organization.AssertionsSource)
 }
 
 func organizationAssertionRecord(ctx context.Context, repository policyRepository) (policyRecord, error) {

@@ -141,8 +141,9 @@ type demoPolicySeedRecord struct {
 }
 
 type policyCheckResponse struct {
-	Valid       bool   `json:"valid"`
-	Diagnostics string `json:"diagnostics"`
+	Valid       bool             `json:"valid"`
+	Diagnostics string           `json:"diagnostics"`
+	Warnings    []lintDiagnostic `json:"warnings,omitempty"`
 }
 
 type assistantMessage struct {
@@ -222,7 +223,11 @@ func newPolicyWorkspace() (*policyWorkspace, string) {
 		_ = store.Close()
 		return nil, "Unable to import the configured demo policy catalog."
 	}
-	if err := seedOrganizationAssertions(context.Background(), store); err != nil {
+	assertionDefaults := ""
+	if organization, err := loadSimulatorOrganization(simulatorOrganizationsDirectory(), os.Getenv("ZPR_POLICY_ORGANIZATION_ID")); err == nil {
+		assertionDefaults = organization.AssertionsSource
+	}
+	if err := seedOrganizationAssertions(context.Background(), store, assertionDefaults); err != nil {
 		_ = store.Close()
 		return nil, "Unable to initialize organization assertions."
 	}
@@ -863,6 +868,14 @@ func (p *policyWorkspace) check(ctx context.Context, source string) policyCheckR
 	return p.checkUnlocked(ctx, source)
 }
 
+func (p *policyWorkspace) policyConfigPaths() []string {
+	paths := []string{p.configPath}
+	if runtimePath, err := resolvedRegularFile(p.stageConfigPath); err == nil && runtimePath != p.configPath {
+		paths = append(paths, runtimePath)
+	}
+	return paths
+}
+
 func (p *policyWorkspace) checkUnlocked(ctx context.Context, source string) policyCheckResponse {
 	if p.checkSource != nil {
 		return p.checkSource(ctx, source)
@@ -888,22 +901,26 @@ func (p *policyWorkspace) checkUnlocked(ctx context.Context, source string) poli
 	}
 	commandCtx, cancel := context.WithTimeout(ctx, 20*time.Second)
 	defer cancel()
-	command := exec.CommandContext(commandCtx, p.compiler, "--parse-only", "--config", p.configPath, temporaryPath)
-	command.Dir = filepath.Dir(p.configPath)
-	output := &limitedBuffer{limit: maxPolicyOutputBytes}
-	command.Stdout, command.Stderr = output, output
-	err = command.Run()
-	diagnostics := strings.TrimSpace(strings.ReplaceAll(output.String(), temporaryPath, "policy.zpl"))
-	if err != nil {
-		if diagnostics == "" {
-			diagnostics = "ZPLC could not validate this policy."
+	diagnostics := ""
+	warnings := []lintDiagnostic{}
+	for _, configPath := range p.policyConfigPaths() {
+		command := exec.CommandContext(commandCtx, p.compiler, "--parse-only", "--lint", "--config", configPath, temporaryPath)
+		command.Dir = filepath.Dir(configPath)
+		output := &limitedBuffer{limit: maxPolicyOutputBytes}
+		command.Stdout, command.Stderr = output, output
+		err = command.Run()
+		diagnostics, warnings = splitCompilerLint(strings.ReplaceAll(output.String(), temporaryPath, "policy.zpl"))
+		if err == nil {
+			if diagnostics == "" {
+				diagnostics = "ZPLC parse-only check passed."
+			}
+			return policyCheckResponse{Valid: true, Diagnostics: diagnostics, Warnings: warnings}
 		}
-		return policyCheckResponse{Diagnostics: diagnostics}
 	}
 	if diagnostics == "" {
-		diagnostics = "ZPLC parse-only check passed."
+		diagnostics = "ZPLC could not validate this policy."
 	}
-	return policyCheckResponse{Valid: true, Diagnostics: diagnostics}
+	return policyCheckResponse{Diagnostics: diagnostics, Warnings: warnings}
 }
 
 func decodePolicyRequest(w http.ResponseWriter, r *http.Request, maxBytes int64, target any) bool {

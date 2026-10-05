@@ -253,12 +253,18 @@ func policyTestUserAttributes(uid string, raw map[string][]string, organization 
 	}
 	for _, mapping := range mappings {
 		if strings.HasPrefix(mapping.Attribute, "user.") {
-			setPolicyTestAttribute(attributes, mapping.Attribute, raw[strings.ToLower(mapping.Source)])
+			setPolicyTestAttribute(attributes, strings.TrimSuffix(mapping.Attribute, "{}"), raw[strings.ToLower(mapping.Source)])
 		}
 	}
 	for groupName, members := range groups {
 		for _, member := range members {
 			if member == uid {
+				for _, mapping := range mappings {
+					if strings.EqualFold(mapping.Source, "role") && strings.HasPrefix(mapping.Attribute, "user.") {
+						attribute := strings.TrimSuffix(mapping.Attribute, "{}")
+						setPolicyTestAttribute(attributes, attribute, append(attributes[attribute], groupName))
+					}
+				}
 				tag := policyTestTag(groupName)
 				if tag != "" {
 					attributes["user.zpr.tag."+tag] = []string{}

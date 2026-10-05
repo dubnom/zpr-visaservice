@@ -227,8 +227,13 @@ func main() {
 	policyRoot := flag.String("policy-root", "", "Root directory of policy layer sources and organization profiles")
 	policyOrganization := flag.String("policy-organization", "", "Organization policy layer to compose")
 	policyOutput := flag.String("policy-output", "", "Output file for the composed policy source")
+	assertionsDatabase := flag.String("assertions-db", "", "Organization policy database to populate with default assertions")
 	flag.Parse()
 	switch *mode {
+	case "seed-assertions":
+		if err := populateOrganizationAssertions(*policyRoot, *policyOrganization, *assertionsDatabase); err != nil {
+			log.Fatal(err)
+		}
 	case "compose-policy":
 		if err := writeOrganizationPolicy(*policyRoot, *policyOrganization, *policyOutput); err != nil {
 			log.Fatal(err)

@@ -3,8 +3,9 @@
   const grid = document.getElementById("machine-logs-grid");
   const controlRoom = grid.dataset.site === "control-room";
   const followLogs = () => controlRoom || document.getElementById("machine-logs-follow").checked;
-  const endpoint = grid.dataset.endpoint || "/api/simulator/machine-logs";
+  const endpoint = grid.dataset.endpoint;
   const pageActive = () => controlRoom ? location.hash === "#adapter-logs" : location.pathname === "/machine-logs.html";
+  const pauseButton = document.getElementById("machine-logs-pause");
   const refreshButton = document.getElementById("machine-logs-refresh");
   const cards = new Map();
   const sourceCache = new Map();
@@ -23,7 +24,10 @@
     if (organizationID !== result.organization_id) sourceCache.clear();
     organizationID = result.organization_id;
     const present = new Set();
-    const retained = (result.machines || []).map((entry) => {
+    const entries = controlRoom ? (result.adapters || []).map((adapter) => ({
+      machine: { id: adapter.id, name: adapter.name }, state: adapter.state, sources: adapter.sources,
+    })) : result.machines || [];
+    const retained = entries.map((entry) => {
       present.add(entry.machine.id);
       const cached = sourceCache.get(entry.machine.id) || { entry, sources: new Map() };
       const names = new Set();
@@ -112,7 +116,7 @@
 
   function adapterSources() {
     return machines.flatMap((entry) => (entry.sources || [])
-      .filter((source) => adapterLogType === "controller" ? source.name === "Controller" : /adapter$/i.test(source.name))
+      .filter((source) => source.kind === adapterLogType)
       .map((source) => ({ key: `${entry.machine.id}\u001f${source.name}`, machine: entry, source, label: `${source.name} · ${entry.machine.id}` })));
   }
 
@@ -188,7 +192,7 @@
       if (output.clientHeight) column.following = output.scrollHeight - output.clientHeight - output.scrollTop <= 8;
     });
     actions.append(removeButton, maximizeButton);
-    header.append(actions);
+    header.append(title, actions);
     toolbar.append(label, select);
     panel.append(header, toolbar, output);
     grid.append(panel);
@@ -413,7 +417,7 @@
     if (pending || !active) return;
     pending = new AbortController();
     const request = pending;
-    refreshButton.disabled = true;
+    if (refreshButton) refreshButton.disabled = true;
     try {
       const response = await fetch(endpoint, { cache: "no-store", signal: request.signal });
       const result = await response.json();
@@ -423,19 +427,20 @@
       render();
       document.getElementById("machine-logs-error").hidden = true;
       document.getElementById("machine-logs-time").textContent = new Date(result.updated_at).toLocaleTimeString();
-      document.getElementById("machine-logs-status").textContent = `${result.organization_id} / ${paused ? "Paused" : "Live"}`;
+      const status = paused ? "Paused" : "Live";
+      document.getElementById("machine-logs-status").textContent = controlRoom ? status : `${result.organization_id} / ${status}`;
     } catch (error) {
       if (error.name !== "AbortError" && active) {
         machines = machines.map((entry) => ({ ...entry, state: "disconnected", sources: (entry.sources || []).map((source) => ({ ...source, disconnected: true })) }));
         render();
         const message = document.getElementById("machine-logs-error");
-        message.textContent = error.message || "Machine logs unavailable";
+        message.textContent = error.message || (controlRoom ? "Adapter logs unavailable" : "Machine logs unavailable");
         message.hidden = false;
         document.getElementById("machine-logs-status").textContent = "Disconnected";
       }
     } finally {
       if (pending === request) pending = null;
-      refreshButton.disabled = false;
+      if (refreshButton) refreshButton.disabled = false;
       if (active && !paused) timer = setTimeout(refresh, 2000);
     }
   }
@@ -455,16 +460,18 @@
     }
   }
 
-  document.getElementById("machine-logs-pause").addEventListener("click", () => {
+  pauseButton.addEventListener("click", () => {
     paused = !paused;
-    document.getElementById("machine-logs-pause").textContent = paused ? "Resume" : "Pause";
+    pauseButton.textContent = paused ? "Resume" : "Pause";
+    pauseButton.setAttribute("aria-pressed", String(paused));
+    pauseButton.setAttribute("aria-label", paused ? "Resume log updates" : "Pause log updates");
     clearTimeout(timer);
     if (paused) {
       pending?.abort();
       document.getElementById("machine-logs-status").textContent = "Paused";
     } else start();
   });
-  document.getElementById("machine-logs-refresh").addEventListener("click", () => { clearTimeout(timer); refresh(); });
+  refreshButton?.addEventListener("click", () => { clearTimeout(timer); refresh(); });
   if (controlRoom) {
     document.getElementById("adapter-log-add").addEventListener("click", addAdapterColumn);
     for (const button of document.querySelectorAll("[data-adapter-log-type]")) {
