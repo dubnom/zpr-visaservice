@@ -1,14 +1,20 @@
 #!/bin/sh
 set -eu
 
-SCRIPT_DIR=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
-DASHBOARD_DIR=$(CDPATH= cd -- "$SCRIPT_DIR/.." && pwd)
-RUNTIME_DIR=$(CDPATH= cd -- "$DASHBOARD_DIR/../../.local-runtime" && pwd)
+SCRIPT_DIR=$(CDPATH='' cd -- "$(dirname -- "$0")" && pwd)
+DASHBOARD_DIR=$(CDPATH='' cd -- "$SCRIPT_DIR/.." && pwd)
+RUNTIME_DIR=$(CDPATH='' cd -- "$DASHBOARD_DIR/../../.local-runtime" && pwd)
 SERVICE_CERTS="$RUNTIME_DIR/service-certs"
 SIMULATION_MANIFEST="${SIMULATION_MANIFEST:-$RUNTIME_DIR/simulation-environment.json}"
 STATE_DIR="$RUNTIME_DIR/dashboard-stack"
 BIN="$STATE_DIR/zpr-web-dashboard"
 POLICY_TESTER_BIN="${ZPR_ZPT_BIN:-$DASHBOARD_DIR/../target/debug/zpt}"
+ZPLC_DEFAULT_BIN="$DASHBOARD_DIR/../../zpr-compiler/target/release/zplc"
+ZPLC_DEBUG_BIN="$DASHBOARD_DIR/../../zpr-compiler/target/debug/zplc"
+if [ -x "$ZPLC_DEBUG_BIN" ] && { [ ! -x "$ZPLC_DEFAULT_BIN" ] || [ "$ZPLC_DEBUG_BIN" -nt "$ZPLC_DEFAULT_BIN" ]; }; then
+    ZPLC_DEFAULT_BIN="$ZPLC_DEBUG_BIN"
+fi
+ZPLC_BIN="${ZPR_ZPLC_BIN:-$ZPLC_DEFAULT_BIN}"
 CONTROL_DIR="$STATE_DIR/machine-control"
 MACHINE_CERT_DIR="$CONTROL_DIR/machine-certs"
 CONTROL_CA="$CONTROL_DIR/control-ca.crt"
@@ -498,7 +504,7 @@ restart_policy_context() {
         SIMULATION_MANIFEST="$SIMULATION_MANIFEST" \
         SIMULATION_ORGANIZATIONS_DIR="$ORGANIZATIONS_DIR" \
         ZPR_ZPT_BIN="$POLICY_TESTER_BIN" \
-        ZPR_ZPLC_BIN="$DASHBOARD_DIR/../../zpr-compiler/target/debug/zplc" \
+        ZPR_ZPLC_BIN="$ZPLC_BIN" \
         "$BIN" -mode policy-service
     wait_for_url https://127.0.0.1:8789/api/policy/context policy-context \
         --cacert "$SERVICE_CERTS/service-ca.crt" \
@@ -534,10 +540,7 @@ prepare_policy_tester() {
     fi
 }
 
-start_stack() {
-    mkdir -p "$STATE_DIR"
-    stop_stack
-    create_machine_control_pki
+start_policy_service() {
     if [ ! -f "$SIMULATION_MANIFEST" ]; then
         echo "simulation manifest not found: $SIMULATION_MANIFEST" >&2
         return 1
@@ -588,12 +591,28 @@ start_stack() {
         SIMULATION_MANIFEST="$SIMULATION_MANIFEST" \
         SIMULATION_ORGANIZATIONS_DIR="$ORGANIZATIONS_DIR" \
         ZPR_ZPT_BIN="$POLICY_TESTER_BIN" \
-        ZPR_ZPLC_BIN="$DASHBOARD_DIR/../../zpr-compiler/target/debug/zplc" \
+        ZPR_ZPLC_BIN="$ZPLC_BIN" \
         "$BIN" -mode policy-service
     wait_for_url https://127.0.0.1:8789/api/policy policy-service \
         --cacert "$SERVICE_CERTS/service-ca.crt" \
         --cert "$SERVICE_CERTS/control-policy-client.crt" \
         --key "$SERVICE_CERTS/control-policy-client.key"
+}
+
+restart_policy_service() {
+    if pid_running "$POLICY_PID"; then
+        listener=$(lsof -tiTCP:8789 -sTCP:LISTEN 2>/dev/null || true)
+        [ "$listener" = "$(cat "$POLICY_PID")" ] || { echo "Policy Service PID mismatch" >&2; return 1; }
+        stop_service "$POLICY_PID"
+    fi
+    start_policy_service
+}
+
+start_stack() {
+    mkdir -p "$STATE_DIR"
+    stop_stack
+    create_machine_control_pki
+    start_policy_service
 
     start_admin_relay
     start_dns_service
@@ -689,6 +708,7 @@ case "${1:-start}" in
         stop_service "$CONTROL_PID"
         start_control_service
         ;;
+    restart-policy-service) restart_policy_service ;;
     restart-simulator-control) start_zpr_machine_control_service ;;
     stop-legacy-workloads) stop_legacy_named_workloads ;;
     reset-organization) exec sh "$SCRIPT_DIR/activate-organization.sh" "$@" ;;
@@ -696,5 +716,5 @@ case "${1:-start}" in
         [ "$#" -eq 3 ] || { echo "usage: $0 restart-policy-context organization source" >&2; exit 2; }
         restart_policy_context "$2" "$3"
         ;;
-    *) echo "usage: $0 {start|stop|restart|status|start-admin-relay|stop-admin-relay|start-dns|stop-dns|start-ui-relays|stop-ui-relays|start-browser-gateway|stop-browser-gateway|restart-control-service|restart-simulator-control}" >&2; exit 2 ;;
+    *) echo "usage: $0 {start|stop|restart|status|start-admin-relay|stop-admin-relay|start-dns|stop-dns|start-ui-relays|stop-ui-relays|start-browser-gateway|stop-browser-gateway|restart-control-service|restart-policy-service|restart-simulator-control}" >&2; exit 2 ;;
 esac

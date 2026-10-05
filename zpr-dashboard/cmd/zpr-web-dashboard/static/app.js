@@ -3,7 +3,7 @@ const zplKeywords = new Set(["allow", "never", "define", "with", "to", "access",
 const GRAPH_ARRIVAL_DURATION = 2800;
 const GRAPH_REMOVAL_DURATION = 900;
 const reducedMotion = window.matchMedia?.("(prefers-reduced-motion: reduce)").matches ?? false;
-const state = { snapshot: null, timer: null, paused: false, pending: false, graphCamera: null, graphAnimations: !reducedMotion, topologyComponents: null, topologyNodeColumns: null, topologyNodeSlots: new Map(), topologyNewComponents: new Map(), selection: null, sorts: {}, dnsPending: false, policy: { loaded: false, configured: false, categories: [], records: [], attributes: [], categoryID: "", collapsedCategories: new Set(), treeInitialized: false, record: null, source: "", savedSource: "", revision: 0, browsingRevision: 0, saveAs: false, compilerReady: false, testerReady: false, testMode: false, testPending: false, testAbort: null, testResult: null, testSource: "", testDimensions: [], saveTestPending: false, saveTestSource: "", saveTestError: "", saveAsTestSource: "", saveAsTestError: "", assistantReady: false, assistantEnabled: false, assistantUsage: { input: 0, output: 0 }, evaluatedSource: null, validSource: null, errorOffsets: [], revisions: [], messages: [], assistantPending: false, assistantError: "" } };
+const state = { snapshot: null, timer: null, paused: false, pending: false, graphCamera: null, graphAnimations: !reducedMotion, topologyComponents: null, topologyNodeColumns: null, topologyNodeSlots: new Map(), topologyNewComponents: new Map(), selection: null, sorts: {}, dnsPending: false, policy: { loaded: false, configured: false, categories: [], records: [], attributes: [], categoryID: "", collapsedCategories: new Set(), treeInitialized: false, record: null, source: "", savedSource: "", revision: 0, browsingRevision: 0, saveAs: false, compilerReady: false, testerReady: false, testMode: false, testPending: false, testAbort: null, testResult: null, testSource: "", testDimensions: [], saveTestPending: false, saveTestSource: "", saveTestError: "", saveAsTestSource: "", saveAsTestError: "", assistantReady: false, assistantEnabled: false, assistantUsage: { input: 0, output: 0 }, evaluatedSource: null, validSource: null, errorOffsets: [], checkDiagnostics: "", revisions: [], messages: [], assistantPending: false, assistantError: "" } };
 
 let previousPolledValues = null;
 
@@ -1102,7 +1102,7 @@ async function loadPolicyWorkspace() {
     const data = await response.json();
     if (!response.ok) throw new Error(data.error || `Policy server responded ${response.status}`);
     const organizationChanged = policy.organizationID && data.organization_id && policy.organizationID !== data.organization_id;
-    if (organizationChanged && policy.testMode) stopPolicyTest();
+    if (organizationChanged && policy.testPending) stopPolicyTest();
     Object.assign(policy, {
       organizationID: data.organization_id || "",
       organizationName: data.organization_name || "",
@@ -1349,7 +1349,13 @@ function renderPolicyCatalog() {
           const icon = window.zprPolicyRecordIcon(record.kind);
           const label = document.createElement("strong"); label.textContent = record.name;
           if (icon) item.append(icon);
-          item.append(label); group.append(item);
+          item.append(label);
+          if (record.kind === "assertions") {
+            const revision = document.createElement("small");
+            revision.textContent = `Assertions · r${record.current_revision || 0}`;
+            item.append(revision);
+          }
+          group.append(item);
         }
         renderBranch(group, category.id, depth + 1);
         container.append(group);
@@ -1436,7 +1442,6 @@ function clearPolicySelection() {
   setPolicyRecordSurface("");
   if (policy.testAbort) policy.testAbort.abort();
   policy.testAbort = null;
-  policy.testMode = false;
   policy.testPending = false;
   policy.record = null; policy.source = ""; policy.savedSource = ""; policy.revision = 0; policy.revisions = []; policy.evaluatedSource = null; policy.validSource = null;
   policy.saveTestSource = ""; policy.saveTestError = ""; policy.saveAsTestSource = ""; policy.saveAsTestError = "";
@@ -1453,17 +1458,16 @@ function clearPolicySelection() {
   byId("policy-format").disabled = true;
   byId("policy-check").disabled = true;
   byId("policy-check").textContent = "Analyze";
-  byId("policy-check").setAttribute("aria-pressed", "false");
-  byId("policy-workbench").dataset.testMode = "false";
-  byId("policy-code-editor").dataset.testMode = "false";
   state.policy.testResult = null;
   state.policy.testSource = "";
+  state.policy.checkDiagnostics = "";
   byId("policy-test-gutter").replaceChildren();
   byId("policy-test-gutter").hidden = false;
   byId("policy-test-status").hidden = true;
   hidePolicyTestDetails();
   byId("policy-check").removeAttribute("data-analysis-state");
   byId("policy-check-result").textContent = "Policy source is not loaded.";
+  byId("policy-check-result").hidden = true;
   byId("policy-history-count").textContent = "—";
   byId("policy-history").innerHTML = '<p class="catalog-empty">Select a policy to browse versions.</p>';
   byId("assistant-question").disabled = true; byId("assistant-send").disabled = true;
@@ -1480,6 +1484,12 @@ async function selectPolicyRecord(id, fetchRecord = true, discardEdits = false, 
   const summary = policy.records.find((record) => record.id === id);
   if (!summary) return clearPolicySelection();
   if (!discardEdits && hasUnsavedPolicyChanges(policy) && !window.confirm("Discard unsaved changes or leave this historical version?")) return;
+  if (policy.testPending) stopPolicyTest();
+  policy.checkGeneration = (policy.checkGeneration || 0) + 1;
+  clearPolicyTestResults();
+  policy.checkDiagnostics = "";
+  policy.errorOffsets = [];
+  byId("policy-check-result").hidden = true;
   try {
     let record = summary;
     if (fetchRecord) {
@@ -1490,6 +1500,7 @@ async function selectPolicyRecord(id, fetchRecord = true, discardEdits = false, 
     policy.record = record;
     policy.categoryID = record.kind === "assertions" ? organizationPolicyCategoryID(policy) || record.category_id : record.category_id;
     policy.source = record.content || ""; policy.savedSource = policy.source; policy.revision = record.current_revision; policy.evaluatedSource = null; policy.validSource = null;
+    policy.checkDiagnostics = "";
     policy.saveTestSource = ""; policy.saveTestError = ""; policy.saveAsTestSource = ""; policy.saveAsTestError = "";
     setPolicyRecordSurface(record.kind, record);
     policy.errorOffsets = [];
@@ -1503,6 +1514,7 @@ async function selectPolicyRecord(id, fetchRecord = true, discardEdits = false, 
     byId("policy-check").disabled = record.kind !== "policy" || !policy.compilerReady;
     byId("policy-save").disabled = true;
     byId("policy-check-result").textContent = record.kind === "policy" ? "Evaluate the current policy before saving." : `Record type: ${record.kind}`;
+    byId("policy-check-result").hidden = true;
     byId("policy-check-result").dataset.state = "";
     updateAssistantControls();
     policy.messages = []; policy.assistantError = ""; renderAssistantMessages();
@@ -1517,7 +1529,7 @@ async function selectPolicyRecord(id, fetchRecord = true, discardEdits = false, 
 function setPolicyRecordSurface(kind, record = state.policy.record) {
   const assertionsSelected = kind === "assertions";
   const policy = state.policy;
-  if (assertionsSelected && policy.testMode) stopPolicyTest();
+  if (assertionsSelected && policy.testPending) stopPolicyTest();
   byId("policy-assertion-editor").hidden = !assertionsSelected;
   byId("policy-source-surface").hidden = assertionsSelected;
   byId("policy-attribute-toolbar").hidden = assertionsSelected;
@@ -1847,7 +1859,11 @@ async function browsePolicyRevision(number) {
     const response = await fetch(`/api/policy/records/${encodeURIComponent(policy.record.id)}/revisions/${number}`, { cache: "no-store" });
     const revision = await response.json();
     if (!response.ok) throw new Error(revision.error || `Version load failed (${response.status})`);
-    if (byId("policy-source").value !== policy.savedSource && !window.confirm("Discard unsaved edits and browse this version?")) return;
+    if (!policy.browsingRevision && byId("policy-source").value !== policy.savedSource && !window.confirm("Discard unsaved edits and browse this version?")) return;
+    if (policy.testPending) stopPolicyTest();
+    policy.checkGeneration = (policy.checkGeneration || 0) + 1;
+    clearPolicyTestResults();
+    policy.checkDiagnostics = "";
     policy.evaluatedSource = null;
     policy.validSource = null;
     policy.errorOffsets = [];
@@ -2099,9 +2115,12 @@ async function createPolicyRecord(event) {
   try {
     const saveAs = state.policy.saveAs;
     const content = saveAs ? byId("policy-source").value : "";
+    if (saveAs && state.policy.evaluatedSource !== content) {
+      await checkPolicy(content);
+      if (content !== byId("policy-source").value) return;
+    }
     const sourcePassedEvaluation = state.policy.validSource === content;
-    const evaluationDetails = byId("policy-check-result").textContent;
-    if (saveAs && state.policy.evaluatedSource !== content) throw new Error("Evaluate the current policy before saving a copy.");
+    const evaluationDetails = state.policy.checkDiagnostics || byId("policy-check-result").textContent;
     if (saveAs && state.policy.saveAsTestSource !== content) {
       const test = await runPolicyTestBeforeSave(content);
       state.policy.saveAsTestSource = content;
@@ -2132,7 +2151,9 @@ async function createPolicyRecord(event) {
       state.policy.evaluatedSource = content;
       state.policy.validSource = sourcePassedEvaluation ? content : null;
       if (!sourcePassedEvaluation) {
-        byId("policy-check-result").textContent = `${evaluationDetails}\n\nSaved copy with evaluation errors. It cannot be staged until it passes.`;
+        state.policy.checkDiagnostics = evaluationDetails;
+        byId("policy-check-result").textContent = "Saved copy with evaluation errors. It cannot be staged until it passes.";
+        byId("policy-check-result").hidden = true;
         byId("policy-check-result").dataset.state = "invalid";
       }
       updatePolicyDirtyState();
@@ -2147,34 +2168,32 @@ function updatePolicyDirtyState() {
   const dirty = !policy.browsingRevision && contentDirty;
   const checked = policy.evaluatedSource === source;
   const savedSourceHasErrors = policyHasCompileErrors(policy.savedSource);
-  const canEdit = policy.configured && policy.record?.kind === "policy" && !policy.record?.archived && !policy.browsingRevision && !policy.testMode && !policy.saveTestPending;
+  const canEdit = policy.configured && policy.record?.kind === "policy" && !policy.record?.archived && !policy.browsingRevision && !policy.saveTestPending && !policy.testPending && !policy.checkPending;
   const canViewSource = policy.configured && policy.record?.kind === "policy" && !policy.browsingRevision;
   const canTest = policy.configured && policy.record?.kind === "policy" && !policy.browsingRevision && Boolean(source.trim());
   const isDraft = Boolean(policy.record?.isDraft);
-  const canSave = canEdit && checked && !policy.testPending && (isDraft ? Boolean(policy.record.name.trim()) && source.trim() !== "" : contentDirty);
-  const canStage = Boolean(!policy.testMode && policy.stagingReady && policy.record?.kind === "policy" && !policy.record?.archived && !isDraft && !policy.browsingRevision && !contentDirty && !savedSourceHasErrors && !policy.stagePending);
+  const canSave = canEdit && contentDirty && (!isDraft || Boolean(policy.record.name.trim()) && source.trim() !== "");
+  const canSaveAs = canEdit && !isDraft;
   byId("policy-save").disabled = !canSave;
-  byId("policy-save-as").disabled = !canEdit || isDraft || !checked;
-  byId("policy-stage").disabled = !canStage;
-  byId("policy-check").disabled = policy.testMode ? false : !canEdit || !canTest || !policy.compilerReady || !policy.testerReady || policy.testPending;
-  byId("policy-check").textContent = policy.testMode ? "Exit test" : "Analyze";
-  byId("policy-check").setAttribute("aria-pressed", String(policy.testMode));
+  byId("policy-save-as").disabled = !canSaveAs;
+  byId("policy-stage").disabled = policy.stagePending || policy.testPending || policy.checkPending;
+  byId("policy-check").disabled = !canEdit || !canTest || !policy.compilerReady || !policy.testerReady || policy.testPending || policy.checkPending;
+  byId("policy-check").textContent = "Analyze";
   if (!checked && !policy.testPending) byId("policy-check").removeAttribute("data-analysis-state");
   byId("policy-format").disabled = !canEdit;
   byId("policy-source").disabled = !canViewSource;
-  byId("policy-source").readOnly = policy.testMode || policy.saveTestPending;
-  byId("policy-source").setAttribute("aria-readonly", String(policy.testMode || policy.saveTestPending));
-  byId("policy-workbench").dataset.testMode = String(policy.testMode);
-  byId("policy-code-editor").dataset.testMode = String(policy.testMode);
+  byId("policy-source").readOnly = policy.saveTestPending;
+  byId("policy-source").setAttribute("aria-readonly", String(policy.saveTestPending));
   updatePolicyWorkbenchLayout();
   byId("policy-test-gutter").hidden = false;
-  byId("policy-test-status").hidden = !policy.testMode && !policy.saveTestPending;
+  byId("policy-test-status").hidden = true;
+  byId("policy-check-result").hidden = true;
   byId("policy-attribute-rescan").disabled = !canEdit;
-  byId("policy-refresh").disabled = policy.testMode || !policy.record || (!dirty && !policy.browsingRevision && !isDraft);
+  byId("policy-refresh").disabled = policy.testPending || !policy.record || (!dirty && !policy.browsingRevision && !isDraft);
   byId("policy-check").classList.toggle("button-next-evaluate", canEdit && !checked);
   byId("policy-save").classList.toggle("button-save-next", !canSave);
-  byId("policy-save").classList.toggle("button-next-save", canSave);
-  byId("policy-save-as").classList.toggle("button-save-as-ready", canEdit && !isDraft && checked);
+  byId("policy-save").classList.toggle("button-save-as-ready", canSave);
+  byId("policy-save-as").classList.toggle("button-save-as-ready", canSaveAs);
   renderPolicyStageStatus();
   renderPolicyIdentity(policy.record, policy.browsingRevision || policy.revision);
   const result = byId("policy-check-result");
@@ -2188,24 +2207,14 @@ function updatePolicyDirtyState() {
   }
 }
 
-async function runPolicyTest({ interactive = true, source = byId("policy-source").value } = {}) {
+async function runPolicyTest(source = byId("policy-source").value) {
   const policy = state.policy;
-  if (interactive && policy.testMode) {
-    stopPolicyTest();
-    return { passed: false, cancelled: true };
-  }
   if (policy.testPending || !source.trim()) return { passed: false, error: "Policy test could not start for this source." };
   const controller = new AbortController();
-  policy.testMode = interactive;
+  clearPolicyTestResults();
   policy.testPending = true;
   policy.testAbort = controller;
-  policy.testResult = null;
-  policy.testSource = "";
-  byId("policy-test-gutter").replaceChildren();
-  byId("policy-test-gutter").hidden = false;
-  byId("policy-test-status").hidden = false;
-  byId("policy-test-status").textContent = "Preparing test cases and evaluating candidate…";
-  byId("policy-test-status").dataset.state = "pending";
+  byId("policy-test-status").hidden = true;
   byId("policy-check").dataset.analysisState = "pending";
   hidePolicyTestDetails();
   updatePolicyDirtyState();
@@ -2228,22 +2237,17 @@ async function runPolicyTest({ interactive = true, source = byId("policy-source"
     policy.testSource = source;
     byId("policy-check").dataset.analysisState = "success";
     renderPolicyTestGutter(result);
-    const warnings = fixtures.warnings || [];
-    byId("policy-test-status").textContent = `${result.actor_count} actor samples · ${result.services.length} services tested${warnings.length ? ` · ${warnings.join(" ")}` : ""}`;
-    byId("policy-test-status").dataset.state = "complete";
     outcome = { passed: true, result };
   } catch (error) {
     if (error.name !== "AbortError" && !controller.signal.aborted) {
-      const errorLines = policyTestErrorLines(error.message, source.split("\n").length);
+      const parsedLines = policyTestErrorLines(error.message, source.split("\n").length);
+      const errorLines = parsedLines.length ? parsedLines : [1];
       policy.testResult = { error: error.message };
       policy.testSource = source;
       byId("policy-check").dataset.analysisState = "error";
-      if (errorLines.length) {
-        renderPolicyTestErrorGutter(error.message, errorLines);
-        byId("policy-test-status").textContent = `Policy test failed on ${errorLines.length} source ${errorLines.length === 1 ? "line" : "lines"}. Click ERR for details.`;
-      } else {
-        byId("policy-test-status").textContent = error.message;
-      }
+      renderPolicyTestErrorGutter(error.message, errorLines);
+      byId("policy-test-status").hidden = true;
+      byId("policy-test-status").textContent = "";
       byId("policy-test-status").dataset.state = "error";
       outcome = { passed: false, error: error.message };
     }
@@ -2260,12 +2264,23 @@ async function runPolicyTest({ interactive = true, source = byId("policy-source"
 function renderPolicyTestGutter(result) {
   const gutter = byId("policy-test-gutter");
   const lineCount = byId("policy-source").value.split("\n").length;
-  const rulesByLine = new Map();
+  const resultsByLine = new Map();
   for (const service of result.services || []) {
+    if (!service.supported) continue;
     for (const rule of service.rules || []) {
       if (rule.line < 1 || rule.line > lineCount) continue;
-      if (!rulesByLine.has(rule.line)) rulesByLine.set(rule.line, []);
-      rulesByLine.get(rule.line).push({ service, rule });
+      let lineResult = resultsByLine.get(rule.line);
+      if (!lineResult) {
+        lineResult = { count: 0, effect: rule.effect || "deny", services: new Set(), subjects: new Map() };
+        resultsByLine.set(rule.line, lineResult);
+      }
+      const matched = rule.matched || { count: 0, subjects: [] };
+      lineResult.count += Number(matched.count) || 0;
+      if (rule.effect === "deny") lineResult.effect = "deny";
+      lineResult.services.add(service.name || service.id);
+      for (const subject of matched.subjects || []) {
+        if (subject.id && !lineResult.subjects.has(subject.id)) lineResult.subjects.set(subject.id, subject);
+      }
     }
   }
 
@@ -2274,23 +2289,17 @@ function renderPolicyTestGutter(result) {
     const row = document.createElement("div");
     row.className = "policy-test-line";
     row.dataset.line = String(line);
-    for (const { service, rule } of rulesByLine.get(line) || []) {
-      const summary = rule.matched || { count: 0, by_dimension: {}, subjects: [] };
-      const countLabel = policyTestCountLabel(summary);
-      const effect = rule.effect === "allow" ? "Allow" : "Deny";
+    const lineResult = resultsByLine.get(line);
+    if (lineResult) {
       const button = document.createElement("button");
       button.type = "button";
       button.className = "policy-test-line-result";
-      button.dataset.effect = rule.effect || "deny";
-      button.disabled = !service.supported;
-      if (!service.supported) button.textContent = "N/A";
-      else renderPolicyTestCount(button, summary, countLabel);
-      button.title = service.supported
-        ? `Line ${line} · ${service.name || service.id} · ${effect} · ${countLabel}`
-        : `Line ${line} · ${service.name || service.id} was not tested: ${service.reason || "No test endpoint is configured."}`;
-      button.setAttribute("aria-label", button.title + "; show matching identities");
-      const fullCountLabel = countLabel;
-      if (service.supported) button.addEventListener("click", () => showPolicyTestSubjects(summary.subjects || [], "", `Line ${line} · ${service.name || service.id} · ${effect} · ${fullCountLabel}`));
+      button.dataset.effect = lineResult.effect;
+      button.textContent = lineResult.count > 0 ? String(lineResult.count) : "None";
+      const resultTitle = `Line ${line} · ${Array.from(lineResult.services).join(", ")} · ${button.textContent}`;
+      button.title = `${resultTitle} · Show details`;
+      button.setAttribute("aria-label", button.title);
+      button.addEventListener("click", () => showPolicyTestSubjects([...lineResult.subjects.values()], "", resultTitle));
       row.append(button);
     }
     fragment.append(row);
@@ -2306,7 +2315,7 @@ function policyTestErrorLines(message, lineCount) {
     .sort((left, right) => left - right);
 }
 
-function renderPolicyTestErrorGutter(message, errorLines) {
+function renderPolicyTestErrorGutter(message, errorLines, errorTitle = "Policy test error") {
   const gutter = byId("policy-test-gutter");
   const errorLineSet = new Set(errorLines);
   const fragment = document.createDocumentFragment();
@@ -2321,9 +2330,9 @@ function renderPolicyTestErrorGutter(message, errorLines) {
       button.className = "policy-test-line-result";
       button.dataset.effect = "error";
       button.textContent = "ERR";
-      button.title = `Line ${line} · Policy test error · Show diagnostic`;
+      button.title = `Line ${line} · ${errorTitle} · Show diagnostic`;
       button.setAttribute("aria-label", button.title);
-      button.addEventListener("click", () => showPolicyTestError(line, message));
+      button.addEventListener("click", () => showPolicyTestError(line, message, errorTitle));
       row.append(button);
     }
     fragment.append(row);
@@ -2333,62 +2342,14 @@ function renderPolicyTestErrorGutter(message, errorLines) {
   gutter.style.transform = `translateY(${-byId("policy-source").scrollTop}px)`;
 }
 
-function policyTestDimensionCounts(summary) {
-  return state.policy.testDimensions
-    .map((dimension) => ({ dimension, count: Number(summary.by_dimension?.[dimension]) || 0 }))
-    .filter(({ count }) => count > 0);
-}
-
-function policyTestCountLabel(summary) {
-  const dimensions = policyTestDimensionCounts(summary);
-  if (!(Number(summary.count) > 0) && !dimensions.length) return "None";
-  if (dimensions.length) {
-    return dimensions.map(({ dimension, count }) => `${count} ${pluralPolicyTestDimensionLabel(dimension, count)}`).join(" · ");
-  }
-  const count = Number(summary.count) || 0;
-  return `${count} ${count === 1 ? "Match" : "Matches"}`;
-}
-
-function renderPolicyTestCount(button, summary, countLabel) {
-  if (countLabel === "None") {
-    button.textContent = countLabel;
-    return;
-  }
-  const dimensions = policyTestDimensionCounts(summary);
-  if (!dimensions.length) {
-    const number = document.createElement("strong");
-    number.className = "policy-test-count-number";
-    number.textContent = String(summary.count);
-    button.append(number, document.createTextNode(` ${Number(summary.count) === 1 ? "Match" : "Matches"}`));
-    return;
-  }
-  dimensions.forEach(({ dimension, count }, index) => {
-    if (index) button.append(document.createTextNode(" · "));
-    const item = document.createElement("span");
-    item.className = "policy-test-count";
-    const number = document.createElement("strong");
-    number.className = "policy-test-count-number";
-    number.textContent = String(count);
-    const label = document.createElement("span");
-    label.className = "policy-test-count-label";
-    label.textContent = pluralPolicyTestDimensionLabel(dimension, count);
-    item.append(number, document.createTextNode(" "), label);
-    button.append(item);
-  });
-}
-
-function pluralPolicyTestDimensionLabel(dimension, count) {
-  const label = policyTestDimensionLabel(dimension);
-  if (count === 1) return label;
-  return window.pluralize(label);
-}
-
 function policyTestDimensionLabel(name) {
   return String(name).split("_").map((word) => word.charAt(0).toUpperCase() + word.slice(1)).join(" ");
 }
 
 function showPolicyTestSubjects(subjects, dimension, title) {
   const list = byId("policy-analyze-subjects");
+  const details = byId("policy-test-details");
+  details.dataset.detailKind = "subjects";
   const unique = new Map();
   for (const subject of subjects) {
     const key = dimension ? subject.dimensions?.[dimension] : subject.id;
@@ -2414,23 +2375,44 @@ function showPolicyTestSubjects(subjects, dimension, title) {
       list.append(item);
     }
   }
-  byId("policy-test-details").hidden = false;
+  details.showModal();
 }
 
-function showPolicyTestError(line, error) {
+function showPolicyTestError(line, error, title = "Policy test error") {
+  const details = byId("policy-test-details");
   const list = byId("policy-analyze-subjects");
-  byId("policy-analyze-title").textContent = "Policy test error";
-  byId("policy-analyze-subject-title").textContent = `Line ${line} diagnostic`;
+  details.dataset.detailKind = "error";
+  details.setAttribute("aria-label", "Analyze error details");
+  byId("policy-analyze-title").textContent = title;
+  byId("policy-analyze-subject-title").textContent = "";
   const detail = document.createElement("div");
-  detail.className = "policy-test-subject";
+  detail.className = "policy-test-subject policy-test-diagnostic";
   detail.textContent = error;
   list.replaceChildren(detail);
-  byId("policy-test-details").hidden = false;
+  details.showModal();
 }
 
 function hidePolicyTestDetails() {
-  byId("policy-test-details").hidden = true;
+  const details = byId("policy-test-details");
+  if (details.open) details.close();
+  delete details.dataset.detailKind;
+  details.setAttribute("aria-label", "Analyze details");
   byId("policy-analyze-subjects").replaceChildren();
+}
+
+function clearPolicyTestResults() {
+  const policy = state.policy;
+  policy.testResult = null;
+  policy.testSource = "";
+  policy.testDimensions = [];
+  byId("policy-test-gutter").replaceChildren();
+  byId("policy-test-gutter").hidden = false;
+  byId("policy-check-result").hidden = true;
+  byId("policy-check-result").textContent = "";
+  byId("policy-test-status").hidden = true;
+  byId("policy-test-status").textContent = "";
+  byId("policy-test-status").dataset.state = "";
+  hidePolicyTestDetails();
 }
 
 function stopPolicyTest() {
@@ -2438,11 +2420,7 @@ function stopPolicyTest() {
   if (policy.testAbort) policy.testAbort.abort();
   policy.testAbort = null;
   policy.testPending = false;
-  policy.testMode = false;
-  policy.testResult = null;
-  policy.testSource = "";
-  policy.testDimensions = [];
-  hidePolicyTestDetails();
+  clearPolicyTestResults();
   if (byId("policy-check").dataset.analysisState === "pending") {
     byId("policy-check").dataset.analysisState = policy.validSource === policy.evaluatedSource ? "success" : "";
   }
@@ -2464,8 +2442,9 @@ function renderPolicyStageStatus() {
     status.textContent = policy.stageError;
     status.dataset.state = "error";
   } else if (policy.record?.kind === "policy" && policyHasCompileErrors(policy.savedSource)) {
-    status.textContent = "This saved revision has evaluation errors and cannot be staged.";
-    status.dataset.state = "error";
+    status.hidden = true;
+    status.textContent = "";
+    status.dataset.state = "";
   } else if (policy.stagedCandidate) {
     const candidate = policy.stagedCandidate;
     status.textContent = `Staged ${candidate.record_name} r${candidate.record_revision} · SHA-256 ${candidate.bundle_sha256.slice(0, 12)} · not pushed`;
@@ -2482,7 +2461,43 @@ function renderPolicyStageStatus() {
 
 async function stageSelectedPolicy() {
   const policy = state.policy;
-  if (!policy.record || policy.record.kind !== "policy" || policy.record.isDraft || policy.browsingRevision || byId("policy-source").value !== policy.savedSource || policyHasCompileErrors(policy.savedSource) || !policy.stagingReady || policy.stagePending) return;
+  if (policy.stagePending || policy.testPending || policy.checkPending) return;
+  policy.stageError = "";
+  renderPolicyStageStatus();
+  if (!policy.record || policy.record.kind !== "policy" || policy.record.isDraft || policy.record.archived || policy.browsingRevision) {
+    policy.stageError = "Select a saved policy revision to stage.";
+    renderPolicyStageStatus();
+    return;
+  }
+  const source = byId("policy-source").value;
+  if (!await analyzePolicySource(source)) {
+    policy.stageError = "Analysis failed. Candidate was not staged.";
+    renderPolicyStageStatus();
+    return;
+  }
+  if (source !== policy.savedSource) {
+    policy.stageError = "Save the analyzed changes before staging.";
+    renderPolicyStageStatus();
+    return;
+  }
+  if (!policy.stagingReady) {
+    policy.stageError = "Policy staging is not configured.";
+    renderPolicyStageStatus();
+    return;
+  }
+  byId("policy-stage-confirm-summary").textContent = `${policy.record.name} · Version ${policy.record.current_revision} will be staged as a candidate.`;
+  byId("policy-stage-dialog").showModal();
+}
+
+async function confirmPolicyStage() {
+  const policy = state.policy;
+  if (policy.stagePending) return;
+  byId("policy-stage-dialog").close();
+  if (!policy.record || policy.record.kind !== "policy" || policy.record.isDraft || policy.browsingRevision || byId("policy-source").value !== policy.savedSource) {
+    policy.stageError = "Save the current policy revision before staging.";
+    renderPolicyStageStatus();
+    return;
+  }
   policy.stagePending = true;
   policy.stageError = "";
   updatePolicyDirtyState();
@@ -2513,14 +2528,19 @@ async function reloadPolicyWorkspace() {
   await selectPolicyRecord(state.policy.record.id, true, true);
 }
 
-async function checkPolicy() {
+async function checkPolicy(source = byId("policy-source").value) {
   const button = byId("policy-check");
-  const source = byId("policy-source").value;
+  if (state.policy.checkPending) return false;
+  const generation = (state.policy.checkGeneration || 0) + 1;
+  state.policy.checkGeneration = generation;
+  state.policy.checkPending = true;
+    state.policy.checkDiagnostics = "";
   state.policy.errorOffsets = [];
   updatePolicyHighlight();
   button.disabled = true;
   button.dataset.analysisState = "pending";
   byId("policy-check-result").textContent = "Checking with ZPLC…";
+  updatePolicyDirtyState();
   let valid = false;
   try {
     const response = await fetch("/api/policy/check", {
@@ -2528,23 +2548,30 @@ async function checkPolicy() {
       body: JSON.stringify({ source }),
     });
     const result = await response.json();
+    if (generation !== state.policy.checkGeneration || source !== byId("policy-source").value) return false;
     valid = response.ok && result.valid;
     policySetCheckResult(valid, result.diagnostics || result.error || "No compiler diagnostics.", source);
   } catch (error) {
+    if (generation !== state.policy.checkGeneration || source !== byId("policy-source").value) return false;
     policySetCheckResult(false, error.message, source);
   } finally {
+    state.policy.checkPending = false;
     updatePolicyDirtyState();
   }
   return valid;
 }
 
+async function analyzePolicySource(source) {
+  if (state.policy.testPending || state.policy.checkPending) return false;
+  clearPolicyTestResults();
+  state.policy.checkDiagnostics = "";
+  if (!await checkPolicy(source) || source !== byId("policy-source").value) return;
+  return (await runPolicyTest(source)).passed;
+}
+
 async function evaluateAndTestPolicy() {
-  if (state.policy.testMode) {
-    stopPolicyTest();
-    return;
-  }
-  if (!await checkPolicy()) return;
-  await runPolicyTest({ interactive: true });
+  if (state.policy.testPending || state.policy.checkPending) return;
+  await analyzePolicySource(byId("policy-source").value);
 }
 
 function policySetCheckResult(valid, diagnostics, source) {
@@ -2554,9 +2581,19 @@ function policySetCheckResult(valid, diagnostics, source) {
   policy.errorOffsets = valid ? [] : extractZPLErrorOffsets(diagnostics, source);
   updatePolicyHighlight();
   const result = byId("policy-check-result");
-  result.textContent = valid ? diagnostics : `${diagnostics}\n\nThis source can be saved, but it cannot be staged until it passes evaluation.`;
+  policy.checkDiagnostics = valid ? "" : diagnostics;
+  result.hidden = true;
+  result.textContent = "";
   result.dataset.state = valid ? "valid" : "invalid";
   byId("policy-check").dataset.analysisState = valid ? "success" : "error";
+  byId("policy-test-status").hidden = true;
+  byId("policy-test-status").textContent = "";
+  if (!valid) {
+    const parsedLines = policyTestErrorLines(diagnostics, source.split("\n").length);
+    const errorLines = parsedLines.length ? parsedLines : [1];
+    renderPolicyTestErrorGutter(diagnostics, errorLines, "Compiler error");
+    byId("policy-test-status").dataset.state = "error";
+  }
   if (policy.errorOffsets.length) {
     const beforeError = source.slice(0, policy.errorOffsets[0]);
     const line = beforeError.split("\n").length - 1;
@@ -2569,7 +2606,9 @@ function policySetCheckResult(valid, diagnostics, source) {
 
 async function savePolicy() {
   const source = byId("policy-source").value;
-  if (state.policy.testPending || state.policy.saveTestPending) return;
+  if (state.policy.testPending || state.policy.saveTestPending || state.policy.checkPending) return;
+  if (state.policy.evaluatedSource !== source) await checkPolicy(source);
+  if (source !== byId("policy-source").value) return;
   const test = await runPolicyTestBeforeSave(source);
   if (test.cancelled) return;
   byId("version-note").value = "";
@@ -2590,7 +2629,7 @@ async function runPolicyTestBeforeSave(source) {
   byId("policy-test-status").textContent = "Running policy test before save…";
   byId("policy-test-status").dataset.state = "pending";
   updatePolicyDirtyState();
-  const test = await runPolicyTest({ interactive: false, source });
+  const test = await runPolicyTest(source);
   policy.saveTestPending = false;
   policy.saveTestSource = source;
   policy.saveTestError = test.passed ? "" : test.error || "The test was cancelled.";
@@ -2617,7 +2656,7 @@ async function appendPolicyVersion(summary) {
     return;
   }
   const savedWithErrors = policy.validSource !== submittedSource;
-  const diagnostics = byId("policy-check-result").textContent;
+  const diagnostics = policy.checkDiagnostics || byId("policy-check-result").textContent;
   const recordID = policy.record.id;
   const expectedRevision = policy.revision;
   button.disabled = true;
@@ -2666,8 +2705,9 @@ async function appendPolicyVersion(summary) {
     policy.evaluatedSource = submittedSource;
     policy.validSource = savedWithErrors ? null : submittedSource;
     byId("policy-check-result").textContent = savedWithErrors
-      ? `${diagnostics}\n\nSaved with evaluation errors. This revision cannot be staged until it passes.`
+      ? "Saved with evaluation errors. This revision cannot be staged until it passes."
       : result.diagnostics || `Created Version ${nextRevision}.`;
+    byId("policy-check-result").hidden = true;
     byId("policy-check-result").dataset.state = savedWithErrors ? "invalid" : "valid";
     updatePolicyDirtyState();
   } catch (error) {
@@ -3152,6 +3192,11 @@ document.addEventListener("click", (event) => {
   if (revision) browsePolicyRevision(Number(revision.dataset.revision));
 });
 byId("policy-source").addEventListener("input", () => {
+  state.policy.checkGeneration = (state.policy.checkGeneration || 0) + 1;
+  if (state.policy.testAbort) state.policy.testAbort.abort();
+  clearPolicyTestResults();
+  state.policy.checkDiagnostics = "";
+  byId("policy-check-result").hidden = true;
   state.policy.evaluatedSource = null;
   state.policy.validSource = null;
   state.policy.saveTestSource = "";
@@ -3159,10 +3204,6 @@ byId("policy-source").addEventListener("input", () => {
   state.policy.saveAsTestSource = "";
   state.policy.saveAsTestError = "";
   state.policy.errorOffsets = [];
-  if (state.policy.testResult && !byId("policy-test-details").hidden) {
-    byId("policy-test-status").textContent = "Source changed since these results were produced.";
-    byId("policy-test-status").dataset.state = "stale";
-  }
   byId("policy-check-result").dataset.state = "";
   updatePolicyHighlight();
   updatePolicyDirtyState();
@@ -3170,7 +3211,11 @@ byId("policy-source").addEventListener("input", () => {
 });
 byId("policy-format").addEventListener("click", formatPolicySource);
 byId("policy-check").addEventListener("click", evaluateAndTestPolicy);
+byId("policy-stage-cancel").addEventListener("click", () => byId("policy-stage-dialog").close());
+byId("policy-stage-confirm").addEventListener("click", confirmPolicyStage);
 byId("policy-test-details-close").addEventListener("click", hidePolicyTestDetails);
+byId("policy-analyze-details-dismiss").addEventListener("click", hidePolicyTestDetails);
+byId("policy-analyze-details-dismiss").addEventListener("click", hidePolicyTestDetails);
 byId("policy-attribute-rescan").addEventListener("click", rescanPolicyAttributes);
 byId("policy-draft-name").addEventListener("input", () => {
   if (!state.policy.record?.isDraft) return;

@@ -6,7 +6,6 @@ define MilwaukeeReceiving as adapter with greatlakes.location:'Milwaukee, Wiscon
 define ShenzhenEngineering as adapter with greatlakes.location:'Shenzhen, China' and greatlakes.department:'Shenzhen Engineering'.
 define TijuanaAssembly as adapter with greatlakes.location:'Tijuana, Mexico' and greatlakes.department:Assembly.
 define TijuanaTest as adapter with greatlakes.location:'Tijuana, Mexico' and greatlakes.department:'Test and Quality'.
-define VisaService as a service with device.zpr.adapter.cn:'vs.zpr'.
 
 service A2Svc as json {"service_class":"A2Svc"}.
   allow A1.

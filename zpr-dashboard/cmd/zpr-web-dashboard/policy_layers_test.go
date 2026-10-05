@@ -1,6 +1,8 @@
 package main
 
 import (
+	"context"
+	"encoding/json"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -121,6 +123,69 @@ func TestGreatLakesPolicyParsesWithZPLCWhenAvailable(t *testing.T) {
 	output, err := exec.Command(compiler, "-c", configPath, "-p", policyPath).CombinedOutput()
 	if err != nil {
 		t.Fatalf("Great Lakes ZPL parse failed: %v\n%s", err, output)
+	}
+}
+
+func TestAllOrganizationPoliciesPassConfiguredZPLC(t *testing.T) {
+	compiler := os.Getenv("ZPR_ZPLC_BIN")
+	if compiler == "" {
+		t.Skip("set ZPR_ZPLC_BIN to validate every organization with the current compiler")
+	}
+	profiles, err := filepath.Glob(filepath.Join("examples", "organizations", "*.json"))
+	if err != nil || len(profiles) == 0 {
+		t.Fatalf("organization profiles unavailable: %v", err)
+	}
+	for _, profile := range profiles {
+		organizationID := strings.TrimSuffix(filepath.Base(profile), ".json")
+		t.Run(organizationID, func(t *testing.T) {
+			organization, err := loadSimulatorOrganization(filepath.Join("examples", "organizations"), organizationID)
+			if err != nil {
+				t.Fatal(err)
+			}
+			configPath, err := filepath.Abs(filepath.Join("examples", organization.PolicyConfig))
+			if err != nil {
+				t.Fatal(err)
+			}
+			workspace := &policyWorkspace{compiler: compiler, configPath: configPath}
+			policyPath := filepath.Join(t.TempDir(), "runtime.zpl")
+			if err := writeOrganizationPolicy("examples", organizationID, policyPath); err != nil {
+				t.Fatal(err)
+			}
+			source, err := os.ReadFile(policyPath)
+			if err != nil {
+				t.Fatal(err)
+			}
+			t.Run("runtime", func(t *testing.T) {
+				runtimeConfigPath := configPath
+				if organizationID != "great-lakes" {
+					runtimeConfigPath = os.Getenv("ZPR_POLICY_RUNTIME_CONFIG_FILE")
+					if runtimeConfigPath == "" {
+						t.Skip("set ZPR_POLICY_RUNTIME_CONFIG_FILE to validate composed runtime policies")
+					}
+				}
+				runtimeWorkspace := &policyWorkspace{compiler: compiler, configPath: runtimeConfigPath}
+				if result := runtimeWorkspace.check(context.Background(), string(source)); !result.Valid {
+					t.Fatal(result.Diagnostics)
+				}
+			})
+			contents, err := os.ReadFile(filepath.Join("examples", organization.PolicyCatalog))
+			if err != nil {
+				t.Fatal(err)
+			}
+			var catalog demoPolicyCatalog
+			if err := json.Unmarshal(contents, &catalog); err != nil {
+				t.Fatal(err)
+			}
+			for _, record := range catalog.Records {
+				if record.Kind == "policy" {
+					t.Run(record.Name, func(t *testing.T) {
+						if result := workspace.check(context.Background(), record.Content); !result.Valid {
+							t.Fatal(result.Diagnostics)
+						}
+					})
+				}
+			}
+		})
 	}
 }
 

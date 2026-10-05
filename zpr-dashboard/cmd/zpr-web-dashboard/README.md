@@ -147,6 +147,12 @@ parse-only mode. Saves require the current revision number and append a new
 revision transactionally; stale writers receive a conflict. A version note and
 server-configured `ZPR_POLICY_AUTHOR` (default `local-operator`) are recorded.
 
+The local `scripts/dashboard-stack.sh` launcher selects the newer executable
+between the compiler's release and debug builds unless `ZPR_ZPLC_BIN` is set.
+Rebuild the selected compiler after grammar changes; passing source tests alone
+does not update the compiler used by a running Policy-Service. Verify the live
+`/api/policy/check` response before claiming the editor uses the new grammar.
+
 To load the optional fictional Northstar departments/services/policies,
 point `ZPR_POLICY_DEMO_CATALOG_FILE` at
 `cmd/zpr-web-dashboard/examples/northstar/demo-policy-catalog.json` and use
@@ -280,3 +286,17 @@ the key-file option is preferred.
 go test ./cmd/zpr-web-dashboard
 go test ./...
 ```
+
+To validate every organization catalog and composed runtime policy with the
+current compiler, run from the dashboard repository:
+
+```sh
+ZPR_ZPLC_BIN="$PWD/../../zpr-compiler/target/release/zplc" \
+ZPR_POLICY_RUNTIME_CONFIG_FILE="$PWD/../../.local-runtime/linux-integration/pregen/v6-1node-3actor-ping.zplc" \
+go test ./cmd/zpr-web-dashboard -run '^TestAllOrganizationPoliciesPassConfiguredZPLC$' -count=1 -v
+```
+
+Catalogs use each organization's demo configuration. Shared one-node runtime
+layers use `ZPR_POLICY_RUNTIME_CONFIG_FILE`; Great Lakes uses its multi-node
+demo configuration. These are compiler checks, not proof of live forwarding or
+policy deployment. Catalog imports do not overwrite existing saved revisions.

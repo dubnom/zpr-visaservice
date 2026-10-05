@@ -917,7 +917,65 @@ test("policy actions share a non-overlapping responsive toolbar", async ({ page,
     });
     expect(browseBounds.x + browseBounds.width).toBeLessThanOrEqual(rescanBounds.x);
   }
-  await expect(actions.getByRole("button", { name: "Compile & Stage" })).toBeVisible();
+  await expect(actions.getByRole("button", { name: "Stage", exact: true })).toBeEnabled();
+});
+
+test("Save is dirty-gated and uses the Save As color", async ({ page, appURL, api }) => {
+  await page.goto(appURL + "/#policy");
+  await openPolicyPicker(page);
+  await page.locator('[data-record-id="test-policy"]').click();
+  const save = page.locator("#policy-save");
+  const saveAs = page.locator("#policy-save-as");
+  await expect(save).toBeDisabled();
+  await expect(saveAs).toBeEnabled();
+  const saveAsColor = await saveAs.evaluate((button) => getComputedStyle(button).backgroundColor);
+  await page.locator("#policy-source").fill(`${await page.locator("#policy-source").inputValue()}\n# unsaved change\n`);
+  await expect(save).toBeEnabled();
+  await expect(save).toHaveCSS("background-color", saveAsColor);
+});
+
+test("Stage analyzes, blocks errors, and requires confirmation", async ({ page, appURL, api }) => {
+  api.policy.staging_ready = true;
+  let checkCalls = 0;
+  let testCalls = 0;
+  let stageCalls = 0;
+  api.handlers.set("/api/policy/check", async (route) => {
+    checkCalls += 1;
+    if (checkCalls === 1) return route.fulfill({ status: 422, json: { valid: false, diagnostics: "error: [ line 1, column 1 ] invalid" } });
+    return route.fulfill({ json: { valid: true, diagnostics: "Compiled successfully." } });
+  });
+  api.handlers.set("/api/policy/test/fixtures", async (route) => route.fulfill({ json: { actors: [], services: [], warnings: [] } }));
+  api.handlers.set("/api/policy/test", async (route) => {
+    testCalls += 1;
+    await route.fulfill({ json: { api_version: 1, actor_count: 0, services: [] } });
+  });
+  api.handlers.set("/api/policy/records/test-policy/stage", async (route) => {
+    stageCalls += 1;
+    await route.fulfill({ json: { record_name: "Test policy", record_revision: 1, bundle_sha256: "a".repeat(64) } });
+  });
+  await page.goto(appURL + "/#policy");
+  await openPolicyPicker(page);
+  await page.locator('[data-record-id="test-policy"]').click();
+  const stage = page.locator("#policy-stage");
+  const dialog = page.locator("#policy-stage-dialog");
+  await expect(stage).toHaveText("Stage");
+  await expect(stage).toBeEnabled();
+  await stage.click();
+  await expect(page.locator("#policy-check")).toHaveAttribute("data-analysis-state", "error");
+  await expect(dialog).toBeHidden();
+  await expect(page.locator("#policy-stage-status")).toContainText("Analysis failed");
+  expect(testCalls).toBe(0);
+  expect(stageCalls).toBe(0);
+
+  await stage.click();
+  await expect(dialog).toBeVisible();
+  await expect(dialog).toContainText("Test policy · Version 1");
+  await expect(dialog).toContainText("does not push or activate");
+  expect(testCalls).toBe(1);
+  expect(stageCalls).toBe(0);
+  await dialog.locator("#policy-stage-confirm").click();
+  await expect.poll(() => stageCalls).toBe(1);
+  await expect(page.locator("#policy-stage-status")).toContainText("Staged Test policy r1");
 });
 
 test("policy source with evaluation errors can be saved with warning but cannot be staged", async ({ page, appURL, api }) => {
@@ -945,9 +1003,16 @@ test("policy source with evaluation errors can be saved with warning but cannot 
   await page.locator("#policy-source").fill(invalidSource);
   await page.locator("#policy-check").click();
   await expect(page.locator("#policy-check")).toHaveAttribute("data-analysis-state", "error");
+  const compilerErrorMarker = page.locator('#policy-test-gutter [data-line="2"] .policy-test-line-result[data-effect="error"]');
+  await expect(compilerErrorMarker).toHaveText("ERR");
+  await expect(page.locator("#policy-check-result")).toBeHidden();
+  await expect(page.locator("#policy-test-status")).toBeHidden();
+  await compilerErrorMarker.click();
+  await expect(page.locator("#policy-test-details")).toContainText("unexpected token");
+  await page.locator("#policy-test-details-close").click();
   await page.mouse.move(0, 0);
   await expect(page.locator("#policy-check")).toHaveCSS("background-color", "rgb(184, 59, 59)");
-  await expect(page.locator("#policy-check-result")).toContainText("cannot be staged");
+  await expect(page.locator("#policy-check-result")).toBeHidden();
   await expect(page.locator("#policy-save")).toBeEnabled();
   await page.locator("#policy-save").click();
   await expect(page.locator("#version-warning")).toBeVisible();
@@ -956,9 +1021,9 @@ test("policy source with evaluation errors can be saved with warning but cannot 
   await page.locator("#version-save").click();
   await expect.poll(() => savedRequest).toBeTruthy();
   expect(savedRequest.content).toBe(invalidSource);
-  await expect(page.locator("#policy-check-result")).toContainText("Saved with evaluation errors");
-  await expect(page.locator("#policy-stage")).toBeDisabled();
-  await expect(page.locator("#policy-stage-status")).toContainText("cannot be staged");
+  await expect(page.locator("#policy-check-result")).toBeHidden();
+  await expect(page.locator("#policy-stage")).toBeEnabled();
+  await expect(page.locator("#policy-stage-status")).toBeHidden();
   const copiedRecord = { ...api.policy.records[0], id: "invalid-policy-copy", name: "Test policy copy", current_revision: 1, content: invalidSource, content_hash: "invalid-copy" };
   let saveAsRequest;
   api.handlers.set("/api/policy/records", async (route) => {
@@ -1139,8 +1204,17 @@ test("read-only browser can be embedded twice with independent filters and API b
   await expect(viewers.nth(0).locator(".pb-title")).toHaveText("Select a record");
 });
 
-test("Analyze shows per-line counts and matching identities inline", async ({ page, appURL, api }) => {
-  api.handlers.set("/api/policy/check", async (route) => route.fulfill({ json: { valid: true, diagnostics: "Compiled successfully." } }));
+test("Analyze gutter opens a dialog and resets when switching policies", async ({ page, appURL, api }) => {
+  const secondPolicy = { ...api.policy.records[0], id: "test-policy-next", name: "Second policy", content: "define SecondGroup as user.\n" };
+  api.policy.records.push(secondPolicy);
+  api.handlers.set("/api/policy/records/test-policy-next", async (route) => route.fulfill({ json: secondPolicy }));
+  api.handlers.set("/api/policy/records/test-policy-next/revisions", async (route) => route.fulfill({ json: [] }));
+  let checkCalls = 0;
+  api.handlers.set("/api/policy/check", async (route) => {
+    checkCalls += 1;
+    if (checkCalls > 1) return route.fulfill({ status: 422, json: { valid: false, diagnostics: "error: [ line 2, column 1 ] unexpected token" } });
+    return route.fulfill({ json: { valid: true, diagnostics: "Compiled successfully." } });
+  });
   api.handlers.set("/api/policy/test/fixtures", async (route) => {
     await route.fulfill({ json: {
       actors: [
@@ -1176,29 +1250,54 @@ test("Analyze shows per-line counts and matching identities inline", async ({ pa
   await expect(page.locator("#policy-check")).toBeEnabled();
   const gutter = page.locator("#policy-test-gutter");
   await expect(gutter).toBeVisible();
-  await expect(gutter).toHaveCSS("width", "92px");
-  await expect(page.locator("#policy-source")).toHaveCSS("padding-left", "112px");
+  await expect(gutter).toHaveCSS("width", "48px");
+  await expect(page.locator("#policy-source")).toHaveCSS("padding-left", "0px");
+  const scrollGeometry = await page.locator("#policy-code-editor").evaluate((editor) => {
+    const source = editor.querySelector("#policy-source");
+    const gutter = editor.querySelector("#policy-test-gutter");
+    const original = source.value;
+    source.value = `${original}\n${"x".repeat(600)}`;
+    source.scrollLeft = 160;
+    const sourceBounds = source.getBoundingClientRect();
+    const gutterBounds = gutter.getBoundingClientRect();
+    const geometry = {
+      scrollable: source.scrollWidth > source.clientWidth,
+      scrollLeft: source.scrollLeft,
+      sourceLeft: sourceBounds.left,
+      textPaddingLeft: getComputedStyle(source).paddingLeft,
+      gutterRight: gutterBounds.right,
+      sourceBottom: sourceBounds.bottom,
+      gutterBottom: gutterBounds.bottom,
+    };
+    source.value = original;
+    source.scrollLeft = 0;
+    return geometry;
+  });
+  expect(scrollGeometry.scrollable).toBeTruthy();
+  expect(scrollGeometry.scrollLeft).toBeGreaterThan(0);
+  expect(scrollGeometry.sourceLeft).toBeGreaterThanOrEqual(scrollGeometry.gutterRight);
+  expect(scrollGeometry.textPaddingLeft).toBe("0px");
+  expect(scrollGeometry.sourceBottom).toBeLessThanOrEqual(scrollGeometry.gutterBottom + 1);
   await page.locator("#policy-check").click();
-  await expect(page.locator("#policy-check")).toHaveText("Exit test");
+  await expect(page.locator("#policy-check")).toHaveText("Analyze");
   await expect(page.locator("#policy-check")).toBeVisible();
   await expect(page.locator("#policy-check")).toBeEnabled();
   await expect(page.locator("#policy-source")).toBeEnabled();
-  await expect(page.locator("#policy-source")).not.toBeEditable();
+  await expect(page.locator("#policy-source")).toBeEditable();
   await expect(page.locator(".policy-catalog-pane")).toBeHidden();
   await expect(page.locator("#policy-test-gutter")).toBeVisible();
   await expect(page.locator("#policy-check")).toHaveAttribute("data-analysis-state", "success");
   await page.mouse.move(0, 0);
   await expect(page.locator("#policy-check")).toHaveCSS("background-color", "rgb(35, 117, 76)");
   const lineResult = page.locator('#policy-test-gutter [data-line="2"] .policy-test-line-result');
-  await expect(lineResult.nth(0)).toHaveText("1 Device · 1 User");
-  await expect(lineResult.nth(0).locator(".policy-test-count-number").first()).toHaveCSS("font-weight", "800");
-  await expect(lineResult.nth(1)).toHaveText("None");
-  await lineResult.nth(0).click();
+  await expect(lineResult).toHaveCount(1);
+  await expect(lineResult).toHaveText("1");
+  await lineResult.click();
   const details = page.locator("#policy-test-details");
   await expect(details).toBeVisible();
+  await expect(details.locator("#policy-analyze-title")).toBeVisible();
   await expect(details.locator("#policy-analyze-subjects")).toContainText("Alice Rivera on machine-1");
-  await expect(details.locator("#policy-analyze-subject-title")).toContainText("1 Device");
-  await expect(details.locator("#policy-analyze-subject-title")).toContainText("1 User");
+  await expect(details.locator("#policy-analyze-subject-title")).toContainText("Line 2 · EchoWeb · 1");
   await expect(details.locator("#policy-analyze-subjects")).toContainText("Device: machine-1");
   await page.evaluate(() => showPolicyTestSubjects(Array.from({ length: 105 }, (_, index) => ({ id: `member-${index}`, label: `Member ${index}`, dimensions: { device: `device-${index}` } })), "", "Device matches"));
   await expect(details.locator(".policy-test-subject")).toHaveCount(100);
@@ -1207,12 +1306,52 @@ test("Analyze shows per-line counts and matching identities inline", async ({ pa
   await details.locator("#policy-test-details-close").click();
   await expect(details).toBeHidden();
   await page.locator("#policy-check").click();
+  await expect.poll(() => checkCalls).toBe(2);
   await expect(page.locator("#policy-check")).toHaveText("Analyze");
-  await expect(page.locator("#policy-source")).toBeEnabled();
+  await expect(page.locator("#policy-source")).toBeEditable();
+  await expect(page.locator("#policy-check")).toHaveAttribute("data-analysis-state", "error");
+  await expect(page.locator('#policy-test-gutter [data-line="2"] .policy-test-line-result[data-effect="error"]')).toHaveText("ERR");
+  await expect(page.locator("#policy-check-result")).toBeHidden();
+  await expect(page.locator("#policy-test-status")).toBeHidden();
   await expect(page.locator(".policy-catalog-pane")).toBeHidden();
   await expect(gutter).toBeVisible();
-  await expect(page.locator("#policy-source")).toHaveCSS("padding-left", "112px");
+  await expect(page.locator("#policy-source")).toHaveCSS("padding-left", "0px");
+  await page.evaluate(() => { window.confirm = () => true; });
+  await openPolicyPicker(page);
+  await page.locator('[data-record-id="test-policy-next"]').click();
+  await expect(page.locator("#policy-record-title")).toHaveText("Second policy");
+  await expect(page.locator("#policy-source")).toHaveValue("define SecondGroup as user.\n");
+  await expect(gutter.locator(".policy-test-line-result")).toHaveCount(0);
+  await expect(page.locator("#policy-check-result")).toBeHidden();
+  await expect(page.locator("#policy-test-status")).toBeHidden();
+  await expect(details).toBeHidden();
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBeTruthy();
+});
+
+test("browsing historical revisions only warns for dirty working source", async ({ page, appURL, api }) => {
+  const savedSource = "define Employee as user.\n";
+  const dirtySource = "define Employee as user.\n# unsaved edit\n";
+  api.policy.records[0].current_revision = 3;
+  api.policy.records[0].content = savedSource;
+  api.handlers.set("/api/policy/records/test-policy/revisions", async (route) => route.fulfill({ json: [
+    { number: 1, content_hash: "revision-1", summary: "First revision", author: "tester", created_at: "2026-10-01T12:00:00Z" },
+    { number: 2, content_hash: "revision-2", summary: "Second revision", author: "tester", created_at: "2026-10-02T12:00:00Z" },
+    { number: 3, content_hash: "revision-3", summary: "Current revision", author: "tester", created_at: "2026-10-03T12:00:00Z" },
+  ] }));
+  api.handlers.set("/api/policy/records/test-policy/revisions/1", async (route) => route.fulfill({ json: { number: 1, content: "define FirstGroup as user.\n", content_hash: "revision-1", summary: "First revision" } }));
+  api.handlers.set("/api/policy/records/test-policy/revisions/2", async (route) => route.fulfill({ json: { number: 2, content: "define SecondGroup as user.\n", content_hash: "revision-2", summary: "Second revision" } }));
+  await page.goto(appURL + "/#policy");
+  await page.evaluate(() => { window.confirmCalls = 0; window.confirm = () => { window.confirmCalls += 1; return false; }; });
+  await page.locator("#policy-source").fill(dirtySource);
+  await page.locator('[data-revision="1"]').click();
+  await expect.poll(() => page.evaluate(() => window.confirmCalls)).toBe(1);
+  await expect(page.locator("#policy-source")).toHaveValue(dirtySource);
+  await page.locator("#policy-source").fill(savedSource);
+  await page.locator('[data-revision="1"]').click();
+  await expect(page.locator("#policy-source")).toHaveValue("define FirstGroup as user.\n");
+  await page.locator('[data-revision="2"]').click();
+  await expect(page.locator("#policy-source")).toHaveValue("define SecondGroup as user.\n");
+  await expect.poll(() => page.evaluate(() => window.confirmCalls)).toBe(1);
 });
 
 test("policy Test shows compiler diagnostics as clickable line error markers", async ({ page, appURL, api }) => {
@@ -1230,19 +1369,21 @@ test("policy Test shows compiler diagnostics as clickable line error markers", a
   await page.locator("#policy-check").click();
   const errorMarker = page.locator('#policy-test-gutter [data-line="2"] .policy-test-line-result[data-effect="error"]');
   await expect(errorMarker).toHaveText("ERR");
-  await expect(page.locator("#policy-test-gutter")).toHaveCSS("width", "92px");
+  await expect(page.locator("#policy-test-gutter")).toHaveCSS("width", "48px");
   await expect(page.locator("#policy-test-gutter")).toHaveCSS("border-right-style", "solid");
-  await expect(page.locator("#policy-test-gutter")).toHaveCSS("width", "92px");
+  await expect(page.locator("#policy-test-gutter")).toHaveCSS("width", "48px");
   await expect(page.locator("#policy-test-gutter")).toHaveCSS("border-right-style", "solid");
-  await expect(page.locator("#policy-test-status")).toContainText("Click ERR for details");
+  await expect(page.locator("#policy-test-status")).toBeHidden();
   await expect(page.locator("#policy-check")).toHaveAttribute("data-analysis-state", "error");
   await page.mouse.move(0, 0);
   await expect(page.locator("#policy-check")).toHaveCSS("background-color", "rgb(184, 59, 59)");
   await errorMarker.click();
   const details = page.locator("#policy-test-details");
   await expect(details).toBeVisible();
-  await expect(details.locator("#policy-analyze-subject-title")).toHaveText("Line 2 diagnostic");
-  await expect(details.locator("#policy-analyze-subjects")).toContainText("explicit service targets are rejected");
+  await expect(details.locator("#policy-analyze-title")).toBeHidden();
+  await expect(details.locator("#policy-analyze-subject-title")).toBeHidden();
+  await expect(details.locator(".policy-test-diagnostic")).toHaveText("Candidate policy compilation failed: error: [ line 2, column 1 ] explicit service targets are rejected");
+  await expect(details.locator(".policy-test-diagnostic")).toHaveCSS("font-size", "15px");
 });
 
 for (const view of [

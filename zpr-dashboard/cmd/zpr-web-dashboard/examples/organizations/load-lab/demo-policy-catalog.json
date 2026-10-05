@@ -7,7 +7,7 @@
       "kind": "policy",
       "content_type": "text/vnd.zpr.zpl",
       "metadata": {"demo": true, "live": false},
-      "content": "define LoadClient as adapter with zpr.adapter.cn:'finance-client'.\ndefine LoadService001 as service with device.zpr.adapter.cn:'echo-service'.\n\nprovide LoadService001 at load-service-001.svc.zpr over TCP 10000.\n  allow LoadClient.",
+      "content": "define LoadClient as device with zpr.adapter.cn:'finance-client'.\ndefine LoadService001 as service with device.zpr.adapter.cn:'echo-service'.\n\nprovide LoadService001 at load-service-001.svc.zpr over TCP 10000.\n  allow LoadClient.",
       "summary": "Illustrative first grant only; generate and install the complete runtime layer before running the scenario."
     }
   ]
