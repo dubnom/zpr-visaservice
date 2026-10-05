@@ -344,7 +344,7 @@ td:first-child { color: var(--ink); font-weight: 600; }
 .policy-attribute-status { min-height: 14px; margin: 0 0 7px; color: var(--muted); font: 9px var(--mono); }
 .policy-attribute-status[data-state="error"] { color: var(--danger, #b42318); }
 .policy-code-editor { position: relative; min-width: 0; min-height: 56vh; flex: 1; overflow: hidden; border: 1px solid #344a40; border-radius: 2px; background: #17211e; }
-.policy-code-editor[data-test-mode="true"] .policy-highlight, .policy-code-editor[data-test-mode="true"] #policy-source { padding-left: 112px; }
+.policy-code-editor .policy-highlight, .policy-code-editor #policy-source { padding-left: 112px; }
 .policy-code-editor:focus-within { border-color: #7ea65b; box-shadow: 0 0 0 2px #b5e34f30; }
 .policy-highlight, #policy-source, .policy-caret-mirror { position: absolute; inset: 0; width: 100%; height: 100%; margin: 0; padding: 15px; border: 0; border-radius: 0; font: 12px/1.65 var(--mono); tab-size: 2; white-space: pre; overflow: auto; }
 .policy-caret-mirror { visibility: hidden; pointer-events: none; }

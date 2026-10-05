@@ -1459,7 +1459,7 @@ function clearPolicySelection() {
   state.policy.testResult = null;
   state.policy.testSource = "";
   byId("policy-test-gutter").replaceChildren();
-  byId("policy-test-gutter").hidden = true;
+  byId("policy-test-gutter").hidden = false;
   byId("policy-test-status").hidden = true;
   hidePolicyTestDetails();
   byId("policy-check").removeAttribute("data-analysis-state");
@@ -2167,7 +2167,7 @@ function updatePolicyDirtyState() {
   byId("policy-workbench").dataset.testMode = String(policy.testMode);
   byId("policy-code-editor").dataset.testMode = String(policy.testMode);
   updatePolicyWorkbenchLayout();
-  byId("policy-test-gutter").hidden = !policy.testMode || !policy.testResult;
+  byId("policy-test-gutter").hidden = false;
   byId("policy-test-status").hidden = !policy.testMode && !policy.saveTestPending;
   byId("policy-attribute-rescan").disabled = !canEdit;
   byId("policy-refresh").disabled = policy.testMode || !policy.record || (!dirty && !policy.browsingRevision && !isDraft);
@@ -2202,7 +2202,7 @@ async function runPolicyTest({ interactive = true, source = byId("policy-source"
   policy.testResult = null;
   policy.testSource = "";
   byId("policy-test-gutter").replaceChildren();
-  byId("policy-test-gutter").hidden = true;
+  byId("policy-test-gutter").hidden = false;
   byId("policy-test-status").hidden = false;
   byId("policy-test-status").textContent = "Preparing test cases and evaluating candidate…";
   byId("policy-test-status").dataset.state = "pending";
@@ -2447,7 +2447,7 @@ function stopPolicyTest() {
     byId("policy-check").dataset.analysisState = policy.validSource === policy.evaluatedSource ? "success" : "";
   }
   byId("policy-test-gutter").replaceChildren();
-  byId("policy-test-gutter").hidden = true;
+  byId("policy-test-gutter").hidden = false;
   byId("policy-test-status").hidden = true;
   byId("policy-test-status").textContent = "";
   updatePolicyDirtyState();

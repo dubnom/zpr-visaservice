@@ -1174,6 +1174,10 @@ test("Analyze shows per-line counts and matching identities inline", async ({ pa
   await expect(page.locator("#policy-stage-status")).not.toContainText("Saved revision can be staged");
   await expect(page.locator("#policy-attribute-status")).toBeHidden();
   await expect(page.locator("#policy-check")).toBeEnabled();
+  const gutter = page.locator("#policy-test-gutter");
+  await expect(gutter).toBeVisible();
+  await expect(gutter).toHaveCSS("width", "92px");
+  await expect(page.locator("#policy-source")).toHaveCSS("padding-left", "112px");
   await page.locator("#policy-check").click();
   await expect(page.locator("#policy-check")).toHaveText("Exit test");
   await expect(page.locator("#policy-check")).toBeVisible();
@@ -1206,7 +1210,8 @@ test("Analyze shows per-line counts and matching identities inline", async ({ pa
   await expect(page.locator("#policy-check")).toHaveText("Analyze");
   await expect(page.locator("#policy-source")).toBeEnabled();
   await expect(page.locator(".policy-catalog-pane")).toBeHidden();
-  await expect(page.locator("#policy-test-gutter")).toBeHidden();
+  await expect(gutter).toBeVisible();
+  await expect(page.locator("#policy-source")).toHaveCSS("padding-left", "112px");
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBeTruthy();
 });
 
