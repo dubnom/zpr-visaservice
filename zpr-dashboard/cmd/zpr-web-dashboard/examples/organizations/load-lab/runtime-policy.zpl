@@ -1,0 +1,1 @@
+define LoadClient as adapter with zpr.adapter.cn:'finance-client'.

@@ -1,5 +1,12 @@
+async function openPolicyPicker(page) {
+  const toggle = page.locator("#policy-picker-toggle");
+  if (await toggle.getAttribute("aria-expanded") !== "true") await toggle.click();
+  await expect(page.locator("#policy-catalog-pane")).toBeVisible();
+}
+
 async function openAssertionRecord(page, appURL) {
   await page.goto(appURL + "/#policy");
+  await openPolicyPicker(page);
   await expect(page.locator('[data-page-link="assertions"]')).toHaveCount(0);
   await expect(page.locator('[data-category-id="test"]')).toHaveAttribute("aria-selected", "true");
   await expect(page.getByRole("treeitem", { name: "Assertions", exact: true })).toHaveCount(0);
@@ -228,9 +235,13 @@ test("new assertion records support copy, paste, duplicate, and protect built-in
   });
 
   await page.goto(appURL + "/#policy");
+  await openPolicyPicker(page);
+  await openPolicyPicker(page);
   await expect(page.locator("#new-assertion-record")).toBeEnabled();
-  const policyMarkerColor = await page.locator('[data-record-id="test-policy"]').evaluate((item) => getComputedStyle(item, "::before").backgroundColor);
-  const assertionMarkerColor = await page.locator('[data-record-id="test-assertions"]').evaluate((item) => getComputedStyle(item, "::before").backgroundColor);
+  await expect(page.locator('[data-record-id="test-policy"] .policy-kind-icon')).toHaveAttribute("data-icon", "traffic-light");
+  await expect(page.locator('[data-record-id="test-assertions"] .policy-kind-icon')).toHaveAttribute("data-icon", "database-check");
+  const policyMarkerColor = await page.locator('[data-record-id="test-policy"] .policy-kind-icon').evaluate((item) => getComputedStyle(item).color);
+  const assertionMarkerColor = await page.locator('[data-record-id="test-assertions"] .policy-kind-icon').evaluate((item) => getComputedStyle(item).color);
   expect(assertionMarkerColor).not.toBe(policyMarkerColor);
   await page.locator('[data-category-id="test"]').click({ button: "right" });
   await page.locator("#new-assertion-record").click();
@@ -359,6 +370,9 @@ const test = base.extend({
         activation: { state: "idle" },
         organizations: [["alpha", "Alpha Labs"], ["beta", "Beta Labs"], ["gamma", "Gamma Labs"]].map(([id, name]) => ({
           id, name, description: "Test organization", policies: [], services: [],
+          runtime: id === "beta"
+            ? { driver: "docker-multinode", topology: "multi-node", nodes: [{ id: "north-hub", location: "North Hub" }, { id: "regional-yard", location: "Regional Yard" }] }
+            : { driver: "linux-one-node", topology: "single-node", nodes: [{ id: `${id}-node`, location: "Test site" }] },
           directory: { base_dn: `dc=${id},dc=test`, seed_mode: "fixture", departments: [], people: [], groups: [] },
         })),
       },
@@ -418,6 +432,24 @@ const test = base.extend({
 });
 
 registerAssertionBrowserTests();
+
+test("assertion picker lines omit counts and revisions and distinguish record kinds by color", async ({ page, appURL, api }) => {
+  await page.goto(appURL + "/#policy");
+  await openPolicyPicker(page);
+  const tree = page.locator("#policy-category-tree");
+  await expect(tree.locator(".category-tree-item small, .policy-record-item small")).toHaveCount(0);
+  const policy = tree.locator('[data-record-id="test-policy"]');
+  const assertions = tree.locator('[data-record-id="test-assertions"]');
+  await expect(policy).toHaveText("Test policy");
+  await expect(assertions).toHaveText("Organization assertions");
+  await expect(policy.locator(".policy-kind-icon")).toHaveAttribute("data-icon", "traffic-light");
+  await expect(assertions.locator(".policy-kind-icon")).toHaveAttribute("data-icon", "database-check");
+  const policyColor = await policy.locator(".policy-kind-icon").evaluate((item) => getComputedStyle(item).color);
+  const assertionColor = await assertions.locator(".policy-kind-icon").evaluate((item) => getComputedStyle(item).color);
+  expect(assertionColor).not.toBe(policyColor);
+  await assertions.click();
+  await expect(page.getByRole("tab", { name: "Attributes", exact: true })).toBeVisible();
+});
 
 test("Security Review reports denial and log evidence and compares new inventory to its local baseline", async ({ page, appURL, api }) => {
   api.snapshot.actors = [{ cn: "adapter-a", node: false, zpr_addr: "fd00::1" }];
@@ -604,9 +636,9 @@ test("sortable tables show defaults and clicks select then reverse a column", as
   await expect(page.locator("#dns-record-rows tr").first().locator("td").first()).toHaveText("zeta.svc.zpr.");
   await page.goto(`${appURL}/#security-review`);
   await expect(page.locator("#security-review-findings tr")).toHaveCount(2);
-  await expect(page.locator("#security-review-findings tr").first().locator("td").nth(2)).toHaveText("fd00::b");
+  await expect(page.locator("#security-review-findings tr").first().locator("td").nth(3)).toHaveText("fd00::b");
   await page.locator('table[data-sort-page="security-review"] th[data-sort-key="entity"]').click();
-  await expect(page.locator("#security-review-findings tr").first().locator("td").nth(2)).toHaveText("fd00::a");
+  await expect(page.locator("#security-review-findings tr").first().locator("td").nth(3)).toHaveText("fd00::a");
   expect(api.counts.get("/api/snapshot")).toBeGreaterThan(0);
 });
 
@@ -654,6 +686,7 @@ test("Simulator trusted source page uses the same read-only browser", async ({ p
 
 test("policy picker right-click menu targets records and categories without visible action rows", async ({ page, appURL, api }, testInfo) => {
   await page.goto(appURL + "/#policy");
+  await openPolicyPicker(page);
   const category = page.locator('[data-category-id="test"]');
   const menu = page.getByRole("menu", { name: /./ });
   await expect(category).toBeVisible();
@@ -677,6 +710,7 @@ test("policy picker right-click menu targets records and categories without visi
   await expect(menu.getByRole("menuitem", { name: "Delete", exact: true })).toBeDisabled();
   await page.keyboard.press("Escape");
 
+  await openPolicyPicker(page);
   await page.locator('[data-record-id="test-policy"]').click({ button: "right" });
   await expect(menu).toBeVisible();
   await expect(page.locator("#policy-picker-menu-title")).toHaveText("Test policy");
@@ -696,6 +730,7 @@ test("policy picker right-click menu targets records and categories without visi
 
 test("policy picker actions support keyboard opening, navigation and dismissal", async ({ page, appURL, api }) => {
   await page.goto(appURL + "/#policy");
+  await openPolicyPicker(page);
   const record = page.locator('[data-record-id="test-policy"]');
   await record.focus();
   await record.press("Shift+F10");
@@ -707,10 +742,12 @@ test("policy picker actions support keyboard opening, navigation and dismissal",
   await page.keyboard.press("Escape");
   await expect(menu).toBeHidden();
   await expect(record).toBeFocused();
+  await openPolicyPicker(page);
   await record.press("Shift+F10");
   await expect(menu).toBeVisible();
   await page.locator("#policy-record-title").click();
   await expect(menu).toBeHidden();
+  await openPolicyPicker(page);
   await page.locator("#policy-category-tree").focus();
   await page.locator("#policy-category-tree").press("Shift+F10");
   await expect(menu).toBeVisible();
@@ -720,6 +757,7 @@ test("policy picker actions support keyboard opening, navigation and dismissal",
 
 test("each picker row opens its own menu from labels and metadata", async ({ page, appURL, api }) => {
   await page.goto(appURL + "/#policy");
+  await openPolicyPicker(page);
   const category = page.locator('[data-category-id="test"]');
   await expect(category).toBeVisible();
   await expect(category).toHaveAttribute("aria-haspopup", "menu");
@@ -730,15 +768,16 @@ test("each picker row opens its own menu from labels and metadata", async ({ pag
   await expect(page.locator("#policy-duplicate")).toBeHidden();
   await page.keyboard.press("Escape");
   for (const [id, name] of [["test-policy", "Test policy"], ["test-assertions", "Organization assertions"]]) {
+    await openPolicyPicker(page);
     const row = page.locator(`[data-record-id="${id}"]`);
     await expect(row).toHaveAttribute("aria-controls", "policy-picker-menu");
-    await row.locator("small").click({ button: "right" });
+    await row.locator("strong").click({ button: "right" });
     await expect(menu).toBeVisible();
     await expect(menu).toHaveAttribute("data-context", "record");
     await expect(page.locator("#policy-picker-menu-title")).toHaveText(name);
     await expect(page.locator("#new-category")).toBeHidden();
     await page.keyboard.press("Escape");
-    await expect(row).toBeFocused();
+    await expect(page.locator("#policy-picker-toggle")).toBeFocused();
   }
 });
 
@@ -765,8 +804,7 @@ for (const navigation of [
         const toggleRect = element.parentElement.querySelector(".sidebar-toggle").getBoundingClientRect();
         return Math.abs(brandRect.left - headerRect.left) <= 1
           && Math.abs((brandRect.top + brandRect.bottom) / 2 - (toggleRect.top + toggleRect.bottom) / 2) <= 2
-          && toggleRect.left >= brandRect.right
-          && toggleRect.left - brandRect.right <= 12;
+          && Math.abs(toggleRect.right - headerRect.right) <= 1;
       });
       expect(await alignedBesideToggle()).toBeTruthy();
     }
@@ -782,8 +820,7 @@ for (const navigation of [
         const toggleRect = element.parentElement.querySelector(".sidebar-toggle").getBoundingClientRect();
         return Math.abs(brandRect.left - headerRect.left) <= 1
           && Math.abs((brandRect.top + brandRect.bottom) / 2 - (toggleRect.top + toggleRect.bottom) / 2) <= 2
-          && toggleRect.left >= brandRect.right
-          && toggleRect.left - brandRect.right <= 12;
+          && Math.abs(toggleRect.right - headerRect.right) <= 1;
       });
       expect(alignedBesideToggle).toBeTruthy();
     }
@@ -810,6 +847,7 @@ for (const navigation of [
 
 test("policy Format condenses repeated blank lines including trailing whitespace", async ({ page, appURL, api }) => {
   await page.goto(appURL + "/#policy");
+  await openPolicyPicker(page);
   await page.locator('[data-record-id="test-policy"]').click();
   const editor = page.locator("#policy-source");
   await expect(editor).toHaveValue("define Employee as user.\n");
@@ -825,6 +863,7 @@ test("policy Format condenses repeated blank lines including trailing whitespace
 
 test("policy Format removes leading whitespace and gaps inside definition and service groups", async ({ page, appURL, api }) => {
   await page.goto(appURL + "/#policy");
+  await openPolicyPicker(page);
   await page.locator('[data-record-id="test-policy"]').click();
   const editor = page.locator("#policy-source");
   await expect(editor).toHaveValue("define Employee as user.\n");
@@ -839,31 +878,144 @@ test("policy Format removes leading whitespace and gaps inside definition and se
   expect(crlf).toBe("service Api as json {}.\r\n  allow Employee.\r\n");
 });
 
-test("policy picker and AI assistant collapse independently with readable vertical labels", async ({ page, appURL, api }, testInfo) => {
+test("policy actions share a non-overlapping responsive toolbar", async ({ page, appURL, api }) => {
+  await page.goto(appURL + "/#policy");
+  await openPolicyPicker(page);
+  await page.locator('[data-record-id="test-policy"]').click();
+  const actions = page.locator("#policy-actions");
+  const browse = page.locator("#policy-picker-toggle");
+  const rescan = page.locator("#policy-attribute-rescan");
+  await expect(browse).toHaveText("Browse...⌄");
+  await expect(page.locator("#policy-check")).toHaveText("Analyze");
+  await expect(page.locator("#policy-check").locator("xpath=../..")).toHaveClass(/policy-attribute-toolbar/);
+  for (const width of [834, 768]) {
+    await page.setViewportSize({ width, height: 900 });
+    const layout = await page.evaluate(() => {
+      const toolbar = document.querySelector(".policy-attribute-toolbar").getBoundingClientRect();
+      const editor = document.querySelector("#policy-code-editor").getBoundingClientRect();
+      const actionsRect = document.querySelector("#policy-actions").getBoundingClientRect();
+      const buttons = [...document.querySelectorAll(".policy-attribute-toolbar .button")].map((button) => button.getBoundingClientRect());
+      return {
+        toolbarBottom: toolbar.bottom,
+        editorTop: editor.top,
+        actionsBottom: actionsRect.bottom,
+        overlaps: buttons.some((first, index) => buttons.slice(index + 1).some((second) => first.left < second.right && first.right > second.left && first.top < second.bottom && first.bottom > second.top)),
+      };
+    });
+    expect(layout.actionsBottom).toBeLessThanOrEqual(layout.editorTop);
+    expect(layout.toolbarBottom).toBeLessThanOrEqual(layout.editorTop);
+    expect(layout.overlaps).toBeFalsy();
+    const { browseBounds, rescanBounds } = await page.evaluate(() => {
+      const bounds = (element) => {
+        const rect = element.getBoundingClientRect();
+        return { x: rect.x, width: rect.width };
+      };
+      return {
+        browseBounds: bounds(document.querySelector("#policy-picker-toggle")),
+        rescanBounds: bounds(document.querySelector("#policy-attribute-rescan")),
+      };
+    });
+    expect(browseBounds.x + browseBounds.width).toBeLessThanOrEqual(rescanBounds.x);
+  }
+  await expect(actions.getByRole("button", { name: "Compile & Stage" })).toBeVisible();
+});
+
+test("policy source with evaluation errors can be saved with warning but cannot be staged", async ({ page, appURL, api }) => {
+  api.policy.staging_ready = true;
+  const invalidSource = "define Employee as user.\nthis is not valid ZPL.\n";
+  api.handlers.set("/api/policy/check", async (route) => route.fulfill({
+    status: 422,
+    json: { valid: false, diagnostics: "error: [ line 2, column 1 ] unexpected token" },
+  }));
+  api.handlers.set("/api/policy/test/fixtures", async (route) => route.fulfill({ json: {
+    actors: [{ id: "alice", label: "Alice", kind: "user", dimensions: { user: "alice" }, attributes: [] }],
+    services: [{ id: "EchoWeb", name: "EchoWeb", protocol: "TCP", port: 8080, attributes: [] }], warnings: [],
+  } }));
+  api.handlers.set("/api/policy/test", async (route) => route.fulfill({ status: 422, json: { error: "Candidate policy compilation failed: test fixture error" } }));
+  let savedRequest;
+  api.handlers.set("/api/policy/records/test-policy/revisions", async (route) => {
+    if (route.request().method() === "GET") return route.fulfill({ json: [] });
+    savedRequest = route.request().postDataJSON();
+    api.policy.records[0].current_revision = 2;
+    api.policy.records[0].content = savedRequest.content;
+    await route.fulfill({ json: { number: 2, content_hash: "invalid-revision" } });
+  });
   await page.goto(appURL + "/#policy");
   await expect(page.locator("#policy-record-title")).toHaveText("Test policy");
-  const workbench = page.locator("#policy-workbench");
+  await page.locator("#policy-source").fill(invalidSource);
+  await page.locator("#policy-check").click();
+  await expect(page.locator("#policy-check")).toHaveAttribute("data-analysis-state", "error");
+  await page.mouse.move(0, 0);
+  await expect(page.locator("#policy-check")).toHaveCSS("background-color", "rgb(184, 59, 59)");
+  await expect(page.locator("#policy-check-result")).toContainText("cannot be staged");
+  await expect(page.locator("#policy-save")).toBeEnabled();
+  await page.locator("#policy-save").click();
+  await expect(page.locator("#version-warning")).toBeVisible();
+  await expect(page.locator("#version-warning")).toContainText("Policy test failed");
+  await expect(page.locator("#version-save")).toHaveText("Save anyway");
+  await page.locator("#version-save").click();
+  await expect.poll(() => savedRequest).toBeTruthy();
+  expect(savedRequest.content).toBe(invalidSource);
+  await expect(page.locator("#policy-check-result")).toContainText("Saved with evaluation errors");
+  await expect(page.locator("#policy-stage")).toBeDisabled();
+  await expect(page.locator("#policy-stage-status")).toContainText("cannot be staged");
+  const copiedRecord = { ...api.policy.records[0], id: "invalid-policy-copy", name: "Test policy copy", current_revision: 1, content: invalidSource, content_hash: "invalid-copy" };
+  let saveAsRequest;
+  api.handlers.set("/api/policy/records", async (route) => {
+    saveAsRequest = route.request().postDataJSON();
+    api.policy.records.push(copiedRecord);
+    await route.fulfill({ status: 201, json: copiedRecord });
+  });
+  api.handlers.set("/api/policy/records/invalid-policy-copy", async (route) => route.fulfill({ json: copiedRecord }));
+  api.handlers.set("/api/policy/records/invalid-policy-copy/revisions", async (route) => route.fulfill({ json: [] }));
+  await page.locator("#policy-save-as").click();
+  await expect(page.locator("#record-warning")).toBeVisible();
+  await expect(page.locator("#record-warning")).toContainText("cannot be staged");
+  await page.locator('#record-form button[type="submit"]').click();
+  await expect(page.locator("#record-warning")).toContainText("Policy test failed");
+  await expect(page.locator("#record-submit")).toHaveText("Save anyway");
+  expect(saveAsRequest).toBeUndefined();
+  await page.locator('#record-form button[type="submit"]').click();
+  await expect.poll(() => saveAsRequest).toBeTruthy();
+  expect(saveAsRequest.content).toBe(invalidSource);
+  await expect(page.locator("#policy-record-title")).toHaveText("Test policy copy");
+});
+
+test("policy picker opens as a pulldown, closes after selection and leaves the editor wide", async ({ page, appURL, api }, testInfo) => {
+  await page.goto(appURL + "/#policy");
+  await expect(page.locator("#policy-record-title")).toHaveText("Test policy");
   const editor = page.locator("#policy-editor-pane");
   const picker = page.locator("#policy-catalog-pane");
   const assistant = page.locator("#policy-assistant-pane");
   const pickerToggle = page.locator("#policy-picker-toggle");
   const assistantToggle = page.locator("#policy-assistant-toggle");
   const initialEditorWidth = await editor.evaluate((element) => element.getBoundingClientRect().width);
-
-  await pickerToggle.click();
-  await expect(picker).toHaveAttribute("data-collapsed", "true");
+  await expect(picker).toBeHidden();
   await expect(pickerToggle).toHaveAttribute("aria-expanded", "false");
-  await expect(page.locator("#policy-category-tree")).toBeHidden();
-  const pickerLabel = pickerToggle.locator(".pane-toggle-label");
-  await expect(pickerLabel).toHaveText("Policy Picker");
-  await expect(pickerLabel).toHaveCSS("writing-mode", "vertical-rl");
-  await expect(pickerLabel).toHaveCSS("text-orientation", "mixed");
-  await expect(pickerLabel).toHaveCSS("transform", "matrix(-1, 0, 0, -1, 0, 0)");
-  await expect(pickerLabel).toHaveCSS("font-size", "14px");
-  const pickerCollapsedWidth = await editor.evaluate((element) => element.getBoundingClientRect().width);
   if ((page.viewportSize()?.width || 1000) > 900) {
-    await expect.poll(() => editor.evaluate((element) => element.getBoundingClientRect().width)).toBeGreaterThan(initialEditorWidth);
+    const workbenchWidth = await page.locator("#policy-workbench").evaluate((element) => element.getBoundingClientRect().width);
+    expect(initialEditorWidth / workbenchWidth).toBeGreaterThan(0.6);
   }
+
+  await openPolicyPicker(page);
+  await expect(page.locator("#policy-category-tree")).toBeVisible();
+  const overlayEditorWidth = await editor.evaluate((element) => element.getBoundingClientRect().width);
+  expect(Math.abs(overlayEditorWidth - initialEditorWidth)).toBeLessThanOrEqual(1);
+  await page.locator('[data-record-id="test-assertions"]').click();
+  await expect(picker).toBeHidden();
+  await expect(page.locator("#policy-record-title")).toHaveText("Organization assertions");
+  await expect(page.locator("#policy-assertion-editor")).toBeVisible();
+
+  await openPolicyPicker(page);
+  await page.locator('[data-record-id="test-policy"]').click();
+  await expect(picker).toBeHidden();
+  await openPolicyPicker(page);
+  await page.locator("#policy-record-title").click();
+  await expect(picker).toBeHidden();
+  await openPolicyPicker(page);
+  await page.keyboard.press("Escape");
+  await expect(picker).toBeHidden();
+  await expect(pickerToggle).toBeFocused();
 
   await assistantToggle.click();
   await expect(assistant).toHaveAttribute("data-collapsed", "true");
@@ -875,7 +1027,7 @@ test("policy picker and AI assistant collapse independently with readable vertic
   await expect(assistantLabel).toHaveCSS("text-orientation", "mixed");
   await expect(assistantLabel).toHaveCSS("transform", "matrix(-1, 0, 0, -1, 0, 0)");
   await expect(assistantLabel).toHaveCSS("font-size", "14px");
-  for (const [button, label] of [[pickerToggle, pickerLabel], [assistantToggle, assistantLabel]]) {
+  for (const [button, label] of [[assistantToggle, assistantLabel]]) {
     const outer = await button.boundingBox();
     const inner = await label.boundingBox();
     expect(inner.x).toBeGreaterThanOrEqual(outer.x);
@@ -883,18 +1035,12 @@ test("policy picker and AI assistant collapse independently with readable vertic
     expect(inner.x + inner.width).toBeLessThanOrEqual(outer.x + outer.width);
     expect(inner.y + inner.height).toBeLessThanOrEqual(outer.y + outer.height);
   }
-  await page.screenshot({ path: testInfo.outputPath("policy-pane-labels.png"), fullPage: true });
-  const bothCollapsedWidth = await editor.evaluate((element) => element.getBoundingClientRect().width);
-  if ((page.viewportSize()?.width || 1000) > 900) {
-    await expect.poll(() => editor.evaluate((element) => element.getBoundingClientRect().width)).toBeGreaterThan(pickerCollapsedWidth);
-  }
+  await page.screenshot({ path: testInfo.outputPath("policy-picker-pulldown.png"), fullPage: true });
 
   await page.reload();
-  await expect(workbench).toHaveAttribute("data-picker-collapsed", "true");
-  await expect(workbench).toHaveAttribute("data-assistant-collapsed", "true");
-  await pickerToggle.click();
+  await expect(picker).toBeHidden();
+  await expect(page.locator("#policy-workbench")).toHaveAttribute("data-assistant-collapsed", "true");
   await assistantToggle.click();
-  await expect(picker).toHaveAttribute("data-collapsed", "false");
   await expect(assistant).toHaveAttribute("data-collapsed", "false");
 });
 
@@ -916,6 +1062,14 @@ test("read-only browser filters policy and assertion records and shows saved rev
   const viewer = page.locator("zpr-policy-browser");
   await expect(viewer.locator(".pb-organization")).toHaveText("Alpha Labs");
   await expect(viewer.locator(".pb-record")).toHaveCount(2);
+  await expect(viewer.locator('[data-record-id="test-policy"]')).toHaveText("Test policy");
+  await expect(viewer.locator('[data-record-id="test-assertions"]')).toHaveText("Organization assertions");
+  await expect(viewer.locator(".pb-record small")).toHaveCount(0);
+  await expect(viewer.locator('[data-record-id="test-policy"] .policy-kind-icon')).toHaveAttribute("data-icon", "traffic-light");
+  await expect(viewer.locator('[data-record-id="test-assertions"] .policy-kind-icon')).toHaveAttribute("data-icon", "database-check");
+  const policyColor = await viewer.locator('[data-record-id="test-policy"] .policy-kind-icon').evaluate((item) => getComputedStyle(item).color);
+  const assertionColor = await viewer.locator('[data-record-id="test-assertions"] .policy-kind-icon').evaluate((item) => getComputedStyle(item).color);
+  expect(assertionColor).not.toBe(policyColor);
   await viewer.locator('[data-record-id="test-policy"]').click();
   await expect(viewer.locator(".pb-source")).toContainText("allow Employee.");
   await viewer.getByLabel("Revision", { exact: true }).selectOption("1");
@@ -985,7 +1139,8 @@ test("read-only browser can be embedded twice with independent filters and API b
   await expect(viewers.nth(0).locator(".pb-title")).toHaveText("Select a record");
 });
 
-test("policy Test opens per-line counts and matching identities in the editor modal", async ({ page, appURL, api }) => {
+test("Analyze shows per-line counts and matching identities inline", async ({ page, appURL, api }) => {
+  api.handlers.set("/api/policy/check", async (route) => route.fulfill({ json: { valid: true, diagnostics: "Compiled successfully." } }));
   api.handlers.set("/api/policy/test/fixtures", async (route) => {
     await route.fulfill({ json: {
       actors: [
@@ -1016,44 +1171,47 @@ test("policy Test opens per-line counts and matching identities in the editor mo
     } });
   });
   await page.goto(appURL + "/#policy");
-  await expect(page.locator("#policy-test")).toBeEnabled();
-  await page.locator("#policy-test").click();
-  await expect(page.locator("#policy-test")).toHaveText("Exit test");
-  await expect(page.locator("#policy-test")).toBeVisible();
-  await expect(page.locator("#policy-test")).toBeEnabled();
+  await expect(page.locator("#policy-stage-status")).not.toContainText("Saved revision can be staged");
+  await expect(page.locator("#policy-attribute-status")).toBeHidden();
+  await expect(page.locator("#policy-check")).toBeEnabled();
+  await page.locator("#policy-check").click();
+  await expect(page.locator("#policy-check")).toHaveText("Exit test");
+  await expect(page.locator("#policy-check")).toBeVisible();
+  await expect(page.locator("#policy-check")).toBeEnabled();
   await expect(page.locator("#policy-source")).toBeEnabled();
   await expect(page.locator("#policy-source")).not.toBeEditable();
   await expect(page.locator(".policy-catalog-pane")).toBeHidden();
   await expect(page.locator("#policy-test-gutter")).toBeVisible();
+  await expect(page.locator("#policy-check")).toHaveAttribute("data-analysis-state", "success");
+  await page.mouse.move(0, 0);
+  await expect(page.locator("#policy-check")).toHaveCSS("background-color", "rgb(35, 117, 76)");
   const lineResult = page.locator('#policy-test-gutter [data-line="2"] .policy-test-line-result');
   await expect(lineResult.nth(0)).toHaveText("1 Device · 1 User");
   await expect(lineResult.nth(0).locator(".policy-test-count-number").first()).toHaveCSS("font-weight", "800");
   await expect(lineResult.nth(1)).toHaveText("None");
   await lineResult.nth(0).click();
-  const dialog = page.getByRole("dialog", { name: "Policy test" });
-  await expect(dialog).toBeVisible();
-  await expect(dialog.locator("#policy-test-subjects")).toContainText("Alice Rivera on machine-1");
-  await expect(dialog.locator("#policy-test-subject-title")).toContainText("1 Device");
-  await expect(dialog.locator("#policy-test-subject-title")).toContainText("1 User");
-  await expect(dialog.locator("#policy-test-subjects")).toContainText("Device: machine-1");
+  const details = page.locator("#policy-test-details");
+  await expect(details).toBeVisible();
+  await expect(details.locator("#policy-analyze-subjects")).toContainText("Alice Rivera on machine-1");
+  await expect(details.locator("#policy-analyze-subject-title")).toContainText("1 Device");
+  await expect(details.locator("#policy-analyze-subject-title")).toContainText("1 User");
+  await expect(details.locator("#policy-analyze-subjects")).toContainText("Device: machine-1");
   await page.evaluate(() => showPolicyTestSubjects(Array.from({ length: 105 }, (_, index) => ({ id: `member-${index}`, label: `Member ${index}`, dimensions: { device: `device-${index}` } })), "", "Device matches"));
-  await expect(dialog.locator(".policy-test-subject")).toHaveCount(100);
-  await expect(dialog.locator("#policy-test-subject-title")).toContainText("105 members · First 100 shown");
-  await expect(dialog.locator(".policy-test-subject").last()).toContainText("Member 99");
-  await dialog.locator(".dialog-actions .button").click();
-  await page.locator("#policy-test").click();
-  await expect(page.locator("#policy-test")).toHaveText("Test");
+  await expect(details.locator(".policy-test-subject")).toHaveCount(100);
+  await expect(details.locator("#policy-analyze-subject-title")).toContainText("105 members · First 100 shown");
+  await expect(details.locator(".policy-test-subject").last()).toContainText("Member 99");
+  await details.locator("#policy-test-details-close").click();
+  await expect(details).toBeHidden();
+  await page.locator("#policy-check").click();
+  await expect(page.locator("#policy-check")).toHaveText("Analyze");
   await expect(page.locator("#policy-source")).toBeEnabled();
-  await expect(page.locator(".policy-catalog-pane")).toBeVisible();
+  await expect(page.locator(".policy-catalog-pane")).toBeHidden();
   await expect(page.locator("#policy-test-gutter")).toBeHidden();
-  if ((page.viewportSize()?.width || 1000) <= 600) {
-    const gridColumns = await page.locator("#policy-workbench").evaluate((element) => getComputedStyle(element).gridTemplateColumns.trim().split(/\s+/).length);
-    expect(gridColumns).toBe(1);
-  }
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBeTruthy();
 });
 
 test("policy Test shows compiler diagnostics as clickable line error markers", async ({ page, appURL, api }) => {
+  api.handlers.set("/api/policy/check", async (route) => route.fulfill({ json: { valid: true, diagnostics: "Compiled successfully." } }));
   api.handlers.set("/api/policy/test/fixtures", async (route) => route.fulfill({ json: {
     actors: [{ id: "alice", label: "Alice Rivera", kind: "user", dimensions: { user: "alice" }, attributes: [] }],
     services: [{ id: "EchoWeb", name: "EchoWeb", protocol: "TCP", port: 8080, attributes: [] }],
@@ -1064,14 +1222,22 @@ test("policy Test shows compiler diagnostics as clickable line error markers", a
     json: { error: "Candidate policy compilation failed: error: [ line 2, column 1 ] explicit service targets are rejected" },
   }));
   await page.goto(appURL + "/#policy");
-  await page.locator("#policy-test").click();
+  await page.locator("#policy-check").click();
   const errorMarker = page.locator('#policy-test-gutter [data-line="2"] .policy-test-line-result[data-effect="error"]');
   await expect(errorMarker).toHaveText("ERR");
+  await expect(page.locator("#policy-test-gutter")).toHaveCSS("width", "92px");
+  await expect(page.locator("#policy-test-gutter")).toHaveCSS("border-right-style", "solid");
+  await expect(page.locator("#policy-test-gutter")).toHaveCSS("width", "92px");
+  await expect(page.locator("#policy-test-gutter")).toHaveCSS("border-right-style", "solid");
   await expect(page.locator("#policy-test-status")).toContainText("Click ERR for details");
+  await expect(page.locator("#policy-check")).toHaveAttribute("data-analysis-state", "error");
+  await page.mouse.move(0, 0);
+  await expect(page.locator("#policy-check")).toHaveCSS("background-color", "rgb(184, 59, 59)");
   await errorMarker.click();
-  const dialog = page.getByRole("dialog", { name: "Policy test error" });
-  await expect(dialog.locator("#policy-test-subject-title")).toHaveText("Line 2 diagnostic");
-  await expect(dialog.locator("#policy-test-subjects")).toContainText("explicit service targets are rejected");
+  const details = page.locator("#policy-test-details");
+  await expect(details).toBeVisible();
+  await expect(details.locator("#policy-analyze-subject-title")).toHaveText("Line 2 diagnostic");
+  await expect(details.locator("#policy-analyze-subjects")).toContainText("explicit service targets are rejected");
 });
 
 for (const view of [
@@ -1122,7 +1288,7 @@ for (const view of [
 }
 
 test("Adapter Logs grows horizontally and removes only the selected column", async ({ page, appURL, api }) => {
-  await page.setViewportSize({ width: 390, height: 844 });
+  await page.setViewportSize({ width: 834, height: 1194 });
   await page.goto(appURL + "/#adapter-logs");
   const columns = page.locator(".adapter-log-column");
   await expect(columns).toHaveCount(1);
@@ -1327,12 +1493,13 @@ test("Adapter Logs polls only while its Control Room page is active", async ({ p
 
 test("policy editor has no attribute picker and retains attribute completions", async ({ page, appURL, api }) => {
   await page.goto(appURL + "/#policy");
+  await openPolicyPicker(page);
   await page.locator('[data-record-id="test-policy"]').click();
   const editor = page.locator("#policy-source");
   await expect(editor).toHaveValue("define Employee as user.\n");
   await expect(page.locator("#policy-attribute-picker, #policy-attribute-insert")).toHaveCount(0);
   await expect(page.locator("#policy-format")).toBeVisible();
-  await expect(page.locator("#policy-test")).toBeVisible();
+  await expect(page.locator("#policy-check")).toBeVisible();
   await expect(page.locator("#policy-attribute-rescan")).toBeVisible();
   await editor.fill("define Employee as user with user.");
   await expect(page.locator("#policy-completions")).toContainText("user.department:");
@@ -1340,6 +1507,7 @@ test("policy editor has no attribute picker and retains attribute completions", 
 
 test("policy completions respect statements, define attributes and punctuation", async ({ page, appURL, api }) => {
   await page.goto(appURL + "/#policy");
+  await openPolicyPicker(page);
   await page.locator('[data-record-id="test-policy"]').click();
   const editor = page.locator("#policy-source");
   const menu = page.locator("#policy-completions");
@@ -1371,6 +1539,8 @@ test("policy completions respect statements, define attributes and punctuation",
   await expect(menu.getByRole("option", { name: "SignalService", exact: true })).toBeVisible();
   await editor.fill("define Employee as user.\nallow Employee to ");
   await expect(menu.getByRole("option", { name: "access", exact: true })).toHaveCount(0);
+  await editor.fill("define Mouse as user.\nallow Mi");
+  await expect(menu.getByRole("option", { name: "Mice", exact: true })).toBeVisible();
 });
 
 test("policy compiler errors highlight their source token", async ({ page, appURL, api }) => {
@@ -1379,6 +1549,7 @@ test("policy compiler errors highlight their source token", async ({ page, appUR
     await route.fulfill({ json: { valid: false, diagnostics } });
   });
   await page.goto(appURL + "/#policy");
+  await openPolicyPicker(page);
   await page.locator('[data-record-id="test-policy"]').click();
   const editor = page.locator("#policy-source");
   await expect(editor).toHaveValue("define Employee as user.\n");
@@ -1542,6 +1713,7 @@ test("organization activation requires explicit approval and is cancel-safe", as
   });
   await page.goto(appURL + "/organizations.html");
   await page.locator('[data-organization-id="beta"]').click();
+  await expect(page.locator("#organization-detail")).toContainText("multi-node · 2 nodes · North Hub / Regional Yard");
   const activate = page.locator('[data-activate-organization="beta"]');
   await activate.click();
   const dialog = page.getByRole("dialog", { name: "Switch organization?", exact: true });
@@ -1589,6 +1761,21 @@ test("organization approval is rejected after the active organization changes", 
   expect(api.counts.get("/api/simulator/organizations/beta/activate") || 0).toBe(0);
   await dialog.getByRole("button", { name: "Cancel", exact: true }).click();
   await expect(dialog).not.toBeVisible();
+});
+
+test("organization switching shows reset progress in the Simulator", async ({ page, appURL, api }) => {
+  await page.clock.install();
+  api.organizations.activation = { state: "resetting", organization_id: "beta", progress: "Waiting for ZPR node and company LDAP" };
+  await page.goto(appURL + "/organizations.html");
+  await expect(page.locator("#organization-connection")).toContainText("Waiting for ZPR node and company LDAP");
+  await page.locator('[data-organization-id="beta"]').click();
+  const activationButton = page.locator('[data-activate-organization="beta"]');
+  await expect(activationButton).toBeDisabled();
+  await expect(activationButton).toContainText("Resetting ZPR · Waiting for ZPR node and company LDAP");
+  api.organizations.activation.progress = "Applying organization runtime policy";
+  await page.clock.runFor(1100);
+  await expect(page.locator("#organization-connection")).toContainText("Applying organization runtime policy");
+  await expect(activationButton).toContainText("Applying organization runtime policy");
 });
 
 test("scenario machine lanes scroll from a scrollbar at the top of the panel", async ({ page, appURL }) => {

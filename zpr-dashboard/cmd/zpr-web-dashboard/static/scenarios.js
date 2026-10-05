@@ -184,7 +184,8 @@ function updateScenarioEditorActions() {
 const scenarioStepActions = [
   "start_machine", "wait_controller", "login", "select_workloads", "logout", "stop_machine",
   "start_workload", "stop_workload", "start_test_service", "stop_test_service",
-  "request_test_service", "benchmark_test_service", "traffic", "delay",
+  "request_test_service", "benchmark_test_service", "start_service_fleet",
+  "stop_service_fleet", "stress_traffic", "traffic", "delay",
 ];
 
 function scenarioStepMarkup(step, index) {

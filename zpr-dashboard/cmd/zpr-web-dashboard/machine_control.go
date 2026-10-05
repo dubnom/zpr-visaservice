@@ -40,11 +40,12 @@ type machineControllerRegistry struct {
 var simulatorControllers = machineControllerRegistry{lastSeen: make(map[string]time.Time)}
 
 type machineControlCommand struct {
-	ID       string `json:"id"`
-	Action   string `json:"action"`
-	User     string `json:"user,omitempty"`
-	Workload string `json:"workload,omitempty"`
-	Expires  int64  `json:"expires_unix_ms"`
+	ID       string   `json:"id"`
+	Action   string   `json:"action"`
+	User     string   `json:"user,omitempty"`
+	Workload string   `json:"workload,omitempty"`
+	Services []string `json:"services,omitempty"`
+	Expires  int64    `json:"expires_unix_ms"`
 }
 
 type machineControlCommandResult struct {
@@ -361,7 +362,7 @@ func executeMachineControlCommand(machineID string, command machineControlComman
 	case "start-workload", "stop-workload":
 		var err error
 		if command.Action == "start-workload" {
-			err = startMachineWorkload(command.Workload)
+			err = startMachineWorkload(command.Workload, command.Services)
 		} else {
 			err = stopMachineWorkload(command.Workload)
 		}
@@ -397,17 +398,30 @@ func machineWorkload(agent string) (machineWorkloadConfig, bool) {
 	return config, ok
 }
 
-func startMachineWorkload(agent string) error {
+func startMachineWorkload(agent string, serviceNames []string) error {
 	config, ok := machineWorkload(agent)
 	if !ok {
 		return fmt.Errorf("unknown machine workload %q", agent)
+	}
+	if len(serviceNames) > 512 {
+		return errors.New("too many service registrations for one workload")
+	}
+	for _, serviceName := range serviceNames {
+		if !policyTestValueSafe(serviceName) || strings.TrimSpace(serviceName) == "" || len(serviceName) > 200 || strings.Contains(serviceName, ",") {
+			return errors.New("invalid service registration")
+		}
 	}
 	runtimeDir := "/run/zpr-workloads"
 	assets := "/opt/zpr-workloads"
 	socket := filepath.Join(runtimeDir, agent+".sock")
 	linkSummary, _ := exec.Command(filepath.Join(assets, "ph-cli"), "-p", socket, "link", "show").CombinedOutput()
 	if strings.Contains(string(linkSummary), "(Active)") {
-		return startTestLogServer(agent)
+		if len(serviceNames) == 0 {
+			return startTestLogServer(agent)
+		}
+		if err := stopMachineWorkload(agent); err != nil {
+			return err
+		}
 	}
 	_ = exec.Command("pkill", "-TERM", "-f", "[p]h adapter.*--name "+agent).Run()
 	_ = os.Remove(socket)
@@ -436,7 +450,11 @@ func startMachineWorkload(agent string) error {
 		return err
 	}
 	command := exec.Command(filepath.Join(assets, "ph"), "adapter", "--logging", "all=INFO", "--control-path", socket, "--capture-path", filepath.Join(runtimeDir, agent+"_cap.sock"), "--self-addr", substrateAddress, "--ca-file", filepath.Join(assets, "ca.crt"), "--bootstrap-key", filepath.Join(assets, config.key), "--name", agent, "--km-impl", "noise", "--tun-if", config.tun, "--node-addr", "10.0.0.1:5000", "--zpr-addr", config.address)
-	command.Env = append(os.Environ(), "ZPR_ADAPTER_SERVICES="+config.services)
+	registeredServices := config.services
+	if len(serviceNames) > 0 {
+		registeredServices = strings.Join(serviceNames, ",")
+	}
+	command.Env = append(os.Environ(), "ZPR_ADAPTER_SERVICES="+registeredServices)
 	command.Stdout, command.Stderr = logFile, logFile
 	if err := command.Start(); err != nil {
 		_ = logFile.Close()

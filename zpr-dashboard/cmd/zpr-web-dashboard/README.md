@@ -9,11 +9,18 @@ owns its REST listener, SQLite journal, and ZPLC configuration. All three
 processes use the same Go executable with different `-mode` values and remain
 separate processes and trust boundaries.
 
+The ZPR browser-based GUIs, including Control Room and Simulator, support desktop
+and iPad-like tablet devices when the available viewport resolution is sufficient
+to use the interface comfortably. Phone-sized mobile devices are not supported.
+This support boundary applies only to ZPR web GUIs; it does not change support
+expectations for terminal interfaces, APIs, command-line tools, or other clients.
+
 Control Room and Simulator side menus can be condensed with the arrow button
 and reopened with the same control. The active page name stays visible. Desktop
-keeps a narrow menu with readable tab labels; mobile collapses to a current-page
-bar. Each app saves its own menu preference in browser storage, including across
-Simulator page transitions and browser Back/Forward navigation.
+keeps a narrow menu with readable tab labels; iPad-like tablet layouts collapse
+to a current-page bar when needed. Each app saves its own menu preference in
+browser storage, including across Simulator page transitions and browser
+Back/Forward navigation.
 
 The Trusted sources page explains each provider in terms of its owning actor,
 service endpoint, and most recent real attribute lookup. **Working** means the

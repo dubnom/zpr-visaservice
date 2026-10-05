@@ -58,6 +58,13 @@ fields below. The collection side should batch with bounded memory and retry
 transient failures without granting access or blocking visa issuance. Avoid
 passwords, private keys, authentication tokens and full packet payloads.
 
+The local collector adds `zpr.organization.id` to the OTLP resource on every
+metrics and logs batch. Organization activation passes the newly active ZPR
+profile ID before restarting the collector. `OPENOBSERVE_ORG` is a separate
+OpenObserve storage-tenant setting; changing the active ZPR profile does not
+change that tenant. The shared data volume is retained across switches, and
+older records are not retroactively retagged.
+
 * **Visa counters:** Poll the existing authenticated `GET /admin/stats` at a
   fixed interval, export its numeric counters as cumulative OTLP sums with
   stable `zpr_vs_*` names, and export uptime as `zpr_vs_uptime_seconds`.
@@ -122,6 +129,14 @@ observability directory. Set `ZPR_OBSERVABILITY_ENV_FILE` to a private env file
 containing `ZO_ROOT_USER_EMAIL` and `ZO_ROOT_USER_PASSWORD`; root credentials are
 bootstrap-only. `run.sh start` waits for the service adapter and starts the
 collector; `run.sh stop` stops both. No host port mapping is performed.
+
+To make a tenant named `ZPR` the collector's default, create that organization
+in OpenObserve, use its exact returned organization ID, and set it in the
+private `collector.env` as `OPENOBSERVE_ORG=ZPR`. The ingestion token must also
+be scoped to that tenant. If OpenObserve returns a different ID than `ZPR`, use
+the returned ID. Restart the collector after changing the tenant or token. This
+selects the OpenObserve tenant; `zpr.organization.id` continues to identify the
+active ZPR profile that produced each record.
 
 `run.sh status` reports OpenObserve and collector state. To restart only the
 collector after changing its code or credentials, run its `stop` and `start`

@@ -203,6 +203,16 @@ func main() {
 	clientID := flag.String("client-id", "", "Client identifier for test-client mode")
 	logWorkload := flag.String("log-workload", "", "Workload for test log reader mode")
 	testService := flag.String("test-service-name", "", "Expected service for test-client mode")
+	stressServiceCount := flag.Int("service-count", 0, "Number of services for stress-test modes")
+	stressBasePort := flag.Int("base-port", 0, "First TCP port for stress-test services")
+	stressClientCount := flag.Int("client-count", 0, "Number of logical clients for stress-client mode")
+	stressDurationSeconds := flag.Int("duration-seconds", 0, "Stress-client run duration")
+	stressRequestDelayMinMS := flag.Int("request-delay-min-ms", 0, "Minimum delay between logical-client requests")
+	stressRequestDelayMaxMS := flag.Int("request-delay-max-ms", 0, "Maximum delay between logical-client requests")
+	stressRestartMinSeconds := flag.Int("restart-interval-min-seconds", 0, "Minimum time between logical-client restart pauses")
+	stressRestartMaxSeconds := flag.Int("restart-interval-max-seconds", 0, "Maximum time between logical-client restart pauses")
+	stressRestartPauseMinSeconds := flag.Int("restart-pause-min-seconds", 0, "Minimum logical-client offline duration")
+	stressRestartPauseMaxSeconds := flag.Int("restart-pause-max-seconds", 0, "Maximum logical-client offline duration")
 	gatewayUpstream := flag.String("gateway-upstream", "", "Fixed HTTPS upstream for the internet-gateway test service")
 	controlURL := flag.String("control-url", "", "Simulator mTLS heartbeat URL")
 	controlCA := flag.String("control-ca", "", "Simulator control CA certificate")
@@ -249,6 +259,23 @@ func main() {
 		}
 	case "test-service":
 		if err := runTestService(*listen, *logWorkload); err != nil {
+			log.Fatal(err)
+		}
+	case "stress-service-fleet":
+		if err := runStressServiceFleet(*listen, *logWorkload, *stressServiceCount, *stressBasePort); err != nil {
+			log.Fatal(err)
+		}
+	case "stress-service-health":
+		if err := checkStressServiceFleet(*listen, *stressServiceCount, *stressBasePort); err != nil {
+			log.Fatal(err)
+		}
+	case "stress-client":
+		if *stressDurationSeconds < 1 || *stressDurationSeconds > 180 {
+			log.Fatal("stress-client duration must be between 1 and 180 seconds")
+		}
+		ctx, cancel := context.WithTimeout(context.Background(), time.Duration(*stressDurationSeconds)*time.Second)
+		defer cancel()
+		if err := runStressClientFleet(ctx, *listen, *zprAddress, *logWorkload, *stressServiceCount, *stressBasePort, *stressClientCount, *stressRequestDelayMinMS, *stressRequestDelayMaxMS, *stressRestartMinSeconds, *stressRestartMaxSeconds, *stressRestartPauseMinSeconds, *stressRestartPauseMaxSeconds); err != nil {
 			log.Fatal(err)
 		}
 	case "gateway-service":

@@ -16,7 +16,12 @@ dock_node = "redwood-node"
 
 [trusted_services.redwood_directory]
 api = "rest/1"
-returns_attributes = ["ou -> device.redwood.department", "title -> device.redwood.title", "role -> device.redwood.role"]
+returns_attributes = ["ou -> device.redwood.department", "title -> device.redwood.title", "l -> device.redwood.location", "zprMachineType -> device.redwood.machine_type", "zprMachineLocation -> device.redwood.location", "zprMachineSecure -> device.redwood.secure", "role -> device.redwood.role"]
+expiration_seconds = 3600
+
+[trusted_services.redwood_user_directory]
+api = "rest/1"
+returns_attributes = ["cn -> user.name", "mail -> user.email", "ou -> user.department", "title -> user.title", "l -> user.location", "role -> user.role{}"]
 expiration_seconds = 3600
 
 [protocols.ping]

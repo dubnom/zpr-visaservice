@@ -121,7 +121,12 @@ pid=$(pgrep -xo slapd)
 config=$(tr '\000' '\n' < "/proc/$pid/cmdline" | awk 'previous == "-f" { print; exit } { previous = $0 }')
 test -n "$config"
 directory=${config%/*}
-sudo ip netns exec zpr-vs env LDAPTLS_CACERT="$directory/ca.crt" ldapsearch -LLL -A -x \
+if ip netns list 2>/dev/null | awk '$1 == "zpr-vs" { found = 1 } END { exit !found }'; then
+	search() { sudo -n ip netns exec zpr-vs env "$@"; }
+else
+	search() { env "$@"; }
+fi
+search LDAPTLS_REQCERT=demand LDAPTLS_CACERT="$directory/ca.crt" ldapsearch -LLL -A -x \
   -H ldaps://127.0.0.1:1636 -D "$1" -y "$directory/ldap-password" \
   -b "$2" -s sub '(objectClass=*)' '*'
 `

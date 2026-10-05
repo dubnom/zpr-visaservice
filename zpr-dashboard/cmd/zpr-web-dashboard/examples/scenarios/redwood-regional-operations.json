@@ -1,0 +1,18 @@
+{
+  "id": "redwood-regional-operations",
+  "organization_id": "redwood",
+  "name": "Redwood regional operations",
+  "description": "Verify the two site nodes, adapters, web endpoints, and live dispatcher directory attributes.",
+  "topology": {
+    "nodes": [
+      {"id": "north-hub", "zpr_address": "fd5a:5052:90de::10", "substrate": "172.30.0.13"},
+      {"id": "regional-yard", "zpr_address": "fd5a:5052:90de::11", "substrate": "172.30.0.10"}
+    ],
+    "links": [
+      {"id": "north-hub-regional-yard", "from": "north-hub", "to": "regional-yard"}
+    ]
+  },
+  "steps": [
+    {"action": "verify_multinode_runtime"}
+  ]
+}

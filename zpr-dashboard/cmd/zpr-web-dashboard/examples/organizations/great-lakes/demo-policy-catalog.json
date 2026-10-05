@@ -1,0 +1,36 @@
+{
+  "categories": [
+    "Headquarters/Departments",
+    "Regional/Engineering",
+    "Regional/Manufacturing"
+  ],
+  "records": [
+    {
+      "category": "Headquarters/Departments",
+      "name": "Milwaukee department boundaries",
+      "kind": "policy",
+      "content_type": "text/vnd.zpr.zpl",
+      "metadata": {"demo": true, "live": false},
+      "content": "define MilwaukeeSupport as adapter with greatlakes.location:'Milwaukee, Wisconsin, USA' and greatlakes.department:'Customer Support'.\ndefine MilwaukeeFinance as adapter with greatlakes.location:'Milwaukee, Wisconsin, USA' and greatlakes.department:Finance.\ndefine MilwaukeeShipping as adapter with greatlakes.location:'Milwaukee, Wisconsin, USA' and greatlakes.department:Shipping.\ndefine MilwaukeeReceiving as adapter with greatlakes.location:'Milwaukee, Wisconsin, USA' and greatlakes.department:Receiving.",
+      "summary": "Customer Support, Finance, Shipping, and Receiving apps are available only to their corresponding Milwaukee departments."
+    },
+    {
+      "category": "Regional/Engineering",
+      "name": "Shenzhen engineering access",
+      "kind": "policy",
+      "content_type": "text/vnd.zpr.zpl",
+      "metadata": {"demo": true, "live": false},
+      "content": "define ShenzhenEngineering as adapter with greatlakes.location:'Shenzhen, China' and greatlakes.department:'Shenzhen Engineering'.\nprovide EngineeringBuildFarm at engineering-build.svc.zpr over TCP 8444.\n  allow ShenzhenEngineering.",
+      "summary": "Shenzhen Engineering can use the build farm, with no grants to HQ business systems."
+    },
+    {
+      "category": "Regional/Manufacturing",
+      "name": "Tijuana assembly and test access",
+      "kind": "policy",
+      "content_type": "text/vnd.zpr.zpl",
+      "metadata": {"demo": true, "live": false},
+      "content": "define TijuanaAssembly as adapter with greatlakes.location:'Tijuana, Mexico' and greatlakes.department:Assembly.\ndefine TijuanaTest as adapter with greatlakes.location:'Tijuana, Mexico' and greatlakes.department:'Test and Quality'.\nprovide AssemblyExecution at assembly-mes.svc.zpr over TCP 8448.\n  allow TijuanaAssembly.\nprovide QualityTestBench at quality-test.svc.zpr over TCP 8449.\n  allow TijuanaTest.",
+      "summary": "Tijuana Assembly and Test can reach only their assigned production and quality systems."
+    }
+  ]
+}

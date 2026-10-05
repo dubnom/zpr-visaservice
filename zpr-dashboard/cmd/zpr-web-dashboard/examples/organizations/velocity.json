@@ -2,6 +2,11 @@
   "id": "velocity",
   "name": "Velocity Labs",
   "description": "Single-node performance laboratory: two machines measure application throughput and warmed request latency. Direct visa-grant timing requires separate instrumentation.",
+  "runtime": {
+    "driver": "linux-one-node",
+    "topology": "single-node",
+    "nodes": [{"id": "velocity-node", "location": "Performance Lab"}]
+  },
   "directory": {
     "base_dn": "dc=velocity,dc=test",
     "seed_mode": "ldif",

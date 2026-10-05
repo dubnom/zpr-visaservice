@@ -47,6 +47,19 @@ def metric_name(stat_name: str) -> str:
     return f"zpr_vs_{normalized}"
 
 
+def organization_resource(organization_id: str) -> dict[str, object]:
+    if not re.fullmatch(r"[a-z][a-z0-9-]{0,79}", organization_id):
+        raise ValueError("ZPR organization ID must be a lowercase profile ID")
+    return {
+        "attributes": [
+            otlp_string_attribute("service.name", "zpr-visaservice"),
+            otlp_string_attribute("service.instance.id", "local-linux-zpr"),
+            otlp_string_attribute("zpr.net", "local-linux-zpr"),
+            otlp_string_attribute("zpr.organization.id", organization_id),
+        ]
+    }
+
+
 def redact(message: str) -> str:
     for pattern in SECRET_PATTERNS:
         message = pattern.sub("[REDACTED]", message)
@@ -57,7 +70,8 @@ class Collector:
     def __init__(self, runtime: Path) -> None:
         self.runtime = runtime
         self.config = read_env_file(runtime / "observability" / "collector.env")
-        self.organization = self.required_config("OPENOBSERVE_ORG")
+        self.openobserve_organization = self.required_config("OPENOBSERVE_ORG")
+        self.zpr_organization_id = os.environ.get("ZPR_ORGANIZATION_ID", "").strip()
         self.email = self.required_config("OPENOBSERVE_EMAIL")
         self.ingestion_token = (runtime / "observability" / "ingestion.token").read_text(encoding="utf-8").strip()
         self.api_key = (runtime / "admin-read.key").read_text(encoding="utf-8").strip()
@@ -67,13 +81,7 @@ class Collector:
         self.admin_context = ssl.create_default_context(cafile=str(self.admin_ca))
         self.admin_context.check_hostname = False
         self.otlp_auth = base64.b64encode(f"{self.email}:{self.ingestion_token}".encode()).decode()
-        self.resource = {
-            "attributes": [
-                otlp_string_attribute("service.name", "zpr-visaservice"),
-                otlp_string_attribute("service.instance.id", "local-linux-zpr"),
-                otlp_string_attribute("zpr.net", "local-linux-zpr"),
-            ]
-        }
+        self.resource = organization_resource(self.zpr_organization_id)
         self.last_deny_ms = int(time.time() * 1000) - 5 * 60 * 1000
         self.seen_denies: set[tuple[object, ...]] = set()
         self.pending_denies: set[tuple[object, ...]] = set()
@@ -99,7 +107,7 @@ class Collector:
             return json.loads(response.read())
 
     def send_otlp(self, signal: str, body: dict[str, object]) -> None:
-        organization = urllib.parse.quote(self.organization, safe="")
+        organization = urllib.parse.quote(self.openobserve_organization, safe="")
         request = urllib.request.Request(
             f"{self.openobserve_url}/api/{organization}/v1/{signal}",
             data=json.dumps(body, separators=(",", ":")).encode(),
@@ -107,7 +115,7 @@ class Collector:
                 "Authorization": f"Basic {self.otlp_auth}",
                 "Content-Type": "application/json",
                 "stream-name": "zpr_visa_service",
-                "organization": self.organization,
+                "organization": self.openobserve_organization,
             },
             method="POST",
         )

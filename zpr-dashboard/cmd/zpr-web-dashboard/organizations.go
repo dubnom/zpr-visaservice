@@ -18,6 +18,7 @@ type simulatorOrganization struct {
 	ID                 string                         `json:"id"`
 	Name               string                         `json:"name"`
 	Description        string                         `json:"description"`
+	Runtime            simulatorOrganizationRuntime   `json:"runtime"`
 	Directory          simulatorOrganizationDirectory `json:"directory"`
 	MachineOwners      map[string][]string            `json:"machine_owners,omitempty"`
 	PolicyConfig       string                         `json:"policy_config"`
@@ -26,6 +27,35 @@ type simulatorOrganization struct {
 	Policies           []simulatorOrganizationPolicy  `json:"policies"`
 	Services           []simulatorOrganizationService `json:"services"`
 	PolicyTestServices []simulatorPolicyTestService   `json:"policy_test_services,omitempty"`
+	LoadTest           *simulatorLoadTestProfile      `json:"load_test,omitempty"`
+}
+
+type simulatorLoadTestProfile struct {
+	ClientMachine               string `json:"client_machine"`
+	ServiceMachine              string `json:"service_machine"`
+	ClientWorkload              string `json:"client_workload"`
+	ServiceWorkload             string `json:"service_workload"`
+	ClientCount                 int    `json:"client_count"`
+	ServiceCount                int    `json:"service_count"`
+	BasePort                    int    `json:"base_port"`
+	DurationSeconds             int    `json:"duration_seconds"`
+	RequestDelayMinMilliseconds int    `json:"request_delay_min_ms"`
+	RequestDelayMaxMilliseconds int    `json:"request_delay_max_ms"`
+	RestartIntervalMinSeconds   int    `json:"restart_interval_min_seconds"`
+	RestartIntervalMaxSeconds   int    `json:"restart_interval_max_seconds"`
+	RestartPauseMinSeconds      int    `json:"restart_pause_min_seconds"`
+	RestartPauseMaxSeconds      int    `json:"restart_pause_max_seconds"`
+}
+
+type simulatorOrganizationRuntime struct {
+	Driver   string                             `json:"driver"`
+	Topology string                             `json:"topology"`
+	Nodes    []simulatorOrganizationRuntimeNode `json:"nodes"`
+}
+
+type simulatorOrganizationRuntimeNode struct {
+	ID       string `json:"id"`
+	Location string `json:"location"`
 }
 
 type simulatorOrganizationDirectory struct {
@@ -53,6 +83,7 @@ type simulatorOrganizationPerson struct {
 	Email      string `json:"email"`
 	Department string `json:"department"`
 	Title      string `json:"title"`
+	Location   string `json:"location,omitempty"`
 }
 
 type simulatorOrganizationGroup struct {
@@ -168,6 +199,14 @@ func loadSimulatorOrganizations(directory string) ([]simulatorOrganization, erro
 		if organization.ID != fileID {
 			return nil, fmt.Errorf("organization %q id must match its filename", entry.Name())
 		}
+		if organization.LoadTest == nil {
+			profile, err := loadSimulatorLoadTestProfile(directory, fileID)
+			if err != nil {
+				return nil, fmt.Errorf("organization %q load-test profile: %w", fileID, err)
+			}
+			organization.LoadTest = profile
+		}
+		materializeSimulatorLoadTestServices(&organization)
 		if _, exists := ids[organization.ID]; exists {
 			return nil, fmt.Errorf("duplicate organization id %q", organization.ID)
 		}
@@ -184,9 +223,54 @@ func loadSimulatorOrganizations(directory string) ([]simulatorOrganization, erro
 	return organizations, nil
 }
 
+func loadSimulatorLoadTestProfile(directory, organizationID string) (*simulatorLoadTestProfile, error) {
+	path := filepath.Join(directory, organizationID, "load_test.json")
+	info, err := os.Stat(path)
+	if errors.Is(err, os.ErrNotExist) {
+		return nil, nil
+	}
+	if err != nil || info.Size() > 16<<10 {
+		return nil, errors.New("profile is too large or unreadable")
+	}
+	content, err := os.ReadFile(path)
+	if err != nil {
+		return nil, err
+	}
+	decoder := json.NewDecoder(strings.NewReader(string(content)))
+	decoder.DisallowUnknownFields()
+	var profile simulatorLoadTestProfile
+	if err := decoder.Decode(&profile); err != nil {
+		return nil, err
+	}
+	var extra any
+	if err := decoder.Decode(&extra); err != io.EOF {
+		return nil, errors.New("profile contains trailing data")
+	}
+	return &profile, nil
+}
+
 func validateSimulatorOrganization(organization simulatorOrganization) error {
 	if !validScenarioID(organization.ID) || strings.TrimSpace(organization.Name) == "" || strings.TrimSpace(organization.Description) == "" {
 		return errors.New("id, name, and description are required")
+	}
+	if organization.Runtime.Driver != "linux-one-node" && organization.Runtime.Driver != "docker-multinode" {
+		return errors.New("runtime driver must be linux-one-node or docker-multinode")
+	}
+	if organization.Runtime.Topology != "single-node" && organization.Runtime.Topology != "multi-node" {
+		return errors.New("runtime topology must be single-node or multi-node")
+	}
+	if organization.Runtime.Driver == "linux-one-node" && organization.Runtime.Topology != "single-node" || organization.Runtime.Driver == "docker-multinode" && organization.Runtime.Topology != "multi-node" {
+		return fmt.Errorf("runtime driver %q is incompatible with topology %q", organization.Runtime.Driver, organization.Runtime.Topology)
+	}
+	if organization.Runtime.Topology == "single-node" && len(organization.Runtime.Nodes) != 1 || organization.Runtime.Topology == "multi-node" && len(organization.Runtime.Nodes) < 2 {
+		return fmt.Errorf("runtime topology %q has an invalid node count", organization.Runtime.Topology)
+	}
+	seenNodes := make(map[string]bool, len(organization.Runtime.Nodes))
+	for _, node := range organization.Runtime.Nodes {
+		if !validScenarioID(node.ID) || strings.TrimSpace(node.Location) == "" || seenNodes[node.ID] {
+			return errors.New("runtime nodes require unique valid ids and locations")
+		}
+		seenNodes[node.ID] = true
 	}
 	if !strings.Contains(organization.Directory.BaseDN, "=") {
 		return errors.New("directory base_dn is required")
@@ -226,6 +310,20 @@ func validateSimulatorOrganization(organization simulatorOrganization) error {
 		}
 		seen[person.UID] = struct{}{}
 	}
+	seenGroups := make(map[string]bool, len(organization.Directory.Groups))
+	for _, group := range organization.Directory.Groups {
+		if strings.TrimSpace(group.Name) == "" || seenGroups[group.Name] {
+			return errors.New("directory groups require unique names")
+		}
+		seenGroups[group.Name] = true
+		members := make(map[string]bool, len(group.Members))
+		for _, member := range group.Members {
+			if _, exists := seen[member]; !exists || members[member] {
+				return fmt.Errorf("directory group %q has an unknown or duplicate member %q", group.Name, member)
+			}
+			members[member] = true
+		}
+	}
 	for _, policy := range organization.Policies {
 		if !validScenarioID(policy.ID) || policy.Name == "" || policy.Description == "" {
 			return errors.New("policies require a valid id, name, and description")
@@ -240,6 +338,32 @@ func validateSimulatorOrganization(organization simulatorOrganization) error {
 		}
 		if service.ActorCN != "" && (!policyTestValueSafe(service.ActorCN) || len(service.ActorCN) > 200) {
 			return fmt.Errorf("service %q has an invalid provider actor identity", service.Name)
+		}
+	}
+	if profile := organization.LoadTest; profile != nil {
+		if !validScenarioID(profile.ClientMachine) || !validScenarioID(profile.ServiceMachine) || profile.ClientMachine == profile.ServiceMachine {
+			return errors.New("load test requires distinct valid client and service machines")
+		}
+		if !testClientWorkloads[profile.ClientWorkload] || testServicePorts[profile.ServiceWorkload] == "" {
+			return errors.New("load test requires a supported client and service workload")
+		}
+		if profile.ClientCount < 100 || profile.ClientCount > 512 || profile.ServiceCount < 100 || profile.ServiceCount > 512 {
+			return errors.New("load test client and service counts must be between 100 and 512")
+		}
+		if profile.BasePort < 1024 || profile.BasePort+profile.ServiceCount-1 > 65535 {
+			return errors.New("load test service port range is invalid")
+		}
+		if profile.DurationSeconds < 10 || profile.DurationSeconds > 180 {
+			return errors.New("load test duration must be between 10 and 180 seconds")
+		}
+		if profile.RequestDelayMinMilliseconds < 100 || profile.RequestDelayMaxMilliseconds < profile.RequestDelayMinMilliseconds || profile.RequestDelayMaxMilliseconds > 60000 {
+			return errors.New("load test request delay range is invalid")
+		}
+		if profile.RestartIntervalMinSeconds < 5 || profile.RestartIntervalMaxSeconds < profile.RestartIntervalMinSeconds || profile.RestartIntervalMaxSeconds > profile.DurationSeconds {
+			return errors.New("load test client restart interval is invalid")
+		}
+		if profile.RestartPauseMinSeconds < 1 || profile.RestartPauseMaxSeconds < profile.RestartPauseMinSeconds || profile.RestartPauseMaxSeconds > 30 {
+			return errors.New("load test client restart pause is invalid")
 		}
 	}
 	testServiceIDs := make(map[string]bool, len(organization.PolicyTestServices))
@@ -275,6 +399,61 @@ func validateSimulatorOrganization(organization simulatorOrganization) error {
 		}
 	}
 	return nil
+}
+
+func materializeSimulatorLoadTestServices(organization *simulatorOrganization) {
+	if organization.LoadTest == nil {
+		return
+	}
+	services := organization.Services[:0]
+	for _, service := range organization.Services {
+		if service.Name != "LoadServiceFleet" {
+			services = append(services, service)
+		}
+	}
+	organization.Services = services
+	profile := organization.LoadTest
+	for index := 1; index <= profile.ServiceCount; index++ {
+		serviceNumber := fmt.Sprintf("%03d", index)
+		organization.Services = append(organization.Services, simulatorOrganizationService{
+			Name:        "LoadService" + serviceNumber,
+			Kind:        "Stress HTTP",
+			Endpoint:    fmt.Sprintf("ZPR/TCP/%d", profile.BasePort+index-1),
+			Description: "Generated load-test endpoint on " + profile.ServiceMachine,
+			PolicyID:    "load-service-" + serviceNumber + ".svc.zpr",
+			ActorCN:     profile.ServiceWorkload,
+		})
+	}
+}
+
+func simulatorLoadTestServiceNames(profile simulatorLoadTestProfile) []string {
+	services := make([]string, profile.ServiceCount)
+	for index := range services {
+		services[index] = fmt.Sprintf("LoadService%03d", index+1)
+	}
+	return services
+}
+
+func simulatorLoadTestServicesForAgent(directory, organizationID, agent string) ([]string, error) {
+	organization, err := loadSimulatorOrganization(directory, organizationID)
+	if err != nil {
+		return nil, err
+	}
+	if organization.LoadTest == nil || organization.LoadTest.ServiceWorkload != agent {
+		return nil, nil
+	}
+	return simulatorLoadTestServiceNames(*organization.LoadTest), nil
+}
+
+func simulatorLoadTestProfileForManifest(manifest simulatorManifest) (simulatorLoadTestProfile, bool, error) {
+	organization, err := loadSimulatorOrganization(simulatorOrganizationsDirectory(), activeSimulatorOrganizationID(manifest))
+	if err != nil {
+		return simulatorLoadTestProfile{}, false, err
+	}
+	if organization.LoadTest == nil {
+		return simulatorLoadTestProfile{}, false, nil
+	}
+	return *organization.LoadTest, true, nil
 }
 
 func loadSimulatorOrganization(directory, id string) (simulatorOrganization, error) {

@@ -656,13 +656,7 @@ func (a *application) handleCreatePolicyRecord(w http.ResponseWriter, r *http.Re
 func (a *application) validatePolicyRecordContent(ctx context.Context, kind, contentType, content string) *policyCheckResponse {
 	switch kind {
 	case "policy":
-		if strings.TrimSpace(content) == "" {
-			return nil
-		}
-		result := a.policy.check(ctx, content)
-		if !result.Valid {
-			return &result
-		}
+		return nil
 	case organizationAssertionsKind:
 		if contentType != assertionRecordSourceContentType {
 			return &policyCheckResponse{Diagnostics: "Assertion records must use the assertion source content type."}
@@ -815,15 +809,11 @@ func (a *application) handlePolicyRecordRevisions(w http.ResponseWriter, r *http
 		writePolicyError(w, http.StatusConflict, "Restore the archived record before editing it.")
 		return
 	}
-	if record.Kind == "policy" {
-		result := a.policy.checkUnlocked(r.Context(), request.Content)
-		if !result.Valid {
-			writeJSON(w, http.StatusUnprocessableEntity, result)
+	if record.Kind != "policy" {
+		if validation := a.validatePolicyRecordContent(r.Context(), record.Kind, record.ContentType, request.Content); validation != nil {
+			writeJSON(w, http.StatusUnprocessableEntity, validation)
 			return
 		}
-	} else if validation := a.validatePolicyRecordContent(r.Context(), record.Kind, record.ContentType, request.Content); validation != nil {
-		writeJSON(w, http.StatusUnprocessableEntity, validation)
-		return
 	}
 	revision, err := a.policy.store.AppendRevision(r.Context(), recordID, request.ExpectedRevision, request.Content, policyAuthor(), request.Summary)
 	if err != nil {

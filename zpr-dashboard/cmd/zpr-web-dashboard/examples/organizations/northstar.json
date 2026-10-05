@@ -2,6 +2,11 @@
   "id": "northstar",
   "name": "Northstar Labs",
   "description": "Research and engineering organization with campus and remote teams.",
+  "runtime": {
+    "driver": "linux-one-node",
+    "topology": "single-node",
+    "nodes": [{"id": "northstar-node", "location": "North Campus"}]
+  },
   "directory": {
     "base_dn": "dc=northstar,dc=test",
     "seed_mode": "pregen",

@@ -49,7 +49,12 @@ directory=${config%/*}
 bind=$1
 base=$2
 shift 2
-sudo -n ip netns exec zpr-vs env LDAPTLS_REQCERT=demand LDAPTLS_CACERT="$directory/ca.crt" ldapsearch -LLL -x \
+if ip netns list 2>/dev/null | awk '$1 == "zpr-vs" { found = 1 } END { exit !found }'; then
+	search() { sudo -n ip netns exec zpr-vs env "$@"; }
+else
+	search() { env "$@"; }
+fi
+search LDAPTLS_REQCERT=demand LDAPTLS_CACERT="$directory/ca.crt" ldapsearch -LLL -x \
 	-H ldaps://127.0.0.1:1636 -D "$bind" -y "$directory/ldap-password" \
 	-b "$base" -s sub '(|(objectClass=person)(objectClass=inetOrgPerson)(objectClass=posixAccount)(objectClass=posixGroup)(objectClass=groupOfNames)(objectClass=groupOfUniqueNames))' \
 	objectClass uid cn memberUid member uniqueMember "$@"
@@ -117,8 +122,17 @@ func parseAssertionLDAPAttributes(source string, attributes []string) (assertion
 		if classes["person"] || classes["inetorgperson"] || classes["posixaccount"] {
 			uids := entry.GetEqualFoldAttributeValues("uid")
 			dn, parseErr := ldap.ParseDN(entry.DN)
-			if parseErr != nil || len(uids) != 1 || uids[0] == "" || len(uids[0]) > 200 || people[uids[0]] || peopleByDN[dn.String()] != "" {
-				return assertionDirectory{}, errors.New("LDAP people must have unique UID and distinguished-name identities")
+			if parseErr != nil {
+				return assertionDirectory{}, errors.New("LDAP people must have valid distinguished names")
+			}
+			if len(uids) != 1 || uids[0] == "" || len(uids[0]) > 200 {
+				return assertionDirectory{}, errors.New("LDAP people must have exactly one nonempty UID")
+			}
+			if people[uids[0]] {
+				return assertionDirectory{}, errors.New("LDAP people must have unique UIDs")
+			}
+			if peopleByDN[dn.String()] != "" {
+				return assertionDirectory{}, errors.New("LDAP people must have unique distinguished names")
 			}
 			people[uids[0]], peopleByDN[dn.String()] = true, uids[0]
 			personAttributes[uids[0]], err = assertionLDAPAttributes(entry, attributes)

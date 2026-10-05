@@ -16,7 +16,8 @@ directory.
 Supported step actions are `start_machine`, `wait_controller`, `login`,
 `select_workloads`, `start_workload`, `traffic`, `stop_workload`, `logout`,
 `stop_machine`, `start_test_service`, `request_test_service`,
-`stop_test_service`, `benchmark_test_service`, and `delay`. Steps are run in order. `traffic` probes the
+`stop_test_service`, `start_service_fleet`, `stop_service_fleet`,
+`stress_traffic`, `benchmark_test_service`, and `delay`. Steps are run in order. `traffic` probes the
 component's manifest namespace and target, or an explicit IPv6 `target`, and
 requires `expected` to be `allow` or `deny`.
 
@@ -30,7 +31,7 @@ after recovery from older rigs, `scripts/dashboard-stack.sh stop-legacy-workload
 withdraws those copies without stopping DNS or platform infrastructure.
 
 Keep cleanup
-to `stop_test_service`, `stop_workload`, `logout`, and `stop_machine` actions so partial scenarios do
+to `stop_test_service`, `stop_service_fleet`, `stop_workload`, `logout`, and `stop_machine` actions so partial scenarios do
 not leave simulated sessions or workloads behind. Scenario files cannot run
 arbitrary shell commands. Step timeouts are optional and capped by the runner.
 
@@ -92,3 +93,11 @@ address granted to that client, and routes service replies through the service
 PH link rather than the machine-control link.
 Scenario files may reference at most ten distinct machines, and the runner also
 refuses to start a machine if that would put the live fleet above ten.
+
+`load-lab-fanout.json` starts 200 service ports on machine-05 and runs 200
+logical HTTP clients from machine-03 for two minutes. Each request opens a fresh
+TCP connection to a randomly selected service; each logical client periodically
+goes offline for a short pause and resumes. These clients share one
+`finance-client` ZPR adapter identity/address, so this exercises flow and service
+fan-out rather than hundreds of independent adapter identities. Load Lab's
+README documents the generated runtime policy, provisioning steps, and bounds.

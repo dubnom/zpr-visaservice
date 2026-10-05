@@ -143,6 +143,14 @@ start_browser_gateway() {
 }
 
 start_admin_relay() {
+    if pid_running "$ADMIN_RELAY_PID"; then
+        relay_listener=$(lsof -tiTCP:"$ADMIN_RELAY_PORT" -sTCP:LISTEN 2>/dev/null || true)
+        if [ "$relay_listener" = "$(cat "$ADMIN_RELAY_PID")" ]; then
+            wait_for_response "https://127.0.0.1:$ADMIN_RELAY_PORT/admin/stats" admin-relay \
+                --cacert "$RUNTIME_DIR/local-admin-cert.pem"
+            return 0
+        fi
+    fi
     start_service admin-relay "$ADMIN_RELAY_PID" socat \
         "TCP-LISTEN:$ADMIN_RELAY_PORT,bind=127.0.0.1,reuseaddr,fork" \
         "SYSTEM:\"/usr/local/bin/docker exec -i $SIMULATION_CONTAINER ip netns exec zpr-vs socat STDIO TCP:[fd5a:5052::1]:8182\""
@@ -216,17 +224,22 @@ stop_ui_relays() {
 }
 
 start_control_service() {
+    control_organization="${SIMULATION_ORGANIZATION_ID:-${organization_id:-$(jq -r '.organization_id // "northstar"' "$SIMULATION_MANIFEST")}}"
+    control_ldap_container=${ZPR_ASSERTION_LDAP_CONTAINER:-}
+    if [ -z "$control_ldap_container" ]; then
+        control_ldap_container=$(policy_ldap_container "$control_organization")
+    fi
     start_service control-service "$CONTROL_PID" env \
         ZPR_CONTROL_SERVICE_LISTEN=127.0.0.1:8790 \
         ZPR_CONTROL_SERVICE_CERT_FILE="$SERVICE_CERTS/control-service.crt" \
         ZPR_CONTROL_SERVICE_KEY_FILE="$SERVICE_CERTS/control-service.key" \
         ZPR_CONTROL_SERVICE_CLIENT_CA_FILE="$SERVICE_CERTS/service-ca.crt" \
         ZPR_ASSERTION_STORE_FILE="${ZPR_ASSERTION_STORE_FILE:-$STATE_DIR/assertions/global.json}" \
-        ZPR_ASSERTION_LDAP_CONTAINER="${ZPR_ASSERTION_LDAP_CONTAINER:-$SIMULATION_CONTAINER}" \
-        ZPR_PLATFORM_SERVICES="$(jq -c '[.services[] | select(.kind == "Gateway") | {service_name: .name, actor_cn: .provider, zpr_addr: .address, service_kind: .kind, service_endpoints: .endpoint, external_network_connection: .external_network_connection}]' "$SIMULATION_MANIFEST")" \
-        ZPR_ADMIN_URL="https://127.0.0.1:$ADMIN_RELAY_PORT" \
-        ZPR_ADMIN_CA_FILE="$RUNTIME_DIR/local-admin-cert.pem" \
-        ZPR_ADMIN_KEY_FILE="$RUNTIME_DIR/admin-read.key" \
+        ZPR_ASSERTION_LDAP_CONTAINER="$control_ldap_container" \
+        ZPR_PLATFORM_SERVICES="${ZPR_PLATFORM_SERVICES:-$(jq -c '[.services[] | select(.kind == "Gateway") | {service_name: .name, actor_cn: .provider, zpr_addr: .address, service_kind: .kind, service_endpoints: .endpoint, external_network_connection: .external_network_connection}]' "$SIMULATION_MANIFEST")}" \
+        ZPR_ADMIN_URL="${ZPR_ADMIN_URL:-https://127.0.0.1:$ADMIN_RELAY_PORT}" \
+        ZPR_ADMIN_CA_FILE="${ZPR_ADMIN_CA_FILE:-$RUNTIME_DIR/local-admin-cert.pem}" \
+        ZPR_ADMIN_KEY_FILE="${ZPR_ADMIN_KEY_FILE:-$RUNTIME_DIR/admin-read.key}" \
         ZPR_DNS_STATS_URL="${ZPR_DNS_STATS_URL:-http://127.0.0.1:$DNS_STATS_RELAY_PORT}" \
         ZPR_DNS_TRANSFER_ADDR="127.0.0.1:$DNS_RECORDS_RELAY_PORT" \
         ZPR_DNS_TRANSFER_TSIG_KEY_FILE="$DNS_VIEWER_KEY_FILE" \
@@ -454,6 +467,7 @@ restart_policy_context() {
     context_config="$DASHBOARD_DIR/cmd/zpr-web-dashboard/examples/$(jq -er '.policy_config' "$context_profile")"
     context_catalog="$DASHBOARD_DIR/cmd/zpr-web-dashboard/examples/$(jq -er '.policy_catalog' "$context_profile")"
     context_base_dn=$(jq -er '.directory.base_dn' "$context_profile")
+    context_ldap_container=$(policy_ldap_container "$context_organization")
     [ -r "$context_config" ] && [ -r "$context_catalog" ] || { echo "policy profile assets unavailable" >&2; return 1; }
     prepare_policy_tester
     if pid_running "$POLICY_PID"; then
@@ -478,7 +492,7 @@ restart_policy_context() {
         ZPR_POLICY_DEMO_CATALOG_FILE="$context_catalog" \
         ZPR_POLICY_STAGE_DIR="$STATE_DIR/staged-policy/$context_organization" \
         ZPR_POLICY_STAGE_SIGNING_KEY_FILE="$RUNTIME_DIR/linux-integration/pregen/zpr-rsa-key.pem" \
-        ZPR_POLICY_LDAP_CONTAINER="$SIMULATION_CONTAINER" \
+        ZPR_POLICY_LDAP_CONTAINER="$context_ldap_container" \
         ZPR_POLICY_LDAP_BASE_DN="$context_base_dn" \
         ZPR_POLICY_LDAP_BIND_DN="cn=zpr-reader,ou=Service Accounts,$context_base_dn" \
         SIMULATION_MANIFEST="$SIMULATION_MANIFEST" \
@@ -490,6 +504,17 @@ restart_policy_context() {
         --cacert "$SERVICE_CERTS/service-ca.crt" \
         --cert "$SERVICE_CERTS/control-policy-client.crt" \
         --key "$SERVICE_CERTS/control-policy-client.key"
+}
+
+policy_ldap_container() {
+    organization=$1
+    profile="$ORGANIZATIONS_DIR/$organization.json"
+    driver=$(jq -er '.runtime.driver' "$profile")
+    case "$driver" in
+        docker-multinode) printf '%s-directory' "$organization" ;;
+        linux-one-node) printf '%s' "$SIMULATION_CONTAINER" ;;
+        *) echo "unsupported organization runtime driver: $driver" >&2; return 1 ;;
+    esac
 }
 
 prepare_policy_tester() {
@@ -530,6 +555,7 @@ start_stack() {
     policy_catalog_relative=$(jq -er '.policy_catalog' "$organization_file")
     ldap_base_dn=$(jq -er '.directory.base_dn' "$organization_file")
     ldap_bind_dn="cn=zpr-reader,ou=Service Accounts,$ldap_base_dn"
+    ldap_container=$(policy_ldap_container "$organization_id")
     policy_config="$DASHBOARD_DIR/cmd/zpr-web-dashboard/examples/$policy_config_relative"
     policy_catalog="$DASHBOARD_DIR/cmd/zpr-web-dashboard/examples/$policy_catalog_relative"
     if [ ! -r "$policy_config" ] || [ ! -r "$policy_catalog" ]; then
@@ -556,7 +582,7 @@ start_stack() {
         ZPR_POLICY_DEMO_CATALOG_FILE="$policy_catalog" \
         ZPR_POLICY_STAGE_DIR="$STATE_DIR/staged-policy" \
         ZPR_POLICY_STAGE_SIGNING_KEY_FILE="$RUNTIME_DIR/linux-integration/pregen/zpr-rsa-key.pem" \
-        ZPR_POLICY_LDAP_CONTAINER="$SIMULATION_CONTAINER" \
+        ZPR_POLICY_LDAP_CONTAINER="$ldap_container" \
         ZPR_POLICY_LDAP_BASE_DN="$ldap_base_dn" \
         ZPR_POLICY_LDAP_BIND_DN="$ldap_bind_dn" \
         SIMULATION_MANIFEST="$SIMULATION_MANIFEST" \
@@ -651,6 +677,8 @@ case "${1:-start}" in
     stop) stop_stack ;;
     restart) start_stack ;;
     status) status_stack ;;
+    start-admin-relay) start_admin_relay ;;
+    stop-admin-relay) stop_service "$ADMIN_RELAY_PID" ;;
     start-dns) start_dns_service ;;
     stop-dns) stop_dns_service ;;
     start-ui-relays) start_ui_relays ;;
@@ -668,5 +696,5 @@ case "${1:-start}" in
         [ "$#" -eq 3 ] || { echo "usage: $0 restart-policy-context organization source" >&2; exit 2; }
         restart_policy_context "$2" "$3"
         ;;
-    *) echo "usage: $0 {start|stop|restart|status|start-dns|stop-dns|start-ui-relays|stop-ui-relays|start-browser-gateway|stop-browser-gateway|restart-control-service|restart-simulator-control}" >&2; exit 2 ;;
+    *) echo "usage: $0 {start|stop|restart|status|start-admin-relay|stop-admin-relay|start-dns|stop-dns|start-ui-relays|stop-ui-relays|start-browser-gateway|stop-browser-gateway|restart-control-service|restart-simulator-control}" >&2; exit 2 ;;
 esac

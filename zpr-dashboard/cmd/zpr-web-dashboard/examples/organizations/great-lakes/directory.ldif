@@ -1,0 +1,314 @@
+dn: dc=greatlakes,dc=test
+objectClass: top
+objectClass: dcObject
+objectClass: organization
+dc: greatlakes
+o: Great Lakes Instruments
+
+dn: ou=People,dc=greatlakes,dc=test
+objectClass: top
+objectClass: organizationalUnit
+ou: People
+
+dn: ou=Machines,dc=greatlakes,dc=test
+objectClass: top
+objectClass: organizationalUnit
+ou: Machines
+
+dn: ou=Roles,dc=greatlakes,dc=test
+objectClass: top
+objectClass: organizationalUnit
+ou: Roles
+
+dn: uid=maya.brooks,ou=People,dc=greatlakes,dc=test
+objectClass: inetOrgPerson
+uid: maya.brooks
+cn: Maya Brooks
+sn: Brooks
+mail: maya.brooks@greatlakes.example
+ou: Customer Support
+title: Customer Support Lead
+l: Milwaukee, Wisconsin, USA
+
+dn: uid=james.wu,ou=People,dc=greatlakes,dc=test
+objectClass: inetOrgPerson
+uid: james.wu
+cn: James Wu
+sn: Wu
+mail: james.wu@greatlakes.example
+ou: Engineering
+title: Engineering Manager
+l: Milwaukee, Wisconsin, USA
+
+dn: uid=olivia.chen,ou=People,dc=greatlakes,dc=test
+objectClass: inetOrgPerson
+uid: olivia.chen
+cn: Olivia Chen
+sn: Chen
+mail: olivia.chen@greatlakes.example
+ou: Finance
+title: Finance Analyst
+l: Milwaukee, Wisconsin, USA
+
+dn: uid=harper.jones,ou=People,dc=greatlakes,dc=test
+objectClass: inetOrgPerson
+uid: harper.jones
+cn: Harper Jones
+sn: Jones
+mail: harper.jones@greatlakes.example
+ou: Shipping
+title: Shipping Coordinator
+l: Milwaukee, Wisconsin, USA
+
+dn: uid=devin.brooks,ou=People,dc=greatlakes,dc=test
+objectClass: inetOrgPerson
+uid: devin.brooks
+cn: Devin Brooks
+sn: Brooks
+mail: devin.brooks@greatlakes.example
+ou: Receiving
+title: Receiving Supervisor
+l: Milwaukee, Wisconsin, USA
+
+dn: uid=lin.wei,ou=People,dc=greatlakes,dc=test
+objectClass: inetOrgPerson
+uid: lin.wei
+cn: Lin Wei
+sn: Wei
+mail: lin.wei@greatlakes.example
+ou: Shenzhen Engineering
+title: Embedded Engineer
+l: Shenzhen, China
+
+dn: uid=chen.yu,ou=People,dc=greatlakes,dc=test
+objectClass: inetOrgPerson
+uid: chen.yu
+cn: Chen Yu
+sn: Yu
+mail: chen.yu@greatlakes.example
+ou: Shenzhen Engineering
+title: Test Automation Engineer
+l: Shenzhen, China
+
+dn: uid=lucia.torres,ou=People,dc=greatlakes,dc=test
+objectClass: inetOrgPerson
+uid: lucia.torres
+cn: Lucia Torres
+sn: Torres
+mail: lucia.torres@greatlakes.example
+ou: Assembly
+title: Assembly Technician
+l: Tijuana, Mexico
+
+dn: uid=ana.garcia,ou=People,dc=greatlakes,dc=test
+objectClass: inetOrgPerson
+uid: ana.garcia
+cn: Ana Garcia
+sn: Garcia
+mail: ana.garcia@greatlakes.example
+ou: Test and Quality
+title: Quality Test Engineer
+l: Tijuana, Mexico
+
+dn: uid=machine-01,ou=Machines,dc=greatlakes,dc=test
+objectClass: inetOrgPerson
+objectClass: zprMachine
+uid: machine-01
+cn: machine-01
+sn: Endpoint
+zprMachineId: machine-01
+zprMachineType: laptop
+zprMachineModel: Customer Support Laptop
+zprMachineLocation: Milwaukee, Wisconsin, USA
+ou: Customer Support
+zprMachineOwner: maya.brooks
+zprMachineSecure: TRUE
+
+dn: uid=machine-02,ou=Machines,dc=greatlakes,dc=test
+objectClass: inetOrgPerson
+objectClass: zprMachine
+uid: machine-02
+cn: machine-02
+sn: Endpoint
+zprMachineId: machine-02
+zprMachineType: laptop
+zprMachineModel: Engineering Workstation
+zprMachineLocation: Milwaukee, Wisconsin, USA
+ou: Engineering
+zprMachineOwner: james.wu
+zprMachineSecure: TRUE
+
+dn: uid=machine-03,ou=Machines,dc=greatlakes,dc=test
+objectClass: inetOrgPerson
+objectClass: zprMachine
+uid: machine-03
+cn: machine-03
+sn: Endpoint
+zprMachineId: machine-03
+zprMachineType: desktop
+zprMachineModel: Finance Workstation
+zprMachineLocation: Milwaukee, Wisconsin, USA
+ou: Finance
+zprMachineOwner: olivia.chen
+zprMachineSecure: TRUE
+
+dn: uid=machine-04,ou=Machines,dc=greatlakes,dc=test
+objectClass: inetOrgPerson
+objectClass: zprMachine
+uid: machine-04
+cn: machine-04
+sn: Endpoint
+zprMachineId: machine-04
+zprMachineType: workstation
+zprMachineModel: Shipping Terminal
+zprMachineLocation: Milwaukee, Wisconsin, USA
+ou: Shipping
+zprMachineOwner: harper.jones
+zprMachineSecure: TRUE
+
+dn: uid=machine-05,ou=Machines,dc=greatlakes,dc=test
+objectClass: inetOrgPerson
+objectClass: zprMachine
+uid: machine-05
+cn: machine-05
+sn: Endpoint
+zprMachineId: machine-05
+zprMachineType: workstation
+zprMachineModel: Receiving Terminal
+zprMachineLocation: Milwaukee, Wisconsin, USA
+ou: Receiving
+zprMachineOwner: devin.brooks
+zprMachineSecure: TRUE
+
+dn: uid=machine-06,ou=Machines,dc=greatlakes,dc=test
+objectClass: inetOrgPerson
+objectClass: zprMachine
+uid: machine-06
+cn: machine-06
+sn: Endpoint
+zprMachineId: machine-06
+zprMachineType: laptop
+zprMachineModel: Shenzhen Engineering Laptop
+zprMachineLocation: Shenzhen, China
+ou: Shenzhen Engineering
+zprMachineOwner: lin.wei
+zprMachineSecure: TRUE
+
+dn: uid=machine-07,ou=Machines,dc=greatlakes,dc=test
+objectClass: inetOrgPerson
+objectClass: zprMachine
+uid: machine-07
+cn: machine-07
+sn: Endpoint
+zprMachineId: machine-07
+zprMachineType: workstation
+zprMachineModel: Assembly Station
+zprMachineLocation: Tijuana, Mexico
+ou: Assembly
+zprMachineOwner: lucia.torres
+zprMachineSecure: TRUE
+
+dn: uid=machine-08,ou=Machines,dc=greatlakes,dc=test
+objectClass: inetOrgPerson
+objectClass: zprMachine
+uid: machine-08
+cn: machine-08
+sn: Endpoint
+zprMachineId: machine-08
+zprMachineType: workstation
+zprMachineModel: Quality Test Bench
+zprMachineLocation: Tijuana, Mexico
+ou: Test and Quality
+zprMachineOwner: ana.garcia
+zprMachineSecure: TRUE
+
+dn: uid=support-desk-app,ou=Machines,dc=greatlakes,dc=test
+objectClass: inetOrgPerson
+uid: support-desk-app
+cn: support-desk-app
+sn: Application
+
+dn: uid=engineering-build-farm,ou=Machines,dc=greatlakes,dc=test
+objectClass: inetOrgPerson
+uid: engineering-build-farm
+cn: engineering-build-farm
+sn: Application
+
+dn: uid=finance-workspace,ou=Machines,dc=greatlakes,dc=test
+objectClass: inetOrgPerson
+uid: finance-workspace
+cn: finance-workspace
+sn: Application
+
+dn: uid=shipping-portal,ou=Machines,dc=greatlakes,dc=test
+objectClass: inetOrgPerson
+uid: shipping-portal
+cn: shipping-portal
+sn: Application
+
+dn: uid=receiving-portal,ou=Machines,dc=greatlakes,dc=test
+objectClass: inetOrgPerson
+uid: receiving-portal
+cn: receiving-portal
+sn: Application
+
+dn: uid=assembly-mes,ou=Machines,dc=greatlakes,dc=test
+objectClass: inetOrgPerson
+uid: assembly-mes
+cn: assembly-mes
+sn: Application
+
+dn: uid=quality-test-bench,ou=Machines,dc=greatlakes,dc=test
+objectClass: inetOrgPerson
+uid: quality-test-bench
+cn: quality-test-bench
+sn: Application
+
+dn: cn=HQCustomerSupport,ou=Roles,dc=greatlakes,dc=test
+objectClass: top
+objectClass: groupOfNames
+cn: HQCustomerSupport
+member: uid=maya.brooks,ou=People,dc=greatlakes,dc=test
+
+dn: cn=HQEngineering,ou=Roles,dc=greatlakes,dc=test
+objectClass: top
+objectClass: groupOfNames
+cn: HQEngineering
+member: uid=james.wu,ou=People,dc=greatlakes,dc=test
+
+dn: cn=HQFinance,ou=Roles,dc=greatlakes,dc=test
+objectClass: top
+objectClass: groupOfNames
+cn: HQFinance
+member: uid=olivia.chen,ou=People,dc=greatlakes,dc=test
+
+dn: cn=HQShipping,ou=Roles,dc=greatlakes,dc=test
+objectClass: top
+objectClass: groupOfNames
+cn: HQShipping
+member: uid=harper.jones,ou=People,dc=greatlakes,dc=test
+
+dn: cn=HQReceiving,ou=Roles,dc=greatlakes,dc=test
+objectClass: top
+objectClass: groupOfNames
+cn: HQReceiving
+member: uid=devin.brooks,ou=People,dc=greatlakes,dc=test
+
+dn: cn=ShenzhenEngineering,ou=Roles,dc=greatlakes,dc=test
+objectClass: top
+objectClass: groupOfNames
+cn: ShenzhenEngineering
+member: uid=lin.wei,ou=People,dc=greatlakes,dc=test
+member: uid=chen.yu,ou=People,dc=greatlakes,dc=test
+
+dn: cn=TijuanaAssembly,ou=Roles,dc=greatlakes,dc=test
+objectClass: top
+objectClass: groupOfNames
+cn: TijuanaAssembly
+member: uid=lucia.torres,ou=People,dc=greatlakes,dc=test
+
+dn: cn=TijuanaTest,ou=Roles,dc=greatlakes,dc=test
+objectClass: top
+objectClass: groupOfNames
+cn: TijuanaTest
+member: uid=ana.garcia,ou=People,dc=greatlakes,dc=test

@@ -3,7 +3,7 @@
 **Scope:** Control Room, Simulator, the Policy Service integration, trusted LDAP
 readers, organization workspaces, and browser-accessible operational data.
 
-**Status:** working checklist, updated 2026-10-03. Checked items describe
+**Status:** working checklist, updated 2026-10-04. Checked items describe
 implemented controls, not a claim that the whole dashboard is security-certified.
 Keep this plan aligned with the broader ZPR [security model](../../zpr-dev-context/docs/SECURITY_MODEL.md)
 and the separate organization-isolation work.
@@ -28,6 +28,10 @@ and the separate organization-isolation work.
   clears the prior in-memory result.
 - [x] Machine-log responses are bounded and redact recognized credentials.
   Browser tests cover CSP, HTML/ANSI safety, source failures, and polling state.
+- [x] A proposed remote browser-access contract is documented in
+  [BROWSER_ACCESS_CONTRACT.md](BROWSER_ACCESS_CONTRACT.md). This is a design
+  contract only; the mTLS gateway and all application listeners remain
+  loopback-only.
 
 ## Open Work
 
@@ -52,6 +56,9 @@ and the separate organization-isolation work.
 
 ### P0: Browser Authentication and CSRF
 
+- [ ] Implement the proposed remote access contract before any public binding;
+  the current client-certificate gateway prototype is not an authenticated
+  administrative product.
 - [ ] Before any non-loopback deployment, require an authenticated user session
   for browser routes; mTLS between backend services does not identify individual
   browser users. Define roles for read-only monitoring, policy editing/staging,

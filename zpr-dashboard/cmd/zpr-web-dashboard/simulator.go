@@ -738,7 +738,12 @@ func handleSimulatorAction(w http.ResponseWriter, r *http.Request) {
 			if action == "stop-component" {
 				operation = "stop-workload"
 			}
-			result, dispatchErr := dispatchMachineControlCommand(machineID, machineControlCommand{Action: operation, Workload: agent})
+			services, servicesErr := simulatorLoadTestServicesForAgent(simulatorOrganizationsDirectory(), activeSimulatorOrganizationID(manifest), agent)
+			if servicesErr != nil {
+				http.Error(w, "organization workload configuration unavailable", http.StatusServiceUnavailable)
+				return
+			}
+			result, dispatchErr := dispatchMachineControlCommand(machineID, machineControlCommand{Action: operation, Workload: agent, Services: services})
 			if dispatchErr != nil {
 				http.Error(w, "machine workload dispatch failed: "+dispatchErr.Error(), http.StatusGatewayTimeout)
 				return

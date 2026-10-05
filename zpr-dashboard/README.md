@@ -8,23 +8,24 @@ To setup your development environment, run `go mod download` to install the loca
 
 ## Tests
 
-`make test` runs the Go unit and component suites. Browser regressions require
-Node.js 20 or newer (CI uses 22) and the pinned development dependencies:
+`make test` runs the Go unit and component suites. Browser regressions run in
+the pinned Playwright Docker image; Docker is the only additional local
+prerequisite. Node/npm and Chromium stay inside the container:
 
 ```sh
-npm ci
-npx playwright install chromium
 make test-browser
 make test-all
 ```
 
-On Linux, use `npx playwright install --with-deps chromium` when installing
-the browser's system dependencies. CI runs both the Go and browser suites;
+When changing browser dependencies, regenerate the lockfile and embedded
+browser assets with `make vendor-browser-assets`. This runs npm in the
+multi-architecture Node container. CI runs both the Go and browser suites;
 failed browser tests retain screenshots and traces as artifacts.
 
-The browser suite runs regressions on desktop and mobile Chromium. It
-serves the real static assets with the dashboard's CSP and fixture APIs, without
-Docker, running services, certificates, or private credentials. Coverage includes
+The browser suite runs regressions on desktop and iPad-like tablet Chromium inside
+the container, matching the supported web-GUI device scope. It serves the real
+static assets with the dashboard's CSP and fixture APIs, without live services,
+certificates, or private credentials. Coverage includes
 radio log selection, per-source scroll/follow memory, errors and polling lifecycle,
 ANSI/HTML safety, policy completions, map/table colors and gateway clouds, visa
 refresh/DNS labels, LDAP popups, attributes, memberships, branch collapse, and
@@ -90,6 +91,13 @@ and their sources, including multiline clauses. Suggestions are suppressed
 after terminating periods and inside comments, quoted strings, and attribute
 values. Control-Space requests suggestions, arrow keys select, Tab accepts,
 and Escape dismisses; Enter remains a newline and Shift-Tab moves focus out.
+
+Rescan LDAP, Format, Discard, Evaluate & Test, Save, Save As, and Compile & Stage
+share a responsive control strip directly above the source editor. Evaluate &
+Test runs ZPLC before the identity simulation. Save and Save As automatically
+rerun the simulation; if it fails, the user must confirm Save anyway. Compiler-invalid
+source can still be preserved, but cannot be staged. Compile & Stage recompiles
+the selected saved revision on the server before creating a candidate.
 
 The Control Room Services page uses distinct type colors for BuiltIn, Regular,
 Visa, Gateway, trusted file, trusted REST, and services not in the current
@@ -266,20 +274,19 @@ shows organizational relationships from profile data, not a live LDAP query or
 an LDIF parser, and does not imply that people are physically stored beneath
 their department DN. It supports keyboard node selection, pan, zoom, and fit.
 
-## Browser Access Gateway
+## Browser Access Gateway Prototype
 
-The optional browser gateway exposes only the Control Room and simulator over
-mutually authenticated HTTPS. It routes `control.localhost` to
-`127.0.0.1:8787` and `simulator.localhost` to `127.0.0.1:8788`; upstreams must
-remain loopback origins. LDAP and OpenObserve remain separate local-only tools
-in this first version.
+The optional gateway is a loopback-only development prototype. It routes
+`control.localhost` to `127.0.0.1:8787` and `simulator.localhost` to
+`127.0.0.1:8788`; upstreams must remain loopback origins. LDAP and OpenObserve
+remain separate local-only tools.
 
 With the default hostnames and port, use `https://control.localhost:8443` for
 Control Room and `https://simulator.localhost:8443` for the Simulator.
 
-Provision a server certificate/key and a dedicated browser-client CA. Do not
-reuse the machine-control CA. Start the gateway without restarting the rest of
-the stack:
+The prototype requires a server certificate/key and a dedicated browser-client
+CA. Do not reuse the machine-control CA. Start it on loopback for controlled
+development without restarting the rest of the stack:
 
 ```sh
 ZPR_ACCESS_GATEWAY_TLS_CERT_FILE=/path/to/gateway.crt \
@@ -290,11 +297,13 @@ scripts/dashboard-stack.sh start-browser-gateway
 
 The listener defaults to `127.0.0.1:8443`. Browsers must trust the server
 certificate and present a client certificate issued by the configured client
-CA. To publish beyond loopback, explicitly set `ZPR_ACCESS_GATEWAY_LISTEN`, use
-a server certificate matching the configured hostnames, and apply network
-firewall policy. This first version has no OIDC integration or per-certificate
-revocation list; rotate the client CA to revoke all issued browser certificates.
-Use `scripts/dashboard-stack.sh stop-browser-gateway` to stop it independently.
+CA. This authenticates a client certificate, not a named user; the prototype
+has no OIDC, role authorization, user sessions, or per-certificate revocation.
+Do not set `ZPR_ACCESS_GATEWAY_LISTEN` to a non-loopback address or publish an
+administrative UI. Public access is deferred until the [Remote Browser Access
+Contract](BROWSER_ACCESS_CONTRACT.md) is implemented and its release gates pass.
+Use `scripts/dashboard-stack.sh stop-browser-gateway` to stop the local
+prototype independently.
 
 The Simulator opens on Agents. Shared ZPR actors, links, and service inventory
 remain in Control Room; Agents provides per-machine controls without stack-wide

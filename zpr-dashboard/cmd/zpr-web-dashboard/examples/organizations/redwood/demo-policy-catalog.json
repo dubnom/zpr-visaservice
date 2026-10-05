@@ -47,7 +47,7 @@
         ],
         "live": false
       },
-      "content": "define PartnerAuditors as a device with redwood.role:PartnerAuditor.\ndefine ShipmentLedger as a service with device.zpr.adapter.cn:shipment-ledger.\n\nservice ShipmentLedger as json {\"service_class\":\"ShipmentLedger\",\"actor_cn\":\"shipment-ledger\",\"summary\":\"Partner shipment records.\",\"endpoint\":\"zpr://shipment-ledger\",\"status\":\"example only; not deployed\"}.\n  allow PartnerAuditors.",
+      "content": "define PartnerAuditors as a device with redwood.role:PartnerAuditors.\ndefine ShipmentLedger as a service with device.zpr.adapter.cn:shipment-ledger.\n\nservice ShipmentLedger as json {\"service_class\":\"ShipmentLedger\",\"actor_cn\":\"shipment-ledger\",\"summary\":\"Partner shipment records.\",\"endpoint\":\"zpr://shipment-ledger\",\"status\":\"example only; not deployed\"}.\n  allow PartnerAuditors.",
       "summary": "Partner auditor access to shipment records"
     }
   ]

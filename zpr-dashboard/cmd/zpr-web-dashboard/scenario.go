@@ -12,6 +12,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"sort"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -240,8 +241,8 @@ func validateSimulatorScenario(scenario simulatorScenario, manifest simulatorMan
 		if step.ID != "" || len(step.After) != 0 {
 			return fmt.Errorf("cleanup step %d cannot have id or after", index+1)
 		}
-		if step.Action != "stop_test_service" && step.Action != "stop_workload" && step.Action != "logout" && step.Action != "stop_machine" {
-			return fmt.Errorf("cleanup step %d must stop a test service or workload, log out, or stop a machine", index+1)
+		if step.Action != "stop_test_service" && step.Action != "stop_service_fleet" && step.Action != "stop_workload" && step.Action != "logout" && step.Action != "stop_machine" {
+			return fmt.Errorf("cleanup step %d must stop a test service fleet or workload, log out, or stop a machine", index+1)
 		}
 		if err := validateSimulatorScenarioStep(step, scenarioManifest, organization, true); err != nil {
 			return fmt.Errorf("cleanup step %d: %w", index+1, err)
@@ -307,6 +308,10 @@ func validScenarioID(id string) bool {
 
 func validateSimulatorScenarioStep(step simulatorScenarioStep, manifest simulatorManifest, organization simulatorOrganization, cleanup bool) error {
 	switch step.Action {
+	case "verify_multinode_runtime":
+		if cleanup || organization.Runtime.Driver != "docker-multinode" || organization.Runtime.Topology != "multi-node" || len(organization.Runtime.Nodes) != 2 {
+			return errors.New("runtime verification requires a two-node docker-multinode organization and cannot be cleanup")
+		}
 	case "start_machine", "wait_controller", "login", "select_workloads", "logout", "stop_machine":
 		if !manifestHasMachine(manifest, step.Machine) {
 			return errors.New("known machine is required")
@@ -342,6 +347,19 @@ func validateSimulatorScenarioStep(step simulatorScenarioStep, manifest simulato
 		}
 		if testServicePorts[step.Target] == "" {
 			return errors.New("test request target must be a supported service")
+		}
+	case "start_service_fleet", "stop_service_fleet":
+		profile := organization.LoadTest
+		if profile == nil || step.Machine != profile.ServiceMachine || !manifestHasMachine(manifest, step.Machine) {
+			return errors.New("service fleet action requires the organization's configured service machine")
+		}
+	case "stress_traffic":
+		profile := organization.LoadTest
+		if profile == nil || step.Machine != profile.ClientMachine || step.Component != profile.ClientWorkload || step.Target != profile.ServiceWorkload || !manifestHasMachine(manifest, step.Machine) {
+			return errors.New("stress traffic must match the organization's configured client and service workloads")
+		}
+		if _, err := readSimulatorComponent(manifest, step.Component); err != nil {
+			return errors.New("stress client workload is missing from the simulator manifest")
 		}
 	case "traffic":
 		component, err := readSimulatorComponent(manifest, step.Component)
@@ -618,8 +636,142 @@ func scenarioCommand(ctx context.Context, name string, args ...string) (string, 
 	return strings.TrimSpace(string(output)), err
 }
 
+func verifyMultinodeRuntime(ctx context.Context, manifest simulatorManifest) (string, error) {
+	organizationID := activeSimulatorOrganizationID(manifest)
+	organization, err := loadSimulatorOrganization(simulatorOrganizationsDirectory(), organizationID)
+	if err != nil {
+		return "", err
+	}
+	if organization.Runtime.Driver != "docker-multinode" || len(organization.Runtime.Nodes) != 2 {
+		return "", errors.New("active organization is not a two-node docker-multinode runtime")
+	}
+	prefix := organizationID + "-"
+	containers := []string{prefix + "node0", prefix + "node1", prefix + "vs", prefix + "web0", prefix + "web1", prefix + "directory"}
+	for _, container := range containers {
+		state, err := scenarioCommand(ctx, "docker", "inspect", "-f", "{{.State.Running}}", container)
+		if err != nil || state != "true" {
+			return "", fmt.Errorf("required runtime container %s is not running", container)
+		}
+	}
+	activeLink := func(container, endpoint string) error {
+		summary, err := scenarioCommand(ctx, "docker", "exec", container, "/app/bin/ph-cli", "-p", "/var/run/zpr/control.sock", "link", "show")
+		if err != nil {
+			return fmt.Errorf("read links on %s: %w", container, err)
+		}
+		for _, line := range strings.Split(summary, "\n") {
+			if strings.Contains(line, endpoint) && strings.Contains(line, "(Active)") {
+				return nil
+			}
+		}
+		return fmt.Errorf("%s has no active link for %s", container, endpoint)
+	}
+	for _, link := range []struct{ container, endpoint string }{
+		{prefix + "node0", "172.30.0.10:5000"},
+		{prefix + "node1", "172.30.0.13:5000"},
+		{prefix + "node0", "172.30.0.11:"},
+		{prefix + "node0", "172.30.0.14:"},
+	} {
+		if err := activeLink(link.container, link.endpoint); err != nil {
+			return "", err
+		}
+	}
+	for _, container := range []string{prefix + "web0", prefix + "web1"} {
+		status, err := scenarioCommand(ctx, "docker", "exec", container, "curl", "-fsS", "-o", "/dev/null", "-w", "%{http_code}", "http://localhost:80")
+		if err != nil || status != "200" {
+			return "", fmt.Errorf("web service in %s returned HTTP %s", container, status)
+		}
+	}
+
+	machineIDs := make([]string, 0, len(organization.MachineOwners))
+	for machineID := range organization.MachineOwners {
+		machineIDs = append(machineIDs, machineID)
+	}
+	sort.Strings(machineIDs)
+	if len(machineIDs) == 0 || len(organization.MachineOwners[machineIDs[0]]) == 0 {
+		return "", errors.New("organization profile has no machine owner for directory verification")
+	}
+	machineID, ownerUID := machineIDs[0], organization.MachineOwners[machineIDs[0]][0]
+	userUID, userRole := organization.Directory.HealthUID, ""
+	for _, group := range organization.Directory.Groups {
+		for _, member := range group.Members {
+			if member == userUID {
+				userRole = group.Name
+				break
+			}
+		}
+		if userRole != "" {
+			break
+		}
+	}
+	if userUID == "" || userRole == "" {
+		return "", errors.New("organization profile has no grouped directory health user")
+	}
+	lookup := func(identityKey, identityValue string) (map[string][]string, error) {
+		requestBody, err := json.Marshal(map[string]any{"identities": []map[string]string{{"key": identityKey, "value": identityValue}}})
+		if err != nil {
+			return nil, err
+		}
+		output, err := scenarioCommand(ctx, "docker", "exec", prefix+"directory", "curl", "-fsS", "--resolve", "directory:8443:127.0.0.1", "--cacert", "/runtime/ca.crt", "--cert", "/runtime/visa-client.crt", "--key", "/runtime/visa-client.key", "-H", "Content-Type: application/json", "--data-binary", string(requestBody), "https://directory:8443/v1/attributes")
+		if err != nil {
+			return nil, fmt.Errorf("trusted directory lookup failed: %w", err)
+		}
+		var response struct {
+			Attributes map[string][]string `json:"attributes"`
+		}
+		if err := json.Unmarshal([]byte(output), &response); err != nil {
+			return nil, fmt.Errorf("trusted directory returned invalid JSON: %w", err)
+		}
+		return response.Attributes, nil
+	}
+	deviceAttributes, err := lookup("device.zpr.adapter.cn", machineID)
+	if err != nil {
+		return "", err
+	}
+	if !scenarioContainsString(deviceAttributes["zprMachineOwner"], ownerUID) {
+		return "", errors.New("trusted directory machine owner does not match the organization profile")
+	}
+	userAttributes, err := lookup("user.sub", userUID)
+	if err != nil {
+		return "", err
+	}
+	if !scenarioContainsString(userAttributes["role"], userRole) {
+		return "", errors.New("trusted directory user role does not match the organization profile")
+	}
+	return fmt.Sprintf("verified %s and %s peer links, VS/OciWeb adapters, both site HTTP services, and LDAP owner/role for %s", organization.Runtime.Nodes[0].Location, organization.Runtime.Nodes[1].Location, userUID), nil
+}
+
+func scenarioContainsString(values []string, expected string) bool {
+	for _, value := range values {
+		if value == expected {
+			return true
+		}
+	}
+	return false
+}
+
+func waitForStressServiceFleet(ctx context.Context, machineID, serviceAddress, serviceCount, basePort string) error {
+	readinessContext, cancel := context.WithTimeout(ctx, 10*time.Second)
+	defer cancel()
+	ticker := time.NewTicker(250 * time.Millisecond)
+	defer ticker.Stop()
+	var lastError error
+	for {
+		_, lastError = scenarioCommand(readinessContext, "docker", "exec", machineContainerName(machineID), "/usr/local/bin/zpr-machine-controller", "-mode", "stress-service-health", "-listen", serviceAddress, "-service-count", serviceCount, "-base-port", basePort)
+		if lastError == nil {
+			return nil
+		}
+		select {
+		case <-readinessContext.Done():
+			return fmt.Errorf("stress service fleet did not become ready: %w", lastError)
+		case <-ticker.C:
+		}
+	}
+}
+
 func simulatorScenarioExecutorForManifest(ctx context.Context, manifest simulatorManifest, step simulatorScenarioStep) (string, error) {
 	switch step.Action {
+	case "verify_multinode_runtime":
+		return verifyMultinodeRuntime(ctx, manifest)
 	case "start_machine":
 		return startScenarioMachine(ctx, manifest, step.Machine)
 	case "wait_controller":
@@ -685,7 +837,11 @@ func simulatorScenarioExecutorForManifest(ctx context.Context, manifest simulato
 			agent = component.Name
 		}
 		operation := strings.ReplaceAll(step.Action, "_", "-")
-		if _, err := simulatorMachineCommands.enqueueAndWait(ctx, step.Machine, machineControlCommand{Action: operation, Workload: agent}); err != nil {
+		services, err := simulatorLoadTestServicesForAgent(simulatorOrganizationsDirectory(), activeSimulatorOrganizationID(manifest), agent)
+		if err != nil {
+			return "", err
+		}
+		if _, err := simulatorMachineCommands.enqueueAndWait(ctx, step.Machine, machineControlCommand{Action: operation, Workload: agent, Services: services}); err != nil {
 			return "", err
 		}
 		if step.Action == "start_workload" {
@@ -730,6 +886,51 @@ func simulatorScenarioExecutorForManifest(ctx context.Context, manifest simulato
 			return "test service already stopped", nil
 		}
 		return output, err
+	case "start_service_fleet":
+		profile, ok, err := simulatorLoadTestProfileForManifest(manifest)
+		if err != nil || !ok {
+			return "", errors.New("organization load-test profile is unavailable")
+		}
+		if err := requireScenarioWorkload(step.Machine, profile.ServiceWorkload); err != nil {
+			return "", err
+		}
+		serviceAddress := machineWorkloadAddress(profile.ServiceWorkload)
+		serviceCount := strconv.Itoa(profile.ServiceCount)
+		basePort := strconv.Itoa(profile.BasePort)
+		if _, err := scenarioCommand(ctx, "docker", "exec", "-d", machineContainerName(step.Machine), "/usr/local/bin/zpr-machine-controller", "-mode", "stress-service-fleet", "-listen", serviceAddress, "-log-workload", profile.ServiceWorkload, "-service-count", serviceCount, "-base-port", basePort); err != nil {
+			return "", err
+		}
+		if err := waitForStressServiceFleet(ctx, step.Machine, serviceAddress, serviceCount, basePort); err != nil {
+			return "", err
+		}
+		return fmt.Sprintf("started %d services on ports %d-%d", profile.ServiceCount, profile.BasePort, profile.BasePort+profile.ServiceCount-1), nil
+	case "stop_service_fleet":
+		profile, ok, err := simulatorLoadTestProfileForManifest(manifest)
+		if err != nil || !ok {
+			return "", errors.New("organization load-test profile is unavailable")
+		}
+		if simulatorMachineContainerStates([]string{step.Machine})[step.Machine] != "running" {
+			return "service fleet machine already stopped", nil
+		}
+		output, err := scenarioCommand(ctx, "docker", "exec", machineContainerName(step.Machine), "pkill", "-TERM", "-f", "[z]pr-machine-controller -mode stress-service-fleet .* -log-workload "+profile.ServiceWorkload)
+		var exitError *exec.ExitError
+		if errors.As(err, &exitError) && exitError.ExitCode() == 1 {
+			return "service fleet already stopped", nil
+		}
+		return output, err
+	case "stress_traffic":
+		profile, ok, err := simulatorLoadTestProfileForManifest(manifest)
+		if err != nil || !ok {
+			return "", errors.New("organization load-test profile is unavailable")
+		}
+		if err := requireScenarioWorkload(step.Machine, profile.ClientWorkload); err != nil {
+			return "", err
+		}
+		sourceAddress, err := scenarioClientAddress(ctx, step.Machine, profile.ClientWorkload)
+		if err != nil {
+			return "", err
+		}
+		return scenarioCommand(ctx, "docker", "exec", machineContainerName(step.Machine), "/usr/local/bin/zpr-machine-controller", "-mode", "stress-client", "-listen", machineWorkloadAddress(profile.ServiceWorkload), "-zpr-addr", sourceAddress, "-log-workload", profile.ClientWorkload, "-client-count", strconv.Itoa(profile.ClientCount), "-service-count", strconv.Itoa(profile.ServiceCount), "-base-port", strconv.Itoa(profile.BasePort), "-duration-seconds", strconv.Itoa(profile.DurationSeconds), "-request-delay-min-ms", strconv.Itoa(profile.RequestDelayMinMilliseconds), "-request-delay-max-ms", strconv.Itoa(profile.RequestDelayMaxMilliseconds), "-restart-interval-min-seconds", strconv.Itoa(profile.RestartIntervalMinSeconds), "-restart-interval-max-seconds", strconv.Itoa(profile.RestartIntervalMaxSeconds), "-restart-pause-min-seconds", strconv.Itoa(profile.RestartPauseMinSeconds), "-restart-pause-max-seconds", strconv.Itoa(profile.RestartPauseMaxSeconds))
 	case "request_test_service", "benchmark_test_service":
 		if err := requireScenarioWorkload(step.Machine, step.Component); err != nil {
 			return "", err

@@ -5,14 +5,15 @@
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <meta name="theme-color" content="#17211e">
     <title>ZPR Control Room</title>
-    <link rel="stylesheet" href="/app.css?v=31">
+    <link rel="stylesheet" href="/app.css?v=38">
     <link rel="stylesheet" href="/machine-logs.css?v=9">
     <link rel="stylesheet" href="/assertions.css?v=5">
-    <link rel="stylesheet" href="/sidebar.css?v=5">
+    <link rel="stylesheet" href="/sidebar.css?v=6">
     <link rel="stylesheet" href="/trusted-source.css?v=1">
     <link rel="stylesheet" href="/security-review.css?v=2">
     <script src="/sidebar.js?v=4" defer></script>
     <script src="/trusted-source.js?v=1" defer></script>
+    <script src="/policy-record-icons.js?v=1" defer></script>
   </head>
   <body>
     <div class="app-shell">
@@ -196,12 +197,10 @@ each group attribute "gidNumber" &gt;= 1000;</pre></details></div><aside class="
                 <strong id="policy-record-title">Select a policy</strong><span id="policy-revision-label"></span>
                 <input id="policy-draft-name" type="text" maxlength="100" autocomplete="off" aria-label="New policy name" placeholder="Name this policy" hidden>
               </div>
-              <div class="policy-actions" id="policy-actions"><button id="policy-refresh" class="button" type="button" disabled>Discard</button><button id="policy-check" class="button" type="button" disabled>Evaluate</button><button id="policy-save" class="button button-save-next" type="button" disabled>Save</button><button id="policy-save-as" class="button" type="button" disabled>Save As...</button><button id="policy-stage" class="button" type="button" disabled>Compile &amp; Stage</button></div>
             </div>
-            <div id="policy-stage-status" class="policy-stage-status" role="status" aria-live="polite">Select a saved policy revision to stage.</div>
             <div id="policy-workbench" class="policy-workbench" data-test-mode="false">
-              <aside class="policy-catalog-pane" id="policy-catalog-pane" aria-label="Policy picker">
-                <div class="catalog-pane-heading"><strong>Policies &amp; assertions</strong><button id="policy-picker-toggle" class="pane-collapse-toggle" type="button" aria-label="Collapse Policy Picker" aria-controls="policy-category-tree" aria-expanded="true" title="Collapse Policy Picker"><span class="pane-toggle-icon" aria-hidden="true"></span><span class="pane-toggle-label" aria-hidden="true">Policy Picker</span></button></div>
+              <aside class="policy-catalog-pane" id="policy-catalog-pane" aria-label="Policy picker" hidden>
+                <div class="catalog-pane-heading"><strong>Policies &amp; assertions</strong><button id="policy-picker-close" class="pane-collapse-toggle" type="button" aria-label="Close policy picker" title="Close policy picker">×</button></div>
                 <div id="policy-picker-menu" class="policy-picker-menu" role="menu" aria-labelledby="policy-picker-menu-title" hidden>
                   <strong id="policy-picker-menu-title" class="policy-picker-menu-title">Policy picker</strong>
                   <button id="new-category" type="button" role="menuitem">New category</button>
@@ -218,12 +217,22 @@ each group attribute "gidNumber" &gt;= 1000;</pre></details></div><aside class="
                 <div id="policy-category-tree" class="policy-category-tree" role="tree" tabindex="0"><p class="catalog-empty">No categories yet.</p></div>
               </aside>
               <section class="policy-editor-pane" id="policy-editor-pane" aria-label="Policy source editor">
-                <div id="policy-source-surface">
-                <div class="policy-attribute-toolbar">
+                <div class="policy-editor-tools">
+                  <button id="policy-picker-toggle" class="button policy-picker-trigger" type="button" aria-label="Browse policies and assertions" aria-haspopup="dialog" aria-controls="policy-catalog-pane" aria-expanded="false"><span id="policy-picker-label">Browse...</span><span class="policy-picker-chevron" aria-hidden="true">⌄</span></button>
+                  <div class="policy-attribute-toolbar" id="policy-attribute-toolbar">
                   <button id="policy-attribute-rescan" class="button button-refresh" type="button" disabled>Rescan LDAP</button>
                   <button id="policy-format" class="button button-refresh" type="button" title="Format policy source" aria-label="Format policy source" disabled>Format</button>
-                  <button id="policy-test" class="button button-refresh" type="button" disabled>Test</button>
+                  <div class="policy-actions" id="policy-actions">
+                    <button id="policy-refresh" class="button" type="button" disabled>Discard</button>
+                    <button id="policy-check" class="button" type="button" disabled>Analyze</button>
+                    <button id="policy-save" class="button button-save-next" type="button" disabled>Save</button>
+                    <button id="policy-save-as" class="button" type="button" disabled>Save As...</button>
+                    <button id="policy-stage" class="button" type="button" disabled>Compile &amp; Stage</button>
+                  </div>
+                  </div>
                 </div>
+                <div id="policy-source-surface">
+                <div id="policy-stage-status" class="policy-stage-status" role="status" aria-live="polite">Select a saved policy revision to stage.</div>
                 <div id="policy-attribute-status" class="policy-attribute-status" role="status" aria-live="polite"></div>
                 <div id="policy-code-editor" class="policy-code-editor" data-test-mode="false">
                   <div id="policy-test-gutter" class="policy-test-gutter" aria-label="Test results by policy line" hidden></div>
@@ -232,6 +241,11 @@ each group attribute "gidNumber" &gt;= 1000;</pre></details></div><aside class="
                   <div id="policy-completions" class="policy-completions" role="listbox" aria-label="ZPL completions" hidden></div>
                 </div>
                 <div id="policy-test-status" class="policy-test-status" role="status" aria-live="polite" hidden></div>
+                <section id="policy-test-details" class="policy-test-details" aria-label="Policy test details" hidden>
+                  <div class="policy-test-details-heading"><h3 id="policy-analyze-title">Policy test results</h3><button id="policy-test-details-close" class="button" type="button" aria-label="Close policy test details">Close</button></div>
+                  <h4 id="policy-analyze-subject-title" class="policy-test-subject-title">Matching identities</h4>
+                  <div id="policy-analyze-subjects" class="policy-test-subjects"></div>
+                </section>
                 <span id="policy-editor-help" class="sr-only">ZPL syntax is highlighted. Press Control-Space for suggestions; use arrow keys and Tab to insert a completion. Enter starts a new line.</span>
                 <div id="policy-check-result" class="policy-check-result" role="status" aria-live="polite">Policy source is not loaded.</div>
                 </div>
@@ -273,6 +287,7 @@ each group attribute "gidNumber" &gt;= 1000;</pre></details></div><aside class="
             <div class="dialog-heading"><h2 id="record-dialog-title">New policy</h2><button class="inspector-close" type="button" data-close-dialog="record-dialog" aria-label="Close">×</button></div>
             <label for="record-name">Name</label><input id="record-name" name="name" maxlength="100" required autocomplete="off">
             <label for="record-category">Category</label><select id="record-category" name="category" required></select>
+            <p id="record-warning" class="dialog-warning" role="status" hidden></p>
             <p id="record-error" class="dialog-error" role="status"></p>
             <div class="dialog-actions"><button class="button" type="button" data-close-dialog="record-dialog">Cancel</button><button id="record-submit" class="button button-refresh" type="submit">Create record</button></div>
           </form>
@@ -283,15 +298,16 @@ each group attribute "gidNumber" &gt;= 1000;</pre></details></div><aside class="
             <div class="dialog-heading"><h2>Save</h2><button class="inspector-close" type="button" data-close-dialog="version-dialog" aria-label="Close">×</button></div>
             <label for="version-note">Version note <span class="optional-note">OPTIONAL</span></label>
             <textarea id="version-note" name="summary" rows="3" maxlength="200" placeholder="What changed in this version?"></textarea>
+            <p id="version-warning" class="dialog-warning" role="status" hidden></p>
             <p id="version-error" class="dialog-error" role="status"></p>
-            <div class="dialog-actions"><button class="button" type="button" data-close-dialog="version-dialog">Cancel</button><button class="button button-refresh" type="submit">Save</button></div>
+            <div class="dialog-actions"><button class="button" type="button" data-close-dialog="version-dialog">Cancel</button><button id="version-save" class="button button-refresh" type="submit">Save</button></div>
           </form>
         </dialog>
 
         <dialog id="policy-test-dialog" class="policy-dialog policy-test-dialog" aria-labelledby="policy-test-title">
           <div class="policy-test-modal">
-            <div class="dialog-heading"><h2 id="policy-test-title">Policy test results</h2><button class="inspector-close" type="button" data-close-dialog="policy-test-dialog" aria-label="Close">×</button></div>
-            <h3 id="policy-test-subject-title" class="policy-test-subject-title">Matching identities</h3>
+            <div class="dialog-heading"><h2 id="policy-test-title">Assertion results</h2><button class="inspector-close" type="button" data-close-dialog="policy-test-dialog" aria-label="Close">×</button></div>
+            <h3 id="policy-test-subject-title" class="policy-test-subject-title">Assertion details</h3>
             <div id="policy-test-subjects" class="policy-test-subjects"></div>
             <div class="dialog-actions"><button class="button" type="button" data-close-dialog="policy-test-dialog">Close</button></div>
           </div>
@@ -330,7 +346,8 @@ each group attribute "gidNumber" &gt;= 1000;</pre></details></div><aside class="
         <footer class="page-footer"><span>ZPR CONTROL ROOM <b>·</b> LIVE MONITOR / POLICY RECORDS</span><span id="footer-poll">Auto-refresh every 5 seconds</span></footer>
       </main>
     </div>
-    <script src="/app.js?v=47" defer></script>
+    <script src="/vendor/pluralize.js?v=8.0.0" defer></script>
+    <script src="/app.js?v=54" defer></script>
     <script src="/machine-logs.js?v=10" defer></script>
     <script src="/assertions.js?v=5" defer></script>
       <script src="/security-review.js?v=4" defer></script>

@@ -13,6 +13,23 @@ pid_file="$runtime_dir/collector.pid"
 log_file="$runtime_dir/collector.log"
 container_runtime=/work/.local-runtime
 collector_script=/work/zpr-visaservice/observability/openobserve/collector.py
+simulation_manifest=${SIMULATION_MANIFEST:-$workspace_dir/.local-runtime/simulation-environment.json}
+case "$simulation_manifest" in
+    */*) manifest_directory=${simulation_manifest%/*} ;;
+    *) manifest_directory=$workspace_dir ;;
+esac
+active_organization_file=${SIMULATION_ACTIVE_ORGANIZATION_FILE:-$manifest_directory/active-organization.txt}
+zpr_organization_id=${ZPR_ORGANIZATION_ID:-}
+if [ -z "$zpr_organization_id" ]; then
+    if [ -r "$active_organization_file" ]; then
+        IFS= read -r zpr_organization_id <"$active_organization_file" || true
+    else
+        zpr_organization_id=${SIMULATION_ORGANIZATION_ID:-northstar}
+    fi
+fi
+case "$zpr_organization_id" in
+    ''|*[!a-z0-9-]*) echo "invalid ZPR organization ID for telemetry tagging" >&2; exit 2 ;;
+esac
 
 case "${1:-}" in
     start)
@@ -26,7 +43,7 @@ case "${1:-}" in
         fi
         docker exec "$rig" ip -n zpr-vs link show "$publisher_tun" >/dev/null
         docker exec "$rig" ip -n zpr-vs -6 route replace "$address/128" dev "$publisher_tun"
-        docker exec -d -e ZPR_RUNTIME_DIR="$container_runtime" "$rig" sh -c \
+        docker exec -d -e ZPR_RUNTIME_DIR="$container_runtime" -e ZPR_ORGANIZATION_ID="$zpr_organization_id" "$rig" sh -c \
             'echo $$ > "$1"; exec ip netns exec zpr-vs python3 -u "$2" >> "$3" 2>&1' \
             zpr-telemetry-collector "$container_runtime/observability/collector.pid" "$collector_script" "$container_runtime/observability/collector.log"
         ;;

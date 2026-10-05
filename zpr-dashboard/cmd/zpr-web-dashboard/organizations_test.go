@@ -7,6 +7,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 )
 
@@ -15,8 +16,8 @@ func TestBundledOrganizationsHaveSeparateIdentityAndPolicyCatalogs(t *testing.T)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(organizations) != 3 {
-		t.Fatalf("loaded %d organizations, want 3", len(organizations))
+	if len(organizations) != 5 {
+		t.Fatalf("loaded %d organizations, want 5", len(organizations))
 	}
 	northstar, err := loadSimulatorOrganization(filepath.Join("examples", "organizations"), "northstar")
 	if err != nil {
@@ -26,14 +27,247 @@ func TestBundledOrganizationsHaveSeparateIdentityAndPolicyCatalogs(t *testing.T)
 	if err != nil {
 		t.Fatal(err)
 	}
+	velocity, err := loadSimulatorOrganization(filepath.Join("examples", "organizations"), "velocity")
+	if err != nil {
+		t.Fatal(err)
+	}
+	loadLab, err := loadSimulatorOrganization(filepath.Join("examples", "organizations"), "load-lab")
+	if err != nil {
+		t.Fatal(err)
+	}
 	if northstar.Directory.BaseDN == redwood.Directory.BaseDN {
 		t.Fatal("organizations must have isolated LDAP base DNs")
 	}
 	if northstar.PolicyCatalog == redwood.PolicyCatalog || northstar.PolicyConfig == redwood.PolicyConfig {
 		t.Fatal("organizations must have separate policy config and catalog paths")
 	}
+	greatLakes, err := loadSimulatorOrganization(filepath.Join("examples", "organizations"), "great-lakes")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if greatLakes.Runtime.Topology != "multi-node" || len(greatLakes.Runtime.Nodes) != 3 || greatLakes.Directory.BaseDN != "dc=greatlakes,dc=test" {
+		t.Fatalf("Great Lakes profile = %+v; want three isolated site nodes", greatLakes)
+	}
+	if len(greatLakes.Directory.Departments) < 5 || len(greatLakes.Services) != 7 || greatLakes.RuntimePolicy == "" {
+		t.Fatalf("Great Lakes profile is missing departments, services, or runtime policy: %+v", greatLakes)
+	}
 	if northstar.Services[0].Name == redwood.Services[0].Name {
 		t.Fatal("organizations must have distinct service catalogs")
+	}
+	if northstar.Runtime.Driver != "linux-one-node" || northstar.Runtime.Topology != "single-node" || len(northstar.Runtime.Nodes) != 1 {
+		t.Fatalf("Northstar runtime = %+v; want one node", northstar.Runtime)
+	}
+	if redwood.Runtime.Driver != "docker-multinode" || redwood.Runtime.Topology != "multi-node" || len(redwood.Runtime.Nodes) != 2 || redwood.Runtime.Nodes[0].Location != "North Hub" || redwood.Runtime.Nodes[1].Location != "Regional Yard" {
+		t.Fatalf("Redwood runtime = %+v; want two location-specific nodes", redwood.Runtime)
+	}
+	if velocity.Runtime.Driver != "linux-one-node" || velocity.Runtime.Topology != "single-node" || len(velocity.Runtime.Nodes) != 1 {
+		t.Fatalf("Velocity runtime = %+v; want one node", velocity.Runtime)
+	}
+	if loadLab.LoadTest == nil || loadLab.LoadTest.ClientCount != 200 || loadLab.LoadTest.ServiceCount != 200 || len(loadLab.Services) != 200 {
+		t.Fatalf("Load Lab profile = %+v with %d services; want 200 clients and 200 services", loadLab.LoadTest, len(loadLab.Services))
+	}
+	if first, last := loadLab.Services[0], loadLab.Services[len(loadLab.Services)-1]; first.Name != "LoadService001" || first.Endpoint != "ZPR/TCP/10000" || last.Name != "LoadService200" || last.Endpoint != "ZPR/TCP/10199" {
+		t.Fatalf("Load Lab service range = first %+v, last %+v", first, last)
+	}
+}
+
+func TestLoadLabScenarioUsesBoundedTwoMachineStressProfile(t *testing.T) {
+	organizationDirectory, err := filepath.Abs(filepath.Join("examples", "organizations"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("SIMULATION_ORGANIZATIONS_DIR", organizationDirectory)
+	manifest := scenarioTestManifest()
+	manifest.OrganizationID = "load-lab"
+	scenarios, err := loadSimulatorScenarios(filepath.Join("examples", "scenarios"), manifest)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(scenarios) != 1 || scenarios[0].ID != "load-lab-fanout" {
+		t.Fatalf("Load Lab scenarios = %#v", scenarios)
+	}
+	machines := make(map[string]bool)
+	for _, step := range scenarios[0].Steps {
+		if step.Machine != "" {
+			machines[step.Machine] = true
+		}
+	}
+	if len(machines) != 2 || !machines["machine-03"] || !machines["machine-05"] {
+		t.Fatalf("Load Lab scenario machines = %v", machines)
+	}
+}
+
+func TestLoadLabLDIFMatchesOperatorsAndOwnedMachines(t *testing.T) {
+	organization, err := loadSimulatorOrganization(filepath.Join("examples", "organizations"), "load-lab")
+	if err != nil {
+		t.Fatal(err)
+	}
+	var seed strings.Builder
+	for _, filename := range organization.Directory.LDIFFiles {
+		content, err := os.ReadFile(filepath.Join("examples", "organizations", "load-lab", filename))
+		if err != nil {
+			t.Fatal(err)
+		}
+		seed.Write(content)
+		seed.WriteByte('\n')
+	}
+	directory, err := parseAssertionLDAPAttributes(seed.String(), []string{"mail", "ou", "title", "zprMachineId", "zprMachineOwner", "zprMachineSecure"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, person := range organization.Directory.People {
+		if _, exists := directory.PersonAttributes[person.UID]; !exists {
+			t.Errorf("Load Lab operator %q is missing from LDIF", person.UID)
+		}
+	}
+	for machineID, owners := range organization.MachineOwners {
+		attributes, exists := directory.PersonAttributes[machineID]
+		if !exists || len(owners) != 1 || len(attributes["zprMachineOwner"]) != 1 || attributes["zprMachineOwner"][0] != owners[0] {
+			t.Errorf("Load Lab machine %q owner does not match LDIF: %+v", machineID, attributes)
+		}
+	}
+	if members := directory.Groups["LoadOperators"]; len(members) != len(organization.Directory.People) {
+		t.Fatalf("LoadOperators has %d LDAP members; want %d", len(members), len(organization.Directory.People))
+	}
+}
+
+func TestRedwoodLDIFMatchesOrganizationPeopleSitesAndGroups(t *testing.T) {
+	organization, err := loadSimulatorOrganization(filepath.Join("examples", "organizations"), "redwood")
+	if err != nil {
+		t.Fatal(err)
+	}
+	var seed strings.Builder
+	for _, filename := range organization.Directory.LDIFFiles {
+		content, err := os.ReadFile(filepath.Join("examples", "organizations", "redwood", filename))
+		if err != nil {
+			t.Fatal(err)
+		}
+		seed.Write(content)
+		seed.WriteByte('\n')
+	}
+	directory, err := parseAssertionLDAPAttributes(seed.String(), []string{"l"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(organization.Directory.People) != 53 || len(directory.People) != 56 {
+		t.Fatalf("profile people=%d, LDAP identities=%d; want 53 people plus 3 machines", len(organization.Directory.People), len(directory.People))
+	}
+	locations := make(map[string]int)
+	for _, person := range organization.Directory.People {
+		attributes, exists := directory.PersonAttributes[person.UID]
+		if !exists {
+			t.Errorf("profile person %q is missing from the LDAP seed", person.UID)
+			continue
+		}
+		if values := attributes["l"]; len(values) != 0 {
+			locations[values[0]]++
+			if person.Location != values[0] {
+				t.Errorf("person %q profile location %q differs from LDAP %q", person.UID, person.Location, values[0])
+			}
+		}
+	}
+	if locations["North Hub"] != 26 || locations["Regional Yard"] != 27 {
+		t.Fatalf("LDAP people by site = %v", locations)
+	}
+	for _, group := range organization.Directory.Groups {
+		actual := make(map[string]bool)
+		for _, member := range directory.Groups[group.Name] {
+			actual[member] = true
+		}
+		if len(actual) != len(group.Members) {
+			t.Errorf("group %q profile members=%d, LDAP members=%d", group.Name, len(group.Members), len(actual))
+		}
+		for _, member := range group.Members {
+			if !actual[member] {
+				t.Errorf("group %q is missing member %q in LDAP", group.Name, member)
+			}
+		}
+	}
+}
+
+func TestGreatLakesLDIFMatchesPeopleSiteAttributesAndGroups(t *testing.T) {
+	organization, err := loadSimulatorOrganization(filepath.Join("examples", "organizations"), "great-lakes")
+	if err != nil {
+		t.Fatal(err)
+	}
+	content, err := os.ReadFile(filepath.Join("examples", "organizations", "great-lakes", "directory.ldif"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	directory, err := parseAssertionLDAPAttributes(string(content), []string{"l", "ou", "zprMachineLocation", "zprMachineOwner"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, person := range organization.Directory.People {
+		attributes, exists := directory.PersonAttributes[person.UID]
+		if !exists {
+			t.Errorf("Great Lakes person %q is missing from the LDAP seed", person.UID)
+			continue
+		}
+		if values := attributes["l"]; len(values) != 1 || values[0] != person.Location {
+			t.Errorf("person %q profile location %q differs from LDAP %v", person.UID, person.Location, values)
+		}
+	}
+	for machineID, owners := range organization.MachineOwners {
+		attributes := directory.PersonAttributes[machineID]
+		if len(owners) != 1 || len(attributes["zprMachineOwner"]) != 1 || attributes["zprMachineOwner"][0] != owners[0] {
+			t.Errorf("machine %q owner does not match the profile: %+v", machineID, attributes)
+		}
+	}
+	for uid, expected := range map[string][]string{
+		"machine-02": {"Milwaukee, Wisconsin, USA", "Engineering"},
+		"machine-06": {"Shenzhen, China", "Shenzhen Engineering"},
+		"machine-07": {"Tijuana, Mexico", "Assembly"},
+		"machine-08": {"Tijuana, Mexico", "Test and Quality"},
+	} {
+		attributes := directory.PersonAttributes[uid]
+		if len(attributes["zprMachineLocation"]) != 1 || attributes["zprMachineLocation"][0] != expected[0] || len(attributes["ou"]) != 1 || attributes["ou"][0] != expected[1] {
+			t.Errorf("machine %q site/department attributes = %+v; want %v", uid, attributes, expected)
+		}
+	}
+	for _, group := range organization.Directory.Groups {
+		actual := make(map[string]bool)
+		for _, member := range directory.Groups[group.Name] {
+			actual[member] = true
+		}
+		for _, member := range group.Members {
+			if !actual[member] {
+				t.Errorf("group %q is missing member %q in LDAP", group.Name, member)
+			}
+		}
+	}
+}
+
+func TestBundledOrganizationSeedsHaveSingleValuedLocations(t *testing.T) {
+	organizations, err := loadSimulatorOrganizations(filepath.Join("examples", "organizations"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, organization := range organizations {
+		seedDirectory := filepath.Join("examples", "organizations", organization.ID)
+		if organization.Directory.SeedMode == "pregen" {
+			seedDirectory = filepath.Join("..", "..", "..", "..", ".local-runtime", "linux-integration", "pregen")
+		}
+		var seed strings.Builder
+		for _, filename := range organization.Directory.LDIFFiles {
+			content, err := os.ReadFile(filepath.Join(seedDirectory, filename))
+			if err != nil {
+				t.Fatalf("read %s directory seed %q: %v", organization.ID, filename, err)
+			}
+			seed.Write(content)
+			seed.WriteString("\n\n")
+		}
+		directory, err := parseAssertionLDAPAttributes(seed.String(), []string{"l", "zprMachineLocation"})
+		if err != nil {
+			t.Fatalf("parse %s directory seed: %v", organization.ID, err)
+		}
+		for uid, attributes := range directory.PersonAttributes {
+			for _, name := range []string{"l", "zprMachineLocation"} {
+				if values := attributes[name]; len(values) > 1 {
+					t.Errorf("%s identity %q has multiple %s values: %v", organization.ID, uid, name, values)
+				}
+			}
+		}
 	}
 }
 
@@ -62,7 +296,7 @@ func TestSimulatorOrganizationsEndpointReturnsActiveCatalog(t *testing.T) {
 	if err := json.Unmarshal(response.Body.Bytes(), &body); err != nil {
 		t.Fatal(err)
 	}
-	if body.ActiveID != "northstar" || len(body.Organizations) != 3 {
+	if body.ActiveID != "northstar" || len(body.Organizations) != 5 {
 		t.Fatalf("organization catalog = active %q, %d organizations", body.ActiveID, len(body.Organizations))
 	}
 }
@@ -102,7 +336,7 @@ func TestRedwoodScenarioCatalogEndpointFiltersByActiveOrganization(t *testing.T)
 	if err := json.Unmarshal(response.Body.Bytes(), &body); err != nil {
 		t.Fatal(err)
 	}
-	if len(body.Scenarios) != 1 || body.Scenarios[0].ID != "redwood-dispatch-login" {
+	if len(body.Scenarios) != 2 || body.Scenarios[0].ID != "redwood-dispatch-login" || body.Scenarios[1].ID != "redwood-regional-operations" {
 		t.Fatalf("Redwood API scenarios = %#v", body.Scenarios)
 	}
 }
@@ -130,7 +364,7 @@ func TestOrganizationWorkspaceSeedsOnlyItsBundledScenarios(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(artifacts) != 2 {
+	if len(artifacts) != 3 {
 		t.Fatalf("Redwood workspace scenarios = %#v", artifacts)
 	}
 	artifactsByID := make(map[string]workspaceArtifact, len(artifacts))
@@ -139,6 +373,9 @@ func TestOrganizationWorkspaceSeedsOnlyItsBundledScenarios(t *testing.T) {
 	}
 	if seeded := artifactsByID["redwood-dispatch-login"]; seeded.PublishedRevision != 1 {
 		t.Fatalf("Redwood bundled scenario = %#v", seeded)
+	}
+	if seeded := artifactsByID["redwood-regional-operations"]; seeded.PublishedRevision != 1 {
+		t.Fatalf("Redwood runtime scenario = %#v", seeded)
 	}
 	if draft := artifactsByID["custom-redwood"]; draft.Revision != 1 || draft.PublishedRevision != 0 || string(draft.Content) != string(customDraft) {
 		t.Fatalf("existing Redwood draft changed during seed import: %#v", draft)
@@ -277,7 +514,7 @@ func TestRedwoodScenarioUsesOrganizationPeopleAndMachineOwners(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(scenarios) != 1 || scenarios[0].ID != "redwood-dispatch-login" {
+	if len(scenarios) != 2 || scenarios[0].ID != "redwood-dispatch-login" || scenarios[1].ID != "redwood-regional-operations" {
 		t.Fatalf("Redwood scenario catalog = %#v", scenarios)
 	}
 	if scenarios[0].Topology == nil || len(scenarios[0].Topology.Nodes) != 2 || len(scenarios[0].Topology.Links) != 1 {

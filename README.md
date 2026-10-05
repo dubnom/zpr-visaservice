@@ -2,6 +2,10 @@
 
 ZPR visa service implementation (under active development).
 
+See [Features Added Since the Upstream Fork](FEATURES_SINCE_ZPR_ORG.md) for a
+high-level overview of the operator, policy, trusted-service, DNS, observability,
+and simulator capabilities added in this fork.
+
 
 ## Crates / Packages / Libraries
 

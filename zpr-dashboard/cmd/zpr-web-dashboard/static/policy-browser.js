@@ -122,12 +122,13 @@ class ZPRPolicyBrowser extends HTMLElement {
       button.type = "button";
       button.className = "pb-record";
       button.dataset.recordId = record.id;
+      button.dataset.kind = record.kind;
       button.setAttribute("aria-current", String(this.record?.id === record.id));
+      const icon = window.zprPolicyRecordIcon(record.kind);
       const name = document.createElement("strong");
       name.textContent = record.name;
-      const details = document.createElement("small");
-      details.textContent = `${record.kind === "policy" ? "Policy" : "Assertions"} / ${categories.get(record.category_id) || "Uncategorized"} / r${record.current_revision}`;
-      button.append(name, details);
+      if (icon) button.append(icon);
+      button.append(name);
       button.addEventListener("click", () => this.selectRecord(record.id));
       list.append(button);
     }

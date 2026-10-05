@@ -15,6 +15,7 @@ import (
 type organizationActivation struct {
 	OrganizationID string `json:"organization_id,omitempty"`
 	State          string `json:"state"`
+	Progress       string `json:"progress,omitempty"`
 	Error          string `json:"error,omitempty"`
 }
 
@@ -33,6 +34,7 @@ var activeOrganizationActivation = &organizationActivationManager{
 			return errors.New("organization reset is not configured")
 		}
 		command := exec.CommandContext(ctx, "sh", script, "reset-organization", organizationID)
+		command.Env = append(os.Environ(), "SIMULATION_ACTIVATION_STATUS_FILE="+simulatorActiveOrganizationPath()+".progress")
 		command.Cancel = func() error { return command.Process.Signal(syscall.SIGTERM) }
 		command.WaitDelay = 2 * time.Minute
 		if err := command.Run(); err != nil {
@@ -54,7 +56,7 @@ func (manager *organizationActivationManager) start(organizationID, selectionFil
 	if manager.run.State == "resetting" {
 		return false
 	}
-	manager.run = organizationActivation{OrganizationID: organizationID, State: "resetting"}
+	manager.run = organizationActivation{OrganizationID: organizationID, State: "resetting", Progress: "Preparing organization switch"}
 	manager.done = make(chan struct{})
 	go manager.execute(organizationID, selectionFile, manager.done)
 	return true
@@ -62,18 +64,55 @@ func (manager *organizationActivationManager) start(organizationID, selectionFil
 
 func (manager *organizationActivationManager) execute(organizationID, selectionFile string, done chan struct{}) {
 	defer close(done)
+	progressFile := selectionFile + ".progress"
+	_ = os.Remove(progressFile)
+	progressDone := make(chan struct{})
+	go manager.watchProgress(progressFile, progressDone)
 	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Minute)
 	defer cancel()
 	err := manager.reset(ctx, organizationID)
+	close(progressDone)
 	if err == nil {
+		manager.setProgress("Saving active organization")
 		err = saveActiveOrganization(selectionFile, organizationID)
 	}
+	_ = os.Remove(progressFile)
 	manager.mu.Lock()
 	defer manager.mu.Unlock()
 	manager.run.State = "completed"
 	if err != nil {
 		manager.run.State = "failed"
+		manager.run.Progress = "Organization switch failed"
 		manager.run.Error = err.Error()
+	} else {
+		manager.run.Progress = "Organization ready"
+	}
+}
+
+func (manager *organizationActivationManager) setProgress(progress string) {
+	progress = strings.TrimSpace(progress)
+	if progress == "" {
+		return
+	}
+	manager.mu.Lock()
+	if manager.run.State == "resetting" {
+		manager.run.Progress = progress
+	}
+	manager.mu.Unlock()
+}
+
+func (manager *organizationActivationManager) watchProgress(progressFile string, done <-chan struct{}) {
+	ticker := time.NewTicker(250 * time.Millisecond)
+	defer ticker.Stop()
+	for {
+		if progress, err := os.ReadFile(progressFile); err == nil {
+			manager.setProgress(string(progress))
+		}
+		select {
+		case <-done:
+			return
+		case <-ticker.C:
+		}
 	}
 }
 

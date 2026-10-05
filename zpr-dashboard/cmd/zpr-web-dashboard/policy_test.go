@@ -305,6 +305,12 @@ func TestPolicyCategoriesVersionHistoryAndPersistence(t *testing.T) {
 	if record.CurrentRevision != 1 || record.Kind != "policy" {
 		t.Fatalf("created record = %+v", record)
 	}
+	invalidCreate := `{"category_id":"` + child.ID + `","name":"draft-with-errors","kind":"policy","content_type":"text/vnd.zpr.zpl","metadata":{"language":"zpl"},"content":"invalid policy","summary":"Preserve compiler errors"}`
+	invalidCreated := httptest.NewRecorder()
+	app.handleCreatePolicyRecord(invalidCreated, localPolicyRequest(http.MethodPost, "/api/policy/records", invalidCreate))
+	if invalidCreated.Code != http.StatusCreated {
+		t.Fatalf("invalid policy draft status = %d, body %s", invalidCreated.Code, invalidCreated.Body)
+	}
 
 	invalidCheck := httptest.NewRecorder()
 	app.handleCheckPolicy(invalidCheck, localPolicyRequest(http.MethodPost, "/api/policy/check", `{"source":"invalid policy"}`))
@@ -324,6 +330,11 @@ func TestPolicyCategoriesVersionHistoryAndPersistence(t *testing.T) {
 	if updated.Code != http.StatusCreated {
 		t.Fatalf("append revision status = %d, body %s", updated.Code, updated.Body)
 	}
+	invalidUpdated := httptest.NewRecorder()
+	app.handlePolicyRecordRevisions(invalidUpdated, appendRequest(2, "invalid policy"))
+	if invalidUpdated.Code != http.StatusCreated {
+		t.Fatalf("invalid policy revision status = %d, body %s", invalidUpdated.Code, invalidUpdated.Body)
+	}
 	stale := httptest.NewRecorder()
 	app.handlePolicyRecordRevisions(stale, appendRequest(1, "allow everyone."))
 	if stale.Code != http.StatusConflict {
@@ -335,8 +346,12 @@ func TestPolicyCategoriesVersionHistoryAndPersistence(t *testing.T) {
 	listRequest.SetPathValue("id", record.ID)
 	app.handlePolicyRecordRevisions(revisionList, listRequest)
 	var revisions []policyRevisionSummary
-	if err := json.Unmarshal(revisionList.Body.Bytes(), &revisions); err != nil || len(revisions) != 2 || revisions[0].Number != 2 || revisions[1].Number != 1 {
+	if err := json.Unmarshal(revisionList.Body.Bytes(), &revisions); err != nil || len(revisions) != 3 || revisions[0].Number != 3 || revisions[1].Number != 2 || revisions[2].Number != 1 {
 		t.Fatalf("revision history = %+v, err = %v", revisions, err)
+	}
+	latestRevision, err := store.GetRevision(context.Background(), record.ID, 3)
+	if err != nil || latestRevision.Content != "invalid policy" {
+		t.Fatalf("invalid revision was not persisted: %+v, err = %v", latestRevision, err)
 	}
 	firstRevision, err := store.GetRevision(context.Background(), record.ID, 1)
 	if err != nil || firstRevision.Content != "allow team to access service." {
@@ -352,7 +367,7 @@ func TestPolicyCategoriesVersionHistoryAndPersistence(t *testing.T) {
 	}
 	defer store.Close()
 	reopened, err := store.GetRecord(context.Background(), record.ID)
-	if err != nil || reopened.CurrentRevision != 2 || reopened.Content != updatedContent {
+	if err != nil || reopened.CurrentRevision != 3 || reopened.Content != "invalid policy" {
 		t.Fatalf("persisted record = %+v, err = %v", reopened, err)
 	}
 }
@@ -581,7 +596,7 @@ func TestCompileAndStagePolicyRecordStagesSignedCandidateWithoutPush(t *testing.
 		}
 	}
 	compilerPath := filepath.Join(root, "fake-zplc")
-	compiler := "#!/bin/sh\nset -eu\noutput=\nwhile [ \"$#\" -gt 0 ]; do\n  if [ \"$1\" = \"-o\" ]; then output=$2; shift 2; else shift; fi\ndone\nprintf 'signed test candidate' > \"$output\"\n"
+	compiler := "#!/bin/sh\nset -eu\noutput=\nsource=\nwhile [ \"$#\" -gt 0 ]; do\n  if [ \"$1\" = \"-o\" ]; then output=$2; shift 2; else source=$1; shift; fi\ndone\nif /usr/bin/grep -q 'invalid policy' \"$source\"; then printf 'ZPLC: invalid policy\\n' >&2; exit 1; fi\nprintf 'signed test candidate' > \"$output\"\n"
 	if err := os.WriteFile(compilerPath, []byte(compiler), 0o700); err != nil {
 		t.Fatal(err)
 	}
@@ -610,6 +625,10 @@ func TestCompileAndStagePolicyRecordStagesSignedCandidateWithoutPush(t *testing.
 	metadata, err := os.ReadFile(filepath.Join(stageDirectory, "latest.json"))
 	if err != nil || !strings.Contains(string(metadata), candidate.BundleSHA256) {
 		t.Fatalf("staged metadata = %s, err=%v", metadata, err)
+	}
+	record.Content = "invalid policy"
+	if _, err := workspace.compileAndStagePolicyRecord(context.Background(), record); err == nil || !strings.Contains(err.Error(), "invalid policy") {
+		t.Fatalf("invalid policy staging error = %v", err)
 	}
 }
 

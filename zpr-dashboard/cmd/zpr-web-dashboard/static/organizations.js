@@ -4,6 +4,7 @@ let organizationActivationStatus = { state: "idle" };
 let selectedOrganizationID = "";
 let organizationCatalogSignature = "";
 let organizationRefreshTimer;
+let organizationRefreshInterval = 0;
 let organizationRefreshPromise;
 let directoryEditorArtifact;
 let directoryEditorOrganizationID = "";
@@ -19,7 +20,14 @@ function organizationEscape(value) {
 
 function organizationItems(items, title, emptyLabel) {
   if (!items?.length) return `<section class="organization-section"><h3>${organizationEscape(title)}</h3><p class="organization-empty">No ${organizationEscape(emptyLabel)}.</p></section>`;
-  return `<section class="organization-section"><h3>${organizationEscape(title)}</h3><div class="organization-list-items">${items.map((item) => `<div class="organization-item"><strong>${organizationEscape(item.name || item.uid || item.id)}</strong><small>${organizationEscape(item.description || [item.title, item.department, item.endpoint].filter(Boolean).join(" · "))}</small></div>`).join("")}</div></section>`;
+  return `<section class="organization-section"><h3>${organizationEscape(title)}</h3><div class="organization-list-items">${items.map((item) => `<div class="organization-item"><strong>${organizationEscape(item.name || item.uid || item.id)}</strong><small>${organizationEscape(item.description || [item.title, item.department, item.location, item.endpoint].filter(Boolean).join(" · "))}</small></div>`).join("")}</div></section>`;
+}
+
+function organizationRuntimeLabel(organization) {
+  const runtime = organization.runtime || {};
+  const nodes = runtime.nodes || [];
+  const locations = [...new Set(nodes.map((node) => node.location).filter(Boolean))];
+  return `${runtime.topology || "runtime unspecified"} · ${nodes.length} ${nodes.length === 1 ? "node" : "nodes"}${locations.length ? ` · ${locations.join(" / ")}` : ""}`;
 }
 
 function renderOrganizationList() {
@@ -27,7 +35,7 @@ function renderOrganizationList() {
   document.getElementById("organization-count").textContent = `${organizationCatalog.length} profiles`;
   document.getElementById("organization-list").innerHTML = organizationCatalog.map((organization) => {
     const active = organization.id === activeOrganizationID;
-    return `<button class="organization-card${organization.id === selected ? " selected" : ""}" type="button" data-organization-id="${organizationEscape(organization.id)}"><strong>${organizationEscape(organization.name)}${active ? " · ACTIVE" : ""}</strong><small>${organizationEscape(organization.directory.base_dn)} · ${organization.policies.length} policies · ${organization.services.length} services</small></button>`;
+    return `<button class="organization-card${organization.id === selected ? " selected" : ""}" type="button" data-organization-id="${organizationEscape(organization.id)}"><strong>${organizationEscape(organization.name)}${active ? " · ACTIVE" : ""}</strong><small>${organizationEscape(organization.directory.base_dn)} · ${organizationEscape(organizationRuntimeLabel(organization))} · ${organization.policies.length} policies · ${organization.services.length} services</small></button>`;
   }).join("");
   const organization = organizationCatalog.find((item) => item.id === selected) || organizationCatalog[0];
   if (organization) renderOrganizationDetails(organization);
@@ -37,14 +45,15 @@ function renderOrganizationDetails(organization) {
   selectedOrganizationID = organization.id;
   const isActive = organization.id === activeOrganizationID;
   const activationBusy = organizationActivationInFlight || organizationActivationStatus.state === "resetting";
+  const activationProgress = organizationActivationStatus.progress || "Preparing organization reset";
   const directory = organization.directory || {};
   document.getElementById("organization-title").textContent = organization.name;
   document.getElementById("organization-active-name").textContent = organizationCatalog.find((item) => item.id === activeOrganizationID)?.name || "Unavailable";
   document.getElementById("organization-active-id").textContent = activeOrganizationID;
   document.getElementById("organization-detail").innerHTML = `
-    <div class="organization-summary"><span class="scenario-state ${isActive ? "completed" : "idle"}">${isActive ? "Active" : "Profile"}</span>${isActive ? "" : `<button type="button" data-activate-organization="${organizationEscape(organization.id)}" ${activationBusy ? "disabled" : ""}>${activationBusy ? "Resetting ZPR..." : "Activate organization"}</button>`}<span>${organizationEscape(organization.description)}</span></div>
+    <div class="organization-summary"><span class="scenario-state ${isActive ? "completed" : "idle"}">${isActive ? "Active" : "Profile"}</span>${isActive ? "" : `<button type="button" data-activate-organization="${organizationEscape(organization.id)}" ${activationBusy ? "disabled" : ""}>${activationBusy ? `Resetting ZPR · ${organizationEscape(activationProgress)}` : "Activate organization"}</button>`}<span>${organizationEscape(organization.description)}</span></div>
     <div class="organization-sections">
-      <section class="organization-section"><div class="organization-directory-heading"><h3>Directory · ${organizationEscape(directory.base_dn)}</h3><button class="quiet" type="button" data-edit-directory="${organizationEscape(organization.id)}">Edit LDAP seed</button></div><div class="organization-summary"><span>${(directory.departments || []).length} departments</span><span>${(directory.people || []).length} people</span><span>${(directory.groups || []).length} groups</span><span>LDAP seed: ${organizationEscape(directory.seed_mode)}</span></div><ldap-org-graph></ldap-org-graph></section>
+      <section class="organization-section"><div class="organization-directory-heading"><h3>Directory · ${organizationEscape(directory.base_dn)}</h3><button class="quiet" type="button" data-edit-directory="${organizationEscape(organization.id)}">Edit LDAP seed</button></div><div class="organization-summary"><span>${(directory.departments || []).length} departments</span><span>${(directory.people || []).length} people</span><span>${(directory.groups || []).length} groups</span><span>LDAP seed: ${organizationEscape(directory.seed_mode)}</span><span>Runtime profile: ${organizationEscape(organizationRuntimeLabel(organization))}</span></div><ldap-org-graph></ldap-org-graph></section>
       ${organizationItems(organization.policies || [], "Policies", "policy records")}
       ${organizationItems(organization.services || [], "Services", "services")}
     </div>`;
@@ -165,7 +174,9 @@ async function refreshOrganizations() {
         if (!organizationCatalog.some((item) => item.id === selectedOrganizationID)) selectedOrganizationID = activeOrganizationID;
         renderOrganizationList();
       }
-      document.getElementById("organization-connection").textContent = organizationActivationStatus.state === "resetting" ? "Resetting ZPR for organization activation" : `${organizationCatalog.length} profiles loaded`;
+      document.getElementById("organization-connection").textContent = organizationActivationStatus.state === "resetting"
+        ? `Resetting ZPR · ${organizationActivationStatus.progress || "Preparing organization reset"}`
+        : `${organizationCatalog.length} profiles loaded`;
       error.hidden = organizationActivationStatus.state !== "failed";
       if (!error.hidden) error.textContent = organizationActivationStatus.error || "Organization activation failed";
     } catch (failure) {
@@ -175,6 +186,15 @@ async function refreshOrganizations() {
     }
   })();
   try { await organizationRefreshPromise; } finally { organizationRefreshPromise = undefined; }
+  if (organizationRefreshTimer) scheduleOrganizationRefresh();
+}
+
+function scheduleOrganizationRefresh() {
+  const interval = organizationActivationStatus.state === "resetting" ? 1000 : 5000;
+  if (organizationRefreshTimer && organizationRefreshInterval === interval) return;
+  clearInterval(organizationRefreshTimer);
+  organizationRefreshInterval = interval;
+  organizationRefreshTimer = setInterval(refreshOrganizations, interval);
 }
 
 const designButton = document.createElement("button");
@@ -250,6 +270,8 @@ organizationSwitchConfirm.addEventListener("click", async () => {
     const response = await fetch(`/api/simulator/organizations/${encodeURIComponent(approval.to)}/activate`, { method: "POST" });
     const result = await response.json();
     if (!response.ok) throw new Error(result.error || `HTTP ${response.status}`);
+    organizationActivationStatus = result.activation || { state: "resetting", progress: "Preparing organization reset" };
+    renderOrganizationList();
     await refreshOrganizations();
   } catch (error) {
     const message = document.getElementById("organization-error");
@@ -309,11 +331,13 @@ document.getElementById("directory-editor-revisions").addEventListener("change",
 document.addEventListener("simulator:activate", (event) => {
   if (event.detail.path !== "/organizations.html" || organizationRefreshTimer) return;
   refreshOrganizations();
-  organizationRefreshTimer = setInterval(refreshOrganizations, 5000);
+  organizationRefreshInterval = 5000;
+  organizationRefreshTimer = setInterval(refreshOrganizations, organizationRefreshInterval);
 });
 document.addEventListener("simulator:deactivate", (event) => {
   if (event.detail.path !== "/organizations.html") return;
   if (organizationSwitchDialog.open) organizationSwitchDialog.close();
   clearInterval(organizationRefreshTimer);
   organizationRefreshTimer = undefined;
+  organizationRefreshInterval = 0;
 });

@@ -3,16 +3,20 @@ package main
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"log"
+	"math/rand"
 	"net"
 	"net/http"
 	"os"
 	"path/filepath"
 	"sort"
+	"strconv"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 )
 
@@ -21,6 +25,7 @@ type testAppEvent struct {
 	Role      string    `json:"role"`
 	Direction string    `json:"direction"`
 	ClientID  string    `json:"client_id,omitempty"`
+	Service   string    `json:"service,omitempty"`
 	Remote    string    `json:"remote,omitempty"`
 	Path      string    `json:"path"`
 	Status    int       `json:"status"`
@@ -38,6 +43,8 @@ var testLogServers = struct {
 	sync.Mutex
 	byWorkload map[string]*http.Server
 }{byWorkload: make(map[string]*http.Server)}
+
+var testLogWriteMu sync.Mutex
 
 func testLogPath(workload string) string {
 	return filepath.Join("/tmp", "zpr-"+workload+".jsonl")
@@ -87,12 +94,224 @@ func handleSimulatorWorkloadLogs(w http.ResponseWriter, request *http.Request) {
 }
 
 func appendTestEvent(workload string, event testAppEvent) error {
+	testLogWriteMu.Lock()
+	defer testLogWriteMu.Unlock()
 	file, err := os.OpenFile(testLogPath(workload), os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0600)
 	if err != nil {
 		return err
 	}
 	defer file.Close()
 	return json.NewEncoder(file).Encode(event)
+}
+
+func stressServiceName(index int) string {
+	return fmt.Sprintf("LoadService%03d", index+1)
+}
+
+func stressServiceHandler(workload, serviceName string) http.Handler {
+	return stressServiceHandlerWithLogger(workload, serviceName, appendTestEvent)
+}
+
+func stressServiceHandlerWithLogger(workload, serviceName string, writeEvent func(string, testAppEvent) error) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, request *http.Request) {
+		if request.Method != http.MethodGet || request.URL.Path != "/health" {
+			http.NotFound(w, request)
+			return
+		}
+		clientID := request.Header.Get("X-ZPR-Test-Client")
+		if err := writeEvent(workload, testAppEvent{Time: time.Now().UTC(), Role: "service", Direction: "received", ClientID: clientID, Service: serviceName, Remote: request.RemoteAddr, Path: request.URL.Path}); err != nil {
+			http.Error(w, "service event log unavailable", http.StatusInternalServerError)
+			return
+		}
+		w.Header().Set("Content-Type", "application/json")
+		if err := json.NewEncoder(w).Encode(struct {
+			Service string `json:"service"`
+			Status  string `json:"status"`
+		}{Service: serviceName, Status: "ok"}); err != nil {
+			return
+		}
+		_ = writeEvent(workload, testAppEvent{Time: time.Now().UTC(), Role: "service", Direction: "sent", ClientID: clientID, Service: serviceName, Remote: request.RemoteAddr, Path: request.URL.Path, Status: http.StatusOK})
+	})
+}
+
+func runStressServiceFleet(serviceAddress, workload string, serviceCount, basePort int) error {
+	if _, ok := testServicePorts[workload]; !ok || serviceCount < 100 || serviceCount > 512 || basePort < 1024 || basePort+serviceCount-1 > 65535 {
+		return errors.New("invalid stress service fleet configuration")
+	}
+	address := net.ParseIP(strings.Trim(serviceAddress, "[]"))
+	if address == nil || address.To4() != nil {
+		return errors.New("stress service fleet requires an IPv6 service address")
+	}
+	listeners := make([]net.Listener, 0, serviceCount)
+	for index := 0; index < serviceCount; index++ {
+		port := basePort + index
+		listener, err := net.Listen("tcp6", net.JoinHostPort(address.String(), strconv.Itoa(port)))
+		if err != nil {
+			for _, openListener := range listeners {
+				_ = openListener.Close()
+			}
+			return fmt.Errorf("listen for %s on port %d: %w", stressServiceName(index), port, err)
+		}
+		listeners = append(listeners, listener)
+	}
+	for index, listener := range listeners {
+		serviceName := stressServiceName(index)
+		go func(listener net.Listener, serviceName string) {
+			server := &http.Server{Handler: stressServiceHandler(workload, serviceName), ReadHeaderTimeout: 5 * time.Second}
+			_ = server.Serve(listener)
+		}(listener, serviceName)
+	}
+	log.Printf("stress service fleet listening on %s ports %d-%d (%d services)", address, basePort, basePort+serviceCount-1, serviceCount)
+	select {}
+}
+
+func checkStressServiceFleet(serviceAddress string, serviceCount, basePort int) error {
+	if serviceCount < 100 || serviceCount > 512 || basePort < 1024 || basePort+serviceCount-1 > 65535 {
+		return errors.New("invalid stress service readiness configuration")
+	}
+	address := net.ParseIP(strings.Trim(serviceAddress, "[]"))
+	if address == nil || address.To4() != nil {
+		return errors.New("stress service readiness requires an IPv6 address")
+	}
+	dialer := net.Dialer{Timeout: 250 * time.Millisecond}
+	for index := 0; index < serviceCount; index++ {
+		endpoint := net.JoinHostPort(address.String(), strconv.Itoa(basePort+index))
+		connection, err := dialer.Dial("tcp6", endpoint)
+		if err != nil {
+			return fmt.Errorf("%s is not ready: %w", stressServiceName(index), err)
+		}
+		_ = connection.Close()
+	}
+	return nil
+}
+
+type stressTrafficSummary struct {
+	Clients  int `json:"clients"`
+	Services int `json:"services"`
+	Requests int `json:"requests"`
+	Restarts int `json:"client_restarts"`
+	Failures int `json:"failures"`
+}
+
+func runStressClientFleet(ctx context.Context, serviceAddress, sourceAddress, workload string, serviceCount, basePort, clientCount, requestDelayMinMS, requestDelayMaxMS, restartMinSeconds, restartMaxSeconds, restartPauseMinSeconds, restartPauseMaxSeconds int) error {
+	return runStressClientFleetWithLogger(ctx, serviceAddress, sourceAddress, workload, serviceCount, basePort, clientCount, requestDelayMinMS, requestDelayMaxMS, restartMinSeconds, restartMaxSeconds, restartPauseMinSeconds, restartPauseMaxSeconds, appendTestEvent)
+}
+
+func runStressClientFleetWithLogger(ctx context.Context, serviceAddress, sourceAddress, workload string, serviceCount, basePort, clientCount, requestDelayMinMS, requestDelayMaxMS, restartMinSeconds, restartMaxSeconds, restartPauseMinSeconds, restartPauseMaxSeconds int, writeEvent func(string, testAppEvent) error) error {
+	if !testClientWorkloads[workload] || serviceCount < 100 || serviceCount > 512 || clientCount < 100 || clientCount > 512 || basePort < 1024 || basePort+serviceCount-1 > 65535 {
+		return errors.New("invalid stress client fleet configuration")
+	}
+	if requestDelayMinMS < 100 || requestDelayMaxMS < requestDelayMinMS || requestDelayMaxMS > 60000 || restartMinSeconds < 5 || restartMaxSeconds < restartMinSeconds || restartPauseMinSeconds < 1 || restartPauseMaxSeconds < restartPauseMinSeconds || restartPauseMaxSeconds > 30 {
+		return errors.New("invalid stress client timing configuration")
+	}
+	serviceIP := net.ParseIP(strings.Trim(serviceAddress, "[]"))
+	sourceIP := net.ParseIP(strings.Trim(sourceAddress, "[]"))
+	if serviceIP == nil || serviceIP.To4() != nil || sourceIP == nil || sourceIP.To4() != nil {
+		return errors.New("stress traffic requires IPv6 client and service addresses")
+	}
+	client := &http.Client{Timeout: 5 * time.Second, Transport: &http.Transport{
+		DisableKeepAlives: true,
+		DialContext:       (&net.Dialer{Timeout: 3 * time.Second, LocalAddr: &net.TCPAddr{IP: sourceIP}}).DialContext,
+	}}
+	defer client.CloseIdleConnections()
+	var requests, restarts, failures atomic.Int64
+	var failureMu sync.Mutex
+	var firstFailure string
+	var workers sync.WaitGroup
+	started := time.Now()
+	for clientIndex := 0; clientIndex < clientCount; clientIndex++ {
+		workers.Add(1)
+		go func(clientIndex int) {
+			defer workers.Done()
+			random := rand.New(rand.NewSource(started.UnixNano() + int64(clientIndex+1)*7919))
+			clientID := fmt.Sprintf("logical-client-%03d", clientIndex+1)
+			nextRestart := started.Add(time.Duration(randomBetween(random, restartMinSeconds, restartMaxSeconds)) * time.Second)
+			for ctx.Err() == nil {
+				if time.Now().After(nextRestart) {
+					_ = writeEvent(workload, testAppEvent{Time: time.Now().UTC(), Role: "client", Direction: "offline", ClientID: clientID})
+					if !waitStressClient(ctx, time.Duration(randomBetween(random, restartPauseMinSeconds, restartPauseMaxSeconds))*time.Second) {
+						return
+					}
+					restarts.Add(1)
+					_ = writeEvent(workload, testAppEvent{Time: time.Now().UTC(), Role: "client", Direction: "restarted", ClientID: clientID})
+					nextRestart = time.Now().Add(time.Duration(randomBetween(random, restartMinSeconds, restartMaxSeconds)) * time.Second)
+				}
+				serviceIndex := random.Intn(serviceCount)
+				serviceName := stressServiceName(serviceIndex)
+				servicePort := basePort + serviceIndex
+				endpoint := "http://" + net.JoinHostPort(serviceIP.String(), strconv.Itoa(servicePort)) + "/health"
+				_ = writeEvent(workload, testAppEvent{Time: time.Now().UTC(), Role: "client", Direction: "sent", ClientID: clientID, Service: serviceName, Remote: net.JoinHostPort(serviceIP.String(), strconv.Itoa(servicePort)), Path: "/health"})
+				request, err := http.NewRequestWithContext(ctx, http.MethodGet, endpoint, nil)
+				if err == nil {
+					request.Header.Set("X-ZPR-Test-Client", clientID)
+					var response *http.Response
+					response, err = client.Do(request)
+					if err == nil {
+						var result struct {
+							Service string `json:"service"`
+							Status  string `json:"status"`
+						}
+						decodeErr := json.NewDecoder(io.LimitReader(response.Body, 4096)).Decode(&result)
+						_ = response.Body.Close()
+						if response.StatusCode != http.StatusOK {
+							err = fmt.Errorf("service returned %s", response.Status)
+						} else if decodeErr != nil {
+							err = decodeErr
+						} else if result.Service != serviceName || result.Status != "ok" {
+							err = fmt.Errorf("unexpected service response from %s", serviceName)
+						}
+					}
+				}
+				if err != nil && ctx.Err() != nil {
+					return
+				}
+				requests.Add(1)
+				if err != nil {
+					failures.Add(1)
+					failureMu.Lock()
+					if firstFailure == "" {
+						firstFailure = err.Error()
+					}
+					failureMu.Unlock()
+					_ = writeEvent(workload, testAppEvent{Time: time.Now().UTC(), Role: "client", Direction: "error", ClientID: clientID, Service: serviceName, Remote: net.JoinHostPort(serviceIP.String(), strconv.Itoa(servicePort)), Path: "/health"})
+				} else {
+					_ = writeEvent(workload, testAppEvent{Time: time.Now().UTC(), Role: "client", Direction: "received", ClientID: clientID, Service: serviceName, Remote: net.JoinHostPort(serviceIP.String(), strconv.Itoa(servicePort)), Path: "/health", Status: http.StatusOK})
+				}
+				if !waitStressClient(ctx, time.Duration(randomBetween(random, requestDelayMinMS, requestDelayMaxMS))*time.Millisecond) {
+					return
+				}
+			}
+		}(clientIndex)
+	}
+	workers.Wait()
+	summary := stressTrafficSummary{Clients: clientCount, Services: serviceCount, Requests: int(requests.Load()), Restarts: int(restarts.Load()), Failures: int(failures.Load())}
+	if err := json.NewEncoder(os.Stdout).Encode(summary); err != nil {
+		return err
+	}
+	if summary.Failures > 0 {
+		failureMu.Lock()
+		defer failureMu.Unlock()
+		return fmt.Errorf("load test completed with %d failed requests: %s", summary.Failures, firstFailure)
+	}
+	return nil
+}
+
+func randomBetween(random *rand.Rand, minimum, maximum int) int {
+	if maximum <= minimum {
+		return minimum
+	}
+	return minimum + random.Intn(maximum-minimum+1)
+}
+
+func waitStressClient(ctx context.Context, duration time.Duration) bool {
+	timer := time.NewTimer(duration)
+	defer timer.Stop()
+	select {
+	case <-ctx.Done():
+		return false
+	case <-timer.C:
+		return true
+	}
 }
 
 func testLogHandler(path string) http.Handler {

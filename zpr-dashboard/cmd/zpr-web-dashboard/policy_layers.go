@@ -42,6 +42,16 @@ func writeOrganizationPolicy(rootDirectory, organizationID, destination string) 
 	if err != nil {
 		return err
 	}
+	organization, err := loadSimulatorOrganization(filepath.Join(rootDirectory, "organizations"), organizationID)
+	if err != nil {
+		return err
+	}
+	if organization.LoadTest != nil {
+		source += generateSimulatorLoadTestPolicy(*organization.LoadTest)
+		if len(source) > maxPolicySourceBytes {
+			return fmt.Errorf("composed policy exceeds source size limit")
+		}
+	}
 	if destination == "" {
 		return fmt.Errorf("policy output file is required")
 	}
@@ -59,6 +69,18 @@ func writeOrganizationPolicy(rootDirectory, organizationID, destination string) 
 		return closeErr
 	}
 	return os.Rename(file.Name(), destination)
+}
+
+func generateSimulatorLoadTestPolicy(profile simulatorLoadTestProfile) string {
+	var source strings.Builder
+	fmt.Fprintf(&source, "\n# Generated load-test grants: %d services on %s\n", profile.ServiceCount, profile.ServiceMachine)
+	for index, serviceName := range simulatorLoadTestServiceNames(profile) {
+		port := profile.BasePort + index
+		endpoint := fmt.Sprintf("load-service-%03d.svc.zpr", index+1)
+		fmt.Fprintf(&source, "define %s as service with device.zpr.adapter.cn:'%s'.\n", serviceName, profile.ServiceWorkload)
+		fmt.Fprintf(&source, "provide %s at %s over TCP %d.\n  allow LoadClient.\n", serviceName, endpoint, port)
+	}
+	return source.String()
 }
 
 func composePolicyLayers(rootDirectory string, bundle policyLayerBundle) (string, error) {

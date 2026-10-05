@@ -6,7 +6,6 @@ BIN         := $(BIN_DIR)/$(BINARY)
 GO          := go
 GOFLAGS     :=
 LDFLAGS     := -s -w
-NPM         ?= npm
 
 .DEFAULT_GOAL := build
 
@@ -30,7 +29,11 @@ test:
 
 .PHONY: test-browser
 test-browser:
-	$(NPM) run test:browser
+	sh scripts/test-browser-container.sh
+
+.PHONY: vendor-browser-assets
+vendor-browser-assets:
+	sh scripts/vendor-browser-dependencies.sh
 
 .PHONY: test-all
 test-all: test test-browser
