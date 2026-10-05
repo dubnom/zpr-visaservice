@@ -41,6 +41,7 @@ DNS_VIEWER_KEY_FILE="${ZPR_DNS_TRANSFER_TSIG_KEY_FILE:-$DNS_RUNTIME_DIR/zpr-dns-
 POLICY_PID="$STATE_DIR/policy-service.pid"
 CONTROL_PID="$STATE_DIR/control-service.pid"
 ROOM_PID="$STATE_DIR/control-room.pid"
+CONTROL_ROOM_DOCKER_CONTAINER="${ZPR_CONTROL_ROOM_CONTAINER:-zpr-control-room}"
 SIMULATOR_PID="$STATE_DIR/simulator.pid"
 SIMULATOR_DOCKER_CONTAINER="${ZPR_SIMULATOR_CONTAINER:-zpr-simulator}"
 SIMULATOR_IMAGE="${ZPR_SIMULATOR_IMAGE:-zpr-simulator:local}"
@@ -108,13 +109,20 @@ stop_simulator() {
     fi
 }
 
+stop_control_room() {
+    stop_service "$ROOM_PID"
+    if docker inspect "$CONTROL_ROOM_DOCKER_CONTAINER" >/dev/null 2>&1; then
+        docker rm -f "$CONTROL_ROOM_DOCKER_CONTAINER" >/dev/null
+    fi
+}
+
 stop_stack() {
     for number in $(seq -w 1 20); do
         docker rm -f "zpr-machine-$number" >/dev/null 2>&1 || true
     done
     stop_service "$BROWSER_GATEWAY_PID"
     stop_simulator
-    stop_service "$ROOM_PID"
+    stop_control_room
     stop_service "$CONTROL_PID"
     stop_service "$ADMIN_RELAY_PID"
     stop_ui_relays
@@ -170,6 +178,35 @@ start_simulator() {
         --cacert "$CONTROL_CA" \
         --cert "$MACHINE_CERT_DIR/machine-01/client.crt" \
         --key "$MACHINE_CERT_DIR/machine-01/client.key"
+}
+
+start_control_room() {
+    if [ "$(docker inspect -f '{{.State.Running}}' "$CONTROL_ROOM_DOCKER_CONTAINER" 2>/dev/null || true)" = true ]; then
+        return 0
+    fi
+    docker rm -f "$CONTROL_ROOM_DOCKER_CONTAINER" >/dev/null 2>&1 || true
+    docker build -f "$SCRIPT_DIR/Dockerfile.simulator" -t "$SIMULATOR_IMAGE" "$DASHBOARD_DIR"
+    control_room_proxy_ip=$(docker network inspect bridge --format '{{(index .IPAM.Config 0).Gateway}}')
+    docker run -d --name "$CONTROL_ROOM_DOCKER_CONTAINER" \
+        --label zpr.control-room=true \
+        --restart unless-stopped \
+        -v "$SERVICE_CERTS:$SERVICE_CERTS:ro" \
+        -p 127.0.0.1:8787:8787 \
+        -e ZPR_CONTROL_SERVICE_URL=https://host.docker.internal:8790 \
+        -e ZPR_CONTROL_SERVICE_TLS_SERVER_NAME=127.0.0.1 \
+        -e ZPR_CONTROL_ROOM_PROXY_IP="$control_room_proxy_ip" \
+        -e ZPR_CONTROL_SERVICE_CA_FILE="$SERVICE_CERTS/service-ca.crt" \
+        -e ZPR_CONTROL_CLIENT_CERT_FILE="$SERVICE_CERTS/control-room-client.crt" \
+        -e ZPR_CONTROL_CLIENT_KEY_FILE="$SERVICE_CERTS/control-room-client.key" \
+        --entrypoint /usr/local/bin/zpr-web-dashboard \
+        "$SIMULATOR_IMAGE" -mode control-room -listen 0.0.0.0:8787 >/dev/null
+    wait_for_url http://127.0.0.1:8787/api/snapshot control-room
+}
+
+restart_control_room() {
+    docker build -f "$SCRIPT_DIR/Dockerfile.simulator" -t "$SIMULATOR_IMAGE" "$DASHBOARD_DIR"
+    stop_control_room
+    start_control_room
 }
 
 restart_simulator() {
@@ -679,12 +716,7 @@ start_stack() {
     start_ui_relays
     start_control_service
 
-    start_service control-room "$ROOM_PID" env \
-        ZPR_CONTROL_SERVICE_URL=https://127.0.0.1:8790 \
-        ZPR_CONTROL_SERVICE_CA_FILE="$SERVICE_CERTS/service-ca.crt" \
-        ZPR_CONTROL_CLIENT_CERT_FILE="$SERVICE_CERTS/control-room-client.crt" \
-        ZPR_CONTROL_CLIENT_KEY_FILE="$SERVICE_CERTS/control-room-client.key" \
-        "$BIN" -mode control-room -listen 127.0.0.1:8787
+    start_control_room
     wait_for_url http://127.0.0.1:8787/ control-room
 	start_simulator
 	start_machine_controllers
@@ -697,7 +729,7 @@ start_stack() {
 }
 
 status_stack() {
-    for entry in "policy-service:$POLICY_PID:8789" "admin-relay:$ADMIN_RELAY_PID:$ADMIN_RELAY_PORT" "ldap-ui-relay:$LDAP_UI_RELAY_PID:$LDAP_UI_RELAY_PORT" "observability-ui-relay:$OBSERVABILITY_UI_RELAY_PID:$OBSERVABILITY_UI_RELAY_PORT" "control-service:$CONTROL_PID:8790" "control-room:$ROOM_PID:8787" "browser-gateway:$BROWSER_GATEWAY_PID:8443"; do
+    for entry in "policy-service:$POLICY_PID:8789" "admin-relay:$ADMIN_RELAY_PID:$ADMIN_RELAY_PORT" "ldap-ui-relay:$LDAP_UI_RELAY_PID:$LDAP_UI_RELAY_PORT" "observability-ui-relay:$OBSERVABILITY_UI_RELAY_PID:$OBSERVABILITY_UI_RELAY_PORT" "control-service:$CONTROL_PID:8790" "browser-gateway:$BROWSER_GATEWAY_PID:8443"; do
         name=${entry%%:*}
         rest=${entry#*:}
         pid_file=${rest%%:*}
@@ -708,6 +740,8 @@ status_stack() {
             echo "$name: stopped"
         fi
     done
+    control_room_state=$(docker inspect -f '{{.State.Status}}' "$CONTROL_ROOM_DOCKER_CONTAINER" 2>/dev/null || printf stopped)
+    echo "control-room: container $control_room_state"
     simulator_state=$(docker inspect -f '{{.State.Status}}' "$SIMULATOR_DOCKER_CONTAINER" 2>/dev/null || printf stopped)
     echo "simulator: container $simulator_state"
     dns_state=$(docker inspect -f '{{.State.Status}}' "$DNS_CONTAINER" 2>/dev/null || printf stopped)
@@ -746,6 +780,7 @@ case "${1:-start}" in
     stop-ui-relays) stop_ui_relays ;;
     start-browser-gateway) start_browser_gateway ;;
     stop-browser-gateway) stop_service "$BROWSER_GATEWAY_PID" ;;
+    restart-control-room) restart_control_room ;;
     restart-simulator) restart_simulator ;;
     restart-control-service)
         stop_service "$CONTROL_PID"
@@ -759,5 +794,5 @@ case "${1:-start}" in
         [ "$#" -eq 3 ] || { echo "usage: $0 restart-policy-context organization source" >&2; exit 2; }
         restart_policy_context "$2" "$3"
         ;;
-    *) echo "usage: $0 {start|stop|restart|status|start-admin-relay|stop-admin-relay|start-dns|stop-dns|start-ui-relays|stop-ui-relays|start-browser-gateway|stop-browser-gateway|restart-simulator|restart-control-service|restart-policy-service|restart-simulator-control}" >&2; exit 2 ;;
+    *) echo "usage: $0 {start|stop|restart|status|start-admin-relay|stop-admin-relay|start-dns|stop-dns|start-ui-relays|stop-ui-relays|start-browser-gateway|stop-browser-gateway|restart-control-room|restart-simulator|restart-control-service|restart-policy-service|restart-simulator-control}" >&2; exit 2 ;;
 esac

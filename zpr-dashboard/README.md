@@ -68,9 +68,18 @@ manifest-backed agent/service inventory, a fixed fleet of 20 machine profiles,
 workload placement, and recent managed-service logs. The fleet has 12 laptops
 and 8 desktops; machine type, model, location, owner, and secure posture are
 seeded into the local demo LDAP directory when the disposable Linux rig starts.
-Its Activity page shows recent visas and denials from Control Room. Control
-Room remains the read-only network and policy monitor at
+Its Activity page is a live view of recent Control Room visa and denial data.
+It shows request/approval/denial totals, sortable recent-visa and denial tables,
+and a manual Refresh beside the stream status. It is an operational feed, not a
+durable audit archive. The Agents page labels the fleet as Devices and filters
+by device type. Control Room remains the read-only network and policy monitor at
 `http://127.0.0.1:8787`.
+
+Control Room groups Adapters, Actors, Services, Visas, Denials, and DNS under
+counted Status tabs. The summary metrics stay on Map rather than repeating on
+each status page. Map updates animate retained topology components as bounds
+move; Fit centers the rendered topology with padding while preserving glyph
+proportions, and reduced-motion preferences suppress movement animation.
 
 Selecting an adapter in the Control Room map shows its current unexpired visas,
 including inbound and outbound flows, protocol, expiry, node, and policy ID.
@@ -422,7 +431,10 @@ share the per-organization SQLite file under
 `.local-runtime/dashboard-stack/policy-private/`. The scenario editor provides
 form-based metadata, repeatable step and cleanup controls, optional parallel
 dependencies, advanced JSON for topology-specific fields, and virtual folders
-grouped in the catalog. Drafts are validated and versioned; only published
+grouped in the catalog; scenarios without a folder appear under **Unfiled**.
+The run panel offers **Clear** only for a terminal run, and clearing removes
+that run history without deleting its scenario or changing machine logs.
+Drafts are validated and versioned; only published
 scenarios can run, and each run records the organization and published revision
 it used. Deleting a scenario archives it from the catalog while retaining its
 immutable revision history. Directory edits are drafts until explicitly

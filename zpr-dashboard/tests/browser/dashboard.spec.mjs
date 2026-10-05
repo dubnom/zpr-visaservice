@@ -555,6 +555,101 @@ const test = base.extend({
 
 registerAssertionBrowserTests();
 
+test("Simulator Agents uses device terminology without a machine-count label", async ({ page, appURL }) => {
+  await page.goto(appURL + "/agents.html");
+  await expect(page.getByRole("heading", { name: "Devices", exact: true })).toBeVisible();
+  await expect(page.locator("#machine-count")).toHaveCount(0);
+  await expect(page.locator("#machine-type-filter option[value=all]")).toHaveText("All devices");
+});
+
+test("Simulator Activity uses sortable tables and keeps Refresh beside stream state", async ({ page, appURL, api }) => {
+  api.handlers.set("/api/simulator/activity", async (route) => route.fulfill({ json: {
+    generated_at: "2026-10-05T12:00:00Z",
+    stats: { visa_requests: 4, visa_requests_approved: 2, visa_requests_denied: 2 },
+    visas: [
+      { id: 1, source_addr: "fd00::2", dest_addr: "fd00::8", proto: "TCP", dest_port: 8080, policy_id: "Echo", expires: 1200 },
+      { id: 2, source_addr: "fd00::1", dest_addr: "fd00::8", proto: "TCP", dest_port: 8080, policy_id: "Echo", expires: 1800 },
+    ],
+    denies: [
+      { source_addr: "fd00::2", dest_addr: "fd00::9", protocol: 6, dest_port: 443, code: "Denied", count: 3 },
+      { source_addr: "fd00::1", dest_addr: "fd00::9", protocol: 6, dest_port: 443, code: "NoMatch", count: 8 },
+    ],
+  } }));
+  await page.goto(appURL + "/activity.html");
+  await expect(page.locator("#activity-state")).toHaveText("LIVE");
+  await expect(page.locator("#refresh").locator("xpath=..")).toHaveClass(/activity-stream-actions/);
+  await expect(page.getByText("DECISIONS", { exact: true })).toHaveCount(0);
+  await expect(page.getByText("BLOCKED FLOWS", { exact: true })).toHaveCount(0);
+
+  const visas = page.locator('table[data-sort-page="activity-visas"]');
+  const flow = visas.locator('th[data-sort-key="flow"]');
+  await flow.click();
+  await expect(flow).toHaveAttribute("aria-sort", "ascending");
+  await expect(visas.locator("tbody tr").first()).toContainText("fd00::1");
+  await flow.click();
+  await expect(flow).toHaveAttribute("aria-sort", "descending");
+  await expect(visas.locator("tbody tr").first()).toContainText("fd00::2");
+  await expect(page.locator('table[data-sort-page="activity-denies"] tbody tr')).toHaveCount(2);
+});
+
+test("Simulator Scenarios groups unfiled entries and clears only terminal run history", async ({ page, appURL, api }) => {
+  const scenario = {
+    id: "sample-flow", name: "Sample flow", folder: "", description: "A browser fixture.",
+    organization_id: "alpha", current_revision: 1, published_revision: 1, steps: [], cleanup: [],
+  };
+  let run = {
+    scenario_id: scenario.id, scenario_name: scenario.name, state: "completed", current_step: 1, total_steps: 1,
+    steps: [], scenario: { steps: [], cleanup: [] },
+  };
+  api.handlers.set("/api/simulator/scenarios", async (route) => route.fulfill({ json: {
+    active_organization_id: "alpha", organization: { name: "Alpha Labs" }, scenarios: [scenario], run, max_machines: 10,
+  } }));
+  api.handlers.set("/api/simulator/scenarios/clear", async (route) => {
+    run = { state: "idle", steps: [] };
+    await route.fulfill({ json: run });
+  });
+  await page.goto(appURL + "/scenarios.html");
+  await expect(page.locator("#scenario-new")).toHaveText("New Scenario...");
+  await expect(page.locator(".scenario-list-pane #scenario-new")).toBeVisible();
+  await expect(page.locator("#scenario-count")).toHaveCount(0);
+  await expect(page.getByText("Available scenarios", { exact: true })).toHaveCount(0);
+  await expect(page.locator(".scenario-folder")).toHaveCount(0);
+  await expect(page.locator("#scenario-list")).toContainText("Sample flow");
+  const scenarioCard = page.locator(`#scenario-list [data-run-scenario="${scenario.id}"]`).locator("xpath=ancestor::article");
+  await expect(scenarioCard.locator(".scenario-version")).toHaveText("Version 1");
+  await expect(scenarioCard.locator("button")).toHaveText(["Run", "Edit", "Delete"]);
+  await expect(page.locator("#scenario-run-title")).toHaveText("Sample flow");
+  await expect(page.locator("#scenario-run-state .scenario-state-label")).toHaveText("completed");
+  await expect(page.locator("#scenario-cancel")).toBeHidden();
+  await expect(page.locator("#scenario-clear")).toBeVisible();
+
+  await page.evaluate(() => renderScenarioRun({ scenario_id: "sample-flow", scenario_name: "Sample flow", state: "running", steps: [], scenario: { steps: [], cleanup: [] } }));
+  await expect(page.locator("#scenario-cancel")).toBeVisible();
+  await expect(page.locator("#scenario-clear")).toBeHidden();
+  await page.evaluate(() => renderScenarioRun({ scenario_id: "sample-flow", scenario_name: "Sample flow", state: "running", current_step: 2, total_steps: 5, steps: [], scenario: { steps: [], cleanup: [] } }));
+  await expect(page.locator("#scenario-run-state")).toContainText("2 / 5");
+  const statusActionGeometry = await page.evaluate(() => {
+    const state = document.querySelector("#scenario-run-state").getBoundingClientRect();
+    const cancel = document.querySelector("#scenario-cancel").getBoundingClientRect();
+    return { adjacent: cancel.left >= state.right && cancel.left - state.right < 20, sameRow: Math.abs(cancel.top + cancel.height / 2 - state.top - state.height / 2) < 5 };
+  });
+  expect(statusActionGeometry.adjacent).toBeTruthy();
+  expect(statusActionGeometry.sameRow).toBeTruthy();
+  await page.evaluate(() => renderScenarioRun({ scenario_id: "sample-flow", scenario_name: "Sample flow", state: "cancelled", current_step: 2, total_steps: 5, error: "Context canceled", steps: [{ number: 1, status: "failed", error: "context canceled" }], scenario: { steps: [{ action: "wait", machine: "node" }], cleanup: [] } }));
+  await expect(page.locator("#scenario-run-state")).toContainText("2 / 5");
+  await expect(page.locator("#scenario-run-summary")).toBeHidden();
+  await expect(page.locator(".scenario-run-pane")).not.toContainText("Context canceled");
+  await expect(page.locator("#scenario-cancel")).toBeHidden();
+  await expect(page.locator("#scenario-clear")).toBeVisible();
+  await page.evaluate(() => renderScenarioRun({ scenario_id: "sample-flow", scenario_name: "Sample flow", state: "completed", steps: [], scenario: { steps: [], cleanup: [] } }));
+  await expect(page.locator("#scenario-cancel")).toBeHidden();
+  await expect(page.locator("#scenario-clear")).toBeVisible();
+  await page.locator("#scenario-clear").click();
+  await expect(page.locator("#scenario-run-title")).toHaveText("Scenario");
+  await expect(page.locator("#scenario-clear")).toBeHidden();
+  expect(api.counts.get("/api/simulator/scenarios/clear")).toBe(1);
+});
+
 test("assertion picker lines omit counts and revisions and distinguish record kinds by color", async ({ page, appURL, api }) => {
   await page.goto(appURL + "/#policy");
   await openPolicyPicker(page);
@@ -573,6 +668,29 @@ test("assertion picker lines omit counts and revisions and distinguish record ki
   await expect(page.getByRole("tab", { name: "Attributes", exact: true })).toBeVisible();
 });
 
+test("Security Review stacks baseline and current inventory with compact checkboxes", async ({ page, appURL, api }) => {
+  api.snapshot.actors = [{ cn: "adapter-a", node: false, zpr_addr: "fd00::1" }];
+  api.snapshot.services = [{ service_name: "API", actor_cn: "adapter-a", service_kind: "Regular", service_endpoints: "TCP/443" }];
+  await page.goto(appURL + "/#security-review");
+  await expect(page.locator("#security-review-baseline-actors")).toContainText("adapter-a");
+  api.snapshot.actors.push({ cn: "adapter-b", node: false, zpr_addr: "fd00::2" });
+  await page.locator("#refresh-now").click();
+  await expect(page.locator("#security-review-current-actors")).toContainText("adapter-b");
+  await expect(page.locator("#security-review-baseline-actors")).not.toContainText("adapter-b");
+  const baseline = await page.locator('[data-inventory-row="baseline"]').boundingBox();
+  const current = await page.locator('[data-inventory-row="current"]').boundingBox();
+  expect(current.y).toBeGreaterThanOrEqual(baseline.y + baseline.height - 1);
+  const checkbox = await page.locator("#security-review-show-dismissed").boundingBox();
+  expect(checkbox.width).toBeLessThanOrEqual(18);
+  expect(checkbox.height).toBeLessThanOrEqual(18);
+  await expect(page.locator("#security-review-current-time")).not.toContainText("Observed");
+  await expect(page.locator('#security-review-current-actors [data-change="added"]')).toContainText("adapter-b");
+  api.snapshot.actors = api.snapshot.actors.filter((actor) => actor.cn !== "adapter-a");
+  await page.locator("#refresh-now").click();
+  await expect(page.locator('#security-review-current-actors [data-change="removed"]')).toContainText("adapter-a");
+  await expect(page.locator("#security-review-baseline-actors")).toContainText("adapter-a");
+});
+
 test("Security Review reports denial and log evidence and compares new inventory to its local baseline", async ({ page, appURL, api }) => {
   api.snapshot.actors = [{ cn: "adapter-a", node: false, zpr_addr: "fd00::1" }];
   api.snapshot.services = [{ service_name: "base-service", actor_cn: "adapter-a", service_kind: "Regular" }];
@@ -584,6 +702,23 @@ test("Security Review reports denial and log evidence and compares new inventory
   const mutations = [];
   page.on("request", (request) => { if (request.method() !== "GET") mutations.push(request.method()); });
   await page.goto(appURL + "/#security-review");
+  await expect(page.getByRole("heading", { name: "Security review", exact: true })).toHaveCount(0);
+  await expect(page.getByText("INVESTIGATION LEADS · READ ONLY", { exact: true })).toHaveCount(0);
+  await expect(page.locator(".security-review-baseline-label")).toHaveText("Baseline");
+  await expect(page.locator("#security-review-baseline-time")).not.toContainText("Saved");
+  await expect(page.getByText("Inventory", { exact: true })).toHaveCount(0);
+  await expect(page.locator("#security-review-status")).toBeEmpty();
+  await expect(page.locator("#security-review-status")).not.toContainText("Scanning");
+  await expect(page.locator(".security-review-caveat")).toHaveCount(0);
+  const resetBox = await page.locator("#security-review-reset").boundingBox();
+  const summaryBox = await page.locator("#security-review-baseline-details summary").boundingBox();
+  expect(Math.abs((resetBox.y + resetBox.height / 2) - (summaryBox.y + summaryBox.height / 2))).toBeLessThan(3);
+  const baselineTimeBox = await page.locator("#security-review-baseline-time").boundingBox();
+  const currentTimeBox = await page.locator("#security-review-current-time").boundingBox();
+  expect(Math.abs(baselineTimeBox.x - currentTimeBox.x)).toBeLessThan(1);
+  await expect(page.locator(".security-review-baseline-help")).toHaveCount(0);
+  await expect(page.locator("#security-review-status")).not.toContainText("Scan complete");
+  await expect(page.locator(".security-review-select-visible")).toContainText("Select visible");
   const findings = page.locator("#security-review-findings");
   await expect(findings).toContainText("Repeated policy denials");
   await expect(findings).toContainText("5 denied requests");
@@ -595,6 +730,19 @@ test("Security Review reports denial and log evidence and compares new inventory
   await expect(findings).toContainText("1 pending installs");
   await expect(findings).toContainText("Node contact stale");
   await expect(page.locator("#security-review-baseline")).toContainText("3 actors · 1 services");
+  const baselineDetails = page.locator("#security-review-baseline-details");
+  const currentDetails = page.locator("#security-review-current-details");
+  await expect(baselineDetails).not.toHaveAttribute("open", "");
+  await expect(currentDetails).not.toHaveAttribute("open", "");
+  await expect(baselineDetails.locator(".security-review-inventory-details")).toBeHidden();
+  await expect(currentDetails.locator(".security-review-inventory-details")).toBeHidden();
+  await baselineDetails.locator("summary").click();
+  await expect(baselineDetails.locator("#security-review-baseline-actors")).toBeVisible();
+  await expect(baselineDetails.locator("#security-review-baseline-actors")).toContainText("adapter-a");
+  await baselineDetails.locator("summary").click();
+  await currentDetails.locator("summary").click();
+  await expect(currentDetails.locator("#security-review-current-actors")).toContainText("adapter-a");
+  await currentDetails.locator("summary").click();
   await expect(findings).not.toContainText("Actor first observed since baseline");
   await expect(findings).not.toContainText("Service first observed since baseline");
 
@@ -616,9 +764,6 @@ test("Security Review dismisses individual, selected and all findings and can re
   const sourceFailure = findings.locator("tr").filter({ hasText: "Trusted-source lookup failed" });
   await expect(denial).toBeVisible();
   await expect(sourceFailure).toBeVisible();
-  await expect(page.locator(".security-review-baseline-help")).toContainText("Only later changes are flagged");
-  await expect(page.locator(".security-review-baseline-help")).toContainText("Dismissals are separate");
-
   await denial.getByRole("button", { name: /^Dismiss/ }).click();
   await expect(findings).not.toContainText("Repeated policy denials");
   await sourceFailure.getByRole("checkbox").check();
@@ -652,6 +797,9 @@ test("Security Review uses Control Room polling, pause, interval and manual refr
   await expect.poll(() => api.counts.get("/api/snapshot")).toBe(2);
   await expect.poll(() => api.counts.get("/api/adapter-logs")).toBe(2);
   await page.locator("#pause-poll").click();
+  await expect(page.locator("#pause-poll")).toHaveAttribute("aria-pressed", "true");
+  await expect(page.locator("#pause-poll")).toHaveCSS("background-color", "rgb(168, 62, 41)");
+  await expect(page.locator("#pause-status")).toHaveText("Updates paused");
   const snapshots = api.counts.get("/api/snapshot");
   const logs = api.counts.get("/api/adapter-logs");
   await page.clock.runFor(10000);
@@ -661,8 +809,12 @@ test("Security Review uses Control Room polling, pause, interval and manual refr
   await page.locator("#refresh-now").click();
   await expect(page.locator("#security-review-findings")).toContainText("Repeated policy denials");
   await expect.poll(() => api.counts.get("/api/snapshot")).toBe(snapshots + 1);
-  await page.getByRole("link", { name: "Services", exact: true }).click();
+  await page.locator('.primary-nav [data-page-group="status"]').click();
+  await expect(page.locator("#status-tabs")).toBeVisible();
+  await page.locator('#status-tabs [data-page-link="services"]').click();
   await page.locator("#pause-poll").click();
+  await expect(page.locator("#pause-poll")).toHaveAttribute("aria-pressed", "false");
+  await expect(page.locator("#pause-status")).toBeHidden();
   const before = api.counts.get("/api/adapter-logs");
   await page.clock.runFor(3100);
   expect(api.counts.get("/api/adapter-logs")).toBe(before);
@@ -775,6 +927,32 @@ test("Trusted Sources omits explanatory headings and counts while retaining sour
   await expect(page.locator("#trusted-count")).toHaveCount(0);
   await expect(page.getByRole("searchbox", { name: "Filter trusted sources", exact: true })).toBeVisible();
   await expect(sources.locator("table[data-sort-page=sources]")).toBeVisible();
+});
+
+test("Control Room sidebar routes Logging internally and promotes external managers", async ({ page, appURL, api }) => {
+  const directoryURLs = [`${appURL}/?directory=one`, `${appURL}/?directory=two`];
+  api.snapshot.trusted_sources = ["Directory A", "Directory B"].map((name, index) => ({ name, provider: "file", actor_cn: "directory-service", health: "working", last_lookup_ms: Date.now(), last_success_ms: Date.now(), editor_url: directoryURLs[index] }));
+  await page.goto(appURL + "/#sources");
+  const nav = page.locator(".primary-nav");
+  await expect(nav.getByRole("link", { name: "Logging", exact: true })).toHaveAttribute("href", "#adapter-logs");
+  await expect(nav.getByRole("link", { name: "Adapter Logs", exact: true })).toHaveCount(0);
+  await expect(nav.getByRole("link", { name: /LDAP control GUI/i })).toHaveCount(0);
+  const logManager = page.getByRole("link", { name: "Log Manager", exact: true });
+  await expect(logManager).toHaveAttribute("href", "http://127.0.0.1:8798/");
+  await expect(logManager).toHaveAttribute("target", "zpr-log-manager");
+  await expect(logManager).toHaveClass(/sidebar-tool-prominent/);
+  const manageLinks = page.getByRole("link", { name: "Manage", exact: true });
+  await expect(manageLinks).toHaveCount(2);
+  await expect(manageLinks.nth(0)).toHaveAttribute("href", directoryURLs[0]);
+  await expect(manageLinks.nth(0)).toHaveAttribute("target", "zpr-directory-manager");
+  await expect(manageLinks.nth(1)).toHaveAttribute("target", "zpr-directory-manager");
+  const [directoryPage] = await Promise.all([page.context().waitForEvent("page"), manageLinks.nth(0).click()]);
+  await expect.poll(() => new URL(directoryPage.url()).searchParams.get("directory")).toBe("one");
+  await manageLinks.nth(1).click();
+  await expect.poll(() => new URL(directoryPage.url()).searchParams.get("directory")).toBe("two");
+  expect(page.context().pages()).toHaveLength(2);
+  await expect(manageLinks.nth(0)).toContainText("↗");
+  await expect(manageLinks.nth(0)).toHaveCSS("background-color", "rgb(233, 243, 212)");
 });
 
 test("Control Room trusted source panel browses records read-only", async ({ page, appURL, api }) => {
@@ -903,8 +1081,36 @@ test("each picker row opens its own menu from labels and metadata", async ({ pag
   }
 });
 
+test("Control Room groups status pages into counted tabs and keeps metrics on Map only", async ({ page, appURL, api }) => {
+  api.snapshot.actors = [
+    { cn: "node-a", node: true, zpr_addr: "fd00::1", node_details: { adapters: ["adapter-a"], in_sync: true } },
+    { cn: "adapter-a", node: false, zpr_addr: "fd00::2" },
+  ];
+  api.snapshot.services = [{ service_name: "Echo", actor_cn: "adapter-a", service_kind: "Regular" }];
+  api.snapshot.visa_count = 7;
+  api.snapshot.recent_denies = [{ source_addr: "fd00::2", dest_addr: "fd00::3", count: 4, deny_code: "Denied" }];
+  api.handlers.set("/api/dns/stats/json/v1/status", async (route) => route.fulfill({ json: { "current-time": "2026-10-05T12:00:00Z" } }));
+  api.handlers.set("/api/dns/stats/json/v1/server", async (route) => route.fulfill({ json: { version: "9", nsstats: {} } }));
+  api.handlers.set("/api/dns/stats/json/v1/zones", async (route) => route.fulfill({ json: { views: { internal: { zones: [{ name: "svc.zpr." }, { name: "example.test." }] } } } }));
+  await page.goto(appURL + "/#services");
+  await expect(page.locator(".primary-nav [data-page-group=status]")).toHaveClass(/active/);
+  await expect(page.locator("#status-tabs")).toBeVisible();
+  await expect(page.locator('#status-tabs [data-page-link="services"]')).toHaveClass(/active/);
+  await expect(page.locator("#status-count-adapters")).toHaveText("1");
+  await expect(page.locator("#status-count-actors")).toHaveText("2");
+  await expect(page.locator("#status-count-services")).toHaveText("1");
+  await expect(page.locator("#status-count-visas")).toHaveText("7");
+  await expect(page.locator("#status-count-denies")).toHaveText("4");
+  await expect(page.locator(".status-banner")).toBeHidden();
+  await page.locator('#status-tabs [data-page-link="dns"]').click();
+  await expect(page.locator("#status-count-dns")).toHaveText("2");
+  await page.goto(appURL + "/#map");
+  await expect(page.locator("#status-tabs")).toBeHidden();
+  await expect(page.locator(".status-banner")).toBeVisible();
+});
+
 for (const navigation of [
-  { app: "Control Room", path: "/#services", label: "Services", next: "Visas", nextPath: "/#visas" },
+  { app: "Control Room", path: "/#services", label: "Status", next: "Visas", nextPath: "/#visas" },
   { app: "Simulator", path: "/organizations.html", label: "Organizations", next: "Workload logs", nextPath: "/machine-logs.html" },
 ]) {
   test(`${navigation.app} side menu condenses, remembers its state and keeps the active tab visible`, async ({ page, appURL, api }, testInfo) => {
@@ -912,6 +1118,8 @@ for (const navigation of [
     const activeLink = page.locator(".primary-nav .nav-link.active");
     await expect(activeLink).toHaveText(navigation.label);
     if (navigation.app === "Control Room") {
+      await expect(page.locator('#status-tabs [data-page-link="services"]')).toHaveClass(/active/);
+      await expect(page.locator(".status-banner")).toBeHidden();
       await expect(page.getByRole("link", { name: "Browse policy & assertions", exact: true })).toHaveCount(0);
     }
     {
@@ -950,15 +1158,20 @@ for (const navigation of [
     await page.reload();
     await expect(page.locator("body")).toHaveClass(/sidebar-condensed/);
     await expect(page.locator(".primary-nav .nav-link.active")).toHaveText(navigation.label);
+    if (navigation.app === "Control Room") await expect(page.locator('#status-tabs [data-page-link="services"]')).toHaveClass(/active/);
     if (testInfo.project.name === "desktop") {
       await expect(page.locator(".sidebar")).toHaveCSS("width", "104px");
       await expect(page.locator(".main-content")).toHaveCSS("margin-left", "104px");
     }
     await page.screenshot({ path: testInfo.outputPath("sidebar-condensed.png"), fullPage: true });
     await page.getByRole("button", { name: "Expand side menu", exact: true }).click();
-    await page.getByRole("link", { name: navigation.next, exact: true }).click();
+    const nextLink = navigation.app === "Control Room"
+      ? page.locator(`#status-tabs a[href="${navigation.nextPath.slice(1)}"]`)
+      : page.getByRole("link", { name: navigation.next, exact: true });
+    await nextLink.click();
     await expect(page).toHaveURL(appURL + navigation.nextPath);
-    await expect(page.locator(".primary-nav .nav-link.active")).toHaveText(navigation.next);
+    if (navigation.app === "Control Room") await expect(page.locator('#status-tabs [data-page-link="visas"]')).toHaveClass(/active/);
+    else await expect(page.locator(".primary-nav .nav-link.active")).toHaveText(navigation.next);
     await page.getByRole("button", { name: "Condense side menu", exact: true }).click();
     await page.goBack();
     await expect(page.locator(".primary-nav .nav-link.active")).toHaveText(navigation.label);
@@ -1978,7 +2191,9 @@ test(`map pulses only the requesting adapter for new grants and denials (${reduc
   await expect(requester.locator('.graph-decision-ring[data-decision="grant"]')).toHaveCount(1);
   const service = page.locator('.graph-service-badge[data-inspect-service="API"]');
   await expect(service.locator(".graph-service-decision-ring")).toHaveCount(1);
-  await expect(service.locator(".graph-service-decision-ring")).toHaveCSS("stroke", "rgb(40, 124, 199)");
+  await expect(service.locator(".graph-service-decision-ring")).toHaveCSS("stroke", "rgb(24, 137, 75)");
+  const servicePulseDuration = await service.locator(".graph-service-decision-ring").evaluate((ring) => ring.getAnimations()[0].effect.getTiming().duration);
+  expect(servicePulseDuration).toBe(2000);
   for (const outline of [service.locator(".graph-service-decision-ring"), requester.locator(".graph-decision-ring")]) {
     const transforms = await outline.evaluate((element) => element.getAnimations().flatMap((animation) => animation.effect.getKeyframes().map((frame) => frame.transform).filter(Boolean)));
     if (reducedMotion === "reduce") expect(transforms).toEqual([]);
@@ -2084,9 +2299,111 @@ test("adding topology parents keeps existing nodes at the same screen position",
   await graph.evaluate((svg) => { svg.getAnimations().find((animation) => animation.effect?.target === svg).finish(); });
   const afterNode = page.locator('.graph-vertex.node[data-inspect-actor="node-0"]');
   const after = await afterNode.boundingBox();
-  expect(Math.abs(midway.x - before.x)).toBeGreaterThan(1);
-  expect(Math.abs(midway.x - before.x)).toBeLessThan(Math.abs(after.x - before.x));
-  expect(after.x).not.toBeCloseTo(before.x, 1);
+  const midwayDistance = Math.hypot(midway.x - before.x, midway.y - before.y);
+  const finalDistance = Math.hypot(after.x - before.x, after.y - before.y);
+  expect(midwayDistance).toBeGreaterThan(1);
+  expect(midwayDistance).toBeLessThan(finalDistance);
+  expect(finalDistance).toBeGreaterThan(1);
+});
+
+test("retained adapters animate when topology bounds move", async ({ page, appURL, api }) => {
+  await page.emulateMedia({ reducedMotion: "no-preference" });
+  api.snapshot.actors = [
+    { cn: "node-0", node: true, zpr_addr: "fd00::1", node_details: { adapters: ["adapter-0"], in_sync: true } },
+    { cn: "adapter-0", node: false, zpr_addr: "fd00::2" },
+  ];
+  await page.goto(appURL + "/#map");
+  const retained = page.locator('.graph-vertex[data-inspect-actor="adapter-0"]');
+  await expect(retained).toBeVisible();
+  const beforePosition = await retained.evaluate((element) => [element.dataset.originX, element.dataset.originY]);
+  await page.getByRole("button", { name: "Pause updates", exact: true }).click();
+
+  api.snapshot.actors = [
+    { cn: "node-0", node: true, zpr_addr: "fd00::1", node_details: { adapters: ["adapter-0", "gateway-0"], in_sync: true } },
+    { cn: "adapter-0", node: false, zpr_addr: "fd00::2" },
+    { cn: "gateway-0", node: false, zpr_addr: "fd00::3" },
+  ];
+  api.snapshot.services = [{ service_name: "Public gateway", service_kind: "Gateway", actor_cn: "gateway-0", external_network_connection: "public-internet" }];
+  await page.locator("#refresh-now").click();
+  await expect(page.locator('.graph-vertex[data-inspect-actor="gateway-0"]')).toBeVisible();
+  const afterPosition = await retained.evaluate((element) => [element.dataset.originX, element.dataset.originY]);
+  expect(afterPosition).not.toEqual(beforePosition);
+  const motion = await retained.evaluate((element) => element.graphMotion && ({ from: element.graphMotion.from, to: element.graphMotion.to }));
+  expect(motion).not.toBeNull();
+  expect(Math.hypot(motion.from.x - motion.to.x, motion.from.y - motion.to.y)).toBeGreaterThan(1);
+  const dockLink = page.locator('.graph-edge[data-topology-edge="dock|node-0|adapter-0"]');
+  const linkMotion = await dockLink.evaluate((element) => element.graphLinkMotion);
+  expect(linkMotion).toBeTruthy();
+  expect(Math.hypot(linkMotion.from.x1 - linkMotion.to.x1, linkMotion.from.y1 - linkMotion.to.y1)).toBeGreaterThan(1);
+});
+
+test("Fit centers the actual topology bounds", async ({ page, appURL, api }) => {
+  api.snapshot.actors = [{ cn: "adapter", node: false, zpr_addr: "fd00::1" }];
+  await page.goto(appURL + "/#map");
+  await page.locator('[data-graph-action="fit"]').click();
+  const geometry = await page.evaluate(() => {
+    const stage = document.querySelector("#topology-stage").getBoundingClientRect();
+    const bounds = document.querySelector("#graph-world").getBBox();
+    const matrix = document.querySelector("#graph-world").getScreenCTM();
+    const corners = [[bounds.x, bounds.y], [bounds.x + bounds.width, bounds.y + bounds.height]].map(([x, y]) => {
+      const point = new DOMPoint(x, y).matrixTransform(matrix);
+      return [point.x, point.y];
+    });
+    const [left, top] = corners[0];
+    const [right, bottom] = corners[1];
+    return {
+      left, top, right, bottom,
+      centerX: stage.left + stage.width / 2,
+      centerY: stage.top + stage.height / 2,
+      stageLeft: stage.left,
+      stageTop: stage.top,
+      stageRight: stage.right,
+      stageBottom: stage.bottom,
+    };
+  });
+  expect(Math.abs((geometry.left + geometry.right) / 2 - geometry.centerX)).toBeLessThan(1);
+  expect(Math.abs((geometry.top + geometry.bottom) / 2 - geometry.centerY)).toBeLessThan(1);
+  expect(geometry.left).toBeGreaterThan(geometry.stageLeft);
+  expect(geometry.top).toBeGreaterThan(geometry.stageTop);
+  expect(geometry.right).toBeLessThan(geometry.stageRight);
+  expect(geometry.bottom).toBeLessThan(geometry.stageBottom);
+});
+
+test("Fit keeps five percent viewBox padding without stretching Map glyphs", async ({ page, appURL, api }) => {
+  await page.setViewportSize({ width: 887, height: 394 });
+  const adapters = Array.from({ length: 8 }, (_, index) => `adapter-${index}`);
+  api.snapshot.actors = [
+    { cn: "node", node: true, zpr_addr: "fd00::1", node_details: { adapters, in_sync: true } },
+    ...adapters.map((cn, index) => ({ cn, node: false, zpr_addr: `fd00::${index + 2}` })),
+  ];
+  api.snapshot.services = [{ service_name: "Web", service_kind: "Regular", actor_cn: "adapter-0", service_endpoints: "TCP/8080", zpr_addr: "fd00::2" }];
+  await page.goto(appURL + "/#map");
+  await page.locator('[data-graph-action="fit"]').click();
+  const margins = await page.evaluate(() => {
+    const svg = document.querySelector(".topology-graph");
+    const world = document.querySelector("#graph-world");
+    const bounds = world.getBBox();
+    const viewBox = svg.viewBox.baseVal;
+    const adapter = document.querySelector(".graph-adapter").getBoundingClientRect();
+    return {
+      margins: [
+        (bounds.x - viewBox.x) / viewBox.width,
+        (bounds.y - viewBox.y) / viewBox.height,
+        (viewBox.x + viewBox.width - bounds.x - bounds.width) / viewBox.width,
+        (viewBox.y + viewBox.height - bounds.y - bounds.height) / viewBox.height,
+      ],
+      adapterAspect: adapter.width / adapter.height,
+    };
+  });
+  for (const margin of margins.margins) expect(Math.abs(margin - 0.05)).toBeLessThan(0.001);
+  expect(Math.abs(margins.adapterAspect - 1)).toBeLessThan(0.01);
+});
+
+test("Map canvas leaves no large empty footer below the panel", async ({ page, appURL }) => {
+  await page.setViewportSize({ width: 887, height: 394 });
+  await page.goto(appURL + "/#map");
+  const gap = await page.evaluate(() => window.innerHeight - document.querySelector("#topology-stage").getBoundingClientRect().bottom);
+  expect(Math.abs(gap)).toBeLessThan(18);
 });
 
 test("visa refresh preserves current grants and resolves DNS labels", async ({ page, appURL, api }) => {

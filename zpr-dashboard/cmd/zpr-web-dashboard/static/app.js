@@ -26,7 +26,7 @@ state.policy.showArchived = false;
 
 const pages = {
   map: "MAP",
-  connections: "CONNECTIONS",
+  connections: "ADAPTERS",
   actors: "ACTORS",
   "adapter-logs": "ADAPTER LOGS",
   services: "SERVICES",
@@ -37,6 +37,22 @@ const pages = {
   denies: "DENIALS",
   "security-review": "SECURITY REVIEW",
 };
+const statusPages = new Set(["connections", "actors", "services", "visas", "denies", "dns"]);
+
+function updateStatusTabCounts(snapshot) {
+  const actors = snapshot.actors || [];
+  const denies = snapshot.recent_denies || [];
+  const counts = {
+    adapters: actors.filter((actor) => !actor.node).length,
+    actors: actors.length,
+    services: (snapshot.services || []).length,
+    visas: num(snapshot.visa_count),
+    denies: denies.reduce((sum, record) => sum + num(record.count), 0),
+  };
+  for (const [key, count] of Object.entries(counts)) {
+    byId(`status-count-${key}`).textContent = formatNumber(count);
+  }
+}
 
 function currentPage() {
   const page = location.hash.replace(/^#/, "") || "map";
@@ -54,12 +70,15 @@ function mountPolicyAssertionEditor() {
 }
 
 function showPage(page = currentPage()) {
+  const statusPage = statusPages.has(page);
+  document.querySelector(".status-banner").hidden = page !== "map";
+  byId("status-tabs").hidden = !statusPage;
   for (const view of document.querySelectorAll(".page-view")) {
     view.hidden = view.dataset.page !== page;
     view.classList.toggle("active", !view.hidden);
   }
-  for (const link of document.querySelectorAll("[data-page-link]")) {
-    const active = link.dataset.pageLink === page;
+  for (const link of document.querySelectorAll("[data-page-link], [data-page-group]")) {
+    const active = link.dataset.pageLink === page || (link.dataset.pageGroup === "status" && statusPage);
     link.classList.toggle("active", active);
     if (active) link.setAttribute("aria-current", "page");
     else link.removeAttribute("aria-current");
@@ -120,6 +139,7 @@ function renderDNSStats(status, server, zones) {
   const zoneRows = Object.entries(zones.views || {}).flatMap(([viewName, view]) =>
     (view.zones || []).map((zone) => ({ ...zone, view: viewName }))
   );
+  byId("status-count-dns").textContent = formatNumber(zoneRows.length);
   byId("dns-zone-rows").innerHTML = zoneRows.length ? zoneRows.map((zone) =>
     `<tr><td data-sort-value="${escapeHTML(zone.name || "—")}">${escapeHTML(zone.name || "—")}<small class="dns-zone-view">${escapeHTML(zone.view)}</small></td><td>${escapeHTML(zone.type || "—")}</td><td class="mono" data-sort-value="${escapeHTML(zone.serial ?? "")}">${escapeHTML(zone.serial ?? "—")}</td><td class="mono">${dnsNumber(zone.rcodes, "QrySuccess")}</td><td class="mono">${dnsNumber(zone.rcodes, "QryNXDOMAIN")}</td><td class="mono">${dnsNumber(zone.qtypes, "AAAA")}</td></tr>`
   ).join("") : `<tr><td colspan="6" class="empty-row">No zone statistics returned</td></tr>`;
@@ -522,7 +542,7 @@ function renderInspector() {
       detailField("Basis", source.health_note || "No lookup status from the admin API"),
     ]));
     if (source.editor_url) {
-      sections.push(`<div class="inspector-actions"><a class="button button-refresh" href="${escapeHTML(source.editor_url)}" target="_blank" rel="noopener noreferrer">Open LDAP editor ↗</a></div>`);
+      sections.push(`<div class="inspector-actions"><a class="button button-refresh" href="${escapeHTML(source.editor_url)}" target="zpr-directory-manager" data-reuse-window="zpr-directory-manager" rel="noopener noreferrer">Open LDAP editor ↗</a></div>`);
     }
   } else if (state.selection.kind === "link") {
     const [kind, fromName, toName] = state.selection.key.split("|");
@@ -572,6 +592,28 @@ function animateGraphMotion(component, animation, from, to, endAt = 1) {
     if (animation.playState === "running") requestAnimationFrame(update);
   };
   update();
+}
+
+function animateGraphLink(group, start, duration = 700) {
+  const lines = [...group.querySelectorAll("line.graph-link, line.graph-link-hit")];
+  const target = lines[0];
+  if (!target) return;
+  const to = { x1: Number(target.getAttribute("x1")), y1: Number(target.getAttribute("y1")), x2: Number(target.getAttribute("x2")), y2: Number(target.getAttribute("y2")) };
+  const from = { x1: start.x1, y1: start.y1, x2: start.x2, y2: start.y2 };
+  if (Object.keys(to).every((key) => Math.abs(to[key] - from[key]) < 0.5)) return;
+  group.graphLinkMotion = { from, to };
+  const startedAt = performance.now();
+  const update = (now) => {
+    if (!group.isConnected) return;
+    const progress = Math.min(1, (now - startedAt) / duration);
+    const eased = 1 - (1 - progress) ** 3;
+    for (const line of lines) {
+      for (const key of Object.keys(to)) line.setAttribute(key, String(from[key] + (to[key] - from[key]) * eased));
+    }
+    if (progress < 1) requestAnimationFrame(update);
+    else delete group.graphLinkMotion;
+  };
+  update(startedAt);
 }
 
 function renderTopology(data, exitComponents = []) {
@@ -696,6 +738,55 @@ function renderTopology(data, exitComponents = []) {
       y: ownerPosition.y + Math.sin(angle) * radius,
     });
   }
+
+  const measureTopologyBounds = () => {
+    let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+    const include = (left, top, right, bottom) => {
+      minX = Math.min(minX, left);
+      minY = Math.min(minY, top);
+      maxX = Math.max(maxX, right);
+      maxY = Math.max(maxY, bottom);
+    };
+    for (const actor of actors) {
+      const position = positions.get(actor.cn);
+      if (!position) continue;
+      const radius = actorRadius(actor);
+      const labelExtent = Math.min((displayNames.get(actor.cn) || actor.cn).length, 20) * 3.5;
+      const extentX = Math.max(radius, labelExtent);
+      include(position.x - extentX, position.y - radius, position.x + extentX, position.y + radius);
+      if (gatewayActors.has(actor.cn)) {
+        const parent = edges.find((edge) => edge.kind === "dock" && edge.to.cn === actor.cn)?.from;
+        const parentPosition = parent && positions.get(parent.cn);
+        const angle = parentPosition ? Math.atan2(position.y - parentPosition.y, position.x - parentPosition.x) : 0;
+        const cloudDistance = serviceRingRadius(actor.cn) + 110;
+        const cloudX = position.x + Math.cos(angle) * cloudDistance;
+        const cloudY = position.y + Math.sin(angle) * cloudDistance;
+        include(cloudX - 68, cloudY - 26, cloudX + 68, cloudY + 26);
+      }
+    }
+    for (const service of services) {
+      const position = servicePositions.get(service);
+      if (!position) continue;
+      const halfWidth = badgeWidthForService(service) / 2 + 3;
+      include(position.x - halfWidth, position.y - 13, position.x + halfWidth, position.y + 13);
+    }
+    return { minX, minY, maxX, maxY, width: maxX - minX, height: maxY - minY };
+  };
+
+  const bounds = measureTopologyBounds();
+  const paddingX = bounds.width * (5 / 90);
+  const paddingY = bounds.height * (5 / 90);
+  const offsetX = paddingX - bounds.minX;
+  const offsetY = paddingY - bounds.minY;
+  for (const position of positions.values()) {
+    position.x += offsetX;
+    position.y += offsetY;
+  }
+  for (const position of servicePositions.values()) {
+    position.x += offsetX;
+    position.y += offsetY;
+  }
+
   const oldGraph = stage.querySelector(".topology-graph");
   const oldViewBox = oldGraph?.viewBox.baseVal;
   const previousViewport = oldGraph ? {
@@ -704,8 +795,8 @@ function renderTopology(data, exitComponents = []) {
     clientWidth: oldGraph.clientWidth,
     clientHeight: oldGraph.clientHeight,
   } : null;
-  const width = Math.max(760, oldViewBox?.width || 0, 2 * margin + 2 * maximumClusterRadius + (nodeColumns - 1) * nodeSpacing, margin * 2 + (unconnectedColumns - 1) * (hostRingRadius * 2 + 100));
-  const height = Math.max(460, oldViewBox?.height || 0, 2 * margin + 2 * maximumClusterRadius + (nodeRows - 1) * nodeSpacing, margin + nodeRows * nodeSpacing + unconnectedHosts.length * (hostRingRadius * 2 + 100));
+  let width = Math.max(1, bounds.width + paddingX * 2);
+  let height = Math.max(1, bounds.height + paddingY * 2);
   const query = byId("topology-search").value.trim().toLowerCase();
   const matches = (actor) => !query || `${displayNames.get(actor.cn)} ${actor.cn} ${actor.zpr_addr || ""} ${visaServices.has(actor.cn) ? "visa service" : ""} ${(servicesByActor.get(actor.cn) || []).map((service) => `${service.service_name} ${service.service_kind} ${service.external_network_connection || ""}`).join(" ")}`.toLowerCase().includes(query);
 
@@ -720,7 +811,7 @@ function renderTopology(data, exitComponents = []) {
     const highlighted = query && (matches(edge.from) || matches(edge.to)) ? "highlighted" : "";
     const filtered = query && !highlighted ? "filtered" : "";
     const key = `${edge.kind}|${edge.from.cn}|${edge.to.cn}`;
-    return `<g class="graph-edge ${highlighted} ${filtered}" data-inspect-link="${escapeHTML(key)}"${docked ? ` data-dock-adapter="${escapeHTML(edge.to.cn)}"` : ""} tabindex="0" role="button" aria-label="Inspect ${escapeHTML(title)}"><title>${escapeHTML(title)}</title><line class="graph-link ${cls}" x1="${from.x}" y1="${from.y}" x2="${to.x}" y2="${to.y}"/><line class="graph-link-hit" x1="${from.x}" y1="${from.y}" x2="${to.x}" y2="${to.y}"/></g>`;
+    return `<g class="graph-edge ${highlighted} ${filtered}" data-topology-edge="${escapeHTML(key)}" data-inspect-link="${escapeHTML(key)}"${docked ? ` data-dock-adapter="${escapeHTML(edge.to.cn)}"` : ""} tabindex="0" role="button" aria-label="Inspect ${escapeHTML(title)}"><title>${escapeHTML(title)}</title><line class="graph-link ${cls}" x1="${from.x}" y1="${from.y}" x2="${to.x}" y2="${to.y}"/><line class="graph-link-hit" x1="${from.x}" y1="${from.y}" x2="${to.x}" y2="${to.y}"/></g>`;
   }).join("");
 
   const arrivalMarker = (key, x, y, radius) => {
@@ -738,7 +829,22 @@ function renderTopology(data, exitComponents = []) {
     if (!parent) return null;
     return { x: parent.x - target.x, y: parent.y - target.y };
   };
-  const previousMovement = new Map([...stage.querySelectorAll("#graph-world > [data-topology-component]")].map((component) => [component.dataset.topologyComponent, graphMotionAt(component)]));
+  const previousMovement = new Map();
+  const previousPositions = new Map();
+  for (const component of stage.querySelectorAll("#graph-world > [data-topology-component]")) {
+    const movement = graphMotionAt(component);
+    const key = component.dataset.topologyComponent;
+    previousMovement.set(key, movement);
+    previousPositions.set(key, {
+      x: Number(component.dataset.originX) + movement.x,
+      y: Number(component.dataset.originY) + movement.y,
+      scale: movement.scale,
+    });
+  }
+  const previousEdgePositions = new Map([...stage.querySelectorAll("#graph-world [data-topology-edge]")].map((group) => {
+    const line = group.querySelector("line.graph-link");
+    return [group.dataset.topologyEdge, line && { x1: Number(line.getAttribute("x1")), y1: Number(line.getAttribute("y1")), x2: Number(line.getAttribute("x2")), y2: Number(line.getAttribute("y2")) }];
+  }).filter(([, position]) => position));
   const enteringOffsets = new Map();
   const offsetAttributes = (offset, parentKey, enteringOffset) => `${parentKey ? ` data-topology-parent="${escapeHTML(parentKey)}"` : ""}${offset ? ` data-arrival-dx="${offset.x}" data-arrival-dy="${offset.y}"` : ""}${enteringOffset ? ` data-entry-dx="${enteringOffset.x}" data-entry-dy="${enteringOffset.y}"` : ""}`;
   const vertexMarkup = actors.map((actor) => {
@@ -806,7 +912,8 @@ function renderTopology(data, exitComponents = []) {
     const serviceMatches = `${service.service_name} ${service.service_kind} ${service.external_network_connection || ""}`.toLowerCase().includes(query);
     const highlighted = query && (serviceMatches || matches(owner)) ? "highlighted" : "";
     const filtered = query && !highlighted ? "filtered" : "";
-    serviceEdgeMarkup.push(`<g class="graph-service-edge ${highlighted} ${filtered}" aria-hidden="true"><line class="graph-link service-link" x1="${startX}" y1="${startY}" x2="${endX}" y2="${endY}"/></g>`);
+    const serviceEdgeKey = `service:${JSON.stringify([service.actor_cn, service.service_name])}`;
+    serviceEdgeMarkup.push(`<g class="graph-service-edge ${highlighted} ${filtered}" data-topology-edge="${escapeHTML(serviceEdgeKey)}" aria-hidden="true"><line class="graph-link service-link" x1="${startX}" y1="${startY}" x2="${endX}" y2="${endY}"/></g>`);
     const providerName = displayNames.get(owner.cn) || owner.cn;
     const title = `${isGatewayService(service) ? "Gateway · " : ""}${service.service_name} registered by ${providerName} (${owner.cn})${service.external_network_connection ? ` · external network: ${service.external_network_connection}` : ""}${service.zpr_addr ? ` · ${dnsAddressTitle(service.zpr_addr)}` : ""}`;
     const labelForScreenReader = `Inspect service ${service.service_name}, registered by ${providerName}`;
@@ -823,6 +930,32 @@ function renderTopology(data, exitComponents = []) {
 
   const exiting = (kind) => exitComponents.filter((component) => component.kind === kind).map((component) => component.markup).join("");
   stage.innerHTML = `<div class="graph-controls" aria-label="Topology graph controls"><button class="graph-control" data-graph-action="in" type="button" aria-label="Zoom in" title="Zoom in">+</button><button class="graph-control" data-graph-action="out" type="button" aria-label="Zoom out" title="Zoom out">−</button><button class="graph-control graph-fit" data-graph-action="fit" type="button" aria-label="Fit graph" title="Fit graph">Fit</button></div><svg class="topology-graph" viewBox="0 0 ${width} ${height}" role="img" aria-label="Topology graph with ${nodes.length} nodes, ${adapters.length} adapters, ${dockEdges.length} dock connections, ${networkEdges.length} inter-node links, and ${(data.services || []).filter((service) => servicesByActor.has(service.actor_cn)).length} registered services"><g id="graph-world">${edgeMarkup}${serviceEdgeMarkup.join("")}${serviceMarkup.join("")}<g class="graph-exit-layer" aria-hidden="true">${exiting("service")}</g>${vertexMarkup.slice(nodes.length).join("")}<g class="graph-exit-layer" aria-hidden="true">${exiting("adapter")}</g>${vertexMarkup.slice(0, nodes.length).join("")}<g class="graph-exit-layer" aria-hidden="true">${exiting("node")}</g></g></svg>`;
+
+  const renderedBounds = stage.querySelector("#graph-world").getBBox();
+  if (renderedBounds.width > 0 && renderedBounds.height > 0) {
+    const paddingX = renderedBounds.width * (5 / 90);
+    const paddingY = renderedBounds.height * (5 / 90);
+    width = renderedBounds.width + paddingX * 2;
+    height = renderedBounds.height + paddingY * 2;
+    stage.querySelector(".topology-graph").setAttribute("viewBox", `${renderedBounds.x - paddingX} ${renderedBounds.y - paddingY} ${width} ${height}`);
+  }
+
+  if (state.graphAnimations) {
+    for (const component of stage.querySelectorAll("#graph-world > [data-topology-component]")) {
+      const previous = previousPositions.get(component.dataset.topologyComponent);
+      if (!previous) continue;
+      const originX = Number(component.dataset.originX);
+      const originY = Number(component.dataset.originY);
+      const from = { x: previous.x - originX, y: previous.y - originY, scale: previous.scale };
+      if (Math.abs(from.x) < 0.5 && Math.abs(from.y) < 0.5 && Math.abs(from.scale - 1) < 0.01) continue;
+      const animation = component.animate([{ opacity: 1 }, { opacity: 1 }], { duration: 700, easing: "ease-in-out", fill: "both" });
+      animateGraphMotion(component, animation, from, { x: 0, y: 0, scale: 1 });
+    }
+    for (const group of stage.querySelectorAll("#graph-world [data-topology-edge]")) {
+      const previous = previousEdgePositions.get(group.dataset.topologyEdge);
+      if (previous) animateGraphLink(group, previous);
+    }
+  }
 
   setupGraphControls(stage, width, height, previousViewport);
   pulseAdapterDecisions(data);
@@ -857,16 +990,18 @@ function setupGraphControls(stage, width, height, previousViewport) {
   if (!state.graphCamera) state.graphCamera = { x: 0, y: 0, scale: 1 };
   const camera = state.graphCamera;
   const maxZoom = 1e6;
+  const viewBox = svg.viewBox.baseVal;
   const apply = () => world.setAttribute("transform", `translate(${camera.x} ${camera.y}) scale(${camera.scale})`);
   if (previousViewport?.clientWidth > 0 && previousViewport?.clientHeight > 0 && svg.clientWidth > 0 && svg.clientHeight > 0) {
     const previousScale = Math.min(previousViewport.clientWidth / previousViewport.width, previousViewport.clientHeight / previousViewport.height);
     const nextScale = Math.min(svg.clientWidth / width, svg.clientHeight / height);
-    if (previousScale > 0 && nextScale > 0 && Math.abs(previousScale - nextScale) > 0.0001) {
+    const previousOffsetX = (previousViewport.clientWidth - previousScale * previousViewport.width) / 2;
+    const previousOffsetY = (previousViewport.clientHeight - previousScale * previousViewport.height) / 2;
+    const nextOffsetX = (svg.clientWidth - nextScale * width) / 2;
+    const nextOffsetY = (svg.clientHeight - nextScale * height) / 2;
+    const viewportMoved = Math.abs(previousOffsetX - nextOffsetX) > 0.5 || Math.abs(previousOffsetY - nextOffsetY) > 0.5;
+    if (previousScale > 0 && nextScale > 0 && (Math.abs(previousScale - nextScale) > 0.0001 || viewportMoved)) {
       const ratio = previousScale / nextScale;
-      const previousOffsetX = (previousViewport.clientWidth - previousScale * previousViewport.width) / 2;
-      const previousOffsetY = (previousViewport.clientHeight - previousScale * previousViewport.height) / 2;
-      const nextOffsetX = (svg.clientWidth - nextScale * width) / 2;
-      const nextOffsetY = (svg.clientHeight - nextScale * height) / 2;
       const initialTransform = `translate(${previousOffsetX - ratio * nextOffsetX}px, ${previousOffsetY - ratio * nextOffsetY}px) scale(${ratio})`;
       if (reducedMotion) {
         svg.style.transformOrigin = "0 0";
@@ -879,8 +1014,8 @@ function setupGraphControls(stage, width, height, previousViewport) {
       }
     }
   }
-  const zoomAt = (nextScale, x = width / 2, y = height / 2) => {
-    const scale = Math.max(0.55, Math.min(maxZoom, nextScale));
+  const zoomAt = (nextScale, x = viewBox.x + width / 2, y = viewBox.y + height / 2) => {
+    const scale = Math.max(0.05, Math.min(maxZoom, nextScale));
     const ratio = scale / camera.scale;
     camera.x = x - (x - camera.x) * ratio;
     camera.y = y - (y - camera.y) * ratio;
@@ -899,12 +1034,13 @@ function setupGraphControls(stage, width, height, previousViewport) {
     if (action === "in") zoomAt(camera.scale * 1.25);
     if (action === "out") zoomAt(camera.scale / 1.25);
     if (action === "fit") {
-      camera.x = 0;
-      camera.y = 0;
-      camera.scale = 1;
       svg.getAnimations().filter((animation) => animation.effect?.target === svg).forEach((animation) => animation.cancel());
       svg.style.transform = "none";
       svg.style.transformOrigin = "";
+      const bounds = world.getBBox();
+      camera.scale = Math.min((width * 0.9) / Math.max(1, bounds.width), (height * 0.9) / Math.max(1, bounds.height));
+      camera.x = viewBox.x + width / 2 - (bounds.x + bounds.width / 2) * camera.scale;
+      camera.y = viewBox.y + height / 2 - (bounds.y + bounds.height / 2) * camera.scale;
       apply();
     }
   }));
@@ -1019,7 +1155,7 @@ function renderTrusted(data) {
     const sourceName = `<strong>${escapeHTML(source.name)}</strong><small>${escapeHTML(providerDescription(source.provider))}</small>`;
     const actorLabel = source.actor_cn || "No actor reported";
       const statusText = lookupOutcome(source.health);
-    const editorAction = source.editor_url ? `<a class="source-editor-link" href="${escapeHTML(source.editor_url)}" target="_blank" rel="noopener noreferrer" title="Open ${escapeHTML(source.name)} in LDAP editor">Open directory ↗</a>` : "";
+    const editorAction = source.editor_url ? `<a class="source-editor-link" href="${escapeHTML(source.editor_url)}" target="zpr-directory-manager" data-reuse-window="zpr-directory-manager" rel="noopener noreferrer" title="Manage ${escapeHTML(source.name)} in LDAP editor"><span>Manage</span><span aria-hidden="true">↗</span></a>` : "";
     return `<tr class="selectable-row" data-inspect-source="${escapeHTML(source.name)}" tabindex="0" role="button" aria-label="Inspect trusted source ${escapeHTML(source.name)}"><td class="source-primary">${sourceName}</td><td>${escapeHTML(providerDescription(source.provider))}</td><td>${escapeHTML(actorLabel)}</td><td><span class="health-badge ${["working", "failed"].includes(source.health) ? source.health : ""}">${escapeHTML(statusText)}</span></td><td><span class="source-time">${source.last_lookup_ms ? escapeHTML(new Date(source.last_lookup_ms).toLocaleString()) : "No lookup recorded"}</span>${source.last_success_ms ? `<small class="source-secondary">Last success ${escapeHTML(new Date(source.last_success_ms).toLocaleString())}</small>` : ""}${editorAction ? `<small class="source-secondary">${editorAction}</small>` : ""}</td></tr>`;
   }).join("") : `<tr><td colspan="5" class="empty-row">${sources.length ? "No matching trusted sources" : "No trusted services reported by the Visa Service."}</td></tr>`;
 }
@@ -3042,6 +3178,7 @@ function snapshotRemovedTopologyComponents(keys) {
 const adapterDecisionPulses = new Map();
 const serviceGrantPulses = new Map();
 const ADAPTER_DECISION_DURATION = 1200;
+const SERVICE_GRANT_DURATION = 2000;
 
 function decisionPulseFrames(reducedMotion) {
   return [
@@ -3097,7 +3234,7 @@ function pulseAdapterDecisions(data) {
     if (now - pulse.startedAt >= ADAPTER_DECISION_DURATION) adapterDecisionPulses.delete(address);
   }
   for (const [key, pulse] of serviceGrantPulses) {
-    if (now - pulse.startedAt >= ADAPTER_DECISION_DURATION) serviceGrantPulses.delete(key);
+    if (now - pulse.startedAt >= SERVICE_GRANT_DURATION) serviceGrantPulses.delete(key);
   }
   if (!["map", "connections"].includes(currentPage())) return;
   const reducedMotion = matchMedia("(prefers-reduced-motion: reduce)").matches;
@@ -3115,12 +3252,12 @@ function pulseAdapterDecisions(data) {
     outline.setAttribute("rx", "6");
     outline.setAttribute("aria-hidden", "true");
     badge.insertBefore(outline, glyph);
-    const animation = outline.animate(decisionPulseFrames(reducedMotion), { duration: ADAPTER_DECISION_DURATION, easing: "ease-in-out" });
+    const animation = outline.animate(decisionPulseFrames(reducedMotion), { duration: SERVICE_GRANT_DURATION, easing: "ease-in-out" });
     animation.onfinish = () => outline.remove();
     animation.currentTime = elapsed;
     if (!reducedMotion) {
       glyph.classList.add("graph-decision-glyph");
-      const expansion = glyph.animate([{ transform: "scale(1)" }, { transform: "scale(1.12)", offset: 0.4 }, { transform: "scale(1)" }], { duration: ADAPTER_DECISION_DURATION, easing: "ease-in-out" });
+      const expansion = glyph.animate([{ transform: "scale(1)" }, { transform: "scale(1.12)", offset: 0.4 }, { transform: "scale(1)" }], { duration: SERVICE_GRANT_DURATION, easing: "ease-in-out" });
       expansion.onfinish = () => glyph.classList.remove("graph-decision-glyph");
       expansion.currentTime = elapsed;
     }
@@ -3186,6 +3323,7 @@ function render(data) {
   }
   state.topologyComponents = componentKeys;
   state.snapshot = data;
+  updateStatusTabCounts(data);
   updateConnection(data);
   renderMetrics(data);
   renderTopology(data, exitComponents);
@@ -3486,6 +3624,8 @@ byId("assistant-form").addEventListener("submit", (event) => {
 byId("pause-poll").addEventListener("click", (event) => {
   state.paused = !state.paused;
   event.currentTarget.textContent = state.paused ? "Resume updates" : "Pause updates";
+  event.currentTarget.setAttribute("aria-pressed", String(state.paused));
+  byId("pause-status").hidden = !state.paused;
   setPollTimer();
 });
 byId("poll-rate").addEventListener("change", setPollTimer);
@@ -3545,6 +3685,17 @@ window.addEventListener("hashchange", () => {
   closeInspector();
 });
 showPage();
+
+document.addEventListener("click", (event) => {
+  const link = event.target.closest("a[data-reuse-window]");
+  if (!link || event.defaultPrevented || event.button !== 0 || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return;
+  event.preventDefault();
+  const namedPage = window.open(link.href, link.dataset.reuseWindow);
+  if (namedPage) {
+    namedPage.opener = null;
+    namedPage.focus();
+  }
+});
 
 document.addEventListener("click", (event) => {
   if (event.target.closest(".source-editor-link")) return;

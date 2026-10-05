@@ -458,6 +458,18 @@ func (manager *simulatorScenarioManager) cancelRun() bool {
 	return true
 }
 
+func (manager *simulatorScenarioManager) clearRun() bool {
+	manager.mu.Lock()
+	defer manager.mu.Unlock()
+	if manager.run.State == "running" || manager.run.State == "cleaning" {
+		return false
+	}
+	manager.run = simulatorScenarioRun{State: "idle", Steps: []simulatorScenarioStepResult{}}
+	manager.cancel = nil
+	manager.done = nil
+	return true
+}
+
 func (manager *simulatorScenarioManager) snapshot() simulatorScenarioRun {
 	manager.mu.RLock()
 	defer manager.mu.RUnlock()
@@ -1252,5 +1264,13 @@ func handleSimulatorScenarioCancel(w http.ResponseWriter, _ *http.Request) {
 		return
 	}
 	w.WriteHeader(http.StatusAccepted)
+	writeSimulatorJSON(w, activeSimulatorScenario.snapshot())
+}
+
+func handleSimulatorScenarioClear(w http.ResponseWriter, _ *http.Request) {
+	if !activeSimulatorScenario.clearRun() {
+		http.Error(w, "cannot clear an active scenario", http.StatusConflict)
+		return
+	}
 	writeSimulatorJSON(w, activeSimulatorScenario.snapshot())
 }

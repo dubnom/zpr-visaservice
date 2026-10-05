@@ -59,7 +59,11 @@ func newControlServiceProxy() (http.Handler, string) {
 	if err != nil || baseURL.Scheme != "https" || baseURL.Host == "" || baseURL.Path != "" || baseURL.User != nil || baseURL.RawQuery != "" || baseURL.Fragment != "" {
 		return nil, "ZPR_CONTROL_SERVICE_URL must be an HTTPS origin without a path."
 	}
-	transport, message := mutualTLSClientTransport(clientCert, clientKey, caFile, baseURL.Hostname())
+	serverName := strings.TrimSpace(os.Getenv("ZPR_CONTROL_SERVICE_TLS_SERVER_NAME"))
+	if serverName == "" {
+		serverName = baseURL.Hostname()
+	}
+	transport, message := mutualTLSClientTransport(clientCert, clientKey, caFile, serverName)
 	if transport == nil {
 		return nil, message
 	}

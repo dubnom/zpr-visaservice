@@ -72,6 +72,7 @@ func TestControlRoomProxiesToControlServiceOverMutualTLS(t *testing.T) {
 
 	serviceURL := &url.URL{Scheme: "https", Host: listener.Addr().String()}
 	t.Setenv("ZPR_CONTROL_SERVICE_URL", serviceURL.String())
+	t.Setenv("ZPR_CONTROL_SERVICE_TLS_SERVER_NAME", "localhost")
 	t.Setenv("ZPR_CONTROL_CLIENT_CERT_FILE", clientCertPath)
 	t.Setenv("ZPR_CONTROL_CLIENT_KEY_FILE", clientKeyPath)
 	t.Setenv("ZPR_CONTROL_SERVICE_CA_FILE", caPath)

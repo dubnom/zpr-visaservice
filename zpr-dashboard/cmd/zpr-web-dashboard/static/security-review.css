@@ -1,10 +1,33 @@
 .security-review-actions { display: flex; align-items: center; gap: 8px; }
 .security-review-caveat { max-width: 840px; margin: 0 0 16px; color: var(--muted); font-size: 12px; line-height: 1.5; }
-.security-review-baseline-help { max-width: 840px; margin: -7px 0 14px; color: var(--muted); font-size: 11px; line-height: 1.5; }
+.security-review-baseline-row { margin-bottom: 14px; }
+.security-review-comparison-heading { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 6px; color: var(--ink-soft); font: 11px var(--mono); }
+.security-review-disclosures { border-top: 1px solid var(--line); }
+.security-review-baseline-line, .security-review-current-line { display: grid; grid-template-columns: minmax(0, 1fr) 128px; align-items: center; gap: 10px; border-bottom: 1px solid var(--line); }
+.security-review-baseline-line .security-review-disclosure, .security-review-current-line .security-review-disclosure { min-width: 0; border-bottom: 0; }
+.security-review-baseline-line > .button { width: 128px; white-space: nowrap; }
+.security-review-baseline-action-space { width: 128px; }
+.security-review-disclosure { border-bottom: 1px solid var(--line); }
+.security-review-disclosure summary { display: grid; grid-template-columns: 82px minmax(0, 1fr) 150px 10px; align-items: center; gap: 9px; min-height: 43px; padding: 7px 10px; cursor: pointer; list-style: none; }
+.security-review-disclosure summary::-webkit-details-marker { display: none; }
+.security-review-disclosure summary::after { width: 8px; height: 8px; border-right: 1.5px solid var(--forest); border-bottom: 1.5px solid var(--forest); content: ""; transform: translateY(-2px) rotate(45deg); transition: transform .16s ease; }
+.security-review-disclosure[open] summary::after { transform: translateY(2px) rotate(225deg); }
+.security-review-disclosure summary > span { color: var(--muted); font: 9px var(--mono); text-transform: uppercase; }
+.security-review-disclosure summary strong { color: var(--ink); font-size: 13px; font-weight: 650; }
+.security-review-disclosure summary small { color: var(--muted); font: 9px var(--mono); white-space: nowrap; }
+.security-review-inventory-details { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 14px; padding: 4px 10px 12px; }
+.security-review-inventory-details h3 { margin: 0 0 5px; color: var(--muted); font: 9px var(--mono); text-transform: uppercase; }
+.security-review-inventory-details ul { max-height: 160px; margin: 0; padding: 0; overflow: auto; list-style: none; font: 11px/1.7 var(--mono); overflow-wrap: anywhere; }
+.security-review-inventory-details [data-change="added"] { color: #18894b; }
+.security-review-inventory-details [data-change="removed"] { color: #a43830; }
+#security-review-baseline-time, #security-review-current-time, #security-review-status { color: var(--muted); font: 10px var(--mono); overflow-wrap: anywhere; }
+.security-review-baseline-row > .button { flex: 0 0 auto; }
 .security-review-tools { align-items: center; flex-wrap: wrap; }
 .security-review-show-dismissed { display: flex; align-items: center; gap: 6px; color: var(--ink-soft); font: 10px var(--sans); white-space: nowrap; }
 .security-review-show-dismissed input, .security-review-select { accent-color: var(--forest); }
-.security-review-status { display: flex; justify-content: space-between; gap: 12px; margin: 12px 0; color: var(--ink-soft); font: 10px var(--mono); }
+.security-review-show-dismissed input[type="checkbox"], .security-review-select, .security-review-select-visible input[type="checkbox"] { width: 15px; min-width: 15px; height: 15px; min-height: 15px; margin: 0; padding: 0; flex: 0 0 15px; }
+.security-review-select-visible { display: inline-flex; align-items: center; gap: 6px; color: var(--ink-soft); font: 10px var(--sans); white-space: nowrap; }
+.security-review-select-visible input { width: 15px; height: 15px; margin: 0; accent-color: var(--forest); }
 .security-review-table { width: 100%; border-collapse: collapse; text-align: left; }
 .security-review-table th, .security-review-table td { padding: 10px 12px; border-bottom: 1px solid var(--line); vertical-align: top; }
 .security-review-table thead th { color: var(--muted); font: 9px var(--mono); }
@@ -20,6 +43,7 @@
   .security-review-actions .button { min-height: 34px; }
   .security-review-tools > .filter-group { flex-wrap: wrap; }
   .security-review-tools > .security-review-actions { width: 100%; }
-  .security-review-status { flex-direction: column; }
+  .security-review-baseline-row { align-items: flex-start; flex-direction: column; }
+  .security-review-inventory-details { grid-template-columns: minmax(0, 1fr); }
   .security-review-table { min-width: 680px; }
 }

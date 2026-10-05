@@ -71,6 +71,24 @@ source receives an editor link; the browser authenticates directly to the
 editor with a separate LDAP admin login. The monitor does not proxy LDAP edits
 or store the admin password.
 
+## Activity and Navigation
+
+Simulator Activity reads the current Control Room feed while its page is active.
+It polls every four seconds and shows request, approval, denial, and visa totals
+alongside sortable recent-visa and denial tables. Manual Refresh is available
+beside the live stream status. This is a bounded activity view, not a durable
+audit archive. The Agents page calls the fleet **Devices** and filters by device
+type.
+
+Control Room groups Adapters, Actors, Services, Visas, Denials, and DNS in a
+counted Status tab row. Its summary metrics appear on Map only. Map Fit centers
+the rendered topology with padding while preserving glyph proportions; retained
+components animate when layout bounds move unless reduced motion is enabled.
+
+Simulator Scenarios groups cards by folder and places entries without a folder
+under **Unfiled**. **Clear** is available only after a run reaches a terminal
+state; it clears run history, not the scenario definition or machine logs.
+
 ## Security Review
 
 Policy Analyze displays advisory warnings separately from compiler errors and
@@ -108,6 +126,11 @@ logs. New identities and matching log lines are leads for operator review, not
 proof of intrusion. The view does not block traffic or change policy, actors,
 services, or logs; it only sees events exposed by the current snapshot and
 available adapter logs.
+
+The inventory comparison stacks the saved Baseline above Current in aligned
+actor/service columns, with capture times and explicit added/removed identities.
+The compact Show dismissed checkbox controls visibility of dismissed findings;
+Select visible is the independent bulk-selection checkbox, not a scan toggle.
 
 Dismissals are stored separately in the current browser. Operators can dismiss
 one finding, selected findings, or all active findings, then show and restore

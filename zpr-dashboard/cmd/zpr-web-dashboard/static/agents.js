@@ -21,7 +21,7 @@ function render(snapshot) {
 
 function highlightChangedSimulatorFields() {
   const fields = new Map();
-  for (const id of ["runtime-state", "agent-count", "running-count", "service-count", "stack-count", "machine-count"]) {
+  for (const id of ["runtime-state", "agent-count", "running-count", "service-count", "stack-count"]) {
     const node = document.getElementById(id);
     if (node) fields.set(`summary:${id}`, { node, value: node.textContent.trim() });
   }
@@ -45,7 +45,6 @@ function renderMachines(machines, components, controllers, componentStates, sess
   const filter = $("#machine-type-filter").value;
   const visible = machines.filter((machine) => filter === "all" || machine.type === filter);
   const workloadChoices = [...components].sort((left, right) => left.name.localeCompare(right.name));
-  $("#machine-count").textContent = visible.length;
   $("#machine-grid").innerHTML = visible.map((machine) => {
     const posture = machine.secure ? "Secure" : "Unsecured";
     const connected = controllers[machine.id]?.connected === true;

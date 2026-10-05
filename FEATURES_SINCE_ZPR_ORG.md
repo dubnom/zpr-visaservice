@@ -1,6 +1,6 @@
 # Features Added Since the Upstream Fork
 
-**Snapshot:** 2026-10-04
+**Snapshot:** 2026-10-05
 **Baseline:** `origin/main` at `abb1acd` (2026-09-03)
 
 This is a capability overview of the work added in this fork after its upstream
@@ -24,6 +24,10 @@ contracts remain authoritative where this overview is shorter.
   highlights changes against a browser-local inventory baseline, supports
   dismissal and restoration, and links IP evidence to DNS names. Findings are
   triage signals, not automatic incident determinations or traffic controls.
+- Added sortable Activity tables for recent visas and denials, plus counted
+  Control Room status tabs; summary metrics remain on Map. Map updates animate
+  retained topology components and Fit centers the rendered bounds while
+  respecting reduced-motion preferences.
 - Added responsive, independently collapsible navigation for Control Room and
   Simulator, plus shared log panels for adapter, controller, application, and
   service output. Log panels retain the last bounded tail on disconnect and
@@ -77,6 +81,9 @@ contracts remain authoritative where this overview is shorter.
   profiles, workload placement, scenario execution, managed-service logs, and
   machine controls carried over ZPR rather than exposed as an underlay control
   path.
+- Labeled the Agents inventory as Devices, grouped unfiled scenarios explicitly,
+  and added a clear action for completed/cancelled run history without deleting
+  scenario definitions or logs.
 - Added organization-scoped scenario and directory workspaces, organization
   switching and approval flows, and example organizations for exercising
   different policy and directory configurations.

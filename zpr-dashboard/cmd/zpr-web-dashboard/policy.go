@@ -945,7 +945,9 @@ func localEditorRequest(w http.ResponseWriter, r *http.Request) bool {
 	}
 	remoteHost, _, err := net.SplitHostPort(r.RemoteAddr)
 	remoteIP := net.ParseIP(remoteHost)
-	if err != nil || remoteIP == nil || !remoteIP.IsLoopback() {
+	proxyIP := net.ParseIP(strings.TrimSpace(os.Getenv("ZPR_CONTROL_ROOM_PROXY_IP")))
+	trustedProxy := remoteIP != nil && proxyIP != nil && proxyIP.Equal(remoteIP)
+	if err != nil || remoteIP == nil || (!remoteIP.IsLoopback() && !trustedProxy) {
 		writePolicyError(w, http.StatusForbidden, "Policy workspace is available only over loopback.")
 		return false
 	}

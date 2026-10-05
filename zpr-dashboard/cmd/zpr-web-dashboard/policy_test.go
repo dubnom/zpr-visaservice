@@ -398,6 +398,32 @@ func TestPolicyEditorRejectsNonLoopbackAndCrossOriginRequests(t *testing.T) {
 	if response.Code != http.StatusForbidden {
 		t.Fatalf("non-loopback host status = %d, want 403", response.Code)
 	}
+
+	t.Setenv("ZPR_CONTROL_ROOM_PROXY_IP", "172.17.0.1")
+	containerRequest := httptest.NewRequest(http.MethodGet, "/api/policy", nil)
+	containerRequest.RemoteAddr = "172.17.0.1:4321"
+	containerRequest.Host = "127.0.0.1:8787"
+	response = httptest.NewRecorder()
+	if !localEditorRequest(response, containerRequest) || response.Code != http.StatusOK {
+		t.Fatalf("configured Docker gateway request status = %d, want 200", response.Code)
+	}
+
+	untrustedDockerRequest := httptest.NewRequest(http.MethodGet, "/api/policy", nil)
+	untrustedDockerRequest.RemoteAddr = "172.17.0.2:4321"
+	untrustedDockerRequest.Host = "127.0.0.1:8787"
+	untrustedDockerRequest.Header.Set("X-Forwarded-For", "127.0.0.1")
+	response = httptest.NewRecorder()
+	if localEditorRequest(response, untrustedDockerRequest) || response.Code != http.StatusForbidden {
+		t.Fatalf("untrusted Docker source status = %d, want 403", response.Code)
+	}
+
+	badHostRequest := httptest.NewRequest(http.MethodGet, "/api/policy", nil)
+	badHostRequest.RemoteAddr = "172.17.0.1:4321"
+	badHostRequest.Host = "attacker.example"
+	response = httptest.NewRecorder()
+	if localEditorRequest(response, badHostRequest) || response.Code != http.StatusForbidden {
+		t.Fatalf("trusted gateway with non-loopback Host status = %d, want 403", response.Code)
+	}
 }
 
 func TestAssertionPolicyRecordLifecycleAndProtectsOrganizationSettings(t *testing.T) {

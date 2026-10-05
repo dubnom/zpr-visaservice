@@ -349,6 +349,28 @@ func TestScenarioCleanupTimeoutDoesNotStarveMachineShutdown(t *testing.T) {
 	}
 }
 
+func TestSimulatorScenarioManagerClearRunRejectsActiveRuns(t *testing.T) {
+	manager := newSimulatorScenarioManager()
+	manager.run = simulatorScenarioRun{
+		ScenarioID: "sample",
+		State:      "failed",
+		Steps:      []simulatorScenarioStepResult{{Number: 1, Status: "failed"}},
+	}
+	if !manager.clearRun() {
+		t.Fatal("terminal run should be clearable")
+	}
+	cleared := manager.snapshot()
+	if cleared.State != "idle" || cleared.ScenarioID != "" || len(cleared.Steps) != 0 {
+		t.Fatalf("clearRun() left terminal history: %+v", cleared)
+	}
+	for _, state := range []string{"running", "cleaning"} {
+		manager.run.State = state
+		if manager.clearRun() {
+			t.Fatalf("clearRun() accepted active state %q", state)
+		}
+	}
+}
+
 func TestSimulatorScenarioManagerRunsStepsAndCleanupInOrder(t *testing.T) {
 	manager := newSimulatorScenarioManager()
 	var got []string

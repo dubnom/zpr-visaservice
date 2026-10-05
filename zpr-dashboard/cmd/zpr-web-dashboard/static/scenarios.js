@@ -20,7 +20,6 @@ function scenarioEscape(value) {
 function renderScenarioList(scenarios, maxMachines) {
   scenarioById.clear();
   for (const scenario of scenarios) scenarioById.set(scenario.id, scenario);
-  document.getElementById("scenario-count").textContent = `${scenarios.length} loaded`;
   document.getElementById("scenario-machine-limit").textContent = `Maximum ${maxMachines} machines per run`;
   if (!scenarios.length) {
     document.getElementById("scenario-list").innerHTML = `<p class="scenario-empty">No scenarios in this organization. Create one to get started.</p>`;
@@ -42,9 +41,11 @@ function renderScenarioList(scenarios, maxMachines) {
       const topologySummary = topology?.nodes?.length ? `${topology.nodes.length} nodes · ${(topology.links || []).length} links` : "base topology";
       const published = Number(scenario.published_revision || 0);
       const canRun = scenario.organization_id === activeScenarioOrganization && published > 0 && !running;
-      return `<article class="scenario-card${selected ? " selected" : ""}"><div class="scenario-card-heading"><div><span class="scenario-id">${scenarioEscape(scenario.id)}</span><h3>${scenarioEscape(scenario.name)}</h3></div><span class="scenario-step-count">${topologySummary} · ${machines}/${maxMachines} machines · ${(scenario.steps || []).length} steps</span></div><p>${scenarioEscape(scenario.description)}</p><div class="scenario-card-actions"><span class="scenario-version${published ? " published" : ""}">${published ? `Published r${published}` : `Draft r${scenario.current_revision || 1}`}</span><button class="quiet" type="button" data-edit-scenario="${scenarioEscape(scenario.id)}">Edit</button><button type="button" data-run-scenario="${scenarioEscape(scenario.id)}" data-run-organization="${scenarioEscape(scenario.organization_id)}" data-run-published="${published > 0}" ${canRun ? "" : "disabled"}>Run published</button><button class="quiet danger" type="button" data-delete-scenario="${scenarioEscape(scenario.id)}" data-delete-organization="${scenarioEscape(scenario.organization_id)}" data-delete-revision="${scenario.current_revision || 1}" ${running && selected ? "disabled" : ""}>Delete</button></div></article>`;
+      return `<article class="scenario-card${selected ? " selected" : ""}"><div class="scenario-card-heading"><div><span class="scenario-id">${scenarioEscape(scenario.id)}</span><h3>${scenarioEscape(scenario.name)}</h3></div><span class="scenario-step-count">${topologySummary} · ${machines}/${maxMachines} machines · ${(scenario.steps || []).length} steps</span></div><p>${scenarioEscape(scenario.description)}</p><div class="scenario-card-actions"><span class="scenario-version${published ? " published" : ""}">${published ? `Version ${published}` : `Draft r${scenario.current_revision || 1}`}</span><button type="button" data-run-scenario="${scenarioEscape(scenario.id)}" data-run-organization="${scenarioEscape(scenario.organization_id)}" data-run-published="${published > 0}" ${canRun ? "" : "disabled"}>Run</button><button class="quiet" type="button" data-edit-scenario="${scenarioEscape(scenario.id)}">Edit</button><button class="quiet danger" type="button" data-delete-scenario="${scenarioEscape(scenario.id)}" data-delete-organization="${scenarioEscape(scenario.organization_id)}" data-delete-revision="${scenario.current_revision || 1}" ${running && selected ? "disabled" : ""}>Delete</button></div></article>`;
     }).join("");
-    return `<section class="scenario-folder"><header><h3>${scenarioEscape(folder)}</h3><span>${entries.length}</span></header><div class="scenario-folder-items">${cards}</div></section>`;
+    const items = `<div class="scenario-folder-items">${cards}</div>`;
+    if (folder === "Unfiled") return `<div class="scenario-unfiled">${items}</div>`;
+    return `<section class="scenario-folder"><header><h3>${scenarioEscape(folder)}</h3><span>${entries.length}</span></header>${items}</section>`;
   }).join("");
 }
 
@@ -92,17 +93,37 @@ function updateScenarioTrackScroll() {
 function renderScenarioRun(run) {
   scenarioRun = run || { state: "idle", steps: [] };
   const busy = scenarioRun.state === "running" || scenarioRun.state === "cleaning";
-  document.getElementById("scenario-state-label").textContent = String(scenarioRun.state || "idle").toUpperCase();
+  const listedScenario = scenarioById.get(scenarioRun.scenario_id);
+  const scenarioName = scenarioRun.scenario_name || listedScenario?.name || "Scenario";
+  const title = document.getElementById("scenario-run-title");
+  const state = document.getElementById("scenario-run-state");
+  const actions = document.querySelector(".scenario-run-actions");
+  const heading = title.parentElement;
+  if (actions.parentElement !== heading) heading.append(actions);
+  title.textContent = scenarioRun.scenario_id ? scenarioName : "Scenario";
+  const stateLabel = document.createElement("span");
+  stateLabel.className = "scenario-state-label";
+  stateLabel.textContent = String(scenarioRun.state || "idle");
+  const progress = document.createElement("span");
+  progress.className = "scenario-progress";
+  progress.textContent = `${scenarioRun.current_step || 0} / ${scenarioRun.total_steps || 0}`;
+  progress.hidden = !scenarioRun.scenario_id || !scenarioRun.total_steps;
+  state.replaceChildren(stateLabel, progress);
+  state.className = `scenario-state ${scenarioEscape(scenarioRun.state || "idle")}`;
+  document.getElementById("scenario-cancel").hidden = !busy;
   document.getElementById("scenario-cancel").disabled = !busy;
+  document.getElementById("scenario-clear").hidden = busy || !scenarioRun.scenario_id;
   const summary = document.getElementById("scenario-run-summary");
   if (!scenarioRun.scenario_id) {
-    summary.innerHTML = `<span class="scenario-state idle">Idle</span><span>No scenario selected</span>`;
+    summary.hidden = false;
+    summary.innerHTML = `<span>No run selected</span>`;
   } else {
-    const current = `${scenarioRun.current_step || 0} / ${scenarioRun.total_steps || 0}`;
-    summary.innerHTML = `<span class="scenario-state ${scenarioEscape(scenarioRun.state)}">${scenarioEscape(scenarioRun.state)}</span><strong>${scenarioEscape(scenarioRun.scenario_name)}</strong><span class="scenario-progress">${current}</span>${scenarioRun.error ? `<p class="scenario-run-error">${scenarioEscape(scenarioRun.error)}</p>` : ""}`;
+    const redundantCancellation = scenarioRun.state === "cancelled" && /^context canceled\.?$/i.test(String(scenarioRun.error || "").trim());
+    const error = redundantCancellation ? "" : scenarioRun.error;
+    summary.innerHTML = error ? `<p class="scenario-run-error">${scenarioEscape(error)}</p>` : "";
+    summary.hidden = !error;
   }
   const results = scenarioRun.steps || [];
-  const listedScenario = scenarioById.get(scenarioRun.scenario_id);
   const scenario = scenarioRun.scenario || listedScenario?.published_scenario || listedScenario;
   const planned = scenario ? [
     ...(scenario.steps || []).map((step) => ({ ...step, phase: "run" })),
@@ -117,11 +138,12 @@ function renderScenarioRun(run) {
     const active = !result && activeSteps.has(index + 1);
     const status = result?.status || (active ? "running" : "pending");
     const waiting = phase === "run" ? scenarioRun.state === "running" : busy;
-    const detail = result?.error || result?.output || (active ? "Running" : status === "pending" ? waiting ? "Waiting" : "Not run" : "Completed");
+    let detail = result?.error || result?.output || (active ? "Running" : status === "pending" ? waiting ? "Waiting" : "Not run" : "Completed");
+    if (scenarioRun.state === "cancelled" && /^context canceled\.?$/i.test(String(detail).trim())) detail = "";
     const time = result?.finished_at ? new Date(result.finished_at).toLocaleTimeString() : "";
     const machine = step.machine || "Shared";
     const lane = lanes.get(machine) || [];
-    lane.push(`<li class="scenario-step ${scenarioEscape(status)} ${phase === "cleanup" ? "cleanup" : ""}"><span class="scenario-step-mark" aria-hidden="true"></span><div class="scenario-step-copy"><div><span class="scenario-step-number">${index + 1}</span><strong>${scenarioEscape(step.action.replaceAll("_", " "))}</strong>${step.component ? `<span>${scenarioEscape(step.component)}</span>` : ""}${phase === "cleanup" ? `<span>Cleanup</span>` : ""}</div><p>${scenarioEscape(detail)}</p></div><time>${scenarioEscape(time)}</time></li>`);
+    lane.push(`<li class="scenario-step ${scenarioEscape(status)} ${phase === "cleanup" ? "cleanup" : ""}"><span class="scenario-step-mark" aria-hidden="true"></span><div class="scenario-step-copy"><div><span class="scenario-step-number">${index + 1}</span><strong>${scenarioEscape(step.action.replaceAll("_", " "))}</strong>${step.component ? `<span>${scenarioEscape(step.component)}</span>` : ""}${phase === "cleanup" ? `<span>Cleanup</span>` : ""}</div>${detail ? `<p>${scenarioEscape(detail)}</p>` : ""}</div><time>${scenarioEscape(time)}</time></li>`);
     lanes.set(machine, lane);
   });
   document.getElementById("scenario-steps").innerHTML = [...lanes].map(([machine, steps]) => `<section class="scenario-lane"><h3>${scenarioEscape(machine)}</h3><ol class="scenario-steps">${steps.join("")}</ol></section>`).join("");
@@ -581,6 +603,20 @@ document.getElementById("scenario-cancel").addEventListener("click", async (even
     const message = document.getElementById("scenario-error");
     message.textContent = error.message || "Could not cancel scenario";
     message.hidden = false;
+  }
+});
+document.getElementById("scenario-clear").addEventListener("click", async (event) => {
+  const button = event.currentTarget;
+  button.disabled = true;
+  try {
+    await postScenarioAction("/api/simulator/scenarios/clear");
+    await refreshScenarios();
+  } catch (error) {
+    const message = document.getElementById("scenario-error");
+    message.textContent = error.message || "Could not clear scenario run";
+    message.hidden = false;
+  } finally {
+    button.disabled = false;
   }
 });
 document.addEventListener("simulator:activate", (event) => {

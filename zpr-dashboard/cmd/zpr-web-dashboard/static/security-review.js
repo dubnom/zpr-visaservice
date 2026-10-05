@@ -7,6 +7,7 @@
   const state = { baseline: null, findings: [], dismissed: {}, selected: new Set(), scannedAt: null, pending: false, snapshot: null, request: null };
   const byId = (id) => document.getElementById(id);
   const baselineLabel = byId("security-review-baseline");
+  const baselineTime = byId("security-review-baseline-time");
   const statusLabel = byId("security-review-status");
   const rows = byId("security-review-findings");
   const countLabel = byId("security-review-count");
@@ -59,12 +60,45 @@
   }
 
   function baselineText() {
+    const baseline = state.baseline;
+    const current = state.snapshot ? currentInventory(state.snapshot) : null;
+    const displayService = (identity) => {
+      try {
+        const [name, actor, kind, endpoint] = JSON.parse(identity);
+        return [name, actor, kind, endpoint].filter(Boolean).join(" · ");
+      } catch { return identity; }
+    };
+    const inventoryList = (id, values, saved, service = false) => {
+      const cell = byId(id);
+      cell.replaceChildren();
+      if (!values) { cell.textContent = "—"; return; }
+      const list = document.createElement("ul");
+      const present = new Set(values);
+      const savedValues = new Set(saved || []);
+      for (const value of [...new Set([...values, ...savedValues])].sort()) {
+        const item = document.createElement("li");
+        const change = !present.has(value) ? "removed" : saved && !savedValues.has(value) ? "added" : "";
+        item.textContent = `${service ? displayService(value) : value}${change ? ` (${change})` : ""}`;
+        if (change) item.dataset.change = change;
+        list.append(item);
+      }
+      if (!list.children.length) cell.textContent = "None";
+      else cell.append(list);
+    };
+    inventoryList("security-review-baseline-actors", baseline?.actors);
+    inventoryList("security-review-baseline-services", baseline?.services, null, true);
+    inventoryList("security-review-current-actors", current?.actors, baseline?.actors);
+    inventoryList("security-review-current-services", current?.services, baseline?.services, true);
+    byId("security-review-current").textContent = current ? `${current.actors.length} actors · ${current.services.length} services` : "Waiting";
+    byId("security-review-current-time").textContent = state.scannedAt ? new Date(state.scannedAt).toLocaleString() : "No snapshot";
     if (!state.baseline) {
-      baselineLabel.textContent = "Baseline not set";
+      baselineLabel.textContent = "Not set";
+      baselineTime.textContent = "No baseline";
       return;
     }
     const date = new Date(state.baseline.saved_at).toLocaleString();
-    baselineLabel.textContent = `Browser baseline · ${state.baseline.actors.length} actors · ${state.baseline.services.length} services · ${date}`;
+    baselineLabel.textContent = `${state.baseline.actors.length} actors · ${state.baseline.services.length} services`;
+    baselineTime.textContent = date;
   }
 
   function makeFinding(indicator, entity, evidence, severity = "info", observedAt = Date.now(), entityAddress = "") {
@@ -282,7 +316,7 @@
     state.pending = true;
     const request = new AbortController();
     state.request = request;
-    statusLabel.textContent = "Scanning live signals…";
+    statusLabel.textContent = "";
     try {
       const logsResult = await readJSON("/api/adapter-logs", request.signal).then((logs) => ({ logs }), (error) => ({ error }));
       if (!active() || request.signal.aborted) return;
@@ -297,18 +331,17 @@
       if (!state.baseline) {
         state.baseline = { ...currentInventory(snapshot), saved_at: new Date().toISOString() };
         try { localStorage.setItem(baselineKey, JSON.stringify(state.baseline)); }
-        catch { statusLabel.textContent = "Scan complete; browser storage unavailable for baseline."; }
+        catch { statusLabel.textContent = "Scanned · browser storage unavailable for baseline."; }
         baselineCreated = true;
       }
+      state.scannedAt = new Date();
       baselineText();
       state.findings = [...denialFindings(snapshot), ...trustedSourceFindings(snapshot), ...nodeHealthFindings(snapshot), ...inventoryFindings(snapshot), ...(logsResult.logs ? logFindings(logsResult.logs) : [])]
         .sort((left, right) => (left.severity === right.severity ? right.observedAt - left.observedAt : left.severity === "review" ? -1 : 1))
         .slice(0, 250);
-      state.scannedAt = new Date();
-      if (logsResult.error) statusLabel.textContent = `Scan complete; adapter logs unavailable: ${logsResult.error.message}`;
-      else if (!(snapshot.actors || []).length && !(snapshot.services || []).length) statusLabel.textContent = "Scan complete; live inventory is unavailable.";
-      else if (baselineCreated) statusLabel.textContent = `Baseline established · ${state.findings.length} other indicators found.`;
-      else statusLabel.textContent = `Scan complete · ${state.findings.length} potential indicators · ${state.scannedAt.toLocaleString()}`;
+      if (logsResult.error) statusLabel.textContent = `Scanned · adapter logs unavailable: ${logsResult.error.message}`;
+      else if (!(snapshot.actors || []).length && !(snapshot.services || []).length) statusLabel.textContent = "Scanned · live inventory is unavailable.";
+      else statusLabel.textContent = "";
       render();
     } catch (error) {
       if (active() && error.name !== "AbortError") statusLabel.textContent = error.message || "Security scan failed.";

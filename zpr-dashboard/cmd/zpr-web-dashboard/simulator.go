@@ -194,6 +194,7 @@ func runSimulator(listen string) error {
 	mux.HandleFunc("POST /api/simulator/organizations/{organization}/directory/publish", handleWorkspaceDirectoryPublish)
 	mux.HandleFunc("GET /api/simulator/activity", handleSimulatorActivity)
 	mux.HandleFunc("GET /api/simulator/scenarios", handleWorkspaceScenarioCatalog)
+	mux.HandleFunc("POST /api/simulator/scenarios/clear", handleSimulatorScenarioClear)
 	mux.HandleFunc("GET /api/simulator/organizations/{organization}/scenarios/{scenario}/revisions/{revision}", handleWorkspaceScenarioRevisionGet)
 	mux.HandleFunc("GET /api/simulator/organizations/{organization}/scenarios/{scenario}/revisions", handleWorkspaceScenarioRevisions)
 	mux.HandleFunc("GET /api/simulator/organizations/{organization}/scenarios/{scenario}", handleWorkspaceScenarioGet)

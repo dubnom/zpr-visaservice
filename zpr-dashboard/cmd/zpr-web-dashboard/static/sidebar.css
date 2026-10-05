@@ -3,6 +3,8 @@
 .sidebar-header .brand > span:last-child { min-width: 0; }
 .sidebar-toggle { display: grid; flex: 0 0 32px; width: 32px; height: 32px; margin-left: auto; place-items: center; padding: 0; border: 1px solid #668076; border-radius: 3px; background: transparent; color: #f4f7f2; cursor: pointer; }
 .sidebar-toggle span { font: 24px/1 var(--sans); }
+.nav-separator { height: 1px; margin: 5px 10px; background: #3a4841; }
+.primary-nav .nav-sub-link { margin-left: 8px; padding-left: 16px; color: #a3b2a9; font-size: 11px; }
 .sidebar-toggle:hover { border-color: #b5e34f; background: #24322d; }
 .sidebar-toggle:focus-visible { outline: 2px solid #b5e34f; outline-offset: 2px; }
 body.sidebar-condensed .sidebar { width: 104px; padding: 14px 8px; }
