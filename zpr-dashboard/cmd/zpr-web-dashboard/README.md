@@ -66,14 +66,19 @@ navigation.
 
 Adapter Logs keeps its controls alongside the section label. Each panel header
 shows the configured adapter name in the title font, with a chevron beside it
-that opens the source selection dialog. The page-wide type selector determines
+that opens just the expanded source choice list, without a heading or extra
+controls, positioned directly below the adapter title. Select a source to close it, or dismiss it with Escape or an outside
+click. The page-wide type selector determines
 adapter or controller logs; the selected source identity is also available in
 the chevron tooltip. **Running only** excludes stopped, paused, unknown, and
 unavailable sources, including disconnected retained history.
 **Show all adapters** opens every configured log source for the selected
 adapter/controller type; **Hide all adapters** closes those panels. Individual
 panels can still be added or removed. **Word wrap** applies to every panel,
-including maximized panels.
+including maximized panels, and starts enabled on each page load.
+When no sources match the selected log type and running filter, the page states
+that no adapters/controllers are available and disables adding/showing panels.
+This differs from deliberately closing all panels when sources are available.
 
 ZPR Config uses the editor toolbar, line-number gutter and modification
 indicator, a dark syntax-colored TOML surface, and a separated line-number
@@ -90,9 +95,12 @@ names and approved attributes, alongside the existing tables. Escaped commas
 remain part of an RDN. Providers without entry DNs display an explicit
 unavailable-tree message rather than an invented LDAP hierarchy. The browse
 contract adds `directory.entries` containing `dn` and `attributes`; excluded
-credential attributes remain excluded. Control Room refreshes trusted records
-and diagnostics through its global refresh controls; standalone source pages
-retain their own refresh action.
+credential attributes remain excluded. Control Room loads trusted records on
+the first visit, then only rereads them when the operator clicks the global
+Refresh button on Trusted Sources. Automatic snapshot polling and navigation
+back to the page preserve the records, filter, and expanded LDAP branches.
+Diagnostics still follows global polling; standalone source pages retain their
+own refresh action.
 
 ## Operator Boundary
 

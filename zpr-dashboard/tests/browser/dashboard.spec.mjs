@@ -773,6 +773,20 @@ test("GUI Adapter Logs places pickers in headers and toggles all panels and wrap
   await expect(panels).toHaveCount(1);
 });
 
+test("GUI Adapter Logs starts wrapped, including long lines and maximized panels", async ({ page, appURL, api }) => {
+  api.adapterLogs.machines[0].sources[1].lines = ["x".repeat(400)];
+  await page.goto(appURL + "/#adapter-logs");
+  const panel = page.locator(".adapter-log-column").first();
+  const output = panel.locator(".machine-log-output");
+  await expect(output).toContainText("x".repeat(400));
+  await expect(page.locator("#adapter-log-wrap")).toHaveAttribute("aria-pressed", "true");
+  await expect(output.locator("pre")).toHaveCSS("white-space", "pre-wrap");
+  await expect.poll(() => output.evaluate(el => el.scrollWidth <= el.clientWidth)).toBe(true);
+  await panel.getByRole("button", { name: "Maximize adapter panel 1", exact: true }).click();
+  await expect(output.locator("pre")).toHaveCSS("white-space", "pre-wrap");
+  await expect.poll(() => output.evaluate(el => el.scrollWidth <= el.clientWidth)).toBe(true);
+});
+
 test("GUI Adapter Logs filters sources to running devices and selects them in a dialog", async ({ page, appURL, api }) => {
   api.adapterLogs.machines[1].state = "stopped";
   await page.goto(appURL + "/#adapter-logs");
@@ -782,11 +796,43 @@ test("GUI Adapter Logs filters sources to running devices and selects them in a 
   await panel.getByRole("button", { name: /Choose adapter and log source/ }).click();
   const dialog = panel.getByRole("dialog", { name: "Choose adapter log source" });
   await expect(dialog).toBeVisible();
-  await expect(dialog.getByRole("combobox").locator("option")).toHaveCount(2);
-  await dialog.getByRole("combobox").selectOption({ label: "finance-client adapter · machine-first" });
+  await expect(dialog.locator("header, h3, label, button")).toHaveCount(0);
+  await expect(dialog.getByRole("listbox").locator("option")).toHaveCount(2);
+  await expect(dialog.getByRole("listbox")).toHaveAttribute("size", "2");
+  const titleBounds = await panel.locator("header h2").boundingBox();
+  const pickerBounds = await dialog.boundingBox();
+  expect(pickerBounds.y).toBeCloseTo(titleBounds.y + titleBounds.height + 6, 0);
+  expect(pickerBounds.x).toBeCloseTo(titleBounds.x, 0);
+  await page.keyboard.press("Escape");
+  await expect(dialog).toBeHidden();
+  await panel.getByRole("button", { name: /Choose adapter and log source/ }).click();
+  await dialog.getByRole("listbox").selectOption({ label: "finance-client adapter · machine-first" });
   await expect(dialog).toBeHidden();
   await expect(panel.locator(".machine-log-output")).toContainText("finance-client adapter entry 79");
   await expect(panel.locator(".adapter-source-picker-button")).toHaveAttribute("title", /finance-client adapter/);
+});
+
+test("GUI Adapter Logs distinguishes no available adapters from closed panels and recovers", async ({ page, appURL, api }) => {
+  api.adapterLogs.machines = [];
+  await page.goto(appURL + "/#adapter-logs");
+  await expect(page.locator(".adapter-columns-empty")).toHaveText("No adapters available.");
+  await expect(page.locator(".adapter-log-column:visible")).toHaveCount(0);
+  await expect(page.locator("#adapter-log-add")).toBeDisabled();
+  await expect(page.locator("#adapter-log-all")).toBeDisabled();
+  api.adapterLogs.machines = [{
+    machine: { id: "restored", name: "Restored adapter" }, state: "stopped",
+    sources: [{ name: "Restored adapter", state: "stopped", lines: ["restored logs"] }],
+  }];
+  await expect(page.locator(".adapter-log-column:visible")).toHaveCount(1);
+  await expect(page.locator("#adapter-log-add")).toBeEnabled();
+  await page.locator("#adapter-log-running").check();
+  await expect(page.locator(".adapter-columns-empty")).toHaveText("No running adapters available.");
+  await expect(page.locator(".adapter-log-column:visible")).toHaveCount(0);
+  await page.locator("#adapter-log-running").uncheck();
+  await expect(page.locator(".adapter-log-column:visible")).toHaveCount(1);
+  await expect(page.locator(".machine-log-output")).toContainText("restored logs");
+  await page.getByRole("button", { name: "Controller logs", exact: true }).click();
+  await expect(page.locator(".adapter-columns-empty")).toHaveText("No controllers available.");
 });
 
 test("GUI Running only excludes stopped, failed and unknown sources even on a running device", async ({ page, appURL, api }) => {
@@ -825,6 +871,35 @@ test("GUI LDAP tree uses real nested DNs, escaped commas, approved attributes an
   await browser.getByRole("searchbox").fill("alice");
   await expect(browser.locator("[data-ldap-entry]")).toHaveCount(1);
   await expect(browser.locator(".trusted-source-tree")).toContainText("ou=Engineering");
+  expect([...api.counts.keys()].some((path) => path.startsWith("/api/simulator"))).toBe(false);
+});
+
+test("GUI LDAP keeps its tree during polling and navigation, but manual Refresh reloads", async ({ page, appURL, api }) => {
+  api.assertionSource.directory.entries = [
+    { dn: "uid=alice,ou=Engineering,dc=alpha,dc=test", attributes: { mail: ["alice@example.test"] } },
+  ];
+  await page.goto(appURL + "/#sources");
+  const browser = page.locator("trusted-source-browser");
+  await browser.getByRole("tab", { name: "LDAP tree" }).click();
+  const entry = browser.locator("[data-ldap-entry]");
+  await expect(entry).toHaveCount(1);
+  await entry.locator("summary").click();
+  await expect(entry).toHaveAttribute("open", "");
+  const sourceReads = api.counts.get("/api/assertions/source");
+  const snapshots = api.counts.get("/api/snapshot") || 0;
+  await page.locator("#poll-rate").selectOption("3");
+  await expect.poll(() => api.counts.get("/api/snapshot"), { timeout: 10000 }).toBeGreaterThan(snapshots + 1);
+  expect(api.counts.get("/api/assertions/source")).toBe(sourceReads);
+  await expect(entry).toHaveAttribute("open", "");
+  await page.getByRole("link", { name: "Map", exact: true }).click();
+  await page.getByRole("link", { name: "Trusted Sources", exact: true }).click();
+  await expect(entry).toHaveAttribute("open", "");
+  expect(api.counts.get("/api/assertions/source")).toBe(sourceReads);
+  api.assertionSource.directory.entries[0].attributes.mail = ["updated@example.test"];
+  await page.locator("#refresh-now").click();
+  await expect.poll(() => api.counts.get("/api/assertions/source")).toBe(sourceReads + 1);
+  await entry.locator("summary").click();
+  await expect(entry).toContainText("updated@example.test");
   expect([...api.counts.keys()].some((path) => path.startsWith("/api/simulator"))).toBe(false);
 });
 

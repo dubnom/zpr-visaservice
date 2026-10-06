@@ -27,12 +27,9 @@
 .adapter-source-picker-button { width: 28px; height: 28px; padding: 0; border: 1px solid var(--line); border-radius: 3px; background: var(--panel); color: var(--ink); font: 16px var(--mono); cursor: pointer; }
 .adapter-source-picker-button:hover:not(:disabled) { border-color: #62856f; background: #eaf4d9; }
 .adapter-source-picker-button:disabled { color: var(--muted); cursor: default; }
-.adapter-source-picker-dialog { width: min(460px, calc(100vw - 32px)); padding: 16px; border: 1px solid #b5c1b8; border-radius: 4px; background: #f8faf7; color: #17211e; box-shadow: 0 16px 48px #101a1880; }
+.adapter-source-picker-dialog { position: fixed; margin: 0; width: min(460px, calc(100vw - 32px)); padding: 4px; border: 1px solid #b5c1b8; border-radius: 4px; background: #f8faf7; color: #17211e; box-shadow: 0 16px 48px #101a1880; }
 .adapter-source-picker-dialog::backdrop { background: #101a1870; }
-.adapter-source-picker-dialog header { display: flex; justify-content: space-between; align-items: center; gap: 12px; padding: 0 0 12px; border-bottom: 1px solid #dbe2dc; }
-.adapter-source-picker-dialog h3 { margin: 0; font-size: 16px; }
-.adapter-source-picker-dialog label { display: grid; gap: 8px; margin-top: 14px; color: var(--muted); font: 11px var(--mono); }
-.adapter-source-picker-dialog select { min-height: 36px; padding: 6px 8px; border: 1px solid var(--line); background: white; color: var(--ink); font: 11px var(--mono); }
+.adapter-source-picker-dialog select { display: block; width: 100%; padding: 6px 8px; border: 0; background: white; color: var(--ink); font: 11px var(--mono); }
 .adapter-source-picker-dialog :focus-visible { outline: 2px solid #547c55; outline-offset: 2px; }
 .machine-log-type-toggle { display: flex; max-width: 100%; gap: 0; border: 1px solid var(--line); border-radius: 3px; overflow: hidden; }
 .machine-log-type-toggle button { min-height: 32px; padding: 5px 10px; border: 0; background: var(--panel); color: var(--ink); font: 11px var(--mono); cursor: pointer; }

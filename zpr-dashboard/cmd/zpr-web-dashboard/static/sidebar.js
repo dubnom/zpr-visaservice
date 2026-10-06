@@ -77,15 +77,15 @@
     sources: {
       title: "Trusted sources",
       intro: "Inspect configured attribute providers and their latest health and lookup status.",
-      steps: ["Open a provider link only when you need its operator console.", "Use the assertion editor’s Read source action to inspect returned directory data."],
+      steps: ["Browse returned directory records using LDAP tree, People, Groups or Attributes; filter without rereading the provider.", "Records load on the first visit. Automatic polling and returning to this page do not reload LDAP or collapse its tree. Click the global Refresh button here to read the provider again.", "Open a provider link only when you need its operator console."],
       recovery: "For unavailable sources, check provider health, identity mappings, and the Control-Service trust configuration.",
       context: "Providers are configured and authenticated server-side. The browser uses same-origin Control Room APIs and does not receive provider URLs, tokens, or directory credentials. Trusted attributes inform identity and policy; the provider does not grant access.",
       docs: "Trusted-service configuration", href: "https://github.com/org-zpr/zpr-visaservice/blob/main/README.md",
     },
     "adapter-logs": {
       title: "Adapter logs",
-      intro: "Read bounded tails from the operator-configured production adapter/controller inventory. Each panel heading names the log type; the button beside it identifies the adapter or machine, stable ID, and selected source.",
-      steps: ["Choose Adapter logs or Controller logs to select which configured source class appears.", "Click the identity/source button in a panel header to open the source picker; select an entry to change that panel.", "Running only hides sources whose adapter/machine state is not running. Show all adapters opens one panel for each matching configured source; Hide all adapters closes those panels.", "Word wrap changes long lines across all panels. Pause stops polling; Maximize expands one panel."],
+      intro: "Read bounded tails from the operator-configured production adapter/controller inventory. Each panel heading names the adapter; the chevron tooltip identifies its stable ID and selected source.",
+      steps: ["Choose Adapter logs or Controller logs to select which configured source class appears.", "Click the chevron beside an adapter name to open an expanded choice list; select an entry to change that panel. Escape or an outside click dismisses the list.", "Running only hides sources whose adapter/machine state is not running. Show all adapters opens one panel for each matching configured source; Hide all adapters closes those panels.", "Word wrap starts enabled and changes long lines across all panels, including maximized panels. Pause stops polling; Maximize expands one panel."],
       recovery: "An unavailable source is reported independently; check its configured path/container and the Control-Service log inventory.",
       context: "These are operator-owned production logs returned through Control-Service, not Simulator workload logs. A machine can be running while a particular log source is disconnected or missing.",
       docs: "Adapter log configuration", href: "https://github.com/org-zpr/zpr-visaservice/blob/main/zpr-dashboard/cmd/zpr-web-dashboard/README.md",

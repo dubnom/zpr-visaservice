@@ -3669,7 +3669,10 @@ function setPollTimer() {
   if (!state.paused) state.timer = setInterval(refresh, seconds * 1000);
 }
 
-byId("refresh-now").addEventListener("click", refresh);
+byId("refresh-now").addEventListener("click", () => {
+  document.dispatchEvent(new CustomEvent("control-room:refresh-requested"));
+  void refresh();
+});
 function updatePolicyWorkbenchLayout() {
   const workbench = byId("policy-workbench");
   const assistantCollapsed = workbench.dataset.assistantCollapsed === "true";

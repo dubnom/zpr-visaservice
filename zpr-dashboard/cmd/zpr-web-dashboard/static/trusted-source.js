@@ -14,7 +14,7 @@
       if (this.closest("#page-sources")) {
         if (!this.hashListener) {
           this.hashListener = () => {
-            if (location.hash === "#sources") this.load();
+            if (location.hash === "#sources" && !this.snapshot) this.load();
           };
           window.addEventListener("hashchange", this.hashListener);
         }
@@ -64,7 +64,7 @@
       this.querySelector("[data-source-filter]").addEventListener("input", () => this.render());
       if (this.closest("#page-sources")) {
         this.querySelector("[data-source-refresh]").hidden = true;
-        document.addEventListener("control-room:refreshed", () => {
+        document.addEventListener("control-room:refresh-requested", () => {
           if (location.hash === "#sources") this.load();
         });
       }

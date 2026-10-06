@@ -170,25 +170,36 @@
     pickerButton.setAttribute("aria-haspopup", "dialog");
     const pickerDialog = document.createElement("dialog");
     pickerDialog.className = "adapter-source-picker-dialog";
-    const pickerHeader = document.createElement("header");
-    const pickerTitle = document.createElement("h3");
-    pickerTitle.id = `adapter-source-picker-title-${nextAdapterColumnID}`;
-    pickerDialog.setAttribute("aria-labelledby", pickerTitle.id);
-    const pickerClose = document.createElement("button");
-    pickerClose.type = "button";
-    pickerClose.className = "quiet";
-    pickerClose.textContent = "Close";
-    pickerClose.addEventListener("click", () => pickerDialog.close());
-    pickerHeader.append(pickerTitle, pickerClose);
-    const pickerLabel = document.createElement("label");
-    pickerLabel.textContent = "Adapter and log source";
+    pickerDialog.setAttribute("aria-label", `Choose ${adapterLogType} log source`);
     const select = document.createElement("select");
+    select.size = 2;
     select.setAttribute("aria-label", `Select ${adapterLogType} and log source`);
-    pickerLabel.append(select);
-    pickerDialog.append(pickerHeader, pickerLabel);
+    pickerDialog.append(select);
+    pickerDialog.addEventListener("click", (event) => {
+      if (event.target !== pickerDialog) return;
+      const bounds = pickerDialog.getBoundingClientRect();
+      if (event.clientX < bounds.left || event.clientX > bounds.right || event.clientY < bounds.top || event.clientY > bounds.bottom) pickerDialog.close();
+    });
     pickerButton.addEventListener("click", () => {
       if (!pickerDialog.open) pickerDialog.showModal();
+      const bounds = title.getBoundingClientRect();
+      const width = Math.min(460, panel.getBoundingClientRect().width, window.innerWidth - 32);
+      pickerDialog.style.width = `${width}px`;
+      pickerDialog.style.left = `${Math.max(16, Math.min(bounds.left, window.innerWidth - width - 16))}px`;
+      pickerDialog.style.top = `${bounds.bottom + 6}px`;
+      pickerDialog.style.maxHeight = `${Math.max(36, window.innerHeight - bounds.bottom - 22)}px`;
       select.focus();
+    });
+    const dismissPicker = () => {
+      if (pickerDialog.open) pickerDialog.close();
+    };
+    pickerDialog.addEventListener("close", () => {
+      window.removeEventListener("resize", dismissPicker);
+      grid.removeEventListener("scroll", dismissPicker);
+    });
+    pickerButton.addEventListener("click", () => {
+      window.addEventListener("resize", dismissPicker);
+      grid.addEventListener("scroll", dismissPicker);
     });
     const toolbar = document.createElement("div");
     toolbar.className = "machine-log-source-toolbar adapter-column-picker";
@@ -197,7 +208,7 @@
     output.className = "machine-log-output";
     output.tabIndex = 0;
     const column = {
-      id: nextAdapterColumnID++, panel, title, maximizeButton, removeButton, select, pickerButton, pickerDialog, pickerTitle,
+      id: nextAdapterColumnID++, panel, title, maximizeButton, removeButton, select, pickerButton, pickerDialog,
       toolbar, output, selectedKey: "", selectedKeys: new Map(), choices: "", signature: "", sourceViews: new Map(),
       following: true, nextScrollTop: undefined,
     };
@@ -213,11 +224,19 @@
       column.nextScrollTop = saved?.scrollTop ?? 0;
       renderAdapterColumns();
     });
+    select.addEventListener("click", (event) => {
+      if (event.target.closest("option")) pickerDialog.close();
+    });
+    select.addEventListener("keydown", (event) => {
+      if (event.key === "Enter") {
+        event.preventDefault();
+        pickerDialog.close();
+      }
+    });
     output.addEventListener("scroll", () => {
       if (output.clientHeight) column.following = output.scrollHeight - output.clientHeight - output.scrollTop <= 8;
     });
     actions.append(removeButton, maximizeButton);
-    pickerTitle.textContent = `Choose ${adapterLogType} log source`;
     toolbar.append(pickerButton);
     header.append(title, toolbar, actions);
     panel.append(header, output, pickerDialog);
@@ -233,6 +252,7 @@
   function removeAdapterColumn(column) {
     showingAll = false;
     saveAdapterColumnPosition(column);
+    if (column.pickerDialog.open) column.pickerDialog.close();
     if (column.panel.classList.contains("maximized")) setMaximized(column, false);
     column.panel.remove();
     const index = adapterColumns.indexOf(column);
@@ -253,7 +273,7 @@
     const addButton = document.getElementById("adapter-log-add");
     addButton.setAttribute("aria-label", `Add ${type} panel`);
     addButton.title = `Add ${type} panel`;
-    if (!adapterColumnsInitialized) {
+    if (!adapterColumnsInitialized && choices.length) {
       adapterColumnsInitialized = true;
       makeAdapterColumn();
     }
@@ -261,6 +281,7 @@
       const keys = new Set(choices.map((choice) => choice.key));
       for (const column of [...adapterColumns]) {
         if (!keys.has(column.selectedKey)) {
+          if (column.pickerDialog.open) column.pickerDialog.close();
           if (column.panel.classList.contains("maximized")) setMaximized(column, false);
           column.panel.remove();
           adapterColumns.splice(adapterColumns.indexOf(column), 1);
@@ -274,16 +295,25 @@
     document.getElementById("adapter-log-running").checked = runningOnly;
     allButton.textContent = showingAll ? "Hide all adapters" : "Show all adapters";
     allButton.setAttribute("aria-pressed", String(showingAll));
-    addButton.disabled = showingAll;
-    if (!adapterColumns.length) {
-      grid.replaceChildren();
+    addButton.disabled = showingAll || choices.length === 0;
+    allButton.disabled = choices.length === 0;
+    grid.querySelector(".adapter-columns-empty")?.remove();
+    if (!adapterColumns.length || !choices.length) {
       const empty = document.createElement("p");
       empty.className = "adapter-columns-empty";
-      empty.textContent = `No ${type} panels. Use + to add one.`;
+      empty.setAttribute("role", "status");
+      empty.textContent = !choices.length
+        ? runningOnly ? `No running ${type}s available.` : `No ${type}s available.`
+        : `No ${type} panels. Use + to add one.`;
       grid.append(empty);
     }
     for (const column of adapterColumns) {
-      column.pickerTitle.textContent = `Choose ${type} log source`;
+      column.panel.hidden = choices.length === 0;
+      if (!choices.length) {
+        if (column.pickerDialog.open) column.pickerDialog.close();
+        if (column.panel.classList.contains("maximized")) setMaximized(column, false);
+      }
+      column.pickerDialog.setAttribute("aria-label", `Choose ${type} log source`);
       column.pickerButton.setAttribute("aria-label", `Choose ${type} and log source for panel ${column.id}`);
       column.select.setAttribute("aria-label", `Select ${type} for panel ${column.id}`);
       column.removeButton.setAttribute("aria-label", `Remove ${type} panel`);
@@ -298,6 +328,7 @@
           column.select.append(option);
         }
         column.choices = choicesSignature;
+        column.select.size = Math.max(2, Math.min(8, choices.length));
       }
       if (!choices.some((choice) => choice.key === column.selectedKey)) {
         const previous = column.selectedKey;
@@ -526,6 +557,7 @@
     document.getElementById("adapter-log-all").addEventListener("click", () => {
       showingAll = !showingAll;
       for (const column of [...adapterColumns]) {
+        if (column.pickerDialog.open) column.pickerDialog.close();
         if (column.panel.classList.contains("maximized")) setMaximized(column, false);
         column.panel.remove();
       }
@@ -537,7 +569,10 @@
       runningOnly = event.currentTarget.checked;
       renderAdapterColumns();
     });
-    document.getElementById("adapter-log-wrap").addEventListener("click", (event) => {
+    const wrapButton = document.getElementById("adapter-log-wrap");
+    wrapButton.setAttribute("aria-pressed", "true");
+    grid.classList.remove("logs-nowrap");
+    wrapButton.addEventListener("click", (event) => {
       const wrapped = event.currentTarget.getAttribute("aria-pressed") !== "true";
       event.currentTarget.setAttribute("aria-pressed", String(wrapped));
       grid.classList.toggle("logs-nowrap", !wrapped);
