@@ -30,12 +30,13 @@
       this.innerHTML = `
         <section class="trusted-source-browser-panel" aria-label="Trusted source browser">
           <header class="trusted-source-browser-head">
-            <div><p class="eyebrow">READ ONLY</p><h3 data-source-title>Trusted source</h3><p data-source-meta class="trusted-source-meta">Not loaded</p></div>
+            <div><h3 data-source-title>Trusted source</h3><p data-source-meta class="trusted-source-meta">Not loaded</p></div>
             <button type="button" class="button" data-source-refresh>Refresh</button>
           </header>
           <div class="trusted-source-summary" data-source-summary role="status"></div>
           <div class="trusted-source-browser-tools">
             <div class="trusted-source-tabs" role="tablist" aria-label="Trusted source records">
+              <button type="button" role="tab" data-source-tab="tree" aria-selected="false" tabindex="-1">LDAP tree</button>
               <button type="button" role="tab" data-source-tab="people" aria-selected="true">People</button>
               <button type="button" role="tab" data-source-tab="groups" aria-selected="false" tabindex="-1">Groups</button>
               <button type="button" role="tab" data-source-tab="attributes" aria-selected="false" tabindex="-1">Attributes</button>
@@ -61,6 +62,12 @@
         }
       });
       this.querySelector("[data-source-filter]").addEventListener("input", () => this.render());
+      if (this.closest("#page-sources")) {
+        this.querySelector("[data-source-refresh]").hidden = true;
+        document.addEventListener("control-room:refreshed", () => {
+          if (location.hash === "#sources") this.load();
+        });
+      }
     }
 
     async load() {
@@ -101,14 +108,74 @@
       const results = this.querySelector("[data-source-results]");
       const message = this.querySelector("[data-source-message]");
       results.replaceChildren();
-      if (this.view === "people") this.renderPeople(results, directory, query);
+      if (this.view === "tree") this.renderTree(results, directory, query);
+      else if (this.view === "people") this.renderPeople(results, directory, query);
       else if (this.view === "groups") this.renderGroups(results, directory, query);
       else this.renderAttributes(results, directory, query);
-      const count = results.querySelectorAll("tbody tr").length;
+      const count = this.view === "tree" ? results.querySelectorAll("[data-ldap-entry]").length : results.querySelectorAll("tbody tr").length;
       this.querySelector("[data-source-count]").textContent = `${count} ${this.view}`;
       message.textContent = count ? "" : `No ${this.view} match this filter.`;
       message.hidden = count > 0;
       results.hidden = false;
+    }
+
+    renderTree(results, directory, query) {
+      if (!Array.isArray(directory.entries) || !directory.entries.length) {
+        results.append(element("p", "trusted-source-message", "This provider has not returned LDAP distinguished names. People, groups and attributes remain available."));
+        return;
+      }
+      const root = { children: new Map() };
+      // LDAP permits escaped commas inside RDN values; they are not path separators.
+      const splitDN = (dn) => {
+        const parts = [];
+        let start = 0, escaped = false;
+        for (let index = 0; index < dn.length; index++) {
+          const character = dn[index];
+          if (character === "," && !escaped) { parts.push(dn.slice(start, index).trim()); start = index + 1; }
+          escaped = character === "\\" && !escaped;
+        }
+        parts.push(dn.slice(start).trim());
+        return parts;
+      };
+      for (const entry of directory.entries) {
+        if (!JSON.stringify(entry).toLowerCase().includes(query)) continue;
+        let parent = root;
+        for (const rdn of splitDN(entry.dn).reverse()) {
+          const key = rdn.toLowerCase();
+          if (!parent.children.has(key)) parent.children.set(key, { label: rdn, children: new Map() });
+          parent = parent.children.get(key);
+        }
+        parent.entry = entry;
+      }
+      const list = element("ul", "trusted-source-tree");
+      const add = (parent, nodes) => {
+        for (const node of [...nodes.values()].sort((a, b) => a.label.localeCompare(b.label))) {
+          const item = element("li");
+          const branch = element("details");
+          branch.open = Boolean(query) || !node.entry;
+          const summary = element("summary", "", node.label);
+          if (node.entry) {
+            branch.dataset.ldapEntry = node.entry.dn;
+            summary.title = node.entry.dn;
+          }
+          branch.append(summary);
+          if (node.entry) {
+            branch.append(element("p", "trusted-source-meta", node.entry.dn));
+            const attributes = element("div", "trusted-source-attributes");
+            attributes.append(...this.attributeCell(node.entry.attributes || {}).childNodes);
+            branch.append(attributes);
+          }
+          if (node.children.size) {
+            const children = element("ul");
+            add(children, node.children);
+            branch.append(children);
+          }
+          item.append(branch);
+          parent.append(item);
+        }
+      };
+      add(list, root.children);
+      results.append(list);
     }
 
     renderPeople(results, directory, query) {

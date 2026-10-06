@@ -9,6 +9,12 @@
   let catalog;
   let saved = "";
   let pending = false;
+  const gutter = document.getElementById("zpr-config-gutter");
+  function renderEditor() {
+    document.getElementById("zpr-config-modified").hidden = source.value === saved;
+    gutter.textContent = source.value.split("\n").map((_, index) => index + 1).join("\n");
+    gutter.scrollTop = source.scrollTop;
+  }
   const request = async (url, options = {}) => {
     const response = await fetch(url, { cache: "no-store", ...options });
     const result = await response.json();
@@ -21,7 +27,7 @@
     pending = true;
     document.querySelectorAll("[data-config-command]").forEach((button) => { button.disabled = true; });
     try { await action(); } catch (error) { status.textContent = error.message; }
-    finally { pending = false; document.querySelectorAll("[data-config-command]").forEach((button) => { button.disabled = false; }); }
+    finally { pending = false; document.querySelectorAll("[data-config-command]").forEach((button) => { button.disabled = false; }); renderEditor(); }
   };
   async function loadCatalog() {
     catalog = await request("/api/policy");
@@ -68,7 +74,8 @@
     await loadCatalog();
     status.textContent = `Saved r${record.current_revision}; runtime unchanged.`;
   }));
-  source.addEventListener("input", () => { status.textContent = source.value === saved ? "Saved draft" : "Unsaved draft"; });
+  source.addEventListener("input", () => { status.textContent = source.value === saved ? "Saved draft" : "Unsaved draft"; renderEditor(); });
+  source.addEventListener("scroll", () => { gutter.scrollTop = source.scrollTop; });
   window.addEventListener("hashchange", () => { if (location.hash === "#zpr-config" && !catalog) void run(loadCatalog); });
   if (location.hash === "#zpr-config") void run(loadCatalog);
 })();

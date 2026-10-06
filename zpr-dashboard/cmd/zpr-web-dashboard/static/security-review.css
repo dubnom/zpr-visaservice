@@ -47,3 +47,4 @@
   .security-review-inventory-details { grid-template-columns: minmax(0, 1fr); }
   .security-review-table { min-width: 680px; }
 }
+[data-security-review] tr[data-severity="high"] .security-indicator { color: #a43824; font-weight: 800; }

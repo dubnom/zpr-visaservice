@@ -443,28 +443,35 @@ func handleSimulatorMachineSession(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		if action == "start" {
-			rig := strings.TrimSpace(os.Getenv("SIMULATION_CONTAINER"))
-			if rig == "" {
-				rig = "zpr-local-linux-node"
-			}
-			rigOutput, inspectErr := exec.Command("docker", "inspect", "-f", "{{range .NetworkSettings.Networks}}{{.IPAddress}}{{end}}", rig).CombinedOutput()
-			if inspectErr != nil {
-				http.Error(w, fmt.Sprintf("could not inspect ZPR rig container: %s", strings.TrimSpace(string(rigOutput))), http.StatusBadGateway)
+			runtimeDriver, runtimeErr := simulatorRuntimeDriverForManifest(manifest)
+			if runtimeErr != nil {
+				http.Error(w, "organization runtime unavailable", http.StatusServiceUnavailable)
 				return
 			}
-			routeCommand, routeErr := simulatorMachineSubstrateRouteCommand(manifest, machineID, strings.TrimSpace(string(rigOutput)))
-			if routeErr != nil {
-				http.Error(w, routeErr.Error(), http.StatusBadGateway)
-				return
-			}
-			routeOutput, routeRunErr := routeCommand.CombinedOutput()
-			if routeRunErr != nil {
-				http.Error(w, fmt.Sprintf("could not restore machine substrate route: %s", strings.TrimSpace(string(routeOutput))), http.StatusBadGateway)
-				return
-			}
-			if err := configureSimulatorMachineControlReturnRoute(r.Context(), manifest, machineID, rig); err != nil {
-				http.Error(w, fmt.Sprintf("could not restore machine-control ZPR return route: %v", err), http.StatusGatewayTimeout)
-				return
+			if runtimeDriver == "linux-one-node" {
+				rig := strings.TrimSpace(os.Getenv("SIMULATION_CONTAINER"))
+				if rig == "" {
+					rig = "zpr-local-linux-node"
+				}
+				rigOutput, inspectErr := exec.Command("docker", "inspect", "-f", "{{range .NetworkSettings.Networks}}{{.IPAddress}}{{end}}", rig).CombinedOutput()
+				if inspectErr != nil {
+					http.Error(w, fmt.Sprintf("could not inspect ZPR rig container: %s", strings.TrimSpace(string(rigOutput))), http.StatusBadGateway)
+					return
+				}
+				routeCommand, routeErr := simulatorMachineSubstrateRouteCommand(manifest, machineID, strings.TrimSpace(string(rigOutput)))
+				if routeErr != nil {
+					http.Error(w, routeErr.Error(), http.StatusBadGateway)
+					return
+				}
+				routeOutput, routeRunErr := routeCommand.CombinedOutput()
+				if routeRunErr != nil {
+					http.Error(w, fmt.Sprintf("could not restore machine substrate route: %s", strings.TrimSpace(string(routeOutput))), http.StatusBadGateway)
+					return
+				}
+				if err := configureSimulatorMachineControlReturnRoute(r.Context(), manifest, machineID, rig); err != nil {
+					http.Error(w, fmt.Sprintf("could not restore machine-control ZPR return route: %v", err), http.StatusGatewayTimeout)
+					return
+				}
 			}
 		}
 		if action == "stop" {

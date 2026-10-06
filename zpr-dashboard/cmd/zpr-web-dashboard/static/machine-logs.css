@@ -11,6 +11,15 @@
 .machine-logs-toolbar > span { color: var(--muted); font: 11px var(--mono); }
 .machine-logs-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 340px), 1fr)); gap: 16px; padding-bottom: 22px; }
 .adapter-logs-toolbar { justify-content: flex-start; gap: 8px; }
+.adapter-logs-heading { justify-content: flex-start; }
+.adapter-logs-heading .adapter-logs-toolbar { margin: 0; }
+.adapter-log-column header { flex-wrap: wrap; gap: 8px; }
+.adapter-log-column .adapter-column-picker { flex: 1; min-width: 100px; padding: 0; border: 0; }
+.adapter-log-column .adapter-column-picker label { display: none; }
+.adapter-log-column .machine-log-panel-actions { gap: 4px; }
+.adapter-log-column .machine-log-panel-actions button { padding: 4px; }
+.adapter-log-columns.logs-nowrap .machine-log-output,
+.adapter-log-columns.logs-nowrap .machine-log-output pre { white-space: pre; overflow-wrap: normal; }
 .adapter-logs-toolbar > span { margin-right: auto; }
 .adapter-logs-toolbar #machine-logs-pause { min-height: 32px; }
 .machine-log-type-toggle { display: flex; max-width: 100%; gap: 0; border: 1px solid var(--line); border-radius: 3px; overflow: hidden; }

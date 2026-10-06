@@ -22,6 +22,12 @@ type assertionDirectory struct {
 	Attributes       []string                       `json:"attributes,omitempty"`
 	PersonAttributes map[string]map[string][]string `json:"person_attributes,omitempty"`
 	GroupAttributes  map[string]map[string][]string `json:"group_attributes,omitempty"`
+	Entries          []assertionDirectoryEntry      `json:"entries,omitempty"`
+}
+
+type assertionDirectoryEntry struct {
+	DN         string              `json:"dn"`
+	Attributes map[string][]string `json:"attributes"`
 }
 
 type assertionRule struct {

@@ -91,6 +91,7 @@ func parseAssertionLDAPAttributes(source string, attributes []string) (assertion
 	allDNs := make(map[string]bool)
 	personAttributes := make(map[string]map[string][]string)
 	groupEntries := make(map[string]*ldap.Entry)
+	var entries []assertionDirectoryEntry
 	for _, record := range data.Entries {
 		entry := record.Entry
 		if entry == nil {
@@ -113,6 +114,15 @@ func parseAssertionLDAPAttributes(source string, attributes []string) (assertion
 		for _, class := range entry.GetEqualFoldAttributeValues("objectClass") {
 			classes[strings.ToLower(class)] = true
 		}
+		dn, parseErr := ldap.ParseDN(entry.DN)
+		if parseErr != nil || len(dn.RDNs) == 0 {
+			return assertionDirectory{}, errors.New("LDAP entries must have valid distinguished names")
+		}
+		entryAttributes, attributeErr := assertionLDAPAttributes(entry, attributes)
+		if attributeErr != nil {
+			return assertionDirectory{}, attributeErr
+		}
+		entries = append(entries, assertionDirectoryEntry{DN: dn.String(), Attributes: entryAttributes})
 		if classes["posixgroup"] || classes["groupofnames"] || classes["groupofuniquenames"] {
 			names := entry.GetEqualFoldAttributeValues("cn")
 			if len(names) != 1 || names[0] == "" || len(names[0]) > 200 || groupEntries[names[0]] != nil {
@@ -147,7 +157,8 @@ func parseAssertionLDAPAttributes(source string, attributes []string) (assertion
 			}
 		}
 	}
-	directory := assertionDirectory{People: []string{}, Groups: make(map[string][]string), Attributes: attributes, PersonAttributes: personAttributes, GroupAttributes: make(map[string]map[string][]string)}
+	sort.Slice(entries, func(i, j int) bool { return entries[i].DN < entries[j].DN })
+	directory := assertionDirectory{People: []string{}, Groups: make(map[string][]string), Attributes: attributes, PersonAttributes: personAttributes, GroupAttributes: make(map[string]map[string][]string), Entries: entries}
 	for uid := range people {
 		directory.People = append(directory.People, uid)
 	}

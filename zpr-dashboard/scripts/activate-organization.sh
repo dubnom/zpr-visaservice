@@ -15,6 +15,13 @@ profile="$dashboard_dir/cmd/zpr-web-dashboard/examples/organizations/$organizati
 organization_driver=$(jq -er '.runtime.driver' "$profile")
 policy_config_relative=$(jq -er '.policy_config' "$profile")
 policy_config="$dashboard_dir/cmd/zpr-web-dashboard/examples/$policy_config_relative"
+runtime_policy_relative=$(jq -er --arg organization "$organization" '.runtime_policy // ("organizations/" + $organization + "/runtime-policy.zpl")' "$profile")
+runtime_policy_source="$dashboard_dir/cmd/zpr-web-dashboard/examples/$runtime_policy_relative"
+runtime_policy_config="$policy_config"
+if [ "$organization_driver" = "docker-multinode" ]; then
+    runtime_policy_config="$runtime_dir/multinode/$organization/admin/multinode-demo.zplc"
+    [ -r "$runtime_policy_config" ] || { echo "multinode runtime policy config missing: $runtime_policy_config" >&2; exit 1; }
+fi
 organization_base_dn=$(jq -er '.directory.base_dn' "$profile")
 organization_bind_dn="cn=zpr-reader,ou=Service Accounts,$organization_base_dn"
 control_room_url=${SIMULATOR_CONTROL_ROOM_URL:-http://127.0.0.1:8787}
@@ -51,14 +58,41 @@ report_activation_status() {
 report_activation_status "Preparing runtime policy"
 printf 'Preflight organization %s\n' "$organization"
 "$binary" -mode compose-policy -policy-root "$dashboard_dir/cmd/zpr-web-dashboard/examples" -policy-organization "$organization" -policy-output "$bundle_dir/runtime.zpl"
-if [ -n "${ZPR_ZPLC_IMAGE:-}" ]; then
+if [ "$organization_driver" = "docker-multinode" ]; then
+    install_policy_source="$bundle_dir/install.zpl"
+    {
+        printf '%s\n\n' "define adapter as a device with zpr.adapter.cn."
+        cat "$dashboard_dir/cmd/zpr-web-dashboard/examples/policy-layers/platform.zpl"
+        printf '\n'
+        cat "$runtime_policy_source"
+        printf '\n'
+        cat "$runtime_dir/multinode/$organization/admin/multinode-demo.zpl"
+    } > "$install_policy_source"
+    if [ -n "${ZPR_ZPLC_IMAGE:-}" ]; then
+        docker run --rm --network none -v "$runtime_dir:/runtime" \
+            -v "$runtime_dir/multinode/$organization/include:/runtime-include:ro" \
+            "$ZPR_ZPLC_IMAGE" \
+            "/runtime/organization-policy/$organization/install.zpl" \
+            -c "/runtime/multinode/$organization/admin/multinode-demo.zplc" \
+            -k /runtime/linux-integration/pregen/zpr-rsa-key.pem \
+            -d "/runtime/organization-policy/$organization" -o runtime.bin2
+    else
+        docker run --rm --network none -v "$runtime_dir:/runtime" \
+            -v "$runtime_dir/multinode/$organization/include:/runtime-include:ro" \
+            zpr-multinode /app/bin/zplc \
+            "/runtime/organization-policy/$organization/install.zpl" \
+            -c "/runtime/multinode/$organization/admin/multinode-demo.zplc" \
+            -k /runtime/linux-integration/pregen/zpr-rsa-key.pem \
+            -d "/runtime/organization-policy/$organization" -o runtime.bin2
+    fi
+elif [ -n "${ZPR_ZPLC_IMAGE:-}" ]; then
     docker run --rm --network none -v "$runtime_dir:/runtime" -v "$dashboard_dir:/dashboard:ro" "$ZPR_ZPLC_IMAGE" \
         "/runtime/organization-policy/$organization/runtime.zpl" \
         -c "/dashboard/cmd/zpr-web-dashboard/examples/$policy_config_relative" \
         -k /runtime/linux-integration/pregen/zpr-rsa-key.pem \
         -d "/runtime/organization-policy/$organization" -o runtime.bin2
 else
-    "$compiler" "$bundle_dir/runtime.zpl" -c "$policy_config" -k "$pregen/zpr-rsa-key.pem" -d "$bundle_dir" -o runtime.bin2
+    "$compiler" "$bundle_dir/runtime.zpl" -c "$runtime_policy_config" -k "$pregen/zpr-rsa-key.pem" -d "$bundle_dir" -o runtime.bin2
 fi
 report_activation_status "Runtime policy compiled"
 docker inspect "$rig" >/dev/null
@@ -210,6 +244,8 @@ if [ "$organization_driver" = linux-one-node ]; then
     fi
 else
     report_activation_status "Checking multi-node ZPR services"
+    report_activation_status "Starting organization ZPR DNS"
+    SIMULATION_ORGANIZATION_ID="$organization" "$script_dir/dashboard-stack.sh" start-dns
     configured_node_count=$(jq -er '.runtime.nodes | length' "$dashboard_dir/cmd/zpr-web-dashboard/examples/organizations/$organization.json")
     echo "$configured_node_count-node $organization runtime passed configured peer and service readiness checks"
 fi

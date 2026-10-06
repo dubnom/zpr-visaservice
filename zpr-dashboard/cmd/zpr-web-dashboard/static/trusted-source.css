@@ -25,6 +25,12 @@ trusted-source-browser { display: block; }
 .trusted-source-attributes dt { color: var(--muted); font: 10px var(--mono); overflow-wrap: anywhere; }
 .trusted-source-attributes dd { margin: 0; overflow-wrap: anywhere; }
 .trusted-source-number { font-variant-numeric: tabular-nums; }
+.trusted-source-tree, .trusted-source-tree ul { padding-left: 20px; list-style: none; }
+.trusted-source-tree { max-height: 58vh; overflow: auto; margin: 14px 0; }
+.trusted-source-tree li { border-left: 1px solid var(--line); padding: 4px 0 4px 12px; }
+.trusted-source-tree summary { cursor: pointer; font: 12px var(--mono); padding: 4px; }
+.trusted-source-tree summary:focus-visible { outline: 2px solid var(--forest); }
+.trusted-source-tree .trusted-source-attributes { padding: 10px; }
 @media (max-width: 700px) {
   .trusted-source-browser-tools { align-items: stretch; flex-wrap: wrap; gap: 8px; }
   .trusted-source-tabs { width: 100%; }

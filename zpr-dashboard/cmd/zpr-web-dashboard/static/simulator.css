@@ -58,7 +58,7 @@ main { margin-left: 238px; max-width: none; padding: 28px 42px 70px; }
 .pill.on { background: #e6f1bc; color: #3e642f; }
 .service-row { justify-content: space-between; }
 .service-row span { color: var(--teal); letter-spacing: .02em; text-transform: none; }
-.components, .logs { margin-top: 38px; border-top: 1px solid var(--line); padding-top: 24px; }
+.components, .logs { margin-top: 38px; }
 .component-grid { display: grid; grid-template-columns: repeat(5, 1fr); gap: 10px; }
 .component-card { background: var(--panel); border: 1px solid var(--line); padding: 16px; display: grid; gap: 12px; }
 .component-card strong { display: block; font-size: 17px; font-weight: 400; margin-top: 6px; }
@@ -98,7 +98,12 @@ pre { margin: 0; padding: 14px; min-height: 110px; max-height: 180px; overflow: 
 .primary-nav { display: grid; gap: 2px; }.nav-link { display: flex; align-items: center; padding: 9px 10px; border-radius: 4px; color: #b9c5bd; font-size: 13px; text-decoration: none; }.nav-link:hover { background: #24322d; color: white; }.nav-link.active { background: var(--lime); color: var(--ink); box-shadow: inset 4px 0 #76a72b; font-weight: 650; }
 .sidebar-foot { margin-top: auto; display: flex; align-items: center; gap: 9px; padding: 13px 9px 2px; color: #90a096; font: 9px var(--mono); letter-spacing: .09em; }.tiny-dot { width: 7px; height: 7px; border-radius: 50%; background: var(--lime); }
 .main-content { margin-left: 230px; padding: 0 39px 70px; }.main-content .topbar { position: sticky; inset: auto; width: auto; height: auto; margin: 0 -39px; padding: 0 39px; min-height: 62px; background: #f3f6f2ed; border-bottom: 1px solid var(--line); color: var(--ink); display: flex; flex-direction: row; align-items: center; justify-content: space-between; z-index: 4; }.topbar-status { display: flex; align-items: center; gap: 18px; }.connection-state { display: flex; align-items: center; gap: 10px; }.state-lamp { width: 9px; height: 9px; border-radius: 50%; background: var(--lime); box-shadow: 0 0 0 4px #e6f1bc; }.connection-state strong { display: block; font-size: 13px; }.connection-state small { display: block; color: var(--muted); font: 10px var(--mono); margin-top: 3px; }.uptime-status { display: grid; gap: 3px; }.uptime-status span { color: var(--muted); font: 9px var(--mono); letter-spacing: .1em; }.uptime-status strong { font: 12px var(--mono); }.main-content .top-actions { margin: 0; display: flex; flex-direction: row; }.main-content .hero { margin-top: 26px; }
-@media (max-width: 700px) { .sidebar { position: static; width: 100%; padding: 9px 12px 6px; }.brand { padding: 0 5px 8px; }.sidebar-foot { display: none; }.primary-nav { display: flex; gap: 3px; overflow-x: auto; }.nav-link { flex: 0 0 auto; padding: 7px 9px; font-size: 11px; }.main-content { margin-left: 0; padding: 0 15px 24px; }.main-content .topbar { position: static; min-height: 42px; margin: 0 -15px; padding: 0 15px; }.main-content .uptime-status { display: none; }.main-content .hero { margin-top: 18px; } }
+.main-content .topbar { gap: 12px; }
+.main-content .topbar > .topbar-status { min-width: 0; flex: 1 1 auto; }
+.main-content .topbar .connection-state > div { min-width: 0; }
+.main-content .topbar .connection-state strong, .main-content .topbar .connection-state small { overflow-wrap: anywhere; }
+.main-content .topbar > .machine-logs-actions { flex: 0 0 auto; margin-left: auto; }
+@media (max-width: 700px) { .sidebar { position: static; width: 100%; padding: 9px 12px 6px; }.brand { padding: 0 5px 8px; }.sidebar-foot { display: none; }.primary-nav { display: flex; gap: 3px; overflow-x: auto; }.nav-link { flex: 0 0 auto; padding: 7px 9px; font-size: 11px; }.main-content { margin-left: 0; padding: 0 15px 24px; }.main-content .topbar { position: static; min-height: 42px; margin: 0 -15px; padding: 0 15px; flex-wrap: wrap; row-gap: 8px; }.main-content .topbar > .topbar-status { flex: 1 1 auto; }.main-content .topbar > .help-trigger { margin-left: auto; }.main-content .topbar > .machine-logs-actions { margin-left: auto; }.main-content .uptime-status { display: none; }.main-content .hero { margin-top: 18px; } }
 .uptime-status small { display: block; margin-top: 3px; color: var(--muted); font: 9px var(--mono); }
 .metrics-grid { grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 10px; margin: 18px 0 26px; }
 .activity-stream-actions { display: flex; align-items: center; gap: 12px; }

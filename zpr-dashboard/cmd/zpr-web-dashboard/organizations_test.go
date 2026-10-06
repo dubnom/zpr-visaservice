@@ -71,6 +71,27 @@ func TestBundledOrganizationsHaveSeparateIdentityAndPolicyCatalogs(t *testing.T)
 	}
 }
 
+func TestSimulatorRuntimeDriverComesFromOrganizationProfile(t *testing.T) {
+	for _, test := range []struct {
+		organizationID string
+		wantDriver     string
+	}{
+		{organizationID: "northstar", wantDriver: "linux-one-node"},
+		{organizationID: "redwood", wantDriver: "docker-multinode"},
+		{organizationID: "great-lakes", wantDriver: "docker-multinode"},
+	} {
+		t.Run(test.organizationID, func(t *testing.T) {
+			gotDriver, err := simulatorRuntimeDriverForManifest(simulatorManifest{OrganizationID: test.organizationID})
+			if err != nil {
+				t.Fatal(err)
+			}
+			if gotDriver != test.wantDriver {
+				t.Fatalf("runtime driver = %q; want %q", gotDriver, test.wantDriver)
+			}
+		})
+	}
+}
+
 func TestLoadLabScenarioUsesBoundedTwoMachineStressProfile(t *testing.T) {
 	organizationDirectory, err := filepath.Abs(filepath.Join("examples", "organizations"))
 	if err != nil {

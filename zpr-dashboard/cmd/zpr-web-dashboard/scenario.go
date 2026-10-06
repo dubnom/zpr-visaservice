@@ -705,7 +705,10 @@ func verifyMultinodeRuntimeWithCommand(ctx context.Context, manifest simulatorMa
 			}
 		}
 	}
-	for _, link := range []struct{ nodeIndex int; endpoint string }{
+	for _, link := range []struct {
+		nodeIndex int
+		endpoint  string
+	}{
 		{0, "172.30.0.11:"},
 		{0, "172.30.0.14:"},
 	} {
@@ -896,7 +899,16 @@ func simulatorScenarioExecutorForManifest(ctx context.Context, manifest simulato
 		if err != nil {
 			return "", err
 		}
-		address := net.JoinHostPort(machineWorkloadAddress(step.Component), testServicePorts[step.Component])
+		serviceAddress := machineWorkloadAddress(step.Component)
+		if runtimeDriver, err := simulatorRuntimeDriverForManifest(manifest); err != nil {
+			return "", err
+		} else if runtimeDriver == "docker-multinode" {
+			serviceAddress, err = scenarioClientAddress(ctx, step.Machine, step.Component)
+			if err != nil {
+				return "", fmt.Errorf("read service ZPR address: %w", err)
+			}
+		}
+		address := net.JoinHostPort(serviceAddress, testServicePorts[step.Component])
 		mode := "test-service"
 		arguments := []string{"exec", "-d", machineContainerName(step.Machine), "/usr/local/bin/zpr-machine-controller"}
 		if component.GatewayUpstream != "" {
@@ -907,6 +919,13 @@ func simulatorScenarioExecutorForManifest(ctx context.Context, manifest simulato
 		}
 		if _, err := scenarioCommand(ctx, "docker", arguments...); err != nil {
 			return "", err
+		}
+		if runtimeDriver, err := simulatorRuntimeDriverForManifest(manifest); err != nil {
+			return "", err
+		} else if runtimeDriver == "docker-multinode" {
+			if err := publishScenarioServiceDNSRecord(ctx, manifest, step.Component, serviceAddress); err != nil {
+				return "", err
+			}
 		}
 		return "test service started on " + address, nil
 	case "stop_test_service":
@@ -977,7 +996,20 @@ func simulatorScenarioExecutorForManifest(ctx context.Context, manifest simulato
 		if err != nil {
 			return "", err
 		}
-		address := net.JoinHostPort(machineWorkloadAddress(step.Target), testServicePorts[step.Target])
+		serviceAddress := machineWorkloadAddress(step.Target)
+		if runtimeDriver, err := simulatorRuntimeDriverForManifest(manifest); err != nil {
+			return "", err
+		} else if runtimeDriver == "docker-multinode" {
+			dnsName, err := scenarioServiceDNSName(manifest, step.Target)
+			if err != nil {
+				return "", err
+			}
+			serviceAddress, err = resolveScenarioDNSAddress(ctx, step.Machine, manifest.DNSServer, dnsName)
+			if err != nil {
+				return "", err
+			}
+		}
+		address := net.JoinHostPort(serviceAddress, testServicePorts[step.Target])
 		if step.Action == "benchmark_test_service" {
 			return scenarioCommand(ctx, "docker", "exec", machineContainerName(step.Machine), "/usr/local/bin/zpr-machine-controller", "-mode", "benchmark-client", "-listen", address, "-zpr-addr", sourceAddress)
 		}
@@ -1078,6 +1110,49 @@ func scenarioClientAddress(ctx context.Context, machineID, agent string) (string
 	return grantedScenarioClientAddress(output, agent)
 }
 
+func scenarioServiceDNSName(manifest simulatorManifest, workload string) (string, error) {
+	organization, err := loadSimulatorOrganization(simulatorOrganizationsDirectory(), activeSimulatorOrganizationID(manifest))
+	if err != nil {
+		return "", err
+	}
+	for _, service := range organization.PolicyTestServices {
+		if service.ActorCN == workload {
+			return strings.TrimSuffix(service.ID, ".") + ".", nil
+		}
+	}
+	return "", fmt.Errorf("organization has no DNS-published service for workload %q", workload)
+}
+
+func resolveScenarioDNSAddress(ctx context.Context, machineID, server, dnsName string) (string, error) {
+	output, err := scenarioCommand(ctx, "docker", "exec", machineContainerName(machineID), "dig", "+tcp", "+time=2", "+tries=1", "+short", "AAAA", "@"+server, dnsName)
+	if err != nil {
+		return "", fmt.Errorf("DNS lookup failed for %s: %w", dnsName, err)
+	}
+	for _, line := range strings.Fields(output) {
+		address := net.ParseIP(line)
+		if address != nil && address.To4() == nil {
+			return address.String(), nil
+		}
+	}
+	return "", fmt.Errorf("DNS lookup returned no IPv6 address for %s", dnsName)
+}
+
+func publishScenarioServiceDNSRecord(ctx context.Context, manifest simulatorManifest, workload, address string) error {
+	dnsName, err := scenarioServiceDNSName(manifest, workload)
+	if err != nil {
+		return err
+	}
+	if parsed := net.ParseIP(address); parsed == nil || parsed.To4() != nil {
+		return fmt.Errorf("service %q has invalid ZPR IPv6 address %q", workload, address)
+	}
+	update := fmt.Sprintf("server %s\nzone svc.zpr.\nupdate delete %s AAAA\nupdate add %s 30 AAAA %s\nsend\n", manifest.DNSServer, dnsName, dnsName, address)
+	output, err := scenarioCommand(ctx, "docker", "exec", "zpr-dns-bind9", "sh", "-c", `printf '%s' "$1" | nsupdate -v -k /run/secrets/zpr-vs-publisher.key`, "zpr-dns-update", update)
+	if err != nil {
+		return fmt.Errorf("publish %s in ZPR DNS: %s: %w", dnsName, output, err)
+	}
+	return nil
+}
+
 func grantedScenarioClientAddress(output, agent string) (string, error) {
 	var interfaces []struct {
 		Addresses []struct {
@@ -1141,8 +1216,10 @@ func waitForMachineWorkloadLink(ctx context.Context, machineID, agent string, ac
 				return fmt.Errorf("workload %q has no TUN configuration", agent)
 			}
 			if workloadConfig.services == "" {
-				if _, err := scenarioCommand(ctx, "docker", "exec", container, "ip", "-6", "route", "replace", "fd00:1::/32", "dev", workloadConfig.tun); err != nil {
-					return fmt.Errorf("configure client service route: %w", err)
+				for _, prefix := range []string{"fd00:1::/32", "fd5a:5052:adda:1::/64"} {
+					if _, err := scenarioCommand(ctx, "docker", "exec", container, "ip", "-6", "route", "replace", prefix, "dev", workloadConfig.tun); err != nil {
+						return fmt.Errorf("configure client service route for %s: %w", prefix, err)
+					}
 				}
 			} else {
 				if _, err := scenarioCommand(ctx, "docker", "exec", container, "ip", "-6", "addr", "replace", workloadConfig.address+"/32", "dev", workloadConfig.tun); err != nil {
@@ -1154,9 +1231,17 @@ func waitForMachineWorkloadLink(ctx context.Context, machineID, agent string, ac
 						return fmt.Errorf("configure service reply route: %w", err)
 					}
 				}
-				_, _ = scenarioCommand(ctx, "docker", "exec", container, "ip", "-6", "rule", "del", "from", workloadConfig.address+"/128", "table", table)
-				if _, err := scenarioCommand(ctx, "docker", "exec", container, "ip", "-6", "rule", "add", "from", workloadConfig.address+"/128", "table", table); err != nil {
-					return fmt.Errorf("configure service source rule: %w", err)
+				sourceAddresses := []string{workloadConfig.address}
+				if address, err := scenarioClientAddress(ctx, machineID, agent); err != nil {
+					return fmt.Errorf("read service ZPR address: %w", err)
+				} else if address != workloadConfig.address {
+					sourceAddresses = append(sourceAddresses, address)
+				}
+				for _, address := range sourceAddresses {
+					_, _ = scenarioCommand(ctx, "docker", "exec", container, "ip", "-6", "rule", "del", "from", address+"/128", "table", table)
+					if _, err := scenarioCommand(ctx, "docker", "exec", container, "ip", "-6", "rule", "add", "from", address+"/128", "table", table); err != nil {
+						return fmt.Errorf("configure service source rule for %s: %w", address, err)
+					}
 				}
 			}
 			return nil
@@ -1199,6 +1284,13 @@ func startScenarioMachine(ctx context.Context, manifest simulatorManifest, machi
 	}
 	if err != nil {
 		return output, err
+	}
+	runtimeDriver, err := simulatorRuntimeDriverForManifest(manifest)
+	if err != nil {
+		return output, fmt.Errorf("load organization runtime: %w", err)
+	}
+	if runtimeDriver == "docker-multinode" {
+		return strings.TrimSpace(output), nil
 	}
 	rig := strings.TrimSpace(os.Getenv("SIMULATION_CONTAINER"))
 	if rig == "" {

@@ -6,7 +6,6 @@
   const error = document.getElementById("diagnostics-error");
   const filter = document.getElementById("diagnostics-filter");
   const count = document.getElementById("diagnostics-count");
-  const refreshButton = document.getElementById("diagnostics-refresh");
   let responseData = null;
   let pending = null;
   let timer = null;
@@ -80,7 +79,6 @@
     if (!active || pending) return;
     pending = new AbortController();
     const request = pending;
-    refreshButton.disabled = true;
     updated.textContent = "Querying telemetry provider…";
     try {
       const response = await fetch("/api/diagnostics", { cache: "no-store", signal: request.signal, headers: { Accept: "application/json" } });
@@ -100,8 +98,6 @@
       }
     } finally {
       if (pending === request) pending = null;
-      refreshButton.disabled = false;
-      if (active) timer = setTimeout(load, 15000);
     }
   }
 
@@ -117,7 +113,7 @@
   }
 
   filter.addEventListener("input", render);
-  refreshButton.addEventListener("click", () => void load());
+  document.addEventListener("control-room:refreshed", () => { if (active) void load(); });
   window.addEventListener("hashchange", setActive);
   setActive();
 })();

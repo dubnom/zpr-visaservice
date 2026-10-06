@@ -158,7 +158,10 @@
       const latest = Math.max(...group.records.map((record) => Number(record.last_deny_ms) || 0));
       const repeated = group.hits >= 5 || group.records.length >= 3;
       const evidence = `${group.hits} denied requests${destinations.length ? ` · ${destinations.join(", ")}` : ""}${reasons.length ? ` · ${reasons.join(", ")}` : ""}`;
-      return makeFinding(repeated ? "Repeated policy denials" : "Policy denial observed", source, evidence, repeated ? "review" : "info", latest || Date.now());
+      const known = (snapshot.actors || []).some((actor) => actor.zpr_addr && dnsAddressKey(actor.zpr_addr) === dnsAddressKey(source));
+      const varied = new Set(group.records.map((record) => JSON.stringify([record.dest_addr, record.protocol, record.dest_port, record.deny_code]))).size >= 3;
+      const high = repeated && (!known || varied);
+      return makeFinding(repeated ? "Repeated policy denials" : "Policy denial observed", source, evidence, high ? "high" : repeated ? "review" : "info", latest || Date.now());
     });
   }
 
@@ -200,7 +203,7 @@
     for (const actor of snapshot.actors || []) {
       if (!actor.cn || knownActors.has(actor.cn)) continue;
       knownActors.add(actor.cn);
-      findings.push(makeFinding("Actor first observed since baseline", actor.cn, `${actor.node ? "Node" : "Adapter or machine actor"}${actor.zpr_addr ? ` · ${actor.zpr_addr}` : ""}`, "review", Date.now(), actor.zpr_addr || ""));
+      findings.push(makeFinding("Actor first observed since baseline", actor.cn, `${actor.node ? "Node" : "Adapter or machine actor"}${actor.zpr_addr ? ` · ${actor.zpr_addr}` : ""}`, "info", Date.now(), actor.zpr_addr || ""));
     }
     for (const service of snapshot.services || []) {
       const key = serviceIdentity(service);
@@ -226,6 +229,11 @@
   }
 
   function render() {
+    const highCount = state.findings.filter((finding) => finding.severity === "high" && !state.dismissed[findingKey(finding)]).length;
+    const nav = document.querySelector('.primary-nav [data-page-link="security-review"]');
+    nav.dataset.highAlert = String(highCount > 0);
+    if (highCount) nav.setAttribute("aria-label", `Security: ${highCount} high alerts`);
+    else nav.removeAttribute("aria-label");
     const query = filter.value.trim().toLowerCase();
     const matching = state.findings.filter((finding) => `${finding.indicator} ${finding.entity} ${finding.evidence} ${finding.entityAddress} ${entityParts(finding).map((part) => part.text).join("")} ${addressParts(finding.evidence).map((part) => part.text).join("")}`.toLowerCase().includes(query));
     const dismissedCount = matching.filter((finding) => state.dismissed[findingKey(finding)]).length;
@@ -308,7 +316,7 @@
 
   async function scan(snapshot) {
     state.snapshot = snapshot;
-    if (state.pending || !active()) return;
+    if (state.pending) return;
     if (snapshot.api_status !== "connected") {
       statusLabel.textContent = "Live inventory unavailable; baseline unchanged";
       return;
@@ -318,8 +326,10 @@
     state.request = request;
     statusLabel.textContent = "";
     try {
-      const logsResult = await readJSON("/api/adapter-logs", request.signal).then((logs) => ({ logs }), (error) => ({ error }));
-      if (!active() || request.signal.aborted) return;
+      const logsResult = active()
+        ? await readJSON("/api/adapter-logs", request.signal).then((logs) => ({ logs }), (error) => ({ error }))
+        : {};
+      if (request.signal.aborted) return;
       snapshot = state.snapshot;
       if (snapshot.api_status !== "connected") {
         const details = (snapshot.errors || []).join(" · ");
@@ -328,7 +338,7 @@
       }
       state.baseline = readBaseline();
       let baselineCreated = false;
-      if (!state.baseline) {
+      if (!state.baseline && active()) {
         state.baseline = { ...currentInventory(snapshot), saved_at: new Date().toISOString() };
         try { localStorage.setItem(baselineKey, JSON.stringify(state.baseline)); }
         catch { statusLabel.textContent = "Scanned · browser storage unavailable for baseline."; }
@@ -337,7 +347,7 @@
       state.scannedAt = new Date();
       baselineText();
       state.findings = [...denialFindings(snapshot), ...trustedSourceFindings(snapshot), ...nodeHealthFindings(snapshot), ...inventoryFindings(snapshot), ...(logsResult.logs ? logFindings(logsResult.logs) : [])]
-        .sort((left, right) => (left.severity === right.severity ? right.observedAt - left.observedAt : left.severity === "review" ? -1 : 1))
+        .sort((left, right) => ({ high: 0, review: 1, info: 2 }[left.severity] - { high: 0, review: 1, info: 2 }[right.severity]) || right.observedAt - left.observedAt)
         .slice(0, 250);
       if (logsResult.error) statusLabel.textContent = `Scanned · adapter logs unavailable: ${logsResult.error.message}`;
       else if (!(snapshot.actors || []).length && !(snapshot.services || []).length) statusLabel.textContent = "Scanned · live inventory is unavailable.";
@@ -353,7 +363,7 @@
 
   document.addEventListener("control-room:refreshed", (event) => {
     state.snapshot = event.detail;
-    if (active()) void scan(event.detail);
+    void scan(event.detail);
   });
   window.addEventListener("hashchange", () => { if (!active()) state.request?.abort(); });
   document.addEventListener("control-room:dns-updated", render);

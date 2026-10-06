@@ -266,8 +266,18 @@ function visibleRows(page, rows, columns) {
     const b = columns[sort.key](right) ?? "";
     const comparison = typeof a === "number" && typeof b === "number"
       ? a - b : String(a).localeCompare(String(b), undefined, { numeric: true, sensitivity: "base" });
-    return comparison * sort.direction;
+    return (comparison || compareStableRows(left, right, columns)) * sort.direction;
   });
+}
+
+function compareStableRows(left, right, columns) {
+  for (const value of Object.values(columns)) {
+    const a = String(value(left) ?? "");
+    const b = String(value(right) ?? "");
+    const comparison = a.localeCompare(b, undefined, { numeric: true }) || (a < b ? -1 : a > b ? 1 : 0);
+    if (comparison) return comparison;
+  }
+  return 0;
 }
 
 function sortControlRoomTableRows(page) {
@@ -290,7 +300,9 @@ function sortControlRoomTableRows(page) {
     const comparison = a !== "" && b !== "" && Number.isFinite(numericA) && Number.isFinite(numericB)
       ? numericA - numericB
       : a.localeCompare(b, undefined, { numeric: true, sensitivity: "base" });
-    return comparison * sort.direction;
+    return (comparison || compareStableRows(left, right,
+      Object.fromEntries([...table.tHead.rows[0].cells].map((_, index) =>
+        [index, (row) => row.cells[index]?.dataset.sortValue ?? row.cells[index]?.textContent.trim() ?? ""])))) * sort.direction;
   });
   for (const row of rows) body.append(row);
 }
@@ -597,7 +609,7 @@ function animateGraphMotion(component, animation, from, to, endAt = 1) {
 }
 
 function animateGraphLink(group, start, duration = 700) {
-  const lines = [...group.querySelectorAll("line.graph-link, line.graph-link-hit")];
+  const lines = [...group.querySelectorAll("line.graph-link, line.graph-link-hit, line.graph-network-clearance")];
   const target = lines[0];
   if (!target) return;
   const to = { x1: Number(target.getAttribute("x1")), y1: Number(target.getAttribute("y1")), x2: Number(target.getAttribute("x2")), y2: Number(target.getAttribute("y2")) };
@@ -703,6 +715,10 @@ function renderTopology(data, exitComponents = []) {
       y: margin + maxChildExtent + Math.floor(slot / nodeColumns) * nodeSpacing,
     };
     positions.set(node.cn, nodeCenter);
+  });
+  nodes.forEach((node) => {
+    const nodeCenter = positions.get(node.cn);
+    const attached = attachedByNode.get(node.cn) || [];
     if (!attached.length) return;
     const radius = clusterRadius(node);
     const extents = attached.map((actor) => actorExtent(actor) + 18);
@@ -711,10 +727,29 @@ function renderTopology(data, exitComponents = []) {
       return (extents[slot] + extents[next] + 20) / radius;
     });
     const spareAngle = Math.max(0, 2 * Math.PI - gaps.reduce((sum, gap) => sum + gap, 0)) / attached.length;
+    const directions = networkEdges.filter((edge) => edge.from.cn === node.cn || edge.to.cn === node.cn).map((edge) => {
+      const other = positions.get(edge.from.cn === node.cn ? edge.to.cn : edge.from.cn);
+      return Math.atan2(other.y - nodeCenter.y, other.x - nodeCenter.x);
+    });
+    const angles = [];
     let angle = -Math.PI / 2;
+    for (const gap of gaps) {
+      angles.push(angle);
+      angle += gap + spareAngle;
+    }
+    let rotation = 0, clearance = -1;
+    // Rotate the adapter ring away from inter-node corridors without changing its spacing.
+    for (let step = 0; directions.length && step < 120; step++) {
+      const candidate = step * Math.PI / 60;
+      let distance = Infinity;
+      for (const a of angles) for (const b of directions) {
+        distance = Math.min(distance, Math.abs(Math.atan2(Math.sin(a + candidate - b), Math.cos(a + candidate - b))));
+      }
+      if (distance > clearance) { clearance = distance; rotation = candidate; }
+    }
     attached.forEach((adapter, slot) => {
+      const angle = angles[slot] + rotation;
       positions.set(adapter.cn, { x: nodeCenter.x + Math.cos(angle) * radius, y: nodeCenter.y + Math.sin(angle) * radius });
-      angle += gaps[slot] + spareAngle;
     });
   });
   const unconnectedHosts = adapters.filter((host) => !positions.has(host.cn));
@@ -802,7 +837,7 @@ function renderTopology(data, exitComponents = []) {
   const query = byId("topology-search").value.trim().toLowerCase();
   const matches = (actor) => !query || `${displayNames.get(actor.cn)} ${actor.cn} ${actor.zpr_addr || ""} ${visaServices.has(actor.cn) ? "visa service" : ""} ${(servicesByActor.get(actor.cn) || []).map((service) => `${service.service_name} ${service.service_kind} ${service.external_network_connection || ""}`).join(" ")}`.toLowerCase().includes(query);
 
-  const edgeMarkup = edges.map((edge) => {
+  const edgeMarkup = [...dockEdges, ...networkEdges].map((edge) => {
     const from = positions.get(edge.from.cn), to = positions.get(edge.to.cn);
     const docked = edge.kind === "dock";
     const up = docked || edge.state === "UP";
@@ -813,7 +848,7 @@ function renderTopology(data, exitComponents = []) {
     const highlighted = query && (matches(edge.from) || matches(edge.to)) ? "highlighted" : "";
     const filtered = query && !highlighted ? "filtered" : "";
     const key = `${edge.kind}|${edge.from.cn}|${edge.to.cn}`;
-    return `<g class="graph-edge ${highlighted} ${filtered}" data-topology-edge="${escapeHTML(key)}" data-inspect-link="${escapeHTML(key)}"${docked ? ` data-dock-adapter="${escapeHTML(edge.to.cn)}"` : ""} tabindex="0" role="button" aria-label="Inspect ${escapeHTML(title)}"><title>${escapeHTML(title)}</title><line class="graph-link ${cls}" x1="${from.x}" y1="${from.y}" x2="${to.x}" y2="${to.y}"/><line class="graph-link-hit" x1="${from.x}" y1="${from.y}" x2="${to.x}" y2="${to.y}"/></g>`;
+    return `<g class="graph-edge ${highlighted} ${filtered}" data-topology-edge="${escapeHTML(key)}" data-inspect-link="${escapeHTML(key)}"${docked ? ` data-dock-adapter="${escapeHTML(edge.to.cn)}"` : ""} tabindex="0" role="button" aria-label="Inspect ${escapeHTML(title)}"><title>${escapeHTML(title)}</title>${docked ? "" : `<line class="graph-network-clearance" x1="${from.x}" y1="${from.y}" x2="${to.x}" y2="${to.y}"/>`}<line class="graph-link ${cls}" x1="${from.x}" y1="${from.y}" x2="${to.x}" y2="${to.y}"/><line class="graph-link-hit" x1="${from.x}" y1="${from.y}" x2="${to.x}" y2="${to.y}"/></g>`;
   }).join("");
 
   const arrivalMarker = (key, x, y, radius) => {

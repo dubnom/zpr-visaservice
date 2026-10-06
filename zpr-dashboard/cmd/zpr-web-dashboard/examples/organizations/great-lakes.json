@@ -85,8 +85,8 @@
     {"id": "receiving-portal.svc.zpr", "name": "Receiving Portal", "actor_cn": "receiving-portal", "protocol": "TCP", "port": 8447},
     {"id": "assembly-mes.svc.zpr", "name": "Assembly Execution", "actor_cn": "assembly-mes", "protocol": "TCP", "port": 8448},
     {"id": "quality-test.svc.zpr", "name": "Quality Test Bench", "actor_cn": "quality-test-bench", "protocol": "TCP", "port": 8449},
-    {"id": "echo-web.svc.zpr", "name": "Workday Echo", "actor_cn": "echo-service", "protocol": "TCP", "port": 8080},
-    {"id": "metrics-web.svc.zpr", "name": "Workday Metrics", "actor_cn": "metrics-service", "protocol": "TCP", "port": 8081}
+    {"id": "echo-web.svc.zpr", "name": "Workday Echo", "actor_cn": "echo-service", "protocol": "TCP", "port": 8080, "zpr_address": "fd00:1:7::1"},
+    {"id": "metrics-web.svc.zpr", "name": "Workday Metrics", "actor_cn": "metrics-service", "protocol": "TCP", "port": 8081, "zpr_address": "fd00:1:8::1"}
   ],
   "services": [
     {"name": "Customer Support Desk", "kind": "Application", "endpoint": "ZPR/TCP/8443", "description": "Customer case management restricted to Milwaukee Customer Support.", "policy_id": "customer-support.svc.zpr", "actor_cn": "support-desk-app"},

@@ -27,6 +27,7 @@ MACHINE_CONTROLLER_AMD64_BIN="$STATE_DIR/zpr-machine-controller-linux-amd64"
 MACHINE_CONTROL_PROXY_BIN="$STATE_DIR/zpr-machine-control-proxy-linux-arm64"
 MACHINE_CONTROL_PROXY_AMD64_BIN="$STATE_DIR/zpr-machine-control-proxy-linux-amd64"
 MACHINE_RUNTIME_ARCH_FILE="$STATE_DIR/machine-runtime-arch"
+MACHINE_CONTROL_ADDRESS_FILE="$STATE_DIR/multinode-machine-control-address.txt"
 MACHINE_WORKLOAD_DIR="$STATE_DIR/machine-workloads"
 MACHINE_IMAGE="${SIMULATOR_MACHINE_IMAGE:-zpr-sim-machine:local}"
 SIMULATION_CONTAINER="${SIMULATION_CONTAINER:-zpr-local-linux-node}"
@@ -148,11 +149,12 @@ docker_socket_path() {
 
 stop_simulator() {
     if [ "${ZPR_DASHBOARD_CONTAINER_RUNTIME:-}" != 1 ]; then
-        stop_host_relays
         if [ "$(docker inspect -f '{{.State.Running}}' "$SIMULATOR_DOCKER_CONTAINER" 2>/dev/null || true)" = true ]; then
             for action in stop-admin-relay stop-dns stop-ui-relays; do
                 docker exec "$SIMULATOR_DOCKER_CONTAINER" sh "$SCRIPT_DIR/dashboard-stack.sh" "$action" >/dev/null 2>&1 || true
             done
+        else
+            stop_host_relays
         fi
     fi
     stop_service "$SIMULATOR_PID"
@@ -173,14 +175,16 @@ stop_stack() {
         docker rm -f "zpr-machine-$number" >/dev/null 2>&1 || true
     done
     stop_service "$BROWSER_GATEWAY_PID"
+    if [ "$(docker inspect -f '{{.State.Running}}' "$SIMULATOR_DOCKER_CONTAINER" 2>/dev/null || true)" = true ]; then
+        stop_ui_relays
+        stop_dns_service
+    fi
     stop_simulator
     stop_control_room
     docker rm -f "$CONTROL_CONTAINER" "$POLICY_CONTAINER" >/dev/null 2>&1 || true
     stop_service "$CONTROL_PID"
     stop_service "$ADMIN_RELAY_PID"
-    stop_ui_relays
     stop_service "$POLICY_PID"
-    stop_dns_service
 }
 
 stop_service() {
@@ -239,6 +243,7 @@ start_simulator() {
         --label zpr.simulator=true \
         -v "$simulator_socket:/var/run/docker.sock" \
         -v "$DASHBOARD_DIR:$DASHBOARD_DIR:ro" \
+        -v "$DNS_PROFILE_DIR:$DNS_PROFILE_DIR:ro" \
         -v "$RUNTIME_DIR:$RUNTIME_DIR" \
         -p 127.0.0.1:8055:8055 \
         -p 127.0.0.1:8184:8184 \
@@ -370,9 +375,116 @@ stop_admin_relay() {
     stop_service "$ADMIN_RELAY_PID"
 }
 
+configure_multinode_service_return_route() {
+    route_node=$1
+    route_tun=$2
+    route_source=$3
+    route_table=$4
+    docker exec "$route_node" ip -6 rule del pref "$route_table" 2>/dev/null || true
+    docker exec "$route_node" ip -6 route replace fd5a:5052:adda:1::/64 dev "$route_tun" table "$route_table"
+    docker exec "$route_node" ip -6 rule add pref "$route_table" from "$route_source/128" table "$route_table"
+}
+
+start_multinode_dns_service() {
+    dns_organization=$1
+    dns_profile="$ORGANIZATIONS_DIR/$dns_organization.json"
+    node_container="$dns_organization-node0"
+    dns_runtime="$RUNTIME_DIR/multinode/$dns_organization/dns"
+    dns_zone_dir="$dns_runtime/zone"
+    dns_zone_file="$dns_zone_dir/db.svc.zpr"
+    dns_config="$DNS_PROFILE_DIR/named.conf.simulator"
+    publisher_key="$dns_runtime/zpr-vs-publisher.key"
+    viewer_key="$dns_runtime/zpr-dns-viewer.key"
+    echo_address=$(jq -er '.policy_test_services[] | select(.id == "echo-web.svc.zpr") | .zpr_address' "$dns_profile")
+    metrics_address=$(jq -er '.policy_test_services[] | select(.id == "metrics-web.svc.zpr") | .zpr_address' "$dns_profile")
+    mkdir -p "$dns_zone_dir"
+    if [ ! -r "$publisher_key" ]; then
+        publisher_secret=$(openssl rand -base64 32 | tr -d '\n')
+        printf 'key "zpr-vs-publisher" {\n    algorithm hmac-sha256;\n    secret "%s";\n};\n' "$publisher_secret" > "$publisher_key"
+        chmod 600 "$publisher_key"
+    fi
+    if [ ! -r "$viewer_key" ]; then
+        viewer_secret=$(openssl rand -base64 32 | tr -d '\n')
+        printf 'key "zpr-dns-viewer" {\n    algorithm hmac-sha256;\n    secret "%s";\n};\n' "$viewer_secret" > "$viewer_key"
+        chmod 600 "$viewer_key"
+    fi
+    {
+        printf '%s\n' '$TTL 30' '$ORIGIN svc.zpr.' '@ IN SOA dns.svc.zpr. hostmaster.svc.zpr. (1 60 60 86400 30)' '  IN NS dns.svc.zpr.'
+        printf 'dns IN AAAA %s\n' "$DNS_SERVICE_ADDRESS"
+        printf 'echo-web IN AAAA %s\n' "$echo_address"
+        printf 'metrics-web IN AAAA %s\n' "$metrics_address"
+    } > "$dns_zone_file"
+    cp "$DNS_PROFILE_DIR/named.conf.simulator" "$dns_runtime/named.conf"
+    docker exec "$node_container" pkill -TERM -f '[p]h adapter.*--name adapter1' 2>/dev/null || true
+    docker exec "$node_container" ip link del tun6 2>/dev/null || true
+    docker exec "$node_container" ip tuntap add name tun6 mode tun multi_queue
+    docker exec "$node_container" ip -6 addr add "$DNS_SERVICE_ADDRESS/32" dev tun6
+    docker exec "$node_container" ip link set tun6 up
+    docker exec -d "$node_container" sh -c \
+        'exec env ZPR_ADAPTER_SERVICES=ZprDNS,ZprDNSStatistics /app/bin/ph adapter -c /conf/adapter-dns-conf.toml --name adapter1 --node-addr "$1:5000" >>/logs/adapter1-dns.log 2>&1' \
+        adapter1-dns "$(jq -er '.runtime.nodes[0].substrate_address' "$dns_profile")"
+    attempts=0
+    while [ "$attempts" -lt 45 ]; do
+        if docker exec "$node_container" /app/bin/ph-cli -p /var/run/zpr/adapter1.sock link show 2>/dev/null | grep -q '(Active)'; then
+            break
+        fi
+        attempts=$((attempts + 1))
+        sleep 1
+    done
+    if [ "$attempts" -ge 45 ]; then
+        docker exec "$node_container" tail -n 80 /logs/adapter1-dns.log >&2 || true
+        echo "ZPR DNS adapter did not become active on $node_container" >&2
+        return 1
+    fi
+    docker rm -f "$DNS_CONTAINER" >/dev/null 2>&1 || true
+    docker build -t "$DNS_IMAGE" "$DNS_PROFILE_DIR"
+    docker run -d --name "$DNS_CONTAINER" --network "container:$node_container" --pid="container:$node_container" --privileged \
+        -e ZPR_DNS_ADAPTER_NAME=adapter1 \
+        -e ZPR_DNS_TSIG_KEY_FILE=/run/secrets/zpr-vs-publisher.key \
+        -e ZPR_DNS_TRANSFER_TSIG_KEY_FILE=/run/secrets/zpr-dns-viewer.key \
+        -e ZPR_DNS_ZONE_FILE=/var/lib/bind/db.svc.zpr \
+        -v "$dns_config:/etc/bind/named.conf:ro" \
+        -v "$publisher_key:/run/secrets/zpr-vs-publisher.key:ro" \
+        -v "$viewer_key:/run/secrets/zpr-dns-viewer.key:ro" \
+        -v "$dns_zone_dir:/var/lib/bind" \
+        "$DNS_IMAGE" >/dev/null
+    configure_multinode_service_return_route "$node_container" tun6 "$DNS_SERVICE_ADDRESS" 106
+    attempts=0
+    while [ "$attempts" -lt 30 ]; do
+        if docker exec "$DNS_CONTAINER" dig +tcp +time=1 +tries=1 +short AAAA @"$DNS_SERVICE_ADDRESS" echo-web.svc.zpr 2>/dev/null | grep -Fq "$echo_address" &&
+           docker exec "$DNS_CONTAINER" dig +tcp +time=1 +tries=1 +short AAAA @"$DNS_SERVICE_ADDRESS" metrics-web.svc.zpr 2>/dev/null | grep -Fq "$metrics_address"; then
+            return 0
+        fi
+        attempts=$((attempts + 1))
+        sleep 1
+    done
+    docker logs "$DNS_CONTAINER" >&2 || true
+    docker exec "$node_container" tail -n 80 /logs/adapter1-dns.log >&2 || true
+    echo "multinode ZPR DNS did not resolve the Workday services" >&2
+    return 1
+}
+
 start_dns_service() {
     if [ "${ZPR_DASHBOARD_CONTAINER_RUNTIME:-}" != 1 ]; then
         docker exec "$SIMULATOR_DOCKER_CONTAINER" sh "$SCRIPT_DIR/dashboard-stack.sh" start-dns
+        return
+    fi
+    dns_organization=${SIMULATION_ORGANIZATION_ID:-$(jq -r '.organization_id // "northstar"' "$SIMULATION_MANIFEST")}
+    if [ -r "$ACTIVE_ORGANIZATION_FILE" ]; then
+        selected_organization=$(tr -d '\r\n' < "$ACTIVE_ORGANIZATION_FILE")
+        [ -z "$selected_organization" ] || dns_organization=$selected_organization
+    fi
+    if [ "$(jq -er '.runtime.driver' "$ORGANIZATIONS_DIR/$dns_organization.json")" = docker-multinode ]; then
+        start_multinode_dns_service "$dns_organization"
+        return
+    fi
+    organization=${SIMULATION_ORGANIZATION_ID:-$(jq -r '.organization_id // "northstar"' "$SIMULATION_MANIFEST")}
+    if [ -r "$ACTIVE_ORGANIZATION_FILE" ]; then
+        selected_organization=$(tr -d '\r\n' < "$ACTIVE_ORGANIZATION_FILE")
+        [ -z "$selected_organization" ] || organization=$selected_organization
+    fi
+    if [ "$(jq -er '.runtime.driver' "$ORGANIZATIONS_DIR/$organization.json")" = docker-multinode ]; then
+        start_multinode_dns_service
         return
     fi
     config=${ZPR_DNS_NAMED_CONF:-$DNS_PROFILE_DIR/named.conf.simulator}
@@ -424,6 +536,18 @@ stop_dns_service() {
         docker exec "$SIMULATOR_DOCKER_CONTAINER" sh "$SCRIPT_DIR/dashboard-stack.sh" stop-dns
         return
     fi
+    dns_organization=${SIMULATION_ORGANIZATION_ID:-$(jq -r '.organization_id // "northstar"' "$SIMULATION_MANIFEST")}
+    if [ -r "$ACTIVE_ORGANIZATION_FILE" ]; then
+        selected_organization=$(tr -d '\r\n' < "$ACTIVE_ORGANIZATION_FILE")
+        [ -z "$selected_organization" ] || dns_organization=$selected_organization
+    fi
+    if [ "$(jq -er '.runtime.driver' "$ORGANIZATIONS_DIR/$dns_organization.json")" = docker-multinode ]; then
+        dns_node_container="$dns_organization-node0"
+        docker rm -f "$DNS_CONTAINER" >/dev/null 2>&1 || true
+        docker exec "$dns_node_container" pkill -TERM -f '[p]h adapter.*--name adapter1' 2>/dev/null || true
+        docker exec "$dns_node_container" ip link del tun6 2>/dev/null || true
+        return
+    fi
     stop_service "$DNS_RECORDS_RELAY_PID"
     stop_service "$DNS_STATS_RELAY_PID"
     docker rm -f "$DNS_CONTAINER" >/dev/null 2>&1 || true
@@ -463,6 +587,7 @@ start_control_service() {
         --restart unless-stopped \
         -v "$(docker_socket_path):/var/run/docker.sock" \
         -v "$RUNTIME_DIR:$RUNTIME_DIR" \
+        -v "$DASHBOARD_DIR/../../zpr-demo/multinode-demo:$DASHBOARD_DIR/../../zpr-demo/multinode-demo:ro" \
         -p 127.0.0.1:8790:8790 \
         -e ZPR_CONTROL_SERVICE_LISTEN=0.0.0.0:8790 \
         -e ZPR_CONTROL_SERVICE_CERT_FILE="$SERVICE_CERTS/control-service.crt" \
@@ -588,7 +713,6 @@ start_machine_container() {
         machine-[0-9][0-9]) ;;
         *) echo "invalid machine id: $machine" >&2; return 2 ;;
     esac
-    number=${machine#machine-}
     container="zpr-$machine"
     machine_organization=${SIMULATION_ORGANIZATION_ID:-$(jq -r '.organization_id // "northstar"' "$SIMULATION_MANIFEST")}
     if [ -r "$ACTIVE_ORGANIZATION_FILE" ]; then
@@ -611,6 +735,9 @@ start_machine_container() {
         docker rm "$container" >/dev/null
     fi
     ensure_machine_runtime_arch "$machine_arch"
+    machine_node_address=10.0.0.1:5000
+    machine_network=
+    machine_control_url="https://[fd5a:5052:adda:1:ffff:ffff:ffff:fffe]:8792"
     if [ "$machine_runtime_driver" = docker-multinode ]; then
         machine_location=$(jq -er --arg id "$machine" '
             .machine_owners[$id][0] as $owner |
@@ -623,23 +750,21 @@ start_machine_container() {
         machine_node_address="$machine_node_ip:5000"
         machine_network="zpr-$machine_organization"
         start_zpr_machine_control_service
+        machine_control_address=$(cat "$MACHINE_CONTROL_ADDRESS_FILE")
+        case "$machine_control_address" in *:*) ;; *) echo "invalid multinode SimulatorControl address" >&2; return 1 ;; esac
+        machine_control_url="https://[$machine_control_address]:8792"
         prepare_machine_workloads
     else
-        machine_node_address=10.0.0.1:5000
         start_zpr_machine_control_service
         prepare_machine_workloads
         stop_legacy_named_workloads
-    fi
-    machine_control_url="https://[fd5a:5052:adda:1:ffff:ffff:ffff:fffe]:8792"
-    machine_controller_binary=$MACHINE_CONTROLLER_BIN
-    if [ "$machine_arch" = amd64 ]; then machine_controller_binary=$MACHINE_CONTROLLER_AMD64_BIN; fi
-    machine_network=${machine_network:-}
-    if [ "$machine_runtime_driver" = linux-one-node ]; then
         if [ -z "${RIG_IP:-}" ]; then
             RIG_IP=$(docker inspect -f '{{range .NetworkSettings.Networks}}{{.IPAddress}}{{end}}' "$SIMULATION_CONTAINER")
         fi
         [ -n "$RIG_IP" ] || { echo "ZPR rig $SIMULATION_CONTAINER has no IPv4 address" >&2; return 1; }
     fi
+    machine_controller_binary=$MACHINE_CONTROLLER_BIN
+    if [ "$machine_arch" = amd64 ]; then machine_controller_binary=$MACHINE_CONTROLLER_AMD64_BIN; fi
     set -- docker run -d --name "$container"
     if [ -n "$machine_network" ]; then set -- "$@" --network "$machine_network"; fi
     set -- "$@" \
@@ -691,33 +816,41 @@ start_zpr_machine_control_service() {
         service_dir=/tmp/zpr-machine-control
         service_socket="$service_dir/control.sock"
         key_dir="$RUNTIME_DIR/linux-integration/pregen/machine-control"
-        if docker exec "$node_container" /app/bin/ph-cli -p "$service_socket" link show 2>/dev/null | grep -q '(Active)'; then
-            return 0
-        fi
-        docker exec "$node_container" pkill -TERM -f '[p]h adapter.*--name simulator-control' 2>/dev/null || true
-        docker exec "$node_container" pkill -TERM -f '[z]pr-machine-control-proxy-linux-amd64' 2>/dev/null || true
         docker exec "$node_container" mkdir -p "$service_dir"
         docker cp "$MACHINE_CONTROL_PROXY_AMD64_BIN" "$node_container:$proxy_in_node"
-        docker cp "$key_dir/simulator-control.key" "$node_container:$service_dir/simulator-control.key"
-        docker exec -d "$node_container" sh -c \
-            'mkdir -p "$1"; exec env ZPR_ADAPTER_SERVICES=SimulatorControlService /app/bin/ph adapter --logging all=INFO --control-path "$2" --capture-path "$3" --self-addr 0.0.0.0:0 --ca-file /conf/include/auth-ca.crt --bootstrap-key "$4/simulator-control.key" --name simulator-control --km-impl noise --tun-if tun5 --node-addr "$5:5000" --zpr-addr fd5a:5052:adda:1:ffff:ffff:ffff:fffe >>"$6" 2>&1' \
-            machine-control-service "$service_dir" "$service_socket" "$service_dir/control-cap.sock" "$service_dir" "$node_ip" "$service_dir/adapter.log"
-        attempts=0
-        while [ "$attempts" -lt 90 ]; do
-            if docker exec "$node_container" /app/bin/ph-cli -p "$service_socket" link show 2>/dev/null | grep -q '(Active)'; then
-                break
+        if ! docker exec "$node_container" /app/bin/ph-cli -p "$service_socket" link show 2>/dev/null | grep -q '(Active)'; then
+            docker exec "$node_container" pkill -TERM -f '[p]h adapter.*--name simulator-control' 2>/dev/null || true
+            docker exec "$node_container" pkill -TERM -f '[z]pr-machine-control-proxy-linux-amd64' 2>/dev/null || true
+            docker cp "$key_dir/simulator-control.key" "$node_container:$service_dir/simulator-control.key"
+            docker exec -d "$node_container" sh -c \
+                'exec env ZPR_ADAPTER_SERVICES=SimulatorControlService /app/bin/ph adapter --logging all=INFO --control-path "$1" --capture-path "$2" --self-addr 0.0.0.0:0 --ca-file /conf/include/auth-ca.crt --bootstrap-key "$3/simulator-control.key" --name simulator-control --km-impl noise --tun-if tun5 --node-addr "$4:5000" --zpr-addr fd5a:5052:adda:1:ffff:ffff:ffff:fffe >>"$5" 2>&1' \
+                machine-control-service "$service_socket" "$service_dir/control-cap.sock" "$service_dir" "$node_ip" "$service_dir/adapter.log"
+            attempts=0
+            while [ "$attempts" -lt 90 ]; do
+                if docker exec "$node_container" /app/bin/ph-cli -p "$service_socket" link show 2>/dev/null | grep -q '(Active)'; then
+                    break
+                fi
+                attempts=$((attempts + 1))
+                sleep 1
+            done
+            if [ "$attempts" -ge 90 ]; then
+                docker exec "$node_container" tail -n 80 "$service_dir/adapter.log" >&2 || true
+                echo "multinode simulator-control adapter did not become active on $node_container" >&2
+                return 1
             fi
-            attempts=$((attempts + 1))
-            sleep 1
-        done
-        if [ "$attempts" -ge 90 ]; then
-            docker exec "$node_container" tail -n 80 "$service_dir/adapter.log" >&2 || true
-            echo "multinode simulator-control adapter did not become active on $node_container" >&2
-            return 1
         fi
-        docker exec -d "$node_container" sh -c \
-            'exec "$1" --mode machine-control-proxy --proxy-listen "[fd5a:5052:adda:1:ffff:ffff:ffff:fffe]:8792" --proxy-upstream host.docker.internal:8791 >>"$2" 2>&1' \
-            machine-control-proxy "$proxy_in_node" "$service_dir/proxy.log"
+        control_address=$(docker exec "$node_container" ip -6 -o addr show dev tun5 scope global | awk 'NR == 1 { split($4, address, "/"); print address[1]; exit }' | tr -d '\r\n')
+        case "$control_address" in *:*) ;; *) echo "multinode SimulatorControl adapter has no active IPv6 address" >&2; return 1 ;; esac
+        printf '%s\n' "$control_address" > "$MACHINE_CONTROL_ADDRESS_FILE"
+        configure_multinode_service_return_route "$node_container" tun5 "$control_address" 105
+        control_upstream_ip=$(docker inspect -f '{{range .NetworkSettings.Networks}}{{.IPAddress}}{{end}}' "$SIMULATOR_DOCKER_CONTAINER")
+        [ -n "$control_upstream_ip" ] || { echo "Simulator container has no reachable Docker IPv4 address" >&2; return 1; }
+        if ! docker exec "$node_container" pgrep -af '[z]pr-machine-control-proxy-linux-amd64.*proxy-listen' >/dev/null 2>&1; then
+            docker exec "$node_container" pkill -TERM -f '[z]pr-machine-control-proxy-linux-amd64' 2>/dev/null || true
+            docker exec -d "$node_container" sh -c \
+            'exec "$1" --mode machine-control-proxy --proxy-listen "[::]:8792" --proxy-upstream "$3" >>"$2" 2>&1' \
+            machine-control-proxy "$proxy_in_node" "$service_dir/proxy.log" "$control_upstream_ip:8791"
+        fi
         return 0
     fi
     [ "$machine_runtime_driver" = linux-one-node ] || { echo "unsupported machine-control runtime: $machine_runtime_driver" >&2; return 1; }
@@ -995,15 +1128,32 @@ start_stack() {
     create_machine_control_pki
     start_simulator
     start_policy_service
-
-    start_admin_relay
-    start_dns_service
-    start_ui_relays
-    start_control_service
-
+    startup_organization=${SIMULATION_ORGANIZATION_ID:-$(jq -r '.organization_id // "northstar"' "$SIMULATION_MANIFEST")}
+    if [ -r "$ACTIVE_ORGANIZATION_FILE" ]; then
+        selected_organization=$(tr -d '\r\n' < "$ACTIVE_ORGANIZATION_FILE")
+        [ -z "$selected_organization" ] || startup_organization=$selected_organization
+    fi
+    startup_profile="$ORGANIZATIONS_DIR/$startup_organization.json"
+    startup_driver=$(jq -er '.runtime.driver' "$startup_profile")
+    if [ "$startup_driver" = linux-one-node ]; then
+        start_admin_relay
+        start_dns_service
+        start_ui_relays
+        start_control_service
+        start_machine_controllers
+    else
+        multinode_runtime="$RUNTIME_DIR/multinode/$startup_organization"
+        SIMULATION_ORGANIZATION_ID="$startup_organization" \
+        ZPR_ASSERTION_LDAP_CONTAINER="${startup_organization}-directory" \
+        ZPR_ASSERTION_LDAP_BASE_DN="$(jq -er '.directory.base_dn' "$startup_profile")" \
+        ZPR_ASSERTION_LDAP_BIND_DN="cn=zpr-reader,ou=Service Accounts,$(jq -er '.directory.base_dn' "$startup_profile")" \
+        ZPR_ADMIN_URL=https://127.0.0.1:8185 \
+        ZPR_ADMIN_CA_FILE="$DASHBOARD_DIR/../../zpr-demo/multinode-demo/zpr-conf/include/admin-tls-cert.pem" \
+        ZPR_ADMIN_KEY_FILE="$multinode_runtime/bob/web-monitor.key" \
+            start_control_service
+    fi
     start_control_room
     wait_for_url http://127.0.0.1:8787/ control-room
-	start_machine_controllers
     echo "Control Room ready at http://127.0.0.1:8787"
     echo "OpenObserve GUI relay at http://127.0.0.1:$OBSERVABILITY_UI_RELAY_PORT"
     echo "LDAP editor relay at http://127.0.0.1:$LDAP_UI_RELAY_PORT/"

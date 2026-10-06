@@ -111,13 +111,14 @@ type simulatorOrganizationService struct {
 }
 
 type simulatorPolicyTestService struct {
-	ID       string `json:"id"`
-	Name     string `json:"name"`
-	ActorCN  string `json:"actor_cn"`
-	Protocol string `json:"protocol"`
-	Port     int    `json:"port,omitempty"`
-	ICMPType int    `json:"icmp_type,omitempty"`
-	ICMPCode int    `json:"icmp_code,omitempty"`
+	ID         string `json:"id"`
+	Name       string `json:"name"`
+	ActorCN    string `json:"actor_cn"`
+	Protocol   string `json:"protocol"`
+	Port       int    `json:"port,omitempty"`
+	ICMPType   int    `json:"icmp_type,omitempty"`
+	ICMPCode   int    `json:"icmp_code,omitempty"`
+	ZPRAddress string `json:"zpr_address,omitempty"`
 }
 
 func simulatorOrganizationsDirectory() string {
@@ -132,6 +133,14 @@ func activeSimulatorOrganizationID(manifest simulatorManifest) string {
 		return id
 	}
 	return defaultSimulatorOrganizationID
+}
+
+func simulatorRuntimeDriverForManifest(manifest simulatorManifest) (string, error) {
+	organization, err := loadSimulatorOrganization(simulatorOrganizationsDirectory(), activeSimulatorOrganizationID(manifest))
+	if err != nil {
+		return "", err
+	}
+	return organization.Runtime.Driver, nil
 }
 
 func simulatorActiveOrganizationPath() string {
@@ -403,6 +412,12 @@ func validateSimulatorOrganization(organization simulatorOrganization) error {
 			}
 		default:
 			return fmt.Errorf("policy test service %q uses an unsupported protocol", service.ID)
+		}
+		if service.ZPRAddress != "" {
+			address := net.ParseIP(service.ZPRAddress)
+			if address == nil || address.To4() != nil {
+				return fmt.Errorf("policy test service %q has an invalid ZPR IPv6 address", service.ID)
+			}
 		}
 		testServiceIDs[service.ID] = true
 	}

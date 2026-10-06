@@ -24,6 +24,46 @@ opens its warnings alongside the result details. Fixture-generation failures are
 reported as **Analysis unavailable**, not as policy compiler errors. The current
 ZPT fixture format cannot represent LDAP values containing commas or braces.
 
+## GUI controls
+
+Page-specific Help opens a keyboard-accessible dialog from the upper-right
+corner. It describes the current view, provides policy/assertion examples and
+explains the client, service and trusted-source security model.
+
+Status tables use automatic secondary column comparisons, so equal primary
+values remain deterministic when snapshot ordering changes. Map adapter rings
+rotate away from inter-node corridors; inter-node links render above dock links
+with a clearance stroke to distinguish unavoidable crossings.
+
+Security navigation highlights active high-priority findings even while another
+page is open. Repeated denials mean at least five denied requests or three denial
+records from one source. They are high priority when the source is absent from
+the live actor inventory or the attempts span at least three distinct
+destination/protocol/port/reason combinations. A newly observed actor alone is
+informational. Dismissing high findings clears their navigation highlight;
+filters do not hide alerts from navigation.
+
+Adapter Logs keeps its controls alongside the section label, with a source
+dropdown in each panel header. **Show all adapters** opens every configured log
+source for the selected adapter/controller type; **Hide all adapters** closes
+those panels. Individual panels can still be added or removed. **Word wrap**
+applies to every panel, including maximized panels.
+
+ZPR Config uses the editor toolbar, line-number gutter and modification indicator.
+Configuration selection and revision history remain because the repository
+supports multiple versioned drafts. It intentionally omits Browse, policy File
+commands and Refresh Attributes. Validation and saving never apply configuration
+to the runtime.
+
+Trusted Sources includes an expandable LDAP tree built from actual distinguished
+names and approved attributes, alongside the existing tables. Escaped commas
+remain part of an RDN. Providers without entry DNs display an explicit
+unavailable-tree message rather than an invented LDAP hierarchy. The browse
+contract adds `directory.entries` containing `dn` and `attributes`; excluded
+credential attributes remain excluded. Control Room refreshes trusted records
+and diagnostics through its global refresh controls; standalone source pages
+retain their own refresh action.
+
 ## Operator Boundary
 
 Control Room and Control-Service are production-facing operator components.

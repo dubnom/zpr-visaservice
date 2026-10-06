@@ -14,6 +14,7 @@
   let nextAdapterColumnID = 1;
   let adapterColumnsInitialized = false;
   let adapterLogType = "adapter";
+  let showingAll = false;
   let machines = [];
   let paused = false;
   let active = pageActive();
@@ -192,9 +193,9 @@
       if (output.clientHeight) column.following = output.scrollHeight - output.clientHeight - output.scrollTop <= 8;
     });
     actions.append(removeButton, maximizeButton);
-    header.append(title, actions);
     toolbar.append(label, select);
-    panel.append(header, toolbar, output);
+    header.append(title, toolbar, actions);
+    panel.append(header, output);
     grid.append(panel);
     adapterColumns.push(column);
     return column;
@@ -205,6 +206,7 @@
   }
 
   function removeAdapterColumn(column) {
+    showingAll = false;
     saveAdapterColumnPosition(column);
     if (column.panel.classList.contains("maximized")) setMaximized(column, false);
     column.panel.remove();
@@ -230,6 +232,23 @@
       adapterColumnsInitialized = true;
       makeAdapterColumn();
     }
+    if (showingAll) {
+      const keys = new Set(choices.map((choice) => choice.key));
+      for (const column of [...adapterColumns]) {
+        if (!keys.has(column.selectedKey)) {
+          if (column.panel.classList.contains("maximized")) setMaximized(column, false);
+          column.panel.remove();
+          adapterColumns.splice(adapterColumns.indexOf(column), 1);
+        }
+      }
+      for (const choice of choices) {
+        if (!adapterColumns.some((column) => column.selectedKey === choice.key)) makeAdapterColumn().selectedKey = choice.key;
+      }
+    }
+    const allButton = document.getElementById("adapter-log-all");
+    allButton.textContent = showingAll ? "Hide all adapters" : "Show all adapters";
+    allButton.setAttribute("aria-pressed", String(showingAll));
+    addButton.disabled = showingAll;
     if (!adapterColumns.length) {
       grid.replaceChildren();
       const empty = document.createElement("p");
@@ -262,7 +281,7 @@
         if (previous && column.selectedKey !== previous) column.signature = "";
       }
       column.select.value = column.selectedKey;
-      column.select.disabled = choices.length === 0;
+      column.select.disabled = choices.length === 0 || showingAll;
       const selected = choices.find((choice) => choice.key === column.selectedKey);
       const entry = selected?.machine;
       const source = selected?.source;
@@ -474,6 +493,21 @@
   refreshButton?.addEventListener("click", () => { clearTimeout(timer); refresh(); });
   if (controlRoom) {
     document.getElementById("adapter-log-add").addEventListener("click", addAdapterColumn);
+    document.getElementById("adapter-log-all").addEventListener("click", () => {
+      showingAll = !showingAll;
+      for (const column of [...adapterColumns]) {
+        if (column.panel.classList.contains("maximized")) setMaximized(column, false);
+        column.panel.remove();
+      }
+      adapterColumns.length = 0;
+      adapterColumnsInitialized = true;
+      renderAdapterColumns();
+    });
+    document.getElementById("adapter-log-wrap").addEventListener("click", (event) => {
+      const wrapped = event.currentTarget.getAttribute("aria-pressed") !== "true";
+      event.currentTarget.setAttribute("aria-pressed", String(wrapped));
+      grid.classList.toggle("logs-nowrap", !wrapped);
+    });
     for (const button of document.querySelectorAll("[data-adapter-log-type]")) {
       button.addEventListener("click", () => switchAdapterLogType(button.dataset.adapterLogType));
     }

@@ -664,6 +664,112 @@ const test = base.extend({
 
 registerAssertionBrowserTests();
 
+test("GUI status sorting breaks primary ties independently of snapshot order", async ({ page, appURL, api }) => {
+  api.snapshot.actors = [
+    { cn: "node", node: true, node_details: { adapters: ["charlie", "alpha", "bravo"] } },
+    ...["charlie", "alpha", "bravo"].map((cn) => ({ cn, node: false })),
+  ];
+  await page.goto(appURL + "/#connections");
+  await page.locator('[data-sort-page="connections"] th[data-sort-key="state"]').click();
+  const before = await page.locator("#link-list tr").allTextContents();
+  api.snapshot.actors[0].node_details.adapters.reverse();
+  api.snapshot.actors.reverse();
+  await page.locator("#refresh-now").click();
+  await expect.poll(() => page.locator("#link-list tr").allTextContents()).toEqual(before);
+});
+
+test("GUI Security nav alerts on repeated unknown or varied denials, not new actors", async ({ page, appURL, api }) => {
+  const nav = page.locator('.primary-nav [data-page-link="security-review"]');
+  await page.goto(appURL + "/#map");
+  await expect(nav).toHaveAttribute("data-high-alert", "false");
+  api.snapshot.actors.push({ cn: "new-device", node: false, zpr_addr: "fd00::20" });
+  await page.locator("#refresh-now").click();
+  await expect(nav).toHaveAttribute("data-high-alert", "false");
+  api.snapshot.recent_denies = [{ source_addr: "fd00::99", dest_addr: "fd00::20", count: 5, deny_code: "DENY", last_deny_ms: Date.now() }];
+  await page.locator("#refresh-now").click();
+  await expect(nav).toHaveAttribute("data-high-alert", "true");
+  await expect(nav).toHaveAccessibleName("Security: 1 high alerts");
+  await nav.click();
+  await page.locator("#security-review-dismiss-all").click();
+  await expect(nav).toHaveAttribute("data-high-alert", "false");
+  api.snapshot.recent_denies = [80, 443, 22].map((port) => ({ source_addr: "fd00::20", dest_addr: "fd00::30", protocol: 6, dest_port: port, count: 1, deny_code: "DENY", last_deny_ms: Date.now() }));
+  await page.locator("#refresh-now").click();
+  await expect(nav).toHaveAttribute("data-high-alert", "true");
+});
+
+test("GUI Adapter Logs places pickers in headers and toggles all panels and wrapping", async ({ page, appURL, api }) => {
+  await page.goto(appURL + "/#adapter-logs");
+  const panels = page.locator(".adapter-log-column");
+  await expect(panels).toHaveCount(1);
+  await expect(panels.locator("header select")).toBeVisible();
+  await expect(page.locator(".adapter-logs-heading #adapter-log-all")).toBeVisible();
+  await page.locator("#adapter-log-all").click();
+  await expect(panels).toHaveCount(4);
+  await page.locator("#adapter-log-wrap").click();
+  await expect(panels.first().locator("pre")).toHaveCSS("white-space", "pre");
+  await page.locator("#adapter-log-wrap").click();
+  await expect(panels.first().locator("pre")).toHaveCSS("white-space", "pre-wrap");
+  await page.locator("#adapter-log-all").click();
+  await expect(panels).toHaveCount(0);
+  await page.locator("#adapter-log-add").click();
+  await expect(panels).toHaveCount(1);
+});
+
+test("GUI LDAP tree uses real nested DNs, escaped commas, approved attributes and filtering", async ({ page, appURL, api }) => {
+  api.assertionSource.directory.entries = [
+    { dn: "uid=alice,ou=Engineering,dc=alpha,dc=test", attributes: { mail: ["alice@example.test"] } },
+    { dn: "cn=Operations\\, East,ou=Groups,dc=alpha,dc=test", attributes: { description: ["Operators"] } },
+  ];
+  await page.goto(appURL + "/#sources");
+  const browser = page.locator("trusted-source-browser");
+  await browser.getByRole("tab", { name: "LDAP tree" }).click();
+  await expect(browser.locator("[data-ldap-entry]")).toHaveCount(2);
+  await expect(browser.getByText("READ ONLY", { exact: true })).toHaveCount(0);
+  await browser.locator('summary').filter({ hasText: "uid=alice" }).click();
+  await expect(browser.locator(".trusted-source-tree")).toContainText("alice@example.test");
+  await expect(browser.locator('summary').filter({ hasText: "cn=Operations\\, East" })).toBeVisible();
+  await browser.getByRole("searchbox").fill("alice");
+  await expect(browser.locator("[data-ldap-entry]")).toHaveCount(1);
+  await expect(browser.locator(".trusted-source-tree")).toContainText("ou=Engineering");
+  expect([...api.counts.keys()].some((path) => path.startsWith("/api/simulator"))).toBe(false);
+});
+
+test("GUI ZPR Config shares editor layout, line numbers and modification indicator", async ({ page, appURL, api }) => {
+  await page.goto(appURL + "/#zpr-config");
+  await expect(page.locator("#zpr-config-modified")).toBeHidden();
+  await page.locator("#zpr-config-source").fill('[visa_service]\ndock_node = "node"\n');
+  await expect(page.locator("#zpr-config-gutter")).toHaveText("1\n2\n3");
+  await expect(page.locator("#zpr-config-modified")).toBeVisible();
+  await expect(page.locator("#page-zpr-config .policy-editor-tools")).toContainText("ZPR Config");
+  await expect(page.locator("#page-zpr-config").getByRole("button", { name: /Browse|Refresh Attributes/ })).toHaveCount(0);
+});
+
+test("GUI topology keeps dock rays distinct from inter-node links and paints network links last", async ({ page, appURL, api }) => {
+  api.snapshot.actors = [
+    { cn: "node-a", zpr_addr: "fd00::1", node: true, node_details: { adapters: ["adapter-a", "adapter-b", "adapter-c", "adapter-d"] } },
+    { cn: "node-b", zpr_addr: "fd00::2", node: true, node_details: { adapters: [] } },
+    ...["adapter-a", "adapter-b", "adapter-c", "adapter-d"].map((cn) => ({ cn, node: false })),
+  ];
+  api.snapshot.network = [{ node_a_addr: "fd00::1", node_b_addr: "fd00::2", ctype: "UP" }];
+  await page.goto(appURL + "/#map");
+  await expect(page.locator(".graph-network-clearance")).toHaveCount(1);
+  const geometry = await page.evaluate(() => {
+    const edges = [...document.querySelectorAll(".graph-edge")];
+    const angle = (line) => Math.atan2(Number(line.getAttribute("y2")) - Number(line.getAttribute("y1")), Number(line.getAttribute("x2")) - Number(line.getAttribute("x1")));
+    const network = edges.find((edge) => !edge.dataset.dockAdapter);
+    const direction = angle(network.querySelector(".graph-link"));
+    return {
+      last: edges.at(-1) === network,
+      separation: Math.min(...edges.filter((edge) => edge.dataset.dockAdapter).map((edge) => {
+        const delta = angle(edge.querySelector(".graph-link")) - direction;
+        return Math.abs(Math.atan2(Math.sin(delta), Math.cos(delta)));
+      })),
+    };
+  });
+  expect(geometry.last).toBe(true);
+  expect(geometry.separation).toBeGreaterThan(0.2);
+});
+
 test("Control Room keeps Adapter Logs internal and Log Manager under Tools", async ({ page, appURL }) => {
   await page.goto(appURL + "/#map");
   const adapterLogs = page.getByRole("link", { name: "Adapter Logs", exact: true });
@@ -1389,6 +1495,50 @@ for (const navigation of [
   });
 }
 
+test("page Help is keyboard accessible, contextual, and reachable in the condensed mobile menu", async ({ page, appURL, api }) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.goto(appURL + "/#policy");
+  await page.getByRole("button", { name: "Condense side menu", exact: true }).click();
+  const helpButton = page.getByRole("button", { name: "Help for this page" });
+  await expect(helpButton).toBeVisible();
+  await expect(helpButton).toHaveAttribute("aria-haspopup", "dialog");
+  await helpButton.click();
+  const dialog = page.getByRole("dialog", { name: "Policy editor" });
+  await expect(dialog).toBeVisible();
+  await expect(dialog).toContainText("Stage creates a candidate for review; it does not deploy or activate policy.");
+  await expect(dialog.getByRole("link", { name: "Policy authoring guide" })).toHaveAttribute("target", "_blank");
+  const bounds = await dialog.boundingBox();
+  expect(bounds.x).toBeGreaterThanOrEqual(0);
+  expect(bounds.x + bounds.width).toBeLessThanOrEqual(390);
+  await page.keyboard.press("Escape");
+  await expect(dialog).toBeHidden();
+  await expect(helpButton).toBeFocused();
+
+  await openAssertionRecord(page, appURL);
+  await page.getByRole("button", { name: "Help for this page" }).click();
+  const assertionHelp = page.getByRole("dialog", { name: "Assertion editor" });
+  await expect(assertionHelp).toBeVisible();
+  await expect(assertionHelp).toContainText("Analyze evaluates the current source; it does not save it.");
+  await assertionHelp.getByRole("button", { name: "Close", exact: true }).click();
+});
+
+test("Simulator Help warns before organization activation and stays usable on mobile", async ({ page, appURL }) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.goto(appURL + "/organizations.html");
+  await page.getByRole("button", { name: "Condense side menu", exact: true }).click();
+  const helpButton = page.getByRole("button", { name: "Help for this page" });
+  await expect(helpButton).toBeVisible();
+  await helpButton.click();
+  const dialog = page.getByRole("dialog", { name: "Organizations" });
+  await expect(dialog).toBeVisible();
+  await expect(dialog).toContainText("Switching resets the simulated runtime and can interrupt connections and workloads");
+  await expect(dialog).toContainText("finish/cancel scenarios and log out users first");
+  await expect(dialog.getByRole("link", { name: "Organization runtime profiles" })).toHaveAttribute("href", /organizations/);
+  await page.keyboard.press("Escape");
+  await expect(dialog).toBeHidden();
+  await expect(helpButton).toBeFocused();
+});
+
 test("policy Format condenses repeated blank lines including trailing whitespace", async ({ page, appURL, api }) => {
   await page.goto(appURL + "/#policy");
   await openPolicyPicker(page);
@@ -1434,6 +1584,7 @@ test("policy actions share a non-overlapping responsive toolbar", async ({ page,
   await expect(page.locator("#policy-editor-mode")).toHaveText("Policy");
   await expect(page.locator("#policy-modified-indicator")).toBeHidden();
   await expect(page.locator(".policy-toolbar")).toHaveCSS("border-top-style", "none");
+  await expect(page.locator(".policy-page")).toHaveCSS("border-top-style", "none");
   const desktopModeCenter = await page.evaluate(() => {
     const tools = document.querySelector(".policy-editor-tools").getBoundingClientRect();
     const mode = document.querySelector("#policy-editor-mode").getBoundingClientRect();
