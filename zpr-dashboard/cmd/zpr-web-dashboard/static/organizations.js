@@ -11,6 +11,7 @@ let directoryEditorOrganizationID = "";
 let directoryEditorDirty = false;
 let organizationActivationInFlight = false;
 let pendingOrganizationActivation = null;
+let pendingOrganizationRestore = null;
 
 function organizationEscape(value) {
   return String(value ?? "").replace(/[&<>"']/g, (character) => ({
@@ -44,6 +45,7 @@ function renderOrganizationDetails(organization) {
   selectedOrganizationID = organization.id;
   const isActive = organization.id === activeOrganizationID;
   const activationBusy = organizationActivationInFlight || organizationActivationStatus.state === "resetting";
+  const operationLabel = organizationActivationStatus.operation === "restore-base" ? "Restoring base" : "Resetting ZPR";
   const activationProgress = organizationActivationStatus.progress || "Preparing organization reset";
   const directory = organization.directory || {};
   document.getElementById("organization-title").textContent = organization.name;
@@ -51,7 +53,10 @@ function renderOrganizationDetails(organization) {
   heading.querySelector("[data-organization-activation-control]")?.remove();
   const control = document.createElement("div");
   control.dataset.organizationActivationControl = "true";
-  control.innerHTML = isActive ? '<span class="scenario-state completed">Active</span>' : `<button type="button" data-activate-organization="${organizationEscape(organization.id)}" ${activationBusy ? "disabled" : ""}>${activationBusy ? `Resetting ZPR · ${organizationEscape(activationProgress)}` : "Activate organization"}</button>`;
+  const activationAction = isActive
+    ? '<span class="scenario-state completed">Active</span>'
+    : `<button type="button" data-activate-organization="${organizationEscape(organization.id)}" ${activationBusy ? "disabled" : ""}>${activationBusy ? `${operationLabel} · ${organizationEscape(activationProgress)}` : "Activate organization"}</button>`;
+  control.innerHTML = `${activationAction}<button class="quiet" type="button" data-restore-base="${organizationEscape(organization.id)}" ${activationBusy ? "disabled" : ""}>Restore base state</button>`;
   heading.append(control);
   document.getElementById("organization-active-name").textContent = organizationCatalog.find((item) => item.id === activeOrganizationID)?.name || "Unavailable";
   document.getElementById("organization-active-id").textContent = activeOrganizationID;
@@ -288,6 +293,47 @@ const organizationSwitchError = document.getElementById("organization-switch-err
 organizationSwitchDialog.querySelector("[data-cancel-organization-switch]").addEventListener("click", () => organizationSwitchDialog.close());
 organizationSwitchDialog.addEventListener("close", () => { pendingOrganizationActivation = null; });
 
+const organizationRestoreDialog = document.createElement("dialog");
+organizationRestoreDialog.id = "organization-restore-dialog";
+organizationRestoreDialog.className = "organization-switch-dialog";
+organizationRestoreDialog.setAttribute("aria-labelledby", "organization-restore-title");
+organizationRestoreDialog.setAttribute("aria-describedby", "organization-restore-warning");
+organizationRestoreDialog.innerHTML = `<h2 id="organization-restore-title">Restore base state?</h2><p id="organization-restore-target"></p><p id="organization-restore-warning">This replaces the selected organization's saved policy, assertions, scenarios, and LDAP edits with its bundled defaults, then reseeds its directory. The current state is backed up locally. Its runtime will restart and may interrupt connections.</p><p id="organization-restore-error" role="alert" hidden></p><div class="organization-switch-actions"><button class="quiet" type="button" data-cancel-organization-restore autofocus>Cancel</button><button type="button" data-confirm-organization-restore>Restore base state</button></div>`;
+document.body.append(organizationRestoreDialog);
+const organizationRestoreConfirm = organizationRestoreDialog.querySelector("[data-confirm-organization-restore]");
+const organizationRestoreError = document.getElementById("organization-restore-error");
+organizationRestoreDialog.querySelector("[data-cancel-organization-restore]").addEventListener("click", () => organizationRestoreDialog.close());
+organizationRestoreDialog.addEventListener("close", () => { pendingOrganizationRestore = null; });
+
+organizationRestoreConfirm.addEventListener("click", async () => {
+  const organizationID = pendingOrganizationRestore;
+  if (!organizationID || organizationActivationInFlight) return;
+  if (organizationActivationStatus.state === "resetting" || !organizationCatalog.some((item) => item.id === organizationID)) {
+    organizationRestoreError.textContent = "The organization state changed while this dialog was open. Cancel and review the current state before trying again.";
+    organizationRestoreError.hidden = false;
+    organizationRestoreConfirm.disabled = true;
+    return;
+  }
+  organizationActivationInFlight = true;
+  organizationRestoreDialog.close();
+  renderOrganizationList();
+  try {
+    const response = await fetch(`/api/simulator/organizations/${encodeURIComponent(organizationID)}/restore-base`, { method: "POST" });
+    const result = await response.json();
+    if (!response.ok) throw new Error(result.error || `HTTP ${response.status}`);
+    organizationActivationStatus = result.activation || { state: "resetting", operation: "restore-base", progress: "Preparing organization base restore" };
+    renderOrganizationList();
+    await refreshOrganizations();
+  } catch (error) {
+    const message = document.getElementById("organization-error");
+    message.textContent = error.message || "Could not restore organization base state";
+    message.hidden = false;
+  } finally {
+    organizationActivationInFlight = false;
+    renderOrganizationList();
+  }
+});
+
 organizationSwitchConfirm.addEventListener("click", async () => {
   const approval = pendingOrganizationActivation;
   if (!approval || organizationActivationInFlight) return;
@@ -324,6 +370,18 @@ document.getElementById("organization-list").addEventListener("click", (event) =
   if (organization) renderOrganizationDetails(organization);
 });
 document.querySelector(".organization-detail").addEventListener("click", async (event) => {
+  const restore = event.target.closest("[data-restore-base]");
+  if (restore) {
+    if (organizationActivationInFlight || organizationActivationStatus.state === "resetting") return;
+    const target = organizationCatalog.find((item) => item.id === restore.dataset.restoreBase);
+    if (!target) return;
+    pendingOrganizationRestore = target.id;
+    document.getElementById("organization-restore-target").textContent = `Restore ${target.name} to its checked-in profile defaults?`;
+    organizationRestoreError.hidden = true;
+    organizationRestoreConfirm.disabled = false;
+    organizationRestoreDialog.showModal();
+    return;
+  }
   const activate = event.target.closest("[data-activate-organization]");
   if (activate) {
     if (organizationActivationInFlight || organizationActivationStatus.state === "resetting") return;

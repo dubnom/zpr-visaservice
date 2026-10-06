@@ -26,34 +26,63 @@ ZPT fixture format cannot represent LDAP values containing commas or braces.
 
 ## GUI controls
 
-Page-specific Help opens a keyboard-accessible dialog from the upper-right
-corner. It describes the current view, provides policy/assertion examples and
-explains the client, service and trusted-source security model.
+Page-specific Help opens a keyboard-accessible dialog beside uptime and refresh
+controls in the upper-right corner. It explains the current view, common
+workflows and recovery steps, and provides examples where useful. Policy and
+assertion help also describes their syntax and the client, service and
+trusted-source security model.
 
 Status tables use automatic secondary column comparisons, so equal primary
 values remain deterministic when snapshot ordering changes. Map adapter rings
 rotate away from inter-node corridors; inter-node links render above dock links
 with a clearance stroke to distinguish unavoidable crossings.
+Map **Auto-fit** is checked initially and fits the graph on refresh. Unchecking
+it preserves the chosen viewport and zoom across refreshes; **Fit** remains a
+one-time action without changing the checkbox. Rechecking Auto-fit fits
+immediately and resumes automatic fitting. Manual panning, wheel zoom, and the
+zoom buttons turn Auto-fit off and preserve the chosen camera on refresh.
+Clicking the background without dragging or using Fit does not change the checkbox.
+Map **Dark mode** changes only the canvas, controls, and connector colors; it
+does not theme the rest of Control Room. It is off initially, remains available
+on an empty map, and retains its selection across refreshes and navigation for
+the current page session. Service-type colors and decision feedback stay intact.
+Connector endpoints intersect the actual SVG glyph boundaries, including rounded
+node/service rectangles, circular adapters, visa diamonds, gateway polygons, and
+cloud paths. Visible strokes, network clearance, and clickable hit areas use the
+same endpoints. Connections track component movement and scale during animation.
 
 Security navigation highlights active high-priority findings even while another
 page is open. Repeated denials mean at least five denied requests or three denial
 records from one source. They are high priority when the source is absent from
 the live actor inventory or the attempts span at least three distinct
 destination/protocol/port/reason combinations. A newly observed actor alone is
-informational. Dismissing high findings clears their navigation highlight;
-filters do not hide alerts from navigation.
+informational. Visiting Security acknowledges existing navigation alerts without
+dismissing findings. The highlight returns for a new high-priority finding,
+changed evidence, a newer reported denial, or a resolved alert that recurs.
+Acknowledgements last for the current page session. Dismissing high findings
+also clears their navigation highlight; filters do not hide new alerts from
+navigation.
 
-Adapter Logs keeps its controls alongside the section label, with a source
-dropdown in each panel header. **Show all adapters** opens every configured log
-source for the selected adapter/controller type; **Hide all adapters** closes
-those panels. Individual panels can still be added or removed. **Word wrap**
-applies to every panel, including maximized panels.
+Adapter Logs keeps its controls alongside the section label. Each panel header
+shows the configured adapter name in the title font, with a chevron beside it
+that opens the source selection dialog. The page-wide type selector determines
+adapter or controller logs; the selected source identity is also available in
+the chevron tooltip. **Running only** excludes stopped, paused, unknown, and
+unavailable sources, including disconnected retained history.
+**Show all adapters** opens every configured log source for the selected
+adapter/controller type; **Hide all adapters** closes those panels. Individual
+panels can still be added or removed. **Word wrap** applies to every panel,
+including maximized panels.
 
-ZPR Config uses the editor toolbar, line-number gutter and modification indicator.
-Configuration selection and revision history remain because the repository
-supports multiple versioned drafts. It intentionally omits Browse, policy File
-commands and Refresh Attributes. Validation and saving never apply configuration
-to the runtime.
+ZPR Config uses the editor toolbar, line-number gutter and modification
+indicator, a dark syntax-colored TOML surface, and a separated line-number
+gutter. **Analyze** checks TOML syntax, colors its success/error state, and places
+line-specific parser errors in the gutter. Responses for edited source are
+discarded. **Format** normalizes assignment spacing only after syntax
+validation; **File** saves a versioned draft, opens a local TOML/ZPLC draft,
+starts a new draft, or downloads the current source. Configuration selection and revision history
+remain because the repository supports multiple versioned drafts. Validation
+and saving never apply configuration to the runtime.
 
 Trusted Sources includes an expandable LDAP tree built from actual distinguished
 names and approved attributes, alongside the existing tables. Escaped commas
@@ -75,6 +104,12 @@ unavailable; shared UI utilities must keep independent endpoints/data contracts.
 
 Adapter Logs reads `ZPR_ADAPTER_LOG_CONFIG_FILE` on Control-Service. This is an
 operator-owned JSON inventory, independent of any test environment:
+
+Container sources report Docker runtime state independently of readable log
+history: `docker logs` can succeed for an exited container. State is reported
+per source, so a running controller does not make a stopped adapter running.
+File-only sources have `unknown` runtime state; file readability cannot prove a
+live process. They remain available with **Running only** disabled.
 
 ```json
 {
@@ -228,9 +263,11 @@ rather than a universally ineffective rule. No lint path depends on Simulator.
 On the Map, newly observed visa grants pulse the requesting adapter with a green
 ring and briefly expand/restore its glyph; new denials use red. Its dock wire
 pulses the same color at the same time, then restores its original appearance.
-Matching destination service badges pulse blue using the visa's address,
+Matching destination service badges pulse green using the visa's address,
 protocol and service-side port, including reverse visas. Colored outlines grow
-25% and contract over 1.2 seconds, while glyphs expand 12% and restore. Pulse
+25% and contract over 1.2 seconds for adapters and 2 seconds for services,
+while glyphs expand 20% and restore. Six-pixel glowing outlines, tinted halos,
+and thicker dock-wire feedback make decisions visible against the topology. Pulse
 lifetimes survive DNS/search redraws without restarting. Services sharing an
 identical endpoint cannot be distinguished by the current visa feed.
 Initial history and unchanged snapshots do not replay decisions. Multiple
@@ -238,6 +275,21 @@ decisions for an adapter in one snapshot coalesce, with denial taking precedence
 Reduced-motion mode keeps colored feedback without glyph scaling. These are
 snapshot observations from the normal operator API, not a complete event stream
 or a Simulator dependency.
+
+Component connections and their legend use solid lines; their colors still
+distinguish dock, service, and network connections. Small badges beside adapters
+and services show active visa counts. Zero counts use an empty outlined badge,
+with the count still available to assistive technology and in the tooltip.
+Adapter counts include either endpoint,
+counting a self-connection once; service counts match the provider address,
+protocol, and service-side port, including reverse visas. Services sharing an
+endpoint share its count. These use the complete `active_visas` snapshot inventory,
+not the ten-entry `recent_visas` history. Control-Service fetches visa details
+with at most sixteen concurrent Admin API requests and excludes expired grants.
+If the inventory or any detail is unavailable, `active_visas` is null and badges
+show `?`, not a misleading zero or partial total. Visas removed between listing
+and detail retrieval are skipped. The browser also excludes grants expired since
+the snapshot and deduplicates IDs on each render.
 
 The Control Room Security Review is a read-only triage view using the normal
 Control Room Refresh, Pause, and refresh-interval controls. It consumes the
@@ -286,6 +338,22 @@ for either upstream API. This separates the service boundary and storage
 process, but does not yet provide user-specific record permissions: all local
 Control Room operators still share the Control-Service identity. The Policy
 Repository is not an attribute source queried during ZPL policy evaluation.
+
+## Restore organization base state
+
+The Simulator Organizations page provides an explicit **Restore base state**
+action. After confirmation, it backs up the selected organization's policy and
+workspace database, staged policy candidates, published LDAP seed, and (for a
+Docker-multinode organization) LDAP database files under
+`.local-runtime/organization-backups/<organization>/<timestamp>-<generation>/`.
+It then recreates that organization's workspace from its checked-in policy,
+assertion, scenario, and LDIF sources and activates the profile again. Secrets
+and certificates are retained. Other organizations' state is not removed.
+
+The operation is serialized with organization activation and is rejected while
+a scenario is running or a machine user remains logged in. The backup is kept
+for manual recovery; restore does not erase the organization profile or its
+checked-in seed files.
 
 ## Policy records
 

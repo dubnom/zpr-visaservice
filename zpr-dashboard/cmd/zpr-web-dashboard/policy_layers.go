@@ -6,6 +6,8 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+
+	"github.com/BurntSushi/toml"
 )
 
 type policyLayer struct {
@@ -69,6 +71,101 @@ func writeOrganizationPolicy(rootDirectory, organizationID, destination string) 
 		return closeErr
 	}
 	return os.Rename(file.Name(), destination)
+}
+
+func writeMergedPolicyConfig(organizationConfigPath, runtimeConfigPath, bootstrapDirectory, destination string) error {
+	if destination == "" {
+		return fmt.Errorf("policy config output file is required")
+	}
+	organizationConfig, err := readPolicyConfig(organizationConfigPath)
+	if err != nil {
+		return err
+	}
+	runtimeConfig, err := readPolicyConfig(runtimeConfigPath)
+	if err != nil {
+		return err
+	}
+	mergePolicyConfig(organizationConfig, runtimeConfig)
+	if err := resolvePolicyBootstrapPaths(organizationConfig, bootstrapDirectory); err != nil {
+		return err
+	}
+
+	file, err := os.CreateTemp(filepath.Dir(destination), ".merged-policy-config-*")
+	if err != nil {
+		return err
+	}
+	defer os.Remove(file.Name())
+	if err := file.Chmod(0o600); err != nil {
+		file.Close()
+		return err
+	}
+	if err := toml.NewEncoder(file).Encode(organizationConfig); err != nil {
+		file.Close()
+		return err
+	}
+	if err := file.Close(); err != nil {
+		return err
+	}
+	return os.Rename(file.Name(), destination)
+}
+
+func resolvePolicyBootstrapPaths(config map[string]any, bootstrapDirectory string) error {
+	bootstrapDirectory = strings.TrimSpace(bootstrapDirectory)
+	if bootstrapDirectory == "" {
+		return fmt.Errorf("bootstrap key directory is required")
+	}
+	bootstrapDirectory, err := filepath.Abs(bootstrapDirectory)
+	if err != nil {
+		return err
+	}
+	info, err := os.Stat(bootstrapDirectory)
+	if err != nil || !info.IsDir() {
+		return fmt.Errorf("bootstrap key directory is unavailable")
+	}
+	bootstrap, ok := config["bootstrap"].(map[string]any)
+	if !ok {
+		return fmt.Errorf("runtime policy config has no bootstrap table")
+	}
+	for name, value := range bootstrap {
+		path, ok := value.(string)
+		if !ok || !strings.HasPrefix(path, "/runtime-include/") {
+			continue
+		}
+		keyPath := filepath.Join(bootstrapDirectory, strings.TrimPrefix(path, "/runtime-include/"))
+		keyInfo, err := os.Stat(keyPath)
+		if err != nil || !keyInfo.Mode().IsRegular() {
+			return fmt.Errorf("bootstrap key for %q is unavailable", name)
+		}
+		bootstrap[name] = keyPath
+	}
+	return nil
+}
+
+func readPolicyConfig(path string) (map[string]any, error) {
+	if strings.TrimSpace(path) == "" {
+		return nil, fmt.Errorf("policy config path is required")
+	}
+	config := make(map[string]any)
+	if _, err := toml.DecodeFile(path, &config); err != nil {
+		return nil, fmt.Errorf("decode policy config %q: %w", path, err)
+	}
+	return config, nil
+}
+
+func mergePolicyConfig(destination, overlay map[string]any) {
+	for key, overlayValue := range overlay {
+		overlayTable, isTable := overlayValue.(map[string]any)
+		if !isTable {
+			destination[key] = overlayValue
+			continue
+		}
+		destinationTable, exists := destination[key].(map[string]any)
+		if !exists {
+			destinationTable = make(map[string]any, len(overlayTable))
+			destination[key] = destinationTable
+		}
+		mergePolicyConfig(destinationTable, overlayTable)
+	}
 }
 
 func generateSimulatorLoadTestPolicy(profile simulatorLoadTestProfile) string {

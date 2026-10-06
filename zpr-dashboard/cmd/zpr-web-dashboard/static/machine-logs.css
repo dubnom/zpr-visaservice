@@ -14,14 +14,26 @@
 .adapter-logs-heading { justify-content: flex-start; }
 .adapter-logs-heading .adapter-logs-toolbar { margin: 0; }
 .adapter-log-column header { flex-wrap: wrap; gap: 8px; }
-.adapter-log-column .adapter-column-picker { flex: 1; min-width: 100px; padding: 0; border: 0; }
-.adapter-log-column .adapter-column-picker label { display: none; }
+.adapter-log-column .adapter-column-picker { flex: 0 0 auto; min-width: 0; padding: 0; border: 0; }
+.adapter-log-column > header > h2 { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .adapter-log-column .machine-log-panel-actions { gap: 4px; }
 .adapter-log-column .machine-log-panel-actions button { padding: 4px; }
 .adapter-log-columns.logs-nowrap .machine-log-output,
 .adapter-log-columns.logs-nowrap .machine-log-output pre { white-space: pre; overflow-wrap: normal; }
 .adapter-logs-toolbar > span { margin-right: auto; }
 .adapter-logs-toolbar #machine-logs-pause { min-height: 32px; }
+.adapter-running-filter { display: inline-flex; min-height: 32px; align-items: center; gap: 5px; padding: 0 5px; color: var(--ink-soft) !important; white-space: nowrap; }
+.adapter-running-filter input { margin: 0; accent-color: var(--forest); }
+.adapter-source-picker-button { width: 28px; height: 28px; padding: 0; border: 1px solid var(--line); border-radius: 3px; background: var(--panel); color: var(--ink); font: 16px var(--mono); cursor: pointer; }
+.adapter-source-picker-button:hover:not(:disabled) { border-color: #62856f; background: #eaf4d9; }
+.adapter-source-picker-button:disabled { color: var(--muted); cursor: default; }
+.adapter-source-picker-dialog { width: min(460px, calc(100vw - 32px)); padding: 16px; border: 1px solid #b5c1b8; border-radius: 4px; background: #f8faf7; color: #17211e; box-shadow: 0 16px 48px #101a1880; }
+.adapter-source-picker-dialog::backdrop { background: #101a1870; }
+.adapter-source-picker-dialog header { display: flex; justify-content: space-between; align-items: center; gap: 12px; padding: 0 0 12px; border-bottom: 1px solid #dbe2dc; }
+.adapter-source-picker-dialog h3 { margin: 0; font-size: 16px; }
+.adapter-source-picker-dialog label { display: grid; gap: 8px; margin-top: 14px; color: var(--muted); font: 11px var(--mono); }
+.adapter-source-picker-dialog select { min-height: 36px; padding: 6px 8px; border: 1px solid var(--line); background: white; color: var(--ink); font: 11px var(--mono); }
+.adapter-source-picker-dialog :focus-visible { outline: 2px solid #547c55; outline-offset: 2px; }
 .machine-log-type-toggle { display: flex; max-width: 100%; gap: 0; border: 1px solid var(--line); border-radius: 3px; overflow: hidden; }
 .machine-log-type-toggle button { min-height: 32px; padding: 5px 10px; border: 0; background: var(--panel); color: var(--ink); font: 11px var(--mono); cursor: pointer; }
 .machine-log-type-toggle button + button { border-left: 1px solid var(--line); }

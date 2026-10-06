@@ -70,6 +70,10 @@
   "policy_config": "organizations/great-lakes/policy-demo.zplc",
   "policy_catalog": "organizations/great-lakes/demo-policy-catalog.json",
   "runtime_policy": "organizations/great-lakes/runtime-policy.zpl",
+  "workload_services": {
+    "echo-service": ["WorkdayEcho"],
+    "metrics-service": ["WorkdayMetrics"]
+  },
   "policies": [
     {"id": "hq-department-boundaries", "name": "HQ department boundaries", "description": "Milwaukee Customer Support, Finance, Shipping, and Receiving apps are department-restricted."},
     {"id": "engineering-site-boundary", "name": "Engineering site boundary", "description": "Milwaukee and Shenzhen Engineering may access the build farm; Shenzhen has no HQ business-system grants."},

@@ -230,6 +230,10 @@ func TestZPLCConfigurationDraftValidation(t *testing.T) {
 			t.Fatalf("invalid draft accepted: %q", source)
 		}
 	}
+	result := app.validatePolicyRecordContent(context.Background(), "configuration", "text/vnd.zpr.zplc", "[resolver]\norder = \"unterminated\n")
+	if result == nil || result.Line != 2 {
+		t.Fatalf("TOML syntax error should identify line 2, got %+v", result)
+	}
 }
 
 func TestNorthstarDemoPoliciesPassConfiguredZPLC(t *testing.T) {

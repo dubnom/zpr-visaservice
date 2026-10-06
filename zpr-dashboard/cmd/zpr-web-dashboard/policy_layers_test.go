@@ -8,6 +8,8 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/BurntSushi/toml"
 )
 
 func TestPolicyLayersComposeInOrderAndRejectUnsafeSources(t *testing.T) {
@@ -47,6 +49,86 @@ func TestPolicyLayersComposeInOrderAndRejectUnsafeSources(t *testing.T) {
 	bundle.Layers[2].Sources = []string{"escape.zpl"}
 	if _, err := composePolicyLayers(root, bundle); err == nil {
 		t.Fatal("symlink escape accepted")
+	}
+}
+
+func TestMergedPolicyConfigPreservesOrganizationAndRuntimeSettings(t *testing.T) {
+	directory := t.TempDir()
+	bootstrapDirectory := filepath.Join(directory, "include")
+	if err := os.Mkdir(bootstrapDirectory, 0700); err != nil {
+		t.Fatal(err)
+	}
+	bootstrapKey := filepath.Join(bootstrapDirectory, "node0-public-key.pem")
+	if err := os.WriteFile(bootstrapKey, []byte("test key"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	organizationPath := filepath.Join(directory, "organization.zplc")
+	runtimePath := filepath.Join(directory, "runtime.zplc")
+	outputPath := filepath.Join(directory, "merged.zplc")
+	organizationConfig := `[visa_service]
+dock_node = "milwaukee-hq"
+
+[nodes.milwaukee-hq]
+zpr_address = "mke.zpr"
+
+[protocols.tcp_8081]
+l4protocol = "iana.TCP"
+port = 8081
+
+[services.WorkdayMetrics]
+protocol = "tcp_8081"
+
+[trusted_services.great_lakes_ldap]
+api = "rest/1"
+`
+	runtimeConfig := `[visa_service]
+dock_node = "n0"
+
+[nodes.n0]
+zpr_address = "fd5a:5052:90de::10"
+
+[nodes.n1]
+zpr_address = "fd5a:5052:90de::11"
+
+[bootstrap]
+"node0.demo" = "/runtime-include/node0-public-key.pem"
+
+[services.SimulatorControlService]
+protocol = "simulator-control"
+`
+	if err := os.WriteFile(organizationPath, []byte(organizationConfig), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(runtimePath, []byte(runtimeConfig), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := writeMergedPolicyConfig(organizationPath, runtimePath, bootstrapDirectory, outputPath); err != nil {
+		t.Fatal(err)
+	}
+
+	var merged map[string]any
+	if _, err := toml.DecodeFile(outputPath, &merged); err != nil {
+		t.Fatalf("decode merged config: %v", err)
+	}
+	visaService := merged["visa_service"].(map[string]any)
+	if visaService["dock_node"] != "n0" {
+		t.Fatalf("runtime dock node = %v, want n0", visaService["dock_node"])
+	}
+	nodes := merged["nodes"].(map[string]any)
+	if nodes["milwaukee-hq"] == nil || nodes["n0"] == nil || nodes["n1"] == nil {
+		t.Fatalf("organization/runtime nodes were not merged: %v", nodes)
+	}
+	services := merged["services"].(map[string]any)
+	if services["WorkdayMetrics"] == nil || services["SimulatorControlService"] == nil {
+		t.Fatalf("organization/runtime services were not merged: %v", services)
+	}
+	trustedServices := merged["trusted_services"].(map[string]any)
+	if trustedServices["great_lakes_ldap"] == nil {
+		t.Fatalf("organization trusted service was lost: %v", trustedServices)
+	}
+	bootstrap := merged["bootstrap"].(map[string]any)
+	if bootstrap["node0.demo"] != bootstrapKey {
+		t.Fatalf("runtime bootstrap key = %v", bootstrap["node0.demo"])
 	}
 }
 

@@ -5,14 +5,14 @@
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <meta name="theme-color" content="#17211e">
     <title>ZPR Control Room</title>
-    <link rel="stylesheet" href="/app.css?v=64">
-    <link rel="stylesheet" href="/machine-logs.css?v=11">
+    <link rel="stylesheet" href="/app.css?v=70">
+    <link rel="stylesheet" href="/machine-logs.css?v=13">
     <link rel="stylesheet" href="/assertions.css?v=11">
     <link rel="stylesheet" href="/sidebar.css?v=7">
     <link rel="stylesheet" href="/trusted-source.css?v=2">
     <link rel="stylesheet" href="/security-review.css?v=8">
     <link rel="stylesheet" href="/diagnostics.css?v=1">
-    <script src="/sidebar.js?v=7" defer></script>
+    <script src="/sidebar.js?v=13" defer></script>
     <script src="/trusted-source.js?v=2" defer></script>
     <script src="/policy-record-icons.js?v=1" defer></script>
   </head>
@@ -52,9 +52,9 @@
               <span class="state-lamp"></span>
               <div><strong id="api-state-text">Connecting to Visa Service</strong><small id="last-updated">Waiting for first snapshot</small></div>
             </div>
-            <div class="uptime-status"><span>UPTIME</span><strong id="metric-uptime">—</strong></div>
           </div>
           <div class="top-actions">
+            <div class="uptime-status"><span>UPTIME</span><strong id="metric-uptime">—</strong></div>
             <label class="poll-control" for="poll-rate"><span>REFRESH</span>
               <select id="poll-rate" aria-label="Refresh interval">
                 <option value="3">3 sec</option>
@@ -135,7 +135,7 @@
 
         <section class="page-view" id="page-adapter-logs" data-page="adapter-logs" aria-label="Adapter Logs">
           <section class="section-block">
-            <div class="adapter-logs-heading"><h2>Adapter Logs</h2><div class="machine-logs-toolbar adapter-logs-toolbar"><button id="machine-logs-pause" class="button button-quiet" type="button" aria-label="Pause log updates" aria-pressed="false">Pause</button><div class="machine-log-type-toggle" role="group" aria-label="Log type"><button type="button" data-adapter-log-type="adapter" aria-pressed="true">Adapter logs</button><button type="button" data-adapter-log-type="controller" aria-pressed="false">Controller logs</button></div><button id="adapter-log-all" class="button" type="button" aria-pressed="false">Show all adapters</button><button id="adapter-log-wrap" class="button" type="button" aria-pressed="true">Word wrap</button><button id="adapter-log-add" class="adapter-column-add" type="button" aria-label="Add adapter panel" title="Add adapter panel">+</button></div></div>
+            <div class="adapter-logs-heading"><h2>Adapter Logs</h2><div class="machine-logs-toolbar adapter-logs-toolbar"><button id="machine-logs-pause" class="button button-quiet" type="button" aria-label="Pause log updates" aria-pressed="false">Pause</button><div class="machine-log-type-toggle" role="group" aria-label="Log type"><button type="button" data-adapter-log-type="adapter" aria-pressed="true">Adapter logs</button><button type="button" data-adapter-log-type="controller" aria-pressed="false">Controller logs</button></div><button id="adapter-log-all" class="button" type="button" aria-pressed="false">Show all adapters</button><label class="adapter-running-filter"><input id="adapter-log-running" type="checkbox"><span>Running only</span></label><button id="adapter-log-wrap" class="button" type="button" aria-pressed="true">Word wrap</button><button id="adapter-log-add" class="adapter-column-add" type="button" aria-label="Add adapter panel" title="Add adapter panel">+</button></div></div>
             <div class="adapter-logs-meta"><span id="machine-logs-status">Connecting</span><span>Updated <time id="machine-logs-time">-</time></span></div>
             <div id="machine-logs-error" class="machine-logs-error" role="alert" hidden></div>
             <div id="machine-logs-grid" class="machine-logs-grid adapter-log-columns" data-site="control-room" data-endpoint="/api/adapter-logs"></div>
@@ -364,8 +364,8 @@ each group attribute "gidNumber" &gt;= 1000;</pre></details></div><aside class="
         <section class="page-view" id="page-zpr-config" data-page="zpr-config" aria-label="ZPR Config" hidden>
           <section class="section-block policy-editor-panel config-editor-panel">
             <div class="policy-version-toolbar"><label>Configuration<select id="zpr-config-picker" aria-label="ZPR configuration draft"><option value="">New draft</option></select></label><label>Name<input id="zpr-config-name" aria-label="Configuration name" maxlength="160"></label><span id="zpr-config-modified" class="policy-modified-indicator" hidden>Modified</span></div>
-            <div class="policy-editor-tools"><div class="policy-tool-group"><button id="zpr-config-validate" class="button" data-config-command type="button">Validate syntax</button></div><strong class="policy-editor-mode">ZPR Config</strong><div class="policy-tool-group"><label>History<select id="zpr-config-history" aria-label="Configuration history"></select></label><button id="zpr-config-save" class="button" data-config-command type="button">Save draft</button></div></div>
-            <div class="config-source-editor"><pre id="zpr-config-gutter" class="config-source-gutter" aria-hidden="true">1</pre><textarea id="zpr-config-source" class="zpr-config-source" aria-label="ZPLC configuration source" spellcheck="false" maxlength="1048576"></textarea></div>
+            <div class="policy-editor-tools"><div class="policy-tool-group"><details class="config-file-menu"><summary class="button">File…</summary><div class="config-file-popover" role="menu" aria-label="Configuration file commands"><button id="zpr-config-save" data-config-command type="button" role="menuitem">Save draft</button><button id="zpr-config-new" data-config-command type="button" role="menuitem">New draft</button><button id="zpr-config-open" data-config-command type="button" role="menuitem">Open file…</button><button id="zpr-config-download" data-config-command type="button" role="menuitem">Download file…</button></div></details><input id="zpr-config-file-input" type="file" accept=".toml,.zplc,text/plain" hidden><button id="zpr-config-validate" class="button" data-config-command type="button">Analyze</button><button id="zpr-config-format" class="button button-save-as-ready" data-config-command type="button">Format</button></div><strong class="policy-editor-mode">ZPR Config</strong><div class="policy-tool-group"><label>History<select id="zpr-config-history" aria-label="Configuration history"></select></label></div></div>
+            <div class="config-source-editor"><div id="zpr-config-gutter" class="config-source-gutter" aria-label="Configuration line numbers and errors"></div><div class="config-code-surface"><pre id="zpr-config-highlight" aria-hidden="true"></pre><textarea id="zpr-config-source" class="zpr-config-source" aria-label="ZPLC configuration source" spellcheck="false" maxlength="1048576" wrap="off"></textarea></div></div>
             <p id="zpr-config-status" role="status">New draft</p>
           </section>
         </section>
@@ -405,11 +405,11 @@ each group attribute "gidNumber" &gt;= 1000;</pre></details></div><aside class="
       </main>
     </div>
     <script src="/vendor/pluralize.js?v=8.0.0" defer></script>
-    <script src="/app.js?v=82" defer></script>
-    <script src="/machine-logs.js?v=14" defer></script>
+    <script src="/app.js?v=86" defer></script>
+    <script src="/machine-logs.js?v=16" defer></script>
     <script src="/assertions.js?v=11" defer></script>
-    <script src="/config-editor.js?v=2" defer></script>
+    <script src="/config-editor.js?v=4" defer></script>
     <script src="/diagnostics.js?v=2" defer></script>
-      <script src="/security-review.js?v=11" defer></script>
+      <script src="/security-review.js?v=12" defer></script>
   </body>
 </html>

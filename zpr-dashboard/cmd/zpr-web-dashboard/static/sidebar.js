@@ -8,22 +8,60 @@
   const controlHelp = {
     map: {
       title: "Map",
-      intro: "Inspect the live ZPR topology and open a node or adapter to review its identity and current grants.",
-      steps: ["Use Fit to frame the current topology.", "Select a node or adapter to inspect its address and recent activity."],
-      recovery: "If the map is disconnected or empty, open Status and review the Visa Service connection errors.",
+      intro: "This diagram is the current Visa Service view of the ZPR network. Nodes host adapters; adapters make the ZPR connection on behalf of an endpoint; registered service badges name destinations published by an actor.",
+      steps: ["Fit frames all rendered actors and services without distorting the diagram; + and − zoom the view. Auto-fit is checked initially: refreshes fit the graph automatically. Panning or zooming turns it off to retain your chosen view. Recheck it to resume automatic fitting; Fit remains a one-time action without changing the checkbox.", "Search highlights matching actors, addresses and service names without removing surrounding connections.", "Select an actor, registration or link to see its reported identity, address and live details. Solid dock lines attach adapters to nodes; inter-node lines are reported network connections.", "Small numbers beside adapters count active visas involving either endpoint. Service counts match address, protocol and service-side port; services sharing an endpoint share its count. An empty outline means zero; a ? means the complete inventory is unavailable.", "New grants glow green around the requester and matching services; new denials glow red around the requester. Dock wires thicken in the same color. Reduced-motion mode keeps the color feedback without expanding glyphs."],
+      recovery: "Dark mode changes only this canvas and its controls; it stays selected across refreshes and page navigation until reload. Service colors and grant/denial feedback keep their meanings. If the map is disconnected or empty, open Status and review the Visa Service connection errors.",
+      context: "The map is observed runtime topology, not a policy editor or deployment preview. A visible connection does not by itself mean a client is authorized to access a service; Visa Service grants depend on authenticated identities and the active policy.",
+      example: "A client adapter is docked to node A → node A has an inter-node connection to node B → node B hosts an adapter that registers a service. Select each line or actor to inspect what Visa Service actually reported.",
       docs: "Control Room guide", href: "https://github.com/org-zpr/zpr-visaservice/blob/main/zpr-dashboard/cmd/zpr-web-dashboard/README.md",
     },
     connections: {
       title: "Status",
-      intro: "Use the status tabs to inspect actors, services, visas, denials, and DNS data returned by Visa Service.",
-      steps: ["Choose a tab to compare live records.", "Use table filters and column headings to narrow or sort results."],
+      intro: "Status tabs are live Visa Service Admin API snapshots. They describe reported runtime state; they do not edit configuration or explain a policy decision beyond the fields shown.",
+      steps: ["Choose Adapters, Actors, Services, Visas, Denials or DNS in the horizontal tabs.", "Type in Filter to match visible row values. Select a column heading to sort; ties are ordered by the other row fields for stable results.", "Use the global refresh interval, Pause updates and Refresh controls in the top bar for every Control Room view."],
       recovery: "A disconnected status identifies the failing Admin API resource in its error details; verify Control-Service and Visa Service availability.",
+      context: "The tab count is the number of records in the latest successful snapshot. When an API resource is unavailable, the page reports that independently; an empty result is not evidence that the service is healthy.",
+    },
+    actors: {
+      title: "Actors",
+      intro: "Actors are identities Visa Service knows about. Node rows describe infrastructure; adapters and clients describe attached or communicating ZPR endpoints.",
+      steps: ["Filter by identity, role, address or state.", "Select an actor row to inspect its reported address and available runtime details.", "Use NODE STATE and the node details to distinguish current reachability from identity enrollment."],
+      recovery: "Missing actors can reflect Admin API availability, registration or stale topology. Compare with Map and the global connection status before treating absence as a removal.",
+      context: "An actor identity alone does not authorize traffic. A policy grant applies to authenticated client identities accessing registered service identities.",
+    },
+    services: {
+      title: "Services",
+      intro: "Services are destination endpoints registered by provider actors. The row associates the advertised service name and kind with its registering actor, DNS name and endpoints.",
+      steps: ["Filter by service name, kind, provider actor, address or endpoint.", "Use Type colors to identify service kinds; the legend is only a visual key.", "Select a row to inspect the service registration and provider details."],
+      recovery: "A registered service may still be unavailable or inaccessible. Check provider actor state and Diagnostics; registration is not an access grant.",
+      context: "Clients request a service identity. Visa Service evaluates that authenticated client/service pair against active policy before issuing a visa.",
+    },
+    visas: {
+      title: "Visas",
+      intro: "A visa is an observed authorization issued for a network flow. This table shows the visa identifier, endpoint pair, protocol, requesting node and expiry.",
+      steps: ["Filter by endpoint, protocol, node or visa ID.", "Sort Expires to find grants nearing expiry.", "Use the endpoint address details to relate a flow back to actors and topology."],
+      recovery: "No active visas can mean no matching requests or expired grants. Check Denials and Visa Service status before diagnosing policy.",
+      context: "This is runtime evidence of an issued authorization, not a guarantee that the endpoint remains reachable or that a new request will receive the same decision.",
+    },
+    denies: {
+      title: "Denials",
+      intro: "Denials summarize recent blocked requests by source, destination, protocol/port and reason, with the observed hit count.",
+      steps: ["Sort Hits to find repeated blocked flows.", "Filter by address, reason or port to group related attempts.", "Compare source and destination actors with the Map before changing policy."],
+      recovery: "A denial means a request was blocked, but the table alone may not identify why an identity or rule failed. Review the reason and the authoritative policy/test evidence.",
+      context: "Repeated or varied denials from an unknown source may be a security signal. Security highlights selected high-priority patterns; it does not automatically label every denied request as hostile.",
+    },
+    dns: {
+      title: "DNS",
+      intro: "DNS shows the configured zone’s request counters, zone statistics and resource records reported by the operator’s DNS source.",
+      steps: ["Compare request and response counters to spot query failures.", "Review zone serial and per-zone statistics for update/freshness clues.", "Filter or sort the resource record table to inspect a name, type, TTL and value."],
+      recovery: "If statistics or records are unavailable, read the displayed source status first; a missing DNS snapshot is different from an empty zone.",
+      context: "DNS resolves service names to network locations. Resolution does not create a ZPR authorization; service access is still decided by Visa Service and policy.",
       docs: "Control Room guide", href: "https://github.com/org-zpr/zpr-visaservice/blob/main/zpr-dashboard/cmd/zpr-web-dashboard/README.md",
     },
     "security-review": {
       title: "Security review",
       intro: "Compare the browser-local Baseline inventory with the current observed inventory; this view does not replace authoritative policy review.",
-      steps: ["Select visible findings to inspect or dismiss them.", "Reset Baseline only when you intend to replace the saved browser snapshot."],
+      steps: ["Visiting Security clears the navigation highlight for the alerts already observed, without dismissing their findings. A new high-priority alert highlights navigation again.", "Select visible findings to inspect or dismiss them.", "Reset Baseline only when you intend to replace the saved browser snapshot."],
       recovery: "If an inventory is unavailable, refresh the source view and inspect its displayed error before resetting the baseline.",
       context: "A missing or stale source is missing evidence, not proof of a healthy state. Baseline is a local comparison aid; ZPL policy and Visa Service remain authoritative for access decisions.",
       docs: "Security and operations guide", href: "https://github.com/org-zpr/zpr-visaservice/blob/main/zpr-dashboard/cmd/zpr-web-dashboard/README.md",
@@ -46,22 +84,25 @@
     },
     "adapter-logs": {
       title: "Adapter logs",
-      intro: "Read logs from the operator-configured adapter and controller inventory. Sources are bounded and read-only.",
-      steps: ["Choose an adapter and log source.", "Use search and follow controls to inspect recent entries."],
+      intro: "Read bounded tails from the operator-configured production adapter/controller inventory. Each panel heading names the log type; the button beside it identifies the adapter or machine, stable ID, and selected source.",
+      steps: ["Choose Adapter logs or Controller logs to select which configured source class appears.", "Click the identity/source button in a panel header to open the source picker; select an entry to change that panel.", "Running only hides sources whose adapter/machine state is not running. Show all adapters opens one panel for each matching configured source; Hide all adapters closes those panels.", "Word wrap changes long lines across all panels. Pause stops polling; Maximize expands one panel."],
       recovery: "An unavailable source is reported independently; check its configured path/container and the Control-Service log inventory.",
+      context: "These are operator-owned production logs returned through Control-Service, not Simulator workload logs. A machine can be running while a particular log source is disconnected or missing.",
       docs: "Adapter log configuration", href: "https://github.com/org-zpr/zpr-visaservice/blob/main/zpr-dashboard/cmd/zpr-web-dashboard/README.md",
     },
     "zpr-config": {
       title: "ZPR configuration",
-      intro: "Edit and validate versioned ZPLC drafts. Saving a draft does not apply it to the live runtime.",
-      steps: ["Choose a configuration to edit, then Analyze and Format as needed.", "Save a validated draft; use the explicit deployment workflow to apply a candidate."],
-      recovery: "Compiler diagnostics are attached to source lines when available. Resolve them before staging; a staged candidate is not an activated policy.",
+      intro: "This editor stores versioned ZPLC runtime-configuration drafts. Analyze checks TOML syntax, Format normalizes assignment spacing without reordering keys or deleting comments, and File opens/imports or downloads a local draft.",
+      steps: ["Choose a saved draft and revision, or use File → New draft/Open file.", "Run Analyze before saving. TOML parser errors with a reported source line appear in the gutter; other diagnostics stay in the status message.", "Format first validates TOML; if valid it adjusts spacing around assignments while preserving comments and values.", "Save draft creates a version; it does not apply settings to a running service."],
+      recovery: "Fix the marked TOML line and Analyze again. If validation reports no line, read the full status rather than assuming line 1. A saved configuration draft still needs its separate approved runtime-application workflow.",
+      context: "Policy is about who may access which service; ZPLC configuration controls runtime/service settings. Editing this draft does not compile, stage or activate network policy.",
+      example: "[visa_service]\ndock_node = \"node-a\"\nlisten_address = \"[::]:8080\" # retained comment",
       docs: "ZPLC and configuration guide", href: "https://github.com/org-zpr/zpr-visaservice/blob/main/zpr-dashboard/README.md",
     },
     policy: {
       title: "Policy editor",
-      intro: "Browse versioned policy records, edit source, and use Analyze to compile and test against the configured candidate fixtures.",
-      steps: ["Analyze reports compiler and evaluator results in the source gutter.", "Format changes spacing only; it does not save.", "Stage creates a candidate for review; it does not deploy or activate policy."],
+      intro: "A policy describes which authenticated client identities may access which registered service identities. The editor works on versioned source records; a draft is not active runtime policy.",
+      steps: ["Browse opens the policy/assertion catalog; File contains record actions such as create, save and version operations.", "Analyze compiles and tests the exact edited source against configured candidate fixtures. Markers are attached only to the source line that produced them.", "Format changes policy-source layout only; it neither analyzes nor saves.", "Stage creates a review candidate. It does not deploy or activate that candidate."],
       recovery: "Analysis unavailable means required test fixtures could not be built; it is distinct from a compiler error. Check the status message and fixture-provider configuration.",
       context: "ZPL matches authenticated client/user or device attributes and service identity attributes. Service rules describe a destination; `allow` grants matching client classes access. The browser calls same-origin `/api/*` and carries no Visa Service or Policy Repository credentials.",
       example: "define FinanceStaff as a user with user.department:Finance;\ndefine FinanceWorkspace as a service with device.zpr.adapter.cn:finance-workspace;\nservice FinanceWorkspace as json {\"service_class\":\"FinanceWorkspace\",\"actor_cn\":\"finance-workspace\",\"summary\":\"Illustrative finance reporting and ledger workspace.\",\"endpoint\":\"zpr://finance-workspace\",\"status\":\"example only; not deployed\"}.\n  allow FinanceStaff.",
@@ -69,10 +110,10 @@
     },
     assertions: {
       title: "Assertion editor",
-      intro: "Author report-only checks against configured trusted sources. Analyze evaluates the current source; it does not save it.",
-      steps: ["Use Analyze to see pass/fail results and source-line warnings in the gutter.", "Format normalizes layout without saving.", "Save stores the assertion revision; periodic evaluation is a separate setting."],
+      intro: "Assertions are report-only checks against trusted directory data. They help operators verify expected identities, group membership and attributes; they do not define an access grant.",
+      steps: ["Read source loads the configured source catalog; it does not edit directory data.", "Analyze evaluates the exact unsaved assertion source and shows checks/results. Source-line warnings appear in the gutter; provider/configuration failures remain in status.", "Format normalizes assertion layout but does not save.", "Save stores a new assertion revision. Enabling periodic evaluation is separate from saving."],
       recovery: "If trusted data cannot be read, verify the provider and its organization-scoped identity mapping before interpreting assertion results.",
-      context: "Assertions validate trusted directory data and never grant or deny network access. Trusted readers and credentials are configured on the server; the browser cannot submit provider URLs, credentials, or data snapshots. Lint warnings are advisory.",
+      context: "Assertions validate trusted directory data and never grant or deny network access. Trusted readers and credentials are configured on the server; the browser cannot submit provider URLs, credentials, or data snapshots. A warning is advisory; a failed/unavailable source means the check lacks data, not that it passed.",
       example: "// Assertions are report-only data checks.\ngroup \"Operators\" members >= 2;\npeople in \"Operators\" attribute \"mail\" present;",
       docs: "Assertion language and behavior", href: "https://github.com/org-zpr/zpr-visaservice/blob/main/zpr-dashboard/ASSERTIONS.md",
     },
@@ -172,7 +213,7 @@
       stylesheet.dataset.zprHelpStyles = "true";
       document.head.append(stylesheet);
     }
-    const topbar = document.querySelector(".main-content .topbar, main .topbar, .topbar");
+    const topbar = document.querySelector(".main-content .top-actions, main .top-actions") || document.querySelector(".main-content .topbar, main .topbar, .topbar");
     let button = document.querySelector(".help-trigger");
     if (!button) {
       button = document.createElement("button");

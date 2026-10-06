@@ -92,6 +92,24 @@ func TestSimulatorRuntimeDriverComesFromOrganizationProfile(t *testing.T) {
 	}
 }
 
+func TestGreatLakesWorkloadsRegisterPolicyServiceClasses(t *testing.T) {
+	for _, test := range []struct {
+		agent string
+		want  string
+	}{
+		{agent: "echo-service", want: "WorkdayEcho"},
+		{agent: "metrics-service", want: "WorkdayMetrics"},
+	} {
+		services, err := simulatorWorkloadServicesForAgent(filepath.Join("examples", "organizations"), "great-lakes", test.agent)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if len(services) != 1 || services[0] != test.want {
+			t.Errorf("%s services = %v, want [%s]", test.agent, services, test.want)
+		}
+	}
+}
+
 func TestLoadLabScenarioUsesBoundedTwoMachineStressProfile(t *testing.T) {
 	organizationDirectory, err := filepath.Abs(filepath.Join("examples", "organizations"))
 	if err != nil {
@@ -459,7 +477,7 @@ func TestLoadSimulatorScenariosFiltersByOrganization(t *testing.T) {
 
 func TestSimulatorOrganizationActivationPersistsSelection(t *testing.T) {
 	previousActivation := activeOrganizationActivation
-	activeOrganizationActivation = &organizationActivationManager{run: organizationActivation{State: "idle"}, reset: func(context.Context, string) error { return nil }}
+	activeOrganizationActivation = &organizationActivationManager{run: organizationActivation{State: "idle"}, reset: func(context.Context, string, string) error { return nil }}
 	t.Cleanup(func() { activeOrganizationActivation = previousActivation })
 	manifestPath := filepath.Join(t.TempDir(), "manifest.json")
 	manifest := scenarioTestManifest()
@@ -516,6 +534,55 @@ func TestSimulatorOrganizationActivationPersistsSelection(t *testing.T) {
 	handleSimulatorOrganizationActivate(response, request)
 	if response.Code != 409 {
 		t.Fatalf("authenticated session activation status = %d", response.Code)
+	}
+}
+
+func TestSimulatorOrganizationRestoreBaseDispatchesRestoreOperation(t *testing.T) {
+	previousActivation := activeOrganizationActivation
+	operation := make(chan string, 1)
+	manager := &organizationActivationManager{
+		run: organizationActivation{State: "idle"},
+		reset: func(_ context.Context, organizationID, action string) error {
+			if organizationID != "great-lakes" {
+				t.Errorf("restore organization = %q", organizationID)
+			}
+			operation <- action
+			return nil
+		},
+	}
+	activeOrganizationActivation = manager
+	t.Cleanup(func() { activeOrganizationActivation = previousActivation })
+	manifestPath := filepath.Join(t.TempDir(), "manifest.json")
+	manifest := scenarioTestManifest()
+	content, err := json.Marshal(manifest)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(manifestPath, content, 0600); err != nil {
+		t.Fatal(err)
+	}
+	selectionPath := filepath.Join(t.TempDir(), "active.txt")
+	t.Setenv("SIMULATION_MANIFEST", manifestPath)
+	t.Setenv("SIMULATION_ORGANIZATION_ID", "northstar")
+	t.Setenv("SIMULATION_ACTIVE_ORGANIZATION_FILE", selectionPath)
+	t.Setenv("SIMULATION_ORGANIZATIONS_DIR", filepath.Join("examples", "organizations"))
+	request := httptest.NewRequest("POST", "/api/simulator/organizations/great-lakes/restore-base", nil)
+	request.SetPathValue("organization", "great-lakes")
+	response := httptest.NewRecorder()
+	handleSimulatorOrganizationRestoreBase(response, request)
+	if response.Code != http.StatusAccepted {
+		t.Fatalf("restore request failed: %d %s", response.Code, response.Body.String())
+	}
+	<-manager.done
+	if got := <-operation; got != "restore-base" {
+		t.Fatalf("reset operation = %q, want restore-base", got)
+	}
+	if status := manager.snapshot(); status.State != "completed" || status.Operation != "restore-base" {
+		t.Fatalf("restore status = %+v", status)
+	}
+	selected, err := os.ReadFile(selectionPath)
+	if err != nil || string(selected) != "great-lakes\n" {
+		t.Fatalf("restored organization selection = %q, %v", selected, err)
 	}
 }
 

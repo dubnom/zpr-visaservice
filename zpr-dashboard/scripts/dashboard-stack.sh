@@ -1223,6 +1223,9 @@ case "${1:-start}" in
     restart-control-service)
         start_control_service
         ;;
+    stop-policy-service)
+        stop_policy_service
+        ;;
     restart-policy-service) restart_policy_service ;;
     restart-simulator-control) start_zpr_machine_control_service ;;
     stop-legacy-workloads) stop_legacy_named_workloads ;;
@@ -1231,5 +1234,5 @@ case "${1:-start}" in
         [ "$#" -eq 3 ] || { echo "usage: $0 restart-policy-context organization source" >&2; exit 2; }
         restart_policy_context "$2" "$3"
         ;;
-    *) echo "usage: $0 {start|stop|restart|status|start-admin-relay|stop-admin-relay|start-dns|stop-dns|start-ui-relays|stop-ui-relays|start-browser-gateway|stop-browser-gateway|restart-control-room|restart-simulator|restart-control-service|restart-policy-service|restart-simulator-control}" >&2; exit 2 ;;
+    *) echo "usage: $0 {start|stop|restart|status|start-admin-relay|stop-admin-relay|start-dns|stop-dns|start-ui-relays|stop-ui-relays|start-browser-gateway|stop-browser-gateway|restart-control-room|restart-simulator|restart-control-service|stop-policy-service|restart-policy-service|restart-simulator-control}" >&2; exit 2 ;;
 esac

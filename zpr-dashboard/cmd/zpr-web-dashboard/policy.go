@@ -144,6 +144,7 @@ type policyCheckResponse struct {
 	Valid       bool             `json:"valid"`
 	Diagnostics string           `json:"diagnostics"`
 	Warnings    []lintDiagnostic `json:"warnings,omitempty"`
+	Line        int              `json:"line,omitempty"`
 }
 
 type assistantMessage struct {
@@ -681,7 +682,12 @@ func (a *application) validatePolicyRecordContent(ctx context.Context, kind, con
 		}
 		var config map[string]any
 		if _, err := toml.Decode(content, &config); err != nil {
-			return &policyCheckResponse{Diagnostics: "Invalid TOML configuration: " + err.Error()}
+			result := &policyCheckResponse{Diagnostics: "Invalid TOML configuration: " + err.Error()}
+			var parseError toml.ParseError
+			if errors.As(err, &parseError) && parseError.Position.Line > 0 {
+				result.Line = parseError.Position.Line
+			}
+			return result
 		}
 	case "policy":
 		return nil

@@ -6,6 +6,8 @@ const reducedMotion = window.matchMedia?.("(prefers-reduced-motion: reduce)").ma
 const state = { snapshot: null, timer: null, paused: false, pending: false, graphCamera: null, graphAnimations: !reducedMotion, topologyComponents: null, topologyNodeColumns: null, topologyNodeSlots: new Map(), topologyNewComponents: new Map(), selection: null, sorts: {}, dnsPending: false, policy: { loaded: false, configured: false, categories: [], records: [], attributes: [], categoryID: "", collapsedCategories: new Set(), treeInitialized: false, record: null, source: "", savedSource: "", revision: 0, browsingRevision: 0, saveAs: false, compilerReady: false, testerReady: false, testMode: false, testPending: false, testAbort: null, testResult: null, testSource: "", testDimensions: [], saveTestPending: false, saveTestSource: "", saveTestError: "", saveAsTestSource: "", saveAsTestError: "", assistantReady: false, assistantEnabled: false, assistantUsage: { input: 0, output: 0 }, evaluatedSource: null, validSource: null, errorOffsets: [], checkDiagnostics: "", revisions: [], messages: [], assistantPending: false, assistantError: "" } };
 
 let previousPolledValues = null;
+let graphAutoFit = true;
+let graphDarkMode = false;
 
 const defaultTableSorts = {
   connections: { key: "from", direction: 1 },
@@ -603,6 +605,10 @@ function animateGraphMotion(component, animation, from, to, endAt = 1) {
     const { x, y, scale } = graphMotionAt(component);
     const centerX = Number(component.dataset.originX), centerY = Number(component.dataset.originY);
     component.setAttribute("transform", `translate(${x} ${y}) translate(${centerX} ${centerY}) scale(${scale}) translate(${-centerX} ${-centerY})`);
+    const world = component.closest("#graph-world");
+    for (const connection of world?.graphConnections?.get(component.dataset.topologyComponent) || []) {
+      connectGraphShapes(connection.lines, connection.from, connection.to, world);
+    }
     if (animation.playState === "running") requestAnimationFrame(update);
   };
   update();
@@ -612,7 +618,7 @@ function animateGraphLink(group, start, duration = 700) {
   const lines = [...group.querySelectorAll("line.graph-link, line.graph-link-hit, line.graph-network-clearance")];
   const target = lines[0];
   if (!target) return;
-  const to = { x1: Number(target.getAttribute("x1")), y1: Number(target.getAttribute("y1")), x2: Number(target.getAttribute("x2")), y2: Number(target.getAttribute("y2")) };
+  const to = group.graphConnection?.target || { x1: Number(target.getAttribute("x1")), y1: Number(target.getAttribute("y1")), x2: Number(target.getAttribute("x2")), y2: Number(target.getAttribute("y2")) };
   const from = { x1: start.x1, y1: start.y1, x2: start.x2, y2: start.y2 };
   if (Object.keys(to).every((key) => Math.abs(to[key] - from[key]) < 0.5)) return;
   group.graphLinkMotion = { from, to };
@@ -621,13 +627,60 @@ function animateGraphLink(group, start, duration = 700) {
     if (!group.isConnected) return;
     const progress = Math.min(1, (now - startedAt) / duration);
     const eased = 1 - (1 - progress) ** 3;
-    for (const line of lines) {
-      for (const key of Object.keys(to)) line.setAttribute(key, String(from[key] + (to[key] - from[key]) * eased));
+    if (group.graphConnection) {
+      const connection = group.graphConnection;
+      connectGraphShapes(connection.lines, connection.from, connection.to, group.closest("#graph-world"));
+    } else {
+      for (const line of lines) {
+        for (const key of Object.keys(to)) line.setAttribute(key, String(from[key] + (to[key] - from[key]) * eased));
+      }
     }
     if (progress < 1) requestAnimationFrame(update);
     else delete group.graphLinkMotion;
   };
   update(startedAt);
+}
+
+function setupGraphAppearance(stage) {
+  stage.classList.toggle("graph-dark", graphDarkMode);
+  stage.querySelector("[data-graph-dark-mode]").addEventListener("change", (event) => {
+    graphDarkMode = event.currentTarget.checked;
+    stage.classList.toggle("graph-dark", graphDarkMode);
+  });
+}
+
+function connectGraphShapes(lines, fromShape, toShape, world) {
+  const worldMatrix = world.getCTM();
+  const shapeSpace = (shape) => shape.getCTM().inverse().multiply(worldMatrix);
+  const center = (shape) => {
+    const box = shape.getBBox();
+    return new DOMPoint(box.x + box.width / 2, box.y + box.height / 2)
+      .matrixTransform(worldMatrix.inverse().multiply(shape.getCTM()));
+  };
+  const from = center(fromShape), to = center(toShape);
+  const boundary = (shape, start, end) => {
+    const matrix = shapeSpace(shape);
+    let inside = 0, outside = 1;
+    // Intersect the ray with the actual SVG fill, including rounded corners and polygons.
+    for (let step = 0; step < 32; step++) {
+      const fraction = (inside + outside) / 2;
+      const point = new DOMPoint(start.x + (end.x - start.x) * fraction, start.y + (end.y - start.y) * fraction);
+      if (shape.isPointInFill(point.matrixTransform(matrix))) inside = fraction;
+      else outside = fraction;
+    }
+    return { x: start.x + (end.x - start.x) * inside, y: start.y + (end.y - start.y) * inside };
+  };
+  const start = boundary(fromShape, from, to);
+  const end = boundary(toShape, to, from);
+  for (const line of lines) {
+    const matrix = line.parentElement.getCTM().inverse().multiply(worldMatrix);
+    const localStart = new DOMPoint(start.x, start.y).matrixTransform(matrix);
+    const localEnd = new DOMPoint(end.x, end.y).matrixTransform(matrix);
+    line.setAttribute("x1", String(localStart.x));
+    line.setAttribute("y1", String(localStart.y));
+    line.setAttribute("x2", String(localEnd.x));
+    line.setAttribute("y2", String(localEnd.y));
+  }
 }
 
 function renderTopology(data, exitComponents = []) {
@@ -637,6 +690,20 @@ function renderTopology(data, exitComponents = []) {
   const displayNames = new Map(actors.map((actor) => [actor.cn, actorDisplayName(actor)]));
   const actorsByName = new Map(actors.map((actor) => [actor.cn, actor]));
   const actorsByAddress = new Map(actors.map((actor) => [actor.zpr_addr, actor]));
+  const activeVisas = Array.isArray(data.active_visas)
+    ? [...new Map(data.active_visas.map((visa) => [String(visa.id), visa])).values()].filter((visa) => Number(visa.expires) > Date.now() / 1000)
+    : null;
+  const actorVisaCounts = new Map();
+  if (activeVisas) for (const visa of activeVisas) {
+    for (const address of new Set([visa.source_addr, visa.dest_addr].filter(Boolean).map(dnsAddressKey))) {
+      actorVisaCounts.set(address, (actorVisaCounts.get(address) || 0) + 1);
+    }
+  }
+  const visaCountBadge = (count, x, y) => {
+    const label = count == null ? "?" : count === 0 ? "" : String(count);
+    const width = Math.max(22, label.length * 7 + 10);
+    return `<g class="graph-visa-count${count === 0 ? " empty" : ""}" aria-label="${count == null ? "Active visa count unavailable" : `${count} active visas`}"><title>${count == null ? "Active visa count unavailable" : `${count} active visas`}</title><rect x="${x - 11}" y="${y - 9}" width="${width}" height="18" rx="9"/>${label ? `<text x="${x - 11 + width / 2}" y="${y + 3}">${label}</text>` : ""}</g>`;
+  };
   const edges = [];
 
   for (const node of nodes) {
@@ -652,6 +719,7 @@ function renderTopology(data, exitComponents = []) {
   }
 
   const stage = byId("topology-stage");
+  const darkModeControl = `<label class="graph-auto-fit"><input type="checkbox" data-graph-dark-mode${graphDarkMode ? " checked" : ""}>Dark mode</label>`;
   const positions = new Map();
   const servicePositions = new Map();
   const servicesByActor = new Map();
@@ -667,7 +735,8 @@ function renderTopology(data, exitComponents = []) {
   renderConnections(edges, unconnected);
 
   if (!actors.length && !exitComponents.length) {
-    stage.innerHTML = `<div class="empty-state">No nodes or adapters reported.</div>`;
+    stage.innerHTML = `<div class="graph-controls" aria-label="Topology graph controls">${darkModeControl}</div><div class="empty-state">No nodes or adapters reported.</div>`;
+    setupGraphAppearance(stage);
     return;
   }
 
@@ -827,6 +896,9 @@ function renderTopology(data, exitComponents = []) {
   const oldGraph = stage.querySelector(".topology-graph");
   const oldViewBox = oldGraph?.viewBox.baseVal;
   const previousViewport = oldGraph ? {
+    viewBox: oldGraph.getAttribute("viewBox"),
+    x: oldViewBox.x,
+    y: oldViewBox.y,
     width: oldViewBox.width,
     height: oldViewBox.height,
     clientWidth: oldGraph.clientWidth,
@@ -848,7 +920,7 @@ function renderTopology(data, exitComponents = []) {
     const highlighted = query && (matches(edge.from) || matches(edge.to)) ? "highlighted" : "";
     const filtered = query && !highlighted ? "filtered" : "";
     const key = `${edge.kind}|${edge.from.cn}|${edge.to.cn}`;
-    return `<g class="graph-edge ${highlighted} ${filtered}" data-topology-edge="${escapeHTML(key)}" data-inspect-link="${escapeHTML(key)}"${docked ? ` data-dock-adapter="${escapeHTML(edge.to.cn)}"` : ""} tabindex="0" role="button" aria-label="Inspect ${escapeHTML(title)}"><title>${escapeHTML(title)}</title>${docked ? "" : `<line class="graph-network-clearance" x1="${from.x}" y1="${from.y}" x2="${to.x}" y2="${to.y}"/>`}<line class="graph-link ${cls}" x1="${from.x}" y1="${from.y}" x2="${to.x}" y2="${to.y}"/><line class="graph-link-hit" x1="${from.x}" y1="${from.y}" x2="${to.x}" y2="${to.y}"/></g>`;
+    return `<g class="graph-edge ${highlighted} ${filtered}" data-topology-edge="${escapeHTML(key)}" data-connector-from="${escapeHTML(`actor:${JSON.stringify(edge.from.cn)}`)}" data-connector-to="${escapeHTML(`actor:${JSON.stringify(edge.to.cn)}`)}" data-inspect-link="${escapeHTML(key)}"${docked ? ` data-dock-adapter="${escapeHTML(edge.to.cn)}"` : ""} tabindex="0" role="button" aria-label="Inspect ${escapeHTML(title)}"><title>${escapeHTML(title)}</title>${docked ? "" : `<line class="graph-network-clearance" x1="${from.x}" y1="${from.y}" x2="${to.x}" y2="${to.y}"/>`}<line class="graph-link ${cls}" x1="${from.x}" y1="${from.y}" x2="${to.x}" y2="${to.y}"/><line class="graph-link-hit" x1="${from.x}" y1="${from.y}" x2="${to.x}" y2="${to.y}"/></g>`;
   }).join("");
 
   const arrivalMarker = (key, x, y, radius) => {
@@ -920,7 +992,8 @@ function renderTopology(data, exitComponents = []) {
       cloudMarkup = `<g class="graph-external-network"><title>${escapeHTML(externalNetworks)}</title><line class="graph-link gateway-cloud-link" x1="${pos.x}" y1="${pos.y}" x2="${cloudX}" y2="${cloudY}"/><path class="graph-cloud" transform="translate(${cloudX} ${cloudY})" d="M -34 22 C -60 22 -62 -12 -39 -17 C -40 -43 -2 -49 9 -28 C 31 -42 52 -22 46 -5 C 68 0 62 22 42 22 Z"/></g>`;
     }
     const highlighted = query && matches(actor) ? "highlighted" : "";
-    return `<g class="graph-vertex ${isNode ? "node" : isGateway ? "gateway" : isVisaService ? "visa" : "adapter"}${arrivingClass} ${highlighted} ${query && !matches(actor) ? "filtered" : ""}" data-topology-component="${escapeHTML(componentKey)}" data-origin-x="${pos.x}" data-origin-y="${pos.y}"${positionAttributes} data-inspect-actor="${escapeHTML(actor.cn)}" tabindex="0" role="button" aria-label="Inspect ${escapeHTML(isGateway ? "gateway " : "")}${escapeHTML(displayName)}"><title>${escapeHTML(isGateway ? "ZPR gateway · " : "")}${escapeHTML(displayName)} · ${escapeHTML(actor.cn)} · ${escapeHTML(dnsAddressTitle(actor.zpr_addr))}</title>${cloudMarkup}${glyph}${marker}<text class="graph-label" x="${pos.x}" y="${pos.y + 3}">${escapeHTML(shortName)}</text></g>`;
+    const count = !isNode ? visaCountBadge(activeVisas && actor.zpr_addr ? actorVisaCounts.get(dnsAddressKey(actor.zpr_addr)) || 0 : null, pos.x + actorRadius(actor) - 2, pos.y - 24) : "";
+    return `<g class="graph-vertex ${isNode ? "node" : isGateway ? "gateway" : isVisaService ? "visa" : "adapter"}${arrivingClass} ${highlighted} ${query && !matches(actor) ? "filtered" : ""}" data-topology-component="${escapeHTML(componentKey)}" data-origin-x="${pos.x}" data-origin-y="${pos.y}"${positionAttributes} data-inspect-actor="${escapeHTML(actor.cn)}" tabindex="0" role="button" aria-label="Inspect ${escapeHTML(isGateway ? "gateway " : "")}${escapeHTML(displayName)}"><title>${escapeHTML(isGateway ? "ZPR gateway · " : "")}${escapeHTML(displayName)} · ${escapeHTML(actor.cn)} · ${escapeHTML(dnsAddressTitle(actor.zpr_addr))}</title>${cloudMarkup}${glyph}${marker}<text class="graph-label" x="${pos.x}" y="${pos.y + 3}">${escapeHTML(shortName)}</text>${count}</g>`;
   });
 
   const serviceEdgeMarkup = [];
@@ -932,16 +1005,6 @@ function renderTopology(data, exitComponents = []) {
     const label = service.service_name;
     const shortLabel = label.length > 22 ? `${label.slice(0, 21)}…` : label;
     const badgeWidth = Math.max(46, Math.min(132, shortLabel.length * 5.6 + 16));
-    const dx = position.x - ownerPosition.x;
-    const dy = position.y - ownerPosition.y;
-    const distance = Math.hypot(dx, dy) || 1;
-    const outwardX = dx / distance;
-    const outwardY = dy / distance;
-    const actorRadius = owner.node ? 49 : visaServices.has(owner.cn) ? 39 : 32;
-    const startX = ownerPosition.x + outwardX * actorRadius;
-    const startY = ownerPosition.y + outwardY * actorRadius;
-    const endX = position.x - outwardX * (badgeWidth / 2);
-    const endY = position.y - outwardY * 10;
     const type = serviceTypeAppearance(isGatewayService(service) ? "Gateway" : service.service_kind);
     const trustedType = (service.service_kind || "").match(/^Trusted\("([^\"]+)"\)$/)?.[1];
     const trustedClass = trustedType ? ` trusted-${trustedType.toLowerCase().replace(/[^a-z0-9]+/g, "-")}` : "";
@@ -950,7 +1013,7 @@ function renderTopology(data, exitComponents = []) {
     const highlighted = query && (serviceMatches || matches(owner)) ? "highlighted" : "";
     const filtered = query && !highlighted ? "filtered" : "";
     const serviceEdgeKey = `service:${JSON.stringify([service.actor_cn, service.service_name])}`;
-    serviceEdgeMarkup.push(`<g class="graph-service-edge ${highlighted} ${filtered}" data-topology-edge="${escapeHTML(serviceEdgeKey)}" aria-hidden="true"><line class="graph-link service-link" x1="${startX}" y1="${startY}" x2="${endX}" y2="${endY}"/></g>`);
+    serviceEdgeMarkup.push(`<g class="graph-service-edge ${highlighted} ${filtered}" data-topology-edge="${escapeHTML(serviceEdgeKey)}" data-connector-from="${escapeHTML(`actor:${JSON.stringify(service.actor_cn)}`)}" data-connector-to="${escapeHTML(serviceEdgeKey)}" aria-hidden="true"><line class="graph-link service-link" x1="${ownerPosition.x}" y1="${ownerPosition.y}" x2="${position.x}" y2="${position.y}"/></g>`);
     const providerName = displayNames.get(owner.cn) || owner.cn;
     const title = `${isGatewayService(service) ? "Gateway · " : ""}${service.service_name} registered by ${providerName} (${owner.cn})${service.external_network_connection ? ` · external network: ${service.external_network_connection}` : ""}${service.zpr_addr ? ` · ${dnsAddressTitle(service.zpr_addr)}` : ""}`;
     const labelForScreenReader = `Inspect service ${service.service_name}, registered by ${providerName}`;
@@ -962,11 +1025,38 @@ function renderTopology(data, exitComponents = []) {
     const parentMovement = marker ? enteringOffsets.get(parentKey) || previousMovement.get(parentKey) : null;
     const entry = marker && parentMovement ? { x: offset.x + parentMovement.x, y: offset.y + parentMovement.y } : null;
     const positionAttributes = offsetAttributes(offset, parentKey, entry);
-    return `<g class="graph-service-badge${gatewayClass}${trustedClass}${arrivingClass} ${highlighted} ${filtered}" data-service-type="${escapeHTML(type.key)}" fill="${escapeHTML(type.background)}" stroke="${escapeHTML(type.border)}" color="${escapeHTML(type.color)}" data-topology-component="${escapeHTML(componentKey)}" data-origin-x="${position.x}" data-origin-y="${position.y}"${positionAttributes} data-inspect-service="${escapeHTML(service.service_name)}" tabindex="0" role="button" aria-label="${escapeHTML(labelForScreenReader)}"><title>${escapeHTML(title)}</title><rect x="${position.x - badgeWidth / 2}" y="${position.y - 10}" width="${badgeWidth}" height="20" rx="4"/>${marker}<text x="${position.x}" y="${position.y + 3}">${escapeHTML(shortLabel)}</text></g>`;
+    const count = visaCountBadge(activeVisas ? activeVisas.filter((visa) => serviceMatchesVisa(service, visa, actors)).length : null, position.x + badgeWidth / 2 + 12, position.y);
+    return `<g class="graph-service-badge${gatewayClass}${trustedClass}${arrivingClass} ${highlighted} ${filtered}" data-service-type="${escapeHTML(type.key)}" fill="${escapeHTML(type.background)}" stroke="${escapeHTML(type.border)}" color="${escapeHTML(type.color)}" data-topology-component="${escapeHTML(componentKey)}" data-origin-x="${position.x}" data-origin-y="${position.y}"${positionAttributes} data-inspect-service="${escapeHTML(service.service_name)}" tabindex="0" role="button" aria-label="${escapeHTML(labelForScreenReader)}"><title>${escapeHTML(title)}</title><rect x="${position.x - badgeWidth / 2}" y="${position.y - 10}" width="${badgeWidth}" height="20" rx="4"/>${marker}<text x="${position.x}" y="${position.y + 3}">${escapeHTML(shortLabel)}</text>${count}</g>`;
   });
 
   const exiting = (kind) => exitComponents.filter((component) => component.kind === kind).map((component) => component.markup).join("");
-  stage.innerHTML = `<div class="graph-controls" aria-label="Topology graph controls"><button class="graph-control" data-graph-action="in" type="button" aria-label="Zoom in" title="Zoom in">+</button><button class="graph-control" data-graph-action="out" type="button" aria-label="Zoom out" title="Zoom out">−</button><button class="graph-control graph-fit" data-graph-action="fit" type="button" aria-label="Fit graph" title="Fit graph">Fit</button></div><svg class="topology-graph" viewBox="0 0 ${width} ${height}" role="img" aria-label="Topology graph with ${nodes.length} nodes, ${adapters.length} adapters, ${dockEdges.length} dock connections, ${networkEdges.length} inter-node links, and ${(data.services || []).filter((service) => servicesByActor.has(service.actor_cn)).length} registered services"><g id="graph-world">${edgeMarkup}${serviceEdgeMarkup.join("")}${serviceMarkup.join("")}<g class="graph-exit-layer" aria-hidden="true">${exiting("service")}</g>${vertexMarkup.slice(nodes.length).join("")}<g class="graph-exit-layer" aria-hidden="true">${exiting("adapter")}</g>${vertexMarkup.slice(0, nodes.length).join("")}<g class="graph-exit-layer" aria-hidden="true">${exiting("node")}</g></g></svg>`;
+  stage.innerHTML = `<div class="graph-controls" aria-label="Topology graph controls">${darkModeControl}<label class="graph-auto-fit"><input type="checkbox" data-graph-auto-fit${graphAutoFit ? " checked" : ""}>Auto-fit</label><button class="graph-control" data-graph-action="in" type="button" aria-label="Zoom in" title="Zoom in">+</button><button class="graph-control" data-graph-action="out" type="button" aria-label="Zoom out" title="Zoom out">−</button><button class="graph-control graph-fit" data-graph-action="fit" type="button" aria-label="Fit graph" title="Fit graph">Fit</button></div><svg class="topology-graph" viewBox="0 0 ${width} ${height}" role="img" aria-label="Topology graph with ${nodes.length} nodes, ${adapters.length} adapters, ${dockEdges.length} dock connections, ${networkEdges.length} inter-node links, and ${(data.services || []).filter((service) => servicesByActor.has(service.actor_cn)).length} registered services"><g id="graph-world">${edgeMarkup}${serviceEdgeMarkup.join("")}${serviceMarkup.join("")}<g class="graph-exit-layer" aria-hidden="true">${exiting("service")}</g>${vertexMarkup.slice(nodes.length).join("")}<g class="graph-exit-layer" aria-hidden="true">${exiting("adapter")}</g>${vertexMarkup.slice(0, nodes.length).join("")}<g class="graph-exit-layer" aria-hidden="true">${exiting("node")}</g></g></svg>`;
+  setupGraphAppearance(stage);
+  const world = stage.querySelector("#graph-world");
+  const shapes = new Map([...world.querySelectorAll(":scope > [data-topology-component]")].map((component) => [
+    component.dataset.topologyComponent,
+    component.querySelector(":scope > .graph-node, :scope > .graph-adapter, :scope > .graph-gateway, :scope > .graph-visa, :scope > rect"),
+  ]));
+  world.graphConnections = new Map();
+  const registerConnection = (keys, lines, from, to) => {
+    const connection = { lines, from, to };
+    connectGraphShapes(lines, from, to, world);
+    const line = lines[0];
+    connection.target = Object.fromEntries(["x1", "y1", "x2", "y2"].map((key) => [key, Number(line.getAttribute(key))]));
+    line.parentElement.graphConnection = connection;
+    for (const key of new Set(keys)) {
+      const connections = world.graphConnections.get(key) || [];
+      connections.push(connection);
+      world.graphConnections.set(key, connections);
+    }
+  };
+  for (const edge of world.querySelectorAll("[data-connector-from]")) {
+    registerConnection([edge.dataset.connectorFrom, edge.dataset.connectorTo], edge.querySelectorAll("line"), shapes.get(edge.dataset.connectorFrom), shapes.get(edge.dataset.connectorTo));
+  }
+  for (const cloud of world.querySelectorAll(".graph-external-network")) {
+    const owner = cloud.closest("[data-topology-component]");
+    registerConnection([owner.dataset.topologyComponent], cloud.querySelectorAll("line"), shapes.get(owner.dataset.topologyComponent), cloud.querySelector(".graph-cloud"));
+  }
 
   const renderedBounds = stage.querySelector("#graph-world").getBBox();
   if (renderedBounds.width > 0 && renderedBounds.height > 0) {
@@ -975,6 +1065,11 @@ function renderTopology(data, exitComponents = []) {
     width = renderedBounds.width + paddingX * 2;
     height = renderedBounds.height + paddingY * 2;
     stage.querySelector(".topology-graph").setAttribute("viewBox", `${renderedBounds.x - paddingX} ${renderedBounds.y - paddingY} ${width} ${height}`);
+  }
+  if (!graphAutoFit && previousViewport) {
+    width = previousViewport.width;
+    height = previousViewport.height;
+    stage.querySelector(".topology-graph").setAttribute("viewBox", previousViewport.viewBox);
   }
 
   if (state.graphAnimations) {
@@ -1051,7 +1146,18 @@ function setupGraphControls(stage, width, height, previousViewport) {
       }
     }
   }
+  const cancelViewportAnimation = () => {
+    svg.getAnimations().filter((animation) => animation.effect?.target === svg).forEach((animation) => animation.cancel());
+    svg.style.transform = "none";
+    svg.style.transformOrigin = "";
+  };
+  const beginManualNavigation = () => {
+    graphAutoFit = false;
+    stage.querySelector("[data-graph-auto-fit]").checked = false;
+    cancelViewportAnimation();
+  };
   const zoomAt = (nextScale, x = viewBox.x + width / 2, y = viewBox.y + height / 2) => {
+    beginManualNavigation();
     const scale = Math.max(0.05, Math.min(maxZoom, nextScale));
     const ratio = scale / camera.scale;
     camera.x = x - (x - camera.x) * ratio;
@@ -1065,24 +1171,29 @@ function setupGraphControls(stage, width, height, previousViewport) {
     point.y = event.clientY;
     return point.matrixTransform(svg.getScreenCTM().inverse());
   };
+  const fit = (cancelAnimation = true) => {
+    if (cancelAnimation) cancelViewportAnimation();
+    const bounds = world.getBBox();
+    camera.scale = Math.min((width * 0.9) / Math.max(1, bounds.width), (height * 0.9) / Math.max(1, bounds.height));
+    camera.x = viewBox.x + width / 2 - (bounds.x + bounds.width / 2) * camera.scale;
+    camera.y = viewBox.y + height / 2 - (bounds.y + bounds.height / 2) * camera.scale;
+    apply();
+  };
+  stage.querySelector("[data-graph-auto-fit]").addEventListener("change", (event) => {
+    graphAutoFit = event.currentTarget.checked;
+    if (graphAutoFit) fit();
+  });
 
   stage.querySelectorAll("[data-graph-action]").forEach((button) => button.addEventListener("click", () => {
     const action = button.dataset.graphAction;
     if (action === "in") zoomAt(camera.scale * 1.25);
     if (action === "out") zoomAt(camera.scale / 1.25);
-    if (action === "fit") {
-      svg.getAnimations().filter((animation) => animation.effect?.target === svg).forEach((animation) => animation.cancel());
-      svg.style.transform = "none";
-      svg.style.transformOrigin = "";
-      const bounds = world.getBBox();
-      camera.scale = Math.min((width * 0.9) / Math.max(1, bounds.width), (height * 0.9) / Math.max(1, bounds.height));
-      camera.x = viewBox.x + width / 2 - (bounds.x + bounds.width / 2) * camera.scale;
-      camera.y = viewBox.y + height / 2 - (bounds.y + bounds.height / 2) * camera.scale;
-      apply();
-    }
+    if (action === "fit") fit();
   }));
   svg.addEventListener("wheel", (event) => {
     event.preventDefault();
+    if (event.deltaY === 0) return;
+    cancelViewportAnimation();
     const point = pointAt(event);
     zoomAt(camera.scale * (event.deltaY < 0 ? 1.12 : 1 / 1.12), point.x, point.y);
   }, { passive: false });
@@ -1097,8 +1208,12 @@ function setupGraphControls(stage, width, height, previousViewport) {
   });
   svg.addEventListener("pointermove", (event) => {
     if (!drag || drag.pointerId !== event.pointerId) return;
-    camera.x = drag.x + (event.clientX - drag.clientX) * width / svg.clientWidth;
-    camera.y = drag.y + (event.clientY - drag.clientY) * height / svg.clientHeight;
+    const x = drag.x + (event.clientX - drag.clientX) * width / svg.clientWidth;
+    const y = drag.y + (event.clientY - drag.clientY) * height / svg.clientHeight;
+    if (x === camera.x && y === camera.y) return;
+    beginManualNavigation();
+    camera.x = x;
+    camera.y = y;
     apply();
   });
   const endDrag = (event) => {
@@ -1108,7 +1223,8 @@ function setupGraphControls(stage, width, height, previousViewport) {
   };
   svg.addEventListener("pointerup", endDrag);
   svg.addEventListener("pointercancel", endDrag);
-  apply();
+  if (graphAutoFit) fit(false);
+  else apply();
   stage.querySelectorAll(".graph-exit-layer .graph-exiting").forEach((component) => {
     const moving = component.hasAttribute("data-arrival-dx");
     const exitX = component.dataset.exitDx ?? component.dataset.arrivalDx;
@@ -3315,7 +3431,7 @@ const SERVICE_GRANT_DURATION = 2000;
 function decisionPulseFrames(reducedMotion) {
   return [
     { opacity: 0, ...(reducedMotion ? {} : { transform: "scale(1)" }) },
-    { opacity: 0.95, offset: 0.4, ...(reducedMotion ? {} : { transform: "scale(1.25)" }) },
+    { opacity: 1, offset: 0.4, ...(reducedMotion ? {} : { transform: "scale(1.25)" }) },
     { opacity: 0, ...(reducedMotion ? {} : { transform: "scale(1)" }) },
   ];
 }
@@ -3389,7 +3505,7 @@ function pulseAdapterDecisions(data) {
     animation.currentTime = elapsed;
     if (!reducedMotion) {
       glyph.classList.add("graph-decision-glyph");
-      const expansion = glyph.animate([{ transform: "scale(1)" }, { transform: "scale(1.12)", offset: 0.4 }, { transform: "scale(1)" }], { duration: SERVICE_GRANT_DURATION, easing: "ease-in-out" });
+      const expansion = glyph.animate([{ transform: "scale(1)" }, { transform: "scale(1.2)", offset: 0.4 }, { transform: "scale(1)" }], { duration: SERVICE_GRANT_DURATION, easing: "ease-in-out" });
       expansion.onfinish = () => glyph.classList.remove("graph-decision-glyph");
       expansion.currentTime = elapsed;
     }
@@ -3420,13 +3536,13 @@ function pulseAdapterDecisions(data) {
       const normal = getComputedStyle(wire);
       const base = { stroke: normal.stroke, strokeWidth: normal.strokeWidth };
       wire.dataset.decision = decision;
-      const wireAnimation = wire.animate([base, { stroke: color, strokeWidth: `${Number.parseFloat(normal.strokeWidth) + 1}px`, offset: 0.35 }, base], { duration: ADAPTER_DECISION_DURATION, easing: "ease-in-out" });
+      const wireAnimation = wire.animate([base, { stroke: color, strokeWidth: `${Number.parseFloat(normal.strokeWidth) + 3}px`, offset: 0.35 }, base], { duration: ADAPTER_DECISION_DURATION, easing: "ease-in-out" });
       wireAnimation.onfinish = () => delete wire.dataset.decision;
       wireAnimation.currentTime = elapsed;
     }
     if (!reducedMotion) {
       glyph.classList.add("graph-decision-glyph");
-      const expansion = glyph.animate([{ transform: "scale(1)" }, { transform: "scale(1.12)", offset: 0.4 }, { transform: "scale(1)" }], { duration: ADAPTER_DECISION_DURATION, easing: "ease-in-out" });
+      const expansion = glyph.animate([{ transform: "scale(1)" }, { transform: "scale(1.2)", offset: 0.4 }, { transform: "scale(1)" }], { duration: ADAPTER_DECISION_DURATION, easing: "ease-in-out" });
       expansion.onfinish = () => glyph.classList.remove("graph-decision-glyph");
       expansion.currentTime = elapsed;
     }

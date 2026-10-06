@@ -35,8 +35,25 @@ type adapterLogSourceConfig struct {
 type adapterLogOutput struct {
 	Name  string   `json:"name"`
 	Kind  string   `json:"kind"`
+	State string   `json:"state"`
 	Lines []string `json:"lines"`
 	Error string   `json:"error,omitempty"`
+}
+
+func adapterLogRuntimeState(ctx context.Context, source adapterLogSourceConfig) string {
+	if source.Container == "" {
+		return "unknown"
+	}
+	output, err := exec.CommandContext(ctx, "docker", "inspect", "--format", "{{.State.Status}}", source.Container).Output()
+	if err != nil {
+		return "unavailable"
+	}
+	switch state := strings.TrimSpace(string(output)); state {
+	case "running", "paused", "restarting", "created", "exited", "dead", "removing":
+		return state
+	default:
+		return "unknown"
+	}
 }
 
 type adapterLogEntry struct {
@@ -130,22 +147,26 @@ func newAdapterLogsHandler() http.Handler {
 		ctx, cancel := context.WithTimeout(r.Context(), 12*time.Second)
 		defer cancel()
 		entries := make([]adapterLogEntry, 0, len(inventory.Adapters))
+		runtimeStates := make(map[string]string)
 		for _, adapter := range inventory.Adapters {
-			entry := adapterLogEntry{ID: adapter.ID, Name: adapter.Name, State: "running", Sources: []adapterLogOutput{}}
-			available := false
+			entry := adapterLogEntry{ID: adapter.ID, Name: adapter.Name, State: "unknown", Sources: []adapterLogOutput{}}
 			for _, source := range adapter.Sources {
+				state, known := runtimeStates[source.Container]
+				if !known {
+					state = adapterLogRuntimeState(ctx, source)
+					runtimeStates[source.Container] = state
+				}
 				output, err := readAdapterLogSource(ctx, source)
-				log := adapterLogOutput{Name: source.Name, Kind: source.Kind, Lines: []string{}}
+				log := adapterLogOutput{Name: source.Name, Kind: source.Kind, State: state, Lines: []string{}}
 				if err != nil {
 					log.Error = "Log source unavailable"
 				} else {
 					log.Lines = machineLogLines(output)
-					available = true
+				}
+				if state == "running" || entry.State == "unknown" {
+					entry.State = state
 				}
 				entry.Sources = append(entry.Sources, log)
-			}
-			if !available {
-				entry.State = "unavailable"
 			}
 			entries = append(entries, entry)
 		}

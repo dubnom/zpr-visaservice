@@ -181,6 +181,7 @@ func runSimulator(listen string) error {
 	}
 	mux := http.NewServeMux()
 	mux.HandleFunc("POST /api/simulator/organizations/{organization}/activate", handleSimulatorOrganizationActivate)
+	mux.HandleFunc("POST /api/simulator/organizations/{organization}/restore-base", handleSimulatorOrganizationRestoreBase)
 	mux.HandleFunc("GET /api/simulator/status", handleSimulatorStatus)
 	mux.HandleFunc("GET /api/simulator/machine-logs", handleSimulatorMachineLogs)
 	mux.HandleFunc("GET /api/simulator/adapter-logs", handleSimulatorAdapterLogs)
@@ -874,7 +875,7 @@ func handleSimulatorAction(w http.ResponseWriter, r *http.Request) {
 			if action == "stop-component" {
 				operation = "stop-workload"
 			}
-			services, servicesErr := simulatorLoadTestServicesForAgent(simulatorOrganizationsDirectory(), activeSimulatorOrganizationID(manifest), agent)
+			services, servicesErr := simulatorWorkloadServicesForAgent(simulatorOrganizationsDirectory(), activeSimulatorOrganizationID(manifest), agent)
 			if servicesErr != nil {
 				http.Error(w, "organization workload configuration unavailable", http.StatusServiceUnavailable)
 				return

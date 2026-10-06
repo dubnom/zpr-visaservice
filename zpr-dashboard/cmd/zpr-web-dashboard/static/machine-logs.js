@@ -15,6 +15,7 @@
   let adapterColumnsInitialized = false;
   let adapterLogType = "adapter";
   let showingAll = false;
+  let runningOnly = false;
   let machines = [];
   let paused = false;
   let active = pageActive();
@@ -35,7 +36,8 @@
       const sources = (entry.sources || []).map((source) => {
         names.add(source.name);
         const previous = cached.sources.get(source.name);
-        const disconnected = entry.state !== "running" || Boolean(source.error);
+        const runtimeState = source.state || entry.state;
+        const disconnected = !["running", "unknown"].includes(runtimeState) || Boolean(source.error);
         const lines = Array.isArray(source.lines) ? source.lines : [];
         if (!source.error && !disconnected) cached.sources.set(source.name, { ...source, lines });
         return { ...source, lines: disconnected && previous ? previous.lines : lines, disconnected };
@@ -117,7 +119,7 @@
 
   function adapterSources() {
     return machines.flatMap((entry) => (entry.sources || [])
-      .filter((source) => source.kind === adapterLogType)
+      .filter((source) => source.kind === adapterLogType && (!runningOnly || (source.state || entry.state) === "running" && !source.disconnected))
       .map((source) => ({ key: `${entry.machine.id}\u001f${source.name}`, machine: entry, source, label: `${source.name} · ${entry.machine.id}` })));
   }
 
@@ -147,7 +149,7 @@
     panel.className = "machine-log-panel adapter-log-column";
     const header = document.createElement("header");
     const title = document.createElement("h2");
-    title.textContent = "Adapter logs";
+    title.textContent = "Choose adapter";
     const actions = document.createElement("div");
     actions.className = "machine-log-panel-actions";
     const maximizeButton = document.createElement("button");
@@ -161,21 +163,42 @@
     removeButton.textContent = "−";
     removeButton.title = "Remove adapter panel";
     removeButton.setAttribute("aria-label", "Remove adapter panel");
+    const pickerButton = document.createElement("button");
+    pickerButton.type = "button";
+    pickerButton.className = "adapter-source-picker-button";
+    pickerButton.textContent = "⌄";
+    pickerButton.setAttribute("aria-haspopup", "dialog");
+    const pickerDialog = document.createElement("dialog");
+    pickerDialog.className = "adapter-source-picker-dialog";
+    const pickerHeader = document.createElement("header");
+    const pickerTitle = document.createElement("h3");
+    pickerTitle.id = `adapter-source-picker-title-${nextAdapterColumnID}`;
+    pickerDialog.setAttribute("aria-labelledby", pickerTitle.id);
+    const pickerClose = document.createElement("button");
+    pickerClose.type = "button";
+    pickerClose.className = "quiet";
+    pickerClose.textContent = "Close";
+    pickerClose.addEventListener("click", () => pickerDialog.close());
+    pickerHeader.append(pickerTitle, pickerClose);
+    const pickerLabel = document.createElement("label");
+    pickerLabel.textContent = "Adapter and log source";
     const select = document.createElement("select");
-    select.setAttribute("aria-label", "Select adapter");
+    select.setAttribute("aria-label", `Select ${adapterLogType} and log source`);
+    pickerLabel.append(select);
+    pickerDialog.append(pickerHeader, pickerLabel);
+    pickerButton.addEventListener("click", () => {
+      if (!pickerDialog.open) pickerDialog.showModal();
+      select.focus();
+    });
     const toolbar = document.createElement("div");
     toolbar.className = "machine-log-source-toolbar adapter-column-picker";
-    const label = document.createElement("label");
-    label.textContent = "Adapter";
-    label.htmlFor = `adapter-log-picker-${nextAdapterColumnID}`;
-    select.id = label.htmlFor;
     select.setAttribute("aria-label", `Select adapter for panel ${nextAdapterColumnID}`);
     const output = document.createElement("div");
     output.className = "machine-log-output";
     output.tabIndex = 0;
     const column = {
-      id: nextAdapterColumnID++, panel, title, maximizeButton, removeButton, select,
-      toolbar, label, output, selectedKey: "", selectedKeys: new Map(), choices: "", signature: "", sourceViews: new Map(),
+      id: nextAdapterColumnID++, panel, title, maximizeButton, removeButton, select, pickerButton, pickerDialog, pickerTitle,
+      toolbar, output, selectedKey: "", selectedKeys: new Map(), choices: "", signature: "", sourceViews: new Map(),
       following: true, nextScrollTop: undefined,
     };
     maximizeButton.setAttribute("aria-label", `Maximize adapter panel ${column.id}`);
@@ -184,6 +207,7 @@
     select.addEventListener("change", () => {
       saveAdapterColumnPosition(column);
       column.selectedKey = select.value;
+      pickerDialog.close();
       const saved = column.sourceViews.get(column.selectedKey);
       column.following = saved?.following ?? true;
       column.nextScrollTop = saved?.scrollTop ?? 0;
@@ -193,9 +217,10 @@
       if (output.clientHeight) column.following = output.scrollHeight - output.clientHeight - output.scrollTop <= 8;
     });
     actions.append(removeButton, maximizeButton);
-    toolbar.append(label, select);
+    pickerTitle.textContent = `Choose ${adapterLogType} log source`;
+    toolbar.append(pickerButton);
     header.append(title, toolbar, actions);
-    panel.append(header, output);
+    panel.append(header, output, pickerDialog);
     grid.append(panel);
     adapterColumns.push(column);
     return column;
@@ -246,6 +271,7 @@
       }
     }
     const allButton = document.getElementById("adapter-log-all");
+    document.getElementById("adapter-log-running").checked = runningOnly;
     allButton.textContent = showingAll ? "Hide all adapters" : "Show all adapters";
     allButton.setAttribute("aria-pressed", String(showingAll));
     addButton.disabled = showingAll;
@@ -257,7 +283,8 @@
       grid.append(empty);
     }
     for (const column of adapterColumns) {
-      column.label.textContent = type === "controller" ? "Machine" : "Adapter";
+      column.pickerTitle.textContent = `Choose ${type} log source`;
+      column.pickerButton.setAttribute("aria-label", `Choose ${type} and log source for panel ${column.id}`);
       column.select.setAttribute("aria-label", `Select ${type} for panel ${column.id}`);
       column.removeButton.setAttribute("aria-label", `Remove ${type} panel`);
       column.removeButton.title = `Remove ${type} panel`;
@@ -285,8 +312,11 @@
       const selected = choices.find((choice) => choice.key === column.selectedKey);
       const entry = selected?.machine;
       const source = selected?.source;
-      column.panel.classList.toggle("running", entry?.state === "running" && !source?.disconnected);
-      column.title.textContent = selected ? `${source.name} · ${entry.machine.id}` : `${type === "controller" ? "Controller" : "Adapter"} logs`;
+      column.panel.classList.toggle("running", Boolean(selected) && (source.state || entry.state) === "running" && !source.disconnected);
+      column.title.textContent = selected ? entry.machine.name || entry.machine.id : "No source available";
+      column.title.title = selected ? `${entry.machine.id} / ${source.name}` : `No ${type} source available`;
+      column.pickerButton.title = selected ? `Choose log source: ${entry.machine.id} / ${source.name}` : `Choose ${type} log source`;
+      column.pickerButton.disabled = choices.length === 0;
       column.output.setAttribute("aria-label", selected ? `${entry.machine.id} ${source.name} logs` : `${type} logs`);
       const contentSignature = JSON.stringify({ state: entry?.state || "missing", source });
       if (contentSignature !== column.signature) {
@@ -501,6 +531,10 @@
       }
       adapterColumns.length = 0;
       adapterColumnsInitialized = true;
+      renderAdapterColumns();
+    });
+    document.getElementById("adapter-log-running").addEventListener("change", (event) => {
+      runningOnly = event.currentTarget.checked;
       renderAdapterColumns();
     });
     document.getElementById("adapter-log-wrap").addEventListener("click", (event) => {

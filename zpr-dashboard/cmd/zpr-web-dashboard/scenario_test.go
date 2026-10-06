@@ -343,9 +343,30 @@ func TestGrantedScenarioClientAddress(t *testing.T) {
 	if err != nil || address != "fd5a:5052:adda:1::3" {
 		t.Fatalf("granted address = %q, %v", address, err)
 	}
-	for _, output := range []string{`[{"addr_info":[{"local":"fd00:1:4::1","scope":"global"}]}]`, `{not-json}`} {
-		if _, err := grantedScenarioClientAddress(output, "finance-client"); err == nil {
-			t.Fatalf("invalid client address response %q was accepted", output)
+	staticAddress, err := grantedScenarioClientAddress(`[{"addr_info":[{"local":"fd00:1:4::1","scope":"global"}]}]`, "finance-client")
+	if err != nil || staticAddress != "fd00:1:4::1" {
+		t.Fatalf("static workload address = %q, %v", staticAddress, err)
+	}
+	if _, err := grantedScenarioClientAddress(`{not-json}`, "finance-client"); err == nil {
+		t.Fatal("invalid workload address response was accepted")
+	}
+}
+
+func TestScenarioWorkloadServiceRouteUsesExactDestination(t *testing.T) {
+	command, err := scenarioWorkloadServiceRouteCommand("machine-04", "operations-client", "fd5a:5052:adda:1:1234::1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := "docker exec zpr-machine-04 ip -6 route replace fd5a:5052:adda:1:1234::1/128 dev tun1"
+	if got := strings.Join(command.Args, " "); got != want {
+		t.Fatalf("service route = %q, want %q", got, want)
+	}
+	for _, invalid := range []struct{ agent, address string }{
+		{agent: "metrics-service", address: "fd5a:5052:adda:1:1234::1"},
+		{agent: "operations-client", address: "192.0.2.1"},
+	} {
+		if _, err := scenarioWorkloadServiceRouteCommand("machine-04", invalid.agent, invalid.address); err == nil {
+			t.Errorf("invalid route target was accepted: %+v", invalid)
 		}
 	}
 }

@@ -878,7 +878,7 @@ func simulatorScenarioExecutorForManifest(ctx context.Context, manifest simulato
 			agent = component.Name
 		}
 		operation := strings.ReplaceAll(step.Action, "_", "-")
-		services, err := simulatorLoadTestServicesForAgent(simulatorOrganizationsDirectory(), activeSimulatorOrganizationID(manifest), agent)
+		services, err := simulatorWorkloadServicesForAgent(simulatorOrganizationsDirectory(), activeSimulatorOrganizationID(manifest), agent)
 		if err != nil {
 			return "", err
 		}
@@ -1007,6 +1007,15 @@ func simulatorScenarioExecutorForManifest(ctx context.Context, manifest simulato
 			serviceAddress, err = resolveScenarioDNSAddress(ctx, step.Machine, manifest.DNSServer, dnsName)
 			if err != nil {
 				return "", err
+			}
+			if strings.HasPrefix(serviceAddress, "fd5a:5052:") {
+				routeCommand, err := scenarioWorkloadServiceRouteCommand(step.Machine, step.Component, serviceAddress)
+				if err != nil {
+					return "", err
+				}
+				if output, err := scenarioCommand(ctx, routeCommand.Path, routeCommand.Args[1:]...); err != nil {
+					return output, fmt.Errorf("route service address through workload adapter: %w", err)
+				}
 			}
 		}
 		address := net.JoinHostPort(serviceAddress, testServicePorts[step.Target])
@@ -1154,6 +1163,10 @@ func publishScenarioServiceDNSRecord(ctx context.Context, manifest simulatorMani
 }
 
 func grantedScenarioClientAddress(output, agent string) (string, error) {
+	workloadConfig, configured := machineWorkload(agent)
+	if !configured {
+		return "", fmt.Errorf("workload %q has no TUN configuration", agent)
+	}
 	var interfaces []struct {
 		Addresses []struct {
 			Local string `json:"local"`
@@ -1166,6 +1179,13 @@ func grantedScenarioClientAddress(output, agent string) (string, error) {
 	for _, networkInterface := range interfaces {
 		for _, address := range networkInterface.Addresses {
 			if address.Scope == "global" && strings.HasPrefix(address.Local, "fd5a:5052:") {
+				return address.Local, nil
+			}
+		}
+	}
+	for _, networkInterface := range interfaces {
+		for _, address := range networkInterface.Addresses {
+			if address.Scope == "global" && address.Local == workloadConfig.address {
 				return address.Local, nil
 			}
 		}
@@ -1216,10 +1236,8 @@ func waitForMachineWorkloadLink(ctx context.Context, machineID, agent string, ac
 				return fmt.Errorf("workload %q has no TUN configuration", agent)
 			}
 			if workloadConfig.services == "" {
-				for _, prefix := range []string{"fd00:1::/32", "fd5a:5052:adda:1::/64"} {
-					if _, err := scenarioCommand(ctx, "docker", "exec", container, "ip", "-6", "route", "replace", prefix, "dev", workloadConfig.tun); err != nil {
-						return fmt.Errorf("configure client service route for %s: %w", prefix, err)
-					}
+				if _, err := scenarioCommand(ctx, "docker", "exec", container, "ip", "-6", "route", "replace", "fd00:1::/32", "dev", workloadConfig.tun); err != nil {
+					return fmt.Errorf("configure client test-service route: %w", err)
 				}
 			} else {
 				if _, err := scenarioCommand(ctx, "docker", "exec", container, "ip", "-6", "addr", "replace", workloadConfig.address+"/32", "dev", workloadConfig.tun); err != nil {
@@ -1258,6 +1276,18 @@ func waitForMachineWorkloadLink(ctx context.Context, machineID, agent string, ac
 		case <-ticker.C:
 		}
 	}
+}
+
+func scenarioWorkloadServiceRouteCommand(machineID, agent, serviceAddress string) (*exec.Cmd, error) {
+	config, ok := machineWorkload(agent)
+	if !ok || config.services != "" {
+		return nil, fmt.Errorf("workload %q is not a configured service client", agent)
+	}
+	parsedAddress := net.ParseIP(serviceAddress)
+	if parsedAddress == nil || parsedAddress.To4() != nil {
+		return nil, fmt.Errorf("invalid IPv6 service address %q", serviceAddress)
+	}
+	return exec.Command("docker", "exec", machineContainerName(machineID), "ip", "-6", "route", "replace", parsedAddress.String()+"/128", "dev", config.tun), nil
 }
 
 var scenarioMachineStartMu sync.Mutex

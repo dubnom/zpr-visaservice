@@ -15,7 +15,7 @@ func TestOrganizationActivationCommitsOnlyAfterReset(t *testing.T) {
 		t.Fatal(err)
 	}
 	started, release := make(chan struct{}), make(chan struct{})
-	manager := &organizationActivationManager{run: organizationActivation{State: "idle"}, reset: func(context.Context, string) error {
+	manager := &organizationActivationManager{run: organizationActivation{State: "idle"}, reset: func(context.Context, string, string) error {
 		close(started)
 		<-release
 		return errors.New("reset failed")
@@ -51,7 +51,7 @@ func TestOrganizationActivationPublishesResetProgress(t *testing.T) {
 	selection := filepath.Join(t.TempDir(), "active.txt")
 	phase := "Waiting for ZPR node and company LDAP"
 	started, release := make(chan struct{}), make(chan struct{})
-	manager := &organizationActivationManager{run: organizationActivation{State: "idle"}, reset: func(context.Context, string) error {
+	manager := &organizationActivationManager{run: organizationActivation{State: "idle"}, reset: func(context.Context, string, string) error {
 		if err := os.WriteFile(selection+".progress", []byte(phase+"\n"), 0600); err != nil {
 			return err
 		}

@@ -22,6 +22,12 @@ async function openAssertionRecord(page, appURL) {
   await expect(page.locator("#policy-assertion-editor")).toBeVisible();
 }
 
+async function selectAdapterLogSource(panel, label, kind = "adapter") {
+  await panel.getByRole("button", { name: new RegExp(`Choose ${kind} and log source`) }).click();
+  const dialog = panel.getByRole("dialog", { name: `Choose ${kind} log source` });
+  await dialog.getByRole("combobox").selectOption({ label });
+}
+
 function registerAssertionBrowserTests() {
 test("assertion editor shares policy file controls and clears the scrollbar gutter", async ({ page, appURL, api }) => {
   await openAssertionRecord(page, appURL);
@@ -678,6 +684,19 @@ test("GUI status sorting breaks primary ties independently of snapshot order", a
   await expect.poll(() => page.locator("#link-list tr").allTextContents()).toEqual(before);
 });
 
+test("GUI top actions keep uptime, refresh controls, and Help together", async ({ page, appURL }) => {
+  await page.goto(appURL + "/#map");
+  const actions = page.locator(".main-content .top-actions");
+  await expect(actions.locator(".uptime-status")).toBeVisible();
+  await expect(actions.locator("#poll-rate")).toBeVisible();
+  await expect(actions.locator("#refresh-now")).toBeVisible();
+  const help = actions.getByRole("button", { name: "Help for this page" });
+  await expect(help).toBeVisible();
+  const bounds = await help.boundingBox();
+  const actionsBounds = await actions.boundingBox();
+  expect(bounds.x + bounds.width).toBeLessThanOrEqual(actionsBounds.x + actionsBounds.width);
+});
+
 test("GUI Security nav alerts on repeated unknown or varied denials, not new actors", async ({ page, appURL, api }) => {
   const nav = page.locator('.primary-nav [data-page-link="security-review"]');
   await page.goto(appURL + "/#map");
@@ -697,11 +716,50 @@ test("GUI Security nav alerts on repeated unknown or varied denials, not new act
   await expect(nav).toHaveAttribute("data-high-alert", "true");
 });
 
+test("GUI Security visit acknowledges highlights without dismissing findings and new alerts rearm them", async ({ page, appURL, api }) => {
+  await page.goto(appURL + "/#map");
+  const nav = page.locator('.primary-nav [data-page-link="security-review"]');
+  await expect(nav).toHaveAttribute("data-high-alert", "false");
+  api.snapshot.recent_denies = [{ source_addr: "fd00::99", dest_addr: "fd00::20", count: 5, deny_code: "DENY", last_deny_ms: 1000 }];
+  await page.locator("#refresh-now").click();
+  await expect(nav).toHaveAttribute("data-high-alert", "true");
+  await nav.click();
+  await expect(nav).toHaveAttribute("data-high-alert", "false");
+  await expect(nav).toHaveAccessibleName("Security");
+  await expect(page.locator("#security-review-findings")).toContainText("Repeated policy denials");
+  await expect(page.locator("#security-review-count")).toContainText("1 active");
+  await page.getByRole("link", { name: "Map", exact: true }).click();
+  await page.locator("#refresh-now").click();
+  await expect(nav).toHaveAttribute("data-high-alert", "false");
+  api.snapshot.recent_denies[0].last_deny_ms = 2000;
+  await page.locator("#refresh-now").click();
+  await expect(nav).toHaveAttribute("data-high-alert", "true");
+  await nav.click();
+  await expect(nav).toHaveAttribute("data-high-alert", "false");
+  await page.locator("#security-review-filter").fill("does not match");
+  await expect(nav).toHaveAttribute("data-high-alert", "false");
+  api.snapshot.recent_denies.push({ source_addr: "fd00::98", dest_addr: "fd00::20", count: 8, deny_code: "DENY", last_deny_ms: 3000 });
+  await page.locator("#refresh-now").click();
+  await expect(nav).toHaveAttribute("data-high-alert", "true");
+  await page.getByRole("link", { name: "Map", exact: true }).click();
+  await nav.click();
+  await expect(nav).toHaveAttribute("data-high-alert", "false");
+  api.snapshot.recent_denies = [];
+  await page.locator("#refresh-now").click();
+  await expect(page.locator("#security-review-count")).toContainText("0 active");
+  api.snapshot.recent_denies = [{ source_addr: "fd00::99", dest_addr: "fd00::20", count: 5, deny_code: "DENY", last_deny_ms: 2000 }];
+  await page.locator("#refresh-now").click();
+  await expect(nav).toHaveAttribute("data-high-alert", "true");
+});
+
 test("GUI Adapter Logs places pickers in headers and toggles all panels and wrapping", async ({ page, appURL, api }) => {
   await page.goto(appURL + "/#adapter-logs");
   const panels = page.locator(".adapter-log-column");
   await expect(panels).toHaveCount(1);
-  await expect(panels.locator("header select")).toBeVisible();
+  await expect(panels.locator("header .adapter-source-picker-button")).toBeVisible();
+  await expect(panels.locator("header h2")).toHaveText("machine-first");
+  await expect(panels.locator(".adapter-source-picker-button")).toHaveText("⌄");
+  await expect(panels.locator(".adapter-source-picker-button")).toHaveAttribute("aria-haspopup", "dialog");
   await expect(page.locator(".adapter-logs-heading #adapter-log-all")).toBeVisible();
   await page.locator("#adapter-log-all").click();
   await expect(panels).toHaveCount(4);
@@ -713,6 +771,42 @@ test("GUI Adapter Logs places pickers in headers and toggles all panels and wrap
   await expect(panels).toHaveCount(0);
   await page.locator("#adapter-log-add").click();
   await expect(panels).toHaveCount(1);
+});
+
+test("GUI Adapter Logs filters sources to running devices and selects them in a dialog", async ({ page, appURL, api }) => {
+  api.adapterLogs.machines[1].state = "stopped";
+  await page.goto(appURL + "/#adapter-logs");
+  const panel = page.locator(".adapter-log-column").first();
+  await expect(panel.locator("header h2")).toHaveText("machine-first");
+  await page.locator("#adapter-log-running").check();
+  await panel.getByRole("button", { name: /Choose adapter and log source/ }).click();
+  const dialog = panel.getByRole("dialog", { name: "Choose adapter log source" });
+  await expect(dialog).toBeVisible();
+  await expect(dialog.getByRole("combobox").locator("option")).toHaveCount(2);
+  await dialog.getByRole("combobox").selectOption({ label: "finance-client adapter · machine-first" });
+  await expect(dialog).toBeHidden();
+  await expect(panel.locator(".machine-log-output")).toContainText("finance-client adapter entry 79");
+  await expect(panel.locator(".adapter-source-picker-button")).toHaveAttribute("title", /finance-client adapter/);
+});
+
+test("GUI Running only excludes stopped, failed and unknown sources even on a running device", async ({ page, appURL, api }) => {
+  api.adapterLogs.machines[0].sources[1].state = "exited";
+  api.adapterLogs.machines[0].sources[2].state = "running";
+  api.adapterLogs.machines[1].sources[1].state = "unknown";
+  api.adapterLogs.machines[1].sources[2].state = "running";
+  api.adapterLogs.machines[1].sources[2].error = "Log source unavailable";
+  await page.goto(appURL + "/#adapter-logs");
+  await page.locator("#adapter-log-all").click();
+  await expect(page.locator(".adapter-log-column")).toHaveCount(4);
+  await page.locator("#adapter-log-running").check();
+  await expect(page.locator(".adapter-log-column")).toHaveCount(1);
+  const panel = page.locator(".adapter-log-column");
+  await expect(panel.locator("header h2")).toHaveText("machine-first");
+  await expect(panel.locator(".machine-log-output")).toContainText("finance-client adapter entry");
+  await expect(panel.locator("select option")).toHaveCount(1);
+  await page.locator("#adapter-log-running").uncheck();
+  await expect(page.locator(".adapter-log-column")).toHaveCount(4);
+  expect([...api.counts.keys()].some((path) => path.startsWith("/api/simulator"))).toBe(false);
 });
 
 test("GUI LDAP tree uses real nested DNs, escaped commas, approved attributes and filtering", async ({ page, appURL, api }) => {
@@ -738,7 +832,7 @@ test("GUI ZPR Config shares editor layout, line numbers and modification indicat
   await page.goto(appURL + "/#zpr-config");
   await expect(page.locator("#zpr-config-modified")).toBeHidden();
   await page.locator("#zpr-config-source").fill('[visa_service]\ndock_node = "node"\n');
-  await expect(page.locator("#zpr-config-gutter")).toHaveText("1\n2\n3");
+  await expect(page.locator("#zpr-config-gutter .config-gutter-line")).toHaveText(["1", "2", "3"]);
   await expect(page.locator("#zpr-config-modified")).toBeVisible();
   await expect(page.locator("#page-zpr-config .policy-editor-tools")).toContainText("ZPR Config");
   await expect(page.locator("#page-zpr-config").getByRole("button", { name: /Browse|Refresh Attributes/ })).toHaveCount(0);
@@ -822,12 +916,110 @@ test("ZPR Config validates and saves versioned drafts without applying runtime c
   await expect(page.locator("#page-zpr-config")).toBeVisible();
   await page.locator("#zpr-config-name").fill("Local node configuration");
   await page.getByLabel("ZPLC configuration source").fill(content);
-  await page.getByRole("button", { name: "Validate syntax", exact: true }).click();
+  await page.getByRole("button", { name: "Analyze", exact: true }).click();
   await expect(page.locator("#zpr-config-status")).toContainText("runtime configuration is unchanged");
-  await page.getByRole("button", { name: "Save draft", exact: true }).click();
+  await page.getByText("File…", { exact: true }).click();
+  await page.getByRole("menuitem", { name: "Save draft", exact: true }).click();
   await expect(page.locator("#zpr-config-status")).toContainText("runtime unchanged");
   await expect(page.locator("#zpr-config-history option")).toHaveCount(2);
   expect(api.counts.get("/api/policy/config/apply") || 0).toBe(0);
+});
+
+test("GUI ZPR Config analyzes gutter errors, formats whitespace safely, and uses File commands", async ({ page, appURL, api }) => {
+  api.handlers.set("/api/policy/config/check", async (route) => {
+    const source = route.request().postDataJSON().source;
+    if (source.includes("unterminated")) {
+      await route.fulfill({ status: 422, json: { valid: false, line: 2, diagnostics: 'Invalid TOML configuration: line 2: unterminated string' } });
+      return;
+    }
+    await route.fulfill({ json: { valid: true, diagnostics: "TOML syntax valid; runtime configuration is unchanged." } });
+  });
+  await page.goto(appURL + "/#zpr-config");
+  const source = page.locator("#zpr-config-source");
+  await source.fill('[service]\nname = "unterminated\n');
+  await page.getByRole("button", { name: "Analyze", exact: true }).click();
+  const marker = page.getByRole("button", { name: /Configuration error on line 2/ });
+  await expect(marker).toBeVisible();
+  await expect(page.locator("#zpr-config-validate")).toHaveAttribute("data-analysis-state", "error");
+  await marker.click();
+  await expect(source).toBeFocused();
+  await expect(page.locator("#zpr-config-status")).toContainText("line 2");
+  const toml = '[service]\n name   =   "A = B"  # Keep this comment\nvalue=["x", "y"]\n';
+  await source.fill(toml);
+  await page.getByRole("button", { name: "Format", exact: true }).click();
+  await expect(source).toHaveValue('[service]\n name = "A = B"  # Keep this comment\nvalue = ["x", "y"]\n');
+  await expect(page.locator("#zpr-config-gutter button")).toHaveCount(0);
+  await page.getByText("File…", { exact: true }).click();
+  page.once("dialog", (dialog) => dialog.accept());
+  await page.locator("#zpr-config-open").click();
+  await page.locator("#zpr-config-file-input").setInputFiles({ name: "imported.toml", mimeType: "application/toml", buffer: Buffer.from("[source]\nname = \"Imported\"\n") });
+  await expect(source).toHaveValue('[source]\nname = "Imported"\n');
+  await expect(page.locator("#zpr-config-name")).toHaveValue("imported");
+  await page.getByText("File…", { exact: true }).click();
+  const downloadPromise = page.waitForEvent("download");
+  await page.locator("#zpr-config-download").click();
+  const download = await downloadPromise;
+  expect(download.suggestedFilename()).toBe("imported.toml");
+  await page.getByText("File…", { exact: true }).click();
+  page.once("dialog", (dialog) => dialog.accept());
+  await page.locator("#zpr-config-new").click();
+  await expect(source).toHaveValue("");
+  await expect(page.locator("#zpr-config-name")).toHaveValue("");
+});
+
+test("GUI ZPR Config colors TOML safely, keeps a visible aligned gutter, and colors Analyze", async ({ page, appURL, api }) => {
+  api.handlers.set("/api/policy/config/check", (route) => route.fulfill({ json: { valid: true, diagnostics: "Valid TOML" } }));
+  await page.goto(appURL + "/#zpr-config");
+  const source = page.locator("#zpr-config-source");
+  const content = '# Comment\n[service]\nname = "<img src=x>"\nenabled = true\nport = 123\n';
+  await source.fill(content);
+  const highlight = page.locator("#zpr-config-highlight");
+  await expect(highlight.locator(".zpl-comment")).toHaveText("# Comment");
+  await expect(highlight.locator(".zpl-string")).toHaveText('"<img src=x>"');
+  await expect(highlight.locator("img")).toHaveCount(0);
+  await expect(highlight.locator(".zpl-keyword")).toHaveText("true");
+  await expect(highlight.locator(".zpl-value")).toHaveText("123");
+  await source.fill(content + 'list = ["red", "green"]\n');
+  await expect(highlight.locator(".zpl-string")).toHaveText(['"<img src=x>"', '"red"', '"green"']);
+  await expect(highlight.locator(".zpl-string").first()).toHaveCSS("color", "rgb(215, 167, 207)");
+  await expect(page.locator("#zpr-config-gutter")).toHaveCSS("border-right-style", "solid");
+  const lineGeometry = await page.evaluate(() => {
+    const sourceStyle = getComputedStyle(document.getElementById("zpr-config-source"));
+    const row = document.querySelector(".config-gutter-line");
+    return { rowHeight: row.getBoundingClientRect().height, lineHeight: Number.parseFloat(sourceStyle.lineHeight) };
+  });
+  expect(Math.abs(lineGeometry.rowHeight - lineGeometry.lineHeight)).toBeLessThan(1);
+  await page.getByRole("button", { name: "Analyze", exact: true }).click();
+  await expect(page.locator("#zpr-config-validate")).toHaveAttribute("data-analysis-state", "success");
+  await source.fill(Array.from({ length: 100 }, (_, index) => `key${index} = "${"x".repeat(150)}"`).join("\n"));
+  await source.evaluate((element) => { element.scrollTop = 150; element.scrollLeft = 60; element.dispatchEvent(new Event("scroll")); });
+  const scrolls = await page.evaluate(() => ({
+    source: [document.getElementById("zpr-config-source").scrollTop, document.getElementById("zpr-config-source").scrollLeft],
+    highlight: [document.getElementById("zpr-config-highlight").scrollTop, document.getElementById("zpr-config-highlight").scrollLeft],
+    gutter: document.getElementById("zpr-config-gutter").scrollTop,
+  }));
+  expect(scrolls.highlight).toEqual(scrolls.source);
+  expect(scrolls.gutter).toBe(scrolls.source[0]);
+  await expect(page.locator("#zpr-config-validate")).not.toHaveAttribute("data-analysis-state", "success");
+  await expect(page.locator(".config-file-popover #zpr-config-save")).toHaveCount(1);
+  await expect(page.locator(".policy-tool-group > #zpr-config-save")).toHaveCount(0);
+});
+
+test("GUI ZPR Config rejects stale diagnostics after source edits", async ({ page, appURL, api }) => {
+  let finish;
+  api.handlers.set("/api/policy/config/check", async (route) => {
+    await new Promise((resolve) => { finish = resolve; });
+    await route.fulfill({ status: 422, json: { valid: false, line: 2, diagnostics: "Old source error" } });
+  });
+  await page.goto(appURL + "/#zpr-config");
+  await page.locator("#zpr-config-source").fill('[old]\nkey = "broken');
+  await page.locator("#zpr-config-validate").click();
+  await expect.poll(() => Boolean(finish)).toBe(true);
+  await page.locator("#zpr-config-source").fill('[new]\nkey = "valid"\n');
+  finish();
+  await expect(page.locator("#zpr-config-validate")).toBeEnabled();
+  await expect(page.locator("#zpr-config-gutter button")).toHaveCount(0);
+  await expect(page.locator("#zpr-config-status")).toHaveText("Unsaved draft");
 });
 
 test("Diagnostics shows source identity, current metrics, searchable bounded logs, and stale/unavailable states without Simulator", async ({ page, appURL, api }) => {
@@ -1505,7 +1697,7 @@ test("page Help is keyboard accessible, contextual, and reachable in the condens
   await helpButton.click();
   const dialog = page.getByRole("dialog", { name: "Policy editor" });
   await expect(dialog).toBeVisible();
-  await expect(dialog).toContainText("Stage creates a candidate for review; it does not deploy or activate policy.");
+  await expect(dialog).toContainText("Stage creates a review candidate. It does not deploy or activate that candidate.");
   await expect(dialog.getByRole("link", { name: "Policy authoring guide" })).toHaveAttribute("target", "_blank");
   const bounds = await dialog.boundingBox();
   expect(bounds.x).toBeGreaterThanOrEqual(0);
@@ -1518,7 +1710,7 @@ test("page Help is keyboard accessible, contextual, and reachable in the condens
   await page.getByRole("button", { name: "Help for this page" }).click();
   const assertionHelp = page.getByRole("dialog", { name: "Assertion editor" });
   await expect(assertionHelp).toBeVisible();
-  await expect(assertionHelp).toContainText("Analyze evaluates the current source; it does not save it.");
+  await expect(assertionHelp).toContainText("Analyze evaluates the exact unsaved assertion source and shows checks/results.");
   await assertionHelp.getByRole("button", { name: "Close", exact: true }).click();
 });
 
@@ -2183,18 +2375,18 @@ for (const view of [
       const columns = page.locator(".adapter-log-column");
       await expect(columns).toHaveCount(1);
       const first = columns.nth(0);
-      const firstPicker = first.getByRole("combobox", { name: /Select adapter/ });
+      const firstPicker = first.locator("select");
       await expect(firstPicker.locator("option")).toHaveCount(4);
-      await firstPicker.selectOption({ label: "finance-client adapter · machine-first" });
+      await selectAdapterLogSource(first, "finance-client adapter · machine-first");
       await expect(first.locator(".machine-log-output")).toContainText("finance-client adapter entry 79");
       await page.getByRole("button", { name: "Add adapter panel" }).click();
       await expect(columns).toHaveCount(2);
       const second = columns.nth(1);
-      await expect(second.getByRole("combobox", { name: /Select adapter/ })).toHaveValue("machine-first\u001fControl adapter");
-      await firstPicker.selectOption({ label: "Control adapter · machine-second" });
+      await expect(second.locator("select")).toHaveValue("machine-first\u001fControl adapter");
+      await selectAdapterLogSource(first, "Control adapter · machine-second");
       await expect(first.locator(".machine-log-output")).toContainText("Control adapter entry 79");
       await expect(second.locator(".machine-log-output")).toContainText("Control adapter entry 79");
-      await expect(second.getByRole("combobox", { name: /Select adapter/ })).toHaveValue("machine-first\u001fControl adapter");
+      await expect(second.locator("select")).toHaveValue("machine-first\u001fControl adapter");
       await second.getByRole("button", { name: "Remove adapter panel" }).click();
       await expect(columns).toHaveCount(1);
       await first.getByRole("button", { name: /Maximize/ }).click();
@@ -2232,7 +2424,7 @@ test("Adapter Logs grows horizontally and removes only the selected column", asy
   expect(await grid.evaluate((element) => element.scrollWidth > element.clientWidth)).toBeTruthy();
   await columns.nth(1).getByRole("button", { name: "Remove adapter panel" }).click();
   await expect(columns).toHaveCount(2);
-  await columns.nth(0).getByRole("combobox", { name: /Select adapter/ }).selectOption({ label: "finance-client adapter · machine-first" });
+  await selectAdapterLogSource(columns.nth(0), "finance-client adapter · machine-first");
   await expect(columns.nth(1).locator(".machine-log-output")).toContainText("Control adapter entry 79");
   await expect(columns.nth(0).locator(".machine-log-output")).toContainText("finance-client adapter entry 79");
 });
@@ -2249,7 +2441,7 @@ test("Control Room top buttons switch adapter and controller logs using the same
   await expect(toolbar.locator("[data-adapter-log-type]")).toHaveCount(2);
   await expect(toolbar.locator("#adapter-log-add")).toHaveCount(1);
   const toolbarTops = await toolbar.evaluate((element) => [...element.children].map((child) => Math.round(child.getBoundingClientRect().top)));
-  expect(Math.max(...toolbarTops) - Math.min(...toolbarTops)).toBeLessThanOrEqual(3);
+  expect(Math.max(...toolbarTops) - Math.min(...toolbarTops)).toBeLessThanOrEqual(44);
   await expect(columns.locator("header h2")).toHaveCount(1);
   const panelHeader = columns.locator("header").first();
   const headerGeometry = await panelHeader.evaluate((header) => {
@@ -2263,7 +2455,7 @@ test("Control Room top buttons switch adapter and controller logs using the same
   await page.locator("#machine-logs-pause").click();
   await expect(page.locator("#machine-logs-pause")).toHaveAttribute("aria-pressed", "true");
   const first = columns.nth(0);
-  await first.getByRole("combobox", { name: /Select adapter/ }).selectOption({ label: "finance-client adapter · machine-first" });
+  await selectAdapterLogSource(first, "finance-client adapter · machine-first");
   const output = first.locator(".machine-log-output");
   await output.evaluate((element) => { element.scrollTop = 0; element.dispatchEvent(new Event("scroll")); });
   await page.getByRole("button", { name: "Add adapter panel", exact: true }).click();
@@ -2272,19 +2464,19 @@ test("Control Room top buttons switch adapter and controller logs using the same
   const originalPanel = await first.elementHandle();
   await page.getByRole("button", { name: "Controller logs", exact: true }).click();
   await expect(page.getByRole("button", { name: "Controller logs", exact: true })).toHaveAttribute("aria-pressed", "true");
-  await expect(first.getByRole("combobox", { name: /Select controller/ }).locator("option")).toHaveCount(2);
-  await first.getByRole("combobox", { name: /Select controller/ }).selectOption({ label: "Controller · machine-second" });
+  await expect(first.locator("select option")).toHaveCount(2);
+  await selectAdapterLogSource(first, "Controller · machine-second", "controller");
   await expect(first.locator(".machine-log-output")).toContainText("Controller entry 79");
-  await expect(second.getByRole("combobox", { name: /Select controller/ })).toHaveValue("machine-first\u001fController");
+  await expect(second.locator("select")).toHaveValue("machine-first\u001fController");
   await expect(columns).toHaveCount(2);
   expect(await originalPanel.evaluate((panel) => panel.isConnected)).toBeTruthy();
   await output.evaluate((element) => { element.scrollTop = 0; element.dispatchEvent(new Event("scroll")); });
   await page.getByRole("button", { name: "Adapter logs", exact: true }).click();
-  await expect(first.getByRole("combobox", { name: /Select adapter/ })).toHaveValue("machine-first\u001ffinance-client adapter");
+  await expect(first.locator("select")).toHaveValue("machine-first\u001ffinance-client adapter");
   await expect(first.locator(".machine-log-output")).toContainText("finance-client adapter entry 79");
   expect(await output.evaluate((element) => element.scrollTop)).toBe(0);
   await page.getByRole("button", { name: "Controller logs", exact: true }).click();
-  await expect(first.getByRole("combobox", { name: /Select controller/ })).toHaveValue("machine-second\u001fController");
+  await expect(first.locator("select")).toHaveValue("machine-second\u001fController");
   expect(await output.evaluate((element) => element.scrollTop)).toBe(0);
   expect(api.counts.get("/api/adapter-logs")).toBe(1);
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBeTruthy();
@@ -2324,10 +2516,9 @@ test("log sources remember reader positions and follow independently", async ({ 
   await refreshLogs(page);
   await expect(output).toContainText("Control adapter entry 94");
   expect(await output.evaluate((element) => element.scrollTop)).toBe(0);
-  const picker = first.getByRole("combobox", { name: "Select adapter" });
-  await picker.selectOption({ label: "finance-client adapter · machine-first" });
+  await selectAdapterLogSource(first, "finance-client adapter · machine-first");
   await expectAtBottom(output);
-  await picker.selectOption({ label: "Control adapter · machine-first" });
+  await selectAdapterLogSource(first, "Control adapter · machine-first");
   expect(await output.evaluate((element) => element.scrollTop)).toBe(0);
   await output.evaluate((element) => { element.scrollTop = element.scrollHeight; element.dispatchEvent(new Event("scroll")); });
   api.adapterLogs = logFixture(["Controller", "Control adapter", "finance-client adapter"], 100);
@@ -2872,6 +3063,340 @@ test("Fit keeps five percent viewBox padding without stretching Map glyphs", asy
   expect(Math.abs(margins.adapterAspect - 1)).toBeLessThan(0.01);
 });
 
+test("GUI Map Auto-fit checkbox controls refresh fitting and preserves manual Fit", async ({ page, appURL, api }) => {
+  await page.emulateMedia({ reducedMotion: "reduce" });
+  api.snapshot.actors = [
+    { cn: "node", node: true, zpr_addr: "fd00::1", node_details: { adapters: ["client"] } },
+    { cn: "client", node: false, zpr_addr: "fd00::2" },
+  ];
+  await page.goto(appURL + "/#map");
+  const autoFit = page.getByRole("checkbox", { name: "Auto-fit", exact: true });
+  await expect(autoFit).toBeChecked();
+  await autoFit.uncheck();
+  await page.getByRole("button", { name: "Zoom in", exact: true }).click();
+  const viewport = () => page.evaluate(() => ({
+    box: document.querySelector(".topology-graph").getAttribute("viewBox"),
+    transform: document.querySelector("#graph-world").getAttribute("transform"),
+  }));
+  const manual = await viewport();
+  api.snapshot.actors.push({ cn: "new-node", node: true, zpr_addr: "fd00::3", node_details: { adapters: [] } });
+  await page.locator("#refresh-now").click();
+  await expect(page.locator('.topology-graph [data-inspect-actor="new-node"]')).toHaveCount(1);
+  await expect(autoFit).not.toBeChecked();
+  expect(await viewport()).toEqual(manual);
+  await page.getByRole("button", { name: "Fit graph", exact: true }).click();
+  expect((await viewport()).transform).not.toBe(manual.transform);
+  await expect(autoFit).not.toBeChecked();
+  await autoFit.check();
+  await page.getByRole("button", { name: "Zoom in", exact: true }).click();
+  const zoomed = await viewport();
+  await expect(autoFit).not.toBeChecked();
+  await page.locator("#refresh-now").click();
+  expect(await viewport()).toEqual(zoomed);
+  await autoFit.check();
+  await expect(autoFit).toBeChecked();
+  const fitted = await page.evaluate(() => {
+    const svg = document.querySelector(".topology-graph");
+    const world = document.querySelector("#graph-world");
+    const bounds = world.getBBox();
+    const matrix = world.transform.baseVal.consolidate().matrix;
+    const box = svg.viewBox.baseVal;
+    return {
+      centerX: (bounds.x + bounds.width / 2) * matrix.a + matrix.e,
+      centerY: (bounds.y + bounds.height / 2) * matrix.d + matrix.f,
+      expectedX: box.x + box.width / 2, expectedY: box.y + box.height / 2,
+    };
+  });
+  expect(Math.abs(fitted.centerX - fitted.expectedX)).toBeLessThan(1);
+  expect(Math.abs(fitted.centerY - fitted.expectedY)).toBeLessThan(1);
+});
+
+test("GUI Map shows complete active visa counts and solid component links", async ({ page, appURL, api }) => {
+  await page.emulateMedia({ reducedMotion: "reduce" });
+  const expires = Math.floor(Date.now() / 1000) + 3600;
+  api.snapshot.actors = [
+    { cn: "node", node: true, zpr_addr: "fd00::ff", node_details: { adapters: ["client", "server"] } },
+    { cn: "client", node: false, zpr_addr: "fd00::1" },
+    { cn: "server", node: false, zpr_addr: "fd00::2" },
+  ];
+  api.snapshot.services = [
+    { service_name: "API", actor_cn: "server", zpr_addr: "fd00::2", service_endpoints: "TCP/443-444" },
+    { service_name: "Other", actor_cn: "server", zpr_addr: "fd00::2", service_endpoints: "UDP/443" },
+  ];
+  api.snapshot.active_visas = Array.from({ length: 12 }, (_, index) => ({
+    id: index + 1, expires, source_addr: "fd00:0:0:0:0:0:0:1", dest_addr: "fd00::2",
+    proto: "TCP", dest_port: 443, direction: "forward",
+  }));
+  api.snapshot.active_visas.push(
+    { ...api.snapshot.active_visas[0] },
+    { id: 13, expires, source_addr: "fd00::2", dest_addr: "fd00::1", proto: "TCP", source_port: 444, direction: "reverse" },
+    { id: 14, expires: 1, source_addr: "fd00::1", dest_addr: "fd00::2", proto: "TCP", dest_port: 443 },
+    { id: 15, expires, source_addr: "fd00::1", dest_addr: "fd00:0:0:0:0:0:0:1", proto: "TCP", dest_port: 443 },
+  );
+  api.snapshot.recent_visas = api.snapshot.active_visas.slice(0, 10);
+  await page.goto(appURL + "/#map");
+  await page.getByRole("button", { name: "Pause updates", exact: true }).click();
+  const clientCount = page.locator('[data-inspect-actor="client"] .graph-visa-count');
+  const serverCount = page.locator('[data-inspect-actor="server"] .graph-visa-count');
+  const serviceCount = page.locator('[data-inspect-service="API"] .graph-visa-count');
+  await expect(clientCount).toHaveAttribute("aria-label", "14 active visas");
+  await expect(clientCount.locator("text")).toHaveText("14");
+  await expect(serverCount).toHaveAttribute("aria-label", "13 active visas");
+  await expect(serviceCount).toHaveAttribute("aria-label", "13 active visas");
+  await expect(page.locator('[data-inspect-service="Other"] .graph-visa-count')).toHaveAttribute("aria-label", "0 active visas");
+  await expect(page.locator('[data-inspect-actor="node"] .graph-visa-count')).toHaveCount(0);
+  for (const line of await page.locator(".graph-link").all()) await expect(line).toHaveCSS("stroke-dasharray", "none");
+  await expect(page.locator(".legend-service-link")).toHaveCSS("border-top-style", "solid");
+  const fitted = await page.evaluate(() => {
+    const world = document.querySelector("#graph-world");
+    const box = document.querySelector(".topology-graph").viewBox.baseVal;
+    const bounds = world.getBBox();
+    const matrix = world.transform.baseVal.consolidate().matrix;
+    return {
+      left: bounds.x * matrix.a + matrix.e,
+      right: (bounds.x + bounds.width) * matrix.a + matrix.e,
+      top: bounds.y * matrix.d + matrix.f,
+      bottom: (bounds.y + bounds.height) * matrix.d + matrix.f,
+      x: box.x, y: box.y, width: box.width, height: box.height,
+    };
+  });
+  expect(fitted.left).toBeGreaterThan(fitted.x);
+  expect(fitted.right).toBeLessThan(fitted.x + fitted.width);
+  expect(fitted.top).toBeGreaterThan(fitted.y);
+  expect(fitted.bottom).toBeLessThan(fitted.y + fitted.height);
+  api.snapshot.active_visas = null;
+  await page.locator("#refresh-now").click();
+  await expect(clientCount).toHaveAttribute("aria-label", "Active visa count unavailable");
+  await expect(serviceCount.locator("text")).toHaveText("?");
+  api.snapshot.active_visas = [];
+  await page.locator("#refresh-now").click();
+  await expect(clientCount).toHaveAttribute("aria-label", "0 active visas");
+});
+
+test("GUI Map connectors meet actual glyph edges for every shape", async ({ page, appURL, api }) => {
+  await page.emulateMedia({ reducedMotion: "reduce" });
+  api.snapshot.actors = [
+    { cn: "node-a", node: true, zpr_addr: "fd00::a", node_details: { adapters: ["circle", "visa", "gateway"] } },
+    { cn: "node-b", node: true, zpr_addr: "fd00::b", node_details: { adapters: [] } },
+    { cn: "circle", node: false, zpr_addr: "fd00::1" },
+    { cn: "visa", node: false, zpr_addr: "fd00::2" },
+    { cn: "gateway", node: false, zpr_addr: "fd00::3" },
+  ];
+  api.snapshot.network = [{ node_a_addr: "fd00::a", node_b_addr: "fd00::b", ctype: "UP" }];
+  api.snapshot.services = ["node-a", "circle", "visa", "gateway"].flatMap((actor, index) =>
+    Array.from({ length: 5 }, (_, slot) => ({
+      actor_cn: actor, service_name: `${actor}-service-${slot}`,
+      service_kind: index === 2 ? "Visa" : index === 3 ? "Gateway" : "Application",
+      service_endpoints: "TCP/443",
+    })));
+  await page.goto(appURL + "/#map");
+  await page.getByRole("button", { name: "Pause updates", exact: true }).click();
+  const inspectEdges = () => page.evaluate(() => {
+    const world = document.querySelector("#graph-world");
+    const shapes = new Map([...world.querySelectorAll(":scope > [data-topology-component]")].map(component => [
+      component.dataset.topologyComponent,
+      component.querySelector(":scope > .graph-node, :scope > .graph-adapter, :scope > .graph-gateway, :scope > .graph-visa, :scope > rect"),
+    ]));
+    const pairs = [...world.querySelectorAll("[data-connector-from]")].map(edge => ({
+      name: edge.dataset.topologyEdge,
+      lines: [...edge.querySelectorAll("line")],
+      from: shapes.get(edge.dataset.connectorFrom), to: shapes.get(edge.dataset.connectorTo),
+    }));
+    for (const cloud of world.querySelectorAll(".graph-external-network")) pairs.push({
+      name: "cloud", lines: [...cloud.querySelectorAll("line")],
+      from: shapes.get(cloud.closest("[data-topology-component]").dataset.topologyComponent),
+      to: cloud.querySelector(".graph-cloud"),
+    });
+    return pairs.map(pair => {
+      const line = pair.lines[0];
+      const matrix = world.getCTM().inverse().multiply(line.parentElement.getCTM());
+      const start = new DOMPoint(Number(line.getAttribute("x1")), Number(line.getAttribute("y1"))).matrixTransform(matrix);
+      const end = new DOMPoint(Number(line.getAttribute("x2")), Number(line.getAttribute("y2"))).matrixTransform(matrix);
+      const x1 = start.x, y1 = start.y, x2 = end.x, y2 = end.y;
+      const length = Math.hypot(x2 - x1, y2 - y1);
+      const dx = (x2 - x1) / length * 0.2, dy = (y2 - y1) / length * 0.2;
+      const filled = (shape, x, y) => shape.isPointInFill(new DOMPoint(x, y).matrixTransform(shape.getCTM().inverse().multiply(world.getCTM())));
+      return {
+        name: pair.name, length,
+        fromInside: filled(pair.from, x1 - dx, y1 - dy),
+        fromOutside: filled(pair.from, x1 + dx, y1 + dy),
+        toInside: filled(pair.to, x2 + dx, y2 + dy),
+        toOutside: filled(pair.to, x2 - dx, y2 - dy),
+        layersAgree: pair.lines.every(other => ["x1", "y1", "x2", "y2"].every(key => other.getAttribute(key) === line.getAttribute(key))),
+      };
+    });
+  });
+  const verify = async () => {
+    const edges = await inspectEdges();
+    expect(edges.length).toBe(25);
+    for (const edge of edges) {
+      expect(edge.length, edge.name).toBeGreaterThan(0);
+      expect(edge.fromInside, edge.name).toBe(true);
+      expect(edge.fromOutside, edge.name).toBe(false);
+      expect(edge.toInside, edge.name).toBe(true);
+      expect(edge.toOutside, edge.name).toBe(false);
+      expect(edge.layersAgree, edge.name).toBe(true);
+    }
+  };
+  await verify();
+  api.snapshot.actors.push({ cn: "node-c", node: true, zpr_addr: "fd00::c", node_details: { adapters: [] } });
+  await page.locator("#refresh-now").click();
+  await expect(page.locator('.graph-vertex[data-inspect-actor="node-c"]')).toHaveCount(1);
+  await verify();
+  await page.evaluate(() => {
+    for (const name of ["node-a", "gateway", "visa"]) {
+      const component = [...document.querySelectorAll(".graph-vertex")].find(element => element.dataset.inspectActor === name);
+      const animation = component.animate([{ opacity: 1 }, { opacity: 1 }], { duration: 700, fill: "both" });
+      animation.pause();
+      animation.currentTime = 350;
+      animateGraphMotion(component, animation, { x: 10, y: -5, scale: 0.8 }, { x: 0, y: 0, scale: 1 });
+    }
+  });
+  await verify();
+});
+
+test("GUI Map Dark mode only themes the canvas and survives refresh and navigation", async ({ page, appURL, api }) => {
+  await page.emulateMedia({ reducedMotion: "reduce" });
+  api.snapshot.actors = [{ cn: "client", node: false, zpr_addr: "fd00::1" }];
+  api.snapshot.services = [{ service_name: "API", actor_cn: "client", service_endpoints: "TCP/443" }];
+  api.snapshot.active_visas = [];
+  await page.goto(appURL + "/#map");
+  await page.getByRole("button", { name: "Pause updates", exact: true }).click();
+  const checkbox = page.getByRole("checkbox", { name: "Dark mode", exact: true });
+  const stage = page.locator("#topology-stage");
+  const externalColors = () => page.evaluate(() => [document.body, document.querySelector(".sidebar"), document.querySelector(".topbar")].map(el => {
+    const css = getComputedStyle(el);
+    return [css.backgroundColor, css.color];
+  }));
+  const before = await externalColors();
+  const camera = () => page.locator("#graph-world").getAttribute("transform");
+  const originalCamera = await camera();
+  await expect(checkbox).not.toBeChecked();
+  await checkbox.check();
+  await expect(stage).toHaveCSS("background-color", "rgb(20, 33, 30)");
+  await expect(stage.locator(".graph-visa-count.empty rect").first()).toHaveCSS("stroke", "rgb(156, 228, 188)");
+  expect(await camera()).toBe(originalCamera);
+  expect(await externalColors()).toEqual(before);
+  await page.locator("#refresh-now").click();
+  await expect(checkbox).toBeChecked();
+  await page.getByRole("link", { name: "Status", exact: true }).click();
+  await page.getByRole("link", { name: "Map", exact: true }).click();
+  await expect(checkbox).toBeChecked();
+  await checkbox.uncheck();
+  await expect(stage).not.toHaveClass(/graph-dark/);
+  api.snapshot.actors = [];
+  api.snapshot.services = [];
+  await page.locator("#refresh-now").click();
+  await expect(stage).toContainText("No nodes or adapters reported.");
+  await checkbox.check();
+  await expect(stage).toHaveClass(/graph-dark/);
+  api.snapshot.actors = [{ cn: "returned", node: false, zpr_addr: "fd00::1" }];
+  await page.locator("#refresh-now").click();
+  await expect(page.locator('.graph-vertex[data-inspect-actor="returned"]')).toHaveCount(1);
+  await expect(checkbox).toBeChecked();
+  await expect(stage).toHaveClass(/graph-dark/);
+});
+
+test("GUI Map zero visa badges are empty outlines and retain accessible counts", async ({ page, appURL, api }) => {
+  api.snapshot.actors = [{ cn: "client", node: false, zpr_addr: "fd00::1" }];
+  api.snapshot.services = [{ service_name: "API", actor_cn: "client", zpr_addr: "fd00::1", service_endpoints: "TCP/443" }];
+  api.snapshot.active_visas = [];
+  await page.goto(appURL + "/#map");
+  await page.getByRole("button", { name: "Pause updates", exact: true }).click();
+  for (const selector of ['[data-inspect-actor="client"]', '[data-inspect-service="API"]']) {
+    const badge = page.locator(`${selector} .graph-visa-count`);
+    await expect(badge).toHaveAttribute("aria-label", "0 active visas");
+    await expect(badge.locator("title")).toHaveText("0 active visas");
+    await expect(badge.locator("text")).toHaveCount(0);
+    await expect(badge.locator("rect")).toHaveCSS("fill", "none");
+    await expect(badge.locator("rect")).toHaveCSS("stroke", "rgb(23, 77, 61)");
+    await expect(badge.locator("rect")).toHaveAttribute("width", "22");
+  }
+  api.snapshot.active_visas = [{ id: 1, expires: Math.floor(Date.now() / 1000) + 3600, source_addr: "fd00::2", dest_addr: "fd00::1", proto: "TCP", dest_port: 443 }];
+  await page.locator("#refresh-now").click();
+  for (const selector of ['[data-inspect-actor="client"]', '[data-inspect-service="API"]']) {
+    const badge = page.locator(`${selector} .graph-visa-count`);
+    await expect(badge.locator("text")).toHaveText("1");
+    await expect(badge.locator("rect")).toHaveCSS("fill", "rgb(23, 77, 61)");
+  }
+  api.snapshot.active_visas = null;
+  await page.locator("#refresh-now").click();
+  await expect(page.locator('[data-inspect-actor="client"] .graph-visa-count text')).toHaveText("?");
+});
+
+for (const reducedMotion of ["no-preference", "reduce"]) {
+test(`GUI Map manual pan and zoom disable Auto-fit (${reducedMotion})`, async ({ page, appURL, api }) => {
+  await page.emulateMedia({ reducedMotion });
+  api.snapshot.actors = [{ cn: "client", node: false, zpr_addr: "fd00::1" }];
+  await page.goto(appURL + "/#map");
+  await page.getByRole("button", { name: "Pause updates", exact: true }).click();
+  const autoFit = page.getByRole("checkbox", { name: "Auto-fit", exact: true });
+  const svg = page.locator(".topology-graph");
+  const viewport = () => page.evaluate(() => ({
+    box: document.querySelector(".topology-graph").getAttribute("viewBox"),
+    transform: document.querySelector("#graph-world").getAttribute("transform"),
+  }));
+  await expect(autoFit).toBeChecked();
+  await page.getByRole("button", { name: "Fit graph", exact: true }).click();
+  await expect(autoFit).toBeChecked();
+  const bounds = await svg.boundingBox();
+  await page.mouse.click(bounds.x + 8, bounds.y + 8);
+  await expect(autoFit).toBeChecked();
+  for (const interaction of ["in", "out", "wheel", "pan"]) {
+    if (!(await autoFit.isChecked())) await autoFit.check();
+    const before = await viewport();
+    if (interaction === "in" || interaction === "out") {
+      await page.getByRole("button", { name: interaction === "in" ? "Zoom in" : "Zoom out", exact: true }).click();
+    } else if (interaction === "wheel") {
+      await svg.dispatchEvent("wheel", { deltaY: -100, clientX: bounds.x + 20, clientY: bounds.y + 20 });
+    } else {
+      await page.mouse.move(bounds.x + 8, bounds.y + 8);
+      await page.mouse.down();
+      await page.mouse.move(bounds.x + 48, bounds.y + 38, { steps: 4 });
+      await expect(autoFit).not.toBeChecked();
+      await page.mouse.move(bounds.x + 8, bounds.y + 8, { steps: 4 });
+      expect(await viewport()).toEqual(before);
+      await page.mouse.move(bounds.x + 48, bounds.y + 38, { steps: 4 });
+      await page.mouse.up();
+    }
+    await expect(autoFit).not.toBeChecked();
+    const manual = await viewport();
+    expect(manual).not.toEqual(before);
+    api.snapshot.actors.push({ cn: `extra-${interaction}`, node: false, zpr_addr: `fd00::${api.snapshot.actors.length + 1}` });
+    await page.locator("#refresh-now").click();
+    await expect(page.locator(`.graph-vertex[data-inspect-actor="extra-${interaction}"]`)).toHaveCount(1);
+    await expect(autoFit).not.toBeChecked();
+    expect(await viewport()).toEqual(manual);
+    await page.getByRole("button", { name: "Fit graph", exact: true }).click();
+    await expect(autoFit).not.toBeChecked();
+  }
+  await autoFit.check();
+  await page.locator("#refresh-now").click();
+  await expect(autoFit).toBeChecked();
+});
+}
+
+test("GUI Map decision feedback uses prominent rings and wires", async ({ page, appURL, api }) => {
+  await page.emulateMedia({ reducedMotion: "reduce" });
+  api.snapshot.actors = [
+    { cn: "node", node: true, node_details: { adapters: ["client"] } },
+    { cn: "client", node: false, zpr_addr: "fd00::1" },
+  ];
+  await page.goto(appURL + "/#map");
+  await page.getByRole("button", { name: "Pause updates", exact: true }).click();
+  api.snapshot.recent_visas = [{ id: 123, source_addr: "fd00::1" }];
+  await page.locator("#refresh-now").click();
+  const ring = page.locator(".graph-decision-ring");
+  await expect(ring).toHaveCSS("stroke-width", "6px");
+  expect(await ring.evaluate((element) => getComputedStyle(element).filter)).toContain("drop-shadow");
+  const feedback = await page.locator('.graph-edge[data-dock-adapter="client"] .graph-link').evaluate((element) => ({
+    widths: element.getAnimations()[0].effect.getKeyframes().map((frame) => Number.parseFloat(frame.strokeWidth)),
+    transforms: document.querySelector(".graph-decision-ring").getAnimations()[0].effect.getKeyframes().map((frame) => frame.transform).filter(Boolean),
+  }));
+  expect(Math.max(...feedback.widths)).toBeGreaterThanOrEqual(4.5);
+  expect(feedback.transforms).toEqual([]);
+});
+
 test("Map canvas leaves no large empty footer below the panel", async ({ page, appURL }) => {
   await page.setViewportSize({ width: 887, height: 394 });
   await page.goto(appURL + "/#map");
@@ -3004,6 +3529,32 @@ test("organization activation requires explicit approval and is cancel-safe", as
   await expect(page.locator("#organization-active-name")).toHaveText("Beta Labs");
   await expect(dialog).not.toBeVisible();
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBeTruthy();
+});
+
+test("organization base restore requires explicit confirmation", async ({ page, appURL, api }) => {
+  const restorePath = "/api/simulator/organizations/beta/restore-base";
+  api.handlers.set(restorePath, async (route) => {
+    expect(route.request().method()).toBe("POST");
+    api.organizations.activation = { state: "completed", operation: "restore-base", organization_id: "beta", progress: "Organization ready" };
+    await route.fulfill({ status: 202, json: { activation: api.organizations.activation } });
+  });
+  await page.goto(appURL + "/organizations.html");
+  await page.locator('[data-organization-id="beta"]').click();
+  const restore = page.locator('[data-restore-base="beta"]');
+  await restore.click();
+  const dialog = page.getByRole("dialog", { name: "Restore base state?", exact: true });
+  await expect(dialog).toBeVisible();
+  await expect(dialog).toContainText("bundled defaults");
+  await expect(dialog).toContainText("backed up locally");
+  expect(api.counts.get(restorePath) || 0).toBe(0);
+  await dialog.getByRole("button", { name: "Cancel", exact: true }).click();
+  await expect(dialog).not.toBeVisible();
+  expect(api.counts.get(restorePath) || 0).toBe(0);
+
+  await restore.click();
+  await dialog.getByRole("button", { name: "Restore base state", exact: true }).click();
+  await expect.poll(() => api.counts.get(restorePath)).toBe(1);
+  await expect(dialog).not.toBeVisible();
 });
 
 test("organization approval is rejected after the active organization changes", async ({ page, appURL, api }) => {

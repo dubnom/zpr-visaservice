@@ -19,6 +19,18 @@
   const selectVisibleToggle = byId("security-review-select-visible");
   const suspiciousLogLine = /\b(?:authentication failed|failed authentication|auth(?:entication)? failure|login failed|invalid certificate|certificate verify failed|unauthorized|access denied|permission denied|invalid token)\b/i;
   const active = () => location.hash === "#security-review";
+  const acknowledgedAlerts = new Set();
+  function alertKey(finding) {
+    const latestDenial = finding.indicator === "Repeated policy denials"
+      ? Math.max(0, ...(state.snapshot?.recent_denies || []).filter((deny) => deny.source_addr === finding.entity).map((deny) => Number(deny.last_deny_ms) || 0))
+      : 0;
+    return JSON.stringify([findingKey(finding), latestDenial]);
+  }
+  function acknowledgeAlerts() {
+    for (const finding of state.findings) {
+      if (finding.severity === "high") acknowledgedAlerts.add(alertKey(finding));
+    }
+  }
 
   function readBaseline() {
     try {
@@ -229,7 +241,9 @@
   }
 
   function render() {
-    const highCount = state.findings.filter((finding) => finding.severity === "high" && !state.dismissed[findingKey(finding)]).length;
+    const currentAlerts = new Set(state.findings.filter((finding) => finding.severity === "high").map(alertKey));
+    for (const key of acknowledgedAlerts) if (!currentAlerts.has(key)) acknowledgedAlerts.delete(key);
+    const highCount = state.findings.filter((finding) => finding.severity === "high" && !state.dismissed[findingKey(finding)] && !acknowledgedAlerts.has(alertKey(finding))).length;
     const nav = document.querySelector('.primary-nav [data-page-link="security-review"]');
     nav.dataset.highAlert = String(highCount > 0);
     if (highCount) nav.setAttribute("aria-label", `Security: ${highCount} high alerts`);
@@ -365,7 +379,13 @@
     state.snapshot = event.detail;
     void scan(event.detail);
   });
-  window.addEventListener("hashchange", () => { if (!active()) state.request?.abort(); });
+  window.addEventListener("hashchange", () => {
+    if (!active()) state.request?.abort();
+    else {
+      acknowledgeAlerts();
+      render();
+    }
+  });
   document.addEventListener("control-room:dns-updated", render);
   root.addEventListener("click", (event) => {
     const action = event.target.closest("[data-security-disposition]");

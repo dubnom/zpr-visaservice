@@ -60,6 +60,7 @@ type snapshot struct {
 	Trusted      []trustedSource   `json:"trusted_sources"`
 	VisaCount    int               `json:"visa_count"`
 	RecentVisas  []visa            `json:"recent_visas"`
+	ActiveVisas  []visa            `json:"active_visas"`
 	RecentDenies []deny            `json:"recent_denies"`
 }
 
@@ -242,6 +243,9 @@ func main() {
 	policyRoot := flag.String("policy-root", "", "Root directory of policy layer sources and organization profiles")
 	policyOrganization := flag.String("policy-organization", "", "Organization policy layer to compose")
 	policyOutput := flag.String("policy-output", "", "Output file for the composed policy source")
+	policyConfigBase := flag.String("policy-config-base", "", "Organization ZPLC config to merge")
+	policyConfigRuntime := flag.String("policy-config-runtime", "", "Generated runtime ZPLC config to overlay")
+	policyConfigBootstrapDir := flag.String("policy-config-bootstrap-dir", "", "Directory containing runtime bootstrap public keys")
 	assertionsDatabase := flag.String("assertions-db", "", "Organization policy database to populate with default assertions")
 	flag.Parse()
 	switch *mode {
@@ -251,6 +255,10 @@ func main() {
 		}
 	case "compose-policy":
 		if err := writeOrganizationPolicy(*policyRoot, *policyOrganization, *policyOutput); err != nil {
+			log.Fatal(err)
+		}
+	case "merge-policy-config":
+		if err := writeMergedPolicyConfig(*policyConfigBase, *policyConfigRuntime, *policyConfigBootstrapDir, *policyOutput); err != nil {
 			log.Fatal(err)
 		}
 	case "policy-service":
@@ -549,7 +557,17 @@ func (a *application) fetchSnapshot(ctx context.Context) snapshot {
 		case "visas":
 			entries := res.value.([]visaEntry)
 			out.VisaCount = len(entries)
-			out.RecentVisas = a.fetchRecentVisas(ctx, entries, &out.Errors, &mu)
+			items, complete := a.fetchVisaInventory(ctx, entries, &out.Errors, &mu)
+			out.RecentVisas = items[:min(len(items), maxRecentVisas)]
+			if complete {
+				out.ActiveVisas = []visa{}
+				now := time.Now().Unix()
+				for _, item := range items {
+					if item.Expires > now {
+						out.ActiveVisas = append(out.ActiveVisas, item)
+					}
+				}
+			}
 		case "denies":
 			out.RecentDenies = res.value.([]deny)
 		}
@@ -699,27 +717,50 @@ func trustedSourcesFromStatus(statuses []trustedStatus, services []service) []tr
 	return trusted
 }
 
-func (a *application) fetchRecentVisas(ctx context.Context, entries []visaEntry, errs *[]string, mu *sync.Mutex) []visa {
+func (a *application) fetchVisaInventory(ctx context.Context, entries []visaEntry, errs *[]string, mu *sync.Mutex) ([]visa, bool) {
 	sort.Slice(entries, func(i, j int) bool { return entries[i].ID > entries[j].ID })
-	if len(entries) > maxRecentVisas {
-		entries = entries[:maxRecentVisas]
-	}
 	items := make([]visa, len(entries))
+	valid := make([]bool, len(entries))
+	complete := true
 	var wg sync.WaitGroup
+	workers := make(chan struct{}, 16)
 	for i, entry := range entries {
 		wg.Add(1)
 		go func(i int, id int64) {
 			defer wg.Done()
+			select {
+			case workers <- struct{}{}:
+				defer func() { <-workers }()
+			case <-ctx.Done():
+				mu.Lock()
+				complete = false
+				*errs = append(*errs, fmt.Sprintf("visa %d: %v", id, ctx.Err()))
+				mu.Unlock()
+				return
+			}
 			path := "/admin/visas/" + fmt.Sprint(id)
 			if err := a.admin.getJSON(ctx, path, &items[i]); err != nil {
+				var statusError adminStatusError
+				if errors.As(err, &statusError) && statusError.code == http.StatusNotFound {
+					return
+				}
 				mu.Lock()
+				complete = false
 				*errs = append(*errs, fmt.Sprintf("visa %d: %v", id, err))
 				mu.Unlock()
+			} else {
+				valid[i] = true
 			}
 		}(i, entry.ID)
 	}
 	wg.Wait()
-	return items
+	result := make([]visa, 0, len(items))
+	for index, item := range items {
+		if valid[index] {
+			result = append(result, item)
+		}
+	}
+	return result, complete
 }
 
 func (a *application) handleActorVisas(w http.ResponseWriter, r *http.Request) {

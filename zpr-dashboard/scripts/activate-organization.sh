@@ -4,10 +4,11 @@ script_dir=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
 dashboard_dir=$(CDPATH= cd -- "$script_dir/.." && pwd)
 runtime_dir=$(CDPATH= cd -- "$dashboard_dir/../../.local-runtime" && pwd)
 rig=${SIMULATION_CONTAINER:-zpr-local-linux-node}
+action=${1:-}
 organization=${2:-}
-case "${1:-}:$organization" in
-    reset-organization:*) ;;
-    *) echo "usage: $0 reset-organization organization-id" >&2; exit 2 ;;
+case "$action:$organization" in
+    reset-organization:*|restore-base:*) ;;
+    *) echo "usage: $0 {reset-organization|restore-base} organization-id" >&2; exit 2 ;;
 esac
 case "$organization" in ''|*[!a-z0-9-]*) echo "invalid organization id" >&2; exit 2 ;; esac
 profile="$dashboard_dir/cmd/zpr-web-dashboard/examples/organizations/$organization.json"
@@ -15,13 +16,7 @@ profile="$dashboard_dir/cmd/zpr-web-dashboard/examples/organizations/$organizati
 organization_driver=$(jq -er '.runtime.driver' "$profile")
 policy_config_relative=$(jq -er '.policy_config' "$profile")
 policy_config="$dashboard_dir/cmd/zpr-web-dashboard/examples/$policy_config_relative"
-runtime_policy_relative=$(jq -er --arg organization "$organization" '.runtime_policy // ("organizations/" + $organization + "/runtime-policy.zpl")' "$profile")
-runtime_policy_source="$dashboard_dir/cmd/zpr-web-dashboard/examples/$runtime_policy_relative"
 runtime_policy_config="$policy_config"
-if [ "$organization_driver" = "docker-multinode" ]; then
-    runtime_policy_config="$runtime_dir/multinode/$organization/admin/multinode-demo.zplc"
-    [ -r "$runtime_policy_config" ] || { echo "multinode runtime policy config missing: $runtime_policy_config" >&2; exit 1; }
-fi
 organization_base_dn=$(jq -er '.directory.base_dn' "$profile")
 organization_bind_dn="cn=zpr-reader,ou=Service Accounts,$organization_base_dn"
 control_room_url=${SIMULATOR_CONTROL_ROOM_URL:-http://127.0.0.1:8787}
@@ -44,6 +39,27 @@ compiler=${ZPR_ZPLC_BIN:-$dashboard_dir/../../zpr-compiler/target/debug/zplc}
 pregen="$runtime_dir/linux-integration/pregen"
 multinode_dir="$dashboard_dir/../../zpr-demo/multinode-demo"
 multinode_deploy="$multinode_dir/local-compute/deploy-docker.sh"
+install_multinode_policy() {
+    runtime_policy_config="$runtime_dir/multinode/$organization/admin/multinode-demo.zplc"
+    [ -r "$runtime_policy_config" ] || { echo "multinode runtime policy config missing: $runtime_policy_config" >&2; return 1; }
+    install_policy_config="$bundle_dir/install.zplc"
+    "$binary" -mode merge-policy-config \
+        -policy-config-base "$policy_config" \
+        -policy-config-runtime "$runtime_policy_config" \
+        -policy-config-bootstrap-dir "$runtime_dir/multinode/$organization/include" \
+        -policy-output "$install_policy_config"
+    "$compiler" "$bundle_dir/runtime.zpl" -c "$install_policy_config" \
+        -k "$pregen/zpr-rsa-key.pem" -d "$bundle_dir" -o runtime.bin2
+    docker run --rm \
+        -v "$bundle_dir:/runtime/policy:ro" \
+        -v "$multinode_dir/zpr-conf/include:/runtime/include:ro" \
+        -v "$runtime_dir/multinode/$organization/bob:/runtime/operator:ro" \
+        zpr-multinode /app/bin/vs-admin \
+        --svc-url "https://host.docker.internal:${ZPR_ADMIN_PORT:-8185}" \
+        --ca-cert /runtime/include/admin-tls-cert.pem \
+        --api-key-file /runtime/operator/client.key \
+        --format compact policies --path /runtime/policy/runtime.bin2
+}
 bundle_dir="$runtime_dir/organization-policy/$organization"
 request_file="$runtime_dir/organization-request.json"
 status_file=${SIMULATION_ACTIVATION_STATUS_FILE:-$runtime_dir/dashboard-stack/active-organization.txt.progress}
@@ -59,32 +75,7 @@ report_activation_status "Preparing runtime policy"
 printf 'Preflight organization %s\n' "$organization"
 "$binary" -mode compose-policy -policy-root "$dashboard_dir/cmd/zpr-web-dashboard/examples" -policy-organization "$organization" -policy-output "$bundle_dir/runtime.zpl"
 if [ "$organization_driver" = "docker-multinode" ]; then
-    install_policy_source="$bundle_dir/install.zpl"
-    {
-        printf '%s\n\n' "define adapter as a device with zpr.adapter.cn."
-        cat "$dashboard_dir/cmd/zpr-web-dashboard/examples/policy-layers/platform.zpl"
-        printf '\n'
-        cat "$runtime_policy_source"
-        printf '\n'
-        cat "$runtime_dir/multinode/$organization/admin/multinode-demo.zpl"
-    } > "$install_policy_source"
-    if [ -n "${ZPR_ZPLC_IMAGE:-}" ]; then
-        docker run --rm --network none -v "$runtime_dir:/runtime" \
-            -v "$runtime_dir/multinode/$organization/include:/runtime-include:ro" \
-            "$ZPR_ZPLC_IMAGE" \
-            "/runtime/organization-policy/$organization/install.zpl" \
-            -c "/runtime/multinode/$organization/admin/multinode-demo.zplc" \
-            -k /runtime/linux-integration/pregen/zpr-rsa-key.pem \
-            -d "/runtime/organization-policy/$organization" -o runtime.bin2
-    else
-        docker run --rm --network none -v "$runtime_dir:/runtime" \
-            -v "$runtime_dir/multinode/$organization/include:/runtime-include:ro" \
-            zpr-multinode /app/bin/zplc \
-            "/runtime/organization-policy/$organization/install.zpl" \
-            -c "/runtime/multinode/$organization/admin/multinode-demo.zplc" \
-            -k /runtime/linux-integration/pregen/zpr-rsa-key.pem \
-            -d "/runtime/organization-policy/$organization" -o runtime.bin2
-    fi
+    report_activation_status "Runtime policy source prepared"
 elif [ -n "${ZPR_ZPLC_IMAGE:-}" ]; then
     docker run --rm --network none -v "$runtime_dir:/runtime" -v "$dashboard_dir:/dashboard:ro" "$ZPR_ZPLC_IMAGE" \
         "/runtime/organization-policy/$organization/runtime.zpl" \
@@ -120,17 +111,6 @@ stop_linux_one_node_runtime() {
     if [ "$(docker inspect -f '{{.State.Running}}' zpr-observability 2>/dev/null || true)" = true ]; then docker stop zpr-observability >/dev/null; fi
     if [ "$(docker inspect -f '{{.State.Running}}' "$rig" 2>/dev/null || true)" = true ]; then docker stop "$rig" >/dev/null; fi
 }
-stop_multinode_runtimes() {
-    for candidate_profile in "$dashboard_dir/cmd/zpr-web-dashboard/examples/organizations/"*.json; do
-        [ -r "$candidate_profile" ] || continue
-        multinode_profile_id=${candidate_profile##*/}
-        multinode_profile_id=${multinode_profile_id%.json}
-        if [ "$(jq -er '.runtime.driver' "$candidate_profile")" = docker-multinode ]; then
-            ZPR_ORGANIZATION_ID="$multinode_profile_id" ZPR_RUNTIME_ROOT="$(multinode_runtime_dir "$multinode_profile_id")" bash "$multinode_deploy" stop
-        fi
-    done
-    ZPR_ORGANIZATION_ID=multinode-demo bash "$multinode_deploy" stop
-}
 stop_runtime() {
     runtime_id=$1
     runtime_profile="$dashboard_dir/cmd/zpr-web-dashboard/examples/organizations/$runtime_id.json"
@@ -148,16 +128,51 @@ stop_runtime() {
         *) echo "unsupported runtime driver: $runtime_kind" >&2; return 1 ;;
     esac
 }
+restore_organization_base() {
+    backup_directory="$runtime_dir/organization-backups/$organization/$(date -u +%Y%m%dT%H%M%SZ)-$generation"
+    policy_database="$runtime_dir/dashboard-stack/policy-private/$organization-policy-only.db"
+    staged_policy="$runtime_dir/dashboard-stack/staged-policy/$organization"
+    published_directory="$runtime_dir/published-directories/$organization.ldif"
+    mkdir -m 700 -p "$backup_directory"
+
+    "$script_dir/dashboard-stack.sh" stop-policy-service
+    for file_path in "$policy_database" "$policy_database-wal" "$policy_database-shm" "$published_directory"; do
+        if [ -f "$file_path" ]; then
+            cp -p "$file_path" "$backup_directory/$(basename "$file_path")"
+        fi
+    done
+    if [ -d "$staged_policy" ]; then
+        cp -R "$staged_policy" "$backup_directory/staged-policy"
+    fi
+
+    if [ "$organization_driver" = "docker-multinode" ]; then
+        directory_root="$runtime_dir/multinode/$organization/directory"
+        for file_path in "$directory_root/seed-complete" "$directory_root/company.ldif" "$directory_root/slapd.conf"; do
+            if [ -f "$file_path" ]; then
+                cp -p "$file_path" "$backup_directory/$(basename "$file_path")"
+            fi
+        done
+        if [ -d "$directory_root/data" ]; then
+            cp -R "$directory_root/data" "$backup_directory/directory-data"
+        fi
+    fi
+
+    rm -f "$policy_database" "$policy_database-wal" "$policy_database-shm" "$published_directory"
+    rm -rf "$staged_policy"
+    if [ "$organization_driver" = "docker-multinode" ]; then
+        rm -rf "$directory_root/data" "$directory_root/slapd.d"
+        rm -f "$directory_root/seed-complete" "$directory_root/company.ldif" "$directory_root/slapd.conf"
+    fi
+    echo "Base-state restore backup: $backup_directory"
+}
 start_runtime() {
     runtime_id=$1
     runtime_driver=$(jq -er '.runtime.driver' "$dashboard_dir/cmd/zpr-web-dashboard/examples/organizations/$runtime_id.json")
     case "$runtime_driver" in
         linux-one-node)
-            stop_multinode_runtimes
             if [ "$(docker inspect -f '{{.State.Running}}' "$rig" 2>/dev/null || true)" = true ]; then docker restart "$rig" >/dev/null; else docker start "$rig" >/dev/null; fi
             ;;
         docker-multinode)
-            stop_multinode_runtimes
             stop_linux_one_node_runtime
             ZPR_ORGANIZATION_ID="$runtime_id" ZPR_RUNTIME_ROOT="$(multinode_runtime_dir "$runtime_id")" bash "$multinode_deploy" deploy
             ;;
@@ -207,8 +222,16 @@ mv "$request_temp" "$request_file"
 changed=yes
 report_activation_status "Stopping previous runtime"
 stop_runtime "$previous_organization"
+if [ "$action" = "restore-base" ]; then
+    report_activation_status "Backing up and restoring organization base state"
+    restore_organization_base
+fi
 report_activation_status "Starting $organization runtime"
 start_runtime "$organization"
+if [ "$organization_driver" = "docker-multinode" ]; then
+    report_activation_status "Compiling and installing policy with deployed bootstrap keys"
+    install_multinode_policy
+fi
 if [ "$organization_driver" = linux-one-node ]; then
     report_activation_status "Starting DNS and platform relays"
     "$script_dir/dashboard-stack.sh" start-admin-relay
@@ -244,10 +267,10 @@ if [ "$organization_driver" = linux-one-node ]; then
     fi
 else
     report_activation_status "Checking multi-node ZPR services"
-    report_activation_status "Starting organization ZPR DNS"
-    SIMULATION_ORGANIZATION_ID="$organization" "$script_dir/dashboard-stack.sh" start-dns
     configured_node_count=$(jq -er '.runtime.nodes | length' "$dashboard_dir/cmd/zpr-web-dashboard/examples/organizations/$organization.json")
     echo "$configured_node_count-node $organization runtime passed configured peer and service readiness checks"
+    report_activation_status "Starting organization ZPR DNS"
+    SIMULATION_ORGANIZATION_ID="$organization" "$script_dir/dashboard-stack.sh" start-dns
 fi
 policy_changed=yes
 report_activation_status "Applying organization runtime policy"

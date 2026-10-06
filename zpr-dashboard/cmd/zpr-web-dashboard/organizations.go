@@ -29,6 +29,7 @@ type simulatorOrganization struct {
 	Policies           []simulatorOrganizationPolicy  `json:"policies"`
 	Services           []simulatorOrganizationService `json:"services"`
 	PolicyTestServices []simulatorPolicyTestService   `json:"policy_test_services,omitempty"`
+	WorkloadServices   map[string][]string            `json:"workload_services,omitempty"`
 	LoadTest           *simulatorLoadTestProfile      `json:"load_test,omitempty"`
 }
 
@@ -151,6 +152,14 @@ func simulatorActiveOrganizationPath() string {
 }
 
 func handleSimulatorOrganizationActivate(w http.ResponseWriter, r *http.Request) {
+	handleSimulatorOrganizationOperation(w, r, false)
+}
+
+func handleSimulatorOrganizationRestoreBase(w http.ResponseWriter, r *http.Request) {
+	handleSimulatorOrganizationOperation(w, r, true)
+}
+
+func handleSimulatorOrganizationOperation(w http.ResponseWriter, r *http.Request, restoreBase bool) {
 	organizationID := r.PathValue("organization")
 	if _, err := loadSimulatorOrganization(simulatorOrganizationsDirectory(), organizationID); err != nil {
 		writeWorkspaceError(w, http.StatusNotFound, "unknown organization")
@@ -170,7 +179,13 @@ func handleSimulatorOrganizationActivate(w http.ResponseWriter, r *http.Request)
 			return
 		}
 	}
-	if !activeOrganizationActivation.start(organizationID, simulatorActiveOrganizationPath()) {
+	var started bool
+	if restoreBase {
+		started = activeOrganizationActivation.restoreBase(organizationID, simulatorActiveOrganizationPath())
+	} else {
+		started = activeOrganizationActivation.start(organizationID, simulatorActiveOrganizationPath())
+	}
+	if !started {
 		writeWorkspaceError(w, http.StatusConflict, "An organization activation is already in progress.")
 		return
 	}
@@ -367,6 +382,19 @@ func validateSimulatorOrganization(organization simulatorOrganization) error {
 			return fmt.Errorf("service %q has an invalid provider actor identity", service.Name)
 		}
 	}
+	if len(organization.WorkloadServices) > 32 {
+		return errors.New("organization has too many workload service registrations")
+	}
+	for agent, serviceNames := range organization.WorkloadServices {
+		if _, ok := machineWorkload(agent); !ok || len(serviceNames) == 0 || len(serviceNames) > 512 {
+			return fmt.Errorf("workload %q has invalid service registrations", agent)
+		}
+		for _, serviceName := range serviceNames {
+			if !policyTestValueSafe(serviceName) || strings.TrimSpace(serviceName) == "" || len(serviceName) > 200 || strings.Contains(serviceName, ",") {
+				return fmt.Errorf("workload %q has invalid service registration", agent)
+			}
+		}
+	}
 	if profile := organization.LoadTest; profile != nil {
 		if !validScenarioID(profile.ClientMachine) || !validScenarioID(profile.ServiceMachine) || profile.ClientMachine == profile.ServiceMachine {
 			return errors.New("load test requires distinct valid client and service machines")
@@ -467,10 +495,13 @@ func simulatorLoadTestServiceNames(profile simulatorLoadTestProfile) []string {
 	return services
 }
 
-func simulatorLoadTestServicesForAgent(directory, organizationID, agent string) ([]string, error) {
+func simulatorWorkloadServicesForAgent(directory, organizationID, agent string) ([]string, error) {
 	organization, err := loadSimulatorOrganization(directory, organizationID)
 	if err != nil {
 		return nil, err
+	}
+	if services, ok := organization.WorkloadServices[agent]; ok {
+		return append([]string(nil), services...), nil
 	}
 	if organization.LoadTest == nil || organization.LoadTest.ServiceWorkload != agent {
 		return nil, nil

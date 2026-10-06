@@ -14,6 +14,7 @@ import (
 
 type organizationActivation struct {
 	OrganizationID string `json:"organization_id,omitempty"`
+	Operation      string `json:"operation,omitempty"`
 	State          string `json:"state"`
 	Progress       string `json:"progress,omitempty"`
 	Error          string `json:"error,omitempty"`
@@ -23,17 +24,20 @@ type organizationActivationManager struct {
 	mu    sync.RWMutex
 	run   organizationActivation
 	done  chan struct{}
-	reset func(context.Context, string) error
+	reset func(context.Context, string, string) error
 }
 
 var activeOrganizationActivation = &organizationActivationManager{
 	run: organizationActivation{State: "idle"},
-	reset: func(ctx context.Context, organizationID string) error {
+	reset: func(ctx context.Context, organizationID, operation string) error {
 		script := strings.TrimSpace(os.Getenv("SIMULATION_ORGANIZATION_RESET_SCRIPT"))
 		if script == "" {
 			return errors.New("organization reset is not configured")
 		}
-		command := exec.CommandContext(ctx, "sh", script, "reset-organization", organizationID)
+		if operation != "reset-organization" && operation != "restore-base" {
+			return errors.New("organization operation is invalid")
+		}
+		command := exec.CommandContext(ctx, "sh", script, operation, organizationID)
 		command.Env = append(os.Environ(), "SIMULATION_ACTIVATION_STATUS_FILE="+simulatorActiveOrganizationPath()+".progress")
 		command.Cancel = func() error { return command.Process.Signal(syscall.SIGTERM) }
 		command.WaitDelay = 2 * time.Minute
@@ -51,18 +55,30 @@ func (manager *organizationActivationManager) snapshot() organizationActivation 
 }
 
 func (manager *organizationActivationManager) start(organizationID, selectionFile string) bool {
+	return manager.startOperation("reset-organization", organizationID, selectionFile)
+}
+
+func (manager *organizationActivationManager) restoreBase(organizationID, selectionFile string) bool {
+	return manager.startOperation("restore-base", organizationID, selectionFile)
+}
+
+func (manager *organizationActivationManager) startOperation(operation, organizationID, selectionFile string) bool {
 	manager.mu.Lock()
 	defer manager.mu.Unlock()
 	if manager.run.State == "resetting" {
 		return false
 	}
-	manager.run = organizationActivation{OrganizationID: organizationID, State: "resetting", Progress: "Preparing organization switch"}
+	progress := "Preparing organization switch"
+	if operation == "restore-base" {
+		progress = "Preparing organization base restore"
+	}
+	manager.run = organizationActivation{OrganizationID: organizationID, Operation: operation, State: "resetting", Progress: progress}
 	manager.done = make(chan struct{})
-	go manager.execute(organizationID, selectionFile, manager.done)
+	go manager.execute(operation, organizationID, selectionFile, manager.done)
 	return true
 }
 
-func (manager *organizationActivationManager) execute(organizationID, selectionFile string, done chan struct{}) {
+func (manager *organizationActivationManager) execute(operation, organizationID, selectionFile string, done chan struct{}) {
 	defer close(done)
 	progressFile := selectionFile + ".progress"
 	_ = os.Remove(progressFile)
@@ -70,7 +86,7 @@ func (manager *organizationActivationManager) execute(organizationID, selectionF
 	go manager.watchProgress(progressFile, progressDone)
 	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Minute)
 	defer cancel()
-	err := manager.reset(ctx, organizationID)
+	err := manager.reset(ctx, organizationID, operation)
 	close(progressDone)
 	if err == nil {
 		manager.setProgress("Saving active organization")
@@ -82,7 +98,7 @@ func (manager *organizationActivationManager) execute(organizationID, selectionF
 	manager.run.State = "completed"
 	if err != nil {
 		manager.run.State = "failed"
-		manager.run.Progress = "Organization switch failed"
+		manager.run.Progress = "Organization operation failed"
 		manager.run.Error = err.Error()
 	} else {
 		manager.run.Progress = "Organization ready"
