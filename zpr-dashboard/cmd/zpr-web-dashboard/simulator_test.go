@@ -233,6 +233,24 @@ func TestSimulatorStackServiceState(t *testing.T) {
 	}
 }
 
+func TestSimulatorActivationLogReturnsBoundedTail(t *testing.T) {
+	logPath := filepath.Join(t.TempDir(), "organization-reset.log")
+	content := strings.Repeat("old reset output", simulatorActivationLogLimit/15+1) + "\nGreat Lakes preflight failed\n"
+	if err := os.WriteFile(logPath, []byte(content), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("SIMULATION_ACTIVATION_LOG_FILE", logPath)
+	request := httptest.NewRequest(http.MethodGet, "/api/simulator/activation-log", nil)
+	response := httptest.NewRecorder()
+	handleSimulatorActivationLog(response, request)
+	if response.Code != http.StatusOK || !strings.Contains(response.Header().Get("Content-Type"), "text/plain") {
+		t.Fatalf("activation log response status=%d content-type=%q", response.Code, response.Header().Get("Content-Type"))
+	}
+	if !strings.Contains(response.Body.String(), "Great Lakes preflight failed") || !strings.Contains(response.Body.String(), "Earlier reset log lines omitted") {
+		t.Fatalf("activation log tail missing marker or failure: %q", response.Body.String())
+	}
+}
+
 func TestMachineCommandQueueCorrelatesPerMachineResults(t *testing.T) {
 	registry := machineCommandRegistry{queues: make(map[string]chan machineControlCommand), pending: make(map[string]chan machineControlCommandResult)}
 	ctx, cancel := context.WithTimeout(context.Background(), time.Second)

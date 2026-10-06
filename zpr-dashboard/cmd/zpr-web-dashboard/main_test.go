@@ -91,6 +91,22 @@ func TestDemoLDAPEditorURL(t *testing.T) {
 	}
 }
 
+func TestProviderManagerURLsAreServerConfiguredAndScoped(t *testing.T) {
+	services := []service{{Name: "authentication", Kind: `Trusted("rest/1")`}, {Name: "directory", Kind: `Trusted("rest/1")`}}
+	statuses := []trustedStatus{{Name: "authentication", Health: "working"}, {Name: "directory", Health: "working"}}
+	t.Setenv("ZPR_PROVIDER_MANAGER_URLS", `{"authentication":"https://auth.example.test/admin","directory":"http://127.0.0.1:8797/"}`)
+	items := trustedSourcesFromStatus(statuses, services)
+	if items[0].EditorURL != "https://auth.example.test/admin" || items[1].EditorURL != "http://127.0.0.1:8797/" {
+		t.Fatalf("configured provider manager links = %+v", items)
+	}
+	for _, raw := range []string{`{"authentication":"javascript:alert(1)"}`, `{"authentication":"http://example.test/admin"}`, `{"authentication":"https://user:pass@example.test/admin"}`} {
+		t.Setenv("ZPR_PROVIDER_MANAGER_URLS", raw)
+		if got := providerManagerURL("authentication"); got != "" {
+			t.Errorf("unsafe provider manager URL %q accepted as %q", raw, got)
+		}
+	}
+}
+
 func TestFetchSnapshotAggregatesLiveAdminData(t *testing.T) {
 	simulatorRequests := make(chan struct{}, 1)
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {

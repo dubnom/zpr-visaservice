@@ -313,8 +313,11 @@ func policyTestAttributeList(attributes map[string][]string) ([]policyTestAttrib
 	for _, key := range keys {
 		values := append([]string(nil), attributes[key]...)
 		for _, value := range values {
-			if !policyTestValueSafe(value) || len(value) > 2048 {
-				return nil, errors.New("A directory attribute cannot be represented safely in the policy test request.")
+			if !policyTestValueSafe(value) {
+				return nil, fmt.Errorf("Policy analysis is unavailable: directory attribute %q contains a comma, brace, or control character unsupported by the ZPT fixture format. This is not a policy compiler error.", key)
+			}
+			if len(value) > 2048 {
+				return nil, fmt.Errorf("Policy analysis is unavailable: directory attribute %q exceeds the 2048-byte fixture value limit.", key)
 			}
 		}
 		result = append(result, policyTestAttributeInput{Key: key, Values: values})

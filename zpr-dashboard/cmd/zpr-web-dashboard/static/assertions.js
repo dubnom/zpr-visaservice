@@ -3,12 +3,20 @@
   const source = element("assertion-source");
   const enabled = element("assertion-enabled");
   const interval = element("assertion-interval");
+  const fileMenu = element("policy-file-menu");
+  for (const id of ["assertion-save", "assertion-reload"]) {
+    const button = element(id);
+    button.setAttribute("role", "menuitem");
+    button.hidden = true;
+    fileMenu.append(button);
+  }
+  element("assertion-reload").textContent = "Discard";
   const lintWarnings = document.createElement("ul");
   lintWarnings.id = "assertion-lint-warnings";
   lintWarnings.className = "lint-warning-list";
   lintWarnings.setAttribute("aria-label", "Assertion lint warnings");
   lintWarnings.hidden = true;
-  element("assertion-run-error").after(lintWarnings);
+  element("assertion-message").after(lintWarnings);
   source.addEventListener("input", () => { lintWarnings.replaceChildren(); lintWarnings.hidden = true; });
   const catalogSource = document.createElement("select");
   catalogSource.id = "assertion-catalog-source";
@@ -24,7 +32,6 @@
   let savedInterval = 60;
   let pending = false;
   let testPending = false;
-  let testMode = false;
   let testAbort = null;
   let selectedRecord = null;
   let recordMode = false;
@@ -48,27 +55,35 @@
     element("assertion-highlight").scrollTop = source.scrollTop;
     element("assertion-highlight").scrollLeft = source.scrollLeft;
     element("assertion-result-lines").style.transform = `translateY(${-source.scrollTop}px)`;
+    element("assertion-result-gutter").style.height = `${Math.max(0, source.clientHeight - 15)}px`;
   }
+
+  new ResizeObserver(highlight).observe(source);
 
   function actions() {
     const organization = status?.organization_name || status?.organization_id || "Organization";
     element("assertion-revision").textContent = `${organization} / r${loadedRevision}${dirty() ? " / Unsaved" : ""}${stale() ? " / Reload required" : ""}`;
+    element("policy-modified-indicator").hidden = !dirty();
     const hasDraftName = !recordMode || !selectedRecord?.isDraft || Boolean(element("policy-draft-name").value.trim());
-    element("assertion-save").disabled = pending || testMode || !status || !dirty() || stale() || !hasDraftName || (recordMode && (!source.value.trim() || selectedRecord?.archived));
-    element("assertion-evaluate").disabled = testMode ? false : pending || testPending || !status?.configured || status?.running || stale() || !source.value.trim();
-    element("assertion-evaluate").textContent = testMode ? "Exit test" : "Test";
-    element("assertion-evaluate").setAttribute("aria-pressed", String(testMode));
-    element("assertion-read-source").disabled = pending || testMode || recordMode || !status?.configured || status?.running;
-    element("assertion-reload").disabled = pending || testMode || !status || (recordMode && selectedRecord?.isDraft);
-    element("assertion-periodic-control").hidden = recordMode;
-    element("assertion-interval-control").hidden = recordMode;
-    enabled.disabled = pending || testMode || recordMode || !status?.configured;
-    interval.disabled = pending || testMode || recordMode;
+    element("assertion-save").disabled = pending || !status || !dirty() || stale() || !hasDraftName || (recordMode && (!source.value.trim() || selectedRecord?.archived));
+    element("assertion-read-source").disabled = pending || recordMode || !status?.configured || status?.running;
+    element("assertion-reload").disabled = pending || !status || (recordMode && selectedRecord?.isDraft);
+    element("assertion-periodic-control").hidden = true;
+    element("assertion-interval-control").hidden = true;
+    for (const id of ["assertion-analyze", "assertion-format"]) {
+      element(id).disabled = pending || !status || stale() || !source.value.trim() || Boolean(selectedRecord?.archived);
+    }
+    element("assertion-analyze").disabled ||= !status?.configured || status?.running;
+    element("assertion-analyze").classList.toggle("button-next-evaluate", !element("assertion-analyze").dataset.analysisState);
+    element("assertion-format").classList.toggle("button-save-as-ready", !element("assertion-format").disabled);
+    element("assertion-save").classList.toggle("button-save-as-ready", !element("assertion-save").disabled);
+    element("assertion-save").classList.toggle("button-save-next", element("assertion-save").disabled);
+    enabled.disabled = pending || recordMode || !status?.configured;
+    interval.disabled = pending || recordMode;
     source.disabled = !status || Boolean(selectedRecord?.archived);
-    source.readOnly = testMode || Boolean(selectedRecord?.archived);
+    source.readOnly = Boolean(selectedRecord?.archived);
     const catalog = document.querySelector(".assertion-catalog");
-    if (catalog) catalog.dataset.testMode = String(testMode || recordMode);
-    element("policy-workbench").dataset.assertionTestMode = String(testMode);
+    if (catalog) catalog.dataset.testMode = String(recordMode);
     window.policyWorkbenchLayoutChanged?.();
   }
 
@@ -151,6 +166,11 @@
   }
 
   function renderRun(run) {
+    if (run) {
+      element("assertion-analyze").dataset.analysisState = run.status === "error" ? "error" : "success";
+    } else {
+      element("assertion-analyze").removeAttribute("data-analysis-state");
+    }
     const heading = element("assertion-run-status");
     const rows = element("assertion-result-rows");
     rows.replaceChildren();
@@ -177,44 +197,46 @@
     }
   }
 
-  async function toggleTest() {
-    if (testMode) {
-      stopTest();
-      return;
-    }
+  async function analyzeAssertions() {
     if (pending || testPending || !status?.configured || stale() || !source.value.trim()) return;
     const controller = new AbortController();
-    testMode = true;
     testPending = true;
     testAbort = controller;
+    pending = true;
+    const analyzedSource = source.value;
+    const analyzedRecordID = loadedRecordID;
     renderRun(null);
-    message("Evaluating assertions…");
+    element("assertion-analyze").dataset.analysisState = "pending";
+    message("");
     actions();
     try {
       const run = await request("/api/assertions/evaluate", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ source: source.value, expected_revision: recordMode ? status.settings.revision : loadedRevision }),
+        body: JSON.stringify({ source: analyzedSource, expected_revision: recordMode ? status.settings.revision : loadedRevision }),
         signal: controller.signal,
       });
-      if (!testMode) return;
+      if (controller.signal.aborted || source.value !== analyzedSource || loadedRecordID !== analyzedRecordID) return;
       if (recordMode) {
         run.revision = loadedRevision;
         run.draft = dirty();
         recordLastRun = run;
       }
       renderRun(run);
+      element("assertion-analyze").dataset.analysisState = run.status === "error" ? "error" : "success";
       message(run.status === "error" ? run.error || "Assertion evaluation failed." : "");
     } catch (error) {
-      if (error.name !== "AbortError" && testMode) {
+      if (error.name !== "AbortError" && !controller.signal.aborted && source.value === analyzedSource && loadedRecordID === analyzedRecordID) {
         const failure = { status: "error", error: error.message, revision: loadedRevision, draft: source.value !== savedSource, finished_at: new Date().toISOString(), results: [] };
         renderRun(failure);
+        element("assertion-analyze").dataset.analysisState = "error";
         message(error.message, "error");
       }
     } finally {
       if (testAbort === controller) {
         testAbort = null;
         testPending = false;
+        pending = false;
         actions();
       }
     }
@@ -224,7 +246,7 @@
     testAbort?.abort();
     testAbort = null;
     testPending = false;
-    testMode = false;
+    pending = false;
     renderRun(null);
     message("");
     actions();
@@ -235,9 +257,9 @@
     const resultLines = element("assertion-result-lines");
     const editor = element("assertion-editor");
     resultLines.replaceChildren();
+    gutter.hidden = false;
+    editor.dataset.resultState = "true";
     if (!run) {
-      gutter.hidden = true;
-      editor.dataset.resultState = "false";
       return;
     }
     const lineCount = Math.max(1, source.value.split("\n").length);
@@ -316,7 +338,7 @@
 
   function applyStatus(data, replace = false) {
     const organizationChanged = Boolean(loadedOrganizationID && data.organization_id && loadedOrganizationID !== data.organization_id);
-    if (organizationChanged && testMode) stopTest();
+    if (organizationChanged && testPending) stopTest();
     const keepDraft = organizationChanged && dirty() && !replace;
     status = data;
     if (replace || !keepDraft && (organizationChanged || !source.dataset.loaded)) {
@@ -454,13 +476,47 @@
     finally { pending = false; actions(); }
   }
 
-  for (const control of [source, enabled, interval]) control.addEventListener("input", () => { highlight(); renderRun(null); actions(); });
+  for (const control of [source, enabled, interval]) control.addEventListener("input", () => { element("assertion-analyze").removeAttribute("data-analysis-state"); highlight(); renderRun(null); actions(); });
   source.addEventListener("scroll", highlight);
   source.addEventListener("keydown", (event) => {
     if (event.key === "Tab") { event.preventDefault(); source.setRangeText("  ", source.selectionStart, source.selectionEnd, "end"); highlight(); actions(); }
   });
   element("assertion-save").addEventListener("click", () => command("save"));
-  element("assertion-evaluate").addEventListener("click", toggleTest);
+  async function editSource(action) {
+    pending = true;
+    actions();
+    message("");
+    try {
+      const result = await request(`/api/assertions/${action}`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ source: source.value }),
+      });
+      if (action === "format") {
+        source.value = result.source;
+        element("assertion-analyze").removeAttribute("data-analysis-state");
+        renderRun(null);
+        highlight();
+      } else {
+        renderResultGutter(null);
+      }
+      lintWarnings.replaceChildren(...(result.warnings || []).map((warning) => {
+        const item = document.createElement("li");
+        item.textContent = `Line ${warning.line}: ${warning.code} - ${warning.message}`;
+        return item;
+      }));
+      lintWarnings.hidden = !lintWarnings.childElementCount;
+      message(action === "format" ? "Assertions formatted." : `${result.rule_count} ${result.rule_count === 1 ? "assertion" : "assertions"} analyzed.`);
+    } catch (error) {
+      message(error.message, "error");
+      renderResultGutter({ status: "error", error: error.message, results: [] });
+    } finally {
+      pending = false;
+      actions();
+    }
+  }
+  element("assertion-analyze").addEventListener("click", analyzeAssertions);
+  element("assertion-format").addEventListener("click", () => editSource("format"));
   element("assertion-read-source").addEventListener("click", () => command("read"));
   element("assertion-reload").addEventListener("click", () => { if (!dirty() || window.confirm("Discard unsaved assertion changes?")) load(true); });
   element("policy-draft-name").addEventListener("input", actions);
@@ -468,7 +524,7 @@
   window.addEventListener("policy-record-kind-changed", (event) => {
     const { kind, record } = event.detail || {};
     const nextRecordMode = kind === "assertions" && record && (record.isDraft || record.content_type === "text/vnd.zpr.assertions");
-    if (testMode && (!nextRecordMode || selectedRecord?.id !== record?.id)) stopTest();
+    if (testPending && (!nextRecordMode || selectedRecord?.id !== record?.id)) stopTest();
     selectedRecord = nextRecordMode ? record : null;
     recordMode = Boolean(nextRecordMode);
     recordStale = false;
@@ -511,7 +567,7 @@
   window.addEventListener("policy-record-kind-changed", (event) => {
     const { kind, record } = event.detail || {};
     const nextRecordMode = kind === "assertions" && record && (record.isDraft || record.content_type === "text/vnd.zpr.assertions");
-    if (testMode && (!nextRecordMode || selectedRecord?.id !== record?.id)) stopTest();
+    if (testPending && (!nextRecordMode || selectedRecord?.id !== record?.id)) stopTest();
     selectedRecord = nextRecordMode ? record : null;
     recordMode = Boolean(nextRecordMode);
     recordStale = false;
@@ -534,7 +590,7 @@
   element("policy-draft-name").addEventListener("input", actions);
   const navigation = () => {
     clearInterval(timer);
-    if (!active() && testMode) stopTest();
+    if (!active() && testPending) stopTest();
     if (active()) { load(); timer = setInterval(() => { if (!pending) load(); }, 5000); }
   };
   window.addEventListener("hashchange", navigation);

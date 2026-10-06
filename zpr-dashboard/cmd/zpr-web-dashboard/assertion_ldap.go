@@ -87,6 +87,8 @@ func parseAssertionLDAPAttributes(source string, attributes []string) (assertion
 	}
 	peopleByDN := make(map[string]string)
 	people := make(map[string]bool)
+	allUIDs := make(map[string]bool)
+	allDNs := make(map[string]bool)
 	personAttributes := make(map[string]map[string][]string)
 	groupEntries := make(map[string]*ldap.Entry)
 	for _, record := range data.Entries {
@@ -128,16 +130,20 @@ func parseAssertionLDAPAttributes(source string, attributes []string) (assertion
 			if len(uids) != 1 || uids[0] == "" || len(uids[0]) > 200 {
 				return assertionDirectory{}, errors.New("LDAP people must have exactly one nonempty UID")
 			}
-			if people[uids[0]] {
+			if allUIDs[uids[0]] {
 				return assertionDirectory{}, errors.New("LDAP people must have unique UIDs")
 			}
-			if peopleByDN[dn.String()] != "" {
+			if allDNs[dn.String()] {
 				return assertionDirectory{}, errors.New("LDAP people must have unique distinguished names")
 			}
-			people[uids[0]], peopleByDN[dn.String()] = true, uids[0]
+			allUIDs[uids[0]], allDNs[dn.String()] = true, true
 			personAttributes[uids[0]], err = assertionLDAPAttributes(entry, attributes)
 			if err != nil {
 				return assertionDirectory{}, err
+			}
+			machineOrApplication := classes["zprmachine"] || strings.EqualFold(entry.GetEqualFoldAttributeValue("sn"), "Application")
+			if !machineOrApplication {
+				people[uids[0]], peopleByDN[dn.String()] = true, uids[0]
 			}
 		}
 	}

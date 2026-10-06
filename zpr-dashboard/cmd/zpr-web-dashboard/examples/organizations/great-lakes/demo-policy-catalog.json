@@ -2,7 +2,8 @@
   "categories": [
     "Headquarters/Departments",
     "Regional/Engineering",
-    "Regional/Manufacturing"
+    "Regional/Manufacturing",
+    "Shared/Workday"
   ],
   "records": [
     {
@@ -31,6 +32,15 @@
       "metadata": {"demo": true, "live": false},
       "content": "define TijuanaAssembly as device with greatlakes.location:'Tijuana, Mexico' and greatlakes.department:Assembly.\ndefine TijuanaTest as device with greatlakes.location:'Tijuana, Mexico' and greatlakes.department:'Test and Quality'.\ndefine AssemblyExecution as service with device.zpr.adapter.cn:'assembly-mes'.\ndefine QualityTestBench as service with device.zpr.adapter.cn:'quality-test-bench'.\nprovide AssemblyExecution at assembly-mes.svc.zpr over TCP 8448.\n  allow TijuanaAssembly.\nprovide QualityTestBench at quality-test.svc.zpr over TCP 8449.\n  allow TijuanaTest.",
       "summary": "Tijuana Assembly and Test can reach only their assigned production and quality systems."
+    },
+    {
+      "category": "Shared/Workday",
+      "name": "Workday service endpoints",
+      "kind": "policy",
+      "content_type": "text/vnd.zpr.zpl",
+      "metadata": {"demo": true, "live": false},
+      "content": "define FinanceClient as device with zpr.adapter.cn:'finance-client'.\ndefine OperationsClient as device with zpr.adapter.cn:'operations-client'.\ndefine TelemetryClient as device with zpr.adapter.cn:'telemetry-client'.\ndefine WorkdayEcho as service with device.zpr.adapter.cn:'echo-service'.\ndefine WorkdayMetrics as service with device.zpr.adapter.cn:'metrics-service'.\nprovide WorkdayEcho at echo-web.svc.zpr over TCP 8080.\n  allow FinanceClient.\nprovide WorkdayMetrics at metrics-web.svc.zpr over TCP 8081.\n  allow OperationsClient.\n  allow TelemetryClient.",
+      "summary": "Finance, operations, and telemetry clients receive explicit service scopes for the compressed workday simulation."
     }
   ]
 }

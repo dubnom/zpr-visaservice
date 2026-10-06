@@ -4,10 +4,11 @@ set -eu
 SCRIPT_DIR=$(CDPATH='' cd -- "$(dirname -- "$0")" && pwd)
 DASHBOARD_DIR=$(CDPATH='' cd -- "$SCRIPT_DIR/.." && pwd)
 RUNTIME_DIR=$(CDPATH='' cd -- "$DASHBOARD_DIR/../../.local-runtime" && pwd)
+PROJECT_ROOT=$(CDPATH='' cd -- "$DASHBOARD_DIR/../.." && pwd)
 SERVICE_CERTS="$RUNTIME_DIR/service-certs"
 SIMULATION_MANIFEST="${SIMULATION_MANIFEST:-$RUNTIME_DIR/simulation-environment.json}"
 STATE_DIR="$RUNTIME_DIR/dashboard-stack"
-BIN="$STATE_DIR/zpr-web-dashboard"
+BIN="${ZPR_WEB_DASHBOARD_BIN:-$STATE_DIR/zpr-web-dashboard}"
 POLICY_TESTER_BIN="${ZPR_ZPT_BIN:-$DASHBOARD_DIR/../target/debug/zpt}"
 ZPLC_DEFAULT_BIN="$DASHBOARD_DIR/../../zpr-compiler/target/release/zplc"
 ZPLC_DEBUG_BIN="$DASHBOARD_DIR/../../zpr-compiler/target/debug/zplc"
@@ -22,11 +23,15 @@ CONTROL_CA_KEY="$CONTROL_DIR/control-ca.key"
 CONTROL_SERVER_CERT="$CONTROL_DIR/simulator.crt"
 CONTROL_SERVER_KEY="$CONTROL_DIR/simulator.key"
 MACHINE_CONTROLLER_BIN="$STATE_DIR/zpr-machine-controller-linux-arm64"
+MACHINE_CONTROLLER_AMD64_BIN="$STATE_DIR/zpr-machine-controller-linux-amd64"
 MACHINE_CONTROL_PROXY_BIN="$STATE_DIR/zpr-machine-control-proxy-linux-arm64"
+MACHINE_CONTROL_PROXY_AMD64_BIN="$STATE_DIR/zpr-machine-control-proxy-linux-amd64"
+MACHINE_RUNTIME_ARCH_FILE="$STATE_DIR/machine-runtime-arch"
 MACHINE_WORKLOAD_DIR="$STATE_DIR/machine-workloads"
 MACHINE_IMAGE="${SIMULATOR_MACHINE_IMAGE:-zpr-sim-machine:local}"
 SIMULATION_CONTAINER="${SIMULATION_CONTAINER:-zpr-local-linux-node}"
 ORGANIZATIONS_DIR="$DASHBOARD_DIR/cmd/zpr-web-dashboard/examples/organizations"
+ACTIVE_ORGANIZATION_FILE="${SIMULATION_ACTIVE_ORGANIZATION_FILE:-$RUNTIME_DIR/active-organization.txt}"
 DNS_PROFILE_DIR="$DASHBOARD_DIR/../dns/bind9"
 DNS_RUNTIME_DIR="$RUNTIME_DIR/dns-bind"
 DNS_CONTAINER="${ZPR_DNS_CONTAINER:-zpr-dns-bind9}"
@@ -37,14 +42,18 @@ DNS_RECORDS_RELAY_PID="$STATE_DIR/dns-records-relay.pid"
 DNS_RECORDS_RELAY_PORT="${ZPR_DNS_RECORDS_RELAY_PORT:-8055}"
 DNS_SERVICE_ADDRESS="${ZPR_DNS_SERVICE_ADDRESS:-fd00:1:1::1}"
 DNS_VIEWER_KEY_FILE="${ZPR_DNS_TRANSFER_TSIG_KEY_FILE:-$DNS_RUNTIME_DIR/zpr-dns-viewer.key}"
-
 POLICY_PID="$STATE_DIR/policy-service.pid"
+POLICY_CONTAINER="${ZPR_POLICY_SERVICE_CONTAINER:-zpr-policy-service}"
+POLICY_TOOLS_IMAGE="${ZPR_POLICY_TOOLS_IMAGE:-zpr-policy-tools:local}"
+POLICY_TOOLS_DIR="$RUNTIME_DIR/linux-tools"
 CONTROL_PID="$STATE_DIR/control-service.pid"
+CONTROL_CONTAINER="${ZPR_CONTROL_SERVICE_CONTAINER:-zpr-control-service}"
 ROOM_PID="$STATE_DIR/control-room.pid"
 CONTROL_ROOM_DOCKER_CONTAINER="${ZPR_CONTROL_ROOM_CONTAINER:-zpr-control-room}"
 SIMULATOR_PID="$STATE_DIR/simulator.pid"
 SIMULATOR_DOCKER_CONTAINER="${ZPR_SIMULATOR_CONTAINER:-zpr-simulator}"
 SIMULATOR_IMAGE="${ZPR_SIMULATOR_IMAGE:-zpr-simulator:local}"
+ZPLC_IMAGE="${ZPR_ZPLC_IMAGE:-zpr-zplc:local}"
 BROWSER_GATEWAY_PID="$STATE_DIR/browser-gateway.pid"
 ADMIN_RELAY_PID="$STATE_DIR/admin-relay.pid"
 ADMIN_RELAY_PORT=8184
@@ -79,7 +88,7 @@ wait_for_response() {
     label=$2
     shift 2
     attempts=0
-    while [ "$attempts" -lt 50 ]; do
+    while [ "$attempts" -lt 150 ]; do
         if curl --silent --show-error --connect-timeout 1 --max-time 2 "$@" "$url" >/dev/null 2>&1; then
             return 0
         fi
@@ -90,12 +99,47 @@ wait_for_response() {
     return 1
 }
 
-stop_service() {
-    pid_file=$1
-    if pid_running "$pid_file"; then
-        kill "$(cat "$pid_file")" 2>/dev/null || true
+wait_for_policy_context() {
+    expected_organization=$1
+    attempts=0
+    while [ "$attempts" -lt 150 ]; do
+        if [ "${ZPR_DASHBOARD_CONTAINER_RUNTIME:-}" = 1 ]; then
+            response=$(curl --silent --show-error --connect-timeout 1 --max-time 2 \
+                --connect-to 127.0.0.1:8789:host.docker.internal:8789 \
+                --cacert "$SERVICE_CERTS/service-ca.crt" \
+                --cert "$SERVICE_CERTS/control-policy-client.crt" \
+                --key "$SERVICE_CERTS/control-policy-client.key" \
+                https://127.0.0.1:8789/api/policy/context 2>/dev/null || true)
+        else
+            response=$(curl --silent --show-error --connect-timeout 1 --max-time 2 \
+                --cacert "$SERVICE_CERTS/service-ca.crt" \
+                --cert "$SERVICE_CERTS/control-policy-client.crt" \
+                --key "$SERVICE_CERTS/control-policy-client.key" \
+                https://127.0.0.1:8789/api/policy/context 2>/dev/null || true)
+        fi
+        actual_organization=$(printf '%s' "$response" | jq -r '.organization_id // empty' 2>/dev/null || true)
+        if [ "$actual_organization" = "$expected_organization" ]; then
+            return 0
+        fi
+        attempts=$((attempts + 1))
+        sleep 0.2
+    done
+    actual_organization=$(printf '%s' "$response" | jq -r '.organization_id // "unavailable"' 2>/dev/null || printf unavailable)
+    echo "policy context did not become ready for $expected_organization (current: $actual_organization)" >&2
+    return 1
+}
+
+ensure_policy_tools() {
+    mkdir -p "$POLICY_TOOLS_DIR"
+    docker build --platform linux/arm64 -f "$SCRIPT_DIR/Dockerfile.zpt" -t "$POLICY_TOOLS_IMAGE" "$PROJECT_ROOT"
+    if ! docker image inspect "$ZPLC_IMAGE" >/dev/null 2>&1; then
+        docker build --platform linux/arm64 -f "$SCRIPT_DIR/Dockerfile.zplc" -t "$ZPLC_IMAGE" "$DASHBOARD_DIR/../../zpr-compiler"
     fi
-    rm -f "$pid_file"
+    docker run --rm -v "$RUNTIME_DIR:/runtime" --entrypoint /bin/sh "$POLICY_TOOLS_IMAGE" \
+        -c 'cp /usr/local/bin/zpt /runtime/linux-tools/zpt'
+    docker run --rm -v "$RUNTIME_DIR:/runtime" --entrypoint /bin/sh "$ZPLC_IMAGE" \
+        -c 'cp /usr/local/bin/zplc /runtime/linux-tools/zplc'
+    chmod 755 "$POLICY_TOOLS_DIR/zpt" "$POLICY_TOOLS_DIR/zplc"
 }
 
 docker_socket_path() {
@@ -103,6 +147,14 @@ docker_socket_path() {
 }
 
 stop_simulator() {
+    if [ "${ZPR_DASHBOARD_CONTAINER_RUNTIME:-}" != 1 ]; then
+        stop_host_relays
+        if [ "$(docker inspect -f '{{.State.Running}}' "$SIMULATOR_DOCKER_CONTAINER" 2>/dev/null || true)" = true ]; then
+            for action in stop-admin-relay stop-dns stop-ui-relays; do
+                docker exec "$SIMULATOR_DOCKER_CONTAINER" sh "$SCRIPT_DIR/dashboard-stack.sh" "$action" >/dev/null 2>&1 || true
+            done
+        fi
+    fi
     stop_service "$SIMULATOR_PID"
     if docker inspect "$SIMULATOR_DOCKER_CONTAINER" >/dev/null 2>&1; then
         docker rm -f "$SIMULATOR_DOCKER_CONTAINER" >/dev/null
@@ -123,11 +175,47 @@ stop_stack() {
     stop_service "$BROWSER_GATEWAY_PID"
     stop_simulator
     stop_control_room
+    docker rm -f "$CONTROL_CONTAINER" "$POLICY_CONTAINER" >/dev/null 2>&1 || true
     stop_service "$CONTROL_PID"
     stop_service "$ADMIN_RELAY_PID"
     stop_ui_relays
     stop_service "$POLICY_PID"
     stop_dns_service
+}
+
+stop_service() {
+    pid_file=$1
+    if pid_running "$pid_file"; then
+        kill "$(cat "$pid_file")" 2>/dev/null || true
+    fi
+    rm -f "$pid_file"
+}
+
+stop_host_relays() {
+    for entry in "$ADMIN_RELAY_PORT:$ADMIN_RELAY_PID" "$DNS_STATS_RELAY_PORT:$DNS_STATS_RELAY_PID" "$DNS_RECORDS_RELAY_PORT:$DNS_RECORDS_RELAY_PID" "$LDAP_UI_RELAY_PORT:$LDAP_UI_RELAY_PID" "$OBSERVABILITY_UI_RELAY_PORT:$OBSERVABILITY_UI_RELAY_PID"; do
+        relay_port=${entry%%:*}
+        relay_pid_file=${entry#*:}
+        listener=$(lsof -tiTCP:"$relay_port" -sTCP:LISTEN 2>/dev/null | awk 'NR == 1 { print; exit }')
+        if [ -n "$listener" ]; then
+            process_command=$(ps -p "$listener" -o command= 2>/dev/null || true)
+            case "$process_command" in
+                *socat*)
+                    kill "$listener" 2>/dev/null || true
+                    attempts=0
+                    while [ "$attempts" -lt 50 ] && lsof -tiTCP:"$relay_port" -sTCP:LISTEN >/dev/null 2>&1; do
+                        attempts=$((attempts + 1))
+                        sleep 0.1
+                    done
+                    if [ "$attempts" -lt 50 ] && lsof -tiTCP:"$relay_port" -sTCP:LISTEN >/dev/null 2>&1; then
+                        echo "socat did not release relay port $relay_port" >&2
+                        return 1
+                    fi
+                    ;;
+                *) echo "refusing to stop unrelated listener $listener on relay port $relay_port" >&2; return 1 ;;
+            esac
+        fi
+        rm -f "$relay_pid_file"
+    done
 }
 
 start_service() {
@@ -152,8 +240,12 @@ start_simulator() {
         -v "$simulator_socket:/var/run/docker.sock" \
         -v "$DASHBOARD_DIR:$DASHBOARD_DIR:ro" \
         -v "$RUNTIME_DIR:$RUNTIME_DIR" \
+        -p 127.0.0.1:8055:8055 \
+        -p 127.0.0.1:8184:8184 \
         -p 127.0.0.1:8788:8788 \
         -p 0.0.0.0:8791:8791 \
+        -p 127.0.0.1:8797:8797 \
+        -p 127.0.0.1:8798:8798 \
         -e SIMULATION_MANIFEST="$SIMULATION_MANIFEST" \
         -e SIMULATION_ORGANIZATION_ID="$organization_id" \
         -e SIMULATION_ORGANIZATIONS_DIR="$ORGANIZATIONS_DIR" \
@@ -163,15 +255,24 @@ start_simulator() {
         -e SIMULATION_SCENARIOS_DIR="$DASHBOARD_DIR/cmd/zpr-web-dashboard/examples/scenarios" \
         -e SIMULATION_STACK_SCRIPT="$SCRIPT_DIR/dashboard-stack.sh" \
         -e SIMULATION_ORGANIZATION_RESET_SCRIPT="$SCRIPT_DIR/activate-organization.sh" \
+        -e SIMULATION_ACTIVATION_LOG_FILE="$STATE_DIR/organization-reset.log" \
+        -e ZPR_WEB_DASHBOARD_BIN=/usr/local/bin/zpr-web-dashboard \
+        -e ZPR_ZPT_BIN="$POLICY_TOOLS_DIR/zpt" \
+        -e ZPR_ZPLC_BIN="$POLICY_TOOLS_DIR/zplc" \
+        -e ZPR_ZPLC_IMAGE="$ZPLC_IMAGE" \
         -e SIMULATION_AGENT_SCRIPT="$SCRIPT_DIR/simulation-agent.sh" \
         -e SIMULATION_CONTAINER="$SIMULATION_CONTAINER" \
         -e SIMULATOR_CONTROL_TLS_CERT="$CONTROL_SERVER_CERT" \
         -e SIMULATOR_CONTROL_TLS_KEY="$CONTROL_SERVER_KEY" \
         -e SIMULATOR_CONTROL_CLIENT_CA="$CONTROL_CA" \
         -e SIMULATOR_CONTROL_LISTEN=0.0.0.0:8791 \
-        -e SIMULATOR_CONTROL_ROOM_URL=http://host.docker.internal:8787 \
+        -e SIMULATOR_CONTROL_ROOM_URL=http://127.0.0.1:8787 \
         -e SIMULATOR_CONTROL_ROOM_HOST=127.0.0.1:8787 \
         -e SIMULATOR_DOCKER_CONTAINER="$SIMULATOR_DOCKER_CONTAINER" \
+        -e ZPR_DASHBOARD_CONTAINER_RUNTIME=1 \
+        -e ZPR_POLICY_SERVICE_CONTAINER="$POLICY_CONTAINER" \
+        -e ZPR_CONTROL_SERVICE_CONTAINER="$CONTROL_CONTAINER" \
+        -e ZPR_CONTROL_ROOM_CONTAINER="$CONTROL_ROOM_DOCKER_CONTAINER" \
         "$SIMULATOR_IMAGE" >/dev/null
     wait_for_url http://127.0.0.1:8788/api/simulator/status simulator
     wait_for_url https://127.0.0.1:8791/internal/ping 'machine-control listener' \
@@ -245,22 +346,35 @@ start_browser_gateway() {
 }
 
 start_admin_relay() {
+    if [ "${ZPR_DASHBOARD_CONTAINER_RUNTIME:-}" != 1 ]; then
+        docker exec "$SIMULATOR_DOCKER_CONTAINER" sh "$SCRIPT_DIR/dashboard-stack.sh" start-admin-relay
+        return
+    fi
     if pid_running "$ADMIN_RELAY_PID"; then
-        relay_listener=$(lsof -tiTCP:"$ADMIN_RELAY_PORT" -sTCP:LISTEN 2>/dev/null || true)
-        if [ "$relay_listener" = "$(cat "$ADMIN_RELAY_PID")" ]; then
-            wait_for_response "https://127.0.0.1:$ADMIN_RELAY_PORT/admin/stats" admin-relay \
-                --cacert "$RUNTIME_DIR/local-admin-cert.pem"
-            return 0
-        fi
+        wait_for_response "https://127.0.0.1:$ADMIN_RELAY_PORT/admin/stats" admin-relay \
+            --cacert "$RUNTIME_DIR/local-admin-cert.pem" && return 0
+        stop_service "$ADMIN_RELAY_PID"
     fi
     start_service admin-relay "$ADMIN_RELAY_PID" socat \
-        "TCP-LISTEN:$ADMIN_RELAY_PORT,bind=127.0.0.1,reuseaddr,fork" \
-        "SYSTEM:\"/usr/local/bin/docker exec -i $SIMULATION_CONTAINER ip netns exec zpr-vs socat STDIO TCP:[fd5a:5052::1]:8182\""
+        "TCP-LISTEN:$ADMIN_RELAY_PORT,bind=0.0.0.0,reuseaddr,fork" \
+        "SYSTEM:\"docker exec -i $SIMULATION_CONTAINER ip netns exec zpr-vs socat STDIO TCP:[fd5a:5052::1]:8182\""
     wait_for_response "https://127.0.0.1:$ADMIN_RELAY_PORT/admin/stats" admin-relay \
         --cacert "$RUNTIME_DIR/local-admin-cert.pem"
 }
 
+stop_admin_relay() {
+    if [ "${ZPR_DASHBOARD_CONTAINER_RUNTIME:-}" != 1 ]; then
+        docker exec "$SIMULATOR_DOCKER_CONTAINER" sh "$SCRIPT_DIR/dashboard-stack.sh" stop-admin-relay
+        return
+    fi
+    stop_service "$ADMIN_RELAY_PID"
+}
+
 start_dns_service() {
+    if [ "${ZPR_DASHBOARD_CONTAINER_RUNTIME:-}" != 1 ]; then
+        docker exec "$SIMULATOR_DOCKER_CONTAINER" sh "$SCRIPT_DIR/dashboard-stack.sh" start-dns
+        return
+    fi
     config=${ZPR_DNS_NAMED_CONF:-$DNS_PROFILE_DIR/named.conf.simulator}
     key_file=${ZPR_DNS_TSIG_KEY_FILE:-$DNS_RUNTIME_DIR/zpr-vs-publisher.key}
     zone_file=${ZPR_DNS_ZONE_FILE:-$DNS_RUNTIME_DIR/zone/db.svc.zpr}
@@ -296,66 +410,104 @@ start_dns_service() {
         "$DNS_IMAGE" >/dev/null
 
     start_service dns-stats-relay "$DNS_STATS_RELAY_PID" socat \
-        "TCP-LISTEN:$DNS_STATS_RELAY_PORT,bind=127.0.0.1,reuseaddr,fork" \
+        "TCP-LISTEN:$DNS_STATS_RELAY_PORT,bind=0.0.0.0,reuseaddr,fork" \
         "SYSTEM:\"docker exec -i $SIMULATION_CONTAINER ip netns exec zpr-a socat STDIO TCP:127.0.0.1:8053\""
     wait_for_url "http://127.0.0.1:$DNS_STATS_RELAY_PORT/json/v1/status" dns-stats-relay
 
     start_service dns-records-relay "$DNS_RECORDS_RELAY_PID" socat \
-        "TCP-LISTEN:$DNS_RECORDS_RELAY_PORT,bind=127.0.0.1,reuseaddr,fork" \
+        "TCP-LISTEN:$DNS_RECORDS_RELAY_PORT,bind=0.0.0.0,reuseaddr,fork" \
         "SYSTEM:\"docker exec -i $SIMULATION_CONTAINER ip netns exec zpr-a socat STDIO TCP:[$DNS_SERVICE_ADDRESS]:53\""
 }
 
 stop_dns_service() {
+    if [ "${ZPR_DASHBOARD_CONTAINER_RUNTIME:-}" != 1 ]; then
+        docker exec "$SIMULATOR_DOCKER_CONTAINER" sh "$SCRIPT_DIR/dashboard-stack.sh" stop-dns
+        return
+    fi
     stop_service "$DNS_RECORDS_RELAY_PID"
     stop_service "$DNS_STATS_RELAY_PID"
     docker rm -f "$DNS_CONTAINER" >/dev/null 2>&1 || true
 }
 
 start_ui_relays() {
+    if [ "${ZPR_DASHBOARD_CONTAINER_RUNTIME:-}" != 1 ]; then
+        docker exec "$SIMULATOR_DOCKER_CONTAINER" sh "$SCRIPT_DIR/dashboard-stack.sh" start-ui-relays
+        return
+    fi
     start_service ldap-ui-relay "$LDAP_UI_RELAY_PID" socat \
-        "TCP-LISTEN:$LDAP_UI_RELAY_PORT,bind=127.0.0.1,reuseaddr,fork" \
+        "TCP-LISTEN:$LDAP_UI_RELAY_PORT,bind=0.0.0.0,reuseaddr,fork" \
         "SYSTEM:\"docker exec -i $SIMULATION_CONTAINER ip netns exec zpr-vs socat STDIO TCP:127.0.0.1:8080\""
     start_service observability-ui-relay "$OBSERVABILITY_UI_RELAY_PID" socat \
-        "TCP-LISTEN:$OBSERVABILITY_UI_RELAY_PORT,bind=127.0.0.1,reuseaddr,fork" \
+        "TCP-LISTEN:$OBSERVABILITY_UI_RELAY_PORT,bind=0.0.0.0,reuseaddr,fork" \
         "SYSTEM:\"docker exec -i $SIMULATION_CONTAINER ip netns exec zpr-vs socat STDIO TCP:[$OBSERVABILITY_ADDRESS]:5080\""
 }
 
 stop_ui_relays() {
+    if [ "${ZPR_DASHBOARD_CONTAINER_RUNTIME:-}" != 1 ]; then
+        docker exec "$SIMULATOR_DOCKER_CONTAINER" sh "$SCRIPT_DIR/dashboard-stack.sh" stop-ui-relays
+        return
+    fi
     stop_service "$OBSERVABILITY_UI_RELAY_PID"
     stop_service "$LDAP_UI_RELAY_PID"
 }
 
 start_control_service() {
-    control_organization="${SIMULATION_ORGANIZATION_ID:-${organization_id:-$(jq -r '.organization_id // "northstar"' "$SIMULATION_MANIFEST")}}"
     control_ldap_container=${ZPR_ASSERTION_LDAP_CONTAINER:-}
-    if [ -z "$control_ldap_container" ]; then
-        control_ldap_container=$(policy_ldap_container "$control_organization")
-    fi
-    start_service control-service "$CONTROL_PID" env \
-        ZPR_CONTROL_SERVICE_LISTEN=127.0.0.1:8790 \
-        ZPR_CONTROL_SERVICE_CERT_FILE="$SERVICE_CERTS/control-service.crt" \
-        ZPR_CONTROL_SERVICE_KEY_FILE="$SERVICE_CERTS/control-service.key" \
-        ZPR_CONTROL_SERVICE_CLIENT_CA_FILE="$SERVICE_CERTS/service-ca.crt" \
-        ZPR_ASSERTION_STORE_FILE="${ZPR_ASSERTION_STORE_FILE:-$STATE_DIR/assertions/global.json}" \
-        ZPR_ASSERTION_LDAP_CONTAINER="$control_ldap_container" \
-        ZPR_ADAPTER_LOG_CONFIG_FILE="${ZPR_ADAPTER_LOG_CONFIG_FILE:-$STATE_DIR/adapter-logs.json}" \
-        ZPR_PLATFORM_SERVICES="${ZPR_PLATFORM_SERVICES:-$(jq -c '[.services[] | select(.kind == "Gateway") | {service_name: .name, actor_cn: .provider, zpr_addr: .address, service_kind: .kind, service_endpoints: .endpoint, external_network_connection: .external_network_connection}]' "$SIMULATION_MANIFEST")}" \
-        ZPR_ADMIN_URL="${ZPR_ADMIN_URL:-https://127.0.0.1:$ADMIN_RELAY_PORT}" \
-        ZPR_ADMIN_CA_FILE="${ZPR_ADMIN_CA_FILE:-$RUNTIME_DIR/local-admin-cert.pem}" \
-        ZPR_ADMIN_KEY_FILE="${ZPR_ADMIN_KEY_FILE:-$RUNTIME_DIR/admin-read.key}" \
-        ZPR_DNS_STATS_URL="${ZPR_DNS_STATS_URL:-http://127.0.0.1:$DNS_STATS_RELAY_PORT}" \
-        ZPR_DNS_TRANSFER_ADDR="127.0.0.1:$DNS_RECORDS_RELAY_PORT" \
-        ZPR_DNS_TRANSFER_TSIG_KEY_FILE="$DNS_VIEWER_KEY_FILE" \
-        ZPR_DEMO_LDAP_EDITOR_URL="http://127.0.0.1:$LDAP_UI_RELAY_PORT/" \
-        ZPR_POLICY_SERVICE_URL=https://127.0.0.1:8789 \
-        ZPR_POLICY_SERVICE_CA_FILE="$SERVICE_CERTS/service-ca.crt" \
-        ZPR_POLICY_CLIENT_CERT_FILE="$SERVICE_CERTS/control-policy-client.crt" \
-        ZPR_POLICY_CLIENT_KEY_FILE="$SERVICE_CERTS/control-policy-client.key" \
-        "$BIN" -mode control-service
+    stop_control_service
+    control_admin_url=${ZPR_ADMIN_URL:-https://127.0.0.1:$ADMIN_RELAY_PORT}
+    control_admin_url=$(printf '%s' "$control_admin_url" | sed 's#://127\.0\.0\.1:#://host.docker.internal:#')
+    control_dns_stats_url=${ZPR_DNS_STATS_URL:-http://127.0.0.1:$DNS_STATS_RELAY_PORT}
+    control_dns_stats_url=$(printf '%s' "$control_dns_stats_url" | sed 's#://127\.0\.0\.1:#://host.docker.internal:#')
+    docker run -d --name "$CONTROL_CONTAINER" \
+        --label zpr.control-service=true \
+        --restart unless-stopped \
+        -v "$(docker_socket_path):/var/run/docker.sock" \
+        -v "$RUNTIME_DIR:$RUNTIME_DIR" \
+        -p 127.0.0.1:8790:8790 \
+        -e ZPR_CONTROL_SERVICE_LISTEN=0.0.0.0:8790 \
+        -e ZPR_CONTROL_SERVICE_CERT_FILE="$SERVICE_CERTS/control-service.crt" \
+        -e ZPR_CONTROL_SERVICE_KEY_FILE="$SERVICE_CERTS/control-service.key" \
+        -e ZPR_CONTROL_SERVICE_CLIENT_CA_FILE="$SERVICE_CERTS/service-ca.crt" \
+        -e ZPR_ASSERTION_STORE_FILE="${ZPR_ASSERTION_STORE_FILE:-$STATE_DIR/assertions/global.json}" \
+        -e ZPR_ASSERTION_LDAP_CONTAINER="$control_ldap_container" \
+        -e ZPR_ASSERTION_LDAP_BASE_DN="${ZPR_ASSERTION_LDAP_BASE_DN:-}" \
+        -e ZPR_ASSERTION_LDAP_BIND_DN="${ZPR_ASSERTION_LDAP_BIND_DN:-}" \
+        -e ZPR_ASSERTION_SOURCES_FILE="${ZPR_ASSERTION_SOURCES_FILE:-}" \
+        -e ZPR_ADAPTER_LOG_CONFIG_FILE="${ZPR_ADAPTER_LOG_CONFIG_FILE:-$STATE_DIR/adapter-logs.json}" \
+        -e ZPR_PROVIDER_MANAGER_URLS="${ZPR_PROVIDER_MANAGER_URLS:-}" \
+        -e ZPR_DIAGNOSTICS_CONFIG_FILE="${ZPR_DIAGNOSTICS_CONFIG_FILE:-$STATE_DIR/diagnostics/openobserve.json}" \
+        -e ZPR_DIAGNOSTICS_USERNAME="${ZPR_DIAGNOSTICS_USERNAME:-}" \
+        -e ZPR_DIAGNOSTICS_TOKEN_FILE="${ZPR_DIAGNOSTICS_TOKEN_FILE:-$STATE_DIR/diagnostics/query.token}" \
+        -e ZPR_DIAGNOSTICS_SOURCE_MAP_FILE="${ZPR_DIAGNOSTICS_SOURCE_MAP_FILE:-$STATE_DIR/diagnostics/source-map.json}" \
+        -e ZPR_PLATFORM_SERVICES="${ZPR_PLATFORM_SERVICES:-[]}" \
+        -e ZPR_ADMIN_URL="$control_admin_url" \
+        -e ZPR_ADMIN_CA_FILE="${ZPR_ADMIN_CA_FILE:-$RUNTIME_DIR/local-admin-cert.pem}" \
+        -e ZPR_ADMIN_KEY_FILE="${ZPR_ADMIN_KEY_FILE:-$RUNTIME_DIR/admin-read.key}" \
+        -e ZPR_DNS_STATS_URL="$control_dns_stats_url" \
+        -e ZPR_DNS_TRANSFER_ADDR="host.docker.internal:$DNS_RECORDS_RELAY_PORT" \
+        -e ZPR_DNS_TRANSFER_TSIG_KEY_FILE="$DNS_VIEWER_KEY_FILE" \
+        -e ZPR_POLICY_SERVICE_URL=https://host.docker.internal:8789 \
+        -e ZPR_POLICY_SERVICE_TLS_SERVER_NAME=127.0.0.1 \
+        -e ZPR_POLICY_SERVICE_CA_FILE="$SERVICE_CERTS/service-ca.crt" \
+        -e ZPR_POLICY_CLIENT_CERT_FILE="$SERVICE_CERTS/control-policy-client.crt" \
+        -e ZPR_POLICY_CLIENT_KEY_FILE="$SERVICE_CERTS/control-policy-client.key" \
+        --entrypoint /usr/local/bin/zpr-web-dashboard \
+        "$SIMULATOR_IMAGE" -mode control-service >/dev/null
     wait_for_url https://127.0.0.1:8790/api/snapshot control-service \
+        ${ZPR_DASHBOARD_CONTAINER_RUNTIME:+--connect-to 127.0.0.1:8790:host.docker.internal:8790} \
         --cacert "$SERVICE_CERTS/service-ca.crt" \
         --cert "$SERVICE_CERTS/control-room-client.crt" \
         --key "$SERVICE_CERTS/control-room-client.key"
+}
+
+stop_control_service() {
+    docker rm -f "$CONTROL_CONTAINER" >/dev/null 2>&1 || true
+    stop_service "$CONTROL_PID"
+}
+
+stop_policy_service() {
+    docker rm -f "$POLICY_CONTAINER" >/dev/null 2>&1 || true
+    stop_service "$POLICY_PID"
 }
 
 create_control_certificate() {
@@ -398,13 +550,35 @@ create_machine_control_pki() {
     done
 }
 
+ensure_machine_runtime_arch() {
+    machine_arch=$1
+    case "$machine_arch" in arm64|amd64) ;; *) echo "unsupported machine image architecture: $machine_arch" >&2; return 1 ;; esac
+    if [ "$(cat "$MACHINE_RUNTIME_ARCH_FILE" 2>/dev/null || true)" = "$machine_arch" ]; then
+        return 0
+    fi
+    if [ "$machine_arch" = amd64 ]; then
+        machine_controller_binary=$MACHINE_CONTROLLER_AMD64_BIN
+        machine_proxy_binary=$MACHINE_CONTROL_PROXY_AMD64_BIN
+    else
+        machine_controller_binary=$MACHINE_CONTROLLER_BIN
+        machine_proxy_binary=$MACHINE_CONTROL_PROXY_BIN
+    fi
+    if [ ! -x "$machine_controller_binary" ] || [ ! -x "$machine_proxy_binary" ]; then
+        echo "prebuilt linux/$machine_arch machine controller and proxy are required in $STATE_DIR" >&2
+        return 1
+    fi
+    if [ "$(cat "$MACHINE_RUNTIME_ARCH_FILE" 2>/dev/null || true)" = "$machine_arch" ]; then
+        return 0
+    fi
+    docker build --platform "linux/$machine_arch" -f "$SCRIPT_DIR/Dockerfile.machine" -t "$MACHINE_IMAGE" "$SCRIPT_DIR"
+    printf '%s\n' "$machine_arch" > "$MACHINE_RUNTIME_ARCH_FILE"
+}
+
 start_machine_controllers() {
-    docker build -f "$SCRIPT_DIR/Dockerfile.machine" -t "$MACHINE_IMAGE" "$SCRIPT_DIR"
     GOOS=linux GOARCH=arm64 CGO_ENABLED=0 go -C "$DASHBOARD_DIR" build -trimpath -o "$MACHINE_CONTROLLER_BIN" ./cmd/zpr-web-dashboard
     GOOS=linux GOARCH=arm64 CGO_ENABLED=0 go -C "$DASHBOARD_DIR" build -trimpath -o "$MACHINE_CONTROL_PROXY_BIN" ./cmd/zpr-web-dashboard
-    prepare_machine_workloads
-    stop_legacy_named_workloads
-    start_zpr_machine_control_service
+    GOOS=linux GOARCH=amd64 CGO_ENABLED=0 go -C "$DASHBOARD_DIR" build -trimpath -o "$MACHINE_CONTROLLER_AMD64_BIN" ./cmd/zpr-web-dashboard
+    GOOS=linux GOARCH=amd64 CGO_ENABLED=0 go -C "$DASHBOARD_DIR" build -trimpath -o "$MACHINE_CONTROL_PROXY_AMD64_BIN" ./cmd/zpr-web-dashboard
     start_machine_container machine-01
 }
 
@@ -416,6 +590,19 @@ start_machine_container() {
     esac
     number=${machine#machine-}
     container="zpr-$machine"
+    machine_organization=${SIMULATION_ORGANIZATION_ID:-$(jq -r '.organization_id // "northstar"' "$SIMULATION_MANIFEST")}
+    if [ -r "$ACTIVE_ORGANIZATION_FILE" ]; then
+        selected_organization=$(tr -d '\r\n' < "$ACTIVE_ORGANIZATION_FILE")
+        [ -z "$selected_organization" ] || machine_organization=$selected_organization
+    fi
+    case "$machine_organization" in ''|*[!a-z0-9-]*) echo "invalid active organization: $machine_organization" >&2; return 1 ;; esac
+    machine_profile="$ORGANIZATIONS_DIR/$machine_organization.json"
+    machine_runtime_driver=$(jq -er '.runtime.driver' "$machine_profile")
+    case "$machine_runtime_driver" in
+        linux-one-node) machine_arch=arm64 ;;
+        docker-multinode) machine_arch=amd64 ;;
+        *) echo "unsupported machine runtime driver: $machine_runtime_driver" >&2; return 1 ;;
+    esac
     existing=$(docker inspect -f '{{.State.Status}}' "$container" 2>/dev/null || true)
     if [ "$existing" = running ]; then
         return 0
@@ -423,10 +610,39 @@ start_machine_container() {
     if [ "$existing" = exited ] || [ "$existing" = created ]; then
         docker rm "$container" >/dev/null
     fi
-    if [ -z "${RIG_IP:-}" ]; then
-        RIG_IP=$(docker inspect -f '{{range .NetworkSettings.Networks}}{{.IPAddress}}{{end}}' "$SIMULATION_CONTAINER")
+    ensure_machine_runtime_arch "$machine_arch"
+    if [ "$machine_runtime_driver" = docker-multinode ]; then
+        machine_location=$(jq -er --arg id "$machine" '
+            .machine_owners[$id][0] as $owner |
+            if ($owner | type) != "string" then error("machine has no configured organization owner") else
+                [.directory.people[] | select(.uid == $owner) | .location][0] // error("machine owner has no organization location")
+            end
+        ' "$machine_profile")
+        machine_node_index=$(jq -er --arg location "$machine_location" '[.runtime.nodes | to_entries[] | select(.value.location == $location) | .key] | if length == 1 then .[0] else error("machine location must match exactly one configured node") end' "$machine_profile")
+        machine_node_ip=$(jq -er --argjson index "$machine_node_index" '.runtime.nodes[$index].substrate_address' "$machine_profile")
+        machine_node_address="$machine_node_ip:5000"
+        machine_network="zpr-$machine_organization"
+        start_zpr_machine_control_service
+        prepare_machine_workloads
+    else
+        machine_node_address=10.0.0.1:5000
+        start_zpr_machine_control_service
+        prepare_machine_workloads
+        stop_legacy_named_workloads
     fi
-    docker run -d --name "$container" \
+    machine_control_url="https://[fd5a:5052:adda:1:ffff:ffff:ffff:fffe]:8792"
+    machine_controller_binary=$MACHINE_CONTROLLER_BIN
+    if [ "$machine_arch" = amd64 ]; then machine_controller_binary=$MACHINE_CONTROLLER_AMD64_BIN; fi
+    machine_network=${machine_network:-}
+    if [ "$machine_runtime_driver" = linux-one-node ]; then
+        if [ -z "${RIG_IP:-}" ]; then
+            RIG_IP=$(docker inspect -f '{{range .NetworkSettings.Networks}}{{.IPAddress}}{{end}}' "$SIMULATION_CONTAINER")
+        fi
+        [ -n "$RIG_IP" ] || { echo "ZPR rig $SIMULATION_CONTAINER has no IPv4 address" >&2; return 1; }
+    fi
+    set -- docker run -d --name "$container"
+    if [ -n "$machine_network" ]; then set -- "$@" --network "$machine_network"; fi
+    set -- "$@" \
         --privileged --device /dev/net/tun \
         --label zpr.simulator=true \
         --label "zpr.machine.id=$machine" \
@@ -435,20 +651,23 @@ start_machine_container() {
         --label "zpr.machine.model=$(jq -r --arg id "$machine" '.machines[] | select(.id == $id) | .model' "$SIMULATION_MANIFEST")" \
         --label "zpr.machine.owner=$(jq -r --arg id "$machine" '.machines[] | select(.id == $id) | .owner' "$SIMULATION_MANIFEST")" \
         --label "zpr.machine.secure=$(jq -r --arg id "$machine" '.machines[] | select(.id == $id) | .secure' "$SIMULATION_MANIFEST")" \
-        -v "$MACHINE_CONTROLLER_BIN:/usr/local/bin/zpr-machine-controller:ro" \
+        -v "$machine_controller_binary:/usr/local/bin/zpr-machine-controller:ro" \
         -v "$MACHINE_CERT_DIR/$machine:/run/zpr-machine:ro" \
         -v "$MACHINE_WORKLOAD_DIR:/opt/zpr-workloads:ro" \
         "$MACHINE_IMAGE" \
         /bin/sh -c 'mkdir -p /run/zpr-workloads && exec /usr/local/bin/zpr-machine-controller "$@"' zpr-machine \
         -mode machine-controller -machine-id "$machine" \
-        -control-url "https://[fd5a:5052:adda:1:ffff:ffff:ffff:fffe]:8792" \
+        -control-url "$machine_control_url" \
         -control-ca /run/zpr-machine/control-ca.crt \
         -client-cert /run/zpr-machine/client.crt \
         -client-key /run/zpr-machine/client.key \
         -zpr-ph /opt/zpr-workloads/ph \
         -zpr-bootstrap-key "/opt/zpr-workloads/machine-controller-$machine.key" \
-        -zpr-node-addr 10.0.0.1:5000 >/dev/null
-    docker exec "$container" ip route replace 10.0.0.0/8 via "$RIG_IP"
+        -zpr-node-addr "$machine_node_address"
+    "$@" >/dev/null
+    if [ "$machine_runtime_driver" = linux-one-node ]; then
+        docker exec "$container" ip route replace 10.0.0.0/8 via "$RIG_IP"
+    fi
 }
 
 start_zpr_machine_control_service() {
@@ -458,6 +677,50 @@ start_zpr_machine_control_service() {
     service_log="$service_dir/adapter.log"
     proxy_log="$service_dir/proxy.log"
     key_dir=/work/.local-runtime/linux-integration/pregen/machine-control
+    machine_organization=${SIMULATION_ORGANIZATION_ID:-$(jq -r '.organization_id // "northstar"' "$SIMULATION_MANIFEST")}
+    if [ -r "$ACTIVE_ORGANIZATION_FILE" ]; then
+        selected_organization=$(tr -d '\r\n' < "$ACTIVE_ORGANIZATION_FILE")
+        [ -z "$selected_organization" ] || machine_organization=$selected_organization
+    fi
+    machine_profile="$ORGANIZATIONS_DIR/$machine_organization.json"
+    machine_runtime_driver=$(jq -er '.runtime.driver' "$machine_profile")
+    if [ "$machine_runtime_driver" = docker-multinode ]; then
+        node_container="$machine_organization-node0"
+        node_ip=$(jq -er '.runtime.nodes[0].substrate_address' "$machine_profile")
+        proxy_in_node=/tmp/zpr-machine-control-proxy-linux-amd64
+        service_dir=/tmp/zpr-machine-control
+        service_socket="$service_dir/control.sock"
+        key_dir="$RUNTIME_DIR/linux-integration/pregen/machine-control"
+        if docker exec "$node_container" /app/bin/ph-cli -p "$service_socket" link show 2>/dev/null | grep -q '(Active)'; then
+            return 0
+        fi
+        docker exec "$node_container" pkill -TERM -f '[p]h adapter.*--name simulator-control' 2>/dev/null || true
+        docker exec "$node_container" pkill -TERM -f '[z]pr-machine-control-proxy-linux-amd64' 2>/dev/null || true
+        docker exec "$node_container" mkdir -p "$service_dir"
+        docker cp "$MACHINE_CONTROL_PROXY_AMD64_BIN" "$node_container:$proxy_in_node"
+        docker cp "$key_dir/simulator-control.key" "$node_container:$service_dir/simulator-control.key"
+        docker exec -d "$node_container" sh -c \
+            'mkdir -p "$1"; exec env ZPR_ADAPTER_SERVICES=SimulatorControlService /app/bin/ph adapter --logging all=INFO --control-path "$2" --capture-path "$3" --self-addr 0.0.0.0:0 --ca-file /conf/include/auth-ca.crt --bootstrap-key "$4/simulator-control.key" --name simulator-control --km-impl noise --tun-if tun5 --node-addr "$5:5000" --zpr-addr fd5a:5052:adda:1:ffff:ffff:ffff:fffe >>"$6" 2>&1' \
+            machine-control-service "$service_dir" "$service_socket" "$service_dir/control-cap.sock" "$service_dir" "$node_ip" "$service_dir/adapter.log"
+        attempts=0
+        while [ "$attempts" -lt 90 ]; do
+            if docker exec "$node_container" /app/bin/ph-cli -p "$service_socket" link show 2>/dev/null | grep -q '(Active)'; then
+                break
+            fi
+            attempts=$((attempts + 1))
+            sleep 1
+        done
+        if [ "$attempts" -ge 90 ]; then
+            docker exec "$node_container" tail -n 80 "$service_dir/adapter.log" >&2 || true
+            echo "multinode simulator-control adapter did not become active on $node_container" >&2
+            return 1
+        fi
+        docker exec -d "$node_container" sh -c \
+            'exec "$1" --mode machine-control-proxy --proxy-listen "[fd5a:5052:adda:1:ffff:ffff:ffff:fffe]:8792" --proxy-upstream host.docker.internal:8791 >>"$2" 2>&1' \
+            machine-control-proxy "$proxy_in_node" "$service_dir/proxy.log"
+        return 0
+    fi
+    [ "$machine_runtime_driver" = linux-one-node ] || { echo "unsupported machine-control runtime: $machine_runtime_driver" >&2; return 1; }
     rig_dir=$(docker exec "$SIMULATION_CONTAINER" sh -c 'for socket in $(find /tmp -maxdepth 3 -type s -name node.sock -print); do if /tmp/zpr-core-target/debug/ph-cli -p "$socket" link show >/dev/null 2>&1; then dirname "$socket"; exit 0; fi; done')
     if [ -z "$rig_dir" ]; then
         echo "active ZPR rig credentials not found in $SIMULATION_CONTAINER" >&2
@@ -518,7 +781,38 @@ stop_legacy_named_workloads() {
 prepare_machine_workloads() {
     mkdir -p "$MACHINE_WORKLOAD_DIR"
     chmod 700 "$MACHINE_WORKLOAD_DIR"
+    machine_organization=${SIMULATION_ORGANIZATION_ID:-$(jq -r '.organization_id // "northstar"' "$SIMULATION_MANIFEST")}
+    if [ -r "$ACTIVE_ORGANIZATION_FILE" ]; then
+        selected_organization=$(tr -d '\r\n' < "$ACTIVE_ORGANIZATION_FILE")
+        [ -z "$selected_organization" ] || machine_organization=$selected_organization
+    fi
+    machine_profile="$ORGANIZATIONS_DIR/$machine_organization.json"
+    machine_runtime_driver=$(jq -er '.runtime.driver' "$machine_profile")
+    workload_runtime_marker="$machine_runtime_driver:$machine_organization"
+    if [ "$(cat "$MACHINE_WORKLOAD_DIR/.runtime" 2>/dev/null || true)" = "$workload_runtime_marker" ] && [ -x "$MACHINE_WORKLOAD_DIR/ph" ]; then
+        return 0
+    fi
     rm -f "$MACHINE_WORKLOAD_DIR"/*
+    rm -f "$MACHINE_WORKLOAD_DIR/.runtime"
+    if [ "$machine_runtime_driver" = docker-multinode ]; then
+        node_container="$machine_organization-node0"
+        runtime_root="$RUNTIME_DIR/multinode/$machine_organization"
+        pregen="$RUNTIME_DIR/linux-integration/pregen"
+        docker cp "$node_container:/app/bin/ph" "$MACHINE_WORKLOAD_DIR/ph"
+        docker cp "$node_container:/app/bin/ph-cli" "$MACHINE_WORKLOAD_DIR/ph-cli"
+        cp "$runtime_root/conf/node0/include/auth-ca.crt" "$MACHINE_WORKLOAD_DIR/ca.crt"
+        for file in client-finance-rsa.key client-operations-rsa.key client-telemetry-rsa.key service-echo-rsa.key service-metrics-rsa.key internet-gateway-rsa.key; do
+            cp "$pregen/$file" "$MACHINE_WORKLOAD_DIR/$file"
+        done
+        for number in $(seq -w 1 20); do
+            cp "$pregen/machine-control/machine-$number.key" "$MACHINE_WORKLOAD_DIR/machine-controller-machine-$number.key"
+        done
+        chmod 700 "$MACHINE_WORKLOAD_DIR/ph" "$MACHINE_WORKLOAD_DIR/ph-cli"
+        chmod 600 "$MACHINE_WORKLOAD_DIR"/*.key
+        printf '%s\n' "$workload_runtime_marker" > "$MACHINE_WORKLOAD_DIR/.runtime"
+        return 0
+    fi
+    [ "$machine_runtime_driver" = linux-one-node ] || { echo "unsupported machine workload runtime: $machine_runtime_driver" >&2; return 1; }
     rig_dir=$(docker exec "$SIMULATION_CONTAINER" sh -c 'find /tmp -maxdepth 3 -type f -name client-finance-rsa.key -print -quit | xargs -r dirname')
     if [ -z "$rig_dir" ]; then
         echo "active ZPR rig credentials not found in $SIMULATION_CONTAINER" >&2
@@ -559,6 +853,7 @@ prepare_machine_workloads() {
             iptables -D FORWARD -i sim-host0 -o eth0 -s 10.0.0.0/8 -d '$DOCKER_SUBNET' -p udp -j ACCEPT 2>/dev/null || true
             iptables -D FORWARD -i eth0 -o sim-host0 -d 10.0.0.0/8 -m conntrack --ctstate ESTABLISHED,RELATED -j ACCEPT 2>/dev/null || true
         fi"
+    printf '%s\n' "$workload_runtime_marker" > "$MACHINE_WORKLOAD_DIR/.runtime"
 }
 
 restart_policy_context() {
@@ -573,40 +868,55 @@ restart_policy_context() {
     context_ldap_container=$(policy_ldap_container "$context_organization")
     [ -r "$context_config" ] && [ -r "$context_catalog" ] || { echo "policy profile assets unavailable" >&2; return 1; }
     prepare_policy_tester
-    if pid_running "$POLICY_PID"; then
-        context_listener=$(lsof -tiTCP:8789 -sTCP:LISTEN)
-        [ "$context_listener" = "$(cat "$POLICY_PID")" ] || { echo "Policy Service PID mismatch" >&2; return 1; }
-        stop_service "$POLICY_PID"
-    fi
-    start_service policy-service "$POLICY_PID" env \
-        ZPR_POLICY_SERVICE_LISTEN=127.0.0.1:8789 \
-        ZPR_POLICY_DB_FILE="$STATE_DIR/policy-private/$context_organization-policy-only.db" \
-        ZPR_POLICY_SERVICE_CERT_FILE="$SERVICE_CERTS/policy-service.crt" \
-        ZPR_POLICY_SERVICE_KEY_FILE="$SERVICE_CERTS/policy-service.key" \
-        ZPR_POLICY_SERVICE_CLIENT_CA_FILE="$SERVICE_CERTS/service-ca.crt" \
-        ZPR_POLICY_STAGE_CONFIG_FILE="$RUNTIME_DIR/linux-integration/pregen/v6-1node-3actor-ping.zplc" \
-        ZPR_POLICY_ORGANIZATION_ID="$context_organization" \
-        ZPR_POLICY_ORGANIZATION_NAME="$(jq -er '.name' "$context_profile")" \
-        ZPR_POLICY_ORGANIZATION_BASE_DN="$context_base_dn" \
-        ZPR_POLICY_CONFIG_FILE="$context_config" \
-        ZPR_POLICY_SOURCE_FILE="$context_source" \
-        ZPR_POLICY_SEED_CATEGORY="Network/Effective" \
-        ZPR_POLICY_SEED_NAME="Effective network policy" \
-        ZPR_POLICY_DEMO_CATALOG_FILE="$context_catalog" \
-        ZPR_POLICY_STAGE_DIR="$STATE_DIR/staged-policy/$context_organization" \
-        ZPR_POLICY_STAGE_SIGNING_KEY_FILE="$RUNTIME_DIR/linux-integration/pregen/zpr-rsa-key.pem" \
-        ZPR_POLICY_LDAP_CONTAINER="$context_ldap_container" \
-        ZPR_POLICY_LDAP_BASE_DN="$context_base_dn" \
-        ZPR_POLICY_LDAP_BIND_DN="cn=zpr-reader,ou=Service Accounts,$context_base_dn" \
-        SIMULATION_MANIFEST="$SIMULATION_MANIFEST" \
-        SIMULATION_ORGANIZATIONS_DIR="$ORGANIZATIONS_DIR" \
-        ZPR_ZPT_BIN="$POLICY_TESTER_BIN" \
-        ZPR_ZPLC_BIN="$ZPLC_BIN" \
-        "$BIN" -mode policy-service
-    wait_for_url https://127.0.0.1:8789/api/policy/context policy-context \
-        --cacert "$SERVICE_CERTS/service-ca.crt" \
-        --cert "$SERVICE_CERTS/control-policy-client.crt" \
-        --key "$SERVICE_CERTS/control-policy-client.key"
+    start_policy_context_container "$context_organization" "$context_source" \
+        "Network/Effective" "Effective network policy" "$STATE_DIR/staged-policy/$context_organization"
+    wait_for_policy_context "$context_organization"
+}
+
+start_policy_context_container() {
+    context_organization=$1
+    context_source=$2
+    context_seed_category=$3
+    context_seed_name=$4
+    context_stage_dir=$5
+    context_profile="$ORGANIZATIONS_DIR/$context_organization.json"
+    context_config="$DASHBOARD_DIR/cmd/zpr-web-dashboard/examples/$(jq -er '.policy_config' "$context_profile")"
+    context_catalog="$DASHBOARD_DIR/cmd/zpr-web-dashboard/examples/$(jq -er '.policy_catalog' "$context_profile")"
+    context_base_dn=$(jq -er '.directory.base_dn' "$context_profile")
+    context_ldap_container=$(policy_ldap_container "$context_organization")
+    stop_policy_service
+    docker run -d --name "$POLICY_CONTAINER" \
+        --label zpr.policy-service=true \
+        --restart unless-stopped \
+        -v "$(docker_socket_path):/var/run/docker.sock" \
+        -v "$DASHBOARD_DIR:$DASHBOARD_DIR:ro" \
+        -v "$RUNTIME_DIR:$RUNTIME_DIR" \
+        -p 127.0.0.1:8789:8789 \
+        -e ZPR_POLICY_SERVICE_LISTEN=0.0.0.0:8789 \
+        -e ZPR_POLICY_DB_FILE="$STATE_DIR/policy-private/$context_organization-policy-only.db" \
+        -e ZPR_POLICY_SERVICE_CERT_FILE="$SERVICE_CERTS/policy-service.crt" \
+        -e ZPR_POLICY_SERVICE_KEY_FILE="$SERVICE_CERTS/policy-service.key" \
+        -e ZPR_POLICY_SERVICE_CLIENT_CA_FILE="$SERVICE_CERTS/service-ca.crt" \
+        -e ZPR_POLICY_STAGE_CONFIG_FILE="$RUNTIME_DIR/linux-integration/pregen/v6-1node-3actor-ping.zplc" \
+        -e ZPR_POLICY_ORGANIZATION_ID="$context_organization" \
+        -e ZPR_POLICY_ORGANIZATION_NAME="$(jq -er '.name' "$context_profile")" \
+        -e ZPR_POLICY_ORGANIZATION_BASE_DN="$context_base_dn" \
+        -e ZPR_POLICY_CONFIG_FILE="$context_config" \
+        -e ZPR_POLICY_SOURCE_FILE="$context_source" \
+        -e ZPR_POLICY_SEED_CATEGORY="$context_seed_category" \
+        -e ZPR_POLICY_SEED_NAME="$context_seed_name" \
+        -e ZPR_POLICY_DEMO_CATALOG_FILE="$context_catalog" \
+        -e ZPR_POLICY_STAGE_DIR="$context_stage_dir" \
+        -e ZPR_POLICY_STAGE_SIGNING_KEY_FILE="$RUNTIME_DIR/linux-integration/pregen/zpr-rsa-key.pem" \
+        -e ZPR_POLICY_LDAP_CONTAINER="$context_ldap_container" \
+        -e ZPR_POLICY_LDAP_BASE_DN="$context_base_dn" \
+        -e ZPR_POLICY_LDAP_BIND_DN="cn=zpr-reader,ou=Service Accounts,$context_base_dn" \
+        -e SIMULATION_MANIFEST="$SIMULATION_MANIFEST" \
+        -e SIMULATION_ORGANIZATIONS_DIR="$ORGANIZATIONS_DIR" \
+        -e ZPR_ZPT_BIN="$POLICY_TOOLS_DIR/zpt" \
+        -e ZPR_ZPLC_BIN="$POLICY_TOOLS_DIR/zplc" \
+        --entrypoint /usr/local/bin/zpr-web-dashboard \
+        "$SIMULATOR_IMAGE" -mode policy-service >/dev/null
 }
 
 policy_ldap_container() {
@@ -662,34 +972,12 @@ start_policy_service() {
         echo "policy assets for organization $organization_id are missing" >&2
         return 1
     fi
-    prepare_policy_tester
-    go -C "$DASHBOARD_DIR" build -trimpath -o "$BIN" ./cmd/zpr-web-dashboard
-
-    start_service policy-service "$POLICY_PID" env \
-        ZPR_POLICY_SERVICE_LISTEN=127.0.0.1:8789 \
-        ZPR_POLICY_DB_FILE="$STATE_DIR/policy-private/$organization_id-policy-only.db" \
-        ZPR_POLICY_SERVICE_CERT_FILE="$SERVICE_CERTS/policy-service.crt" \
-        ZPR_POLICY_SERVICE_KEY_FILE="$SERVICE_CERTS/policy-service.key" \
-        ZPR_POLICY_SERVICE_CLIENT_CA_FILE="$SERVICE_CERTS/service-ca.crt" \
-        ZPR_POLICY_STAGE_CONFIG_FILE="$RUNTIME_DIR/linux-integration/pregen/v6-1node-3actor-ping.zplc" \
-        ZPR_POLICY_ORGANIZATION_ID="$organization_id" \
-        ZPR_POLICY_ORGANIZATION_NAME="$(jq -er '.name' "$organization_file")" \
-        ZPR_POLICY_ORGANIZATION_BASE_DN="$ldap_base_dn" \
-        ZPR_POLICY_CONFIG_FILE="$policy_config" \
-        ZPR_POLICY_SOURCE_FILE="$RUNTIME_DIR/linux-integration/pregen/v4-1node-3actor-ping.zpl" \
-        ZPR_POLICY_SEED_CATEGORY="Simulator/Runtime" \
-        ZPR_POLICY_SEED_NAME="Simulator runtime policy" \
-        ZPR_POLICY_DEMO_CATALOG_FILE="$policy_catalog" \
-        ZPR_POLICY_STAGE_DIR="$STATE_DIR/staged-policy" \
-        ZPR_POLICY_STAGE_SIGNING_KEY_FILE="$RUNTIME_DIR/linux-integration/pregen/zpr-rsa-key.pem" \
-        ZPR_POLICY_LDAP_CONTAINER="$ldap_container" \
-        ZPR_POLICY_LDAP_BASE_DN="$ldap_base_dn" \
-        ZPR_POLICY_LDAP_BIND_DN="$ldap_bind_dn" \
-        SIMULATION_MANIFEST="$SIMULATION_MANIFEST" \
-        SIMULATION_ORGANIZATIONS_DIR="$ORGANIZATIONS_DIR" \
-        ZPR_ZPT_BIN="$POLICY_TESTER_BIN" \
-        ZPR_ZPLC_BIN="$ZPLC_BIN" \
-        "$BIN" -mode policy-service
+    ensure_policy_tools
+    docker build -f "$SCRIPT_DIR/Dockerfile.simulator" -t "$SIMULATOR_IMAGE" "$DASHBOARD_DIR"
+    start_policy_context_container "$organization_id" \
+        "$RUNTIME_DIR/linux-integration/pregen/v4-1node-3actor-ping.zpl" \
+        "Simulator/Runtime" "Simulator runtime policy" "$STATE_DIR/staged-policy"
+    wait_for_policy_context "$organization_id"
     wait_for_url https://127.0.0.1:8789/api/policy policy-service \
         --cacert "$SERVICE_CERTS/service-ca.crt" \
         --cert "$SERVICE_CERTS/control-policy-client.crt" \
@@ -697,11 +985,7 @@ start_policy_service() {
 }
 
 restart_policy_service() {
-    if pid_running "$POLICY_PID"; then
-        listener=$(lsof -tiTCP:8789 -sTCP:LISTEN 2>/dev/null || true)
-        [ "$listener" = "$(cat "$POLICY_PID")" ] || { echo "Policy Service PID mismatch" >&2; return 1; }
-        stop_service "$POLICY_PID"
-    fi
+    stop_policy_service
     start_policy_service
 }
 
@@ -709,6 +993,7 @@ start_stack() {
     mkdir -p "$STATE_DIR"
     stop_stack
     create_machine_control_pki
+    start_simulator
     start_policy_service
 
     start_admin_relay
@@ -718,7 +1003,6 @@ start_stack() {
 
     start_control_room
     wait_for_url http://127.0.0.1:8787/ control-room
-	start_simulator
 	start_machine_controllers
     echo "Control Room ready at http://127.0.0.1:8787"
     echo "OpenObserve GUI relay at http://127.0.0.1:$OBSERVABILITY_UI_RELAY_PORT"
@@ -729,7 +1013,11 @@ start_stack() {
 }
 
 status_stack() {
-    for entry in "policy-service:$POLICY_PID:8789" "admin-relay:$ADMIN_RELAY_PID:$ADMIN_RELAY_PORT" "ldap-ui-relay:$LDAP_UI_RELAY_PID:$LDAP_UI_RELAY_PORT" "observability-ui-relay:$OBSERVABILITY_UI_RELAY_PID:$OBSERVABILITY_UI_RELAY_PORT" "control-service:$CONTROL_PID:8790" "browser-gateway:$BROWSER_GATEWAY_PID:8443"; do
+    policy_state=$(docker inspect -f '{{.State.Status}}' "$POLICY_CONTAINER" 2>/dev/null || printf stopped)
+    echo "policy-service: container $policy_state"
+    control_state=$(docker inspect -f '{{.State.Status}}' "$CONTROL_CONTAINER" 2>/dev/null || printf stopped)
+    echo "control-service: container $control_state"
+    for entry in "admin-relay:$ADMIN_RELAY_PID:$ADMIN_RELAY_PORT" "ldap-ui-relay:$LDAP_UI_RELAY_PID:$LDAP_UI_RELAY_PORT" "observability-ui-relay:$OBSERVABILITY_UI_RELAY_PID:$OBSERVABILITY_UI_RELAY_PORT" "browser-gateway:$BROWSER_GATEWAY_PID:8443"; do
         name=${entry%%:*}
         rest=${entry#*:}
         pid_file=${rest%%:*}
@@ -773,7 +1061,7 @@ case "${1:-start}" in
     restart) start_stack ;;
     status) status_stack ;;
     start-admin-relay) start_admin_relay ;;
-    stop-admin-relay) stop_service "$ADMIN_RELAY_PID" ;;
+    stop-admin-relay) stop_admin_relay ;;
     start-dns) start_dns_service ;;
     stop-dns) stop_dns_service ;;
     start-ui-relays) start_ui_relays ;;
@@ -783,7 +1071,6 @@ case "${1:-start}" in
     restart-control-room) restart_control_room ;;
     restart-simulator) restart_simulator ;;
     restart-control-service)
-        stop_service "$CONTROL_PID"
         start_control_service
         ;;
     restart-policy-service) restart_policy_service ;;

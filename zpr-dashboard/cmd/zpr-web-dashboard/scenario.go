@@ -309,8 +309,8 @@ func validScenarioID(id string) bool {
 func validateSimulatorScenarioStep(step simulatorScenarioStep, manifest simulatorManifest, organization simulatorOrganization, cleanup bool) error {
 	switch step.Action {
 	case "verify_multinode_runtime":
-		if cleanup || organization.Runtime.Driver != "docker-multinode" || organization.Runtime.Topology != "multi-node" || len(organization.Runtime.Nodes) != 2 {
-			return errors.New("runtime verification requires a two-node docker-multinode organization and cannot be cleanup")
+		if cleanup || organization.Runtime.Driver != "docker-multinode" || organization.Runtime.Topology != "multi-node" || len(organization.Runtime.Nodes) < 2 {
+			return errors.New("runtime verification requires a multi-node docker-multinode organization and cannot be cleanup")
 		}
 	case "start_machine", "wait_controller", "login", "select_workloads", "logout", "stop_machine":
 		if !manifestHasMachine(manifest, step.Machine) {
@@ -347,6 +347,13 @@ func validateSimulatorScenarioStep(step simulatorScenarioStep, manifest simulato
 		}
 		if testServicePorts[step.Target] == "" {
 			return errors.New("test request target must be a supported service")
+		}
+	case "resolve_dns":
+		if !manifestHasMachine(manifest, step.Machine) || net.ParseIP(manifest.DNSServer) == nil || !testClientWorkloads[step.Component] || !validScenarioDNSName(step.Target) {
+			return errors.New("DNS lookup requires a known machine, client workload, configured DNS server, and .zpr name")
+		}
+		if _, err := readSimulatorComponent(manifest, step.Component); err != nil {
+			return errors.New("DNS lookup requires a known client component")
 		}
 	case "start_service_fleet", "stop_service_fleet":
 		profile := organization.LoadTest
@@ -648,25 +655,35 @@ func scenarioCommand(ctx context.Context, name string, args ...string) (string, 
 	return strings.TrimSpace(string(output)), err
 }
 
+type scenarioCommandFunc func(context.Context, string, ...string) (string, error)
+
 func verifyMultinodeRuntime(ctx context.Context, manifest simulatorManifest) (string, error) {
+	return verifyMultinodeRuntimeWithCommand(ctx, manifest, scenarioCommand)
+}
+
+func verifyMultinodeRuntimeWithCommand(ctx context.Context, manifest simulatorManifest, command scenarioCommandFunc) (string, error) {
 	organizationID := activeSimulatorOrganizationID(manifest)
 	organization, err := loadSimulatorOrganization(simulatorOrganizationsDirectory(), organizationID)
 	if err != nil {
 		return "", err
 	}
-	if organization.Runtime.Driver != "docker-multinode" || len(organization.Runtime.Nodes) != 2 {
-		return "", errors.New("active organization is not a two-node docker-multinode runtime")
+	if organization.Runtime.Driver != "docker-multinode" || len(organization.Runtime.Nodes) < 2 {
+		return "", errors.New("active organization is not a multi-node docker-multinode runtime")
 	}
 	prefix := organizationID + "-"
-	containers := []string{prefix + "node0", prefix + "node1", prefix + "vs", prefix + "web0", prefix + "web1", prefix + "directory"}
+	containers := make([]string, 0, len(organization.Runtime.Nodes)+5)
+	for index := range organization.Runtime.Nodes {
+		containers = append(containers, fmt.Sprintf("%snode%d", prefix, index))
+	}
+	containers = append(containers, prefix+"vs", prefix+"web0", prefix+"web1", prefix+"directory")
 	for _, container := range containers {
-		state, err := scenarioCommand(ctx, "docker", "inspect", "-f", "{{.State.Running}}", container)
+		state, err := command(ctx, "docker", "inspect", "-f", "{{.State.Running}}", container)
 		if err != nil || state != "true" {
 			return "", fmt.Errorf("required runtime container %s is not running", container)
 		}
 	}
 	activeLink := func(container, endpoint string) error {
-		summary, err := scenarioCommand(ctx, "docker", "exec", container, "/app/bin/ph-cli", "-p", "/var/run/zpr/control.sock", "link", "show")
+		summary, err := command(ctx, "docker", "exec", container, "/app/bin/ph-cli", "-p", "/var/run/zpr/control.sock", "link", "show")
 		if err != nil {
 			return fmt.Errorf("read links on %s: %w", container, err)
 		}
@@ -677,18 +694,27 @@ func verifyMultinodeRuntime(ctx context.Context, manifest simulatorManifest) (st
 		}
 		return fmt.Errorf("%s has no active link for %s", container, endpoint)
 	}
-	for _, link := range []struct{ container, endpoint string }{
-		{prefix + "node0", "172.30.0.10:5000"},
-		{prefix + "node1", "172.30.0.13:5000"},
-		{prefix + "node0", "172.30.0.11:"},
-		{prefix + "node0", "172.30.0.14:"},
+	for index, node := range organization.Runtime.Nodes {
+		container := fmt.Sprintf("%snode%d", prefix, index)
+		for peerIndex, peer := range organization.Runtime.Nodes {
+			if peerIndex == index {
+				continue
+			}
+			if err := activeLink(container, net.JoinHostPort(peer.SubstrateAddress, "5000")); err != nil {
+				return "", fmt.Errorf("runtime node %s peer check: %w", node.ID, err)
+			}
+		}
+	}
+	for _, link := range []struct{ nodeIndex int; endpoint string }{
+		{0, "172.30.0.11:"},
+		{0, "172.30.0.14:"},
 	} {
-		if err := activeLink(link.container, link.endpoint); err != nil {
+		if err := activeLink(fmt.Sprintf("%snode%d", prefix, link.nodeIndex), link.endpoint); err != nil {
 			return "", err
 		}
 	}
 	for _, container := range []string{prefix + "web0", prefix + "web1"} {
-		status, err := scenarioCommand(ctx, "docker", "exec", container, "curl", "-fsS", "-o", "/dev/null", "-w", "%{http_code}", "http://localhost:80")
+		status, err := command(ctx, "docker", "exec", container, "curl", "-fsS", "-o", "/dev/null", "-w", "%{http_code}", "http://localhost:80")
 		if err != nil || status != "200" {
 			return "", fmt.Errorf("web service in %s returned HTTP %s", container, status)
 		}
@@ -723,7 +749,7 @@ func verifyMultinodeRuntime(ctx context.Context, manifest simulatorManifest) (st
 		if err != nil {
 			return nil, err
 		}
-		output, err := scenarioCommand(ctx, "docker", "exec", prefix+"directory", "curl", "-fsS", "--resolve", "directory:8443:127.0.0.1", "--cacert", "/runtime/ca.crt", "--cert", "/runtime/visa-client.crt", "--key", "/runtime/visa-client.key", "-H", "Content-Type: application/json", "--data-binary", string(requestBody), "https://directory:8443/v1/attributes")
+		output, err := command(ctx, "docker", "exec", prefix+"directory", "curl", "-fsS", "--resolve", "directory:8443:127.0.0.1", "--cacert", "/runtime/ca.crt", "--cert", "/runtime/visa-client.crt", "--key", "/runtime/visa-client.key", "-H", "Content-Type: application/json", "--data-binary", string(requestBody), "https://directory:8443/v1/attributes")
 		if err != nil {
 			return nil, fmt.Errorf("trusted directory lookup failed: %w", err)
 		}
@@ -749,7 +775,7 @@ func verifyMultinodeRuntime(ctx context.Context, manifest simulatorManifest) (st
 	if !scenarioContainsString(userAttributes["role"], userRole) {
 		return "", errors.New("trusted directory user role does not match the organization profile")
 	}
-	return fmt.Sprintf("verified %s and %s peer links, VS/OciWeb adapters, both site HTTP services, and LDAP owner/role for %s", organization.Runtime.Nodes[0].Location, organization.Runtime.Nodes[1].Location, userUID), nil
+	return fmt.Sprintf("verified %d-node ZPR backbone, VS/OciWeb adapters, both site HTTP services, and LDAP owner/role for %s across %d configured sites", len(organization.Runtime.Nodes), userUID, len(organization.Runtime.Nodes)), nil
 }
 
 func scenarioContainsString(values []string, expected string) bool {
@@ -956,6 +982,21 @@ func simulatorScenarioExecutorForManifest(ctx context.Context, manifest simulato
 			return scenarioCommand(ctx, "docker", "exec", machineContainerName(step.Machine), "/usr/local/bin/zpr-machine-controller", "-mode", "benchmark-client", "-listen", address, "-zpr-addr", sourceAddress)
 		}
 		return scenarioCommand(ctx, "docker", "exec", machineContainerName(step.Machine), "/usr/local/bin/zpr-machine-controller", "-mode", "test-client", "-listen", address, "-zpr-addr", sourceAddress, "-client-id", step.Machine, "-log-workload", step.Component, "-test-service-name", step.Target)
+	case "resolve_dns":
+		if err := requireScenarioWorkload(step.Machine, step.Component); err != nil {
+			return "", err
+		}
+		output, err := scenarioCommand(ctx, "docker", "exec", machineContainerName(step.Machine), "dig", "+tcp", "+time=2", "+tries=1", "+short", "AAAA", "@"+manifest.DNSServer, step.Target)
+		if err != nil {
+			return output, fmt.Errorf("DNS lookup failed for %s: %w", step.Target, err)
+		}
+		for _, line := range strings.Fields(output) {
+			address := net.ParseIP(line)
+			if address != nil && address.To4() == nil {
+				return fmt.Sprintf("%s resolved to %s", step.Target, address), nil
+			}
+		}
+		return output, fmt.Errorf("DNS lookup returned no IPv6 address for %s", step.Target)
 	case "traffic":
 		component, _ := readSimulatorComponent(manifest, step.Component)
 		target := component.Target
@@ -1055,6 +1096,23 @@ func grantedScenarioClientAddress(output, agent string) (string, error) {
 		}
 	}
 	return "", fmt.Errorf("workload %q has no granted ZPR address", agent)
+}
+
+func validScenarioDNSName(name string) bool {
+	if len(name) > 253 || !strings.HasSuffix(strings.ToLower(name), ".zpr") {
+		return false
+	}
+	for _, label := range strings.Split(name, ".") {
+		if len(label) == 0 || len(label) > 63 || label[0] == '-' || label[len(label)-1] == '-' {
+			return false
+		}
+		for _, char := range label {
+			if !(char >= 'a' && char <= 'z' || char >= 'A' && char <= 'Z' || char >= '0' && char <= '9' || char == '-') {
+				return false
+			}
+		}
+	}
+	return true
 }
 
 func requireScenarioWorkload(machineID, component string) error {

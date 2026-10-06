@@ -137,12 +137,14 @@ Results from a previous organization are cleared.
 ### Organization Defaults
 
 Each bundled organization profile supplies `assertions_source`. Defaults cover
-UID/CN integrity, populated operator or role groups, and group-scoped email,
-title, and department checks. Human-only fields are scoped to named groups
-because the LDAP reader also returns machine and service accounts. Northstar
-allows overlapping roles for cross-department users; Redwood and Great Lakes
-check mutually exclusive department-group membership within those groups.
-These defaults do not prove that every ungrouped person has complete attributes.
+UID/CN integrity, populated operator or role groups, and employee email/title
+completeness. Department-specific checks are scoped to role groups. Assertion
+`people` scopes include human person entries. Hardware entries marked
+`zprMachine` and application entries with `sn: Application` remain available as
+source metadata but are excluded from employee assertions. Northstar allows
+overlapping roles for cross-department users; Redwood and Great Lakes check
+mutually exclusive department-group membership within those groups. These
+defaults do not prove that every ungrouped human has complete attributes.
 
 Policy-Service fills missing or empty assertion records from the profile using
 immutable revisions. Nonempty operator rules and existing periodic settings

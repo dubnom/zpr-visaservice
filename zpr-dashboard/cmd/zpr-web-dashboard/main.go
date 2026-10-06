@@ -149,6 +149,21 @@ func localLDAPEditorURL() string {
 	return parsed.String()
 }
 
+func providerManagerURL(name string) string {
+	var managers map[string]string
+	if json.Unmarshal([]byte(os.Getenv("ZPR_PROVIDER_MANAGER_URLS")), &managers) != nil {
+		return ""
+	}
+	parsed, err := url.Parse(managers[name])
+	if err != nil || parsed.Host == "" || parsed.User != nil {
+		return ""
+	}
+	if parsed.Scheme != "https" && !(parsed.Scheme == "http" && (parsed.Hostname() == "127.0.0.1" || parsed.Hostname() == "localhost" || parsed.Hostname() == "::1")) {
+		return ""
+	}
+	return parsed.String()
+}
+
 type trustedStatus struct {
 	Name          string  `json:"name"`
 	Health        string  `json:"health"`
@@ -670,6 +685,9 @@ func trustedSourcesFromStatus(statuses []trustedStatus, services []service) []tr
 			HealthNote:   "Based on the most recent real attribute lookup, not a live probe.",
 			LastLookupMS: status.LastLookupMS, LastSuccessMS: status.LastSuccessMS,
 			EditorURL: func() string {
+				if manager := providerManagerURL(status.Name); manager != "" {
+					return manager
+				}
 				if status.Name == "demo_ldap" && provider == "rest/1" {
 					return localLDAPEditorURL()
 				}

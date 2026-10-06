@@ -37,7 +37,7 @@ var testLogPorts = map[string]int{
 }
 
 var testServicePorts = map[string]string{"echo-service": "8080", "metrics-service": "8081", "internet-gateway": "8082"}
-var testClientWorkloads = map[string]bool{"finance-client": true, "operations-client": true}
+var testClientWorkloads = map[string]bool{"finance-client": true, "operations-client": true, "telemetry-client": true}
 
 var testLogServers = struct {
 	sync.Mutex

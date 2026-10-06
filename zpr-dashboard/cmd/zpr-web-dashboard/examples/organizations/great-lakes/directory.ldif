@@ -222,6 +222,20 @@ ou: Test and Quality
 zprMachineOwner: ana.garcia
 zprMachineSecure: TRUE
 
+dn: uid=machine-09,ou=Machines,dc=greatlakes,dc=test
+objectClass: inetOrgPerson
+objectClass: zprMachine
+uid: machine-09
+cn: machine-09
+sn: Endpoint
+zprMachineId: machine-09
+zprMachineType: laptop
+zprMachineModel: Shenzhen Engineering Test Laptop
+zprMachineLocation: Shenzhen, China
+ou: Shenzhen Engineering
+zprMachineOwner: chen.yu
+zprMachineSecure: TRUE
+
 dn: uid=support-desk-app,ou=Machines,dc=greatlakes,dc=test
 objectClass: inetOrgPerson
 uid: support-desk-app

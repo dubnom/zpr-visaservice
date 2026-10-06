@@ -14,12 +14,16 @@ file's `id` must match its filename. Scenarios are loaded from
 directory.
 
 Supported step actions are `start_machine`, `wait_controller`, `login`,
-`select_workloads`, `start_workload`, `traffic`, `stop_workload`, `logout`,
+`select_workloads`, `start_workload`, `traffic`, `resolve_dns`, `stop_workload`, `logout`,
 `stop_machine`, `start_test_service`, `request_test_service`,
 `stop_test_service`, `start_service_fleet`, `stop_service_fleet`,
 `stress_traffic`, `benchmark_test_service`, and `delay`. Steps are run in order. `traffic` probes the
 component's manifest namespace and target, or an explicit IPv6 `target`, and
 requires `expected` to be `allow` or `deny`.
+
+`resolve_dns` requires an authenticated machine with the selected client workload,
+a configured resolver in the simulation manifest, and a `.zpr` target name. It
+queries the configured DNS server over TCP and records the returned IPv6 address.
 
 An optional `cleanup` list runs after success, failure, or cancellation. Keep it
 ordered so workload stops and logout precede machine shutdown. Each cleanup

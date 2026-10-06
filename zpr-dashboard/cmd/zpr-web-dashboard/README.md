@@ -9,6 +9,21 @@ owns its REST listener, SQLite journal, and ZPLC configuration. All three
 processes use the same Go executable with different `-mode` values and remain
 separate processes and trust boundaries.
 
+The assertion editor uses the policy editor's Browse/File toolbar, Analyze/Format
+placement, analysis colors, and persistent results gutter. **Analyze** parses,
+lints, and evaluates source against configured trusted sources, showing clickable
+per-line results without entering a separate test mode. **Format** normalizes
+spacing and statement layout, preserving comments and quoted values; it leaves
+changes unsaved. Syntax-only clients can use `POST /api/assertions/analyze`;
+the editor uses `POST /api/assertions/evaluate` for live analysis and
+`POST /api/assertions/format` for formatting.
+
+Policy compiler and evaluator lint warnings appear as clickable gutter markers,
+including when analysis cannot obtain test fixtures. An amber-marked result also
+opens its warnings alongside the result details. Fixture-generation failures are
+reported as **Analysis unavailable**, not as policy compiler errors. The current
+ZPT fixture format cannot represent LDAP values containing commas or braces.
+
 ## Operator Boundary
 
 Control Room and Control-Service are production-facing operator components.
@@ -36,12 +51,70 @@ operator-owned JSON inventory, independent of any test environment:
 }
 ```
 
+This inventory covers configured adapter and controller log sources. Simulator
+Workload logs covers assigned application/service event files, while the
+optional OpenObserve collector covers Visa Service counters, denials, and
+process logs. The separate Diagnostics view covers ZPR nodes and configured
+Visa Service/trusted-service sources without reading Simulator workloads.
+
 A source selects an absolute regular-file path, a configured container's log
 stream, or a container plus an absolute `path`. Browser requests cannot choose
 files, containers, commands, or upstream URLs. Reads are bounded/redacted and
 read-only; unavailable sources are reported separately. The endpoint returns
 `adapters` with identities and typed sources, never Simulator machine/session
 objects. Missing inventory is a log-configuration error, not a Simulator error.
+
+## Unified Diagnostics
+
+The Diagnostics page consumes only Control-Service's provider-neutral
+`GET /api/diagnostics` contract; browser requests never select a provider,
+query, organization, or credential. Control-Service builds the source catalog
+from Visa Service Admin actors, registered services, and trusted-service
+status. It queries telemetry by OpenTelemetry `service.name` and
+`service.instance.id`, using `zpr.source.type` for node, required-service,
+trusted-service, and Visa Service identities. Optional server-owned
+`ZPR_DIAGNOSTICS_SOURCE_MAP_FILE` maps catalog IDs to actual OTel identities.
+
+The initial query adapter is OpenObserve. Configure it only on Control-Service
+with JSON provider configuration and a private, owner-only query-token file:
+
+```json
+{
+	"endpoint": "https://openobserve.example.test",
+	"organization": "zpr",
+	"logs_stream": "zpr_visa_service",
+	"metrics_stream": "zpr_visa_service",
+	"stale_after_seconds": 300
+}
+```
+
+Set `ZPR_DIAGNOSTICS_CONFIG_FILE`, `ZPR_DIAGNOSTICS_USERNAME`, and
+`ZPR_DIAGNOSTICS_TOKEN_FILE`; keep files under the mounted local runtime for
+the bundled Docker deployment. Endpoint URLs must be HTTPS or HTTP loopback,
+with no userinfo/path/query. Credentials remain server-side and provider
+responses are bounded. The contract returns at most 100 sources, 50 log entries
+and 50 metrics/source, 500 log entries and 1,000 metrics overall. Each provider
+response is capped at 512 KiB; log bodies at 2 KiB; and attributes at eight
+fields of 128 characters each. Search is capped at 200 characters. Sources
+report available, stale, partial, or unavailable states and their latest
+telemetry timestamp.
+
+The OpenObserve collector accepts an operator-owned
+`observability/diagnostic-sources.json` inventory to tail node/trusted-service
+log files and numeric metrics snapshots, exporting them as OTLP with source
+identity, source type, and active organization resource attributes. Direct
+OTLP producers can export the same resource contract. See
+`observability/openobserve/diagnostic-sources.example.json`,
+`diagnostics/openobserve-provider.example.json`, and
+`diagnostics/source-map.example.json`. OpenObserve remains replaceable behind
+the Go provider interface; the Control Room contract contains no OpenObserve
+query fields or Simulator data.
+
+The Control-Service launcher does not read Simulator manifests or profiles.
+Optional gateway annotations come from the operator-owned
+`ZPR_PLATFORM_SERVICES` JSON setting and default to an empty list. Set
+`ZPR_ASSERTION_LDAP_CONTAINER` explicitly to enable LDAP attribute discovery;
+the demo LDAP editor URL is not forwarded to Control-Service.
 
 The ZPR browser-based GUIs, including Control Room and Simulator, support desktop
 and iPad-like tablet devices when the available viewport resolution is sufficient
@@ -70,6 +143,19 @@ The local `demo_ldap` source optionally links to a separate phpLDAPadmin tab if
 source receives an editor link; the browser authenticates directly to the
 editor with a separate LDAP admin login. The monitor does not proxy LDAP edits
 or store the admin password.
+
+Control-Service can provide additional provider manager links with
+`ZPR_PROVIDER_MANAGER_URLS`, a JSON object from trusted-service name to URL.
+HTTPS is accepted for remote managers; plain HTTP is limited to loopback.
+URLs containing credentials or unsupported schemes are ignored. The setting is
+server-side and the browser receives only the validated link for each source.
+
+## ZPR Config Drafts
+
+The Control Room ZPR Config page stores versioned `configuration` records under
+the Policy Repository's `ZPR Config` category. It validates TOML syntax and
+preserves immutable revisions. Drafts are not runtime configuration: saving or
+validating never applies, stages, or activates them.
 
 ## Activity and Navigation
 

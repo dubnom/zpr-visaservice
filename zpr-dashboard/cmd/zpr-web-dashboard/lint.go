@@ -87,9 +87,6 @@ func splitCompilerLint(output string) (string, []lintDiagnostic) {
 				continue
 			}
 		}
-		if strings.HasPrefix(strings.TrimSpace(line), "warning:") {
-			warnings = append(warnings, lintDiagnostic{Code: "COMPILER_WARNING", Severity: "warning", Line: 1, Message: strings.TrimSpace(strings.TrimPrefix(strings.TrimSpace(line), "warning:"))})
-		}
 		lines = append(lines, line)
 	}
 	return strings.TrimSpace(strings.Join(lines, "\n")), warnings

@@ -8,14 +8,16 @@ import (
 	"os"
 	"path/filepath"
 	"reflect"
+	"strings"
 	"testing"
 	"time"
 )
 
 func scenarioTestManifest() simulatorManifest {
-	manifest := simulatorManifest{OrganizationID: "northstar", Machines: make([]simulatorMachine, 20), Components: []simulatorComponent{
+	manifest := simulatorManifest{OrganizationID: "northstar", DNSServer: "fd00:1:1::1", Machines: make([]simulatorMachine, 20), Components: []simulatorComponent{
 		{Name: "finance-client", Kind: "client", Agent: "finance-client", Namespace: "zpr-a", Target: "fd00:1:2::1"},
 		{Name: "operations-client", Kind: "client", Agent: "operations-client", Namespace: "zpr-b", Target: "fd00:1:3::1"},
+		{Name: "telemetry-client", Kind: "client", Agent: "telemetry-client", Namespace: "zpr-b", Target: "fd00:1:8::1"},
 		{Name: "echo-service", Kind: "service", Agent: "echo-service", Namespace: "zpr-service-a", Target: "fd00:1:2::1"},
 		{Name: "metrics-service", Kind: "service", Agent: "metrics-service", Namespace: "zpr-c", Target: "fd00:1:8::1"},
 		{Name: "internet-gateway", Kind: "service", Agent: "internet-gateway", GatewayUpstream: "https://example.com/"},
@@ -30,6 +32,32 @@ func scenarioTestManifest() simulatorManifest {
 		}
 	}
 	return manifest
+}
+
+func TestScenarioDNSResolutionValidation(t *testing.T) {
+	manifest := scenarioTestManifest()
+	organization, err := loadSimulatorOrganization(filepath.Join("examples", "organizations"), "great-lakes")
+	if err != nil {
+		t.Fatal(err)
+	}
+	step := simulatorScenarioStep{Action: "resolve_dns", Machine: "machine-03", Component: "finance-client", Target: "echo-web.svc.zpr"}
+	if err := validateSimulatorScenarioStep(step, manifest, organization, false); err != nil {
+		t.Fatalf("valid DNS lookup rejected: %v", err)
+	}
+	for _, invalid := range []simulatorScenarioStep{
+		{Action: "resolve_dns", Machine: "machine-03", Component: "finance-client", Target: "example.com"},
+		{Action: "resolve_dns", Machine: "machine-03", Component: "echo-service", Target: "echo-web.svc.zpr"},
+		{Action: "resolve_dns", Machine: "machine-30", Component: "finance-client", Target: "echo-web.svc.zpr"},
+		{Action: "resolve_dns", Machine: "machine-03", Component: "finance-client", Target: "bad name.svc.zpr"},
+	} {
+		if err := validateSimulatorScenarioStep(invalid, manifest, organization, false); err == nil {
+			t.Errorf("invalid DNS lookup accepted: %+v", invalid)
+		}
+	}
+	manifest.DNSServer = ""
+	if err := validateSimulatorScenarioStep(step, manifest, organization, false); err == nil {
+		t.Fatal("DNS lookup accepted without a configured resolver")
+	}
 }
 
 func TestLoadSimulatorScenariosValidatesAndSorts(t *testing.T) {
@@ -114,6 +142,199 @@ func TestBundledSimulatorScenariosLoad(t *testing.T) {
 	}
 	if requests["finance-client:echo-service"] != 8 || requests["operations-client:metrics-service"] != 8 || len(requests) != 2 || services["echo-service"] != 1 || services["metrics-service"] != 2 || len(services) != 2 {
 		t.Fatalf("active-team HTTP cadence: requests=%v starts=%v", requests, services)
+	}
+}
+
+func TestGreatLakesWorkdayCoversAllEmployeesAndCleanup(t *testing.T) {
+	organization, err := loadSimulatorOrganization(filepath.Join("examples", "organizations"), "great-lakes")
+	if err != nil {
+		t.Fatal(err)
+	}
+	manifest := scenarioTestManifest()
+	manifest.OrganizationID = "great-lakes"
+	for index := range manifest.Machines {
+		owners := organization.MachineOwners[manifest.Machines[index].ID]
+		if len(owners) > 0 {
+			manifest.Machines[index].Owner = owners[0]
+		}
+	}
+	scenarios, err := loadSimulatorScenarios(filepath.Join("examples", "scenarios"), manifest)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var workday *simulatorScenario
+	for index := range scenarios {
+		if scenarios[index].ID == "great-lakes-five-minute-workday" {
+			workday = &scenarios[index]
+			break
+		}
+	}
+	if workday == nil {
+		t.Fatal("Great Lakes five-minute workday scenario is missing")
+	}
+	if err := validateSimulatorScenario(*workday, manifest); err != nil {
+		t.Fatalf("Great Lakes workday scenario is invalid: %v", err)
+	}
+
+	started := make(map[string]bool)
+	controllers := make(map[string]bool)
+	loggedIn := make(map[string]bool)
+	loggedOut := make(map[string]bool)
+	stopped := make(map[string]bool)
+	requests := make(map[string]int)
+	dnsLookups, deniedProbes, thirtySecondDelays := 0, 0, 0
+	for _, step := range workday.Steps {
+		switch step.Action {
+		case "start_machine":
+			started[step.Machine] = true
+		case "wait_controller":
+			controllers[step.Machine] = true
+		case "login":
+			loggedIn[step.Machine] = true
+		case "request_test_service":
+			requests[step.Component+":"+step.Target]++
+		case "resolve_dns":
+			dnsLookups++
+		case "traffic":
+			if step.Expected == "deny" {
+				deniedProbes++
+			}
+		case "delay":
+			if step.TimeoutSeconds == 30 {
+				thirtySecondDelays++
+			}
+		}
+	}
+	for _, step := range workday.Cleanup {
+		switch step.Action {
+		case "logout":
+			loggedOut[step.Machine] = true
+		case "stop_machine":
+			stopped[step.Machine] = true
+		}
+	}
+	for number := 1; number <= 9; number++ {
+		machineID := fmt.Sprintf("machine-%02d", number)
+		if !started[machineID] || !controllers[machineID] || !loggedIn[machineID] || !loggedOut[machineID] || !stopped[machineID] {
+			t.Errorf("workday does not fully start, log in, and clean up %s", machineID)
+		}
+	}
+	if requests["finance-client:echo-service"] != 8 || requests["operations-client:metrics-service"] != 8 || requests["telemetry-client:metrics-service"] != 8 {
+		t.Errorf("workday request cadence = %v, want eight requests for each client/service pair", requests)
+	}
+	if dnsLookups != 3 || deniedProbes != 3 || thirtySecondDelays != 21 {
+		t.Errorf("workday checks = %d DNS lookups, %d denial probes, %d 30-second delays; want 3, 3, 21", dnsLookups, deniedProbes, thirtySecondDelays)
+	}
+}
+
+func TestVerifyMultinodeRuntimeUsesConfiguredNodeCount(t *testing.T) {
+	baseOrganization, err := loadSimulatorOrganization(filepath.Join("examples", "organizations"), "great-lakes")
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, nodeCount := range []int{2, 3, 4} {
+		t.Run(fmt.Sprintf("%d nodes", nodeCount), func(t *testing.T) {
+			organization := baseOrganization
+			organization.Runtime.Nodes = append([]simulatorOrganizationRuntimeNode(nil), baseOrganization.Runtime.Nodes...)
+			for len(organization.Runtime.Nodes) < nodeCount {
+				index := len(organization.Runtime.Nodes)
+				organization.Runtime.Nodes = append(organization.Runtime.Nodes, simulatorOrganizationRuntimeNode{
+					ID:               fmt.Sprintf("test-node-%d", index),
+					Location:         fmt.Sprintf("Test Site %d", index),
+					SubstrateAddress: fmt.Sprintf("172.30.0.%d", 17+index),
+					ZPRAddress:       fmt.Sprintf("fd5a:5052:90de::%x", 0x10+index),
+				})
+			}
+			organization.Runtime.Nodes = organization.Runtime.Nodes[:nodeCount]
+			organizationDirectory := t.TempDir()
+			profile, err := json.Marshal(organization)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if err := os.WriteFile(filepath.Join(organizationDirectory, "great-lakes.json"), profile, 0600); err != nil {
+				t.Fatal(err)
+			}
+			t.Setenv("SIMULATION_ORGANIZATIONS_DIR", organizationDirectory)
+
+			seenNodeContainers := make(map[string]bool)
+			peerCheckCalls := make(map[string]int)
+			command := func(_ context.Context, name string, args ...string) (string, error) {
+				if name != "docker" || len(args) == 0 {
+					return "", fmt.Errorf("unexpected command %q %q", name, args)
+				}
+				switch args[0] {
+				case "inspect":
+					container := args[len(args)-1]
+					if strings.HasPrefix(container, "great-lakes-node") {
+						seenNodeContainers[container] = true
+					}
+					return "true", nil
+				case "exec":
+					container := args[1]
+					if len(args) > 2 && args[2] == "/app/bin/ph-cli" {
+						peerCheckCalls[container]++
+						var summary strings.Builder
+						for _, node := range organization.Runtime.Nodes {
+							fmt.Fprintf(&summary, "%s:5000 (Active)\n", node.SubstrateAddress)
+						}
+						fmt.Fprintln(&summary, "172.30.0.11:38430 (Active)")
+						fmt.Fprintln(&summary, "172.30.0.14:38431 (Active)")
+						return summary.String(), nil
+					}
+					if len(args) > 2 && args[2] == "curl" {
+						if args[len(args)-1] == "http://localhost:80" {
+							return "200", nil
+						}
+						for index, argument := range args {
+							if argument != "--data-binary" || index+1 >= len(args) {
+								continue
+							}
+							var request struct {
+								Identities []struct {
+									Key   string `json:"key"`
+									Value string `json:"value"`
+								} `json:"identities"`
+							}
+							if err := json.Unmarshal([]byte(args[index+1]), &request); err != nil || len(request.Identities) != 1 {
+								return "", fmt.Errorf("invalid trusted lookup request: %v", err)
+							}
+							if request.Identities[0].Key == "device.zpr.adapter.cn" {
+								return `{"attributes":{"zprMachineOwner":["maya.brooks"]}}`, nil
+							}
+							return `{"attributes":{"role":["HQCustomerSupport"]}}`, nil
+						}
+					}
+					return "", fmt.Errorf("unexpected docker exec arguments: %q", args)
+				default:
+					return "", fmt.Errorf("unexpected docker action %q", args[0])
+				}
+			}
+
+			manifest := simulatorManifest{OrganizationID: "great-lakes"}
+			output, err := verifyMultinodeRuntimeWithCommand(context.Background(), manifest, command)
+			if err != nil {
+				t.Fatalf("verify configured %d-node runtime: %v", nodeCount, err)
+			}
+			if !strings.Contains(output, fmt.Sprintf("verified %d-node ZPR backbone", nodeCount)) {
+				t.Fatalf("verification summary = %q", output)
+			}
+			if len(seenNodeContainers) != nodeCount {
+				t.Fatalf("verified %d node containers, want %d: %v", len(seenNodeContainers), nodeCount, seenNodeContainers)
+			}
+			for index := range organization.Runtime.Nodes {
+				container := fmt.Sprintf("great-lakes-node%d", index)
+				if !seenNodeContainers[container] {
+					t.Errorf("configured node container %s was not inspected", container)
+				}
+				wantChecks := nodeCount - 1
+				if index == 0 {
+					wantChecks += 2
+				}
+				if peerCheckCalls[container] != wantChecks {
+					t.Errorf("node %s link queries = %d; want %d", container, peerCheckCalls[container], wantChecks)
+				}
+			}
+		})
 	}
 }
 

@@ -41,3 +41,16 @@ provide AssemblyExecution at assembly-mes.svc.zpr over TCP 8448.
 provide QualityTestBench at quality-test.svc.zpr over TCP 8449.
   allow TijuanaTest.
   allow MilwaukeeEngineering.
+
+define FinanceClient as adapter with zpr.adapter.cn:'finance-client'.
+define OperationsClient as adapter with zpr.adapter.cn:'operations-client'.
+define TelemetryClient as adapter with zpr.adapter.cn:'telemetry-client'.
+define WorkdayEcho as service with device.zpr.adapter.cn:'echo-service'.
+define WorkdayMetrics as service with device.zpr.adapter.cn:'metrics-service'.
+
+provide WorkdayEcho at echo-web.svc.zpr over TCP 8080.
+  allow FinanceClient.
+
+provide WorkdayMetrics at metrics-web.svc.zpr over TCP 8081.
+  allow OperationsClient.
+  allow TelemetryClient.

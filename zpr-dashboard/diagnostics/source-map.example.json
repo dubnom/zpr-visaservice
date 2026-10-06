@@ -1,0 +1,14 @@
+{
+  "node:node-west-1": {
+    "service_name": "zpr-core-node",
+    "instance_id": "node-west-1"
+  },
+  "service:AuthService": {
+    "service_name": "zpr-auth-provider",
+    "instance_id": "auth-west-1"
+  },
+  "trusted:authentication": {
+    "service_name": "zpr-auth-provider",
+    "instance_id": "auth-west-1"
+  }
+}

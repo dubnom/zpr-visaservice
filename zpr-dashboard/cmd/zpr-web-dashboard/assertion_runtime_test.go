@@ -19,6 +19,39 @@ type memoryAssertionSettingsStore struct {
 	response assertionSettingsResponse
 }
 
+func TestAssertionSourceToolsWithoutLDAP(t *testing.T) {
+	for _, action := range []string{"analyze", "format"} {
+		t.Run(action, func(t *testing.T) {
+			request := httptest.NewRequest(http.MethodPost, "/api/assertions/"+action, strings.NewReader(`{"source":"group   \"Operators\" members>=2;"}`))
+			request.RemoteAddr = "127.0.0.1:12345"
+			request.Host = "127.0.0.1:8787"
+			response := httptest.NewRecorder()
+			handleAssertionSourceTools(response, request)
+			if response.Code != http.StatusOK {
+				t.Fatalf("status=%d: %s", response.Code, response.Body)
+			}
+			var body struct {
+				RuleCount int    `json:"rule_count"`
+				Source    string `json:"source"`
+			}
+			if err := json.Unmarshal(response.Body.Bytes(), &body); err != nil {
+				t.Fatal(err)
+			}
+			if body.RuleCount != 1 || action == "format" && body.Source != "group \"Operators\" members >= 2;\n" {
+				t.Fatalf("unexpected tool response: %+v", body)
+			}
+			invalid := httptest.NewRequest(http.MethodPost, "/api/assertions/"+action, strings.NewReader(`{"source":"group \"Operators\" members >=;"}`))
+			invalid.RemoteAddr = "127.0.0.1:12345"
+			invalid.Host = "127.0.0.1:8787"
+			failure := httptest.NewRecorder()
+			handleAssertionSourceTools(failure, invalid)
+			if failure.Code != http.StatusBadRequest || !strings.Contains(failure.Body.String(), "line 1") {
+				t.Fatalf("missing syntax diagnostic: %d %s", failure.Code, failure.Body)
+			}
+		})
+	}
+}
+
 func (store *memoryAssertionSettingsStore) Load(context.Context) (assertionSettingsResponse, error) {
 	return store.response, nil
 }

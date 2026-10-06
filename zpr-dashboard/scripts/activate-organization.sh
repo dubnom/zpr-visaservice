@@ -13,9 +13,26 @@ case "$organization" in ''|*[!a-z0-9-]*) echo "invalid organization id" >&2; exi
 profile="$dashboard_dir/cmd/zpr-web-dashboard/examples/organizations/$organization.json"
 [ -r "$profile" ] || { echo "organization profile missing" >&2; exit 1; }
 organization_driver=$(jq -er '.runtime.driver' "$profile")
+policy_config_relative=$(jq -er '.policy_config' "$profile")
+policy_config="$dashboard_dir/cmd/zpr-web-dashboard/examples/$policy_config_relative"
 organization_base_dn=$(jq -er '.directory.base_dn' "$profile")
 organization_bind_dn="cn=zpr-reader,ou=Service Accounts,$organization_base_dn"
-binary="$runtime_dir/dashboard-stack/zpr-web-dashboard"
+control_room_url=${SIMULATOR_CONTROL_ROOM_URL:-http://127.0.0.1:8787}
+control_room_curl() {
+    if [ "${ZPR_DASHBOARD_CONTAINER_RUNTIME:-}" = 1 ]; then
+        curl --connect-to 127.0.0.1:8787:host.docker.internal:8787 "$@"
+    else
+        curl "$@"
+    fi
+}
+policy_service_curl() {
+    if [ "${ZPR_DASHBOARD_CONTAINER_RUNTIME:-}" = 1 ]; then
+        curl --connect-to 127.0.0.1:8789:host.docker.internal:8789 "$@"
+    else
+        curl "$@"
+    fi
+}
+binary=${ZPR_WEB_DASHBOARD_BIN:-$runtime_dir/dashboard-stack/zpr-web-dashboard}
 compiler=${ZPR_ZPLC_BIN:-$dashboard_dir/../../zpr-compiler/target/debug/zplc}
 pregen="$runtime_dir/linux-integration/pregen"
 multinode_dir="$dashboard_dir/../../zpr-demo/multinode-demo"
@@ -34,7 +51,15 @@ report_activation_status() {
 report_activation_status "Preparing runtime policy"
 printf 'Preflight organization %s\n' "$organization"
 "$binary" -mode compose-policy -policy-root "$dashboard_dir/cmd/zpr-web-dashboard/examples" -policy-organization "$organization" -policy-output "$bundle_dir/runtime.zpl"
-"$compiler" "$bundle_dir/runtime.zpl" -c "$pregen/v6-1node-3actor-ping.zplc" -k "$pregen/zpr-rsa-key.pem" -d "$bundle_dir" -o runtime.bin2
+if [ -n "${ZPR_ZPLC_IMAGE:-}" ]; then
+    docker run --rm --network none -v "$runtime_dir:/runtime" -v "$dashboard_dir:/dashboard:ro" "$ZPR_ZPLC_IMAGE" \
+        "/runtime/organization-policy/$organization/runtime.zpl" \
+        -c "/dashboard/cmd/zpr-web-dashboard/examples/$policy_config_relative" \
+        -k /runtime/linux-integration/pregen/zpr-rsa-key.pem \
+        -d "/runtime/organization-policy/$organization" -o runtime.bin2
+else
+    "$compiler" "$bundle_dir/runtime.zpl" -c "$policy_config" -k "$pregen/zpr-rsa-key.pem" -d "$bundle_dir" -o runtime.bin2
+fi
 report_activation_status "Runtime policy compiled"
 docker inspect "$rig" >/dev/null
 [ -r "$runtime_dir/build-and-run-linux-node.sh" ] || { echo "rig launcher unavailable"; exit 1; }
@@ -153,8 +178,6 @@ start_runtime "$organization"
 if [ "$organization_driver" = linux-one-node ]; then
     report_activation_status "Starting DNS and platform relays"
     "$script_dir/dashboard-stack.sh" start-admin-relay
-    "$script_dir/dashboard-stack.sh" start-dns
-    "$script_dir/dashboard-stack.sh" start-ui-relays
     control_changed=yes
     SIMULATION_ORGANIZATION_ID="$organization" \
     ZPR_ASSERTION_LDAP_BASE_DN="$organization_base_dn" \
@@ -165,28 +188,35 @@ if [ "$organization_driver" = linux-one-node ]; then
     attempt=0
     while [ "$attempt" -lt 600 ]; do
         if [ -r "$runtime_dir/organization-runtime.json" ] && jq -e --arg id "$organization" --arg generation "$generation" '.organization_id==$id and .generation==$generation' "$runtime_dir/organization-runtime.json" >/dev/null &&
-           curl -fsS --connect-timeout 1 --max-time 5 http://127.0.0.1:8787/api/snapshot | jq -e '(.errors|length)==0 and any(.actors[]; .node and .node_details.in_sync) and any(.actors[]; .cn=="adapter1")' >/dev/null; then break; fi
+           control_room_curl -fsS --connect-timeout 1 --max-time 5 "$control_room_url/api/snapshot" | jq -e '(.errors|length)==0 and any(.actors[]; .node and .node_details.in_sync) and any(.actors[]; .cn=="adapter1")' >/dev/null; then break; fi
         attempt=$((attempt+1))
         sleep 1
     done
     [ "$attempt" -lt 600 ] || { echo "company bootstrap timed out"; exit 1; }
+    report_activation_status "Starting DNS and UI relays"
+    "$script_dir/dashboard-stack.sh" start-dns
+    "$script_dir/dashboard-stack.sh" start-ui-relays
     report_activation_status "Restoring observability adapters"
     "$script_dir/dashboard-stack.sh" restart-simulator-control
     if [ -r "$runtime_dir/observability/restore-adapters.sh" ]; then
         rig_directory=$(docker exec "$rig" sh -c 'pid=$(pgrep -x vs | head -1); readlink "/proc/$pid/cwd"')
         docker exec "$rig" bash /work/.local-runtime/observability/restore-adapters.sh "$rig_directory"
         if docker inspect zpr-observability >/dev/null 2>&1; then docker start zpr-observability >/dev/null; fi
-        sh "$dashboard_dir/../observability/openobserve/collector.sh" stop
-        ZPR_ORGANIZATION_ID="$organization" sh "$dashboard_dir/../observability/openobserve/collector.sh" start
+        collector_script="$dashboard_dir/../observability/openobserve/collector.sh"
+        if [ -r "$collector_script" ]; then
+            sh "$collector_script" stop
+            ZPR_ORGANIZATION_ID="$organization" sh "$collector_script" start
+        fi
     fi
 else
     report_activation_status "Checking multi-node ZPR services"
-    echo "Two-node Redwood runtime passed peer and service readiness checks"
+    configured_node_count=$(jq -er '.runtime.nodes | length' "$dashboard_dir/cmd/zpr-web-dashboard/examples/organizations/$organization.json")
+    echo "$configured_node_count-node $organization runtime passed configured peer and service readiness checks"
 fi
 policy_changed=yes
 report_activation_status "Applying organization runtime policy"
 "$script_dir/dashboard-stack.sh" restart-policy-context "$organization" "$bundle_dir/runtime.zpl"
-curl -fsS --max-time 10 http://127.0.0.1:8787/api/policy/context | jq -e --arg id "$organization" '.organization_id==$id' >/dev/null
+control_room_curl -fsS --max-time 10 "$control_room_url/api/policy/context" | jq -e --arg id "$organization" '.organization_id==$id' >/dev/null
 control_changed=yes
 report_activation_status "Checking Control Service readiness"
 if [ "$organization_driver" = docker-multinode ]; then
@@ -199,12 +229,67 @@ if [ "$organization_driver" = docker-multinode ]; then
     ZPR_ADMIN_CA_FILE="$multinode_dir/zpr-conf/include/admin-tls-cert.pem" \
     ZPR_ADMIN_KEY_FILE="$multinode_runtime/bob/web-monitor.key" \
         "$script_dir/dashboard-stack.sh" restart-control-service
-    curl -fsS --max-time 15 http://127.0.0.1:8787/api/snapshot | jq -e '.api_status=="connected" and any(.actors[]; .node)' >/dev/null
+    control_snapshot=$(control_room_curl --silent --show-error --max-time 15 "$control_room_url/api/snapshot" || true)
+    if ! printf '%s' "$control_snapshot" | jq -e '.api_status=="connected" and any(.actors[]; .node)' >/dev/null 2>&1; then
+        control_summary=$(printf '%s' "$control_snapshot" | jq -c '{api_status,errors}' 2>/dev/null || printf '%s' "$control_snapshot")
+        echo "Control Service did not connect to the Great Lakes Visa Service: $control_summary" >&2
+        exit 1
+    fi
 else
     SIMULATION_ORGANIZATION_ID="$organization" \
     ZPR_ASSERTION_LDAP_BASE_DN="$organization_base_dn" \
     ZPR_ASSERTION_LDAP_BIND_DN="$organization_bind_dn" \
         "$script_dir/dashboard-stack.sh" restart-control-service
-    curl -fsS --max-time 15 http://127.0.0.1:8787/api/assertions/source >/dev/null
+    control_room_curl -fsS --max-time 15 "$control_room_url/api/assertions/source" >/dev/null
+fi
+report_activation_status "Verifying policy, assertions, LDAP, DNS, and logs"
+policy_settings=$(policy_service_curl --silent --show-error --max-time 10 \
+    --cacert "$runtime_dir/service-certs/service-ca.crt" \
+    --cert "$runtime_dir/service-certs/control-policy-client.crt" \
+    --key "$runtime_dir/service-certs/control-policy-client.key" \
+    https://127.0.0.1:8789/api/assertions/settings || true)
+if ! printf '%s' "$policy_settings" | jq -e --arg id "$organization" --arg base_dn "$organization_base_dn" \
+    '.organization_id==$id and .base_dn==$base_dn and (.settings.source|type=="string" and length>0)' >/dev/null 2>&1; then
+    echo "Policy assertion settings do not match organization $organization" >&2
+    exit 1
+fi
+ldap_source=$(control_room_curl --silent --show-error --max-time 15 "$control_room_url/api/assertions/source" || true)
+if ! printf '%s' "$ldap_source" | jq -e --arg id "$organization" --arg base_dn "$organization_base_dn" \
+    '.organization_id==$id and .base_dn==$base_dn and .people>0 and (.groups|length)>0' >/dev/null 2>&1; then
+    ldap_summary=$(printf '%s' "$ldap_source" | jq -c '{organization_id,base_dn,people,groups,error}' 2>/dev/null || printf '%s' "$ldap_source")
+    echo "Organization LDAP assertion source is not ready: $ldap_summary" >&2
+    exit 1
+fi
+assertion_payload=$(printf '%s' "$policy_settings" | jq -c '{source:.settings.source,expected_revision:.settings.revision}')
+assertion_evaluation=$(control_room_curl --silent --show-error --max-time 15 \
+    -H 'Content-Type: application/json' -d "$assertion_payload" \
+    "$control_room_url/api/assertions/evaluate" || true)
+if ! printf '%s' "$assertion_evaluation" | jq -e '.status=="pass" and (.results|length)>0 and all(.results[];.status=="pass")' >/dev/null 2>&1; then
+    assertion_summary=$(printf '%s' "$assertion_evaluation" | jq -c '{organization_id,status,results,error}' 2>/dev/null || printf '%s' "$assertion_evaluation")
+    echo "Organization assertions failed against LDAP: $assertion_summary" >&2
+    exit 1
+fi
+control_snapshot=$(control_room_curl --silent --show-error --max-time 15 "$control_room_url/api/snapshot" || true)
+if ! printf '%s' "$control_snapshot" | jq -e '.api_status=="connected" and (.errors|length)==0' >/dev/null 2>&1; then
+    snapshot_summary=$(printf '%s' "$control_snapshot" | jq -c '{api_status,errors}' 2>/dev/null || printf '%s' "$control_snapshot")
+    echo "Control Service snapshot is not healthy: $snapshot_summary" >&2
+    exit 1
+fi
+adapter_logs=$(control_room_curl --silent --show-error --max-time 15 "$control_room_url/api/adapter-logs" || true)
+if ! printf '%s' "$adapter_logs" | jq -e '.adapters|type=="array" and length>0 and any(.[]; any(.sources[]; (.error // "")=="" and ((.lines // [])|length)>0))' >/dev/null 2>&1; then
+    echo "Control Service adapter log inventory has no available log sources" >&2
+    exit 1
+fi
+if [ "$organization_driver" = linux-one-node ]; then
+    dns_stats=$(control_room_curl --silent --show-error --max-time 15 "$control_room_url/api/dns/stats/json/v1/status" || true)
+    if ! printf '%s' "$dns_stats" | jq -e 'type=="object" and length>0' >/dev/null 2>&1; then
+        echo "DNS statistics are unavailable for organization $organization" >&2
+        exit 1
+    fi
+    dns_records=$(control_room_curl --silent --show-error --max-time 15 "$control_room_url/api/dns/records" || true)
+    if ! printf '%s' "$dns_records" | jq -e '.zone=="svc.zpr." and (.records|type=="array" and length>0)' >/dev/null 2>&1; then
+        echo "DNS zone transfer returned no records for organization $organization" >&2
+        exit 1
+    fi
 fi
 echo "Organization policy, directory, and ZPR context ready"

@@ -21,6 +21,17 @@ func TestPolicyUserFixturesIncludeMappedLDAPGroupRoles(t *testing.T) {
 	}
 }
 
+func TestPolicyFixtureUnsupportedLocationDiagnostic(t *testing.T) {
+	_, err := policyTestAttributeList(map[string][]string{"user.l": {"Milwaukee, Wisconsin, USA"}})
+	if err == nil || !strings.Contains(err.Error(), `"user.l"`) || !strings.Contains(err.Error(), "ZPT fixture format") || !strings.Contains(err.Error(), "not a policy compiler error") {
+		t.Fatalf("missing fixture limitation diagnostic: %v", err)
+	}
+	attributes, err := policyTestAttributeList(map[string][]string{"user.l": {"Milwaukee"}})
+	if err != nil || len(attributes) != 1 || attributes[0].Values[0] != "Milwaukee" {
+		t.Fatalf("valid fixture value changed: %v, %v", attributes, err)
+	}
+}
+
 func TestUserAndDevicePolicyExamplesParseWithZPLC(t *testing.T) {
 	compiler := os.Getenv("ZPR_ZPLC_BIN")
 	if compiler == "" {

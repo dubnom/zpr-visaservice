@@ -23,6 +23,115 @@ async function openAssertionRecord(page, appURL) {
 }
 
 function registerAssertionBrowserTests() {
+test("assertion editor shares policy file controls and clears the scrollbar gutter", async ({ page, appURL, api }) => {
+  await openAssertionRecord(page, appURL);
+  await expect(page.locator("#policy-editor-mode")).toHaveText("Assertion");
+  await expect(page.locator("#policy-modified-indicator")).toBeHidden();
+  await expect(page.locator("#policy-picker-toggle")).toBeVisible();
+  await expect(page.locator("#policy-files-toggle")).toBeVisible();
+  await expect(page.locator("#assertion-save")).toBeHidden();
+  await expect(page.locator("#assertion-message")).toBeHidden();
+  const spacing = await page.evaluate(() => {
+    const toolbar = document.querySelector(".policy-editor-tools").getBoundingClientRect();
+    const editor = document.querySelector("#assertion-editor").getBoundingClientRect();
+    return editor.top - toolbar.bottom;
+  });
+  expect(spacing).toBeLessThanOrEqual(9);
+  await openPolicyFiles(page);
+  await expect(page.locator("#assertion-save")).toBeVisible();
+  await expect(page.locator("#assertion-reload")).toHaveText("Discard");
+  await expect(page.locator("#policy-stage")).toBeHidden();
+  await page.locator("#policy-files-toggle").click();
+  await page.locator("#assertion-source").fill(`group "${"Operators".repeat(80)}" members >= 2;`);
+  await expect(page.locator("#policy-modified-indicator")).toHaveText("Modified");
+  await page.locator("#assertion-analyze").click();
+  await expect(page.locator("#assertion-result-gutter")).toBeVisible();
+  await expect.poll(() => page.evaluate(() => {
+    const source = document.querySelector("#assertion-source");
+    const gutter = document.querySelector("#assertion-result-gutter").getBoundingClientRect();
+    const sourceBounds = source.getBoundingClientRect();
+    return source.scrollWidth > source.clientWidth && sourceBounds.left >= gutter.right && gutter.bottom <= sourceBounds.top + source.clientHeight + 1;
+  })).toBeTruthy();
+  await openPolicyPicker(page);
+  page.once("dialog", (dialog) => dialog.accept());
+  await page.locator(`[data-record-id="${api.policy.records.find((record) => record.kind === "policy").id}"]`).click();
+  await openPolicyFiles(page);
+  await expect(page.locator("#policy-save")).toBeVisible();
+  await expect(page.locator("#assertion-save")).toBeHidden();
+  await expect(page.locator(".policy-editor-tools > .assertion-actions")).toBeHidden();
+});
+
+test("assertion Analyze matches policy toolbar colors and gutter behavior", async ({ page, appURL, api }) => {
+  let analyzed = "";
+  api.handlers.set("/api/assertions/evaluate", async (route) => {
+    analyzed = route.request().postDataJSON().source;
+    await route.fulfill({ json: { status: "pass", revision: 0, draft: true, finished_at: "2026-10-05T12:00:00Z", warnings: [], results: [{ rule: { line: 1, kind: "group", group: "Operators", operator: ">=", limit: 2 }, status: "pass", checked: 1, violations: 0, subjects: [], message: "1 checked; 0 violations" }] } });
+  });
+  api.handlers.set("/api/assertions/format", async (route) => {
+    expect(route.request().postDataJSON().source).toBe('group   "Operators" members>=2;');
+    await route.fulfill({ json: { rule_count: 1, source: 'group "Operators" members >= 2;\n', warnings: [] } });
+  });
+  await openAssertionRecord(page, appURL);
+  await expect(page.getByRole("button", { name: "Test", exact: true })).toHaveCount(0);
+  await expect(page.getByRole("button", { name: "Exit test", exact: true })).toHaveCount(0);
+  await expect(page.locator("#assertion-result-gutter")).toBeVisible();
+  const before = await page.locator("#assertion-source").boundingBox();
+  const toolbar = await page.evaluate(() => {
+    const files = document.querySelector("#policy-files-toggle").getBoundingClientRect();
+    const analyze = document.querySelector("#assertion-analyze").getBoundingClientRect();
+    const format = document.querySelector("#assertion-format").getBoundingClientRect();
+    return { gap: analyze.left - files.right, sameRow: Math.abs(analyze.top - files.top) < 1 && Math.abs(format.top - files.top) < 1 };
+  });
+  expect(toolbar.gap).toBeLessThanOrEqual(9);
+  expect(toolbar.sameRow).toBeTruthy();
+  await expect(page.locator("#assertion-periodic-control")).toBeHidden();
+  await expect(page.locator("#assertion-interval-control")).toBeHidden();
+  const source = page.locator("#assertion-source");
+  await source.fill('group   "Operators" members>=2;');
+  await expect(page.locator("#assertion-analyze")).toHaveClass(/button-next-evaluate/);
+  await page.locator("#assertion-analyze").click();
+  await expect(page.locator("#assertion-analyze")).toHaveAttribute("data-analysis-state", "success");
+  await expect(source).toBeEditable();
+  const after = await source.boundingBox();
+  expect(after.x).toBe(before.x);
+  expect(after.width).toBe(before.width);
+  await page.mouse.move(0, 0);
+  await expect.poll(() => page.evaluate(() => {
+    const assertion = document.querySelector("#assertion-analyze");
+    const policy = document.querySelector("#policy-check");
+    policy.dataset.analysisState = "success";
+    return getComputedStyle(assertion).backgroundColor === getComputedStyle(policy).backgroundColor;
+  })).toBeTruthy();
+  await page.locator(".assertion-result-marker").click();
+  await expect(page.getByRole("dialog", { name: "Assertion pass" })).toBeVisible();
+  await page.getByRole("dialog", { name: "Assertion pass" }).locator(".dialog-actions .button").click();
+  expect(analyzed).toBe('group   "Operators" members>=2;');
+  await page.locator("#assertion-format").click();
+  await expect(source).toHaveValue('group "Operators" members >= 2;\n');
+  await expect(page.locator("#assertion-message")).toHaveText("Assertions formatted.");
+  await openPolicyFiles(page);
+  await expect(page.locator("#assertion-save")).toBeEnabled();
+  expect(api.counts.get("/api/assertions/evaluate") || 0).toBe(1);
+  expect(api.assertions.settings.source).toBe("");
+  await page.locator("#policy-files-toggle").click();
+  api.handlers.set("/api/assertions/evaluate", async (route) => {
+    await route.fulfill({ status: 400, json: { error: "line 1: expected a number" } });
+  });
+  await source.fill('group "Operators" members >=;');
+  await page.locator("#assertion-analyze").click();
+  await expect(page.locator("#assertion-analyze")).toHaveAttribute("data-analysis-state", "error");
+  await expect(source).toBeEditable();
+  await page.mouse.move(0, 0);
+  await expect.poll(() => page.evaluate(() => {
+    const assertion = document.querySelector("#assertion-analyze");
+    const policy = document.querySelector("#policy-check");
+    policy.dataset.analysisState = "error";
+    return getComputedStyle(assertion).backgroundColor === getComputedStyle(policy).backgroundColor;
+  })).toBeTruthy();
+  await page.locator('.assertion-result-marker[data-state="error"]').click();
+  await expect(page.getByRole("dialog", { name: "Assertion error" })).toContainText("line 1: expected a number");
+});
+
 test("assertion lint warns on complexity without changing a passing result", async ({ page, appURL, api }) => {
   api.handlers.set("/api/assertions/evaluate", async (route) => {
     const request = route.request().postDataJSON();
@@ -555,6 +664,88 @@ const test = base.extend({
 
 registerAssertionBrowserTests();
 
+test("Control Room keeps Adapter Logs internal and Log Manager under Tools", async ({ page, appURL }) => {
+  await page.goto(appURL + "/#map");
+  const adapterLogs = page.getByRole("link", { name: "Adapter Logs", exact: true });
+  await expect(adapterLogs).toHaveAttribute("href", "#adapter-logs");
+  await expect(adapterLogs).not.toHaveAttribute("target");
+  await adapterLogs.click();
+  await expect(page.locator("#page-adapter-logs")).toBeVisible();
+  const manager = page.locator(".sidebar-external-tools a");
+  await expect(manager).toContainText("Log Manager");
+  await expect(manager).toHaveAttribute("href", "http://127.0.0.1:8798/");
+  await expect(manager).toHaveAttribute("target", "zpr-log-manager");
+});
+
+test("trusted source manager links appear only for configured providers", async ({ page, appURL, api }) => {
+  api.snapshot.trusted_sources = [
+    { name: "identity", provider: "rest/1", actor_cn: "auth", health: "working", editor_url: "https://auth.example.test/admin" },
+    { name: "directory", provider: "rest/1", actor_cn: "ldap", health: "working" },
+  ];
+  await page.goto(appURL + "/#sources");
+  await expect(page.locator(".source-editor-link")).toHaveCount(1);
+  await expect(page.locator(".source-editor-link")).toHaveAttribute("href", "https://auth.example.test/admin");
+  await expect(page.locator(".source-editor-link")).toContainText("Manage");
+});
+
+test("ZPR Config validates and saves versioned drafts without applying runtime configuration", async ({ page, appURL, api }) => {
+  const content = '[visa_service]\ndock_node = "node"\n';
+  let savedRecord;
+  api.handlers.set("/api/policy/config/check", async (route) => {
+    expect(route.request().postDataJSON().source).toBe(content);
+    await route.fulfill({ json: { valid: true, diagnostics: "TOML syntax valid; runtime configuration is unchanged." } });
+  });
+  api.handlers.set("/api/policy/categories", async (route) => {
+    const category = { id: "zpr-config", path: "ZPR Config", name: "ZPR Config" };
+    api.policy.categories.push(category);
+    await route.fulfill({ status: 201, json: category });
+  });
+  api.handlers.set("/api/policy/records", async (route) => {
+    const request = route.request().postDataJSON();
+    expect(request.kind).toBe("configuration");
+    expect(request.content_type).toBe("text/vnd.zpr.zplc");
+    expect(request.content).toBe(content);
+    savedRecord = { id: "config-1", category_id: "zpr-config", name: request.name, kind: request.kind, content_type: request.content_type, current_revision: 1, content: request.content };
+    api.policy.records.push(savedRecord);
+    await route.fulfill({ status: 201, json: savedRecord });
+  });
+  api.handlers.set("/api/policy/records/config-1", async (route) => route.fulfill({ json: savedRecord }));
+  api.handlers.set("/api/policy/records/config-1/revisions", async (route) => route.fulfill({ json: [{ number: 1, summary: "Initial configuration draft" }] }));
+  await page.goto(appURL + "/#map");
+  await page.getByRole("link", { name: "ZPR Config", exact: true }).click();
+  await expect(page.locator("#page-zpr-config")).toBeVisible();
+  await page.locator("#zpr-config-name").fill("Local node configuration");
+  await page.getByLabel("ZPLC configuration source").fill(content);
+  await page.getByRole("button", { name: "Validate syntax", exact: true }).click();
+  await expect(page.locator("#zpr-config-status")).toContainText("runtime configuration is unchanged");
+  await page.getByRole("button", { name: "Save draft", exact: true }).click();
+  await expect(page.locator("#zpr-config-status")).toContainText("runtime unchanged");
+  await expect(page.locator("#zpr-config-history option")).toHaveCount(2);
+  expect(api.counts.get("/api/policy/config/apply") || 0).toBe(0);
+});
+
+test("Diagnostics shows source identity, current metrics, searchable bounded logs, and stale/unavailable states without Simulator", async ({ page, appURL, api }) => {
+  const simulationRequests = [];
+  page.on("request", (request) => { if (request.url().includes("/api/simulator/")) simulationRequests.push(request.url()); });
+  api.handlers.set("/api/diagnostics", async (route) => route.fulfill({ json: {
+    generated_at: "2026-10-05T12:00:00Z", state: "partial", sources: [
+      { id: "node:node-a", name: "node-a", kind: "ZPR node", identity: "node-a", address: "fd00::1", state: "available", last_updated: "2026-10-05T11:59:00Z", metrics: [{ name: "packets_forwarded", value: "12", unit: "1" }], logs: [{ timestamp: "2026-10-05T11:59:00Z", severity: "INFO", body: "node forwarding ready" }] },
+      { id: "trusted:ldap", name: "ldap", kind: "Trusted service · rest/1", identity: "ldap-service", state: "stale", last_updated: "2026-10-05T10:00:00Z", metrics: [], logs: [{ timestamp: "2026-10-05T10:00:00Z", body: "directory lookup ready" }] },
+      { id: "service:auth", name: "AuthService", kind: "Required service · Auth", identity: "auth", state: "unavailable", error: "No OpenTelemetry signals received", metrics: [], logs: [] },
+    ],
+  } }));
+  await page.goto(appURL + "/#diagnostics");
+  await expect(page.locator("#page-diagnostics")).toBeVisible();
+  await expect(page.locator(".diagnostics-source")).toHaveCount(3);
+  await expect(page.locator('.diagnostics-source[data-state="available"]')).toContainText("12");
+  await expect(page.locator('.diagnostics-source[data-state="stale"]')).toContainText("stale");
+  await expect(page.locator('.diagnostics-source[data-state="unavailable"]')).toContainText("No OpenTelemetry signals received");
+  await page.getByRole("searchbox", { name: "Filter logs and sources" }).fill("forwarding ready");
+  await expect(page.locator(".diagnostics-source")).toHaveCount(1);
+  await expect(page.locator(".diagnostics-source")).toContainText("node-a");
+  expect(simulationRequests).toEqual([]);
+});
+
 test("Simulator Agents uses device terminology without a machine-count label", async ({ page, appURL }) => {
   await page.goto(appURL + "/agents.html");
   await expect(page.getByRole("heading", { name: "Devices", exact: true })).toBeVisible();
@@ -593,6 +784,7 @@ test("Simulator Activity uses sortable tables and keeps Refresh beside stream st
 });
 
 test("Simulator Scenarios groups unfiled entries and clears only terminal run history", async ({ page, appURL, api }) => {
+  await page.emulateMedia({ reducedMotion: "no-preference" });
   const scenario = {
     id: "sample-flow", name: "Sample flow", folder: "", description: "A browser fixture.",
     organization_id: "alpha", current_revision: 1, published_revision: 1, steps: [], cleanup: [],
@@ -615,6 +807,9 @@ test("Simulator Scenarios groups unfiled entries and clears only terminal run hi
   await expect(page.getByText("Available scenarios", { exact: true })).toHaveCount(0);
   await expect(page.locator(".scenario-folder")).toHaveCount(0);
   await expect(page.locator("#scenario-list")).toContainText("Sample flow");
+  await expect(page.getByText("EXECUTION PLAN", { exact: true })).toHaveCount(0);
+  await expect(page.getByRole("button", { name: "Run", exact: true })).toBeVisible();
+  await expect(page.getByRole("button", { name: "Run Published", exact: true })).toHaveCount(0);
   const scenarioCard = page.locator(`#scenario-list [data-run-scenario="${scenario.id}"]`).locator("xpath=ancestor::article");
   await expect(scenarioCard.locator(".scenario-version")).toHaveText("Version 1");
   await expect(scenarioCard.locator("button")).toHaveText(["Run", "Edit", "Delete"]);
@@ -628,6 +823,15 @@ test("Simulator Scenarios groups unfiled entries and clears only terminal run hi
   await expect(page.locator("#scenario-clear")).toBeHidden();
   await page.evaluate(() => renderScenarioRun({ scenario_id: "sample-flow", scenario_name: "Sample flow", state: "running", current_step: 2, total_steps: 5, steps: [], scenario: { steps: [], cleanup: [] } }));
   await expect(page.locator("#scenario-run-state")).toContainText("2 / 5");
+  const animationCount = await page.locator("#scenario-run-state").evaluate((element) => element.getAnimations().length);
+  expect(animationCount).toBeGreaterThan(0);
+  await page.evaluate(() => renderScenarioRun({ scenario_id: "sample-flow", scenario_name: "Sample flow", state: "running", current_step: 2, total_steps: 5, steps: [], scenario: { steps: [], cleanup: [] } }));
+  await expect.poll(() => page.locator("#scenario-run-state").evaluate((element) => element.getAnimations().length)).toBe(animationCount);
+  await page.emulateMedia({ reducedMotion: "reduce" });
+  const reducedMotionAnimationCount = await page.locator("#scenario-run-state").evaluate((element) => element.getAnimations().length);
+  await page.evaluate(() => renderScenarioRun({ scenario_id: "sample-flow", scenario_name: "Sample flow", state: "running", current_step: 3, total_steps: 5, steps: [], scenario: { steps: [], cleanup: [] } }));
+  await expect(page.locator("#scenario-run-state")).toContainText("3 / 5");
+  await expect.poll(() => page.locator("#scenario-run-state").evaluate((element) => element.getAnimations().length)).toBe(reducedMotionAnimationCount);
   const statusActionGeometry = await page.evaluate(() => {
     const state = document.querySelector("#scenario-run-state").getBoundingClientRect();
     const cancel = document.querySelector("#scenario-cancel").getBoundingClientRect();
@@ -648,6 +852,11 @@ test("Simulator Scenarios groups unfiled entries and clears only terminal run hi
   await expect(page.locator("#scenario-run-title")).toHaveText("Scenario");
   await expect(page.locator("#scenario-clear")).toBeHidden();
   expect(api.counts.get("/api/simulator/scenarios/clear")).toBe(1);
+  await page.locator("#scenario-new").click();
+  const editorAction = page.locator('#scenario-editor-steps [data-step-key="action"]');
+  await expect(editorAction).toHaveValue("delay");
+  await editorAction.selectOption("resolve_dns");
+  await expect(editorAction).toHaveValue("resolve_dns");
 });
 
 test("assertion picker lines omit counts and revisions and distinguish record kinds by color", async ({ page, appURL, api }) => {
@@ -1220,11 +1429,27 @@ test("policy actions share a non-overlapping responsive toolbar", async ({ page,
   await page.goto(appURL + "/#policy");
   await openPolicyPicker(page);
   await page.locator('[data-record-id="test-policy"]').click();
+  const sourceEditor = page.locator("#policy-source");
+  const savedSource = await sourceEditor.inputValue();
+  await expect(page.locator("#policy-editor-mode")).toHaveText("Policy");
+  await expect(page.locator("#policy-modified-indicator")).toBeHidden();
+  await expect(page.locator(".policy-toolbar")).toHaveCSS("border-top-style", "none");
+  const desktopModeCenter = await page.evaluate(() => {
+    const tools = document.querySelector(".policy-editor-tools").getBoundingClientRect();
+    const mode = document.querySelector("#policy-editor-mode").getBoundingClientRect();
+    return Math.abs((tools.left + tools.right) / 2 - (mode.left + mode.right) / 2);
+  });
+  expect(desktopModeCenter).toBeLessThanOrEqual(1);
+  await sourceEditor.fill(`${savedSource}# modified\n`);
+  await expect(page.locator("#policy-modified-indicator")).toHaveText("Modified");
+  await sourceEditor.fill(savedSource);
+  await expect(page.locator("#policy-modified-indicator")).toBeHidden();
   const actions = page.locator("#policy-actions");
   const browse = page.locator("#policy-picker-toggle");
   const files = page.locator("#policy-files-toggle");
   const filesMenu = page.locator("#policy-file-menu");
   const rescan = page.locator("#policy-attribute-rescan");
+  await expect(rescan).toHaveText("Refresh Attributes");
   const analyze = page.locator("#policy-check");
   const format = page.locator("#policy-format");
   const history = page.locator("#policy-history-menu");
@@ -1257,6 +1482,7 @@ test("policy actions share a non-overlapping responsive toolbar", async ({ page,
       const toolbar = document.querySelector(".policy-attribute-toolbar").getBoundingClientRect();
       const editor = document.querySelector("#policy-code-editor").getBoundingClientRect();
       const tools = document.querySelector(".policy-editor-tools").getBoundingClientRect();
+      const mode = document.querySelector("#policy-editor-mode").getBoundingClientRect();
       const utilities = document.querySelector("#policy-editor-utilities").getBoundingClientRect();
       const rescanRect = document.querySelector("#policy-attribute-rescan").getBoundingClientRect();
       const historyRect = document.querySelector("#policy-history-menu summary").getBoundingClientRect();
@@ -1276,6 +1502,8 @@ test("policy actions share a non-overlapping responsive toolbar", async ({ page,
         toolsWidth: tools.width,
         toolsCssWidth: toolsStyle.width,
         toolsAlignSelf: toolsStyle.alignSelf,
+        modeCenter: mode.left + mode.width / 2,
+        toolsCenter: tools.left + tools.width / 2,
         paneRight: pane.right,
         paneLeft: pane.left,
         paneWidth: pane.width,
@@ -1290,6 +1518,7 @@ test("policy actions share a non-overlapping responsive toolbar", async ({ page,
       };
     });
     expect(layout.toolbarBottom).toBeLessThanOrEqual(layout.editorTop);
+    expect(Math.abs(layout.modeCenter - layout.toolsCenter), JSON.stringify(layout)).toBeLessThanOrEqual(1);
     expect(Math.abs(layout.utilitiesRight - layout.toolsRight), JSON.stringify(layout)).toBeLessThanOrEqual(1);
     expect(Math.abs(layout.rescanTop - layout.historyTop)).toBeLessThanOrEqual(1);
     expect(layout.analyzeTop).toBe(layout.formatTop);
@@ -1678,6 +1907,13 @@ test("Analyze gutter opens a dialog and resets when switching policies", async (
   expect(scrollGeometry.sourceLeft).toBeGreaterThanOrEqual(scrollGeometry.gutterRight);
   expect(scrollGeometry.textPaddingLeft).toBe("0px");
   expect(scrollGeometry.sourceBottom).toBeLessThanOrEqual(scrollGeometry.gutterBottom + 1);
+  const editor = page.locator("#policy-source");
+  const originalSource = await editor.inputValue();
+  await editor.fill(`${originalSource}\n${"x".repeat(600)}`);
+  await expect(page.locator("#policy-code-editor")).toHaveAttribute("data-horizontal-overflow", "true");
+  await expect.poll(() => page.locator("#policy-code-editor").evaluate((element) => getComputedStyle(element, "::after").backgroundColor)).toBe("rgb(255, 255, 255)");
+  await editor.fill(originalSource);
+  await expect(page.locator("#policy-code-editor")).toHaveAttribute("data-horizontal-overflow", "false");
   await page.locator("#policy-check").click();
   await expect(page.locator("#policy-check")).toHaveText("Analyze");
   await expect(page.locator("#policy-check")).toBeVisible();
@@ -2140,6 +2376,91 @@ test("policy compiler errors highlight their source token", async ({ page, appUR
   await expect(page.locator("#policy-highlight .zpl-error")).toHaveText("allow");
 });
 
+test("Analyze warnings belong only to the selected policy source", async ({ page, appURL, api }) => {
+  api.policy.records[0].content = "define Operators as user.\nallow Operators to access Payroll.";
+  const milwaukee = { ...api.policy.records[0], id: "milwaukee-boundaries", name: "Milwaukee department boundaries", content: "define MilwaukeeSupport as device with greatlakes.department:'Customer Support'.\ndefine MilwaukeeFinance as device with greatlakes.department:Finance." };
+  api.policy.records.push(milwaukee);
+  api.handlers.set("/api/policy/records/milwaukee-boundaries", async (route) => route.fulfill({ json: milwaukee }));
+  api.handlers.set("/api/policy/records/milwaukee-boundaries/revisions", async (route) => route.fulfill({ json: [] }));
+  api.handlers.set("/api/policy/check", async (route) => {
+    const { source } = route.request().postDataJSON();
+    await route.fulfill({ json: source === milwaukee.content ? {
+      valid: true, diagnostics: "warning: no policy granting admin access to VisaService",
+      warnings: [
+        { code: "COMPILER_CONTEXT", severity: "warning", line: 0, message: "No source location." },
+        { code: "FOREIGN_WARNING", severity: "warning", line: 200, message: "Outside this policy source." },
+      ],
+    } : { valid: true, diagnostics: "Compiled successfully.", warnings: [{ code: "POLICY_BROAD_GRANT", severity: "warning", line: 2, message: "Review the Payroll grant." }] } });
+  });
+  api.handlers.set("/api/policy/test/fixtures", async (route) => route.fulfill({ status: 503, json: { error: "Fixtures unavailable" } }));
+  await page.goto(appURL + "/#policy");
+  await openPolicyPicker(page);
+  await page.locator('[data-record-id="test-policy"]').click();
+  await page.locator("#policy-check").click();
+  await expect(page.locator('#policy-test-gutter [data-line="2"] [data-has-warnings="true"]')).toHaveCount(1);
+  await openPolicyPicker(page);
+  await page.locator('[data-record-id="milwaukee-boundaries"]').click();
+  await expect(page.locator("#policy-record-title")).toHaveText(milwaukee.name);
+  await expect(page.locator('#policy-test-gutter [data-has-warnings="true"]')).toHaveCount(0);
+  await page.locator("#policy-check").click();
+  await expect(page.locator("#policy-test-status")).toContainText("Fixtures unavailable");
+  await expect(page.locator('#policy-test-gutter [data-has-warnings="true"]')).toHaveCount(0);
+});
+
+test("policy warnings remain in the gutter when fixtures fail", async ({ page, appURL, api }) => {
+  api.handlers.set("/api/policy/check", async (route) => route.fulfill({ json: {
+    valid: true, diagnostics: "Compiled successfully.",
+    warnings: [{ code: "POLICY_SPECIFIC_IDENTITY", severity: "warning", line: 2, message: "Prefer groups instead of individual devices or users." }],
+  } }));
+  api.handlers.set("/api/policy/test/fixtures", async (route) => route.fulfill({ status: 503, json: {
+    error: "A directory attribute cannot be represented safely in the policy test request.",
+  } }));
+  await page.goto(appURL + "/#policy");
+  await openPolicyPicker(page);
+  await page.locator('[data-record-id="test-policy"]').click();
+  await page.locator("#policy-source").fill("define Operators as user.\nallow Operators to access Payroll.");
+  await page.locator("#policy-check").click();
+  await expect(page.locator("#policy-check")).toHaveAttribute("data-analysis-state", "error");
+  await expect(page.locator("#policy-lint-warnings")).toHaveCount(0);
+  await expect(page.locator("#policy-test-status")).toContainText("Analysis unavailable");
+  await expect(page.locator('#policy-test-gutter [data-line="1"] [data-effect="error"]')).toHaveCount(0);
+  const warning = page.locator('#policy-test-gutter [data-line="2"] [data-effect="warning"]');
+  await expect(warning).toHaveText("WARN");
+  await warning.click();
+  await expect(page.getByRole("dialog", { name: "Analyze warning details" })).toContainText("POLICY_SPECIFIC_IDENTITY");
+  await page.locator("#policy-test-details .dialog-actions .button").click();
+  await page.locator("#policy-source").fill("define Operators as user.");
+  await expect(page.locator('#policy-test-gutter [data-effect="warning"]')).toHaveCount(0);
+});
+
+test("policy gutter combines matching results and lint warning details", async ({ page, appURL, api }) => {
+  api.handlers.set("/api/policy/check", async (route) => route.fulfill({ json: {
+    valid: true, diagnostics: "Compiled successfully.",
+    warnings: [{ code: "POLICY_BROAD_GRANT", severity: "warning", line: 2, message: "Review the grant scope." }],
+  } }));
+  api.handlers.set("/api/policy/test/fixtures", async (route) => route.fulfill({ json: { actors: [], services: [] } }));
+  api.handlers.set("/api/policy/test", async (route) => route.fulfill({ json: {
+    actor_count: 0,
+    services: [{ id: "payroll", name: "Payroll", supported: true, rules: [{ line: 2, effect: "allow", matched: { count: 0, subjects: [] } }] }],
+    warnings: [{ code: "POLICY_NO_HITS", severity: "warning", line: 2, message: "No hits in this population." }],
+  } }));
+  await page.goto(appURL + "/#policy");
+  await openPolicyPicker(page);
+  await page.locator('[data-record-id="test-policy"]').click();
+  await page.locator("#policy-source").fill("define Operators as user.\nallow Operators to access Payroll.");
+  await page.locator("#policy-check").click();
+  await expect(page.locator("#policy-check")).toHaveAttribute("data-analysis-state", "success");
+  const marker = page.locator('#policy-test-gutter [data-line="2"] button');
+  await expect(marker).toHaveCount(1);
+  await expect(marker).toHaveText("None");
+  await expect(marker).toHaveAttribute("data-has-warnings", "true");
+  await marker.click();
+  await expect(page.locator("#policy-test-details")).toContainText("No matching identities.");
+  await expect(page.locator("#policy-test-details")).toContainText("POLICY_BROAD_GRANT");
+  await expect(page.locator("#policy-test-details")).toContainText("POLICY_NO_HITS");
+  await expect(page.locator("#policy-lint-warnings")).toHaveCount(0);
+});
+
 test("policy lint warns about specific identities without failing Analyze", async ({ page, appURL, api }) => {
   api.handlers.set("/api/policy/check", async (route) => route.fulfill({ json: {
     valid: true, diagnostics: "Compiled successfully.",
@@ -2154,10 +2475,11 @@ test("policy lint warns about specific identities without failing Analyze", asyn
   await page.locator('[data-record-id="test-policy"]').click();
   await page.getByRole("button", { name: "Analyze", exact: true }).click();
   await expect(page.locator("#policy-check")).toHaveAttribute("data-analysis-state", "success");
-  await expect(page.locator("#policy-lint-warnings")).toContainText("POLICY_SPECIFIC_IDENTITY");
-  await expect(page.locator("#policy-lint-warnings")).toContainText("POLICY_NO_HITS");
+  await expect(page.locator('#policy-test-gutter [data-line="1"] [data-effect="warning"]')).toHaveAttribute("data-has-warnings", "true");
+  await expect(page.locator('#policy-test-gutter [data-line="2"] [data-effect="warning"]')).toHaveAttribute("data-has-warnings", "true");
+  await expect(page.locator("#policy-lint-warnings")).toHaveCount(0);
   await page.locator("#policy-source").fill("define Operators as user with user.role:Operator.");
-  await expect(page.locator("#policy-lint-warnings")).toBeHidden();
+  await expect(page.locator('#policy-test-gutter [data-effect="warning"]')).toHaveCount(0);
 });
 
 for (const reducedMotion of ["no-preference", "reduce"]) {
@@ -2481,10 +2803,28 @@ test("organization activation requires explicit approval and is cancel-safe", as
     api.organizations.activation = { state: "completed", organization_id: "beta" };
     await route.fulfill({ status: 202, json: { activation: api.organizations.activation } });
   });
+  api.handlers.set("/api/simulator/scenarios", async (route) => {
+    const organizationID = new URL(route.request().url()).searchParams.get("organization_id") || "alpha";
+    const organization = api.organizations.organizations.find((entry) => entry.id === organizationID);
+    await route.fulfill({ json: { organization, active_organization_id: "alpha", scenarios: [{ id: "beta-scenario", name: "Beta scenario", organization_id: organizationID }] } });
+  });
   await page.goto(appURL + "/organizations.html");
+  await expect(page.getByText("Organization directory", { exact: true })).toBeVisible();
+  await expect(page.locator("#organization-connection")).not.toContainText("profiles");
+  await expect(page.getByRole("heading", { name: "Organizations", exact: true })).toHaveCount(0);
+  await expect(page.locator("#organization-count")).toHaveCount(0);
   await page.locator('[data-organization-id="beta"]').click();
   await expect(page.locator("#organization-detail")).toContainText("multi-node · 2 nodes · North Hub / Regional Yard");
   const activate = page.locator('[data-activate-organization="beta"]');
+  const activationPlacement = await page.evaluate(() => {
+    const title = document.getElementById("organization-title").getBoundingClientRect();
+    const control = document.querySelector("[data-organization-activation-control]").getBoundingClientRect();
+    const description = document.querySelector("#organization-detail > .organization-summary").getBoundingClientRect();
+    return { adjacent: control.left >= title.right && control.top < title.bottom, descriptionBelow: description.top >= control.bottom };
+  });
+  expect(activationPlacement.adjacent).toBeTruthy();
+  expect(activationPlacement.descriptionBelow).toBeTruthy();
+  await expect(page.locator("#organization-scenario-summary a").first()).toBeVisible();
   await activate.click();
   const dialog = page.getByRole("dialog", { name: "Switch organization?", exact: true });
   await expect(dialog).toBeVisible();
@@ -2531,6 +2871,14 @@ test("organization approval is rejected after the active organization changes", 
   expect(api.counts.get("/api/simulator/organizations/beta/activate") || 0).toBe(0);
   await dialog.getByRole("button", { name: "Cancel", exact: true }).click();
   await expect(dialog).not.toBeVisible();
+});
+
+test("Organizations exposes the local reset log", async ({ page, appURL }) => {
+  await page.goto(appURL + "/organizations.html");
+  const resetLog = page.getByRole("link", { name: "Open reset log", exact: true });
+  await expect(resetLog).toHaveAttribute("href", "/api/simulator/activation-log");
+  await expect(resetLog).toHaveAttribute("target", "_blank");
+  await expect(resetLog).toHaveAttribute("rel", "noopener noreferrer");
 });
 
 test("organization switching shows reset progress in the Simulator", async ({ page, appURL, api }) => {

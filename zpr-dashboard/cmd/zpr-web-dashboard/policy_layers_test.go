@@ -88,6 +88,8 @@ func TestBundledPolicyLayersPreserveInfrastructureAndIsolateCompanies(t *testing
 				"provide EngineeringBuildFarm at engineering-build.svc.zpr over TCP 8444.\n  allow MilwaukeeEngineering.\n  allow ShenzhenEngineering.",
 				"provide AssemblyExecution at assembly-mes.svc.zpr over TCP 8448.\n  allow TijuanaAssembly.",
 				"provide QualityTestBench at quality-test.svc.zpr over TCP 8449.\n  allow TijuanaTest.\n  allow MilwaukeeEngineering.",
+				"provide WorkdayEcho at echo-web.svc.zpr over TCP 8080.\n  allow FinanceClient.",
+				"provide WorkdayMetrics at metrics-web.svc.zpr over TCP 8081.\n  allow OperationsClient.\n  allow TelemetryClient.",
 			} {
 				if !strings.Contains(source, grant) {
 					t.Errorf("Great Lakes policy is missing grant %q", grant)

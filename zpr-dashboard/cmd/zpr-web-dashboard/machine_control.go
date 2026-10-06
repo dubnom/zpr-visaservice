@@ -184,6 +184,13 @@ func runMachineController(machineID, controlURL, caFile, certFile, keyFile, phBi
 	if machineID == "" || controlURL == "" || caFile == "" || certFile == "" || keyFile == "" || phBinary == "" || bootstrapKey == "" || nodeAddress == "" {
 		return errors.New("machine controller requires machine id, control URL, TLS identity, PH binary, bootstrap key, and node address")
 	}
+	const runtimeDir = "/run/zpr-workloads"
+	if err := os.MkdirAll(runtimeDir, 0755); err != nil {
+		return fmt.Errorf("create machine workload runtime directory: %w", err)
+	}
+	if err := os.WriteFile(filepath.Join(runtimeDir, "node-address"), []byte(nodeAddress+"\n"), 0600); err != nil {
+		return fmt.Errorf("write machine workload node address: %w", err)
+	}
 	phControlPath := "/run/zpr-workloads/machine-control.sock"
 	phCapturePath := "/run/zpr-workloads/machine-control-cap.sock"
 	phLog, err := os.OpenFile("/tmp/machine-control-ph.log", os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0600)
@@ -398,6 +405,23 @@ func machineWorkload(agent string) (machineWorkloadConfig, bool) {
 	return config, ok
 }
 
+func machineWorkloadNodeAddress(runtimeDir string) (string, error) {
+	const singleNodeAddress = "10.0.0.1:5000"
+	content, err := os.ReadFile(filepath.Join(runtimeDir, "node-address"))
+	if errors.Is(err, os.ErrNotExist) {
+		return singleNodeAddress, nil
+	}
+	if err != nil {
+		return "", fmt.Errorf("read machine workload node address: %w", err)
+	}
+	address := strings.TrimSpace(string(content))
+	host, port, err := net.SplitHostPort(address)
+	if err != nil || net.ParseIP(host) == nil || port != "5000" {
+		return "", fmt.Errorf("invalid machine workload node address %q", address)
+	}
+	return address, nil
+}
+
 func startMachineWorkload(agent string, serviceNames []string) error {
 	config, ok := machineWorkload(agent)
 	if !ok {
@@ -413,6 +437,10 @@ func startMachineWorkload(agent string, serviceNames []string) error {
 	}
 	runtimeDir := "/run/zpr-workloads"
 	assets := "/opt/zpr-workloads"
+	nodeAddress, err := machineWorkloadNodeAddress(runtimeDir)
+	if err != nil {
+		return err
+	}
 	socket := filepath.Join(runtimeDir, agent+".sock")
 	linkSummary, _ := exec.Command(filepath.Join(assets, "ph-cli"), "-p", socket, "link", "show").CombinedOutput()
 	if strings.Contains(string(linkSummary), "(Active)") {
@@ -449,7 +477,7 @@ func startMachineWorkload(agent string, serviceNames []string) error {
 	if err != nil {
 		return err
 	}
-	command := exec.Command(filepath.Join(assets, "ph"), "adapter", "--logging", "all=INFO", "--control-path", socket, "--capture-path", filepath.Join(runtimeDir, agent+"_cap.sock"), "--self-addr", substrateAddress, "--ca-file", filepath.Join(assets, "ca.crt"), "--bootstrap-key", filepath.Join(assets, config.key), "--name", agent, "--km-impl", "noise", "--tun-if", config.tun, "--node-addr", "10.0.0.1:5000", "--zpr-addr", config.address)
+	command := exec.Command(filepath.Join(assets, "ph"), "adapter", "--logging", "all=INFO", "--control-path", socket, "--capture-path", filepath.Join(runtimeDir, agent+"_cap.sock"), "--self-addr", substrateAddress, "--ca-file", filepath.Join(assets, "ca.crt"), "--bootstrap-key", filepath.Join(assets, config.key), "--name", agent, "--km-impl", "noise", "--tun-if", config.tun, "--node-addr", nodeAddress, "--zpr-addr", config.address)
 	registeredServices := config.services
 	if len(serviceNames) > 0 {
 		registeredServices = strings.Join(serviceNames, ",")

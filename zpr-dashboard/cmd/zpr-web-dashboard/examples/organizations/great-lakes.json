@@ -1,15 +1,15 @@
 {
   "id": "great-lakes",
-  "assertions_source": "// Great Lakes Instruments directory integrity; human fields are group-scoped.\npeople attribute \"uid\" present;\npeople attribute \"cn\" present;\ngroup \"HQCustomerSupport\" members >= 1;\npeople in \"HQCustomerSupport\" attribute \"mail\" present;\npeople in \"HQCustomerSupport\" attribute \"title\" present;\npeople in \"HQCustomerSupport\" attribute \"ou\" == \"Customer Support\";\npeople in \"HQCustomerSupport\" exactly_one [\"HQCustomerSupport\",\"HQEngineering\",\"HQFinance\",\"HQShipping\",\"HQReceiving\",\"ShenzhenEngineering\",\"TijuanaAssembly\",\"TijuanaTest\"];\ngroup \"HQEngineering\" members >= 1;\npeople in \"HQEngineering\" attribute \"mail\" present;\npeople in \"HQEngineering\" attribute \"title\" present;\npeople in \"HQEngineering\" attribute \"ou\" == \"Engineering\";\npeople in \"HQEngineering\" exactly_one [\"HQCustomerSupport\",\"HQEngineering\",\"HQFinance\",\"HQShipping\",\"HQReceiving\",\"ShenzhenEngineering\",\"TijuanaAssembly\",\"TijuanaTest\"];\ngroup \"HQFinance\" members >= 1;\npeople in \"HQFinance\" attribute \"mail\" present;\npeople in \"HQFinance\" attribute \"title\" present;\npeople in \"HQFinance\" attribute \"ou\" == \"Finance\";\npeople in \"HQFinance\" exactly_one [\"HQCustomerSupport\",\"HQEngineering\",\"HQFinance\",\"HQShipping\",\"HQReceiving\",\"ShenzhenEngineering\",\"TijuanaAssembly\",\"TijuanaTest\"];\ngroup \"HQShipping\" members >= 1;\npeople in \"HQShipping\" attribute \"mail\" present;\npeople in \"HQShipping\" attribute \"title\" present;\npeople in \"HQShipping\" attribute \"ou\" == \"Shipping\";\npeople in \"HQShipping\" exactly_one [\"HQCustomerSupport\",\"HQEngineering\",\"HQFinance\",\"HQShipping\",\"HQReceiving\",\"ShenzhenEngineering\",\"TijuanaAssembly\",\"TijuanaTest\"];\ngroup \"HQReceiving\" members >= 1;\npeople in \"HQReceiving\" attribute \"mail\" present;\npeople in \"HQReceiving\" attribute \"title\" present;\npeople in \"HQReceiving\" attribute \"ou\" == \"Receiving\";\npeople in \"HQReceiving\" exactly_one [\"HQCustomerSupport\",\"HQEngineering\",\"HQFinance\",\"HQShipping\",\"HQReceiving\",\"ShenzhenEngineering\",\"TijuanaAssembly\",\"TijuanaTest\"];\ngroup \"ShenzhenEngineering\" members >= 1;\npeople in \"ShenzhenEngineering\" attribute \"mail\" present;\npeople in \"ShenzhenEngineering\" attribute \"title\" present;\npeople in \"ShenzhenEngineering\" attribute \"ou\" == \"Shenzhen Engineering\";\npeople in \"ShenzhenEngineering\" exactly_one [\"HQCustomerSupport\",\"HQEngineering\",\"HQFinance\",\"HQShipping\",\"HQReceiving\",\"ShenzhenEngineering\",\"TijuanaAssembly\",\"TijuanaTest\"];\ngroup \"TijuanaAssembly\" members >= 1;\npeople in \"TijuanaAssembly\" attribute \"mail\" present;\npeople in \"TijuanaAssembly\" attribute \"title\" present;\npeople in \"TijuanaAssembly\" attribute \"ou\" == \"Assembly\";\npeople in \"TijuanaAssembly\" exactly_one [\"HQCustomerSupport\",\"HQEngineering\",\"HQFinance\",\"HQShipping\",\"HQReceiving\",\"ShenzhenEngineering\",\"TijuanaAssembly\",\"TijuanaTest\"];\ngroup \"TijuanaTest\" members >= 1;\npeople in \"TijuanaTest\" attribute \"mail\" present;\npeople in \"TijuanaTest\" attribute \"title\" present;\npeople in \"TijuanaTest\" attribute \"ou\" == \"Test and Quality\";\npeople in \"TijuanaTest\" exactly_one [\"HQCustomerSupport\",\"HQEngineering\",\"HQFinance\",\"HQShipping\",\"HQReceiving\",\"ShenzhenEngineering\",\"TijuanaAssembly\",\"TijuanaTest\"];\n",
+  "assertions_source": "// Great Lakes Instruments directory integrity; employee fields are global.\npeople attribute \"uid\" present;\npeople attribute \"cn\" present;\npeople attribute \"mail\" present;\npeople attribute \"title\" present;\ngroup \"HQCustomerSupport\" members >= 1;\npeople in \"HQCustomerSupport\" attribute \"ou\" == \"Customer Support\";\npeople in \"HQCustomerSupport\" exactly_one [\"HQCustomerSupport\",\"HQEngineering\",\"HQFinance\",\"HQShipping\",\"HQReceiving\",\"ShenzhenEngineering\",\"TijuanaAssembly\",\"TijuanaTest\"];\ngroup \"HQEngineering\" members >= 1;\npeople in \"HQEngineering\" attribute \"ou\" == \"Engineering\";\npeople in \"HQEngineering\" exactly_one [\"HQCustomerSupport\",\"HQEngineering\",\"HQFinance\",\"HQShipping\",\"HQReceiving\",\"ShenzhenEngineering\",\"TijuanaAssembly\",\"TijuanaTest\"];\ngroup \"HQFinance\" members >= 1;\npeople in \"HQFinance\" attribute \"ou\" == \"Finance\";\npeople in \"HQFinance\" exactly_one [\"HQCustomerSupport\",\"HQEngineering\",\"HQFinance\",\"HQShipping\",\"HQReceiving\",\"ShenzhenEngineering\",\"TijuanaAssembly\",\"TijuanaTest\"];\ngroup \"HQShipping\" members >= 1;\npeople in \"HQShipping\" attribute \"ou\" == \"Shipping\";\npeople in \"HQShipping\" exactly_one [\"HQCustomerSupport\",\"HQEngineering\",\"HQFinance\",\"HQShipping\",\"HQReceiving\",\"ShenzhenEngineering\",\"TijuanaAssembly\",\"TijuanaTest\"];\ngroup \"HQReceiving\" members >= 1;\npeople in \"HQReceiving\" attribute \"ou\" == \"Receiving\";\npeople in \"HQReceiving\" exactly_one [\"HQCustomerSupport\",\"HQEngineering\",\"HQFinance\",\"HQShipping\",\"HQReceiving\",\"ShenzhenEngineering\",\"TijuanaAssembly\",\"TijuanaTest\"];\ngroup \"ShenzhenEngineering\" members >= 1;\npeople in \"ShenzhenEngineering\" attribute \"ou\" == \"Shenzhen Engineering\";\npeople in \"ShenzhenEngineering\" exactly_one [\"HQCustomerSupport\",\"HQEngineering\",\"HQFinance\",\"HQShipping\",\"HQReceiving\",\"ShenzhenEngineering\",\"TijuanaAssembly\",\"TijuanaTest\"];\ngroup \"TijuanaAssembly\" members >= 1;\npeople in \"TijuanaAssembly\" attribute \"ou\" == \"Assembly\";\npeople in \"TijuanaAssembly\" exactly_one [\"HQCustomerSupport\",\"HQEngineering\",\"HQFinance\",\"HQShipping\",\"HQReceiving\",\"ShenzhenEngineering\",\"TijuanaAssembly\",\"TijuanaTest\"];\ngroup \"TijuanaTest\" members >= 1;\npeople in \"TijuanaTest\" attribute \"ou\" == \"Test and Quality\";\npeople in \"TijuanaTest\" exactly_one [\"HQCustomerSupport\",\"HQEngineering\",\"HQFinance\",\"HQShipping\",\"HQReceiving\",\"ShenzhenEngineering\",\"TijuanaAssembly\",\"TijuanaTest\"];\n",
   "name": "Great Lakes Instruments",
   "description": "Wisconsin-headquartered instrumentation maker with a small Shenzhen engineering office and a Tijuana assembly and test operation. Unlisted cross-site access is not granted.",
   "runtime": {
     "driver": "docker-multinode",
     "topology": "multi-node",
     "nodes": [
-      {"id": "milwaukee-hq", "location": "Milwaukee, Wisconsin, USA"},
-      {"id": "shenzhen-office", "location": "Shenzhen, China"},
-      {"id": "tijuana-plant", "location": "Tijuana, Mexico"}
+      {"id": "milwaukee-hq", "location": "Milwaukee, Wisconsin, USA", "substrate_address": "172.30.0.13", "zpr_address": "fd5a:5052:90de::10"},
+      {"id": "shenzhen-office", "location": "Shenzhen, China", "substrate_address": "172.30.0.10", "zpr_address": "fd5a:5052:90de::11"},
+      {"id": "tijuana-plant", "location": "Tijuana, Mexico", "substrate_address": "172.30.0.17", "zpr_address": "fd5a:5052:90de::12"}
     ]
   },
   "directory": {
@@ -64,7 +64,8 @@
     "machine-05": ["devin.brooks"],
     "machine-06": ["lin.wei"],
     "machine-07": ["lucia.torres"],
-    "machine-08": ["ana.garcia"]
+    "machine-08": ["ana.garcia"],
+    "machine-09": ["chen.yu"]
   },
   "policy_config": "organizations/great-lakes/policy-demo.zplc",
   "policy_catalog": "organizations/great-lakes/demo-policy-catalog.json",
@@ -73,6 +74,7 @@
     {"id": "hq-department-boundaries", "name": "HQ department boundaries", "description": "Milwaukee Customer Support, Finance, Shipping, and Receiving apps are department-restricted."},
     {"id": "engineering-site-boundary", "name": "Engineering site boundary", "description": "Milwaukee and Shenzhen Engineering may access the build farm; Shenzhen has no HQ business-system grants."},
     {"id": "tijuana-production-boundary", "name": "Tijuana production boundary", "description": "Tijuana Assembly and Test may access only their assigned manufacturing systems."},
+    {"id": "workday-service-access", "name": "Workday service access", "description": "Finance, operations, and telemetry clients use only their named workday service endpoints; other cross-service probes are denied."},
     {"id": "default-deny", "name": "Default deny", "description": "No other cross-site or service access is granted."}
   ],
   "policy_test_services": [
@@ -82,7 +84,9 @@
     {"id": "shipping-portal.svc.zpr", "name": "Shipping Portal", "actor_cn": "shipping-portal", "protocol": "TCP", "port": 8446},
     {"id": "receiving-portal.svc.zpr", "name": "Receiving Portal", "actor_cn": "receiving-portal", "protocol": "TCP", "port": 8447},
     {"id": "assembly-mes.svc.zpr", "name": "Assembly Execution", "actor_cn": "assembly-mes", "protocol": "TCP", "port": 8448},
-    {"id": "quality-test.svc.zpr", "name": "Quality Test Bench", "actor_cn": "quality-test-bench", "protocol": "TCP", "port": 8449}
+    {"id": "quality-test.svc.zpr", "name": "Quality Test Bench", "actor_cn": "quality-test-bench", "protocol": "TCP", "port": 8449},
+    {"id": "echo-web.svc.zpr", "name": "Workday Echo", "actor_cn": "echo-service", "protocol": "TCP", "port": 8080},
+    {"id": "metrics-web.svc.zpr", "name": "Workday Metrics", "actor_cn": "metrics-service", "protocol": "TCP", "port": 8081}
   ],
   "services": [
     {"name": "Customer Support Desk", "kind": "Application", "endpoint": "ZPR/TCP/8443", "description": "Customer case management restricted to Milwaukee Customer Support.", "policy_id": "customer-support.svc.zpr", "actor_cn": "support-desk-app"},
@@ -91,6 +95,8 @@
     {"name": "Shipping Portal", "kind": "Operations", "endpoint": "ZPR/TCP/8446", "description": "Outbound logistics restricted to Milwaukee Shipping.", "policy_id": "shipping-portal.svc.zpr", "actor_cn": "shipping-portal"},
     {"name": "Receiving Portal", "kind": "Operations", "endpoint": "ZPR/TCP/8447", "description": "Inbound receiving restricted to Milwaukee Receiving.", "policy_id": "receiving-portal.svc.zpr", "actor_cn": "receiving-portal"},
     {"name": "Assembly Execution", "kind": "Manufacturing", "endpoint": "ZPR/TCP/8448", "description": "Production instructions restricted to Tijuana Assembly.", "policy_id": "assembly-mes.svc.zpr", "actor_cn": "assembly-mes"},
-    {"name": "Quality Test Bench", "kind": "Manufacturing Test", "endpoint": "ZPR/TCP/8449", "description": "Product testing restricted to Tijuana Test and Milwaukee Engineering.", "policy_id": "quality-test.svc.zpr", "actor_cn": "quality-test-bench"}
+    {"name": "Quality Test Bench", "kind": "Manufacturing Test", "endpoint": "ZPR/TCP/8449", "description": "Product testing restricted to Tijuana Test and Milwaukee Engineering.", "policy_id": "quality-test.svc.zpr", "actor_cn": "quality-test-bench"},
+    {"name": "Workday Echo", "kind": "Application", "endpoint": "ZPR/TCP/8080", "description": "Authenticated work requests and service activity for the compressed workday scenario.", "policy_id": "echo-web.svc.zpr", "actor_cn": "echo-service"},
+    {"name": "Workday Metrics", "kind": "Observability", "endpoint": "ZPR/TCP/8081", "description": "Operations and engineering telemetry requests for the compressed workday scenario.", "policy_id": "metrics-web.svc.zpr", "actor_cn": "metrics-service"}
   ]
 }

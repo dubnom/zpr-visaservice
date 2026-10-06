@@ -10,6 +10,19 @@ import (
 	"testing"
 )
 
+func TestCompilerContextWarningsHaveNoInventedSourceLocation(t *testing.T) {
+	context := "warning: visa service has docking node set but is not enforced\nwarning: no policy granting admin access to VisaService\nwarning: no certificate for default trusted service"
+	diagnostics, warnings := splitCompilerLint(context)
+	if diagnostics != context || len(warnings) != 0 {
+		t.Fatalf("context diagnostics attributed to candidate source: diagnostics=%q warnings=%+v", diagnostics, warnings)
+	}
+	located := `ZPR_LINT {"code":"POLICY_BROAD_GRANT","severity":"warning","line":2,"message":"Review this grant."}`
+	diagnostics, warnings = splitCompilerLint(context + "\n" + located)
+	if diagnostics != context || len(warnings) != 1 || warnings[0].Line != 2 || warnings[0].Code != "POLICY_BROAD_GRANT" {
+		t.Fatalf("source-local lint was lost or mixed with context: diagnostics=%q warnings=%+v", diagnostics, warnings)
+	}
+}
+
 func TestPolicyTestSummaryIncludesZeroRulesAndUniqueDimensions(t *testing.T) {
 	request := policyTestRequest{
 		Source: "candidate",

@@ -8,8 +8,8 @@ RUN CGO_ENABLED=0 go build -trimpath -o /out/zpr-web-dashboard ./cmd/zpr-web-das
 
 FROM alpine:3.22
 
-RUN apk add --no-cache ca-certificates docker-cli jq
+RUN apk add --no-cache ca-certificates docker-cli docker-cli-compose jq bash curl openssl socat
 COPY --from=build /out/zpr-web-dashboard /usr/local/bin/zpr-web-dashboard
 
-EXPOSE 8788 8791
+EXPOSE 8054 8055 8184 8788 8791 8797 8798
 ENTRYPOINT ["/usr/local/bin/zpr-web-dashboard", "-mode", "simulator", "-listen", "0.0.0.0:8788"]

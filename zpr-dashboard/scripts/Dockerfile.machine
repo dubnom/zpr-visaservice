@@ -1,5 +1,5 @@
 FROM debian:trixie
 
 RUN apt-get update \
-    && apt-get install -y --no-install-recommends iproute2 iputils-ping procps libpcap0.8 \
+    && apt-get install -y --no-install-recommends iproute2 iputils-ping procps libpcap0.8 dnsutils \
     && rm -rf /var/lib/apt/lists/*

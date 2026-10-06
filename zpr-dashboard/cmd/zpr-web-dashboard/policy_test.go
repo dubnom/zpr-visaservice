@@ -220,6 +220,18 @@ func TestNorthstarDemoCatalogImportsIdempotently(t *testing.T) {
 	}
 }
 
+func TestZPLCConfigurationDraftValidation(t *testing.T) {
+	app := &application{}
+	if result := app.validatePolicyRecordContent(context.Background(), "configuration", "text/vnd.zpr.zplc", "[resolver]\norder = [\"hosts\", \"dns\"]\n"); result != nil {
+		t.Fatalf("valid draft rejected: %+v", result)
+	}
+	for _, source := range []string{"", "[broken"} {
+		if result := app.validatePolicyRecordContent(context.Background(), "configuration", "text/vnd.zpr.zplc", source); result == nil {
+			t.Fatalf("invalid draft accepted: %q", source)
+		}
+	}
+}
+
 func TestNorthstarDemoPoliciesPassConfiguredZPLC(t *testing.T) {
 	configPath := os.Getenv("ZPR_POLICY_CONFIG_FILE")
 	if configPath == "" {

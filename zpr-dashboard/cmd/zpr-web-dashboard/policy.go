@@ -658,8 +658,31 @@ func (a *application) handleCreatePolicyRecord(w http.ResponseWriter, r *http.Re
 	writeJSON(w, http.StatusCreated, record)
 }
 
+func (a *application) handleCheckConfiguration(w http.ResponseWriter, r *http.Request) {
+	if !localEditorRequest(w, r) {
+		return
+	}
+	var request policySourceRequest
+	if !decodePolicyRequest(w, r, maxPolicySourceBytes, &request) {
+		return
+	}
+	if result := a.validatePolicyRecordContent(r.Context(), "configuration", "text/vnd.zpr.zplc", request.Source); result != nil {
+		writeJSON(w, http.StatusUnprocessableEntity, result)
+		return
+	}
+	writeJSON(w, http.StatusOK, policyCheckResponse{Valid: true, Diagnostics: "TOML syntax valid; runtime configuration is unchanged."})
+}
+
 func (a *application) validatePolicyRecordContent(ctx context.Context, kind, contentType, content string) *policyCheckResponse {
 	switch kind {
+	case "configuration":
+		if contentType != "text/vnd.zpr.zplc" || strings.TrimSpace(content) == "" {
+			return &policyCheckResponse{Diagnostics: "Write a ZPLC configuration draft before saving."}
+		}
+		var config map[string]any
+		if _, err := toml.Decode(content, &config); err != nil {
+			return &policyCheckResponse{Diagnostics: "Invalid TOML configuration: " + err.Error()}
+		}
 	case "policy":
 		return nil
 	case organizationAssertionsKind:

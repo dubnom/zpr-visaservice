@@ -71,6 +71,54 @@ type assertionParser struct {
 	err             error
 }
 
+func formatAssertionSource(source string) (string, error) {
+	if _, err := parseAssertions(source); err != nil {
+		return "", err
+	}
+	var input scanner.Scanner
+	input.Init(strings.NewReader(source))
+	input.Mode = scanner.ScanIdents | scanner.ScanInts | scanner.ScanFloats | scanner.ScanStrings | scanner.ScanComments
+	var output strings.Builder
+	previous := ""
+	for token := input.Scan(); token != scanner.EOF; token = input.Scan() {
+		text := input.TokenText()
+		if token == scanner.Comment {
+			if previous != "" {
+				output.WriteByte('\n')
+			}
+			output.WriteString(text)
+			output.WriteByte('\n')
+			previous = ""
+			continue
+		}
+		space := previous != "" && text != ";" && text != "," && text != ")" && text != "]" && text != "." && previous != "(" && previous != "[" && previous != "."
+		if text == "(" && (previous == "source" || previous == "group" || previous == "attribute") {
+			space = false
+		}
+		if text == "=" && strings.Contains("<>=!", previous) && len(previous) == 1 {
+			space = false
+		}
+		if space {
+			output.WriteByte(' ')
+		}
+		output.WriteString(text)
+		if text == ";" {
+			output.WriteByte('\n')
+			previous = ""
+		} else {
+			previous = text
+		}
+	}
+	formatted := strings.TrimSpace(output.String())
+	if formatted != "" {
+		formatted += "\n"
+	}
+	if _, err := parseAssertions(formatted); err != nil {
+		return "", err
+	}
+	return formatted, nil
+}
+
 func parseAssertions(source string) ([]assertionRule, error) {
 	if len(source) > maxAssertionSource {
 		return nil, errors.New("assertion source exceeds 64 KiB")

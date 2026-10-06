@@ -8,6 +8,16 @@
 - This is early release code, so we do not care about migrating existing
   database state.
 
+## Analysis Ownership
+- Analyze warnings, errors, and gutter markers must belong to the selected
+  policy/assertion record and the exact editor source submitted for that run.
+- Do not attach warnings from another record, active runtime policy, provider,
+  or compiler configuration to the current file. Configuration diagnostics must
+  remain separately identified and must never be assigned invented source lines.
+- Clear diagnostics on record/source changes and reject stale analysis responses.
+- Preserve valid source-local warnings; never hide them simply to produce a clean
+  result. Test definitions-only records, record switching, and delayed responses.
+
 ## Control Room Boundary
 - Control Room is a production-facing ZPR operator UI, not a Simulator client.
 - Control Room and Control-Service must never call Simulator APIs, load

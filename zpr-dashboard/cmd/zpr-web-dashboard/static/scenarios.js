@@ -91,6 +91,7 @@ function updateScenarioTrackScroll() {
 }
 
 function renderScenarioRun(run) {
+  const previousProgress = JSON.stringify([scenarioRun?.scenario_id, scenarioRun?.state, scenarioRun?.current_step, scenarioRun?.results]);
   scenarioRun = run || { state: "idle", steps: [] };
   const busy = scenarioRun.state === "running" || scenarioRun.state === "cleaning";
   const listedScenario = scenarioById.get(scenarioRun.scenario_id);
@@ -110,6 +111,14 @@ function renderScenarioRun(run) {
   progress.hidden = !scenarioRun.scenario_id || !scenarioRun.total_steps;
   state.replaceChildren(stateLabel, progress);
   state.className = `scenario-state ${scenarioEscape(scenarioRun.state || "idle")}`;
+  if (busy && previousProgress !== JSON.stringify([scenarioRun.scenario_id, scenarioRun.state, scenarioRun.current_step, scenarioRun.results])
+    && !window.matchMedia("(prefers-reduced-motion: reduce)").matches) {
+    state.animate([
+      { opacity: 0.65, transform: "scale(1)", boxShadow: "inset 0 0 0 1px #c28b12" },
+      { opacity: 1, transform: "scale(1.05)", boxShadow: "0 0 0 3px #f4c44766, inset 0 0 0 1px #c28b12", offset: 0.45 },
+      { opacity: 1, transform: "scale(1)", boxShadow: "inset 0 0 0 1px #c28b12" },
+    ], { duration: 750, easing: "ease-in-out" });
+  }
   document.getElementById("scenario-cancel").hidden = !busy;
   document.getElementById("scenario-cancel").disabled = !busy;
   document.getElementById("scenario-clear").hidden = busy || !scenarioRun.scenario_id;
@@ -207,7 +216,7 @@ const scenarioStepActions = [
   "start_machine", "wait_controller", "login", "select_workloads", "logout", "stop_machine",
   "start_workload", "stop_workload", "start_test_service", "stop_test_service",
   "request_test_service", "benchmark_test_service", "start_service_fleet",
-  "stop_service_fleet", "stress_traffic", "traffic", "delay",
+  "stop_service_fleet", "stress_traffic", "traffic", "resolve_dns", "delay",
 ];
 
 function scenarioStepMarkup(step, index) {

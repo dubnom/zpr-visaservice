@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"io/fs"
 	"log"
 	"net"
@@ -187,6 +188,7 @@ func runSimulator(listen string) error {
 	mux.HandleFunc("GET /api/simulator/assistant/status", handleSimulatorAssistantStatus)
 	mux.HandleFunc("POST /api/simulator/design-assistant", simulatorDesignAssistantHandler(newClaudeAssistant()))
 	mux.HandleFunc("GET /api/simulator/organizations", handleSimulatorOrganizations)
+	mux.HandleFunc("GET /api/simulator/activation-log", handleSimulatorActivationLog)
 	mux.HandleFunc("GET /api/simulator/organizations/{organization}/directory/revisions/{revision}", handleWorkspaceDirectoryRevisionGet)
 	mux.HandleFunc("GET /api/simulator/organizations/{organization}/directory/revisions", handleWorkspaceDirectoryRevisions)
 	mux.HandleFunc("GET /api/simulator/organizations/{organization}/directory", handleWorkspaceDirectoryGet)
@@ -254,6 +256,59 @@ func serveStaticPage(root fs.FS, name string, w http.ResponseWriter) {
 	_, _ = w.Write(content)
 }
 
+const simulatorActivationLogLimit = 256 << 10
+
+func simulatorActivationLogPath() string {
+	if path := strings.TrimSpace(os.Getenv("SIMULATION_ACTIVATION_LOG_FILE")); path != "" {
+		return filepath.Clean(path)
+	}
+	return filepath.Join(filepath.Dir(simulatorManifestPath()), "dashboard-stack", "organization-reset.log")
+}
+
+func handleSimulatorActivationLog(w http.ResponseWriter, _ *http.Request) {
+	file, err := os.Open(simulatorActivationLogPath())
+	if os.IsNotExist(err) {
+		w.Header().Set("Content-Type", "text/plain; charset=utf-8")
+		_, _ = w.Write([]byte("No organization reset log has been created yet.\n"))
+		return
+	}
+	if err != nil {
+		http.Error(w, "organization reset log unavailable", http.StatusInternalServerError)
+		return
+	}
+	defer file.Close()
+	info, err := file.Stat()
+	if err != nil {
+		http.Error(w, "organization reset log unavailable", http.StatusInternalServerError)
+		return
+	}
+	start := info.Size() - simulatorActivationLogLimit
+	truncated := start > 0
+	if start < 0 {
+		start = 0
+	}
+	if _, err := file.Seek(start, io.SeekStart); err != nil {
+		http.Error(w, "organization reset log unavailable", http.StatusInternalServerError)
+		return
+	}
+	content, err := io.ReadAll(io.LimitReader(file, simulatorActivationLogLimit))
+	if err != nil {
+		http.Error(w, "organization reset log unavailable", http.StatusInternalServerError)
+		return
+	}
+	if truncated {
+		if newline := strings.IndexByte(string(content), '\n'); newline >= 0 {
+			content = content[newline+1:]
+		}
+	}
+	w.Header().Set("Cache-Control", "no-store")
+	w.Header().Set("Content-Type", "text/plain; charset=utf-8")
+	if truncated {
+		_, _ = w.Write([]byte("[Earlier reset log lines omitted; showing the latest 256 KiB]\n"))
+	}
+	_, _ = w.Write(content)
+}
+
 func handleSimulatorStatus(w http.ResponseWriter, _ *http.Request) {
 	manifest, err := readSimulatorManifest()
 	if err != nil {
@@ -312,8 +367,18 @@ func simulatorStackRuntimeStatus(machineIDs []string, containers map[string]stri
 }
 
 func simulatorStackServiceState(runtimeDir, service string) string {
-	if service == "simulator" && strings.TrimSpace(os.Getenv("SIMULATOR_DOCKER_CONTAINER")) != "" {
-		return "running"
+	containerEnv := map[string]string{
+		"simulator":       "SIMULATOR_DOCKER_CONTAINER",
+		"policy-service":  "ZPR_POLICY_SERVICE_CONTAINER",
+		"control-service": "ZPR_CONTROL_SERVICE_CONTAINER",
+		"control-room":    "ZPR_CONTROL_ROOM_CONTAINER",
+	}[service]
+	if containerName := strings.TrimSpace(os.Getenv(containerEnv)); containerEnv != "" && containerName != "" {
+		output, err := exec.Command("docker", "inspect", "-f", "{{.State.Status}}", containerName).Output()
+		if err != nil {
+			return "stopped"
+		}
+		return strings.TrimSpace(string(output))
 	}
 	pidBytes, err := os.ReadFile(filepath.Join(runtimeDir, service+".pid"))
 	if err != nil {

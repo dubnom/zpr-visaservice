@@ -56,6 +56,37 @@ func TestAssertionExpressionEvaluation(t *testing.T) {
 	}
 }
 
+func TestFormatAssertionSourcePreservesMeaningAndComments(t *testing.T) {
+	source := "// Keep this comment\ngroup   \"Operators; // literal\"   members>=2; people attribute \"title\" in [\"Engineer\",\"Reviewer\"]; assert source(\"ldap\").group(\"Operators\").members>=2;"
+	formatted, err := formatAssertionSource(source)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(formatted, "// Keep this comment\n") || !strings.Contains(formatted, `"Operators; // literal"`) || !strings.Contains(formatted, "members >= 2;\n") {
+		t.Fatalf("formatted source lost content or spacing: %q", formatted)
+	}
+	again, err := formatAssertionSource(formatted)
+	if err != nil || again != formatted {
+		t.Fatalf("formatter is not idempotent: %q, %v", again, err)
+	}
+	originalRules, _ := parseAssertions(source)
+	formattedRules, err := parseAssertions(formatted)
+	if err != nil || len(originalRules) != len(formattedRules) {
+		t.Fatalf("format changed rule count: %v", err)
+	}
+	directory := assertionDirectory{Groups: map[string][]string{"Operators": {"alice", "bob"}, "Operators; // literal": {"alice", "bob"}}}
+	originalResults := evaluateAssertions(originalRules, directory)
+	formattedResults := evaluateAssertions(formattedRules, directory)
+	for index := range originalRules {
+		if originalResults[index].Status != formattedResults[index].Status {
+			t.Fatalf("format changed evaluation of rule %d", index)
+		}
+	}
+	if _, err := formatAssertionSource(`group "Operators" members >=;`); err == nil {
+		t.Fatal("invalid source was formatted")
+	}
+}
+
 func TestAssertionExpressionParsing(t *testing.T) {
 	for _, source := range []string{
 		`assert (source("staff").group("Operators").members + 2) * 3 >= source("hr").group("Operators").members and 1 < 2 or 3 == 4;`,

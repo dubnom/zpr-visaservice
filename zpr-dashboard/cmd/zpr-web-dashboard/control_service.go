@@ -135,12 +135,20 @@ func runControlService() error {
 	defer stopAssertions()
 	assertions.start(assertionContext)
 	policyAPI, policyErr := newPolicyServiceProxy()
+	diagnostics, diagnosticsStaleAfter, diagnosticsErr := newOpenObserveDiagnosticsProvider()
 	app := &application{
 		admin: admin, configErr: configErr, policyAPI: policyAPI, policyErr: policyErr, assistant: newClaudeAssistant(),
 	}
 	mux := http.NewServeMux()
 	assertions.register(mux)
 	mux.HandleFunc("GET /api/snapshot", app.handleSnapshot)
+	readDiagnosticsSnapshot := func(ctx context.Context) snapshot {
+		if app.admin == nil {
+			return snapshot{APIStatus: "disconnected", Errors: []string{app.configErr}}
+		}
+		return app.fetchSnapshot(ctx)
+	}
+	mux.Handle("GET /api/diagnostics", newDiagnosticsHandler(readDiagnosticsSnapshot, diagnostics, diagnosticsErr, diagnosticsStaleAfter))
 	mux.HandleFunc("GET /api/actors/{actor}/visas", app.handleActorVisas)
 	mux.Handle("GET /api/adapter-logs", newAdapterLogsHandler())
 	mux.Handle("GET /api/dns/records", newDNSRecordsHandler())

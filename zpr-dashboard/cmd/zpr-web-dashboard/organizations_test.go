@@ -48,7 +48,7 @@ func TestBundledOrganizationsHaveSeparateIdentityAndPolicyCatalogs(t *testing.T)
 	if greatLakes.Runtime.Topology != "multi-node" || len(greatLakes.Runtime.Nodes) != 3 || greatLakes.Directory.BaseDN != "dc=greatlakes,dc=test" {
 		t.Fatalf("Great Lakes profile = %+v; want three isolated site nodes", greatLakes)
 	}
-	if len(greatLakes.Directory.Departments) < 5 || len(greatLakes.Services) != 7 || greatLakes.RuntimePolicy == "" {
+	if len(greatLakes.Directory.People) != 9 || len(greatLakes.Directory.Departments) != 11 || len(greatLakes.Directory.Groups) != 8 || len(greatLakes.MachineOwners) != 9 || len(greatLakes.Services) != 9 || greatLakes.RuntimePolicy == "" {
 		t.Fatalf("Great Lakes profile is missing departments, services, or runtime policy: %+v", greatLakes)
 	}
 	if northstar.Services[0].Name == redwood.Services[0].Name {
@@ -198,6 +198,28 @@ func TestGreatLakesLDIFMatchesPeopleSiteAttributesAndGroups(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	assertionPeople := make(map[string]bool, len(directory.People))
+	for _, uid := range directory.People {
+		assertionPeople[uid] = true
+	}
+	if len(assertionPeople) != len(organization.Directory.People) {
+		t.Fatalf("Great Lakes assertion people = %d, want human-only directory count %d", len(assertionPeople), len(organization.Directory.People))
+	}
+	for _, person := range organization.Directory.People {
+		if !assertionPeople[person.UID] {
+			t.Errorf("employee %q missing from assertion people scope", person.UID)
+		}
+	}
+	for identity := range organization.MachineOwners {
+		if assertionPeople[identity] {
+			t.Errorf("machine %q entered employee assertion scope", identity)
+		}
+	}
+	for _, identity := range []string{"support-desk-app", "engineering-build-farm", "finance-workspace", "shipping-portal", "receiving-portal", "assembly-mes", "quality-test-bench"} {
+		if assertionPeople[identity] {
+			t.Errorf("application %q entered employee assertion scope", identity)
+		}
+	}
 	for _, person := range organization.Directory.People {
 		attributes, exists := directory.PersonAttributes[person.UID]
 		if !exists {
@@ -219,6 +241,7 @@ func TestGreatLakesLDIFMatchesPeopleSiteAttributesAndGroups(t *testing.T) {
 		"machine-06": {"Shenzhen, China", "Shenzhen Engineering"},
 		"machine-07": {"Tijuana, Mexico", "Assembly"},
 		"machine-08": {"Tijuana, Mexico", "Test and Quality"},
+		"machine-09": {"Shenzhen, China", "Shenzhen Engineering"},
 	} {
 		attributes := directory.PersonAttributes[uid]
 		if len(attributes["zprMachineLocation"]) != 1 || attributes["zprMachineLocation"][0] != expected[0] || len(attributes["ou"]) != 1 || attributes["ou"][0] != expected[1] {
@@ -529,5 +552,78 @@ func TestRedwoodScenarioUsesOrganizationPeopleAndMachineOwners(t *testing.T) {
 	}
 	if simulatorOrganizationAllowsUser(manifest, organization, "machine-01", "elena.park") {
 		t.Fatal("Northstar identity must not be admitted by the Redwood organization")
+	}
+}
+
+func TestGreatLakesThreeSiteRuntimeScenarioIsSeeded(t *testing.T) {
+	manifest := scenarioTestManifest()
+	manifest.OrganizationID = "great-lakes"
+	organizationDirectory, err := filepath.Abs(filepath.Join("examples", "organizations"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	scenarioDirectory, err := filepath.Abs(filepath.Join("examples", "scenarios"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("SIMULATION_ORGANIZATIONS_DIR", organizationDirectory)
+	t.Setenv("SIMULATION_SCENARIOS_DIR", scenarioDirectory)
+	workspaceDirectory := t.TempDir()
+	if err := os.Chmod(workspaceDirectory, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	store, err := openWorkspaceRepository(filepath.Join(workspaceDirectory, "great-lakes-workspace.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer store.Close()
+	if err := ensureWorkspaceScenarioSeeds(t.Context(), store, "great-lakes", manifest); err != nil {
+		t.Fatal(err)
+	}
+	artifacts, err := store.List(t.Context(), "great-lakes", workspaceScenarioKind)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(artifacts) != 2 || artifacts[0].ID != "great-lakes-five-minute-workday" || artifacts[0].PublishedRevision != 1 || artifacts[1].ID != "great-lakes-runtime-verification" || artifacts[1].PublishedRevision != 1 {
+		t.Fatalf("Great Lakes scenario seeds = %#v", artifacts)
+	}
+	for _, artifact := range artifacts {
+		var scenario simulatorScenario
+		if err := json.Unmarshal(artifact.Content, &scenario); err != nil {
+			t.Fatal(err)
+		}
+		if err := validateSimulatorScenario(scenario, manifest); err != nil {
+			t.Fatalf("Great Lakes scenario %q is invalid: %v", artifact.ID, err)
+		}
+	}
+	var workday simulatorScenario
+	if err := json.Unmarshal(artifacts[0].Content, &workday); err != nil {
+		t.Fatal(err)
+	}
+	people := make(map[string]bool)
+	machines := make(map[string]bool)
+	lookups, deniedProbes, requests, delays := 0, 0, 0, 0
+	for _, step := range workday.Steps {
+		if step.Action == "login" {
+			people[step.User] = true
+		}
+		if step.Action == "start_machine" {
+			machines[step.Machine] = true
+		}
+		if step.Action == "resolve_dns" {
+			lookups++
+		}
+		if step.Action == "traffic" && step.Expected == "deny" {
+			deniedProbes++
+		}
+		if step.Action == "request_test_service" {
+			requests++
+		}
+		if step.Action == "delay" && step.TimeoutSeconds == 30 {
+			delays++
+		}
+	}
+	if len(people) != 9 || len(machines) != 9 || lookups != 3 || deniedProbes < 2 || requests != 24 || delays != 21 {
+		t.Fatalf("Great Lakes workday coverage people=%d machines=%d DNS=%d denials=%d requests=%d pauses=%d", len(people), len(machines), lookups, deniedProbes, requests, delays)
 	}
 }

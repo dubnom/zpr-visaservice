@@ -5,12 +5,13 @@
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <meta name="theme-color" content="#17211e">
     <title>ZPR Control Room</title>
-    <link rel="stylesheet" href="/app.css?v=58">
+    <link rel="stylesheet" href="/app.css?v=63">
     <link rel="stylesheet" href="/machine-logs.css?v=10">
-    <link rel="stylesheet" href="/assertions.css?v=8">
+    <link rel="stylesheet" href="/assertions.css?v=11">
     <link rel="stylesheet" href="/sidebar.css?v=7">
     <link rel="stylesheet" href="/trusted-source.css?v=1">
     <link rel="stylesheet" href="/security-review.css?v=7">
+    <link rel="stylesheet" href="/diagnostics.css?v=1">
     <script src="/sidebar.js?v=4" defer></script>
     <script src="/trusted-source.js?v=1" defer></script>
     <script src="/policy-record-icons.js?v=1" defer></script>
@@ -26,8 +27,10 @@
           <a class="nav-link active" href="#map" data-page-link="map">Map</a>
           <a class="nav-link" href="#connections" data-page-group="status">Status</a>
           <a class="nav-link" href="#security-review" data-page-link="security-review">Security</a>
+          <a class="nav-link" href="#diagnostics" data-page-link="diagnostics">Diagnostics</a>
           <a class="nav-link" href="#sources" data-page-link="sources">Trusted Sources</a>
-          <a class="nav-link" href="#adapter-logs" data-page-link="adapter-logs">Logging</a>
+          <a class="nav-link" href="#adapter-logs" data-page-link="adapter-logs">Adapter Logs</a>
+          <a class="nav-link" href="#zpr-config" data-page-link="zpr-config">ZPR Config</a>
           <div class="nav-separator" role="separator"></div>
           <a class="nav-link" href="#policy" data-page-link="policy">Editor</a>
           <div class="nav-separator" role="separator"></div>
@@ -175,7 +178,7 @@
 
         <section id="policy-assertion-editor" class="policy-assertion-editor" aria-label="Assertion editor" hidden>
           <section class="section-block">
-            <div class="assertion-heading"><div><h2>Assertions</h2><small id="assertion-revision">Global</small></div><div class="assertion-actions"><label id="assertion-periodic-control"><input id="assertion-enabled" type="checkbox" disabled>Periodic checks</label><label id="assertion-interval-control">Interval (s)<input id="assertion-interval" type="number" min="30" max="3600" value="60"></label><button id="assertion-reload" class="button" type="button" disabled>Reload</button><button id="assertion-save" class="button" type="button" disabled>Save</button><button id="assertion-evaluate" class="button" type="button" disabled>Test</button></div></div>
+            <div class="assertion-heading"><div><h2>Assertions</h2><small id="assertion-revision">Global</small></div><div class="assertion-actions"><span id="assertion-periodic-control" hidden><input id="assertion-enabled" type="checkbox" disabled></span><span id="assertion-interval-control" hidden><input id="assertion-interval" type="number" min="30" max="3600" value="60"></span><button id="assertion-reload" class="button" type="button" disabled>Reload</button><button id="assertion-save" class="button" type="button" disabled>Save</button><button id="assertion-analyze" class="button" type="button" disabled>Analyze</button><button id="assertion-format" class="button" type="button" title="Format assertion source" aria-label="Format assertion source" disabled>Format</button></div></div>
             <div id="assertion-message" class="assertion-message" role="status" aria-live="polite"></div>
             <div class="assertion-workbench"><div><div id="assertion-editor" class="assertion-editor"><div id="assertion-result-gutter" class="assertion-result-gutter" aria-label="Assertion results by source line" hidden><div id="assertion-result-lines" class="assertion-result-lines"></div></div><pre id="assertion-highlight" aria-hidden="true"></pre><textarea id="assertion-source" aria-label="Data assertion source" maxlength="65536" spellcheck="false" autocapitalize="off" autocomplete="off" wrap="off" disabled></textarea></div><details class="assertion-syntax"><summary>Syntax</summary><pre>group "Operators" members &gt;= 2;
 each group members &gt; 3;
@@ -202,7 +205,7 @@ each group attribute "gidNumber" &gt;= 1000;</pre></details></div><aside class="
           <section class="section-block policy-page">
             <div class="policy-toolbar">
               <div id="policy-edit-state" class="policy-identity" aria-label="Selected policy">
-                <strong id="policy-record-title">Select a policy</strong><span id="policy-revision-label"></span>
+                <strong id="policy-record-title">Select a policy</strong><span id="policy-revision-label"></span><span id="policy-modified-indicator" class="policy-modified-indicator" role="status" hidden>Modified</span>
                 <input id="policy-draft-name" type="text" maxlength="100" autocomplete="off" aria-label="New policy name" placeholder="Name this policy" hidden>
               </div>
             </div>
@@ -239,12 +242,13 @@ each group attribute "gidNumber" &gt;= 1000;</pre></details></div><aside class="
                       </div>
                     </div>
                   </div>
+                  <span id="policy-editor-mode" class="policy-editor-mode" hidden></span>
                   <div class="policy-attribute-toolbar" id="policy-attribute-toolbar">
                     <button id="policy-check" class="button" type="button" disabled>Analyze</button>
                     <button id="policy-format" class="button button-save-as-ready" type="button" title="Format policy source" aria-label="Format policy source" disabled>Format</button>
                   </div>
                   <div class="policy-editor-utilities" id="policy-editor-utilities">
-                    <button id="policy-attribute-rescan" class="button button-save-as-ready" type="button" disabled>Rescan LDAP</button>
+                    <button id="policy-attribute-rescan" class="button button-save-as-ready" type="button" disabled>Refresh Attributes</button>
                     <details id="policy-history-menu" class="policy-history-menu">
                       <summary class="button policy-history-toggle" aria-label="Version history">History <span id="policy-history-count">—</span><span class="policy-picker-chevron" aria-hidden="true">⌄</span></summary>
                       <div id="policy-history" class="policy-history"><p class="catalog-empty">Select a policy to browse versions.</p></div>
@@ -358,6 +362,19 @@ each group attribute "gidNumber" &gt;= 1000;</pre></details></div><aside class="
           </section>
         </section>
 
+        <section class="page-view" id="page-zpr-config" data-page="zpr-config" aria-label="ZPR Config" hidden>
+          <div class="table-tools"><label>Configuration<select id="zpr-config-picker" aria-label="ZPR configuration draft"><option value="">New draft</option></select></label><label>Name<input id="zpr-config-name" aria-label="Configuration name" maxlength="160"></label><button id="zpr-config-validate" data-config-command type="button">Validate syntax</button><button id="zpr-config-save" data-config-command type="button">Save draft</button></div>
+          <textarea id="zpr-config-source" class="zpr-config-source" aria-label="ZPLC configuration source" spellcheck="false" maxlength="1048576"></textarea>
+          <div class="table-tools"><label>History<select id="zpr-config-history" aria-label="Configuration history"></select></label><p id="zpr-config-status" role="status">New draft</p></div>
+        </section>
+        <section class="page-view" id="page-diagnostics" data-page="diagnostics" aria-label="ZPR diagnostics" hidden>
+          <section class="section-block diagnostics" data-diagnostics>
+            <header class="diagnostics-header"><div><h2>Diagnostics</h2><p id="diagnostics-updated" role="status">Waiting for telemetry sources</p></div><button id="diagnostics-refresh" class="button button-refresh" type="button">Refresh</button></header>
+            <div class="diagnostics-toolbar"><label for="diagnostics-filter">Filter logs and sources</label><input id="diagnostics-filter" type="search" maxlength="200" placeholder="Identity, source, message, metric"><span id="diagnostics-count" class="count-label">—</span></div>
+            <p id="diagnostics-error" class="diagnostics-error" role="status" hidden></p>
+            <div id="diagnostics-sources" class="diagnostics-sources" aria-live="polite"></div>
+          </section>
+        </section>
         <section class="page-view" id="page-security-review" data-page="security-review" aria-label="Security review">
           <section class="section-block security-review" data-security-review>
             <div class="security-review-baseline-row">
@@ -386,9 +403,11 @@ each group attribute "gidNumber" &gt;= 1000;</pre></details></div><aside class="
       </main>
     </div>
     <script src="/vendor/pluralize.js?v=8.0.0" defer></script>
-    <script src="/app.js?v=75" defer></script>
+    <script src="/app.js?v=81" defer></script>
     <script src="/machine-logs.js?v=13" defer></script>
-    <script src="/assertions.js?v=7" defer></script>
+    <script src="/assertions.js?v=11" defer></script>
+    <script src="/config-editor.js?v=1" defer></script>
+    <script src="/diagnostics.js?v=1" defer></script>
       <script src="/security-review.js?v=10" defer></script>
   </body>
 </html>

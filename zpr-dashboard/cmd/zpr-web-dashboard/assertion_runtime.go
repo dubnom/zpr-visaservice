@@ -368,7 +368,38 @@ func decodeAssertionRequest(w http.ResponseWriter, r *http.Request, target any) 
 	return nil
 }
 
+func handleAssertionSourceTools(w http.ResponseWriter, r *http.Request) {
+	if !localEditorRequest(w, r) {
+		return
+	}
+	var request struct {
+		Source string `json:"source"`
+	}
+	if err := decodeAssertionRequest(w, r, &request); err != nil {
+		assertionHTTPError(w, err)
+		return
+	}
+	rules, err := parseAssertions(request.Source)
+	if err != nil {
+		assertionHTTPError(w, err)
+		return
+	}
+	response := map[string]any{"rule_count": len(rules), "warnings": lintAssertions(rules)}
+	if strings.HasSuffix(r.URL.Path, "/format") {
+		formatted, err := formatAssertionSource(request.Source)
+		if err != nil {
+			assertionHTTPError(w, err)
+			return
+		}
+		response["source"] = formatted
+	}
+	w.Header().Set("Cache-Control", "no-store")
+	writeJSON(w, http.StatusOK, response)
+}
+
 func (runtime *assertionRuntime) register(mux *http.ServeMux) {
+	mux.HandleFunc("POST /api/assertions/analyze", handleAssertionSourceTools)
+	mux.HandleFunc("POST /api/assertions/format", handleAssertionSourceTools)
 	mux.HandleFunc("GET /api/assertions/source", func(w http.ResponseWriter, r *http.Request) {
 		if !localEditorRequest(w, r) {
 			return

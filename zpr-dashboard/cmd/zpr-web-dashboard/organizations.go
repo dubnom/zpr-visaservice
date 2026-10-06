@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"net"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -55,8 +56,10 @@ type simulatorOrganizationRuntime struct {
 }
 
 type simulatorOrganizationRuntimeNode struct {
-	ID       string `json:"id"`
-	Location string `json:"location"`
+	ID               string `json:"id"`
+	Location         string `json:"location"`
+	SubstrateAddress string `json:"substrate_address,omitempty"`
+	ZPRAddress       string `json:"zpr_address,omitempty"`
 }
 
 type simulatorOrganizationDirectory struct {
@@ -267,9 +270,23 @@ func validateSimulatorOrganization(organization simulatorOrganization) error {
 		return fmt.Errorf("runtime topology %q has an invalid node count", organization.Runtime.Topology)
 	}
 	seenNodes := make(map[string]bool, len(organization.Runtime.Nodes))
+	seenSubstrateAddresses := make(map[string]bool, len(organization.Runtime.Nodes))
+	seenZPRAddresses := make(map[string]bool, len(organization.Runtime.Nodes))
 	for _, node := range organization.Runtime.Nodes {
 		if !validScenarioID(node.ID) || strings.TrimSpace(node.Location) == "" || seenNodes[node.ID] {
 			return errors.New("runtime nodes require unique valid ids and locations")
+		}
+		if organization.Runtime.Driver == "docker-multinode" {
+			substrate := net.ParseIP(node.SubstrateAddress)
+			zprAddress := net.ParseIP(node.ZPRAddress)
+			if substrate == nil || substrate.To4() == nil || zprAddress == nil || zprAddress.To4() != nil {
+				return fmt.Errorf("runtime node %q requires an IPv4 substrate address and IPv6 ZPR address", node.ID)
+			}
+			if seenSubstrateAddresses[node.SubstrateAddress] || seenZPRAddresses[node.ZPRAddress] {
+				return errors.New("runtime node substrate and ZPR addresses must be unique")
+			}
+			seenSubstrateAddresses[node.SubstrateAddress] = true
+			seenZPRAddresses[node.ZPRAddress] = true
 		}
 		seenNodes[node.ID] = true
 	}

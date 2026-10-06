@@ -94,6 +94,17 @@ password. Polling/export failures are logged locally and do not block Visa
 issuance. Denial history remains the Visa Service's bounded in-memory window,
 not a durable audit source.
 
+The collector also accepts an optional operator-owned
+`diagnostic-sources.json` beside `collector.env`. It may list up to 250
+node/trusted-service sources using absolute log and/or numeric-metrics JSON
+file paths. Log tails are rotation-aware and bounded to 512 KiB per poll;
+metric files are bounded to 64 KiB/100 points. Each source is exported with
+`service.name`, `service.instance.id`, `zpr.source.type`, and
+`zpr.organization.id` resource attributes. Missing files are retried on later
+polls; telemetry failures never block Visa authorization. See
+`diagnostic-sources.example.json`. Source files and paths are operator-owned;
+this interface does not inspect Simulator manifests or workloads.
+
 ## Deployment
 
 Provision a dedicated adapter and private credentials first. Put

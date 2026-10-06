@@ -109,9 +109,13 @@ func newPolicyServiceTransport() (*url.URL, *http.Transport, string) {
 	if !roots.AppendCertsFromPEM(caPEM) {
 		return nil, nil, "Policy Service CA file contains no certificates."
 	}
+	serverName := strings.TrimSpace(os.Getenv("ZPR_POLICY_SERVICE_TLS_SERVER_NAME"))
+	if serverName == "" {
+		serverName = baseURL.Hostname()
+	}
 	transport := &http.Transport{
 		TLSClientConfig: &tls.Config{
-			MinVersion: tls.VersionTLS13, RootCAs: roots, Certificates: []tls.Certificate{certificate}, ServerName: baseURL.Hostname(),
+			MinVersion: tls.VersionTLS13, RootCAs: roots, Certificates: []tls.Certificate{certificate}, ServerName: serverName,
 		},
 		DialContext:         (&net.Dialer{Timeout: 5 * time.Second, KeepAlive: 30 * time.Second}).DialContext,
 		TLSHandshakeTimeout: 5 * time.Second, ResponseHeaderTimeout: 10 * time.Second,
@@ -138,6 +142,7 @@ func policyServiceMux(workspace *policyWorkspace) http.Handler {
 	mux.HandleFunc("GET /api/policy/test/fixtures", app.handlePolicyTestFixtures)
 	mux.HandleFunc("POST /api/policy/records/{id}/stage", app.handleStagePolicyRecord)
 	mux.HandleFunc("POST /api/policy/check", app.handleCheckPolicy)
+	mux.HandleFunc("POST /api/policy/config/check", app.handleCheckConfiguration)
 	mux.HandleFunc("POST /api/policy/categories", app.handleCreatePolicyCategory)
 	mux.HandleFunc("POST /api/policy/records", app.handleCreatePolicyRecord)
 	mux.HandleFunc("POST /api/policy/records/{id}/duplicate", app.handleDuplicatePolicyRecord)
