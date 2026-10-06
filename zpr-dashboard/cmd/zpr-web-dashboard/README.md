@@ -51,7 +51,8 @@ node/service rectangles, circular adapters, visa diamonds, gateway polygons, and
 cloud paths. Visible strokes, network clearance, and clickable hit areas use the
 same endpoints. Connections track component movement and scale during animation.
 
-Security navigation highlights active high-priority findings even while another
+Security navigation colors only the narrow side indicator for active
+high-priority findings, retaining the normal link background and text, even while another
 page is open. Repeated denials mean at least five denied requests or three denial
 records from one source. They are high priority when the source is absent from
 the live actor inventory or the attempts span at least three distinct
@@ -290,6 +291,88 @@ If the inventory or any detail is unavailable, `active_visas` is null and badges
 show `?`, not a misleading zero or partial total. Visas removed between listing
 and detail retrieval are skipped. The browser also excludes grants expired since
 the snapshot and deduplicates IDs on each render.
+
+Nodes instead show red buffered-denial badges: the number of currently cached
+negative decisions reported by that node, not cumulative Visa Service denials.
+Zero is an empty red outline; unavailable telemetry is `?`. The node inspector
+shows **Local denial occurrences**, the cumulative number of requests suppressed
+locally by the denial cache since restart/counter reset, separately from
+Visa Service's approved/denied request totals.
+
+Count changes in either direction briefly pulse the badge (including expiry to
+zero), without replaying unchanged snapshots or treating unknown readings as
+zero. Reduced-motion mode fades the badge without scaling. New service grants
+also pulse their service connector; adapter decisions pulse the dock connector.
+
+#### Deploying node denial metrics
+
+Update the node packet handler to the version exposing `Buffered Denials` in
+its management RPC counters. On the node host, run the operator-owned exporter:
+
+```sh
+sh scripts/node-denial-metrics.sh /usr/local/bin/ph-cli /run/zpr/control.sock zpr-core node-01
+```
+
+It emits an OTLP JSON resource-metrics payload to stdout. Schedule it at roughly
+one-second intervals and send each successful payload to the operator-configured
+collector's OTLP `/v1/metrics` receiver using the deployment's normal authenticated
+telemetry transport. Never upload failed or partial output. The exporter needs
+`jq` and access to the node management socket; it does not discover Simulator
+containers or read simulation configuration.
+
+Map the catalog ID `node:<actor CN>` to that exporter `service.name` and
+`service.instance.id` in `ZPR_DIAGNOSTICS_SOURCE_MAP_FILE`. Control-Service reads
+`zpr.node.denials.buffered` (gauge) and `zpr.node.denials.local` (cumulative sum)
+through its existing provider-neutral diagnostics interface. Samples older than
+ten seconds (or the configured shorter freshness window), future timestamps,
+negative/noninteger values, missing metrics, and provider errors are unavailable.
+The badge represents the latest fresh node observation; short-lived entries can
+expire between samples. Polling does not reconstruct cache state or local hits
+from Visa Service denials. Until runtime rollout and telemetry export are configured,
+the inspector states the telemetry error and the Map displays `?`.
+
+For deployments without a metrics collector, Control-Service can consume the
+same OTLP payload from operator-owned local files. Set
+`ZPR_NODE_DENIAL_METRICS_FILE` to a JSON object mapping node actor CNs to absolute
+sample paths:
+
+```json
+{"node-01": "/var/lib/zpr/metrics/node-01.json"}
+```
+
+When that variable is unset, Control-Service checks for `node-denial-metrics.json`
+beside `ZPR_DIAGNOSTICS_CONFIG_FILE`; if no such file exists it uses the
+OpenObserve provider. An explicitly configured missing or invalid file is an
+error, not a fallback. Configurations and samples are limited to 64 KiB.
+Sample resource identities must match the production diagnostics source mapping
+(both identifiers default to the actor CN when no mapping is configured).
+The same ten-second freshness and integer-count checks apply.
+
+The supervised `scripts/node-denial-exporter.sh` takes an operator-owned JSON
+array, reads each explicitly configured node through `docker exec`, and atomically
+replaces its sample once per second:
+
+```json
+[{
+  "container": "production-node-01",
+  "cli": "/usr/local/bin/ph-cli",
+  "socket": "/run/zpr/control.sock",
+  "service_name": "node-01",
+  "instance_id": "node-01",
+  "output": "/var/lib/zpr/metrics/node-01.json"
+}]
+```
+
+Run `sh scripts/node-denial-exporter.sh /etc/zpr/node-exporter.json` under the
+deployment's service supervisor, or in a dedicated container with a restart
+policy, `sh`, `jq`, the Docker CLI/socket, and writable sample-directory mounts.
+Create output directories first and expose the sample paths to Control-Service.
+Docker-socket access is privileged: restrict this exporter and its configuration
+to trusted operators. Export failures are logged, never published as zero;
+the last successful sample expires normally. Stop/restart the exporter using
+its supervisor and verify fresh samples plus matching live snapshot counts.
+These files are independent operator configuration, not Simulator profiles,
+manifests, discovery, or APIs; Simulator need not be running.
 
 The Control Room Security Review is a read-only triage view using the normal
 Control Room Refresh, Pause, and refresh-interval controls. It consumes the

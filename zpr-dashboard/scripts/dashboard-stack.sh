@@ -244,6 +244,7 @@ start_simulator() {
         -v "$simulator_socket:/var/run/docker.sock" \
         -v "$DASHBOARD_DIR:$DASHBOARD_DIR:ro" \
         -v "$DNS_PROFILE_DIR:$DNS_PROFILE_DIR:ro" \
+        -v "$DASHBOARD_DIR/../../zpr-demo/multinode-demo:$DASHBOARD_DIR/../../zpr-demo/multinode-demo:ro" \
         -v "$RUNTIME_DIR:$RUNTIME_DIR" \
         -p 127.0.0.1:8055:8055 \
         -p 127.0.0.1:8184:8184 \

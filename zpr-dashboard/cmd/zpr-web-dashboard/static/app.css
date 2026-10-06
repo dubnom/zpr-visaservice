@@ -192,6 +192,10 @@ h1 { margin-bottom: 6px; font-size: 28px; line-height: 1.15; letter-spacing: 0; 
 .legend-service-link { width: 14px !important; height: 0; border-top: 2px solid #b8753f; }
 #graph-world .graph-visa-count rect { fill: #174d3d; stroke: #fff; stroke-width: 1.5; filter: none; }
 #graph-world .graph-visa-count.empty rect { fill: none; stroke: #174d3d; }
+#graph-world .graph-denial-count rect { fill: #a12c2c; }
+#graph-world .graph-denial-count.empty rect { fill: none; stroke: #a12c2c; }
+.graph-dark #graph-world .graph-denial-count:not(.empty) rect { fill: #a12c2c; stroke: #ffc1b8; }
+.graph-dark #graph-world .graph-denial-count.empty rect { stroke: #ff9e91; }
 #graph-world .graph-visa-count text { fill: #fff; stroke: none; font: 700 10px var(--mono); text-anchor: middle; pointer-events: none; }
 .graph-node { fill: #e7f0e4; stroke: #426453; stroke-width: 2; }
 .graph-node.synced { fill: #eaf4d9; stroke: #367453; }
@@ -557,8 +561,7 @@ td:first-child { color: var(--ink); font-weight: 600; }
 .config-file-popover button { padding: 7px 10px; border: 0; background: transparent; color: var(--ink); font: 11px var(--mono); text-align: left; cursor: pointer; }
 .config-file-popover button:hover, .config-file-popover button:focus-visible { background: #eaf4d9; }
 .config-file-popover button:disabled { opacity: .48; cursor: not-allowed; }
-.nav-link[data-high-alert="true"] { background: #792e24; color: #fff; box-shadow: inset 4px 0 #ffb084; }
-.nav-link[data-high-alert="true"]::after { content: "!"; margin-left: auto; font-weight: 800; }
+.nav-link[data-high-alert="true"] { box-shadow: inset 4px 0 #ff7966; }
 .dns-stats-status { margin: 0 0 9px; color: var(--muted); font: 10px var(--mono); }
 .dns-stats-metrics { gap: 6px; }
 .dns-stats-metrics .metric { display: flex; min-width: 0; min-height: 33px; align-items: center; justify-content: space-between; gap: 6px; padding: 4px 9px; }

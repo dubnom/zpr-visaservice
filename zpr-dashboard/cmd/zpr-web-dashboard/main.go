@@ -87,6 +87,9 @@ type nodeDetail struct {
 	VisaRequests      int      `json:"visa_requests"`
 	ApprovedRequests  int      `json:"approved_vreqs"`
 	DeniedRequests    int      `json:"denied_vreqs"`
+	BufferedDenials   *uint64  `json:"buffered_denials"`
+	LocalDenials      *uint64  `json:"local_denials"`
+	DenialStatsError  string   `json:"denial_stats_error,omitempty"`
 }
 
 type link struct {
@@ -578,6 +581,8 @@ func (a *application) fetchSnapshot(ctx context.Context) snapshot {
 		out.Trusted = trustedSourcesFrom(out.Services)
 	}
 	mergePlatformServices(&out)
+	provider, staleAfter, providerError := newNodeDenialProvider()
+	populateNodeDenialStats(ctx, &out, provider, staleAfter, providerError, diagnosticsSourceMappings())
 	if successfulEndpoints == 0 {
 		out.APIStatus = "disconnected"
 	} else if len(out.Errors) > 0 {

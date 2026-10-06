@@ -494,6 +494,9 @@ function renderInspector() {
         detailField("Pending revocations", details.pending_revocation),
         detailField("Visa requests", details.visa_requests),
         detailField("Approved / denied", `${details.approved_vreqs} / ${details.denied_vreqs}`),
+        detailField("Buffered denials", details.buffered_denials ?? "Unavailable"),
+        detailField("Local denial occurrences", details.local_denials ?? "Unavailable"),
+        ...(details.denial_stats_error ? [detailField("Denial telemetry", details.denial_stats_error)] : []),
         detailField("Installed visas", (details.visas || []).length),
         detailHTMLField("Docked adapters", attached.map((name) => {
           const linkedActor = data.actors.find((item) => item.cn === name);
@@ -683,6 +686,27 @@ function connectGraphShapes(lines, fromShape, toShape, world) {
   }
 }
 
+function mapComponentCounts(data) {
+  const counts = new Map();
+  const active = Array.isArray(data.active_visas)
+    ? [...new Map(data.active_visas.map((visa) => [String(visa.id), visa])).values()].filter((visa) => Number(visa.expires) > Date.now() / 1000)
+    : null;
+  const addresses = new Map();
+  if (active) for (const visa of active) {
+    for (const address of new Set([visa.source_addr, visa.dest_addr].filter(Boolean).map(dnsAddressKey))) {
+      addresses.set(address, (addresses.get(address) || 0) + 1);
+    }
+  }
+  for (const actor of data.actors) {
+    const value = actor.node ? actor.node_details?.buffered_denials : active && actor.zpr_addr ? addresses.get(dnsAddressKey(actor.zpr_addr)) || 0 : null;
+    counts.set(`actor:${JSON.stringify(actor.cn)}`, value == null ? null : value);
+  }
+  for (const service of data.services || []) {
+    counts.set(`service:${JSON.stringify([service.actor_cn, service.service_name])}`, active ? active.filter((visa) => serviceMatchesVisa(service, visa, data.actors)).length : null);
+  }
+  return counts;
+}
+
 function renderTopology(data, exitComponents = []) {
   const nodes = data.actors.filter((actor) => actor.node).sort((a, b) => a.cn.localeCompare(b.cn));
   const adapters = data.actors.filter((actor) => !actor.node).sort((a, b) => a.cn.localeCompare(b.cn));
@@ -690,19 +714,12 @@ function renderTopology(data, exitComponents = []) {
   const displayNames = new Map(actors.map((actor) => [actor.cn, actorDisplayName(actor)]));
   const actorsByName = new Map(actors.map((actor) => [actor.cn, actor]));
   const actorsByAddress = new Map(actors.map((actor) => [actor.zpr_addr, actor]));
-  const activeVisas = Array.isArray(data.active_visas)
-    ? [...new Map(data.active_visas.map((visa) => [String(visa.id), visa])).values()].filter((visa) => Number(visa.expires) > Date.now() / 1000)
-    : null;
-  const actorVisaCounts = new Map();
-  if (activeVisas) for (const visa of activeVisas) {
-    for (const address of new Set([visa.source_addr, visa.dest_addr].filter(Boolean).map(dnsAddressKey))) {
-      actorVisaCounts.set(address, (actorVisaCounts.get(address) || 0) + 1);
-    }
-  }
-  const visaCountBadge = (count, x, y) => {
+  const counts = mapComponentCounts(data);
+  const visaCountBadge = (count, x, y, denial = false) => {
     const label = count == null ? "?" : count === 0 ? "" : String(count);
     const width = Math.max(22, label.length * 7 + 10);
-    return `<g class="graph-visa-count${count === 0 ? " empty" : ""}" aria-label="${count == null ? "Active visa count unavailable" : `${count} active visas`}"><title>${count == null ? "Active visa count unavailable" : `${count} active visas`}</title><rect x="${x - 11}" y="${y - 9}" width="${width}" height="18" rx="9"/>${label ? `<text x="${x - 11 + width / 2}" y="${y + 3}">${label}</text>` : ""}</g>`;
+    const description = count == null ? denial ? "Buffered denial count unavailable" : "Active visa count unavailable" : `${count} ${denial ? "buffered denials" : "active visas"}`;
+    return `<g class="graph-visa-count${denial ? " graph-denial-count" : ""}${count === 0 ? " empty" : ""}" aria-label="${description}"><title>${description}</title><rect x="${x - 11}" y="${y - 9}" width="${width}" height="18" rx="9"/>${label ? `<text x="${x - 11 + width / 2}" y="${y + 3}">${label}</text>` : ""}</g>`;
   };
   const edges = [];
 
@@ -992,7 +1009,7 @@ function renderTopology(data, exitComponents = []) {
       cloudMarkup = `<g class="graph-external-network"><title>${escapeHTML(externalNetworks)}</title><line class="graph-link gateway-cloud-link" x1="${pos.x}" y1="${pos.y}" x2="${cloudX}" y2="${cloudY}"/><path class="graph-cloud" transform="translate(${cloudX} ${cloudY})" d="M -34 22 C -60 22 -62 -12 -39 -17 C -40 -43 -2 -49 9 -28 C 31 -42 52 -22 46 -5 C 68 0 62 22 42 22 Z"/></g>`;
     }
     const highlighted = query && matches(actor) ? "highlighted" : "";
-    const count = !isNode ? visaCountBadge(activeVisas && actor.zpr_addr ? actorVisaCounts.get(dnsAddressKey(actor.zpr_addr)) || 0 : null, pos.x + actorRadius(actor) - 2, pos.y - 24) : "";
+    const count = visaCountBadge(counts.get(componentKey), pos.x + (isNode ? 44 : actorRadius(actor) - 2), pos.y - 24, isNode);
     return `<g class="graph-vertex ${isNode ? "node" : isGateway ? "gateway" : isVisaService ? "visa" : "adapter"}${arrivingClass} ${highlighted} ${query && !matches(actor) ? "filtered" : ""}" data-topology-component="${escapeHTML(componentKey)}" data-origin-x="${pos.x}" data-origin-y="${pos.y}"${positionAttributes} data-inspect-actor="${escapeHTML(actor.cn)}" tabindex="0" role="button" aria-label="Inspect ${escapeHTML(isGateway ? "gateway " : "")}${escapeHTML(displayName)}"><title>${escapeHTML(isGateway ? "ZPR gateway · " : "")}${escapeHTML(displayName)} · ${escapeHTML(actor.cn)} · ${escapeHTML(dnsAddressTitle(actor.zpr_addr))}</title>${cloudMarkup}${glyph}${marker}<text class="graph-label" x="${pos.x}" y="${pos.y + 3}">${escapeHTML(shortName)}</text>${count}</g>`;
   });
 
@@ -1025,7 +1042,7 @@ function renderTopology(data, exitComponents = []) {
     const parentMovement = marker ? enteringOffsets.get(parentKey) || previousMovement.get(parentKey) : null;
     const entry = marker && parentMovement ? { x: offset.x + parentMovement.x, y: offset.y + parentMovement.y } : null;
     const positionAttributes = offsetAttributes(offset, parentKey, entry);
-    const count = visaCountBadge(activeVisas ? activeVisas.filter((visa) => serviceMatchesVisa(service, visa, actors)).length : null, position.x + badgeWidth / 2 + 12, position.y);
+    const count = visaCountBadge(counts.get(componentKey), position.x + badgeWidth / 2 + 12, position.y);
     return `<g class="graph-service-badge${gatewayClass}${trustedClass}${arrivingClass} ${highlighted} ${filtered}" data-service-type="${escapeHTML(type.key)}" fill="${escapeHTML(type.background)}" stroke="${escapeHTML(type.border)}" color="${escapeHTML(type.color)}" data-topology-component="${escapeHTML(componentKey)}" data-origin-x="${position.x}" data-origin-y="${position.y}"${positionAttributes} data-inspect-service="${escapeHTML(service.service_name)}" tabindex="0" role="button" aria-label="${escapeHTML(labelForScreenReader)}"><title>${escapeHTML(title)}</title><rect x="${position.x - badgeWidth / 2}" y="${position.y - 10}" width="${badgeWidth}" height="20" rx="4"/>${marker}<text x="${position.x}" y="${position.y + 3}">${escapeHTML(shortLabel)}</text>${count}</g>`;
   });
 
@@ -1091,6 +1108,7 @@ function renderTopology(data, exitComponents = []) {
 
   setupGraphControls(stage, width, height, previousViewport);
   pulseAdapterDecisions(data);
+  pulseMapCounts(counts);
 }
 
 function renderConnections(edges, unconnected) {
@@ -3425,6 +3443,42 @@ function snapshotRemovedTopologyComponents(keys) {
 
 const adapterDecisionPulses = new Map();
 const serviceGrantPulses = new Map();
+const mapCountPulses = new Map();
+let previousMapCounts = null;
+
+function pulseMapCounts(counts) {
+  const now = Date.now();
+  if (previousMapCounts) for (const [key, count] of counts) {
+    const previous = previousMapCounts.get(key);
+    if (count != null && previous != null && count !== previous) mapCountPulses.set(key, now);
+  }
+  previousMapCounts = counts;
+  for (const [key, startedAt] of mapCountPulses) if (now - startedAt >= 1200 || !counts.has(key)) mapCountPulses.delete(key);
+  for (const component of document.querySelectorAll("#graph-world > [data-topology-component]")) {
+    const startedAt = mapCountPulses.get(component.dataset.topologyComponent);
+    const badge = component.querySelector(".graph-visa-count");
+    if (startedAt == null || !badge) continue;
+    badge.dataset.countPulse = "true";
+    badge.classList.add("graph-decision-glyph");
+    const motion = matchMedia("(prefers-reduced-motion: reduce)").matches;
+    const animation = badge.animate([
+      { opacity: 1, ...(motion ? {} : { transform: "scale(1)" }) },
+      { opacity: 0.45, offset: 0.4, ...(motion ? {} : { transform: "scale(1.35)" }) },
+      { opacity: 1, ...(motion ? {} : { transform: "scale(1)" }) },
+    ], { duration: 1200, easing: "ease-in-out" });
+    animation.currentTime = now - startedAt;
+    animation.onfinish = () => { delete badge.dataset.countPulse; badge.classList.remove("graph-decision-glyph"); };
+  }
+}
+
+function pulseGraphWire(wire, decision, color, duration, elapsed) {
+  const normal = getComputedStyle(wire);
+  const base = { stroke: normal.stroke, strokeWidth: normal.strokeWidth };
+  wire.dataset.decision = decision;
+  const animation = wire.animate([base, { stroke: color, strokeWidth: `${Number.parseFloat(normal.strokeWidth) + 3}px`, offset: 0.35 }, base], { duration, easing: "ease-in-out" });
+  animation.onfinish = () => delete wire.dataset.decision;
+  animation.currentTime = elapsed;
+}
 const ADAPTER_DECISION_DURATION = 1200;
 const SERVICE_GRANT_DURATION = 2000;
 
@@ -3503,6 +3557,11 @@ function pulseAdapterDecisions(data) {
     const animation = outline.animate(decisionPulseFrames(reducedMotion), { duration: SERVICE_GRANT_DURATION, easing: "ease-in-out" });
     animation.onfinish = () => outline.remove();
     animation.currentTime = elapsed;
+    for (const edge of document.querySelectorAll(".graph-service-edge")) {
+      if (edge.dataset.connectorTo === badge.dataset.topologyComponent) {
+        pulseGraphWire(edge.querySelector(".graph-link"), "grant", getComputedStyle(outline).stroke, SERVICE_GRANT_DURATION, elapsed);
+      }
+    }
     if (!reducedMotion) {
       glyph.classList.add("graph-decision-glyph");
       const expansion = glyph.animate([{ transform: "scale(1)" }, { transform: "scale(1.2)", offset: 0.4 }, { transform: "scale(1)" }], { duration: SERVICE_GRANT_DURATION, easing: "ease-in-out" });
@@ -3533,12 +3592,7 @@ function pulseAdapterDecisions(data) {
     for (const edge of document.querySelectorAll(".graph-edge[data-dock-adapter]")) {
       if (edge.dataset.dockAdapter !== actor.cn) continue;
       const wire = edge.querySelector(".graph-link");
-      const normal = getComputedStyle(wire);
-      const base = { stroke: normal.stroke, strokeWidth: normal.strokeWidth };
-      wire.dataset.decision = decision;
-      const wireAnimation = wire.animate([base, { stroke: color, strokeWidth: `${Number.parseFloat(normal.strokeWidth) + 3}px`, offset: 0.35 }, base], { duration: ADAPTER_DECISION_DURATION, easing: "ease-in-out" });
-      wireAnimation.onfinish = () => delete wire.dataset.decision;
-      wireAnimation.currentTime = elapsed;
+      pulseGraphWire(wire, decision, color, ADAPTER_DECISION_DURATION, elapsed);
     }
     if (!reducedMotion) {
       glyph.classList.add("graph-decision-glyph");

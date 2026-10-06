@@ -3144,7 +3144,7 @@ test("GUI Map shows complete active visa counts and solid component links", asyn
   await expect(serverCount).toHaveAttribute("aria-label", "13 active visas");
   await expect(serviceCount).toHaveAttribute("aria-label", "13 active visas");
   await expect(page.locator('[data-inspect-service="Other"] .graph-visa-count')).toHaveAttribute("aria-label", "0 active visas");
-  await expect(page.locator('[data-inspect-actor="node"] .graph-visa-count')).toHaveCount(0);
+  await expect(page.locator('.graph-vertex[data-inspect-actor="node"] .graph-denial-count')).toHaveAttribute("aria-label", "Buffered denial count unavailable");
   for (const line of await page.locator(".graph-link").all()) await expect(line).toHaveCSS("stroke-dasharray", "none");
   await expect(page.locator(".legend-service-link")).toHaveCSS("border-top-style", "solid");
   const fitted = await page.evaluate(() => {
@@ -3171,6 +3171,87 @@ test("GUI Map shows complete active visa counts and solid component links", asyn
   api.snapshot.active_visas = [];
   await page.locator("#refresh-now").click();
   await expect(clientCount).toHaveAttribute("aria-label", "0 active visas");
+});
+
+for (const reducedMotion of ["no-preference", "reduce"]) {
+test(`GUI Map denial badges and count changes pulse without replay (${reducedMotion})`, async ({ page, appURL, api }) => {
+  await page.emulateMedia({ reducedMotion });
+  api.snapshot.actors = [
+    { cn: "node", node: true, zpr_addr: "fd00::ff", node_details: { adapters: ["client"], buffered_denials: 0, local_denials: 19 } },
+    { cn: "client", node: false, zpr_addr: "fd00::1" },
+  ];
+  api.snapshot.services = [{ service_name: "API", actor_cn: "client", zpr_addr: "fd00::1", service_endpoints: "TCP/443" }];
+  api.snapshot.active_visas = [];
+  await page.goto(appURL + "/#map");
+  await page.getByRole("button", { name: "Pause updates", exact: true }).click();
+  const node = page.locator('.graph-vertex[data-inspect-actor="node"]');
+  const nodeCount = node.locator(".graph-denial-count");
+  await expect(nodeCount).toHaveAttribute("aria-label", "0 buffered denials");
+  await expect(nodeCount.locator("text")).toHaveCount(0);
+  await expect(nodeCount.locator("rect")).toHaveCSS("fill", "none");
+  await expect(nodeCount.locator("rect")).toHaveCSS("stroke", "rgb(161, 44, 44)");
+  await expect(page.locator("[data-count-pulse]")).toHaveCount(0);
+  api.snapshot.actors[0].node_details.buffered_denials = 3;
+  api.snapshot.active_visas = [{ id: 1, expires: Math.floor(Date.now() / 1000) + 3600, source_addr: "fd00::2", dest_addr: "fd00::1", dest_port: 443, proto: "TCP" }];
+  await page.locator("#refresh-now").click();
+  await expect(nodeCount).toHaveAttribute("data-count-pulse", "true");
+  await expect(nodeCount.locator("text")).toHaveText("3");
+  await expect(nodeCount.locator("rect")).toHaveCSS("fill", "rgb(161, 44, 44)");
+  await expect(page.locator('[data-inspect-service="API"] .graph-visa-count')).toHaveAttribute("data-count-pulse", "true");
+  const frames = await nodeCount.evaluate(el => el.getAnimations()[0].effect.getKeyframes().map(frame => frame.transform).filter(Boolean));
+  expect(frames).toEqual(reducedMotion === "reduce" ? [] : ["scale(1)", "scale(1.35)", "scale(1)"]);
+  await expect(page.locator("[data-count-pulse]")).toHaveCount(0);
+  await page.locator("#refresh-now").click();
+  await expect(page.locator("[data-count-pulse]")).toHaveCount(0);
+  api.snapshot.actors[0].node_details.buffered_denials = 0;
+  api.snapshot.active_visas = [];
+  await page.locator("#refresh-now").click();
+  await expect(nodeCount).toHaveAttribute("data-count-pulse", "true");
+  await expect(nodeCount.locator("text")).toHaveCount(0);
+  await expect(page.locator("[data-count-pulse]")).toHaveCount(0);
+  api.snapshot.actors[0].node_details.buffered_denials = null;
+  await page.locator("#refresh-now").click();
+  await expect(nodeCount).toHaveAttribute("aria-label", "Buffered denial count unavailable");
+  await expect(page.locator("[data-count-pulse]")).toHaveCount(0);
+  await node.click();
+  await expect(page.locator("#inspector-body")).toContainText("Local denial occurrences");
+  await expect(page.locator("#inspector-body")).toContainText("19");
+});
+}
+
+test("GUI Security high alerts only color the side indicator", async ({ page, appURL, api }) => {
+  await page.goto(appURL + "/#map");
+  await page.getByRole("button", { name: "Pause updates", exact: true }).click();
+  const nav = page.locator('.primary-nav [data-page-link="security-review"]');
+  const colors = () => nav.evaluate(el => {
+    const css = getComputedStyle(el);
+    return { background: css.backgroundColor, color: css.color };
+  });
+  const original = await colors();
+  api.snapshot.recent_denies = [{ source_addr: "fd00::99", dest_addr: "fd00::20", count: 5, deny_code: "DENY", last_deny_ms: Date.now() }];
+  await page.locator("#refresh-now").click();
+  await expect(nav).toHaveAttribute("data-high-alert", "true");
+  expect(await colors()).toEqual(original);
+  expect(await nav.evaluate(el => getComputedStyle(el).boxShadow)).toContain("rgb(255, 121, 102)");
+});
+
+test("GUI Map service grants pulse their connectors as well as adapters", async ({ page, appURL, api }) => {
+  api.snapshot.actors = [
+    { cn: "node", node: true, node_details: { adapters: ["client", "server"] } },
+    { cn: "client", node: false, zpr_addr: "fd00::1" },
+    { cn: "server", node: false, zpr_addr: "fd00::2" },
+  ];
+  api.snapshot.services = [{ service_name: "API", actor_cn: "server", service_endpoints: "TCP/443" }];
+  await page.goto(appURL + "/#map");
+  await page.getByRole("button", { name: "Pause updates", exact: true }).click();
+  api.snapshot.recent_visas = [{ id: 100, source_addr: "fd00::1", dest_addr: "fd00::2", proto: "TCP", dest_port: 443 }];
+  await page.locator("#refresh-now").click();
+  await expect(page.locator('.graph-edge[data-dock-adapter="client"] .graph-link')).toHaveAttribute("data-decision", "grant");
+  const wire = page.locator(".graph-service-edge .graph-link");
+  await expect(wire).toHaveAttribute("data-decision", "grant");
+  const widths = await wire.evaluate(el => el.getAnimations()[0].effect.getKeyframes().map(frame => Number.parseFloat(frame.strokeWidth)));
+  expect(Math.max(...widths)).toBeGreaterThanOrEqual(4.5);
+  await expect(wire).not.toHaveAttribute("data-decision");
 });
 
 test("GUI Map connectors meet actual glyph edges for every shape", async ({ page, appURL, api }) => {
