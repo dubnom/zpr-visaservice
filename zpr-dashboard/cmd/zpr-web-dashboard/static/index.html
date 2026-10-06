@@ -1,0 +1,415 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <meta name="theme-color" content="#17211e">
+    <title>ZPR Control Room</title>
+    <link rel="stylesheet" href="/app.css?v=70">
+    <link rel="stylesheet" href="/machine-logs.css?v=13">
+    <link rel="stylesheet" href="/assertions.css?v=11">
+    <link rel="stylesheet" href="/sidebar.css?v=7">
+    <link rel="stylesheet" href="/trusted-source.css?v=2">
+    <link rel="stylesheet" href="/security-review.css?v=8">
+    <link rel="stylesheet" href="/diagnostics.css?v=1">
+    <script src="/sidebar.js?v=13" defer></script>
+    <script src="/trusted-source.js?v=2" defer></script>
+    <script src="/policy-record-icons.js?v=1" defer></script>
+  </head>
+  <body>
+    <div class="app-shell">
+      <aside class="sidebar">
+        <a class="brand" href="#map" aria-label="ZPR Control Room map">
+          <span class="brand-mark"><i></i><i></i><i></i></span>
+          <span><strong>ZPR</strong><small>CONTROL ROOM</small></span>
+        </a>
+        <nav class="primary-nav" aria-label="Main navigation">
+          <a class="nav-link active" href="#map" data-page-link="map">Map</a>
+          <a class="nav-link" href="#connections" data-page-group="status">Status</a>
+          <a class="nav-link" href="#security-review" data-page-link="security-review">Security</a>
+          <a class="nav-link" href="#diagnostics" data-page-link="diagnostics">Diagnostics</a>
+          <a class="nav-link" href="#sources" data-page-link="sources">Trusted Sources</a>
+          <a class="nav-link" href="#adapter-logs" data-page-link="adapter-logs">Adapter Logs</a>
+          <a class="nav-link" href="#zpr-config" data-page-link="zpr-config">ZPR Config</a>
+          <div class="nav-separator" role="separator"></div>
+          <a class="nav-link" href="#policy" data-page-link="policy">Editor</a>
+          <div class="nav-separator" role="separator"></div>
+        </nav>
+        <div class="sidebar-external-tools">
+          <p class="sidebar-tools-label">TOOLS</p>
+          <a class="nav-link sidebar-external-link sidebar-tool-prominent" href="http://127.0.0.1:8798/" target="zpr-log-manager" data-reuse-window="zpr-log-manager" rel="noopener noreferrer"><span>Log Manager</span><span aria-hidden="true">↗</span></a>
+        </div>
+        <div class="sidebar-foot">
+          <span class="tiny-dot"></span>
+          <span>LIVE STATE + POLICY RECORDS</span>
+        </div>
+      </aside>
+
+      <main class="main-content" id="app-main">
+        <header class="topbar">
+          <div class="topbar-status">
+            <div class="connection-state" id="connection-state" data-state="loading">
+              <span class="state-lamp"></span>
+              <div><strong id="api-state-text">Connecting to Visa Service</strong><small id="last-updated">Waiting for first snapshot</small></div>
+            </div>
+          </div>
+          <div class="top-actions">
+            <div class="uptime-status"><span>UPTIME</span><strong id="metric-uptime">—</strong></div>
+            <label class="poll-control" for="poll-rate"><span>REFRESH</span>
+              <select id="poll-rate" aria-label="Refresh interval">
+                <option value="3">3 sec</option>
+                <option value="5" selected>5 sec</option>
+                <option value="10">10 sec</option>
+                <option value="30">30 sec</option>
+              </select>
+            </label>
+            <button id="pause-poll" class="button button-quiet button-pause" type="button" aria-pressed="false">Pause updates</button>
+            <span id="pause-status" class="pause-status" role="status" aria-live="polite" hidden>Updates paused</span>
+            <button id="refresh-now" class="button button-refresh" type="button" title="Refresh now">Refresh <span aria-hidden="true">↻</span></button>
+          </div>
+        </header>
+
+        <nav id="status-tabs" class="status-tabs" aria-label="Status pages" hidden>
+          <a href="#connections" data-page-link="connections">Adapters <span id="status-count-adapters">—</span></a>
+          <a href="#actors" data-page-link="actors">Actors <span id="status-count-actors">—</span></a>
+          <a href="#services" data-page-link="services">Services <span id="status-count-services">—</span></a>
+          <a href="#visas" data-page-link="visas">Visas <span id="status-count-visas">—</span></a>
+          <a href="#denies" data-page-link="denies">Denials <span id="status-count-denies">—</span></a>
+          <a href="#dns" data-page-link="dns">DNS <span id="status-count-dns">—</span></a>
+        </nav>
+
+        <section class="status-banner" aria-label="Live network overview">
+          <div id="alert-strip" class="alert-strip" hidden role="status"></div>
+          <div class="metrics-grid" aria-label="Key metrics">
+            <article class="metric metric-dark">
+              <div class="metric-pair metric-population">
+                <span><strong id="metric-actors">—</strong> actors</span>
+                <span><strong id="metric-adapters">—</strong> docked</span>
+                <span><strong id="metric-services">—</strong> services</span>
+              </div>
+            </article>
+            <article class="metric">
+              <div class="metric-head"><span>VISAS</span><span class="metric-glyph glyph-orange">Σ</span></div>
+              <div class="metric-pair">
+                <span class="decision-allowed"><strong id="metric-allowed">—</strong> allow</span>
+                <span class="decision-denied"><strong id="metric-denied">—</strong> deny</span>
+                <span><strong id="metric-visas">—</strong> active</span>
+              </div>
+            </article>
+            <article class="metric">
+              <div class="metric-head"><span>NODES IN SYNC</span><span class="metric-glyph glyph-green">N</span></div>
+              <strong class="metric-value" id="metric-nodes">—</strong>
+              <small id="metric-nodes-note">Waiting for topology</small>
+            </article>
+          </div>
+        </section>
+
+        <section class="page-view" id="page-map" data-page="map" aria-label="Map">
+          <section class="section-block topology-page">
+          <div class="section-heading">
+            <div class="legend"><input id="topology-search" class="topology-search" type="search" placeholder="Highlight" aria-label="Highlight topology graph"><span><i class="legend-node"></i>NODE</span><span><i class="legend-visa"></i>VISA SERVICE</span><span><i class="legend-gateway"></i>GATEWAY</span><span><i class="legend-adapter"></i>ADAPTER</span><span><i class="legend-service"></i>SERVICE</span><span><i class="legend-service-link"></i>REGISTRATION</span><span><i class="legend-trusted-file"></i>TRUSTED FILE</span><span><i class="legend-trusted-rest"></i>TRUSTED REST/1</span><span><i class="legend-dock"></i>DOCKED</span><span><i class="legend-up"></i>INTER-NODE</span></div>
+          </div>
+          <div class="topology-layout topology-only">
+            <div class="topology-stage" id="topology-stage">
+              <div class="empty-state">Waiting for node and link data…</div>
+            </div>
+          </div>
+          </section>
+        </section>
+
+        <section class="page-view" id="page-connections" data-page="connections" aria-label="Adapters">
+          <section class="section-block">
+            <div class="table-tools"><div class="filter-group"><input id="connections-filter" type="search" placeholder="Filter" aria-label="Filter connections"><span class="count-label" id="connection-count">—</span></div></div>
+            <div class="table-scroll"><table data-sort-page="connections"><thead><tr><th data-sort-key="from">FROM</th><th data-sort-key="to">TO</th><th data-sort-key="type">TYPE</th><th data-sort-key="address">DNS NAMES</th><th data-sort-key="state">STATE</th></tr></thead><tbody id="link-list"><tr><td colspan="5" class="empty-row">Waiting for connection data…</td></tr></tbody></table></div>
+          </section>
+        </section>
+
+        <section class="page-view" id="page-actors" data-page="actors" aria-label="Actors">
+          <section class="section-block">
+          <div id="actors">
+            <div class="table-tools"><div class="filter-group"><input id="actor-search" type="search" placeholder="Filter" aria-label="Filter actors"><span class="count-label" id="actor-count">—</span></div></div>
+            <div class="table-scroll"><table data-sort-page="actors"><thead><tr><th data-sort-key="cn">ACTOR</th><th data-sort-key="role">ROLE</th><th data-sort-key="address">DNS NAME</th><th data-sort-key="state">NODE STATE</th></tr></thead><tbody id="actor-rows"><tr><td colspan="4" class="empty-row">Waiting for actor data…</td></tr></tbody></table></div>
+          </div>
+          </section>
+        </section>
+
+        <section class="page-view" id="page-adapter-logs" data-page="adapter-logs" aria-label="Adapter Logs">
+          <section class="section-block">
+            <div class="adapter-logs-heading"><h2>Adapter Logs</h2><div class="machine-logs-toolbar adapter-logs-toolbar"><button id="machine-logs-pause" class="button button-quiet" type="button" aria-label="Pause log updates" aria-pressed="false">Pause</button><div class="machine-log-type-toggle" role="group" aria-label="Log type"><button type="button" data-adapter-log-type="adapter" aria-pressed="true">Adapter logs</button><button type="button" data-adapter-log-type="controller" aria-pressed="false">Controller logs</button></div><button id="adapter-log-all" class="button" type="button" aria-pressed="false">Show all adapters</button><label class="adapter-running-filter"><input id="adapter-log-running" type="checkbox"><span>Running only</span></label><button id="adapter-log-wrap" class="button" type="button" aria-pressed="true">Word wrap</button><button id="adapter-log-add" class="adapter-column-add" type="button" aria-label="Add adapter panel" title="Add adapter panel">+</button></div></div>
+            <div class="adapter-logs-meta"><span id="machine-logs-status">Connecting</span><span>Updated <time id="machine-logs-time">-</time></span></div>
+            <div id="machine-logs-error" class="machine-logs-error" role="alert" hidden></div>
+            <div id="machine-logs-grid" class="machine-logs-grid adapter-log-columns" data-site="control-room" data-endpoint="/api/adapter-logs"></div>
+          </section>
+        </section>
+
+        <section class="page-view" id="page-services" data-page="services" aria-label="Services">
+          <section class="section-block">
+            <div class="table-tools service-table-tools"><div class="filter-group"><input id="services-filter" type="search" placeholder="Filter" aria-label="Filter services"><span class="count-label" id="service-count">—</span></div><details class="service-type-key"><summary aria-label="Show service type colors">Type colors</summary><div id="service-type-legend" class="service-type-legend" role="list" aria-label="Service type color mapping"></div></details></div>
+            <div class="table-scroll"><table data-sort-page="services"><thead><tr><th data-sort-key="name">SERVICE</th><th data-sort-key="kind">TYPE</th><th data-sort-key="actor">PROVIDER ACTOR</th><th data-sort-key="address">DNS NAME</th><th data-sort-key="endpoints">ENDPOINTS</th></tr></thead><tbody id="service-rows"><tr><td colspan="5" class="empty-row">Waiting for service data…</td></tr></tbody></table></div>
+          </section>
+        </section>
+
+        <section class="page-view" id="page-dns" data-page="dns" aria-label="DNS data">
+          <section class="section-block dns-statistics-page">
+            <p id="dns-stats-status" class="dns-stats-status" role="status">Waiting for BIND statistics…</p>
+            <div class="metrics-grid dns-stats-metrics">
+              <article class="metric metric-dark"><div class="metric-head"><span>REQUESTS</span></div><strong class="metric-value" id="dns-stat-requests">—</strong></article>
+              <article class="metric"><div class="metric-head"><span>SUCCESSFUL</span></div><strong class="metric-value" id="dns-stat-success">—</strong></article>
+              <article class="metric"><div class="metric-head"><span>NXDOMAIN</span></div><strong class="metric-value" id="dns-stat-nxdomain">—</strong></article>
+              <article class="metric"><div class="metric-head"><span>SERVFAIL</span></div><strong class="metric-value" id="dns-stat-servfail">—</strong></article>
+            </div>
+            <div class="dns-statistics-grid">
+              <section class="dns-statistics-section" aria-label="DNS request counters">
+                <div class="section-heading"><div><p class="eyebrow">BIND 9</p><h2>Request counters</h2></div></div>
+                <div class="table-scroll"><table data-sort-page="dns-counters"><thead><tr><th data-sort-key="counter">COUNTER</th><th data-sort-key="value">VALUE</th></tr></thead><tbody id="dns-counter-rows"><tr><td colspan="2" class="empty-row">Waiting for statistics…</td></tr></tbody></table></div>
+              </section>
+              <section class="dns-statistics-section" aria-label="DNS zones">
+                <div class="section-heading"><div><p class="eyebrow">AUTHORITATIVE DATA</p><h2>Zones</h2></div></div>
+                <div class="table-scroll"><table data-sort-page="dns-zones"><thead><tr><th data-sort-key="zone">ZONE</th><th data-sort-key="type">TYPE</th><th data-sort-key="serial">SERIAL</th><th data-sort-key="success">SUCCESS</th><th data-sort-key="nxdomain">NXDOMAIN</th><th data-sort-key="aaaa">AAAA</th></tr></thead><tbody id="dns-zone-rows"><tr><td colspan="6" class="empty-row">Waiting for zone statistics…</td></tr></tbody></table></div>
+              </section>
+            </div>
+            <section class="dns-statistics-section dns-records-section" aria-label="DNS resource records">
+              <div class="section-heading"><div><p class="eyebrow">AUTHENTICATED ZONE TRANSFER</p><h2>Resource records</h2></div><p id="dns-record-status" class="dns-record-status" role="status">Waiting for zone records…</p></div>
+              <div class="table-scroll"><table data-sort-page="dns-records"><thead><tr><th data-sort-key="name">NAME</th><th data-sort-key="ttl">TTL</th><th data-sort-key="type">TYPE</th><th data-sort-key="value">VALUE</th></tr></thead><tbody id="dns-record-rows"><tr><td colspan="4" class="empty-row">Waiting for zone records…</td></tr></tbody></table></div>
+            </section>
+          </section>
+        </section>
+
+        <section id="policy-assertion-editor" class="policy-assertion-editor" aria-label="Assertion editor" hidden>
+          <section class="section-block">
+            <div class="assertion-heading"><div><h2>Assertions</h2><small id="assertion-revision">Global</small></div><div class="assertion-actions"><span id="assertion-periodic-control" hidden><input id="assertion-enabled" type="checkbox" disabled></span><span id="assertion-interval-control" hidden><input id="assertion-interval" type="number" min="30" max="3600" value="60"></span><button id="assertion-reload" class="button" type="button" disabled>Reload</button><button id="assertion-save" class="button" type="button" disabled>Save</button><button id="assertion-analyze" class="button" type="button" disabled>Analyze</button><button id="assertion-format" class="button" type="button" title="Format assertion source" aria-label="Format assertion source" disabled>Format</button></div></div>
+            <div id="assertion-message" class="assertion-message" role="status" aria-live="polite"></div>
+            <div class="assertion-workbench"><div><div id="assertion-editor" class="assertion-editor"><div id="assertion-result-gutter" class="assertion-result-gutter" aria-label="Assertion results by source line" hidden><div id="assertion-result-lines" class="assertion-result-lines"></div></div><pre id="assertion-highlight" aria-hidden="true"></pre><textarea id="assertion-source" aria-label="Data assertion source" maxlength="65536" spellcheck="false" autocapitalize="off" autocomplete="off" wrap="off" disabled></textarea></div><details class="assertion-syntax"><summary>Syntax</summary><pre>group "Operators" members &gt;= 2;
+each group members &gt; 3;
+assert (source("ldap").group("Operators").members + 1) &gt;= 3;
+people from "ldap" where source("ldap").attribute("title") == "Engineer" or source("ldap").attribute("title") == "Reviewer";
+people exactly_one ["Employees", "Contractors"];
+people in "Employees" not_both ["Administrators", "Auditors"];
+people attribute "mail" present;
+people in "Operators" attribute "title" == "Engineer";
+people attribute "employeeType" in ["Employee", "Contractor"];
+each group attribute "gidNumber" &gt;= 1000;</pre></details></div><aside class="assertion-catalog"><div class="assertion-heading"><h3>Trusted source</h3><button id="assertion-read-source" class="button" type="button" disabled>Read source</button></div><p id="assertion-source-status" class="assertion-source-meta">Loading</p><p id="assertion-source-summary" class="assertion-source-meta">Not read</p><div class="assertion-catalog-tabs" role="tablist" aria-label="Trusted source catalog"><button id="assertion-groups-tab" type="button" role="tab" data-assertion-catalog-tab aria-controls="assertion-groups-panel" aria-selected="true">Groups</button><button id="assertion-attributes-tab" type="button" role="tab" data-assertion-catalog-tab aria-controls="assertion-attributes-panel" aria-selected="false" tabindex="-1">Attributes</button></div><div id="assertion-groups-panel" role="tabpanel" aria-labelledby="assertion-groups-tab"><div class="table-scroll"><table><thead><tr><th>GROUP</th><th>MEMBERS</th><th></th></tr></thead><tbody id="assertion-group-rows"></tbody></table></div></div><div id="assertion-attributes-panel" role="tabpanel" aria-labelledby="assertion-attributes-tab" hidden><div class="table-scroll"><table><thead><tr><th>ATTRIBUTE</th><th>PEOPLE</th><th>GROUPS</th><th></th></tr></thead><tbody id="assertion-attribute-rows"></tbody></table></div></div></aside></div>
+            <section class="assertion-results"><h3>Results</h3><p id="assertion-run-status">Not evaluated</p><p id="assertion-run-error" role="status"></p><div class="table-scroll"><table><thead><tr><th>LINE</th><th>ASSERTION</th><th>RESULT</th><th>CHECKED</th><th>VIOLATIONS</th></tr></thead><tbody id="assertion-result-rows"></tbody></table></div></section>
+          </section>
+        </section>
+        <section class="page-view" id="page-sources" data-page="sources" aria-label="Trusted sources">
+          <section class="section-block">
+            <div class="table-tools"><div class="filter-group"><input id="sources-filter" type="search" placeholder="Filter" aria-label="Filter trusted sources"></div></div>
+            <div class="table-scroll"><table data-sort-page="sources"><thead><tr><th data-sort-key="name">SOURCE</th><th data-sort-key="provider">HOW IT SUPPLIES</th><th data-sort-key="actor">USED BY</th><th data-sort-key="health">LAST RESULT</th><th data-sort-key="last_lookup">LAST CHECKED</th></tr></thead><tbody id="trusted-list"><tr><td colspan="5" class="empty-row">Waiting for service data…</td></tr></tbody></table></div>
+            <trusted-source-browser data-endpoint="/api/assertions/source"></trusted-source-browser>
+          </section>
+        </section>
+
+        <section class="page-view" id="page-policy" data-page="policy" aria-label="Policy studio">
+          <section class="section-block policy-page">
+            <div class="policy-toolbar">
+              <div id="policy-edit-state" class="policy-identity" aria-label="Selected policy">
+                <strong id="policy-record-title">Select a policy</strong><span id="policy-revision-label"></span><span id="policy-modified-indicator" class="policy-modified-indicator" role="status" hidden>Modified</span>
+                <input id="policy-draft-name" type="text" maxlength="100" autocomplete="off" aria-label="New policy name" placeholder="Name this policy" hidden>
+              </div>
+            </div>
+            <div id="policy-workbench" class="policy-workbench" data-test-mode="false">
+              <aside class="policy-catalog-pane" id="policy-catalog-pane" aria-label="Policy picker" hidden>
+                <div class="catalog-pane-heading"><strong>Policies &amp; assertions</strong><button id="policy-picker-close" class="pane-collapse-toggle" type="button" aria-label="Close policy picker" title="Close policy picker">×</button></div>
+                <div id="policy-picker-menu" class="policy-picker-menu" role="menu" aria-labelledby="policy-picker-menu-title" hidden>
+                  <strong id="policy-picker-menu-title" class="policy-picker-menu-title">Policy picker</strong>
+                  <button id="new-category" type="button" role="menuitem">New category</button>
+                  <button id="new-policy-record" type="button" role="menuitem" disabled>New policy</button>
+                  <button id="new-assertion-record" type="button" role="menuitem" disabled>New assertion</button>
+                  <hr class="policy-picker-create-separator">
+                  <button id="policy-copy" type="button" role="menuitem" disabled>Copy</button><button id="policy-paste" type="button" role="menuitem" disabled>Paste</button>
+                  <button id="policy-duplicate" type="button" role="menuitem" disabled>Duplicate</button><button id="policy-delete" type="button" role="menuitem" disabled>Delete</button>
+                  <button id="policy-restore" type="button" role="menuitem" hidden>Restore</button>
+                  <hr>
+                  <button id="policy-show-archived" type="button" role="menuitemcheckbox" aria-checked="false" aria-pressed="false">Show archived</button>
+                </div>
+                <p id="policy-file-status" class="policy-file-status" role="status" aria-live="polite"></p>
+                <div id="policy-category-tree" class="policy-category-tree" role="tree" tabindex="0"><p class="catalog-empty">No categories yet.</p></div>
+              </aside>
+              <section class="policy-editor-pane" id="policy-editor-pane" aria-label="Policy source editor">
+                <div class="policy-editor-tools">
+                  <div class="policy-browser-controls">
+                    <button id="policy-picker-toggle" class="button button-refresh policy-picker-trigger" type="button" aria-label="Browse policies and assertions" aria-haspopup="dialog" aria-controls="policy-catalog-pane" aria-expanded="false"><span id="policy-picker-label">Browse...</span><span class="policy-picker-chevron" aria-hidden="true">⌄</span></button>
+                    <div id="policy-actions" class="policy-files">
+                      <button id="policy-files-toggle" class="button button-refresh policy-files-toggle" type="button" aria-haspopup="menu" aria-controls="policy-file-menu" aria-expanded="false"><span>File...</span><span class="policy-picker-chevron" aria-hidden="true">⌄</span></button>
+                      <div id="policy-file-menu" class="policy-file-menu" role="menu" aria-label="File operations" hidden>
+                        <button id="policy-save" class="button button-save-next" type="button" role="menuitem" disabled>Save</button>
+                        <button id="policy-save-as" class="button" type="button" role="menuitem" disabled>Save As...</button>
+                        <button id="policy-stage" class="button" type="button" role="menuitem">Stage</button>
+                        <hr role="separator">
+                        <button id="policy-refresh" class="button" type="button" role="menuitem" disabled>Discard</button>
+                      </div>
+                    </div>
+                  </div>
+                  <span id="policy-editor-mode" class="policy-editor-mode" hidden></span>
+                  <div class="policy-attribute-toolbar" id="policy-attribute-toolbar">
+                    <button id="policy-check" class="button" type="button" disabled>Analyze</button>
+                    <button id="policy-format" class="button button-save-as-ready" type="button" title="Format policy source" aria-label="Format policy source" disabled>Format</button>
+                  </div>
+                  <div class="policy-editor-utilities" id="policy-editor-utilities">
+                    <button id="policy-attribute-rescan" class="button button-save-as-ready" type="button" disabled>Refresh Attributes</button>
+                    <details id="policy-history-menu" class="policy-history-menu">
+                      <summary class="button policy-history-toggle" aria-label="Version history">History <span id="policy-history-count">—</span><span class="policy-picker-chevron" aria-hidden="true">⌄</span></summary>
+                      <div id="policy-history" class="policy-history"><p class="catalog-empty">Select a policy to browse versions.</p></div>
+                    </details>
+                  </div>
+                </div>
+                <div id="policy-source-surface">
+                <div id="policy-stage-status" class="policy-stage-status" role="status" aria-live="polite">Select a saved policy revision to stage.</div>
+                <div id="policy-attribute-status" class="policy-attribute-status" role="status" aria-live="polite"></div>
+                <div id="policy-code-editor" class="policy-code-editor" data-test-mode="false">
+                  <div id="policy-test-gutter" class="policy-test-gutter" aria-label="Analyze results by policy line"><div id="policy-test-gutter-content" class="policy-test-gutter-content"></div></div>
+                  <pre id="policy-highlight" class="policy-highlight" aria-hidden="true"></pre>
+                  <textarea id="policy-source" aria-label="ZPL policy source" aria-describedby="policy-editor-help" aria-controls="policy-completions" aria-autocomplete="list" aria-expanded="false" spellcheck="false" autocapitalize="off" autocomplete="off" autocorrect="off" wrap="off" disabled></textarea>
+                  <div id="policy-completions" class="policy-completions" role="listbox" aria-label="ZPL completions" hidden></div>
+                </div>
+                <div id="policy-test-status" class="policy-test-status" role="status" aria-live="polite" hidden></div>
+                <span id="policy-editor-help" class="sr-only">ZPL syntax is highlighted. Press Control-Space for suggestions; use arrow keys and Tab to insert a completion. Enter starts a new line.</span>
+                <div id="policy-check-result" class="policy-check-result" role="status" aria-live="polite" hidden>Policy source is not loaded.</div>
+                </div>
+              </section>
+              <aside class="policy-assistant-pane" id="policy-assistant-pane" aria-label="AI Assistant">
+                <div class="assistant-heading"><h3>AI Assistant</h3><span id="assistant-state" class="assistant-state">Not configured</span><button id="policy-assistant-toggle" class="pane-collapse-toggle" type="button" aria-label="Collapse AI Assistant" aria-controls="assistant-messages" aria-expanded="true" title="Collapse AI Assistant"><span class="pane-toggle-icon" aria-hidden="true"></span><span class="pane-toggle-label" aria-hidden="true">AI Assistant</span></button></div>
+                <div class="assistant-settings">
+                  <label class="assistant-enable" for="assistant-enabled"><input id="assistant-enabled" type="checkbox" disabled> Use assistant</label>
+                  <label for="assistant-model">Model<select id="assistant-model" disabled></select></label>
+                  <label for="assistant-max-tokens">Max output<select id="assistant-max-tokens" disabled><option value="300">300 tokens</option><option value="600">600 tokens</option><option value="1200" selected>1,200 tokens</option><option value="2400">2,400 tokens</option></select></label>
+                  <span id="assistant-usage" class="assistant-usage" role="status">Session: 0 input · 0 output tokens</span>
+                </div>
+                <p id="assistant-disclosure" class="assistant-disclosure">When enabled, submitting a question sends the current policy and chat history to Anthropic.</p>
+                <div id="assistant-messages" class="assistant-messages" role="log" aria-live="polite"><p class="assistant-empty">No conversation yet.</p></div>
+                <form id="assistant-form" class="assistant-form">
+                  <label for="assistant-question">Message</label>
+                  <textarea id="assistant-question" rows="3" maxlength="12000" placeholder="Ask about this policy" disabled></textarea>
+                  <button id="assistant-send" class="button button-refresh" type="submit" disabled>Send</button>
+                </form>
+              </aside>
+            </div>
+          </section>
+        </section>
+
+        <dialog id="category-dialog" class="policy-dialog">
+          <form id="category-form" method="dialog">
+            <div class="dialog-heading"><h2>New category</h2><button class="inspector-close" type="button" data-close-dialog="category-dialog" aria-label="Close">×</button></div>
+            <label for="category-name">Name</label><input id="category-name" name="name" maxlength="100" required autocomplete="off">
+            <label for="category-parent">Parent category</label><select id="category-parent" name="parent"></select>
+            <p id="category-error" class="dialog-error" role="status"></p>
+            <div class="dialog-actions"><button class="button" type="button" data-close-dialog="category-dialog">Cancel</button><button class="button button-refresh" type="submit">Create</button></div>
+          </form>
+        </dialog>
+
+        <dialog id="record-dialog" class="policy-dialog">
+          <form id="record-form" method="dialog">
+            <div class="dialog-heading"><h2 id="record-dialog-title">New policy</h2><button class="inspector-close" type="button" data-close-dialog="record-dialog" aria-label="Close">×</button></div>
+            <label for="record-name">Name</label><input id="record-name" name="name" maxlength="100" required autocomplete="off">
+            <label for="record-category">Category</label><select id="record-category" name="category" required></select>
+            <p id="record-warning" class="dialog-warning" role="status" hidden></p>
+            <p id="record-error" class="dialog-error" role="status"></p>
+            <div class="dialog-actions"><button class="button" type="button" data-close-dialog="record-dialog">Cancel</button><button id="record-submit" class="button button-refresh" type="submit">Create record</button></div>
+          </form>
+        </dialog>
+
+        <dialog id="version-dialog" class="policy-dialog">
+          <form id="version-form" method="dialog">
+            <div class="dialog-heading"><h2>Save</h2><button class="inspector-close" type="button" data-close-dialog="version-dialog" aria-label="Close">×</button></div>
+            <label for="version-note">Version note <span class="optional-note">OPTIONAL</span></label>
+            <textarea id="version-note" name="summary" rows="3" maxlength="200" placeholder="What changed in this version?"></textarea>
+            <p id="version-warning" class="dialog-warning" role="status" hidden></p>
+            <p id="version-error" class="dialog-error" role="status"></p>
+            <div class="dialog-actions"><button class="button" type="button" data-close-dialog="version-dialog">Cancel</button><button id="version-save" class="button button-refresh" type="submit">Save</button></div>
+          </form>
+        </dialog>
+
+        <dialog id="policy-test-dialog" class="policy-dialog policy-test-dialog" aria-labelledby="policy-test-title">
+          <div class="policy-test-modal">
+            <div class="dialog-heading"><h2 id="policy-test-title">Assertion results</h2><button class="inspector-close" type="button" data-close-dialog="policy-test-dialog" aria-label="Close">×</button></div>
+            <h3 id="policy-test-subject-title" class="policy-test-subject-title">Assertion details</h3>
+            <div id="policy-test-subjects" class="policy-test-subjects"></div>
+            <div class="dialog-actions"><button class="button" type="button" data-close-dialog="policy-test-dialog">Close</button></div>
+          </div>
+        </dialog>
+
+        <dialog id="policy-test-details" class="policy-dialog policy-test-dialog" aria-label="Analyze details">
+          <div class="policy-test-modal">
+            <div class="dialog-heading"><h2 id="policy-analyze-title">Analyze results</h2><button id="policy-test-details-close" class="inspector-close" type="button" aria-label="Close Analyze results">×</button></div>
+            <h3 id="policy-analyze-subject-title" class="policy-test-subject-title">Matching identities</h3>
+            <div id="policy-analyze-subjects" class="policy-test-subjects"></div>
+            <div class="dialog-actions"><button class="button" type="button" id="policy-analyze-details-dismiss">Close</button></div>
+          </div>
+        </dialog>
+
+        <dialog id="policy-stage-dialog" class="policy-dialog" aria-labelledby="policy-stage-title">
+          <div class="policy-stage-confirmation">
+            <div class="dialog-heading"><h2 id="policy-stage-title">Stage candidate?</h2><button class="inspector-close" type="button" data-close-dialog="policy-stage-dialog" aria-label="Close">×</button></div>
+            <p id="policy-stage-confirm-summary" class="policy-stage-confirm-summary"></p>
+            <p class="policy-stage-confirm-note">This creates a candidate for review. It does not push or activate the policy.</p>
+            <div class="dialog-actions"><button id="policy-stage-cancel" class="button" type="button">Cancel</button><button id="policy-stage-confirm" class="button button-refresh" type="button">Stage candidate</button></div>
+          </div>
+        </dialog>
+
+        <section class="page-view" id="page-visas" data-page="visas" aria-label="Visas">
+          <section class="section-block">
+            <div class="table-tools"><div class="filter-group"><input id="visas-filter" type="search" placeholder="Filter" aria-label="Filter visas"><span class="count-label" id="visa-total">— total</span></div></div>
+            <div class="table-scroll"><table data-sort-page="visas"><thead><tr><th data-sort-key="id">ID</th><th data-sort-key="flow">FLOW</th><th data-sort-key="proto">PROTO</th><th data-sort-key="node">REQUESTING NODE</th><th data-sort-key="expires">EXPIRES</th></tr></thead><tbody id="visa-rows"><tr><td colspan="5" class="empty-row">Waiting for visa data…</td></tr></tbody></table></div>
+          </section>
+        </section>
+
+        <section class="page-view" id="page-denies" data-page="denies" aria-label="Denials">
+          <section class="section-block">
+            <div class="table-tools"><div class="filter-group"><input id="denies-filter" type="search" placeholder="Filter" aria-label="Filter denials"><span class="count-label count-alert" id="deny-total">—</span></div></div>
+            <div class="table-scroll"><table data-sort-page="denies"><thead><tr><th data-sort-key="source">SOURCE</th><th data-sort-key="destination">DESTINATION</th><th data-sort-key="protocol">PROTOCOL / PORT</th><th data-sort-key="reason">REASON</th><th data-sort-key="count">HITS</th></tr></thead><tbody id="deny-list"><tr><td colspan="5" class="empty-row">Waiting for denial data…</td></tr></tbody></table></div>
+          </section>
+        </section>
+
+        <section class="page-view" id="page-zpr-config" data-page="zpr-config" aria-label="ZPR Config" hidden>
+          <section class="section-block policy-editor-panel config-editor-panel">
+            <div class="policy-version-toolbar"><label>Configuration<select id="zpr-config-picker" aria-label="ZPR configuration draft"><option value="">New draft</option></select></label><label>Name<input id="zpr-config-name" aria-label="Configuration name" maxlength="160"></label><span id="zpr-config-modified" class="policy-modified-indicator" hidden>Modified</span></div>
+            <div class="policy-editor-tools"><div class="policy-tool-group"><details class="config-file-menu"><summary class="button">File…</summary><div class="config-file-popover" role="menu" aria-label="Configuration file commands"><button id="zpr-config-save" data-config-command type="button" role="menuitem">Save draft</button><button id="zpr-config-new" data-config-command type="button" role="menuitem">New draft</button><button id="zpr-config-open" data-config-command type="button" role="menuitem">Open file…</button><button id="zpr-config-download" data-config-command type="button" role="menuitem">Download file…</button></div></details><input id="zpr-config-file-input" type="file" accept=".toml,.zplc,text/plain" hidden><button id="zpr-config-validate" class="button" data-config-command type="button">Analyze</button><button id="zpr-config-format" class="button button-save-as-ready" data-config-command type="button">Format</button></div><strong class="policy-editor-mode">ZPR Config</strong><div class="policy-tool-group"><label>History<select id="zpr-config-history" aria-label="Configuration history"></select></label></div></div>
+            <div class="config-source-editor"><div id="zpr-config-gutter" class="config-source-gutter" aria-label="Configuration line numbers and errors"></div><div class="config-code-surface"><pre id="zpr-config-highlight" aria-hidden="true"></pre><textarea id="zpr-config-source" class="zpr-config-source" aria-label="ZPLC configuration source" spellcheck="false" maxlength="1048576" wrap="off"></textarea></div></div>
+            <p id="zpr-config-status" role="status">New draft</p>
+          </section>
+        </section>
+        <section class="page-view" id="page-diagnostics" data-page="diagnostics" aria-label="ZPR diagnostics" hidden>
+          <section class="section-block diagnostics" data-diagnostics>
+            <header class="diagnostics-header"><p id="diagnostics-updated" role="status">Waiting for telemetry sources</p></header>
+            <div class="diagnostics-toolbar"><label for="diagnostics-filter">Filter logs and sources</label><input id="diagnostics-filter" type="search" maxlength="200" placeholder="Identity, source, message, metric"><span id="diagnostics-count" class="count-label">—</span></div>
+            <p id="diagnostics-error" class="diagnostics-error" role="status" hidden></p>
+            <div id="diagnostics-sources" class="diagnostics-sources" aria-live="polite"></div>
+          </section>
+        </section>
+        <section class="page-view" id="page-security-review" data-page="security-review" aria-label="Security review">
+          <section class="section-block security-review" data-security-review>
+            <div class="security-review-baseline-row">
+              <div class="security-review-disclosures" aria-label="Baseline and current summaries">
+                <div class="security-review-disclosure-line security-review-baseline-line"><details class="security-review-disclosure" id="security-review-baseline-details">
+                  <summary><span class="security-review-baseline-label">Baseline</span><strong id="security-review-baseline">Not set</strong><small id="security-review-baseline-time">No baseline</small></summary>
+                  <div class="security-review-inventory-details"><section><h3>Actors</h3><div id="security-review-baseline-actors">—</div></section><section><h3>Services</h3><div id="security-review-baseline-services">—</div></section></div>
+                </details><button id="security-review-reset" class="button" type="button">Reset Baseline</button></div>
+                <div class="security-review-disclosure-line security-review-current-line"><details class="security-review-disclosure" id="security-review-current-details">
+                  <summary><span>Current</span><strong id="security-review-current">Waiting</strong><small id="security-review-current-time">No snapshot</small></summary>
+                  <div class="security-review-inventory-details"><section><h3>Actors</h3><div id="security-review-current-actors">—</div></section><section><h3>Services</h3><div id="security-review-current-services">—</div></section></div>
+                </details><span class="security-review-baseline-action-space" aria-hidden="true"></span></div>
+              </div>
+              <span id="security-review-status" role="status" aria-live="polite"></span>
+            </div>
+            <div class="table-tools security-review-tools"><div class="filter-group"><input id="security-review-filter" type="search" placeholder="Filter findings" aria-label="Filter security findings"><span id="security-review-count" class="count-label">—</span></div><div class="security-review-actions"><button id="security-review-dismiss-selected" class="button" type="button" disabled>Dismiss selected</button><button id="security-review-dismiss-all" class="button" type="button" disabled>Dismiss all</button><label class="security-review-show-dismissed"><input id="security-review-show-dismissed" type="checkbox">Show dismissed</label></div></div>
+            <div class="table-scroll"><table class="security-review-table" data-sort-page="security-review"><thead><tr><th><label class="security-review-select-visible"><input id="security-review-select-visible" type="checkbox" aria-label="Select visible active findings"><span>Select visible</span></label></th><th data-sort-key="observed">OBSERVED</th><th data-sort-key="indicator">INDICATOR</th><th data-sort-key="entity">ENTITY</th><th data-sort-key="evidence">EVIDENCE</th><th>ACTION</th></tr></thead><tbody id="security-review-findings"><tr><td colspan="6" class="empty-row">Waiting for live signals.</td></tr></tbody></table></div>
+          </section>
+        </section>
+
+        <aside id="component-inspector" class="component-inspector" aria-hidden="true">
+          <div class="inspector-head"><div><p class="eyebrow" id="inspector-kind">COMPONENT</p><h2 id="inspector-title">Details</h2></div><button id="inspector-close" class="inspector-close" type="button" aria-label="Close details">×</button></div>
+          <div id="inspector-body" class="inspector-body"></div>
+        </aside>
+
+      </main>
+    </div>
+    <script src="/vendor/pluralize.js?v=8.0.0" defer></script>
+    <script src="/app.js?v=86" defer></script>
+    <script src="/machine-logs.js?v=16" defer></script>
+    <script src="/assertions.js?v=11" defer></script>
+    <script src="/config-editor.js?v=4" defer></script>
+    <script src="/diagnostics.js?v=2" defer></script>
+      <script src="/security-review.js?v=12" defer></script>
+  </body>
+</html>

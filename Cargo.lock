@@ -2796,6 +2796,7 @@ dependencies = [
  "rustls-platform-verifier",
  "serde",
  "serde_json",
+ "serde_urlencoded",
  "sync_wrapper",
  "tokio",
  "tokio-rustls",
@@ -3884,6 +3885,7 @@ dependencies = [
  "rcgen",
  "redis",
  "regex",
+ "reqwest",
  "rustls",
  "rustls-pemfile",
  "serde",
@@ -4626,8 +4628,7 @@ checksum = "b8848ee67ecc8aedbaf3e4122217aff892639231befc6a1b58d29fff4c2cabaa"
 
 [[package]]
 name = "zpr"
-version = "0.25.1"
-source = "git+https://github.com/org-zpr/zpr-common.git?tag=v0.25.1#104c8112cdf0eb780e2be7c0ad30cbe31e155fa5"
+version = "0.25.2"
 dependencies = [
  "base64",
  "bytes",

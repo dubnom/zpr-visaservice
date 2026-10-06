@@ -21,12 +21,14 @@ mod admin_service;
 mod apikey;
 mod assembly;
 mod auth;
+mod auth_service;
 mod config;
 mod connection_control;
 mod counters;
 mod db;
 mod db_worker;
 mod deny_log;
+mod dns_publisher;
 mod error;
 mod event_mgr;
 mod loaded_policy;
@@ -255,21 +257,23 @@ async fn main() -> std::process::ExitCode {
     let policy_mgr = {
         let policy_mgr_res = match initial_policy_bytes {
             Some(p) => {
-                PolicyMgr::new_with_initial_policy(
+                PolicyMgr::new_with_initial_policy_and_http(
                     p,
                     db::PolicyRepo::new(db_handle.clone()),
                     Arc::new(SystemResolver),
                     ts_mgr.clone(),
                     file_ts_dir,
+                    cfg.trusted_service_http.clone(),
                 )
                 .await
             }
             None => {
-                PolicyMgr::new_from_state(
+                PolicyMgr::new_from_state_with_http(
                     db::PolicyRepo::new(db_handle.clone()),
                     Arc::new(SystemResolver),
                     ts_mgr.clone(),
                     file_ts_dir,
+                    cfg.trusted_service_http.clone(),
                 )
                 .await
             }
@@ -359,9 +363,19 @@ async fn main() -> std::process::ExitCode {
         error!(target: MAIN, "failed to restore topology state: {}", e);
         return std::process::ExitCode::FAILURE;
     }
+    if let Err(e) = asm.topo_mgr.clear_unconfirmed_links().await {
+        error!(target: MAIN, "failed to clear unconfirmed topology links: {}", e);
+        return std::process::ExitCode::FAILURE;
+    }
 
     js.spawn_local(signal_worker::launch(asm.clone()));
     js.spawn_local(event_mgr::launch(asm.clone(), event_rx));
+    let dns_asm = asm.clone();
+    js.spawn_local(async move {
+        if let Err(error) = event_mgr::reconcile_dns_providers(&dns_asm).await {
+            error!(target: MAIN, "initial DNS provider reconciliation failed: {}", error);
+        }
+    });
 
     js.spawn_local(vsapi_worker::launch(
         asm.clone(),
@@ -375,7 +389,7 @@ async fn main() -> std::process::ExitCode {
         let admin_key = cfg.core.admin_key.clone();
         let admin_cert = cfg.core.admin_cert.clone();
         let admin_listen = SocketAddr::new(
-            cfg.get_vs_addr(),
+            cfg.get_admin_addr(),
             cfg.core.admin_port.unwrap_or(config::ADMIN_HTTPS_PORT),
         );
         let admin_asm = asm.clone();

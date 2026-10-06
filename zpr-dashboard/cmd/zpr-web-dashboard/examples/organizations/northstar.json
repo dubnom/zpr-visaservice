@@ -1,0 +1,91 @@
+{
+  "id": "northstar",
+  "assertions_source": "// Northstar Labs directory integrity; human fields are group-scoped.\npeople attribute \"uid\" present;\npeople attribute \"cn\" present;\ngroup \"Approver\" members >= 1;\npeople in \"Approver\" attribute \"mail\" present;\npeople in \"Approver\" attribute \"title\" present;\npeople in \"Approver\" attribute \"ou\" present;\ngroup \"Incident Responder\" members >= 1;\npeople in \"Incident Responder\" attribute \"mail\" present;\npeople in \"Incident Responder\" attribute \"title\" present;\npeople in \"Incident Responder\" attribute \"ou\" present;\ngroup \"Security Reviewer\" members >= 1;\npeople in \"Security Reviewer\" attribute \"mail\" present;\npeople in \"Security Reviewer\" attribute \"title\" present;\npeople in \"Security Reviewer\" attribute \"ou\" present;\ngroup \"Accounting Manager\" members >= 1;\npeople in \"Accounting Manager\" attribute \"mail\" present;\npeople in \"Accounting Manager\" attribute \"title\" present;\npeople in \"Accounting Manager\" attribute \"ou\" present;\ngroup \"HR Partner\" members >= 1;\npeople in \"HR Partner\" attribute \"mail\" present;\npeople in \"HR Partner\" attribute \"title\" present;\npeople in \"HR Partner\" attribute \"ou\" present;\ngroup \"IT Administrator\" members >= 1;\npeople in \"IT Administrator\" attribute \"mail\" present;\npeople in \"IT Administrator\" attribute \"title\" present;\npeople in \"IT Administrator\" attribute \"ou\" present;\ngroup \"Legal Reviewer\" members >= 1;\npeople in \"Legal Reviewer\" attribute \"mail\" present;\npeople in \"Legal Reviewer\" attribute \"title\" present;\npeople in \"Legal Reviewer\" attribute \"ou\" present;\ngroup \"Platform Engineer\" members >= 1;\npeople in \"Platform Engineer\" attribute \"mail\" present;\npeople in \"Platform Engineer\" attribute \"title\" present;\npeople in \"Platform Engineer\" attribute \"ou\" present;\ngroup \"Product Engineer\" members >= 1;\npeople in \"Product Engineer\" attribute \"mail\" present;\npeople in \"Product Engineer\" attribute \"title\" present;\npeople in \"Product Engineer\" attribute \"ou\" present;\ngroup \"Recruiter\" members >= 1;\npeople in \"Recruiter\" attribute \"mail\" present;\npeople in \"Recruiter\" attribute \"title\" present;\npeople in \"Recruiter\" attribute \"ou\" present;\ngroup \"Sales Lead\" members >= 1;\npeople in \"Sales Lead\" attribute \"mail\" present;\npeople in \"Sales Lead\" attribute \"title\" present;\npeople in \"Sales Lead\" attribute \"ou\" present;\ngroup \"Data Analyst\" members >= 1;\npeople in \"Data Analyst\" attribute \"mail\" present;\npeople in \"Data Analyst\" attribute \"title\" present;\npeople in \"Data Analyst\" attribute \"ou\" present;\ngroup \"Executive\" members >= 1;\npeople in \"Executive\" attribute \"mail\" present;\npeople in \"Executive\" attribute \"title\" present;\npeople in \"Executive\" attribute \"ou\" present;\ngroup \"People Manager\" members >= 1;\npeople in \"People Manager\" attribute \"mail\" present;\npeople in \"People Manager\" attribute \"title\" present;\npeople in \"People Manager\" attribute \"ou\" present;\n// Role overlap is intentional for cross-department users.\n",
+  "name": "Northstar Labs",
+  "description": "Research and engineering organization with campus and remote teams.",
+  "runtime": {
+    "driver": "linux-one-node",
+    "topology": "single-node",
+    "nodes": [{"id": "northstar-node", "location": "North Campus"}]
+  },
+  "directory": {
+    "base_dn": "dc=northstar,dc=test",
+    "seed_mode": "pregen",
+    "ldif_files": ["demo-company.ldif", "demo-employees.ldif", "demo-roles.ldif", "demo-machines.ldif"],
+    "health_uid": "adapter1",
+    "identity_mappings": {"device.zpr.adapter.cn": "uid"},
+    "attributes": ["ou", "title", "zprMachineId", "zprMachineType", "zprMachineModel", "zprMachineLocation", "zprMachineSecure", "zprMachineOwner"],
+    "user_identity_mappings": {"user.sub": "uid"},
+    "user_attributes": ["cn", "mail", "ou", "title"],
+    "departments": [
+      {"name": "Engineering"},
+      {"name": "Platform", "parent": "Engineering"},
+      {"name": "Product", "parent": "Engineering"},
+      {"name": "Operations"},
+      {"name": "IT", "parent": "Operations"},
+      {"name": "Support", "parent": "Operations"},
+      {"name": "Research"},
+      {"name": "Security", "parent": "Research"},
+      {"name": "Data Science", "parent": "Research"},
+      {"name": "Finance"},
+      {"name": "Accounting", "parent": "Finance"},
+      {"name": "Payroll", "parent": "Finance"},
+      {"name": "Sales"},
+      {"name": "Field", "parent": "Sales"},
+      {"name": "People Operations"},
+      {"name": "Talent", "parent": "People Operations"},
+      {"name": "HR", "parent": "People Operations"}
+    ],
+    "people": [
+      {"uid": "elena.park", "name": "Elena Park", "email": "elena.park@northstar.example", "department": "Platform", "title": "Platform Engineering Manager"},
+      {"uid": "jamal.brooks", "name": "Jamal Brooks", "email": "jamal.brooks@northstar.example", "department": "Platform", "title": "Site Reliability Engineer"},
+      {"uid": "sophie.nguyen", "name": "Sophie Nguyen", "email": "sophie.nguyen@northstar.example", "department": "Platform", "title": "Infrastructure Engineer"},
+      {"uid": "theo.martin", "name": "Theo Martin", "email": "theo.martin@northstar.example", "department": "Platform", "title": "Systems Engineer"},
+      {"uid": "arjun.patel", "name": "Arjun Patel", "email": "arjun.patel@northstar.example", "department": "Product", "title": "Product Engineering Lead"},
+      {"uid": "zoe.carter", "name": "Zoe Carter", "email": "zoe.carter@northstar.example", "department": "Product", "title": "Frontend Engineer"},
+      {"uid": "omar.hassan", "name": "Omar Hassan", "email": "omar.hassan@northstar.example", "department": "Product", "title": "Backend Engineer"},
+      {"uid": "nina.ross", "name": "Nina Ross", "email": "nina.ross@northstar.example", "department": "IT", "title": "IT Manager"},
+      {"uid": "ben.torres", "name": "Ben Torres", "email": "ben.torres@northstar.example", "department": "IT", "title": "Systems Administrator"},
+      {"uid": "grace.lee", "name": "Grace Lee", "email": "grace.lee@northstar.example", "department": "IT", "title": "Network Administrator"},
+      {"uid": "hana.kim", "name": "Hana Kim", "email": "hana.kim@northstar.example", "department": "Security", "title": "Security Research Lead"},
+      {"uid": "daniel.okafor", "name": "Daniel Okafor", "email": "daniel.okafor@northstar.example", "department": "Security", "title": "Threat Researcher"}
+    ],
+    "groups": [
+      {"name": "FinanceReaders", "members": ["elena.park"]},
+      {"name": "OperationsAdmins", "members": ["nina.ross", "ben.torres"]},
+      {"name": "SecurityReviewers", "members": ["hana.kim", "daniel.okafor"]}
+    ]
+  },
+  "policy_config": "northstar/policy-demo.zplc",
+  "policy_catalog": "northstar/demo-policy-catalog.json",
+  "policies": [
+    {"id": "finance-records", "name": "Finance records", "description": "Accounting access bound to Northstar department and role attributes."},
+    {"id": "platform-operations", "name": "Platform operations", "description": "Engineering access for managed Northstar infrastructure."},
+    {"id": "security-review", "name": "Security review", "description": "Restricted review access for security roles."},
+    {"id": "device-posture", "name": "Device posture", "description": "Type, location, and secure-state predicates for managed machines."},
+    {"id": "user-access", "name": "User access", "description": "Department and LDAP group-role predicates for authenticated users."}
+  ],
+  "policy_test_services": [
+    {"id":"echo-web.svc.zpr","name":"EchoWeb","actor_cn":"echo-service","protocol":"TCP","port":8080},
+    {"id":"metrics-web.svc.zpr","name":"MetricsWeb","actor_cn":"metrics-service","protocol":"TCP","port":8081},
+    {"id":"internet-gateway.svc.zpr","name":"InternetGatewayWeb","actor_cn":"internet-gateway","protocol":"TCP","port":8082},
+    {"id":"FinanceWorkspace","name":"Finance Workspace","actor_cn":"finance-workspace","protocol":"ICMP6","icmp_type":128,"icmp_code":0},
+    {"id":"PayrollRecords","name":"Payroll Records","actor_cn":"payroll-records","protocol":"ICMP6","icmp_type":128,"icmp_code":0},
+    {"id":"EngineeringBuildFarm","name":"Engineering Build Farm","actor_cn":"engineering-build","protocol":"ICMP6","icmp_type":128,"icmp_code":0},
+    {"id":"PeopleOperationsHub","name":"People Operations Hub","actor_cn":"people-operations","protocol":"ICMP6","icmp_type":128,"icmp_code":0},
+    {"id":"SecurityIncidentConsole","name":"Security Incident Console","actor_cn":"security-console","protocol":"ICMP6","icmp_type":128,"icmp_code":0},
+    {"id":"SalesCRM","name":"Sales CRM","actor_cn":"sales-crm","protocol":"ICMP6","icmp_type":128,"icmp_code":0},
+    {"id":"LegalMatterFiles","name":"Legal Matter Files","actor_cn":"legal-matters","protocol":"ICMP6","icmp_type":128,"icmp_code":0},
+    {"id":"SecureDeviceOperations","name":"Secure Device Operations","actor_cn":"secure-device-operations","protocol":"ICMP6","icmp_type":128,"icmp_code":0},
+    {"id":"UserRecords","name":"User Records","actor_cn":"user-records","protocol":"ICMP6","icmp_type":128,"icmp_code":0}
+  ],
+  "services": [
+    {"name": "PolicyService", "kind": "Policy", "endpoint": "HTTPS/8789", "description": "Policy evaluation and catalog."},
+    {"name": "ControlService", "kind": "Control", "endpoint": "HTTPS/8790", "description": "Administration and telemetry APIs."},
+    {"name": "AuthService", "kind": "Auth", "endpoint": "HTTPS/8183", "description": "Bootstrap authentication."},
+    {"name": "AttributeService", "kind": "Attribute", "endpoint": "HTTPS/8443", "description": "LDAP-backed device attributes."},
+    {"name": "UserAttributeService", "kind": "Attribute", "endpoint": "HTTPS/8444", "description": "LDAP-backed user profile and group-role attributes."},
+    {"name": "EchoService", "kind": "Application", "endpoint": "ZPR/HTTP", "description": "Demo application endpoint."},
+    {"name": "MetricsService", "kind": "Application", "endpoint": "ZPR/HTTP", "description": "Demo telemetry endpoint."}
+  ]
+}

@@ -1,0 +1,40 @@
+{
+  "id": "load-lab",
+  "assertions_source": "// Load Lab directory integrity; human fields are group-scoped.\npeople attribute \"uid\" present;\npeople attribute \"cn\" present;\ngroup \"LoadOperators\" members >= 2;\npeople in \"LoadOperators\" attribute \"mail\" present;\npeople in \"LoadOperators\" attribute \"title\" present;\npeople in \"LoadOperators\" attribute \"ou\" == \"Performance\";\n",
+  "name": "Load Lab",
+  "description": "Bounded service-fanout and randomized-flow exercise for Visa Service and Control Room monitoring.",
+  "runtime": {
+    "driver": "linux-one-node",
+    "topology": "single-node",
+    "nodes": [{"id": "load-lab-node", "location": "Load Test Bench"}]
+  },
+  "directory": {
+    "base_dn": "dc=loadlab,dc=test",
+    "seed_mode": "ldif",
+    "ldif_files": ["directory.ldif"],
+    "health_uid": "load.client",
+    "identity_mappings": {"device.zpr.adapter.cn": "uid"},
+    "attributes": ["ou", "title", "zprMachineId", "zprMachineType", "zprMachineModel", "zprMachineLocation", "zprMachineSecure", "zprMachineOwner"],
+    "user_identity_mappings": {"user.sub": "uid"},
+    "user_attributes": ["cn", "mail", "ou", "title"],
+    "departments": [{"name": "Performance"}],
+    "people": [
+      {"uid": "load.client", "name": "Load Client Operator", "email": "load.client@loadlab.example", "department": "Performance", "title": "Traffic Generator Operator"},
+      {"uid": "load.service", "name": "Load Service Operator", "email": "load.service@loadlab.example", "department": "Performance", "title": "Service Host Operator"}
+    ],
+    "groups": [{"name": "LoadOperators", "members": ["load.client", "load.service"]}]
+  },
+  "machine_owners": {
+    "machine-03": ["load.client"],
+    "machine-05": ["load.service"]
+  },
+  "policy_config": "organizations/load-lab/policy-demo.zplc",
+  "policy_catalog": "organizations/load-lab/demo-policy-catalog.json",
+  "runtime_policy": "organizations/load-lab/runtime-policy.zpl",
+  "policies": [
+    {"id": "load-fanout", "name": "Load service fan-out", "description": "Permit the load client adapter to reach the generated service classes on the service host."}
+  ],
+  "services": [
+    {"name": "LoadServiceFleet", "kind": "Stress HTTP", "endpoint": "ZPR/TCP/10000-10199", "description": "200 generated load-test services on the service host.", "policy_id": "load-service-001.svc.zpr", "actor_cn": "echo-service"}
+  ]
+}

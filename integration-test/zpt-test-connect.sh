@@ -48,7 +48,7 @@ echo "TEST OK"
 echo "TESTING ACTOR WITH TRUSTED-SERVICE-DERIVED user.zpr.authority MATCHES 'allow users'"
 # Positive counterpart (#324 follow-up): with user.zpr.authority:bas installed —
 # as the VS derives it from a trusted service vending user.* attributes — the
-# same `allow users to access Webby.` rule matches.
+# same target-free `allow users.` rule in the Webby service group matches.
 obj5="$("${PROG_CMD[@]}" | sed -n '5p')"
 jq -e \
     '.kind == "EVAL" and .decision == "ALLOW"' \

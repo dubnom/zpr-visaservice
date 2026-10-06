@@ -1,0 +1,33 @@
+ldap-org-graph { display: block; min-width: 0; border: 1px solid var(--line, #cbd5ce); border-radius: 5px; background: var(--panel, #fff); color: var(--ink, #17211e); }
+ldap-org-graph .ldap-graph-toolbar { display: flex; flex-wrap: wrap; gap: 6px; padding: 9px; border-bottom: 1px solid var(--line, #cbd5ce); }
+ldap-org-graph .ldap-graph-toolbar input { flex: 1; min-width: 0; width: 100%; padding: 5px 8px; border: 1px solid var(--line, #cbd5ce); border-radius: 3px; background: var(--panel, #fff); color: inherit; font: 12px var(--mono, monospace); }
+ldap-org-graph .ldap-graph-toolbar button { flex: 0 0 auto; min-width: 30px; height: 30px; padding: 0 8px; border: 1px solid var(--line, #cbd5ce); border-radius: 3px; background: var(--panel, #fff); color: inherit; font: 12px var(--mono, monospace); cursor: pointer; }
+ldap-org-graph svg { display: block; width: 100%; height: 420px; touch-action: none; background: radial-gradient(#dfe6df 0.8px, transparent 0.8px); background-size: 15px 15px; cursor: grab; }
+ldap-org-graph .ldap-graph-edge { fill: none; stroke: #99aba1; stroke-width: 1.5; }
+ldap-org-graph .ldap-graph-membership { fill: none; stroke: #ad7635; stroke-width: 2; stroke-dasharray: 5 4; }
+ldap-org-graph [hidden] { display: none; }
+ldap-org-graph .ldap-graph-node { cursor: pointer; }
+ldap-org-graph .ldap-graph-node rect { fill: #f4f7f5; stroke: #829a8c; stroke-width: 1; }
+ldap-org-graph .ldap-graph-node.directory rect { fill: #dcebdc; stroke: #458267; }
+ldap-org-graph .ldap-graph-node.department rect { fill: #edf2da; stroke: #7b8c49; }
+ldap-org-graph .ldap-graph-node.person rect { fill: #e8f2f7; stroke: #51829b; }
+ldap-org-graph .ldap-graph-node.group rect { fill: #fff0d9; stroke: #ad7635; }
+ldap-org-graph .ldap-graph-node text { fill: #17211e; font: 12px var(--mono, monospace); pointer-events: none; }
+ldap-org-graph .ldap-graph-node .ldap-graph-kind { fill: #55665d; font-size: 10px; }
+ldap-org-graph .ldap-graph-node.selected rect, ldap-org-graph .ldap-graph-node:focus rect { stroke: #183f2d; stroke-width: 3; }
+ldap-org-graph .ldap-graph-node.dimmed { opacity: 0.3; }
+ldap-org-graph .ldap-graph-toggle { cursor: pointer; }
+ldap-org-graph .ldap-graph-toggle circle { fill: #fff; stroke: #526d5e; stroke-width: 1.5; }
+ldap-org-graph .ldap-graph-toggle text { fill: #183f2d; font: 16px var(--mono, monospace); pointer-events: none; }
+ldap-org-graph .ldap-graph-toggle:hover circle, ldap-org-graph .ldap-graph-toggle:focus circle { fill: #dcebdc; stroke: #183f2d; stroke-width: 2.5; }
+ldap-org-graph .ldap-graph-dialog { box-sizing: border-box; width: min(540px, calc(100vw - 32px)); max-height: min(640px, 80vh); padding: 0; overflow: auto; border: 1px solid var(--line, #cbd5ce); border-radius: 5px; background: var(--panel, #fff); color: var(--ink, #17211e); box-shadow: 0 16px 48px #17211e33; }
+ldap-org-graph .ldap-graph-dialog::backdrop { background: #17211e66; }
+ldap-org-graph .ldap-graph-dialog-header { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 12px; border-bottom: 1px solid var(--line, #cbd5ce); }
+ldap-org-graph .ldap-graph-dialog-header h2 { min-width: 0; margin: 0; overflow-wrap: anywhere; font: 600 15px var(--mono, monospace); }
+ldap-org-graph .ldap-graph-dialog-header button { display: grid; flex: 0 0 30px; height: 30px; place-items: center; padding: 0; border: 1px solid var(--line, #cbd5ce); border-radius: 3px; background: var(--panel, #fff); color: inherit; font: 20px var(--mono, monospace); cursor: pointer; }
+ldap-org-graph .ldap-graph-dialog-header button:hover { background: #dcebdc; }
+ldap-org-graph .ldap-graph-details { padding: 12px; overflow-wrap: anywhere; }
+ldap-org-graph .ldap-graph-details dl { display: grid; grid-template-columns: minmax(60px, 100px) minmax(0, 1fr); gap: 5px 12px; margin: 10px 0 0; font: 11px/1.5 var(--mono, monospace); }
+ldap-org-graph .ldap-graph-details dt { color: var(--muted, #55665d); }
+ldap-org-graph .ldap-graph-details dd { margin: 0; }
+@media (max-width: 600px) { ldap-org-graph svg { height: 320px; } }

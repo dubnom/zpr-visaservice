@@ -1,0 +1,51 @@
+# Redwood compiler fixture for organization-scoped policy examples.
+
+[resolver]
+order = ["hosts", "dns"]
+
+[resolver.hosts]
+"n0.zpr" = "fd5a:5052::2"
+
+[nodes."node"]
+provider = [["device.zpr.adapter.cn", "node"]]
+zpr_address = "n0.zpr"
+
+[visa_service]
+dock_node = "node"
+
+[trusted_services.demo_auth]
+api = "validation/2"
+client = "AuthService"
+returns_attributes = ["sub -> user.sub"]
+identity_attributes = ["sub"]
+provider = [["device.zpr.adapter.cn", "auth-service"]]
+
+[trusted_services.demo_ldap]
+api = "rest/1"
+returns_attributes = ["ou -> device.redwood.department", "title -> device.redwood.title", "zprMachineId -> device.redwood.machine_id", "zprMachineType -> device.redwood.machine_type", "zprMachineModel -> device.redwood.model", "zprMachineLocation -> device.redwood.location", "zprMachineSecure -> device.redwood.secure", "zprMachineOwner -> device.redwood.owner"]
+expiration_seconds = 3600
+
+[trusted_services.demo_ldap_user]
+api = "rest/1"
+returns_attributes = ["cn -> user.name", "mail -> user.email", "ou -> user.department", "title -> user.title", "role -> user.role{}"]
+expiration_seconds = 3600
+
+[protocols.ping]
+l4protocol = "iana.ICMP6"
+icmp_type = "request-response"
+icmp_codes = [128, 129]
+
+[services.RouteExchange]
+protocol = "ping"
+
+[services.FleetTelemetry]
+protocol = "ping"
+
+[services.ShipmentLedger]
+protocol = "ping"
+
+[services.FleetSafety]
+protocol = "ping"
+
+[services.PartnerAudit]
+protocol = "ping"

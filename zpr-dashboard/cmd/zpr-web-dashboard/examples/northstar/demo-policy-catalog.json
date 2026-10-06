@@ -1,0 +1,157 @@
+{
+  "categories": [
+    "Northstar/Policies/Finance",
+    "Northstar/Policies/Engineering",
+    "Northstar/Policies/People Operations",
+    "Northstar/Policies/Security",
+    "Northstar/Policies/Sales",
+    "Northstar/Policies/Legal",
+    "Northstar/Policies/Device Posture",
+    "Northstar/Policies/User Access"
+  ],
+  "records": [
+    {
+      "category": "Northstar/Policies/Finance",
+      "name": "Finance department access",
+      "kind": "policy",
+      "content_type": "text/vnd.zpr.zpl",
+      "metadata": {
+        "demo": true,
+        "ldap_attributes": [
+          "ou -> user.department"
+        ],
+        "live": false
+      },
+      "content": "# Department access uses authenticated LDAP user attributes.\ndefine AccountingStaff as a user with user.department:Accounting.\ndefine FinanceStaff as a user with user.department:Finance.\ndefine PayrollStaff as a user with user.department:Payroll.\ndefine FinanceWorkspace as a service with device.zpr.adapter.cn:finance-workspace.\ndefine PayrollRecords as a service with device.zpr.adapter.cn:payroll-records.\n\nservice FinanceWorkspace as json {\"service_class\":\"FinanceWorkspace\",\"actor_cn\":\"finance-workspace\",\"summary\":\"Illustrative finance reporting and ledger workspace.\",\"endpoint\":\"zpr://finance-workspace\",\"status\":\"example only; not deployed\"}.\n  allow AccountingStaff.\n  allow FinanceStaff.\n\nservice PayrollRecords as json {\"service_class\":\"PayrollRecords\",\"actor_cn\":\"payroll-records\",\"summary\":\"Illustrative payroll records service.\",\"endpoint\":\"zpr://payroll-records\",\"status\":\"example only; not deployed\"}.\n  allow PayrollStaff.",
+      "summary": "Department-based finance workspace and payroll access"
+    },
+    {
+      "category": "Northstar/Policies/Engineering",
+      "name": "Engineering build access",
+      "kind": "policy",
+      "content_type": "text/vnd.zpr.zpl",
+      "metadata": {
+        "demo": true,
+        "ldap_attributes": [
+          "ou -> user.department"
+        ],
+        "live": false
+      },
+      "content": "# Platform and Product map to LDAP organizational-unit values.\ndefine PlatformStaff as a user with user.department:Platform.\ndefine ProductStaff as a user with user.department:Product.\ndefine EngineeringBuildFarm as a service with device.zpr.adapter.cn:engineering-build.\n\nservice EngineeringBuildFarm as json {\"service_class\":\"EngineeringBuildFarm\",\"actor_cn\":\"engineering-build\",\"summary\":\"Illustrative build and release system.\",\"endpoint\":\"zpr://engineering-build\",\"status\":\"example only; not deployed\"}.\n  allow PlatformStaff.\n  allow ProductStaff.",
+      "summary": "Platform and Product access to the illustrative build farm"
+    },
+    {
+      "category": "Northstar/Policies/People Operations",
+      "name": "People operations access",
+      "kind": "policy",
+      "content_type": "text/vnd.zpr.zpl",
+      "metadata": {
+        "demo": true,
+        "ldap_attributes": [
+          "ou -> user.department"
+        ],
+        "live": false
+      },
+      "content": "# HR and Talent are separate LDAP department values.\ndefine HRStaff as a user with user.department:HR.\ndefine TalentStaff as a user with user.department:Talent.\ndefine PeopleOperationsHub as a service with device.zpr.adapter.cn:people-operations.\n\nservice PeopleOperationsHub as json {\"service_class\":\"PeopleOperationsHub\",\"actor_cn\":\"people-operations\",\"summary\":\"Illustrative HR case and talent operations service.\",\"endpoint\":\"zpr://people-operations\",\"status\":\"example only; not deployed\"}.\n  allow HRStaff.\n  allow TalentStaff.",
+      "summary": "HR and Talent access to the illustrative people hub"
+    },
+    {
+      "category": "Northstar/Policies/Security",
+      "name": "Security and compliance access",
+      "kind": "policy",
+      "content_type": "text/vnd.zpr.zpl",
+      "metadata": {
+        "demo": true,
+        "ldap_attributes": [
+          "ou -> user.department"
+        ],
+        "live": false
+      },
+      "content": "# Department-based security and compliance policy.\ndefine SecurityStaff as a user with user.department:Security.\ndefine ComplianceStaff as a user with user.department:Compliance.\ndefine SecurityIncidentConsole as a service with device.zpr.adapter.cn:security-console.\n\nservice SecurityIncidentConsole as json {\"service_class\":\"SecurityIncidentConsole\",\"actor_cn\":\"security-console\",\"summary\":\"Illustrative incident response and review console.\",\"endpoint\":\"zpr://security-console\",\"status\":\"example only; not deployed\"}.\n  allow SecurityStaff.\n  allow ComplianceStaff.",
+      "summary": "Department-based security and compliance access"
+    },
+    {
+      "category": "Northstar/Policies/Security",
+      "name": "Security role-group access",
+      "kind": "policy",
+      "content_type": "text/vnd.zpr.zpl",
+      "metadata": {
+        "demo": true,
+        "ldap_attributes": [
+          "role -> user.role{}"
+        ],
+        "requires_user_identity": "user.sub from AuthService",
+        "live": false
+      },
+      "content": "# These predicates use LDAP groupOfNames memberships on the authenticated user.\ndefine IncidentResponders as a user with user.role:'Incident Responder'.\ndefine SecurityReviewers as a user with user.role:'Security Reviewer'.\ndefine Approvers as a user with user.role:Approver.\ndefine SecurityIncidentConsole as a service with device.zpr.adapter.cn:security-console.\n\nservice SecurityIncidentConsole as json {\"service_class\":\"SecurityIncidentConsole\",\"actor_cn\":\"security-console\",\"summary\":\"Illustrative incident response and review console.\",\"endpoint\":\"zpr://security-console\",\"status\":\"example only; not deployed\"}.\n  allow IncidentResponders.\n  allow SecurityReviewers.\n  allow Approvers.",
+      "summary": "Role-group access to the illustrative security console"
+    },
+    {
+      "category": "Northstar/Policies/Sales",
+      "name": "Sales and customer success access",
+      "kind": "policy",
+      "content_type": "text/vnd.zpr.zpl",
+      "metadata": {
+        "demo": true,
+        "ldap_attributes": [
+          "ou -> user.department"
+        ],
+        "live": false
+      },
+      "content": "# Customer Success is quoted because its LDAP value contains a space.\ndefine FieldSales as a user with user.department:Field.\ndefine CustomerSuccess as a user with user.department:'Customer Success'.\ndefine SalesCRM as a service with device.zpr.adapter.cn:sales-crm.\n\nservice SalesCRM as json {\"service_class\":\"SalesCRM\",\"actor_cn\":\"sales-crm\",\"summary\":\"Illustrative account and customer success workspace.\",\"endpoint\":\"zpr://sales-crm\",\"status\":\"example only; not deployed\"}.\n  allow FieldSales.\n  allow CustomerSuccess.",
+      "summary": "Field and Customer Success access to the illustrative CRM"
+    },
+    {
+      "category": "Northstar/Policies/Legal",
+      "name": "Legal matter access",
+      "kind": "policy",
+      "content_type": "text/vnd.zpr.zpl",
+      "metadata": {
+        "demo": true,
+        "ldap_attributes": [
+          "ou -> user.department"
+        ],
+        "live": false
+      },
+      "content": "define LegalStaff as a user with user.department:Legal.\ndefine LegalMatterFiles as a service with device.zpr.adapter.cn:legal-matters.\n\nservice LegalMatterFiles as json {\"service_class\":\"LegalMatterFiles\",\"actor_cn\":\"legal-matters\",\"summary\":\"Illustrative legal matter document store.\",\"endpoint\":\"zpr://legal-matters\",\"status\":\"example only; not deployed\"}.\n  allow LegalStaff.",
+      "summary": "Legal department access to illustrative matter files"
+    },
+    {
+      "category": "Northstar/Policies/Device Posture",
+      "name": "Secure device posture",
+      "kind": "policy",
+      "content_type": "text/vnd.zpr.zpl",
+      "metadata": {
+        "demo": true,
+        "ldap_attributes": [
+          "zprMachineType -> device.demo.machine_type",
+          "zprMachineLocation -> device.demo.location",
+          "zprMachineSecure -> device.demo.secure"
+        ],
+        "live": false
+      },
+      "content": "# Machine posture comes from the LDAP zprMachine schema.\ndefine Laptops as a device with demo.machine_type:laptop.\ndefine NorthCampusDevices as a device with demo.location:'North Campus'.\ndefine SecureDevices as a device with demo.secure:TRUE.\ndefine SecureDeviceOperations as a service with device.zpr.adapter.cn:secure-device-operations.\n\nservice SecureDeviceOperations as json {\"service_class\":\"SecureDeviceOperations\",\"actor_cn\":\"secure-device-operations\",\"summary\":\"Illustrative posture-gated device operations.\",\"endpoint\":\"zpr://secure-device-operations\",\"status\":\"example only; not deployed\"}.\n  allow SecureDevices.",
+      "summary": "Device type, location, and secure status predicates"
+    },
+    {
+      "category": "Northstar/Policies/User Access",
+      "name": "User department and role access",
+      "kind": "policy",
+      "content_type": "text/vnd.zpr.zpl",
+      "metadata": {
+        "demo": true,
+        "ldap_attributes": [
+          "ou -> user.department",
+          "title -> user.title",
+          "cn -> user.name",
+          "mail -> user.email",
+          "role -> user.role{}"
+        ],
+        "requires_user_identity": "user.sub from AuthService",
+        "live": false
+      },
+      "content": "# User fields and group roles require an authenticated user.sub identity.\ndefine FinanceUsers as a user with user.department:Finance.\ndefine SecurityReviewers as a user with user.role:'Security Reviewer'.\ndefine UserRecords as a service with device.zpr.adapter.cn:user-records.\n\nservice UserRecords as json {\"service_class\":\"UserRecords\",\"actor_cn\":\"user-records\",\"summary\":\"Illustrative user-scoped records.\",\"endpoint\":\"zpr://user-records\",\"status\":\"example only; not deployed\"}.\n  allow FinanceUsers.\n  allow SecurityReviewers.",
+      "summary": "User LDAP profile and group-role predicates"
+    }
+  ]
+}

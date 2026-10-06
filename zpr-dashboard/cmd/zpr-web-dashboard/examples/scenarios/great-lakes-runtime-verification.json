@@ -1,0 +1,10 @@
+{
+  "id": "great-lakes-runtime-verification",
+  "organization_id": "great-lakes",
+  "folder": "Runtime",
+  "name": "Great Lakes runtime verification",
+  "description": "Verify the two-node ZPR backbone, web services, and Great Lakes directory ownership and roles across its three configured sites.",
+  "steps": [
+    {"action": "verify_multinode_runtime"}
+  ]
+}

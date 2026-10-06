@@ -1,0 +1,39 @@
+# Redwood Freight Cooperative illustrative policy configuration.
+# Services are examples only and are not deployed endpoints.
+
+[resolver]
+order = ["hosts", "dns"]
+
+[resolver.hosts]
+"redwood-node.zpr" = "fd5a:5052::20"
+
+[nodes."redwood-node"]
+provider = [["device.zpr.adapter.cn", "redwood-node"]]
+zpr_address = "redwood-node.zpr"
+
+[visa_service]
+dock_node = "redwood-node"
+
+[trusted_services.redwood_directory]
+api = "rest/1"
+returns_attributes = ["ou -> device.redwood.department", "title -> device.redwood.title", "l -> device.redwood.location", "zprMachineType -> device.redwood.machine_type", "zprMachineLocation -> device.redwood.location", "zprMachineSecure -> device.redwood.secure", "role -> device.redwood.role"]
+expiration_seconds = 3600
+
+[trusted_services.redwood_user_directory]
+api = "rest/1"
+returns_attributes = ["cn -> user.name", "mail -> user.email", "ou -> user.department", "title -> user.title", "l -> user.location", "role -> user.role{}"]
+expiration_seconds = 3600
+
+[protocols.ping]
+l4protocol = "iana.ICMP6"
+icmp_type = "request-response"
+icmp_codes = [128, 129]
+
+[services.RouteExchange]
+protocol = "ping"
+
+[services.FleetTelemetry]
+protocol = "ping"
+
+[services.ShipmentLedger]
+protocol = "ping"

@@ -70,6 +70,10 @@ pub struct Hit {
     /// Caller can use this to find the ZPL line and the conditions.
     pub match_idx: usize,
 
+    /// Original ZPL source associated with the matching communication policy.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub zpl_source: Option<String>,
+
     /// If 'Forward' then this the Hit was on the "forward" client->service direction.
     pub direction: Direction,
 
@@ -101,6 +105,7 @@ impl Hit {
     pub fn new_no_signal(index: usize, direction: Direction) -> Self {
         Hit {
             match_idx: index,
+            zpl_source: None,
             direction,
             signal: None,
             route_predicate: None,
@@ -112,6 +117,7 @@ impl Hit {
     pub fn new_with_signal(index: usize, direction: Direction, signal: Signal) -> Self {
         Hit {
             match_idx: index,
+            zpl_source: None,
             direction,
             signal: Some(signal),
             route_predicate: None,

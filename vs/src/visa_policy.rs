@@ -107,7 +107,7 @@ pub(crate) async fn evaluate_against_policy(
 
     match decision {
         PartialEvalResult::Deny(FinalDeny::NoMatch(message)) => {
-            info!(target: VREQ, "eval denied (no match): {message}");
+            info!(target: VREQ, "eval denied (no match) for flow {src_zpr} -> {dst_zpr} {pkt:?}: {message}");
             Ok(PolicyOutcome::Deny(DenyCode::NoMatch))
         }
         PartialEvalResult::AllowWithoutRoute(hits) => Ok(PolicyOutcome::Allow {

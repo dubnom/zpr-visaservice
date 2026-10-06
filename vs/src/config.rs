@@ -114,6 +114,52 @@ pub const DENY_LOG_SIZE: usize = 500;
 #[serde(deny_unknown_fields, default)]
 pub struct VSConfig {
     pub core: CoreSection,
+    pub trusted_service_http: std::collections::BTreeMap<String, TrustedServiceHttpConfig>,
+    pub dns_update: Option<DnsUpdateConfig>,
+}
+
+#[derive(Deserialize, Serialize, Debug, Clone)]
+#[serde(deny_unknown_fields)]
+pub struct TrustedServiceHttpConfig {
+    pub url: String,
+    pub ca_cert: PathBuf,
+    pub client_cert: PathBuf,
+    pub client_key: PathBuf,
+    #[serde(default)]
+    pub token_verification_key_file: Option<PathBuf>,
+}
+
+#[derive(Deserialize, Serialize, Debug, Clone)]
+#[serde(deny_unknown_fields)]
+pub struct DnsUpdateConfig {
+    /// ZPR address of the policy-gated DNS service, not its substrate address.
+    pub server: IpAddr,
+    #[serde(default = "default_dns_port")]
+    pub port: u16,
+    /// Absolute DNS zone, for example `svc.zpr.`.
+    pub zone: String,
+    #[serde(default)]
+    pub reverse_zones: Vec<String>,
+    #[serde(default)]
+    pub adapter_state_file: Option<PathBuf>,
+    /// BIND-format TSIG key file restricted to this publisher's DNS owner zone.
+    pub tsig_key_file: PathBuf,
+    #[serde(default = "default_dns_ttl")]
+    pub ttl_seconds: u32,
+    #[serde(default = "default_nsupdate_bin")]
+    pub nsupdate_bin: PathBuf,
+}
+
+fn default_dns_port() -> u16 {
+    53
+}
+
+fn default_dns_ttl() -> u32 {
+    30
+}
+
+fn default_nsupdate_bin() -> PathBuf {
+    PathBuf::from("nsupdate")
 }
 
 #[derive(Deserialize, Serialize, Debug, Clone)]
@@ -121,6 +167,9 @@ pub struct VSConfig {
 pub struct CoreSection {
     /// The visa service bind address - this is a constant baked into entire ZPR system only override for testing.
     pub vs_addr: Option<IpAddr>,
+
+    /// Optional separate bind address for the HTTPS admin API. Defaults to `vs_addr`.
+    pub admin_addr: Option<IpAddr>,
 
     /// VSAPI port used by nodes to talk to the visa service VS API.
     /// Must be kept in sync with the compiler.
@@ -155,6 +204,8 @@ impl Default for VSConfig {
     fn default() -> Self {
         VSConfig {
             core: CoreSection::default(),
+            trusted_service_http: std::collections::BTreeMap::new(),
+            dns_update: None,
         }
     }
 }
@@ -162,6 +213,7 @@ impl Default for CoreSection {
     fn default() -> Self {
         CoreSection {
             vs_addr: Some(IpAddr::V6(VS_ZPR_ADDR)),
+            admin_addr: None,
             vsapi_port: Some(VSAPI_PORT),
             admin_port: Some(ADMIN_HTTPS_PORT),
             admin_cert: PathBuf::from("admin-tls-cert.pem"),
@@ -205,10 +257,28 @@ impl VSConfig {
         if let Some(p) = self.core.file_ts_dir.as_mut() {
             rebase(base, p);
         }
+        for service in self.trusted_service_http.values_mut() {
+            rebase(base, &mut service.ca_cert);
+            rebase(base, &mut service.client_cert);
+            rebase(base, &mut service.client_key);
+            if let Some(path) = service.token_verification_key_file.as_mut() {
+                rebase(base, path);
+            }
+        }
+        if let Some(dns_update) = self.dns_update.as_mut() {
+            rebase(base, &mut dns_update.tsig_key_file);
+            if dns_update.nsupdate_bin.components().count() > 1 {
+                rebase(base, &mut dns_update.nsupdate_bin);
+            }
+        }
     }
 
     pub fn get_vs_addr(&self) -> IpAddr {
         self.core.vs_addr.unwrap_or(IpAddr::V6(VS_ZPR_ADDR))
+    }
+
+    pub fn get_admin_addr(&self) -> IpAddr {
+        self.core.admin_addr.unwrap_or_else(|| self.get_vs_addr())
     }
 }
 
@@ -317,6 +387,24 @@ mod test {
         assert_eq!(cfg.core.vsapi_port, Some(9999));
     }
 
+    #[test]
+    fn test_rest_trusted_service_tls_paths_resolve_relative_to_config() {
+        let (cfg, dir) = load_from_temp_dir(
+            r#"
+        [trusted_service_http.directory]
+        url = "https://localhost:8443"
+        ca_cert = "certs/ca.pem"
+        client_cert = "certs/client.pem"
+        client_key = "certs/client.key"
+        "#,
+        );
+        let http = &cfg.trusted_service_http["directory"];
+        assert_eq!(http.url, "https://localhost:8443");
+        assert_eq!(http.ca_cert, dir.path().join("certs/ca.pem"));
+        assert_eq!(http.client_cert, dir.path().join("certs/client.pem"));
+        assert_eq!(http.client_key, dir.path().join("certs/client.key"));
+    }
+
     // Write `contents` into a temp dir as vs.toml and load it via from_file,
     // returning the parsed config and the temp dir (kept alive by the caller).
     fn load_from_temp_dir(contents: &str) -> (VSConfig, tempfile::TempDir) {
@@ -380,6 +468,33 @@ mod test {
     }
 
     #[test]
+    fn test_admin_addr_defaults_to_vs_addr_and_can_be_overridden() {
+        let (default_cfg, _dir) = load_from_temp_dir(
+            r#"
+        [core]
+        vs_addr = "fd5a:5052::1"
+        "#,
+        );
+        assert_eq!(default_cfg.get_admin_addr(), default_cfg.get_vs_addr());
+
+        let (override_cfg, _dir) = load_from_temp_dir(
+            r#"
+        [core]
+        vs_addr = "fd5a:5052::1"
+        admin_addr = "127.0.0.1"
+        "#,
+        );
+        assert_eq!(
+            override_cfg.get_admin_addr(),
+            "127.0.0.1".parse::<IpAddr>().unwrap()
+        );
+        assert_eq!(
+            override_cfg.get_vs_addr(),
+            "fd5a:5052::1".parse::<IpAddr>().unwrap()
+        );
+    }
+
+    #[test]
     fn test_bare_filename_config_path_keeps_cwd_relative_paths() {
         // A config path with no directory component ("vs.toml") has an empty
         // parent; rebasing onto it must leave relative paths unchanged.
@@ -392,5 +507,25 @@ mod test {
         .unwrap();
         cfg.resolve_paths(std::path::Path::new("vs.toml").parent().unwrap());
         assert_eq!(cfg.core.admin_cert, PathBuf::from("cert.pem"));
+    }
+
+    #[test]
+    fn test_dns_update_config_is_optional_and_key_path_resolves_relative_to_config() {
+        let (default_cfg, _dir) = load_from_temp_dir("");
+        assert!(default_cfg.dns_update.is_none());
+
+        let (cfg, dir) = load_from_temp_dir(
+            r#"
+        [dns_update]
+        server = "fd5a:5052:adda:1::53"
+        zone = "svc.zpr."
+        tsig_key_file = "keys/dns-publisher.key"
+        "#,
+        );
+        let dns = cfg.dns_update.expect("dns update configuration");
+        assert_eq!(dns.port, 53);
+        assert_eq!(dns.ttl_seconds, 30);
+        assert_eq!(dns.tsig_key_file, dir.path().join("keys/dns-publisher.key"));
+        assert_eq!(dns.nsupdate_bin, PathBuf::from("nsupdate"));
     }
 }

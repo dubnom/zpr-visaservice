@@ -4,7 +4,7 @@ use crate::error::EvalError;
 use crate::eval_result::{Direction, FinalDeny, Hit, PartialEvalResult, Signal};
 use crate::joinpolicy::JFlag;
 use crate::logging::targets::EVAL;
-use crate::policy::Policy;
+use crate::policy::{CommunicationPolicySummary, Policy};
 use crate::visa::VisaProps;
 
 use zpr::vsapi_types::PacketDesc;
@@ -54,6 +54,10 @@ impl PAttrValue {
 impl EvalContext {
     pub fn new(policy: Arc<Policy>) -> Self {
         EvalContext { policy }
+    }
+
+    pub fn communication_policy_summaries(&self) -> Vec<CommunicationPolicySummary> {
+        self.policy.communication_policy_summaries()
     }
 
     /// Check if policy permits the described actor communication.
@@ -478,10 +482,14 @@ impl EvalContext {
                         service: signal_rdr.get_svc().unwrap().to_string().unwrap(),
                     };
                     debug!(target: EVAL, "policy #{i} hits {direction} with signal: {:?}", signal);
-                    hits.push(Hit::new_with_signal(i, direction, signal));
+                    let mut hit = Hit::new_with_signal(i, direction, signal);
+                    hit.zpl_source = self.policy.get_cpol_source(i).map(str::to_owned);
+                    hits.push(hit);
                 } else {
                     debug!(target: EVAL, "policy #{i} hits {direction} no signal");
-                    hits.push(Hit::new_no_signal(i, direction));
+                    let mut hit = Hit::new_no_signal(i, direction);
+                    hit.zpl_source = self.policy.get_cpol_source(i).map(str::to_owned);
+                    hits.push(hit);
                 }
             }
         }

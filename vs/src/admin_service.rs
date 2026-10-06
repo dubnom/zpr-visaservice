@@ -181,6 +181,7 @@ fn admin_app(state: SharedState) -> Router {
         .route("/admin/actors/{capture}", delete(revoke_actor))
         .route("/admin/nodes/{capture}/visas", get(get_visas_on_node))
         .route("/admin/services", get(get_services))
+        .route("/admin/trusted-services", get(get_trusted_services))
         .route("/admin/services/{capture}", get(get_service))
         .route(
             "/admin/services/{capture}/cache",
@@ -831,6 +832,17 @@ async fn get_services(
     }
 }
 
+async fn get_trusted_services(
+    Extension(perm): Extension<Permission>,
+    State(state): State<SharedState>,
+) -> Result<Json<Vec<crate::trusted_services::TrustedServiceStatus>>, StatusCode> {
+    if !perm.can_read() {
+        return Err(StatusCode::FORBIDDEN);
+    }
+    let asm = state.read().await.asm.clone();
+    Ok(Json(asm.ts_mgr.statuses()))
+}
+
 async fn get_service(
     Extension(perm): Extension<Permission>,
     State(state): State<SharedState>,
@@ -1224,6 +1236,40 @@ mod tests {
         let body = response.into_body().collect().await.unwrap().to_bytes();
         let entry: ListEntry = serde_json::from_slice(&body).unwrap();
         assert_eq!(entry.id, DEFAULT_POLICY_ID);
+    }
+
+    #[tokio::test]
+    async fn test_get_trusted_services_requires_read_key() {
+        let asm = Arc::new(new_assembly_for_tests(None).await);
+        let api_key = setup_test_api_r_key(&asm);
+        let shared_state = Arc::new(tokio::sync::RwLock::new(AdminState::new(asm)));
+        let app = admin_app(shared_state);
+        let unauthorized = app
+            .clone()
+            .oneshot(
+                Request::builder()
+                    .uri("/admin/trusted-services")
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(unauthorized.status(), StatusCode::UNAUTHORIZED);
+
+        let response = app
+            .oneshot(
+                Request::builder()
+                    .uri("/admin/trusted-services")
+                    .header("X-API-Key", &api_key)
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(response.status(), StatusCode::OK);
+        let body = response.into_body().collect().await.unwrap().to_bytes();
+        let statuses: Vec<serde_json::Value> = serde_json::from_slice(&body).unwrap();
+        assert!(statuses.is_empty());
     }
 
     /// GET /admin/policies/curr returns the current policy as a base64;zip PolicyBundle.

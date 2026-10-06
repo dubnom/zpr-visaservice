@@ -1,0 +1,7 @@
+{
+  "endpoint": "https://openobserve.example.test",
+  "organization": "zpr",
+  "logs_stream": "zpr_visa_service",
+  "metrics_stream": "zpr_visa_service",
+  "stale_after_seconds": 300
+}

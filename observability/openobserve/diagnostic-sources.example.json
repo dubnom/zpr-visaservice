@@ -1,0 +1,24 @@
+{
+  "sources": [
+    {
+      "service_name": "zpr-core-node",
+      "service_instance_id": "node-west-1",
+      "source_type": "node",
+      "log_file": "/var/log/zpr/nodes/node-west-1.log",
+      "metrics_file": "/var/lib/zpr/metrics/node-west-1.json"
+    },
+    {
+      "service_name": "zpr-auth-provider",
+      "service_instance_id": "auth-west-1",
+      "source_type": "trusted-service",
+      "log_file": "/var/log/zpr/trusted-services/auth-west-1.log",
+      "metrics_file": "/var/lib/zpr/metrics/auth-west-1.json"
+    },
+    {
+      "service_name": "zpr-visaservice",
+      "service_instance_id": "local-linux-zpr",
+      "source_type": "visa-service",
+      "log_file": "/var/log/zpr/visa-service.log"
+    }
+  ]
+}

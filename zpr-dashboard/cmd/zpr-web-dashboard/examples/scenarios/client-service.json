@@ -1,0 +1,34 @@
+{
+  "id": "client-service",
+  "organization_id": "northstar",
+  "name": "Client calls echo service",
+  "description": "Run a real HTTP request from the finance client through ZPR to an echo service on another machine.",
+  "parallel": true,
+  "steps": [
+    {"id": "client-machine", "action": "start_machine", "machine": "machine-03"},
+    {"id": "service-machine", "action": "start_machine", "machine": "machine-05"},
+    {"id": "client-controller", "action": "wait_controller", "machine": "machine-03", "timeout_seconds": 90},
+    {"id": "service-controller", "action": "wait_controller", "machine": "machine-05", "timeout_seconds": 90},
+    {"id": "client-login", "action": "login", "machine": "machine-03", "user": "sophie.nguyen"},
+    {"id": "service-login", "action": "login", "machine": "machine-05", "user": "arjun.patel"},
+    {"id": "client-selection", "action": "select_workloads", "machine": "machine-03", "workloads": ["finance-client"]},
+    {"id": "service-selection", "action": "select_workloads", "machine": "machine-05", "workloads": ["echo-service"]},
+    {"id": "client-workload", "action": "start_workload", "machine": "machine-03", "component": "finance-client"},
+    {"id": "service-workload", "action": "start_workload", "machine": "machine-05", "component": "echo-service"},
+    {"id": "echo-ready", "action": "start_test_service", "machine": "machine-05", "component": "echo-service"},
+    {"id": "first-request", "after": ["echo-ready"], "action": "request_test_service", "machine": "machine-03", "component": "finance-client", "target": "echo-service"},
+    {"id": "pause-one", "after": ["first-request"], "action": "delay", "timeout_seconds": 2},
+    {"id": "second-request", "after": ["pause-one"], "action": "request_test_service", "machine": "machine-03", "component": "finance-client", "target": "echo-service"},
+    {"id": "pause-two", "after": ["second-request"], "action": "delay", "timeout_seconds": 2},
+    {"id": "third-request", "after": ["pause-two"], "action": "request_test_service", "machine": "machine-03", "component": "finance-client", "target": "echo-service"}
+  ],
+  "cleanup": [
+    {"action": "stop_test_service", "machine": "machine-05", "component": "echo-service"},
+    {"action": "stop_workload", "machine": "machine-03", "component": "finance-client"},
+    {"action": "stop_workload", "machine": "machine-05", "component": "echo-service"},
+    {"action": "logout", "machine": "machine-03"},
+    {"action": "logout", "machine": "machine-05"},
+    {"action": "stop_machine", "machine": "machine-03"},
+    {"action": "stop_machine", "machine": "machine-05"}
+  ]
+}

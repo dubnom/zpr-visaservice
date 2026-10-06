@@ -170,20 +170,26 @@ impl FakeDb {
         if !self.exists_with_lock(key).await? {
             return Ok(());
         }
-        if let Some(entry) = self.store.get(key) {
+        let empty = if let Some(entry) = self.store.get(key) {
             match &entry.value {
                 FakeDbValue::Set(s) => {
                     s.remove(member);
-                    Ok(())
+                    s.is_empty()
                 }
-                _ => Err(redis::RedisError::from((
-                    redis::ErrorKind::UnexpectedReturnType,
-                    "value is not a set",
-                ))),
+                _ => {
+                    return Err(redis::RedisError::from((
+                        redis::ErrorKind::UnexpectedReturnType,
+                        "value is not a set",
+                    )));
+                }
             }
         } else {
-            Ok(())
+            false
+        };
+        if empty {
+            self.store.remove(key);
         }
+        Ok(())
     }
 
     async fn expire_with_lock(&self, key: &str, seconds: i64) -> DbResult<()> {

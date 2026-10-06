@@ -1,5 +1,19 @@
 define database as a service.
-allow red users to access content:red services.
-never allow green users to access services.
 define pingdb as a service.
-allow red users to access pingdb.
+define RedDatabase as a database with service.content:red.
+define RedPingDb as a pingdb with service.content:red.
+
+service database as json {"service_class":"database"}.
+  never allow green users.
+
+service RedDatabase as json {"service_class":"RedDatabase"}.
+  allow red users.
+  never allow green users.
+
+service pingdb as json {"service_class":"pingdb"}.
+  allow red users.
+  never allow green users.
+
+service RedPingDb as json {"service_class":"RedPingDb"}.
+  allow red users.
+  never allow green users.

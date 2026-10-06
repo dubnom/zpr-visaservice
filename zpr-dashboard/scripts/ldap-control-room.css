@@ -1,0 +1,125 @@
+@import url("../default/style.css");
+
+:root {
+    color-scheme: light;
+    --ink: #17211e;
+    --ink-soft: #45524d;
+    --muted: #77837d;
+    --line: #dbe2dc;
+    --paper: #f3f6f2;
+    --panel: #ffffff;
+    --forest: #174d3d;
+    --leaf: #b5e34f;
+    --orange-wash: #fff0e5;
+    --sans: "Avenir Next", "Segoe UI", sans-serif;
+    --mono: "SF Mono", "Cascadia Code", monospace;
+}
+
+html, body, table.page, table.page table.body {
+    background: var(--paper);
+    color: var(--ink);
+    font-family: var(--sans);
+    font-size: 13px;
+}
+
+body { margin: 0; }
+table.page { border-collapse: collapse; }
+table.page td.body { background: var(--paper); }
+
+table.page tr.pagehead {
+    height: 48px;
+    background: var(--ink);
+    color: #f4f7f2;
+    font: 700 14px var(--sans);
+}
+
+table.page tr.pagehead > td { padding: 5px 14px; }
+table.page tr.pagehead img.logo {
+    border-radius: 2px;
+    background: var(--paper);
+    padding: 3px 6px;
+}
+table.page tr.control td, table.page tr.foot td,
+table.page table.body td.spacer, table.page table.body td.foot {
+    border-color: var(--line);
+}
+
+table.page tr.control td { background: var(--panel); }
+table.page table.control td { padding: 5px; }
+table.page td.tree {
+    border-right: 1px solid var(--line);
+    background: #e9eee8;
+}
+
+table.page a, table.page table.control a { color: var(--forest); }
+table.page a:hover, table.page table.control a:hover {
+    background: #e9f3d4;
+    color: var(--ink);
+}
+
+table.page table.body h3.title {
+    border: 0;
+    border-bottom: 2px solid var(--leaf);
+    background: var(--ink);
+    color: #f4f7f2;
+    font: 650 17px var(--sans);
+    text-align: left;
+}
+
+table.page table.body h3.subtitle {
+    border-color: var(--line);
+    background: var(--panel);
+    color: var(--ink-soft);
+    font: 11px var(--mono);
+    text-align: left;
+}
+
+table.page table.server_select, table.page table.body td.head { color: var(--ink); }
+table.page table.sysmsg td.head { background: var(--orange-wash); color: var(--ink); }
+table.page tr.foot td, span.hint { color: var(--muted); }
+table.page table.body img[alt="phpLDAPadmin logo"] { max-width: 180px; height: auto; }
+table.page table.forminput { border: 1px solid var(--line); background: var(--panel); }
+
+input[type="text"], input[type="password"], select, textarea, #login, #password, #generic {
+    border: 1px solid #bcc9c0;
+    border-radius: 3px;
+    background-color: var(--panel);
+    color: var(--ink);
+    font: 13px var(--sans);
+    padding: 5px 8px;
+}
+
+#login, #password { padding-left: 23px; }
+input:focus, select:focus, textarea:focus, #login:focus, #password:focus {
+    border-color: var(--forest);
+    outline: 2px solid #b5e34f80;
+    outline-offset: 1px;
+    background-color: var(--panel);
+}
+
+input[type="submit"], input[type="button"], button {
+    border: 1px solid var(--forest);
+    border-radius: 3px;
+    background: var(--forest);
+    color: #ffffff;
+    font: 600 12px var(--sans);
+    padding: 6px 11px;
+    cursor: pointer;
+}
+
+input[type="submit"]:hover, input[type="button"]:hover, button:hover {
+    background: #23654f;
+}
+
+@media (max-width: 640px) {
+    table.page > tbody > tr > td.tree,
+    table.page > tbody > tr > td.body {
+        display: block;
+        width: auto !important;
+    }
+
+    table.page > tbody > tr > td.tree {
+        border-right: 0;
+        border-bottom: 1px solid var(--line);
+    }
+}

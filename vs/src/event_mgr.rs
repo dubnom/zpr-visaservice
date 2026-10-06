@@ -5,7 +5,7 @@
 use futures::future::join_all;
 use futures::stream::{self, StreamExt};
 
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 use std::net::IpAddr;
 use std::sync::Arc;
 use tokio::sync::mpsc;
@@ -18,10 +18,13 @@ use libeval::eval::EvalContext;
 
 use crate::actor_attributes::refresh_actors;
 use crate::assembly::Assembly;
+use crate::dns_publisher::DnsPublisher;
 use crate::error::ServiceError;
 use crate::logging::targets::EVENT;
 use crate::policy_mgr::PolicySnapshot;
 use crate::visa_reconciler::{SweepReason, revalidate_visas};
+
+static DNS_PUBLICATION_LOCK: tokio::sync::Mutex<()> = tokio::sync::Mutex::const_new(());
 
 #[derive(Debug)]
 pub enum VsEvent {
@@ -69,7 +72,18 @@ impl EventMgr {
 
 pub async fn launch(asm: Arc<Assembly>, mut event_rx: mpsc::Receiver<VsEvent>) {
     debug!(target: EVENT, "event manager worker started");
-    while let Some(event) = event_rx.recv().await {
+    let mut dns_refresh = tokio::time::interval(std::time::Duration::from_secs(30));
+    dns_refresh.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
+    loop {
+        let event = tokio::select! {
+            event = event_rx.recv() => match event { Some(event) => event, None => break },
+            _ = dns_refresh.tick(), if asm.config.dns_update.is_some() => {
+                if let Err(error) = reconcile_dns_providers(&asm).await {
+                    error!(target: EVENT, "periodic DNS reconciliation failed: {}", error);
+                }
+                continue;
+            }
+        };
         match event {
             VsEvent::ActorJoins(actor) => {
                 if let Err(e) = handle_actor_joins(&asm, actor).await {
@@ -99,25 +113,124 @@ pub async fn launch(asm: Arc<Assembly>, mut event_rx: mpsc::Receiver<VsEvent>) {
     info!(target: EVENT, "event manager shutting down");
 }
 
-/// TODO: Does not do anything yet.
-async fn handle_actor_joins(_asm: &Arc<Assembly>, actor_addr: IpAddr) -> Result<(), ServiceError> {
+/// Reconcile DNS publication after an authenticated actor joins.
+async fn handle_actor_joins(asm: &Arc<Assembly>, actor_addr: IpAddr) -> Result<(), ServiceError> {
     info!(target: EVENT, "actor joined: {}", actor_addr);
-    Ok(())
+    reconcile_dns_providers(asm).await
 }
 
-/// TODO: Does not do anything yet.
+/// Reconcile DNS publication after an actor has been removed from the registry.
 async fn handle_actor_leaves(
-    _asm: &Arc<Assembly>,
+    asm: &Arc<Assembly>,
     actor_addr: IpAddr,
     _reason: DisconnectReason,
 ) -> Result<(), ServiceError> {
     info!(target: EVENT, "actor left: {}", actor_addr);
+    reconcile_dns_providers(asm).await
+}
+
+/// Reconcile in-zone DNS names against current signed policy and admitted providers.
+pub async fn reconcile_dns_providers(asm: &Arc<Assembly>) -> Result<(), ServiceError> {
+    let Some(config) = asm.config.dns_update.clone() else {
+        return Ok(());
+    };
+    let _publication_guard = DNS_PUBLICATION_LOCK.lock().await;
+    let publisher = DnsPublisher::new(config)?;
+    let snapshot = asm.policy_mgr.get_current_snapshot();
+    let policy = snapshot.policy_arc();
+    let eval_context = EvalContext::new(policy.clone());
+    let mut adapters = HashSet::new();
+    for common_name in asm.actor_mgr.list_actor_cns(None).await? {
+        let Some(actor) = asm.actor_mgr.get_actor_by_cn(&common_name).await? else {
+            continue;
+        };
+        if actor.is_node()
+            || actor
+                .get_authentication_expiration()
+                .is_some_and(|expires| expires <= std::time::SystemTime::now())
+        {
+            continue;
+        }
+        if let Some(address) = actor.get_zpr_addr() {
+            adapters.insert((*address, publisher.adapter_name(&common_name, *address)));
+        }
+    }
+    if let Err(error) = publisher.reconcile_adapters(&adapters).await {
+        error!(target: EVENT, "failed to reconcile adapter DNS records: {}", error);
+    }
+    let registrations = asm.actor_mgr.list_registered_service_providers().await?;
+
+    let mut service_ids = policy
+        .list_services()
+        .into_iter()
+        .map(|service| service.id.clone())
+        .collect::<HashSet<_>>();
+    service_ids.extend(registrations.iter().map(|entry| entry.name.clone()));
+
+    let mut providers_by_service: HashMap<String, HashSet<IpAddr>> = HashMap::new();
+    for registration in registrations {
+        let Some(service) = policy.service_by_id(&registration.name) else {
+            continue;
+        };
+        if !publisher.accepts_service_id(&service.id) {
+            continue;
+        }
+        let Some(actor) = asm
+            .actor_mgr
+            .get_actor_by_zpr_addr(&registration.zpr_addr)
+            .await?
+        else {
+            continue;
+        };
+        if !actor.provides(&service.id) {
+            continue;
+        }
+        let claims = actor.attrs_iter().cloned().collect::<Vec<_>>();
+        let explicitly_authorized = policy
+            .match_join_policies(&claims)
+            .iter()
+            .any(|join_policy| {
+                join_policy
+                    .services
+                    .as_ref()
+                    .is_some_and(|service_ids| service_ids.iter().any(|id| id == &service.id))
+            });
+        if !explicitly_authorized {
+            continue;
+        }
+        match eval_context.approve_connected(&actor) {
+            Ok(true) => {
+                providers_by_service
+                    .entry(service.id.clone())
+                    .or_default()
+                    .insert(registration.zpr_addr);
+            }
+            Ok(false) => {}
+            Err(error) => {
+                warn!(target: EVENT, "DNS provider {} failed current-policy admission: {}", registration.zpr_addr, error)
+            }
+        }
+    }
+
+    for service_id in service_ids {
+        if !publisher.accepts_service_id(&service_id) {
+            continue;
+        }
+        let mut addresses = providers_by_service
+            .remove(&service_id)
+            .unwrap_or_default()
+            .into_iter()
+            .collect::<Vec<_>>();
+        addresses.sort();
+        if let Err(error) = publisher.replace_providers(&service_id, &addresses).await {
+            error!(target: EVENT, "failed to reconcile DNS records for {}: {}", service_id, error);
+        }
+    }
     Ok(())
 }
 
-// Re-push the current authorized-services list to all connected nodes. Triggered by
-// `AuthServiceChange` when an auth-service provider has joined or left, so nodes always
-// see the up-to-date list.
+/// The set of authorized services may have changed (an auth-service provider
+/// joined or left). Handler re-pushes the current auth-services list to all nodes.
 async fn handle_auth_service_change(asm: &Arc<Assembly>) -> Result<(), ServiceError> {
     let auth_services = asm.actor_mgr.get_auth_services_list(asm.clone()).await?;
     set_services_all_nodes(asm, &auth_services).await
@@ -292,6 +405,9 @@ async fn handle_policy_updated(asm: &Arc<Assembly>, vinst: u64) -> Result<(), Se
     // Re-check existing visas against the new policy. Runs last so route checks
     // and the nodes' own link state already reflect the updated topology.
     revalidate_visas(asm, &psnap, SweepReason::PolicyUpdate).await;
+    if let Err(error) = reconcile_dns_providers(asm).await {
+        error!(target: EVENT, "failed to reconcile DNS records after policy update: {}", error);
+    }
 
     Ok(())
 }

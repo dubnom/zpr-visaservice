@@ -27,6 +27,17 @@ run:
 test:
 	$(GO) test ./...
 
+.PHONY: test-browser
+test-browser:
+	sh scripts/test-browser-container.sh
+
+.PHONY: vendor-browser-assets
+vendor-browser-assets:
+	sh scripts/vendor-browser-dependencies.sh
+
+.PHONY: test-all
+test-all: test test-browser
+
 .PHONY: status
 status:
 	$(GO) run $(SIM_PATH) status

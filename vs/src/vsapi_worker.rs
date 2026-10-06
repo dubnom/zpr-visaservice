@@ -25,7 +25,7 @@ use crate::config;
 use crate::counters::CounterType;
 use crate::error::ServiceError;
 use crate::event_mgr::{self, VsEvent};
-use crate::logging::targets::API;
+use crate::logging::targets::{API, TOPO};
 use crate::net_mgr;
 use crate::packet::describe_five_tuple;
 use crate::topology_mgr::{AddLinkedNodeError, TopologyMgr};
@@ -330,6 +330,7 @@ fn write_error(bldr: &mut vsapi::error::Builder, code: vsapi::ErrorCode, message
 ///
 /// TODO: Rethink this: do we really node connect and open in VSAPI?
 /// See: https://github.com/org-zpr/zpr-visaservice/issues/302
+#[cfg(test)]
 async fn install_policy_links_for_node(asm: &Assembly, node_actor: &Actor, node_addr: &IpAddr) {
     let psnap = asm.policy_mgr.get_current_snapshot();
     let Some(peers) = psnap.policy().get_peers_for_node(node_addr) else {
@@ -1065,10 +1066,6 @@ impl vsapi::v_s_gate::Server for VSGateImpl {
             info!(target: API, "node {:?} already present in router on (re)connect; keeping existing node and links", &node_cn);
         }
 
-        // Install the node's policy-declared links to already-connected peers. Must happen
-        // before ActorJoins: that event drives the topology fan-out, which reads the router.
-        install_policy_links_for_node(&self.asm, &node_actor, &node_zpr_addr).await;
-
         let evt = VsEvent::ActorJoins(node_zpr_addr);
         if let Err(e) = self.asm.event_mgr.record_event(evt).await {
             error!(target: API, "failed to record actor joins event for node {:?}: {}", &node_cn, e);
@@ -1412,6 +1409,10 @@ impl vsapi::v_s_handle::Server for VSHandleImpl {
         let zpr_addr = maybe_zpr_addr.unwrap();
 
         let reason = dnotice.get_reason_code()?;
+        let is_node_leaving = self
+            .node
+            .get_zpr_addr()
+            .is_some_and(|addr| *addr == zpr_addr);
         debug!(
             target: API,
             "disconnect call from node {:?} for {} with reason {:?}",
@@ -1447,6 +1448,16 @@ impl vsapi::v_s_handle::Server for VSHandleImpl {
                     "internal error during disconnect",
                 );
                 return Ok(());
+            }
+        }
+        if is_node_leaving {
+            if let Err(e) = self
+                .asm
+                .topo_mgr
+                .clear_peer_link_status_for_node(&zpr_addr)
+                .await
+            {
+                warn!(target: TOPO, "failed to clear link status for disconnected node {zpr_addr}: {e}");
             }
         }
         let evt = VsEvent::ActorLeaves(zpr_addr, reason);
@@ -1555,6 +1566,54 @@ impl vsapi::v_s_handle::Server for VSHandleImpl {
 
         let mut res_builder = results.get().init_res();
         res_builder.set_ok(());
+        Ok(())
+    }
+
+    async fn report_link_status(
+        self: Rc<Self>,
+        params: vsapi::v_s_handle::ReportLinkStatusParams,
+        mut results: vsapi::v_s_handle::ReportLinkStatusResults,
+    ) -> Result<(), capnp::Error> {
+        let params = params.get()?;
+        let policy_link_id = params.get_link_id()?.to_string()?;
+        let peer_addr = ipaddr_from_capnp(params.get_peer_zpr_addr()?)?;
+        let is_up = params.get_is_up();
+        let generation = params.get_generation();
+        let Some(local_addr) = self.node.get_zpr_addr().copied() else {
+            let res = results.get().init_res();
+            let mut err = res.init_error();
+            write_error(
+                &mut err,
+                vsapi::ErrorCode::InvalidOperation,
+                "reporter has no Node Address",
+            );
+            return Ok(());
+        };
+
+        self.update_last_seen_time(&local_addr).await;
+        let snapshot = self.asm.policy_mgr.get_current_snapshot();
+        let result = self
+            .asm
+            .topo_mgr
+            .report_peer_link_status(
+                &snapshot,
+                &self.asm.actor_mgr,
+                &local_addr,
+                &peer_addr,
+                &policy_link_id,
+                is_up,
+                generation,
+            )
+            .await;
+        let mut res = results.get().init_res();
+        match result {
+            Ok(()) => res.set_ok(()),
+            Err(e) => {
+                warn!(target: API, "rejected link status from {local_addr} for {peer_addr} ({policy_link_id}): {e}");
+                let mut err = res.init_error();
+                write_error(&mut err, vsapi::ErrorCode::ParamError, &e.to_string());
+            }
+        }
         Ok(())
     }
 

@@ -1,0 +1,113 @@
+{
+  "id": "redwood",
+  "assertions_source": "// Redwood Freight Cooperative directory integrity; human fields are group-scoped.\npeople attribute \"uid\" present;\npeople attribute \"cn\" present;\ngroup \"DispatchOperators\" members >= 1;\npeople in \"DispatchOperators\" attribute \"mail\" present;\npeople in \"DispatchOperators\" attribute \"title\" present;\npeople in \"DispatchOperators\" attribute \"ou\" == \"Dispatch\";\npeople in \"DispatchOperators\" exactly_one [\"DispatchOperators\",\"FleetManagers\",\"PartnerAuditors\"];\ngroup \"FleetManagers\" members >= 1;\npeople in \"FleetManagers\" attribute \"mail\" present;\npeople in \"FleetManagers\" attribute \"title\" present;\npeople in \"FleetManagers\" attribute \"ou\" == \"Fleet\";\npeople in \"FleetManagers\" exactly_one [\"DispatchOperators\",\"FleetManagers\",\"PartnerAuditors\"];\ngroup \"PartnerAuditors\" members >= 1;\npeople in \"PartnerAuditors\" attribute \"mail\" present;\npeople in \"PartnerAuditors\" attribute \"title\" present;\npeople in \"PartnerAuditors\" attribute \"ou\" == \"Auditors\";\npeople in \"PartnerAuditors\" exactly_one [\"DispatchOperators\",\"FleetManagers\",\"PartnerAuditors\"];\n",
+  "name": "Redwood Freight Cooperative",
+  "description": "Federated logistics organization with regional operations, fleet, and partner services.",
+  "runtime": {
+    "driver": "docker-multinode",
+    "topology": "multi-node",
+    "nodes": [
+      {"id": "north-hub", "location": "North Hub", "substrate_address": "172.30.0.13", "zpr_address": "fd5a:5052:90de::10"},
+      {"id": "regional-yard", "location": "Regional Yard", "substrate_address": "172.30.0.10", "zpr_address": "fd5a:5052:90de::11"}
+    ]
+  },
+  "directory": {
+    "base_dn": "dc=redwood,dc=test",
+    "seed_mode": "ldif",
+    "ldif_files": ["directory.ldif", "directory-people.ldif"],
+    "health_uid": "marisol.vega",
+    "identity_mappings": {"device.zpr.adapter.cn": "uid"},
+    "attributes": ["ou", "title", "zprMachineId", "zprMachineType", "zprMachineModel", "zprMachineLocation", "zprMachineSecure", "zprMachineOwner"],
+    "user_identity_mappings": {"user.sub": "uid"},
+    "user_attributes": ["cn", "mail", "ou", "title", "l"],
+    "departments": [
+      {"name": "Operations"},
+      {"name": "Dispatch", "parent": "Operations"},
+      {"name": "Fleet", "parent": "Operations"},
+      {"name": "Partners"},
+      {"name": "Auditors", "parent": "Partners"}
+    ],
+    "people": [
+      {"uid": "marisol.vega", "name": "Marisol Vega", "email": "marisol.vega@redwood.example", "department": "Dispatch", "title": "Regional Dispatcher", "location": "North Hub"},
+      {"uid": "darius.cole", "name": "Darius Cole", "email": "darius.cole@redwood.example", "department": "Fleet", "title": "Fleet Operations Lead", "location": "Regional Yard"},
+      {"uid": "priya.shah", "name": "Priya Shah", "email": "priya.shah@redwood.example", "department": "Auditors", "title": "Partner Auditor", "location": "Regional Yard"},
+      {"uid": "north.dispatch.01", "name": "North Hub Dispatcher 01", "email": "north.dispatch.01@redwood.example", "department": "Dispatch", "title": "Dispatcher", "location": "North Hub"},
+      {"uid": "north.dispatch.02", "name": "North Hub Dispatcher 02", "email": "north.dispatch.02@redwood.example", "department": "Dispatch", "title": "Dispatcher", "location": "North Hub"},
+      {"uid": "north.dispatch.03", "name": "North Hub Dispatcher 03", "email": "north.dispatch.03@redwood.example", "department": "Dispatch", "title": "Dispatcher", "location": "North Hub"},
+      {"uid": "north.dispatch.04", "name": "North Hub Dispatcher 04", "email": "north.dispatch.04@redwood.example", "department": "Dispatch", "title": "Dispatcher", "location": "North Hub"},
+      {"uid": "north.dispatch.05", "name": "North Hub Dispatcher 05", "email": "north.dispatch.05@redwood.example", "department": "Dispatch", "title": "Dispatcher", "location": "North Hub"},
+      {"uid": "north.dispatch.06", "name": "North Hub Dispatcher 06", "email": "north.dispatch.06@redwood.example", "department": "Dispatch", "title": "Dispatcher", "location": "North Hub"},
+      {"uid": "north.dispatch.07", "name": "North Hub Dispatcher 07", "email": "north.dispatch.07@redwood.example", "department": "Dispatch", "title": "Dispatcher", "location": "North Hub"},
+      {"uid": "north.dispatch.08", "name": "North Hub Dispatcher 08", "email": "north.dispatch.08@redwood.example", "department": "Dispatch", "title": "Dispatcher", "location": "North Hub"},
+      {"uid": "north.dispatch.09", "name": "North Hub Dispatcher 09", "email": "north.dispatch.09@redwood.example", "department": "Dispatch", "title": "Dispatcher", "location": "North Hub"},
+      {"uid": "yard.dispatch.01", "name": "Regional Yard Dispatcher 01", "email": "yard.dispatch.01@redwood.example", "department": "Dispatch", "title": "Dispatcher", "location": "Regional Yard"},
+      {"uid": "yard.dispatch.02", "name": "Regional Yard Dispatcher 02", "email": "yard.dispatch.02@redwood.example", "department": "Dispatch", "title": "Dispatcher", "location": "Regional Yard"},
+      {"uid": "yard.dispatch.03", "name": "Regional Yard Dispatcher 03", "email": "yard.dispatch.03@redwood.example", "department": "Dispatch", "title": "Dispatcher", "location": "Regional Yard"},
+      {"uid": "yard.dispatch.04", "name": "Regional Yard Dispatcher 04", "email": "yard.dispatch.04@redwood.example", "department": "Dispatch", "title": "Dispatcher", "location": "Regional Yard"},
+      {"uid": "yard.dispatch.05", "name": "Regional Yard Dispatcher 05", "email": "yard.dispatch.05@redwood.example", "department": "Dispatch", "title": "Dispatcher", "location": "Regional Yard"},
+      {"uid": "yard.dispatch.06", "name": "Regional Yard Dispatcher 06", "email": "yard.dispatch.06@redwood.example", "department": "Dispatch", "title": "Dispatcher", "location": "Regional Yard"},
+      {"uid": "yard.dispatch.07", "name": "Regional Yard Dispatcher 07", "email": "yard.dispatch.07@redwood.example", "department": "Dispatch", "title": "Dispatcher", "location": "Regional Yard"},
+      {"uid": "yard.dispatch.08", "name": "Regional Yard Dispatcher 08", "email": "yard.dispatch.08@redwood.example", "department": "Dispatch", "title": "Dispatcher", "location": "Regional Yard"},
+      {"uid": "yard.dispatch.09", "name": "Regional Yard Dispatcher 09", "email": "yard.dispatch.09@redwood.example", "department": "Dispatch", "title": "Dispatcher", "location": "Regional Yard"},
+      {"uid": "north.fleet.01", "name": "North Hub Fleet Manager 01", "email": "north.fleet.01@redwood.example", "department": "Fleet", "title": "Fleet Manager", "location": "North Hub"},
+      {"uid": "north.fleet.02", "name": "North Hub Fleet Manager 02", "email": "north.fleet.02@redwood.example", "department": "Fleet", "title": "Fleet Manager", "location": "North Hub"},
+      {"uid": "north.fleet.03", "name": "North Hub Fleet Manager 03", "email": "north.fleet.03@redwood.example", "department": "Fleet", "title": "Fleet Manager", "location": "North Hub"},
+      {"uid": "north.fleet.04", "name": "North Hub Fleet Manager 04", "email": "north.fleet.04@redwood.example", "department": "Fleet", "title": "Fleet Manager", "location": "North Hub"},
+      {"uid": "north.fleet.05", "name": "North Hub Fleet Manager 05", "email": "north.fleet.05@redwood.example", "department": "Fleet", "title": "Fleet Manager", "location": "North Hub"},
+      {"uid": "north.fleet.06", "name": "North Hub Fleet Manager 06", "email": "north.fleet.06@redwood.example", "department": "Fleet", "title": "Fleet Manager", "location": "North Hub"},
+      {"uid": "north.fleet.07", "name": "North Hub Fleet Manager 07", "email": "north.fleet.07@redwood.example", "department": "Fleet", "title": "Fleet Manager", "location": "North Hub"},
+      {"uid": "north.fleet.08", "name": "North Hub Fleet Manager 08", "email": "north.fleet.08@redwood.example", "department": "Fleet", "title": "Fleet Manager", "location": "North Hub"},
+      {"uid": "yard.fleet.01", "name": "Regional Yard Fleet Manager 01", "email": "yard.fleet.01@redwood.example", "department": "Fleet", "title": "Fleet Manager", "location": "Regional Yard"},
+      {"uid": "yard.fleet.02", "name": "Regional Yard Fleet Manager 02", "email": "yard.fleet.02@redwood.example", "department": "Fleet", "title": "Fleet Manager", "location": "Regional Yard"},
+      {"uid": "yard.fleet.03", "name": "Regional Yard Fleet Manager 03", "email": "yard.fleet.03@redwood.example", "department": "Fleet", "title": "Fleet Manager", "location": "Regional Yard"},
+      {"uid": "yard.fleet.04", "name": "Regional Yard Fleet Manager 04", "email": "yard.fleet.04@redwood.example", "department": "Fleet", "title": "Fleet Manager", "location": "Regional Yard"},
+      {"uid": "yard.fleet.05", "name": "Regional Yard Fleet Manager 05", "email": "yard.fleet.05@redwood.example", "department": "Fleet", "title": "Fleet Manager", "location": "Regional Yard"},
+      {"uid": "yard.fleet.06", "name": "Regional Yard Fleet Manager 06", "email": "yard.fleet.06@redwood.example", "department": "Fleet", "title": "Fleet Manager", "location": "Regional Yard"},
+      {"uid": "yard.fleet.07", "name": "Regional Yard Fleet Manager 07", "email": "yard.fleet.07@redwood.example", "department": "Fleet", "title": "Fleet Manager", "location": "Regional Yard"},
+      {"uid": "yard.fleet.08", "name": "Regional Yard Fleet Manager 08", "email": "yard.fleet.08@redwood.example", "department": "Fleet", "title": "Fleet Manager", "location": "Regional Yard"},
+      {"uid": "north.auditor.01", "name": "North Hub Partner Auditor 01", "email": "north.auditor.01@redwood.example", "department": "Auditors", "title": "Partner Auditor", "location": "North Hub"},
+      {"uid": "north.auditor.02", "name": "North Hub Partner Auditor 02", "email": "north.auditor.02@redwood.example", "department": "Auditors", "title": "Partner Auditor", "location": "North Hub"},
+      {"uid": "north.auditor.03", "name": "North Hub Partner Auditor 03", "email": "north.auditor.03@redwood.example", "department": "Auditors", "title": "Partner Auditor", "location": "North Hub"},
+      {"uid": "north.auditor.04", "name": "North Hub Partner Auditor 04", "email": "north.auditor.04@redwood.example", "department": "Auditors", "title": "Partner Auditor", "location": "North Hub"},
+      {"uid": "north.auditor.05", "name": "North Hub Partner Auditor 05", "email": "north.auditor.05@redwood.example", "department": "Auditors", "title": "Partner Auditor", "location": "North Hub"},
+      {"uid": "north.auditor.06", "name": "North Hub Partner Auditor 06", "email": "north.auditor.06@redwood.example", "department": "Auditors", "title": "Partner Auditor", "location": "North Hub"},
+      {"uid": "north.auditor.07", "name": "North Hub Partner Auditor 07", "email": "north.auditor.07@redwood.example", "department": "Auditors", "title": "Partner Auditor", "location": "North Hub"},
+      {"uid": "north.auditor.08", "name": "North Hub Partner Auditor 08", "email": "north.auditor.08@redwood.example", "department": "Auditors", "title": "Partner Auditor", "location": "North Hub"},
+      {"uid": "yard.auditor.01", "name": "Regional Yard Partner Auditor 01", "email": "yard.auditor.01@redwood.example", "department": "Auditors", "title": "Partner Auditor", "location": "Regional Yard"},
+      {"uid": "yard.auditor.02", "name": "Regional Yard Partner Auditor 02", "email": "yard.auditor.02@redwood.example", "department": "Auditors", "title": "Partner Auditor", "location": "Regional Yard"},
+      {"uid": "yard.auditor.03", "name": "Regional Yard Partner Auditor 03", "email": "yard.auditor.03@redwood.example", "department": "Auditors", "title": "Partner Auditor", "location": "Regional Yard"},
+      {"uid": "yard.auditor.04", "name": "Regional Yard Partner Auditor 04", "email": "yard.auditor.04@redwood.example", "department": "Auditors", "title": "Partner Auditor", "location": "Regional Yard"},
+      {"uid": "yard.auditor.05", "name": "Regional Yard Partner Auditor 05", "email": "yard.auditor.05@redwood.example", "department": "Auditors", "title": "Partner Auditor", "location": "Regional Yard"},
+      {"uid": "yard.auditor.06", "name": "Regional Yard Partner Auditor 06", "email": "yard.auditor.06@redwood.example", "department": "Auditors", "title": "Partner Auditor", "location": "Regional Yard"},
+      {"uid": "yard.auditor.07", "name": "Regional Yard Partner Auditor 07", "email": "yard.auditor.07@redwood.example", "department": "Auditors", "title": "Partner Auditor", "location": "Regional Yard"},
+      {"uid": "yard.auditor.08", "name": "Regional Yard Partner Auditor 08", "email": "yard.auditor.08@redwood.example", "department": "Auditors", "title": "Partner Auditor", "location": "Regional Yard"}
+    ],
+    "groups": [
+      {"name": "DispatchOperators", "members": ["marisol.vega", "north.dispatch.01", "north.dispatch.02", "north.dispatch.03", "north.dispatch.04", "north.dispatch.05", "north.dispatch.06", "north.dispatch.07", "north.dispatch.08", "north.dispatch.09", "yard.dispatch.01", "yard.dispatch.02", "yard.dispatch.03", "yard.dispatch.04", "yard.dispatch.05", "yard.dispatch.06", "yard.dispatch.07", "yard.dispatch.08", "yard.dispatch.09"]},
+      {"name": "FleetManagers", "members": ["darius.cole", "north.fleet.01", "north.fleet.02", "north.fleet.03", "north.fleet.04", "north.fleet.05", "north.fleet.06", "north.fleet.07", "north.fleet.08", "yard.fleet.01", "yard.fleet.02", "yard.fleet.03", "yard.fleet.04", "yard.fleet.05", "yard.fleet.06", "yard.fleet.07", "yard.fleet.08"]},
+      {"name": "PartnerAuditors", "members": ["priya.shah", "north.auditor.01", "north.auditor.02", "north.auditor.03", "north.auditor.04", "north.auditor.05", "north.auditor.06", "north.auditor.07", "north.auditor.08", "yard.auditor.01", "yard.auditor.02", "yard.auditor.03", "yard.auditor.04", "yard.auditor.05", "yard.auditor.06", "yard.auditor.07", "yard.auditor.08"]}
+    ]
+  },
+  "policy_config": "organizations/redwood/policy-demo.zplc",
+  "policy_catalog": "organizations/redwood/demo-policy-catalog.json",
+  "machine_owners": {
+    "machine-01": ["marisol.vega"],
+    "machine-02": ["darius.cole"],
+    "machine-03": ["priya.shah"]
+  },
+  "policies": [
+    {"id": "dispatch-routing", "name": "Dispatch routing", "description": "Dispatchers may coordinate only assigned regional routes."},
+    {"id": "fleet-maintenance", "name": "Fleet maintenance", "description": "Fleet operators may reach maintenance services for assigned vehicles."},
+    {"id": "partner-audit", "name": "Partner audit", "description": "Auditors receive time-limited access to shipment records."}
+  ],
+  "policy_test_services": [
+    {"id":"RouteExchange","name":"Route Exchange","actor_cn":"route-exchange","protocol":"ICMP6","icmp_type":128,"icmp_code":0},
+    {"id":"FleetTelemetry","name":"Fleet Telemetry","actor_cn":"fleet-telemetry","protocol":"ICMP6","icmp_type":128,"icmp_code":0},
+    {"id":"ShipmentLedger","name":"Shipment Ledger","actor_cn":"shipment-ledger","protocol":"ICMP6","icmp_type":128,"icmp_code":0}
+  ],
+  "services": [
+    {"name": "RouteExchange", "kind": "Application", "endpoint": "ZPR/HTTPS", "description": "Regional route coordination."},
+    {"name": "FleetTelemetry", "kind": "Application", "endpoint": "ZPR/UDP", "description": "Vehicle telemetry ingestion."},
+    {"name": "ShipmentLedger", "kind": "Application", "endpoint": "ZPR/HTTPS", "description": "Partner shipment records."}
+  ]
+}

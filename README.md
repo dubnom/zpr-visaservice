@@ -2,6 +2,10 @@
 
 ZPR visa service implementation (under active development).
 
+See [Features Added Since the Upstream Fork](FEATURES_SINCE_ZPR_ORG.md) for a
+high-level overview of the operator, policy, trusted-service, DNS, observability,
+and simulator capabilities added in this fork.
+
 
 ## Crates / Packages / Libraries
 
@@ -58,5 +62,20 @@ The visa service (`vs`) exposes an HTTPS admin API on port 8182 by default.
 The `vs-admin` command line tool consumes this API.
 
 See [admin-http-api.txt](admin-http-api.txt) for full endpoint documentation.
+
+## ZPR DNS service
+
+The BIND 9 deployment profile runs DNS on a ZPR service address, uses ZPL to
+authorize authenticated query clients, and accepts service-record updates from
+the Visa Service only through TSIG over ZPR. BIND is not exposed as a public or
+underlay DNS service. See the [BIND 9 ZPR DNS guide](dns/bind9/README.md).
+
+## ZPR observability service
+
+The [OpenObserve deployment profile](observability/openobserve/README.md)
+packages a third-party open-source log and metrics server behind a dedicated
+ZPR adapter. It specifies OTLP/HTTP ingestion, authenticated reader access,
+and the required Visa Service exporter interfaces. The profile does not
+provision an adapter, install policy, or export existing metrics automatically.
 
 

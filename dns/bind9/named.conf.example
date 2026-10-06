@@ -1,0 +1,37 @@
+// BIND 9 authoritative-only private ZPR DNS service.
+// Replace the example addresses and key material for the deployment.
+acl zpr_clients {
+    fd5a:5052:adda:1::/64;
+};
+
+include "/run/named/zpr-vs-publisher.key";
+
+options {
+    directory "/var/cache/bind";
+    recursion no;
+    dnssec-validation no;
+    allow-recursion { none; };
+    allow-query-cache { none; };
+    allow-query { zpr_clients; };
+    listen-on port 53 { none; };
+    listen-on-v6 port 53 { fd5a:5052:adda:1::53; };
+    zone-statistics full;
+};
+
+statistics-channels {
+    inet fd5a:5052:adda:1::53 port 8053 allow { zpr_clients; };
+};
+
+zone "svc.zpr" {
+    type primary;
+    file "/var/lib/bind/db.svc.zpr";
+    update-policy {
+        grant zpr-vs-publisher zonesub A AAAA;
+    };
+};
+
+zone "2.5.0.5.a.5.d.f.ip6.arpa" {
+    type primary;
+    file "/var/lib/bind/db.fd5a-5052.ip6";
+    update-policy { grant zpr-vs-publisher zonesub PTR; };
+};

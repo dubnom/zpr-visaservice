@@ -1,16 +1,16 @@
 define database as a service.
 define employee as a user with user.bas_id.
 define signalService as a service.
+define SalesDatabase as a database with device.tint:sales.
 
 # No ON
-allow color:red employees 
-to access databases and 
-signal "red employee" to signalService.
 
-allow employees to access databases and signal "employee"
-     to signalService.
+service database as json {"service_class":"database"}.
+  allow color:red employees and signal "red employee" to signalService.
+  allow employees and signal "employee" to signalService.
+  allow employees on hardened devices and signal "accessed" to signalService.
 
-# With ON
-allow color:red employees to access databases on tint:sales devices and signal "red tint access" to signalService.
+# Provider-device conditions are part of the service class.
 
-allow employees on hardened devices to access databases and signal "accessed" to signalService.
+service SalesDatabase as json {"service_class":"SalesDatabase"}.
+  allow color:red employees and signal "red tint access" to signalService.

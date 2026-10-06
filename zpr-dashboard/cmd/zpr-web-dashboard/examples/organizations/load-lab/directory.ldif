@@ -1,0 +1,84 @@
+dn: dc=loadlab,dc=test
+objectClass: top
+objectClass: dcObject
+objectClass: organization
+dc: loadlab
+o: Load Lab
+
+dn: ou=People,dc=loadlab,dc=test
+objectClass: top
+objectClass: organizationalUnit
+ou: People
+
+dn: ou=Machines,dc=loadlab,dc=test
+objectClass: top
+objectClass: organizationalUnit
+ou: Machines
+
+dn: ou=Service Accounts,dc=loadlab,dc=test
+objectClass: top
+objectClass: organizationalUnit
+ou: Service Accounts
+
+dn: cn=zpr-reader,ou=Service Accounts,dc=loadlab,dc=test
+objectClass: top
+objectClass: organizationalRole
+objectClass: simpleSecurityObject
+cn: zpr-reader
+description: Read-only directory identity for Load Lab
+userPassword: DEMO_BIND_PASSWORD_HASH
+
+dn: ou=Performance,ou=People,dc=loadlab,dc=test
+objectClass: top
+objectClass: organizationalUnit
+ou: Performance
+
+dn: uid=load.client,ou=Performance,ou=People,dc=loadlab,dc=test
+objectClass: inetOrgPerson
+uid: load.client
+cn: Load Client Operator
+sn: Operator
+mail: load.client@loadlab.example
+ou: Performance
+title: Traffic Generator Operator
+
+dn: uid=load.service,ou=Performance,ou=People,dc=loadlab,dc=test
+objectClass: inetOrgPerson
+uid: load.service
+cn: Load Service Operator
+sn: Operator
+mail: load.service@loadlab.example
+ou: Performance
+title: Service Host Operator
+
+dn: cn=LoadOperators,ou=People,dc=loadlab,dc=test
+objectClass: groupOfNames
+cn: LoadOperators
+member: uid=load.client,ou=Performance,ou=People,dc=loadlab,dc=test
+member: uid=load.service,ou=Performance,ou=People,dc=loadlab,dc=test
+
+dn: uid=machine-03,ou=Machines,dc=loadlab,dc=test
+objectClass: inetOrgPerson
+objectClass: zprMachine
+uid: machine-03
+cn: machine-03
+sn: Endpoint
+zprMachineId: machine-03
+zprMachineType: laptop
+zprMachineModel: Load Clients
+zprMachineLocation: Load Test Bench
+zprMachineOwner: load.client
+zprMachineSecure: TRUE
+
+dn: uid=machine-05,ou=Machines,dc=loadlab,dc=test
+objectClass: inetOrgPerson
+objectClass: zprMachine
+uid: machine-05
+cn: machine-05
+sn: Endpoint
+zprMachineId: machine-05
+zprMachineType: desktop
+zprMachineModel: Load Services
+zprMachineLocation: Load Test Bench
+zprMachineOwner: load.service
+zprMachineSecure: TRUE

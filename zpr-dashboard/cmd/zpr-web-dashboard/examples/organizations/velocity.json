@@ -1,0 +1,32 @@
+{
+  "id": "velocity",
+  "assertions_source": "// Velocity Labs directory integrity; human fields are group-scoped.\npeople attribute \"uid\" present;\npeople attribute \"cn\" present;\ngroup \"BenchmarkOperators\" members >= 2;\npeople in \"BenchmarkOperators\" attribute \"mail\" present;\npeople in \"BenchmarkOperators\" attribute \"title\" present;\npeople in \"BenchmarkOperators\" attribute \"ou\" == \"Performance\";\n",
+  "name": "Velocity Labs",
+  "description": "Single-node performance laboratory: two machines measure application throughput and warmed request latency. Direct visa-grant timing requires separate instrumentation.",
+  "runtime": {
+    "driver": "linux-one-node",
+    "topology": "single-node",
+    "nodes": [{"id": "velocity-node", "location": "Performance Lab"}]
+  },
+  "directory": {
+    "base_dn": "dc=velocity,dc=test",
+    "seed_mode": "ldif",
+    "ldif_files": ["directory.ldif"],
+    "health_uid": "alex.rivera",
+    "identity_mappings": {"device.zpr.adapter.cn": "uid"},
+    "attributes": ["ou", "title", "zprMachineId", "zprMachineType", "zprMachineModel", "zprMachineLocation", "zprMachineSecure", "zprMachineOwner"],
+    "user_identity_mappings": {"user.sub": "uid"},
+    "user_attributes": ["cn", "mail", "ou", "title"],
+    "departments": [{"name": "Performance"}],
+    "people": [
+      {"uid": "alex.rivera", "name": "Alex Rivera", "email": "alex.rivera@velocity.example", "department": "Performance", "title": "Client Benchmark Operator"},
+      {"uid": "sam.chen", "name": "Sam Chen", "email": "sam.chen@velocity.example", "department": "Performance", "title": "Service Benchmark Operator"}
+    ],
+    "groups": [{"name": "BenchmarkOperators", "members": ["alex.rivera", "sam.chen"]}]
+  },
+  "machine_owners": {"machine-03": ["alex.rivera"], "machine-05": ["sam.chen"]},
+  "policy_config": "organizations/velocity/policy-demo.zplc",
+  "policy_catalog": "organizations/velocity/demo-policy-catalog.json",
+  "policies": [{"id": "benchmark-access", "name": "Benchmark access", "description": "The benchmark client may reach the echo server on TCP 8080."}],
+  "services": [{"name": "EchoWeb", "kind": "Benchmark HTTP", "endpoint": "ZPR/TCP/8080", "description": "Warmed request latency and a bounded 16 MiB download on one forwarding node.", "policy_id": "echo-web.svc.zpr", "actor_cn": "echo-service"}]
+}

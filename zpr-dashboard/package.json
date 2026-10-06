@@ -1,0 +1,11 @@
+{
+  "name": "zpr-dashboard-browser-tests",
+  "private": true,
+  "scripts": {
+    "test:browser": "playwright test"
+  },
+  "devDependencies": {
+    "@playwright/test": "1.63.0",
+    "pluralize": "8.0.0"
+  }
+}
