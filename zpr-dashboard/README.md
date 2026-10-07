@@ -62,8 +62,9 @@ This package is not a device authentication or credential-issuance service.
 The device service now verifies fresh proof of key possession and atomically
 claims an invitation. Durable approval/rejection is implemented;
 authoritative inventory integration,
-issuance, device-facing rate limits, named-user Control Room authorization,
-and the signed Debian/Ubuntu installer remain pending.
+issuance, device-facing rate limits, and the signed Debian/Ubuntu installer
+remain pending. Named-user Control Room authorization and opt-in invitation
+creation are described below.
 
 ### Certificate-authorized invitation administration
 
@@ -110,7 +111,8 @@ explicit SHA-256 pin; a matching CN or request header is not sufficient.
 Readers can be assigned only `read`. Unlisted certificates, organizations,
 and permissions fail closed. Do not authorize the shared Control Room service
 certificate as an administrator. Control Room proxy requests to enrollment
-are blocked until named-user authorization is implemented.
+are blocked unless HTTPS named-user authorization and independently verified
+backend delegation are explicitly configured.
 
 Obtain the pin from the **public** administrator certificate:
 
@@ -129,7 +131,7 @@ verified device attributes or granted policy roles.
 
 | Method | Path | Permission | Input/result |
 | --- | --- | --- | --- |
-| GET | `/api/enrollment/v1/catalog` | read | Scoped profile/type catalogs and lifetime; GUI mutations disabled |
+| GET | `/api/enrollment/v1/catalog` | read | Scoped catalogs/lifetimes; general GUI mutations disabled; separate opt-in creator organization capability on delegated route |
 | POST | `/api/enrollment/v1/invitations` | create | JSON asset; returns invitation and one-time-visible enrollment code |
 | GET | `/api/enrollment/v1/invitations?organization=...` | read | Paginated invitations, no codes or hashes |
 | GET | `/api/enrollment/v1/invitations/{id}?organization=...` | read | Invitation detail, no code or hash |
@@ -947,6 +949,14 @@ operator-policy and loopback requirements.
 
 ### Route-level Control Room and Simulator policy
 
+Simulator organization activation prepares its Linux/amd64 trusted-service
+helper before stopping the previous runtime. A stale or missing helper is built
+atomically using local Go, or the pinned `golang:1.26-alpine3.22` Docker builder
+when the Simulator runtime has no Go compiler. Builder failures leave the old
+artifact and current rig intact. The fallback requires Docker access, the builder
+image (or permission to pull it), and dependency download access on a cold cache.
+Use `sh scripts/prepare-trusted-service.sh` to prepare it ahead of switching.
+
 Without OIDC configured, both applications retain their existing local-stack
 API behavior. No named operator session is required and
 `ZPR_CONTROL_ROOM_ORGANIZATION_ID` may remain unset. Control Room still applies
@@ -1089,10 +1099,10 @@ delegation but does not retroactively cancel accepted requests. No automatic
 mutation retries are introduced. If a response is lost, inspect registry state
 before requesting another mutation; a token cannot be replayed.
 
-The catalog still advertises `gui_mutations_enabled:false`: the current worksheet
-cannot submit records, reveal codes, or review claims. A successful catalog probe
-does not enable buttons. Registry-backed GUI forms and real-service browser
-acceptance are the next milestone.
+The catalog retains `gui_mutations_enabled:false`: general GUI mutations/review
+are not enabled. Invitation creation has a separate, explicitly configured
+capability described below. A successful catalog read alone never authorizes
+creation.
 
 Tests include tampered method/path/query/body/signature, wrong certificate,
 absent verification, wrong issuer/subject, expiry/future issue time, replay and
@@ -1105,18 +1115,21 @@ go test -race ./internal/operatordelegation ./internal/enrollment ./internal/ope
 go test -race ./cmd/zpr-web-dashboard -run 'Operator|Delegation|ControlRoom|Enrollment'
 ```
 
-### Control Room provisioning worksheet and read-only registry
+### Control Room provisioning invitations and read-only registry
 
 Provisioning > Adapters now offers a memory-only invitation worksheet and
-local review dialog for name, owner, requested organization/type/profile,
-inventory reference, and instruction recipient. It does not submit or persist
-these values, create an invitation/code, reserve an asset, or send email.
-Clear resets the worksheet; a page reload clears it too. No enrollment code
-or private key belongs in this form.
+local review dialog for name, owner, organization/type/profile, inventory
+reference, and instruction recipient. **Review worksheet** submits nothing.
+**Clear worksheet** and reload clear form values; no form values, CSRF proof, or
+codes are saved in browser storage. Never paste an enrollment code or private key
+into this form.
 
-Requested worksheet catalog values are explicitly unvalidated. With configured
-HTTPS/OIDC login and independently verified delegation, the page loads authorized
-type/profile catalogs and organization-scoped registry pages of up to 50 records.
+Without an authorized catalog, fields are explicitly unvalidated requests and
+creation is locked. With configured HTTPS/OIDC login and independently verified
+delegation, the form uses approved organization/type/profile selects; changing
+organization clears incompatible choices. Catalog selections are administrative
+claims, not verified device attributes. The page also loads organization-scoped
+registry pages of up to 50 records.
 **Next page** follows the service cursor; **Check again** reloads the catalog and
 first page for the selected organization. **Details** reads a fresh record showing
 revision, fingerprint, deadlines, and audit identity/reason; it never retrieves
@@ -1124,12 +1137,50 @@ an enrollment code. Navigation, session checks/loss, and logout clear registry
 data and details. Stale reads are discarded. Invalid, denied, and unavailable
 responses are distinguished from a legitimately empty page.
 
-Creation, cancellation, approval, and rejection remain disabled, even if the
-catalog's mutation flag changes. Worksheet catalog selections and mutations need
-separate implementation and real-service browser acceptance. Help explains remote/offline invitation
-creation, separate authenticated code delivery, package verification, invitation
-versus approval deadlines, and approval versus credential issuance/connectivity.
-The retained package remains unsigned development tooling.
+#### Opt-in invitation creation
+
+Keep creation disabled in existing deployments (the default). To deliberately
+enable it, add `"gui_invitation_creation_enabled": true` to the operator-owned
+Control-Service `ZPR_ENROLLMENT_CONFIG_FILE`. Configure HTTPS/OIDC, signing and
+independent backend trust as above, and give the exact issuer/subject `read` and
+`create` grants for the intended organizations at **both** Control Room and
+Control-Service. Apply the configuration through your normal deployment process;
+no running service or configuration was changed by this implementation.
+
+Control-Service returns `gui_create_organizations` containing only independently
+authorized creator organizations when this flag is enabled. Older catalogs or
+absent capabilities keep creation locked. The service also enforces this opt-in
+on delegated POST creation, so changing the browser UI cannot bypass it.
+Direct certificate-authorized creation remains unchanged by this flag.
+The legacy general-mutation flag does not unlock anything.
+
+1. Choose approved organization/type/profile and fill the remaining asset fields.
+   Asset values must fit the backend limit of 256 UTF-8 bytes without line breaks.
+2. Select **Create invitation**, review the exact asset and lifetime, and
+   acknowledge separate authenticated code delivery. **Confirm creation** sends
+   one same-origin CSRF-protected POST; double submission is blocked.
+3. A validated HTTP 201 response shows the invitation ID, audited named principal,
+   expiry, and code once in a dialog. Record the ID and deliver the code through a
+   separate authenticated secure channel, never email or the installer URL.
+4. Closing, navigation, session checks/loss, or logout erases the code from the
+   page. Read APIs cannot recover it. No code is automatically copied, downloaded,
+   emailed, or saved to browser storage. If it was not securely delivered, use
+   certificate-authorized cancellation or wait for expiry before replacing it.
+5. A timeout (20 seconds), lost response, unexpected status, or malformed/mismatched
+   creation result is **uncertain**, not success or failure. No automatic retry
+   occurs. Creation stays locked in this page until explicit registry
+   reconciliation is acknowledged. Clearing the form, refreshing the catalog,
+   or rechecking the session does not remove this uncertainty.
+6. Check **all registry pages** for the organization and inventory reference.
+   Resolve an existing unusable invitation by certificate-authorized cancellation
+   or expiry before requesting a replacement. Reload loses the in-memory guard;
+   it does not prove failure or make a retry safe. The registry's active-asset
+   uniqueness remains the durable duplicate protection.
+
+Cancellation, approval, and rejection GUI controls remain disabled. Creating an
+invitation sends no email, reserves no admitted/live adapter, and issues no
+credentials. No production signed package host or installer link is configured;
+the retained package remains unsigned development tooling.
 
 Browser acceptance checks run without Simulator:
 
@@ -1137,6 +1188,11 @@ Browser acceptance checks run without Simulator:
 sh scripts/test-browser-container.sh dashboard.spec.mjs provisioning-live.spec.mjs \
   --grep 'GUI operator|GUI [Pp]rovisioning|live provisioning'
 ```
+
+The real HTTPS browser fixture verifies opt-in creation through OIDC, CSRF, mTLS
+delegation, and SQLite, named audit, secret-free readback, and a committed but
+lost response without a retry. It does not certify device installation or
+credential issuance.
 
 # Compiling the binary
 

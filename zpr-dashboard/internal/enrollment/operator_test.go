@@ -39,6 +39,7 @@ func TestOperatorEnrollmentAuditsIndependentUserAndDurableReplay(t *testing.T) {
 	id := operatorauth.Identity{Issuer: "https://id.example", Subject: "admin-123"}
 	trust := operatordelegation.Config{Version: 1, Audience: "https://control.example", Keys: []operatordelegation.TrustedKey{{KeyID: "room", PublicKey: base64.RawURLEncoding.EncodeToString(public), CertificateSHA256: digest("room-cert")}}, Grants: []operatorauth.Grant{{Issuer: id.Issuer, Subject: id.Subject, Organizations: []string{"company"}, Permissions: []string{"read", "create", "cancel", "approve", "reject"}}}}
 	config := apiConfig()
+	config.GUIInvitationCreation = true
 	config.ApprovalLifetimeSeconds = 3600
 	handler, err := NewOperatorAdminHandler(store, config, trust)
 	if err != nil {
@@ -197,5 +198,84 @@ INSERT INTO operator_delegation_replay(token_hash,expires_at) SELECT printf('%06
 	trust.Grants[0].Permissions = []string{"approve"}
 	if _, err := NewOperatorAdminHandler(store, apiConfig(), trust); err == nil {
 		t.Fatal("review without deadline accepted")
+	}
+}
+
+func TestOperatorInvitationCreationOptInAndCatalogCapabilities(t *testing.T) {
+	for _, test := range []struct {
+		name        string
+		enabled     bool
+		permissions []string
+		want        int
+	}{
+		{"default-disabled", false, []string{"read", "create"}, http.StatusForbidden},
+		{"reader-not-creator", true, []string{"read"}, http.StatusForbidden},
+		{"explicit-enabled-creator", true, []string{"read", "create"}, http.StatusCreated},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			store := testStore(t)
+			config := apiConfig()
+			config.GUIInvitationCreation = test.enabled
+			handler, err := newAdminHandler(store, config, true)
+			if err != nil {
+				t.Fatal(err)
+			}
+			// Changing the caller's configuration must not bypass the snapshot.
+			config.GUIInvitationCreation = !test.enabled
+			request := func(method, path string, body []byte) *httptest.ResponseRecorder {
+				r := httptest.NewRequest(method, APIPrefix+path, bytes.NewReader(body))
+				r.Header.Set("Content-Type", "application/json")
+				r = r.WithContext(context.WithValue(r.Context(), operatorPrincipalKey{}, Principal{
+					Name: "oidc:fixture", Organizations: []string{"company"}, Permissions: test.permissions,
+				}))
+				w := httptest.NewRecorder()
+				handler.ServeHTTP(w, r)
+				return w
+			}
+			w := request(http.MethodGet, "catalog", nil)
+			var catalog struct {
+				Organizations map[string]Organization `json:"organizations"`
+				Create        []string                `json:"gui_create_organizations"`
+				Mutations     bool                    `json:"gui_mutations_enabled"`
+			}
+			if w.Code != http.StatusOK || json.Unmarshal(w.Body.Bytes(), &catalog) != nil {
+				t.Fatalf("catalog=%d %s", w.Code, w.Body.String())
+			}
+			wantCapabilities := 0
+			if test.want == http.StatusCreated {
+				wantCapabilities = 1
+			}
+			if len(catalog.Create) != wantCapabilities || catalog.Mutations || len(catalog.Organizations) != 1 ||
+				(wantCapabilities == 1 && catalog.Create[0] != "company") {
+				t.Fatalf("unexpected capabilities: %s", w.Body.String())
+			}
+			w = request(http.MethodPost, "invitations", assetJSON(t, testAsset()))
+			if w.Code != test.want {
+				t.Fatalf("create=%d %s, want %d", w.Code, w.Body.String(), test.want)
+			}
+			var count int
+			if err := store.db.QueryRow(`SELECT count(*) FROM invitations`).Scan(&count); err != nil || count != wantCapabilities {
+				t.Fatalf("registry rows=%d err=%v, want %d", count, err, wantCapabilities)
+			}
+		})
+	}
+}
+
+func TestDirectCertificateCreationUnaffectedByGUIOptIn(t *testing.T) {
+	for _, enabled := range []bool{false, true} {
+		config := apiConfig()
+		config.GUIInvitationCreation = enabled
+		handler, err := NewAdminHandler(testStore(t), config)
+		if err != nil {
+			t.Fatal(err)
+		}
+		w := requestAPI(handler, http.MethodGet, APIPrefix+"catalog", nil, "admin-cert")
+		if w.Code != http.StatusOK || !strings.Contains(w.Body.String(), `"gui_create_organizations":[]`) {
+			t.Fatalf("direct catalog must not advertise browser creation: %d %s", w.Code, w.Body.String())
+		}
+		w = requestAPI(handler, http.MethodPost, APIPrefix+"invitations", assetJSON(t, testAsset()), "admin-cert")
+		if w.Code != http.StatusCreated {
+			t.Fatalf("direct creation changed: %d %s", w.Code, w.Body.String())
+		}
 	}
 }

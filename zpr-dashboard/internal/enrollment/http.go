@@ -32,6 +32,7 @@ type Organization struct {
 
 type Config struct {
 	Version                   int                     `json:"version"`
+	GUIInvitationCreation     bool                    `json:"gui_invitation_creation_enabled,omitempty"`
 	InvitationLifetimeSeconds int                     `json:"invitation_lifetime_seconds"`
 	ApprovalLifetimeSeconds   int                     `json:"approval_lifetime_seconds,omitempty"`
 	Principals                []Principal             `json:"principals"`
@@ -202,18 +203,29 @@ func (api *adminAPI) catalog(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	organizations := map[string]Organization{}
+	createOrganizations := []string{}
 	for _, name := range principal.Organizations {
 		organizations[name] = api.config.Organizations[name]
+		if api.operator && api.config.GUIInvitationCreation && slices.Contains(principal.Permissions, "create") {
+			createOrganizations = append(createOrganizations, name)
+		}
 	}
+	slices.Sort(createOrganizations)
 	apiJSON(w, http.StatusOK, struct {
-		Organizations    map[string]Organization `json:"organizations"`
-		Lifetime         int                     `json:"invitation_lifetime_seconds"`
-		ApprovalLifetime int                     `json:"approval_lifetime_seconds"`
-		GUIMutations     bool                    `json:"gui_mutations_enabled"`
-	}{organizations, api.config.InvitationLifetimeSeconds, api.config.ApprovalLifetimeSeconds, false})
+		Organizations       map[string]Organization `json:"organizations"`
+		Lifetime            int                     `json:"invitation_lifetime_seconds"`
+		ApprovalLifetime    int                     `json:"approval_lifetime_seconds"`
+		GUIMutations        bool                    `json:"gui_mutations_enabled"`
+		CreateOrganizations []string                `json:"gui_create_organizations"`
+	}{organizations, api.config.InvitationLifetimeSeconds, api.config.ApprovalLifetimeSeconds, false, createOrganizations})
 }
 
 func (api *adminAPI) create(w http.ResponseWriter, r *http.Request) {
+	if api.operator && !api.config.GUIInvitationCreation {
+		log.Print("Operator invitation creation denied: not enabled in enrollment configuration")
+		apiError(w, http.StatusForbidden, "Named-user invitation creation is not enabled at Control-Service.")
+		return
+	}
 	var asset Asset
 	if !readBody(w, r, &asset) {
 		return

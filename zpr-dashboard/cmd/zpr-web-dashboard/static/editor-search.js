@@ -295,7 +295,7 @@
     const label = document.createElement("label");
     label.className = "editor-wrap-toggle";
     label.title = "Wrap long lines to the editor width";
-    label.innerHTML = `<input type="checkbox" data-word-wrap> Word wrap`;
+    label.innerHTML = `<input type="checkbox" data-word-wrap> Wrap`;
     const checkbox = label.querySelector("input");
     let stored = null;
     try { stored = localStorage.getItem(storageKey); } catch { /* storage unavailable */ }

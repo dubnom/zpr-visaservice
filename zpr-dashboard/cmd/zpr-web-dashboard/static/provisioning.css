@@ -11,7 +11,10 @@
 .provisioning-card { min-width: 0; padding: 16px; border: 1px solid var(--line); background: var(--panel); }
 .provisioning-fields { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; margin: 16px 0; }
 .provisioning-fields label { display: grid; gap: 6px; color: var(--ink); font-size: 12px; }
-.provisioning-fields input { width: 100%; min-width: 0; padding: 8px; border: 1px solid var(--line); background: white; color: var(--ink); font: 12px var(--sans); }
+.provisioning-fields input, .provisioning-fields select { width: 100%; min-width: 0; padding: 8px; border: 1px solid var(--line); background: white; color: var(--ink); font: 12px var(--sans); }
+.provisioning-panel [hidden] { display: none; }
+#provisioning-one-time-code { display: block; padding: 12px; user-select: all; overflow-wrap: anywhere; border: 1px solid var(--line); font: 16px var(--mono); }
+.provisioning-review label { display: block; margin: 12px 0; font-size: 12px; }
 .provisioning-wide { grid-column: 1 / -1; }
 .provisioning-steps { margin: 12px 0 0; padding-left: 22px; }
 .provisioning-steps li { padding-left: 4px; margin-bottom: 12px; }

@@ -15,6 +15,8 @@ type policyTestFixtureResponse struct {
 	Actors   []policyTestActorInput   `json:"actors"`
 	Services []policyTestServiceInput `json:"services"`
 	Warnings []string                 `json:"warnings,omitempty"`
+	// OmittedAttributes lists directory attributes whose values the ZPT fixture format cannot carry.
+	OmittedAttributes []string `json:"omitted_attributes,omitempty"`
 }
 
 type policyTestActorFixture struct {
@@ -58,7 +60,7 @@ func (workspace *policyWorkspace) policyTestFixtures(ctx context.Context) (polic
 	if err != nil {
 		return policyTestFixtureResponse{}, err
 	}
-	actors, warnings, err := buildPolicyTestActorFixtures(organization, manifest, directory, workspace.attributeMappings)
+	actors, omitted, warnings, err := buildPolicyTestActorFixtures(organization, manifest, directory, workspace.attributeMappings)
 	if err != nil {
 		return policyTestFixtureResponse{}, err
 	}
@@ -70,7 +72,7 @@ func (workspace *policyWorkspace) policyTestFixtures(ctx context.Context) (polic
 	if len(services) == 0 {
 		return policyTestFixtureResponse{}, errors.New("No testable service fixtures are configured for this policy context.")
 	}
-	return policyTestFixtureResponse{Actors: actors, Services: services, Warnings: warnings}, nil
+	return policyTestFixtureResponse{Actors: actors, Services: services, Warnings: warnings, OmittedAttributes: omitted}, nil
 }
 
 func policyTestLDAPAttributes(organization simulatorOrganization, mappings []policyAttributeMapping) ([]string, error) {
@@ -124,7 +126,7 @@ func buildPolicyTestServiceFixtures(organization simulatorOrganization) ([]polic
 	return services, warnings
 }
 
-func buildPolicyTestActorFixtures(organization simulatorOrganization, manifest simulatorManifest, directory assertionDirectory, mappings []policyAttributeMapping) ([]policyTestActorInput, []string, error) {
+func buildPolicyTestActorFixtures(organization simulatorOrganization, manifest simulatorManifest, directory assertionDirectory, mappings []policyAttributeMapping) ([]policyTestActorInput, []string, []string, error) {
 	users := make(map[string]policyTestActorFixture)
 	machines := make(map[string]simulatorMachine, len(manifest.Machines))
 	knownMachines := make(map[string]bool, len(organization.MachineOwners))
@@ -225,22 +227,31 @@ func buildPolicyTestActorFixtures(organization simulatorOrganization, manifest s
 		}
 	}
 	if len(fixtures) > maxPolicyTestActors {
-		return nil, nil, fmt.Errorf("Test fixture population exceeds the %d-actor limit.", maxPolicyTestActors)
+		return nil, nil, nil, fmt.Errorf("Test fixture population exceeds the %d-actor limit.", maxPolicyTestActors)
 	}
 	warnings := []string{}
 	if len(organization.MachineOwners) == 0 {
 		warnings = append(warnings, "Device ownership uses the simulation manifest because no organization owner map is configured.")
 	}
 	actors := make([]policyTestActorInput, 0, len(fixtures))
+	omittedSet := map[string]bool{}
 	for _, fixture := range fixtures {
-		attributes, err := policyTestAttributeList(fixture.attributes)
-		if err != nil {
-			return nil, nil, err
+		attributes, omitted := policyTestAttributeList(fixture.attributes)
+		for _, key := range omitted {
+			omittedSet[key] = true
 		}
 		fixture.input.Attributes = attributes
 		actors = append(actors, fixture.input)
 	}
-	return actors, warnings, nil
+	omitted := make([]string, 0, len(omittedSet))
+	for key := range omittedSet {
+		omitted = append(omitted, key)
+	}
+	sort.Strings(omitted)
+	for _, key := range omitted {
+		warnings = append(warnings, fmt.Sprintf("Directory attribute %q was omitted from test fixtures: a value contains a comma, brace or control character, or exceeds 2048 bytes, which the ZPT fixture format cannot carry. Policies that reference it cannot be analyzed.", key))
+	}
+	return actors, omitted, warnings, nil
 }
 
 func policyTestUserAttributes(uid string, raw map[string][]string, organization simulatorOrganization, mappings []policyAttributeMapping, groups map[string][]string) map[string][]string {
@@ -303,26 +314,31 @@ func setPolicyTestAttribute(attributes map[string][]string, name string, values 
 	}
 }
 
-func policyTestAttributeList(attributes map[string][]string) ([]policyTestAttributeInput, error) {
+// policyTestAttributeList returns ZPT-safe attributes plus the keys omitted because a value cannot be represented.
+func policyTestAttributeList(attributes map[string][]string) ([]policyTestAttributeInput, []string) {
 	keys := make([]string, 0, len(attributes))
 	for key := range attributes {
 		keys = append(keys, key)
 	}
 	sort.Strings(keys)
 	result := make([]policyTestAttributeInput, 0, len(keys))
+	omitted := []string{}
 	for _, key := range keys {
 		values := append([]string(nil), attributes[key]...)
+		supported := true
 		for _, value := range values {
-			if !policyTestValueSafe(value) {
-				return nil, fmt.Errorf("Policy analysis is unavailable: directory attribute %q contains a comma, brace, or control character unsupported by the ZPT fixture format. This is not a policy compiler error.", key)
+			if !policyTestValueSafe(value) || len(value) > 2048 {
+				supported = false
+				break
 			}
-			if len(value) > 2048 {
-				return nil, fmt.Errorf("Policy analysis is unavailable: directory attribute %q exceeds the 2048-byte fixture value limit.", key)
-			}
+		}
+		if !supported {
+			omitted = append(omitted, key)
+			continue
 		}
 		result = append(result, policyTestAttributeInput{Key: key, Values: values})
 	}
-	return result, nil
+	return result, omitted
 }
 
 func policyTestTag(value string) string {

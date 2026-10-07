@@ -55,7 +55,7 @@
       status.textContent = `Signed in: ${identity.subject}`;
       scope.hidden = false;
       scope.textContent = `Named identity: ${identity.subject} (${identity.issuer}). Configured organizations: ${identity.organizations.join(", ")}. Permissions: ${identity.permissions.join(", ")}. Enrollment actions also require backend delegation.`;
-      window.dispatchEvent(new Event("operator-session-ready"));
+      window.dispatchEvent(new CustomEvent("operator-session-ready", { detail: { identity, csrf } }));
     } catch (error) {
       if (current !== generation) return;
       clearSession();

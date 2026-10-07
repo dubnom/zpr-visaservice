@@ -127,6 +127,7 @@ func TestOperatorDelegationRealTLSLoginToAuditedEnrollment(t *testing.T) {
 	pin := sha256.Sum256(roomClient.Certificate[0])
 	trust := operatordelegation.Config{Version: 1, Audience: "https://control-service.example", Keys: []operatordelegation.TrustedKey{{KeyID: "room", PublicKey: base64.RawURLEncoding.EncodeToString(public), CertificateSHA256: hex.EncodeToString(pin[:])}}, Grants: []operatorauth.Grant{{Issuer: provider.URL, Subject: "named-admin", Organizations: []string{"production"}, Permissions: []string{"read", "create", "cancel"}}}}
 	config := enrollment.Config{Version: 1, InvitationLifetimeSeconds: 3600, Organizations: map[string]enrollment.Organization{"production": {Profiles: []string{"standard"}, Types: []string{"laptop"}}}, Principals: []enrollment.Principal{{Name: "direct-admin", CertificateSHA256: strings.Repeat("a", 64), Organizations: []string{"production"}, Permissions: []string{"read"}}}}
+	config.GUIInvitationCreation = os.Getenv("ZPR_OPERATOR_BROWSER_FIXTURE") != "1" || os.Getenv("ZPR_OPERATOR_BROWSER_CREATE") == "1"
 	roots := x509.NewCertPool()
 	roots.AddCert(ca)
 	backend := httptest.NewUnstartedServer(nil)

@@ -28,13 +28,13 @@
 - [x] Find & Replace button doesn't change color.
 - [x] Make the Find & Replace dialog mimic Microsoft Word but with support for regular expressions (if checked).
 - [x] Word wrap should be a check box, and default to enabled
-- [ ] Analyze and Format should be next to File...
-- [ ] Analyze should use the same colors, fonts, etc. as the Policy editor.
-- [ ] Change "Word wrap" to "Wrap".
+- [x] Analyze and Format should be next to File...
+- [x] Analyze should use the same colors, fonts, etc. as the Policy editor.
+- [x] Change "Word wrap" to "Wrap".
 
 ### All log viewers
-- [ ] Word wrap checkbox and default to enabled.
-- [ ] Change "Word wrap" to "Wrap"
+- [x] Word wrap checkbox and default to enabled.
+- [x] Change "Word wrap" to "Wrap"
 
 ## Control Room
 
@@ -69,7 +69,7 @@
 - [x] Clicking on the component legend items should highlight what has been clicked on.
 - [x] No obvious way to clear highlighted areas or dimmed components.(or the component) Closing the info dialog on the right doesn't always remove the highlight.
 - [x] This gets worse with the click-on legend.
-- [ ] The right-click (and legend) behavior should simply highlight, no dimming of the other stuff.
+- [x] The right-click (and legend) behavior should simply highlight, no dimming of the other stuff.
 
 ### Navigation
 - [x] Keep Map as the main view and group Adapters, Actors, Services, Visas, Denials, and DNS under horizontal Status tabs with counts.
@@ -105,6 +105,7 @@
 ### Editor
 - [x] If there is a horizontal scrollbar, color the forbidden area under the gutter white.
 - [x] Keep every source-located Analyze warning in the gutter on its reported line; never render a duplicate warning list above or below the editor. Keep line-less analysis failures in the status area rather than inventing line 1.
+- [x] Analyze of a define-only policy turned red with no message. Keep line-less compiler/analysis errors visible while Analyze is red, and omit directory attributes the ZPT fixture format cannot carry (e.g. Great Lakes `user.l` with commas) instead of failing every analysis; fail with a named-attribute message only when the policy references one.
 - [x] Keep line-specific policy warnings in the gutter; show analysis failures without a source line in the status area instead of attaching them to line 1.
 - [x] Rename "Rescan LDAP" to "Refresh Attributes", and make sure it handles all trusted attribute sources.
 - [x] Put "Policy" or "Assertion" above the editor to be clear of the mode. Center between the left and right button groups.
@@ -204,7 +205,7 @@ Machine/adapter enrollment is tracked in [Provisioning plan](../Provisioning%20p
 - [x] Add a Control Room invitation worksheet, local review, delivery/expiry
   explanations, and enrollment help under Provisioning > Adapters.
 - [x] Keep the worksheet memory-only, with explicit unsaved/unvalidated
-  labels and no invitation creation, email, or Simulator calls.
+  labels when catalogs are unavailable; local review sends nothing.
 - [ ] Connect approved catalogs and invitation/review actions only after HTTPS
   named-user sign-in and independently verified Control-Service delegation.
 - [x] Add opt-in direct HTTPS OIDC sign-in, named subject/scope display, explicit
@@ -216,5 +217,11 @@ Machine/adapter enrollment is tracked in [Provisioning plan](../Provisioning%20p
   discard stale responses, and distinguish unavailable from empty.
 - [x] Verify read-only registry access through actual HTTPS OIDC login, mTLS
   delegation, SQLite, and logout in desktop/tablet browsers with Simulator unavailable.
-- [ ] Wire worksheet selections to approved catalogs, invitation creation/code
-  handling, and revision/key-bound review with real-service mutation browser tests.
+- [x] Wire form selections to approved catalogs and opt-in invitation creation,
+  CSRF confirmation, one-time code clearing, and uncertainty/reconciliation without
+  automatic retry. Preserve existing local unauthenticated behavior and direct
+  certificate administration; no email, credentials, or Simulator calls.
+- [x] Verify real-service browser creation, named audit, secret-free readback,
+  and committed-but-lost response recovery in desktop/tablet browsers.
+- [ ] Wire cancellation and revision/key-bound review with real-service mutation
+  browser tests.

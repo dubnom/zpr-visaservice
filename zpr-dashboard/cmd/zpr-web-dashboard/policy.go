@@ -172,7 +172,7 @@ type claudeAssistant struct {
 	http   *http.Client
 }
 
-const defaultAssistantModel = "claude-sonnet-4-5-20250929"
+const defaultAssistantModel = "claude-sonnet-5-5"
 const alternateAssistantModel = "claude-haiku-4-5-20251001"
 
 func assistantModels(defaultModel string) []string {

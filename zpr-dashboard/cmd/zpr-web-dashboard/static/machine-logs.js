@@ -585,14 +585,10 @@
     } else start();
   });
   refreshButton?.addEventListener("click", () => { clearTimeout(timer); refresh(); });
-  const wrapButton = document.getElementById(controlRoom ? "adapter-log-wrap" : "machine-logs-wrap");
-  wrapButton.setAttribute("aria-pressed", "true");
+  const wrapToggle = document.getElementById(controlRoom ? "adapter-log-wrap" : "machine-logs-wrap");
+  wrapToggle.checked = true;
   grid.classList.remove("logs-nowrap");
-  wrapButton.addEventListener("click", (event) => {
-    const wrapped = event.currentTarget.getAttribute("aria-pressed") !== "true";
-    event.currentTarget.setAttribute("aria-pressed", String(wrapped));
-    grid.classList.toggle("logs-nowrap", !wrapped);
-  });
+  wrapToggle.addEventListener("change", () => grid.classList.toggle("logs-nowrap", !wrapToggle.checked));
   if (controlRoom) {
     document.getElementById("adapter-log-add").addEventListener("click", addAdapterColumn);
     document.getElementById("adapter-log-all").addEventListener("click", () => {

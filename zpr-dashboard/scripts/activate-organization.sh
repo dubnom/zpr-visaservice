@@ -110,6 +110,10 @@ previous_profile="$dashboard_dir/cmd/zpr-web-dashboard/examples/organizations/$p
 previous_driver=$(jq -er '.runtime.driver' "$previous_profile")
 previous_base_dn=$(jq -er '.directory.base_dn' "$previous_profile")
 previous_bind_dn="cn=zpr-reader,ou=Service Accounts,$previous_base_dn"
+if [ "$organization_driver" = docker-multinode ] || [ "$previous_driver" = docker-multinode ]; then
+    report_activation_status "Preparing trusted-service helper before stopping runtime"
+    sh "$script_dir/prepare-trusted-service.sh"
+fi
 multinode_runtime_dir() { printf '%s/multinode/%s' "$runtime_dir" "$1"; }
 stop_linux_one_node_runtime() {
     for machine in $(jq -r '.machines[].id' "${SIMULATION_MANIFEST:-$runtime_dir/simulation-environment.json}"); do

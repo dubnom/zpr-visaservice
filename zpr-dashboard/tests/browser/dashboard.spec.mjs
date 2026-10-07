@@ -823,9 +823,9 @@ test("GUI Adapter Logs places pickers in headers and toggles all panels and wrap
   await expect(page.locator(".adapter-logs-heading #adapter-log-all")).toBeVisible();
   await page.locator("#adapter-log-all").click();
   await expect(panels).toHaveCount(4);
-  await page.locator("#adapter-log-wrap").click();
+  await page.getByRole("checkbox", { name: "Wrap", exact: true }).uncheck();
   await expect(panels.first().locator("pre")).toHaveCSS("white-space", "pre");
-  await page.locator("#adapter-log-wrap").click();
+  await page.locator("#adapter-log-wrap").check();
   await expect(panels.first().locator("pre")).toHaveCSS("white-space", "pre-wrap");
   await page.locator("#adapter-log-all").click();
   await expect(panels).toHaveCount(0);
@@ -839,7 +839,7 @@ test("GUI Adapter Logs starts wrapped, including long lines and maximized panels
   const panel = page.locator(".adapter-log-column").first();
   const output = panel.locator(".machine-log-output");
   await expect(output).toContainText("x".repeat(400));
-  await expect(page.locator("#adapter-log-wrap")).toHaveAttribute("aria-pressed", "true");
+  await expect(page.getByRole("checkbox", { name: "Wrap", exact: true })).toBeChecked();
   await expect(output.locator("pre")).toHaveCSS("white-space", "pre-wrap");
   await expect.poll(() => output.evaluate(el => el.scrollWidth <= el.clientWidth)).toBe(true);
   await panel.getByRole("button", { name: "Maximize adapter panel 1", exact: true }).click();
@@ -1008,12 +1008,12 @@ test("GUI ZPR Config shares editor controls and keeps an error-only gutter", asy
       historyTop: history.top,
     };
   });
-  expect(Math.abs(toolbarLayout.modeCenter - toolbarLayout.toolbarCenter)).toBeLessThanOrEqual(1);
-  expect(toolbarLayout.fileRight).toBeLessThanOrEqual(toolbarLayout.modeLeft);
+  expect(toolbarLayout.fileRight).toBeLessThanOrEqual(toolbarLayout.actionsLeft);
+  expect(toolbarLayout.actionsLeft - toolbarLayout.fileRight).toBeLessThanOrEqual(10);
   if (await page.evaluate(() => window.innerWidth >= 1000)) {
-    expect(toolbarLayout.modeRight).toBeLessThanOrEqual(toolbarLayout.actionsLeft);
+    expect(toolbarLayout.actionsRight).toBeLessThanOrEqual(toolbarLayout.modeLeft);
     expect(Math.abs(toolbarLayout.formatTop - toolbarLayout.historyTop)).toBeLessThanOrEqual(1);
-    expect(toolbarLayout.actionsRight).toBeLessThanOrEqual(toolbarLayout.utilitiesLeft + 8);
+    expect(toolbarLayout.modeRight).toBeLessThanOrEqual(toolbarLayout.utilitiesLeft);
   }
   const styles = await page.evaluate(() => {
     document.querySelector("#policy-check").classList.add("button-next-evaluate");
@@ -1457,7 +1457,7 @@ test("GUI editor search replaces directory source locally and keeps revision con
 
 test("GUI editor search reveals distant matches and prevents accidental form submission", async ({ page, appURL, api }) => {
   await page.goto(appURL + "/#zpr-config");
-  await page.locator("#page-zpr-config").getByRole("checkbox", { name: "Word wrap" }).uncheck();
+  await page.locator("#page-zpr-config").getByRole("checkbox", { name: "Wrap", exact: true }).uncheck();
   const source = page.locator("#zpr-config-source");
   await source.fill(Array.from({ length: 100 }, (_, index) => index === 90 ? `key = "${"x".repeat(200)}NEEDLE"` : `key${index} = "value"`).join("\n"));
   await source.evaluate((element) => { element.scrollTop = 0; element.scrollLeft = 0; element.setSelectionRange(0, 0); });
@@ -2789,7 +2789,7 @@ test("read-only browser filters policy and assertion records and shows saved rev
   await viewer.getByLabel("Search", { exact: true }).fill("Organization");
   await expect(viewer.locator(".pb-record")).toHaveCount(1);
   await viewer.getByLabel("Category", { exact: true }).selectOption("test");
-  await viewer.getByLabel("Wrap lines", { exact: true }).uncheck();
+  await viewer.getByLabel("Wrap", { exact: true }).uncheck();
   await expect(viewer.locator(".pb-source")).toHaveAttribute("data-wrap", "false");
   expect(methods.length).toBeGreaterThan(0);
   expect(methods.every((method) => method === "GET")).toBeTruthy();
@@ -2889,7 +2889,7 @@ test("Analyze gutter opens a dialog and resets when switching policies", async (
   await expect(gutter).toHaveCSS("width", "48px");
   await expect(gutter).toHaveCSS("overflow-y", "hidden");
   await expect(page.locator("#policy-source")).toHaveCSS("padding-left", "0px");
-  await page.locator("#page-policy").getByRole("checkbox", { name: "Word wrap" }).uncheck();
+  await page.locator("#page-policy").getByRole("checkbox", { name: "Wrap", exact: true }).uncheck();
   const scrollGeometry = await page.locator("#policy-code-editor").evaluate((editor) => {
     const source = editor.querySelector("#policy-source");
     const gutter = editor.querySelector("#policy-test-gutter");
@@ -3431,6 +3431,7 @@ test("policy warnings remain in the gutter when fixtures fail", async ({ page, a
   await expect(page.locator("#policy-check")).toHaveAttribute("data-analysis-state", "error");
   await expect(page.locator("#policy-lint-warnings")).toHaveCount(0);
   await expect(page.locator("#policy-test-status")).toContainText("Analysis unavailable");
+  await expect(page.locator("#policy-test-status")).toBeVisible();
   await expect(page.locator('#policy-test-gutter [data-line="1"] [data-effect="error"]')).toHaveCount(0);
   const warning = page.locator('#policy-test-gutter [data-line="2"] [data-effect="warning"]');
   await expect(warning).toHaveText("WARN");
@@ -3439,6 +3440,47 @@ test("policy warnings remain in the gutter when fixtures fail", async ({ page, a
   await page.locator("#policy-test-details .dialog-actions .button").click();
   await page.locator("#policy-source").fill("define Operators as user.");
   await expect(page.locator('#policy-test-gutter [data-effect="warning"]')).toHaveCount(0);
+});
+
+test("policy Analyze tolerates omitted directory attributes unless the policy references them", async ({ page, appURL, api }) => {
+  api.handlers.set("/api/policy/check", async (route) => route.fulfill({ json: { valid: true, diagnostics: "Compiled successfully.", warnings: [] } }));
+  api.handlers.set("/api/policy/test/fixtures", async (route) => route.fulfill({ json: {
+    actors: [], services: [], omitted_attributes: ["user.l"],
+    warnings: ['Directory attribute "user.l" was omitted from test fixtures.'],
+  } }));
+  let tests = 0;
+  api.handlers.set("/api/policy/test", async (route) => {
+    tests += 1;
+    await route.fulfill({ json: { matrix: [], rules: [], warnings: [] } });
+  });
+  await page.goto(appURL + "/#policy");
+  await openPolicyPicker(page);
+  await page.locator('[data-record-id="test-policy"]').click();
+  await page.locator("#policy-source").fill("define employee as a user with user.bas_id.\n# user.l is not used here");
+  await page.locator("#policy-check").click();
+  await expect(page.locator("#policy-check")).toHaveAttribute("data-analysis-state", "success");
+  await expect(page.locator("#policy-test-status")).toBeHidden();
+  expect(tests).toBe(1);
+  await page.locator("#policy-source").fill("define locals as a user with user.l:Milwaukee.");
+  await page.locator("#policy-check").click();
+  await expect(page.locator("#policy-check")).toHaveAttribute("data-analysis-state", "error");
+  await expect(page.locator("#policy-test-status")).toBeVisible();
+  await expect(page.locator("#policy-test-status")).toContainText('Analysis unavailable: policy references directory attribute "user.l"');
+  expect(tests).toBe(1);
+  await page.locator("#policy-source").fill("define locals as a user.");
+  await expect(page.locator("#policy-test-status")).toBeHidden();
+});
+
+test("policy compiler errors without a line stay visible", async ({ page, appURL, api }) => {
+  api.handlers.set("/api/policy/check", async (route) => route.fulfill({ json: { valid: false, diagnostics: "no service contract or configuration found for webserver", warnings: [] } }));
+  await page.goto(appURL + "/#policy");
+  await openPolicyPicker(page);
+  await page.locator('[data-record-id="test-policy"]').click();
+  await page.locator("#policy-source").fill("define webserver as a service with tag:web.");
+  await page.locator("#policy-check").click();
+  await expect(page.locator("#policy-check")).toHaveAttribute("data-analysis-state", "error");
+  await expect(page.locator("#policy-test-status")).toBeVisible();
+  await expect(page.locator("#policy-test-status")).toContainText("Compiler error: no service contract or configuration found for webserver");
 });
 
 test("policy gutter combines matching results and lint warning details", async ({ page, appURL, api }) => {
@@ -4065,12 +4107,13 @@ test("GUI Workers merges passive device inventory and logs with type filtering a
   await expect(page.locator('[data-machine-action], [data-session-action], [data-login-machine], [data-workload-name], [data-save-workloads]')).toHaveCount(0);
   const output = first.locator(".machine-log-output");
   await expect.poll(() => output.evaluate(element => element.scrollWidth <= element.clientWidth)).toBe(true);
-  await page.getByRole("button", { name: "Word wrap", exact: true }).click();
+  await expect(page.getByRole("checkbox", { name: "Wrap", exact: true })).toBeChecked();
+  await page.getByRole("checkbox", { name: "Wrap", exact: true }).uncheck();
   await expect.poll(() => output.evaluate(element => element.scrollWidth > element.clientWidth)).toBe(true);
   await first.getByRole("button", { name: /Maximize/ }).click();
   await expect(first.locator("pre")).toHaveCSS("white-space", "pre");
   await page.keyboard.press("Escape");
-  await page.getByRole("button", { name: "Word wrap", exact: true }).click();
+  await page.getByRole("checkbox", { name: "Wrap", exact: true }).check();
   await page.locator("#machine-type-filter").selectOption("desktop");
   await expect(first).toBeHidden();
   await expect(panels.nth(1)).toBeVisible();
@@ -4592,14 +4635,17 @@ test("GUI Map legend items highlight their component type and right-click matche
   await legendNode.click();
   await expect(legendNode).toHaveAttribute("aria-pressed", "true");
   await expect(page.locator('.graph-vertex[data-inspect-actor="n1"]')).toHaveClass(/highlighted/);
-  await expect(page.locator('.graph-vertex[data-inspect-actor="client"]')).toHaveClass(/filtered/);
-  await expect(page.locator('.graph-service-badge[data-inspect-service="API"]')).toHaveClass(/filtered/);
+  await expect(page.locator('.graph-vertex[data-inspect-actor="client"]')).not.toHaveClass(/highlighted/);
+  await expect(page.locator('.graph-vertex[data-inspect-actor="client"]')).toHaveCSS("opacity", "1");
+  await expect(page.locator('.graph-service-badge[data-inspect-service="API"]')).toHaveCSS("opacity", "1");
+  await expect(page.locator(".filtered")).toHaveCount(0);
   await page.locator('[data-legend-kind="service"]').click();
   await expect(legendNode).toHaveAttribute("aria-pressed", "false");
   await expect(page.locator('.graph-service-badge[data-inspect-service="API"]')).toHaveClass(/highlighted/);
-  await expect(page.locator('.graph-vertex[data-inspect-actor="n1"]')).toHaveClass(/filtered/);
+  await expect(page.locator('.graph-vertex[data-inspect-actor="n1"]')).not.toHaveClass(/highlighted/);
+  await expect(page.locator('.graph-vertex[data-inspect-actor="n1"]')).toHaveCSS("opacity", "1");
   await page.locator('[data-legend-kind="service"]').click();
-  await expect(page.locator(".graph-vertex.filtered, .graph-service-badge.filtered")).toHaveCount(0);
+  await expect(page.locator(".graph-vertex.highlighted, .graph-service-badge.highlighted")).toHaveCount(0);
 
   const client = page.locator('.graph-vertex[data-inspect-actor="client"]');
   await client.locator(".graph-adapter, circle, rect").first().click({ button: "right", force: true });
@@ -4609,10 +4655,12 @@ test("GUI Map legend items highlight their component type and right-click matche
   await expect(page.locator("#topology-stage")).not.toHaveClass(/graph-visa-focused/);
   await client.locator(".graph-visa-count").dispatchEvent("contextmenu", { bubbles: true });
   await expect(page.locator("#topology-stage")).toHaveClass(/graph-visa-focused/);
+  await expect(page.locator('.graph-vertex[data-inspect-actor="client"]')).toHaveClass(/visa-focus/);
+  await expect(page.locator('.graph-service-badge[data-inspect-service="API"]')).toHaveCSS("opacity", "1");
   await expect.poll(() => page.locator("#inspector-body").innerText()).toBe(fromComponent);
 });
 
-test("GUI Map Clear highlight, Esc and closing the info panel remove highlighting and dimming", async ({ page, appURL, api }) => {
+test("GUI Map Clear highlight, Esc and closing the info panel remove highlighting", async ({ page, appURL, api }) => {
   api.snapshot.actors = [
     { cn: "n1", node: true, zpr_addr: "fd00::a", node_details: { adapters: ["client"] } },
     { cn: "client", node: false, zpr_addr: "fd00::1" },
@@ -4623,14 +4671,14 @@ test("GUI Map Clear highlight, Esc and closing the info panel remove highlightin
   await page.getByRole("button", { name: "Pause updates", exact: true }).click();
   const clear = page.getByRole("button", { name: "Clear highlight", exact: true });
   const stage = page.locator("#topology-stage");
-  const dimmed = page.locator(".graph-vertex.filtered, .graph-service-badge.filtered");
+  const highlighted = page.locator(".graph-vertex.highlighted, .graph-service-badge.highlighted, .graph-edge.highlighted, .graph-service-edge.highlighted");
   await expect(page.locator('.graph-vertex[data-inspect-actor="n1"]')).toBeVisible();
   await expect(clear).toBeHidden();
 
   await page.locator('[data-legend-kind="node"]').click();
-  await expect(dimmed).not.toHaveCount(0);
+  await expect(highlighted).not.toHaveCount(0);
   await clear.click();
-  await expect(dimmed).toHaveCount(0);
+  await expect(highlighted).toHaveCount(0);
   await expect(page.locator('[data-legend-kind][aria-pressed="true"]')).toHaveCount(0);
   await expect(clear).toBeHidden();
 
@@ -4640,7 +4688,7 @@ test("GUI Map Clear highlight, Esc and closing the info panel remove highlightin
   await page.keyboard.press("Escape");
   await page.locator("body").press("Escape");
   await expect(page.locator("#topology-search")).toHaveValue("");
-  await expect(dimmed).toHaveCount(0);
+  await expect(highlighted).toHaveCount(0);
   await expect(clear).toBeHidden();
 
   const client = page.locator('.graph-vertex[data-inspect-actor="client"]');
@@ -4656,7 +4704,7 @@ test("GUI Map Clear highlight, Esc and closing the info panel remove highlightin
   await clear.click();
   await expect(stage).not.toHaveClass(/graph-visa-focused/);
   await expect(page.locator("#component-inspector")).not.toHaveClass(/open/);
-  await expect(dimmed).toHaveCount(0);
+  await expect(highlighted).toHaveCount(0);
 });
 
 test("GUI Provisioning Adapters reports the Control Room enrollment gate without Simulator", async ({ page, appURL, api }) => {
@@ -4971,10 +5019,237 @@ test("GUI provisioning registry discards late details after closing or navigatio
   await expect(page.locator("#provisioning-approved-catalog")).toBeHidden();
 });
 
-test("GUI text editors word wrap by default with a checkbox and keep gutter rows aligned", async ({ page, appURL, api }) => {
+async function mockInvitationCreator(page, api, enabled = true) {
+  await page.route("**/auth/operator/config", (route) => route.fulfill({ json: { enabled: true } }));
+  await page.route("**/auth/operator/session", (route) => route.fulfill({ json: {
+    identity: { issuer: "https://identity.example", subject: "creator", organizations: ["alpha", "beta"], permissions: ["read", "create"] },
+    csrf: "creation-csrf-proof",
+  } }));
+  api.handlers.set("/api/enrollment/v1/catalog", (route) => route.fulfill({ json: {
+    ...provisioningCatalog(), gui_create_organizations: enabled ? ["alpha"] : [],
+  } }));
+  api.handlers.set("/api/enrollment/v1/invitations", (route) => route.fulfill({ json: { invitations: [] } }));
+}
+
+async function fillApprovedInvitation(page) {
+  const form = page.locator("#provisioning-draft");
+  await form.locator('[name="organization"]').selectOption("alpha");
+  await form.locator('[name="type"]').selectOption("laptop");
+  await form.locator('[name="profile"]').selectOption("standard");
+  for (const [name, value] of Object.entries({ name: "Created laptop", owner: "Operations", asset_id: "INV-CREATE", recipient: "owner@example.org" })) {
+    await form.locator(`[name="${name}"]`).fill(value);
+  }
+}
+
+async function confirmInvitationCreation(page) {
+  await page.getByRole("button", { name: "Create invitation", exact: true }).click();
+  const dialog = page.getByRole("dialog", { name: "Confirm invitation creation" });
+  await expect(dialog.getByRole("button", { name: "Confirm creation", exact: true })).toBeDisabled();
+  await dialog.getByRole("checkbox").check();
+  await dialog.getByRole("button", { name: "Confirm creation", exact: true }).click();
+}
+
+function createdInvitationResponse(asset) {
+  const now = Date.now();
+  return { invitation: { id: "created-id", asset, state: "invited", revision: 1,
+    created_at: new Date(now).toISOString(), expires_at: new Date(now + 3600000).toISOString(),
+    created_by: 'oidc:["https://identity.example","creator"]' }, enrollment_code: "A".repeat(26) };
+}
+
+test.describe("GUI provisioning invitation creation", () => {
+  test.use({ ignoreHTTPSErrors: true });
+  test("requires backend opt-in and both scopes while selecting approved catalog values", async ({ page, secureAppURL: appURL, api }) => {
+    await mockInvitationCreator(page, api, false);
+    await page.goto(appURL + "/#provisioning-adapters");
+    await fillApprovedInvitation(page);
+    await expect(page.getByRole("button", { name: "Create invitation", exact: true })).toBeDisabled();
+    api.handlers.set("/api/enrollment/v1/catalog", (route) => route.fulfill({ json: { ...provisioningCatalog(), gui_create_organizations: ["alpha"] } }));
+    await page.getByRole("button", { name: "Check again", exact: true }).click();
+    await expect(page.getByRole("button", { name: "Create invitation", exact: true })).toBeEnabled();
+    await page.locator('#provisioning-draft [name="organization"]').selectOption("beta");
+    await expect(page.locator('#provisioning-draft [name="type"]')).toHaveValue("");
+    await expect(page.locator('#provisioning-draft [name="type"] option')).toHaveText(["Choose approved value", "server"]);
+    await expect(page.getByRole("button", { name: "Create invitation", exact: true })).toBeDisabled();
+    await page.route("**/auth/operator/session", (route) => route.fulfill({ json: {
+      identity: { issuer: "https://identity.example", subject: "reader", organizations: ["alpha"], permissions: ["read"] }, csrf: "reader-csrf",
+    } }));
+    await page.evaluate(() => window.dispatchEvent(new Event("focus")));
+    await expect(page.locator("#operator-login-status")).toHaveText("Signed in: reader");
+    await page.locator('#provisioning-draft [name="organization"]').selectOption("alpha");
+    await expect(page.getByRole("button", { name: "Create invitation", exact: true })).toBeDisabled();
+  });
+
+  test("confirms once with CSRF and clears the one-time code without persistence", async ({ page, secureAppURL: appURL, api }) => {
+    await mockInvitationCreator(page, api);
+    const posted = [];
+    api.handlers.set("/api/enrollment/v1/invitations", (route) => {
+      if (route.request().method() === "GET") return route.fulfill({ json: { invitations: [] } });
+      posted.push({ headers: route.request().headers(), asset: route.request().postDataJSON() });
+      return route.fulfill({ status: 201, json: createdInvitationResponse(posted.at(-1).asset) });
+    });
+    await page.goto(appURL + "/#provisioning-adapters");
+    await fillApprovedInvitation(page);
+    await confirmInvitationCreation(page);
+    const created = page.getByRole("dialog", { name: "Invitation created — one-time code" });
+    await expect(created).toContainText("A".repeat(26));
+    await expect(created).toContainText("No email was sent");
+    expect(posted).toHaveLength(1);
+    expect(posted[0].headers["x-zpr-csrf"]).toBe("creation-csrf-proof");
+    expect(posted[0].asset).toEqual({ name: "Created laptop", owner: "Operations", organization: "alpha", asset_id: "INV-CREATE",
+      type: "laptop", profile: "standard", recipient: "owner@example.org" });
+    expect(await page.evaluate(() => [JSON.stringify(localStorage), JSON.stringify(sessionStorage)].some((value) => value.includes("A".repeat(26)) || value.includes("creation-csrf-proof")))).toBe(false);
+    await page.keyboard.press("Escape");
+    await expect(page.locator("#provisioning-one-time-code")).toHaveCount(0);
+    await expect(page.locator("#provisioning-create-status")).toContainText("one-time code cleared");
+    expect(posted).toHaveLength(1);
+  });
+
+  for (const clearing of ["navigation", "session-loss"]) {
+    test(`clears a confirmed one-time code on ${clearing}`, async ({ page, secureAppURL: appURL, api }) => {
+      await mockInvitationCreator(page, api);
+      api.handlers.set("/api/enrollment/v1/invitations", (route) => route.request().method() === "GET" ?
+        route.fulfill({ json: { invitations: [] } }) :
+        route.fulfill({ status: 201, json: createdInvitationResponse(route.request().postDataJSON()) }));
+      await page.goto(appURL + "/#provisioning-adapters");
+      await fillApprovedInvitation(page);
+      await confirmInvitationCreation(page);
+      await expect(page.locator("#provisioning-one-time-code")).toHaveText("A".repeat(26));
+      if (clearing === "navigation") await page.evaluate(() => { location.hash = "#map"; });
+      else await page.evaluate(() => window.dispatchEvent(new Event("operator-session-cleared")));
+      await expect(page.locator("#provisioning-one-time-code")).toHaveCount(0);
+      await expect(page.locator("#provisioning-create-status")).toContainText("one-time code cleared");
+    });
+  }
+
+  for (const failure of ["unavailable", "mismatched", "wrong-audit", "wrong-lifetime", "bad-code"]) {
+    test(`never retries ${failure} creation responses and requires registry reconciliation`, async ({ page, secureAppURL: appURL, api }) => {
+      await mockInvitationCreator(page, api);
+      let posts = 0;
+      api.handlers.set("/api/enrollment/v1/invitations", (route) => {
+        if (route.request().method() === "GET") return route.fulfill({ json: { invitations: [] } });
+        posts++;
+        const result = createdInvitationResponse(route.request().postDataJSON());
+        if (failure === "mismatched") result.invitation.asset.organization = "beta";
+        if (failure === "wrong-audit") result.invitation.created_by = 'oidc:["https://identity.example","another-admin"]';
+        if (failure === "wrong-lifetime") result.invitation.expires_at = new Date(Date.parse(result.invitation.created_at) + 1800000).toISOString();
+        if (failure === "bad-code") result.enrollment_code = "invalid-secret";
+        return route.fulfill(failure === "unavailable" ? { status: 503, json: { error: "Response unavailable" } } : { status: 201, json: result });
+      });
+      await page.goto(appURL + "/#provisioning-adapters");
+      await fillApprovedInvitation(page);
+      await confirmInvitationCreation(page);
+      await expect(page.locator("#provisioning-create-status")).toContainText("Creation outcome uncertain");
+      await expect(page.locator("#provisioning-one-time-code")).toHaveCount(0);
+      await page.getByRole("button", { name: "Clear worksheet", exact: true }).click();
+      await page.getByRole("button", { name: "Check again", exact: true }).click();
+      await fillApprovedInvitation(page);
+      await expect(page.getByRole("button", { name: "Create invitation", exact: true })).toBeDisabled();
+      await page.getByRole("button", { name: "Resolve uncertain creation", exact: true }).click();
+      const reconcile = page.getByRole("dialog", { name: "Resolve uncertain invitation creation" });
+      await expect(reconcile).toContainText("all registry pages");
+      await expect(reconcile.getByRole("button", { name: "Clear uncertainty", exact: true })).toBeDisabled();
+      await reconcile.getByRole("checkbox").check();
+      await reconcile.getByRole("button", { name: "Clear uncertainty", exact: true }).click();
+      await expect(page.locator("#provisioning-create-status")).toContainText("No mutation was retried");
+      expect(posts).toBe(1);
+    });
+  }
+
+  test("ignores delayed mutation responses after session loss", async ({ page, secureAppURL: appURL, api }) => {
+    await mockInvitationCreator(page, api);
+    let release;
+    let posts = 0;
+    api.handlers.set("/api/enrollment/v1/invitations", async (route) => {
+      if (route.request().method() === "GET") return route.fulfill({ json: { invitations: [] } });
+      posts++;
+      const result = createdInvitationResponse(route.request().postDataJSON());
+      await new Promise((resolve) => { release = resolve; });
+      await route.fulfill({ status: 201, json: result }).catch(() => {});
+    });
+    await page.goto(appURL + "/#provisioning-adapters");
+    await fillApprovedInvitation(page);
+    await confirmInvitationCreation(page);
+    await expect.poll(() => Boolean(release)).toBe(true);
+    await page.evaluate(() => window.dispatchEvent(new Event("operator-session-cleared")));
+    release();
+    await expect(page.locator("#provisioning-create-status")).toContainText("Creation outcome uncertain");
+    await expect(page.locator("#provisioning-one-time-code")).toHaveCount(0);
+    await expect(page.getByRole("button", { name: "Create invitation", exact: true })).toBeDisabled();
+    expect(posts).toBe(1);
+  });
+
+  test("times out at twenty seconds without retrying or exposing a late code", async ({ page, secureAppURL: appURL, api }) => {
+    await page.clock.install();
+    await mockInvitationCreator(page, api);
+    let release;
+    let posts = 0;
+    api.handlers.set("/api/enrollment/v1/invitations", async (route) => {
+      if (route.request().method() === "GET") return route.fulfill({ json: { invitations: [] } });
+      posts++;
+      const result = createdInvitationResponse(route.request().postDataJSON());
+      await new Promise((resolve) => { release = resolve; });
+      await route.fulfill({ status: 201, json: result }).catch(() => {});
+    });
+    await page.goto(appURL + "/#provisioning-adapters");
+    await fillApprovedInvitation(page);
+    await confirmInvitationCreation(page);
+    await expect.poll(() => Boolean(release)).toBe(true);
+    await page.clock.fastForward(19000);
+    await expect(page.locator("#provisioning-create-status")).toContainText("Creating invitation once");
+    await page.clock.fastForward(1001);
+    await expect(page.locator("#provisioning-create-status")).toContainText("Creation outcome uncertain");
+    release();
+    await expect(page.locator("#provisioning-one-time-code")).toHaveCount(0);
+    await expect(page.getByRole("button", { name: "Create invitation", exact: true })).toBeDisabled();
+    expect(posts).toBe(1);
+  });
+
+  test("clears denied authorization without mislabeling an explicit rejection as uncertain", async ({ page, secureAppURL: appURL, api }) => {
+    await mockInvitationCreator(page, api);
+    let posts = 0;
+    api.handlers.set("/api/enrollment/v1/invitations", (route) => {
+      if (route.request().method() === "GET") return route.fulfill({ json: { invitations: [] } });
+      posts++;
+      return route.fulfill({ status: 403, json: { error: "create grant removed" } });
+    });
+    await page.goto(appURL + "/#provisioning-adapters");
+    await fillApprovedInvitation(page);
+    await confirmInvitationCreation(page);
+    await expect(page.locator("#provisioning-create-status")).toContainText("Creation rejected (HTTP 403)");
+    await expect(page.locator("#provisioning-create-status")).not.toContainText("uncertain");
+    await expect(page.getByRole("button", { name: "Resolve uncertain creation", exact: true })).toBeHidden();
+    await expect(page.getByRole("button", { name: "Create invitation", exact: true })).toBeDisabled();
+    await expect(page.locator("#provisioning-invitations tbody")).toBeEmpty();
+    expect(posts).toBe(1);
+  });
+
+  test("reports explicit rejections and enforces the UTF-8 byte limit", async ({ page, secureAppURL: appURL, api }) => {
+    await mockInvitationCreator(page, api);
+    let posts = 0;
+    api.handlers.set("/api/enrollment/v1/invitations", (route) => {
+      if (route.request().method() === "GET") return route.fulfill({ json: { invitations: [] } });
+      posts++;
+      return route.fulfill({ status: 409, json: { error: "active asset" } });
+    });
+    await page.goto(appURL + "/#provisioning-adapters");
+    await fillApprovedInvitation(page);
+    await page.locator('#provisioning-draft [name="name"]').fill("é".repeat(129));
+    await page.getByRole("button", { name: "Create invitation", exact: true }).click();
+    await expect(page.getByRole("dialog")).toHaveCount(0);
+    expect(posts).toBe(0);
+    await page.locator('#provisioning-draft [name="name"]').fill("é".repeat(128));
+    await confirmInvitationCreation(page);
+    await expect(page.locator("#provisioning-create-status")).toContainText("Creation rejected (HTTP 409)");
+    await expect(page.locator("#provisioning-one-time-code")).toHaveCount(0);
+    await expect(page.getByRole("button", { name: "Resolve uncertain creation", exact: true })).toBeHidden();
+    expect(posts).toBe(1);
+  });
+});
+
+test("GUI text editors wrap by default with a checkbox and keep gutter rows aligned", async ({ page, appURL, api }) => {
   await page.goto(appURL + "/#zpr-config");
   const source = page.locator("#zpr-config-source");
-  const toggle = page.locator("#page-zpr-config").getByRole("checkbox", { name: "Word wrap" });
+  const toggle = page.locator("#page-zpr-config").getByRole("checkbox", { name: "Wrap", exact: true });
   await expect(toggle).toBeChecked();
   await source.fill(`short = 1\nlong = "${"x".repeat(600)}"\nlast = 2`);
   await expect(source).toHaveAttribute("wrap", "soft");
@@ -5000,11 +5275,11 @@ test("GUI text editors word wrap by default with a checkbox and keep gutter rows
   measured = await geometry();
   expect(measured.scrollWidth).toBeGreaterThan(measured.clientWidth);
   await page.reload();
-  await expect(page.locator("#page-zpr-config").getByRole("checkbox", { name: "Word wrap" })).not.toBeChecked();
+  await expect(page.locator("#page-zpr-config").getByRole("checkbox", { name: "Wrap", exact: true })).not.toBeChecked();
 
   for (const [hash, id] of [["#policy", "policy-source"], ["#gateways", "gateway-source"]]) {
     await page.goto(appURL + "/" + hash);
-    await expect(page.locator(`#page-${hash.slice(1)}`).getByRole("checkbox", { name: "Word wrap" })).toBeChecked();
+    await expect(page.locator(`#page-${hash.slice(1)}`).getByRole("checkbox", { name: "Wrap", exact: true })).toBeChecked();
     await expect(page.locator(`#${id}`)).toHaveAttribute("wrap", "soft");
   }
 });
@@ -5475,4 +5750,23 @@ test("GUI Simulator directory editor has an AI Assistant using Simulator endpoin
   expect(requests[0]).toMatchObject({ editor: "directory-ldif", source: "dn: cn=Operators,dc=alpha,dc=test\ncn: Operators\n" });
   expect(api.counts.get("/api/gateways/assistant") || 0).toBe(0);
   expect(api.counts.get("/api/policy/assistant") || 0).toBe(0);
+});
+
+test("GUI editor toolbars place Analyze and Format immediately after File", async ({ page, appURL }) => {
+  for (const [hash, file] of [["policy", "#policy-files-toggle"], ["gateways", "#gateway-files-toggle"], ["zpr-config", ".config-file-menu > summary"]]) {
+    await page.goto(`${appURL}/#${hash}`);
+    const tools = page.locator(`#page-${hash} .policy-editor-tools`).first();
+    await expect(tools).toBeVisible();
+    const layout = await tools.evaluate((element, fileSelector) => {
+      const box = (target) => target.getBoundingClientRect();
+      const file = box(element.querySelector(fileSelector));
+      const actions = box(element.querySelector(".policy-attribute-toolbar"));
+      const analyze = [...element.querySelectorAll(".policy-attribute-toolbar .button")].map((button) => button.textContent.trim());
+      return { gap: actions.left - file.right, sameRow: Math.abs(actions.top - file.top) <= 2, analyze };
+    }, file);
+    expect(layout.analyze, hash).toEqual(["Analyze", "Format"]);
+    expect(layout.sameRow, hash).toBe(true);
+    expect(layout.gap, hash).toBeGreaterThanOrEqual(0);
+    expect(layout.gap, hash).toBeLessThanOrEqual(10);
+  }
 });

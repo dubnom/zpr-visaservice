@@ -22,7 +22,13 @@ Policy compiler and evaluator lint warnings appear as clickable gutter markers,
 including when analysis cannot obtain test fixtures. An amber-marked result also
 opens its warnings alongside the result details. Fixture-generation failures are
 reported as **Analysis unavailable**, not as policy compiler errors. The current
-ZPT fixture format cannot represent LDAP values containing commas or braces.
+ZPT fixture format cannot represent LDAP values containing commas, braces or
+control characters, or values over 2048 bytes. The fixtures endpoint omits such
+attributes and lists them in `omitted_attributes`. Analyze still runs unless the
+policy references an omitted attribute key (for example `user.l`), in which case
+it reports **Analysis unavailable** with the attribute name. Whenever Analyze
+turns red, a compiler or analysis error with no source line stays visible below
+the editor.
 
 ## GUI controls
 
@@ -73,7 +79,9 @@ denial badge, otherwise their visa counts. Right-clicking blank canvas clears fo
 Legend items are buttons: click one to highlight every component or connection of
 that type (nodes, visas, gateways, adapters, services, registrations, trusted
 sources, docks or inter-node links); click it again to clear. Legend highlighting
-combines with Search. While any search, legend or right-click highlight is active,
+combines with Search. Search, legend and right-click focus only add highlight
+styling to matches; other components are never dimmed or faded.
+While any search, legend or right-click highlight is active,
 a **Clear highlight** button appears at the end of the legend and clears all of
 them. On Map, Esc closes an open info panel (and its visa focus); otherwise it
 clears all highlighting. Closing the info panel with × also clears its visa focus.
@@ -108,8 +116,8 @@ the chevron tooltip. **Running only** excludes stopped, paused, unknown, and
 unavailable sources, including disconnected retained history.
 **Show all adapters** opens every configured log source for the selected
 adapter/controller type; **Hide all adapters** closes those panels. Individual
-panels can still be added or removed. **Word wrap** applies to every panel,
-including maximized panels, and starts enabled on each page load.
+panels can still be added or removed. The **Wrap** checkbox applies to every
+panel, including maximized panels, and starts checked on each page load.
 When no sources match the selected log type and running filter, the page states
 that no adapters/controllers are available and disables adding/showing panels.
 This differs from deliberately closing all panels when sources are available.
@@ -298,10 +306,14 @@ fields come from the installed contract. Saving never activates the runtime
 gateway. The editor uses Control Room APIs only and does not depend on Simulator.
 
 The ZPR Config, scenario and gateway editors share the policy editor's gutter
-geometry (line height, marker column and padding).
+geometry (line height, marker column and padding). Each editor toolbar places
+**Analyze** and **Format** immediately after **File…**, with search and history
+utilities on the right. Analyze is orange while the current source still needs
+analysis, green after success and red after errors; Format uses the policy
+editor's green ready style.
 
 Every editor with Find and Replace (policy, assertion, gateway, ZPR Config,
-raw scenario source and directory LDIF) has a **Word wrap** checkbox. Wrapping is
+raw scenario source and directory LDIF) has a **Wrap** checkbox. Wrapping is
 on by default and the choice is remembered per editor in browser storage. Line
 gutters size each row to its wrapped height so numbers and markers stay aligned
 with their logical lines; uncheck the box to restore horizontal scrolling.
@@ -316,7 +328,8 @@ audit archive. **Workers** merges the former Agents/device inventory and Workloa
 Logs in a read-only view at `/machine-logs.html`; old `/agents.html` links redirect
 there. Expand **Device and workloads** for owner, posture, container/controller
 state, authenticated user and selected workload identities/states. Search,
-device-type and running-only filters, source selection, word wrap, pause/follow,
+device-type and running-only filters, source selection, the **Wrap** checkbox
+(checked by default), pause/follow,
 and maximize remain available. Lifecycle, workload assignment and login/logout
 controls are no longer on this page; scenarios manage them. Missing telemetry is
 shown as unavailable rather than inferred from log presence.
@@ -339,9 +352,16 @@ fresh read-only details with revision, key fingerprint, deadlines, and audit
 identity/reason. **Check again** reloads the catalog and first registry page;
 **Next page** follows the service cursor. Unavailable/denied reads are not an empty
 queue. Navigation and session checks/loss/logout clear records and details, and
-late responses are discarded. Worksheet catalog values remain unvalidated.
-It creates no invitation/code, sends no email, and enables no cancel/approve/reject
-actions. Read access does not unlock mutations or imply live adapter connectivity.
+late responses are discarded. The form uses approved organization/type/profile
+selects when a catalog is available; otherwise it remains an unvalidated worksheet.
+Invitation creation defaults off and requires the explicit backend
+`gui_invitation_creation_enabled` flag, authorized creator organization capability,
+named-user grants at both services, and CSRF confirmation. A confirmed result shows
+the audited invitation and its code once; closing/navigation/session checks/loss
+erase the code. No code is saved or recovered from registry reads. Uncertain
+responses lock further creation until explicit registry reconciliation; no retry
+is automatic. It sends no email and enables no cancel/approve/reject actions.
+Read access does not unlock mutations or imply live adapter connectivity.
 It never calls Simulator.
 
 Direct HTTPS with operator-configured certificates and OIDC is opt-in in
@@ -353,7 +373,8 @@ does not confer blanket authority over other operator APIs, and does not unlock 
 verified named-user delegation to Control-Service is separately configurable.
 The backend independently checks issuer/subject grants, signing key and verified
 client-certificate pin, and a persistent nonce ledger; the shared certificate
-alone is not administrator authority. GUI mutation controls remain disconnected.
+alone is not administrator authority. Review/cancellation GUI controls remain
+disconnected; creation has its separate default-off capability.
 See the [delegation configuration guide](../../README.md#independently-verified-named-user-delegation) and the
 [HTTPS/OIDC configuration guide](../../README.md#direct-https-configuration).
 

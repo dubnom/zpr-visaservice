@@ -1090,11 +1090,8 @@ function renderTopology(data, exitComponents = []) {
   let height = Math.max(1, bounds.height + paddingY * 2);
   const query = byId("topology-search").value.trim().toLowerCase();
   const legendKind = state.mapLegendKind || "";
-  const mapMark = (queryMatch, legendMatch) => {
-    const active = Boolean(query || legendKind);
-    const hit = active && (!query || queryMatch) && (!legendKind || legendMatch);
-    return { highlighted: hit ? "highlighted" : "", filtered: active && !hit ? "filtered" : "" };
-  };
+  // Search and legend selections only highlight matches; unmatched components keep full emphasis.
+  const mapMark = (queryMatch, legendMatch) => (query || legendKind) && (!query || queryMatch) && (!legendKind || legendMatch) ? "highlighted" : "";
   const matches = (actor) => !query || `${displayNames.get(actor.cn)} ${actor.cn} ${actor.zpr_addr || ""} ${visaServices.has(actor.cn) ? "visa service" : ""} ${(servicesByActor.get(actor.cn) || []).map((service) => `${service.service_name} ${service.service_kind} ${service.external_network_connection || ""}`).join(" ")}`.toLowerCase().includes(query);
 
   const edgeMarkup = [...dockEdges, ...networkEdges].map((edge) => {
@@ -1105,9 +1102,9 @@ function renderTopology(data, exitComponents = []) {
     const title = docked
       ? `${displayNames.get(edge.to.cn)} docked to ${displayNames.get(edge.from.cn)} · ${dnsAddressTitle(edge.to.zpr_addr, "Adapter IP")} · ${dnsAddressTitle(edge.from.zpr_addr, "Node IP")}`
       : `${displayNames.get(edge.from.cn)} to ${displayNames.get(edge.to.cn)}: ${edge.state} · ${dnsAddressTitle(edge.from.zpr_addr, "Node A IP")} · ${dnsAddressTitle(edge.to.zpr_addr, "Node B IP")}`;
-    const { highlighted, filtered } = mapMark(matches(edge.from) || matches(edge.to), legendKind === (docked ? "dock" : "inter-node"));
+    const highlighted = mapMark(matches(edge.from) || matches(edge.to), legendKind === (docked ? "dock" : "inter-node"));
     const key = `${edge.kind}|${edge.from.cn}|${edge.to.cn}`;
-    return `<g class="graph-edge ${highlighted} ${filtered}" data-topology-edge="${escapeHTML(key)}" data-connector-from="${escapeHTML(`actor:${JSON.stringify(edge.from.cn)}`)}" data-connector-to="${escapeHTML(`actor:${JSON.stringify(edge.to.cn)}`)}" data-inspect-link="${escapeHTML(key)}"${docked ? ` data-dock-adapter="${escapeHTML(edge.to.cn)}"` : ""} tabindex="0" role="button" aria-label="Inspect ${escapeHTML(title)}"><title>${escapeHTML(title)}</title>${docked ? "" : `<line class="graph-network-clearance" x1="${from.x}" y1="${from.y}" x2="${to.x}" y2="${to.y}"/>`}<line class="graph-link ${cls}" x1="${from.x}" y1="${from.y}" x2="${to.x}" y2="${to.y}"/><line class="graph-link-hit" x1="${from.x}" y1="${from.y}" x2="${to.x}" y2="${to.y}"/></g>`;
+    return `<g class="graph-edge ${highlighted}" data-topology-edge="${escapeHTML(key)}" data-connector-from="${escapeHTML(`actor:${JSON.stringify(edge.from.cn)}`)}" data-connector-to="${escapeHTML(`actor:${JSON.stringify(edge.to.cn)}`)}" data-inspect-link="${escapeHTML(key)}"${docked ? ` data-dock-adapter="${escapeHTML(edge.to.cn)}"` : ""} tabindex="0" role="button" aria-label="Inspect ${escapeHTML(title)}"><title>${escapeHTML(title)}</title>${docked ? "" : `<line class="graph-network-clearance" x1="${from.x}" y1="${from.y}" x2="${to.x}" y2="${to.y}"/>`}<line class="graph-link ${cls}" x1="${from.x}" y1="${from.y}" x2="${to.x}" y2="${to.y}"/><line class="graph-link-hit" x1="${from.x}" y1="${from.y}" x2="${to.x}" y2="${to.y}"/></g>`;
   }).join("");
 
   const arrivalMarker = (key, x, y, radius) => {
@@ -1179,13 +1176,13 @@ function renderTopology(data, exitComponents = []) {
       cloudMarkup = `<g class="graph-external-network"><title>${escapeHTML(externalNetworks)}</title><line class="graph-link gateway-cloud-link" x1="${pos.x}" y1="${pos.y}" x2="${cloudX}" y2="${cloudY}"/><path class="graph-cloud" transform="translate(${cloudX} ${cloudY})" d="M -34 22 C -60 22 -62 -12 -39 -17 C -40 -43 -2 -49 9 -28 C 31 -42 52 -22 46 -5 C 68 0 62 22 42 22 Z"/></g>`;
     }
     const vertexKind = isNode ? "node" : isGateway ? "gateway" : isVisaService ? "visa" : "adapter";
-    const { highlighted, filtered: vertexFiltered } = mapMark(matches(actor), legendKind === vertexKind);
+    const highlighted = mapMark(matches(actor), legendKind === vertexKind);
     const countAnchor = isNode ? { x: 44, y: -23 }
       : isGateway ? { x: 28, y: -16 }
       : isVisaService ? { x: 17.5, y: -17.5 }
       : { x: 29 / Math.SQRT2, y: -29 / Math.SQRT2 };
     const count = visaCountBadge(counts.get(componentKey), pos.x + countAnchor.x, pos.y + countAnchor.y, isNode);
-    return `<g class="graph-vertex ${isNode ? "node" : isGateway ? "gateway" : isVisaService ? "visa" : "adapter"}${arrivingClass} ${highlighted} ${vertexFiltered}" data-topology-component="${escapeHTML(componentKey)}" data-origin-x="${pos.x}" data-origin-y="${pos.y}"${positionAttributes} data-inspect-actor="${escapeHTML(actor.cn)}" tabindex="0" role="button" aria-label="Inspect ${escapeHTML(isGateway ? "gateway " : "")}${escapeHTML(displayName)}"><title>${escapeHTML(isGateway ? "ZPR gateway · " : "")}${escapeHTML(displayName)} · ${escapeHTML(actor.cn)} · ${escapeHTML(dnsAddressTitle(actor.zpr_addr))}</title>${cloudMarkup}${glyph}${marker}<text class="graph-label" x="${pos.x}" y="${pos.y + 3}">${escapeHTML(shortName)}</text>${count}</g>`;
+    return `<g class="graph-vertex ${isNode ? "node" : isGateway ? "gateway" : isVisaService ? "visa" : "adapter"}${arrivingClass} ${highlighted}" data-topology-component="${escapeHTML(componentKey)}" data-origin-x="${pos.x}" data-origin-y="${pos.y}"${positionAttributes} data-inspect-actor="${escapeHTML(actor.cn)}" tabindex="0" role="button" aria-label="Inspect ${escapeHTML(isGateway ? "gateway " : "")}${escapeHTML(displayName)}"><title>${escapeHTML(isGateway ? "ZPR gateway · " : "")}${escapeHTML(displayName)} · ${escapeHTML(actor.cn)} · ${escapeHTML(dnsAddressTitle(actor.zpr_addr))}</title>${cloudMarkup}${glyph}${marker}<text class="graph-label" x="${pos.x}" y="${pos.y + 3}">${escapeHTML(shortName)}</text>${count}</g>`;
   });
 
   const serviceEdgeMarkup = [];
@@ -1203,10 +1200,10 @@ function renderTopology(data, exitComponents = []) {
     const gatewayClass = isGatewayService(service) ? " gateway" : "";
     const serviceMatches = `${service.service_name} ${service.service_kind} ${service.external_network_connection || ""}`.toLowerCase().includes(query);
     const badgeKind = trustedClass ? trustedClass.trim() : gatewayClass ? "gateway" : "service";
-    const { highlighted, filtered } = mapMark(serviceMatches || matches(owner), legendKind === badgeKind);
-    const edgeMark = mapMark(serviceMatches || matches(owner), legendKind === "registration");
+    const highlighted = mapMark(serviceMatches || matches(owner), legendKind === badgeKind);
+    const edgeHighlighted = mapMark(serviceMatches || matches(owner), legendKind === "registration");
     const serviceEdgeKey = `service:${JSON.stringify([service.actor_cn, service.service_name])}`;
-    serviceEdgeMarkup.push(`<g class="graph-service-edge ${edgeMark.highlighted} ${edgeMark.filtered}" data-topology-edge="${escapeHTML(serviceEdgeKey)}" data-connector-from="${escapeHTML(`actor:${JSON.stringify(service.actor_cn)}`)}" data-connector-to="${escapeHTML(serviceEdgeKey)}" aria-hidden="true"><line class="graph-link service-link" x1="${ownerPosition.x}" y1="${ownerPosition.y}" x2="${position.x}" y2="${position.y}"/></g>`);
+    serviceEdgeMarkup.push(`<g class="graph-service-edge ${edgeHighlighted}" data-topology-edge="${escapeHTML(serviceEdgeKey)}" data-connector-from="${escapeHTML(`actor:${JSON.stringify(service.actor_cn)}`)}" data-connector-to="${escapeHTML(serviceEdgeKey)}" aria-hidden="true"><line class="graph-link service-link" x1="${ownerPosition.x}" y1="${ownerPosition.y}" x2="${position.x}" y2="${position.y}"/></g>`);
     const providerName = displayNames.get(owner.cn) || owner.cn;
     const title = `${isGatewayService(service) ? "Gateway · " : ""}${service.service_name} registered by ${providerName} (${owner.cn})${service.external_network_connection ? ` · external network: ${service.external_network_connection}` : ""}${service.zpr_addr ? ` · ${dnsAddressTitle(service.zpr_addr)}` : ""}`;
     const labelForScreenReader = `Inspect service ${service.service_name}, registered by ${providerName}`;
@@ -1219,7 +1216,7 @@ function renderTopology(data, exitComponents = []) {
     const entry = marker && parentMovement ? { x: offset.x + parentMovement.x, y: offset.y + parentMovement.y } : null;
     const positionAttributes = offsetAttributes(offset, parentKey, entry);
     const count = visaCountBadge(counts.get(componentKey), position.x + badgeWidth / 2 - 2, position.y - 8);
-    return `<g class="graph-service-badge${gatewayClass}${trustedClass}${arrivingClass} ${highlighted} ${filtered}" data-service-type="${escapeHTML(type.key)}" fill="${escapeHTML(type.background)}" stroke="${escapeHTML(type.border)}" color="${escapeHTML(type.color)}" data-topology-component="${escapeHTML(componentKey)}" data-origin-x="${position.x}" data-origin-y="${position.y}"${positionAttributes} data-service-actor="${escapeHTML(service.actor_cn)}" data-inspect-service="${escapeHTML(service.service_name)}" tabindex="0" role="button" aria-label="${escapeHTML(labelForScreenReader)}"><title>${escapeHTML(title)}</title><rect x="${position.x - badgeWidth / 2}" y="${position.y - 10}" width="${badgeWidth}" height="20" rx="4"/>${marker}<text x="${position.x}" y="${position.y + 3}">${escapeHTML(shortLabel)}</text>${count}</g>`;
+    return `<g class="graph-service-badge${gatewayClass}${trustedClass}${arrivingClass} ${highlighted}" data-service-type="${escapeHTML(type.key)}" fill="${escapeHTML(type.background)}" stroke="${escapeHTML(type.border)}" color="${escapeHTML(type.color)}" data-topology-component="${escapeHTML(componentKey)}" data-origin-x="${position.x}" data-origin-y="${position.y}"${positionAttributes} data-service-actor="${escapeHTML(service.actor_cn)}" data-inspect-service="${escapeHTML(service.service_name)}" tabindex="0" role="button" aria-label="${escapeHTML(labelForScreenReader)}"><title>${escapeHTML(title)}</title><rect x="${position.x - badgeWidth / 2}" y="${position.y - 10}" width="${badgeWidth}" height="20" rx="4"/>${marker}<text x="${position.x}" y="${position.y + 3}">${escapeHTML(shortLabel)}</text>${count}</g>`;
   });
 
   const exiting = (kind) => exitComponents.filter((component) => component.kind === kind).map((component) => component.markup).join("");
@@ -2718,7 +2715,9 @@ function updatePolicyDirtyState() {
   byId("policy-source").setAttribute("aria-readonly", String(policy.saveTestPending));
   updatePolicyWorkbenchLayout();
   byId("policy-test-gutter").hidden = false;
-  byId("policy-test-status").hidden = true;
+  // Errors without a source line have no gutter marker, so keep their message visible while Analyze is red.
+  const testStatus = byId("policy-test-status");
+  testStatus.hidden = !(testStatus.dataset.state === "error" && testStatus.textContent && byId("policy-check").dataset.analysisState === "error");
   byId("policy-check-result").hidden = true;
   byId("policy-attribute-rescan").disabled = !canEdit;
   byId("policy-attribute-rescan").classList.toggle("button-save-as-ready", canEdit && !policy.attributeScanPending);
@@ -2740,6 +2739,11 @@ function updatePolicyDirtyState() {
   }
 }
 
+function policyReferencedOmittedAttributes(source, omitted = []) {
+  const code = source.split("\n").map((line) => line.replace(/\/\/.*$|#.*$/, "")).join("\n");
+  return (omitted || []).filter((key) => new RegExp(`(^|[^\\w.])${key.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}(?![\\w.])`, "i").test(code));
+}
+
 async function runPolicyTest(source = byId("policy-source").value) {
   const policy = state.policy;
   if (policy.testPending || !source.trim()) return { passed: false, error: "Policy test could not start for this source." };
@@ -2757,6 +2761,10 @@ async function runPolicyTest(source = byId("policy-source").value) {
     const fixtureResponse = await fetch("/api/policy/test/fixtures", { cache: "no-store", signal: controller.signal });
     const fixtures = await fixtureResponse.json();
     if (!fixtureResponse.ok) throw new Error(fixtures.error || `Test fixture request failed (${fixtureResponse.status})`);
+    const unavailable = policyReferencedOmittedAttributes(source, fixtures.omitted_attributes);
+    if (unavailable.length) {
+      throw new Error(`policy references directory ${unavailable.length === 1 ? "attribute" : "attributes"} ${unavailable.map((key) => `"${key}"`).join(", ")} with values the ZPT fixture format cannot carry (comma, brace, control character or over 2048 bytes). This is not a policy compiler error.`);
+    }
     errorTitle = "Policy evaluation error";
     policy.testDimensions = Array.from(new Set((fixtures.actors || []).flatMap((actor) => Object.keys(actor.dimensions || {})))).sort();
     const response = await fetch("/api/policy/test", {

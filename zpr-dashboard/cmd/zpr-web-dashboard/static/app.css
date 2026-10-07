@@ -154,8 +154,6 @@ h1 { margin-bottom: 6px; font-size: 28px; line-height: 1.15; letter-spacing: 0; 
 .graph-auto-fit input { margin: 0; accent-color: var(--forest); }
 .graph-auto-fit[hidden], .graph-visa-focus-status[hidden] { display: none; }
 .graph-visa-focus-status { position: absolute; bottom: 4px; left: 8px; right: 8px; margin: 0; padding: 5px 8px; background: #fffffff0; border: 1px solid var(--line); color: var(--ink); font: 10px var(--mono); pointer-events: none; }
-.graph-visa-focused #graph-world > :is(.graph-vertex, .graph-service-badge, .graph-edge, .graph-service-edge):not(.visa-focus) { opacity: .18; }
-.graph-visa-focused #graph-world .visa-focus { opacity: 1; }
 .graph-visa-focused #graph-world .graph-vertex.visa-focus > :is(rect, circle, polygon),
 .graph-visa-focused #graph-world .graph-service-badge.visa-focus > rect { stroke: #1769a1; stroke-width: 4; filter: drop-shadow(0 0 5px #56b1e2); }
 .graph-visa-focused #graph-world :is(.graph-edge, .graph-service-edge).visa-focus .graph-link { stroke: #1769a1; stroke-width: 4; }
@@ -369,7 +367,7 @@ td:first-child { color: var(--ink); font-weight: 600; }
 .policy-file-menu .button { width: 100%; text-align: left; }
 .policy-file-menu .button:disabled, .assistant-form .button:disabled { cursor: not-allowed; opacity: .48; }
 .policy-file-menu hr { width: 100%; margin: 3px 0; border: 0; border-top: 1px solid var(--line); }
-.policy-editor-utilities { display: flex; min-width: 0; max-width: 100%; flex: 0 1 auto; flex-wrap: wrap; align-items: center; justify-content: flex-end; gap: 8px; margin-left: 8px; }
+.policy-editor-utilities { display: flex; min-width: 0; max-width: 100%; flex: 0 1 auto; flex-wrap: wrap; align-items: center; justify-content: flex-end; gap: 8px; margin-left: auto; order: 2; }
 .policy-history-menu { position: relative; }
 .policy-history-menu > summary { display: inline-flex; align-items: center; gap: 7px; list-style: none; cursor: pointer; }
 .policy-history-menu > summary::-webkit-details-marker { display: none; }
@@ -432,9 +430,10 @@ td:first-child { color: var(--ink); font-weight: 600; }
 .policy-editor-pane { display: flex; min-width: 0; flex-direction: column; padding: 12px 20px 12px 0; }
 #policy-source-surface:not([hidden]) { display: flex; flex: 1; flex-direction: column; }
 .policy-editor-tools { position: relative; display: flex; width: 100%; min-width: 0; flex-wrap: wrap; align-self: stretch; align-items: center; gap: 8px; margin-bottom: 8px; }
-.policy-editor-mode { position: absolute; left: 50%; min-width: 0; transform: translateX(-50%); color: var(--muted); font: 10px var(--mono); text-align: center; pointer-events: none; }
+.policy-editor-mode { order: 1; min-width: 0; margin-inline: auto; color: var(--muted); font: 10px var(--mono); text-align: center; pointer-events: none; }
+#policy-editor-mode { position: absolute; left: 50%; margin: 0; transform: translateX(-50%); }
 .policy-editor-mode[hidden] { display: none; }
-.policy-attribute-toolbar { display: flex; min-width: 0; flex: 0 1 auto; flex-wrap: wrap; align-items: center; gap: 8px; margin-left: auto; }
+.policy-attribute-toolbar { display: flex; min-width: 0; flex: 0 1 auto; flex-wrap: wrap; align-items: center; gap: 8px; }
 .policy-attribute-toolbar[hidden] { display: none !important; }
 .policy-attribute-toolbar .button:disabled { cursor: not-allowed; opacity: .55; }
 .policy-attribute-status { min-height: 14px; margin: 0 0 7px; color: var(--muted); font: 9px var(--mono); }

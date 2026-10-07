@@ -22,13 +22,16 @@ func TestPolicyUserFixturesIncludeMappedLDAPGroupRoles(t *testing.T) {
 }
 
 func TestPolicyFixtureUnsupportedLocationDiagnostic(t *testing.T) {
-	_, err := policyTestAttributeList(map[string][]string{"user.l": {"Milwaukee, Wisconsin, USA"}})
-	if err == nil || !strings.Contains(err.Error(), `"user.l"`) || !strings.Contains(err.Error(), "ZPT fixture format") || !strings.Contains(err.Error(), "not a policy compiler error") {
-		t.Fatalf("missing fixture limitation diagnostic: %v", err)
+	attributes, omitted := policyTestAttributeList(map[string][]string{"user.l": {"Milwaukee, Wisconsin, USA"}, "user.cn": {"Alice"}, "user.note": {strings.Repeat("x", 2049)}})
+	if len(omitted) != 2 || omitted[0] != "user.l" || omitted[1] != "user.note" {
+		t.Fatalf("omitted = %v, want user.l and user.note", omitted)
 	}
-	attributes, err := policyTestAttributeList(map[string][]string{"user.l": {"Milwaukee"}})
-	if err != nil || len(attributes) != 1 || attributes[0].Values[0] != "Milwaukee" {
-		t.Fatalf("valid fixture value changed: %v, %v", attributes, err)
+	if len(attributes) != 1 || attributes[0].Key != "user.cn" {
+		t.Fatalf("unsupported attribute was not omitted: %v", attributes)
+	}
+	attributes, omitted = policyTestAttributeList(map[string][]string{"user.l": {"Milwaukee"}})
+	if len(omitted) != 0 || len(attributes) != 1 || attributes[0].Values[0] != "Milwaukee" {
+		t.Fatalf("valid fixture value changed: %v, %v", attributes, omitted)
 	}
 }
 

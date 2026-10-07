@@ -15,8 +15,7 @@
   let dialog = null;
   const active = () => location.hash === "#provisioning-adapters";
   const text = (value) => typeof value === "string" && value.length > 0 && value.length <= 1024;
-  const instant = (value) => text(value) && Number.isFinite(Date.parse(value));
-  const states = new Set(["invited", "pending_approval", "approved", "rejected", "cancelled", "expired", "approval_expired"]);
+  const { validInvitation } = provisioningContract;
 
   function closeDetail() {
     ++detailGeneration;
@@ -35,6 +34,7 @@
     controller = null;
     closeDetail();
     catalog = null;
+    window.dispatchEvent(new Event("provisioning-catalog-cleared"));
     next = "";
     organizationPicker.replaceChildren(new Option("Catalog unavailable", ""));
     organizationPicker.disabled = true;
@@ -64,20 +64,6 @@
     resetRegistry(message);
     accessStatus.dataset.state = "unavailable";
     accessStatus.textContent = `Enrollment administration unavailable: ${message}`;
-  }
-
-  function validInvitation(item, organization) {
-    return item && text(item.id) && /^[A-Za-z0-9_-]{1,128}$/.test(item.id) &&
-      item.asset && item.asset.organization === organization &&
-      ["asset_id", "name", "owner", "type", "profile", "recipient"].every((key) => text(item.asset[key])) &&
-      states.has(item.state) && Number.isSafeInteger(item.revision) && item.revision > 0 &&
-      instant(item.created_at) && instant(item.expires_at) && text(item.created_by) &&
-      (item.key_fingerprint === undefined || (text(item.key_fingerprint) && /^[a-f0-9]{64}$/.test(item.key_fingerprint))) &&
-      ["claimed_at", "approval_expires_at", "decided_at"].every((key) => item[key] == null || instant(item[key])) &&
-      (item.decision_by === undefined || text(item.decision_by)) &&
-      (item.decision_reason === undefined || text(item.decision_reason)) &&
-      !Object.hasOwn(item, "enrollment_code") &&
-      (item.state !== "pending_approval" || (item.key_fingerprint && item.claimed_at && item.approval_expires_at));
   }
 
   function detailsList(pairs) {
@@ -154,7 +140,7 @@
     registryStatus.textContent = `Loading registry for ${organization}...`;
     catalogView.hidden = false;
     const approved = catalog.organizations[organization];
-    catalogView.textContent = `Approved types: ${approved.types.join(", ")}. Approved profiles: ${approved.profiles.join(", ")}. Invitation lifetime: ${catalog.invitation_lifetime_seconds} seconds. Approval lifetime: ${catalog.approval_lifetime_seconds} seconds. Worksheet values remain requests; no invitation is submitted.`;
+    catalogView.textContent = `Approved types: ${approved.types.join(", ")}. Approved profiles: ${approved.profiles.join(", ")}. Invitation lifetime: ${catalog.invitation_lifetime_seconds} seconds. Approval lifetime: ${catalog.approval_lifetime_seconds} seconds. No invitation is submitted by reading this catalog.`;
     try {
       const query = new URLSearchParams({ organization, limit: "50" });
       if (after) query.set("after", after);
@@ -214,9 +200,15 @@
           !Number.isInteger(result.invitation_lifetime_seconds) || result.invitation_lifetime_seconds < 1 ||
           !Number.isInteger(result.approval_lifetime_seconds) || result.approval_lifetime_seconds < 0 ||
           typeof result.gui_mutations_enabled !== "boolean") throw new Error("Invalid enrollment catalog response.");
+      if (result.gui_create_organizations !== undefined && (!Array.isArray(result.gui_create_organizations) ||
+          new Set(result.gui_create_organizations).size !== result.gui_create_organizations.length ||
+          !result.gui_create_organizations.every((name) => text(name) && Object.hasOwn(result.organizations, name)))) {
+        throw new Error("Invalid invitation creation capabilities.");
+      }
       catalog = result;
+      window.dispatchEvent(new CustomEvent("provisioning-catalog-ready", { detail: result }));
       accessStatus.dataset.state = "available";
-      accessStatus.textContent = "Authorized enrollment catalog loaded. GUI mutations remain locked.";
+      accessStatus.textContent = "Authorized enrollment catalog loaded. Invitation creation requires explicit backend opt-in and named-user create grants. Review and cancellation mutations remain locked.";
       const names = Object.keys(result.organizations).sort();
       organizationPicker.replaceChildren(...names.map((name) => new Option(name, name)));
       organizationPicker.disabled = names.length === 0;
@@ -237,6 +229,12 @@
   organizationPicker.addEventListener("change", () => void loadPage());
   nextButton.addEventListener("click", () => { if (next) void loadPage(next); });
   window.addEventListener("provisioning-refresh", () => { if (active()) void loadCatalog(); });
+  window.addEventListener("provisioning-invitation-created", (event) => {
+    if (active() && catalog && Object.hasOwn(catalog.organizations, event.detail.organization)) {
+      organizationPicker.value = event.detail.organization;
+      void loadPage();
+    }
+  });
   window.addEventListener("operator-session-cleared", () => {
     resetRegistry("Registry cleared while operator session is unavailable or being checked.");
     accessStatus.dataset.state = "unavailable";
