@@ -3186,6 +3186,98 @@ test("GUI Map Auto-fit checkbox controls refresh fitting and preserves manual Fi
   expect(Math.abs(fitted.centerY - fitted.expectedY)).toBeLessThan(1);
 });
 
+for (const reducedMotion of ["no-preference", "reduce"]) {
+test(`GUI Map draws cached topology on navigation without waiting for refresh (${reducedMotion})`, async ({ page, appURL, api }) => {
+  await page.emulateMedia({ reducedMotion });
+  api.snapshot.actors = [
+    { cn: "node", node: true, zpr_addr: "fd00::ff", node_details: { adapters: ["client"] } },
+    { cn: "client", node: false, zpr_addr: "fd00::1" },
+  ];
+  api.snapshot.services = [{ service_name: "API", actor_cn: "client", service_endpoints: "TCP/443" }];
+  let requests = 0;
+  api.handlers.set("/api/snapshot", async (route) => {
+    requests += 1;
+    await route.fulfill({ json: api.snapshot });
+  });
+  await page.goto(appURL + "/#adapter-logs");
+  await expect(page.locator("#connection-count")).toHaveText("1 Connections");
+  await page.locator("#pause-poll").click();
+  const before = requests;
+  await page.locator('[data-page-link="map"]').click();
+  await expect(page.locator(".graph-vertex")).toHaveCount(2);
+  await expect(page.locator(".graph-service-badge")).toHaveCount(1);
+  const geometry = () => page.evaluate(() => {
+    const svg = document.querySelector(".topology-graph");
+    const world = document.querySelector("#graph-world");
+    const view = svg.getBoundingClientRect();
+    const bounds = world.getBoundingClientRect();
+    return {
+      fitted: bounds.width > 0 && bounds.height > 0 && bounds.left >= view.left - 1
+        && bounds.right <= view.right + 1 && bounds.top >= view.top - 1 && bounds.bottom <= view.bottom + 1,
+      links: [...document.querySelectorAll(".graph-link")].every(line => {
+        const values = ["x1", "y1", "x2", "y2"].map(key => Number(line.getAttribute(key)));
+        return values.every(Number.isFinite) && Math.hypot(values[2] - values[0], values[3] - values[1]) > 1;
+      }),
+    };
+  });
+  await expect.poll(geometry).toEqual({ fitted: true, links: true });
+  expect(requests).toBe(before);
+  await page.locator('[data-page-link="adapter-logs"]').click();
+  api.snapshot.actors[0].node_details.adapters.push("server");
+  api.snapshot.actors.push({ cn: "server", node: false, zpr_addr: "fd00::2" });
+  api.snapshot.services.push({ service_name: "Other", actor_cn: "server", service_endpoints: "TCP/80" });
+  await page.locator("#refresh-now").click();
+  await expect(page.locator("#connection-count")).toHaveText("2 Connections");
+  const refreshed = requests;
+  await page.locator('[data-page-link="map"]').click();
+  await expect(page.locator(".graph-vertex")).toHaveCount(3);
+  await expect(page.locator(".graph-service-badge")).toHaveCount(2);
+  await expect.poll(geometry).toEqual({ fitted: true, links: true });
+  expect(requests).toBe(refreshed);
+  await page.getByRole("button", { name: "Zoom in", exact: true }).click();
+  const camera = await page.locator("#graph-world").getAttribute("transform");
+  const viewBox = await page.locator(".topology-graph").getAttribute("viewBox");
+  await page.locator('[data-page-link="adapter-logs"]').click();
+  await page.locator("#refresh-now").click();
+  await expect(page.locator("#refresh-now")).toBeEnabled();
+  await page.locator('[data-page-link="map"]').click();
+  await expect(page.locator("[data-graph-auto-fit]")).not.toBeChecked();
+  await expect(page.locator("#graph-world")).toHaveAttribute("transform", camera);
+  await expect(page.locator(".topology-graph")).toHaveAttribute("viewBox", viewBox);
+});
+}
+
+test("GUI Map distinguishes loading, unavailable, and empty topology", async ({ page, appURL, api }) => {
+  let release;
+  const pending = new Promise(resolve => { release = resolve; });
+  api.handlers.set("/api/snapshot", async (route) => {
+    await pending;
+    await route.fulfill({ status: 503, json: { error: "Unavailable" } });
+  });
+  await page.goto(appURL + "/#map");
+  await expect(page.locator("#topology-stage")).toContainText("Loading topology");
+  release();
+  await expect(page.locator("#topology-stage")).toContainText("Unable to load topology");
+  await expect(page.locator("#alert-strip")).toContainText("503");
+  await page.locator("#pause-poll").click();
+  api.handlers.delete("/api/snapshot");
+  await page.locator("#refresh-now").click();
+  await expect(page.locator("#topology-stage")).toContainText("No nodes or adapters reported");
+  api.snapshot.api_status = "partial";
+  api.snapshot.errors = ["Actor inventory unavailable"];
+  await page.locator("#refresh-now").click();
+  await expect(page.locator("#topology-stage")).toContainText("Topology unavailable");
+  api.snapshot.api_status = "connected";
+  api.snapshot.errors = [];
+  api.snapshot.actors = [{ cn: "node", node: true }];
+  await page.locator("#refresh-now").click();
+  await expect(page.locator(".graph-vertex")).toHaveCount(1);
+  api.statuses.set("/api/snapshot", 503);
+  await page.locator("#refresh-now").click();
+  await expect(page.locator("#alert-strip")).toContainText("503");
+  await expect(page.locator(".graph-vertex")).toHaveCount(1);
+});
+
 test("GUI Map shows complete active visa counts and solid component links", async ({ page, appURL, api }) => {
   await page.emulateMedia({ reducedMotion: "reduce" });
   const expires = Math.floor(Date.now() / 1000) + 3600;
@@ -3273,8 +3365,26 @@ test(`GUI Map denial badges and count changes pulse without replay (${reducedMot
   await expect(nodeCount.locator("text")).toHaveText("3");
   await expect(nodeCount.locator("rect")).toHaveCSS("fill", "rgb(161, 44, 44)");
   await expect(page.locator('[data-inspect-service="API"] .graph-visa-count')).toHaveAttribute("data-count-pulse", "true");
-  const frames = await nodeCount.evaluate(el => el.getAnimations()[0].effect.getKeyframes().map(frame => frame.transform).filter(Boolean));
-  expect(frames).toEqual(reducedMotion === "reduce" ? [] : ["scale(1)", "scale(1.35)", "scale(1)"]);
+  const pulseGeometry = await nodeCount.evaluate(async el => {
+    const animation = el.getAnimations()[0];
+    const base = el.getBBox();
+    animation.pause();
+    animation.currentTime = 600;
+    await new Promise(resolve => requestAnimationFrame(resolve));
+    await new Promise(resolve => requestAnimationFrame(resolve));
+    const matrix = el.parentElement.getScreenCTM().inverse().multiply(el.getScreenCTM());
+    const center = new DOMPoint(base.x + base.width / 2, base.y + base.height / 2);
+    const expandedCenter = center.matrixTransform(matrix);
+    return {
+      duration: animation.effect.getTiming().duration,
+      scale: matrix.a,
+      centerDrift: Math.hypot(expandedCenter.x - center.x, expandedCenter.y - center.y),
+    };
+  });
+  expect(pulseGeometry.duration).toBe(2400);
+  expect(pulseGeometry.scale).toBeCloseTo(reducedMotion === "reduce" ? 1 : 1.75, 4);
+  expect(pulseGeometry.centerDrift).toBeLessThan(0.1);
+  await nodeCount.evaluate(el => el.getAnimations()[0].finish());
   await expect(page.locator("[data-count-pulse]")).toHaveCount(0);
   await page.locator("#refresh-now").click();
   await expect(page.locator("[data-count-pulse]")).toHaveCount(0);
@@ -3283,6 +3393,7 @@ test(`GUI Map denial badges and count changes pulse without replay (${reducedMot
   await page.locator("#refresh-now").click();
   await expect(nodeCount).toHaveAttribute("data-count-pulse", "true");
   await expect(nodeCount.locator("text")).toHaveCount(0);
+  if (reducedMotion !== "reduce") await expect.poll(() => nodeCount.evaluate(el => Number(el.getAttribute("transform")?.match(/scale\(([^)]+)/)?.[1]))).toBeGreaterThan(1.6);
   await expect(page.locator("[data-count-pulse]")).toHaveCount(0);
   api.snapshot.actors[0].node_details.buffered_denials = null;
   await page.locator("#refresh-now").click();
@@ -3308,6 +3419,39 @@ test("GUI Security high alerts only color the side indicator", async ({ page, ap
   await expect(nav).toHaveAttribute("data-high-alert", "true");
   expect(await colors()).toEqual(original);
   expect(await nav.evaluate(el => getComputedStyle(el).boxShadow)).toContain("rgb(255, 121, 102)");
+});
+
+test("GUI node details show live management and worker counters without losing integer precision", async ({ page, appURL, api }) => {
+  api.snapshot.actors = [{
+    cn: "node", node: true, node_details: {
+      counters_updated_at: new Date().toISOString(),
+      counters: [
+        { group: "management", name: "internal_routing_error", value: "0" },
+        { group: "fastpath.0", name: "inbound_packets_received", value: "18446744073709551615" },
+        { group: "fastpath.1", name: "ttl_reached_0", value: "3" },
+      ],
+    },
+  }];
+  await page.goto(appURL + "/#map");
+  await page.locator("#pause-poll").click();
+  await page.locator('[data-inspect-actor="node"].graph-vertex').click();
+  const inspector = page.locator("#inspector-body");
+  await expect(inspector).toContainText("Management counters");
+  await expect(inspector).toContainText("Fastpath worker 0");
+  await expect(inspector).toContainText("Fastpath worker 1");
+  await expect(inspector).toContainText("18446744073709551615");
+  await expect(inspector).toContainText("TTL Reached 0");
+  await expect(inspector).toContainText("not per route or link");
+  api.snapshot.actors[0].node_details.counters[1].value = "12";
+  await page.locator("#refresh-now").click();
+  await expect(inspector).not.toContainText("18446744073709551615");
+  await expect(inspector).toContainText("12");
+  api.snapshot.actors[0].node_details.counters = null;
+  api.snapshot.actors[0].node_details.counter_stats_error = "Node counters are stale or invalid.";
+  await page.locator("#refresh-now").click();
+  await expect(inspector).toContainText("Node counters are stale or invalid.");
+  await expect(inspector).not.toContainText("Fastpath worker");
+  await expect(inspector).not.toContainText("Management counters");
 });
 
 test("GUI Map service grants pulse their connectors as well as adapters", async ({ page, appURL, api }) => {
@@ -3411,46 +3555,102 @@ test("GUI Map connectors meet actual glyph edges for every shape", async ({ page
   await verify();
 });
 
-test("GUI Map Dark mode only themes the canvas and survives refresh and navigation", async ({ page, appURL, api }) => {
+test("GUI Map keeps Dark mode hidden on populated and empty maps", async ({ page, appURL, api }) => {
   await page.emulateMedia({ reducedMotion: "reduce" });
   api.snapshot.actors = [{ cn: "client", node: false, zpr_addr: "fd00::1" }];
   api.snapshot.services = [{ service_name: "API", actor_cn: "client", service_endpoints: "TCP/443" }];
   api.snapshot.active_visas = [];
   await page.goto(appURL + "/#map");
   await page.getByRole("button", { name: "Pause updates", exact: true }).click();
-  const checkbox = page.getByRole("checkbox", { name: "Dark mode", exact: true });
+  const checkbox = page.locator("[data-graph-dark-mode]");
   const stage = page.locator("#topology-stage");
-  const externalColors = () => page.evaluate(() => [document.body, document.querySelector(".sidebar"), document.querySelector(".topbar")].map(el => {
-    const css = getComputedStyle(el);
-    return [css.backgroundColor, css.color];
-  }));
-  const before = await externalColors();
-  const camera = () => page.locator("#graph-world").getAttribute("transform");
-  const originalCamera = await camera();
+  await expect(checkbox).toBeHidden();
   await expect(checkbox).not.toBeChecked();
-  await checkbox.check();
-  await expect(stage).toHaveCSS("background-color", "rgb(20, 33, 30)");
-  await expect(stage.locator(".graph-visa-count.empty rect").first()).toHaveCSS("stroke", "rgb(156, 228, 188)");
-  expect(await camera()).toBe(originalCamera);
-  expect(await externalColors()).toEqual(before);
+  await expect(stage).not.toHaveClass(/graph-dark/);
   await page.locator("#refresh-now").click();
-  await expect(checkbox).toBeChecked();
+  await expect(checkbox).toBeHidden();
   await page.getByRole("link", { name: "Status", exact: true }).click();
   await page.getByRole("link", { name: "Map", exact: true }).click();
-  await expect(checkbox).toBeChecked();
-  await checkbox.uncheck();
+  await expect(checkbox).toBeHidden();
   await expect(stage).not.toHaveClass(/graph-dark/);
   api.snapshot.actors = [];
   api.snapshot.services = [];
   await page.locator("#refresh-now").click();
   await expect(stage).toContainText("No nodes or adapters reported.");
-  await checkbox.check();
-  await expect(stage).toHaveClass(/graph-dark/);
+  await expect(checkbox).toBeHidden();
   api.snapshot.actors = [{ cn: "returned", node: false, zpr_addr: "fd00::1" }];
   await page.locator("#refresh-now").click();
   await expect(page.locator('.graph-vertex[data-inspect-actor="returned"]')).toHaveCount(1);
-  await expect(checkbox).toBeChecked();
-  await expect(stage).toHaveClass(/graph-dark/);
+  await expect(checkbox).toBeHidden();
+  await expect(stage).not.toHaveClass(/graph-dark/);
+});
+
+test("GUI Map right-click highlights only current outbound visa services and ordered routes", async ({ page, appURL, api }) => {
+  api.snapshot.actors = [
+    { cn: "n1", node: true, zpr_addr: "fd00::a", node_details: { adapters: ["client"] } },
+    { cn: "n2", node: true, zpr_addr: "fd00::b", node_details: { adapters: [] } },
+    { cn: "n3", node: true, zpr_addr: "fd00::c", node_details: { adapters: ["server", "other"] } },
+    { cn: "client", node: false, zpr_addr: "fd00::1" },
+    { cn: "server", node: false, zpr_addr: "fd00::2" },
+    { cn: "other", node: false, zpr_addr: "fd00::3" },
+  ];
+  api.snapshot.network = [
+    { node_a_addr: "fd00::a", node_b_addr: "fd00::b", ctype: "UP" },
+    { node_a_addr: "fd00::b", node_b_addr: "fd00::c", ctype: "UP" },
+    { node_a_addr: "fd00::a", node_b_addr: "fd00::c", ctype: "UP" },
+  ];
+  api.snapshot.services = [
+    { service_name: "Allowed", actor_cn: "server", service_endpoints: "TCP/443" },
+    { service_name: "Wrong port", actor_cn: "server", service_endpoints: "TCP/80" },
+    { service_name: "Expired", actor_cn: "other", service_endpoints: "TCP/443" },
+  ];
+  api.snapshot.active_visas = [
+    { id: 1, expires: Date.now() / 1000 + 3600, source_addr: "fd00::1", dest_addr: "fd00::2", dest_port: 443, proto: "TCP", path: ["fd00:0:0:0:0:0:0:a", "fd00::b", "fd00::c"] },
+    { id: 2, expires: Date.now() / 1000 - 10, source_addr: "fd00::1", dest_addr: "fd00::3", dest_port: 443, proto: "TCP", path: ["fd00::a", "fd00::c"] },
+    { id: 3, expires: Date.now() / 1000 + 3600, source_addr: "fd00::2", dest_addr: "fd00::1", source_port: 443, proto: "TCP", direction: "reverse", path: ["fd00::c", "fd00::b", "fd00::a"] },
+  ];
+  await page.goto(appURL + "/#map");
+  await page.locator("#pause-poll").click();
+  const client = page.locator('.graph-vertex[data-inspect-actor="client"]');
+  const stage = page.locator("#topology-stage");
+  await client.click({ button: "right" });
+  await expect(stage).toHaveClass(/graph-visa-focused/);
+  await expect(page.locator(".graph-service-badge.visa-focus")).toHaveCount(1);
+  await expect(page.locator(".graph-service-badge.visa-focus")).toHaveAttribute("data-inspect-service", "Allowed");
+  await expect(page.locator(".graph-edge.visa-focus")).toHaveCount(4);
+  await expect(page.locator('[data-topology-edge="network|n1|n3"]')).not.toHaveClass(/visa-focus/);
+  await expect(page.locator('.graph-vertex[data-inspect-actor="other"]')).not.toHaveClass(/visa-focus/);
+  await expect(page.locator(".graph-visa-focus-status")).toContainText("2 active outbound visas");
+  await page.locator("#refresh-now").click();
+  await expect(page.locator(".graph-edge.visa-focus")).toHaveCount(4);
+  await client.click({ button: "right" });
+  await expect(stage).not.toHaveClass(/graph-visa-focused/);
+  await client.click({ button: "right" });
+  await page.locator(".topology-graph").dispatchEvent("contextmenu", { bubbles: true });
+  await expect(stage).not.toHaveClass(/graph-visa-focused/);
+  api.snapshot.active_visas[0].path = null;
+  api.snapshot.active_visas = api.snapshot.active_visas.slice(0, 1);
+  await page.locator("#refresh-now").click();
+  await client.click({ button: "right" });
+  await expect(page.locator(".graph-visa-focus-status")).toContainText("Ordered route unavailable");
+  await expect(page.locator(".graph-edge.visa-focus")).toHaveCount(0);
+  api.snapshot.active_visas = null;
+  await page.locator("#refresh-now").click();
+  await expect(page.locator(".graph-visa-focus-status")).toContainText("inventory unavailable");
+  api.snapshot.active_visas = [{
+    id: 4, expires: Date.now() / 1000 + 3600, source_addr: "fd00::2", dest_addr: "fd00::3",
+    dest_port: 443, proto: "TCP", path: null,
+  }];
+  await page.locator("#refresh-now").click();
+  await page.locator('.graph-vertex[data-inspect-actor="server"]').click({ button: "right" });
+  await expect(page.locator(".graph-visa-focus-status")).toContainText("server: 1 active outbound visas");
+  await expect(page.locator(".graph-visa-focus-status")).not.toContainText("unavailable");
+  await expect(page.locator(".graph-edge.visa-focus")).toHaveCount(2);
+  await expect(page.locator(".graph-service-badge.visa-focus")).toHaveAttribute("data-inspect-service", "Expired");
+  api.snapshot.active_visas[0].expires = Date.now() / 1000 - 1;
+  await page.locator("#refresh-now").click();
+  await expect(page.locator(".graph-visa-focus-status")).toContainText("0 active outbound visas");
+  await expect(page.locator(".graph-edge.visa-focus")).toHaveCount(0);
 });
 
 test("GUI Map zero visa badges are empty outlines and retain accessible counts", async ({ page, appURL, api }) => {

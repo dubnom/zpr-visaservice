@@ -77,19 +77,28 @@ type actor struct {
 }
 
 type nodeDetail struct {
-	LastContact       *int64   `json:"last_contact"`
-	InSync            bool     `json:"in_sync"`
-	PendingInstall    int      `json:"pending_install"`
-	PendingRevocation int      `json:"pending_revocation"`
-	Adapters          []string `json:"adapters"`
-	Links             []string `json:"links"`
-	Visas             []int64  `json:"visas"`
-	VisaRequests      int      `json:"visa_requests"`
-	ApprovedRequests  int      `json:"approved_vreqs"`
-	DeniedRequests    int      `json:"denied_vreqs"`
-	BufferedDenials   *uint64  `json:"buffered_denials"`
-	LocalDenials      *uint64  `json:"local_denials"`
-	DenialStatsError  string   `json:"denial_stats_error,omitempty"`
+	LastContact       *int64        `json:"last_contact"`
+	InSync            bool          `json:"in_sync"`
+	PendingInstall    int           `json:"pending_install"`
+	PendingRevocation int           `json:"pending_revocation"`
+	Adapters          []string      `json:"adapters"`
+	Links             []string      `json:"links"`
+	Visas             []int64       `json:"visas"`
+	VisaRequests      int           `json:"visa_requests"`
+	ApprovedRequests  int           `json:"approved_vreqs"`
+	DeniedRequests    int           `json:"denied_vreqs"`
+	BufferedDenials   *uint64       `json:"buffered_denials"`
+	LocalDenials      *uint64       `json:"local_denials"`
+	DenialStatsError  string        `json:"denial_stats_error,omitempty"`
+	Counters          []nodeCounter `json:"counters"`
+	CounterStatsError string        `json:"counter_stats_error,omitempty"`
+	CountersUpdatedAt *time.Time    `json:"counters_updated_at,omitempty"`
+}
+
+type nodeCounter struct {
+	Group string `json:"group"`
+	Name  string `json:"name"`
+	Value string `json:"value"`
 }
 
 type link struct {
@@ -187,17 +196,18 @@ type visaEntry struct {
 }
 
 type visa struct {
-	ID              int64  `json:"id"`
-	Created         int64  `json:"created"`
-	Expires         int64  `json:"expires"`
-	Source          string `json:"source_addr"`
-	Destination     string `json:"dest_addr"`
-	SourcePort      *int   `json:"source_port"`
-	DestinationPort *int   `json:"dest_port"`
-	Protocol        string `json:"proto"`
-	Direction       string `json:"direction"`
-	RequestingNode  string `json:"requesting_node"`
-	PolicyID        string `json:"policy_id"`
+	ID              int64    `json:"id"`
+	Created         int64    `json:"created"`
+	Expires         int64    `json:"expires"`
+	Source          string   `json:"source_addr"`
+	Destination     string   `json:"dest_addr"`
+	SourcePort      *int     `json:"source_port"`
+	DestinationPort *int     `json:"dest_port"`
+	Protocol        string   `json:"proto"`
+	Direction       string   `json:"direction"`
+	RequestingNode  string   `json:"requesting_node"`
+	Path            []string `json:"path"`
+	PolicyID        string   `json:"policy_id"`
 }
 
 type deny struct {

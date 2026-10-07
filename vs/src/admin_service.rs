@@ -5,9 +5,6 @@ use std::path::Path;
 use std::sync::Arc;
 
 use axum::{
-    Extension,
-    Json,
-    Router,
     //routing::post,
     extract::{Json as EJson, Path as EPath, Query, Request, State},
     //extract::Form,
@@ -16,6 +13,9 @@ use axum::{
     response::{IntoResponse, Response},
     //response::Response,
     routing::{delete, get, post},
+    Extension,
+    Json,
+    Router,
 };
 
 use hyper::body::Incoming;
@@ -25,9 +25,9 @@ use tower_service::Service;
 use zpr::policy_types::{NetAddr, NetworkHost, PolicyBundle, Scope};
 use zpr::vsapi_types::{DockPepType, KeyFormat, KeySet, Visa};
 
-use libeval::attribute::{Attribute, ROLE_NODE, key};
-use rustls::ServerConfig;
+use libeval::attribute::{key, Attribute, ROLE_NODE};
 use rustls::pki_types::PrivateKeyDer;
+use rustls::ServerConfig;
 use serde::Deserialize;
 use std::time::SystemTime;
 use tokio::net::TcpListener;
@@ -437,6 +437,10 @@ async fn get_visa(
                     expires: visa.expires,
                     created: metadata.ctime,
                     requesting_node: metadata.requesting_node.to_string(),
+                    path: metadata
+                        .path
+                        .as_ref()
+                        .map(|path| path.iter().map(ToString::to_string).collect()),
                     policy_id: metadata.policy_version.to_string(),
                     zpl: metadata.zpl.to_string(),
                     direction: match metadata.direction {

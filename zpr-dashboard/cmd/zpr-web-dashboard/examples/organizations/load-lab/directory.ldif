@@ -51,7 +51,12 @@ mail: load.service@loadlab.example
 ou: Performance
 title: Service Host Operator
 
-dn: cn=LoadOperators,ou=People,dc=loadlab,dc=test
+dn: ou=Roles,dc=loadlab,dc=test
+objectClass: top
+objectClass: organizationalUnit
+ou: Roles
+
+dn: cn=LoadOperators,ou=Roles,dc=loadlab,dc=test
 objectClass: groupOfNames
 cn: LoadOperators
 member: uid=load.client,ou=Performance,ou=People,dc=loadlab,dc=test

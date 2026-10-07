@@ -213,14 +213,14 @@ func TestGreatLakesWorkdayCoversAllEmployeesAndCleanup(t *testing.T) {
 			stopped[step.Machine] = true
 		}
 	}
-	for number := 1; number <= 9; number++ {
+	for number := 1; number <= 12; number++ {
 		machineID := fmt.Sprintf("machine-%02d", number)
 		if !started[machineID] || !controllers[machineID] || !loggedIn[machineID] || !loggedOut[machineID] || !stopped[machineID] {
 			t.Errorf("workday does not fully start, log in, and clean up %s", machineID)
 		}
 	}
-	if requests["finance-client:echo-service"] != 8 || requests["operations-client:metrics-service"] != 8 || requests["telemetry-client:metrics-service"] != 8 {
-		t.Errorf("workday request cadence = %v, want eight requests for each client/service pair", requests)
+	if requests["finance-client:echo-service"] != 10 || requests["operations-client:metrics-service"] != 10 || requests["telemetry-client:metrics-service"] != 10 {
+		t.Errorf("workday request cadence = %v, want ten requests for each client/service pair", requests)
 	}
 	if dnsLookups != 3 || deniedProbes != 3 || thirtySecondDelays != 21 {
 		t.Errorf("workday checks = %d DNS lookups, %d denial probes, %d 30-second delays; want 3, 3, 21", dnsLookups, deniedProbes, thirtySecondDelays)

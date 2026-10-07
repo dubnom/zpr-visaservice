@@ -2,9 +2,9 @@
 
 Great Lakes models a three-site instrumentation manufacturer with a Milwaukee
 headquarters, a Shenzhen engineering office, and a Tijuana assembly and test
-plant. Its profile contains nine employees, eleven department nodes, eight
-LDAP role groups, and nine employee-owned computers. Chen Yu's Shenzhen laptop
-is `machine-09`.
+plant. Its profile contains twelve employees, eleven department nodes, eight
+LDAP role groups, and twelve employee-owned laptops. Three additional Tijuana
+laptops join the workday scenario; Chen Yu's Shenzhen laptop is `machine-09`.
 
 ## Directory And Assertions
 
@@ -31,15 +31,16 @@ resolves them over the authenticated client's ZPR workload link.
 ## Workday Simulation
 
 Activate Great Lakes Instruments, then run **Great Lakes: five-minute
-workday**. It starts and signs in all nine employee computers, brings up Echo
-and Metrics, and runs finance, operations, and telemetry requests across eight
-work blocks separated by seven 30-second lulls. Expected cross-service denials
-are included. Startup and cleanup bring the full run to about five minutes.
+workday**. It starts and signs in all twelve employee laptops, brings up Echo
+and Metrics, and runs finance, operations, telemetry, assembly, and quality
+activity across eight work blocks. The three Tijuana laptops join during the
+day and run intermittent work bursts. Expected cross-service denials remain
+part of the scenario.
 
 Client and server request events are available from the Simulator Agents page's
 workload logs. DNS resolutions, HTTP requests, and expected-denial probes are
 also recorded as scenario steps. Cleanup stops services and workloads, logs out
-every employee, and shuts down all nine computers, including on failure or
+every employee, and shuts down all twelve computers, including on failure or
 cancellation.
 
 The machine image must include `dig`; the normal machine-controller startup

@@ -89,7 +89,7 @@ wait_for_response() {
     label=$2
     shift 2
     attempts=0
-    while [ "$attempts" -lt 150 ]; do
+    while [ "$attempts" -lt 600 ]; do
         if curl --silent --show-error --connect-timeout 1 --max-time 2 "$@" "$url" >/dev/null 2>&1; then
             return 0
         fi
@@ -245,6 +245,7 @@ start_simulator() {
         -v "$DASHBOARD_DIR:$DASHBOARD_DIR:ro" \
         -v "$DNS_PROFILE_DIR:$DNS_PROFILE_DIR:ro" \
         -v "$DASHBOARD_DIR/../../zpr-demo/multinode-demo:$DASHBOARD_DIR/../../zpr-demo/multinode-demo:ro" \
+        -v "$DASHBOARD_DIR/../../zpr-core:$DASHBOARD_DIR/../../zpr-core:ro" \
         -v "$RUNTIME_DIR:$RUNTIME_DIR" \
         -p 127.0.0.1:8055:8055 \
         -p 127.0.0.1:8184:8184 \
@@ -396,8 +397,8 @@ start_multinode_dns_service() {
     dns_config="$DNS_PROFILE_DIR/named.conf.simulator"
     publisher_key="$dns_runtime/zpr-vs-publisher.key"
     viewer_key="$dns_runtime/zpr-dns-viewer.key"
-    echo_address=$(jq -er '.policy_test_services[] | select(.id == "echo-web.svc.zpr") | .zpr_address' "$dns_profile")
-    metrics_address=$(jq -er '.policy_test_services[] | select(.id == "metrics-web.svc.zpr") | .zpr_address' "$dns_profile")
+    echo_address=$(jq -r '[.policy_test_services[]? | select(.id == "echo-web.svc.zpr") | .zpr_address // empty][0] // empty' "$dns_profile")
+    metrics_address=$(jq -r '[.policy_test_services[]? | select(.id == "metrics-web.svc.zpr") | .zpr_address // empty][0] // empty' "$dns_profile")
     mkdir -p "$dns_zone_dir"
     if [ ! -r "$publisher_key" ]; then
         publisher_secret=$(openssl rand -base64 32 | tr -d '\n')
@@ -412,8 +413,8 @@ start_multinode_dns_service() {
     {
         printf '%s\n' '$TTL 30' '$ORIGIN svc.zpr.' '@ IN SOA dns.svc.zpr. hostmaster.svc.zpr. (1 60 60 86400 30)' '  IN NS dns.svc.zpr.'
         printf 'dns IN AAAA %s\n' "$DNS_SERVICE_ADDRESS"
-        printf 'echo-web IN AAAA %s\n' "$echo_address"
-        printf 'metrics-web IN AAAA %s\n' "$metrics_address"
+        if [ -n "$echo_address" ]; then printf 'echo-web IN AAAA %s\n' "$echo_address"; fi
+        if [ -n "$metrics_address" ]; then printf 'metrics-web IN AAAA %s\n' "$metrics_address"; fi
     } > "$dns_zone_file"
     cp "$DNS_PROFILE_DIR/named.conf.simulator" "$dns_runtime/named.conf"
     docker exec "$node_container" pkill -TERM -f '[p]h adapter.*--name adapter1' 2>/dev/null || true
@@ -452,8 +453,16 @@ start_multinode_dns_service() {
     configure_multinode_service_return_route "$node_container" tun6 "$DNS_SERVICE_ADDRESS" 106
     attempts=0
     while [ "$attempts" -lt 30 ]; do
-        if docker exec "$DNS_CONTAINER" dig +tcp +time=1 +tries=1 +short AAAA @"$DNS_SERVICE_ADDRESS" echo-web.svc.zpr 2>/dev/null | grep -Fq "$echo_address" &&
-           docker exec "$DNS_CONTAINER" dig +tcp +time=1 +tries=1 +short AAAA @"$DNS_SERVICE_ADDRESS" metrics-web.svc.zpr 2>/dev/null | grep -Fq "$metrics_address"; then
+        if [ -n "$echo_address" ] || [ -n "$metrics_address" ]; then
+            dns_records_ready=yes
+            if [ -n "$echo_address" ] && ! docker exec "$DNS_CONTAINER" dig +tcp +time=1 +tries=1 +short AAAA @"$DNS_SERVICE_ADDRESS" echo-web.svc.zpr 2>/dev/null | grep -Fq "$echo_address"; then
+                dns_records_ready=no
+            fi
+            if [ -n "$metrics_address" ] && ! docker exec "$DNS_CONTAINER" dig +tcp +time=1 +tries=1 +short AAAA @"$DNS_SERVICE_ADDRESS" metrics-web.svc.zpr 2>/dev/null | grep -Fq "$metrics_address"; then
+                dns_records_ready=no
+            fi
+            if [ "$dns_records_ready" = yes ]; then return 0; fi
+        elif docker exec "$DNS_CONTAINER" dig +tcp +time=1 +tries=1 +short SOA @"$DNS_SERVICE_ADDRESS" svc.zpr 2>/dev/null | grep -Fq 'svc.zpr'; then
             return 0
         fi
         attempts=$((attempts + 1))
@@ -471,7 +480,7 @@ start_dns_service() {
         return
     fi
     dns_organization=${SIMULATION_ORGANIZATION_ID:-$(jq -r '.organization_id // "northstar"' "$SIMULATION_MANIFEST")}
-    if [ -r "$ACTIVE_ORGANIZATION_FILE" ]; then
+    if [ -z "${SIMULATION_ORGANIZATION_ID:-}" ] && [ -r "$ACTIVE_ORGANIZATION_FILE" ]; then
         selected_organization=$(tr -d '\r\n' < "$ACTIVE_ORGANIZATION_FILE")
         [ -z "$selected_organization" ] || dns_organization=$selected_organization
     fi
@@ -480,7 +489,7 @@ start_dns_service() {
         return
     fi
     organization=${SIMULATION_ORGANIZATION_ID:-$(jq -r '.organization_id // "northstar"' "$SIMULATION_MANIFEST")}
-    if [ -r "$ACTIVE_ORGANIZATION_FILE" ]; then
+    if [ -z "${SIMULATION_ORGANIZATION_ID:-}" ] && [ -r "$ACTIVE_ORGANIZATION_FILE" ]; then
         selected_organization=$(tr -d '\r\n' < "$ACTIVE_ORGANIZATION_FILE")
         [ -z "$selected_organization" ] || organization=$selected_organization
     fi
@@ -538,7 +547,7 @@ stop_dns_service() {
         return
     fi
     dns_organization=${SIMULATION_ORGANIZATION_ID:-$(jq -r '.organization_id // "northstar"' "$SIMULATION_MANIFEST")}
-    if [ -r "$ACTIVE_ORGANIZATION_FILE" ]; then
+    if [ -z "${SIMULATION_ORGANIZATION_ID:-}" ] && [ -r "$ACTIVE_ORGANIZATION_FILE" ]; then
         selected_organization=$(tr -d '\r\n' < "$ACTIVE_ORGANIZATION_FILE")
         [ -z "$selected_organization" ] || dns_organization=$selected_organization
     fi
@@ -723,6 +732,13 @@ start_machine_container() {
     case "$machine_organization" in ''|*[!a-z0-9-]*) echo "invalid active organization: $machine_organization" >&2; return 1 ;; esac
     machine_profile="$ORGANIZATIONS_DIR/$machine_organization.json"
     machine_runtime_driver=$(jq -er '.runtime.driver' "$machine_profile")
+    machine_owner=$(jq -r --arg id "$machine" '.machine_owners[$id][0] // empty' "$machine_profile")
+    if [ -n "$machine_owner" ]; then
+        machine_location=$(jq -er --arg owner "$machine_owner" '.directory.people[] | select(.uid == $owner) | .location' "$machine_profile")
+    else
+        machine_owner=$(jq -r --arg id "$machine" '.machines[] | select(.id == $id) | .owner // ""' "$SIMULATION_MANIFEST")
+        machine_location=$(jq -er --arg id "$machine" '.machines[] | select(.id == $id) | .location' "$SIMULATION_MANIFEST")
+    fi
     case "$machine_runtime_driver" in
         linux-one-node) machine_arch=arm64 ;;
         docker-multinode) machine_arch=amd64 ;;
@@ -773,9 +789,9 @@ start_machine_container() {
         --label zpr.simulator=true \
         --label "zpr.machine.id=$machine" \
         --label "zpr.machine.type=$(jq -r --arg id "$machine" '.machines[] | select(.id == $id) | .type' "$SIMULATION_MANIFEST")" \
-        --label "zpr.machine.location=$(jq -r --arg id "$machine" '.machines[] | select(.id == $id) | .location' "$SIMULATION_MANIFEST")" \
+        --label "zpr.machine.location=$machine_location" \
         --label "zpr.machine.model=$(jq -r --arg id "$machine" '.machines[] | select(.id == $id) | .model' "$SIMULATION_MANIFEST")" \
-        --label "zpr.machine.owner=$(jq -r --arg id "$machine" '.machines[] | select(.id == $id) | .owner' "$SIMULATION_MANIFEST")" \
+        --label "zpr.machine.owner=$machine_owner" \
         --label "zpr.machine.secure=$(jq -r --arg id "$machine" '.machines[] | select(.id == $id) | .secure' "$SIMULATION_MANIFEST")" \
         -v "$machine_controller_binary:/usr/local/bin/zpr-machine-controller:ro" \
         -v "$MACHINE_CERT_DIR/$machine:/run/zpr-machine:ro" \

@@ -4,9 +4,9 @@
   "name": "Load Lab",
   "description": "Bounded service-fanout and randomized-flow exercise for Visa Service and Control Room monitoring.",
   "runtime": {
-    "driver": "linux-one-node",
+    "driver": "docker-multinode",
     "topology": "single-node",
-    "nodes": [{"id": "load-lab-node", "location": "Load Test Bench"}]
+    "nodes": [{"id": "load-lab-node", "location": "Load Test Bench", "substrate_address": "172.30.0.13", "zpr_address": "fd5a:5052:90de::10"}]
   },
   "directory": {
     "base_dn": "dc=loadlab,dc=test",

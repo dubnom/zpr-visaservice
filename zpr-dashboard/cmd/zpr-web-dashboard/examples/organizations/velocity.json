@@ -4,9 +4,9 @@
   "name": "Velocity Labs",
   "description": "Single-node performance laboratory: two machines measure application throughput and warmed request latency. Direct visa-grant timing requires separate instrumentation.",
   "runtime": {
-    "driver": "linux-one-node",
+    "driver": "docker-multinode",
     "topology": "single-node",
-    "nodes": [{"id": "velocity-node", "location": "Performance Lab"}]
+    "nodes": [{"id": "velocity-node", "location": "Performance Lab", "substrate_address": "172.30.0.13", "zpr_address": "fd5a:5052:90de::10"}]
   },
   "directory": {
     "base_dn": "dc=velocity,dc=test",

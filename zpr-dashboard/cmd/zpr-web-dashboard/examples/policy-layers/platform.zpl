@@ -1,7 +1,6 @@
 define PolicyService as service with device.zpr.adapter.cn:'vs.zpr'.
 define ControlService as service with device.zpr.adapter.cn:'vs.zpr'.
 define ControlRoom as service with device.zpr.adapter.cn:'vs.zpr'.
-define AuthService as service with device.zpr.adapter.cn:'vs.zpr'.
 define AttributeService as service with device.zpr.adapter.cn:'vs.zpr'.
 define A1 as adapter with zpr.adapter.cn:adapter1.
 define A2 as adapter with zpr.adapter.cn:adapter2.

@@ -62,6 +62,7 @@ install_multinode_policy() {
 }
 bundle_dir="$runtime_dir/organization-policy/$organization"
 request_file="$runtime_dir/organization-request.json"
+runtime_context_file="$runtime_dir/organization-runtime.json"
 status_file=${SIMULATION_ACTIVATION_STATUS_FILE:-$runtime_dir/dashboard-stack/active-organization.txt.progress}
 umask 077
 mkdir -p "$bundle_dir"
@@ -70,6 +71,15 @@ report_activation_status() {
     status_temp="$status_file.tmp.$$"
     printf '%s\n' "$1" >"$status_temp"
     mv "$status_temp" "$status_file"
+}
+write_runtime_context() {
+    context_organization=$1
+    context_base_dn=$2
+    context_generation=$3
+    context_temp=$(mktemp "${runtime_context_file}.XXXXXX")
+    jq -n --arg organization_id "$context_organization" --arg ldap_base_dn "$context_base_dn" --arg generation "$context_generation" '{organization_id:$organization_id,ldap_base_dn:$ldap_base_dn,generation:$generation}' > "$context_temp"
+    chmod 600 "$context_temp"
+    mv "$context_temp" "$runtime_context_file"
 }
 report_activation_status "Preparing runtime policy"
 printf 'Preflight organization %s\n' "$organization"
@@ -186,6 +196,11 @@ rollback() {
         echo "Activation failed; restoring previous rig context"
         stop_runtime "$organization" || true
         if [ "$had_request" = yes ]; then cp "$backup" "$request_file"; else rm -f "$request_file"; fi
+        previous_generation=startup
+        if [ -r "$request_file" ] && jq -e --arg id "$previous_organization" '.organization_id==$id' "$request_file" >/dev/null 2>&1; then
+            previous_generation=$(jq -er '.generation // "startup"' "$request_file")
+        fi
+        write_runtime_context "$previous_organization" "$previous_base_dn" "$previous_generation" || true
         start_runtime "$previous_organization" || true
         if [ "$policy_changed" = yes ]; then
             previous_source="$runtime_dir/organization-policy/$previous_organization/runtime.zpl"
@@ -230,7 +245,10 @@ report_activation_status "Starting $organization runtime"
 start_runtime "$organization"
 if [ "$organization_driver" = "docker-multinode" ]; then
     report_activation_status "Compiling and installing policy with deployed bootstrap keys"
-    install_multinode_policy
+    if ! install_multinode_policy; then
+        echo "organization runtime policy installation failed" >&2
+        exit 1
+    fi
 fi
 if [ "$organization_driver" = linux-one-node ]; then
     report_activation_status "Starting DNS and platform relays"
@@ -351,4 +369,5 @@ if [ "$organization_driver" = linux-one-node ]; then
         exit 1
     fi
 fi
+write_runtime_context "$organization" "$organization_base_dn" "$generation"
 echo "Organization policy, directory, and ZPR context ready"

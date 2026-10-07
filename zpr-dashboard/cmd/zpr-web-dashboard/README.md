@@ -36,16 +36,30 @@ Status tables use automatic secondary column comparisons, so equal primary
 values remain deterministic when snapshot ordering changes. Map adapter rings
 rotate away from inter-node corridors; inter-node links render above dock links
 with a clearance stroke to distinguish unavoidable crossings.
+Returning to Map draws the latest cached snapshot immediately, even with updates
+paused. Geometry is calculated only while the canvas is visible, so refreshes
+on other pages cannot collapse connectors or corrupt the fitted viewport.
+Manual zoom/pan and Auto-fit remain selected across navigation.
+Before the first snapshot, the canvas identifies loading or a failed request;
+an empty connected snapshot reports no nodes or adapters, while an incomplete
+API response reports topology unavailable. Failed refreshes retain the last
+successfully drawn topology and display the connection error.
 Map **Auto-fit** is checked initially and fits the graph on refresh. Unchecking
 it preserves the chosen viewport and zoom across refreshes; **Fit** remains a
 one-time action without changing the checkbox. Rechecking Auto-fit fits
 immediately and resumes automatic fitting. Manual panning, wheel zoom, and the
 zoom buttons turn Auto-fit off and preserve the chosen camera on refresh.
 Clicking the background without dragging or using Fit does not change the checkbox.
-Map **Dark mode** changes only the canvas, controls, and connector colors; it
-does not theme the rest of Control Room. It is off initially, remains available
-on an empty map, and retains its selection across refreshes and navigation for
-the current page session. Service-type colors and decision feedback stay intact.
+Map **Dark mode** is temporarily hidden; the canvas starts in its light theme.
+Right-click an adapter to highlight its current outbound visas: matching service
+registrations, endpoint actors, and ordered node routes reported by Visa Service.
+Reverse visas use the original requester and service-side source port. Expired
+visas are excluded; endpoint matches alone do not imply service authorization.
+Right-click the same adapter or blank canvas to clear; right-click another adapter
+to change focus. Focus follows refreshed snapshots. The status line explicitly
+reports unavailable visa inventory or route data; no shortest path is inferred.
+For same-node visas without a stored multihop path, matching unambiguous docking
+nodes establish the local route.
 Connector endpoints intersect the actual SVG glyph boundaries, including rounded
 node/service rectangles, circular adapters, visa diamonds, gateway polygons, and
 cloud paths. Visible strokes, network clearance, and clickable hit areas use the
@@ -309,10 +323,12 @@ Visa Service's approved/denied request totals.
 
 Count changes in either direction briefly pulse the badge (including expiry to
 zero), without replaying unchanged snapshots or treating unknown readings as
-zero. Reduced-motion mode fades the badge without scaling. New service grants
+zero. Counts expand and contract twice over 2.4 seconds, using explicit SVG
+coordinates and a colored glow, including the outline when a count drops to zero.
+Reduced-motion mode fades the badge without scaling. New service grants
 also pulse their service connector; adapter decisions pulse the dock connector.
 
-#### Deploying node denial metrics
+#### Deploying node counters and denial metrics
 
 Update the node packet handler to the version exposing `Buffered Denials` in
 its management RPC counters. On the node host, run the operator-owned exporter:
@@ -355,6 +371,19 @@ error, not a fallback. Configurations and samples are limited to 64 KiB.
 Sample resource identities must match the production diagnostics source mapping
 (both identifiers default to the actor CN when no mapping is configured).
 The same ten-second freshness and integer-count checks apply.
+
+Clicking a node opens packet-processing counters alongside its live node state.
+The exporter also emits every management and fastpath-worker counter from the
+full `ph-cli counters` output, using cumulative OTLP sums named
+`zpr.node.counters.management.<counter_name>` and
+`zpr.node.counters.fastpath.<worker_id>.<counter_name>`. Counter names are
+lowercase with punctuation/spaces replaced by underscores. The inspector groups
+management and individual workers, shows the sample time, and updates while open.
+Values retain full unsigned 64-bit precision. These are processing totals since
+runtime restart or counter reset, not rates or per-route/per-link statistics.
+Missing, incomplete, stale, invalid, or unavailable counter telemetry is shown
+explicitly rather than as zero. Legacy samples with denial metrics alone still
+drive the badges, but the packet-counter section reports unavailable.
 
 The supervised `scripts/node-denial-exporter.sh` takes an operator-owned JSON
 array, reads each explicitly configured node through `docker exec`, and atomically

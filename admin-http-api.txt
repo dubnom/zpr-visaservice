@@ -56,12 +56,16 @@ Common Types
 |                 |   "policy_id": string, "zpl": string,                    |
 |                 |   "direction": "forward" | "reverse",                    |
 |                 |   "requesting_node": string,                             |
+|                 |   "path": string[] | null,                               |
 |                 |   "source_addr": string | null,                          |
 |                 |   "dest_addr": string | null,                            |
 |                 |   "source_port": number | null,                          |
 |                 |   "dest_port": number | null,                            |
 |                 |   "proto": string, "signals": string[],                  |
 |                 |   "session_key": ApiKeySet }                             |
+|                 |   path lists node ZPR addresses in packet-flow order,    |
+|                 |   ingress first and egress last. It is null for a        |
+|                 |   same-node route; do not derive it from requesting_node.|
 |                 |                                                          |
 | ApiKeySet       | { "format": "ZprKF01",                                   |
 |                 |   "ingress_key": string, "egress_key": string }          |

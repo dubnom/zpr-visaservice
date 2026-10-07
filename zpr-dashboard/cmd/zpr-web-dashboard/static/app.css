@@ -146,6 +146,13 @@ h1 { margin-bottom: 6px; font-size: 28px; line-height: 1.15; letter-spacing: 0; 
 .graph-fit { width: 40px; font: 9px var(--mono); }
 .graph-auto-fit { display: inline-flex; align-items: center; gap: 5px; min-height: 28px; padding: 0 6px; border: 1px solid var(--line); border-radius: 3px; background: #ffffffed; color: var(--ink); font: 10px var(--mono); cursor: pointer; }
 .graph-auto-fit input { margin: 0; accent-color: var(--forest); }
+.graph-auto-fit[hidden], .graph-visa-focus-status[hidden] { display: none; }
+.graph-visa-focus-status { position: absolute; bottom: 4px; left: 8px; right: 8px; margin: 0; padding: 5px 8px; background: #fffffff0; border: 1px solid var(--line); color: var(--ink); font: 10px var(--mono); pointer-events: none; }
+.graph-visa-focused #graph-world > :is(.graph-vertex, .graph-service-badge, .graph-edge, .graph-service-edge):not(.visa-focus) { opacity: .18; }
+.graph-visa-focused #graph-world .visa-focus { opacity: 1; }
+.graph-visa-focused #graph-world .graph-vertex.visa-focus > :is(rect, circle, polygon),
+.graph-visa-focused #graph-world .graph-service-badge.visa-focus > rect { stroke: #1769a1; stroke-width: 4; filter: drop-shadow(0 0 5px #56b1e2); }
+.graph-visa-focused #graph-world :is(.graph-edge, .graph-service-edge).visa-focus .graph-link { stroke: #1769a1; stroke-width: 4; }
 .topology-stage.graph-dark { background-color: #14211e; background-image: radial-gradient(#35443f 0.8px, transparent .8px); color: #e4eee8; }
 .graph-dark .graph-control, .graph-dark .graph-auto-fit { background: #22352f; border-color: #597468; color: #e4eee8; }
 .graph-dark .graph-control:hover { background: #304b40; border-color: #9dc3ae; }
@@ -197,6 +204,8 @@ h1 { margin-bottom: 6px; font-size: 28px; line-height: 1.15; letter-spacing: 0; 
 .graph-dark #graph-world .graph-denial-count:not(.empty) rect { fill: #a12c2c; stroke: #ffc1b8; }
 .graph-dark #graph-world .graph-denial-count.empty rect { stroke: #ff9e91; }
 #graph-world .graph-visa-count text { fill: #fff; stroke: none; font: 700 10px var(--mono); text-anchor: middle; pointer-events: none; }
+#graph-world .graph-visa-count[data-count-pulse] rect { stroke: #18894b; stroke-width: 3; filter: drop-shadow(0 0 5px #18894b); }
+#graph-world .graph-denial-count[data-count-pulse] rect { stroke: #d03232; filter: drop-shadow(0 0 5px #d03232); }
 .graph-node { fill: #e7f0e4; stroke: #426453; stroke-width: 2; }
 .graph-node.synced { fill: #eaf4d9; stroke: #367453; }
 .graph-adapter { fill: #f0f5f7; stroke: #7c9aaa; stroke-width: 1.5; }

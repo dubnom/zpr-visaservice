@@ -110,6 +110,36 @@ ou: Test and Quality
 title: Quality Test Engineer
 l: Tijuana, Mexico
 
+dn: uid=carlos.ramirez,ou=People,dc=greatlakes,dc=test
+objectClass: inetOrgPerson
+uid: carlos.ramirez
+cn: Carlos Ramirez
+sn: Ramirez
+mail: carlos.ramirez@greatlakes.example
+ou: Assembly
+title: Assembly Technician
+l: Tijuana, Mexico
+
+dn: uid=marisol.vega,ou=People,dc=greatlakes,dc=test
+objectClass: inetOrgPerson
+uid: marisol.vega
+cn: Marisol Vega
+sn: Vega
+mail: marisol.vega@greatlakes.example
+ou: Test and Quality
+title: Quality Test Analyst
+l: Tijuana, Mexico
+
+dn: uid=oscar.navarro,ou=People,dc=greatlakes,dc=test
+objectClass: inetOrgPerson
+uid: oscar.navarro
+cn: Oscar Navarro
+sn: Navarro
+mail: oscar.navarro@greatlakes.example
+ou: Assembly
+title: Production Specialist
+l: Tijuana, Mexico
+
 dn: uid=machine-01,ou=Machines,dc=greatlakes,dc=test
 objectClass: inetOrgPerson
 objectClass: zprMachine
@@ -236,6 +266,48 @@ ou: Shenzhen Engineering
 zprMachineOwner: chen.yu
 zprMachineSecure: TRUE
 
+dn: uid=machine-10,ou=Machines,dc=greatlakes,dc=test
+objectClass: inetOrgPerson
+objectClass: zprMachine
+uid: machine-10
+cn: machine-10
+sn: Endpoint
+zprMachineId: machine-10
+zprMachineType: laptop
+zprMachineModel: Tijuana Assembly Laptop
+zprMachineLocation: Tijuana, Mexico
+ou: Assembly
+zprMachineOwner: carlos.ramirez
+zprMachineSecure: TRUE
+
+dn: uid=machine-11,ou=Machines,dc=greatlakes,dc=test
+objectClass: inetOrgPerson
+objectClass: zprMachine
+uid: machine-11
+cn: machine-11
+sn: Endpoint
+zprMachineId: machine-11
+zprMachineType: laptop
+zprMachineModel: Tijuana Quality Laptop
+zprMachineLocation: Tijuana, Mexico
+ou: Test and Quality
+zprMachineOwner: marisol.vega
+zprMachineSecure: TRUE
+
+dn: uid=machine-12,ou=Machines,dc=greatlakes,dc=test
+objectClass: inetOrgPerson
+objectClass: zprMachine
+uid: machine-12
+cn: machine-12
+sn: Endpoint
+zprMachineId: machine-12
+zprMachineType: laptop
+zprMachineModel: Tijuana Production Laptop
+zprMachineLocation: Tijuana, Mexico
+ou: Assembly
+zprMachineOwner: oscar.navarro
+zprMachineSecure: TRUE
+
 dn: uid=support-desk-app,ou=Machines,dc=greatlakes,dc=test
 objectClass: inetOrgPerson
 uid: support-desk-app
@@ -320,9 +392,12 @@ objectClass: top
 objectClass: groupOfNames
 cn: TijuanaAssembly
 member: uid=lucia.torres,ou=People,dc=greatlakes,dc=test
+member: uid=carlos.ramirez,ou=People,dc=greatlakes,dc=test
+member: uid=oscar.navarro,ou=People,dc=greatlakes,dc=test
 
 dn: cn=TijuanaTest,ou=Roles,dc=greatlakes,dc=test
 objectClass: top
 objectClass: groupOfNames
 cn: TijuanaTest
 member: uid=ana.garcia,ou=People,dc=greatlakes,dc=test
+member: uid=marisol.vega,ou=People,dc=greatlakes,dc=test

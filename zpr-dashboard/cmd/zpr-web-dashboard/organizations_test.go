@@ -48,20 +48,23 @@ func TestBundledOrganizationsHaveSeparateIdentityAndPolicyCatalogs(t *testing.T)
 	if greatLakes.Runtime.Topology != "multi-node" || len(greatLakes.Runtime.Nodes) != 3 || greatLakes.Directory.BaseDN != "dc=greatlakes,dc=test" {
 		t.Fatalf("Great Lakes profile = %+v; want three isolated site nodes", greatLakes)
 	}
-	if len(greatLakes.Directory.People) != 9 || len(greatLakes.Directory.Departments) != 11 || len(greatLakes.Directory.Groups) != 8 || len(greatLakes.MachineOwners) != 9 || len(greatLakes.Services) != 9 || greatLakes.RuntimePolicy == "" {
+	if greatLakes.Runtime.Nodes[0].ID != "milwaukee-hq" || greatLakes.Runtime.Nodes[1].ID != "shenzhen-office" || greatLakes.Runtime.Nodes[2].ID != "tijuana-plant" {
+		t.Fatalf("Great Lakes node IDs = %+v; want location-based site names", greatLakes.Runtime.Nodes)
+	}
+	if len(greatLakes.Directory.People) != 12 || len(greatLakes.Directory.Departments) != 11 || len(greatLakes.Directory.Groups) != 8 || len(greatLakes.MachineOwners) != 12 || len(greatLakes.Services) != 9 || greatLakes.RuntimePolicy == "" {
 		t.Fatalf("Great Lakes profile is missing departments, services, or runtime policy: %+v", greatLakes)
 	}
 	if northstar.Services[0].Name == redwood.Services[0].Name {
 		t.Fatal("organizations must have distinct service catalogs")
 	}
-	if northstar.Runtime.Driver != "linux-one-node" || northstar.Runtime.Topology != "single-node" || len(northstar.Runtime.Nodes) != 1 {
-		t.Fatalf("Northstar runtime = %+v; want one node", northstar.Runtime)
+	if northstar.Runtime.Driver != "docker-multinode" || northstar.Runtime.Topology != "single-node" || len(northstar.Runtime.Nodes) != 1 {
+		t.Fatalf("Northstar runtime = %+v; want one Compose node", northstar.Runtime)
 	}
 	if redwood.Runtime.Driver != "docker-multinode" || redwood.Runtime.Topology != "multi-node" || len(redwood.Runtime.Nodes) != 2 || redwood.Runtime.Nodes[0].Location != "North Hub" || redwood.Runtime.Nodes[1].Location != "Regional Yard" {
 		t.Fatalf("Redwood runtime = %+v; want two location-specific nodes", redwood.Runtime)
 	}
-	if velocity.Runtime.Driver != "linux-one-node" || velocity.Runtime.Topology != "single-node" || len(velocity.Runtime.Nodes) != 1 {
-		t.Fatalf("Velocity runtime = %+v; want one node", velocity.Runtime)
+	if velocity.Runtime.Driver != "docker-multinode" || velocity.Runtime.Topology != "single-node" || len(velocity.Runtime.Nodes) != 1 {
+		t.Fatalf("Velocity runtime = %+v; want one Compose node", velocity.Runtime)
 	}
 	if loadLab.LoadTest == nil || loadLab.LoadTest.ClientCount != 200 || loadLab.LoadTest.ServiceCount != 200 || len(loadLab.Services) != 200 {
 		t.Fatalf("Load Lab profile = %+v with %d services; want 200 clients and 200 services", loadLab.LoadTest, len(loadLab.Services))
@@ -76,9 +79,11 @@ func TestSimulatorRuntimeDriverComesFromOrganizationProfile(t *testing.T) {
 		organizationID string
 		wantDriver     string
 	}{
-		{organizationID: "northstar", wantDriver: "linux-one-node"},
+		{organizationID: "northstar", wantDriver: "docker-multinode"},
+		{organizationID: "load-lab", wantDriver: "docker-multinode"},
 		{organizationID: "redwood", wantDriver: "docker-multinode"},
 		{organizationID: "great-lakes", wantDriver: "docker-multinode"},
+		{organizationID: "velocity", wantDriver: "docker-multinode"},
 	} {
 		t.Run(test.organizationID, func(t *testing.T) {
 			gotDriver, err := simulatorRuntimeDriverForManifest(simulatorManifest{OrganizationID: test.organizationID})
@@ -281,6 +286,9 @@ func TestGreatLakesLDIFMatchesPeopleSiteAttributesAndGroups(t *testing.T) {
 		"machine-07": {"Tijuana, Mexico", "Assembly"},
 		"machine-08": {"Tijuana, Mexico", "Test and Quality"},
 		"machine-09": {"Shenzhen, China", "Shenzhen Engineering"},
+		"machine-10": {"Tijuana, Mexico", "Assembly"},
+		"machine-11": {"Tijuana, Mexico", "Test and Quality"},
+		"machine-12": {"Tijuana, Mexico", "Assembly"},
 	} {
 		attributes := directory.PersonAttributes[uid]
 		if len(attributes["zprMachineLocation"]) != 1 || attributes["zprMachineLocation"][0] != expected[0] || len(attributes["ou"]) != 1 || attributes["ou"][0] != expected[1] {
@@ -690,6 +698,9 @@ func TestGreatLakesThreeSiteRuntimeScenarioIsSeeded(t *testing.T) {
 	}
 	people := make(map[string]bool)
 	machines := make(map[string]bool)
+	tijuanaRequests := make(map[string]int)
+	tijuanaMachines := map[string]bool{"machine-10": true, "machine-11": true, "machine-12": true}
+	tijuanaPauses := 0
 	lookups, deniedProbes, requests, delays := 0, 0, 0, 0
 	for _, step := range workday.Steps {
 		if step.Action == "login" {
@@ -706,12 +717,18 @@ func TestGreatLakesThreeSiteRuntimeScenarioIsSeeded(t *testing.T) {
 		}
 		if step.Action == "request_test_service" {
 			requests++
+			if tijuanaMachines[step.Machine] {
+				tijuanaRequests[step.Machine]++
+			}
 		}
 		if step.Action == "delay" && step.TimeoutSeconds == 30 {
 			delays++
 		}
+		if step.Action == "delay" && step.TimeoutSeconds == 15 && tijuanaMachines[step.Machine] {
+			tijuanaPauses++
+		}
 	}
-	if len(people) != 9 || len(machines) != 9 || lookups != 3 || deniedProbes < 2 || requests != 24 || delays != 21 {
+	if len(people) != 12 || len(machines) != 12 || lookups != 3 || deniedProbes < 2 || requests != 30 || delays != 21 || tijuanaRequests["machine-10"] != 2 || tijuanaRequests["machine-11"] != 2 || tijuanaRequests["machine-12"] != 2 || tijuanaPauses != 3 {
 		t.Fatalf("Great Lakes workday coverage people=%d machines=%d DNS=%d denials=%d requests=%d pauses=%d", len(people), len(machines), lookups, deniedProbes, requests, delays)
 	}
 }

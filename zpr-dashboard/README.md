@@ -441,9 +441,12 @@ immutable revision history. Directory edits are drafts until explicitly
 published. Publishing stages a private LDIF at
 `.local-runtime/published-directories/<organization>.ldif`; the running
 directory is unchanged, and the new seed applies on the next explicit LDAP
-reseed or rig restart. Restart the stack to activate another profile so LDAP,
-policy, and service seeds remain consistent. Set `SIMULATION_MANIFEST` to use a
-different machine/runtime manifest.
+reseed or runtime restart. All bundled organization profiles now use isolated
+Docker Compose projects; single-node profiles keep one node, while Great Lakes
+and Redwood retain their multi-node topologies. Activate another profile
+through the Organizations page so its directory, policy, and services are
+reseeded together. Set `SIMULATION_MANIFEST` to use a different machine/runtime
+manifest.
 
 The Simulator's Claude design assistant can review scenario drafts and
 organization profiles. It keeps `ANTHROPIC_API_KEY` server-side and only applies

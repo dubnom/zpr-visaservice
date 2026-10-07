@@ -4,9 +4,9 @@
   "name": "Northstar Labs",
   "description": "Research and engineering organization with campus and remote teams.",
   "runtime": {
-    "driver": "linux-one-node",
+    "driver": "docker-multinode",
     "topology": "single-node",
-    "nodes": [{"id": "northstar-node", "location": "North Campus"}]
+    "nodes": [{"id": "northstar-node", "location": "North Campus", "substrate_address": "172.30.0.13", "zpr_address": "fd5a:5052:90de::10"}]
   },
   "directory": {
     "base_dn": "dc=northstar,dc=test",

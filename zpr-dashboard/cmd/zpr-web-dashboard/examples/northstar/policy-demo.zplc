@@ -22,6 +22,11 @@ returns_attributes = ["sub -> user.sub"]
 identity_attributes = ["sub"]
 provider = [["device.zpr.adapter.cn", "auth-service"]]
 
+[trusted_services.demo_file]
+api = "file"
+returns_attributes = ["verified -> device.demo.verified", "external-network-connection -> service.external-network-connection"]
+expiration_seconds = 3600
+
 [trusted_services.demo_ldap]
 api = "rest/1"
 returns_attributes = ["ou -> device.demo.department", "title -> device.demo.title", "zprMachineId -> device.demo.machine_id", "zprMachineType -> device.demo.machine_type", "zprMachineModel -> device.demo.model", "zprMachineLocation -> device.demo.location", "zprMachineSecure -> device.demo.secure", "zprMachineOwner -> device.demo.owner"]
@@ -36,6 +41,69 @@ expiration_seconds = 3600
 l4protocol = "iana.ICMP6"
 icmp_type = "request-response"
 icmp_codes = [128, 129]
+
+[protocols.northstar_echo_http]
+l4protocol = "iana.TCP"
+port = 8080
+
+[protocols.northstar_metrics_http]
+l4protocol = "iana.TCP"
+port = 8081
+
+[protocols.northstar_gateway_http]
+l4protocol = "iana.TCP"
+port = 8082
+
+[services.PingableVs]
+protocol = "ping"
+
+[services.PingableNode]
+protocol = "ping"
+
+[services.A1Svc]
+protocol = "ping"
+
+[services.A2Svc]
+protocol = "ping"
+
+[services.A3Svc]
+protocol = "ping"
+
+[services.PolicyService]
+protocol = "ping"
+
+[services.ControlService]
+protocol = "ping"
+
+[services.ControlRoom]
+protocol = "ping"
+
+[services.AuthService]
+protocol = "ping"
+
+[services.AttributeService]
+protocol = "ping"
+
+[services.EchoService]
+protocol = "northstar_echo_http"
+
+[services.EchoWeb]
+protocol = "northstar_echo_http"
+
+[services.MetricsService]
+protocol = "northstar_metrics_http"
+
+[services.MetricsWeb]
+protocol = "northstar_metrics_http"
+
+[services.gateway]
+protocol = "northstar_gateway_http"
+
+[services.internet-gateway]
+protocol = "northstar_gateway_http"
+
+[services.InternetGatewayWeb]
+protocol = "northstar_gateway_http"
 
 [services.FinanceWorkspace]
 protocol = "ping"

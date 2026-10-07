@@ -7,12 +7,80 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"regexp"
+	"sort"
 	"strconv"
+	"strings"
 	"time"
 )
 
 const bufferedDenialsMetric = "zpr.node.denials.buffered"
 const localDenialsMetric = "zpr.node.denials.local"
+const nodeCounterPrefix = "zpr.node.counters."
+
+var nodeCounterName = regexp.MustCompile(`^(management|fastpath\.[0-9]{1,4})\.([a-z][a-z0-9_]{0,95})$`)
+
+func readNodeCounters(metrics []diagnosticsMetric, now time.Time, freshness time.Duration) ([]nodeCounter, *time.Time, string) {
+	latest := map[string]diagnosticsMetric{}
+	for _, metric := range metrics {
+		if strings.HasPrefix(metric.Name, nodeCounterPrefix) {
+			if prior, exists := latest[metric.Name]; !exists || metric.Timestamp.After(prior.Timestamp) {
+				latest[metric.Name] = metric
+			}
+		}
+	}
+	if len(latest) == 0 {
+		return nil, nil, "Node counters unavailable: exporter did not report packet-processing counters."
+	}
+	if len(latest) > 512 {
+		return nil, nil, "Node counter inventory exceeds the supported limit."
+	}
+	counters := make([]nodeCounter, 0, len(latest))
+	groups := map[string]map[string]bool{}
+	var updated time.Time
+	for name, metric := range latest {
+		match := nodeCounterName.FindStringSubmatch(strings.TrimPrefix(name, nodeCounterPrefix))
+		if match == nil || metric.Timestamp.IsZero() || metric.Timestamp.After(now) || now.Sub(metric.Timestamp) > freshness {
+			return nil, nil, "Node counters are stale or invalid."
+		}
+		value, err := strconv.ParseUint(metric.Value, 10, 64)
+		if err != nil {
+			return nil, nil, "Node counter value is invalid."
+		}
+		group, label := match[1], match[2]
+		if groups[group] == nil {
+			groups[group] = map[string]bool{}
+		}
+		groups[group][label] = true
+		counters = append(counters, nodeCounter{Group: group, Name: label, Value: strconv.FormatUint(value, 10)})
+		if updated.IsZero() || metric.Timestamp.Before(updated) {
+			updated = metric.Timestamp
+		}
+	}
+	if groups["management"] == nil || len(groups) < 2 {
+		return nil, nil, "Node counter inventory is incomplete."
+	}
+	for group, names := range groups {
+		if group == "management" {
+			continue
+		}
+		for _, required := range []string{"inbound_packets_received", "inbound_packets_sent", "inbound_packets_dropped", "outbound_packets_received", "outbound_packets_sent", "outbound_packets_dropped"} {
+			if !names[required] {
+				return nil, nil, "Node packet counter inventory is incomplete."
+			}
+		}
+	}
+	sort.Slice(counters, func(i, j int) bool {
+		if counters[i].Group != counters[j].Group {
+			if counters[i].Group == "management" || counters[j].Group == "management" {
+				return counters[i].Group == "management"
+			}
+			return counters[i].Group < counters[j].Group
+		}
+		return counters[i].Name < counters[j].Name
+	})
+	return counters, &updated, ""
+}
 
 type nodeOTLPFiles map[string]string
 
@@ -123,8 +191,11 @@ func populateNodeDenialStats(ctx context.Context, data *snapshot, provider diagn
 		details := actor.NodeDetails
 		details.BufferedDenials, details.LocalDenials = nil, nil
 		details.DenialStatsError = ""
+		details.Counters, details.CountersUpdatedAt = nil, nil
+		details.CounterStatsError = ""
 		if provider == nil {
 			details.DenialStatsError = providerError
+			details.CounterStatsError = "Node counters unavailable: telemetry provider not configured."
 			continue
 		}
 		var source diagnosticsSource
@@ -136,14 +207,17 @@ func populateNodeDenialStats(ctx context.Context, data *snapshot, provider diagn
 		}
 		if source.ID == "" {
 			details.DenialStatsError = "Node telemetry identity unavailable."
+			details.CounterStatsError = details.DenialStatsError
 			continue
 		}
 		_, metrics, err := provider.query(ctx, source, 1)
 		if err != nil {
 			details.DenialStatsError = fmt.Sprintf("Node denial telemetry unavailable: %v", err)
+			details.CounterStatsError = fmt.Sprintf("Node counters unavailable: %v", err)
 			continue
 		}
 		now := time.Now()
+		details.Counters, details.CountersUpdatedAt, details.CounterStatsError = readNodeCounters(metrics, now, min(staleAfter, 10*time.Second))
 		read := func(name string) *uint64 {
 			var latest *diagnosticsMetric
 			for i := range metrics {

@@ -20,7 +20,7 @@ import (
 
 const (
 	maxScenarioFileSize = 256 << 10
-	maxScenarioMachines = 10
+	maxScenarioMachines = 12
 )
 
 var errScenarioAlreadyRunning = errors.New("a scenario is already running")

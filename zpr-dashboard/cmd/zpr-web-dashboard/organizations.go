@@ -287,8 +287,8 @@ func validateSimulatorOrganization(organization simulatorOrganization) error {
 	if organization.Runtime.Topology != "single-node" && organization.Runtime.Topology != "multi-node" {
 		return errors.New("runtime topology must be single-node or multi-node")
 	}
-	if organization.Runtime.Driver == "linux-one-node" && organization.Runtime.Topology != "single-node" || organization.Runtime.Driver == "docker-multinode" && organization.Runtime.Topology != "multi-node" {
-		return fmt.Errorf("runtime driver %q is incompatible with topology %q", organization.Runtime.Driver, organization.Runtime.Topology)
+	if organization.Runtime.Driver == "linux-one-node" && organization.Runtime.Topology != "single-node" {
+		return errors.New("linux-one-node runtime requires single-node topology")
 	}
 	if organization.Runtime.Topology == "single-node" && len(organization.Runtime.Nodes) != 1 || organization.Runtime.Topology == "multi-node" && len(organization.Runtime.Nodes) < 2 {
 		return fmt.Errorf("runtime topology %q has an invalid node count", organization.Runtime.Topology)

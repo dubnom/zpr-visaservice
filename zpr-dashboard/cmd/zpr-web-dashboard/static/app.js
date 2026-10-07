@@ -8,6 +8,72 @@ const state = { snapshot: null, timer: null, paused: false, pending: false, grap
 let previousPolledValues = null;
 let graphAutoFit = true;
 let graphDarkMode = false;
+let graphVisaFocus = null;
+
+function activeMapVisas(data) {
+  return Array.isArray(data.active_visas)
+    ? [...new Map(data.active_visas.map(visa => [String(visa.id), visa])).values()].filter(visa => Number(visa.expires) > Date.now() / 1000)
+    : null;
+}
+
+function applyMapVisaFocus(data) {
+  const stage = byId("topology-stage");
+  const adapter = data.actors.find(actor => !actor.node && actor.cn === graphVisaFocus);
+  if (!adapter) graphVisaFocus = null;
+  stage.classList.toggle("graph-visa-focused", graphVisaFocus != null);
+  stage.querySelectorAll(".visa-focus").forEach(element => element.classList.remove("visa-focus"));
+  const status = stage.querySelector(".graph-visa-focus-status");
+  if (graphVisaFocus == null) {
+    if (status) { status.hidden = true; status.textContent = ""; }
+    return;
+  }
+  const actorKey = actor => `actor:${JSON.stringify(actor.cn)}`;
+  const componentKeys = new Set([actorKey(adapter)]);
+  const connectorPairs = new Set();
+  const pairKey = (a, b) => JSON.stringify([a, b].sort());
+  const addressActor = address => data.actors.find(actor => actor.zpr_addr && dnsAddressKey(actor.zpr_addr) === dnsAddressKey(address));
+  const docks = actor => actor.node ? [actor] : data.actors.filter(node => node.node && node.node_details?.adapters?.includes(actor.cn));
+  const visas = activeMapVisas(data);
+  let matching = 0, missingRoutes = 0;
+  for (const visa of visas || []) {
+    const requester = String(visa.direction || "").toLowerCase() === "reverse" ? visa.dest_addr : visa.source_addr;
+    if (!requester || !adapter.zpr_addr || dnsAddressKey(requester) !== dnsAddressKey(adapter.zpr_addr)) continue;
+    matching += 1;
+    const source = addressActor(visa.source_addr), destination = addressActor(visa.dest_addr);
+    for (const endpoint of [source, destination].filter(Boolean)) componentKeys.add(actorKey(endpoint));
+    let nodes = [];
+    if (Array.isArray(visa.path) && visa.path.length > 0) {
+      nodes = visa.path.map(addressActor);
+      if (nodes.some(node => !node?.node)) { missingRoutes += 1; nodes = []; }
+    } else if (source && destination) {
+      const sourceDocks = docks(source), destinationDocks = docks(destination);
+      if (sourceDocks.length === 1 && destinationDocks.length === 1 && sourceDocks[0].cn === destinationDocks[0].cn) nodes = sourceDocks;
+      else missingRoutes += 1;
+    } else missingRoutes += 1;
+    for (const node of nodes) componentKeys.add(actorKey(node));
+    for (let index = 1; index < nodes.length; index += 1) connectorPairs.add(pairKey(actorKey(nodes[index - 1]), actorKey(nodes[index])));
+    for (const [endpoint, node] of [[source, nodes[0]], [destination, nodes.at(-1)]]) {
+      if (endpoint && node && !endpoint.node && node.node_details?.adapters?.includes(endpoint.cn)) connectorPairs.add(pairKey(actorKey(endpoint), actorKey(node)));
+    }
+    for (const service of data.services || []) {
+      if (!serviceMatchesVisa(service, visa, data.actors)) continue;
+      const key = `service:${JSON.stringify([service.actor_cn, service.service_name])}`;
+      componentKeys.add(key);
+      connectorPairs.add(pairKey(`actor:${JSON.stringify(service.actor_cn)}`, key));
+    }
+  }
+  for (const component of stage.querySelectorAll("#graph-world > [data-topology-component]")) {
+    component.classList.toggle("visa-focus", componentKeys.has(component.dataset.topologyComponent));
+  }
+  for (const edge of stage.querySelectorAll("[data-connector-from][data-connector-to]")) {
+    edge.classList.toggle("visa-focus", connectorPairs.has(pairKey(edge.dataset.connectorFrom, edge.dataset.connectorTo)));
+  }
+  if (status) {
+    status.hidden = false;
+    status.textContent = visas == null ? `${actorDisplayName(adapter)}: active visa inventory unavailable.`
+      : `${actorDisplayName(adapter)}: ${matching} active outbound visas.${missingRoutes ? ` Ordered route unavailable for ${missingRoutes}; no route inferred.` : ""} Right-click this adapter or blank canvas to clear.`;
+  }
+}
 
 const defaultTableSorts = {
   connections: { key: "from", direction: 1 },
@@ -90,6 +156,7 @@ function showPage(page = currentPage()) {
   if (page === "policy") loadPolicyWorkspace();
   if (page === "dns") loadDNSStats();
   if (page === "security-review" && !state.paused) void refresh();
+  if (page === "map" && state.snapshot) renderTopology(state.snapshot);
 }
 
 function escapeHTML(value) {
@@ -504,6 +571,27 @@ function renderInspector() {
         }).join(" ")),
         detailHTMLField("Node links", outgoing),
       ]));
+      const counters = details.counters || [];
+      if (details.counter_stats_error || !counters.length) {
+        sections.push(detailSection("Packet-processing counters", [
+          detailField("Telemetry", details.counter_stats_error || "Node counters unavailable."),
+        ]));
+      } else {
+        sections.push(detailSection("Packet-processing counters", [
+          detailField("Sample time", details.counters_updated_at ? new Date(details.counters_updated_at).toLocaleString() : "Not reported"),
+          detailField("Scope", "Cumulative since runtime restart or counter reset; per worker, not per route or link."),
+        ]));
+        const groups = new Map();
+        for (const counter of counters) {
+          const fields = groups.get(counter.group) || [];
+          const label = counter.name.split("_").map(word => ["ttl", "micv", "zpi"].includes(word) ? word.toUpperCase() : word.charAt(0).toUpperCase() + word.slice(1)).join(" ");
+          fields.push(detailField(label, counter.value, "mono"));
+          groups.set(counter.group, fields);
+        }
+        for (const [group, fields] of groups) {
+          sections.push(detailSection(group === "management" ? "Management counters" : `Fastpath worker ${group.split(".")[1]}`, fields));
+        }
+      }
     } else {
       refreshAdapterVisas(actor);
       const attachedTo = data.actors.filter((node) => node.node && (node.node_details?.adapters || []).includes(actor.cn));
@@ -688,9 +776,7 @@ function connectGraphShapes(lines, fromShape, toShape, world) {
 
 function mapComponentCounts(data) {
   const counts = new Map();
-  const active = Array.isArray(data.active_visas)
-    ? [...new Map(data.active_visas.map((visa) => [String(visa.id), visa])).values()].filter((visa) => Number(visa.expires) > Date.now() / 1000)
-    : null;
+  const active = activeMapVisas(data);
   const addresses = new Map();
   if (active) for (const visa of active) {
     for (const address of new Set([visa.source_addr, visa.dest_addr].filter(Boolean).map(dnsAddressKey))) {
@@ -736,7 +822,7 @@ function renderTopology(data, exitComponents = []) {
   }
 
   const stage = byId("topology-stage");
-  const darkModeControl = `<label class="graph-auto-fit"><input type="checkbox" data-graph-dark-mode${graphDarkMode ? " checked" : ""}>Dark mode</label>`;
+  const darkModeControl = `<label class="graph-auto-fit" hidden><input type="checkbox" data-graph-dark-mode${graphDarkMode ? " checked" : ""}>Dark mode</label>`;
   const positions = new Map();
   const servicePositions = new Map();
   const servicesByActor = new Map();
@@ -750,10 +836,16 @@ function renderTopology(data, exitComponents = []) {
   const networkEdges = edges.filter((edge) => edge.kind === "network");
   const unconnected = adapters.filter((adapter) => !dockEdges.some((edge) => edge.to.cn === adapter.cn));
   renderConnections(edges, unconnected);
+  // Hidden SVGs do not provide usable geometry for fitting or connector intersections.
+  if (byId("page-map").hidden) return;
 
   if (!actors.length && !exitComponents.length) {
-    stage.innerHTML = `<div class="graph-controls" aria-label="Topology graph controls">${darkModeControl}</div><div class="empty-state">No nodes or adapters reported.</div>`;
+    const message = data.api_status === "connected"
+      ? "No nodes or adapters reported. Visa Service returned an empty topology."
+      : "Topology unavailable. Check the Visa Service connection and reported errors.";
+    stage.innerHTML = `<div class="graph-controls" aria-label="Topology graph controls">${darkModeControl}</div><div class="empty-state" role="status">${message}</div>`;
     setupGraphAppearance(stage);
+    applyMapVisaFocus(data);
     return;
   }
 
@@ -1107,6 +1199,12 @@ function renderTopology(data, exitComponents = []) {
   }
 
   setupGraphControls(stage, width, height, previousViewport);
+  const focusStatus = document.createElement("p");
+  focusStatus.className = "graph-visa-focus-status";
+  focusStatus.setAttribute("role", "status");
+  focusStatus.hidden = true;
+  stage.append(focusStatus);
+  applyMapVisaFocus(data);
   pulseAdapterDecisions(data);
   pulseMapCounts(counts);
 }
@@ -3445,6 +3543,7 @@ const adapterDecisionPulses = new Map();
 const serviceGrantPulses = new Map();
 const mapCountPulses = new Map();
 let previousMapCounts = null;
+const MAP_COUNT_PULSE_DURATION = 2400;
 
 function pulseMapCounts(counts) {
   const now = Date.now();
@@ -3453,21 +3552,33 @@ function pulseMapCounts(counts) {
     if (count != null && previous != null && count !== previous) mapCountPulses.set(key, now);
   }
   previousMapCounts = counts;
-  for (const [key, startedAt] of mapCountPulses) if (now - startedAt >= 1200 || !counts.has(key)) mapCountPulses.delete(key);
+  for (const [key, startedAt] of mapCountPulses) if (now - startedAt >= MAP_COUNT_PULSE_DURATION || !counts.has(key)) mapCountPulses.delete(key);
   for (const component of document.querySelectorAll("#graph-world > [data-topology-component]")) {
     const startedAt = mapCountPulses.get(component.dataset.topologyComponent);
     const badge = component.querySelector(".graph-visa-count");
     if (startedAt == null || !badge) continue;
     badge.dataset.countPulse = "true";
-    badge.classList.add("graph-decision-glyph");
+    const bounds = badge.getBBox();
+    const x = bounds.x + bounds.width / 2, y = bounds.y + bounds.height / 2;
     const motion = matchMedia("(prefers-reduced-motion: reduce)").matches;
     const animation = badge.animate([
-      { opacity: 1, ...(motion ? {} : { transform: "scale(1)" }) },
-      { opacity: 0.45, offset: 0.4, ...(motion ? {} : { transform: "scale(1.35)" }) },
-      { opacity: 1, ...(motion ? {} : { transform: "scale(1)" }) },
-    ], { duration: 1200, easing: "ease-in-out" });
+      { opacity: 1 },
+      { opacity: 0.65, offset: 0.25 },
+      { opacity: 1, offset: 0.5 },
+      { opacity: 0.65, offset: 0.75 },
+      { opacity: 1 },
+    ], { duration: MAP_COUNT_PULSE_DURATION, easing: "linear" });
+    // Apply expansion in SVG coordinates, rather than relying on browser-specific g transform origins.
+    const expand = () => {
+      if (!badge.isConnected) return;
+      const progress = animation.effect.getComputedTiming().progress ?? 1;
+      const scale = motion ? 1 : 1 + 0.75 * Math.sin(progress * Math.PI * 2) ** 2;
+      badge.setAttribute("transform", `translate(${x} ${y}) scale(${scale}) translate(${-x} ${-y})`);
+      if (animation.playState === "running") requestAnimationFrame(expand);
+    };
     animation.currentTime = now - startedAt;
-    animation.onfinish = () => { delete badge.dataset.countPulse; badge.classList.remove("graph-decision-glyph"); };
+    expand();
+    animation.onfinish = () => { delete badge.dataset.countPulse; badge.removeAttribute("transform"); };
   }
 }
 
@@ -3614,7 +3725,7 @@ function render(data) {
   const removedKeys = state.topologyComponents
     ? [...state.topologyComponents].filter((key) => !componentKeys.has(key))
     : [];
-  const exitComponents = state.graphAnimations ? snapshotRemovedTopologyComponents(removedKeys) : [];
+  const exitComponents = state.graphAnimations && !byId("page-map").hidden ? snapshotRemovedTopologyComponents(removedKeys) : [];
   for (const [key, startedAt] of state.topologyNewComponents) {
     if (now - startedAt >= GRAPH_ARRIVAL_DURATION) state.topologyNewComponents.delete(key);
   }
@@ -3657,6 +3768,7 @@ async function refresh() {
     document.dispatchEvent(new CustomEvent("control-room:refreshed", { detail: snapshot }));
   } catch (error) {
     updateConnection({ api_status: "disconnected", errors: [error.message] });
+    if (!state.snapshot) byId("topology-stage").querySelector(".empty-state").textContent = "Unable to load topology. Check the connection error above or use Refresh to retry.";
   } finally {
     state.pending = false;
     byId("refresh-now").disabled = false;
@@ -3936,6 +4048,20 @@ byId("pause-poll").addEventListener("click", (event) => {
 });
 byId("poll-rate").addEventListener("change", setPollTimer);
 byId("topology-search").addEventListener("input", () => state.snapshot && renderTopology(state.snapshot));
+byId("topology-stage").addEventListener("contextmenu", event => {
+  if (!state.snapshot) return;
+  const component = event.target.closest(".graph-vertex[data-inspect-actor]");
+  const actor = component && state.snapshot.actors.find(actor => actor.cn === component.dataset.inspectActor);
+  if (actor && !actor.node) {
+    event.preventDefault();
+    graphVisaFocus = graphVisaFocus === actor.cn ? null : actor.cn;
+    applyMapVisaFocus(state.snapshot);
+  } else if (!event.target.closest("[data-inspect-actor], [data-inspect-service], [data-inspect-link], .graph-controls")) {
+    event.preventDefault();
+    graphVisaFocus = null;
+    applyMapVisaFocus(state.snapshot);
+  }
+});
 
 const pageRenderers = {
   connections: (data) => renderTopology(data),

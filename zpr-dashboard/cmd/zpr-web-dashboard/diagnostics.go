@@ -240,7 +240,11 @@ func (provider *openObserveDiagnosticsProvider) query(ctx context.Context, sourc
 		}
 		parsedLogs = append(parsedLogs, diagnosticsLog{Timestamp: timestamp, Severity: diagnosticsHitString(hit, "severity_text", "severity", "level"), Body: machineLogSecrets.ReplaceAllString(body, "[REDACTED]"), Attributes: diagnosticsSafeAttributes(hit)})
 	}
-	metricHits, metricsErr := provider.search(ctx, provider.metricsStream, source, start, end, maxDiagnosticsMetrics, "metrics")
+	metricLimit := maxDiagnosticsMetrics
+	if source.Kind == "ZPR node" {
+		metricLimit = 1024
+	}
+	metricHits, metricsErr := provider.search(ctx, provider.metricsStream, source, start, end, metricLimit, "metrics")
 	parsedMetrics := make([]diagnosticsMetric, 0, len(metricHits))
 	for _, hit := range metricHits {
 		name := diagnosticsHitString(hit, "name", "metric_name", "metric.name")

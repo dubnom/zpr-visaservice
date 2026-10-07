@@ -33,6 +33,13 @@
 - [x] Since Nodes don't show visa count - show the count of buffered denies in a similar fashion but use red (and the same outline rules)
 - [x] When the number of visas or buffered denies change, do a little pulse.
 - [x] Pulse the connector in addition to the adapter.
+- [x] Does the map come up blank because it is missing info, or just waiting for a refresh to fill it?
+- [x] Possibly related - when I switch to the map from another page, the map is only partially drawn until a refresh.
+- [x] Show management and per-fastpath packet-processing counters in node details when a node is clicked, with explicit unavailable/stale telemetry states.
+- [x] Add a right mouse click on adapters to highlight current visa allowed services and routes. Right click again on the adapter, or in blank space to remove the highlight.
+- [x] Hide the dark mode checkbox for now.
+- [x] The visa and buffered denies still don't pulse as far as I can tell. Are we using our expand/contract paradigm.
+- [ ] Make the right-click highlight stuff work for services as well.
 
 ### Navigation
 - [x] Keep Map as the main view and group Adapters, Actors, Services, Visas, Denials, and DNS under horizontal Status tabs with counts.

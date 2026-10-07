@@ -37,7 +37,10 @@ pub struct VisaDescriptor {
     pub policy_id: String,
     pub zpl: String,
     pub direction: VisaMatchDirection,
-    pub requesting_node: String,     // ZPR address
+    pub requesting_node: String, // ZPR address
+    /// Ordered node addresses from ingress to egress; absent for same-node routes.
+    #[serde(default)]
+    pub path: Option<Vec<String>>,
     pub source_addr: Option<String>, // ZPR address
     pub dest_addr: Option<String>,   // ZPR address
     pub source_port: Option<u16>,
@@ -435,6 +438,7 @@ mod tests {
             zpl: "zpl".to_string(),
             direction: VisaMatchDirection::Forward,
             requesting_node: "fd5a::1".to_string(),
+            path: Some(vec!["fd5a::1".to_string(), "fd5a::4".to_string()]),
             source_addr: Some("fd5a::2".to_string()),
             dest_addr: Some("fd5a::3".to_string()),
             source_port: Some(80),
@@ -447,6 +451,7 @@ mod tests {
             serde_json::from_str(&serde_json::to_string(&vd).unwrap()).unwrap();
         assert_eq!(v["expires"].as_i64().unwrap(), 9000);
         assert_eq!(v["created"].as_i64().unwrap(), 1000);
+        assert_eq!(v["path"], serde_json::json!(["fd5a::1", "fd5a::4"]));
     }
 
     #[test]
@@ -459,6 +464,7 @@ mod tests {
             "session_key": {"format": "ZprKF01", "ingress_key": "AAEC", "egress_key": "AAEC"}
         }"#;
         let vd: VisaDescriptor = serde_json::from_str(json).unwrap();
+        assert!(vd.path.is_none());
         assert_eq!(
             vd.expires,
             SystemTime::UNIX_EPOCH + std::time::Duration::from_secs(9000)

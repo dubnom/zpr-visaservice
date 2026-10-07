@@ -43,7 +43,10 @@
       {"uid": "lin.wei", "name": "Lin Wei", "email": "lin.wei@greatlakes.example", "department": "Shenzhen Engineering", "title": "Embedded Engineer", "location": "Shenzhen, China"},
       {"uid": "chen.yu", "name": "Chen Yu", "email": "chen.yu@greatlakes.example", "department": "Shenzhen Engineering", "title": "Test Automation Engineer", "location": "Shenzhen, China"},
       {"uid": "lucia.torres", "name": "Lucia Torres", "email": "lucia.torres@greatlakes.example", "department": "Assembly", "title": "Assembly Technician", "location": "Tijuana, Mexico"},
-      {"uid": "ana.garcia", "name": "Ana Garcia", "email": "ana.garcia@greatlakes.example", "department": "Test and Quality", "title": "Quality Test Engineer", "location": "Tijuana, Mexico"}
+      {"uid": "ana.garcia", "name": "Ana Garcia", "email": "ana.garcia@greatlakes.example", "department": "Test and Quality", "title": "Quality Test Engineer", "location": "Tijuana, Mexico"},
+      {"uid": "carlos.ramirez", "name": "Carlos Ramirez", "email": "carlos.ramirez@greatlakes.example", "department": "Assembly", "title": "Assembly Technician", "location": "Tijuana, Mexico"},
+      {"uid": "marisol.vega", "name": "Marisol Vega", "email": "marisol.vega@greatlakes.example", "department": "Test and Quality", "title": "Quality Test Analyst", "location": "Tijuana, Mexico"},
+      {"uid": "oscar.navarro", "name": "Oscar Navarro", "email": "oscar.navarro@greatlakes.example", "department": "Assembly", "title": "Production Specialist", "location": "Tijuana, Mexico"}
     ],
     "groups": [
       {"name": "HQCustomerSupport", "members": ["maya.brooks"]},
@@ -52,8 +55,8 @@
       {"name": "HQShipping", "members": ["harper.jones"]},
       {"name": "HQReceiving", "members": ["devin.brooks"]},
       {"name": "ShenzhenEngineering", "members": ["lin.wei", "chen.yu"]},
-      {"name": "TijuanaAssembly", "members": ["lucia.torres"]},
-      {"name": "TijuanaTest", "members": ["ana.garcia"]}
+      {"name": "TijuanaAssembly", "members": ["lucia.torres", "carlos.ramirez", "oscar.navarro"]},
+      {"name": "TijuanaTest", "members": ["ana.garcia", "marisol.vega"]}
     ]
   },
   "machine_owners": {
@@ -65,7 +68,10 @@
     "machine-06": ["lin.wei"],
     "machine-07": ["lucia.torres"],
     "machine-08": ["ana.garcia"],
-    "machine-09": ["chen.yu"]
+    "machine-09": ["chen.yu"],
+    "machine-10": ["carlos.ramirez"],
+    "machine-11": ["marisol.vega"],
+    "machine-12": ["oscar.navarro"]
   },
   "policy_config": "organizations/great-lakes/policy-demo.zplc",
   "policy_catalog": "organizations/great-lakes/demo-policy-catalog.json",

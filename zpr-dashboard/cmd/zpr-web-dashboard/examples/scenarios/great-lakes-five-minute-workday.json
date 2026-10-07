@@ -3,7 +3,7 @@
   "organization_id": "great-lakes",
   "folder": "Workday",
   "name": "Great Lakes: five-minute workday",
-  "description": "Bring all nine employee computers online and log in across Milwaukee, Shenzhen, and Tijuana. Resolve the workday services through ZPR DNS, run finance, operations, and telemetry requests with deliberate cross-service denial probes, and leave workload logs for review. Seven 30-second lulls separate eight active work blocks; startup and cleanup bring the full-day simulation to about five minutes.",
+  "description": "Bring twelve employee laptops online across Milwaukee, Shenzhen, and Tijuana. Three Tijuana laptops join during the day and run short, intermittent work bursts. Resolve workday services through ZPR DNS, run finance, operations, and telemetry requests with deliberate cross-service denial probes, and leave workload logs for review.",
   "parallel": true,
   "steps": [
     {"id":"machine-01-start","action":"start_machine","machine":"machine-01"},
@@ -33,6 +33,15 @@
     {"id":"machine-09-start","action":"start_machine","machine":"machine-09"},
     {"id":"machine-09-controller","after":["machine-09-start"],"action":"wait_controller","machine":"machine-09"},
     {"id":"machine-09-login","after":["machine-09-controller"],"action":"login","machine":"machine-09","user":"chen.yu"},
+    {"id":"machine-10-start","after":["machine-09-login"],"action":"start_machine","machine":"machine-10"},
+    {"id":"machine-10-controller","after":["machine-10-start"],"action":"wait_controller","machine":"machine-10"},
+    {"id":"machine-10-login","after":["machine-10-controller"],"action":"login","machine":"machine-10","user":"carlos.ramirez"},
+    {"id":"machine-11-start","after":["machine-10-login"],"action":"start_machine","machine":"machine-11"},
+    {"id":"machine-11-controller","after":["machine-11-start"],"action":"wait_controller","machine":"machine-11"},
+    {"id":"machine-11-login","after":["machine-11-controller"],"action":"login","machine":"machine-11","user":"marisol.vega"},
+    {"id":"machine-12-start","after":["machine-11-login"],"action":"start_machine","machine":"machine-12"},
+    {"id":"machine-12-controller","after":["machine-12-start"],"action":"wait_controller","machine":"machine-12"},
+    {"id":"machine-12-login","after":["machine-12-controller"],"action":"login","machine":"machine-12","user":"oscar.navarro"},
 
     {"id":"echo-select","after":["machine-02-login"],"action":"select_workloads","machine":"machine-02","workloads":["echo-service"]},
     {"id":"echo-start","after":["echo-select"],"action":"start_workload","machine":"machine-02","component":"echo-service"},
@@ -67,6 +76,8 @@
     {"id":"finance-request-07","after":["finance-window-06"],"action":"request_test_service","machine":"machine-03","component":"finance-client","target":"echo-service"},
     {"id":"finance-window-07","after":["finance-request-07"],"action":"delay","machine":"machine-03","timeout_seconds":30},
     {"id":"finance-request-08","after":["finance-window-07"],"action":"request_test_service","machine":"machine-03","component":"finance-client","target":"echo-service"},
+    {"id":"finance-release-workload","after":["finance-request-08"],"action":"stop_workload","machine":"machine-03","component":"finance-client"},
+    {"id":"finance-release-session","after":["finance-release-workload"],"action":"logout","machine":"machine-03"},
 
     {"id":"operations-request-01","after":["operations-dns"],"action":"request_test_service","machine":"machine-04","component":"operations-client","target":"metrics-service"},
     {"id":"operations-window-01","after":["operations-request-01"],"action":"delay","machine":"machine-04","timeout_seconds":30},
@@ -84,6 +95,8 @@
     {"id":"operations-request-07","after":["operations-window-06"],"action":"request_test_service","machine":"machine-04","component":"operations-client","target":"metrics-service"},
     {"id":"operations-window-07","after":["operations-request-07"],"action":"delay","machine":"machine-04","timeout_seconds":30},
     {"id":"operations-request-08","after":["operations-window-07"],"action":"request_test_service","machine":"machine-04","component":"operations-client","target":"metrics-service"},
+    {"id":"operations-release-workload","after":["operations-request-08"],"action":"stop_workload","machine":"machine-04","component":"operations-client"},
+    {"id":"operations-release-session","after":["operations-release-workload"],"action":"logout","machine":"machine-04"},
 
     {"id":"telemetry-request-01","after":["telemetry-dns"],"action":"request_test_service","machine":"machine-06","component":"telemetry-client","target":"metrics-service"},
     {"id":"telemetry-window-01","after":["telemetry-request-01"],"action":"delay","machine":"machine-06","timeout_seconds":30},
@@ -100,7 +113,30 @@
     {"id":"telemetry-window-06","after":["telemetry-request-06"],"action":"delay","machine":"machine-06","timeout_seconds":30},
     {"id":"telemetry-request-07","after":["telemetry-window-06"],"action":"request_test_service","machine":"machine-06","component":"telemetry-client","target":"metrics-service"},
     {"id":"telemetry-window-07","after":["telemetry-request-07"],"action":"delay","machine":"machine-06","timeout_seconds":30},
-    {"id":"telemetry-request-08","after":["telemetry-window-07"],"action":"request_test_service","machine":"machine-06","component":"telemetry-client","target":"metrics-service"}
+    {"id":"telemetry-request-08","after":["telemetry-window-07"],"action":"request_test_service","machine":"machine-06","component":"telemetry-client","target":"metrics-service"},
+    {"id":"telemetry-release-workload","after":["telemetry-request-08"],"action":"stop_workload","machine":"machine-06","component":"telemetry-client"},
+    {"id":"telemetry-release-session","after":["telemetry-release-workload"],"action":"logout","machine":"machine-06"},
+
+    {"id":"tijuana-assembly-select-01","after":["operations-release-session","machine-10-login"],"action":"select_workloads","machine":"machine-10","workloads":["operations-client"]},
+    {"id":"tijuana-assembly-start-01","after":["tijuana-assembly-select-01"],"action":"start_workload","machine":"machine-10","component":"operations-client"},
+    {"id":"tijuana-assembly-request-01","after":["tijuana-assembly-start-01","metrics-ready"],"action":"request_test_service","machine":"machine-10","component":"operations-client","target":"metrics-service"},
+    {"id":"tijuana-assembly-pause-01","after":["tijuana-assembly-request-01"],"action":"delay","machine":"machine-10","timeout_seconds":15},
+    {"id":"tijuana-assembly-request-02","after":["tijuana-assembly-pause-01"],"action":"request_test_service","machine":"machine-10","component":"operations-client","target":"metrics-service"},
+    {"id":"tijuana-assembly-stop-01","after":["tijuana-assembly-request-02"],"action":"stop_workload","machine":"machine-10","component":"operations-client"},
+
+    {"id":"tijuana-test-select-01","after":["telemetry-release-session","machine-11-login"],"action":"select_workloads","machine":"machine-11","workloads":["telemetry-client"]},
+    {"id":"tijuana-test-start-01","after":["tijuana-test-select-01"],"action":"start_workload","machine":"machine-11","component":"telemetry-client"},
+    {"id":"tijuana-test-request-01","after":["tijuana-test-start-01","metrics-ready"],"action":"request_test_service","machine":"machine-11","component":"telemetry-client","target":"metrics-service"},
+    {"id":"tijuana-test-pause-01","after":["tijuana-test-request-01"],"action":"delay","machine":"machine-11","timeout_seconds":15},
+    {"id":"tijuana-test-request-02","after":["tijuana-test-pause-01"],"action":"request_test_service","machine":"machine-11","component":"telemetry-client","target":"metrics-service"},
+    {"id":"tijuana-test-stop-01","after":["tijuana-test-request-02"],"action":"stop_workload","machine":"machine-11","component":"telemetry-client"},
+
+    {"id":"tijuana-production-select-01","after":["finance-release-session","machine-12-login"],"action":"select_workloads","machine":"machine-12","workloads":["finance-client"]},
+    {"id":"tijuana-production-start-01","after":["tijuana-production-select-01"],"action":"start_workload","machine":"machine-12","component":"finance-client"},
+    {"id":"tijuana-production-request-01","after":["tijuana-production-start-01","echo-ready"],"action":"request_test_service","machine":"machine-12","component":"finance-client","target":"echo-service"},
+    {"id":"tijuana-production-pause-01","after":["tijuana-production-request-01"],"action":"delay","machine":"machine-12","timeout_seconds":15},
+    {"id":"tijuana-production-request-02","after":["tijuana-production-pause-01"],"action":"request_test_service","machine":"machine-12","component":"finance-client","target":"echo-service"},
+    {"id":"tijuana-production-stop-01","after":["tijuana-production-request-02"],"action":"stop_workload","machine":"machine-12","component":"finance-client"}
   ],
   "cleanup": [
     {"action":"stop_test_service","machine":"machine-02","component":"echo-service"},
@@ -108,6 +144,9 @@
     {"action":"stop_workload","machine":"machine-03","component":"finance-client"},
     {"action":"stop_workload","machine":"machine-04","component":"operations-client"},
     {"action":"stop_workload","machine":"machine-06","component":"telemetry-client"},
+    {"action":"stop_workload","machine":"machine-10","component":"operations-client"},
+    {"action":"stop_workload","machine":"machine-11","component":"telemetry-client"},
+    {"action":"stop_workload","machine":"machine-12","component":"finance-client"},
     {"action":"stop_workload","machine":"machine-02","component":"echo-service"},
     {"action":"stop_workload","machine":"machine-05","component":"metrics-service"},
     {"action":"logout","machine":"machine-01"},
@@ -119,6 +158,9 @@
     {"action":"logout","machine":"machine-07"},
     {"action":"logout","machine":"machine-08"},
     {"action":"logout","machine":"machine-09"},
+    {"action":"logout","machine":"machine-10"},
+    {"action":"logout","machine":"machine-11"},
+    {"action":"logout","machine":"machine-12"},
     {"action":"stop_machine","machine":"machine-01"},
     {"action":"stop_machine","machine":"machine-02"},
     {"action":"stop_machine","machine":"machine-03"},
@@ -127,6 +169,9 @@
     {"action":"stop_machine","machine":"machine-06"},
     {"action":"stop_machine","machine":"machine-07"},
     {"action":"stop_machine","machine":"machine-08"},
-    {"action":"stop_machine","machine":"machine-09"}
+    {"action":"stop_machine","machine":"machine-09"},
+    {"action":"stop_machine","machine":"machine-10"},
+    {"action":"stop_machine","machine":"machine-11"},
+    {"action":"stop_machine","machine":"machine-12"}
   ]
 }
