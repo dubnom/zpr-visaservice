@@ -157,3 +157,73 @@ Running" orange should be a non-indicated color like blue.
 
 ### Workers
 - [x] Add the wordwrap button like the Adapter Logs.
+
+### Machine/adapter provisioning
+
+#### What happens today
+
+The local Simulator is a fixed-fleet test fixture, not a general machine
+onboarding flow. It defines 20 machine profiles and creates a machine
+container on demand when a scenario starts one. Each container runs its own
+machine controller and PH adapter, with a machine-specific identity and a
+dynamic ZPR address.
+
+At startup, the stack prepares credentials for the fleet. It generates
+per-machine mTLS client certificates for the Simulator control channel, then
+copies each machine's pre-generated ZPR bootstrap RSA private key into the
+workload directory. The container receives only its matching control
+certificate and bootstrap key. The bootstrap public keys and machine
+identities are already represented in local policy/configuration; policy
+names each machine by its adapter certificate CN and enumerates the machines
+allowed to use the Simulator control service. Starting a container is
+therefore not the same as enrolling an unknown device: its identity and
+authorization were provisioned ahead of time.
+
+These are two separate credentials: the per-machine mTLS certificate
+authenticates the machine controller to the Simulator control service, while
+the ZPR bootstrap key authenticates its adapter to the ZPR network. The
+pre-generated keys, named fleet, and enumerated rules are appropriate for a
+repeatable local test rig, but should not become the production onboarding
+pattern. See the stack setup in
+[`dashboard-stack.sh`](./zpr-visaservice/zpr-dashboard/scripts/dashboard-stack.sh),
+the
+[Simulator stack notes](./zpr-visaservice/zpr-dashboard/README.md), and the
+[example machine policy](./zpr-visaservice/zpr-dashboard/cmd/zpr-web-dashboard/examples/policy-layers/platform.zpl).
+
+#### What we should do instead
+
+For real machines, use an explicit, auditable enrollment flow instead of
+pre-provisioning a permanent bootstrap key and policy entry for every device:
+
+1. Install a generic adapter image. On first enrollment, the device generates
+   its own private key locally (preferably non-exportable in a TPM or other
+   hardware-backed store); images and fleet manifests must not contain
+   per-device private keys.
+2. An administrator or device-management system authorizes enrollment with a
+   one-time, short-lived credential bound to the intended asset. The adapter
+   proves possession of its newly generated key over the authenticated
+   enrollment channel. Reject expired, reused, or mismatched enrollment
+   attempts.
+3. An enrollment/authentication service verifies the device against the
+   organization’s inventory and issues or activates a device identity bound
+   to that key. It returns trusted, sourced device attributes (such as
+   organization, owner, and posture) rather than treating a claimed adapter
+   name as authorization.
+4. The adapter authenticates with that identity, receives its ZPR address,
+   and is admitted by normal policy evaluation. Write policy against
+   trustworthy attributes and least-privilege roles, not a hand-maintained
+   allow rule for every machine. Identity establishes *which device* joined;
+   policy still decides *what it may do*.
+5. Support credential renewal, immediate revocation, retirement, and
+   replacement-key recovery. Keep an audit trail of who authorized enrollment
+   and when; fail closed if enrollment or required attribute sources cannot
+   validate the device.
+
+Static bootstrap trust should remain limited to the small set of services
+needed to bring up authentication and the network. It should not silently
+expand into a long-lived exception for every endpoint. The operator UI should
+show enrollment as a lifecycle (pending, active, expired/revoked), with
+identity and trusted attributes visible for review; it should not mint or
+display device private keys. Simulator can exercise this contract, but its
+machine-control mTLS credentials must remain distinct from production adapter
+identity and authorization.
