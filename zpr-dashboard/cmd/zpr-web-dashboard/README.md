@@ -60,6 +60,14 @@ to change focus. Focus follows refreshed snapshots. The status line explicitly
 reports unavailable visa inventory or route data; no shortest path is inferred.
 For same-node visas without a stored multihop path, matching unambiguous docking
 nodes establish the local route.
+Right-click an adapter or service's visa-count badge to open its complete active
+visa inventory in the details panel, including endpoints, direction, expiry,
+policy and reported route. Clicking/tapping the badge or pressing Enter/Space
+while it is focused opens the same view. Inventory follows refreshed snapshots,
+excludes expired and duplicate visas, and uses the same matching rules as the
+count. Missing inventory is explicitly unavailable, never replaced with recent
+decisions or treated as zero. Right-clicking the component itself still toggles
+route highlighting.
 Connector endpoints intersect the actual SVG glyph boundaries, including rounded
 node/service rectangles, circular adapters, visa diamonds, gateway polygons, and
 cloud paths. Visible strokes, network clearance, and clickable hit areas use the
@@ -77,6 +85,9 @@ changed evidence, a newer reported denial, or a resolved alert that recurs.
 Acknowledgements last for the current page session. Dismissing high findings
 also clears their navigation highlight; filters do not hide new alerts from
 navigation.
+
+For exact finding triggers, generated indicators/evidence, severities, and
+hard-coded tuning points, see the [Security Review Checks guide](../../SECURITY_REVIEW_GUIDE.md).
 
 Adapter Logs keeps its controls alongside the section label. Each panel header
 shows the configured adapter name in the title font, with a chevron beside it
@@ -150,10 +161,18 @@ live process. They remain available with **Running only** disabled.
 ```
 
 This inventory covers configured adapter and controller log sources. Simulator
-Workload logs covers assigned application/service event files, while the
+Workers covers assigned application/service event files, while the
 optional OpenObserve collector covers Visa Service counters, denials, and
 process logs. The separate Diagnostics view covers ZPR nodes and configured
 Visa Service/trusted-service sources without reading Simulator workloads.
+
+For the bundled Compose-backed organizations, `dashboard-stack.sh` refreshes
+the Adapter Logs inventory from the active organization's mounted runtime log
+directory and runs its collector against that profile's read-only Visa Service
+Admin API key. A single loopback-only OpenObserve store is shared, with every
+record tagged by `zpr.organization.id`; collectors are switched with the active
+organization. Control-Service queries are restricted to the active profile ID
+and require a separate read-only OpenObserve query credential.
 
 A source selects an absolute regular-file path, a configured container's log
 stream, or a container plus an absolute `path`. Browser requests cannot choose
@@ -261,17 +280,49 @@ Simulator Activity reads the current Control Room feed while its page is active.
 It polls every four seconds and shows request, approval, denial, and visa totals
 alongside sortable recent-visa and denial tables. Manual Refresh is available
 beside the live stream status. This is a bounded activity view, not a durable
-audit archive. The Agents page calls the fleet **Devices** and filters by device
-type.
+audit archive. **Workers** merges the former Agents/device inventory and Workload
+Logs in a read-only view at `/machine-logs.html`; old `/agents.html` links redirect
+there. Expand **Device and workloads** for owner, posture, container/controller
+state, authenticated user and selected workload identities/states. Search,
+device-type and running-only filters, source selection, word wrap, pause/follow,
+and maximize remain available. Lifecycle, workload assignment and login/logout
+controls are no longer on this page; scenarios manage them. Missing telemetry is
+shown as unavailable rather than inferred from log presence.
 
 Control Room groups Adapters, Actors, Services, Visas, Denials, and DNS in a
 counted Status tab row. Its summary metrics appear on Map only. Map Fit centers
 the rendered topology with padding while preserving glyph proportions; retained
 components animate when layout bounds move unless reduced motion is enabled.
+Count badges overlap the upper-right glyph boundary, with Visa Service badges
+centered on the diamond's upper-right edge. Status tables have bounded vertical
+scrolling and sticky sortable headings so large inventories remain usable.
+
+Simulator navigation is ordered Organizations, Scenarios, Trusted Sources,
+Activity, then Workers; this order is retained across page switches. The Simulator
+root and brand link open Organizations.
 
 Simulator Scenarios groups cards by folder and places entries without a folder
 under **Unfiled**. **Clear** is available only after a run reaches a terminal
 state; it clears run history, not the scenario definition or machine logs.
+Running and cleanup states use saturated blue; failures use red. When a run
+fails, the progress badge and summary retain the original failed run step even
+after cleanup advances the step counter. Cleanup-only failures show their own
+step instead.
+
+Load Lab places both scenario machines on the **Load Test Bench** node.
+For Docker multinode profiles with explicit machine-owner mappings, each
+machine's first configured owner must have a `location` matching exactly one
+runtime node. Keep the owner's LDAP `l` attribute consistent with that profile
+location. Single-node profiles without owner mappings (such as Northstar) use
+the manifest owner and dock all machines to their sole runtime node, including
+machines whose physical location is remote. Multi-node profiles require explicit
+owner mappings; scenarios validate placement before any steps run.
+
+Machine startup refreshes the machine-control proxy if Simulator's container
+address has changed. Cleanup skips workloads on stopped machines and reports
+offline controllers immediately instead of queueing commands that cannot run.
+Traffic timeouts and policy denials still fail scenarios; these checks are not
+relaxed by lifecycle recovery.
 
 ## Security Review
 
@@ -591,8 +642,11 @@ When Claude is configured, the UI discloses that submitting a question sends
 the current policy and chat history to Anthropic. The key stays server-side;
 assistant responses are suggestions and are never applied automatically.
 Run this from the dashboard module directory; the script prompts for the key
-without echoing it and restarts only Control-Service. It does not store the key
-for future restarts, so run it again if the stack is restarted. Do not put the
+without echoing it and recreates only Control-Service. Docker inherits
+`ANTHROPIC_API_KEY` from the script environment without placing its value in
+command-line arguments. The key remains in that container's environment across
+ordinary container restarts, but the script does not save it to a file; run it
+again after the stack recreates the container. Do not put the
 key in browser storage, the Policy
 Repository, shell history, or this repository. The Policy page offers a
 session-only on/off control, the server default model or Haiku 4.5, and

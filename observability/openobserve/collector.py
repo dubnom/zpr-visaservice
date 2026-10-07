@@ -140,7 +140,12 @@ class Collector:
         self.admin_context = ssl.create_default_context(cafile=str(self.admin_ca))
         self.admin_context.check_hostname = False
         self.otlp_auth = base64.b64encode(f"{self.email}:{self.ingestion_token}".encode()).decode()
-        self.resource = organization_resource(self.zpr_organization_id)
+        self.resource = organization_resource(
+            self.zpr_organization_id,
+            "zpr-visaservice",
+            os.environ.get("ZPR_VS_INSTANCE_ID", f"{self.zpr_organization_id}-vs"),
+            "visa-service",
+        )
         self.last_deny_ms = int(time.time() * 1000) - 5 * 60 * 1000
         self.seen_denies: set[tuple[object, ...]] = set()
         self.pending_denies: set[tuple[object, ...]] = set()

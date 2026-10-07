@@ -41,6 +41,7 @@ sn: Operator
 mail: load.client@loadlab.example
 ou: Performance
 title: Traffic Generator Operator
+l: Load Test Bench
 
 dn: uid=load.service,ou=Performance,ou=People,dc=loadlab,dc=test
 objectClass: inetOrgPerson
@@ -50,6 +51,7 @@ sn: Operator
 mail: load.service@loadlab.example
 ou: Performance
 title: Service Host Operator
+l: Load Test Bench
 
 dn: ou=Roles,dc=loadlab,dc=test
 objectClass: top

@@ -18,8 +18,14 @@
 .adapter-log-column > header > h2 { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .adapter-log-column .machine-log-panel-actions { gap: 4px; }
 .adapter-log-column .machine-log-panel-actions button { padding: 4px; }
-.adapter-log-columns.logs-nowrap .machine-log-output,
-.adapter-log-columns.logs-nowrap .machine-log-output pre { white-space: pre; overflow-wrap: normal; }
+.logs-nowrap .machine-log-output,
+.logs-nowrap .machine-log-output pre { white-space: pre; overflow-wrap: normal; }
+.worker-details { padding: 10px 12px; border-bottom: 1px solid var(--line); color: var(--ink); font: 11px/1.5 var(--mono); }
+.worker-details summary { cursor: pointer; }
+.worker-details p { margin: 6px 0; white-space: pre-wrap; overflow-wrap: anywhere; }
+.workers-empty { color: var(--muted); font: 12px var(--mono); }
+.worker-type-filter select { max-width: 140px; padding: 5px; border: 1px solid var(--line); background: var(--panel); color: var(--ink); }
+.machine-logs-actions { flex-wrap: wrap; }
 .adapter-logs-toolbar > span { margin-right: auto; }
 .adapter-logs-toolbar #machine-logs-pause { min-height: 32px; }
 .adapter-running-filter { display: inline-flex; min-height: 32px; align-items: center; gap: 5px; padding: 0 5px; color: var(--ink-soft) !important; white-space: nowrap; }

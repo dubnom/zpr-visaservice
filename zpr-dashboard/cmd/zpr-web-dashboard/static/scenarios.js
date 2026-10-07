@@ -107,16 +107,22 @@ function renderScenarioRun(run) {
   stateLabel.textContent = String(scenarioRun.state || "idle");
   const progress = document.createElement("span");
   progress.className = "scenario-progress";
-  progress.textContent = `${scenarioRun.current_step || 0} / ${scenarioRun.total_steps || 0}`;
+  const failures = (scenarioRun.steps || []).filter(step => step.status === "failed");
+  const firstFailure = failures.find(step => step.phase !== "cleanup") || failures[0];
+  const failedNumber = firstFailure?.number;
+  const showFailure = firstFailure && (scenarioRun.state === "failed" || scenarioRun.state === "cleaning");
+  progress.textContent = showFailure
+    ? `Failed step ${failedNumber} / ${scenarioRun.total_steps || 0}${scenarioRun.state === "cleaning" ? ` · Cleanup ${scenarioRun.current_step || 0} / ${scenarioRun.total_steps || 0}` : ""}`
+    : `${scenarioRun.current_step || 0} / ${scenarioRun.total_steps || 0}`;
   progress.hidden = !scenarioRun.scenario_id || !scenarioRun.total_steps;
   state.replaceChildren(stateLabel, progress);
   state.className = `scenario-state ${scenarioEscape(scenarioRun.state || "idle")}`;
   if (busy && previousProgress !== JSON.stringify([scenarioRun.scenario_id, scenarioRun.state, scenarioRun.current_step, scenarioRun.results])
     && !window.matchMedia("(prefers-reduced-motion: reduce)").matches) {
     state.animate([
-      { opacity: 0.65, transform: "scale(1)", boxShadow: "inset 0 0 0 1px #c28b12" },
-      { opacity: 1, transform: "scale(1.05)", boxShadow: "0 0 0 3px #f4c44766, inset 0 0 0 1px #c28b12", offset: 0.45 },
-      { opacity: 1, transform: "scale(1)", boxShadow: "inset 0 0 0 1px #c28b12" },
+      { opacity: 0.8, transform: "scale(1)", boxShadow: "inset 0 0 0 1px #1251a0" },
+      { opacity: 1, transform: "scale(1.05)", boxShadow: "0 0 0 3px #2473d866, inset 0 0 0 1px #1251a0", offset: 0.45 },
+      { opacity: 1, transform: "scale(1)", boxShadow: "inset 0 0 0 1px #1251a0" },
     ], { duration: 750, easing: "ease-in-out" });
   }
   document.getElementById("scenario-cancel").hidden = !busy;
@@ -129,8 +135,11 @@ function renderScenarioRun(run) {
   } else {
     const redundantCancellation = scenarioRun.state === "cancelled" && /^context canceled\.?$/i.test(String(scenarioRun.error || "").trim());
     const error = redundantCancellation ? "" : scenarioRun.error;
-    summary.innerHTML = error ? `<p class="scenario-run-error">${scenarioEscape(error)}</p>` : "";
-    summary.hidden = !error;
+    const failureDetail = showFailure
+      ? `Step ${failedNumber}: ${String(firstFailure.action || "unknown action").replaceAll("_", " ")}${firstFailure.machine ? ` on ${firstFailure.machine}` : ""}${firstFailure.error ? ` — ${firstFailure.error}` : ""}`
+      : "";
+    summary.innerHTML = `${failureDetail ? `<p class="scenario-run-error">${scenarioEscape(failureDetail)}</p>` : ""}${error && error !== firstFailure?.error ? `<p class="scenario-run-error">${scenarioEscape(error)}</p>` : ""}`;
+    summary.hidden = !error && !failureDetail;
   }
   const results = scenarioRun.steps || [];
   const scenario = scenarioRun.scenario || listedScenario?.published_scenario || listedScenario;

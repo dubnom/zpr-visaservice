@@ -194,6 +194,7 @@ rollback() {
     trap - EXIT HUP INT TERM
     if [ "$result" -ne 0 ] && [ "$changed" = yes ]; then
         echo "Activation failed; restoring previous rig context"
+        "$script_dir/dashboard-stack.sh" stop-observability-collector || true
         stop_runtime "$organization" || true
         if [ "$had_request" = yes ]; then cp "$backup" "$request_file"; else rm -f "$request_file"; fi
         previous_generation=startup
@@ -225,6 +226,9 @@ rollback() {
                     "$script_dir/dashboard-stack.sh" restart-control-service || true
             fi
         fi
+        if [ "$previous_driver" = docker-multinode ]; then
+            "$script_dir/dashboard-stack.sh" start-observability-collector "$previous_organization" || true
+        fi
     fi
     rm -f "$backup"
     exit "$result"
@@ -236,6 +240,7 @@ jq -n --arg organization_id "$organization" --arg generation "$generation" --arg
 mv "$request_temp" "$request_file"
 changed=yes
 report_activation_status "Stopping previous runtime"
+"$script_dir/dashboard-stack.sh" stop-observability-collector
 stop_runtime "$previous_organization"
 if [ "$action" = "restore-base" ]; then
     report_activation_status "Backing up and restoring organization base state"
@@ -306,10 +311,19 @@ if [ "$organization_driver" = docker-multinode ]; then
     ZPR_ADMIN_CA_FILE="$multinode_dir/zpr-conf/include/admin-tls-cert.pem" \
     ZPR_ADMIN_KEY_FILE="$multinode_runtime/bob/web-monitor.key" \
         "$script_dir/dashboard-stack.sh" restart-control-service
-    control_snapshot=$(control_room_curl --silent --show-error --max-time 15 "$control_room_url/api/snapshot" || true)
-    if ! printf '%s' "$control_snapshot" | jq -e '.api_status=="connected" and any(.actors[]; .node)' >/dev/null 2>&1; then
+    control_snapshot=
+    control_attempt=0
+    while [ "$control_attempt" -lt 60 ]; do
+        control_snapshot=$(control_room_curl --silent --show-error --max-time 15 "$control_room_url/api/snapshot" || true)
+        if printf '%s' "$control_snapshot" | jq -e '.api_status=="connected" and (.errors|length)==0' >/dev/null 2>&1; then
+            break
+        fi
+        control_attempt=$((control_attempt + 1))
+        sleep 1
+    done
+    if [ "$control_attempt" -ge 60 ]; then
         control_summary=$(printf '%s' "$control_snapshot" | jq -c '{api_status,errors}' 2>/dev/null || printf '%s' "$control_snapshot")
-        echo "Control Service did not connect to the Great Lakes Visa Service: $control_summary" >&2
+        echo "Control Service did not report a healthy snapshot for $organization: $control_summary" >&2
         exit 1
     fi
 else
@@ -318,6 +332,10 @@ else
     ZPR_ASSERTION_LDAP_BIND_DN="$organization_bind_dn" \
         "$script_dir/dashboard-stack.sh" restart-control-service
     control_room_curl -fsS --max-time 15 "$control_room_url/api/assertions/source" >/dev/null
+fi
+if [ "$organization_driver" = docker-multinode ]; then
+    report_activation_status "Starting organization observability collector"
+    "$script_dir/dashboard-stack.sh" start-observability-collector "$organization"
 fi
 report_activation_status "Verifying policy, assertions, LDAP, DNS, and logs"
 policy_settings=$(policy_service_curl --silent --show-error --max-time 10 \

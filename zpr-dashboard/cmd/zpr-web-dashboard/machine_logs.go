@@ -16,10 +16,39 @@ type machineLogSource struct {
 }
 
 type machineLogView struct {
-	Machine simulatorMachine   `json:"machine"`
-	State   string             `json:"state"`
-	User    string             `json:"user,omitempty"`
-	Sources []machineLogSource `json:"sources"`
+	Machine    simulatorMachine        `json:"machine"`
+	State      string                  `json:"state"`
+	User       string                  `json:"user,omitempty"`
+	Controller machineControllerStatus `json:"controller"`
+	Session    simulatorUserSession    `json:"session"`
+	Workloads  []workerWorkload        `json:"workloads"`
+	Sources    []machineLogSource      `json:"sources"`
+}
+
+type workerWorkload struct {
+	Name    string `json:"name"`
+	Kind    string `json:"kind"`
+	Agent   string `json:"agent"`
+	Address string `json:"address"`
+	State   string `json:"state"`
+}
+
+func workerWorkloads(components []simulatorComponent, selected []string, states map[string]string) []workerWorkload {
+	workloads := make([]workerWorkload, 0, len(selected))
+	for _, name := range selected {
+		for _, component := range components {
+			if component.Name != name {
+				continue
+			}
+			state := states[name]
+			if state == "" {
+				state = "unknown"
+			}
+			workloads = append(workloads, workerWorkload{Name: name, Kind: component.Kind, Agent: component.Agent, Address: component.Address, State: state})
+			break
+		}
+	}
+	return workloads
 }
 
 var machineLogSecrets = regexp.MustCompile(`(?i)(\bBearer\s+[A-Za-z0-9._~+/=-]+|\bzpr_vsapi\.[0-9a-f]{8}\.[A-Za-z0-9_-]+|(?:authorization|x-api-key|password|secret|token)["']?\s*[:=]\s*["']?(?:bearer\s+)?[^\s,;"}]+)`)
@@ -99,13 +128,21 @@ func handleMachineLogs(w http.ResponseWriter, r *http.Request, category string) 
 	}
 	states := simulatorMachineContainerStates(ids)
 	sessions := simulatorSessions.snapshot(ids)
+	controllers := simulatorControllers.snapshot(ids, time.Now())
+	componentStates := simulatorRuntimeComponentStates(manifest, nil, simulatorSelectedAgentLinkStates(manifest, sessions))
 	views := make([]machineLogView, len(manifest.Machines))
 	ctx, cancel := context.WithTimeout(r.Context(), 12*time.Second)
 	defer cancel()
 	workers := make(chan struct{}, 4)
 	var wait sync.WaitGroup
 	for index, machine := range manifest.Machines {
-		views[index] = machineLogView{Machine: machine, State: states[machine.ID], User: sessions[machine.ID].User, Sources: []machineLogSource{}}
+		session := sessions[machine.ID]
+		views[index] = machineLogView{
+			Machine: machine, State: states[machine.ID], User: session.User,
+			Controller: controllers[machine.ID], Session: session,
+			Workloads: workerWorkloads(manifest.Components, session.Workloads, componentStates),
+			Sources:   []machineLogSource{},
+		}
 		if states[machine.ID] != "running" {
 			continue
 		}

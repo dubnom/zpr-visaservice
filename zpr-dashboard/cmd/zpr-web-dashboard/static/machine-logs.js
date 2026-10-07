@@ -50,7 +50,7 @@
       return { ...entry, sources };
     });
     for (const [id, cached] of sourceCache) {
-      if (!present.has(id)) retained.push({ ...cached.entry, state: "missing", sources: [...cached.sources.values()].map((source) => ({ ...source, disconnected: true })) });
+      if (!present.has(id)) retained.push({ ...cached.entry, state: "missing", controller: null, session: null, workloads: null, user: "", sources: [...cached.sources.values()].map((source) => ({ ...source, disconnected: true })) });
     }
     return retained;
   }
@@ -416,12 +416,18 @@
         sourceOptions.setAttribute("role", "radiogroup");
         sourceOptions.setAttribute("aria-label", `Log source for ${machine.id}`);
         sourceToolbar.append(sourceLabel, sourceOptions);
+        const details = document.createElement("details");
+        details.className = "worker-details";
+        const summary = document.createElement("summary");
+        summary.textContent = "Device and workloads";
+        const inventory = document.createElement("div");
+        details.append(summary, inventory);
         identity.append(name, meta);
         actions.append(status, maximizeButton);
         header.append(identity, actions);
-        panel.append(header, sourceToolbar, output);
+        panel.append(header, details, sourceToolbar, output);
         grid.append(panel);
-        card = { panel, name, meta, status, maximizeButton, output, sourceOptions, sourceViews: new Map(), selectedSource: "", sourceChoices: "", signature: "", following: true };
+        card = { panel, name, meta, status, maximizeButton, output, sourceOptions, inventory, sourceViews: new Map(), selectedSource: "", sourceChoices: "", signature: "", following: true };
         output.addEventListener("scroll", () => {
           if (output.clientHeight) card.following = output.scrollHeight - output.clientHeight - output.scrollTop <= 8;
         });
@@ -430,6 +436,22 @@
       card.name.textContent = machine.id;
       card.meta.textContent = [machine.model, machine.location, entry.user].filter(Boolean).join(" / ");
       card.status.textContent = entry.state || "missing";
+      card.inventory.replaceChildren();
+      const field = (label, value) => {
+        const row = document.createElement("p");
+        const title = document.createElement("strong");
+        title.textContent = `${label}: `;
+        row.append(title, document.createTextNode(value));
+        card.inventory.append(row);
+      };
+      field("Type", machine.type || "Not reported");
+      field("Owner", machine.owner || "Not reported");
+      field("Security posture", machine.secure == null ? "Not reported" : machine.secure ? "Secure" : "Unsecured");
+      field("Container", entry.state || "Not reported");
+      field("Controller", entry.controller ? entry.controller.connected ? "Connected" : "Offline" : "Unavailable");
+      field("Session", entry.session ? entry.session.authenticated ? `Authenticated as ${entry.session.user}` : "No authenticated user" : "Unavailable");
+      const workloads = entry.workloads;
+      field("Workloads", workloads == null ? "Unavailable" : workloads.length ? workloads.map(workload => `${workload.name} (${workload.kind || "workload"}): ${workload.state || "unknown"} · ${workload.agent || "agent not reported"} · ${workload.address || "address not reported"}`).join("\n") : "None selected");
       const sources = entry.sources || [];
       const choices = JSON.stringify(sources.map((source) => source.name));
       if (choices !== card.sourceChoices) {
@@ -477,7 +499,8 @@
         card.output.scrollTop = scrollTop;
       }
       const matches = !query || JSON.stringify(entry).toLowerCase().includes(query);
-      card.panel.hidden = !matches || (runningOnly && entry.state !== "running");
+      const type = document.getElementById("machine-type-filter").value;
+      card.panel.hidden = !matches || (runningOnly && entry.state !== "running") || (type !== "all" && machine.type !== type);
       if (!card.panel.hidden) visible++;
     }
     for (const [id, card] of cards) {
@@ -487,7 +510,17 @@
         cards.delete(id);
       }
     }
-    document.getElementById("machine-logs-count").textContent = `${visible} / ${machines.length} machines`;
+    document.getElementById("machine-logs-count").textContent = `${visible} / ${machines.length} workers`;
+    let empty = grid.querySelector(".workers-empty");
+    if (!visible) {
+      if (!empty) {
+        empty = document.createElement("p");
+        empty.className = "workers-empty";
+        empty.setAttribute("role", "status");
+        grid.append(empty);
+      }
+      empty.textContent = machines.length ? "No workers match the filters." : "No workers available.";
+    } else empty?.remove();
     if (follow) for (const card of cards.values()) {
       if (card.following && !card.panel.hidden) card.output.scrollTop = card.output.scrollHeight;
     }
@@ -552,6 +585,14 @@
     } else start();
   });
   refreshButton?.addEventListener("click", () => { clearTimeout(timer); refresh(); });
+  const wrapButton = document.getElementById(controlRoom ? "adapter-log-wrap" : "machine-logs-wrap");
+  wrapButton.setAttribute("aria-pressed", "true");
+  grid.classList.remove("logs-nowrap");
+  wrapButton.addEventListener("click", (event) => {
+    const wrapped = event.currentTarget.getAttribute("aria-pressed") !== "true";
+    event.currentTarget.setAttribute("aria-pressed", String(wrapped));
+    grid.classList.toggle("logs-nowrap", !wrapped);
+  });
   if (controlRoom) {
     document.getElementById("adapter-log-add").addEventListener("click", addAdapterColumn);
     document.getElementById("adapter-log-all").addEventListener("click", () => {
@@ -569,19 +610,11 @@
       runningOnly = event.currentTarget.checked;
       renderAdapterColumns();
     });
-    const wrapButton = document.getElementById("adapter-log-wrap");
-    wrapButton.setAttribute("aria-pressed", "true");
-    grid.classList.remove("logs-nowrap");
-    wrapButton.addEventListener("click", (event) => {
-      const wrapped = event.currentTarget.getAttribute("aria-pressed") !== "true";
-      event.currentTarget.setAttribute("aria-pressed", String(wrapped));
-      grid.classList.toggle("logs-nowrap", !wrapped);
-    });
     for (const button of document.querySelectorAll("[data-adapter-log-type]")) {
       button.addEventListener("click", () => switchAdapterLogType(button.dataset.adapterLogType));
     }
   }
-  if (!controlRoom) for (const id of ["machine-logs-search", "machine-logs-running"]) document.getElementById(id).addEventListener("input", render);
+  if (!controlRoom) for (const id of ["machine-logs-search", "machine-logs-running", "machine-type-filter"]) document.getElementById(id).addEventListener("input", render);
   document.getElementById("machine-logs-follow")?.addEventListener("input", (event) => {
     if (event.target.checked) for (const card of cards.values()) {
       card.following = true;

@@ -177,7 +177,7 @@ func TestDiagnosticsProviderUsesServerCredentialsBoundsAndRedacts(t *testing.T) 
 		if err := json.NewDecoder(r.Body).Decode(&query); err != nil {
 			t.Error(err)
 		}
-		if !strings.Contains(query.Query.SQL, "service_name = 'zpr-node'") || !strings.Contains(query.Query.SQL, "service_instance_id = 'node-a'") || query.Query.Size > maxDiagnosticsMetrics {
+		if !strings.Contains(query.Query.SQL, "zpr_organization_id = 'northstar'") || !strings.Contains(query.Query.SQL, "service_name = 'zpr-node'") || !strings.Contains(query.Query.SQL, "service_instance_id = 'node-a'") || query.Query.Size > maxDiagnosticsMetrics {
 			t.Errorf("unscoped/unbounded query: %+v", query.Query)
 		}
 		w.Header().Set("Content-Type", "application/json")
@@ -194,7 +194,7 @@ func TestDiagnosticsProviderUsesServerCredentialsBoundsAndRedacts(t *testing.T) 
 		}
 	}))
 	defer server.Close()
-	provider := &openObserveDiagnosticsProvider{client: server.Client(), endpoint: mustDiagnosticsURL(t, server.URL), organization: "zpr", logsStream: "logs", metricsStream: "metrics", username: "reader", token: "private-token"}
+	provider := &openObserveDiagnosticsProvider{client: server.Client(), endpoint: mustDiagnosticsURL(t, server.URL), organization: "zpr", zprOrganizationID: "northstar", logsStream: "logs", metricsStream: "metrics", username: "reader", token: "private-token"}
 	logs, metrics, err := provider.query(context.Background(), diagnosticsSource{ServiceName: "zpr-node", InstanceID: "node-a"}, 10)
 	if err != nil || requests != 2 || len(logs) != 1 || len(metrics) != 1 {
 		t.Fatalf("query logs=%+v metrics=%+v requests=%d err=%v", logs, metrics, requests, err)
@@ -224,7 +224,7 @@ func fmtDiagnosticsAttributes(metrics []diagnosticsMetric) []string {
 func TestDiagnosticsProviderRequiresPrivateTokenFile(t *testing.T) {
 	directory := t.TempDir()
 	configPath := filepath.Join(directory, "provider.json")
-	if err := os.WriteFile(configPath, []byte(`{"endpoint":"https://telemetry.example.test","organization":"zpr","logs_stream":"logs","metrics_stream":"metrics"}`), 0600); err != nil {
+	if err := os.WriteFile(configPath, []byte(`{"endpoint":"https://telemetry.example.test","organization":"zpr","zpr_organization_id":"northstar","logs_stream":"logs","metrics_stream":"metrics"}`), 0600); err != nil {
 		t.Fatal(err)
 	}
 	t.Setenv("ZPR_DIAGNOSTICS_CONFIG_FILE", configPath)
@@ -240,6 +240,27 @@ func TestDiagnosticsProviderRequiresPrivateTokenFile(t *testing.T) {
 	t.Setenv("ZPR_DIAGNOSTICS_TOKEN_FILE", tokenPath)
 	if provider, _, message := newOpenObserveDiagnosticsProvider(); provider != nil || !strings.Contains(message, "private regular file") {
 		t.Fatalf("provider=%v message=%q", provider, message)
+	}
+}
+
+func TestDiagnosticsEndpointAllowsOnlyPrivateLoggerNetworkHTTP(t *testing.T) {
+	for _, test := range []struct {
+		endpoint string
+		allowed  bool
+	}{
+		{endpoint: "http://127.0.0.1:5080", allowed: true},
+		{endpoint: "http://zpr-observability-local:5080", allowed: true},
+		{endpoint: "http://zpr-observability-local:8798", allowed: false},
+		{endpoint: "http://example.test:5080", allowed: false},
+		{endpoint: "https://telemetry.example.test:443", allowed: true},
+	} {
+		parsed, err := url.Parse(test.endpoint)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if actual := validDiagnosticsEndpoint(parsed); actual != test.allowed {
+			t.Errorf("validDiagnosticsEndpoint(%q) = %t, want %t", test.endpoint, actual, test.allowed)
+		}
 	}
 }
 

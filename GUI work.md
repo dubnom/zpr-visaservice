@@ -16,6 +16,10 @@
 - [x] Pages shouldn't have their own "REFRESH" buttons when they are part of the global refresh updates.
 - [x] Only one line between the topmost status/refresh panel and the content below.
 
+### All text editors
+- [ ] Add search and replace functionality. Put the buttons on the right side before History.
+- [ ] Add AI Assistant
+
 
 ## Control Room
 
@@ -40,6 +44,9 @@
 - [x] Hide the dark mode checkbox for now.
 - [x] The visa and buffered denies still don't pulse as far as I can tell. Are we using our expand/contract paradigm.
 - [x] Make the right-click highlight stuff work for services as well.
+- [x] Right-click on visa count should show the visas.
+- [ ] Right-click on Buffer denials should show the details.
+- [x] Move the small number indicator to overlap the top right corner of the objects. For the visa service put it overlapping the center of the upper right line. For circles upper right line and overlap it. For future shapes do the same kind of thing.
 
 ### Navigation
 - [x] Keep Map as the main view and group Adapters, Actors, Services, Visas, Denials, and DNS under horizontal Status tabs with counts.
@@ -78,6 +85,7 @@
 
 ### Status
 - [x] I noticed on the "adapters" page that even when sorted, the records moved around (though nothing changed). I think sorting only sorts on its primary field but if that field has duplicates this occurs. A solution would be to always have a secondary field (or more) that is/are automatically attached. The user has nothing to do with this but the results would be deterministic.
+- [x] Status tables need vertical scroll bars when they get big.
 
 ### Adapter Logs
 - [x] move the buttons to be next to "Adapter Logs".
@@ -99,7 +107,9 @@
 ### ZPR Config
 - [x] Adopt the same look-and-feel as the policy editor. If ZPR config is limited to one file, there is no need for Browse, or some of the File commands. Refresh Attributes is also not relevant.
 - [x] Still things to do to get the look and feel better. "Validate syntax" should act like "Analyze". There should be a gutter for errors. A Format button, a file button.
-- [x] Where are the colors? Where is the gutter? Why is the "Save Draft" not part of the file pulldown?
+- [ ] Where are the colors? Where is the gutter? Why is the "Save Draft" not part of the file pulldown? Make "File..." and Analyze use the same color and sizes of the policy editor.
+- [ ] Remove "New draft" at the bottom of the editor, and use that space for the editor.
+- [ ] Remvoe line numbers from the gutter.
 
 ### Trusted Sources
 - [x] Get rid of "Read Only"
@@ -109,10 +119,14 @@
 
 ## Simulator
 
+### Navigation
+- [x] Set order to: Organizations, Scenarios, Trusted Sources, Activity, Workers (merged Agents/Workload logs).
+
 ### Agents
 - [x] Remove the machine count label.
 - [x] Change Simulated Fleet to Devices and make the heading prominent.
 - [x] Change the type filter's All Machines option to All Devices.
+- [x] Merge Agents and Workload Logs as Workers, retaining passive device/runtime inspection and removing active start/stop/login controls (approved).
 
 ### Scenarios
 - [x] Remove Available scenarios and the catalog-count label.
@@ -125,6 +139,11 @@
 - [x] Pulse the running state only when scenario progress changes; respect reduced-motion preferences.
 - [x] Remove the redundant Organizations list heading and profile-count text.
 - [x] Keep the Activate/Active control beside the organization name and place its description below.
+- [x] Make the scenario running state more visible with more saturated colors. The
+Running" orange should be a non-indicated color like blue.
+- [x] When a scenario fails, the step/total steps doesn't show the failure line because of the cleanup.
+- [ ] We need a raw version of a scenario editor (that gives the same type of experience, colors, columns, etc. as the Control Room editors)
+- [ ] Add AI Assistants to the dialog and raw scenario editors.
 
 ### Activity
 - [x] Remove the Decisions and Blocked flows headings.
@@ -134,3 +153,7 @@
 ### Organizations
 - [x] Move Activate/Active control next to the organization name in the identity/policy/services pane.
 - [x] Show a shortform list of scenarios in the organization identity area; links open scenarios without activating the organization.
+- [ ] I want to be able to add new organizations with the help of the AI Assistant. This is a bigger project, so make a plan first and get my approval.
+
+### Workers
+- [x] Add the wordwrap button like the Adapter Logs.

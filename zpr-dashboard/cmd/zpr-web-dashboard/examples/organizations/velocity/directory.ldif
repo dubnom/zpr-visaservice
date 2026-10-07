@@ -43,6 +43,7 @@ sn: Rivera
 mail: alex.rivera@velocity.example
 ou: Performance
 title: Client Benchmark Operator
+l: Performance Lab
 
 dn: uid=sam.chen,ou=People,dc=velocity,dc=test
 objectClass: inetOrgPerson
@@ -52,6 +53,7 @@ sn: Chen
 mail: sam.chen@velocity.example
 ou: Performance
 title: Service Benchmark Operator
+l: Performance Lab
 
 dn: uid=machine-03,ou=Machines,dc=velocity,dc=test
 objectClass: inetOrgPerson

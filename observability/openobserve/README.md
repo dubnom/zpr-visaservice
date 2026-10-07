@@ -171,3 +171,27 @@ host-loopback GUI relay may remain listening while OpenObserve is stopped;
 an open relay port does not prove that the logger is available. Startup and
 recovery retain the existing data volume and credentials; do not remove the
 volume or reseed credentials to fix a readiness failure.
+
+## Compose-backed organizations
+
+The dashboard stack runs one persistent OpenObserve store for all bundled
+Compose-backed organization profiles. Its UI is published only on
+`127.0.0.1:8800`; the API is available to Control-Service and the collector
+only on the private `zpr-observability-local` Docker network. The legacy
+ZPR-adapter deployment above remains available for isolated legacy labs.
+
+During organization activation, the stack starts one collector for the active
+profile. It reads that profile's mounted runtime log files and uses its
+read-only Visa Service Admin key, then tags each record with
+`zpr.organization.id`. Switching profiles stops the previous collector before
+starting the new one. The collector does not read Simulator manifests,
+sessions, or workloads.
+
+Control Room Diagnostics requires a separate non-root OpenObserve query
+credential with read-only access. Save its token as
+`.local-runtime/dashboard-stack/diagnostics/query.token` with mode `0600`, set
+`ZPR_DIAGNOSTICS_USERNAME` before starting the dashboard stack, and restart
+Control-Service after provisioning the credential. Do not reuse the ingestion
+token or the OpenObserve root password for queries. Until this query
+credential is present, the Logger UI and telemetry collection work while the
+Diagnostics view correctly reports its provider as unavailable.

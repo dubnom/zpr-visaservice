@@ -316,6 +316,11 @@ func validateSimulatorScenarioStep(step simulatorScenarioStep, manifest simulato
 		if !manifestHasMachine(manifest, step.Machine) {
 			return errors.New("known machine is required")
 		}
+		if step.Action == "start_machine" {
+			if err := validateScenarioMachinePlacement(organization, step.Machine); err != nil {
+				return err
+			}
+		}
 	case "start_workload", "stop_workload":
 		if !manifestHasMachine(manifest, step.Machine) {
 			return errors.New("known machine is required")
@@ -824,7 +829,13 @@ func simulatorScenarioExecutorForManifest(ctx context.Context, manifest simulato
 			}
 			select {
 			case <-ctx.Done():
-				return "", ctx.Err()
+				diagnosticsContext, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+				output, logsErr := scenarioCommand(diagnosticsContext, "docker", "logs", "--tail", "6", machineContainerName(step.Machine))
+				cancel()
+				if logsErr != nil {
+					output += "\ncontroller logs unavailable: " + logsErr.Error()
+				}
+				return output, fmt.Errorf("%s controller did not connect: %w", step.Machine, ctx.Err())
 			case <-ticker.C:
 			}
 		}
@@ -859,6 +870,18 @@ func simulatorScenarioExecutorForManifest(ctx context.Context, manifest simulato
 		simulatorSessions.set(step.Machine, session)
 		return fmt.Sprintf("selected %d workload(s)", len(step.Workloads)), nil
 	case "start_workload", "stop_workload":
+		if step.Action == "stop_workload" {
+			running, err := scenarioMachineRunning(ctx, step.Machine)
+			if err != nil {
+				return "", err
+			}
+			if !running {
+				return "workload machine already stopped", nil
+			}
+			if !simulatorControllers.snapshot([]string{step.Machine}, time.Now())[step.Machine].Connected {
+				return "", fmt.Errorf("cannot stop workload %q: %s controller is offline; stop the machine to terminate its workloads", step.Component, step.Machine)
+			}
+		}
 		session := simulatorSessions.snapshot([]string{step.Machine})[step.Machine]
 		if step.Action == "start_workload" {
 			if !session.Authenticated {
@@ -929,7 +952,11 @@ func simulatorScenarioExecutorForManifest(ctx context.Context, manifest simulato
 		}
 		return "test service started on " + address, nil
 	case "stop_test_service":
-		if simulatorMachineContainerStates([]string{step.Machine})[step.Machine] != "running" {
+		running, stateErr := scenarioMachineRunning(ctx, step.Machine)
+		if stateErr != nil {
+			return "", stateErr
+		}
+		if !running {
 			return "test service machine already stopped", nil
 		}
 		component, _ := readSimulatorComponent(manifest, step.Component)
@@ -966,7 +993,11 @@ func simulatorScenarioExecutorForManifest(ctx context.Context, manifest simulato
 		if err != nil || !ok {
 			return "", errors.New("organization load-test profile is unavailable")
 		}
-		if simulatorMachineContainerStates([]string{step.Machine})[step.Machine] != "running" {
+		running, stateErr := scenarioMachineRunning(ctx, step.Machine)
+		if stateErr != nil {
+			return "", stateErr
+		}
+		if !running {
 			return "service fleet machine already stopped", nil
 		}
 		output, err := scenarioCommand(ctx, "docker", "exec", machineContainerName(step.Machine), "pkill", "-TERM", "-f", "[z]pr-machine-controller -mode stress-service-fleet .* -log-workload "+profile.ServiceWorkload)

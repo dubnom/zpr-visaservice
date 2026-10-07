@@ -208,7 +208,9 @@ func runSimulator(listen string) error {
 	mux.HandleFunc("GET /api/simulator/logs/{machine}/{workload}", handleSimulatorWorkloadLogs)
 	mux.HandleFunc("POST /api/simulator/scenarios/cancel", handleSimulatorScenarioCancel)
 	mux.HandleFunc("POST /api/simulator/scenarios/{scenario}/run", handleWorkspaceScenarioRun)
-	mux.HandleFunc("/agents.html", func(w http.ResponseWriter, r *http.Request) { serveStaticPage(staticRoot, "agents.html", w) })
+	mux.HandleFunc("/agents.html", func(w http.ResponseWriter, r *http.Request) {
+		http.Redirect(w, r, "/machine-logs.html", http.StatusFound)
+	})
 	mux.HandleFunc("/activity.html", func(w http.ResponseWriter, r *http.Request) { serveStaticPage(staticRoot, "activity.html", w) })
 	mux.HandleFunc("/machine-logs.html", func(w http.ResponseWriter, r *http.Request) { serveStaticPage(staticRoot, "machine-logs.html", w) })
 	mux.HandleFunc("/trusted-source.html", func(w http.ResponseWriter, r *http.Request) { serveStaticPage(staticRoot, "trusted-source.html", w) })
@@ -219,7 +221,7 @@ func runSimulator(listen string) error {
 	staticServer := http.FileServer(http.FS(staticRoot))
 	mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path == "/" {
-			http.Redirect(w, r, "/agents.html", http.StatusFound)
+			http.Redirect(w, r, "/organizations.html", http.StatusFound)
 			return
 		}
 		staticServer.ServeHTTP(w, r)

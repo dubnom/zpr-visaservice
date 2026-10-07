@@ -63,6 +63,12 @@ LDAP_UI_RELAY_PORT="${ZPR_LDAP_UI_RELAY_PORT:-8797}"
 OBSERVABILITY_UI_RELAY_PID="$STATE_DIR/observability-ui-relay.pid"
 OBSERVABILITY_UI_RELAY_PORT="${ZPR_OBSERVABILITY_UI_RELAY_PORT:-8798}"
 OBSERVABILITY_ADDRESS="${ZPR_OBSERVABILITY_ADDR:-fd5a:5052:adda:1::54}"
+OBSERVABILITY_PROFILE_DIR="$DASHBOARD_DIR/../observability/openobserve"
+OBSERVABILITY_ENV_FILE="$RUNTIME_DIR/observability/openobserve.env"
+OBSERVABILITY_COLLECTOR_CONTAINER="zpr-observability-collector"
+OBSERVABILITY_LOCAL_CONTAINER="zpr-observability-local"
+OBSERVABILITY_LOCAL_NETWORK="zpr-observability-local"
+OBSERVABILITY_LOCAL_PORT=8800
 
 pid_running() {
     [ -f "$1" ] && kill -0 "$(cat "$1")" 2>/dev/null
@@ -171,6 +177,9 @@ stop_control_room() {
 }
 
 stop_stack() {
+    stop_observability_collector
+    ZPR_OBSERVABILITY_LOCAL_CONTAINER="$OBSERVABILITY_LOCAL_CONTAINER" \
+        sh "$OBSERVABILITY_PROFILE_DIR/run.sh" stop-local || true
     for number in $(seq -w 1 20); do
         docker rm -f "zpr-machine-$number" >/dev/null 2>&1 || true
     done
@@ -243,6 +252,7 @@ start_simulator() {
         --label zpr.simulator=true \
         -v "$simulator_socket:/var/run/docker.sock" \
         -v "$DASHBOARD_DIR:$DASHBOARD_DIR:ro" \
+        -v "$OBSERVABILITY_PROFILE_DIR:$OBSERVABILITY_PROFILE_DIR:ro" \
         -v "$DNS_PROFILE_DIR:$DNS_PROFILE_DIR:ro" \
         -v "$DASHBOARD_DIR/../../zpr-demo/multinode-demo:$DASHBOARD_DIR/../../zpr-demo/multinode-demo:ro" \
         -v "$DASHBOARD_DIR/../../zpr-core:$DASHBOARD_DIR/../../zpr-core:ro" \
@@ -275,6 +285,7 @@ start_simulator() {
         -e SIMULATOR_CONTROL_LISTEN=0.0.0.0:8791 \
         -e SIMULATOR_CONTROL_ROOM_URL=http://127.0.0.1:8787 \
         -e SIMULATOR_CONTROL_ROOM_HOST=127.0.0.1:8787 \
+        -e ZPR_DIAGNOSTICS_USERNAME="${ZPR_DIAGNOSTICS_USERNAME:-}" \
         -e SIMULATOR_DOCKER_CONTAINER="$SIMULATOR_DOCKER_CONTAINER" \
         -e ZPR_DASHBOARD_CONTAINER_RUNTIME=1 \
         -e ZPR_POLICY_SERVICE_CONTAINER="$POLICY_CONTAINER" \
@@ -585,9 +596,131 @@ stop_ui_relays() {
     stop_service "$LDAP_UI_RELAY_PID"
 }
 
+start_local_observability() {
+    if [ ! -r "$OBSERVABILITY_ENV_FILE" ]; then
+        echo "OpenObserve is not configured; local logger backend was not started" >&2
+        return 0
+    fi
+    ZPR_OBSERVABILITY_ENV_FILE="$OBSERVABILITY_ENV_FILE" \
+    ZPR_OBSERVABILITY_LOCAL_CONTAINER="$OBSERVABILITY_LOCAL_CONTAINER" \
+    ZPR_OBSERVABILITY_LOCAL_NETWORK="$OBSERVABILITY_LOCAL_NETWORK" \
+    ZPR_OBSERVABILITY_LOCAL_PORT="$OBSERVABILITY_LOCAL_PORT" \
+        sh "$OBSERVABILITY_PROFILE_DIR/run.sh" start-local
+
+    openobserve_org=$(awk -F= '$1 == "OPENOBSERVE_ORG" {sub(/^[^=]*=/, ""); print; exit}' "$RUNTIME_DIR/observability/collector.env")
+    case "$openobserve_org" in ''|*[!A-Za-z0-9_-]*) echo "invalid OpenObserve organization in collector.env" >&2; return 1 ;; esac
+    diagnostics_zpr_org=${SIMULATION_ORGANIZATION_ID:-}
+    if [ -z "$diagnostics_zpr_org" ] && [ -r "$ACTIVE_ORGANIZATION_FILE" ]; then
+        diagnostics_zpr_org=$(tr -d '\r\n' < "$ACTIVE_ORGANIZATION_FILE")
+    fi
+    if [ -z "$diagnostics_zpr_org" ]; then
+        diagnostics_zpr_org=$(jq -er '.organization_id // "northstar"' "$SIMULATION_MANIFEST")
+    fi
+    diagnostics_config="${ZPR_DIAGNOSTICS_CONFIG_FILE:-$STATE_DIR/diagnostics/openobserve.json}"
+    if [ "$diagnostics_config" = "$STATE_DIR/diagnostics/openobserve.json" ]; then
+        mkdir -m 700 -p "$STATE_DIR/diagnostics"
+        diagnostics_temp="$diagnostics_config.tmp.$$"
+        jq -n --arg endpoint "http://$OBSERVABILITY_LOCAL_CONTAINER:5080" --arg organization "$openobserve_org" --arg zpr_organization_id "$diagnostics_zpr_org" \
+            '{endpoint:$endpoint,organization:$organization,zpr_organization_id:$zpr_organization_id,logs_stream:"zpr_visa_service",metrics_stream:"zpr_visa_service",stale_after_seconds:300}' > "$diagnostics_temp"
+        chmod 600 "$diagnostics_temp"
+        mv "$diagnostics_temp" "$diagnostics_config"
+    fi
+}
+
+stop_observability_collector() {
+    docker rm -f "$OBSERVABILITY_COLLECTOR_CONTAINER" >/dev/null 2>&1 || true
+}
+
+start_observability_collector() {
+    organization=$1
+    case "$organization" in ''|*[!a-z0-9-]*) echo "invalid observability organization: $organization" >&2; return 2 ;; esac
+    organization_profile="$ORGANIZATIONS_DIR/$organization.json"
+    organization_runtime="$RUNTIME_DIR/multinode/$organization"
+    organization_logs="$organization_runtime/logs"
+    organization_driver=$(jq -er '.runtime.driver' "$organization_profile")
+    if [ "$organization_driver" != docker-multinode ]; then
+        echo "organization $organization does not use the supported Compose log sources" >&2
+        return 1
+    fi
+    admin_key="$organization_runtime/bob/web-monitor.key"
+    admin_ca="$DASHBOARD_DIR/../../zpr-demo/multinode-demo/zpr-conf/include/admin-tls-cert.pem"
+    for source_file in "$admin_key" "$admin_ca" "$RUNTIME_DIR/observability/collector.env" "$RUNTIME_DIR/observability/ingestion.token"; do
+        [ -r "$source_file" ] || { echo "required observability source is unavailable" >&2; return 1; }
+    done
+    [ -d "$organization_logs" ] || { echo "organization runtime logs are unavailable" >&2; return 1; }
+
+    collector_runtime="$STATE_DIR/observability-collector/$organization"
+    mkdir -m 700 -p "$collector_runtime/observability"
+    install -m 600 "$admin_key" "$collector_runtime/admin-read.key"
+    install -m 644 "$admin_ca" "$collector_runtime/local-admin-cert.pem"
+    install -m 600 "$RUNTIME_DIR/observability/collector.env" "$collector_runtime/observability/collector.env"
+    install -m 600 "$RUNTIME_DIR/observability/ingestion.token" "$collector_runtime/observability/ingestion.token"
+
+    sources='[]'
+    adapter_targets='[]'
+    for source_path in "$organization_logs"/*.log; do
+        [ -f "$source_path" ] || continue
+        source_file=${source_path##*/}
+        source_id=${source_file%.log}
+        [ "$source_id" = vs ] && continue
+        case "$source_id" in
+            node[0-9]*) source_name=zpr-core-node; source_type=node ;;
+            *-adapter) source_name=zpr-adapter; source_type=adapter ;;
+            *) source_name=$source_id; source_type=service ;;
+        esac
+        sources=$(printf '%s' "$sources" | jq -c --arg name "$source_name" --arg instance "$organization-$source_id" \
+            --arg type "$source_type" --arg path "/org-logs/$source_file" \
+            '. + [{service_name:$name,service_instance_id:$instance,source_type:$type,log_file:$path}]')
+        case "$source_id" in
+            *-adapter) adapter_kind=adapter; adapter_title="$source_id adapter" ;;
+            *) adapter_kind=controller; adapter_title="$source_id" ;;
+        esac
+        adapter_targets=$(printf '%s' "$adapter_targets" | jq -c --arg id "$organization-$source_id" --arg title "$organization $adapter_title" \
+            --arg name "$source_id" --arg kind "$adapter_kind" --arg file "$source_path" \
+            '. + [{id:$id,name:$title,sources:[{name:$name,kind:$kind,file:$file}]}]')
+    done
+    printf '%s\n' "$(jq -n --argjson adapters "$adapter_targets" '{adapters:$adapters}')" > "$STATE_DIR/adapter-logs.json"
+    chmod 600 "$STATE_DIR/adapter-logs.json"
+    jq -n --argjson sources "$sources" '{sources:$sources}' > "$collector_runtime/observability/diagnostic-sources.json"
+    chmod 600 "$collector_runtime/observability/diagnostic-sources.json"
+
+    source_map='{}'
+    node_count=$(jq -er '.runtime.nodes | length' "$organization_profile")
+    node_index=0
+    while [ "$node_index" -lt "$node_count" ]; do
+        node_instance="$organization-node$node_index"
+        node_identity="node$node_index.demo"
+        for source_id in "node:$node_identity" "service:/zpr/n$node_index" "service:zpr/n$node_index/vss"; do
+            source_map=$(printf '%s' "$source_map" | jq -c --arg id "$source_id" --arg instance "$node_instance" \
+                '. + {($id):{service_name:"zpr-core-node",instance_id:$instance}}')
+        done
+        node_index=$((node_index + 1))
+    done
+    for source_id in service:/zpr/visaservice service:/zpr/visaservice/admin; do
+        source_map=$(printf '%s' "$source_map" | jq -c --arg id "$source_id" --arg instance "$organization-vs" \
+            '. + {($id):{service_name:"zpr-visaservice",instance_id:$instance}}')
+    done
+    printf '%s\n' "$source_map" > "$STATE_DIR/diagnostics/source-map.json"
+    chmod 600 "$STATE_DIR/diagnostics/source-map.json"
+
+    stop_observability_collector
+    docker run -d --name "$OBSERVABILITY_COLLECTOR_CONTAINER" --restart unless-stopped \
+        --network "$OBSERVABILITY_LOCAL_NETWORK" --add-host vs.zpr:host-gateway \
+        --read-only --tmpfs /tmp:rw,size=16m \
+        -v "$collector_runtime:/runtime:ro" -v "$organization_logs:/org-logs:ro" \
+        -v "$OBSERVABILITY_PROFILE_DIR/collector.py:/app/collector.py:ro" \
+        -e ZPR_RUNTIME_DIR=/runtime -e ZPR_ORGANIZATION_ID="$organization" \
+        -e ZPR_VS_INSTANCE_ID="$organization-vs" \
+        -e ZPR_VS_ADMIN_URL=https://vs.zpr:8185 \
+        -e ZPR_OBSERVABILITY_URL="http://$OBSERVABILITY_LOCAL_CONTAINER:5080" \
+        -e ZPR_VS_LOG_FILE=/org-logs/vs.log \
+        --entrypoint python3 zpr-observability:local -u /app/collector.py >/dev/null
+}
+
 start_control_service() {
     control_ldap_container=${ZPR_ASSERTION_LDAP_CONTAINER:-}
     stop_control_service
+    start_local_observability
     control_admin_url=${ZPR_ADMIN_URL:-https://127.0.0.1:$ADMIN_RELAY_PORT}
     control_admin_url=$(printf '%s' "$control_admin_url" | sed 's#://127\.0\.0\.1:#://host.docker.internal:#')
     control_dns_stats_url=${ZPR_DNS_STATS_URL:-http://127.0.0.1:$DNS_STATS_RELAY_PORT}
@@ -599,6 +732,7 @@ start_control_service() {
         -v "$RUNTIME_DIR:$RUNTIME_DIR" \
         -v "$DASHBOARD_DIR/../../zpr-demo/multinode-demo:$DASHBOARD_DIR/../../zpr-demo/multinode-demo:ro" \
         -p 127.0.0.1:8790:8790 \
+        -e ANTHROPIC_API_KEY \
         -e ZPR_CONTROL_SERVICE_LISTEN=0.0.0.0:8790 \
         -e ZPR_CONTROL_SERVICE_CERT_FILE="$SERVICE_CERTS/control-service.crt" \
         -e ZPR_CONTROL_SERVICE_KEY_FILE="$SERVICE_CERTS/control-service.key" \
@@ -628,6 +762,9 @@ start_control_service() {
         -e ZPR_POLICY_CLIENT_KEY_FILE="$SERVICE_CERTS/control-policy-client.key" \
         --entrypoint /usr/local/bin/zpr-web-dashboard \
         "$SIMULATOR_IMAGE" -mode control-service >/dev/null
+    if docker inspect "$OBSERVABILITY_LOCAL_CONTAINER" >/dev/null 2>&1; then
+        docker network connect "$OBSERVABILITY_LOCAL_NETWORK" "$CONTROL_CONTAINER"
+    fi
     wait_for_url https://127.0.0.1:8790/api/snapshot control-service \
         ${ZPR_DASHBOARD_CONTAINER_RUNTIME:+--connect-to 127.0.0.1:8790:host.docker.internal:8790} \
         --cacert "$SERVICE_CERTS/service-ca.crt" \
@@ -717,6 +854,33 @@ start_machine_controllers() {
     start_machine_container machine-01
 }
 
+resolve_machine_placement() {
+    machine_owner=$(jq -r --arg id "$machine" '.machine_owners[$id][0] // empty' "$machine_profile")
+    if [ -n "$machine_owner" ]; then
+        machine_location=$(jq -er --arg owner "$machine_owner" '
+            [.directory.people[] | select(.uid == $owner) | .location][0] |
+            if type == "string" and length > 0 then . else error("machine owner has no organization location") end
+        ' "$machine_profile")
+    else
+        machine_owner=$(jq -r --arg id "$machine" '.machines[] | select(.id == $id) | .owner // ""' "$SIMULATION_MANIFEST")
+        machine_location=$(jq -er --arg id "$machine" '.machines[] | select(.id == $id) | .location' "$SIMULATION_MANIFEST")
+        if [ "$machine_runtime_driver" = docker-multinode ]; then
+            machine_location=$(jq -er '
+                if .runtime.topology == "single-node" and (.runtime.nodes | length) == 1 then
+                    .runtime.nodes[0].location
+                else error("multi-node machine requires a configured organization owner") end
+            ' "$machine_profile")
+        fi
+    fi
+    if [ "$machine_runtime_driver" = docker-multinode ]; then
+        machine_node_index=$(jq -er --arg location "$machine_location" '
+            [.runtime.nodes | to_entries[] | select(.value.location == $location) | .key] |
+            if length == 1 then .[0] else error("machine location must match exactly one configured node") end
+        ' "$machine_profile")
+        machine_node_ip=$(jq -er --argjson index "$machine_node_index" '.runtime.nodes[$index].substrate_address' "$machine_profile")
+    fi
+}
+
 start_machine_container() {
     machine=$1
     case "$machine" in
@@ -732,13 +896,7 @@ start_machine_container() {
     case "$machine_organization" in ''|*[!a-z0-9-]*) echo "invalid active organization: $machine_organization" >&2; return 1 ;; esac
     machine_profile="$ORGANIZATIONS_DIR/$machine_organization.json"
     machine_runtime_driver=$(jq -er '.runtime.driver' "$machine_profile")
-    machine_owner=$(jq -r --arg id "$machine" '.machine_owners[$id][0] // empty' "$machine_profile")
-    if [ -n "$machine_owner" ]; then
-        machine_location=$(jq -er --arg owner "$machine_owner" '.directory.people[] | select(.uid == $owner) | .location' "$machine_profile")
-    else
-        machine_owner=$(jq -r --arg id "$machine" '.machines[] | select(.id == $id) | .owner // ""' "$SIMULATION_MANIFEST")
-        machine_location=$(jq -er --arg id "$machine" '.machines[] | select(.id == $id) | .location' "$SIMULATION_MANIFEST")
-    fi
+    resolve_machine_placement
     case "$machine_runtime_driver" in
         linux-one-node) machine_arch=arm64 ;;
         docker-multinode) machine_arch=amd64 ;;
@@ -756,14 +914,6 @@ start_machine_container() {
     machine_network=
     machine_control_url="https://[fd5a:5052:adda:1:ffff:ffff:ffff:fffe]:8792"
     if [ "$machine_runtime_driver" = docker-multinode ]; then
-        machine_location=$(jq -er --arg id "$machine" '
-            .machine_owners[$id][0] as $owner |
-            if ($owner | type) != "string" then error("machine has no configured organization owner") else
-                [.directory.people[] | select(.uid == $owner) | .location][0] // error("machine owner has no organization location")
-            end
-        ' "$machine_profile")
-        machine_node_index=$(jq -er --arg location "$machine_location" '[.runtime.nodes | to_entries[] | select(.value.location == $location) | .key] | if length == 1 then .[0] else error("machine location must match exactly one configured node") end' "$machine_profile")
-        machine_node_ip=$(jq -er --argjson index "$machine_node_index" '.runtime.nodes[$index].substrate_address' "$machine_profile")
         machine_node_address="$machine_node_ip:5000"
         machine_network="zpr-$machine_organization"
         start_zpr_machine_control_service
@@ -836,8 +986,8 @@ start_zpr_machine_control_service() {
         docker exec "$node_container" mkdir -p "$service_dir"
         docker cp "$MACHINE_CONTROL_PROXY_AMD64_BIN" "$node_container:$proxy_in_node"
         if ! docker exec "$node_container" /app/bin/ph-cli -p "$service_socket" link show 2>/dev/null | grep -q '(Active)'; then
-            docker exec "$node_container" pkill -TERM -f '[p]h adapter.*--name simulator-control' 2>/dev/null || true
-            docker exec "$node_container" pkill -TERM -f '[z]pr-machine-control-proxy-linux-amd64' 2>/dev/null || true
+            stop_multinode_control_processes "$node_container" adapter
+            stop_multinode_control_processes "$node_container" proxy
             docker cp "$key_dir/simulator-control.key" "$node_container:$service_dir/simulator-control.key"
             docker exec -d "$node_container" sh -c \
                 'exec env ZPR_ADAPTER_SERVICES=SimulatorControlService /app/bin/ph adapter --logging all=INFO --control-path "$1" --capture-path "$2" --self-addr 0.0.0.0:0 --ca-file /conf/include/auth-ca.crt --bootstrap-key "$3/simulator-control.key" --name simulator-control --km-impl noise --tun-if tun5 --node-addr "$4:5000" --zpr-addr fd5a:5052:adda:1:ffff:ffff:ffff:fffe >>"$5" 2>&1' \
@@ -862,8 +1012,14 @@ start_zpr_machine_control_service() {
         configure_multinode_service_return_route "$node_container" tun5 "$control_address" 105
         control_upstream_ip=$(docker inspect -f '{{range .NetworkSettings.Networks}}{{.IPAddress}}{{end}}' "$SIMULATOR_DOCKER_CONTAINER")
         [ -n "$control_upstream_ip" ] || { echo "Simulator container has no reachable Docker IPv4 address" >&2; return 1; }
-        if ! docker exec "$node_container" pgrep -af '[z]pr-machine-control-proxy-linux-amd64.*proxy-listen' >/dev/null 2>&1; then
-            docker exec "$node_container" pkill -TERM -f '[z]pr-machine-control-proxy-linux-amd64' 2>/dev/null || true
+        proxy_processes=$(docker exec "$node_container" ps -eo pid,args)
+        if ! printf '%s\n' "$proxy_processes" | awk -v binary="$proxy_in_node" -v upstream="$control_upstream_ip:8791" '
+            $2 == binary {
+                for (i = 3; i < NF; i++) if ($i == "--proxy-upstream" && $(i+1) == upstream) found = 1
+            }
+            END { exit !found }
+        '; then
+            stop_multinode_control_processes "$node_container" proxy
             docker exec -d "$node_container" sh -c \
             'exec "$1" --mode machine-control-proxy --proxy-listen "[::]:8792" --proxy-upstream "$3" >>"$2" 2>&1' \
             machine-control-proxy "$proxy_in_node" "$service_dir/proxy.log" "$control_upstream_ip:8791"
@@ -913,6 +1069,28 @@ start_zpr_machine_control_service() {
     docker exec -d "$SIMULATION_CONTAINER" sh -c \
         'exec ip netns exec zpr-vs "$1" --mode machine-control-proxy --proxy-listen "[fd5a:5052:adda:1:ffff:ffff:ffff:fffe]:8792" --proxy-upstream 10.254.0.1:8793 >>"$2" 2>&1' \
         machine-control-proxy "$proxy_in_rig" "$proxy_log"
+}
+
+stop_multinode_control_processes() {
+    control_processes=$(docker exec "$1" ps -eo pid,args)
+    control_process_ids=$(printf '%s\n' "$control_processes" | awk -v kind="$2" '
+        kind == "proxy" && $2 == "/tmp/zpr-machine-control-proxy-linux-amd64" { print $1 }
+        kind == "adapter" && $2 == "/app/bin/ph" && $3 == "adapter" {
+            for (i = 4; i < NF; i++) if ($i == "--name" && $(i+1) == "simulator-control") print $1
+        }
+    ')
+    for control_process_id in $control_process_ids; do
+        docker exec "$1" kill "$control_process_id"
+        control_stop_attempts=0
+        while docker exec "$1" kill -0 "$control_process_id" 2>/dev/null; do
+            control_stop_attempts=$((control_stop_attempts + 1))
+            if [ "$control_stop_attempts" -ge 50 ]; then
+                echo "machine-control process $control_process_id did not stop in $1" >&2
+                return 1
+            fi
+            sleep 0.1
+        done
+    done
 }
 
 stop_legacy_named_workloads() {
@@ -1169,10 +1347,13 @@ start_stack() {
         ZPR_ADMIN_KEY_FILE="$multinode_runtime/bob/web-monitor.key" \
             start_control_service
     fi
+    if [ "$startup_driver" = docker-multinode ]; then
+        start_observability_collector "$startup_organization"
+    fi
     start_control_room
     wait_for_url http://127.0.0.1:8787/ control-room
     echo "Control Room ready at http://127.0.0.1:8787"
-    echo "OpenObserve GUI relay at http://127.0.0.1:$OBSERVABILITY_UI_RELAY_PORT"
+    echo "OpenObserve Logger ready at http://127.0.0.1:$OBSERVABILITY_LOCAL_PORT"
     echo "LDAP editor relay at http://127.0.0.1:$LDAP_UI_RELAY_PORT/"
     echo "Simulator ready at http://127.0.0.1:8788"
     echo "Active organization: $organization_id"
@@ -1197,6 +1378,10 @@ status_stack() {
     done
     control_room_state=$(docker inspect -f '{{.State.Status}}' "$CONTROL_ROOM_DOCKER_CONTAINER" 2>/dev/null || printf stopped)
     echo "control-room: container $control_room_state"
+    observability_state=$(docker inspect -f '{{.State.Status}}' "$OBSERVABILITY_LOCAL_CONTAINER" 2>/dev/null || printf stopped)
+    echo "observability: container $observability_state (127.0.0.1:$OBSERVABILITY_LOCAL_PORT)"
+    collector_state=$(docker inspect -f '{{.State.Status}}' "$OBSERVABILITY_COLLECTOR_CONTAINER" 2>/dev/null || printf stopped)
+    echo "observability-collector: container $collector_state"
     simulator_state=$(docker inspect -f '{{.State.Status}}' "$SIMULATOR_DOCKER_CONTAINER" 2>/dev/null || printf stopped)
     echo "simulator: container $simulator_state"
     dns_state=$(docker inspect -f '{{.State.Status}}' "$DNS_CONTAINER" 2>/dev/null || printf stopped)
@@ -1245,11 +1430,13 @@ case "${1:-start}" in
         ;;
     restart-policy-service) restart_policy_service ;;
     restart-simulator-control) start_zpr_machine_control_service ;;
+    start-observability-collector) [ "$#" -eq 2 ] || { echo "usage: $0 start-observability-collector organization-id" >&2; exit 2; }; start_observability_collector "$2" ;;
+    stop-observability-collector) stop_observability_collector ;;
     stop-legacy-workloads) stop_legacy_named_workloads ;;
     reset-organization) exec sh "$SCRIPT_DIR/activate-organization.sh" "$@" ;;
     restart-policy-context)
         [ "$#" -eq 3 ] || { echo "usage: $0 restart-policy-context organization source" >&2; exit 2; }
         restart_policy_context "$2" "$3"
         ;;
-    *) echo "usage: $0 {start|stop|restart|status|start-admin-relay|stop-admin-relay|start-dns|stop-dns|start-ui-relays|stop-ui-relays|start-browser-gateway|stop-browser-gateway|restart-control-room|restart-simulator|restart-control-service|stop-policy-service|restart-policy-service|restart-simulator-control}" >&2; exit 2 ;;
+    *) echo "usage: $0 {start|stop|restart|status|start-admin-relay|stop-admin-relay|start-dns|stop-dns|start-ui-relays|stop-ui-relays|start-browser-gateway|stop-browser-gateway|restart-control-room|restart-simulator|restart-control-service|stop-policy-service|restart-policy-service|restart-simulator-control|start-observability-collector organization-id|stop-observability-collector}" >&2; exit 2 ;;
 esac

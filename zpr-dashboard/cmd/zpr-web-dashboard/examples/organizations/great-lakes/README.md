@@ -37,7 +37,7 @@ activity across eight work blocks. The three Tijuana laptops join during the
 day and run intermittent work bursts. Expected cross-service denials remain
 part of the scenario.
 
-Client and server request events are available from the Simulator Agents page's
+Client and server request events are available from the Simulator Workers page's
 workload logs. DNS resolutions, HTTP requests, and expected-denial probes are
 also recorded as scenario steps. Cleanup stops services and workloads, logs out
 every employee, and shuts down all twelve computers, including on failure or

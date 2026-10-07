@@ -27,10 +27,16 @@
       logsLink.className = "nav-link";
       logsLink.dataset.simulatorNav = "";
       logsLink.href = "/machine-logs.html";
-      logsLink.textContent = "Workload logs";
+      logsLink.textContent = "Workers";
       nav.insertBefore(logsLink, nav.querySelector('a[href="/activity.html"]'));
     }
-    logsLink.textContent = "Workload logs";
+    logsLink.textContent = "Workers";
+    nav.querySelector('a[href="/agents.html"]')?.remove();
+    const brand = document.querySelector(".brand[data-simulator-nav]");
+    if (brand) {
+      brand.href = "/organizations.html";
+      brand.setAttribute("aria-label", "ZPR Simulator organizations");
+    }
     let sourceLink = nav.querySelector('a[href="/trusted-source.html"]');
     if (!sourceLink) {
       sourceLink = document.createElement("a");
@@ -39,6 +45,10 @@
       sourceLink.href = "/trusted-source.html";
       sourceLink.textContent = "Trusted source";
       nav.insertBefore(sourceLink, nav.querySelector('a[href="/activity.html"]'));
+    }
+    for (const path of ["/organizations.html", "/scenarios.html", "/trusted-source.html", "/activity.html", "/machine-logs.html"]) {
+      const link = nav.querySelector(`a[href="${path}"]`);
+      if (link) nav.append(link);
     }
     nav.querySelectorAll("a[data-simulator-nav]").forEach((link) => {
       link.classList.toggle("active", pageKey(link.href) === currentPath);

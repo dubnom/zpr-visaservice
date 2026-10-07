@@ -19,8 +19,8 @@
     "user_attributes": ["cn", "mail", "ou", "title"],
     "departments": [{"name": "Performance"}],
     "people": [
-      {"uid": "load.client", "name": "Load Client Operator", "email": "load.client@loadlab.example", "department": "Performance", "title": "Traffic Generator Operator"},
-      {"uid": "load.service", "name": "Load Service Operator", "email": "load.service@loadlab.example", "department": "Performance", "title": "Service Host Operator"}
+      {"uid": "load.client", "name": "Load Client Operator", "email": "load.client@loadlab.example", "department": "Performance", "title": "Traffic Generator Operator", "location": "Load Test Bench"},
+      {"uid": "load.service", "name": "Load Service Operator", "email": "load.service@loadlab.example", "department": "Performance", "title": "Service Host Operator", "location": "Load Test Bench"}
     ],
     "groups": [{"name": "LoadOperators", "members": ["load.client", "load.service"]}]
   },

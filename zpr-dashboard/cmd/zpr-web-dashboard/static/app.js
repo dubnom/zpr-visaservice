@@ -486,6 +486,12 @@ function detailSection(title, fields) {
   return `<section class="detail-section"><h3>${escapeHTML(title)}</h3><dl>${fields.join("")}</dl></section>`;
 }
 
+function currentVisaList(visas) {
+  if (!visas.length) return `<p>No current visas.</p>`;
+  const ordered = [...visas].sort((a, b) => num(a.id) - num(b.id) || String(a.id).localeCompare(String(b.id)));
+  return `<div class="detail-list">${ordered.map(visa => `<div class="detail-item"><strong>Visa ${escapeHTML(visa.id)} · ${escapeHTML(visa.proto)}</strong><span title="${escapeHTML(visaEndpointTitle(visa.source_addr, visa.dest_addr))}">${escapeHTML(visaEndpoint(visa.source_addr, visa.source_port, visa.dest_addr, visa.dest_port))}</span><span>Direction: ${escapeHTML(visa.direction || "Not reported")}</span><span>Expires: ${escapeHTML(new Date(num(visa.expires) * 1000).toLocaleString())}</span><span>Node: ${escapeHTML(visa.requesting_node || "Not reported")} · Policy: ${escapeHTML(visa.policy_id || "Not reported")}</span><span>Route: ${escapeHTML(visa.path?.length ? visa.path.join(" → ") : "Not reported")}</span></div>`).join("")}</div>`;
+}
+
 let adapterVisaDetails;
 
 function refreshAdapterVisas(actor) {
@@ -540,7 +546,29 @@ function renderInspector() {
   let title = state.selection.key;
   let sections = [];
 
-  if (state.selection.kind === "actor") {
+  if (state.selection.kind === "visa-count") {
+    const selection = JSON.parse(state.selection.key);
+    const actor = data.actors.find(item => item.cn === selection.actorCN);
+    const service = selection.kind === "service"
+      ? data.services.find(item => item.actor_cn === selection.actorCN && item.service_name === selection.serviceName)
+      : null;
+    if (!actor || selection.kind === "service" && !service) return closeInspector();
+    kindLabel = "ACTIVE VISAS";
+    title = service ? service.service_name : actorDisplayName(actor);
+    const inventory = activeMapVisas(data);
+    const visas = inventory?.filter(visa => service
+      ? serviceMatchesVisa(service, visa, data.actors)
+      : [visa.source_addr, visa.dest_addr].some(address => address && actor.zpr_addr && dnsAddressKey(address) === dnsAddressKey(actor.zpr_addr)));
+    sections.push(detailSection("Visa inventory", [
+      detailField("Scope", service ? `Service on ${actorDisplayName(actor)}` : "Adapter source or destination"),
+      detailField("Active visas", visas?.length ?? "Unavailable"),
+      detailField("Snapshot", data.generated_at ? new Date(data.generated_at).toLocaleString() : "Not reported"),
+    ]));
+    const content = visas == null
+      ? `<p role="status">Active visa inventory unavailable. Recent decisions are not a complete current inventory.</p>`
+      : currentVisaList(visas);
+    sections.push(`<section class="detail-section"><h3>Current visas</h3>${content}</section>`);
+  } else if (state.selection.kind === "actor") {
     const actor = data.actors.find((item) => item.cn === state.selection.key);
     if (!actor) return closeInspector();
     const services = data.services.filter((item) => item.actor_cn === actor.cn);
@@ -620,7 +648,7 @@ function renderInspector() {
     }
     if (!actor.node) {
       const current = adapterVisaDetails.items.filter((visa) => num(visa.expires) > Date.now() / 1000);
-      const content = !adapterVisaDetails.loaded ? adapterVisaDetails.pending ? `<p>Loading current visas...</p>` : "" : current.length ? `<div class="detail-list">${current.map((visa) => `<div class="detail-item"><strong>Visa ${escapeHTML(visa.id)} · ${escapeHTML(visa.proto)}</strong><span title="${escapeHTML(visaEndpointTitle(visa.source_addr, visa.dest_addr))}">${escapeHTML(visaEndpoint(visa.source_addr, visa.source_port, visa.dest_addr, visa.dest_port))}</span><span>Direction: ${escapeHTML(visa.direction || "Not reported")}</span><span>Expires: ${escapeHTML(new Date(num(visa.expires) * 1000).toLocaleString())}</span><span>Node: ${escapeHTML(visa.requesting_node || "Not reported")} · Policy: ${escapeHTML(visa.policy_id || "Not reported")}</span></div>`).join("")}</div>` : `<p>No current visas.</p>`;
+      const content = !adapterVisaDetails.loaded ? adapterVisaDetails.pending ? `<p>Loading current visas...</p>` : "" : currentVisaList(current);
       const error = adapterVisaDetails.error ? `<p role="status">${escapeHTML(adapterVisaDetails.error)}${adapterVisaDetails.loaded ? "; showing last successful result." : ""}</p>` : "";
       sections.push(`<section class="detail-section"><h3>Current visas</h3>${error}${content}</section>`);
     } else if (relatedVisas.length) sections.push(`<section class="detail-section"><h3>Recent visas</h3><div class="detail-list">${relatedVisas.slice(0, 6).map((visa) => `<div class="detail-item"><strong>Visa ${escapeHTML(visa.id)} · ${escapeHTML(visa.proto)}</strong><span title="${escapeHTML(visaEndpointTitle(visa.source_addr, visa.dest_addr))}">${escapeHTML(visaEndpoint(visa.source_addr, visa.source_port, visa.dest_addr, visa.dest_port))}</span></div>`).join("")}</div></section>`);
@@ -819,7 +847,7 @@ function renderTopology(data, exitComponents = []) {
     const label = count == null ? "?" : count === 0 ? "" : String(count);
     const width = Math.max(22, label.length * 7 + 10);
     const description = count == null ? denial ? "Buffered denial count unavailable" : "Active visa count unavailable" : `${count} ${denial ? "buffered denials" : "active visas"}`;
-    return `<g class="graph-visa-count${denial ? " graph-denial-count" : ""}${count === 0 ? " empty" : ""}" aria-label="${description}"><title>${description}</title><rect x="${x - 11}" y="${y - 9}" width="${width}" height="18" rx="9"/>${label ? `<text x="${x - 11 + width / 2}" y="${y + 3}">${label}</text>` : ""}</g>`;
+    return `<g class="graph-visa-count${denial ? " graph-denial-count" : ""}${count === 0 ? " empty" : ""}"${denial ? "" : ' role="button" tabindex="0" aria-description="Click, right-click or press Enter to show visas"'} aria-label="${description}"><title>${description}</title><rect x="${x - width / 2}" y="${y - 9}" width="${width}" height="18" rx="9"/>${label ? `<text x="${x}" y="${y + 3}">${label}</text>` : ""}</g>`;
   };
   const edges = [];
 
@@ -1115,7 +1143,11 @@ function renderTopology(data, exitComponents = []) {
       cloudMarkup = `<g class="graph-external-network"><title>${escapeHTML(externalNetworks)}</title><line class="graph-link gateway-cloud-link" x1="${pos.x}" y1="${pos.y}" x2="${cloudX}" y2="${cloudY}"/><path class="graph-cloud" transform="translate(${cloudX} ${cloudY})" d="M -34 22 C -60 22 -62 -12 -39 -17 C -40 -43 -2 -49 9 -28 C 31 -42 52 -22 46 -5 C 68 0 62 22 42 22 Z"/></g>`;
     }
     const highlighted = query && matches(actor) ? "highlighted" : "";
-    const count = visaCountBadge(counts.get(componentKey), pos.x + (isNode ? 44 : actorRadius(actor) - 2), pos.y - 24, isNode);
+    const countAnchor = isNode ? { x: 44, y: -23 }
+      : isGateway ? { x: 28, y: -16 }
+      : isVisaService ? { x: 17.5, y: -17.5 }
+      : { x: 29 / Math.SQRT2, y: -29 / Math.SQRT2 };
+    const count = visaCountBadge(counts.get(componentKey), pos.x + countAnchor.x, pos.y + countAnchor.y, isNode);
     return `<g class="graph-vertex ${isNode ? "node" : isGateway ? "gateway" : isVisaService ? "visa" : "adapter"}${arrivingClass} ${highlighted} ${query && !matches(actor) ? "filtered" : ""}" data-topology-component="${escapeHTML(componentKey)}" data-origin-x="${pos.x}" data-origin-y="${pos.y}"${positionAttributes} data-inspect-actor="${escapeHTML(actor.cn)}" tabindex="0" role="button" aria-label="Inspect ${escapeHTML(isGateway ? "gateway " : "")}${escapeHTML(displayName)}"><title>${escapeHTML(isGateway ? "ZPR gateway · " : "")}${escapeHTML(displayName)} · ${escapeHTML(actor.cn)} · ${escapeHTML(dnsAddressTitle(actor.zpr_addr))}</title>${cloudMarkup}${glyph}${marker}<text class="graph-label" x="${pos.x}" y="${pos.y + 3}">${escapeHTML(shortName)}</text>${count}</g>`;
   });
 
@@ -1148,7 +1180,7 @@ function renderTopology(data, exitComponents = []) {
     const parentMovement = marker ? enteringOffsets.get(parentKey) || previousMovement.get(parentKey) : null;
     const entry = marker && parentMovement ? { x: offset.x + parentMovement.x, y: offset.y + parentMovement.y } : null;
     const positionAttributes = offsetAttributes(offset, parentKey, entry);
-    const count = visaCountBadge(counts.get(componentKey), position.x + badgeWidth / 2 + 12, position.y);
+    const count = visaCountBadge(counts.get(componentKey), position.x + badgeWidth / 2 - 2, position.y - 8);
     return `<g class="graph-service-badge${gatewayClass}${trustedClass}${arrivingClass} ${highlighted} ${filtered}" data-service-type="${escapeHTML(type.key)}" fill="${escapeHTML(type.background)}" stroke="${escapeHTML(type.border)}" color="${escapeHTML(type.color)}" data-topology-component="${escapeHTML(componentKey)}" data-origin-x="${position.x}" data-origin-y="${position.y}"${positionAttributes} data-service-actor="${escapeHTML(service.actor_cn)}" data-inspect-service="${escapeHTML(service.service_name)}" tabindex="0" role="button" aria-label="${escapeHTML(labelForScreenReader)}"><title>${escapeHTML(title)}</title><rect x="${position.x - badgeWidth / 2}" y="${position.y - 10}" width="${badgeWidth}" height="20" rx="4"/>${marker}<text x="${position.x}" y="${position.y + 3}">${escapeHTML(shortLabel)}</text>${count}</g>`;
   });
 
@@ -4062,8 +4094,32 @@ byId("pause-poll").addEventListener("click", (event) => {
 });
 byId("poll-rate").addEventListener("change", setPollTimer);
 byId("topology-search").addEventListener("input", () => state.snapshot && renderTopology(state.snapshot));
+function inspectMapVisaCount(target) {
+  const badge = target.closest(".graph-visa-count:not(.graph-denial-count)");
+  if (!badge || !state.snapshot) return false;
+  const service = badge.closest(".graph-service-badge[data-inspect-service]");
+  const component = badge.closest(".graph-vertex[data-inspect-actor]");
+  if (!service && !component) return false;
+  openInspector("visa-count", JSON.stringify(service
+    ? { kind: "service", actorCN: service.dataset.serviceActor, serviceName: service.dataset.inspectService }
+    : { kind: "actor", actorCN: component.dataset.inspectActor }));
+  return true;
+}
+byId("topology-stage").addEventListener("keydown", event => {
+  if (!["Enter", " "].includes(event.key) || !inspectMapVisaCount(event.target)) return;
+  event.preventDefault();
+  event.stopPropagation();
+});
+byId("topology-stage").addEventListener("click", event => {
+  if (!inspectMapVisaCount(event.target)) return;
+  event.stopPropagation();
+});
 byId("topology-stage").addEventListener("contextmenu", event => {
   if (!state.snapshot) return;
+  if (inspectMapVisaCount(event.target)) {
+    event.preventDefault();
+    return;
+  }
   const serviceBadge = event.target.closest(".graph-service-badge[data-inspect-service]");
   if (serviceBadge) {
     const serviceFocus = { kind: "service", actorCN: serviceBadge.dataset.serviceActor, serviceName: serviceBadge.dataset.inspectService };

@@ -34,6 +34,7 @@ const (
 type diagnosticsProviderConfig struct {
 	Endpoint          string `json:"endpoint"`
 	Organization      string `json:"organization"`
+	ZPROrganizationID string `json:"zpr_organization_id"`
 	LogsStream        string `json:"logs_stream"`
 	MetricsStream     string `json:"metrics_stream"`
 	StaleAfterSeconds int    `json:"stale_after_seconds"`
@@ -49,14 +50,15 @@ type diagnosticsProvider interface {
 }
 
 type openObserveDiagnosticsProvider struct {
-	client        *http.Client
-	endpoint      *url.URL
-	organization  string
-	logsStream    string
-	metricsStream string
-	username      string
-	token         string
-	staleAfter    time.Duration
+	client            *http.Client
+	endpoint          *url.URL
+	organization      string
+	zprOrganizationID string
+	logsStream        string
+	metricsStream     string
+	username          string
+	token             string
+	staleAfter        time.Duration
 }
 
 type diagnosticsSource struct {
@@ -145,14 +147,11 @@ func newOpenObserveDiagnosticsProvider() (diagnosticsProvider, time.Duration, st
 	if err != nil || endpoint.Host == "" || endpoint.User != nil || endpoint.Path != "" || endpoint.RawQuery != "" || endpoint.Fragment != "" {
 		return nil, 5 * time.Minute, "Diagnostics provider endpoint must be an origin without credentials or path."
 	}
-	if endpoint.Scheme != "https" {
-		address := net.ParseIP(endpoint.Hostname())
-		if endpoint.Scheme != "http" || address == nil || !address.IsLoopback() {
-			return nil, 5 * time.Minute, "Diagnostics provider endpoint must use HTTPS or HTTP loopback."
-		}
+	if !validDiagnosticsEndpoint(endpoint) {
+		return nil, 5 * time.Minute, "Diagnostics provider endpoint must use HTTPS, HTTP loopback, or the private logger network."
 	}
-	if !diagnosticsOrganizationPattern.MatchString(config.Organization) || !diagnosticsStreamPattern.MatchString(config.LogsStream) || !diagnosticsStreamPattern.MatchString(config.MetricsStream) {
-		return nil, 5 * time.Minute, "Diagnostics provider organization and valid stream names are required."
+	if !diagnosticsOrganizationPattern.MatchString(config.Organization) || !diagnosticsOrganizationPattern.MatchString(config.ZPROrganizationID) || !diagnosticsStreamPattern.MatchString(config.LogsStream) || !diagnosticsStreamPattern.MatchString(config.MetricsStream) {
+		return nil, 5 * time.Minute, "Diagnostics provider organizations and valid stream names are required."
 	}
 	username := strings.TrimSpace(os.Getenv("ZPR_DIAGNOSTICS_USERNAME"))
 	tokenPath := strings.TrimSpace(os.Getenv("ZPR_DIAGNOSTICS_TOKEN_FILE"))
@@ -173,9 +172,24 @@ func newOpenObserveDiagnosticsProvider() (diagnosticsProvider, time.Duration, st
 	}
 	return &openObserveDiagnosticsProvider{
 		client: &http.Client{Timeout: 12 * time.Second}, endpoint: endpoint,
-		organization: config.Organization, logsStream: config.LogsStream, metricsStream: config.MetricsStream,
+		organization: config.Organization, zprOrganizationID: config.ZPROrganizationID, logsStream: config.LogsStream, metricsStream: config.MetricsStream,
 		username: username, token: strings.TrimSpace(string(token)), staleAfter: time.Duration(staleAfter) * time.Second,
 	}, time.Duration(staleAfter) * time.Second, ""
+}
+
+func validDiagnosticsEndpoint(endpoint *url.URL) bool {
+	if endpoint.Scheme == "https" {
+		return true
+	}
+	if endpoint.Scheme != "http" {
+		return false
+	}
+	hostname := strings.TrimSuffix(strings.ToLower(endpoint.Hostname()), ".")
+	address := net.ParseIP(hostname)
+	if address != nil && address.IsLoopback() {
+		return true
+	}
+	return hostname == "zpr-observability-local" && endpoint.Port() == "5080"
 }
 
 func diagnosticsSourcesFromSnapshot(data snapshot, mappings map[string]diagnosticsOTelIdentity) []diagnosticsSource {
@@ -269,7 +283,7 @@ func (provider *openObserveDiagnosticsProvider) search(ctx context.Context, stre
 	if signal == "metrics" {
 		signalFilter = "name IS NOT NULL"
 	}
-	query.Query.SQL = fmt.Sprintf(`SELECT * FROM "%s" WHERE service_name = '%s' AND service_instance_id = '%s' AND %s ORDER BY _timestamp DESC`, stream, quote(source.ServiceName), quote(source.InstanceID), signalFilter)
+	query.Query.SQL = fmt.Sprintf(`SELECT * FROM "%s" WHERE zpr_organization_id = '%s' AND service_name = '%s' AND service_instance_id = '%s' AND %s ORDER BY _timestamp DESC`, stream, quote(provider.zprOrganizationID), quote(source.ServiceName), quote(source.InstanceID), signalFilter)
 	query.Query.StartTime = start.UnixMilli()
 	query.Query.EndTime = end.UnixMilli()
 	query.Query.Size = limit

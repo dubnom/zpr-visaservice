@@ -43,11 +43,11 @@ test.afterAll(async () => {
 });
 
 const simulatorPages = [
-  { path: "/agents.html", refreshId: "#refresh", heading: "Devices" },
+  { path: "/agents.html", refreshId: "#machine-logs-refresh", heading: "Workers" },
   { path: "/activity.html", refreshId: "#refresh", heading: "Activity" },
   { path: "/organizations.html", refreshId: "#organization-refresh", heading: "Organizations" },
   { path: "/scenarios.html", refreshId: "#scenario-refresh", heading: "Scenarios" },
-  { path: "/machine-logs.html", refreshId: "#machine-logs-refresh", heading: "Workload logs" },
+  { path: "/machine-logs.html", refreshId: "#machine-logs-refresh", heading: "Workers" },
   { path: "/trusted-source.html", heading: "Trusted source" },
 ];
 

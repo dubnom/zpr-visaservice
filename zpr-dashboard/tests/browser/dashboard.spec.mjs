@@ -752,6 +752,42 @@ test("GUI Security visit acknowledges highlights without dismissing findings and
   await expect(nav).toHaveAttribute("data-high-alert", "true");
 });
 
+test("Security Review flags aggregate DNS probing without raising a source-attributed high alert", async ({ page, appURL, api }) => {
+  let statsRequest = 0;
+  api.handlers.set("/api/dns/stats/json/v1/server", async (route) => {
+    statsRequest += 1;
+    const nsstats = statsRequest === 1
+      ? { Requestv4: 0, Requestv6: 0, QryNXDOMAIN: 0 }
+      : { Requestv4: 20, Requestv6: 10, QryNXDOMAIN: 20 };
+    await route.fulfill({ json: { nsstats } });
+  });
+
+  await page.goto(`${appURL}/#security-review`);
+  await page.locator("#refresh-now").click();
+
+  const finding = page.locator("#security-review-findings tr").filter({ hasText: "DNS probing pattern" });
+  await expect(finding).toBeVisible();
+  await expect(finding).toHaveAttribute("data-severity", "review");
+  await expect(finding).toContainText("20 NXDOMAIN responses");
+  await expect(finding).toContainText("30 requests");
+  await expect(page.locator('.primary-nav [data-page-link="security-review"]')).toHaveAttribute("data-high-alert", "false");
+});
+
+test("Security Review ignores DNS NXDOMAIN activity below the aggregate threshold", async ({ page, appURL, api }) => {
+  let statsRequest = 0;
+  api.handlers.set("/api/dns/stats/json/v1/server", async (route) => {
+    statsRequest += 1;
+    const nsstats = statsRequest === 1
+      ? { Requestv4: 0, Requestv6: 0, QryNXDOMAIN: 0 }
+      : { Requestv4: 20, Requestv6: 10, QryNXDOMAIN: 19 };
+    await route.fulfill({ json: { nsstats } });
+  });
+
+  await page.goto(`${appURL}/#security-review`);
+  await page.locator("#refresh-now").click();
+  await expect(page.locator("#security-review-findings")).not.toContainText("DNS probing pattern");
+});
+
 test("GUI Adapter Logs places pickers in headers and toggles all panels and wrapping", async ({ page, appURL, api }) => {
   await page.goto(appURL + "/#adapter-logs");
   const panels = page.locator(".adapter-log-column");
@@ -948,7 +984,7 @@ test("Control Room keeps Adapter Logs internal and Log Manager under Tools", asy
   await expect(page.locator("#page-adapter-logs")).toBeVisible();
   const manager = page.locator(".sidebar-external-tools a");
   await expect(manager).toContainText("Log Manager");
-  await expect(manager).toHaveAttribute("href", "http://127.0.0.1:8798/");
+  await expect(manager).toHaveAttribute("href", "http://127.0.0.1:8800/");
   await expect(manager).toHaveAttribute("target", "zpr-log-manager");
 });
 
@@ -1119,9 +1155,10 @@ test("Diagnostics shows source identity, current metrics, searchable bounded log
   expect(simulationRequests).toEqual([]);
 });
 
-test("Simulator Agents uses device terminology without a machine-count label", async ({ page, appURL }) => {
+test("Simulator Agents redirects to Workers with device filtering", async ({ page, appURL, api }) => {
   await page.goto(appURL + "/agents.html");
-  await expect(page.getByRole("heading", { name: "Devices", exact: true })).toBeVisible();
+  await expect(page).toHaveURL(appURL + "/machine-logs.html");
+  await expect(page).toHaveTitle("ZPR Simulator Workers");
   await expect(page.locator("#machine-count")).toHaveCount(0);
   await expect(page.locator("#machine-type-filter option[value=all]")).toHaveText("All devices");
 });
@@ -1693,7 +1730,7 @@ test("Control Room groups status pages into counted tabs and keeps metrics on Ma
 
 for (const navigation of [
   { app: "Control Room", path: "/#services", label: "Status", next: "Visas", nextPath: "/#visas" },
-  { app: "Simulator", path: "/organizations.html", label: "Organizations", next: "Workload logs", nextPath: "/machine-logs.html" },
+  { app: "Simulator", path: "/organizations.html", label: "Organizations", next: "Workers", nextPath: "/machine-logs.html" },
 ]) {
   test(`${navigation.app} side menu condenses, remembers its state and keeps the active tab visible`, async ({ page, appURL, api }, testInfo) => {
     await page.goto(appURL + navigation.path);
@@ -3276,6 +3313,239 @@ test("GUI Map distinguishes loading, unavailable, and empty topology", async ({ 
   await page.locator("#refresh-now").click();
   await expect(page.locator("#alert-strip")).toContainText("503");
   await expect(page.locator(".graph-vertex")).toHaveCount(1);
+});
+
+test("GUI visa count opens complete current adapter and service inventories", async ({ page, appURL, api }) => {
+  api.snapshot.actors = [
+    { cn: "node", node: true, zpr_addr: "fd00::a", node_details: { adapters: ["client", "server"], buffered_denials: 2 } },
+    { cn: "client", node: false, zpr_addr: "fd00::1" },
+    { cn: "server", node: false, zpr_addr: "fd00::2" },
+  ];
+  api.snapshot.services = [
+    { service_name: "HTTPS", actor_cn: "server", service_endpoints: "TCP/443" },
+    { service_name: "HTTP", actor_cn: "server", service_endpoints: "TCP/80" },
+  ];
+  const visa = { expires: Date.now() / 1000 + 3600, source_addr: "fd00:0:0:0:0:0:0:1", dest_addr: "fd00::2", dest_port: 443, proto: "TCP", path: ["fd00::a"], policy_id: "<script>bad()</script>" };
+  api.snapshot.active_visas = [
+    ...Array.from({ length: 15 }, (_, index) => ({ ...visa, id: index + 1 })),
+    { ...visa, id: 1 }, // Duplicate snapshots must match the badge's deduplicated inventory.
+    { ...visa, id: 16, direction: "reverse", source_addr: "fd00::2", source_port: 443, dest_addr: "fd00::1", dest_port: 50000 },
+    { ...visa, id: 99, expires: Date.now() / 1000 - 10 },
+  ];
+  api.snapshot.recent_visas = [{ ...visa, id: 888 }];
+  await page.route("**/api/simulator/**", route => route.abort());
+  await page.goto(appURL + "/#map");
+  await page.locator("#pause-poll").click();
+  const clientCount = page.locator('.graph-vertex[data-inspect-actor="client"] .graph-visa-count');
+  await expect(clientCount).toHaveAttribute("aria-label", "16 active visas");
+  await clientCount.click({ button: "right" });
+  const inspector = page.locator("#component-inspector");
+  await expect(inspector).toHaveClass(/open/);
+  await expect(inspector.locator(".detail-item")).toHaveCount(16);
+  await expect(inspector).toContainText("Route: fd00::a");
+  await expect(inspector).toContainText("Policy: <script>bad()</script>");
+  await expect(inspector.locator("script")).toHaveCount(0);
+  await expect(inspector).not.toContainText("Visa 888");
+  await expect(page.locator("#topology-stage")).not.toHaveClass(/graph-visa-focused/);
+  await page.locator("#inspector-close").click();
+  await clientCount.click();
+  await expect(page.locator("#inspector-kind")).toHaveText("ACTIVE VISAS");
+  await expect(inspector.locator(".detail-item")).toHaveCount(16);
+  await page.locator("#inspector-close").click();
+  const httpsCount = page.locator('.graph-service-badge[data-inspect-service="HTTPS"] .graph-visa-count');
+  await httpsCount.focus();
+  await page.keyboard.press("Enter");
+  await expect(page.locator("#inspector-kind")).toHaveText("ACTIVE VISAS");
+  await expect(page.locator("#inspector-title")).toHaveText("HTTPS");
+  await expect(inspector.locator(".detail-item")).toHaveCount(16);
+  await page.locator("#inspector-close").click();
+  const httpCount = page.locator('.graph-service-badge[data-inspect-service="HTTP"] .graph-visa-count');
+  await httpCount.click({ button: "right" });
+  await expect(inspector).toContainText("No current visas.");
+  await expect(inspector.locator(".detail-item")).toHaveCount(0);
+  await page.locator("#inspector-close").click();
+  await httpsCount.click({ button: "right" });
+  api.snapshot.active_visas = [];
+  await page.locator("#refresh-now").click();
+  await expect(inspector).toContainText("No current visas.");
+  delete api.snapshot.active_visas;
+  await page.locator("#refresh-now").click();
+  await expect(inspector).toContainText("Active visa inventory unavailable");
+  await expect(inspector.locator(".detail-item")).toHaveCount(0);
+  api.snapshot.services = [];
+  await page.locator("#refresh-now").click();
+  await expect(inspector).not.toHaveClass(/open/);
+});
+
+test("GUI Simulator navigation order survives page switching", async ({ page, appURL, api }) => {
+  await page.goto(appURL + "/machine-logs.html");
+  const paths = ["/organizations.html", "/scenarios.html", "/trusted-source.html", "/activity.html", "/machine-logs.html"];
+  const nav = page.locator(".primary-nav a[data-simulator-nav]");
+  await expect.poll(() => nav.evaluateAll(links => links.map(link => link.getAttribute("href")))).toEqual(paths);
+  for (const path of paths.slice(0, -1)) {
+    await page.locator(`.primary-nav a[href="${path}"]`).click();
+    await expect(page).toHaveURL(appURL + path);
+    await expect.poll(() => nav.evaluateAll(links => links.map(link => link.getAttribute("href")))).toEqual(paths);
+    await expect(page.locator(".primary-nav a.active")).toHaveAttribute("href", path);
+  }
+  await page.locator('.primary-nav a[href="/machine-logs.html"]').click();
+  await expect(page.locator(".primary-nav a.active")).toHaveAttribute("href", "/machine-logs.html");
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBeTruthy();
+});
+
+test("GUI Workers merges passive device inventory and logs with type filtering and word wrap", async ({ page, appURL, api }) => {
+  const [laptop, desktop] = api.workloadLogs.machines;
+  laptop.machine = { ...laptop.machine, type: "laptop", owner: "alice", secure: true, location: "HQ" };
+  laptop.controller = { connected: true };
+  laptop.session = { authenticated: true, user: "alice" };
+  laptop.workloads = [{ name: "finance-client", kind: "client", agent: "adapter-1", address: "fd00::1", state: "running" }];
+  laptop.sources[0].lines = ["x".repeat(1000)];
+  desktop.machine = { ...desktop.machine, type: "desktop", secure: false, owner: "bob" };
+  desktop.state = "stopped";
+  desktop.controller = { connected: false };
+  desktop.session = { authenticated: false };
+  desktop.workloads = [];
+  const mutations = [];
+  page.on("request", request => {
+    if (request.url().includes("/api/simulator/") && request.method() !== "GET") mutations.push(request.url());
+  });
+  await page.goto(appURL + "/agents.html");
+  await expect(page).toHaveURL(appURL + "/machine-logs.html");
+  await expect(page).toHaveTitle("ZPR Simulator Workers");
+  await expect(page.locator('.primary-nav a[href="/agents.html"]')).toHaveCount(0);
+  await expect(page.locator('.primary-nav a[href="/machine-logs.html"]')).toHaveText("Workers");
+  const panels = page.locator(".machine-log-panel");
+  await expect(panels).toHaveCount(2);
+  const first = panels.first();
+  await first.locator(".worker-details summary").click();
+  await expect(first.locator(".worker-details")).toContainText("Controller: Connected");
+  await expect(first.locator(".worker-details")).toContainText("Authenticated as alice");
+  await expect(first.locator(".worker-details")).toContainText("finance-client (client): running");
+  await expect(first.locator(".worker-details")).toContainText("fd00::1");
+  await expect(page.locator('[data-machine-action], [data-session-action], [data-login-machine], [data-workload-name], [data-save-workloads]')).toHaveCount(0);
+  const output = first.locator(".machine-log-output");
+  await expect.poll(() => output.evaluate(element => element.scrollWidth <= element.clientWidth)).toBe(true);
+  await page.getByRole("button", { name: "Word wrap", exact: true }).click();
+  await expect.poll(() => output.evaluate(element => element.scrollWidth > element.clientWidth)).toBe(true);
+  await first.getByRole("button", { name: /Maximize/ }).click();
+  await expect(first.locator("pre")).toHaveCSS("white-space", "pre");
+  await page.keyboard.press("Escape");
+  await page.getByRole("button", { name: "Word wrap", exact: true }).click();
+  await page.locator("#machine-type-filter").selectOption("desktop");
+  await expect(first).toBeHidden();
+  await expect(panels.nth(1)).toBeVisible();
+  await panels.nth(1).locator(".worker-details summary").click();
+  await expect(panels.nth(1)).toContainText("Controller: Offline");
+  await expect(panels.nth(1)).toContainText("No authenticated user");
+  await page.locator("#machine-logs-running").check();
+  await expect(page.locator(".workers-empty")).toHaveText("No workers match the filters.");
+  await page.locator("#machine-type-filter").selectOption("all");
+  await expect(first).toBeVisible();
+  await page.locator("#machine-logs-pause").click();
+  await expect(page.locator("#machine-logs-status")).toHaveText("Paused");
+  expect(mutations).toEqual([]);
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBeTruthy();
+});
+
+test("GUI scenario failure progress preserves the original step through cleanup", async ({ page, appURL, api }) => {
+  api.handlers.set("/api/simulator/scenarios", async route => route.fulfill({ json: {
+    active_organization_id: "alpha", scenarios: [], run: { state: "idle", steps: [] },
+  } }));
+  await page.goto(appURL + "/scenarios.html");
+  await expect(page.locator("#scenario-run-state")).toContainText("idle");
+  await page.evaluate(() => {
+    window.guiFailureRun = {
+      scenario_id: "failed-fixture", state: "cleaning", current_step: 8, total_steps: 9,
+      scenario: { steps: [{ action: "start_machine", machine: "machine-03" }], cleanup: [] },
+      steps: [
+        { number: 1, phase: "run", action: "start_machine", machine: "machine-03", status: "failed", error: "Owner missing" },
+        { number: 8, phase: "cleanup", action: "stop_workload", status: "failed", error: "Controller offline" },
+      ],
+    };
+    renderScenarioRun(window.guiFailureRun);
+  });
+  await expect(page.locator(".scenario-progress")).toHaveText("Failed step 1 / 9 · Cleanup 8 / 9");
+  await expect(page.locator("#scenario-run-summary")).toContainText("Step 1: start machine on machine-03");
+  await page.evaluate(() => renderScenarioRun({ ...window.guiFailureRun, state: "failed", current_step: 9, error: "Owner missing" }));
+  await expect(page.locator(".scenario-progress")).toHaveText("Failed step 1 / 9");
+  await expect(page.locator("#scenario-run-summary")).toContainText("Owner missing");
+  await expect(page.locator("#scenario-run-summary .scenario-run-error")).toHaveCount(1);
+  await expect(page.locator("#scenario-clear")).toBeVisible();
+  await page.evaluate(() => renderScenarioRun({
+    ...window.guiFailureRun, state: "failed",
+    steps: [{ number: 8, phase: "cleanup", action: "stop_workload", status: "failed", error: "Cleanup failed" }],
+  }));
+  await expect(page.locator(".scenario-progress")).toHaveText("Failed step 8 / 9");
+  await page.evaluate(() => renderScenarioRun({ scenario_id: "running-fixture", state: "running", current_step: 1, total_steps: 2, steps: [] }));
+  await expect.poll(() => page.locator("#scenario-run-state").evaluate(element => ({
+    background: getComputedStyle(element).backgroundColor, color: getComputedStyle(element).color,
+  }))).toEqual({ background: "rgb(21, 95, 192)", color: "rgb(255, 255, 255)" });
+});
+
+test("GUI Status tables scroll vertically with retained sortable headings", async ({ page, appURL, api }) => {
+  api.snapshot.actors = Array.from({ length: 120 }, (_, index) => ({
+    cn: `actor-${String(index).padStart(3, "0")}`, node: false, zpr_addr: `fd00::${index + 1}`,
+  }));
+  await page.goto(appURL + "/#actors");
+  const scroll = page.locator("#page-actors .table-scroll");
+  await expect(page.locator("#actor-rows tr")).toHaveCount(120);
+  const dimensions = await scroll.evaluate(element => ({
+    height: element.clientHeight, total: element.scrollHeight, viewport: innerHeight,
+    overflow: getComputedStyle(element).overflowY,
+  }));
+  expect(dimensions.total).toBeGreaterThan(dimensions.height);
+  expect(dimensions.height).toBeLessThanOrEqual(dimensions.viewport * 0.65 + 1);
+  expect(dimensions.overflow).toBe("auto");
+  await scroll.evaluate(element => { element.scrollTop = 500; });
+  const positions = await page.locator('#page-actors th[data-sort-key="cn"]').evaluate(element => ({
+    heading: element.getBoundingClientRect().top,
+    container: element.closest(".table-scroll").getBoundingClientRect().top,
+  }));
+  expect(Math.abs(positions.heading - positions.container)).toBeLessThan(2);
+  await page.locator('#page-actors th[data-sort-key="cn"]').click();
+  await expect(page.locator('#page-actors th[data-sort-key="cn"]')).toHaveAttribute("aria-sort", "descending");
+  const headingColor = await page.locator('#page-actors th[data-sort-key="cn"]').evaluate(element => getComputedStyle(element).backgroundColor);
+  expect(headingColor).toBe("rgb(233, 243, 212)");
+});
+
+test("GUI Map count badges overlap upper-right glyph boundaries", async ({ page, appURL, api }) => {
+  api.snapshot.actors = [
+    { cn: "node", node: true, zpr_addr: "fd00::ff", node_details: { adapters: ["client", "vs", "gateway"], buffered_denials: 123456 } },
+    { cn: "client", node: false, zpr_addr: "fd00::1" },
+    { cn: "vs", node: false, zpr_addr: "fd00::2" },
+    { cn: "gateway", node: false, zpr_addr: "fd00::3" },
+  ];
+  api.snapshot.services = [
+    { service_name: "API", actor_cn: "client", zpr_addr: "fd00::1", service_kind: "Regular", service_endpoints: "TCP/443" },
+    { service_name: "Visa", actor_cn: "vs", zpr_addr: "fd00::2", service_kind: "Visa", service_endpoints: "TCP/5002" },
+    { service_name: "Gateway", actor_cn: "gateway", zpr_addr: "fd00::3", service_kind: "Gateway", service_endpoints: "TCP/443" },
+  ];
+  api.snapshot.active_visas = [];
+  await page.goto(appURL + "/#map");
+  await expect(page.locator(".graph-visa")).toHaveCount(1);
+  const anchors = await page.locator("[data-topology-component]").evaluateAll(elements => elements.map(element => {
+    const badge = element.querySelector(".graph-visa-count rect");
+    const glyph = element.querySelector(":scope > .graph-node, :scope > .graph-adapter, :scope > .graph-visa, :scope > .graph-gateway, :scope > rect");
+    if (!badge || !glyph) return null;
+    const bounds = badge.getBBox();
+    const shape = glyph.getBBox();
+    const x = bounds.x + bounds.width / 2, y = bounds.y + bounds.height / 2;
+    const origin = { x: Number(element.dataset.originX), y: Number(element.dataset.originY) };
+    return { type: glyph.tagName, gateway: glyph.classList.contains("graph-gateway"), dx: x - origin.x, dy: y - origin.y, halfWidth: shape.width / 2, halfHeight: shape.height / 2 };
+  }).filter(Boolean));
+  expect(anchors).toHaveLength(7);
+  for (const anchor of anchors) {
+    expect(anchor.dx).toBeGreaterThan(0);
+    expect(anchor.dy).toBeLessThan(0);
+    if (anchor.type === "circle") expect(Math.hypot(anchor.dx, anchor.dy)).toBeCloseTo(29, 4);
+    else if (anchor.type === "polygon") {
+      expect(anchor.dx).toBeCloseTo(anchor.gateway ? 28 : 17.5, 4);
+      expect(anchor.dy).toBeCloseTo(anchor.gateway ? -16 : -17.5, 4);
+    } else {
+      expect(anchor.dx).toBeCloseTo(anchor.halfWidth - 2, 4);
+      expect(anchor.dy).toBeCloseTo(-anchor.halfHeight + 2, 4);
+    }
+  }
 });
 
 test("GUI Map shows complete active visa counts and solid component links", async ({ page, appURL, api }) => {

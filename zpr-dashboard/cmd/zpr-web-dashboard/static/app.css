@@ -199,6 +199,8 @@ h1 { margin-bottom: 6px; font-size: 28px; line-height: 1.15; letter-spacing: 0; 
 .legend-service-link { width: 14px !important; height: 0; border-top: 2px solid #b8753f; }
 #graph-world .graph-visa-count rect { fill: #174d3d; stroke: #fff; stroke-width: 1.5; filter: none; }
 #graph-world .graph-visa-count.empty rect { fill: none; stroke: #174d3d; }
+#graph-world .graph-visa-count[role="button"] rect { pointer-events: all; cursor: context-menu; }
+#graph-world .graph-visa-count[role="button"]:focus-visible rect { stroke: #2473d8; stroke-width: 3; }
 #graph-world .graph-denial-count rect { fill: #a12c2c; }
 #graph-world .graph-denial-count.empty rect { fill: none; stroke: #a12c2c; }
 .graph-dark #graph-world .graph-denial-count:not(.empty) rect { fill: #a12c2c; stroke: #ffc1b8; }
@@ -278,6 +280,20 @@ h1 { margin-bottom: 6px; font-size: 28px; line-height: 1.15; letter-spacing: 0; 
 .table-tools input:not([type="checkbox"]) { width: min(250px, 46vw); min-height: 31px; padding: 0 9px; border: 1px solid var(--line); border-radius: 2px; outline: none; background: white; color: var(--ink); font: 11px var(--sans); }
 .table-tools input:focus { border-color: #62856f; box-shadow: 0 0 0 2px #b5e34f42; }
 .table-scroll { overflow-x: auto; }
+#page-connections .table-scroll, #page-actors .table-scroll,
+#page-services .table-scroll, #page-visas .table-scroll,
+#page-denies .table-scroll, #page-dns .table-scroll {
+  max-height: min(65vh, 640px);
+  overflow: auto;
+  scrollbar-gutter: stable;
+}
+:where(#page-connections, #page-actors, #page-services,
+  #page-visas, #page-denies, #page-dns) th {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  background: #e9eee8;
+}
 table { width: 100%; border-collapse: collapse; background: var(--panel); }
 thead { background: #e9eee8; }
 th { padding: 9px 10px; color: #78857c; text-align: left; font: 8px var(--mono); letter-spacing: .06em; white-space: nowrap; }

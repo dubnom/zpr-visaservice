@@ -4,7 +4,7 @@
 
   const baselineKey = "zpr.control-room.security-review.baseline.v1";
   const dismissalsKey = "zpr.control-room.security-review.dismissals.v1";
-  const state = { baseline: null, findings: [], dismissed: {}, selected: new Set(), scannedAt: null, pending: false, snapshot: null, request: null };
+  const state = { baseline: null, findings: [], dismissed: {}, selected: new Set(), scannedAt: null, pending: false, snapshot: null, request: null, dnsSamples: [] };
   const byId = (id) => document.getElementById(id);
   const baselineLabel = byId("security-review-baseline");
   const baselineTime = byId("security-review-baseline-time");
@@ -240,6 +240,45 @@
     return findings;
   }
 
+  async function dnsProbeFindings(signal) {
+    try {
+      const response = await fetch("/api/dns/stats/json/v1/server", { cache: "no-store", signal, headers: { Accept: "application/json" } });
+      if (!response.ok) return [];
+      const counters = (await response.json()).nsstats || {};
+      const counter = (value) => {
+        const parsed = Number(value);
+        return Number.isFinite(parsed) && parsed >= 0 ? parsed : 0;
+      };
+      const sample = {
+        observedAt: Date.now(),
+        requests: counter(counters.Requestv4) + counter(counters.Requestv6),
+        nxdomain: counter(counters.QryNXDOMAIN),
+      };
+      const previous = state.dnsSamples.at(-1);
+      if (previous && (sample.requests < previous.requests || sample.nxdomain < previous.nxdomain)) state.dnsSamples = [];
+      state.dnsSamples.push(sample);
+      const cutoff = sample.observedAt - 60000;
+      while (state.dnsSamples.length > 1 && state.dnsSamples[1].observedAt <= cutoff) state.dnsSamples.shift();
+      const baseline = state.dnsSamples.find((item) => item.observedAt >= cutoff) || state.dnsSamples[0];
+      const elapsed = sample.observedAt - baseline.observedAt;
+      if (elapsed <= 0 || elapsed > 60000) return [];
+
+      const requests = sample.requests - baseline.requests;
+      const nxdomain = sample.nxdomain - baseline.nxdomain;
+      if (requests < 30 || nxdomain < 20 || nxdomain / requests < 0.6) return [];
+      const seconds = Math.max(1, Math.round(elapsed / 1000));
+      return [makeFinding(
+        "DNS probing pattern (aggregate)",
+        "DNS service",
+        `${nxdomain} NXDOMAIN responses among ${requests} requests in the last ${seconds} seconds; aggregate counters cannot identify the source.`,
+        "review",
+        sample.observedAt,
+      )];
+    } catch {
+      return [];
+    }
+  }
+
   function render() {
     const currentAlerts = new Set(state.findings.filter((finding) => finding.severity === "high").map(alertKey));
     for (const key of acknowledgedAlerts) if (!currentAlerts.has(key)) acknowledgedAlerts.delete(key);
@@ -343,6 +382,7 @@
       const logsResult = active()
         ? await readJSON("/api/adapter-logs", request.signal).then((logs) => ({ logs }), (error) => ({ error }))
         : {};
+      const dnsFindings = active() ? await dnsProbeFindings(request.signal) : [];
       if (request.signal.aborted) return;
       snapshot = state.snapshot;
       if (snapshot.api_status !== "connected") {
@@ -360,7 +400,7 @@
       }
       state.scannedAt = new Date();
       baselineText();
-      state.findings = [...denialFindings(snapshot), ...trustedSourceFindings(snapshot), ...nodeHealthFindings(snapshot), ...inventoryFindings(snapshot), ...(logsResult.logs ? logFindings(logsResult.logs) : [])]
+      state.findings = [...denialFindings(snapshot), ...trustedSourceFindings(snapshot), ...nodeHealthFindings(snapshot), ...inventoryFindings(snapshot), ...(logsResult.logs ? logFindings(logsResult.logs) : []), ...dnsFindings]
         .sort((left, right) => ({ high: 0, review: 1, info: 2 }[left.severity] - { high: 0, review: 1, info: 2 }[right.severity]) || right.observedAt - left.observedAt)
         .slice(0, 250);
       if (logsResult.error) statusLabel.textContent = `Scanned · adapter logs unavailable: ${logsResult.error.message}`;

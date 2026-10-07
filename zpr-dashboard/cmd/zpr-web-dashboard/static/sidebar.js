@@ -120,14 +120,6 @@
   };
 
   const simulatorHelp = {
-    "agents.html": {
-      title: "Devices",
-      intro: "Inspect simulated devices, runtime services, and recent agent/controller activity.",
-      steps: ["Open a device to review its state.", "Log users out and stop active sessions before changing organizations."],
-      recovery: "If a controller is offline, verify the machine-control listener and device container state before retrying a command.",
-      context: "A simulated client workload and a service workload have distinct ZPR identities. A test request succeeds only when the active runtime policy grants that client access to the service; starting a workload does not create a grant.",
-      docs: "Simulator guide", href: "https://github.com/org-zpr/zpr-visaservice/blob/main/zpr-dashboard/cmd/zpr-web-dashboard/README.md",
-    },
     "organizations.html": {
       title: "Organizations",
       intro: "Each organization selects a separate simulated policy, directory, DNS context, and runtime profile.",
@@ -154,9 +146,9 @@
       docs: "Simulator guide", href: "https://github.com/org-zpr/zpr-visaservice/blob/main/zpr-dashboard/cmd/zpr-web-dashboard/README.md",
     },
     "machine-logs.html": {
-      title: "Workload logs",
-      intro: "Inspect bounded controller, adapter, and workload output from the simulator fleet.",
-      steps: ["Choose the device and source to read.", "Pause or filter the stream when examining a specific event."],
+      title: "Workers",
+      intro: "Inspect simulated devices, their container/controller/session state, selected workloads, and bounded workload logs in one read-only view.",
+      steps: ["Expand Device and workloads to inspect identity, posture and runtime state.", "Choose a log source; filter by type or running state, pause updates, or toggle word wrap.", "Machine and workload lifecycle and login are controlled by scenarios, not this page."],
       recovery: "Unavailable sources are reported separately; confirm the container is running and the requested log source exists.",
       context: "The Simulator polls the selected workload feed while this page is active. These application logs are separate from the production Control Room’s operator-configured adapter, controller, and service telemetry.",
       docs: "Simulator guide", href: "https://github.com/org-zpr/zpr-visaservice/blob/main/zpr-dashboard/cmd/zpr-web-dashboard/README.md",
@@ -176,7 +168,7 @@
 
   function helpContent() {
     const simulator = document.querySelector(".sidebar .brand")?.textContent.includes("SIMULATOR");
-    if (simulator) return simulatorHelp[location.pathname.split("/").pop()] || simulatorHelp["agents.html"];
+    if (simulator) return simulatorHelp[location.pathname.split("/").pop()] || simulatorHelp["machine-logs.html"];
     const page = location.hash.slice(1) || "map";
     if (page === "policy" && !document.querySelector("#policy-assertion-editor")?.hidden) return controlHelp.assertions;
     return controlHelp[page] || controlHelp.map;

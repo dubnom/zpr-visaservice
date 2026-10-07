@@ -19,8 +19,8 @@
     "user_attributes": ["cn", "mail", "ou", "title"],
     "departments": [{"name": "Performance"}],
     "people": [
-      {"uid": "alex.rivera", "name": "Alex Rivera", "email": "alex.rivera@velocity.example", "department": "Performance", "title": "Client Benchmark Operator"},
-      {"uid": "sam.chen", "name": "Sam Chen", "email": "sam.chen@velocity.example", "department": "Performance", "title": "Service Benchmark Operator"}
+      {"uid": "alex.rivera", "name": "Alex Rivera", "email": "alex.rivera@velocity.example", "department": "Performance", "title": "Client Benchmark Operator", "location": "Performance Lab"},
+      {"uid": "sam.chen", "name": "Sam Chen", "email": "sam.chen@velocity.example", "department": "Performance", "title": "Service Benchmark Operator", "location": "Performance Lab"}
     ],
     "groups": [{"name": "BenchmarkOperators", "members": ["alex.rivera", "sam.chen"]}]
   },

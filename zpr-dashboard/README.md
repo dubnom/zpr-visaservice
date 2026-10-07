@@ -71,8 +71,8 @@ seeded into the local demo LDAP directory when the disposable Linux rig starts.
 Its Activity page is a live view of recent Control Room visa and denial data.
 It shows request/approval/denial totals, sortable recent-visa and denial tables,
 and a manual Refresh beside the stream status. It is an operational feed, not a
-durable audit archive. The Agents page labels the fleet as Devices and filters
-by device type. Control Room remains the read-only network and policy monitor at
+durable audit archive. **Workers** merges passive device/runtime inventory and
+workload logs, with device-type filtering. Control Room remains the read-only network and policy monitor at
 `http://127.0.0.1:8787`.
 
 Control Room groups Adapters, Actors, Services, Visas, Denials, and DNS under
@@ -196,7 +196,8 @@ using the same horizontal panels. Each panel remembers its adapter/controller
 selection and source scroll/follow state; changing types needs no additional
 collection request. The machine/adapter selectors and add/remove panel controls
 apply to the selected type.
-The Simulator's **Workload logs** page shows only assigned application/service
+The Simulator's **Workers** page shows passive device, controller, session and
+selected workload status together with assigned application/service
 event logs, not Controller or adapter logs. Running machines with no supported
 workload logs have an explicit empty state.
 
@@ -220,7 +221,7 @@ only approved color and text-emphasis styles are applied without relaxing CSP.
 Each source returns at most 100 lines and 64 KiB. Collection runs for at most
 12 seconds with four concurrent machines; empty and unavailable sources are
 shown separately. Adapter Logs reads Docker controller output and PH log files;
-Workload logs reads application/service JSON event files. Neither view generates
+Workers reads application/service JSON event files. Neither view generates
 traffic or starts log-producing
 workloads. Recognized credentials are redacted before sending logs to the
 browser. This is a bounded live tail, not a durable audit archive.
@@ -333,7 +334,7 @@ restarting the simulator's machine fleet.
 
 The simulator defines 20 Docker machine profiles but initially creates only
 `zpr-machine-01`, from the `debian:trixie` image. Starting another machine in
-the Agents page creates it on demand. Each running container has its own
+a scenario creates it on demand. Each running container has its own
 Linux/ARM64 machine controller and PH adapter with a unique bootstrapped ZPR
 identity. Machine adapters use dynamic `fd5a:5052::/32` addresses; the
 simulator-control provider uses a reserved `fd5a:5052:adda:1::/64` address so
@@ -371,14 +372,18 @@ password check or ZPR user authentication: controller mTLS is a separate
 machine identity, and the existing BAS auth-code flow authenticates an adapter
 key rather than a human.
 
-The Agents page starts with no clients or services assigned. While logged in,
-an operator can select any configured workload for a machine and then
-individually start/stop it. Selections are simulator control state and a given
-workload can be selected on only one logged-in machine at a time. Login/logout
+Workers is read-only: its expandable device details show owner, posture,
+container/controller state, authenticated user and selected workload identities.
+The former Agents page redirects to Workers at `/machine-logs.html`, and the
+navigation has one Workers entry rather than separate Agents and Workload Logs.
+Word wrap is initially enabled and can be toggled for all windows, including
+maximized logs. Start/stop, login/logout and workload assignment are controlled
+by scenarios rather than page buttons. Selections are simulator control state
+and a workload can be selected on only one logged-in machine at a time. Login/logout
 and workload start/stop commands are queued by the simulator and executed by
 the machine controller over its ZPR service connection; PH workload adapters
 run inside the selected machine container. The selected workload remains
-stopped until its individual Start control is used. Docker container Start/Stop
+stopped until a scenario starts it. Docker container Start/Stop
 remains a local host operation because an offline container cannot receive a
 ZPR command. Stopping a machine stops its workloads and clears its
 simulated login session; starting it restores its route but does not log a user
@@ -476,4 +481,3 @@ The individual process environment is documented in
 non-local deployments.
 
 Open `http://127.0.0.1:8787` for the Control Room UI.
-
