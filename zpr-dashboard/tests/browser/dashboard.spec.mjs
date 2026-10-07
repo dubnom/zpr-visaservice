@@ -3651,6 +3651,22 @@ test("GUI Map right-click highlights only current outbound visa services and ord
   await page.locator("#refresh-now").click();
   await expect(page.locator(".graph-visa-focus-status")).toContainText("0 active outbound visas");
   await expect(page.locator(".graph-edge.visa-focus")).toHaveCount(0);
+  api.snapshot.active_visas = [{
+    id: 5, expires: Date.now() / 1000 + 3600, source_addr: "fd00::1", dest_addr: "fd00::2",
+    dest_port: 443, proto: "TCP", path: ["fd00::a", "fd00::b", "fd00::c"],
+  }];
+  await page.locator("#refresh-now").click();
+  const serviceBadge = page.locator('.graph-service-badge[data-inspect-service="Allowed"]');
+  await serviceBadge.click({ button: "right" });
+  await expect(stage).toHaveClass(/graph-visa-focused/);
+  await expect(page.locator(".graph-visa-focus-status")).toContainText("Allowed: 1 active visas serve this service");
+  await expect(serviceBadge).toHaveClass(/visa-focus/);
+  await expect(page.locator('.graph-vertex[data-inspect-actor="client"]')).toHaveClass(/visa-focus/);
+  await expect(page.locator('.graph-vertex[data-inspect-actor="server"]')).toHaveClass(/visa-focus/);
+  await expect(page.locator(".graph-edge.visa-focus")).toHaveCount(4);
+  await serviceBadge.click({ button: "right" });
+  await expect(stage).not.toHaveClass(/graph-visa-focused/);
+  await expect(serviceBadge).not.toHaveClass(/visa-focus/);
 });
 
 test("GUI Map zero visa badges are empty outlines and retain accessible counts", async ({ page, appURL, api }) => {

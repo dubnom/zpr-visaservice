@@ -18,8 +18,16 @@ function activeMapVisas(data) {
 
 function applyMapVisaFocus(data) {
   const stage = byId("topology-stage");
-  const adapter = data.actors.find(actor => !actor.node && actor.cn === graphVisaFocus);
-  if (!adapter) graphVisaFocus = null;
+  let focusedService = graphVisaFocus?.kind === "service"
+    ? data.services.find(service => service.actor_cn === graphVisaFocus.actorCN && service.service_name === graphVisaFocus.serviceName)
+    : null;
+  const adapterCN = graphVisaFocus?.kind === "adapter" ? graphVisaFocus.actorCN : focusedService?.actor_cn;
+  let adapter = data.actors.find(actor => !actor.node && actor.cn === adapterCN);
+  if (!adapter || (graphVisaFocus?.kind === "service" && !focusedService)) {
+    graphVisaFocus = null;
+    focusedService = null;
+    adapter = null;
+  }
   stage.classList.toggle("graph-visa-focused", graphVisaFocus != null);
   stage.querySelectorAll(".visa-focus").forEach(element => element.classList.remove("visa-focus"));
   const status = stage.querySelector(".graph-visa-focus-status");
@@ -29,6 +37,7 @@ function applyMapVisaFocus(data) {
   }
   const actorKey = actor => `actor:${JSON.stringify(actor.cn)}`;
   const componentKeys = new Set([actorKey(adapter)]);
+  if (focusedService) componentKeys.add(`service:${JSON.stringify([focusedService.actor_cn, focusedService.service_name])}`);
   const connectorPairs = new Set();
   const pairKey = (a, b) => JSON.stringify([a, b].sort());
   const addressActor = address => data.actors.find(actor => actor.zpr_addr && dnsAddressKey(actor.zpr_addr) === dnsAddressKey(address));
@@ -37,7 +46,10 @@ function applyMapVisaFocus(data) {
   let matching = 0, missingRoutes = 0;
   for (const visa of visas || []) {
     const requester = String(visa.direction || "").toLowerCase() === "reverse" ? visa.dest_addr : visa.source_addr;
-    if (!requester || !adapter.zpr_addr || dnsAddressKey(requester) !== dnsAddressKey(adapter.zpr_addr)) continue;
+    const matchesFocus = focusedService
+      ? serviceMatchesVisa(focusedService, visa, data.actors)
+      : requester && adapter.zpr_addr && dnsAddressKey(requester) === dnsAddressKey(adapter.zpr_addr);
+    if (!matchesFocus) continue;
     matching += 1;
     const source = addressActor(visa.source_addr), destination = addressActor(visa.dest_addr);
     for (const endpoint of [source, destination].filter(Boolean)) componentKeys.add(actorKey(endpoint));
@@ -55,7 +67,7 @@ function applyMapVisaFocus(data) {
     for (const [endpoint, node] of [[source, nodes[0]], [destination, nodes.at(-1)]]) {
       if (endpoint && node && !endpoint.node && node.node_details?.adapters?.includes(endpoint.cn)) connectorPairs.add(pairKey(actorKey(endpoint), actorKey(node)));
     }
-    for (const service of data.services || []) {
+    for (const service of focusedService ? [focusedService] : data.services || []) {
       if (!serviceMatchesVisa(service, visa, data.actors)) continue;
       const key = `service:${JSON.stringify([service.actor_cn, service.service_name])}`;
       componentKeys.add(key);
@@ -70,8 +82,10 @@ function applyMapVisaFocus(data) {
   }
   if (status) {
     status.hidden = false;
-    status.textContent = visas == null ? `${actorDisplayName(adapter)}: active visa inventory unavailable.`
-      : `${actorDisplayName(adapter)}: ${matching} active outbound visas.${missingRoutes ? ` Ordered route unavailable for ${missingRoutes}; no route inferred.` : ""} Right-click this adapter or blank canvas to clear.`;
+    const focusName = focusedService ? focusedService.service_name : actorDisplayName(adapter);
+    const focusDescription = focusedService ? "active visas serve this service" : "active outbound visas";
+    status.textContent = visas == null ? `${focusName}: active visa inventory unavailable.`
+      : `${focusName}: ${matching} ${focusDescription}.${missingRoutes ? ` Ordered route unavailable for ${missingRoutes}; no route inferred.` : ""} Right-click this ${focusedService ? "service" : "adapter"} or blank canvas to clear.`;
   }
 }
 
@@ -1135,7 +1149,7 @@ function renderTopology(data, exitComponents = []) {
     const entry = marker && parentMovement ? { x: offset.x + parentMovement.x, y: offset.y + parentMovement.y } : null;
     const positionAttributes = offsetAttributes(offset, parentKey, entry);
     const count = visaCountBadge(counts.get(componentKey), position.x + badgeWidth / 2 + 12, position.y);
-    return `<g class="graph-service-badge${gatewayClass}${trustedClass}${arrivingClass} ${highlighted} ${filtered}" data-service-type="${escapeHTML(type.key)}" fill="${escapeHTML(type.background)}" stroke="${escapeHTML(type.border)}" color="${escapeHTML(type.color)}" data-topology-component="${escapeHTML(componentKey)}" data-origin-x="${position.x}" data-origin-y="${position.y}"${positionAttributes} data-inspect-service="${escapeHTML(service.service_name)}" tabindex="0" role="button" aria-label="${escapeHTML(labelForScreenReader)}"><title>${escapeHTML(title)}</title><rect x="${position.x - badgeWidth / 2}" y="${position.y - 10}" width="${badgeWidth}" height="20" rx="4"/>${marker}<text x="${position.x}" y="${position.y + 3}">${escapeHTML(shortLabel)}</text>${count}</g>`;
+    return `<g class="graph-service-badge${gatewayClass}${trustedClass}${arrivingClass} ${highlighted} ${filtered}" data-service-type="${escapeHTML(type.key)}" fill="${escapeHTML(type.background)}" stroke="${escapeHTML(type.border)}" color="${escapeHTML(type.color)}" data-topology-component="${escapeHTML(componentKey)}" data-origin-x="${position.x}" data-origin-y="${position.y}"${positionAttributes} data-service-actor="${escapeHTML(service.actor_cn)}" data-inspect-service="${escapeHTML(service.service_name)}" tabindex="0" role="button" aria-label="${escapeHTML(labelForScreenReader)}"><title>${escapeHTML(title)}</title><rect x="${position.x - badgeWidth / 2}" y="${position.y - 10}" width="${badgeWidth}" height="20" rx="4"/>${marker}<text x="${position.x}" y="${position.y + 3}">${escapeHTML(shortLabel)}</text>${count}</g>`;
   });
 
   const exiting = (kind) => exitComponents.filter((component) => component.kind === kind).map((component) => component.markup).join("");
@@ -4050,11 +4064,21 @@ byId("poll-rate").addEventListener("change", setPollTimer);
 byId("topology-search").addEventListener("input", () => state.snapshot && renderTopology(state.snapshot));
 byId("topology-stage").addEventListener("contextmenu", event => {
   if (!state.snapshot) return;
+  const serviceBadge = event.target.closest(".graph-service-badge[data-inspect-service]");
+  if (serviceBadge) {
+    const serviceFocus = { kind: "service", actorCN: serviceBadge.dataset.serviceActor, serviceName: serviceBadge.dataset.inspectService };
+    const isSameService = graphVisaFocus?.kind === "service" && graphVisaFocus.actorCN === serviceFocus.actorCN && graphVisaFocus.serviceName === serviceFocus.serviceName;
+    event.preventDefault();
+    graphVisaFocus = isSameService ? null : serviceFocus;
+    applyMapVisaFocus(state.snapshot);
+    return;
+  }
   const component = event.target.closest(".graph-vertex[data-inspect-actor]");
   const actor = component && state.snapshot.actors.find(actor => actor.cn === component.dataset.inspectActor);
   if (actor && !actor.node) {
     event.preventDefault();
-    graphVisaFocus = graphVisaFocus === actor.cn ? null : actor.cn;
+    const isSameAdapter = graphVisaFocus?.kind === "adapter" && graphVisaFocus.actorCN === actor.cn;
+    graphVisaFocus = isSameAdapter ? null : { kind: "adapter", actorCN: actor.cn };
     applyMapVisaFocus(state.snapshot);
   } else if (!event.target.closest("[data-inspect-actor], [data-inspect-service], [data-inspect-link], .graph-controls")) {
     event.preventDefault();
