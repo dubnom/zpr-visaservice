@@ -66,8 +66,14 @@ policy and reported route. Clicking/tapping the badge or pressing Enter/Space
 while it is focused opens the same view. Inventory follows refreshed snapshots,
 excludes expired and duplicate visas, and uses the same matching rules as the
 count. Missing inventory is explicitly unavailable, never replaced with recent
-decisions or treated as zero. Right-clicking the component itself still toggles
-route highlighting.
+decisions or treated as zero. Right-clicking a component behaves exactly like
+right-clicking its count badge: adapters and services toggle route highlighting
+and open their visa inventory; nodes open denial telemetry when they show a
+denial badge, otherwise their visa counts. Right-clicking blank canvas clears focus.
+Legend items are buttons: click one to highlight every component or connection of
+that type (nodes, visas, gateways, adapters, services, registrations, trusted
+sources, docks or inter-node links); click it again to clear. Legend highlighting
+combines with Search.
 Connector endpoints intersect the actual SVG glyph boundaries, including rounded
 node/service rectangles, circular adapters, visa diamonds, gateway polygons, and
 cloud paths. Visible strokes, network clearance, and clickable hit areas use the
@@ -273,6 +279,23 @@ The Control Room ZPR Config page stores versioned `configuration` records under
 the Policy Repository's `ZPR Config` category. It validates TOML syntax and
 preserves immutable revisions. Drafts are not runtime configuration: saving or
 validating never applies, stages, or activates them.
+
+## Gateway Drafts
+
+The Control Room Gateways page edits one versioned JSON draft per installed
+gateway, using the policy editor's layout. **Browse gateways** lists installed
+gateway contracts with their adapter and latest draft revision. **File...**
+saves, opens, downloads or discards a draft; **Analyze** validates the exact
+source through `POST /api/gateways/config/check` (local JSON syntax errors get a
+gutter marker); **Format** pretty-prints valid JSON; **History** reloads an earlier
+revision; Find & Replace matches the other editors. Save draft (or Ctrl/⌘-S) is
+enabled only after the unchanged source has been analyzed as valid, and creates
+a new revision via `POST /api/gateways/configs/{id}/revisions`. Gateway identity
+fields come from the installed contract. Saving never activates the runtime
+gateway. The editor uses Control Room APIs only and does not depend on Simulator.
+
+The ZPR Config, scenario and gateway editors share the policy editor's gutter
+geometry (line height, marker column and padding).
 
 ## Activity and Navigation
 

@@ -19,7 +19,14 @@
 ### All text editors
 - [x] Add search and replace functionality. Put the buttons on the right side before History. Shared local controls cover policy/assertion, ZPR Config, scenario JSON, and directory LDIF source editors.
 - [ ] Add AI Assistant
-
+- [x] Make Search and Replace one button/ Clicking the button should show or hide the dialog. Button should change colors while in use.
+- [x] Remove "Enter text..." in Search and Replace.
+- [x] Add a checkbox to Search and Replace to enable/disable regular expressions
+- [x] Remove line and column numbers from Search and Replace.
+- [x] Replace needs to support undo in the editor.
+- [x] Rename Search & Replace to Find & Replace
+- [x] Find & Replace button doesn't change color.
+- [x] Make the Find & Replace dialog mimic Microsoft Word but with support for regular expressions (if checked).
 
 ## Control Room
 
@@ -45,8 +52,13 @@
 - [x] The visa and buffered denies still don't pulse as far as I can tell. Are we using our expand/contract paradigm.
 - [x] Make the right-click highlight stuff work for services as well.
 - [x] Right-click on visa count should show the visas.
-- [ ] Right-click on Buffer denials should show the details.
+- [x] Right-click on Buffer denials should show the details.
 - [x] Move the small number indicator to overlap the top right corner of the objects. For the visa service put it overlapping the center of the upper right line. For circles upper right line and overlap it. For future shapes do the same kind of thing.
+- [x] For 0 visa or buffered denials, fill in the circle with white.
+- [x] When the visa count is zero, show the same circle, but just as an outline with nothing in it.
+- [x] When the user interacts through panning and zooming, turn off Auto-fit.
+- [x] Make right-click on a component should have the same behavior as right-clicking on its number.
+- [x] Clicking on the component legend items should highlight what has been clicked on.
 
 ### Navigation
 - [x] Keep Map as the main view and group Adapters, Actors, Services, Visas, Denials, and DNS under horizontal Status tabs with counts.
@@ -55,8 +67,9 @@
 - [x] Add a ZPR Config menu item for managing versioned ZPLC configuration drafts. Validate and save drafts without applying them to the live runtime.
 - [x] Add Trusted Sources links to provider control GUIs using server-configured provider URLs; hide links for providers without a configured manager.
 - [x] Rename Logging to "Adapter Logs" and have it show the adapter logs. Remove the arrow. Log Manager remains a separate Tools link.
-- [x] When the visa count is zero, show the same circle, but just as an outline with nothing in it.
-- [x] When the user interacts through panning and zooming, turn off Auto-fit.
+- [x] Move "Gateways" and "ZPR Config" under editor. Rename editor 'Policy".
+- [x] If there is a subtle way of adding a title to the policy/gateways/... group, call it 'Configuration'.
+- [x] Move Log Manager to below Adapter Logs. Make the arrow more visible.
 
 ### Service logs and statistics
 - [x] Add one Control Room diagnostics view for logs and current stats from every ZPR node and every configured trusted/required service used by Visa Service.
@@ -73,6 +86,7 @@
 - [x] Highlight the nav when a high alert is noticed. This may entail changes to the prioritization of detections (for example - Actor first observed, is not a high alert; multiple requests being blocked could be a high alert - especially if addresses aren't found, varied attempts, etc.)
 - [x] Clear the security highlight in the nav once the page is visited (until another security alert)
 - [x] Make the security highlight only color the little side indicator, not the main body area.
+- [x] Flag sustained aggregate DNS NXDOMAIN probing in Security Review as an unattributed review finding; do not raise the high-priority nav alert from server-wide counters.
 
 ### Editor
 - [x] If there is a horizontal scrollbar, color the forbidden area under the gutter white.
@@ -106,15 +120,23 @@
 
 ### ZPR Config
 - [x] Adopt the same look-and-feel as the policy editor. If ZPR config is limited to one file, there is no need for Browse, or some of the File commands. Refresh Attributes is also not relevant.
+- [x] Keep ZPR Config toolbar roles aligned with the Policy editor: File on the left, editor mode centered, Analyze/Format in the right-side action group, and History/utilities at the right. Match the orange pending-analysis state, enabled/disabled Format styling, success/error colors, and responsive placement.
 - [x] Still things to do to get the look and feel better. "Validate syntax" should act like "Analyze". There should be a gutter for errors. A Format button, a file button.
 - [x] Where are the colors? Where is the gutter? Why is the "Save Draft" not part of the file pulldown? Make "File..." and Analyze use the same color and sizes of the policy editor.
 - [x] Remove "New draft" at the bottom of the editor, and use that space for the editor.
-- [x] Remvoe line numbers from the gutter.
+- [x] Remove line numbers from the gutter.
+- [x] Gutter looks different from the other editors.
 
 ### Trusted Sources
 - [x] Get rid of "Read Only"
 - [x] Add a typical LDAP tree view.
 - [x] Don't auto refresh ldap.
+
+### Gateways
+- [x] Add a Control Room page listing installed ZPL Gateway services by organization and editing their versioned runtime drafts.
+- [x] Validate destination/path/method/timeout/response-size settings through Control-Service before saving; keep drafts organization-scoped and do not activate them.
+- [ ] Add verified external-network policy metadata, gateway runtime health, and explicit reviewed activation/rollback after the production provisioning contract is implemented.
+- [x] There can be multiple gateways, so lets use the exact same editor paradigm, colors, and behavior as the polic editor.
 
 
 ## Simulator
@@ -144,6 +166,9 @@ Running" orange should be a non-indicated color like blue.
 - [x] When a scenario fails, the step/total steps doesn't show the failure line because of the cleanup.
 - [x] We need a raw version of a scenario editor (that gives the same type of experience, colors, columns, etc. as the Control Room editors)
 - [x] Add AI Assistants to the dialog and raw scenario editors.
+- [x] Move the raw/dialog link/button to the top right corner of the inner pages.
+- [x] Implement the Analyze button with colors and behavior just like every other editor.
+- [x] Switch (or just edit) scenarios in yaml.
 
 ### Activity
 - [x] Remove the Decisions and Blocked flows headings.
@@ -158,294 +183,6 @@ Running" orange should be a non-indicated color like blue.
 ### Workers
 - [x] Add the wordwrap button like the Adapter Logs.
 
-### Machine/adapter provisioning
+## Provisioning
 
-#### What happens today
-
-The local Simulator is a fixed-fleet test fixture, not a general machine
-onboarding flow. It defines 20 machine profiles and creates a machine
-container on demand when a scenario starts one. Each container runs its own
-machine controller and PH adapter, with a machine-specific identity and a
-dynamic ZPR address.
-
-At startup, the stack prepares credentials for the fleet. It generates
-per-machine mTLS client certificates for the Simulator control channel, then
-copies each machine's pre-generated ZPR bootstrap RSA private key into the
-workload directory. The controller is configured to use its matching control
-certificate and bootstrap key; the shared workload directory is also mounted
-into the container. The bootstrap public keys and machine
-identities are already represented in local policy/configuration; policy
-names each machine by its adapter certificate CN and enumerates the machines
-allowed to use the Simulator control service. Starting a container is
-therefore not the same as enrolling an unknown device: its identity and
-authorization were provisioned ahead of time.
-
-These are two separate credentials: the per-machine mTLS certificate
-authenticates the machine controller to the Simulator control service, while
-the ZPR bootstrap key authenticates its adapter to the ZPR network. The
-pre-generated keys, named fleet, and enumerated rules are appropriate for a
-repeatable local test rig, but should not become the production onboarding
-pattern. See the stack setup in
-[`dashboard-stack.sh`](./zpr-visaservice/zpr-dashboard/scripts/dashboard-stack.sh),
-the
-[Simulator stack notes](./zpr-visaservice/zpr-dashboard/README.md), and the
-[example machine policy](./zpr-visaservice/zpr-dashboard/cmd/zpr-web-dashboard/examples/policy-layers/platform.zpl).
-
-#### What we should do instead
-
-For real machines, use an explicit, auditable enrollment flow instead of
-pre-provisioning a permanent bootstrap key and policy entry for every device:
-
-1. Install a generic adapter image. On first enrollment, the device generates
-   its own private key locally (preferably non-exportable in a TPM or other
-   hardware-backed store); images and fleet manifests must not contain
-   per-device private keys.
-2. An administrator or device-management system authorizes enrollment with a
-   one-time, short-lived credential bound to the intended asset. The adapter
-   proves possession of its newly generated key over the authenticated
-   enrollment channel. Reject expired, reused, or mismatched enrollment
-   attempts.
-3. An enrollment/authentication service verifies the device against the
-   organization’s inventory and issues or activates a device identity bound
-   to that key. It returns trusted, sourced device attributes (such as
-   organization, owner, and posture) rather than treating a claimed adapter
-   name as authorization.
-4. The adapter authenticates with that identity, receives its ZPR address,
-   and is admitted by normal policy evaluation. Write policy against
-   trustworthy attributes and least-privilege roles, not a hand-maintained
-   allow rule for every machine. Identity establishes *which device* joined;
-   policy still decides *what it may do*.
-5. Support credential renewal, immediate revocation, retirement, and
-   replacement-key recovery. Keep an audit trail of who authorized enrollment
-   and when; fail closed if enrollment or required attribute sources cannot
-   validate the device.
-
-Static bootstrap trust should remain limited to the small set of services
-needed to bring up authentication and the network. It should not silently
-expand into a long-lived exception for every endpoint. The operator UI should
-show enrollment as a lifecycle (pending, active, expired/revoked), with
-identity and trusted attributes visible for review; it should not mint or
-display device private keys. Simulator can exercise this contract, but its
-machine-control mTLS credentials must remain distinct from production adapter
-identity and authorization.
-
-#### Detailed GUI and installation workflow
-
-**Status: proposed design and implementation plan, not an existing enrollment
-feature.** The recommended first release requires explicit administrator
-approval for each new device. A user can run the package, but that does not
-give the user authority to approve a device or grant network permissions.
-Supported operating systems, package formats, identity provider, credential
-lifetimes, and hardware-key requirements need approval before implementation.
-
-##### 1. Prepare the production enrollment service
-
-- Operate an Enrollment Service and device identity registry independently of
-  Simulator. Control Room calls Control-Service, which uses authenticated
-  production service contracts for enrollment administration.
-- Give the new machine a narrowly scoped HTTPS enrollment endpoint reachable
-  on its existing network before it has a ZPR identity. This is necessary to
-  break the bootstrap dependency; it is not an underlay path to ordinary ZPR
-  services. Expose only enrollment operations through an approved gateway,
-  not Control-Service, Policy-Service, or the Visa Service Admin API.
-- Establish authenticated administrator access, organization-scoped
-  permissions, package signing, server trust, audit storage, and service
-  ownership. Public access to the current local UI is not part of this work;
-  follow the
-  [Remote Browser Access Contract](./zpr-visaservice/zpr-dashboard/BROWSER_ACCESS_CONTRACT.md)
-  before any external administrative rollout.
-- Integrate the device registry with a trusted authentication/attribute
-  provider consumed by Visa Service. Issuing a certificate alone is not
-  enough: adapter proof, trusted attributes, network admission, and
-  revocation must work together. Keep link identity credentials distinct
-  from enrollment credentials where the protocols require different keys.
-- Preconfigure the minimum infrastructure bootstrap trust and attribute-based
-  admission/access policy. Installing a device must not rewrite policy or add
-  its key to the static bootstrap list.
-
-##### 2. Administrator creates an enrollment invitation in Control Room
-
-Add an **Enroll device...** action to the adapter/device inventory. It opens a
-wizard with the following steps:
-
-1. **Identify the asset:** select the organization and an existing inventory
-   asset, or create a pending asset with an asset tag and optional display
-   name. Select its intended owner and an approved device profile.
-2. **Review requirements:** show supported platform/package, required local
-   administrator privileges, hardware-key requirements, and the profile's
-   intended access. Profiles map to approved attributes; this is not an
-   arbitrary policy editor or an unrestricted role picker.
-3. **Create invitation:** the server creates a bounded-lifetime, single-use
-   enrollment invitation scoped to this asset and organization. Record who
-   created it, its expiry, and the approval requirement.
-4. **Deliver installation instructions:** show the signed generic installer
-   download and an enrollment code that the user enters in its wizard.
-   Distribute the code through an approved secure channel; do not put it in
-   a download URL, command line, log, or browser persistent storage. Store
-   only a verifier for the invitation secret on the server. If it is lost,
-   cancel and replace the invitation rather than retrieving the secret.
-
-The installer is reusable and contains no device private key or enrollment
-secret. Trusted deployment configuration identifies the enrollment endpoint
-and server trust requirements. Never derive server trust solely from a URL
-or certificate supplied by an untrusted invitation.
-
-##### 3. User or administrator runs the package on the new machine
-
-1. The operating system verifies the signed package. The installer explains
-   what it will install, what information it will send, and which network
-   changes it will make. Elevate only for installation and required adapter
-   setup; do not require the user to disable TLS or operating-system checks.
-2. Run preflight checks for platform support, existing installation,
-   permissions, key-store availability, time, and enrollment connectivity.
-   Show actionable failures before changing routes or resolver settings.
-3. Install the adapter and its local service. Open a setup wizard that asks
-   for the enrollment code, confirms the trusted organization/service, and
-   permits editing only non-authoritative information such as a display name.
-4. Generate the device's protocol-required private keys locally. Use the
-   approved hardware-backed store when required; otherwise use a protected
-   OS key store if the selected profile permits it. Report the actual key
-   protection level to the administrator. Do not silently downgrade it.
-5. Submit the invitation, public key(s), signed server challenge, and bounded
-   device evidence over authenticated HTTPS. Evidence can include platform,
-   asset information, and verified attestation where supported. Self-reported
-   hostname, serial number, or posture is a claim, not a trusted attribute.
-6. The server atomically claims the invitation for this enrollment and key,
-   verifies possession, and creates a **Pending approval** request. A retry
-   for the same request and key resumes it; a different device/key cannot
-   reuse the invitation. Browser link previews or merely opening the wizard
-   must not consume it.
-7. Show **Waiting for administrator approval**, the non-secret request ID,
-   and a key-derived fingerprint/verification code in the local wizard.
-   Persist enough protected local state to resume after a restart. Waiting
-   does not grant an identity usable for ordinary ZPR traffic.
-
-##### 4. Administrator verifies and approves the machine
-
-Control Room shows a **Pending enrollments** count and a review table. Each
-request opens details containing:
-
-- Organization, intended asset/owner/profile, invitation creator and expiry,
-  submission time, package version, and request ID.
-- Device public-key fingerprint, reported platform, actual key protection,
-  and separately labeled verified evidence and unverified claims.
-- Inventory conflicts, an already-enrolled asset, missing attestation, or
-  mismatched requirements. Blocking conflicts cannot be dismissed into a
-  successful enrollment.
-
-The administrator compares the verification code with the machine's setup
-wizard through a trusted channel, checks the inventory/evidence, and chooses
-**Approve** or **Reject**, with an audit reason. Possession of an invitation
-alone does not prove that this is the intended physical asset. Approval
-requires authoritative inventory or verified attestation, or an explicit
-human verification step; the interface must make the remaining uncertainty
-visible.
-
-The backend rechecks the administrator's permission, invitation state,
-organization, and request revision. Approval binds the asset to the verified
-public key and approved profile. Record this decision durably before issuing
-credentials; concurrent approvals/rejections must not create duplicate
-identities. Rejection, cancellation, and timeout leave the device without
-ordinary network access.
-
-##### 5. Package finishes enrollment and makes the first connection
-
-1. The package retrieves the result over a key-authenticated enrollment
-   session. After invitation claim, possession of the invitation alone cannot
-   retrieve credentials or alter the request.
-2. On approval, the service issues a bounded-lifetime device credential and
-   a versioned configuration containing the device identity, trust material,
-   docking endpoints, and approved DNS/adapter settings. No device private
-   key is returned. Configuration is authenticated and bound to this device
-   and organization; it does not contain the live network policy.
-3. The package verifies the issuer, identity/key binding, configuration
-   version, and required fields, then installs the credential/configuration
-   atomically. If delivery fails after approval, resume the same enrollment
-   and reconcile issuance rather than creating another device or requiring
-   reuse of the invitation.
-4. Start the adapter, establish its authenticated node link, authenticate
-   through the trusted device provider, and let Visa Service evaluate normal
-   admission policy. A credential is not a promise of admission or access.
-   An address is assigned only after admission succeeds.
-5. Apply supported host routes/resolver changes with a saved rollback record.
-   Do not strand the enrollment connection or replace unrelated network
-   settings. The installer must preserve the user's ordinary network access
-   according to the approved platform deployment design.
-6. Verify the device's live identity and ZPR address, one explicitly permitted
-   connectivity check, and one deliberately forbidden test flow. Report
-   routing, authentication, or policy failures separately rather than showing
-   **Connected** just because the local service started.
-7. The package displays **Enrolled and connected** only after live checks
-   succeed. Control Room obtains live adapter state from Visa Service and
-   enrollment state from the registry; stale/unavailable sources remain
-   explicitly labeled. A successful enrollment with a connection problem
-   remains enrolled, with a separate actionable connection status.
-
-##### 6. Manage the device after enrollment
-
-- **Renew:** the adapter proves possession of its current key and obtains a
-  replacement credential before expiry, subject to current registry state,
-  device requirements, and revocation checks. Keep expiry visible and alert
-  on renewal failure; never fall back to static bootstrap authentication.
-- **Revoke:** an authorized administrator disables the identity in the
-  registry. Propagate the change to the trusted provider and Visa Service,
-  terminate affected active admissions/visas, and prevent renewal or
-  reconnect. Show propagation pending/failure until enforcement is confirmed;
-  changing a GUI label is not revocation.
-- **Replace or recover:** a lost key, rebuilt OS, or replacement machine
-  requires a fresh invitation and approval. Retire the old key explicitly;
-  do not copy it or reactivate it based on the device's name.
-- **Retire/uninstall:** retire the server-side identity and record the action.
-  The package removes its local credential/service and reverses only the
-  network settings it owns. Local uninstall alone is not proof of remote
-  revocation.
-
-Keep enrollment lifecycle separate from connectivity. Suggested enrollment
-states are **Invited**, **Pending approval**, **Approved / delivery pending**,
-**Enrolled**, **Rejected**, **Cancelled**, **Expired**, **Revoked**, and
-**Retired**. Connectivity is separately **Connecting**, **Connected**,
-**Disconnected**, or **Unknown/stale**. An expired invitation and an expired
-device credential are different events and must be labeled accordingly.
-
-##### Implementation sequence and acceptance criteria
-
-- [ ] Approve the first supported OS/package format, administrative identity
-  provider, device inventory source, approval rules, validity periods, and
-  key-protection requirements. Specify the authenticated pre-ZPR enrollment
-  endpoint and its deployment boundary.
-- [ ] Define versioned Enrollment Service contracts for invitation creation,
-  cancellation, key-bound submission/resume, review, approval/rejection,
-  result delivery, renewal, revocation, and retirement. Include
-  organization-scoped authorization, challenge/replay protection,
-  idempotency, atomic state transitions, rate limits, bounded requests, and
-  secret-free audit records.
-- [ ] Implement the durable registry, issuer integration, trusted
-  authentication/attribute provider, and Visa Service enforcement. Prove that
-  a newly approved device can authenticate without a per-device bootstrap
-  entry and that revocation stops existing and new traffic.
-- [ ] Build and sign the generic package and setup wizard, including local
-  key generation, installation, approval waiting/resume, configuration
-  verification, network rollback, renewal, and uninstall.
-- [ ] Add Control Room's enrollment wizard, pending review, device detail,
-  revoke/retire actions, and independent lifecycle/connectivity indicators.
-  Do not repurpose Simulator Workers as the production enrollment GUI.
-- [ ] Run an end-to-end test from a clean machine: create invitation in the
-  GUI, run the package, verify/approve in the GUI, observe the live adapter,
-  test allowed/denied traffic, renew, revoke, and confirm traffic stops.
-- [ ] Test expired/reused/stolen invitations, wrong organization/key,
-  insufficient admin privileges, duplicate assets, concurrent decisions,
-  rejected evidence, offline services, package restart, and failures between
-  approval, issuance, delivery, and connection. Prove no duplicate identity,
-  credential leakage, unauthorized access, or false success.
-- [ ] Test route/resolver rollback and uninstall on every supported platform,
-  and re-enrollment after key loss without restoring the old identity.
-- [ ] Test Control Room, enrollment, and live admission with Simulator stopped
-  and Simulator environment variables unset or deliberately invalid.
-  Simulator may later test these public contracts, but it must not be a
-  dependency of the production process.
-
-The first milestone is complete when an administrator can invite, verify,
-approve, observe, and revoke a real new device using the GUI, while its user
-only downloads/runs the signed package and follows its setup wizard. No
-manual key copying, fleet-manifest edits, or per-device policy compilation
-should be required.
+Machine/adapter enrollment is tracked in [Provisioning plan](./Provisioning%20plan.md).

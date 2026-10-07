@@ -149,7 +149,7 @@ test("assertion lint warns on complexity without changing a passing result", asy
   await openAssertionRecord(page, appURL);
   const editor = page.getByRole("textbox", { name: "Data assertion source", exact: true });
   await editor.fill(`assert ${"1 + ".repeat(13)}1 > 0;`);
-  await page.locator("#assertion-evaluate").click();
+  await page.locator("#assertion-analyze").click();
   await expect(page.locator("#assertion-run-status")).toContainText("PASS");
   await expect(page.locator("#assertion-lint-warnings")).toContainText("ASSERT_COMPLEXITY");
   await expect(page.locator("#assertion-run-error")).toBeEmpty();
@@ -189,7 +189,7 @@ test("organization assertions author, save and evaluate without policy compilati
   await expect(page.locator("#assertion-group-rows")).toContainText("Operators");
   await page.getByRole("button", { name: "Insert a cardinality assertion for Operators", exact: true }).click();
   await expect(editor).toHaveValue('group "Operators" members >= 2;\n');
-  await page.locator("#assertion-evaluate").click();
+  await page.locator("#assertion-analyze").click();
   await expect(page.locator("#assertion-run-status")).toContainText("Draft r0");
   const resultGutterStyle = await page.locator("#assertion-result-gutter").evaluate((gutter) => ({
     width: gutter.getBoundingClientRect().width,
@@ -206,10 +206,10 @@ test("organization assertions author, save and evaluate without policy compilati
   await expect(passDetails).toContainText('group "Operators" members >= 2');
   await expect(passDetails).toContainText("1 checked; 0 violations");
   await passDetails.locator(".dialog-actions .button").click();
-  await expect(page.locator("#assertion-evaluate")).toHaveText("Exit test");
+  await expect(page.locator("#assertion-analyze")).toHaveText("Exit test");
   await expect(editor).not.toBeEditable();
-  await page.locator("#assertion-evaluate").click();
-  await expect(page.locator("#assertion-evaluate")).toHaveText("Test");
+  await page.locator("#assertion-analyze").click();
+  await expect(page.locator("#assertion-analyze")).toHaveText("Test");
   await expect(editor).toBeEditable();
   expect(api.assertions.settings.source).toBe("");
   await page.locator("#assertion-save").click();
@@ -222,10 +222,10 @@ test("organization assertions author, save and evaluate without policy compilati
   await expect(page.locator('[data-record-id="test-assertions"]')).toContainText("Assertions · r2");
   expect(api.assertions.settings.enabled).toBe(true);
   expect(api.assertions.settings.interval_seconds).toBe(300);
-  await page.locator("#assertion-evaluate").click();
+  await page.locator("#assertion-analyze").click();
   await expect(page.locator("#assertion-result-rows")).toContainText("PASS");
   await expect(page.locator("#assertion-run-status")).toContainText("Saved r2");
-  await page.locator("#assertion-evaluate").click();
+  await page.locator("#assertion-analyze").click();
   expect(api.counts.get("/api/policy/test") || 0).toBe(0);
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBeTruthy();
 });
@@ -242,7 +242,7 @@ test("assertion result gutter clips long documents and follows editor scroll", a
   await openAssertionRecord(page, appURL);
   const source = page.locator("#assertion-source");
   await source.fill(Array.from({ length: 100 }, (_, index) => `group "Operators${index}" members >= 2;`).join("\n"));
-  await page.locator("#assertion-evaluate").click();
+  await page.locator("#assertion-analyze").click();
   const gutter = page.locator("#assertion-result-gutter");
   const marker = page.locator('#assertion-result-gutter [data-line="90"] .assertion-result-marker');
   await expect(marker).toHaveCount(1);
@@ -316,7 +316,7 @@ test("assertion attribute catalog inserts rules and renders typed comparisons", 
   await expect(page.locator("#assertion-attribute-rows tr")).toHaveCount(2);
   await page.getByRole("button", { name: "Insert presence assertion for mail", exact: true }).click();
   await expect(page.locator("#assertion-source")).toHaveValue('people attribute "mail" present;\n');
-  await page.locator("#assertion-evaluate").click();
+  await page.locator("#assertion-analyze").click();
   await expect(page.locator("#assertion-result-rows")).toContainText('people attribute "mail" present');
   await expect(page.locator("#assertion-result-rows")).toContainText("bob");
   const failMarker = page.locator('#assertion-result-gutter [data-line="1"] .assertion-result-marker');
@@ -326,12 +326,12 @@ test("assertion attribute catalog inserts rules and renders typed comparisons", 
   await expect(failDetails).toContainText("2 checked; 1 violations");
   await expect(failDetails).toContainText("bob");
   await failDetails.locator(".dialog-actions .button").click();
-  await page.locator("#assertion-evaluate").click();
+  await page.locator("#assertion-analyze").click();
   await page.locator("#assertion-source").fill('each group attribute "gidNumber" >= 1000;');
-  await page.locator("#assertion-evaluate").click();
+  await page.locator("#assertion-analyze").click();
   await expect(page.locator("#assertion-result-rows")).toContainText('each group attribute "gidnumber" >= 1000');
   await expect(page.locator("#assertion-run-status")).toContainText("PASS");
-  await page.locator("#assertion-evaluate").click();
+  await page.locator("#assertion-analyze").click();
   await page.getByRole("tab", { name: "Attributes", exact: true }).focus();
   await page.keyboard.press("ArrowLeft");
   await expect(page.getByRole("tab", { name: "Groups", exact: true })).toHaveAttribute("aria-selected", "true");
@@ -356,7 +356,7 @@ test("assertion catalogs insert named sources and expression results show their 
   await page.getByRole("button", { name: "Insert a cardinality assertion for Employees", exact: true }).click();
   await expect(page.locator("#assertion-source")).toHaveValue('group "Employees" from "hr" members >= 2;\n');
   await page.locator("#assertion-source").fill('assert source("staff").group("Operators").members == source("hr").group("Employees").members;');
-  await page.locator("#assertion-evaluate").click();
+  await page.locator("#assertion-analyze").click();
   await expect(page.locator("#assertion-result-rows")).toContainText('assert source("staff").group("Operators").members == source("hr").group("Employees").members');
   await page.locator(".assertion-result-marker").click();
   await expect(page.getByRole("dialog", { name: "Assertion pass" })).toContainText('source("hr").group("Employees").members');
@@ -369,8 +369,8 @@ test("assertion source failures are errors and never successful checks", async (
     await route.fulfill({ json: api.assertions.last_run });
   });
   await openAssertionRecord(page, appURL);
-  await expect(page.locator("#assertion-evaluate")).toBeEnabled();
-  await page.locator("#assertion-evaluate").click();
+  await expect(page.locator("#assertion-analyze")).toBeEnabled();
+  await page.locator("#assertion-analyze").click();
   await expect(page.locator("#assertion-run-status")).toContainText("ERROR");
   await expect(page.locator("#assertion-run-error")).toContainText("no assertions were evaluated");
   const errorMarker = page.locator('#assertion-result-gutter [data-line="1"] .assertion-result-marker');
@@ -379,11 +379,11 @@ test("assertion source failures are errors and never successful checks", async (
   const errorDetails = page.getByRole("dialog", { name: "Assertion error" });
   await expect(errorDetails).toContainText("Trusted LDAP read failed");
   await errorDetails.locator(".dialog-actions .button").click();
-  await page.locator("#assertion-evaluate").click();
+  await page.locator("#assertion-analyze").click();
   await expect(page.locator("#assertion-result-rows tr")).toHaveCount(0);
   api.assertions.configured = false;
   await page.locator("#assertion-reload").click();
-  await expect(page.locator("#assertion-evaluate")).toBeDisabled();
+  await expect(page.locator("#assertion-analyze")).toBeDisabled();
   await expect(page.locator("#assertion-enabled")).toBeDisabled();
 });
 
@@ -398,7 +398,7 @@ test("assertion polling preserves dirty drafts and blocks stale revisions", asyn
   await expect(editor).toHaveValue('group "Operators" members > 1;');
   await expect(page.locator("#assertion-revision")).toContainText("Reload required");
   await expect(page.locator("#assertion-save")).toBeDisabled();
-  await expect(page.locator("#assertion-evaluate")).toBeDisabled();
+  await expect(page.locator("#assertion-analyze")).toBeDisabled();
   page.once("dialog", (dialog) => dialog.accept());
   await page.locator("#assertion-reload").click();
   await expect(editor).toHaveValue('group "Operators" members >= 2;');
@@ -419,7 +419,7 @@ test("organization switch reloads that organization's assertions and protects di
   await expect(editor).toHaveValue('group "Local draft" members > 0;');
   await expect(page.locator("#assertion-revision")).toHaveText("Beta Labs / r0 / Unsaved / Reload required");
   await expect(page.locator("#assertion-save")).toBeDisabled();
-  await expect(page.locator("#assertion-evaluate")).toBeDisabled();
+  await expect(page.locator("#assertion-analyze")).toBeDisabled();
   page.once("dialog", (dialog) => dialog.accept());
   await page.locator("#assertion-reload").click();
   await expect(editor).toHaveValue('group "Beta Operators" members >= 2;');
@@ -943,13 +943,56 @@ test("GUI ZPR Config shares editor controls and keeps an error-only gutter", asy
   await page.goto(appURL + "/#zpr-config");
   await expect(page.locator("#zpr-config-status")).toBeHidden();
   await expect(page.locator("#zpr-config-modified")).toBeHidden();
+  const configAnalyze = page.locator("#zpr-config-validate");
+  const configFormat = page.locator("#zpr-config-format");
+  await expect(configAnalyze).toBeDisabled();
+  await expect(configFormat).toBeDisabled();
+  await expect(configFormat).not.toHaveClass(/button-save-as-ready/);
+  const disabledOpacity = await configAnalyze.evaluate((button) => getComputedStyle(button).opacity);
+  expect(disabledOpacity).toBe(await page.locator("#policy-check").evaluate((button) => getComputedStyle(button).opacity));
   await page.locator("#zpr-config-source").fill('[visa_service]\ndock_node = "node"\n');
+  await expect(configAnalyze).toBeEnabled();
+  await expect(configFormat).toBeEnabled();
+  await expect(configAnalyze).toHaveClass(/button-next-evaluate/);
+  await expect(configFormat).toHaveClass(/button-save-as-ready/);
   await expect(page.locator("#zpr-config-gutter .config-gutter-line")).toHaveText(["", "", ""]);
   expect(await page.locator("#zpr-config-gutter .config-gutter-line").evaluateAll((rows) => rows.map((row) => row.dataset.line))).toEqual(["1", "2", "3"]);
   await expect(page.locator("#zpr-config-modified")).toBeVisible();
   await expect(page.locator("#page-zpr-config .policy-editor-tools")).toContainText("ZPR Config");
   await expect(page.locator("#page-zpr-config").getByRole("button", { name: /Browse|Refresh Attributes/ })).toHaveCount(0);
+  await expect(configAnalyze.locator("xpath=..")).toHaveClass(/policy-attribute-toolbar/);
+  await expect(configFormat.locator("xpath=..")).toHaveClass(/policy-attribute-toolbar/);
+  const toolbarLayout = await page.evaluate(() => {
+    const rect = (selector) => document.querySelector(selector).getBoundingClientRect();
+    const toolbar = rect("#page-zpr-config .policy-editor-tools");
+    const mode = rect("#page-zpr-config .policy-editor-mode");
+    const file = rect("#page-zpr-config .config-file-menu > summary");
+    const actions = rect("#page-zpr-config .policy-attribute-toolbar");
+    const format = rect("#page-zpr-config #zpr-config-format");
+    const utilities = rect("#page-zpr-config .policy-editor-utilities");
+    const history = rect("#page-zpr-config #zpr-config-history");
+    return {
+      modeCenter: (mode.left + mode.right) / 2,
+      toolbarCenter: (toolbar.left + toolbar.right) / 2,
+      fileRight: file.right,
+      modeLeft: mode.left,
+      modeRight: mode.right,
+      actionsLeft: actions.left,
+      actionsRight: actions.right,
+      utilitiesLeft: utilities.left,
+      formatTop: format.top,
+      historyTop: history.top,
+    };
+  });
+  expect(Math.abs(toolbarLayout.modeCenter - toolbarLayout.toolbarCenter)).toBeLessThanOrEqual(1);
+  expect(toolbarLayout.fileRight).toBeLessThanOrEqual(toolbarLayout.modeLeft);
+  if (await page.evaluate(() => window.innerWidth >= 1000)) {
+    expect(toolbarLayout.modeRight).toBeLessThanOrEqual(toolbarLayout.actionsLeft);
+    expect(Math.abs(toolbarLayout.formatTop - toolbarLayout.historyTop)).toBeLessThanOrEqual(1);
+    expect(toolbarLayout.actionsRight).toBeLessThanOrEqual(toolbarLayout.utilitiesLeft + 8);
+  }
   const styles = await page.evaluate(() => {
+    document.querySelector("#policy-check").classList.add("button-next-evaluate");
     const properties = (selector) => {
       const element = document.querySelector(selector);
       const style = getComputedStyle(element);
@@ -964,6 +1007,24 @@ test("GUI ZPR Config shares editor controls and keeps an error-only gutter", asy
   });
   expect(styles.configFile).toEqual(styles.policyFile);
   expect(styles.configAnalyze).toEqual(styles.policyAnalyze);
+  const analysisColors = await page.evaluate(async () => {
+    const result = {};
+    for (const state of ["success", "error"]) {
+      const buttons = ["#policy-check", "#zpr-config-validate"].map((selector) => document.querySelector(selector));
+      buttons.forEach((button) => { button.dataset.analysisState = state; });
+      await new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve)));
+      const values = buttons.map((button) => {
+        const style = getComputedStyle(button);
+        return { matches: button.matches(`:is(#policy-check, #assertion-analyze, #zpr-config-validate, #scenario-source-analyze)[data-analysis-state="${state}"]`), colors: [style.backgroundColor, style.borderColor, style.color] };
+      });
+      result[state] = values;
+    }
+    return result;
+  });
+  expect(analysisColors.success[1].matches).toBeTruthy();
+  expect(analysisColors.success[1].colors).toEqual(analysisColors.success[0].colors);
+  expect(analysisColors.error[1].matches).toBeTruthy();
+  expect(analysisColors.error[1].colors).toEqual(analysisColors.error[0].colors);
 });
 
 test("GUI editor search and replace is literal, case-aware, bounded, and updates config analysis", async ({ page, appURL, api }) => {
@@ -971,23 +1032,33 @@ test("GUI editor search and replace is literal, case-aware, bounded, and updates
   await page.goto(appURL + "/#zpr-config");
   const source = page.locator("#zpr-config-source");
   const tools = page.locator('[data-editor-search-target="zpr-config-source"]');
-  const query = tools.getByRole("textbox", { name: "Find text" });
+  const query = tools.getByRole("textbox", { name: "Find what" });
   await source.fill('name = "Alpha alpha a.b a.b"\n');
   await page.locator("#zpr-config-validate").click();
   await source.press("Control+f");
   await query.fill("ALPHA");
   await expect(tools.getByRole("status")).toHaveText("2 matches");
+  await expect(tools.getByRole("tab", { name: "Find" })).toHaveAttribute("aria-selected", "true");
+  await expect(tools.getByRole("textbox", { name: "Replace with" })).toBeHidden();
+  await expect(tools.getByRole("checkbox", { name: "Match case" })).toBeHidden();
+  await tools.getByRole("button", { name: "More >>" }).click();
+  await expect(tools.getByRole("group", { name: "Search Options" })).toBeVisible();
   await tools.getByRole("checkbox", { name: "Match case" }).check();
   await expect(tools.getByRole("status")).toHaveText("0 matches");
   await tools.getByRole("checkbox", { name: "Match case" }).uncheck();
-  await tools.getByRole("button", { name: "Next", exact: true }).click();
+  await tools.getByRole("button", { name: "Find Next", exact: true }).click();
   await expect(tools.getByRole("status")).toContainText("Match 1 of 2");
-  await tools.getByRole("button", { name: "Previous" }).click();
+  await query.press("Shift+Enter");
   await expect(tools.getByRole("status")).toContainText("Match 2 of 2");
-  await tools.getByRole("button", { name: "Replace", exact: true }).click();
+  await tools.getByRole("combobox", { name: "Search direction" }).selectOption("down");
+  await tools.getByRole("button", { name: "Find Next", exact: true }).click();
+  await expect(tools.getByRole("status")).toHaveText("Reached the end of the source.");
+  await tools.getByRole("combobox", { name: "Search direction" }).selectOption("all");
+  await tools.getByRole("tab", { name: "Replace" }).click();
+  await expect(tools.getByRole("textbox", { name: "Replace with" })).toBeVisible();
   await query.fill("a.b");
   await expect(tools.getByRole("status")).toHaveText("2 matches");
-  await tools.getByRole("textbox", { name: "Replacement text" }).fill("$&");
+  await tools.getByRole("textbox", { name: "Replace with" }).fill("$&");
   await tools.getByRole("button", { name: "Replace all" }).click();
   await expect(source).toHaveValue('name = "Alpha alpha $& $&"\n');
   await expect(page.locator("#zpr-config-modified")).toBeVisible();
@@ -995,14 +1066,67 @@ test("GUI editor search and replace is literal, case-aware, bounded, and updates
   await expect(tools.getByRole("status")).toContainText("Replaced 2 matches");
   await source.evaluate((element) => { element.maxLength = element.value.length; });
   await query.fill("$&");
-  await tools.getByRole("textbox", { name: "Replacement text" }).fill("longer");
+  await tools.getByRole("textbox", { name: "Replace with" }).fill("longer");
   await tools.getByRole("button", { name: "Replace all" }).click();
   await expect(tools.getByRole("status")).toContainText("No changes made");
   await expect(source).toHaveValue('name = "Alpha alpha $& $&"\n');
   await query.press("Escape");
   await expect(tools.getByRole("search")).toBeHidden();
   await expect(source).toBeFocused();
+  const toggle = tools.getByRole("button", { name: "Find & Replace", exact: true });
+  await expect(tools.getByRole("button")).toHaveCount(1);
+  await expect(toggle).toHaveAttribute("aria-expanded", "false");
+  const idleBackground = await toggle.evaluate(async (element) => {
+    await Promise.all(element.getAnimations().map((animation) => animation.finished));
+    return getComputedStyle(element).backgroundColor;
+  });
+  await toggle.click();
+  await expect(tools.getByRole("dialog", { name: "Find and Replace" })).toBeVisible();
+  await expect(tools.getByRole("search")).toBeVisible();
+  await expect(toggle).toHaveAttribute("aria-expanded", "true");
+  await expect(toggle).toHaveCSS("background-color", "rgb(23, 77, 61)");
+  expect(idleBackground).not.toBe("rgb(23, 77, 61)");
+  await expect(tools.getByRole("tab", { name: "Replace" })).toHaveAttribute("aria-selected", "true");
+  await tools.getByRole("button", { name: "Cancel", exact: true }).click();
+  await expect(tools.getByRole("search")).toBeHidden();
+  await toggle.click();
+  await toggle.click();
+  await expect(tools.getByRole("search")).toBeHidden();
+  await expect(toggle).toHaveAttribute("aria-expanded", "false");
   expect([...api.counts.keys()].some((path) => path.startsWith("/api/simulator"))).toBe(false);
+});
+
+test("GUI editor search supports regular expressions, compact status, and undoable replacements", async ({ page, appURL, api }) => {
+  await page.goto(appURL + "/#zpr-config");
+  const source = page.locator("#zpr-config-source");
+  const tools = page.locator('[data-editor-search-target="zpr-config-source"]');
+  const query = tools.getByRole("textbox", { name: "Find what" });
+  const status = tools.getByRole("status");
+  const original = 'port = 8080\nhost = "a-1"\n';
+  await source.fill(original);
+  await tools.getByRole("button", { name: "Find & Replace", exact: true }).click();
+  await expect(status).toHaveText("");
+  await expect(tools.getByText(/Enter text/)).toHaveCount(0);
+  await query.fill("\\d+");
+  await expect(status).toHaveText("0 matches");
+  await tools.getByRole("button", { name: "More >>" }).click();
+  await tools.getByRole("checkbox", { name: "Use regular expressions" }).check();
+  await expect(status).toHaveText("2 matches");
+  await tools.getByRole("button", { name: "Find Next", exact: true }).click();
+  await expect(status).toHaveText("Match 1 of 2");
+  await query.fill("(");
+  await expect(status).toContainText("Invalid regular expression");
+  await expect(tools.getByRole("button", { name: "Replace all" })).toBeDisabled();
+  await query.fill("(\\w)-(\\d)");
+  await tools.getByRole("textbox", { name: "Replace with" }).fill("$2_$1$$");
+  await tools.getByRole("button", { name: "Replace all" }).click();
+  await expect(source).toHaveValue('port = 8080\nhost = "1_a$"\n');
+  await expect(page.locator("#zpr-config-modified")).toBeVisible();
+  await source.focus();
+  await page.keyboard.press("ControlOrMeta+z");
+  await expect(source).toHaveValue(original);
+  await page.keyboard.press("ControlOrMeta+Shift+z");
+  await expect(source).toHaveValue('port = 8080\nhost = "1_a$"\n');
 });
 
 test("GUI editor search controls follow the policy or assertion source and precede History", async ({ page, appURL, api }) => {
@@ -1011,10 +1135,10 @@ test("GUI editor search controls follow the policy or assertion source and prece
   await page.locator('[data-record-id="test-policy"]').click();
   const tools = page.locator('[data-editor-search-target="policy-source,assertion-source"]');
   await page.locator("#policy-source").fill('define One as user.\ndefine Two as user.\n');
+  await tools.getByRole("button", { name: "Find & Replace", exact: true }).click();
+  await tools.getByRole("textbox", { name: "Find what" }).fill("user");
+  await tools.getByRole("textbox", { name: "Replace with" }).fill("service");
   await tools.getByRole("button", { name: "Replace", exact: true }).click();
-  await tools.getByRole("textbox", { name: "Find text" }).fill("user");
-  await tools.getByRole("textbox", { name: "Replacement text" }).fill("service");
-  await tools.getByRole("button", { name: "Replace match" }).click();
   await expect(page.locator("#policy-source")).toHaveValue('define One as service.\ndefine Two as user.\n');
   await tools.getByRole("button", { name: "Close", exact: true }).click();
   await openPolicyPicker(page);
@@ -1025,8 +1149,8 @@ test("GUI editor search controls follow the policy or assertion source and prece
   const policyBefore = await page.locator("#policy-source").inputValue();
   await assertion.fill('group "Operators" members >= 2;\n');
   await assertion.press("Control+h");
-  await tools.getByRole("textbox", { name: "Find text" }).fill("Operators");
-  await tools.getByRole("textbox", { name: "Replacement text" }).fill("Reviewers");
+  await tools.getByRole("textbox", { name: "Find what" }).fill("Operators");
+  await tools.getByRole("textbox", { name: "Replace with" }).fill("Reviewers");
   await tools.getByRole("button", { name: "Replace all" }).click();
   await expect(assertion).toHaveValue('group "Reviewers" members >= 2;\n');
   await expect(page.locator("#policy-modified-indicator")).toBeVisible();
@@ -1042,14 +1166,14 @@ test("GUI editor search works in Simulator scenario JSON without saving or runni
   await expect(page.locator("#scenario-organization")).toHaveText("Alpha Labs");
   await page.locator("#scenario-new").click();
   const tools = page.locator('[data-editor-search-target="scenario-editor-source"]');
-  await tools.getByRole("button", { name: "Replace", exact: true }).click();
+  await tools.getByRole("button", { name: "Find & Replace", exact: true }).click();
   await expect(page.locator("#scenario-editor-advanced")).toHaveAttribute("open", "");
-  await tools.getByRole("textbox", { name: "Find text" }).fill("New scenario");
-  await tools.getByRole("textbox", { name: "Replacement text" }).fill("Search draft");
+  await tools.getByRole("textbox", { name: "Find what" }).fill("New scenario");
+  await tools.getByRole("textbox", { name: "Replace with" }).fill("Search draft");
   await tools.getByRole("button", { name: "Replace all" }).click();
   expect(JSON.parse(await page.locator("#scenario-editor-source").inputValue()).name).toBe("Search draft");
   await tools.getByRole("button", { name: "Close", exact: true }).click();
-  await page.locator("#scenario-editor-advanced > summary").click();
+  await page.locator("#scenario-editor-mode-toggle").click();
   await expect(page.locator("#scenario-editor-name")).toHaveValue("Search draft");
   expect(api.counts.get("/api/simulator/scenarios/run") || 0).toBe(0);
 });
@@ -1064,16 +1188,30 @@ async function openRawScenario(page, appURL, api, assistantReady = false) {
   api.handlers.set("/api/simulator/organizations/alpha/scenario-check", (route) => {
     const request = route.request().postDataJSON();
     let scenario;
-    try { scenario = JSON.parse(request.source); } catch {
+    try {
+      if (request.format === "yaml") {
+        scenario = Object.fromEntries(request.source.split("\n").map((line) => line.match(/^([A-Za-z0-9_]+):\s*(.*)$/)).filter(Boolean).map((match) => [match[1], match[2].replace(/^"|"$/g, "")]));
+        scenario.steps = [{ action: "delay", timeout_seconds: 1 }];
+        scenario.cleanup = [];
+      } else {
+        scenario = JSON.parse(request.source);
+      }
+    } catch {
       return route.fulfill({ status: 422, json: { valid: false, error: "Scenario must be valid JSON: invalid character", line: 3 } });
     }
     if (scenario.organization_id !== "alpha") return route.fulfill({ status: 422, json: { valid: false, error: "Scenario organization_id must match the selected organization." } });
-    return route.fulfill({ json: { valid: true, diagnostics: "Scenario JSON and definition valid. Nothing saved, published, or run." } });
+    return route.fulfill({ json: {
+      valid: true,
+      diagnostics: "Scenario source and definition valid. Nothing saved, published, or run.",
+      scenario,
+      canonical_json: JSON.stringify(scenario, null, 2),
+      canonical_yaml: `id: ${scenario.id}\norganization_id: ${scenario.organization_id}\nname: "${scenario.name}"\ndescription: "${scenario.description}"\nsteps:\n  - action: delay\n    timeout_seconds: 1\ncleanup: []\n`,
+    } });
   });
   await page.goto(appURL + "/scenarios.html");
   await expect(page.locator("#scenario-organization")).toHaveText("Alpha Labs");
   await page.locator("#scenario-new").click();
-  await page.locator("#scenario-editor-advanced > summary").click();
+  await page.locator("#scenario-editor-mode-toggle").click();
   await expect(page.locator("#scenario-editor-source")).toBeVisible();
 }
 
@@ -1099,10 +1237,10 @@ test("GUI raw scenario editor has safe syntax colors, aligned error gutter, and 
   await page.locator("[data-source-format]").click();
   await expect(source).toHaveValue(JSON.stringify(scenario, null, 2));
   await expect(page.locator("#scenario-source-analyze")).not.toHaveAttribute("data-analysis-state", "success");
-  await page.locator("#scenario-editor-advanced > summary").click();
+  await page.locator("#scenario-editor-mode-toggle").click();
   await expect(page.locator("#scenario-editor-description")).toHaveValue(scenario.description);
   await page.locator("#scenario-editor-name").fill("Round trip");
-  await page.locator("#scenario-editor-advanced > summary").click();
+  await page.locator("#scenario-editor-mode-toggle").click();
   const updated = JSON.parse(await source.inputValue());
   expect(updated.name).toBe("Round trip");
   expect(updated.steps[0].id).toBe("retained-step");
@@ -1113,7 +1251,7 @@ test("GUI raw scenario editor has safe syntax colors, aligned error gutter, and 
   await expect(marker).toBeVisible();
   await marker.click();
   await expect(source).toBeFocused();
-  await page.locator("#scenario-editor-advanced > summary").click();
+  await page.locator("#scenario-editor-mode-toggle").click();
   await expect(page.locator("#scenario-editor-advanced")).toHaveAttribute("open", "");
   await expect(page.locator("#scenario-editor-status")).toContainText("valid JSON");
   await source.fill(JSON.stringify(updated, null, 2));
@@ -1168,7 +1306,7 @@ test("GUI raw scenario assistant uses exact raw context and applies only unsaved
   expect(JSON.parse(await source.inputValue()).name).toBe("Assistant draft");
   await expect(page.locator("#scenario-source-modified")).toBeVisible();
   await expect(page.locator("#scenario-editor-publish")).toBeDisabled();
-  await page.locator("#scenario-editor-advanced > summary").click();
+  await page.locator("#scenario-editor-mode-toggle").click();
   await expect(page.locator("#scenario-editor-name")).toHaveValue("Assistant draft");
   await assistant.locator("[data-assistant-question]").fill("Review form too");
   await assistant.locator("[data-assistant-submit]").click();
@@ -1281,9 +1419,9 @@ test("GUI editor search replaces directory source locally and keeps revision con
   await page.getByRole("button", { name: "Edit LDAP seed", exact: true }).click();
   await expect(page.locator("#directory-editor-publish")).toBeEnabled();
   const tools = page.locator('[data-editor-search-target="directory-editor-source"]');
-  await tools.getByRole("button", { name: "Replace", exact: true }).click();
-  await tools.getByRole("textbox", { name: "Find text" }).fill("Operators");
-  await tools.getByRole("textbox", { name: "Replacement text" }).fill("Reviewers");
+  await tools.getByRole("button", { name: "Find & Replace", exact: true }).click();
+  await tools.getByRole("textbox", { name: "Find what" }).fill("Operators");
+  await tools.getByRole("textbox", { name: "Replace with" }).fill("Reviewers");
   await tools.getByRole("button", { name: "Replace all" }).click();
   await expect(page.locator("#directory-editor-source")).toHaveValue("dn: cn=Reviewers,dc=alpha,dc=test\ncn: Reviewers\n");
   await expect(page.locator("#directory-editor-publish")).toBeDisabled();
@@ -1299,9 +1437,9 @@ test("GUI editor search reveals distant matches and prevents accidental form sub
   await source.evaluate((element) => { element.scrollTop = 0; element.scrollLeft = 0; element.setSelectionRange(0, 0); });
   await source.press("Control+f");
   const tools = page.locator('[data-editor-search-target="zpr-config-source"]');
-  await tools.getByRole("textbox", { name: "Find text" }).fill("NEEDLE");
-  await tools.getByRole("textbox", { name: "Find text" }).press("Enter");
-  await expect(tools.getByRole("status")).toContainText("line 91, column 208");
+  await tools.getByRole("textbox", { name: "Find what" }).fill("NEEDLE");
+  await tools.getByRole("textbox", { name: "Find what" }).press("Enter");
+  await expect(tools.getByRole("status")).toHaveText("Match 1 of 1");
   const position = await source.evaluate((element) => ({
     scrollTop: element.scrollTop, scrollLeft: element.scrollLeft,
     selected: element.value.slice(element.selectionStart, element.selectionEnd),
@@ -1343,15 +1481,19 @@ test("GUI topology keeps dock rays distinct from inter-node links and paints net
   expect(geometry.separation).toBeGreaterThan(0.2);
 });
 
-test("Control Room keeps Adapter Logs internal and Log Manager under Tools", async ({ page, appURL }) => {
+test("Control Room keeps Adapter Logs internal, Log Manager beneath it, and a Configuration group", async ({ page, appURL }) => {
   await page.goto(appURL + "/#map");
   const adapterLogs = page.getByRole("link", { name: "Adapter Logs", exact: true });
   await expect(adapterLogs).toHaveAttribute("href", "#adapter-logs");
   await expect(adapterLogs).not.toHaveAttribute("target");
   await adapterLogs.click();
   await expect(page.locator("#page-adapter-logs")).toBeVisible();
-  const manager = page.locator(".sidebar-external-tools a");
+  const manager = page.locator(".primary-nav .sidebar-external-link");
   await expect(manager).toContainText("Log Manager");
+  await expect(manager.locator(".external-arrow")).toHaveCSS("color", "rgb(181, 227, 79)");
+  const labels = await page.locator(".primary-nav").evaluate((nav) => [...nav.querySelectorAll(".nav-link, .nav-group-label")].map((item) => item.textContent.replace("↗", "").trim()));
+  expect(labels).toEqual(["Map", "Status", "Security", "Diagnostics", "Trusted Sources", "Adapter Logs", "Log Manager", "Configuration", "Policy", "Gateways", "ZPR Config"]);
+  await expect(page.getByRole("group", { name: "Configuration" }).getByRole("link")).toHaveCount(3);
   await expect(manager).toHaveAttribute("href", "http://127.0.0.1:8800/");
   await expect(manager).toHaveAttribute("target", "zpr-log-manager");
 });
@@ -1464,7 +1606,7 @@ test("GUI ZPR Config colors TOML safely, keeps a visible aligned gutter, and col
   await expect(page.locator("#zpr-config-gutter")).toHaveCSS("border-right-style", "solid");
   const lineGeometry = await page.evaluate(() => {
     const sourceStyle = getComputedStyle(document.getElementById("zpr-config-source"));
-    const row = document.querySelector(".config-gutter-line");
+    const row = document.querySelector("#zpr-config-gutter .config-gutter-line");
     return { rowHeight: row.getBoundingClientRect().height, lineHeight: Number.parseFloat(sourceStyle.lineHeight) };
   });
   expect(Math.abs(lineGeometry.rowHeight - lineGeometry.lineHeight)).toBeLessThan(1);
@@ -1916,18 +2058,29 @@ test("Trusted Sources omits explanatory headings and counts while retaining sour
   await expect(sources.locator("table[data-sort-page=sources]")).toBeVisible();
 });
 
-test("Control Room sidebar routes Logging internally and promotes external managers", async ({ page, appURL, api }) => {
+test("GUI raw scenario editor switches to YAML and analyzes before saving", async ({ page, appURL, api }) => {
+  await openRawScenario(page, appURL, api);
+  const source = page.locator("#scenario-editor-source");
+  await page.locator("#scenario-source-format").selectOption("yaml");
+  await expect(source).toHaveValue(/id: new-scenario/);
+  await source.fill('id: new-scenario\norganization_id: alpha\nname: "YAML scenario"\ndescription: "Edited as YAML"\n');
+  await page.locator("#scenario-source-analyze").click();
+  await expect(page.locator("#scenario-source-analyze")).toHaveAttribute("data-analysis-state", "success");
+  await expect(page.locator("#scenario-source-highlight .zpl-attribute").first()).toBeVisible();
+  await page.locator("#scenario-editor-save").click();
+  await expect.poll(() => api.counts.get("/api/simulator/organizations/alpha/scenarios") || 0).toBe(1);
+});
+
+test("Control Room sidebar links Adapter Logs internally and promotes external managers", async ({ page, appURL, api }) => {
   const directoryURLs = [`${appURL}/?directory=one`, `${appURL}/?directory=two`];
   api.snapshot.trusted_sources = ["Directory A", "Directory B"].map((name, index) => ({ name, provider: "file", actor_cn: "directory-service", health: "working", last_lookup_ms: Date.now(), last_success_ms: Date.now(), editor_url: directoryURLs[index] }));
   await page.goto(appURL + "/#sources");
   const nav = page.locator(".primary-nav");
-  await expect(nav.getByRole("link", { name: "Logging", exact: true })).toHaveAttribute("href", "#adapter-logs");
-  await expect(nav.getByRole("link", { name: "Adapter Logs", exact: true })).toHaveCount(0);
+  await expect(nav.getByRole("link", { name: "Adapter Logs", exact: true })).toHaveAttribute("href", "#adapter-logs");
   await expect(nav.getByRole("link", { name: /LDAP control GUI/i })).toHaveCount(0);
-  const logManager = page.getByRole("link", { name: "Log Manager", exact: true });
-  await expect(logManager).toHaveAttribute("href", "http://127.0.0.1:8798/");
+  const logManager = nav.getByRole("link", { name: "Log Manager", exact: true });
+  await expect(logManager).toHaveAttribute("href", "http://127.0.0.1:8800/");
   await expect(logManager).toHaveAttribute("target", "zpr-log-manager");
-  await expect(logManager).toHaveClass(/sidebar-tool-prominent/);
   const manageLinks = page.getByRole("link", { name: "Manage", exact: true });
   await expect(manageLinks).toHaveCount(2);
   await expect(manageLinks.nth(0)).toHaveAttribute("href", directoryURLs[0]);
@@ -1978,7 +2131,7 @@ test("policy picker right-click menu targets records and categories without visi
   const menu = page.getByRole("menu", { name: /./ });
   await expect(category).toBeVisible();
   await expect(page.locator("#policy-picker-actions")).toHaveCount(0);
-  await expect(page.locator(".catalog-pane-heading button")).toHaveCount(1);
+  await expect(page.locator("#policy-catalog-pane .catalog-pane-heading button")).toHaveCount(1);
   await expect(page.locator("#policy-picker-toggle")).toBeVisible();
   await expect(page.locator(".policy-file-actions")).toHaveCount(0);
   await expect(page.locator("#new-category")).toBeHidden();
@@ -2343,7 +2496,11 @@ test("policy actions share a non-overlapping responsive toolbar", async ({ page,
     expect(layout.toolbarBottom).toBeLessThanOrEqual(layout.editorTop);
     expect(Math.abs(layout.modeCenter - layout.toolsCenter), JSON.stringify(layout)).toBeLessThanOrEqual(1);
     expect(Math.abs(layout.utilitiesRight - layout.toolsRight), JSON.stringify(layout)).toBeLessThanOrEqual(1);
-    expect(Math.abs(layout.rescanTop - layout.historyTop)).toBeLessThanOrEqual(1);
+    if (width >= 900) expect(Math.abs(layout.rescanTop - layout.historyTop)).toBeLessThanOrEqual(1);
+    else {
+      expect(layout.historyTop).toBeGreaterThanOrEqual(layout.rescanTop);
+      expect(layout.historyTop).toBeLessThan(layout.editorTop);
+    }
     expect(layout.analyzeTop).toBe(layout.formatTop);
     expect(layout.analyzeRight).toBeLessThanOrEqual(layout.formatLeft);
     expect(layout.order).toEqual([...layout.order].sort((left, right) => left - right));
@@ -2743,7 +2900,7 @@ test("Analyze gutter opens a dialog and resets when switching policies", async (
   await expect(page.locator("#policy-check")).toBeEnabled();
   await expect(page.locator("#policy-source")).toBeEnabled();
   await expect(page.locator("#policy-source")).toBeEditable();
-  await expect(page.locator(".policy-catalog-pane")).toBeHidden();
+  await expect(page.locator("#policy-catalog-pane")).toBeHidden();
   await expect(page.locator("#policy-test-gutter")).toBeVisible();
   await expect(page.locator("#policy-check")).toHaveAttribute("data-analysis-state", "success");
   await page.mouse.move(0, 0);
@@ -2772,7 +2929,7 @@ test("Analyze gutter opens a dialog and resets when switching policies", async (
   await expect(page.locator('#policy-test-gutter [data-line="2"] .policy-test-line-result[data-effect="error"]')).toHaveText("ERR");
   await expect(page.locator("#policy-check-result")).toBeHidden();
   await expect(page.locator("#policy-test-status")).toBeHidden();
-  await expect(page.locator(".policy-catalog-pane")).toBeHidden();
+  await expect(page.locator("#policy-catalog-pane")).toBeHidden();
   await expect(gutter).toBeVisible();
   await expect(page.locator("#policy-source")).toHaveCSS("padding-left", "0px");
   await page.evaluate(() => { window.confirm = () => true; });
@@ -3420,14 +3577,20 @@ test("service types share table and map colors and gateways have clouds", async 
   await expect(page.locator(".gateway-cloud-link")).toHaveCount(1);
 });
 
-test("Gateways validates and saves a ZPL-bound runtime draft without activating it", async ({ page, appURL, api }) => {
-  const contract = {
-    organization_id: "alpha", instance_id: "public-egress", adapter_cn: "gateway-public-egress",
-    service_name: "public-egress.svc.zpr", external_network: "",
-  };
+test("Gateways edits multiple gateway drafts with the policy editor paradigm without activating them", async ({ page, appURL, api }) => {
+  const contracts = [
+    { organization_id: "alpha", instance_id: "public-egress", adapter_cn: "gateway-public-egress", service_name: "public-egress.svc.zpr", external_network: "" },
+    { organization_id: "alpha", instance_id: "partner-egress", adapter_cn: "gateway-partner-egress", service_name: "partner-egress.svc.zpr", external_network: "partner" },
+  ];
   const savedRequests = [];
-  api.handlers.set("/api/gateways/contracts", async (route) => route.fulfill({ json: { organization_id: "alpha", contracts: [contract] } }));
-  api.handlers.set("/api/gateways/configs", async (route) => route.fulfill({ json: { organization_id: "alpha", configs: [] } }));
+  api.handlers.set("/api/gateways/contracts", async (route) => route.fulfill({ json: { organization_id: "alpha", contracts } }));
+  api.handlers.set("/api/gateways/configs", async (route) => route.fulfill({ json: { organization_id: "alpha", configs: [{
+    organization_id: "alpha", instance_id: "partner-egress", current_revision: 2,
+    revisions: [
+      { revision: 1, saved_at: "2026-10-01T12:00:00Z", config: { schema_version: 1, instance_id: "partner-egress", destinations: [{ origin: "https://old.partner.example", path_prefixes: ["/"] }] } },
+      { revision: 2, saved_at: "2026-10-02T12:00:00Z", config: { schema_version: 1, instance_id: "partner-egress", destinations: [{ origin: "https://partner.example", path_prefixes: ["/v2/"] }] } },
+    ],
+  }] } }));
   api.handlers.set("/api/gateways/config/check", async (route) => {
     const { config } = route.request().postDataJSON();
     expect(config.organization_id).toBe("alpha");
@@ -3435,7 +3598,11 @@ test("Gateways validates and saves a ZPL-bound runtime draft without activating 
     expect(config.adapter_cn).toBe("gateway-public-egress");
     expect(config.service_name).toBe("public-egress.svc.zpr");
     expect(config.external_network).toBeUndefined();
-    await route.fulfill({ json: { valid: true, diagnostics: "Gateway draft matches the live Gateway service identity; runtime configuration is unchanged.", contract } });
+    if (!config.destinations[0].origin) {
+      await route.fulfill({ status: 422, json: { valid: false, diagnostics: "destination origin is required" } });
+      return;
+    }
+    await route.fulfill({ json: { valid: true, diagnostics: "Gateway draft matches the live Gateway service identity; runtime configuration is unchanged.", contract: contracts[0] } });
   });
   api.handlers.set("/api/gateways/configs/public-egress/revisions", async (route) => {
     const body = route.request().postDataJSON();
@@ -3447,17 +3614,52 @@ test("Gateways validates and saves a ZPL-bound runtime draft without activating 
   });
 
   await page.goto(`${appURL}/#gateways`);
-  await expect(page.getByRole("heading", { name: "Gateway configuration" })).toBeVisible();
-  await expect(page.locator("#gateway-draft-identity")).toContainText("public-egress.svc.zpr");
-  await page.getByRole("textbox", { name: "Gateway HTTPS origin" }).fill("https://api.example.com");
-  await page.getByRole("textbox", { name: "Allowed gateway path prefixes" }).fill("/v1/");
-  await page.getByRole("button", { name: "Validate draft" }).click();
+  const source = page.getByRole("textbox", { name: "Gateway draft JSON" });
+  await expect(page.locator("#gateway-picker-label")).toHaveText("public-egress.svc.zpr");
+  await expect(page.locator("#gateway-editor-mode")).toHaveText("Gateway · public-egress");
+  await expect(source).toHaveValue(/"instance_id": "public-egress"/);
+  await expect(page.locator("#gateway-source").locator("xpath=ancestor::div[contains(@class,'config-source-editor')]")).toHaveCSS("background-color", "rgb(23, 33, 30)");
+  await expect(page.getByRole("button", { name: "Find & Replace" })).toBeVisible();
+
+  const analyze = page.getByRole("button", { name: "Analyze", exact: true });
+  await expect(analyze).toHaveClass(/button-next-evaluate/);
+  await analyze.click();
+  await expect(analyze).toHaveAttribute("data-analysis-state", "error");
+  await expect(page.locator("#gateway-draft-message")).toContainText("destination origin is required");
+
+  await source.fill((await source.inputValue()).replace('"origin": ""', '"origin": "https://api.example.com",'));
+  await analyze.click();
+  await expect(analyze).toHaveAttribute("data-analysis-state", "error");
+  await expect(page.locator("#gateway-gutter .config-error-marker")).toHaveCount(1);
+
+  await source.fill((await source.inputValue()).replace(",,", ","));
+  await expect(analyze).not.toHaveAttribute("data-analysis-state", /.+/);
+  await page.getByRole("button", { name: "File..." }).click();
+  await expect(page.getByRole("menuitem", { name: "Save draft" })).toBeDisabled();
+  await page.keyboard.press("Escape");
+  await analyze.click();
+  await expect(analyze).toHaveAttribute("data-analysis-state", "success");
+  await expect(analyze).toHaveCSS("background-color", /rgb\((35, 117, 76|25, 92, 58)\)/);
   await expect(page.locator("#gateway-draft-message")).toContainText("runtime configuration is unchanged");
-  await page.getByRole("button", { name: "Save draft" }).click();
+  await page.getByRole("button", { name: "File..." }).click();
+  await page.getByRole("menuitem", { name: "Save draft" }).click();
   await expect(page.locator("#gateway-draft-message")).toContainText("Saved draft revision 1");
-  await expect(page.locator("#gateway-revision")).toHaveValue("1");
+  await expect(page.locator("#gateway-history-count")).toHaveText("1 version");
   expect(savedRequests).toHaveLength(1);
   expect(savedRequests[0].expected_revision).toBe(0);
+  expect(savedRequests[0].config.destinations[0].origin).toBe("https://api.example.com");
+
+  await page.getByRole("button", { name: "Browse gateways" }).click();
+  const items = page.locator("#gateway-contracts [role=treeitem]");
+  await expect(items).toHaveCount(2);
+  await expect(items.nth(0)).toHaveAttribute("aria-selected", "true");
+  await items.filter({ hasText: "partner-egress.svc.zpr" }).click();
+  await expect(page.locator("#gateway-catalog-pane")).toBeHidden();
+  await expect(page.locator("#gateway-picker-label")).toHaveText("partner-egress.svc.zpr");
+  await expect(source).toHaveValue(/https:\/\/partner\.example/);
+  await page.locator("#gateway-history-menu > summary").click();
+  await page.locator('#gateway-history [data-revision="1"]').click();
+  await expect(source).toHaveValue(/old\.partner\.example/);
   await expect(page.getByRole("button", { name: "Activate", exact: true })).toHaveCount(0);
 });
 
@@ -3755,7 +3957,7 @@ test("GUI visa count opens complete current adapter and service inventories", as
   await expect(inspector).toContainText("Policy: <script>bad()</script>");
   await expect(inspector.locator("script")).toHaveCount(0);
   await expect(inspector).not.toContainText("Visa 888");
-  await expect(page.locator("#topology-stage")).not.toHaveClass(/graph-visa-focused/);
+  await expect(page.locator("#topology-stage")).toHaveClass(/graph-visa-focused/);
   await page.locator("#inspector-close").click();
   await clientCount.click();
   await expect(page.locator("#inspector-kind")).toHaveText("ACTIVE VISAS");
@@ -4034,7 +4236,7 @@ test(`GUI Map denial badges and count changes pulse without replay (${reducedMot
   const nodeCount = node.locator(".graph-denial-count");
   await expect(nodeCount).toHaveAttribute("aria-label", "0 buffered denials");
   await expect(nodeCount.locator("text")).toHaveCount(0);
-  await expect(nodeCount.locator("rect")).toHaveCSS("fill", "none");
+  await expect(nodeCount.locator("rect")).toHaveCSS("fill", "rgb(255, 255, 255)");
   await expect(nodeCount.locator("rect")).toHaveCSS("stroke", "rgb(161, 44, 44)");
   await expect(page.locator("[data-count-pulse]")).toHaveCount(0);
   api.snapshot.actors[0].node_details.buffered_denials = 3;
@@ -4348,7 +4550,40 @@ test("GUI Map right-click highlights only current outbound visa services and ord
   await expect(serviceBadge).not.toHaveClass(/visa-focus/);
 });
 
-test("GUI Map zero visa badges are empty outlines and retain accessible counts", async ({ page, appURL, api }) => {
+test("GUI Map legend items highlight their component type and right-click matches count badges", async ({ page, appURL, api }) => {
+  api.snapshot.actors = [
+    { cn: "n1", node: true, zpr_addr: "fd00::a", node_details: { adapters: ["client"] } },
+    { cn: "client", node: false, zpr_addr: "fd00::1" },
+  ];
+  api.snapshot.services = [{ service_name: "API", actor_cn: "client", zpr_addr: "fd00::1", service_endpoints: "TCP/443" }];
+  api.snapshot.active_visas = [];
+  await page.goto(appURL + "/#map");
+  await page.getByRole("button", { name: "Pause updates", exact: true }).click();
+  const legendNode = page.locator('[data-legend-kind="node"]');
+  await legendNode.click();
+  await expect(legendNode).toHaveAttribute("aria-pressed", "true");
+  await expect(page.locator('.graph-vertex[data-inspect-actor="n1"]')).toHaveClass(/highlighted/);
+  await expect(page.locator('.graph-vertex[data-inspect-actor="client"]')).toHaveClass(/filtered/);
+  await expect(page.locator('.graph-service-badge[data-inspect-service="API"]')).toHaveClass(/filtered/);
+  await page.locator('[data-legend-kind="service"]').click();
+  await expect(legendNode).toHaveAttribute("aria-pressed", "false");
+  await expect(page.locator('.graph-service-badge[data-inspect-service="API"]')).toHaveClass(/highlighted/);
+  await expect(page.locator('.graph-vertex[data-inspect-actor="n1"]')).toHaveClass(/filtered/);
+  await page.locator('[data-legend-kind="service"]').click();
+  await expect(page.locator(".graph-vertex.filtered, .graph-service-badge.filtered")).toHaveCount(0);
+
+  const client = page.locator('.graph-vertex[data-inspect-actor="client"]');
+  await client.locator(".graph-adapter, circle, rect").first().click({ button: "right", force: true });
+  await expect(page.locator("#component-inspector")).toHaveClass(/open/);
+  const fromComponent = await page.locator("#inspector-body").innerText();
+  await client.locator(".graph-visa-count").dispatchEvent("contextmenu", { bubbles: true });
+  await expect(page.locator("#topology-stage")).not.toHaveClass(/graph-visa-focused/);
+  await client.locator(".graph-visa-count").dispatchEvent("contextmenu", { bubbles: true });
+  await expect(page.locator("#topology-stage")).toHaveClass(/graph-visa-focused/);
+  await expect.poll(() => page.locator("#inspector-body").innerText()).toBe(fromComponent);
+});
+
+test("GUI Map zero visa badges are white-filled and retain accessible counts", async ({ page, appURL, api }) => {
   api.snapshot.actors = [{ cn: "client", node: false, zpr_addr: "fd00::1" }];
   api.snapshot.services = [{ service_name: "API", actor_cn: "client", zpr_addr: "fd00::1", service_endpoints: "TCP/443" }];
   api.snapshot.active_visas = [];
@@ -4359,7 +4594,7 @@ test("GUI Map zero visa badges are empty outlines and retain accessible counts",
     await expect(badge).toHaveAttribute("aria-label", "0 active visas");
     await expect(badge.locator("title")).toHaveText("0 active visas");
     await expect(badge.locator("text")).toHaveCount(0);
-    await expect(badge.locator("rect")).toHaveCSS("fill", "none");
+    await expect(badge.locator("rect")).toHaveCSS("fill", "rgb(255, 255, 255)");
     await expect(badge.locator("rect")).toHaveCSS("stroke", "rgb(23, 77, 61)");
     await expect(badge.locator("rect")).toHaveAttribute("width", "22");
   }
@@ -4680,4 +4915,26 @@ test("scenario machine lanes scroll from a scrollbar at the top of the panel", a
   await expect.poll(() => viewport.evaluate((element) => element.scrollLeft)).toBeGreaterThan(0);
   await viewport.evaluate((element) => { element.scrollLeft = 0; });
   await expect.poll(() => scrollbar.evaluate((element) => element.scrollLeft)).toBe(0);
+});
+test("GUI Map buffered denial badge opens node denial details on right-click", async ({ page, appURL, api }) => {
+  api.snapshot.actors = [
+    { cn: "node", node: true, zpr_addr: "fd00::ff", node_details: { adapters: ["client"], buffered_denials: 4, local_denials: 19 } },
+    { cn: "client", node: false, zpr_addr: "fd00::1" },
+    { cn: "other", node: false, zpr_addr: "fd00::9" },
+  ];
+  api.snapshot.recent_denies = [
+    { source_addr: "fd00::1", dest_addr: "fd00::2", protocol: 6, dest_port: 443, deny_code: "NoMatchingPolicy", count: 4, last_deny_ms: Date.now() },
+    { source_addr: "fd00::9", dest_addr: "fd00::2", protocol: 6, dest_port: 22, deny_code: "OtherNode", count: 1, last_deny_ms: Date.now() },
+  ];
+  await page.goto(appURL + "/#map");
+  await page.getByRole("button", { name: "Pause updates", exact: true }).click();
+  const badge = page.locator('.graph-vertex[data-inspect-actor="node"] .graph-denial-count');
+  await expect(badge).toHaveAttribute("role", "button");
+  await badge.click({ button: "right" });
+  const inspector = page.locator("#inspector-body");
+  await expect(inspector).toContainText("Node denial telemetry");
+  await expect(inspector).toContainText("Buffered denials");
+  await expect(inspector).toContainText("NoMatchingPolicy");
+  await expect(inspector).not.toContainText("OtherNode");
+  await expect(inspector).toContainText("count only");
 });

@@ -440,7 +440,7 @@ This is permission-protected storage, **not encrypted-at-rest or non-exportable
 storage**. Root/the owning account and backups containing this file can access
 the key; copying the state can impersonate the enrolled request. Protect backup
 and support bundles accordingly and never include the state file in logs.
-TPM storage, attestation, installer ownership/service-user provisioning,
+TPM storage, attestation, system service-account handoff,
 rotation, and production key-recovery policy remain unimplemented.
 
 Tests cover persistence, signing after reload, unsafe filesystem entries,
@@ -477,8 +477,9 @@ Example operator configuration (replace all paths and the audience):
 
 The state directory is absolute and must be a dedicated owner-only leaf under
 an existing trusted parent. Run as its intended owner; do not launch a browser
-as root or indiscriminately run the wizard with sudo. Installer/service account
-selection is not implemented. Configuration and CA files must be regular,
+as root or indiscriminately run the wizard with sudo. The development desktop
+package uses the logged-in user as described below; system service-account
+handoff is not implemented. Configuration and CA files must be regular,
 non-symlink files owned by root or the effective user, not writable by group
 or others, and at most 64 KiB. Their parent directories must also be trusted.
 Relative `ca_file` paths resolve against the configuration directory. Omit
@@ -534,15 +535,364 @@ recovery, uncertain responses, server backoff, and graceful shutdown:
 
 ```sh
 go test -race ./internal/enrollment
-npm run test:browser -- tests/browser/enrollment-setup.spec.mjs --workers=1
+sh scripts/test-browser-container.sh \
+  tests/browser/enrollment-setup.spec.mjs tests/browser/enrollment-live.spec.mjs
 ```
 
 The isolated desktop/tablet browser tests start their own temporary loopback
 wizard with an unavailable remote service, never Simulator. They verify key
 preparation, code-field clearing, uncertain failure, and missing-session
-blocking. They were not executed in the current environment: Node/npm is
-unavailable and the integrated browser connection timed out. Do not treat
-browser acceptance as complete until they pass.
+blocking. All four desktop/tablet tests passed in the pinned Playwright
+container; host Node/npm is not required. The runner cross-builds the Linux
+setup fixture for the Docker server architecture and supplies it through
+`ZPR_SETUP_TEST_BINARY`. Direct npm runs can instead build it with local Go.
+These tests do not certify a full graphical clean-machine installation or
+production credential issuance.
+
+The [real-service browser suite](tests/browser/enrollment-live.spec.mjs) adds
+eight desktop/tablet cases, bringing enrollment coverage to twelve passing
+browser cases. It uses the actual wizard, TLS device handler, SQLite registry,
+and an independent reviewer connection, with invalid Simulator configuration.
+It verifies:
+
+- A browser-submitted claim reaches pending approval and automatic polling
+  observes a fingerprint-bound approval; only one code submission occurs.
+- Wizard restart retains the identical stored key/metadata and requires a
+  fresh signed status before showing approval.
+- Rejection remains terminal across restart; no code form reappears.
+- An unclaimed saved identity requires a status denial, administrator-confirmed
+  recovery checkbox, and the server retry delay before code submission.
+- A successfully delivered claim whose local browser response is lost remains
+  uncertain, then recovers through signed status without another claim or key.
+
+The [opt-in test fixture](internal/enrollment/browser_fixture_test.go) is
+compiled into an enrollment Go test executable, not the shipped wizard.
+Review/restart commands use the test process's stdin, never an HTTP bypass.
+The container runner builds this executable for the Docker architecture and
+sets `ZPR_ENROLLMENT_TEST_BINARY`. Direct npm execution can build it with
+local Go. Test startup/teardown bounds process waits and closes temporary
+listeners and state. Reviewer actions exercise the durable review state
+machine, not certificate-authorized administration or Control Room login.
+Thus these tests are device-flow acceptance, not named-user authorization,
+graphical desktop package certification, credential issuance, or ZPR admission.
+
+### Development Debian/Ubuntu package
+
+Approved initial targets are **Ubuntu 24.04 LTS and Debian 12, amd64 desktop**.
+The [package builder](packaging/enrollment/build-deb.sh) requires `dpkg-deb`
+and standard Debian/Ubuntu shell utilities. Build a static Linux executable
+from the module root, then package it:
+
+```sh
+CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -trimpath \
+  -o /tmp/zpr-enrollment-setup ./cmd/zpr-enrollment-setup
+sh packaging/enrollment/build-deb.sh /tmp/zpr-enrollment-setup \
+  0.1.0~dev1 /tmp/zpr-enrollment-setup_0.1.0~dev1_amd64.deb
+```
+
+The output path must not exist. The builder checks version characters and ELF
+amd64 format and sets package ownership to root. It creates an **unsigned
+development artifact**, not an authenticated installer. A checksum is not a
+signature; do not distribute it as the signed package required by the plan.
+Detached manifest signing/verification is now implemented below. Production
+signing authority, authenticated download hosting, revocation of old versions,
+and release automation remain pending.
+
+Contents:
+
+- `/usr/bin/zpr-enrollment-setup`: static wizard binary.
+- `/usr/share/applications/zpr-enrollment-setup.desktop`: terminal-based
+  **ZPR Machine Setup (Development)** launcher.
+- `/usr/share/zpr-enrollment-setup/setup.example.json`: intentionally invalid
+  endpoint example; no active configuration or invitation.
+- `/usr/share/doc/zpr-enrollment-setup/README`: operator/user instructions.
+
+There are no installation hooks, system services, auto-start listeners,
+private keys, codes, or adapter binaries. Installation does not create a
+device identity. A modern browser, graphical desktop, and terminal emulator
+are prerequisites; the package does not install a desktop environment.
+
+For controlled development testing, install using the target distribution's
+package manager. An administrator must then create a root-owned, non-writable
+by others `/etc/zpr` directory and `/etc/zpr/enrollment-setup.json`, replacing
+the example audience with the independently trusted HTTPS endpoint and
+optionally adding `ca_file`. **Omit `state_directory`** in desktop configuration.
+Keep the development software-key opt-in explicit. Do not use an invitation,
+email, or browser form to select CA trust.
+
+Launch the desktop entry as the logged-in user, or run:
+
+```sh
+zpr-enrollment-setup -config /etc/zpr/enrollment-setup.json -user-state
+```
+
+The desktop entry opens a terminal; open the printed private URL in the same
+user's normal browser. It does not run a browser as root. `-user-state` refuses
+root and derives state from `$HOME/.local/state/zpr-enrollment-development`
+(it intentionally does not use `XDG_STATE_HOME`). The home and existing
+`.local/state` parents must be owned by that user, not symlinks or group/other
+writable. Missing parents are created with `0700`; the identity store creates
+the private leaf. Existing configuration cannot override the per-user path.
+The explicit-state command remains available for development/service testing,
+not for the desktop package launcher.
+
+Upgrades, removal, and purge preserve per-user state and administrator-created
+configuration: the package owns neither. Losing/deleting the key requires
+administrator-led recovery; uninstall is not server revocation. The eventual
+machine adapter must not silently consume another user's key. System-service
+identity handoff is deliberately not implemented.
+
+The [package lifecycle checks](packaging/enrollment/test-deb.sh) are only for
+fresh disposable Docker containers, never a real workstation. They install
+the package, run setup tests as an unprivileged user, verify launch readiness,
+reinstall it, and purge while checking preserved user state/configuration.
+They passed on Debian 12 and Ubuntu 24.04 amd64, with network disabled.
+The retained-state fixture checks file preservation, not adapter revocation.
+Graphical launcher/desktop installation and end-to-end signed provisioning
+still require clean-machine certification.
+
+### Detached release signatures
+
+The approved first distribution contract uses a detached OpenPGP signature
+over a canonical text manifest, not an embedded `.deb` signature or an APT
+repository. **Installing the `.deb` directly does not verify this signature.**
+The retained development artifact is still unsigned; no production signing
+identity has been created.
+
+The [signer](packaging/enrollment/sign-release.sh) and
+[verifier](packaging/enrollment/verify-release.sh) require GnuPG (`gpg`, `gpgv`),
+`sha256sum`, `dpkg-deb`, and standard Debian/Ubuntu shell utilities.
+An operator supplies an existing private key through their managed GnuPG
+agent/hardware signer. Scripts never generate/import private keys or accept
+a passphrase argument. Example operator workflow:
+
+```sh
+# PRIMARY_FINGERPRINT is the full uppercase fingerprint of the approved
+# existing signer. EXPIRES is an explicit Unix timestamp, within 30 days.
+sh packaging/enrollment/sign-release.sh /trusted/build/package.deb \
+  0.1.0~dev1 "$PRIMARY_FINGERPRINT" "$EXPIRES" /trusted/releases/new-dev1
+```
+
+The new output directory must not exist. Signer input is copied into private
+temporary storage; package metadata is checked before signing. The signature
+is verified against the requested primary key before publishing. Distribute
+only after a successful exit; an I/O failure can leave an incomplete output
+directory that must not be served. The output contains exactly:
+
+- `zpr-enrollment-setup_0.1.0~dev1_amd64.deb`
+- `release.manifest`
+- `release.manifest.asc`
+
+The five-line, newline-terminated ASCII manifest binds format version 1,
+release version, expiry epoch, canonical package filename, and SHA-256.
+The signer chooses SHA-256 signatures; verification accepts SHA-256/384/512.
+No codes, machine keys, CA trust, or device invitations belong in this bundle.
+Publish the three files through operator-managed HTTPS without mutable local
+write access. Hosting/email delivery is not implemented.
+
+**Before downloading**, provision the trusted verifier scripts (including
+`release-common.sh`), binary OpenPGP public keyring, full primary fingerprint,
+and exact approved release version through an independent authenticated
+operator channel. Do not trust a keyring, fingerprint, script, or version just
+because it accompanies the download or appears in its email. The verifier
+does not contact keyservers, import keys into the user's keyring, or fall back
+to default trust. Example recipient check:
+
+```sh
+sh /trusted/tools/verify-release.sh \
+  /trusted/download/zpr-enrollment-setup_0.1.0~dev1_amd64.deb \
+  /trusted/download/release.manifest /trusted/download/release.manifest.asc \
+  /trusted/keys/release-signers.gpg "$PRIMARY_FINGERPRINT" 0.1.0~dev1
+```
+
+Verification requires exactly one valid signature from the pinned primary key
+or its signing subkey and rejects expired/revoked keys present in the supplied
+keyring. It validates canonical manifest bytes, version, lifetime, SHA-256,
+and package name/version/architecture. Expected-version pinning rejects
+substitution of an older release; it does not automatically discover the
+latest release or record a monotonic version history. Correct system clocks
+are required. Expiry limits initial download verification, not invitation
+lifetime, installed-package execution, or server revocation.
+
+The command copies inputs into private temporary storage and never installs
+anything. Preserve the exact original bytes in a trusted, non-writable-by-others
+directory before and after verification, then install through the approved
+package manager as a separate administrator action. Changing the file after
+verification invalidates that result; the scripts are not a privileged
+verification-to-install transaction. Signature authenticity is not evidence
+of hardware protection, credential issuance, or live ZPR admission.
+
+Operators must independently distribute refreshed keyrings/revocation data
+and fingerprints during key rotation. Offline verification cannot discover
+a revocation absent from its trusted keyring. No production keys are bundled,
+and signed test keys must never become production trust roots.
+
+[Disposable release tests](packaging/enrollment/test-release.sh) generate
+short-lived test keys only inside Docker containers and leave no retained
+signed release. Valid primary/subkey checks and rejection of tampering,
+wrong trust/version, expired keys/releases, excessive lifetime, weak digests,
+unexpected paths/fields/bytes, and symlink inputs pass on Debian 12 and an
+Ubuntu 24.04-based image. They install no packages and do not certify release
+operations or graphical clean-machine provisioning.
+
+### Trusted HTTPS release staging
+
+[download-release.sh](packaging/enrollment/download-release.sh) combines bounded
+HTTPS download with the existing detached-signature verifier. It never installs
+anything and does not download trust roots, signing keys, or verifier scripts.
+Provision this tool and its sibling verification scripts, trusted keyring,
+primary fingerprint, exact expected version, and approved download base URL
+through an independent authenticated operator channel first.
+
+On Debian 12/Ubuntu 24.04, install the prerequisite tools (`curl`, GnuPG,
+`dpkg`, coreutils) through trusted OS package management. Create an existing
+private output parent owned by the invoking user with **mode 0700**. Example:
+
+```sh
+mkdir -m 0700 "$HOME/zpr-release-downloads"
+sh /trusted/tools/download-release.sh \
+  https://downloads.example.com/zpr/dev1 \
+  /trusted/keys/release-signers.gpg "$PRIMARY_FINGERPRINT" 0.1.0~dev1 \
+  "$HOME/zpr-release-downloads/dev1" system
+```
+
+The final argument is `system` for OS TLS roots or the path to an independently
+trusted CA PEM file. Environment CA overrides (`CURL_CA_BUNDLE`, `SSL_CERT_FILE`,
+`SSL_CERT_DIR`), HTTP proxies, and user curl configuration are ignored.
+Certificate and hostname verification remain enabled; TLS 1.2 or later is
+required for the static download endpoint (the enrollment device service itself
+still requires TLS 1.3). Initial URL support is intentionally narrow: HTTPS
+DNS/IPv4 authority, optional port, and plain path; no credentials, percent
+escapes, queries, fragments, IPv6 literals, or redirect-based CDN links.
+Provide the final HTTPS base URL directly rather than weakening TLS checks.
+
+The tool fetches exactly `release.manifest`, `release.manifest.asc`, and the
+canonical versioned amd64 package. Only HTTP 200 is accepted; redirects are
+not followed. Each transfer has a ten-second connect timeout and 120-second
+total timeout. Accepted content limits are 1 KiB manifest, 64 KiB signature,
+and 32 MiB package. Curl size checks plus an OS file-size limit bound chunked
+transfers even on older curl: temporary data may reach the OS cap (up to
+64 MiB) before rejection, but oversized files are never accepted/published.
+There is no silent retry, HTTP downgrade, or automatic proxy fallback.
+
+The existing parent must be an absolute canonical path without symlink
+components, owned by the current user, mode 0700. Its ancestors, CA, keyring,
+and tools must also be independently trusted; this is not protection from
+root/the owning account. A private sibling temporary directory holds downloads
+and copies of trust material. All signatures, hashes, version, expiry, and
+package metadata must verify before publication. GNU `mv -T -n` atomically
+publishes the directory without replacing/merging into an existing destination,
+including a destination created during download. On failure, no completed
+bundle is published and temporary files are removed. Existing output is left
+unchanged. Only the package, manifest, and signature remain in successful output.
+
+Staging is a separate unprivileged step, not a privileged verification-to-install
+transaction. Preserve the private output, reverify if anything changes or the
+release expires, and install the exact verified package through a separate
+approved administrator action. The tools do not auto-select newer versions,
+send emails, host downloads, manage production keys, or expose an installer GUI.
+
+The [HTTPS download tests](packaging/enrollment/test-download.mjs) run through
+`ZPR_TEST_DOWNLOAD=1 sh packaging/enrollment/test-release.sh package.deb` inside
+a disposable Docker container with Node, OpenSSL, curl, and GnuPG installed.
+They use a local HTTPS server and disposable signed releases, not an external
+download host or Simulator. Tests pass with Debian 12 tooling and an Ubuntu
+24.04-based image, covering valid staging, curl/proxy override isolation,
+untrusted TLS, plaintext/redirect rejection, missing/truncated/oversized transfers,
+signature/hash failures, unsafe/symlink parents, concurrent destination creation,
+and cleanup. Test keys, TLS identities, and bundles are removed at teardown.
+
+## Named operator OIDC foundation (not mounted)
+
+[internal/operatorauth](internal/operatorauth/auth.go) provides the approved
+OIDC login/session boundary for future Control Room enrollment integration.
+It is not wired into either listener and introduces no active login route,
+environment configuration, or enrollment proxy exception. Existing
+certificate-authorized administration remains unchanged. Control Room
+enrollment mutations remain blocked.
+
+The library uses `github.com/coreos/go-oidc/v3` and `golang.org/x/oauth2`, with
+`go-jose` for signed-token integration tests. This concrete authentication
+feature needs maintained protocol/crypto libraries; hand-written JWT validation
+is intentionally avoided. Existing unrelated module dependencies are preserved.
+
+`operatorauth.New(ctx, config, clientSecret)` validates typed operator
+configuration and performs HTTPS discovery. The secret is supplied separately,
+not included in public JSON, requests, logs, or sessions. A protected secret-file
+loader/IdP deployment configuration is not implemented yet. Example typed
+configuration's JSON shape:
+
+```json
+{
+  "version": 1,
+  "issuer": "https://identity.example.com",
+  "client_id": "zpr-control-room",
+  "redirect_url": "https://control.example.com/auth/operator/callback",
+  "session_lifetime_seconds": 600,
+  "grants": [{
+    "issuer": "https://identity.example.com",
+    "subject": "stable-admin-subject",
+    "organizations": ["production"],
+    "permissions": ["read", "create", "approve", "reject", "cancel"]
+  }]
+}
+```
+
+Issuer/subject pairs are exact and explicit; email, display name, groups,
+arbitrary browser headers, and shared backend certificates are never used
+as authorization. Grants are copied at initialization, so caller mutation
+cannot expand scopes. Updates require a new instance, invalidating old sessions;
+there is no hot reload or distributed session store.
+
+When explicitly mounted by a future HTTPS integration, the handler supports:
+
+- `POST /auth/operator/login`: exact same-origin initiation; creates a
+  five-minute browser-bound state/nonce and redirects to authorization with
+  S256 PKCE and only the `openid` scope.
+- `GET /auth/operator/callback`: one-time state/browser cookie, code exchange,
+  signed ID-token validation, explicit grant lookup, and opaque session cookie.
+- `GET /auth/operator/session`: same-origin identity and CSRF token only,
+  `no-store`; no provider tokens or client secret.
+- `POST /auth/operator/logout`: same-origin CSRF-protected local session
+  invalidation. It does not log the user out of the identity provider.
+
+All routes require actual TLS and the exact configured callback authority.
+Forwarded headers cannot turn plaintext into trusted HTTPS. Cookies use
+`__Host-` names, Secure, HttpOnly, Path `/`, no Domain, and SameSite=Lax.
+Discovery authorization/token/JWKS endpoints must also be HTTPS.
+The owned IdP HTTP client enforces timeouts, rejects redirects, and does not
+inherit environment proxies. Provider token validation uses RS256/ES256,
+issuer/client audience, authorized party, nonce, issued-at, signature, and expiry.
+
+Sessions store only grants, CSRF proof, and expiration in memory. They expire
+at the earlier of token expiry and an explicit 60-3600 second lifetime.
+There is no sliding renewal, refresh-token storage, or offline token acceptance.
+Restarts clear all sessions. Login/session capacity is bounded at 256/1024;
+expired entries are removed on access. Gateway/source rate controls and
+multi-process sessions remain deployment work.
+
+`Session` returns a copied identity/CSRF token for a same-origin reader.
+`Authorize` checks the active session plus explicit organization/permission;
+mutations additionally require exact Origin and `X-ZPR-CSRF`. Only local logout
+uses empty scope arguments. An enrollment integration must always pass the
+actual organization and required permission and must never trust an identity
+header or serialize a session as an unsigned backend assertion. Request denial
+is surfaced without reflecting raw tokens, authorization codes, or provider errors.
+
+Tests use a disposable HTTPS provider with real JWKS/signatures and real code
+exchange/PKCE. They cover grant isolation, callback replay, initiating-browser
+binding, invalid token claims/signatures, IdP failure, plaintext/cross-origin
+rejection, forged headers, CSRF, logout, token-bounded session expiry, and
+capacity limits without Simulator:
+
+```sh
+go test -race ./internal/operatorauth ./internal/enrollment
+```
+
+Before enabling the GUI, complete the HTTPS listener/gateway boundary,
+operator-selected IdP registration and secret loading, independently verified
+named-user delegation/audit at Control-Service, and browser acceptance tests.
+No service was restarted, identity provider deployed, or provisioning UI enabled.
 
 # Compiling the binary
 
@@ -571,6 +921,11 @@ durable audit archive. **Workers** merges passive device/runtime inventory and
 workload logs, with device-type filtering. Control Room remains the read-only network and policy monitor at
 `http://127.0.0.1:8787`.
 
+The Control Room sidebar lists Map, Status, Security, Diagnostics, Trusted
+Sources, Adapter Logs, and the external Log Manager (marked with a green ↗
+arrow). Policy, Gateways, and ZPR Config follow under a small **Configuration**
+label; the label is hidden in condensed and mobile layouts.
+
 Control Room groups Adapters, Actors, Services, Visas, Denials, and DNS under
 counted Status tabs. The summary metrics stay on Map rather than repeating on
 each status page. Map updates animate retained topology components as bounds
@@ -583,6 +938,11 @@ The panel refreshes with polling and queries the complete Visa Service list,
 not the recent-ten snapshot. These are current grants involving the adapter's
 ZPR address, not confirmations that its PH has installed each grant. Loading
 and upstream failures are distinguished from an empty current-visa list.
+Zero visa and buffered-denial badges are white-filled circles; `?` means the
+count is unavailable. Click, right-click, or press Enter on a red node denial
+badge to show the node's buffered and local denial telemetry plus recent Visa
+Service denials whose source is an adapter docked on that node. The node exports
+only a count, so these records are context and may not match it one-to-one.
 Refreshes keep the last successful visa list visible, including after a failed
 request; switching adapters still loads that adapter's own list. Visa flows in
 the inspector and Visas table show matching DNS names alongside the original
@@ -597,15 +957,28 @@ after terminating periods and inside comments, quoted strings, and attribute
 values. Control-Space requests suggestions, arrow keys select, Tab accepts,
 and Escape dismisses; Enter remains a newline and Shift-Tab moves focus out.
 
-Source editors offer local **Search** and **Replace** controls immediately before
-History: policy/assertion, ZPR Config, Simulator scenario JSON, and directory LDIF.
-Control/Command-F opens search in the focused source; Control/Command-H opens
-replace. Searches match literal text (with optional case sensitivity), Next and
-Previous wrap, Enter/Shift-Enter navigate matches, and Escape closes the controls.
-Replacement text is literal too, including `$` characters. Replace match or
-Replace all changes only the unsaved source, preserving each editor's normal
-modified state and analysis invalidation. Nothing is saved, published, or applied
-automatically; replacements exceeding an editor's character limit are rejected.
+Source editors offer a **Find & Replace** button immediately before History:
+policy/assertion, ZPR Config, Simulator scenario source, and directory LDIF. It
+turns dark green while its dialog is open and closes the dialog when clicked
+again. The dialog follows Microsoft Word's Find and Replace layout: **Find** and
+**Replace** tabs, *Find what* and *Replace with* fields, and Replace, Replace
+All, Find Next, and Cancel buttons. **More >>** reveals Search Options: search
+direction (All wraps; Down and Up stop at the end or beginning), Match case,
+and **Use regular expressions** (Word's wildcards are replaced by JavaScript
+regular expressions). Control/Command-F opens the Find tab in the focused source;
+Control/Command-H opens the Replace tab. Enter is Find Next, Shift-Enter
+searches backward, and Escape closes the dialog.
+
+Searches are literal unless regular expressions are enabled. Regular-expression
+mode reports invalid patterns, ignores empty matches, and expands `$&`,
+`$1`–`$99`, `$<name>`, and `$$` in replacements; literal mode keeps replacement
+text literal, including `$`. The status shows only match counts and position
+(for example, `Match 2 of 5`). Replace or Replace All is applied as one native
+edit, so the editor's Undo/Redo (Control/Command-Z and Shift-Control/Command-Z)
+restores it. Replacements change only the unsaved source, preserving each
+editor's normal modified state and analysis invalidation. Nothing is saved,
+published, or applied automatically; replacements exceeding an editor's
+character limit are rejected.
 
 ZPR Config uses the policy editor's syntax colors and toolbar styling. Its narrow
 gutter contains only source-local error markers, not line numbers. Analyze shows
@@ -615,19 +988,23 @@ save/load status remain visible. Saving configuration still never applies it to
 the runtime.
 
 The Simulator scenario dialog switches between its structured form and a
-**Raw JSON editor**. Raw mode uses the same dark syntax colors, error-only gutter,
-File/Analyze/Format controls, and synchronized scrolling as Control Room's source
-editors, with a line/column indicator and a responsive assistant column.
+top-right raw-source editor toggle. Raw mode edits either JSON or YAML, using the
+same dark syntax colors, error-only gutter, File/Analyze/Format controls, and
+synchronized scrolling as Control Room's source editors, with a line/column
+indicator and a responsive assistant column. Save and Publish store the same
+canonical scenario definition regardless of the chosen raw format.
 Analyze calls the read-only, organization-scoped
 `POST /api/simulator/organizations/{organization}/scenario-check` endpoint. It
-uses the normal scenario validator but never opens a workspace, saves, publishes,
-or starts anything. Syntax/type errors with exact source offsets appear in the
-gutter; definition errors without source locations remain in the status area.
-Form and JSON changes round-trip, and invalid JSON blocks returning to the form
-rather than discarding the draft. File import/download remains local and unsaved.
+accepts `{format:"json"|"yaml", source}` and returns the canonical JSON/YAML
+rendering when valid. It uses the normal scenario validator but never opens a
+workspace, saves, publishes, or starts anything. Syntax/type errors with exact
+source offsets appear in the gutter; definition errors without source locations
+remain in the status area. Form and raw-source changes round-trip, and invalid
+JSON/YAML blocks returning to the form rather than discarding the draft. File
+import/download remains local and unsaved.
 
 The same Claude assistant is available in both modes and uses the current form
-or exact JSON draft. Its disclosure explains what is sent to Anthropic; the
+or exact raw draft. Its disclosure explains what is sent to Anthropic; the
 server still requires `ANTHROPIC_API_KEY`. Applying a proposal updates only the
 unsaved editor. Responses/proposals for a changed draft or reset conversation
 cannot overwrite newer work. Save, Publish, and Run remain separate explicit

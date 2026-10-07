@@ -569,6 +569,28 @@ function renderInspector() {
       ? `<p role="status">Active visa inventory unavailable. Recent decisions are not a complete current inventory.</p>`
       : currentVisaList(visas);
     sections.push(`<section class="detail-section"><h3>Current visas</h3>${content}</section>`);
+  } else if (state.selection.kind === "denial-count") {
+    const actor = data.actors.find(item => item.cn === state.selection.key && item.node);
+    if (!actor) return closeInspector();
+    const details = actor.node_details || {};
+    kindLabel = "BUFFERED DENIALS";
+    title = actorDisplayName(actor);
+    sections.push(detailSection("Node denial telemetry", [
+      detailField("Buffered denials", details.buffered_denials ?? "Unavailable"),
+      detailField("Local denial occurrences", details.local_denials ?? "Unavailable"),
+      ...(details.denial_stats_error ? [detailField("Telemetry", details.denial_stats_error)] : []),
+      detailField("Snapshot", data.generated_at ? new Date(data.generated_at).toLocaleString() : "Not reported"),
+    ]));
+    const docked = new Set((details.adapters || []).map(name => data.actors.find(item => item.cn === name)?.zpr_addr).filter(Boolean).map(dnsAddressKey));
+    const denials = (data.recent_denies || []).filter(record => record.source_addr && docked.has(dnsAddressKey(record.source_addr)))
+      .sort((left, right) => num(right.last_deny_ms) - num(left.last_deny_ms));
+    const items = denials.map(record => `<div class="detail-item"><strong>${escapeHTML(record.deny_code || "Denied")} · ${escapeHTML(`${protocolName(record.protocol)}/${record.dest_port}`)}</strong><span title="${escapeHTML(visaEndpointTitle(record.source_addr, record.dest_addr))}">${escapeHTML(`${dnsAddressLabel(record.source_addr)} → ${dnsAddressLabel(record.dest_addr)}`)}</span><span>Count: ${escapeHTML(formatNumber(record.count))} · Last: ${record.last_deny_ms ? escapeHTML(new Date(num(record.last_deny_ms)).toLocaleString()) : "Not reported"}</span></div>`).join("");
+    const content = !docked.size
+      ? `<p role="status">No docked adapters with ZPR addresses are reported for this node.</p>`
+      : items
+        ? `<div class="detail-list" aria-label="Recent policy denials from docked adapters">${items}</div>`
+        : `<p role="status">No recent Visa Service policy denials from adapters docked on this node.</p>`;
+    sections.push(`<section class="detail-section"><h3>Recent policy denials from docked adapters</h3><p>The node reports buffered denials as a count only. These Visa Service denial records are matched by docked adapter source address and may not match the buffered count one-to-one.</p>${content}</section>`);
   } else if (state.selection.kind === "actor") {
     const actor = data.actors.find((item) => item.cn === state.selection.key);
     if (!actor) return closeInspector();
@@ -848,7 +870,7 @@ function renderTopology(data, exitComponents = []) {
     const label = count == null ? "?" : count === 0 ? "" : String(count);
     const width = Math.max(22, label.length * 7 + 10);
     const description = count == null ? denial ? "Buffered denial count unavailable" : "Active visa count unavailable" : `${count} ${denial ? "buffered denials" : "active visas"}`;
-    return `<g class="graph-visa-count${denial ? " graph-denial-count" : ""}${count === 0 ? " empty" : ""}"${denial ? "" : ' role="button" tabindex="0" aria-description="Click, right-click or press Enter to show visas"'} aria-label="${description}"><title>${description}</title><rect x="${x - width / 2}" y="${y - 9}" width="${width}" height="18" rx="9"/>${label ? `<text x="${x}" y="${y + 3}">${label}</text>` : ""}</g>`;
+    return `<g class="graph-visa-count${denial ? " graph-denial-count" : ""}${count === 0 ? " empty" : ""}"${denial ? ' role="button" tabindex="0" aria-description="Click, right-click or press Enter to show buffered denial details"' : ' role="button" tabindex="0" aria-description="Click, right-click or press Enter to show visas"'} aria-label="${description}"><title>${description}</title><rect x="${x - width / 2}" y="${y - 9}" width="${width}" height="18" rx="9"/>${label ? `<text x="${x}" y="${y + 3}">${label}</text>` : ""}</g>`;
   };
   const edges = [];
 
@@ -1059,6 +1081,12 @@ function renderTopology(data, exitComponents = []) {
   let width = Math.max(1, bounds.width + paddingX * 2);
   let height = Math.max(1, bounds.height + paddingY * 2);
   const query = byId("topology-search").value.trim().toLowerCase();
+  const legendKind = state.mapLegendKind || "";
+  const mapMark = (queryMatch, legendMatch) => {
+    const active = Boolean(query || legendKind);
+    const hit = active && (!query || queryMatch) && (!legendKind || legendMatch);
+    return { highlighted: hit ? "highlighted" : "", filtered: active && !hit ? "filtered" : "" };
+  };
   const matches = (actor) => !query || `${displayNames.get(actor.cn)} ${actor.cn} ${actor.zpr_addr || ""} ${visaServices.has(actor.cn) ? "visa service" : ""} ${(servicesByActor.get(actor.cn) || []).map((service) => `${service.service_name} ${service.service_kind} ${service.external_network_connection || ""}`).join(" ")}`.toLowerCase().includes(query);
 
   const edgeMarkup = [...dockEdges, ...networkEdges].map((edge) => {
@@ -1069,8 +1097,7 @@ function renderTopology(data, exitComponents = []) {
     const title = docked
       ? `${displayNames.get(edge.to.cn)} docked to ${displayNames.get(edge.from.cn)} · ${dnsAddressTitle(edge.to.zpr_addr, "Adapter IP")} · ${dnsAddressTitle(edge.from.zpr_addr, "Node IP")}`
       : `${displayNames.get(edge.from.cn)} to ${displayNames.get(edge.to.cn)}: ${edge.state} · ${dnsAddressTitle(edge.from.zpr_addr, "Node A IP")} · ${dnsAddressTitle(edge.to.zpr_addr, "Node B IP")}`;
-    const highlighted = query && (matches(edge.from) || matches(edge.to)) ? "highlighted" : "";
-    const filtered = query && !highlighted ? "filtered" : "";
+    const { highlighted, filtered } = mapMark(matches(edge.from) || matches(edge.to), legendKind === (docked ? "dock" : "inter-node"));
     const key = `${edge.kind}|${edge.from.cn}|${edge.to.cn}`;
     return `<g class="graph-edge ${highlighted} ${filtered}" data-topology-edge="${escapeHTML(key)}" data-connector-from="${escapeHTML(`actor:${JSON.stringify(edge.from.cn)}`)}" data-connector-to="${escapeHTML(`actor:${JSON.stringify(edge.to.cn)}`)}" data-inspect-link="${escapeHTML(key)}"${docked ? ` data-dock-adapter="${escapeHTML(edge.to.cn)}"` : ""} tabindex="0" role="button" aria-label="Inspect ${escapeHTML(title)}"><title>${escapeHTML(title)}</title>${docked ? "" : `<line class="graph-network-clearance" x1="${from.x}" y1="${from.y}" x2="${to.x}" y2="${to.y}"/>`}<line class="graph-link ${cls}" x1="${from.x}" y1="${from.y}" x2="${to.x}" y2="${to.y}"/><line class="graph-link-hit" x1="${from.x}" y1="${from.y}" x2="${to.x}" y2="${to.y}"/></g>`;
   }).join("");
@@ -1143,13 +1170,14 @@ function renderTopology(data, exitComponents = []) {
       const externalNetworks = [...new Set((servicesByActor.get(actor.cn) || []).filter(isGatewayService).map((service) => service.external_network_connection || "External network"))].join(", ");
       cloudMarkup = `<g class="graph-external-network"><title>${escapeHTML(externalNetworks)}</title><line class="graph-link gateway-cloud-link" x1="${pos.x}" y1="${pos.y}" x2="${cloudX}" y2="${cloudY}"/><path class="graph-cloud" transform="translate(${cloudX} ${cloudY})" d="M -34 22 C -60 22 -62 -12 -39 -17 C -40 -43 -2 -49 9 -28 C 31 -42 52 -22 46 -5 C 68 0 62 22 42 22 Z"/></g>`;
     }
-    const highlighted = query && matches(actor) ? "highlighted" : "";
+    const vertexKind = isNode ? "node" : isGateway ? "gateway" : isVisaService ? "visa" : "adapter";
+    const { highlighted, filtered: vertexFiltered } = mapMark(matches(actor), legendKind === vertexKind);
     const countAnchor = isNode ? { x: 44, y: -23 }
       : isGateway ? { x: 28, y: -16 }
       : isVisaService ? { x: 17.5, y: -17.5 }
       : { x: 29 / Math.SQRT2, y: -29 / Math.SQRT2 };
     const count = visaCountBadge(counts.get(componentKey), pos.x + countAnchor.x, pos.y + countAnchor.y, isNode);
-    return `<g class="graph-vertex ${isNode ? "node" : isGateway ? "gateway" : isVisaService ? "visa" : "adapter"}${arrivingClass} ${highlighted} ${query && !matches(actor) ? "filtered" : ""}" data-topology-component="${escapeHTML(componentKey)}" data-origin-x="${pos.x}" data-origin-y="${pos.y}"${positionAttributes} data-inspect-actor="${escapeHTML(actor.cn)}" tabindex="0" role="button" aria-label="Inspect ${escapeHTML(isGateway ? "gateway " : "")}${escapeHTML(displayName)}"><title>${escapeHTML(isGateway ? "ZPR gateway · " : "")}${escapeHTML(displayName)} · ${escapeHTML(actor.cn)} · ${escapeHTML(dnsAddressTitle(actor.zpr_addr))}</title>${cloudMarkup}${glyph}${marker}<text class="graph-label" x="${pos.x}" y="${pos.y + 3}">${escapeHTML(shortName)}</text>${count}</g>`;
+    return `<g class="graph-vertex ${isNode ? "node" : isGateway ? "gateway" : isVisaService ? "visa" : "adapter"}${arrivingClass} ${highlighted} ${vertexFiltered}" data-topology-component="${escapeHTML(componentKey)}" data-origin-x="${pos.x}" data-origin-y="${pos.y}"${positionAttributes} data-inspect-actor="${escapeHTML(actor.cn)}" tabindex="0" role="button" aria-label="Inspect ${escapeHTML(isGateway ? "gateway " : "")}${escapeHTML(displayName)}"><title>${escapeHTML(isGateway ? "ZPR gateway · " : "")}${escapeHTML(displayName)} · ${escapeHTML(actor.cn)} · ${escapeHTML(dnsAddressTitle(actor.zpr_addr))}</title>${cloudMarkup}${glyph}${marker}<text class="graph-label" x="${pos.x}" y="${pos.y + 3}">${escapeHTML(shortName)}</text>${count}</g>`;
   });
 
   const serviceEdgeMarkup = [];
@@ -1166,10 +1194,11 @@ function renderTopology(data, exitComponents = []) {
     const trustedClass = trustedType ? ` trusted-${trustedType.toLowerCase().replace(/[^a-z0-9]+/g, "-")}` : "";
     const gatewayClass = isGatewayService(service) ? " gateway" : "";
     const serviceMatches = `${service.service_name} ${service.service_kind} ${service.external_network_connection || ""}`.toLowerCase().includes(query);
-    const highlighted = query && (serviceMatches || matches(owner)) ? "highlighted" : "";
-    const filtered = query && !highlighted ? "filtered" : "";
+    const badgeKind = trustedClass ? trustedClass.trim() : gatewayClass ? "gateway" : "service";
+    const { highlighted, filtered } = mapMark(serviceMatches || matches(owner), legendKind === badgeKind);
+    const edgeMark = mapMark(serviceMatches || matches(owner), legendKind === "registration");
     const serviceEdgeKey = `service:${JSON.stringify([service.actor_cn, service.service_name])}`;
-    serviceEdgeMarkup.push(`<g class="graph-service-edge ${highlighted} ${filtered}" data-topology-edge="${escapeHTML(serviceEdgeKey)}" data-connector-from="${escapeHTML(`actor:${JSON.stringify(service.actor_cn)}`)}" data-connector-to="${escapeHTML(serviceEdgeKey)}" aria-hidden="true"><line class="graph-link service-link" x1="${ownerPosition.x}" y1="${ownerPosition.y}" x2="${position.x}" y2="${position.y}"/></g>`);
+    serviceEdgeMarkup.push(`<g class="graph-service-edge ${edgeMark.highlighted} ${edgeMark.filtered}" data-topology-edge="${escapeHTML(serviceEdgeKey)}" data-connector-from="${escapeHTML(`actor:${JSON.stringify(service.actor_cn)}`)}" data-connector-to="${escapeHTML(serviceEdgeKey)}" aria-hidden="true"><line class="graph-link service-link" x1="${ownerPosition.x}" y1="${ownerPosition.y}" x2="${position.x}" y2="${position.y}"/></g>`);
     const providerName = displayNames.get(owner.cn) || owner.cn;
     const title = `${isGatewayService(service) ? "Gateway · " : ""}${service.service_name} registered by ${providerName} (${owner.cn})${service.external_network_connection ? ` · external network: ${service.external_network_connection}` : ""}${service.zpr_addr ? ` · ${dnsAddressTitle(service.zpr_addr)}` : ""}`;
     const labelForScreenReader = `Inspect service ${service.service_name}, registered by ${providerName}`;
@@ -4095,7 +4124,21 @@ byId("pause-poll").addEventListener("click", (event) => {
 });
 byId("poll-rate").addEventListener("change", setPollTimer);
 byId("topology-search").addEventListener("input", () => state.snapshot && renderTopology(state.snapshot));
+for (const item of document.querySelectorAll("[data-legend-kind]")) {
+  item.addEventListener("click", () => {
+    state.mapLegendKind = state.mapLegendKind === item.dataset.legendKind ? "" : item.dataset.legendKind;
+    for (const other of document.querySelectorAll("[data-legend-kind]")) other.setAttribute("aria-pressed", String(other.dataset.legendKind === state.mapLegendKind));
+    if (state.snapshot) renderTopology(state.snapshot);
+  });
+}
 function inspectMapVisaCount(target) {
+  const denialBadge = target.closest(".graph-denial-count");
+  if (denialBadge && state.snapshot) {
+    const node = denialBadge.closest(".graph-vertex[data-inspect-actor]");
+    if (!node) return false;
+    openInspector("denial-count", node.dataset.inspectActor);
+    return true;
+  }
   const badge = target.closest(".graph-visa-count:not(.graph-denial-count)");
   if (!badge || !state.snapshot) return false;
   const service = badge.closest(".graph-service-badge[data-inspect-service]");
@@ -4115,28 +4158,35 @@ byId("topology-stage").addEventListener("click", event => {
   if (!inspectMapVisaCount(event.target)) return;
   event.stopPropagation();
 });
+function toggleMapVisaFocus(focus) {
+  const same = graphVisaFocus?.kind === focus.kind && graphVisaFocus.actorCN === focus.actorCN && graphVisaFocus.serviceName === focus.serviceName;
+  graphVisaFocus = same ? null : focus;
+  applyMapVisaFocus(state.snapshot);
+  const countKey = JSON.stringify(focus.kind === "service"
+    ? { kind: "service", actorCN: focus.actorCN, serviceName: focus.serviceName }
+    : { kind: "actor", actorCN: focus.actorCN });
+  if (!same) openInspector("visa-count", countKey);
+  else if (state.selection?.kind === "visa-count" && state.selection.key === countKey) closeInspector();
+}
+// Right-clicking a map component and right-clicking its count badge do the same thing.
 byId("topology-stage").addEventListener("contextmenu", event => {
   if (!state.snapshot) return;
-  if (inspectMapVisaCount(event.target)) {
-    event.preventDefault();
-    return;
-  }
   const serviceBadge = event.target.closest(".graph-service-badge[data-inspect-service]");
   if (serviceBadge) {
-    const serviceFocus = { kind: "service", actorCN: serviceBadge.dataset.serviceActor, serviceName: serviceBadge.dataset.inspectService };
-    const isSameService = graphVisaFocus?.kind === "service" && graphVisaFocus.actorCN === serviceFocus.actorCN && graphVisaFocus.serviceName === serviceFocus.serviceName;
     event.preventDefault();
-    graphVisaFocus = isSameService ? null : serviceFocus;
-    applyMapVisaFocus(state.snapshot);
+    toggleMapVisaFocus({ kind: "service", actorCN: serviceBadge.dataset.serviceActor, serviceName: serviceBadge.dataset.inspectService });
     return;
   }
   const component = event.target.closest(".graph-vertex[data-inspect-actor]");
   const actor = component && state.snapshot.actors.find(actor => actor.cn === component.dataset.inspectActor);
-  if (actor && !actor.node) {
+  if (actor?.node) {
     event.preventDefault();
-    const isSameAdapter = graphVisaFocus?.kind === "adapter" && graphVisaFocus.actorCN === actor.cn;
-    graphVisaFocus = isSameAdapter ? null : { kind: "adapter", actorCN: actor.cn };
-    applyMapVisaFocus(state.snapshot);
+    const onVisaCount = event.target.closest(".graph-visa-count:not(.graph-denial-count)");
+    if (!onVisaCount && component.querySelector(".graph-denial-count")) openInspector("denial-count", actor.cn);
+    else openInspector("visa-count", JSON.stringify({ kind: "actor", actorCN: actor.cn }));
+  } else if (actor) {
+    event.preventDefault();
+    toggleMapVisaFocus({ kind: "adapter", actorCN: actor.cn });
   } else if (!event.target.closest("[data-inspect-actor], [data-inspect-service], [data-inspect-link], .graph-controls")) {
     event.preventDefault();
     graphVisaFocus = null;

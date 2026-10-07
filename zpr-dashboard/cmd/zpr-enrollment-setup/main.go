@@ -16,11 +16,18 @@ import (
 
 func main() {
 	path := flag.String("config", "", "Required trusted local setup JSON configuration file")
+	userState := flag.Bool("user-state", false, "Use logged-in user's private home state; configuration must omit state_directory")
 	flag.Parse()
 	if *path == "" || flag.NArg() != 0 {
 		log.Fatal("usage: zpr-enrollment-setup -config /path/to/setup.json")
 	}
-	config, err := enrollment.LoadSetupConfig(*path)
+	var config enrollment.SetupConfig
+	var err error
+	if *userState {
+		config, err = enrollment.LoadUserSetupConfig(*path)
+	} else {
+		config, err = enrollment.LoadSetupConfig(*path)
+	}
 	if err != nil {
 		log.Fatal(err)
 	}

@@ -307,6 +307,7 @@ pre { margin: 0; padding: 14px; min-height: 110px; max-height: 180px; overflow: 
 .scenario-editor-dialog::backdrop { background: #17211e88; }
 .scenario-editor-dialog form { display: grid; gap: 14px; padding: 20px; }
 .scenario-editor-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; }
+.scenario-editor-head-actions { display: flex; align-items: center; justify-content: flex-end; gap: 8px; flex-wrap: wrap; }
 .scenario-editor-head h2 { margin: 0; font-size: 20px; font-weight: 500; }
 .scenario-editor-head .eyebrow { margin: 0 0 5px; }
 .scenario-builder-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; }
@@ -322,11 +323,16 @@ pre { margin: 0; padding: 14px; min-height: 110px; max-height: 180px; overflow: 
 .scenario-raw-mode > :is(.scenario-builder-grid, .scenario-step-editor) { display: none; }
 .scenario-source-tools { margin: 10px 0 8px; }
 .scenario-source-tools strong { color: var(--muted); font: 11px var(--mono); }
+.scenario-source-format { display: flex; align-items: center; gap: 5px; color: var(--muted); font: 10px var(--mono); }
+.scenario-source-format select { padding: 5px 7px; border: 1px solid var(--line); border-radius: 3px; background: var(--panel); color: var(--ink); font: 10px var(--mono); }
 #scenario-source-position { margin-left: auto; color: var(--muted); font: 10px var(--mono); }
 #scenario-source-modified { color: #795015; font: 10px var(--mono); }
 .scenario-source-tools [hidden] { display: none; }
-.scenario-json-editor { height: max(340px, calc(72dvh - 180px)); }
-.scenario-json-editor #scenario-editor-source { min-height: 0; }
+.scenario-source-editor { height: max(340px, calc(72dvh - 180px)); }
+.scenario-source-editor #scenario-editor-source { min-height: 0; }
+.scenario-editor-dialog :is(#scenario-editor-analyze, #scenario-source-analyze)[data-analysis-state="pending"] { border-color: #a85725; background: #c96932; color: white; }
+.scenario-editor-dialog :is(#scenario-editor-analyze, #scenario-source-analyze)[data-analysis-state="success"] { border-color: #23754c; background: #23754c; color: white; }
+.scenario-editor-dialog :is(#scenario-editor-analyze, #scenario-source-analyze)[data-analysis-state="error"] { border-color: #a53232; background: #b83b3b; color: white; }
 .scenario-raw-mode #scenario-assistant-slot .design-assistant { border-top: 0; padding-top: 0; }
 @media (max-width: 900px) { .scenario-raw-mode .scenario-source-workbench { grid-template-columns: minmax(0, 1fr); } }
 .scenario-parallel-field { display: flex; align-items: center; gap: 8px; color: var(--ink); font-size: 11px; }

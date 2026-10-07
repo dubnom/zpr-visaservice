@@ -68,3 +68,62 @@ func TestScenarioSourceCheckRejectsInvalidRequests(t *testing.T) {
 		}
 	}
 }
+
+func TestScenarioSourceCheckAcceptsYAMLAndRejectsUnsafeYAML(t *testing.T) {
+	configureDesignAssistantTest(t, "northstar")
+	valid := "id: yaml-smoke\norganization_id: northstar\nname: YAML smoke\ndescription: Read-only YAML check.\nsteps:\n  - action: delay\n    timeout_seconds: 1\n"
+	body, err := json.Marshal(map[string]string{"format": "yaml", "source": valid})
+	if err != nil {
+		t.Fatal(err)
+	}
+	request := localPolicyRequest(http.MethodPost, "/api/simulator/organizations/northstar/scenario-check", string(body))
+	request.SetPathValue("organization", "northstar")
+	response := httptest.NewRecorder()
+	handleScenarioSourceCheck(response, request)
+	if response.Code != http.StatusOK {
+		t.Fatalf("status = %d, body = %s", response.Code, response.Body)
+	}
+	var result struct {
+		Scenario      simulatorScenario `json:"scenario"`
+		CanonicalJSON string            `json:"canonical_json"`
+		CanonicalYAML string            `json:"canonical_yaml"`
+	}
+	if err := json.Unmarshal(response.Body.Bytes(), &result); err != nil {
+		t.Fatal(err)
+	}
+	if result.Scenario.ID != "yaml-smoke" || !strings.Contains(result.CanonicalJSON, `"organization_id": "northstar"`) || !strings.Contains(result.CanonicalYAML, "organization_id: northstar") {
+		t.Fatalf("unexpected YAML conversion result: %+v", result)
+	}
+	for _, tc := range []struct {
+		name, source, message string
+		line                  int
+	}{
+		{"non-mapping", "- id: nope\n", "mapping object", 1},
+		{"duplicate", strings.Replace(valid, "name: YAML smoke", "name: YAML smoke\nname: duplicate", 1), "duplicate YAML key", 4},
+		{"alias", "id: &id yaml-smoke\norganization_id: northstar\nname: *id\ndescription: Alias\nsteps:\n  - action: delay\n", "anchors are not supported", 1},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			body, err := json.Marshal(map[string]string{"format": "yaml", "source": tc.source})
+			if err != nil {
+				t.Fatal(err)
+			}
+			request := localPolicyRequest(http.MethodPost, "/api/simulator/organizations/northstar/scenario-check", string(body))
+			request.SetPathValue("organization", "northstar")
+			response := httptest.NewRecorder()
+			handleScenarioSourceCheck(response, request)
+			if response.Code != http.StatusUnprocessableEntity {
+				t.Fatalf("status = %d, body = %s", response.Code, response.Body)
+			}
+			var result struct {
+				Line  int    `json:"line"`
+				Error string `json:"error"`
+			}
+			if err := json.Unmarshal(response.Body.Bytes(), &result); err != nil {
+				t.Fatal(err)
+			}
+			if result.Line != tc.line || !strings.Contains(result.Error, tc.message) {
+				t.Fatalf("result = %+v; want line %d and %q", result, tc.line, tc.message)
+			}
+		})
+	}
+}

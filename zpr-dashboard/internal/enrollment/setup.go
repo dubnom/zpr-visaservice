@@ -70,6 +70,45 @@ func readSetupFile(path string) ([]byte, error) {
 }
 
 func LoadSetupConfig(path string) (SetupConfig, error) {
+	return loadSetupConfig(path, "")
+}
+
+// LoadUserSetupConfig derives private state from the desktop user's home,
+// not from a machine-wide configuration or a shared service account.
+func LoadUserSetupConfig(path string) (SetupConfig, error) {
+	if os.Geteuid() == 0 {
+		return SetupConfig{}, errors.New("desktop setup must run as the logged-in user, not root")
+	}
+	home, err := os.UserHomeDir()
+	if err != nil || !filepath.IsAbs(home) || filepath.Clean(home) != home {
+		return SetupConfig{}, errors.New("desktop setup requires an absolute clean home directory")
+	}
+	state := filepath.Join(home, ".local", "state", "zpr-enrollment-development")
+	config, err := loadSetupConfig(path, state)
+	if err != nil {
+		return SetupConfig{}, err
+	}
+	// Validate the home and each existing/created parent; never repair someone
+	// else's ownership or accept symlinked/shared writable state.
+	for _, directory := range []string{home, filepath.Join(home, ".local"), filepath.Join(home, ".local", "state")} {
+		if directory != home {
+			if err := os.Mkdir(directory, 0700); err != nil && !errors.Is(err, os.ErrExist) {
+				return SetupConfig{}, err
+			}
+		}
+		info, err := os.Lstat(directory)
+		if err != nil {
+			return SetupConfig{}, err
+		}
+		stat, ok := info.Sys().(*syscall.Stat_t)
+		if !ok || !info.IsDir() || int(stat.Uid) != os.Geteuid() || info.Mode().Perm()&0022 != 0 {
+			return SetupConfig{}, errors.New("desktop home/state parents must be owned by the current user, not symlinks or group/other writable")
+		}
+	}
+	return config, nil
+}
+
+func loadSetupConfig(path, userState string) (SetupConfig, error) {
 	data, err := readSetupFile(path)
 	if err != nil {
 		return SetupConfig{}, fmt.Errorf("read trusted setup configuration: %w", err)
@@ -77,6 +116,12 @@ func LoadSetupConfig(path string) (SetupConfig, error) {
 	var config SetupConfig
 	if err := decodeJSON(bytes.NewReader(data), &config); err != nil {
 		return SetupConfig{}, errors.New("invalid setup configuration JSON")
+	}
+	if userState != "" {
+		if config.StateDirectory != "" {
+			return SetupConfig{}, errors.New("desktop configuration must omit state_directory; state belongs to the logged-in user")
+		}
+		config.StateDirectory = userState
 	}
 	base, err := filepath.Abs(filepath.Dir(path))
 	if err != nil {

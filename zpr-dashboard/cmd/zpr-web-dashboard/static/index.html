@@ -5,15 +5,15 @@
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <meta name="theme-color" content="#17211e">
     <title>ZPR Control Room</title>
-    <link rel="stylesheet" href="/app.css?v=76">
+    <link rel="stylesheet" href="/app.css?v=78">
     <link rel="stylesheet" href="/machine-logs.css?v=17">
     <link rel="stylesheet" href="/assertions.css?v=11">
-    <link rel="stylesheet" href="/sidebar.css?v=7">
+    <link rel="stylesheet" href="/sidebar.css?v=8">
     <link rel="stylesheet" href="/trusted-source.css?v=2">
     <link rel="stylesheet" href="/security-review.css?v=8">
     <link rel="stylesheet" href="/diagnostics.css?v=1">
-    <link rel="stylesheet" href="/gateways.css?v=1">
-    <script src="/sidebar.js?v=19" defer></script>
+    <link rel="stylesheet" href="/gateways.css?v=2">
+    <script src="/sidebar.js?v=21" defer></script>
     <script src="/trusted-source.js?v=3" defer></script>
     <script src="/policy-record-icons.js?v=1" defer></script>
   </head>
@@ -29,18 +29,17 @@
           <a class="nav-link" href="#connections" data-page-group="status">Status</a>
           <a class="nav-link" href="#security-review" data-page-link="security-review">Security</a>
           <a class="nav-link" href="#diagnostics" data-page-link="diagnostics">Diagnostics</a>
-          <a class="nav-link" href="#gateways" data-page-link="gateways">Gateways</a>
           <a class="nav-link" href="#sources" data-page-link="sources">Trusted Sources</a>
           <a class="nav-link" href="#adapter-logs" data-page-link="adapter-logs">Adapter Logs</a>
-          <a class="nav-link" href="#zpr-config" data-page-link="zpr-config">ZPR Config</a>
+          <a class="nav-link sidebar-external-link" href="http://127.0.0.1:8800/" target="zpr-log-manager" data-reuse-window="zpr-log-manager" rel="noopener noreferrer" title="Log Manager (opens in a separate window)"><span>Log Manager</span><span class="external-arrow" aria-hidden="true">↗</span></a>
           <div class="nav-separator" role="separator"></div>
-          <a class="nav-link" href="#policy" data-page-link="policy">Editor</a>
-          <div class="nav-separator" role="separator"></div>
+          <p class="nav-group-label" id="nav-configuration-label">Configuration</p>
+          <div class="nav-group" role="group" aria-labelledby="nav-configuration-label">
+            <a class="nav-link" href="#policy" data-page-link="policy">Policy</a>
+            <a class="nav-link" href="#gateways" data-page-link="gateways">Gateways</a>
+            <a class="nav-link" href="#zpr-config" data-page-link="zpr-config">ZPR Config</a>
+          </div>
         </nav>
-        <div class="sidebar-external-tools">
-          <p class="sidebar-tools-label">TOOLS</p>
-          <a class="nav-link sidebar-external-link sidebar-tool-prominent" href="http://127.0.0.1:8800/" target="zpr-log-manager" data-reuse-window="zpr-log-manager" rel="noopener noreferrer"><span>Log Manager</span><span aria-hidden="true">↗</span></a>
-        </div>
         <div class="sidebar-foot">
           <span class="tiny-dot"></span>
           <span>LIVE STATE + POLICY RECORDS</span>
@@ -109,7 +108,7 @@
         <section class="page-view" id="page-map" data-page="map" aria-label="Map">
           <section class="section-block topology-page">
           <div class="section-heading">
-            <div class="legend"><input id="topology-search" class="topology-search" type="search" placeholder="Highlight" aria-label="Highlight topology graph"><span><i class="legend-node"></i>NODE</span><span><i class="legend-visa"></i>VISA SERVICE</span><span><i class="legend-gateway"></i>GATEWAY</span><span><i class="legend-adapter"></i>ADAPTER</span><span><i class="legend-service"></i>SERVICE</span><span><i class="legend-service-link"></i>REGISTRATION</span><span><i class="legend-trusted-file"></i>TRUSTED FILE</span><span><i class="legend-trusted-rest"></i>TRUSTED REST/1</span><span><i class="legend-dock"></i>DOCKED</span><span><i class="legend-up"></i>INTER-NODE</span></div>
+            <div class="legend" role="group" aria-label="Map legend: click a type to highlight it"><input id="topology-search" class="topology-search" type="search" placeholder="Highlight" aria-label="Highlight topology graph"><button class="legend-item" type="button" data-legend-kind="node" aria-pressed="false" title="Highlight node on the map"><i class="legend-node"></i>NODE</button><button class="legend-item" type="button" data-legend-kind="visa" aria-pressed="false" title="Highlight visa service on the map"><i class="legend-visa"></i>VISA SERVICE</button><button class="legend-item" type="button" data-legend-kind="gateway" aria-pressed="false" title="Highlight gateway on the map"><i class="legend-gateway"></i>GATEWAY</button><button class="legend-item" type="button" data-legend-kind="adapter" aria-pressed="false" title="Highlight adapter on the map"><i class="legend-adapter"></i>ADAPTER</button><button class="legend-item" type="button" data-legend-kind="service" aria-pressed="false" title="Highlight service on the map"><i class="legend-service"></i>SERVICE</button><button class="legend-item" type="button" data-legend-kind="registration" aria-pressed="false" title="Highlight registration on the map"><i class="legend-service-link"></i>REGISTRATION</button><button class="legend-item" type="button" data-legend-kind="trusted-file" aria-pressed="false" title="Highlight trusted file on the map"><i class="legend-trusted-file"></i>TRUSTED FILE</button><button class="legend-item" type="button" data-legend-kind="trusted-rest-1" aria-pressed="false" title="Highlight trusted rest/1 on the map"><i class="legend-trusted-rest"></i>TRUSTED REST/1</button><button class="legend-item" type="button" data-legend-kind="dock" aria-pressed="false" title="Highlight docked on the map"><i class="legend-dock"></i>DOCKED</button><button class="legend-item" type="button" data-legend-kind="inter-node" aria-pressed="false" title="Highlight inter-node on the map"><i class="legend-up"></i>INTER-NODE</button></div>
           </div>
           <div class="topology-layout topology-only">
             <div class="topology-stage" id="topology-stage">
@@ -365,32 +364,43 @@ each group attribute "gidNumber" &gt;= 1000;</pre></details></div><aside class="
         </section>
 
         <section class="page-view" id="page-gateways" data-page="gateways" aria-label="Gateways" hidden>
-          <section class="section-block gateway-manager" data-gateway-manager>
-            <header class="gateway-manager-header">
-              <div><p class="eyebrow">ZPL-REGISTERED INSTANCES</p><h2>Gateway configuration</h2></div>
-              <button id="gateway-refresh" class="button button-refresh" type="button">Refresh</button>
-            </header>
-            <p id="gateway-status" class="gateway-status" role="status" aria-live="polite">Waiting for gateway inventory</p>
-            <div class="gateway-workspace">
-              <section class="gateway-inventory" aria-labelledby="gateway-contracts-title">
-                <div class="gateway-section-heading"><h3 id="gateway-contracts-title">Installed gateway services</h3><span id="gateway-contract-count" class="count-label">—</span></div>
-                <div id="gateway-contracts" class="gateway-contract-list"><p class="empty-row">Loading installed gateway services…</p></div>
-              </section>
-              <section class="gateway-draft" aria-labelledby="gateway-draft-title">
-                <header class="gateway-section-heading"><div><h3 id="gateway-draft-title">Instance draft</h3><p id="gateway-draft-identity" class="gateway-draft-identity">Select an installed gateway.</p></div><label>Revision<select id="gateway-revision" aria-label="Gateway draft revision" disabled><option value="">New draft</option></select></label></header>
-                <div id="gateway-draft-empty" class="gateway-empty">Choose an installed gateway to configure its runtime draft.</div>
-                <div id="gateway-draft-form" hidden>
-                  <div class="gateway-destinations-heading"><h4>Allowed upstream destinations</h4><button id="gateway-add-destination" class="button button-save-as-ready" type="button">Add destination</button></div>
-                  <div id="gateway-destinations" class="gateway-destinations"></div>
-                  <div class="gateway-options-grid">
-                    <fieldset class="gateway-methods"><legend>Allowed methods</legend><label><input id="gateway-method-get" type="checkbox" checked> GET</label><label><input id="gateway-method-head" type="checkbox" checked> HEAD</label></fieldset>
-                    <label>Timeout (ms)<input id="gateway-timeout" type="number" min="100" max="30000" step="100" value="8000"></label>
-                    <label>Maximum response (bytes)<input id="gateway-response-limit" type="number" min="1" max="2097152" step="1024" value="2097152"></label>
+          <section class="section-block policy-editor-panel config-editor-panel gateway-editor-panel" data-gateway-manager>
+            <div class="gateway-workbench">
+              <aside id="gateway-catalog-pane" class="policy-catalog-pane gateway-catalog-pane" aria-label="Gateway picker" hidden>
+                <div class="catalog-pane-heading"><strong>Installed gateways <span id="gateway-contract-count" class="count-label">—</span></strong><button id="gateway-refresh" class="button" type="button">Refresh</button><button id="gateway-picker-close" class="pane-collapse-toggle" type="button" aria-label="Close gateway picker" title="Close gateway picker">×</button></div>
+                <div id="gateway-contracts" class="policy-category-tree" role="tree" aria-label="Installed gateways" tabindex="0"><p class="catalog-empty">Loading installed gateway services…</p></div>
+              </aside>
+              <div class="policy-editor-tools">
+                <div class="policy-browser-controls">
+                  <button id="gateway-picker-toggle" class="button button-refresh policy-picker-trigger" type="button" aria-label="Browse gateways" aria-haspopup="dialog" aria-controls="gateway-catalog-pane" aria-expanded="false"><span id="gateway-picker-label">Browse...</span><span class="policy-picker-chevron" aria-hidden="true">⌄</span></button>
+                  <div id="gateway-actions" class="policy-files">
+                    <button id="gateway-files-toggle" class="button button-refresh policy-files-toggle" type="button" aria-haspopup="menu" aria-controls="gateway-file-menu" aria-expanded="false"><span>File...</span><span class="policy-picker-chevron" aria-hidden="true">⌄</span></button>
+                    <div id="gateway-file-menu" class="policy-file-menu" role="menu" aria-label="Gateway file operations" hidden>
+                      <button id="gateway-save" class="button" type="button" role="menuitem" disabled>Save draft</button>
+                      <button id="gateway-open" class="button" type="button" role="menuitem" disabled>Open file...</button>
+                      <button id="gateway-download" class="button" type="button" role="menuitem" disabled>Download file...</button>
+                      <hr role="separator">
+                      <button id="gateway-discard" class="button" type="button" role="menuitem" disabled>Discard</button>
+                    </div>
+                    <input id="gateway-file-input" type="file" accept=".json,application/json" hidden>
                   </div>
-                  <div class="gateway-draft-actions"><button id="gateway-validate" class="button" type="button">Validate draft</button><button id="gateway-save" class="button button-save-as-ready" type="button" disabled>Save draft</button></div>
                 </div>
-                <p id="gateway-draft-message" class="gateway-draft-message" role="status" aria-live="polite"></p>
-              </section>
+                <strong id="gateway-editor-mode" class="policy-editor-mode">Gateway</strong>
+                <div class="policy-attribute-toolbar">
+                  <button id="gateway-analyze" class="button" type="button" disabled>Analyze</button>
+                  <button id="gateway-format" class="button" type="button" title="Format gateway draft" aria-label="Format gateway draft" disabled>Format</button>
+                </div>
+                <div class="policy-editor-utilities">
+                  <span data-editor-search-target="gateway-source"></span>
+                  <details id="gateway-history-menu" class="policy-history-menu">
+                    <summary class="button policy-history-toggle" aria-label="Version history">History <span id="gateway-history-count">—</span><span class="policy-picker-chevron" aria-hidden="true">⌄</span></summary>
+                    <div id="gateway-history" class="policy-history"><p class="catalog-empty">Select a gateway to browse versions.</p></div>
+                  </details>
+                </div>
+              </div>
+              <p id="gateway-status" class="gateway-status" role="status" aria-live="polite">Waiting for gateway inventory</p>
+              <div class="config-source-editor gateway-source-editor"><div id="gateway-gutter" class="config-source-gutter" aria-label="Gateway draft errors by source line"></div><div class="config-code-surface"><pre id="gateway-highlight" aria-hidden="true"></pre><textarea id="gateway-source" class="zpr-config-source" aria-label="Gateway draft JSON" spellcheck="false" maxlength="1048576" wrap="off" disabled></textarea></div></div>
+              <p id="gateway-draft-message" class="gateway-draft-message" role="status" aria-live="polite"></p>
             </div>
           </section>
         </section>
@@ -398,7 +408,15 @@ each group attribute "gidNumber" &gt;= 1000;</pre></details></div><aside class="
         <section class="page-view" id="page-zpr-config" data-page="zpr-config" aria-label="ZPR Config" hidden>
           <section class="section-block policy-editor-panel config-editor-panel">
             <div class="policy-version-toolbar"><label>Configuration<select id="zpr-config-picker" aria-label="ZPR configuration draft"><option value="">New draft</option></select></label><label>Name<input id="zpr-config-name" aria-label="Configuration name" maxlength="160"></label><span id="zpr-config-modified" class="policy-modified-indicator" hidden>Modified</span></div>
-            <div class="policy-editor-tools"><div class="policy-tool-group"><details class="config-file-menu"><summary class="button button-refresh">File…</summary><div class="config-file-popover" role="menu" aria-label="Configuration file commands"><button id="zpr-config-save" data-config-command type="button" role="menuitem">Save draft</button><button id="zpr-config-new" data-config-command type="button" role="menuitem">New draft</button><button id="zpr-config-open" data-config-command type="button" role="menuitem">Open file…</button><button id="zpr-config-download" data-config-command type="button" role="menuitem">Download file…</button></div></details><input id="zpr-config-file-input" type="file" accept=".toml,.zplc,text/plain" hidden><button id="zpr-config-validate" class="button" data-config-command type="button">Analyze</button><button id="zpr-config-format" class="button button-save-as-ready" data-config-command type="button">Format</button></div><strong class="policy-editor-mode">ZPR Config</strong><div class="policy-tool-group"><span data-editor-search-target="zpr-config-source"></span><label>History<select id="zpr-config-history" aria-label="Configuration history"></select></label></div></div>
+            <div class="policy-editor-tools">
+              <div class="policy-tool-group">
+                <details class="config-file-menu"><summary class="button button-refresh">File…</summary><div class="config-file-popover" role="menu" aria-label="Configuration file commands"><button id="zpr-config-save" data-config-command type="button" role="menuitem">Save draft</button><button id="zpr-config-new" data-config-command type="button" role="menuitem">New draft</button><button id="zpr-config-open" data-config-command type="button" role="menuitem">Open file…</button><button id="zpr-config-download" data-config-command type="button" role="menuitem">Download file…</button></div></details>
+                <input id="zpr-config-file-input" type="file" accept=".toml,.zplc,text/plain" hidden>
+              </div>
+              <strong class="policy-editor-mode">ZPR Config</strong>
+              <div class="policy-attribute-toolbar"><button id="zpr-config-validate" class="button" data-config-command type="button" disabled>Analyze</button><button id="zpr-config-format" class="button" data-config-command type="button" disabled>Format</button></div>
+              <div class="policy-editor-utilities"><span data-editor-search-target="zpr-config-source"></span><label>History<select id="zpr-config-history" aria-label="Configuration history"></select></label></div>
+            </div>
             <div class="config-source-editor"><div id="zpr-config-gutter" class="config-source-gutter" aria-label="Configuration errors by source line"></div><div class="config-code-surface"><pre id="zpr-config-highlight" aria-hidden="true"></pre><textarea id="zpr-config-source" class="zpr-config-source" aria-label="ZPLC configuration source" spellcheck="false" maxlength="1048576" wrap="off"></textarea></div></div>
             <p id="zpr-config-status" role="status"></p>
           </section>
@@ -439,12 +457,12 @@ each group attribute "gidNumber" &gt;= 1000;</pre></details></div><aside class="
       </main>
     </div>
     <script src="/vendor/pluralize.js?v=8.0.0" defer></script>
-    <script src="/app.js?v=95" defer></script>
+    <script src="/app.js?v=97" defer></script>
     <script src="/machine-logs.js?v=20" defer></script>
     <script src="/assertions.js?v=11" defer></script>
-    <script src="/config-editor.js?v=5" defer></script>
-    <script src="/gateways.js?v=1" defer></script>
-    <script src="/editor-search.js?v=1" defer></script>
+    <script src="/config-editor.js?v=6" defer></script>
+    <script src="/gateways.js?v=3" defer></script>
+    <script src="/editor-search.js?v=4" defer></script>
     <script src="/diagnostics.js?v=2" defer></script>
       <script src="/security-review.js?v=13" defer></script>
   </body>

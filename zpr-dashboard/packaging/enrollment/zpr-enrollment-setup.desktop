@@ -1,0 +1,8 @@
+[Desktop Entry]
+Type=Application
+Name=ZPR Machine Setup (Development)
+Comment=Prepare a development software key and open the local enrollment wizard
+Exec=/usr/bin/zpr-enrollment-setup -config /etc/zpr/enrollment-setup.json -user-state
+Terminal=true
+Categories=System;
+StartupNotify=false

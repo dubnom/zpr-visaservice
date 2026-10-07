@@ -13,11 +13,19 @@
   const gutter = document.getElementById("zpr-config-gutter");
   const highlight = document.getElementById("zpr-config-highlight");
   const analyze = document.getElementById("zpr-config-validate");
+  const format = document.getElementById("zpr-config-format");
   let sourceVersion = 0;
   function clearAnalysis() {
     sourceVersion++;
     diagnostic = null;
     delete analyze.dataset.analysisState;
+  }
+  function syncAnalysisButtons() {
+    const disabled = pending || !source.value.trim();
+    analyze.disabled = disabled;
+    format.disabled = disabled;
+    format.classList.toggle("button-save-as-ready", !disabled);
+    analyze.classList.toggle("button-next-evaluate", !disabled && !analyze.dataset.analysisState);
   }
   function syncScroll() {
     gutter.scrollTop = source.scrollTop;
@@ -26,6 +34,7 @@
     source.closest(".config-source-editor").dataset.horizontalOverflow = String(source.scrollWidth > source.clientWidth);
   }
   function renderEditor() {
+    syncAnalysisButtons();
     document.getElementById("zpr-config-modified").hidden = source.value === saved;
     gutter.replaceChildren(...source.value.split("\n").map((_, index) => {
       const row = document.createElement("div");
@@ -130,7 +139,7 @@
     status.textContent = result.diagnostics;
     renderEditor();
   }));
-  document.getElementById("zpr-config-format").addEventListener("click", () => run(async () => {
+  format.addEventListener("click", () => run(async () => {
     const version = sourceVersion;
     const original = source.value;
     await post("/api/policy/config/check", { source: original });

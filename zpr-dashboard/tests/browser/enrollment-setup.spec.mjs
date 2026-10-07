@@ -15,8 +15,10 @@ let state;
 
 test.beforeAll(() => {
   directory = mkdtempSync(join(tmpdir(), "zpr-setup-browser-"));
-  binary = join(directory, "setup");
-  execFileSync("go", ["build", "-o", binary, "./cmd/zpr-enrollment-setup"], { timeout: 60000 });
+  binary = process.env.ZPR_SETUP_TEST_BINARY || join(directory, "setup");
+  if (!process.env.ZPR_SETUP_TEST_BINARY) {
+    execFileSync("go", ["build", "-o", binary, "./cmd/zpr-enrollment-setup"], { timeout: 60000 });
+  }
 });
 
 test.beforeEach(async () => {
