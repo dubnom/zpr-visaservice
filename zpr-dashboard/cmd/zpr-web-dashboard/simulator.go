@@ -175,11 +175,19 @@ func simulatorScript() string {
 }
 
 func runSimulator(listen string) error {
+	securityContext, cancelSecurity := context.WithTimeout(context.Background(), 20*time.Second)
+	security, err := configuredSimulatorSecurity(securityContext, listen)
+	cancelSecurity()
+	if err != nil {
+		return err
+	}
+	defer security.close()
 	staticRoot, err := fs.Sub(staticFiles, "static")
 	if err != nil {
 		return err
 	}
 	mux := http.NewServeMux()
+	security.register(mux)
 	mux.HandleFunc("POST /api/simulator/organizations/{organization}/activate", handleSimulatorOrganizationActivate)
 	mux.HandleFunc("POST /api/simulator/organizations/{organization}/restore-base", handleSimulatorOrganizationRestoreBase)
 	mux.HandleFunc("GET /api/simulator/status", handleSimulatorStatus)
@@ -188,6 +196,7 @@ func runSimulator(listen string) error {
 	mux.Handle("GET /api/simulator/trusted-source", simulatorTrustedSourceHandler(readAssertionLDAP))
 	mux.HandleFunc("GET /api/simulator/assistant/status", handleSimulatorAssistantStatus)
 	mux.HandleFunc("POST /api/simulator/design-assistant", simulatorDesignAssistantHandler(newClaudeAssistant()))
+	mux.HandleFunc("POST /api/simulator/editor-assistant", simulatorEditorAssistantHandler(newClaudeAssistant()))
 	mux.HandleFunc("GET /api/simulator/organizations", handleSimulatorOrganizations)
 	mux.HandleFunc("GET /api/simulator/activation-log", handleSimulatorActivationLog)
 	mux.HandleFunc("GET /api/simulator/organizations/{organization}/directory/revisions/{revision}", handleWorkspaceDirectoryRevisionGet)
@@ -219,7 +228,7 @@ func runSimulator(listen string) error {
 	mux.HandleFunc("POST /api/simulator/action/{action}", handleSimulatorAction)
 	mux.HandleFunc("POST /api/simulator/machines/{machine}/{action}", handleSimulatorMachineSession)
 	mux.HandleFunc("PUT /api/simulator/machines/{machine}/workloads", handleSimulatorMachineWorkloads)
-	staticServer := http.FileServer(http.FS(staticRoot))
+	staticServer := revalidateStatic(http.FileServer(http.FS(staticRoot)))
 	mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path == "/" {
 			http.Redirect(w, r, "/organizations.html", http.StatusFound)
@@ -227,7 +236,9 @@ func runSimulator(listen string) error {
 		}
 		staticServer.ServeHTTP(w, r)
 	})
-	server := &http.Server{Addr: listen, Handler: securityHeaders(mux), ReadHeaderTimeout: 5 * time.Second}
+	handler := simulatorAPIProxy(security.auth, currentSimulatorOrganization, mux)
+	handler = simulatorLoginGate(security.auth, handler)
+	server := &http.Server{Addr: listen, Handler: securityHeaders(security.protect(handler)), ReadHeaderTimeout: 5 * time.Second, TLSConfig: security.tls}
 	controlCert := strings.TrimSpace(os.Getenv("SIMULATOR_CONTROL_TLS_CERT"))
 	controlKey := strings.TrimSpace(os.Getenv("SIMULATOR_CONTROL_TLS_KEY"))
 	controlCA := strings.TrimSpace(os.Getenv("SIMULATOR_CONTROL_CLIENT_CA"))
@@ -246,6 +257,10 @@ func runSimulator(listen string) error {
 			}
 		}()
 	}
+	if security.tls != nil {
+		log.Printf("ZPR Simulator listening at %s (named operator login configured: %t)", security.origin, security.auth != nil)
+		return server.ListenAndServeTLS("", "")
+	}
 	log.Printf("ZPR Simulator listening at http://%s", listen)
 	return server.ListenAndServe()
 }
@@ -257,6 +272,7 @@ func serveStaticPage(root fs.FS, name string, w http.ResponseWriter) {
 		return
 	}
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
+	w.Header().Set("Cache-Control", "no-cache")
 	_, _ = w.Write(content)
 }
 

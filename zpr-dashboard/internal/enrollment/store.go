@@ -116,6 +116,10 @@ CREATE TABLE IF NOT EXISTS audit (
  organization TEXT NOT NULL, principal TEXT NOT NULL,
  action TEXT NOT NULL, occurred_at INTEGER NOT NULL
 );
+CREATE TABLE IF NOT EXISTS operator_delegation_replay (
+ token_hash TEXT PRIMARY KEY,
+ expires_at INTEGER NOT NULL
+);
 COMMIT;`)
 	if err != nil {
 		_ = db.Close()

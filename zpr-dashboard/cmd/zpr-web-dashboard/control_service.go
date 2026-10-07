@@ -16,9 +16,22 @@ import (
 	"path/filepath"
 	"strings"
 	"time"
+
+	"neboagency.com/zpr-dashborad/internal/operatordelegation"
 )
 
 func runControlRoom(listen string) error {
+	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
+	defer cancel()
+	security, err := configuredControlRoomSecurity(ctx, listen)
+	if err != nil {
+		return err
+	}
+	defer security.close()
+	signer, err := configuredOperatorSigner(security)
+	if err != nil {
+		return err
+	}
 	proxy, message := newControlServiceProxy()
 	if proxy == nil {
 		return errors.New(message)
@@ -28,11 +41,18 @@ func runControlRoom(listen string) error {
 		return err
 	}
 	mux := http.NewServeMux()
-	mux.Handle("/api/", localControlRoomProxy(proxy))
+	security.register(mux)
+	mux.Handle("/api/enrollment/", operatorEnrollmentProxy(security.auth, signer, proxy))
+	mux.Handle("/api/", controlRoomAPIProxy(security.auth, os.Getenv("ZPR_CONTROL_ROOM_ORGANIZATION_ID"), proxy))
 	mux.Handle("GET /bind9.xsl", localControlRoomProxy(proxy))
-	mux.Handle("/", http.FileServer(http.FS(staticRoot)))
+	mux.Handle("/", revalidateStatic(http.FileServer(http.FS(staticRoot))))
 	server := &http.Server{
-		Addr: listen, Handler: securityHeaders(mux), ReadHeaderTimeout: 5 * time.Second, IdleTimeout: 60 * time.Second,
+		Addr: listen, Handler: securityHeaders(security.protect(mux)), ReadHeaderTimeout: 5 * time.Second, IdleTimeout: 60 * time.Second,
+		TLSConfig: security.tls, MaxHeaderBytes: 32768,
+	}
+	if security.tls != nil {
+		log.Printf("ZPR Control Room listening at %s (named operator login configured: %t; delegation signing configured: %t)", security.origin, security.auth != nil, signer != nil)
+		return server.ListenAndServeTLS("", "")
 	}
 	log.Printf("ZPR Control Room listening at http://%s", listen)
 	return server.ListenAndServe()
@@ -43,7 +63,7 @@ func localControlRoomProxy(proxy http.Handler) http.Handler {
 		if !localEditorRequest(w, r) {
 			return
 		}
-		if strings.HasPrefix(r.URL.Path, "/api/enrollment/") {
+		if strings.HasPrefix(r.URL.Path, "/api/enrollment/") || strings.HasPrefix(r.URL.Path, "/api/operator-enrollment/") {
 			w.Header().Set("Cache-Control", "no-store")
 			writePolicyError(w, http.StatusForbidden, "Control Room enrollment requires named-user authorization; use the certificate-authorized administration API directly.")
 			return
@@ -88,6 +108,15 @@ func newControlServiceProxy() (http.Handler, string) {
 		request.Header.Del("Origin")
 		request.Header.Del("Cookie")
 		request.Header.Del("Authorization")
+		request.Header.Del("X-ZPR-CSRF")
+		request.Header.Del("Sec-Fetch-Site")
+		request.Header.Del("Sec-Fetch-Mode")
+		request.Header.Del("Sec-Fetch-Dest")
+		request.Header.Del("Sec-Fetch-User")
+		request.Header.Del(operatordelegation.Header)
+		if token, ok := request.Context().Value(signedOperatorRequestKey{}).(string); ok && strings.HasPrefix(request.URL.Path, operatordelegation.Prefix) {
+			request.Header.Set(operatordelegation.Header, token)
+		}
 		request.Header.Del("X-Forwarded-Host")
 		request.Header["X-Forwarded-For"] = nil
 	}
@@ -162,6 +191,7 @@ func runControlService() error {
 	}
 	mux := http.NewServeMux()
 	mux.Handle("/api/enrollment/", enrollmentAPI)
+	mux.Handle("/api/operator-enrollment/", enrollmentAPI)
 	assertions.register(mux)
 	gatewayAPI := newGatewayAPI(strings.TrimSpace(os.Getenv("ZPR_GATEWAY_ORGANIZATION_ID")), gatewaySnapshotReaderFromApplication(app), gatewayStore)
 	mux.Handle("/api/gateways/", gatewayAPI)
@@ -177,6 +207,8 @@ func runControlService() error {
 	mux.Handle("GET /api/adapter-logs", newAdapterLogsHandler())
 	mux.Handle("GET /api/dns/records", newDNSRecordsHandler())
 	mux.HandleFunc("POST /api/policy/assistant", app.handlePolicyAssistant)
+	mux.HandleFunc("GET /api/gateways/assistant", app.handleGatewayAssistantStatus)
+	mux.HandleFunc("POST /api/gateways/assistant", app.handleGatewayAssistant)
 	mux.Handle("/api/dns/stats/", newDNSStatsProxy())
 	mux.Handle("GET /bind9.xsl", newDNSStatsAssetProxy())
 	mux.Handle("/api/policy", app.policyProxyHandler())

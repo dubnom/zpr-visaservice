@@ -29,6 +29,7 @@ function applyMapVisaFocus(data) {
     adapter = null;
   }
   stage.classList.toggle("graph-visa-focused", graphVisaFocus != null);
+  syncMapClearHighlight();
   stage.querySelectorAll(".visa-focus").forEach(element => element.classList.remove("visa-focus"));
   const status = stage.querySelector(".graph-visa-focus-status");
   if (graphVisaFocus == null) {
@@ -121,6 +122,7 @@ const pages = {
   "security-review": "SECURITY REVIEW",
   "zpr-config": "ZPR CONFIG",
   diagnostics: "DIAGNOSTICS",
+  "provisioning-adapters": "ADAPTER PROVISIONING",
 };
 const statusPages = new Set(["connections", "actors", "services", "visas", "denies", "dns"]);
 
@@ -170,9 +172,15 @@ function showPage(page = currentPage()) {
   }
   if (page === "policy") loadPolicyWorkspace();
   if (page === "dns") loadDNSStats();
+  if (page === "provisioning-adapters") checkProvisioningAccess();
   if (page === "security-review" && !state.paused) void refresh();
   if (page === "map" && state.snapshot) renderTopology(state.snapshot);
 }
+
+function checkProvisioningAccess() {
+  window.dispatchEvent(new Event("provisioning-refresh"));
+}
+byId("provisioning-recheck").addEventListener("click", () => void checkProvisioningAccess());
 
 function escapeHTML(value) {
   return String(value ?? "").replace(/[&<>"']/g, (char) => ({
@@ -1653,9 +1661,6 @@ async function loadPolicyWorkspace() {
     }
     modelSelect.value = (data.assistant_models || []).includes(selectedModel) ? selectedModel : data.assistant_model || "";
     updateAssistantControls();
-    byId("assistant-disclosure").textContent = policy.assistantReady
-      ? "Submitting sends the current policy, configured attribute catalog, and chat history to Anthropic. Suggestions are not applied automatically."
-      : "Claude is off. Set ANTHROPIC_API_KEY on the server to enable it.";
   } catch (error) {
     policy.loaded = false;
     byId("policy-check-result").textContent = error.message;
@@ -1670,9 +1675,19 @@ function updateAssistantControls() {
   byId("assistant-enabled").checked = enabled;
   byId("assistant-model").disabled = !enabled;
   byId("assistant-max-tokens").disabled = !enabled;
-  byId("assistant-question").disabled = !enabled || policy.record?.kind !== "policy";
-  byId("assistant-send").disabled = !enabled || policy.record?.kind !== "policy" || policy.assistantPending;
+  const assertions = policy.record?.kind === "assertions";
+  const supported = policy.record?.kind === "policy" || assertions;
+  byId("assistant-question").disabled = !enabled || !supported;
+  byId("assistant-send").disabled = !enabled || !supported || policy.assistantPending;
   byId("assistant-usage").textContent = `Session: ${formatNumber(policy.assistantUsage.input)} input · ${formatNumber(policy.assistantUsage.output)} output tokens`;
+  byId("assistant-question").placeholder = assertions ? "Ask about these assertions" : "Ask about this policy";
+  byId("assistant-disclosure").textContent = !policy.assistantReady
+    ? "Claude is off. Set ANTHROPIC_API_KEY on the server to enable it."
+    : `Submitting sends the current ${assertions ? "assertions" : "policy"}, configured attribute catalog, and chat history to Anthropic. Suggestions are not applied automatically; use Insert on a suggested block to add it as an unsaved edit.`;
+}
+
+function policyAssistantTarget() {
+  return byId(state.policy.record?.kind === "assertions" ? "assertion-source" : "policy-source");
 }
 
 function renderPolicyAttributes() {
@@ -2034,7 +2049,8 @@ function setPolicyRecordSurface(kind, record = state.policy.record) {
   }
   byId("policy-editor-utilities").hidden = assertionsSelected;
   byId("policy-stage-status").hidden = assertionsSelected;
-  byId("policy-assistant-pane").hidden = assertionsSelected;
+  byId("policy-assistant-pane").hidden = false;
+  updateAssistantControls();
   byId("policy-workbench").dataset.recordKind = kind || "";
   updatePolicyWorkbenchLayout();
   window.dispatchEvent(new CustomEvent("policy-record-kind-changed", { detail: { kind, record } }));
@@ -3350,8 +3366,9 @@ function renderAssistantMessages() {
     entry.className = `assistant-message ${message.role}`;
     const label = document.createElement("strong");
     label.textContent = message.role === "user" ? "YOU" : "CLAUDE";
-    const content = document.createElement("pre");
-    content.textContent = message.content;
+    const content = window.editorAssistantContent
+      ? window.editorAssistantContent(message.content, message.role === "assistant" ? policyAssistantTarget : null)
+      : Object.assign(document.createElement("pre"), { textContent: message.content });
     entry.append(label, content);
     list.append(entry);
   }
@@ -3381,7 +3398,7 @@ async function askPolicyAssistant(question) {
   try {
     const response = await fetch("/api/policy/assistant", {
       method: "POST", headers: { "Content-Type": "application/json", Accept: "application/json" },
-      body: JSON.stringify({ source: byId("policy-source").value, messages: policy.messages, model: byId("assistant-model").value, max_tokens: Number(byId("assistant-max-tokens").value) }),
+      body: JSON.stringify({ editor: policy.record?.kind === "assertions" ? "assertion" : "policy", source: policyAssistantTarget().value, messages: policy.messages, model: byId("assistant-model").value, max_tokens: Number(byId("assistant-max-tokens").value) }),
     });
     const result = await response.json();
     if (!response.ok) throw new Error(result.error || `Claude request failed (${response.status})`);
@@ -3864,13 +3881,11 @@ byId("refresh-now").addEventListener("click", () => {
 function updatePolicyWorkbenchLayout() {
   const workbench = byId("policy-workbench");
   const assistantCollapsed = workbench.dataset.assistantCollapsed === "true";
-  const assertionsSelected = workbench.dataset.recordKind === "assertions";
   const assertionTestMode = workbench.dataset.assertionTestMode === "true";
-  const mobile = window.matchMedia("(max-width: 600px)").matches;
   const tablet = window.matchMedia("(max-width: 900px)").matches;
-  if (mobile || assertionsSelected || assertionTestMode) workbench.style.gridTemplateColumns = "minmax(0, 1fr)";
+  if (tablet || assertionTestMode) workbench.style.gridTemplateColumns = "minmax(0, 1fr)";
   else if (assistantCollapsed) workbench.style.gridTemplateColumns = "minmax(0, 1fr) 42px";
-  else workbench.style.gridTemplateColumns = tablet ? "minmax(0, 1.6fr) minmax(245px, .8fr)" : "minmax(0, 1.8fr) minmax(245px, .8fr)";
+  else workbench.style.gridTemplateColumns = "minmax(0, 1.8fr) minmax(245px, .8fr)";
 }
 
 window.policyWorkbenchLayoutChanged = updatePolicyWorkbenchLayout;
@@ -4123,14 +4138,35 @@ byId("pause-poll").addEventListener("click", (event) => {
   setPollTimer();
 });
 byId("poll-rate").addEventListener("change", setPollTimer);
-byId("topology-search").addEventListener("input", () => state.snapshot && renderTopology(state.snapshot));
+function mapHighlightActive() {
+  return graphVisaFocus != null || Boolean(state.mapLegendKind) || byId("topology-search").value.trim() !== "";
+}
+function syncMapClearHighlight() {
+  byId("map-clear-highlight").hidden = !mapHighlightActive();
+}
+function clearMapHighlight() {
+  const had = mapHighlightActive();
+  graphVisaFocus = null;
+  state.mapLegendKind = "";
+  byId("topology-search").value = "";
+  for (const item of document.querySelectorAll("[data-legend-kind]")) item.setAttribute("aria-pressed", "false");
+  if (had && state.snapshot) renderTopology(state.snapshot);
+  syncMapClearHighlight();
+  return had;
+}
+byId("topology-search").addEventListener("input", () => { if (state.snapshot) renderTopology(state.snapshot); syncMapClearHighlight(); });
 for (const item of document.querySelectorAll("[data-legend-kind]")) {
   item.addEventListener("click", () => {
     state.mapLegendKind = state.mapLegendKind === item.dataset.legendKind ? "" : item.dataset.legendKind;
     for (const other of document.querySelectorAll("[data-legend-kind]")) other.setAttribute("aria-pressed", String(other.dataset.legendKind === state.mapLegendKind));
     if (state.snapshot) renderTopology(state.snapshot);
+    syncMapClearHighlight();
   });
 }
+byId("map-clear-highlight").addEventListener("click", () => {
+  clearMapHighlight();
+  closeInspector();
+});
 function inspectMapVisaCount(target) {
   const denialBadge = target.closest(".graph-denial-count");
   if (denialBadge && state.snapshot) {
@@ -4281,9 +4317,24 @@ document.addEventListener("keydown", (event) => {
   else openInspector("link", target.dataset.inspectLink);
 });
 
-byId("inspector-close").addEventListener("click", closeInspector);
+// Closing the inspector also releases any right-click visa focus it was describing.
+byId("inspector-close").addEventListener("click", () => {
+  closeInspector();
+  if (graphVisaFocus != null && state.snapshot) {
+    graphVisaFocus = null;
+    applyMapVisaFocus(state.snapshot);
+  }
+});
 document.addEventListener("keydown", (event) => {
-  if (event.key === "Escape") closeInspector();
+  if (event.key !== "Escape") return;
+  const inspectorOpen = state.selection != null;
+  closeInspector();
+  if (currentPage() !== "map" || event.defaultPrevented) return;
+  if (inspectorOpen) {
+    if (graphVisaFocus != null && state.snapshot) { graphVisaFocus = null; applyMapVisaFocus(state.snapshot); }
+    return;
+  }
+  clearMapHighlight();
 });
 
 refresh();

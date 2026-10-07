@@ -5,7 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <meta name="theme-color" content="#17211e">
     <title>ZPR Control Room</title>
-    <link rel="stylesheet" href="/app.css?v=78">
+    <link rel="stylesheet" href="/app.css?v=79">
     <link rel="stylesheet" href="/machine-logs.css?v=17">
     <link rel="stylesheet" href="/assertions.css?v=11">
     <link rel="stylesheet" href="/sidebar.css?v=8">
@@ -13,7 +13,9 @@
     <link rel="stylesheet" href="/security-review.css?v=8">
     <link rel="stylesheet" href="/diagnostics.css?v=1">
     <link rel="stylesheet" href="/gateways.css?v=2">
-    <script src="/sidebar.js?v=21" defer></script>
+    <link rel="stylesheet" href="/provisioning.css?v=1">
+    <link rel="stylesheet" href="/editor-assistant.css?v=1">
+    <script src="/sidebar.js?v=28" defer></script>
     <script src="/trusted-source.js?v=3" defer></script>
     <script src="/policy-record-icons.js?v=1" defer></script>
   </head>
@@ -25,6 +27,8 @@
           <span><strong>ZPR</strong><small>CONTROL ROOM</small></span>
         </a>
         <nav class="primary-nav" aria-label="Main navigation">
+          <p class="nav-group-label" id="nav-monitoring-label">Monitoring</p>
+          <div class="nav-group" role="group" aria-labelledby="nav-monitoring-label">
           <a class="nav-link active" href="#map" data-page-link="map">Map</a>
           <a class="nav-link" href="#connections" data-page-group="status">Status</a>
           <a class="nav-link" href="#security-review" data-page-link="security-review">Security</a>
@@ -32,12 +36,18 @@
           <a class="nav-link" href="#sources" data-page-link="sources">Trusted Sources</a>
           <a class="nav-link" href="#adapter-logs" data-page-link="adapter-logs">Adapter Logs</a>
           <a class="nav-link sidebar-external-link" href="http://127.0.0.1:8800/" target="zpr-log-manager" data-reuse-window="zpr-log-manager" rel="noopener noreferrer" title="Log Manager (opens in a separate window)"><span>Log Manager</span><span class="external-arrow" aria-hidden="true">↗</span></a>
+          </div>
           <div class="nav-separator" role="separator"></div>
           <p class="nav-group-label" id="nav-configuration-label">Configuration</p>
           <div class="nav-group" role="group" aria-labelledby="nav-configuration-label">
             <a class="nav-link" href="#policy" data-page-link="policy">Policy</a>
             <a class="nav-link" href="#gateways" data-page-link="gateways">Gateways</a>
             <a class="nav-link" href="#zpr-config" data-page-link="zpr-config">ZPR Config</a>
+          </div>
+          <div class="nav-separator" role="separator"></div>
+          <p class="nav-group-label" id="nav-provisioning-label">Provisioning</p>
+          <div class="nav-group" role="group" aria-labelledby="nav-provisioning-label">
+            <a class="nav-link" href="#provisioning-adapters" data-page-link="provisioning-adapters">Adapters</a>
           </div>
         </nav>
         <div class="sidebar-foot">
@@ -55,6 +65,11 @@
             </div>
           </div>
           <div class="top-actions">
+            <div class="operator-login" aria-label="Operator login">
+              <span id="operator-login-status" role="status" aria-live="polite">Checking operator login</span>
+              <form id="operator-login-form" method="post" action="/auth/operator/login" hidden><button class="button" type="submit">Sign in</button></form>
+              <button id="operator-logout" class="button button-quiet" type="button" hidden>Sign out</button>
+            </div>
             <div class="uptime-status"><span>UPTIME</span><strong id="metric-uptime">—</strong></div>
             <label class="poll-control" for="poll-rate"><span>REFRESH</span>
               <select id="poll-rate" aria-label="Refresh interval">
@@ -108,7 +123,7 @@
         <section class="page-view" id="page-map" data-page="map" aria-label="Map">
           <section class="section-block topology-page">
           <div class="section-heading">
-            <div class="legend" role="group" aria-label="Map legend: click a type to highlight it"><input id="topology-search" class="topology-search" type="search" placeholder="Highlight" aria-label="Highlight topology graph"><button class="legend-item" type="button" data-legend-kind="node" aria-pressed="false" title="Highlight node on the map"><i class="legend-node"></i>NODE</button><button class="legend-item" type="button" data-legend-kind="visa" aria-pressed="false" title="Highlight visa service on the map"><i class="legend-visa"></i>VISA SERVICE</button><button class="legend-item" type="button" data-legend-kind="gateway" aria-pressed="false" title="Highlight gateway on the map"><i class="legend-gateway"></i>GATEWAY</button><button class="legend-item" type="button" data-legend-kind="adapter" aria-pressed="false" title="Highlight adapter on the map"><i class="legend-adapter"></i>ADAPTER</button><button class="legend-item" type="button" data-legend-kind="service" aria-pressed="false" title="Highlight service on the map"><i class="legend-service"></i>SERVICE</button><button class="legend-item" type="button" data-legend-kind="registration" aria-pressed="false" title="Highlight registration on the map"><i class="legend-service-link"></i>REGISTRATION</button><button class="legend-item" type="button" data-legend-kind="trusted-file" aria-pressed="false" title="Highlight trusted file on the map"><i class="legend-trusted-file"></i>TRUSTED FILE</button><button class="legend-item" type="button" data-legend-kind="trusted-rest-1" aria-pressed="false" title="Highlight trusted rest/1 on the map"><i class="legend-trusted-rest"></i>TRUSTED REST/1</button><button class="legend-item" type="button" data-legend-kind="dock" aria-pressed="false" title="Highlight docked on the map"><i class="legend-dock"></i>DOCKED</button><button class="legend-item" type="button" data-legend-kind="inter-node" aria-pressed="false" title="Highlight inter-node on the map"><i class="legend-up"></i>INTER-NODE</button></div>
+            <div class="legend" role="group" aria-label="Map legend: click a type to highlight it"><input id="topology-search" class="topology-search" type="search" placeholder="Highlight" aria-label="Highlight topology graph"><button class="legend-item" type="button" data-legend-kind="node" aria-pressed="false" title="Highlight node on the map"><i class="legend-node"></i>NODE</button><button class="legend-item" type="button" data-legend-kind="visa" aria-pressed="false" title="Highlight visa service on the map"><i class="legend-visa"></i>VISA SERVICE</button><button class="legend-item" type="button" data-legend-kind="gateway" aria-pressed="false" title="Highlight gateway on the map"><i class="legend-gateway"></i>GATEWAY</button><button class="legend-item" type="button" data-legend-kind="adapter" aria-pressed="false" title="Highlight adapter on the map"><i class="legend-adapter"></i>ADAPTER</button><button class="legend-item" type="button" data-legend-kind="service" aria-pressed="false" title="Highlight service on the map"><i class="legend-service"></i>SERVICE</button><button class="legend-item" type="button" data-legend-kind="registration" aria-pressed="false" title="Highlight registration on the map"><i class="legend-service-link"></i>REGISTRATION</button><button class="legend-item" type="button" data-legend-kind="trusted-file" aria-pressed="false" title="Highlight trusted file on the map"><i class="legend-trusted-file"></i>TRUSTED FILE</button><button class="legend-item" type="button" data-legend-kind="trusted-rest-1" aria-pressed="false" title="Highlight trusted rest/1 on the map"><i class="legend-trusted-rest"></i>TRUSTED REST/1</button><button class="legend-item" type="button" data-legend-kind="dock" aria-pressed="false" title="Highlight docked on the map"><i class="legend-dock"></i>DOCKED</button><button class="legend-item" type="button" data-legend-kind="inter-node" aria-pressed="false" title="Highlight inter-node on the map"><i class="legend-up"></i>INTER-NODE</button><button class="map-clear-highlight" id="map-clear-highlight" type="button" hidden title="Clear highlighting and dimming (Esc)">Clear highlight</button></div>
           </div>
           <div class="topology-layout topology-only">
             <div class="topology-stage" id="topology-stage">
@@ -421,6 +436,52 @@ each group attribute "gidNumber" &gt;= 1000;</pre></details></div><aside class="
             <p id="zpr-config-status" role="status"></p>
           </section>
         </section>
+        <section class="page-view" id="page-provisioning-adapters" data-page="provisioning-adapters" aria-label="Adapter provisioning" hidden>
+          <section class="section-block provisioning-panel">
+            <p id="provisioning-status" class="provisioning-status" role="status">Checking enrollment administration…</p>
+            <div class="provisioning-toolbar"><button id="provisioning-recheck" class="button" type="button">Check again</button></div>
+            <p class="provisioning-notice">Authorized catalogs and registry details are read-only. GUI invitation and review mutation controls are not connected and remain locked. Enrollment APIs require configured HTTPS sign-in and independently verified named-user delegation to Control-Service. The shared service certificate alone is not administrator authority. Direct certificate-authorized administration remains separate.</p>
+            <p id="operator-scope" hidden></p>
+            <div class="provisioning-workspace">
+              <form id="provisioning-draft" class="provisioning-card" autocomplete="off">
+                <h2>Prepare invitation</h2>
+                <p>Unsaved worksheet only. No machine, invitation, code, or email is created. Values remain in this page's memory and are cleared on reload.</p>
+                <div class="provisioning-fields">
+                  <label>Name<input name="name" required maxlength="200" placeholder="Finance laptop 07"></label>
+                  <label>Owner<input name="owner" required maxlength="200" placeholder="Named owner or team"></label>
+                  <label>Organization<input name="organization" required maxlength="200" aria-describedby="provisioning-catalog-note"></label>
+                  <label>Inventory reference<input name="asset_id" required maxlength="200" placeholder="Inventory asset ID"></label>
+                  <label>Requested type<input name="type" required maxlength="200" aria-describedby="provisioning-catalog-note"></label>
+                  <label>Requested profile<input name="profile" required maxlength="200" aria-describedby="provisioning-catalog-note"></label>
+                  <label class="provisioning-wide">Instruction recipient<input name="recipient" required type="email" maxlength="200" placeholder="owner@example.org" aria-describedby="provisioning-recipient-note"></label>
+                </div>
+                <p id="provisioning-catalog-note">Organization, type, and profile are requests, not approved selections. Authorized catalogs appear below when access is configured; worksheet values have not been validated by Control-Service.</p>
+                <p id="provisioning-recipient-note">For installation instructions only. Never include an enrollment code in email.</p>
+                <div class="provisioning-actions"><button class="button" type="submit">Review worksheet</button><button class="button button-quiet" type="reset">Clear worksheet</button><button class="button" type="button" disabled title="Requires verified named-user authorization">Create invitation</button></div>
+                <p id="provisioning-draft-status" role="status" aria-live="polite"></p>
+              </form>
+              <aside class="provisioning-card" aria-label="Enrollment workflow">
+                <h2>Enrollment workflow</h2>
+                <ol class="provisioning-steps">
+                  <li><strong>Invite</strong><p>An authorized administrator validates inventory and approved catalogs, then creates an expiring, single-use invitation. The machine need not be present or online.</p></li>
+                  <li><strong>Deliver separately</strong><p>Send instructions and the generic installer link. Deliver the code through a separate authenticated secure channel. Automatic email delivery is not implemented.</p></li>
+                  <li><strong>Run on the new machine</strong><p>Verify the versioned manifest and detached signature using independently trusted signing information before installing. Run the local setup wizard as the desktop user; the machine needs enrollment-service connectivity.</p></li>
+                  <li><strong>Review key proof</strong><p>Compare the machine's key fingerprint through a trusted channel. Approval is bound to the current revision and verified key, with a recorded reason and an approval deadline.</p></li>
+                  <li><strong>Issue and admit separately</strong><p>Approval does not issue credentials or prove live ZPR connectivity. Credential issuance and adapter admission are not implemented.</p></li>
+                </ol>
+              </aside>
+            </div>
+            <section class="provisioning-card provisioning-queue" aria-label="Enrollment requests">
+              <h2>Invitations and pending reviews</h2>
+              <label>Registry organization<select id="provisioning-organization" disabled><option value="">Catalog unavailable</option></select></label>
+              <p id="provisioning-registry-status" role="status" aria-live="polite">Registry unavailable; this is not an empty queue or a live adapter inventory.</p>
+              <div id="provisioning-approved-catalog" hidden></div>
+              <div class="provisioning-table-scroll"><table id="provisioning-invitations" hidden><thead><tr><th>Name</th><th>Inventory</th><th>State</th><th>Invitation expiry</th><th>Details</th></tr></thead><tbody></tbody></table></div>
+              <button id="provisioning-next" class="button" type="button" hidden>Next page</button>
+              <p>Invitation expiry limits the initial claim. Once claimed, a separate approval deadline applies. The generic installer link is not a per-machine invitation and need not share its expiry.</p>
+            </section>
+          </section>
+        </section>
         <section class="page-view" id="page-diagnostics" data-page="diagnostics" aria-label="ZPR diagnostics" hidden>
           <section class="section-block diagnostics" data-diagnostics>
             <header class="diagnostics-header"><p id="diagnostics-updated" role="status">Waiting for telemetry sources</p></header>
@@ -457,12 +518,16 @@ each group attribute "gidNumber" &gt;= 1000;</pre></details></div><aside class="
       </main>
     </div>
     <script src="/vendor/pluralize.js?v=8.0.0" defer></script>
-    <script src="/app.js?v=97" defer></script>
+    <script src="/app.js?v=101" defer></script>
     <script src="/machine-logs.js?v=20" defer></script>
     <script src="/assertions.js?v=11" defer></script>
     <script src="/config-editor.js?v=6" defer></script>
     <script src="/gateways.js?v=3" defer></script>
-    <script src="/editor-search.js?v=4" defer></script>
+    <script src="/provisioning.js?v=1" defer></script>
+    <script src="/provisioning-registry.js?v=1" defer></script>
+    <script src="/operator-login.js?v=3" defer></script>
+    <script src="/editor-assistant.js?v=1" defer></script>
+    <script src="/editor-search.js?v=5" defer></script>
     <script src="/diagnostics.js?v=2" defer></script>
       <script src="/security-review.js?v=13" defer></script>
   </body>

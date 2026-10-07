@@ -802,14 +802,15 @@ untrusted TLS, plaintext/redirect rejection, missing/truncated/oversized transfe
 signature/hash failures, unsafe/symlink parents, concurrent destination creation,
 and cleanup. Test keys, TLS identities, and bundles are removed at teardown.
 
-## Named operator OIDC foundation (not mounted)
+## Named operator OIDC and opt-in direct HTTPS
 
 [internal/operatorauth](internal/operatorauth/auth.go) provides the approved
-OIDC login/session boundary for future Control Room enrollment integration.
-It is not wired into either listener and introduces no active login route,
-environment configuration, or enrollment proxy exception. Existing
-certificate-authorized administration remains unchanged. Control Room
-enrollment mutations remain blocked.
+OIDC login/session boundary for Control Room. Direct HTTPS and login are
+explicitly opt-in; the default HTTP listener does not mount authentication.
+Existing certificate-authorized administration remains unchanged. Control Room
+GUI invitation/review controls remain disconnected. Versioned enrollment APIs
+can now be explicitly enabled with signed named-user delegation and independently
+configured Control-Service grants; sign-in alone is never sufficient.
 
 The library uses `github.com/coreos/go-oidc/v3` and `golang.org/x/oauth2`, with
 `go-jose` for signed-token integration tests. This concrete authentication
@@ -818,8 +819,9 @@ is intentionally avoided. Existing unrelated module dependencies are preserved.
 
 `operatorauth.New(ctx, config, clientSecret)` validates typed operator
 configuration and performs HTTPS discovery. The secret is supplied separately,
-not included in public JSON, requests, logs, or sessions. A protected secret-file
-loader/IdP deployment configuration is not implemented yet. Example typed
+not included in public JSON, requests, logs, or sessions. The Control Room now
+loads strict bounded configuration and a separate protected secret file.
+Actual IdP registration/deployment remains the operator's responsibility. Example typed
 configuration's JSON shape:
 
 ```json
@@ -827,7 +829,7 @@ configuration's JSON shape:
   "version": 1,
   "issuer": "https://identity.example.com",
   "client_id": "zpr-control-room",
-  "redirect_url": "https://control.example.com/auth/operator/callback",
+  "redirect_url": "https://localhost:8787/auth/operator/callback",
   "session_lifetime_seconds": 600,
   "grants": [{
     "issuer": "https://identity.example.com",
@@ -844,7 +846,7 @@ as authorization. Grants are copied at initialization, so caller mutation
 cannot expand scopes. Updates require a new instance, invalidating old sessions;
 there is no hot reload or distributed session store.
 
-When explicitly mounted by a future HTTPS integration, the handler supports:
+When enabled on direct HTTPS, the handler supports:
 
 - `POST /auth/operator/login`: exact same-origin initiation; creates a
   five-minute browser-bound state/nonce and redirects to authorization with
@@ -889,10 +891,252 @@ capacity limits without Simulator:
 go test -race ./internal/operatorauth ./internal/enrollment
 ```
 
-Before enabling the GUI, complete the HTTPS listener/gateway boundary,
-operator-selected IdP registration and secret loading, independently verified
-named-user delegation/audit at Control-Service, and browser acceptance tests.
-No service was restarted, identity provider deployed, or provisioning UI enabled.
+### Direct HTTPS configuration
+
+The approved initial integration terminates TLS in Control Room itself. This
+increment preserves the existing loopback-only browser/API exposure: use a literal
+loopback `-listen` address and a `localhost`/loopback origin with the same fixed
+port. Remote/wildcard binding is rejected; remote-operator exposure needs a
+separate reviewed authorization boundary for all existing APIs, not just enrollment.
+Forwarded headers and the existing browser gateway cannot establish TLS or a
+named-user identity for these handlers.
+
+For `-mode control-room`, keep the existing Control-Service mTLS environment
+configuration and explicitly add:
+
+```sh
+export ZPR_CONTROL_ROOM_ORIGIN=https://localhost:8787
+export ZPR_CONTROL_ROOM_CERT_FILE=/etc/zpr/control-room/server.crt
+export ZPR_CONTROL_ROOM_KEY_FILE=/etc/zpr/control-room/server.key
+export ZPR_OPERATOR_OIDC_CONFIG_FILE=/etc/zpr/control-room/oidc.json
+export ZPR_OPERATOR_OIDC_SECRET_FILE=/etc/zpr/control-room/oidc-client.secret
+go run ./cmd/zpr-web-dashboard -mode control-room -listen 127.0.0.1:8787
+```
+
+Provision a current server-auth certificate covering the origin hostname; the
+browser must independently trust its issuer. TLS minimum is 1.3. All three TLS
+variables are required together; omitting both OIDC variables enables HTTPS
+without login. A partial configuration or failed discovery aborts startup,
+never falls back to HTTP. No automatic HTTP redirect/listener is started.
+Register the exact callback URI in the operator-selected confidential OIDC client,
+which must support S256 PKCE and the library's RS256/ES256 signed-token contract.
+The identity provider is verified against system CA roots. For an independently
+trusted private IdP CA, optionally set `ZPR_OPERATOR_OIDC_CA_FILE` to a protected
+PEM file (at most 64 KiB); its certificates are added to system roots. The same
+owned client verifies discovery, token exchange, and JWKS. No insecure TLS option,
+environment proxy, or redirect bypass is used. A CA file without OIDC configuration
+is a startup error.
+
+Files must be regular, single-link, root/current-user-owned, and not writable by
+group/others. Key and secret require no group/other permissions (normally 0600).
+Final symlinks and special files are rejected. Operators must protect the containing
+directories and their ancestors; file permission checks are not an adversary boundary
+against root/the owning user or a writable ancestor. Certificate/key/config are
+bounded to 64 KiB each; secret to 4 KiB, one nonempty line with optional final newline.
+OIDC JSON rejects unknown fields and trailing documents. Configuration/grants,
+secret, and certificate are startup snapshots; rotate them with a deliberate restart.
+
+`GET /auth/operator/config` reveals only whether login is configured, not provider
+configuration or secrets. The GUI shows Sign in, a verified subject/scope after
+callback, and CSRF-protected Sign out. Session/CSRF data remain in memory, never
+browser storage. Session expiry is rechecked on page load/window focus; logout is
+not reported successful without HTTP 204. A login/config failure is shown explicitly.
+The signing/trust configuration below covers only enrollment; it does not
+delegate unrelated monitoring/editor operations or replace their separate
+operator-policy and loopback requirements.
+
+### Route-level Control Room and Simulator policy
+
+Without OIDC configured, both applications retain their existing local-stack
+API behavior. No named operator session is required and
+`ZPR_CONTROL_ROOM_ORGANIZATION_ID` may remain unset. Control Room still applies
+its existing local/proxy origin checks and blocks public/private enrollment
+routes; disabled login does not grant enrollment authority. Simulator retains
+its existing handler boundaries and does not resolve organization context for
+operator authorization in this mode. This is local development behavior, not
+approval for unauthenticated remote exposure.
+
+The Control Room API classifies monitoring, policy, and Gateway routes as
+`monitor.read`, `policy.read`/`policy.analyze`/`policy.edit`, and
+`gateway.read`/`gateway.analyze`/`gateway.edit`. With OIDC enabled, every API
+route must have an explicit classification, the operator grant must include the
+configured `ZPR_CONTROL_ROOM_ORGANIZATION_ID`, and mutations require the
+session's same-origin CSRF proof. Unmapped routes fail closed. A missing
+organization with OIDC enabled returns HTTP 503; set
+`ZPR_CONTROL_ROOM_ORGANIZATION_ID` to the production organization authorized by
+the operator grant rather than disabling authorization or using Simulator state.
+
+Simulator accepts separate `ZPR_SIMULATOR_OPERATOR_*` TLS/OIDC settings and
+requires its own confidential OIDC client with callback
+`https://localhost:8788/auth/operator/callback`. Its cookie namespace is derived
+from issuer, client ID, and callback, so signing into either app does not replace
+the other app's browser session. Simulator routes use distinct organization,
+scenario, directory, device-lifecycle, simulated-device-session, workload, and
+simulator-control permissions. Organization IDs in route paths are checked
+against grants; the organization catalog is filtered to granted IDs. Global
+Simulator views are checked against the selected active organization. Simulated
+device-user login is not operator login.
+
+To enable Simulator OIDC through `scripts/dashboard-stack.sh`, set
+`ZPR_SIMULATOR_OPERATOR_ORIGIN`, `ZPR_SIMULATOR_OPERATOR_CERT_FILE`,
+`ZPR_SIMULATOR_OPERATOR_KEY_FILE`, `ZPR_SIMULATOR_OPERATOR_OIDC_CONFIG_FILE`,
+`ZPR_SIMULATOR_OPERATOR_OIDC_SECRET_FILE`, and
+`ZPR_SIMULATOR_OPERATOR_TLS_CA_FILE`. The certificate, key, config, secret, and
+optional `ZPR_SIMULATOR_OPERATOR_OIDC_CA_FILE` must be under the mounted
+`.local-runtime` directory. The launcher defaults the trusted peer to the Docker
+bridge gateway; override with `ZPR_SIMULATOR_OPERATOR_TRUSTED_PEER_IP` only when
+the direct TLS peer differs. Readiness uses the supplied TLS CA, not an insecure
+certificate bypass. Leaving the Simulator origin unset preserves the existing
+loopback HTTP development mode.
+
+These route checks are enforced at the web-app edge. General monitoring,
+policy-editor, and Simulator operations do not yet carry signed user delegation
+to their backend services; mTLS still identifies the service, not the named
+operator. Enrollment has its separate signed delegation contract. Do not treat
+the current edge policy as backend authorization for direct service callers.
+
+Before deploying, complete operator-selected IdP registration and configure the
+independent delegation keys, certificate pins, and grants below. Live GUI forms
+still need registry-backed wiring and real-service browser acceptance. No running
+service was restarted or identity provider deployed by this work.
+
+### Independently verified named-user delegation
+
+[internal/operatordelegation](internal/operatordelegation/delegation.go) defines
+a deliberately narrow, non-JWT signed request format using standard-library
+Ed25519. It is not a transferable session, OIDC access token, or unsigned
+identity header. Keep the OIDC client secret, delegation signing key, TLS server
+key, and Control Room mTLS client key separate.
+
+On Control Room, configure a protected strict JSON signing file:
+
+```json
+{
+  "version": 1,
+  "audience": "https://control-service.example:8790",
+  "key_id": "control-room-production-1"
+}
+```
+
+Set `ZPR_OPERATOR_DELEGATION_SIGNER_FILE` to that file and
+`ZPR_OPERATOR_DELEGATION_KEY_FILE` to one protected PKCS#8 Ed25519 PEM private
+key. Both are required together and require direct HTTPS/OIDC already enabled.
+Audience must exactly equal `ZPR_CONTROL_SERVICE_URL`, including explicit port;
+no implicit origin aliases are accepted. Operators provision these keys
+independently; no production signing keys are generated by this feature.
+
+On Control-Service, set `ZPR_OPERATOR_DELEGATION_TRUST_FILE` to a protected
+strict JSON trust configuration. Existing `ZPR_ENROLLMENT_CONFIG_FILE` and
+`ZPR_ENROLLMENT_DATABASE_FILE` are also required:
+
+```json
+{
+  "version": 1,
+  "audience": "https://control-service.example:8790",
+  "keys": [{
+    "key_id": "control-room-production-1",
+    "public_key": "REPLACE_WITH_BASE64URL_NO_PADDING_ED25519_PUBLIC_KEY",
+    "certificate_sha256": "REPLACE_WITH_LOWERCASE_LEAF_CERTIFICATE_SHA256"
+  }],
+  "grants": [{
+    "issuer": "https://identity.example.com",
+    "subject": "stable-admin-subject",
+    "organizations": ["production"],
+    "permissions": ["read", "create", "cancel", "approve", "reject"]
+  }]
+}
+```
+
+The placeholder key/pin deliberately fail validation. Public key is the raw
+32-byte Ed25519 key, base64url encoded without padding; the pin is the SHA-256
+of the Control Room mTLS leaf certificate's DER bytes (not the TLS server
+certificate or a CA). Control-Service verifies its existing mTLS chain *and*
+the exact configured leaf pin for the asserted key ID. CA trust alone cannot
+delegate a user. Independent exact issuer/subject grants determine backend
+organizations/permissions; browser-side grants cannot expand these. Unknown
+organizations and review permissions without an approval lifetime fail startup.
+Issuer/subject audit encoding must fit the existing 256-byte principal limit.
+Files follow the same ownership, permission, regular-file, and 64 KiB limits
+as OIDC configuration. Grants/trust are startup snapshots; rotate by deliberate
+restart. Operator administration remains independent of Simulator.
+
+Browser callers use the existing versioned `/api/enrollment/v1/` contract,
+an active same-origin OIDC session, and `X-ZPR-CSRF` for mutations. Control Room
+checks its organization/permission grants, bounds request bodies to 8 KiB,
+discards caller-supplied delegation headers, and signs only allowlisted enrollment
+operations. It rewrites to a separate private
+`/api/operator-enrollment/v1/` route; normal proxy access to that route is blocked.
+Direct `/api/enrollment/v1/` certificate administration stays separate and never
+accepts delegated headers as certificate authority.
+
+The single canonical assertion binds version, key ID, exact audience, verified
+issuer/subject, HTTP method, exact path/query, SHA-256 of exact body bytes,
+issued/expiry nanoseconds, and a random nonce. Lifetime is at most 30 seconds;
+issued-at may be at most two seconds ahead for clock skew. Keep both hosts'
+clocks synchronized. The private service validates signature and bindings before
+dispatch and consumes a hashed nonce in the registry's SQLite immediate
+transaction. Replay tracking persists across restart and concurrent connections,
+expires with the assertion, and is capped at 8192 live entries. Database errors,
+capacity exhaustion, or duplicate consumption fail closed; there is no replay
+cache fallback. A denied or failed operation still consumes its accepted assertion.
+
+Creation/cancellation/approval/rejection reuse the existing registry/audit
+transactions, attributing actions to `oidc:["exact-issuer","exact-subject"]`.
+Review retains current-revision/key-fingerprint/deadline checks. Signing is not
+credential issuance or adapter admission. Once signed, an in-flight assertion can
+finish within its short validity even if the browser logs out; logout blocks new
+delegation but does not retroactively cancel accepted requests. No automatic
+mutation retries are introduced. If a response is lost, inspect registry state
+before requesting another mutation; a token cannot be replayed.
+
+The catalog still advertises `gui_mutations_enabled:false`: the current worksheet
+cannot submit records, reveal codes, or review claims. A successful catalog probe
+does not enable buttons. Registry-backed GUI forms and real-service browser
+acceptance are the next milestone.
+
+Tests include tampered method/path/query/body/signature, wrong certificate,
+absent verification, wrong issuer/subject, expiry/future issue time, replay and
+concurrent consumption, persisted replay after reopen, server-grant isolation,
+direct-route separation, named audit attribution, and an actual HTTPS OIDC
+login → mTLS delegated catalog/create/cancel → logout path:
+
+```sh
+go test -race ./internal/operatordelegation ./internal/enrollment ./internal/operatorauth
+go test -race ./cmd/zpr-web-dashboard -run 'Operator|Delegation|ControlRoom|Enrollment'
+```
+
+### Control Room provisioning worksheet and read-only registry
+
+Provisioning > Adapters now offers a memory-only invitation worksheet and
+local review dialog for name, owner, requested organization/type/profile,
+inventory reference, and instruction recipient. It does not submit or persist
+these values, create an invitation/code, reserve an asset, or send email.
+Clear resets the worksheet; a page reload clears it too. No enrollment code
+or private key belongs in this form.
+
+Requested worksheet catalog values are explicitly unvalidated. With configured
+HTTPS/OIDC login and independently verified delegation, the page loads authorized
+type/profile catalogs and organization-scoped registry pages of up to 50 records.
+**Next page** follows the service cursor; **Check again** reloads the catalog and
+first page for the selected organization. **Details** reads a fresh record showing
+revision, fingerprint, deadlines, and audit identity/reason; it never retrieves
+an enrollment code. Navigation, session checks/loss, and logout clear registry
+data and details. Stale reads are discarded. Invalid, denied, and unavailable
+responses are distinguished from a legitimately empty page.
+
+Creation, cancellation, approval, and rejection remain disabled, even if the
+catalog's mutation flag changes. Worksheet catalog selections and mutations need
+separate implementation and real-service browser acceptance. Help explains remote/offline invitation
+creation, separate authenticated code delivery, package verification, invitation
+versus approval deadlines, and approval versus credential issuance/connectivity.
+The retained package remains unsigned development tooling.
+
+Browser acceptance checks run without Simulator:
+
+```sh
+sh scripts/test-browser-container.sh dashboard.spec.mjs provisioning-live.spec.mjs \
+  --grep 'GUI operator|GUI [Pp]rovisioning|live provisioning'
+```
 
 # Compiling the binary
 

@@ -73,7 +73,10 @@ denial badge, otherwise their visa counts. Right-clicking blank canvas clears fo
 Legend items are buttons: click one to highlight every component or connection of
 that type (nodes, visas, gateways, adapters, services, registrations, trusted
 sources, docks or inter-node links); click it again to clear. Legend highlighting
-combines with Search.
+combines with Search. While any search, legend or right-click highlight is active,
+a **Clear highlight** button appears at the end of the legend and clears all of
+them. On Map, Esc closes an open info panel (and its visa focus); otherwise it
+clears all highlighting. Closing the info panel with × also clears its visa focus.
 Connector endpoints intersect the actual SVG glyph boundaries, including rounded
 node/service rectangles, circular adapters, visa diamonds, gateway polygons, and
 cloud paths. Visible strokes, network clearance, and clickable hit areas use the
@@ -297,6 +300,12 @@ gateway. The editor uses Control Room APIs only and does not depend on Simulator
 The ZPR Config, scenario and gateway editors share the policy editor's gutter
 geometry (line height, marker column and padding).
 
+Every editor with Find and Replace (policy, assertion, gateway, ZPR Config,
+raw scenario source and directory LDIF) has a **Word wrap** checkbox. Wrapping is
+on by default and the choice is remembered per editor in browser storage. Line
+gutters size each row to its wrapped height so numbers and markers stay aligned
+with their logical lines; uncheck the box to restore horizontal scrolling.
+
 ## Activity and Navigation
 
 Simulator Activity reads the current Control Room feed while its page is active.
@@ -319,6 +328,34 @@ components animate when layout bounds move unless reduced motion is enabled.
 Count badges overlap the upper-right glyph boundary, with Visa Service badges
 centered on the diamond's upper-right edge. Status tables have bounded vertical
 scrolling and sticky sortable headings so large inventories remain usable.
+
+Control Room navigation groups Map through Log Manager under **Monitoring**,
+the policy, assertion, gateway, directory and ZPR Config editors under
+**Configuration**, and **Provisioning → Adapters** after a separator. The
+Adapters page provides a memory-only invitation worksheet and local review.
+When HTTPS/OIDC and independently verified delegation are configured, it loads
+authorized catalogs, organization-scoped registry pages (up to 50 records), and
+fresh read-only details with revision, key fingerprint, deadlines, and audit
+identity/reason. **Check again** reloads the catalog and first registry page;
+**Next page** follows the service cursor. Unavailable/denied reads are not an empty
+queue. Navigation and session checks/loss/logout clear records and details, and
+late responses are discarded. Worksheet catalog values remain unvalidated.
+It creates no invitation/code, sends no email, and enables no cancel/approve/reject
+actions. Read access does not unlock mutations or imply live adapter connectivity.
+It never calls Simulator.
+
+Direct HTTPS with operator-configured certificates and OIDC is opt-in in
+`-mode control-room`, currently restricted to a loopback listener/origin.
+Sign in uses the native same-origin POST; callback creates an opaque secure
+session cookie. The GUI displays the verified subject and configured enrollment
+scope and offers CSRF-protected Sign out. Login is not mounted on default HTTP,
+does not confer blanket authority over other operator APIs, and does not unlock enrollment:
+verified named-user delegation to Control-Service is separately configurable.
+The backend independently checks issuer/subject grants, signing key and verified
+client-certificate pin, and a persistent nonce ledger; the shared certificate
+alone is not administrator authority. GUI mutation controls remain disconnected.
+See the [delegation configuration guide](../../README.md#independently-verified-named-user-delegation) and the
+[HTTPS/OIDC configuration guide](../../README.md#direct-https-configuration).
 
 Simulator navigation is ordered Organizations, Scenarios, Trusted Sources,
 Activity, then Workers; this order is retained across page switches. The Simulator
@@ -676,6 +713,18 @@ session-only on/off control, the server default model or Haiku 4.5, and
 per-request output limits of 300, 600, 1200, or 2400 tokens. The displayed
 input/output token totals come from successful responses and reset on page
 reload; they are not a billing or organization-wide usage limit.
+
+The same opt-in AI Assistant pane is available beside the assertion, Gateways
+and ZPR Config editors in Control Room, and beside the Simulator's LDAP seed
+(LDIF) editor. Each editor sends only its own draft: assertions and ZPR Config
+use `POST /api/policy/assistant` with `editor` set to `assertion` or
+`zpr-config` (assertions also include the attribute catalog), Gateways uses
+`GET`/`POST /api/gateways/assistant` (`gateway.read`/`gateway.analyze`), and
+the Simulator uses its own `POST /api/simulator/editor-assistant` with its own
+key, so Control Room never calls the Simulator. Suggested replacement text is
+shown as a code block with an **Insert** button that places it at the cursor
+(replacing any selection) as an ordinary, undoable unsaved edit; nothing is
+saved, staged, published or activated by the assistant.
 
 ## Configure and run
 

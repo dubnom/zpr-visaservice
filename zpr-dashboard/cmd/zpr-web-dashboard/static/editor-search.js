@@ -229,3 +229,88 @@
     }
   }
 })();
+
+// Word wrap: one checkbox per editor toolbar, on by default. Line gutters keep one row per
+// logical line, so their rows are resized to match each line's wrapped height.
+(() => {
+  const gutterIDs = { "policy-source": "policy-test-gutter-content", "assertion-source": "assertion-result-lines" };
+  const gutterFor = (source) => document.getElementById(gutterIDs[source.id]) || source.closest(".config-source-editor")?.querySelector(".config-source-gutter");
+  const observed = new WeakSet();
+  const measured = new WeakMap();
+
+  function wrappedLineHeights(source) {
+    const width = source.clientWidth;
+    if (!width) return null;
+    const key = `${width}\u0000${source.value}`;
+    const cached = measured.get(source);
+    if (cached?.key === key) return cached.heights;
+    const style = getComputedStyle(source);
+    const mirror = document.createElement("div");
+    Object.assign(mirror.style, {
+      position: "fixed", top: "0", left: "-10000px", visibility: "hidden", width: `${width}px`, boxSizing: "border-box",
+      paddingLeft: style.paddingLeft, paddingRight: style.paddingRight, font: style.font, letterSpacing: style.letterSpacing,
+      tabSize: style.tabSize, whiteSpace: "pre-wrap", overflowWrap: "break-word",
+    });
+    for (const line of source.value.split("\n")) {
+      const row = document.createElement("div");
+      row.textContent = line || " ";
+      mirror.append(row);
+    }
+    document.body.append(mirror);
+    const heights = [...mirror.children].map((row) => row.getBoundingClientRect().height);
+    mirror.remove();
+    measured.set(source, { key, heights });
+    return heights;
+  }
+
+  function sizeGutter(source) {
+    const gutter = gutterFor(source);
+    if (!gutter) return;
+    if (!observed.has(gutter)) {
+      observed.add(gutter);
+      new MutationObserver(() => sizeGutter(source)).observe(gutter, { childList: true });
+    }
+    const heights = source.wrap === "off" ? null : wrappedLineHeights(source);
+    gutter.classList.toggle("editor-gutter-wrapped", Boolean(heights));
+    [...gutter.children].forEach((row, index) => {
+      const height = heights?.[index];
+      row.style.height = height ? `${height}px` : "";
+    });
+  }
+
+  function apply(source, wrapped) {
+    source.wrap = wrapped ? "soft" : "off";
+    source.dataset.wordWrap = String(wrapped);
+    const surface = source.parentElement;
+    surface.classList.toggle("editor-word-wrap", wrapped);
+    surface.style.setProperty("--editor-scrollbar-width", `${Math.max(0, source.offsetWidth - source.clientWidth - (parseFloat(getComputedStyle(source).borderLeftWidth) || 0) - (parseFloat(getComputedStyle(source).borderRightWidth) || 0))}px`);
+    sizeGutter(source);
+    source.dispatchEvent(new Event("scroll"));
+  }
+
+  for (const host of document.querySelectorAll("[data-editor-search-target]")) {
+    const sources = host.dataset.editorSearchTarget.split(",").map((id) => document.getElementById(id)).filter(Boolean);
+    if (!sources.length) continue;
+    const storageKey = `zpr.editor-word-wrap.${host.dataset.editorSearchTarget}`;
+    const label = document.createElement("label");
+    label.className = "editor-wrap-toggle";
+    label.title = "Wrap long lines to the editor width";
+    label.innerHTML = `<input type="checkbox" data-word-wrap> Word wrap`;
+    const checkbox = label.querySelector("input");
+    let stored = null;
+    try { stored = localStorage.getItem(storageKey); } catch { /* storage unavailable */ }
+    checkbox.checked = stored !== "false";
+    host.before(label);
+    const applyAll = () => { for (const source of sources) apply(source, checkbox.checked); };
+    checkbox.addEventListener("change", () => {
+      try { localStorage.setItem(storageKey, String(checkbox.checked)); } catch { /* storage unavailable */ }
+      applyAll();
+    });
+    const resize = new ResizeObserver((entries) => { for (const entry of entries) apply(entry.target, checkbox.checked); });
+    for (const source of sources) {
+      source.addEventListener("input", () => apply(source, checkbox.checked));
+      resize.observe(source);
+    }
+    applyAll();
+  }
+})();

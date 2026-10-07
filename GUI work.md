@@ -18,7 +18,7 @@
 
 ### All text editors
 - [x] Add search and replace functionality. Put the buttons on the right side before History. Shared local controls cover policy/assertion, ZPR Config, scenario JSON, and directory LDIF source editors.
-- [ ] Add AI Assistant
+- [x] Add AI Assistant
 - [x] Make Search and Replace one button/ Clicking the button should show or hide the dialog. Button should change colors while in use.
 - [x] Remove "Enter text..." in Search and Replace.
 - [x] Add a checkbox to Search and Replace to enable/disable regular expressions
@@ -27,6 +27,14 @@
 - [x] Rename Search & Replace to Find & Replace
 - [x] Find & Replace button doesn't change color.
 - [x] Make the Find & Replace dialog mimic Microsoft Word but with support for regular expressions (if checked).
+- [x] Word wrap should be a check box, and default to enabled
+- [ ] Analyze and Format should be next to File...
+- [ ] Analyze should use the same colors, fonts, etc. as the Policy editor.
+- [ ] Change "Word wrap" to "Wrap".
+
+### All log viewers
+- [ ] Word wrap checkbox and default to enabled.
+- [ ] Change "Word wrap" to "Wrap"
 
 ## Control Room
 
@@ -59,6 +67,9 @@
 - [x] When the user interacts through panning and zooming, turn off Auto-fit.
 - [x] Make right-click on a component should have the same behavior as right-clicking on its number.
 - [x] Clicking on the component legend items should highlight what has been clicked on.
+- [x] No obvious way to clear highlighted areas or dimmed components.(or the component) Closing the info dialog on the right doesn't always remove the highlight.
+- [x] This gets worse with the click-on legend.
+- [ ] The right-click (and legend) behavior should simply highlight, no dimming of the other stuff.
 
 ### Navigation
 - [x] Keep Map as the main view and group Adapters, Actors, Services, Visas, Denials, and DNS under horizontal Status tabs with counts.
@@ -76,6 +87,9 @@
 - [x] Standardize ingestion on OpenTelemetry through a ZPR observability trusted service. Put a provider-neutral catalog/query contract behind Control-Service; OpenObserve is the initial replaceable backend, not a UI/API dependency.
 - [x] Show source identity/type, last update, stale/unavailable states, bounded searchable logs, and service stats. Keep credentials and provider queries server-side; do not depend on Simulator.
 - [x] Test nodes and each configured service class, unavailable/stale sources, redaction/size limits, and Control Room behavior with Simulator unavailable.
+- [x] Put "Monitoring" as a header for the Map, Status... area.
+- [x] Add another separator below ZPR Config named "Provisioning"
+- [x] Add the new provisioner to the nav and call it "Adapters"
 
 ### Security review
 - [x] Remove the investigation-leads read-only heading and redundant baseline/dismissal explanations.
@@ -185,4 +199,22 @@ Running" orange should be a non-indicated color like blue.
 
 ## Provisioning
 
-Machine/adapter enrollment is tracked in [Provisioning plan](./Provisioning%20plan.md).
+Machine/adapter enrollment is tracked in [Provisioning plan](../Provisioning%20plan.md).
+
+- [x] Add a Control Room invitation worksheet, local review, delivery/expiry
+  explanations, and enrollment help under Provisioning > Adapters.
+- [x] Keep the worksheet memory-only, with explicit unsaved/unvalidated
+  labels and no invitation creation, email, or Simulator calls.
+- [ ] Connect approved catalogs and invitation/review actions only after HTTPS
+  named-user sign-in and independently verified Control-Service delegation.
+- [x] Add opt-in direct HTTPS OIDC sign-in, named subject/scope display, explicit
+  unavailable/expired states, and CSRF logout without unlocking enrollment.
+- [x] Add opt-in signed named-user delegation to the private enrollment API,
+  independent backend grants, persistent replay protection, and named audit.
+- [x] Load authorized catalogs and organization-scoped paginated registry
+  list/fresh details without enabling mutations. Clear on navigation/session loss,
+  discard stale responses, and distinguish unavailable from empty.
+- [x] Verify read-only registry access through actual HTTPS OIDC login, mTLS
+  delegation, SQLite, and logout in desktop/tablet browsers with Simulator unavailable.
+- [ ] Wire worksheet selections to approved catalogs, invitation creation/code
+  handling, and revision/key-bound review with real-service mutation browser tests.

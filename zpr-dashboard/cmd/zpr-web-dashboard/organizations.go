@@ -574,7 +574,7 @@ func validLDAPAttributeName(value string) bool {
 	return true
 }
 
-func handleSimulatorOrganizations(w http.ResponseWriter, _ *http.Request) {
+func handleSimulatorOrganizations(w http.ResponseWriter, r *http.Request) {
 	manifest, err := readSimulatorManifest()
 	if err != nil {
 		http.Error(w, "simulation manifest unavailable", http.StatusServiceUnavailable)
@@ -585,9 +585,31 @@ func handleSimulatorOrganizations(w http.ResponseWriter, _ *http.Request) {
 		http.Error(w, "organization catalog unavailable: "+err.Error(), http.StatusServiceUnavailable)
 		return
 	}
+	activeID := manifest.OrganizationID
+	var activation any = activeOrganizationActivation.snapshot()
+	if identity, restricted := simulatorOperatorIdentity(r.Context()); restricted {
+		organizations, activeID, activation = filterSimulatorOrganizationCatalog(organizations, activeID, activation, identity.Organizations)
+	}
 	writeSimulatorJSON(w, map[string]any{
-		"active_id":     manifest.OrganizationID,
+		"active_id":     activeID,
 		"organizations": organizations,
-		"activation":    activeOrganizationActivation.snapshot(),
+		"activation":    activation,
 	})
+}
+
+func filterSimulatorOrganizationCatalog(organizations []simulatorOrganization, activeID string, activation any, allowedIDs []string) ([]simulatorOrganization, string, any) {
+	allowed := make(map[string]bool, len(allowedIDs))
+	for _, organizationID := range allowedIDs {
+		allowed[organizationID] = true
+	}
+	filtered := make([]simulatorOrganization, 0, len(organizations))
+	for _, organization := range organizations {
+		if allowed[organization.ID] {
+			filtered = append(filtered, organization)
+		}
+	}
+	if !allowed[activeID] {
+		return filtered, "", nil
+	}
+	return filtered, activeID, activation
 }

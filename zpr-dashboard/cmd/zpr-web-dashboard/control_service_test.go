@@ -11,6 +11,8 @@ import (
 	"os"
 	"path/filepath"
 	"testing"
+
+	"neboagency.com/zpr-dashborad/internal/operatordelegation"
 )
 
 func TestControlRoomProxiesToControlServiceOverMutualTLS(t *testing.T) {
@@ -41,7 +43,7 @@ func TestControlRoomProxiesToControlServiceOverMutualTLS(t *testing.T) {
 		observed <- observedRequest{
 			path:                  r.URL.Path,
 			clientCertificateSeen: r.TLS != nil && len(r.TLS.PeerCertificates) > 0,
-			browserHeadersSeen:    r.Header.Get("Origin") != "" || r.Header.Get("Cookie") != "" || r.Header.Get("Authorization") != "" || r.Header.Get("X-Forwarded-Host") != "" || r.Header.Get("X-Forwarded-For") != "",
+			browserHeadersSeen:    r.Header.Get("Origin") != "" || r.Header.Get("Cookie") != "" || r.Header.Get("Authorization") != "" || r.Header.Get("X-ZPR-CSRF") != "" || r.Header.Get(operatordelegation.Header) != "" || r.Header.Get("X-Forwarded-Host") != "" || r.Header.Get("X-Forwarded-For") != "",
 		}
 		w.Header().Set("Content-Type", "application/json")
 		_, _ = w.Write([]byte(`{"snapshot":true}`))
@@ -87,6 +89,8 @@ func TestControlRoomProxiesToControlServiceOverMutualTLS(t *testing.T) {
 	request.Header.Set("Origin", "http://127.0.0.1:8787")
 	request.Header.Set("Cookie", "session=browser")
 	request.Header.Set("Authorization", "browser-session")
+	request.Header.Set("X-ZPR-CSRF", "browser-csrf-proof")
+	request.Header.Set(operatordelegation.Header, "forged-browser-assertion")
 	request.Header.Set("X-Forwarded-Host", "attacker.example")
 	request.Header.Set("X-Forwarded-For", "192.0.2.5")
 	response := httptest.NewRecorder()

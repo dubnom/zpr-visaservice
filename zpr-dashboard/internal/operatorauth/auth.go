@@ -3,8 +3,11 @@ package operatorauth
 import (
 	"context"
 	"crypto/rand"
+	"crypto/sha256"
 	"crypto/subtle"
 	"crypto/tls"
+	"crypto/x509"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"log"
@@ -20,14 +23,24 @@ import (
 	"golang.org/x/oauth2"
 )
 
-const cookieName = "__Host-zpr-operator"
-const flowCookie = "__Host-zpr-login"
-
 type Grant struct {
 	Issuer        string   `json:"issuer"`
 	Subject       string   `json:"subject"`
 	Organizations []string `json:"organizations"`
 	Permissions   []string `json:"permissions"`
+}
+
+func ValidPermission(permission string) bool {
+	return slices.Contains([]string{
+		"read", "create", "cancel", "approve", "reject",
+		"monitor.read", "policy.read", "policy.analyze", "policy.edit",
+		"gateway.read", "gateway.analyze", "gateway.edit",
+		"simulator.read", "simulator.control",
+		"organization.read", "organization.activate", "organization.restore",
+		"scenario.read", "scenario.analyze", "scenario.edit", "scenario.publish", "scenario.archive", "scenario.run", "scenario.cancel",
+		"directory.read", "directory.edit", "directory.publish",
+		"device.lifecycle", "device.session", "device.workloads",
+	}, permission)
 }
 
 type Config struct {
@@ -81,8 +94,8 @@ func (c Config) Validate() error {
 			}
 		}
 		for _, permission := range grant.Permissions {
-			if !slices.Contains([]string{"read", "create", "cancel", "approve", "reject"}, permission) {
-				return errors.New("unknown operator enrollment permission")
+			if !ValidPermission(permission) {
+				return errors.New("unknown operator permission")
 			}
 		}
 	}
@@ -112,6 +125,8 @@ type Identity struct {
 type Auth struct {
 	config   Config
 	origin   string
+	cookie   string
+	flow     string
 	oauth    oauth2.Config
 	verifier *oidc.IDTokenVerifier
 	client   *http.Client
@@ -122,8 +137,24 @@ type Auth struct {
 }
 
 func New(ctx context.Context, config Config, clientSecret string) (*Auth, error) {
+	return newWithRoots(ctx, config, clientSecret, nil)
+}
+
+// NewWithCertificateAuthorities adds independently configured operator IdP roots.
+func NewWithCertificateAuthorities(ctx context.Context, config Config, clientSecret string, caPEM []byte) (*Auth, error) {
+	roots, err := x509.SystemCertPool()
+	if err != nil {
+		return nil, errors.New("operator OIDC system trust store is unavailable")
+	}
+	if len(caPEM) == 0 || !roots.AppendCertsFromPEM(caPEM) {
+		return nil, errors.New("operator OIDC CA file must contain trusted certificates")
+	}
+	return newWithRoots(ctx, config, clientSecret, roots)
+}
+
+func newWithRoots(ctx context.Context, config Config, clientSecret string, roots *x509.CertPool) (*Auth, error) {
 	transport := &http.Transport{
-		TLSClientConfig:     &tls.Config{MinVersion: tls.VersionTLS12},
+		TLSClientConfig:     &tls.Config{MinVersion: tls.VersionTLS12, RootCAs: roots},
 		DialContext:         (&net.Dialer{Timeout: 5 * time.Second}).DialContext,
 		TLSHandshakeTimeout: 5 * time.Second, ResponseHeaderTimeout: 10 * time.Second,
 		MaxResponseHeaderBytes: 16384, IdleConnTimeout: 30 * time.Second,
@@ -163,7 +194,10 @@ func newAuth(ctx context.Context, config Config, clientSecret string, client *ht
 		config.Grants[i].Permissions = slices.Clone(config.Grants[i].Permissions)
 	}
 	callback, _ := url.Parse(config.RedirectURL)
+	namespace := sha256.Sum256([]byte(config.Issuer + "\x00" + config.ClientID + "\x00" + config.RedirectURL))
+	suffix := hex.EncodeToString(namespace[:])
 	return &Auth{config: config, origin: callback.Scheme + "://" + callback.Host,
+		cookie: "__Host-zpr-operator-" + suffix, flow: "__Host-zpr-login-" + suffix,
 		oauth: oauth2.Config{ClientID: config.ClientID, ClientSecret: clientSecret, RedirectURL: config.RedirectURL,
 			Endpoint: endpoint, Scopes: []string{oidc.ScopeOpenID}},
 		verifier: provider.Verifier(&oidc.Config{ClientID: config.ClientID, SupportedSigningAlgs: []string{oidc.RS256, oidc.ES256}}),
@@ -239,7 +273,7 @@ func (a *Auth) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		flow := pendingLogin{browser: rand.Text(), nonce: rand.Text(), verifier: oauth2.GenerateVerifier(), expires: now.Add(5 * time.Minute)}
 		a.pending[state] = flow
 		a.mu.Unlock()
-		setCookie(w, flowCookie, flow.browser, 300)
+		setCookie(w, a.flow, flow.browser, 300)
 		http.Redirect(w, r, a.oauth.AuthCodeURL(state, oidc.Nonce(flow.nonce), oauth2.S256ChallengeOption(flow.verifier)), http.StatusSeeOther)
 	case "/auth/operator/callback":
 		if r.Method != http.MethodGet {
@@ -258,7 +292,7 @@ func (a *Auth) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			deny(w, http.StatusBadRequest)
 			return
 		}
-		browser, err := r.Cookie(flowCookie)
+		browser, err := r.Cookie(a.flow)
 		a.mu.Lock()
 		a.cleanup(a.now())
 		flow, ok := a.pending[state]
@@ -272,7 +306,7 @@ func (a *Auth) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			deny(w, http.StatusForbidden)
 			return
 		}
-		setCookie(w, flowCookie, "", -1)
+		setCookie(w, a.flow, "", -1)
 		ctx, cancel := context.WithTimeout(oidc.ClientContext(r.Context(), a.client), 20*time.Second)
 		defer cancel()
 		token, err := a.oauth.Exchange(ctx, code, oauth2.VerifierOption(flow.verifier))
@@ -326,13 +360,13 @@ func (a *Auth) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			deny(w, http.StatusServiceUnavailable)
 			return
 		}
-		if old, err := r.Cookie(cookieName); err == nil {
+		if old, err := r.Cookie(a.cookie); err == nil {
 			delete(a.sessions, old.Value)
 		}
 		key := rand.Text()
 		a.sessions[key] = session{grant: *grant, csrf: rand.Text(), expires: expiry}
 		a.mu.Unlock()
-		setCookie(w, cookieName, key, int(time.Until(expiry).Seconds()))
+		setCookie(w, a.cookie, key, int(time.Until(expiry).Seconds()))
 		http.Redirect(w, r, "/", http.StatusSeeOther)
 	case "/auth/operator/logout":
 		if r.Method != http.MethodPost || r.URL.RawQuery != "" {
@@ -343,11 +377,11 @@ func (a *Auth) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			deny(w, http.StatusForbidden)
 			return
 		}
-		cookie, _ := r.Cookie(cookieName)
+		cookie, _ := r.Cookie(a.cookie)
 		a.mu.Lock()
 		delete(a.sessions, cookie.Value)
 		a.mu.Unlock()
-		setCookie(w, cookieName, "", -1)
+		setCookie(w, a.cookie, "", -1)
 		w.WriteHeader(http.StatusNoContent)
 	default:
 		http.NotFound(w, r)
@@ -361,7 +395,7 @@ func (a *Auth) current(r *http.Request) (session, error) {
 		(r.Header.Get("Sec-Fetch-Site") != "" && r.Header.Get("Sec-Fetch-Site") != "same-origin" && r.Header.Get("Sec-Fetch-Site") != "none") {
 		return session{}, errors.New("untrusted operator origin")
 	}
-	cookie, err := r.Cookie(cookieName)
+	cookie, err := r.Cookie(a.cookie)
 	if err != nil {
 		return session{}, errors.New("operator session required")
 	}

@@ -1,0 +1,38 @@
+.provisioning-panel { max-width: 1120px; }
+.provisioning-toolbar, .provisioning-actions { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 12px; }
+.operator-login { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
+.operator-login [hidden] { display: none; }
+.operator-login form { margin: 0; }
+.operator-login [role="status"] { max-width: 180px; overflow-wrap: anywhere; font: 10px var(--mono); }
+.provisioning-actions .button:disabled { opacity: .48; cursor: not-allowed; }
+.provisioning-notice { padding: 12px; border-left: 3px solid var(--orange, #c96932); background: #fff0e5; }
+.provisioning-status[data-state="available"] { border-left-color: #84938a; }
+.provisioning-workspace { display: grid; grid-template-columns: minmax(0, 1.3fr) minmax(0, 1fr); gap: 16px; }
+.provisioning-card { min-width: 0; padding: 16px; border: 1px solid var(--line); background: var(--panel); }
+.provisioning-fields { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; margin: 16px 0; }
+.provisioning-fields label { display: grid; gap: 6px; color: var(--ink); font-size: 12px; }
+.provisioning-fields input { width: 100%; min-width: 0; padding: 8px; border: 1px solid var(--line); background: white; color: var(--ink); font: 12px var(--sans); }
+.provisioning-wide { grid-column: 1 / -1; }
+.provisioning-steps { margin: 12px 0 0; padding-left: 22px; }
+.provisioning-steps li { padding-left: 4px; margin-bottom: 12px; }
+.provisioning-steps strong { font-size: 12px; }
+.provisioning-queue { margin-top: 16px; }
+.provisioning-queue select { max-width: 100%; padding: 8px; margin: 8px; border: 1px solid var(--line); background: white; color: var(--ink); }
+.provisioning-table-scroll { overflow-x: auto; }
+.provisioning-queue table { width: 100%; border-collapse: collapse; font-size: 12px; }
+.provisioning-queue th, .provisioning-queue td { text-align: left; padding: 10px; border-bottom: 1px solid var(--line); overflow-wrap: anywhere; }
+.provisioning-queue td:first-child, .provisioning-queue td:nth-child(2) { max-width: 200px; }
+.provisioning-queue [hidden] { display: none; }
+.provisioning-review { width: min(620px, calc(100vw - 28px)); max-height: calc(100dvh - 28px); overflow: auto; padding: 18px; }
+.provisioning-review dl { display: grid; grid-template-columns: 140px minmax(0, 1fr); gap: 10px; font-size: 12px; }
+.provisioning-review dt { color: var(--muted); }
+.provisioning-review dd { margin: 0; white-space: pre-wrap; overflow-wrap: anywhere; }
+.provisioning-review p { font-size: 12px; line-height: 1.5; }
+@media (max-width: 1000px) {
+  .provisioning-workspace { grid-template-columns: minmax(0, 1fr); }
+}
+@media (max-width: 600px) {
+  .provisioning-fields { grid-template-columns: minmax(0, 1fr); }
+  .provisioning-review dl { grid-template-columns: minmax(0, 1fr); gap: 6px; }
+  .provisioning-review dd { margin-bottom: 8px; }
+}

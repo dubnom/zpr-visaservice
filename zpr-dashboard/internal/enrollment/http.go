@@ -104,12 +104,17 @@ func validNames(names []string) bool {
 }
 
 type adminAPI struct {
-	store  *Store
-	config Config
-	now    func() time.Time
+	store    *Store
+	config   Config
+	now      func() time.Time
+	operator bool
 }
 
 func NewAdminHandler(store *Store, config Config) (http.Handler, error) {
+	return newAdminHandler(store, config, false)
+}
+
+func newAdminHandler(store *Store, config Config, operator bool) (http.Handler, error) {
 	if store == nil {
 		return nil, errors.New("enrollment registry is required")
 	}
@@ -125,7 +130,7 @@ func NewAdminHandler(store *Store, config Config) (http.Handler, error) {
 	if err := json.Unmarshal(data, &snapshot); err != nil {
 		return nil, err
 	}
-	api := &adminAPI{store: store, config: snapshot, now: time.Now}
+	api := &adminAPI{store: store, config: snapshot, now: time.Now, operator: operator}
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET "+APIPrefix+"catalog", api.catalog)
 	mux.HandleFunc("GET "+APIPrefix+"invitations", api.list)
@@ -152,6 +157,10 @@ func NewAdminHandler(store *Store, config Config) (http.Handler, error) {
 }
 
 func (api *adminAPI) principal(r *http.Request) (Principal, bool) {
+	if api.operator {
+		principal, ok := r.Context().Value(operatorPrincipalKey{}).(Principal)
+		return principal, ok
+	}
 	if r.TLS == nil || len(r.TLS.PeerCertificates) == 0 || len(r.TLS.VerifiedChains) == 0 {
 		return Principal{}, false
 	}
@@ -179,7 +188,7 @@ func (api *adminAPI) authorize(w http.ResponseWriter, r *http.Request, organizat
 	principal, ok := api.principal(r)
 	if !ok || !slices.Contains(principal.Permissions, permission) ||
 		!slices.Contains(principal.Organizations, organization) {
-		log.Print("Enrollment administration denied: organization or permission outside certificate scope")
+		log.Print("Enrollment administration denied: organization or permission outside authorized scope")
 		apiError(w, http.StatusForbidden, "Enrollment permission or organization is not authorized.")
 		return Principal{}, false
 	}

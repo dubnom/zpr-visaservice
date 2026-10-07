@@ -10,12 +10,16 @@ import (
 	"strings"
 
 	"neboagency.com/zpr-dashborad/internal/enrollment"
+	"neboagency.com/zpr-dashborad/internal/operatordelegation"
 )
 
 func configuredEnrollmentHandler() (http.Handler, func() error, error) {
 	configPath := strings.TrimSpace(os.Getenv("ZPR_ENROLLMENT_CONFIG_FILE"))
 	databasePath := strings.TrimSpace(os.Getenv("ZPR_ENROLLMENT_DATABASE_FILE"))
 	if configPath == "" && databasePath == "" {
+		if strings.TrimSpace(os.Getenv("ZPR_OPERATOR_DELEGATION_TRUST_FILE")) != "" {
+			return nil, nil, errors.New("operator delegation requires configured enrollment registry/catalogs")
+		}
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			w.Header().Set("Cache-Control", "no-store")
 			writePolicyError(w, http.StatusServiceUnavailable, "Device enrollment administration is not configured.")
@@ -52,5 +56,13 @@ func configuredEnrollmentHandler() (http.Handler, func() error, error) {
 		_ = store.Close()
 		return nil, nil, err
 	}
-	return handler, store.Close, nil
+	operator, err := configuredOperatorEnrollment(store, config)
+	if err != nil {
+		_ = store.Close()
+		return nil, nil, err
+	}
+	mux := http.NewServeMux()
+	mux.Handle(enrollment.APIPrefix, handler)
+	mux.Handle(operatordelegation.Prefix, operator)
+	return mux, store.Close, nil
 }

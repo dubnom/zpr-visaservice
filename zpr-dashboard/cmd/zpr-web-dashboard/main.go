@@ -353,6 +353,16 @@ func securityHeaders(next http.Handler) http.Handler {
 	})
 }
 
+// revalidateStatic makes browsers check embedded UI files on every load. Embedded
+// files have no modification time, so without this a deployed build can stay hidden
+// behind a cached page that still references old asset versions.
+func revalidateStatic(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Cache-Control", "no-cache")
+		next.ServeHTTP(w, r)
+	})
+}
+
 func envOr(name, fallback string) string {
 	if value := os.Getenv(name); value != "" {
 		return value

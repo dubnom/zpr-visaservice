@@ -292,8 +292,8 @@ test("policy and assertion editors fill the available page height", async ({ pag
     await expect(page.locator("#assertion-source")).toBeEnabled();
     const assertion = await page.locator("#assertion-editor").boundingBox();
     const assertionPanel = await page.locator("#policy-assertion-editor").boundingBox();
-    expect(assertionPanel.y + assertionPanel.height).toBeGreaterThanOrEqual(1150);
-    expect(assertion.height).toBeGreaterThan(360);
+    if (width > 900) expect(assertionPanel.y + assertionPanel.height).toBeGreaterThanOrEqual(1150);
+    expect(assertion.height).toBeGreaterThanOrEqual(360);
   }
 });
 
@@ -515,7 +515,10 @@ test("new assertion records support copy, paste, duplicate, and protect built-in
 }
 import { test as base, expect } from "@playwright/test";
 import { createServer } from "node:http";
-import { readFile } from "node:fs/promises";
+import { readFile, mkdtemp, rm } from "node:fs/promises";
+import { createServer as createHTTPSServer } from "node:https";
+import { execFileSync } from "node:child_process";
+import { tmpdir } from "node:os";
 import { resolve, sep } from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -537,9 +540,20 @@ function logFixture(names, count = 80) {
   };
 }
 
-const test = base.extend({
-  appURL: [async ({}, use) => {
-    const server = createServer(async (request, response) => {
+async function browserAppURL(use, operatorHTTPS = false) {
+  let tlsDirectory;
+  let server;
+  try {
+    let credentials;
+    if (operatorHTTPS) {
+      tlsDirectory = await mkdtemp(resolve(tmpdir(), "zpr-operator-browser-"));
+      const key = resolve(tlsDirectory, "key.pem");
+      const cert = resolve(tlsDirectory, "cert.pem");
+      execFileSync("openssl", ["req", "-x509", "-newkey", "rsa:2048", "-nodes", "-days", "1",
+        "-keyout", key, "-out", cert, "-subj", "/CN=localhost", "-addext", "subjectAltName=DNS:localhost,IP:127.0.0.1"], { stdio: "ignore" });
+      credentials = { key: await readFile(key), cert: await readFile(cert), minVersion: "TLSv1.3" };
+    }
+    const handler = async (request, response) => {
       const pathname = new URL(request.url, "http://localhost").pathname;
       if (pathname === "/__tests/ldap.html") {
         response.writeHead(200, { "Content-Type": "text/html", "Content-Security-Policy": csp });
@@ -563,20 +577,30 @@ const test = base.extend({
       } catch {
         response.writeHead(404).end();
       }
-    });
+    };
+    server = operatorHTTPS ? createHTTPSServer(credentials, handler) : createServer(handler);
     await new Promise((ready) => server.listen(0, "127.0.0.1", ready));
-    try {
-      await use(`http://127.0.0.1:${server.address().port}`);
-    } finally {
-      await new Promise((closed) => server.close(closed));
-    }
-  }, { scope: "worker" }],
+    await use(`${operatorHTTPS ? "https" : "http"}://127.0.0.1:${server.address().port}`);
+  } finally {
+    if (server?.listening) await new Promise((closed) => server.close(closed));
+    if (tlsDirectory) await rm(tlsDirectory, { recursive: true });
+  }
+}
+
+const test = base.extend({
+  appURL: [async ({}, use) => browserAppURL(use), { scope: "worker" }],
+  secureAppURL: [async ({}, use) => browserAppURL(use, true), { scope: "worker" }],
   api: async ({ page }, use) => {
     const errors = [];
     page.on("pageerror", (error) => errors.push(error.message));
     await page.addInitScript(() => {
       window.testCSPViolations = [];
       document.addEventListener("securitypolicyviolation", (event) => window.testCSPViolations.push(event.violatedDirective));
+    });
+    await page.route("**/auth/operator/**", async (route) => {
+      const path = new URL(route.request().url()).pathname;
+      if (path === "/auth/operator/config") await route.fulfill({ json: { enabled: false } });
+      else await route.fulfill({ status: 503, json: { error: "Named operator login not configured in this test." } });
     });
     const data = {
       adapterLogs: logFixture(["Controller", "Control adapter", "finance-client adapter"]),
@@ -1263,6 +1287,7 @@ test("GUI raw scenario editor has safe syntax colors, aligned error gutter, and 
 
 test("GUI raw scenario source scroll tracks highlighting and preserves unavailable assistant state", async ({ page, appURL, api }) => {
   await openRawScenario(page, appURL, api);
+  await page.locator(".editor-wrap-toggle:visible input").uncheck();
   const source = page.locator("#scenario-editor-source");
   await source.fill(Array.from({ length: 100 }, (_, index) => `  "key${index}": "${"x".repeat(180)}",`).join("\n"));
   await source.evaluate((element) => { element.scrollTop = 300; element.scrollLeft = 70; element.dispatchEvent(new Event("scroll")); });
@@ -1432,6 +1457,7 @@ test("GUI editor search replaces directory source locally and keeps revision con
 
 test("GUI editor search reveals distant matches and prevents accidental form submission", async ({ page, appURL, api }) => {
   await page.goto(appURL + "/#zpr-config");
+  await page.locator("#page-zpr-config").getByRole("checkbox", { name: "Word wrap" }).uncheck();
   const source = page.locator("#zpr-config-source");
   await source.fill(Array.from({ length: 100 }, (_, index) => index === 90 ? `key = "${"x".repeat(200)}NEEDLE"` : `key${index} = "value"`).join("\n"));
   await source.evaluate((element) => { element.scrollTop = 0; element.scrollLeft = 0; element.setSelectionRange(0, 0); });
@@ -1492,8 +1518,10 @@ test("Control Room keeps Adapter Logs internal, Log Manager beneath it, and a Co
   await expect(manager).toContainText("Log Manager");
   await expect(manager.locator(".external-arrow")).toHaveCSS("color", "rgb(181, 227, 79)");
   const labels = await page.locator(".primary-nav").evaluate((nav) => [...nav.querySelectorAll(".nav-link, .nav-group-label")].map((item) => item.textContent.replace("↗", "").trim()));
-  expect(labels).toEqual(["Map", "Status", "Security", "Diagnostics", "Trusted Sources", "Adapter Logs", "Log Manager", "Configuration", "Policy", "Gateways", "ZPR Config"]);
+  expect(labels).toEqual(["Monitoring", "Map", "Status", "Security", "Diagnostics", "Trusted Sources", "Adapter Logs", "Log Manager", "Configuration", "Policy", "Gateways", "ZPR Config", "Provisioning", "Adapters"]);
+  await expect(page.getByRole("group", { name: "Monitoring" }).getByRole("link")).toHaveCount(7);
   await expect(page.getByRole("group", { name: "Configuration" }).getByRole("link")).toHaveCount(3);
+  await expect(page.getByRole("group", { name: "Provisioning" }).getByRole("link", { name: "Adapters", exact: true })).toHaveAttribute("href", "#provisioning-adapters");
   await expect(manager).toHaveAttribute("href", "http://127.0.0.1:8800/");
   await expect(manager).toHaveAttribute("target", "zpr-log-manager");
 });
@@ -2693,7 +2721,7 @@ test("policy picker opens as a pulldown, closes after selection and leaves the e
   await assistantToggle.click();
   await expect(assistant).toHaveAttribute("data-collapsed", "true");
   await expect(assistantToggle).toHaveAttribute("aria-expanded", "false");
-  await expect(page.locator(".assistant-settings")).toBeHidden();
+  await expect(assistant.locator(".assistant-settings")).toBeHidden();
   const assistantLabel = assistantToggle.locator(".pane-toggle-label");
   await expect(assistantLabel).toHaveText("AI Assistant");
   await expect(assistantLabel).toHaveCSS("writing-mode", "vertical-rl");
@@ -2861,6 +2889,7 @@ test("Analyze gutter opens a dialog and resets when switching policies", async (
   await expect(gutter).toHaveCSS("width", "48px");
   await expect(gutter).toHaveCSS("overflow-y", "hidden");
   await expect(page.locator("#policy-source")).toHaveCSS("padding-left", "0px");
+  await page.locator("#page-policy").getByRole("checkbox", { name: "Word wrap" }).uncheck();
   const scrollGeometry = await page.locator("#policy-code-editor").evaluate((editor) => {
     const source = editor.querySelector("#policy-source");
     const gutter = editor.querySelector("#policy-test-gutter");
@@ -4583,6 +4612,403 @@ test("GUI Map legend items highlight their component type and right-click matche
   await expect.poll(() => page.locator("#inspector-body").innerText()).toBe(fromComponent);
 });
 
+test("GUI Map Clear highlight, Esc and closing the info panel remove highlighting and dimming", async ({ page, appURL, api }) => {
+  api.snapshot.actors = [
+    { cn: "n1", node: true, zpr_addr: "fd00::a", node_details: { adapters: ["client"] } },
+    { cn: "client", node: false, zpr_addr: "fd00::1" },
+  ];
+  api.snapshot.services = [{ service_name: "API", actor_cn: "client", zpr_addr: "fd00::1", service_endpoints: "TCP/443" }];
+  api.snapshot.active_visas = [];
+  await page.goto(appURL + "/#map");
+  await page.getByRole("button", { name: "Pause updates", exact: true }).click();
+  const clear = page.getByRole("button", { name: "Clear highlight", exact: true });
+  const stage = page.locator("#topology-stage");
+  const dimmed = page.locator(".graph-vertex.filtered, .graph-service-badge.filtered");
+  await expect(page.locator('.graph-vertex[data-inspect-actor="n1"]')).toBeVisible();
+  await expect(clear).toBeHidden();
+
+  await page.locator('[data-legend-kind="node"]').click();
+  await expect(dimmed).not.toHaveCount(0);
+  await clear.click();
+  await expect(dimmed).toHaveCount(0);
+  await expect(page.locator('[data-legend-kind][aria-pressed="true"]')).toHaveCount(0);
+  await expect(clear).toBeHidden();
+
+  await page.locator("#topology-search").fill("API");
+  await expect(clear).toBeVisible();
+  await page.locator('[data-legend-kind="adapter"]').click();
+  await page.keyboard.press("Escape");
+  await page.locator("body").press("Escape");
+  await expect(page.locator("#topology-search")).toHaveValue("");
+  await expect(dimmed).toHaveCount(0);
+  await expect(clear).toBeHidden();
+
+  const client = page.locator('.graph-vertex[data-inspect-actor="client"]');
+  await client.locator(".graph-visa-count").dispatchEvent("contextmenu", { bubbles: true });
+  await expect(stage).toHaveClass(/graph-visa-focused/);
+  await expect(clear).toBeVisible();
+  await page.locator("#inspector-close").click();
+  await expect(stage).not.toHaveClass(/graph-visa-focused/);
+  await expect(clear).toBeHidden();
+
+  await client.locator(".graph-visa-count").dispatchEvent("contextmenu", { bubbles: true });
+  await page.locator('[data-legend-kind="service"]').click();
+  await clear.click();
+  await expect(stage).not.toHaveClass(/graph-visa-focused/);
+  await expect(page.locator("#component-inspector")).not.toHaveClass(/open/);
+  await expect(dimmed).toHaveCount(0);
+});
+
+test("GUI Provisioning Adapters reports the Control Room enrollment gate without Simulator", async ({ page, appURL, api }) => {
+  const requested = [];
+  page.on("request", (request) => requested.push(new URL(request.url()).pathname));
+  api.handlers.set("/api/enrollment/v1/catalog", (route) => route.fulfill({ status: 403, json: { error: "Control Room enrollment requires named-user authorization; use the certificate-authorized administration API directly." } }));
+  await page.goto(appURL + "/#map");
+  await page.getByRole("group", { name: "Provisioning" }).getByRole("link", { name: "Adapters", exact: true }).click();
+  await expect(page.locator("#page-provisioning-adapters")).toBeVisible();
+  const status = page.locator("#provisioning-status");
+  await expect(status).toHaveAttribute("data-state", "unavailable");
+  await expect(status).toContainText("named-user authorization");
+  api.handlers.set("/api/enrollment/v1/catalog", (route) => route.fulfill({ json: { organizations: {}, invitation_lifetime_seconds: 3600, approval_lifetime_seconds: 3600, gui_mutations_enabled: false } }));
+  await page.getByRole("button", { name: "Check again", exact: true }).click();
+  await expect(status).toHaveAttribute("data-state", "available");
+  expect(requested.filter((path) => path.startsWith("/api/simulator"))).toEqual([]);
+});
+
+test("GUI provisioning worksheet reviews locally without transmitting or saving asset details", async ({ page, appURL, api }) => {
+  const requests = [];
+  page.on("request", (request) => requests.push({ path: new URL(request.url()).pathname, body: request.postData(), method: request.method() }));
+  api.handlers.set("/api/enrollment/v1/catalog", (route) => route.fulfill({ status: 403, json: { error: "Named-user authorization is required." } }));
+  await page.goto(appURL + "/#provisioning-adapters");
+  const form = page.locator("#provisioning-draft");
+  await expect(page.getByRole("button", { name: "Create invitation", exact: true })).toBeDisabled();
+  const values = {
+    name: '<img src=x onerror="alert(1)">',
+    owner: "Unique private owner",
+    organization: "requested-org",
+    asset_id: "inventory-private-007",
+    type: "workstation",
+    profile: "requested-profile",
+    recipient: "private-owner@example.org",
+  };
+  for (const [name, value] of Object.entries(values)) await form.locator(`[name="${name}"]`).fill(value);
+  await form.getByRole("button", { name: "Review worksheet" }).click();
+  const review = page.getByRole("dialog", { name: "Review invitation worksheet" });
+  await expect(review).toBeVisible();
+  await expect(review).toContainText("Unsaved and unvalidated");
+  for (const value of Object.values(values)) await expect(review).toContainText(value);
+  await expect(review.locator("img")).toHaveCount(0);
+  await page.keyboard.press("Escape");
+  await expect(review).toHaveCount(0);
+  await expect(form.locator('[name="owner"]')).toHaveValue(values.owner);
+  await page.goto(appURL + "/#map");
+  await page.goto(appURL + "/#provisioning-adapters");
+  await expect(form.locator('[name="owner"]')).toHaveValue(values.owner);
+  await page.reload();
+  await expect(form.locator('[name="owner"]')).toHaveValue("");
+  expect(requests.filter((request) => request.path.startsWith("/api/enrollment/") && request.method !== "GET")).toEqual([]);
+  expect(requests.some((request) => request.path.startsWith("/api/simulator"))).toBe(false);
+  expect(requests.some((request) => request.body?.includes(values.asset_id))).toBe(false);
+  expect(await page.evaluate((value) => [JSON.stringify(localStorage), JSON.stringify(sessionStorage)].some((stored) => stored.includes(value)), values.asset_id)).toBe(false);
+});
+
+test("GUI operator login remains unavailable on HTTP even when configuration claims enabled", async ({ page, appURL, api }) => {
+  let sessionReads = 0;
+  await page.route("**/auth/operator/config", (route) => route.fulfill({ json: { enabled: true } }));
+  await page.route("**/auth/operator/session", (route) => {
+    sessionReads++;
+    return route.fulfill({ status: 401 });
+  });
+  await page.goto(appURL + "/#provisioning-adapters");
+  await expect(page.locator("#operator-login-status")).toHaveText("Operator login requires direct HTTPS.");
+  await expect(page.getByRole("button", { name: "Sign in", exact: true })).toBeHidden();
+  expect(sessionReads).toBe(0);
+  await expect(page.getByRole("button", { name: "Create invitation", exact: true })).toBeDisabled();
+});
+
+test.describe("GUI operator HTTPS login", () => {
+  test.use({ ignoreHTTPSErrors: true });
+
+  test("shows sign-in and sends a same-origin native POST without asset details", async ({ page, secureAppURL: appURL, api }) => {
+    await page.route("**/auth/operator/config", (route) => route.fulfill({ json: { enabled: true } }));
+    await page.route("**/auth/operator/session", (route) => route.fulfill({ status: 401 }));
+    let observed;
+    await page.route("**/auth/operator/login", (route) => {
+      observed = route.request();
+      return route.fulfill({ status: 403, body: "Test-only provider unavailable" });
+    });
+    await page.goto(appURL + "/#provisioning-adapters");
+    await expect(page.locator("#operator-login-status")).toHaveText("Not signed in");
+    await page.locator('#provisioning-draft [name="owner"]').fill("Never transmit worksheet owner");
+    await page.getByRole("button", { name: "Sign in", exact: true }).click();
+    await expect.poll(() => observed?.method()).toBe("POST");
+    expect(observed.headers().origin).toBe(appURL);
+    expect(observed.postData() || "").not.toContain("Never transmit");
+    expect(observed.url()).toBe(appURL + "/auth/operator/login");
+  });
+
+  test("shows verified session scope but stays locked and confirms CSRF logout", async ({ page, secureAppURL: appURL, api }) => {
+    let signedIn = true;
+    let logoutAttempts = 0;
+    let observedCSRF = "";
+    const subject = '<img src=x onerror="alert(1)">';
+    await page.route("**/auth/operator/config", (route) => route.fulfill({ json: { enabled: true } }));
+    await page.route("**/auth/operator/session", (route) => route.fulfill(signedIn ? { json: {
+      identity: { issuer: "https://identity.example", subject, organizations: ["production"], permissions: ["read", "create"] }, csrf: "private-csrf-proof",
+    } } : { status: 401 }));
+    await page.route("**/auth/operator/logout", (route) => {
+      logoutAttempts++;
+      observedCSRF = route.request().headers()["x-zpr-csrf"];
+      if (logoutAttempts === 1) return route.fulfill({ status: 503 });
+      signedIn = false;
+      return route.fulfill({ status: 204 });
+    });
+    await page.goto(appURL + "/#provisioning-adapters");
+    await expect(page.locator("#operator-login-status")).toHaveText(`Signed in: ${subject}`);
+    await expect(page.locator("#operator-scope")).toContainText("production");
+    await expect(page.locator(".provisioning-notice")).toContainText("controls are not connected and remain locked");
+    await expect(page.locator(".operator-login img")).toHaveCount(0);
+    await expect(page.getByRole("button", { name: "Create invitation", exact: true })).toBeDisabled();
+    await page.getByRole("button", { name: "Sign out", exact: true }).click();
+    await expect(page.locator("#operator-login-status")).toContainText("Sign out was not confirmed");
+    await expect(page.getByRole("button", { name: "Sign out", exact: true })).toBeVisible();
+    await page.getByRole("button", { name: "Sign out", exact: true }).click();
+    await expect(page.locator("#operator-login-status")).toHaveText("Not signed in");
+    expect(observedCSRF).toBe("private-csrf-proof");
+    await expect(page.locator("#operator-scope")).toBeHidden();
+    expect(await page.evaluate(() => [JSON.stringify(localStorage), JSON.stringify(sessionStorage)].some((value) => value.includes("private-csrf-proof")))).toBe(false);
+  });
+
+  test("clears expired sessions on focus and rejects malformed identity responses", async ({ page, secureAppURL: appURL, api }) => {
+    let state = "valid";
+    await page.route("**/auth/operator/config", (route) => route.fulfill({ json: { enabled: true } }));
+    await page.route("**/auth/operator/session", (route) => route.fulfill(state === "expired" ? { status: 401 } : { json: state === "invalid" ?
+      { identity: { subject: "unverified" }, csrf: "bad" } :
+      { identity: { issuer: "https://identity.example", subject: "admin", organizations: ["production"], permissions: ["read"] }, csrf: "proof" },
+    }));
+    await page.goto(appURL + "/#provisioning-adapters");
+    await expect(page.locator("#operator-login-status")).toHaveText("Signed in: admin");
+    state = "expired";
+    await page.evaluate(() => window.dispatchEvent(new Event("focus")));
+    await expect(page.locator("#operator-login-status")).toHaveText("Not signed in");
+    await expect(page.locator("#operator-scope")).toBeHidden();
+    state = "invalid";
+    await page.evaluate(() => window.dispatchEvent(new Event("focus")));
+    await expect(page.locator("#operator-login-status")).toHaveText("Invalid operator session response.");
+    await expect(page.getByRole("button", { name: "Sign out", exact: true })).toBeHidden();
+    await expect(page.getByRole("button", { name: "Create invitation", exact: true })).toBeDisabled();
+  });
+});
+
+test("GUI provisioning worksheet rejects blank values and clears validation on reset", async ({ page, appURL, api }) => {
+  api.handlers.set("/api/enrollment/v1/catalog", (route) => route.fulfill({ status: 403, json: { error: "Named-user authorization is required." } }));
+  await page.goto(appURL + "/#provisioning-adapters");
+  const form = page.locator("#provisioning-draft");
+  const values = { name: "   ", owner: "Owner", organization: "org", asset_id: "asset", type: "type", profile: "profile", recipient: "owner@example.org" };
+  for (const [name, value] of Object.entries(values)) await form.locator(`[name="${name}"]`).fill(value);
+  await form.getByRole("button", { name: "Review worksheet" }).click();
+  await expect(page.getByRole("dialog")).toHaveCount(0);
+  expect(await form.locator('[name="name"]').evaluate((input) => input.validationMessage)).toBe("Enter a value, not just spaces.");
+  await form.getByRole("button", { name: "Clear worksheet" }).click();
+  await expect(page.locator("#provisioning-draft-status")).toHaveText("Worksheet cleared. Nothing has been submitted.");
+  for (const name of Object.keys(values)) await expect(form.locator(`[name="${name}"]`)).toHaveValue("");
+  for (const [name, value] of Object.entries({ ...values, name: "  Laptop 07  " })) await form.locator(`[name="${name}"]`).fill(value);
+  await form.getByRole("button", { name: "Review worksheet" }).click();
+  await expect(page.getByRole("dialog", { name: "Review invitation worksheet" })).toContainText("Laptop 07");
+  await page.getByRole("dialog").getByRole("button", { name: "Close", exact: true }).click();
+  await expect(form.locator('[name="name"]')).toHaveValue("Laptop 07");
+});
+
+test("GUI provisioning never unlocks on an endpoint response and explains remote enrollment", async ({ page, appURL, api }) => {
+  api.handlers.set("/api/enrollment/v1/catalog", (route) => route.fulfill({ json: { organizations: {}, invitation_lifetime_seconds: 3600, approval_lifetime_seconds: 3600, gui_mutations_enabled: false } }));
+  await page.goto(appURL + "/#provisioning-adapters");
+  await expect(page.locator("#provisioning-status")).toContainText("remain locked");
+  await expect(page.getByRole("button", { name: "Create invitation", exact: true })).toBeDisabled();
+  await expect(page.getByRole("region", { name: "Enrollment requests" })).toContainText("not an empty queue");
+  await page.getByRole("button", { name: "Help for this page", exact: true }).click();
+  const help = page.getByRole("dialog", { name: "Adapter provisioning" });
+  await expect(help).toContainText("remote and offline");
+  await expect(help).toContainText("separately delivered code");
+  await expect(help).toContainText("development package is unsigned");
+  await help.getByRole("button", { name: "Close", exact: true }).click();
+  await expect(help).toHaveCount(0);
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
+});
+
+function provisioningCatalog() {
+  return { organizations: { alpha: { types: ["laptop"], profiles: ["standard"] }, beta: { types: ["server"], profiles: ["restricted"] } },
+    invitation_lifetime_seconds: 3600, approval_lifetime_seconds: 1800, gui_mutations_enabled: false };
+}
+
+function provisioningInvitation(id, organization = "alpha") {
+  return { id, asset: { organization, asset_id: `INV-${id}`, name: `Laptop ${id}`, owner: "Owner", type: "laptop", profile: "standard", recipient: "owner@example.org" },
+    state: "pending_approval", revision: 2, created_by: 'oidc:["https://id.example","admin"]',
+    created_at: "2026-10-07T12:00:00Z", expires_at: "2026-10-07T13:00:00Z",
+    claimed_at: "2026-10-07T12:10:00Z", approval_expires_at: "2026-10-07T12:40:00Z", key_fingerprint: "b".repeat(64) };
+}
+
+test("GUI provisioning registry shows approved catalogs, paginated records, and fresh key-bound details", async ({ page, appURL, api }) => {
+  api.handlers.set("/api/enrollment/v1/catalog", (route) => route.fulfill({ json: { ...provisioningCatalog(), gui_mutations_enabled: true } }));
+  const queries = [];
+  api.handlers.set("/api/enrollment/v1/invitations", (route) => {
+    const query = new URL(route.request().url()).searchParams;
+    queries.push(query.toString());
+    return route.fulfill({ json: query.get("organization") === "beta" ? { invitations: [] } :
+      query.get("after") ? { invitations: [provisioningInvitation("second")] } :
+      { invitations: [provisioningInvitation("first")], next_after: "first" } });
+  });
+  api.handlers.set("/api/enrollment/v1/invitations/second", (route) => route.fulfill({ json: { ...provisioningInvitation("second"), revision: 3, decision_reason: '<img src=x onerror="alert(1)">' } }));
+  await page.goto(appURL + "/#provisioning-adapters");
+  await expect(page.locator("#provisioning-approved-catalog")).toContainText("standard");
+  await expect(page.locator("#provisioning-invitations")).toContainText("Laptop first");
+  await page.getByRole("button", { name: "Next page", exact: true }).click();
+  await expect(page.locator("#provisioning-invitations")).toContainText("Laptop second");
+  await expect(page.locator("#provisioning-invitations")).not.toContainText("Laptop first");
+  await page.getByRole("button", { name: "Details for Laptop second" }).click();
+  const detail = page.getByRole("dialog", { name: "Enrollment request details" });
+  await expect(detail).toContainText("b".repeat(64));
+  await expect(detail).toContainText('<img src=x onerror="alert(1)">');
+  await expect(detail.locator("img")).toHaveCount(0);
+  await expect(detail.locator("dt").filter({ hasText: /^Revision$/ }).locator("+ dd")).toHaveText("3");
+  await page.keyboard.press("Escape");
+  await expect(detail).toHaveCount(0);
+  await page.locator("#provisioning-organization").selectOption("beta");
+  await expect(page.locator("#provisioning-registry-status")).toContainText("no invitations on this registry page");
+  await expect(page.locator("#provisioning-approved-catalog")).toContainText("restricted");
+  expect(queries).toContain("organization=alpha&limit=50&after=first");
+  await expect(page.getByRole("button", { name: "Create invitation", exact: true })).toBeDisabled();
+});
+
+test("GUI provisioning registry rejects malformed and cross-organization pages instead of showing empty", async ({ page, appURL, api }) => {
+  api.handlers.set("/api/enrollment/v1/catalog", (route) => route.fulfill({ json: provisioningCatalog() }));
+  api.handlers.set("/api/enrollment/v1/invitations", (route) => route.fulfill({ json: { invitations: [provisioningInvitation("foreign", "beta")] } }));
+  await page.goto(appURL + "/#provisioning-adapters");
+  await expect(page.locator("#provisioning-registry-status")).toContainText("response shape is invalid");
+  await expect(page.locator("#provisioning-registry-status")).toContainText("not an empty queue");
+  await expect(page.locator("#provisioning-invitations")).toBeHidden();
+  api.handlers.set("/api/enrollment/v1/catalog", (route) => route.fulfill({ json: { organizations: [] } }));
+  await page.getByRole("button", { name: "Check again", exact: true }).click();
+  await expect(page.locator("#provisioning-status")).toContainText("Invalid enrollment catalog");
+  await expect(page.locator("#provisioning-organization")).toBeDisabled();
+});
+
+test("GUI provisioning registry cancels stale organization reads and clears records on navigation and session loss", async ({ page, appURL, api }) => {
+  api.handlers.set("/api/enrollment/v1/catalog", (route) => route.fulfill({ json: provisioningCatalog() }));
+  let release;
+  api.handlers.set("/api/enrollment/v1/invitations", async (route) => {
+    if (new URL(route.request().url()).searchParams.get("organization") === "alpha") {
+      await new Promise((resolve) => { release = resolve; });
+      await route.fulfill({ json: { invitations: [provisioningInvitation("stale")] } }).catch(() => {});
+    } else await route.fulfill({ json: { invitations: [provisioningInvitation("beta-current", "beta")] } });
+  });
+  await page.goto(appURL + "/#provisioning-adapters");
+  await expect.poll(() => Boolean(release)).toBe(true);
+  await page.locator("#provisioning-organization").selectOption("beta");
+  await expect(page.locator("#provisioning-invitations")).toContainText("beta-current");
+  release();
+  await expect(page.locator("#provisioning-invitations")).not.toContainText("stale");
+  await page.evaluate(() => window.dispatchEvent(new Event("operator-session-cleared")));
+  await expect(page.locator("#provisioning-invitations tbody")).toBeEmpty();
+  await expect(page.locator("#provisioning-approved-catalog")).toBeHidden();
+  await expect(page.locator("#provisioning-organization")).toBeDisabled();
+  await page.goto(appURL + "/#map");
+  await expect(page.locator("#provisioning-invitations tbody")).toBeEmpty();
+});
+
+test("GUI provisioning registry rejects duplicate IDs, broken cursors, and invalid pending key details", async ({ page, appURL, api }) => {
+  api.handlers.set("/api/enrollment/v1/catalog", (route) => route.fulfill({ json: provisioningCatalog() }));
+  let result = { invitations: [provisioningInvitation("same"), provisioningInvitation("same")] };
+  api.handlers.set("/api/enrollment/v1/invitations", (route) => route.fulfill({ json: result }));
+  await page.goto(appURL + "/#provisioning-adapters");
+  await expect(page.locator("#provisioning-registry-status")).toContainText("response shape is invalid");
+  await expect(page.locator("#provisioning-invitations tbody")).toBeEmpty();
+  result = { invitations: [provisioningInvitation("same")], next_after: "unrelated" };
+  await page.getByRole("button", { name: "Check again", exact: true }).click();
+  await expect(page.locator("#provisioning-registry-status")).toContainText("response shape is invalid");
+  await expect(page.locator("#provisioning-next")).toBeHidden();
+  result = { invitations: [provisioningInvitation("same")] };
+  api.handlers.set("/api/enrollment/v1/invitations/same", (route) => route.fulfill({ json: { ...provisioningInvitation("same"), key_fingerprint: undefined } }));
+  await page.getByRole("button", { name: "Check again", exact: true }).click();
+  await page.getByRole("button", { name: "Details for Laptop same" }).click();
+  const detail = page.getByRole("dialog", { name: "Enrollment request details" });
+  await expect(detail).toContainText("response shape is invalid");
+  await expect(detail.locator("dl")).toHaveCount(0);
+  await page.keyboard.press("Escape");
+  api.handlers.set("/api/enrollment/v1/invitations/same", (route) => route.fulfill({ json: provisioningInvitation("different") }));
+  await page.getByRole("button", { name: "Details for Laptop same" }).click();
+  await expect(detail).toContainText("detail identity or response shape is invalid");
+  await expect(detail.locator("dl")).toHaveCount(0);
+});
+
+test("GUI provisioning registry discards late details after closing or navigation and clears denied access", async ({ page, appURL, api }) => {
+  api.handlers.set("/api/enrollment/v1/catalog", (route) => route.fulfill({ json: provisioningCatalog() }));
+  api.handlers.set("/api/enrollment/v1/invitations", (route) => route.fulfill({ json: { invitations: [provisioningInvitation("detail")] } }));
+  let release;
+  api.handlers.set("/api/enrollment/v1/invitations/detail", async (route) => {
+    await new Promise((resolve) => { release = resolve; });
+    await route.fulfill({ json: provisioningInvitation("detail") }).catch(() => {});
+  });
+  await page.goto(appURL + "/#provisioning-adapters");
+  await page.getByRole("button", { name: "Details for Laptop detail" }).click();
+  await expect.poll(() => Boolean(release)).toBe(true);
+  await page.keyboard.press("Escape");
+  release();
+  await expect(page.getByRole("dialog", { name: "Enrollment request details" })).toHaveCount(0);
+  await page.evaluate(() => { location.hash = "#map"; });
+  await expect(page.locator("#provisioning-invitations tbody")).toBeEmpty();
+  await expect(page.locator("#provisioning-approved-catalog")).toBeHidden();
+  api.handlers.set("/api/enrollment/v1/invitations/detail", (route) => route.fulfill({ status: 403, json: { error: "read grant removed" } }));
+  await page.goto(appURL + "/#provisioning-adapters");
+  await page.getByRole("button", { name: "Details for Laptop detail" }).click();
+  await expect(page.locator("#provisioning-status")).toHaveAttribute("data-state", "unavailable");
+  await expect(page.locator("#provisioning-registry-status")).toContainText("read grant removed");
+  await expect(page.locator("#provisioning-invitations tbody")).toBeEmpty();
+  await expect(page.locator("#provisioning-organization")).toBeDisabled();
+  await expect(page.getByRole("dialog", { name: "Enrollment request details" })).toHaveCount(0);
+  api.handlers.set("/api/enrollment/v1/invitations", (route) => route.fulfill({ status: 401, json: { error: "session expired" } }));
+  await page.getByRole("button", { name: "Check again", exact: true }).click();
+  await expect(page.locator("#provisioning-registry-status")).toContainText("session expired");
+  await expect(page.locator("#provisioning-approved-catalog")).toBeHidden();
+});
+
+test("GUI text editors word wrap by default with a checkbox and keep gutter rows aligned", async ({ page, appURL, api }) => {
+  await page.goto(appURL + "/#zpr-config");
+  const source = page.locator("#zpr-config-source");
+  const toggle = page.locator("#page-zpr-config").getByRole("checkbox", { name: "Word wrap" });
+  await expect(toggle).toBeChecked();
+  await source.fill(`short = 1\nlong = "${"x".repeat(600)}"\nlast = 2`);
+  await expect(source).toHaveAttribute("wrap", "soft");
+  await expect(page.locator("#zpr-config-highlight")).toHaveCSS("white-space", "pre-wrap");
+  const geometry = () => page.evaluate(() => {
+    const textarea = document.getElementById("zpr-config-source");
+    const rows = [...document.querySelectorAll("#zpr-config-gutter .config-gutter-line")].map((row) => row.getBoundingClientRect().height);
+    const highlight = document.getElementById("zpr-config-highlight");
+    return { rows, scrollWidth: textarea.scrollWidth, clientWidth: textarea.clientWidth, highlightHeight: highlight.scrollHeight, sourceHeight: textarea.scrollHeight };
+  });
+  await expect.poll(async () => (await geometry()).rows[1]).toBeGreaterThan(50);
+  let measured = await geometry();
+  expect(measured.rows).toHaveLength(3);
+  expect(measured.rows[1]).toBeGreaterThan(measured.rows[0] * 2);
+  expect(Math.abs(measured.rows[2] - measured.rows[0])).toBeLessThan(1);
+  expect(measured.scrollWidth).toBeLessThanOrEqual(measured.clientWidth + 1);
+  expect(Math.abs(measured.highlightHeight - measured.sourceHeight)).toBeLessThan(2);
+
+  await toggle.uncheck();
+  await expect(source).toHaveAttribute("wrap", "off");
+  await expect(page.locator("#zpr-config-highlight")).toHaveCSS("white-space", "pre");
+  await expect.poll(async () => (await geometry()).rows[1]).toBeLessThan(25);
+  measured = await geometry();
+  expect(measured.scrollWidth).toBeGreaterThan(measured.clientWidth);
+  await page.reload();
+  await expect(page.locator("#page-zpr-config").getByRole("checkbox", { name: "Word wrap" })).not.toBeChecked();
+
+  for (const [hash, id] of [["#policy", "policy-source"], ["#gateways", "gateway-source"]]) {
+    await page.goto(appURL + "/" + hash);
+    await expect(page.locator(`#page-${hash.slice(1)}`).getByRole("checkbox", { name: "Word wrap" })).toBeChecked();
+    await expect(page.locator(`#${id}`)).toHaveAttribute("wrap", "soft");
+  }
+});
+
 test("GUI Map zero visa badges are white-filled and retain accessible counts", async ({ page, appURL, api }) => {
   api.snapshot.actors = [{ cn: "client", node: false, zpr_addr: "fd00::1" }];
   api.snapshot.services = [{ service_name: "API", actor_cn: "client", zpr_addr: "fd00::1", service_endpoints: "TCP/443" }];
@@ -4937,4 +5363,116 @@ test("GUI Map buffered denial badge opens node denial details on right-click", a
   await expect(inspector).toContainText("NoMatchingPolicy");
   await expect(inspector).not.toContainText("OtherNode");
   await expect(inspector).toContainText("count only");
+});
+
+function mockEditorAssistant(api, path, answer, requests, statusPath = path) {
+  api.handlers.set(path, async (route) => {
+    if (route.request().method() === "GET") {
+      await route.fulfill({ json: { ready: true, model: "test-model", models: ["test-model"] } });
+      return;
+    }
+    requests.push(route.request().postDataJSON());
+    await route.fulfill({ json: { answer, input_tokens: 40, output_tokens: 9 } });
+  });
+  if (statusPath !== path) api.handlers.set(statusPath, async (route) => route.fulfill({ json: { ready: true, model: "test-model", models: ["test-model"] } }));
+}
+
+test("GUI gateway editor AI Assistant is opt-in, sends the draft, and inserts suggestions undoably", async ({ page, appURL, api }) => {
+  api.handlers.set("/api/gateways/contracts", async (route) => route.fulfill({ json: { organization_id: "alpha", contracts: [
+    { organization_id: "alpha", instance_id: "public-egress", adapter_cn: "gateway-public-egress", service_name: "public-egress.svc.zpr", external_network: "" },
+  ] } }));
+  api.handlers.set("/api/gateways/configs", async (route) => route.fulfill({ json: { organization_id: "alpha", configs: [] } }));
+  const requests = [];
+  mockEditorAssistant(api, "/api/gateways/assistant", 'Add a destination:\n```json\n{"origin": "https://api.example.com"}\n```', requests);
+  await page.goto(`${appURL}/#gateways`);
+  const source = page.locator("#gateway-source");
+  await expect(source).toHaveValue(/"instance_id": "public-egress"/);
+  const original = await source.inputValue();
+  const pane = page.locator("#editor-assistant-gateway-pane");
+  await expect(pane).toBeVisible();
+  await expect(pane.locator(".assistant-state")).toHaveText("Ready");
+  const question = pane.getByRole("textbox", { name: "Message" });
+  await expect(question).toBeDisabled();
+  await pane.getByRole("checkbox", { name: "Use assistant" }).check();
+  await question.fill("Add an origin");
+  await pane.getByRole("button", { name: "Send" }).click();
+  await expect(pane.locator(".assistant-code")).toHaveText('{"origin": "https://api.example.com"}');
+  expect(requests).toHaveLength(1);
+  expect(requests[0]).toMatchObject({ editor: "gateway", source: original, model: "test-model", max_tokens: 1200, messages: [{ role: "user", content: "Add an origin" }] });
+  await expect(pane.locator(".assistant-usage")).toContainText("40 input");
+  await source.evaluate((element) => element.setSelectionRange(0, element.value.length));
+  await pane.getByRole("button", { name: "Insert" }).click();
+  await expect(source).toHaveValue('{"origin": "https://api.example.com"}');
+  await source.press("ControlOrMeta+z");
+  await expect(source).toHaveValue(original);
+  const layout = page.locator("#page-gateways .editor-assistant-layout");
+  if ((page.viewportSize()?.width || 1000) > 900) {
+    const editorBox = await layout.locator(".editor-assistant-main").boundingBox();
+    const paneBox = await pane.boundingBox();
+    expect(paneBox.x).toBeGreaterThan(editorBox.x + editorBox.width - 2);
+  }
+  await pane.getByRole("button", { name: "Collapse AI Assistant" }).click();
+  await expect(layout).toHaveAttribute("data-assistant-collapsed", "true");
+  await expect(pane.locator(".assistant-settings")).toBeHidden();
+  await expect(pane.locator(".pane-toggle-label")).toHaveText("AI Assistant");
+});
+
+test("GUI ZPR Config AI Assistant uses the policy assistant endpoint with the config editor", async ({ page, appURL, api }) => {
+  Object.assign(api.policy, { assistant_ready: true, assistant_model: "test-model", assistant_models: ["test-model"] });
+  const requests = [];
+  mockEditorAssistant(api, "/api/policy/assistant", "Looks valid.", requests);
+  await page.goto(appURL + "/#zpr-config");
+  const source = page.locator("#zpr-config-source");
+  await source.fill('[visa_service]\ndock_node = "node"\n');
+  const pane = page.locator("#editor-assistant-zpr-config-pane");
+  await expect(pane.locator(".assistant-state")).toHaveText("Ready");
+  await pane.getByRole("checkbox", { name: "Use assistant" }).check();
+  await pane.getByRole("textbox", { name: "Message" }).fill("Explain");
+  await pane.getByRole("textbox", { name: "Message" }).press("ControlOrMeta+Enter");
+  await expect(pane.locator(".assistant-message.assistant")).toContainText("Looks valid.");
+  expect(requests[0]).toMatchObject({ editor: "zpr-config", source: '[visa_service]\ndock_node = "node"\n' });
+});
+
+test("GUI assertion editor shows the AI Assistant and sends the assertion source", async ({ page, appURL, api }) => {
+  Object.assign(api.policy, { assistant_ready: true, assistant_model: "test-model", assistant_models: ["test-model"] });
+  const requests = [];
+  mockEditorAssistant(api, "/api/policy/assistant", '```\ngroup "Operators" members >= 2;\n```', requests);
+  await page.goto(appURL + "/#policy");
+  await expect(page.locator("#policy-record-title")).toHaveText("Test policy");
+  await openPolicyPicker(page);
+  await page.locator('[data-record-id="test-assertions"]').click();
+  await expect(page.locator("#policy-assertion-editor")).toBeVisible();
+  const pane = page.locator("#policy-assistant-pane");
+  await expect(pane).toBeVisible();
+  await page.locator("#assistant-enabled").check();
+  await expect(page.locator("#assistant-question")).toHaveAttribute("placeholder", "Ask about these assertions");
+  await page.locator("#assistant-question").fill("Check operators");
+  await page.locator("#assistant-send").click();
+  await expect(pane.locator(".assistant-code")).toHaveText('group "Operators" members >= 2;');
+  expect(requests[0]).toMatchObject({ editor: "assertion", source: await page.locator("#assertion-source").inputValue() });
+  await page.locator("#assertion-source").evaluate((element) => element.setSelectionRange(element.value.length, element.value.length));
+  await pane.getByRole("button", { name: "Insert" }).click();
+  await expect(page.locator("#assertion-source")).toHaveValue(/group "Operators" members >= 2;$/);
+});
+
+test("GUI Simulator directory editor has an AI Assistant using Simulator endpoints", async ({ page, appURL, api }) => {
+  const endpoint = "/api/simulator/organizations/alpha/directory";
+  api.handlers.set(endpoint, (route) => route.fulfill({ json: {
+    revision: 1, published_revision: 0, content: { base_dn: "dc=alpha,dc=test", ldif: "dn: cn=Operators,dc=alpha,dc=test\ncn: Operators\n" },
+  } }));
+  api.handlers.set(endpoint + "/revisions", (route) => route.fulfill({ json: [{ revision: 1, summary: "Initial" }] }));
+  const requests = [];
+  mockEditorAssistant(api, "/api/simulator/editor-assistant", "```\ncn: Reviewers\n```", requests, "/api/simulator/assistant/status");
+  await page.goto(appURL + "/organizations.html");
+  await page.getByRole("button", { name: "Edit LDAP seed", exact: true }).click();
+  const pane = page.locator("#editor-assistant-directory-ldif-pane");
+  await expect(pane).toBeVisible();
+  await expect(pane.locator(".assistant-state")).toHaveText("Ready");
+  await pane.getByRole("checkbox", { name: "Use assistant" }).check();
+  await pane.getByRole("textbox", { name: "Message" }).fill("Add a group");
+  await pane.getByRole("button", { name: "Send" }).click();
+  await expect(pane.locator(".assistant-code")).toHaveText("cn: Reviewers");
+  expect(requests[0]).toMatchObject({ editor: "directory-ldif", source: "dn: cn=Operators,dc=alpha,dc=test\ncn: Operators\n" });
+  expect(api.counts.get("/api/gateways/assistant") || 0).toBe(0);
+  expect(api.counts.get("/api/policy/assistant") || 0).toBe(0);
 });

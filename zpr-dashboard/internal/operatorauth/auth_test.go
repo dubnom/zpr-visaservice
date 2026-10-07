@@ -164,7 +164,7 @@ func TestOIDCLoginGrantsCSRFLogoutAndExpiry(t *testing.T) {
 	}
 	var cookie *http.Cookie
 	for _, item := range w.Result().Cookies() {
-		if item.Name == cookieName {
+		if item.Name == a.cookie {
 			cookie = item
 		}
 	}
@@ -235,12 +235,32 @@ func TestOIDCLoginGrantsCSRFLogoutAndExpiry(t *testing.T) {
 	a.now = func() time.Time { return time.Now().Add(11 * time.Minute) }
 	expired := authRequest("GET", "/api/enrollment/v1/catalog")
 	for _, item := range w.Result().Cookies() {
-		if item.Name == cookieName {
+		if item.Name == a.cookie {
 			expired.AddCookie(item)
 		}
 	}
 	if _, err := a.Authorize(expired, "production", "read"); err == nil {
 		t.Fatal("expired session accepted")
+	}
+}
+
+func TestOIDCApplicationsUseDistinctCookieNamespaces(t *testing.T) {
+	f := newProvider(t)
+	controlRoomConfig := testConfig(f)
+	simulatorConfig := testConfig(f)
+	simulatorConfig.RedirectURL = "https://room.example:8788/auth/operator/callback"
+	controlRoom, err := newAuth(context.Background(), controlRoomConfig, "test-secret", f.server.Client())
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer controlRoom.Close()
+	simulator, err := newAuth(context.Background(), simulatorConfig, "test-secret", f.server.Client())
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer simulator.Close()
+	if controlRoom.cookie == simulator.cookie || controlRoom.flow == simulator.flow {
+		t.Fatal("applications sharing a hostname must use distinct session and login-flow cookies")
 	}
 }
 

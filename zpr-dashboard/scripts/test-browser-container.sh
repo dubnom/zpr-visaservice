@@ -12,10 +12,11 @@ case "$(docker info --format '{{.Architecture}}')" in
     *) echo "Unsupported Docker architecture for enrollment browser tests" >&2; exit 1 ;;
 esac
 artifact_dir=$(mktemp -d)
-trap 'rm -f -- "$artifact_dir/setup" "$artifact_dir/enrollment-tests"; rmdir -- "$artifact_dir"' EXIT
+trap 'rm -f -- "$artifact_dir/setup" "$artifact_dir/enrollment-tests" "$artifact_dir/operator-tests"; rmdir -- "$artifact_dir"' EXIT
 trap 'exit 1' HUP INT TERM
 (cd "$dashboard_dir" && CGO_ENABLED=0 GOOS=linux GOARCH="$architecture" go build -o "$artifact_dir/setup" ./cmd/zpr-enrollment-setup)
 (cd "$dashboard_dir" && CGO_ENABLED=0 GOOS=linux GOARCH="$architecture" go test -c -o "$artifact_dir/enrollment-tests" ./internal/enrollment)
+(cd "$dashboard_dir" && CGO_ENABLED=0 GOOS=linux GOARCH="$architecture" go test -c -o "$artifact_dir/operator-tests" ./cmd/zpr-web-dashboard)
 chmod 0755 "$artifact_dir"
 
 docker run --rm \
@@ -24,6 +25,7 @@ docker run --rm \
     -e npm_config_cache=/tmp/npm-cache \
     -e ZPR_SETUP_TEST_BINARY=/enrollment-fixture/setup \
     -e ZPR_ENROLLMENT_TEST_BINARY=/enrollment-fixture/enrollment-tests \
+    -e ZPR_OPERATOR_TEST_BINARY=/enrollment-fixture/operator-tests \
     -v "$artifact_dir:/enrollment-fixture:ro" \
     -v "$dashboard_dir:/workspace" \
     -w /workspace \

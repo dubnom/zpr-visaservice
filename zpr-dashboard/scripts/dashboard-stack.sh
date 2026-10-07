@@ -249,6 +249,37 @@ start_simulator() {
     simulator_socket=$(docker_socket_path)
     organization_id=${SIMULATION_ORGANIZATION_ID:-$(jq -r '.organization_id // "northstar"' "$SIMULATION_MANIFEST")}
     simulator_proxy_ip=$(docker network inspect bridge --format '{{(index .IPAM.Config 0).Gateway}}')
+    simulator_operator_origin=${ZPR_SIMULATOR_OPERATOR_ORIGIN:-}
+    simulator_operator_trusted_peer=${ZPR_SIMULATOR_OPERATOR_TRUSTED_PEER_IP:-}
+    if [ -n "$simulator_operator_origin" ]; then
+        for simulator_operator_file in \
+            "${ZPR_SIMULATOR_OPERATOR_CERT_FILE:-}" \
+            "${ZPR_SIMULATOR_OPERATOR_KEY_FILE:-}" \
+            "${ZPR_SIMULATOR_OPERATOR_OIDC_CONFIG_FILE:-}" \
+            "${ZPR_SIMULATOR_OPERATOR_OIDC_SECRET_FILE:-}" \
+            "${ZPR_SIMULATOR_OPERATOR_TLS_CA_FILE:-}"; do
+            if [ -z "$simulator_operator_file" ]; then
+                echo "Simulator HTTPS requires certificate, key, OIDC config/secret, and TLS CA file paths" >&2
+                return 1
+            fi
+        done
+        if [ -z "$simulator_operator_trusted_peer" ]; then
+            simulator_operator_trusted_peer=$simulator_proxy_ip
+        fi
+        for simulator_operator_file in \
+            "$ZPR_SIMULATOR_OPERATOR_CERT_FILE" \
+            "$ZPR_SIMULATOR_OPERATOR_KEY_FILE" \
+            "$ZPR_SIMULATOR_OPERATOR_OIDC_CONFIG_FILE" \
+            "$ZPR_SIMULATOR_OPERATOR_OIDC_SECRET_FILE" \
+            "${ZPR_SIMULATOR_OPERATOR_OIDC_CA_FILE:-}"; do
+            if [ -n "$simulator_operator_file" ]; then
+                case "$simulator_operator_file" in
+                    "$RUNTIME_DIR"/*) ;;
+                    *) echo "Simulator operator files must be under $RUNTIME_DIR so the container can read them" >&2; return 1 ;;
+                esac
+            fi
+        done
+    fi
     docker run -d --name "$SIMULATOR_DOCKER_CONTAINER" \
         --label zpr.simulator=true \
         -v "$simulator_socket:/var/run/docker.sock" \
@@ -286,6 +317,13 @@ start_simulator() {
         -e SIMULATOR_CONTROL_LISTEN=0.0.0.0:8791 \
         -e SIMULATOR_CONTROL_ROOM_URL=http://127.0.0.1:8787 \
         -e SIMULATOR_CONTROL_ROOM_HOST=127.0.0.1:8787 \
+        -e ZPR_SIMULATOR_OPERATOR_ORIGIN="$simulator_operator_origin" \
+        -e ZPR_SIMULATOR_OPERATOR_CERT_FILE="${ZPR_SIMULATOR_OPERATOR_CERT_FILE:-}" \
+        -e ZPR_SIMULATOR_OPERATOR_KEY_FILE="${ZPR_SIMULATOR_OPERATOR_KEY_FILE:-}" \
+        -e ZPR_SIMULATOR_OPERATOR_OIDC_CONFIG_FILE="${ZPR_SIMULATOR_OPERATOR_OIDC_CONFIG_FILE:-}" \
+        -e ZPR_SIMULATOR_OPERATOR_OIDC_SECRET_FILE="${ZPR_SIMULATOR_OPERATOR_OIDC_SECRET_FILE:-}" \
+        -e ZPR_SIMULATOR_OPERATOR_OIDC_CA_FILE="${ZPR_SIMULATOR_OPERATOR_OIDC_CA_FILE:-}" \
+        -e ZPR_SIMULATOR_OPERATOR_TRUSTED_PEER_IP="$simulator_operator_trusted_peer" \
         -e ZPR_DIAGNOSTICS_USERNAME="${ZPR_DIAGNOSTICS_USERNAME:-}" \
         -e SIMULATOR_DOCKER_CONTAINER="$SIMULATOR_DOCKER_CONTAINER" \
         -e ZPR_DASHBOARD_CONTAINER_RUNTIME=1 \
@@ -295,7 +333,11 @@ start_simulator() {
         -e ZPR_CONTROL_ROOM_PROXY_IP="$simulator_proxy_ip" \
         -e ANTHROPIC_API_KEY \
         "$SIMULATOR_IMAGE" >/dev/null
-    wait_for_url http://127.0.0.1:8788/api/simulator/status simulator
+    if [ -n "$simulator_operator_origin" ]; then
+        wait_for_url "$simulator_operator_origin/auth/operator/config" simulator --cacert "$ZPR_SIMULATOR_OPERATOR_TLS_CA_FILE"
+    else
+        wait_for_url http://127.0.0.1:8788/api/simulator/status simulator
+    fi
     wait_for_url https://127.0.0.1:8791/internal/ping 'machine-control listener' \
         --cacert "$CONTROL_CA" \
         --cert "$MACHINE_CERT_DIR/machine-01/client.crt" \
