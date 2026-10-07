@@ -939,14 +939,382 @@ test("GUI LDAP keeps its tree during polling and navigation, but manual Refresh 
   expect([...api.counts.keys()].some((path) => path.startsWith("/api/simulator"))).toBe(false);
 });
 
-test("GUI ZPR Config shares editor layout, line numbers and modification indicator", async ({ page, appURL, api }) => {
+test("GUI ZPR Config shares editor controls and keeps an error-only gutter", async ({ page, appURL, api }) => {
   await page.goto(appURL + "/#zpr-config");
+  await expect(page.locator("#zpr-config-status")).toBeHidden();
   await expect(page.locator("#zpr-config-modified")).toBeHidden();
   await page.locator("#zpr-config-source").fill('[visa_service]\ndock_node = "node"\n');
-  await expect(page.locator("#zpr-config-gutter .config-gutter-line")).toHaveText(["1", "2", "3"]);
+  await expect(page.locator("#zpr-config-gutter .config-gutter-line")).toHaveText(["", "", ""]);
+  expect(await page.locator("#zpr-config-gutter .config-gutter-line").evaluateAll((rows) => rows.map((row) => row.dataset.line))).toEqual(["1", "2", "3"]);
   await expect(page.locator("#zpr-config-modified")).toBeVisible();
   await expect(page.locator("#page-zpr-config .policy-editor-tools")).toContainText("ZPR Config");
   await expect(page.locator("#page-zpr-config").getByRole("button", { name: /Browse|Refresh Attributes/ })).toHaveCount(0);
+  const styles = await page.evaluate(() => {
+    const properties = (selector) => {
+      const element = document.querySelector(selector);
+      const style = getComputedStyle(element);
+      return [style.backgroundColor, style.color, style.minHeight, style.fontSize, style.padding];
+    };
+    return {
+      policyFile: properties("#policy-files-toggle"),
+      configFile: properties(".config-file-menu > summary"),
+      policyAnalyze: properties("#policy-check"),
+      configAnalyze: properties("#zpr-config-validate"),
+    };
+  });
+  expect(styles.configFile).toEqual(styles.policyFile);
+  expect(styles.configAnalyze).toEqual(styles.policyAnalyze);
+});
+
+test("GUI editor search and replace is literal, case-aware, bounded, and updates config analysis", async ({ page, appURL, api }) => {
+  api.handlers.set("/api/policy/config/check", (route) => route.fulfill({ json: { valid: true, diagnostics: "Valid TOML" } }));
+  await page.goto(appURL + "/#zpr-config");
+  const source = page.locator("#zpr-config-source");
+  const tools = page.locator('[data-editor-search-target="zpr-config-source"]');
+  const query = tools.getByRole("textbox", { name: "Find text" });
+  await source.fill('name = "Alpha alpha a.b a.b"\n');
+  await page.locator("#zpr-config-validate").click();
+  await source.press("Control+f");
+  await query.fill("ALPHA");
+  await expect(tools.getByRole("status")).toHaveText("2 matches");
+  await tools.getByRole("checkbox", { name: "Match case" }).check();
+  await expect(tools.getByRole("status")).toHaveText("0 matches");
+  await tools.getByRole("checkbox", { name: "Match case" }).uncheck();
+  await tools.getByRole("button", { name: "Next", exact: true }).click();
+  await expect(tools.getByRole("status")).toContainText("Match 1 of 2");
+  await tools.getByRole("button", { name: "Previous" }).click();
+  await expect(tools.getByRole("status")).toContainText("Match 2 of 2");
+  await tools.getByRole("button", { name: "Replace", exact: true }).click();
+  await query.fill("a.b");
+  await expect(tools.getByRole("status")).toHaveText("2 matches");
+  await tools.getByRole("textbox", { name: "Replacement text" }).fill("$&");
+  await tools.getByRole("button", { name: "Replace all" }).click();
+  await expect(source).toHaveValue('name = "Alpha alpha $& $&"\n');
+  await expect(page.locator("#zpr-config-modified")).toBeVisible();
+  await expect(page.locator("#zpr-config-validate")).not.toHaveAttribute("data-analysis-state", "success");
+  await expect(tools.getByRole("status")).toContainText("Replaced 2 matches");
+  await source.evaluate((element) => { element.maxLength = element.value.length; });
+  await query.fill("$&");
+  await tools.getByRole("textbox", { name: "Replacement text" }).fill("longer");
+  await tools.getByRole("button", { name: "Replace all" }).click();
+  await expect(tools.getByRole("status")).toContainText("No changes made");
+  await expect(source).toHaveValue('name = "Alpha alpha $& $&"\n');
+  await query.press("Escape");
+  await expect(tools.getByRole("search")).toBeHidden();
+  await expect(source).toBeFocused();
+  expect([...api.counts.keys()].some((path) => path.startsWith("/api/simulator"))).toBe(false);
+});
+
+test("GUI editor search controls follow the policy or assertion source and precede History", async ({ page, appURL, api }) => {
+  await page.goto(appURL + "/#policy");
+  await openPolicyPicker(page);
+  await page.locator('[data-record-id="test-policy"]').click();
+  const tools = page.locator('[data-editor-search-target="policy-source,assertion-source"]');
+  await page.locator("#policy-source").fill('define One as user.\ndefine Two as user.\n');
+  await tools.getByRole("button", { name: "Replace", exact: true }).click();
+  await tools.getByRole("textbox", { name: "Find text" }).fill("user");
+  await tools.getByRole("textbox", { name: "Replacement text" }).fill("service");
+  await tools.getByRole("button", { name: "Replace match" }).click();
+  await expect(page.locator("#policy-source")).toHaveValue('define One as service.\ndefine Two as user.\n');
+  await tools.getByRole("button", { name: "Close", exact: true }).click();
+  await openPolicyPicker(page);
+  page.once("dialog", (dialog) => dialog.accept());
+  await page.locator('[data-record-id="test-assertions"]').click();
+  const assertion = page.locator("#assertion-source");
+  await expect(assertion).toBeVisible();
+  const policyBefore = await page.locator("#policy-source").inputValue();
+  await assertion.fill('group "Operators" members >= 2;\n');
+  await assertion.press("Control+h");
+  await tools.getByRole("textbox", { name: "Find text" }).fill("Operators");
+  await tools.getByRole("textbox", { name: "Replacement text" }).fill("Reviewers");
+  await tools.getByRole("button", { name: "Replace all" }).click();
+  await expect(assertion).toHaveValue('group "Reviewers" members >= 2;\n');
+  await expect(page.locator("#policy-modified-indicator")).toBeVisible();
+  await expect(page.locator("#policy-source")).toHaveValue(policyBefore);
+  expect(await tools.evaluate((element) => Boolean(element.compareDocumentPosition(document.getElementById("policy-history-menu")) & Node.DOCUMENT_POSITION_FOLLOWING))).toBe(true);
+});
+
+test("GUI editor search works in Simulator scenario JSON without saving or running", async ({ page, appURL, api }) => {
+  api.handlers.set("/api/simulator/scenarios", (route) => route.fulfill({ json: {
+    active_organization_id: "alpha", organization: { name: "Alpha Labs" }, scenarios: [], run: { state: "idle" }, max_machines: 12,
+  } }));
+  await page.goto(appURL + "/scenarios.html");
+  await expect(page.locator("#scenario-organization")).toHaveText("Alpha Labs");
+  await page.locator("#scenario-new").click();
+  const tools = page.locator('[data-editor-search-target="scenario-editor-source"]');
+  await tools.getByRole("button", { name: "Replace", exact: true }).click();
+  await expect(page.locator("#scenario-editor-advanced")).toHaveAttribute("open", "");
+  await tools.getByRole("textbox", { name: "Find text" }).fill("New scenario");
+  await tools.getByRole("textbox", { name: "Replacement text" }).fill("Search draft");
+  await tools.getByRole("button", { name: "Replace all" }).click();
+  expect(JSON.parse(await page.locator("#scenario-editor-source").inputValue()).name).toBe("Search draft");
+  await tools.getByRole("button", { name: "Close", exact: true }).click();
+  await page.locator("#scenario-editor-advanced > summary").click();
+  await expect(page.locator("#scenario-editor-name")).toHaveValue("Search draft");
+  expect(api.counts.get("/api/simulator/scenarios/run") || 0).toBe(0);
+});
+
+async function openRawScenario(page, appURL, api, assistantReady = false) {
+  api.handlers.set("/api/simulator/scenarios", (route) => route.fulfill({ json: {
+    active_organization_id: "alpha", organization: { name: "Alpha Labs" }, scenarios: [], run: { state: "idle" }, max_machines: 12,
+  } }));
+  api.handlers.set("/api/simulator/assistant/status", (route) => route.fulfill({ json: {
+    ready: assistantReady, model: "test-model", models: ["test-model"],
+  } }));
+  api.handlers.set("/api/simulator/organizations/alpha/scenario-check", (route) => {
+    const request = route.request().postDataJSON();
+    let scenario;
+    try { scenario = JSON.parse(request.source); } catch {
+      return route.fulfill({ status: 422, json: { valid: false, error: "Scenario must be valid JSON: invalid character", line: 3 } });
+    }
+    if (scenario.organization_id !== "alpha") return route.fulfill({ status: 422, json: { valid: false, error: "Scenario organization_id must match the selected organization." } });
+    return route.fulfill({ json: { valid: true, diagnostics: "Scenario JSON and definition valid. Nothing saved, published, or run." } });
+  });
+  await page.goto(appURL + "/scenarios.html");
+  await expect(page.locator("#scenario-organization")).toHaveText("Alpha Labs");
+  await page.locator("#scenario-new").click();
+  await page.locator("#scenario-editor-advanced > summary").click();
+  await expect(page.locator("#scenario-editor-source")).toBeVisible();
+}
+
+test("GUI raw scenario editor has safe syntax colors, aligned error gutter, and form round trips", async ({ page, appURL, api }) => {
+  await openRawScenario(page, appURL, api);
+  const source = page.locator("#scenario-editor-source");
+  const scenario = JSON.parse(await source.inputValue());
+  scenario.description = "<img src=x> JSON only";
+  scenario.parallel = true;
+  scenario.steps[0].id = "retained-step";
+  scenario.steps[0].after = [];
+  await source.fill(JSON.stringify(scenario));
+  await expect(page.locator(".scenario-builder-grid")).toBeHidden();
+  await expect(page.locator("#scenario-source-highlight .zpl-string").filter({ hasText: "<img src=x>" })).toHaveCSS("color", "rgb(215, 167, 207)");
+  await expect(page.locator("#scenario-source-highlight img")).toHaveCount(0);
+  await expect(page.locator("#scenario-source-highlight .zpl-attribute").first()).toHaveCSS("color", "rgb(184, 215, 139)");
+  await expect(page.locator("#scenario-source-gutter")).toHaveCSS("border-right-style", "solid");
+  await expect(page.locator(".scenario-source-tools .config-file-menu > summary")).toHaveCSS("color", "rgb(255, 255, 255)");
+  await expect(page.locator("#scenario-source-modified")).toBeVisible();
+  await page.locator("#scenario-source-analyze").click();
+  await expect(page.locator("#scenario-source-analyze")).toHaveAttribute("data-analysis-state", "success");
+  await expect(page.locator("#scenario-editor-status")).toContainText("Nothing saved, published, or run");
+  await page.locator("[data-source-format]").click();
+  await expect(source).toHaveValue(JSON.stringify(scenario, null, 2));
+  await expect(page.locator("#scenario-source-analyze")).not.toHaveAttribute("data-analysis-state", "success");
+  await page.locator("#scenario-editor-advanced > summary").click();
+  await expect(page.locator("#scenario-editor-description")).toHaveValue(scenario.description);
+  await page.locator("#scenario-editor-name").fill("Round trip");
+  await page.locator("#scenario-editor-advanced > summary").click();
+  const updated = JSON.parse(await source.inputValue());
+  expect(updated.name).toBe("Round trip");
+  expect(updated.steps[0].id).toBe("retained-step");
+  await source.fill('{\n  "id": "new-scenario",\n  "steps": [}\n');
+  await page.locator("#scenario-source-analyze").click();
+  await expect(page.locator("#scenario-source-analyze")).toHaveAttribute("data-analysis-state", "error");
+  const marker = page.locator("#scenario-source-gutter button");
+  await expect(marker).toBeVisible();
+  await marker.click();
+  await expect(source).toBeFocused();
+  await page.locator("#scenario-editor-advanced > summary").click();
+  await expect(page.locator("#scenario-editor-advanced")).toHaveAttribute("open", "");
+  await expect(page.locator("#scenario-editor-status")).toContainText("valid JSON");
+  await source.fill(JSON.stringify(updated, null, 2));
+  await expect(marker).toHaveCount(0);
+  await source.press("Tab");
+  await expect(page.locator("#scenario-source-position")).toContainText("Column");
+  expect(api.counts.get("/api/simulator/organizations/alpha/scenarios") || 0).toBe(0);
+});
+
+test("GUI raw scenario source scroll tracks highlighting and preserves unavailable assistant state", async ({ page, appURL, api }) => {
+  await openRawScenario(page, appURL, api);
+  const source = page.locator("#scenario-editor-source");
+  await source.fill(Array.from({ length: 100 }, (_, index) => `  "key${index}": "${"x".repeat(180)}",`).join("\n"));
+  await source.evaluate((element) => { element.scrollTop = 300; element.scrollLeft = 70; element.dispatchEvent(new Event("scroll")); });
+  const geometry = await page.evaluate(() => {
+    const source = document.getElementById("scenario-editor-source");
+    const highlight = document.getElementById("scenario-source-highlight");
+    const gutter = document.getElementById("scenario-source-gutter");
+    return {
+      source: [source.scrollTop, source.scrollLeft], highlight: [highlight.scrollTop, highlight.scrollLeft],
+      gutter: gutter.scrollTop, rowHeight: document.querySelector("#scenario-source-gutter .config-gutter-line").getBoundingClientRect().height,
+      lineHeight: Number.parseFloat(getComputedStyle(source).lineHeight),
+    };
+  });
+  expect(geometry.highlight).toEqual(geometry.source);
+  expect(geometry.gutter).toBe(geometry.source[0]);
+  expect(Math.abs(geometry.rowHeight - geometry.lineHeight)).toBeLessThan(1);
+  await expect(page.locator("#scenario-assistant-slot [data-assistant-state]")).toHaveText("Not configured");
+  await expect(page.locator("#scenario-assistant-slot [data-assistant-submit]")).toBeDisabled();
+  await expect(page.locator("#scenario-assistant-slot")).toContainText("sends the current organization/scenario context");
+});
+
+test("GUI raw scenario assistant uses exact raw context and applies only unsaved proposals in either mode", async ({ page, appURL, api }) => {
+  let request;
+  api.handlers.set("/api/simulator/design-assistant", async (route) => {
+    request = route.request().postDataJSON();
+    await route.fulfill({ json: {
+      answer: "Reviewed.", proposal: { scenario: { ...request.scenario, name: "Assistant draft" } }, input_tokens: 10, output_tokens: 20,
+    } });
+  });
+  await openRawScenario(page, appURL, api, true);
+  const source = page.locator("#scenario-editor-source");
+  const scenario = JSON.parse(await source.inputValue());
+  scenario.name = "Raw request";
+  await source.fill(JSON.stringify(scenario, null, 2));
+  const assistant = page.locator("#scenario-assistant-slot");
+  await assistant.locator("[data-assistant-question]").fill("Review this draft");
+  await assistant.locator("[data-assistant-submit]").click();
+  await expect(assistant.locator("[data-assistant-apply]")).toBeVisible();
+  expect(request.scenario.name).toBe("Raw request");
+  await assistant.locator("[data-assistant-apply]").click();
+  expect(JSON.parse(await source.inputValue()).name).toBe("Assistant draft");
+  await expect(page.locator("#scenario-source-modified")).toBeVisible();
+  await expect(page.locator("#scenario-editor-publish")).toBeDisabled();
+  await page.locator("#scenario-editor-advanced > summary").click();
+  await expect(page.locator("#scenario-editor-name")).toHaveValue("Assistant draft");
+  await assistant.locator("[data-assistant-question]").fill("Review form too");
+  await assistant.locator("[data-assistant-submit]").click();
+  await expect(assistant.locator("[data-assistant-apply]")).toBeVisible();
+  await assistant.locator("[data-assistant-apply]").click();
+  expect(request.scenario.name).toBe("Assistant draft");
+  expect(api.counts.get("/api/simulator/organizations/alpha/scenarios") || 0).toBe(0);
+});
+
+test("GUI raw scenario assistant rejects proposals after source changes", async ({ page, appURL, api }) => {
+  let complete;
+  api.handlers.set("/api/simulator/design-assistant", async (route) => {
+    const request = route.request().postDataJSON();
+    await new Promise((resolve) => { complete = resolve; });
+    await route.fulfill({ json: { answer: "Old draft.", proposal: { scenario: { ...request.scenario, name: "Old proposal" } } } });
+  });
+  await openRawScenario(page, appURL, api, true);
+  const assistant = page.locator("#scenario-assistant-slot");
+  await assistant.locator("[data-assistant-question]").fill("Review");
+  await assistant.locator("[data-assistant-submit]").click();
+  await expect.poll(() => Boolean(complete)).toBe(true);
+  const source = page.locator("#scenario-editor-source");
+  const scenario = JSON.parse(await source.inputValue());
+  scenario.name = "Newer edits";
+  await source.fill(JSON.stringify(scenario));
+  complete();
+  await expect(assistant).toContainText("editor changed while Claude was responding");
+  await expect(assistant.locator("[data-assistant-apply]")).toBeHidden();
+  expect(JSON.parse(await source.inputValue()).name).toBe("Newer edits");
+});
+
+test("GUI raw scenario file import, download, and identity checks never save implicitly", async ({ page, appURL, api }) => {
+  await openRawScenario(page, appURL, api);
+  const source = page.locator("#scenario-editor-source");
+  const imported = { id: "new-scenario", organization_id: "alpha", name: "Imported JSON", description: "Local", steps: [{ action: "delay", timeout_seconds: 1 }], cleanup: [] };
+  await page.locator(".scenario-source-tools .config-file-menu > summary").click();
+  await page.locator("[data-source-open]").click();
+  await page.locator("[data-source-file]").setInputFiles({ name: "draft.json", mimeType: "application/json", buffer: Buffer.from(JSON.stringify(imported)) });
+  await expect(page.locator("#scenario-editor-status")).toContainText("Opened draft.json");
+  await page.locator("#scenario-source-analyze").click();
+  await expect(page.locator("#scenario-source-analyze")).toHaveAttribute("data-analysis-state", "success");
+  await page.locator(".scenario-source-tools .config-file-menu > summary").click();
+  const downloading = page.waitForEvent("download");
+  await page.locator("[data-source-download]").click();
+  expect((await downloading).suggestedFilename()).toBe("new-scenario.json");
+  await source.fill(JSON.stringify({ ...imported, organization_id: "beta" }));
+  await page.locator("#scenario-source-analyze").click();
+  await expect(page.locator("#scenario-editor-status")).toContainText("organization_id must match");
+  await expect(page.locator("#scenario-source-gutter button")).toHaveCount(0);
+  await expect(page.locator("#scenario-source-analyze")).toHaveAttribute("data-analysis-state", "error");
+  expect(api.counts.get("/api/simulator/organizations/alpha/scenarios") || 0).toBe(0);
+});
+
+test("GUI raw scenario analysis ignores delayed errors for an edited source", async ({ page, appURL, api }) => {
+  await openRawScenario(page, appURL, api);
+  let complete;
+  api.handlers.set("/api/simulator/organizations/alpha/scenario-check", async (route) => {
+    await new Promise((resolve) => { complete = resolve; });
+    await route.fulfill({ status: 422, json: { valid: false, line: 2, error: "Old syntax error" } });
+  });
+  const source = page.locator("#scenario-editor-source");
+  await source.fill('{\n"old": }');
+  await page.locator("#scenario-source-analyze").click();
+  await expect.poll(() => Boolean(complete)).toBe(true);
+  await source.fill('{"id":"new-scenario","name":"Current","steps":[]}');
+  complete();
+  await expect(page.locator("#scenario-editor-status")).toHaveText("Unsaved JSON draft. Analyze before saving.");
+  await expect(page.locator("#scenario-source-gutter button")).toHaveCount(0);
+  await expect(page.locator("#scenario-source-analyze")).not.toHaveAttribute("data-analysis-state", "error");
+});
+
+test("GUI raw scenario assistant discards a proposal changed before Apply and after resetting the editor", async ({ page, appURL, api }) => {
+  let complete;
+  let delay = false;
+  api.handlers.set("/api/simulator/design-assistant", async (route) => {
+    const request = route.request().postDataJSON();
+    if (delay) await new Promise((resolve) => { complete = resolve; });
+    await route.fulfill({ json: { answer: "Old conversation.", proposal: { scenario: { ...request.scenario, name: "Old proposal" } } } });
+  });
+  await openRawScenario(page, appURL, api, true);
+  const assistant = page.locator("#scenario-assistant-slot");
+  await assistant.locator("[data-assistant-question]").fill("Review");
+  await assistant.locator("[data-assistant-submit]").click();
+  await expect(assistant.locator("[data-assistant-apply]")).toBeVisible();
+  const source = page.locator("#scenario-editor-source");
+  const scenario = JSON.parse(await source.inputValue());
+  scenario.name = "Newer source";
+  await source.fill(JSON.stringify(scenario));
+  await assistant.locator("[data-assistant-apply]").click();
+  await expect(assistant).toContainText("editor changed after this proposal");
+  expect(JSON.parse(await source.inputValue()).name).toBe("Newer source");
+  delay = true;
+  await assistant.locator("[data-assistant-question]").fill("Review again");
+  await assistant.locator("[data-assistant-submit]").click();
+  await expect.poll(() => Boolean(complete)).toBe(true);
+  await page.locator("#scenario-editor-dialog").getByRole("button", { name: "Close editor" }).click();
+  await page.locator("#scenario-new").click();
+  complete();
+  await expect(assistant.locator("[data-assistant-thread]")).not.toContainText("Old conversation");
+  await expect(assistant.locator("[data-assistant-apply]")).toBeHidden();
+});
+
+test("GUI editor search replaces directory source locally and keeps revision controls", async ({ page, appURL, api }) => {
+  const endpoint = "/api/simulator/organizations/alpha/directory";
+  api.handlers.set(endpoint, (route) => route.fulfill({ json: {
+    revision: 1, published_revision: 0, content: { base_dn: "dc=alpha,dc=test", ldif: "dn: cn=Operators,dc=alpha,dc=test\ncn: Operators\n" },
+  } }));
+  api.handlers.set(endpoint + "/revisions", (route) => route.fulfill({ json: [{ revision: 1, summary: "Initial" }] }));
+  await page.goto(appURL + "/organizations.html");
+  await page.getByRole("button", { name: "Edit LDAP seed", exact: true }).click();
+  await expect(page.locator("#directory-editor-publish")).toBeEnabled();
+  const tools = page.locator('[data-editor-search-target="directory-editor-source"]');
+  await tools.getByRole("button", { name: "Replace", exact: true }).click();
+  await tools.getByRole("textbox", { name: "Find text" }).fill("Operators");
+  await tools.getByRole("textbox", { name: "Replacement text" }).fill("Reviewers");
+  await tools.getByRole("button", { name: "Replace all" }).click();
+  await expect(page.locator("#directory-editor-source")).toHaveValue("dn: cn=Reviewers,dc=alpha,dc=test\ncn: Reviewers\n");
+  await expect(page.locator("#directory-editor-publish")).toBeDisabled();
+  await expect(tools.getByRole("status")).toContainText("Changes are unsaved");
+  await expect(page.locator("#directory-editor-revisions")).toBeVisible();
+  expect(api.counts.get(endpoint)).toBe(1);
+});
+
+test("GUI editor search reveals distant matches and prevents accidental form submission", async ({ page, appURL, api }) => {
+  await page.goto(appURL + "/#zpr-config");
+  const source = page.locator("#zpr-config-source");
+  await source.fill(Array.from({ length: 100 }, (_, index) => index === 90 ? `key = "${"x".repeat(200)}NEEDLE"` : `key${index} = "value"`).join("\n"));
+  await source.evaluate((element) => { element.scrollTop = 0; element.scrollLeft = 0; element.setSelectionRange(0, 0); });
+  await source.press("Control+f");
+  const tools = page.locator('[data-editor-search-target="zpr-config-source"]');
+  await tools.getByRole("textbox", { name: "Find text" }).fill("NEEDLE");
+  await tools.getByRole("textbox", { name: "Find text" }).press("Enter");
+  await expect(tools.getByRole("status")).toContainText("line 91, column 208");
+  const position = await source.evaluate((element) => ({
+    scrollTop: element.scrollTop, scrollLeft: element.scrollLeft,
+    selected: element.value.slice(element.selectionStart, element.selectionEnd),
+    lineTop: 90 * Number.parseFloat(getComputedStyle(element).lineHeight) + Number.parseFloat(getComputedStyle(element).paddingTop) - element.scrollTop,
+    height: element.clientHeight,
+  }));
+  expect(position.scrollTop).toBeGreaterThan(0);
+  expect(position.lineTop).toBeGreaterThanOrEqual(0);
+  expect(position.lineTop).toBeLessThan(position.height);
+  expect(position.scrollLeft).toBeGreaterThan(0);
+  expect(position.selected).toBe("NEEDLE");
+  await source.press("Escape");
+  await expect(tools.getByRole("search")).toBeHidden();
 });
 
 test("GUI topology keeps dock rays distinct from inter-node links and paints network links last", async ({ page, appURL, api }) => {
@@ -3050,6 +3418,47 @@ test("service types share table and map colors and gateways have clouds", async 
   await expect(page.locator(".graph-cloud")).toHaveCount(1);
   await expect(page.locator(".graph-cloud")).toHaveCSS("fill", "rgb(69, 69, 69)");
   await expect(page.locator(".gateway-cloud-link")).toHaveCount(1);
+});
+
+test("Gateways validates and saves a ZPL-bound runtime draft without activating it", async ({ page, appURL, api }) => {
+  const contract = {
+    organization_id: "alpha", instance_id: "public-egress", adapter_cn: "gateway-public-egress",
+    service_name: "public-egress.svc.zpr", external_network: "",
+  };
+  const savedRequests = [];
+  api.handlers.set("/api/gateways/contracts", async (route) => route.fulfill({ json: { organization_id: "alpha", contracts: [contract] } }));
+  api.handlers.set("/api/gateways/configs", async (route) => route.fulfill({ json: { organization_id: "alpha", configs: [] } }));
+  api.handlers.set("/api/gateways/config/check", async (route) => {
+    const { config } = route.request().postDataJSON();
+    expect(config.organization_id).toBe("alpha");
+    expect(config.instance_id).toBe("public-egress");
+    expect(config.adapter_cn).toBe("gateway-public-egress");
+    expect(config.service_name).toBe("public-egress.svc.zpr");
+    expect(config.external_network).toBeUndefined();
+    await route.fulfill({ json: { valid: true, diagnostics: "Gateway draft matches the live Gateway service identity; runtime configuration is unchanged.", contract } });
+  });
+  api.handlers.set("/api/gateways/configs/public-egress/revisions", async (route) => {
+    const body = route.request().postDataJSON();
+    savedRequests.push(body);
+    await route.fulfill({ json: {
+      organization_id: "alpha", instance_id: "public-egress", current_revision: 1,
+      revisions: [{ revision: 1, saved_at: new Date().toISOString(), config: body.config }],
+    } });
+  });
+
+  await page.goto(`${appURL}/#gateways`);
+  await expect(page.getByRole("heading", { name: "Gateway configuration" })).toBeVisible();
+  await expect(page.locator("#gateway-draft-identity")).toContainText("public-egress.svc.zpr");
+  await page.getByRole("textbox", { name: "Gateway HTTPS origin" }).fill("https://api.example.com");
+  await page.getByRole("textbox", { name: "Allowed gateway path prefixes" }).fill("/v1/");
+  await page.getByRole("button", { name: "Validate draft" }).click();
+  await expect(page.locator("#gateway-draft-message")).toContainText("runtime configuration is unchanged");
+  await page.getByRole("button", { name: "Save draft" }).click();
+  await expect(page.locator("#gateway-draft-message")).toContainText("Saved draft revision 1");
+  await expect(page.locator("#gateway-revision")).toHaveValue("1");
+  expect(savedRequests).toHaveLength(1);
+  expect(savedRequests[0].expected_revision).toBe(0);
+  await expect(page.getByRole("button", { name: "Activate", exact: true })).toHaveCount(0);
 });
 
 test("adding topology parents keeps existing nodes at the same screen position", async ({ page, appURL, api }) => {

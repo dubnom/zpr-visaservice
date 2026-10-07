@@ -96,7 +96,7 @@ func TestMutualTLSLookup(t *testing.T) {
 	}
 	roots := x509.NewCertPool()
 	roots.AddCert(rootCert)
-	server := httptest.NewUnstartedServer(handler(fileProvider{path}))
+	server := httptest.NewUnstartedServer(handler(fileProvider{path}, nil))
 	server.TLS = &tls.Config{Certificates: []tls.Certificate{makeCert(2, true)}, ClientCAs: roots, ClientAuth: tls.RequireAndVerifyClientCert, MinVersion: tls.VersionTLS13}
 	server.StartTLS()
 	defer server.Close()
@@ -131,7 +131,7 @@ func TestHandler(t *testing.T) {
 	if err := os.WriteFile(path, []byte(`{"user.sub":{"alice":{"team":["eng"]}}}`), 0600); err != nil {
 		t.Fatal(err)
 	}
-	server := handler(fileProvider{path})
+	server := handler(fileProvider{path}, nil)
 	for _, test := range []struct {
 		body string
 		code int

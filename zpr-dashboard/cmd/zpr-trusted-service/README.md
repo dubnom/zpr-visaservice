@@ -67,6 +67,54 @@ client_key = "/secure/visa-client.key"
 Server verification is pinned to `ca_cert`; a valid Visa Service client certificate is
 required. Do not expose this endpoint publicly or store private keys in the repository.
 
+## LDAP Change Feed
+
+With `-ldap-uri`, add `-ldap-changes-base cn=accesslog` to serve `GET /v1/changes` on the
+same mTLS listener. Callers poll it to learn which directory entries changed since their
+last call. The feed reads the OpenLDAP `accesslog` overlay and returns metadata only:
+attribute names, never values.
+
+```text
+GET /v1/changes                    -> {"changes":[],"cursor":"<head>","more":false}
+GET /v1/changes?cursor=<c>&limit=N -> {"changes":[{"cursor","time","type","dn","new_dn"?,
+                                        "entry_uuid"?,"attributes"?}],"cursor":"<next>","more":bool}
+```
+
+- With no cursor, the response is a baseline cursor. Do a full sync through `/v1/attributes`,
+  then poll with the cursor you received. Always pass back the latest response `cursor`.
+- `type` is `add`, `delete`, `modify`, or `modrdn`. `modrdn` includes `new_dn`.
+  Operational attributes are omitted from `attributes`.
+- `limit` is 1–500 (default 100). When `more` is true, poll again immediately.
+- Writes become visible after `-ldap-changes-settle` (default 2s) plus up to one second.
+- A cursor older than `-ldap-changes-retention` (default 168h) whose entry was purged returns
+  `410 {"error":"cursor_expired"}`. The caller must full-sync and request a new baseline.
+  Keep the retention at or below the slapd `logpurge` age.
+- Responses are `400` for bad parameters and `503` when the change log is unavailable.
+
+The slapd configuration needs a separate accesslog database. Define it before the main
+database and make it readable by the bind account:
+
+```text
+moduleload accesslog
+database mdb
+suffix "cn=accesslog"
+directory /runtime/accesslog
+index reqStart eq
+access to * by dn.exact="<bind DN>" read by * none
+database mdb
+suffix "<base DN>"
+...
+overlay accesslog
+logdb "cn=accesslog"
+logops writes
+logsuccess TRUE
+logpurge 07+00:00 01+00:00
+```
+
+Imports done with `slapadd` are not logged. A directory reseed therefore needs a caller full
+sync, not a change poll. The multinode demo directory (`zpr-demo/multinode-demo`) enables
+this configuration.
+
 ## LDAP Change Consumer
 
 `-ldap-watch` is a separate read-only RFC 4533 consumer, not an HTTPS server:

@@ -106,7 +106,7 @@ func (searcher ldapSearcherFunc) Search(request *ldap.SearchRequest) (*ldap.Sear
 	return searcher(request)
 }
 
-func (p ldapProvider) lookup(ctx context.Context, identities []identity) (map[string][]string, error) {
+func (p ldapProvider) dial() (*ldap.Conn, error) {
 	uri, err := url.Parse(p.uri)
 	if err != nil || uri.Scheme != "ldaps" || uri.Hostname() == "" || uri.User != nil {
 		return nil, errors.New("LDAP URI must be ldaps:// with a hostname")
@@ -117,11 +117,20 @@ func (p ldapProvider) lookup(ctx context.Context, identities []identity) (map[st
 	if err != nil {
 		return nil, err
 	}
-	defer conn.Close()
 	conn.SetTimeout(5 * time.Second)
 	if err := conn.Bind(p.bindDN, p.password); err != nil {
+		conn.Close()
 		return nil, err
 	}
+	return conn, nil
+}
+
+func (p ldapProvider) lookup(ctx context.Context, identities []identity) (map[string][]string, error) {
+	conn, err := p.dial()
+	if err != nil {
+		return nil, err
+	}
+	defer conn.Close()
 	result := make(map[string][]string)
 	for _, ident := range identities {
 		if err := ctx.Err(); err != nil {
@@ -186,8 +195,11 @@ func ldapIdentityAttributes(ctx context.Context, searcher ldapSearcher, peopleBa
 	return result, nil
 }
 
-func handler(store provider) http.Handler {
+func handler(store provider, changes changeSource) http.Handler {
 	mux := http.NewServeMux()
+	if changes != nil {
+		mux.Handle("GET /v1/changes", changesHandler(changes))
+	}
 	mux.HandleFunc("POST /v1/attributes", func(w http.ResponseWriter, r *http.Request) {
 		if r.Header.Get("Content-Type") != "application/json" {
 			http.Error(w, "expected application/json", http.StatusUnsupportedMediaType)
@@ -224,6 +236,16 @@ func handler(store provider) http.Handler {
 	return mux
 }
 
+func writeChangesJSON(w http.ResponseWriter, status int, value any) {
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(status)
+	_ = json.NewEncoder(w).Encode(value)
+}
+
+func logChangeFailure(err error) {
+	log.Printf("trusted service change query failed: %T", err)
+}
+
 func main() {
 	listen := flag.String("listen", "127.0.0.1:8443", "HTTPS listen address")
 	cert := flag.String("cert", "", "server certificate PEM")
@@ -238,6 +260,9 @@ func main() {
 	ldapIdentities := flag.String("ldap-identities", "", "JSON map of ZPR identity key to LDAP search attribute")
 	ldapAttributes := flag.String("ldap-attributes", "", "comma-separated LDAP attributes to return")
 	ldapGroupsBase := flag.String("ldap-groups-base", "", "optional LDAP group search base DN for groupOfNames role membership")
+	ldapChangesBase := flag.String("ldap-changes-base", "", "optional OpenLDAP accesslog suffix (for example cn=accesslog) that enables GET /v1/changes")
+	ldapChangesRetention := flag.Duration("ldap-changes-retention", 7*24*time.Hour, "age of changes guaranteed retained by the accesslog logpurge setting; older cursors expire")
+	ldapChangesSettle := flag.Duration("ldap-changes-settle", 2*time.Second, "delay before a logged write becomes visible to pollers")
 	ldapWatch := flag.Bool("ldap-watch", false, "consume LDAP sync changes as metadata-only JSON lines on stdout instead of serving HTTPS")
 	flag.Parse()
 	if *ldapWatch {
@@ -260,7 +285,11 @@ func main() {
 		log.Fatal("invalid client CA")
 	}
 	var store provider
+	var changes changeSource
 	if *file != "" {
+		if *ldapChangesBase != "" {
+			log.Fatal("-ldap-changes-base requires -ldap-uri")
+		}
 		store = fileProvider{*file}
 	} else {
 		if *ldapCA == "" || *ldapBase == "" || *ldapPasswordFile == "" || *ldapIdentities == "" || *ldapAttributes == "" {
@@ -292,12 +321,31 @@ func main() {
 				log.Fatal("invalid LDAP attribute name")
 			}
 		}
-		store = ldapProvider{
+		ldapStore := ldapProvider{
 			uri: *ldapURI, baseDN: *ldapBase, bindDN: *ldapBind, password: strings.TrimSuffix(string(password), "\n"),
 			ca: roots, identityKeys: keys, attributes: attributes, groupsBaseDN: *ldapGroupsBase,
 		}
+		store = ldapStore
+		if *ldapChangesBase != "" {
+			if _, err := ldap.ParseDN(*ldapChangesBase); err != nil {
+				log.Fatal("invalid -ldap-changes-base")
+			}
+			if *ldapChangesRetention <= 0 || *ldapChangesSettle < 0 {
+				log.Fatal("invalid LDAP change retention or settle delay")
+			}
+			changes = accessLogChanges{
+				logBase: *ldapChangesBase, retention: *ldapChangesRetention, settle: *ldapChangesSettle, now: time.Now,
+				connect: func(context.Context) (ldapSearcher, func(), error) {
+					conn, err := ldapStore.dial()
+					if err != nil {
+						return nil, nil, err
+					}
+					return conn, func() { conn.Close() }, nil
+				},
+			}
+		}
 	}
-	server := http.Server{Addr: *listen, Handler: handler(store), ReadHeaderTimeout: 5 * time.Second, TLSConfig: &tls.Config{
+	server := http.Server{Addr: *listen, Handler: handler(store, changes), ReadHeaderTimeout: 5 * time.Second, TLSConfig: &tls.Config{
 		MinVersion: tls.VersionTLS13, ClientAuth: tls.RequireAndVerifyClientCert, ClientCAs: clients,
 	}}
 	log.Printf("trusted service listening at %s", *listen)

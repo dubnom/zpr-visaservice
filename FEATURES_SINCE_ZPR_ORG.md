@@ -1,6 +1,6 @@
 # Features Added Since the Upstream Fork
 
-**Snapshot:** 2026-10-05
+**Snapshot:** 2026-10-07
 **Baseline:** `origin/main` at `abb1acd` (2026-09-03)
 
 This is a capability overview of the work added in this fork after its upstream
@@ -24,6 +24,16 @@ contracts remain authoritative where this overview is shorter.
   highlights changes against a browser-local inventory baseline, supports
   dismissal and restoration, and links IP evidence to DNS names. Findings are
   triage signals, not automatic incident determinations or traffic controls.
+- Added an aggregate DNS-probing review finding based on BIND counter deltas:
+  at least 30 requests, 20 NXDOMAIN responses, and a 60% NXDOMAIN ratio within
+  60 seconds. It is unattributed, review severity only, sampled while Security
+  Review is active, and does not raise the high-priority navigation indicator.
+- Added a draft-only Gateways view. It lists installed ZPL Gateway services,
+  validates destination/path/method/timeout/response-size configuration through
+  Control-Service, and saves organization-scoped revisions with concurrency
+  checks. It does not provision adapters or activate runtime changes; external
+  network classification is policy-owned and not fully exposed by the current
+  Admin API.
 - Added sortable Activity tables for recent visas and denials, plus counted
   Control Room status tabs; summary metrics remain on Map. Map updates animate
   retained topology components and Fit centers the rendered bounds while
@@ -42,6 +52,9 @@ contracts remain authoritative where this overview is shorter.
 - Added Policy Studio editing support: ZPL completions, LDAP attribute
   discovery, formatting, compiler diagnostics, source-aware test results, and
   a standalone read-only policy/assertion browser.
+- Added shared local search and replace controls across policy/assertion, ZPR
+  Config, scenario JSON, and directory LDIF source editors. Replacements remain
+  unsaved editor changes and do not apply configuration or policy automatically.
 - Added **Evaluate & Test** and automatic policy tests before Save and Save As.
   Failed tests require an explicit confirmation to continue saving. Compiler-
   invalid source may be preserved for repair, but server-side compilation
@@ -70,10 +83,16 @@ contracts remain authoritative where this overview is shorter.
   to ZPR DNS. Added an isolated BIND 9 deployment profile that serves on a ZPR
   address and accepts Visa Service updates through TSIG over ZPR.
 - Added an OpenObserve deployment profile behind a dedicated ZPR adapter,
-  including documented ingestion and reader-access interfaces. The profile
-  does not automatically provision adapters or export existing metrics.
-- Added LDAP change-consumer integration and reliability improvements for
-  Control Room data refresh and lifecycle handling.
+  including documented ingestion and reader-access interfaces. A separate
+  local Compose mode provides one loopback-only store with an active-
+  organization collector that tags telemetry and reads that profile's runtime
+  logs. Control Room Diagnostics still requires a separate read-only query
+  credential. The legacy ZPR-adapter profile does not automatically provision
+  adapters.
+- Added a metadata-only OpenLDAP accesslog change feed to the REST trusted
+  service. It reports directory change metadata, not attribute values; it does
+  not yet invalidate Visa Service attribute caches, reevaluate assertions, or
+  revoke visas.
 
 ## Simulator
 
@@ -81,15 +100,24 @@ contracts remain authoritative where this overview is shorter.
   profiles, workload placement, scenario execution, managed-service logs, and
   machine controls carried over ZPR rather than exposed as an underlay control
   path.
-- Labeled the Agents inventory as Devices, grouped unfiled scenarios explicitly,
-  and added a clear action for completed/cancelled run history without deleting
-  scenario definitions or logs.
+- Merged passive device/runtime inspection and workload log viewing into a
+  Workers page; active start/stop/login machine controls were removed from that
+  operator surface. Labeled the fleet as Devices, grouped unfiled scenarios
+  explicitly, and added a clear action for completed/cancelled run history
+  without deleting scenario definitions or logs.
 - Added organization-scoped scenario and directory workspaces, organization
   switching and approval flows, and example organizations for exercising
   different policy and directory configurations.
 - Added demo integrations for trusted sources, DNS, observability, and policy
   layers. Simulator data is for controlled testing and does not imply that a
   scenario or policy has been installed in a live ZPR network.
+- Added invitation-backed enrollment primitives: Control-Service invitation
+  and approval APIs, a separate signed device challenge/proof HTTPS service,
+  an enrollment client, and a local development setup wizard with software-key
+  storage. The device service is opt-in and not registered on Control-Service;
+  credentials are not issued and approval does not establish ZPR connectivity.
+  Production gateway, installer, hardware-backed key, and remote deployment
+  integration remain outstanding.
 - Added Load Lab, a two-machine stress profile with 200 named service ports,
   200 logical request clients, randomized fresh-connection traffic, and short
   offline/restart intervals. The logical clients share one client adapter
@@ -115,6 +143,9 @@ contracts remain authoritative where this overview is shorter.
 ## Further Reading
 
 - [Control Room and Services guide](zpr-dashboard/cmd/zpr-web-dashboard/README.md)
+- [Gateway work plan](../Gateway%20work.md)
+- [Provisioning plan](../Provisioning%20plan.md)
+- [Trusted-service REST and LDAP change-feed guide](zpr-dashboard/cmd/zpr-trusted-service/README.md)
 - [Trusted Data Assertions](zpr-dashboard/ASSERTIONS.md)
 - [BIND 9 ZPR DNS guide](dns/bind9/README.md)
 - [OpenObserve profile](observability/openobserve/README.md)

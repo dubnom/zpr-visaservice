@@ -12,6 +12,13 @@ window.mountSimulatorDesignAssistant = function mountSimulatorDesignAssistant(co
   const status = container.querySelector("[data-assistant-state]");
   const usage = container.querySelector("[data-assistant-usage]");
   const state = { messages: [], proposal: null, ready: false, pending: false, inputTokens: 0, outputTokens: 0 };
+  let generation = 0;
+  let proposalContext = "";
+  let statusError = "";
+  const disclosure = document.createElement("p");
+  disclosure.className = "design-assistant-description";
+  disclosure.textContent = "Asking Claude sends the current organization/scenario context and conversation to Anthropic. Suggestions never save, publish, activate, or run automatically.";
+  form.before(disclosure);
 
   function render() {
     thread.replaceChildren();
@@ -28,10 +35,10 @@ window.mountSimulatorDesignAssistant = function mountSimulatorDesignAssistant(co
     if (!state.messages.length) {
       const empty = document.createElement("p");
       empty.className = "design-assistant-empty";
-      empty.textContent = options.emptyMessage;
+      empty.textContent = statusError || options.emptyMessage;
       thread.append(empty);
     }
-    status.textContent = state.pending ? "Thinking" : state.ready ? "Ready" : "Not configured";
+    status.textContent = state.pending ? "Thinking" : state.ready ? "Ready" : statusError ? "Unavailable" : "Not configured";
     send.disabled = !state.ready || state.pending || !question.value.trim();
     question.disabled = !state.ready || state.pending;
     model.disabled = !state.ready || state.pending;
@@ -42,6 +49,9 @@ window.mountSimulatorDesignAssistant = function mountSimulatorDesignAssistant(co
   }
 
   function reset() {
+    generation++;
+    state.pending = false;
+    proposalContext = "";
     state.messages = [];
     state.proposal = null;
     state.inputTokens = 0;
@@ -58,9 +68,10 @@ window.mountSimulatorDesignAssistant = function mountSimulatorDesignAssistant(co
       if (data.model) model.value = data.model;
       status.title = state.ready ? `Using ${data.model}` : "Set ANTHROPIC_API_KEY on the simulator server to enable Claude.";
     })
-    .catch(() => {
+    .catch((error) => {
       state.ready = false;
-      status.title = "Claude status unavailable.";
+      status.title = `Claude status unavailable: ${error.message}`;
+      statusError = `Assistant status unavailable: ${error.message}`;
     })
     .finally(render);
 
@@ -72,9 +83,11 @@ window.mountSimulatorDesignAssistant = function mountSimulatorDesignAssistant(co
     state.proposal = null;
     question.value = "";
     state.pending = true;
+    const requestGeneration = generation;
     render();
     try {
       const context = options.getContext();
+      const fingerprint = JSON.stringify(context);
       const response = await fetch("/api/simulator/design-assistant", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -88,22 +101,33 @@ window.mountSimulatorDesignAssistant = function mountSimulatorDesignAssistant(co
         }),
       });
       const result = await response.json();
+      if (requestGeneration !== generation) return;
       if (!response.ok) throw new Error(result.error || `Claude request failed (${response.status})`);
       state.messages.push({ role: "assistant", content: result.proposal_error ? `${result.answer}\n\nProposal not applied: ${result.proposal_error}` : result.answer });
-      state.proposal = result.proposal || null;
+      if (JSON.stringify(options.getContext()) !== fingerprint) {
+        state.proposal = null;
+        state.messages.push({ role: "assistant", content: "The editor changed while Claude was responding. This proposal cannot be applied; ask again using the current draft." });
+      } else {
+        state.proposal = result.proposal || null;
+        proposalContext = fingerprint;
+      }
       state.inputTokens += Number(result.input_tokens) || 0;
       state.outputTokens += Number(result.output_tokens) || 0;
     } catch (error) {
+      if (requestGeneration !== generation) return;
       state.messages.push({ role: "assistant", content: error.message || "Claude could not complete the request." });
     } finally {
-      state.pending = false;
-      render();
+      if (requestGeneration === generation) { state.pending = false; render(); }
     }
   });
 
   apply.addEventListener("click", async () => {
     if (!state.proposal || state.pending) return;
     try {
+      if (JSON.stringify(options.getContext()) !== proposalContext) {
+        state.proposal = null;
+        throw new Error("The editor changed after this proposal was generated. Ask again using the current draft.");
+      }
       await options.onApply(state.proposal);
       state.proposal = null;
       state.messages.push({ role: "assistant", content: "Applied to the editor as an unsaved draft. Review it, then use the editor's Save draft action." });

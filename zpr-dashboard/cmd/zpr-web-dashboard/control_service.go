@@ -43,6 +43,11 @@ func localControlRoomProxy(proxy http.Handler) http.Handler {
 		if !localEditorRequest(w, r) {
 			return
 		}
+		if strings.HasPrefix(r.URL.Path, "/api/enrollment/") {
+			w.Header().Set("Cache-Control", "no-store")
+			writePolicyError(w, http.StatusForbidden, "Control Room enrollment requires named-user authorization; use the certificate-authorized administration API directly.")
+			return
+		}
 		proxy.ServeHTTP(w, r)
 	})
 }
@@ -113,6 +118,15 @@ func runControlService() error {
 	if err != nil {
 		return err
 	}
+	enrollmentAPI, closeEnrollment, err := configuredEnrollmentHandler()
+	if err != nil {
+		return err
+	}
+	defer func() {
+		if err := closeEnrollment(); err != nil {
+			log.Printf("Close enrollment registry failed: %T", err)
+		}
+	}()
 	admin, configErr := newAdminClient()
 	assertions, err := newAssertionRuntime()
 	if err != nil {
@@ -139,8 +153,18 @@ func runControlService() error {
 	app := &application{
 		admin: admin, configErr: configErr, policyAPI: policyAPI, policyErr: policyErr, assistant: newClaudeAssistant(),
 	}
+	var gatewayStore *gatewayConfigStore
+	if storePath := strings.TrimSpace(os.Getenv("ZPR_GATEWAY_CONFIG_STORE_DIR")); storePath != "" {
+		gatewayStore, err = newGatewayConfigStore(storePath)
+		if err != nil {
+			log.Printf("Gateway draft store is unavailable: %T", err)
+		}
+	}
 	mux := http.NewServeMux()
+	mux.Handle("/api/enrollment/", enrollmentAPI)
 	assertions.register(mux)
+	gatewayAPI := newGatewayAPI(strings.TrimSpace(os.Getenv("ZPR_GATEWAY_ORGANIZATION_ID")), gatewaySnapshotReaderFromApplication(app), gatewayStore)
+	mux.Handle("/api/gateways/", gatewayAPI)
 	mux.HandleFunc("GET /api/snapshot", app.handleSnapshot)
 	readDiagnosticsSnapshot := func(ctx context.Context) snapshot {
 		if app.admin == nil {

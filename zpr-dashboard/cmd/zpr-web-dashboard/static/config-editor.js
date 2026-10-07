@@ -30,10 +30,7 @@
     gutter.replaceChildren(...source.value.split("\n").map((_, index) => {
       const row = document.createElement("div");
       row.className = "config-gutter-line";
-      const number = document.createElement("span");
-      number.textContent = String(index + 1);
-      number.setAttribute("aria-hidden", "true");
-      row.append(number);
+      row.dataset.line = String(index + 1);
       if (diagnostic?.line === index + 1) {
         const marker = document.createElement("button");
         marker.type = "button";
@@ -115,7 +112,7 @@
   picker.addEventListener("change", () => run(async () => {
     if (source.value !== saved && !confirm("Discard unsaved configuration changes?")) { picker.value = record?.id || ""; return; }
     if (picker.value) await loadRecord(picker.value);
-    else { record = null; clearAnalysis(); name.value = ""; source.value = saved = ""; history.replaceChildren(); status.textContent = "New draft"; renderEditor(); }
+    else { record = null; clearAnalysis(); name.value = ""; source.value = saved = ""; history.replaceChildren(); status.textContent = ""; renderEditor(); }
   }));
   history.addEventListener("change", () => run(async () => {
     if (!record || !history.value) return;
@@ -173,7 +170,7 @@
     source.value = saved = "";
     picker.value = "";
     history.replaceChildren();
-    status.textContent = "New draft";
+    status.textContent = "";
     renderEditor();
     source.focus();
   });

@@ -46,7 +46,503 @@ internal/
   styles/            Color palette and shared lipgloss styles
   config/            Reads config.toml into the environment
   dataplane/         HTTP client for the vs-admin API
+  enrollment/        SQLite registry, admin API, and device HTTPS service
 ```
+
+## Device enrollment foundation
+
+`internal/enrollment` implements the first storage slice of production device
+provisioning without Simulator dependencies or additional module dependencies.
+It persists organization-scoped asset invitations, hashed enrollment codes,
+expiry/cancellation, single-key claims, and transactional audit events.
+The database is owner-readable/writable only. The caller supplies the approved
+invitation expiration; this library does not select a deployment lifetime.
+
+This package is not a device authentication or credential-issuance service.
+The device service now verifies fresh proof of key possession and atomically
+claims an invitation. Durable approval/rejection is implemented;
+authoritative inventory integration,
+issuance, device-facing rate limits, named-user Control Room authorization,
+and the signed Debian/Ubuntu installer remain pending.
+
+### Certificate-authorized invitation administration
+
+Control-Service optionally serves `/api/enrollment/v1/` on its existing private
+TLS listener. No additional listener or public device enrollment endpoint is
+opened. With both settings absent, these routes return `503`; supplying only
+one setting or an invalid configuration prevents service startup:
+
+```sh
+ZPR_ENROLLMENT_CONFIG_FILE=/etc/zpr/enrollment-admin.json
+ZPR_ENROLLMENT_DATABASE_FILE=/var/lib/zpr/enrollment.sqlite
+```
+
+The configuration must explicitly define the invitation lifetime, approved
+organization/profile/type catalogs, and administrator certificate permissions.
+Review permissions additionally require an explicit approval lifetime.
+For example (both lifetimes are examples, not defaults):
+
+```json
+{
+  "version": 1,
+  "invitation_lifetime_seconds": 3600,
+  "approval_lifetime_seconds": 3600,
+  "organizations": {
+    "example-company": {
+      "profiles": ["managed-linux"],
+      "types": ["laptop", "desktop", "server"]
+    }
+  },
+  "principals": [
+    {
+      "name": "enrollment-operator",
+      "certificate_sha256": "REPLACE_WITH_LOWERCASE_SHA256_OF_CLIENT_CERTIFICATE_DER",
+      "organizations": ["example-company"],
+      "permissions": ["read", "create", "cancel", "approve", "reject"]
+    }
+  ]
+}
+```
+
+Use a dedicated administrator client certificate issued by the configured
+Control-Service client CA. Its verified leaf certificate must also match the
+explicit SHA-256 pin; a matching CN or request header is not sufficient.
+Readers can be assigned only `read`. Unlisted certificates, organizations,
+and permissions fail closed. Do not authorize the shared Control Room service
+certificate as an administrator. Control Room proxy requests to enrollment
+are blocked until named-user authorization is implemented.
+
+Obtain the pin from the **public** administrator certificate:
+
+```sh
+openssl x509 -in admin-client.crt -outform DER | openssl dgst -sha256
+```
+
+Configuration is validated and loaded at startup; restart Control-Service
+after changing grants, removing a certificate pin, or rotating a certificate.
+Both configured lifetimes must be between 1 second and 30 days (a validation
+bound, not a recommended duration). Existing invitation-only configurations
+may omit `approval_lifetime_seconds` if they grant neither `approve` nor
+`reject`. The pending asset
+owner, recipient, and inventory reference are administrative claims, not
+verified device attributes or granted policy roles.
+
+| Method | Path | Permission | Input/result |
+| --- | --- | --- | --- |
+| GET | `/api/enrollment/v1/catalog` | read | Scoped profile/type catalogs and lifetime; GUI mutations disabled |
+| POST | `/api/enrollment/v1/invitations` | create | JSON asset; returns invitation and one-time-visible enrollment code |
+| GET | `/api/enrollment/v1/invitations?organization=...` | read | Paginated invitations, no codes or hashes |
+| GET | `/api/enrollment/v1/invitations/{id}?organization=...` | read | Invitation detail, no code or hash |
+| POST | `/api/enrollment/v1/invitations/{id}/cancel` | cancel | JSON `{"organization":"..."}`; cancels the invitation |
+| POST | `/api/enrollment/v1/invitations/{id}/approve` | approve | Organization, reviewed revision, key fingerprint, and verification reason |
+| POST | `/api/enrollment/v1/invitations/{id}/reject` | reject | Organization, reviewed revision, key fingerprint, and rejection reason |
+
+Creation accepts `organization`, `asset_id`, `name`, `owner`, `type`, `profile`,
+and `recipient`. All are required bounded strings; type/profile must be in the
+configured catalog. The backend derives the audited principal from the verified
+certificate and the expiration from server configuration. Creating an asset
+does not create an adapter, issue a credential, or authorize network access.
+
+JSON mutation bodies are limited to 8192 bytes and reject unknown fields,
+trailing JSON values, non-JSON content types, and query parameters. Responses
+use `Cache-Control: no-store`. Browser-origin requests are rejected, even if
+they present an authorized certificate. Use the APIs directly with an mTLS
+client, not through the browser/shared-service proxy.
+
+Listing defaults to 50 invitations; `limit` is bounded to 1–100. Pass the
+returned `next_after` as `after` to continue in stable invitation-ID order.
+Cancellation is idempotent. Duplicate active asset invitations return `409`.
+If a create response is lost, inspect the asset's invitation and cancel/replace
+it; codes cannot be retrieved afterward. Delivery retries/idempotency for
+creation are not yet implemented. Transfer the code through the approved
+separate secure channel, never an email, URL, command argument, or log.
+
+### Reviewing a claimed device
+
+The device proof-of-possession service sets an explicit approval deadline
+from its deployment configuration. The claim records `claimed_at`, `approval_expires_at`, and the
+verified key fingerprint, and increments `revision`. Same-key retries preserve
+that deadline and revision; they cannot keep a request alive indefinitely.
+At the deadline, the request reports `approval_expired` and cannot be approved
+or resumed. A fresh invitation is required. Legacy pending records without a
+deadline fail closed rather than acquiring an unlimited approval window.
+
+Read the invitation before review, verify the asset and fingerprint through
+the trusted procedure, then submit:
+
+```json
+{
+  "organization": "example-company",
+  "revision": 2,
+  "key_fingerprint": "REPLACE_WITH_THE_REVIEWED_DEVICE_KEY_SHA256",
+  "reason": "Asset and device verification code checked through trusted channel"
+}
+```
+
+Reasons are required and bounded to 256 bytes; never include enrollment secrets
+or unnecessary personal information. A missing/mismatched fingerprint is rejected.
+Stale revisions and competing decisions return `409`; reload and inspect the
+record instead of blindly retrying. Approval also rechecks the current approved
+profile/type catalog. Rejection remains available if a profile was removed.
+Decision principal, reason, timestamp, and revision are persisted atomically
+with the state and audit event. Approved and rejected decisions cannot be
+reopened by these endpoints.
+
+An `approved` state means **approved for future credential delivery**, not
+enrolled, issued, or connected. Approved assets stay reserved against duplicate
+invitations. Cancellation is not revocation and cannot cancel an approved
+record; future issuance/revocation services must handle that lifecycle.
+Rejected, cancelled, or expired requests may be replaced by a fresh invitation.
+Expiration is evaluated on reads; replacing an expired invitation materializes
+and audits its expired state transactionally.
+
+These administrative APIs do not provide a way to manufacture a claimed request.
+The separate device protocol below verifies key possession first. Neither its
+listener nor the installer has been deployed, and the GUI remains blocked.
+
+### Device challenge and proof protocol
+
+`NewDeviceService` and `NewDeviceHandler` implement the device-facing protocol
+independently of the administration handler. They are **not registered on Control-Service**. The opt-in standalone
+`zpr-enrollment-service` command serves them on a separate TLS listener.
+Deployment still requires an approved pre-ZPR HTTPS service/gateway and installer
+integration; do not expose the administrative listener to devices. No service
+is automatically started by the dashboard stack or this change.
+
+The service requires an explicit trusted HTTPS origin (`Audience`), challenge
+lifetime (1 second to 5 minutes), and approval lifetime (1 second to 30 days).
+These are protocol bounds, not selected deployment defaults. Challenges are
+durable in the same SQLite registry and bind version, origin/audience,
+organization, invitation ID, purpose, key fingerprint, expiry, and a random nonce.
+
+The initial proof scheme uses RSA-2048 through RSA-4096 with exponent 65537,
+SHA-256, and RSASSA-PKCS1-v1_5, matching the existing adapter's RSA signing
+family. This is an **enrollment proof**, not the adapter's Noise key or a
+replacement for trusted-provider authentication. Hardware-backed key storage,
+attestation, and link/authentication credential binding remain installer/provider
+integration work. Possession of a key does not prove device posture.
+
+1. Generate the key locally. Encode its public key as standard Base64 of DER
+   SubjectPublicKeyInfo. Retain the private key on the device.
+2. POST JSON to `/enrollment/v1/challenges` with `organization`,
+   `invitation_id`, `purpose: "claim"`, `enrollment_code`, and `public_key`.
+   The administrator must transfer the non-secret invitation ID and organization
+   with the instructions as well as the code through the separate secure channel.
+   The invitation must still be unclaimed and unexpired.
+3. The response contains `challenge_id`, `payload` (Base64 of the exact bytes
+   to sign), and `expires_at`. The installer must verify the payload's version,
+   audience, purpose, invitation/organization, and public-key fingerprint against
+   its trusted configuration and local request before signing. Do not sign
+   arbitrary unvalidated payloads or reserialize the JSON before signing.
+4. Sign SHA-256 of the decoded payload using RSASSA-PKCS1-v1_5, then POST
+   `challenge_id` and Base64 `signature` to `/enrollment/v1/proofs`.
+   The server verifies the signature against the stored key and payload, then
+   claims the invitation, records its approval deadline/audit, and consumes
+   the challenge in one transaction. Cancelled/expired invitations fail closed.
+5. Persist the local key and non-secret request metadata. To check status,
+   request a fresh challenge with `purpose: "status"` and the same public key,
+   **without** `enrollment_code`, then sign/submit it identically. Status proofs
+   require the claimed key; the invitation code cannot authenticate this operation.
+   After a lost proof response, try key-authenticated status first. If the request
+   remains unclaimed, obtain a fresh claim challenge; never replay the old proof.
+
+Each proof is single-use, including status proofs. An audience change makes
+previous challenges unusable. Replay state persists across service restarts.
+Challenge validity ends at its deadline; claim challenges also end no later
+than invitation expiry. A status proof returns only invitation ID, state,
+revision, key fingerprint, approval deadline, and `credentials_issued: false`.
+It does not return owner/recipient, administrative review reasons, credential
+material, or network authorization. Approved/rejected/cancelled and
+approval-expired requests can be inspected only by their already-bound key.
+
+The device HTTP handler requires TLS, rejects browser-origin requests, uses
+the same strict 8192-byte JSON limits, and never accepts secrets in mutation
+URLs. It limits requests to 30 per source IP and 600 globally per minute,
+without trusting forwarded IP headers, and bounds its source map to 1024.
+An authenticated TLS reverse proxy is not yet integrated: simply forwarding
+HTTP to the handler fails its TLS requirement.
+
+The registry holds at most 1024 unexpired challenges globally and eight per
+invitation, including consumed challenges until expiry. Expired challenges are
+removed when another is requested. `429` responses include `Retry-After`;
+the installer must back off instead of polling aggressively. These bounded
+single-instance controls are not a substitute for production gateway/distributed
+abuse protection or deployment-specific capacity sizing.
+
+Tests cover signed claim/status round trips, wrong key/code/organization,
+tampered payloads, expiry, cancellation races, persistent concurrent replay
+rejection, audit-failure rollback, audience separation, HTTP/TLS guards, private
+status shape, and measured challenge/request caps.
+
+### Running the separate device HTTPS service
+
+Build the standalone command from the dashboard module:
+
+```sh
+go build -o bin/zpr-enrollment-service ./cmd/zpr-enrollment-service
+```
+
+Create an operator-owned configuration file. Example for **local development
+only**, using a certificate valid for `localhost` (lifetimes are examples):
+
+```json
+{
+  "version": 1,
+  "listen": "127.0.0.1:9443",
+  "allow_non_loopback": false,
+  "audience": "https://localhost:9443",
+  "database_file": "/var/lib/zpr/enrollment.sqlite",
+  "certificate_file": "/etc/zpr/enrollment-server.crt",
+  "key_file": "/etc/zpr/enrollment-server.key",
+  "challenge_lifetime_seconds": 60,
+  "approval_lifetime_seconds": 3600
+}
+```
+
+Start only when explicitly required:
+
+```sh
+bin/zpr-enrollment-service -config /etc/zpr/device-enrollment.json
+```
+
+There are no listener, certificate, lifetime, or database defaults.
+Configuration rejects unknown fields, trailing JSON, and files over 65536 bytes.
+Relative file paths resolve against the configuration file's directory, not
+the process working directory. The listener must use a literal IP and explicit
+port. Non-loopback addresses require `allow_non_loopback: true`; that flag is
+a technical opt-in, **not approval for internet deployment**.
+
+The server validates the certificate/key pair, certificate validity period,
+server-authentication usage, and audience hostname before opening the database.
+It serves TLS 1.3 or later and requires the HTTP Host to match the configured
+audience authority exactly, including any explicit port. The audience is the
+stable HTTPS origin trusted by the device, not necessarily the private bind
+address. Clients must verify the hostname and trust chain; never use an
+insecure TLS override.
+
+Only `/enrollment/v1/challenges` and `/enrollment/v1/proofs` are exposed.
+There are no administrative, static GUI, proxy, metrics, or inventory routes
+on this listener. The service accepts devices without client certificates
+because initial identity is established through the invitation and signed
+challenge, not through a credential they do not yet possess.
+
+The device service and private Control-Service administration process must
+point to the **same enrollment database on the same host**, with owner-only
+permissions under an operator-controlled parent directory. The current SQLite
+design is not a network-filesystem or multi-host deployment contract.
+Immediate transactions serialize claims/reviews across database connections.
+Configure the same approval lifetime in both services; the device service
+sets and persists the actual claim deadline. Changes apply after restart and
+do not extend existing deadlines. Keep TLS private keys and writable registry
+files out of package-download directories.
+
+Read headers are limited to 16 KiB; header/read/write/idle timeouts are
+5/10/15/30 seconds. Requests have a 10-second application deadline and a
+32-request concurrency cap. Busy responses return `503` with `Retry-After`.
+SIGINT/SIGTERM stops acceptance and allows up to 15 seconds for graceful
+shutdown before closing remaining connections and the database.
+
+An approved production gateway is still required before remote rollout.
+Prefer TCP/TLS pass-through for this initial server. HTTP forwarding is not
+supported, and proxy-supplied source/identity headers are not trusted. Behind
+a pass-through gateway, connections may share the gateway's source-IP rate
+budget; enforce remote-client abuse limits there as well. Certificate renewal,
+gateway policy, service supervision, operational monitoring, and remote
+deployment approval remain operator work. This change does not configure or
+expose any running service.
+
+Live TLS integration tests cover device claim, approval from a separate
+registry connection, key-authenticated status, admin route isolation, exact
+Host checks, certificate trust, launch readiness, and graceful shutdown with
+Simulator configuration unavailable.
+
+### Enrollment client core
+
+`internal/enrollment.NewClient` implements the installer's claim/status
+exchange. It accepts a trusted HTTPS audience, an optional CA pool (nil uses
+OS trust roots), and a `crypto.Signer` exposing an approved RSA public key.
+It does not itself select or persist a key store, generate credentials, or change
+network settings. The separate development wizard is described below. The signer boundary allows a future
+hardware-backed signer without exporting its private key; actual TPM support
+is not implemented.
+
+The client verifies server certificates and hostnames using TLS 1.3 or later.
+It never follows redirects or inherits environment-controlled HTTP proxies.
+Trusted deployments needing a forward proxy require a separate explicit proxy
+contract; disabling TLS verification is not supported.
+
+Before signing, it verifies challenge version, audience, organization,
+invitation, purpose, local public-key fingerprint, challenge ID, nonce, and
+matching expiry. Challenges must still be valid and expire within five minutes.
+It signs the exact decoded payload bytes and checks the resulting RSA signature
+locally before sending it. Enrollment service and device clocks must be correct;
+there is no silent clock-skew override.
+
+`Claim` takes the code in memory; `Status` never accepts a code. `Fingerprint`
+supplies the verification value to show in the future wizard. Call `Close` to
+close idle connections. The caller retains its signer and non-secret request
+metadata to resume status after restart. This core does not persist the code,
+log it, or accept it through a command-line interface.
+
+Responses are bounded to 16 KiB and strictly decoded. Wrong identity/key,
+invalid revision/state, missing pending approval deadline, and unexpected
+credential issuance are rejected. An approved response still means approval
+only, not successful credential installation or ZPR connectivity.
+
+HTTP failures return a `RemoteError` with status and bounded `RetryAfter`,
+without reflecting server error bodies or request secrets. No requests or
+proofs are automatically replayed. After uncertain proof delivery, use a fresh
+key-authenticated status request; the wizard must surface uncertainty and
+honor backoff rather than silently declaring success or starting a new asset.
+
+Client tests cover a real TLS claim/approval/resumed-status exchange, rejected
+challenge bindings before signing, redirect prevention, unknown trust roots,
+response limits/error redaction, retry timing, context cancellation,
+environment-proxy isolation, and rejection of false issued/connected results.
+
+### Development software enrollment identity
+
+The initial Linux development release uses a **non-hardware-backed software
+key**, as approved in the [Provisioning plan](../../Provisioning%20plan.md).
+`CreateSoftwareIdentity` and `LoadSoftwareIdentity` in
+[identity.go](internal/enrollment/identity.go) provide the local persistence
+core. They are available on Linux and macOS (for development tests); this
+does not expand the approved installer platform beyond Debian/Ubuntu.
+
+Creation generates RSA-3072 and stores PKCS#8 key material with versioned
+`software-development` metadata in `identity.json`. Metadata includes only
+the trusted HTTPS audience, organization, and invitation ID. It does not
+include the enrollment code, issued credentials, or cached approval status.
+The returned identity implements `crypto.Signer` and exposes `Metadata()`;
+pass it to `NewClient` and use a fresh `Status` request after restart.
+
+The caller must select an absolute, clean, dedicated state directory under a
+trusted parent on a local filesystem that supports hard links and file/directory
+sync. Creation makes the leaf directory with mode `0700` and the file with
+mode `0600`; existing state must belong to the effective user and have no
+group/other permissions. Symlink directories/files, nonregular files, additional
+hard links, unexpected fields, oversized/corrupt records, and incompatible
+versions/protection/key formats are rejected rather than repaired silently.
+The caller must separately validate installation configuration and CA trust;
+stored metadata is not an authoritative source of new trust roots.
+
+Creation syncs a complete temporary file, atomically links it to the final
+name without replacement, removes the temporary name, and syncs the directory.
+Concurrent creation has exactly one winner. An I/O failure after publication
+can leave a complete identity even though creation returned an error: surface
+the error and inspect/load the state, never assume failure means no key exists.
+A crash can leave a private temporary file; there is no automatic deletion
+or recovery of temporary key files. Loading missing/corrupt state never
+creates a replacement. Losing the key requires administrator-led recovery,
+not reuse of the invitation code to impersonate the previous identity.
+
+This is permission-protected storage, **not encrypted-at-rest or non-exportable
+storage**. Root/the owning account and backups containing this file can access
+the key; copying the state can impersonate the enrolled request. Protect backup
+and support bundles accordingly and never include the state file in logs.
+TPM storage, attestation, installer ownership/service-user provisioning,
+rotation, and production key-recovery policy remain unimplemented.
+
+Tests cover persistence, signing after reload, unsafe filesystem entries,
+strict bounded record validation, no-overwrite concurrent creation, and an
+actual TLS claim/approval/status exchange using a key reloaded from disk
+without the enrollment code. The identity store does not issue credentials
+or provide live adapter admission; the development setup command below uses it.
+
+Run the focused tests with `go test -race ./internal/enrollment`. The complete
+workflow and release decisions are in the
+[Provisioning plan](../../Provisioning%20plan.md).
+
+### Local browser setup wizard (development)
+
+The [setup command](cmd/zpr-enrollment-setup/main.go) is a runnable development
+GUI, not a signed installer or production adapter. Build it explicitly:
+
+```sh
+go build -o /tmp/zpr-enrollment-setup ./cmd/zpr-enrollment-setup
+/tmp/zpr-enrollment-setup -config /path/to/trusted-setup.json
+```
+
+Example operator configuration (replace all paths and the audience):
+
+```json
+{
+  "version": 1,
+  "audience": "https://enroll.example.com:9443",
+  "ca_file": "/etc/zpr/enrollment-ca.pem",
+  "state_directory": "/var/lib/zpr/enrollment-development",
+  "allow_software_development": true
+}
+```
+
+The state directory is absolute and must be a dedicated owner-only leaf under
+an existing trusted parent. Run as its intended owner; do not launch a browser
+as root or indiscriminately run the wizard with sudo. Installer/service account
+selection is not implemented. Configuration and CA files must be regular,
+non-symlink files owned by root or the effective user, not writable by group
+or others, and at most 64 KiB. Their parent directories must also be trusted.
+Relative `ca_file` paths resolve against the configuration directory. Omit
+`ca_file` to use OS trust roots; a configured file supplies a separate CA pool.
+An invalid configuration, corrupt identity, or changed stored audience fails
+startup. The GUI cannot override the audience, CA roots, or saved invitation.
+
+The command listens only on `127.0.0.1`, chooses an ephemeral port, and prints
+a private URL with a one-hour session capability in the fragment. Open it
+manually in this machine's normal browser and keep the command running.
+Do not share/capture the URL or process output in support logs. No browser is
+launched automatically. The page removes the fragment using `replaceState`;
+it keeps the capability only in memory and sends it in API headers. Reloading
+requires reopening the printed complete URL; after one hour restart the
+command for a new session. Ctrl-C/SIGTERM shuts down the local listener.
+There is no remote binding option, headless flow, or SSH/browser tunnel contract.
+
+Every API call requires the capability; mutations require the exact local
+Origin. Exact Host, Fetch Metadata, method, body size, and strict JSON checks
+reject cross-origin or malformed requests. Responses are no-store, scripts
+and styles are embedded local assets, and CSP disallows external resources,
+inline scripts, framing, and form navigation. These controls do not protect
+against root/the same local account or a compromised browser.
+
+Workflow:
+
+1. Enter the administrator-supplied organization and invitation ID. Preparing
+   creates/persists the software key locally, without sending a claim.
+2. Verify those details and enter the separately delivered code. It is cleared
+   from the password field when submitted, never logged or stored, and sent
+   only over the verified enrollment HTTPS exchange.
+3. Share the displayed fingerprint through an authenticated administrator
+   verification channel. Pending approval polls at ten-second intervals;
+   longer service `Retry-After` is enforced on the server as well as in the UI.
+4. After restart use **Check fresh status** with the saved key, without a code.
+   A successful approval explicitly states that credentials are **not issued**
+   and ZPR connectivity is **not established**.
+5. On a transport/invalid response failure, the outcome remains uncertain.
+   Automatic polling stops and code replay is blocked; wait and request fresh
+   status. A denied status does not prove the invitation is unclaimed. Only
+   explicit administrator-confirmed recovery can submit the code again with
+   the same key. Rejected/cancelled/expired requests require administrator
+   action, not deletion or replacement of local identity state.
+
+Requests are serialized; concurrent operations are rejected rather than
+queued. The ten-second floor also limits manual polling. Retry timing is
+in-memory per process, not a distributed rate-control guarantee. Opening a
+new command does not restore a cached approval decision.
+
+Go tests cover session/host/origin isolation, strict configuration, no key
+replacement, live TLS claim/approval/status after restart, administrator-confirmed
+recovery, uncertain responses, server backoff, and graceful shutdown:
+
+```sh
+go test -race ./internal/enrollment
+npm run test:browser -- tests/browser/enrollment-setup.spec.mjs --workers=1
+```
+
+The isolated desktop/tablet browser tests start their own temporary loopback
+wizard with an unavailable remote service, never Simulator. They verify key
+preparation, code-field clearing, uncertain failure, and missing-session
+blocking. They were not executed in the current environment: Node/npm is
+unavailable and the integrated browser connection timed out. Do not treat
+browser acceptance as complete until they pass.
 
 # Compiling the binary
 
@@ -101,6 +597,42 @@ after terminating periods and inside comments, quoted strings, and attribute
 values. Control-Space requests suggestions, arrow keys select, Tab accepts,
 and Escape dismisses; Enter remains a newline and Shift-Tab moves focus out.
 
+Source editors offer local **Search** and **Replace** controls immediately before
+History: policy/assertion, ZPR Config, Simulator scenario JSON, and directory LDIF.
+Control/Command-F opens search in the focused source; Control/Command-H opens
+replace. Searches match literal text (with optional case sensitivity), Next and
+Previous wrap, Enter/Shift-Enter navigate matches, and Escape closes the controls.
+Replacement text is literal too, including `$` characters. Replace match or
+Replace all changes only the unsaved source, preserving each editor's normal
+modified state and analysis invalidation. Nothing is saved, published, or applied
+automatically; replacements exceeding an editor's character limit are rejected.
+
+ZPR Config uses the policy editor's syntax colors and toolbar styling. Its narrow
+gutter contains only source-local error markers, not line numbers. Analyze shows
+success/error state on its button, and File contains Save draft and local file
+commands. An empty new draft has no redundant footer; actionable diagnostics and
+save/load status remain visible. Saving configuration still never applies it to
+the runtime.
+
+The Simulator scenario dialog switches between its structured form and a
+**Raw JSON editor**. Raw mode uses the same dark syntax colors, error-only gutter,
+File/Analyze/Format controls, and synchronized scrolling as Control Room's source
+editors, with a line/column indicator and a responsive assistant column.
+Analyze calls the read-only, organization-scoped
+`POST /api/simulator/organizations/{organization}/scenario-check` endpoint. It
+uses the normal scenario validator but never opens a workspace, saves, publishes,
+or starts anything. Syntax/type errors with exact source offsets appear in the
+gutter; definition errors without source locations remain in the status area.
+Form and JSON changes round-trip, and invalid JSON blocks returning to the form
+rather than discarding the draft. File import/download remains local and unsaved.
+
+The same Claude assistant is available in both modes and uses the current form
+or exact JSON draft. Its disclosure explains what is sent to Anthropic; the
+server still requires `ANTHROPIC_API_KEY`. Applying a proposal updates only the
+unsaved editor. Responses/proposals for a changed draft or reset conversation
+cannot overwrite newer work. Save, Publish, and Run remain separate explicit
+operations.
+
 Rescan LDAP, Format, Discard, Evaluate & Test, Save, Save As, and Compile & Stage
 share a responsive control strip directly above the source editor. Evaluate &
 Test runs ZPLC before the identity simulation. Save and Save As automatically
@@ -128,6 +660,31 @@ gateway key before running this scenario.
 In the Control Room map, each gateway is connected to a dark gray cloud
 representing its external network. Hover over the cloud to see the declared
 network label.
+
+### Gateway draft API
+
+Control-Service exposes `GET /api/gateways/contracts` to list live registered
+Gateway services with a matching actor, and `POST /api/gateways/config/check`
+to validate a JSON draft against one of those contracts. `GET /api/gateways/configs`
+lists the active organization's saved drafts;
+`GET /api/gateways/configs/{instance}` reads a draft and its revisions; and
+`POST /api/gateways/configs/{instance}/revisions` saves a new revision with an
+`expected_revision` compare-and-swap. Draft files are organization-partitioned,
+private, and versioned. The Control Room **Gateways** page provides fields for
+destinations, path prefixes, GET/HEAD methods, timeout, and response size, with
+server validation before saving. All these operations leave runtime unchanged.
+There is intentionally no Activate action yet.
+
+The draft cannot set the external-network classification; that remains
+policy-owned.
+
+The Visa Service Admin API reports service kind from installed policy but does
+not return the ZPL `external-network-connection` claim. Contract discovery uses
+the policy-derived `Gateway` kind and a matching live actor; any response
+external-network label is optional `ZPR_PLATFORM_SERVICES` display metadata,
+not a verified ZPL claim. Do not use draft validation as an activation/egress
+security boundary until Control-Service can verify the complete installed ZPL
+contract and runtime DNS/egress checks are implemented.
 
 ## Policy Layers
 
@@ -456,7 +1013,9 @@ manifest.
 The Simulator's Claude design assistant can review scenario drafts and
 organization profiles. It keeps `ANTHROPIC_API_KEY` server-side and only applies
 validated scenario or LDIF proposals to the open draft; saving and publishing
-remain explicit operator actions.
+remain explicit operator actions. Export `ANTHROPIC_API_KEY` before running
+`scripts/dashboard-stack.sh`; the script forwards it to the Simulator container
+and trusts only the Docker bridge gateway as its loopback proxy.
 
 The reusable base contract lives in `.local-runtime/generic-zpr-base.json` and
 is validated separately by the installer.

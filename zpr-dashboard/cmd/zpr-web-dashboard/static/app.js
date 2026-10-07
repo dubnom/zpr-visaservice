@@ -117,6 +117,7 @@ const pages = {
   policy: "POLICY",
   visas: "VISAS",
   denies: "DENIALS",
+  gateways: "GATEWAYS",
   "security-review": "SECURITY REVIEW",
   "zpr-config": "ZPR CONFIG",
   diagnostics: "DIAGNOSTICS",

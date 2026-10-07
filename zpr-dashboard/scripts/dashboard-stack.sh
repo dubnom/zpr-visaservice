@@ -248,6 +248,7 @@ start_simulator() {
     docker build -f "$SCRIPT_DIR/Dockerfile.simulator" -t "$SIMULATOR_IMAGE" "$DASHBOARD_DIR"
     simulator_socket=$(docker_socket_path)
     organization_id=${SIMULATION_ORGANIZATION_ID:-$(jq -r '.organization_id // "northstar"' "$SIMULATION_MANIFEST")}
+    simulator_proxy_ip=$(docker network inspect bridge --format '{{(index .IPAM.Config 0).Gateway}}')
     docker run -d --name "$SIMULATOR_DOCKER_CONTAINER" \
         --label zpr.simulator=true \
         -v "$simulator_socket:/var/run/docker.sock" \
@@ -291,6 +292,8 @@ start_simulator() {
         -e ZPR_POLICY_SERVICE_CONTAINER="$POLICY_CONTAINER" \
         -e ZPR_CONTROL_SERVICE_CONTAINER="$CONTROL_CONTAINER" \
         -e ZPR_CONTROL_ROOM_CONTAINER="$CONTROL_ROOM_DOCKER_CONTAINER" \
+        -e ZPR_CONTROL_ROOM_PROXY_IP="$simulator_proxy_ip" \
+        -e ANTHROPIC_API_KEY \
         "$SIMULATOR_IMAGE" >/dev/null
     wait_for_url http://127.0.0.1:8788/api/simulator/status simulator
     wait_for_url https://127.0.0.1:8791/internal/ping 'machine-control listener' \
@@ -719,6 +722,11 @@ start_observability_collector() {
 
 start_control_service() {
     control_ldap_container=${ZPR_ASSERTION_LDAP_CONTAINER:-}
+    control_gateway_organization=${ZPR_GATEWAY_ORGANIZATION_ID:-${SIMULATION_ORGANIZATION_ID:-}}
+    active_organization_file=${ACTIVE_ORGANIZATION_FILE:-}
+    if [ -z "$control_gateway_organization" ] && [ -n "$active_organization_file" ] && [ -r "$active_organization_file" ]; then
+        control_gateway_organization=$(tr -d '\r\n' < "$active_organization_file")
+    fi
     stop_control_service
     start_local_observability
     control_admin_url=${ZPR_ADMIN_URL:-https://127.0.0.1:$ADMIN_RELAY_PORT}
@@ -734,6 +742,8 @@ start_control_service() {
         -p 127.0.0.1:8790:8790 \
         -e ANTHROPIC_API_KEY \
         -e ZPR_CONTROL_SERVICE_LISTEN=0.0.0.0:8790 \
+        -e ZPR_GATEWAY_ORGANIZATION_ID="$control_gateway_organization" \
+        -e ZPR_GATEWAY_CONFIG_STORE_DIR="${ZPR_GATEWAY_CONFIG_STORE_DIR:-$STATE_DIR/gateway-configs}" \
         -e ZPR_CONTROL_SERVICE_CERT_FILE="$SERVICE_CERTS/control-service.crt" \
         -e ZPR_CONTROL_SERVICE_KEY_FILE="$SERVICE_CERTS/control-service.key" \
         -e ZPR_CONTROL_SERVICE_CLIENT_CA_FILE="$SERVICE_CERTS/service-ca.crt" \
@@ -1334,7 +1344,7 @@ start_stack() {
         start_admin_relay
         start_dns_service
         start_ui_relays
-        start_control_service
+        ZPR_GATEWAY_ORGANIZATION_ID="$startup_organization" start_control_service
         start_machine_controllers
     else
         multinode_runtime="$RUNTIME_DIR/multinode/$startup_organization"
@@ -1345,7 +1355,10 @@ start_stack() {
         ZPR_ADMIN_URL=https://127.0.0.1:8185 \
         ZPR_ADMIN_CA_FILE="$DASHBOARD_DIR/../../zpr-demo/multinode-demo/zpr-conf/include/admin-tls-cert.pem" \
         ZPR_ADMIN_KEY_FILE="$multinode_runtime/bob/web-monitor.key" \
+        ZPR_GATEWAY_ORGANIZATION_ID="$startup_organization" \
             start_control_service
+        docker exec -e SIMULATION_ORGANIZATION_ID="$startup_organization" "$SIMULATOR_DOCKER_CONTAINER" \
+            sh "$SCRIPT_DIR/dashboard-stack.sh" start-dns
     fi
     if [ "$startup_driver" = docker-multinode ]; then
         start_observability_collector "$startup_organization"

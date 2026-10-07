@@ -92,7 +92,7 @@
     },
     "zpr-config": {
       title: "ZPR configuration",
-      intro: "This editor stores versioned ZPLC runtime-configuration drafts. Analyze checks TOML syntax, Format normalizes assignment spacing without reordering keys or deleting comments, and File opens/imports or downloads a local draft.",
+      intro: "This editor stores versioned ZPLC runtime-configuration drafts. Analyze checks TOML syntax, Format normalizes assignment spacing without reordering keys or deleting comments, and File opens/imports or downloads a local draft. Search and Replace work locally on literal source text; replacements remain unsaved.",
       steps: ["Choose a saved draft and revision, or use File → New draft/Open file.", "Run Analyze before saving. TOML parser errors with a reported source line appear in the gutter; other diagnostics stay in the status message.", "Format first validates TOML; if valid it adjusts spacing around assignments while preserving comments and values.", "Save draft creates a version; it does not apply settings to a running service."],
       recovery: "Fix the marked TOML line and Analyze again. If validation reports no line, read the full status rather than assuming line 1. A saved configuration draft still needs its separate approved runtime-application workflow.",
       context: "Policy is about who may access which service; ZPLC configuration controls runtime/service settings. Editing this draft does not compile, stage or activate network policy.",
@@ -101,7 +101,7 @@
     },
     policy: {
       title: "Policy editor",
-      intro: "A policy describes which authenticated client identities may access which registered service identities. The editor works on versioned source records; a draft is not active runtime policy.",
+      intro: "A policy describes which authenticated client identities may access which registered service identities. The editor works on versioned source records; a draft is not active runtime policy. Search and Replace before History operate on the current policy or assertion source. Control/Command-F opens search, Control/Command-H opens replace, and changes stay unsaved.",
       steps: ["Browse opens the policy/assertion catalog; File contains record actions such as create, save and version operations.", "Analyze compiles and tests the exact edited source against configured candidate fixtures. Markers are attached only to the source line that produced them.", "Format changes policy-source layout only; it neither analyzes nor saves.", "Stage creates a review candidate. It does not deploy or activate that candidate."],
       recovery: "Analysis unavailable means required test fixtures could not be built; it is distinct from a compiler error. Check the status message and fixture-provider configuration.",
       context: "ZPL matches authenticated client/user or device attributes and service identity attributes. Service rules describe a destination; `allow` grants matching client classes access. The browser calls same-origin `/api/*` and carries no Visa Service or Policy Repository credentials.",
@@ -131,8 +131,8 @@
     "scenarios.html": {
       title: "Scenarios",
       intro: "Scenarios are organization-specific, revisioned workflows for simulated runtime tasks.",
-      steps: ["Only published revisions can run.", "Review cleanup steps before publishing; cancel stops active work and still runs cleanup.", "Editing or publishing does not activate a different organization."],
-      recovery: "If the catalog is empty, confirm the active organization has bundled or workspace scenarios. Open the reset log for activation failures.",
+      steps: ["Only published revisions can run.", "In the editor, switch to Raw JSON for syntax colors, line/column tracking, error markers, and File/Analyze/Format controls. Search and Replace sit before History.", "Analyze validates the exact JSON and scenario definition without saving or running. Definition errors without source locations stay in the status message.", "The Claude assistant works in both editor modes; Ask sends the current context and chat to Anthropic, and Apply changes only the unsaved draft. Review, Save, and Publish separately.", "Review cleanup steps before publishing; cancel stops active work and still runs cleanup.", "Editing or publishing does not activate a different organization."],
+      recovery: "Invalid JSON blocks returning to the form so it cannot be silently discarded. Select a source-local gutter marker or read the analysis status, fix the draft, and Analyze again. If the catalog is empty, confirm the active organization has bundled or workspace scenarios. Open the reset log for activation failures.",
       context: "Example: the Northstar `client-service` scenario runs `finance-client` on machine-03 against `echo-service` on machine-05. It requires the separately provisioned EchoWeb TCP 8080 grant; scenario execution does not modify policy.",
       example: "{\"id\":\"first-request\",\"after\":[\"echo-ready\"],\"action\":\"request_test_service\",\"machine\":\"machine-03\",\"component\":\"finance-client\",\"target\":\"echo-service\"}",
       docs: "Scenario format and actions", href: "https://github.com/org-zpr/zpr-visaservice/blob/main/zpr-dashboard/cmd/zpr-web-dashboard/examples/scenarios/README.md",

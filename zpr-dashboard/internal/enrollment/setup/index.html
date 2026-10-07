@@ -1,0 +1,41 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>ZPR machine setup</title>
+  <link rel="stylesheet" href="/setup.css">
+  <script src="/setup.js" defer></script>
+</head>
+<body>
+<main>
+  <h1>ZPR machine setup</h1>
+  <p class="warning">Development release: software key, not hardware-backed or encrypted at rest. Approval does not install credentials or establish ZPR connectivity.</p>
+  <p>Trusted enrollment service: <strong id="audience"></strong></p>
+  <form id="prepare">
+    <h2>Invitation details</h2>
+    <label>Organization <input id="organization" required maxlength="256" autocomplete="off"></label>
+    <label>Invitation ID <input id="invitation" required maxlength="256" autocomplete="off"></label>
+    <p>Use the exact details supplied by your administrator. Preparing saves a local key and binds these details; it does not contact the service.</p>
+    <button type="submit">Create and save local key</button>
+  </form>
+  <section id="identity" hidden>
+    <h2>Saved identity</h2>
+    <p id="metadata"></p>
+    <p>Verification fingerprint:</p>
+    <code id="fingerprint"></code>
+    <p>Verify this fingerprint with your administrator through an authenticated channel.</p>
+    <form id="claim" hidden>
+      <label id="recovery" hidden><input id="confirm-recovery" type="checkbox"> My administrator confirmed this invitation is valid for this saved key. I understand a denied status does not prove a previous claim failed.</label>
+      <label>Separately supplied enrollment code <input id="code" type="password" required minlength="26" maxlength="26" autocomplete="off" spellcheck="false"></label>
+      <button type="submit">Submit code and request approval</button>
+    </form>
+    <button id="status" type="button">Check fresh status</button>
+    <p id="state">No server status verified in this session.</p>
+  </section>
+  <p id="message" role="status" aria-live="polite">Opening protected setup session...</p>
+  <p id="retry"></p>
+  <p>Keep this page open while waiting. If you close it, reopen the setup URL printed by the command. Never delete the saved identity to retry an uncertain claim.</p>
+</main>
+</body>
+</html>

@@ -205,6 +205,7 @@ func runSimulator(listen string) error {
 	mux.HandleFunc("DELETE /api/simulator/organizations/{organization}/scenarios/{scenario}", handleWorkspaceScenarioArchive)
 	mux.HandleFunc("PUT /api/simulator/organizations/{organization}/scenarios/{scenario}", handleWorkspaceScenarioSave)
 	mux.HandleFunc("POST /api/simulator/organizations/{organization}/scenarios", handleWorkspaceScenarioCreate)
+	mux.HandleFunc("POST /api/simulator/organizations/{organization}/scenario-check", handleScenarioSourceCheck)
 	mux.HandleFunc("GET /api/simulator/logs/{machine}/{workload}", handleSimulatorWorkloadLogs)
 	mux.HandleFunc("POST /api/simulator/scenarios/cancel", handleSimulatorScenarioCancel)
 	mux.HandleFunc("POST /api/simulator/scenarios/{scenario}/run", handleWorkspaceScenarioRun)
