@@ -97,15 +97,17 @@ func TestSimulatorRuntimeDriverComesFromOrganizationProfile(t *testing.T) {
 	}
 }
 
-func TestGreatLakesWorkloadsRegisterPolicyServiceClasses(t *testing.T) {
+func TestOrganizationWorkloadsRegisterPolicyServiceClasses(t *testing.T) {
 	for _, test := range []struct {
-		agent string
-		want  string
+		organization string
+		agent        string
+		want         string
 	}{
-		{agent: "echo-service", want: "WorkdayEcho"},
-		{agent: "metrics-service", want: "WorkdayMetrics"},
+		{organization: "great-lakes", agent: "echo-service", want: "WorkdayEcho"},
+		{organization: "great-lakes", agent: "metrics-service", want: "WorkdayMetrics"},
+		{organization: "velocity", agent: "echo-service", want: "EchoWeb"},
 	} {
-		services, err := simulatorWorkloadServicesForAgent(filepath.Join("examples", "organizations"), "great-lakes", test.agent)
+		services, err := simulatorWorkloadServicesForAgent(filepath.Join("examples", "organizations"), test.organization, test.agent)
 		if err != nil {
 			t.Fatal(err)
 		}
