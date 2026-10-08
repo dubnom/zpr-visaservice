@@ -15,6 +15,7 @@ let scenarioEditorSaved = null;
 let scenarioEditorSummary = "";
 let scenarioEditorViewing = 0;
 const scenarioEditorPage = window.ZPREditorPage;
+scenarioEditorPage.placeStatus(document.getElementById("scenario-editor-status"));
 const scenarioHistory = scenarioEditorPage.createHistory({
   menu: document.getElementById("scenario-editor-history-menu"),
   list: document.getElementById("scenario-editor-history"),
@@ -242,8 +243,7 @@ function renderScenarioIdentity() {
 function setScenarioAnalyzeState(state = "") {
   for (const button of document.querySelectorAll("#scenario-source-analyze")) {
     if (!button) continue;
-    if (state) button.dataset.analysisState = state;
-    else delete button.dataset.analysisState;
+    scenarioEditorPage.setAnalysisState(button, state);
     button.classList.toggle("button-next-evaluate", !state);
   }
 }

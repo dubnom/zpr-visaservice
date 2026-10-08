@@ -361,9 +361,6 @@ pre { margin: 0; padding: 14px; min-height: 110px; max-height: 180px; overflow: 
 .sim-editor-page .policy-toolbar { border-bottom: 0; }
 .sim-editor-close { flex: 0 0 auto; }.sim-editor-page button { border-radius: 3px; font-family: var(--sans); }
 
-.scenario-editor-dialog :is(#scenario-source-analyze)[data-analysis-state="pending"] { border-color: #a85725; background: #c96932; color: white; }
-.scenario-editor-dialog :is(#scenario-source-analyze)[data-analysis-state="success"] { border-color: #23754c; background: #23754c; color: white; }
-.scenario-editor-dialog :is(#scenario-source-analyze)[data-analysis-state="error"] { border-color: #a53232; background: #b83b3b; color: white; }
 .scenario-editor-main { display: flex; flex-direction: column; gap: 14px; }
 .scenario-raw-mode .scenario-editor-main > :is(.scenario-builder-grid, .scenario-step-editor) { display: none; }
 .scenario-advanced:not([open]) > :not(summary) { display: none; }

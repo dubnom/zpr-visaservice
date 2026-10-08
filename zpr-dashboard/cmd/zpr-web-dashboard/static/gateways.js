@@ -17,6 +17,11 @@
   const saveButton = byId("gateway-save");
   const page = window.ZPREditorPage;
   const message = byId("gateway-draft-message");
+  const analysisScope = page.createAnalysisScope(() => [
+    source.value, state.selected?.organization_id, state.selected?.instance_id,
+    state.selected?.adapter_cn, state.selected?.service_name, state.revision,
+  ]);
+  page.placeStatus(message);
   const surface = page.createSourceSurface({
     source, highlight, gutter, language: "json", label: "Gateway draft",
   });
@@ -83,9 +88,10 @@
   }
 
   function clearAnalysis() {
+    analysisScope.invalidate();
     state.validDraft = "";
     surface.setDiagnostic(null);
-    delete analyzeButton.dataset.analysisState;
+    page.setAnalysisState(analyzeButton);
   }
 
   function updateControls() {
@@ -233,30 +239,31 @@
     const parsed = parseSource();
     if (parsed.error) {
       surface.setDiagnostic({ line: parsed.line, message: parsed.error });
-      analyzeButton.dataset.analysisState = "error";
+      page.setAnalysisState(analyzeButton, "error");
       setMessage(surface.diagnostic ? "" : parsed.error, "error");
       renderSource();
       return;
     }
     const analyzed = source.value;
+    const isCurrent = analysisScope.begin();
     state.busy = true;
-    analyzeButton.dataset.analysisState = "pending";
+    page.setAnalysisState(analyzeButton, "pending");
     setMessage("");
     updateControls();
     try {
       const result = await readJSON("/api/gateways/config/check", {
         method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ config: parsed.config }),
       });
-      if (source.value !== analyzed) return;
+      if (!isCurrent()) return;
       if (!result.valid) throw new Error(result.diagnostics || "Gateway draft analysis failed.");
       state.validDraft = analyzed;
       surface.setDiagnostic(null);
-      analyzeButton.dataset.analysisState = "success";
+      page.setAnalysisState(analyzeButton, "success");
       setMessage(`${result.diagnostics} No runtime changes were made.`, "success");
     } catch (error) {
-      if (source.value !== analyzed) return;
+      if (!isCurrent()) return;
       state.validDraft = "";
-      analyzeButton.dataset.analysisState = "error";
+      page.setAnalysisState(analyzeButton, "error");
       setMessage(error.message, "error");
     } finally {
       state.busy = false;
@@ -268,7 +275,7 @@
     const parsed = parseSource();
     if (parsed.error) {
       surface.setDiagnostic({ line: parsed.line, message: parsed.error });
-      analyzeButton.dataset.analysisState = "error";
+      page.setAnalysisState(analyzeButton, "error");
       setMessage(surface.diagnostic ? "" : parsed.error, "error");
       renderSource();
       return;

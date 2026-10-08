@@ -2,6 +2,28 @@
 
 ## Deployment status
 
+- Deployed to local Control Room and Simulator on 2026-10-08 at 14:25 EDT:
+  Analyze idle/pending styling is blue in all five
+  Analyze-capable editors; success remains green and errors remain red.
+  All 14 focused desktop/tablet color and Analyze-state tests pass.
+  Live stylesheets and editor HTML match source hashes; operator login is
+  enabled and signed-out sessions return 401. Dashboard configuration and
+  protected backend/Great Lakes start times are unchanged; Great Lakes is
+  active with activation idle. Both DNS relays were restored and checked.
+- Deployed to local Control Room and Simulator on 2026-10-08 at 14:20 EDT:
+  shared Analyze-button states; non-line errors under controls in all six
+  editors; valid-only gutter locations; shared source/context guards for
+  Assertion evaluation, Config Analyze/Format, Gateway and raw Scenario.
+  Edit-return cycles and Assertion Tab insertion invalidate obsolete results.
+  Directory has no Analyze action; diagnostics remain editor-owned.
+- Deployment verification: live HTML and changed JavaScript on both dashboards
+  match source hashes; Control Room HTTPS login readiness and signed-out 401
+  behavior are correct. Dashboard configurations are unchanged. Great Lakes
+  remains active; backend, DNS and Great Lakes container start times were
+  unchanged. Both Simulator DNS relays were restored and checked.
+- Pre-deployment focused desktop/tablet suites passed: 40 error-location/layout
+  and Analyze tests, 30 Gateway/Scenario guard tests, 22 Config regression tests,
+  and 20 Assertion guard/integration tests (overlapping coverage).
 - Deployed to local Control Room on 2026-10-08 at 12:56 EDT: shared History
   controller migration for Policy/Assertions and editor-specific revision
   selection isolation (`app.js?v=111`). Live HTML, application script and shared
@@ -43,6 +65,7 @@
 ### All text editors
 - [x] Add search and replace functionality. Put the buttons on the right side before History. Shared local controls cover policy/assertion, ZPR Config, scenario JSON, and directory LDIF source editors.
 - [x] Add AI Assistant
+- [x] Add task-specific embedded SKILL.md instructions for Policy, Assertions, ZPR Config, Gateways, Simulator directory LDIF, scenario design and organization design; preserve response contracts and operator-only application.
 - [x] Make Search and Replace one button/ Clicking the button should show or hide the dialog. Button should change colors while in use.
 - [x] Remove "Enter text..." in Search and Replace.
 - [x] Add a checkbox to Search and Replace to enable/disable regular expressions
@@ -58,7 +81,7 @@
 - [x] Use the Policy editor as the blueprint for every editor: shared `editor-page.js` core for Gateways, ZPR Config, Simulator directory and scenario editors.
 - [x] Remove the centred editor kind label and idle/"Select a…" placeholder text from all editor pages.
 - [x] Open the Simulator directory and scenario editors as full pages instead of modal dialogs.
-- [x] Keep source-line errors in the gutter only; retain service/configuration failures below the editor.
+- [x] Keep source-line errors in the gutter only; show service/configuration failures under the control buttons and above source in all six editors. Do not assign invented source lines.
 - [x] Remove extra top spacing and the separator above editor controls.
 - [x] Remove the naming placeholder and New/unsaved label from the ZPR Config editor.
 - [x] Remove the ZPR Config name box above Browse; ask for a name on Save.
@@ -68,6 +91,11 @@
 - [x] Wrap should start as disabled for all editors; a user's explicit saved Wrap choice is remembered.
 - [x] Fix assistant key setup: persist the key securely for both Control-Service and Simulator, use it for readiness and requests, and explain the supported setup command. Reload the existing Control-Service container in place so key setup preserves configured LDAP/admin settings.
 - [x] Add Rename to the Browse right-click menus for Policy, Assertion, and ZPR Config records.
+- [ ] AI Assistant doesn't need the 'Use assistant' checkbox.
+- [ ] AI Assistant Model and Max output (should be max tokens) should be collapsible, and start off collapsed.
+- [ ] Make sure AI changes are able to be undone.
+- [ ] Does the AI assistant also send attributes and groups to Anthropic?
+- [ ] Change 'Ask about this policy' to 'How can I help?'
 
 ### All log viewers
 - [x] Word wrap checkbox defaults to disabled; users can enable it per view.
@@ -88,6 +116,11 @@
   - [x] Share dirty-state discard confirmation across all six editors, preserving action-specific warnings, cancellation and reset behavior.
   - [x] Use the shared History controller and version renderer for Policy/Assertions as well as Config, Gateways, Directory and Scenario. Keep revision loading domain-owned and prevent another editor's History selection from invoking Policy revision loading.
 - [ ] Consolidate Analyze state, source-owned diagnostics, diagnostic clearing and stale-response rejection without mixing service/configuration errors with source-line errors.
+  - [x] Share valid source-line bounds checking across source surfaces and Policy/Assertion gutter rendering. Place non-line editor errors under controls; Assertion errors without valid locations remain visible there instead of receiving line-1/clamped markers.
+  - [x] Share source/context analysis guards for Gateway and raw Scenario. Reject superseded runs, edited-then-restored source, and changed record/revision/organization/format context without applying obsolete success or error results.
+  - [x] Use the shared analysis-context guard for Config Analyze and validation-before-Format. Keep mutation error handling separate; stale responses cannot format replaced text or attach obsolete diagnostics.
+  - [x] Use the shared analysis-context guard for Assertion evaluation, preserving AbortController cancellation and record/organization/revision ownership. Source edits, Tab insertion, catalog insertion and record changes invalidate obsolete results.
+  - [x] Share explicit idle/pending/success/error button-state transitions in the five Analyze-capable editors. Preserve readiness, disabled actions, diagnostic rendering and stale-response guards; do not add an Analyze action to Directory.
 - [ ] Consolidate JavaScript editor-frame setup and responsive viewport sizing so individual editors do not duplicate layout wiring.
 - [ ] Extract a shared AI assistant shell and conversation controller from `editor-assistant.js` and `design-assistant.js`: messages, model/token controls, usage counters, pending/error states and collapse behavior.
 - [ ] Share assistant stale-context/proposal protection while keeping undoable text Insert and validated structured Apply as separate adapters; never save, publish, activate or run automatically.
@@ -191,7 +224,7 @@
 - [x] Match the assertion editor gutter to the other editors.
 - [x] Change Nav from "Policy" to "Policy/Assertions".
 - [x] Remove Syntax from the bottom of the assertions editor.
-- [ ] Change "Analyze" color to blue instead of orange.
+- [x] Change "Analyze" color to blue instead of orange across Policy, Assertions, Config, Gateways and Scenario, including hover and pending states. Keep success green and errors red.
 
 ### Status
 - [x] I noticed on the "adapters" page that even when sorted, the records moved around (though nothing changed). I think sorting only sorts on its primary field but if that field has duplicates this occurs. A solution would be to always have a secondary field (or more) that is/are automatically attached. The user has nothing to do with this but the results would be deterministic.
@@ -217,7 +250,7 @@
 
 ### ZPR Config
 - [x] Adopt the same look-and-feel as the policy editor. If ZPR config is limited to one file, there is no need for Browse, or some of the File commands. Refresh Attributes is also not relevant.
-- [x] Keep ZPR Config toolbar roles aligned with the Policy editor: File on the left, editor mode centered, Analyze/Format in the right-side action group, and History/utilities at the right. Match the orange pending-analysis state, enabled/disabled Format styling, success/error colors, and responsive placement.
+- [x] Keep ZPR Config toolbar roles aligned with the Policy editor: File on the left, editor mode centered, Analyze/Format in the right-side action group, and History/utilities at the right. Match the blue pending-analysis state, enabled/disabled Format styling, success/error colors, and responsive placement.
 - [x] Still things to do to get the look and feel better. "Validate syntax" should act like "Analyze". There should be a gutter for errors. A Format button, a file button.
 - [x] Where are the colors? Where is the gutter? Why is the "Save Draft" not part of the file pulldown? Make "File..." and Analyze use the same color and sizes of the policy editor.
 - [x] Remove "New draft" at the bottom of the editor, and use that space for the editor.

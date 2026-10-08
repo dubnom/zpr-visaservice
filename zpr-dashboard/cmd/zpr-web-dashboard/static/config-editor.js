@@ -5,6 +5,7 @@
   const page = window.ZPREditorPage;
   let draftName = "";
   const status = byId("zpr-config-status");
+  page.placeStatus(status);
   const records = byId("zpr-config-records");
   const recordMenu = byId("zpr-config-record-menu");
   const analyze = byId("zpr-config-validate");
@@ -18,6 +19,10 @@
   let pending = false;
   let sourceVersion = 0;
   let menuRecordID = "";
+  const analysisScope = page.createAnalysisScope(() => [
+    source.value, catalog?.organization_id, record?.id,
+    record?.current_revision, browsingRevision,
+  ]);
   const surface = page.createSourceSurface({
     source, highlight: byId("zpr-config-highlight"), gutter: byId("zpr-config-gutter"), language: "toml", label: "Configuration",
   });
@@ -31,8 +36,9 @@
   const setStatus = (text = "", kind = "") => page.setStatus(status, text, kind);
   function clearAnalysis() {
     sourceVersion++;
+    analysisScope.invalidate();
     surface.setDiagnostic(null);
-    delete analyze.dataset.analysisState;
+    page.setAnalysisState(analyze);
   }
   function syncAnalysisButtons() {
     const disabled = pending || !source.value.trim();
@@ -136,15 +142,15 @@
     recordMenu.style.top = `${Math.max(8, Math.min(y, innerHeight - recordMenu.offsetHeight - 8))}px`;
     recordMenu.querySelector("button:not(:disabled)")?.focus();
   }
-  const run = async (action) => {
+  const run = async (action, isCurrent = null) => {
     if (pending) return;
     pending = true;
     const version = sourceVersion;
     document.querySelectorAll("[data-config-command]").forEach((button) => { button.disabled = true; });
     try { await action(); } catch (error) {
-      if (version !== sourceVersion) return;
+      if (isCurrent ? !isCurrent() : version !== sourceVersion) return;
       surface.setDiagnostic(error.line ? { line: error.line, message: error.message } : null);
-      if (error.details?.valid === false) analyze.dataset.analysisState = "error";
+      if (error.details?.valid === false) page.setAnalysisState(analyze, "error");
       setStatus(surface.diagnostic ? "" : error.message, "error");
     }
     finally { pending = false; document.querySelectorAll("[data-config-command]").forEach((button) => { button.disabled = false; }); renderEditor(); }
@@ -203,19 +209,22 @@
     renderRecords();
     renderEditor();
   }
-  analyze.addEventListener("click", () => run(async () => {
-    const version = sourceVersion;
+  const runSourceAction = (action) => {
+    if (pending) return;
+    const isCurrent = analysisScope.begin();
+    return run(() => action(isCurrent), isCurrent);
+  };
+  analyze.addEventListener("click", () => runSourceAction(async (isCurrent) => {
     const result = await post("/api/policy/config/check", { source: source.value });
-    if (version !== sourceVersion) return;
+    if (!isCurrent()) return;
     surface.setDiagnostic(null);
-    analyze.dataset.analysisState = "success";
+    page.setAnalysisState(analyze, "success");
     setStatus(result.diagnostics, "success");
   }));
-  format.addEventListener("click", () => run(async () => {
-    const version = sourceVersion;
+  format.addEventListener("click", () => runSourceAction(async (isCurrent) => {
     const original = source.value;
     await post("/api/policy/config/check", { source: original });
-    if (version !== sourceVersion) return;
+    if (!isCurrent()) return;
     source.value = formatTOMLSpacing(original);
     clearAnalysis();
     setStatus("");

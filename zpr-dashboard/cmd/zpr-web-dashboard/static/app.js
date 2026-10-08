@@ -2002,7 +2002,7 @@ function clearPolicySelection() {
   byId("policy-test-gutter").hidden = false;
   byId("policy-test-status").hidden = true;
   hidePolicyTestDetails();
-  byId("policy-check").removeAttribute("data-analysis-state");
+  window.ZPREditorPage.setAnalysisState(byId("policy-check"));
   byId("policy-check-result").textContent = "Policy source is not loaded.";
   byId("policy-check-result").hidden = true;
   renderPolicyHistory();
@@ -2763,7 +2763,7 @@ function updatePolicyDirtyState() {
   byId("policy-stage").disabled = policy.stagePending || policy.testPending || policy.checkPending;
   byId("policy-check").disabled = !canEdit || !canTest || !policy.compilerReady || !policy.testerReady || policy.testPending || policy.checkPending;
   byId("policy-check").textContent = "Analyze";
-  if (!checked && !policy.testPending) byId("policy-check").removeAttribute("data-analysis-state");
+  if (!checked && !policy.testPending) window.ZPREditorPage.setAnalysisState(byId("policy-check"));
   byId("policy-format").disabled = !canEdit;
   byId("policy-format").classList.toggle("button-save-as-ready", canEdit);
   byId("policy-source").disabled = !canViewSource;
@@ -2808,7 +2808,7 @@ async function runPolicyTest(source = byId("policy-source").value) {
   policy.testPending = true;
   policy.testAbort = controller;
   byId("policy-test-status").hidden = true;
-  byId("policy-check").dataset.analysisState = "pending";
+  window.ZPREditorPage.setAnalysisState(byId("policy-check"), "pending");
   hidePolicyTestDetails();
   updatePolicyDirtyState();
   let outcome = { passed: false, error: "Policy test did not complete." };
@@ -2836,7 +2836,7 @@ async function runPolicyTest(source = byId("policy-source").value) {
     policy.testSource = source;
     policy.testWarnings = result.warnings || [];
     renderPolicyLintWarnings();
-    byId("policy-check").dataset.analysisState = "success";
+    window.ZPREditorPage.setAnalysisState(byId("policy-check"), "success");
     renderPolicyTestGutter(result);
     outcome = { passed: true, result };
   } catch (error) {
@@ -2844,7 +2844,7 @@ async function runPolicyTest(source = byId("policy-source").value) {
       const parsedLines = policyTestErrorLines(error.message, source.split("\n").length);
       policy.testResult = { error: error.message };
       policy.testSource = source;
-      byId("policy-check").dataset.analysisState = "error";
+      window.ZPREditorPage.setAnalysisState(byId("policy-check"), "error");
       if (parsedLines.length) {
         renderPolicyTestErrorGutter(error.message, parsedLines, errorTitle);
         byId("policy-test-status").hidden = true;
@@ -2875,11 +2875,12 @@ function renderPolicyTestGutter(result) {
   for (const service of result.services || []) {
     if (!service.supported) continue;
     for (const rule of service.rules || []) {
-      if (rule.line < 1 || rule.line > lineCount) continue;
-      let lineResult = resultsByLine.get(rule.line);
+      const line = window.ZPREditorPage.sourceLine(rule.line, lineCount);
+      if (line === null) continue;
+      let lineResult = resultsByLine.get(line);
       if (!lineResult) {
         lineResult = { count: 0, effect: rule.effect || "deny", services: new Set(), subjects: new Map() };
-        resultsByLine.set(rule.line, lineResult);
+        resultsByLine.set(line, lineResult);
       }
       const matched = rule.matched || { count: 0, subjects: [] };
       lineResult.count += Number(matched.count) || 0;
@@ -2919,7 +2920,7 @@ function renderPolicyTestGutter(result) {
 
 function policyTestErrorLines(message, lineCount) {
   return [...new Set(Array.from(String(message).matchAll(/\bline\s+(\d+)(?:\s*,\s*column\s+\d+)?\b/gi), (match) => Number(match[1]))) ]
-    .filter((line) => line >= 1 && line <= lineCount)
+    .filter((line) => window.ZPREditorPage.sourceLine(line, lineCount) !== null)
     .sort((left, right) => left - right);
 }
 
@@ -3034,7 +3035,7 @@ function stopPolicyTest() {
   policy.testPending = false;
   clearPolicyTestResults();
   if (byId("policy-check").dataset.analysisState === "pending") {
-    byId("policy-check").dataset.analysisState = policy.validSource === policy.evaluatedSource ? "success" : "";
+    window.ZPREditorPage.setAnalysisState(byId("policy-check"), policy.validSource === policy.evaluatedSource ? "success" : "");
   }
   byId("policy-test-gutter-content").replaceChildren();
   byId("policy-test-gutter").hidden = false;
@@ -3150,7 +3151,7 @@ async function checkPolicy(source = byId("policy-source").value) {
   state.policy.errorOffsets = [];
   updatePolicyHighlight();
   button.disabled = true;
-  button.dataset.analysisState = "pending";
+  window.ZPREditorPage.setAnalysisState(button, "pending");
   byId("policy-check-result").textContent = "Checking with ZPLC…";
   updatePolicyDirtyState();
   let valid = false;
@@ -3201,8 +3202,8 @@ function renderPolicyLintWarnings() {
   const lineCount = byId("policy-source").value.split("\n").length;
   const byLine = new Map();
   for (const warning of warnings) {
-    const line = Number(warning.line);
-    if (!Number.isInteger(line) || line < 1 || line > lineCount) continue;
+    const line = window.ZPREditorPage.sourceLine(warning.line, lineCount);
+    if (line === null) continue;
     if (!byLine.has(line)) byLine.set(line, []);
     byLine.get(line).push(warning);
   }
@@ -3270,7 +3271,7 @@ function policySetCheckResult(valid, diagnostics, source, warnings = []) {
   result.hidden = true;
   result.textContent = "";
   result.dataset.state = valid ? "valid" : "invalid";
-  byId("policy-check").dataset.analysisState = valid ? "success" : "error";
+  window.ZPREditorPage.setAnalysisState(byId("policy-check"), valid ? "success" : "error");
   byId("policy-test-status").hidden = true;
   byId("policy-test-status").textContent = "";
   if (!valid) {
@@ -4013,6 +4014,8 @@ const policyHistory = window.ZPREditorPage.createHistory({
   isAvailable: () => Boolean(state.policy.record),
 });
 window.ZPREditorPage.fitSourceToViewport(byId("policy-code-editor"));
+byId("policy-source-surface").prepend(byId("policy-test-status"));
+window.ZPREditorPage.placeStatus(byId("policy-file-status"));
 setPolicyPickerOpen(false);
 setAssistantPaneCollapsed(policyPaneCollapsed("assistant"));
 byId("policy-assistant-toggle").addEventListener("click", () => {

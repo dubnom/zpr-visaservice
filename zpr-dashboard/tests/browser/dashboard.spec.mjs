@@ -366,15 +366,13 @@ test("assertion source failures are errors and never successful checks", async (
   await page.locator("#assertion-analyze").click();
   await expect(page.locator("#assertion-run-status")).toContainText("ERROR");
   await expect(page.locator("#assertion-run-error")).toContainText("no assertions were evaluated");
-  const errorMarker = page.locator('#assertion-result-gutter [data-line="1"] .assertion-result-marker');
-  await expect(errorMarker).toHaveAttribute("data-state", "error");
-  await errorMarker.click();
-  const errorDetails = page.getByRole("dialog", { name: "Assertion error" });
-  await expect(errorDetails).toContainText("Trusted LDAP read failed");
-  await errorDetails.locator(".dialog-actions .button").click();
+  await expect(page.locator("#assertion-result-gutter .assertion-result-marker")).toHaveCount(0);
+  await expect(page.locator("#assertion-message")).toBeVisible();
+  await expect(page.locator("#assertion-message")).toContainText("Trusted LDAP read failed");
   await page.locator("#assertion-analyze").click();
   await expect(page.locator("#assertion-result-rows tr")).toHaveCount(0);
   api.assertions.configured = false;
+  await openPolicyFiles(page);
   await page.locator("#assertion-reload").click();
   await expect(page.locator("#assertion-analyze")).toBeDisabled();
   await expect(page.locator("#assertion-enabled")).toBeDisabled();
@@ -1141,6 +1139,47 @@ test("GUI ZPR Config shares editor controls and keeps an error-only gutter", asy
   expect(analysisColors.error[1].colors).toEqual(analysisColors.error[0].colors);
 });
 
+test("Analyze styling is blue pending and keeps green success and red errors across editors", async ({ page, appURL, api }) => {
+  await page.goto(appURL + "/#map");
+  await page.addStyleTag({ url: appURL + "/simulator.css" });
+  await page.evaluate(() => {
+    const ids = ["policy-check", "assertion-analyze", "zpr-config-validate", "gateway-analyze", "scenario-source-analyze"];
+    const fixture = document.createElement("div");
+    fixture.className = "scenario-editor-dialog";
+    fixture.style.cssText = "position:fixed;inset:0;z-index:10000;background:white;display:flex;align-items:flex-start";
+    for (const id of ids) {
+      document.getElementById(id)?.remove();
+      const button = document.createElement("button");
+      button.id = id;
+      button.className = "button button-next-evaluate";
+      button.textContent = id;
+      fixture.append(button);
+    }
+    document.body.append(fixture);
+  });
+  for (const [state, normal, hover] of [
+    ["", "rgb(36, 99, 166)", "rgb(29, 80, 136)"],
+    ["pending", "rgb(36, 99, 166)", "rgb(29, 80, 136)"],
+    ["success", "rgb(35, 117, 76)", "rgb(25, 92, 58)"],
+    ["error", "rgb(184, 59, 59)", "rgb(153, 47, 47)"],
+  ]) {
+    await page.evaluate((value) => {
+      document.querySelectorAll(".scenario-editor-dialog button").forEach((button) => {
+        if (value) button.dataset.analysisState = value;
+        else delete button.dataset.analysisState;
+      });
+    }, state);
+    for (const id of ["policy-check", "assertion-analyze", "zpr-config-validate", "gateway-analyze", "scenario-source-analyze"]) {
+      await page.mouse.move(0, 200);
+      const button = page.locator(`#${id}`);
+      await expect(button).toHaveCSS("background-color", normal);
+      await expect(button).toHaveCSS("color", "rgb(255, 255, 255)");
+      await button.hover();
+      await expect(button).toHaveCSS("background-color", hover);
+    }
+  }
+});
+
 test("Configuration navigation labels the ZPR Config editor Config and keeps its route", async ({ page, appURL, api }) => {
   await page.goto(appURL + "/#map");
   if (await page.locator("body").evaluate((body) => body.classList.contains("sidebar-condensed"))) {
@@ -1409,7 +1448,7 @@ test("GUI raw scenario source scroll tracks highlighting and preserves unavailab
   expect(geometry.highlight).toEqual(geometry.source);
   expect(geometry.gutter).toBe(geometry.source[0]);
   expect(Math.abs(geometry.rowHeight - geometry.lineHeight)).toBeLessThan(1);
-  await expect(page.locator("#scenario-assistant-slot [data-assistant-state]")).toHaveText("Not configured");
+  await expect(page.locator("#scenario-assistant-slot [data-assistant-state]")).toHaveText("Unavailable");
   await expect(page.locator("#scenario-assistant-slot [data-assistant-submit]")).toBeDisabled();
   await expect(page.locator("#scenario-assistant-slot")).toContainText("sends the current organization/scenario context");
 });
@@ -1773,6 +1812,381 @@ for (const editor of [
     await page.locator(`#${editor.name === "Assertions" ? "assertion-source" : editor.name === "Policy" ? "policy-source" : editor.name === "Config" ? "zpr-config-source" : editor.name === "Gateway" ? "gateway-source" : `${editor.prefix}-source`}`).click();
     await expect(menu).toBeHidden();
     await expect(toggle).toHaveAttribute("aria-expanded", "false");
+  });
+}
+
+test("shared analysis scope rejects superseded runs, context changes and edit-return cycles", async ({ page, appURL, api }) => {
+  await page.goto(appURL + "/#map");
+  const states = await page.evaluate(() => {
+    let context = ["source", "record", "organization", 1, "json"];
+    const scope = window.ZPREditorPage.createAnalysisScope(() => context);
+    const first = scope.begin();
+    const initial = first();
+    const second = scope.begin();
+    const superseded = first();
+    const latest = second();
+    scope.invalidate();
+    const invalidated = second();
+    const changes = context.map((_, index) => {
+      const run = scope.begin();
+      const original = context[index];
+      context[index] = `${original}-changed`;
+      const changed = run();
+      context[index] = original;
+      return changed;
+    });
+    const edit = scope.begin();
+    context[0] = "edited";
+    scope.invalidate();
+    context[0] = "source";
+    const returned = edit();
+    const loaded = scope.begin();
+    context = [...context];
+    return { initial, superseded, latest, invalidated, changes, returned, sameValues: loaded() };
+  });
+  expect(states).toEqual({ initial: true, superseded: false, latest: true, invalidated: false, changes: [false, false, false, false, false], returned: false, sameValues: true });
+});
+
+for (const outcome of ["success", "error"]) {
+  test(`Gateway analysis scope rejects delayed ${outcome} after editing back to the original source`, async ({ page, appURL, api }) => {
+    api.handlers.set("/api/gateways/contracts", (route) => route.fulfill({ json: { organization_id: "alpha", contracts: [
+      { organization_id: "alpha", instance_id: "egress", adapter_cn: "gateway-egress", service_name: "egress.svc.zpr" },
+    ] } }));
+    api.handlers.set("/api/gateways/configs", (route) => route.fulfill({ json: { organization_id: "alpha", configs: [] } }));
+    let complete;
+    api.handlers.set("/api/gateways/config/check", async (route) => {
+      await new Promise((resolve) => { complete = resolve; });
+      await route.fulfill({ status: outcome === "success" ? 200 : 422, json: {
+        valid: outcome === "success", diagnostics: "Obsolete gateway analysis", error: "Obsolete gateway analysis",
+      } });
+    });
+    await page.goto(appURL + "/#gateways");
+    const source = page.locator("#gateway-source");
+    await expect(source).toHaveValue(/"instance_id": "egress"/);
+    const original = await source.inputValue();
+    const analyzed = JSON.stringify({ ...JSON.parse(original), description: "Draft needing analysis" }, null, 2);
+    await source.fill(analyzed);
+    const button = page.locator("#gateway-analyze");
+    await button.click();
+    await expect.poll(() => Boolean(complete)).toBe(true);
+    await source.fill(analyzed + "\n");
+    await source.fill(analyzed);
+    complete();
+    await expect(button).toBeEnabled();
+    await expect(button).not.toHaveAttribute("data-analysis-state", /.+/);
+    await expect(page.locator("#gateway-draft-message")).toBeHidden();
+    await expect(page.locator("#gateway-gutter button")).toHaveCount(0);
+    await page.locator("#gateway-files-toggle").click();
+    await expect(page.locator("#gateway-save")).toBeDisabled();
+    expect([...api.counts.keys()].some((path) => path.startsWith("/api/simulator"))).toBe(false);
+  });
+
+  test(`Scenario analysis scope rejects delayed ${outcome} after editing back to the original source`, async ({ page, appURL, api }) => {
+    await openRawScenario(page, appURL, api);
+    const source = page.locator("#scenario-editor-source");
+    const original = await source.inputValue();
+    let complete;
+    api.handlers.set("/api/simulator/organizations/alpha/scenario-check", async (route) => {
+      await new Promise((resolve) => { complete = resolve; });
+      await route.fulfill({ status: outcome === "success" ? 200 : 422, json: {
+        valid: outcome === "success", diagnostics: "Obsolete scenario analysis", error: "Obsolete scenario analysis", line: 2,
+        scenario: JSON.parse(original),
+      } });
+    });
+    const analysis = page.evaluate(() => window.analyzeScenarioSourceEditor());
+    await expect.poll(() => Boolean(complete)).toBe(true);
+    await source.fill(original + "\n");
+    await source.fill(original);
+    complete();
+    expect(await analysis).toBeNull();
+    await expect(source).toHaveValue(original);
+    await expect(page.locator("#scenario-editor-status")).toBeHidden();
+    await expect(page.locator("#scenario-source-gutter button")).toHaveCount(0);
+    await expect(page.locator("#scenario-source-analyze")).not.toHaveAttribute("data-analysis-state", /success|error/);
+  });
+}
+
+test("Gateway analysis scope rejects a delayed result after switching installed gateways", async ({ page, appURL, api }) => {
+  api.handlers.set("/api/gateways/contracts", (route) => route.fulfill({ json: { organization_id: "alpha", contracts: [
+    { organization_id: "alpha", instance_id: "first", adapter_cn: "gateway-first", service_name: "first.svc.zpr" },
+    { organization_id: "alpha", instance_id: "second", adapter_cn: "gateway-second", service_name: "second.svc.zpr" },
+  ] } }));
+  api.handlers.set("/api/gateways/configs", (route) => route.fulfill({ json: { organization_id: "alpha", configs: [] } }));
+  let complete;
+  api.handlers.set("/api/gateways/config/check", async (route) => {
+    await new Promise((resolve) => { complete = resolve; });
+    await route.fulfill({ json: { valid: true, diagnostics: "Old gateway valid" } });
+  });
+  await page.goto(appURL + "/#gateways");
+  const source = page.locator("#gateway-source");
+  await expect(source).toHaveValue(/"instance_id": "first"/);
+  await page.locator("#gateway-analyze").click();
+  await expect.poll(() => Boolean(complete)).toBe(true);
+  await page.locator("#gateway-picker-toggle").click();
+  await page.locator('#gateway-contracts [data-instance-id="second"]').click();
+  await expect(source).toHaveValue(/"instance_id": "second"/);
+  complete();
+  await expect(page.locator("#gateway-analyze")).toBeEnabled();
+  await expect(page.locator("#gateway-analyze")).not.toHaveAttribute("data-analysis-state", /.+/);
+  await expect(page.locator("#gateway-draft-message")).toBeHidden();
+  await expect(page.locator("#gateway-record-title")).toHaveText("second.svc.zpr");
+});
+
+for (const action of ["Analyze", "Format"]) {
+  for (const outcome of ["success", "error"]) {
+    test(`Config analysis scope rejects delayed ${outcome} for ${action} after an edit-return cycle`, async ({ page, appURL, api }) => {
+      let complete;
+      api.handlers.set("/api/policy/config/check", async (route) => {
+        await new Promise((resolve) => { complete = resolve; });
+        await route.fulfill({ status: outcome === "success" ? 200 : 422, json: {
+          valid: outcome === "success", diagnostics: "Obsolete config analysis",
+          error: "Obsolete config analysis", line: 1,
+        } });
+      });
+      await page.goto(appURL + "/#zpr-config");
+      const source = page.locator("#zpr-config-source");
+      const original = 'name="Original"\n';
+      await source.fill(original);
+      await page.getByRole("button", { name: action, exact: true }).click();
+      await expect.poll(() => Boolean(complete)).toBe(true);
+      await source.fill('name="Replacement"\n');
+      await source.fill(original);
+      complete();
+      await expect(page.locator("#zpr-config-validate")).toBeEnabled();
+      await expect(source).toHaveValue(original);
+      await expect(page.locator("#zpr-config-validate")).not.toHaveAttribute("data-analysis-state", /.+/);
+      await expect(page.locator("#zpr-config-status")).toBeHidden();
+      await expect(page.locator("#zpr-config-gutter button")).toHaveCount(0);
+      api.handlers.set("/api/policy/config/check", (route) => route.fulfill({ json: { valid: true, diagnostics: "Current config valid" } }));
+      await page.getByRole("button", { name: action, exact: true }).click();
+      await expect(page.locator("#zpr-config-validate")).toBeEnabled();
+      if (action === "Analyze") {
+        await expect(page.locator("#zpr-config-validate")).toHaveAttribute("data-analysis-state", "success");
+        await expect(page.locator("#zpr-config-status")).toHaveText("Current config valid");
+      } else {
+        await expect(source).toHaveValue('name = "Original"\n');
+      }
+      expect([...api.counts.keys()].some((path) => path.startsWith("/api/simulator"))).toBe(false);
+    });
+  }
+}
+
+for (const outcome of ["success", "error"]) {
+  for (const edit of ["replacement", "Tab"]) {
+    test(`Assertions analysis scope rejects delayed ${outcome} after ${edit} and restored source`, async ({ page, appURL, api }) => {
+      const original = 'group "Operators" members >= 1;\n';
+      Object.assign(api.policy.records.find((record) => record.id === "test-assertions"), {
+        content_type: "text/vnd.zpr.assertions", content: original,
+      });
+      let complete;
+      api.handlers.set("/api/assertions/evaluate", async (route) => {
+        await new Promise((resolve) => { complete = resolve; });
+        await route.fulfill({ json: {
+          status: outcome === "success" ? "pass" : "error", revision: 1, draft: false,
+          finished_at: "2026-10-08T18:00:00Z", error: outcome === "error" ? "Obsolete assertion error on line 1" : "",
+          results: [{ rule: { line: 1, kind: "group", group: "Operators", operator: ">=", limit: 1 }, status: "pass", subjects: [], message: "Obsolete result" }],
+        } });
+      });
+      await openAssertionRecord(page, appURL);
+      const source = page.locator("#assertion-source");
+      await expect(source).toHaveValue(original);
+      const button = page.locator("#assertion-analyze");
+      await button.click();
+      await expect.poll(() => Boolean(complete)).toBe(true);
+      if (edit === "Tab") await source.press("Tab");
+      else await source.fill(original + "# edited\n");
+      await source.fill(original);
+      complete();
+      await expect(button).toBeEnabled();
+      await expect(button).not.toHaveAttribute("data-analysis-state", /.+/);
+      await expect(source).toHaveValue(original);
+      await expect(page.locator("#assertion-result-gutter button")).toHaveCount(0);
+      await expect(page.locator("#assertion-result-rows tr")).toHaveCount(0);
+      await expect(page.locator("#assertion-message")).toBeHidden();
+      api.handlers.set("/api/assertions/evaluate", (route) => route.fulfill({ json: {
+        status: "pass", revision: 1, draft: false, finished_at: "2026-10-08T18:00:01Z",
+        results: [{ rule: { line: 1, kind: "group", group: "Operators", operator: ">=", limit: 1 }, status: "pass", subjects: [], message: "Current result" }],
+      } }));
+      await button.click();
+      await expect(button).toHaveAttribute("data-analysis-state", "success");
+      await expect(page.locator("#assertion-result-rows")).toContainText("Current result");
+      await expect(page.locator("#assertion-result-gutter button")).toHaveCount(1);
+      expect([...api.counts.keys()].some((path) => path.startsWith("/api/simulator"))).toBe(false);
+    });
+  }
+}
+
+test("shared source-line validation never clamps invalid locations", async ({ page, appURL, api }) => {
+  await page.goto(appURL + "/#map");
+  expect(await page.evaluate(() => [undefined, null, true, [], 0, -1, 1.5, 4, Infinity, "bad", 1, "2", 3]
+    .map((value) => window.ZPREditorPage.sourceLine(value, 3)))).toEqual([null, null, null, null, null, null, null, null, null, null, 1, 2, 3]);
+});
+
+test("Assertions unlocated errors stay under controls and valid diagnostics alone get gutter markers", async ({ page, appURL, api }) => {
+  let error = "Trusted LDAP unavailable";
+  api.handlers.set("/api/assertions/evaluate", (route) => route.fulfill({ json: {
+    status: "error", error, revision: 0, draft: true, finished_at: "2026-10-08T18:00:00Z", results: [],
+  } }));
+  await openAssertionRecord(page, appURL);
+  await page.locator("#assertion-source").fill('group "Operators" members >= 1;\n# second line');
+  for (error of ["Trusted LDAP unavailable", "Invalid line 99", "Invalid line 0", "Invalid line 1.5", "Invalid line 2"]) {
+    await page.locator("#assertion-analyze").click();
+    await expect(page.locator("#assertion-analyze")).toHaveAttribute("data-analysis-state", "error");
+    const markers = page.locator("#assertion-result-gutter .assertion-result-marker");
+    if (error === "Invalid line 2") {
+      await expect(markers).toHaveCount(1);
+      await expect(page.locator('#assertion-result-gutter [data-line="2"] button')).toBeVisible();
+      await expect(page.locator("#assertion-message")).toBeHidden();
+      await markers.click();
+      await expect(page.getByRole("dialog", { name: "Assertion error" })).toContainText(error);
+      await page.getByRole("dialog", { name: "Assertion error" }).locator(".dialog-actions .button").click();
+    } else {
+      await expect(markers).toHaveCount(0);
+      await expect(page.locator("#assertion-message")).toBeVisible();
+      await expect(page.locator("#assertion-message")).toHaveText(error);
+    }
+  }
+  api.handlers.set("/api/assertions/evaluate", (route) => route.fulfill({ json: {
+    status: "pass", revision: 0, draft: true, finished_at: "2026-10-08T18:00:00Z",
+    results: [0, 99, 1.5, 2].map((line) => ({ rule: { line, kind: "group", group: "Operators", operator: ">=", limit: 1 }, status: "pass", subjects: [], message: "Checked" })),
+  } }));
+  await page.locator("#assertion-analyze").click();
+  await expect(page.locator("#assertion-result-gutter .assertion-result-marker")).toHaveCount(1);
+  await expect(page.locator('#assertion-result-gutter [data-line="2"] button')).toHaveText("PASS");
+});
+
+for (const editor of [
+  { name: "Policy", path: "/#policy", source: "policy-source", status: "policy-test-status", frame: "policy-code-editor", button: "policy-check", endpoint: "/api/policy/check", content: "define Employee as user.\n" },
+  { name: "Assertions", path: "/#policy", source: "assertion-source", status: "assertion-message", frame: "assertion-editor", button: "assertion-analyze", endpoint: "/api/assertions/evaluate", content: 'group "Operators" members >= 1;' },
+  { name: "Config", path: "/#zpr-config", source: "zpr-config-source", status: "zpr-config-status", button: "zpr-config-validate", endpoint: "/api/policy/config/check", content: 'name = "Example"\n' },
+  { name: "Gateway", path: "/#gateways", source: "gateway-source", status: "gateway-draft-message", button: "gateway-analyze", endpoint: "/api/gateways/config/check" },
+  { name: "Directory", path: "/organizations.html", source: "directory-editor-source", status: "directory-editor-status", button: "directory-editor-save", endpoint: "/api/simulator/organizations/alpha/directory" },
+  { name: "Scenario", path: "/scenarios.html", source: "scenario-editor-source", status: "scenario-editor-status", button: "scenario-source-analyze", endpoint: "/api/simulator/organizations/alpha/scenario-check" },
+]) {
+  test(`${editor.name} non-line editor errors appear under controls and above source`, async ({ page, appURL, api }) => {
+    if (editor.name === "Gateway") {
+      api.handlers.set("/api/gateways/contracts", (route) => route.fulfill({ json: { organization_id: "alpha", contracts: [
+        { organization_id: "alpha", instance_id: "egress", adapter_cn: "gateway-egress", service_name: "egress.svc.zpr" },
+      ] } }));
+      api.handlers.set("/api/gateways/configs", (route) => route.fulfill({ json: { organization_id: "alpha", configs: [] } }));
+    }
+    if (editor.name === "Directory") {
+      api.handlers.set(editor.endpoint, (route) => route.fulfill({ json: { revision: 1, published_revision: 0, content: { base_dn: "dc=alpha,dc=test", ldif: "dn: dc=alpha,dc=test\n" } } }));
+      api.handlers.set(editor.endpoint + "/revisions", (route) => route.fulfill({ json: [] }));
+    }
+    if (editor.name === "Scenario") await openRawScenario(page, appURL, api);
+    else if (editor.name === "Assertions") await openAssertionRecord(page, appURL);
+    else await page.goto(appURL + editor.path);
+    if (editor.name === "Policy") {
+      await openPolicyPicker(page);
+      await page.locator('[data-record-id="test-policy"]').click();
+    }
+    if (editor.name === "Directory") await page.getByRole("button", { name: "Edit LDAP seed", exact: true }).click();
+    const source = page.locator(`#${editor.source}`);
+    await expect(source).toBeVisible();
+    if (editor.name === "Gateway") await expect(source).toHaveValue(/"instance_id": "egress"/);
+    await source.fill(editor.content || (await source.inputValue()) + "\n");
+    api.handlers.set(editor.endpoint, (route) => route.fulfill({ status: 503, json: { valid: false, line: 0, error: "Editor service unavailable", diagnostics: "Editor service unavailable" } }));
+    if (editor.name === "Directory") await page.locator("#directory-editor-files-toggle").click();
+    await page.locator(`#${editor.button}`).click();
+    const status = page.locator(`#${editor.status}`);
+    await expect(status).toBeVisible();
+    await expect(status).toContainText("Editor service unavailable");
+    const geometry = await status.evaluate((element, { sourceID, frameID }) => {
+      const controls = element.closest(".policy-page").querySelector(".policy-editor-tools").getBoundingClientRect();
+      const status = element.getBoundingClientRect();
+      const source = document.getElementById(sourceID);
+      const frame = (frameID ? document.getElementById(frameID) : source.closest(".config-source-editor")).getBoundingClientRect();
+      return { gap: status.top - controls.bottom, beforeSource: status.bottom <= frame.top + 1 };
+    }, { sourceID: editor.source, frameID: editor.frame });
+    expect(geometry.gap).toBeGreaterThanOrEqual(-1);
+    expect(geometry.gap).toBeLessThan(50);
+    expect(geometry.beforeSource).toBe(true);
+    if (!["Scenario", "Directory"].includes(editor.name)) expect([...api.counts.keys()].some((path) => path.startsWith("/api/simulator"))).toBe(false);
+  });
+}
+
+test("shared Analyze state accepts explicit states and leaves diagnostics, actions and readiness untouched", async ({ page, appURL, api }) => {
+  await page.goto(appURL + "/#map");
+  const result = await page.evaluate(() => {
+    const button = document.createElement("button");
+    button.disabled = true;
+    button.textContent = "Analyze";
+    button.className = "button-next-evaluate";
+    const states = ["pending", "success", "error", ""].map((state) => {
+      window.ZPREditorPage.setAnalysisState(button, state);
+      return { state: button.getAttribute("data-analysis-state"), disabled: button.disabled, text: button.textContent, classes: button.className };
+    });
+    window.ZPREditorPage.setAnalysisState(button, "success");
+    let error = "";
+    try { window.ZPREditorPage.setAnalysisState(button, "unknown"); }
+    catch (failure) { error = failure.message; }
+    return { states, error, retained: button.dataset.analysisState };
+  });
+  expect(result.states).toEqual(["pending", "success", "error", null].map((state) => ({
+    state, disabled: true, text: "Analyze", classes: "button-next-evaluate",
+  })));
+  expect(result.error).toBe("Unsupported editor analysis state: unknown");
+  expect(result.retained).toBe("success");
+});
+
+for (const editor of [
+  { name: "Policy", path: "/#policy", source: "policy-source", button: "policy-check", endpoint: "/api/policy/check", content: "define Employee as user.\n" },
+  { name: "Assertions", path: "/#policy", source: "assertion-source", button: "assertion-analyze", endpoint: "/api/assertions/evaluate", content: 'group "Operators" members >= 1;\n' },
+  { name: "Config", path: "/#zpr-config", source: "zpr-config-source", button: "zpr-config-validate", endpoint: "/api/policy/config/check", content: 'name = "Example"\n' },
+  { name: "Gateway", path: "/#gateways", source: "gateway-source", button: "gateway-analyze", endpoint: "/api/gateways/config/check" },
+  { name: "Scenario", path: "/scenarios.html", source: "scenario-editor-source", button: "scenario-source-analyze", endpoint: "/api/simulator/organizations/alpha/scenario-check" },
+]) {
+  test(`${editor.name} shared Analyze state handles success, edits and failures through its own adapter`, async ({ page, appURL, api }) => {
+    if (editor.name === "Gateway") {
+      api.handlers.set("/api/gateways/contracts", (route) => route.fulfill({ json: { organization_id: "alpha", contracts: [
+        { organization_id: "alpha", instance_id: "egress", adapter_cn: "gateway-egress", service_name: "egress.svc.zpr" },
+      ] } }));
+      api.handlers.set("/api/gateways/configs", (route) => route.fulfill({ json: { organization_id: "alpha", configs: [] } }));
+    }
+    if (editor.name === "Scenario") await openRawScenario(page, appURL, api);
+    else if (editor.name === "Assertions") await openAssertionRecord(page, appURL);
+    else {
+      await page.goto(appURL + editor.path);
+      if (editor.name === "Policy") {
+        await openPolicyPicker(page);
+        await page.locator('[data-record-id="test-policy"]').click();
+      }
+    }
+    if (editor.name !== "Scenario") {
+      api.handlers.set(editor.endpoint, (route) => route.fulfill({ json: editor.name === "Assertions"
+        ? { status: "pass", revision: 0, draft: true, finished_at: "2026-10-08T17:00:00Z", results: [], warnings: [] }
+        : { valid: true, diagnostics: "Valid source" } }));
+    }
+    if (editor.name === "Policy") {
+      api.handlers.set("/api/policy/test/fixtures", (route) => route.fulfill({ json: { actors: [], services: [] } }));
+      api.handlers.set("/api/policy/test", (route) => route.fulfill({ json: { results: [], warnings: [] } }));
+    }
+    await page.evaluate(() => {
+      const original = window.ZPREditorPage.setAnalysisState;
+      window.analysisTransitions = [];
+      window.ZPREditorPage.setAnalysisState = (button, state = "") => {
+        window.analysisTransitions.push({ id: button.id, state });
+        return original(button, state);
+      };
+    });
+    const source = page.locator(`#${editor.source}`);
+    if (editor.content) await source.fill(editor.content);
+    if (editor.name === "Gateway") await expect(source).toHaveValue(/"instance_id": "egress"/);
+    const button = page.locator(`#${editor.button}`);
+    await button.click();
+    await expect(button).toHaveAttribute("data-analysis-state", "success");
+    await source.fill((await source.inputValue()) + "\n");
+    await expect(button).not.toHaveAttribute("data-analysis-state", "success");
+    api.handlers.set(editor.endpoint, (route) => route.fulfill({ status: 422, json: {
+      valid: false, error: "Analysis test failure", diagnostics: "Analysis test failure", line: 0,
+    } }));
+    await button.click();
+    await expect(button).toHaveAttribute("data-analysis-state", "error");
+    const transitions = await page.evaluate((id) => window.analysisTransitions.filter((entry) => entry.id === id).map((entry) => entry.state), editor.button);
+    expect(transitions).toContain("success");
+    expect(transitions).toContain("error");
+    if (editor.name !== "Scenario") expect([...api.counts.keys()].some((path) => path.startsWith("/api/simulator"))).toBe(false);
   });
 }
 

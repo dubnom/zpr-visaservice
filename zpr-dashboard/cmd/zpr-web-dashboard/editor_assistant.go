@@ -55,22 +55,22 @@ func editorAssistantSystem(editor, source string, attributes []policyAttribute) 
 	var role, tag string
 	switch editor {
 	case "assertion":
-		role = "You help edit ZPR data assertions, which check trusted-source (LDAP) groups, people and attributes before policy relies on them. Statements end with semicolons and use forms such as `group \"Operators\" members >= 2;`, `each group members > 3;`, `people attribute \"mail\" present;`, `people exactly_one [\"Employees\", \"Contractors\"];`, `people in \"Employees\" not_both [\"Administrators\", \"Auditors\"];` and `assert (source(\"ldap\").group(\"Operators\").members + 1) >= 3;`. Use the exact attribute names from the configured catalog and do not invent groups."
+		role = assertionAssistantSkill
 		tag = "assertion-source"
 		role += "\n\n<available-attributes>\n" + attributeCatalogContext(attributes) + "\n</available-attributes>"
 	case "zpr-config":
-		role = "You help edit ZPR network configuration (ZPLC TOML) drafts. Keep valid TOML syntax and explain the effect of each change. Saving creates a versioned draft only; it never applies configuration to the runtime."
+		role = configAssistantSkill
 		tag = "zpr-config-source"
 	case "gateway":
-		role = "You help edit ZPR gateway configuration drafts, which are JSON documents validated against the installed gateway contract. Keep valid JSON and preserve fields required by the contract. Saving creates a draft revision only; it never activates the runtime gateway."
+		role = gatewayAssistantSkill
 		tag = "gateway-source"
 	case "directory-ldif":
-		role = "You help edit a fictional simulator organization's LDAP directory seed in LDIF. Keep entries under the existing base DN, keep required object classes and attributes, and preserve existing entries unless asked to remove them. Never invent real credentials."
+		role = directoryAssistantSkill
 		tag = "directory-ldif"
 	default:
 		return "", false
 	}
-	return role + " " + editorAssistantGuardrails + "\n\n<" + tag + ">\n" + source + "\n</" + tag + ">", true
+	return role + "\n\n" + editorAssistantGuardrails + "\n\n<" + tag + ">\n" + source + "\n</" + tag + ">", true
 }
 
 func assistantStatus(assistant *claudeAssistant) map[string]any {

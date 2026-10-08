@@ -2048,6 +2048,30 @@ editors, including singular/plural counts, empty histories, current-version
 markers, outside-click dismissal and Escape focus restoration. Each editor owns
 its revision-loading callback and discard checks; selecting another editor's
 version never also invokes the Policy revision loader.
+Policy, Assertions, Config, Gateways and Scenario also share explicit Analyze
+button-state transitions (idle, pending, success and error). The helper does not
+change readiness classes, enable actions, create diagnostics or interpret
+service failures. Request ownership and stale-response rejection remain with
+each editor. Scenario's pending state can mean edits need analysis, not a request
+in flight. Directory has no Analyze action.
+Non-line editor errors appear below the control buttons and above the source
+surface in all six editors, not below the document. Source-local diagnostics
+remain in the gutter. Shared line validation accepts only positive integer
+locations within the current source; missing, fractional or out-of-range
+locations are never clamped onto a real line. Assertion service failures stay
+visible in the error status instead of acquiring a line-1 marker.
+Config Analyze/validation-before-Format, Gateway and raw Scenario analysis use
+a shared generation/context guard.
+Editing and then restoring the same text still invalidates the old request.
+Late successes and failures cannot update validity, status or gutter markers
+after the source or domain-owned record/revision/organization/format context
+changes. The guard has no service dependencies and never retries mutations.
+Config Save and other mutations retain their existing error handling; analysis
+guarding does not hide mutation failures or imply a failed save succeeded.
+Assertion evaluation also uses this guard alongside its existing abort
+controller. Source edits (including Tab and catalog insertion), record changes
+and organization/revision context changes prevent late results from populating
+the current gutter, result table or cached record result.
 The shortcut invokes the editor's existing enabled Save action, including its
 name/revision checks and confirmations; it never publishes, activates, or runs.
 Disabled Save still suppresses the browser's Save Page action. Held-key repeats,

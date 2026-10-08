@@ -342,7 +342,7 @@ marker column and padding). Each editor toolbar places **Analyze** and
 History sits beside the file name in every editor; revision information stays
 inside that dropdown rather than in a separate version label. Blank names show
 **Untitled**, which is a reserved placeholder and cannot be saved as a name.
-Analyze is orange while the current source still needs
+Analyze is blue while the current source still needs
 analysis, green after success and red after errors; Format uses the policy
 editor's green ready style.
 
@@ -809,6 +809,32 @@ key, so Control Room never calls the Simulator. Suggested replacement text is
 shown as a code block with an **Insert** button that places it at the cursor
 (replacing any selection) as an ordinary, undoable unsaved edit; nothing is
 saved, staged, published or activated by the assistant.
+
+### Task-specific assistant skills
+
+Each assistant's system prompt includes a build-embedded Markdown skill:
+
+| Task | Skill |
+| --- | --- |
+| Policy / ZPL | [policy/SKILL.md](skills/policy/SKILL.md) |
+| Trusted-data assertions | [assertion/SKILL.md](skills/assertion/SKILL.md) |
+| ZPR Config / ZPLC TOML | [zpr-config/SKILL.md](skills/zpr-config/SKILL.md) |
+| Gateway JSON | [gateway/SKILL.md](skills/gateway/SKILL.md) |
+| Simulator directory LDIF editor | [directory-ldif/SKILL.md](skills/directory-ldif/SKILL.md) |
+| Simulator scenario design | [scenario/SKILL.md](skills/scenario/SKILL.md) |
+| Simulator organization design | [organization/SKILL.md](skills/organization/SKILL.md) |
+
+These are explicitly embedded by `assistant_skills.go`, not automatically
+discovered Claude Code skills or repository `CLAUDE.md` instructions. Editing
+a skill requires rebuilding and restarting the service that owns the assistant:
+Control-Service for Policy, Assertions and ZPR Config; Control Room for
+Gateways; Simulator for its three tasks. No runtime filesystem or Simulator
+lookup is added to production assistants. Missing skill files fail the build.
+The text editors retain shared insertion/Analyze guardrails; design assistants
+retain their JSON answer/proposal contracts and server-side proposal validation.
+Skills provide guidance, not tools, permissions, schema validation, or proof of
+execution. Only the relevant task skill and existing request context are sent
+in each system prompt.
 
 ## Configure and run
 

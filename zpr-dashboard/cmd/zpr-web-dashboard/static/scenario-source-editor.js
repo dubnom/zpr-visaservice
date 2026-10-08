@@ -13,6 +13,10 @@
   let sourceFormat = "json";
   let lastScenario = null;
   let lastError = null;
+  const analysisScope = page.createAnalysisScope(() => [
+    source.value, sourceFormat, scenarioEditorOrganization,
+    scenarioEditorArtifact?.id, scenarioEditorArtifact?.revision,
+  ]);
 
   function sourceFormatName() {
     return sourceFormat === "json" ? "JSON" : "YAML";
@@ -53,6 +57,7 @@
 
   function clear() {
     fileVersion++;
+    analysisScope.invalidate();
     surface.setDiagnostic(null);
     lastScenario = null;
     setAnalysisState(scenarioEditorDirty ? "pending" : "");
@@ -64,7 +69,8 @@
     surface.setDiagnostic(null);
     lastError = null;
     setScenarioEditorStatus("");
-    const version = ++fileVersion;
+    fileVersion++;
+    const isCurrent = analysisScope.begin();
     const original = source.value;
     const organization = scenarioEditorOrganization;
     try {
@@ -73,7 +79,7 @@
         body: JSON.stringify({ format: sourceFormat, source: original, scenario_id: scenarioEditorArtifact?.id || "" }),
       });
       const result = await response.json();
-      if (version !== fileVersion || organization !== scenarioEditorOrganization) return null;
+      if (!isCurrent()) return null;
       if (!response.ok || result.valid !== true) {
         surface.setDiagnostic(result.line > 0 ? { line: result.line, message: result.error || "Scenario analysis failed." } : null);
         throw new Error(result.error || `Scenario analysis failed (${response.status}).`);
@@ -84,7 +90,7 @@
       render();
       return result;
     } catch (error) {
-      if (version !== fileVersion || organization !== scenarioEditorOrganization) return null;
+      if (!isCurrent()) return null;
       setAnalysisState("error");
       error.sourceDiagnostic = Boolean(surface.diagnostic);
       lastError = error;

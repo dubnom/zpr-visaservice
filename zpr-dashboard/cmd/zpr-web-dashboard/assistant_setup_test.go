@@ -30,6 +30,7 @@ set -eu
 CONTROL_CONTAINER=test-control-service
 RUNTIME_DIR=/operator
 DASHBOARD_DIR=/dashboard
+ORGANIZATIONS_DIR=/dashboard/examples/organizations
 STATE_DIR=/operator/state
 SERVICE_CERTS=/operator/certs
 ADMIN_RELAY_PORT=8183

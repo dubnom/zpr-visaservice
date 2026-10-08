@@ -97,6 +97,7 @@ async function loadOrganizationScenarioSummary(organizationID) {
 
 const directoryEditorPage = window.ZPREditorPage;
 const directoryEditorSource = document.getElementById("directory-editor-source");
+directoryEditorPage.placeStatus(document.getElementById("directory-editor-status"));
 const directoryEditorSurface = directoryEditorPage.createSourceSurface({
   source: directoryEditorSource,
   highlight: document.getElementById("directory-editor-highlight"),

@@ -43,6 +43,16 @@
     return text.split("\n").slice(0, index).reduce((length, line) => length + line.length + 1, 0);
   }
 
+  function sourceLine(value, lineCount) {
+    if (typeof value !== "number" && typeof value !== "string") return null;
+    const line = Number(value);
+    return Number.isInteger(line) && line > 0 && line <= lineCount ? line : null;
+  }
+
+  function placeStatus(element) {
+    element.closest(".policy-page").querySelector(".policy-editor-tools").after(element);
+  }
+
   // Wires a textarea, highlight overlay and diagnostic gutter into one code surface.
   function createSourceSurface({ source, highlight: pre, gutter, language, label = "Source", onMarker }) {
     let diagnostic = null;
@@ -99,8 +109,8 @@
       selectLine,
       get diagnostic() { return diagnostic; },
       setDiagnostic(next) {
-        const line = Number(next?.line);
-        diagnostic = Number.isInteger(line) && line > 0 && line <= source.value.split("\n").length
+        const line = sourceLine(next?.line, source.value.split("\n").length);
+        diagnostic = line !== null
           ? { line, message: String(next.message || "") } : null;
       },
     };
@@ -209,6 +219,31 @@
     return !dirty || window.confirm(message);
   }
 
+  function setAnalysisState(button, state = "") {
+    if (!["", "pending", "success", "error"].includes(state)) {
+      throw new Error(`Unsupported editor analysis state: ${state}`);
+    }
+    if (state) button.dataset.analysisState = state;
+    else delete button.dataset.analysisState;
+  }
+
+  // Context adapters return primitive identity fields, never mutable record objects.
+  function createAnalysisScope(readContext) {
+    let generation = 0;
+    return {
+      invalidate() { generation++; },
+      begin() {
+        const current = ++generation;
+        const context = [...readContext()];
+        return () => {
+          const next = readContext();
+          return current === generation && context.length === next.length &&
+            context.every((value, index) => value === next[index]);
+        };
+      },
+    };
+  }
+
   function bindSaveShortcut({ root, button }) {
     const onKeydown = (event) => {
       if (event.defaultPrevented || event.isComposing || event.repeat ||
@@ -266,5 +301,5 @@
     if (kind) element.dataset.state = kind; else delete element.dataset.state;
   }
 
-  window.ZPREditorPage = { highlight, createSourceSurface, createMenu, createPicker, createHistory, placeHistory, isNamed, confirmDiscard, bindSaveShortcut, fitSourceToViewport, renderIdentity, setStatus };
+  window.ZPREditorPage = { highlight, sourceLine, placeStatus, createAnalysisScope, createSourceSurface, createMenu, createPicker, createHistory, placeHistory, isNamed, confirmDiscard, setAnalysisState, bindSaveShortcut, fitSourceToViewport, renderIdentity, setStatus };
 })();
