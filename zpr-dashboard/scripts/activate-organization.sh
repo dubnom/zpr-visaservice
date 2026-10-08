@@ -19,7 +19,11 @@ policy_config="$dashboard_dir/cmd/zpr-web-dashboard/examples/$policy_config_rela
 runtime_policy_config="$policy_config"
 organization_base_dn=$(jq -er '.directory.base_dn' "$profile")
 organization_bind_dn="cn=zpr-reader,ou=Service Accounts,$organization_base_dn"
-control_room_url=${SIMULATOR_OPERATOR_SERVICE_URL:-https://127.0.0.1:8790}
+if [ "${ZPR_DASHBOARD_CONTAINER_RUNTIME:-}" = 1 ]; then
+    control_room_url=https://127.0.0.1:8790
+else
+    control_room_url=${SIMULATOR_OPERATOR_SERVICE_URL:-https://127.0.0.1:8790}
+fi
 control_room_curl() {
     if [ "${ZPR_DASHBOARD_CONTAINER_RUNTIME:-}" = 1 ]; then
         curl --connect-to 127.0.0.1:8790:host.docker.internal:8790 \
