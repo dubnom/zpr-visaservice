@@ -91,6 +91,35 @@ func TestScenarioPlacementPreflightMatchesLauncher(t *testing.T) {
 	}
 }
 
+func TestMultinodeMachineStartRefreshesServicesOnlyWhenIdle(t *testing.T) {
+	function := stackFunctionForTest(t, "refresh_multinode_services_if_idle")
+	directory := t.TempDir()
+	docker := filepath.Join(directory, "docker")
+	if err := os.WriteFile(docker, []byte("#!/bin/sh\n[ \"$1\" = ps ] || exit 2\nprintf '%s' \"$RUNNING_MACHINE_CONTAINERS\"\n"), 0700); err != nil {
+		t.Fatal(err)
+	}
+	run := func(running string) string {
+		script := function + `
+start_multinode_dns_service() { printf 'dns:%s\\n' "$1"; }
+stop_multinode_control_processes() { printf 'control:%s:%s\\n' "$1" "$2"; }
+refresh_multinode_services_if_idle velocity
+`
+		command := exec.Command("sh", "-c", script)
+		command.Env = append(os.Environ(), "PATH="+directory+string(os.PathListSeparator)+os.Getenv("PATH"), "RUNNING_MACHINE_CONTAINERS="+running)
+		output, err := command.CombinedOutput()
+		if err != nil {
+			t.Fatalf("refresh helper failed: %v: %s", err, output)
+		}
+		return string(output)
+	}
+	if got, want := run(""), "dns:velocity\\ncontrol:velocity-node0:adapter\\n"; got != want {
+		t.Fatalf("idle refresh = %q, want %q", got, want)
+	}
+	if got := run("zpr-machine-03"); got != "" {
+		t.Fatalf("active-machine refresh = %q, want no service restart", got)
+	}
+}
+
 func TestScenarioCleanupSkipsStoppedMachineWorkload(t *testing.T) {
 	dir := t.TempDir()
 	if err := os.WriteFile(filepath.Join(dir, "docker"), []byte("#!/bin/sh\n[ \"$1\" = ps ] || { echo 'unexpected command' >&2; exit 1; }\nprintf 'exited\\n'\n"), 0700); err != nil {

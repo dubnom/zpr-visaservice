@@ -991,6 +991,7 @@ resolve_machine_placement() {
                     .runtime.nodes[0].location
                 else error("multi-node machine requires a configured organization owner") end
             ' "$machine_profile")
+
         fi
     fi
     if [ "$machine_runtime_driver" = docker-multinode ]; then
@@ -1000,6 +1001,14 @@ resolve_machine_placement() {
         ' "$machine_profile")
         machine_node_ip=$(jq -er --argjson index "$machine_node_index" '.runtime.nodes[$index].substrate_address' "$machine_profile")
     fi
+}
+
+refresh_multinode_services_if_idle() {
+    organization_id=$1
+    running_machine_containers=$(docker ps --filter label=zpr.machine.id --filter status=running -q)
+    [ -z "$running_machine_containers" ] || return 0
+    start_multinode_dns_service "$organization_id"
+    stop_multinode_control_processes "$organization_id-node0" adapter
 }
 
 start_machine_container() {
@@ -1037,6 +1046,7 @@ start_machine_container() {
     if [ "$machine_runtime_driver" = docker-multinode ]; then
         machine_node_address="$machine_node_ip:5000"
         machine_network="zpr-$machine_organization"
+        refresh_multinode_services_if_idle "$machine_organization"
         start_zpr_machine_control_service
         machine_control_address=$(cat "$MACHINE_CONTROL_ADDRESS_FILE")
         case "$machine_control_address" in *:*) ;; *) echo "invalid multinode SimulatorControl address" >&2; return 1 ;; esac
