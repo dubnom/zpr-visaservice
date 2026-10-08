@@ -56,7 +56,9 @@ func simulatorTrustedSourceHandlerWithOrganization(reader trustedSourceLDAPReade
 			return
 		}
 		container := strings.TrimSpace(os.Getenv("SIMULATION_CONTAINER"))
-		if container == "" {
+		if organization.Runtime.Driver == "docker-multinode" {
+			container = organization.ID + "-directory"
+		} else if container == "" {
 			container = "zpr-local-linux-node"
 		}
 		baseDN := organization.Directory.BaseDN

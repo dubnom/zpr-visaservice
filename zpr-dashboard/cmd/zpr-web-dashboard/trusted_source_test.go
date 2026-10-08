@@ -74,3 +74,29 @@ func TestSimulatorTrustedSourceIsReadOnlyAndUsesActiveDirectory(t *testing.T) {
 		t.Fatalf("non-read request was not rejected: status=%d reads=%d", response.Code, reads)
 	}
 }
+
+func TestSimulatorTrustedSourceUsesOrganizationDirectoryContainerForMultinode(t *testing.T) {
+	t.Setenv("SIMULATION_CONTAINER", "stale-rig")
+	organization := simulatorOrganization{
+		ID: "great-lakes", Runtime: simulatorOrganizationRuntime{Driver: "docker-multinode"},
+		Directory: simulatorOrganizationDirectory{BaseDN: "dc=greatlakes,dc=test"},
+	}
+	var receivedContainer string
+	reader := func(_ context.Context, container, _, _ string, _ []string) (assertionDirectory, error) {
+		receivedContainer = container
+		return assertionDirectory{
+			People: []string{"alice"}, Groups: map[string][]string{"Operators": {"alice"}},
+			PersonAttributes: map[string]map[string][]string{}, GroupAttributes: map[string]map[string][]string{},
+		}, nil
+	}
+	handler := simulatorTrustedSourceHandlerWithOrganization(reader, func() (simulatorOrganization, error) {
+		return organization, nil
+	})
+	response := httptest.NewRecorder()
+	request := httptest.NewRequest(http.MethodGet, "http://127.0.0.1/api/simulator/trusted-source", nil)
+	request.RemoteAddr = "127.0.0.1:1234"
+	handler.ServeHTTP(response, request)
+	if response.Code != http.StatusOK || receivedContainer != "great-lakes-directory" {
+		t.Fatalf("multinode directory source = %q, status=%d body=%s", receivedContainer, response.Code, response.Body.String())
+	}
+}
