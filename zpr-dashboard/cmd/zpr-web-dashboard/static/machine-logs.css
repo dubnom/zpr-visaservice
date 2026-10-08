@@ -11,6 +11,7 @@
 .machine-logs-toolbar > span { color: var(--muted); font: 11px var(--mono); }
 .machine-logs-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 340px), 1fr)); gap: 16px; padding-bottom: 22px; }
 .adapter-logs-toolbar { justify-content: flex-start; gap: 8px; }
+.adapter-logs-toolbar > label { min-height: 32px; }
 .adapter-logs-heading { justify-content: flex-start; }
 .adapter-logs-heading .adapter-logs-toolbar { margin: 0; }
 .adapter-log-column header { flex-wrap: wrap; gap: 8px; }

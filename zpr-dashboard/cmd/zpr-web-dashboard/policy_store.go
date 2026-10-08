@@ -22,6 +22,7 @@ var (
 	errCategoryNotFound = errors.New("category not found")
 	errRevisionConflict = errors.New("revision conflict")
 	errNameConflict     = errors.New("name already exists")
+	errRecordArchived   = errors.New("record is archived")
 )
 
 type policyRepository interface {
@@ -30,6 +31,7 @@ type policyRepository interface {
 	CreateCategory(context.Context, *string, string) (policyCategory, error)
 	CreateRecord(context.Context, string, string, string, string, json.RawMessage, string, string, string) (policyRecord, error)
 	GetRecord(context.Context, string) (policyRecord, error)
+	RenameRecord(context.Context, string, int, string) (policyRecord, error)
 	SetRecordArchived(context.Context, string, int, bool) error
 	AppendRevision(context.Context, string, int, string, string, string) (policyRevision, error)
 	ListRevisions(context.Context, string) ([]policyRevisionSummary, error)
@@ -372,6 +374,46 @@ func (r *sqlitePolicyRepository) policyRecordArchived(ctx context.Context, id st
 	var archived bool
 	err := r.db.QueryRowContext(ctx, `SELECT EXISTS(SELECT 1 FROM policy_record_archive WHERE record_id=?)`, id).Scan(&archived)
 	return archived, err
+}
+
+func (r *sqlitePolicyRepository) RenameRecord(ctx context.Context, id string, expected int, name string) (policyRecord, error) {
+	name, err := validateRecordName(name)
+	if err != nil {
+		return policyRecord{}, err
+	}
+	tx, err := r.db.BeginTx(ctx, nil)
+	if err != nil {
+		return policyRecord{}, err
+	}
+	defer tx.Rollback()
+	var current int
+	if err := tx.QueryRowContext(ctx, `SELECT current_revision FROM policy_records WHERE record_id=?`, id).Scan(&current); errors.Is(err, sql.ErrNoRows) {
+		return policyRecord{}, errRecordNotFound
+	} else if err != nil {
+		return policyRecord{}, err
+	}
+	if current != expected {
+		return policyRecord{}, errRevisionConflict
+	}
+	var archived bool
+	if err := tx.QueryRowContext(ctx, `SELECT EXISTS(SELECT 1 FROM policy_record_archive WHERE record_id=?)`, id).Scan(&archived); err != nil {
+		return policyRecord{}, err
+	}
+	if archived {
+		return policyRecord{}, errRecordArchived
+	}
+	_, err = tx.ExecContext(ctx, `UPDATE policy_records SET name=?,updated_at=? WHERE record_id=? AND current_revision=?`,
+		name, formatPolicyTime(time.Now().UTC()), id, expected)
+	if isUniqueConstraint(err) {
+		return policyRecord{}, errNameConflict
+	}
+	if err != nil {
+		return policyRecord{}, err
+	}
+	if err := tx.Commit(); err != nil {
+		return policyRecord{}, err
+	}
+	return r.GetRecord(ctx, id)
 }
 
 func (r *sqlitePolicyRepository) SetRecordArchived(ctx context.Context, id string, expected int, archived bool) error {

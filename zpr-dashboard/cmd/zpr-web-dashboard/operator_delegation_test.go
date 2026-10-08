@@ -125,8 +125,16 @@ func TestOperatorDelegationRealTLSLoginToAuditedEnrollment(t *testing.T) {
 		t.Fatal(err)
 	}
 	pin := sha256.Sum256(roomClient.Certificate[0])
-	trust := operatordelegation.Config{Version: 1, Audience: "https://control-service.example", Keys: []operatordelegation.TrustedKey{{KeyID: "room", PublicKey: base64.RawURLEncoding.EncodeToString(public), CertificateSHA256: hex.EncodeToString(pin[:])}}, Grants: []operatorauth.Grant{{Issuer: provider.URL, Subject: "named-admin", Organizations: []string{"production"}, Permissions: []string{"read", "create", "cancel"}}}}
+	reviewEnabled := os.Getenv("ZPR_OPERATOR_BROWSER_FIXTURE") == "1" && os.Getenv("ZPR_OPERATOR_BROWSER_REVIEW") == "1"
+	backendPermissions := []string{"read", "create", "cancel"}
+	if reviewEnabled {
+		backendPermissions = append(backendPermissions, "approve", "reject")
+	}
+	trust := operatordelegation.Config{Version: 1, Audience: "https://control-service.example", Keys: []operatordelegation.TrustedKey{{KeyID: "room", PublicKey: base64.RawURLEncoding.EncodeToString(public), CertificateSHA256: hex.EncodeToString(pin[:])}}, Grants: []operatorauth.Grant{{Issuer: provider.URL, Subject: "named-admin", Organizations: []string{"production"}, Permissions: backendPermissions}}}
 	config := enrollment.Config{Version: 1, InvitationLifetimeSeconds: 3600, Organizations: map[string]enrollment.Organization{"production": {Profiles: []string{"standard"}, Types: []string{"laptop"}}}, Principals: []enrollment.Principal{{Name: "direct-admin", CertificateSHA256: strings.Repeat("a", 64), Organizations: []string{"production"}, Permissions: []string{"read"}}}}
+	if reviewEnabled {
+		config.ApprovalLifetimeSeconds = 3600
+	}
 	config.GUIInvitationCreation = os.Getenv("ZPR_OPERATOR_BROWSER_FIXTURE") != "1" || os.Getenv("ZPR_OPERATOR_BROWSER_CREATE") == "1"
 	roots := x509.NewCertPool()
 	roots.AddCert(ca)
@@ -167,7 +175,7 @@ func TestOperatorDelegationRealTLSLoginToAuditedEnrollment(t *testing.T) {
 	room := httptest.NewUnstartedServer(nil)
 	origin := "https://" + room.Listener.Addr().String()
 	roomOrigin = origin
-	auth, err := operatorauth.NewWithCertificateAuthorities(context.Background(), operatorauth.Config{Version: 1, Issuer: provider.URL, ClientID: "control-room", RedirectURL: origin + "/auth/operator/callback", SessionLifetimeSeconds: 600, Grants: []operatorauth.Grant{{Issuer: provider.URL, Subject: "named-admin", Organizations: []string{"production", "browser-only"}, Permissions: []string{"read", "create", "approve", "cancel"}}}}, "fixture-secret", pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: ca.Raw}))
+	auth, err := operatorauth.NewWithCertificateAuthorities(context.Background(), operatorauth.Config{Version: 1, Issuer: provider.URL, ClientID: "control-room", RedirectURL: origin + "/auth/operator/callback", SessionLifetimeSeconds: 600, Grants: []operatorauth.Grant{{Issuer: provider.URL, Subject: "named-admin", Organizations: []string{"production", "browser-only"}, Permissions: []string{"read", "create", "approve", "reject", "cancel"}}}}, "fixture-secret", pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: ca.Raw}))
 	if err != nil {
 		t.Fatal(err)
 	}

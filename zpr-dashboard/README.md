@@ -964,7 +964,13 @@ The console opens the default browser to a private one-hour loopback capability
 URL. Keep it running; Ctrl-C stops setup. Failure to open a browser is explicit
 and retains the URL for manual opening. The existing invitation/key verification,
 separately transmitted code and uncertain-response recovery flow is unchanged.
-Approval still means only a review decision, not connected/enrolled credentials.
+Control Room review controls are available only with matching named-user and
+independent Control-Service grants for that organization plus a configured
+approval deadline. A reviewer must confirm that the exact key fingerprint was
+verified through a trusted channel and record a reason; the backend binds the
+decision to the fresh invitation revision and key. Uncertain responses require
+fresh-detail reconciliation without automatic retry. This review does not issue
+credentials, admit an adapter, or establish connectivity.
 
 Windows private state is
 `%LOCALAPPDATA%\ZPR\EnrollmentDevelopment\identity.dpapi`. The RSA-3072 identity
@@ -1247,6 +1253,13 @@ initial password, CA signing key or IdP signing database there. The IdP has
 Control Room switches. Configuration, IdP database and enrollment registry
 persist across service/container restarts. Control Room's in-memory sessions do
 not: sign in again after a Room restart.
+
+When direct HTTPS operator login is configured, a signed-out user is sent
+straight to the identity provider's login page through the same-origin native
+POST login form. Failed or denied callbacks retain a retryable sign-in screen
+instead of automatically redirecting again. Explicit sign-out leaves the user
+signed out with a Sign in button, avoiding immediate single-sign-on reentry.
+Unconfigured local login retains its existing behavior; HTTP never starts OIDC.
 
 Visit **https://localhost:8787**, choose **Sign in**, and enter `dubnom` in the
 IdP's login field and the locally saved password. Do not use the old HTTP or
@@ -1609,8 +1622,8 @@ workload logs, with device-type filtering. Control Room remains the read-only ne
 
 The Control Room sidebar lists Map, Status, Security, Diagnostics, Trusted
 Sources, Adapter Logs, and the external Log Manager (marked with a green ↗
-arrow). Policy, Gateways, and ZPR Config follow under a small **Configuration**
-label; the label is hidden in condensed and mobile layouts.
+arrow). Policy/Assertions, Gateways, and Config follow under a small
+**Configuration** label; the label is hidden in condensed and mobile layouts.
 
 Control Room groups Adapters, Actors, Services, Visas, Denials, and DNS under
 counted Status tabs. The summary metrics stay on Map rather than repeating on
@@ -1693,8 +1706,11 @@ The same Claude assistant is available in both modes and uses the current form
 or exact raw draft. Its disclosure explains what is sent to Anthropic; the
 server still requires `ANTHROPIC_API_KEY`. Run
 `scripts/configure-assistant.sh` from an interactive terminal to store it in a
-0600 file under `.local-runtime/dashboard-stack/assistant/`; Control-Service is
-restarted to load it, while Simulator assistant requests read the protected
+0600 file under `.local-runtime/dashboard-stack/assistant/`; the existing
+Control-Service container is restarted in place to load it, preserving its
+LDAP, Admin API, diagnostics, enrollment and organization configuration.
+Setup refuses to reload a service configured for a different key-file path.
+Simulator assistant requests read the protected
 file at request time. This avoids shell exports that disappear after a
 terminal closes. Applying a proposal updates only the unsaved editor.
 Responses/proposals for a changed draft or reset conversation cannot overwrite
@@ -1825,6 +1841,14 @@ selected workload status together with assigned application/service
 event logs, not Controller or adapter logs. Running machines with no supported
 workload logs have an explicit empty state.
 
+Adapter/Controller Logs, Workers, and Diagnostics offer **Format JSON**, initially
+unchecked. Enable it to indent complete JSON objects/arrays; disable it to restore
+the exact raw log text. This is a local display change, including while paused,
+and does not collect or modify logs. Plain text, prefixed messages, and malformed
+or truncated JSON remain unchanged. Entries nested beyond 64 levels stay raw to
+bound indentation growth. Formatting retains number tokens (including
+large integers), duplicate keys, and escaped string contents. Wrap is independent.
+
 Both views poll two seconds after each collection completes, without overlapping
 requests. Pause/resume, manual refresh, search, running-only filtering, and
 follow-tail controls operate independently of machine lifecycle actions.
@@ -1871,6 +1895,11 @@ is focused by default; Cancel or Escape sends no activation request. Only
 while the dialog is open, cancel and review the new state before trying again.
 The backend still requires scenarios to be finished/cancelled and machine users
 to be logged out.
+
+**See Logs** appears on the Simulator Organizations page only when the latest
+activation or base restore reports a failure. It opens the local reset log in a
+separate tab. The link disappears when a retry is resetting, completes, or returns
+to idle; a catalog refresh failure retains access to the last known failed reset.
 
 ## LDAP Organization Graph
 
@@ -2001,6 +2030,29 @@ container/controller state, authenticated user and selected workload identities.
 The former Agents page redirects to Workers at `/machine-logs.html`, and the
 navigation has one Workers entry rather than separate Agents and Workload Logs.
 Word wrap is initially disabled and can be enabled in editors and log viewers.
+
+All six source editors share Ctrl+S / Cmd+S handling through `editor-page.js`.
+Their title rows also use its shared identity renderer for Untitled, safe title
+text, path tooltips, and Modified visibility. Each editor retains its own dirty
+calculation and draft naming; version information remains in History.
+Discard, record/history switching, and editor-close checks use a shared
+confirmation guard. Clean source does not prompt; cancellation retains the
+current draft. Warning text and reset actions remain specific to each editor.
+File menus also share one controller: opening focuses the first visible, enabled
+action; arrow keys wrap through available actions and Home/End select the first
+or last. Hidden and disabled actions are skipped. Escape closes the menu and
+restores focus to File; selecting an action or clicking outside closes it.
+Menu arrow keys do not intercept typing/navigation elsewhere in the editor.
+History uses the same shared dropdown and safe version renderer in all six
+editors, including singular/plural counts, empty histories, current-version
+markers, outside-click dismissal and Escape focus restoration. Each editor owns
+its revision-loading callback and discard checks; selecting another editor's
+version never also invokes the Policy revision loader.
+The shortcut invokes the editor's existing enabled Save action, including its
+name/revision checks and confirmations; it never publishes, activates, or runs.
+Disabled Save still suppresses the browser's Save Page action. Held-key repeats,
+IME composition, already-handled keys, and Alt/Shift-modified shortcuts do not
+trigger Save. The Scenario shortcut also works in its structured form.
 Start/stop, login/logout and workload assignment are controlled
 by scenarios rather than page buttons. Selections are simulator control state
 and a workload can be selected on only one logged-in machine at a time. Login/logout
@@ -2082,9 +2134,21 @@ organization profiles. It keeps `ANTHROPIC_API_KEY` server-side and only applies
 validated scenario or LDIF proposals to the open draft; saving and publishing
 remain explicit operator actions. `scripts/configure-assistant.sh` stores the
 key in a protected runtime file readable by both assistant services. Simulator
-status and requests check that file dynamically; the Control-Service is
-restarted by the setup command. The stack forwards only the key-file path to
+status and requests check that file dynamically; the existing Control-Service
+container is restarted in place by the setup command, not recreated from shell
+defaults. The stack forwards only the key-file path to
 containers, not the key as a command-line argument.
+
+Assistant setup requires a running Control-Service using the standard persistent
+key path. `sh scripts/dashboard-stack.sh reload-assistant` reloads an existing
+stored key without replacing the container configuration. Keep the private
+`.local-runtime/dashboard-stack/assistant/` directory when cleaning runtime
+artifacts; if its key file is deleted, the GUI cannot recover it.
+
+The local stack's Policy-Service startup/restart selects an explicit
+`SIMULATION_ORGANIZATION_ID` first, then the saved active organization, then
+the bootstrap manifest. This keeps policy attributes aligned with the selected
+local directory rather than reverting to the bootstrap organization on restart.
 
 The reusable base contract lives in `.local-runtime/generic-zpr-base.json` and
 is validated separately by the installer.

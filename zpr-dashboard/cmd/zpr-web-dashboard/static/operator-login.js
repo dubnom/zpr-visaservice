@@ -5,6 +5,8 @@
     const login = document.getElementById("operator-login-form");
     const logout = document.getElementById("operator-logout");
     const scope = document.getElementById("operator-scope");
+    const title = widget?.querySelector(".operator-login-title");
+    const description = widget?.querySelector(".operator-login-description");
     if (!widget || !status || !login || !logout || !scope) return;
     if (widget.dataset.operatorLoginReady === "true") {
       if (widget.isConnected) void widget.operatorRefresh?.();
@@ -16,6 +18,9 @@
     let generation = 0;
     let authConfigured = false;
     let canAttemptLogin = false;
+    let loginStarting = false;
+    let automaticLogin = true;
+    let loginFailure = "";
     const retry = document.createElement("button");
     retry.type = "button";
     retry.className = "button button-quiet operator-login-retry";
@@ -23,7 +28,22 @@
     retry.hidden = true;
     widget.append(retry);
 
-    const setGate = (enabled) => document.body.classList.toggle("operator-auth-gated", enabled);
+    const setGate = (enabled) => {
+      document.body.classList.toggle("operator-auth-gated", enabled);
+      if (title) title.hidden = !enabled;
+      if (description) description.hidden = !enabled;
+      if (enabled) {
+        widget.setAttribute("role", "dialog");
+        widget.setAttribute("aria-modal", "true");
+        widget.setAttribute("aria-labelledby", "operator-login-title");
+        widget.setAttribute("aria-describedby", "operator-login-description");
+      } else {
+        widget.removeAttribute("role");
+        widget.removeAttribute("aria-modal");
+        widget.removeAttribute("aria-labelledby");
+        widget.removeAttribute("aria-describedby");
+      }
+    };
     setGate(true);
 
     function clearSession() {
@@ -41,6 +61,8 @@
       const url = new URL(location.href);
       const loginResult = url.searchParams.get("operator_login");
       if (loginResult === "failed" || loginResult === "denied") {
+        loginFailure = loginResult;
+        automaticLogin = false;
         url.searchParams.delete("operator_login");
         history.replaceState(history.state, "", `${url.pathname}${url.search}${url.hash}`);
       }
@@ -71,9 +93,13 @@
         if (response.status === 401) {
           login.hidden = false;
           setGate(true);
-          status.textContent = loginResult === "denied"
+          status.textContent = loginFailure === "denied"
             ? "This account is not authorized. Contact your operator administrator."
-            : loginResult === "failed" ? "Sign-in failed. Check your credentials and try again." : "Not signed in";
+            : loginFailure === "failed" ? "Sign-in failed. Check your credentials and try again." : "Not signed in";
+          if (automaticLogin && !loginStarting) {
+            status.textContent = "Opening sign-in page";
+            login.requestSubmit();
+          }
           return;
         }
         if (!response.ok) throw new Error(`Operator session unavailable (HTTP ${response.status}).`);
@@ -86,6 +112,9 @@
             !validList(identity.permissions) || typeof session.csrf !== "string" || !session.csrf) {
           throw new Error("Invalid operator session response.");
         }
+        loginFailure = "";
+        loginStarting = false;
+        automaticLogin = true;
         const simulator = widget.dataset.operatorApplication === "simulator";
         const appPermissions = simulator
           ? ["simulator.", "organization.", "scenario.", "directory.", "device."]
@@ -115,6 +144,7 @@
         window.dispatchEvent(new CustomEvent("operator-session-ready", { detail: { identity, csrf } }));
       } catch (error) {
         if (current !== generation) return;
+        automaticLogin = false;
         clearSession();
         status.textContent = error.message;
         setGate(true);
@@ -126,6 +156,7 @@
     }
     widget.operatorRefresh = readState;
     retry.addEventListener("click", () => void readState());
+    login.addEventListener("submit", () => { loginStarting = true; });
 
     logout.addEventListener("click", async () => {
       if (busy || !csrf) return;
@@ -139,6 +170,9 @@
           headers: { "X-ZPR-CSRF": csrf },
         });
         if (response.status !== 204) throw new Error(`Sign out was not confirmed (HTTP ${response.status}). Retry or reload to check the session.`);
+        automaticLogin = false;
+        loginFailure = "";
+        loginStarting = false;
         clearSession();
         await readState();
       } catch (error) {

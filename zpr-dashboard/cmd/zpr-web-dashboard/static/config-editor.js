@@ -6,6 +6,7 @@
   let draftName = "";
   const status = byId("zpr-config-status");
   const records = byId("zpr-config-records");
+  const recordMenu = byId("zpr-config-record-menu");
   const analyze = byId("zpr-config-validate");
   const format = byId("zpr-config-format");
   page.fitSourceToViewport(source.closest(".config-source-editor"));
@@ -16,6 +17,7 @@
   let saved = "";
   let pending = false;
   let sourceVersion = 0;
+  let menuRecordID = "";
   const surface = page.createSourceSurface({
     source, highlight: byId("zpr-config-highlight"), gutter: byId("zpr-config-gutter"), language: "toml", label: "Configuration",
   });
@@ -77,6 +79,8 @@
       item.dataset.kind = "configuration";
       item.dataset.recordId = entry.id;
       item.setAttribute("role", "treeitem");
+      item.setAttribute("aria-haspopup", "menu");
+      item.setAttribute("aria-controls", "zpr-config-record-menu");
       item.setAttribute("aria-selected", String(record?.id === entry.id));
       const icon = document.createElementNS("http://www.w3.org/2000/svg", "svg");
       icon.setAttribute("class", "policy-kind-icon");
@@ -90,7 +94,7 @@
       item.append(icon, title, detail);
       item.addEventListener("click", () => void run(async () => {
         if (record?.id === entry.id) { picker.setOpen(false, true); return; }
-        if (dirty() && !confirm("Discard unsaved configuration changes?")) return;
+        if (!page.confirmDiscard(dirty(), "Discard unsaved configuration changes?")) return;
         await loadRecord(entry.id);
         picker.setOpen(false, true);
       }));
@@ -114,6 +118,24 @@
     return result;
   };
   const post = (url, body) => request(url, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
+  function closeRecordMenu(restoreFocus = false) {
+    if (recordMenu.hidden) return;
+    recordMenu.hidden = true;
+    if (restoreFocus) {
+      const origin = records.querySelector(`[data-record-id="${CSS.escape(menuRecordID)}"]`);
+      (origin || records).focus();
+    }
+    menuRecordID = "";
+  }
+  function openRecordMenu(item, x, y) {
+    if (!item) return;
+    closeRecordMenu();
+    menuRecordID = item.dataset.recordId;
+    recordMenu.hidden = false;
+    recordMenu.style.left = `${Math.max(8, Math.min(x, innerWidth - recordMenu.offsetWidth - 8))}px`;
+    recordMenu.style.top = `${Math.max(8, Math.min(y, innerHeight - recordMenu.offsetHeight - 8))}px`;
+    recordMenu.querySelector("button:not(:disabled)")?.focus();
+  }
   const run = async (action) => {
     if (pending) return;
     pending = true;
@@ -131,6 +153,22 @@
     catalog = await request("/api/policy");
     renderRecords();
   }
+  async function renameRecord(id) {
+    const latest = await request(`/api/policy/records/${encodeURIComponent(id)}`);
+    if (latest.kind !== "configuration" || latest.archived) throw new Error("This configuration is no longer available to rename.");
+    const name = prompt("Rename configuration", latest.name);
+    if (name === null) return;
+    if (name.trim() === latest.name) return;
+    const renamed = await post(`/api/policy/records/${encodeURIComponent(id)}/rename`, {
+      name, expected_revision: latest.current_revision,
+    });
+    if (record?.id === id) {
+      record = renamed;
+      draftName = renamed.name;
+    }
+    await loadCatalog();
+    setStatus(`Renamed to ${renamed.name}`, "success");
+  }
   async function loadRecord(id) {
     record = await request(`/api/policy/records/${encodeURIComponent(id)}`);
     clearAnalysis();
@@ -144,7 +182,7 @@
   }
   async function loadRevision(number) {
     if (!record) return;
-    if (dirty() && !confirm("Discard unsaved configuration changes?")) return;
+    if (!page.confirmDiscard(dirty(), "Discard unsaved configuration changes?")) return;
     const revision = await request(`/api/policy/records/${encodeURIComponent(record.id)}/revisions/${encodeURIComponent(number)}`);
     clearAnalysis();
     browsingRevision = number === record.current_revision ? 0 : number;
@@ -187,7 +225,7 @@
       const entered = prompt("Configuration name", "");
       if (entered === null) return;
       if (!page.isNamed(entered)) throw new Error("Enter a configuration name other than Untitled.");
-      if (entered.trim().length > 160) throw new Error("Configuration names must be at most 160 characters.");
+      if (entered.trim().length > 100) throw new Error("Configuration names must be at most 100 characters.");
       draftName = entered.trim();
       renderIdentity();
     }
@@ -207,13 +245,45 @@
     setStatus(`Saved version ${record.current_revision}; runtime unchanged.`, "success");
   }));
   byId("zpr-config-discard").addEventListener("click", () => {
-    if (!dirty() || !confirm("Discard unsaved configuration changes?")) return;
+    if (!dirty() || !page.confirmDiscard(true, "Discard unsaved configuration changes?")) return;
     if (record) void run(() => loadRecord(record.id));
     else reset();
   });
+  records.addEventListener("contextmenu", (event) => {
+    const item = event.target.closest("[data-record-id]");
+    if (!item) return;
+    event.preventDefault();
+    openRecordMenu(item, event.clientX, event.clientY);
+  });
+  records.addEventListener("keydown", (event) => {
+    if (event.key !== "ContextMenu" && !(event.shiftKey && event.key === "F10")) return;
+    event.preventDefault();
+    openRecordMenu(event.target.closest("[data-record-id]"), event.target.getBoundingClientRect().left, event.target.getBoundingClientRect().bottom);
+  });
+  byId("zpr-config-rename").addEventListener("click", () => {
+    const id = menuRecordID;
+    closeRecordMenu();
+    if (id) void run(() => renameRecord(id));
+  });
+  recordMenu.addEventListener("keydown", (event) => {
+    if (event.key === "Escape") {
+      event.preventDefault();
+      closeRecordMenu(true);
+    }
+  });
+  document.addEventListener("pointerdown", (event) => {
+    if (!event.target.closest("#zpr-config-record-menu")) closeRecordMenu();
+  });
+  document.addEventListener("keydown", (event) => {
+    if (recordMenu.hidden || !["Escape", "Tab"].includes(event.key)) return;
+    if (event.key === "Escape") event.preventDefault();
+    closeRecordMenu(true);
+  });
+  window.addEventListener("hashchange", () => closeRecordMenu());
+  window.addEventListener("resize", () => closeRecordMenu());
   source.addEventListener("input", () => { clearAnalysis(); setStatus(""); renderEditor(); });
   byId("zpr-config-new").addEventListener("click", () => {
-    if (dirty() && !confirm("Discard unsaved configuration changes?")) return;
+    if (!page.confirmDiscard(dirty(), "Discard unsaved configuration changes?")) return;
     reset();
     source.focus();
   });
@@ -224,7 +294,7 @@
     fileInput.value = "";
     if (!file) return;
     if (file.size > 1048576) { setStatus("Configuration file exceeds the 1 MiB editor limit.", "error"); return; }
-    if (dirty() && !confirm("Discard unsaved configuration changes?")) return;
+    if (!page.confirmDiscard(dirty(), "Discard unsaved configuration changes?")) return;
     let content;
     try { content = await file.text(); } catch (error) {
       setStatus(`Could not open ${file.name}: ${error.message}`, "error");
@@ -244,12 +314,7 @@
     anchor.click();
     URL.revokeObjectURL(url);
   });
-  source.addEventListener("keydown", (event) => {
-    if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === "s") {
-      event.preventDefault();
-      byId("zpr-config-save").click();
-    }
-  });
+  page.bindSaveShortcut({ root: source, button: byId("zpr-config-save") });
   window.addEventListener("hashchange", () => { if (location.hash === "#zpr-config" && !catalog) void run(loadCatalog); });
   if (location.hash === "#zpr-config") void run(loadCatalog);
   renderRecords();

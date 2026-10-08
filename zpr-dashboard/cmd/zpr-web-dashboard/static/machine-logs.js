@@ -21,6 +21,7 @@
   let active = pageActive();
   let timer;
   let pending;
+  const jsonToggle = document.getElementById(controlRoom ? "adapter-log-json" : "machine-logs-json");
 
   function retainSourceTails(result) {
     if (organizationID !== result.organization_id) sourceCache.clear();
@@ -65,7 +66,8 @@
     }
     if (source && (source.lines.length || !source.disconnected && !source.error)) {
       const content = document.createElement("pre");
-      renderColoredLog(content, source.lines.join("\n") || "No log entries.");
+      const lines = jsonToggle.checked ? source.lines.map(window.ZPRLogFormat.formatJSON) : source.lines;
+      renderColoredLog(content, lines.join("\n") || "No log entries.");
       output.append(content);
     }
   }
@@ -349,7 +351,7 @@
       column.pickerButton.title = selected ? `Choose log source: ${entry.machine.id} / ${source.name}` : `Choose ${type} log source`;
       column.pickerButton.disabled = choices.length === 0;
       column.output.setAttribute("aria-label", selected ? `${entry.machine.id} ${source.name} logs` : `${type} logs`);
-      const contentSignature = JSON.stringify({ state: entry?.state || "missing", source });
+      const contentSignature = JSON.stringify({ state: entry?.state || "missing", source, formatJSON: jsonToggle.checked });
       if (contentSignature !== column.signature) {
         const scrollTop = column.nextScrollTop ?? column.output.scrollTop;
         column.nextScrollTop = undefined;
@@ -490,7 +492,7 @@
       card.panel.classList.toggle("running", entry.state === "running" && !source?.disconnected);
       if (source?.disconnected) card.status.textContent = "disconnected";
       card.output.setAttribute("aria-label", `${machine.id} ${card.selectedSource || "machine"} logs`);
-      const signature = JSON.stringify({ state: entry.state, source });
+      const signature = JSON.stringify({ state: entry.state, source, formatJSON: jsonToggle.checked });
       if (signature !== card.signature) {
         const scrollTop = card.nextScrollTop ?? card.output.scrollTop;
         card.nextScrollTop = undefined;
@@ -595,6 +597,7 @@
   wrapToggle.checked = false;
   grid.classList.add("logs-nowrap");
   wrapToggle.addEventListener("change", () => grid.classList.toggle("logs-nowrap", !wrapToggle.checked));
+  jsonToggle.addEventListener("change", render);
   if (controlRoom) {
     document.getElementById("adapter-log-add").addEventListener("click", addAdapterColumn);
     document.getElementById("adapter-log-all").addEventListener("click", () => {

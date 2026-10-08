@@ -483,6 +483,7 @@
     if (event.key === "Tab") { event.preventDefault(); source.setRangeText("  ", source.selectionStart, source.selectionEnd, "end"); highlight(); actions(); }
   });
   element("assertion-save").addEventListener("click", () => command("save"));
+  window.ZPREditorPage.bindSaveShortcut({ root: source, button: element("assertion-save") });
   async function editSource(action) {
     pending = true;
     actions();
@@ -519,7 +520,7 @@
   element("assertion-analyze").addEventListener("click", analyzeAssertions);
   element("assertion-format").addEventListener("click", () => editSource("format"));
   element("assertion-read-source").addEventListener("click", () => command("read"));
-  element("assertion-reload").addEventListener("click", () => { if (!dirty() || window.confirm("Discard unsaved assertion changes?")) load(true); });
+  element("assertion-reload").addEventListener("click", () => { if (window.ZPREditorPage.confirmDiscard(dirty(), "Discard unsaved assertion changes?")) load(true); });
   element("policy-draft-name").addEventListener("input", actions);
   window.policyAssertionDirty = () => recordMode ? dirty() : false;
   window.addEventListener("policy-record-kind-changed", (event) => {

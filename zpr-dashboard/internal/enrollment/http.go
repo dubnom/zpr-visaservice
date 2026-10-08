@@ -205,6 +205,8 @@ func (api *adminAPI) catalog(w http.ResponseWriter, r *http.Request) {
 	organizations := map[string]Organization{}
 	createOrganizations := []string{}
 	cancelOrganizations := []string{}
+	approveOrganizations := []string{}
+	rejectOrganizations := []string{}
 	for _, name := range principal.Organizations {
 		organizations[name] = api.config.Organizations[name]
 		if api.operator && api.config.GUIInvitationCreation && slices.Contains(principal.Permissions, "create") {
@@ -213,17 +215,30 @@ func (api *adminAPI) catalog(w http.ResponseWriter, r *http.Request) {
 		if api.operator && slices.Contains(principal.Permissions, "cancel") {
 			cancelOrganizations = append(cancelOrganizations, name)
 		}
+		if api.operator && api.config.ApprovalLifetimeSeconds > 0 {
+			if slices.Contains(principal.Permissions, "approve") {
+				approveOrganizations = append(approveOrganizations, name)
+			}
+			if slices.Contains(principal.Permissions, "reject") {
+				rejectOrganizations = append(rejectOrganizations, name)
+			}
+		}
 	}
 	slices.Sort(createOrganizations)
 	slices.Sort(cancelOrganizations)
+	slices.Sort(approveOrganizations)
+	slices.Sort(rejectOrganizations)
 	apiJSON(w, http.StatusOK, struct {
-		Organizations       map[string]Organization `json:"organizations"`
-		Lifetime            int                     `json:"invitation_lifetime_seconds"`
-		ApprovalLifetime    int                     `json:"approval_lifetime_seconds"`
-		GUIMutations        bool                    `json:"gui_mutations_enabled"`
-		CreateOrganizations []string                `json:"gui_create_organizations"`
-		CancelOrganizations []string                `json:"gui_cancel_organizations"`
-	}{organizations, api.config.InvitationLifetimeSeconds, api.config.ApprovalLifetimeSeconds, false, createOrganizations, cancelOrganizations})
+		Organizations        map[string]Organization `json:"organizations"`
+		Lifetime             int                     `json:"invitation_lifetime_seconds"`
+		ApprovalLifetime     int                     `json:"approval_lifetime_seconds"`
+		GUIMutations         bool                    `json:"gui_mutations_enabled"`
+		CreateOrganizations  []string                `json:"gui_create_organizations"`
+		CancelOrganizations  []string                `json:"gui_cancel_organizations"`
+		ApproveOrganizations []string                `json:"gui_approve_organizations"`
+		RejectOrganizations  []string                `json:"gui_reject_organizations"`
+	}{organizations, api.config.InvitationLifetimeSeconds, api.config.ApprovalLifetimeSeconds, false,
+		createOrganizations, cancelOrganizations, approveOrganizations, rejectOrganizations})
 }
 
 func (api *adminAPI) create(w http.ResponseWriter, r *http.Request) {

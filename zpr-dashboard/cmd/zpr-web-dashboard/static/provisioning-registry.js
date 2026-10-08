@@ -7,6 +7,7 @@
   const table = document.getElementById("provisioning-invitations");
   const nextButton = document.getElementById("provisioning-next");
   const cancelStatus = document.getElementById("provisioning-cancel-status");
+  const reviewStatus = document.getElementById("provisioning-review-status");
   let catalog = null;
   let next = "";
   let generation = 0;
@@ -16,7 +17,9 @@
   let dialog = null;
   let session = null;
   let pendingCancellation = null;
+  let pendingReview = null;
   const uncertainCancellations = new Set();
+  const uncertainReviews = new Set();
   const active = () => location.hash === "#provisioning-adapters";
   const text = (value) => typeof value === "string" && value.length > 0 && value.length <= 1024;
   const { validInvitation } = provisioningContract;
@@ -25,6 +28,10 @@
     if (pendingCancellation && !pendingCancellation.settled) {
       uncertainCancellation(pendingCancellation.item);
       pendingCancellation.controller.abort();
+    }
+    if (pendingReview && !pendingReview.settled) {
+      uncertainReview(pendingReview.item);
+      pendingReview.controller.abort();
     }
     ++detailGeneration;
     detailController?.abort();
@@ -43,6 +50,9 @@
     closeDetail();
     if (!pendingCancellation && !uncertainCancellations.size) {
       cancelStatus.textContent = "No cancellation pending; use fresh Details to review an invitation.";
+    }
+    if (!pendingReview && !uncertainReviews.size) {
+      reviewStatus.textContent = "No review decision submitted.";
     }
     catalog = null;
     window.dispatchEvent(new Event("provisioning-catalog-cleared"));
@@ -92,6 +102,148 @@
   function uncertainCancellation(item) {
     uncertainCancellations.add(item.id);
     cancelStatus.textContent = `Cancellation outcome uncertain for invitation ${item.id}. It may have been cancelled. Do not retry; reopen fresh Details and acknowledge the refreshed outcome before a new decision. Reloading does not prove failure.`;
+  }
+
+  function uncertainReview(item) {
+    uncertainReviews.add(item.id);
+    reviewStatus.textContent = `Review outcome uncertain for invitation ${item.id}. It may have been decided. Do not retry; reopen fresh Details and acknowledge the refreshed outcome before another decision.`;
+  }
+
+  function reviewControls(content, item) {
+    const organization = item.asset.organization;
+    const section = document.createElement("section");
+    const status = document.createElement("p");
+    status.setAttribute("role", "status");
+    section.append(status);
+    content.append(section);
+    if (uncertainReviews.has(item.id)) {
+      status.textContent = `This is a fresh read after an uncertain review: state ${item.state}, revision ${item.revision}, decision ${item.decision_by ?? "not recorded"}. A pending request may still finish; no request has been retried.`;
+      const acknowledge = document.createElement("button");
+      acknowledge.type = "button";
+      acknowledge.className = "button";
+      acknowledge.textContent = "Acknowledge refreshed outcome";
+      acknowledge.addEventListener("click", () => {
+        if (pendingReview) {
+          status.textContent = "The previous browser request has not settled yet. Wait, then acknowledge this fresh read; no review has been retried.";
+          return;
+        }
+        uncertainReviews.delete(item.id);
+        reviewStatus.textContent = `Refreshed review outcome acknowledged for ${item.id}: ${item.state}, revision ${item.revision}. No request was sent. Reopen Details before another decision.`;
+        closeDetail();
+      });
+      section.append(acknowledge);
+      return;
+    }
+    if (item.state !== "pending_approval" || !item.key_fingerprint || !item.approval_expires_at) {
+      status.textContent = "This record is not awaiting a key-bound review. Expired and terminal decisions cannot be changed here.";
+      return;
+    }
+    const canApprove = location.protocol === "https:" && session?.csrf &&
+      session.identity.permissions?.includes("approve") &&
+      (session.identity.organizations?.includes("*") || session.identity.organizations?.includes(organization)) &&
+      catalog?.gui_approve_organizations?.includes(organization);
+    const canReject = location.protocol === "https:" && session?.csrf &&
+      session.identity.permissions?.includes("reject") &&
+      (session.identity.organizations?.includes("*") || session.identity.organizations?.includes(organization)) &&
+      catalog?.gui_reject_organizations?.includes(organization);
+    if (!canApprove && !canReject) {
+      status.textContent = "Approval or rejection requires the matching named-user permission and independent backend grant for this organization.";
+      return;
+    }
+    status.textContent = "Review only this fresh revision and key fingerprint. Independently verify the fingerprint through a trusted channel. Approval does not issue credentials or establish connectivity.";
+    const form = document.createElement("form");
+    const reasonLabel = document.createElement("label");
+    reasonLabel.textContent = "Review reason";
+    const reason = document.createElement("textarea");
+    reason.name = "review_reason";
+    reason.required = true;
+    reasonLabel.append(reason);
+    const acknowledgement = document.createElement("label");
+    const checkbox = document.createElement("input");
+    checkbox.type = "checkbox";
+    checkbox.required = true;
+    acknowledgement.append(checkbox, document.createTextNode(
+      ` I independently verified fingerprint ${item.key_fingerprint} for ${item.id} at revision ${item.revision} through a trusted channel.`,
+    ));
+    form.append(reasonLabel, acknowledgement);
+    if (canApprove) {
+      const approve = document.createElement("button");
+      approve.type = "submit";
+      approve.className = "button";
+      approve.value = "approve";
+      approve.textContent = "Approve verified key";
+      form.append(approve);
+    }
+    if (canReject) {
+      const reject = document.createElement("button");
+      reject.type = "submit";
+      reject.className = "button button-quiet";
+      reject.value = "reject";
+      reject.textContent = "Reject key proof";
+      form.append(reject);
+    }
+    section.append(form);
+    form.addEventListener("submit", (event) => {
+      event.preventDefault();
+      const decision = event.submitter?.value;
+      const value = reason.value.trim();
+      reason.setCustomValidity(value && new TextEncoder().encode(value).length <= 256 && !/[\0\r\n]/.test(value) ? "" :
+        "Enter a reason of 1 to 256 UTF-8 bytes, without line breaks.");
+      if (!form.reportValidity()) return;
+      if ((decision !== "approve" || !canApprove) && (decision !== "reject" || !canReject)) return;
+      if (pendingCancellation || pendingReview || uncertainReviews.has(item.id)) {
+        status.textContent = "A review is pending or uncertain. Wait for it to settle, then reopen fresh Details before another decision.";
+        return;
+      }
+      for (const control of form.elements) control.disabled = true;
+      void decideInvitation(item, decision, value, session.identity, session.csrf, status);
+    });
+    reason.addEventListener("input", () => reason.setCustomValidity(""));
+  }
+
+  async function decideInvitation(item, decision, reason, identity, csrf, status) {
+    const attempt = { item, controller: new AbortController(), settled: false };
+    pendingReview = attempt;
+    const state = decision === "approve" ? "approved" : "rejected";
+    reviewStatus.textContent = `Submitting ${state} decision for invitation ${item.id}, revision ${item.revision}, once. Do not retry or navigate away until confirmed.`;
+    status.textContent = reviewStatus.textContent;
+    const timer = setTimeout(() => attempt.controller.abort(), 20000);
+    try {
+      const result = await provisioningContract.postMutation(
+        `/api/enrollment/v1/invitations/${encodeURIComponent(item.id)}/${decision}`,
+        { organization: item.asset.organization, revision: item.revision, key_fingerprint: item.key_fingerprint, reason },
+        csrf, attempt.controller.signal, 200,
+      );
+      if (attempt.controller.signal.aborted) throw new Error("Review interrupted.");
+      if (result.rejected) {
+        attempt.settled = true;
+        reviewStatus.textContent = `${state} rejected (HTTP ${result.rejected}); this request did not decide the invitation. Reopen fresh Details before another decision.`;
+        status.textContent = reviewStatus.textContent;
+        closeDetail();
+        if (result.rejected === 401 || result.rejected === 403) window.dispatchEvent(new Event("operator-session-cleared"));
+        return;
+      }
+      const changed = result.value;
+      const auditIdentity = `oidc:${JSON.stringify([identity.issuer, identity.subject])}`;
+      if (!validInvitation(changed, item.asset.organization) || changed.id !== item.id || changed.state !== state ||
+          changed.revision !== item.revision + 1 ||
+          !provisioningContract.assetFields.every((key) => changed.asset[key] === item.asset[key]) ||
+          ["created_at", "expires_at", "created_by", "key_fingerprint", "claimed_at", "approval_expires_at"].some((key) => changed[key] !== item[key]) ||
+          changed.decision_by !== auditIdentity || changed.decision_reason !== reason || !changed.decided_at) {
+        throw new Error("Unconfirmed key-bound review record.");
+      }
+      attempt.settled = true;
+      reviewStatus.textContent = `Invitation ${item.id} ${state} at revision ${changed.revision} by ${changed.decision_by}. Reason: ${reason}. Approval does not issue credentials or establish connectivity.`;
+      status.textContent = reviewStatus.textContent;
+      closeDetail();
+      window.dispatchEvent(new CustomEvent("provisioning-invitation-changed", { detail: { organization: item.asset.organization } }));
+    } catch {
+      uncertainReview(item);
+      status.textContent = reviewStatus.textContent;
+    } finally {
+      clearTimeout(timer);
+      pendingReview = null;
+    }
   }
 
   function cancellationControls(content, item) {
@@ -242,8 +394,9 @@
         ["Decision by", item.decision_by], ["Decision reason", item.decision_reason], ["Decided at", item.decided_at],
       ]));
       const notice = document.createElement("p");
-      notice.textContent = "Approve and reject controls are not enabled in this release. No enrollment code is available from read endpoints.";
+      notice.textContent = "No enrollment code is available from read endpoints.";
       content.append(notice);
+      reviewControls(content, item);
       cancellationControls(content, item);
     } catch (error) {
       if (current !== detailGeneration || error.name === "AbortError") return;
@@ -336,10 +489,17 @@
           !result.gui_cancel_organizations.every((name) => text(name) && Object.hasOwn(result.organizations, name)))) {
         throw new Error("Invalid invitation cancellation capabilities.");
       }
+      for (const key of ["gui_approve_organizations", "gui_reject_organizations"]) {
+        if (result[key] !== undefined && (!Array.isArray(result[key]) ||
+            new Set(result[key]).size !== result[key].length ||
+            !result[key].every((name) => text(name) && Object.hasOwn(result.organizations, name)))) {
+          throw new Error("Invalid invitation review capabilities.");
+        }
+      }
       catalog = result;
       window.dispatchEvent(new CustomEvent("provisioning-catalog-ready", { detail: result }));
       accessStatus.dataset.state = "available";
-      accessStatus.textContent = "Authorized enrollment catalog loaded. Invitation creation requires explicit backend opt-in and named-user create grants. Cancellation requires independent cancel grants; approval and rejection remain locked.";
+      accessStatus.textContent = "Authorized enrollment catalog loaded. Creation, cancellation, approval and rejection each require named-user permission and independent backend authorization. Review is revision/key-bound and does not issue credentials.";
       const names = Object.keys(result.organizations).sort();
       organizationPicker.replaceChildren(...names.map((name) => new Option(name, name)));
       organizationPicker.disabled = names.length === 0;

@@ -32,6 +32,7 @@ function organizationRuntimeLabel(organization) {
 }
 
 function renderOrganizationList() {
+  resetLogLink.hidden = organizationActivationStatus.state !== "failed";
   const selected = selectedOrganizationID || activeOrganizationID;
   document.getElementById("organization-list").innerHTML = organizationCatalog.map((organization) => {
     const active = organization.id === activeOrganizationID;
@@ -226,7 +227,7 @@ async function publishDirectoryRevision() {
 
 async function loadDirectoryRevision(revisionNumber) {
   if (!revisionNumber || !directoryEditorArtifact) return;
-  if (directoryEditorDirty && !confirm("Discard unsaved directory changes?")) return;
+  if (!directoryEditorPage.confirmDiscard(directoryEditorDirty, "Discard unsaved directory changes?")) return;
   const path = `/api/simulator/organizations/${encodeURIComponent(directoryEditorOrganizationID)}/directory/revisions/${encodeURIComponent(revisionNumber)}`;
   const response = await fetch(path, { cache: "no-store" });
   const revision = await response.json();
@@ -258,6 +259,7 @@ async function refreshOrganizations() {
       const nextOrganizations = data.organizations || [];
       const nextActiveID = data.active_id || "";
       organizationActivationStatus = data.activation || { state: "idle" };
+      resetLogLink.hidden = organizationActivationStatus.state !== "failed";
       window.dispatchEvent(new CustomEvent("simulator:organization-context", {
         detail: nextOrganizations.find((item) => item.id === nextActiveID) || null,
       }));
@@ -302,7 +304,8 @@ resetLogLink.className = "organization-reset-log";
 resetLogLink.href = "/api/simulator/activation-log";
 resetLogLink.target = "_blank";
 resetLogLink.rel = "noopener noreferrer";
-resetLogLink.textContent = "Open reset log";
+resetLogLink.textContent = "See Logs";
+resetLogLink.hidden = true;
 const refreshButton = document.getElementById("organization-refresh");
 const topActions = document.createElement("div");
 topActions.className = "organization-top-actions";
@@ -470,12 +473,7 @@ directoryEditorSource.addEventListener("input", () => {
   setDirectoryEditorStatus("");
   renderDirectoryEditor();
 });
-directoryEditorSource.addEventListener("keydown", (event) => {
-  if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === "s") {
-    event.preventDefault();
-    document.getElementById("directory-editor-save").click();
-  }
-});
+directoryEditorPage.bindSaveShortcut({ root: directoryEditorSource, button: document.getElementById("directory-editor-save") });
 document.getElementById("directory-editor-save").addEventListener("click", async () => {
   directoryEditorMenu.setOpen(false);
   try { await saveDirectoryDraft(); }
@@ -488,7 +486,7 @@ document.getElementById("directory-editor-publish").addEventListener("click", as
 });
 document.getElementById("directory-editor-discard").addEventListener("click", () => {
   directoryEditorMenu.setOpen(false);
-  if (!directoryEditorDirty || !confirm("Discard unsaved directory changes?")) return;
+  if (!directoryEditorDirty || !directoryEditorPage.confirmDiscard(true, "Discard unsaved directory changes?")) return;
   directoryEditorSource.value = directoryEditorArtifact.content.ldif;
   directoryEditorSaved = directoryEditorSource.value;
   directoryEditorViewing = 0;
@@ -501,7 +499,7 @@ document.getElementById("directory-editor-close").addEventListener("click", () =
   closeDirectoryEditor();
 });
 document.getElementById("directory-editor-form").addEventListener("submit", (event) => {
-  if (directoryEditorDirty && !confirm("Close the directory editor and discard unsaved changes?")) event.preventDefault();
+  if (!directoryEditorPage.confirmDiscard(directoryEditorDirty, "Close the directory editor and discard unsaved changes?")) event.preventDefault();
 });
 document.getElementById("directory-editor-dialog").addEventListener("close", () => {
   directoryEditorArtifact = null;

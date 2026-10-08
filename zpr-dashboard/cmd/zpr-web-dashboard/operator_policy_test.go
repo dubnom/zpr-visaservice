@@ -36,6 +36,7 @@ func TestControlRoomAPIPermissionMap(t *testing.T) {
 		{http.MethodPost, "/api/policy/check", "policy.analyze", true},
 		{http.MethodPost, "/api/assertions/evaluate", "policy.analyze", true},
 		{http.MethodPost, "/api/policy/records", "policy.edit", true},
+		{http.MethodPost, "/api/policy/records/example/rename", "policy.edit", true},
 		{http.MethodDelete, "/api/policy/records/example", "policy.edit", true},
 		{http.MethodGet, "/api/gateways/contracts", "gateway.read", true},
 		{http.MethodPost, "/api/gateways/config/check", "gateway.analyze", true},

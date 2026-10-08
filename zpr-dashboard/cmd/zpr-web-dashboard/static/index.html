@@ -5,13 +5,13 @@
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <meta name="theme-color" content="#17211e">
     <title>ZPR Control Room</title>
-    <link rel="stylesheet" href="/app.css?v=84">
-    <link rel="stylesheet" href="/machine-logs.css?v=17">
+    <link rel="stylesheet" href="/app.css?v=85">
+    <link rel="stylesheet" href="/machine-logs.css?v=18">
     <link rel="stylesheet" href="/assertions.css?v=11">
     <link rel="stylesheet" href="/sidebar.css?v=8">
     <link rel="stylesheet" href="/trusted-source.css?v=3">
     <link rel="stylesheet" href="/security-review.css?v=8">
-    <link rel="stylesheet" href="/diagnostics.css?v=1">
+    <link rel="stylesheet" href="/diagnostics.css?v=2">
     <link rel="stylesheet" href="/gateways.css?v=3">
     <link rel="stylesheet" href="/provisioning.css?v=3">
     <link rel="stylesheet" href="/editor-assistant.css?v=4">
@@ -40,9 +40,9 @@
           <div class="nav-separator" role="separator"></div>
           <p class="nav-group-label" id="nav-configuration-label">Configuration</p>
           <div class="nav-group" role="group" aria-labelledby="nav-configuration-label">
-            <a class="nav-link" href="#policy" data-page-link="policy">Policy</a>
+            <a class="nav-link" href="#policy" data-page-link="policy">Policy/Assertions</a>
             <a class="nav-link" href="#gateways" data-page-link="gateways">Gateways</a>
-            <a class="nav-link" href="#zpr-config" data-page-link="zpr-config">ZPR Config</a>
+            <a class="nav-link" href="#zpr-config" data-page-link="zpr-config">Config</a>
           </div>
           <div class="nav-separator" role="separator"></div>
           <p class="nav-group-label" id="nav-provisioning-label">Provisioning</p>
@@ -66,6 +66,8 @@
           </div>
           <div class="top-actions">
             <div class="operator-login" aria-label="Operator login">
+              <h2 class="operator-login-title" id="operator-login-title" hidden>ZPR Operator Access</h2>
+              <p class="operator-login-description" id="operator-login-description" hidden>Sign in with an authorized operator account to continue.</p>
               <span id="operator-login-status" role="status" aria-live="polite">Checking operator login</span>
               <form id="operator-login-form" method="post" action="/auth/operator/login" hidden><button class="button" type="submit">Sign in</button></form>
               <button id="operator-logout" class="button button-quiet" type="button" hidden>Sign out</button>
@@ -151,7 +153,7 @@
 
         <section class="page-view" id="page-adapter-logs" data-page="adapter-logs" aria-label="Adapter Logs">
           <section class="section-block">
-            <div class="adapter-logs-heading"><h2>Adapter Logs</h2><div class="machine-logs-toolbar adapter-logs-toolbar"><button id="machine-logs-pause" class="button button-quiet" type="button" aria-label="Pause log updates" aria-pressed="false">Pause</button><div class="machine-log-type-toggle" role="group" aria-label="Log type"><button type="button" data-adapter-log-type="adapter" aria-pressed="true">Adapter logs</button><button type="button" data-adapter-log-type="controller" aria-pressed="false">Controller logs</button></div><button id="adapter-log-all" class="button" type="button" aria-pressed="false">Show all adapters</button><label class="adapter-running-filter"><input id="adapter-log-running" type="checkbox"><span>Running only</span></label><label class="editor-wrap-toggle log-wrap-toggle"><input id="adapter-log-wrap" type="checkbox"> Wrap</label><button id="adapter-log-add" class="adapter-column-add" type="button" aria-label="Add adapter panel" title="Add adapter panel">+</button></div></div>
+            <div class="adapter-logs-heading"><h2>Adapter Logs</h2><div class="machine-logs-toolbar adapter-logs-toolbar"><button id="machine-logs-pause" class="button button-quiet" type="button" aria-label="Pause log updates" aria-pressed="false">Pause</button><div class="machine-log-type-toggle" role="group" aria-label="Log type"><button type="button" data-adapter-log-type="adapter" aria-pressed="true">Adapter logs</button><button type="button" data-adapter-log-type="controller" aria-pressed="false">Controller logs</button></div><button id="adapter-log-all" class="button" type="button" aria-pressed="false">Show all adapters</button><label class="adapter-running-filter"><input id="adapter-log-running" type="checkbox"><span>Running only</span></label><label class="editor-wrap-toggle log-wrap-toggle"><input id="adapter-log-wrap" type="checkbox"> Wrap</label><label class="editor-wrap-toggle log-wrap-toggle"><input id="adapter-log-json" type="checkbox"> Format JSON</label><button id="adapter-log-add" class="adapter-column-add" type="button" aria-label="Add adapter panel" title="Add adapter panel">+</button></div></div>
             <div class="adapter-logs-meta"><span id="machine-logs-status">Connecting</span><span>Updated <time id="machine-logs-time">-</time></span></div>
             <div id="machine-logs-error" class="machine-logs-error" role="alert" hidden></div>
             <div id="machine-logs-grid" class="machine-logs-grid adapter-log-columns" data-site="control-room" data-endpoint="/api/adapter-logs"></div>
@@ -195,16 +197,7 @@
           <section class="section-block">
             <div class="assertion-heading"><div><h2>Assertions</h2><small id="assertion-revision">Global</small></div><div class="assertion-actions"><span id="assertion-periodic-control" hidden><input id="assertion-enabled" type="checkbox" disabled></span><span id="assertion-interval-control" hidden><input id="assertion-interval" type="number" min="30" max="3600" value="60"></span><button id="assertion-reload" class="button" type="button" disabled>Reload</button><button id="assertion-save" class="button" type="button" disabled>Save</button><button id="assertion-analyze" class="button" type="button" disabled>Analyze</button><button id="assertion-format" class="button" type="button" title="Format assertion source" aria-label="Format assertion source" disabled>Format</button></div></div>
             <div id="assertion-message" class="assertion-message" role="status" aria-live="polite"></div>
-            <div class="assertion-workbench"><div><div id="assertion-editor" class="assertion-editor"><div id="assertion-result-gutter" class="assertion-result-gutter" aria-label="Assertion results by source line" hidden><div id="assertion-result-lines" class="assertion-result-lines"></div></div><pre id="assertion-highlight" aria-hidden="true"></pre><textarea id="assertion-source" aria-label="Data assertion source" maxlength="65536" spellcheck="false" autocapitalize="off" autocomplete="off" wrap="off" disabled></textarea></div><details class="assertion-syntax"><summary>Syntax</summary><pre>group "Operators" members &gt;= 2;
-each group members &gt; 3;
-assert (source("ldap").group("Operators").members + 1) &gt;= 3;
-people from "ldap" where source("ldap").attribute("title") == "Engineer" or source("ldap").attribute("title") == "Reviewer";
-people exactly_one ["Employees", "Contractors"];
-people in "Employees" not_both ["Administrators", "Auditors"];
-people attribute "mail" present;
-people in "Operators" attribute "title" == "Engineer";
-people attribute "employeeType" in ["Employee", "Contractor"];
-each group attribute "gidNumber" &gt;= 1000;</pre></details></div><aside class="assertion-catalog"><div class="assertion-heading"><h3>Trusted source</h3><button id="assertion-read-source" class="button" type="button" disabled>Read source</button></div><p id="assertion-source-status" class="assertion-source-meta">Loading</p><p id="assertion-source-summary" class="assertion-source-meta">Not read</p><div class="assertion-catalog-tabs" role="tablist" aria-label="Trusted source catalog"><button id="assertion-groups-tab" type="button" role="tab" data-assertion-catalog-tab aria-controls="assertion-groups-panel" aria-selected="true">Groups</button><button id="assertion-attributes-tab" type="button" role="tab" data-assertion-catalog-tab aria-controls="assertion-attributes-panel" aria-selected="false" tabindex="-1">Attributes</button></div><div id="assertion-groups-panel" role="tabpanel" aria-labelledby="assertion-groups-tab"><div class="table-scroll"><table><thead><tr><th>GROUP</th><th>MEMBERS</th><th></th></tr></thead><tbody id="assertion-group-rows"></tbody></table></div></div><div id="assertion-attributes-panel" role="tabpanel" aria-labelledby="assertion-attributes-tab" hidden><div class="table-scroll"><table><thead><tr><th>ATTRIBUTE</th><th>PEOPLE</th><th>GROUPS</th><th></th></tr></thead><tbody id="assertion-attribute-rows"></tbody></table></div></div></aside></div>
+            <div class="assertion-workbench"><div><div id="assertion-editor" class="assertion-editor"><div id="assertion-result-gutter" class="assertion-result-gutter" aria-label="Assertion results by source line" hidden><div id="assertion-result-lines" class="assertion-result-lines"></div></div><pre id="assertion-highlight" aria-hidden="true"></pre><textarea id="assertion-source" aria-label="Data assertion source" maxlength="65536" spellcheck="false" autocapitalize="off" autocomplete="off" wrap="off" disabled></textarea></div></div><aside class="assertion-catalog"><div class="assertion-heading"><h3>Trusted source</h3><button id="assertion-read-source" class="button" type="button" disabled>Read source</button></div><p id="assertion-source-status" class="assertion-source-meta">Loading</p><p id="assertion-source-summary" class="assertion-source-meta">Not read</p><div class="assertion-catalog-tabs" role="tablist" aria-label="Trusted source catalog"><button id="assertion-groups-tab" type="button" role="tab" data-assertion-catalog-tab aria-controls="assertion-groups-panel" aria-selected="true">Groups</button><button id="assertion-attributes-tab" type="button" role="tab" data-assertion-catalog-tab aria-controls="assertion-attributes-panel" aria-selected="false" tabindex="-1">Attributes</button></div><div id="assertion-groups-panel" role="tabpanel" aria-labelledby="assertion-groups-tab"><div class="table-scroll"><table><thead><tr><th>GROUP</th><th>MEMBERS</th><th></th></tr></thead><tbody id="assertion-group-rows"></tbody></table></div></div><div id="assertion-attributes-panel" role="tabpanel" aria-labelledby="assertion-attributes-tab" hidden><div class="table-scroll"><table><thead><tr><th>ATTRIBUTE</th><th>PEOPLE</th><th>GROUPS</th><th></th></tr></thead><tbody id="assertion-attribute-rows"></tbody></table></div></div></aside></div>
             <section class="assertion-results"><h3>Results</h3><p id="assertion-run-status">Not evaluated</p><p id="assertion-run-error" role="status"></p><div class="table-scroll"><table><thead><tr><th>LINE</th><th>ASSERTION</th><th>RESULT</th><th>CHECKED</th><th>VIOLATIONS</th></tr></thead><tbody id="assertion-result-rows"></tbody></table></div></section>
           </section>
         </section>
@@ -233,6 +226,7 @@ each group attribute "gidNumber" &gt;= 1000;</pre></details></div><aside class="
                   <button id="new-policy-record" type="button" role="menuitem" disabled>New policy</button>
                   <button id="new-assertion-record" type="button" role="menuitem" disabled>New assertion</button>
                   <hr class="policy-picker-create-separator">
+                  <button id="policy-rename" type="button" role="menuitem" hidden>Rename</button>
                   <button id="policy-copy" type="button" role="menuitem" disabled>Copy</button><button id="policy-paste" type="button" role="menuitem" disabled>Paste</button>
                   <button id="policy-duplicate" type="button" role="menuitem" disabled>Duplicate</button><button id="policy-delete" type="button" role="menuitem" disabled>Delete</button>
                   <button id="policy-restore" type="button" role="menuitem" hidden>Restore</button>
@@ -434,6 +428,9 @@ each group attribute "gidNumber" &gt;= 1000;</pre></details></div><aside class="
             <div class="editor-page-workbench">
               <aside id="zpr-config-catalog-pane" class="policy-catalog-pane editor-catalog-pane" aria-label="Configuration picker" hidden>
                 <div class="catalog-pane-heading"><strong>Configurations <span id="zpr-config-count" class="count-label">—</span></strong><button id="zpr-config-picker-close" class="pane-collapse-toggle" type="button" aria-label="Close configuration picker" title="Close configuration picker">×</button></div>
+                <div id="zpr-config-record-menu" class="policy-picker-menu" role="menu" aria-label="Configuration record actions" hidden>
+                  <button id="zpr-config-rename" type="button" role="menuitem">Rename</button>
+                </div>
                 <div id="zpr-config-records" class="policy-category-tree" role="tree" aria-label="Saved configurations" tabindex="0"></div>
               </aside>
               <div class="editor-page-main">
@@ -472,7 +469,7 @@ each group attribute "gidNumber" &gt;= 1000;</pre></details></div><aside class="
           <section class="section-block provisioning-panel">
             <p id="provisioning-status" class="provisioning-status" role="status">Checking enrollment administration…</p>
             <div class="provisioning-toolbar"><button id="provisioning-recheck" class="button" type="button">Check again</button></div>
-            <p class="provisioning-notice">Invitation creation requires explicit backend opt-in and named-user create grants. Authorized admins can cancel invited or pending requests from fresh Details, with a reason and revision/key-bound confirmation; approval and rejection controls are not connected and remain locked. Enrollment APIs require configured HTTPS sign-in and independently verified named-user delegation to Control-Service. The shared service certificate alone is not administrator authority. Direct certificate-authorized administration remains separate.</p>
+            <p class="provisioning-notice">Invitation creation requires explicit backend opt-in and named-user create grants. Authorized admins can cancel invited or pending requests, or approve/reject pending key proofs, from fresh Details using the current revision and exact fingerprint. Verify the fingerprint through an independent trusted channel; every decision needs a reason and independent backend authorization. Review approval does not issue credentials or establish connectivity. Enrollment APIs require configured HTTPS sign-in and independently verified named-user delegation to Control-Service. The shared service certificate alone is not administrator authority. Direct certificate-authorized administration remains separate.</p>
             <p id="operator-scope" hidden></p>
             <div class="provisioning-workspace">
               <form id="provisioning-draft" class="provisioning-card" autocomplete="off">
@@ -510,6 +507,7 @@ each group attribute "gidNumber" &gt;= 1000;</pre></details></div><aside class="
               <label>Registry organization<select id="provisioning-organization" disabled><option value="">Catalog unavailable</option></select></label>
               <p id="provisioning-registry-status" role="status" aria-live="polite">Registry unavailable; this is not an empty queue or a live adapter inventory.</p>
               <p id="provisioning-cancel-status" role="status" aria-live="polite">No cancellation submitted.</p>
+              <p id="provisioning-review-status" role="status" aria-live="polite">No review decision submitted.</p>
               <div id="provisioning-approved-catalog" hidden></div>
               <div class="provisioning-table-scroll"><table id="provisioning-invitations" hidden><thead><tr><th>Name</th><th>Inventory</th><th>State</th><th>Invitation expiry</th><th>Details</th></tr></thead><tbody></tbody></table></div>
               <button id="provisioning-next" class="button" type="button" hidden>Next page</button>
@@ -520,7 +518,7 @@ each group attribute "gidNumber" &gt;= 1000;</pre></details></div><aside class="
         <section class="page-view" id="page-diagnostics" data-page="diagnostics" aria-label="ZPR diagnostics" hidden>
           <section class="section-block diagnostics" data-diagnostics>
             <header class="diagnostics-header"><p id="diagnostics-updated" role="status">Waiting for telemetry sources</p></header>
-            <div class="diagnostics-toolbar"><label for="diagnostics-filter">Filter logs and sources</label><input id="diagnostics-filter" type="search" maxlength="200" placeholder="Identity, source, message, metric"><span id="diagnostics-count" class="count-label">—</span></div>
+            <div class="diagnostics-toolbar"><label for="diagnostics-filter">Filter logs and sources</label><input id="diagnostics-filter" type="search" maxlength="200" placeholder="Identity, source, message, metric"><label class="editor-wrap-toggle log-wrap-toggle"><input id="diagnostics-json" type="checkbox"> Format JSON</label><span id="diagnostics-count" class="count-label">—</span></div>
             <p id="diagnostics-error" class="diagnostics-error" role="status" hidden></p>
             <div id="diagnostics-sources" class="diagnostics-sources" aria-live="polite"></div>
           </section>
@@ -554,19 +552,20 @@ each group attribute "gidNumber" &gt;= 1000;</pre></details></div><aside class="
     </div>
     <script src="/vendor/pluralize.js?v=8.0.0" defer></script>
     <script src="/operator-request.js?v=1" defer></script>
-    <script src="/editor-page.js?v=3" defer></script>
-    <script src="/app.js?v=106" defer></script>
-    <script src="/machine-logs.js?v=21" defer></script>
-    <script src="/assertions.js?v=12" defer></script>
-    <script src="/config-editor.js?v=10" defer></script>
-    <script src="/gateways.js?v=6" defer></script>
+    <script src="/editor-page.js?v=7" defer></script>
+    <script src="/app.js?v=111" defer></script>
+    <script src="/log-format.js?v=1" defer></script>
+    <script src="/machine-logs.js?v=22" defer></script>
+    <script src="/assertions.js?v=14" defer></script>
+    <script src="/config-editor.js?v=12" defer></script>
+    <script src="/gateways.js?v=8" defer></script>
     <script src="/provisioning-contract.js?v=2" defer></script>
     <script src="/provisioning.js?v=3" defer></script>
-    <script src="/provisioning-registry.js?v=3" defer></script>
-    <script src="/operator-login.js?v=4" defer></script>
+    <script src="/provisioning-registry.js?v=4" defer></script>
+    <script src="/operator-login.js?v=7" defer></script>
     <script src="/editor-assistant.js?v=2" defer></script>
     <script src="/editor-search.js?v=7" defer></script>
-    <script src="/diagnostics.js?v=2" defer></script>
+    <script src="/diagnostics.js?v=3" defer></script>
       <script src="/security-review.js?v=13" defer></script>
   </body>
 </html>

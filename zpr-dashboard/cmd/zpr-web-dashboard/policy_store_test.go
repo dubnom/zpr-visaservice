@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"os"
 	"path/filepath"
 	"testing"
@@ -84,6 +85,57 @@ func TestSQLitePolicyRecordArchivePreservesImmutableRevisions(t *testing.T) {
 	revisions, err := repository.ListRevisions(context.Background(), record.ID)
 	if err != nil || len(revisions) != 1 {
 		t.Fatalf("revision history = %+v, err = %v", revisions, err)
+	}
+}
+
+func TestSQLitePolicyRecordRenamePreservesRevisionsAndRejectsStaleOrConflictingNames(t *testing.T) {
+	repository, err := openSQLitePolicyRepository(filepath.Join(privatePolicyTestDir(t), "rename.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer repository.Close()
+	ctx := context.Background()
+	category, err := repository.CreateCategory(ctx, nil, "Policies")
+	if err != nil {
+		t.Fatal(err)
+	}
+	first, err := repository.CreateRecord(ctx, category.ID, "Original", "policy", "text/vnd.zpr.zpl", json.RawMessage(`{"language":"zpl"}`), "allow team.", "tester", "Initial")
+	if err != nil {
+		t.Fatal(err)
+	}
+	second, err := repository.CreateRecord(ctx, category.ID, "Taken", "policy", "text/vnd.zpr.zpl", json.RawMessage(`{"language":"zpl"}`), "deny team.", "tester", "Initial")
+	if err != nil {
+		t.Fatal(err)
+	}
+	renamed, err := repository.RenameRecord(ctx, first.ID, first.CurrentRevision, "Renamed")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if renamed.Name != "Renamed" || renamed.CurrentRevision != first.CurrentRevision || renamed.Content != first.Content {
+		t.Fatalf("renamed record = %+v", renamed)
+	}
+	if _, err := repository.RenameRecord(ctx, first.ID, first.CurrentRevision-1, "Stale"); !errors.Is(err, errRevisionConflict) {
+		t.Fatalf("stale rename error = %v, want revision conflict", err)
+	}
+	if _, err := repository.RenameRecord(ctx, first.ID, first.CurrentRevision, second.Name); !errors.Is(err, errNameConflict) {
+		t.Fatalf("duplicate-name rename error = %v, want name conflict", err)
+	}
+	if _, err := repository.RenameRecord(ctx, first.ID, first.CurrentRevision, " "); err == nil {
+		t.Fatal("empty name was accepted")
+	}
+	revisions, err := repository.ListRevisions(ctx, first.ID)
+	if err != nil || len(revisions) != 1 {
+		t.Fatalf("revisions after rename = %+v, err = %v", revisions, err)
+	}
+	revision, err := repository.GetRevision(ctx, first.ID, 1)
+	if err != nil || revision.Content != first.Content {
+		t.Fatalf("immutable revision after rename = %+v, err = %v", revision, err)
+	}
+	if err := repository.SetRecordArchived(ctx, first.ID, first.CurrentRevision, true); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := repository.RenameRecord(ctx, first.ID, first.CurrentRevision, "Archived rename"); !errors.Is(err, errRecordArchived) {
+		t.Fatalf("archived rename error = %v, want archived error", err)
 	}
 }
 

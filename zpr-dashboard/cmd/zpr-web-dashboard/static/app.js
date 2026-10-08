@@ -1915,6 +1915,8 @@ function renderPolicyFileActions() {
   const recordContext = context === "record";
   for (const id of ["new-category", "new-policy-record", "new-assertion-record"]) byId(id).hidden = recordContext;
   byId("new-category").textContent = categoryContext ? "New subcategory" : "New category";
+  byId("policy-rename").hidden = !recordContext;
+  byId("policy-rename").disabled = !saved || archived || protectedRecord || Boolean(policy.browsingRevision) || hasUnsavedPolicyChanges(policy);
   byId("policy-copy").hidden = categoryContext;
   byId("policy-duplicate").hidden = categoryContext;
   byId("policy-copy").disabled = !saved || archived || protectedRecord;
@@ -2003,8 +2005,7 @@ function clearPolicySelection() {
   byId("policy-check").removeAttribute("data-analysis-state");
   byId("policy-check-result").textContent = "Policy source is not loaded.";
   byId("policy-check-result").hidden = true;
-  byId("policy-history-count").textContent = "—";
-  byId("policy-history").replaceChildren();
+  renderPolicyHistory();
   byId("assistant-question").disabled = true; byId("assistant-send").disabled = true;
   renderPolicyCatalog();
 }
@@ -2018,7 +2019,7 @@ async function selectPolicyRecord(id, fetchRecord = true, discardEdits = false, 
   }
   const summary = policy.records.find((record) => record.id === id);
   if (!summary) return clearPolicySelection();
-  if (!discardEdits && hasUnsavedPolicyChanges(policy) && !window.confirm("Discard unsaved changes or leave this historical version?")) return;
+  if (!discardEdits && !window.ZPREditorPage.confirmDiscard(hasUnsavedPolicyChanges(policy), "Discard unsaved changes or leave this historical version?")) return;
   if (policy.testPending) stopPolicyTest();
   policy.checkGeneration = (policy.checkGeneration || 0) + 1;
   policy.lintWarnings = [];
@@ -2097,29 +2098,24 @@ function renderPolicyIdentity(record = state.policy.record, version = state.poli
   const title = byId("policy-record-title");
   const draftName = byId("policy-draft-name");
   const modified = byId("policy-modified-indicator");
+  const identity = { title, version: byId("policy-revision-label"), modified };
   draftName.hidden = !record?.isDraft;
   if (!record) {
-    title.textContent = "Untitled";
-    title.hidden = false;
-    title.removeAttribute("title");
-    byId("policy-revision-label").textContent = "";
-    modified.hidden = true;
+    window.ZPREditorPage.renderIdentity(identity);
     return;
   }
   const categoryID = record.kind === "assertions" ? organizationPolicyCategoryID(state.policy) : record.category_id;
   const category = state.policy.categories.find((item) => item.id === categoryID);
   const path = [category?.path, record.name].filter(Boolean).join("/");
-  title.hidden = false;
   const draftNameValue = record.isDraft ? record.name : "";
   if (draftName.value !== draftNameValue) draftName.value = draftNameValue;
-  title.textContent = record.name.trim() || "Untitled";
-  title.title = path;
-  byId("policy-revision-label").textContent = "";
-  byId("policy-revision-label").hidden = true;
-  byId("policy-revision-label").removeAttribute("title");
-  modified.hidden = record.kind === "assertions"
-    ? !window.policyAssertionDirty?.()
-    : record.isDraft || byId("policy-source").value === state.policy.savedSource;
+  window.ZPREditorPage.renderIdentity(identity, {
+    name: record.name,
+    tooltip: path,
+    dirty: record.kind === "assertions"
+      ? Boolean(window.policyAssertionDirty?.())
+      : !record.isDraft && byId("policy-source").value !== state.policy.savedSource,
+  });
 }
 
 window.addEventListener("policy-assertion-saved", () => {
@@ -2401,16 +2397,16 @@ async function loadPolicyHistory(recordID) {
   const revisions = await response.json();
   if (!response.ok) throw new Error(revisions.error || `Version history failed (${response.status})`);
   state.policy.revisions = revisions;
-  byId("policy-history-count").textContent = `${revisions.length} versions`;
-  const history = byId("policy-history"); history.replaceChildren();
-  for (const revision of revisions) {
-    const button = document.createElement("button"); button.type = "button"; button.className = "history-item";
-    button.dataset.revision = String(revision.number); button.setAttribute("aria-current", String(revision.number === state.policy.revision));
-    const title = document.createElement("strong"); title.textContent = `Version ${revision.number}`;
-    const summary = document.createElement("span"); summary.textContent = revision.summary || "No change summary";
-    const meta = document.createElement("small"); meta.textContent = `${revision.author} · ${new Date(revision.created_at).toLocaleString()}`;
-    button.append(title, summary, meta); history.append(button);
-  }
+  renderPolicyHistory();
+}
+
+function renderPolicyHistory() {
+  policyHistory.render(state.policy.revisions, {
+    current: state.policy.browsingRevision || state.policy.revision,
+    detail: (revision) => revision.summary || "No change summary",
+    meta: (revision) => `${revision.author} · ${new Date(revision.created_at).toLocaleString()}`,
+    onSelect: (revision) => { void browsePolicyRevision(revision.number); },
+  });
 }
 
 async function refreshPolicyCatalog() {
@@ -2425,7 +2421,7 @@ async function browsePolicyRevision(number) {
     const response = await window.zprOperatorFetch(`/api/policy/records/${encodeURIComponent(policy.record.id)}/revisions/${number}`, { cache: "no-store" });
     const revision = await response.json();
     if (!response.ok) throw new Error(revision.error || `Version load failed (${response.status})`);
-    if (!policy.browsingRevision && byId("policy-source").value !== policy.savedSource && !window.confirm("Discard unsaved edits and browse this version?")) return;
+    if (!window.ZPREditorPage.confirmDiscard(!policy.browsingRevision && byId("policy-source").value !== policy.savedSource, "Discard unsaved edits and browse this version?")) return;
     if (policy.testPending) stopPolicyTest();
     policy.checkGeneration = (policy.checkGeneration || 0) + 1;
     clearPolicyTestResults();
@@ -2444,7 +2440,7 @@ async function browsePolicyRevision(number) {
     byId("policy-refresh").disabled = false;
     byId("policy-check-result").textContent = revision.summary || "Historical version";
     byId("policy-check-result").dataset.state = "";
-    for (const item of byId("policy-history").querySelectorAll("[data-revision]")) item.setAttribute("aria-current", String(Number(item.dataset.revision) === revision.number));
+    renderPolicyHistory();
     updatePolicyDirtyState();
   } catch (error) {
     byId("policy-check-result").textContent = error.message;
@@ -2493,7 +2489,7 @@ function openRecordDialog(saveAs = true) {
 function beginNewPolicyDraft() {
   const policy = state.policy;
   if (!policy.categoryID || !policy.configured) return;
-  if (hasUnsavedPolicyChanges(policy) && !window.confirm("Discard the current edits and start a new policy draft?")) return;
+  if (!window.ZPREditorPage.confirmDiscard(hasUnsavedPolicyChanges(policy), "Discard the current edits and start a new policy draft?")) return;
   const draft = {
     id: "",
     category_id: policy.categoryID,
@@ -2522,8 +2518,7 @@ function beginNewPolicyDraft() {
   renderPolicyIdentity(draft, 0, "");
   byId("policy-check-result").textContent = "Name this policy, add ZPL, then Evaluate before saving.";
   byId("policy-check-result").dataset.state = "";
-  byId("policy-history-count").textContent = "0 versions";
-  byId("policy-history").innerHTML = '<p class="catalog-empty">No saved versions.</p>';
+  renderPolicyHistory();
   byId("policy-check").disabled = !policy.compilerReady;
   byId("policy-save").disabled = true;
   byId("policy-save-as").disabled = true;
@@ -2538,7 +2533,7 @@ function beginNewAssertionDraft() {
   const policy = state.policy;
   const categoryID = organizationPolicyCategoryID(policy) || policy.categoryID;
   if (!categoryID || !policy.configured) return;
-  if (hasUnsavedPolicyChanges(policy) && !window.confirm("Discard the current edits and start a new assertion set?")) return;
+  if (!window.ZPREditorPage.confirmDiscard(hasUnsavedPolicyChanges(policy), "Discard the current edits and start a new assertion set?")) return;
   const draft = {
     id: "", category_id: categoryID, name: "", kind: "assertions",
     content_type: "text/vnd.zpr.assertions", metadata: { language: "assertions" },
@@ -2555,8 +2550,7 @@ function beginNewAssertionDraft() {
   policy.revisions = [];
   setPolicyRecordSurface("assertions", draft);
   renderPolicyIdentity(draft, 0, "");
-  byId("policy-history-count").textContent = "0 versions";
-  byId("policy-history").innerHTML = '<p class="catalog-empty">No saved versions.</p>';
+  renderPolicyHistory();
   renderPolicyCatalog();
   updatePolicyDirtyState();
   byId("assertion-source").focus();
@@ -2635,6 +2629,29 @@ async function managePolicyFile(action) {
   if (action === "duplicate") {
     if (!record || record.isDraft || record.archived) return;
     await pastePolicyRecord(record, true);
+    return;
+  }
+  if (action === "rename") {
+    if (!record || record.isDraft || record.archived || policy.browsingRevision || hasUnsavedPolicyChanges(policy)) return;
+    const pickerWasOpen = !byId("policy-catalog-pane").hidden;
+    const name = window.prompt("Rename record", record.name);
+    if (name === null) return;
+    try {
+      const response = await window.zprOperatorFetch(`/api/policy/records/${encodeURIComponent(record.id)}/rename`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ name, expected_revision: record.current_revision }),
+      });
+      const renamed = await response.json();
+      if (!response.ok) throw new Error(renamed.error || `Rename failed (${response.status})`);
+      policy.record = renamed;
+      await refreshPolicyCatalog();
+      if (pickerWasOpen) setPolicyPickerOpen(true);
+      renderPolicyIdentity(renamed, renamed.current_revision, renamed.content_hash);
+      setPolicyFileStatus(`Renamed to ${renamed.name}`);
+    } catch (error) {
+      setPolicyFileStatus(error.message, true);
+    }
     return;
   }
   if (!record || record.isDraft || !record.id) return;
@@ -3111,7 +3128,7 @@ async function confirmPolicyStage() {
 }
 
 async function reloadPolicyWorkspace() {
-  if ((hasUnsavedPolicyChanges(state.policy) || state.policy.browsingRevision || state.policy.record?.isDraft) && !window.confirm("Discard changes and return to the last saved policy?")) return;
+  if (!window.ZPREditorPage.confirmDiscard(hasUnsavedPolicyChanges(state.policy) || state.policy.browsingRevision || state.policy.record?.isDraft, "Discard changes and return to the last saved policy?")) return;
   if (!state.policy.record) return loadPolicyWorkspace();
   if (state.policy.record.isDraft) {
     clearPolicySelection();
@@ -3978,56 +3995,24 @@ function setPolicyPickerOpen(open, restoreFocus = false) {
   else if (restoreFocus) button.focus();
 }
 
+const policyFileMenu = window.ZPREditorPage.createMenu({
+  root: byId("policy-actions"),
+  toggle: byId("policy-files-toggle"),
+  menu: byId("policy-file-menu"),
+});
 function setPolicyFileMenuOpen(open, restoreFocus = false) {
-  const menu = byId("policy-file-menu");
-  const toggle = byId("policy-files-toggle");
-  menu.hidden = !open;
-  toggle.setAttribute("aria-expanded", String(open));
-  if (open) menu.querySelector("button:not(:disabled)")?.focus();
-  else if (restoreFocus) toggle.focus();
+  policyFileMenu.setOpen(open, restoreFocus);
 }
 
 byId("policy-picker-toggle").addEventListener("click", () => setPolicyPickerOpen(byId("policy-catalog-pane").hidden));
 byId("policy-picker-close").addEventListener("click", () => setPolicyPickerOpen(false, true));
-byId("policy-files-toggle").addEventListener("click", () => setPolicyFileMenuOpen(byId("policy-file-menu").hidden));
-byId("policy-file-menu").addEventListener("click", (event) => {
-  if (event.target.closest("button:not(:disabled)")) setPolicyFileMenuOpen(false);
+const policyHistory = window.ZPREditorPage.createHistory({
+  menu: byId("policy-history-menu"),
+  list: byId("policy-history"),
+  count: byId("policy-history-count"),
+  isAvailable: () => Boolean(state.policy.record),
 });
-document.addEventListener("pointerdown", (event) => {
-  if (!byId("policy-file-menu").hidden && !event.target.closest("#policy-actions")) setPolicyFileMenuOpen(false);
-});
-document.addEventListener("keydown", (event) => {
-  const menu = byId("policy-file-menu");
-  if (menu.hidden) return;
-  if (event.key === "Escape") {
-    event.preventDefault();
-    setPolicyFileMenuOpen(false, true);
-    return;
-  }
-  if (! ["ArrowDown", "ArrowUp", "Home", "End"].includes(event.key)) return;
-  const items = [...menu.querySelectorAll("button:not(:disabled)")];
-  if (!items.length) return;
-  event.preventDefault();
-  const current = items.indexOf(document.activeElement);
-  const next = event.key === "Home" ? 0 : event.key === "End" ? items.length - 1 : (current + (event.key === "ArrowDown" ? 1 : -1) + items.length) % items.length;
-  items[next].focus();
-});
-window.ZPREditorPage.placeHistory(byId("policy-history-menu"));
 window.ZPREditorPage.fitSourceToViewport(byId("policy-code-editor"));
-byId("policy-history-menu").querySelector("summary").addEventListener("click", (event) => {
-  if (!state.policy.record) event.preventDefault();
-});
-document.addEventListener("pointerdown", (event) => {
-  const history = byId("policy-history-menu");
-  if (history.open && !event.target.closest("#policy-history-menu")) history.open = false;
-});
-document.addEventListener("keydown", (event) => {
-  const history = byId("policy-history-menu");
-  if (event.key !== "Escape" || !history.open) return;
-  event.preventDefault();
-  history.open = false;
-  history.querySelector("summary").focus();
-});
 setPolicyPickerOpen(false);
 setAssistantPaneCollapsed(policyPaneCollapsed("assistant"));
 byId("policy-assistant-toggle").addEventListener("click", () => {
@@ -4086,6 +4071,7 @@ byId("new-assertion-record").addEventListener("click", beginNewAssertionDraft);
 byId("policy-copy").addEventListener("click", () => managePolicyFile("copy"));
 byId("policy-paste").addEventListener("click", () => managePolicyFile("paste"));
 byId("policy-duplicate").addEventListener("click", () => managePolicyFile("duplicate"));
+byId("policy-rename").addEventListener("click", () => managePolicyFile("rename"));
 byId("policy-delete").addEventListener("click", () => managePolicyFile("delete"));
 byId("policy-restore").addEventListener("click", () => managePolicyFile("restore"));
 byId("policy-show-archived").addEventListener("click", () => managePolicyFile("show-archived"));
@@ -4105,11 +4091,6 @@ document.addEventListener("click", (event) => {
   }
   const record = event.target.closest("[data-record-id]");
   if (record) selectPolicyRecord(record.dataset.recordId);
-  const revision = event.target.closest("[data-revision]");
-  if (revision) {
-    if (revision.closest("#policy-history")) byId("policy-history-menu").open = false;
-    browsePolicyRevision(Number(revision.dataset.revision));
-  }
 });
 byId("policy-source").addEventListener("input", () => {
   state.policy.checkGeneration = (state.policy.checkGeneration || 0) + 1;
@@ -4183,6 +4164,7 @@ byId("policy-source").addEventListener("blur", (event) => {
   if (!event.relatedTarget?.closest("#policy-completions")) hidePolicyCompletions();
 });
 byId("policy-save").addEventListener("click", savePolicy);
+window.ZPREditorPage.bindSaveShortcut({ root: byId("policy-source"), button: byId("policy-save") });
 byId("policy-stage").addEventListener("click", stageSelectedPolicy);
 byId("assistant-enabled").addEventListener("change", (event) => {
   state.policy.assistantEnabled = event.target.checked;

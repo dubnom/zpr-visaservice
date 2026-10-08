@@ -14,11 +14,8 @@ test("deployed local operator signs in through real Dex and authorizes monitorin
   const config = JSON.parse(readFileSync(`${directory}/oidc.json`, "utf8"));
   const errors = [];
   page.on("pageerror", (error) => errors.push(error.message));
-  await page.goto(settings.origin + "/#map");
-  await expect(page.locator("#operator-login-status")).toHaveText("Not signed in");
-  expect(await page.evaluate(async () => (await fetch("/api/snapshot")).status)).toBe(403);
   const loginRequest = page.waitForRequest((request) => new URL(request.url()).pathname === "/auth/operator/login");
-  await page.getByRole("button", { name: "Sign in", exact: true }).click();
+  await page.goto(settings.origin + "/#map");
   expect((await loginRequest).headers().origin).toBe(settings.origin);
   await expect(page).toHaveURL(/^https:\/\/zpr-id\.localhost:5556\//);
   await page.locator('input[name="login"]').fill(settings.username);
@@ -40,7 +37,7 @@ test("deployed local operator signs in through real Dex and authorizes monitorin
     method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ source: '[visa_service]\ndock_node = "node"\n' }),
   })).status);
   expect(missingCSRF).toBe(403);
-  await page.getByRole("link", { name: "ZPR Config", exact: true }).click();
+  await page.getByRole("link", { name: "Config", exact: true }).click();
   await page.getByLabel("ZPLC configuration source").fill('[visa_service]\ndock_node = "node"\n');
   const analyzed = page.waitForResponse((response) => new URL(response.url()).pathname === "/api/policy/config/check");
   await page.getByRole("button", { name: "Analyze", exact: true }).click();

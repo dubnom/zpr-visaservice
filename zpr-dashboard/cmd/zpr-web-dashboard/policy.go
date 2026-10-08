@@ -121,6 +121,11 @@ type policyRecordDuplicateRequest struct {
 	Name       string `json:"name"`
 }
 
+type policyRecordRenameRequest struct {
+	Name             string `json:"name"`
+	ExpectedRevision int    `json:"expected_revision"`
+}
+
 type policyRecordArchiveRequest struct {
 	ExpectedRevision int `json:"expected_revision"`
 }
@@ -800,6 +805,40 @@ func protectedOrganizationAssertionRecord(record policyRecord) bool {
 	return record.Kind == organizationAssertionsKind && record.Name == organizationAssertionsName && record.ContentType == "application/vnd.zpr.assertions+json"
 }
 
+func (a *application) handleRenamePolicyRecord(w http.ResponseWriter, r *http.Request) {
+	if !localEditorRequest(w, r) {
+		return
+	}
+	if a.policy == nil {
+		writePolicyError(w, http.StatusServiceUnavailable, a.policyErr)
+		return
+	}
+	var request policyRecordRenameRequest
+	if !decodePolicyRequest(w, r, 4096, &request) {
+		return
+	}
+	if request.ExpectedRevision <= 0 {
+		writePolicyError(w, http.StatusBadRequest, "The current record revision is required.")
+		return
+	}
+	record, err := a.policy.store.GetRecord(r.Context(), r.PathValue("id"))
+	if err != nil {
+		writePolicyStoreError(w, err)
+		return
+	}
+	if protectedOrganizationAssertionRecord(record) {
+		writePolicyError(w, http.StatusConflict, "The organization assertion settings record cannot be renamed.")
+		return
+	}
+	record, err = a.policy.store.RenameRecord(r.Context(), record.ID, request.ExpectedRevision, request.Name)
+	if err != nil {
+		writePolicyStoreError(w, err)
+		return
+	}
+	w.Header().Set("Cache-Control", "no-store")
+	writeJSON(w, http.StatusOK, record)
+}
+
 func (a *application) handleArchivePolicyRecord(w http.ResponseWriter, r *http.Request) {
 	if !localEditorRequest(w, r) {
 		return
@@ -930,6 +969,8 @@ func writePolicyStoreError(w http.ResponseWriter, err error) {
 		writePolicyError(w, http.StatusConflict, "This record changed in another editor. Reload its latest revision before saving.")
 	case errors.Is(err, errNameConflict):
 		writePolicyError(w, http.StatusConflict, "A category or record with that name already exists here.")
+	case errors.Is(err, errRecordArchived):
+		writePolicyError(w, http.StatusConflict, "Restore the archived record before renaming it.")
 	default:
 		writePolicyError(w, http.StatusBadRequest, err.Error())
 	}

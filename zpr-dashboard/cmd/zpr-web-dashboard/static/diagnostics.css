@@ -3,7 +3,7 @@
 .diagnostics-header p { margin: 5px 0 0; color: var(--muted); font: 10px var(--mono); }
 .diagnostics-toolbar { display: flex; align-items: center; gap: 10px; margin-bottom: 12px; }
 .diagnostics-toolbar label { color: var(--muted); font: 9px var(--mono); text-transform: uppercase; }
-.diagnostics-toolbar input { flex: 1; min-width: 120px; min-height: 32px; padding: 5px 8px; border: 1px solid var(--line); border-radius: 2px; color: var(--ink); background: white; font: 11px var(--sans); }
+.diagnostics-toolbar input[type="search"] { flex: 1; min-width: 120px; min-height: 32px; padding: 5px 8px; border: 1px solid var(--line); border-radius: 2px; color: var(--ink); background: white; font: 11px var(--sans); }
 .diagnostics-sources { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 360px), 1fr)); gap: 12px; align-items: start; }
 .diagnostics-source { min-width: 0; padding: 12px; border: 1px solid var(--line); border-top: 3px solid #278966; background: var(--panel); }
 .diagnostics-source[data-state="stale"] { border-top-color: #c28b12; }

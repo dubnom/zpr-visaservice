@@ -925,6 +925,25 @@ stop_control_service() {
     stop_service "$CONTROL_PID"
 }
 
+reload_assistant() {
+    if [ "$(docker inspect -f '{{.State.Running}}' "$CONTROL_CONTAINER")" != true ]; then
+        echo "Control-Service must be running before reloading the assistant." >&2
+        return 1
+    fi
+    configured_key_file=$(docker inspect -f '{{range .Config.Env}}{{println .}}{{end}}' "$CONTROL_CONTAINER" |
+        sed -n 's/^ZPR_ANTHROPIC_API_KEY_FILE=//p')
+    if [ "$configured_key_file" != "$STATE_DIR/assistant/api-key" ]; then
+        echo "Control-Service uses a different assistant key path; configure its persistent key file before reloading." >&2
+        return 1
+    fi
+    docker restart "$CONTROL_CONTAINER" >/dev/null
+    wait_for_url https://127.0.0.1:8790/api/snapshot control-service \
+        ${ZPR_DASHBOARD_CONTAINER_RUNTIME:+--connect-to 127.0.0.1:8790:host.docker.internal:8790} \
+        --cacert "$SERVICE_CERTS/service-ca.crt" \
+        --cert "$SERVICE_CERTS/control-room-client.crt" \
+        --key "$SERVICE_CERTS/control-room-client.key"
+}
+
 stop_policy_service() {
     docker rm -f "$POLICY_CONTAINER" >/dev/null 2>&1 || true
     stop_service "$POLICY_PID"
@@ -1433,12 +1452,26 @@ prepare_policy_tester() {
     fi
 }
 
+policy_startup_organization() {
+    selected=${SIMULATION_ORGANIZATION_ID:-}
+    if [ -z "$selected" ] && [ -r "$ACTIVE_ORGANIZATION_FILE" ]; then
+        selected=$(tr -d '\r\n' < "$ACTIVE_ORGANIZATION_FILE")
+    fi
+    if [ -z "$selected" ]; then
+        selected=$(jq -r '.organization_id // "northstar"' "$SIMULATION_MANIFEST")
+    fi
+    case "$selected" in
+        ''|*[!a-z0-9-]*) echo "invalid policy organization id" >&2; return 1 ;;
+    esac
+    printf '%s\n' "$selected"
+}
+
 start_policy_service() {
     if [ ! -f "$SIMULATION_MANIFEST" ]; then
         echo "simulation manifest not found: $SIMULATION_MANIFEST" >&2
         return 1
     fi
-    organization_id=${SIMULATION_ORGANIZATION_ID:-$(jq -r '.organization_id // "northstar"' "$SIMULATION_MANIFEST")}
+    organization_id=$(policy_startup_organization)
     case "$organization_id" in
         ''|*[!a-z0-9-]*) echo "invalid simulation organization id: $organization_id" >&2; return 1 ;;
     esac
@@ -1591,6 +1624,7 @@ case "${1:-start}" in
     restart-control-service)
         start_control_service
         ;;
+    reload-assistant) reload_assistant ;;
     stop-policy-service)
         stop_policy_service
         ;;
@@ -1604,5 +1638,5 @@ case "${1:-start}" in
         [ "$#" -eq 3 ] || { echo "usage: $0 restart-policy-context organization source" >&2; exit 2; }
         restart_policy_context "$2" "$3"
         ;;
-    *) echo "usage: $0 {start|stop|restart|status|start-admin-relay|stop-admin-relay|start-dns|stop-dns|start-ui-relays|stop-ui-relays|start-browser-gateway|stop-browser-gateway|restart-control-room|restart-simulator|restart-control-service|stop-policy-service|restart-policy-service|restart-simulator-control|start-observability-collector organization-id|stop-observability-collector}" >&2; exit 2 ;;
+    *) echo "usage: $0 {start|stop|restart|status|start-admin-relay|stop-admin-relay|start-dns|stop-dns|start-ui-relays|stop-ui-relays|start-browser-gateway|stop-browser-gateway|restart-control-room|restart-simulator|restart-control-service|reload-assistant|stop-policy-service|restart-policy-service|restart-simulator-control|start-observability-collector organization-id|stop-observability-collector}" >&2; exit 2 ;;
 esac

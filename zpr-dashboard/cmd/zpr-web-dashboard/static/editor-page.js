@@ -108,17 +108,19 @@
 
   // Policy-style button menu (File...): toggle button + role=menu popover, Escape and outside click close it.
   function createMenu({ root, toggle, menu }) {
+    const availableItems = () => [...menu.querySelectorAll("button:not(:disabled)")]
+      .filter((button) => button.getClientRects().length > 0);
     function setOpen(open, restoreFocus = false) {
       menu.hidden = !open;
       toggle.setAttribute("aria-expanded", String(open));
-      if (open) menu.querySelector("button:not(:disabled)")?.focus();
+      if (open) availableItems()[0]?.focus();
       else if (restoreFocus) toggle.focus();
     }
     toggle.addEventListener("click", () => setOpen(menu.hidden));
     menu.addEventListener("click", (event) => { if (event.target.closest("button:not(:disabled)")) setOpen(false); });
     menu.addEventListener("keydown", (event) => {
       if (!["ArrowDown", "ArrowUp", "Home", "End"].includes(event.key)) return;
-      const items = [...menu.querySelectorAll("button:not(:disabled)")];
+      const items = availableItems();
       if (!items.length) return;
       event.preventDefault();
       const current = items.indexOf(document.activeElement);
@@ -203,6 +205,22 @@
     return Boolean(name?.trim()) && name.trim().toLowerCase() !== "untitled";
   }
 
+  function confirmDiscard(dirty, message) {
+    return !dirty || window.confirm(message);
+  }
+
+  function bindSaveShortcut({ root, button }) {
+    const onKeydown = (event) => {
+      if (event.defaultPrevented || event.isComposing || event.repeat ||
+          !(event.ctrlKey || event.metaKey) || event.altKey || event.shiftKey ||
+          event.key.toLowerCase() !== "s") return;
+      event.preventDefault();
+      if (!button.disabled) button.click();
+    };
+    root.addEventListener("keydown", onKeydown);
+    return () => root.removeEventListener("keydown", onKeydown);
+  }
+
   function fitSourceToViewport(container) {
     const frame = container.closest(".policy-page");
     let scheduled = false;
@@ -237,6 +255,7 @@
     if (tooltip) title.title = tooltip; else title.removeAttribute("title");
     version.textContent = "";
     version.hidden = true;
+    version.removeAttribute("title");
     modified.hidden = !dirty;
   }
 
@@ -247,5 +266,5 @@
     if (kind) element.dataset.state = kind; else delete element.dataset.state;
   }
 
-  window.ZPREditorPage = { highlight, createSourceSurface, createMenu, createPicker, createHistory, placeHistory, isNamed, fitSourceToViewport, renderIdentity, setStatus };
+  window.ZPREditorPage = { highlight, createSourceSurface, createMenu, createPicker, createHistory, placeHistory, isNamed, confirmDiscard, bindSaveShortcut, fitSourceToViewport, renderIdentity, setStatus };
 })();

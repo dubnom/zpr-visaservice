@@ -1,5 +1,29 @@
 # GUI Improvements
 
+## Deployment status
+
+- Deployed to local Control Room on 2026-10-08 at 12:56 EDT: shared History
+  controller migration for Policy/Assertions and editor-specific revision
+  selection isolation (`app.js?v=111`). Live HTML, application script and shared
+  editor helper match source. Login readiness and signed-out session behavior
+  were verified; 40 focused desktop/tablet regression tests passed before
+  deployment. Only Control Room restarted; Simulator, its DNS relays, Great
+  Lakes and backend service start times were unchanged.
+- Deployed to local Control Room and Simulator on 2026-10-08:
+  automatic identity-provider login, raw/formatted JSON log toggles, shared
+  editor Save shortcuts, identity rendering, discard guards and File menus.
+  The failure-only Simulator See Logs link remains deployed.
+- Validation: 32 focused desktop/tablet tests passed for shared File menus,
+  discard, identity and Save shortcut contracts. Live assets on both dashboards
+  were hash-checked against source; Control Room HTTPS and login configuration
+  responded successfully.
+- Great Lakes remains active. Control-Service, Policy-Service, DNS and Great
+  Lakes container start times were unchanged. Dashboard containers were
+  updated in place; both Simulator DNS relays were restored and checked.
+- Control Room restart clears in-memory sessions; operators must sign in again.
+  Live browser inspection was unavailable because the browser connection timed
+  out. Broader unchecked refactoring tasks below remain outstanding.
+
 ## Overall
 
 ### Help
@@ -42,19 +66,27 @@
 - [x] Place History beside the file name in every editor, removing separate version labels.
 - [x] Display Untitled for unnamed drafts and prevent saving Untitled as a name.
 - [x] Wrap should start as disabled for all editors; a user's explicit saved Wrap choice is remembered.
-- [x] Fix assistant key setup: persist the key securely for both Control-Service and Simulator, use it for readiness and requests, and explain the supported setup command.
+- [x] Fix assistant key setup: persist the key securely for both Control-Service and Simulator, use it for readiness and requests, and explain the supported setup command. Reload the existing Control-Service container in place so key setup preserves configured LDAP/admin settings.
+- [x] Add Rename to the Browse right-click menus for Policy, Assertion, and ZPR Config records.
 
 ### All log viewers
 - [x] Word wrap checkbox defaults to disabled; users can enable it per view.
 - [x] Change "Word wrap" to "Wrap"
 - [x] Wrap should start as disabled for all log viewers.
+- [x] Toggle between raw and formatted JSON in Adapter/Controller Logs, Workers, and Diagnostics. Keep raw as the default, preserve numeric/string tokens, and leave plain-text or malformed entries unchanged.
 
 ### Logging in and out
 - [x] If there isn't a properly authenticated and permissioned user don't show anything other than a sign in box with similar styling can colors as the app. Failure to sign in should show the error and allow retries.
+- [x] Skip the "you're not logged in" dialog box and go directly to the identity provider login page. Failed/denied callbacks remain retryable, and explicit sign-out does not automatically sign back in.
 
 ### JavaScript reuse refactoring
 - [ ] Extract a shared editor controller for Policy, Assertions, ZPR Config, Gateways, Simulator Directory and Scenario, with explicit adapters for load, analyze, save and domain-specific rendering.
+  - [x] Share File menu interaction across all six editors: visible/enabled action focus, arrow/Home/End navigation, Escape focus restoration and outside-click dismissal.
 - [ ] Consolidate editor title/Untitled handling, reserved-name validation, History placement, dirty state, discard confirmation and Save keyboard shortcuts.
+  - [x] Share Ctrl/Cmd+S handling across Policy, Assertions, Config, Gateways, Directory and Scenario. Use each editor's enabled Save action; ignore modified, composing, repeated and already-handled shortcuts.
+  - [x] Use the shared identity renderer in all six editors, including Policy/Assertions; preserve domain-owned dirty checks and draft naming. Clear obsolete version tooltips when identities change.
+  - [x] Share dirty-state discard confirmation across all six editors, preserving action-specific warnings, cancellation and reset behavior.
+  - [x] Use the shared History controller and version renderer for Policy/Assertions as well as Config, Gateways, Directory and Scenario. Keep revision loading domain-owned and prevent another editor's History selection from invoking Policy revision loading.
 - [ ] Consolidate Analyze state, source-owned diagnostics, diagnostic clearing and stale-response rejection without mixing service/configuration errors with source-line errors.
 - [ ] Consolidate JavaScript editor-frame setup and responsive viewport sizing so individual editors do not duplicate layout wiring.
 - [ ] Extract a shared AI assistant shell and conversation controller from `editor-assistant.js` and `design-assistant.js`: messages, model/token controls, usage counters, pending/error states and collapse behavior.
@@ -125,6 +157,7 @@
 - [x] If there is a subtle way of adding a title to the policy/gateways/... group, call it 'Configuration'.
 - [x] Move Log Manager to below Adapter Logs. Make the arrow more visible.
 - [x] Clicking on "Log Manager" should switch focus to the Log Manger.
+- [x] Rename "ZPR Config" to "Config" in the navigation.
 
 ### Service logs and statistics
 - [x] Add one Control Room diagnostics view for logs and current stats from every ZPR node and every configured trusted/required service used by Visa Service.
@@ -155,6 +188,10 @@
 - [x] Put "Policy" or "Assertion" above the editor to be clear of the mode. Center between the left and right button groups.
 - [x] Get rid of the extra line above the name of the policy/assertion being edited.
 - [x] Add an indicator to the policy/assertion name line to indicate if the file has been modified. Don't show anything if it isn't.
+- [x] Match the assertion editor gutter to the other editors.
+- [x] Change Nav from "Policy" to "Policy/Assertions".
+- [x] Remove Syntax from the bottom of the assertions editor.
+- [ ] Change "Analyze" color to blue instead of orange.
 
 ### Status
 - [x] I noticed on the "adapters" page that even when sorted, the records moved around (though nothing changed). I think sorting only sorts on its primary field but if that field has duplicates this occurs. A solution would be to always have a secondary field (or more) that is/are automatically attached. The user has nothing to do with this but the results would be deterministic.
@@ -194,6 +231,7 @@
 - [x] All the tables should be sortable and use the same visual treatment as above.
 - [x] Groups should make the cn and objectclass their own columns
 - [x] People should condense each row and toggle viewing when clicked.
+- [ ] Add a page to view updates from the trusted source
 
 ### Gateways
 - [x] Add a Control Room page listing installed ZPL Gateway services by organization and editing their versioned runtime drafts.
@@ -243,7 +281,9 @@ Running" orange should be a non-indicated color like blue.
 
 ### Organizations
   Proposed plan for approval: keep AI proposal-only; gather requirements and selected template/profile context; validate a schema-bound organization draft without writing files; show a diff for identity, directory, policy, services and runtime; require a separate `organization.create` authorization and explicit confirmation; create through an audited, idempotent backend API with revision/conflict handling; test invalid proposals, stale context, cancellation, duplicate IDs and lost responses. No organization creation has been wired.
- [x] "Activate organization" and "Active" use very different styles. Make them look similar (other than the color).
+ - [x] "Activate organization" and "Active" use very different styles. Make them look similar (other than the color).
+ - [x] "Open reset log" should only show if there is a failure. Change the name to "See Logs".
+
 ### Workers
 - [x] Add the wordwrap button like the Adapter Logs.
 
@@ -289,7 +329,13 @@ Machine/adapter enrollment is tracked in [Provisioning plan](../Provisioning%20p
   uncertainty/readback acknowledgement with no automatic retry.
 - [x] Verify real-service invited/pending cancellation and committed-but-lost
   response readback in desktop/tablet browsers with Simulator unavailable.
-- [ ] Wire revision/key-bound approval/rejection with real-service mutation browser tests.
+- [x] Wire revision/key-bound approval/rejection only for independently granted
+  organizations; require fresh Details, trusted-channel fingerprint verification,
+  a reason, explicit confirmation, named audit and uncertain-response
+  reconciliation without automatic retry.
+- [x] Verify approve, reject, locked-without-backend-grant and committed-but-lost
+  review response through HTTPS OIDC/CSRF/mTLS/SQLite browser tests. Approval is
+  only a review decision; credential issuance and adapter admission remain separate.
 - [x] Add Windows 11 x64 per-user enrollment wizard support and build an unsigned
   setup EXE; use user-bound DPAPI/private ACLs and preserve keys/config on uninstall.
 - [ ] Certify native Windows install/browser launch, DPAPI/ACL and two-user

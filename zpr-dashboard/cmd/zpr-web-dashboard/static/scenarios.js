@@ -407,7 +407,7 @@ function showScenarioEditorPage() {
 }
 
 function closeScenarioEditorPage() {
-  if (scenarioEditorDirty && !window.confirm("Discard unsaved scenario changes?")) return false;
+  if (!scenarioEditorPage.confirmDiscard(scenarioEditorDirty, "Discard unsaved scenario changes?")) return false;
   scenarioEditorDirty = false;
   document.getElementById("scenario-editor-dialog").close();
   return true;
@@ -673,7 +673,7 @@ document.getElementById("scenario-editor-publish").addEventListener("click", asy
   catch (error) { setScenarioEditorStatus(error.message || "Could not publish scenario.", "error"); }
 });
 document.getElementById("scenario-editor-discard").addEventListener("click", () => {
-  if (!scenarioEditorDirty || !window.confirm("Discard unsaved scenario changes?")) return;
+  if (!scenarioEditorDirty || !scenarioEditorPage.confirmDiscard(true, "Discard unsaved scenario changes?")) return;
   scenarioEditorDirty = false;
   scenarioEditorViewing = 0;
   scenarioEditorSummary = "";
@@ -688,12 +688,7 @@ document.getElementById("scenario-editor-form").addEventListener("submit", (even
   closeScenarioEditorPage();
 });
 document.getElementById("scenario-editor-form").noValidate = true;
-document.getElementById("scenario-editor-dialog").addEventListener("keydown", (event) => {
-  if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === "s") {
-    event.preventDefault();
-    document.getElementById("scenario-editor-save").click();
-  }
-});
+scenarioEditorPage.bindSaveShortcut({ root: document.getElementById("scenario-editor-dialog"), button: document.getElementById("scenario-editor-save") });
 document.getElementById("scenario-editor-delete").addEventListener("click", async () => {
   if (!scenarioEditorArtifact) return;
   try { await archiveScenario(scenarioEditorArtifact.id, scenarioEditorOrganization, scenarioEditorArtifact.revision); }

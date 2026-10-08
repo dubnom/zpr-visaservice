@@ -484,6 +484,23 @@ func TestAssertionPolicyRecordLifecycleAndProtectsOrganizationSettings(t *testin
 	if err := json.Unmarshal(duplicateResponse.Body.Bytes(), &duplicate); err != nil || duplicate.Content != content || duplicate.ID == record.ID {
 		t.Fatalf("duplicate assertion record = %+v, err=%v", duplicate, err)
 	}
+	renameRequest := localPolicyRequest(http.MethodPost, "/api/policy/records/"+duplicate.ID+"/rename", `{"name":"Operator assertions renamed","expected_revision":1}`)
+	renameRequest.SetPathValue("id", duplicate.ID)
+	renamedResponse := httptest.NewRecorder()
+	app.handleRenamePolicyRecord(renamedResponse, renameRequest)
+	if renamedResponse.Code != http.StatusOK {
+		t.Fatalf("rename assertion record status=%d body=%s", renamedResponse.Code, renamedResponse.Body)
+	}
+	if err := json.Unmarshal(renamedResponse.Body.Bytes(), &duplicate); err != nil || duplicate.Name != "Operator assertions renamed" || duplicate.CurrentRevision != 1 || duplicate.Content != content {
+		t.Fatalf("renamed assertion record = %+v, err=%v", duplicate, err)
+	}
+	conflictRequest := localPolicyRequest(http.MethodPost, "/api/policy/records/"+duplicate.ID+"/rename", `{"name":"Operator assertions","expected_revision":1}`)
+	conflictRequest.SetPathValue("id", duplicate.ID)
+	conflictResponse := httptest.NewRecorder()
+	app.handleRenamePolicyRecord(conflictResponse, conflictRequest)
+	if conflictResponse.Code != http.StatusConflict {
+		t.Fatalf("conflicting rename status=%d body=%s", conflictResponse.Code, conflictResponse.Body)
+	}
 
 	archiveBody, _ := json.Marshal(policyRecordArchiveRequest{ExpectedRevision: record.CurrentRevision})
 	archiveRequest := localPolicyRequest(http.MethodDelete, "/api/policy/records/"+record.ID, string(archiveBody))
@@ -527,6 +544,13 @@ func TestAssertionPolicyRecordLifecycleAndProtectsOrganizationSettings(t *testin
 	app.handleArchivePolicyRecord(archiveRejected, protectedArchive)
 	if archiveRejected.Code != http.StatusConflict {
 		t.Fatalf("built-in archive status=%d body=%s", archiveRejected.Code, archiveRejected.Body)
+	}
+	protectedRename := localPolicyRequest(http.MethodPost, "/api/policy/records/"+builtIn.ID+"/rename", `{"name":"Renamed","expected_revision":1}`)
+	protectedRename.SetPathValue("id", builtIn.ID)
+	renameRejected := httptest.NewRecorder()
+	app.handleRenamePolicyRecord(renameRejected, protectedRename)
+	if renameRejected.Code != http.StatusConflict {
+		t.Fatalf("built-in rename status=%d body=%s", renameRejected.Code, renameRejected.Body)
 	}
 }
 

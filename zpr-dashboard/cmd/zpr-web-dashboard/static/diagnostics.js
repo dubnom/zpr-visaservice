@@ -6,6 +6,7 @@
   const error = document.getElementById("diagnostics-error");
   const filter = document.getElementById("diagnostics-filter");
   const count = document.getElementById("diagnostics-count");
+  const jsonToggle = document.getElementById("diagnostics-json");
   let responseData = null;
   let pending = null;
   let timer = null;
@@ -65,7 +66,8 @@
         const stamp = log.timestamp ? new Date(log.timestamp).toLocaleTimeString() : "—";
         appendText(row, "time", "diagnostics-log-time", stamp);
         if (log.severity) appendText(row, "span", "diagnostics-log-severity", log.severity);
-        appendText(row, "span", "diagnostics-log-body", log.body || "");
+        const body = log.body || "";
+        appendText(row, "span", "diagnostics-log-body", jsonToggle.checked ? window.ZPRLogFormat.formatJSON(body) : body);
         logs.append(row);
       }
       if (!logs.children.length) appendText(logs, "li", "diagnostics-no-logs", "No logs in the current window.");
@@ -113,6 +115,7 @@
   }
 
   filter.addEventListener("input", render);
+  jsonToggle.addEventListener("change", render);
   document.addEventListener("control-room:refreshed", () => { if (active) void load(); });
   window.addEventListener("hashchange", setActive);
   setActive();

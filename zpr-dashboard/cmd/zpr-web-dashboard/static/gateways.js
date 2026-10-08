@@ -211,7 +211,7 @@
       setPickerOpen(false, true);
       return;
     }
-    if (isDirty() && !confirm("Discard unsaved gateway draft edits?")) return;
+    if (!page.confirmDiscard(isDirty(), "Discard unsaved gateway draft edits?")) return;
     state.selected = contract;
     state.record = state.configs.find((record) => record.instance_id === contract.instance_id) || null;
     loadSelected();
@@ -219,7 +219,7 @@
   }
 
   function loadRevision(revision) {
-    if (source.value !== pretty(revision.config) && isDirty() && !confirm("Discard unsaved gateway draft edits?")) return;
+    if (!page.confirmDiscard(source.value !== pretty(revision.config) && isDirty(), "Discard unsaved gateway draft edits?")) return;
     state.revision = revision.revision;
     source.value = pretty(revision.config);
     clearAnalysis();
@@ -315,18 +315,13 @@
     setMessage("");
     renderSource();
   });
-  source.addEventListener("keydown", (event) => {
-    if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === "s") {
-      event.preventDefault();
-      void saveDraft();
-    }
-  });
+  page.bindSaveShortcut({ root: source, button: saveButton });
   analyzeButton.addEventListener("click", () => void analyzeDraft());
   formatButton.addEventListener("click", formatDraft);
   saveButton.addEventListener("click", () => void saveDraft());
   byId("gateway-refresh").addEventListener("click", () => void loadInventory());
   byId("gateway-discard").addEventListener("click", () => {
-    if (!isDirty() || !confirm("Discard unsaved gateway draft edits?")) return;
+    if (!isDirty() || !page.confirmDiscard(true, "Discard unsaved gateway draft edits?")) return;
     source.value = state.saved;
     clearAnalysis();
     setMessage("");

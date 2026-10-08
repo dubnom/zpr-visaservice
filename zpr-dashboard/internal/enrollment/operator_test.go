@@ -236,6 +236,8 @@ func TestOperatorInvitationCreationOptInAndCatalogCapabilities(t *testing.T) {
 			var catalog struct {
 				Organizations map[string]Organization `json:"organizations"`
 				Create        []string                `json:"gui_create_organizations"`
+				Approve       []string                `json:"gui_approve_organizations"`
+				Reject        []string                `json:"gui_reject_organizations"`
 				Mutations     bool                    `json:"gui_mutations_enabled"`
 			}
 			if w.Code != http.StatusOK || json.Unmarshal(w.Body.Bytes(), &catalog) != nil {
@@ -245,7 +247,8 @@ func TestOperatorInvitationCreationOptInAndCatalogCapabilities(t *testing.T) {
 			if test.want == http.StatusCreated {
 				wantCapabilities = 1
 			}
-			if len(catalog.Create) != wantCapabilities || catalog.Mutations || len(catalog.Organizations) != 1 ||
+			if len(catalog.Create) != wantCapabilities || len(catalog.Approve) != 0 || len(catalog.Reject) != 0 ||
+				catalog.Mutations || len(catalog.Organizations) != 1 ||
 				(wantCapabilities == 1 && catalog.Create[0] != "company") {
 				t.Fatalf("unexpected capabilities: %s", w.Body.String())
 			}
@@ -256,6 +259,47 @@ func TestOperatorInvitationCreationOptInAndCatalogCapabilities(t *testing.T) {
 			var count int
 			if err := store.db.QueryRow(`SELECT count(*) FROM invitations`).Scan(&count); err != nil || count != wantCapabilities {
 				t.Fatalf("registry rows=%d err=%v, want %d", count, err, wantCapabilities)
+			}
+		})
+	}
+}
+
+func TestOperatorCatalogReviewCapabilitiesRequireConfiguredPermissionAndDeadline(t *testing.T) {
+	for _, test := range []struct {
+		name        string
+		permissions []string
+		deadline    int
+		approve     bool
+		reject      bool
+	}{
+		{"no-review-permissions", []string{"read"}, 3600, false, false},
+		{"approve-only", []string{"read", "approve"}, 3600, true, false},
+		{"reject-only", []string{"read", "reject"}, 3600, false, true},
+		{"no-deadline", []string{"read", "approve", "reject"}, 0, false, false},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			store := testStore(t)
+			config := apiConfig()
+			config.ApprovalLifetimeSeconds = test.deadline
+			handler, err := newAdminHandler(store, config, true)
+			if err != nil {
+				t.Fatal(err)
+			}
+			request := httptest.NewRequest(http.MethodGet, APIPrefix+"catalog", nil)
+			request = request.WithContext(context.WithValue(request.Context(), operatorPrincipalKey{}, Principal{
+				Name: "oidc:fixture", Organizations: []string{"company"}, Permissions: test.permissions,
+			}))
+			response := httptest.NewRecorder()
+			handler.ServeHTTP(response, request)
+			var catalog struct {
+				Approve []string `json:"gui_approve_organizations"`
+				Reject  []string `json:"gui_reject_organizations"`
+			}
+			if response.Code != http.StatusOK || json.Unmarshal(response.Body.Bytes(), &catalog) != nil {
+				t.Fatalf("catalog=%d %s", response.Code, response.Body.String())
+			}
+			if (len(catalog.Approve) == 1) != test.approve || (len(catalog.Reject) == 1) != test.reject {
+				t.Fatalf("unexpected review capabilities: %s", response.Body.String())
 			}
 		})
 	}

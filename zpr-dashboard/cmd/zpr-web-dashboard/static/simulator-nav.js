@@ -41,6 +41,16 @@
       widget.className = "operator-login simulator-operator-login";
       widget.dataset.operatorApplication = "simulator";
       widget.setAttribute("aria-label", "Simulator operator login");
+      const title = document.createElement("h2");
+      title.className = "operator-login-title";
+      title.id = "operator-login-title";
+      title.textContent = "ZPR Operator Access";
+      title.hidden = true;
+      const description = document.createElement("p");
+      description.className = "operator-login-description";
+      description.id = "operator-login-description";
+      description.textContent = "Sign in with an authorized operator account to continue.";
+      description.hidden = true;
       const status = document.createElement("span");
       status.id = "operator-login-status";
       status.setAttribute("role", "status");
@@ -62,7 +72,7 @@
       signOut.type = "button";
       signOut.textContent = "Sign out";
       signOut.hidden = true;
-      widget.append(status, login, signOut);
+      widget.append(title, description, status, login, signOut);
       topbar.append(widget);
       const scope = document.createElement("p");
       scope.id = "operator-scope";
@@ -77,7 +87,7 @@
     if (!operatorLoginScriptLoading) {
       operatorLoginScriptLoading = new Promise((resolve, reject) => {
         const script = document.createElement("script");
-        script.src = "/operator-login.js?v=5";
+        script.src = "/operator-login.js?v=7";
         script.addEventListener("load", resolve, { once: true });
         script.addEventListener("error", reject, { once: true });
         document.head.append(script);

@@ -4,9 +4,11 @@ import { createInterface } from "node:readline";
 
 const test = base.extend({
   creationEnabled: [false, { option: true }],
-  operatorFixture: async ({ creationEnabled }, use) => {
+  reviewEnabled: [false, { option: true }],
+  operatorFixture: async ({ creationEnabled, reviewEnabled }, use) => {
     const child = spawn(process.env.ZPR_OPERATOR_TEST_BINARY, ["-test.run=^TestOperatorDelegationRealTLSLoginToAuditedEnrollment$"], {
       env: { ...process.env, ZPR_OPERATOR_BROWSER_FIXTURE: "1", ZPR_OPERATOR_BROWSER_CREATE: creationEnabled ? "1" : "0",
+        ZPR_OPERATOR_BROWSER_REVIEW: reviewEnabled ? "1" : "0",
         ZPR_SIMULATOR_URL: "http://127.0.0.1:1", SIMULATION_MANIFEST: "/does/not/exist" },
       stdio: ["pipe", "pipe", "pipe"],
     });
@@ -44,8 +46,6 @@ test.skip(!process.env.ZPR_OPERATOR_TEST_BINARY, "Requires the container-built o
 
 async function login(page, fixture) {
   await page.goto(fixture.url + "/#provisioning-adapters");
-  await expect(page.locator("#provisioning-status")).toHaveAttribute("data-state", "unavailable");
-  await page.getByRole("button", { name: "Sign in", exact: true }).click();
   await expect(page.locator("#operator-login-status")).toHaveText(/^Signed in(?:: .+)?$/);
   await expect(page.locator("#operator-login-status")).not.toContainText("named-admin");
   await page.getByRole("group", { name: "Provisioning" }).getByRole("link", { name: "Adapters", exact: true }).click();
@@ -80,6 +80,8 @@ test("live provisioning reads registry after real OIDC login and clears it on lo
   await expect(detail).toContainText(fixture.fingerprint);
   await expect(detail).toContainText("Approval deadline");
   await expect(detail).toContainText("Approval does not issue credentials");
+  await expect(detail.getByRole("button", { name: "Approve verified key" })).toHaveCount(0);
+  await expect(detail.getByRole("button", { name: "Reject key proof" })).toHaveCount(0);
   await detail.getByRole("button", { name: "Close", exact: true }).click();
   await expect(page.getByRole("button", { name: "Create invitation", exact: true })).toBeDisabled();
   await page.getByRole("button", { name: "Sign out", exact: true }).click();
@@ -89,6 +91,95 @@ test("live provisioning reads registry after real OIDC login and clears it on lo
   await expect(page.locator("#provisioning-organization")).toBeDisabled();
   expect(requests.some((request) => request.path.startsWith("/api/simulator"))).toBe(false);
   expect(requests.filter((request) => request.path.startsWith("/api/enrollment/") && request.method !== "GET")).toEqual([]);
+});
+
+test.describe("live provisioning review", () => {
+  test.use({ reviewEnabled: true });
+
+  test("approves only a freshly read revision and fingerprint with named audit", async ({ page, operatorFixture: fixture }) => {
+    const posts = [];
+    page.on("request", (request) => {
+      if (request.method() === "POST" && request.url().includes("/approve")) posts.push(request);
+    });
+    await login(page, fixture);
+    await page.getByRole("button", { name: "Details for Fixture laptop", exact: true }).click();
+    const detail = page.getByRole("dialog", { name: "Enrollment request details" });
+    await expect(detail).toContainText(fixture.fingerprint);
+    await detail.getByLabel("Review reason").fill("Verified against the owner-held device key");
+    await detail.getByRole("checkbox", { name: /^I independently verified/ }).check();
+    await detail.getByRole("button", { name: "Approve verified key", exact: true }).click();
+    await expect(page.locator("#provisioning-review-status")).toContainText("approved at revision 3");
+    await expect(page.locator("#provisioning-invitations")).toContainText("approved");
+    expect(posts).toHaveLength(1);
+    expect(posts[0].postDataJSON()).toMatchObject({
+      organization: "production", revision: 2, key_fingerprint: fixture.fingerprint,
+      reason: "Verified against the owner-held device key",
+    });
+    expect(posts[0].headers()["x-zpr-csrf"]).toBeTruthy();
+    await page.getByRole("button", { name: "Details for Fixture laptop", exact: true }).click();
+    const updated = page.getByRole("dialog", { name: "Enrollment request details" });
+    await expect(updated).toContainText("approved");
+    await expect(updated).toContainText("Verified against the owner-held device key");
+    await expect(updated.getByRole("button", { name: "Approve verified key" })).toHaveCount(0);
+    await expect(updated.getByRole("button", { name: "Reject key proof" })).toHaveCount(0);
+    expect(await page.evaluate((id) => [JSON.stringify(localStorage), JSON.stringify(sessionStorage)].some((value) => value.includes(id)), fixture.invitation)).toBe(false);
+    await updated.getByRole("button", { name: "Close", exact: true }).click();
+    await page.getByRole("button", { name: "Sign out", exact: true }).click();
+    await expect(page.locator("#provisioning-review-status")).toHaveText("No review decision submitted.");
+    await expect(page.locator("#provisioning-review-status")).not.toContainText("Verified against the owner-held device key");
+  });
+
+  test("rejects a pending key proof with its own permission and audit reason", async ({ page, operatorFixture: fixture }) => {
+    const posts = [];
+    page.on("request", (request) => {
+      if (request.method() === "POST" && request.url().includes("/reject")) posts.push(request);
+    });
+    await login(page, fixture);
+    await page.getByRole("button", { name: "Details for Fixture laptop", exact: true }).click();
+    const detail = page.getByRole("dialog", { name: "Enrollment request details" });
+    await detail.getByLabel("Review reason").fill("Fingerprint did not match the independently verified record");
+    await detail.getByRole("checkbox", { name: /^I independently verified/ }).check();
+    await detail.getByRole("button", { name: "Reject key proof", exact: true }).click();
+    await expect(page.locator("#provisioning-review-status")).toContainText("rejected at revision 3");
+    await expect(page.locator("#provisioning-invitations")).toContainText("rejected");
+    expect(posts).toHaveLength(1);
+    expect(posts[0].postDataJSON()).toMatchObject({
+      organization: "production", revision: 2, key_fingerprint: fixture.fingerprint,
+      reason: "Fingerprint did not match the independently verified record",
+    });
+    await page.getByRole("button", { name: "Details for Fixture laptop", exact: true }).click();
+    const updated = page.getByRole("dialog", { name: "Enrollment request details" });
+    await expect(updated).toContainText("named-admin");
+    await expect(updated).toContainText("Fingerprint did not match the independently verified record");
+    await expect(updated.getByRole("button", { name: "Approve verified key" })).toHaveCount(0);
+    await expect(updated.getByRole("button", { name: "Reject key proof" })).toHaveCount(0);
+  });
+
+  test("does not retry an uncertain committed review and requires fresh-read acknowledgement", async ({ page, operatorFixture: fixture }) => {
+    let posts = 0;
+    await page.route("**/api/enrollment/v1/invitations/*/approve", async (route) => {
+      posts++;
+      const response = await route.fetch();
+      expect(response.status()).toBe(200);
+      await route.abort("failed");
+    });
+    await login(page, fixture);
+    await page.getByRole("button", { name: "Details for Fixture laptop", exact: true }).click();
+    let detail = page.getByRole("dialog", { name: "Enrollment request details" });
+    await detail.getByLabel("Review reason").fill("Confirmed independently");
+    await detail.getByRole("checkbox", { name: /^I independently verified/ }).check();
+    await detail.getByRole("button", { name: "Approve verified key", exact: true }).click();
+    await expect(page.locator("#provisioning-review-status")).toContainText("Review outcome uncertain");
+    await page.getByRole("dialog").getByRole("button", { name: "Close", exact: true }).click();
+    await page.getByRole("button", { name: "Check again", exact: true }).click();
+    await expect(page.locator("#provisioning-invitations")).toContainText("approved");
+    await page.getByRole("button", { name: "Details for Fixture laptop", exact: true }).click();
+    detail = page.getByRole("dialog", { name: "Enrollment request details" });
+    await expect(detail).toContainText("fresh read after an uncertain review: state approved, revision 3");
+    await expect(detail).toContainText("Confirmed independently");
+    await detail.getByRole("button", { name: "Acknowledge refreshed outcome", exact: true }).click();
+    expect(posts).toBe(1);
+  });
 });
 
 async function cancelDetail(page, name, reason) {

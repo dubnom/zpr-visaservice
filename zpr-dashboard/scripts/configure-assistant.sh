@@ -24,6 +24,5 @@ trap 'unset ANTHROPIC_API_KEY; rm -f -- "$temporary_file"' EXIT
 printf '%s\n' "$ANTHROPIC_API_KEY" > "$temporary_file"
 chmod 600 "$temporary_file"
 mv -f -- "$temporary_file" "$key_file"
-export ZPR_ANTHROPIC_API_KEY_FILE="$key_file"
-export ANTHROPIC_API_KEY
-sh "${0:A:h}/dashboard-stack.sh" restart-control-service
+unset ANTHROPIC_API_KEY
+sh "${0:A:h}/dashboard-stack.sh" reload-assistant
