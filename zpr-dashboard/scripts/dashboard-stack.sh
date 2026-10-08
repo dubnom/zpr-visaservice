@@ -513,6 +513,8 @@ start_multinode_dns_service() {
     dns_config="$DNS_PROFILE_DIR/named.conf.simulator"
     publisher_key="$dns_runtime/zpr-vs-publisher.key"
     viewer_key="$dns_runtime/zpr-dns-viewer.key"
+    stop_service "$DNS_RECORDS_RELAY_PID"
+    stop_service "$DNS_STATS_RELAY_PID"
     echo_address=$(jq -r '[.policy_test_services[]? | select(.id == "echo-web.svc.zpr") | .zpr_address // empty][0] // empty' "$dns_profile")
     metrics_address=$(jq -r '[.policy_test_services[]? | select(.id == "metrics-web.svc.zpr") | .zpr_address // empty][0] // empty' "$dns_profile")
     mkdir -p "$dns_zone_dir"
@@ -567,6 +569,20 @@ start_multinode_dns_service() {
         -v "$dns_zone_dir:/var/lib/bind" \
         "$DNS_IMAGE" >/dev/null
     configure_multinode_service_return_route "$node_container" tun6 "$DNS_SERVICE_ADDRESS" 106
+    start_service dns-stats-relay "$DNS_STATS_RELAY_PID" socat \
+        "TCP-LISTEN:$DNS_STATS_RELAY_PORT,bind=0.0.0.0,reuseaddr,fork" \
+        "SYSTEM:\"docker exec -i $node_container socat STDIO TCP:127.0.0.1:8053\""
+    wait_for_url "http://127.0.0.1:$DNS_STATS_RELAY_PORT/json/v1/status" dns-stats-relay
+    start_service dns-records-relay "$DNS_RECORDS_RELAY_PID" socat \
+        "TCP-LISTEN:$DNS_RECORDS_RELAY_PORT,bind=0.0.0.0,reuseaddr,fork" \
+        "SYSTEM:\"docker exec -i $node_container socat STDIO TCP:[$DNS_SERVICE_ADDRESS]:53\""
+    attempts=0
+    while [ "$attempts" -lt 50 ]; do
+        if nc -z 127.0.0.1 "$DNS_RECORDS_RELAY_PORT"; then break; fi
+        attempts=$((attempts + 1))
+        sleep 0.2
+    done
+    [ "$attempts" -lt 50 ] || { echo "DNS records relay did not listen on $DNS_RECORDS_RELAY_PORT" >&2; return 1; }
     attempts=0
     while [ "$attempts" -lt 30 ]; do
         if [ -n "$echo_address" ] || [ -n "$metrics_address" ]; then
@@ -669,6 +685,8 @@ stop_dns_service() {
     fi
     if [ "$(jq -er '.runtime.driver' "$ORGANIZATIONS_DIR/$dns_organization.json")" = docker-multinode ]; then
         dns_node_container="$dns_organization-node0"
+        stop_service "$DNS_RECORDS_RELAY_PID"
+        stop_service "$DNS_STATS_RELAY_PID"
         docker rm -f "$DNS_CONTAINER" >/dev/null 2>&1 || true
         docker exec "$dns_node_container" pkill -TERM -f '[p]h adapter.*--name adapter1' 2>/dev/null || true
         docker exec "$dns_node_container" ip link del tun6 2>/dev/null || true
@@ -829,6 +847,15 @@ start_control_service() {
     if [ -z "$control_gateway_organization" ] && [ -n "$active_organization_file" ] && [ -r "$active_organization_file" ]; then
         control_gateway_organization=$(tr -d '\r\n' < "$active_organization_file")
     fi
+    control_dns_transfer_key_file=${ZPR_DNS_TRANSFER_TSIG_KEY_FILE:-}
+    if [ -z "$control_dns_transfer_key_file" ]; then
+        control_dns_transfer_key_file=$DNS_VIEWER_KEY_FILE
+        control_organization_profile="$ORGANIZATIONS_DIR/$control_gateway_organization.json"
+        if [ -n "$control_gateway_organization" ] && [ -r "$control_organization_profile" ] &&
+            [ "$(jq -er '.runtime.driver' "$control_organization_profile")" = docker-multinode ]; then
+            control_dns_transfer_key_file="$RUNTIME_DIR/multinode/$control_gateway_organization/dns/zpr-dns-viewer.key"
+        fi
+    fi
     stop_control_service
     start_local_observability
     control_admin_url=${ZPR_ADMIN_URL:-https://127.0.0.1:$ADMIN_RELAY_PORT}
@@ -874,7 +901,7 @@ start_control_service() {
         -e ZPR_ADMIN_KEY_FILE="${ZPR_ADMIN_KEY_FILE:-$RUNTIME_DIR/admin-read.key}" \
         -e ZPR_DNS_STATS_URL="$control_dns_stats_url" \
         -e ZPR_DNS_TRANSFER_ADDR="host.docker.internal:$DNS_RECORDS_RELAY_PORT" \
-        -e ZPR_DNS_TRANSFER_TSIG_KEY_FILE="$DNS_VIEWER_KEY_FILE" \
+        -e ZPR_DNS_TRANSFER_TSIG_KEY_FILE="$control_dns_transfer_key_file" \
         -e ZPR_POLICY_SERVICE_URL=https://host.docker.internal:8789 \
         -e ZPR_POLICY_SERVICE_TLS_SERVER_NAME=127.0.0.1 \
         -e ZPR_POLICY_SERVICE_CA_FILE="$SERVICE_CERTS/service-ca.crt" \
