@@ -270,6 +270,7 @@
 ### Logging in and out
 - [x] If there isn't a properly authenticated and permissioned user don't show anything other than a sign in box with similar styling can colors as the app. Failure to sign in should show the error and allow retries.
 - [x] Skip the "you're not logged in" dialog box and go directly to the identity provider login page. Failed/denied callbacks remain retryable, and explicit sign-out does not automatically sign back in.
+- [ ] We have to log back in whenever the visa service disconnects, so can we just go to the login page instead of waiting for me to click on something?
 
 ### JavaScript reuse refactoring
 - [ ] Extract a shared editor controller for Policy, Assertions, ZPR Config, Gateways, Simulator Directory and Scenario, with explicit adapters for load, analyze, save and domain-specific rendering.
@@ -355,7 +356,11 @@
   - [x] Reuse node details/selection, make markers keyboard accessible, and group duplicate/co-located nodes with an explicit chooser and a small-screen node list.
   - [x] Test projection bounds, missing/invalid/zero coordinates, mobile sizing, replacement node sets, and Simulator-unavailable production metadata pass-through.
   - [x] Seed all eight nodes across the five bundled Simulator organizations with explicit approximate coordinates and per-node guess notes; provision them into Visa Service config under actual runtime CNs without adding a reverse Simulator dependency to Control Room.
-  - [ ] Approve deployment and configure reviewed coordinates for actual node CNs; verify geographic placement against two organization deployments. No live coordinates, services or routing were changed by the initial implementation.
+  - [ ] Review profile-derived approximate coordinates for actual node CNs and verify geographic placement against a second organization. Great Lakes was redeployed with its profile coordinates; no second organization has been checked in the live map.
+  - [ ] Worldmap should support the same controls as the map for zooming and panning. Display the network components on the map with nodes constrained.
+  - [ ] Rename Geography to "World Map".
+  - [ ] We need country borders.
+  - [ ] Needs to be a light colored map because of our overlay.
 
 ### Navigation
 - [x] Keep Map as the main view and group Adapters, Actors, Services, Visas, Denials, and DNS under horizontal Status tabs with counts.
