@@ -90,6 +90,7 @@
 - [x] Move "Gateways" and "ZPR Config" under editor. Rename editor 'Policy".
 - [x] If there is a subtle way of adding a title to the policy/gateways/... group, call it 'Configuration'.
 - [x] Move Log Manager to below Adapter Logs. Make the arrow more visible.
+- [ ] Clicking on "Log Manager" should switch focus to the Log Manger.
 
 ### Service logs and statistics
 - [x] Add one Control Room diagnostics view for logs and current stats from every ZPR node and every configured trusted/required service used by Visa Service.
