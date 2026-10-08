@@ -651,6 +651,7 @@ const test = base.extend({
       }
       const bodies = {
         "/api/adapter-logs": {
+          organization_id: data.adapterLogs.organization_id,
           updated_at: data.adapterLogs.updated_at,
           adapters: (data.adapterLogs.machines || []).map((entry) => ({
             id: entry.machine.id, name: entry.machine.id, state: entry.state,
@@ -3360,7 +3361,7 @@ test("Control Room top buttons switch adapter and controller logs using the same
 
 async function refreshLogs(page) {
   const button = page.locator("#machine-logs-refresh");
-  if (await button.count()) {
+  if (await button.isVisible()) {
     await button.click();
     await expect(button).toBeEnabled();
     return;
@@ -3368,7 +3369,8 @@ async function refreshLogs(page) {
   const pause = page.locator("#machine-logs-pause");
   const wasPaused = await pause.getAttribute("aria-pressed") === "true";
   if (!wasPaused) await pause.click();
-  const response = page.waitForResponse((item) => item.url().includes("/api/adapter-logs"));
+  const endpoint = new URL(page.url()).pathname === "/machine-logs.html" ? "/api/simulator/machine-logs" : "/api/adapter-logs";
+  const response = page.waitForResponse((item) => item.url().includes(endpoint));
   await pause.click();
   await response;
   if (wasPaused) await pause.click();
@@ -3432,6 +3434,17 @@ test("non-JSON worker responses report service unavailability instead of parser 
   await page.goto(appURL + "/machine-logs.html");
   await expect(page.locator("#machine-logs-error")).toHaveText("Visa Service or Control-Service is unavailable (HTTP 502).");
   await expect(page.locator("#machine-logs-error")).not.toContainText("Unexpected token");
+});
+
+test("workload logs remain visible when first opened after a machine exits", async ({ page, appURL, api }) => {
+  api.workloadLogs.machines[0].state = "exited";
+  await page.goto(appURL + "/machine-logs.html");
+  const panel = page.locator(".machine-log-panel").first();
+  const output = panel.locator(".machine-log-output");
+  await expect(output).toContainText("finance-client events entry 79");
+  await expect(panel).toContainText("disconnected");
+  await expect(panel).not.toHaveClass(/running/);
+  await expect(panel).toHaveCSS("background-color", "rgb(255, 255, 255)");
 });
 
 test("log errors, empty workloads and removed sources are explicit", async ({ page, appURL, api }) => {

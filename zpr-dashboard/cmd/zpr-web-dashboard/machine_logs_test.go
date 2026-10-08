@@ -1,6 +1,8 @@
 package main
 
 import (
+	"archive/tar"
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
@@ -8,6 +10,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"reflect"
 	"strings"
 	"sync/atomic"
 	"testing"
@@ -83,6 +86,66 @@ func TestMachineLogSourcesAreSeparatedByCategory(t *testing.T) {
 				}
 			}
 		})
+	}
+}
+
+func TestExitedMachineLogSourcesReadFinalTails(t *testing.T) {
+	var readPaths []string
+	execute := func(_ context.Context, command string, args ...string) (string, error) {
+		if command != "docker" || !reflect.DeepEqual(args, []string{"logs", "--tail", "100", "--timestamps", "zpr-machine-05"}) {
+			t.Fatalf("unexpected exited-container command: %q %v", command, args)
+		}
+		return "controller stopped\n", nil
+	}
+	readFile := func(_ context.Context, container, path string) (string, error) {
+		if container != "zpr-machine-05" {
+			t.Fatalf("log container = %q", container)
+		}
+		readPaths = append(readPaths, path)
+		if path == "/tmp/echo-service.log" {
+			return "adapter final tail\n", nil
+		}
+		if path == testLogPath("echo-service") {
+			return "authorization: Bearer secret-value\nbenchmark finished\n", nil
+		}
+		return "", errors.New("log file missing")
+	}
+	sources := readExitedMachineLogSources(t.Context(), "machine-05", execute, readFile, "workload")
+	if len(sources) != 1 || sources[0].Name != "echo-service events" || !strings.Contains(strings.Join(sources[0].Lines, "\n"), "benchmark finished") {
+		t.Fatalf("exited workload sources = %+v", sources)
+	}
+	if strings.Contains(strings.Join(sources[0].Lines, "\n"), "secret-value") {
+		t.Fatal("exited-container log exposed a credential")
+	}
+	if len(readPaths) == 0 {
+		t.Fatal("stopped workload log files were not read")
+	}
+	adapterSources := readExitedMachineLogSources(t.Context(), "machine-05", execute, readFile, "adapter")
+	if len(adapterSources) != 2 || adapterSources[0].Name != "Controller" || adapterSources[1].Name != "echo-service adapter" {
+		t.Fatalf("exited adapter sources = %+v", adapterSources)
+	}
+}
+
+func TestReadMachineLogArchiveTailIsBounded(t *testing.T) {
+	content := bytes.Repeat([]byte("x"), 65544)
+	copy(content[len(content)-4:], []byte("tail"))
+	var archive bytes.Buffer
+	writer := tar.NewWriter(&archive)
+	if err := writer.WriteHeader(&tar.Header{Name: "log", Mode: 0600, Size: int64(len(content)), Typeflag: tar.TypeReg}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := writer.Write(content); err != nil {
+		t.Fatal(err)
+	}
+	if err := writer.Close(); err != nil {
+		t.Fatal(err)
+	}
+	got, err := readMachineLogArchiveTail(&archive)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(got) != 65536 || string(got[len(got)-4:]) != "tail" {
+		t.Fatalf("archive tail length=%d suffix=%q", len(got), got[len(got)-4:])
 	}
 }
 

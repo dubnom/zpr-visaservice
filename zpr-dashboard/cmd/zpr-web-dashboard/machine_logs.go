@@ -1,8 +1,13 @@
 package main
 
 import (
+	"archive/tar"
+	"bytes"
 	"context"
+	"errors"
+	"io"
 	"net/http"
+	"os/exec"
 	"regexp"
 	"strings"
 	"sync"
@@ -108,6 +113,91 @@ func readSelectedMachineLogSources(ctx context.Context, machineID string, worklo
 	return sources
 }
 
+func readExitedMachineLogSources(ctx context.Context, machineID string, execute func(context.Context, string, ...string) (string, error), readFile func(context.Context, string, string) (string, error), category string) []machineLogSource {
+	container := machineContainerName(machineID)
+	sources := make([]machineLogSource, 0)
+	readFileSource := func(name, path string) {
+		output, err := readFile(ctx, container, path)
+		if err == nil {
+			sources = append(sources, machineLogSource{Name: name, Lines: machineLogLines(output)})
+		}
+	}
+	if category != "workload" {
+		output, err := execute(ctx, "docker", "logs", "--tail", "100", "--timestamps", container)
+		if err == nil {
+			sources = append(sources, machineLogSource{Name: "Controller", Lines: machineLogLines(output)})
+		}
+		readFileSource("Control adapter", "/tmp/machine-control-ph.log")
+	}
+	for _, workload := range []string{"echo-service", "finance-client", "internet-gateway", "metrics-service", "operations-client", "telemetry-client"} {
+		if _, ok := machineWorkload(workload); !ok {
+			continue
+		}
+		if category != "workload" {
+			readFileSource(workload+" adapter", "/tmp/"+workload+".log")
+		}
+		if _, ok := testLogPorts[workload]; ok && category != "adapter" {
+			readFileSource(workload+" events", testLogPath(workload))
+		}
+	}
+	return sources
+}
+
+func readExitedContainerLogFile(ctx context.Context, container, path string) (string, error) {
+	command := exec.CommandContext(ctx, "docker", "cp", container+":"+path, "-")
+	stdout, err := command.StdoutPipe()
+	if err != nil {
+		return "", err
+	}
+	command.Stderr = io.Discard
+	if err := command.Start(); err != nil {
+		return "", err
+	}
+	output, readErr := readMachineLogArchiveTail(stdout)
+	if readErr != nil {
+		_ = command.Process.Kill()
+		_ = command.Wait()
+		return "", readErr
+	}
+	if err := command.Wait(); err != nil {
+		return "", err
+	}
+	return string(output), nil
+}
+
+func readMachineLogArchiveTail(source io.Reader) ([]byte, error) {
+	archive := tar.NewReader(source)
+	header, err := archive.Next()
+	if err != nil {
+		return nil, err
+	}
+	if header.Typeflag != tar.TypeReg && header.Typeflag != tar.TypeRegA {
+		return nil, errors.New("container log archive did not contain a regular file")
+	}
+	if header.Size > 65536 {
+		if _, err := io.CopyN(io.Discard, archive, header.Size-65536); err != nil {
+			return nil, err
+		}
+	}
+	output, err := io.ReadAll(io.LimitReader(archive, 65536))
+	if err != nil {
+		return nil, err
+	}
+	for {
+		_, err := archive.Next()
+		if errors.Is(err, io.EOF) {
+			break
+		}
+		if err != nil {
+			return nil, err
+		}
+		if _, err := io.Copy(io.Discard, archive); err != nil {
+			return nil, err
+		}
+	}
+	return bytes.TrimSpace(output), nil
+}
+
 func handleSimulatorMachineLogs(w http.ResponseWriter, r *http.Request) {
 	handleMachineLogs(w, r, "workload")
 }
@@ -142,6 +232,20 @@ func handleMachineLogs(w http.ResponseWriter, r *http.Request, category string) 
 			Controller: controllers[machine.ID], Session: session,
 			Workloads: workerWorkloads(manifest.Components, session.Workloads, componentStates),
 			Sources:   []machineLogSource{},
+		}
+		if states[machine.ID] == "exited" {
+			wait.Add(1)
+			go func(index int, machineID string) {
+				defer wait.Done()
+				select {
+				case workers <- struct{}{}:
+					defer func() { <-workers }()
+				case <-ctx.Done():
+					return
+				}
+				views[index].Sources = readExitedMachineLogSources(ctx, machineID, scenarioCommand, readExitedContainerLogFile, category)
+			}(index, machine.ID)
+			continue
 		}
 		if states[machine.ID] != "running" {
 			continue
