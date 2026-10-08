@@ -1380,6 +1380,116 @@ async function openRawScenario(page, appURL, api, assistantReady = false) {
   await expect(page.locator("#scenario-editor-source")).toBeVisible();
 }
 
+for (const outcome of ["success", "error"]) {
+  for (const change of ["edit-return", "replacement", "record", "organization", "revision", "mode", "close-reopen"]) {
+    test(`Scenario form analysis scope rejects delayed ${outcome} after ${change}`, async ({ page, appURL, api }) => {
+      await openRawScenario(page, appURL, api);
+      await page.locator("#scenario-editor-mode-toggle").click();
+      await expect(page.locator("#scenario-editor-name")).toBeVisible();
+      const completions = [];
+      let oldFinished = false;
+      api.handlers.set("/api/simulator/organizations/alpha/scenario-check", async (route) => {
+        const index = completions.length;
+        const scenario = JSON.parse(route.request().postDataJSON().source);
+        expect(route.request().postDataJSON().format).toBe("json");
+        await new Promise((resolve) => completions.push(resolve));
+        await route.fulfill(index === 0 && outcome === "error"
+          ? { status: 503, json: { error: "Obsolete form failure" } }
+          : { json: { valid: true, scenario, diagnostics: index === 0 ? "Obsolete form success" : "Fresh form success" } });
+        if (index === 0) oldFinished = true;
+      });
+      await page.locator("#scenario-source-analyze").click();
+      await expect.poll(() => completions.length).toBe(1);
+      if (change === "edit-return") {
+        await page.locator("#scenario-editor-name").fill("Temporary name");
+        await page.locator("#scenario-editor-name").fill("");
+      } else if (change === "replacement") {
+        await page.evaluate(() => renderScenarioEditor({ ...readScenarioEditorForm() }));
+      } else if (change === "record") {
+        await page.evaluate(() => { scenarioEditorArtifact = { id: "another-scenario", revision: 1 }; });
+      } else if (change === "organization") {
+        await page.evaluate(() => { scenarioEditorOrganization = "beta"; });
+      } else if (change === "revision") {
+        await page.evaluate(() => { scenarioEditorViewing = 1; });
+      } else if (change === "mode") {
+        await page.locator("#scenario-editor-mode-toggle").click();
+        await expect(page.locator("#scenario-editor-source")).toBeVisible();
+      } else {
+        await page.locator("#scenario-editor-files-toggle").click();
+        page.once("dialog", (dialog) => dialog.accept());
+        await page.locator("#scenario-editor-close").click();
+        await expect(page.locator("#scenario-editor-dialog")).not.toHaveAttribute("open");
+        await page.locator("#scenario-new").click();
+      }
+      if (change === "close-reopen") {
+        await page.locator("#scenario-source-analyze").click();
+        await expect.poll(() => completions.length).toBe(2);
+      }
+      completions[0]();
+      await expect.poll(() => oldFinished).toBe(true);
+      await expect(page.locator("#scenario-editor-status")).not.toContainText(/Obsolete form/);
+      await expect(page.locator("#scenario-source-analyze")).not.toHaveAttribute("data-analysis-state", /success|error/);
+      await expect(page.locator("#scenario-source-gutter button")).toHaveCount(0);
+      if (change === "close-reopen") {
+        completions[1]();
+        await expect(page.locator("#scenario-editor-status")).toHaveText("Fresh form success");
+        await expect(page.locator("#scenario-source-analyze")).toHaveAttribute("data-analysis-state", "success");
+      }
+      expect([...api.counts.keys()].some((path) => /\/(run|publish)$/.test(path))).toBe(false);
+    });
+  }
+  test(`Scenario form analysis scope rejects superseded ${outcome} without source changes`, async ({ page, appURL, api }) => {
+    await openRawScenario(page, appURL, api);
+    await page.locator("#scenario-editor-mode-toggle").click();
+    const completions = [];
+    let oldFinished = false;
+    api.handlers.set("/api/simulator/organizations/alpha/scenario-check", async (route) => {
+      const index = completions.length;
+      const scenario = JSON.parse(route.request().postDataJSON().source);
+      await new Promise((resolve) => completions.push(resolve));
+      await route.fulfill(index === 0 && outcome === "error"
+        ? { status: 503, json: { error: "Obsolete form failure" } }
+        : { json: { valid: true, scenario, diagnostics: index === 0 ? "Obsolete form success" : "Fresh form success" } });
+      if (index === 0) oldFinished = true;
+    });
+    await page.locator("#scenario-source-analyze").click();
+    await expect.poll(() => completions.length).toBe(1);
+    await page.locator("#scenario-source-analyze").click();
+    await expect.poll(() => completions.length).toBe(2);
+    completions[1]();
+    await expect(page.locator("#scenario-editor-status")).toHaveText("Fresh form success");
+    completions[0]();
+    await expect.poll(() => oldFinished).toBe(true);
+    await expect(page.locator("#scenario-editor-status")).toHaveText("Fresh form success");
+    await expect(page.locator("#scenario-source-analyze")).toHaveAttribute("data-analysis-state", "success");
+  });
+}
+
+for (const outcome of ["success", "error"]) {
+  test(`Scenario raw analysis scope rejects delayed ${outcome} after editor close`, async ({ page, appURL, api }) => {
+    await openRawScenario(page, appURL, api);
+    let complete;
+    let finished = false;
+    api.handlers.set("/api/simulator/organizations/alpha/scenario-check", async (route) => {
+      const scenario = JSON.parse(route.request().postDataJSON().source);
+      await new Promise((resolve) => { complete = resolve; });
+      await route.fulfill(outcome === "success"
+        ? { json: { valid: true, scenario, diagnostics: "Obsolete raw success" } }
+        : { status: 422, json: { error: "Obsolete raw failure", line: 1 } });
+      finished = true;
+    });
+    await page.locator("#scenario-source-analyze").click();
+    await expect.poll(() => Boolean(complete)).toBe(true);
+    await page.locator("#scenario-editor-files-toggle").click();
+    await page.locator("#scenario-editor-close").click();
+    await expect(page.locator("#scenario-editor-dialog")).not.toHaveAttribute("open");
+    complete();
+    await expect.poll(() => finished).toBe(true);
+    await expect(page.locator("#scenario-editor-status")).not.toContainText(/Obsolete raw/);
+    await expect(page.locator("#scenario-source-gutter button")).toHaveCount(0);
+  });
+}
+
 test("GUI raw scenario editor has safe syntax colors, aligned error gutter, and form round trips", async ({ page, appURL, api }) => {
   await openRawScenario(page, appURL, api);
   const source = page.locator("#scenario-editor-source");
@@ -2015,6 +2125,136 @@ for (const outcome of ["success", "error"]) {
     });
   }
 }
+
+for (const outcome of ["success", "error"]) {
+  for (const edit of ["replacement", "Tab"]) {
+    test(`Assertion Format scope rejects delayed ${outcome} after ${edit} and restored source`, async ({ page, appURL, api }) => {
+      const original = 'group   "Operators" members>=1;\n';
+      const formatted = 'group "Operators" members >= 1;\n';
+      Object.assign(api.policy.records.find((record) => record.id === "test-assertions"), {
+        content_type: "text/vnd.zpr.assertions", content: original,
+      });
+      let complete;
+      api.handlers.set("/api/assertions/format", async (route) => {
+        expect(route.request().postDataJSON().source).toBe(original);
+        await new Promise((resolve) => { complete = resolve; });
+        return route.fulfill(outcome === "success"
+          ? { json: { source: formatted, warnings: [{ line: 1, code: "OBSOLETE", message: "Obsolete warning" }] } }
+          : { status: 422, json: { error: "Obsolete format failure on line 1" } });
+      });
+      await openAssertionRecord(page, appURL);
+      const source = page.locator("#assertion-source");
+      const format = page.locator("#assertion-format");
+      await format.click();
+      await expect.poll(() => Boolean(complete)).toBe(true);
+      await expect(format).toBeDisabled();
+      if (edit === "Tab") await source.press("Tab");
+      else await source.fill(original + "# changed\n");
+      await source.fill(original);
+      complete();
+      await expect(format).toBeEnabled();
+      await expect(source).toHaveValue(original);
+      await expect(page.locator("#assertion-message")).toBeHidden();
+      await expect(page.locator("#assertion-lint-warnings")).toBeHidden();
+      await expect(page.locator("#assertion-result-gutter button")).toHaveCount(0);
+      await expect(page.locator("#assertion-analyze")).not.toHaveAttribute("data-analysis-state", /.+/);
+      api.handlers.set("/api/assertions/format", (route) => route.fulfill({ json: { source: formatted, warnings: [] } }));
+      await format.click();
+      await expect(source).toHaveValue(formatted);
+      await expect(page.locator("#assertion-message")).toHaveText("Assertions formatted.");
+      await source.press("ControlOrMeta+z");
+      await expect(source).toHaveValue(original);
+      expect([...api.counts.keys()].some((path) => path.startsWith("/api/simulator"))).toBe(false);
+    });
+  }
+}
+
+for (const outcome of ["success", "error"]) {
+  test(`Assertion Format scope rejects delayed ${outcome} after a same-source record revision change`, async ({ page, appURL, api }) => {
+    const original = 'group "Operators" members >= 1;\n';
+    const record = api.policy.records.find((record) => record.id === "test-assertions");
+    Object.assign(record, { content_type: "text/vnd.zpr.assertions", content: original });
+    let complete;
+    api.handlers.set("/api/assertions/format", async (route) => {
+      await new Promise((resolve) => { complete = resolve; });
+      return route.fulfill(outcome === "success"
+        ? { json: { source: 'group "Obsolete" members >= 99;\n', warnings: [{ line: 1, code: "OBSOLETE", message: "Obsolete warning" }] } }
+        : { status: 422, json: { error: "Obsolete format failure on line 1" } });
+    });
+    await openAssertionRecord(page, appURL);
+    await page.locator("#assertion-format").click();
+    await expect.poll(() => Boolean(complete)).toBe(true);
+    await page.evaluate((record) => {
+      window.dispatchEvent(new CustomEvent("policy-record-kind-changed", { detail: { kind: "assertions", record } }));
+    }, { ...record, current_revision: record.current_revision + 1 });
+    complete();
+    await expect(page.locator("#assertion-format")).toBeEnabled();
+    await expect(page.locator("#assertion-source")).toHaveValue(original);
+    await expect(page.locator("#assertion-message")).toBeHidden();
+    await expect(page.locator("#assertion-lint-warnings")).toBeHidden();
+    await expect(page.locator("#assertion-result-gutter button")).toHaveCount(0);
+  });
+}
+
+test("Assertion Format preserves current source-local warnings", async ({ page, appURL, api }) => {
+  api.handlers.set("/api/assertions/format", (route) => route.fulfill({
+    json: { source: 'group "Operators" members >= 1;\n', warnings: [{ line: 1, code: "LOCAL", message: "Current source warning" }] },
+  }));
+  await openAssertionRecord(page, appURL);
+  await page.locator("#assertion-source").fill('group   "Operators" members>=1;');
+  await page.locator("#assertion-format").click();
+  await expect(page.locator("#assertion-lint-warnings")).toHaveText("Line 1: LOCAL - Current source warning");
+  await expect(page.locator("#assertion-message")).toHaveText("Assertions formatted.");
+});
+
+test("Assertion Format cancellation cannot release a newer pending analysis after record switching", async ({ page, appURL, api }) => {
+  const original = 'group "Operators" members >= 1;\n';
+  Object.assign(api.policy.records.find((record) => record.id === "test-assertions"), {
+    content_type: "text/vnd.zpr.assertions", content: original,
+  });
+  let completeFormat;
+  let completeAnalysis;
+  api.handlers.set("/api/assertions/format", async (route) => {
+    await new Promise((resolve) => { completeFormat = resolve; });
+    return route.fulfill({ json: { source: 'group "Obsolete" members >= 99;\n', warnings: [] } });
+  });
+  api.handlers.set("/api/assertions/evaluate", async (route) => {
+    await new Promise((resolve) => { completeAnalysis = resolve; });
+    return route.fulfill({ json: { status: "pass", revision: 1, draft: false, finished_at: "2026-10-08T21:00:00Z", results: [] } });
+  });
+  await openAssertionRecord(page, appURL);
+  await page.locator("#assertion-format").click();
+  await expect.poll(() => Boolean(completeFormat)).toBe(true);
+  await openPolicyPicker(page);
+  await page.locator('[data-record-id="test-policy"]').click();
+  await expect(page.locator("#policy-source")).toBeVisible();
+  await openPolicyPicker(page);
+  await page.locator('[data-record-id="test-assertions"]').click();
+  await expect(page.locator("#assertion-format")).toBeEnabled();
+  await page.locator("#assertion-analyze").click();
+  await expect.poll(() => Boolean(completeAnalysis)).toBe(true);
+  completeFormat();
+  await expect(page.locator("#assertion-analyze")).toBeDisabled();
+  await expect(page.locator("#assertion-format")).toBeDisabled();
+  await expect(page.locator("#assertion-source")).toHaveValue(original);
+  completeAnalysis();
+  await expect(page.locator("#assertion-analyze")).toHaveAttribute("data-analysis-state", "success");
+  await expect(page.locator("#assertion-format")).toBeEnabled();
+  await expect(page.locator("#assertion-message")).toBeHidden();
+});
+
+test("Assertion Format failures retain source and display current service errors without invented lines", async ({ page, appURL, api }) => {
+  api.handlers.set("/api/assertions/format", (route) => route.fulfill({ status: 503, json: { error: "Formatter unavailable" } }));
+  await openAssertionRecord(page, appURL);
+  const source = page.locator("#assertion-source");
+  const original = 'group "Operators" members >= 1;\n';
+  await source.fill(original);
+  await page.locator("#assertion-format").click();
+  await expect(page.locator("#assertion-message")).toHaveText("Formatter unavailable");
+  await expect(source).toHaveValue(original);
+  await expect(page.locator("#assertion-result-gutter button")).toHaveCount(0);
+  await expect(page.locator("#assertion-format")).toBeEnabled();
+});
 
 test("shared source-line validation never clamps invalid locations", async ({ page, appURL, api }) => {
   await page.goto(appURL + "/#map");
@@ -4703,6 +4943,387 @@ test("policy completions respect statements, define attributes and punctuation",
   await editor.fill("define Mouse as user.\nallow Mi");
   await expect(menu.getByRole("option", { name: "Mice", exact: true })).toBeVisible();
 });
+
+for (const outcome of ["success", "error"]) {
+  for (const edit of ["replacement", "Tab"]) {
+    test(`Policy compiler scope rejects delayed ${outcome} after ${edit} and restored source`, async ({ page, appURL, api }) => {
+      const original = "define Employee as user.\n";
+      let complete;
+      let finished = false;
+      api.handlers.set("/api/policy/check", async (route) => {
+        expect(route.request().postDataJSON().source).toBe(original);
+        await new Promise((resolve) => { complete = resolve; });
+        await route.fulfill(outcome === "success"
+          ? { json: { valid: true, diagnostics: "Obsolete compiler result", warnings: [{ line: 1, code: "OBSOLETE", message: "Obsolete compiler warning" }] } }
+          : { status: 503, json: { error: "Obsolete compiler failure" } });
+        finished = true;
+      });
+      await page.goto(appURL + "/#policy");
+      await openPolicyPicker(page);
+      await page.locator('[data-record-id="test-policy"]').click();
+      const source = page.locator("#policy-source");
+      await page.locator("#policy-check").click();
+      await expect.poll(() => Boolean(complete)).toBe(true);
+      if (edit === "Tab") await source.press("Tab");
+      else await source.fill(original + "# changed\n");
+      await source.fill(original);
+      complete();
+      await expect.poll(() => finished).toBe(true);
+      await expect(source).toHaveValue(original);
+      await expect(page.locator("#policy-check")).not.toHaveAttribute("data-analysis-state", /.+/);
+      await expect(page.locator('#policy-test-gutter [data-has-warnings="true"], #policy-highlight .zpl-error')).toHaveCount(0);
+      await expect(page.locator("#policy-test-status")).toBeHidden();
+      expect(api.counts.get("/api/policy/test/fixtures") || 0).toBe(0);
+      api.handlers.set("/api/policy/check", (route) => route.fulfill({ json: { valid: false, diagnostics: "error: unexpected token at line 1, column 1" } }));
+      await page.locator("#policy-check").click();
+      await expect(page.locator("#policy-highlight .zpl-error")).toHaveText("define");
+      await expect(page.locator("#policy-check")).toHaveAttribute("data-analysis-state", "error");
+      expect([...api.counts.keys()].some((path) => path.startsWith("/api/simulator"))).toBe(false);
+    });
+  }
+  test(`Policy compiler cancellation rejects old ${outcome} and preserves a newer same-source record check`, async ({ page, appURL, api }) => {
+    const record = { ...api.policy.records.find((item) => item.id === "test-policy"), id: "another-policy", name: "Another policy" };
+    api.policy.records.push(record);
+    api.handlers.set("/api/policy/records/another-policy", (route) => route.fulfill({ json: record }));
+    api.handlers.set("/api/policy/records/another-policy/revisions", (route) => route.fulfill({ json: [] }));
+    const completions = [];
+    let oldFinished = false;
+    api.handlers.set("/api/policy/check", async (route) => {
+      const index = completions.length;
+      await new Promise((resolve) => completions.push(resolve));
+      await route.fulfill(index === 0
+        ? outcome === "success"
+          ? { json: { valid: true, diagnostics: "Obsolete compiler result", warnings: [{ line: 1, code: "OBSOLETE", message: "Obsolete compiler warning" }] } }
+          : { status: 503, json: { error: "Obsolete compiler failure" } }
+        : { json: { valid: false, diagnostics: "error: unexpected token at line 1, column 1" } });
+      if (index === 0) oldFinished = true;
+    });
+    await page.goto(appURL + "/#policy");
+    await openPolicyPicker(page);
+    await page.locator('[data-record-id="test-policy"]').click();
+    await page.locator("#policy-check").click();
+    await expect.poll(() => completions.length).toBe(1);
+    await openPolicyPicker(page);
+    await page.locator('[data-record-id="another-policy"]').click();
+    await expect(page.locator("#policy-record-title")).toHaveText(record.name);
+    await expect(page.locator("#policy-check")).toBeEnabled();
+    await page.locator("#policy-check").click();
+    await expect.poll(() => completions.length).toBe(2);
+    completions[0]();
+    await expect.poll(() => oldFinished).toBe(true);
+    await expect(page.locator("#policy-check")).toBeDisabled();
+    await expect(page.locator("#policy-check")).toHaveAttribute("data-analysis-state", "pending");
+    await expect(page.locator('#policy-test-gutter [data-has-warnings="true"], #policy-highlight .zpl-error')).toHaveCount(0);
+    expect(api.counts.get("/api/policy/test/fixtures") || 0).toBe(0);
+    completions[1]();
+    await expect(page.locator("#policy-highlight .zpl-error")).toHaveText("define");
+    await expect(page.locator("#policy-check")).toBeEnabled();
+  });
+  for (const action of ["Save", "Save As"]) {
+    test(`Policy compiler cancellation stops ${action} after a delayed ${outcome} for edited-then-restored source`, async ({ page, appURL, api }) => {
+      let complete;
+      let finished = false;
+      api.handlers.set("/api/policy/check", async (route) => {
+        await new Promise((resolve) => { complete = resolve; });
+        await route.fulfill(outcome === "success"
+          ? { json: { valid: true, diagnostics: "Obsolete compiler result" } }
+          : { status: 503, json: { error: "Obsolete compiler failure" } });
+        finished = true;
+      });
+      await page.goto(appURL + "/#policy");
+      await openPolicyPicker(page);
+      await page.locator('[data-record-id="test-policy"]').click();
+      const source = page.locator("#policy-source");
+      const draft = "define Employee as user.\n# unsaved\n";
+      await source.fill(draft);
+      await openPolicyFiles(page);
+      if (action === "Save") await page.locator("#policy-save").click();
+      else {
+        await page.locator("#policy-save-as").click();
+        await page.locator("#record-submit").click();
+      }
+      await expect.poll(() => Boolean(complete)).toBe(true);
+      if (action === "Save As") await page.locator("#record-dialog").getByRole("button", { name: "Cancel", exact: true }).click();
+      await source.fill(draft + "# changed\n");
+      await source.fill(draft);
+      complete();
+      await expect.poll(() => finished).toBe(true);
+      await expect(source).toHaveValue(draft);
+      await expect(page.locator("#version-dialog")).toBeHidden();
+      expect(api.counts.get("/api/policy/test/fixtures") || 0).toBe(0);
+      expect(api.counts.get("/api/policy/test") || 0).toBe(0);
+      expect(api.counts.get("/api/policy/records") || 0).toBe(0);
+    });
+  }
+  for (const context of ["revision", "organization"]) {
+    test(`Policy compiler scope rejects delayed ${outcome} after a same-source ${context} change`, async ({ page, appURL, api }) => {
+      const original = api.policy.records.find((record) => record.id === "test-policy").content;
+      api.policy.organization_id = "first-organization";
+      api.handlers.set("/api/policy/records/test-policy/revisions", (route) => route.fulfill({ json: [
+        { number: 1, summary: "Original", author: "tester", created_at: "2026-10-01T12:00:00Z" },
+      ] }));
+      api.handlers.set("/api/policy/records/test-policy/revisions/1", (route) => route.fulfill({ json: {
+        number: 1, content: original, content_hash: "old", summary: "Original",
+      } }));
+      let complete;
+      let finished = false;
+      api.handlers.set("/api/policy/check", async (route) => {
+        await new Promise((resolve) => { complete = resolve; });
+        await route.fulfill(outcome === "success"
+          ? { json: { valid: true, diagnostics: "Obsolete compiler result", warnings: [{ line: 1, code: "OBSOLETE", message: "Obsolete compiler warning" }] } }
+          : { status: 503, json: { error: "Obsolete compiler failure" } });
+        finished = true;
+      });
+      await page.goto(appURL + "/#policy");
+      await openPolicyPicker(page);
+      await page.locator('[data-record-id="test-policy"]').click();
+      await page.locator("#policy-check").click();
+      await expect.poll(() => Boolean(complete)).toBe(true);
+      if (context === "revision") {
+        await page.locator("#policy-history-menu summary").click();
+        await page.locator('#policy-history-menu [data-revision="1"]').click();
+        await expect(page.locator("#policy-source")).toBeDisabled();
+      } else {
+        api.policy.organization_id = "second-organization";
+        await page.evaluate(() => refreshPolicyCatalog());
+      }
+      complete();
+      await expect.poll(() => finished).toBe(true);
+      await expect(page.locator("#policy-source")).toHaveValue(original);
+      await expect(page.locator('#policy-test-gutter [data-has-warnings="true"], #policy-highlight .zpl-error')).toHaveCount(0);
+      await expect(page.locator("#policy-test-status")).toBeHidden();
+      expect(api.counts.get("/api/policy/test/fixtures") || 0).toBe(0);
+    });
+  }
+}
+
+for (const phase of ["fixtures", "evaluation"]) {
+  for (const outcome of ["success", "error"]) {
+    for (const change of ["source", "record", "revision", "organization"]) {
+      test(`Policy runtime scope rejects delayed ${phase} ${outcome} after ${change} changes`, async ({ page, appURL, api }) => {
+        const original = api.policy.records.find((record) => record.id === "test-policy").content;
+        const next = { ...api.policy.records[0], id: "runtime-next-policy", name: "Runtime next policy", content: original };
+        api.policy.records.push(next);
+        api.policy.organization_id = "first-organization";
+        api.handlers.set("/api/policy/records/runtime-next-policy", (route) => route.fulfill({ json: next }));
+        api.handlers.set("/api/policy/records/runtime-next-policy/revisions", (route) => route.fulfill({ json: [] }));
+        api.handlers.set("/api/policy/records/test-policy/revisions", (route) => route.fulfill({ json: [
+          { number: 1, summary: "Original", author: "tester", created_at: "2026-10-01T12:00:00Z" },
+        ] }));
+        api.handlers.set("/api/policy/records/test-policy/revisions/1", (route) => route.fulfill({ json: {
+          number: 1, content: original, content_hash: "old", summary: "Original",
+        } }));
+        api.handlers.set("/api/policy/check", (route) => route.fulfill({ json: { valid: true, diagnostics: "Compiled successfully.", warnings: [] } }));
+        const fixtures = { actors: [], services: [] };
+        const result = { api_version: 1, actor_count: 0, services: [], warnings: [{ line: 1, code: "OBSOLETE", message: "Obsolete runtime warning" }] };
+        const endpoint = phase === "fixtures" ? "/api/policy/test/fixtures" : "/api/policy/test";
+        api.handlers.set("/api/policy/test/fixtures", (route) => route.fulfill({ json: fixtures }));
+        api.handlers.set("/api/policy/test", (route) => route.fulfill({ json: result }));
+        const completions = [];
+        let oldFinished = false;
+        api.handlers.set(endpoint, async (route) => {
+          const index = completions.length;
+          await new Promise((resolve) => completions.push(resolve));
+          await route.fulfill(index === 0 && outcome === "error"
+            ? { status: 503, json: { error: "Obsolete runtime failure on line 1" } }
+            : { json: phase === "fixtures" ? fixtures : { ...result, warnings: index === 0 ? result.warnings : [] } });
+          if (index === 0) oldFinished = true;
+        });
+        await page.goto(appURL + "/#policy");
+        await openPolicyPicker(page);
+        await page.locator('[data-record-id="test-policy"]').click();
+        await page.locator("#policy-check").click();
+        await expect.poll(() => completions.length).toBe(1);
+        const source = page.locator("#policy-source");
+        if (change === "source") {
+          await source.press("Tab");
+          await source.fill(original);
+        } else if (change === "record") {
+          await openPolicyPicker(page);
+          await page.locator('[data-record-id="runtime-next-policy"]').click();
+          await expect(page.locator("#policy-record-title")).toHaveText(next.name);
+        } else if (change === "revision") {
+          await page.locator("#policy-history-menu summary").click();
+          await page.locator('#policy-history-menu [data-revision="1"]').click();
+          await expect(source).toBeDisabled();
+        } else {
+          api.policy.organization_id = "second-organization";
+          await page.evaluate(() => refreshPolicyCatalog());
+        }
+        if (change === "record") {
+          await page.locator("#policy-check").click();
+          await expect.poll(() => completions.length).toBe(2);
+        }
+        completions[0]();
+        await expect.poll(() => oldFinished).toBe(true);
+        await expect(source).toHaveValue(original);
+        await expect(page.locator('#policy-test-gutter [data-has-warnings="true"], #policy-test-gutter [data-effect="error"], #policy-highlight .zpl-error')).toHaveCount(0);
+        await expect(page.locator("#policy-test-status")).toBeHidden();
+        if (phase === "fixtures") expect(api.counts.get("/api/policy/test") || 0).toBe(0);
+        if (change === "record") {
+          await expect(page.locator("#policy-check")).toBeDisabled();
+          await expect(page.locator("#policy-check")).toHaveAttribute("data-analysis-state", "pending");
+          completions[1]();
+          await expect(page.locator("#policy-check")).toBeEnabled();
+          await expect(page.locator("#policy-check")).toHaveAttribute("data-analysis-state", "success");
+        } else await expect(page.locator("#policy-check")).not.toHaveAttribute("data-analysis-state", "error");
+        expect([...api.counts.keys()].some((path) => path.startsWith("/api/simulator"))).toBe(false);
+      });
+    }
+    for (const action of ["Save", "Save As"]) {
+      test(`Policy runtime cancellation stops ${action} after delayed ${phase} ${outcome} on another record`, async ({ page, appURL, api }) => {
+        const next = { ...api.policy.records[0], id: "runtime-save-next", name: "Runtime save next" };
+        api.policy.records.push(next);
+        api.handlers.set("/api/policy/records/runtime-save-next", (route) => route.fulfill({ json: next }));
+        api.handlers.set("/api/policy/records/runtime-save-next/revisions", (route) => route.fulfill({ json: [] }));
+        api.handlers.set("/api/policy/check", (route) => route.fulfill({ json: { valid: true, diagnostics: "Compiled successfully." } }));
+        const fixtures = { actors: [], services: [] };
+        const result = { api_version: 1, actor_count: 0, services: [] };
+        api.handlers.set("/api/policy/test/fixtures", (route) => route.fulfill({ json: fixtures }));
+        api.handlers.set("/api/policy/test", (route) => route.fulfill({ json: result }));
+        let complete;
+        let finished = false;
+        api.handlers.set(phase === "fixtures" ? "/api/policy/test/fixtures" : "/api/policy/test", async (route) => {
+          await new Promise((resolve) => { complete = resolve; });
+          await route.fulfill(outcome === "error"
+            ? { status: 503, json: { error: "Obsolete pre-save failure" } }
+            : { json: phase === "fixtures" ? fixtures : result });
+          finished = true;
+        });
+        await page.goto(appURL + "/#policy");
+        await openPolicyPicker(page);
+        await page.locator('[data-record-id="test-policy"]').click();
+        await page.locator("#policy-source").fill("define Employee as user.\n# unsaved\n");
+        await openPolicyFiles(page);
+        if (action === "Save") await page.locator("#policy-save").click();
+        else {
+          await page.locator("#policy-save-as").click();
+          await page.locator("#record-submit").click();
+        }
+        await expect.poll(() => Boolean(complete)).toBe(true);
+        await expect(page.locator("#policy-source")).toHaveJSProperty("readOnly", true);
+        if (action === "Save As") await page.locator("#record-dialog").getByRole("button", { name: "Cancel", exact: true }).click();
+        page.once("dialog", (dialog) => dialog.accept());
+        await openPolicyPicker(page);
+        await page.locator('[data-record-id="runtime-save-next"]').click();
+        await expect(page.locator("#policy-record-title")).toHaveText(next.name);
+        await expect(page.locator("#policy-source")).toBeEditable();
+        complete();
+        await expect.poll(() => finished).toBe(true);
+        await expect(page.locator("#version-dialog")).toBeHidden();
+        await expect(page.locator("#record-warning")).toBeHidden();
+        expect(api.counts.get("/api/policy/records") || 0).toBe(0);
+        const cached = await page.evaluate(() => ({
+          source: state.policy.saveTestSource, error: state.policy.saveTestError,
+          copySource: state.policy.saveAsTestSource, copyError: state.policy.saveAsTestError,
+          pending: state.policy.saveTestPending,
+        }));
+        expect(cached).toEqual({ source: "", error: "", copySource: "", copyError: "", pending: false });
+      });
+    }
+  }
+}
+
+for (const outcome of ["success", "error"]) {
+  test(`Policy runtime scope rejects ${outcome} when revision changes without an abort event`, async ({ page, appURL, api }) => {
+    api.handlers.set("/api/policy/check", (route) => route.fulfill({ json: { valid: true, diagnostics: "Compiled successfully." } }));
+    api.handlers.set("/api/policy/test/fixtures", (route) => route.fulfill({ json: { actors: [], services: [] } }));
+    let complete;
+    let finished = false;
+    api.handlers.set("/api/policy/test", async (route) => {
+      await new Promise((resolve) => { complete = resolve; });
+      await route.fulfill(outcome === "success"
+        ? { json: { api_version: 1, actor_count: 0, services: [], warnings: [{ line: 1, code: "OBSOLETE", message: "Obsolete warning" }] } }
+        : { status: 503, json: { error: "Obsolete runtime failure on line 1" } });
+      finished = true;
+    });
+    await page.goto(appURL + "/#policy");
+    await page.locator("#policy-check").click();
+    await expect.poll(() => Boolean(complete)).toBe(true);
+    expect(await page.evaluate(() => {
+      state.policy.record.current_revision++;
+      return state.policy.testAbort.signal.aborted;
+    })).toBe(false);
+    complete();
+    await expect.poll(() => finished).toBe(true);
+    await expect(page.locator("#policy-check")).toBeEnabled();
+    await expect(page.locator('#policy-test-gutter [data-has-warnings="true"], #policy-test-gutter [data-effect="error"]')).toHaveCount(0);
+    await expect(page.locator("#policy-test-status")).toBeHidden();
+    expect(await page.evaluate(() => state.policy.testResult)).toBeNull();
+  });
+}
+
+for (const phase of ["fixtures", "evaluation"]) {
+  test(`Policy runtime cancellation cannot release a newer pre-save ${phase} request`, async ({ page, appURL, api }) => {
+    const next = { ...api.policy.records[0], id: "new-save-owner", name: "New save owner" };
+    api.policy.records.push(next);
+    api.handlers.set("/api/policy/records/new-save-owner", (route) => route.fulfill({ json: next }));
+    api.handlers.set("/api/policy/records/new-save-owner/revisions", (route) => route.fulfill({ json: [] }));
+    api.handlers.set("/api/policy/check", (route) => route.fulfill({ json: { valid: true, diagnostics: "Compiled successfully." } }));
+    const fixtures = { actors: [], services: [] };
+    const result = { api_version: 1, actor_count: 0, services: [] };
+    api.handlers.set("/api/policy/test/fixtures", (route) => route.fulfill({ json: fixtures }));
+    api.handlers.set("/api/policy/test", (route) => route.fulfill({ json: result }));
+    const completions = [];
+    let oldFinished = false;
+    api.handlers.set(phase === "fixtures" ? "/api/policy/test/fixtures" : "/api/policy/test", async (route) => {
+      const index = completions.length;
+      await new Promise((resolve) => completions.push(resolve));
+      await route.fulfill({ json: phase === "fixtures" ? fixtures : result });
+      if (index === 0) oldFinished = true;
+    });
+    await page.goto(appURL + "/#policy");
+    await page.locator("#policy-source").fill("define Employee as user.\n# old draft\n");
+    await openPolicyFiles(page);
+    await page.locator("#policy-save").click();
+    await expect.poll(() => completions.length).toBe(1);
+    page.once("dialog", (dialog) => dialog.accept());
+    await openPolicyPicker(page);
+    await page.locator('[data-record-id="new-save-owner"]').click();
+    const draft = "define Employee as user.\n# new draft\n";
+    await page.locator("#policy-source").fill(draft);
+    await openPolicyFiles(page);
+    await page.locator("#policy-save").click();
+    await expect.poll(() => completions.length).toBe(2);
+    completions[0]();
+    await expect.poll(() => oldFinished).toBe(true);
+    await expect(page.locator("#policy-source")).toHaveJSProperty("readOnly", true);
+    await expect(page.locator("#policy-save")).toBeDisabled();
+    await expect(page.locator("#version-dialog")).toBeHidden();
+    expect(await page.evaluate(() => state.policy.saveTestPending)).toBe(true);
+    completions[1]();
+    await expect(page.locator("#version-dialog")).toBeVisible();
+    await expect(page.locator("#version-warning")).toBeHidden();
+    expect(await page.evaluate(() => state.policy.saveTestSource)).toBe(draft);
+    await expect(page.locator("#policy-source")).toHaveValue(draft);
+  });
+
+  test(`Policy runtime cancellation during Stage ${phase} does not attach an old staging error`, async ({ page, appURL, api }) => {
+    api.policy.staging_ready = true;
+    api.handlers.set("/api/policy/check", (route) => route.fulfill({ json: { valid: true, diagnostics: "Compiled successfully." } }));
+    api.handlers.set("/api/policy/test/fixtures", (route) => route.fulfill({ json: { actors: [], services: [] } }));
+    let complete;
+    let finished = false;
+    api.handlers.set(phase === "fixtures" ? "/api/policy/test/fixtures" : "/api/policy/test", async (route) => {
+      await new Promise((resolve) => { complete = resolve; });
+      await route.fulfill({ status: 503, json: { error: "Obsolete Stage analysis failure" } });
+      finished = true;
+    });
+    await page.goto(appURL + "/#policy");
+    await openPolicyFiles(page);
+    await page.locator("#policy-stage").click();
+    await expect.poll(() => Boolean(complete)).toBe(true);
+    const original = await page.locator("#policy-source").inputValue();
+    await page.locator("#policy-source").fill(original + "# changed\n");
+    await page.locator("#policy-source").fill(original);
+    complete();
+    await expect.poll(() => finished).toBe(true);
+    await expect(page.locator("#policy-stage-dialog")).toBeHidden();
+    await expect(page.locator("#policy-stage-status")).toBeHidden();
+    await expect(page.locator("#policy-test-status")).toBeHidden();
+    expect(api.counts.get("/api/policy/records/test-policy/stage") || 0).toBe(0);
+  });
+}
 
 test("policy compiler errors highlight their source token", async ({ page, appURL, api }) => {
   let diagnostics = "error: unexpected tab char at line 2, column 1";

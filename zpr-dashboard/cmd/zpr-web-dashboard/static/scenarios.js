@@ -10,11 +10,16 @@ let scenarioEditorOrganization = "";
 let scenarioEditorDirty = false;
 let scenarioEditorJsonDirty = false;
 let scenarioEditorDraft = {};
-let scenarioEditorAnalysisVersion = 0;
 let scenarioEditorSaved = null;
 let scenarioEditorSummary = "";
 let scenarioEditorViewing = 0;
 const scenarioEditorPage = window.ZPREditorPage;
+const scenarioFormAnalysisScope = scenarioEditorPage.createAnalysisScope(() => [
+  JSON.stringify(readScenarioEditorForm()), scenarioEditorOrganization,
+  scenarioEditorArtifact?.id, scenarioEditorArtifact?.revision, scenarioEditorViewing,
+  document.getElementById("scenario-editor-dialog").open,
+  document.getElementById("scenario-editor-advanced").open,
+]);
 scenarioEditorPage.placeStatus(document.getElementById("scenario-editor-status"));
 const scenarioHistory = scenarioEditorPage.createHistory({
   menu: document.getElementById("scenario-editor-history-menu"),
@@ -293,6 +298,7 @@ function updateScenarioParallelFields() {
 }
 
 function renderScenarioEditor(scenario) {
+  scenarioFormAnalysisScope.invalidate();
   scenarioEditorDraft = { ...scenario };
   document.getElementById("scenario-editor-id").value = scenario.id || "";
   document.getElementById("scenario-editor-id").disabled = Boolean(scenarioEditorArtifact);
@@ -355,7 +361,7 @@ function readScenarioEditorForm() {
 
 function markScenarioEditorDirty(fromJSON = false) {
   scenarioEditorDirty = true;
-  scenarioEditorAnalysisVersion++;
+  scenarioFormAnalysisScope.invalidate();
   setScenarioAnalyzeState("pending");
   if (!fromJSON) {
     scenarioEditorJsonDirty = false;
@@ -366,12 +372,12 @@ function markScenarioEditorDirty(fromJSON = false) {
 }
 
 async function analyzeScenarioEditor() {
-  const version = scenarioEditorAnalysisVersion;
+  if (document.getElementById("scenario-editor-advanced").open && window.analyzeScenarioSourceEditor) {
+    const result = await window.analyzeScenarioSourceEditor();
+    return result?.scenario || null;
+  }
+  const isCurrent = scenarioFormAnalysisScope.begin();
   try {
-    if (document.getElementById("scenario-editor-advanced").open && window.analyzeScenarioSourceEditor) {
-      const result = await window.analyzeScenarioSourceEditor();
-      return result?.scenario || null;
-    }
     const scenario = readScenarioEditorForm();
     const response = await fetch(`/api/simulator/organizations/${encodeURIComponent(scenarioEditorOrganization)}/scenario-check`, {
       method: "POST",
@@ -379,13 +385,13 @@ async function analyzeScenarioEditor() {
       body: JSON.stringify({ format: "json", source: JSON.stringify(scenario), scenario_id: scenarioEditorArtifact?.id || "" }),
     });
     const result = await response.json();
-    if (version !== scenarioEditorAnalysisVersion) return null;
+    if (!isCurrent()) return null;
     if (!response.ok || result.valid !== true) throw new Error(result.error || `Scenario analysis failed (${response.status}).`);
     setScenarioAnalyzeState("success");
     setScenarioEditorStatus(result.diagnostics || "Scenario definition valid. Nothing saved, published, or run.");
     return result.scenario || scenario;
   } catch (error) {
-    if (version !== scenarioEditorAnalysisVersion) return null;
+    if (!isCurrent()) return null;
     setScenarioAnalyzeState("error");
     setScenarioEditorStatus(error.message || "Scenario analysis failed.", "error");
     return null;
@@ -610,7 +616,7 @@ const scenarioAssistant = window.mountSimulatorDesignAssistant("scenario-assista
       window.renderScenarioSourceEditor?.();
       scenarioEditorDirty = dirty;
       scenarioEditorSummary = summary;
-      scenarioEditorAnalysisVersion++;
+      scenarioFormAnalysisScope.invalidate();
       setScenarioAnalyzeState("pending");
       updateScenarioEditorActions();
       setScenarioEditorStatus("AI change restored as an unsaved editor change.");
@@ -619,7 +625,7 @@ const scenarioAssistant = window.mountSimulatorDesignAssistant("scenario-assista
     scenario.organization_id = scenarioEditorOrganization;
     renderScenarioEditor(scenario);
     scenarioEditorDirty = true;
-    scenarioEditorAnalysisVersion++;
+    scenarioFormAnalysisScope.invalidate();
     setScenarioAnalyzeState("pending");
     scenarioEditorSummary = "Claude-assisted scenario draft";
     setScenarioEditorStatus("Claude proposal applied to the editor. Review and save it as a draft.");
@@ -643,6 +649,8 @@ async function postScenarioAction(url) {
 
 document.getElementById("scenario-refresh").addEventListener("click", refreshScenarios);
 document.getElementById("scenario-new").addEventListener("click", openNewScenarioEditor);
+document.getElementById("scenario-editor-dialog").addEventListener("close", () => scenarioFormAnalysisScope.invalidate());
+document.getElementById("scenario-editor-advanced").addEventListener("toggle", () => scenarioFormAnalysisScope.invalidate());
 document.getElementById("scenario-editor-dialog").addEventListener("input", (event) => {
   if (event.target.id === "scenario-editor-source") {
     scenarioEditorJsonDirty = true;

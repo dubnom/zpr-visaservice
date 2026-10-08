@@ -9,6 +9,30 @@ let previousPolledValues = null;
 let graphAutoFit = true;
 let graphDarkMode = false;
 let graphVisaFocus = null;
+const policyAnalysisContext = () => [
+  byId("policy-source").value, state.policy.record?.id, state.policy.record?.kind,
+  state.policy.record?.isDraft, state.policy.record?.current_revision,
+  state.policy.revision, state.policy.browsingRevision, state.policy.organizationID,
+];
+const policyCheckScope = window.ZPREditorPage.createAnalysisScope(policyAnalysisContext);
+const policyTestScope = window.ZPREditorPage.createAnalysisScope(policyAnalysisContext);
+
+function invalidatePolicyAnalysis() {
+  policyCheckScope.invalidate();
+  state.policy.checkAbort?.abort();
+  state.policy.checkAbort = null;
+  state.policy.checkPending = false;
+  invalidatePolicyTest();
+}
+
+function invalidatePolicyTest() {
+  policyTestScope.invalidate();
+  state.policy.testAbort?.abort();
+  state.policy.testAbort = null;
+  state.policy.testPending = false;
+  state.policy.saveTestOperation = null;
+  state.policy.saveTestPending = false;
+}
 
 function activeMapVisas(data) {
   return Array.isArray(data.active_visas)
@@ -1630,6 +1654,7 @@ async function loadPolicyWorkspace() {
     if (!response.ok) throw new Error(data.error || `Policy server responded ${response.status}`);
     const organizationChanged = policy.organizationID && data.organization_id && policy.organizationID !== data.organization_id;
     if (organizationChanged && policy.testPending) stopPolicyTest();
+    if (organizationChanged) invalidatePolicyAnalysis();
     Object.assign(policy, {
       organizationID: data.organization_id || "",
       organizationName: data.organization_name || "",
@@ -1971,10 +1996,8 @@ async function openPolicyPickerMenu(target, x, y) {
 
 function clearPolicySelection() {
   const policy = state.policy;
+  invalidatePolicyAnalysis();
   setPolicyRecordSurface("");
-  if (policy.testAbort) policy.testAbort.abort();
-  policy.testAbort = null;
-  policy.testPending = false;
   policy.record = null; policy.source = ""; policy.savedSource = ""; policy.revision = 0; policy.revisions = []; policy.evaluatedSource = null; policy.validSource = null;
   policy.saveTestSource = ""; policy.saveTestError = ""; policy.saveAsTestSource = ""; policy.saveAsTestError = "";
   policy.errorOffsets = [];
@@ -2016,7 +2039,7 @@ async function selectPolicyRecord(id, fetchRecord = true, discardEdits = false, 
   if (!summary) return clearPolicySelection();
   if (!discardEdits && !window.ZPREditorPage.confirmDiscard(hasUnsavedPolicyChanges(policy), "Discard unsaved changes or leave this historical version?")) return;
   if (policy.testPending) stopPolicyTest();
-  policy.checkGeneration = (policy.checkGeneration || 0) + 1;
+  invalidatePolicyAnalysis();
   policy.lintWarnings = [];
   policy.evaluatedSource = null;
   clearPolicyTestResults();
@@ -2418,7 +2441,7 @@ async function browsePolicyRevision(number) {
     if (!response.ok) throw new Error(revision.error || `Version load failed (${response.status})`);
     if (!window.ZPREditorPage.confirmDiscard(!policy.browsingRevision && byId("policy-source").value !== policy.savedSource, "Discard unsaved edits and browse this version?")) return;
     if (policy.testPending) stopPolicyTest();
-    policy.checkGeneration = (policy.checkGeneration || 0) + 1;
+    invalidatePolicyAnalysis();
     clearPolicyTestResults();
     policy.checkDiagnostics = "";
     policy.evaluatedSource = null;
@@ -2485,6 +2508,7 @@ function beginNewPolicyDraft() {
   const policy = state.policy;
   if (!policy.categoryID || !policy.configured) return;
   if (!window.ZPREditorPage.confirmDiscard(hasUnsavedPolicyChanges(policy), "Discard the current edits and start a new policy draft?")) return;
+  invalidatePolicyAnalysis();
   const draft = {
     id: "",
     category_id: policy.categoryID,
@@ -2503,6 +2527,7 @@ function beginNewPolicyDraft() {
   policy.revision = 0;
   policy.evaluatedSource = null;
   policy.validSource = null;
+  clearPolicyTestResults();
   policy.errorOffsets = [];
   policy.browsingRevision = 0;
   policy.revisions = [];
@@ -2529,6 +2554,7 @@ function beginNewAssertionDraft() {
   const categoryID = organizationPolicyCategoryID(policy) || policy.categoryID;
   if (!categoryID || !policy.configured) return;
   if (!window.ZPREditorPage.confirmDiscard(hasUnsavedPolicyChanges(policy), "Discard the current edits and start a new assertion set?")) return;
+  invalidatePolicyAnalysis();
   const draft = {
     id: "", category_id: categoryID, name: "", kind: "assertions",
     content_type: "text/vnd.zpr.assertions", metadata: { language: "assertions" },
@@ -2541,6 +2567,7 @@ function beginNewAssertionDraft() {
   policy.revision = 0;
   policy.evaluatedSource = null;
   policy.validSource = null;
+  clearPolicyTestResults();
   policy.browsingRevision = 0;
   policy.revisions = [];
   setPolicyRecordSurface("assertions", draft);
@@ -2695,13 +2722,14 @@ async function createPolicyRecord(event) {
     const saveAs = state.policy.saveAs;
     const content = saveAs ? byId("policy-source").value : "";
     if (saveAs && state.policy.evaluatedSource !== content) {
-      await checkPolicy(content);
+      if (await checkPolicy(content) === null) return;
       if (content !== byId("policy-source").value) return;
     }
     const sourcePassedEvaluation = state.policy.validSource === content;
     const evaluationDetails = state.policy.checkDiagnostics || byId("policy-check-result").textContent;
     if (saveAs && state.policy.saveAsTestSource !== content) {
       const test = await runPolicyTestBeforeSave(content);
+      if (test.cancelled) return;
       state.policy.saveAsTestSource = content;
       state.policy.saveAsTestError = test.passed ? "" : test.error || "The test was cancelled.";
       if (!test.passed) {
@@ -2758,7 +2786,7 @@ function updatePolicyDirtyState() {
   byId("policy-stage").disabled = policy.stagePending || policy.testPending || policy.checkPending;
   byId("policy-check").disabled = !canEdit || !canTest || !policy.compilerReady || !policy.testerReady || policy.testPending || policy.checkPending;
   byId("policy-check").textContent = "Analyze";
-  if (!checked && !policy.testPending) window.ZPREditorPage.setAnalysisState(byId("policy-check"));
+  if (!checked && !policy.testPending && !policy.checkPending) window.ZPREditorPage.setAnalysisState(byId("policy-check"));
   byId("policy-format").disabled = !canEdit;
   byId("policy-format").classList.toggle("button-save-as-ready", canEdit);
   byId("policy-source").disabled = !canViewSource;
@@ -2799,6 +2827,8 @@ async function runPolicyTest(source = byId("policy-source").value) {
   const policy = state.policy;
   if (policy.testPending || !source.trim()) return { passed: false, error: "Policy test could not start for this source." };
   const controller = new AbortController();
+  const isCurrent = policyTestScope.begin();
+  const current = () => !controller.signal.aborted && isCurrent() && source === byId("policy-source").value;
   clearPolicyTestResults();
   policy.testPending = true;
   policy.testAbort = controller;
@@ -2811,6 +2841,7 @@ async function runPolicyTest(source = byId("policy-source").value) {
   try {
     const fixtureResponse = await window.zprOperatorFetch("/api/policy/test/fixtures", { cache: "no-store", signal: controller.signal });
     const fixtures = await fixtureResponse.json();
+    if (!current()) return { passed: false, cancelled: true };
     if (!fixtureResponse.ok) throw new Error(fixtures.error || `Test fixture request failed (${fixtureResponse.status})`);
     const unavailable = policyReferencedOmittedAttributes(source, fixtures.omitted_attributes);
     if (unavailable.length) {
@@ -2826,7 +2857,7 @@ async function runPolicyTest(source = byId("policy-source").value) {
     });
     const result = await response.json();
     if (!response.ok) throw new Error(result.error || `Policy test failed (${response.status})`);
-    if (controller.signal.aborted) return { passed: false, cancelled: true };
+    if (!current()) return { passed: false, cancelled: true };
     policy.testResult = result;
     policy.testSource = source;
     policy.testWarnings = result.warnings || [];
@@ -2835,23 +2866,22 @@ async function runPolicyTest(source = byId("policy-source").value) {
     renderPolicyTestGutter(result);
     outcome = { passed: true, result };
   } catch (error) {
-    if (error.name !== "AbortError" && !controller.signal.aborted) {
-      const parsedLines = policyTestErrorLines(error.message, source.split("\n").length);
-      policy.testResult = { error: error.message };
-      policy.testSource = source;
-      window.ZPREditorPage.setAnalysisState(byId("policy-check"), "error");
-      if (parsedLines.length) {
-        renderPolicyTestErrorGutter(error.message, parsedLines, errorTitle);
-        byId("policy-test-status").hidden = true;
-        byId("policy-test-status").textContent = "";
-      } else {
-        byId("policy-test-status").textContent = `${errorTitle}: ${error.message}`;
-        byId("policy-test-status").dataset.state = "error";
-        byId("policy-test-status").hidden = false;
-        renderPolicyLintWarnings();
-      }
-      outcome = { passed: false, error: error.message };
+    if (error.name === "AbortError" || !current()) return { passed: false, cancelled: true };
+    const parsedLines = policyTestErrorLines(error.message, source.split("\n").length);
+    policy.testResult = { error: error.message };
+    policy.testSource = source;
+    window.ZPREditorPage.setAnalysisState(byId("policy-check"), "error");
+    if (parsedLines.length) {
+      renderPolicyTestErrorGutter(error.message, parsedLines, errorTitle);
+      byId("policy-test-status").hidden = true;
+      byId("policy-test-status").textContent = "";
+    } else {
+      byId("policy-test-status").textContent = `${errorTitle}: ${error.message}`;
+      byId("policy-test-status").dataset.state = "error";
+      byId("policy-test-status").hidden = false;
+      renderPolicyLintWarnings();
     }
+    outcome = { passed: false, error: error.message };
   } finally {
     if (policy.testAbort === controller) {
       policy.testAbort = null;
@@ -3025,9 +3055,7 @@ function clearPolicyTestResults() {
 
 function stopPolicyTest() {
   const policy = state.policy;
-  if (policy.testAbort) policy.testAbort.abort();
-  policy.testAbort = null;
-  policy.testPending = false;
+  invalidatePolicyTest();
   clearPolicyTestResults();
   if (byId("policy-check").dataset.analysisState === "pending") {
     window.ZPREditorPage.setAnalysisState(byId("policy-check"), policy.validSource === policy.evaluatedSource ? "success" : "");
@@ -3075,7 +3103,9 @@ async function stageSelectedPolicy() {
     return;
   }
   const source = byId("policy-source").value;
-  if (!await analyzePolicySource(source)) {
+  const analyzed = await analyzePolicySource(source);
+  if (analyzed === null) return;
+  if (!analyzed) {
     policy.stageError = "Analysis failed. Candidate was not staged.";
     renderPolicyStageStatus();
     return;
@@ -3136,13 +3166,14 @@ async function reloadPolicyWorkspace() {
 async function checkPolicy(source = byId("policy-source").value) {
   const button = byId("policy-check");
   if (state.policy.checkPending) return false;
-  const generation = (state.policy.checkGeneration || 0) + 1;
-  state.policy.checkGeneration = generation;
+  const controller = new AbortController();
+  const isCurrent = policyCheckScope.begin();
+  state.policy.checkAbort = controller;
   state.policy.checkPending = true;
   state.policy.lintWarnings = [];
   state.policy.testWarnings = [];
   renderPolicyLintWarnings();
-    state.policy.checkDiagnostics = "";
+  state.policy.checkDiagnostics = "";
   state.policy.errorOffsets = [];
   updatePolicyHighlight();
   button.disabled = true;
@@ -3154,17 +3185,21 @@ async function checkPolicy(source = byId("policy-source").value) {
     const response = await window.zprOperatorFetch("/api/policy/check", {
       method: "POST", headers: { "Content-Type": "application/json", Accept: "application/json" },
       body: JSON.stringify({ source }),
+      signal: controller.signal,
     });
     const result = await response.json();
-    if (generation !== state.policy.checkGeneration || source !== byId("policy-source").value) return false;
+    if (controller.signal.aborted || !isCurrent() || source !== byId("policy-source").value) return null;
     valid = response.ok && result.valid;
     policySetCheckResult(valid, result.diagnostics || result.error || "No compiler diagnostics.", source, result.warnings || []);
   } catch (error) {
-    if (generation !== state.policy.checkGeneration || source !== byId("policy-source").value) return false;
+    if (error.name === "AbortError" || controller.signal.aborted || !isCurrent() || source !== byId("policy-source").value) return null;
     policySetCheckResult(false, error.message, source);
   } finally {
-    state.policy.checkPending = false;
-    updatePolicyDirtyState();
+    if (state.policy.checkAbort === controller) {
+      state.policy.checkAbort = null;
+      state.policy.checkPending = false;
+      updatePolicyDirtyState();
+    }
   }
   return valid;
 }
@@ -3173,8 +3208,11 @@ async function analyzePolicySource(source) {
   if (state.policy.testPending || state.policy.checkPending) return false;
   clearPolicyTestResults();
   state.policy.checkDiagnostics = "";
-  if (!await checkPolicy(source) || source !== byId("policy-source").value) return;
-  return (await runPolicyTest(source)).passed;
+  const checked = await checkPolicy(source);
+  if (checked === null || source !== byId("policy-source").value) return null;
+  if (!checked) return false;
+  const test = await runPolicyTest(source);
+  return test.cancelled ? null : test.passed;
 }
 
 async function evaluateAndTestPolicy() {
@@ -3299,7 +3337,7 @@ async function savePolicy() {
     byId("policy-test-status").hidden = false;
     return;
   }
-  if (state.policy.evaluatedSource !== source) await checkPolicy(source);
+  if (state.policy.evaluatedSource !== source && await checkPolicy(source) === null) return;
   if (source !== byId("policy-source").value) return;
   const test = await runPolicyTestBeforeSave(source);
   if (test.cancelled) return;
@@ -3315,6 +3353,8 @@ async function savePolicy() {
 
 async function runPolicyTestBeforeSave(source) {
   const policy = state.policy;
+  const operation = {};
+  policy.saveTestOperation = operation;
   policy.saveTestPending = true;
   policy.saveTestSource = "";
   policy.saveTestError = "";
@@ -3322,7 +3362,13 @@ async function runPolicyTestBeforeSave(source) {
   byId("policy-test-status").dataset.state = "pending";
   updatePolicyDirtyState();
   const test = await runPolicyTest(source);
+  if (policy.saveTestOperation !== operation) return { passed: false, cancelled: true };
+  policy.saveTestOperation = null;
   policy.saveTestPending = false;
+  if (test.cancelled) {
+    updatePolicyDirtyState();
+    return test;
+  }
   policy.saveTestSource = source;
   policy.saveTestError = test.passed ? "" : test.error || "The test was cancelled.";
   updatePolicyDirtyState();
@@ -4012,8 +4058,7 @@ document.addEventListener("click", (event) => {
   if (record) selectPolicyRecord(record.dataset.recordId);
 });
 byId("policy-source").addEventListener("input", () => {
-  state.policy.checkGeneration = (state.policy.checkGeneration || 0) + 1;
-  if (state.policy.testAbort) state.policy.testAbort.abort();
+  invalidatePolicyAnalysis();
   clearPolicyTestResults();
   state.policy.checkDiagnostics = "";
   byId("policy-check-result").hidden = true;

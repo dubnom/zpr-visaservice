@@ -1732,6 +1732,12 @@ configured trusted-attribute definitions and operator-written conversation.
 It does not load a People catalog, individual user records, memberships or
 Simulator state. A regression exercises both endpoints with unavailable
 Simulator configuration. Directory and Scenario request payloads are unchanged.
+In production, Control-Service obtains Policy/Assertion attribute definitions
+from Policy-Service over its configured mutual-TLS connection rather than
+requiring an in-process policy workspace. Only attribute definitions enter the
+assistant prompt; unrelated repository records are not forwarded. Context
+failures are reported explicitly and prevent the model request. ZPR Config
+does not need an attribute catalog lookup.
 
 Rescan LDAP, Format, Discard, Evaluate & Test, Save, Save As, and Compile & Stage
 share a responsive control strip directly above the source editor. Evaluate &
@@ -2089,6 +2095,35 @@ Assertion evaluation also uses this guard alongside its existing abort
 controller. Source edits (including Tab and catalog insertion), record changes
 and organization/revision context changes prevent late results from populating
 the current gutter, result table or cached record result.
+Assertion Format uses the same source/context guard and a separately owned
+abort controller. Late formatted text, warnings and errors cannot replace or
+decorate another draft, including after edit-then-restore. Switching records
+or leaving the editor cancels Format; obsolete cleanup cannot unlock a newer
+operation. Current formatting is an undoable unsaved edit and dispatches normal
+source input so analysis and assistant suggestions are invalidated.
+Policy compiler checks also use the shared source/context guard, covering
+record kind/draft identity, current and browsing revisions, and organization.
+Source edits and context replacement cancel the compiler request; only its
+own controller can clear pending state. Obsolete successes, warnings and
+failures never attach to the current source or start runtime testing. Save
+and Save As stop on cancelled checks while retaining the existing explicit
+save-with-errors flow for current compiler failures. Runtime testing uses the
+same context adapter with its own shared scope and abort controller. Both
+fixture loading and evaluation reject obsolete successes/failures before
+starting another request or updating dimensions, results, warnings and errors.
+Source/record/revision/organization changes cancel both analysis phases;
+obsolete pre-save cleanup cannot unlock a newer Save test or cache cancelled
+tests as current failures. Cancelled tests stop Save, Save As and Stage
+continuations. Current test failures retain explicit warnings and the existing
+save-anyway confirmation. Production service contracts remain unchanged.
+Structured Scenario analysis uses the shared generation/context guard with
+the exact serialized form, scenario identity/revision, organization, viewed
+revision and editor mode/open state. Form edits and replacement rendering
+invalidate earlier requests, including edit-then-restore and identical
+replacement forms. Only the newest Analyze may update status; closing and
+reopening the editor cannot resurrect an old response. Raw Scenario checks
+also include the viewed revision and editor open state. These adapters retain
+Simulator-only endpoints and do not change Save, Publish or Run contracts.
 The shortcut invokes the editor's existing enabled Save action, including its
 name/revision checks and confirmations; it never publishes, activates, or runs.
 Disabled Save still suppresses the browser's Save Page action. Held-key repeats,

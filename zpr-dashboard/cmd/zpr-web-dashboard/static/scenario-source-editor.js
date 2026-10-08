@@ -16,6 +16,7 @@
   const analysisScope = page.createAnalysisScope(() => [
     source.value, sourceFormat, scenarioEditorOrganization,
     scenarioEditorArtifact?.id, scenarioEditorArtifact?.revision,
+    scenarioEditorViewing, document.getElementById("scenario-editor-dialog").open,
   ]);
 
   function sourceFormatName() {

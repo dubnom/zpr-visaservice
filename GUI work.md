@@ -2,7 +2,61 @@
 
 ## Deployment status
 
-- Pending next deployment: shared AI assistant shell/controller across all
+- Deployed to local Simulator on 2026-10-08 at 17:47 EDT:
+  structured Scenario analysis uses the shared
+  context guard for exact form, identity/revision, organization, viewed
+  revision and editor mode/open state. Edit-return, replacement, superseded
+  requests and close/reopen reject obsolete success/errors. Raw analysis
+  also guards viewed revision and editor close. Save/Publish/Run are unchanged.
+  Focused desktop/tablet coverage: 46 tests pass, including delayed
+  success/error, identical form replacement, context changes, close/reopen,
+  superseded requests, raw round trips and AI Apply Undo/Redo.
+  Build succeeded; live scenarios.js v29, scenario-source-editor.js v6 and
+  scenarios.html hashes match source. Only Simulator restarted; configuration,
+  Control Room sessions and all production/DNS/Great Lakes start times are
+  unchanged. Great Lakes is active, activation idle, assistant ready and both
+  DNS relays responsive.
+- Deployed to local Control Room and Simulator on 2026-10-08 at 17:38 EDT:
+  Assertion Format, Policy compiler checks and Policy runtime analysis
+  refactors below. Live app.js v116 and assertions.js v18 hashes match source
+  on both dashboards; Simulator organization/scenario HTML hashes also match.
+  Named operator login is enabled; signed-out protected APIs reject requests
+  with 403. Only the two dashboards restarted, with unchanged configuration.
+  Control-Service, Policy-Service, DNS and Great Lakes start times are unchanged;
+  Great Lakes remains active, activation idle, and both DNS relays respond.
+  Build succeeded; focused desktop/tablet validation is recorded below.
+- Included in this deployment: Policy runtime analysis uses the shared context
+  guard for fixture loading and evaluation. Cancelled pre-save tests cannot
+  cache old failures or release a newer Save; Save/Save As/Stage continuations
+  stop on cancellation. Current test failures keep explicit save-anyway warnings.
+  Final focused desktop/tablet coverage: 106 tests pass. Additional older
+  Assertion organization-switch and copy/paste tests time out clicking hidden
+  File-menu Discard/Save buttons without opening the menu (four project cases);
+  those tests remain unchanged.
+- Included in this deployment: Policy compiler checks use the shared source/context
+  guard and request-owned cancellation/pending cleanup. Obsolete checks cannot
+  decorate another draft, unlock newer checks, or continue Save/Save As.
+  Current compiler failures retain the explicit save-with-errors workflow.
+- Included in this deployment: Assertion Format uses the shared source/context
+  guard, cancels on record/navigation changes, and keeps pending-operation
+  cleanup owned by its request. Current formatted text is undoable and
+  invalidates obsolete analysis/assistant suggestions through normal input.
+- Hotfix deployed to Control-Service on 2026-10-08 at 17:05 EDT:
+  production Policy/Assertion AI now reads attribute definitions
+  through Control-Service's configured mutual-TLS Policy-Service connection;
+  it no longer requires an in-process policy workspace. Context failures stop
+  the model request with an explicit error. Config AI skips unnecessary
+  attribute retrieval. No People catalog or Simulator dependency is added.
+  Live Policy, Assertion and Config requests completed successfully using
+  synthetic empty drafts. Focused Assistant/Claude/proxy tests pass, including
+  real mutual TLS, no browser credentials/unrelated records forwarded, and
+  explicit failures for unavailable, malformed, oversized or redirected
+  context. Only Control-Service restarted; its configuration and all dashboard,
+  Policy-Service, DNS and Great Lakes start times are unchanged. DNS relays
+  remain responsive. Full `make test` retains the unrelated Redwood fixture
+  mismatch described below.
+- Deployed to local Control Room and Simulator on 2026-10-08 at 17:00 EDT:
+  shared AI assistant shell/controller across all
   source and design assistants; no Use assistant checkbox; collapsed Model and
   max tokens settings; How can I help? prompt; source/context-owned responses
   and suggestions; native/fallback text undo and structured Apply Undo/Redo.
@@ -13,6 +67,11 @@
   regression suite pass; editor diagnostics and formatting checks are clean.
   Full `make test` remains blocked by the unrelated Redwood LDAP fixture
   mismatch (53 identities present; 53 people plus 3 machines expected).
+  Live AI scripts, styles and editor HTML match source hashes. Operator login
+  is enabled and signed-out sessions return 401; Simulator assistant readiness
+  is true. Dashboard configuration and backend/DNS/Great Lakes start times are
+  unchanged. Great Lakes remains active with activation idle; both DNS relays
+  were restored and checked. Control Room operators must sign in again.
 - Deployed to local Control Room and Simulator on 2026-10-08 at 14:25 EDT:
   Analyze idle/pending styling is blue in all five
   Analyze-capable editors; success remains green and errors remain red.
@@ -107,6 +166,9 @@
 - [x] Make sure AI changes are able to be undone. Text Insert supports native/fallback undo/redo; Scenario and organization-directory Apply provide guarded Undo AI change/Redo AI change without saving or publishing.
 - [x] Does the AI assistant also send attributes and groups to Anthropic? Policy/Assertions attach source/group definitions and configured attribute definitions, but never load a People catalog or memberships. Per clarification, do not expand disclosure or change Directory/Scenario payloads.
 - [x] Change 'Ask about this policy' to 'How can I help?' in every assistant.
+- [ ] Put the lint warnings (Line 4 - Warning [ASSRT_HUMAN_SCOPE]...) in the gutter.
+- [ ] If there are warnings, color Analyze button yellow.
+- [ ] Add the most used expressions as examples in their help text.
 
 ### All log viewers
 - [x] Word wrap checkbox defaults to disabled; users can enable it per view.
@@ -131,6 +193,10 @@
   - [x] Share source/context analysis guards for Gateway and raw Scenario. Reject superseded runs, edited-then-restored source, and changed record/revision/organization/format context without applying obsolete success or error results.
   - [x] Use the shared analysis-context guard for Config Analyze and validation-before-Format. Keep mutation error handling separate; stale responses cannot format replaced text or attach obsolete diagnostics.
   - [x] Use the shared analysis-context guard for Assertion evaluation, preserving AbortController cancellation and record/organization/revision ownership. Source edits, Tab insertion, catalog insertion and record changes invalidate obsolete results.
+  - [x] Use the shared analysis-context guard for Assertion Format. Reject obsolete source, warnings and errors after edit-return/context changes; abort record/navigation changes without clearing a newer pending action. Apply current formatting as an undoable unsaved input edit.
+  - [x] Use the shared analysis-context guard for Policy compiler checks, preserving source/record/revision/organization ownership, request-owned cancellation and pending state. Cancelled checks stop analysis and Save/Save As continuations; current failures remain explicitly saveable with errors.
+  - [x] Use the shared analysis-context guard for Policy runtime fixtures/evaluation with independent request ownership. Reject late results, dimensions, warnings and failures; cancel source/record/revision/organization replacements and stop obsolete Save/Save As/Stage continuations without releasing a newer pre-save test.
+  - [x] Use the shared analysis-context guard for structured Scenario Analyze. Reject superseded requests, edited-then-restored/replaced forms and changed identity/revision/organization/viewed revision/mode/open state. Raw analysis also rejects closed-editor and viewed-revision changes.
   - [x] Share explicit idle/pending/success/error button-state transitions in the five Analyze-capable editors. Preserve readiness, disabled actions, diagnostic rendering and stale-response guards; do not add an Analyze action to Directory.
 - [ ] Consolidate JavaScript editor-frame setup and responsive viewport sizing so individual editors do not duplicate layout wiring.
 - [x] Extract a shared AI assistant shell and conversation controller from `editor-assistant.js` and `design-assistant.js`: messages, model/token controls, usage counters, pending/error states and collapse behavior. Policy/Assertion uses the same `assistant-core.js` controller.
@@ -276,6 +342,8 @@
 - [x] Groups should make the cn and objectclass their own columns
 - [x] People should condense each row and toggle viewing when clicked.
 - [ ] Add a page to view updates from the trusted source
+- [ ] Remove filter from the top table.
+- [ ] Rename lower table "Trusted source: {great_lakes_ldap}".
 
 ### Gateways
 - [x] Add a Control Room page listing installed ZPL Gateway services by organization and editing their versioned runtime drafts.
@@ -327,6 +395,32 @@ Running" orange should be a non-indicated color like blue.
   Proposed plan for approval: keep AI proposal-only; gather requirements and selected template/profile context; validate a schema-bound organization draft without writing files; show a diff for identity, directory, policy, services and runtime; require a separate `organization.create` authorization and explicit confirmation; create through an audited, idempotent backend API with revision/conflict handling; test invalid proposals, stale context, cancellation, duplicate IDs and lost responses. No organization creation has been wired.
  - [x] "Activate organization" and "Active" use very different styles. Make them look similar (other than the color).
  - [x] "Open reset log" should only show if there is a failure. Change the name to "See Logs".
+
+#### Organization creation and editing
+- [ ] Prioritize Duplicate organization -> edit draft -> validate -> review activation as the first end-to-end workflow.
+- [ ] Add New, Duplicate and Import actions to the organization list.
+- [ ] Add a short creation wizard with blank/template/existing-organization starting points.
+- [ ] Collect display name, stable organization ID, description and directory base DN; suggest IDs and allow review before creation.
+- [ ] Collect initial sites/departments and topology without requiring people, services or scenarios to be complete.
+- [ ] Show a creation review with the proposed artifacts and missing configuration; finish with Create draft, never automatic activation.
+- [ ] Exclude credentials, enrollment identities, sessions and runtime state from duplication and reject them from imports.
+- [ ] Use an audited, idempotent creation API with explicit organization.create authorization, confirmation, revision/conflict handling and uncertain-response reconciliation.
+- [ ] Add a full-page organization workspace using the shared editor styling, organization name and History.
+- [ ] Add Overview fields for name/description and a readiness summary distinguishing incomplete drafts, validation failures and runtime not provisioned.
+- [ ] Add structured Sites & topology tables and a topology preview.
+- [ ] Add Directory tree/tables for people and groups alongside the existing LDIF source editor.
+- [ ] Add Services & workloads tables with references to available machines and workloads.
+- [ ] Open organization-scoped Policy, Assertions and ZPR Config through the existing editors.
+- [ ] Add an organization-scoped Scenarios list opening the existing Scenario editor.
+- [ ] Offer Advanced source for the organization profile as an alternative view of the same draft, not an independently editable copy; preserve unsupported fields through structured edits.
+- [ ] Keep Save draft, Validate and Activate/Apply separate; saving must not change the runtime.
+- [ ] Validate individual documents and cross-document references, including group members, service references, duplicate IDs and directory base-DN containment.
+- [ ] Save coherent organization revisions across related documents; provide History and rollback without combining incompatible document versions.
+- [ ] Require an explicit activation review showing runtime effects, prerequisites and changes before applying anything.
+- [ ] Make AI assistance section-aware for overview, directory, policy/configuration and scenarios; disclose exactly which context will be sent.
+- [ ] Show AI proposals as reviewable diffs across affected documents; never silently replace, save or activate an organization.
+- [ ] Test invalid proposals/imports, stale context, structured/source round trips, cancellation, duplicate IDs, concurrent revisions, lost responses, coherent rollback and runtime isolation on draft saves.
+- [ ] Keep production Control Room organization administration separate, using independently authorized production service contracts with no Simulator template, manifest or availability dependencies.
 
 ### Workers
 - [x] Add the wordwrap button like the Adapter Logs.

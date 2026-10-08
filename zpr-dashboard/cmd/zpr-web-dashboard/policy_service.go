@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"crypto/tls"
 	"crypto/x509"
 	"encoding/json"
@@ -17,6 +18,57 @@ import (
 	"strings"
 	"time"
 )
+
+func (a *application) policyAssistantAttributes(ctx context.Context) ([]policyAttribute, error) {
+	if a.policy != nil {
+		a.policy.mu.Lock()
+		defer a.policy.mu.Unlock()
+		return append([]policyAttribute(nil), a.policy.attributes...), nil
+	}
+	if a.policyAPI == nil {
+		return nil, errors.New("Policy Service is not configured")
+	}
+	baseURL, transport, message := newPolicyServiceTransport()
+	if message != "" {
+		return nil, errors.New(message)
+	}
+	defer transport.CloseIdleConnections()
+	request, err := http.NewRequestWithContext(ctx, http.MethodGet, baseURL.String()+"/api/policy", nil)
+	if err != nil {
+		return nil, err
+	}
+	request.Header.Set("Accept", "application/json")
+	client := &http.Client{
+		Transport: transport, Timeout: 12 * time.Second,
+		CheckRedirect: func(_ *http.Request, _ []*http.Request) error { return http.ErrUseLastResponse },
+	}
+	response, err := client.Do(request)
+	if err != nil {
+		return nil, err
+	}
+	defer response.Body.Close()
+	if response.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("Policy Service returned HTTP %d", response.StatusCode)
+	}
+	body, err := io.ReadAll(io.LimitReader(response.Body, (4<<20)+1))
+	if err != nil {
+		return nil, err
+	}
+	if len(body) > 4<<20 {
+		return nil, errors.New("Policy Service context exceeds the size limit")
+	}
+	var status struct {
+		Configured bool              `json:"configured"`
+		Attributes []policyAttribute `json:"attributes"`
+	}
+	if err := json.Unmarshal(body, &status); err != nil {
+		return nil, errors.New("Policy Service returned invalid assistant context")
+	}
+	if !status.Configured {
+		return nil, errors.New("Policy Service workspace is unavailable")
+	}
+	return status.Attributes, nil
+}
 
 func (a *application) policyProxyHandler() http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {

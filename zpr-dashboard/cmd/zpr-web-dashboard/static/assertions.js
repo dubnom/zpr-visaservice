@@ -34,6 +34,7 @@
   let pending = false;
   let testPending = false;
   let testAbort = null;
+  let formatAbort = null;
   let selectedRecord = null;
   let recordMode = false;
   let recordStale = false;
@@ -256,6 +257,8 @@
     analysisScope.invalidate();
     testAbort?.abort();
     testAbort = null;
+    formatAbort?.abort();
+    formatAbort = null;
     testPending = false;
     pending = false;
     renderRun(null);
@@ -502,41 +505,50 @@
   });
   element("assertion-save").addEventListener("click", () => command("save"));
   window.ZPREditorPage.bindSaveShortcut({ root: source, button: element("assertion-save") });
-  async function editSource(action) {
+  async function formatAssertions() {
+    if (pending || testPending || !status || stale() || !source.value.trim() || source.disabled || source.readOnly) return;
+    const controller = new AbortController();
+    formatAbort = controller;
+    const original = source.value;
+    const isCurrent = analysisScope.begin();
     pending = true;
     actions();
     message("");
     try {
-      const result = await request(`/api/assertions/${action}`, {
+      const result = await request("/api/assertions/format", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ source: source.value }),
+        body: JSON.stringify({ source: original }),
+        signal: controller.signal,
       });
-      if (action === "format") {
-        source.value = result.source;
-        window.ZPREditorPage.setAnalysisState(element("assertion-analyze"));
-        renderRun(null);
-        highlight();
-      } else {
-        renderResultGutter(null);
-      }
-      lintWarnings.replaceChildren(...(result.warnings || []).map((warning) => {
+      if (controller.signal.aborted || !isCurrent()) return;
+      if (typeof result.source !== "string") throw new Error("Assertion formatter returned an invalid source response.");
+      const warnings = (result.warnings || []).map((warning) => {
         const item = document.createElement("li");
         item.textContent = `Line ${warning.line}: ${warning.code} - ${warning.message}`;
         return item;
-      }));
+      });
+      window.ZPRAssistant.editText(source, result.source, true);
+      window.ZPREditorPage.setAnalysisState(element("assertion-analyze"));
+      renderRun(null);
+      highlight();
+      lintWarnings.replaceChildren(...warnings);
       lintWarnings.hidden = !lintWarnings.childElementCount;
-      message(action === "format" ? "Assertions formatted." : `${result.rule_count} ${result.rule_count === 1 ? "assertion" : "assertions"} analyzed.`);
+      message("Assertions formatted.");
     } catch (error) {
+      if (error.name === "AbortError" || controller.signal.aborted || !isCurrent()) return;
       message(assertionErrorLine(error.message) === null ? error.message : "", "error");
       renderResultGutter({ status: "error", error: error.message, results: [] });
     } finally {
-      pending = false;
-      actions();
+      if (formatAbort === controller) {
+        formatAbort = null;
+        pending = false;
+        actions();
+      }
     }
   }
   element("assertion-analyze").addEventListener("click", analyzeAssertions);
-  element("assertion-format").addEventListener("click", () => editSource("format"));
+  element("assertion-format").addEventListener("click", formatAssertions);
   element("assertion-read-source").addEventListener("click", () => command("read"));
   element("assertion-reload").addEventListener("click", () => { if (window.ZPREditorPage.confirmDiscard(dirty(), "Discard unsaved assertion changes?")) load(true); });
   element("policy-draft-name").addEventListener("input", actions);
@@ -545,7 +557,7 @@
     analysisScope.invalidate();
     const { kind, record } = event.detail || {};
     const nextRecordMode = kind === "assertions" && record && (record.isDraft || record.content_type === "text/vnd.zpr.assertions");
-    if (testPending && (!nextRecordMode || selectedRecord?.id !== record?.id)) stopTest();
+    if ((testPending || formatAbort) && (!nextRecordMode || selectedRecord?.id !== record?.id)) stopTest();
     selectedRecord = nextRecordMode ? record : null;
     recordMode = Boolean(nextRecordMode);
     recordStale = false;
@@ -589,7 +601,7 @@
     analysisScope.invalidate();
     const { kind, record } = event.detail || {};
     const nextRecordMode = kind === "assertions" && record && (record.isDraft || record.content_type === "text/vnd.zpr.assertions");
-    if (testPending && (!nextRecordMode || selectedRecord?.id !== record?.id)) stopTest();
+    if ((testPending || formatAbort) && (!nextRecordMode || selectedRecord?.id !== record?.id)) stopTest();
     selectedRecord = nextRecordMode ? record : null;
     recordMode = Boolean(nextRecordMode);
     recordStale = false;
@@ -612,7 +624,7 @@
   element("policy-draft-name").addEventListener("input", actions);
   const navigation = () => {
     clearInterval(timer);
-    if (!active() && testPending) stopTest();
+    if (!active() && (testPending || formatAbort)) stopTest();
     if (active()) { load(); timer = setInterval(() => { if (!pending) load(); }, 5000); }
   };
   window.addEventListener("hashchange", navigation);

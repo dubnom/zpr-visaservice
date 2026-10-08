@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"log"
 	"net"
 	"net/http"
 	"net/url"
@@ -1125,7 +1126,7 @@ func (a *application) handlePolicyAssistant(w http.ResponseWriter, r *http.Reque
 		writePolicyError(w, http.StatusServiceUnavailable, "No assistant key is available to Control-Service. Run scripts/configure-assistant.sh, then retry.")
 		return
 	}
-	if a.policy == nil {
+	if a.policy == nil && a.policyAPI == nil {
 		writePolicyError(w, http.StatusServiceUnavailable, "Policy configuration is unavailable.")
 		return
 	}
@@ -1141,9 +1142,16 @@ func (a *application) handlePolicyAssistant(w http.ResponseWriter, r *http.Reque
 		writePolicyError(w, http.StatusBadRequest, message)
 		return
 	}
-	a.policy.mu.Lock()
-	attributes := append([]policyAttribute(nil), a.policy.attributes...)
-	a.policy.mu.Unlock()
+	var attributes []policyAttribute
+	if request.Editor != "zpr-config" {
+		var contextErr error
+		attributes, contextErr = a.policyAssistantAttributes(r.Context())
+		if contextErr != nil {
+			log.Printf("Policy assistant context unavailable: %v", contextErr)
+			writePolicyError(w, http.StatusBadGateway, "Policy Repository assistant context is unavailable. Retry after checking Policy-Service.")
+			return
+		}
+	}
 	var answer assistantReply
 	var err error
 	if request.Editor == "" || request.Editor == "policy" {
