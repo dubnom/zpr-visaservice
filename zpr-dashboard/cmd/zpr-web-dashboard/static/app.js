@@ -3,7 +3,7 @@ const zplKeywords = new Set(["allow", "never", "define", "with", "to", "access",
 const GRAPH_ARRIVAL_DURATION = 2800;
 const GRAPH_REMOVAL_DURATION = 900;
 const reducedMotion = window.matchMedia?.("(prefers-reduced-motion: reduce)").matches ?? false;
-const state = { snapshot: null, timer: null, paused: false, pending: false, graphCamera: null, graphAnimations: !reducedMotion, topologyComponents: null, topologyNodeColumns: null, topologyNodeSlots: new Map(), topologyNewComponents: new Map(), selection: null, sorts: {}, dnsPending: false, policy: { loaded: false, configured: false, categories: [], records: [], attributes: [], categoryID: "", collapsedCategories: new Set(), treeInitialized: false, record: null, source: "", savedSource: "", revision: 0, browsingRevision: 0, saveAs: false, compilerReady: false, testerReady: false, testMode: false, testPending: false, testAbort: null, testResult: null, testSource: "", testDimensions: [], saveTestPending: false, saveTestSource: "", saveTestError: "", saveAsTestSource: "", saveAsTestError: "", assistantReady: false, assistantEnabled: false, assistantUsage: { input: 0, output: 0 }, evaluatedSource: null, validSource: null, errorOffsets: [], checkDiagnostics: "", revisions: [], messages: [], assistantPending: false, assistantError: "" } };
+const state = { snapshot: null, timer: null, paused: false, pending: false, graphCamera: null, graphAnimations: !reducedMotion, topologyComponents: null, topologyNodeColumns: null, topologyNodeSlots: new Map(), topologyNewComponents: new Map(), selection: null, sorts: {}, dnsPending: false, policy: { loaded: false, configured: false, categories: [], records: [], attributes: [], categoryID: "", collapsedCategories: new Set(), treeInitialized: false, record: null, source: "", savedSource: "", revision: 0, browsingRevision: 0, saveAs: false, compilerReady: false, testerReady: false, testMode: false, testPending: false, testAbort: null, testResult: null, testSource: "", testDimensions: [], saveTestPending: false, saveTestSource: "", saveTestError: "", saveAsTestSource: "", saveAsTestError: "", assistantReady: false, evaluatedSource: null, validSource: null, errorOffsets: [], checkDiagnostics: "", revisions: [] } };
 
 let previousPolledValues = null;
 let graphAutoFit = true;
@@ -1685,18 +1685,7 @@ async function loadPolicyWorkspace() {
     byId("policy-check").disabled = !policy.configured || !policy.compilerReady;
     byId("new-category").disabled = !policy.configured;
     byId("new-policy-record").disabled = !policy.configured || !policy.categoryID;
-    byId("assistant-state").textContent = policy.assistantReady ? "Ready" : "Not configured";
-    byId("assistant-state").classList.toggle("ready", policy.assistantReady);
-    const modelSelect = byId("assistant-model");
-    const selectedModel = modelSelect.value || data.assistant_model;
-    modelSelect.replaceChildren();
-    for (const model of data.assistant_models || []) {
-      const option = document.createElement("option");
-      option.value = model;
-      option.textContent = model;
-      modelSelect.append(option);
-    }
-    modelSelect.value = (data.assistant_models || []).includes(selectedModel) ? selectedModel : data.assistant_model || "";
+    policyAssistant.setStatus(data);
     updateAssistantControls();
   } catch (error) {
     policy.loaded = false;
@@ -1704,24 +1693,30 @@ async function loadPolicyWorkspace() {
   }
 }
 
-function updateAssistantControls() {
-  const policy = state.policy;
-  const available = Boolean(policy.configured && policy.assistantReady);
-  const enabled = available && policy.assistantEnabled;
-  byId("assistant-enabled").disabled = !available;
-  byId("assistant-enabled").checked = enabled;
-  byId("assistant-model").disabled = !enabled;
-  byId("assistant-max-tokens").disabled = !enabled;
-  const assertions = policy.record?.kind === "assertions";
-  const supported = policy.record?.kind === "policy" || assertions;
-  byId("assistant-question").disabled = !enabled || !supported;
-  byId("assistant-send").disabled = !enabled || !supported || policy.assistantPending;
-  byId("assistant-usage").textContent = `Session: ${formatNumber(policy.assistantUsage.input)} input · ${formatNumber(policy.assistantUsage.output)} output tokens`;
-  byId("assistant-question").placeholder = assertions ? "Ask about these assertions" : "Ask about this policy";
-  byId("assistant-disclosure").textContent = !policy.assistantReady
-    ? "Claude is not configured for this service. Run scripts/configure-assistant.sh, then refresh the assistant status."
-    : `Submitting sends the current ${assertions ? "assertions" : "policy"}, configured attribute catalog, and chat history to Anthropic. Suggestions are not applied automatically; use Insert on a suggested block to add it as an unsaved edit.`;
-}
+const policyAssistant = window.ZPRAssistant.mount({
+  pane: byId("policy-assistant-pane"), prefix: "assistant",
+  getTarget: policyAssistantTarget,
+  getContext: () => ({
+    source: policyAssistantTarget().value, id: state.policy.record?.id,
+    kind: state.policy.record?.kind, revision: state.policy.revision,
+    browsing: state.policy.browsingRevision, organization: state.policy.organizationID,
+  }),
+  editable: () => state.policy.configured && ["policy", "assertions"].includes(state.policy.record?.kind) && !policyAssistantTarget().disabled && !policyAssistantTarget().readOnly,
+  disclosure: "Submitting sends the current draft and chat history to Anthropic. Suggestions are unsaved edits; use Insert to apply and Ctrl/Command+Z to undo.",
+  request: (conversation) => window.ZPRAssistant.jsonRequest("/api/policy/assistant", {
+    method: "POST", headers: { "Content-Type": "application/json", Accept: "application/json" },
+    body: JSON.stringify({ ...conversation, editor: state.policy.record?.kind === "assertions" ? "assertion" : "policy", source: policyAssistantTarget().value }),
+  }),
+  watch(invalidate, reset) {
+    for (const id of ["policy-source", "assertion-source"]) {
+      byId(id).addEventListener("input", invalidate);
+      new MutationObserver(() => policyAssistant.render()).observe(byId(id), { attributes: true, attributeFilter: ["disabled", "readonly"] });
+    }
+    document.addEventListener("zpr:policy-record-kind", reset);
+  },
+});
+
+function updateAssistantControls() { policyAssistant.render(); }
 
 function policyAssistantTarget() {
   return byId(state.policy.record?.kind === "assertions" ? "assertion-source" : "policy-source");
@@ -2055,7 +2050,7 @@ async function selectPolicyRecord(id, fetchRecord = true, discardEdits = false, 
     byId("policy-check-result").hidden = true;
     byId("policy-check-result").dataset.state = "";
     updateAssistantControls();
-    policy.messages = []; policy.assistantError = ""; renderAssistantMessages();
+    policyAssistant.reset();
     renderPolicyCatalog(); await loadPolicyHistory(record.id);
     updatePolicyDirtyState();
     if (pickerWasOpen && closePicker) setPolicyPickerOpen(false, true);
@@ -3420,67 +3415,6 @@ byId("version-form").addEventListener("submit", (event) => {
   appendPolicyVersion(byId("version-note").value.trim());
 });
 
-function renderAssistantMessages() {
-  const list = byId("assistant-messages");
-  list.replaceChildren();
-  if (!state.policy.messages.length && !state.policy.assistantError) {
-    const empty = document.createElement("p");
-    empty.className = "assistant-empty";
-    empty.textContent = "No conversation yet.";
-    list.append(empty);
-  }
-  for (const message of state.policy.messages) {
-    const entry = document.createElement("article");
-    entry.className = `assistant-message ${message.role}`;
-    const label = document.createElement("strong");
-    label.textContent = message.role === "user" ? "YOU" : "CLAUDE";
-    const content = window.editorAssistantContent
-      ? window.editorAssistantContent(message.content, message.role === "assistant" ? policyAssistantTarget : null)
-      : Object.assign(document.createElement("pre"), { textContent: message.content });
-    entry.append(label, content);
-    list.append(entry);
-  }
-  if (state.policy.assistantError) {
-    const error = document.createElement("p");
-    error.className = "assistant-error";
-    error.textContent = state.policy.assistantError;
-    list.append(error);
-  }
-  if (state.policy.assistantPending) {
-    const pending = document.createElement("p");
-    pending.className = "assistant-pending";
-    pending.textContent = "Claude is responding…";
-    list.append(pending);
-  }
-  list.scrollTop = list.scrollHeight;
-}
-
-async function askPolicyAssistant(question) {
-  const policy = state.policy;
-  policy.messages = policy.messages.slice(-18);
-  policy.messages.push({ role: "user", content: question });
-  policy.assistantPending = true;
-  policy.assistantError = "";
-  byId("assistant-send").disabled = true;
-  renderAssistantMessages();
-  try {
-    const response = await window.zprOperatorFetch("/api/policy/assistant", {
-      method: "POST", headers: { "Content-Type": "application/json", Accept: "application/json" },
-      body: JSON.stringify({ editor: policy.record?.kind === "assertions" ? "assertion" : "policy", source: policyAssistantTarget().value, messages: policy.messages, model: byId("assistant-model").value, max_tokens: Number(byId("assistant-max-tokens").value) }),
-    });
-    const result = await response.json();
-    if (!response.ok) throw new Error(result.error || `Claude request failed (${response.status})`);
-    policy.messages.push({ role: "assistant", content: result.answer });
-    policy.assistantUsage.input += Number(result.input_tokens) || 0;
-    policy.assistantUsage.output += Number(result.output_tokens) || 0;
-  } catch (error) {
-    policy.assistantError = error.message;
-  } finally {
-    policy.assistantPending = false;
-    updateAssistantControls();
-    renderAssistantMessages();
-  }
-}
 
 const serviceTypePalette = new Map([
   ["BuiltIn", { color: "#294879", background: "#e8edf9", border: "#8da4cb" }],
@@ -3968,24 +3902,6 @@ function updatePolicyWorkbenchLayout() {
 
 window.policyWorkbenchLayoutChanged = updatePolicyWorkbenchLayout;
 
-function policyPaneCollapsed(name) {
-  try { return localStorage.getItem(`zpr-policy-pane-${name}-collapsed`) === "true"; }
-  catch { return false; }
-}
-
-function setAssistantPaneCollapsed(collapsed) {
-  byId("policy-workbench").dataset.assistantCollapsed = String(collapsed);
-  const pane = byId("policy-assistant-pane");
-  const button = byId("policy-assistant-toggle");
-  pane.dataset.collapsed = String(collapsed);
-  button.setAttribute("aria-expanded", String(!collapsed));
-  button.setAttribute("aria-label", `${collapsed ? "Expand" : "Collapse"} AI Assistant`);
-  button.title = `${collapsed ? "Expand" : "Collapse"} AI Assistant`;
-  updatePolicyWorkbenchLayout();
-  try { localStorage.setItem("zpr-policy-pane-assistant-collapsed", String(collapsed)); }
-  catch { /* The pane still works when browser storage is unavailable. */ }
-}
-
 function setPolicyPickerOpen(open, restoreFocus = false) {
   const pane = byId("policy-catalog-pane");
   const button = byId("policy-picker-toggle");
@@ -4017,10 +3933,10 @@ window.ZPREditorPage.fitSourceToViewport(byId("policy-code-editor"));
 byId("policy-source-surface").prepend(byId("policy-test-status"));
 window.ZPREditorPage.placeStatus(byId("policy-file-status"));
 setPolicyPickerOpen(false);
-setAssistantPaneCollapsed(policyPaneCollapsed("assistant"));
-byId("policy-assistant-toggle").addEventListener("click", () => {
-  const button = byId("policy-assistant-toggle");
-  setAssistantPaneCollapsed(button.getAttribute("aria-expanded") === "true");
+window.ZPRAssistant.bindCollapse({
+  pane: byId("policy-assistant-pane"), toggle: byId("policy-assistant-toggle"),
+  layout: byId("policy-workbench"), storageKey: "zpr-policy-pane-assistant-collapsed",
+  changed: updatePolicyWorkbenchLayout,
 });
 document.addEventListener("pointerdown", (event) => {
   if (!byId("policy-catalog-pane").hidden && !event.target.closest("#policy-catalog-pane, #policy-picker-toggle, #policy-picker-menu")) setPolicyPickerOpen(false);
@@ -4169,17 +4085,6 @@ byId("policy-source").addEventListener("blur", (event) => {
 byId("policy-save").addEventListener("click", savePolicy);
 window.ZPREditorPage.bindSaveShortcut({ root: byId("policy-source"), button: byId("policy-save") });
 byId("policy-stage").addEventListener("click", stageSelectedPolicy);
-byId("assistant-enabled").addEventListener("change", (event) => {
-  state.policy.assistantEnabled = event.target.checked;
-  updateAssistantControls();
-});
-byId("assistant-form").addEventListener("submit", (event) => {
-  event.preventDefault();
-  const question = byId("assistant-question").value.trim();
-  if (!question || !state.policy.assistantEnabled || !state.policy.assistantReady || state.policy.assistantPending) return;
-  byId("assistant-question").value = "";
-  askPolicyAssistant(question);
-});
 byId("pause-poll").addEventListener("click", (event) => {
   state.paused = !state.paused;
   event.currentTarget.textContent = state.paused ? "Resume updates" : "Pause updates";

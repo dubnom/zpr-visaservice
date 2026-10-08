@@ -2,6 +2,17 @@
 
 ## Deployment status
 
+- Pending next deployment: shared AI assistant shell/controller across all
+  source and design assistants; no Use assistant checkbox; collapsed Model and
+  max tokens settings; How can I help? prompt; source/context-owned responses
+  and suggestions; native/fallback text undo and structured Apply Undo/Redo.
+  Policy/Assertion context remains source/group and attribute definitions, with
+  no People catalog or Simulator dependency. Directory/Scenario payloads are
+  unchanged.
+  Validation: 54 focused desktop/tablet tests and the Go Assistant/Claude
+  regression suite pass; editor diagnostics and formatting checks are clean.
+  Full `make test` remains blocked by the unrelated Redwood LDAP fixture
+  mismatch (53 identities present; 53 people plus 3 machines expected).
 - Deployed to local Control Room and Simulator on 2026-10-08 at 14:25 EDT:
   Analyze idle/pending styling is blue in all five
   Analyze-capable editors; success remains green and errors remain red.
@@ -91,11 +102,11 @@
 - [x] Wrap should start as disabled for all editors; a user's explicit saved Wrap choice is remembered.
 - [x] Fix assistant key setup: persist the key securely for both Control-Service and Simulator, use it for readiness and requests, and explain the supported setup command. Reload the existing Control-Service container in place so key setup preserves configured LDAP/admin settings.
 - [x] Add Rename to the Browse right-click menus for Policy, Assertion, and ZPR Config records.
-- [ ] AI Assistant doesn't need the 'Use assistant' checkbox.
-- [ ] AI Assistant Model and Max output (should be max tokens) should be collapsible, and start off collapsed.
-- [ ] Make sure AI changes are able to be undone.
-- [ ] Does the AI assistant also send attributes and groups to Anthropic?
-- [ ] Change 'Ask about this policy' to 'How can I help?'
+- [x] AI Assistant doesn't need the 'Use assistant' checkbox. Configured assistants are ready; requests still require explicit Send.
+- [x] AI Assistant Model and Max output (should be max tokens) should be collapsible, and start off collapsed. Shared Model and max tokens preferences apply to text and design assistants.
+- [x] Make sure AI changes are able to be undone. Text Insert supports native/fallback undo/redo; Scenario and organization-directory Apply provide guarded Undo AI change/Redo AI change without saving or publishing.
+- [x] Does the AI assistant also send attributes and groups to Anthropic? Policy/Assertions attach source/group definitions and configured attribute definitions, but never load a People catalog or memberships. Per clarification, do not expand disclosure or change Directory/Scenario payloads.
+- [x] Change 'Ask about this policy' to 'How can I help?' in every assistant.
 
 ### All log viewers
 - [x] Word wrap checkbox defaults to disabled; users can enable it per view.
@@ -122,8 +133,8 @@
   - [x] Use the shared analysis-context guard for Assertion evaluation, preserving AbortController cancellation and record/organization/revision ownership. Source edits, Tab insertion, catalog insertion and record changes invalidate obsolete results.
   - [x] Share explicit idle/pending/success/error button-state transitions in the five Analyze-capable editors. Preserve readiness, disabled actions, diagnostic rendering and stale-response guards; do not add an Analyze action to Directory.
 - [ ] Consolidate JavaScript editor-frame setup and responsive viewport sizing so individual editors do not duplicate layout wiring.
-- [ ] Extract a shared AI assistant shell and conversation controller from `editor-assistant.js` and `design-assistant.js`: messages, model/token controls, usage counters, pending/error states and collapse behavior.
-- [ ] Share assistant stale-context/proposal protection while keeping undoable text Insert and validated structured Apply as separate adapters; never save, publish, activate or run automatically.
+- [x] Extract a shared AI assistant shell and conversation controller from `editor-assistant.js` and `design-assistant.js`: messages, model/token controls, usage counters, pending/error states and collapse behavior. Policy/Assertion uses the same `assistant-core.js` controller.
+- [x] Share assistant stale-context/proposal protection while keeping undoable text Insert and validated structured Apply as separate adapters; never save, publish, activate or run automatically. Reject edited-then-restored source, changed record/revision/organization, reset conversations and stale failures.
 - [ ] Extract shared page polling/lifecycle helpers: start/stop on navigation, prevent overlapping requests, abort obsolete requests, reject late responses and retain last-good data with explicit errors.
 - [ ] Extract shared sortable-table helpers for column definitions, comparators, accessible sort headings and empty states, starting with Control Room tables and Simulator Activity.
 - [ ] Consolidate safe text rendering and timestamp/protocol display helpers without changing API contracts or losing integer precision.

@@ -786,19 +786,18 @@ When Claude is configured, the UI discloses that submitting a question sends
 the current policy and chat history to Anthropic. The key stays server-side;
 assistant responses are suggestions and are never applied automatically.
 Run this from the dashboard module directory; the script prompts for the key
-without echoing it and recreates only Control-Service. Docker inherits
-`ANTHROPIC_API_KEY` from the script environment without placing its value in
-command-line arguments. The key remains in that container's environment across
-ordinary container restarts, but the script does not save it to a file; run it
-again after the stack recreates the container. Do not put the
-key in browser storage, the Policy
-Repository, shell history, or this repository. The Policy page offers a
-session-only on/off control, the server default model or Haiku 4.5, and
-per-request output limits of 300, 600, 1200, or 2400 tokens. The displayed
+without echoing it, persists it in a protected runtime file, and reloads the
+existing Control-Service container in place while preserving operator settings.
+Do not put the key in browser storage, the Policy Repository, shell history,
+or this repository. The assistant is ready when the service is configured;
+there is no "Use assistant" checkbox and no request is sent until Send is used.
+**Model and max tokens** expands the initially collapsed preferences. The
+server default model or Haiku 4.5 and per-request limits of 300, 600, 1200, or
+2400 tokens are available. The question prompt is **How can I help?**. Displayed
 input/output token totals come from successful responses and reset on page
 reload; they are not a billing or organization-wide usage limit.
 
-The same opt-in AI Assistant pane is available beside the assertion, Gateways
+The same AI Assistant pane is available beside the assertion, Gateways
 and ZPR Config editors in Control Room, and beside the Simulator's LDAP seed
 (LDIF) editor. Each editor sends only its own draft: assertions and ZPR Config
 use `POST /api/policy/assistant` with `editor` set to `assertion` or
@@ -809,6 +808,23 @@ key, so Control Room never calls the Simulator. Suggested replacement text is
 shown as a code block with an **Insert** button that places it at the cursor
 (replacing any selection) as an ordinary, undoable unsaved edit; nothing is
 saved, staged, published or activated by the assistant.
+
+All assistants use `assistant-core.js` for conversations, model/token settings,
+usage, pending/error rendering, safe code blocks and pane collapse. Domain
+adapters retain their own independent endpoints and readiness checks. Changed
+source (including edit-then-restore), record, revision, organization or reset
+conversation invalidates obsolete responses and Insert/Apply actions.
+Text Insert supports Ctrl/Command+Z and redo, including an explicit fallback
+undo stack if native textarea editing is unavailable. Scenario and organization
+Apply expose **Undo AI change** and **Redo AI change**; these restore editor
+drafts only and refuse to overwrite later edits or another record/revision.
+
+Policy/Assertion assistants attach source (including its group definitions)
+and configured trusted-attribute definitions, not a People catalog, individual
+directory records, memberships, simulation profiles or runtime sessions.
+Their endpoints do not query Simulator or require it to be available. No
+additional group/attribute disclosure is added. Directory/Scenario payloads
+are unchanged and retain their existing source/context contracts.
 
 ### Task-specific assistant skills
 

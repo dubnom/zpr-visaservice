@@ -575,22 +575,61 @@ async function archiveScenario(scenarioID, organizationID, revision) {
 
 const scenarioAssistant = window.mountSimulatorDesignAssistant("scenario-assistant-slot", {
   scope: "scenario",
+  editorID: "scenario-editor-dialog",
   applyLabel: "Apply scenario draft",
   emptyMessage: "Ask for a scenario outline, step plan, or review of this draft.",
   getContext: () => ({
     organization_id: scenarioEditorOrganization,
     scenario: scenarioEditorJsonDirty ? window.peekScenarioSourceEditor() : readScenarioEditorForm(),
+    source: document.getElementById("scenario-editor-source").value,
+    revision: scenarioEditorArtifact?.revision,
+    viewing: scenarioEditorViewing,
   }),
   onApply: (proposal) => {
     const scenario = proposal.scenario;
     if (!scenario) throw new Error("Claude did not return a scenario draft.");
     if (scenarioEditorArtifact && scenario.id !== scenarioEditorArtifact.id) throw new Error("The proposal changed the existing scenario ID.");
+    const before = scenarioEditorJsonDirty ? window.peekScenarioSourceEditor() : readScenarioEditorForm();
+    const previousSource = document.getElementById("scenario-editor-source").value;
+    const previousJsonDirty = scenarioEditorJsonDirty;
+    const previousDirty = scenarioEditorDirty;
+    const previousSummary = scenarioEditorSummary;
+    const organization = scenarioEditorOrganization;
+    const artifact = scenarioEditorArtifact;
+    const revision = artifact?.revision;
+    const viewing = scenarioEditorViewing;
+    const current = () => JSON.stringify({ form: readScenarioEditorForm(), source: document.getElementById("scenario-editor-source").value, rawDirty: scenarioEditorJsonDirty });
+    let expected;
+    const restore = (value, text, rawDirty, dirty, summary) => {
+      if (scenarioEditorOrganization !== organization || scenarioEditorArtifact !== artifact || artifact?.revision !== revision || scenarioEditorViewing !== viewing || current() !== expected) {
+        throw new Error("The scenario changed after the AI edit. Undo/redo is no longer available.");
+      }
+      renderScenarioEditor(value);
+      document.getElementById("scenario-editor-source").value = text;
+      scenarioEditorJsonDirty = rawDirty;
+      window.renderScenarioSourceEditor?.();
+      scenarioEditorDirty = dirty;
+      scenarioEditorSummary = summary;
+      scenarioEditorAnalysisVersion++;
+      setScenarioAnalyzeState("pending");
+      updateScenarioEditorActions();
+      setScenarioEditorStatus("AI change restored as an unsaved editor change.");
+      expected = current();
+    };
     scenario.organization_id = scenarioEditorOrganization;
     renderScenarioEditor(scenario);
     scenarioEditorDirty = true;
+    scenarioEditorAnalysisVersion++;
+    setScenarioAnalyzeState("pending");
     scenarioEditorSummary = "Claude-assisted scenario draft";
     setScenarioEditorStatus("Claude proposal applied to the editor. Review and save it as a draft.");
     updateScenarioEditorActions();
+    const appliedSource = document.getElementById("scenario-editor-source").value;
+    expected = current();
+    return {
+      undo: () => restore(before, previousSource, previousJsonDirty, previousDirty, previousSummary),
+      redo: () => restore(scenario, appliedSource, false, true, "Claude-assisted scenario draft"),
+    };
   },
 });
 

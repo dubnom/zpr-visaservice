@@ -7419,7 +7419,198 @@ function mockEditorAssistant(api, path, answer, requests, statusPath = path) {
   if (statusPath !== path) api.handlers.set(statusPath, async (route) => route.fulfill({ json: { ready: true, model: "test-model", models: ["test-model"] } }));
 }
 
-test("GUI gateway editor AI Assistant is opt-in, sends the draft, and inserts suggestions undoably", async ({ page, appURL, api }) => {
+test("AI shared shell defaults to collapsed options and safe, undoable insertion including fallback redo", async ({ page, appURL, api }) => {
+  await page.goto(appURL + "/#map");
+  await page.evaluate(() => {
+    const pane = document.createElement("aside");
+    pane.id = "test-assistant";
+    pane.style.cssText = "position:fixed;inset:20px;z-index:10000;background:white;overflow:auto";
+    pane.innerHTML = '<div class="assistant-heading"><span class="assistant-state"></span></div>';
+    const source = document.createElement("textarea");
+    source.id = "test-ai-source";
+    source.value = "original";
+    document.body.prepend(pane, source);
+    window.testAI = window.ZPRAssistant.mount({
+      pane, prefix: "test-ai", getContext: () => ({ source: source.value }), getTarget: () => source,
+      request: async (conversation) => {
+        window.testAIRequest = conversation;
+        return { answer: '<img src=x onerror=alert(1)>\n```\nreplacement\n```', input_tokens: 12, output_tokens: 8 };
+      },
+      watch: (invalidate) => source.addEventListener("input", invalidate),
+    });
+    window.testAI.setStatus({ ready: true, model: "test-model", models: ["test-model", "second-model"] });
+    pane.append(source);
+  });
+  const pane = page.locator("#test-assistant");
+  await expect(pane.getByRole("checkbox")).toHaveCount(0);
+  await expect(pane.getByLabel("Model", { exact: true })).toBeHidden();
+  await expect(pane.getByLabel("Max tokens", { exact: true })).toBeHidden();
+  await pane.getByText("Model and max tokens", { exact: true }).click();
+  await expect(pane.getByLabel("Max tokens", { exact: true })).toBeVisible();
+  await pane.getByLabel("Model", { exact: true }).selectOption("second-model");
+  await pane.getByLabel("Max tokens", { exact: true }).selectOption("2400");
+  await expect(pane.getByRole("textbox", { name: "Message" })).toHaveAttribute("placeholder", "How can I help?");
+  await pane.getByRole("textbox", { name: "Message" }).fill("Help");
+  await pane.getByRole("button", { name: "Send", exact: true }).click();
+  await expect(pane.locator("img")).toHaveCount(0);
+  await expect(pane.locator(".assistant-usage")).toContainText("12 input · 8 output");
+  expect(await page.evaluate(() => window.testAIRequest)).toEqual({ messages: [{ role: "user", content: "Help" }], model: "second-model", max_tokens: 2400 });
+  const source = page.locator("#test-ai-source");
+  await source.evaluate((element) => element.setSelectionRange(0, element.value.length));
+  await source.evaluate((element) => { element.maxLength = 4; });
+  await pane.getByRole("button", { name: "Insert", exact: true }).click();
+  await expect(pane.locator(".assistant-error")).toContainText("size limit");
+  await expect(source).toHaveValue("original");
+  await source.evaluate((element) => { element.removeAttribute("maxlength"); element.readOnly = true; });
+  await pane.getByRole("button", { name: "Insert", exact: true }).click();
+  await expect(pane.locator(".assistant-error")).toContainText("read-only");
+  await source.evaluate((element) => { element.readOnly = false; });
+  await page.evaluate(() => { document.execCommand = () => false; });
+  await pane.getByRole("button", { name: "Insert", exact: true }).click();
+  await expect(source).toHaveValue("replacement");
+  await source.press("ControlOrMeta+z");
+  await expect(source).toHaveValue("original");
+  await source.press("ControlOrMeta+Shift+z");
+  await expect(source).toHaveValue("replacement");
+  await pane.getByRole("button", { name: "Insert", exact: true }).click();
+  await expect(pane.locator(".assistant-error")).toContainText("editor changed after this suggestion");
+  await expect(source).toHaveValue("replacement");
+  await pane.getByRole("button", { name: "Clear", exact: true }).click();
+  await expect(pane.locator(".assistant-usage")).toContainText("0 input · 0 output");
+});
+
+test("AI Policy pending conversation cannot leak a response into a selected Assertion record", async ({ page, appURL, api }) => {
+  Object.assign(api.policy, { assistant_ready: true, assistant_model: "test-model", assistant_models: ["test-model"] });
+  let complete;
+  api.handlers.set("/api/policy/assistant", async (route) => {
+    await new Promise((resolve) => { complete = resolve; });
+    return route.fulfill({ json: { answer: "Obsolete policy response", input_tokens: 40, output_tokens: 20 } });
+  });
+  await page.goto(appURL + "/#policy");
+  await page.locator("#assistant-question").fill("Review policy");
+  await page.locator("#assistant-send").click();
+  await expect.poll(() => typeof complete).toBe("function");
+  await openPolicyPicker(page);
+  await page.locator('[data-record-id="test-assertions"]').click();
+  await expect(page.locator("#policy-assertion-editor")).toBeVisible();
+  complete();
+  await page.route("**/api/policy/assistant", (route) => route.fulfill({ json: { answer: "Fresh assertion response", input_tokens: 2, output_tokens: 3 } }));
+  await page.locator("#assistant-question").fill("Review assertion");
+  await page.locator("#assistant-send").click();
+  await expect(page.locator("#assistant-messages")).toContainText("Fresh assertion response");
+  await expect(page.locator("#assistant-messages")).not.toContainText("Obsolete policy response");
+  await expect(page.locator("#assistant-usage")).toContainText("2 input · 3 output");
+  expect([...api.counts.keys()].filter((path) => path.startsWith("/api/simulator"))).toEqual([]);
+});
+
+for (const outcome of ["success", "error"]) {
+  test(`AI Config rejects delayed ${outcome} after edit-return and permits a fresh request`, async ({ page, appURL, api }) => {
+    Object.assign(api.policy, { assistant_ready: true, assistant_model: "test-model", assistant_models: ["test-model"] });
+    let complete;
+    let fresh = false;
+    api.handlers.set("/api/policy/assistant", async (route) => {
+      if (fresh) return route.fulfill({ json: { answer: "Current response", input_tokens: 2, output_tokens: 3 } });
+      await new Promise((resolve) => { complete = resolve; });
+      return route.fulfill(outcome === "error"
+        ? { status: 503, json: { error: "Obsolete error" } }
+        : { json: { answer: "Obsolete success", input_tokens: 40, output_tokens: 20 } });
+    });
+    await page.goto(appURL + "/#zpr-config");
+    const source = page.locator("#zpr-config-source");
+    await source.fill('[visa_service]\ndock_node = "node"\n');
+    const original = await source.inputValue();
+    const pane = page.locator("#editor-assistant-zpr-config-pane");
+    const question = pane.getByRole("textbox", { name: "Message" });
+    await question.fill("Explain");
+    await pane.getByRole("button", { name: "Send", exact: true }).click();
+    await expect(pane.locator(".assistant-state")).toHaveText("Thinking");
+    await expect.poll(() => typeof complete).toBe("function");
+    await source.fill(original + "# changed\n");
+    await source.fill(original);
+    complete();
+    fresh = true;
+    await expect(pane.locator(".assistant-error")).toContainText("editor changed while Claude");
+    await question.fill("Explain current");
+    await pane.getByRole("button", { name: "Send", exact: true }).click();
+    await expect(pane.locator(".assistant-message.assistant")).toContainText("Current response");
+    await expect(pane).not.toContainText("Obsolete");
+    await expect(pane.locator(".assistant-usage")).toContainText("2 input · 3 output");
+    expect([...api.counts.keys()].filter((path) => path.startsWith("/api/simulator"))).toEqual([]);
+  });
+}
+
+test("AI Scenario Apply supports exact raw Undo and Redo without saving or running", async ({ page, appURL, api }) => {
+  let proposals = 0;
+  api.handlers.set("/api/simulator/design-assistant", async (route) => {
+    const request = route.request().postDataJSON();
+    proposals++;
+    return route.fulfill({ json: { answer: "Proposal", proposal: { scenario: { ...request.scenario, name: proposals === 1 ? "AI changed name" : "Second AI change" } } } });
+  });
+  await openRawScenario(page, appURL, api, true);
+  const source = page.locator("#scenario-editor-source");
+  const original = await source.inputValue();
+  await source.fill(JSON.stringify(JSON.parse(original)));
+  const exact = await source.inputValue();
+  const pane = page.locator("#scenario-assistant-slot");
+  await expect(pane.locator("[data-assistant-model]")).toBeHidden();
+  await pane.locator("[data-assistant-question]").fill("Review");
+  await pane.locator("[data-assistant-submit]").click();
+  await pane.locator("[data-assistant-apply]").click();
+  await expect(page.locator("#scenario-editor-name")).toHaveValue("AI changed name");
+  const applied = await source.inputValue();
+  await pane.getByRole("button", { name: "Undo AI change", exact: true }).click();
+  await expect(source).toHaveValue(exact);
+  await pane.getByRole("button", { name: "Redo AI change", exact: true }).click();
+  await expect(source).toHaveValue(applied);
+  await pane.locator("[data-assistant-question]").fill("Review again");
+  await pane.locator("[data-assistant-submit]").click();
+  await pane.locator("[data-assistant-apply]").click();
+  await expect(page.locator("#scenario-editor-name")).toHaveValue("Second AI change");
+  const second = await source.inputValue();
+  await pane.getByRole("button", { name: "Undo AI change", exact: true }).click();
+  await expect(source).toHaveValue(applied);
+  await pane.getByRole("button", { name: "Undo AI change", exact: true }).click();
+  await expect(source).toHaveValue(exact);
+  await pane.getByRole("button", { name: "Redo AI change", exact: true }).click();
+  await expect(source).toHaveValue(applied);
+  await pane.getByRole("button", { name: "Redo AI change", exact: true }).click();
+  await expect(source).toHaveValue(second);
+  await source.fill(second + "\n");
+  await pane.getByRole("button", { name: "Undo AI change", exact: true }).click();
+  await expect(pane.locator(".assistant-error")).toContainText("Undo/redo is no longer available");
+  await expect(source).toHaveValue(second + "\n");
+  expect(api.counts.get("/api/simulator/scenarios/run") || 0).toBe(0);
+  expect(api.counts.get("/api/simulator/organizations/alpha/scenarios") || 0).toBe(0);
+});
+
+test("AI organization Apply is undoable and never saves or publishes the directory", async ({ page, appURL, api }) => {
+  const endpoint = "/api/simulator/organizations/alpha/directory";
+  const original = "dn: cn=Operators,dc=alpha,dc=test\ncn: Operators\n";
+  const proposed = "dn: cn=Reviewers,dc=alpha,dc=test\ncn: Reviewers\n";
+  const mutations = [];
+  api.handlers.set(endpoint, (route) => {
+    if (route.request().method() !== "GET") mutations.push(route.request().method());
+    return route.fulfill({ json: { revision: 1, published_revision: 0, content: { base_dn: "dc=alpha,dc=test", ldif: original } } });
+  });
+  api.handlers.set(endpoint + "/revisions", (route) => route.fulfill({ json: [{ revision: 1, summary: "Initial" }] }));
+  api.handlers.set("/api/simulator/assistant/status", (route) => route.fulfill({ json: { ready: true, model: "test-model", models: ["test-model"] } }));
+  api.handlers.set("/api/simulator/design-assistant", (route) => route.fulfill({ json: { answer: "Proposal", proposal: { directory_ldif: proposed } } }));
+  await page.goto(appURL + "/organizations.html");
+  await page.locator("#organization-design-assistant").click();
+  const pane = page.locator("#organization-assistant-slot");
+  await pane.locator("[data-assistant-question]").fill("Review");
+  await pane.locator("[data-assistant-submit]").click();
+  await pane.locator("[data-assistant-apply]").click();
+  await expect(page.locator("#directory-editor-source")).toHaveValue(proposed);
+  await pane.getByRole("button", { name: "Undo AI change", exact: true }).click();
+  await expect(page.locator("#directory-editor-source")).toHaveValue(original);
+  await pane.getByRole("button", { name: "Redo AI change", exact: true }).click();
+  await expect(page.locator("#directory-editor-source")).toHaveValue(proposed);
+  expect(mutations).toEqual([]);
+  expect(api.counts.get(endpoint + "/publish") || 0).toBe(0);
+});
+
+test("GUI gateway editor AI Assistant is ready without opt-in, sends the draft, and inserts suggestions undoably", async ({ page, appURL, api }) => {
   api.handlers.set("/api/gateways/contracts", async (route) => route.fulfill({ json: { organization_id: "alpha", contracts: [
     { organization_id: "alpha", instance_id: "public-egress", adapter_cn: "gateway-public-egress", service_name: "public-egress.svc.zpr", external_network: "" },
   ] } }));
@@ -7434,8 +7625,8 @@ test("GUI gateway editor AI Assistant is opt-in, sends the draft, and inserts su
   await expect(pane).toBeVisible();
   await expect(pane.locator(".assistant-state")).toHaveText("Ready");
   const question = pane.getByRole("textbox", { name: "Message" });
-  await expect(question).toBeDisabled();
-  await pane.getByRole("checkbox", { name: "Use assistant" }).check();
+  await expect(question).toBeEnabled();
+  await expect(pane.getByRole("checkbox", { name: "Use assistant" })).toHaveCount(0);
   await question.fill("Add an origin");
   await pane.getByRole("button", { name: "Send" }).click();
   await expect(pane.locator(".assistant-code")).toHaveText('{"origin": "https://api.example.com"}');
@@ -7468,7 +7659,7 @@ test("GUI ZPR Config AI Assistant uses the policy assistant endpoint with the co
   await source.fill('[visa_service]\ndock_node = "node"\n');
   const pane = page.locator("#editor-assistant-zpr-config-pane");
   await expect(pane.locator(".assistant-state")).toHaveText("Ready");
-  await pane.getByRole("checkbox", { name: "Use assistant" }).check();
+  await expect(pane.getByRole("checkbox", { name: "Use assistant" })).toHaveCount(0);
   await pane.getByRole("textbox", { name: "Message" }).fill("Explain");
   await pane.getByRole("textbox", { name: "Message" }).press("ControlOrMeta+Enter");
   await expect(pane.locator(".assistant-message.assistant")).toContainText("Looks valid.");
@@ -7486,8 +7677,8 @@ test("GUI assertion editor shows the AI Assistant and sends the assertion source
   await expect(page.locator("#policy-assertion-editor")).toBeVisible();
   const pane = page.locator("#policy-assistant-pane");
   await expect(pane).toBeVisible();
-  await page.locator("#assistant-enabled").check();
-  await expect(page.locator("#assistant-question")).toHaveAttribute("placeholder", "Ask about these assertions");
+  await expect(page.locator("#assistant-enabled")).toHaveCount(0);
+  await expect(page.locator("#assistant-question")).toHaveAttribute("placeholder", "How can I help?");
   await page.locator("#assistant-question").fill("Check operators");
   await page.locator("#assistant-send").click();
   await expect(pane.locator(".assistant-code")).toHaveText('group "Operators" members >= 2;');
@@ -7510,7 +7701,7 @@ test("GUI Simulator directory editor has an AI Assistant using Simulator endpoin
   const pane = page.locator("#editor-assistant-directory-ldif-pane");
   await expect(pane).toBeVisible();
   await expect(pane.locator(".assistant-state")).toHaveText("Ready");
-  await pane.getByRole("checkbox", { name: "Use assistant" }).check();
+  await expect(pane.getByRole("checkbox", { name: "Use assistant" })).toHaveCount(0);
   await pane.getByRole("textbox", { name: "Message" }).fill("Add a group");
   await pane.getByRole("button", { name: "Send" }).click();
   await expect(pane.locator(".assistant-code")).toHaveText("cn: Reviewers");

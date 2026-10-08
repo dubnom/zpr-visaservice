@@ -120,6 +120,7 @@ let directoryEditorSaved = "";
 let directoryEditorSummary = "";
 let directoryEditorRevisions = [];
 let directoryEditorViewing = 0;
+window.getDirectoryAssistantContext = () => [directoryEditorOrganizationID, directoryEditorArtifact?.id, directoryEditorArtifact?.revision, directoryEditorViewing];
 
 function setDirectoryEditorStatus(message, state = "") {
   directoryEditorPage.setStatus(document.getElementById("directory-editor-status"), message, state === "saved" ? "success" : state);
@@ -155,10 +156,11 @@ function closeDirectoryEditor() {
   if (dialog.open) dialog.close();
 }
 
-async function openDirectoryEditor(organizationID) {
+async function openDirectoryEditor(organizationID, isCurrent = null, onLoaded = null) {
   const response = await fetch(`/api/simulator/organizations/${encodeURIComponent(organizationID)}/directory`, { cache: "no-store" });
   const artifact = await response.json();
   if (!response.ok) throw new Error(artifact.error || `HTTP ${response.status}`);
+  if (isCurrent && !isCurrent()) throw new Error("The assistant context changed before the directory loaded. Ask again.");
   directoryEditorArtifact = artifact;
   directoryEditorOrganizationID = organizationID;
   directoryEditorViewing = 0;
@@ -169,6 +171,7 @@ async function openDirectoryEditor(organizationID) {
   if (!dialog.open) dialog.show();
   window.scrollTo({ top: 0 });
   renderDirectoryEditor();
+  onLoaded?.();
   await refreshDirectoryRevisions();
 }
 
@@ -322,16 +325,46 @@ document.body.append(organizationDesignDialog);
 let organizationAssistantID = "";
 const organizationAssistant = window.mountSimulatorDesignAssistant("organization-assistant-slot", {
   scope: "organization",
+  editorID: "directory-editor-dialog",
   applyLabel: "Apply LDIF draft",
   emptyMessage: "Ask for organization, identity, group, service, or LDAP seed design advice.",
-  getContext: () => ({ organization_id: organizationAssistantID }),
-  onApply: async (proposal) => {
+  getContext: () => ({
+    organization_id: organizationAssistantID,
+    directory: directoryEditorOrganizationID === organizationAssistantID ? {
+      source: directoryEditorSource.value, revision: directoryEditorArtifact?.revision, viewing: directoryEditorViewing,
+    } : null,
+  }),
+  onApply: async (proposal, isCurrent) => {
     if (!proposal.directory_ldif) throw new Error("Claude did not return an LDIF proposal.");
-    await openDirectoryEditor(organizationAssistantID);
-    directoryEditorSource.value = proposal.directory_ldif;
-    directoryEditorSource.dispatchEvent(new Event("input", { bubbles: true }));
-    directoryEditorSummary = "Claude-assisted directory draft";
-    setDirectoryEditorStatus("Claude proposal loaded. Review it before saving or publishing.");
+    const organization = organizationAssistantID;
+    let history;
+    const insert = () => {
+      const before = directoryEditorSource.value;
+      const after = proposal.directory_ldif;
+      const previousSummary = directoryEditorSummary;
+      const revision = directoryEditorArtifact?.revision;
+      const viewing = directoryEditorViewing;
+      window.ZPRAssistant.editText(directoryEditorSource, after, true);
+      directoryEditorSummary = "Claude-assisted directory draft";
+      setDirectoryEditorStatus("Claude proposal loaded. Review it before saving or publishing.");
+      const restore = (expected, value, summary) => {
+        if (directoryEditorOrganizationID !== organization || directoryEditorArtifact?.revision !== revision || directoryEditorViewing !== viewing || directoryEditorSource.value !== expected || directoryEditorSource.disabled || directoryEditorSource.readOnly) {
+          throw new Error("The directory changed after the AI edit. Undo/redo is no longer available.");
+        }
+        window.ZPRAssistant.editText(directoryEditorSource, value, true);
+        directoryEditorSummary = summary;
+      };
+      history = {
+        undo: () => restore(after, before, previousSummary),
+        redo: () => restore(before, after, "Claude-assisted directory draft"),
+      };
+    };
+    if (directoryEditorOrganizationID === organization && document.getElementById("directory-editor-dialog").open) insert();
+    else {
+      if (!directoryEditorPage.confirmDiscard(directoryEditorDirty, "Open the proposed directory and discard unsaved changes in the other directory?")) throw new Error("AI apply cancelled; the directory is unchanged.");
+      await openDirectoryEditor(organization, isCurrent, insert);
+    }
+    return history;
   },
 });
 
@@ -345,6 +378,7 @@ designButton.addEventListener("click", () => {
   organizationDesignDialog.showModal();
 });
 organizationDesignDialog.querySelector("[data-close-design-assistant]").addEventListener("click", () => organizationDesignDialog.close());
+organizationDesignDialog.addEventListener("close", () => organizationAssistant.reset());
 
 const organizationSwitchDialog = document.createElement("dialog");
 organizationSwitchDialog.id = "organization-switch-dialog";

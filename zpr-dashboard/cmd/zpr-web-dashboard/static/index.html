@@ -14,8 +14,8 @@
     <link rel="stylesheet" href="/diagnostics.css?v=2">
     <link rel="stylesheet" href="/gateways.css?v=3">
     <link rel="stylesheet" href="/provisioning.css?v=3">
-    <link rel="stylesheet" href="/editor-assistant.css?v=4">
-    <script src="/sidebar.js?v=37" defer></script>
+    <link rel="stylesheet" href="/editor-assistant.css?v=5">
+    <script src="/sidebar.js?v=38" defer></script>
     <script src="/trusted-source.js?v=4" defer></script>
     <script src="/policy-record-icons.js?v=1" defer></script>
   </head>
@@ -280,19 +280,6 @@
               </section>
               <aside class="policy-assistant-pane" id="policy-assistant-pane" aria-label="AI Assistant">
                 <div class="assistant-heading"><h3>AI Assistant</h3><span id="assistant-state" class="assistant-state">Not configured</span><button id="policy-assistant-toggle" class="pane-collapse-toggle" type="button" aria-label="Collapse AI Assistant" aria-controls="assistant-messages" aria-expanded="true" title="Collapse AI Assistant"><span class="pane-toggle-icon" aria-hidden="true"></span><span class="pane-toggle-label" aria-hidden="true">AI Assistant</span></button></div>
-                <div class="assistant-settings">
-                  <label class="assistant-enable" for="assistant-enabled"><input id="assistant-enabled" type="checkbox" disabled> Use assistant</label>
-                  <label for="assistant-model">Model<select id="assistant-model" disabled></select></label>
-                  <label for="assistant-max-tokens">Max output<select id="assistant-max-tokens" disabled><option value="300">300 tokens</option><option value="600">600 tokens</option><option value="1200" selected>1,200 tokens</option><option value="2400">2,400 tokens</option></select></label>
-                  <span id="assistant-usage" class="assistant-usage" role="status">Session: 0 input · 0 output tokens</span>
-                </div>
-                <p id="assistant-disclosure" class="assistant-disclosure">When enabled, submitting a question sends the current policy and chat history to Anthropic.</p>
-                <div id="assistant-messages" class="assistant-messages" role="log" aria-live="polite"><p class="assistant-empty">No conversation yet.</p></div>
-                <form id="assistant-form" class="assistant-form">
-                  <label for="assistant-question">Message</label>
-                  <textarea id="assistant-question" rows="3" maxlength="12000" placeholder="Ask about this policy" disabled></textarea>
-                  <button id="assistant-send" class="button button-refresh" type="submit" disabled>Send</button>
-                </form>
               </aside>
             </div>
           </section>
@@ -553,17 +540,18 @@
     <script src="/vendor/pluralize.js?v=8.0.0" defer></script>
     <script src="/operator-request.js?v=1" defer></script>
     <script src="/editor-page.js?v=10" defer></script>
-    <script src="/app.js?v=113" defer></script>
+    <script src="/assistant-core.js?v=1" defer></script>
+    <script src="/app.js?v=114" defer></script>
     <script src="/log-format.js?v=1" defer></script>
     <script src="/machine-logs.js?v=22" defer></script>
     <script src="/assertions.js?v=17" defer></script>
-    <script src="/config-editor.js?v=15" defer></script>
-    <script src="/gateways.js?v=11" defer></script>
+    <script src="/config-editor.js?v=16" defer></script>
+    <script src="/gateways.js?v=12" defer></script>
     <script src="/provisioning-contract.js?v=2" defer></script>
     <script src="/provisioning.js?v=3" defer></script>
     <script src="/provisioning-registry.js?v=4" defer></script>
     <script src="/operator-login.js?v=7" defer></script>
-    <script src="/editor-assistant.js?v=2" defer></script>
+    <script src="/editor-assistant.js?v=3" defer></script>
     <script src="/editor-search.js?v=7" defer></script>
     <script src="/diagnostics.js?v=3" defer></script>
       <script src="/security-review.js?v=13" defer></script>

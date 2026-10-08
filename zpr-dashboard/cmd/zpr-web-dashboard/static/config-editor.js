@@ -23,6 +23,7 @@
     source.value, catalog?.organization_id, record?.id,
     record?.current_revision, browsingRevision,
   ]);
+  window.getConfigAssistantContext = () => [catalog?.organization_id, record?.id, record?.current_revision, browsingRevision];
   const surface = page.createSourceSurface({
     source, highlight: byId("zpr-config-highlight"), gutter: byId("zpr-config-gutter"), language: "toml", label: "Configuration",
   });

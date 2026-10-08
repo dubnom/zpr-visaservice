@@ -43,3 +43,12 @@
 .editor-assistant-pane .assistant-settings .assistant-enable { display: flex; align-items: center; gap: 6px; color: var(--ink-soft); }
 .editor-assistant-pane .assistant-settings select { width: 100%; min-height: 30px; padding: 4px 6px; border: 1px solid var(--line); border-radius: 2px; background: white; color: var(--ink); font: 10px var(--sans); }
 .editor-assistant-pane .assistant-form label { color: var(--muted); font: 9px var(--mono); }
+.assistant-options { margin: 10px 0; }
+.assistant-options > summary { cursor: pointer; color: var(--ink-soft); font: 11px var(--sans); }
+.assistant-options:not([open]) > .assistant-settings { display: none; }
+.assistant-actions { display: flex; flex-wrap: wrap; gap: 6px; }
+.assistant-actions > [hidden] { display: none; }
+.policy-assistant-pane > .assistant-body { display: flex; flex: 1; min-width: 0; min-height: 0; flex-direction: column; }
+.design-assistant[data-collapsed="true"] > .assistant-body { display: none; }
+.design-assistant .assistant-body { display: grid; gap: 8px; }
+.design-assistant .assistant-messages { max-height: 340px; overflow: auto; }

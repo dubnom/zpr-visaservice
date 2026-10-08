@@ -1716,6 +1716,23 @@ terminal closes. Applying a proposal updates only the unsaved editor.
 Responses/proposals for a changed draft or reset conversation cannot overwrite
 newer work. Save, Publish, and Run remain separate explicit operations.
 
+All editor and design assistants share `assistant-core.js`: ready-to-use
+controls without an opt-in checkbox, initially collapsed **Model and max
+tokens** preferences, the **How can I help?** prompt, bounded conversations,
+usage counters, pending/errors, safe text rendering and pane collapse.
+Text suggestions are undoable with Ctrl/Command+Z (with redo and a fallback
+edit history when native editing is unavailable). Structured Scenario and
+organization-directory Apply offer **Undo AI change**/**Redo AI change**,
+restore unsaved drafts only, and reject history actions after conflicting
+source, record or revision changes. Applying never saves, publishes, activates
+or runs anything.
+
+Policy/Assertion context consists of the selected source/group definitions,
+configured trusted-attribute definitions and operator-written conversation.
+It does not load a People catalog, individual user records, memberships or
+Simulator state. A regression exercises both endpoints with unavailable
+Simulator configuration. Directory and Scenario request payloads are unchanged.
+
 Rescan LDAP, Format, Discard, Evaluate & Test, Save, Save As, and Compile & Stage
 share a responsive control strip directly above the source editor. Evaluate &
 Test runs ZPLC before the identity simulation. Save and Save As automatically

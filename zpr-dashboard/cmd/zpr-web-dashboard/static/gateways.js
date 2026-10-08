@@ -22,6 +22,7 @@
     state.selected?.adapter_cn, state.selected?.service_name, state.revision,
   ]);
   page.placeStatus(message);
+  window.getGatewayAssistantContext = () => [state.selected?.organization_id, state.selected?.instance_id, state.selected?.adapter_cn, state.selected?.service_name, state.revision];
   const surface = page.createSourceSurface({
     source, highlight, gutter, language: "json", label: "Gateway draft",
   });
