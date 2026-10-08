@@ -18,5 +18,43 @@ cert_path = ""
 l4protocol = "iana.TCP"
 port = 8080
 
+[protocols.ping]
+l4protocol = "iana.ICMP6"
+icmp_type = "request-response"
+icmp_codes = [128, 129]
+
+[services.PingableVs]
+protocol = "ping"
+
+[services.PingableNode]
+protocol = "ping"
+
+[services.A1Svc]
+protocol = "ping"
+
+[services.A2Svc]
+protocol = "ping"
+
+[services.A3Svc]
+protocol = "ping"
+
+[services.AttributeService]
+protocol = "ping"
+
+[services.ControlRoom]
+protocol = "ping"
+
+[services.ControlService]
+protocol = "ping"
+
+[services.EchoService]
+protocol = "ping"
+
+[services.MetricsService]
+protocol = "ping"
+
+[services.PolicyService]
+protocol = "ping"
+
 [services.EchoWeb]
 protocol = "benchmark_http"
