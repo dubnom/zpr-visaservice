@@ -1035,7 +1035,7 @@ func simulatorScenarioExecutorForManifest(ctx context.Context, manifest simulato
 			if err != nil {
 				return "", err
 			}
-			serviceAddress, err = resolveScenarioDNSAddress(ctx, step.Machine, manifest.DNSServer, dnsName)
+			serviceAddress, err = resolveScenarioDNSAddress(ctx, step.Machine, step.Component, manifest.DNSServer, dnsName)
 			if err != nil {
 				return "", err
 			}
@@ -1057,6 +1057,13 @@ func simulatorScenarioExecutorForManifest(ctx context.Context, manifest simulato
 	case "resolve_dns":
 		if err := requireScenarioWorkload(step.Machine, step.Component); err != nil {
 			return "", err
+		}
+		routeCommand, err := scenarioDNSRouteCommand(step.Machine, step.Component, manifest.DNSServer)
+		if err != nil {
+			return "", err
+		}
+		if output, err := scenarioCommand(ctx, routeCommand.Path, routeCommand.Args[1:]...); err != nil {
+			return output, fmt.Errorf("route DNS server through workload adapter: %w", err)
 		}
 		output, err := scenarioCommand(ctx, "docker", "exec", machineContainerName(step.Machine), "dig", "+tcp", "+time=2", "+tries=1", "+short", "AAAA", "@"+manifest.DNSServer, step.Target)
 		if err != nil {
@@ -1163,7 +1170,14 @@ func scenarioServiceDNSName(manifest simulatorManifest, workload string) (string
 	return "", fmt.Errorf("organization has no DNS-published service for workload %q", workload)
 }
 
-func resolveScenarioDNSAddress(ctx context.Context, machineID, server, dnsName string) (string, error) {
+func resolveScenarioDNSAddress(ctx context.Context, machineID, workload, server, dnsName string) (string, error) {
+	routeCommand, err := scenarioDNSRouteCommand(machineID, workload, server)
+	if err != nil {
+		return "", err
+	}
+	if output, err := scenarioCommand(ctx, routeCommand.Path, routeCommand.Args[1:]...); err != nil {
+		return "", fmt.Errorf("route DNS server through workload adapter: %s: %w", output, err)
+	}
 	output, err := scenarioCommand(ctx, "docker", "exec", machineContainerName(machineID), "dig", "+tcp", "+time=2", "+tries=1", "+short", "AAAA", "@"+server, dnsName)
 	if err != nil {
 		return "", fmt.Errorf("DNS lookup failed for %s: %w", dnsName, err)
@@ -1175,6 +1189,18 @@ func resolveScenarioDNSAddress(ctx context.Context, machineID, server, dnsName s
 		}
 	}
 	return "", fmt.Errorf("DNS lookup returned no IPv6 address for %s", dnsName)
+}
+
+func scenarioDNSRouteCommand(machineID, workload, server string) (*exec.Cmd, error) {
+	workloadConfig, configured := machineWorkload(workload)
+	if !configured {
+		return nil, fmt.Errorf("workload %q has no TUN configuration", workload)
+	}
+	address := net.ParseIP(server)
+	if address == nil || address.To4() != nil {
+		return nil, fmt.Errorf("DNS server %q is not an IPv6 address", server)
+	}
+	return exec.Command("docker", "exec", machineContainerName(machineID), "ip", "-6", "route", "replace", address.String()+"/128", "dev", workloadConfig.tun), nil
 }
 
 func publishScenarioServiceDNSRecord(ctx context.Context, manifest simulatorManifest, workload, address string) error {

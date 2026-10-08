@@ -103,6 +103,22 @@ func TestScenarioCleanupSkipsStoppedMachineWorkload(t *testing.T) {
 	}
 }
 
+func TestScenarioDNSRouteUsesSelectedWorkloadTunnel(t *testing.T) {
+	command, err := scenarioDNSRouteCommand("machine-03", "finance-client", "fd00:1:1::1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got, want := strings.Join(command.Args, " "), "docker exec zpr-machine-03 ip -6 route replace fd00:1:1::1/128 dev tun0"; got != want {
+		t.Fatalf("DNS route command = %q, want %q", got, want)
+	}
+	if _, err := scenarioDNSRouteCommand("machine-03", "unknown", "fd00:1:1::1"); err == nil {
+		t.Fatal("unknown DNS workload accepted")
+	}
+	if _, err := scenarioDNSRouteCommand("machine-03", "finance-client", "192.0.2.53"); err == nil {
+		t.Fatal("IPv4 DNS server accepted for an IPv6 route")
+	}
+}
+
 func TestScenarioCleanupReportsOfflineRunningController(t *testing.T) {
 	dir := t.TempDir()
 	if err := os.WriteFile(filepath.Join(dir, "docker"), []byte("#!/bin/sh\n[ \"$1\" = ps ] || { echo 'unexpected command' >&2; exit 1; }\nprintf 'running\\n'\n"), 0700); err != nil {
