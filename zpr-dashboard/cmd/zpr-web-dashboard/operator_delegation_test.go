@@ -186,7 +186,7 @@ func TestOperatorDelegationRealTLSLoginToAuditedEnrollment(t *testing.T) {
 		t.Fatal(err)
 	}
 	mux.Handle("/", revalidateStatic(http.FileServer(http.FS(staticRoot))))
-	room.Config.Handler = security.protect(mux)
+	room.Config.Handler = securityHeaders(security.protect(mux))
 	room.TLS = security.tls.Clone()
 	room.StartTLS()
 	defer room.Close()
@@ -301,8 +301,9 @@ func TestOperatorDelegationRealTLSLoginToAuditedEnrollment(t *testing.T) {
 	if code, _, _ := do("POST", enrollment.APIPrefix+"invitations/"+created.Invitation.ID+"/approve", []byte(`{"organization":"production","revision":1,"key_fingerprint":"unknown","reason":"test"}`), session.CSRF); code != 403 {
 		t.Fatalf("browser expanded backend permission: %d", code)
 	}
-	code, data, _ = do("POST", enrollment.APIPrefix+"invitations/"+created.Invitation.ID+"/cancel", []byte(`{"organization":"production"}`), session.CSRF)
-	if code != 200 || !bytes.Contains(data, []byte(`"state":"cancelled"`)) {
+	code, data, _ = do("POST", enrollment.APIPrefix+"invitations/"+created.Invitation.ID+"/cancel", []byte(`{"organization":"production","revision":1,"key_fingerprint":"","reason":"Invitation no longer needed"}`), session.CSRF)
+	if code != 200 || !bytes.Contains(data, []byte(`"state":"cancelled"`)) ||
+		!bytes.Contains(data, []byte(`"decision_reason":"Invitation no longer needed"`)) {
 		t.Fatalf("cancel=%d %s", code, data)
 	}
 	if code, _, _ := do("GET", operatordelegation.Prefix+"catalog", nil, ""); code != 403 {

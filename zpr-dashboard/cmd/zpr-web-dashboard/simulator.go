@@ -10,6 +10,7 @@ import (
 	"log"
 	"net"
 	"net/http"
+	"net/url"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -1075,20 +1076,38 @@ func readControlRoomSnapshot() (snapshot, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
 	defer cancel()
 	endpoint := strings.TrimRight(envOr("SIMULATOR_CONTROL_ROOM_URL", "http://127.0.0.1:8787"), "/")
+	client := &http.Client{Timeout: 2 * time.Second, CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }}
+	serviceEndpoint := strings.TrimSpace(os.Getenv("SIMULATOR_OPERATOR_SERVICE_URL"))
+	if serviceEndpoint != "" {
+		u, err := url.Parse(serviceEndpoint)
+		if err != nil || u.Scheme != "https" || u.Host == "" || u.User != nil || u.Path != "" ||
+			u.RawQuery != "" || u.ForceQuery || u.Fragment != "" {
+			return snapshotData, errors.New("Simulator operator service must be an exact HTTPS origin")
+		}
+		serverName := envOr("SIMULATOR_OPERATOR_SERVICE_TLS_SERVER_NAME", u.Hostname())
+		transport, message := mutualTLSClientTransport(os.Getenv("SIMULATOR_OPERATOR_CLIENT_CERT_FILE"),
+			os.Getenv("SIMULATOR_OPERATOR_CLIENT_KEY_FILE"), os.Getenv("SIMULATOR_OPERATOR_SERVICE_CA_FILE"), serverName)
+		if transport == nil {
+			return snapshotData, errors.New(message)
+		}
+		defer transport.CloseIdleConnections()
+		client.Transport = transport
+		endpoint = serviceEndpoint
+	}
 	request, err := http.NewRequestWithContext(ctx, http.MethodGet, endpoint+"/api/snapshot", nil)
 	if err != nil {
 		return snapshotData, err
 	}
-	if host := strings.TrimSpace(os.Getenv("SIMULATOR_CONTROL_ROOM_HOST")); host != "" {
+	if host := strings.TrimSpace(os.Getenv("SIMULATOR_CONTROL_ROOM_HOST")); serviceEndpoint == "" && host != "" {
 		request.Host = host
 	}
-	response, err := (&http.Client{Timeout: 2 * time.Second}).Do(request)
+	response, err := client.Do(request)
 	if err != nil {
 		return snapshotData, err
 	}
 	defer response.Body.Close()
 	if response.StatusCode != http.StatusOK {
-		return snapshotData, fmt.Errorf("Control Room returned %s", response.Status)
+		return snapshotData, fmt.Errorf("Operator snapshot endpoint returned %s", response.Status)
 	}
 	if err := json.NewDecoder(response.Body).Decode(&snapshotData); err != nil {
 		return snapshotData, err

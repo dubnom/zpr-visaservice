@@ -23,7 +23,8 @@
   const input = (name) => form.elements.namedItem(name);
   const active = () => location.hash === "#provisioning-adapters";
   const canCreate = () => active() && location.protocol === "https:" && session &&
-    session.identity.permissions.includes("create") && session.identity.organizations.includes(input("organization").value) &&
+    session.identity.permissions.includes("create") &&
+    (session.identity.organizations.includes("*") || session.identity.organizations.includes(input("organization").value)) &&
     catalog?.gui_create_organizations?.includes(input("organization").value);
 
   function updateControls() {
@@ -43,7 +44,7 @@
     previous.remove();
     if (secretVisible) {
       secretVisible = false;
-      createStatus.textContent = `${confirmedSummary}; one-time code cleared. Read endpoints cannot recover it. If it was not securely delivered, use certificate-authorized cancellation or wait for expiry before creating a replacement.`;
+      createStatus.textContent = `${confirmedSummary}; one-time code cleared. Read endpoints cannot recover it. If it was not securely delivered, use authorized cancellation from fresh Details, certificate administration, or expiry before creating a replacement.`;
     }
     updateControls();
   }
@@ -137,7 +138,7 @@
 
   function markUncertain(asset) {
     uncertain = asset;
-    createStatus.textContent = `Creation outcome uncertain for ${asset.organization} / ${asset.asset_id} (${asset.name}). An invitation may exist, but no usable code was confirmed. Do not retry. Read the registry and resolve any existing invitation using certificate-authorized cancellation or expiry. Reloading does not resolve this uncertainty.`;
+    createStatus.textContent = `Creation outcome uncertain for ${asset.organization} / ${asset.asset_id} (${asset.name}). An invitation may exist, but no usable code was confirmed. Do not retry. Read the registry and resolve any existing invitation using authorized cancellation from fresh Details, certificate administration, or expiry. Reloading does not resolve this uncertainty.`;
     updateControls();
   }
 
@@ -159,28 +160,20 @@
     updateControls();
     const timer = setTimeout(() => attempt.controller.abort(), 20000);
     try {
-      const response = await fetch("/api/enrollment/v1/invitations", {
-        method: "POST", cache: "no-store", credentials: "same-origin", redirect: "error", signal: attempt.controller.signal,
-        headers: { Accept: "application/json", "Content-Type": "application/json", "X-ZPR-CSRF": csrf },
-        body: JSON.stringify(asset),
-      });
+      const response = await provisioningContract.postMutation("/api/enrollment/v1/invitations", asset, csrf, attempt.controller.signal, 201);
       if (attempt.controller.signal.aborted) return;
-      // Only explicit pre-commit rejections are safe to present as not created.
-      if ([400, 401, 403, 409, 413, 415].includes(response.status)) {
+      if (response.rejected) {
         attempt.rejected = true;
-        createStatus.textContent = response.status === 409 ?
+        createStatus.textContent = response.rejected === 409 ?
           "Creation rejected (HTTP 409). An active invitation or reserved asset may already exist. Read the registry before attempting a replacement." :
-          `Creation rejected (HTTP ${response.status}); no invitation was created by this request. Check fields, current grants, and the backend opt-in setting.`;
-        if (response.status === 401 || response.status === 403) {
+          `Creation rejected (HTTP ${response.rejected}); no invitation was created by this request. Check fields, current grants, and the backend opt-in setting.`;
+        if (response.rejected === 401 || response.rejected === 403) {
           session = null;
           window.dispatchEvent(new Event("operator-session-cleared"));
         }
         return;
       }
-      if (response.status !== 201 || !response.headers.get("Content-Type")?.includes("application/json")) {
-        throw new Error("Unconfirmed creation response.");
-      }
-      const result = await response.json();
+      const result = response.value;
       if (attempt.controller.signal.aborted) return;
       const item = result.invitation;
       if (!provisioningContract.validInvitation(item, asset.organization) || item.state !== "invited" || item.revision !== 1 ||
@@ -262,7 +255,7 @@
     if (!uncertain || pending) return;
     const content = document.createElement("div");
     content.append(assetDetails(uncertain));
-    paragraph(content, "Read all registry pages for this organization and inventory reference. If an invitation exists without a securely delivered code, cancel it through certificate-authorized administration or wait until it expires. GUI cancellation is not implemented. Do not assume a missing first-page row means creation failed.");
+    paragraph(content, "Read all registry pages for this organization and inventory reference. If an invitation exists without a securely delivered code, use its fresh Details to cancel it with authorized named-user administration, use certificate-authorized cancellation, or wait until it expires. Do not assume a missing first-page row means creation failed.");
     const label = document.createElement("label");
     const acknowledge = document.createElement("input");
     acknowledge.type = "checkbox";

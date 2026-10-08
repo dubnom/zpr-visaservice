@@ -248,7 +248,7 @@ async function loadDNSStats() {
   const recordsRequest = loadDNSRecords(true);
   try {
     const paths = ["status", "server", "zones"];
-    const responses = await Promise.all(paths.map((path) => fetch(`/api/dns/stats/json/v1/${path}`, { cache: "no-store", headers: { Accept: "application/json" } })));
+    const responses = await Promise.all(paths.map((path) => window.zprOperatorFetch(`/api/dns/stats/json/v1/${path}`, { cache: "no-store", headers: { Accept: "application/json" } })));
     const failed = responses.find((response) => !response.ok);
     if (failed) throw new Error(`HTTP ${failed.status}`);
     const [status, server, zones] = await Promise.all(responses.map((response) => response.json()));
@@ -326,7 +326,7 @@ async function loadDNSRecords(force = false) {
   const rows = byId("dns-record-rows");
   if (status.textContent.startsWith("Waiting")) status.textContent = "Loading zone records…";
   try {
-    const response = await fetch("/api/dns/records", { cache: "no-store", headers: { Accept: "application/json" } });
+    const response = await window.zprOperatorFetch("/api/dns/records", { cache: "no-store", headers: { Accept: "application/json" } });
     if (!response.ok) throw new Error(`HTTP ${response.status}`);
     const result = await response.json();
     const records = Array.isArray(result.records) ? result.records : [];
@@ -495,10 +495,50 @@ function detailSection(title, fields) {
   return `<section class="detail-section"><h3>${escapeHTML(title)}</h3><dl>${fields.join("")}</dl></section>`;
 }
 
+// Visa Service reports no pair ID; a reverse visa pairs with the forward visa whose
+// protocol matches, addresses are swapped and destination port is its source port.
+function pairVisas(visas) {
+  const direction = visa => String(visa.direction || "").toLowerCase();
+  const key = (proto, from, to, port) => JSON.stringify([String(proto || "").toUpperCase(), from ? dnsAddressKey(from) : "", to ? dnsAddressKey(to) : "", String(port ?? "")]);
+  const byID = (a, b) => num(a.id) - num(b.id) || String(a.id).localeCompare(String(b.id));
+  const reverses = new Map();
+  for (const visa of visas) {
+    if (direction(visa) !== "reverse") continue;
+    const reverseKey = key(visa.proto, visa.dest_addr, visa.source_addr, visa.source_port);
+    if (!reverses.has(reverseKey)) reverses.set(reverseKey, []);
+    reverses.get(reverseKey).push(visa);
+  }
+  const used = new Set();
+  const groups = [];
+  for (const visa of [...visas].sort(byID)) {
+    const kind = direction(visa);
+    if (kind === "reverse") continue;
+    if (kind !== "forward") { groups.push({ forward: null, reverse: null, single: visa }); continue; }
+    const candidates = (reverses.get(key(visa.proto, visa.source_addr, visa.dest_addr, visa.dest_port)) || []).filter(item => !used.has(item))
+      .sort((a, b) => Math.abs(num(a.created) - num(visa.created)) - Math.abs(num(b.created) - num(visa.created)) || byID(a, b));
+    const reverse = candidates[0] || null;
+    if (reverse) used.add(reverse);
+    groups.push({ forward: visa, reverse, single: null });
+  }
+  for (const visa of [...visas].sort(byID)) if (direction(visa) === "reverse" && !used.has(visa)) groups.push({ forward: null, reverse: visa, single: null });
+  return groups.map(group => ({ ...group, members: [group.forward, group.reverse, group.single].filter(Boolean) }));
+}
+
+function visaPairLabel(group, visa) {
+  if (group.single) return "Direction not reported";
+  const partner = visa === group.forward ? group.reverse : group.forward;
+  if (partner) return `↔ #${partner.id}`;
+  return visa === group.forward ? "No reverse visa" : "No forward visa";
+}
+
 function currentVisaList(visas) {
   if (!visas.length) return `<p>No current visas.</p>`;
-  const ordered = [...visas].sort((a, b) => num(a.id) - num(b.id) || String(a.id).localeCompare(String(b.id)));
-  return `<div class="detail-list">${ordered.map(visa => `<div class="detail-item"><strong>Visa ${escapeHTML(visa.id)} · ${escapeHTML(visa.proto)}</strong><span title="${escapeHTML(visaEndpointTitle(visa.source_addr, visa.dest_addr))}">${escapeHTML(visaEndpoint(visa.source_addr, visa.source_port, visa.dest_addr, visa.dest_port))}</span><span>Direction: ${escapeHTML(visa.direction || "Not reported")}</span><span>Expires: ${escapeHTML(new Date(num(visa.expires) * 1000).toLocaleString())}</span><span>Node: ${escapeHTML(visa.requesting_node || "Not reported")} · Policy: ${escapeHTML(visa.policy_id || "Not reported")}</span><span>Route: ${escapeHTML(visa.path?.length ? visa.path.join(" → ") : "Not reported")}</span></div>`).join("")}</div>`;
+  const groups = pairVisas(visas).sort((a, b) => num(a.members[0].id) - num(b.members[0].id) || String(a.members[0].id).localeCompare(String(b.members[0].id)));
+  const item = (group, visa) => `<div class="detail-item"><strong>Visa ${escapeHTML(visa.id)} · ${escapeHTML(visa.proto)}</strong><span title="${escapeHTML(visaEndpointTitle(visa.source_addr, visa.dest_addr))}">${escapeHTML(visaEndpoint(visa.source_addr, visa.source_port, visa.dest_addr, visa.dest_port))}</span><span>Direction: ${escapeHTML(visa.direction || "Not reported")} · Pair: ${escapeHTML(visaPairLabel(group, visa))}</span><span>Expires: ${escapeHTML(new Date(num(visa.expires) * 1000).toLocaleString())}</span><span>Node: ${escapeHTML(visa.requesting_node || "Not reported")} · Policy: ${escapeHTML(visa.policy_id || "Not reported")}</span><span>Route: ${escapeHTML(visa.path?.length ? visa.path.join(" → ") : "Not reported")}</span></div>`;
+  const heading = group => group.forward && group.reverse
+    ? `Connection · Visa ${group.forward.id} ↔ ${group.reverse.id}`
+    : group.single ? `Visa ${group.single.id} · direction not reported` : group.forward ? `Visa ${group.forward.id} · no reverse visa` : `Visa ${group.reverse.id} · no forward visa`;
+  return `<div class="detail-list">${groups.map(group => `<div class="visa-pair${group.forward && group.reverse ? " paired" : ""}" role="group" aria-label="${escapeHTML(heading(group))}"><p class="visa-pair-heading">${escapeHTML(heading(group))}</p>${group.members.map(visa => item(group, visa)).join("")}</div>`).join("")}</div>`;
 }
 
 let adapterVisaDetails;
@@ -509,7 +549,7 @@ function refreshAdapterVisas(actor) {
   adapterVisaDetails?.controller.abort();
   const request = { key: actor.cn, snapshot: state.snapshot, pending: true, loaded: previous?.loaded || false, items: previous?.items || [], error: "", controller: new AbortController() };
   adapterVisaDetails = request;
-  fetch(`/api/actors/${encodeURIComponent(actor.cn)}/visas`, { cache: "no-store", signal: request.controller.signal }).then(async (response) => {
+  window.zprOperatorFetch(`/api/actors/${encodeURIComponent(actor.cn)}/visas`, { cache: "no-store", signal: request.controller.signal }).then(async (response) => {
     if (!response.ok) throw new Error(`Current visas unavailable (HTTP ${response.status})`);
     const items = await response.json();
     if (!Array.isArray(items)) throw new Error("Invalid current visa response");
@@ -1528,7 +1568,7 @@ async function refreshPolicyContext() {
   if (location.hash !== "#policy" || !policy.loaded || policy.contextPending) return;
   policy.contextPending = true;
   try {
-    const response = await fetch("/api/policy/context", { cache: "no-store" });
+    const response = await window.zprOperatorFetch("/api/policy/context", { cache: "no-store" });
     if (!response.ok) return;
     const context = await response.json();
     if (context.organization_id && context.organization_id !== policy.organizationID) {
@@ -1585,7 +1625,7 @@ async function loadPolicyWorkspace() {
   const editorSource = byId("policy-source").value;
   const hasUnsavedChanges = hasUnsavedPolicyChanges(policy, editorSource);
   try {
-    const response = await fetch("/api/policy", { cache: "no-store", headers: { Accept: "application/json" } });
+    const response = await window.zprOperatorFetch("/api/policy", { cache: "no-store", headers: { Accept: "application/json" } });
     const data = await response.json();
     if (!response.ok) throw new Error(data.error || `Policy server responded ${response.status}`);
     const organizationChanged = policy.organizationID && data.organization_id && policy.organizationID !== data.organization_id;
@@ -1712,7 +1752,7 @@ async function rescanPolicyAttributes() {
   policy.attributeScanPending = true;
   renderPolicyAttributes();
   try {
-    const response = await fetch("/api/policy/attributes/rescan", { method: "POST", headers: { Accept: "application/json" } });
+    const response = await window.zprOperatorFetch("/api/policy/attributes/rescan", { method: "POST", headers: { Accept: "application/json" } });
     const data = await response.json();
     if (!response.ok) throw new Error(data.error || "Unable to refresh trusted attributes.");
     policy.attributes = data.attributes || [];
@@ -1964,7 +2004,7 @@ function clearPolicySelection() {
   byId("policy-check-result").textContent = "Policy source is not loaded.";
   byId("policy-check-result").hidden = true;
   byId("policy-history-count").textContent = "—";
-  byId("policy-history").innerHTML = '<p class="catalog-empty">Select a policy to browse versions.</p>';
+  byId("policy-history").replaceChildren();
   byId("assistant-question").disabled = true; byId("assistant-send").disabled = true;
   renderPolicyCatalog();
 }
@@ -1990,7 +2030,7 @@ async function selectPolicyRecord(id, fetchRecord = true, discardEdits = false, 
   try {
     let record = summary;
     if (fetchRecord) {
-      const response = await fetch(`/api/policy/records/${encodeURIComponent(id)}`, { cache: "no-store" });
+      const response = await window.zprOperatorFetch(`/api/policy/records/${encodeURIComponent(id)}`, { cache: "no-store" });
       record = await response.json();
       if (!response.ok) throw new Error(record.error || `Record load failed (${response.status})`);
     }
@@ -2040,12 +2080,12 @@ function setPolicyRecordSurface(kind, record = state.policy.record) {
   }
   const assertionActions = document.querySelector(".assertion-actions");
   assertionActions.hidden = !assertionsSelected;
-  const editorTools = document.querySelector(".policy-editor-tools");
+  const editorTools = document.querySelector("#page-policy .policy-editor-tools");
   if (assertionActions.parentElement !== editorTools) {
     editorTools.insertBefore(assertionActions, byId("policy-editor-utilities"));
   }
   byId("policy-editor-utilities").hidden = assertionsSelected;
-  byId("policy-stage-status").hidden = assertionsSelected;
+  if (assertionsSelected) byId("policy-stage-status").hidden = true;
   byId("policy-assistant-pane").hidden = false;
   updateAssistantControls();
   byId("policy-workbench").dataset.recordKind = kind || "";
@@ -2057,13 +2097,10 @@ function renderPolicyIdentity(record = state.policy.record, version = state.poli
   const title = byId("policy-record-title");
   const draftName = byId("policy-draft-name");
   const modified = byId("policy-modified-indicator");
-  const mode = byId("policy-editor-mode");
   draftName.hidden = !record?.isDraft;
-  mode.hidden = !record;
-  mode.textContent = record?.kind === "assertions" ? "Assertion" : "Policy";
   if (!record) {
-    title.textContent = "Select a policy";
-    title.hidden = false;
+    title.textContent = "";
+    title.hidden = true;
     title.removeAttribute("title");
     byId("policy-revision-label").textContent = "";
     modified.hidden = true;
@@ -2359,7 +2396,7 @@ function movePolicyCompletion(delta) {
 }
 
 async function loadPolicyHistory(recordID) {
-  const response = await fetch(`/api/policy/records/${encodeURIComponent(recordID)}/revisions`, { cache: "no-store" });
+  const response = await window.zprOperatorFetch(`/api/policy/records/${encodeURIComponent(recordID)}/revisions`, { cache: "no-store" });
   const revisions = await response.json();
   if (!response.ok) throw new Error(revisions.error || `Version history failed (${response.status})`);
   state.policy.revisions = revisions;
@@ -2384,7 +2421,7 @@ async function browsePolicyRevision(number) {
   const policy = state.policy;
   if (!policy.record) return;
   try {
-    const response = await fetch(`/api/policy/records/${encodeURIComponent(policy.record.id)}/revisions/${number}`, { cache: "no-store" });
+    const response = await window.zprOperatorFetch(`/api/policy/records/${encodeURIComponent(policy.record.id)}/revisions/${number}`, { cache: "no-store" });
     const revision = await response.json();
     if (!response.ok) throw new Error(revision.error || `Version load failed (${response.status})`);
     if (!policy.browsingRevision && byId("policy-source").value !== policy.savedSource && !window.confirm("Discard unsaved edits and browse this version?")) return;
@@ -2485,7 +2522,7 @@ function beginNewPolicyDraft() {
   byId("policy-check-result").textContent = "Name this policy, add ZPL, then Evaluate before saving.";
   byId("policy-check-result").dataset.state = "";
   byId("policy-history-count").textContent = "0 versions";
-  byId("policy-history").innerHTML = '<p class="catalog-empty">The first version is created when this policy is saved.</p>';
+  byId("policy-history").innerHTML = '<p class="catalog-empty">No saved versions.</p>';
   byId("policy-check").disabled = !policy.compilerReady;
   byId("policy-save").disabled = true;
   byId("policy-save-as").disabled = true;
@@ -2518,7 +2555,7 @@ function beginNewAssertionDraft() {
   setPolicyRecordSurface("assertions", draft);
   renderPolicyIdentity(draft, 0, "");
   byId("policy-history-count").textContent = "0 versions";
-  byId("policy-history").innerHTML = '<p class="catalog-empty">The first version is created when this assertion set is saved.</p>';
+  byId("policy-history").innerHTML = '<p class="catalog-empty">No saved versions.</p>';
   renderPolicyCatalog();
   updatePolicyDirtyState();
   byId("assertion-source").focus();
@@ -2555,7 +2592,7 @@ async function pastePolicyRecord(sourceRecord, duplicate = false) {
         content_type: sourceRecord.content_type, metadata: sourceRecord.metadata || {},
         content: sourceRecord.content || "", summary: `Copied from ${sourceRecord.name}`,
       };
-    const response = await fetch(path, {
+    const response = await window.zprOperatorFetch(path, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(body),
@@ -2605,7 +2642,7 @@ async function managePolicyFile(action) {
   }
   if (action !== "delete" && action !== "restore") return;
   try {
-    const response = await fetch(`/api/policy/records/${encodeURIComponent(record.id)}${action === "restore" ? "/restore" : ""}`, {
+    const response = await window.zprOperatorFetch(`/api/policy/records/${encodeURIComponent(record.id)}${action === "restore" ? "/restore" : ""}`, {
       method: action === "delete" ? "DELETE" : "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ expected_revision: record.current_revision }),
@@ -2627,7 +2664,7 @@ async function createPolicyCategory(event) {
   const name = byId("category-name").value.trim();
   const parentID = byId("category-parent").value || null;
   try {
-    const response = await fetch("/api/policy/categories", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ name, parent_id: parentID }) });
+    const response = await window.zprOperatorFetch("/api/policy/categories", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ name, parent_id: parentID }) });
     const result = await response.json();
     if (!response.ok) throw new Error(result.error || `Category creation failed (${response.status})`);
     if (!state.policy.categoryID) state.policy.categoryID = result.id;
@@ -2660,7 +2697,7 @@ async function createPolicyRecord(event) {
         return;
       }
     }
-    const response = await fetch("/api/policy/records", {
+    const response = await window.zprOperatorFetch("/api/policy/records", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
@@ -2758,7 +2795,7 @@ async function runPolicyTest(source = byId("policy-source").value) {
   let outcome = { passed: false, error: "Policy test did not complete." };
   let errorTitle = "Analysis unavailable";
   try {
-    const fixtureResponse = await fetch("/api/policy/test/fixtures", { cache: "no-store", signal: controller.signal });
+    const fixtureResponse = await window.zprOperatorFetch("/api/policy/test/fixtures", { cache: "no-store", signal: controller.signal });
     const fixtures = await fixtureResponse.json();
     if (!fixtureResponse.ok) throw new Error(fixtures.error || `Test fixture request failed (${fixtureResponse.status})`);
     const unavailable = policyReferencedOmittedAttributes(source, fixtures.omitted_attributes);
@@ -2767,7 +2804,7 @@ async function runPolicyTest(source = byId("policy-source").value) {
     }
     errorTitle = "Policy evaluation error";
     policy.testDimensions = Array.from(new Set((fixtures.actors || []).flatMap((actor) => Object.keys(actor.dimensions || {})))).sort();
-    const response = await fetch("/api/policy/test", {
+    const response = await window.zprOperatorFetch("/api/policy/test", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ source, actors: fixtures.actors, services: fixtures.services }),
@@ -3005,12 +3042,9 @@ function renderPolicyStageStatus() {
     const candidate = policy.stagedCandidate;
     status.textContent = `Staged ${candidate.record_name} r${candidate.record_revision} · SHA-256 ${candidate.bundle_sha256.slice(0, 12)} · not pushed`;
     status.dataset.state = "staged";
-  } else if (!policy.stagingReady) {
-    status.textContent = "Policy staging is not configured.";
-    status.dataset.state = "error";
   } else {
-    status.hidden = policy.record?.kind === "policy";
-    status.textContent = policy.record?.kind === "policy" ? "" : "Select a saved policy revision to stage.";
+    status.hidden = true;
+    status.textContent = "";
     status.dataset.state = "";
   }
 }
@@ -3021,7 +3055,7 @@ async function stageSelectedPolicy() {
   policy.stageError = "";
   renderPolicyStageStatus();
   if (!policy.record || policy.record.kind !== "policy" || policy.record.isDraft || policy.record.archived || policy.browsingRevision) {
-    policy.stageError = "Select a saved policy revision to stage.";
+    policy.stageError = "Only a saved policy version can be staged.";
     renderPolicyStageStatus();
     return;
   }
@@ -3058,7 +3092,7 @@ async function confirmPolicyStage() {
   policy.stageError = "";
   updatePolicyDirtyState();
   try {
-    const response = await fetch(`/api/policy/records/${encodeURIComponent(policy.record.id)}/stage`, {
+    const response = await window.zprOperatorFetch(`/api/policy/records/${encodeURIComponent(policy.record.id)}/stage`, {
       method: "POST",
       headers: { "Content-Type": "application/json", Accept: "application/json" },
       body: JSON.stringify({ expected_revision: policy.record.current_revision }),
@@ -3102,7 +3136,7 @@ async function checkPolicy(source = byId("policy-source").value) {
   updatePolicyDirtyState();
   let valid = false;
   try {
-    const response = await fetch("/api/policy/check", {
+    const response = await window.zprOperatorFetch("/api/policy/check", {
       method: "POST", headers: { "Content-Type": "application/json", Accept: "application/json" },
       body: JSON.stringify({ source }),
     });
@@ -3305,7 +3339,7 @@ async function appendPolicyVersion(summary) {
     let nextRevision;
     let contentHash;
     if (isDraft) {
-      response = await fetch("/api/policy/records", {
+      response = await window.zprOperatorFetch("/api/policy/records", {
         method: "POST", headers: { "Content-Type": "application/json", Accept: "application/json" },
         body: JSON.stringify({
           category_id: policy.record.category_id, name: recordName, kind: "policy",
@@ -3320,7 +3354,7 @@ async function appendPolicyVersion(summary) {
       policy.record = { ...result, isDraft: false };
       policy.records.push(policy.record);
     } else {
-      response = await fetch(`/api/policy/records/${encodeURIComponent(recordID)}/revisions`, {
+      response = await window.zprOperatorFetch(`/api/policy/records/${encodeURIComponent(recordID)}/revisions`, {
         method: "POST", headers: { "Content-Type": "application/json", Accept: "application/json" },
         body: JSON.stringify({ content: submittedSource, expected_revision: expectedRevision, summary }),
       });
@@ -3404,7 +3438,7 @@ async function askPolicyAssistant(question) {
   byId("assistant-send").disabled = true;
   renderAssistantMessages();
   try {
-    const response = await fetch("/api/policy/assistant", {
+    const response = await window.zprOperatorFetch("/api/policy/assistant", {
       method: "POST", headers: { "Content-Type": "application/json", Accept: "application/json" },
       body: JSON.stringify({ editor: policy.record?.kind === "assertions" ? "assertion" : "policy", source: policyAssistantTarget().value, messages: policy.messages, model: byId("assistant-model").value, max_tokens: Number(byId("assistant-max-tokens").value) }),
     });
@@ -3515,12 +3549,22 @@ function renderServices(data) {
 function renderVisas(data) {
   byId("visa-total").textContent = `${formatNumber(data.visa_count)} Visas`;
   const rows = data.recent_visas || [];
-  const columns = { id: (visa) => num(visa.id), flow: (visa) => `${visaEndpoint(visa.source_addr, visa.source_port, visa.dest_addr, visa.dest_port)} ${visa.source_addr || ""} ${visa.dest_addr || ""}`, proto: (visa) => visa.proto, node: (visa) => visa.requesting_node, expires: (visa) => num(visa.expires) };
-  const shown = visibleRows("visas", rows, columns);
-  byId("visa-rows").innerHTML = shown.length ? shown.map((visa) => {
+  const groups = pairVisas(rows);
+  const primary = group => group.members[0];
+  const columns = {
+    id: (group) => num(primary(group).id),
+    flow: (group) => group.members.map(visa => `${visaEndpoint(visa.source_addr, visa.source_port, visa.dest_addr, visa.dest_port)} ${visa.source_addr || ""} ${visa.dest_addr || ""}`).join(" "),
+    proto: (group) => primary(group).proto,
+    node: (group) => group.members.map(visa => visa.requesting_node || "").join(" "),
+    expires: (group) => Math.min(...group.members.map(visa => num(visa.expires))),
+    pair: (group) => group.members.map(visa => `${visa.id} ${visaPairLabel(group, visa)}`).join(" "),
+  };
+  const shown = visibleRows("visas", groups, columns);
+  byId("visa-rows").innerHTML = shown.length ? shown.flatMap((group) => group.members.map((visa, index) => {
     const flow = visaEndpoint(visa.source_addr, visa.source_port, visa.dest_addr, visa.dest_port);
-    return `<tr><td class="mono">${escapeHTML(visa.id)}</td><td class="mono" title="${escapeHTML(visaEndpointTitle(visa.source_addr, visa.dest_addr))}">${escapeHTML(flow)}</td><td>${escapeHTML(visa.proto || "—")}</td><td>${escapeHTML(visa.requesting_node || "—")}</td><td class="mono">${escapeHTML(new Date(num(visa.expires) * 1000).toLocaleTimeString())}</td></tr>`;
-  }).join("") : `<tr><td colspan="5" class="empty-row">${rows.length ? "No matching visas" : "No active visas returned"}</td></tr>`;
+    const classes = ["visa-row", index ? "visa-pair-partner" : "visa-pair-lead", group.forward && group.reverse ? "paired" : "unpaired"].join(" ");
+    return `<tr class="${classes}" data-visa-id="${escapeHTML(visa.id)}"><td class="mono">${escapeHTML(visa.id)}</td><td class="mono" title="${escapeHTML(visaEndpointTitle(visa.source_addr, visa.dest_addr))}">${escapeHTML(flow)}</td><td>${escapeHTML(visa.proto || "—")}</td><td>${escapeHTML(visa.requesting_node || "—")}</td><td class="mono">${escapeHTML(new Date(num(visa.expires) * 1000).toLocaleTimeString())}</td><td class="mono visa-pair-cell">${escapeHTML(visaPairLabel(group, visa))}</td></tr>`;
+  })).join("") : `<tr><td colspan="6" class="empty-row">${rows.length ? "No matching visas" : "No active visas returned"}</td></tr>`;
 }
 
 function protocolName(number) {
@@ -3862,7 +3906,7 @@ async function refresh() {
   byId("refresh-now").disabled = true;
   if (currentPage() === "dns") void loadDNSStats();
   try {
-    const response = await fetch("/api/snapshot", { cache: "no-store", headers: { Accept: "application/json" } });
+    const response = await window.zprOperatorFetch("/api/snapshot", { cache: "no-store", headers: { Accept: "application/json" } });
     if (!response.ok) throw new Error(`Monitor server responded ${response.status}`);
     const snapshot = await response.json();
     render(snapshot);
@@ -3960,6 +4004,9 @@ document.addEventListener("keydown", (event) => {
   const next = event.key === "Home" ? 0 : event.key === "End" ? items.length - 1 : (current + (event.key === "ArrowDown" ? 1 : -1) + items.length) % items.length;
   items[next].focus();
 });
+byId("policy-history-menu").querySelector("summary").addEventListener("click", (event) => {
+  if (!state.policy.record) event.preventDefault();
+});
 document.addEventListener("pointerdown", (event) => {
   const history = byId("policy-history-menu");
   if (history.open && !event.target.closest("#policy-history-menu")) history.open = false;
@@ -3986,7 +4033,7 @@ document.addEventListener("keydown", (event) => {
     setPolicyPickerOpen(false, true);
   }
 });
-const policyPicker = document.querySelector(".policy-catalog-pane");
+const policyPicker = document.querySelector("#page-policy .policy-catalog-pane");
 policyPicker.addEventListener("contextmenu", (event) => {
   if (event.target.closest("#policy-picker-menu")) return;
   event.preventDefault();
@@ -4206,13 +4253,9 @@ function toggleMapVisaFocus(focus) {
   const same = graphVisaFocus?.kind === focus.kind && graphVisaFocus.actorCN === focus.actorCN && graphVisaFocus.serviceName === focus.serviceName;
   graphVisaFocus = same ? null : focus;
   applyMapVisaFocus(state.snapshot);
-  const countKey = JSON.stringify(focus.kind === "service"
-    ? { kind: "service", actorCN: focus.actorCN, serviceName: focus.serviceName }
-    : { kind: "actor", actorCN: focus.actorCN });
-  if (!same) openInspector("visa-count", countKey);
-  else if (state.selection?.kind === "visa-count" && state.selection.key === countKey) closeInspector();
 }
-// Right-clicking a map component and right-clicking its count badge do the same thing.
+// Right-clicking an adapter or service (or its count badge) only toggles route focus;
+// left-clicking the count badge opens the visa inventory.
 byId("topology-stage").addEventListener("contextmenu", event => {
   if (!state.snapshot) return;
   const serviceBadge = event.target.closest(".graph-service-badge[data-inspect-service]");
@@ -4325,23 +4368,13 @@ document.addEventListener("keydown", (event) => {
   else openInspector("link", target.dataset.inspectLink);
 });
 
-// Closing the inspector also releases any right-click visa focus it was describing.
-byId("inspector-close").addEventListener("click", () => {
-  closeInspector();
-  if (graphVisaFocus != null && state.snapshot) {
-    graphVisaFocus = null;
-    applyMapVisaFocus(state.snapshot);
-  }
-});
+byId("inspector-close").addEventListener("click", () => closeInspector());
 document.addEventListener("keydown", (event) => {
   if (event.key !== "Escape") return;
   const inspectorOpen = state.selection != null;
   closeInspector();
   if (currentPage() !== "map" || event.defaultPrevented) return;
-  if (inspectorOpen) {
-    if (graphVisaFocus != null && state.snapshot) { graphVisaFocus = null; applyMapVisaFocus(state.snapshot); }
-    return;
-  }
+  if (inspectorOpen) return;
   clearMapHighlight();
 });
 

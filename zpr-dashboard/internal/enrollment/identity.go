@@ -3,13 +3,7 @@
 package enrollment
 
 import (
-	"bytes"
-	"crypto"
 	"crypto/rand"
-	"crypto/rsa"
-	"crypto/x509"
-	"encoding/base64"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
@@ -17,38 +11,6 @@ import (
 	"path/filepath"
 	"syscall"
 )
-
-const identityFile = "identity.json"
-
-// LocalEnrollment contains no code, credentials, or cached approval decision.
-type LocalEnrollment struct {
-	Audience     string `json:"audience"`
-	Organization string `json:"organization"`
-	InvitationID string `json:"invitation_id"`
-}
-
-// SoftwareIdentity is development-only, not a hardware-backed device identity.
-type SoftwareIdentity struct {
-	key      *rsa.PrivateKey
-	metadata LocalEnrollment
-}
-
-func (i *SoftwareIdentity) Public() crypto.PublicKey { return i.key.Public() }
-func (i *SoftwareIdentity) Sign(random io.Reader, digest []byte, options crypto.SignerOpts) ([]byte, error) {
-	return i.key.Sign(random, digest, options)
-}
-func (i *SoftwareIdentity) Metadata() LocalEnrollment { return i.metadata }
-
-type identityRecord struct {
-	Version    int             `json:"version"`
-	Protection string          `json:"protection"`
-	Enrollment LocalEnrollment `json:"enrollment"`
-	PrivateKey string          `json:"private_key"`
-}
-
-func validLocalEnrollment(m LocalEnrollment) bool {
-	return validateAudience(m.Audience) == nil && validText(m.Organization) && validText(m.InvitationID)
-}
 
 // CreateSoftwareIdentity never overwrites an existing identity. The parent
 // directory must be trusted; the caller selects a dedicated local state path.
@@ -66,26 +28,21 @@ func CreateSoftwareIdentity(directory string, metadata LocalEnrollment) (*Softwa
 	} else if !errors.Is(err, os.ErrNotExist) {
 		return nil, err
 	}
-	key, err := rsa.GenerateKey(rand.Reader, 3072)
-	if err != nil {
-		return nil, fmt.Errorf("generate enrollment key: %w", err)
-	}
-	der, err := x509.MarshalPKCS8PrivateKey(key)
-	if err != nil {
-		return nil, err
-	}
-	data, err := json.Marshal(identityRecord{Version: 1, Protection: "software-development",
-		Enrollment: metadata, PrivateKey: base64.StdEncoding.EncodeToString(der)})
+	identity, data, err := newSoftwareIdentityRecord(metadata, "software-development")
 	if err != nil {
 		return nil, err
 	}
 	if err := publishIdentity(root, data); err != nil {
 		return nil, err
 	}
-	return &SoftwareIdentity{key: key, metadata: metadata}, nil
+	return identity, nil
 }
 
 func publishIdentity(root *os.Root, data []byte) (err error) {
+	return publishIdentityFile(root, identityFile, data)
+}
+
+func publishIdentityFile(root *os.Root, destination string, data []byte) (err error) {
 	name := ".identity-" + rand.Text()
 	file, err := root.OpenFile(name, os.O_CREATE|os.O_EXCL|os.O_WRONLY, 0600)
 	if err != nil {
@@ -105,7 +62,7 @@ func publishIdentity(root *os.Root, data []byte) (err error) {
 		return err
 	}
 	// Link publishes a complete file atomically without replacing another key.
-	if err = root.Link(name, identityFile); err != nil {
+	if err = root.Link(name, destination); err != nil {
 		return fmt.Errorf("publish enrollment identity: %w", err)
 	}
 	if err = root.Remove(name); err != nil {
@@ -127,14 +84,23 @@ func LoadSoftwareIdentity(directory string) (*SoftwareIdentity, error) {
 		return nil, err
 	}
 	defer root.Close()
-	entry, err := root.Lstat(identityFile)
+	data, err := readIdentityFile(root, identityFile)
+	if err != nil {
+		return nil, err
+	}
+	defer clear(data)
+	return decodeSoftwareIdentity(data, "software-development")
+}
+
+func readIdentityFile(root *os.Root, name string) ([]byte, error) {
+	entry, err := root.Lstat(name)
 	if err != nil {
 		return nil, err
 	}
 	if !entry.Mode().IsRegular() || !privateOwned(entry) {
 		return nil, errors.New("enrollment identity must be a private, owner-only regular file")
 	}
-	file, err := root.OpenFile(identityFile, os.O_RDONLY|syscall.O_NOFOLLOW|syscall.O_NONBLOCK, 0)
+	file, err := root.OpenFile(name, os.O_RDONLY|syscall.O_NOFOLLOW|syscall.O_NONBLOCK, 0)
 	if err != nil {
 		return nil, fmt.Errorf("open enrollment identity: %w", err)
 	}
@@ -147,7 +113,7 @@ func LoadSoftwareIdentity(directory string) (*SoftwareIdentity, error) {
 		return nil, errors.New("enrollment identity must be a private, owner-only regular file")
 	}
 	// Root resolves internal symlinks itself; verify the directory entry too.
-	current, err := root.Lstat(identityFile)
+	current, err := root.Lstat(name)
 	if err != nil || !current.Mode().IsRegular() || !os.SameFile(current, info) {
 		return nil, errors.New("enrollment identity changed while opening")
 	}
@@ -159,24 +125,10 @@ func LoadSoftwareIdentity(directory string) (*SoftwareIdentity, error) {
 	if err != nil {
 		return nil, err
 	}
-	var record identityRecord
-	if len(data) > 16384 || decodeJSON(bytes.NewReader(data), &record) != nil ||
-		record.Version != 1 || record.Protection != "software-development" || !validLocalEnrollment(record.Enrollment) {
-		return nil, errors.New("invalid local enrollment identity")
+	if len(data) > 16384 {
+		return nil, errors.New("local enrollment identity exceeds maximum size")
 	}
-	der, err := base64.StdEncoding.Strict().DecodeString(record.PrivateKey)
-	if err != nil {
-		return nil, errors.New("invalid local enrollment key encoding")
-	}
-	parsed, err := x509.ParsePKCS8PrivateKey(der)
-	if err != nil {
-		return nil, errors.New("invalid local enrollment private key")
-	}
-	key, ok := parsed.(*rsa.PrivateKey)
-	if !ok || key.N == nil || key.N.BitLen() != 3072 || key.E != 65537 || key.Validate() != nil {
-		return nil, errors.New("invalid local enrollment RSA key")
-	}
-	return &SoftwareIdentity{key: key, metadata: record.Enrollment}, nil
+	return data, nil
 }
 
 func openIdentityDirectory(path string, create bool) (*os.Root, error) {

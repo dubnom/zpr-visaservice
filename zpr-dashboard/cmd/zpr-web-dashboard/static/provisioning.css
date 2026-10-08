@@ -15,6 +15,7 @@
 .provisioning-panel [hidden] { display: none; }
 #provisioning-one-time-code { display: block; padding: 12px; user-select: all; overflow-wrap: anywhere; border: 1px solid var(--line); font: 16px var(--mono); }
 .provisioning-review label { display: block; margin: 12px 0; font-size: 12px; }
+.provisioning-review textarea { display: block; width: 100%; min-height: 64px; margin-top: 6px; padding: 8px; box-sizing: border-box; border: 1px solid var(--line); color: var(--ink); font: 12px var(--sans); }
 .provisioning-wide { grid-column: 1 / -1; }
 .provisioning-steps { margin: 12px 0 0; padding-left: 22px; }
 .provisioning-steps li { padding-left: 4px; margin-bottom: 12px; }

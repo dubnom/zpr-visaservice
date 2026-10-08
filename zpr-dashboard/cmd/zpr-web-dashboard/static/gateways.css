@@ -1,12 +1,5 @@
-.gateway-workbench { position: relative; display: flex; min-width: 0; flex-direction: column; }
-.gateway-catalog-pane { top: 44px; left: 0; }
 .gateway-catalog-pane .catalog-pane-heading strong { display: inline-flex; align-items: center; gap: 6px; margin-right: auto; }
 .gateway-record-item { grid-template-columns: 18px minmax(0, 1fr); }
 .gateway-record-item small { grid-column: 2; overflow: hidden; color: var(--muted); font: 8px var(--mono); text-overflow: ellipsis; white-space: nowrap; }
 .gateway-record-item[data-kind="gateway"] .policy-kind-icon { color: #c98612; }
-.gateway-status, .gateway-draft-message { min-height: 0; margin: 0 0 8px; color: var(--muted); font: 11px var(--mono); }
-.gateway-draft-message { margin: 8px 0 0; }
-.gateway-draft-message:empty { display: none; }
-.gateway-draft-message[data-state="success"] { color: var(--forest); }
-.gateway-draft-message[data-state="error"] { color: var(--red); }
 .gateway-source-editor .zpr-config-source:disabled { cursor: not-allowed; }

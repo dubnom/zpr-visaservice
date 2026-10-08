@@ -60,6 +60,8 @@
       if (current !== generation) return;
       clearSession();
       status.textContent = error.message;
+    } finally {
+      if (current === generation) window.dispatchEvent(new Event("operator-login-checked"));
     }
   }
 

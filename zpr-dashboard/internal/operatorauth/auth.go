@@ -427,6 +427,11 @@ func identity(grant Grant) Identity {
 		Organizations: slices.Clone(grant.Organizations), Permissions: slices.Clone(grant.Permissions)}
 }
 
+// OrganizationAllowed recognizes an explicit global grant, never an implicit default.
+func OrganizationAllowed(organizations []string, organization string) bool {
+	return organization != "" && (slices.Contains(organizations, organization) || slices.Contains(organizations, "*"))
+}
+
 func (a *Auth) Authorize(r *http.Request, organization, permission string) (Identity, error) {
 	item, err := a.current(r)
 	if err != nil {
@@ -438,7 +443,7 @@ func (a *Auth) Authorize(r *http.Request, organization, permission string) (Iden
 			return Identity{}, errors.New("operator mutation requires same origin and CSRF proof")
 		}
 	}
-	if (organization != "" && !slices.Contains(item.grant.Organizations, organization)) ||
+	if (organization != "" && !OrganizationAllowed(item.grant.Organizations, organization)) ||
 		(permission != "" && !slices.Contains(item.grant.Permissions, permission)) {
 		return Identity{}, errors.New("operator scope denied")
 	}

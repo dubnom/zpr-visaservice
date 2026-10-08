@@ -1,0 +1,6 @@
+{
+  "version": 1,
+  "audience": "https://enrollment.example.invalid",
+  "allow_software_development": true,
+  "key_protection": "macos-keychain"
+}

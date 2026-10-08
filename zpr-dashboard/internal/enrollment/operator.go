@@ -7,6 +7,7 @@ import (
 	"io"
 	"log"
 	"net/http"
+	"slices"
 	"strings"
 	"time"
 
@@ -54,6 +55,9 @@ func NewOperatorAdminHandler(store *Store, config Config, trust operatordelegati
 	}
 	for _, grant := range trust.Grants {
 		for _, organization := range grant.Organizations {
+			if organization == "*" {
+				continue
+			}
 			if _, ok := config.Organizations[organization]; !ok {
 				return nil, errors.New("operator delegation grant references unknown enrollment organization")
 			}
@@ -72,6 +76,11 @@ func NewOperatorAdminHandler(store *Store, config Config, trust operatordelegati
 	if err != nil {
 		return nil, err
 	}
+	organizations := make([]string, 0, len(config.Organizations))
+	for name := range config.Organizations {
+		organizations = append(organizations, name)
+	}
+	slices.Sort(organizations)
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Cache-Control", "no-store")
 		if r.Header.Get("Origin") != "" || r.Header.Get("Sec-Fetch-Site") != "" ||
@@ -94,6 +103,9 @@ func NewOperatorAdminHandler(store *Store, config Config, trust operatordelegati
 		}
 		principal := Principal{Name: operatordelegation.AuditIdentity(grant.Issuer, grant.Subject),
 			Organizations: grant.Organizations, Permissions: grant.Permissions}
+		if slices.Contains(grant.Organizations, "*") {
+			principal.Organizations = organizations
+		}
 		request := r.Clone(context.WithValue(r.Context(), operatorPrincipalKey{}, principal))
 		request.URL.Path = APIPrefix + strings.TrimPrefix(r.URL.Path, operatordelegation.Prefix)
 		request.URL.RawPath = ""

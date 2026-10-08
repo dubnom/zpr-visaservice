@@ -201,7 +201,7 @@ pre { margin: 0; padding: 14px; min-height: 110px; max-height: 180px; overflow: 
 .scenario-card p { margin: 11px 0; color: var(--muted); font-size: 12px; line-height: 1.45; }
 .scenario-card button { padding: 7px 10px; font-size: 10px; }
 .scenario-card button:disabled { cursor: not-allowed; opacity: .45; }
-.scenario-card .danger, .scenario-editor-actions .danger { color: #a1432b; }
+.scenario-card .danger, .scenario-editor-dialog .danger { color: #a1432b; }
 .organization-layout { display: grid; grid-template-columns: minmax(230px, .7fr) minmax(400px, 1.3fr); gap: 26px; margin-top: 26px; }
 .organization-list { display: grid; gap: 8px; }
 .organization-card { width: 100%; padding: 12px; border: 1px solid var(--line); border-radius: 5px; background: var(--panel); color: var(--ink); text-align: left; cursor: pointer; }
@@ -221,21 +221,6 @@ pre { margin: 0; padding: 14px; min-height: 110px; max-height: 180px; overflow: 
 .organization-item strong { display: block; font-size: 12px; font-weight: 550; overflow-wrap: anywhere; }
 .organization-item small { display: block; margin-top: 3px; color: var(--muted); font-size: 11px; line-height: 1.4; overflow-wrap: anywhere; }
 .organization-empty { color: var(--muted); font-size: 12px; }
-.directory-editor-dialog { width: min(900px, calc(100% - 28px)); max-width: 900px; max-height: min(90vh, 900px); padding: 0; border: 1px solid var(--line); border-radius: 5px; background: var(--panel); color: var(--ink); box-shadow: 0 20px 70px #17211e55; }
-.directory-editor-dialog::backdrop { background: #17211e88; }
-.directory-editor-dialog form { display: grid; gap: 14px; padding: 20px; }
-.directory-editor-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; }
-.directory-editor-head h2 { margin: 0; font-size: 20px; font-weight: 500; }
-.directory-editor-head .eyebrow { margin: 0 0 5px; }
-.directory-editor-head small { display: block; margin-top: 6px; color: var(--muted); font: 10px var(--mono); overflow-wrap: anywhere; }
-.directory-editor-field { display: grid; gap: 5px; min-width: 0; color: var(--muted); font: 9px var(--mono); }
-.directory-editor-field input, .directory-editor-field select, .directory-editor-field textarea { width: 100%; min-width: 0; padding: 8px 9px; border: 1px solid var(--line); border-radius: 3px; background: var(--panel); color: var(--ink); font: 11px/1.5 var(--mono); }
-.directory-editor-field textarea { min-height: 320px; resize: vertical; white-space: pre; }
-.directory-editor-meta { display: grid; grid-template-columns: minmax(0, 1fr) minmax(180px, .6fr); gap: 12px; }
-.directory-editor-status { min-height: 18px; margin: 0; color: var(--muted); font: 10px/1.5 var(--mono); }
-.directory-editor-status[data-state="error"] { color: #9e4a2a; }
-.directory-editor-status[data-state="saved"] { color: #21845b; }
-.directory-editor-actions { display: flex; justify-content: flex-end; gap: 8px; padding-top: 10px; border-top: 1px solid var(--line); }
 .scenario-run-pane { border-top: 1px solid var(--line); padding-top: 12px; }
 .scenario-list-heading { justify-content: flex-start; margin-bottom: 12px; }
 .scenario-run-heading, .scenario-run-actions { display: flex; align-items: center; gap: 9px; min-width: 0; }
@@ -292,49 +277,23 @@ pre { margin: 0; padding: 14px; min-height: 110px; max-height: 180px; overflow: 
 @media (max-width: 380px) { .machine-session { flex-wrap: wrap; }.user-select { flex: 1 1 150px; }.user-select select { max-width: 100%; width: 100%; } }
 @media (max-width: 900px) { .scenario-layout { grid-template-columns: minmax(0, 1fr); }.scenario-run-pane { margin-top: 10px; } }
 @media (max-width: 900px) { .organization-layout { grid-template-columns: minmax(0, 1fr); } }
-@media (max-width: 700px) { .directory-editor-meta { grid-template-columns: minmax(0, 1fr); }.organization-directory-heading { align-items: flex-start; flex-direction: column; } }
+@media (max-width: 700px) { .organization-directory-heading { align-items: flex-start; flex-direction: column; } }
 
 .scenario-org-select, .scenario-editor-field { display: grid; gap: 5px; min-width: 0; color: var(--muted); font: 9px var(--mono); }
 .scenario-org-select strong { max-width: 240px; color: var(--ink); font: 600 12px/1.5 var(--mono); overflow-wrap: anywhere; }
 .scenario-org-select select, .scenario-editor-field input, .scenario-editor-field select, .scenario-editor-field textarea { width: 100%; min-width: 0; padding: 8px 9px; border: 1px solid var(--line); border-radius: 3px; background: var(--panel); color: var(--ink); font: 11px/1.5 var(--mono); }
 .scenario-org-select select { min-width: 175px; }
-.scenario-top-actions, .scenario-card-actions, .scenario-editor-actions { display: flex; align-items: center; gap: 8px; }
+.scenario-top-actions, .scenario-card-actions { display: flex; align-items: center; gap: 8px; }
 .scenario-card-actions { flex-wrap: wrap; }
 .scenario-card-actions button { flex: 1 1 auto; }
 .scenario-version { color: var(--muted); font: 9px var(--mono); }
 .scenario-version.published { color: #21845b; }
-.scenario-editor-dialog { width: min(1120px, calc(100% - 28px)); max-width: 1120px; max-height: min(92vh, 1000px); overflow: auto; padding: 0; border: 1px solid var(--line); border-radius: 5px; background: var(--panel); color: var(--ink); box-shadow: 0 20px 70px #17211e55; }
-.scenario-editor-dialog::backdrop { background: #17211e88; }
-.scenario-editor-dialog form { display: grid; gap: 14px; padding: 20px; }
-.scenario-editor-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; }
-.scenario-editor-head-actions { display: flex; align-items: center; justify-content: flex-end; gap: 8px; flex-wrap: wrap; }
-.scenario-editor-head h2 { margin: 0; font-size: 20px; font-weight: 500; }
-.scenario-editor-head .eyebrow { margin: 0 0 5px; }
 .scenario-builder-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; }
 .scenario-builder-grid .scenario-description-field { grid-column: 1 / -1; }
 .scenario-editor-field textarea { min-height: 62px; resize: vertical; }
 .scenario-advanced textarea { min-height: 260px; font-family: var(--mono); tab-size: 2; white-space: pre; }
-.scenario-advanced summary { width: fit-content; color: var(--teal); font-size: 11px; cursor: pointer; }
-.scenario-advanced > summary.button-refresh { color: white; padding: 7px 11px; }
-.scenario-advanced .config-file-menu > summary.button-refresh { color: white; }
-.scenario-source-workbench { display: flex; flex-direction: column; gap: 14px; min-width: 0; }
-.scenario-source-workbench > details { min-width: 0; }
-.scenario-raw-mode .scenario-source-workbench { display: grid; grid-template-columns: minmax(0, 1fr) minmax(260px, .38fr); align-items: start; }
-.scenario-raw-mode > :is(.scenario-builder-grid, .scenario-step-editor) { display: none; }
-.scenario-source-tools { margin: 10px 0 8px; }
-.scenario-source-tools strong { color: var(--muted); font: 11px var(--mono); }
-.scenario-source-format { display: flex; align-items: center; gap: 5px; color: var(--muted); font: 10px var(--mono); }
-.scenario-source-format select { padding: 5px 7px; border: 1px solid var(--line); border-radius: 3px; background: var(--panel); color: var(--ink); font: 10px var(--mono); }
-#scenario-source-position { margin-left: auto; color: var(--muted); font: 10px var(--mono); }
-#scenario-source-modified { color: #795015; font: 10px var(--mono); }
-.scenario-source-tools [hidden] { display: none; }
 .scenario-source-editor { height: max(340px, calc(72dvh - 180px)); }
 .scenario-source-editor #scenario-editor-source { min-height: 0; }
-.scenario-editor-dialog :is(#scenario-editor-analyze, #scenario-source-analyze)[data-analysis-state="pending"] { border-color: #a85725; background: #c96932; color: white; }
-.scenario-editor-dialog :is(#scenario-editor-analyze, #scenario-source-analyze)[data-analysis-state="success"] { border-color: #23754c; background: #23754c; color: white; }
-.scenario-editor-dialog :is(#scenario-editor-analyze, #scenario-source-analyze)[data-analysis-state="error"] { border-color: #a53232; background: #b83b3b; color: white; }
-.scenario-raw-mode #scenario-assistant-slot .design-assistant { border-top: 0; padding-top: 0; }
-@media (max-width: 900px) { .scenario-raw-mode .scenario-source-workbench { grid-template-columns: minmax(0, 1fr); } }
 .scenario-parallel-field { display: flex; align-items: center; gap: 8px; color: var(--ink); font-size: 11px; }
 .scenario-parallel-field input { accent-color: var(--teal); }
 .scenario-step-editor { min-width: 0; border-top: 1px solid var(--line); padding-top: 12px; }
@@ -350,12 +309,6 @@ pre { margin: 0; padding: 14px; min-height: 110px; max-height: 180px; overflow: 
 .scenario-step-fields input, .scenario-step-fields select { width: 100%; min-width: 0; padding: 7px; border: 1px solid var(--line); border-radius: 3px; background: var(--panel); color: var(--ink); font: 10px/1.4 var(--mono); }
 .scenario-step-fields [hidden] { display: none; }
 .scenario-step-empty { margin: 0; color: var(--muted); font-size: 11px; }
-.scenario-editor-meta { display: grid; grid-template-columns: minmax(0, 1fr) minmax(180px, .6fr); gap: 12px; }
-.scenario-editor-status { min-height: 18px; margin: 0; color: var(--muted); font: 10px/1.5 var(--mono); }
-.scenario-editor-status[data-state="error"] { color: #9e4a2a; }
-.scenario-editor-status[data-state="saved"] { color: #21845b; }
-.scenario-editor-actions { justify-content: flex-end; padding-top: 10px; border-top: 1px solid var(--line); }
-.scenario-editor-action-spacer { flex: 1; }
 .organization-top-actions { display: flex; align-items: center; gap: 8px; }
 .organization-reset-log { display: inline-flex; align-items: center; justify-content: center; min-height: 34px; padding: 7px 10px; border: 1px solid var(--line); border-radius: 4px; color: var(--teal); font: 10px var(--mono); text-decoration: none; white-space: nowrap; }
 .organization-reset-log:hover { border-color: #a5b4aa; background: var(--panel); }
@@ -385,3 +338,20 @@ pre { margin: 0; padding: 14px; min-height: 110px; max-height: 180px; overflow: 
 .design-assistant-dialog .design-assistant { border-top: 0; padding-top: 0; }
 @media (max-width: 900px) { .scenario-builder-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }.scenario-step-fields { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
 @media (max-width: 700px) { .scenario-org-select { flex: 1 1 100%; }.scenario-org-select select { width: 100%; }.scenario-top-actions { margin-left: auto; }.organization-top-actions { flex-wrap: wrap; justify-content: flex-end; }.scenario-editor-meta, .scenario-builder-grid, .scenario-step-fields { grid-template-columns: minmax(0, 1fr); }.scenario-builder-grid .scenario-description-field { grid-column: auto; }.scenario-editor-actions { flex-wrap: wrap; }.scenario-editor-action-spacer { display: none; }.design-assistant-controls label { flex: 1 1 135px; }.design-assistant-controls select { max-width: none; width: 100%; } }
+
+/* Simulator editors open as full editor pages that follow the Control Room Policy blueprint. */
+.sim-editor-page { position: static; width: auto; max-width: none; max-height: none; margin: 0; padding: 0; border: 0; background: transparent; color: inherit; }
+.sim-editor-page:not([open]) { display: none !important; }
+.sim-editor-page[open] { display: flex; flex-direction: column; min-height: calc(100vh - 110px); }
+.main-content:has(> .sim-editor-page[open]) > :not(.topbar, .sim-editor-page, script) { display: none !important; }
+.sim-editor-form { display: flex; flex: 1; min-width: 0; flex-direction: column; }
+.sim-editor-page .policy-toolbar { border-bottom: 0; }
+.sim-editor-close { flex: 0 0 auto; }.sim-editor-page button { border-radius: 3px; font-family: var(--sans); }
+
+.scenario-editor-dialog :is(#scenario-source-analyze)[data-analysis-state="pending"] { border-color: #a85725; background: #c96932; color: white; }
+.scenario-editor-dialog :is(#scenario-source-analyze)[data-analysis-state="success"] { border-color: #23754c; background: #23754c; color: white; }
+.scenario-editor-dialog :is(#scenario-source-analyze)[data-analysis-state="error"] { border-color: #a53232; background: #b83b3b; color: white; }
+.scenario-editor-main { display: flex; flex-direction: column; gap: 14px; }
+.scenario-raw-mode .scenario-editor-main > :is(.scenario-builder-grid, .scenario-step-editor) { display: none; }
+.scenario-advanced:not([open]) > :not(summary) { display: none; }
+.scenario-assistant-pane .design-assistant { border-top: 0; padding-top: 0; }

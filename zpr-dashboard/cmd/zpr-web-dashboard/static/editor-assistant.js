@@ -168,7 +168,7 @@
       updateControls();
       render();
       try {
-        const response = await fetch(options.askURL, {
+        const response = await (window.zprOperatorFetch ?? fetch)(options.askURL, {
           method: "POST", headers: { "Content-Type": "application/json", Accept: "application/json" },
           body: JSON.stringify({ editor: options.editor, source: source.value, messages: state.messages, model: modelSelect.value, max_tokens: Number(tokenSelect.value) }),
         });
@@ -242,7 +242,7 @@
   const gatewaySource = document.getElementById("gateway-source");
   if (gatewaySource) {
     mountEditorAssistant({
-      editor: "gateway", source: gatewaySource, anchor: gatewaySource.closest(".config-source-editor"),
+      editor: "gateway", source: gatewaySource, anchor: gatewaySource.closest(".editor-page-main") || gatewaySource.closest(".config-source-editor"),
       statusURL: "/api/gateways/assistant", askURL: "/api/gateways/assistant",
       placeholder: "Ask about this gateway draft",
       disclosure: "Submitting sends the current gateway draft and chat history to Anthropic. Suggestions are never saved or activated automatically.",
@@ -251,7 +251,7 @@
   const configSource = document.getElementById("zpr-config-source");
   if (configSource) {
     mountEditorAssistant({
-      editor: "zpr-config", source: configSource, anchor: configSource.closest(".config-source-editor"),
+      editor: "zpr-config", source: configSource, anchor: configSource.closest(".editor-page-main") || configSource.closest(".config-source-editor"),
       statusURL: "/api/policy", askURL: "/api/policy/assistant",
       placeholder: "Ask about this configuration",
       disclosure: "Submitting sends the current configuration draft and chat history to Anthropic. Suggestions are never saved or applied automatically.",
@@ -260,7 +260,7 @@
   const directorySource = document.getElementById("directory-editor-source");
   if (directorySource) {
     const directoryAssistant = mountEditorAssistant({
-      editor: "directory-ldif", source: directorySource, anchor: directorySource.closest(".directory-editor-field"),
+      editor: "directory-ldif", source: directorySource, anchor: directorySource.closest(".editor-page-main") || directorySource.closest(".directory-editor-field"),
       statusURL: "/api/simulator/assistant/status", askURL: "/api/simulator/editor-assistant",
       placeholder: "Ask about this directory seed",
       disclosure: "Submitting sends the current LDIF draft and chat history to Anthropic. Suggestions are never saved or published automatically.",

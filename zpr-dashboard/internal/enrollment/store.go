@@ -323,6 +323,46 @@ func (s *Store) Cancel(ctx context.Context, organization, id, principal string, 
 	return s.transition(ctx, organization, id, "", "", principal, "cancelled", now, time.Time{})
 }
 
+// CancelReviewed binds an operator cancellation to the record displayed for review.
+// Direct certificate cancellation retains its existing idempotent contract.
+func (s *Store) CancelReviewed(ctx context.Context, organization, id, principal, reason, fingerprint string, revision int, now time.Time) (Invitation, error) {
+	if !validText(principal) || !validText(reason) || revision < 1 || now.IsZero() {
+		return Invitation{}, ErrInvalid
+	}
+	tx, err := s.db.BeginTx(ctx, nil)
+	if err != nil {
+		return Invitation{}, err
+	}
+	defer tx.Rollback()
+	i, err := readInvitation(ctx, tx, organization, id, now)
+	if err != nil {
+		return Invitation{}, err
+	}
+	if i.Revision != revision {
+		return Invitation{}, ErrRevision
+	}
+	if i.KeyFingerprint != fingerprint {
+		return Invitation{}, ErrInvalid
+	}
+	if i.State != "invited" && i.State != "pending_approval" {
+		return Invitation{}, ErrUnavailable
+	}
+	i, err = transitionTx(ctx, tx, organization, id, "", "", principal, "cancelled", now, time.Time{})
+	if err != nil {
+		return Invitation{}, err
+	}
+	if _, err := tx.ExecContext(ctx, `UPDATE invitation_reviews SET decision_by=?,decision_reason=?,decided_at=? WHERE invitation_id=?`,
+		principal, reason, now.UnixNano(), id); err != nil {
+		return Invitation{}, err
+	}
+	decided := now.UTC()
+	i.DecisionBy, i.DecisionReason, i.DecidedAt = principal, reason, &decided
+	if err := tx.Commit(); err != nil {
+		return Invitation{}, err
+	}
+	return i, nil
+}
+
 func (s *Store) transition(ctx context.Context, organization, id, codeHash, fingerprint, principal, action string, now, approvalExpires time.Time) (Invitation, error) {
 	tx, err := s.db.BeginTx(ctx, nil)
 	if err != nil {

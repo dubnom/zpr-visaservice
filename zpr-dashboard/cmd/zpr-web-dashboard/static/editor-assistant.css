@@ -15,3 +15,19 @@
   .editor-assistant-main { padding-right: 0; }
   .editor-assistant-pane { min-height: 0; padding: 15px 0 0; border-top: 1px solid var(--line); border-left: 0; }
 }
+
+/* Shared editor-page blueprint: the same frame as the Policy page for every editor. */
+.editor-page-workbench { position: relative; display: flex; flex: 1; min-width: 0; flex-direction: column; }
+.editor-page .editor-assistant-layout { flex: 1; min-height: 62vh; border-top: 1px solid var(--line); }
+.editor-page .editor-assistant-main { padding: 12px 20px 12px 0; }
+.editor-page .policy-identity input:not([hidden]) { width: min(270px, 40vw); min-width: 120px; min-height: 32px; padding: 5px 8px; border: 1px solid #aab9ad; border-radius: 2px; outline: none; background: white; color: var(--ink); font: 600 12px var(--sans); }
+.editor-page .policy-identity input:focus { border-color: #62856f; box-shadow: 0 0 0 2px #b5e34f42; }
+.editor-page .policy-identity input[hidden] { display: none; }
+.editor-page-status { margin: 8px 0 0; color: var(--muted); font: 11px var(--mono); overflow-wrap: anywhere; }
+.editor-page-status[hidden] { display: none; }
+.editor-page-status[data-state="success"] { color: var(--forest); }
+.editor-page-status[data-state="error"] { color: var(--red, #b42318); }
+.editor-assistant-pane .assistant-settings label { display: grid; min-width: 0; gap: 4px; color: var(--muted); font: 9px var(--mono); }
+.editor-assistant-pane .assistant-settings .assistant-enable { display: flex; align-items: center; gap: 6px; color: var(--ink-soft); }
+.editor-assistant-pane .assistant-settings select { width: 100%; min-height: 30px; padding: 4px 6px; border: 1px solid var(--line); border-radius: 2px; background: white; color: var(--ink); font: 10px var(--sans); }
+.editor-assistant-pane .assistant-form label { color: var(--muted); font: 9px var(--mono); }

@@ -330,7 +330,7 @@
   }
 
   async function request(path, options) {
-    const response = await fetch(path, { cache: "no-store", ...options });
+    const response = await window.zprOperatorFetch(path, { cache: "no-store", ...options });
     const data = await response.json();
     if (!response.ok) throw new Error(data.error || `HTTP ${response.status}`);
     return data;

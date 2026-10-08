@@ -1,4 +1,4 @@
-//go:build linux || darwin
+//go:build linux || darwin || windows
 
 package enrollment
 
@@ -11,16 +11,15 @@ import (
 	"embed"
 	"errors"
 	"fmt"
-	"io"
 	"log"
 	"math"
 	"net"
 	"net/http"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strconv"
 	"sync"
-	"syscall"
 	"time"
 )
 
@@ -33,79 +32,26 @@ type SetupConfig struct {
 	CAFile                   string `json:"ca_file"`
 	StateDirectory           string `json:"state_directory"`
 	AllowSoftwareDevelopment bool   `json:"allow_software_development"`
+	KeyProtection            string `json:"key_protection,omitempty"`
 }
 
 func (c SetupConfig) Validate() error {
 	if c.Version != 1 || validateAudience(c.Audience) != nil || !c.AllowSoftwareDevelopment ||
 		!filepath.IsAbs(c.StateDirectory) || filepath.Clean(c.StateDirectory) != c.StateDirectory ||
-		c.StateDirectory == string(filepath.Separator) {
+		filepath.Dir(c.StateDirectory) == c.StateDirectory {
 		return errors.New("setup requires version 1, a trusted HTTPS audience, an absolute clean state directory, and explicit software-development approval")
+	}
+	if c.KeyProtection != "" && (c.KeyProtection != "macos-keychain" || runtime.GOOS != "darwin") {
+		return errors.New("key_protection must be omitted, or macos-keychain on macOS")
+	}
+	if c.KeyProtection == "macos-keychain" && !keychainAvailable() {
+		return errors.New("macos-keychain requires a native CGO-enabled Security.framework build")
 	}
 	return nil
 }
 
-func readSetupFile(path string) ([]byte, error) {
-	file, err := os.OpenFile(path, os.O_RDONLY|syscall.O_NOFOLLOW|syscall.O_NONBLOCK, 0)
-	if err != nil {
-		return nil, err
-	}
-	defer file.Close()
-	info, err := file.Stat()
-	if err != nil {
-		return nil, err
-	}
-	stat, ok := info.Sys().(*syscall.Stat_t)
-	if !ok || !info.Mode().IsRegular() || info.Mode().Perm()&0022 != 0 ||
-		(int(stat.Uid) != os.Geteuid() && stat.Uid != 0) {
-		return nil, errors.New("setup configuration and CA files must be regular, owned by root or the current user, and not group/other writable")
-	}
-	data, err := io.ReadAll(io.LimitReader(file, 65537))
-	if err != nil {
-		return nil, err
-	}
-	if len(data) > 65536 {
-		return nil, errors.New("setup configuration or CA file exceeds 65536 bytes")
-	}
-	return data, nil
-}
-
 func LoadSetupConfig(path string) (SetupConfig, error) {
 	return loadSetupConfig(path, "")
-}
-
-// LoadUserSetupConfig derives private state from the desktop user's home,
-// not from a machine-wide configuration or a shared service account.
-func LoadUserSetupConfig(path string) (SetupConfig, error) {
-	if os.Geteuid() == 0 {
-		return SetupConfig{}, errors.New("desktop setup must run as the logged-in user, not root")
-	}
-	home, err := os.UserHomeDir()
-	if err != nil || !filepath.IsAbs(home) || filepath.Clean(home) != home {
-		return SetupConfig{}, errors.New("desktop setup requires an absolute clean home directory")
-	}
-	state := filepath.Join(home, ".local", "state", "zpr-enrollment-development")
-	config, err := loadSetupConfig(path, state)
-	if err != nil {
-		return SetupConfig{}, err
-	}
-	// Validate the home and each existing/created parent; never repair someone
-	// else's ownership or accept symlinked/shared writable state.
-	for _, directory := range []string{home, filepath.Join(home, ".local"), filepath.Join(home, ".local", "state")} {
-		if directory != home {
-			if err := os.Mkdir(directory, 0700); err != nil && !errors.Is(err, os.ErrExist) {
-				return SetupConfig{}, err
-			}
-		}
-		info, err := os.Lstat(directory)
-		if err != nil {
-			return SetupConfig{}, err
-		}
-		stat, ok := info.Sys().(*syscall.Stat_t)
-		if !ok || !info.IsDir() || int(stat.Uid) != os.Geteuid() || info.Mode().Perm()&0022 != 0 {
-			return SetupConfig{}, errors.New("desktop home/state parents must be owned by the current user, not symlinks or group/other writable")
-		}
-	}
-	return config, nil
 }
 
 func loadSetupConfig(path, userState string) (SetupConfig, error) {
@@ -164,6 +110,7 @@ type setupView struct {
 	ConfirmRecovery bool             `json:"confirm_recovery"`
 	RetryAfter      int              `json:"retry_after_seconds"`
 	Message         string           `json:"message"`
+	KeyProtection   string           `json:"key_protection"`
 }
 
 func NewSetupServer(config SetupConfig) (*SetupServer, error) {
@@ -182,7 +129,7 @@ func NewSetupServer(config SetupConfig) (*SetupServer, error) {
 		}
 	}
 	s := &SetupServer{config: config, roots: roots, token: rand.Text(), expires: time.Now().Add(time.Hour)}
-	identity, err := LoadSoftwareIdentity(config.StateDirectory)
+	identity, err := loadSetupIdentity(config)
 	if err == nil {
 		if err := s.attach(identity); err != nil {
 			return nil, err
@@ -344,10 +291,15 @@ func (s *SetupServer) serveHTTP(w http.ResponseWriter, r *http.Request) {
 			s.reply(w, http.StatusConflict, "Identity already exists or invitation details are invalid; no key was replaced.")
 			return
 		}
-		identity, err := CreateSoftwareIdentity(s.config.StateDirectory, LocalEnrollment{
+		identity, err := createSetupIdentity(s.config, LocalEnrollment{
 			Audience: s.config.Audience, Organization: input.Organization, InvitationID: input.InvitationID})
 		if err != nil {
-			s.reply(w, http.StatusInternalServerError, "Could not persist identity. Restart to inspect local state; no claim was sent.")
+			message := "Could not persist identity. Restart to inspect local state; no claim was sent."
+			if s.config.KeyProtection == "macos-keychain" {
+				message = "Could not save Keychain identity. Unlock/authorize your default Keychain and restart to inspect state; no claim was sent and no plaintext fallback was used."
+			}
+			log.Printf("Local setup identity persistence failed: %v", err)
+			s.reply(w, http.StatusInternalServerError, message)
 			return
 		}
 		if err := s.attach(identity); err != nil {
@@ -417,6 +369,13 @@ func (s *SetupServer) serveHTTP(w http.ResponseWriter, r *http.Request) {
 
 func (s *SetupServer) reply(w http.ResponseWriter, code int, message string) {
 	view := setupView{Audience: s.config.Audience, Status: s.status, Uncertain: s.uncertain, Message: message}
+	view.KeyProtection = "Software development key, not hardware-backed or encrypted at rest."
+	if runtime.GOOS == "windows" {
+		view.KeyProtection = "Software development key protected at rest by Windows user-bound DPAPI, not hardware-backed. Other Windows users require separate enrollment."
+	}
+	if s.config.KeyProtection == "macos-keychain" {
+		view.KeyProtection = "Software development key stored in the current user's macOS Keychain, not Secure Enclave-backed or device attestation. Keychain access is required to resume."
+	}
 	if s.identity != nil {
 		metadata := s.identity.Metadata()
 		view.Metadata, view.Fingerprint = &metadata, s.client.Fingerprint()

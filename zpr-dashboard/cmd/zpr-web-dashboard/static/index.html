@@ -5,18 +5,18 @@
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <meta name="theme-color" content="#17211e">
     <title>ZPR Control Room</title>
-    <link rel="stylesheet" href="/app.css?v=81">
+    <link rel="stylesheet" href="/app.css?v=84">
     <link rel="stylesheet" href="/machine-logs.css?v=17">
     <link rel="stylesheet" href="/assertions.css?v=11">
     <link rel="stylesheet" href="/sidebar.css?v=8">
-    <link rel="stylesheet" href="/trusted-source.css?v=2">
+    <link rel="stylesheet" href="/trusted-source.css?v=3">
     <link rel="stylesheet" href="/security-review.css?v=8">
     <link rel="stylesheet" href="/diagnostics.css?v=1">
-    <link rel="stylesheet" href="/gateways.css?v=2">
-    <link rel="stylesheet" href="/provisioning.css?v=2">
-    <link rel="stylesheet" href="/editor-assistant.css?v=1">
-    <script src="/sidebar.js?v=31" defer></script>
-    <script src="/trusted-source.js?v=3" defer></script>
+    <link rel="stylesheet" href="/gateways.css?v=3">
+    <link rel="stylesheet" href="/provisioning.css?v=3">
+    <link rel="stylesheet" href="/editor-assistant.css?v=2">
+    <script src="/sidebar.js?v=35" defer></script>
+    <script src="/trusted-source.js?v=4" defer></script>
     <script src="/policy-record-icons.js?v=1" defer></script>
   </head>
   <body>
@@ -220,7 +220,7 @@ each group attribute "gidNumber" &gt;= 1000;</pre></details></div><aside class="
           <section class="section-block policy-page">
             <div class="policy-toolbar">
               <div id="policy-edit-state" class="policy-identity" aria-label="Selected policy">
-                <strong id="policy-record-title">Select a policy</strong><span id="policy-revision-label"></span><span id="policy-modified-indicator" class="policy-modified-indicator" role="status" hidden>Modified</span>
+                <strong id="policy-record-title" hidden></strong><span id="policy-revision-label"></span><span id="policy-modified-indicator" class="policy-modified-indicator" role="status" hidden>Modified</span>
                 <input id="policy-draft-name" type="text" maxlength="100" autocomplete="off" aria-label="New policy name" placeholder="Name this policy" hidden>
               </div>
             </div>
@@ -257,7 +257,6 @@ each group attribute "gidNumber" &gt;= 1000;</pre></details></div><aside class="
                       </div>
                     </div>
                   </div>
-                  <span id="policy-editor-mode" class="policy-editor-mode" hidden></span>
                   <div class="policy-attribute-toolbar" id="policy-attribute-toolbar">
                     <button id="policy-check" class="button" type="button" disabled>Analyze</button>
                     <button id="policy-format" class="button button-save-as-ready" type="button" title="Format policy source" aria-label="Format policy source" disabled>Format</button>
@@ -267,12 +266,12 @@ each group attribute "gidNumber" &gt;= 1000;</pre></details></div><aside class="
                     <span data-editor-search-target="policy-source,assertion-source"></span>
                     <details id="policy-history-menu" class="policy-history-menu">
                       <summary class="button policy-history-toggle" aria-label="Version history">History <span id="policy-history-count">—</span><span class="policy-picker-chevron" aria-hidden="true">⌄</span></summary>
-                      <div id="policy-history" class="policy-history"><p class="catalog-empty">Select a policy to browse versions.</p></div>
+                      <div id="policy-history" class="policy-history"></div>
                     </details>
                   </div>
                 </div>
                 <div id="policy-source-surface">
-                <div id="policy-stage-status" class="policy-stage-status" role="status" aria-live="polite">Select a saved policy revision to stage.</div>
+                <div id="policy-stage-status" class="policy-stage-status" role="status" aria-live="polite" hidden></div>
                 <div id="policy-attribute-status" class="policy-attribute-status" role="status" aria-live="polite"></div>
                 <div id="policy-code-editor" class="policy-code-editor" data-test-mode="false">
                   <div id="policy-test-gutter" class="policy-test-gutter" aria-label="Analyze results by policy line"><div id="policy-test-gutter-content" class="policy-test-gutter-content"></div></div>
@@ -367,7 +366,7 @@ each group attribute "gidNumber" &gt;= 1000;</pre></details></div><aside class="
         <section class="page-view" id="page-visas" data-page="visas" aria-label="Visas">
           <section class="section-block">
             <div class="table-tools"><div class="filter-group"><input id="visas-filter" type="search" placeholder="Filter" aria-label="Filter visas"><span class="count-label" id="visa-total">— total</span></div></div>
-            <div class="table-scroll"><table data-sort-page="visas"><thead><tr><th data-sort-key="id">ID</th><th data-sort-key="flow">FLOW</th><th data-sort-key="proto">PROTO</th><th data-sort-key="node">REQUESTING NODE</th><th data-sort-key="expires">EXPIRES</th></tr></thead><tbody id="visa-rows"><tr><td colspan="5" class="empty-row">Waiting for visa data…</td></tr></tbody></table></div>
+            <div class="table-scroll"><table data-sort-page="visas"><thead><tr><th data-sort-key="id">ID</th><th data-sort-key="flow">FLOW</th><th data-sort-key="proto">PROTO</th><th data-sort-key="node">REQUESTING NODE</th><th data-sort-key="expires">EXPIRES</th><th data-sort-key="pair">PAIR</th></tr></thead><tbody id="visa-rows"><tr><td colspan="6" class="empty-row">Waiting for visa data…</td></tr></tbody></table></div>
           </section>
         </section>
 
@@ -379,68 +378,101 @@ each group attribute "gidNumber" &gt;= 1000;</pre></details></div><aside class="
         </section>
 
         <section class="page-view" id="page-gateways" data-page="gateways" aria-label="Gateways" hidden>
-          <section class="section-block policy-editor-panel config-editor-panel gateway-editor-panel" data-gateway-manager>
-            <div class="gateway-workbench">
-              <aside id="gateway-catalog-pane" class="policy-catalog-pane gateway-catalog-pane" aria-label="Gateway picker" hidden>
+          <section class="section-block policy-page editor-page config-editor-panel gateway-editor-panel" data-gateway-manager>
+            <div class="policy-toolbar">
+              <div class="policy-identity" aria-label="Selected gateway">
+                <strong id="gateway-record-title" hidden></strong><span id="gateway-revision-label"></span><span id="gateway-modified-indicator" class="policy-modified-indicator" role="status" hidden>Modified</span>
+              </div>
+            </div>
+            <div class="editor-page-workbench gateway-workbench">
+              <aside id="gateway-catalog-pane" class="policy-catalog-pane editor-catalog-pane gateway-catalog-pane" aria-label="Gateway picker" hidden>
                 <div class="catalog-pane-heading"><strong>Installed gateways <span id="gateway-contract-count" class="count-label">—</span></strong><button id="gateway-refresh" class="button" type="button">Refresh</button><button id="gateway-picker-close" class="pane-collapse-toggle" type="button" aria-label="Close gateway picker" title="Close gateway picker">×</button></div>
-                <div id="gateway-contracts" class="policy-category-tree" role="tree" aria-label="Installed gateways" tabindex="0"><p class="catalog-empty">Loading installed gateway services…</p></div>
+                <div id="gateway-contracts" class="policy-category-tree" role="tree" aria-label="Installed gateways" tabindex="0"></div>
               </aside>
-              <div class="policy-editor-tools">
-                <div class="policy-browser-controls">
-                  <button id="gateway-picker-toggle" class="button button-refresh policy-picker-trigger" type="button" aria-label="Browse gateways" aria-haspopup="dialog" aria-controls="gateway-catalog-pane" aria-expanded="false"><span id="gateway-picker-label">Browse...</span><span class="policy-picker-chevron" aria-hidden="true">⌄</span></button>
-                  <div id="gateway-actions" class="policy-files">
-                    <button id="gateway-files-toggle" class="button button-refresh policy-files-toggle" type="button" aria-haspopup="menu" aria-controls="gateway-file-menu" aria-expanded="false"><span>File...</span><span class="policy-picker-chevron" aria-hidden="true">⌄</span></button>
-                    <div id="gateway-file-menu" class="policy-file-menu" role="menu" aria-label="Gateway file operations" hidden>
-                      <button id="gateway-save" class="button" type="button" role="menuitem" disabled>Save draft</button>
-                      <button id="gateway-open" class="button" type="button" role="menuitem" disabled>Open file...</button>
-                      <button id="gateway-download" class="button" type="button" role="menuitem" disabled>Download file...</button>
-                      <hr role="separator">
-                      <button id="gateway-discard" class="button" type="button" role="menuitem" disabled>Discard</button>
+              <div class="editor-page-main">
+                <div class="policy-editor-tools">
+                  <div class="policy-browser-controls">
+                    <button id="gateway-picker-toggle" class="button button-refresh policy-picker-trigger" type="button" aria-label="Browse gateways" aria-haspopup="dialog" aria-controls="gateway-catalog-pane" aria-expanded="false"><span id="gateway-picker-label">Browse...</span><span class="policy-picker-chevron" aria-hidden="true">⌄</span></button>
+                    <div id="gateway-actions" class="policy-files">
+                      <button id="gateway-files-toggle" class="button button-refresh policy-files-toggle" type="button" aria-haspopup="menu" aria-controls="gateway-file-menu" aria-expanded="false"><span>File...</span><span class="policy-picker-chevron" aria-hidden="true">⌄</span></button>
+                      <div id="gateway-file-menu" class="policy-file-menu" role="menu" aria-label="Gateway file operations" hidden>
+                        <button id="gateway-save" class="button" type="button" role="menuitem" disabled>Save</button>
+                        <button id="gateway-open" class="button" type="button" role="menuitem" disabled>Open file...</button>
+                        <button id="gateway-download" class="button" type="button" role="menuitem" disabled>Download file...</button>
+                        <hr role="separator">
+                        <button id="gateway-discard" class="button" type="button" role="menuitem" disabled>Discard</button>
+                      </div>
+                      <input id="gateway-file-input" type="file" accept=".json,application/json" hidden>
                     </div>
-                    <input id="gateway-file-input" type="file" accept=".json,application/json" hidden>
+                  </div>
+                  <div class="policy-attribute-toolbar">
+                    <button id="gateway-analyze" class="button" type="button" disabled>Analyze</button>
+                    <button id="gateway-format" class="button" type="button" title="Format gateway draft" aria-label="Format gateway draft" disabled>Format</button>
+                  </div>
+                  <div class="policy-editor-utilities">
+                    <span data-editor-search-target="gateway-source"></span>
+                    <details id="gateway-history-menu" class="policy-history-menu">
+                      <summary class="button policy-history-toggle" aria-label="Version history">History <span id="gateway-history-count">—</span><span class="policy-picker-chevron" aria-hidden="true">⌄</span></summary>
+                      <div id="gateway-history" class="policy-history"></div>
+                    </details>
                   </div>
                 </div>
-                <strong id="gateway-editor-mode" class="policy-editor-mode">Gateway</strong>
-                <div class="policy-attribute-toolbar">
-                  <button id="gateway-analyze" class="button" type="button" disabled>Analyze</button>
-                  <button id="gateway-format" class="button" type="button" title="Format gateway draft" aria-label="Format gateway draft" disabled>Format</button>
-                </div>
-                <div class="policy-editor-utilities">
-                  <span data-editor-search-target="gateway-source"></span>
-                  <details id="gateway-history-menu" class="policy-history-menu">
-                    <summary class="button policy-history-toggle" aria-label="Version history">History <span id="gateway-history-count">—</span><span class="policy-picker-chevron" aria-hidden="true">⌄</span></summary>
-                    <div id="gateway-history" class="policy-history"><p class="catalog-empty">Select a gateway to browse versions.</p></div>
-                  </details>
-                </div>
+                <div class="config-source-editor gateway-source-editor"><div id="gateway-gutter" class="config-source-gutter" aria-label="Gateway draft errors by source line"></div><div class="config-code-surface"><pre id="gateway-highlight" aria-hidden="true"></pre><textarea id="gateway-source" class="zpr-config-source" aria-label="Gateway draft JSON" spellcheck="false" maxlength="1048576" wrap="off" disabled></textarea></div></div>
+                <p id="gateway-draft-message" class="editor-page-status" role="status" aria-live="polite" hidden></p>
               </div>
-              <p id="gateway-status" class="gateway-status" role="status" aria-live="polite">Waiting for gateway inventory</p>
-              <div class="config-source-editor gateway-source-editor"><div id="gateway-gutter" class="config-source-gutter" aria-label="Gateway draft errors by source line"></div><div class="config-code-surface"><pre id="gateway-highlight" aria-hidden="true"></pre><textarea id="gateway-source" class="zpr-config-source" aria-label="Gateway draft JSON" spellcheck="false" maxlength="1048576" wrap="off" disabled></textarea></div></div>
-              <p id="gateway-draft-message" class="gateway-draft-message" role="status" aria-live="polite"></p>
             </div>
           </section>
         </section>
 
         <section class="page-view" id="page-zpr-config" data-page="zpr-config" aria-label="ZPR Config" hidden>
-          <section class="section-block policy-editor-panel config-editor-panel">
-            <div class="policy-version-toolbar"><label>Configuration<select id="zpr-config-picker" aria-label="ZPR configuration draft"><option value="">New draft</option></select></label><label>Name<input id="zpr-config-name" aria-label="Configuration name" maxlength="160"></label><span id="zpr-config-modified" class="policy-modified-indicator" hidden>Modified</span></div>
-            <div class="policy-editor-tools">
-              <div class="policy-tool-group">
-                <details class="config-file-menu"><summary class="button button-refresh">File…</summary><div class="config-file-popover" role="menu" aria-label="Configuration file commands"><button id="zpr-config-save" data-config-command type="button" role="menuitem">Save draft</button><button id="zpr-config-new" data-config-command type="button" role="menuitem">New draft</button><button id="zpr-config-open" data-config-command type="button" role="menuitem">Open file…</button><button id="zpr-config-download" data-config-command type="button" role="menuitem">Download file…</button></div></details>
-                <input id="zpr-config-file-input" type="file" accept=".toml,.zplc,text/plain" hidden>
+          <section class="section-block policy-page editor-page config-editor-panel" data-config-editor>
+            <div class="policy-toolbar">
+              <div class="policy-identity" aria-label="Selected configuration">
+                <strong id="zpr-config-title" hidden></strong><input id="zpr-config-name" type="text" maxlength="160" autocomplete="off" aria-label="Configuration name" placeholder="Name this configuration"><span id="zpr-config-revision-label"></span><span id="zpr-config-modified" class="policy-modified-indicator" role="status" hidden>Modified</span>
               </div>
-              <strong class="policy-editor-mode">ZPR Config</strong>
-              <div class="policy-attribute-toolbar"><button id="zpr-config-validate" class="button" data-config-command type="button" disabled>Analyze</button><button id="zpr-config-format" class="button" data-config-command type="button" disabled>Format</button></div>
-              <div class="policy-editor-utilities"><span data-editor-search-target="zpr-config-source"></span><label>History<select id="zpr-config-history" aria-label="Configuration history"></select></label></div>
             </div>
-            <div class="config-source-editor"><div id="zpr-config-gutter" class="config-source-gutter" aria-label="Configuration errors by source line"></div><div class="config-code-surface"><pre id="zpr-config-highlight" aria-hidden="true"></pre><textarea id="zpr-config-source" class="zpr-config-source" aria-label="ZPLC configuration source" spellcheck="false" maxlength="1048576" wrap="off"></textarea></div></div>
-            <p id="zpr-config-status" role="status"></p>
+            <div class="editor-page-workbench">
+              <aside id="zpr-config-catalog-pane" class="policy-catalog-pane editor-catalog-pane" aria-label="Configuration picker" hidden>
+                <div class="catalog-pane-heading"><strong>Configurations <span id="zpr-config-count" class="count-label">—</span></strong><button id="zpr-config-picker-close" class="pane-collapse-toggle" type="button" aria-label="Close configuration picker" title="Close configuration picker">×</button></div>
+                <div id="zpr-config-records" class="policy-category-tree" role="tree" aria-label="Saved configurations" tabindex="0"></div>
+              </aside>
+              <div class="editor-page-main">
+                <div class="policy-editor-tools">
+                  <div class="policy-browser-controls">
+                    <button id="zpr-config-picker-toggle" class="button button-refresh policy-picker-trigger" type="button" aria-label="Browse configurations" aria-haspopup="dialog" aria-controls="zpr-config-catalog-pane" aria-expanded="false"><span>Browse...</span><span class="policy-picker-chevron" aria-hidden="true">⌄</span></button>
+                    <div id="zpr-config-actions" class="policy-files">
+                      <button id="zpr-config-files-toggle" class="button button-refresh policy-files-toggle" type="button" aria-haspopup="menu" aria-controls="zpr-config-file-menu" aria-expanded="false"><span>File...</span><span class="policy-picker-chevron" aria-hidden="true">⌄</span></button>
+                      <div id="zpr-config-file-menu" class="policy-file-menu" role="menu" aria-label="Configuration file operations" hidden>
+                        <button id="zpr-config-save" class="button" data-config-command type="button" role="menuitem">Save</button>
+                        <button id="zpr-config-new" class="button" data-config-command type="button" role="menuitem">New</button>
+                        <button id="zpr-config-open" class="button" data-config-command type="button" role="menuitem">Open file...</button>
+                        <button id="zpr-config-download" class="button" data-config-command type="button" role="menuitem">Download file...</button>
+                        <hr role="separator">
+                        <button id="zpr-config-discard" class="button" type="button" role="menuitem" disabled>Discard</button>
+                      </div>
+                      <input id="zpr-config-file-input" type="file" accept=".toml,.zplc,text/plain" hidden>
+                    </div>
+                  </div>
+                  <div class="policy-attribute-toolbar"><button id="zpr-config-validate" class="button" data-config-command type="button" disabled>Analyze</button><button id="zpr-config-format" class="button" data-config-command type="button" disabled>Format</button></div>
+                  <div class="policy-editor-utilities">
+                    <span data-editor-search-target="zpr-config-source"></span>
+                    <details id="zpr-config-history-menu" class="policy-history-menu">
+                      <summary class="button policy-history-toggle" aria-label="Version history">History <span id="zpr-config-history-count">—</span><span class="policy-picker-chevron" aria-hidden="true">⌄</span></summary>
+                      <div id="zpr-config-history" class="policy-history"></div>
+                    </details>
+                  </div>
+                </div>
+                <div class="config-source-editor"><div id="zpr-config-gutter" class="config-source-gutter" aria-label="Configuration errors by source line"></div><div class="config-code-surface"><pre id="zpr-config-highlight" aria-hidden="true"></pre><textarea id="zpr-config-source" class="zpr-config-source" aria-label="ZPLC configuration source" spellcheck="false" maxlength="1048576" wrap="off"></textarea></div></div>
+                <p id="zpr-config-status" class="editor-page-status" role="status" aria-live="polite" hidden></p>
+              </div>
+            </div>
           </section>
         </section>
         <section class="page-view" id="page-provisioning-adapters" data-page="provisioning-adapters" aria-label="Adapter provisioning" hidden>
           <section class="section-block provisioning-panel">
             <p id="provisioning-status" class="provisioning-status" role="status">Checking enrollment administration…</p>
             <div class="provisioning-toolbar"><button id="provisioning-recheck" class="button" type="button">Check again</button></div>
-            <p class="provisioning-notice">Registry details are read-only. Invitation creation requires explicit backend opt-in and named-user create grants. Review and cancellation controls are not connected and remain locked. Enrollment APIs require configured HTTPS sign-in and independently verified named-user delegation to Control-Service. The shared service certificate alone is not administrator authority. Direct certificate-authorized administration remains separate.</p>
+            <p class="provisioning-notice">Invitation creation requires explicit backend opt-in and named-user create grants. Authorized admins can cancel invited or pending requests from fresh Details, with a reason and revision/key-bound confirmation; approval and rejection controls are not connected and remain locked. Enrollment APIs require configured HTTPS sign-in and independently verified named-user delegation to Control-Service. The shared service certificate alone is not administrator authority. Direct certificate-authorized administration remains separate.</p>
             <p id="operator-scope" hidden></p>
             <div class="provisioning-workspace">
               <form id="provisioning-draft" class="provisioning-card" autocomplete="off">
@@ -477,6 +509,7 @@ each group attribute "gidNumber" &gt;= 1000;</pre></details></div><aside class="
               <h2>Invitations and pending reviews</h2>
               <label>Registry organization<select id="provisioning-organization" disabled><option value="">Catalog unavailable</option></select></label>
               <p id="provisioning-registry-status" role="status" aria-live="polite">Registry unavailable; this is not an empty queue or a live adapter inventory.</p>
+              <p id="provisioning-cancel-status" role="status" aria-live="polite">No cancellation submitted.</p>
               <div id="provisioning-approved-catalog" hidden></div>
               <div class="provisioning-table-scroll"><table id="provisioning-invitations" hidden><thead><tr><th>Name</th><th>Inventory</th><th>State</th><th>Invitation expiry</th><th>Details</th></tr></thead><tbody></tbody></table></div>
               <button id="provisioning-next" class="button" type="button" hidden>Next page</button>
@@ -520,17 +553,19 @@ each group attribute "gidNumber" &gt;= 1000;</pre></details></div><aside class="
       </main>
     </div>
     <script src="/vendor/pluralize.js?v=8.0.0" defer></script>
-    <script src="/app.js?v=103" defer></script>
+    <script src="/operator-request.js?v=1" defer></script>
+    <script src="/app.js?v=105" defer></script>
     <script src="/machine-logs.js?v=21" defer></script>
     <script src="/assertions.js?v=11" defer></script>
-    <script src="/config-editor.js?v=6" defer></script>
-    <script src="/gateways.js?v=3" defer></script>
-    <script src="/provisioning-contract.js?v=1" defer></script>
-    <script src="/provisioning.js?v=2" defer></script>
-    <script src="/provisioning-registry.js?v=2" defer></script>
+    <script src="/editor-page.js?v=1" defer></script>
+    <script src="/config-editor.js?v=8" defer></script>
+    <script src="/gateways.js?v=4" defer></script>
+    <script src="/provisioning-contract.js?v=2" defer></script>
+    <script src="/provisioning.js?v=3" defer></script>
+    <script src="/provisioning-registry.js?v=3" defer></script>
     <script src="/operator-login.js?v=4" defer></script>
-    <script src="/editor-assistant.js?v=1" defer></script>
-    <script src="/editor-search.js?v=6" defer></script>
+    <script src="/editor-assistant.js?v=2" defer></script>
+    <script src="/editor-search.js?v=7" defer></script>
     <script src="/diagnostics.js?v=2" defer></script>
       <script src="/security-review.js?v=13" defer></script>
   </body>

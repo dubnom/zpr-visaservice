@@ -31,10 +31,16 @@
 - [x] Analyze and Format should be next to File...
 - [x] Analyze should use the same colors, fonts, etc. as the Policy editor.
 - [x] Change "Word wrap" to "Wrap".
+- [x] Use the Policy editor as the blueprint for every editor: shared `editor-page.js` core for Gateways, ZPR Config, Simulator directory and scenario editors.
+- [x] Remove the centred editor kind label and idle/"Select a…" placeholder text from all editor pages.
+- [x] Open the Simulator directory and scenario editors as full pages instead of modal dialogs.
+- [ ] Wrap should start as disabled for all editors.
+- [ ] AI Assistants are saying the don't have an API key, but I set one.  What happened?
 
 ### All log viewers
 - [x] Word wrap checkbox and default to enabled.
 - [x] Change "Word wrap" to "Wrap"
+- [ ] Wrap should start as disabled for all log viewers.
 
 ## Control Room
 
@@ -70,6 +76,9 @@
 - [x] No obvious way to clear highlighted areas or dimmed components.(or the component) Closing the info dialog on the right doesn't always remove the highlight.
 - [x] This gets worse with the click-on legend.
 - [x] The right-click (and legend) behavior should simply highlight, no dimming of the other stuff.
+- [x] What happened to showing visa routes? Routes now draw as thick glowing blue lines with moving dashes and pulsing routed components; right-click only toggles routes (count badge click opens the visa list).
+- [x] Link forward and reverse visas for display: paired on the Visas page (PAIR column) and in Map visa lists.
+- [ ] Make clicking away from the component info dialog close the window.
 
 ### Navigation
 - [x] Keep Map as the main view and group Adapters, Actors, Services, Visas, Denials, and DNS under horizontal Status tabs with counts.
@@ -132,6 +141,7 @@
 - [x] The adapter picker doesn't need a header or anything else. It just needs the pull down to start in an open position.
 - [x] If there aren't any adapters (none available) than show a message that says this/
 - [x] Move the picker to be under the adapter title when opened.
+- [ ] The error message "Unexpected token 'C', "Client sen"... is not valid JSON" makes no sense when the real issue is the Visa service being unavailable.
 
 ### ZPR Config
 - [x] Adopt the same look-and-feel as the policy editor. If ZPR config is limited to one file, there is no need for Browse, or some of the File commands. Refresh Attributes is also not relevant.
@@ -146,12 +156,18 @@
 - [x] Get rid of "Read Only"
 - [x] Add a typical LDAP tree view.
 - [x] Don't auto refresh ldap.
+- [x] All the tables should be sortable and use the same visual treatment as above.
+- [x] Groups should make the cn and objectclass their own columns
+- [x] People should condense each row and toggle viewing when clicked.
 
 ### Gateways
 - [x] Add a Control Room page listing installed ZPL Gateway services by organization and editing their versioned runtime drafts.
 - [x] Validate destination/path/method/timeout/response-size settings through Control-Service before saving; keep drafts organization-scoped and do not activate them.
 - [ ] Add verified external-network policy metadata, gateway runtime health, and explicit reviewed activation/rollback after the production provisioning contract is implemented.
 - [x] There can be multiple gateways, so lets use the exact same editor paradigm, colors, and behavior as the polic editor.
+
+### Header
+- [ ] I'm signed in as my user name/email, not the hidden identity key.
 
 
 ## Simulator
@@ -210,6 +226,15 @@ Machine/adapter enrollment is tracked in [Provisioning plan](../Provisioning%20p
   named-user sign-in and independently verified Control-Service delegation.
 - [x] Add opt-in direct HTTPS OIDC sign-in, named subject/scope display, explicit
   unavailable/expired states, and CSRF logout without unlocking enrollment.
+- [x] Deploy real loopback Dex/HTTPS login for dubnom with a dedicated user-trusted
+  CA and explicit all-organization admin grants; preserve default-off invitation
+  creation and independent backend catalog/grants.
+- [x] Preserve native login Origin under production security headers and add
+  memory-only CSRF transport for policy/assertion/config/gateway editor mutations.
+- [x] Verify the deployed real-provider login, wrong-password denial, authenticated
+  reads, GUI config Analyze, reload and logout in desktop/tablet browsers.
+- [x] Keep Simulator local HTTP; move Activity/activation reads to private mTLS
+  Control-Service instead of depending on a Control Room browser session.
 - [x] Add opt-in signed named-user delegation to the private enrollment API,
   independent backend grants, persistent replay protection, and named audit.
 - [x] Load authorized catalogs and organization-scoped paginated registry
@@ -223,5 +248,22 @@ Machine/adapter enrollment is tracked in [Provisioning plan](../Provisioning%20p
   certificate administration; no email, credentials, or Simulator calls.
 - [x] Verify real-service browser creation, named audit, secret-free readback,
   and committed-but-lost response recovery in desktop/tablet browsers.
-- [ ] Wire cancellation and revision/key-bound review with real-service mutation
-  browser tests.
+- [x] Wire named-user cancellation from fresh Details without another feature
+  flag: independent cancel grants, reason, revision/key binding, audit and
+  uncertainty/readback acknowledgement with no automatic retry.
+- [x] Verify real-service invited/pending cancellation and committed-but-lost
+  response readback in desktop/tablet browsers with Simulator unavailable.
+- [ ] Wire revision/key-bound approval/rejection with real-service mutation browser tests.
+- [x] Add Windows 11 x64 per-user enrollment wizard support and build an unsigned
+  setup EXE; use user-bound DPAPI/private ACLs and preserve keys/config on uninstall.
+- [ ] Certify native Windows install/browser launch, DPAPI/ACL and two-user
+  isolation; sign and deliver releases. No Windows adapter/driver/service or
+  credential issuance is included in the enrollment installer.
+- [x] Build Apple Silicon per-user Mac enrollment app/DMG with explicit Keychain
+  storage and no plaintext fallback; verify isolated native Keychain/restart
+  tests and the packaged loopback wizard. Local build is ad-hoc signed only.
+- [x] Build/test the native Mac adapter without privileged network changes;
+  harden Mac tunnel/address validation with unprivileged regression tests.
+- [ ] Certify Mac Finder/Terminal/browser permissions, Developer ID signing/
+  notarization and supported OS versions; complete privileged tunnel/traffic
+  tests, credential issuance and secure adapter-runtime handoff.

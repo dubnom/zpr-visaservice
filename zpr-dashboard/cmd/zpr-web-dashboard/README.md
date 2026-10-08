@@ -59,6 +59,9 @@ Clicking the background without dragging or using Fit does not change the checkb
 Map **Dark mode** is temporarily hidden; the canvas starts in its light theme.
 Right-click an adapter to highlight its current outbound visas: matching service
 registrations, endpoint actors, and ordered node routes reported by Visa Service.
+Routes draw as thick, glowing blue lines with dashes that move along the path, and
+routed components pulse with a blue glow; nothing else is dimmed. Reduced-motion
+mode keeps a steady glow without animation.
 Reverse visas use the original requester and service-side source port. Expired
 visas are excluded; endpoint matches alone do not imply service authorization.
 Right-click the same adapter or blank canvas to clear; right-click another adapter
@@ -66,16 +69,23 @@ to change focus. Focus follows refreshed snapshots. The status line explicitly
 reports unavailable visa inventory or route data; no shortest path is inferred.
 For same-node visas without a stored multihop path, matching unambiguous docking
 nodes establish the local route.
-Right-click an adapter or service's visa-count badge to open its complete active
-visa inventory in the details panel, including endpoints, direction, expiry,
-policy and reported route. Clicking/tapping the badge or pressing Enter/Space
-while it is focused opens the same view. Inventory follows refreshed snapshots,
+Click/tap an adapter or service's visa-count badge (or press Enter/Space while it
+is focused) to open its complete active visa inventory in the details panel,
+including endpoints, direction, pair, expiry, policy and reported route. Inventory follows refreshed snapshots,
 excludes expired and duplicate visas, and uses the same matching rules as the
 count. Missing inventory is explicitly unavailable, never replaced with recent
 decisions or treated as zero. Right-clicking a component behaves exactly like
-right-clicking its count badge: adapters and services toggle route highlighting
-and open their visa inventory; nodes open denial telemetry when they show a
-denial badge, otherwise their visa counts. Right-clicking blank canvas clears focus.
+right-clicking its count badge: adapters and services only toggle route
+highlighting (no panel opens, so routes stay unobstructed); nodes open denial
+telemetry when they show a denial badge, otherwise their visa counts.
+Right-clicking blank canvas clears focus.
+Forward and reverse visas are grouped as one connection in the details panel and
+on the Visas page. Visa Service reports no pair ID, so a reverse visa pairs with
+the forward visa that has the same protocol, swapped addresses, and a destination
+port equal to the reverse source port (one-to-one, nearest creation time first).
+The Visas **PAIR** column shows the partner ID; unmatched visas are marked
+"No reverse visa" or "No forward visa", and visas without a reported direction
+are left unpaired. Filtering keeps pairs together.
 Legend items are buttons: click one to highlight every component or connection of
 that type (nodes, visas, gateways, adapters, services, registrations, trusted
 sources, docks or inter-node links); click it again to clear. Legend highlighting
@@ -83,8 +93,9 @@ combines with Search. Search, legend and right-click focus only add highlight
 styling to matches; other components are never dimmed or faded.
 While any search, legend or right-click highlight is active,
 a **Clear highlight** button appears at the end of the legend and clears all of
-them. On Map, Esc closes an open info panel (and its visa focus); otherwise it
-clears all highlighting. Closing the info panel with × also clears its visa focus.
+them. On Map, Esc closes an open info panel; otherwise it clears all
+highlighting. The info panel and route focus are independent: closing the panel
+with × or Esc leaves the route highlight in place.
 Connector endpoints intersect the actual SVG glyph boundaries, including rounded
 node/service rectangles, circular adapters, visa diamonds, gateway polygons, and
 cloud paths. Visible strokes, network clearance, and clickable hit areas use the
@@ -143,6 +154,16 @@ Refresh button on Trusted Sources. Automatic snapshot polling and navigation
 back to the page preserve the records, filter, and expanded LDAP branches.
 Diagnostics still follows global polling; standalone source pages retain their
 own refresh action.
+
+Every Trusted Sources table (People, Groups and Attributes, on both the Control
+Room page and the Simulator page) has sortable column headings with the same
+treatment as other Control Room tables: click a heading for ascending order,
+click again for descending. Empty values always sort last. Groups show `cn` and
+`objectClass` as their own columns, ahead of members and the remaining
+attributes. People rows are condensed to identity, name, title, unit and mail;
+click a row (or press Enter on its identity) to show or hide all of that
+person's attributes. Sort order and expanded people persist across filtering
+and global polling.
 
 ## Operator Boundary
 
@@ -305,10 +326,20 @@ a new revision via `POST /api/gateways/configs/{id}/revisions`. Gateway identity
 fields come from the installed contract. Saving never activates the runtime
 gateway. The editor uses Control Room APIs only and does not depend on Simulator.
 
-The ZPR Config, scenario and gateway editors share the policy editor's gutter
-geometry (line height, marker column and padding). Each editor toolbar places
-**Analyze** and **Format** immediately after **File…**, with search and history
-utilities on the right. Analyze is orange while the current source still needs
+The Policy editor is the blueprint for every source editor. Gateways, ZPR
+Config, the Simulator directory (LDIF) editor and the Simulator scenario editor
+are built on the shared `editor-page.js` core (`window.ZPREditorPage`), which
+provides the identity row (name, version label and modified dot), the **File…**
+menu, the history menu, syntax highlighting, the gutter and the status line.
+Editor pages have no kind label and no idle or "Select a…" placeholder text;
+status appears only after an action. The Simulator directory and scenario
+editors open as full pages rather than modal dialogs; scenario **Save**,
+**Publish revision**, YAML/JSON conversion, **Discard**, **Delete scenario** and
+**Close** live in its File menu, and the form/raw toggle sits beside Find &
+Replace. All editors share the policy editor's gutter geometry (line height,
+marker column and padding). Each editor toolbar places **Analyze** and
+**Format** immediately after **File…**, with search and history utilities on
+the right. Analyze is orange while the current source still needs
 analysis, green after success and red after errors; Format uses the policy
 editor's green ready style.
 
@@ -360,7 +391,15 @@ named-user grants at both services, and CSRF confirmation. A confirmed result sh
 the audited invitation and its code once; closing/navigation/session checks/loss
 erase the code. No code is saved or recovered from registry reads. Uncertain
 responses lock further creation until explicit registry reconciliation; no retry
-is automatic. It sends no email and enables no cancel/approve/reject actions.
+is automatic. It sends no email and enables no approve/reject actions.
+Authorized admins can cancel active invited/pending requests from fresh **Details**
+without a separate feature flag. Both services must grant `read`/`cancel` for
+the organization; the catalog must advertise backend cancel capability.
+Confirmation requires a reason and exact revision/fingerprint. Cancellation
+records the named principal/reason/time, prevents subsequent claim, and never
+revokes issued credentials. Lost responses, timeout, navigation or session loss
+during cancellation are uncertain: no automatic retry; reopen fresh **Details**,
+inspect/acknowledge the outcome, then reopen before any new decision.
 Read access does not unlock mutations or imply live adapter connectivity.
 It never calls Simulator.
 
@@ -373,10 +412,21 @@ does not confer blanket authority over other operator APIs, and does not unlock 
 verified named-user delegation to Control-Service is separately configurable.
 The backend independently checks issuer/subject grants, signing key and verified
 client-certificate pin, and a persistent nonce ledger; the shared certificate
-alone is not administrator authority. Review/cancellation GUI controls remain
-disconnected; creation has its separate default-off capability.
+alone is not administrator authority. Approval/rejection GUI controls remain
+disconnected; creation has its separate default-off capability and cancellation
+uses independent named-user/backend cancel grants.
 See the [delegation configuration guide](../../README.md#independently-verified-named-user-delegation) and the
 [HTTPS/OIDC configuration guide](../../README.md#direct-https-configuration).
+
+The local stack now also supports a real [development operator login](../../README.md#local-development-operator-login)
+using Dex on loopback and a dedicated user-trusted CA. The deployed Room URL is
+`https://localhost:8787`; the old HTTP URL no longer works in this profile.
+`dubnom` logs into the IdP using the protected local `operator-password` file.
+The explicit global organization grant covers current/future organizations at
+both services; enrollment still uses the independent configured backend catalog.
+Editor requests use the session CSRF token in memory. Simulator remains local
+HTTP and uses independent mTLS Control-Service access for Activity/activation,
+not a browser session. The development gateway is not a substitute for this login.
 
 Simulator navigation is ordered Organizations, Scenarios, Trusted Sources,
 Activity, then Workers; this order is retained across page switches. The Simulator

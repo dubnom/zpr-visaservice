@@ -90,8 +90,75 @@ test("live provisioning reads registry after real OIDC login and clears it on lo
   expect(requests.filter((request) => request.path.startsWith("/api/enrollment/") && request.method !== "GET")).toEqual([]);
 });
 
+async function cancelDetail(page, name, reason) {
+  await page.getByRole("button", { name: `Details for ${name}`, exact: true }).click();
+  const detail = page.getByRole("dialog", { name: "Enrollment request details" });
+  await detail.getByLabel("Cancellation reason").fill(reason);
+  await detail.getByRole("checkbox").check();
+  await detail.getByRole("button", { name: "Confirm cancellation", exact: true }).click();
+}
+
+test("live provisioning cancels a pending submission with named audit without creation opt-in", async ({ page, operatorFixture: fixture }) => {
+  const posts = [];
+  page.on("request", (request) => { if (request.method() === "POST" && request.url().includes("/cancel")) posts.push(request); });
+  await login(page, fixture);
+  await expect(page.getByRole("button", { name: "Create invitation", exact: true })).toBeDisabled();
+  await cancelDetail(page, "Fixture laptop", "Owner reports wrong device");
+  await expect(page.locator("#provisioning-cancel-status")).toContainText("cancelled at revision 3");
+  await expect(page.locator("#provisioning-invitations")).toContainText("cancelled");
+  await page.getByRole("button", { name: "Details for Fixture laptop", exact: true }).click();
+  const detail = page.getByRole("dialog", { name: "Enrollment request details" });
+  await expect(detail).toContainText("named-admin");
+  await expect(detail).toContainText("Owner reports wrong device");
+  await expect(detail).toContainText(fixture.fingerprint);
+  await expect(detail.getByRole("button", { name: "Confirm cancellation" })).toHaveCount(0);
+  expect(posts).toHaveLength(1);
+  expect(posts[0].postDataJSON()).toMatchObject({ organization: "production", revision: 2, key_fingerprint: fixture.fingerprint });
+  await detail.getByRole("button", { name: "Close", exact: true }).click();
+  await page.getByRole("button", { name: "Sign out", exact: true }).click();
+  await expect(page.locator("#provisioning-cancel-status")).not.toContainText("Owner reports wrong device");
+  await expect(page.locator("#provisioning-cancel-status")).not.toContainText("named-admin");
+});
+
+test("live provisioning reconciles a committed but lost cancellation response through secret-free fresh details", async ({ page, operatorFixture: fixture }) => {
+  let posts = 0;
+  await page.route("**/api/enrollment/v1/invitations/*/cancel", async (route) => {
+    posts++;
+    const response = await route.fetch();
+    expect(response.status()).toBe(200);
+    await route.abort("failed");
+  });
+  await login(page, fixture);
+  await cancelDetail(page, "Fixture laptop", "Invitation withdrawn");
+  await expect(page.locator("#provisioning-cancel-status")).toContainText("Cancellation outcome uncertain");
+  await page.getByRole("dialog").getByRole("button", { name: "Close", exact: true }).click();
+  await page.getByRole("button", { name: "Check again", exact: true }).click();
+  await expect(page.locator("#provisioning-invitations")).toContainText("cancelled");
+  await page.getByRole("button", { name: "Details for Fixture laptop", exact: true }).click();
+  const detail = page.getByRole("dialog", { name: "Enrollment request details" });
+  await expect(detail).toContainText("fresh read after an uncertain cancellation: state cancelled, revision 3");
+  await expect(detail).toContainText("Invitation withdrawn");
+  await expect(detail).toContainText("named-admin");
+  await expect(detail.getByRole("button", { name: "Confirm cancellation" })).toHaveCount(0);
+  await detail.getByRole("button", { name: "Acknowledge refreshed outcome" }).click();
+  expect(posts).toBe(1);
+});
+
 test.describe("live provisioning creation", () => {
   test.use({ creationEnabled: true });
+  test("cancels a freshly created invited record before any device claim", async ({ page, operatorFixture: fixture }) => {
+    await login(page, fixture);
+    await create(page, "INV-LIVE-CANCEL");
+    await page.getByRole("dialog", { name: "Invitation created — one-time code" }).getByRole("button", { name: "Close", exact: true }).click();
+    await expect(page.locator("#provisioning-invitations")).toContainText("INV-LIVE-CANCEL");
+    await cancelDetail(page, "Browser created laptop", "Code was not securely delivered");
+    await expect(page.locator("#provisioning-cancel-status")).toContainText("cancelled at revision 2");
+    await page.getByRole("button", { name: "Details for Browser created laptop", exact: true }).click();
+    const detail = page.getByRole("dialog", { name: "Enrollment request details" });
+    await expect(detail).toContainText("Code was not securely delivered");
+    await expect(detail).toContainText("named-admin");
+    await expect(detail.locator("#provisioning-one-time-code")).toHaveCount(0);
+  });
   test("creates once with named audit and clears code on session check without exposing it through reads", async ({ page, operatorFixture: fixture }) => {
     const posts = [];
     page.on("request", (request) => {

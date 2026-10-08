@@ -1,15 +1,4 @@
 (() => {
-  for (const [sourceID, historyID] of [["scenario-editor-source", "scenario-editor-revisions"], ["directory-editor-source", "directory-editor-revisions"]]) {
-    const history = document.getElementById(historyID);
-    if (!history) continue;
-    const host = document.createElement("div");
-    host.dataset.editorSearchTarget = sourceID;
-    const label = history.closest("label");
-    const group = document.createElement("div");
-    group.className = "editor-history-tools";
-    label.before(group);
-    group.append(host, label);
-  }
   for (const host of document.querySelectorAll("[data-editor-search-target]")) {
     const sources = host.dataset.editorSearchTarget.split(",").map((id) => document.getElementById(id)).filter(Boolean);
     host.classList.add("editor-search-tools");

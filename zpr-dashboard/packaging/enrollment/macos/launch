@@ -1,0 +1,9 @@
+#!/bin/sh
+set -eu
+bundle=$(CDPATH='' cd -- "$(dirname -- "$0")/.." && pwd)
+config="$HOME/Library/Application Support/ZPR/EnrollmentSetup/setup.json"
+if [ "$(id -u)" = 0 ]; then
+    echo "Run Mac setup as the logged-in desktop user, not root" >&2
+    exit 1
+fi
+/usr/bin/osascript "$bundle/Resources/launch.applescript" "$bundle" "$config"

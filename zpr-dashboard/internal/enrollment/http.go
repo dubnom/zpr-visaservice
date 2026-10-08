@@ -59,7 +59,7 @@ func (c Config) Validate() error {
 		return errors.New("enrollment approval lifetime must be between 1 second and 30 days when configured")
 	}
 	for name, organization := range c.Organizations {
-		if !validText(name) || !validNames(organization.Profiles) || !validNames(organization.Types) {
+		if name == "*" || !validText(name) || !validNames(organization.Profiles) || !validNames(organization.Types) {
 			return errors.New("enrollment organizations require valid names, approved profiles, and device types")
 		}
 	}
@@ -204,20 +204,26 @@ func (api *adminAPI) catalog(w http.ResponseWriter, r *http.Request) {
 	}
 	organizations := map[string]Organization{}
 	createOrganizations := []string{}
+	cancelOrganizations := []string{}
 	for _, name := range principal.Organizations {
 		organizations[name] = api.config.Organizations[name]
 		if api.operator && api.config.GUIInvitationCreation && slices.Contains(principal.Permissions, "create") {
 			createOrganizations = append(createOrganizations, name)
 		}
+		if api.operator && slices.Contains(principal.Permissions, "cancel") {
+			cancelOrganizations = append(cancelOrganizations, name)
+		}
 	}
 	slices.Sort(createOrganizations)
+	slices.Sort(cancelOrganizations)
 	apiJSON(w, http.StatusOK, struct {
 		Organizations       map[string]Organization `json:"organizations"`
 		Lifetime            int                     `json:"invitation_lifetime_seconds"`
 		ApprovalLifetime    int                     `json:"approval_lifetime_seconds"`
 		GUIMutations        bool                    `json:"gui_mutations_enabled"`
 		CreateOrganizations []string                `json:"gui_create_organizations"`
-	}{organizations, api.config.InvitationLifetimeSeconds, api.config.ApprovalLifetimeSeconds, false, createOrganizations})
+		CancelOrganizations []string                `json:"gui_cancel_organizations"`
+	}{organizations, api.config.InvitationLifetimeSeconds, api.config.ApprovalLifetimeSeconds, false, createOrganizations, cancelOrganizations})
 }
 
 func (api *adminAPI) create(w http.ResponseWriter, r *http.Request) {
@@ -296,6 +302,29 @@ func (api *adminAPI) get(w http.ResponseWriter, r *http.Request) {
 }
 
 func (api *adminAPI) cancel(w http.ResponseWriter, r *http.Request) {
+	if api.operator {
+		var input struct {
+			Organization   string `json:"organization"`
+			Revision       int    `json:"revision"`
+			KeyFingerprint string `json:"key_fingerprint"`
+			Reason         string `json:"reason"`
+		}
+		if !readBody(w, r, &input) {
+			return
+		}
+		principal, ok := api.authorize(w, r, input.Organization, "cancel")
+		if !ok {
+			return
+		}
+		item, err := api.store.CancelReviewed(r.Context(), input.Organization, r.PathValue("id"), principal.Name,
+			input.Reason, input.KeyFingerprint, input.Revision, api.now())
+		if err != nil {
+			storeError(w, err)
+			return
+		}
+		apiJSON(w, http.StatusOK, item)
+		return
+	}
 	var input struct {
 		Organization string `json:"organization"`
 	}

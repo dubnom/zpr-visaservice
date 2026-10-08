@@ -94,17 +94,63 @@ async function loadOrganizationScenarioSummary(organizationID) {
   }
 }
 
+const directoryEditorPage = window.ZPREditorPage;
+const directoryEditorSource = document.getElementById("directory-editor-source");
+const directoryEditorSurface = directoryEditorPage.createSourceSurface({
+  source: directoryEditorSource,
+  highlight: document.getElementById("directory-editor-highlight"),
+  gutter: document.getElementById("directory-editor-gutter"),
+  language: "ldif",
+  label: "Directory",
+});
+const directoryEditorMenu = directoryEditorPage.createMenu({
+  root: document.getElementById("directory-editor-actions"),
+  toggle: document.getElementById("directory-editor-files-toggle"),
+  menu: document.getElementById("directory-editor-file-menu"),
+});
+const directoryEditorHistory = directoryEditorPage.createHistory({
+  menu: document.getElementById("directory-editor-history-menu"),
+  list: document.getElementById("directory-editor-history"),
+  count: document.getElementById("directory-editor-history-count"),
+  isAvailable: () => Boolean(directoryEditorArtifact),
+});
+let directoryEditorSaved = "";
+let directoryEditorSummary = "";
+let directoryEditorRevisions = [];
+let directoryEditorViewing = 0;
+
 function setDirectoryEditorStatus(message, state = "") {
-  const status = document.getElementById("directory-editor-status");
-  status.textContent = message;
-  status.dataset.state = state;
+  directoryEditorPage.setStatus(document.getElementById("directory-editor-status"), message, state === "saved" ? "success" : state);
 }
 
 function updateDirectoryEditorActions() {
-  const publish = document.getElementById("directory-editor-publish");
+  directoryEditorDirty = directoryEditorSource.value !== directoryEditorSaved;
   const current = directoryEditorArtifact?.revision || 0;
   const published = directoryEditorArtifact?.published_revision || 0;
-  publish.disabled = !directoryEditorArtifact || directoryEditorDirty || current === published;
+  document.getElementById("directory-editor-publish").disabled = !directoryEditorArtifact || directoryEditorDirty || current === published;
+  document.getElementById("directory-editor-discard").disabled = !directoryEditorDirty;
+  const organization = organizationCatalog.find((item) => item.id === directoryEditorOrganizationID);
+  const revision = directoryEditorViewing || current;
+  directoryEditorPage.renderIdentity({
+    title: document.getElementById("directory-editor-title"),
+    version: document.getElementById("directory-editor-revision-label"),
+    modified: document.getElementById("directory-editor-modified"),
+  }, {
+    name: directoryEditorArtifact ? `${organization?.name || directoryEditorOrganizationID} directory` : "",
+    label: directoryEditorArtifact ? `Version ${revision}${directoryEditorViewing ? "" : published ? (published === current ? " · published" : ` · published v${published}`) : " · not published"}` : "",
+    tooltip: directoryEditorArtifact?.content?.base_dn || "",
+    dirty: directoryEditorDirty,
+  });
+}
+
+function renderDirectoryEditor() {
+  directoryEditorSurface.render();
+  updateDirectoryEditorActions();
+}
+
+function closeDirectoryEditor() {
+  const dialog = document.getElementById("directory-editor-dialog");
+  if (dialog.open) dialog.close();
 }
 
 async function openDirectoryEditor(organizationID) {
@@ -113,15 +159,15 @@ async function openDirectoryEditor(organizationID) {
   if (!response.ok) throw new Error(artifact.error || `HTTP ${response.status}`);
   directoryEditorArtifact = artifact;
   directoryEditorOrganizationID = organizationID;
-  directoryEditorDirty = false;
-  document.getElementById("directory-editor-title").textContent = `Edit ${organizationCatalog.find((item) => item.id === organizationID)?.name || organizationID} directory`;
-  document.getElementById("directory-editor-base-dn").textContent = artifact.content.base_dn;
-  document.getElementById("directory-editor-source").value = artifact.content.ldif;
-  document.getElementById("directory-editor-summary").value = "";
-  document.getElementById("directory-editor-dialog").showModal();
+  directoryEditorViewing = 0;
+  directoryEditorSummary = "";
+  directoryEditorSource.value = directoryEditorSaved = artifact.content.ldif;
+  setDirectoryEditorStatus("");
+  const dialog = document.getElementById("directory-editor-dialog");
+  if (!dialog.open) dialog.show();
+  window.scrollTo({ top: 0 });
+  renderDirectoryEditor();
   await refreshDirectoryRevisions();
-  setDirectoryEditorStatus(`Revision ${artifact.revision}${artifact.published_revision ? ` · published r${artifact.published_revision}` : " · not yet published"}.`);
-  updateDirectoryEditorActions();
 }
 
 async function refreshDirectoryRevisions() {
@@ -130,28 +176,37 @@ async function refreshDirectoryRevisions() {
   const response = await fetch(path, { cache: "no-store" });
   const revisions = await response.json();
   if (!response.ok) throw new Error(revisions.error || `HTTP ${response.status}`);
-  const selector = document.getElementById("directory-editor-revisions");
-  selector.replaceChildren(...revisions.map((revision) => new Option(`r${revision.revision} · ${revision.summary || revision.author}`, String(revision.revision))));
-  selector.disabled = revisions.length === 0;
+  directoryEditorRevisions = revisions.map((revision) => ({ ...revision, number: revision.revision })).sort((left, right) => right.number - left.number);
+  renderDirectoryHistory();
+}
+
+function renderDirectoryHistory() {
+  directoryEditorHistory.render(directoryEditorRevisions, {
+    current: directoryEditorViewing || directoryEditorArtifact?.revision,
+    detail: (revision) => revision.summary || "",
+    meta: (revision) => [revision.author, revision.created_at ? new Date(revision.created_at).toLocaleString() : ""].filter(Boolean).join(" · "),
+    onSelect: (revision) => {
+      loadDirectoryRevision(revision.number).catch((error) => setDirectoryEditorStatus(error.message || "Could not load revision.", "error"));
+    },
+  });
 }
 
 async function saveDirectoryDraft() {
-  const ldif = document.getElementById("directory-editor-source").value;
-  const summary = document.getElementById("directory-editor-summary").value.trim();
   const path = `/api/simulator/organizations/${encodeURIComponent(directoryEditorOrganizationID)}/directory`;
   const response = await fetch(path, {
     method: "PUT",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ document: { base_dn: directoryEditorArtifact.content.base_dn, ldif }, expected_revision: directoryEditorArtifact.revision, summary }),
+    body: JSON.stringify({ document: { base_dn: directoryEditorArtifact.content.base_dn, ldif: directoryEditorSource.value }, expected_revision: directoryEditorArtifact.revision, summary: directoryEditorSummary || "Updated directory draft" }),
   });
   const revision = await response.json();
   if (!response.ok) throw new Error(revision.error || `HTTP ${response.status}`);
   directoryEditorArtifact = { ...directoryEditorArtifact, revision: revision.revision, content: revision.content, content_hash: revision.content_hash };
-  directoryEditorDirty = false;
-  document.getElementById("directory-editor-summary").value = "";
-  setDirectoryEditorStatus(`Saved draft revision ${revision.revision}. Publish it for the next LDAP reseed.`, "saved");
+  directoryEditorSaved = directoryEditorSource.value;
+  directoryEditorSummary = "";
+  directoryEditorViewing = 0;
+  setDirectoryEditorStatus(`Saved version ${revision.revision}. Publish it for the next LDAP reseed.`, "saved");
+  renderDirectoryEditor();
   await refreshDirectoryRevisions();
-  updateDirectoryEditorActions();
 }
 
 async function publishDirectoryRevision() {
@@ -165,21 +220,25 @@ async function publishDirectoryRevision() {
   const result = await response.json();
   if (!response.ok) throw new Error(result.error || `HTTP ${response.status}`);
   directoryEditorArtifact = result.artifact;
-  setDirectoryEditorStatus(`Published r${result.artifact.published_revision}; applies on the next explicit LDAP reseed or rig restart.`, "saved");
+  setDirectoryEditorStatus(`Published version ${result.artifact.published_revision}; applies on the next explicit LDAP reseed or rig restart.`, "saved");
   updateDirectoryEditorActions();
 }
 
 async function loadDirectoryRevision(revisionNumber) {
   if (!revisionNumber || !directoryEditorArtifact) return;
+  if (directoryEditorDirty && !confirm("Discard unsaved directory changes?")) return;
   const path = `/api/simulator/organizations/${encodeURIComponent(directoryEditorOrganizationID)}/directory/revisions/${encodeURIComponent(revisionNumber)}`;
   const response = await fetch(path, { cache: "no-store" });
   const revision = await response.json();
   if (!response.ok) throw new Error(revision.error || `HTTP ${response.status}`);
-  document.getElementById("directory-editor-source").value = revision.content.ldif;
-  document.getElementById("directory-editor-summary").value = `Restore revision ${revision.revision}`;
-  directoryEditorDirty = true;
-  setDirectoryEditorStatus(`Viewing revision ${revision.revision}; save to create a new revision.`);
-  updateDirectoryEditorActions();
+  const current = Number(revision.revision) === Number(directoryEditorArtifact.revision);
+  directoryEditorViewing = current ? 0 : Number(revision.revision);
+  directoryEditorSource.value = revision.content.ldif;
+  directoryEditorSaved = current ? revision.content.ldif : "";
+  directoryEditorSummary = current ? "" : `Restore version ${revision.revision}`;
+  setDirectoryEditorStatus("");
+  renderDirectoryEditor();
+  renderDirectoryHistory();
 }
 
 function renderOrganizationListSelection() {
@@ -262,10 +321,9 @@ const organizationAssistant = window.mountSimulatorDesignAssistant("organization
   onApply: async (proposal) => {
     if (!proposal.directory_ldif) throw new Error("Claude did not return an LDIF proposal.");
     await openDirectoryEditor(organizationAssistantID);
-    const source = document.getElementById("directory-editor-source");
-    source.value = proposal.directory_ldif;
-    source.dispatchEvent(new Event("input", { bubbles: true }));
-    document.getElementById("directory-editor-summary").value = "Claude-assisted directory draft";
+    directoryEditorSource.value = proposal.directory_ldif;
+    directoryEditorSource.dispatchEvent(new Event("input", { bubbles: true }));
+    directoryEditorSummary = "Claude-assisted directory draft";
     setDirectoryEditorStatus("Claude proposal loaded. Review it before saving or publishing.");
   },
 });
@@ -404,21 +462,48 @@ document.querySelector(".organization-detail").addEventListener("click", async (
     message.hidden = false;
   }
 });
-document.getElementById("directory-editor-source").addEventListener("input", () => {
-  directoryEditorDirty = true;
-  updateDirectoryEditorActions();
+directoryEditorSource.addEventListener("input", () => {
+  directoryEditorSurface.setDiagnostic(null);
+  setDirectoryEditorStatus("");
+  renderDirectoryEditor();
+});
+directoryEditorSource.addEventListener("keydown", (event) => {
+  if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === "s") {
+    event.preventDefault();
+    document.getElementById("directory-editor-save").click();
+  }
 });
 document.getElementById("directory-editor-save").addEventListener("click", async () => {
+  directoryEditorMenu.setOpen(false);
   try { await saveDirectoryDraft(); }
   catch (error) { setDirectoryEditorStatus(error.message || "Could not save directory.", "error"); }
 });
 document.getElementById("directory-editor-publish").addEventListener("click", async () => {
+  directoryEditorMenu.setOpen(false);
   try { await publishDirectoryRevision(); }
   catch (error) { setDirectoryEditorStatus(error.message || "Could not publish directory.", "error"); }
 });
-document.getElementById("directory-editor-revisions").addEventListener("change", async (event) => {
-  try { await loadDirectoryRevision(event.target.value); }
-  catch (error) { setDirectoryEditorStatus(error.message || "Could not load revision.", "error"); }
+document.getElementById("directory-editor-discard").addEventListener("click", () => {
+  directoryEditorMenu.setOpen(false);
+  if (!directoryEditorDirty || !confirm("Discard unsaved directory changes?")) return;
+  directoryEditorSource.value = directoryEditorArtifact.content.ldif;
+  directoryEditorSaved = directoryEditorSource.value;
+  directoryEditorViewing = 0;
+  directoryEditorSummary = "";
+  renderDirectoryEditor();
+  renderDirectoryHistory();
+});
+document.getElementById("directory-editor-close").addEventListener("click", () => {
+  directoryEditorMenu.setOpen(false);
+  closeDirectoryEditor();
+});
+document.getElementById("directory-editor-form").addEventListener("submit", (event) => {
+  if (directoryEditorDirty && !confirm("Close the directory editor and discard unsaved changes?")) event.preventDefault();
+});
+document.getElementById("directory-editor-dialog").addEventListener("close", () => {
+  directoryEditorArtifact = null;
+  directoryEditorSource.value = directoryEditorSaved = "";
+  directoryEditorDirty = false;
 });
 document.addEventListener("simulator:activate", (event) => {
   if (event.detail.path !== "/organizations.html" || organizationRefreshTimer) return;

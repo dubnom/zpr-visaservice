@@ -15,12 +15,21 @@
   const analyzeButton = byId("gateway-analyze");
   const formatButton = byId("gateway-format");
   const saveButton = byId("gateway-save");
-  const history = byId("gateway-history");
-  const status = byId("gateway-status");
+  const page = window.ZPREditorPage;
   const message = byId("gateway-draft-message");
+  const surface = page.createSourceSurface({
+    source, highlight, gutter, language: "json", label: "Gateway draft",
+    onMarker: (diagnostic) => setMessage(diagnostic.message, "error"),
+  });
+  const historyMenu = page.createHistory({
+    menu: byId("gateway-history-menu"), list: byId("gateway-history"), count: byId("gateway-history-count"),
+    isAvailable: () => Boolean(state.selected),
+  });
+  const picker = page.createPicker({ toggle: pickerToggle, pane, close: byId("gateway-picker-close"), focus: contractList });
+  const files = page.createMenu({ root: byId("gateway-actions"), toggle: filesToggle, menu: fileMenu });
 
   async function readJSON(path, options = {}) {
-    const response = await fetch(path, { cache: "no-store", headers: { Accept: "application/json" }, ...options });
+    const response = await window.zprOperatorFetch(path, { cache: "no-store", headers: { Accept: "application/json" }, ...options });
     let result;
     try { result = await response.json(); } catch { result = {}; }
     if (!response.ok && !(result && result.valid === false)) throw new Error(result.error || result.diagnostics || `HTTP ${response.status}`);
@@ -45,8 +54,20 @@
   const isDirty = () => Boolean(state.selected) && source.value !== state.saved;
 
   function setMessage(text, kind = "") {
-    message.textContent = text;
-    message.dataset.state = kind;
+    page.setStatus(message, text, kind);
+  }
+
+  function renderIdentity() {
+    const selected = state.selected;
+    page.renderIdentity(
+      { title: byId("gateway-record-title"), version: byId("gateway-revision-label"), modified: byId("gateway-modified-indicator") },
+      {
+        name: selected?.service_name || "",
+        label: !selected ? "" : state.revision ? `Version ${state.revision}` : "New · unsaved",
+        tooltip: selected ? `${selected.instance_id} · ${selected.adapter_cn}` : "",
+        dirty: isDirty(),
+      },
+    );
   }
 
   // Parses the draft locally so syntax errors get a gutter marker before the server is asked.
@@ -64,7 +85,7 @@
 
   function clearAnalysis() {
     state.validDraft = "";
-    state.diagnostic = null;
+    surface.setDiagnostic(null);
     delete analyzeButton.dataset.analysisState;
   }
 
@@ -86,61 +107,9 @@
     byId("gateway-refresh").disabled = state.busy;
   }
 
-  function syncScroll() {
-    gutter.scrollTop = source.scrollTop;
-    highlight.scrollTop = source.scrollTop;
-    highlight.scrollLeft = source.scrollLeft;
-    source.closest(".config-source-editor").dataset.horizontalOverflow = String(source.scrollWidth > source.clientWidth);
-  }
-
   function renderSource() {
-    const lines = source.value.split("\n");
-    gutter.replaceChildren(...lines.map((_, index) => {
-      const row = document.createElement("div");
-      row.className = "config-gutter-line";
-      row.dataset.line = String(index + 1);
-      if (state.diagnostic?.line === index + 1) {
-        const marker = document.createElement("button");
-        marker.type = "button";
-        marker.className = "config-error-marker";
-        marker.title = state.diagnostic.message;
-        marker.setAttribute("aria-label", `Gateway draft error on line ${index + 1}: ${state.diagnostic.message}`);
-        marker.textContent = "!";
-        marker.addEventListener("click", () => {
-          const offset = lines.slice(0, index).reduce((length, line) => length + line.length + 1, 0);
-          source.focus();
-          source.setSelectionRange(offset, offset + lines[index].length);
-          setMessage(state.diagnostic.message, "error");
-        });
-        row.append(marker);
-      } else {
-        const spacer = document.createElement("span");
-        spacer.className = "config-gutter-marker-space";
-        spacer.setAttribute("aria-hidden", "true");
-        row.append(spacer);
-      }
-      return row;
-    }));
-    const tokens = /("(?:\\.|[^"\\\n])*")(\s*:)?|\b(?:true|false|null)\b|-?\b\d+(?:\.\d+)?(?:[eE][+-]?\d+)?\b|[{}[\],]/g;
-    highlight.replaceChildren();
-    let offset = 0;
-    for (const match of source.value.matchAll(tokens)) {
-      highlight.append(document.createTextNode(source.value.slice(offset, match.index)));
-      const token = document.createElement("span");
-      const text = match[1] || match[0];
-      token.className = match[2] ? "zpl-attribute" : match[1] ? "zpl-string" : /^[a-z]/.test(text) ? "zpl-keyword" : /^[-\d]/.test(text) ? "zpl-value" : "zpl-punctuation";
-      token.textContent = text;
-      highlight.append(token);
-      if (match[2]) {
-        const separator = document.createElement("span");
-        separator.className = "zpl-punctuation";
-        separator.textContent = match[2];
-        highlight.append(separator);
-      }
-      offset = match.index + match[0].length;
-    }
-    highlight.append(document.createTextNode(source.value.slice(offset) + "\n"));
-    syncScroll();
+    surface.render();
+    renderIdentity();
     updateControls();
   }
 
@@ -179,38 +148,16 @@
   }
 
   function renderHistory() {
-    const revisions = state.record?.revisions || [];
-    byId("gateway-history-count").textContent = state.selected ? `${revisions.length} version${revisions.length === 1 ? "" : "s"}` : "—";
-    history.replaceChildren();
-    if (!revisions.length) {
-      const empty = document.createElement("p");
-      empty.className = "catalog-empty";
-      empty.textContent = state.selected ? "No saved draft revisions yet." : "Select a gateway to browse versions.";
-      history.append(empty);
-      return;
-    }
-    for (const revision of [...revisions].reverse()) {
-      const button = document.createElement("button");
-      button.type = "button";
-      button.className = "history-item";
-      button.dataset.revision = String(revision.revision);
-      button.setAttribute("aria-current", String(revision.revision === state.revision));
-      const title = document.createElement("strong");
-      title.textContent = `Version ${revision.revision}`;
-      const summary = document.createElement("span");
-      summary.textContent = revision.revision === state.record.current_revision ? "Latest saved draft" : "Earlier draft";
-      const meta = document.createElement("small");
-      meta.textContent = revision.saved_at ? new Date(revision.saved_at).toLocaleString() : "";
-      button.append(title, summary, meta);
-      button.addEventListener("click", () => loadRevision(revision));
-      history.append(button);
-    }
+    const revisions = [...(state.record?.revisions || [])].reverse().map((revision) => ({ ...revision, number: revision.revision }));
+    historyMenu.render(revisions, {
+      current: state.revision,
+      onSelect: loadRevision,
+      detail: (revision) => revision.revision === state.record.current_revision ? "Latest saved draft" : "Earlier draft",
+      meta: (revision) => revision.saved_at ? new Date(revision.saved_at).toLocaleString() : "",
+    });
   }
 
   function renderSelection() {
-    const selected = state.selected;
-    byId("gateway-picker-label").textContent = selected ? selected.service_name : "Browse...";
-    byId("gateway-editor-mode").textContent = selected ? `Gateway · ${selected.instance_id}` : "Gateway";
     renderContracts();
     renderHistory();
     renderSource();
@@ -221,29 +168,18 @@
     state.revision = latest?.revision || 0;
     source.value = state.saved = state.selected ? pretty(latest?.config || emptyConfig(state.selected)) : "";
     clearAnalysis();
-    setMessage(state.selected ? (latest ? `Loaded draft r${latest.revision}. Runtime is unchanged.` : "New draft. Analyze it, then save from File.") : "");
+    setMessage("");
     renderSelection();
   }
 
   function setPickerOpen(open, restoreFocus = false) {
-    pane.hidden = !open;
-    pickerToggle.setAttribute("aria-expanded", String(open));
-    if (open) contractList.focus();
-    else if (restoreFocus) pickerToggle.focus();
-  }
-
-  function setFileMenuOpen(open, restoreFocus = false) {
-    fileMenu.hidden = !open;
-    filesToggle.setAttribute("aria-expanded", String(open));
-    if (open) fileMenu.querySelector("button:not(:disabled)")?.focus();
-    else if (restoreFocus) filesToggle.focus();
+    picker.setOpen(open, restoreFocus);
   }
 
   async function loadInventory() {
     if (state.busy) return;
     state.busy = true;
     updateControls();
-    status.textContent = "Loading installed gateway services and saved drafts…";
     try {
       const [contractResponse, configResponse] = await Promise.all([
         readJSON("/api/gateways/contracts"),
@@ -255,17 +191,16 @@
       const previous = state.selected?.instance_id;
       state.selected = state.contracts.find((item) => item.instance_id === previous) || state.contracts[0] || null;
       state.record = state.configs.find((record) => record.instance_id === state.selected?.instance_id) || null;
-      status.textContent = `${contractResponse.organization_id} · ${state.contracts.length} installed gateway service${state.contracts.length === 1 ? "" : "s"}`;
       if (!previous || previous !== state.selected?.instance_id || !isDirty()) loadSelected();
       else renderSelection();
     } catch (error) {
-      status.textContent = `Gateway inventory unavailable: ${error.message}`;
       state.loaded = true;
       state.contracts = [];
       state.configs = [];
       state.selected = null;
       state.record = null;
       loadSelected();
+      setMessage(`Gateway inventory unavailable: ${error.message}`, "error");
     } finally {
       state.busy = false;
       updateControls();
@@ -286,11 +221,10 @@
 
   function loadRevision(revision) {
     if (source.value !== pretty(revision.config) && isDirty() && !confirm("Discard unsaved gateway draft edits?")) return;
-    byId("gateway-history-menu").open = false;
     state.revision = revision.revision;
     source.value = pretty(revision.config);
     clearAnalysis();
-    setMessage(`Loaded draft r${revision.revision}. Analyze before saving it as a new revision.`);
+    setMessage("");
     renderHistory();
     renderSource();
   }
@@ -299,16 +233,16 @@
     if (!state.selected || state.busy) return;
     const parsed = parseSource();
     if (parsed.error) {
-      state.diagnostic = { line: parsed.line, message: parsed.error };
+      surface.setDiagnostic({ line: parsed.line, message: parsed.error });
       analyzeButton.dataset.analysisState = "error";
-      setMessage(`${parsed.error} Select the gutter marker on line ${parsed.line}.`, "error");
+      setMessage(parsed.error, "error");
       renderSource();
       return;
     }
     const analyzed = source.value;
     state.busy = true;
     analyzeButton.dataset.analysisState = "pending";
-    setMessage("Analyzing draft against the live Gateway service…");
+    setMessage("");
     updateControls();
     try {
       const result = await readJSON("/api/gateways/config/check", {
@@ -317,7 +251,7 @@
       if (source.value !== analyzed) return;
       if (!result.valid) throw new Error(result.diagnostics || "Gateway draft analysis failed.");
       state.validDraft = analyzed;
-      state.diagnostic = null;
+      surface.setDiagnostic(null);
       analyzeButton.dataset.analysisState = "success";
       setMessage(`${result.diagnostics} No runtime changes were made.`, "success");
     } catch (error) {
@@ -334,7 +268,7 @@
   function formatDraft() {
     const parsed = parseSource();
     if (parsed.error) {
-      state.diagnostic = { line: parsed.line, message: parsed.error };
+      surface.setDiagnostic({ line: parsed.line, message: parsed.error });
       analyzeButton.dataset.analysisState = "error";
       setMessage(parsed.error, "error");
       renderSource();
@@ -365,7 +299,6 @@
       state.revision = record.current_revision;
       state.saved = source.value;
       setMessage(`Saved draft revision ${record.current_revision}. Runtime is unchanged.`, "success");
-      status.textContent = `${state.selected.instance_id} · draft r${record.current_revision} saved`;
     } catch (error) {
       setMessage(error.message, "error");
     } finally {
@@ -376,10 +309,9 @@
 
   source.addEventListener("input", () => {
     clearAnalysis();
-    if (message.dataset.state) setMessage("Draft changed. Analyze it again before saving.");
+    setMessage("");
     renderSource();
   });
-  source.addEventListener("scroll", syncScroll);
   source.addEventListener("keydown", (event) => {
     if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === "s") {
       event.preventDefault();
@@ -394,7 +326,7 @@
     if (!isDirty() || !confirm("Discard unsaved gateway draft edits?")) return;
     source.value = state.saved;
     clearAnalysis();
-    setMessage("Discarded unsaved edits.");
+    setMessage("");
     renderSource();
   });
   byId("gateway-download").addEventListener("click", () => {
@@ -411,23 +343,8 @@
     if (!file || (isDirty() && !confirm("Replace unsaved gateway draft edits with this file?"))) return;
     source.value = await file.text();
     clearAnalysis();
-    setMessage(`Opened ${file.name}. Analyze it before saving.`);
+    setMessage("");
     renderSource();
-  });
-  pickerToggle.addEventListener("click", () => setPickerOpen(pane.hidden));
-  byId("gateway-picker-close").addEventListener("click", () => setPickerOpen(false, true));
-  filesToggle.addEventListener("click", () => setFileMenuOpen(fileMenu.hidden));
-  fileMenu.addEventListener("click", (event) => {
-    if (event.target.closest("button:not(:disabled)")) setFileMenuOpen(false);
-  });
-  document.addEventListener("pointerdown", (event) => {
-    if (!fileMenu.hidden && !event.target.closest("#gateway-actions")) setFileMenuOpen(false);
-    if (!pane.hidden && !event.target.closest("#gateway-catalog-pane, #gateway-picker-toggle")) setPickerOpen(false);
-  });
-  document.addEventListener("keydown", (event) => {
-    if (event.key !== "Escape") return;
-    if (!fileMenu.hidden) setFileMenuOpen(false, true);
-    else if (!pane.hidden) setPickerOpen(false, true);
   });
   window.addEventListener("beforeunload", (event) => {
     if (isDirty()) event.preventDefault();

@@ -1,23 +1,35 @@
 (() => {
   const source = document.getElementById("zpr-config-source");
   if (!source) return;
-  const picker = document.getElementById("zpr-config-picker");
-  const name = document.getElementById("zpr-config-name");
-  const history = document.getElementById("zpr-config-history");
-  const status = document.getElementById("zpr-config-status");
-  let record;
+  const byId = (id) => document.getElementById(id);
+  const page = window.ZPREditorPage;
+  const name = byId("zpr-config-name");
+  const status = byId("zpr-config-status");
+  const records = byId("zpr-config-records");
+  const analyze = byId("zpr-config-validate");
+  const format = byId("zpr-config-format");
+  let record = null;
   let catalog;
+  let revisions = [];
+  let browsingRevision = 0;
   let saved = "";
   let pending = false;
-  let diagnostic = null;
-  const gutter = document.getElementById("zpr-config-gutter");
-  const highlight = document.getElementById("zpr-config-highlight");
-  const analyze = document.getElementById("zpr-config-validate");
-  const format = document.getElementById("zpr-config-format");
   let sourceVersion = 0;
+  const surface = page.createSourceSurface({
+    source, highlight: byId("zpr-config-highlight"), gutter: byId("zpr-config-gutter"), language: "toml", label: "Configuration",
+    onMarker: (diagnostic) => setStatus(diagnostic.message, "error"),
+  });
+  const picker = page.createPicker({ toggle: byId("zpr-config-picker-toggle"), pane: byId("zpr-config-catalog-pane"), close: byId("zpr-config-picker-close"), focus: records });
+  page.createMenu({ root: byId("zpr-config-actions"), toggle: byId("zpr-config-files-toggle"), menu: byId("zpr-config-file-menu") });
+  const history = page.createHistory({
+    menu: byId("zpr-config-history-menu"), list: byId("zpr-config-history"), count: byId("zpr-config-history-count"),
+    isAvailable: () => Boolean(record),
+  });
+  const dirty = () => source.value !== saved;
+  const setStatus = (text = "", kind = "") => page.setStatus(status, text, kind);
   function clearAnalysis() {
     sourceVersion++;
-    diagnostic = null;
+    surface.setDiagnostic(null);
     delete analyze.dataset.analysisState;
   }
   function syncAnalysisButtons() {
@@ -26,59 +38,73 @@
     format.disabled = disabled;
     format.classList.toggle("button-save-as-ready", !disabled);
     analyze.classList.toggle("button-next-evaluate", !disabled && !analyze.dataset.analysisState);
+    byId("zpr-config-discard").disabled = pending || !dirty();
   }
-  function syncScroll() {
-    gutter.scrollTop = source.scrollTop;
-    highlight.scrollTop = source.scrollTop;
-    highlight.scrollLeft = source.scrollLeft;
-    source.closest(".config-source-editor").dataset.horizontalOverflow = String(source.scrollWidth > source.clientWidth);
+  function renderIdentity() {
+    name.hidden = Boolean(record);
+    page.renderIdentity(
+      { title: byId("zpr-config-title"), version: byId("zpr-config-revision-label"), modified: byId("zpr-config-modified") },
+      {
+        name: record?.name || "",
+        label: record ? `Version ${browsingRevision || record.current_revision}` : "New · unsaved",
+        tooltip: record ? `ZPR Config/${record.name}` : "",
+        dirty: dirty(),
+      },
+    );
+  }
+  function renderHistory() {
+    history.render(revisions.map((revision) => ({ ...revision, number: revision.number || revision.revision })).sort((a, b) => b.number - a.number), {
+      current: browsingRevision || record?.current_revision,
+      onSelect: (revision) => void run(() => loadRevision(revision.number)),
+      detail: (revision) => revision.summary || "",
+      meta: (revision) => [revision.author, revision.created_at ? new Date(revision.created_at).toLocaleString() : ""].filter(Boolean).join(" · "),
+    });
+  }
+  function renderRecords() {
+    const entries = (catalog?.records || []).filter((entry) => entry.kind === "configuration" && !entry.archived);
+    byId("zpr-config-count").textContent = catalog ? String(entries.length) : "—";
+    records.replaceChildren();
+    if (!entries.length) {
+      const empty = document.createElement("p");
+      empty.className = "catalog-empty";
+      empty.textContent = catalog ? "No saved configurations." : "Loading configurations…";
+      records.append(empty);
+      return;
+    }
+    for (const entry of entries) {
+      const item = document.createElement("button");
+      item.type = "button";
+      item.className = "policy-record-item config-record-item";
+      item.dataset.kind = "configuration";
+      item.dataset.recordId = entry.id;
+      item.setAttribute("role", "treeitem");
+      item.setAttribute("aria-selected", String(record?.id === entry.id));
+      const icon = document.createElementNS("http://www.w3.org/2000/svg", "svg");
+      icon.setAttribute("class", "policy-kind-icon");
+      icon.setAttribute("viewBox", "0 0 16 16");
+      icon.setAttribute("aria-hidden", "true");
+      icon.innerHTML = '<path d="M3 2h7l3 3v9H3Z M10 2v3h3 M5 8h6 M5 10.5h6"/>';
+      const title = document.createElement("strong");
+      title.textContent = entry.name;
+      const detail = document.createElement("small");
+      detail.textContent = `Version ${entry.current_revision}`;
+      item.append(icon, title, detail);
+      item.addEventListener("click", () => void run(async () => {
+        if (record?.id === entry.id) { picker.setOpen(false, true); return; }
+        if (dirty() && !confirm("Discard unsaved configuration changes?")) return;
+        await loadRecord(entry.id);
+        picker.setOpen(false, true);
+      }));
+      records.append(item);
+    }
   }
   function renderEditor() {
     syncAnalysisButtons();
-    document.getElementById("zpr-config-modified").hidden = source.value === saved;
-    gutter.replaceChildren(...source.value.split("\n").map((_, index) => {
-      const row = document.createElement("div");
-      row.className = "config-gutter-line";
-      row.dataset.line = String(index + 1);
-      if (diagnostic?.line === index + 1) {
-        const marker = document.createElement("button");
-        marker.type = "button";
-        marker.className = "config-error-marker";
-        marker.title = diagnostic.message;
-        marker.setAttribute("aria-label", `Configuration error on line ${index + 1}: ${diagnostic.message}`);
-        marker.textContent = "!";
-        marker.addEventListener("click", () => {
-          source.focus();
-          const offset = source.value.split("\n").slice(0, index).reduce((length, line) => length + line.length + 1, 0);
-          source.setSelectionRange(offset, offset + (source.value.split("\n")[index]?.length || 0));
-        });
-        row.append(marker);
-      } else {
-        const spacer = document.createElement("span");
-        spacer.className = "config-gutter-marker-space";
-        spacer.setAttribute("aria-hidden", "true");
-        row.append(spacer);
-      }
-      return row;
-    }));
-    const tokens = /("""(?:\\[\s\S]|(?!""")[^\\])*"""|'''[\s\S]*?'''|"(?:\\.|[^"\\\n])*"|'[^'\n]*'|#[^\n]*|^[ \t]*\[\[?[^\n\]]+\]\]?|\b(?:true|false|inf|nan)\b|[+-]?\b\d[\w.+:-]*\b|[A-Za-z0-9_-]+(?=\s*(?:\.|=)))/gm;
-    highlight.replaceChildren();
-    let offset = 0;
-    for (const match of source.value.matchAll(tokens)) {
-      highlight.append(document.createTextNode(source.value.slice(offset, match.index)));
-      const token = document.createElement("span");
-      const text = match[0];
-      const kind = text.startsWith("#") ? "comment" : /^["']/.test(text) ? "string" : text.trimStart().startsWith("[") ? "class-definition" : /^(true|false|inf|nan)$/.test(text) ? "keyword" : /^[+\-\d]/.test(text) ? "value" : "attribute";
-      token.className = `zpl-${kind}`;
-      token.textContent = text;
-      highlight.append(token);
-      offset = match.index + text.length;
-    }
-    highlight.append(document.createTextNode(source.value.slice(offset) + "\n"));
-    syncScroll();
+    surface.render();
+    renderIdentity();
   }
   const request = async (url, options = {}) => {
-    const response = await fetch(url, { cache: "no-store", ...options });
+    const response = await window.zprOperatorFetch(url, { cache: "no-store", ...options });
     const result = await response.json();
     if (!response.ok) {
       const error = new Error(result.error || result.diagnostics || `HTTP ${response.status}`);
@@ -96,48 +122,57 @@
     document.querySelectorAll("[data-config-command]").forEach((button) => { button.disabled = true; });
     try { await action(); } catch (error) {
       if (version !== sourceVersion) return;
-      diagnostic = error.line ? { line: error.line, message: error.message } : null;
+      surface.setDiagnostic(error.line ? { line: error.line, message: error.message } : null);
       if (error.details?.valid === false) analyze.dataset.analysisState = "error";
-      status.textContent = diagnostic ? `Syntax error on line ${diagnostic.line}; select its gutter marker for details.` : error.message;
-      renderEditor();
+      setStatus(error.line ? `Line ${error.line}: ${error.message}` : error.message, "error");
     }
     finally { pending = false; document.querySelectorAll("[data-config-command]").forEach((button) => { button.disabled = false; }); renderEditor(); }
   };
   async function loadCatalog() {
     catalog = await request("/api/policy");
-    const records = (catalog.records || []).filter((entry) => entry.kind === "configuration" && !entry.archived);
-    picker.replaceChildren(new Option("New draft", ""), ...records.map((entry) => new Option(entry.name, entry.id)));
-    picker.value = record?.id || "";
+    renderRecords();
   }
   async function loadRecord(id) {
     record = await request(`/api/policy/records/${encodeURIComponent(id)}`);
     clearAnalysis();
+    browsingRevision = 0;
     name.value = record.name;
     source.value = saved = record.content;
-    const revisions = await request(`/api/policy/records/${encodeURIComponent(id)}/revisions`);
-    history.replaceChildren(new Option("Current revision", ""), ...revisions.map((revision) => new Option(`r${revision.number || revision.revision} · ${revision.summary || ""}`, String(revision.number || revision.revision))));
-    status.textContent = `Loaded r${record.current_revision}; not applied.`;
+    revisions = await request(`/api/policy/records/${encodeURIComponent(id)}/revisions`);
+    setStatus("");
+    renderHistory();
+    renderRecords();
   }
-  picker.addEventListener("change", () => run(async () => {
-    if (source.value !== saved && !confirm("Discard unsaved configuration changes?")) { picker.value = record?.id || ""; return; }
-    if (picker.value) await loadRecord(picker.value);
-    else { record = null; clearAnalysis(); name.value = ""; source.value = saved = ""; history.replaceChildren(); status.textContent = ""; renderEditor(); }
-  }));
-  history.addEventListener("change", () => run(async () => {
-    if (!record || !history.value) return;
-    const revision = await request(`/api/policy/records/${encodeURIComponent(record.id)}/revisions/${encodeURIComponent(history.value)}`);
+  async function loadRevision(number) {
+    if (!record) return;
+    if (dirty() && !confirm("Discard unsaved configuration changes?")) return;
+    const revision = await request(`/api/policy/records/${encodeURIComponent(record.id)}/revisions/${encodeURIComponent(number)}`);
     clearAnalysis();
+    browsingRevision = number === record.current_revision ? 0 : number;
     source.value = revision.content;
-    status.textContent = `Historical r${history.value}; save to create a new revision.`;
-  }));
+    saved = browsingRevision ? "" : revision.content;
+    setStatus("");
+    renderHistory();
+  }
+  function reset() {
+    record = null;
+    revisions = [];
+    browsingRevision = 0;
+    clearAnalysis();
+    name.value = "";
+    source.value = saved = "";
+    setStatus("");
+    renderHistory();
+    renderRecords();
+    renderEditor();
+  }
   analyze.addEventListener("click", () => run(async () => {
     const version = sourceVersion;
     const result = await post("/api/policy/config/check", { source: source.value });
     if (version !== sourceVersion) return;
-    diagnostic = null;
+    surface.setDiagnostic(null);
     analyze.dataset.analysisState = "success";
-    status.textContent = result.diagnostics;
-    renderEditor();
+    setStatus(result.diagnostics, "success");
   }));
   format.addEventListener("click", () => run(async () => {
     const version = sourceVersion;
@@ -146,14 +181,12 @@
     if (version !== sourceVersion) return;
     source.value = formatTOMLSpacing(original);
     clearAnalysis();
-    status.textContent = "TOML spacing formatted. Review and save the draft when ready.";
-    renderEditor();
+    setStatus("");
   }));
-  document.getElementById("zpr-config-save").addEventListener("click", () => run(async () => {
-    fileMenu.open = false;
-    if (!name.value.trim()) throw new Error("Enter a configuration name.");
+  byId("zpr-config-save").addEventListener("click", () => run(async () => {
+    if (!record && !name.value.trim()) { name.hidden = false; name.focus(); throw new Error("Enter a configuration name."); }
     const current = await request("/api/policy");
-    if (current.organization_id !== catalog.organization_id) throw new Error("Organization changed; reload before saving.");
+    if (catalog && current.organization_id !== catalog.organization_id) throw new Error("Organization changed; reload before saving.");
     if (record) {
       await post(`/api/policy/records/${encodeURIComponent(record.id)}/revisions`, { content: source.value, expected_revision: record.current_revision, summary: "Updated ZPLC configuration draft" });
       await loadRecord(record.id);
@@ -164,51 +197,40 @@
       await loadRecord(record.id);
     }
     await loadCatalog();
-    status.textContent = `Saved r${record.current_revision}; runtime unchanged.`;
+    setStatus(`Saved version ${record.current_revision}; runtime unchanged.`, "success");
   }));
-  source.addEventListener("input", () => { clearAnalysis(); status.textContent = source.value === saved ? "Saved draft" : "Unsaved draft"; renderEditor(); });
-  source.addEventListener("scroll", syncScroll);
-  new ResizeObserver(syncScroll).observe(source);
-  const fileMenu = document.querySelector(".config-file-menu");
-  document.getElementById("zpr-config-new").addEventListener("click", () => {
-    fileMenu.open = false;
-    if (source.value !== saved && !confirm("Discard unsaved configuration changes?")) return;
-    record = null;
-    clearAnalysis();
-    name.value = "";
-    source.value = saved = "";
-    picker.value = "";
-    history.replaceChildren();
-    status.textContent = "";
-    renderEditor();
-    source.focus();
+  byId("zpr-config-discard").addEventListener("click", () => {
+    if (!dirty() || !confirm("Discard unsaved configuration changes?")) return;
+    if (record) void run(() => loadRecord(record.id));
+    else reset();
   });
-  const fileInput = document.getElementById("zpr-config-file-input");
-  document.getElementById("zpr-config-open").addEventListener("click", () => { fileMenu.open = false; fileInput.click(); });
+  name.addEventListener("input", renderIdentity);
+  source.addEventListener("input", () => { clearAnalysis(); setStatus(""); renderEditor(); });
+  byId("zpr-config-new").addEventListener("click", () => {
+    if (dirty() && !confirm("Discard unsaved configuration changes?")) return;
+    reset();
+    name.focus();
+  });
+  const fileInput = byId("zpr-config-file-input");
+  byId("zpr-config-open").addEventListener("click", () => fileInput.click());
   fileInput.addEventListener("change", async () => {
     const file = fileInput.files?.[0];
     fileInput.value = "";
     if (!file) return;
-    if (file.size > 1048576) { status.textContent = "Configuration file exceeds the 1 MiB editor limit."; return; }
-    if (source.value !== saved && !confirm("Discard unsaved configuration changes?")) return;
+    if (file.size > 1048576) { setStatus("Configuration file exceeds the 1 MiB editor limit.", "error"); return; }
+    if (dirty() && !confirm("Discard unsaved configuration changes?")) return;
     let content;
     try { content = await file.text(); } catch (error) {
-      status.textContent = `Could not open ${file.name}: ${error.message}`;
+      setStatus(`Could not open ${file.name}: ${error.message}`, "error");
       return;
     }
+    reset();
     source.value = content;
-    saved = "";
-    record = null;
-    clearAnalysis();
-    picker.value = "";
     name.value = file.name.replace(/\.(toml|zplc)$/i, "");
-    history.replaceChildren();
-    status.textContent = `Opened ${file.name}; save to create a versioned draft.`;
     renderEditor();
   });
-  document.getElementById("zpr-config-download").addEventListener("click", () => {
-    fileMenu.open = false;
-    const baseName = name.value.trim().replace(/[^a-zA-Z0-9._-]+/g, "-") || "zpr-config";
+  byId("zpr-config-download").addEventListener("click", () => {
+    const baseName = (record?.name || name.value).trim().replace(/[^a-zA-Z0-9._-]+/g, "-") || "zpr-config";
     const url = URL.createObjectURL(new Blob([source.value], { type: "application/toml;charset=utf-8" }));
     const anchor = document.createElement("a");
     anchor.href = url;
@@ -216,8 +238,16 @@
     anchor.click();
     URL.revokeObjectURL(url);
   });
+  source.addEventListener("keydown", (event) => {
+    if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === "s") {
+      event.preventDefault();
+      byId("zpr-config-save").click();
+    }
+  });
   window.addEventListener("hashchange", () => { if (location.hash === "#zpr-config" && !catalog) void run(loadCatalog); });
   if (location.hash === "#zpr-config") void run(loadCatalog);
+  renderRecords();
+  renderHistory();
   renderEditor();
 })();
 

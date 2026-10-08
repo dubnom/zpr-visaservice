@@ -18,5 +18,20 @@ const provisioningContract = (() => {
       (item.state !== "pending_approval" || Boolean(item.key_fingerprint && item.claimed_at && item.approval_expires_at));
   }
 
-  return Object.freeze({ assetFields, validInvitation });
+  async function postMutation(path, body, csrf, signal, successStatus) {
+    const response = await fetch(path, {
+      method: "POST", cache: "no-store", credentials: "same-origin", redirect: "error", signal,
+      headers: { Accept: "application/json", "Content-Type": "application/json", "X-ZPR-CSRF": csrf },
+      body: JSON.stringify(body),
+    });
+    // Only explicit pre-commit rejections can establish that no mutation occurred.
+    if ([400, 401, 403, 409, 413, 415].includes(response.status) ||
+        (successStatus === 200 && response.status === 404)) return { rejected: response.status };
+    if (response.status !== successStatus || !response.headers.get("Content-Type")?.includes("application/json")) {
+      throw new Error("Unconfirmed enrollment mutation response.");
+    }
+    return { value: await response.json() };
+  }
+
+  return Object.freeze({ assetFields, validInvitation, postMutation });
 })();

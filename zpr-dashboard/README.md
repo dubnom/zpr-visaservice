@@ -804,6 +804,231 @@ untrusted TLS, plaintext/redirect rejection, missing/truncated/oversized transfe
 signature/hash failures, unsafe/symlink parents, concurrent destination creation,
 and cleanup. Test keys, TLS identities, and bundles are removed at teardown.
 
+## Mac enrollment app and adapter validation (development)
+
+The Apple Silicon development image contains a per-user **ZPR Machine Setup.app**,
+the shared loopback browser wizard, Terminal/default-browser launcher, instructions
+and configuration example. Copy the app to the intended user's `~/Applications`.
+No privileged installer, launch daemon, network adapter, route/DNS changes,
+automatic CA import or enrollment request is performed by copying the app.
+Other accounts require their own asset/invitation and enrollment identity.
+
+**This app is enrollment-only, not a connected Mac adapter.** It is ad-hoc signed
+for local integrity, **not Developer ID signed or notarized**. Do not remove
+quarantine or disable Gatekeeper to distribute it. The Mach-O deployment floor
+and bundle minimum are explicitly macOS 13.0, with native arm64 only; testing
+on this host does not certify every macOS release, Intel, Finder/Automation
+permissions or remote clean-machine installation.
+
+An administrator must provision
+`~/Library/Application Support/ZPR/EnrollmentSetup/setup.json` from the bundled
+example, supply the reachable HTTPS device service and optional PEM `ca_file`,
+and retain `"key_protection":"macos-keychain"`. The invalid example cannot enroll
+anything. Configuration/CA files must be regular user/root-owned files, not
+shared-writable; they and their non-symlinked parents must be inside the trusted
+real desktop home. Trust/ownership of the home and its external ancestors is an
+operator prerequisite. Omit `state_directory`, keys and codes. Relative CA paths
+are resolved beside the configuration. A remote Mac cannot use localhost on
+the operator's machine.
+
+Opening the app requests Terminal automation to run setup as the desktop user.
+The wizard opens the default browser to a private one-hour loopback capability
+URL. Keep Terminal running; Ctrl-C stops it. If configuration is absent, the app
+offers instructions instead of sending a request. If browser launch fails, an
+explicit warning retains the URL for manual opening. The launcher requires the
+Keychain mode exactly; omission or unavailable native support fails rather than
+falling back to plaintext. The existing key-fingerprint verification, separately
+delivered enrollment code, claim/status and uncertain-response flow is unchanged.
+Approval remains only an administrative decision.
+
+The full RSA-3072 software identity and enrollment metadata are stored in the
+current user's configured default **macOS Keychain** as a generic-password item
+with service `com.zpr.enrollment.development` and label
+`ZPR development enrollment identity`. Only an owner-private, single-link
+reference file is published on disk:
+`~/Library/Application Support/ZPR/EnrollmentDevelopment/identity.keychain.json`.
+Keychain encryption/access control protects storage; the authorized wizard still
+loads the software key in memory. This is not Secure Enclave-backed, TPM
+attestation or a production adapter credential.
+
+The native implementation uses Apple's Security/CoreFoundation frameworks via
+CGO, not a private-key command-line argument or a third-party Keychain library.
+It explicitly scopes lookup to the selected default Keychain and exact persistent
+reference. Denial/locked Keychain, deleted item, invalid reference or corruption
+fails closed and never produces a replacement key. Publication never overwrites
+an existing reference; competing publishers remove only their unused new items.
+Changing the default Keychain or app signature can require deliberate recovery/
+authorization. Do not automatically grant other applications Keychain access.
+
+Replacing/removing the app preserves the Keychain item, reference and operator
+configuration. Removing the app does not revoke enrollment. Legacy unencrypted
+development state is not automatically migrated/imported. Administrators must
+avoid inviting the same asset again merely because the new Mac profile uses
+a separate state path. Lost references/items, account migration and retirement
+require deliberate recovery/revocation. A future root adapter must not receive
+the user identity by exporting its private key to a plaintext service file.
+
+Native build from this dashboard directory (the explicit deployment flags prevent
+the host SDK from silently producing a newer minimum OS than the bundle declares):
+
+```sh
+MACOSX_DEPLOYMENT_TARGET=13.0 \
+CGO_CFLAGS='-mmacosx-version-min=13.0' \
+CGO_LDFLAGS='-mmacosx-version-min=13.0' \
+CGO_ENABLED=1 GOOS=darwin GOARCH=arm64 go build -trimpath \
+  -o /absolute/output/zpr-enrollment-setup-macos-arm64 ./cmd/zpr-enrollment-setup
+sh packaging/enrollment/build-macos.sh \
+  /absolute/output/zpr-enrollment-setup-macos-arm64 0.1.0 \
+  /absolute/output/zpr-enrollment-macos.dmg
+sh packaging/enrollment/test-macos.sh \
+  /absolute/output/zpr-enrollment-macos.dmg \
+  /absolute/output/zpr-enrollment-setup-macos-arm64
+```
+
+The builder rejects existing output, wrong architecture, missing Security.framework
+or a mismatched Mach-O deployment floor. It compiles the AppleScript launcher,
+signs the executable/app ad-hoc, verifies the sealed bundle and creates a read-only
+compressed DMG. The test mounts it read-only, checks signatures/plist/resources,
+compares the packaged executable against equivalently signed source bytes and
+starts the actual packaged wizard under a disposable home. Authorized session
+reads succeed and anonymous reads fail; no login Keychain entry, browser, live
+claim or adapter is created by that package check.
+
+```sh
+go test -race ./internal/enrollment
+CGO_ENABLED=0 go test ./internal/enrollment
+```
+
+Mac-specific tests use disposable, explicitly scoped test Keychains—not the login
+Keychain—to verify key persistence/proof signing, fresh-process reload, competing
+publishers, deletion recovery, corrupt/unsafe references, legacy rejection,
+configuration-parent checks and protection labels. The no-CGO suite proves that
+Keychain configuration fails at startup without native support. Shared browser
+flows and Linux/Windows builds remain separate regression gates.
+
+### Existing Mac adapter runtime
+
+The separate `zpr-core` packet handler already has a native `utun` backend.
+On this Apple Silicon host, native `cargo test --locked -p ph` passes (246 library
+and 267 binary tests, one ignored in each runner); `cargo build --locked -p ph
+--bin ph` and non-networking help startup pass. Six new Mac-specific tests cover
+interface-name/unit bounds, pre-kernel prefix/MTU rejection, IPv6 masks,
+scoped/global address recognition and the single-queue restriction. Socket errors
+are checked before constructing an owned descriptor; address add/clear operations
+are serialized. No tunnel, route, DNS or running organization was changed.
+
+These are **unprivileged validation**, not packet-flow certification. Current
+high-level Mac address lifecycle is IPv6-only and single-queue. Privileged utun
+start/stop, MTU/address/route/DNS rollback, reconnect/sleep/wake, allowed/denied
+traffic, credential issuance/Keychain-to-runtime handoff and revocation remain
+required. Strict Clippy is currently blocked by unrelated existing dependency
+lints and an existing capture-worker partial-write lint; these were not changed.
+See the [adapter platform plan](../../zpr-core/ADAPTER_PLATFORM_SUPPORT_PLAN.md).
+
+## Windows 11 x64 enrollment installer (development)
+
+Windows is an additional first-stage enrollment target; the existing Linux
+desktop package remains supported. The per-user NSIS setup EXE installs the
+same loopback browser wizard, a console/browser launcher, instructions, a
+configuration example, a current-user Start menu shortcut and an HKCU uninstall
+entry. It requires a native AMD64 Windows 11 desktop (build 22000 or newer),
+not ARM64, Windows 10 or Server. Run without elevation. Install does not start
+a service/browser, import a CA, change networking/firewall rules or contact
+the enrollment service.
+
+**It does not install a network adapter/driver or Windows service, issue
+credentials or connect traffic.** This development artifact is unsigned and
+not yet certified on a real Windows machine. Authenticode/release verification,
+trusted release delivery, credential issuance and adapter-runtime integration
+are separate unfinished work. Do not bypass Windows security warnings as an
+ordinary distribution procedure.
+
+Installed files are under `%LOCALAPPDATA%\ZPR\EnrollmentSetup`. An administrator
+must copy `setup.example.json` to `setup.json`, supply the actual reachable
+HTTPS device enrollment audience and, if required, a trusted PEM `ca_file`
+(relative to the config or an absolute local path). No trust is auto-discovered;
+the invalid example cannot enroll a device. A remote Windows machine cannot
+use the operator's localhost endpoint. Never put a code, key or `state_directory`
+in this configuration. The wizard rejects unsafe writers/owners, reparse
+points, hard-linked config/key files, UNC/device paths and alternate streams.
+
+Launch **ZPR Machine Setup (Development)** from the current user's Start menu.
+The console opens the default browser to a private one-hour loopback capability
+URL. Keep it running; Ctrl-C stops setup. Failure to open a browser is explicit
+and retains the URL for manual opening. The existing invitation/key verification,
+separately transmitted code and uncertain-response recovery flow is unchanged.
+Approval still means only a review decision, not connected/enrolled credentials.
+
+Windows private state is
+`%LOCALAPPDATA%\ZPR\EnrollmentDevelopment\identity.dpapi`. The RSA-3072 identity
+and metadata are encrypted with **current-user DPAPI**, never machine-wide DPAPI,
+and stored under user/SYSTEM-only ACLs. Creation publishes complete ciphertext
+without overwriting an existing identity; invalid protection, unsafe ACLs,
+corruption and decryption failure never generate a replacement key. There is
+no plaintext import/fallback. This is software development protection, not TPM
+attestation; the logged-in user, compromised processes or privileged recovery
+administrators can still impersonate the identity.
+
+Each Windows user has separate enrollment state and needs a separate asset/
+invitation. This does not yet mean multiple working network adapters. Neither
+upgrade nor uninstall deletes the user's key or operator-created config/CA files;
+uninstall does not revoke enrollment. Plan DPAPI recovery before account resets
+or profile migration; lost state requires administrator-led replacement/revocation.
+The Linux/macOS file protection and state paths remain unchanged.
+
+Build from this dashboard directory with the existing Go toolchain and NSIS:
+
+```sh
+GOOS=windows GOARCH=amd64 CGO_ENABLED=0 go build -trimpath \
+  -o /absolute/output/zpr-enrollment-setup.exe ./cmd/zpr-enrollment-setup
+sh packaging/enrollment/build-windows.sh /absolute/output/zpr-enrollment-setup.exe \
+  0.1.0.0 /absolute/output/zpr-enrollment-installer.exe
+```
+
+The builder refuses an existing output, non-AMD64 PE payload or invalid four-part
+version. For macOS/Linux hosts without NSIS, the provided
+`packaging/enrollment/Dockerfile.windows-builder` installs NSIS and the extraction
+checker in an isolated, base-digest-pinned image:
+
+```sh
+docker build -f packaging/enrollment/Dockerfile.windows-builder \
+  -t zpr-enrollment-windows-builder:local packaging/enrollment
+docker run --rm -v "$PWD/packaging/enrollment:/packaging:ro" \
+  -v /absolute/output:/artifacts zpr-enrollment-windows-builder:local \
+  /packaging/build-windows.sh /artifacts/zpr-enrollment-setup.exe \
+  0.1.0.0 /artifacts/zpr-enrollment-installer.exe
+```
+
+Cross-build, Windows-target vet/test compilation, existing enrollment race
+tests and installer extraction checks pass. The extraction runner compares the
+packaged EXE/config/launcher/instructions byte-for-byte and rejects invalid inputs:
+
+```sh
+docker run --rm -v "$PWD/packaging/enrollment:/packaging:ro" \
+  -v /absolute/output:/artifacts zpr-enrollment-windows-builder:local \
+  /packaging/test-windows-build.sh /artifacts/zpr-enrollment-setup.exe
+```
+
+**Native Windows certification remains required**, without elevation in a clean
+Windows 11 x64 account. Run from the dashboard source directory:
+
+```powershell
+go test ./internal/enrollment -run Windows -count=1
+powershell -NoProfile -File packaging/enrollment/test-windows.ps1 `
+  -Installer C:\test\zpr-enrollment-installer.exe
+```
+
+The Go suite checks persistence/proof signing, DPAPI tampering, concurrent
+publication, private ACLs, config overrides, unsafe paths, loopback authorization
+and protection labels. The installer test refuses existing installation/state,
+checks silent install, starts the actual wizard, prepares a test-only key without
+claiming an invitation, and verifies upgrade/uninstall preservation. It removes
+only its newly created test state/config. Also certify interactive Start menu/
+default-browser behavior, two-user isolation and DPAPI decryption rejection
+under another account, junction/symlink denial, Windows 10/ARM64/Server rejection,
+and the actual reachable HTTPS claim/status/restart flow. Never present successful
+cross-compilation or extraction as a substitute for those runtime checks.
+
 ## Named operator OIDC and opt-in direct HTTPS
 
 [internal/operatorauth](internal/operatorauth/auth.go) provides the approved
@@ -898,7 +1123,10 @@ go test -race ./internal/operatorauth ./internal/enrollment
 The approved initial integration terminates TLS in Control Room itself. This
 increment preserves the existing loopback-only browser/API exposure: use a literal
 loopback `-listen` address and a `localhost`/loopback origin with the same fixed
-port. Remote/wildcard binding is rejected; remote-operator exposure needs a
+port. A container may listen on `0.0.0.0` only with an explicit
+`ZPR_CONTROL_ROOM_OPERATOR_TRUSTED_PEER_IP`; the Docker host port must still bind
+to `127.0.0.1`, and the handler requires actual TLS, the exact loopback Host,
+and a loopback or exact configured peer address. Other wildcard/remote binding is rejected; remote-operator exposure needs a
 separate reviewed authorization boundary for all existing APIs, not just enrollment.
 Forwarded headers and the existing browser gateway cannot establish TLS or a
 named-user identity for these handlers.
@@ -946,6 +1174,113 @@ not reported successful without HTTP 204. A login/config failure is shown explic
 The signing/trust configuration below covers only enrollment; it does not
 delegate unrelated monitoring/editor operations or replace their separate
 operator-policy and loopback requirements.
+
+### Local development operator login
+
+The local stack can now run a real Dex identity provider, **not** the test
+login fixture or the certificate-only browser gateway. Both listener ports are
+published only on host loopback. The dedicated development CA is independent of
+the machine-control and backend-service CAs. Do not deploy this local static-user
+profile remotely or treat it as a production IdP with MFA, account lockout or
+managed password recovery.
+
+First prepare the ordinary local stack, including its existing service/client
+certificates and runtime directory. Then, for a fresh operator profile, run from
+this dashboard directory:
+
+```sh
+sh scripts/local-operator-login.sh init dubnom great-lakes
+sh scripts/local-operator-login.sh start
+sh scripts/local-operator-login.sh trust  # macOS user login keychain; explicit trust change
+```
+
+`init` creates protected files under `../../.local-runtime/operator-login`,
+refuses to overwrite an existing identity/configuration, and never prints
+passwords, client secrets or private keys. `operator-password` contains the
+random initial password; open it locally and keep it private. The IdP stores a
+bcrypt hash and its signing/session state in persistent SQLite storage.
+The pinned Dex 2.44.0 image uses HTTPS at `https://zpr-id.localhost:5556`;
+Docker maps that hostname explicitly for the Control Room OIDC client.
+The browser resolves `.localhost` locally. Certificates last 90 days and the
+development CA 365 days; arrange deliberate renewal rather than disabling TLS
+verification when they expire.
+
+The local admin is deliberately granted `organizations:["*"]` at Control Room
+and independently at Control-Service: all existing/future organizations, but
+**only the explicitly listed permissions**. There is no permission wildcard.
+An exact issuer/subject still identifies the user; Dex encodes the stable
+`zpr-local-admin` ID plus its local connector into the subject. The GUI displays
+this opaque verified subject; the login username is `dubnom`.
+General Control Room organization context is explicitly `*`, requiring a global
+grant. An organization-specific deployment should use an exact organization ID
+and exact grant instead.
+
+Enrollment remains limited to the separate Control-Service `enrollment.json`
+organization/type/profile catalog. Initialization seeds `great-lakes`, laptop/
+workstation/server and standard profile as explicit local operator configuration,
+not from Simulator manifests. Add future enrollment organizations to that file
+and deliberately restart Control-Service; global user grants automatically cover
+configured organizations without allowing arbitrary unconfigured organizations.
+Creation remains **default off** (`gui_invitation_creation_enabled:false`);
+cancel capability requires the independent named cancel grant. No review grants,
+credential issuance or adapter admission are enabled by setup.
+
+The presence of `operator-login/stack.json` opts the launcher into this profile.
+Restart Control-Service using its existing operator environment (retain configured
+LDAP/admin/diagnostics settings), then run:
+
+```sh
+sh scripts/dashboard-stack.sh restart-control-room
+```
+
+The launcher mounts only the Room certificate/key, OIDC config/client secret,
+public CA and delegation signer files into Control Room; it does not mount the
+initial password, CA signing key or IdP signing database there. The IdP has
+`unless-stopped` restart policy and startup checks trusted discovery before
+Control Room switches. Configuration, IdP database and enrollment registry
+persist across service/container restarts. Control Room's in-memory sessions do
+not: sign in again after a Room restart.
+
+Visit **https://localhost:8787**, choose **Sign in**, and enter `dubnom` in the
+IdP's login field and the locally saved password. Do not use the old HTTP or
+`https://127.0.0.1:8787` URL: the configured origin/callback is exactly localhost.
+No HTTP redirect listener is provided. Login-bearing documents use
+`Referrer-Policy:same-origin` so Chromium supplies Origin on native login POSTs;
+callback/API responses retain `no-referrer`, and cross-origin referrers remain
+suppressed. Editor mutations now use a shared memory-only CSRF request helper;
+logout/session checks erase its token and no mutation is automatically retried.
+
+Simulator remains at **http://127.0.0.1:8788** without named login in this local
+profile. Activity and activation checks use private mTLS Control-Service access,
+not Control Room browser sessions. Its new `SIMULATOR_OPERATOR_SERVICE_*` URL,
+CA/server name and `SIMULATOR_OPERATOR_CLIENT_*` certificate/key are supplied by
+the launcher. Explicit incomplete/non-HTTPS service settings fail rather than
+falling back to unauthenticated browser access. Legacy `SIMULATOR_CONTROL_ROOM_*`
+settings remain only for backward-compatible local callers.
+`sh scripts/dashboard-stack.sh restart-simulator-ui` updates only the UI/container without stopping DNS/rig
+containers; it refuses if the UI container hosts live socat relays that need a
+planned relay restart. This does not switch the active organization.
+
+Validate an explicitly deployed profile with:
+
+```sh
+sh scripts/test-local-operator-browser.sh
+```
+
+This checks actual Dex password rejection/login, global grants, authenticated
+monitoring/catalog reads, native Origin, missing-CSRF denial, GUI configuration
+Analyze, reload and logout in desktop/tablet Chromium. Container Chromium pins
+the exact local TLS public keys instead of disabling certificate checking
+globally; credential traces/screenshots are disabled. The user's browser uses
+the installed dedicated CA. The integrated browser fixture also now exercises
+the actual production security headers.
+
+To remove user CA trust, run `security remove-trusted-cert` with the exact
+`operator-login/ca.crt` path and remove that specific certificate from the login
+keychain. Do not delete the identity database/keys or repeatedly rerun `init`
+to reset a password; take a protected backup, deliberately replace the bcrypt
+entry and protected password file, restart the IdP, then restart Room to invalidate
+existing sessions. No credentials belong in source control, chat or deployment logs.
 
 ### Route-level Control Room and Simulator policy
 
@@ -1165,22 +1500,66 @@ The legacy general-mutation flag does not unlock anything.
 4. Closing, navigation, session checks/loss, or logout erases the code from the
    page. Read APIs cannot recover it. No code is automatically copied, downloaded,
    emailed, or saved to browser storage. If it was not securely delivered, use
-   certificate-authorized cancellation or wait for expiry before replacing it.
+   authorized cancellation from fresh **Details**, certificate administration,
+   or expiry before replacing it.
 5. A timeout (20 seconds), lost response, unexpected status, or malformed/mismatched
    creation result is **uncertain**, not success or failure. No automatic retry
    occurs. Creation stays locked in this page until explicit registry
    reconciliation is acknowledged. Clearing the form, refreshing the catalog,
    or rechecking the session does not remove this uncertainty.
 6. Check **all registry pages** for the organization and inventory reference.
-   Resolve an existing unusable invitation by certificate-authorized cancellation
-   or expiry before requesting a replacement. Reload loses the in-memory guard;
+   Resolve an existing unusable invitation by authorized GUI cancellation,
+   certificate administration, or expiry before requesting a replacement. Reload loses the in-memory guard;
    it does not prove failure or make a retry safe. The registry's active-asset
    uniqueness remains the durable duplicate protection.
 
-Cancellation, approval, and rejection GUI controls remain disabled. Creating an
+Approval and rejection GUI controls remain disabled. Creating an
 invitation sends no email, reserves no admitted/live adapter, and issues no
 credentials. No production signed package host or installer link is configured;
 the retained package remains unsigned development tooling.
+
+#### Authorized invitation cancellation
+
+An administrator with `read` and `cancel` grants for the organization at **both**
+Control Room and Control-Service can cancel an `invited` or `pending_approval`
+request whenever it remains active. No additional feature flag or creation
+opt-in is required. The catalog independently advertises
+`gui_cancel_organizations`; missing/older capabilities keep the GUI locked.
+HTTPS/OIDC, CSRF and independently verified delegation remain mandatory.
+
+1. Open Provisioning > Adapters, select the organization, and find the invitation
+   across all registry pages. Open **Details** for a fresh service read.
+2. Review the exact ID, inventory reference, owner, state, revision, key
+   fingerprint (empty before claim), and invitation/approval deadline.
+3. Enter a reason of 1–256 UTF-8 bytes without line breaks, acknowledge the exact
+   invitation/revision, and select **Confirm cancellation**. The GUI sends one
+   CSRF-protected POST with organization, revision, fingerprint and reason.
+4. Control-Service independently authorizes the named user and checks current
+   state, deadline, revision and fingerprint in one SQLite transaction. A
+   concurrent claim/decision cannot cancel an unseen revision. Successful
+   cancellation increments the revision and durably records the named decision
+   principal, reason, time and audit event. The code and pending submission can
+   no longer be used.
+5. Confirm the returned cancellation summary or reopen **Details** to read back
+   its audit fields. Approved, rejected, cancelled and expired records cannot be
+   cancelled through this workflow. This is not credential revocation.
+6. Explicit rejection/conflict requires reopening fresh **Details** before
+   another decision. A 20-second timeout, lost/malformed/mismatched response,
+   navigation, dialog closure, or session loss during a request means
+   **outcome uncertain**, not failure. No automatic retry occurs.
+7. Reopen fresh **Details** and inspect state/revision/decision fields. Select
+   **Acknowledge refreshed outcome**, then reopen again before a new cancellation
+   if still active. An in-flight service operation may finish after a read; a new
+   operation remains revision-bound. Refresh/session checks preserve the
+   page-memory uncertainty marker. Reload loses it but does not prove failure.
+
+Delegated cancellation now requires the checked body:
+`{"organization":"…","revision":2,"key_fingerprint":"…","reason":"…"}`.
+Direct certificate-authorized cancellation retains its existing
+`{"organization":"…"}` body and idempotent behavior. Neither path reads or calls
+Simulator. Real HTTPS/OIDC/mTLS/SQLite browser tests cover invited and pending
+cancellation, named audit and committed-but-lost response readback with Simulator
+unavailable.
 
 Browser acceptance checks run without Simulator:
 

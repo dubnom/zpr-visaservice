@@ -11,6 +11,16 @@ let scenarioEditorDirty = false;
 let scenarioEditorJsonDirty = false;
 let scenarioEditorDraft = {};
 let scenarioEditorAnalysisVersion = 0;
+let scenarioEditorSaved = null;
+let scenarioEditorSummary = "";
+let scenarioEditorViewing = 0;
+const scenarioEditorPage = window.ZPREditorPage;
+const scenarioHistory = scenarioEditorPage.createHistory({
+  menu: document.getElementById("scenario-editor-history-menu"),
+  list: document.getElementById("scenario-editor-history"),
+  count: document.getElementById("scenario-editor-history-count"),
+  isAvailable: () => Boolean(scenarioEditorArtifact),
+});
 
 function scenarioEscape(value) {
   return String(value ?? "").replace(/[&<>"']/g, (character) => ({
@@ -210,13 +220,27 @@ async function refreshScenarios() {
 }
 
 function setScenarioEditorStatus(message, state = "") {
-  const status = document.getElementById("scenario-editor-status");
-  status.textContent = message;
-  status.dataset.state = state;
+  scenarioEditorPage.setStatus(document.getElementById("scenario-editor-status"), message || "", state === "saved" ? "success" : state);
+}
+
+function renderScenarioIdentity() {
+  const artifact = scenarioEditorArtifact;
+  const name = document.getElementById("scenario-editor-name").value.trim() || artifact?.content?.name || "New scenario";
+  let label = "New · unsaved";
+  if (artifact) {
+    const published = artifact.published_revision === artifact.revision ? "published"
+      : artifact.published_revision ? `published v${artifact.published_revision}` : "not published";
+    label = scenarioEditorViewing ? `Viewing version ${scenarioEditorViewing}` : `Version ${artifact.revision} · ${published}`;
+  }
+  scenarioEditorPage.renderIdentity({
+    title: document.getElementById("scenario-editor-title"),
+    version: document.getElementById("scenario-editor-revision-label"),
+    modified: document.getElementById("scenario-editor-modified"),
+  }, { name, label, tooltip: artifact?.id || "", dirty: scenarioEditorDirty });
 }
 
 function setScenarioAnalyzeState(state = "") {
-  for (const button of document.querySelectorAll("#scenario-editor-analyze, #scenario-source-analyze")) {
+  for (const button of document.querySelectorAll("#scenario-source-analyze")) {
     if (!button) continue;
     if (state) button.dataset.analysisState = state;
     else delete button.dataset.analysisState;
@@ -229,8 +253,8 @@ function updateScenarioEditorActions() {
   const saved = scenarioEditorArtifact && !scenarioEditorDirty;
   publish.disabled = !saved || scenarioEditorArtifact.published_revision === scenarioEditorArtifact.revision;
   document.getElementById("scenario-editor-delete").hidden = !scenarioEditorArtifact;
-  const modified = document.getElementById("scenario-source-modified");
-  if (modified) modified.hidden = !scenarioEditorDirty;
+  document.getElementById("scenario-editor-discard").disabled = !scenarioEditorDirty;
+  renderScenarioIdentity();
 }
 
 const scenarioStepActions = [
@@ -376,14 +400,21 @@ function addScenarioStep(cleanup = false) {
   markScenarioEditorDirty();
 }
 
-function openNewScenarioEditor() {
-  scenarioEditorArtifact = null;
-  scenarioEditorOrganization = activeScenarioOrganization;
+function showScenarioEditorPage() {
+  const dialog = document.getElementById("scenario-editor-dialog");
+  if (!dialog.open) dialog.show();
+  window.scrollTo(0, 0);
+}
+
+function closeScenarioEditorPage() {
+  if (scenarioEditorDirty && !window.confirm("Discard unsaved scenario changes?")) return false;
   scenarioEditorDirty = false;
-  scenarioAssistant.reset();
-  document.getElementById("scenario-editor-title").textContent = "New scenario";
-  document.getElementById("scenario-editor-advanced").open = false;
-  renderScenarioEditor({
+  document.getElementById("scenario-editor-dialog").close();
+  return true;
+}
+
+function newScenarioTemplate() {
+  return {
     id: "new-scenario",
     organization_id: scenarioEditorOrganization,
     folder: "",
@@ -391,14 +422,23 @@ function openNewScenarioEditor() {
     description: "Describe the behavior this scenario exercises.",
     steps: [{ action: "delay", timeout_seconds: 1 }],
     cleanup: [],
-  });
-  document.getElementById("scenario-editor-summary").value = "Initial version";
-  document.getElementById("scenario-editor-revisions").replaceChildren(new Option("Not saved yet", ""));
-  document.getElementById("scenario-editor-revisions").disabled = true;
-  document.getElementById("scenario-editor-save").textContent = "Create scenario";
-  setScenarioEditorStatus("Save a draft, then publish it before running.");
+  };
+}
+
+function openNewScenarioEditor() {
+  scenarioEditorArtifact = null;
+  scenarioEditorOrganization = activeScenarioOrganization;
+  scenarioEditorDirty = false;
+  scenarioEditorViewing = 0;
+  scenarioEditorSummary = "Initial version";
+  scenarioAssistant.reset();
+  document.getElementById("scenario-editor-advanced").open = false;
+  scenarioEditorSaved = newScenarioTemplate();
+  renderScenarioEditor(scenarioEditorSaved);
+  scenarioHistory.render([]);
+  setScenarioEditorStatus("");
   updateScenarioEditorActions();
-  document.getElementById("scenario-editor-dialog").showModal();
+  showScenarioEditorPage();
 }
 
 async function openExistingScenarioEditor(scenarioID) {
@@ -410,27 +450,32 @@ async function openExistingScenarioEditor(scenarioID) {
   scenarioEditorArtifact = artifact;
   scenarioEditorOrganization = organizationID;
   scenarioEditorDirty = false;
+  scenarioEditorViewing = 0;
+  scenarioEditorSummary = "";
   scenarioAssistant.reset();
   document.getElementById("scenario-editor-advanced").open = false;
-  document.getElementById("scenario-editor-title").textContent = `Edit ${artifact.content.name}`;
+  scenarioEditorSaved = artifact.content;
   renderScenarioEditor(artifact.content);
-  document.getElementById("scenario-editor-summary").value = "";
-  document.getElementById("scenario-editor-save").textContent = "Save new version";
-  document.getElementById("scenario-editor-dialog").showModal();
-  await refreshScenarioRevisions();
+  setScenarioEditorStatus("");
   updateScenarioEditorActions();
+  showScenarioEditorPage();
+  await refreshScenarioRevisions();
 }
 
 async function refreshScenarioRevisions() {
-  const selector = document.getElementById("scenario-editor-revisions");
   const artifact = scenarioEditorArtifact;
-  if (!artifact) return;
+  if (!artifact) { scenarioHistory.render([]); return; }
   const path = `/api/simulator/organizations/${encodeURIComponent(scenarioEditorOrganization)}/scenarios/${encodeURIComponent(artifact.id)}/revisions`;
   const response = await fetch(path, { cache: "no-store" });
   const revisions = await response.json();
   if (!response.ok) throw new Error(revisions.error || `HTTP ${response.status}`);
-  selector.replaceChildren(...revisions.map((revision) => new Option(`r${revision.revision} · ${revision.summary || revision.author}`, String(revision.revision))));
-  selector.disabled = revisions.length === 0;
+  if (artifact !== scenarioEditorArtifact) return;
+  scenarioHistory.render([...revisions].reverse().map((revision) => ({ ...revision, number: revision.revision })), {
+    current: scenarioEditorViewing || artifact.revision,
+    detail: (revision) => revision.summary || "",
+    meta: (revision) => [revision.revision === artifact.published_revision ? "published" : "", revision.author || ""].filter(Boolean).join(" · "),
+    onSelect: (revision) => loadScenarioRevision(revision.number).catch((error) => setScenarioEditorStatus(error.message || "Could not load version.", "error")),
+  });
 }
 
 async function readScenarioEditorSource() {
@@ -446,7 +491,7 @@ async function readScenarioEditorSource() {
 
 async function saveScenarioDraft() {
   const scenario = scenarioEditorJsonDirty ? await readScenarioEditorSource() : readScenarioEditorForm();
-  const summary = document.getElementById("scenario-editor-summary").value.trim();
+  const summary = scenarioEditorSummary || (scenarioEditorArtifact ? "Updated scenario draft" : "Initial version");
   const creating = !scenarioEditorArtifact;
   const path = creating
     ? `/api/simulator/organizations/${encodeURIComponent(scenarioEditorOrganization)}/scenarios`
@@ -462,11 +507,11 @@ async function saveScenarioDraft() {
   else scenarioEditorArtifact = { ...scenarioEditorArtifact, revision: result.revision, content: result.content, content_hash: result.content_hash, published_revision: scenarioEditorArtifact.published_revision || 0 };
   scenarioEditorDraft = scenario;
   scenarioEditorDirty = false;
+  scenarioEditorSaved = scenario;
+  scenarioEditorSummary = "";
+  scenarioEditorViewing = 0;
   renderScenarioEditor(scenario);
-  document.getElementById("scenario-editor-summary").value = "";
-  document.getElementById("scenario-editor-title").textContent = `Edit ${scenario.name}`;
-  document.getElementById("scenario-editor-save").textContent = "Save new version";
-  setScenarioEditorStatus(`Saved draft revision ${scenarioEditorArtifact.revision}. Publish it to enable runs.`, "saved");
+  setScenarioEditorStatus(`Saved version ${scenarioEditorArtifact.revision}. Publish it to enable runs.`, "saved");
   await refreshScenarioRevisions();
   updateScenarioEditorActions();
   await refreshScenarios();
@@ -483,8 +528,9 @@ async function publishScenarioRevision() {
   const artifact = await response.json();
   if (!response.ok) throw new Error(artifact.error || `HTTP ${response.status}`);
   scenarioEditorArtifact = artifact;
-  setScenarioEditorStatus(`Published revision ${artifact.published_revision} for ${scenarioEditorOrganization}.`, "saved");
+  setScenarioEditorStatus(`Published version ${artifact.published_revision} for ${scenarioEditorOrganization}.`, "saved");
   updateScenarioEditorActions();
+  await refreshScenarioRevisions();
   await refreshScenarios();
 }
 
@@ -494,11 +540,14 @@ async function loadScenarioRevision(number) {
   const response = await fetch(path, { cache: "no-store" });
   const revision = await response.json();
   if (!response.ok) throw new Error(revision.error || `HTTP ${response.status}`);
+  if (scenarioEditorDirty && !window.confirm("Replace unsaved scenario changes with this version?")) return;
   renderScenarioEditor(revision.content);
-  document.getElementById("scenario-editor-summary").value = `Restore revision ${revision.revision}`;
-  scenarioEditorDirty = true;
-  setScenarioEditorStatus(`Viewing revision ${revision.revision}; save to create a new version.`);
+  scenarioEditorSummary = `Restore version ${revision.revision}`;
+  scenarioEditorViewing = revision.revision === scenarioEditorArtifact.revision ? 0 : revision.revision;
+  scenarioEditorDirty = Boolean(scenarioEditorViewing);
+  setScenarioEditorStatus("");
   updateScenarioEditorActions();
+  await refreshScenarioRevisions();
 }
 
 async function archiveScenario(scenarioID, organizationID, revision) {
@@ -513,13 +562,13 @@ async function archiveScenario(scenarioID, organizationID, revision) {
     const result = await response.json();
     throw new Error(result.error || `HTTP ${response.status}`);
   }
-  if (scenarioEditorArtifact?.id === scenarioID) document.getElementById("scenario-editor-dialog").close();
+  if (scenarioEditorArtifact?.id === scenarioID) {
+    scenarioEditorDirty = false;
+    document.getElementById("scenario-editor-dialog").close();
+  }
   await refreshScenarios();
 }
 
-const scenarioAssistantSlot = document.createElement("div");
-scenarioAssistantSlot.id = "scenario-assistant-slot";
-document.getElementById("scenario-editor-advanced").before(scenarioAssistantSlot);
 const scenarioAssistant = window.mountSimulatorDesignAssistant("scenario-assistant-slot", {
   scope: "scenario",
   applyLabel: "Apply scenario draft",
@@ -535,7 +584,7 @@ const scenarioAssistant = window.mountSimulatorDesignAssistant("scenario-assista
     scenario.organization_id = scenarioEditorOrganization;
     renderScenarioEditor(scenario);
     scenarioEditorDirty = true;
-    document.getElementById("scenario-editor-summary").value = "Claude-assisted scenario draft";
+    scenarioEditorSummary = "Claude-assisted scenario draft";
     setScenarioEditorStatus("Claude proposal applied to the editor. Review and save it as a draft.");
     updateScenarioEditorActions();
   },
@@ -585,7 +634,7 @@ document.getElementById("scenario-editor-advanced").addEventListener("toggle", (
   }
   })();
 });
-document.getElementById("scenario-editor-analyze").addEventListener("click", analyzeScenarioEditor);
+document.getElementById("scenario-source-analyze").addEventListener("click", analyzeScenarioEditor);
 document.getElementById("scenario-editor-mode-toggle").addEventListener("click", async () => {
   const advanced = document.getElementById("scenario-editor-advanced");
   advanced.open = !advanced.open;
@@ -618,9 +667,26 @@ document.getElementById("scenario-editor-publish").addEventListener("click", asy
   try { await publishScenarioRevision(); }
   catch (error) { setScenarioEditorStatus(error.message || "Could not publish scenario.", "error"); }
 });
-document.getElementById("scenario-editor-revisions").addEventListener("change", async (event) => {
-  try { await loadScenarioRevision(event.target.value); }
-  catch (error) { setScenarioEditorStatus(error.message || "Could not load revision.", "error"); }
+document.getElementById("scenario-editor-discard").addEventListener("click", () => {
+  if (!scenarioEditorDirty || !window.confirm("Discard unsaved scenario changes?")) return;
+  scenarioEditorDirty = false;
+  scenarioEditorViewing = 0;
+  scenarioEditorSummary = "";
+  renderScenarioEditor(scenarioEditorSaved || newScenarioTemplate());
+  setScenarioEditorStatus("");
+  updateScenarioEditorActions();
+  refreshScenarioRevisions().catch(() => {});
+});
+document.getElementById("scenario-editor-close").addEventListener("click", closeScenarioEditorPage);
+document.getElementById("scenario-editor-form").addEventListener("submit", (event) => {
+  event.preventDefault();
+  closeScenarioEditorPage();
+});
+document.getElementById("scenario-editor-dialog").addEventListener("keydown", (event) => {
+  if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === "s") {
+    event.preventDefault();
+    document.getElementById("scenario-editor-save").click();
+  }
 });
 document.getElementById("scenario-editor-delete").addEventListener("click", async () => {
   if (!scenarioEditorArtifact) return;

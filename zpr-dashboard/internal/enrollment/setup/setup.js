@@ -16,6 +16,7 @@ function buttons() {
 }
 
 function render(result) {
+  byId('key-protection').textContent = result.key_protection;
   byId('audience').textContent = result.audience;
   byId('message').textContent = result.message;
   byId('prepare').hidden = !!result.metadata;

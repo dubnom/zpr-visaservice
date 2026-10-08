@@ -8,6 +8,7 @@ PROJECT_ROOT=$(CDPATH='' cd -- "$DASHBOARD_DIR/../.." && pwd)
 SERVICE_CERTS="$RUNTIME_DIR/service-certs"
 SIMULATION_MANIFEST="${SIMULATION_MANIFEST:-$RUNTIME_DIR/simulation-environment.json}"
 STATE_DIR="$RUNTIME_DIR/dashboard-stack"
+OPERATOR_DIR="$RUNTIME_DIR/operator-login"
 BIN="${ZPR_WEB_DASHBOARD_BIN:-$STATE_DIR/zpr-web-dashboard}"
 POLICY_TESTER_BIN="${ZPR_ZPT_BIN:-$DASHBOARD_DIR/../target/debug/zpt}"
 ZPLC_DEFAULT_BIN="$DASHBOARD_DIR/../../zpr-compiler/target/release/zplc"
@@ -315,8 +316,11 @@ start_simulator() {
         -e SIMULATOR_CONTROL_TLS_KEY="$CONTROL_SERVER_KEY" \
         -e SIMULATOR_CONTROL_CLIENT_CA="$CONTROL_CA" \
         -e SIMULATOR_CONTROL_LISTEN=0.0.0.0:8791 \
-        -e SIMULATOR_CONTROL_ROOM_URL=http://127.0.0.1:8787 \
-        -e SIMULATOR_CONTROL_ROOM_HOST=127.0.0.1:8787 \
+        -e SIMULATOR_OPERATOR_SERVICE_URL=https://host.docker.internal:8790 \
+        -e SIMULATOR_OPERATOR_SERVICE_TLS_SERVER_NAME=127.0.0.1 \
+        -e SIMULATOR_OPERATOR_SERVICE_CA_FILE="$SERVICE_CERTS/service-ca.crt" \
+        -e SIMULATOR_OPERATOR_CLIENT_CERT_FILE="$SERVICE_CERTS/control-room-client.crt" \
+        -e SIMULATOR_OPERATOR_CLIENT_KEY_FILE="$SERVICE_CERTS/control-room-client.key" \
         -e ZPR_SIMULATOR_OPERATOR_ORIGIN="$simulator_operator_origin" \
         -e ZPR_SIMULATOR_OPERATOR_CERT_FILE="${ZPR_SIMULATOR_OPERATOR_CERT_FILE:-}" \
         -e ZPR_SIMULATOR_OPERATOR_KEY_FILE="${ZPR_SIMULATOR_OPERATOR_KEY_FILE:-}" \
@@ -351,6 +355,30 @@ start_control_room() {
     docker rm -f "$CONTROL_ROOM_DOCKER_CONTAINER" >/dev/null 2>&1 || true
     docker build -f "$SCRIPT_DIR/Dockerfile.simulator" -t "$SIMULATOR_IMAGE" "$DASHBOARD_DIR"
     control_room_proxy_ip=$(docker network inspect bridge --format '{{(index .IPAM.Config 0).Gateway}}')
+    set --
+    if [ -r "$OPERATOR_DIR/stack.json" ]; then
+        sh "$SCRIPT_DIR/local-operator-login.sh" start
+        operator_origin=$(jq -er '.origin' "$OPERATOR_DIR/stack.json")
+        operator_organization=$(jq -er '.organization' "$OPERATOR_DIR/stack.json")
+        set -- -v "$OPERATOR_DIR/room.crt:$OPERATOR_DIR/room.crt:ro" \
+            -v "$OPERATOR_DIR/room.key:$OPERATOR_DIR/room.key:ro" \
+            -v "$OPERATOR_DIR/oidc.json:$OPERATOR_DIR/oidc.json:ro" \
+            -v "$OPERATOR_DIR/client.secret:$OPERATOR_DIR/client.secret:ro" \
+            -v "$OPERATOR_DIR/ca.crt:$OPERATOR_DIR/ca.crt:ro" \
+            -v "$OPERATOR_DIR/signer.json:$OPERATOR_DIR/signer.json:ro" \
+            -v "$OPERATOR_DIR/delegation.key:$OPERATOR_DIR/delegation.key:ro" \
+            --add-host zpr-id.localhost:host-gateway \
+            -e ZPR_CONTROL_ROOM_ORIGIN="$operator_origin" \
+            -e ZPR_CONTROL_ROOM_OPERATOR_TRUSTED_PEER_IP="$control_room_proxy_ip" \
+            -e ZPR_CONTROL_ROOM_ORGANIZATION_ID="$operator_organization" \
+            -e ZPR_CONTROL_ROOM_CERT_FILE="$OPERATOR_DIR/room.crt" \
+            -e ZPR_CONTROL_ROOM_KEY_FILE="$OPERATOR_DIR/room.key" \
+            -e ZPR_OPERATOR_OIDC_CONFIG_FILE="$OPERATOR_DIR/oidc.json" \
+            -e ZPR_OPERATOR_OIDC_SECRET_FILE="$OPERATOR_DIR/client.secret" \
+            -e ZPR_OPERATOR_OIDC_CA_FILE="$OPERATOR_DIR/ca.crt" \
+            -e ZPR_OPERATOR_DELEGATION_SIGNER_FILE="$OPERATOR_DIR/signer.json" \
+            -e ZPR_OPERATOR_DELEGATION_KEY_FILE="$OPERATOR_DIR/delegation.key"
+    fi
     docker run -d --name "$CONTROL_ROOM_DOCKER_CONTAINER" \
         --label zpr.control-room=true \
         --restart unless-stopped \
@@ -362,13 +390,26 @@ start_control_room() {
         -e ZPR_CONTROL_SERVICE_CA_FILE="$SERVICE_CERTS/service-ca.crt" \
         -e ZPR_CONTROL_CLIENT_CERT_FILE="$SERVICE_CERTS/control-room-client.crt" \
         -e ZPR_CONTROL_CLIENT_KEY_FILE="$SERVICE_CERTS/control-room-client.key" \
+        "$@" \
         --entrypoint /usr/local/bin/zpr-web-dashboard \
         "$SIMULATOR_IMAGE" -mode control-room -listen 0.0.0.0:8787 >/dev/null
-    wait_for_url http://127.0.0.1:8787/api/snapshot control-room
+    wait_for_control_room
+}
+
+wait_for_control_room() {
+    if [ -r "$OPERATOR_DIR/stack.json" ]; then
+        wait_for_url "$(jq -er '.origin' "$OPERATOR_DIR/stack.json")/auth/operator/config" control-room \
+            --cacert "$OPERATOR_DIR/ca.crt"
+    else
+        wait_for_url http://127.0.0.1:8787/api/snapshot control-room
+    fi
 }
 
 restart_control_room() {
     docker build -f "$SCRIPT_DIR/Dockerfile.simulator" -t "$SIMULATOR_IMAGE" "$DASHBOARD_DIR"
+    if [ -r "$OPERATOR_DIR/stack.json" ]; then
+        sh "$SCRIPT_DIR/local-operator-login.sh" start
+    fi
     stop_control_room
     start_control_room
 }
@@ -376,6 +417,24 @@ restart_control_room() {
 restart_simulator() {
     stop_simulator
     start_simulator
+}
+
+restart_simulator_ui() {
+    if [ "$(docker inspect -f '{{.State.Running}}' "$SIMULATOR_DOCKER_CONTAINER" 2>/dev/null || true)" = true ] &&
+        docker exec "$SIMULATOR_DOCKER_CONTAINER" ps -o comm | grep -qx socat; then
+        echo "UI-only restart refused: Simulator hosts live relays; use a planned full UI/relay restart" >&2
+        return 1
+    fi
+    ui_organization=${SIMULATION_ORGANIZATION_ID:-}
+    if [ -z "$ui_organization" ] && [ -r "$ACTIVE_ORGANIZATION_FILE" ]; then
+        ui_organization=$(tr -d '\r\n' < "$ACTIVE_ORGANIZATION_FILE")
+    fi
+    docker build -f "$SCRIPT_DIR/Dockerfile.simulator" -t "$SIMULATOR_IMAGE" "$DASHBOARD_DIR"
+    if docker inspect "$SIMULATOR_DOCKER_CONTAINER" >/dev/null 2>&1; then
+        docker stop "$SIMULATOR_DOCKER_CONTAINER" >/dev/null
+        docker rm "$SIMULATOR_DOCKER_CONTAINER" >/dev/null
+    fi
+    SIMULATION_ORGANIZATION_ID="$ui_organization" start_simulator
 }
 
 start_browser_gateway() {
@@ -775,6 +834,13 @@ start_control_service() {
     control_admin_url=$(printf '%s' "$control_admin_url" | sed 's#://127\.0\.0\.1:#://host.docker.internal:#')
     control_dns_stats_url=${ZPR_DNS_STATS_URL:-http://127.0.0.1:$DNS_STATS_RELAY_PORT}
     control_dns_stats_url=$(printf '%s' "$control_dns_stats_url" | sed 's#://127\.0\.0\.1:#://host.docker.internal:#')
+    set --
+    operator_directory=${OPERATOR_DIR:-$RUNTIME_DIR/operator-login}
+    if [ -r "$operator_directory/stack.json" ]; then
+        set -- -e ZPR_ENROLLMENT_CONFIG_FILE="$operator_directory/enrollment.json" \
+            -e ZPR_ENROLLMENT_DATABASE_FILE="$STATE_DIR/enrollment/registry.db" \
+            -e ZPR_OPERATOR_DELEGATION_TRUST_FILE="$operator_directory/trust.json"
+    fi
     docker run -d --name "$CONTROL_CONTAINER" \
         --label zpr.control-service=true \
         --restart unless-stopped \
@@ -812,6 +878,7 @@ start_control_service() {
         -e ZPR_POLICY_SERVICE_CA_FILE="$SERVICE_CERTS/service-ca.crt" \
         -e ZPR_POLICY_CLIENT_CERT_FILE="$SERVICE_CERTS/control-policy-client.crt" \
         -e ZPR_POLICY_CLIENT_KEY_FILE="$SERVICE_CERTS/control-policy-client.key" \
+        "$@" \
         --entrypoint /usr/local/bin/zpr-web-dashboard \
         "$SIMULATOR_IMAGE" -mode control-service >/dev/null
     if docker inspect "$OBSERVABILITY_LOCAL_CONTAINER" >/dev/null 2>&1; then
@@ -1406,8 +1473,12 @@ start_stack() {
         start_observability_collector "$startup_organization"
     fi
     start_control_room
-    wait_for_url http://127.0.0.1:8787/ control-room
-    echo "Control Room ready at http://127.0.0.1:8787"
+    wait_for_control_room
+    if [ -r "$OPERATOR_DIR/stack.json" ]; then
+        echo "Control Room ready at $(jq -er '.origin' "$OPERATOR_DIR/stack.json")"
+    else
+        echo "Control Room ready at http://127.0.0.1:8787"
+    fi
     echo "OpenObserve Logger ready at http://127.0.0.1:$OBSERVABILITY_LOCAL_PORT"
     echo "LDAP editor relay at http://127.0.0.1:$LDAP_UI_RELAY_PORT/"
     echo "Simulator ready at http://127.0.0.1:8788"
@@ -1477,6 +1548,7 @@ case "${1:-start}" in
     stop-browser-gateway) stop_service "$BROWSER_GATEWAY_PID" ;;
     restart-control-room) restart_control_room ;;
     restart-simulator) restart_simulator ;;
+    restart-simulator-ui) restart_simulator_ui ;;
     restart-control-service)
         start_control_service
         ;;

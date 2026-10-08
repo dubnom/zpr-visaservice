@@ -66,7 +66,8 @@ func configuredControlRoomSecurity(ctx context.Context, listen string) (*control
 		application: "Control Room", certPath: os.Getenv("ZPR_CONTROL_ROOM_CERT_FILE"),
 		keyPath: os.Getenv("ZPR_CONTROL_ROOM_KEY_FILE"), origin: os.Getenv("ZPR_CONTROL_ROOM_ORIGIN"),
 		configPath: os.Getenv("ZPR_OPERATOR_OIDC_CONFIG_FILE"), secretPath: os.Getenv("ZPR_OPERATOR_OIDC_SECRET_FILE"),
-		caPath: os.Getenv("ZPR_OPERATOR_OIDC_CA_FILE"),
+		caPath:        os.Getenv("ZPR_OPERATOR_OIDC_CA_FILE"),
+		trustedPeerIP: os.Getenv("ZPR_CONTROL_ROOM_OPERATOR_TRUSTED_PEER_IP"),
 	}
 	return loadOperatorWebSecurity(ctx, listen, config, newOperatorAuthFactory(config.caPath))
 }
@@ -76,7 +77,8 @@ func loadControlRoomSecurity(ctx context.Context, listen string, newAuth func(co
 		application: "Control Room", certPath: os.Getenv("ZPR_CONTROL_ROOM_CERT_FILE"),
 		keyPath: os.Getenv("ZPR_CONTROL_ROOM_KEY_FILE"), origin: os.Getenv("ZPR_CONTROL_ROOM_ORIGIN"),
 		configPath: os.Getenv("ZPR_OPERATOR_OIDC_CONFIG_FILE"), secretPath: os.Getenv("ZPR_OPERATOR_OIDC_SECRET_FILE"),
-		caPath: os.Getenv("ZPR_OPERATOR_OIDC_CA_FILE"),
+		caPath:        os.Getenv("ZPR_OPERATOR_OIDC_CA_FILE"),
+		trustedPeerIP: os.Getenv("ZPR_CONTROL_ROOM_OPERATOR_TRUSTED_PEER_IP"),
 	}
 	return loadOperatorWebSecurity(ctx, listen, config, newAuth)
 }
@@ -238,6 +240,11 @@ func (s *controlRoomSecurity) protect(next http.Handler) http.Handler {
 			log.Print("Direct HTTPS operator application boundary denied a request")
 			writePolicyError(w, http.StatusForbidden, "Operator application requires direct TLS, the configured host, and an approved connection.")
 			return
+		}
+		// Chromium suppresses the Origin of native form POSTs under no-referrer.
+		// Only the login-bearing document needs same-origin; callbacks keep no-referrer.
+		if s.auth != nil && r.Method == http.MethodGet && (r.URL.Path == "/" || r.URL.Path == "/index.html") {
+			w.Header().Set("Referrer-Policy", "same-origin")
 		}
 		next.ServeHTTP(w, r)
 	})
