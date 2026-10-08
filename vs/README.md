@@ -36,8 +36,27 @@ By default, `vs` will look for TLS credentials in `admin-tls-cert.pem` and
 openssl req -new -newkey rsa:4096 -x509 -sha256 -days 365 -nodes -out admin-tls-cert.pem -keyout admin-tls-key.pem
 ```
 
+## Optional node geography
+
+Node coordinates are optional display-only properties in the Visa Service
+configuration, keyed by the exact node actor CN:
+
+```toml
+[nodes."node.example"]
+latitude = 43.04
+longitude = -87.91
+```
+
+Latitude and longitude must both be present or both absent, finite and within
+`[-90, 90]` and `[-180, 180]` respectively. Invalid values fail configuration
+loading. Zero is valid; omitted coordinates do not acquire a default location.
+The authenticated actor Admin API exposes configured values under
+`node_details.latitude` and `node_details.longitude`, omitting absent values.
+Coordinates do not change identity, routing, policy evaluation or node
+connection state. Configuration changes take effect on service restart.
+Control Room consumes this production contract independently of Simulator.
+
 ## vsapikey
 
 This also builds the binary `vsapikey` which is used to generate API keys
 for accessing the HTTPS admin api.
-

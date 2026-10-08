@@ -33,13 +33,11 @@
   const picker = page.createPicker({ toggle: pickerToggle, pane, close: byId("gateway-picker-close"), focus: contractList });
   const files = page.createMenu({ root: byId("gateway-actions"), toggle: filesToggle, menu: fileMenu });
 
-  async function readJSON(path, options = {}) {
-    const response = await window.zprOperatorFetch(path, { cache: "no-store", headers: { Accept: "application/json" }, ...options });
-    let result;
-    try { result = await response.json(); } catch { result = {}; }
-    if (!response.ok && !(result && result.valid === false)) throw new Error(result.error || result.diagnostics || `HTTP ${response.status}`);
-    return result;
-  }
+  const readJSON = (path, options = {}, responsePolicy) => page.requestJSON(
+    (...args) => window.zprOperatorFetch(...args), path,
+    { headers: { Accept: "application/json" }, ...options },
+    responsePolicy,
+  );
 
   function emptyConfig(contract) {
     return {
@@ -254,7 +252,7 @@
     try {
       const result = await readJSON("/api/gateways/config/check", {
         method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ config: parsed.config }),
-      });
+      }, { acceptError: (result) => result?.valid === false });
       if (!isCurrent()) return;
       if (!result.valid) throw new Error(result.diagnostics || "Gateway draft analysis failed.");
       state.validDraft = analyzed;

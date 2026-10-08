@@ -9,6 +9,11 @@ let previousPolledValues = null;
 let graphAutoFit = true;
 let graphDarkMode = false;
 let graphVisaFocus = null;
+const policySourceLayout = window.ZPREditorPage.bindSourceLayout({
+  source: byId("policy-source"), highlight: byId("policy-highlight"),
+  gutterContent: byId("policy-test-gutter-content"), container: byId("policy-code-editor"),
+  onScroll: positionPolicyCompletions, onResize: updatePolicyGutterBounds,
+});
 const policyAnalysisContext = () => [
   byId("policy-source").value, state.policy.record?.id, state.policy.record?.kind,
   state.policy.record?.isDraft, state.policy.record?.current_revision,
@@ -598,6 +603,7 @@ function openInspector(kind, key) {
     adapterVisaDetails = null;
   }
   state.selection = { kind, key };
+  window.dispatchEvent(new CustomEvent("zpr-selection", { detail: state.selection }));
   renderInspector();
 }
 
@@ -605,6 +611,7 @@ function closeInspector() {
   adapterVisaDetails?.controller.abort();
   adapterVisaDetails = null;
   state.selection = null;
+  window.dispatchEvent(new CustomEvent("zpr-selection", { detail: null }));
   const panel = byId("component-inspector");
   panel.classList.remove("open");
   panel.setAttribute("aria-hidden", "true");
@@ -1648,10 +1655,9 @@ async function loadPolicyWorkspace() {
   const selectedRecordID = policy.record?.id;
   const editorSource = byId("policy-source").value;
   const hasUnsavedChanges = hasUnsavedPolicyChanges(policy, editorSource);
+  setPolicyLoadStatus();
   try {
-    const response = await window.zprOperatorFetch("/api/policy", { cache: "no-store", headers: { Accept: "application/json" } });
-    const data = await response.json();
-    if (!response.ok) throw new Error(data.error || `Policy server responded ${response.status}`);
+    const data = await policyEditorRequest("/api/policy", { headers: { Accept: "application/json" } });
     const organizationChanged = policy.organizationID && data.organization_id && policy.organizationID !== data.organization_id;
     if (organizationChanged && policy.testPending) stopPolicyTest();
     if (organizationChanged) invalidatePolicyAnalysis();
@@ -1714,7 +1720,7 @@ async function loadPolicyWorkspace() {
     updateAssistantControls();
   } catch (error) {
     policy.loaded = false;
-    byId("policy-check-result").textContent = error.message;
+    setPolicyLoadStatus(error.message);
   }
 }
 
@@ -1995,6 +2001,7 @@ async function openPolicyPickerMenu(target, x, y) {
 }
 
 function clearPolicySelection() {
+  setPolicyLoadStatus();
   const policy = state.policy;
   invalidatePolicyAnalysis();
   setPolicyRecordSurface("");
@@ -2046,12 +2053,11 @@ async function selectPolicyRecord(id, fetchRecord = true, discardEdits = false, 
   policy.checkDiagnostics = "";
   policy.errorOffsets = [];
   byId("policy-check-result").hidden = true;
+  setPolicyLoadStatus();
   try {
     let record = summary;
     if (fetchRecord) {
-      const response = await window.zprOperatorFetch(`/api/policy/records/${encodeURIComponent(id)}`, { cache: "no-store" });
-      record = await response.json();
-      if (!response.ok) throw new Error(record.error || `Record load failed (${response.status})`);
+      record = await policyEditorRequest(`/api/policy/records/${encodeURIComponent(id)}`);
     }
     policy.record = record;
     policy.categoryID = record.kind === "assertions" ? organizationPolicyCategoryID(policy) || record.category_id : record.category_id;
@@ -2078,7 +2084,7 @@ async function selectPolicyRecord(id, fetchRecord = true, discardEdits = false, 
     updatePolicyDirtyState();
     if (pickerWasOpen && closePicker) setPolicyPickerOpen(false, true);
   } catch (error) {
-    byId("policy-check-result").textContent = error.message;
+    setPolicyLoadStatus(error.message);
   }
 }
 
@@ -2242,8 +2248,7 @@ function updatePolicyHighlight() {
   const textarea = byId("policy-source");
   const highlight = byId("policy-highlight");
   highlight.innerHTML = highlightZPL(textarea.value, state.policy.errorOffsets);
-  highlight.scrollTop = textarea.scrollTop;
-  highlight.scrollLeft = textarea.scrollLeft;
+  policySourceLayout.syncScroll();
   updatePolicyGutterBounds();
 }
 
@@ -2411,11 +2416,10 @@ function movePolicyCompletion(delta) {
 }
 
 async function loadPolicyHistory(recordID) {
-  const response = await window.zprOperatorFetch(`/api/policy/records/${encodeURIComponent(recordID)}/revisions`, { cache: "no-store" });
-  const revisions = await response.json();
-  if (!response.ok) throw new Error(revisions.error || `Version history failed (${response.status})`);
+  const revisions = await policyEditorRequest(`/api/policy/records/${encodeURIComponent(recordID)}/revisions`);
   state.policy.revisions = revisions;
   renderPolicyHistory();
+  setPolicyLoadStatus();
 }
 
 function renderPolicyHistory() {
@@ -2435,10 +2439,9 @@ async function refreshPolicyCatalog() {
 async function browsePolicyRevision(number) {
   const policy = state.policy;
   if (!policy.record) return;
+  setPolicyLoadStatus();
   try {
-    const response = await window.zprOperatorFetch(`/api/policy/records/${encodeURIComponent(policy.record.id)}/revisions/${number}`, { cache: "no-store" });
-    const revision = await response.json();
-    if (!response.ok) throw new Error(revision.error || `Version load failed (${response.status})`);
+    const revision = await policyEditorRequest(`/api/policy/records/${encodeURIComponent(policy.record.id)}/revisions/${number}`);
     if (!window.ZPREditorPage.confirmDiscard(!policy.browsingRevision && byId("policy-source").value !== policy.savedSource, "Discard unsaved edits and browse this version?")) return;
     if (policy.testPending) stopPolicyTest();
     invalidatePolicyAnalysis();
@@ -2461,8 +2464,12 @@ async function browsePolicyRevision(number) {
     renderPolicyHistory();
     updatePolicyDirtyState();
   } catch (error) {
-    byId("policy-check-result").textContent = error.message;
+    setPolicyLoadStatus(error.message);
   }
+}
+
+function setPolicyLoadStatus(message = "") {
+  window.ZPREditorPage.setStatus(byId("policy-load-status"), message, message ? "error" : "");
 }
 
 function openCategoryDialog() {
@@ -2508,6 +2515,7 @@ function beginNewPolicyDraft() {
   const policy = state.policy;
   if (!policy.categoryID || !policy.configured) return;
   if (!window.ZPREditorPage.confirmDiscard(hasUnsavedPolicyChanges(policy), "Discard the current edits and start a new policy draft?")) return;
+  setPolicyLoadStatus();
   invalidatePolicyAnalysis();
   const draft = {
     id: "",
@@ -2839,24 +2847,20 @@ async function runPolicyTest(source = byId("policy-source").value) {
   let outcome = { passed: false, error: "Policy test did not complete." };
   let errorTitle = "Analysis unavailable";
   try {
-    const fixtureResponse = await window.zprOperatorFetch("/api/policy/test/fixtures", { cache: "no-store", signal: controller.signal });
-    const fixtures = await fixtureResponse.json();
+    const fixtures = await policyEditorRequest("/api/policy/test/fixtures", { signal: controller.signal });
     if (!current()) return { passed: false, cancelled: true };
-    if (!fixtureResponse.ok) throw new Error(fixtures.error || `Test fixture request failed (${fixtureResponse.status})`);
     const unavailable = policyReferencedOmittedAttributes(source, fixtures.omitted_attributes);
     if (unavailable.length) {
       throw new Error(`policy references directory ${unavailable.length === 1 ? "attribute" : "attributes"} ${unavailable.map((key) => `"${key}"`).join(", ")} with values the ZPT fixture format cannot carry (comma, brace, control character or over 2048 bytes). This is not a policy compiler error.`);
     }
     errorTitle = "Policy evaluation error";
     policy.testDimensions = Array.from(new Set((fixtures.actors || []).flatMap((actor) => Object.keys(actor.dimensions || {})))).sort();
-    const response = await window.zprOperatorFetch("/api/policy/test", {
+    const result = await policyEditorRequest("/api/policy/test", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ source, actors: fixtures.actors, services: fixtures.services }),
       signal: controller.signal,
     });
-    const result = await response.json();
-    if (!response.ok) throw new Error(result.error || `Policy test failed (${response.status})`);
     if (!current()) return { passed: false, cancelled: true };
     policy.testResult = result;
     policy.testSource = source;
@@ -3137,13 +3141,11 @@ async function confirmPolicyStage() {
   policy.stageError = "";
   updatePolicyDirtyState();
   try {
-    const response = await window.zprOperatorFetch(`/api/policy/records/${encodeURIComponent(policy.record.id)}/stage`, {
+    const result = await policyEditorRequest(`/api/policy/records/${encodeURIComponent(policy.record.id)}/stage`, {
       method: "POST",
       headers: { "Content-Type": "application/json", Accept: "application/json" },
       body: JSON.stringify({ expected_revision: policy.record.current_revision }),
     });
-    const result = await response.json();
-    if (!response.ok) throw new Error(result.error || `Staging failed (${response.status})`);
     policy.stagedCandidate = result;
   } catch (error) {
     policy.stageError = error.message || "Could not stage policy candidate.";
@@ -3162,6 +3164,10 @@ async function reloadPolicyWorkspace() {
   }
   await selectPolicyRecord(state.policy.record.id, true, true);
 }
+
+const policyEditorRequest = (path, options) => window.ZPREditorPage.requestJSON(
+  (...args) => window.zprOperatorFetch(...args), path, options,
+);
 
 async function checkPolicy(source = byId("policy-source").value) {
   const button = byId("policy-check");
@@ -3182,18 +3188,17 @@ async function checkPolicy(source = byId("policy-source").value) {
   updatePolicyDirtyState();
   let valid = false;
   try {
-    const response = await window.zprOperatorFetch("/api/policy/check", {
+    const result = await policyEditorRequest("/api/policy/check", {
       method: "POST", headers: { "Content-Type": "application/json", Accept: "application/json" },
       body: JSON.stringify({ source }),
       signal: controller.signal,
     });
-    const result = await response.json();
     if (controller.signal.aborted || !isCurrent() || source !== byId("policy-source").value) return null;
-    valid = response.ok && result.valid;
+    valid = result.valid;
     policySetCheckResult(valid, result.diagnostics || result.error || "No compiler diagnostics.", source, result.warnings || []);
   } catch (error) {
     if (error.name === "AbortError" || controller.signal.aborted || !isCurrent() || source !== byId("policy-source").value) return null;
-    policySetCheckResult(false, error.message, source);
+    policySetCheckResult(false, error.details?.diagnostics || error.details?.error || error.message, source, error.details?.warnings || []);
   } finally {
     if (state.policy.checkAbort === controller) {
       state.policy.checkAbort = null;
@@ -3401,12 +3406,11 @@ async function appendPolicyVersion(summary) {
   byId("version-dialog").close();
   byId("policy-check-result").textContent = "Saving version…";
   try {
-    let response;
     let result;
     let nextRevision;
     let contentHash;
     if (isDraft) {
-      response = await window.zprOperatorFetch("/api/policy/records", {
+      result = await policyEditorRequest("/api/policy/records", {
         method: "POST", headers: { "Content-Type": "application/json", Accept: "application/json" },
         body: JSON.stringify({
           category_id: policy.record.category_id, name: recordName, kind: "policy",
@@ -3414,19 +3418,15 @@ async function appendPolicyVersion(summary) {
           content: submittedSource, summary,
         }),
       });
-      result = await response.json();
-      if (!response.ok) throw new Error(result.error || result.diagnostics || `Policy save failed (${response.status})`);
       nextRevision = result.current_revision;
       contentHash = result.content_hash;
       policy.record = { ...result, isDraft: false };
       policy.records.push(policy.record);
     } else {
-      response = await window.zprOperatorFetch(`/api/policy/records/${encodeURIComponent(recordID)}/revisions`, {
+      result = await policyEditorRequest(`/api/policy/records/${encodeURIComponent(recordID)}/revisions`, {
         method: "POST", headers: { "Content-Type": "application/json", Accept: "application/json" },
         body: JSON.stringify({ content: submittedSource, expected_revision: expectedRevision, summary }),
       });
-      result = await response.json();
-      if (!response.ok) throw new Error(result.error || result.diagnostics || `Version save failed (${response.status})`);
       nextRevision = result.number;
       contentHash = result.content_hash;
     }
@@ -3887,6 +3887,7 @@ function render(data) {
   }
   state.topologyComponents = componentKeys;
   state.snapshot = data;
+  window.dispatchEvent(new CustomEvent("zpr-snapshot", { detail: data }));
   updateStatusTabCounts(data);
   updateConnection(data);
   renderMetrics(data);
@@ -4088,15 +4089,6 @@ byId("policy-draft-name").addEventListener("input", () => {
   renderPolicyIdentity(state.policy.record, 0, "");
   updatePolicyDirtyState();
 });
-byId("policy-source").addEventListener("scroll", () => {
-  const textarea = byId("policy-source");
-  const highlight = byId("policy-highlight");
-  highlight.scrollTop = textarea.scrollTop;
-  highlight.scrollLeft = textarea.scrollLeft;
-  byId("policy-test-gutter-content").style.transform = `translateY(${-textarea.scrollTop}px)`;
-  positionPolicyCompletions();
-});
-new ResizeObserver(updatePolicyGutterBounds).observe(byId("policy-source"));
 byId("policy-source").addEventListener("click", () => showPolicyCompletions());
 byId("policy-source").addEventListener("keyup", (event) => {
   if (["ArrowLeft", "ArrowRight", "Home", "End"].includes(event.key)) showPolicyCompletions();

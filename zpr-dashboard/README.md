@@ -2124,6 +2124,66 @@ replacement forms. Only the newest Analyze may update status; closing and
 reopening the editor cannot resurrect an old response. Raw Scenario checks
 also include the viewed revision and editor open state. These adapters retain
 Simulator-only endpoints and do not change Save, Publish or Run contracts.
+Shared Policy/Config viewport sizing returns an idempotent binding per source
+container. Its `schedule()` coalesces layout requests into one animation frame
+and skips hidden containers; `dispose()` cancels queued work, disconnects the
+resize observer, removes window listeners and restores the original inline
+height and priority. A disposed container may be bound again. The existing
+viewport inset and minimum-height rules are unchanged; the binding has no
+service or editor-domain dependencies.
+All six source editors share `bindSourceLayout` for highlight-overlay scroll,
+native gutter scrolling or translated result rows, resize observation and
+horizontal-overflow detection where supported. Policy and Assertion retain
+their own gutter bounds and diagnostic/highlight rendering; Policy retains
+completion positioning on scroll. Assertion scroll/resize no longer rebuilds
+highlighted token nodes. The returned binding (also exposed through source
+surfaces) can disconnect scroll/resize wiring with `dispose()`; disposal
+leaves rendered content and diagnostics intact.
+Config, Assertions and Gateways share `requestJSON`, with each adapter injecting
+the existing authenticated operator fetch function and its own endpoint/options.
+The helper preserves request bodies, headers and abort signals, never retries,
+and retains structured service-error details and source locations. Malformed
+JSON reports an explicit HTTP-status error rather than becoming an empty success
+response; network and abort errors retain their identity. Gateway validation
+explicitly accepts `valid: false` analysis responses, but failed saves remain
+errors and leave the unsaved draft intact. Authentication, CSRF and mutation
+uncertainty handling remain owned by the existing transport and editor adapters.
+Simulator Directory now uses the same injected JSON helper for opening artifacts,
+listing/loading revisions, saving drafts and publishing. Its adapter injects
+Simulator fetch and keeps Simulator directory endpoints local to that page;
+Control Room never imports those contracts. Malformed responses leave the
+existing editor source/revision state intact and are shown through the existing
+operation-specific error surfaces. Save and Publish remain single attempts,
+and publishing still only affects the next explicit LDAP reseed or rig restart.
+Scenario form/raw Analyze, artifact/history/revision reads and Create/Save/Publish
+also use the shared injected JSON transport through a Simulator-local adapter.
+Raw analysis maps structured service errors to validated source-line markers
+only after checking request ownership; malformed JSON remains a visible,
+unlocated error. Existing form/raw stale-context guards remain independent of
+transport decoding. Failed writes leave the draft and revision identity intact,
+never retry automatically, and never publish or run implicitly. Catalog polling,
+Delete and Run retain their separate response/lifecycle contracts.
+Policy compiler checks and runtime fixture/evaluation requests use the shared
+JSON helper through authenticated operator fetch with their existing abort
+signals. Compiler failures preserve diagnostics-before-error message priority
+and source-owned warnings even on non-success HTTP responses; a non-success
+response cannot become valid merely because its body says `valid: true`.
+Runtime fixture and evaluation failures retain distinct error surfaces.
+Malformed responses create explicit unlocated errors without invented markers.
+Context guards and request-owned pending cleanup still prevent obsolete results
+or cancelled Save/Save As/Stage continuations from changing current state.
+Policy workspace, record, History and revision reads also use this authenticated
+transport. Load errors appear in a dedicated status above source, separate from
+compiler/runtime results; structured load errors never receive source markers.
+Failed reads do not replace source text, and successful recovery or a new draft
+clears the load status. Existing History selection and dirty-confirmation rules
+are unchanged. Load-request lifecycle consolidation remains separate.
+Policy revision Save, draft creation through Save and confirmed Stage also use
+the authenticated JSON helper. Existing expected-revision bodies, Save error
+dialogs and explicit Stage confirmation remain unchanged. Undecodable mutation
+responses never advance local revision/draft state or trigger automatic retries;
+they do not prove that the server did not apply the operation. Other record
+management mutations retain their separate transport contracts.
 The shortcut invokes the editor's existing enabled Save action, including its
 name/revision checks and confirmations; it never publishes, activates, or runs.
 Disabled Save still suppresses the browser's Save Page action. Held-key repeats,

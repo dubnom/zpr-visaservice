@@ -51,6 +51,15 @@
     : source.value !== savedSource || enabled.checked !== savedEnabled || Number(interval.value) !== savedInterval;
   const stale = () => Boolean(status && (recordMode ? recordStale || status.organization_id !== loadedOrganizationID : status.settings.revision !== loadedRevision || (status.organization_id && status.organization_id !== loadedOrganizationID)));
   const escape = (text) => String(text ?? "").replace(/[&<>"']/g, (character) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[character]);
+  const sourceLayout = window.ZPREditorPage.bindSourceLayout({
+    source, highlight: element("assertion-highlight"),
+    gutterContent: element("assertion-result-lines"),
+    onResize: updateGutterBounds,
+  });
+
+  function updateGutterBounds() {
+    element("assertion-result-gutter").style.height = `${Math.max(0, source.clientHeight - 15)}px`;
+  }
 
   function highlight() {
     const keywords = new Set(["assert", "source", "from", "where", "and", "or", "person", "group", "each", "members", "people", "in", "exactly_one", "not_both", "attribute", "present", "absent", "contains"]);
@@ -58,13 +67,9 @@
       const kind = token.startsWith("//") ? "comment" : token.startsWith('"') ? "string" : keywords.has(token.toLowerCase()) ? "keyword" : /^\d+$/.test(token) ? "number" : "";
       return kind ? `<span class="assertion-token-${kind}">${escape(token)}</span>` : escape(token);
     }) + "\n";
-    element("assertion-highlight").scrollTop = source.scrollTop;
-    element("assertion-highlight").scrollLeft = source.scrollLeft;
-    element("assertion-result-lines").style.transform = `translateY(${-source.scrollTop}px)`;
-    element("assertion-result-gutter").style.height = `${Math.max(0, source.clientHeight - 15)}px`;
+    sourceLayout.syncScroll();
+    updateGutterBounds();
   }
-
-  new ResizeObserver(highlight).observe(source);
 
   function actions() {
     const organization = status?.organization_name || status?.organization_id || "Organization";
@@ -350,12 +355,9 @@
     dialog.showModal();
   }
 
-  async function request(path, options) {
-    const response = await window.zprOperatorFetch(path, { cache: "no-store", ...options });
-    const data = await response.json();
-    if (!response.ok) throw new Error(data.error || `HTTP ${response.status}`);
-    return data;
-  }
+  const request = (path, options) => window.ZPREditorPage.requestJSON(
+    (...args) => window.zprOperatorFetch(...args), path, options,
+  );
 
   function applyStatus(data, replace = false) {
     const organizationChanged = Boolean(loadedOrganizationID && data.organization_id && loadedOrganizationID !== data.organization_id);
@@ -499,7 +501,6 @@
   }
 
   for (const control of [source, enabled, interval]) control.addEventListener("input", () => { analysisScope.invalidate(); window.ZPREditorPage.setAnalysisState(element("assertion-analyze")); highlight(); renderRun(null); actions(); });
-  source.addEventListener("scroll", highlight);
   source.addEventListener("keydown", (event) => {
     if (event.key === "Tab") { event.preventDefault(); source.setRangeText("  ", source.selectionStart, source.selectionEnd, "end"); source.dispatchEvent(new InputEvent("input", { bubbles: true })); }
   });

@@ -54,3 +54,8 @@ provide WorkdayEcho at echo-web.svc.zpr over TCP 8080.
 provide WorkdayMetrics at metrics-web.svc.zpr over TCP 8081.
   allow OperationsClient.
   allow TelemetryClient.
+
+define InternetGatewayWeb as service with device.zpr.adapter.cn:'internet-gateway'.
+
+provide InternetGatewayWeb at internet-gateway.svc.zpr over TCP 8082.
+  allow MilwaukeeFinance.

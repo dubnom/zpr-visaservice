@@ -7,9 +7,9 @@
     "driver": "docker-multinode",
     "topology": "multi-node",
     "nodes": [
-      {"id": "milwaukee-hq", "location": "Milwaukee, Wisconsin, USA", "substrate_address": "172.30.0.13", "zpr_address": "fd5a:5052:90de::10"},
-      {"id": "shenzhen-office", "location": "Shenzhen, China", "substrate_address": "172.30.0.10", "zpr_address": "fd5a:5052:90de::11"},
-      {"id": "tijuana-plant", "location": "Tijuana, Mexico", "substrate_address": "172.30.0.17", "zpr_address": "fd5a:5052:90de::12"}
+      {"id": "milwaukee-hq", "location": "Milwaukee, Wisconsin, USA", "latitude": 43.04, "longitude": -87.91, "coordinate_note": "Simulation approximation: Milwaukee city center, not a verified company address.", "substrate_address": "172.30.0.13", "zpr_address": "fd5a:5052:90de::10"},
+      {"id": "shenzhen-office", "location": "Shenzhen, China", "latitude": 22.54, "longitude": 114.06, "coordinate_note": "Simulation approximation: Shenzhen city center, not a verified office address.", "substrate_address": "172.30.0.10", "zpr_address": "fd5a:5052:90de::11"},
+      {"id": "tijuana-plant", "location": "Tijuana, Mexico", "latitude": 32.51, "longitude": -117.04, "coordinate_note": "Simulation approximation: Tijuana city center, not a verified plant address.", "substrate_address": "172.30.0.17", "zpr_address": "fd5a:5052:90de::12"}
     ]
   },
   "directory": {
@@ -78,13 +78,16 @@
   "runtime_policy": "organizations/great-lakes/runtime-policy.zpl",
   "workload_services": {
     "echo-service": ["WorkdayEcho"],
-    "metrics-service": ["WorkdayMetrics"]
+    "metrics-service": ["WorkdayMetrics"],
+    "internet-gateway": ["InternetGatewayWeb"]
   },
+  "web_gateway": {"allowed_hosts": ["*.google.com"]},
   "policies": [
     {"id": "hq-department-boundaries", "name": "HQ department boundaries", "description": "Milwaukee Customer Support, Finance, Shipping, and Receiving apps are department-restricted."},
     {"id": "engineering-site-boundary", "name": "Engineering site boundary", "description": "Milwaukee and Shenzhen Engineering may access the build farm; Shenzhen has no HQ business-system grants."},
     {"id": "tijuana-production-boundary", "name": "Tijuana production boundary", "description": "Tijuana Assembly and Test may access only their assigned manufacturing systems."},
     {"id": "workday-service-access", "name": "Workday service access", "description": "Finance, operations, and telemetry clients use only their named workday service endpoints; other cross-service probes are denied."},
+    {"id": "finance-web-egress", "name": "Finance web egress", "description": "Milwaukee Finance may use the allowlisted Google web gateway."},
     {"id": "default-deny", "name": "Default deny", "description": "No other cross-site or service access is granted."}
   ],
   "policy_test_services": [
@@ -96,7 +99,8 @@
     {"id": "assembly-mes.svc.zpr", "name": "Assembly Execution", "actor_cn": "assembly-mes", "protocol": "TCP", "port": 8448},
     {"id": "quality-test.svc.zpr", "name": "Quality Test Bench", "actor_cn": "quality-test-bench", "protocol": "TCP", "port": 8449},
     {"id": "echo-web.svc.zpr", "name": "Workday Echo", "actor_cn": "echo-service", "protocol": "TCP", "port": 8080, "zpr_address": "fd00:1:7::1"},
-    {"id": "metrics-web.svc.zpr", "name": "Workday Metrics", "actor_cn": "metrics-service", "protocol": "TCP", "port": 8081, "zpr_address": "fd00:1:8::1"}
+    {"id": "metrics-web.svc.zpr", "name": "Workday Metrics", "actor_cn": "metrics-service", "protocol": "TCP", "port": 8081, "zpr_address": "fd00:1:8::1"},
+    {"id": "internet-gateway.svc.zpr", "name": "Internet Gateway", "actor_cn": "internet-gateway", "protocol": "TCP", "port": 8082}
   ],
   "services": [
     {"name": "Customer Support Desk", "kind": "Application", "endpoint": "ZPR/TCP/8443", "description": "Customer case management restricted to Milwaukee Customer Support.", "policy_id": "customer-support.svc.zpr", "actor_cn": "support-desk-app"},
@@ -107,6 +111,7 @@
     {"name": "Assembly Execution", "kind": "Manufacturing", "endpoint": "ZPR/TCP/8448", "description": "Production instructions restricted to Tijuana Assembly.", "policy_id": "assembly-mes.svc.zpr", "actor_cn": "assembly-mes"},
     {"name": "Quality Test Bench", "kind": "Manufacturing Test", "endpoint": "ZPR/TCP/8449", "description": "Product testing restricted to Tijuana Test and Milwaukee Engineering.", "policy_id": "quality-test.svc.zpr", "actor_cn": "quality-test-bench"},
     {"name": "Workday Echo", "kind": "Application", "endpoint": "ZPR/TCP/8080", "description": "Authenticated work requests and service activity for the compressed workday scenario.", "policy_id": "echo-web.svc.zpr", "actor_cn": "echo-service"},
-    {"name": "Workday Metrics", "kind": "Observability", "endpoint": "ZPR/TCP/8081", "description": "Operations and engineering telemetry requests for the compressed workday scenario.", "policy_id": "metrics-web.svc.zpr", "actor_cn": "metrics-service"}
+    {"name": "Workday Metrics", "kind": "Observability", "endpoint": "ZPR/TCP/8081", "description": "Operations and engineering telemetry requests for the compressed workday scenario.", "policy_id": "metrics-web.svc.zpr", "actor_cn": "metrics-service"},
+    {"name": "Internet Gateway", "kind": "Gateway", "endpoint": "ZPR/TCP/8082", "description": "Allowlisted Google web access for Milwaukee Finance.", "policy_id": "internet-gateway.svc.zpr", "actor_cn": "internet-gateway"}
   ]
 }

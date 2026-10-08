@@ -976,6 +976,11 @@ func readSimulatorComponent(manifest simulatorManifest, name string) (simulatorC
 			return component, nil
 		}
 	}
+	if name == "internet-gateway" {
+		if gateway, err := simulatorWebGatewayForManifest(manifest); err == nil && gateway != nil {
+			return simulatorComponent{Name: name, Agent: name}, nil
+		}
+	}
 	return simulatorComponent{}, errors.New("component not found")
 }
 

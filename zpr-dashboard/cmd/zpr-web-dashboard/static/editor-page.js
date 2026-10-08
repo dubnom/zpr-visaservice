@@ -53,17 +53,63 @@
     element.closest(".policy-page").querySelector(".policy-editor-tools").after(element);
   }
 
+  async function requestJSON(fetcher, url, options = {}, { acceptError = () => false } = {}) {
+    const response = await fetcher(url, { cache: "no-store", ...options });
+    let result;
+    try {
+      result = await response.json();
+    } catch (error) {
+      if (!(error instanceof SyntaxError)) throw error;
+      throw new Error(`HTTP ${response.status}: invalid JSON response`, { cause: error });
+    }
+    if (!response.ok && !acceptError(result)) {
+      const error = new Error(result?.error || result?.diagnostics || `HTTP ${response.status}`);
+      error.line = result?.line || 0;
+      error.details = result;
+      throw error;
+    }
+    return result;
+  }
+
+  function bindSourceLayout({ source, highlight: pre, gutter, gutterContent, container, onScroll, onResize }) {
+    let disposed = false;
+    function syncScroll() {
+      if (disposed) return;
+      pre.scrollTop = source.scrollTop;
+      pre.scrollLeft = source.scrollLeft;
+      if (gutterContent) gutterContent.style.transform = `translateY(${-source.scrollTop}px)`;
+      else gutter.scrollTop = source.scrollTop;
+      if (container) container.dataset.horizontalOverflow = String(source.scrollWidth > source.clientWidth);
+    }
+    function scroll() {
+      syncScroll();
+      onScroll?.();
+    }
+    const observer = window.ResizeObserver ? new ResizeObserver(() => {
+      if (disposed) return;
+      syncScroll();
+      onResize?.();
+    }) : null;
+    source.addEventListener("scroll", scroll);
+    observer?.observe(source);
+    return {
+      syncScroll,
+      dispose() {
+        if (disposed) return;
+        disposed = true;
+        source.removeEventListener("scroll", scroll);
+        observer?.disconnect();
+      },
+    };
+  }
+
   // Wires a textarea, highlight overlay and diagnostic gutter into one code surface.
   function createSourceSurface({ source, highlight: pre, gutter, language, label = "Source", onMarker }) {
     let diagnostic = null;
     const container = source.closest(".config-source-editor");
     const languageName = () => typeof language === "function" ? language() : language;
-    function syncScroll() {
-      gutter.scrollTop = source.scrollTop;
-      pre.scrollTop = source.scrollTop;
-      pre.scrollLeft = source.scrollLeft;
-      if (container) container.dataset.horizontalOverflow = String(source.scrollWidth > source.clientWidth);
-    }
+    const layout = bindSourceLayout({ source, highlight: pre, gutter, container });
+    const syncScroll = layout.syncScroll;
     function selectLine(line) {
       const lines = source.value.split("\n");
       const index = Math.max(0, Math.min(lines.length - 1, line - 1));
@@ -101,12 +147,11 @@
       highlight(pre, source.value, languageName());
       syncScroll();
     }
-    source.addEventListener("scroll", syncScroll);
-    if (window.ResizeObserver) new ResizeObserver(syncScroll).observe(source);
     return {
       render,
       syncScroll,
       selectLine,
+      dispose: layout.dispose,
       get diagnostic() { return diagnostic; },
       setDiagnostic(next) {
         const line = sourceLine(next?.line, source.value.split("\n").length);
@@ -256,14 +301,20 @@
     return () => root.removeEventListener("keydown", onKeydown);
   }
 
+  const viewportBindings = new WeakMap();
+
   function fitSourceToViewport(container) {
+    const existing = viewportBindings.get(container);
+    if (existing) return existing;
     const frame = container.closest(".policy-page");
-    let scheduled = false;
+    const originalHeight = container.style.getPropertyValue("--editor-source-height");
+    const originalPriority = container.style.getPropertyPriority("--editor-source-height");
+    let animationFrame = null;
+    let disposed = false;
     function schedule() {
-      if (scheduled) return;
-      scheduled = true;
-      requestAnimationFrame(() => {
-        scheduled = false;
+      if (disposed || animationFrame !== null) return;
+      animationFrame = requestAnimationFrame(() => {
+        animationFrame = null;
         if (!container.getClientRects().length) return;
         const top = container.getBoundingClientRect().top + window.scrollY;
         const main = container.closest(".main-content");
@@ -280,7 +331,24 @@
     }
     window.addEventListener("resize", schedule);
     window.addEventListener("hashchange", schedule);
+    const binding = {
+      schedule,
+      dispose() {
+        if (disposed) return;
+        disposed = true;
+        if (animationFrame !== null) cancelAnimationFrame(animationFrame);
+        animationFrame = null;
+        observer.disconnect();
+        window.removeEventListener("resize", schedule);
+        window.removeEventListener("hashchange", schedule);
+        if (originalHeight) container.style.setProperty("--editor-source-height", originalHeight, originalPriority);
+        else container.style.removeProperty("--editor-source-height");
+        viewportBindings.delete(container);
+      },
+    };
+    viewportBindings.set(container, binding);
     schedule();
+    return binding;
   }
 
   // History owns version information; the identity row shows only name and dirty state.
@@ -301,5 +369,5 @@
     if (kind) element.dataset.state = kind; else delete element.dataset.state;
   }
 
-  window.ZPREditorPage = { highlight, sourceLine, placeStatus, createAnalysisScope, createSourceSurface, createMenu, createPicker, createHistory, placeHistory, isNamed, confirmDiscard, setAnalysisState, bindSaveShortcut, fitSourceToViewport, renderIdentity, setStatus };
+  window.ZPREditorPage = { highlight, sourceLine, placeStatus, requestJSON, createAnalysisScope, bindSourceLayout, createSourceSurface, createMenu, createPicker, createHistory, placeHistory, isNamed, confirmDiscard, setAnalysisState, bindSaveShortcut, fitSourceToViewport, renderIdentity, setStatus };
 })();

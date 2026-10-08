@@ -75,15 +75,14 @@
     const original = source.value;
     const organization = scenarioEditorOrganization;
     try {
-      const response = await fetch(`/api/simulator/organizations/${encodeURIComponent(organization)}/scenario-check`, {
+      const result = await scenarioRequest(`/api/simulator/organizations/${encodeURIComponent(organization)}/scenario-check`, {
         method: "POST", headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ format: sourceFormat, source: original, scenario_id: scenarioEditorArtifact?.id || "" }),
       });
-      const result = await response.json();
       if (!isCurrent()) return null;
-      if (!response.ok || result.valid !== true) {
+      if (result.valid !== true) {
         surface.setDiagnostic(result.line > 0 ? { line: result.line, message: result.error || "Scenario analysis failed." } : null);
-        throw new Error(result.error || `Scenario analysis failed (${response.status}).`);
+        throw new Error(result.error || "Scenario analysis failed.");
       }
       lastScenario = result.scenario;
       setAnalysisState("success");
@@ -92,6 +91,7 @@
       return result;
     } catch (error) {
       if (!isCurrent()) return null;
+      if (error.details) surface.setDiagnostic(error.line > 0 ? { line: error.line, message: error.message } : null);
       setAnalysisState("error");
       error.sourceDiagnostic = Boolean(surface.diagnostic);
       lastError = error;

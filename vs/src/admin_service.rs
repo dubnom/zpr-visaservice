@@ -5,6 +5,9 @@ use std::path::Path;
 use std::sync::Arc;
 
 use axum::{
+    Extension,
+    Json,
+    Router,
     //routing::post,
     extract::{Json as EJson, Path as EPath, Query, Request, State},
     //extract::Form,
@@ -13,9 +16,6 @@ use axum::{
     response::{IntoResponse, Response},
     //response::Response,
     routing::{delete, get, post},
-    Extension,
-    Json,
-    Router,
 };
 
 use hyper::body::Incoming;
@@ -25,9 +25,9 @@ use tower_service::Service;
 use zpr::policy_types::{NetAddr, NetworkHost, PolicyBundle, Scope};
 use zpr::vsapi_types::{DockPepType, KeyFormat, KeySet, Visa};
 
-use libeval::attribute::{key, Attribute, ROLE_NODE};
-use rustls::pki_types::PrivateKeyDer;
+use libeval::attribute::{Attribute, ROLE_NODE, key};
 use rustls::ServerConfig;
+use rustls::pki_types::PrivateKeyDer;
 use serde::Deserialize;
 use std::time::SystemTime;
 use tokio::net::TcpListener;
@@ -617,7 +617,7 @@ async fn get_actor(
     }
 }
 
-async fn build_node_record_brief(
+pub(crate) async fn build_node_record_brief(
     asm: &Assembly,
     actor: libeval::actor::Actor,
 ) -> Result<NodeRecordBrief, StatusCode> {
@@ -683,7 +683,10 @@ async fn build_node_record_brief(
         None => (None, false),
     };
 
+    let geography = actor.get_cn().and_then(|cn| asm.config.nodes.get(cn));
     Ok(NodeRecordBrief {
+        latitude: geography.and_then(|node| node.latitude),
+        longitude: geography.and_then(|node| node.longitude),
         pending_install,
         last_contact,
         visa_requests,

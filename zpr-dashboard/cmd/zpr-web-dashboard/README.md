@@ -32,6 +32,60 @@ the editor.
 
 ## GUI controls
 
+### Node geography
+
+Map offers **Topology** (the default) and **Geography**. Geography places only
+nodes, using optional `latitude` and `longitude` from the Visa Service's
+`node_details` contract. It uses the existing snapshot refresh and node inspector;
+it does not fetch Simulator profiles or geocode names. Links, routes, adapters,
+services and runtime topology remain in Topology.
+
+Configure coordinates as optional node properties in the Visa Service TOML,
+keyed by the exact node actor CN, for example:
+
+```toml
+[nodes."node.example"]
+latitude = 43.04
+longitude = -87.91
+```
+
+Both properties must be supplied together, finite and within latitude
+`[-90, 90]` and longitude `[-180, 180]`. Zero is a valid coordinate. Leaving
+both absent preserves existing behavior. Invalid configuration fails to load.
+Coordinates are operator-owned display metadata, not identity claims, routing
+inputs or policy attributes. They require a Visa Service restart to change;
+there is no GUI coordinate mutation endpoint.
+
+The five bundled Simulator organizations explicitly seed approximate coordinates
+for all eight runtime nodes. City-named sites use approximate city centers;
+fictional sites use deliberately guessed locations recorded in each node's
+`coordinate_note`. Northstar's North Campus is placed near Minneapolis; Redwood's
+North Hub and Regional Yard near Eureka and Sacramento; Velocity's Performance
+Lab near San Jose; Load Lab's bench near Chicago. Great Lakes uses Milwaukee,
+Shenzhen and Tijuana. These are simulation placements, not verified company
+addresses. Simulator provisioning copies the explicit profile coordinates into
+Visa Service configuration under the deployed CNs (`node0.demo`, `node1.demo`,
+etc.) using `scripts/render-node-geography.jq`. Control Room still reads only the
+production Admin API: it neither loads these profiles nor guesses coordinates.
+Existing running services retain their old configuration until redeployed.
+
+Nodes without coordinates are listed as **Location not configured**, not placed
+at an invented location. Invalid upstream values are explicitly listed as
+**Invalid coordinates**. Co-located nodes share a count marker that opens a
+node chooser; **Nodes with locations** also provides ordinary inspection buttons
+for small screens. Enter/Space activate markers and existing node inspection.
+
+The checked-in `geography-land.svg` uses public-domain Natural Earth 1:110m land,
+projected equirectangularly into `1800 x 900` coordinates:
+`x = (longitude + 180) * 5`, `y = (90 - latitude) * 5`.
+The overlay uses the same projection with padding for boundary markers.
+The original `worldmap.svg` has CC-BY-4.0 attribution requirements but no
+documented projection in the supplied file, so it is retained and not used for
+coordinate placement. Regenerate the new asset with
+`node scripts/build-geography-basemap.mjs INPUT.geojson OUTPUT.svg`, using
+Natural Earth's `ne_110m_land.geojson`; source and license URLs are recorded
+in the generated SVG. No external basemap request is required at runtime.
+
 Page-specific Help opens a keyboard-accessible dialog beside uptime and refresh
 controls in the upper-right corner. It explains the current view, common
 workflows and recovery steps, and provides examples where useful. Policy and

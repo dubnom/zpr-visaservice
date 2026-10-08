@@ -7,8 +7,8 @@
     "driver": "docker-multinode",
     "topology": "multi-node",
     "nodes": [
-      {"id": "north-hub", "location": "North Hub", "substrate_address": "172.30.0.13", "zpr_address": "fd5a:5052:90de::10"},
-      {"id": "regional-yard", "location": "Regional Yard", "substrate_address": "172.30.0.10", "zpr_address": "fd5a:5052:90de::11"}
+      {"id": "north-hub", "location": "North Hub", "latitude": 40.80, "longitude": -124.16, "coordinate_note": "Simulation guess: Redwood North Hub near Eureka in northern California's redwood region; not a verified site.", "substrate_address": "172.30.0.13", "zpr_address": "fd5a:5052:90de::10"},
+      {"id": "regional-yard", "location": "Regional Yard", "latitude": 38.58, "longitude": -121.49, "coordinate_note": "Simulation guess: Redwood Regional Yard near Sacramento, California; fictional regional freight site.", "substrate_address": "172.30.0.10", "zpr_address": "fd5a:5052:90de::11"}
     ]
   },
   "directory": {

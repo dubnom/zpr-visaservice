@@ -96,6 +96,9 @@ async function loadOrganizationScenarioSummary(organizationID) {
 }
 
 const directoryEditorPage = window.ZPREditorPage;
+const directoryRequest = (path, options) => directoryEditorPage.requestJSON(
+  (...args) => window.fetch(...args), path, options,
+);
 const directoryEditorSource = document.getElementById("directory-editor-source");
 directoryEditorPage.placeStatus(document.getElementById("directory-editor-status"));
 const directoryEditorSurface = directoryEditorPage.createSourceSurface({
@@ -157,9 +160,7 @@ function closeDirectoryEditor() {
 }
 
 async function openDirectoryEditor(organizationID, isCurrent = null, onLoaded = null) {
-  const response = await fetch(`/api/simulator/organizations/${encodeURIComponent(organizationID)}/directory`, { cache: "no-store" });
-  const artifact = await response.json();
-  if (!response.ok) throw new Error(artifact.error || `HTTP ${response.status}`);
+  const artifact = await directoryRequest(`/api/simulator/organizations/${encodeURIComponent(organizationID)}/directory`);
   if (isCurrent && !isCurrent()) throw new Error("The assistant context changed before the directory loaded. Ask again.");
   directoryEditorArtifact = artifact;
   directoryEditorOrganizationID = organizationID;
@@ -178,9 +179,7 @@ async function openDirectoryEditor(organizationID, isCurrent = null, onLoaded = 
 async function refreshDirectoryRevisions() {
   if (!directoryEditorArtifact) return;
   const path = `/api/simulator/organizations/${encodeURIComponent(directoryEditorOrganizationID)}/directory/revisions`;
-  const response = await fetch(path, { cache: "no-store" });
-  const revisions = await response.json();
-  if (!response.ok) throw new Error(revisions.error || `HTTP ${response.status}`);
+  const revisions = await directoryRequest(path);
   directoryEditorRevisions = revisions.map((revision) => ({ ...revision, number: revision.revision })).sort((left, right) => right.number - left.number);
   renderDirectoryHistory();
 }
@@ -198,13 +197,11 @@ function renderDirectoryHistory() {
 
 async function saveDirectoryDraft() {
   const path = `/api/simulator/organizations/${encodeURIComponent(directoryEditorOrganizationID)}/directory`;
-  const response = await fetch(path, {
+  const revision = await directoryRequest(path, {
     method: "PUT",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ document: { base_dn: directoryEditorArtifact.content.base_dn, ldif: directoryEditorSource.value }, expected_revision: directoryEditorArtifact.revision, summary: directoryEditorSummary || "Updated directory draft" }),
   });
-  const revision = await response.json();
-  if (!response.ok) throw new Error(revision.error || `HTTP ${response.status}`);
   directoryEditorArtifact = { ...directoryEditorArtifact, revision: revision.revision, content: revision.content, content_hash: revision.content_hash };
   directoryEditorSaved = directoryEditorSource.value;
   directoryEditorSummary = "";
@@ -217,13 +214,11 @@ async function saveDirectoryDraft() {
 async function publishDirectoryRevision() {
   if (!directoryEditorArtifact || directoryEditorDirty) return;
   const path = `/api/simulator/organizations/${encodeURIComponent(directoryEditorOrganizationID)}/directory/publish`;
-  const response = await fetch(path, {
+  const result = await directoryRequest(path, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ expected_revision: directoryEditorArtifact.revision }),
   });
-  const result = await response.json();
-  if (!response.ok) throw new Error(result.error || `HTTP ${response.status}`);
   directoryEditorArtifact = result.artifact;
   setDirectoryEditorStatus(`Published version ${result.artifact.published_revision}; applies on the next explicit LDAP reseed or rig restart.`, "saved");
   updateDirectoryEditorActions();
@@ -233,9 +228,7 @@ async function loadDirectoryRevision(revisionNumber) {
   if (!revisionNumber || !directoryEditorArtifact) return;
   if (!directoryEditorPage.confirmDiscard(directoryEditorDirty, "Discard unsaved directory changes?")) return;
   const path = `/api/simulator/organizations/${encodeURIComponent(directoryEditorOrganizationID)}/directory/revisions/${encodeURIComponent(revisionNumber)}`;
-  const response = await fetch(path, { cache: "no-store" });
-  const revision = await response.json();
-  if (!response.ok) throw new Error(revision.error || `HTTP ${response.status}`);
+  const revision = await directoryRequest(path);
   const current = Number(revision.revision) === Number(directoryEditorArtifact.revision);
   directoryEditorViewing = current ? 0 : Number(revision.revision);
   directoryEditorSource.value = revision.content.ldif;

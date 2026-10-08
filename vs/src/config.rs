@@ -114,8 +114,44 @@ pub const DENY_LOG_SIZE: usize = 500;
 #[serde(deny_unknown_fields, default)]
 pub struct VSConfig {
     pub core: CoreSection,
+    pub nodes: std::collections::BTreeMap<String, NodeGeography>,
     pub trusted_service_http: std::collections::BTreeMap<String, TrustedServiceHttpConfig>,
     pub dns_update: Option<DnsUpdateConfig>,
+}
+
+#[derive(Debug, Clone, Serialize, Default, PartialEq)]
+pub struct NodeGeography {
+    pub latitude: Option<f64>,
+    pub longitude: Option<f64>,
+}
+
+impl<'de> Deserialize<'de> for NodeGeography {
+    fn deserialize<D: serde::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+        #[derive(Deserialize)]
+        #[serde(deny_unknown_fields)]
+        struct Coordinates {
+            latitude: Option<f64>,
+            longitude: Option<f64>,
+        }
+        let coordinates = Coordinates::deserialize(deserializer)?;
+        match (coordinates.latitude, coordinates.longitude) {
+            (None, None) => Ok(Self::default()),
+            (Some(latitude), Some(longitude))
+                if latitude.is_finite()
+                    && longitude.is_finite()
+                    && (-90.0..=90.0).contains(&latitude)
+                    && (-180.0..=180.0).contains(&longitude) =>
+            {
+                Ok(Self {
+                    latitude: Some(latitude),
+                    longitude: Some(longitude),
+                })
+            }
+            _ => Err(serde::de::Error::custom(
+                "node latitude/longitude must both be present, finite, and within [-90,90]/[-180,180]",
+            )),
+        }
+    }
 }
 
 #[derive(Deserialize, Serialize, Debug, Clone)]
@@ -204,6 +240,7 @@ impl Default for VSConfig {
     fn default() -> Self {
         VSConfig {
             core: CoreSection::default(),
+            nodes: std::collections::BTreeMap::new(),
             trusted_service_http: std::collections::BTreeMap::new(),
             dns_update: None,
         }

@@ -1380,6 +1380,143 @@ async function openRawScenario(page, appURL, api, assistantReady = false) {
   await expect(page.locator("#scenario-editor-source")).toBeVisible();
 }
 
+for (const mode of ["raw", "form"]) {
+  test(`Scenario JSON transport rejects invalid successful ${mode} analysis responses without assuming an HTTP status`, async ({ page, appURL, api }) => {
+    await openRawScenario(page, appURL, api);
+    if (mode === "form") await page.locator("#scenario-editor-mode-toggle").click();
+    api.handlers.set("/api/simulator/organizations/alpha/scenario-check", (route) => route.fulfill({ status: 201, json: { valid: false } }));
+    await page.locator("#scenario-source-analyze").click();
+    await expect(page.locator("#scenario-editor-status")).toHaveText("Scenario analysis failed.");
+    await expect(page.locator("#scenario-source-analyze")).toHaveAttribute("data-analysis-state", "error");
+    await expect(page.locator("#scenario-source-gutter button")).toHaveCount(0);
+    expect(api.counts.get("/api/simulator/organizations/alpha/scenario-check")).toBe(1);
+  });
+
+  test(`Scenario JSON transport reports malformed ${mode} analysis without changing the draft or adding line markers`, async ({ page, appURL, api }) => {
+    await openRawScenario(page, appURL, api);
+    if (mode === "form") await page.locator("#scenario-editor-mode-toggle").click();
+    const source = page.locator("#scenario-editor-source");
+    const original = await source.inputValue();
+    api.handlers.set("/api/simulator/organizations/alpha/scenario-check", (route) => route.fulfill({ status: 502, contentType: "text/html", body: "upstream unavailable" }));
+    await page.locator("#scenario-source-analyze").click();
+    await expect(page.locator("#scenario-editor-status")).toHaveText("HTTP 502: invalid JSON response");
+    await expect(page.locator("#scenario-source-analyze")).toHaveAttribute("data-analysis-state", "error");
+    await expect(source).toHaveValue(original);
+    await expect(page.locator("#scenario-source-gutter button")).toHaveCount(0);
+    expect(api.counts.get("/api/simulator/organizations/alpha/scenario-check")).toBe(1);
+    expect(api.counts.get("/api/simulator/scenarios/run") || 0).toBe(0);
+  });
+}
+
+for (const operation of ["open", "history", "revision", "save", "publish"]) {
+  test(`Scenario JSON transport rejects malformed ${operation} responses and preserves draft revision ownership`, async ({ page, appURL, api }) => {
+    await openRawScenario(page, appURL, api);
+    const scenario = { ...JSON.parse(await page.locator("#scenario-editor-source").inputValue()), id: "transport-test", name: "Transport test" };
+    delete scenario.folder;
+    const endpoint = "/api/simulator/organizations/alpha/scenarios/transport-test";
+    const artifact = { id: scenario.id, revision: 2, published_revision: 0, content: scenario };
+    const paths = { open: endpoint, history: endpoint + "/revisions", revision: endpoint + "/revisions/1", save: endpoint, publish: endpoint + "/publish" };
+    const bad = (route) => route.fulfill({ status: 502, contentType: "text/html", body: "not JSON" });
+    api.handlers.set(endpoint, (route) => route.fulfill({ json: artifact }));
+    api.handlers.set(endpoint + "/revisions", (route) => route.fulfill({ json: [{ revision: 1 }, { revision: 2 }] }));
+    if (operation === "open" || operation === "history") api.handlers.set(paths[operation], bad);
+    const initial = await page.locator("#scenario-editor-source").inputValue();
+    const openingError = await page.evaluate(async () => {
+      try { await openExistingScenarioEditor("transport-test"); return null; }
+      catch (error) { return error.message; }
+    });
+    if (operation === "open") {
+      expect(openingError).toBe("HTTP 502: invalid JSON response");
+      await expect(page.locator("#scenario-editor-source")).toHaveValue(initial);
+    } else {
+      expect(openingError).toBe(operation === "history" ? "HTTP 502: invalid JSON response" : null);
+      await expect(page.locator("#scenario-editor-name")).toHaveValue(scenario.name);
+      if (operation !== "history") {
+        api.handlers.set(paths[operation], bad);
+        if (operation === "revision") {
+          await page.locator("#scenario-editor-history-menu > summary").click();
+          await page.locator('#scenario-editor-history [data-revision="1"]').click();
+        } else {
+          if (operation === "save") await page.locator("#scenario-editor-name").fill("Unsaved transport draft");
+          await page.locator("#scenario-editor-files-toggle").click();
+          await page.locator(`#scenario-editor-${operation}`).click();
+        }
+        await expect(page.locator("#scenario-editor-status")).toHaveText("HTTP 502: invalid JSON response");
+      }
+      await expect(page.locator("#scenario-editor-name")).toHaveValue(operation === "save" ? "Unsaved transport draft" : scenario.name);
+      expect(await page.evaluate(() => scenarioEditorArtifact.revision)).toBe(2);
+      expect(await page.evaluate(() => scenarioEditorArtifact.published_revision)).toBe(0);
+      if (operation === "save") await expect(page.locator("#scenario-editor-modified")).toBeVisible();
+    }
+    expect(api.counts.get(paths[operation])).toBe(operation === "save" ? 2 : 1);
+    expect(api.counts.get("/api/simulator/scenarios/run") || 0).toBe(0);
+  });
+}
+
+test("Scenario JSON transport keeps failed creation unsaved and preserves explicit creation payloads", async ({ page, appURL, api }) => {
+  await openRawScenario(page, appURL, api);
+  const source = page.locator("#scenario-editor-source");
+  const scenario = { ...JSON.parse(await source.inputValue()), id: "created-transport", name: "Created transport" };
+  const text = JSON.stringify(scenario, null, 2);
+  await source.fill(text);
+  const endpoint = "/api/simulator/organizations/alpha/scenarios";
+  const writes = [];
+  api.handlers.set(endpoint, async (route) => {
+    writes.push(route.request().postDataJSON());
+    if (writes.length === 1) await route.fulfill({ status: 502, contentType: "text/html", body: "not JSON" });
+    else await route.fulfill({ json: { id: scenario.id, revision: 1, published_revision: 0, content: scenario } });
+  });
+  api.handlers.set(endpoint + "/created-transport/revisions", (route) => route.fulfill({ json: [{ revision: 1 }] }));
+  await page.locator("#scenario-editor-files-toggle").click();
+  await page.locator("#scenario-editor-save").click();
+  await expect(page.locator("#scenario-editor-status")).toHaveText("HTTP 502: invalid JSON response");
+  await expect(source).toHaveValue(text);
+  expect(await page.evaluate(() => Boolean(scenarioEditorArtifact))).toBe(false);
+  expect(writes).toHaveLength(1);
+  await page.locator("#scenario-editor-files-toggle").click();
+  await page.locator("#scenario-editor-save").click();
+  await expect(page.locator("#scenario-editor-status")).toHaveText("Saved version 1. Publish it to enable runs.");
+  expect(writes).toEqual(Array.from({ length: 2 }, () => ({ scenario, summary: "Initial version", expected_revision: 0 })));
+  expect(api.counts.get(endpoint + "/created-transport/publish") || 0).toBe(0);
+  expect(api.counts.get("/api/simulator/scenarios/run") || 0).toBe(0);
+});
+
+test("Scenario JSON transport preserves Save Publish and revision payloads without running a scenario", async ({ page, appURL, api }) => {
+  await openRawScenario(page, appURL, api);
+  const scenario = { ...JSON.parse(await page.locator("#scenario-editor-source").inputValue()), id: "transport-test", name: "Transport test" };
+  delete scenario.folder;
+  const endpoint = "/api/simulator/organizations/alpha/scenarios/transport-test";
+  const updated = { ...scenario, name: "Updated transport test" };
+  const writes = [];
+  api.handlers.set(endpoint, async (route) => {
+    if (route.request().method() === "PUT") {
+      writes.push(route.request().postDataJSON());
+      await route.fulfill({ json: { revision: 3, content: updated, content_hash: "saved-hash" } });
+    } else await route.fulfill({ json: { id: scenario.id, revision: 2, published_revision: 0, content: scenario } });
+  });
+  api.handlers.set(endpoint + "/revisions", (route) => route.fulfill({ json: [{ revision: 1 }, { revision: 2 }, { revision: 3 }] }));
+  api.handlers.set(endpoint + "/publish", async (route) => {
+    writes.push(route.request().postDataJSON());
+    await route.fulfill({ json: { id: scenario.id, revision: 3, published_revision: 3, content: updated } });
+  });
+  api.handlers.set(endpoint + "/revisions/1", (route) => route.fulfill({ json: { revision: 1, content: scenario } }));
+  await page.evaluate(() => openExistingScenarioEditor("transport-test"));
+  await page.locator("#scenario-editor-name").fill(updated.name);
+  await page.locator("#scenario-editor-files-toggle").click();
+  await page.locator("#scenario-editor-save").click();
+  await expect(page.locator("#scenario-editor-status")).toHaveText("Saved version 3. Publish it to enable runs.");
+  await expect(page.locator("#scenario-editor-modified")).toBeHidden();
+  await page.locator("#scenario-editor-files-toggle").click();
+  await page.locator("#scenario-editor-publish").click();
+  await expect(page.locator("#scenario-editor-status")).toHaveText("Published version 3 for alpha.");
+  await page.locator("#scenario-editor-history-menu > summary").click();
+  await page.locator('#scenario-editor-history [data-revision="1"]').click();
+  await expect(page.locator("#scenario-editor-name")).toHaveValue(scenario.name);
+  await expect(page.locator("#scenario-editor-modified")).toBeVisible();
+  expect(writes).toEqual([{ scenario: updated, summary: "Updated scenario draft", expected_revision: 2 }, { expected_revision: 3 }]);
+  expect(api.counts.get("/api/simulator/scenarios/run") || 0).toBe(0);
+});
+
 for (const outcome of ["success", "error"]) {
   for (const change of ["edit-return", "replacement", "record", "organization", "revision", "mode", "close-reopen"]) {
     test(`Scenario form analysis scope rejects delayed ${outcome} after ${change}`, async ({ page, appURL, api }) => {
@@ -1688,6 +1825,87 @@ test("GUI raw scenario assistant discards a proposal changed before Apply and af
   complete();
   await expect(assistant.locator("[data-assistant-thread]")).not.toContainText("Old conversation");
   await expect(assistant.locator("[data-assistant-apply]")).toBeHidden();
+});
+
+for (const operation of ["open", "history", "revision", "save", "publish"]) {
+  test(`Directory JSON transport reports malformed ${operation} responses without replacing source or retrying mutations`, async ({ page, appURL, api }) => {
+    const endpoint = "/api/simulator/organizations/alpha/directory";
+    const original = "dn: dc=alpha,dc=test\n";
+    const artifact = { revision: 2, published_revision: 0, content: { base_dn: "dc=alpha,dc=test", ldif: original } };
+    const bad = (route) => route.fulfill({ status: 502, contentType: "text/html", body: "upstream unavailable" });
+    api.handlers.set(endpoint, (route) => route.fulfill({ json: artifact }));
+    api.handlers.set(endpoint + "/revisions", (route) => route.fulfill({ json: [{ revision: 1, summary: "Initial" }, { revision: 2, summary: "Current" }] }));
+    const paths = { open: endpoint, history: endpoint + "/revisions", revision: endpoint + "/revisions/1", save: endpoint, publish: endpoint + "/publish" };
+    if (operation === "open" || operation === "history") api.handlers.set(paths[operation], bad);
+    await page.goto(appURL + "/organizations.html");
+    await page.getByRole("button", { name: "Edit LDAP seed", exact: true }).click();
+    const source = page.locator("#directory-editor-source");
+    let expected = original;
+    if (operation === "open") {
+      await expect(page.locator("#organization-error")).toHaveText("HTTP 502: invalid JSON response");
+      await expect(page.locator("#directory-editor-dialog")).toBeHidden();
+    } else {
+      await expect(source).toHaveValue(original);
+      if (operation !== "history") {
+        api.handlers.set(paths[operation], bad);
+        if (operation === "revision") {
+          await page.locator("#directory-editor-history-menu > summary").click();
+          await page.locator('#directory-editor-history [data-revision="1"]').click();
+        } else {
+          if (operation === "save") {
+            expected = original + "description: Unsaved\n";
+            await source.fill(expected);
+          }
+          await page.locator("#directory-editor-files-toggle").click();
+          await page.locator(`#directory-editor-${operation}`).click();
+        }
+      }
+      await expect(page.locator(operation === "history" ? "#organization-error" : "#directory-editor-status")).toHaveText("HTTP 502: invalid JSON response");
+      await expect(source).toHaveValue(expected);
+      await expect(page.locator("#directory-editor-title")).toHaveText("Alpha Labs directory");
+      if (operation === "save") await expect(page.locator("#directory-editor-modified")).toBeVisible();
+      await expect(page.locator("#directory-editor-gutter button")).toHaveCount(0);
+    }
+    expect(api.counts.get(paths[operation])).toBe(operation === "save" ? 2 : 1);
+  });
+}
+
+test("Directory JSON transport preserves save, publish and revision contracts without reseeding LDAP", async ({ page, appURL, api }) => {
+  const endpoint = "/api/simulator/organizations/alpha/directory";
+  const original = "dn: dc=alpha,dc=test\n";
+  const draft = original + "description: Updated\n";
+  const content = { base_dn: "dc=alpha,dc=test", ldif: draft };
+  const writes = [];
+  api.handlers.set(endpoint, async (route) => {
+    if (route.request().method() === "PUT") {
+      writes.push(route.request().postDataJSON());
+      await route.fulfill({ json: { revision: 3, content, content_hash: "saved-hash" } });
+    } else await route.fulfill({ json: { revision: 2, published_revision: 0, content: { ...content, ldif: original } } });
+  });
+  api.handlers.set(endpoint + "/revisions", (route) => route.fulfill({ json: [{ revision: 1 }, { revision: 2 }, { revision: 3 }] }));
+  api.handlers.set(endpoint + "/publish", async (route) => {
+    writes.push(route.request().postDataJSON());
+    await route.fulfill({ json: { artifact: { revision: 3, published_revision: 3, content } } });
+  });
+  api.handlers.set(endpoint + "/revisions/1", (route) => route.fulfill({ json: { revision: 1, content: { ...content, ldif: original } } }));
+  await page.goto(appURL + "/organizations.html");
+  await page.getByRole("button", { name: "Edit LDAP seed", exact: true }).click();
+  const source = page.locator("#directory-editor-source");
+  await expect(source).toHaveValue(original);
+  await source.fill(draft);
+  await page.locator("#directory-editor-files-toggle").click();
+  await page.locator("#directory-editor-save").click();
+  await expect(page.locator("#directory-editor-status")).toHaveText("Saved version 3. Publish it for the next LDAP reseed.");
+  await expect(page.locator("#directory-editor-modified")).toBeHidden();
+  await page.locator("#directory-editor-files-toggle").click();
+  await page.locator("#directory-editor-publish").click();
+  await expect(page.locator("#directory-editor-status")).toContainText("Published version 3; applies on the next explicit LDAP reseed or rig restart.");
+  await page.locator("#directory-editor-history-menu > summary").click();
+  await page.locator('#directory-editor-history [data-revision="1"]').click();
+  await expect(source).toHaveValue(original);
+  await expect(page.locator("#directory-editor-modified")).toBeVisible();
+  expect(writes).toEqual([{ document: content, expected_revision: 2, summary: "Updated directory draft" }, { expected_revision: 3 }]);
+  expect([...api.counts.keys()].some((path) => /reseed|restore-base|activate/.test(path))).toBe(false);
 });
 
 test("GUI editor search replaces directory source locally and keeps revision controls", async ({ page, appURL, api }) => {
@@ -2080,6 +2298,49 @@ for (const action of ["Analyze", "Format"]) {
     });
   }
 }
+
+for (const phase of ["compiler", "fixtures", "evaluation"]) {
+  test(`Policy JSON transport reports malformed ${phase} responses without source markers or mutation retries`, async ({ page, appURL, api }) => {
+    const paths = { compiler: "/api/policy/check", fixtures: "/api/policy/test/fixtures", evaluation: "/api/policy/test" };
+    api.handlers.set(paths.compiler, (route) => route.fulfill({ json: { valid: true, diagnostics: "Valid" } }));
+    api.handlers.set(paths.fixtures, (route) => route.fulfill({ json: { actors: [], services: [] } }));
+    api.handlers.set(paths.evaluation, (route) => route.fulfill({ json: { services: [], warnings: [] } }));
+    api.handlers.set(paths[phase], (route) => route.fulfill({ status: 502, contentType: "text/html", body: "upstream unavailable" }));
+    await page.goto(appURL + "/#policy");
+    await openPolicyPicker(page);
+    await page.locator('[data-record-id="test-policy"]').click();
+    const source = page.locator("#policy-source");
+    const original = await source.inputValue();
+    await page.locator("#policy-check").click();
+    const titles = { compiler: "Compiler error", fixtures: "Analysis unavailable", evaluation: "Policy evaluation error" };
+    await expect(page.locator("#policy-test-status")).toHaveText(`${titles[phase]}: HTTP 502: invalid JSON response`);
+    await expect(page.locator("#policy-check")).toHaveAttribute("data-analysis-state", "error");
+    await expect(source).toHaveValue(original);
+    await expect(page.locator("#policy-highlight .zpl-error, #policy-test-gutter .policy-test-line-result")).toHaveCount(0);
+    expect(api.counts.get(paths[phase])).toBe(1);
+    if (phase === "compiler") expect(api.counts.get(paths.fixtures) || 0).toBe(0);
+    if (phase !== "evaluation") expect(api.counts.get(paths.evaluation) || 0).toBe(0);
+    expect(api.counts.get("/api/policy/records/test-policy/revisions")).toBe(1);
+    expect([...api.counts.keys()].some((path) => path.startsWith("/api/simulator"))).toBe(false);
+  });
+}
+
+test("Policy JSON transport retains compiler diagnostics priority and warnings from non-success responses", async ({ page, appURL, api }) => {
+  api.handlers.set("/api/policy/check", (route) => route.fulfill({ status: 422, json: {
+    valid: true, error: "Secondary compiler message",
+    diagnostics: "Compiler validation unavailable",
+    warnings: [{ line: 1, code: "SOURCE_WARNING", message: "Keep this source-local warning" }],
+  } }));
+  await page.goto(appURL + "/#policy");
+  await openPolicyPicker(page);
+  await page.locator('[data-record-id="test-policy"]').click();
+  await page.locator("#policy-check").click();
+  await expect(page.locator("#policy-check")).toHaveAttribute("data-analysis-state", "error");
+  await expect(page.locator("#policy-test-status")).toHaveText("Compiler error: Compiler validation unavailable");
+  await expect(page.locator('#policy-test-gutter [data-line="1"] [data-has-warnings="true"]')).toHaveAttribute("title", /Keep this source-local warning/);
+  expect(api.counts.get("/api/policy/test/fixtures") || 0).toBe(0);
+  expect(await page.evaluate(() => state.policy.validSource)).toBeNull();
+});
 
 for (const outcome of ["success", "error"]) {
   for (const edit of ["replacement", "Tab"]) {
@@ -2477,6 +2738,119 @@ test("shared History safely renders versions, empty states and explicit selectio
   await page.locator("#topology-stage").click();
   await expect(menu).not.toHaveAttribute("open");
 });
+
+for (const operation of ["workspace", "record", "history", "revision"]) {
+  test(`Policy loading JSON transport reports malformed ${operation} responses separately from source diagnostics and supports retry`, async ({ page, appURL, api }) => {
+    const target = { ...api.policy.records[0], id: "load-target", name: "Load target" };
+    api.policy.records.push(target);
+    api.handlers.set("/api/policy/records/load-target", (route) => route.fulfill({ json: target }));
+    api.handlers.set("/api/policy/records/load-target/revisions", (route) => route.fulfill({ json: [] }));
+    const paths = { workspace: "/api/policy", record: "/api/policy/records/load-target", history: "/api/policy/records/load-target/revisions", revision: "/api/policy/records/test-policy/revisions/1" };
+    await page.goto(appURL + "/#policy");
+    await openPolicyPicker(page);
+    await page.locator('[data-record-id="test-policy"]').click();
+    const source = page.locator("#policy-source");
+    await expect(source).toHaveValue("define Employee as user.\n");
+    const original = await source.inputValue();
+    const previousCounts = api.counts.get(paths[operation]) || 0;
+    api.handlers.set(paths[operation], (route) => route.fulfill({ status: 502, contentType: "text/html", body: "upstream unavailable" }));
+    const invoke = () => page.evaluate(async (action) => {
+      if (action === "workspace") await refreshPolicyCatalog();
+      else if (action === "record" || action === "history") await selectPolicyRecord("load-target", true, true);
+      else await browsePolicyRevision(1);
+    }, operation);
+    await invoke();
+    await expect(page.locator("#policy-load-status")).toBeVisible();
+    await expect(page.locator("#policy-load-status")).toHaveText("HTTP 502: invalid JSON response");
+    await expect(page.locator("#policy-test-status")).toBeHidden();
+    await expect(source).toHaveValue(original);
+    await expect(page.locator("#policy-highlight .zpl-error")).toHaveCount(0);
+    expect(await page.evaluate(() => state.policy.browsingRevision)).toBe(0);
+    expect(api.counts.get(paths[operation])).toBe(previousCounts + 1);
+    if (operation === "revision") api.handlers.set(paths[operation], (route) => route.fulfill({ json: { number: 1, content: "define Historical as user.\n", summary: "Historical", content_hash: "old" } }));
+    else if (operation === "record") api.handlers.set(paths.record, (route) => route.fulfill({ json: target }));
+    else if (operation === "history") api.handlers.set(paths.history, (route) => route.fulfill({ json: [] }));
+    else api.handlers.delete(paths.workspace);
+    if (operation === "history") await page.evaluate(() => loadPolicyHistory(state.policy.record.id));
+    else await invoke();
+    await expect(page.locator("#policy-load-status")).toBeHidden();
+    await expect(source).toHaveValue(operation === "revision" ? "define Historical as user.\n" : original);
+    expect([...api.counts.keys()].some((path) => path.startsWith("/api/simulator"))).toBe(false);
+  });
+}
+
+test("Policy loading JSON transport exposes initial structured workspace failures without inventing source diagnostics", async ({ page, appURL, api }) => {
+  api.handlers.set("/api/policy", (route) => route.fulfill({ status: 503, json: { error: "Policy workspace unavailable", line: 1, diagnostics: "Workspace configuration detail" } }));
+  await page.goto(appURL + "/#policy");
+  await expect(page.locator("#policy-load-status")).toBeVisible();
+  await expect(page.locator("#policy-load-status")).toHaveText("Policy workspace unavailable");
+  await expect(page.locator("#policy-source")).toBeDisabled();
+  await expect(page.locator("#policy-test-status")).toBeHidden();
+  await expect(page.locator("#policy-highlight .zpl-error, #policy-test-gutter .policy-test-line-result")).toHaveCount(0);
+  expect(await page.evaluate(() => state.policy.loaded)).toBe(false);
+  api.handlers.delete("/api/policy");
+  await page.evaluate(() => loadPolicyWorkspace());
+  await expect(page.locator("#policy-load-status")).toBeHidden();
+  await expect(page.locator("#policy-source")).toBeEditable();
+  expect(await page.evaluate(() => state.policy.loaded)).toBe(true);
+  expect([...api.counts.keys()].some((path) => path.startsWith("/api/simulator"))).toBe(false);
+});
+
+test("Policy loading errors clear when starting a new draft without changing Analyze state", async ({ page, appURL, api }) => {
+  await page.goto(appURL + "/#policy");
+  await openPolicyPicker(page);
+  await page.locator('[data-record-id="test-policy"]').click();
+  api.handlers.set("/api/policy/records/test-policy/revisions/1", (route) => route.fulfill({ status: 503, json: { error: "Version unavailable", line: 1 } }));
+  await page.evaluate(() => browsePolicyRevision(1));
+  await expect(page.locator("#policy-load-status")).toHaveText("Version unavailable");
+  await expect(page.locator("#policy-check")).not.toHaveAttribute("data-analysis-state", /error|success/);
+  await page.evaluate(() => beginNewPolicyDraft());
+  await expect(page.locator("#policy-load-status")).toBeHidden();
+  await expect(page.locator("#policy-source")).toHaveValue("");
+  await expect(page.locator("#policy-test-status")).toBeHidden();
+});
+
+for (const operation of ["revision", "create", "stage"]) {
+  test(`Policy mutation JSON transport rejects malformed ${operation} responses without advancing revision or retrying`, async ({ page, appURL, api }) => {
+    await page.goto(appURL + "/#policy");
+    await openPolicyPicker(page);
+    await page.locator('[data-record-id="test-policy"]').click();
+    const original = await page.locator("#policy-source").inputValue();
+    const endpoint = operation === "create" ? "/api/policy/records" : `/api/policy/records/test-policy/${operation === "stage" ? "stage" : "revisions"}`;
+    const requests = [];
+    api.handlers.set(endpoint, async (route) => {
+      requests.push({ method: route.request().method(), body: route.request().postDataJSON() });
+      await route.fulfill({ status: 502, contentType: "text/html", body: "upstream unavailable" });
+    });
+    if (operation === "stage") {
+      await page.evaluate(() => confirmPolicyStage());
+      await expect(page.locator("#policy-stage-status")).toContainText("HTTP 502: invalid JSON response");
+      expect(await page.evaluate(() => state.policy.stagePending)).toBe(false);
+    } else {
+      await page.evaluate((creating) => {
+        const policy = state.policy;
+        if (creating) policy.record = { ...policy.record, id: "", isDraft: true, name: "Created draft" };
+        const text = document.getElementById("policy-source").value;
+        policy.evaluatedSource = text;
+        policy.validSource = text;
+        policy.saveTestSource = text;
+      }, operation === "create");
+      await page.evaluate(() => appendPolicyVersion("Transport test"));
+      await expect(page.locator("#version-dialog")).toBeVisible();
+      await expect(page.locator("#version-error")).toHaveText("HTTP 502: invalid JSON response");
+      expect(await page.evaluate(() => state.policy.record.isDraft || false)).toBe(operation === "create");
+    }
+    await expect(page.locator("#policy-source")).toHaveValue(original);
+    expect(await page.evaluate(() => state.policy.revision)).toBe(1);
+    expect(await page.evaluate(() => state.policy.record.current_revision)).toBe(1);
+    expect(requests).toHaveLength(1);
+    expect(requests[0].method).toBe("POST");
+    if (operation === "stage") expect(requests[0].body).toEqual({ expected_revision: 1 });
+    else if (operation === "revision") expect(requests[0].body).toEqual({ content: original, expected_revision: 1, summary: "Transport test" });
+    else expect(requests[0].body).toMatchObject({ content: original, name: "Created draft", kind: "policy", summary: "Transport test" });
+    expect([...api.counts.keys()].some((path) => path.startsWith("/api/simulator"))).toBe(false);
+  });
+}
 
 test("Policy shared History keeps dirty cancellation and loads each selected revision once", async ({ page, appURL, api }) => {
   api.policy.records[0].current_revision = 2;
@@ -2915,6 +3289,281 @@ test("GUI ZPR Config asks for a name on Save and never persists Untitled", async
     expect(api.counts.get("/api/policy/records") || 0).toBe(0);
     expect(api.counts.get("/api/policy/categories") || 0).toBe(0);
   }
+});
+
+test("shared editor JSON transport preserves options, structured errors, abort identity and single-attempt mutations", async ({ page, appURL }) => {
+  await page.goto(appURL + "/#policy");
+  const result = await page.evaluate(async () => {
+    const request = window.ZPREditorPage.requestJSON;
+    const controller = new AbortController();
+    const options = { method: "POST", headers: { "Content-Type": "application/json", "X-CSRF-Token": "fixture" }, body: '{"source":"draft"}', signal: controller.signal };
+    let calls = 0;
+    let forwarded;
+    const fetcher = async (url, received) => {
+      calls++;
+      forwarded = { url, cache: received.cache, method: received.method, headers: received.headers, body: received.body, signal: received.signal === options.signal };
+      return new Response('{"valid":true}', { status: 200 });
+    };
+    const data = await request(fetcher, "/independent-editor-service", options);
+    const failure = async (body, status, policy) => {
+      try {
+        return { data: await request(async () => { calls++; return new Response(body, { status }); }, "/editor", options, policy) };
+      } catch (error) {
+        return { message: error.message, line: error.line, details: error.details, cause: error.cause?.name };
+      }
+    };
+    const structured = await failure('{"error":"Revision conflict","diagnostics":"Secondary","line":2,"valid":false}', 409);
+    const diagnostics = await failure('{"diagnostics":"Source invalid","line":3}', 422);
+    const fallback = await failure("null", 503);
+    const malformedSuccess = await failure("<html>not JSON</html>", 200);
+    const malformedFailure = await failure("<html>not JSON</html>", 502);
+    const validation = await failure('{"valid":false,"diagnostics":"Destination missing"}', 422, { acceptError: (value) => value?.valid === false });
+    const unauthorized = await failure('{"error":"Sign in required"}', 403, { acceptError: (value) => value?.valid === false });
+    const abort = new DOMException("Cancelled", "AbortError");
+    let sameAbort = false;
+    try { await request(async () => { throw abort; }, "/editor", options); } catch (error) { sameAbort = error === abort; }
+    let sameBodyAbort = false;
+    try { await request(async () => ({ json: async () => { throw abort; } }), "/editor", options); } catch (error) { sameBodyAbort = error === abort; }
+    let sameNetworkError = false;
+    const networkError = new TypeError("Connection lost");
+    try { await request(async () => { throw networkError; }, "/editor", options); } catch (error) { sameNetworkError = error === networkError; }
+    let cacheOverride;
+    await request(async (_, received) => { cacheOverride = received.cache; return new Response("{}"); }, "/editor", { cache: "reload" });
+    return { data, forwarded, calls, structured, diagnostics, fallback, malformedSuccess, malformedFailure, validation, unauthorized, sameAbort, sameBodyAbort, sameNetworkError, cacheOverride };
+  });
+  expect(result.data).toEqual({ valid: true });
+  expect(result.forwarded).toEqual({ url: "/independent-editor-service", cache: "no-store", method: "POST", headers: { "Content-Type": "application/json", "X-CSRF-Token": "fixture" }, body: '{"source":"draft"}', signal: true });
+  expect(result.calls).toBe(8);
+  expect(result.structured).toMatchObject({ message: "Revision conflict", line: 2, details: { valid: false, error: "Revision conflict" } });
+  expect(result.diagnostics).toMatchObject({ message: "Source invalid", line: 3 });
+  expect(result.fallback.message).toBe("HTTP 503");
+  expect(result.malformedSuccess).toMatchObject({ message: "HTTP 200: invalid JSON response", cause: "SyntaxError" });
+  expect(result.malformedFailure).toMatchObject({ message: "HTTP 502: invalid JSON response", cause: "SyntaxError" });
+  expect(result.validation.data).toEqual({ valid: false, diagnostics: "Destination missing" });
+  expect(result.unauthorized.message).toBe("Sign in required");
+  expect(result.sameAbort).toBe(true);
+  expect(result.sameBodyAbort).toBe(true);
+  expect(result.sameNetworkError).toBe(true);
+  expect(result.cacheOverride).toBe("reload");
+});
+
+test("GUI ZPR Config reports malformed validation JSON without changing source or inventing gutter lines", async ({ page, appURL, api }) => {
+  api.handlers.set("/api/policy/config/check", (route) => route.fulfill({ status: 200, contentType: "text/html", body: "<html>service unavailable</html>" }));
+  await page.goto(appURL + "/#zpr-config");
+  const source = page.locator("#zpr-config-source");
+  const text = '[service]\nname   =   "unchanged"\n';
+  await source.fill(text);
+  await page.locator("#zpr-config-format").click();
+  await expect(page.locator("#zpr-config-status")).toHaveText("HTTP 200: invalid JSON response");
+  await expect(source).toHaveValue(text);
+  await expect(page.locator("#zpr-config-gutter button")).toHaveCount(0);
+  expect(api.counts.get("/api/policy/config/check")).toBe(1);
+});
+
+test("Assertion Format reports malformed JSON and preserves the unsaved source", async ({ page, appURL, api }) => {
+  api.handlers.set("/api/assertions/format", (route) => route.fulfill({ status: 502, contentType: "text/html", body: "upstream failure" }));
+  await openAssertionRecord(page, appURL);
+  const source = page.locator("#assertion-source");
+  const text = 'group "Operators" members >= 1;';
+  await source.fill(text);
+  await page.locator("#assertion-format").click();
+  await expect(page.locator("#assertion-message")).toHaveText("HTTP 502: invalid JSON response");
+  await expect(source).toHaveValue(text);
+  expect(api.counts.get("/api/assertions/format")).toBe(1);
+});
+
+test("Gateways rejects malformed analysis and failed saves without retrying or replacing the draft", async ({ page, appURL, api }) => {
+  const contract = { organization_id: "alpha", instance_id: "public-egress", adapter_cn: "gateway-public-egress", service_name: "public-egress.svc.zpr" };
+  api.handlers.set("/api/gateways/contracts", (route) => route.fulfill({ json: { organization_id: "alpha", contracts: [contract] } }));
+  api.handlers.set("/api/gateways/configs", (route) => route.fulfill({ json: { organization_id: "alpha", configs: [] } }));
+  api.handlers.set("/api/gateways/config/check", (route) => route.fulfill({ status: 200, contentType: "text/html", body: "not JSON" }));
+  api.handlers.set("/api/gateways/configs/public-egress/revisions", (route) => route.fulfill({ status: 422, json: { valid: false, error: "Draft rejected; not saved" } }));
+  await page.goto(appURL + "/#gateways");
+  const source = page.locator("#gateway-source");
+  await expect(source).toHaveValue(/public-egress/);
+  const text = (await source.inputValue()).replace('"origin": ""', '"origin": "https://example.com"');
+  await source.fill(text);
+  await page.locator("#gateway-analyze").click();
+  await expect(page.locator("#gateway-draft-message")).toHaveText("HTTP 200: invalid JSON response");
+  await expect(page.locator("#gateway-analyze")).toHaveAttribute("data-analysis-state", "error");
+  await expect(source).toHaveValue(text);
+  api.handlers.set("/api/gateways/config/check", (route) => route.fulfill({ json: { valid: true, diagnostics: "Valid" } }));
+  await page.locator("#gateway-analyze").click();
+  await expect(page.locator("#gateway-analyze")).toHaveAttribute("data-analysis-state", "success");
+  await page.getByRole("button", { name: "File..." }).click();
+  await page.locator("#gateway-save").click();
+  await expect(page.locator("#gateway-draft-message")).toHaveText("Draft rejected; not saved");
+  await expect(source).toHaveValue(text);
+  await page.getByRole("button", { name: "File..." }).click();
+  await expect(page.locator("#gateway-save")).toBeEnabled();
+  expect(api.counts.get("/api/gateways/configs/public-egress/revisions")).toBe(1);
+  expect(api.counts.get("/api/gateways/config/check")).toBe(2);
+});
+
+test("shared source layout synchronizes overlay and both gutter modes and disposes scroll and resize wiring", async ({ page, appURL }) => {
+  await page.goto(appURL + "/#policy");
+  const result = await page.evaluate(async () => {
+    const host = document.createElement("div");
+    host.style.cssText = "position:fixed;top:0;left:0;width:500px;z-index:10000";
+    const source = document.createElement("textarea");
+    const pre = document.createElement("pre");
+    const gutter = document.createElement("div");
+    const rows = document.createElement("div");
+    for (const element of [source, pre, gutter]) {
+      element.style.cssText = "display:block;width:240px;height:100px;overflow:scroll;white-space:pre;font:12px/20px monospace";
+    }
+    source.wrap = "off";
+    source.value = Array.from({ length: 100 }, () => "long-source ".repeat(100)).join("\n");
+    pre.textContent = source.value;
+    rows.textContent = source.value;
+    gutter.append(rows); host.append(source, pre, gutter); document.body.append(host);
+    const tick = () => new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve)));
+    let scrolls = 0;
+    let resizes = 0;
+    const native = window.ZPREditorPage.bindSourceLayout({
+      source, highlight: pre, gutter, container: host,
+      onScroll: () => scrolls++, onResize: () => resizes++,
+    });
+    await tick();
+    source.scrollTop = 240; source.scrollLeft = 70;
+    source.dispatchEvent(new Event("scroll"));
+    await tick();
+    const expected = [source.scrollTop, source.scrollLeft];
+    const actual = [pre.scrollTop, pre.scrollLeft, gutter.scrollTop];
+    const overflow = host.dataset.horizontalOverflow;
+    source.style.height = "130px";
+    const beforeResize = resizes;
+    await tick();
+    const resizeObserved = resizes > beforeResize;
+    native.dispose(); native.dispose();
+    const callbacks = [scrolls, resizes];
+    source.scrollTop = 400; source.scrollLeft = 100;
+    source.style.height = "150px";
+    source.dispatchEvent(new Event("scroll"));
+    native.syncScroll();
+    await tick();
+    const disposedActual = [pre.scrollTop, pre.scrollLeft, gutter.scrollTop];
+    const disposedCallbacks = [scrolls, resizes];
+    const translated = window.ZPREditorPage.bindSourceLayout({ source, highlight: pre, gutterContent: rows });
+    translated.syncScroll();
+    const transform = rows.style.transform;
+    const translatedExpected = `translateY(${-source.scrollTop}px)`;
+    translated.dispose(); host.remove();
+    return { expected, actual, overflow, resizeObserved, callbacks, disposedActual, disposedCallbacks, transform, translatedExpected };
+  });
+  expect(result.actual).toEqual([...result.expected, result.expected[0]]);
+  expect(result.overflow).toBe("true");
+  expect(result.resizeObserved).toBe(true);
+  expect(result.disposedActual).toEqual(result.actual);
+  expect(result.disposedCallbacks).toEqual(result.callbacks);
+  expect(result.transform).toBe(result.translatedExpected);
+});
+
+test("Assertion scrolling retains highlighted nodes while synchronizing the overlay", async ({ page, appURL, api }) => {
+  await openAssertionRecord(page, appURL);
+  await page.locator("#assertion-source").fill(Array.from({ length: 100 }, () => `group "${"Operators".repeat(70)}" members >= 1;`).join("\n"));
+  const result = await page.evaluate(() => {
+    const source = document.getElementById("assertion-source");
+    const pre = document.getElementById("assertion-highlight");
+    const token = pre.firstChild;
+    source.scrollTop = 250; source.scrollLeft = 80;
+    source.dispatchEvent(new Event("scroll"));
+    return { retained: token === pre.firstChild, source: [source.scrollTop, source.scrollLeft], overlay: [pre.scrollTop, pre.scrollLeft], transform: document.getElementById("assertion-result-lines").style.transform };
+  });
+  expect(result.retained).toBe(true);
+  expect(result.overlay).toEqual(result.source);
+  expect(result.transform).toBe(`translateY(${-result.source[0]}px)`);
+});
+
+test("Policy shared source layout preserves token nodes and gutter bounds through scrolling and resize", async ({ page, appURL, api }) => {
+  await page.goto(appURL + "/#policy");
+  await expect(page.locator("#policy-source")).toBeEditable();
+  await page.locator("#policy-source").fill(`# ${"wide ".repeat(80)}\n` + Array.from({ length: 100 }, () => "define Employee as user.").join("\n"));
+  const result = await page.evaluate(() => {
+    const source = document.getElementById("policy-source");
+    const pre = document.getElementById("policy-highlight");
+    const token = pre.firstChild;
+    source.scrollTop = 250; source.scrollLeft = 80;
+    source.dispatchEvent(new Event("scroll"));
+    return {
+      retained: token === pre.firstChild, source: [source.scrollTop, source.scrollLeft],
+      overlay: [pre.scrollTop, pre.scrollLeft], transform: document.getElementById("policy-test-gutter-content").style.transform,
+      overflow: document.getElementById("policy-code-editor").dataset.horizontalOverflow,
+    };
+  });
+  expect(result.retained).toBe(true);
+  expect(result.overlay).toEqual(result.source);
+  expect(result.transform).toBe(`translateY(${-result.source[0]}px)`);
+  expect(result.overflow).toBe("true");
+  const viewport = page.viewportSize();
+  await page.setViewportSize({ width: viewport.width - 80, height: viewport.height + 80 });
+  await expect.poll(() => page.evaluate(() => {
+    const source = document.getElementById("policy-source");
+    return document.getElementById("policy-test-gutter").style.bottom === `${source.offsetHeight - source.clientHeight}px`;
+  })).toBe(true);
+});
+
+test("shared viewport binding is idempotent, coalesces requests and disposes pending layout work", async ({ page, appURL }) => {
+  await page.goto(appURL + "/#policy");
+  const result = await page.evaluate(async () => {
+    const host = document.createElement("div");
+    host.className = "main-content policy-page";
+    host.style.cssText = "position:fixed;top:120px;left:0;width:400px;padding:0 0 20px";
+    host.innerHTML = '<div class="policy-editor-pane" style="padding:0 0 10px"><div id="viewport-contract"></div></div>';
+    document.body.append(host);
+    const container = host.querySelector("#viewport-contract");
+    container.style.setProperty("--editor-source-height", "401px", "important");
+    const expectedHeight = () => {
+      const padding = Number.parseFloat(getComputedStyle(host).paddingBottom) +
+        Number.parseFloat(getComputedStyle(container.parentElement).paddingBottom);
+      return Math.max(320, innerHeight - Math.min(innerHeight * .04, padding) - container.getBoundingClientRect().top - scrollY);
+    };
+    const tick = () => new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve)));
+    const first = window.ZPREditorPage.fitSourceToViewport(container);
+    const same = first === window.ZPREditorPage.fitSourceToViewport(container);
+    const changes = [];
+    const observer = new MutationObserver((records) => changes.push(...records));
+    observer.observe(container, { attributes: true, attributeFilter: ["style"] });
+    first.schedule(); first.schedule(); first.schedule();
+    await tick();
+    const writes = changes.length;
+    const fitted = Number.parseFloat(container.style.getPropertyValue("--editor-source-height"));
+    const expected = expectedHeight();
+    host.hidden = true;
+    changes.length = 0;
+    first.schedule();
+    await tick();
+    const hiddenWrites = changes.length;
+    host.hidden = false;
+    first.schedule();
+    first.dispose(); first.dispose();
+    window.dispatchEvent(new Event("resize"));
+    window.dispatchEvent(new Event("hashchange"));
+    await tick();
+    const restored = container.style.getPropertyValue("--editor-source-height");
+    const priority = container.style.getPropertyPriority("--editor-source-height");
+    changes.length = 0;
+    first.schedule();
+    await tick();
+    const disposedWrites = changes.length;
+    const second = window.ZPREditorPage.fitSourceToViewport(container);
+    const rebound = second !== first;
+    await tick();
+    const reboundHeight = Number.parseFloat(container.style.getPropertyValue("--editor-source-height"));
+    const reboundExpected = expectedHeight();
+    second.dispose();
+    observer.disconnect(); host.remove();
+    return { same, writes, fitted, expected, hiddenWrites, restored, priority, disposedWrites, rebound, reboundHeight, reboundExpected };
+  });
+  expect(result.same).toBe(true);
+  expect(result.writes).toBe(1);
+  expect(result.fitted).toBe(result.expected);
+  expect(result.hiddenWrites).toBe(0);
+  expect(result.restored).toBe("401px");
+  expect(result.priority).toBe("important");
+  expect(result.disposedWrites).toBe(0);
+  expect(result.rebound).toBe(true);
+  expect(result.reboundHeight).toBe(result.reboundExpected);
 });
 
 test("GUI ZPR Config stretches to the same bottom margin as Policy with History beside its title", async ({ page, appURL, api }) => {

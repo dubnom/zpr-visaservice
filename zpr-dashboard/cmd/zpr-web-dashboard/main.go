@@ -77,6 +77,8 @@ type actor struct {
 }
 
 type nodeDetail struct {
+	Latitude          *float64      `json:"latitude,omitempty"`
+	Longitude         *float64      `json:"longitude,omitempty"`
 	LastContact       *int64        `json:"last_contact"`
 	InSync            bool          `json:"in_sync"`
 	PendingInstall    int           `json:"pending_install"`
@@ -243,6 +245,7 @@ func main() {
 	stressRestartPauseMinSeconds := flag.Int("restart-pause-min-seconds", 0, "Minimum logical-client offline duration")
 	stressRestartPauseMaxSeconds := flag.Int("restart-pause-max-seconds", 0, "Maximum logical-client offline duration")
 	gatewayUpstream := flag.String("gateway-upstream", "", "Fixed HTTPS upstream for the internet-gateway test service")
+	gatewayAllowedHosts := flag.String("gateway-allowed-hosts", "", "Comma-separated allowed hosts for the Simulator web gateway")
 	controlURL := flag.String("control-url", "", "Simulator mTLS heartbeat URL")
 	controlCA := flag.String("control-ca", "", "Simulator control CA certificate")
 	clientCert := flag.String("client-cert", "", "Machine controller client certificate")
@@ -321,6 +324,10 @@ func main() {
 		}
 	case "gateway-service":
 		if err := runInternetGatewayService(*listen, *logWorkload, *gatewayUpstream); err != nil {
+			log.Fatal(err)
+		}
+	case "web-gateway-service":
+		if err := runSimulatorWebGatewayService(*listen, *logWorkload, strings.Split(*gatewayAllowedHosts, ",")); err != nil {
 			log.Fatal(err)
 		}
 	case "test-client":

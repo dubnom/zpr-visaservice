@@ -6,6 +6,8 @@
     <meta name="theme-color" content="#17211e">
     <title>ZPR Control Room</title>
     <link rel="stylesheet" href="/app.css?v=86">
+    <link rel="stylesheet" href="/geography.css?v=1">
+    <script src="/geography.js?v=1" defer></script>
     <link rel="stylesheet" href="/machine-logs.css?v=18">
     <link rel="stylesheet" href="/assertions.css?v=11">
     <link rel="stylesheet" href="/sidebar.css?v=8">
@@ -124,6 +126,7 @@
 
         <section class="page-view" id="page-map" data-page="map" aria-label="Map">
           <section class="section-block topology-page">
+          <zpr-geography></zpr-geography>
           <div class="section-heading">
             <div class="legend" role="group" aria-label="Map legend: click a type to highlight it"><input id="topology-search" class="topology-search" type="search" placeholder="Highlight" aria-label="Highlight topology graph"><button class="legend-item" type="button" data-legend-kind="node" aria-pressed="false" title="Highlight node on the map"><i class="legend-node"></i>NODE</button><button class="legend-item" type="button" data-legend-kind="visa" aria-pressed="false" title="Highlight visa service on the map"><i class="legend-visa"></i>VISA SERVICE</button><button class="legend-item" type="button" data-legend-kind="gateway" aria-pressed="false" title="Highlight gateway on the map"><i class="legend-gateway"></i>GATEWAY</button><button class="legend-item" type="button" data-legend-kind="adapter" aria-pressed="false" title="Highlight adapter on the map"><i class="legend-adapter"></i>ADAPTER</button><button class="legend-item" type="button" data-legend-kind="service" aria-pressed="false" title="Highlight service on the map"><i class="legend-service"></i>SERVICE</button><button class="legend-item" type="button" data-legend-kind="registration" aria-pressed="false" title="Highlight registration on the map"><i class="legend-service-link"></i>REGISTRATION</button><button class="legend-item" type="button" data-legend-kind="trusted-file" aria-pressed="false" title="Highlight trusted file on the map"><i class="legend-trusted-file"></i>TRUSTED FILE</button><button class="legend-item" type="button" data-legend-kind="trusted-rest-1" aria-pressed="false" title="Highlight trusted rest/1 on the map"><i class="legend-trusted-rest"></i>TRUSTED REST/1</button><button class="legend-item" type="button" data-legend-kind="dock" aria-pressed="false" title="Highlight docked on the map"><i class="legend-dock"></i>DOCKED</button><button class="legend-item" type="button" data-legend-kind="inter-node" aria-pressed="false" title="Highlight inter-node on the map"><i class="legend-up"></i>INTER-NODE</button><button class="map-clear-highlight" id="map-clear-highlight" type="button" hidden title="Clear highlighting and dimming (Esc)">Clear highlight</button></div>
           </div>
@@ -267,6 +270,7 @@
                 <div id="policy-source-surface">
                 <div id="policy-stage-status" class="policy-stage-status" role="status" aria-live="polite" hidden></div>
                 <div id="policy-attribute-status" class="policy-attribute-status" role="status" aria-live="polite"></div>
+                <p id="policy-load-status" class="editor-page-status" role="status" aria-live="polite" hidden></p>
                 <div id="policy-code-editor" class="policy-code-editor" data-test-mode="false">
                   <div id="policy-test-gutter" class="policy-test-gutter" aria-label="Analyze results by policy line"><div id="policy-test-gutter-content" class="policy-test-gutter-content"></div></div>
                   <pre id="policy-highlight" class="policy-highlight" aria-hidden="true"></pre>
@@ -539,14 +543,14 @@
     </div>
     <script src="/vendor/pluralize.js?v=8.0.0" defer></script>
     <script src="/operator-request.js?v=1" defer></script>
-    <script src="/editor-page.js?v=10" defer></script>
+    <script src="/editor-page.js?v=13" defer></script>
     <script src="/assistant-core.js?v=1" defer></script>
-    <script src="/app.js?v=116" defer></script>
+    <script src="/app.js?v=121" defer></script>
     <script src="/log-format.js?v=1" defer></script>
     <script src="/machine-logs.js?v=22" defer></script>
-    <script src="/assertions.js?v=18" defer></script>
-    <script src="/config-editor.js?v=16" defer></script>
-    <script src="/gateways.js?v=12" defer></script>
+    <script src="/assertions.js?v=20" defer></script>
+    <script src="/config-editor.js?v=17" defer></script>
+    <script src="/gateways.js?v=13" defer></script>
     <script src="/provisioning-contract.js?v=2" defer></script>
     <script src="/provisioning.js?v=3" defer></script>
     <script src="/provisioning-registry.js?v=4" defer></script>

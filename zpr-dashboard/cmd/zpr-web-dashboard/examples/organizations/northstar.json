@@ -6,7 +6,7 @@
   "runtime": {
     "driver": "docker-multinode",
     "topology": "single-node",
-    "nodes": [{"id": "northstar-node", "location": "North Campus", "substrate_address": "172.30.0.13", "zpr_address": "fd5a:5052:90de::10"}]
+    "nodes": [{"id": "northstar-node", "location": "North Campus", "latitude": 44.98, "longitude": -93.27, "coordinate_note": "Simulation guess: Northstar/North Campus placed near Minneapolis, Minnesota; fictional company, not a verified site.", "substrate_address": "172.30.0.13", "zpr_address": "fd5a:5052:90de::10"}]
   },
   "directory": {
     "base_dn": "dc=northstar,dc=test",

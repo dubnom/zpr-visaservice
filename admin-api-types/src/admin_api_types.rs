@@ -96,7 +96,7 @@ pub struct Revokes {
 }
 
 #[serde_as]
-#[derive(Debug, Serialize, Deserialize, Eq)]
+#[derive(Debug, Serialize, Deserialize)]
 pub struct ActorDescriptor {
     pub cn: String,
     #[serde(rename = "created")]
@@ -116,6 +116,8 @@ impl PartialEq for ActorDescriptor {
         self.cn == other.cn
     }
 }
+
+impl Eq for ActorDescriptor {}
 
 impl Ord for ActorDescriptor {
     fn cmp(&self, other: &Self) -> std::cmp::Ordering {
@@ -167,8 +169,12 @@ impl PartialOrd for ServiceDescriptor {
 }
 
 #[serde_as]
-#[derive(Debug, Serialize, Deserialize, PartialEq, Eq)]
+#[derive(Debug, Serialize, Deserialize, PartialEq)]
 pub struct NodeRecordBrief {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub latitude: Option<f64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub longitude: Option<f64>,
     // Number of visas pending install on the node
     pub pending_install: u32,
     // Last time node was contacted by the visa service, 0 if there was no contact
@@ -515,6 +521,8 @@ mod tests {
         last_vreq: Option<SystemTime>,
     ) -> NodeRecordBrief {
         NodeRecordBrief {
+            latitude: None,
+            longitude: None,
             pending_install: 0,
             last_contact,
             visa_requests: 0,

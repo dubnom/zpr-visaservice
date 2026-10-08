@@ -2,6 +2,97 @@
 
 ## Deployment status
 
+- Deployed to local Control Room and Simulator on 2026-10-08 at 19:20 EDT:
+  pending Policy, Scenario and Directory JSON-transport migrations below.
+  Build succeeded; all eight shared/editor JavaScript assets match source on
+  both dashboards, including app.js v121, organizations.js v15, scenarios.js
+  v30 and scenario-source-editor.js v7. Simulator organization/scenario HTML
+  hashes match, and Control Room serves the dedicated Policy load-error status.
+  Operator login remains enabled; signed-out policy API returns 403. Only the
+  two dashboards restarted with unchanged configuration; all other service
+  start times are unchanged from the pre-deploy snapshot. Great Lakes is active,
+  activation idle, assistant ready and both DNS relays responsive.
+- Included in this deployment: Policy revision Save, draft creation through Save
+  and confirmed Stage use shared authenticated JSON transport. Preserve
+  expected-revision payloads, Save error dialogs and explicit Stage confirmation.
+  Malformed responses leave revision/draft state intact and never retry writes;
+  a failed response does not prove whether the server applied a mutation.
+  Twelve focused desktop/tablet tests pass with isolated test output, covering
+  malformed responses, Save shortcuts, save-with-errors and successful confirmed
+  Stage. A preliminary run encountered shared Playwright trace cleanup failures;
+  no existing tests were modified. Local Policy Format remains unchanged.
+- Included in this deployment: Policy workspace, record, History and revision reads
+  use shared authenticated JSON transport. Load errors now appear in a separate
+  visible status above source instead of the hidden compiler-result element;
+  they never create compiler/runtime diagnostics or invented source markers.
+  Successful recovery and new drafts clear the load status. Twenty-eight
+  focused desktop/tablet tests pass, covering malformed and structured errors,
+  recovery, new-draft cleanup, History/dirty cancellation, completions and
+  adjacent compiler/runtime transport. One preliminary run encountered a
+  Playwright trace-file cleanup error; unchanged History tests passed on rerun.
+  Mutation transport and request-lifecycle consolidation remain separate.
+- Included in this deployment: Policy compiler checks and runtime fixture/evaluation
+  requests use shared JSON transport through authenticated operator fetch.
+  Preserve compiler diagnostic priority/warnings on non-success responses,
+  distinct runtime error surfaces and cancellation/pending ownership.
+  Malformed JSON is an explicit unlocated error; no retries or Simulator
+  dependencies are added. One hundred two focused desktop/tablet tests pass,
+  including all three malformed-response phases, compiler warnings, delayed
+  source/context changes, newer request ownership and cancelled Save/Save As/
+  Stage continuations. Policy mutation and workspace-load transport remain
+  separate.
+- Included in this deployment: Scenario form/raw Analyze and editor artifact/
+  revision reads, Create, Save and Publish use shared injected JSON transport.
+  Preserve raw source-local diagnostics after ownership checks, existing
+  stale-response guards and explicit revision/mutation contracts. Malformed
+  JSON reports errors without replacing drafts, advancing revisions or
+  retrying writes; Save/Publish never run scenarios. Sixty-six focused
+  desktop/tablet tests pass, including malformed responses for all migrated
+  operations, creation/revision payloads, raw gutters/round trips and delayed
+  form/raw analysis ownership. Scenario catalog polling, Delete and Run remain
+  separate; no production dependency on Simulator is introduced.
+- Included in this deployment: Simulator Directory uses shared injected JSON
+  transport for artifact/revision reads, draft Save and Publish. Malformed
+  responses are explicit errors without replacing source/revision state or
+  retrying mutations. Production boundaries and LDAP reseed behavior are
+  unchanged; organization polling/activation and Scenario remain separate.
+  Twenty-two focused desktop/tablet tests pass, covering malformed responses
+  for every migrated operation, successful Save/Publish/revision payloads,
+  source preservation, search, menus, discard and explicit service errors.
+- Deployed to local Control Room and Simulator on 2026-10-08 at 18:16 EDT:
+  shared JSON transport, source scroll/resize and viewport lifecycle changes
+  below. Build succeeded; live editor-page.js v13, app.js v117,
+  assertions.js v20, config-editor.js v17 and gateways.js v13 hashes match
+  source on both dashboards. Simulator organization/scenario HTML hashes
+  also match. Named operator login remains enabled and signed-out protected
+  APIs return 403. Only the two dashboards restarted; their configuration and
+  all other service start times are unchanged. Great Lakes remains active,
+  activation idle, assistant ready and both DNS relays responsive.
+- Included in this deployment: Config, Assertions and Gateways share JSON transport
+  decoding/error handling through their existing authenticated operator fetch.
+  Preserve structured diagnostics, abort identity and single-attempt requests.
+  Malformed JSON is explicitly reported; Gateway validation exceptions apply
+  only to Analyze, never to rejected saves. No production/Simulator dependency
+  or automatic retry is introduced. Thirty-four focused desktop/tablet tests
+  pass, including malformed responses, structured/unlocated errors, abort and
+  network-error identity, request-option forwarding, rejected Gateway saves,
+  stale Config diagnostics and Assertion Format ownership/warnings.
+- Included in this deployment: shared source scroll/resize binding across Policy,
+  Assertions and Config/Gateway/Directory/raw-Scenario surfaces. Preserve
+  native/translated gutter modes and domain-owned bounds/diagnostics; Assertion
+  scroll/resize no longer rebuilds highlighted token nodes. Bindings expose
+  explicit scroll/resize cleanup without clearing source or diagnostics.
+  Twenty focused desktop/tablet tests pass across all six editors, including
+  both gutter modes, disposal, scrolling/resize and Policy completion behavior.
+  An additional existing Assertion file-controls spacing test reports a
+  27px toolbar/source gap against its 9px limit in both projects; left unchanged.
+- Included in this deployment: shared Policy/Config viewport sizing is idempotent
+  per container and exposes coalesced scheduling and explicit disposal.
+  Cleanup cancels queued frames, observers and window listeners and restores
+  the original inline height/priority. Existing sizing rules are unchanged.
+  Six focused desktop/tablet contract/layout tests pass. An additional
+  cross-editor toolbar test fails on a hidden Gateway toolbar in both projects;
+  that existing test remains unchanged.
 - Deployed to local Simulator on 2026-10-08 at 17:47 EDT:
   structured Scenario analysis uses the shared
   context guard for exact form, identity/revision, organization, viewed
@@ -199,12 +290,20 @@
   - [x] Use the shared analysis-context guard for structured Scenario Analyze. Reject superseded requests, edited-then-restored/replaced forms and changed identity/revision/organization/viewed revision/mode/open state. Raw analysis also rejects closed-editor and viewed-revision changes.
   - [x] Share explicit idle/pending/success/error button-state transitions in the five Analyze-capable editors. Preserve readiness, disabled actions, diagnostic rendering and stale-response guards; do not add an Analyze action to Directory.
 - [ ] Consolidate JavaScript editor-frame setup and responsive viewport sizing so individual editors do not duplicate layout wiring.
+  - [x] Give the existing shared Policy/Config viewport binding idempotent setup, coalesced scheduling and disposal/rebind contracts without changing sizing rules. Test hidden containers, pending-frame cancellation, restored inline height/priority and responsive geometry.
+  - [x] Share source scrolling and resize observation across all six editors, preserving overlay alignment, native versus translated gutters, domain-specific gutter bounds and Policy completion positioning. Expose disposal through bindings/source surfaces; avoid rebuilding Assertion highlights on scroll/resize.
 - [x] Extract a shared AI assistant shell and conversation controller from `editor-assistant.js` and `design-assistant.js`: messages, model/token controls, usage counters, pending/error states and collapse behavior. Policy/Assertion uses the same `assistant-core.js` controller.
 - [x] Share assistant stale-context/proposal protection while keeping undoable text Insert and validated structured Apply as separate adapters; never save, publish, activate or run automatically. Reject edited-then-restored source, changed record/revision/organization, reset conversations and stale failures.
 - [ ] Extract shared page polling/lifecycle helpers: start/stop on navigation, prevent overlapping requests, abort obsolete requests, reject late responses and retain last-good data with explicit errors.
 - [ ] Extract shared sortable-table helpers for column definitions, comparators, accessible sort headings and empty states, starting with Control Room tables and Simulator Activity.
 - [ ] Consolidate safe text rendering and timestamp/protocol display helpers without changing API contracts or losing integer precision.
 - [ ] Consolidate HTTP/JSON error handling and cancellation; keep authentication, same-origin CSRF handling and mutation retry/uncertainty policies explicit.
+  - [x] Share injected JSON transport for Config, Assertions and Gateways. Preserve structured errors and abort identity; report malformed JSON explicitly rather than defaulting to empty success. Keep Gateway validation-result acceptance local to Analyze and reject failed saves without retrying or replacing unsaved drafts.
+  - [x] Use shared injected JSON transport for Simulator Directory artifact/revision reads, Save and Publish. Retain explicit operation errors, unsaved drafts, expected-revision payloads and separate publish/reseed semantics without retries or production dependencies.
+  - [x] Use shared injected JSON transport for Scenario form/raw Analyze, artifact/history/revision reads, Create, Save and Publish. Keep source-local diagnostic mapping after stale-context checks; preserve draft/revision ownership and explicit mutation payloads without retries, implicit publish/run or production dependencies.
+  - [x] Use shared authenticated JSON transport for Policy compiler checks and runtime fixture/evaluation requests. Preserve non-success compiler diagnostic priority/warnings, separate runtime errors and cancellation-safe pending/Save ownership without retries or Simulator dependencies.
+  - [x] Use shared authenticated JSON transport for Policy workspace, record, History and revision reads. Show load failures separately from analysis diagnostics, retain source on failed reads and clear load status on recovery/new drafts. Preserve History/dirty-confirmation behavior without retries or production/Simulator dependencies.
+  - [x] Use shared authenticated JSON transport for Policy revision Save, draft creation through Save and confirmed Stage. Preserve revision payloads, error dialogs and explicit confirmation without automatic retries or treating undecodable mutation responses as success.
 - [ ] Reuse the existing shared `machine-logs.js` viewer rather than introducing separate Control Room and Simulator log implementations.
 - [ ] Add shared JavaScript component contract tests and desktop/tablet integration coverage for each migration, preserving intended behavior and accessibility.
 - [ ] Verify Control Room works with Simulator unavailable; shared JavaScript must receive independent production endpoints/configuration and must not introduce Simulator data, authorization or runtime dependencies.
@@ -250,11 +349,13 @@
 ### World map
 - [x] `worldmap.svg` is available in the `zpr-dashboard` folder.
 - [x] Plan for a geographic network view using node latitude/longitude:
-  1. Confirm a validated latitude/longitude contract in organization profiles; never infer coordinates from location names.
-  2. Inspect the SVG projection/viewBox and license, then project coordinates into that exact map space with explicit bounds and a clear no-coordinate state.
-  3. Add a separate Geography view/layer so the existing topology graph remains available and authoritative for links and runtime state.
-  4. Reuse node details/selection, make markers keyboard accessible, and handle duplicate/co-located nodes without obscuring them.
-  5. Test projection bounds, missing/invalid coordinates, mobile sizing, and two organizations before asking for deployment approval.
+  - [x] Add optional validated latitude/longitude properties to production node metadata and the Visa Service Admin API; never infer coordinates from location names or read Simulator profiles in Control Room.
+  - [x] Inspect the supplied SVG license/viewBox; because its projection is undocumented, use a public-domain Natural Earth basemap generated in a known equirectangular projection with explicit bounds and a clear no-coordinate state.
+  - [x] Add a separate node-only Geography view so the existing topology graph remains available and authoritative for links and runtime state.
+  - [x] Reuse node details/selection, make markers keyboard accessible, and group duplicate/co-located nodes with an explicit chooser and a small-screen node list.
+  - [x] Test projection bounds, missing/invalid/zero coordinates, mobile sizing, replacement node sets, and Simulator-unavailable production metadata pass-through.
+  - [x] Seed all eight nodes across the five bundled Simulator organizations with explicit approximate coordinates and per-node guess notes; provision them into Visa Service config under actual runtime CNs without adding a reverse Simulator dependency to Control Room.
+  - [ ] Approve deployment and configure reviewed coordinates for actual node CNs; verify geographic placement against two organization deployments. No live coordinates, services or routing were changed by the initial implementation.
 
 ### Navigation
 - [x] Keep Map as the main view and group Adapters, Actors, Services, Visas, Denials, and DNS under horizontal Status tabs with counts.
@@ -302,6 +403,7 @@
 - [x] Change Nav from "Policy" to "Policy/Assertions".
 - [x] Remove Syntax from the bottom of the assertions editor.
 - [x] Change "Analyze" color to blue instead of orange across Policy, Assertions, Config, Gateways and Scenario, including hover and pending states. Keep success green and errors red.
+- [ ] Support Maximize/Restore.
 
 ### Status
 - [x] I noticed on the "adapters" page that even when sorted, the records moved around (though nothing changed). I think sorting only sorts on its primary field but if that field has duplicates this occurs. A solution would be to always have a secondary field (or more) that is/are automatically attached. The user has nothing to do with this but the results would be deterministic.
@@ -385,6 +487,7 @@ Running" orange should be a non-indicated color like blue.
 - [x] Move the raw/dialog link/button to the top right corner of the inner pages.
 - [x] Implement the Analyze button with colors and behavior just like every other editor.
 - [x] Switch (or just edit) scenarios in yaml.
+- [ ] Show shrunk-down log windows above the running simulator machines. It doesn't have to be readable.
 
 ### Activity
 - [x] Remove the Decisions and Blocked flows headings.

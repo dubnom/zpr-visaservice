@@ -156,7 +156,7 @@ func TestBundledPolicyLayersPreserveInfrastructureAndIsolateCompanies(t *testing
 		if strings.Count(source, `service A2Svc as json`) != 1 {
 			t.Fatalf("%s does not have one target-free A2Svc policy group", organizationID)
 		}
-		if organizationID != "northstar" && strings.Contains(source, "provide InternetGatewayWeb") {
+		if organizationID != "northstar" && organizationID != "great-lakes" && strings.Contains(source, "provide InternetGatewayWeb") {
 			t.Fatalf("%s inherited Northstar's gateway grant", organizationID)
 		}
 		if organizationID == "redwood" && strings.Contains(source, "allow FinanceClient.") {
@@ -167,6 +167,7 @@ func TestBundledPolicyLayersPreserveInfrastructureAndIsolateCompanies(t *testing
 		}
 		if organizationID == "great-lakes" {
 			for _, grant := range []string{
+				"provide InternetGatewayWeb at internet-gateway.svc.zpr over TCP 8082.\n  allow MilwaukeeFinance.",
 				"provide EngineeringBuildFarm at engineering-build.svc.zpr over TCP 8444.\n  allow MilwaukeeEngineering.\n  allow ShenzhenEngineering.",
 				"provide AssemblyExecution at assembly-mes.svc.zpr over TCP 8448.\n  allow TijuanaAssembly.",
 				"provide QualityTestBench at quality-test.svc.zpr over TCP 8449.\n  allow TijuanaTest.\n  allow MilwaukeeEngineering.",

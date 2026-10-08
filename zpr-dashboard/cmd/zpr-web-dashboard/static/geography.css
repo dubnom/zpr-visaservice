@@ -1,0 +1,25 @@
+zpr-geography { display: block; }
+.geography-switch { display: flex; gap: 6px; margin-bottom: 12px; }
+.geography-switch button, .geography-group button, .geography-unplaced button, .geography-located button {
+  background: var(--panel, #18283a); color: var(--text, #dce7f3);
+  border: 1px solid var(--border, #53677b); border-radius: 5px; padding: 7px 12px; cursor: pointer;
+}
+.geography-switch button[aria-pressed="true"] { background: #174e78; border-color: #72b8ed; }
+#page-map[data-map-view="geography"] .topology-layout,
+#page-map[data-map-view="geography"] .section-heading { display: none; }
+.geography-panel[hidden], .geography-group[hidden] { display: none; }
+.geography-canvas svg { display: block; width: 100%; max-height: 65vh; background: #122338; border-radius: 6px; }
+.geography-marker { cursor: pointer; }
+.geography-marker circle { fill: #174e78; stroke: #f1f8ff; stroke-width: 3; }
+.geography-marker text { fill: #fff; font: bold 18px sans-serif; pointer-events: none; }
+.geography-marker:focus { outline: none; }
+.geography-marker:focus circle, .geography-marker:hover circle { fill: #2979b5; stroke: #ffda75; stroke-width: 5; }
+.geography-marker.selected circle { fill: #2979b5; stroke: #ffda75; stroke-width: 5; }
+.geography-switch button:focus-visible, .geography-group button:focus-visible,
+.geography-unplaced button:focus-visible, .geography-located button:focus-visible { outline: 2px solid #ffda75; outline-offset: 2px; }
+.geography-unplaced > div, .geography-located > div > div { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; margin: 8px 0; }
+.geography-located button { min-height: 44px; }
+.geography-group button { margin: 4px; }
+.geography-status, .geography-attribution { font-size: 13px; }
+.geography-attribution a { color: #9dd0ff; }
+@media (max-width: 600px) { .geography-canvas svg { min-height: 230px; } }

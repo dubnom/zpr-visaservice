@@ -932,14 +932,13 @@ func simulatorScenarioExecutorForManifest(ctx context.Context, manifest simulato
 			}
 		}
 		address := net.JoinHostPort(serviceAddress, testServicePorts[step.Component])
-		mode := "test-service"
-		arguments := []string{"exec", "-d", machineContainerName(step.Machine), "/usr/local/bin/zpr-machine-controller"}
-		if component.GatewayUpstream != "" {
-			mode = "gateway-service"
-			arguments = append(arguments, "-mode", mode, "-listen", address, "-log-workload", step.Component, "-gateway-upstream", component.GatewayUpstream)
-		} else {
-			arguments = append(arguments, "-mode", mode, "-listen", address, "-log-workload", step.Component)
+		mode, gatewayArguments, err := simulatorTestServiceLaunch(manifest, component)
+		if err != nil {
+			return "", err
 		}
+		arguments := []string{"exec", "-d", machineContainerName(step.Machine), "/usr/local/bin/zpr-machine-controller"}
+		arguments = append(arguments, "-mode", mode, "-listen", address, "-log-workload", step.Component)
+		arguments = append(arguments, gatewayArguments...)
 		if _, err := scenarioCommand(ctx, "docker", arguments...); err != nil {
 			return "", err
 		}
@@ -960,9 +959,9 @@ func simulatorScenarioExecutorForManifest(ctx context.Context, manifest simulato
 			return "test service machine already stopped", nil
 		}
 		component, _ := readSimulatorComponent(manifest, step.Component)
-		mode := "test-service"
-		if component.GatewayUpstream != "" {
-			mode = "gateway-service"
+		mode, _, err := simulatorTestServiceLaunch(manifest, component)
+		if err != nil {
+			return "", err
 		}
 		output, err := scenarioCommand(ctx, "docker", "exec", machineContainerName(step.Machine), "pkill", "-f", "[z]pr-machine-controller -mode "+mode+" .* -log-workload "+step.Component)
 		var exitError *exec.ExitError
@@ -1141,6 +1140,22 @@ func simulatorScenarioExecutorForManifest(ctx context.Context, manifest simulato
 	default:
 		return "", fmt.Errorf("unsupported scenario action %q", step.Action)
 	}
+}
+
+func simulatorTestServiceLaunch(manifest simulatorManifest, component simulatorComponent) (string, []string, error) {
+	if component.Name == "internet-gateway" {
+		gateway, err := simulatorWebGatewayForManifest(manifest)
+		if err != nil {
+			return "", nil, err
+		}
+		if gateway != nil {
+			return "web-gateway-service", []string{"-gateway-allowed-hosts", strings.Join(gateway.AllowedHosts, ",")}, nil
+		}
+	}
+	if component.GatewayUpstream != "" {
+		return "gateway-service", []string{"-gateway-upstream", component.GatewayUpstream}, nil
+	}
+	return "test-service", nil, nil
 }
 
 func machineWorkloadAddress(agent string) string {

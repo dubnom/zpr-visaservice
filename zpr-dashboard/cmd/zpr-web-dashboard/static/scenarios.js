@@ -14,6 +14,9 @@ let scenarioEditorSaved = null;
 let scenarioEditorSummary = "";
 let scenarioEditorViewing = 0;
 const scenarioEditorPage = window.ZPREditorPage;
+const scenarioRequest = (path, options) => scenarioEditorPage.requestJSON(
+  (...args) => window.fetch(...args), path, options,
+);
 const scenarioFormAnalysisScope = scenarioEditorPage.createAnalysisScope(() => [
   JSON.stringify(readScenarioEditorForm()), scenarioEditorOrganization,
   scenarioEditorArtifact?.id, scenarioEditorArtifact?.revision, scenarioEditorViewing,
@@ -379,14 +382,13 @@ async function analyzeScenarioEditor() {
   const isCurrent = scenarioFormAnalysisScope.begin();
   try {
     const scenario = readScenarioEditorForm();
-    const response = await fetch(`/api/simulator/organizations/${encodeURIComponent(scenarioEditorOrganization)}/scenario-check`, {
+    const result = await scenarioRequest(`/api/simulator/organizations/${encodeURIComponent(scenarioEditorOrganization)}/scenario-check`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ format: "json", source: JSON.stringify(scenario), scenario_id: scenarioEditorArtifact?.id || "" }),
     });
-    const result = await response.json();
     if (!isCurrent()) return null;
-    if (!response.ok || result.valid !== true) throw new Error(result.error || `Scenario analysis failed (${response.status}).`);
+    if (result.valid !== true) throw new Error(result.error || "Scenario analysis failed.");
     setScenarioAnalyzeState("success");
     setScenarioEditorStatus(result.diagnostics || "Scenario definition valid. Nothing saved, published, or run.");
     return result.scenario || scenario;
@@ -450,9 +452,7 @@ function openNewScenarioEditor() {
 async function openExistingScenarioEditor(scenarioID) {
   const organizationID = activeScenarioOrganization;
   const path = `/api/simulator/organizations/${encodeURIComponent(organizationID)}/scenarios/${encodeURIComponent(scenarioID)}`;
-  const response = await fetch(path, { cache: "no-store" });
-  const artifact = await response.json();
-  if (!response.ok) throw new Error(artifact.error || `HTTP ${response.status}`);
+  const artifact = await scenarioRequest(path);
   scenarioEditorArtifact = artifact;
   scenarioEditorOrganization = organizationID;
   scenarioEditorDirty = false;
@@ -472,9 +472,7 @@ async function refreshScenarioRevisions() {
   const artifact = scenarioEditorArtifact;
   if (!artifact) { scenarioHistory.render([]); return; }
   const path = `/api/simulator/organizations/${encodeURIComponent(scenarioEditorOrganization)}/scenarios/${encodeURIComponent(artifact.id)}/revisions`;
-  const response = await fetch(path, { cache: "no-store" });
-  const revisions = await response.json();
-  if (!response.ok) throw new Error(revisions.error || `HTTP ${response.status}`);
+  const revisions = await scenarioRequest(path);
   if (artifact !== scenarioEditorArtifact) return;
   scenarioHistory.render([...revisions].reverse().map((revision) => ({ ...revision, number: revision.revision })), {
     current: scenarioEditorViewing || artifact.revision,
@@ -506,13 +504,11 @@ async function saveScenarioDraft() {
   const path = creating
     ? `/api/simulator/organizations/${encodeURIComponent(scenarioEditorOrganization)}/scenarios`
     : `/api/simulator/organizations/${encodeURIComponent(scenarioEditorOrganization)}/scenarios/${encodeURIComponent(scenarioEditorArtifact.id)}`;
-  const response = await fetch(path, {
+  const result = await scenarioRequest(path, {
     method: creating ? "POST" : "PUT",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ scenario, summary, expected_revision: scenarioEditorArtifact?.revision || 0 }),
   });
-  const result = await response.json();
-  if (!response.ok) throw new Error(result.error || `HTTP ${response.status}`);
   if (creating) scenarioEditorArtifact = result;
   else scenarioEditorArtifact = { ...scenarioEditorArtifact, revision: result.revision, content: result.content, content_hash: result.content_hash, published_revision: scenarioEditorArtifact.published_revision || 0 };
   scenarioEditorDraft = scenario;
@@ -530,13 +526,11 @@ async function saveScenarioDraft() {
 async function publishScenarioRevision() {
   if (!scenarioEditorArtifact || scenarioEditorDirty) return;
   const path = `/api/simulator/organizations/${encodeURIComponent(scenarioEditorOrganization)}/scenarios/${encodeURIComponent(scenarioEditorArtifact.id)}/publish`;
-  const response = await fetch(path, {
+  const artifact = await scenarioRequest(path, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ expected_revision: scenarioEditorArtifact.revision }),
   });
-  const artifact = await response.json();
-  if (!response.ok) throw new Error(artifact.error || `HTTP ${response.status}`);
   scenarioEditorArtifact = artifact;
   setScenarioEditorStatus(`Published version ${artifact.published_revision} for ${scenarioEditorOrganization}.`, "saved");
   updateScenarioEditorActions();
@@ -547,9 +541,7 @@ async function publishScenarioRevision() {
 async function loadScenarioRevision(number) {
   if (!number || !scenarioEditorArtifact) return;
   const path = `/api/simulator/organizations/${encodeURIComponent(scenarioEditorOrganization)}/scenarios/${encodeURIComponent(scenarioEditorArtifact.id)}/revisions/${encodeURIComponent(number)}`;
-  const response = await fetch(path, { cache: "no-store" });
-  const revision = await response.json();
-  if (!response.ok) throw new Error(revision.error || `HTTP ${response.status}`);
+  const revision = await scenarioRequest(path);
   if (scenarioEditorDirty && !window.confirm("Replace unsaved scenario changes with this version?")) return;
   renderScenarioEditor(revision.content);
   scenarioEditorSummary = `Restore version ${revision.revision}`;

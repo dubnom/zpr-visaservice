@@ -113,17 +113,7 @@
     surface.render();
     renderIdentity();
   }
-  const request = async (url, options = {}) => {
-    const response = await window.zprOperatorFetch(url, { cache: "no-store", ...options });
-    const result = await response.json();
-    if (!response.ok) {
-      const error = new Error(result.error || result.diagnostics || `HTTP ${response.status}`);
-      error.line = result.line || 0;
-      error.details = result;
-      throw error;
-    }
-    return result;
-  };
+  const request = (url, options) => page.requestJSON((...args) => window.zprOperatorFetch(...args), url, options);
   const post = (url, body) => request(url, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
   function closeRecordMenu(restoreFocus = false) {
     if (recordMenu.hidden) return;

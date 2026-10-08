@@ -51,8 +51,11 @@ func TestBundledOrganizationsHaveSeparateIdentityAndPolicyCatalogs(t *testing.T)
 	if greatLakes.Runtime.Nodes[0].ID != "milwaukee-hq" || greatLakes.Runtime.Nodes[1].ID != "shenzhen-office" || greatLakes.Runtime.Nodes[2].ID != "tijuana-plant" {
 		t.Fatalf("Great Lakes node IDs = %+v; want location-based site names", greatLakes.Runtime.Nodes)
 	}
-	if len(greatLakes.Directory.People) != 12 || len(greatLakes.Directory.Departments) != 11 || len(greatLakes.Directory.Groups) != 8 || len(greatLakes.MachineOwners) != 12 || len(greatLakes.Services) != 9 || greatLakes.RuntimePolicy == "" {
+	if len(greatLakes.Directory.People) != 12 || len(greatLakes.Directory.Departments) != 11 || len(greatLakes.Directory.Groups) != 8 || len(greatLakes.MachineOwners) != 12 || len(greatLakes.Services) != 10 || greatLakes.RuntimePolicy == "" {
 		t.Fatalf("Great Lakes profile is missing departments, services, or runtime policy: %+v", greatLakes)
+	}
+	if greatLakes.WebGateway == nil || len(greatLakes.WebGateway.AllowedHosts) != 1 || greatLakes.WebGateway.AllowedHosts[0] != "*.google.com" {
+		t.Fatalf("Great Lakes web gateway profile = %+v", greatLakes.WebGateway)
 	}
 	if northstar.Services[0].Name == redwood.Services[0].Name {
 		t.Fatal("organizations must have distinct service catalogs")
@@ -105,6 +108,7 @@ func TestOrganizationWorkloadsRegisterPolicyServiceClasses(t *testing.T) {
 	}{
 		{organization: "great-lakes", agent: "echo-service", want: "WorkdayEcho"},
 		{organization: "great-lakes", agent: "metrics-service", want: "WorkdayMetrics"},
+		{organization: "great-lakes", agent: "internet-gateway", want: "InternetGatewayWeb"},
 		{organization: "velocity", agent: "echo-service", want: "EchoWeb"},
 	} {
 		services, err := simulatorWorkloadServicesForAgent(filepath.Join("examples", "organizations"), test.organization, test.agent)
@@ -682,8 +686,28 @@ func TestGreatLakesThreeSiteRuntimeScenarioIsSeeded(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(artifacts) != 2 || artifacts[0].ID != "great-lakes-five-minute-workday" || artifacts[0].PublishedRevision != 1 || artifacts[1].ID != "great-lakes-runtime-verification" || artifacts[1].PublishedRevision != 1 {
+	if len(artifacts) != 3 {
 		t.Fatalf("Great Lakes scenario seeds = %#v", artifacts)
+	}
+	wantScenarios := map[string]bool{
+		"great-lakes-finance-web-gateway":  false,
+		"great-lakes-five-minute-workday":  false,
+		"great-lakes-runtime-verification": false,
+	}
+	var workdayContent []byte
+	for _, artifact := range artifacts {
+		if _, exists := wantScenarios[artifact.ID]; !exists || artifact.PublishedRevision != 1 {
+			t.Fatalf("unexpected Great Lakes scenario seed = %#v", artifact)
+		}
+		wantScenarios[artifact.ID] = true
+		if artifact.ID == "great-lakes-five-minute-workday" {
+			workdayContent = artifact.Content
+		}
+	}
+	for scenarioID, found := range wantScenarios {
+		if !found {
+			t.Errorf("Great Lakes scenario seed %q is missing", scenarioID)
+		}
 	}
 	for _, artifact := range artifacts {
 		var scenario simulatorScenario
@@ -695,7 +719,7 @@ func TestGreatLakesThreeSiteRuntimeScenarioIsSeeded(t *testing.T) {
 		}
 	}
 	var workday simulatorScenario
-	if err := json.Unmarshal(artifacts[0].Content, &workday); err != nil {
+	if err := json.Unmarshal(workdayContent, &workday); err != nil {
 		t.Fatal(err)
 	}
 	people := make(map[string]bool)

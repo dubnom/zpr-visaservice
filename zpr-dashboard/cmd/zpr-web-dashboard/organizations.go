@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"math"
 	"net"
 	"net/http"
 	"os"
@@ -30,7 +31,12 @@ type simulatorOrganization struct {
 	Services           []simulatorOrganizationService `json:"services"`
 	PolicyTestServices []simulatorPolicyTestService   `json:"policy_test_services,omitempty"`
 	WorkloadServices   map[string][]string            `json:"workload_services,omitempty"`
+	WebGateway         *simulatorWebGatewayProfile    `json:"web_gateway,omitempty"`
 	LoadTest           *simulatorLoadTestProfile      `json:"load_test,omitempty"`
+}
+
+type simulatorWebGatewayProfile struct {
+	AllowedHosts []string `json:"allowed_hosts"`
 }
 
 type simulatorLoadTestProfile struct {
@@ -57,10 +63,13 @@ type simulatorOrganizationRuntime struct {
 }
 
 type simulatorOrganizationRuntimeNode struct {
-	ID               string `json:"id"`
-	Location         string `json:"location"`
-	SubstrateAddress string `json:"substrate_address,omitempty"`
-	ZPRAddress       string `json:"zpr_address,omitempty"`
+	ID               string   `json:"id"`
+	Location         string   `json:"location"`
+	SubstrateAddress string   `json:"substrate_address,omitempty"`
+	ZPRAddress       string   `json:"zpr_address,omitempty"`
+	Latitude         *float64 `json:"latitude,omitempty"`
+	Longitude        *float64 `json:"longitude,omitempty"`
+	CoordinateNote   string   `json:"coordinate_note,omitempty"`
 }
 
 type simulatorOrganizationDirectory struct {
@@ -300,6 +309,14 @@ func validateSimulatorOrganization(organization simulatorOrganization) error {
 		if !validScenarioID(node.ID) || strings.TrimSpace(node.Location) == "" || seenNodes[node.ID] {
 			return errors.New("runtime nodes require unique valid ids and locations")
 		}
+		if (node.Latitude == nil) != (node.Longitude == nil) {
+			return fmt.Errorf("runtime node %q requires both latitude and longitude or neither", node.ID)
+		}
+		if node.Latitude != nil && (math.IsNaN(*node.Latitude) || math.IsInf(*node.Latitude, 0) ||
+			math.IsNaN(*node.Longitude) || math.IsInf(*node.Longitude, 0) ||
+			math.Abs(*node.Latitude) > 90 || math.Abs(*node.Longitude) > 180) {
+			return fmt.Errorf("runtime node %q coordinates must be finite and within latitude [-90,90] and longitude [-180,180]", node.ID)
+		}
 		if organization.Runtime.Driver == "docker-multinode" {
 			substrate := net.ParseIP(node.SubstrateAddress)
 			zprAddress := net.ParseIP(node.ZPRAddress)
@@ -380,6 +397,11 @@ func validateSimulatorOrganization(organization simulatorOrganization) error {
 		}
 		if service.ActorCN != "" && (!policyTestValueSafe(service.ActorCN) || len(service.ActorCN) > 200) {
 			return fmt.Errorf("service %q has an invalid provider actor identity", service.Name)
+		}
+	}
+	if organization.WebGateway != nil {
+		if _, err := newSimulatorWebGateway(organization.WebGateway.AllowedHosts); err != nil {
+			return fmt.Errorf("web gateway profile: %w", err)
 		}
 	}
 	if len(organization.WorkloadServices) > 32 {
@@ -507,6 +529,14 @@ func simulatorWorkloadServicesForAgent(directory, organizationID, agent string) 
 		return nil, nil
 	}
 	return simulatorLoadTestServiceNames(*organization.LoadTest), nil
+}
+
+func simulatorWebGatewayForManifest(manifest simulatorManifest) (*simulatorWebGatewayProfile, error) {
+	organization, err := loadSimulatorOrganization(simulatorOrganizationsDirectory(), activeSimulatorOrganizationID(manifest))
+	if err != nil {
+		return nil, err
+	}
+	return organization.WebGateway, nil
 }
 
 func simulatorLoadTestProfileForManifest(manifest simulatorManifest) (simulatorLoadTestProfile, bool, error) {
