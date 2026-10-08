@@ -3,6 +3,7 @@ package main
 import (
 	"os"
 	"os/exec"
+	"path/filepath"
 	"strings"
 	"testing"
 )
@@ -55,6 +56,7 @@ docker() {
     [ "$inherited" = true ] || { echo "Key environment forwarding missing" >&2; return 1; }
     [ "${ANTHROPIC_API_KEY:-}" = "$EXPECTED_KEY" ] || { echo "Key environment mismatch" >&2; return 1; }
 }
+
 `
 			cmd := exec.Command("sh")
 			cmd.Stdin = strings.NewReader(harness + launch + "\nstart_control_service\n")
@@ -73,5 +75,48 @@ docker() {
 				t.Fatalf("Control-Service launch failed: %v\n%s", err, out)
 			}
 		})
+	}
+}
+
+func TestAssistantAPIKeyPrefersEnvironmentAndReadsOnlyProtectedFiles(t *testing.T) {
+	directory := t.TempDir()
+	keyFile := filepath.Join(directory, "assistant.key")
+	t.Setenv("ZPR_ANTHROPIC_API_KEY_FILE", keyFile)
+	t.Setenv("ANTHROPIC_API_KEY", "")
+	if err := os.WriteFile(keyFile, []byte("runtime-key\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if got := assistantAPIKey(); got != "runtime-key" {
+		t.Fatalf("runtime key=%q", got)
+	}
+	t.Setenv("ANTHROPIC_API_KEY", "environment-key")
+	if got := assistantAPIKey(); got != "environment-key" {
+		t.Fatalf("environment key did not take precedence: %q", got)
+	}
+	t.Setenv("ANTHROPIC_API_KEY", "")
+
+	if err := os.Chmod(keyFile, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if got := assistantAPIKey(); got != "" {
+		t.Fatalf("group-readable assistant key accepted: %q", got)
+	}
+	if err := os.Chmod(keyFile, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	link := filepath.Join(directory, "assistant-link")
+	if err := os.Symlink(keyFile, link); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("ZPR_ANTHROPIC_API_KEY_FILE", link)
+	if got := assistantAPIKey(); got != "" {
+		t.Fatalf("symlink assistant key accepted: %q", got)
+	}
+	t.Setenv("ZPR_ANTHROPIC_API_KEY_FILE", keyFile)
+	if err := os.WriteFile(keyFile, []byte(strings.Repeat("x", 4097)), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if got := assistantAPIKey(); got != "" {
+		t.Fatalf("oversized assistant key accepted (%d bytes)", len(got))
 	}
 }

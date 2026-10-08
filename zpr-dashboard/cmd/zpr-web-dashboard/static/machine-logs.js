@@ -533,7 +533,13 @@
     if (refreshButton) refreshButton.disabled = true;
     try {
       const response = await fetch(endpoint, { cache: "no-store", signal: request.signal });
-      const result = await response.json();
+      let result;
+      try {
+        result = await response.json();
+      } catch {
+        if (response.status >= 500) throw new Error(`Visa Service or Control-Service is unavailable (HTTP ${response.status}).`);
+        throw new Error(`Log service returned a non-JSON response (HTTP ${response.status}).`);
+      }
       if (!response.ok) throw new Error(result.error || `HTTP ${response.status}`);
       if (!active) return;
       machines = retainSourceTails(result);
@@ -586,8 +592,8 @@
   });
   refreshButton?.addEventListener("click", () => { clearTimeout(timer); refresh(); });
   const wrapToggle = document.getElementById(controlRoom ? "adapter-log-wrap" : "machine-logs-wrap");
-  wrapToggle.checked = true;
-  grid.classList.remove("logs-nowrap");
+  wrapToggle.checked = false;
+  grid.classList.add("logs-nowrap");
   wrapToggle.addEventListener("change", () => grid.classList.toggle("logs-nowrap", !wrapToggle.checked));
   if (controlRoom) {
     document.getElementById("adapter-log-add").addEventListener("click", addAdapterColumn);

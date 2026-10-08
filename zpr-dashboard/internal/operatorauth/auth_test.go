@@ -123,7 +123,7 @@ func begin(t *testing.T, a *Auth, f *providerFixture) (string, *http.Cookie) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if u.Query().Get("code_challenge_method") != "S256" || u.Query().Get("scope") != "openid" {
+	if u.Query().Get("code_challenge_method") != "S256" || !slicesEqual(strings.Fields(u.Query().Get("scope")), []string{"openid", "profile", "email"}) {
 		t.Fatal("missing PKCE/OpenID scope")
 	}
 	f.nonce, f.challenge = u.Query().Get("nonce"), u.Query().Get("code_challenge")
@@ -144,6 +144,7 @@ func callback(a *Auth, state string, cookie *http.Cookie) *httptest.ResponseReco
 func TestOIDCLoginGrantsCSRFLogoutAndExpiry(t *testing.T) {
 	t.Setenv("ZPR_SIMULATOR_URL", "http://127.0.0.1:1")
 	f := newProvider(t)
+	f.claims = map[string]any{"name": "Alice Operator", "email": "alice@example.test", "email_verified": true}
 	config := testConfig(f)
 	a, err := newAuth(context.Background(), config, "test-secret", f.server.Client())
 	if err != nil {
@@ -177,7 +178,7 @@ func TestOIDCLoginGrantsCSRFLogoutAndExpiry(t *testing.T) {
 	r := authRequest("GET", "/api/enrollment/v1/catalog")
 	r.AddCookie(cookie)
 	id, csrf, err := a.Session(r)
-	if err != nil || id.Subject != "admin-123" || csrf == "" || !slicesEqual(id.Permissions, []string{"read", "create"}) {
+	if err != nil || id.Subject != "admin-123" || id.DisplayName != "Alice Operator" || id.Email != "alice@example.test" || csrf == "" || !slicesEqual(id.Permissions, []string{"read", "create"}) {
 		t.Fatalf("session/grants: %+v %v", id, err)
 	}
 	if _, err := a.Authorize(r, "production", "read"); err != nil {
@@ -227,10 +228,21 @@ func TestOIDCLoginGrantsCSRFLogoutAndExpiry(t *testing.T) {
 	if _, err := a.Authorize(r, "production", "create"); err == nil {
 		t.Fatal("logout did not invalidate session")
 	}
+	f.claims = map[string]any{"email": "unverified@example.test", "email_verified": false}
 	state, browser = begin(t, a, f)
 	w = callback(a, state, browser)
 	if w.Code != 303 {
 		t.Fatal(w.Body.String())
+	}
+	profileRequest := authRequest(http.MethodGet, "/api/operator/profile")
+	for _, item := range w.Result().Cookies() {
+		if item.Name == a.cookie {
+			profileRequest.AddCookie(item)
+		}
+	}
+	profile, _, err := a.Session(profileRequest)
+	if err != nil || profile.Email != "" || profile.DisplayName != "" {
+		t.Fatalf("unverified profile claims were exposed: %+v err=%v", profile, err)
 	}
 	a.now = func() time.Time { return time.Now().Add(11 * time.Minute) }
 	expired := authRequest("GET", "/api/enrollment/v1/catalog")
@@ -261,6 +273,25 @@ func TestOIDCApplicationsUseDistinctCookieNamespaces(t *testing.T) {
 	defer simulator.Close()
 	if controlRoom.cookie == simulator.cookie || controlRoom.flow == simulator.flow {
 		t.Fatal("applications sharing a hostname must use distinct session and login-flow cookies")
+	}
+}
+
+func TestOIDCProviderErrorReturnsToRetryableSignInWithoutReflectingDetails(t *testing.T) {
+	f := newProvider(t)
+	a, err := newAuth(context.Background(), testConfig(f), "test-secret", f.server.Client())
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer a.Close()
+	state, browser := begin(t, a, f)
+	request := authRequest(http.MethodGet, "/auth/operator/callback?state="+url.QueryEscape(state)+"&error=access_denied&error_description=private-provider-detail")
+	request.Header.Del("Origin")
+	request.AddCookie(browser)
+	response := httptest.NewRecorder()
+	a.ServeHTTP(response, request)
+	if response.Code != http.StatusSeeOther || response.Header().Get("Location") != "/?operator_login=failed" ||
+		strings.Contains(response.Body.String(), "private-provider-detail") || len(a.sessions) != 0 {
+		t.Fatalf("provider error did not safely return to retry: status=%d location=%q body=%q", response.Code, response.Header().Get("Location"), response.Body.String())
 	}
 }
 
@@ -304,7 +335,9 @@ func TestOIDCRejectsInvalidTokenIdentityAndUnavailableProvider(t *testing.T) {
 			}
 			w := callback(a, state, browser)
 			f.fail = false
-			if w.Code < 400 || len(a.sessions) != 0 || strings.Contains(w.Body.String(), "private") {
+			location := w.Header().Get("Location")
+			if w.Code != http.StatusSeeOther || (!strings.Contains(location, "operator_login=failed") && !strings.Contains(location, "operator_login=denied")) ||
+				len(a.sessions) != 0 || strings.Contains(w.Body.String(), "private") {
 				t.Fatalf("invalid identity accepted/leaked: %d", w.Code)
 			}
 		})
@@ -315,7 +348,7 @@ func TestOIDCRejectsInvalidTokenIdentityAndUnavailableProvider(t *testing.T) {
 		t.Fatal(err)
 	}
 	state, browser := begin(t, a, f)
-	if w := callback(a, state, browser); w.Code != 401 {
+	if w := callback(a, state, browser); w.Code != http.StatusSeeOther {
 		t.Fatal("untrusted token signature accepted")
 	}
 }

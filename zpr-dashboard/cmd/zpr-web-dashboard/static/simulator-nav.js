@@ -8,6 +8,86 @@
 
   const pageKey = (url) => new URL(url, location.href).pathname;
   const dispatchPageEvent = (name, path) => document.dispatchEvent(new CustomEvent(name, { detail: { path } }));
+  const setActiveOrganization = (organization) => {
+    const status = document.querySelector(".main-content > .topbar .topbar-status");
+    if (!status) return;
+    let badge = status.querySelector(".simulator-active-organization");
+    if (!badge) {
+      badge = document.createElement("span");
+      badge.className = "simulator-active-organization";
+      badge.setAttribute("aria-label", "Active organization");
+      status.append(badge);
+    }
+    badge.textContent = organization?.name || organization?.id || "Organization unavailable";
+    badge.hidden = !organization;
+  };
+  const refreshActiveOrganization = async () => {
+    try {
+      const response = await fetch("/api/simulator/organizations", { cache: "no-store" });
+      if (!response.ok) throw new Error(`HTTP ${response.status}`);
+      const data = await response.json();
+      setActiveOrganization((data.organizations || []).find((item) => item.id === data.active_id));
+    } catch {
+      setActiveOrganization(null);
+    }
+  };
+  let operatorLoginScriptLoading;
+  const mountOperatorLogin = () => {
+    const topbar = document.querySelector(".main-content > .topbar");
+    if (!topbar) return;
+    let widget = topbar.querySelector(".simulator-operator-login");
+    if (!widget) {
+      widget = document.createElement("div");
+      widget.className = "operator-login simulator-operator-login";
+      widget.dataset.operatorApplication = "simulator";
+      widget.setAttribute("aria-label", "Simulator operator login");
+      const status = document.createElement("span");
+      status.id = "operator-login-status";
+      status.setAttribute("role", "status");
+      status.setAttribute("aria-live", "polite");
+      status.textContent = "Checking operator login";
+      const login = document.createElement("form");
+      login.id = "operator-login-form";
+      login.method = "post";
+      login.action = "/auth/operator/login";
+      login.hidden = true;
+      const signIn = document.createElement("button");
+      signIn.className = "button";
+      signIn.type = "submit";
+      signIn.textContent = "Sign in";
+      login.append(signIn);
+      const signOut = document.createElement("button");
+      signOut.id = "operator-logout";
+      signOut.className = "button button-quiet";
+      signOut.type = "button";
+      signOut.textContent = "Sign out";
+      signOut.hidden = true;
+      widget.append(status, login, signOut);
+      topbar.append(widget);
+      const scope = document.createElement("p");
+      scope.id = "operator-scope";
+      scope.className = "simulator-operator-scope";
+      scope.hidden = true;
+      topbar.after(scope);
+    }
+    if (window.initializeOperatorLogin) {
+      window.initializeOperatorLogin();
+      return;
+    }
+    if (!operatorLoginScriptLoading) {
+      operatorLoginScriptLoading = new Promise((resolve, reject) => {
+        const script = document.createElement("script");
+        script.src = "/operator-login.js?v=5";
+        script.addEventListener("load", resolve, { once: true });
+        script.addEventListener("error", reject, { once: true });
+        document.head.append(script);
+      });
+    }
+    operatorLoginScriptLoading.then(() => window.initializeOperatorLogin?.()).catch(() => {
+      const status = document.getElementById("operator-login-status");
+      if (status) status.textContent = "Operator login UI unavailable";
+    });
+  };
   const syncNavigation = () => {
     const nav = document.querySelector(".primary-nav");
     if (!nav) return;
@@ -43,9 +123,10 @@
       sourceLink.className = "nav-link";
       sourceLink.dataset.simulatorNav = "";
       sourceLink.href = "/trusted-source.html";
-      sourceLink.textContent = "Trusted source";
+      sourceLink.textContent = "Trusted Sources";
       nav.insertBefore(sourceLink, nav.querySelector('a[href="/activity.html"]'));
     }
+    sourceLink.textContent = "Trusted Sources";
     for (const path of ["/organizations.html", "/scenarios.html", "/trusted-source.html", "/activity.html", "/machine-logs.html"]) {
       const link = nav.querySelector(`a[href="${path}"]`);
       if (link) nav.append(link);
@@ -53,7 +134,11 @@
     nav.querySelectorAll("a[data-simulator-nav]").forEach((link) => {
       link.classList.toggle("active", pageKey(link.href) === currentPath);
     });
+    void refreshActiveOrganization();
+    mountOperatorLogin();
   };
+
+  window.addEventListener("simulator:organization-context", (event) => setActiveOrganization(event.detail));
 
   const fetchPage = async (url) => {
     const key = pageKey(url);

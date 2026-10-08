@@ -44,12 +44,7 @@ func handleSimulatorAssistantStatus(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	assistant := newClaudeAssistant()
-	status := map[string]any{"ready": assistant != nil, "models": []string{}}
-	if assistant != nil {
-		status["model"] = assistant.model
-		status["models"] = assistantModels(assistant.model)
-	}
-	writeSimulatorJSON(w, status)
+	writeSimulatorJSON(w, assistantStatus(assistant))
 }
 
 func simulatorDesignAssistantHandler(assistant *claudeAssistant) http.HandlerFunc {
@@ -58,7 +53,7 @@ func simulatorDesignAssistantHandler(assistant *claudeAssistant) http.HandlerFun
 			return
 		}
 		if assistant == nil {
-			writeWorkspaceError(w, http.StatusServiceUnavailable, "Configure ANTHROPIC_API_KEY to enable Claude.")
+			writeWorkspaceError(w, http.StatusServiceUnavailable, "No assistant key is available to this service. Run scripts/configure-assistant.sh, then retry.")
 			return
 		}
 		var request simulatorDesignAssistantRequest

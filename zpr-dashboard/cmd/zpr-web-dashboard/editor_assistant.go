@@ -78,6 +78,8 @@ func assistantStatus(assistant *claudeAssistant) map[string]any {
 	if assistant != nil {
 		status["model"] = assistant.model
 		status["models"] = assistantModels(assistant.model)
+	} else {
+		status["message"] = "No assistant key is available to this service. Run scripts/configure-assistant.sh, then check the assistant again."
 	}
 	return status
 }
@@ -88,7 +90,7 @@ func serveEditorAssistant(w http.ResponseWriter, r *http.Request, assistant *cla
 		return
 	}
 	if assistant == nil {
-		writePolicyError(w, http.StatusServiceUnavailable, "Configure ANTHROPIC_API_KEY to enable Claude.")
+		writePolicyError(w, http.StatusServiceUnavailable, "No assistant key is available to this service. Run scripts/configure-assistant.sh, then retry.")
 		return
 	}
 	var request assistantRequest

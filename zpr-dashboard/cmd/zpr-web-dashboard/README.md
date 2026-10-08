@@ -329,7 +329,7 @@ gateway. The editor uses Control Room APIs only and does not depend on Simulator
 The Policy editor is the blueprint for every source editor. Gateways, ZPR
 Config, the Simulator directory (LDIF) editor and the Simulator scenario editor
 are built on the shared `editor-page.js` core (`window.ZPREditorPage`), which
-provides the identity row (name, version label and modified dot), the **File…**
+provides the identity row (name, History dropdown and modified dot), the **File…**
 menu, the history menu, syntax highlighting, the gutter and the status line.
 Editor pages have no kind label and no idle or "Select a…" placeholder text;
 status appears only after an action. The Simulator directory and scenario
@@ -338,10 +338,23 @@ editors open as full pages rather than modal dialogs; scenario **Save**,
 **Close** live in its File menu, and the form/raw toggle sits beside Find &
 Replace. All editors share the policy editor's gutter geometry (line height,
 marker column and padding). Each editor toolbar places **Analyze** and
-**Format** immediately after **File…**, with search and history utilities on
-the right. Analyze is orange while the current source still needs
+**Format** immediately after **File…**, with search utilities on the right.
+History sits beside the file name in every editor; revision information stays
+inside that dropdown rather than in a separate version label. Blank names show
+**Untitled**, which is a reserved placeholder and cannot be saved as a name.
+Analyze is orange while the current source still needs
 analysis, green after success and red after errors; Format uses the policy
 editor's green ready style.
+
+Source-line errors appear only in the gutter, not as duplicate messages below
+the editor. Hover a marker to read its diagnostic; clicking selects the source
+line. Policy markers also open diagnostic details. Service/configuration
+failures without a valid source line remain visible below the editor. The
+editor frame has no separator or extra top padding above its controls. New
+ZPR Config has no name box above Browse; Save asks for a name for an unnamed
+draft (cancel submits nothing). Imported filenames supply a draft name, except
+the reserved Untitled placeholder. The ZPR Config source area stretches to the
+same bottom margin as Policy, and long documents scroll inside the editor.
 
 Every editor with Find and Replace (policy, assertion, gateway, ZPR Config,
 raw scenario source and directory LDIF) has a **Wrap** checkbox. Wrapping is

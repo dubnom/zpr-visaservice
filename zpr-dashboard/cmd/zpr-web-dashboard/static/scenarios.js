@@ -225,7 +225,7 @@ function setScenarioEditorStatus(message, state = "") {
 
 function renderScenarioIdentity() {
   const artifact = scenarioEditorArtifact;
-  const name = document.getElementById("scenario-editor-name").value.trim() || artifact?.content?.name || "New scenario";
+  const name = document.getElementById("scenario-editor-name").value.trim();
   let label = "New · unsaved";
   if (artifact) {
     const published = artifact.published_revision === artifact.revision ? "published"
@@ -418,7 +418,7 @@ function newScenarioTemplate() {
     id: "new-scenario",
     organization_id: scenarioEditorOrganization,
     folder: "",
-    name: "New scenario",
+    name: "",
     description: "Describe the behavior this scenario exercises.",
     steps: [{ action: "delay", timeout_seconds: 1 }],
     cleanup: [],
@@ -481,7 +481,10 @@ async function refreshScenarioRevisions() {
 async function readScenarioEditorSource() {
   let scenario;
   try { scenario = await window.readScenarioSourceEditor(); }
-  catch (error) { throw new Error(`Scenario must be valid JSON or YAML: ${error.message}`); }
+  catch (error) {
+    if (error.sourceDiagnostic) throw error;
+    throw new Error(`Scenario must be valid JSON or YAML: ${error.message}`);
+  }
   if (!scenario || typeof scenario !== "object" || Array.isArray(scenario)) throw new Error("Scenario JSON must be an object.");
   if (scenario.organization_id && scenario.organization_id !== scenarioEditorOrganization) throw new Error("Scenario organization_id must match the selected organization.");
   if (scenarioEditorArtifact && scenario.id !== scenarioEditorArtifact.id) throw new Error("The existing scenario ID cannot be changed.");
@@ -491,6 +494,7 @@ async function readScenarioEditorSource() {
 
 async function saveScenarioDraft() {
   const scenario = scenarioEditorJsonDirty ? await readScenarioEditorSource() : readScenarioEditorForm();
+  if (!scenarioEditorPage.isNamed(scenario.name)) throw new Error("Enter a scenario name other than Untitled before saving.");
   const summary = scenarioEditorSummary || (scenarioEditorArtifact ? "Updated scenario draft" : "Initial version");
   const creating = !scenarioEditorArtifact;
   const path = creating
@@ -619,7 +623,8 @@ document.getElementById("scenario-editor-dialog").addEventListener("change", (ev
   }
 });
 document.getElementById("scenario-editor-advanced").addEventListener("toggle", (event) => {
-  if (event.currentTarget.open) return;
+  const advanced = event.currentTarget;
+  if (advanced.open) return;
   (async () => {
   try {
     const scenario = await readScenarioEditorSource();
@@ -629,8 +634,8 @@ document.getElementById("scenario-editor-advanced").addEventListener("toggle", (
     if (scenarioEditorDirty) setScenarioEditorStatus("Raw source loaded into the form. Save to create a new draft revision.");
     updateScenarioEditorActions();
   } catch (error) {
-    event.currentTarget.open = true;
-    setScenarioEditorStatus(error.message || "Scenario source must be valid.", "error");
+    advanced.open = true;
+    setScenarioEditorStatus(error.sourceDiagnostic ? "" : error.message || "Scenario source must be valid.", "error");
   }
   })();
 });
@@ -661,7 +666,7 @@ document.getElementById("scenario-editor-dialog").addEventListener("click", (eve
 });
 document.getElementById("scenario-editor-save").addEventListener("click", async () => {
   try { await saveScenarioDraft(); }
-  catch (error) { setScenarioEditorStatus(error.message || "Could not save scenario.", "error"); }
+  catch (error) { setScenarioEditorStatus(error.sourceDiagnostic ? "" : error.message || "Could not save scenario.", "error"); }
 });
 document.getElementById("scenario-editor-publish").addEventListener("click", async () => {
   try { await publishScenarioRevision(); }
@@ -682,6 +687,7 @@ document.getElementById("scenario-editor-form").addEventListener("submit", (even
   event.preventDefault();
   closeScenarioEditorPage();
 });
+document.getElementById("scenario-editor-form").noValidate = true;
 document.getElementById("scenario-editor-dialog").addEventListener("keydown", (event) => {
   if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === "s") {
     event.preventDefault();

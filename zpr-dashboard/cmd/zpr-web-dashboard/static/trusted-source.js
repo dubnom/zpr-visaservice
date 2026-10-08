@@ -26,7 +26,8 @@
 
     initialize() {
       this.ready = true;
-      this.view = "people";
+      this.simulatorPage = !this.closest("#page-sources");
+      this.view = this.simulatorPage ? "graph" : "people";
       this.sorts = { people: { key: "identity", direction: 1 }, groups: { key: "group", direction: 1 }, attributes: { key: "attribute", direction: 1 } };
       this.expandedPeople = new Set();
       this.innerHTML = `
@@ -38,8 +39,9 @@
           <div class="trusted-source-summary" data-source-summary role="status"></div>
           <div class="trusted-source-browser-tools">
             <div class="trusted-source-tabs" role="tablist" aria-label="Trusted source records">
+              ${this.simulatorPage ? `<button type="button" role="tab" data-source-tab="graph" aria-selected="true">LDAP graph</button>` : ""}
               <button type="button" role="tab" data-source-tab="tree" aria-selected="false" tabindex="-1">LDAP tree</button>
-              <button type="button" role="tab" data-source-tab="people" aria-selected="true">People</button>
+              <button type="button" role="tab" data-source-tab="people" aria-selected="${this.simulatorPage ? "false" : "true"}"${this.simulatorPage ? ' tabindex="-1"' : ""}>People</button>
               <button type="button" role="tab" data-source-tab="groups" aria-selected="false" tabindex="-1">Groups</button>
               <button type="button" role="tab" data-source-tab="attributes" aria-selected="false" tabindex="-1">Attributes</button>
             </div>
@@ -125,15 +127,50 @@
       const results = this.querySelector("[data-source-results]");
       const message = this.querySelector("[data-source-message]");
       results.replaceChildren();
-      if (this.view === "tree") this.renderTree(results, directory, query);
+      if (this.view === "graph") this.renderGraph(results, directory);
+      else if (this.view === "tree") this.renderTree(results, directory, query);
       else if (this.view === "people") this.renderPeople(results, directory, query);
       else if (this.view === "groups") this.renderGroups(results, directory, query);
       else this.renderAttributes(results, directory, query);
-      const count = this.view === "tree" ? results.querySelectorAll("[data-ldap-entry]").length : results.querySelectorAll("tbody tr[data-source-row]").length;
+      const count = this.view === "graph" ? results.querySelectorAll(".ldap-graph-node").length : this.view === "tree" ? results.querySelectorAll("[data-ldap-entry]").length : results.querySelectorAll("tbody tr[data-source-row]").length;
       this.querySelector("[data-source-count]").textContent = `${count} ${this.view}`;
       message.textContent = count ? "" : `No ${this.view} match this filter.`;
       message.hidden = count > 0;
       results.hidden = false;
+    }
+
+    renderGraph(results, directory) {
+      if (!customElements.get("ldap-org-graph")) {
+        results.append(element("p", "trusted-source-message", "LDAP graph is unavailable; use the People, Groups, or Attributes tabs."));
+        return;
+      }
+      const values = (attributes, names) => {
+        for (const name of names) {
+          const entry = Object.entries(attributes || {}).find(([key]) => key.toLowerCase() === name.toLowerCase());
+          if (entry?.[1]?.[0]) return entry[1][0];
+        }
+        return "";
+      };
+      const people = (directory.people || []).map((uid) => {
+        const attributes = directory.person_attributes?.[uid] || {};
+        return {
+          uid,
+          name: values(attributes, ["displayname", "cn"]) || uid,
+          title: values(attributes, ["title"]),
+          department: values(attributes, ["ou", "departmentnumber", "department"]),
+          location: values(attributes, ["l", "locality"]),
+        };
+      });
+      const departmentNames = [...new Set(people.map((person) => person.department).filter(Boolean))].sort((left, right) => left.localeCompare(right));
+      const graph = element("ldap-org-graph");
+      graph.setAttribute("aria-label", "Trusted source LDAP graph");
+      graph.directory = {
+        base_dn: this.snapshot.base_dn || "Directory",
+        departments: departmentNames.map((name) => ({ name })),
+        people,
+        groups: Object.entries(directory.groups || {}).map(([name, members]) => ({ name, members })),
+      };
+      results.append(graph);
     }
 
     renderTree(results, directory, query) {

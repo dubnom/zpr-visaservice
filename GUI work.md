@@ -34,13 +34,38 @@
 - [x] Use the Policy editor as the blueprint for every editor: shared `editor-page.js` core for Gateways, ZPR Config, Simulator directory and scenario editors.
 - [x] Remove the centred editor kind label and idle/"Select a…" placeholder text from all editor pages.
 - [x] Open the Simulator directory and scenario editors as full pages instead of modal dialogs.
-- [ ] Wrap should start as disabled for all editors.
-- [ ] AI Assistants are saying the don't have an API key, but I set one.  What happened?
+- [x] Keep source-line errors in the gutter only; retain service/configuration failures below the editor.
+- [x] Remove extra top spacing and the separator above editor controls.
+- [x] Remove the naming placeholder and New/unsaved label from the ZPR Config editor.
+- [x] Remove the ZPR Config name box above Browse; ask for a name on Save.
+- [x] Match the ZPR Config editor bottom margin to Policy and keep long documents scrolling inside the editor.
+- [x] Place History beside the file name in every editor, removing separate version labels.
+- [x] Display Untitled for unnamed drafts and prevent saving Untitled as a name.
+- [x] Wrap should start as disabled for all editors; a user's explicit saved Wrap choice is remembered.
+- [x] Fix assistant key setup: persist the key securely for both Control-Service and Simulator, use it for readiness and requests, and explain the supported setup command.
 
 ### All log viewers
-- [x] Word wrap checkbox and default to enabled.
+- [x] Word wrap checkbox defaults to disabled; users can enable it per view.
 - [x] Change "Word wrap" to "Wrap"
-- [ ] Wrap should start as disabled for all log viewers.
+- [x] Wrap should start as disabled for all log viewers.
+
+### Logging in and out
+- [x] If there isn't a properly authenticated and permissioned user don't show anything other than a sign in box with similar styling can colors as the app. Failure to sign in should show the error and allow retries.
+
+### JavaScript reuse refactoring
+- [ ] Extract a shared editor controller for Policy, Assertions, ZPR Config, Gateways, Simulator Directory and Scenario, with explicit adapters for load, analyze, save and domain-specific rendering.
+- [ ] Consolidate editor title/Untitled handling, reserved-name validation, History placement, dirty state, discard confirmation and Save keyboard shortcuts.
+- [ ] Consolidate Analyze state, source-owned diagnostics, diagnostic clearing and stale-response rejection without mixing service/configuration errors with source-line errors.
+- [ ] Consolidate JavaScript editor-frame setup and responsive viewport sizing so individual editors do not duplicate layout wiring.
+- [ ] Extract a shared AI assistant shell and conversation controller from `editor-assistant.js` and `design-assistant.js`: messages, model/token controls, usage counters, pending/error states and collapse behavior.
+- [ ] Share assistant stale-context/proposal protection while keeping undoable text Insert and validated structured Apply as separate adapters; never save, publish, activate or run automatically.
+- [ ] Extract shared page polling/lifecycle helpers: start/stop on navigation, prevent overlapping requests, abort obsolete requests, reject late responses and retain last-good data with explicit errors.
+- [ ] Extract shared sortable-table helpers for column definitions, comparators, accessible sort headings and empty states, starting with Control Room tables and Simulator Activity.
+- [ ] Consolidate safe text rendering and timestamp/protocol display helpers without changing API contracts or losing integer precision.
+- [ ] Consolidate HTTP/JSON error handling and cancellation; keep authentication, same-origin CSRF handling and mutation retry/uncertainty policies explicit.
+- [ ] Reuse the existing shared `machine-logs.js` viewer rather than introducing separate Control Room and Simulator log implementations.
+- [ ] Add shared JavaScript component contract tests and desktop/tablet integration coverage for each migration, preserving intended behavior and accessibility.
+- [ ] Verify Control Room works with Simulator unavailable; shared JavaScript must receive independent production endpoints/configuration and must not introduce Simulator data, authorization or runtime dependencies.
 
 ## Control Room
 
@@ -78,7 +103,16 @@
 - [x] The right-click (and legend) behavior should simply highlight, no dimming of the other stuff.
 - [x] What happened to showing visa routes? Routes now draw as thick glowing blue lines with moving dashes and pulsing routed components; right-click only toggles routes (count badge click opens the visa list).
 - [x] Link forward and reverse visas for display: paired on the Visas page (PAIR column) and in Map visa lists.
-- [ ] Make clicking away from the component info dialog close the window.
+- [x] Make clicking away from the component info dialog close the window.
+
+### World map
+- [x] `worldmap.svg` is available in the `zpr-dashboard` folder.
+- [x] Plan for a geographic network view using node latitude/longitude:
+  1. Confirm a validated latitude/longitude contract in organization profiles; never infer coordinates from location names.
+  2. Inspect the SVG projection/viewBox and license, then project coordinates into that exact map space with explicit bounds and a clear no-coordinate state.
+  3. Add a separate Geography view/layer so the existing topology graph remains available and authoritative for links and runtime state.
+  4. Reuse node details/selection, make markers keyboard accessible, and handle duplicate/co-located nodes without obscuring them.
+  5. Test projection bounds, missing/invalid coordinates, mobile sizing, and two organizations before asking for deployment approval.
 
 ### Navigation
 - [x] Keep Map as the main view and group Adapters, Actors, Services, Visas, Denials, and DNS under horizontal Status tabs with counts.
@@ -90,7 +124,7 @@
 - [x] Move "Gateways" and "ZPR Config" under editor. Rename editor 'Policy".
 - [x] If there is a subtle way of adding a title to the policy/gateways/... group, call it 'Configuration'.
 - [x] Move Log Manager to below Adapter Logs. Make the arrow more visible.
-- [ ] Clicking on "Log Manager" should switch focus to the Log Manger.
+- [x] Clicking on "Log Manager" should switch focus to the Log Manger.
 
 ### Service logs and statistics
 - [x] Add one Control Room diagnostics view for logs and current stats from every ZPR node and every configured trusted/required service used by Visa Service.
@@ -142,7 +176,7 @@
 - [x] The adapter picker doesn't need a header or anything else. It just needs the pull down to start in an open position.
 - [x] If there aren't any adapters (none available) than show a message that says this/
 - [x] Move the picker to be under the adapter title when opened.
-- [ ] The error message "Unexpected token 'C', "Client sen"... is not valid JSON" makes no sense when the real issue is the Visa service being unavailable.
+- [x] The error message "Unexpected token 'C', "Client sen"... is not valid JSON" makes no sense when the real issue is the Visa service being unavailable.
 
 ### ZPR Config
 - [x] Adopt the same look-and-feel as the policy editor. If ZPR config is limited to one file, there is no need for Browse, or some of the File commands. Refresh Attributes is also not relevant.
@@ -168,7 +202,7 @@
 - [x] There can be multiple gateways, so lets use the exact same editor paradigm, colors, and behavior as the polic editor.
 
 ### Header
-- [ ] I'm signed in as my user name/email, not the hidden identity key.
+- [x] Show the verified OIDC display name or verified email in the signed-in UI; keep the subject as an internal authorization/audit key.
 
 
 ## Simulator
@@ -208,12 +242,13 @@ Running" orange should be a non-indicated color like blue.
 - [x] Place Refresh beside the Stream status in the banner.
 
 ### Organizations
-- [x] Move Activate/Active control next to the organization name in the identity/policy/services pane.
-- [x] Show a shortform list of scenarios in the organization identity area; links open scenarios without activating the organization.
-- [ ] I want to be able to add new organizations with the help of the AI Assistant. This is a bigger project, so make a plan first and get my approval.
-
+  Proposed plan for approval: keep AI proposal-only; gather requirements and selected template/profile context; validate a schema-bound organization draft without writing files; show a diff for identity, directory, policy, services and runtime; require a separate `organization.create` authorization and explicit confirmation; create through an audited, idempotent backend API with revision/conflict handling; test invalid proposals, stale context, cancellation, duplicate IDs and lost responses. No organization creation has been wired.
+ [x] "Activate organization" and "Active" use very different styles. Make them look similar (other than the color).
 ### Workers
 - [x] Add the wordwrap button like the Adapter Logs.
+
+### Header
+- [x] Put the active org name in every header, but get rid of "Active organization" and the short name.
 
 ## Provisioning
 
@@ -265,6 +300,10 @@ Machine/adapter enrollment is tracked in [Provisioning plan](../Provisioning%20p
   tests and the packaged loopback wizard. Local build is ad-hoc signed only.
 - [x] Build/test the native Mac adapter without privileged network changes;
   harden Mac tunnel/address validation with unprivileged regression tests.
+- [x] Explicitly approved isolated Mac utun lifecycle smoke: fresh kernel-assigned
+  interfaces, MTU 1400 then 1280, exact IPv6 /128 aliases, duplicate add/removal
+  and repeated teardown. Existing interfaces/default routes/DNS match before/
+  after; no running organization changed. Not packet-flow or credential certification.
 - [ ] Certify Mac Finder/Terminal/browser permissions, Developer ID signing/
-  notarization and supported OS versions; complete privileged tunnel/traffic
+  notarization and supported OS versions; complete full privileged traffic/lifecycle
   tests, credential issuance and secure adapter-runtime handoff.

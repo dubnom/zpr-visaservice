@@ -54,8 +54,8 @@ function renderOrganizationDetails(organization) {
   const control = document.createElement("div");
   control.dataset.organizationActivationControl = "true";
   const activationAction = isActive
-    ? '<span class="scenario-state completed">Active</span>'
-    : `<button type="button" data-activate-organization="${organizationEscape(organization.id)}" ${activationBusy ? "disabled" : ""}>${activationBusy ? `${operationLabel} · ${organizationEscape(activationProgress)}` : "Activate organization"}</button>`;
+    ? '<span class="organization-active-status">Active</span>'
+    : `<button class="organization-activate" type="button" data-activate-organization="${organizationEscape(organization.id)}" ${activationBusy ? "disabled" : ""}>${activationBusy ? `${operationLabel} · ${organizationEscape(activationProgress)}` : "Activate organization"}</button>`;
   control.innerHTML = `${activationAction}<button class="quiet" type="button" data-restore-base="${organizationEscape(organization.id)}" ${activationBusy ? "disabled" : ""}>Restore base state</button>`;
   heading.append(control);
   document.getElementById("organization-active-name").textContent = organizationCatalog.find((item) => item.id === activeOrganizationID)?.name || "Unavailable";
@@ -258,6 +258,9 @@ async function refreshOrganizations() {
       const nextOrganizations = data.organizations || [];
       const nextActiveID = data.active_id || "";
       organizationActivationStatus = data.activation || { state: "idle" };
+      window.dispatchEvent(new CustomEvent("simulator:organization-context", {
+        detail: nextOrganizations.find((item) => item.id === nextActiveID) || null,
+      }));
       const signature = JSON.stringify({ active_id: nextActiveID, organizations: nextOrganizations, activation: organizationActivationStatus });
       if (signature !== organizationCatalogSignature) {
         organizationCatalog = nextOrganizations;

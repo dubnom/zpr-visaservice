@@ -13,6 +13,17 @@ if [[ -z "$ANTHROPIC_API_KEY" ]]; then
     exit 1
 fi
 
+runtime_dir="${0:A:h:h:h:h}/.local-runtime"
+assistant_dir="$runtime_dir/dashboard-stack/assistant"
+umask 077
+mkdir -m 700 -p "$assistant_dir"
+chmod 700 "$assistant_dir"
+key_file="$assistant_dir/api-key"
+temporary_file=$(mktemp "$assistant_dir/api-key.XXXXXX")
+trap 'unset ANTHROPIC_API_KEY; rm -f -- "$temporary_file"' EXIT
+printf '%s\n' "$ANTHROPIC_API_KEY" > "$temporary_file"
+chmod 600 "$temporary_file"
+mv -f -- "$temporary_file" "$key_file"
+export ZPR_ANTHROPIC_API_KEY_FILE="$key_file"
 export ANTHROPIC_API_KEY
-trap 'unset ANTHROPIC_API_KEY' EXIT
 sh "${0:A:h}/dashboard-stack.sh" restart-control-service

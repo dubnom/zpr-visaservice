@@ -108,9 +108,11 @@ type pendingLogin struct {
 }
 
 type session struct {
-	grant   Grant
-	csrf    string
-	expires time.Time
+	grant       Grant
+	displayName string
+	email       string
+	csrf        string
+	expires     time.Time
 }
 
 // Identity is derived only from a verified OIDC token and operator grants,
@@ -118,6 +120,8 @@ type session struct {
 type Identity struct {
 	Issuer        string   `json:"issuer"`
 	Subject       string   `json:"subject"`
+	DisplayName   string   `json:"display_name,omitempty"`
+	Email         string   `json:"email,omitempty"`
 	Organizations []string `json:"organizations"`
 	Permissions   []string `json:"permissions"`
 }
@@ -199,7 +203,7 @@ func newAuth(ctx context.Context, config Config, clientSecret string, client *ht
 	return &Auth{config: config, origin: callback.Scheme + "://" + callback.Host,
 		cookie: "__Host-zpr-operator-" + suffix, flow: "__Host-zpr-login-" + suffix,
 		oauth: oauth2.Config{ClientID: config.ClientID, ClientSecret: clientSecret, RedirectURL: config.RedirectURL,
-			Endpoint: endpoint, Scopes: []string{oidc.ScopeOpenID}},
+			Endpoint: endpoint, Scopes: []string{oidc.ScopeOpenID, "profile", "email"}},
 		verifier: provider.Verifier(&oidc.Config{ClientID: config.ClientID, SupportedSigningAlgs: []string{oidc.RS256, oidc.ES256}}),
 		client:   client, pending: map[string]pendingLogin{}, sessions: map[string]session{}, now: time.Now}, nil
 }
@@ -222,6 +226,15 @@ func (a *Auth) cleanup(now time.Time) {
 func deny(w http.ResponseWriter, status int) {
 	log.Printf("Operator authentication denied (HTTP %d)", status)
 	http.Error(w, "Operator authentication unavailable or denied.", status)
+}
+
+func (a *Auth) loginFailure(w http.ResponseWriter, r *http.Request, result string) {
+	if result != "denied" {
+		result = "failed"
+	}
+	setCookie(w, a.flow, "", -1)
+	w.Header().Set("Cache-Control", "no-store")
+	http.Redirect(w, r, "/?operator_login="+result, http.StatusSeeOther)
 }
 
 func setCookie(w http.ResponseWriter, name, value string, age int) {
@@ -282,13 +295,13 @@ func (a *Auth) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		}
 		query := r.URL.Query()
 		for key, values := range query {
-			if (key != "state" && key != "code") || len(values) != 1 {
+			if (key != "state" && key != "code" && key != "error" && key != "error_description") || len(values) != 1 {
 				deny(w, http.StatusBadRequest)
 				return
 			}
 		}
-		state, code := query.Get("state"), query.Get("code")
-		if len(state) != 26 || code == "" || len(code) > 4096 {
+		state, code, providerError := query.Get("state"), query.Get("code"), query.Get("error")
+		if len(state) != 26 || code == "" && providerError == "" || len(code) > 4096 || len(query.Get("error_description")) > 2048 {
 			deny(w, http.StatusBadRequest)
 			return
 		}
@@ -307,30 +320,39 @@ func (a *Auth) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		setCookie(w, a.flow, "", -1)
+		if providerError != "" {
+			log.Print("Operator identity provider rejected sign-in")
+			a.loginFailure(w, r, "failed")
+			return
+		}
 		ctx, cancel := context.WithTimeout(oidc.ClientContext(r.Context(), a.client), 20*time.Second)
 		defer cancel()
 		token, err := a.oauth.Exchange(ctx, code, oauth2.VerifierOption(flow.verifier))
 		if err != nil {
-			deny(w, http.StatusUnauthorized)
+			log.Printf("Operator authorization-code exchange failed: %T", err)
+			a.loginFailure(w, r, "failed")
 			return
 		}
 		raw, ok := token.Extra("id_token").(string)
 		if !ok || len(raw) > 16384 {
-			deny(w, http.StatusUnauthorized)
+			a.loginFailure(w, r, "failed")
 			return
 		}
 		id, err := a.verifier.Verify(ctx, raw)
 		if err != nil || id.Nonce != flow.nonce || !text(id.Subject) || id.IssuedAt.IsZero() ||
 			id.IssuedAt.After(a.now()) || !id.IssuedAt.Before(id.Expiry) {
-			deny(w, http.StatusUnauthorized)
+			a.loginFailure(w, r, "failed")
 			return
 		}
 		var claims struct {
 			AuthorizedParty string `json:"azp"`
+			Name            string `json:"name"`
+			Email           string `json:"email"`
+			EmailVerified   bool   `json:"email_verified"`
 		}
 		if id.Claims(&claims) != nil || (claims.AuthorizedParty != "" && claims.AuthorizedParty != a.config.ClientID) ||
 			(len(id.Audience) > 1 && claims.AuthorizedParty != a.config.ClientID) {
-			deny(w, http.StatusUnauthorized)
+			a.loginFailure(w, r, "failed")
 			return
 		}
 		var grant *Grant
@@ -341,7 +363,8 @@ func (a *Auth) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			}
 		}
 		if grant == nil {
-			deny(w, http.StatusForbidden)
+			log.Print("Operator sign-in denied: identity has no configured grant")
+			a.loginFailure(w, r, "denied")
 			return
 		}
 		now := a.now()
@@ -352,6 +375,14 @@ func (a *Auth) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		if !now.Before(expiry) {
 			deny(w, http.StatusUnauthorized)
 			return
+		}
+		displayName := claims.Name
+		if !text(displayName) {
+			displayName = ""
+		}
+		email := ""
+		if claims.EmailVerified && text(claims.Email) && strings.Contains(claims.Email, "@") {
+			email = claims.Email
 		}
 		a.mu.Lock()
 		a.cleanup(now)
@@ -364,7 +395,7 @@ func (a *Auth) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			delete(a.sessions, old.Value)
 		}
 		key := rand.Text()
-		a.sessions[key] = session{grant: *grant, csrf: rand.Text(), expires: expiry}
+		a.sessions[key] = session{grant: *grant, displayName: displayName, email: email, csrf: rand.Text(), expires: expiry}
 		a.mu.Unlock()
 		setCookie(w, a.cookie, key, int(time.Until(expiry).Seconds()))
 		http.Redirect(w, r, "/", http.StatusSeeOther)
@@ -419,11 +450,12 @@ func (a *Auth) Session(r *http.Request) (Identity, string, error) {
 	if err != nil {
 		return Identity{}, "", err
 	}
-	return identity(item.grant), item.csrf, nil
+	return identity(item.grant, item.displayName, item.email), item.csrf, nil
 }
 
-func identity(grant Grant) Identity {
+func identity(grant Grant, displayName, email string) Identity {
 	return Identity{Issuer: grant.Issuer, Subject: grant.Subject,
+		DisplayName: displayName, Email: email,
 		Organizations: slices.Clone(grant.Organizations), Permissions: slices.Clone(grant.Permissions)}
 }
 
@@ -447,5 +479,5 @@ func (a *Auth) Authorize(r *http.Request, organization, permission string) (Iden
 		(permission != "" && !slices.Contains(item.grant.Permissions, permission)) {
 		return Identity{}, errors.New("operator scope denied")
 	}
-	return identity(item.grant), nil
+	return identity(item.grant, item.displayName, item.email), nil
 }

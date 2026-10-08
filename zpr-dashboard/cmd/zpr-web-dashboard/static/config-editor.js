@@ -3,11 +3,12 @@
   if (!source) return;
   const byId = (id) => document.getElementById(id);
   const page = window.ZPREditorPage;
-  const name = byId("zpr-config-name");
+  let draftName = "";
   const status = byId("zpr-config-status");
   const records = byId("zpr-config-records");
   const analyze = byId("zpr-config-validate");
   const format = byId("zpr-config-format");
+  page.fitSourceToViewport(source.closest(".config-source-editor"));
   let record = null;
   let catalog;
   let revisions = [];
@@ -17,7 +18,6 @@
   let sourceVersion = 0;
   const surface = page.createSourceSurface({
     source, highlight: byId("zpr-config-highlight"), gutter: byId("zpr-config-gutter"), language: "toml", label: "Configuration",
-    onMarker: (diagnostic) => setStatus(diagnostic.message, "error"),
   });
   const picker = page.createPicker({ toggle: byId("zpr-config-picker-toggle"), pane: byId("zpr-config-catalog-pane"), close: byId("zpr-config-picker-close"), focus: records });
   page.createMenu({ root: byId("zpr-config-actions"), toggle: byId("zpr-config-files-toggle"), menu: byId("zpr-config-file-menu") });
@@ -41,12 +41,11 @@
     byId("zpr-config-discard").disabled = pending || !dirty();
   }
   function renderIdentity() {
-    name.hidden = Boolean(record);
     page.renderIdentity(
       { title: byId("zpr-config-title"), version: byId("zpr-config-revision-label"), modified: byId("zpr-config-modified") },
       {
-        name: record?.name || "",
-        label: record ? `Version ${browsingRevision || record.current_revision}` : "New · unsaved",
+        name: record?.name || draftName,
+        label: record ? `Version ${browsingRevision || record.current_revision}` : "",
         tooltip: record ? `ZPR Config/${record.name}` : "",
         dirty: dirty(),
       },
@@ -124,7 +123,7 @@
       if (version !== sourceVersion) return;
       surface.setDiagnostic(error.line ? { line: error.line, message: error.message } : null);
       if (error.details?.valid === false) analyze.dataset.analysisState = "error";
-      setStatus(error.line ? `Line ${error.line}: ${error.message}` : error.message, "error");
+      setStatus(surface.diagnostic ? "" : error.message, "error");
     }
     finally { pending = false; document.querySelectorAll("[data-config-command]").forEach((button) => { button.disabled = false; }); renderEditor(); }
   };
@@ -136,7 +135,7 @@
     record = await request(`/api/policy/records/${encodeURIComponent(id)}`);
     clearAnalysis();
     browsingRevision = 0;
-    name.value = record.name;
+    draftName = record.name;
     source.value = saved = record.content;
     revisions = await request(`/api/policy/records/${encodeURIComponent(id)}/revisions`);
     setStatus("");
@@ -159,7 +158,7 @@
     revisions = [];
     browsingRevision = 0;
     clearAnalysis();
-    name.value = "";
+    draftName = "";
     source.value = saved = "";
     setStatus("");
     renderHistory();
@@ -184,7 +183,15 @@
     setStatus("");
   }));
   byId("zpr-config-save").addEventListener("click", () => run(async () => {
-    if (!record && !name.value.trim()) { name.hidden = false; name.focus(); throw new Error("Enter a configuration name."); }
+    if (!record && !page.isNamed(draftName)) {
+      const entered = prompt("Configuration name", "");
+      if (entered === null) return;
+      if (!page.isNamed(entered)) throw new Error("Enter a configuration name other than Untitled.");
+      if (entered.trim().length > 160) throw new Error("Configuration names must be at most 160 characters.");
+      draftName = entered.trim();
+      renderIdentity();
+    }
+    if (!page.isNamed(record?.name || draftName)) throw new Error("Rename the configuration before saving; Untitled is reserved for unnamed drafts.");
     const current = await request("/api/policy");
     if (catalog && current.organization_id !== catalog.organization_id) throw new Error("Organization changed; reload before saving.");
     if (record) {
@@ -193,7 +200,7 @@
     } else {
       let category = current.categories.find((entry) => entry.path === "ZPR Config");
       if (!category) category = await post("/api/policy/categories", { name: "ZPR Config" });
-      record = await post("/api/policy/records", { category_id: category.id, name: name.value.trim(), kind: "configuration", content_type: "text/vnd.zpr.zplc", metadata: { language: "toml" }, content: source.value, summary: "Initial ZPLC configuration draft" });
+      record = await post("/api/policy/records", { category_id: category.id, name: draftName, kind: "configuration", content_type: "text/vnd.zpr.zplc", metadata: { language: "toml" }, content: source.value, summary: "Initial ZPLC configuration draft" });
       await loadRecord(record.id);
     }
     await loadCatalog();
@@ -204,12 +211,11 @@
     if (record) void run(() => loadRecord(record.id));
     else reset();
   });
-  name.addEventListener("input", renderIdentity);
   source.addEventListener("input", () => { clearAnalysis(); setStatus(""); renderEditor(); });
   byId("zpr-config-new").addEventListener("click", () => {
     if (dirty() && !confirm("Discard unsaved configuration changes?")) return;
     reset();
-    name.focus();
+    source.focus();
   });
   const fileInput = byId("zpr-config-file-input");
   byId("zpr-config-open").addEventListener("click", () => fileInput.click());
@@ -226,11 +232,11 @@
     }
     reset();
     source.value = content;
-    name.value = file.name.replace(/\.(toml|zplc)$/i, "");
+    draftName = file.name.replace(/\.(toml|zplc)$/i, "");
     renderEditor();
   });
   byId("zpr-config-download").addEventListener("click", () => {
-    const baseName = (record?.name || name.value).trim().replace(/[^a-zA-Z0-9._-]+/g, "-") || "zpr-config";
+    const baseName = (record?.name || draftName).trim().replace(/[^a-zA-Z0-9._-]+/g, "-") || "zpr-config";
     const url = URL.createObjectURL(new Blob([source.value], { type: "application/toml;charset=utf-8" }));
     const anchor = document.createElement("a");
     anchor.href = url;

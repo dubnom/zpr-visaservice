@@ -1719,7 +1719,7 @@ function updateAssistantControls() {
   byId("assistant-usage").textContent = `Session: ${formatNumber(policy.assistantUsage.input)} input · ${formatNumber(policy.assistantUsage.output)} output tokens`;
   byId("assistant-question").placeholder = assertions ? "Ask about these assertions" : "Ask about this policy";
   byId("assistant-disclosure").textContent = !policy.assistantReady
-    ? "Claude is off. Set ANTHROPIC_API_KEY on the server to enable it."
+    ? "Claude is not configured for this service. Run scripts/configure-assistant.sh, then refresh the assistant status."
     : `Submitting sends the current ${assertions ? "assertions" : "policy"}, configured attribute catalog, and chat history to Anthropic. Suggestions are not applied automatically; use Insert on a suggested block to add it as an unsaved edit.`;
 }
 
@@ -2099,8 +2099,8 @@ function renderPolicyIdentity(record = state.policy.record, version = state.poli
   const modified = byId("policy-modified-indicator");
   draftName.hidden = !record?.isDraft;
   if (!record) {
-    title.textContent = "";
-    title.hidden = true;
+    title.textContent = "Untitled";
+    title.hidden = false;
     title.removeAttribute("title");
     byId("policy-revision-label").textContent = "";
     modified.hidden = true;
@@ -2109,13 +2109,14 @@ function renderPolicyIdentity(record = state.policy.record, version = state.poli
   const categoryID = record.kind === "assertions" ? organizationPolicyCategoryID(state.policy) : record.category_id;
   const category = state.policy.categories.find((item) => item.id === categoryID);
   const path = [category?.path, record.name].filter(Boolean).join("/");
-  title.hidden = Boolean(record.isDraft);
+  title.hidden = false;
   const draftNameValue = record.isDraft ? record.name : "";
   if (draftName.value !== draftNameValue) draftName.value = draftNameValue;
-  title.textContent = record.isDraft ? "" : record.name;
+  title.textContent = record.name.trim() || "Untitled";
   title.title = path;
-  byId("policy-revision-label").textContent = record.isDraft ? "New · unsaved" : `Version ${version} [${hash ? hash.slice(0, 12) : "hash unavailable"}]`;
-  byId("policy-revision-label").title = record.isDraft ? "In-memory policy draft" : `${path} · ${hash || "hash unavailable"}`;
+  byId("policy-revision-label").textContent = "";
+  byId("policy-revision-label").hidden = true;
+  byId("policy-revision-label").removeAttribute("title");
   modified.hidden = record.kind === "assertions"
     ? !window.policyAssertionDirty?.()
     : record.isDraft || byId("policy-source").value === state.policy.savedSource;
@@ -2678,6 +2679,7 @@ async function createPolicyRecord(event) {
   const name = byId("record-name").value.trim();
   const categoryID = byId("record-category").value;
   try {
+    if (!window.ZPREditorPage.isNamed(name)) throw new Error("Enter a record name other than Untitled.");
     const saveAs = state.policy.saveAs;
     const content = saveAs ? byId("policy-source").value : "";
     if (saveAs && state.policy.evaluatedSource !== content) {
@@ -3278,6 +3280,12 @@ function policySetCheckResult(valid, diagnostics, source, warnings = []) {
 async function savePolicy() {
   const source = byId("policy-source").value;
   if (state.policy.testPending || state.policy.saveTestPending || state.policy.checkPending) return;
+  if (!window.ZPREditorPage.isNamed(state.policy.record?.name)) {
+    byId("policy-test-status").textContent = "Enter a policy name other than Untitled before saving.";
+    byId("policy-test-status").dataset.state = "error";
+    byId("policy-test-status").hidden = false;
+    return;
+  }
   if (state.policy.evaluatedSource !== source) await checkPolicy(source);
   if (source !== byId("policy-source").value) return;
   const test = await runPolicyTestBeforeSave(source);
@@ -3314,8 +3322,8 @@ async function appendPolicyVersion(summary) {
   const submittedSource = byId("policy-source").value;
   const isDraft = Boolean(policy.record.isDraft);
   const recordName = policy.record.name.trim();
-  if (isDraft && !recordName) {
-    byId("version-error").textContent = "Enter a policy name before saving.";
+  if (!window.ZPREditorPage.isNamed(recordName)) {
+    byId("version-error").textContent = "Enter a policy name other than Untitled before saving.";
     return;
   }
   if (policy.evaluatedSource !== submittedSource) {
@@ -4004,6 +4012,8 @@ document.addEventListener("keydown", (event) => {
   const next = event.key === "Home" ? 0 : event.key === "End" ? items.length - 1 : (current + (event.key === "ArrowDown" ? 1 : -1) + items.length) % items.length;
   items[next].focus();
 });
+window.ZPREditorPage.placeHistory(byId("policy-history-menu"));
+window.ZPREditorPage.fitSourceToViewport(byId("policy-code-editor"));
 byId("policy-history-menu").querySelector("summary").addEventListener("click", (event) => {
   if (!state.policy.record) event.preventDefault();
 });
@@ -4355,6 +4365,13 @@ document.addEventListener("click", (event) => {
   else if (target.dataset.inspectService) openInspector("service", target.dataset.inspectService);
   else if (target.dataset.inspectSource) openInspector("source", target.dataset.inspectSource);
   else openInspector("link", target.dataset.inspectLink);
+});
+
+document.addEventListener("pointerdown", (event) => {
+  const inspector = byId("component-inspector");
+  if (!inspector.classList.contains("open") || inspector.contains(event.target) ||
+      event.target.closest("[data-inspect-actor], [data-inspect-service], [data-inspect-source], [data-inspect-link]")) return;
+  closeInspector();
 });
 
 document.addEventListener("keydown", (event) => {

@@ -19,7 +19,6 @@
   const message = byId("gateway-draft-message");
   const surface = page.createSourceSurface({
     source, highlight, gutter, language: "json", label: "Gateway draft",
-    onMarker: (diagnostic) => setMessage(diagnostic.message, "error"),
   });
   const historyMenu = page.createHistory({
     menu: byId("gateway-history-menu"), list: byId("gateway-history"), count: byId("gateway-history-count"),
@@ -235,7 +234,7 @@
     if (parsed.error) {
       surface.setDiagnostic({ line: parsed.line, message: parsed.error });
       analyzeButton.dataset.analysisState = "error";
-      setMessage(parsed.error, "error");
+      setMessage(surface.diagnostic ? "" : parsed.error, "error");
       renderSource();
       return;
     }
@@ -270,7 +269,7 @@
     if (parsed.error) {
       surface.setDiagnostic({ line: parsed.line, message: parsed.error });
       analyzeButton.dataset.analysisState = "error";
-      setMessage(parsed.error, "error");
+      setMessage(surface.diagnostic ? "" : parsed.error, "error");
       renderSource();
       return;
     }
@@ -285,6 +284,10 @@
 
   async function saveDraft() {
     if (saveButton.disabled) return;
+    if (!page.isNamed(state.selected?.service_name)) {
+      setMessage("The installed gateway needs a name other than Untitled before its draft can be saved.", "error");
+      return;
+    }
     const parsed = parseSource();
     if (parsed.error) return;
     state.busy = true;

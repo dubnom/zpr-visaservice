@@ -47,7 +47,7 @@ func TestLoginDocumentRetainsNativePostOriginButCallbackDoesNotLeakReferrer(t *t
 	security.tls = tlsSecurity.tls
 	handler := securityHeaders(security.protect(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) { w.WriteHeader(204) })))
 	for _, test := range []struct{ path, policy string }{
-		{"/", "same-origin"}, {"/index.html", "same-origin"},
+		{"/", "same-origin"}, {"/index.html", "same-origin"}, {"/scenarios.html", "same-origin"}, {"/trusted-source.html", "same-origin"},
 		{"/auth/operator/callback?state=private&code=private", "no-referrer"}, {"/api/snapshot", "no-referrer"},
 	} {
 		r := httptest.NewRequest("GET", "https://localhost:8787"+test.path, nil)

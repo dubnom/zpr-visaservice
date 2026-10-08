@@ -12,6 +12,7 @@
   let fileVersion = 0;
   let sourceFormat = "json";
   let lastScenario = null;
+  let lastError = null;
 
   function sourceFormatName() {
     return sourceFormat === "json" ? "JSON" : "YAML";
@@ -61,6 +62,8 @@
 
   async function check({ quiet = false } = {}) {
     surface.setDiagnostic(null);
+    lastError = null;
+    setScenarioEditorStatus("");
     const version = ++fileVersion;
     const original = source.value;
     const organization = scenarioEditorOrganization;
@@ -83,16 +86,24 @@
     } catch (error) {
       if (version !== fileVersion || organization !== scenarioEditorOrganization) return null;
       setAnalysisState("error");
-      if (!quiet) setScenarioEditorStatus(error.message, "error");
+      error.sourceDiagnostic = Boolean(surface.diagnostic);
+      lastError = error;
+      setScenarioEditorStatus(surface.diagnostic ? "" : error.message, "error");
       render();
       return null;
     }
   }
 
   window.readScenarioSourceEditor = async () => {
-    if (sourceFormat === "json") return JSON.parse(source.value);
+    if (sourceFormat === "json") {
+      try { return JSON.parse(source.value); }
+      catch {
+        await check({ quiet: true });
+        throw lastError || new Error("Scenario JSON must analyze cleanly before saving.");
+      }
+    }
     const result = await check({ quiet: true });
-    if (!result?.scenario) throw new Error(`Scenario ${sourceFormatName()} must analyze cleanly before saving.`);
+    if (!result?.scenario) throw lastError || new Error(`Scenario ${sourceFormatName()} must analyze cleanly before saving.`);
     return result.scenario;
   };
 
@@ -142,7 +153,6 @@
     if (nextFormat === sourceFormat) return;
     const result = await check({ quiet: true });
     if (!result) {
-      setScenarioEditorStatus(`Analyze the current ${sourceFormatName()} before switching formats.`, "error");
       return;
     }
     sourceFormat = nextFormat;

@@ -219,7 +219,7 @@
   }
 })();
 
-// Word wrap: one checkbox per editor toolbar, on by default. Line gutters keep one row per
+// Word wrap: one checkbox per editor toolbar, off by default. Line gutters keep one row per
 // logical line, so their rows are resized to match each line's wrapped height.
 (() => {
   const gutterIDs = { "policy-source": "policy-test-gutter-content", "assertion-source": "assertion-result-lines" };
@@ -288,7 +288,7 @@
     const checkbox = label.querySelector("input");
     let stored = null;
     try { stored = localStorage.getItem(storageKey); } catch { /* storage unavailable */ }
-    checkbox.checked = stored !== "false";
+    checkbox.checked = stored === "true";
     host.before(label);
     const applyAll = () => { for (const source of sources) apply(source, checkbox.checked); };
     checkbox.addEventListener("change", () => {

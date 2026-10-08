@@ -196,8 +196,12 @@ func runSimulator(listen string) error {
 	mux.HandleFunc("GET /api/simulator/adapter-logs", handleSimulatorAdapterLogs)
 	mux.Handle("GET /api/simulator/trusted-source", simulatorTrustedSourceHandler(readAssertionLDAP))
 	mux.HandleFunc("GET /api/simulator/assistant/status", handleSimulatorAssistantStatus)
-	mux.HandleFunc("POST /api/simulator/design-assistant", simulatorDesignAssistantHandler(newClaudeAssistant()))
-	mux.HandleFunc("POST /api/simulator/editor-assistant", simulatorEditorAssistantHandler(newClaudeAssistant()))
+	mux.HandleFunc("POST /api/simulator/design-assistant", func(w http.ResponseWriter, r *http.Request) {
+		simulatorDesignAssistantHandler(newClaudeAssistant())(w, r)
+	})
+	mux.HandleFunc("POST /api/simulator/editor-assistant", func(w http.ResponseWriter, r *http.Request) {
+		simulatorEditorAssistantHandler(newClaudeAssistant())(w, r)
+	})
 	mux.HandleFunc("GET /api/simulator/organizations", handleSimulatorOrganizations)
 	mux.HandleFunc("GET /api/simulator/activation-log", handleSimulatorActivationLog)
 	mux.HandleFunc("GET /api/simulator/organizations/{organization}/directory/revisions/{revision}", handleWorkspaceDirectoryRevisionGet)
@@ -232,13 +236,16 @@ func runSimulator(listen string) error {
 	staticServer := revalidateStatic(http.FileServer(http.FS(staticRoot)))
 	mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path == "/" {
-			http.Redirect(w, r, "/organizations.html", http.StatusFound)
+			target := "/organizations.html"
+			if result := r.URL.Query().Get("operator_login"); result == "failed" || result == "denied" {
+				target += "?operator_login=" + result
+			}
+			http.Redirect(w, r, target, http.StatusFound)
 			return
 		}
 		staticServer.ServeHTTP(w, r)
 	})
 	handler := simulatorAPIProxy(security.auth, currentSimulatorOrganization, mux)
-	handler = simulatorLoginGate(security.auth, handler)
 	server := &http.Server{Addr: listen, Handler: securityHeaders(security.protect(handler)), ReadHeaderTimeout: 5 * time.Second, TLSConfig: security.tls}
 	controlCert := strings.TrimSpace(os.Getenv("SIMULATOR_CONTROL_TLS_CERT"))
 	controlKey := strings.TrimSpace(os.Getenv("SIMULATOR_CONTROL_TLS_KEY"))

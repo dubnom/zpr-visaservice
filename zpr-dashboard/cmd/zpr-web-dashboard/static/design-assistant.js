@@ -66,7 +66,8 @@ window.mountSimulatorDesignAssistant = function mountSimulatorDesignAssistant(co
       state.ready = Boolean(data.ready);
       for (const name of data.models || []) model.add(new Option(name, name));
       if (data.model) model.value = data.model;
-      status.title = state.ready ? `Using ${data.model}` : "Set ANTHROPIC_API_KEY on the simulator server to enable Claude.";
+      statusError = state.ready ? "" : data.message || "Run scripts/configure-assistant.sh on the host, then check the assistant again.";
+      status.title = state.ready ? `Using ${data.model}` : statusError;
     })
     .catch((error) => {
       state.ready = false;

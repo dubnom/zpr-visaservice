@@ -14,8 +14,8 @@
     <link rel="stylesheet" href="/diagnostics.css?v=1">
     <link rel="stylesheet" href="/gateways.css?v=3">
     <link rel="stylesheet" href="/provisioning.css?v=3">
-    <link rel="stylesheet" href="/editor-assistant.css?v=2">
-    <script src="/sidebar.js?v=35" defer></script>
+    <link rel="stylesheet" href="/editor-assistant.css?v=4">
+    <script src="/sidebar.js?v=37" defer></script>
     <script src="/trusted-source.js?v=4" defer></script>
     <script src="/policy-record-icons.js?v=1" defer></script>
   </head>
@@ -151,7 +151,7 @@
 
         <section class="page-view" id="page-adapter-logs" data-page="adapter-logs" aria-label="Adapter Logs">
           <section class="section-block">
-            <div class="adapter-logs-heading"><h2>Adapter Logs</h2><div class="machine-logs-toolbar adapter-logs-toolbar"><button id="machine-logs-pause" class="button button-quiet" type="button" aria-label="Pause log updates" aria-pressed="false">Pause</button><div class="machine-log-type-toggle" role="group" aria-label="Log type"><button type="button" data-adapter-log-type="adapter" aria-pressed="true">Adapter logs</button><button type="button" data-adapter-log-type="controller" aria-pressed="false">Controller logs</button></div><button id="adapter-log-all" class="button" type="button" aria-pressed="false">Show all adapters</button><label class="adapter-running-filter"><input id="adapter-log-running" type="checkbox"><span>Running only</span></label><label class="editor-wrap-toggle log-wrap-toggle"><input id="adapter-log-wrap" type="checkbox" checked> Wrap</label><button id="adapter-log-add" class="adapter-column-add" type="button" aria-label="Add adapter panel" title="Add adapter panel">+</button></div></div>
+            <div class="adapter-logs-heading"><h2>Adapter Logs</h2><div class="machine-logs-toolbar adapter-logs-toolbar"><button id="machine-logs-pause" class="button button-quiet" type="button" aria-label="Pause log updates" aria-pressed="false">Pause</button><div class="machine-log-type-toggle" role="group" aria-label="Log type"><button type="button" data-adapter-log-type="adapter" aria-pressed="true">Adapter logs</button><button type="button" data-adapter-log-type="controller" aria-pressed="false">Controller logs</button></div><button id="adapter-log-all" class="button" type="button" aria-pressed="false">Show all adapters</button><label class="adapter-running-filter"><input id="adapter-log-running" type="checkbox"><span>Running only</span></label><label class="editor-wrap-toggle log-wrap-toggle"><input id="adapter-log-wrap" type="checkbox"> Wrap</label><button id="adapter-log-add" class="adapter-column-add" type="button" aria-label="Add adapter panel" title="Add adapter panel">+</button></div></div>
             <div class="adapter-logs-meta"><span id="machine-logs-status">Connecting</span><span>Updated <time id="machine-logs-time">-</time></span></div>
             <div id="machine-logs-error" class="machine-logs-error" role="alert" hidden></div>
             <div id="machine-logs-grid" class="machine-logs-grid adapter-log-columns" data-site="control-room" data-endpoint="/api/adapter-logs"></div>
@@ -428,7 +428,7 @@ each group attribute "gidNumber" &gt;= 1000;</pre></details></div><aside class="
           <section class="section-block policy-page editor-page config-editor-panel" data-config-editor>
             <div class="policy-toolbar">
               <div class="policy-identity" aria-label="Selected configuration">
-                <strong id="zpr-config-title" hidden></strong><input id="zpr-config-name" type="text" maxlength="160" autocomplete="off" aria-label="Configuration name" placeholder="Name this configuration"><span id="zpr-config-revision-label"></span><span id="zpr-config-modified" class="policy-modified-indicator" role="status" hidden>Modified</span>
+                <strong id="zpr-config-title">Untitled</strong><span id="zpr-config-revision-label" hidden></span><span id="zpr-config-modified" class="policy-modified-indicator" role="status" hidden>Modified</span>
               </div>
             </div>
             <div class="editor-page-workbench">
@@ -554,12 +554,12 @@ each group attribute "gidNumber" &gt;= 1000;</pre></details></div><aside class="
     </div>
     <script src="/vendor/pluralize.js?v=8.0.0" defer></script>
     <script src="/operator-request.js?v=1" defer></script>
-    <script src="/app.js?v=105" defer></script>
+    <script src="/editor-page.js?v=3" defer></script>
+    <script src="/app.js?v=106" defer></script>
     <script src="/machine-logs.js?v=21" defer></script>
-    <script src="/assertions.js?v=11" defer></script>
-    <script src="/editor-page.js?v=1" defer></script>
-    <script src="/config-editor.js?v=8" defer></script>
-    <script src="/gateways.js?v=4" defer></script>
+    <script src="/assertions.js?v=12" defer></script>
+    <script src="/config-editor.js?v=10" defer></script>
+    <script src="/gateways.js?v=6" defer></script>
     <script src="/provisioning-contract.js?v=2" defer></script>
     <script src="/provisioning.js?v=3" defer></script>
     <script src="/provisioning-registry.js?v=3" defer></script>

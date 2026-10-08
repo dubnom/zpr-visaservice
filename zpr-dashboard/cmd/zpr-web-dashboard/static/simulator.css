@@ -100,6 +100,9 @@ pre { margin: 0; padding: 14px; min-height: 110px; max-height: 180px; overflow: 
 .main-content { margin-left: 230px; padding: 0 39px 70px; }.main-content .topbar { position: sticky; inset: auto; width: auto; height: auto; margin: 0 -39px; padding: 0 39px; min-height: 62px; background: #f3f6f2ed; border-bottom: 1px solid var(--line); color: var(--ink); display: flex; flex-direction: row; align-items: center; justify-content: space-between; z-index: 4; }.topbar-status { display: flex; align-items: center; gap: 18px; }.connection-state { display: flex; align-items: center; gap: 10px; }.state-lamp { width: 9px; height: 9px; border-radius: 50%; background: var(--lime); box-shadow: 0 0 0 4px #e6f1bc; }.connection-state strong { display: block; font-size: 13px; }.connection-state small { display: block; color: var(--muted); font: 10px var(--mono); margin-top: 3px; }.uptime-status { display: grid; gap: 3px; }.uptime-status span { color: var(--muted); font: 9px var(--mono); letter-spacing: .1em; }.uptime-status strong { font: 12px var(--mono); }.main-content .top-actions { margin: 0; display: flex; flex-direction: row; }.main-content .hero { margin-top: 26px; }
 .main-content .topbar { gap: 12px; }
 .main-content .topbar > .topbar-status { min-width: 0; flex: 1 1 auto; }
+.simulator-active-organization { min-width: 0; margin-left: auto; padding: 5px 8px; border: 1px solid var(--line); border-radius: 4px; color: var(--ink-soft); font: 10px var(--mono); overflow-wrap: anywhere; }
+.simulator-active-organization[hidden] { display: none; }
+.main-content .topbar:has(#organization-active-name) .uptime-status, .main-content .topbar .scenario-org-select { display: none; }
 .main-content .topbar .connection-state > div { min-width: 0; }
 .main-content .topbar .connection-state strong, .main-content .topbar .connection-state small { overflow-wrap: anywhere; }
 .main-content .topbar > .machine-logs-actions { flex: 0 0 auto; margin-left: auto; }
@@ -107,6 +110,12 @@ pre { margin: 0; padding: 14px; min-height: 110px; max-height: 180px; overflow: 
 .uptime-status small { display: block; margin-top: 3px; color: var(--muted); font: 9px var(--mono); }
 .metrics-grid { grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 10px; margin: 18px 0 26px; }
 .activity-stream-actions { display: flex; align-items: center; gap: 12px; }
+.simulator-operator-login { display: flex; align-items: center; justify-content: flex-end; flex-wrap: wrap; gap: 6px; min-width: 0; }
+.simulator-operator-login [role="status"] { max-width: 210px; color: var(--muted); font: 10px var(--mono); overflow-wrap: anywhere; }
+.simulator-operator-login form { margin: 0; }
+.simulator-operator-login button { min-height: 30px; padding: 5px 9px; }
+.simulator-operator-login [hidden], .simulator-operator-scope[hidden] { display: none; }
+.main-content > .simulator-operator-scope { margin: 7px 0 0 auto; max-width: 680px; color: var(--muted); font: 10px/1.45 var(--mono); overflow-wrap: anywhere; text-align: right; }
 .activity-stream-actions button { min-height: 32px; padding: 6px 10px; }
 .activity-table-section { min-width: 0; }
 .activity-table-section .section-head { margin-bottom: 8px; }
@@ -212,6 +221,9 @@ pre { margin: 0; padding: 14px; min-height: 110px; max-height: 180px; overflow: 
 .organization-directory-heading { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
 .organization-directory-heading h3 { min-width: 0; overflow-wrap: anywhere; }
 .organization-directory-heading button { flex: 0 0 auto; }
+.section-head [data-organization-activation-control] { display: flex; flex-wrap: wrap; align-items: center; gap: 7px; }
+.organization-activate, .organization-active-status { display: inline-flex; min-height: 34px; align-items: center; justify-content: center; padding: 7px 10px; border: 1px solid var(--teal); border-radius: 4px; font: 600 11px var(--mono); }
+.organization-active-status { background: #e6f1bc; border-color: #81a53d; color: #3e642f; }
 .organization-summary { display: flex; flex-wrap: wrap; align-items: center; gap: 9px; margin-bottom: 18px; color: var(--muted); font-size: 12px; }
 .organization-sections { display: grid; gap: 22px; }
 .organization-section { min-width: 0; border-top: 1px solid var(--line); padding-top: 12px; }

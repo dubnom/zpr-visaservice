@@ -910,17 +910,24 @@ flows and Linux/Windows builds remain separate regression gates.
 
 The separate `zpr-core` packet handler already has a native `utun` backend.
 On this Apple Silicon host, native `cargo test --locked -p ph` passes (246 library
-and 267 binary tests, one ignored in each runner); `cargo build --locked -p ph
+and 267 binary tests, two ignored in each runner); `cargo build --locked -p ph
 --bin ph` and non-networking help startup pass. Six new Mac-specific tests cover
 interface-name/unit bounds, pre-kernel prefix/MTU rejection, IPv6 masks,
 scoped/global address recognition and the single-queue restriction. Socket errors
 are checked before constructing an owned descriptor; address add/clear operations
-are serialized. No tunnel, route, DNS or running organization was changed.
+are serialized. Those unprivileged checks did not change networking.
 
-These are **unprivileged validation**, not packet-flow certification. Current
-high-level Mac address lifecycle is IPv6-only and single-queue. Privileged utun
-start/stop, MTU/address/route/DNS rollback, reconnect/sleep/wake, allowed/denied
-traffic, credential issuance/Keychain-to-runtime handoff and revocation remain
+The explicitly administrator-approved
+[isolated Mac smoke runner](../../zpr-core/integration-test/macos-utun-smoke.sh)
+now also passes on this host: kernel-assigned temporary utun creation, MTU 1400
+then 1280, exact IPv6 /128 aliases, duplicate add/remove and two teardown cycles.
+Cargo builds unprivileged; only the exact ignored test is elevated via cached
+sudo or the macOS administrator dialog. Before/after existing interface, IPv4/
+IPv6 default-route and DNS snapshots match; no running organization was changed.
+This is **interface lifecycle validation**, not packet-flow certification.
+Current high-level Mac address lifecycle is IPv6-only and single-queue. Full
+route/DNS rollback, reconnect/sleep/wake, allowed/denied traffic,
+credential issuance/Keychain-to-runtime handoff and revocation remain
 required. Strict Clippy is currently blocked by unrelated existing dependency
 lints and an existing capture-worker partial-write lint; these were not changed.
 See the [adapter platform plan](../../zpr-core/ADAPTER_PLATFORM_SUPPORT_PLAN.md).
@@ -1684,10 +1691,14 @@ import/download remains local and unsaved.
 
 The same Claude assistant is available in both modes and uses the current form
 or exact raw draft. Its disclosure explains what is sent to Anthropic; the
-server still requires `ANTHROPIC_API_KEY`. Applying a proposal updates only the
-unsaved editor. Responses/proposals for a changed draft or reset conversation
-cannot overwrite newer work. Save, Publish, and Run remain separate explicit
-operations.
+server still requires `ANTHROPIC_API_KEY`. Run
+`scripts/configure-assistant.sh` from an interactive terminal to store it in a
+0600 file under `.local-runtime/dashboard-stack/assistant/`; Control-Service is
+restarted to load it, while Simulator assistant requests read the protected
+file at request time. This avoids shell exports that disappear after a
+terminal closes. Applying a proposal updates only the unsaved editor.
+Responses/proposals for a changed draft or reset conversation cannot overwrite
+newer work. Save, Publish, and Run remain separate explicit operations.
 
 Rescan LDAP, Format, Discard, Evaluate & Test, Save, Save As, and Compile & Stage
 share a responsive control strip directly above the source editor. Evaluate &
@@ -1989,8 +2000,8 @@ Workers is read-only: its expandable device details show owner, posture,
 container/controller state, authenticated user and selected workload identities.
 The former Agents page redirects to Workers at `/machine-logs.html`, and the
 navigation has one Workers entry rather than separate Agents and Workload Logs.
-Word wrap is initially enabled and can be toggled for all windows, including
-maximized logs. Start/stop, login/logout and workload assignment are controlled
+Word wrap is initially disabled and can be enabled in editors and log viewers.
+Start/stop, login/logout and workload assignment are controlled
 by scenarios rather than page buttons. Selections are simulator control state
 and a workload can be selected on only one logged-in machine at a time. Login/logout
 and workload start/stop commands are queued by the simulator and executed by
@@ -2069,9 +2080,11 @@ manifest.
 The Simulator's Claude design assistant can review scenario drafts and
 organization profiles. It keeps `ANTHROPIC_API_KEY` server-side and only applies
 validated scenario or LDIF proposals to the open draft; saving and publishing
-remain explicit operator actions. Export `ANTHROPIC_API_KEY` before running
-`scripts/dashboard-stack.sh`; the script forwards it to the Simulator container
-and trusts only the Docker bridge gateway as its loopback proxy.
+remain explicit operator actions. `scripts/configure-assistant.sh` stores the
+key in a protected runtime file readable by both assistant services. Simulator
+status and requests check that file dynamically; the Control-Service is
+restarted by the setup command. The stack forwards only the key-file path to
+containers, not the key as a command-line argument.
 
 The reusable base contract lives in `.local-runtime/generic-zpr-base.json` and
 is validated separately by the installer.

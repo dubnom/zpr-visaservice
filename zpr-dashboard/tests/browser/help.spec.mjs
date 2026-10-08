@@ -18,6 +18,11 @@ test.beforeAll(async () => {
   server = createServer(async (request, response) => {
     try {
       const pathname = decodeURIComponent(new URL(request.url, "http://localhost").pathname);
+      if (pathname === "/auth/operator/config") {
+        response.writeHead(200, { "content-type": "application/json" });
+        response.end(JSON.stringify({ enabled: false }));
+        return;
+      }
       const filePath = resolve(staticRoot, `.${pathname}`);
       if (!filePath.startsWith(`${staticRoot}${sep}`)) {
         response.writeHead(403).end();
@@ -48,7 +53,7 @@ const simulatorPages = [
   { path: "/organizations.html", refreshId: "#organization-refresh", heading: "Organizations" },
   { path: "/scenarios.html", refreshId: "#scenario-refresh", heading: "Scenarios" },
   { path: "/machine-logs.html", refreshId: "#machine-logs-refresh", heading: "Workers" },
-  { path: "/trusted-source.html", heading: "Trusted source" },
+  { path: "/trusted-source.html", heading: "Trusted Sources" },
 ];
 
 for (const { path, refreshId, heading } of simulatorPages) {
@@ -102,4 +107,112 @@ test("organization Help explains profile separation and activation effects", asy
   await expect(dialog).toContainText("Great Lakes Instruments");
   await expect(dialog).toContainText("does not deploy network policy or reseed LDAP");
   await expect(dialog).toContainText("finish/cancel scenarios and log out users first");
+});
+
+test("Simulator headers show the active organization name on every page", async ({ page }) => {
+  await page.route("**/auth/operator/config", (route) => route.fulfill({ json: { enabled: false } }));
+  await page.route("**/api/simulator/organizations", (route) => route.fulfill({ json: {
+    active_id: "alpha", organizations: [{ id: "alpha", name: "Alpha Labs" }],
+  } }));
+  await page.goto(`${appURL}/organizations.html`);
+  const name = page.locator(".simulator-active-organization");
+  await expect(name).toHaveText("Alpha Labs");
+  await expect(page.locator("#organization-active-name")).toBeHidden();
+  await expect(page.locator("#organization-active-id")).toBeHidden();
+  await page.locator('.primary-nav a[href="/scenarios.html"]').click();
+  await expect(name).toHaveText("Alpha Labs");
+  await expect(page.locator(".scenario-org-select")).toBeHidden();
+  await page.locator('.primary-nav a[href="/activity.html"]').click();
+  await expect(name).toHaveText("Alpha Labs");
+  await page.locator('.primary-nav a[href="/machine-logs.html"]').click();
+  await expect(name).toHaveText("Alpha Labs");
+  await page.locator('.primary-nav a[href="/trusted-source.html"]').click();
+  await expect(name).toHaveText("Alpha Labs");
+});
+
+test("Active and Activate organization controls share visual geometry", async ({ page }) => {
+  await page.route("**/auth/operator/config", (route) => route.fulfill({ json: { enabled: false } }));
+  const profile = (id, name) => ({
+    id, name, description: `${name} profile`,
+    directory: { base_dn: `dc=${id},dc=test`, seed_mode: "ldif", departments: [], people: [], groups: [], attributes: [] },
+    runtime: { topology: "single-node", nodes: [] }, policies: [], services: [],
+  });
+  await page.route("**/api/simulator/organizations", (route) => route.fulfill({ json: {
+    active_id: "alpha", organizations: [profile("alpha", "Alpha Labs"), profile("beta", "Beta Labs")], activation: { state: "idle" },
+  } }));
+  await page.route("**/api/simulator/scenarios**", (route) => route.fulfill({ json: { scenarios: [] } }));
+  await page.goto(`${appURL}/organizations.html`);
+  const active = page.locator(".organization-active-status");
+  await expect(active).toHaveText("Active");
+  const measure = (element) => element.evaluate((node) => {
+    const style = getComputedStyle(node);
+    return {
+      height: node.getBoundingClientRect().height,
+      font: style.font,
+      radius: style.borderRadius,
+      padding: style.padding,
+      background: style.backgroundColor,
+    };
+  });
+  const activeStyle = await measure(active);
+  await page.locator('[data-organization-id="beta"]').click();
+  const activate = page.locator('[data-activate-organization="beta"]');
+  await expect(activate).toBeVisible();
+  const activateStyle = await measure(activate);
+  expect(activateStyle.height).toBe(activeStyle.height);
+  expect(activateStyle.font).toBe(activeStyle.font);
+  expect(activateStyle.radius).toBe(activeStyle.radius);
+  expect(activateStyle.padding).toBe(activeStyle.padding);
+  expect(activateStyle.background).not.toBe(activeStyle.background);
+});
+
+test("map inspector closes when pointer focus moves outside the panel", async ({ page }) => {
+  await page.route("**/auth/operator/config", (route) => route.fulfill({ json: { enabled: false } }));
+  await page.goto(`${appURL}/index.html#map`);
+  const inspector = page.locator("#component-inspector");
+  await inspector.evaluate((element) => {
+    element.classList.add("open");
+    element.setAttribute("aria-hidden", "false");
+  });
+  await expect(inspector).toHaveClass(/open/);
+  await page.locator(".status-banner").click({ position: { x: 8, y: 8 } });
+  await expect(inspector).not.toHaveClass(/open/);
+  await expect(inspector).toHaveAttribute("aria-hidden", "true");
+});
+
+test("Log Manager opens its reusable named window and focuses it", async ({ page }) => {
+  await page.addInitScript(() => {
+    window.__logManagerOpen = null;
+    window.open = (url, target) => {
+      const opened = { url, target, opener: window, focused: false, focus() { this.focused = true; } };
+      window.__logManagerOpen = opened;
+      return opened;
+    };
+  });
+  await page.goto(`${appURL}/index.html#map`);
+  await page.locator(".sidebar-external-link[data-reuse-window='zpr-log-manager']").evaluate((link) => link.click());
+  const opened = await page.evaluate(() => window.__logManagerOpen && ({
+    url: window.__logManagerOpen.url,
+    target: window.__logManagerOpen.target,
+    focused: window.__logManagerOpen.focused,
+    openerCleared: window.__logManagerOpen.opener === null,
+  }));
+  expect(opened).toEqual({
+    url: "http://127.0.0.1:8800/", target: "zpr-log-manager", focused: true, openerCleared: true,
+  });
+});
+
+test("login configuration failure hides the app and offers a retry", async ({ page }) => {
+  let checks = 0;
+  await page.route("**/auth/operator/config", (route) => {
+    checks++;
+    return route.fulfill({ status: 503, json: { error: "Operator login unavailable." } });
+  });
+  await page.goto(`${appURL}/index.html#map`);
+  await expect(page.locator("#operator-login-status")).toHaveText("Login configuration unavailable (HTTP 503).");
+  await expect(page.locator(".app-shell")).toHaveCSS("visibility", "hidden");
+  await expect(page.getByRole("button", { name: "Retry", exact: true })).toBeVisible();
+  await page.getByRole("button", { name: "Retry", exact: true }).click();
+  await expect.poll(() => checks).toBe(2);
+  await expect(page.locator("#operator-login-status")).toHaveText("Login configuration unavailable (HTTP 503).");
 });

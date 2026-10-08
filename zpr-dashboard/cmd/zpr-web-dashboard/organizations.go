@@ -602,13 +602,14 @@ func filterSimulatorOrganizationCatalog(organizations []simulatorOrganization, a
 	for _, organizationID := range allowedIDs {
 		allowed[organizationID] = true
 	}
+	allowAll := allowed["*"]
 	filtered := make([]simulatorOrganization, 0, len(organizations))
 	for _, organization := range organizations {
-		if allowed[organization.ID] {
+		if allowAll || allowed[organization.ID] {
 			filtered = append(filtered, organization)
 		}
 	}
-	if !allowed[activeID] {
+	if !allowAll && !allowed[activeID] {
 		return filtered, "", nil
 	}
 	return filtered, activeID, activation

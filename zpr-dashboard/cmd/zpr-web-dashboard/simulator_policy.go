@@ -144,27 +144,6 @@ func simulatorAPIProxy(auth operatorRequestAuthorizer, resolveOrganization simul
 	})
 }
 
-func simulatorLoginGate(auth *operatorauth.Auth, next http.Handler) http.Handler {
-	if auth == nil {
-		return next
-	}
-	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.URL.Path != "/" && !strings.HasSuffix(r.URL.Path, ".html") ||
-			(r.Method != http.MethodGet && r.Method != http.MethodHead) {
-			next.ServeHTTP(w, r)
-			return
-		}
-		if _, _, err := auth.Session(r); err == nil {
-			next.ServeHTTP(w, r)
-			return
-		}
-		w.Header().Set("Cache-Control", "no-store")
-		w.Header().Set("Content-Type", "text/html; charset=utf-8")
-		w.WriteHeader(http.StatusUnauthorized)
-		_, _ = w.Write([]byte("<!doctype html><html lang=\"en\"><meta charset=\"utf-8\"><meta name=\"viewport\" content=\"width=device-width,initial-scale=1\"><title>Simulator sign in</title><body><main><h1>Simulator sign in</h1><p>A named operator session is required.</p><form method=\"post\" action=\"/auth/operator/login\"><button type=\"submit\">Sign in</button></form></main></body></html>"))
-	})
-}
-
 func currentSimulatorOrganization(*http.Request) (string, error) {
 	manifest, err := readSimulatorManifest()
 	if err != nil {

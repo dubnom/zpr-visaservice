@@ -404,9 +404,10 @@
   }
 
   async function saveAssertionRecord() {
+    const recordName = selectedRecord.isDraft ? element("policy-draft-name").value : selectedRecord.name;
+    if (!window.ZPREditorPage.isNamed(recordName)) throw new Error("Enter an assertion set name other than Untitled before saving.");
     if (selectedRecord.isDraft) {
       const name = element("policy-draft-name").value.trim();
-      if (!name) throw new Error("Name this assertion set before saving.");
       const record = await request("/api/policy/records", {
         method: "POST", headers: { "Content-Type": "application/json" },
         body: JSON.stringify({

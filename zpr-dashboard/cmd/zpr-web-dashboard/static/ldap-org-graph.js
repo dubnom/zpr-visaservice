@@ -1,3 +1,6 @@
+(() => {
+if (customElements.get("ldap-org-graph")) return;
+
 class LDAPOrgGraph extends HTMLElement {
   constructor() {
     super();
@@ -299,3 +302,4 @@ class LDAPOrgGraph extends HTMLElement {
 }
 
 customElements.define("ldap-org-graph", LDAPOrgGraph);
+})();

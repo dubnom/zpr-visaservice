@@ -28,8 +28,8 @@ class ZPRPolicyBrowser extends HTMLElement {
         <section class="pb-detail" aria-label="Record source" aria-busy="false">
           <div class="pb-detail-heading"><h2 class="pb-title">Select a record</h2><label class="pb-revision-control" hidden>Revision<select class="pb-revision" aria-label="Revision"></select></label></div>
           <p class="pb-meta"></p><p class="pb-schedule" hidden></p>
-          <label class="pb-wrap"><input type="checkbox" checked>Wrap</label>
-          <pre class="pb-source" data-wrap="true" tabindex="0" aria-label="Read-only record source"><code></code></pre>
+          <label class="pb-wrap"><input type="checkbox">Wrap</label>
+          <pre class="pb-source" data-wrap="false" tabindex="0" aria-label="Read-only record source"><code></code></pre>
         </section>
       </div>`;
     this.querySelector(".pb-refresh").addEventListener("click", () => this.loadCatalog());

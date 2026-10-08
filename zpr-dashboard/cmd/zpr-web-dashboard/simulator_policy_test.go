@@ -4,7 +4,7 @@ import (
 	"errors"
 	"net/http"
 	"net/http/httptest"
-	"strings"
+	"reflect"
 	"testing"
 
 	"neboagency.com/zpr-dashborad/internal/operatorauth"
@@ -152,27 +152,30 @@ func TestFilterSimulatorOrganizationCatalogUsesOperatorGrant(t *testing.T) {
 	if activeID != "" || activeState != nil {
 		t.Fatalf("unauthorized active organization leaked: id=%q state=%v", activeID, activeState)
 	}
+	organizations, activeID, activeState = filterSimulatorOrganizationCatalog(
+		[]simulatorOrganization{{ID: "northstar"}, {ID: "redwood"}},
+		"redwood", activation, []string{"*"},
+	)
+	if len(organizations) != 2 || activeID != "redwood" || !reflect.DeepEqual(activeState, activation) {
+		t.Fatalf("wildcard grant did not expose all organizations: orgs=%v active=%q state=%v", organizations, activeID, activeState)
+	}
 }
 
-func TestSimulatorLoginGateProtectsPagesButNotStaticAssets(t *testing.T) {
+func TestSimulatorPagesShowLoginWidgetWhileAPIsRequireAuthorization(t *testing.T) {
 	auth := &operatorauth.Auth{}
-	pageCalls, assetCalls := 0, 0
-	handler := simulatorLoginGate(auth, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if strings.HasSuffix(r.URL.Path, ".html") {
-			pageCalls++
-		} else {
-			assetCalls++
-		}
+	pageCalls := 0
+	handler := simulatorAPIProxy(auth, func(*http.Request) (string, error) { return "northstar", nil }, http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		pageCalls++
 		w.WriteHeader(http.StatusNoContent)
 	}))
 	page := httptest.NewRecorder()
-	handler.ServeHTTP(page, httptest.NewRequest(http.MethodGet, "https://localhost:8788/scenarios.html", nil))
-	if page.Code != http.StatusUnauthorized || !strings.Contains(page.Body.String(), "/auth/operator/login") || pageCalls != 0 {
-		t.Fatalf("unauthenticated page status=%d calls=%d body=%q", page.Code, pageCalls, page.Body.String())
+	handler.ServeHTTP(page, httptest.NewRequest(http.MethodGet, "https://localhost:8788/trusted-source.html", nil))
+	if page.Code != http.StatusNoContent || pageCalls != 1 {
+		t.Fatalf("login page was not served: status=%d calls=%d", page.Code, pageCalls)
 	}
-	asset := httptest.NewRecorder()
-	handler.ServeHTTP(asset, httptest.NewRequest(http.MethodGet, "https://localhost:8788/app.js", nil))
-	if asset.Code != http.StatusNoContent || assetCalls != 1 {
-		t.Fatalf("static asset status=%d calls=%d", asset.Code, assetCalls)
+	api := httptest.NewRecorder()
+	handler.ServeHTTP(api, httptest.NewRequest(http.MethodGet, "https://localhost:8788/api/simulator/status", nil))
+	if api.Code != http.StatusForbidden || pageCalls != 1 {
+		t.Fatalf("unauthorized API was not denied: status=%d calls=%d", api.Code, pageCalls)
 	}
 }

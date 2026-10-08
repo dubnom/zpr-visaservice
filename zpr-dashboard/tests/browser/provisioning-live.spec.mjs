@@ -46,7 +46,8 @@ async function login(page, fixture) {
   await page.goto(fixture.url + "/#provisioning-adapters");
   await expect(page.locator("#provisioning-status")).toHaveAttribute("data-state", "unavailable");
   await page.getByRole("button", { name: "Sign in", exact: true }).click();
-  await expect(page.locator("#operator-login-status")).toHaveText("Signed in: named-admin");
+  await expect(page.locator("#operator-login-status")).toHaveText(/^Signed in(?:: .+)?$/);
+  await expect(page.locator("#operator-login-status")).not.toContainText("named-admin");
   await page.getByRole("group", { name: "Provisioning" }).getByRole("link", { name: "Adapters", exact: true }).click();
   await expect(page.locator("#provisioning-approved-catalog")).toContainText("standard");
   await expect(page.locator("#provisioning-organization option")).toHaveCount(1);

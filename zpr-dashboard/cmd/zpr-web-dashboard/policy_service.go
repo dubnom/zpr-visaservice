@@ -56,10 +56,13 @@ func newPolicyServiceProxy() (http.Handler, string) {
 		if err := json.Unmarshal(body, &status); err != nil {
 			return err
 		}
-		status.AssistantReady = strings.TrimSpace(os.Getenv("ANTHROPIC_API_KEY")) != ""
-		if status.AssistantReady {
-			status.AssistantModel = envOr("ANTHROPIC_MODEL", defaultAssistantModel)
+		assistant := newClaudeAssistant()
+		status.AssistantReady = assistant != nil
+		if assistant != nil {
+			status.AssistantModel = assistant.model
 			status.AssistantModels = assistantModels(status.AssistantModel)
+		} else {
+			status.Message = "No assistant key is available to Control-Service. Run scripts/configure-assistant.sh, then reload the assistant."
 		}
 		body, err = json.Marshal(status)
 		if err != nil {

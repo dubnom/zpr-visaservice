@@ -16,6 +16,7 @@ import (
 	"sort"
 	"strings"
 	"sync"
+	"syscall"
 	"time"
 
 	"github.com/BurntSushi/toml"
@@ -465,7 +466,7 @@ func resolvedRegularFile(path string) (string, error) {
 }
 
 func newClaudeAssistant() *claudeAssistant {
-	key := strings.TrimSpace(os.Getenv("ANTHROPIC_API_KEY"))
+	key := assistantAPIKey()
 	if key == "" {
 		return nil
 	}
@@ -478,6 +479,49 @@ func newClaudeAssistant() *claudeAssistant {
 			CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse },
 		},
 	}
+}
+
+func assistantAPIKey() string {
+	if key := strings.TrimSpace(os.Getenv("ANTHROPIC_API_KEY")); key != "" {
+		return key
+	}
+	keyFile := strings.TrimSpace(os.Getenv("ZPR_ANTHROPIC_API_KEY_FILE"))
+	if keyFile == "" {
+		if manifest := strings.TrimSpace(os.Getenv("SIMULATION_MANIFEST")); manifest != "" {
+			keyFile = filepath.Join(filepath.Dir(manifest), "dashboard-stack", "assistant", "api-key")
+		} else if store := strings.TrimSpace(os.Getenv("ZPR_GATEWAY_CONFIG_STORE_DIR")); store != "" {
+			keyFile = filepath.Join(filepath.Dir(store), "assistant", "api-key")
+		}
+	}
+	if keyFile == "" {
+		return ""
+	}
+	info, err := os.Lstat(keyFile)
+	if err != nil || !info.Mode().IsRegular() || info.Mode().Perm()&0o077 != 0 {
+		return ""
+	}
+	stat, ok := info.Sys().(*syscall.Stat_t)
+	if !ok || stat.Nlink != 1 || info.Size() > 4096 {
+		return ""
+	}
+	file, err := os.OpenFile(keyFile, os.O_RDONLY|syscall.O_NOFOLLOW|syscall.O_NONBLOCK, 0)
+	if err != nil {
+		return ""
+	}
+	defer file.Close()
+	opened, err := file.Stat()
+	if err != nil || !os.SameFile(info, opened) || !opened.Mode().IsRegular() {
+		return ""
+	}
+	data, err := io.ReadAll(io.LimitReader(file, 4097))
+	if err != nil || len(data) > 4096 {
+		return ""
+	}
+	key := strings.TrimSuffix(strings.TrimSuffix(string(data), "\n"), "\r")
+	if key == "" || strings.TrimSpace(key) != key || strings.ContainsAny(key, "\r\n\x00") {
+		return ""
+	}
+	return key
 }
 
 func (a *application) handleGetPolicy(w http.ResponseWriter, r *http.Request) {
@@ -1037,7 +1081,7 @@ func (a *application) handlePolicyAssistant(w http.ResponseWriter, r *http.Reque
 		return
 	}
 	if a.assistant == nil {
-		writePolicyError(w, http.StatusServiceUnavailable, "Configure ANTHROPIC_API_KEY to enable Claude.")
+		writePolicyError(w, http.StatusServiceUnavailable, "No assistant key is available to Control-Service. Run scripts/configure-assistant.sh, then retry.")
 		return
 	}
 	if a.policy == nil {

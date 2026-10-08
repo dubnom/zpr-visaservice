@@ -61,7 +61,7 @@
     const ready = Boolean(data?.ready ?? data?.assistant_ready);
     const model = data?.model ?? data?.assistant_model ?? "";
     const models = data?.models ?? data?.assistant_models ?? [];
-    return { ready, model, models: Array.isArray(models) ? models : [] };
+    return { ready, model, models: Array.isArray(models) ? models : [], message: data?.message || "" };
   }
 
   function mountEditorAssistant(options) {
@@ -197,7 +197,7 @@
         modelSelect.replaceChildren(...status.models.map((model) => new Option(model, model)));
         modelSelect.value = status.models.includes(selected) ? selected : status.model;
         stateLabel.textContent = state.ready ? "Ready" : "Not configured";
-        disclosure.textContent = state.ready ? options.disclosure : "Claude is off. Set ANTHROPIC_API_KEY on the server to enable it.";
+        disclosure.textContent = state.ready ? options.disclosure : status.message || "Claude is off. Run scripts/configure-assistant.sh on the host, then reload the assistant.";
       } catch (error) {
         state.ready = false;
         stateLabel.textContent = "Unavailable";

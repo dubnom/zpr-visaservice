@@ -242,8 +242,9 @@ func (s *controlRoomSecurity) protect(next http.Handler) http.Handler {
 			return
 		}
 		// Chromium suppresses the Origin of native form POSTs under no-referrer.
-		// Only the login-bearing document needs same-origin; callbacks keep no-referrer.
-		if s.auth != nil && r.Method == http.MethodGet && (r.URL.Path == "/" || r.URL.Path == "/index.html") {
+		// Login-bearing documents need same-origin; callbacks keep no-referrer.
+		loginDocument := r.URL.Path == "/" || r.URL.Path == "/index.html" || strings.HasSuffix(r.URL.Path, ".html")
+		if s.auth != nil && r.Method == http.MethodGet && loginDocument {
 			w.Header().Set("Referrer-Policy", "same-origin")
 		}
 		next.ServeHTTP(w, r)

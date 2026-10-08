@@ -98,7 +98,11 @@
       syncScroll,
       selectLine,
       get diagnostic() { return diagnostic; },
-      setDiagnostic(next) { diagnostic = next?.line ? { line: Number(next.line), message: String(next.message || "") } : null; },
+      setDiagnostic(next) {
+        const line = Number(next?.line);
+        diagnostic = Number.isInteger(line) && line > 0 && line <= source.value.split("\n").length
+          ? { line, message: String(next.message || "") } : null;
+      },
     };
   }
 
@@ -148,7 +152,13 @@
   }
 
   // Policy-style History <details> dropdown. History cannot open when nothing is selected.
+  function placeHistory(menu) {
+    const identity = menu.closest(".policy-page")?.querySelector(".policy-identity");
+    if (identity) identity.querySelector("strong")?.after(menu);
+  }
+
   function createHistory({ menu, list, count, isAvailable }) {
+    placeHistory(menu);
     const summary = menu.querySelector("summary");
     summary.addEventListener("click", (event) => { if (!isAvailable()) event.preventDefault(); });
     document.addEventListener("pointerdown", (event) => { if (menu.open && !menu.contains(event.target)) menu.open = false; });
@@ -189,12 +199,44 @@
     return { render, close() { menu.open = false; } };
   }
 
-  // Identity header: title, version label and Modified marker. Empty when nothing is selected.
+  function isNamed(name) {
+    return Boolean(name?.trim()) && name.trim().toLowerCase() !== "untitled";
+  }
+
+  function fitSourceToViewport(container) {
+    const frame = container.closest(".policy-page");
+    let scheduled = false;
+    function schedule() {
+      if (scheduled) return;
+      scheduled = true;
+      requestAnimationFrame(() => {
+        scheduled = false;
+        if (!container.getClientRects().length) return;
+        const top = container.getBoundingClientRect().top + window.scrollY;
+        const main = container.closest(".main-content");
+        const pane = container.closest(".policy-editor-pane, .editor-assistant-main") || container.closest(".editor-page-main");
+        const padding = Number.parseFloat(getComputedStyle(main).paddingBottom) + Number.parseFloat(getComputedStyle(pane).paddingBottom);
+        const inset = Math.min(window.innerHeight * .04, padding);
+        const height = Math.max(320, window.innerHeight - inset - top);
+        container.style.setProperty("--editor-source-height", `${height}px`);
+      });
+    }
+    const observer = new ResizeObserver(schedule);
+    for (const element of [frame, frame.querySelector(".policy-toolbar"), frame.querySelector(".policy-editor-tools"), document.querySelector(".topbar"), ...container.parentElement.children]) {
+      if (element) observer.observe(element);
+    }
+    window.addEventListener("resize", schedule);
+    window.addEventListener("hashchange", schedule);
+    schedule();
+  }
+
+  // History owns version information; the identity row shows only name and dirty state.
   function renderIdentity({ title, version, modified }, { name = "", label = "", tooltip = "", dirty = false } = {}) {
-    title.textContent = name;
-    title.hidden = !name;
+    title.textContent = name.trim() || "Untitled";
+    title.hidden = false;
     if (tooltip) title.title = tooltip; else title.removeAttribute("title");
-    version.textContent = label;
+    version.textContent = "";
+    version.hidden = true;
     modified.hidden = !dirty;
   }
 
@@ -205,5 +247,5 @@
     if (kind) element.dataset.state = kind; else delete element.dataset.state;
   }
 
-  window.ZPREditorPage = { highlight, createSourceSurface, createMenu, createPicker, createHistory, renderIdentity, setStatus };
+  window.ZPREditorPage = { highlight, createSourceSurface, createMenu, createPicker, createHistory, placeHistory, isNamed, fitSourceToViewport, renderIdentity, setStatus };
 })();

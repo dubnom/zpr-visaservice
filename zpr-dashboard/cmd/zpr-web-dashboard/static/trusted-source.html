@@ -3,12 +3,13 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
-<title>ZPR Simulator Trusted Source</title>
+<title>ZPR Simulator Trusted Sources</title>
 <link rel="stylesheet" href="/app.css">
 <link rel="stylesheet" href="/simulator.css?v=24">
 <link rel="stylesheet" href="/sidebar.css?v=6">
+<link rel="stylesheet" href="/ldap-org-graph.css?v=2">
 <link rel="stylesheet" href="/trusted-source.css?v=3">
-<script src="/sidebar.js?v=35" defer></script>
+<script src="/sidebar.js?v=37" defer></script>
 </head>
 <body>
 <div class="app-shell">
@@ -25,11 +26,12 @@
     <div class="sidebar-foot"><span class="tiny-dot"></span><span>SIMULATION CONTROL</span></div>
   </aside>
   <main class="main-content">
-    <header class="topbar"><div class="topbar-status"><div class="connection-state"><span class="state-lamp"></span><div><strong>Directory status</strong><small>Read-only trusted-source view</small></div></div></div></header>
+    <header class="topbar"><div class="topbar-status"><div class="connection-state"><span class="state-lamp"></span><div><strong>Trusted Sources</strong><small>Read-only directory data</small></div></div></div></header>
     <trusted-source-browser data-endpoint="/api/simulator/trusted-source"></trusted-source-browser>
   </main>
 </div>
 <script src="/simulator-nav.js?v=16"></script>
+<script src="/ldap-org-graph.js?v=2"></script>
 <script src="/trusted-source.js?v=4"></script>
 </body>
 </html>
