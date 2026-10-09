@@ -1,9 +1,84 @@
 # GUI Improvements
 
+## Design Guidelines
+- Values that are refreshed automatically should pulse (in a consistent way).
+- Extra text, descriptions, etc. are frowned upon.
+- If something needs clarity, put it in the help text.
+- Data should generally be shown in a standardize sortable table. This isn't necessary for small data sets.
+- Numeric table headers should right justify.
+- Table headers should be bold.
+- The topmost banner is only for application-wide information and control.
+
 ## Deployment status
 
-- Deployed the separate Gateway Form/Raw editor to Control Room on 2026-10-08.
-  Form fields cover destination origins/path prefixes, GET/HEAD methods and
+Current tracker reconciliation: 2026-10-09. The dated entries below are
+historical verification snapshots, not fresh health checks.
+
+- Control Room-only Nodes navigation/docked-adapter update deployed at
+  2026-10-09 14:52 UTC using `zpr-editor-ui:20261009-nodes-adapters`.
+  Preserved previously served assets except the four requested Nodes UI assets,
+  and retained the pre-forwarding backend plus seven-method validator. Served
+  index, node-stats JS/CSS and sidebar JS match source exactly; unsigned snapshot
+  requests return 403. Sixteen desktop/tablet fixture cases passed before
+  deployment; no authenticated live browser interaction is claimed. Container
+  environment, command, mounts, ports, network and restart policy are unchanged.
+  Simulator and all other running service start times are unchanged; Simulator
+  remains responsive. Stopped `zpr-control-room-nodes-adapters-rollback` retains
+  the preceding Control Room image. Gateway forwarding changes remain undeployed.
+
+- Control Room-only Node Stats layout/pulse update deployed on 2026-10-09 at
+  14:10 UTC using `zpr-editor-ui:20261009-node-stats-pulse`. Management is narrower
+  beside the sortable worker comparison table; changed summary/counter values
+  pulse, with reduced-motion fading. Served index/app/Node Stats assets match
+  tested source byte-for-byte; fourteen desktop/tablet browser cases pass.
+  Live Control-Service still supplies 146 counters per node without telemetry
+  errors; login readiness and signed-out snapshot rejection are verified.
+  User chose verification without signed-in browser access, so the deployed
+  authenticated page was not interactively certified in this update.
+  Preserved the pre-forwarding backend and Control Room configuration.
+  Simulator, Control-Service, DNS, node and exporter start times are unchanged.
+  Stopped `zpr-control-room-node-stats-rollback` retains the previous deployment.
+
+- Runtime incident on 2026-10-09 at 13:53:50 UTC: Simulator exited with code 2
+  during the Great Lakes five-minute workday; Scenario requests then failed with
+  connection refused / Failed to fetch. No panic trace was present in container
+  logs, and the underlying cause is not established. Restarted the same
+  Simulator image and restored its relays; Scenario API and DNS statistics are
+  healthy. In-memory run history reset to idle. Focused Scenario concurrency/
+  machine-log race tests pass. User declined a diagnostic scenario rerun;
+  no scenario was retried, and the crash remains unresolved.
+
+- UI-only update deployed on 2026-10-09 at 13:44 UTC to Control Room and
+  Simulator using `zpr-editor-ui:20261009-map-node-previews`: Node Stats,
+  World Map viewport-aware Fit/background/compact docks, and Scenario miniature
+  log previews. Reconstructed the same pre-forwarding backend baseline used for
+  the previous image, retaining seven-method draft validation and excluding
+  later Gateway forwarding/consolidation changes. Four live desktop/tablet
+  checks passed: real operator login, source-matching UI assets, World Map
+  Fit/background, three nodes with 146 counters each and no snapshot errors,
+  and Simulator log collection/idle-machine preview behavior. No scenario
+  machines were running, so running-log animation remains fixture-verified,
+  not live-certified. UI environment/mounts/ports/commands are preserved;
+  unrelated service start times are unchanged. DNS statistics and TCP relays
+  are responsive. Stopped `zpr-control-room-map-node-rollback` and
+  `zpr-simulator-map-node-rollback` retain the previous UI deployment.
+- Control Room and Simulator editor-controller completion was deployed at
+  00:49 EDT using `zpr-editor-ui:20261009-unified`, preserving the 04:33 UTC
+  backend snapshot plus current editor assets. Control-Service and Great Lakes
+  were not replaced; DNS relays were restored and stopped UI rollback containers
+  retained. The temporary build snapshot was removed after deployment.
+- Source changes were committed in `24fbf5f` at 00:53 EDT. Seven-method draft
+  validation is deployed, but the later fixed-upstream forwarding fixes and
+  shared forwarding-core consolidation are committed source only, not deployed.
+  No runtime activation, draft method/path enforcement or gateway allowlist
+  change is implied.
+- Shared editor work is complete. General page polling/transport consolidation,
+  ZPR Config forms, organization creation/workspaces and platform certification
+  remain open. World Map viewport/background/compact-dock follow-ups, Node Stats
+  and Scenario machine log previews are deployed as described above.
+
+- Historical initial deployment: separate Gateway Form/Raw editor to Control Room on 2026-10-08.
+  Initial form fields covered destination origins/path prefixes, GET/HEAD methods and
   request limits, with read-only installed identity. Drafts share one JSON
   source; no runtime activation is added. Eighteen focused desktop/tablet
   regressions, gateway Go tests and two authenticated live checks pass.
@@ -319,7 +394,8 @@ statistics/records relays were restored and verified. Great Lakes remains
 active with activation idle and three scenarios. A live read-only Scenario
 Analyze succeeded without saving, publishing or running. Operator login
 readiness and signed-out protected API rejection remain correct. Stopped
-rollback containers are retained. Source changes are not yet committed.
+rollback containers are retained. These source changes were subsequently
+committed in `24fbf5f` at 00:53 EDT.
 The combined desktop/tablet regression run passed 261 cases;
 five trace-cleanup failures (missing shared artifact files, not editor
 assertions) passed in an isolated container-local rerun of 22 cases, including
@@ -373,6 +449,12 @@ tests also fail against committed baseline assets; neither test was changed.
 - [x] Does the map come up blank because it is missing info, or just waiting for a refresh to fill it?
 - [x] Possibly related - when I switch to the map from another page, the map is only partially drawn until a refresh.
 - [x] Show management and per-fastpath packet-processing counters in node details when a node is clicked, with explicit unavailable/stale telemetry states.
+- [x] Add Monitoring > Node Stats with a node selector, live state, denial telemetry, grouped management/fastpath counters, exact counter integers, sample freshness and explicit errors; share global snapshot polling without a Simulator dependency.
+  - Navigation renamed Nodes; Docked adapters shows a clickable count expanding a name-sorted adapter/address table, with sortable headings, refresh retention and an explicit empty state. Sixteen focused desktop/tablet cases pass. Deployed in the Control Room-only Nodes update above; served assets match source and unsigned snapshot access remains protected.
+  - Fastpath counters use one sortable comparison table (Counter, then number-only worker columns) beside a narrower management table, without redundant cumulative-total captions. Deployed in the Control Room-only update above; tests cover exact numeric sorting, refresh preservation and responsive layout.
+  - Changed summary/counter values pulse twice, including decreases/reset to zero; stable node/counter/worker keys avoid false pulses on sorting or node selection. Reduced-motion mode fades instead of scaling. All fourteen Node Stats desktop/tablet cases pass. Deployed in the Control Room-only update above.
+  - Verified eight new desktop/tablet browser cases and focused Go node-telemetry tests. Deployed in the UI-only update above; live authenticated desktop/tablet checks confirm all three nodes expose 146 counters each without snapshot errors.
+  - Repaired the local operator exporter resource identities to match production source mappings. Live Control-Service now reads 146 packet counters per Great Lakes node (plus denial metrics), without counter/denial telemetry errors; no node/service restarts required.
 - [x] Add a right mouse click on adapters to highlight current visa allowed services and routes. Right click again on the adapter, or in blank space to remove the highlight.
 - [x] Hide the dark mode checkbox for now.
 - [x] The visa and buffered denies still don't pulse as far as I can tell. Are we using our expand/contract paradigm.
@@ -413,7 +495,9 @@ tests also fail against committed baseline assets; neither test was changed.
   - [x] Use high-contrast dark text on light inactive buttons and white text on dark-blue selected buttons.
   - [x] Remove the placed/unplaced-node count, Node location overview, Nodes with locations list, and "Countries..." text. Preserve keyboard-accessible co-location choices in the main graph and explicit missing/invalid-location inspection. Deployed and verified through real Dex login on desktop and tablet.
   - [x] Auto-fit and Fit frame the network components rather than the full geographic basemap. When there are no reported nodes or adapters, keep the basemap visible and Fit falls back to its full extent.
-  - [ ] Autofit and fit aren't doing what I asked above.
+  - [x] Autofit and fit aren't doing what I asked above. World Map Fit now reframes network bounds using the current viewport aspect after manual navigation, and Auto-fit follows viewport resizing. Empty maps retain full-basemap fitting; Topology camera behavior is unchanged. Desktop/tablet regressions pass; deployed with live desktop/tablet Fit verification.
+  - [x] Another constraint is to keep the connections as short as possible. Removed World Map's fixed 340-unit dock radius; compact radii are derived from node/adapter clearance and adjacent component spacing, growing only as needed for service rings, gateway clouds, and link-free sectors. Four plain adapters use a 106-unit radius with no overlap. Geographic nodes stay at their reported coordinates and Topology retains its spacing. Desktop/tablet regressions pass; deployed in the UI-only update above.
+  - [x] Make the background the same color as the map background. World Map viewport matches the ocean fill and removes the Topology dot grid, including with the retained dark-mode class; switching back preserves Topology backgrounds. Implemented and verified with desktop/tablet geographic regressions; deployed and live desktop/tablet background checks pass.
 
 ### Navigation
 - [x] Keep Map as the main view and group Adapters, Actors, Services, Visas, Denials, and DNS under horizontal Status tabs with counts.
@@ -511,10 +595,12 @@ tests also fail against committed baseline assets; neither test was changed.
 ### Gateways
 - [x] Gateway Save and Ctrl/Command-S automatically Analyze modified drafts, show errors without saving invalid drafts, and save a revision only after successful exact-source validation.
 - [x] Support GET, HEAD, POST, PUT, PATCH, DELETE and OPTIONS in Gateway draft Form/Raw, Analyze and Save; retain GET/HEAD defaults and reject TRACE/CONNECT. This does not expand runtime handler support.
-- [x] Expand fixed-upstream gateway forwarding to the seven draft methods with bounded bodies and safe headers; retain GET/HEAD health checks. Verify all seven methods and bodies through the separate HTTP/HTTPS-tunnel web proxy. Draft activation remains separate.
-- [x] Consolidate shared Internet-egress forwarding primitives (hostname/method validation, redirect handling, header filtering and response forwarding); remove Simulator-specific naming from the reusable web proxy while preserving both CLI modes and protocol behavior.
+- [x] Expand fixed-upstream gateway forwarding to the seven draft methods with bounded bodies and safe headers; retain GET/HEAD health checks. Verify all seven methods and bodies through the separate HTTP/HTTPS-tunnel web proxy. Committed and tested, not deployed; draft activation remains separate.
+- [x] Consolidate shared Internet-egress forwarding primitives (hostname/method validation, redirect handling, header filtering and response forwarding); remove Simulator-specific naming from the reusable web proxy while preserving both CLI modes and protocol behavior. Committed and tested, not deployed.
+- [ ] Deploy the committed forwarding/consolidation changes through a separately reviewed rollout; preserve production settings and verify the actual gateway binary and protocol behavior, not just UI assets.
 - [ ] Unify deployed Gateway runtime configuration with the editor contract and migrate fixed-upstream callers before retiring that mode. Define enforcement capabilities for opaque HTTPS tunnels; do not imply draft methods/paths are enforced there.
-- [ ] Refine Gateway form usability: make destination versus path-prefix add/delete operations unambiguous, improve individual prefix management, and review wildcard requirements against gateway validation and runtime matching before adding support.
+- [x] Simplify Gateway form rows to Destinations Allowed, Add Destination, Base URL, Paths and Remove; remove numbered titles/borders, the prefix Add button and verbose help paragraphs. Remove deletes the whole destination; Paths remains one prefix per line.
+- [ ] Improve individual path-prefix management and review wildcard requirements against draft validation and runtime matching before adding support. The live web proxy's host patterns do not imply wildcard support in saved gateway drafts.
 - [x] Add a Gateway form editor with draft-only HTTPS origin/path-prefix controls synchronized with the raw JSON view; keep form controls out of the raw editor and Analyze/Save separate from runtime enforcement. Include GET/HEAD, timeout/response limits, read-only installed identity, lossless unknown-field preservation and form/raw validation coverage.
 - [x] Report Gateway Analyze source-line errors only through standard ERR gutter markers; clicking opens error details and selects the source line. Never put source-line diagnostics at the top of the editor; preserve exact formatting and keep live inventory/contract errors separate.
 - [x] Align Gateway ERR markers at the gutter's left inset and suppress the textarea's clipped native focus outline while retaining the editor's focus-within indicator.
@@ -558,7 +644,7 @@ Running" orange should be a non-indicated color like blue.
 - [x] Move the raw/dialog link/button to the top right corner of the inner pages.
 - [x] Implement the Analyze button with colors and behavior just like every other editor.
 - [x] Switch (or just edit) scenarios in yaml.
-- [ ] Show shrunk-down log windows above the running simulator machines. It doesn't have to be readable.
+- [x] Show shrunk-down log windows above the running simulator machines. It doesn't have to be readable. Scenario machine tracks show tiny bounded log previews above their headings while the run/cleanup is active and the machine is running, with a Workers link for full-size logs. Uses existing Simulator-only log collection and non-overlapping navigation-aware polling; unavailable/malformed responses are explicit, last-good tails remain labeled on request errors, and obsolete run/organization responses are rejected. Eighteen focused desktop/tablet regressions pass; deployed, with live log collection/idle-machine checks passing. Running-log animation awaits a live running scenario; no scenario was started for deployment verification.
 
 ### Activity
 - [x] Remove the Decisions and Blocked flows headings.

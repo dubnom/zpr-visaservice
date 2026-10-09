@@ -1,0 +1,62 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="referrer" content="no-referrer">
+  <meta name="color-scheme" content="light">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'self'; style-src 'self'; img-src 'self' data:; connect-src 'none'; base-uri 'none'; form-action 'none'">
+  <title>ZPR device setup</title>
+  <link rel="stylesheet" href="./enrollment.css">
+  <script src="./site-config.js" defer></script>
+  <script src="./enrollment.js" defer></script>
+</head>
+<body>
+  <header class="masthead">
+    <a class="brand" href="./" aria-label="ZPR device setup home"><strong>ZPR</strong><span>DEVICE SETUP</span></a>
+    <span class="access-label">PUBLIC ENROLLMENT</span>
+  </header>
+  <main>
+    <section class="introduction" aria-labelledby="page-title">
+      <p class="eyebrow">BEFORE YOU CONNECT</p>
+      <h1 id="page-title">Set up your ZPR device</h1>
+      <p>This page is available before your device joins ZPR. It does not sign you in, activate an adapter, or request your activation code.</p>
+    </section>
+
+    <section id="invalid-invitation" class="notice notice-warning" role="status">
+      <h2>Open your invitation link</h2>
+      <p>Use the complete link from your administrator's email. If the link is incomplete or expired, ask the administrator to send a new invitation.</p>
+    </section>
+
+    <section id="unsafe-link" class="notice notice-warning" role="alert" hidden>
+      <h2>Request a new invitation link</h2>
+      <p>An activation code should never be included in a link. This page discarded the link details; ask your administrator for a replacement invitation.</p>
+    </section>
+
+    <section id="invitation" hidden aria-labelledby="invitation-heading">
+      <div class="section-heading">
+        <div>
+          <p class="eyebrow">YOUR INVITATION</p>
+          <h2 id="invitation-heading">Prepare your Mac</h2>
+        </div>
+        <span class="step-count">4 STEPS</span>
+      </div>
+
+      <dl class="invitation-details">
+        <div><dt>Organization</dt><dd id="organization"></dd></div>
+        <div><dt>Invitation ID</dt><dd id="invitation-id"></dd></div>
+      </dl>
+
+      <ol class="setup-steps">
+        <li><strong>Install the approved Mac setup app.</strong><span id="installer-unavailable">Your administrator has not published a signed Mac installer for this site yet.</span><a id="installer-link" hidden rel="noreferrer">Download ZPR Machine Setup for macOS</a></li>
+        <li><strong>Open the setup app.</strong><span>Enter the organization and invitation ID shown above when prompted.</span></li>
+        <li><strong>Keep the activation code separate.</strong><span>Enter the code supplied separately by your administrator only in the setup app, never on this page or in a URL.</span></li>
+        <li><strong>Verify your device fingerprint.</strong><span>Confirm it with your administrator through an authenticated channel, then wait for review.</span></li>
+      </ol>
+
+      <p class="security-note"><strong>Important:</strong> approval is a review decision. It does not by itself issue adapter credentials or confirm ZPR connectivity.</p>
+    </section>
+  </main>
+  <footer><span>Use only an invitation provided for your organization.</span><span>Never share your activation code or setup-session URL.</span></footer>
+</body>
+</html>

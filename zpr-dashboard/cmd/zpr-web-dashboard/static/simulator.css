@@ -260,6 +260,12 @@ pre { margin: 0; padding: 14px; min-height: 110px; max-height: 180px; overflow: 
 .scenario-track-scrollbar:focus-visible, .scenario-track-viewport:focus-visible { outline: 2px solid var(--teal); outline-offset: 2px; }
 .scenario-lanes { display: grid; grid-auto-flow: column; grid-auto-columns: 280px; align-items: start; justify-content: start; gap: 18px; }
 .scenario-lane { min-width: 0; border-top: 2px solid var(--teal); }
+.scenario-log-preview { height: 98px; display: grid; grid-template-rows: auto minmax(0, 1fr) auto; gap: 4px; margin-top: 8px; padding: 6px; overflow: hidden; border: 1px solid var(--line); border-radius: 3px; background: #000; color: #fff; }
+.scenario-log-preview-status { font: 9px var(--mono); overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+.scenario-log-preview.unavailable .scenario-log-preview-status { color: #ffcf95; }
+.scenario-log-preview pre { min-height: 0; margin: 0; overflow: auto; font: 5px/1.3 var(--mono); white-space: pre; }
+.scenario-log-preview a { color: #b2ddff; font: 9px var(--mono); justify-self: end; }
+.scenario-log-preview a:focus-visible { outline: 2px solid #fff; outline-offset: 2px; }
 .scenario-lane h3 { margin: 0; padding: 10px 2px 4px; font: 600 11px var(--mono); }
 .scenario-steps { display: grid; gap: 0; margin: 0; padding: 0; list-style: none; }
 .scenario-step { display: grid; grid-template-columns: 10px minmax(0, 1fr) auto; align-items: start; gap: 10px; padding: 12px 2px; border-bottom: 1px solid var(--line); }

@@ -3,6 +3,11 @@
 Project-wide tracking for scaling work. All items below are planned, not
 implemented. Add future scaling areas here as requirements become concrete.
 
+Reviewed 2026-10-09: editor consolidation, local World Map certification and
+Gateway forwarding unit/integration tests do not establish scaling acceptance.
+No measured capacity/latency certification or source-generation pipeline has
+been completed by that work; the scaling tasks below remain open.
+
 ## Trusted sources
 
 ### Goal and current constraints

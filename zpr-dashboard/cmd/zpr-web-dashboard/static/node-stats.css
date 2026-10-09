@@ -1,0 +1,56 @@
+.node-stats-toolbar {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 12px;
+}
+.node-stats-toolbar select { max-width: 100%; min-width: 180px; }
+.node-stats-error { color: var(--danger, #a32626); overflow-wrap: anywhere; }
+.node-stats-fields {
+  display: grid;
+  grid-template-columns: minmax(140px, 1fr) minmax(0, 2fr);
+  gap: 8px 16px;
+}
+.node-stats-fields dd { margin: 0; overflow-wrap: anywhere; }
+.node-stats-adapter-count { min-width: 36px; padding: 2px 8px; }
+#node-stats-adapters { overflow-x: auto; margin-bottom: 20px; }
+#node-stats-adapters table { width: 100%; }
+#node-stats-adapters th, #node-stats-adapters td { text-align: left; overflow-wrap: anywhere; }
+.node-stats-value { display: inline-block; transform-origin: center; }
+.node-stats-value.poll-changed { animation: node-stat-pulse 1800ms ease-out both; }
+@keyframes node-stat-pulse {
+  0%, 50%, 100% { transform: scale(1); }
+  25%, 75% { transform: scale(1.15); background-color: #d9fa55; box-shadow: 0 0 0 3px #d9fa55; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .node-stats-value.poll-changed {
+    animation-name: node-stat-fade;
+    animation-duration: 1800ms !important;
+  }
+}
+@keyframes node-stat-fade {
+  0%, 50%, 100% { opacity: 1; }
+  25%, 75% { opacity: .6; background-color: #d9fa55; }
+}
+.node-stats-groups {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 2fr);
+  gap: 24px;
+}
+.node-stats-groups section { min-width: 0; }
+.node-stats-table-scroll { overflow-x: auto; }
+.node-stats-groups table { width: 100%; }
+.node-stats-fastpath { grid-column: 2; }
+.node-stats-groups th:first-child { min-width: 140px; }
+.node-stats-groups thead th:not(:first-child) { text-align: right; }
+.node-stats-groups .sort-button { white-space: nowrap; }
+.node-stats-groups th { text-align: left; font-weight: normal; overflow-wrap: anywhere; }
+.node-stats-groups td { text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }
+@media (max-width: 900px) {
+  .node-stats-groups { grid-template-columns: minmax(0, 1fr); }
+  .node-stats-fastpath { grid-column: auto; }
+}
+@media (max-width: 600px) {
+  .node-stats-fields { grid-template-columns: 1fr; }
+  .node-stats-fields dd { margin-bottom: 8px; }
+}

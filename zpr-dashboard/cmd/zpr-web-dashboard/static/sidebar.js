@@ -90,6 +90,14 @@
       context: "These are operator-owned production logs returned through Control-Service, not Simulator workload logs. A machine can be running while a particular log source is disconnected or missing.",
       docs: "Adapter log configuration", href: "https://github.com/org-zpr/zpr-visaservice/blob/main/zpr-dashboard/cmd/zpr-web-dashboard/README.md",
     },
+    "node-stats": {
+      title: "Nodes",
+      intro: "View production node state, denial telemetry, and cumulative management and fastpath-worker counters.",
+      steps: ["Select a node to inspect its state and grouped packet-processing totals.", "Use the global Refresh, polling interval and Pause controls. Node selection is retained across snapshots while the node exists.", "Check the sample timestamp and telemetry errors before interpreting totals. Paused or failed refreshes can leave last-known data visible."],
+      recovery: "For unavailable counters, verify exporter health, the node socket, sample freshness, and both resource identifiers against the production diagnostics source mapping.",
+      context: "Counters are exact integer totals since restart or reset, not rates, CPU/RAM usage, bandwidth, latency, or per-link traffic. Data comes from Control-Service; Simulator is not required.",
+      docs: "Node telemetry configuration", href: "https://github.com/org-zpr/zpr-visaservice/blob/main/zpr-dashboard/cmd/zpr-web-dashboard/README.md",
+    },
     gateways: {
       title: "Gateways",
       intro: "This editor keeps a separate versioned JSON draft for each installed gateway, using the same paradigm as the policy editor. Browse lists installed gateways; File opens, downloads or discards a draft; Analyze checks the exact source; Format pretty-prints valid JSON; History reloads an earlier revision; Find & Replace works as in the other editors.",

@@ -77,6 +77,29 @@ test("geography projects valid coordinates exactly and rejects invalid values", 
   expect(await response.text()).toContain('viewBox="0 0 1800 900"');
 });
 
+test("World Map viewport matches the basemap ocean without changing Topology backgrounds", async ({ page, appURL, snapshot }) => {
+  snapshot.actors = [node("zero", 0, 0)];
+  await openGeography(page, appURL);
+  const stage = page.locator("#topology-stage");
+  const basemap = await page.request.get(`${appURL}/geography-land.svg`);
+  const ocean = (await basemap.text()).match(/<rect[^>]*fill="([^"]+)"/)?.[1];
+  expect(ocean).toBe("#eaf4fa");
+  await expect(stage).toHaveCSS("background-color", "rgb(234, 244, 250)");
+  await expect(stage).toHaveCSS("background-image", "none");
+  await stage.evaluate(element => element.classList.add("graph-dark"));
+  await expect(stage).toHaveCSS("background-color", "rgb(234, 244, 250)");
+  await expect(stage).toHaveCSS("background-image", "none");
+  await stage.evaluate(element => element.classList.remove("graph-dark"));
+  await page.getByRole("button", { name: "Topology", exact: true }).click();
+  await expect(stage).toHaveCSS("background-image", /radial-gradient/);
+  await stage.evaluate(element => element.classList.add("graph-dark"));
+  await expect(stage).toHaveCSS("background-color", "rgb(20, 33, 30)");
+  await expect(stage).toHaveCSS("background-image", /radial-gradient/);
+  await page.getByRole("button", { name: "World Map", exact: true }).click();
+  await expect(stage).toHaveCSS("background-color", "rgb(234, 244, 250)");
+  await expect(stage).toHaveCSS("background-image", "none");
+});
+
 test("geography uses only the main network graph and distinguishes missing from invalid locations", async ({ page, appURL, snapshot }) => {
   snapshot.actors = [node("zero", 0, 0), node("north", 90, -180), node("south", -90, 180),
     node("missing"), node("invalid", 100, 0), { ...node("adapter", 40, 20), node: false }];
@@ -213,6 +236,70 @@ test("World Map frames network components at mobile viewport aspect", async ({ p
   expect(Math.max(fit.horizontalCoverage, fit.verticalCoverage)).toBeGreaterThan(0.75);
   expect(Math.max(fit.horizontalCoverage, fit.verticalCoverage)).toBeLessThan(0.95);
   expect(fit.insideViewport).toBe(true);
+});
+
+test("World Map Fit reframes the current viewport after manual zoom and resize", async ({ page, appURL, snapshot }) => {
+  snapshot.actors = [node("hub", 43.04, -87.91), { ...node("peer", 22.54, 114.06), zpr_addr: "fd00::2" }];
+  await page.emulateMedia({ reducedMotion: "reduce" });
+  await openGeography(page, appURL);
+  await page.getByRole("button", { name: "Zoom in", exact: true }).click();
+  await expect(page.locator("[data-graph-auto-fit]")).not.toBeChecked();
+  await page.setViewportSize({ width: 390, height: 844 });
+  for (const action of ["Fit", "Auto-fit"]) {
+    if (action === "Fit") await page.getByRole("button", { name: "Fit graph", exact: true }).click();
+    else await page.locator("[data-graph-auto-fit]").check();
+    const frame = await page.locator(".topology-graph").evaluate(svg => {
+      const box = svg.viewBox.baseVal;
+      const viewport = svg.getBoundingClientRect();
+      const components = [...svg.querySelectorAll(".graph-vertex")].map(element => element.getBoundingClientRect());
+      const left = Math.min(...components.map(box => box.left));
+      const right = Math.max(...components.map(box => box.right));
+      const top = Math.min(...components.map(box => box.top));
+      const bottom = Math.max(...components.map(box => box.bottom));
+      return {
+        aspect: box.width / box.height,
+        viewportAspect: viewport.width / viewport.height,
+        coverage: Math.max((right - left) / viewport.width, (bottom - top) / viewport.height),
+        contained: left >= viewport.left - 1 && right <= viewport.right + 1 && top >= viewport.top - 1 && bottom <= viewport.bottom + 1,
+      };
+    });
+    expect(frame.aspect, action).toBeCloseTo(frame.viewportAspect, 4);
+    expect(frame.coverage, action).toBeGreaterThan(0.75);
+    expect(frame.coverage, action).toBeLessThan(0.95);
+    expect(frame.contained, action).toBe(true);
+  }
+  await page.setViewportSize({ width: 1280, height: 800 });
+  await expect.poll(() => page.locator(".topology-graph").evaluate(svg => {
+    const box = svg.viewBox.baseVal;
+    return Math.abs(box.width / box.height - svg.clientWidth / svg.clientHeight);
+  })).toBeLessThan(0.001);
+});
+
+test("World Map dock connections stay compact and separated without changing Topology spacing", async ({ page, appURL, snapshot }) => {
+  const children = ["adapter-a", "adapter-b", "adapter-c", "adapter-d"];
+  const hub = node("hub", 0, 0);
+  hub.node_details.adapters = children;
+  snapshot.actors = [hub, ...children.map(cn => ({ cn, node: false }))];
+  await openGeography(page, appURL);
+  for (const view of ["World Map", "Topology"]) {
+    await page.getByRole("button", { name: view, exact: true }).click();
+    const geometry = await page.evaluate(children => {
+      const point = cn => {
+        const element = document.querySelector(`.graph-vertex[data-inspect-actor="${cn}"]`);
+        return { x: Number(element.dataset.originX), y: Number(element.dataset.originY) };
+      };
+      const hub = point("hub");
+      const adapters = children.map(point);
+      return {
+        radii: adapters.map(p => Math.hypot(p.x - hub.x, p.y - hub.y)),
+        separations: adapters.flatMap((p, i) => adapters.slice(i + 1).map(q => Math.hypot(p.x - q.x, p.y - q.y))),
+      };
+    }, children);
+    if (view === "World Map") expect(Math.max(...geometry.radii), view).toBeLessThan(160);
+    else expect(Math.min(...geometry.radii), view).toBeCloseTo(340);
+    expect(Math.min(...geometry.radii), view).toBeGreaterThanOrEqual(106);
+    expect(Math.min(...geometry.separations), view).toBeGreaterThanOrEqual(120);
+  }
 });
 
 test("Topology and World Map cluster attached adapters away from inter-node links", async ({ page, appURL, snapshot }) => {

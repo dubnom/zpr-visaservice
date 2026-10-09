@@ -3,12 +3,24 @@
 **Scope:** Control Room, Simulator, the Policy Service integration, trusted LDAP
 readers, organization workspaces, and browser-accessible operational data.
 
-**Status:** working checklist, updated 2026-10-04. Checked items describe
+**Status:** working checklist, reconciled 2026-10-09. Checked items describe
 implemented controls, not a claim that the whole dashboard is security-certified.
 Keep this plan aligned with the broader ZPR [security model](../../zpr-dev-context/docs/SECURITY_MODEL.md)
 and the separate organization-isolation work.
 
+This is a tracker reconciliation, not a new security audit. Local OIDC/HTTPS,
+authorization and CSRF foundations now exist; remote deployment, per-viewer
+LDAP access, complete isolation and security certification remain open.
+
 ## Current Controls
+
+- [x] Implement operator-configured OIDC login with exact issuer/subject grants,
+  organization/permission checks, bounded expiring sessions, CSRF checks and
+  logout. Direct HTTPS is configured in the local operator applications;
+  loopback remains the supported deployment boundary.
+- [x] Preserve local app navigation across re-login and recheck sessions after
+  protected API 401/403 responses without mistaking a live permission denial
+  or backend outage for an expired login.
 
 - [x] Privileged editor/control requests require loopback access or a verified
   client-certificate connection; loopback browser requests validate their Host
@@ -59,15 +71,14 @@ and the separate organization-isolation work.
 - [ ] Implement the proposed remote access contract before any public binding;
   the current client-certificate gateway prototype is not an authenticated
   administrative product.
-- [ ] Before any non-loopback deployment, require an authenticated user session
-  for browser routes; mTLS between backend services does not identify individual
-  browser users. Define roles for read-only monitoring, policy editing/staging,
-  directory editing, assertion administration, machine control, and organization
-  activation.
-- [ ] Bind mutations to the authenticated principal, require CSRF protection and
-  origin checks, rotate/expire sessions, and use secure cookie attributes. Test
-  unauthenticated access, role escalation, cross-site requests, session replay,
-  and logout/revocation.
+- [ ] Certify the implemented named-session and permission model across every
+  remote browser route before non-loopback deployment. Verify least-privilege
+  roles for monitoring, policy staging, directory/assertion administration,
+  machine control and organization activation; backend mTLS alone is not a
+  browser-user identity.
+- [ ] Complete route-wide attributable mutation audit, session/key rotation and
+  revocation acceptance. Existing CSRF/origin, expiry/logout and permission tests
+  establish local foundations, not full remote replay/escalation certification.
 - [ ] Keep the local-only deployment guard as defense in depth; test IPv4/IPv6
   loopback, proxy Host handling, DNS-rebinding Host values, and malformed Origin
   headers. Do not treat “localhost” as user authentication.

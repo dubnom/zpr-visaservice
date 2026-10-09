@@ -6,7 +6,7 @@
     <meta name="theme-color" content="#17211e">
     <title>ZPR Control Room</title>
     <link rel="stylesheet" href="/app.css?v=88">
-    <link rel="stylesheet" href="/geography.css?v=3">
+    <link rel="stylesheet" href="/geography.css?v=4">
     <script src="/geography.js?v=3" defer></script>
     <link rel="stylesheet" href="/machine-logs.css?v=18">
     <link rel="stylesheet" href="/assertions.css?v=13">
@@ -14,10 +14,11 @@
     <link rel="stylesheet" href="/trusted-source.css?v=4">
     <link rel="stylesheet" href="/security-review.css?v=8">
     <link rel="stylesheet" href="/diagnostics.css?v=2">
+    <link rel="stylesheet" href="/node-stats.css?v=4">
     <link rel="stylesheet" href="/gateways.css?v=9">
     <link rel="stylesheet" href="/provisioning.css?v=3">
     <link rel="stylesheet" href="/editor-assistant.css?v=7">
-    <script src="/sidebar.js?v=39" defer></script>
+    <script src="/sidebar.js?v=41" defer></script>
 
     <script src="/policy-record-icons.js?v=1" defer></script>
   </head>
@@ -35,6 +36,7 @@
           <a class="nav-link" href="#connections" data-page-group="status">Status</a>
           <a class="nav-link" href="#security-review" data-page-link="security-review">Security</a>
           <a class="nav-link" href="#diagnostics" data-page-link="diagnostics">Diagnostics</a>
+          <a class="nav-link" href="#node-stats" data-page-link="node-stats">Nodes</a>
           <a class="nav-link" href="#sources" data-page-link="sources">Trusted Sources</a>
           <a class="nav-link" href="#adapter-logs" data-page-link="adapter-logs">Adapter Logs</a>
           <a class="nav-link sidebar-external-link" href="http://127.0.0.1:8800/" target="zpr-log-manager" data-reuse-window="zpr-log-manager" rel="noopener noreferrer" title="Log Manager (opens in a separate window)"><span>Log Manager</span><span class="external-arrow" aria-hidden="true">↗</span></a>
@@ -540,6 +542,16 @@
             <div id="diagnostics-sources" class="diagnostics-sources" aria-live="polite"></div>
           </section>
         </section>
+        <section class="page-view" id="page-node-stats" data-page="node-stats" aria-label="Nodes" hidden>
+          <section class="section-block node-stats">
+            <div class="node-stats-toolbar"><label for="node-stats-select">Node</label><select id="node-stats-select" disabled></select><span id="node-stats-count"></span></div>
+            <p>Counters are cumulative since runtime restart or counter reset, not rates or per-link totals. Use the global Refresh and Pause controls.</p>
+            <p id="node-stats-status" role="status" aria-live="polite">Waiting for a production snapshot.</p>
+            <p id="node-stats-error" class="node-stats-error" role="status" hidden></p>
+            <div id="node-stats-summary"></div>
+            <div id="node-stats-groups" class="node-stats-groups"></div>
+          </section>
+        </section>
         <section class="page-view" id="page-security-review" data-page="security-review" aria-label="Security review">
           <section class="section-block security-review" data-security-review>
             <div class="security-review-baseline-row">
@@ -574,7 +586,8 @@
     <script src="/trusted-source.js?v=8" defer></script>
     <script src="/editor-page.js?v=16" defer></script>
     <script src="/assistant-core.js?v=1" defer></script>
-    <script src="/app.js?v=133" defer></script>
+    <script src="/node-stats.js?v=4" defer></script>
+    <script src="/app.js?v=136" defer></script>
     <script src="/log-format.js?v=1" defer></script>
     <script src="/machine-logs.js?v=23" defer></script>
     <script src="/assertions.js?v=26" defer></script>

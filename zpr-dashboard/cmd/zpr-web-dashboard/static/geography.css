@@ -13,5 +13,6 @@ zpr-geography { display: block; }
 .geography-group button[aria-pressed="true"] { background: #174e78; color: #fff; }
 .graph-geographic-basemap { pointer-events: none; }
 #page-map[data-map-view="geography"] .topology-layout { min-height: 320px; }
+#page-map[data-map-view="geography"] .topology-stage { background-color: #eaf4fa; background-image: none; }
 .geography-panel { max-height: 25vh; overflow: auto; margin-bottom: 8px; }
 .geography-panel:has(.geography-group[hidden]):has(.geography-unplaced:empty) { display: none; }

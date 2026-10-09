@@ -3,6 +3,10 @@ let scenarioRun;
 let scenarioCatalogSignature = "";
 let scenarioRunSignature = "";
 let activeScenarioOrganization = "";
+let scenarioLogContext = "";
+let scenarioLogMachines = new Map();
+let scenarioLogError = "";
+let scenarioLogsLoaded = false;
 let scenarioEditorArtifact;
 let scenarioEditorOrganization = "";
 let scenarioEditorDirty = false;
@@ -35,6 +39,80 @@ const scenarioHistory = scenarioEditorController.history;
 
 function scenarioEscape(value) {
   return window.ZPRSafeDisplay.escapeHTML(value);
+}
+
+function scenarioPreviewContext() {
+  return JSON.stringify([activeScenarioOrganization, scenarioRun?.scenario_id, scenarioRun?.started_at]);
+}
+
+function renderScenarioLogPreviews() {
+  const busy = ["running", "cleaning"].includes(scenarioRun?.state);
+  for (const lane of document.querySelectorAll(".scenario-lane[data-scenario-machine]")) {
+    const existing = lane.querySelector(".scenario-log-preview");
+    if (!busy) {
+      existing?.remove();
+      continue;
+    }
+    const id = lane.dataset.scenarioMachine;
+    const machine = scenarioLogMachines.get(id);
+    if (machine && machine.state !== "running") {
+      existing?.remove();
+      continue;
+    }
+    const preview = existing || document.createElement("div");
+    preview.className = "scenario-log-preview";
+    preview.setAttribute("role", "region");
+    preview.setAttribute("aria-label", `Log preview for ${id}`);
+    const status = preview.querySelector("span") || document.createElement("span");
+    status.className = "scenario-log-preview-status";
+    const sources = machine?.sources || [];
+    const sourceErrors = sources.filter(source => source.error);
+    status.textContent = scenarioLogError || (sourceErrors.length ? sourceErrors.map(source => `${source.name}: ${source.error}`).join("; ")
+      : !machine ? scenarioLogsLoaded ? "Machine logs unavailable" : "Loading logs…" : "Live logs");
+    preview.classList.toggle("unavailable", Boolean(scenarioLogError || sourceErrors.length || scenarioLogsLoaded && !machine));
+    const output = preview.querySelector("pre") || document.createElement("pre");
+    output.textContent = sources.flatMap(source => (source.lines || []).slice(-8).map(line => `${source.name}: ${line}`))
+      .slice(-12).join("\n").slice(-8192) || (machine ? "No log entries." : "");
+    const link = preview.querySelector("a") || document.createElement("a");
+    link.href = "/machine-logs.html";
+    link.dataset.simulatorNav = "";
+    link.textContent = "Workers";
+    link.setAttribute("aria-label", `Open Workers logs for ${id}`);
+    if (!existing) {
+      preview.append(status, output, link);
+      lane.prepend(preview);
+    }
+    output.scrollTop = output.scrollHeight;
+  }
+  updateScenarioTrackScroll();
+}
+
+async function refreshScenarioLogPreviews({ signal, isCurrent }) {
+  if (!["running", "cleaning"].includes(scenarioRun?.state)) return;
+  const context = scenarioPreviewContext();
+  let data;
+  try {
+    data = await scenarioRequest("/api/simulator/machine-logs", { cache: "no-store", signal });
+  } catch (failure) {
+    if (!isCurrent() || context !== scenarioPreviewContext() || !["running", "cleaning"].includes(scenarioRun?.state)) return;
+    scenarioLogError = failure.message || "Machine logs unavailable";
+    renderScenarioLogPreviews();
+    return;
+  }
+  if (!isCurrent() || context !== scenarioPreviewContext() || !["running", "cleaning"].includes(scenarioRun?.state)) return;
+  if (!Array.isArray(data?.machines) || data.machines.some(entry => !entry?.machine?.id || !Array.isArray(entry.sources)
+    || entry.sources.some(source => !Array.isArray(source?.lines) || source.lines.some(line => typeof line !== "string")))) {
+    throw new Error("Invalid machine log response");
+  }
+  scenarioLogsLoaded = true;
+  if (data.organization_id !== activeScenarioOrganization) {
+    scenarioLogMachines.clear();
+    scenarioLogError = "Logs unavailable for this organization";
+  } else {
+    scenarioLogMachines = new Map((data.machines || []).map(entry => [entry.machine.id, entry]));
+    scenarioLogError = "";
+  }
+  renderScenarioLogPreviews();
 }
 
 function renderScenarioList(scenarios, maxMachines) {
@@ -113,6 +191,13 @@ function updateScenarioTrackScroll() {
 function renderScenarioRun(run) {
   const previousProgress = JSON.stringify([scenarioRun?.scenario_id, scenarioRun?.state, scenarioRun?.current_step, scenarioRun?.results]);
   scenarioRun = run || { state: "idle", steps: [] };
+  const logContext = scenarioPreviewContext();
+  if (scenarioLogContext !== logContext) {
+    scenarioLogContext = logContext;
+    scenarioLogMachines.clear();
+    scenarioLogError = "";
+    scenarioLogsLoaded = false;
+  }
   const busy = scenarioRun.state === "running" || scenarioRun.state === "cleaning";
   const listedScenario = scenarioById.get(scenarioRun.scenario_id);
   const scenarioName = scenarioRun.scenario_name || listedScenario?.name || "Scenario";
@@ -184,7 +269,8 @@ function renderScenarioRun(run) {
     lane.push(`<li class="scenario-step ${scenarioEscape(status)} ${phase === "cleanup" ? "cleanup" : ""}"><span class="scenario-step-mark" aria-hidden="true"></span><div class="scenario-step-copy"><div><span class="scenario-step-number">${index + 1}</span><strong>${scenarioEscape(step.action.replaceAll("_", " "))}</strong>${step.component ? `<span>${scenarioEscape(step.component)}</span>` : ""}${phase === "cleanup" ? `<span>Cleanup</span>` : ""}</div>${detail ? `<p>${scenarioEscape(detail)}</p>` : ""}</div><time>${scenarioEscape(time)}</time></li>`);
     lanes.set(machine, lane);
   });
-  document.getElementById("scenario-steps").innerHTML = [...lanes].map(([machine, steps]) => `<section class="scenario-lane"><h3>${scenarioEscape(machine)}</h3><ol class="scenario-steps">${steps.join("")}</ol></section>`).join("");
+  document.getElementById("scenario-steps").innerHTML = [...lanes].map(([machine, steps]) => `<section class="scenario-lane"${machine === "Shared" ? "" : ` data-scenario-machine="${scenarioEscape(machine)}"`}><h3>${scenarioEscape(machine)}</h3><ol class="scenario-steps">${steps.join("")}</ol></section>`).join("");
+  renderScenarioLogPreviews();
   updateScenarioTrackScroll();
   for (const button of document.querySelectorAll("[data-run-scenario]")) {
     button.disabled = busy || button.dataset.runOrganization !== activeScenarioOrganization || button.dataset.runPublished !== "true";
@@ -229,6 +315,16 @@ const scenarioPoller = window.ZPRSimulatorNavigation.createPagePoller({
   },
 });
 const refreshScenariosNow = () => scenarioPoller.refresh();
+window.ZPRSimulatorNavigation.createPagePoller({
+  path: "/scenarios.html",
+  run: refreshScenarioLogPreviews,
+  interval: 3000,
+  onError: failure => {
+    if (!["running", "cleaning"].includes(scenarioRun?.state)) return;
+    scenarioLogError = failure.message || "Machine logs unavailable";
+    renderScenarioLogPreviews();
+  },
+});
 
 function setScenarioEditorStatus(message, state = "") {
   scenarioEditorController.setStatus(message || "", state === "saved" ? "success" : state);

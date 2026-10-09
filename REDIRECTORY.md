@@ -1,6 +1,10 @@
 # Source and Project Reorganization Plan
 
-All checklist items are planned, not implemented. Reorganize incrementally to
+Status reconciled 2026-10-09. Most checklist items remain planned; the shared
+editor-controller reuse is implemented and deployed. Neutral Gateway forwarding
+helpers and naming cleanup are committed but not deployed; they remain inside
+the existing Go main package and do not complete production/Simulator package
+separation. Reorganize incrementally to
 make ownership and dependency boundaries enforceable without changing behavior.
 Keep the existing major project/crate boundaries unless a concrete dependency
 problem justifies changing them. This is not a framework migration, microservice
@@ -54,7 +58,7 @@ Related trackers:
 - [ ] Extract visa/monitoring, policy editing, trusted-source and log feature controllers.
 - [ ] Give Control Room and Simulator explicit page entry modules and service adapters.
 - [ ] Keep shared editor, table, request, display and lifecycle utilities domain-neutral.
-- [ ] Complete shared editor-controller reuse using the detailed JavaScript checklist in GUI work rather than duplicating competing helpers.
+- [x] Complete shared editor-controller reuse using the detailed JavaScript checklist in GUI work rather than duplicating competing helpers. All six editors use the shared controller; deployed with `zpr-editor-ui:20261009-unified`.
 - [ ] Pass load/analyze/save/service behavior through explicit adapters; do not let shared UI utilities reach Simulator state or endpoints.
 - [ ] Preserve editor identity/History, dirty state, source-owned diagnostics, keyboard shortcuts, undo, assistant insertion and viewport behavior.
 - [ ] Preserve request cancellation, stale-response rejection, polling cleanup and explicit CSRF policies during extraction.

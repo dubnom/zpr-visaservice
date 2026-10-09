@@ -164,6 +164,7 @@ const pages = {
   "security-review": "SECURITY REVIEW",
   "zpr-config": "ZPR CONFIG",
   diagnostics: "DIAGNOSTICS",
+  "node-stats": "NODE STATS",
   "provisioning-adapters": "ADAPTER PROVISIONING",
 };
 const statusPages = new Set(["connections", "actors", "services", "visas", "denies", "dns"]);
@@ -1041,8 +1042,13 @@ function renderTopology(data, exitComponents = []) {
   const clusterRadius = (node) => {
     const attached = attachedByNode.get(node.cn) || [];
     const extentSum = attached.reduce((sum, actor) => sum + actorExtent(actor) + 18, 0);
-    const ringRequirement = attached.length ? (2 * extentSum + attached.length * 20) / (2 * Math.PI) + 26 : 280;
-    return Math.max(340, ringRequirement);
+    const ringRequirement = attached.length ? (2 * extentSum + attached.length * 20) / (2 * Math.PI) + 26 : 0;
+    if (!geographic) return Math.max(340, ringRequirement);
+    const nodeClearance = actorRadius(node) + Math.max(0, ...attached.map(actorExtent)) + 20;
+    const pairClearance = attached.length > 1
+      ? Math.max(...attached.map((actor, index) => actorExtent(actor) + actorExtent(attached[(index + 1) % attached.length]) + 56)) / (2 * Math.sin(Math.PI / attached.length))
+      : 0;
+    return Math.max(nodeClearance, ringRequirement, pairClearance);
   };
   if (nodes.length && !state.topologyNodeColumns) state.topologyNodeColumns = Math.ceil(Math.sqrt(nodes.length));
   const nodeColumns = Math.max(1, state.topologyNodeColumns || Math.ceil(Math.sqrt(nodes.length)));
@@ -1511,6 +1517,13 @@ function setupGraphControls(stage, width, height, previousViewport) {
   const fit = (cancelAnimation = true) => {
     if (cancelAnimation) cancelViewportAnimation();
     const bounds = fitBounds();
+    if (byId("page-map").dataset.mapView === "geography" && graphContentBounds(world) && svg.clientWidth > 0 && svg.clientHeight > 0) {
+      const aspect = svg.clientWidth / svg.clientHeight;
+      const frame = graphViewBox(bounds);
+      width = Math.max(frame.width, frame.height * aspect);
+      height = width / aspect;
+      svg.setAttribute("viewBox", `${bounds.x + bounds.width / 2 - width / 2} ${bounds.y + bounds.height / 2 - height / 2} ${width} ${height}`);
+    }
     camera.scale = Math.min((width * 0.9) / Math.max(1, bounds.width), (height * 0.9) / Math.max(1, bounds.height));
     camera.x = viewBox.x + width / 2 - (bounds.x + bounds.width / 2) * camera.scale;
     camera.y = viewBox.y + height / 2 - (bounds.y + bounds.height / 2) * camera.scale;
@@ -1564,6 +1577,16 @@ function setupGraphControls(stage, width, height, previousViewport) {
   svg.addEventListener("pointercancel", endDrag);
   if (graphAutoFit) fit(false);
   else apply();
+  stage.graphResizeObserver?.disconnect();
+  let viewportWidth = svg.clientWidth;
+  let viewportHeight = svg.clientHeight;
+  stage.graphResizeObserver = new ResizeObserver(() => {
+    if (viewportWidth === svg.clientWidth && viewportHeight === svg.clientHeight) return;
+    viewportWidth = svg.clientWidth;
+    viewportHeight = svg.clientHeight;
+    if (graphAutoFit && byId("page-map").dataset.mapView === "geography" && stage.querySelector(".topology-graph") === svg) fit();
+  });
+  stage.graphResizeObserver.observe(svg);
   stage.querySelectorAll(".graph-exit-layer .graph-exiting").forEach((component) => {
     const moving = component.hasAttribute("data-arrival-dx");
     const exitX = component.dataset.exitDx ?? component.dataset.arrivalDx;
@@ -3790,6 +3813,9 @@ function flashPolledChange(node) {
 
 function capturePolledFields() {
   const fields = new Map();
+  for (const node of document.querySelectorAll("[data-node-stat-key]")) {
+    fields.set(`node-stat:${node.dataset.nodeStatKey}`, { node, value: node.textContent });
+  }
   const summaryIDs = [
     "metric-actors", "metric-adapters", "metric-services", "metric-allowed", "metric-denied", "metric-visas", "metric-nodes", "metric-nodes-note",
     "connection-count", "actor-count", "service-count", "visa-total", "deny-total",
@@ -4113,6 +4139,7 @@ async function refresh() {
     document.dispatchEvent(new CustomEvent("control-room:refreshed", { detail: snapshot }));
   } catch (error) {
     updateConnection({ api_status: "disconnected", errors: [error.message] });
+    window.dispatchEvent(new CustomEvent("zpr-snapshot-error", { detail: error.message }));
     if (!state.snapshot) byId("topology-stage").querySelector(".empty-state").textContent = "Unable to load topology. Check the connection error above or use Refresh to retry.";
   } finally {
     state.pending = false;

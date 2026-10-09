@@ -4460,6 +4460,122 @@ test("Simulator catalog pollers report malformed JSON and recover without losing
   await expect(page.locator("#scenario-connection")).toHaveText("Alpha Labs: 0 scenarios");
 });
 
+test("Scenario machine log previews are compact, bounded and limited to running machine tracks", async ({ page, appURL, api }) => {
+  await page.clock.install();
+  const run = {
+    scenario_id: "preview", started_at: "2026-10-09T12:00:00Z", state: "running", steps: [],
+    scenario: { steps: [
+      { action: "start_machine", machine: "machine-01" },
+      { action: "start_machine", machine: "machine-02" },
+      { action: "delay" },
+    ], cleanup: [] },
+  };
+  api.handlers.set("/api/simulator/scenarios", route => route.fulfill({ json: {
+    active_organization_id: "alpha", scenarios: [], run,
+  } }));
+  api.handlers.set("/api/simulator/machine-logs", route => route.fulfill({ json: {
+    organization_id: "alpha",
+    machines: [
+      { machine: { id: "machine-01" }, state: "running", sources: [{ name: "Controller", lines: [
+        "old entry", ...Array.from({ length: 20 }, (_, i) => i === 18 ? "x".repeat(9000) : `line-${i}`), '<script>window.previewUnsafe = true</script>',
+      ] }] },
+      { machine: { id: "machine-02" }, state: "exited", sources: [{ name: "Controller", lines: ["stopped"] }] },
+    ],
+  } }));
+  await page.goto(appURL + "/scenarios.html");
+  await expect(page.locator('[data-scenario-machine="machine-01"]')).toBeVisible();
+  await page.clock.runFor(3100);
+  const preview = page.getByRole("region", { name: "Log preview for machine-01", exact: true });
+  await expect(preview).toContainText("Live logs");
+  await expect(preview).toContainText("line-19");
+  await expect(preview).not.toContainText("old entry");
+  await expect(preview.locator("script")).toHaveCount(0);
+  await expect(page.locator(".scenario-log-preview")).toHaveCount(1);
+  expect(await preview.locator("pre").evaluate(el => el.textContent.length)).toBeLessThanOrEqual(8192);
+  const dimensions = await preview.boundingBox();
+  const title = await page.locator('[data-scenario-machine="machine-01"] h3').boundingBox();
+  expect(dimensions.height).toBeLessThanOrEqual(120);
+  expect(dimensions.y + dimensions.height).toBeLessThanOrEqual(title.y);
+  await expect(preview.getByRole("link", { name: "Open Workers logs for machine-01" })).toHaveAttribute("href", "/machine-logs.html");
+
+  run.state = "completed";
+  await page.clock.runFor(3100);
+  await expect(page.locator(".scenario-log-preview")).toHaveCount(0);
+  const requests = api.counts.get("/api/simulator/machine-logs");
+  await page.clock.runFor(6100);
+  expect(api.counts.get("/api/simulator/machine-logs")).toBe(requests);
+});
+
+test("Scenario machine log previews report failures, recover and reject wrong-organization logs", async ({ page, appURL, api }) => {
+  await page.clock.install();
+  api.handlers.set("/api/simulator/scenarios", route => route.fulfill({ json: {
+    active_organization_id: "alpha", scenarios: [], run: {
+      scenario_id: "preview", state: "running", steps: [],
+      scenario: { steps: [{ action: "start_machine", machine: "machine-01" }], cleanup: [] },
+    },
+  } }));
+  api.handlers.set("/api/simulator/machine-logs", route => route.fulfill({
+    status: 502, contentType: "text/html", body: "unavailable",
+  }));
+  await page.goto(appURL + "/scenarios.html");
+  await page.clock.runFor(3100);
+  const preview = page.locator(".scenario-log-preview");
+  await expect(preview).toContainText("HTTP 502: invalid JSON response");
+  await preview.getByRole("link").focus();
+  api.handlers.set("/api/simulator/machine-logs", route => route.fulfill({ json: {
+    organization_id: "alpha", machines: [{ machine: { id: "machine-01" }, state: "running",
+      sources: [{ name: "Controller", lines: ["recovered"] }, { name: "Adapter", error: "Log source unavailable", lines: [] }] }],
+  } }));
+  await page.clock.runFor(3100);
+  await expect(preview).toContainText("recovered");
+  await expect(preview).toContainText("Adapter: Log source unavailable");
+  await expect(preview.getByRole("link")).toBeFocused();
+  api.handlers.set("/api/simulator/machine-logs", route => route.fulfill({ json: { organization_id: "alpha", machines: "invalid" } }));
+  await page.clock.runFor(3100);
+  await expect(preview).toContainText("Invalid machine log response");
+  await expect(preview).toContainText("recovered");
+  api.handlers.set("/api/simulator/machine-logs", route => route.fulfill({ json: {
+    organization_id: "beta", machines: [{ machine: { id: "machine-01" }, state: "running",
+      sources: [{ name: "Controller", lines: ["other organization secret"] }] }],
+  } }));
+  await page.clock.runFor(3100);
+  await expect(preview).toContainText("Logs unavailable for this organization");
+  await expect(preview).not.toContainText("other organization secret");
+  await expect(preview).not.toContainText("recovered");
+});
+
+test("Scenario machine log previews reject late run responses and stop polling on navigation", async ({ page, appURL, api }) => {
+  await page.clock.install();
+  const run = {
+    scenario_id: "first", started_at: "2026-10-09T12:00:00Z", state: "running", steps: [],
+    scenario: { steps: [{ action: "start_machine", machine: "machine-01" }], cleanup: [] },
+  };
+  api.handlers.set("/api/simulator/scenarios", route => route.fulfill({ json: {
+    active_organization_id: "alpha", scenarios: [], run,
+  } }));
+  let pending;
+  api.handlers.set("/api/simulator/machine-logs", route => { pending = route; });
+  await page.goto(appURL + "/scenarios.html");
+  await page.clock.runFor(3100);
+  await expect.poll(() => Boolean(pending)).toBe(true);
+  const inFlightRequests = api.counts.get("/api/simulator/machine-logs");
+  await page.clock.runFor(6100);
+  expect(api.counts.get("/api/simulator/machine-logs")).toBe(inFlightRequests);
+  run.scenario_id = "second";
+  run.started_at = "2026-10-09T12:01:00Z";
+  await page.locator("#scenario-refresh").evaluate(button => button.click());
+  await pending.fulfill({ json: { organization_id: "alpha", machines: [{
+    machine: { id: "machine-01" }, state: "running", sources: [{ name: "Controller", lines: ["obsolete run"] }],
+  }] } });
+  await expect(page.locator(".scenario-log-preview")).not.toContainText("obsolete run");
+  await page.evaluate(() => document.dispatchEvent(new CustomEvent("simulator:deactivate", {
+    detail: { path: "/scenarios.html" },
+  })));
+  const requests = api.counts.get("/api/simulator/machine-logs");
+  await page.clock.runFor(9100);
+  expect(api.counts.get("/api/simulator/machine-logs")).toBe(requests);
+});
+
 test("Simulator Scenarios groups unfiled entries and clears only terminal run history", async ({ page, appURL, api }) => {
   await page.emulateMedia({ reducedMotion: "no-preference" });
   const scenario = {
@@ -8062,6 +8178,255 @@ test("GUI Security high alerts only color the side indicator", async ({ page, ap
   await expect(nav).toHaveAttribute("data-high-alert", "true");
   expect(await colors()).toEqual(original);
   expect(await nav.evaluate(el => getComputedStyle(el).boxShadow)).toContain("rgb(255, 121, 102)");
+});
+
+test("GUI Nodes dock count opens a sorted adapter table and follows snapshots and selection", async ({ page, appURL, api }) => {
+  api.snapshot.actors = [
+    { cn: "node-a", node: true, node_details: { adapters: ["zeta", "<alpha>"], counters: [] } },
+    { cn: "node-b", node: true, node_details: { adapters: [], counters: [] } },
+    { cn: "zeta", node: false, zpr_addr: "fd00::2" },
+  ];
+  await page.goto(appURL + "/#node-stats");
+  await expect(page.getByRole("link", { name: "Nodes", exact: true })).toHaveAttribute("aria-current", "page");
+  await page.locator("#pause-poll").click();
+  const count = page.getByRole("button", { name: "Show docked adapters for node-a" });
+  await expect(count).toHaveText("2");
+  await expect(count).toHaveAttribute("aria-expanded", "false");
+  await expect(page.locator("#node-stats-adapters")).toBeHidden();
+  await count.focus();
+  await count.press("Enter");
+  const table = page.getByRole("table", { name: "Docked adapters", exact: true });
+  await expect(table).toBeVisible();
+  await expect(table.locator("tbody th")).toHaveText(["<alpha>", "zeta"]);
+  await expect(table).toContainText("Unavailable");
+  await expect(table).toContainText("fd00::2");
+  await table.getByRole("button", { name: /^Sort by Adapter,/ }).click();
+  await expect(table.locator("tbody th")).toHaveText(["zeta", "<alpha>"]);
+  api.snapshot.actors[0].node_details.adapters.push("beta");
+  await page.locator("#refresh-now").click();
+  await expect(count).toHaveText("3");
+  await expect(count).toHaveAttribute("aria-expanded", "true");
+  await expect(table.locator("tbody th")).toHaveText(["zeta", "beta", "<alpha>"]);
+  await page.locator("#node-stats-select").selectOption("node-b");
+  const emptyCount = page.getByRole("button", { name: "Show docked adapters for node-b" });
+  await expect(emptyCount).toHaveText("0");
+  await expect(page.locator("#node-stats-adapters")).toBeHidden();
+  await emptyCount.click();
+  await expect(page.locator("#node-stats-adapters")).toContainText("No docked adapters.");
+  await emptyCount.click();
+  await expect(page.locator("#node-stats-adapters")).toBeHidden();
+});
+
+test("GUI Node Stats routes, groups exact counters and preserves selection on refresh", async ({ page, appURL, api }) => {
+  const requests = [];
+  page.on("request", request => requests.push(request.url()));
+  const details = () => ({
+    in_sync: true, last_contact: 1791547200, buffered_denials: 0, local_denials: 7,
+    adapters: ["adapter-a"], links: ["node-b"], visas: [],
+    counters_updated_at: new Date().toISOString(),
+    counters: [
+      { group: "management", name: "internal_routing_error", value: "0" },
+      { group: "fastpath.0", name: "inbound_packets_received", value: "18446744073709551615" },
+      { group: "fastpath.1", name: "ttl_reached_0", value: "3" },
+    ],
+  });
+  api.snapshot.actors = [
+    { cn: "node-a", node: true, zpr_addr: "fd00::1", node_details: details() },
+    { cn: "node-b", node: true, zpr_addr: "fd00::2", node_details: details() },
+    { cn: "adapter-a", node: false },
+  ];
+  await page.goto(appURL + "/#node-stats");
+  await expect(page.locator("#page-node-stats")).toBeVisible();
+  await expect(page.locator('[data-page-link="node-stats"]')).toHaveAttribute("aria-current", "page");
+  await expect(page.locator("#node-stats-count")).toHaveText("2 nodes");
+  await expect(page.locator("#node-stats-status")).toContainText("Fresh counter sample");
+  const groups = page.locator("#node-stats-groups");
+  for (const text of ["Management counters", "Fastpath workers", "18446744073709551615"]) {
+    await expect(groups).toContainText(text);
+  }
+  await expect(page.locator("#node-stats-summary")).toContainText(new Date(1791547200000).toLocaleString("en-US"));
+  await page.locator("#pause-poll").click();
+  await page.locator("#node-stats-select").selectOption("node-b");
+  api.snapshot.actors[1].node_details.counters[1].value = "12";
+  await page.locator("#refresh-now").click();
+  await expect(page.locator("#node-stats-select")).toHaveValue("node-b");
+  await expect(groups).not.toContainText("18446744073709551615");
+  await expect(groups.locator("td", { hasText: /^12$/ })).toHaveCount(1);
+  await page.locator('[data-page-link="diagnostics"]').click();
+  await page.locator('[data-page-link="node-stats"]').click();
+  await expect(page.locator("#page-node-stats")).toBeVisible();
+  expect(requests.some(url => /\/api\/(simulator|organizations|scenarios|workloads|sessions)/.test(url))).toBe(false);
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
+});
+
+test("GUI Node Stats compares workers in a sortable precision-safe table beside management", async ({ page, appURL, api }) => {
+  api.snapshot.actors = [{ cn: "node-a", node: true, node_details: {
+    counters_updated_at: new Date().toISOString(),
+    counters: [
+      { group: "management", name: "visa_requested", value: "2" },
+      { group: "fastpath.10", name: "zeta", value: "4" },
+      { group: "fastpath.2", name: "zeta", value: "9007199254740993" },
+      { group: "fastpath.0", name: "zeta", value: "12" },
+      { group: "fastpath.2", name: "alpha", value: "9007199254740992" },
+      { group: "fastpath.0", name: "alpha", value: "100" },
+      { group: "fastpath.0", name: "beta", value: "2" },
+    ],
+  } }];
+  await page.goto(appURL + "/#node-stats");
+  await page.locator("#pause-poll").click();
+  const table = page.getByRole("table", { name: "Fastpath workers", exact: true });
+  await expect(table.locator("thead th")).toHaveText(["Counter", "0", "2", "10"]);
+  await expect(table.locator("tbody tr")).toHaveCount(3);
+  await expect(table.locator("tbody tr").first().locator("th")).toHaveText("alpha");
+  await expect(table.locator("tbody tr").first().locator("td")).toHaveText(["100", "9007199254740992", "Unavailable"]);
+  await expect(page.locator("#node-stats-groups caption")).toHaveCount(0);
+  const names = table.locator("tbody th");
+  await table.locator('th[data-sort-key="counter"] button').click();
+  await expect(names).toHaveText(["zeta", "beta", "alpha"]);
+  await table.locator('th[data-sort-key="0"] button').click();
+  await expect(names).toHaveText(["beta", "zeta", "alpha"]);
+  await table.locator('th[data-sort-key="0"] button').click();
+  await expect(names).toHaveText(["alpha", "zeta", "beta"]);
+  await table.locator('th[data-sort-key="2"] button').click();
+  await expect(names).toHaveText(["alpha", "zeta", "beta"]);
+  await table.locator('th[data-sort-key="2"] button').click();
+  await expect(names).toHaveText(["beta", "zeta", "alpha"]);
+  await expect(table.locator('th[data-sort-key="2"]')).toHaveAttribute("aria-sort", "descending");
+  await page.locator("#refresh-now").click();
+  await expect(table.locator('th[data-sort-key="2"]')).toHaveAttribute("aria-sort", "descending");
+  await expect(names).toHaveText(["beta", "zeta", "alpha"]);
+
+  const layout = await page.locator("#node-stats-groups").evaluate(element => {
+    const management = element.querySelector(".node-stats-management").getBoundingClientRect();
+    const fastpath = element.querySelector(".node-stats-fastpath").getBoundingClientRect();
+    return { wide: innerWidth > 900, management: { x: management.x, y: management.y, width: management.width, bottom: management.bottom },
+      fastpath: { x: fastpath.x, y: fastpath.y, width: fastpath.width } };
+  });
+  if (layout.wide) {
+    expect(layout.fastpath.y).toBeCloseTo(layout.management.y, 0);
+    expect(layout.fastpath.x).toBeGreaterThan(layout.management.x + layout.management.width);
+    expect(layout.fastpath.width).toBeGreaterThan(layout.management.width * 1.8);
+  } else {
+    expect(layout.fastpath.y).toBeGreaterThanOrEqual(layout.management.bottom);
+  }
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
+  api.snapshot.actors[0].node_details.counters = api.snapshot.actors[0].node_details.counters.filter(counter => counter.group !== "fastpath.2");
+  await page.locator("#refresh-now").click();
+  await expect(table.locator("thead th")).toHaveText(["Counter", "0", "10"]);
+  await expect(table.locator('th[data-sort-key="counter"]')).toHaveAttribute("aria-sort", "ascending");
+});
+
+for (const reducedMotion of ["no-preference", "reduce"]) {
+test(`GUI Node Stats pulses only changed values with ${reducedMotion} motion`, async ({ page, appURL, api }) => {
+  await page.emulateMedia({ reducedMotion });
+  const details = () => ({
+    buffered_denials: 2, counters_updated_at: new Date().toISOString(),
+    counters: [
+      { group: "management", name: "visa_requested", value: "10" },
+      { group: "fastpath.0", name: "received", value: "9007199254740992" },
+      { group: "fastpath.1", name: "received", value: "20" },
+    ],
+  });
+  api.snapshot.actors = [
+    { cn: "node-a", node: true, node_details: details() },
+    { cn: "node-b", node: true, node_details: details() },
+  ];
+  await page.goto(appURL + "/#node-stats");
+  await page.locator("#pause-poll").click();
+  const pulses = page.locator("#page-node-stats .poll-changed");
+  await expect(pulses).toHaveCount(0);
+  const counters = api.snapshot.actors[0].node_details.counters;
+  counters[0].value = "0";
+  counters[1].value = "9007199254740993";
+  api.snapshot.actors[0].node_details.buffered_denials = 0;
+  await page.locator("#refresh-now").click();
+  await expect(pulses).toHaveCount(3);
+  await expect(page.locator(".node-stats-management td .poll-changed")).toHaveText("0");
+  await expect(page.locator(".node-stats-fastpath td .poll-changed")).toHaveText("9007199254740993");
+  await expect(page.locator(".node-stats-fastpath td").last().locator(".poll-changed")).toHaveCount(0);
+  const animation = await page.locator(".node-stats-fastpath .poll-changed").evaluate(element => {
+    const animation = element.getAnimations()[0];
+    return { name: animation.animationName, duration: animation.effect.getTiming().duration,
+      frames: animation.effect.getKeyframes().map(frame => ({ transform: frame.transform, opacity: frame.opacity })) };
+  });
+  expect(animation.duration).toBe(1800);
+  expect(animation.name).toBe(reducedMotion === "reduce" ? "node-stat-fade" : "node-stat-pulse");
+  if (reducedMotion === "reduce") expect(animation.frames.some(frame => frame.opacity === "0.6")).toBe(true);
+  else expect(animation.frames.some(frame => frame.transform === "scale(1.15)")).toBe(true);
+  await expect(pulses).toHaveCount(0);
+  await page.locator("#refresh-now").click();
+  await expect(pulses).toHaveCount(0);
+  await page.locator('.node-stats-fastpath th[data-sort-key="0"] button').click();
+  await expect(pulses).toHaveCount(0);
+  await page.locator("#node-stats-select").selectOption("node-b");
+  await expect(pulses).toHaveCount(0);
+  await page.locator("#refresh-now").click();
+  await expect(pulses).toHaveCount(0);
+  api.snapshot.actors[1].node_details.counters[2].value = "0";
+  await page.locator("#refresh-now").click();
+  await expect(pulses).toHaveCount(1);
+  await expect(page.locator(".node-stats-fastpath td").last().locator(".poll-changed")).toHaveText("0");
+});
+}
+
+test("GUI Node Stats reports partial telemetry, missing details and node removal without zeros", async ({ page, appURL, api }) => {
+  api.snapshot.actors = [{ cn: "node-a", node: true, node_details: {
+    buffered_denials: 2, local_denials: 9, counters: [],
+    counter_stats_error: "Node counters incomplete.", denial_stats_error: "Denial telemetry stale.",
+  } }];
+  await page.goto(appURL + "/#node-stats");
+  await page.locator("#pause-poll").click();
+  await expect(page.locator("#node-stats-status")).toHaveText("Packet counters unavailable.");
+  await expect(page.locator("#node-stats-error")).toContainText("Node counters incomplete.");
+  await expect(page.locator("#node-stats-error")).toContainText("Denial telemetry stale.");
+  await expect(page.locator("#node-stats-groups table")).toHaveCount(0);
+  await expect(page.locator("#node-stats-summary")).not.toContainText("9");
+  api.snapshot.actors = [{ cn: "node-b", node: true }];
+  await page.locator("#refresh-now").click();
+  await expect(page.locator("#node-stats-select")).toHaveValue("node-b");
+  await expect(page.locator("#node-stats-summary")).toContainText("Unavailable");
+  await expect(page.locator("#node-stats-error")).toBeHidden();
+  api.snapshot.actors = [];
+  await page.locator("#refresh-now").click();
+  await expect(page.locator("#node-stats-status")).toHaveText("No nodes in the production snapshot.");
+  await expect(page.locator("#node-stats-select")).toBeDisabled();
+  await expect(page.locator("#node-stats-summary")).toBeEmpty();
+});
+
+test("GUI Node Stats ages samples while paused and renders telemetry text safely", async ({ page, appURL, api }) => {
+  await page.clock.install();
+  api.snapshot.actors = [{ cn: "<img src=x onerror=alert(1)>", node: true, node_details: {
+    counters_updated_at: new Date().toISOString(),
+    counters: [{ group: "management", name: "<script>bad()</script>", value: "18446744073709551615" }],
+  } }];
+  await page.goto(appURL + "/#node-stats");
+  await expect(page.locator("#node-stats-status")).toContainText("Fresh counter sample");
+  await page.locator("#pause-poll").click();
+  await page.clock.fastForward(11000);
+  await expect(page.locator("#node-stats-status")).toContainText("Stale counter sample");
+  await expect(page.locator("#node-stats-error")).toContainText("displayed totals are last known");
+  await expect(page.locator("#page-node-stats img, #page-node-stats script")).toHaveCount(0);
+  await expect(page.locator("#node-stats-groups")).toContainText("<script>bad()</script>");
+});
+
+test("GUI Node Stats distinguishes failed snapshots and recovers on Refresh", async ({ page, appURL, api }) => {
+  api.handlers.set("/api/snapshot", route => route.fulfill({ status: 503, json: { error: "offline" } }));
+  await page.goto(appURL + "/#node-stats");
+  await page.locator("#pause-poll").click();
+  await expect(page.locator("#node-stats-error")).toContainText("Snapshot refresh failed");
+  await expect(page.locator("#node-stats-status")).toHaveText("Waiting for a production snapshot.");
+  api.handlers.delete("/api/snapshot");
+  api.snapshot.actors = [{ cn: "node-a", node: true, node_details: {
+    counters_updated_at: new Date().toISOString(),
+    counters: [{ group: "management", name: "internal_routing_error", value: "1" }],
+  } }];
+  await page.locator("#refresh-now").click();
+  await expect(page.locator("#node-stats-status")).toContainText("Fresh counter sample");
+  await expect(page.locator("#node-stats-error")).toBeHidden();
+  api.handlers.set("/api/snapshot", route => route.fulfill({ status: 503, json: {} }));
+  await page.locator("#refresh-now").click();
+  await expect(page.locator("#node-stats-error")).toContainText("Displayed data is last known");
+  await expect(page.locator("#node-stats-summary h2")).toHaveText("node-a");
 });
 
 test("GUI node details show live management and worker counters without losing integer precision", async ({ page, appURL, api }) => {

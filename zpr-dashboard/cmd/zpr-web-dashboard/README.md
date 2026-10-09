@@ -50,6 +50,13 @@ immediately, without waiting for the next poll.
 Auto-fit and Fit use the network components' bounds, excluding the geographic
 basemap; when no nodes or adapters are reported, the map remains available and
 Fit falls back to the full basemap extent.
+World Map Fit uses the current viewport aspect even after manual zooming, and
+Auto-fit also reframes on viewport resize. Dock spacing is based on component
+clearance rather than a fixed minimum radius, keeping connections compact while
+leaving reported geographic node coordinates unchanged.
+The World Map viewport uses the basemap's ocean color without the Topology dot
+grid, including outside the basemap when panning or zooming. Topology retains
+its separate light/dark backgrounds.
 Adapters docked to a node are arranged in a compact arc in the largest gap
 between that node's inter-node links, in both map views. The radius grows as
 needed to fit the children, service rings and gateway clouds without wrapping
@@ -665,6 +672,15 @@ fails, the progress badge and summary retain the original failed run step even
 after cleanup advances the step counter. Cleanup-only failures show their own
 step instead.
 
+During a running or cleaning scenario, running machines have miniature log
+windows above their track headings. The previews show bounded recent text from
+the existing Simulator log sources and link to **Workers** for full-size logs.
+They refresh every three seconds after the previous request completes, stop
+collecting outside active runs or after navigation, and reject obsolete
+run/organization responses. Request failures retain the last-good preview with
+an explicit error; a mismatched organization clears the previous content.
+This is Simulator-only and adds no dependency to Control Room.
+
 Load Lab places both scenario machines on the **Load Test Bench** node.
 For Docker multinode profiles with explicit machine-owner mappings, each
 machine's first configured owner must have a `location` matching exactly one
@@ -817,6 +833,48 @@ the last successful sample expires normally. Stop/restart the exporter using
 its supervisor and verify fresh samples plus matching live snapshot counts.
 These files are independent operator configuration, not Simulator profiles,
 manifests, discovery, or APIs; Simulator need not be running.
+
+### Nodes
+
+Control Room's **Monitoring > Nodes** page (`/#node-stats`) uses the same
+authenticated `/api/snapshot` feed as the topology. Select a node to view its
+address, synchronization, last contact, pending installs/revocations, visa request
+counts, attached adapters/links, denials, and counter tables. Docked adapters
+shows a clickable count that expands a name-sorted table with adapter names and
+reported ZPR addresses (Unavailable when missing). Click table headings to sort
+or reverse; the open table and sort survive refreshes for that node.
+A narrow management
+table sits beside a fastpath comparison table with a Counter column and one
+numerically ordered column per worker (number-only headings). Click a heading to
+sort; click again to reverse. Worker totals sort with full integer precision,
+and sort selection survives snapshot refreshes. Missing worker/counter entries
+show Unavailable, not zero. On narrow screens the tables stack and scroll locally.
+Changed summary and counter values pulse twice over 1.8 seconds after a snapshot
+update, including decreases and resets to zero. First samples, unchanged values,
+sorting and node selection do not pulse. Reduced-motion mode uses fading instead
+of scaling.
+Node selection survives refreshes while that node remains present. Global Refresh,
+Pause and polling interval controls apply; the page makes no additional API calls
+and works without Simulator. Counter values are rendered as decimal strings,
+preserving unsigned 64-bit precision.
+
+The page labels counter samples fresh or stale using the ten-second telemetry
+window, including while polling is paused. Provider errors, missing counters,
+missing nodes, and snapshot refresh failures are explicit. Last-known values may
+remain visible with a stale/error warning; they must not be treated as current.
+Buffered denials are a current gauge; local denial occurrences and packet counters
+are cumulative. CPU/RAM, byte bandwidth, latency and per-flow rates are not provided.
+
+For setup, copy **both** `service_name` and `instance_id` from each node's entry in
+the production `ZPR_DIAGNOSTICS_SOURCE_MAP_FILE` into the exporter configuration.
+The actor CN still keys the sample-file map; it is not necessarily either OTLP
+resource identifier. For example, a `node:node-01` mapping with
+`{"service_name":"zpr-core-node","instance_id":"production-node-01"}` requires those
+exact values in the exporter, not `node-01` for both. The exporter rereads its
+configuration each polling cycle. Verify fresh sample timestamps and
+`node_details.counters` with no `counter_stats_error`/`denial_stats_error` in the
+live snapshot after changing it; do not restart production nodes just to repair
+an exporter identity mismatch.
 
 The Control Room Security Review is a read-only triage view using the normal
 Control Room Refresh, Pause, and refresh-interval controls. It consumes the
