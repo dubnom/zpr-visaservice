@@ -27,16 +27,41 @@
   invitationSection.hidden = false;
   invalidNotice.hidden = true;
 
-  const installerURL = window.ZPR_ENROLLMENT_PUBLIC_CONFIG?.macInstallerURL;
-  if (typeof installerURL !== "string" || !installerURL.trim()) return;
-  try {
-    const parsed = new URL(installerURL, window.location.href);
-    if (parsed.protocol !== "https:" || parsed.username || parsed.password) return;
+  const configuredURL = (value) => {
+    if (typeof value !== "string" || !value.trim()) return null;
+    let parsed;
+    try {
+      parsed = new URL(value, window.location.href);
+    } catch {
+      return null;
+    }
+    if (parsed.username || parsed.password || parsed.search || parsed.hash) return;
+    const host = parsed.hostname.toLowerCase().replace(/^\[|\]$/g, "");
+    if (parsed.protocol === "http:") {
+      const octets = host.split(".").map(Number);
+      const privateIPv4 = octets.length === 4 && octets.every((part) => Number.isInteger(part) && part >= 0 && part <= 255) &&
+        (octets[0] === 10 || (octets[0] === 172 && octets[1] >= 16 && octets[1] <= 31) ||
+          (octets[0] === 192 && octets[1] === 168));
+      if (!privateIPv4 && !host.endsWith(".local")) return null;
+      return { href: parsed.href, development: true };
+    }
+    if (parsed.protocol !== "https:") return null;
+    return { href: parsed.href, development: false };
+  };
+  const config = window.ZPR_ENROLLMENT_PUBLIC_CONFIG || {};
+  const installer = configuredURL(config.macInstallerURL);
+  const setupConfig = configuredURL(config.macSetupConfigURL);
+  if (installer) {
     const link = document.getElementById("installer-link");
-    link.href = parsed.href;
+    link.href = installer.href;
     link.hidden = false;
     document.getElementById("installer-unavailable").hidden = true;
-  } catch {
-    return;
+    if (installer.development) document.getElementById("installer-dev-warning").hidden = false;
+  }
+  if (setupConfig) {
+    const link = document.getElementById("setup-config-link");
+    link.href = setupConfig.href;
+    link.hidden = false;
+    if (setupConfig.development) document.getElementById("installer-dev-warning").hidden = false;
   }
 })();

@@ -57,6 +57,62 @@
     : source.value !== savedSource || enabled.checked !== savedEnabled || Number(interval.value) !== savedInterval;
   const stale = () => Boolean(status && (recordMode ? recordStale || status.organization_id !== loadedOrganizationID : status.settings.revision !== loadedRevision || (status.organization_id && status.organization_id !== loadedOrganizationID)));
   const escape = window.ZPRSafeDisplay.escapeHTML;
+  function sortableRows(id, columns) {
+    const body = element(id);
+    const table = body.closest("table");
+    const values = new WeakMap();
+    const changes = window.ZPRPollingDisplay.createTracker();
+    let previousData = null;
+    let previousContext = "";
+    let sort = null;
+    for (const [index, column] of columns.entries()) {
+      const header = table.querySelectorAll("thead th")[index];
+      header.dataset.sortKey = column.key;
+      if (column.numeric) header.dataset.numeric = "true";
+    }
+    function apply() {
+      if (!sort) return;
+      const rows = [...body.rows];
+      const ordered = [...rows].sort((left, right) =>
+        window.ZPRSortableTable.compareValues(values.get(left)[sort.key], values.get(right)[sort.key]) * sort.direction);
+      if (ordered.some((row, index) => row !== rows[index])) body.replaceChildren(...ordered);
+    }
+    window.ZPRSortableTable.bindSortableHeaders({
+      table, getSort: () => sort, onSort: (next) => { sort = next; apply(); },
+    });
+    return {
+      apply,
+      rendered(data, context) {
+        window.ZPRPollingDisplay.markNumericColumns(table);
+        if (context !== previousContext) changes.reset();
+        if (data && (data !== previousData || context !== previousContext)) {
+          const fields = new Map();
+          for (const row of body.rows) {
+            const record = values.get(row);
+            const identity = record.name ?? `${record.line}:${record.assertion}`;
+            for (const [index, column] of columns.entries()) {
+              fields.set(`${identity}:${column.key}`, { node: row.cells[index], value: record[column.key] });
+            }
+          }
+          changes.update(fields);
+          previousData = data;
+        }
+        previousContext = context;
+        apply();
+      },
+      remember(row, record) {
+        values.set(row, record);
+      },
+    };
+  }
+  const groupTable = sortableRows("assertion-group-rows", [{ key: "name" }, { key: "members", numeric: true }]);
+  const attributeTable = sortableRows("assertion-attribute-rows", [
+    { key: "name" }, { key: "people", numeric: true }, { key: "groups", numeric: true },
+  ]);
+  const resultTable = sortableRows("assertion-result-rows", [
+    { key: "line", numeric: true }, { key: "assertion" }, { key: "status" },
+    { key: "checked", numeric: true }, { key: "violations", numeric: true },
+  ]);
   const sourceLayout = window.ZPREditorPage.bindSourceLayout({
     source, highlight: element("assertion-highlight"),
     gutterContent: element("assertion-result-lines"),
@@ -142,8 +198,11 @@
       });
       control.append(insert);
       row.append(name, count, control);
+      groupTable.remember(row, group);
       rows.append(row);
     }
+    const catalogContext = JSON.stringify([loadedOrganizationID, catalogSource.value]);
+    groupTable.rendered(summary, catalogContext);
     const attributeRows = element("assertion-attribute-rows");
     attributeRows.replaceChildren();
     for (const attribute of summary?.attributes || []) {
@@ -167,8 +226,10 @@
       });
       cell.append(insert);
       row.append(cell);
+      attributeTable.remember(row, attribute);
       attributeRows.append(row);
     }
+    attributeTable.rendered(summary, catalogContext);
   }
 
   function ruleLabel(rule) {
@@ -212,14 +273,23 @@
     renderResultGutter(run);
     for (const result of run?.results || []) {
       const row = document.createElement("tr");
-      for (const value of [result.rule.line, ruleLabel(result.rule), result.status.toUpperCase(), result.message, result.subjects.join(", ")]) {
+      const label = ruleLabel(result.rule);
+      for (const value of [result.rule.line, label, result.status.toUpperCase(), result.checked, result.violations]) {
         const cell = document.createElement("td");
         cell.textContent = value;
         row.append(cell);
       }
+      for (const [index, detail] of [[3, result.message], [4, result.subjects.join(", ")]]) {
+        if (!detail) continue;
+        const description = document.createElement("small");
+        description.textContent = ` (${detail})`;
+        row.cells[index].append(description);
+      }
       row.dataset.state = result.status;
+      resultTable.remember(row, { line: result.rule.line, assertion: label, status: result.status, checked: result.checked, violations: result.violations });
       rows.append(row);
     }
+    resultTable.rendered(run, JSON.stringify([loadedOrganizationID, loadedRecordID, source.value]));
   }
 
   async function analyzeAssertions() {

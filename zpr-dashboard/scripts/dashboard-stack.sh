@@ -863,6 +863,21 @@ start_observability_collector() {
 }
 
 start_control_service() {
+    control_node_names_file=${ZPR_NODE_DISPLAY_NAMES_FILE:-}
+    if [ -z "$control_node_names_file" ] && [ -f "$STATE_DIR/node-display-names.json" ]; then
+        control_node_names_file="$STATE_DIR/node-display-names.json"
+    fi
+    control_change_feeds_file=${ZPR_TRUSTED_CHANGE_FEEDS_FILE:-}
+    if [ -z "$control_change_feeds_file" ] && [ -f "$STATE_DIR/trusted-change-feeds.json" ]; then
+        control_change_feeds_file="$STATE_DIR/trusted-change-feeds.json"
+    fi
+    control_change_feeds_network=${ZPR_TRUSTED_CHANGE_FEEDS_NETWORK:-}
+    if [ -z "$control_change_feeds_network" ] && [ -f "$STATE_DIR/trusted-change-feeds.network" ]; then
+        control_change_feeds_network=$(cat "$STATE_DIR/trusted-change-feeds.network")
+    fi
+    if [ -n "$control_change_feeds_network" ]; then
+        docker network inspect "$control_change_feeds_network" >/dev/null
+    fi
     control_ldap_container=${ZPR_ASSERTION_LDAP_CONTAINER:-}
     control_gateway_organization=${ZPR_GATEWAY_ORGANIZATION_ID:-${SIMULATION_ORGANIZATION_ID:-}}
     active_organization_file=${ACTIVE_ORGANIZATION_FILE:-}
@@ -911,7 +926,8 @@ start_control_service() {
         -e ZPR_ASSERTION_LDAP_BASE_DN="${ZPR_ASSERTION_LDAP_BASE_DN:-}" \
         -e ZPR_ASSERTION_LDAP_BIND_DN="${ZPR_ASSERTION_LDAP_BIND_DN:-}" \
         -e ZPR_ASSERTION_SOURCES_FILE="${ZPR_ASSERTION_SOURCES_FILE:-}" \
-        -e ZPR_TRUSTED_CHANGE_FEEDS_FILE="${ZPR_TRUSTED_CHANGE_FEEDS_FILE:-}" \
+        -e ZPR_TRUSTED_CHANGE_FEEDS_FILE="$control_change_feeds_file" \
+        -e ZPR_NODE_DISPLAY_NAMES_FILE="$control_node_names_file" \
         -e ZPR_ADAPTER_LOG_CONFIG_FILE="${ZPR_ADAPTER_LOG_CONFIG_FILE:-$STATE_DIR/adapter-logs.json}" \
         -e ZPR_PROVIDER_MANAGER_URLS="${ZPR_PROVIDER_MANAGER_URLS:-}" \
         -e ZPR_DIAGNOSTICS_CONFIG_FILE="${ZPR_DIAGNOSTICS_CONFIG_FILE:-$STATE_DIR/diagnostics/openobserve.json}" \
@@ -935,6 +951,9 @@ start_control_service() {
         "$SIMULATOR_IMAGE" -mode control-service >/dev/null
     if docker inspect "$OBSERVABILITY_LOCAL_CONTAINER" >/dev/null 2>&1; then
         docker network connect "$OBSERVABILITY_LOCAL_NETWORK" "$CONTROL_CONTAINER"
+    fi
+    if [ -n "$control_change_feeds_network" ] && [ "$control_change_feeds_network" != "$OBSERVABILITY_LOCAL_NETWORK" ]; then
+        docker network connect "$control_change_feeds_network" "$CONTROL_CONTAINER"
     fi
     wait_for_url https://127.0.0.1:8790/api/snapshot control-service \
         ${ZPR_DASHBOARD_CONTAINER_RUNTIME:+--connect-to 127.0.0.1:8790:host.docker.internal:8790} \

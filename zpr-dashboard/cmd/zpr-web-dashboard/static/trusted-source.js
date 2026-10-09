@@ -33,7 +33,7 @@
       this.innerHTML = `
         <section class="trusted-source-browser-panel" aria-label="Trusted source browser">
           <header class="trusted-source-browser-head">
-            <div><h3 data-source-title>Trusted source</h3><p data-source-meta class="trusted-source-meta">Not loaded</p></div>
+            <div><h3 data-source-title>Trusted source</h3>${this.simulatorPage ? "" : `<select data-source-selector class="trusted-source-heading-select" aria-label="Trusted source" hidden></select>`}<p data-source-meta class="trusted-source-meta">Not loaded</p></div>
             <button type="button" class="button" data-source-refresh>Refresh</button>
           </header>
           <div class="trusted-source-summary" data-source-summary role="status"></div>
@@ -50,7 +50,6 @@
             <span class="trusted-source-count" data-source-count></span>
           </div>
           ${this.simulatorPage ? "" : `<div class="trusted-source-update-controls" data-source-update-controls hidden>
-            <label><span>Update feed</span><select data-source-feed aria-label="Trusted source update feed"></select></label>
             <button type="button" class="button" data-source-load-more hidden>Load more updates</button>
           </div>`}
           <p class="trusted-source-message" data-source-message role="status" aria-live="polite">Loading trusted source…</p>
@@ -82,7 +81,7 @@
       this.querySelector("[data-source-filter]").addEventListener("input", () => this.render());
       if (this.closest("#page-sources")) {
         this.querySelector("[data-source-refresh]").hidden = true;
-        this.querySelector("[data-source-feed]").addEventListener("change", () => this.loadUpdates(true));
+        this.querySelector("[data-source-selector]").addEventListener("change", () => this.loadUpdates(true));
         document.addEventListener("control-room:refresh-requested", () => {
           if (location.hash === "#sources") {
             if (this.view === "updates") this.loadUpdates(true);
@@ -106,7 +105,7 @@
           if (!response.ok) throw new Error(data.error || `Source read failed (${response.status})`);
           if (!data.directory) throw new Error("Trusted source did not return browseable records");
           this.snapshot = data;
-          this.querySelector("[data-source-title]").textContent = `${this.dataset.titlePrefix || ""}${data.source_name || "Trusted source"}`;
+          this.renderSourceHeading();
           this.querySelector("[data-source-meta]").textContent = [data.organization_name, data.base_dn, data.observed_at && window.ZPRSafeDisplay.formatDateTime(data.observed_at)].filter(Boolean).join(" · ");
           this.querySelector("[data-source-summary]").textContent = `${data.people || 0} people · ${(data.groups || []).length} groups · ${(data.attributes || []).length} attributes`;
           this.render();
@@ -129,6 +128,8 @@
         this.renderUpdates();
         return;
       }
+      this.renderSourceHeading();
+      if (!this.simulatorPage) this.querySelector("[data-source-update-controls]").hidden = true;
       const directory = this.snapshot.directory;
       const query = this.querySelector("[data-source-filter]").value.trim().toLowerCase();
       const results = this.querySelector("[data-source-results]");
@@ -165,15 +166,19 @@
             if (!response.ok) throw new Error(data.error || `Change feeds could not be read (${response.status})`);
             if (!Array.isArray(data.sources)) throw new Error("Change feed list is malformed");
             this.updateSources = data.sources;
-            const select = this.querySelector("[data-source-feed]");
+            const select = this.querySelector("[data-source-selector]");
             select.replaceChildren(...this.updateSources.map((source) => {
               const option = element("option", "", source.display_name || source.name);
               option.value = source.name;
               return option;
             }));
-            if (this.updateSources.length) select.value = this.updateSources[0].name;
+            if (this.updateSources.length) {
+              const matching = this.updateSources.find(source => source.name === this.directorySourceName());
+              select.value = (matching || this.updateSources[0]).name;
+            }
           }
-          const sourceName = this.querySelector("[data-source-feed]").value;
+          const sourceName = this.querySelector("[data-source-selector]").value;
+          this.renderSourceHeading();
           if (!sourceName) {
             this.updates = [];
             this.updateCursor = "";
@@ -188,7 +193,7 @@
             this.updateMore = true;
             this.updateSourceName = sourceName;
           }
-          this.querySelector("[data-source-feed]").disabled = true;
+          this.querySelector("[data-source-selector]").disabled = true;
           const query = new URLSearchParams({ limit: "100" });
           if (this.updateCursor) query.set("cursor", this.updateCursor);
           const response = await fetch(`/api/trusted-sources/change-feeds/${encodeURIComponent(sourceName)}/changes?${query}`, { cache: "no-store", headers: { Accept: "application/json" } });
@@ -204,14 +209,17 @@
           this.updateCursor = data.cursor;
           this.updateMore = data.more;
           this.updateEmptyMessage = "No trusted-source updates in the last 24 hours.";
-          this.renderUpdates();
+          if (this.view === "updates") this.renderUpdates();
         } catch (error) {
-          results.hidden = true;
-          message.hidden = false;
-          message.textContent = error.message || "Trusted source updates could not be read";
-          moreButton.hidden = true;
+          this.updateError = error.message || "Trusted source updates could not be read";
+          if (this.view === "updates") {
+            results.hidden = true;
+            message.hidden = false;
+            message.textContent = this.updateError;
+            moreButton.hidden = true;
+          }
         } finally {
-          this.querySelector("[data-source-feed]").disabled = false;
+          this.querySelector("[data-source-selector]").disabled = false;
           moreButton.disabled = false;
           this.updatesPending = null;
         }
@@ -219,7 +227,26 @@
       return this.updatesPending;
     }
 
+    renderSourceHeading() {
+      const title = this.querySelector("[data-source-title]");
+      const selector = this.querySelector("[data-source-selector]");
+      const updates = !this.simulatorPage && this.view === "updates";
+      this.querySelector("[data-source-meta]").hidden = updates;
+      this.querySelector("[data-source-summary]").hidden = updates;
+      const selected = updates && this.updateSources?.find(source => source.name === selector.value);
+      title.textContent = selected
+        ? selected.display_name || selected.name
+        : `${this.simulatorPage ? this.dataset.titlePrefix || "" : ""}${this.directorySourceName() || (this.simulatorPage ? "Trusted source" : "Source unavailable")}`;
+      title.hidden = Boolean(updates && this.updateSources?.length > 1);
+      if (selector) selector.hidden = !title.hidden;
+    }
+
+    directorySourceName() {
+      return (!this.simulatorPage && this.snapshot?.default_source) || this.snapshot?.source_name;
+    }
+
     renderUpdates() {
+      if (this.view !== "updates") return;
       const results = this.querySelector("[data-source-results]");
       const message = this.querySelector("[data-source-message]");
       const count = this.querySelector("[data-source-count]");
@@ -474,6 +501,7 @@
       for (const candidate of columns) {
         const heading = element("th");
         heading.dataset.sortKey = candidate.key;
+        if (view === "attributes" && ["people", "groups"].includes(candidate.key)) heading.dataset.numeric = "true";
         heading.textContent = candidate.label;
         header.append(heading);
       }
@@ -486,6 +514,7 @@
         body.append(row, ...afterRow(row, item));
       }
       table.append(head, body);
+      window.ZPRPollingDisplay?.markNumericColumns(table);
       window.ZPRSortableTable.bindSortableHeaders({
         table,
         getSort: () => this.sorts[view],

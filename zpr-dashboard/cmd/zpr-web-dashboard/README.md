@@ -54,6 +54,8 @@ World Map Fit uses the current viewport aspect even after manual zooming, and
 Auto-fit also reframes on viewport resize. Dock spacing is based on component
 clearance rather than a fixed minimum radius, keeping connections compact while
 leaving reported geographic node coordinates unchanged.
+Refresh viewport transitions compare the final fitted geometry, so unchanged
+World Map snapshots do not trigger a spurious zoom animation.
 The World Map viewport uses the basemap's ocean color without the Topology dot
 grid, including outside the basemap when panning or zooming. Topology retains
 its separate light/dark backgrounds.
@@ -237,6 +239,13 @@ back to the page preserve the records, filter, and expanded LDAP branches.
 Diagnostics still follows global polling; standalone source pages retain their
 own refresh action.
 
+The lower Control Room panel heading is the configured source identifier
+(`default_source`), or the source name when that identifier is not supplied.
+The top table gives each source with a known operator-configured `editor_url`
+a **Manage ↗** button in a dedicated column. It reuses the named management
+window; sources without a management URL have no action. Provider type remains
+in its own table column instead of being repeated under the source name.
+
 The Control Room **Updates (24h)** tab shows trusted-source LDAP change metadata
 for the previous 24 hours. It lists the event time, operation, entry DN, rename
 target, and attribute names; attribute values are never included. The page reads
@@ -244,6 +253,15 @@ the existing `zpr-trusted-service` `/v1/changes` feed through Control-Service,
 which owns a separate mTLS client identity. The browser sees neither feed URLs
 nor certificates or keys, and the feed must be configured independently of
 Simulator.
+
+Updates names the selected feed in the panel heading, without a separate
+"Update feed" label or dropdown. A single feed is a plain heading; with multiple
+feeds the heading itself becomes a source selector. The matching directory
+source is selected initially when configured, otherwise the first configured
+feed is shown by name. Changing feeds restarts that feed's 24-hour cursor;
+Load more continues only the selected feed. Switching back to directory tabs
+restores the directory heading and records without rereading LDAP. Directory
+metadata is hidden while viewing another feed to avoid misattribution.
 
 Configure `ZPR_TRUSTED_CHANGE_FEEDS_FILE` on Control-Service with feed identifiers
 matching the names in `ZPR_ASSERTION_SOURCES_FILE`:
@@ -269,6 +287,16 @@ paths in that JSON plus `ZPR_TRUSTED_CHANGE_FEEDS_FILE` (for example,
 Restart Control-Service
 with `sh scripts/dashboard-stack.sh restart-control-service` to load changes.
 Protect the private key and the runtime directory from untrusted users.
+
+The stack script automatically uses `.local-runtime/dashboard-stack/trusted-change-feeds.json`
+when no explicit feed file is supplied. For a provider on another Docker network,
+set `ZPR_TRUSTED_CHANGE_FEEDS_NETWORK`, or persist that network's name in
+`.local-runtime/dashboard-stack/trusted-change-feeds.network`. This is operator
+configuration, independent of Simulator. An unavailable configured network fails
+before the existing Control-Service is stopped. Use a dedicated Control-Service
+client certificate signed by the provider's trusted CA; do not reuse a Visa
+Service client key. Both services must support the exact `since=24h` bootstrap
+query (not Go's compound duration `24h0m0s`).
 
 The trusted-service listener must trust that Control-Service client certificate.
 Set its `-ldap-changes-retention` and slapd `logpurge` age to 24 hours (neither
@@ -843,16 +871,60 @@ counts, attached adapters/links, denials, and counter tables. Docked adapters
 shows a clickable count that expands a name-sorted table with adapter names and
 reported ZPR addresses (Unavailable when missing). Click table headings to sort
 or reverse; the open table and sort survive refreshes for that node.
+Operator display names label nodes in maps, inspection, actor tables, and the
+Nodes selector without changing authenticated CNs, addresses, or telemetry
+keys. The Nodes summary retains an explicit **Node identity** field. Configure
+`ZPR_NODE_DISPLAY_NAMES_FILE` on Control-Service with an IPv6-address-to-name
+JSON object, for example:
+
+```json
+{
+  "fd5a:5052:90de::10": "Milwaukee",
+  "fd5a:5052:90de::11": "Shenzhen",
+  "fd5a:5052:90de::12": "Tijuana"
+}
+```
+
+The stack script defaults to `.local-runtime/dashboard-stack/node-display-names.json`
+when it exists. This independent operator file is reread on snapshots, so name
+edits need no node restart. Invalid configuration produces a snapshot error;
+unconfigured nodes keep their existing labels. Only node actors at the configured
+addresses are renamed; adapter identities and nodes in other address spaces are
+unchanged. Names may contain up to 80 characters but no control characters.
+
 A narrow management
 table sits beside a fastpath comparison table with a Counter column and one
 numerically ordered column per worker (number-only headings). Click a heading to
 sort; click again to reverse. Worker totals sort with full integer precision,
 and sort selection survives snapshot refreshes. Missing worker/counter entries
 show Unavailable, not zero. On narrow screens the tables stack and scroll locally.
-Changed summary and counter values pulse twice over 1.8 seconds after a snapshot
+Changed summary and counter values pulse twice over 2.4 seconds after a snapshot
 update, including decreases and resets to zero. First samples, unchanged values,
 sorting and node selection do not pulse. Reduced-motion mode uses fading instead
 of scaling.
+
+Control Room shares this change treatment across automatically refreshed tables,
+Status tab counts, node/inspector values, uptime, Diagnostics and Security totals.
+Stable record/column keys prevent row sorting, filtering or selection from being
+mistaken for telemetry changes. DNS, Diagnostics and Security compare values only
+after their own asynchronous data response has rendered, not against a loading
+message or an unrelated snapshot. Reduced-motion mode fades rather than scales.
+No polling is added to manually refreshed directory or enrollment data.
+
+Table headings are bold; numeric columns and their sort controls align right.
+Numeric-string sorting preserves exact integer precision. Control Room text has
+an 11px minimum, excluding map labels; the scoped typography stylesheet does not
+change Simulator. Assertion results are visible in a locally scrolling table,
+while source-line gutter diagnostics remain attached to their analyzed source.
+The top banner contains
+Control Room connectivity, operator access, Help and global refresh controls;
+Visa Service health/uptime and source failures appear below it. Permanent
+explanations live in contextual Help; actionable errors, freshness warnings,
+separate enrollment-code delivery and fingerprint/action confirmations remain
+visible where needed. Diagnostics uses a sortable source overview with expandable
+logs and sortable metric tables. Provisioning queue sorting applies only to its
+loaded page, not to the whole server registry. Assertion catalogs/results and
+inspector counters sort without changing source/evaluation ownership.
 Node selection survives refreshes while that node remains present. Global Refresh,
 Pause and polling interval controls apply; the page makes no additional API calls
 and works without Simulator. Counter values are rendered as decimal strings,

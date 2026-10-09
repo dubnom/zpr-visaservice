@@ -6,13 +6,57 @@
 - If something needs clarity, put it in the help text.
 - Data should generally be shown in a standardize sortable table. This isn't necessary for small data sets.
 - Numeric table headers should right justify.
+- Numbers in tables should right justify.
 - Table headers should be bold.
 - The topmost banner is only for application-wide information and control.
+- No font sizes less than 11px - this doesn't apply to the maps.
+
+## Control Room guideline follow-up
+
+Implemented, verified and deployed to Control Room at 2026-10-09 15:37 UTC.
+The implementation remains uncommitted and unpushed.
+
+- [x] Use a shared two-pulse change treatment with reduced-motion fading.
+- [x] Cover Status counts, service uptime, Diagnostics, Security and live inspector values.
+- [x] Compare stable record/column identities after each asynchronous source update; no false pulses on sorting/selection.
+- [x] Make all table headings bold and numeric headings/values right-aligned.
+- [x] Enforce the new 11px minimum text size in Control Room, excluding maps, without changing Simulator typography.
+- [x] Keep the top banner application-wide; separate Control Room transport from Visa Service source health.
+- [x] Move permanent Nodes, Gateway, DNS and Provisioning explanations into Help; preserve operational errors and consequential warnings/confirmations.
+- [x] Use sortable Diagnostics source/metric tables with expandable log details.
+- [x] Sort loaded Provisioning queue pages without changing server pagination or authorization.
+- [x] Sort Assertion catalogs/results and inspector counters without changing source-line/evaluation ownership.
+- [x] Verify desktop/narrow layouts, keyboard sorting, exact integers, pulses and existing refresh semantics without Simulator.
+- [ ] VISA SERVICE UPTIME" should have a red or green dot, show the duration. Move to top area, it is application wide. Get rid of "Visa service connected". Make it look like "Control Room connected" and put it next to it.
+
+Verification: 72 combined desktop/tablet browser cases pass, including measured
+text sizes, page overflow, keyboard sorting, exact integer comparisons, source-local
+evaluation, async change pulses and production-only Diagnostics. Focused node and
+Diagnostics Go tests, the embedded Control Room build, JavaScript syntax checks
+and whitespace checks pass. Three unrelated older tests (Assertion reload via a
+hidden File menu item and two outdated Security inventory/markup expectations)
+fail identically on committed baseline `e41af68` in both viewports; those tests
+were not modified.
 
 ## Deployment status
 
 Current tracker reconciliation: 2026-10-09. The dated entries below are
 historical verification snapshots, not fresh health checks.
+
+- Control Room guideline update deployed at 2026-10-09 15:37 UTC using
+  `zpr-editor-ui:20261009-control-room-guidelines`. Exact release assets passed
+  72 combined desktop/tablet browser cases before deployment; all 20 changed
+  or related served assets match the release build byte-for-byte. Operator
+  login is enabled, signed-out session returns 401 and protected snapshot
+  returns 403. Three production nodes each retain 146 counters without
+  counter or denial errors. Container configuration, mounts, network and
+  restart policy are unchanged; all 17 other running service start times
+  are unchanged and Simulator remains responsive. Stopped
+  `zpr-control-room-guidelines-rollback` retains the preceding image.
+  Preserved the deployed pre-forwarding backend and seven-method validator.
+  Concurrent enrollment email-draft additions and the World Map refresh fix
+  were excluded from this guideline-only release. No authenticated live
+  browser interaction is claimed.
 
 - Control Room-only Nodes navigation/docked-adapter update deployed at
   2026-10-09 14:52 UTC using `zpr-editor-ui:20261009-nodes-adapters`.
@@ -451,6 +495,7 @@ tests also fail against committed baseline assets; neither test was changed.
 - [x] Show management and per-fastpath packet-processing counters in node details when a node is clicked, with explicit unavailable/stale telemetry states.
 - [x] Add Monitoring > Node Stats with a node selector, live state, denial telemetry, grouped management/fastpath counters, exact counter integers, sample freshness and explicit errors; share global snapshot polling without a Simulator dependency.
   - Navigation renamed Nodes; Docked adapters shows a clickable count expanding a name-sorted adapter/address table, with sortable headings, refresh retention and an explicit empty state. Sixteen focused desktop/tablet cases pass. Deployed in the Control Room-only Nodes update above; served assets match source and unsigned snapshot access remains protected.
+  - City display names deployed 2026-10-09: `node0.demo` = Milwaukee, `node1.demo` = Shenzhen, `node2.demo` = Tijuana. Independent operator IPv6/name configuration labels maps, inspectors, actor tables and Nodes; the Nodes summary retains the CN as Node identity. CNs, addresses, authentication, dock/link sets and 146 counters per node remain unchanged. Control-Service and Control Room use `zpr-editor-ui:20261009-city-node-names`; preserved the pre-forwarding backend plus the deployed trusted-feed fix and only city-label changes. All 61 unrelated served assets and 15 unrelated service start times remain unchanged. Concurrent Trusted Sources/enrollment changes and the source-only map-refresh fix were excluded. Live app.js version 140 contains only naming additions to the previously deployed version 137; source version 141 reserves fresh cache invalidation for the other unpublished work. Exact release desktop/tablet naming tests and focused backend tests pass; broader geography run passed 33/34, with a tablet map-stability failure also reproduced with naming changes removed. No authenticated live browser interaction claimed; service API verifies labels and clean snapshot, and unsigned UI snapshot remains HTTP 403. Initial verification rolled back safely because adapter lists changed order; corrected verification compares sets, then deployment succeeded. Stopped `zpr-control-service-city-names-rollback` and `zpr-control-room-city-names-rollback` retained.
   - Fastpath counters use one sortable comparison table (Counter, then number-only worker columns) beside a narrower management table, without redundant cumulative-total captions. Deployed in the Control Room-only update above; tests cover exact numeric sorting, refresh preservation and responsive layout.
   - Changed summary/counter values pulse twice, including decreases/reset to zero; stable node/counter/worker keys avoid false pulses on sorting or node selection. Reduced-motion mode fades instead of scaling. All fourteen Node Stats desktop/tablet cases pass. Deployed in the Control Room-only update above.
   - Verified eight new desktop/tablet browser cases and focused Go node-telemetry tests. Deployed in the UI-only update above; live authenticated desktop/tablet checks confirm all three nodes expose 146 counters each without snapshot errors.
@@ -477,6 +522,7 @@ tests also fail against committed baseline assets; neither test was changed.
 - [x] Show each gateway with a visible connector to a labeled, cloud-shaped external-network component in both Topology and World Map.
 
 ### World map
+- [x] Fix viewport jerking on unchanged refreshes: compare viewport scales only after Auto-fit establishes the final viewBox, not against temporary pre-fit geometry. Reproduced on desktop/tablet before the fix; 32 geographic and 8 shared Topology camera regressions pass after it. Source-only, not deployed.
 - [x] `worldmap.svg` is available in the `zpr-dashboard` folder.
 - [x] Plan for a geographic network view using node latitude/longitude:
   - [x] Add optional validated latitude/longitude properties to production node metadata and the Visa Service Admin API; never infer coordinates from location names or read Simulator profiles in Control Room.
@@ -570,6 +616,8 @@ tests also fail against committed baseline assets; neither test was changed.
 - [x] If there aren't any adapters (none available) than show a message that says this/
 - [x] Move the picker to be under the adapter title when opened.
 - [x] The error message "Unexpected token 'C', "Client sen"... is not valid JSON" makes no sense when the real issue is the Visa service being unavailable.
+- [ ] Logs aren't all showing the same style/layout.
+- [ ] Logs sometimes have the horizontal scroll above the bottom (where it should be).
 
 ### Config
 - [x] Adopt the same look-and-feel as the policy editor. If ZPR config is limited to one file, there is no need for Browse, or some of the File commands. Refresh Attributes is also not relevant.
@@ -589,8 +637,34 @@ tests also fail against committed baseline assets; neither test was changed.
 - [x] Groups should make the cn and objectclass their own columns
 - [x] People should condense each row and toggle viewing when clicked.
 - [x] Add a page to view updates from the trusted source (Control Room reads the mTLS-protected trusted-service change feed through Control-Service; the Updates tab shows one day of metadata only, never attribute values).
+- [x] Fix the live "No trusted-source change feeds are configured" state (2026-10-09): persist the independent `ldap` / Great Lakes LDAP feed and provider network in operator configuration, issue a dedicated Control-Service mTLS client, update the existing trusted-provider binary for lookback support, and serialize bootstrap as exactly `since=24h` rather than rejected `24h0m0s`. Deployed `zpr-control-service:20261009-trusted-feed` from the preserved `3880c6a0` backend plus seven-method validation and this feed fix; no forwarding backend or Control Room assets deployed. Focused provider/dashboard tests and exact release-source tests pass. Live authenticated service API lists the feed, returns valid empty 24-hour history and cursor continuation, and snapshot errors are empty. All 16 unrelated running service start times are unchanged; only directory and Control-Service restarted. Unsigned Control Room feed remains HTTP 403; browser reaches Dex login, so no authenticated browser interaction claimed. Retained stopped `zpr-control-service-trusted-feed-rollback` and original trusted binary `.trusted-feed-rollback`. Reload an already-open Updates page to discard its cached empty feed list.
 - [x] Remove filter from the top table.
 - [x] Rename lower table "Trusted source: {great_lakes_ldap}" using the source name returned by the directory endpoint.
+- [x] Add a button "Manage" with an arrow for each trusted source with a known management interface (dedicated Manage column; only operator-configured URLs; reusable named window).
+- [x] Change the title "Trusted source: Trusted source" and replace it with the configured source identifier, such as "great_lakes_ldap" (use the existing directory response's `default_source`, otherwise `source_name`; no invented source names).
+- [x] Remove the separate "Update feed" label and pulldown. A single feed is named in the heading; with multiple feeds, the heading itself is the source selector, as confirmed by the user. Selection resets that feed's cursor and never mixes records from another feed.
+- [x] Get rid of "Trusted attribute provider" under the source name (provider type remains in its own table column).
+
+Trusted Sources follow-up deployed to Control Room at 2026-10-09 16:18 UTC using
+`zpr-editor-ui:20261009-trusted-sources-gui`. Twenty-six focused
+desktop/tablet browser cases pass, covering source identity, one/multiple feeds,
+cursor reset/continuation, empty/error/expired states, late responses after tab
+changes, manual LDAP refresh, named management-window reuse, sorting, minimum
+text size and Simulator's unchanged shared browser. Focused source-contract Go
+tests and the embedded Control Room build pass. No Simulator API dependency or
+new automatic directory polling was added.
+
+Exact release assets passed the same 26 browser cases before deployment.
+Served index, app, sidebar, Trusted Sources JS/CSS and preserved Nodes/provisioning
+assets match the release build byte-for-byte. Login is enabled; signed-out
+session/feed requests return 401/403. Independent production configuration still
+lists `ldap` / Great Lakes LDAP; snapshot errors are empty and all three city-named
+nodes retain 146 counters. All 16 other service start times, operator settings,
+mounts, network and restart policy are unchanged; Simulator remains responsive.
+Stopped `zpr-control-room-trusted-sources-gui-rollback` retains the city-name image.
+Preserved its backend city-name and trusted-feed fixes; unrelated World Map,
+enrollment and Gateway forwarding changes remain excluded. No authenticated live
+browser interaction is claimed. Implementation remains uncommitted/unpushed.
 
 ### Gateways
 - [x] Gateway Save and Ctrl/Command-S automatically Analyze modified drafts, show errors without saving invalid drafts, and save a revision only after successful exact-source validation.

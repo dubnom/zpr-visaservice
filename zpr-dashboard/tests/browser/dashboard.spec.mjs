@@ -572,6 +572,10 @@ import { execFileSync } from "node:child_process";
 import { tmpdir } from "node:os";
 import { resolve, sep } from "node:path";
 import { fileURLToPath } from "node:url";
+import { registerControlRoomGuidelineTests } from "./control-room-guidelines.mjs";
+import { registerDiagnosticsGuidelineTests } from "./diagnostics-guidelines.mjs";
+import { registerWorkflowGuidelineTests } from "./workflow-guidelines.mjs";
+import { registerTrustedSourceGUITests } from "./trusted-source-gui.mjs";
 
 const assets = fileURLToPath(new URL("../../cmd/zpr-web-dashboard/static/", import.meta.url));
 const csp = "default-src 'self'; style-src 'self'; script-src 'self'; connect-src 'self'; img-src 'self' data:";
@@ -767,6 +771,10 @@ const test = base.extend({
 });
 
 registerAssertionBrowserTests();
+registerControlRoomGuidelineTests(test, expect);
+registerDiagnosticsGuidelineTests(test, expect);
+registerWorkflowGuidelineTests(test, expect);
+registerTrustedSourceGUITests(test, expect);
 
 test("GUI status sorting breaks primary ties independently of snapshot order", async ({ page, appURL, api }) => {
   api.snapshot.actors = [
@@ -8349,8 +8357,8 @@ test(`GUI Node Stats pulses only changed values with ${reducedMotion} motion`, a
     return { name: animation.animationName, duration: animation.effect.getTiming().duration,
       frames: animation.effect.getKeyframes().map(frame => ({ transform: frame.transform, opacity: frame.opacity })) };
   });
-  expect(animation.duration).toBe(1800);
-  expect(animation.name).toBe(reducedMotion === "reduce" ? "node-stat-fade" : "node-stat-pulse");
+  expect(animation.duration).toBe(2400);
+  expect(animation.name).toBe(reducedMotion === "reduce" ? "poll-value-fade" : "poll-value-pulse");
   if (reducedMotion === "reduce") expect(animation.frames.some(frame => frame.opacity === "0.6")).toBe(true);
   else expect(animation.frames.some(frame => frame.transform === "scale(1.15)")).toBe(true);
   await expect(pulses).toHaveCount(0);
@@ -9570,7 +9578,7 @@ async function fillApprovedInvitation(page) {
   await form.locator('[name="organization"]').selectOption("alpha");
   await form.locator('[name="type"]').selectOption("laptop");
   await form.locator('[name="profile"]').selectOption("standard");
-  for (const [name, value] of Object.entries({ name: "Created laptop", owner: "Operations", asset_id: "INV-CREATE", recipient: "owner@example.org" })) {
+  for (const [name, value] of Object.entries({ name: "Created laptop", owner: "Operations", asset_id: "INV-CREATE", recipient: "owner@example.org", public_enrollment_url: "http://10.0.102.35:8090/" })) {
     await form.locator(`[name="${name}"]`).fill(value);
   }
 }
@@ -9627,6 +9635,10 @@ test.describe("GUI provisioning invitation creation", () => {
     const created = page.getByRole("dialog", { name: "Invitation created — one-time code" });
     await expect(created).toContainText("A".repeat(26));
     await expect(created).toContainText("No email was sent");
+    const emailDraft = created.locator("#provisioning-email-draft");
+    await expect(emailDraft).toHaveValue(/To: owner@example\.org/);
+    await expect(emailDraft).toHaveValue(/http:\/\/10\.0\.102\.35:8090\/#organization=alpha&invitation_id=created-id/);
+    expect(await emailDraft.inputValue()).not.toContain("A".repeat(26));
     expect(posted).toHaveLength(1);
     expect(posted[0].headers["x-zpr-csrf"]).toBe("creation-csrf-proof");
     expect(posted[0].asset).toEqual({ name: "Created laptop", owner: "Operations", organization: "alpha", asset_id: "INV-CREATE",

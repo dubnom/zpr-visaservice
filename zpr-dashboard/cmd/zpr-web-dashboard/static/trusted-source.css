@@ -13,13 +13,14 @@ trusted-source-browser { display: block; }
 .trusted-source-filter input { width: min(260px, 38vw); min-height: 32px; border: 1px solid var(--line); border-radius: 3px; padding: 5px 8px; background: var(--panel); color: var(--ink); }
 .trusted-source-count { margin-bottom: 15px; color: var(--muted); font: 10px var(--mono); white-space: nowrap; }
 .trusted-source-update-controls { display: flex; align-items: end; gap: 10px; margin: 12px 0; }
-.trusted-source-update-controls label { display: grid; gap: 4px; color: var(--muted); font-size: 11px; }
-.trusted-source-update-controls select { min-height: 32px; min-width: min(260px, 70vw); border: 1px solid var(--line); border-radius: 3px; padding: 5px 8px; background: var(--panel); color: var(--ink); }
+.trusted-source-heading-select { max-width: 100%; min-height: 32px; border: 1px solid var(--line); border-radius: 3px; padding: 5px 8px; background: var(--panel); color: var(--ink); font: 600 17px var(--mono); }
 .trusted-source-message { margin: 15px 0; color: var(--muted); font-size: 12px; }
 .trusted-source-table-scroll { max-height: min(58vh, 700px); overflow: auto; }
 .trusted-source-table { width: 100%; border-collapse: collapse; text-align: left; }
 .trusted-source-table th, .trusted-source-table td { min-width: 90px; padding: 9px 10px; border-bottom: 1px solid var(--line); vertical-align: top; }
 .trusted-source-table thead th { position: sticky; top: 0; z-index: 1; background: #e9eee8; }
+.trusted-source-table thead th { font-weight: 700; }
+.trusted-source-table [data-numeric="true"] { text-align: right; font-variant-numeric: tabular-nums; }
 .trusted-source-table thead th.sortable-heading { padding: 0; }
 .trusted-source-table thead th[aria-sort="ascending"], .trusted-source-table thead th[aria-sort="descending"] { background: var(--leaf-wash); }
 .trusted-source-person { cursor: pointer; }
@@ -53,8 +54,6 @@ trusted-source-browser { display: block; }
   .trusted-source-filter input { width: 100%; flex: 1; }
   .trusted-source-count { order: 3; margin: 0 0 12px auto; }
   .trusted-source-update-controls { align-items: stretch; flex-wrap: wrap; }
-  .trusted-source-update-controls label { width: 100%; }
-  .trusted-source-update-controls select { width: 100%; }
   .trusted-source-table { min-width: 640px; }
   .trusted-source-browser-head { align-items: flex-start; }
 }

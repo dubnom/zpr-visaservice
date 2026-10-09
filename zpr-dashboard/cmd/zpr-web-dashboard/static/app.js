@@ -5,7 +5,11 @@ const GRAPH_REMOVAL_DURATION = 900;
 const reducedMotion = window.matchMedia?.("(prefers-reduced-motion: reduce)").matches ?? false;
 const state = { snapshot: null, timer: null, paused: false, pending: false, graphCamera: null, graphAnimations: !reducedMotion, topologyComponents: null, topologyNodeColumns: null, topologyNodeSlots: new Map(), topologyNewComponents: new Map(), selection: null, sorts: {}, dnsPending: false, policy: { loaded: false, configured: false, categories: [], records: [], attributes: [], categoryID: "", collapsedCategories: new Set(), treeInitialized: false, record: null, source: "", savedSource: "", revision: 0, browsingRevision: 0, saveAs: false, compilerReady: false, testerReady: false, testMode: false, testPending: false, testAbort: null, testResult: null, testSource: "", testDimensions: [], saveTestPending: false, saveTestSource: "", saveTestError: "", saveAsTestSource: "", saveAsTestError: "", assistantReady: false, evaluatedSource: null, validSource: null, errorOffsets: [], checkDiagnostics: "", revisions: [] } };
 
-let previousPolledValues = null;
+const snapshotFieldTracker = window.ZPRPollingDisplay.createTracker();
+const dnsStatsTracker = window.ZPRPollingDisplay.createTracker();
+const dnsRecordsTracker = window.ZPRPollingDisplay.createTracker();
+const inspectorTracker = window.ZPRPollingDisplay.createTracker();
+const inspectorSorts = new Map();
 let graphAutoFit = true;
 let graphDarkMode = false;
 let graphVisaFocus = null;
@@ -228,6 +232,7 @@ byId("provisioning-recheck").addEventListener("click", () => void checkProvision
 const escapeHTML = window.ZPRSafeDisplay.escapeHTML;
 
 function actorDisplayName(actor) {
+  if (actor?.node && actor.display_name) return actor.display_name;
   return dnsNameForAddress(actor?.zpr_addr) || actor?.cn || "—";
 }
 
@@ -266,7 +271,7 @@ function renderDNSStats(status, server, zones) {
     ["Updates completed", "UpdateDone"], ["Updates failed", "UpdateFail"],
   ];
   byId("dns-counter-rows").innerHTML = counterRows.map(([label, key]) =>
-    `<tr><td>${label}</td><td class="mono">${dnsNumber(counters, key)}</td></tr>`
+    `<tr data-poll-row="${key}"><td>${label}</td><td class="mono">${dnsNumber(counters, key)}</td></tr>`
   ).join("");
 
   const zoneRows = Object.entries(zones.views || {}).flatMap(([viewName, view]) =>
@@ -274,10 +279,11 @@ function renderDNSStats(status, server, zones) {
   );
   byId("status-count-dns").textContent = formatNumber(zoneRows.length);
   byId("dns-zone-rows").innerHTML = zoneRows.length ? zoneRows.map((zone) =>
-    `<tr><td data-sort-value="${escapeHTML(zone.name || "—")}">${escapeHTML(zone.name || "—")}<small class="dns-zone-view">${escapeHTML(zone.view)}</small></td><td>${escapeHTML(zone.type || "—")}</td><td class="mono" data-sort-value="${escapeHTML(zone.serial ?? "")}">${escapeHTML(zone.serial ?? "—")}</td><td class="mono">${dnsNumber(zone.rcodes, "QrySuccess")}</td><td class="mono">${dnsNumber(zone.rcodes, "QryNXDOMAIN")}</td><td class="mono">${dnsNumber(zone.qtypes, "AAAA")}</td></tr>`
+    `<tr data-poll-row="${escapeHTML(JSON.stringify([zone.view, zone.name]))}"><td data-sort-value="${escapeHTML(zone.name || "—")}">${escapeHTML(zone.name || "—")}<small class="dns-zone-view">${escapeHTML(zone.view)}</small></td><td>${escapeHTML(zone.type || "—")}</td><td class="mono" data-sort-value="${escapeHTML(zone.serial ?? "")}">${escapeHTML(zone.serial ?? "—")}</td><td class="mono">${dnsNumber(zone.rcodes, "QrySuccess")}</td><td class="mono">${dnsNumber(zone.rcodes, "QryNXDOMAIN")}</td><td class="mono">${dnsNumber(zone.qtypes, "AAAA")}</td></tr>`
   ).join("") : `<tr><td colspan="6" class="empty-row">No zone statistics returned</td></tr>`;
   sortControlRoomTableRows("dns-counters");
   sortControlRoomTableRows("dns-zones");
+  dnsStatsTracker.update(captureFields(["dns-stat-requests", "dns-stat-success", "dns-stat-nxdomain", "dns-stat-servfail", "status-count-dns"], ["dns-counter-rows", "dns-zone-rows"]));
 }
 
 async function loadDNSStats() {
@@ -373,9 +379,10 @@ async function loadDNSRecords(force = false) {
     document.dispatchEvent(new CustomEvent("control-room:dns-updated"));
     status.textContent = `${escapeHTML(result.zone || "DNS zone")} · ${formatNumber(records.length)} records`;
     rows.innerHTML = records.length ? records.map((record) =>
-      `<tr><td class="mono">${escapeHTML(record.name || "—")}</td><td class="mono" data-sort-value="${escapeHTML(record.ttl ?? "")}">${escapeHTML(record.ttl ?? "—")}</td><td>${escapeHTML(record.type || "—")}</td><td class="mono dns-record-value">${escapeHTML(record.value || "—")}</td></tr>`
+      `<tr data-poll-row="${escapeHTML(JSON.stringify([record.name, record.type, record.value]))}"><td class="mono">${escapeHTML(record.name || "—")}</td><td class="mono" data-sort-value="${escapeHTML(record.ttl ?? "")}">${escapeHTML(record.ttl ?? "—")}</td><td>${escapeHTML(record.type || "—")}</td><td class="mono dns-record-value">${escapeHTML(record.value || "—")}</td></tr>`
     ).join("") : `<tr><td colspan="4" class="empty-row">No records returned</td></tr>`;
     sortControlRoomTableRows("dns-records");
+    dnsRecordsTracker.update(captureFields([], ["dns-record-rows"]));
     if (state.snapshot) {
       render(state.snapshot);
     }
@@ -412,6 +419,7 @@ function compareStableRows(left, right, columns) {
 
 function sortControlRoomTableRows(page) {
   const table = document.querySelector(`table[data-sort-page="${page}"]`);
+  if (table) window.ZPRPollingDisplay.markNumericColumns(table);
   const sort = state.sorts[page];
   const body = table?.tBodies[0];
   if (!table || !sort || !body) return;
@@ -469,11 +477,12 @@ function visaEndpointTitle(source, destination) {
 	return [dnsAddressTitle(source, "Source IP"), dnsAddressTitle(destination, "Destination IP")].filter(Boolean).join(" · ");
 }
 
-function updateConnection(snapshot) {
+function updateConnection(snapshot, transportAvailable = true) {
   const stateEl = byId("connection-state");
   const apiState = snapshot.api_status || "disconnected";
-  stateEl.dataset.state = apiState === "connected" ? "connected" : apiState === "partial" ? "partial" : "disconnected";
-  byId("api-state-text").textContent = apiState === "connected" ? "Visa Service connected" : apiState === "partial" ? "Partial API response" : apiState === "not configured" ? "Admin API not configured" : "Visa Service unavailable";
+  stateEl.dataset.state = transportAvailable ? "connected" : "disconnected";
+  byId("api-state-text").textContent = transportAvailable ? "Control Room connected" : "Control Room unavailable";
+  byId("snapshot-source-status").textContent = apiState === "connected" ? "Visa Service connected" : apiState === "partial" ? "Partial Visa Service response" : apiState === "not configured" ? "Visa Service Admin API not configured" : "Visa Service snapshot unavailable";
   byId("last-updated").textContent = snapshot.generated_at ? `Updated ${window.ZPRSafeDisplay.formatTime(snapshot.generated_at)}` : "Waiting for first snapshot";
 
   const issues = [];
@@ -529,6 +538,50 @@ function detailHTMLField(label, markup) {
 
 function detailSection(title, fields) {
   return `<section class="detail-section"><h3>${escapeHTML(title)}</h3><dl>${fields.join("")}</dl></section>`;
+}
+
+function inspectorCounterTable(title, group, counters) {
+  const rows = counters.map((counter) => {
+    const label = counter.name.split("_").map(word => ["ttl", "micv", "zpi"].includes(word) ? word.toUpperCase() : word.charAt(0).toUpperCase() + word.slice(1)).join(" ");
+    return `<tr data-counter-name="${escapeHTML(counter.name)}"><th scope="row">${escapeHTML(label)}</th><td data-numeric="true">${escapeHTML(counter.value)}</td></tr>`;
+  }).join("");
+  return `<section class="detail-section"><h3>${escapeHTML(title)}</h3><div class="inspector-counter-table"><table data-inspector-counter-group="${escapeHTML(group)}" aria-label="${escapeHTML(title)}"><thead><tr><th scope="col" data-sort-key="name">Counter</th><th scope="col" data-sort-key="value" data-numeric="true">Total</th></tr></thead><tbody>${rows}</tbody></table></div></section>`;
+}
+
+function updateInspectorPresentation(body) {
+  const fields = new Map();
+  const selection = JSON.stringify(state.selection);
+  for (const section of body.querySelectorAll(".detail-section")) {
+    const title = section.querySelector("h3")?.textContent;
+    for (const field of section.querySelectorAll(".detail-field")) {
+      const node = field.querySelector("dd");
+      const label = field.querySelector("dt")?.textContent;
+      if (!node || ["Sample time", "Telemetry", "Denial telemetry", "Scope"].includes(label)) continue;
+      fields.set(JSON.stringify([selection, title, label]), { node, value: node.textContent });
+    }
+  }
+  for (const table of body.querySelectorAll("[data-inspector-counter-group]")) {
+    const identity = JSON.stringify([selection, table.dataset.inspectorCounterGroup]);
+    if (!inspectorSorts.has(identity)) inspectorSorts.set(identity, { key: "name", direction: 1 });
+    const rows = [...table.tBodies[0].rows];
+    for (const row of rows) fields.set(JSON.stringify([identity, row.dataset.counterName]), { node: row.cells[1], value: row.cells[1].textContent });
+    function sortRows() {
+      const { key, direction } = inspectorSorts.get(identity);
+      rows.sort((a, b) => {
+        const comparison = key === "name"
+          ? window.ZPRSortableTable.compareValues(a.cells[0].textContent, b.cells[0].textContent)
+          : window.ZPRSortableTable.compareValues(a.cells[1].textContent, b.cells[1].textContent, { numericStrings: true });
+        return comparison * direction || a.dataset.counterName.localeCompare(b.dataset.counterName);
+      });
+      table.tBodies[0].append(...rows);
+    }
+    window.ZPRSortableTable.bindSortableHeaders({
+      table, getSort: () => inspectorSorts.get(identity),
+      onSort: (sort) => { inspectorSorts.set(identity, sort); sortRows(); },
+    });
+    sortRows();
+  }
+  inspectorTracker.update(fields);
 }
 
 // Visa Service reports no pair ID; a reverse visa pairs with the forward visa whose
@@ -730,24 +783,22 @@ function renderInspector() {
       } else {
         sections.push(detailSection("Packet-processing counters", [
           detailField("Sample time", details.counters_updated_at ? window.ZPRSafeDisplay.formatDateTime(details.counters_updated_at) : "Not reported"),
-          detailField("Scope", "Cumulative since runtime restart or counter reset; per worker, not per route or link."),
         ]));
         const groups = new Map();
         for (const counter of counters) {
           const fields = groups.get(counter.group) || [];
-          const label = counter.name.split("_").map(word => ["ttl", "micv", "zpi"].includes(word) ? word.toUpperCase() : word.charAt(0).toUpperCase() + word.slice(1)).join(" ");
-          fields.push(detailField(label, counter.value, "mono"));
+          fields.push(counter);
           groups.set(counter.group, fields);
         }
         for (const [group, fields] of groups) {
-          sections.push(detailSection(group === "management" ? "Management counters" : `Fastpath worker ${group.split(".")[1]}`, fields));
+          sections.push(inspectorCounterTable(group === "management" ? "Management counters" : `Fastpath worker ${group.split(".")[1]}`, group, fields));
         }
       }
     } else {
       refreshAdapterVisas(actor);
       const attachedTo = data.actors.filter((node) => node.node && (node.node_details?.adapters || []).includes(actor.cn));
       sections.push(detailSection("Live attachment", [
-        detailField("Docked to", attachedTo.map((node) => node.cn).join(", ") || "No dock reported"),
+        detailField("Docked to", attachedTo.map(actorDisplayName).join(", ") || "No dock reported"),
         detailField("Current visas", !adapterVisaDetails.loaded ? adapterVisaDetails.pending ? "Loading" : "Unavailable" : adapterVisaDetails.items.filter((visa) => num(visa.expires) > Date.now() / 1000).length),
         detailField("Services registered", services.map((item) => item.service_name).join(", ") || "None"),
       ]));
@@ -825,6 +876,7 @@ function renderInspector() {
   byId("inspector-title").textContent = title;
   const markup = sections.join("");
   if (body.innerHTML !== markup) body.innerHTML = markup;
+  updateInspectorPresentation(body);
   panel.classList.add("open");
   panel.setAttribute("aria-hidden", "false");
 }
@@ -1464,7 +1516,8 @@ function setupGraphControls(stage, width, height, previousViewport) {
   const maxZoom = 1e6;
   const viewBox = svg.viewBox.baseVal;
   const apply = () => world.setAttribute("transform", `translate(${camera.x} ${camera.y}) scale(${camera.scale})`);
-  if (previousViewport?.clientWidth > 0 && previousViewport?.clientHeight > 0 && svg.clientWidth > 0 && svg.clientHeight > 0) {
+  const animateViewport = () => {
+    if (!(previousViewport?.clientWidth > 0 && previousViewport?.clientHeight > 0 && svg.clientWidth > 0 && svg.clientHeight > 0)) return;
     const previousScale = Math.min(previousViewport.clientWidth / previousViewport.width, previousViewport.clientHeight / previousViewport.height);
     const nextScale = Math.min(svg.clientWidth / width, svg.clientHeight / height);
     const previousOffsetX = (previousViewport.clientWidth - previousScale * previousViewport.width) / 2;
@@ -1485,7 +1538,7 @@ function setupGraphControls(stage, width, height, previousViewport) {
         ], { duration: 700, easing: "ease-in-out", fill: "both" });
       }
     }
-  }
+  };
   const cancelViewportAnimation = () => {
     svg.getAnimations().filter((animation) => animation.effect?.target === svg).forEach((animation) => animation.cancel());
     svg.style.transform = "none";
@@ -1577,6 +1630,7 @@ function setupGraphControls(stage, width, height, previousViewport) {
   svg.addEventListener("pointercancel", endDrag);
   if (graphAutoFit) fit(false);
   else apply();
+  animateViewport();
   stage.graphResizeObserver?.disconnect();
   let viewportWidth = svg.clientWidth;
   let viewportHeight = svg.clientHeight;
@@ -1667,12 +1721,12 @@ function renderTrusted(data) {
   const columns = { name: (source) => source.name, provider: (source) => source.provider, actor: (source) => source.actor_cn, health: (source) => source.health, last_lookup: (source) => source.last_lookup_ms || 0 };
   const shown = visibleRows("sources", sources, columns);
   byId("trusted-list").innerHTML = shown.length ? shown.map((source) => {
-    const sourceName = `<strong>${escapeHTML(source.name)}</strong><small>${escapeHTML(providerDescription(source.provider))}</small>`;
+    const sourceName = `<strong>${escapeHTML(source.name)}</strong>`;
     const actorLabel = source.actor_cn || "No actor reported";
       const statusText = lookupOutcome(source.health);
-    const editorAction = source.editor_url ? `<a class="source-editor-link" href="${escapeHTML(source.editor_url)}" target="zpr-directory-manager" data-reuse-window="zpr-directory-manager" rel="noopener noreferrer" title="Manage ${escapeHTML(source.name)} in LDAP editor"><span>Manage</span><span aria-hidden="true">↗</span></a>` : "";
-    return `<tr class="selectable-row" data-inspect-source="${escapeHTML(source.name)}" tabindex="0" role="button" aria-label="Inspect trusted source ${escapeHTML(source.name)}"><td class="source-primary">${sourceName}</td><td>${escapeHTML(providerDescription(source.provider))}</td><td>${escapeHTML(actorLabel)}</td><td><span class="health-badge ${["working", "failed"].includes(source.health) ? source.health : ""}">${escapeHTML(statusText)}</span></td><td><span class="source-time">${source.last_lookup_ms ? escapeHTML(window.ZPRSafeDisplay.formatDateTime(source.last_lookup_ms)) : "No lookup recorded"}</span>${source.last_success_ms ? `<small class="source-secondary">Last success ${escapeHTML(window.ZPRSafeDisplay.formatDateTime(source.last_success_ms))}</small>` : ""}${editorAction ? `<small class="source-secondary">${editorAction}</small>` : ""}</td></tr>`;
-  }).join("") : `<tr><td colspan="5" class="empty-row">${sources.length ? "No matching trusted sources" : "No trusted services reported by the Visa Service."}</td></tr>`;
+    const editorAction = source.editor_url ? `<a class="source-editor-link button button-refresh" href="${escapeHTML(source.editor_url)}" target="zpr-directory-manager" data-reuse-window="zpr-directory-manager" rel="noopener noreferrer" title="Manage ${escapeHTML(source.name)}"><span>Manage</span><span aria-hidden="true">↗</span></a>` : "";
+    return `<tr class="selectable-row" data-inspect-source="${escapeHTML(source.name)}" tabindex="0" role="button" aria-label="Inspect trusted source ${escapeHTML(source.name)}"><td class="source-primary">${sourceName}</td><td>${escapeHTML(providerDescription(source.provider))}</td><td>${escapeHTML(actorLabel)}</td><td><span class="health-badge ${["working", "failed"].includes(source.health) ? source.health : ""}">${escapeHTML(statusText)}</span></td><td><span class="source-time">${source.last_lookup_ms ? escapeHTML(window.ZPRSafeDisplay.formatDateTime(source.last_lookup_ms)) : "No lookup recorded"}</span>${source.last_success_ms ? `<small class="source-secondary">Last success ${escapeHTML(window.ZPRSafeDisplay.formatDateTime(source.last_success_ms))}</small>` : ""}</td><td>${editorAction}</td></tr>`;
+  }).join("") : `<tr><td colspan="6" class="empty-row">${sources.length ? "No matching trusted sources" : "No trusted services reported by the Visa Service."}</td></tr>`;
 }
 
 function providerDescription(provider) {
@@ -3763,7 +3817,7 @@ function renderServices(data) {
     const type = serviceTypeAppearance(isGatewayService(service) ? "Gateway" : service.service_kind);
     const provider = providerFor(service);
     const providerLabel = actorDisplayName(provider || { cn: service.actor_cn });
-    return `<tr class="selectable-row" data-inspect-service="${escapeHTML(service.service_name)}" tabindex="0" role="button" aria-label="Inspect service ${escapeHTML(service.service_name)}"><td>${escapeHTML(service.service_name || "—")}</td><td><span class="role-chip service-type-chip" data-service-type="${escapeHTML(type.key)}">${escapeHTML(type.label)}</span></td><td>${escapeHTML(providerLabel)}</td><td class="mono" title="${escapeHTML(dnsAddressTitle(service.zpr_addr))}">${escapeHTML(dnsAddressLabel(service.zpr_addr))}</td><td>${escapeHTML(service.service_endpoints || "—")}</td></tr>`;
+    return `<tr class="selectable-row" data-poll-row="${escapeHTML(JSON.stringify([service.actor_cn, service.service_name]))}" data-inspect-service="${escapeHTML(service.service_name)}" tabindex="0" role="button" aria-label="Inspect service ${escapeHTML(service.service_name)}"><td>${escapeHTML(service.service_name || "—")}</td><td><span class="role-chip service-type-chip" data-service-type="${escapeHTML(type.key)}">${escapeHTML(type.label)}</span></td><td>${escapeHTML(providerLabel)}</td><td class="mono" title="${escapeHTML(dnsAddressTitle(service.zpr_addr))}">${escapeHTML(dnsAddressLabel(service.zpr_addr))}</td><td>${escapeHTML(service.service_endpoints || "—")}</td></tr>`;
   }).join("") : `<tr><td colspan="5" class="empty-row">${services.length ? "No matching services" : "No network services returned"}</td></tr>`;
   for (const chip of byId("service-rows").querySelectorAll("[data-service-type]")) applyServiceTypeColor(chip, serviceTypeAppearance(chip.dataset.serviceType));
 }
@@ -3800,50 +3854,53 @@ function renderDenies(data) {
   const columns = { source: (record) => `${dnsAddressLabel(record.source_addr)} ${record.source_addr || ""}`, destination: (record) => `${dnsAddressLabel(record.dest_addr)} ${record.dest_addr || ""}`, protocol: (record) => `${protocolName(record.protocol)}/${record.dest_port}`, reason: (record) => record.deny_code, count: (record) => num(record.count) };
   const shown = visibleRows("denies", denies, columns);
   byId("deny-list").innerHTML = shown.length ? shown.map((record) =>
-    `<tr><td class="mono" title="${escapeHTML(dnsAddressTitle(record.source_addr))}">${escapeHTML(dnsAddressLabel(record.source_addr))}</td><td class="mono" title="${escapeHTML(dnsAddressTitle(record.dest_addr))}">${escapeHTML(dnsAddressLabel(record.dest_addr))}</td><td>${escapeHTML(columns.protocol(record))}</td><td>${escapeHTML(record.deny_code)}</td><td class="mono deny-count">${formatNumber(record.count)}</td></tr>`
+    `<tr data-poll-row="${escapeHTML(JSON.stringify([record.source_addr, record.dest_addr, record.protocol, record.dest_port, record.deny_code]))}"><td class="mono" title="${escapeHTML(dnsAddressTitle(record.source_addr))}">${escapeHTML(dnsAddressLabel(record.source_addr))}</td><td class="mono" title="${escapeHTML(dnsAddressTitle(record.dest_addr))}">${escapeHTML(dnsAddressLabel(record.dest_addr))}</td><td>${escapeHTML(columns.protocol(record))}</td><td>${escapeHTML(record.deny_code)}</td><td class="mono deny-count">${formatNumber(record.count)}</td></tr>`
   ).join("") : `<tr><td colspan="5" class="empty-row">${denies.length ? "No matching denials" : "No recent policy denials"}</td></tr>`;
 }
 
-function flashPolledChange(node) {
-  node.classList.remove("poll-changed");
-  void node.offsetWidth;
-  node.classList.add("poll-changed");
-  window.setTimeout(() => node.classList.remove("poll-changed"), 1800);
-}
-
-function capturePolledFields() {
+function captureFields(summaryIDs, bodyIDs) {
   const fields = new Map();
-  for (const node of document.querySelectorAll("[data-node-stat-key]")) {
-    fields.set(`node-stat:${node.dataset.nodeStatKey}`, { node, value: node.textContent });
-  }
-  const summaryIDs = [
-    "metric-actors", "metric-adapters", "metric-services", "metric-allowed", "metric-denied", "metric-visas", "metric-nodes", "metric-nodes-note",
-    "connection-count", "actor-count", "service-count", "visa-total", "deny-total",
-    "dns-stat-requests", "dns-stat-success", "dns-stat-nxdomain", "dns-stat-servfail",
-  ];
   for (const id of summaryIDs) {
     const node = byId(id);
     if (node) fields.set(`summary:${id}`, { node, value: node.textContent.trim() });
   }
-  for (const body of document.querySelectorAll("#link-list, #actor-rows, #service-rows, #trusted-list, #visa-rows, #deny-list, #dns-counter-rows, #dns-zone-rows, #dns-record-rows")) {
+  for (const bodyID of bodyIDs) {
+    const body = byId(bodyID);
     for (const row of body.querySelectorAll("tr")) {
       if (row.querySelector(".empty-row")) continue;
-      const identity = row.dataset.inspectActor || row.dataset.inspectService || row.dataset.inspectSource || row.dataset.inspectLink
-        || [...row.cells].slice(0, Math.min(3, row.cells.length)).map((cell) => cell.textContent.trim()).join("|");
-      [...row.cells].forEach((cell, index) => fields.set(`row:${body.id}:${identity}:${index}`, { node: cell, value: cell.textContent.trim() }));
+      const identity = row.dataset.pollRow || row.dataset.visaId || row.dataset.inspectActor || row.dataset.inspectSource || row.dataset.inspectLink;
+      if (!identity) continue;
+      const headers = row.closest("table").tHead.rows[0].cells;
+      [...row.cells].forEach((cell, index) => fields.set(JSON.stringify(["row", body.id, identity, headers[index]?.dataset.sortKey || index]), { node: cell, value: cell.textContent.trim() }));
     }
   }
   return fields;
 }
 
 function highlightChangedPolledFields() {
-  const current = capturePolledFields();
-  if (previousPolledValues) {
-    for (const [key, field] of current) {
-      if (previousPolledValues.has(key) && previousPolledValues.get(key) !== field.value) flashPolledChange(field.node);
-    }
+  const current = captureFields([
+    "metric-actors", "metric-adapters", "metric-services", "metric-allowed", "metric-denied", "metric-visas", "metric-nodes", "metric-nodes-note", "metric-uptime",
+    "connection-count", "actor-count", "service-count", "visa-total", "deny-total",
+    "status-count-adapters", "status-count-actors", "status-count-services", "status-count-visas", "status-count-denies",
+  ], ["link-list", "actor-rows", "service-rows", "trusted-list", "visa-rows", "deny-list"]);
+  for (const node of document.querySelectorAll("[data-node-stat-key]")) {
+    current.set(`node-stat:${node.dataset.nodeStatKey}`, { node, value: node.textContent });
   }
-  previousPolledValues = new Map([...current].map(([key, field]) => [key, field.value]));
+  snapshotFieldTracker.update(current);
+}
+
+const numericColumns = {
+  visas: ["id"], denies: ["count"], "dns-counters": ["value"],
+  "dns-zones": ["serial", "success", "nxdomain", "aaaa"], "dns-records": ["ttl"],
+};
+for (const [page, keys] of Object.entries(numericColumns)) {
+  const table = document.querySelector(`table[data-sort-page="${page}"]`);
+  for (const header of table.tHead.rows[0].cells) {
+    if (keys.includes(header.dataset.sortKey)) header.dataset.numeric = "true";
+  }
+}
+function updateTablePresentation() {
+  for (const table of document.querySelectorAll("table")) window.ZPRPollingDisplay.markNumericColumns(table);
 }
 
 function snapshotRemovedTopologyComponents(keys) {
@@ -3913,7 +3970,7 @@ const adapterDecisionPulses = new Map();
 const serviceGrantPulses = new Map();
 const mapCountPulses = new Map();
 let previousMapCounts = null;
-const MAP_COUNT_PULSE_DURATION = 2400;
+const MAP_COUNT_PULSE_DURATION = window.ZPRPollingDisplay.duration;
 
 function pulseMapCounts(counts) {
   const now = Date.now();
@@ -4119,6 +4176,7 @@ function render(data) {
   if (state.selection) renderInspector();
   void refreshPolicyContext();
   highlightChangedPolledFields();
+  updateTablePresentation();
   void loadDNSRecords();
 }
 
@@ -4138,7 +4196,7 @@ async function refresh() {
     render(snapshot);
     document.dispatchEvent(new CustomEvent("control-room:refreshed", { detail: snapshot }));
   } catch (error) {
-    updateConnection({ api_status: "disconnected", errors: [error.message] });
+    updateConnection({ api_status: "disconnected", errors: [error.message] }, false);
     window.dispatchEvent(new CustomEvent("zpr-snapshot-error", { detail: error.message }));
     if (!state.snapshot) byId("topology-stage").querySelector(".empty-state").textContent = "Unable to load topology. Check the connection error above or use Refresh to retry.";
   } finally {
@@ -4437,7 +4495,10 @@ const pageRenderers = {
 
 for (const [page, renderPage] of Object.entries(pageRenderers)) {
   const filterId = page === "actors" ? "actor-search" : `${page}-filter`;
-  byId(filterId)?.addEventListener("input", () => state.snapshot && renderPage(state.snapshot));
+  byId(filterId)?.addEventListener("input", () => {
+    if (state.snapshot) renderPage(state.snapshot);
+    updateTablePresentation();
+  });
 }
 
 for (const table of document.querySelectorAll("table[data-sort-page]")) {
@@ -4450,6 +4511,7 @@ for (const table of document.querySelectorAll("table[data-sort-page]")) {
       state.sorts[page] = sort;
       if (renderPage && state.snapshot) renderPage(state.snapshot);
       else sortControlRoomTableRows(page);
+      window.ZPRPollingDisplay.markNumericColumns(table);
     },
   });
 }

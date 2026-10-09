@@ -4,6 +4,12 @@
     const a = String(left ?? "");
     const b = String(right ?? "");
     if (numericStrings && a && b) {
+      if (/^-?\d+$/.test(a) && /^-?\d+$/.test(b)) {
+        const difference = BigInt(a) - BigInt(b);
+        if (difference > BigInt(Number.MAX_SAFE_INTEGER)) return 1;
+        if (difference < BigInt(Number.MIN_SAFE_INTEGER)) return -1;
+        return Number(difference);
+      }
       const numericA = Number(a.replaceAll(",", ""));
       const numericB = Number(b.replaceAll(",", ""));
       if (Number.isFinite(numericA) && Number.isFinite(numericB)) return numericA - numericB;

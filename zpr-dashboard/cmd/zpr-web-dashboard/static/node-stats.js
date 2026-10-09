@@ -63,7 +63,7 @@
 
   function statValue(parent, value, identity) {
     const span = text(parent, "span", value);
-    span.className = "node-stats-value";
+    span.className = "node-stats-value poll-value";
     span.dataset.nodeStatKey = JSON.stringify([selector.value, ...identity]);
     return span;
   }
@@ -90,6 +90,7 @@
       const header = text(headerRow, "th", label);
       header.scope = "col";
       header.dataset.sortKey = key;
+      if (key !== "counter") header.dataset.numeric = "true";
     }
     const body = text(table, "tbody", "");
     function renderRows() {
@@ -107,6 +108,7 @@
         for (const [column] of columns) {
           statValue(text(row, "td", ""), counter.values.get(column) ?? "Unavailable", [kind, counter.name, column]);
         }
+        window.ZPRPollingDisplay.markNumericColumns(table);
       }
     }
     window.ZPRSortableTable.bindSortableHeaders({
@@ -151,12 +153,13 @@
       updateStatus();
       return;
     }
-    text(summary, "h2", node.cn);
+    text(summary, "h2", node.display_name || node.cn);
     const details = node.node_details;
     const fields = document.createElement("dl");
     fields.className = "node-stats-fields";
     const unavailable = (value) => value ?? "Unavailable";
     const entries = [
+      ["Node identity", node.cn],
       ["ZPR address", unavailable(node.zpr_addr)],
       ["Synchronization", typeof details?.in_sync === "boolean" ? (details.in_sync ? "In sync" : "Not in sync") : "Unavailable"],
       ["Last contact", details?.last_contact != null ? window.ZPRSafeDisplay.formatDateTime(details.last_contact * 1000) : "Unavailable"],
@@ -165,11 +168,14 @@
       ["Visa requests", unavailable(details?.visa_requests)],
       ["Approved requests", unavailable(details?.approved_vreqs)],
       ["Denied requests", unavailable(details?.denied_vreqs)],
-      ["Buffered denials (current)", details?.denial_stats_error ? "Unavailable" : unavailable(details?.buffered_denials)],
-      ["Local denial occurrences (cumulative)", details?.denial_stats_error ? "Unavailable" : unavailable(details?.local_denials)],
+      ["Buffered denials", details?.denial_stats_error ? "Unavailable" : unavailable(details?.buffered_denials)],
+      ["Local denials", details?.denial_stats_error ? "Unavailable" : unavailable(details?.local_denials)],
       ["Installed visas", details ? (details.visas || []).length : "Unavailable"],
       ["Docked adapters", details ? (details.adapters || []).length : "Unavailable"],
-      ["Node links", details ? (details.links || []).join(", ") || "None" : "Unavailable"],
+      ["Node links", details ? (details.links || []).map(name => {
+        const linked = nodes.find(candidate => candidate.cn === name);
+        return linked?.display_name || name;
+      }).join(", ") || "None" : "Unavailable"],
     ];
     for (const [label, value] of entries) {
       text(fields, "dt", label);
@@ -178,7 +184,7 @@
         const button = text(cell, "button", "");
         button.type = "button";
         button.className = "quiet node-stats-adapter-count";
-        button.setAttribute("aria-label", `Show docked adapters for ${node.cn}`);
+        button.setAttribute("aria-label", `Show docked adapters for ${node.display_name || node.cn}`);
         button.setAttribute("aria-controls", "node-stats-adapters");
         button.setAttribute("aria-expanded", String(adaptersExpandedFor === node.cn));
         statValue(button, value, ["summary", label]);
@@ -227,7 +233,7 @@
     snapshotReceived = true;
     connectionError = "";
     selector.replaceChildren();
-    for (const node of nodes) text(selector, "option", node.cn).value = node.cn;
+    for (const node of nodes) text(selector, "option", node.display_name || node.cn).value = node.cn;
     if (nodes.some((node) => node.cn === previous)) selector.value = previous;
     selector.disabled = !nodes.length;
     document.getElementById("node-stats-count").textContent = `${nodes.length} nodes`;

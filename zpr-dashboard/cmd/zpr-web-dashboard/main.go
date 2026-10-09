@@ -70,6 +70,7 @@ type actorEntry struct {
 
 type actor struct {
 	CN          string      `json:"cn"`
+	DisplayName string      `json:"display_name,omitempty"`
 	Node        bool        `json:"node"`
 	ZPRAddress  string      `json:"zpr_addr"`
 	AuthExpires *int64      `json:"auth_exp"`
@@ -615,6 +616,7 @@ func (a *application) fetchSnapshot(ctx context.Context) snapshot {
 		out.Trusted = trustedSourcesFrom(out.Services)
 	}
 	mergePlatformServices(&out)
+	populateNodeDisplayNames(&out)
 	provider, staleAfter, providerError := newNodeDenialProvider()
 	populateNodeDenialStats(ctx, &out, provider, staleAfter, providerError, diagnosticsSourceMappings())
 	if successfulEndpoints == 0 {

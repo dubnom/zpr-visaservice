@@ -4,7 +4,7 @@ import { readFile } from "node:fs/promises";
 import { resolve, sep } from "node:path";
 import { fileURLToPath } from "node:url";
 
-const assets = fileURLToPath(new URL("../../cmd/zpr-web-dashboard/static/", import.meta.url));
+const assets = process.env.ZPR_GEOGRAPHY_TEST_ASSETS || fileURLToPath(new URL("../../cmd/zpr-web-dashboard/static/", import.meta.url));
 const test = base.extend({
   appURL: [async ({}, use) => {
     const server = createServer(async (request, response) => {
@@ -75,6 +75,60 @@ test("geography projects valid coordinates exactly and rejects invalid values", 
   const response = await page.request.get(`${appURL}/geography-land.svg`);
   expect(response.ok()).toBeTruthy();
   expect(await response.text()).toContain('viewBox="0 0 1800 900"');
+});
+
+test("operator node names label maps and Nodes without changing identity or selection", async ({ page, appURL, snapshot }) => {
+  snapshot.actors = [
+    { ...node("node0.demo", 43.04, -87.91), display_name: "Milwaukee", zpr_addr: "fd5a:5052:90de::10" },
+    { ...node("node1.demo", 22.54, 114.06), display_name: "Shenzhen", zpr_addr: "fd5a:5052:90de::11" },
+    { ...node("node2.demo", 32.51, -117.04), display_name: "Tijuana", zpr_addr: "fd5a:5052:90de::12" },
+  ];
+  await openGeography(page, appURL);
+  for (const [index, name] of ["Milwaukee", "Shenzhen", "Tijuana"].entries()) {
+    const marker = page.locator(`.graph-vertex[data-inspect-actor="node${index}.demo"]`);
+    await expect(marker).toContainText(name);
+  }
+  await page.locator('.graph-vertex[data-inspect-actor="node0.demo"]').click();
+  await expect(page.locator("#component-inspector")).toContainText("Milwaukee");
+  await expect(page.locator("#component-inspector")).toContainText("node0.demo");
+  await page.locator("#inspector-close").click();
+  await page.getByRole("link", { name: "Nodes", exact: true }).click();
+  const select = page.locator("#node-stats-select");
+  await expect(select.locator("option")).toHaveText(["Milwaukee", "Shenzhen", "Tijuana"]);
+  await select.selectOption("node1.demo");
+  await expect(page.locator("#node-stats-summary h2")).toHaveText("Shenzhen");
+  await expect(page.locator("#node-stats-summary")).toContainText("node1.demo");
+  snapshot.actors[1].display_name = "Shenzhen <Office>";
+  await page.locator("#refresh-now").click();
+  await expect(select).toHaveValue("node1.demo");
+  await expect(page.locator("#node-stats-summary h2")).toHaveText("Shenzhen <Office>");
+  await expect(page.locator("#node-stats-summary office")).toHaveCount(0);
+});
+
+test("World Map unchanged refreshes preserve screen positions without viewport animation", async ({ page, appURL, snapshot }) => {
+  snapshot.actors = [node("steady", 43.04, -87.91)];
+  await page.emulateMedia({ reducedMotion: "no-preference" });
+  await openGeography(page, appURL);
+  await page.locator("#pause-poll").click();
+  const marker = page.locator('.graph-vertex[data-inspect-actor="steady"]');
+  const before = await marker.boundingBox();
+  const viewBox = await page.locator(".topology-graph").getAttribute("viewBox");
+  for (let refresh = 0; refresh < 3; refresh++) {
+    snapshot.actors[0].node_details.last_contact = 1000 + refresh;
+    await page.locator("#refresh-now").click();
+    await expect(page.locator(".topology-graph")).toHaveAttribute("viewBox", viewBox);
+    const animationCount = await page.locator(".topology-graph").evaluate(svg =>
+      svg.getAnimations().filter(animation => animation.effect?.target === svg).length);
+    expect(animationCount).toBe(0);
+    const after = await marker.boundingBox();
+    expect(after.x).toBeCloseTo(before.x, 2);
+    expect(after.y).toBeCloseTo(before.y, 2);
+    expect(after.width).toBeCloseTo(before.width, 2);
+  }
+  snapshot.actors.push({ ...node("new-peer", 22.54, 114.06), zpr_addr: "fd00::2" });
+  await page.locator("#refresh-now").click();
+  await expect(page.locator('.graph-vertex[data-inspect-actor="new-peer"]')).toBeVisible();
+  await expect(page.locator(".topology-graph")).not.toHaveAttribute("viewBox", viewBox);
 });
 
 test("World Map viewport matches the basemap ocean without changing Topology backgrounds", async ({ page, appURL, snapshot }) => {

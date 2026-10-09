@@ -13,6 +13,8 @@ test("public enrollment link displays only invitation identifiers without networ
   await expect(page.locator("#organization")).toHaveText("acme");
   await expect(page.locator("#invitation-id")).toHaveText("demo-123");
   await expect(page.locator("#installer-unavailable")).toBeVisible();
+  await expect(page.locator("#installer-link")).toBeHidden();
+  await expect(page.locator("#setup-config-link")).toBeHidden();
   await expect(page.locator('input[type="password"]')).toHaveCount(0);
   expect(page.url()).not.toContain("#");
   expect(networkRequests).toEqual([]);

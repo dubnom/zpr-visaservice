@@ -17,7 +17,7 @@ import (
 )
 
 const (
-	trustedChangesLookback = 24 * time.Hour
+	trustedChangesLookback = "24h"
 	maxTrustedChangesBody  = 1 << 20
 )
 
@@ -204,7 +204,7 @@ func (service *trustedSourceChanges) readChanges(w http.ResponseWriter, r *http.
 		}
 		upstreamQuery.Set("cursor", cursor)
 	} else {
-		upstreamQuery.Set("since", trustedChangesLookback.String())
+		upstreamQuery.Set("since", trustedChangesLookback)
 	}
 	request, err := http.NewRequestWithContext(r.Context(), http.MethodGet, feed.endpoint+"?"+upstreamQuery.Encode(), nil)
 	if err != nil {

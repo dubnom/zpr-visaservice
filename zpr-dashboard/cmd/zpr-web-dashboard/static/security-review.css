@@ -30,7 +30,7 @@
 .security-review-select-visible input { width: 15px; height: 15px; margin: 0; accent-color: var(--forest); }
 .security-review-table { width: 100%; border-collapse: collapse; text-align: left; }
 .security-review-table th, .security-review-table td { padding: 10px 12px; border-bottom: 1px solid var(--line); vertical-align: top; }
-.security-review-table thead th { color: var(--muted); font: 9px var(--mono); }
+.security-review-table thead th { color: var(--muted); font: 700 9px var(--mono); }
 .security-review-table tbody td { color: var(--ink-soft); font-size: 12px; overflow-wrap: anywhere; }
 .security-review-table .security-evidence { min-width: 340px; }
 .security-review-table .security-indicator { color: var(--ink); font-weight: 650; }

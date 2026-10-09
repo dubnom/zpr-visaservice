@@ -20,6 +20,21 @@
   const suspiciousLogLine = /\b(?:authentication failed|failed authentication|auth(?:entication)? failure|login failed|invalid certificate|certificate verify failed|unauthorized|access denied|permission denied|invalid token)\b/i;
   const active = () => location.hash === "#security-review";
   const acknowledgedAlerts = new Set();
+  const fieldTracker = window.ZPRPollingDisplay.createTracker();
+
+  function pulseChangedFindings() {
+    const fields = new Map();
+    for (const id of ["security-review-baseline", "security-review-current", "security-review-count"]) {
+      const node = byId(id);
+      fields.set(id, { node, value: node.textContent });
+    }
+    for (const row of rows.querySelectorAll("[data-poll-finding]")) {
+      for (const cell of row.querySelectorAll('[data-sort-cell="indicator"], [data-sort-cell="entity"], [data-sort-cell="evidence"]')) {
+        fields.set(JSON.stringify([row.dataset.pollFinding, cell.dataset.sortCell]), { node: cell, value: cell.textContent });
+      }
+    }
+    fieldTracker.update(fields);
+  }
   function alertKey(finding) {
     const latestDenial = finding.indicator === "Repeated policy denials"
       ? Math.max(0, ...(state.snapshot?.recent_denies || []).filter((deny) => deny.source_addr === finding.entity).map((deny) => Number(deny.last_deny_ms) || 0))
@@ -319,6 +334,7 @@
       const row = document.createElement("tr");
       row.dataset.severity = finding.severity;
       row.dataset.dismissed = String(isDismissed);
+      row.dataset.pollFinding = JSON.stringify([finding.indicator, finding.entity, finding.entityAddress]);
       const selection = document.createElement("td");
       const checkbox = document.createElement("input");
       checkbox.type = "checkbox";
@@ -407,6 +423,7 @@
       else if (!(snapshot.actors || []).length && !(snapshot.services || []).length) statusLabel.textContent = "Scanned · live inventory is unavailable.";
       else statusLabel.textContent = "";
       render();
+      pulseChangedFindings();
     } catch (error) {
       if (active() && error.name !== "AbortError") statusLabel.textContent = error.message || "Security scan failed.";
     } finally {

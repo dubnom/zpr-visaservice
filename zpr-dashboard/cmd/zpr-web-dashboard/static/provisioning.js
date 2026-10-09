@@ -136,6 +136,46 @@
     return Object.fromEntries(fields.map(([name]) => [name, input(name).value]));
   }
 
+  function publicInvitationLink(base, organization, invitationID) {
+    let url;
+    try {
+      url = new URL(base.trim());
+    } catch {
+      return null;
+    }
+    if (!['http:', 'https:'].includes(url.protocol) || url.username || url.password || url.search || url.hash) return null;
+    if (url.protocol === 'http:') {
+      const host = url.hostname.toLowerCase().replace(/^\[|\]$/g, '');
+      const octets = host.split('.').map(Number);
+      const privateIPv4 = octets.length === 4 && octets.every((part) => Number.isInteger(part) && part >= 0 && part <= 255) &&
+        (octets[0] === 10 || (octets[0] === 172 && octets[1] >= 16 && octets[1] <= 31) ||
+          (octets[0] === 192 && octets[1] === 168));
+      if (!privateIPv4 && !host.endsWith('.local')) return null;
+    }
+    const fragment = new URLSearchParams({ organization, invitation_id: invitationID });
+    return `${url.origin}${url.pathname}#${fragment}`;
+  }
+
+  function emailDraft(asset, invitation, link) {
+    return [
+      `To: ${asset.recipient}`,
+      'Subject: Set up your ZPR device',
+      '',
+      `Hello ${asset.owner},`,
+      '',
+      'Use this link to prepare your device:',
+      link,
+      '',
+      `Organization: ${asset.organization}`,
+      `Invitation ID: ${invitation.id}`,
+      `Invitation expires: ${invitation.expires_at}`,
+      '',
+      'Your activation code will be supplied separately. Enter it only in the ZPR setup app; do not reply to this email with the code.',
+      '',
+      'After setup, verify the device fingerprint with your administrator through an authenticated channel. Approval does not itself issue runtime credentials or confirm connectivity.',
+    ].join('\n');
+  }
+
   function markUncertain(asset) {
     uncertain = asset;
     createStatus.textContent = `Creation outcome uncertain for ${asset.organization} / ${asset.asset_id} (${asset.name}). An invitation may exist, but no usable code was confirmed. Do not retry. Read the registry and resolve any existing invitation using authorized cancellation from fresh Details, certificate administration, or expiry. Reloading does not resolve this uncertainty.`;
@@ -191,7 +231,33 @@
       code.id = "provisioning-one-time-code";
       code.textContent = result.enrollment_code;
       content.append(code);
-      paragraph(content, "No email was sent. No signed production installer link is configured. The machine can be remote/offline now; it must reach the enrollment service when the package runs. This invitation does not issue credentials or admit an adapter.");
+      const link = publicInvitationLink(input("public_enrollment_url").value, asset.organization, item.id);
+      if (link) {
+        paragraph(content, "No email was sent. Copy this draft; it contains the setup link and invitation details only, never the activation code.");
+        const draft = document.createElement("textarea");
+        draft.id = "provisioning-email-draft";
+        draft.readOnly = true;
+        draft.setAttribute("aria-label", "Email draft without activation code");
+        draft.value = emailDraft(asset, item, link);
+        const copy = document.createElement("button");
+        copy.type = "button";
+        copy.className = "button";
+        copy.textContent = "Copy email draft";
+        copy.addEventListener("click", async () => {
+          try {
+            await navigator.clipboard.writeText(draft.value);
+            createStatus.textContent = "Email draft copied. The activation code was not included.";
+          } catch {
+            draft.focus();
+            draft.select();
+            createStatus.textContent = "Email draft selected. Copy the selection; the activation code is not included.";
+          }
+        });
+        content.append(draft, copy);
+      } else {
+        paragraph(content, "No email was sent and no public setup URL is configured. Set a valid setup page URL to prepare the email draft. This invitation does not issue credentials or admit an adapter.");
+      }
+      paragraph(content, "The recipient's machine may be remote or offline now; it must reach the enrollment service when the setup app runs. No credentials are issued by this invitation flow.");
       showDialog("Invitation created — one-time code", content);
       confirmedSummary = `Invitation ${item.id} created for ${asset.organization} / ${asset.asset_id}, expiring ${item.expires_at}`;
       secretVisible = true;

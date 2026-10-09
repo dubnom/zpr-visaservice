@@ -51,7 +51,8 @@
 .assertion-catalog td button { display: grid; width: 26px; height: 26px; place-items: center; padding: 0; border: 1px solid var(--line); background: var(--panel); color: var(--ink); cursor: pointer; }
 .assertion-message { min-height: 24px; margin: 8px 0; font: 11px/1.6 var(--mono); overflow-wrap: anywhere; }
 .assertion-message[data-state="error"], #assertion-run-error { color: #a43830; }
-.assertion-results { display: none; }
+.assertion-results { margin-top: 16px; }
+.assertion-results .table-scroll { max-height: 240px; }
 .assertion-results h3 { margin: 0 0 8px; font-size: 14px; }
 #assertion-run-status { font: 11px/1.6 var(--mono); }
 #assertion-run-status[data-state="pass"] { color: #285b3a; }

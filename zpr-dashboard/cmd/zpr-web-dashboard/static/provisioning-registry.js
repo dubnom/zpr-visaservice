@@ -23,6 +23,39 @@
   const active = () => location.hash === "#provisioning-adapters";
   const text = (value) => typeof value === "string" && value.length > 0 && value.length <= 1024;
   const { validInvitation } = provisioningContract;
+  let invitationSort = null;
+
+  for (const [header, key] of [...table.tHead.rows[0].cells].map((cell, index) => [
+    cell,
+    ["name", "inventory", "state", "expiry", null][index],
+  ])) {
+    if (key) header.dataset.sortKey = key;
+  }
+
+  function sortInvitationRows() {
+    if (!invitationSort) return;
+    const body = table.tBodies[0];
+    const rows = [...body.rows];
+    rows.sort((left, right) => {
+      const leftValue = left.dataset[invitationSort.key];
+      const rightValue = right.dataset[invitationSort.key];
+      const order = invitationSort.key === "expiry"
+        ? Date.parse(leftValue) - Date.parse(rightValue)
+        : window.ZPRSortableTable.compareValues(leftValue, rightValue);
+      return order * invitationSort.direction
+        || window.ZPRSortableTable.compareValues(left.dataset.invitationId, right.dataset.invitationId);
+    });
+    body.append(...rows);
+  }
+
+  window.ZPRSortableTable.bindSortableHeaders({
+    table,
+    getSort: () => invitationSort,
+    onSort: (sort) => {
+      invitationSort = sort;
+      sortInvitationRows();
+    },
+  });
 
   function closeDetail() {
     if (pendingCancellation && !pendingCancellation.settled) {
@@ -432,6 +465,11 @@
             result.next_after !== result.invitations.at(-1)?.id))) throw new Error("Registry page identity or response shape is invalid.");
       const rows = result.invitations.map((item) => {
         const row = document.createElement("tr");
+        row.dataset.invitationId = item.id;
+        row.dataset.name = item.asset.name;
+        row.dataset.inventory = item.asset.asset_id;
+        row.dataset.state = item.state;
+        row.dataset.expiry = item.expires_at;
         for (const value of [item.asset.name, item.asset.asset_id, item.state, item.expires_at]) {
           const cell = document.createElement("td");
           cell.textContent = value;
@@ -449,6 +487,7 @@
         return row;
       });
       table.querySelector("tbody").replaceChildren(...rows);
+      sortInvitationRows();
       table.hidden = rows.length === 0;
       next = result.next_after || "";
       nextButton.hidden = !next;
