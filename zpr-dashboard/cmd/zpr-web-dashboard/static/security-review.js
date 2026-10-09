@@ -4,7 +4,7 @@
 
   const baselineKey = "zpr.control-room.security-review.baseline.v1";
   const dismissalsKey = "zpr.control-room.security-review.dismissals.v1";
-  const state = { baseline: null, findings: [], dismissed: {}, selected: new Set(), scannedAt: null, pending: false, snapshot: null, request: null, dnsSamples: [] };
+  const state = { baseline: null, findings: [], dismissed: {}, selected: new Set(), scannedAt: null, snapshot: null, dnsSamples: [] };
   const byId = (id) => document.getElementById(id);
   const baselineLabel = byId("security-review-baseline");
   const baselineTime = byId("security-review-baseline-time");
@@ -256,42 +256,38 @@
   }
 
   async function dnsProbeFindings(signal) {
-    try {
-      const response = await fetch("/api/dns/stats/json/v1/server", { cache: "no-store", signal, headers: { Accept: "application/json" } });
-      if (!response.ok) return [];
-      const counters = (await response.json()).nsstats || {};
-      const counter = (value) => {
-        const parsed = Number(value);
-        return Number.isFinite(parsed) && parsed >= 0 ? parsed : 0;
-      };
-      const sample = {
-        observedAt: Date.now(),
-        requests: counter(counters.Requestv4) + counter(counters.Requestv6),
-        nxdomain: counter(counters.QryNXDOMAIN),
-      };
-      const previous = state.dnsSamples.at(-1);
-      if (previous && (sample.requests < previous.requests || sample.nxdomain < previous.nxdomain)) state.dnsSamples = [];
-      state.dnsSamples.push(sample);
-      const cutoff = sample.observedAt - 60000;
-      while (state.dnsSamples.length > 1 && state.dnsSamples[1].observedAt <= cutoff) state.dnsSamples.shift();
-      const baseline = state.dnsSamples.find((item) => item.observedAt >= cutoff) || state.dnsSamples[0];
-      const elapsed = sample.observedAt - baseline.observedAt;
-      if (elapsed <= 0 || elapsed > 60000) return [];
+    const data = await readJSON("/api/dns/stats/json/v1/server", signal);
+    if (signal.aborted) return [];
+    const counters = data.nsstats || {};
+    const counter = (value) => {
+      const parsed = Number(value);
+      return Number.isFinite(parsed) && parsed >= 0 ? parsed : 0;
+    };
+    const sample = {
+      observedAt: Date.now(),
+      requests: counter(counters.Requestv4) + counter(counters.Requestv6),
+      nxdomain: counter(counters.QryNXDOMAIN),
+    };
+    const previous = state.dnsSamples.at(-1);
+    if (previous && (sample.requests < previous.requests || sample.nxdomain < previous.nxdomain)) state.dnsSamples = [];
+    state.dnsSamples.push(sample);
+    const cutoff = sample.observedAt - 60000;
+    while (state.dnsSamples.length > 1 && state.dnsSamples[1].observedAt <= cutoff) state.dnsSamples.shift();
+    const baseline = state.dnsSamples.find((item) => item.observedAt >= cutoff) || state.dnsSamples[0];
+    const elapsed = sample.observedAt - baseline.observedAt;
+    if (elapsed <= 0 || elapsed > 60000) return [];
 
-      const requests = sample.requests - baseline.requests;
-      const nxdomain = sample.nxdomain - baseline.nxdomain;
-      if (requests < 30 || nxdomain < 20 || nxdomain / requests < 0.6) return [];
-      const seconds = Math.max(1, Math.round(elapsed / 1000));
-      return [makeFinding(
-        "DNS probing pattern (aggregate)",
-        "DNS service",
-        `${nxdomain} NXDOMAIN responses among ${requests} requests in the last ${seconds} seconds; aggregate counters cannot identify the source.`,
-        "review",
-        sample.observedAt,
-      )];
-    } catch {
-      return [];
-    }
+    const requests = sample.requests - baseline.requests;
+    const nxdomain = sample.nxdomain - baseline.nxdomain;
+    if (requests < 30 || nxdomain < 20 || nxdomain / requests < 0.6) return [];
+    const seconds = Math.max(1, Math.round(elapsed / 1000));
+    return [makeFinding(
+      "DNS probing pattern (aggregate)",
+      "DNS service",
+      `${nxdomain} NXDOMAIN responses among ${requests} requests in the last ${seconds} seconds; aggregate counters cannot identify the source.`,
+      "review",
+      sample.observedAt,
+    )];
   }
 
   function render() {
@@ -377,68 +373,66 @@
   }
 
   async function readJSON(url, signal) {
-    const response = await fetch(url, { cache: "no-store", signal, headers: { Accept: "application/json" } });
-    const data = await response.json();
-    if (!response.ok) throw new Error(data.error || `${url} returned ${response.status}`);
-    return data;
+    return window.ZPRPageRuntime.requestJSON(window.zprOperatorFetch, url, { signal, headers: { Accept: "application/json" } });
   }
 
   async function scan(snapshot) {
     state.snapshot = snapshot;
-    if (state.pending) return;
+    return scanPoller.refresh();
+  }
+
+  async function collectScan({ signal, isCurrent }) {
+    let snapshot = state.snapshot;
     if (snapshot.api_status !== "connected") {
       statusLabel.textContent = "Live inventory unavailable; baseline unchanged";
       return;
     }
-    state.pending = true;
-    const request = new AbortController();
-    state.request = request;
     statusLabel.textContent = "";
-    try {
-      const logsResult = active()
-        ? await readJSON("/api/adapter-logs", request.signal).then((logs) => ({ logs }), (error) => ({ error }))
-        : {};
-      const dnsFindings = active() ? await dnsProbeFindings(request.signal) : [];
-      if (request.signal.aborted) return;
-      snapshot = state.snapshot;
-      if (snapshot.api_status !== "connected") {
-        const details = (snapshot.errors || []).join(" · ");
-        statusLabel.textContent = `Live inventory unavailable; baseline unchanged${details ? ` · ${details}` : ""}`;
-        return;
-      }
-      state.baseline = readBaseline();
-      let baselineCreated = false;
-      if (!state.baseline && active()) {
-        state.baseline = { ...currentInventory(snapshot), saved_at: new Date().toISOString() };
-        try { localStorage.setItem(baselineKey, JSON.stringify(state.baseline)); }
-        catch { statusLabel.textContent = "Scanned · browser storage unavailable for baseline."; }
-        baselineCreated = true;
-      }
-      state.scannedAt = new Date();
-      baselineText();
-      state.findings = [...denialFindings(snapshot), ...trustedSourceFindings(snapshot), ...nodeHealthFindings(snapshot), ...inventoryFindings(snapshot), ...(logsResult.logs ? logFindings(logsResult.logs) : []), ...dnsFindings]
-        .sort((left, right) => ({ high: 0, review: 1, info: 2 }[left.severity] - { high: 0, review: 1, info: 2 }[right.severity]) || right.observedAt - left.observedAt)
-        .slice(0, 250);
-      if (logsResult.error) statusLabel.textContent = `Scanned · adapter logs unavailable: ${logsResult.error.message}`;
-      else if (!(snapshot.actors || []).length && !(snapshot.services || []).length) statusLabel.textContent = "Scanned · live inventory is unavailable.";
-      else statusLabel.textContent = "";
-      render();
-      pulseChangedFindings();
-    } catch (error) {
-      if (active() && error.name !== "AbortError") statusLabel.textContent = error.message || "Security scan failed.";
-    } finally {
-      state.pending = false;
-      if (state.request === request) state.request = null;
+    const logsResult = active()
+      ? await readJSON("/api/adapter-logs", signal).then((logs) => ({ logs }), (error) => ({ error }))
+      : {};
+    const dnsResult = active()
+      ? await dnsProbeFindings(signal).then(findings => ({ findings }), error => ({ error }))
+      : {};
+    if (!isCurrent()) return;
+    snapshot = state.snapshot;
+    if (snapshot.api_status !== "connected") {
+      const details = (snapshot.errors || []).join(" · ");
+      statusLabel.textContent = `Live inventory unavailable; baseline unchanged${details ? ` · ${details}` : ""}`;
+      return;
     }
+    state.baseline = readBaseline();
+    if (!state.baseline && active()) {
+      state.baseline = { ...currentInventory(snapshot), saved_at: new Date().toISOString() };
+      try { localStorage.setItem(baselineKey, JSON.stringify(state.baseline)); }
+      catch { statusLabel.textContent = "Scanned · browser storage unavailable for baseline."; }
+    }
+    state.scannedAt = new Date();
+    baselineText();
+    state.findings = [...denialFindings(snapshot), ...trustedSourceFindings(snapshot), ...nodeHealthFindings(snapshot), ...inventoryFindings(snapshot), ...(logsResult.logs ? logFindings(logsResult.logs) : []), ...(dnsResult.findings || [])]
+      .sort((left, right) => ({ high: 0, review: 1, info: 2 }[left.severity] - { high: 0, review: 1, info: 2 }[right.severity]) || right.observedAt - left.observedAt)
+      .slice(0, 250);
+    const errors = [logsResult.error && `adapter logs unavailable: ${logsResult.error.message}`, dnsResult.error && `DNS statistics unavailable: ${dnsResult.error.message}`].filter(Boolean);
+    if (errors.length) statusLabel.textContent = `Scanned · ${errors.join(" · ")}`;
+    else if (!(snapshot.actors || []).length && !(snapshot.services || []).length) statusLabel.textContent = "Scanned · live inventory is unavailable.";
+    else statusLabel.textContent = "";
+    render();
+    pulseChangedFindings();
   }
 
+  const scanPoller = window.ZPRPageRuntime.createPoller({
+    run: collectScan,
+    onError(error) { statusLabel.textContent = error.message || "Security scan failed."; },
+  });
+  scanPoller.start({ immediate: false });
   document.addEventListener("control-room:refreshed", (event) => {
     state.snapshot = event.detail;
     void scan(event.detail);
   });
   window.addEventListener("hashchange", () => {
-    if (!active()) state.request?.abort();
-    else {
+    scanPoller.stop();
+    scanPoller.start({ immediate: false });
+    if (active()) {
       acknowledgeAlerts();
       render();
     }

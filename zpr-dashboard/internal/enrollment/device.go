@@ -31,11 +31,12 @@ type DeviceService struct {
 }
 
 type ChallengeRequest struct {
-	Organization string `json:"organization"`
-	InvitationID string `json:"invitation_id"`
-	Purpose      string `json:"purpose"`
-	Code         string `json:"enrollment_code,omitempty"`
-	PublicKey    string `json:"public_key"`
+	Organization     string `json:"organization"`
+	InvitationID     string `json:"invitation_id"`
+	Purpose          string `json:"purpose"`
+	Code             string `json:"enrollment_code,omitempty"`
+	PublicKey        string `json:"public_key"`
+	RuntimePublicKey string `json:"runtime_public_key,omitempty"`
 }
 
 type Challenge struct {
@@ -45,29 +46,32 @@ type Challenge struct {
 }
 
 type Proof struct {
-	ChallengeID string `json:"challenge_id"`
-	Signature   string `json:"signature"`
+	ChallengeID      string `json:"challenge_id"`
+	Signature        string `json:"signature"`
+	RuntimeSignature string `json:"runtime_signature,omitempty"`
 }
 
 type DeviceStatus struct {
-	InvitationID      string     `json:"invitation_id"`
-	State             string     `json:"state"`
-	Revision          int        `json:"revision"`
-	KeyFingerprint    string     `json:"key_fingerprint"`
-	ApprovalExpiresAt *time.Time `json:"approval_expires_at,omitempty"`
-	CredentialsIssued bool       `json:"credentials_issued"`
+	InvitationID          string     `json:"invitation_id"`
+	State                 string     `json:"state"`
+	Revision              int        `json:"revision"`
+	KeyFingerprint        string     `json:"key_fingerprint"`
+	RuntimeKeyFingerprint string     `json:"runtime_key_fingerprint,omitempty"`
+	ApprovalExpiresAt     *time.Time `json:"approval_expires_at,omitempty"`
+	CredentialsIssued     bool       `json:"credentials_issued"`
 }
 
 type challengePayload struct {
-	Version        int       `json:"version"`
-	Audience       string    `json:"audience"`
-	ID             string    `json:"challenge_id"`
-	Organization   string    `json:"organization"`
-	InvitationID   string    `json:"invitation_id"`
-	Purpose        string    `json:"purpose"`
-	KeyFingerprint string    `json:"key_fingerprint"`
-	Nonce          string    `json:"nonce"`
-	ExpiresAt      time.Time `json:"expires_at"`
+	Version               int       `json:"version"`
+	Audience              string    `json:"audience"`
+	ID                    string    `json:"challenge_id"`
+	Organization          string    `json:"organization"`
+	InvitationID          string    `json:"invitation_id"`
+	Purpose               string    `json:"purpose"`
+	KeyFingerprint        string    `json:"key_fingerprint"`
+	RuntimeKeyFingerprint string    `json:"runtime_key_fingerprint,omitempty"`
+	Nonce                 string    `json:"nonce"`
+	ExpiresAt             time.Time `json:"expires_at"`
 }
 
 func NewDeviceService(store *Store, config DeviceConfig) (*DeviceService, error) {
@@ -81,13 +85,46 @@ func NewDeviceService(store *Store, config DeviceConfig) (*DeviceService, error)
 	_, err = store.db.Exec(`CREATE TABLE IF NOT EXISTS device_challenges (
  id TEXT PRIMARY KEY, organization TEXT NOT NULL, invitation_id TEXT NOT NULL,
  purpose TEXT NOT NULL, public_key BLOB NOT NULL, payload BLOB NOT NULL,
- code_hash TEXT NOT NULL, expires_at INTEGER NOT NULL, consumed INTEGER NOT NULL DEFAULT 0
+ code_hash TEXT NOT NULL, expires_at INTEGER NOT NULL, consumed INTEGER NOT NULL DEFAULT 0,
+ runtime_public_key BLOB NOT NULL DEFAULT X''
 );
 CREATE INDEX IF NOT EXISTS device_challenge_expiry ON device_challenges(expires_at);`)
 	if err != nil {
 		return nil, err
 	}
+	if err := ensureChallengeRuntimeKeyColumn(store.db); err != nil {
+		return nil, err
+	}
 	return &DeviceService{store: store, config: config}, nil
+}
+
+func ensureChallengeRuntimeKeyColumn(db *sql.DB) error {
+	rows, err := db.Query(`PRAGMA table_info(device_challenges)`)
+	if err != nil {
+		return err
+	}
+	found := false
+	for rows.Next() {
+		var sequence, notNull, primary int
+		var name, kind string
+		var defaultValue any
+		if err := rows.Scan(&sequence, &name, &kind, &notNull, &defaultValue, &primary); err != nil {
+			_ = rows.Close()
+			return err
+		}
+		found = found || name == "runtime_public_key"
+	}
+	if err := rows.Err(); err != nil {
+		_ = rows.Close()
+		return err
+	}
+	if err := rows.Close(); err != nil {
+		return err
+	}
+	if !found {
+		_, err = db.Exec(`ALTER TABLE device_challenges ADD COLUMN runtime_public_key BLOB NOT NULL DEFAULT X''`)
+	}
+	return err
 }
 
 func parseDeviceKey(encoded string) (*rsa.PublicKey, []byte, string, error) {
@@ -123,6 +160,14 @@ func (s *DeviceService) Challenge(ctx context.Context, input ChallengeRequest, n
 	if err != nil {
 		return Challenge{}, err
 	}
+	runtimeDER := []byte{}
+	runtimeFingerprint := ""
+	if input.RuntimePublicKey != "" {
+		_, runtimeDER, runtimeFingerprint, err = parseDeviceKey(input.RuntimePublicKey)
+		if err != nil || runtimeFingerprint == fingerprint {
+			return Challenge{}, ErrInvalid
+		}
+	}
 	tx, err := s.store.db.BeginTx(ctx, nil)
 	if err != nil {
 		return Challenge{}, err
@@ -150,6 +195,7 @@ func (s *DeviceService) Challenge(ctx context.Context, input ChallengeRequest, n
 			return Challenge{}, ErrUnavailable
 		}
 	} else if input.Code != "" || i.KeyFingerprint != fingerprint ||
+		i.RuntimeKeyFingerprint != runtimeFingerprint ||
 		(i.State != "pending_approval" && i.State != "approved" && i.State != "rejected" &&
 			i.State != "cancelled" && i.State != "approval_expired") {
 		return Challenge{}, ErrUnavailable
@@ -172,13 +218,15 @@ func (s *DeviceService) Challenge(ctx context.Context, input ChallengeRequest, n
 	id := rand.Text()
 	payload, err := json.Marshal(challengePayload{Version: 1, Audience: s.config.Audience,
 		ID: id, Organization: input.Organization, InvitationID: i.ID, Purpose: input.Purpose,
-		KeyFingerprint: fingerprint, Nonce: rand.Text(), ExpiresAt: expires})
+		KeyFingerprint: fingerprint, RuntimeKeyFingerprint: runtimeFingerprint,
+		Nonce: rand.Text(), ExpiresAt: expires})
 	if err != nil {
 		return Challenge{}, err
 	}
 	if _, err := tx.ExecContext(ctx, `INSERT INTO device_challenges
- (id,organization,invitation_id,purpose,public_key,payload,code_hash,expires_at) VALUES(?,?,?,?,?,?,?,?)`,
-		id, input.Organization, i.ID, input.Purpose, der, payload, codeHash, expires.UnixNano()); err != nil {
+ (id,organization,invitation_id,purpose,public_key,payload,code_hash,expires_at,runtime_public_key)
+ VALUES(?,?,?,?,?,?,?,?,?)`,
+		id, input.Organization, i.ID, input.Purpose, der, payload, codeHash, expires.UnixNano(), runtimeDER); err != nil {
 		return Challenge{}, err
 	}
 	if err := tx.Commit(); err != nil {
@@ -188,12 +236,20 @@ func (s *DeviceService) Challenge(ctx context.Context, input ChallengeRequest, n
 }
 
 func (s *DeviceService) Verify(ctx context.Context, proof Proof, now time.Time) (DeviceStatus, error) {
-	if !validText(proof.ChallengeID) || len(proof.Signature) > 1024 || now.IsZero() {
+	if !validText(proof.ChallengeID) || len(proof.Signature) > 1024 ||
+		len(proof.RuntimeSignature) > 1024 || now.IsZero() {
 		return DeviceStatus{}, ErrInvalid
 	}
 	signature, err := base64.StdEncoding.Strict().DecodeString(proof.Signature)
 	if err != nil {
 		return DeviceStatus{}, ErrInvalid
+	}
+	var runtimeSignature []byte
+	if proof.RuntimeSignature != "" {
+		runtimeSignature, err = base64.StdEncoding.Strict().DecodeString(proof.RuntimeSignature)
+		if err != nil {
+			return DeviceStatus{}, ErrInvalid
+		}
 	}
 	tx, err := s.store.db.BeginTx(ctx, nil)
 	if err != nil {
@@ -201,11 +257,11 @@ func (s *DeviceService) Verify(ctx context.Context, proof Proof, now time.Time) 
 	}
 	defer tx.Rollback()
 	var organization, invitation, purpose, codeHash string
-	var der, payload []byte
+	var der, runtimeDER, payload []byte
 	var expires int64
 	var consumed int
-	err = tx.QueryRowContext(ctx, `SELECT organization,invitation_id,purpose,public_key,payload,code_hash,expires_at,consumed
- FROM device_challenges WHERE id=?`, proof.ChallengeID).Scan(&organization, &invitation, &purpose, &der, &payload, &codeHash, &expires, &consumed)
+	err = tx.QueryRowContext(ctx, `SELECT organization,invitation_id,purpose,public_key,payload,code_hash,expires_at,consumed,runtime_public_key
+ FROM device_challenges WHERE id=?`, proof.ChallengeID).Scan(&organization, &invitation, &purpose, &der, &payload, &codeHash, &expires, &consumed, &runtimeDER)
 	if errors.Is(err, sql.ErrNoRows) || (err == nil && (consumed != 0 || now.UnixNano() >= expires)) {
 		return DeviceStatus{}, ErrUnavailable
 	}
@@ -220,20 +276,47 @@ func (s *DeviceService) Verify(ctx context.Context, proof Proof, now time.Time) 
 	if err := json.Unmarshal(payload, &binding); err != nil {
 		return DeviceStatus{}, err
 	}
-	if binding.Audience != s.config.Audience {
+	runtimeFingerprint := ""
+	if len(runtimeDER) > 0 {
+		_, _, runtimeFingerprint, err = parseDeviceKey(base64.StdEncoding.EncodeToString(runtimeDER))
+		if err != nil {
+			return DeviceStatus{}, err
+		}
+	}
+	if binding.Audience != s.config.Audience || binding.KeyFingerprint != fingerprint ||
+		binding.RuntimeKeyFingerprint != runtimeFingerprint ||
+		(len(runtimeDER) > 0 && len(runtimeSignature) == 0) ||
+		(len(runtimeDER) == 0 && len(runtimeSignature) > 0) {
 		return DeviceStatus{}, ErrUnavailable
 	}
 	hash := sha256.Sum256(payload)
 	if err := rsa.VerifyPKCS1v15(key, crypto.SHA256, hash[:], signature); err != nil {
 		return DeviceStatus{}, ErrUnavailable
 	}
+	if len(runtimeDER) > 0 {
+		runtimeKey, _, _, err := parseDeviceKey(base64.StdEncoding.EncodeToString(runtimeDER))
+		if err != nil {
+			return DeviceStatus{}, err
+		}
+		if err := rsa.VerifyPKCS1v15(runtimeKey, crypto.SHA256, hash[:], runtimeSignature); err != nil {
+			return DeviceStatus{}, ErrUnavailable
+		}
+	}
 	var i Invitation
 	if purpose == "claim" {
 		i, err = transitionTx(ctx, tx, organization, invitation, codeHash, fingerprint,
 			"device:"+fingerprint, "claimed", now, now.Add(s.config.ApprovalLifetime))
+		if err == nil && len(runtimeDER) > 0 {
+			_, err = tx.ExecContext(ctx, `UPDATE invitations SET runtime_public_key=?,runtime_key_fingerprint=?
+ WHERE organization=? AND id=? AND state='pending_approval'`,
+				runtimeDER, runtimeFingerprint, organization, invitation)
+			if err == nil {
+				i.RuntimeKeyFingerprint = runtimeFingerprint
+			}
+		}
 	} else {
 		i, err = readInvitation(ctx, tx, organization, invitation, now)
-		if err == nil && i.KeyFingerprint != fingerprint {
+		if err == nil && (i.KeyFingerprint != fingerprint || i.RuntimeKeyFingerprint != runtimeFingerprint) {
 			err = ErrUnavailable
 		}
 	}
@@ -247,5 +330,6 @@ func (s *DeviceService) Verify(ctx context.Context, proof Proof, now time.Time) 
 		return DeviceStatus{}, err
 	}
 	return DeviceStatus{InvitationID: i.ID, State: i.State, Revision: i.Revision,
-		KeyFingerprint: i.KeyFingerprint, ApprovalExpiresAt: i.ApprovalExpiresAt, CredentialsIssued: false}, nil
+		KeyFingerprint: i.KeyFingerprint, RuntimeKeyFingerprint: i.RuntimeKeyFingerprint,
+		ApprovalExpiresAt: i.ApprovalExpiresAt, CredentialsIssued: false}, nil
 }

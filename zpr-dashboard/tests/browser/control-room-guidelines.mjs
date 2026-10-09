@@ -1,4 +1,72 @@
 export function registerControlRoomGuidelineTests(test, expect) {
+  test("GUI header guideline uses concise service names and secondary uptime while retaining failures", async ({ page, appURL, api }) => {
+    api.snapshot.api_status = "connected";
+    api.snapshot.stats = { uptime: "120" };
+    await page.goto(appURL + "/#node-stats");
+    await page.locator("#pause-poll").click();
+    const control = page.locator("#connection-state");
+    const visa = page.locator("#visa-service-state");
+    await expect(control.locator("strong")).toHaveText("Control Room");
+    await expect(visa.locator("strong")).toHaveText("Visa Service");
+    await expect(visa.locator("small").first()).toHaveText("Uptime 2m 0s");
+    await expect(visa.locator("#snapshot-source-status")).toBeHidden();
+    await expect(visa.locator("#snapshot-source-status")).toHaveText("");
+    for (const lamp of [control, visa]) {
+      await expect(lamp).toHaveAttribute("data-state", "connected");
+      await expect(lamp.locator(".state-lamp")).toHaveCSS("background-color", "rgb(181, 227, 79)");
+    }
+    const checkHeader = async () => {
+      await expect(page.locator(".topbar")).not.toContainText(/Available|connected/);
+      const geometry = await visa.evaluate(element => {
+        const name = element.querySelector("strong").getBoundingClientRect();
+        const uptime = element.querySelector("#metric-uptime").closest("small");
+        return {
+          below: uptime.getBoundingClientRect().top >= name.bottom,
+          size: parseFloat(getComputedStyle(uptime).fontSize),
+          noOverflow: document.documentElement.scrollWidth <= innerWidth,
+        };
+      });
+      expect(geometry.below).toBe(true);
+      expect(geometry.size).toBeGreaterThanOrEqual(11);
+      expect(geometry.noOverflow).toBe(true);
+    };
+    await checkHeader();
+    for (const [state, label] of [["partial", "Partial response"], ["not configured", "Not configured"], ["disconnected", "Unavailable"]]) {
+      api.snapshot.api_status = state;
+      api.snapshot.stats = {};
+      await page.locator("#refresh-now").click();
+      await expect(control.locator("strong")).toHaveText("Control Room");
+      await expect(control).toHaveAttribute("data-state", "connected");
+      await expect(visa).toHaveAttribute("data-state", "disconnected");
+      await expect(visa.locator("#snapshot-source-status")).toBeVisible();
+      await expect(visa.locator("#snapshot-source-status")).toHaveText(label);
+      await expect(visa.locator(".state-lamp")).toHaveCSS("background-color", "rgb(232, 128, 112)");
+      await expect(visa.locator("#metric-uptime")).toHaveText("—");
+    }
+    api.snapshot.api_status = "connected";
+    api.snapshot.stats = { uptime: "0" };
+    await page.locator("#refresh-now").click();
+    await expect(visa.locator("#metric-uptime")).toHaveText("0m 0s");
+    await expect(visa.locator("#snapshot-source-status")).toBeHidden();
+    api.handlers.set("/api/snapshot", route => route.fulfill({ status: 503, json: { error: "Service offline" } }));
+    await page.locator("#refresh-now").click();
+    await expect(control.locator("strong")).toHaveText("Control Room unavailable");
+    await expect(control).toHaveAttribute("data-state", "disconnected");
+    await expect(visa.locator("#snapshot-source-status")).toHaveText("Snapshot unavailable");
+    await expect(visa.locator("#snapshot-source-status")).toBeVisible();
+    await expect(visa.locator("#metric-uptime")).toHaveText("—");
+    api.handlers.delete("/api/snapshot");
+    api.snapshot.stats = { uptime: "180" };
+    await page.locator("#refresh-now").click();
+    await expect(control.locator("strong")).toHaveText("Control Room");
+    await expect(visa.locator("#metric-uptime")).toHaveText("3m 0s");
+    await expect(visa.locator("#snapshot-source-status")).toBeHidden();
+    await checkHeader();
+    await page.setViewportSize({ width: 700, height: 900 });
+    await checkHeader();
+    expect([...api.counts.keys()].some(path => path.startsWith("/api/simulator/"))).toBe(false);
+  });
+
   test("GUI uptime status sits beside Control Room and handles source and transport failures independently", async ({ page, appURL, api }) => {
     api.snapshot.stats = { uptime: "120" };
     api.snapshot.api_status = "connected";

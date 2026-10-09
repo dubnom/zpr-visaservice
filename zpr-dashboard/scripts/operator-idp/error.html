@@ -1,0 +1,14 @@
+{{ template "header.html" . }}
+
+<div class="theme-panel">
+  {{ if eq .ErrMsg "Requested resource does not exist." }}
+  <h2 class="theme-heading">Sign-in timed out</h2>
+  <p>This sign-in attempt is no longer available.</p>
+  <p><a class="dex-btn" href="https://localhost:8787/" referrerpolicy="no-referrer">Timed out. Try again.</a></p>
+  {{ else }}
+  <h2 class="theme-heading">{{ .ErrType }}</h2>
+  <p>{{ .ErrMsg }}</p>
+  {{ end }}
+</div>
+
+{{ template "footer.html" . }}

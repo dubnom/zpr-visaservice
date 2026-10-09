@@ -234,8 +234,8 @@ func TestSetupTLSClaimRestartApprovalAndBackoff(t *testing.T) {
 	if w := setupRequest(s, "/api/claim", `{"code":"`+code+`"}`); w.Code != 409 {
 		t.Fatal("claim replay accepted")
 	}
-	if _, err := store.Decide(context.Background(), "company", invitation.ID, "admin", "approved",
-		"Verified development setup", view.Fingerprint, view.Status.Revision, time.Now().UTC()); err != nil {
+	if _, err := store.DecideWithRuntimeKey(context.Background(), "company", invitation.ID, "admin", "approved",
+		"Verified development setup", view.Fingerprint, view.Status.RuntimeKeyFingerprint, view.Status.Revision, time.Now().UTC()); err != nil {
 		t.Fatal(err)
 	}
 	restarted, err := NewSetupServer(local)

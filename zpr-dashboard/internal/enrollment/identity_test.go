@@ -33,8 +33,16 @@ func TestSoftwareIdentityPersistsAndNeverReplacesKey(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if loaded.Metadata() != localMetadata() || !identity.key.Equal(loaded.key) || loaded.key.N.BitLen() != 3072 {
+	if loaded.Metadata() != localMetadata() || !identity.key.Equal(loaded.key) ||
+		loaded.key.N.BitLen() != 3072 || loaded.runtimeKey == nil ||
+		!identity.runtimeKey.Equal(loaded.runtimeKey) || identity.key.Equal(identity.runtimeKey) {
 		t.Fatal("persisted identity changed")
+	}
+	runtimeDigest := sha256.Sum256([]byte("runtime challenge"))
+	runtimeSignature, err := loaded.RuntimeSigner().Sign(rand.Reader, runtimeDigest[:], crypto.SHA256)
+	if err != nil || rsa.VerifyPKCS1v15(&identity.runtimeKey.PublicKey, crypto.SHA256,
+		runtimeDigest[:], runtimeSignature) != nil {
+		t.Fatal("separate runtime key cannot sign")
 	}
 	digest := sha256.Sum256([]byte("challenge"))
 	signature, err := loaded.Sign(rand.Reader, digest[:], crypto.SHA256)

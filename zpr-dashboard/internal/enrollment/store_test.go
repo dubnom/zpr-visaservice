@@ -198,3 +198,45 @@ func TestInvalidInvitations(t *testing.T) {
 		t.Fatalf("invalid claim: %v", err)
 	}
 }
+
+func TestRuntimeKeyColumnsMigrateExistingRegistry(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "legacy.db")
+	store, err := Open(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := store.db.Exec(`ALTER TABLE invitations DROP COLUMN runtime_public_key`); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := store.db.Exec(`ALTER TABLE invitations DROP COLUMN runtime_key_fingerprint`); err != nil {
+		t.Fatal(err)
+	}
+	if err := store.Close(); err != nil {
+		t.Fatal(err)
+	}
+	store, err = Open(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer store.Close()
+	columns := map[string]bool{}
+	rows, err := store.db.Query(`PRAGMA table_info(invitations)`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for rows.Next() {
+		var sequence, notNull, primary int
+		var name, kind string
+		var defaultValue any
+		if err := rows.Scan(&sequence, &name, &kind, &notNull, &defaultValue, &primary); err != nil {
+			t.Fatal(err)
+		}
+		columns[name] = true
+	}
+	if err := rows.Close(); err != nil {
+		t.Fatal(err)
+	}
+	if !columns["runtime_public_key"] || !columns["runtime_key_fingerprint"] {
+		t.Fatal("legacy invitations schema was not upgraded")
+	}
+}

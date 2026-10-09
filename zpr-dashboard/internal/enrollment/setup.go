@@ -101,16 +101,17 @@ type SetupServer struct {
 }
 
 type setupView struct {
-	Audience        string           `json:"audience"`
-	Metadata        *LocalEnrollment `json:"metadata,omitempty"`
-	Fingerprint     string           `json:"fingerprint,omitempty"`
-	Status          *DeviceStatus    `json:"status,omitempty"`
-	Uncertain       bool             `json:"uncertain"`
-	CanClaim        bool             `json:"can_claim"`
-	ConfirmRecovery bool             `json:"confirm_recovery"`
-	RetryAfter      int              `json:"retry_after_seconds"`
-	Message         string           `json:"message"`
-	KeyProtection   string           `json:"key_protection"`
+	Audience           string           `json:"audience"`
+	Metadata           *LocalEnrollment `json:"metadata,omitempty"`
+	Fingerprint        string           `json:"fingerprint,omitempty"`
+	RuntimeFingerprint string           `json:"runtime_fingerprint,omitempty"`
+	Status             *DeviceStatus    `json:"status,omitempty"`
+	Uncertain          bool             `json:"uncertain"`
+	CanClaim           bool             `json:"can_claim"`
+	ConfirmRecovery    bool             `json:"confirm_recovery"`
+	RetryAfter         int              `json:"retry_after_seconds"`
+	Message            string           `json:"message"`
+	KeyProtection      string           `json:"key_protection"`
 }
 
 func NewSetupServer(config SetupConfig) (*SetupServer, error) {
@@ -157,7 +158,13 @@ func (s *SetupServer) attach(identity *SoftwareIdentity) error {
 	if identity.Metadata().Audience != s.config.Audience {
 		return errors.New("stored identity audience differs from trusted setup configuration; administrator recovery is required")
 	}
-	client, err := NewClient(s.config.Audience, s.roots, identity)
+	var client *Client
+	var err error
+	if runtimeSigner := identity.RuntimeSigner(); runtimeSigner != nil {
+		client, err = NewClientWithRuntimeKey(s.config.Audience, s.roots, identity, runtimeSigner)
+	} else {
+		client, err = NewClient(s.config.Audience, s.roots, identity)
+	}
 	if err != nil {
 		return err
 	}
@@ -360,7 +367,7 @@ func (s *SetupServer) serveHTTP(w http.ResponseWriter, r *http.Request) {
 	if status.State == "approved" {
 		message = "Administrator approved this request. Credentials are not issued and ZPR connectivity is not established."
 	} else if status.State == "pending_approval" {
-		message = "Waiting for administrator approval. Share the key fingerprint through your authenticated verification channel."
+		message = "Waiting for administrator approval. Share both key fingerprints through your authenticated verification channel."
 	} else {
 		message += " Contact the administrator; no credentials were issued."
 	}
@@ -379,6 +386,7 @@ func (s *SetupServer) reply(w http.ResponseWriter, code int, message string) {
 	if s.identity != nil {
 		metadata := s.identity.Metadata()
 		view.Metadata, view.Fingerprint = &metadata, s.client.Fingerprint()
+		view.RuntimeFingerprint = s.client.runtimeFP
 		view.CanClaim = s.checked && (!s.uncertain || s.recovery) && s.status == nil
 		view.ConfirmRecovery = s.recovery
 	}

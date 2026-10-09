@@ -9,61 +9,16 @@
   const pageKey = (url) => new URL(url, location.href).pathname;
   const dispatchPageEvent = (name, path) => document.dispatchEvent(new CustomEvent(name, { detail: { path } }));
   function createPagePoller({ path, run, interval, onError }) {
-    let active = false;
-    let generation = 0;
-    let timer;
-    let operation;
-
-    async function poll(currentGeneration) {
-      if (!active || currentGeneration !== generation) return;
-      if (operation?.generation === currentGeneration) return operation.promise;
-      const controller = new AbortController();
-      const current = {
-        generation: currentGeneration,
-        controller,
-        promise: null,
-      };
-      const isCurrent = () => active && generation === currentGeneration &&
-        operation === current && !controller.signal.aborted;
-      current.promise = Promise.resolve()
-        .then(() => run({ signal: controller.signal, isCurrent }))
-        .catch((error) => { if (isCurrent()) onError(error); })
-        .finally(() => {
-          if (operation === current) operation = null;
-          if (active && generation === currentGeneration) {
-            const delay = typeof interval === "function" ? interval() : interval;
-            timer = window.setTimeout(() => void poll(currentGeneration), delay);
-          }
-        });
-      operation = current;
-      return current.promise;
-    }
-
-    function start() {
-      if (active) return;
-      active = true;
-      void poll(++generation);
-    }
-
-    function stop() {
-      if (!active && !operation) return;
-      active = false;
-      generation++;
-      window.clearTimeout(timer);
-      timer = undefined;
-      operation?.controller.abort();
-      operation = null;
-    }
-
+    const poller = window.ZPRPageRuntime.createPoller({ run, interval, onError });
     document.addEventListener("simulator:activate", (event) => {
-      if (event.detail.path === path) start();
+      if (event.detail.path === path) poller.start();
     });
     document.addEventListener("simulator:deactivate", (event) => {
-      if (event.detail.path === path) stop();
+      if (event.detail.path === path) poller.stop();
     });
     return {
-      refresh() { return active ? poll(generation) : Promise.resolve(); },
-      stop,
+      refresh: poller.refresh,
+      stop: poller.stop,
     };
   }
 
@@ -84,9 +39,7 @@
   };
   const refreshActiveOrganization = async () => {
     try {
-      const response = await fetch("/api/simulator/organizations", { cache: "no-store" });
-      if (!response.ok) throw new Error(`HTTP ${response.status}`);
-      const data = await response.json();
+      const data = await window.ZPRPageRuntime.requestJSON(window.fetch.bind(window), "/api/simulator/organizations");
       setActiveOrganization((data.organizations || []).find((item) => item.id === data.active_id));
     } catch {
       setActiveOrganization(null);

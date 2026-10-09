@@ -54,21 +54,7 @@
   }
 
   async function requestJSON(fetcher, url, options = {}, { acceptError = () => false } = {}) {
-    const response = await fetcher(url, { cache: "no-store", ...options });
-    let result;
-    try {
-      result = await response.json();
-    } catch (error) {
-      if (!(error instanceof SyntaxError)) throw error;
-      throw new Error(`HTTP ${response.status}: invalid JSON response`, { cause: error });
-    }
-    if (!response.ok && !acceptError(result)) {
-      const error = new Error(result?.error || result?.diagnostics || `HTTP ${response.status}`);
-      error.line = result?.line || 0;
-      error.details = result;
-      throw error;
-    }
-    return result;
+    return window.ZPRPageRuntime.requestJSON(fetcher, url, options, { acceptError });
   }
 
   function bindSourceLayout({ source, highlight: pre, gutter, gutterContent, container, onScroll, onResize }) {
@@ -474,12 +460,13 @@
       button.setAttribute("aria-label", "Maximize editor");
       button.setAttribute("aria-pressed", "false");
       button.title = "Maximize editor";
-      button.textContent = "Maximize";
+      window.ZPRSafeDisplay.renderWindowControl(button, false, "editor");
       utilities.append(button);
       registrations.push({ button, pane });
     }
 
     for (const { button, pane } of registrations) {
+      window.ZPRSafeDisplay.renderWindowControl(button, false, "editor");
       const isDialog = pane instanceof HTMLDialogElement;
       const originalRole = pane.getAttribute("role");
       const originalModal = pane.getAttribute("aria-modal");
@@ -495,10 +482,7 @@
         maximized = next;
         pane.classList.toggle("editor-page-maximized", maximized);
         document.body.classList.toggle("editor-page-maximized", maximized);
-        button.setAttribute("aria-pressed", String(maximized));
-        button.textContent = maximized ? "Restore" : "Maximize";
-        button.setAttribute("aria-label", maximized ? "Restore editor" : "Maximize editor");
-        button.title = maximized ? "Restore editor" : "Maximize editor";
+        window.ZPRSafeDisplay.renderWindowControl(button, maximized, "editor");
 
         if (maximized) {
           modalDialog = isDialog && pane.matches(":modal");

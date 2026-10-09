@@ -204,12 +204,37 @@ listener nor the installer has been deployed, and the GUI remains blocked.
 
 ### Device challenge and proof protocol
 
+The proposed production ownership split and versioned lifecycle APIs are
+documented in the [Enrollment Service API contract](ENROLLMENT_SERVICE_CONTRACT.md).
+That contract is not implemented; details below describe the current prototype.
+
 `NewDeviceService` and `NewDeviceHandler` implement the device-facing protocol
-independently of the administration handler. They are **not registered on Control-Service**. The opt-in standalone
-`zpr-enrollment-service` command serves them on a separate TLS listener.
-Deployment still requires an approved pre-ZPR HTTPS service/gateway and installer
-integration; do not expose the administrative listener to devices. No service
-is automatically started by the dashboard stack or this change.
+independently of the administration handler. They are **not registered on
+Control-Service**. The opt-in standalone `zpr-enrollment-service` command
+serves them on a separate TLS listener.
+The selected first-release boundary is private corporate underlay/VPN access
+only; direct public-Internet exposure is not approved. Keep the device listener
+separate from Control-Service, Policy-Service, Visa Service Admin, and operator
+APIs. The handler requires end-to-end TLS, so a private TCP/L4 gateway can
+forward the TLS connection; TLS termination and trusted-proxy identity handling
+are not implemented. Do not expose the administrative listener to devices. No
+service is automatically started by the dashboard stack or this change.
+
+The invitation's asset fields are currently a snapshot, not an authoritative
+inventory. The first release will use a separate Enrollment Service-owned,
+organization-scoped asset registry; external ITAM/MDM integration is out of
+scope. In production, the Enrollment Service must be the sole writer for
+inventory and device identity lifecycle; Control-Service will use an
+independently authenticated administrative API and must not share its database.
+The current local prototype instead mounts the administrative handler in
+Control-Service and uses the enrollment package/SQLite registry for device
+proofs. The production ownership split, inventory API/storage,
+revision-bound invitation contract, credential issuer, trusted-attribute
+publication/revocation, and private network deployment have not been
+implemented. Do not treat this protocol as production device admission.
+For the initial single-operator deployment, the invitation creator may also
+approve the request. The named administrator's permission, revision/key binding,
+and audit checks remain required. Multi-person separation of duties is deferred.
 
 The service requires an explicit trusted HTTPS origin (`Audience`), challenge
 lifetime (1 second to 5 minutes), and approval lifetime (1 second to 30 days).
@@ -1093,6 +1118,11 @@ When enabled on direct HTTPS, the handler supports:
   S256 PKCE and only the `openid` scope.
 - `GET /auth/operator/callback`: one-time state/browser cookie, code exchange,
   signed ID-token validation, explicit grant lookup, and opaque session cookie.
+  Expired, missing-browser, lost-state and replayed login attempts remain HTTP
+  403, but display a recovery page with a single **Timed out. Try again.** action
+  (a same-origin POST starting fresh state/nonce/PKCE). Recovery
+  never exchanges the rejected code or reflects callback parameters. The
+  five-minute login timeout and all authorization checks remain unchanged.
 - `GET /auth/operator/session`: same-origin identity and CSRF token only,
   `no-store`; no provider tokens or client secret.
 - `POST /auth/operator/logout`: same-origin CSRF-protected local session
@@ -1212,11 +1242,25 @@ refuses to overwrite an existing identity/configuration, and never prints
 passwords, client secrets or private keys. `operator-password` contains the
 random initial password; open it locally and keep it private. The IdP stores a
 bcrypt hash and its signing/session state in persistent SQLite storage.
-The pinned Dex 2.44.0 image uses HTTPS at `https://zpr-id.localhost:5556`;
+The local image built with `scripts/Dockerfile.operator-idp` extends the pinned
+Dex 2.44.0 image and uses HTTPS at `https://zpr-id.localhost:5556`;
 Docker maps that hostname explicitly for the Control Room OIDC client.
 The browser resolves `.localhost` locally. Certificates last 90 days and the
 development CA 365 days; arrange deliberate renewal rather than disabling TLS
 verification when they expire.
+
+The local error template replaces Dex's "Requested resource does not exist."
+error for expired login pages (including refresh) with **Sign-in timed out**
+and one **Timed out. Try again.** action. That action opens the fixed trusted
+Control Room URL; its normal same-origin login POST creates a fresh attempt.
+No stale state/code or browser-supplied return URL is reused. Other provider
+errors remain visible. The recovery target is Control Room, not Simulator.
+New configurations select `frontend.dir: "/srv/dex/web"` and new IdP containers
+build the custom image. Existing containers/configurations are not silently
+replaced by `start`: adopting this template requires an explicit IdP image/
+configuration rollout with the persistent SQLite database and identities
+preserved. The local IdP and Control Room recovery handlers were explicitly
+deployed on 2026-10-09; subsequent source edits still require a separate rollout.
 
 The local admin is deliberately granted `organizations:["*"]` at Control Room
 and independently at Control-Service: all existing/future organizations, but
@@ -1628,6 +1672,13 @@ Sources, Adapter Logs, and the external Log Manager (marked with a green ↗
 arrow). Policy/Assertions, Gateways, and Config follow under a small
 **Configuration** label; the label is hidden in condensed and mobile layouts.
 
+The top header uses concise **Control Room** and **Visa Service** titles.
+Visa Service uptime is on its secondary line; healthy states do not repeat
+"Available" or "connected". Independent green/red lamps distinguish Control Room
+transport from Visa Service source health. Partial, unavailable, unconfigured
+and snapshot-transport failures remain explicitly labelled; transport failure
+clears the displayed uptime until a successful snapshot restores it.
+
 Control Room groups Adapters, Actors, Services, Visas, Denials, and DNS under
 counted Status tabs. The summary metrics stay on Map rather than repeating on
 each status page. Map updates animate retained topology components as bounds
@@ -1867,7 +1918,7 @@ selected workload status together with assigned application/service
 event logs, not Controller or adapter logs. Running machines with no supported
 workload logs have an explicit empty state.
 
-Adapter/Controller Logs, Workers, and Diagnostics offer **Format JSON**, initially
+Adapter/Controller Logs and Workers offer **Format JSON**, initially
 unchecked. Enable it to indent complete JSON objects/arrays; disable it to restore
 the exact raw log text. This is a local display change, including while paused,
 and does not collect or modify logs. Plain text, prefixed messages, and malformed
@@ -1891,6 +1942,24 @@ background colors (standard, bright, 256-color, and RGB), bold, faint, italic,
 and underline are rendered using the vendored MIT-licensed `ansi_up` 6.0.6
 browser module. Log text is HTML-escaped, terminal hyperlinks stay inert, and
 only approved color and text-emphasis styles are applied without relaxing CSP.
+Diagnostics log bodies use the same `colored-log.js` renderer as
+Adapter/Controller Logs and Workers, preserving provider-supplied ANSI colors
+and emphasis instead of showing escape sequences as plain text. Each Diagnostics
+record starts with fresh terminal styling, so color cannot leak into the next
+record. Diagnostics displays provider text without JSON reformatting and has no
+Format JSON control. Provider HTML
+and terminal hyperlinks remain inert. No severity colors are invented and
+plain messages retain the existing Diagnostics appearance.
+Diagnostics log entries show only the full-width body, without separate
+timestamp or severity columns. Dates, times and levels already included in
+provider text remain intact; no prefix is synthesized or stripped.
+Diagnostics uses the available application width, including wide monitors.
+Metrics span their detail panel, and source tables/logs grow naturally with
+their bounded response data rather than using fixed-height nested scroll panes.
+The page scrolls vertically; narrow source tables can still scroll horizontally.
+An initial **Loading** indicator is shown until the first request finishes.
+Diagnostics does not display a recurring Querying/Updated status line;
+background refresh retains existing content, with failures shown explicitly.
 
 Each source returns at most 100 lines and 64 KiB. Collection runs for at most
 12 seconds with four concurrent machines; empty and unavailable sources are
@@ -2157,6 +2226,15 @@ scrolling. Scenario and Directory dialogs remain open when Escape restores
 their normal layout. The maximized editor exposes modal semantics and makes
 surrounding content inert; restoring returns focus to the toolbar control and
 preserves any pre-existing inert states.
+All editor and adapter/controller/Worker log window controls use the same
+dependency-free SVG renderer in `safe-display.js`: an outlined window for
+Maximize and overlapping windows for Restore, without visible button text.
+The renderer also marks each window button for shared styling in `app.css`:
+dark icons on a white 32px square, with identical hover, active, disabled and
+keyboard-focus treatment across editor and log toolbars.
+Action-specific accessible names, tooltips and `aria-pressed` remain available;
+keyboard and focus behavior are unchanged. This applies to window sizing only,
+not restoring archived records, revisions or organization base state.
 All six source editors share `bindSourceLayout` for highlight-overlay scroll,
 native gutter scrolling or translated result rows, resize observation and
 horizontal-overflow detection where supported. Policy and Assertion retain
@@ -2165,6 +2243,44 @@ completion positioning on scroll. Assertion scroll/resize no longer rebuilds
 highlighted token nodes. The returned binding (also exposed through source
 surfaces) can disconnect scroll/resize wiring with `dispose()`; disposal
 leaves rendered content and diagnostics intact.
+The dependency-free `page-runtime.js` supplies neutral JSON transport and page
+polling/lifecycle helpers. It has no endpoints, authentication defaults,
+organization lookup or Simulator dependencies. Load it before editor-page,
+assistant and page scripts. The existing editor JSON and Simulator navigation
+poller entrypoints delegate to this runtime, retaining their public contracts.
+
+`createPoller` requires `run` and an explicit `onError` callback. It shares an
+in-flight Promise between refreshes, aborts on stop/pause/pagehide, and supplies
+`signal`/`isCurrent` so late successes or failures cannot update another request
+generation. Only the owning operation releases pending controls. Timer-based
+reads wait the configured interval after completion; paused pages still permit
+manual Refresh. `dispose` removes the pagehide listener and prevents restart.
+Control Room snapshots, active-page DNS statistics, Diagnostics, Security scans,
+adapter/Worker logs and manual Trusted Sources reads use this lifecycle.
+DNS names remain a separately cached, page-independent production read so other
+operator pages can resolve addresses without depending on the DNS route.
+Security retains background inventory alerts while telemetry reads remain
+active-page-only. Policy context checks use a separate navigation-owned scope.
+Sample-age displays and animation timers are not network pollers.
+
+Failed snapshot, DNS, Diagnostics and log reads retain last-good data with
+explicit unavailable/error states; logs retain disconnected tails. Directory
+reads retain last-known records, and normal snapshot polling/navigation does
+not automatically reread LDAP or collapse its expanded tree. Change-feed
+cursors remain source-owned. Failed/expired feed reads hide unconfirmed history
+and keep the feed identity/error visible, rather than presenting it as current.
+
+`requestJSON` receives the caller's fetch function and request options. Production
+reads inject authenticated operator fetch; Simulator callers inject their own
+fetch and endpoints. It preserves headers, bodies and abort identity, reports
+malformed JSON with HTTP status, retains structured service errors, and makes
+one attempt only. Assistant, Activity, policy browsing and policy File operations
+also use it. Enrollment keeps its stricter content-type, status and uncertainty
+rules, reusing only JSON decoding after those checks. Scenario Delete retains
+its potentially empty success response. Operator login/session handling and
+HTML navigation fetches retain their specialized contracts. No write is retried
+or implicitly saved, published, activated or run by these helpers.
+
 Config, Assertions and Gateways share `requestJSON`, with each adapter injecting
 the existing authenticated operator fetch function and its own endpoint/options.
 The helper preserves request bodies, headers and abort signals, never retries,

@@ -62,10 +62,7 @@ class ZPRPolicyBrowser extends HTMLElement {
   }
 
   async request(path, signal) {
-    const response = await fetch(`${this.apiBase}${path}`, { method: "GET", signal, cache: "no-store", headers: { Accept: "application/json" } });
-    const data = await response.json();
-    if (!response.ok) throw new Error(data.error || `Repository returned HTTP ${response.status}`);
-    return data;
+    return window.ZPRPageRuntime.requestJSON(window.fetch.bind(window), `${this.apiBase}${path}`, { method: "GET", signal, headers: { Accept: "application/json" } });
   }
 
   async loadCatalog() {

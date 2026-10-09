@@ -37,19 +37,20 @@ type Asset struct {
 }
 
 type Invitation struct {
-	ID                string     `json:"id"`
-	Asset             Asset      `json:"asset"`
-	State             string     `json:"state"`
-	CreatedBy         string     `json:"created_by"`
-	CreatedAt         time.Time  `json:"created_at"`
-	ExpiresAt         time.Time  `json:"expires_at"`
-	KeyFingerprint    string     `json:"key_fingerprint,omitempty"`
-	Revision          int        `json:"revision"`
-	ClaimedAt         *time.Time `json:"claimed_at,omitempty"`
-	ApprovalExpiresAt *time.Time `json:"approval_expires_at,omitempty"`
-	DecisionBy        string     `json:"decision_by,omitempty"`
-	DecisionReason    string     `json:"decision_reason,omitempty"`
-	DecidedAt         *time.Time `json:"decided_at,omitempty"`
+	ID                    string     `json:"id"`
+	Asset                 Asset      `json:"asset"`
+	State                 string     `json:"state"`
+	CreatedBy             string     `json:"created_by"`
+	CreatedAt             time.Time  `json:"created_at"`
+	ExpiresAt             time.Time  `json:"expires_at"`
+	KeyFingerprint        string     `json:"key_fingerprint,omitempty"`
+	RuntimeKeyFingerprint string     `json:"runtime_key_fingerprint,omitempty"`
+	Revision              int        `json:"revision"`
+	ClaimedAt             *time.Time `json:"claimed_at,omitempty"`
+	ApprovalExpiresAt     *time.Time `json:"approval_expires_at,omitempty"`
+	DecisionBy            string     `json:"decision_by,omitempty"`
+	DecisionReason        string     `json:"decision_reason,omitempty"`
+	DecidedAt             *time.Time `json:"decided_at,omitempty"`
 }
 
 type Store struct {
@@ -96,6 +97,7 @@ CREATE TABLE IF NOT EXISTS invitations (
  profile TEXT NOT NULL, recipient TEXT NOT NULL, state TEXT NOT NULL,
  created_by TEXT NOT NULL, created_at INTEGER NOT NULL, expires_at INTEGER NOT NULL,
  code_hash TEXT NOT NULL UNIQUE, key_fingerprint TEXT NOT NULL DEFAULT ''
+ ,runtime_public_key BLOB NOT NULL DEFAULT X'',runtime_key_fingerprint TEXT NOT NULL DEFAULT ''
 );
 DROP INDEX IF EXISTS active_asset;
 CREATE UNIQUE INDEX active_asset ON invitations(organization, asset_id)
@@ -125,7 +127,47 @@ COMMIT;`)
 		_ = db.Close()
 		return nil, fmt.Errorf("initialize enrollment registry: %w", err)
 	}
+	if err := ensureInvitationRuntimeKeyColumns(db); err != nil {
+		_ = db.Close()
+		return nil, fmt.Errorf("initialize runtime key binding: %w", err)
+	}
 	return &Store{db: db}, nil
+}
+
+func ensureInvitationRuntimeKeyColumns(db *sql.DB) error {
+	columns := map[string]bool{}
+	rows, err := db.Query(`PRAGMA table_info(invitations)`)
+	if err != nil {
+		return err
+	}
+	for rows.Next() {
+		var sequence, notNull, primary int
+		var name, kind string
+		var defaultValue any
+		if err := rows.Scan(&sequence, &name, &kind, &notNull, &defaultValue, &primary); err != nil {
+			_ = rows.Close()
+			return err
+		}
+		columns[name] = true
+	}
+	if err := rows.Err(); err != nil {
+		_ = rows.Close()
+		return err
+	}
+	if err := rows.Close(); err != nil {
+		return err
+	}
+	for name, statement := range map[string]string{
+		"runtime_public_key":      `ALTER TABLE invitations ADD COLUMN runtime_public_key BLOB NOT NULL DEFAULT X''`,
+		"runtime_key_fingerprint": `ALTER TABLE invitations ADD COLUMN runtime_key_fingerprint TEXT NOT NULL DEFAULT ''`,
+	} {
+		if !columns[name] {
+			if _, err := db.Exec(statement); err != nil {
+				return err
+			}
+		}
+	}
+	return nil
 }
 
 func (s *Store) Close() error { return s.db.Close() }
@@ -232,12 +274,12 @@ func readInvitation(ctx context.Context, query interface {
 	var created, expires int64
 	var claimed, approvalExpires, decided sql.NullInt64
 	err := query.QueryRowContext(ctx, `SELECT i.id,i.organization,i.asset_id,i.name,i.owner,i.type,i.profile,i.recipient,
- i.state,i.created_by,i.created_at,i.expires_at,i.key_fingerprint,
+ i.state,i.created_by,i.created_at,i.expires_at,i.key_fingerprint,i.runtime_key_fingerprint,
  r.revision,r.claimed_at,r.approval_expires_at,r.decision_by,r.decision_reason,r.decided_at
  FROM invitations i JOIN invitation_reviews r ON r.invitation_id=i.id WHERE i.organization=? AND i.id=?`,
 		organization, id).Scan(&i.ID, &i.Asset.Organization, &i.Asset.AssetID, &i.Asset.Name,
 		&i.Asset.Owner, &i.Asset.Type, &i.Asset.Profile, &i.Asset.Recipient, &i.State,
-		&i.CreatedBy, &created, &expires, &i.KeyFingerprint, &i.Revision,
+		&i.CreatedBy, &created, &expires, &i.KeyFingerprint, &i.RuntimeKeyFingerprint, &i.Revision,
 		&claimed, &approvalExpires, &i.DecisionBy, &i.DecisionReason, &decided)
 	if errors.Is(err, sql.ErrNoRows) {
 		return Invitation{}, ErrNotFound
@@ -326,6 +368,10 @@ func (s *Store) Cancel(ctx context.Context, organization, id, principal string, 
 // CancelReviewed binds an operator cancellation to the record displayed for review.
 // Direct certificate cancellation retains its existing idempotent contract.
 func (s *Store) CancelReviewed(ctx context.Context, organization, id, principal, reason, fingerprint string, revision int, now time.Time) (Invitation, error) {
+	return s.CancelReviewedWithRuntimeKey(ctx, organization, id, principal, reason, fingerprint, "", revision, now)
+}
+
+func (s *Store) CancelReviewedWithRuntimeKey(ctx context.Context, organization, id, principal, reason, fingerprint, runtimeFingerprint string, revision int, now time.Time) (Invitation, error) {
 	if !validText(principal) || !validText(reason) || revision < 1 || now.IsZero() {
 		return Invitation{}, ErrInvalid
 	}
@@ -342,6 +388,9 @@ func (s *Store) CancelReviewed(ctx context.Context, organization, id, principal,
 		return Invitation{}, ErrRevision
 	}
 	if i.KeyFingerprint != fingerprint {
+		return Invitation{}, ErrInvalid
+	}
+	if i.RuntimeKeyFingerprint != runtimeFingerprint {
 		return Invitation{}, ErrInvalid
 	}
 	if i.State != "invited" && i.State != "pending_approval" {
@@ -432,6 +481,10 @@ func transitionTx(ctx context.Context, tx *sql.Tx, organization, id, codeHash, f
 }
 
 func (s *Store) Decide(ctx context.Context, organization, id, principal, decision, reason, fingerprint string, revision int, now time.Time) (Invitation, error) {
+	return s.DecideWithRuntimeKey(ctx, organization, id, principal, decision, reason, fingerprint, "", revision, now)
+}
+
+func (s *Store) DecideWithRuntimeKey(ctx context.Context, organization, id, principal, decision, reason, fingerprint, runtimeFingerprint string, revision int, now time.Time) (Invitation, error) {
 	if !validText(principal) || !validText(reason) || revision < 1 || now.IsZero() ||
 		(decision != "approved" && decision != "rejected") {
 		return Invitation{}, ErrInvalid
@@ -452,6 +505,9 @@ func (s *Store) Decide(ctx context.Context, organization, id, principal, decisio
 		return Invitation{}, ErrUnavailable
 	}
 	if i.KeyFingerprint == "" || i.KeyFingerprint != fingerprint {
+		return Invitation{}, ErrInvalid
+	}
+	if i.RuntimeKeyFingerprint != runtimeFingerprint {
 		return Invitation{}, ErrInvalid
 	}
 	i.State, i.DecisionBy, i.DecisionReason = decision, principal, reason

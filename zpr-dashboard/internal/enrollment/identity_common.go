@@ -26,8 +26,9 @@ type LocalEnrollment struct {
 
 // SoftwareIdentity is development-only, not a hardware-backed device identity.
 type SoftwareIdentity struct {
-	key      *rsa.PrivateKey
-	metadata LocalEnrollment
+	key        *rsa.PrivateKey
+	runtimeKey *rsa.PrivateKey
+	metadata   LocalEnrollment
 }
 
 func (i *SoftwareIdentity) Public() crypto.PublicKey { return i.key.Public() }
@@ -36,11 +37,21 @@ func (i *SoftwareIdentity) Sign(random io.Reader, digest []byte, options crypto.
 }
 func (i *SoftwareIdentity) Metadata() LocalEnrollment { return i.metadata }
 
+// RuntimeSigner is a separate BAS AuthCode key and is never used to prove
+// possession of the enrollment identity.
+func (i *SoftwareIdentity) RuntimeSigner() crypto.Signer {
+	if i.runtimeKey == nil {
+		return nil
+	}
+	return i.runtimeKey
+}
+
 type identityRecord struct {
 	Version    int             `json:"version"`
 	Protection string          `json:"protection"`
 	Enrollment LocalEnrollment `json:"enrollment"`
 	PrivateKey string          `json:"private_key"`
+	RuntimeKey string          `json:"runtime_key,omitempty"`
 }
 
 func validLocalEnrollment(m LocalEnrollment) bool {
@@ -52,17 +63,27 @@ func newSoftwareIdentityRecord(metadata LocalEnrollment, protection string) (*So
 	if err != nil {
 		return nil, nil, fmt.Errorf("generate enrollment key: %w", err)
 	}
+	runtimeKey, err := rsa.GenerateKey(rand.Reader, 3072)
+	if err != nil {
+		return nil, nil, fmt.Errorf("generate separate BAS runtime key: %w", err)
+	}
 	der, err := x509.MarshalPKCS8PrivateKey(key)
 	if err != nil {
 		return nil, nil, err
 	}
 	defer clear(der)
-	data, err := json.Marshal(identityRecord{Version: 1, Protection: protection,
-		Enrollment: metadata, PrivateKey: base64.StdEncoding.EncodeToString(der)})
+	runtimeDER, err := x509.MarshalPKCS8PrivateKey(runtimeKey)
 	if err != nil {
 		return nil, nil, err
 	}
-	return &SoftwareIdentity{key: key, metadata: metadata}, data, nil
+	defer clear(runtimeDER)
+	data, err := json.Marshal(identityRecord{Version: 1, Protection: protection,
+		Enrollment: metadata, PrivateKey: base64.StdEncoding.EncodeToString(der),
+		RuntimeKey: base64.StdEncoding.EncodeToString(runtimeDER)})
+	if err != nil {
+		return nil, nil, err
+	}
+	return &SoftwareIdentity{key: key, runtimeKey: runtimeKey, metadata: metadata}, data, nil
 }
 
 func decodeSoftwareIdentity(data []byte, protection string) (*SoftwareIdentity, error) {
@@ -84,5 +105,22 @@ func decodeSoftwareIdentity(data []byte, protection string) (*SoftwareIdentity, 
 	if !ok || key.N == nil || key.N.BitLen() != 3072 || key.E != 65537 || key.Validate() != nil {
 		return nil, errors.New("invalid local enrollment RSA key")
 	}
-	return &SoftwareIdentity{key: key, metadata: record.Enrollment}, nil
+	var runtimeKey *rsa.PrivateKey
+	if record.RuntimeKey != "" {
+		runtimeDER, err := base64.StdEncoding.Strict().DecodeString(record.RuntimeKey)
+		if err != nil {
+			return nil, errors.New("invalid local runtime key encoding")
+		}
+		defer clear(runtimeDER)
+		runtimeParsed, err := x509.ParsePKCS8PrivateKey(runtimeDER)
+		if err != nil {
+			return nil, errors.New("invalid local runtime private key")
+		}
+		runtimeKey, ok = runtimeParsed.(*rsa.PrivateKey)
+		if !ok || runtimeKey.N == nil || runtimeKey.N.BitLen() < 2048 ||
+			runtimeKey.N.BitLen() > 4096 || runtimeKey.E != 65537 || runtimeKey.Validate() != nil {
+			return nil, errors.New("invalid local runtime RSA key")
+		}
+	}
+	return &SoftwareIdentity{key: key, runtimeKey: runtimeKey, metadata: record.Enrollment}, nil
 }

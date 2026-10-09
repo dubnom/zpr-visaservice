@@ -10,6 +10,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"errors"
+	"io"
 	"log"
 	"net"
 	"net/http"
@@ -35,6 +36,7 @@ func ValidPermission(permission string) bool {
 		"read", "create", "cancel", "approve", "reject",
 		"monitor.read", "policy.read", "policy.analyze", "policy.edit",
 		"gateway.read", "gateway.analyze", "gateway.edit",
+		"change.read", "change.submit", "change.review",
 		"simulator.read", "simulator.control",
 		"organization.read", "organization.activate", "organization.restore",
 		"scenario.read", "scenario.analyze", "scenario.edit", "scenario.publish", "scenario.archive", "scenario.run", "scenario.cancel",
@@ -228,6 +230,37 @@ func deny(w http.ResponseWriter, status int) {
 	http.Error(w, "Operator authentication unavailable or denied.", status)
 }
 
+func loginRecovery(w http.ResponseWriter) {
+	log.Print("Operator sign-in rejected: login attempt expired or unavailable")
+	w.Header().Set("Content-Type", "text/html; charset=utf-8")
+	w.Header().Set("Content-Security-Policy", "default-src 'none'; style-src 'unsafe-inline'; form-action 'self'; base-uri 'none'; frame-ancestors 'none'")
+	w.WriteHeader(http.StatusForbidden)
+	if _, err := io.WriteString(w, `<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Timed out. Try again. - ZPR Operator Access</title>
+<style>
+body { margin: 0; padding: 24px; background: #f3f6f2; color: #17211e; font: 16px system-ui, sans-serif; }
+main { max-width: 480px; margin: 12vh auto; padding: 32px; background: white; border: 1px solid #ccd6cd; border-radius: 8px; }
+h1 { font-size: 24px; } p { line-height: 1.5; }
+button { padding: 12px 20px; font: inherit; cursor: pointer; }
+:focus-visible { outline: 3px solid #416b45; outline-offset: 3px; }
+</style>
+</head>
+<body>
+<main>
+<h1>Sign-in attempt expired or unavailable</h1>
+<p>Your sign-in attempt may have timed out, already been used, or lost its browser session. Start a new sign-in attempt to continue.</p>
+<form method="post" action="/auth/operator/login"><button type="submit">Timed out. Try again.</button></form>
+</main>
+</body>
+</html>`); err != nil {
+		log.Printf("Operator login recovery response delivery failed: %T", err)
+	}
+}
+
 func (a *Auth) loginFailure(w http.ResponseWriter, r *http.Request, result string) {
 	if result != "denied" {
 		result = "failed"
@@ -316,7 +349,7 @@ func (a *Auth) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		}
 		a.mu.Unlock()
 		if !ok {
-			deny(w, http.StatusForbidden)
+			loginRecovery(w)
 			return
 		}
 		setCookie(w, a.flow, "", -1)

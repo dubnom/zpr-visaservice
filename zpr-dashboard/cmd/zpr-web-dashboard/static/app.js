@@ -3,7 +3,7 @@ const zplKeywords = new Set(["allow", "never", "define", "with", "to", "access",
 const GRAPH_ARRIVAL_DURATION = 2800;
 const GRAPH_REMOVAL_DURATION = 900;
 const reducedMotion = window.matchMedia?.("(prefers-reduced-motion: reduce)").matches ?? false;
-const state = { snapshot: null, timer: null, paused: false, pending: false, graphCamera: null, graphAnimations: !reducedMotion, topologyComponents: null, topologyNodeColumns: null, topologyNodeSlots: new Map(), topologyNewComponents: new Map(), selection: null, sorts: {}, dnsPending: false, policy: { loaded: false, configured: false, categories: [], records: [], attributes: [], categoryID: "", collapsedCategories: new Set(), treeInitialized: false, record: null, source: "", savedSource: "", revision: 0, browsingRevision: 0, saveAs: false, compilerReady: false, testerReady: false, testMode: false, testPending: false, testAbort: null, testResult: null, testSource: "", testDimensions: [], saveTestPending: false, saveTestSource: "", saveTestError: "", saveAsTestSource: "", saveAsTestError: "", assistantReady: false, evaluatedSource: null, validSource: null, errorOffsets: [], checkDiagnostics: "", revisions: [] } };
+const state = { snapshot: null, paused: false, graphCamera: null, graphAnimations: !reducedMotion, topologyComponents: null, topologyNodeColumns: null, topologyNodeSlots: new Map(), topologyNewComponents: new Map(), selection: null, sorts: {}, policy: { loaded: false, configured: false, categories: [], records: [], attributes: [], categoryID: "", collapsedCategories: new Set(), treeInitialized: false, record: null, source: "", savedSource: "", revision: 0, browsingRevision: 0, saveAs: false, compilerReady: false, testerReady: false, testMode: false, testPending: false, testAbort: null, testResult: null, testSource: "", testDimensions: [], saveTestPending: false, saveTestSource: "", saveTestError: "", saveAsTestSource: "", saveAsTestError: "", assistantReady: false, evaluatedSource: null, validSource: null, errorOffsets: [], checkDiagnostics: "", revisions: [] } };
 
 const snapshotFieldTracker = window.ZPRPollingDisplay.createTracker();
 const dnsStatsTracker = window.ZPRPollingDisplay.createTracker();
@@ -286,31 +286,39 @@ function renderDNSStats(status, server, zones) {
   dnsStatsTracker.update(captureFields(["dns-stat-requests", "dns-stat-success", "dns-stat-nxdomain", "dns-stat-servfail", "status-count-dns"], ["dns-counter-rows", "dns-zone-rows"]));
 }
 
-async function loadDNSStats() {
-  if (state.dnsPending) return;
-  state.dnsPending = true;
+let dnsStatsLoaded = false;
+
+async function collectDNSStats({ signal, isCurrent }) {
   if (byId("dns-stats-status").textContent.startsWith("Waiting")) byId("dns-stats-status").textContent = "Loading BIND statistics…";
   const recordsRequest = loadDNSRecords(true);
-  try {
-    const paths = ["status", "server", "zones"];
-    const responses = await Promise.all(paths.map((path) => window.zprOperatorFetch(`/api/dns/stats/json/v1/${path}`, { cache: "no-store", headers: { Accept: "application/json" } })));
-    const failed = responses.find((response) => !response.ok);
-    if (failed) throw new Error(`HTTP ${failed.status}`);
-    const [status, server, zones] = await Promise.all(responses.map((response) => response.json()));
-    renderDNSStats(status, server, zones);
-  } catch (error) {
-    byId("dns-stats-status").textContent = `DNS statistics unavailable (${error.message})`;
-    byId("dns-counter-rows").innerHTML = `<tr><td colspan="2" class="empty-row">Unable to load DNS counters</td></tr>`;
-    byId("dns-zone-rows").innerHTML = `<tr><td colspan="6" class="empty-row">Unable to load zone statistics</td></tr>`;
-  } finally {
-    await recordsRequest;
-    state.dnsPending = false;
-  }
+  const paths = ["status", "server", "zones"];
+  const results = await Promise.allSettled(paths.map(path =>
+    window.ZPRPageRuntime.requestJSON(window.zprOperatorFetch, `/api/dns/stats/json/v1/${path}`, { signal, headers: { Accept: "application/json" } })));
+  const failed = results.find(result => result.status === "rejected");
+  if (failed) throw failed.reason;
+  const [status, server, zones] = results.map(result => result.value);
+  if (!isCurrent()) return;
+  dnsStatsLoaded = true;
+  renderDNSStats(status, server, zones);
+  await recordsRequest;
+}
+
+const dnsStatsPoller = window.ZPRPageRuntime.createPoller({
+  run: collectDNSStats,
+  onError(error) {
+    byId("dns-stats-status").textContent = `DNS statistics unavailable (${error.message})${dnsStatsLoaded ? " · Displayed statistics are last known." : ""}`;
+  },
+});
+
+function loadDNSStats() {
+  if (currentPage() !== "dns") return Promise.resolve();
+  dnsStatsPoller.start({ immediate: false });
+  return dnsStatsPoller.refresh();
 }
 
 let dnsAddressNames = new Map();
-let dnsRecordsPending = false;
 let dnsRecordsNextRefresh = 0;
+let dnsRecordsLoaded = false;
 
 function dnsAddressKey(address) {
   const value = String(address || "").trim();
@@ -363,36 +371,41 @@ function indexDNSAddresses(records) {
   return namesByAddress;
 }
 
-async function loadDNSRecords(force = false) {
-  if (dnsRecordsPending || (!force && Date.now() < dnsRecordsNextRefresh)) return;
-  dnsRecordsPending = true;
-  dnsRecordsNextRefresh = Date.now() + 60000;
+async function collectDNSRecords({ signal, isCurrent }) {
   const status = byId("dns-record-status");
   const rows = byId("dns-record-rows");
   if (status.textContent.startsWith("Waiting")) status.textContent = "Loading zone records…";
-  try {
-    const response = await window.zprOperatorFetch("/api/dns/records", { cache: "no-store", headers: { Accept: "application/json" } });
-    if (!response.ok) throw new Error(`HTTP ${response.status}`);
-    const result = await response.json();
-    const records = Array.isArray(result.records) ? result.records : [];
-    dnsAddressNames = indexDNSAddresses(records);
-    document.dispatchEvent(new CustomEvent("control-room:dns-updated"));
-    status.textContent = `${escapeHTML(result.zone || "DNS zone")} · ${formatNumber(records.length)} records`;
-    rows.innerHTML = records.length ? records.map((record) =>
-      `<tr data-poll-row="${escapeHTML(JSON.stringify([record.name, record.type, record.value]))}"><td class="mono">${escapeHTML(record.name || "—")}</td><td class="mono" data-sort-value="${escapeHTML(record.ttl ?? "")}">${escapeHTML(record.ttl ?? "—")}</td><td>${escapeHTML(record.type || "—")}</td><td class="mono dns-record-value">${escapeHTML(record.value || "—")}</td></tr>`
-    ).join("") : `<tr><td colspan="4" class="empty-row">No records returned</td></tr>`;
-    sortControlRoomTableRows("dns-records");
-    dnsRecordsTracker.update(captureFields([], ["dns-record-rows"]));
-    if (state.snapshot) {
-      render(state.snapshot);
-    }
-  } catch (error) {
-    status.textContent = `DNS records unavailable (${error.message})`;
-    rows.innerHTML = `<tr><td colspan="4" class="empty-row">Unable to load zone records</td></tr>`;
-  } finally {
-    dnsRecordsPending = false;
+  const result = await window.ZPRPageRuntime.requestJSON(window.zprOperatorFetch, "/api/dns/records", { signal, headers: { Accept: "application/json" } });
+  if (!Array.isArray(result.records)) throw new Error("DNS records response is malformed.");
+  if (!isCurrent()) return;
+  dnsRecordsLoaded = true;
+  const records = result.records;
+  dnsAddressNames = indexDNSAddresses(records);
+  document.dispatchEvent(new CustomEvent("control-room:dns-updated"));
+  status.textContent = `${escapeHTML(result.zone || "DNS zone")} · ${formatNumber(records.length)} records`;
+  rows.innerHTML = records.length ? records.map((record) =>
+    `<tr data-poll-row="${escapeHTML(JSON.stringify([record.name, record.type, record.value]))}"><td class="mono">${escapeHTML(record.name || "—")}</td><td class="mono" data-sort-value="${escapeHTML(record.ttl ?? "")}">${escapeHTML(record.ttl ?? "—")}</td><td>${escapeHTML(record.type || "—")}</td><td class="mono dns-record-value">${escapeHTML(record.value || "—")}</td></tr>`
+  ).join("") : `<tr><td colspan="4" class="empty-row">No records returned</td></tr>`;
+  sortControlRoomTableRows("dns-records");
+  dnsRecordsTracker.update(captureFields([], ["dns-record-rows"]));
+  if (state.snapshot) {
+    render(state.snapshot);
   }
 }
+
+const dnsRecordsPoller = window.ZPRPageRuntime.createPoller({
+  run: collectDNSRecords,
+  onError(error) { byId("dns-record-status").textContent = `DNS records unavailable (${error.message})${dnsRecordsLoaded ? " · Displayed records are last known." : ""}`; },
+});
+
+function loadDNSRecords(force = false) {
+  if (!force && Date.now() < dnsRecordsNextRefresh) return Promise.resolve();
+  dnsRecordsNextRefresh = Date.now() + 60000;
+  dnsRecordsPoller.start({ immediate: false });
+  return dnsRecordsPoller.refresh();
+}
+
+window.addEventListener("hashchange", () => { if (currentPage() !== "dns") dnsStatsPoller.stop(); });
 
 function visibleRows(page, rows, columns) {
   const query = byId(`${page === "actors" ? "actor-search" : `${page}-filter`}`)?.value.trim().toLowerCase() || "";
@@ -481,10 +494,12 @@ function updateConnection(snapshot, transportAvailable = true) {
   const stateEl = byId("connection-state");
   const apiState = snapshot.api_status || "disconnected";
   stateEl.dataset.state = transportAvailable ? "connected" : "disconnected";
-  byId("api-state-text").textContent = transportAvailable ? "Control Room connected" : "Control Room unavailable";
+  byId("api-state-text").textContent = transportAvailable ? "Control Room" : "Control Room unavailable";
   const sourceAvailable = transportAvailable && apiState === "connected";
   byId("visa-service-state").dataset.state = sourceAvailable ? "connected" : "disconnected";
-  byId("snapshot-source-status").textContent = sourceAvailable ? "Available" : !transportAvailable ? "Snapshot unavailable" : apiState === "partial" ? "Partial response" : apiState === "not configured" ? "Not configured" : "Unavailable";
+  const sourceStatus = byId("snapshot-source-status");
+  sourceStatus.hidden = sourceAvailable;
+  sourceStatus.textContent = sourceAvailable ? "" : !transportAvailable ? "Snapshot unavailable" : apiState === "partial" ? "Partial response" : apiState === "not configured" ? "Not configured" : "Unavailable";
   if (!transportAvailable) byId("metric-uptime").textContent = "—";
   byId("last-updated").textContent = snapshot.generated_at ? `Updated ${window.ZPRSafeDisplay.formatTime(snapshot.generated_at)}` : "Waiting for first snapshot";
 
@@ -641,9 +656,7 @@ function refreshAdapterVisas(actor) {
   adapterVisaDetails?.controller.abort();
   const request = { key: actor.cn, snapshot: state.snapshot, pending: true, loaded: previous?.loaded || false, items: previous?.items || [], error: "", controller: new AbortController() };
   adapterVisaDetails = request;
-  window.zprOperatorFetch(`/api/actors/${encodeURIComponent(actor.cn)}/visas`, { cache: "no-store", signal: request.controller.signal }).then(async (response) => {
-    if (!response.ok) throw new Error(`Current visas unavailable (HTTP ${response.status})`);
-    const items = await response.json();
+  window.ZPRPageRuntime.requestJSON(window.zprOperatorFetch, `/api/actors/${encodeURIComponent(actor.cn)}/visas`, { signal: request.controller.signal }).then((items) => {
     if (!Array.isArray(items)) throw new Error("Invalid current visa response");
     if (adapterVisaDetails !== request) return;
     request.items = items;
@@ -1766,24 +1779,36 @@ function lookupOutcome(health) {
   if (health === "unverified") return "Not queried";
   return "Status unavailable";
 }
-async function refreshPolicyContext() {
+let policyContextError = "";
+
+async function collectPolicyContext({ signal, isCurrent }) {
   const policy = state.policy;
-  if (location.hash !== "#policy" || !policy.loaded || policy.contextPending) return;
-  policy.contextPending = true;
-  try {
-    const response = await window.zprOperatorFetch("/api/policy/context", { cache: "no-store" });
-    if (!response.ok) return;
-    const context = await response.json();
-    if (context.organization_id && context.organization_id !== policy.organizationID) {
-      policy.loaded = false;
-      await loadPolicyWorkspace();
-    }
-  } catch {
-    // Retain the current editor while the backend context is restarting.
-  } finally {
-    policy.contextPending = false;
+  const organization = policy.organizationID;
+  const context = await policyEditorRequest("/api/policy/context", { signal });
+  if (!isCurrent() || policy.organizationID !== organization) return;
+  if (policyContextError && byId("policy-load-status").textContent === policyContextError) setPolicyLoadStatus();
+  policyContextError = "";
+  if (context.organization_id && context.organization_id !== organization) {
+    policy.loaded = false;
+    await loadPolicyWorkspace();
   }
 }
+
+const policyContextPoller = window.ZPRPageRuntime.createPoller({
+  run: collectPolicyContext,
+  onError(error) {
+    policyContextError = `Policy context unavailable: ${error.message}`;
+    setPolicyLoadStatus(policyContextError);
+  },
+});
+
+function refreshPolicyContext() {
+  if (location.hash !== "#policy" || !state.policy.loaded) return Promise.resolve();
+  policyContextPoller.start({ immediate: false });
+  return policyContextPoller.refresh();
+}
+
+window.addEventListener("hashchange", () => { if (location.hash !== "#policy") policyContextPoller.stop(); });
 
 function organizationPolicyCategoryID(policy = state.policy) {
   const categories = policy.categories || [];
@@ -2068,9 +2093,7 @@ async function rescanPolicyAttributes() {
   policy.attributeScanPending = true;
   renderPolicyAttributes();
   try {
-    const response = await window.zprOperatorFetch("/api/policy/attributes/rescan", { method: "POST", headers: { Accept: "application/json" } });
-    const data = await response.json();
-    if (!response.ok) throw new Error(data.error || "Unable to refresh trusted attributes.");
+    const data = await policyEditorRequest("/api/policy/attributes/rescan", { method: "POST", headers: { Accept: "application/json" } });
     policy.attributes = data.attributes || [];
     policy.ldapAttributeCount = data.ldap_attribute_count || 0;
     policy.attributeScanError = data.error || "";
@@ -2909,13 +2932,11 @@ async function pastePolicyRecord(sourceRecord, duplicate = false) {
         content_type: sourceRecord.content_type, metadata: sourceRecord.metadata || {},
         content: sourceRecord.content || "", summary: `Copied from ${sourceRecord.name}`,
       };
-    const response = await window.zprOperatorFetch(path, {
+    const result = await policyEditorRequest(path, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(body),
     });
-    const result = await response.json();
-    if (!response.ok) throw new Error(result.error || result.diagnostics || `Paste failed (${response.status})`);
     policy.record = null;
     policy.categoryID = result.category_id;
     await refreshPolicyCatalog();
@@ -2959,13 +2980,11 @@ async function managePolicyFile(action) {
     const name = window.prompt("Rename record", record.name);
     if (name === null) return;
     try {
-      const response = await window.zprOperatorFetch(`/api/policy/records/${encodeURIComponent(record.id)}/rename`, {
+      const renamed = await policyEditorRequest(`/api/policy/records/${encodeURIComponent(record.id)}/rename`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ name, expected_revision: record.current_revision }),
       });
-      const renamed = await response.json();
-      if (!response.ok) throw new Error(renamed.error || `Rename failed (${response.status})`);
       policy.record = renamed;
       await refreshPolicyCatalog();
       if (pickerWasOpen) setPolicyPickerOpen(true);
@@ -2982,13 +3001,11 @@ async function managePolicyFile(action) {
   }
   if (action !== "delete" && action !== "restore") return;
   try {
-    const response = await window.zprOperatorFetch(`/api/policy/records/${encodeURIComponent(record.id)}${action === "restore" ? "/restore" : ""}`, {
+    await policyEditorRequest(`/api/policy/records/${encodeURIComponent(record.id)}${action === "restore" ? "/restore" : ""}`, {
       method: action === "delete" ? "DELETE" : "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ expected_revision: record.current_revision }),
     });
-    const result = await response.json();
-    if (!response.ok) throw new Error(result.error || `${action} failed (${response.status})`);
     const name = record.name;
     policy.record = null;
     if (action === "restore") policy.showArchived = true;
@@ -3004,9 +3021,7 @@ async function createPolicyCategory(event) {
   const name = byId("category-name").value.trim();
   const parentID = byId("category-parent").value || null;
   try {
-    const response = await window.zprOperatorFetch("/api/policy/categories", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ name, parent_id: parentID }) });
-    const result = await response.json();
-    if (!response.ok) throw new Error(result.error || `Category creation failed (${response.status})`);
+    const result = await policyEditorRequest("/api/policy/categories", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ name, parent_id: parentID }) });
     if (!state.policy.categoryID) state.policy.categoryID = result.id;
     byId("category-dialog").close();
     await refreshPolicyCatalog();
@@ -3039,7 +3054,7 @@ async function createPolicyRecord(event) {
         return;
       }
     }
-    const response = await window.zprOperatorFetch("/api/policy/records", {
+    const result = await policyEditorRequest("/api/policy/records", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
@@ -3048,8 +3063,6 @@ async function createPolicyRecord(event) {
         summary: saveAs ? `Copied from ${state.policy.record?.name || "policy"}` : "Created policy record",
       }),
     });
-    const result = await response.json();
-    if (!response.ok) throw new Error(result.error || result.diagnostics || `Record creation failed (${response.status})`);
     state.policy.categoryID = categoryID;
     byId("record-dialog").close();
     await refreshPolicyCatalog();
@@ -4208,31 +4221,30 @@ function controlRoomSnapshot() {
   return state.snapshot;
 }
 
-async function refresh() {
-  if (state.pending) return;
-  state.pending = true;
-  byId("refresh-now").disabled = true;
+async function collectSnapshot({ signal, isCurrent }) {
   if (currentPage() === "dns") void loadDNSStats();
-  try {
-    const response = await window.zprOperatorFetch("/api/snapshot", { cache: "no-store", headers: { Accept: "application/json" } });
-    if (!response.ok) throw new Error(`Monitor server responded ${response.status}`);
-    const snapshot = await response.json();
-    render(snapshot);
-    document.dispatchEvent(new CustomEvent("control-room:refreshed", { detail: snapshot }));
-  } catch (error) {
+  const snapshot = await window.ZPRPageRuntime.requestJSON(window.zprOperatorFetch, "/api/snapshot", { signal, headers: { Accept: "application/json" } });
+  if (!isCurrent()) return;
+  render(snapshot);
+  document.dispatchEvent(new CustomEvent("control-room:refreshed", { detail: snapshot }));
+}
+
+const snapshotPoller = window.ZPRPageRuntime.createPoller({
+  run: collectSnapshot,
+  interval: () => Number(byId("poll-rate").value) * 1000,
+  onPending(value) { byId("refresh-now").disabled = value; },
+  onError(error) {
     updateConnection({ api_status: "disconnected", errors: [error.message] }, false);
     window.dispatchEvent(new CustomEvent("zpr-snapshot-error", { detail: error.message }));
     if (!state.snapshot) byId("topology-stage").querySelector(".empty-state").textContent = "Unable to load topology. Check the connection error above or use Refresh to retry.";
-  } finally {
-    state.pending = false;
-    byId("refresh-now").disabled = false;
-  }
-}
+  },
+});
+
+function refresh() { return snapshotPoller.refresh(); }
 
 function setPollTimer() {
-  if (state.timer) clearInterval(state.timer);
-  const seconds = Number(byId("poll-rate").value);
-  if (!state.paused) state.timer = setInterval(refresh, seconds * 1000);
+  snapshotPoller.setPaused(state.paused);
+  snapshotPoller.reschedule();
 }
 
 byId("refresh-now").addEventListener("click", () => {
@@ -4596,5 +4608,5 @@ document.addEventListener("keydown", (event) => {
   clearMapHighlight();
 });
 
-refresh();
+snapshotPoller.start();
 setPollTimer();

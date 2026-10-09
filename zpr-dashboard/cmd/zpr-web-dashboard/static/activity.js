@@ -62,9 +62,7 @@ for (const table of document.querySelectorAll("table[data-sort-page^='activity-'
 }
 
 async function activityRefresh({ signal, isCurrent }) {
-	const response = await fetch("/api/simulator/activity", { signal });
-	if (!response.ok) throw new Error(`HTTP ${response.status}`);
-	const nextData = await response.json();
+	const nextData = await window.ZPRPageRuntime.requestJSON(window.fetch.bind(window), "/api/simulator/activity", { signal });
 	if (!isCurrent()) return;
 	activityData = nextData;
 	const stats = activityData.stats || {};

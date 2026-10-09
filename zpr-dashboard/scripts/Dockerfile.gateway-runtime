@@ -1,0 +1,3 @@
+ARG GATEWAY_BASE_IMAGE=zpr-gateway-runtime-baseline:reviewed
+FROM ${GATEWAY_BASE_IMAGE}
+COPY zpr-web-dashboard /app/bin/zpr-web-dashboard

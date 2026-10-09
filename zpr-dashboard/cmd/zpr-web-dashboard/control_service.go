@@ -42,6 +42,12 @@ func runControlRoom(listen string) error {
 	}
 	mux := http.NewServeMux()
 	security.register(mux)
+	changeReview, closeReview, err := configuredChangeReview(security.auth, proxy)
+	if err != nil {
+		return err
+	}
+	defer closeReview()
+	mux.Handle("/api/change-review/", changeReview)
 	mux.Handle("/api/enrollment/", operatorEnrollmentProxy(security.auth, signer, proxy))
 	mux.Handle("/api/", controlRoomAPIProxy(security.auth, os.Getenv("ZPR_CONTROL_ROOM_ORGANIZATION_ID"), proxy))
 	mux.Handle("GET /bind9.xsl", localControlRoomProxy(proxy))

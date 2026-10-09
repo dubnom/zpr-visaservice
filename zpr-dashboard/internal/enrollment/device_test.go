@@ -50,7 +50,7 @@ func deviceService(t *testing.T, store *Store) *DeviceService {
 	return service
 }
 
-func signedProof(t *testing.T, key *rsa.PrivateKey, challenge Challenge) Proof {
+func signedProof(t *testing.T, key *rsa.PrivateKey, challenge Challenge, runtimeKeys ...*rsa.PrivateKey) Proof {
 	t.Helper()
 	payload, err := base64.StdEncoding.DecodeString(challenge.Payload)
 	if err != nil {
@@ -61,7 +61,15 @@ func signedProof(t *testing.T, key *rsa.PrivateKey, challenge Challenge) Proof {
 	if err != nil {
 		t.Fatal(err)
 	}
-	return Proof{ChallengeID: challenge.ID, Signature: base64.StdEncoding.EncodeToString(signature)}
+	proof := Proof{ChallengeID: challenge.ID, Signature: base64.StdEncoding.EncodeToString(signature)}
+	if len(runtimeKeys) > 0 {
+		runtimeSignature, err := rsa.SignPKCS1v15(rand.Reader, runtimeKeys[0], crypto.SHA256, hash[:])
+		if err != nil {
+			t.Fatal(err)
+		}
+		proof.RuntimeSignature = base64.StdEncoding.EncodeToString(runtimeSignature)
+	}
+	return proof
 }
 
 func TestDeviceClaimThenKeyAuthenticatedStatus(t *testing.T) {
@@ -129,6 +137,71 @@ func TestDeviceClaimThenKeyAuthenticatedStatus(t *testing.T) {
 		if strings.Contains(string(data), private) {
 			t.Fatalf("device status exposes %s", private)
 		}
+	}
+}
+
+func TestRuntimeKeyIsDistinctBoundAndRequiredForStatus(t *testing.T) {
+	ctx := context.Background()
+	store := testStore(t)
+	service := deviceService(t, store)
+	now := time.Now().UTC()
+	invitation, code := createInvitation(t, store, now)
+	enrollmentKey, runtimeKey, replacementRuntimeKey := deviceKey(t), deviceKey(t), deviceKey(t)
+	request := ChallengeRequest{
+		Organization: "company", InvitationID: invitation.ID, Purpose: "claim",
+		Code: code, PublicKey: encodedKey(t, enrollmentKey),
+		RuntimePublicKey: encodedKey(t, runtimeKey),
+	}
+	challenge, err := service.Challenge(ctx, request, now)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var binding challengePayload
+	payload, err := base64.StdEncoding.DecodeString(challenge.Payload)
+	if err != nil || json.Unmarshal(payload, &binding) != nil {
+		t.Fatal("invalid challenge binding")
+	}
+	_, _, expectedRuntimeFingerprint, err := parseDeviceKey(request.RuntimePublicKey)
+	if err != nil || binding.RuntimeKeyFingerprint != expectedRuntimeFingerprint {
+		t.Fatalf("runtime key not bound: %+v", binding)
+	}
+	if _, err := service.Verify(ctx, signedProof(t, enrollmentKey, challenge), now.Add(time.Second)); !errors.Is(err, ErrUnavailable) {
+		t.Fatalf("runtime-bound claim accepted without runtime proof: %v", err)
+	}
+	if _, err := service.Verify(ctx, signedProof(t, enrollmentKey, challenge, replacementRuntimeKey), now.Add(time.Second)); !errors.Is(err, ErrUnavailable) {
+		t.Fatalf("runtime-bound claim accepted a different runtime signer: %v", err)
+	}
+	status, err := service.Verify(ctx, signedProof(t, enrollmentKey, challenge, runtimeKey), now.Add(time.Second))
+	if err != nil || status.RuntimeKeyFingerprint != expectedRuntimeFingerprint {
+		t.Fatalf("runtime key claim = %+v, %v", status, err)
+	}
+	persisted, err := store.Get(ctx, "company", invitation.ID, now.Add(time.Second))
+	if err != nil || persisted.RuntimeKeyFingerprint != expectedRuntimeFingerprint {
+		t.Fatalf("runtime key was not persisted: %+v %v", persisted, err)
+	}
+	if _, err := store.DecideWithRuntimeKey(ctx, "company", invitation.ID, "admin", "approved", "Verified",
+		persisted.KeyFingerprint, "wrong-runtime-key", persisted.Revision, now.Add(time.Second)); !errors.Is(err, ErrInvalid) {
+		t.Fatalf("approval accepted a different runtime key: %v", err)
+	}
+	if _, err := store.CancelReviewedWithRuntimeKey(ctx, "company", invitation.ID, "admin", "Cancel",
+		persisted.KeyFingerprint, "wrong-runtime-key", persisted.Revision, now.Add(time.Second)); !errors.Is(err, ErrInvalid) {
+		t.Fatalf("cancellation accepted a different runtime key: %v", err)
+	}
+	if _, err := service.Challenge(ctx, ChallengeRequest{
+		Organization: "company", InvitationID: invitation.ID, Purpose: "status",
+		PublicKey: encodedKey(t, enrollmentKey), RuntimePublicKey: encodedKey(t, replacementRuntimeKey),
+	}, now.Add(2*time.Second)); !errors.Is(err, ErrUnavailable) {
+		t.Fatalf("replacement runtime key accepted: %v", err)
+	}
+	statusRequest := request
+	statusRequest.Purpose, statusRequest.Code = "status", ""
+	challenge, err = service.Challenge(ctx, statusRequest, now.Add(2*time.Second))
+	if err != nil {
+		t.Fatal(err)
+	}
+	status, err = service.Verify(ctx, signedProof(t, enrollmentKey, challenge, runtimeKey), now.Add(3*time.Second))
+	if err != nil || status.RuntimeKeyFingerprint != expectedRuntimeFingerprint {
+		t.Fatalf("bound runtime status = %+v, %v", status, err)
 	}
 }
 

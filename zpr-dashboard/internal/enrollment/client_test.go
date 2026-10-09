@@ -64,32 +64,34 @@ func TestClientTLSClaimAndResumeStatusWithoutCode(t *testing.T) {
 	go func() { done <- server.ServeTLS(listener, "", "") }()
 	defer func() { server.Close(); <-done }()
 	i, code := createInvitation(t, store, time.Now().UTC())
-	key := deviceKey(t)
-	client, err := NewClient(config.Audience, roots, key)
+	key, runtimeKey := deviceKey(t), deviceKey(t)
+	client, err := NewClientWithRuntimeKey(config.Audience, roots, key, runtimeKey)
 	if err != nil {
 		t.Fatal(err)
 	}
 	defer client.Close()
 	status, err := client.Claim(context.Background(), "company", i.ID, code)
-	if err != nil || status.State != "pending_approval" || status.KeyFingerprint != client.Fingerprint() {
+	if err != nil || status.State != "pending_approval" || status.KeyFingerprint != client.Fingerprint() ||
+		status.RuntimeKeyFingerprint != client.runtimeFP {
 		t.Fatalf("client claim=%+v %v", status, err)
 	}
 	claimed, err := store.Get(context.Background(), "company", i.ID, time.Now().UTC())
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := store.Decide(context.Background(), "company", i.ID, "admin", "approved", "Verified asset",
-		claimed.KeyFingerprint, claimed.Revision, time.Now().UTC()); err != nil {
+	if _, err := store.DecideWithRuntimeKey(context.Background(), "company", i.ID, "admin", "approved", "Verified asset",
+		claimed.KeyFingerprint, claimed.RuntimeKeyFingerprint, claimed.Revision, time.Now().UTC()); err != nil {
 		t.Fatal(err)
 	}
 	// Simulate client restart with the retained signer and non-secret metadata.
-	resumed, err := NewClient(config.Audience, roots, key)
+	resumed, err := NewClientWithRuntimeKey(config.Audience, roots, key, runtimeKey)
 	if err != nil {
 		t.Fatal(err)
 	}
 	defer resumed.Close()
 	status, err = resumed.Status(context.Background(), "company", i.ID)
-	if err != nil || status.State != "approved" || status.CredentialsIssued {
+	if err != nil || status.State != "approved" || status.CredentialsIssued ||
+		status.RuntimeKeyFingerprint != client.runtimeFP {
 		t.Fatalf("resumed status=%+v %v", status, err)
 	}
 	if _, err := client.Claim(context.Background(), "company", i.ID, code); err == nil {

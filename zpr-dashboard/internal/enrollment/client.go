@@ -36,15 +36,29 @@ func (e *RemoteError) Error() string {
 }
 
 type Client struct {
-	audience    string
-	http        *http.Client
-	signer      crypto.Signer
-	publicKey   string
-	fingerprint string
-	now         func() time.Time
+	audience      string
+	http          *http.Client
+	signer        crypto.Signer
+	runtimeSigner crypto.Signer
+	publicKey     string
+	fingerprint   string
+	runtimeKey    string
+	runtimeFP     string
+	now           func() time.Time
 }
 
 func NewClient(audience string, roots *x509.CertPool, signer crypto.Signer) (*Client, error) {
+	return newClient(audience, roots, signer, nil)
+}
+
+func NewClientWithRuntimeKey(audience string, roots *x509.CertPool, signer, runtimeSigner crypto.Signer) (*Client, error) {
+	if runtimeSigner == nil {
+		return nil, ErrInvalid
+	}
+	return newClient(audience, roots, signer, runtimeSigner)
+}
+
+func newClient(audience string, roots *x509.CertPool, signer, runtimeSigner crypto.Signer) (*Client, error) {
 	if validateAudience(audience) != nil || signer == nil {
 		return nil, ErrInvalid
 	}
@@ -61,6 +75,22 @@ func NewClient(audience string, roots *x509.CertPool, signer crypto.Signer) (*Cl
 	if err != nil {
 		return nil, err
 	}
+	runtimeEncoded, runtimeFingerprint := "", ""
+	if runtimeSigner != nil {
+		runtimePublic, ok := runtimeSigner.Public().(*rsa.PublicKey)
+		if !ok || runtimePublic == nil {
+			return nil, ErrInvalid
+		}
+		runtimeDER, err := x509.MarshalPKIXPublicKey(runtimePublic)
+		if err != nil {
+			return nil, err
+		}
+		runtimeEncoded = base64.StdEncoding.EncodeToString(runtimeDER)
+		_, _, runtimeFingerprint, err = parseDeviceKey(runtimeEncoded)
+		if err != nil || runtimeFingerprint == fingerprint {
+			return nil, ErrInvalid
+		}
+	}
 	if roots != nil {
 		roots = roots.Clone()
 	}
@@ -71,7 +101,8 @@ func NewClient(audience string, roots *x509.CertPool, signer crypto.Signer) (*Cl
 		TLSHandshakeTimeout: 5 * time.Second, ResponseHeaderTimeout: 10 * time.Second,
 		IdleConnTimeout: 30 * time.Second, MaxResponseHeaderBytes: 16 * 1024,
 	}
-	return &Client{audience: audience, signer: signer, publicKey: encoded, fingerprint: fingerprint,
+	return &Client{audience: audience, signer: signer, runtimeSigner: runtimeSigner, publicKey: encoded, fingerprint: fingerprint,
+		runtimeKey: runtimeEncoded, runtimeFP: runtimeFingerprint,
 		now: time.Now, http: &http.Client{Transport: transport, Timeout: 15 * time.Second,
 			CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }}}, nil
 }
@@ -111,7 +142,7 @@ func (c *Client) exchange(ctx context.Context, organization, invitation, purpose
 		return DeviceStatus{}, ErrInvalid
 	}
 	request := ChallengeRequest{Organization: organization, InvitationID: invitation, Purpose: purpose,
-		Code: code, PublicKey: c.publicKey}
+		Code: code, PublicKey: c.publicKey, RuntimePublicKey: c.runtimeKey}
 	var challenge Challenge
 	if err := c.post(ctx, DeviceAPIPrefix+"challenges", request, http.StatusCreated, &challenge); err != nil {
 		return DeviceStatus{}, err
@@ -136,15 +167,30 @@ func (c *Client) exchange(ctx context.Context, organization, invitation, purpose
 	if err := rsa.VerifyPKCS1v15(public, crypto.SHA256, hash[:], signature); err != nil {
 		return DeviceStatus{}, errors.New("enrollment signer did not produce the required RSA signature")
 	}
+	proof := Proof{ChallengeID: challenge.ID, Signature: base64.StdEncoding.EncodeToString(signature)}
+	if c.runtimeSigner != nil {
+		runtimeSignature, err := c.runtimeSigner.Sign(rand.Reader, hash[:], crypto.SHA256)
+		if err != nil {
+			return DeviceStatus{}, fmt.Errorf("sign BAS runtime challenge: %w", err)
+		}
+		runtimePublic, _, _, err := parseDeviceKey(c.runtimeKey)
+		if err != nil {
+			return DeviceStatus{}, err
+		}
+		if err := rsa.VerifyPKCS1v15(runtimePublic, crypto.SHA256, hash[:], runtimeSignature); err != nil {
+			return DeviceStatus{}, errors.New("BAS runtime signer did not produce the required RSA signature")
+		}
+		proof.RuntimeSignature = base64.StdEncoding.EncodeToString(runtimeSignature)
+	}
 	if !c.now().Before(challenge.ExpiresAt) {
 		return DeviceStatus{}, ErrInvalidResponse
 	}
 	var result DeviceStatus
-	if err := c.post(ctx, DeviceAPIPrefix+"proofs", Proof{ChallengeID: challenge.ID,
-		Signature: base64.StdEncoding.EncodeToString(signature)}, http.StatusOK, &result); err != nil {
+	if err := c.post(ctx, DeviceAPIPrefix+"proofs", proof, http.StatusOK, &result); err != nil {
 		return DeviceStatus{}, err
 	}
-	if result.InvitationID != invitation || result.KeyFingerprint != c.fingerprint || result.Revision < 2 ||
+	if result.InvitationID != invitation || result.KeyFingerprint != c.fingerprint ||
+		result.RuntimeKeyFingerprint != c.runtimeFP || result.Revision < 2 ||
 		result.CredentialsIssued || !slices.Contains([]string{"pending_approval", "approved", "rejected", "cancelled", "approval_expired"}, result.State) ||
 		(result.State == "pending_approval" && (result.ApprovalExpiresAt == nil || !c.now().Before(*result.ApprovalExpiresAt))) {
 		return DeviceStatus{}, ErrInvalidResponse
@@ -168,6 +214,7 @@ func (c *Client) validateChallenge(challenge Challenge, request ChallengeRequest
 	if binding.Version != 1 || binding.Audience != c.audience || binding.ID != challenge.ID ||
 		binding.Organization != request.Organization || binding.InvitationID != request.InvitationID ||
 		binding.Purpose != request.Purpose || binding.KeyFingerprint != c.fingerprint ||
+		binding.RuntimeKeyFingerprint != c.runtimeFP ||
 		!validText(binding.Nonce) || len(binding.Nonce) < 26 ||
 		!binding.ExpiresAt.Equal(challenge.ExpiresAt) || !now.Before(binding.ExpiresAt) ||
 		binding.ExpiresAt.Sub(now) > 5*time.Minute {

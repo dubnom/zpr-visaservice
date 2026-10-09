@@ -71,9 +71,7 @@ function renderOrganizationDetails(organization) {
 
 async function loadOrganizationScenarioSummary(organizationID) {
   try {
-      const response = await fetch(`/api/simulator/scenarios?organization_id=${encodeURIComponent(organizationID)}`, { cache: "no-store" });
-    if (!response.ok) throw new Error("unavailable");
-    const catalog = await response.json();
+    const catalog = await window.ZPRPageRuntime.requestJSON(window.fetch.bind(window), `/api/simulator/scenarios?organization_id=${encodeURIComponent(organizationID)}`);
     if (selectedOrganizationID !== organizationID) return;
     const summary = document.getElementById("organization-scenario-summary");
     summary.replaceChildren();
@@ -393,9 +391,7 @@ organizationRestoreConfirm.addEventListener("click", async () => {
   organizationRestoreDialog.close();
   renderOrganizationList();
   try {
-    const response = await fetch(`/api/simulator/organizations/${encodeURIComponent(organizationID)}/restore-base`, { method: "POST" });
-    const result = await response.json();
-    if (!response.ok) throw new Error(result.error || `HTTP ${response.status}`);
+    const result = await directoryRequest(`/api/simulator/organizations/${encodeURIComponent(organizationID)}/restore-base`, { method: "POST" });
     organizationActivationStatus = result.activation || { state: "resetting", operation: "restore-base", progress: "Preparing organization base restore" };
     renderOrganizationList();
     await refreshOrganizationsNow();
@@ -422,9 +418,7 @@ organizationSwitchConfirm.addEventListener("click", async () => {
   organizationSwitchDialog.close();
   renderOrganizationList();
   try {
-    const response = await fetch(`/api/simulator/organizations/${encodeURIComponent(approval.to)}/activate`, { method: "POST" });
-    const result = await response.json();
-    if (!response.ok) throw new Error(result.error || `HTTP ${response.status}`);
+    const result = await directoryRequest(`/api/simulator/organizations/${encodeURIComponent(approval.to)}/activate`, { method: "POST" });
     organizationActivationStatus = result.activation || { state: "resetting", progress: "Preparing organization reset" };
     renderOrganizationList();
     await refreshOrganizationsNow();

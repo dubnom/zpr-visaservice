@@ -260,7 +260,8 @@ func reviewJSON(t *testing.T, i Invitation) []byte {
 	t.Helper()
 	data, err := json.Marshal(map[string]any{
 		"organization": i.Asset.Organization, "revision": i.Revision,
-		"key_fingerprint": i.KeyFingerprint, "reason": "Asset verified through trusted channel",
+		"key_fingerprint": i.KeyFingerprint, "runtime_key_fingerprint": i.RuntimeKeyFingerprint,
+		"reason": "Asset verified through trusted channel",
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -275,6 +276,7 @@ func TestReviewAPIPermissionsAndDecision(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+
 	path := APIPrefix + "invitations/" + claimed.ID + "/approve"
 	response := requestAPI(handler, "POST", path, reviewJSON(t, claimed), "reader-cert")
 	if response.Code != http.StatusForbidden {
@@ -300,6 +302,49 @@ func TestReviewAPIPermissionsAndDecision(t *testing.T) {
 	response = requestAPI(handler, "POST", APIPrefix+"invitations/"+claimed.ID+"/reject", reviewJSON(t, claimed), "admin-cert")
 	if response.Code != http.StatusConflict {
 		t.Fatalf("stale opposing decision=%d", response.Code)
+	}
+}
+
+func TestReviewAPIRequiresMatchingRuntimeFingerprint(t *testing.T) {
+	store := testStore(t)
+	now := time.Now().UTC()
+	invitation, code := createInvitation(t, store, now)
+	service := deviceService(t, store)
+	enrollmentKey, runtimeKey := deviceKey(t), deviceKey(t)
+	challenge, err := service.Challenge(context.Background(), ChallengeRequest{
+		Organization: "company", InvitationID: invitation.ID, Purpose: "claim", Code: code,
+		PublicKey: encodedKey(t, enrollmentKey), RuntimePublicKey: encodedKey(t, runtimeKey),
+	}, now)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := service.Verify(context.Background(), signedProof(t, enrollmentKey, challenge, runtimeKey), now.Add(time.Second)); err != nil {
+		t.Fatal(err)
+	}
+	claimed, err := store.Get(context.Background(), "company", invitation.ID, now.Add(time.Second))
+	if err != nil {
+		t.Fatal(err)
+	}
+	handler, err := NewAdminHandler(store, reviewConfig())
+	if err != nil {
+		t.Fatal(err)
+	}
+	body, err := json.Marshal(map[string]any{
+		"organization": "company", "revision": claimed.Revision,
+		"key_fingerprint": claimed.KeyFingerprint, "runtime_key_fingerprint": "wrong-runtime-key",
+		"reason": "Asset verified through trusted channel",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	path := APIPrefix + "invitations/" + claimed.ID + "/approve"
+	response := requestAPI(handler, "POST", path, body, "admin-cert")
+	if response.Code == http.StatusOK {
+		t.Fatal("approval accepted a different runtime fingerprint")
+	}
+	response = requestAPI(handler, "POST", path, reviewJSON(t, claimed), "admin-cert")
+	if response.Code != http.StatusOK {
+		t.Fatalf("bound approval = %d %s", response.Code, response.Body.String())
 	}
 }
 

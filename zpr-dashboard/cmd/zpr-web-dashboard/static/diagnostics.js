@@ -1,16 +1,14 @@
-(() => {
+(async () => {
   const page = document.querySelector("[data-diagnostics]");
   if (!page) return;
+  const { renderColoredLog } = await import("/colored-log.js?v=1");
   const sourceList = document.getElementById("diagnostics-sources");
-  const updated = document.getElementById("diagnostics-updated");
+  const loading = document.getElementById("diagnostics-loading");
   const error = document.getElementById("diagnostics-error");
   const filter = document.getElementById("diagnostics-filter");
   const count = document.getElementById("diagnostics-count");
-  const jsonToggle = document.getElementById("diagnostics-json");
   const tracker = window.ZPRPollingDisplay.createTracker();
   let responseData = null;
-  let pending = null;
-  let timer = null;
   let active = location.hash === "#diagnostics";
   let sourceSort = { key: "source", direction: 1 };
   const metricSorts = new Map();
@@ -208,10 +206,9 @@
     logs.setAttribute("aria-labelledby", logHeading.id || (logHeading.id = `diagnostics-logs-${encodeURIComponent(key)}`));
     for (const log of source.logs || []) {
       const logRow = document.createElement("li");
-      appendText(logRow, "time", "diagnostics-log-time", log.timestamp ? displayTimestamp(log.timestamp) : "Not reported");
-      appendText(logRow, "span", "diagnostics-log-severity", displayMissing(log.severity));
       const body = log.body == null || log.body === "" ? "No log body reported." : log.body;
-      appendText(logRow, "span", "diagnostics-log-body", jsonToggle.checked ? window.ZPRLogFormat.formatJSON(body) : body);
+      const logBody = appendText(logRow, "span", "diagnostics-log-body", "");
+      renderColoredLog(logBody, body);
       logs.append(logRow);
     }
     if (!logs.children.length) appendText(logs, "li", "diagnostics-no-logs", "No logs in the current window.");
@@ -310,46 +307,35 @@
     if (trackChanges) tracker.update(changes);
   }
 
-  async function load() {
-    if (!active || pending) return;
-    pending = new AbortController();
-    const request = pending;
-    updated.textContent = "Querying telemetry provider…";
-    try {
-      const response = await fetch("/api/diagnostics", { cache: "no-store", signal: request.signal, headers: { Accept: "application/json" } });
-      const result = await response.json();
-      if (!response.ok) throw new Error(result.error || `Diagnostics unavailable (${response.status})`);
-      if (!active || pending !== request) return;
-      responseData = result;
-      error.textContent = result.error || "";
-      error.hidden = !result.error;
-      updated.textContent = `Updated ${window.ZPRSafeDisplay.formatTime(result.generated_at)} · ${result.state || "Unavailable"}`;
-      render(true);
-    } catch (failure) {
-      if (failure.name !== "AbortError" && active) {
-        error.textContent = failure.message || "Diagnostics unavailable.";
-        error.hidden = false;
-        updated.textContent = "Unavailable";
-      }
-    } finally {
-      if (pending === request) pending = null;
-    }
+  async function load({ signal, isCurrent }) {
+    const result = await window.ZPRPageRuntime.requestJSON(window.zprOperatorFetch, "/api/diagnostics", { signal, headers: { Accept: "application/json" } });
+    if (!isCurrent()) return;
+    responseData = result;
+    error.textContent = result.error || "";
+    error.hidden = !result.error;
+    render(true);
   }
+
+  const poller = window.ZPRPageRuntime.createPoller({
+    run: load,
+    onPending(pending) { loading.hidden = !pending || responseData !== null; },
+    onError(failure) {
+      error.textContent = failure.message || "Diagnostics unavailable.";
+      error.hidden = false;
+    },
+  });
 
   function setActive() {
     const next = location.hash === "#diagnostics";
     if (active && !next) {
-      clearTimeout(timer);
-      pending?.abort();
-      pending = null;
+      poller.stop();
     }
     active = next;
-    if (active) void load();
+    if (active) poller.start();
   }
 
   filter.addEventListener("input", render);
-  jsonToggle.addEventListener("change", render);
-  document.addEventListener("control-room:refreshed", () => { if (active) void load(); });
+  document.addEventListener("control-room:refreshed", () => { if (active) void poller.refresh(); });
   window.addEventListener("hashchange", setActive);
   setActive();
 })();

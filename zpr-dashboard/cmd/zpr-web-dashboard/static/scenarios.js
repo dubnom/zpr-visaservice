@@ -658,7 +658,7 @@ async function archiveScenario(scenarioID, organizationID, revision) {
     body: JSON.stringify({ expected_revision: Number(revision) }),
   });
   if (!response.ok) {
-    const result = await response.json();
+    const result = await window.ZPRPageRuntime.readJSON(response);
     throw new Error(result.error || `HTTP ${response.status}`);
   }
   if (scenarioEditorArtifact?.id === scenarioID) {

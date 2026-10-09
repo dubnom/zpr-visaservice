@@ -23,21 +23,49 @@ Do not infer current runtime health from a historical verification entry.
 
 ## In progress
 
-No new implementation is started by this document migration. Work in another
-session is not reconciled here until its outcome is recorded.
+Shared JavaScript page-runtime reuse is **Deployed to Control Room; Simulator awaiting deployment**.
+See the [implementation and test evidence](GUI%20completed%20work.md#javascript-reuse-refactoring).
+Control Room rollout: 2026-10-09 19:13 UTC. This work has not been committed or pushed.
+
+Control Room header guideline cleanup is **Deployed** (2026-10-09 19:13 UTC).
+See the [completed guideline work](GUI%20completed%20work.md#control-room-guideline-follow-up).
+
+Consistent Maximize/Restore window icons across Control Room and Simulator are
+**Deployed to Control Room; Simulator awaiting deployment**. See the
+[completed guideline work](GUI%20completed%20work.md#control-room-guideline-follow-up).
+
+Window-control color/style consistency is **Deployed to Control Room; Simulator awaiting deployment**:
+editor and log controls share dark icons on white 32px buttons and identical
+hover, active, disabled and keyboard-focus styles (`app.css` v93,
+`safe-display.js` v3). All six editors and adapter/controller/Worker logs are
+covered by 24 passing desktop/tablet runtime/header/window cases; embedded build
+and editor diagnostics pass. Control Room rollout verified 2026-10-09 19:24 UTC;
+no commit or push.
+
+Diagnostics ANSI log colors are **Deployed to Control Room** (2026-10-09 19:29 UTC).
+Diagnostics and adapter/controller/Worker logs share the safe colored-text
+renderer; 48 desktop/tablet checks and the embedded build pass. See the
+[completed guideline work](GUI%20completed%20work.md#control-room-guideline-follow-up).
+
+Shared Worker-log renderer rollout to Simulator remains pending; no Simulator
+restart, commit or push was performed.
+
+Diagnostics body-only/raw/full-space layout and initial-loading cleanup are
+**Deployed to Control Room** (2026-10-09 19:45 UTC):
+no duplicate timestamp/level columns, Format JSON or recurring Querying/Updated
+line; full available width and natural-height content; initial Loading only.
+The isolated embedded build passes using the exact preserved live backend;
+16 desktop/tablet cases pass against the release assets. Real authenticated
+desktop/tablet checks verify provider logs, layout and loading behavior.
+Only three frontend assets changed; backend services and Simulator untouched.
+No commit or push. See the [release evidence](GUI%20deployments.md) and
+[completed guideline work](GUI%20completed%20work.md#control-room-guideline-follow-up).
 
 ## Next
 
-The open requirements below retain their original scope. Header cleanup is the
-latest presentation request; the Config form editor is the next larger GUI item.
+The open requirements below retain their original scope.
+The Config form editor is the next larger GUI item.
 No new priority or implementation approval is implied for backend rollouts.
-
-### Control Room guideline follow-up
-- [ ] in top header, Visa service - Remove "Available" and move "Uptime ..." below, just like Control Coom. Remove connected from Control Room. and don't add it to Visa Service.
-
-### JavaScript reuse refactoring
-- [ ] Extract shared page polling/lifecycle helpers: start/stop on navigation, prevent overlapping requests, abort obsolete requests, reject late responses and retain last-good data with explicit errors.
-- [ ] Consolidate HTTP/JSON error handling and cancellation; keep authentication, same-origin CSRF handling and mutation retry/uncertainty policies explicit.
 
 ### Config
 - [ ] Create a form editor.
@@ -49,20 +77,35 @@ No new priority or implementation approval is implied for backend rollouts.
 - [ ] Add verified external-network policy metadata, gateway runtime health, and explicit reviewed activation/rollback after the production provisioning contract is implemented.
 
 ### Provisioning
-- [ ] Certify native Windows install/browser launch, DPAPI/ACL and two-user
-  isolation; sign and deliver releases. No Windows adapter/driver/service or
-  credential issuance is included in the enrollment installer.
+- [ ] **Mac pilot first:** provision one Apple Silicon Mac (macOS 13+) through
+  the selected Great Lakes invitation to live ZPR connectivity. The user can
+  operate the laptop and authorize administrator prompts. Complete trusted
+  credential issuance, non-exporting Keychain-to-runtime handoff, adapter
+  admission, allowed/denied traffic checks, and route/DNS rollback verification.
+  Do not consume the invitation until issuance and delivery can complete; no
+  enrollment code belongs in this tracker. See the
+  [Mac pilot blockers](../Provisioning%20plan.md#first-release-decisions-and-progress).
+- [ ] After the Mac pilot passes, certify native Windows install/browser launch,
+  DPAPI/ACL and two-user isolation; sign and deliver releases. No Windows
+  adapter/driver/service or credential issuance is included in the enrollment
+  installer.
 - [ ] Certify Mac Finder/Terminal/browser permissions, Developer ID signing/
   notarization and supported OS versions; complete full privileged traffic/lifecycle
-  tests, credential issuance and secure adapter-runtime handoff.
+  tests. This remains broader release certification after the single-Mac pilot.
+- [ ] **Deferred security issue:** prevent invitation creators from approving
+  their own device requests before multi-operator production use. The initial
+  single-operator setup currently allows this; named-user authorization,
+  revision/key checks and audit remain required. Enforce separation in the
+  Enrollment Service transaction, test it, and keep any future single-operator
+  exception explicit and audited. See the [security hardening tracker](zpr-dashboard/SECURITY_HARDENING.md#p1-enrollment-approval-separation-of-duties).
 
 ## Blocked / needs a decision
 
 - Gateway forwarding rollout requires separate review and actual binary/protocol verification; saved drafts do not imply runtime enforcement.
 - Gateway activation depends on the independent production provisioning contract.
 - Native platform certification needs the relevant OS environments and release signing; local/ad-hoc builds are not certified releases.
+- Self-approval is a deferred risk accepted for the initial single-operator deployment; do not expand to multi-operator production use until the security-hardening item is verified.
 
 ## Larger planned work
 
 - [ ] Organization creation/editing: Duplicate -> edit draft -> validate -> review activation first. The [detailed plan](Organization%20editor%20plan.md) owns the individual requirements; production administration remains independent of Simulator.
-- General polling and HTTP/JSON consolidation remain open despite completed editor and Simulator migrations; see [completed substeps](GUI%20completed%20work.md#javascript-reuse-refactoring).

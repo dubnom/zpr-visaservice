@@ -315,10 +315,7 @@
   }
 
   async function jsonRequest(url, init = {}) {
-    const response = await (window.zprOperatorFetch ?? fetch)(url, init);
-    const result = await response.json();
-    if (!response.ok) throw new Error(result.error || `Assistant request failed (${response.status})`);
-    return result;
+    return window.ZPRPageRuntime.requestJSON(window.zprOperatorFetch ?? window.fetch.bind(window), url, init);
   }
 
   window.ZPRAssistant = { mount, bindCollapse, editText, content, jsonRequest };

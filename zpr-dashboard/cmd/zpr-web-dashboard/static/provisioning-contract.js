@@ -11,6 +11,7 @@ const provisioningContract = (() => {
       states.has(item.state) && Number.isSafeInteger(item.revision) && item.revision > 0 &&
       instant(item.created_at) && instant(item.expires_at) && text(item.created_by) &&
       (item.key_fingerprint === undefined || (text(item.key_fingerprint) && /^[a-f0-9]{64}$/.test(item.key_fingerprint))) &&
+      (item.runtime_key_fingerprint === undefined || (text(item.runtime_key_fingerprint) && /^[a-f0-9]{64}$/.test(item.runtime_key_fingerprint))) &&
       ["claimed_at", "approval_expires_at", "decided_at"].every((key) => item[key] == null || instant(item[key])) &&
       (item.decision_by === undefined || text(item.decision_by)) &&
       (item.decision_reason === undefined || text(item.decision_reason)) &&
@@ -30,7 +31,7 @@ const provisioningContract = (() => {
     if (response.status !== successStatus || !response.headers.get("Content-Type")?.includes("application/json")) {
       throw new Error("Unconfirmed enrollment mutation response.");
     }
-    return { value: await response.json() };
+    return { value: await window.ZPRPageRuntime.readJSON(response) };
   }
 
   return Object.freeze({ assetFields, validInvitation, postMutation });

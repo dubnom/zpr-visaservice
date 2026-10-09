@@ -14,7 +14,20 @@
       if (this.closest("#page-sources")) {
         if (!this.hashListener) {
           this.hashListener = () => {
-            if (location.hash === "#sources" && !this.snapshot) this.load();
+            if (location.hash === "#sources") {
+              if (this.view === "updates") this.loadUpdates(true);
+              else if (!this.snapshot) this.load();
+            }
+            if (location.hash !== "#sources") {
+              const cancelledDirectory = this.directoryPending;
+              this.directoryPoller.stop();
+              this.updatesPoller.stop();
+              if (cancelledDirectory && this.snapshot) {
+                const message = this.querySelector("[data-source-message]");
+                message.textContent = "Refresh cancelled · Displayed records are last known.";
+                message.hidden = false;
+              }
+            }
           };
           window.addEventListener("hashchange", this.hashListener);
         }
@@ -22,6 +35,13 @@
       } else {
         this.load();
       }
+    }
+
+    disconnectedCallback() {
+      this.directoryPoller?.stop();
+      this.updatesPoller?.stop();
+      if (this.hashListener) window.removeEventListener("hashchange", this.hashListener);
+      this.hashListener = null;
     }
 
     initialize() {
@@ -76,6 +96,7 @@
           }
           this.render();
           if (this.view === "updates") this.loadUpdates(true);
+          else if (!this.snapshot) this.load();
         }
       });
       this.querySelector("[data-source-filter]").addEventListener("input", () => this.render());
@@ -83,43 +104,66 @@
         this.querySelector("[data-source-refresh]").hidden = true;
         this.querySelector("[data-source-selector]").addEventListener("change", () => this.loadUpdates(true));
         document.addEventListener("control-room:refresh-requested", () => {
-          if (location.hash === "#sources") {
+          if (this.isConnected && location.hash === "#sources") {
             if (this.view === "updates") this.loadUpdates(true);
             else this.load();
           }
         });
       }
+      this.directoryPoller = window.ZPRPageRuntime.createPoller({
+        run: context => this.collectDirectory(context),
+        onPending: value => {
+          this.directoryPending = value;
+          this.querySelector("[data-source-refresh]").disabled = value;
+        },
+        onError: error => {
+          this.directoryError = `${error.message || "Trusted source could not be read"}${this.snapshot ? " · Displayed records are last known." : ""}`;
+          if (this.view === "updates") return;
+          const message = this.querySelector("[data-source-message]");
+          message.textContent = this.directoryError;
+          message.hidden = false;
+        },
+      });
+      this.updatesPoller = window.ZPRPageRuntime.createPoller({
+        run: context => this.collectUpdates(context),
+        onPending: value => {
+          this.updatesPending = value;
+          this.querySelector("[data-source-selector]").disabled = value;
+          this.querySelector("[data-source-load-more]").disabled = value;
+        },
+        onError: error => {
+          this.updateError = error.status === 410 ? "This update history expired. Refresh to load the current 24-hour window."
+            : error.message || "Trusted source updates could not be read";
+          if (this.view === "updates") {
+            const message = this.querySelector("[data-source-message]");
+            this.querySelector("[data-source-results]").hidden = true;
+            message.textContent = this.updateError;
+            message.hidden = false;
+            this.querySelector("[data-source-load-more]").hidden = true;
+          }
+        },
+      });
     }
 
-    async load() {
-      if (this.pending) return this.pending;
-      const refresh = this.querySelector("[data-source-refresh]");
+    load() {
+      this.directoryPoller.start({ immediate: false });
+      return this.directoryPoller.refresh();
+    }
+
+    async collectDirectory({ signal, isCurrent }) {
       const message = this.querySelector("[data-source-message]");
-      refresh.disabled = true;
       message.hidden = false;
       message.textContent = "Reading trusted source…";
-      this.pending = (async () => {
-        try {
-          const response = await fetch(this.dataset.endpoint, { cache: "no-store", headers: { Accept: "application/json" } });
-          const data = await response.json();
-          if (!response.ok) throw new Error(data.error || `Source read failed (${response.status})`);
-          if (!data.directory) throw new Error("Trusted source did not return browseable records");
-          this.snapshot = data;
-          this.renderSourceHeading();
-          this.querySelector("[data-source-meta]").textContent = [data.organization_name, data.base_dn, data.observed_at && window.ZPRSafeDisplay.formatDateTime(data.observed_at)].filter(Boolean).join(" · ");
-          this.querySelector("[data-source-summary]").textContent = `${data.people || 0} people · ${(data.groups || []).length} groups · ${(data.attributes || []).length} attributes`;
-          this.render();
-        } catch (error) {
-          this.querySelector("[data-source-results]").hidden = true;
-          this.querySelector("[data-source-count]").textContent = "";
-          message.textContent = error.message || "Trusted source could not be read";
-          message.hidden = false;
-        } finally {
-          refresh.disabled = false;
-          this.pending = null;
-        }
-      })();
-      return this.pending;
+      const fetcher = this.simulatorPage ? window.fetch.bind(window) : window.zprOperatorFetch;
+      const data = await window.ZPRPageRuntime.requestJSON(fetcher, this.dataset.endpoint, { signal, headers: { Accept: "application/json" } });
+      if (!data.directory) throw new Error("Trusted source did not return browseable records");
+      if (!isCurrent()) return;
+      this.snapshot = data;
+      this.directoryError = "";
+      this.renderSourceHeading();
+      this.querySelector("[data-source-meta]").textContent = [data.organization_name, data.base_dn, data.observed_at && window.ZPRSafeDisplay.formatDateTime(data.observed_at)].filter(Boolean).join(" · ");
+      this.querySelector("[data-source-summary]").textContent = `${data.people || 0} people · ${(data.groups || []).length} groups · ${(data.attributes || []).length} attributes`;
+      if (this.view !== "updates") this.render();
     }
 
     render() {
@@ -142,89 +186,71 @@
       else this.renderAttributes(results, directory, query);
       const count = this.view === "graph" ? results.querySelectorAll(".ldap-graph-node").length : this.view === "tree" ? results.querySelectorAll("[data-ldap-entry]").length : results.querySelectorAll("tbody tr[data-source-row]").length;
       this.querySelector("[data-source-count]").textContent = `${count} ${this.view}`;
-      message.textContent = count ? "" : `No ${this.view} match this filter.`;
-      message.hidden = count > 0;
+      message.textContent = this.directoryError || (count ? "" : `No ${this.view} match this filter.`);
+      message.hidden = !this.directoryError && count > 0;
       results.hidden = false;
     }
 
-    async loadUpdates(reset = true) {
-      if (!this.closest("#page-sources") || this.updatesPending) return this.updatesPending;
+    loadUpdates(reset = true) {
+      if (!this.closest("#page-sources")) return Promise.resolve();
+      if (!this.updatesPending) this.resetUpdates = reset;
+      this.updatesPoller.start({ immediate: false });
+      return this.updatesPoller.refresh();
+    }
+
+    async collectUpdates({ signal, isCurrent }) {
+      const reset = this.resetUpdates;
       const controls = this.querySelector("[data-source-update-controls]");
       const message = this.querySelector("[data-source-message]");
-      const results = this.querySelector("[data-source-results]");
-      const moreButton = this.querySelector("[data-source-load-more]");
       controls.hidden = false;
       message.hidden = false;
-      results.hidden = true;
       message.textContent = "Loading trusted source updates…";
-      moreButton.disabled = true;
-      this.updatesPending = (async () => {
-        try {
-          if (!this.updateSources) {
-            const response = await fetch("/api/trusted-sources/change-feeds", { cache: "no-store", headers: { Accept: "application/json" } });
-            const data = await response.json();
-            if (!response.ok) throw new Error(data.error || `Change feeds could not be read (${response.status})`);
-            if (!Array.isArray(data.sources)) throw new Error("Change feed list is malformed");
-            this.updateSources = data.sources;
-            const select = this.querySelector("[data-source-selector]");
-            select.replaceChildren(...this.updateSources.map((source) => {
-              const option = element("option", "", source.display_name || source.name);
-              option.value = source.name;
-              return option;
-            }));
-            if (this.updateSources.length) {
-              const matching = this.updateSources.find(source => source.name === this.directorySourceName());
-              select.value = (matching || this.updateSources[0]).name;
-            }
-          }
-          const sourceName = this.querySelector("[data-source-selector]").value;
-          this.renderSourceHeading();
-          if (!sourceName) {
-            this.updates = [];
-            this.updateCursor = "";
-            this.updateMore = false;
-            this.updateEmptyMessage = "No trusted-source change feeds are configured.";
-            this.renderUpdates();
-            return;
-          }
-          if (reset || sourceName !== this.updateSourceName) {
-            this.updates = [];
-            this.updateCursor = "";
-            this.updateMore = true;
-            this.updateSourceName = sourceName;
-          }
-          this.querySelector("[data-source-selector]").disabled = true;
-          const query = new URLSearchParams({ limit: "100" });
-          if (this.updateCursor) query.set("cursor", this.updateCursor);
-          const response = await fetch(`/api/trusted-sources/change-feeds/${encodeURIComponent(sourceName)}/changes?${query}`, { cache: "no-store", headers: { Accept: "application/json" } });
-          const data = await response.json();
-          if (!response.ok) {
-            if (response.status === 410) throw new Error("This update history expired. Refresh to load the current 24-hour window.");
-            throw new Error(data.error || `Trusted source updates could not be read (${response.status})`);
-          }
-          if (!Array.isArray(data.changes) || typeof data.cursor !== "string" || typeof data.more !== "boolean") {
-            throw new Error("Trusted source update response is malformed");
-          }
-          this.updates.push(...data.changes);
-          this.updateCursor = data.cursor;
-          this.updateMore = data.more;
-          this.updateEmptyMessage = "No trusted-source updates in the last 24 hours.";
-          if (this.view === "updates") this.renderUpdates();
-        } catch (error) {
-          this.updateError = error.message || "Trusted source updates could not be read";
-          if (this.view === "updates") {
-            results.hidden = true;
-            message.hidden = false;
-            message.textContent = this.updateError;
-            moreButton.hidden = true;
-          }
-        } finally {
-          this.querySelector("[data-source-selector]").disabled = false;
-          moreButton.disabled = false;
-          this.updatesPending = null;
+      if (!this.updateSources) {
+        const data = await window.ZPRPageRuntime.requestJSON(window.zprOperatorFetch, "/api/trusted-sources/change-feeds", { signal, headers: { Accept: "application/json" } });
+        if (!Array.isArray(data.sources)) throw new Error("Change feed list is malformed");
+        if (!isCurrent()) return;
+        this.updateSources = data.sources;
+        const select = this.querySelector("[data-source-selector]");
+        select.replaceChildren(...this.updateSources.map((source) => {
+          const option = element("option", "", source.display_name || source.name);
+          option.value = source.name;
+          return option;
+        }));
+        if (this.updateSources.length) {
+          const matching = this.updateSources.find(source => source.name === this.directorySourceName());
+          select.value = (matching || this.updateSources[0]).name;
         }
-      })();
-      return this.updatesPending;
+      }
+      const sourceName = this.querySelector("[data-source-selector]").value;
+      this.renderSourceHeading();
+      if (!sourceName) {
+        this.updates = [];
+        this.updateCursor = "";
+        this.updateMore = false;
+        this.updateEmptyMessage = "No trusted-source change feeds are configured.";
+        this.renderUpdates();
+        return;
+      }
+      if (reset || sourceName !== this.updateSourceName) {
+        this.updates = [];
+        this.updateCursor = "";
+        this.updateMore = true;
+        this.updateSourceName = sourceName;
+      }
+      this.querySelector("[data-source-selector]").disabled = true;
+      const query = new URLSearchParams({ limit: "100" });
+      if (this.updateCursor) query.set("cursor", this.updateCursor);
+      const data = await window.ZPRPageRuntime.requestJSON(window.zprOperatorFetch, `/api/trusted-sources/change-feeds/${encodeURIComponent(sourceName)}/changes?${query}`, { signal, headers: { Accept: "application/json" } });
+      if (!Array.isArray(data.changes) || typeof data.cursor !== "string" || typeof data.more !== "boolean") {
+        throw new Error("Trusted source update response is malformed");
+      }
+      if (!isCurrent()) return;
+      this.updates.push(...data.changes);
+      this.updateCursor = data.cursor;
+      this.updateMore = data.more;
+      this.updateError = "";
+      this.updateEmptyMessage = "No trusted-source updates in the last 24 hours.";
+      if (this.view === "updates") this.renderUpdates();
     }
 
     renderSourceHeading() {

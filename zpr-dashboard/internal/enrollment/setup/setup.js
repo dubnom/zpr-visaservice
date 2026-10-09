@@ -28,6 +28,7 @@ function render(result) {
   if (result.metadata) {
     byId('metadata').textContent = `${result.metadata.organization} / ${result.metadata.invitation_id}`;
     byId('fingerprint').textContent = result.fingerprint;
+    byId('runtime-fingerprint').textContent = result.runtime_fingerprint || 'Unavailable: this saved identity predates runtime-key support.';
   }
   const status = result.status;
   byId('state').textContent = status

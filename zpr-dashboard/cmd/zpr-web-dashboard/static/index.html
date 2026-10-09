@@ -5,15 +5,15 @@
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <meta name="theme-color" content="#17211e">
     <title>ZPR Control Room</title>
-    <link rel="stylesheet" href="/app.css?v=91">
+    <link rel="stylesheet" href="/app.css?v=93">
     <link rel="stylesheet" href="/geography.css?v=4">
-    <script src="/geography.js?v=3" defer></script>
+    <script src="/page-runtime.js?v=1"></script><script src="/geography.js?v=3" defer></script>
     <link rel="stylesheet" href="/machine-logs.css?v=19">
     <link rel="stylesheet" href="/assertions.css?v=14">
     <link rel="stylesheet" href="/sidebar.css?v=8">
     <link rel="stylesheet" href="/trusted-source.css?v=6">
     <link rel="stylesheet" href="/security-review.css?v=9">
-    <link rel="stylesheet" href="/diagnostics.css?v=3">
+    <link rel="stylesheet" href="/diagnostics.css?v=6">
     <link rel="stylesheet" href="/node-stats.css?v=5">
     <link rel="stylesheet" href="/gateways.css?v=9">
     <link rel="stylesheet" href="/provisioning.css?v=4">
@@ -70,7 +70,7 @@
             </div>
             <div class="connection-state visa-service-state" id="visa-service-state" data-state="disconnected" role="status">
               <span class="state-lamp" aria-hidden="true"></span>
-              <div><strong>Visa Service uptime <span id="metric-uptime">—</span></strong><small id="snapshot-source-status">Waiting for Visa Service snapshot</small></div>
+              <div><strong>Visa Service</strong><small>Uptime <span id="metric-uptime">—</span></small><small id="snapshot-source-status">Waiting for Visa Service snapshot</small></div>
             </div>
           </div>
           <div class="top-actions">
@@ -266,7 +266,7 @@
                   <div class="policy-editor-utilities" id="policy-editor-utilities">
                     <button id="policy-attribute-rescan" class="button button-save-as-ready" type="button" disabled>Refresh Attributes</button>
                     <span data-editor-search-target="policy-source,assertion-source"></span>
-                    <button id="policy-editor-maximize" class="button button-refresh" type="button" data-editor-maximize="policy-editor-pane" aria-label="Maximize editor" aria-pressed="false" title="Maximize editor">Maximize</button>
+                    <button id="policy-editor-maximize" class="button button-refresh" type="button" data-editor-maximize="policy-editor-pane" aria-label="Maximize editor" aria-pressed="false" title="Maximize editor"></button>
                     <details id="policy-history-menu" class="policy-history-menu">
                       <summary class="button policy-history-toggle" aria-label="Version history">History <span id="policy-history-count">—</span><span class="policy-picker-chevron" aria-hidden="true">⌄</span></summary>
                       <div id="policy-history" class="policy-history"></div>
@@ -528,8 +528,8 @@
         </section>
         <section class="page-view" id="page-diagnostics" data-page="diagnostics" aria-label="ZPR diagnostics" hidden>
           <section class="section-block diagnostics" data-diagnostics>
-            <header class="diagnostics-header"><p id="diagnostics-updated" role="status">Waiting for telemetry sources</p></header>
-            <div class="diagnostics-toolbar"><label for="diagnostics-filter">Filter logs and sources</label><input id="diagnostics-filter" type="search" maxlength="200" placeholder="Identity, source, message, metric"><label class="editor-wrap-toggle log-wrap-toggle"><input id="diagnostics-json" type="checkbox"> Format JSON</label><span id="diagnostics-count" class="count-label">—</span></div>
+            <div class="diagnostics-toolbar"><label for="diagnostics-filter">Filter logs and sources</label><input id="diagnostics-filter" type="search" maxlength="200" placeholder="Identity, source, message, metric"><span id="diagnostics-count" class="count-label">—</span></div>
+            <p id="diagnostics-loading" class="diagnostics-loading" role="status">Loading</p>
             <p id="diagnostics-error" class="diagnostics-error" role="status" hidden></p>
             <div id="diagnostics-sources" class="diagnostics-sources" aria-live="polite"></div>
           </section>
@@ -572,26 +572,26 @@
     </div>
     <script src="/vendor/pluralize.js?v=8.0.0" defer></script>
     <script src="/operator-request.js?v=2" defer></script>
-    <script src="/safe-display.js?v=1" defer></script>
+    <script src="/safe-display.js?v=3" defer></script>
     <script src="/polling-display.js?v=1" defer></script>
     <script src="/table-sort.js?v=2" defer></script>
-    <script src="/trusted-source.js?v=10" defer></script>
-    <script src="/editor-page.js?v=16" defer></script>
-    <script src="/assistant-core.js?v=1" defer></script>
+    <script src="/trusted-source.js?v=11" defer></script>
+    <script src="/editor-page.js?v=18" defer></script>
+    <script src="/assistant-core.js?v=2" defer></script>
     <script src="/node-stats.js?v=6" defer></script>
-    <script src="/app.js?v=143" defer></script>
+    <script src="/app.js?v=145" defer></script>
     <script src="/log-format.js?v=1" defer></script>
-    <script src="/machine-logs.js?v=23" defer></script>
-    <script src="/assertions.js?v=28" defer></script>
+    <script src="/machine-logs.js?v=26" defer></script>
+    <script src="/assertions.js?v=29" defer></script>
     <script src="/config-editor.js?v=19" defer></script>
-    <script src="/gateways.js?v=24" defer></script>
-    <script src="/provisioning-contract.js?v=2" defer></script>
-    <script src="/provisioning.js?v=3" defer></script>
-    <script src="/provisioning-registry.js?v=6" defer></script>
+    <script src="/gateways.js?v=25" defer></script>
+    <script src="/provisioning-contract.js?v=3" defer></script>
+    <script src="/provisioning.js?v=4" defer></script>
+    <script src="/provisioning-registry.js?v=7" defer></script>
     <script src="/operator-login.js?v=10" defer></script>
     <script src="/editor-assistant.js?v=3" defer></script>
     <script src="/editor-search.js?v=7" defer></script>
-    <script src="/diagnostics.js?v=5" defer></script>
-      <script src="/security-review.js?v=15" defer></script>
+    <script src="/diagnostics.js?v=10" defer></script>
+      <script src="/security-review.js?v=16" defer></script>
   </body>
 </html>

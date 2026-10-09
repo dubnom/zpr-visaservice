@@ -105,13 +105,13 @@
     if (!response.ok) {
       let message = `HTTP ${response.status}`;
       if (response.headers.get("Content-Type")?.includes("application/json")) {
-        const error = await response.json();
+        const error = await window.ZPRPageRuntime.readJSON(response);
         if (text(error.error)) message += `: ${error.error}`;
       }
       throw new Error(message);
     }
     if (!response.headers.get("Content-Type")?.includes("application/json")) throw new Error("Expected an enrollment JSON response.");
-    return response.json();
+    return window.ZPRPageRuntime.readJSON(response);
   }
 
   function clearDeniedAccess(message) {
@@ -183,7 +183,7 @@
       status.textContent = "Approval or rejection requires the matching named-user permission and independent backend grant for this organization.";
       return;
     }
-    status.textContent = "Review only this fresh revision and key fingerprint. Independently verify the fingerprint through a trusted channel. Approval does not issue credentials or establish connectivity.";
+    status.textContent = "Review this fresh revision and both key fingerprints. Independently verify each fingerprint through a trusted channel. Approval does not issue credentials or establish connectivity.";
     const form = document.createElement("form");
     const reasonLabel = document.createElement("label");
     reasonLabel.textContent = "Review reason";
@@ -196,7 +196,7 @@
     checkbox.type = "checkbox";
     checkbox.required = true;
     acknowledgement.append(checkbox, document.createTextNode(
-      ` I independently verified fingerprint ${item.key_fingerprint} for ${item.id} at revision ${item.revision} through a trusted channel.`,
+      ` I independently verified enrollment fingerprint ${item.key_fingerprint}${item.runtime_key_fingerprint ? ` and BAS runtime fingerprint ${item.runtime_key_fingerprint}` : ""} for ${item.id} at revision ${item.revision} through a trusted channel.`,
     ));
     form.append(reasonLabel, acknowledgement);
     if (canApprove) {
@@ -244,7 +244,8 @@
     try {
       const result = await provisioningContract.postMutation(
         `/api/enrollment/v1/invitations/${encodeURIComponent(item.id)}/${decision}`,
-        { organization: item.asset.organization, revision: item.revision, key_fingerprint: item.key_fingerprint, reason },
+        { organization: item.asset.organization, revision: item.revision, key_fingerprint: item.key_fingerprint,
+          runtime_key_fingerprint: item.runtime_key_fingerprint ?? "", reason },
         csrf, attempt.controller.signal, 200,
       );
       if (attempt.controller.signal.aborted) throw new Error("Review interrupted.");
@@ -261,7 +262,7 @@
       if (!validInvitation(changed, item.asset.organization) || changed.id !== item.id || changed.state !== state ||
           changed.revision !== item.revision + 1 ||
           !provisioningContract.assetFields.every((key) => changed.asset[key] === item.asset[key]) ||
-          ["created_at", "expires_at", "created_by", "key_fingerprint", "claimed_at", "approval_expires_at"].some((key) => changed[key] !== item[key]) ||
+          ["created_at", "expires_at", "created_by", "key_fingerprint", "runtime_key_fingerprint", "claimed_at", "approval_expires_at"].some((key) => changed[key] !== item[key]) ||
           changed.decision_by !== auditIdentity || changed.decision_reason !== reason || !changed.decided_at) {
         throw new Error("Unconfirmed key-bound review record.");
       }
@@ -358,7 +359,8 @@
     const timer = setTimeout(() => attempt.controller.abort(), 20000);
     try {
       const result = await provisioningContract.postMutation(`/api/enrollment/v1/invitations/${encodeURIComponent(item.id)}/cancel`, {
-        organization: item.asset.organization, revision: item.revision, key_fingerprint: item.key_fingerprint ?? "", reason,
+        organization: item.asset.organization, revision: item.revision, key_fingerprint: item.key_fingerprint ?? "",
+        runtime_key_fingerprint: item.runtime_key_fingerprint ?? "", reason,
       }, csrf, attempt.controller.signal, 200);
       if (attempt.controller.signal.aborted) throw new Error("Cancellation interrupted.");
       if (result.rejected) {
@@ -372,7 +374,7 @@
       if (!validInvitation(changed, item.asset.organization) || changed.id !== item.id || changed.state !== "cancelled" ||
           changed.revision !== item.revision + 1 ||
           !provisioningContract.assetFields.every((key) => changed.asset[key] === item.asset[key]) ||
-          ["created_at", "expires_at", "created_by", "key_fingerprint", "claimed_at", "approval_expires_at"].some((key) => changed[key] !== item[key]) ||
+          ["created_at", "expires_at", "created_by", "key_fingerprint", "runtime_key_fingerprint", "claimed_at", "approval_expires_at"].some((key) => changed[key] !== item[key]) ||
           changed.decision_by !== `oidc:${JSON.stringify([identity.issuer, identity.subject])}` ||
           changed.decision_reason !== reason || !changed.decided_at) throw new Error("Unconfirmed cancellation record.");
       attempt.settled = true;
@@ -421,7 +423,8 @@
         ["Invitation ID", item.id], ["Organization", organization], ["Name", item.asset.name],
         ["Owner", item.asset.owner], ["Inventory reference", item.asset.asset_id],
         ["Type", item.asset.type], ["Profile", item.asset.profile], ["Instruction recipient", item.asset.recipient],
-        ["State", item.state], ["Revision", String(item.revision)], ["Key fingerprint", item.key_fingerprint],
+        ["State", item.state], ["Revision", String(item.revision)], ["Enrollment key fingerprint", item.key_fingerprint],
+        ["BAS runtime key fingerprint", item.runtime_key_fingerprint],
         ["Created by", item.created_by], ["Created at", item.created_at], ["Invitation expiry", item.expires_at],
         ["Claimed at", item.claimed_at], ["Approval deadline", item.approval_expires_at],
         ["Decision by", item.decision_by], ["Decision reason", item.decision_reason], ["Decided at", item.decided_at],

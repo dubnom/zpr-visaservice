@@ -117,6 +117,7 @@ h1 { margin-bottom: 6px; font-size: 28px; line-height: 1.15; letter-spacing: 0; 
 .connection-state[data-state="disconnected"] .state-lamp { border-color: var(--red); background: #e88070; }
 .connection-state strong { display: block; font-size: 11px; font-weight: 650; }
 .connection-state small { display: block; margin-top: 3px; color: var(--muted); font: 10px var(--mono); }
+.connection-state small[hidden] { display: none; }
 .alert-strip { margin: 0 0 17px; padding: 11px 14px; border-left: 3px solid var(--orange); background: var(--orange-wash); color: #704522; font-size: 12px; line-height: 1.5; }
 
 .metrics-grid { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 11px; }
@@ -803,3 +804,11 @@ th[data-numeric="true"] .sort-button { text-align: right; justify-content: flex-
 .provisioning-status { padding: 8px 10px; border: 1px solid var(--line); border-left: 4px solid #84938a; background: #fff; font: 11px var(--mono); }
 .provisioning-status[data-state="unavailable"] { border-left-color: #c58a1b; }
 .provisioning-status[data-state="available"] { border-left-color: #2f8f4e; }
+
+/* Window controls must override both editor and log toolbar button themes. */
+:root body button.window-control { display: inline-flex; align-items: center; justify-content: center; flex: 0 0 32px; width: 32px; height: 32px; min-width: 32px; min-height: 32px; padding: 0; border: 1px solid var(--line); border-radius: 3px; background: var(--panel); color: var(--ink); cursor: pointer; }
+:root body button.window-control:hover:not(:disabled) { border-color: #62856f; background: #eaf4d9; color: var(--ink); }
+:root body button.window-control:active:not(:disabled) { background: #dcebc6; color: var(--ink); }
+:root body button.window-control:focus-visible { outline: 2px solid var(--forest); outline-offset: 2px; }
+:root body button.window-control:disabled { opacity: .48; cursor: not-allowed; }
+:root body button.window-control svg { display: block; flex: 0 0 16px; }

@@ -7,6 +7,22 @@ test.use({
   launchOptions: { args: process.env.ZPR_LOCAL_OPERATOR_CHROME_ARGS ? JSON.parse(process.env.ZPR_LOCAL_OPERATOR_CHROME_ARGS) : [] },
 });
 
+test("expired Dex login refresh shows timeout recovery and starts a fresh Control Room login", async ({ page }) => {
+  await page.goto("https://zpr-id.localhost:5556/auth/local/login?state=expired");
+  await page.reload();
+  await expect(page.getByRole("heading", { name: "Sign-in timed out" })).toBeVisible();
+  await expect(page.locator("body")).not.toContainText("Bad Request");
+  const recovery = page.getByRole("link", { name: "Timed out. Try again.", exact: true });
+  await expect(recovery).toHaveAttribute("href", "https://localhost:8787/");
+  const freshLogin = page.waitForRequest(request => request.method() === "POST" &&
+    request.url() === "https://localhost:8787/auth/operator/login");
+  await recovery.click();
+  const request = await freshLogin;
+  expect(request.headers().origin).toBe("https://localhost:8787");
+  await expect(page.locator('input[name="login"]')).toBeVisible();
+  expect(new URL(page.url()).searchParams.get("state")).not.toBe("expired");
+});
+
 test("deployed local operator signs in through real Dex and authorizes monitoring, catalogs and editor CSRF", async ({ page }) => {
   const directory = process.env.ZPR_LOCAL_OPERATOR_DIR;
   const settings = JSON.parse(readFileSync(`${directory}/stack.json`, "utf8"));

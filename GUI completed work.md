@@ -13,6 +13,35 @@ use the dated deployment ledger when checking release scope.
 
 ## Control Room guideline follow-up
 
+- [x] Standardize window-control button styling, not only SVG geometry:
+  editor and adapter/controller/Worker log controls use dark icons on white
+  32px squares, with shared hover/active, disabled and keyboard-focus treatment.
+  Verified 2026-10-09: 24 desktop/tablet runtime/header/window cases and embedded
+  build pass. Window cases check actual computed colors, icon stroke, button
+  dimensions and all interaction states across six editors and all log types.
+  Existing focus restoration and Enter/click/Escape behavior are preserved.
+  `app.css` v93 and `safe-display.js` v3 are wired across all HTML consumers.
+  This color/style follow-up is deployed to Control Room (verified 2026-10-09
+  19:24 UTC); Simulator rollout remains pending. Not committed or pushed.
+
+- [x] Recover from a timed-out operator sign-in instead of leaving a bare
+  "Operator authentication unavailable or denied." page. Expired, missing-cookie,
+  lost-state and replayed callbacks retain HTTP 403 with an accessible
+  single **Timed out. Try again.** POST action, without a return link. A retry
+  creates fresh browser-bound state/nonce/PKCE; the rejected callback never
+  exchanges a code or creates a session. Four new recovery cases and existing
+  OIDC/operator regressions pass; dashboard build and whitespace checks pass.
+  Deployed 2026-10-09 at 18:09 UTC; source changes not committed or pushed.
+  - Refreshing an expired Dex login page also gets **Sign-in timed out** and a
+    single **Timed out. Try again.** action instead of "Bad Request". The local
+    pinned-Dex image has a scoped error template; other provider errors remain
+    explicit. The action opens Control Room to start a fresh same-origin login.
+    Three template cases and an isolated real-Dex initial/refresh check pass.
+    Deployed desktop/tablet browser regressions pass, including refresh and
+    clicking the recovery action to create a fresh same-origin login POST.
+    Existing IdP identities, certificates, SQLite mount and configuration
+    preserved except selecting the custom frontend template directory.
+
 Implemented, verified and deployed to Control Room at 2026-10-09 15:37 UTC.
 The implementation was committed in `59f0bda`; it has not been pushed.
 
@@ -24,11 +53,33 @@ The implementation was committed in `59f0bda`; it has not been pushed.
 - [x] Keep the top banner application-wide; separate Control Room transport from Visa Service source health.
 - [x] Move permanent Nodes, Gateway, DNS and Provisioning explanations into Help; preserve operational errors and consequential warnings/confirmations.
 - [x] Use sortable Diagnostics source/metric tables with expandable log details.
+- [x] Remove the recurring Diagnostics Querying/Updated status line. Show "Loading" during the initial request only; hide it after completion/failure, preserve explicit errors and retain existing data without loading chatter on subsequent refreshes.
+  - **Deployed to Control Room** on 2026-10-09 at 19:45 UTC, together with body-only/raw/full-space layout. Exact live-backend reproduction, isolated embedded build, 16 desktop/tablet release-asset tests and real authenticated desktop/tablet Diagnostics checks pass. Only Diagnostics JS/CSS and its live HTML block/cache links changed; all 66 assets verified, configuration preserved and 17 unrelated service starts unchanged. Simulator and concurrent enrollment/review/forwarding work excluded. No commit or push; see [deployment evidence](GUI%20deployments.md).
+  - Browser-verified on 2026-10-09: 16 desktop/tablet cases pass, including delayed initial success/failure, recovery, retained content during refresh/failure, stale-response ownership, body-only/full-width layout and ANSI safety. Editor diagnostics and `git diff --check` are clean. The standard fixture runner and embedded build were blocked by concurrent enrollment edits; the final build retry reported undefined `err` in `setup.go` and an unused `bytes` import in `device.go`. Browser tests ran directly in the existing Playwright container. No unrelated enrollment code changed; no deployment, commit or push performed.
+- [x] Remove Diagnostics Format JSON and always render provider body text with ANSI colors intact. Use the full available application width, remove the 720px metrics width limit and fixed 220px log/68vh source-table height caps. Retain natural page scrolling, narrow-table horizontal scrolling, filtering and bounded provider responses.
+  - **Verified, awaiting deployment** on 2026-10-09: 16 desktop/tablet cases and embedded build pass. New tests measure full application/metric widths and uncapped log/source height at 2400px, 1280px, 820px and 700px, with 100 log records, no page-wide overflow and no Format JSON control. Body-only text, ANSI safety, raw exact JSON, source filtering, navigation ownership and header regressions pass. Editor diagnostics and `git diff --check` are clean.
+  - The older Diagnostics JSON-toggle and sortable/pulse tests still exercise the removed control; left unchanged per repository guidance and excluded from this focused run. Current body/color tests were updated to the raw-only requirement. No deployment, commit or push performed.
+- [x] Remove duplicate timestamp/date/time and severity columns from Diagnostics logs. Display each provider body at full width, retaining embedded metadata, multiline text, ANSI colors, JSON formatting and explicit missing/empty-body states.
+  - **Verified, awaiting deployment** on 2026-10-09: 34 selected desktop/tablet browser cases and the embedded build pass, including new full-width/body-only checks at desktop/tablet and 700px, retained colored metadata, empty-body handling, safe ANSI rendering, JSON toggling, source tables/pulses and navigation cancellation. Editor diagnostics and `git diff --check` are clean. No deployment, commit or push performed.
+- [x] Respect provider-supplied ANSI colors and emphasis in Diagnostics log bodies using the shared adapter/controller/Worker renderer. Preserve standard/RGB foreground and background colors, reset record styling independently, keep provider HTML/terminal links inert and retain Format JSON behavior.
+  - Deployed to Control Room and verified 2026-10-09 19:29 UTC; shared Worker
+    renderer still awaits Simulator rollout. No commit or push. See deployment
+    ledger for scoped asset, backend-preservation and real-login evidence.
+  - **Verified, awaiting deployment** on 2026-10-09: 48 desktop/tablet browser cases pass, covering new colored Diagnostics, foreground/background/bold/reset, malicious HTML/inert hyperlinks, exact large-integer JSON toggling, refreshed colors, shared terminal log regressions, window controls and navigation ownership. Production Diagnostics makes no Simulator requests. Embedded dashboard build, editor diagnostics and `git diff --check` pass. No dependency added; no deployment, commit or push performed.
 - [x] Sort loaded Provisioning queue pages without changing server pagination or authorization.
 - [x] Sort Assertion catalogs/results and inspector counters without changing source-line/evaluation ownership.
 - [x] Verify desktop/narrow layouts, keyboard sorting, exact integers, pulses and existing refresh semantics without Simulator.
 - [x] Visa Service uptime has an independent red/green dot and duration beside Control Room status in the top banner; remove the separate "Visa Service connected" text and lower source-summary row. Green represents a connected snapshot; partial/unavailable/unconfigured states are red and explicitly labelled. A failed snapshot transport clears the duration rather than presenting stale uptime. Deployed at 2026-10-09 16:33 UTC: 28 desktop/tablet uptime, failure/recovery, layout and pulse regressions plus the embedded build pass. This update is not yet committed.
-- Open requirement moved to [active GUI work](GUI%20work.md); completed substeps below remain historical evidence.
+- [x] Follow-up: remove healthy "Available" and "connected" text from the top header. Use concise Control Room and Visa Service titles, with Visa Service "Uptime ..." on the secondary line. Preserve independent red/green lamps and explicit partial/unavailable/not-configured/transport-failure states.
+  - **Verified, awaiting deployment** on 2026-10-09: 42 desktop/tablet browser cases and the embedded dashboard build pass. New header coverage checks healthy/zero uptime, source failures, transport failure/recovery, hidden healthy status, secondary-line geometry, the 11px minimum, 700px layout and no Simulator requests. Related polling, pulses, Diagnostics and Trusted Sources cases pass. Editor diagnostics and `git diff --check` are clean.
+  - The two older uptime/banner tests still assert the superseded "Control Room connected" / "Visa Service uptime" text. They were left unchanged and excluded from this focused selection; the new header test covers the revised requirement and failure/recovery behavior. No deployment, commit or push was performed.
+- [x] Replace window Maximize/Restore text with shared standard icons across Control Room and Simulator: one outlined window for Maximize, overlapping windows for Restore. Cover Policy, Assertions, Config, Gateways, Scenario and Directory editors plus adapter/controller/Worker log panels. Preserve tooltips, accessible names, pressed state, keyboard actions and existing maximize ownership; record/base-state Restore actions remain textual.
+  - **Verified, awaiting deployment** on 2026-10-09: 28 desktop/tablet cases and the embedded dashboard build pass. New cross-app coverage checks identical 16px SVG geometry, no visible button text, accessible labels/tooltips, Enter/click/Escape transitions, restored editor focus and preserved nonmodal editor dialogs. Shared runtime and header regressions pass; editor diagnostics and `git diff --check` are clean.
+  - Two older editor-maximize tests assert visible "Maximize"/"Restore" text. They remain unchanged per repository guidance and are excluded from this selection; the new icon tests cover all six editor surfaces and logs. No deployment, commit or push was performed.
+- [x] Extract shared neutral page polling/lifecycle helpers: start/stop on navigation, serialize refreshes, abort obsolete requests, reject late responses and retain last-good data with explicit errors.
+  - [x] Add dependency-free `page-runtime.js`; retain the existing Simulator navigation poller entrypoint as a compatibility adapter, with no production dependency on Simulator.
+  - [x] Migrate Control Room snapshots, DNS statistics/record caching, Diagnostics, Security scans, adapter/Worker logs, Policy context checks and manual Trusted Sources reads. Preserve background inventory alerts, disconnected tails, paused manual Refresh and independent DNS name caching.
+  - [x] Cancel Trusted Sources requests on route departure/disconnection without introducing periodic LDAP reads or collapsing retained trees. Preserve per-feed cursor ownership, late-tab guards and explicit expired/unconfirmed feed errors.
 
 Verification: 72 combined desktop/tablet browser cases pass, including measured
 text sizes, page overflow, keyboard sorting, exact integer comparisons, source-local
@@ -154,7 +205,9 @@ tests also fail against committed baseline assets; neither test was changed.
 
 - [x] Extract a shared AI assistant shell and conversation controller from `editor-assistant.js` and `design-assistant.js`: messages, model/token controls, usage counters, pending/error states and collapse behavior. Policy/Assertion uses the same `assistant-core.js` controller.
 - [x] Share assistant stale-context/proposal protection while keeping undoable text Insert and validated structured Apply as separate adapters; never save, publish, activate or run automatically. Reject edited-then-restored source, changed record/revision/organization, reset conversations and stale failures.
-- Open requirement moved to [active GUI work](GUI%20work.md); completed substeps below remain historical evidence.
+- [x] Consolidate HTTP/JSON error handling and cancellation; keep authentication, same-origin CSRF handling and mutation retry/uncertainty policies explicit.
+  - [x] Delegate editor and assistant JSON transport to the neutral runtime. Reuse it for production telemetry, trusted directory/feeds, Policy File operations, Activity, Simulator organization operations and policy browsing.
+  - [x] Preserve strict enrollment status/content-type checks and unconfirmed mutation handling; share only response decoding there. Preserve Scenario Delete's empty-success contract and specialized operator login/HTML navigation flows.
   - [x] Migrate Simulator Activity polling to the shared navigation lifecycle; abort on departure and ignore late responses while retaining the last successful activity data.
   - [x] Migrate Simulator Scenario polling to the shared navigation lifecycle; abort on departure, serialize periodic/manual refreshes and ignore late catalog/run responses.
   - [x] Migrate Simulator Organization catalog polling to the shared navigation lifecycle; keep last-good catalog data and preserve faster polling during activation.
@@ -177,6 +230,21 @@ tests also fail against committed baseline assets; neither test was changed.
 - [x] Reuse the existing shared `machine-logs.js` viewer rather than introducing separate Control Room and Simulator log implementations.
 - [x] Add shared JavaScript component contract tests and desktop/tablet integration coverage for each migration, preserving intended behavior and accessibility.
 - [x] Verify Control Room works with Simulator unavailable; shared JavaScript must receive independent production endpoints/configuration and must not introduce Simulator data, authorization or runtime dependencies.
+
+The page-runtime/HTTP reuse completion is **Verified**, not deployed, on
+2026-10-09. The final focused/expanded browser run passed **172 desktop/tablet
+cases**, including 18 new runtime/ownership cases, malformed DNS response
+retention, late Diagnostics/Trusted Sources success and failure after departure
+and return, existing Simulator polling, editor transports, assistant context,
+provisioning registry/mutation safeguards and manual-only LDAP behavior.
+Production browser cases made no Simulator requests. Six targeted Go
+production-boundary/API tests and the embedded dashboard build passed;
+editor diagnostics and `git diff --check` were clean.
+The existing `visa refresh preserves current grants and resolves DNS labels`
+test failed its DOM-node-retention assertion in both layouts in the broader
+run. The same two failures were reproduced using committed HEAD application
+code; that test was not modified and is excluded from the final passing
+selection. No dependency, deployment, commit or push was added by this task.
 
 ## Control Room
 

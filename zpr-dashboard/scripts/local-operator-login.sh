@@ -6,7 +6,7 @@ dashboard_dir=$(CDPATH='' cd -- "$script_dir/.." && pwd)
 runtime_dir=$(CDPATH='' cd -- "$dashboard_dir/../../.local-runtime" && pwd)
 directory="$runtime_dir/operator-login"
 container=zpr-local-operator-idp
-image=ghcr.io/dexidp/dex:v2.44.0@sha256:5d0656fce7d453c0e3b2706abf40c0d0ce5b371fb0b73b3cf714d05f35fa5f86
+image=zpr-local-operator-idp:local
 issuer=https://zpr-id.localhost:5556
 
 case "${1:-}" in
@@ -44,6 +44,7 @@ case "${1:-}" in
         jq -n --arg issuer "$issuer" --arg username "$username" --arg hash "$hash" --rawfile secret "$staging/client.secret" \
             '{issuer:$issuer,storage:{type:"sqlite3",config:{file:"/operator/data/dex.db"}},
             web:{https:"0.0.0.0:5556",tlsCert:"/operator/idp.crt",tlsKey:"/operator/idp.key"},
+            frontend:{dir:"/srv/dex/web"},
             oauth2:{skipApprovalScreen:true},enablePasswordDB:true,
             staticClients:[{id:"zpr-control-room",name:"ZPR local Control Room",secret:($secret|rtrimstr("\n")),redirectURIs:["https://localhost:8787/auth/operator/callback"]}],
             staticPasswords:[{email:$username,username:$username,userID:"zpr-local-admin",hash:$hash}],
@@ -73,6 +74,7 @@ case "${1:-}" in
         if docker inspect "$container" >/dev/null 2>&1; then
             docker start "$container" >/dev/null
         else
+            docker build -t "$image" -f "$script_dir/Dockerfile.operator-idp" "$dashboard_dir"
             docker run -d --name "$container" --label zpr.local-operator-idp=true --restart unless-stopped \
                 --user 0:0 -p 127.0.0.1:5556:5556 \
                 -v "$directory/dex.json:/operator/dex.json:ro" \

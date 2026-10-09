@@ -576,6 +576,8 @@ import { registerControlRoomGuidelineTests } from "./control-room-guidelines.mjs
 import { registerDiagnosticsGuidelineTests } from "./diagnostics-guidelines.mjs";
 import { registerWorkflowGuidelineTests } from "./workflow-guidelines.mjs";
 import { registerTrustedSourceGUITests } from "./trusted-source-gui.mjs";
+import { registerPageRuntimeTests } from "./page-runtime.mjs";
+import { registerWindowControlTests } from "./window-controls.mjs";
 
 const assets = fileURLToPath(new URL("../../cmd/zpr-web-dashboard/static/", import.meta.url));
 const csp = "default-src 'self'; style-src 'self'; script-src 'self'; connect-src 'self'; img-src 'self' data:";
@@ -772,6 +774,8 @@ const test = base.extend({
 
 registerAssertionBrowserTests();
 registerControlRoomGuidelineTests(test, expect);
+registerPageRuntimeTests(test, expect);
+registerWindowControlTests(test, expect);
 registerDiagnosticsGuidelineTests(test, expect);
 registerWorkflowGuidelineTests(test, expect);
 registerTrustedSourceGUITests(test, expect);

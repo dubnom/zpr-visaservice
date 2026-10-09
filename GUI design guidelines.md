@@ -16,3 +16,4 @@ completed-work archive; current open requests are in the active backlog.
 - Table headers should be bold.
 - The topmost banner is only for application-wide information and control.
 - No font sizes less than 11px - this doesn't apply to the maps.
+- Window Maximize/Restore controls use consistent icons across apps: a single outlined window for Maximize and overlapping windows for Restore. Keep action-specific accessible names, tooltips and pressed state; do not apply these icons to restoring archived records or base state.

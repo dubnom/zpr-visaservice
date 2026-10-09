@@ -1,5 +1,5 @@
 (async () => {
-  const { AnsiUp } = await import("/ansi_up.js?v=6.0.6");
+  const { renderColoredLog } = await import("/colored-log.js?v=1");
   const grid = document.getElementById("machine-logs-grid");
   const controlRoom = grid.dataset.site === "control-room";
   const followLogs = () => controlRoom || document.getElementById("machine-logs-follow").checked;
@@ -19,8 +19,6 @@
   let machines = [];
   let paused = false;
   let active = pageActive();
-  let timer;
-  let pending;
   const jsonToggle = document.getElementById(controlRoom ? "adapter-log-json" : "machine-logs-json");
 
   function retainSourceTails(result) {
@@ -72,31 +70,10 @@
     }
   }
 
-  function renderColoredLog(target, text) {
-    const ansi = new AnsiUp();
-    ansi.escape_html = true;
-    const parsed = document.createElement("template");
-    parsed.innerHTML = ansi.ansi_to_html(text).replaceAll(' style="', ' data-ansi-style="');
-    const stylesheet = new CSSStyleSheet();
-    const copy = (node) => {
-      if (node.nodeType === 3) return document.createTextNode(node.textContent);
-      const span = document.createElement("span");
-      stylesheet.replaceSync(`span {${node.getAttribute("data-ansi-style") || ""}}`);
-      const style = stylesheet.cssRules[0].style;
-      for (const property of ["color", "backgroundColor", "fontWeight", "fontStyle", "textDecoration", "opacity"]) {
-        if (style[property]) span.style[property] = style[property];
-      }
-      span.append(...[...node.childNodes].map(copy));
-      return span;
-    };
-    target.replaceChildren(...[...parsed.content.childNodes].map(copy));
-  }
-
   function setMaximized(card, maximized) {
     card.panel.classList.toggle("maximized", maximized);
-    card.maximizeButton.textContent = maximized ? "Restore" : "Maximize";
-    card.maximizeButton.setAttribute("aria-label", `${maximized ? "Restore" : "Maximize"} logs for ${card.name?.textContent || card.title?.textContent || "adapter"}`);
-    card.maximizeButton.setAttribute("aria-pressed", String(maximized));
+    window.ZPRSafeDisplay.renderWindowControl(card.maximizeButton, maximized,
+      card.id ? `adapter panel ${card.id}` : `logs for ${card.name?.textContent || card.title?.textContent || "adapter"}`);
     document.body.classList.toggle("machine-log-maximized", maximized);
     if (followLogs() && card.following) card.output.scrollTop = card.output.scrollHeight;
   }
@@ -157,7 +134,6 @@
     const maximizeButton = document.createElement("button");
     maximizeButton.className = "quiet";
     maximizeButton.type = "button";
-    maximizeButton.textContent = "Maximize";
     maximizeButton.setAttribute("aria-pressed", "false");
     const removeButton = document.createElement("button");
     removeButton.type = "button";
@@ -214,7 +190,7 @@
       toolbar, output, selectedKey: "", selectedKeys: new Map(), choices: "", signature: "", sourceViews: new Map(),
       following: true, nextScrollTop: undefined,
     };
-    maximizeButton.setAttribute("aria-label", `Maximize adapter panel ${column.id}`);
+    window.ZPRSafeDisplay.renderWindowControl(maximizeButton, false, `adapter panel ${column.id}`);
     maximizeButton.addEventListener("click", () => maximizeAdapterColumn(column, !panel.classList.contains("maximized")));
     removeButton.addEventListener("click", () => removeAdapterColumn(column));
     select.addEventListener("change", () => {
@@ -400,9 +376,7 @@
         const maximizeButton = document.createElement("button");
         maximizeButton.className = "quiet";
         maximizeButton.type = "button";
-        maximizeButton.textContent = "Maximize";
-        maximizeButton.setAttribute("aria-label", `Maximize logs for ${machine.id}`);
-        maximizeButton.setAttribute("aria-pressed", "false");
+        window.ZPRSafeDisplay.renderWindowControl(maximizeButton, false, `logs for ${machine.id}`);
         maximizeButton.addEventListener("click", () => maximizeCard(card, !panel.classList.contains("maximized")));
         const output = document.createElement("div");
         output.className = "machine-log-output";
@@ -528,54 +502,42 @@
     }
   }
 
-  async function refresh() {
-    if (pending || !active) return;
-    pending = new AbortController();
-    const request = pending;
-    if (refreshButton) refreshButton.disabled = true;
-    try {
-      const response = await fetch(endpoint, { cache: "no-store", signal: request.signal });
-      let result;
-      try {
-        result = await response.json();
-      } catch {
-        if (response.status >= 500) throw new Error(`Visa Service or Control-Service is unavailable (HTTP ${response.status}).`);
-        throw new Error(`Log service returned a non-JSON response (HTTP ${response.status}).`);
-      }
-      if (!response.ok) throw new Error(result.error || `HTTP ${response.status}`);
-      if (!active) return;
-      machines = retainSourceTails(result);
-      render();
-      document.getElementById("machine-logs-error").hidden = true;
-      document.getElementById("machine-logs-time").textContent = window.ZPRSafeDisplay.formatTime(result.updated_at);
-      const status = paused ? "Paused" : "Live";
-      document.getElementById("machine-logs-status").textContent = controlRoom ? status : `${result.organization_id} / ${status}`;
-    } catch (error) {
-      if (error.name !== "AbortError" && active) {
-        machines = machines.map((entry) => ({ ...entry, state: "disconnected", sources: (entry.sources || []).map((source) => ({ ...source, disconnected: true })) }));
-        render();
-        const message = document.getElementById("machine-logs-error");
-        message.textContent = error.message || (controlRoom ? "Adapter logs unavailable" : "Machine logs unavailable");
-        message.hidden = false;
-        document.getElementById("machine-logs-status").textContent = "Disconnected";
-      }
-    } finally {
-      if (pending === request) pending = null;
-      if (refreshButton) refreshButton.disabled = false;
-      if (active && !paused) timer = setTimeout(refresh, 2000);
-    }
+  async function collectLogs({ signal, isCurrent }) {
+    const fetcher = controlRoom ? window.zprOperatorFetch : window.fetch.bind(window);
+    const result = await window.ZPRPageRuntime.requestJSON(fetcher, endpoint, { signal });
+    if (!isCurrent()) return;
+    machines = retainSourceTails(result);
+    render();
+    document.getElementById("machine-logs-error").hidden = true;
+    document.getElementById("machine-logs-time").textContent = window.ZPRSafeDisplay.formatTime(result.updated_at);
+    const status = paused ? "Paused" : "Live";
+    document.getElementById("machine-logs-status").textContent = controlRoom ? status : `${result.organization_id} / ${status}`;
   }
+
+  const poller = window.ZPRPageRuntime.createPoller({
+    run: collectLogs,
+    interval: 2000,
+    onPending(value) { if (refreshButton) refreshButton.disabled = value; },
+    onError(error) {
+      machines = machines.map((entry) => ({ ...entry, state: "disconnected", sources: (entry.sources || []).map((source) => ({ ...source, disconnected: true })) }));
+      render();
+      const message = document.getElementById("machine-logs-error");
+      message.textContent = error.message.startsWith("HTTP 5") && error.message.includes("invalid JSON")
+        ? `Visa Service or Control-Service is unavailable (${error.message.split(":")[0]}).`
+        : error.message || (controlRoom ? "Adapter logs unavailable" : "Machine logs unavailable");
+      message.hidden = false;
+      document.getElementById("machine-logs-status").textContent = "Disconnected";
+    },
+  });
 
   function start() {
     active = true;
-    clearTimeout(timer);
-    if (!paused) refresh();
+    poller.start();
   }
 
   function stop() {
     active = false;
-    clearTimeout(timer);
-    pending?.abort();
+    poller.stop();
     for (const card of cards.values()) {
       if (card.panel.classList.contains("maximized")) maximizeCard(card, false);
     }
@@ -586,13 +548,12 @@
     pauseButton.textContent = paused ? "Resume" : "Pause";
     pauseButton.setAttribute("aria-pressed", String(paused));
     pauseButton.setAttribute("aria-label", paused ? "Resume log updates" : "Pause log updates");
-    clearTimeout(timer);
+    poller.setPaused(paused);
     if (paused) {
-      pending?.abort();
       document.getElementById("machine-logs-status").textContent = "Paused";
-    } else start();
+    } else if (active) void poller.refresh();
   });
-  refreshButton?.addEventListener("click", () => { clearTimeout(timer); refresh(); });
+  refreshButton?.addEventListener("click", () => { void poller.refresh(); });
   const wrapToggle = document.getElementById(controlRoom ? "adapter-log-wrap" : "machine-logs-wrap");
   wrapToggle.checked = false;
   grid.classList.add("logs-nowrap");

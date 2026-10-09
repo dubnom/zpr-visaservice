@@ -1,0 +1,59 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Change Review - ZPR Control Room</title>
+  <link rel="stylesheet" href="/change-review.css?v=1">
+  <script src="/change-review.js?v=1" defer></script>
+</head>
+<body>
+  <header><a href="/">Control Room</a><h1>Change Review</h1><span id="identity"></span></header>
+  <main>
+    <p class="boundary">Approval records a reviewed revision. It does not apply or deploy it. Production application is not configured.</p>
+    <p id="status" role="status" aria-live="polite">Checking operator session</p>
+    <form id="login" method="post" action="/auth/operator/login" hidden><button type="submit">Sign in</button></form>
+    <fieldset id="workspace" disabled>
+      <legend>Organization-scoped changes</legend>
+      <div class="toolbar"><label>Organization <input id="organization" required maxlength="128" autocomplete="off"></label><button id="refresh" type="button">Load queue</button></div>
+      <p id="capabilities"></p>
+      <details><summary>Submit a saved revision</summary>
+        <form id="submission">
+          <label>Kind <select id="kind"><option value="gateway">Gateway</option><option value="policy">Policy</option></select></label>
+          <label>Target ID <input id="target" required maxlength="128" autocomplete="off"></label>
+          <label>Saved revision <input id="revision" type="number" min="1" step="1" required></label>
+          <label>Reason <textarea id="submit-reason" required maxlength="1024" rows="2"></textarea></label>
+          <p>The server reads and validates this saved revision. Unsaved editor content is not submitted. The base shown is the preceding saved revision, not a verified live runtime revision.</p>
+          <button type="submit">Submit for review</button>
+        </form>
+      </details>
+      <div class="table-scroll"><table>
+        <thead><tr>
+          <th><button type="button" data-sort="kind">Kind</button></th>
+          <th><button type="button" data-sort="target">Target</button></th>
+          <th><button type="button" data-sort="revision">Revision</button></th>
+          <th><button type="button" data-sort="state">State</button></th>
+          <th>Author</th><th>Submitted</th><th>Review</th>
+        </tr></thead>
+        <tbody id="requests"></tbody>
+      </table></div>
+      <button id="more" type="button" hidden>Load more</button>
+      <section id="review" hidden aria-labelledby="review-heading">
+        <h2 id="review-heading">Review change</h2>
+        <dl id="metadata"></dl>
+        <details open><summary>Saved revision diff</summary><pre id="diff"></pre></details>
+        <div class="sources"><details><summary>Before: previous saved revision</summary><pre id="before"></pre></details><details><summary>After: submitted revision</summary><pre id="after"></pre></details></div>
+        <h3>Audit history</h3><ol id="audit"></ol>
+        <form id="decision">
+          <label>Review reason <textarea id="decision-reason" required maxlength="1024" rows="2"></textarea></label>
+          <button type="submit" data-action="approve">Approve revision</button>
+          <button type="submit" data-action="reject">Reject</button>
+          <button type="submit" data-action="cancel">Withdraw my request</button>
+        </form>
+        <p id="decision-note"></p>
+        <button type="button" disabled>Apply unavailable</button>
+      </section>
+    </fieldset>
+  </main>
+</body>
+</html>

@@ -6,11 +6,119 @@ This is a historical release ledger, not a live health report. Keep dated test,
 asset, configuration, scope and rollback evidence here. Feature-local release
 notes also remain in the completed-work archive to preserve their context.
 
-Latest recorded Control Room release: `zpr-editor-ui:20261009-log-layout`
-(2026-10-09 16:55 UTC). This does not imply Simulator or every source change was
+Latest recorded Control Room release: `zpr-editor-ui:20261009-diagnostics-layout`
+(2026-10-09 19:45 UTC). This does not imply Simulator or every source change was
 deployed. Commit/push state is separate; retain each dated entry's scope.
 
 ## Deployment status
+
+- Diagnostics body-only/raw/full-space layout and initial Loading deployed to
+  Control Room on 2026-10-09, verified at 19:45 UTC
+  (`zpr-editor-ui:20261009-diagnostics-layout`). Only three assets changed:
+  Diagnostics JS v10, CSS v6 and the Diagnostics block/cache links in the
+  captured live index. No duplicate date/time/level columns, Format JSON or
+  recurring Querying/Updated line; full available width and natural-height
+  content, with existing ANSI colors/errors/last-good data preserved.
+  Reconstructed backend plus preceding live assets exactly reproduced the live
+  executable before overlay:
+  `fa26f7fa42ec33c516d4de43e6932560b95d422fce6fc0d3e96a3f0e0712f28a`.
+  Isolated embedded release build and 16 desktop/tablet browser cases pass
+  against the exact release assets. Current unrelated enrollment edits were
+  excluded rather than repaired or deployed.
+  All 66 served assets hash-verified; configuration, mounts, ports and host
+  settings preserved. All 17 unrelated service starts unchanged; Simulator,
+  Dex, Control-Service, Diagnostics proxy, Policy-Service and gateways untouched.
+  Real Dex-authenticated desktop/tablet checks verify actual provider log bodies,
+  single-child/full-width log rows, uncapped panels, no page-wide overflow,
+  initial Loading and retained logs without Loading on manual refresh. Queries
+  were delayed locally for Loading observation without replacing provider data.
+  The first live verifier used a five-second UI timeout; it passed after waiting
+  for actual provider-query completion. Shared ANSI/inert-HTML, window controls,
+  healthy header/uptime, unsigned API denial and login recovery also verified.
+  Retained stopped `zpr-control-room-diagnostics-layout-rollback`.
+  Room sessions reset on restart; sign in again. No commit or push.
+
+- Diagnostics ANSI colors deployed to Control Room on 2026-10-09, verified at
+  19:29 UTC (`zpr-editor-ui:20261009-colored-logs`). Five frontend assets changed:
+  new shared `colored-log.js` v1, Diagnostics v7, machine-logs v26 and the two
+  corresponding HTML cache links. All 66 served assets hash-verified.
+  Reconstructed backend with prior assets exactly reproduced the live binary
+  (`ac0a65f1d6fdaacca06569661d44a734e739cac8a6eb2d12372e7fde7bbf2ec1`)
+  before overlay; no backend source changes introduced. Configuration, mounts,
+  ports and host settings preserved; all 17 unrelated service starts unchanged.
+  Simulator, Dex, Control-Service, Diagnostics proxy and gateway remain untouched.
+  Eighteen targeted desktop/tablet ANSI, inert HTML, JSON, terminal/window cases
+  pass. Real authenticated desktop/tablet checks verify Diagnostics API access,
+  loaded shared renderer colors/bold and inert HTML, unchanged matching window
+  controls, healthy header/uptime and no JavaScript errors. ANSI live probe uses
+  synthetic text locally in the page, not invented provider log events.
+  Unsigned API denial/login recovery and all asset hashes verified. Retained
+  stopped `zpr-control-room-colored-logs-rollback`; sessions reset on restart.
+  Shared Worker renderer still awaits Simulator deployment. No commit or push.
+
+- Window-control styling follow-up deployed to Control Room on 2026-10-09,
+  verified at 19:24 UTC (`zpr-editor-ui:20261009-window-style`).
+  Shared dark-on-white 32px buttons now match across editor/log Maximize and
+  Restore controls. Only nine static assets changed: shared stylesheet/renderer
+  and seven HTML cache links (`app.css` v93, `safe-display.js` v3). Reconstructed
+  backend with preceding live assets reproduced the live executable exactly
+  before overlay: `f4b190312fd8601621d6b206a8d689565a7a6ccce531e5dce68797029dab1f6e`.
+  All 65 served assets hash-verified. Configuration/mounts/ports/host settings
+  preserved; 17 unrelated running service starts unchanged. Simulator and all
+  backend services remain untouched; Change Review/public enrollment UI excluded.
+  Real Dex-authenticated desktop/tablet checks verify identical computed icon/
+  button colors and 32px geometry, maximize/restore, healthy header/uptime,
+  Diagnostics and no JavaScript errors. Unsigned API denial and login recovery
+  verified. Stopped `zpr-control-room-window-style-rollback` retained.
+  Room restart resets sessions; sign in again. No commit or push.
+
+- Shared JavaScript runtime, concise header/secondary Visa uptime, and verified
+  Maximize/Restore window icons deployed to Control Room on 2026-10-09 at
+  19:13 UTC (`zpr-editor-ui:20261009-runtime-header-icons`). User approved the
+  frontend-only scope and separately approved including the verified icon work.
+  Reconstructed the preceding backend and proved its executable SHA-256 matches
+  the live login-recovery binary byte-for-byte before overlaying static assets:
+  `173d192326ed60d6ca4eb2499eae5bfed628c688223892181ef62957f1d3d496`.
+  The release changes 24 static assets/additions; all 65 served assets were
+  hash-verified. Runtime script ordering and current cache versions preserved.
+  Public enrollment URL/email UI and Change Review source/API remain excluded.
+  Forwarding/enrollment backend changes were not introduced.
+  Container configuration, mounts, ports, host settings and network sets are
+  unchanged except the image. All 17 unrelated running service starts unchanged:
+  Simulator, Dex, Control-Service, Diagnostics proxy, Policy-Service and gateways
+  were not restarted. Shared runtime/icons are still awaiting Simulator rollout.
+  Pre-release combined runtime/header/icon regressions: 24 desktop/tablet cases
+  pass. Real deployed Dex login, healthy header/uptime, Diagnostics, log icons,
+  Policy maximize/restore and absence of JavaScript errors pass on desktop/tablet.
+  Diagnostics retains 11 signaling sources and seven explicit no-signal sources,
+  without provider/query credential errors. Unsigned API access is denied;
+  callback recovery retains HTTP 403 and **Timed out. Try again.**
+  Retained stopped `zpr-control-room-runtime-header-rollback`. One initial
+  replacement automatically restored the prior image because the recovery probe
+  used malformed state and expected 403 instead of its correct 400; corrected
+  valid-state verification then passed. Room sessions were reset; sign in again.
+  No commit or push.
+
+- Operator login timeout recovery deployed 2026-10-09 at 18:09 UTC:
+  Control Room uses `zpr-editor-ui:20261009-login-recovery`; local Dex uses the
+  pinned custom `zpr-local-operator-idp:login-recovery-check` image. Callback
+  rejection remains HTTP 403 with a single **Timed out. Try again.** POST action.
+  Dex's expired-request/refresh error remains HTTP 400 but displays **Sign-in
+  timed out** and the same retry wording; opening Control Room starts a fresh
+  same-origin login. Deployed desktop/tablet refresh/click regressions pass.
+  All 64 served Room assets match the preceding log-layout image byte-for-byte.
+  Preserved the pre-forwarding backend plus trusted-feed/city-name fixes and
+  changed only the shared callback recovery handler. Container configuration,
+  host settings and network sets preserved except image replacements; Dex
+  configuration adds `frontend.dir` only, retaining identities, certificates and
+  persistent SQLite storage. All 16 unrelated running service starts unchanged;
+  Control-Service/Diagnostics, collectors, nodes and Simulator were not restarted.
+  Stopped `zpr-control-room-login-recovery-rollback` and
+  `zpr-local-operator-idp-login-recovery-rollback` retained, together with private
+  `dex.json.login-recovery-rollback`. An initial attempt safely restored Dex after
+  a verifier-only DNS callback issue; corrected verification then succeeded.
+  Room restart invalidates in-memory sessions; users may need to sign in again.
+  Simulator callback backend was not deployed. No commit or push.
 
 Current tracker reconciliation: 2026-10-09. The dated entries below are
 historical verification snapshots, not fresh health checks.

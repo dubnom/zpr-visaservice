@@ -349,10 +349,41 @@ start_simulator() {
         --key "$MACHINE_CERT_DIR/machine-01/client.key"
 }
 
+configure_change_review() {
+    review_config=${ZPR_CHANGE_REVIEW_CONFIG_FILE:-}
+    review_directory=
+    if [ -n "$review_config" ]; then
+        [ -r "$OPERATOR_DIR/stack.json" ] || { echo "Change review requires configured named-user operator login" >&2; return 1; }
+        case "$review_config" in /*) ;; *) echo "Change review config requires an absolute path" >&2; return 1 ;; esac
+        [ -f "$review_config" ] && [ ! -L "$review_config" ] || { echo "Change review config must be a regular file" >&2; return 1; }
+        review_database=$(jq -er 'select(.version == 1) | .database | select(type == "string")' "$review_config")
+        jq -e 'type == "object" and .version == 1 and
+            ((keys - ["version", "database", "allow_self_approval"]) | length == 0) and
+            ((has("allow_self_approval") | not) or (.allow_self_approval | type == "boolean"))' \
+            "$review_config" >/dev/null || { echo "Invalid change review configuration" >&2; return 1; }
+        case "$review_database" in /*) ;; *) echo "Change review database requires an absolute path" >&2; return 1 ;; esac
+        case "$review_config$review_database" in *,*) echo "Change review bind paths cannot contain commas" >&2; return 1 ;; esac
+        review_directory=$(dirname "$review_database")
+        if [ ! -d "$review_directory" ]; then mkdir -m 700 -p "$review_directory"; fi
+        [ ! -L "$review_directory" ] || { echo "Change review database directory must not be a symlink" >&2; return 1; }
+        [ -n "$(find "$review_directory" -prune -type d -perm 0700 -print)" ] || { echo "Change review directory must have mode 0700" >&2; return 1; }
+        review_canonical_directory=$(cd "$review_directory" && pwd -P)
+        operator_canonical_directory=$(cd "$OPERATOR_DIR" && pwd -P)
+        case "$operator_canonical_directory/" in "$review_canonical_directory/"*)
+            echo "Change review requires a dedicated directory, not the operator secrets directory or its ancestors" >&2; return 1 ;;
+        esac
+        [ ! -L "$review_database" ] || { echo "Change review database must not be a symlink" >&2; return 1; }
+        if [ -e "$review_database" ]; then
+            [ -n "$(find "$review_database" -prune -type f -perm 0600 -print)" ] || { echo "Change review database must be a regular file with mode 0600" >&2; return 1; }
+        fi
+    fi
+}
+
 start_control_room() {
     if [ "$(docker inspect -f '{{.State.Running}}' "$CONTROL_ROOM_DOCKER_CONTAINER" 2>/dev/null || true)" = true ]; then
         return 0
     fi
+    configure_change_review
     docker rm -f "$CONTROL_ROOM_DOCKER_CONTAINER" >/dev/null 2>&1 || true
     docker build -f "$SCRIPT_DIR/Dockerfile.simulator" -t "$SIMULATOR_IMAGE" "$DASHBOARD_DIR"
     control_room_proxy_ip=$(docker network inspect bridge --format '{{(index .IPAM.Config 0).Gateway}}')
@@ -379,6 +410,11 @@ start_control_room() {
             -e ZPR_OPERATOR_OIDC_CA_FILE="$OPERATOR_DIR/ca.crt" \
             -e ZPR_OPERATOR_DELEGATION_SIGNER_FILE="$OPERATOR_DIR/signer.json" \
             -e ZPR_OPERATOR_DELEGATION_KEY_FILE="$OPERATOR_DIR/delegation.key"
+    fi
+    if [ -n "$review_config" ]; then
+        set -- "$@" --mount "type=bind,source=$review_config,target=$review_config,readonly" \
+            --mount "type=bind,source=$review_directory,target=$review_directory" \
+            -e ZPR_CHANGE_REVIEW_CONFIG_FILE="$review_config"
     fi
     docker run -d --name "$CONTROL_ROOM_DOCKER_CONTAINER" \
         --label zpr.control-room=true \
@@ -407,6 +443,7 @@ wait_for_control_room() {
 }
 
 restart_control_room() {
+    configure_change_review
     docker build -f "$SCRIPT_DIR/Dockerfile.simulator" -t "$SIMULATOR_IMAGE" "$DASHBOARD_DIR"
     if [ -r "$OPERATOR_DIR/stack.json" ]; then
         sh "$SCRIPT_DIR/local-operator-login.sh" start

@@ -319,10 +319,11 @@ func (api *adminAPI) get(w http.ResponseWriter, r *http.Request) {
 func (api *adminAPI) cancel(w http.ResponseWriter, r *http.Request) {
 	if api.operator {
 		var input struct {
-			Organization   string `json:"organization"`
-			Revision       int    `json:"revision"`
-			KeyFingerprint string `json:"key_fingerprint"`
-			Reason         string `json:"reason"`
+			Organization          string `json:"organization"`
+			Revision              int    `json:"revision"`
+			KeyFingerprint        string `json:"key_fingerprint"`
+			RuntimeKeyFingerprint string `json:"runtime_key_fingerprint"`
+			Reason                string `json:"reason"`
 		}
 		if !readBody(w, r, &input) {
 			return
@@ -331,8 +332,8 @@ func (api *adminAPI) cancel(w http.ResponseWriter, r *http.Request) {
 		if !ok {
 			return
 		}
-		item, err := api.store.CancelReviewed(r.Context(), input.Organization, r.PathValue("id"), principal.Name,
-			input.Reason, input.KeyFingerprint, input.Revision, api.now())
+		item, err := api.store.CancelReviewedWithRuntimeKey(r.Context(), input.Organization, r.PathValue("id"), principal.Name,
+			input.Reason, input.KeyFingerprint, input.RuntimeKeyFingerprint, input.Revision, api.now())
 		if err != nil {
 			storeError(w, err)
 			return
@@ -360,10 +361,11 @@ func (api *adminAPI) cancel(w http.ResponseWriter, r *http.Request) {
 
 func (api *adminAPI) decide(w http.ResponseWriter, r *http.Request) {
 	var input struct {
-		Organization   string `json:"organization"`
-		Revision       int    `json:"revision"`
-		KeyFingerprint string `json:"key_fingerprint"`
-		Reason         string `json:"reason"`
+		Organization          string `json:"organization"`
+		Revision              int    `json:"revision"`
+		KeyFingerprint        string `json:"key_fingerprint"`
+		RuntimeKeyFingerprint string `json:"runtime_key_fingerprint"`
+		Reason                string `json:"reason"`
 	}
 	if !readBody(w, r, &input) {
 		return
@@ -388,8 +390,8 @@ func (api *adminAPI) decide(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 	}
-	item, err := api.store.Decide(r.Context(), input.Organization, r.PathValue("id"), principal.Name,
-		decision, input.Reason, input.KeyFingerprint, input.Revision, api.now())
+	item, err := api.store.DecideWithRuntimeKey(r.Context(), input.Organization, r.PathValue("id"), principal.Name,
+		decision, input.Reason, input.KeyFingerprint, input.RuntimeKeyFingerprint, input.Revision, api.now())
 	if err != nil {
 		storeError(w, err)
 		return
