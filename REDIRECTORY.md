@@ -11,7 +11,9 @@ problem justifies changing them. This is not a framework migration, microservice
 split, or wholesale repository relocation.
 
 Related trackers:
-- [GUI work](GUI%20work.md): editor and JavaScript reuse work.
+- [GUI work](GUI%20work.md): active GUI and JavaScript reuse backlog.
+- [Completed GUI work](GUI%20completed%20work.md): editor/controller migration checklists and evidence.
+- [Organization editor plan](Organization%20editor%20plan.md): detailed creation/editing requirements.
 - [Scaling](SCALING.md): performance and capacity changes.
 - [Repository guidance](AGENTS.repo.md): production/Simulator boundary.
 
@@ -58,7 +60,7 @@ Related trackers:
 - [ ] Extract visa/monitoring, policy editing, trusted-source and log feature controllers.
 - [ ] Give Control Room and Simulator explicit page entry modules and service adapters.
 - [ ] Keep shared editor, table, request, display and lifecycle utilities domain-neutral.
-- [x] Complete shared editor-controller reuse using the detailed JavaScript checklist in GUI work rather than duplicating competing helpers. All six editors use the shared controller; deployed with `zpr-editor-ui:20261009-unified`.
+- [x] Complete shared editor-controller reuse using the [completed JavaScript checklist](GUI%20completed%20work.md#javascript-reuse-refactoring) rather than duplicating competing helpers. All six editors use the shared controller; deployed with `zpr-editor-ui:20261009-unified`.
 - [ ] Pass load/analyze/save/service behavior through explicit adapters; do not let shared UI utilities reach Simulator state or endpoints.
 - [ ] Preserve editor identity/History, dirty state, source-owned diagnostics, keyboard shortcuts, undo, assistant insertion and viewport behavior.
 - [ ] Preserve request cancellation, stale-response rejection, polling cleanup and explicit CSRF policies during extraction.
@@ -74,7 +76,7 @@ Related trackers:
 - [ ] Treat checked-in organization examples as seeds/templates, not a second live database.
 - [ ] Define coherent organization draft/revision boundaries across related documents before implementing the organization creation workspace.
 - [ ] Keep publication, provisioning and activation separate from saving draft state.
-- [ ] Align the organization editor work in GUI work with these ownership decisions.
+- [ ] Align the [organization editor plan](Organization%20editor%20plan.md) with these ownership decisions.
 
 ## 6. Correct misleading naming deliberately
 
