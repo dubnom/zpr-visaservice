@@ -195,3 +195,29 @@ Control-Service after provisioning the credential. Do not reuse the ingestion
 token or the OpenObserve root password for queries. Until this query
 credential is present, the Logger UI and telemetry collection work while the
 Diagnostics view correctly reports its provider as unavailable.
+
+### Local OSS query-only gateway
+
+The local OSS build cannot enforce a Viewer role: requests to create readers
+become Admin accounts. Do not install those credentials in Control-Service.
+The deployed `zpr-diagnostics-query` gateway uses a dedicated upstream account,
+kept in `/Volumes/Storage/dubnom/.zpr-private/diagnostics-query/proxy.json`
+(directory `0700`, file `0600`), outside the runtime mounted into Control-Service.
+Only the separate gateway query credential is stored in runtime `query.token`;
+`query.username` and `query.network` persist the operator query identity and
+isolated network across Control-Service restarts.
+
+The gateway is read-only, capability-dropped, has no published ports, and joins
+separate internal store/query networks. It accepts exact bounded source-scoped
+searches only, translating the older adapter contract to the native search API,
+microsecond timestamps and explicitly allowed native metric streams. The
+unscoped smoke-test metric stream is excluded. An upstream Admin role remains
+necessary in this edition; the gateway enforces query-only access. This does
+not remove Control-Service's existing Docker socket access or claim full host
+isolation. See the dashboard's Unified Diagnostics documentation for the gateway
+configuration fields and build.
+
+Live recovery on 2026-10-09 verified 11 available sources and seven sources
+without signals, with real node logs and Visa Service logs/metrics. No provider,
+collector, node or Simulator restart was needed. Missing signals are reported,
+not replaced with fabricated success.

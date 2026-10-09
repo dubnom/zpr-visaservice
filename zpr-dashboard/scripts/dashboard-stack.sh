@@ -863,6 +863,17 @@ start_observability_collector() {
 }
 
 start_control_service() {
+    control_diagnostics_username=${ZPR_DIAGNOSTICS_USERNAME:-}
+    if [ -z "$control_diagnostics_username" ] && [ -f "$STATE_DIR/diagnostics/query.username" ]; then
+        control_diagnostics_username=$(cat "$STATE_DIR/diagnostics/query.username")
+    fi
+    control_diagnostics_network=${ZPR_DIAGNOSTICS_NETWORK:-$OBSERVABILITY_LOCAL_NETWORK}
+    if [ -z "${ZPR_DIAGNOSTICS_NETWORK:-}" ] && [ -f "$STATE_DIR/diagnostics/query.network" ]; then
+        control_diagnostics_network=$(cat "$STATE_DIR/diagnostics/query.network")
+    fi
+    if [ "$control_diagnostics_network" != "$OBSERVABILITY_LOCAL_NETWORK" ]; then
+        docker network inspect "$control_diagnostics_network" >/dev/null
+    fi
     control_node_names_file=${ZPR_NODE_DISPLAY_NAMES_FILE:-}
     if [ -z "$control_node_names_file" ] && [ -f "$STATE_DIR/node-display-names.json" ]; then
         control_node_names_file="$STATE_DIR/node-display-names.json"
@@ -931,7 +942,7 @@ start_control_service() {
         -e ZPR_ADAPTER_LOG_CONFIG_FILE="${ZPR_ADAPTER_LOG_CONFIG_FILE:-$STATE_DIR/adapter-logs.json}" \
         -e ZPR_PROVIDER_MANAGER_URLS="${ZPR_PROVIDER_MANAGER_URLS:-}" \
         -e ZPR_DIAGNOSTICS_CONFIG_FILE="${ZPR_DIAGNOSTICS_CONFIG_FILE:-$STATE_DIR/diagnostics/openobserve.json}" \
-        -e ZPR_DIAGNOSTICS_USERNAME="${ZPR_DIAGNOSTICS_USERNAME:-}" \
+        -e ZPR_DIAGNOSTICS_USERNAME="$control_diagnostics_username" \
         -e ZPR_DIAGNOSTICS_TOKEN_FILE="${ZPR_DIAGNOSTICS_TOKEN_FILE:-$STATE_DIR/diagnostics/query.token}" \
         -e ZPR_DIAGNOSTICS_SOURCE_MAP_FILE="${ZPR_DIAGNOSTICS_SOURCE_MAP_FILE:-$STATE_DIR/diagnostics/source-map.json}" \
         -e ZPR_PLATFORM_SERVICES="${ZPR_PLATFORM_SERVICES:-[]}" \
@@ -949,8 +960,8 @@ start_control_service() {
         "$@" \
         --entrypoint /usr/local/bin/zpr-web-dashboard \
         "$SIMULATOR_IMAGE" -mode control-service >/dev/null
-    if docker inspect "$OBSERVABILITY_LOCAL_CONTAINER" >/dev/null 2>&1; then
-        docker network connect "$OBSERVABILITY_LOCAL_NETWORK" "$CONTROL_CONTAINER"
+    if [ "$control_diagnostics_network" != "$OBSERVABILITY_LOCAL_NETWORK" ] || docker inspect "$OBSERVABILITY_LOCAL_CONTAINER" >/dev/null 2>&1; then
+        docker network connect "$control_diagnostics_network" "$CONTROL_CONTAINER"
     fi
     if [ -n "$control_change_feeds_network" ] && [ "$control_change_feeds_network" != "$OBSERVABILITY_LOCAL_NETWORK" ]; then
         docker network connect "$control_change_feeds_network" "$CONTROL_CONTAINER"

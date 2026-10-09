@@ -56,6 +56,11 @@ clearance rather than a fixed minimum radius, keeping connections compact while
 leaving reported geographic node coordinates unchanged.
 Refresh viewport transitions compare the final fitted geometry, so unchanged
 World Map snapshots do not trigger a spurious zoom animation.
+Auto-fit reuses its content bounds while component geometry and labels are
+unchanged, so contact/status updates and changing counter-badge widths cannot
+reframe the camera. Explicit Fit still remeasures content, and real component
+changes or viewport resizing still reframe it. The SVG fills the allocated map
+stage without its intrinsic aspect ratio resizing the surrounding layout.
 The World Map viewport uses the basemap's ocean color without the Topology dot
 grid, including outside the basemap when panning or zooming. Topology retains
 its separate light/dark backgrounds.
@@ -216,6 +221,12 @@ panel, including maximized panels, and starts checked on each page load.
 When no sources match the selected log type and running filter, the page states
 that no adapters/controllers are available and disables adding/showing panels.
 This differs from deliberately closing all panels when sources are available.
+Adapter, controller and shared Workers log panels use the same dark terminal
+surface and 11px monospace text, including stopped or disconnected sources.
+Availability/error messages remain explicit and retained history is not cleared.
+Each log viewport fills the remaining panel height, keeping its horizontal
+scrollbar at the panel bottom even when adjacent headers have different heights.
+Maximized panels keep a bounded, independently scrollable viewport.
 
 ZPR Config uses the editor toolbar, line-number gutter and modification
 indicator, a dark syntax-colored TOML surface, and a separated line-number
@@ -404,6 +415,34 @@ response is capped at 512 KiB; log bodies at 2 KiB; and attributes at eight
 fields of 128 characters each. Search is capped at 200 characters. Sources
 report available, stale, partial, or unavailable states and their latest
 telemetry timestamp.
+
+For OpenObserve editions without enforceable reader roles, use the private
+`cmd/zpr-diagnostics-query` gateway, not an Admin credential in Control-Service.
+The gateway accepts only authenticated, exact source/organization-scoped SELECT
+requests on the configured search routes. Ingestion, account management,
+cross-organization searches, extra SQL statements and redirects are rejected.
+It translates the deployed adapter's millisecond times and stream search routes
+to OpenObserve's microsecond, tenant-level searches; native metric streams are
+an explicit operator allowlist, queried with the same source scope.
+
+Build it with `scripts/Dockerfile.diagnostics-query`. Set
+`ZPR_DIAGNOSTICS_QUERY_CONFIG` to an owner-only JSON file containing `upstream`,
+`tenant`, `organization`, `streams` (adapter-facing stream names),
+`metric_streams` (native metric streams), `query_username`, `query_password`,
+`upstream_username` and `upstream_password`. Keep upstream credentials outside
+all Control-Service mounts. The OSS upstream account is Admin, not Viewer;
+read-only enforcement is the gateway's request boundary, not a provider role.
+The local deployment isolates the store on `zpr-diagnostics-store` and the
+query listener on `zpr-diagnostics-read-only`, with no published proxy ports.
+Only the query-network gateway has the `zpr-observability-local` alias visible
+to Control-Service, preserving its existing endpoint contract.
+
+The stack reads persisted `diagnostics/query.username` and
+`diagnostics/query.network` when their environment overrides are absent.
+Keep the query token owner-only and start the gateway before Control-Service.
+These operator files and the source map are independent of Simulator.
+Missing signals remain explicitly unavailable; restoring credentials does not
+create telemetry for sources that do not publish it.
 
 The OpenObserve collector accepts an operator-owned
 `observability/diagnostic-sources.json` inventory to tail node/trusted-service
@@ -918,7 +957,12 @@ change Simulator. Assertion results are visible in a locally scrolling table,
 while source-line gutter diagnostics remain attached to their analyzed source.
 The top banner contains
 Control Room connectivity, operator access, Help and global refresh controls;
-Visa Service health/uptime and source failures appear below it. Permanent
+Visa Service uptime is beside Control Room status in the same top banner, with
+an independent green/red indicator and duration. Green means the latest snapshot
+is connected; partial, disconnected, unconfigured or failed snapshot transport
+shows red with an explicit status. Missing duration shows an em dash, not zero;
+transport failure clears the displayed duration instead of showing a stale value.
+Source failure details remain below the banner. Permanent
 explanations live in contextual Help; actionable errors, freshness warnings,
 separate enrollment-code delivery and fingerprint/action confirmations remain
 visible where needed. Diagnostics uses a sortable source overview with expandable

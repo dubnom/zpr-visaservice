@@ -482,7 +482,10 @@ function updateConnection(snapshot, transportAvailable = true) {
   const apiState = snapshot.api_status || "disconnected";
   stateEl.dataset.state = transportAvailable ? "connected" : "disconnected";
   byId("api-state-text").textContent = transportAvailable ? "Control Room connected" : "Control Room unavailable";
-  byId("snapshot-source-status").textContent = apiState === "connected" ? "Visa Service connected" : apiState === "partial" ? "Partial Visa Service response" : apiState === "not configured" ? "Visa Service Admin API not configured" : "Visa Service snapshot unavailable";
+  const sourceAvailable = transportAvailable && apiState === "connected";
+  byId("visa-service-state").dataset.state = sourceAvailable ? "connected" : "disconnected";
+  byId("snapshot-source-status").textContent = sourceAvailable ? "Available" : !transportAvailable ? "Snapshot unavailable" : apiState === "partial" ? "Partial response" : apiState === "not configured" ? "Not configured" : "Unavailable";
+  if (!transportAvailable) byId("metric-uptime").textContent = "—";
   byId("last-updated").textContent = snapshot.generated_at ? `Updated ${window.ZPRSafeDisplay.formatTime(snapshot.generated_at)}` : "Waiting for first snapshot";
 
   const issues = [];
@@ -1437,7 +1440,19 @@ function renderTopology(data, exitComponents = []) {
   }
 
   const graph = stage.querySelector(".topology-graph");
-  const renderedBounds = graphContentBounds(world);
+  let renderedBounds = graphContentBounds(world);
+  if (geographic) {
+    const geometryKey = JSON.stringify([...world.querySelectorAll(":scope > [data-topology-component]")].map(component => [
+      component.dataset.topologyComponent, component.dataset.originX, component.dataset.originY,
+      [...component.querySelectorAll(".graph-node, .graph-adapter, .graph-gateway, .graph-visa, .graph-cloud, :scope > rect")]
+        .map(shape => [shape.tagName, ...["x", "y", "width", "height", "cx", "cy", "r", "rx", "ry", "d", "points", "transform"]
+          .map(attribute => shape.getAttribute(attribute))]),
+      [...component.querySelectorAll(":scope > text")].map(label => label.textContent),
+    ]));
+    if (!viewChanged && stage.geographicFit?.key === geometryKey) renderedBounds = stage.geographicFit.bounds;
+    stage.geographicFit = { key: geometryKey, bounds: renderedBounds };
+    world.graphFitBounds = renderedBounds;
+  }
   if (renderedBounds) {
     const frame = graphViewBox(renderedBounds);
     width = frame.width;
@@ -1565,12 +1580,18 @@ function setupGraphControls(stage, width, height, previousViewport) {
     return point.matrixTransform(svg.getScreenCTM().inverse());
   };
   const fitBounds = () => {
-    return graphContentBounds(world) || world.getBBox();
+    return world.graphFitBounds || graphContentBounds(world) || world.getBBox();
   };
   const fit = (cancelAnimation = true) => {
-    if (cancelAnimation) cancelViewportAnimation();
+    if (cancelAnimation) {
+      cancelViewportAnimation();
+      if (world.graphFitBounds) {
+        world.graphFitBounds = graphContentBounds(world);
+        stage.geographicFit.bounds = world.graphFitBounds;
+      }
+    }
     const bounds = fitBounds();
-    if (byId("page-map").dataset.mapView === "geography" && graphContentBounds(world) && svg.clientWidth > 0 && svg.clientHeight > 0) {
+    if (byId("page-map").dataset.mapView === "geography" && (world.graphFitBounds || graphContentBounds(world)) && svg.clientWidth > 0 && svg.clientHeight > 0) {
       const aspect = svg.clientWidth / svg.clientHeight;
       const frame = graphViewBox(bounds);
       width = Math.max(frame.width, frame.height * aspect);
@@ -1638,7 +1659,10 @@ function setupGraphControls(stage, width, height, previousViewport) {
     if (viewportWidth === svg.clientWidth && viewportHeight === svg.clientHeight) return;
     viewportWidth = svg.clientWidth;
     viewportHeight = svg.clientHeight;
-    if (graphAutoFit && byId("page-map").dataset.mapView === "geography" && stage.querySelector(".topology-graph") === svg) fit();
+    if (graphAutoFit && byId("page-map").dataset.mapView === "geography" && stage.querySelector(".topology-graph") === svg) {
+      cancelViewportAnimation();
+      fit(false);
+    }
   });
   stage.graphResizeObserver.observe(svg);
   stage.querySelectorAll(".graph-exit-layer .graph-exiting").forEach((component) => {

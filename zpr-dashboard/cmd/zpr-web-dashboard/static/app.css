@@ -50,7 +50,8 @@ a { color: inherit; text-decoration: none; }
 
 .main-content { max-width: 1750px; margin-left: 230px; padding: 0 39px 30px; }
 .topbar { position: sticky; top: 0; z-index: 4; display: flex; align-items: center; justify-content: space-between; gap: 12px; min-height: 42px; margin: 0 -39px; padding: 0 39px; border-bottom: 1px solid var(--line); background: #f3f6f2ed; backdrop-filter: blur(12px); }
-.topbar-status { display: flex; min-width: 0; align-items: center; gap: 18px; }
+.topbar-status { display: flex; min-width: 0; align-items: center; gap: 18px; flex-wrap: wrap; }
+.visa-service-state #metric-uptime { margin-left: 6px; font-variant-numeric: tabular-nums; }
 .top-actions .uptime-status { display: flex; align-items: baseline; gap: 6px; padding: 0 4px; }
 .top-actions .uptime-status span { color: var(--muted); font: 9px var(--mono); }
 .top-actions .uptime-status strong { font: 600 11px var(--mono); font-variant-numeric: tabular-nums; }
@@ -327,9 +328,6 @@ table { width: 100%; border-collapse: collapse; background: var(--panel); }
 thead { background: #e9eee8; }
 th { padding: 9px 10px; color: #78857c; text-align: left; font: 8px var(--mono); letter-spacing: .06em; white-space: nowrap; }
 thead th { font-weight: 700; }
-.snapshot-source-summary { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; }
-.snapshot-source-status { color: var(--muted); font-size: 11px; margin: 10px 0; }
-.snapshot-source-summary .uptime-status { display: flex; gap: 8px; align-items: center; }
 .inspector-counter-table { overflow: auto; }
 .inspector-counter-table th { white-space: normal; }
 .inspector-counter-table tbody th { font: 11px var(--sans); color: var(--ink); }
@@ -691,7 +689,7 @@ th[data-numeric="true"] .sort-button { text-align: right; justify-content: flex-
 .topology-layout.topology-only { display: block; min-height: 0; border: 1px solid var(--line); }
 .topology-page .topology-layout.topology-only { display: flex; flex: 1 1 auto; min-height: 0; }
 .topology-page .topology-stage { height: auto; min-height: 0; flex: 1 1 auto; }
-.topology-page .topology-stage svg { height: 100%; min-height: 0; }
+.topology-page .topology-stage svg { position: absolute; inset: 0; height: 100%; min-height: 0; }
 .graph-vertex { outline: none; cursor: pointer; }
 .graph-edge { outline: none; cursor: pointer; }
 .graph-link-hit { stroke: transparent; stroke-width: 20; }

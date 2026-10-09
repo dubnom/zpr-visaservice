@@ -1,14 +1,52 @@
 export function registerControlRoomGuidelineTests(test, expect) {
+  test("GUI uptime status sits beside Control Room and handles source and transport failures independently", async ({ page, appURL, api }) => {
+    api.snapshot.stats = { uptime: "120" };
+    api.snapshot.api_status = "connected";
+    await page.goto(appURL + "/#node-stats");
+    await page.locator("#pause-poll").click();
+    const source = page.locator("#visa-service-state");
+    await expect(source).toHaveAttribute("data-state", "connected");
+    await expect(source.locator("#metric-uptime")).toHaveText("2m 0s");
+    await expect(source.locator(".state-lamp")).toHaveCSS("background-color", "rgb(181, 227, 79)");
+    await expect(page.locator(".topbar-status > .connection-state")).toHaveCount(2);
+    await expect(page.locator(".snapshot-source-summary")).toHaveCount(0);
+    await expect(page.locator(".topbar")).not.toContainText("Visa Service connected");
+    for (const [state, label] of [["partial", "Partial response"], ["disconnected", "Unavailable"], ["not configured", "Not configured"]]) {
+      api.snapshot.api_status = state;
+      api.snapshot.stats = {};
+      await page.locator("#refresh-now").click();
+      await expect(source).toHaveAttribute("data-state", "disconnected");
+      await expect(source.locator("#snapshot-source-status")).toHaveText(label);
+      await expect(source.locator("#metric-uptime")).toHaveText("—");
+      await expect(source.locator(".state-lamp")).toHaveCSS("background-color", "rgb(232, 128, 112)");
+      await expect(page.locator("#api-state-text")).toHaveText("Control Room connected");
+    }
+    api.snapshot.api_status = "connected";
+    api.snapshot.stats = { uptime: "0" };
+    await page.locator("#refresh-now").click();
+    await expect(source.locator("#metric-uptime")).toHaveText("0m 0s");
+    api.handlers.set("/api/snapshot", route => route.fulfill({ status: 503, json: { error: "offline" } }));
+    await page.locator("#refresh-now").click();
+    await expect(page.locator("#api-state-text")).toHaveText("Control Room unavailable");
+    await expect(source.locator("#snapshot-source-status")).toHaveText("Snapshot unavailable");
+    await expect(source.locator("#metric-uptime")).toHaveText("—");
+    api.handlers.delete("/api/snapshot");
+    api.snapshot.stats = { uptime: "180" };
+    await page.locator("#refresh-now").click();
+    await expect(source).toHaveAttribute("data-state", "connected");
+    await expect(source.locator("#metric-uptime")).toHaveText("3m 0s");
+  });
+
   test("GUI guidelines keep the top banner application-wide and explanations in Help", async ({ page, appURL, api }) => {
     api.snapshot.api_status = "disconnected";
     api.snapshot.errors = ["Visa Service timeout"];
     api.snapshot.stats = { uptime: 120 };
     await page.goto(appURL + "/#node-stats");
     await expect(page.locator("#api-state-text")).toHaveText("Control Room connected");
-    await expect(page.locator("#snapshot-source-status")).toHaveText("Visa Service snapshot unavailable");
+    await expect(page.locator("#snapshot-source-status")).toHaveText("Unavailable");
     await expect(page.locator("#alert-strip")).toContainText("Visa Service timeout");
-    await expect(page.locator(".topbar")).not.toContainText("Visa Service");
-    await expect(page.locator(".topbar #metric-uptime")).toHaveCount(0);
+    await expect(page.locator(".topbar")).toContainText("Visa Service uptime");
+    await expect(page.locator(".topbar #metric-uptime")).toHaveCount(1);
     await expect(page.locator("#page-node-stats")).not.toContainText("Counters are cumulative");
     await page.locator(".help-trigger").click();
     await expect(page.getByRole("dialog")).toContainText("Buffered denials are a current gauge");

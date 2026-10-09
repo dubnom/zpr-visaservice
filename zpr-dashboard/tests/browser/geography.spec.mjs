@@ -110,11 +110,16 @@ test("World Map unchanged refreshes preserve screen positions without viewport a
   await page.emulateMedia({ reducedMotion: "no-preference" });
   await openGeography(page, appURL);
   await page.locator("#pause-poll").click();
-  const marker = page.locator('.graph-vertex[data-inspect-actor="steady"]');
+  await page.evaluate(async () => {
+    await document.fonts.ready;
+    await new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)));
+  });
+  const marker = page.locator('.graph-vertex[data-inspect-actor="steady"] .graph-node');
   const before = await marker.boundingBox();
   const viewBox = await page.locator(".topology-graph").getAttribute("viewBox");
   for (let refresh = 0; refresh < 3; refresh++) {
     snapshot.actors[0].node_details.last_contact = 1000 + refresh;
+    snapshot.actors[0].node_details.buffered_denials = [1, 100000, 0][refresh];
     await page.locator("#refresh-now").click();
     await expect(page.locator(".topology-graph")).toHaveAttribute("viewBox", viewBox);
     const animationCount = await page.locator(".topology-graph").evaluate(svg =>

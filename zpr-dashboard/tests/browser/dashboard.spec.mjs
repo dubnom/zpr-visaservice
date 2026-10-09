@@ -1015,6 +1015,88 @@ test("Controller JSON formatting survives type switches, refresh and disconnecti
   expect(await output.textContent()).toBe(raw + '\n{"refreshed":true}');
 });
 
+for (const view of [
+  { name: "Adapter", path: "/#adapter-logs", data: "adapterLogs", source: 1 },
+  { name: "Controller", path: "/#adapter-logs", data: "adapterLogs", source: 0 },
+  { name: "Worker", path: "/machine-logs.html", data: "workloadLogs", source: 0 },
+]) {
+  test(`GUI log layout keeps ${view.name} terminals consistent across runtime states`, async ({ page, appURL, api }) => {
+    await page.clock.install();
+    const logs = api[view.data];
+    const raw = "\u001b[31mcolored\u001b[0m <script>not markup</script>";
+    logs.machines[0].sources[view.source].lines = [raw];
+    logs.machines[1].state = "stopped";
+    await page.goto(appURL + view.path);
+    if (view.name === "Controller") await page.getByRole("button", { name: "Controller logs", exact: true }).click();
+    if (view.data === "adapterLogs") await page.locator("#adapter-log-all").click();
+    const panels = page.locator(".machine-log-panel");
+    const output = panels.first().locator(".machine-log-output");
+    await expect(output).toContainText("colored <script>not markup</script>");
+    const styles = await panels.locator(".machine-log-output").evaluateAll((elements) => elements.map((element) => {
+      const style = getComputedStyle(element);
+      return [style.backgroundColor, style.color, style.fontSize, style.lineHeight, style.padding, style.colorScheme];
+    }));
+    expect(styles.length).toBeGreaterThan(1);
+    for (const style of styles) expect(style).toEqual(["rgb(0, 0, 0)", "rgb(255, 255, 255)", "11px", "16.5px", "10px 12px", "dark"]);
+    await expect(output.locator("script")).toHaveCount(0);
+    await expect(output.locator("pre span").first()).toHaveCSS("color", "rgb(187, 0, 0)");
+    logs.machines[0].sources[view.source].error = "Source disconnected";
+    await page.clock.runFor(2100);
+    await expect(output.locator(".machine-log-error")).toHaveText("Source disconnected");
+    await expect(output).toContainText("colored <script>not markup</script>");
+    await expect(output).toHaveCSS("background-color", "rgb(0, 0, 0)");
+    await expect(output.locator(".machine-log-error")).toHaveCSS("color", "rgb(255, 183, 167)");
+  });
+
+  test(`GUI log layout keeps ${view.name} scrollports at panel bottoms with uneven headers and maximization`, async ({ page, appURL, api }) => {
+    const logs = api[view.data];
+    logs.machines[0].sources[view.source].lines = Array.from({ length: 100 }, (_, index) => `${index} ${"x".repeat(400)}`);
+    logs.machines[0].machine.model = "Long device metadata ".repeat(20);
+    await page.goto(appURL + view.path);
+    if (view.name === "Controller") await page.getByRole("button", { name: "Controller logs", exact: true }).click();
+    if (view.data === "adapterLogs") {
+      await page.locator("#adapter-log-all").click();
+      await page.locator(".machine-log-panel").first().evaluate((panel) => { panel.style.flexBasis = "240px"; });
+    }
+    const panels = page.locator(".machine-log-panel");
+    const first = panels.first();
+    if (view.data === "adapterLogs") await first.locator("header").evaluate((header) => { header.style.minHeight = "160px"; });
+    const output = first.locator(".machine-log-output");
+    await expect(output).toContainText("x".repeat(400));
+    const bounds = await panels.evaluateAll((elements) => elements.map((panel) => {
+      const rect = panel.getBoundingClientRect();
+      const output = panel.querySelector(".machine-log-output").getBoundingClientRect();
+      return { bottomGap: rect.bottom - output.bottom, height: output.height, headerHeight: panel.querySelector("header").getBoundingClientRect().height };
+    }));
+    expect(new Set(bounds.map((rect) => rect.headerHeight)).size).toBeGreaterThan(1);
+    for (const rect of bounds) {
+      expect(rect.bottomGap).toBeCloseTo(1, 1);
+      expect(rect.height).toBeGreaterThanOrEqual(280);
+      expect(rect.height).toBeLessThan(600);
+    }
+    const wrap = page.getByRole("checkbox", { name: "Wrap", exact: true });
+    await wrap.uncheck();
+    await expect.poll(() => output.evaluate((element) => element.scrollWidth > element.clientWidth)).toBe(true);
+    await expect.poll(() => output.evaluate((element) => element.scrollHeight > element.clientHeight)).toBe(true);
+    await first.getByRole("button", { name: /Maximize/ }).click();
+    await expect(first).toHaveClass(/maximized/);
+    const maximized = await output.evaluate((element) => ({
+      gap: element.parentElement.getBoundingClientRect().bottom - element.getBoundingClientRect().bottom,
+      height: element.clientHeight, viewport: innerHeight, scrollable: element.scrollHeight > element.clientHeight,
+    }));
+    expect(maximized.gap).toBeCloseTo(1, 1);
+    expect(maximized.height).toBeLessThan(maximized.viewport);
+    expect(maximized.scrollable).toBe(true);
+    await first.getByRole("button", { name: /Restore/ }).click();
+    await wrap.check();
+    await first.getByRole("button", { name: /Maximize/ }).click();
+    await expect(output.locator("pre")).toHaveCSS("white-space", "pre-wrap");
+    await expect.poll(() => output.evaluate((element) => element.scrollWidth <= element.clientWidth)).toBe(true);
+    await first.getByRole("button", { name: /Restore/ }).click();
+    await expect(first).not.toHaveClass(/maximized/);
+  });
+}
+
 test("GUI Adapter Logs places pickers in headers and toggles all panels and wrapping", async ({ page, appURL, api }) => {
   await page.goto(appURL + "/#adapter-logs");
   const panels = page.locator(".adapter-log-column");

@@ -5,10 +5,10 @@
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <meta name="theme-color" content="#17211e">
     <title>ZPR Control Room</title>
-    <link rel="stylesheet" href="/app.css?v=89">
+    <link rel="stylesheet" href="/app.css?v=91">
     <link rel="stylesheet" href="/geography.css?v=4">
     <script src="/geography.js?v=3" defer></script>
-    <link rel="stylesheet" href="/machine-logs.css?v=18">
+    <link rel="stylesheet" href="/machine-logs.css?v=19">
     <link rel="stylesheet" href="/assertions.css?v=14">
     <link rel="stylesheet" href="/sidebar.css?v=8">
     <link rel="stylesheet" href="/trusted-source.css?v=6">
@@ -65,8 +65,12 @@
         <header class="topbar">
           <div class="topbar-status">
             <div class="connection-state" id="connection-state" data-state="loading">
-              <span class="state-lamp"></span>
+              <span class="state-lamp" aria-hidden="true"></span>
               <div><strong id="api-state-text">Connecting to Control Room</strong><small id="last-updated">Waiting for first snapshot</small></div>
+            </div>
+            <div class="connection-state visa-service-state" id="visa-service-state" data-state="disconnected" role="status">
+              <span class="state-lamp" aria-hidden="true"></span>
+              <div><strong>Visa Service uptime <span id="metric-uptime">—</span></strong><small id="snapshot-source-status">Waiting for Visa Service snapshot</small></div>
             </div>
           </div>
           <div class="top-actions">
@@ -90,7 +94,6 @@
             <button id="refresh-now" class="button button-refresh" type="button" title="Refresh now">Refresh <span aria-hidden="true">↻</span></button>
           </div>
         </header>
-        <div class="snapshot-source-summary"><p id="snapshot-source-status" class="snapshot-source-status" role="status">Waiting for Visa Service snapshot</p><span class="uptime-status"><span>VISA SERVICE UPTIME</span><strong id="metric-uptime">—</strong></span></div>
         <div id="alert-strip" class="alert-strip" hidden role="status"></div>
 
         <nav id="status-tabs" class="status-tabs" aria-label="Status pages" hidden>
@@ -576,7 +579,7 @@
     <script src="/editor-page.js?v=16" defer></script>
     <script src="/assistant-core.js?v=1" defer></script>
     <script src="/node-stats.js?v=6" defer></script>
-    <script src="/app.js?v=141" defer></script>
+    <script src="/app.js?v=143" defer></script>
     <script src="/log-format.js?v=1" defer></script>
     <script src="/machine-logs.js?v=23" defer></script>
     <script src="/assertions.js?v=28" defer></script>
