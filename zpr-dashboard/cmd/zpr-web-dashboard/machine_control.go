@@ -207,11 +207,20 @@ func runMachineController(machineID, controlURL, caFile, certFile, keyFile, phBi
 		_ = phLog.Close()
 		return fmt.Errorf("start machine ZPR adapter: %w", err)
 	}
-	phDone := make(chan error, 1)
-	go func() { phDone <- ph.Wait() }()
+	phDone := make(chan struct{})
+	var phErr error
+	go func() {
+		phErr = ph.Wait()
+		close(phDone)
+	}()
 	defer func() {
 		_ = ph.Process.Signal(os.Interrupt)
-		<-phDone
+		select {
+		case <-phDone:
+		case <-time.After(5 * time.Second):
+			_ = ph.Process.Kill()
+			<-phDone
+		}
 		_ = phLog.Close()
 	}()
 	certificate, err := tls.LoadX509KeyPair(certFile, keyFile)
@@ -250,8 +259,8 @@ func runMachineController(machineID, controlURL, caFile, certFile, keyFile, phBi
 			break
 		}
 		select {
-		case err := <-phDone:
-			return fmt.Errorf("machine ZPR adapter exited before becoming active: %w", err)
+		case <-phDone:
+			return fmt.Errorf("machine ZPR adapter exited before becoming active: %v", phErr)
 		default:
 		}
 		time.Sleep(time.Second)

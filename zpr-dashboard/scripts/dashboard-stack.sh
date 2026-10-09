@@ -1097,7 +1097,14 @@ start_machine_container() {
     resolve_machine_placement
     case "$machine_runtime_driver" in
         linux-one-node) machine_arch=arm64 ;;
-        docker-multinode) machine_arch=amd64 ;;
+        docker-multinode)
+            machine_host_arch=$(docker info --format '{{.Architecture}}')
+            case "$machine_host_arch" in
+                arm64|aarch64) machine_arch=arm64 ;;
+                amd64|x86_64) machine_arch=amd64 ;;
+                *) echo "unsupported Docker machine architecture: $machine_host_arch" >&2; return 1 ;;
+            esac
+            ;;
         *) echo "unsupported machine runtime driver: $machine_runtime_driver" >&2; return 1 ;;
     esac
     existing=$(docker inspect -f '{{.State.Status}}' "$container" 2>/dev/null || true)
@@ -1119,10 +1126,10 @@ start_machine_container() {
         machine_control_address=$(cat "$MACHINE_CONTROL_ADDRESS_FILE")
         case "$machine_control_address" in *:*) ;; *) echo "invalid multinode SimulatorControl address" >&2; return 1 ;; esac
         machine_control_url="https://[$machine_control_address]:8792"
-        prepare_machine_workloads
+        prepare_machine_workloads "$machine_arch"
     else
         start_zpr_machine_control_service
-        prepare_machine_workloads
+        prepare_machine_workloads "$machine_arch"
         stop_legacy_named_workloads
         if [ -z "${RIG_IP:-}" ]; then
             RIG_IP=$(docker inspect -f '{{range .NetworkSettings.Networks}}{{.IPAddress}}{{end}}' "$SIMULATION_CONTAINER")
@@ -1305,7 +1312,24 @@ stop_legacy_named_workloads() {
     done
 }
 
+build_arm64_machine_workload_tools() {
+    arm64_builder_image=zpr-machine-workload-arm64-builder:local
+    arm64_builder_dir="$PROJECT_ROOT/zpr-demo/multinode-demo"
+    arm64_cargo_home="$RUNTIME_DIR/arm64-machine-workload-cargo"
+    mkdir -p "$arm64_cargo_home"
+    if ! docker image inspect "$arm64_builder_image" >/dev/null 2>&1; then
+        docker build --platform linux/arm64 -t "$arm64_builder_image" \
+            -f "$arm64_builder_dir/Dockerfile.build-linux" "$arm64_builder_dir"
+    fi
+    docker run --rm --platform linux/arm64 -e ZPR_ROOT=/work -e CARGO_HOME=/cargo-home \
+        -v "$PROJECT_ROOT:/work" -v "$arm64_cargo_home:/cargo-home" "$arm64_builder_image" \
+        /bin/bash /work/zpr-demo/multinode-demo/build-linux-arm64-machine-tools.sh
+    cp "$PROJECT_ROOT/zpr-core/target/linux-arm64-machine-tools/release/ph" "$MACHINE_WORKLOAD_DIR/ph"
+    cp "$PROJECT_ROOT/zpr-core/target/linux-arm64-machine-tools/release/ph-cli" "$MACHINE_WORKLOAD_DIR/ph-cli"
+}
+
 prepare_machine_workloads() {
+    workload_arch=$1
     mkdir -p "$MACHINE_WORKLOAD_DIR"
     chmod 700 "$MACHINE_WORKLOAD_DIR"
     machine_organization=${SIMULATION_ORGANIZATION_ID:-$(jq -r '.organization_id // "northstar"' "$SIMULATION_MANIFEST")}
@@ -1315,7 +1339,7 @@ prepare_machine_workloads() {
     fi
     machine_profile="$ORGANIZATIONS_DIR/$machine_organization.json"
     machine_runtime_driver=$(jq -er '.runtime.driver' "$machine_profile")
-    workload_runtime_marker="$machine_runtime_driver:$machine_organization"
+    workload_runtime_marker="$machine_runtime_driver:$machine_organization:$workload_arch"
     if [ "$(cat "$MACHINE_WORKLOAD_DIR/.runtime" 2>/dev/null || true)" = "$workload_runtime_marker" ] && [ -x "$MACHINE_WORKLOAD_DIR/ph" ]; then
         return 0
     fi
@@ -1325,8 +1349,12 @@ prepare_machine_workloads() {
         node_container="$machine_organization-node0"
         runtime_root="$RUNTIME_DIR/multinode/$machine_organization"
         pregen="$RUNTIME_DIR/linux-integration/pregen"
-        docker cp "$node_container:/app/bin/ph" "$MACHINE_WORKLOAD_DIR/ph"
-        docker cp "$node_container:/app/bin/ph-cli" "$MACHINE_WORKLOAD_DIR/ph-cli"
+        if [ "$workload_arch" = arm64 ]; then
+            build_arm64_machine_workload_tools
+        else
+            docker cp "$node_container:/app/bin/ph" "$MACHINE_WORKLOAD_DIR/ph"
+            docker cp "$node_container:/app/bin/ph-cli" "$MACHINE_WORKLOAD_DIR/ph-cli"
+        fi
         cp "$runtime_root/conf/node0/include/auth-ca.crt" "$MACHINE_WORKLOAD_DIR/ca.crt"
         for file in client-finance-rsa.key client-operations-rsa.key client-telemetry-rsa.key service-echo-rsa.key service-metrics-rsa.key internet-gateway-rsa.key; do
             cp "$pregen/$file" "$MACHINE_WORKLOAD_DIR/$file"
@@ -1347,8 +1375,12 @@ prepare_machine_workloads() {
     fi
     RIG_IP=$(docker inspect -f '{{range .NetworkSettings.Networks}}{{.IPAddress}}{{end}}' "$SIMULATION_CONTAINER")
     DOCKER_SUBNET=$(docker network inspect bridge --format '{{(index .IPAM.Config 0).Subnet}}')
-    docker cp "$SIMULATION_CONTAINER:/tmp/zpr-core-target/debug/ph" "$MACHINE_WORKLOAD_DIR/ph"
-    docker cp "$SIMULATION_CONTAINER:/tmp/zpr-core-target/debug/ph-cli" "$MACHINE_WORKLOAD_DIR/ph-cli"
+    if [ "$workload_arch" = arm64 ]; then
+        build_arm64_machine_workload_tools
+    else
+        docker cp "$SIMULATION_CONTAINER:/tmp/zpr-core-target/debug/ph" "$MACHINE_WORKLOAD_DIR/ph"
+        docker cp "$SIMULATION_CONTAINER:/tmp/zpr-core-target/debug/ph-cli" "$MACHINE_WORKLOAD_DIR/ph-cli"
+    fi
     for file in ca.crt client-finance-rsa.key client-operations-rsa.key client-telemetry-rsa.key service-echo-rsa.key service-metrics-rsa.key internet-gateway-rsa.key; do
         docker cp "$SIMULATION_CONTAINER:$rig_dir/$file" "$MACHINE_WORKLOAD_DIR/$file"
     done
