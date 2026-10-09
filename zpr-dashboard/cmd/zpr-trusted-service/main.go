@@ -261,7 +261,7 @@ func main() {
 	ldapAttributes := flag.String("ldap-attributes", "", "comma-separated LDAP attributes to return")
 	ldapGroupsBase := flag.String("ldap-groups-base", "", "optional LDAP group search base DN for groupOfNames role membership")
 	ldapChangesBase := flag.String("ldap-changes-base", "", "optional OpenLDAP accesslog suffix (for example cn=accesslog) that enables GET /v1/changes")
-	ldapChangesRetention := flag.Duration("ldap-changes-retention", 7*24*time.Hour, "age of changes guaranteed retained by the accesslog logpurge setting; older cursors expire")
+	ldapChangesRetention := flag.Duration("ldap-changes-retention", 24*time.Hour, "age of changes guaranteed retained by the accesslog logpurge setting; older cursors expire")
 	ldapChangesSettle := flag.Duration("ldap-changes-settle", 2*time.Second, "delay before a logged write becomes visible to pollers")
 	ldapWatch := flag.Bool("ldap-watch", false, "consume LDAP sync changes as metadata-only JSON lines on stdout instead of serving HTTPS")
 	flag.Parse()

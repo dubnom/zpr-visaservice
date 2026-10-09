@@ -157,6 +157,10 @@ func runControlService() error {
 		}
 	}()
 	admin, configErr := newAdminClient()
+	trustedChanges, err := newTrustedSourceChanges(strings.TrimSpace(os.Getenv("ZPR_TRUSTED_CHANGE_FEEDS_FILE")))
+	if err != nil {
+		return err
+	}
 	assertions, err := newAssertionRuntime()
 	if err != nil {
 		return err
@@ -193,6 +197,7 @@ func runControlService() error {
 	mux.Handle("/api/enrollment/", enrollmentAPI)
 	mux.Handle("/api/operator-enrollment/", enrollmentAPI)
 	assertions.register(mux)
+	trustedChanges.register(mux)
 	gatewayAPI := newGatewayAPI(strings.TrimSpace(os.Getenv("ZPR_GATEWAY_ORGANIZATION_ID")), gatewaySnapshotReaderFromApplication(app), gatewayStore)
 	mux.Handle("/api/gateways/", gatewayAPI)
 	mux.HandleFunc("GET /api/snapshot", app.handleSnapshot)

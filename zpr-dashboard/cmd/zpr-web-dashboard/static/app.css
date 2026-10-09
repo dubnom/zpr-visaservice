@@ -190,7 +190,8 @@ h1 { margin-bottom: 6px; font-size: 28px; line-height: 1.15; letter-spacing: 0; 
 .graph-dark .graph-link.dock-link { stroke: #8bbbd3; }
 .graph-dark .graph-link.service-link { stroke: #edb47f; }
 .graph-dark .graph-link.gateway-cloud-link { stroke: #a2b4ac; }
-.graph-dark .graph-cloud { fill: #354b44; stroke: #b3c9be; }
+.graph-dark .graph-cloud { fill: #263e4a; stroke: #a8cadd; }
+.graph-dark .graph-cloud-label { fill: #e5f2f8; }
 .graph-dark #graph-world .graph-visa-count.empty rect { stroke: #9ce4bc; }
 .graph-dark #graph-world .graph-visa-count:not(.empty) rect { fill: #174d3d; stroke: #b0e6c6; }
 .graph-arrival-marker { pointer-events: none; }
@@ -239,8 +240,9 @@ h1 { margin-bottom: 6px; font-size: 28px; line-height: 1.15; letter-spacing: 0; 
 .graph-node.synced { fill: #eaf4d9; stroke: #367453; }
 .graph-adapter { fill: #f0f5f7; stroke: #7c9aaa; stroke-width: 1.5; }
 .graph-gateway { fill: #ffd36a; stroke: #754000; stroke-width: 3; filter: drop-shadow(0 0 4px #d18a1d88); }
-.graph-cloud { fill: #454545; stroke: #2e2e2e; stroke-width: 2; }
-.graph-link.gateway-cloud-link { stroke: #606060; stroke-width: 2; }
+.graph-cloud { fill: #d9eaf3; stroke: #315f78; stroke-width: 2.5; }
+.graph-cloud-label { fill: #173d52; font: 700 9px var(--mono); pointer-events: none; }
+.graph-link.gateway-cloud-link { stroke: #315f78; stroke-width: 3; stroke-linecap: round; }
 .graph-platform { fill: #f6f1e5; stroke: #b49762; stroke-width: 1.5; }
 .graph-visa { fill: #f7d8ad; stroke: #b86b30; stroke-width: 2.5; }
 .graph-label { fill: #23332c; font: 11px var(--mono); text-anchor: middle; }

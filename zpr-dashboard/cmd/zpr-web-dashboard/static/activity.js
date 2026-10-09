@@ -1,5 +1,5 @@
 var $ = (selector) => document.querySelector(selector);
-var esc = (value) => String(value ?? "—").replace(/[&<>\"]/g, (character) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", "\"": "&quot;" }[character]));
+var esc = (value) => window.ZPRSafeDisplay.escapeHTML(value ?? "—");
 
 const activitySort = {
 	"activity-visas": { key: "expires", direction: -1 },

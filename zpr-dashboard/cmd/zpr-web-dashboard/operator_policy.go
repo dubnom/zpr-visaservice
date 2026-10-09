@@ -26,6 +26,11 @@ func controlRoomAPIPermission(method, path string) (string, bool) {
 		switch path {
 		case "/api/snapshot", "/api/diagnostics", "/api/adapter-logs", "/api/dns/records":
 			return "monitor.read", true
+		case "/api/trusted-sources/change-feeds":
+			return "policy.read", true
+		}
+		if strings.HasPrefix(path, "/api/trusted-sources/change-feeds/") {
+			return "policy.read", true
 		}
 		if strings.HasPrefix(path, "/api/actors/") && strings.HasSuffix(path, "/visas") ||
 			strings.HasPrefix(path, "/api/dns/stats/") {

@@ -378,7 +378,7 @@ async function loadDNSRecords(force = false) {
 }
 
 function visibleRows(page, rows, columns) {
-  const query = byId(`${page === "actors" ? "actor-search" : `${page}-filter`}`).value.trim().toLowerCase();
+  const query = byId(`${page === "actors" ? "actor-search" : `${page}-filter`}`)?.value.trim().toLowerCase() || "";
   const filtered = rows.filter((row) => !query || Object.values(columns).some((value) => String(value(row) ?? "").toLowerCase().includes(query)));
   const sort = state.sorts[page];
   if (!sort) return filtered;
@@ -1064,59 +1064,44 @@ function renderTopology(data, exitComponents = []) {
     const nodeCenter = positions.get(node.cn);
     const attached = attachedByNode.get(node.cn) || [];
     if (!attached.length) return;
-    const radius = clusterRadius(node);
+    let radius = clusterRadius(node);
     const extents = attached.map((actor) => actorExtent(actor) + 18);
-    const gaps = attached.map((_, slot) => {
-      const next = (slot + 1) % attached.length;
-      return (extents[slot] + extents[next] + 20) / radius;
-    });
-    const spareAngle = Math.max(0, 2 * Math.PI - gaps.reduce((sum, gap) => sum + gap, 0)) / attached.length;
     const directions = networkEdges.filter((edge) => edge.from.cn === node.cn || edge.to.cn === node.cn).map((edge) => {
       const other = positions.get(edge.from.cn === node.cn ? edge.to.cn : edge.from.cn);
-      return Math.atan2(other.y - nodeCenter.y, other.x - nodeCenter.x);
-    });
-    const offsets = [0];
-    for (let slot = 0; slot < attached.length - 1; slot++) offsets.push(offsets.at(-1) + gaps[slot]);
-    const span = offsets.at(-1);
+      return other.x === nodeCenter.x && other.y === nodeCenter.y ? null : Math.atan2(other.y - nodeCenter.y, other.x - nodeCenter.x);
+    }).filter((direction) => direction != null).sort((a, b) => a - b);
     let centerAngle = -Math.PI / 2;
-    if (directions.length && span < 2 * Math.PI) {
-      const packedOffsets = offsets.map((offset) => offset - span / 2);
-      let clearance = -1;
-      // Pack children into one arc, then place that arc at maximum angular distance from links.
-      for (let step = 0; step < 180; step++) {
-        const candidate = -Math.PI + step * Math.PI / 90;
-        let distance = Infinity;
-        for (const offset of packedOffsets) for (const direction of directions) {
-          const delta = candidate + offset - direction;
-          distance = Math.min(distance, Math.abs(Math.atan2(Math.sin(delta), Math.cos(delta))));
-        }
-        if (distance > clearance) {
-          clearance = distance;
-          centerAngle = candidate;
-        }
-      }
-    } else if (span >= 2 * Math.PI) {
-      const angles = [];
-      let angle = -Math.PI / 2;
-      for (const gap of gaps) {
-        angles.push(angle);
-        angle += gap + spareAngle;
-      }
-      let rotation = 0, clearance = -1;
-      for (let step = 0; directions.length && step < 120; step++) {
-        const candidate = step * Math.PI / 60;
-        let distance = Infinity;
-        for (const a of angles) for (const b of directions) {
-          distance = Math.min(distance, Math.abs(Math.atan2(Math.sin(a + candidate - b), Math.cos(a + candidate - b))));
-        }
-        if (distance > clearance) { clearance = distance; rotation = candidate; }
-      }
+    if (!directions.length) {
       attached.forEach((adapter, slot) => {
-        const angle = angles[slot] + rotation;
+        const angle = centerAngle + slot * 2 * Math.PI / attached.length;
         positions.set(adapter.cn, { x: nodeCenter.x + Math.cos(angle) * radius, y: nodeCenter.y + Math.sin(angle) * radius });
       });
       return;
     }
+    let openAngle = 0;
+    directions.forEach((direction, index) => {
+      const next = index + 1 < directions.length ? directions[index + 1] : directions[0] + 2 * Math.PI;
+      if (next - direction > openAngle) {
+        openAngle = next - direction;
+        centerAngle = (direction + next) / 2;
+      }
+    });
+    const availableAngle = Math.min(Math.PI, openAngle * 0.75);
+    const offsetsAtRadius = () => {
+      const offsets = [0];
+      for (let slot = 1; slot < attached.length; slot++) {
+        offsets.push(offsets.at(-1) + 2 * Math.asin(Math.min(1, (extents[slot - 1] + extents[slot] + 20) / (2 * radius))));
+      }
+      return offsets;
+    };
+    let offsets = offsetsAtRadius();
+    const largestExtent = Math.max(...extents);
+    // Grow the arc radius to keep service rings and gateway clouds inside a link-free sector.
+    while (offsets.at(-1) + 2 * Math.asin(Math.min(1, largestExtent / radius)) > availableAngle) {
+      radius *= 1.15;
+      offsets = offsetsAtRadius();
+    }
+    const span = offsets.at(-1);
     attached.forEach((adapter, slot) => {
       const angle = centerAngle + offsets[slot] - span / 2;
       positions.set(adapter.cn, { x: nodeCenter.x + Math.cos(angle) * radius, y: nodeCenter.y + Math.sin(angle) * radius });
@@ -1292,7 +1277,8 @@ function renderTopology(data, exitComponents = []) {
       const cloudX = pos.x + Math.cos(angle) * distance;
       const cloudY = pos.y + Math.sin(angle) * distance;
       const externalNetworks = [...new Set((servicesByActor.get(actor.cn) || []).filter(isGatewayService).map((service) => service.external_network_connection || "External network"))].join(", ");
-      cloudMarkup = `<g class="graph-external-network"><title>${escapeHTML(externalNetworks)}</title><line class="graph-link gateway-cloud-link" x1="${pos.x}" y1="${pos.y}" x2="${cloudX}" y2="${cloudY}"/><path class="graph-cloud" transform="translate(${cloudX} ${cloudY})" d="M -34 22 C -60 22 -62 -12 -39 -17 C -40 -43 -2 -49 9 -28 C 31 -42 52 -22 46 -5 C 68 0 62 22 42 22 Z"/></g>`;
+      const cloudLabel = externalNetworks.length > 15 ? `${externalNetworks.slice(0, 14)}…` : externalNetworks;
+      cloudMarkup = `<g class="graph-external-network" role="img" aria-label="Gateway connection to ${escapeHTML(externalNetworks)}"><title>Gateway connection to ${escapeHTML(externalNetworks)}</title><line class="graph-link gateway-cloud-link" x1="${pos.x}" y1="${pos.y}" x2="${cloudX}" y2="${cloudY}"/><path class="graph-cloud" transform="translate(${cloudX} ${cloudY})" d="M -34 22 C -60 22 -62 -12 -39 -17 C -40 -43 -2 -49 9 -28 C 31 -42 52 -22 46 -5 C 68 0 62 22 42 22 Z"/><text class="graph-cloud-label" x="${cloudX}" y="${cloudY + 8}" text-anchor="middle">${escapeHTML(cloudLabel)}</text></g>`;
     }
     const vertexKind = isNode ? "node" : isGateway ? "gateway" : isVisaService ? "visa" : "adapter";
     const highlighted = mapMark(matches(actor), legendKind === vertexKind);
@@ -4307,7 +4293,7 @@ const pageRenderers = {
 
 for (const [page, renderPage] of Object.entries(pageRenderers)) {
   const filterId = page === "actors" ? "actor-search" : `${page}-filter`;
-  byId(filterId).addEventListener("input", () => state.snapshot && renderPage(state.snapshot));
+  byId(filterId)?.addEventListener("input", () => state.snapshot && renderPage(state.snapshot));
 }
 
 for (const table of document.querySelectorAll("table[data-sort-page]")) {

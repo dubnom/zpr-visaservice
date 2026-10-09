@@ -78,16 +78,22 @@ attribute names, never values.
 GET /v1/changes                    -> {"changes":[],"cursor":"<head>","more":false}
 GET /v1/changes?cursor=<c>&limit=N -> {"changes":[{"cursor","time","type","dn","new_dn"?,
                                         "entry_uuid"?,"attributes"?}],"cursor":"<next>","more":bool}
+GET /v1/changes?since=<RFC3339|duration>&limit=N -> the first page from the inclusive lookback time
 ```
 
 - With no cursor, the response is a baseline cursor. Do a full sync through `/v1/attributes`,
   then poll with the cursor you received. Always pass back the latest response `cursor`.
+- A `since` bootstrap returns changes starting at that time, including other writes with the
+  same accesslog second stamp. It is mutually exclusive with `cursor` and is intended for
+  bounded history views that do not have a saved cursor. Duration lookbacks such as `24h`
+  are calculated using the trusted-service clock and cannot exceed configured retention.
 - `type` is `add`, `delete`, `modify`, or `modrdn`. `modrdn` includes `new_dn`.
   Operational attributes are omitted from `attributes`.
 - `limit` is 1–500 (default 100). When `more` is true, poll again immediately.
 - Writes become visible after `-ldap-changes-settle` (default 2s) plus up to one second.
-- A cursor older than `-ldap-changes-retention` (default 168h) whose entry was purged returns
-  `410 {"error":"cursor_expired"}`. The caller must full-sync and request a new baseline.
+- A cursor or `since` time older than `-ldap-changes-retention` (default 24h) whose entry was
+  purged returns `410 {"error":"cursor_expired"}`. The caller must full-sync and request a
+  new baseline, or restart a bounded history view from a time within retention.
   Keep the retention at or below the slapd `logpurge` age.
 - Responses are `400` for bad parameters and `503` when the change log is unavailable.
 
@@ -108,7 +114,7 @@ overlay accesslog
 logdb "cn=accesslog"
 logops writes
 logsuccess TRUE
-logpurge 07+00:00 01+00:00
+logpurge 01+00:00 01+00:00
 ```
 
 Imports done with `slapadd` are not logged. A directory reseed therefore needs a caller full

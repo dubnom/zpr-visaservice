@@ -650,6 +650,22 @@ const test = base.extend({
           group_attributes: { Operators: { description: ["Directory operators"] } },
         },
       },
+      trustedChangeFeeds: [{ name: "great_lakes_ldap", display_name: "Great Lakes LDAP" }],
+      trustedChanges: {
+        changes: [{
+          cursor: "change-1", time: "2026-10-07T14:00:00Z", type: "modify",
+          dn: "uid=alice,dc=alpha,dc=test", attributes: ["mail", "title"],
+        }],
+        cursor: "cursor-1", more: true,
+      },
+      trustedChangesNext: {
+        changes: [{
+          cursor: "change-2", time: "2026-10-07T14:01:00Z", type: "modrdn",
+          dn: "uid=alice,dc=alpha,dc=test", new_dn: "uid=alice,ou=People,dc=alpha,dc=test",
+          attributes: ["cn"],
+        }],
+        cursor: "cursor-2", more: false,
+      },
       counts: new Map(),
       handlers: new Map(),
       statuses: new Map(),
@@ -659,6 +675,11 @@ const test = base.extend({
       data.counts.set(path, (data.counts.get(path) || 0) + 1);
       if (data.handlers.has(path)) {
         await data.handlers.get(path)(route);
+        return;
+      }
+      if (path.startsWith("/api/trusted-sources/change-feeds/") && path.endsWith("/changes")) {
+        const cursor = new URL(route.request().url()).searchParams.get("cursor");
+        await route.fulfill({ json: cursor ? data.trustedChangesNext : data.trustedChanges });
         return;
       }
       const bodies = {
@@ -682,6 +703,7 @@ const test = base.extend({
         "/api/simulator/organizations": data.organizations,
         "/api/assertions": data.assertions,
         "/api/assertions/source": data.assertionSource,
+        "/api/trusted-sources/change-feeds": { sources: data.trustedChangeFeeds },
         "/api/simulator/trusted-source": { ...data.assertionSource, source_name: "Organization LDAP" },
       };
       if (!Object.hasOwn(bodies, path)) {
@@ -4263,6 +4285,27 @@ test("Simulator Scenarios groups unfiled entries and clears only terminal run hi
   await expect(editorAction).toHaveValue("resolve_dns");
 });
 
+test("Scenario run-state mutations report malformed JSON without retrying", async ({ page, appURL, api }) => {
+  const scenario = {
+    id: "sample-flow", name: "Sample flow", folder: "", description: "A browser fixture.",
+    organization_id: "alpha", current_revision: 1, published_revision: 1, steps: [], cleanup: [],
+  };
+  api.handlers.set("/api/simulator/scenarios", (route) => route.fulfill({ json: {
+    active_organization_id: "alpha",
+    organization: { name: "Alpha Labs" },
+    scenarios: [scenario],
+    run: { scenario_id: scenario.id, scenario_name: scenario.name, state: "completed", steps: [] },
+  } }));
+  api.handlers.set("/api/simulator/scenarios/clear", (route) => route.fulfill({
+    status: 502, contentType: "text/html", body: "upstream unavailable",
+  }));
+  await page.goto(appURL + "/scenarios.html");
+  await page.locator("#scenario-clear").click();
+  await expect(page.locator("#scenario-error")).toHaveText("HTTP 502: invalid JSON response");
+  await expect(page.locator("#scenario-clear")).toBeEnabled();
+  expect(api.counts.get("/api/simulator/scenarios/clear")).toBe(1);
+});
+
 test("assertion picker lines omit counts and revisions and distinguish record kinds by color", async ({ page, appURL, api }) => {
   await page.goto(appURL + "/#policy");
   await openPolicyPicker(page);
@@ -4529,7 +4572,11 @@ test("sortable tables show defaults and clicks select then reverse a column", as
   expect(api.counts.get("/api/snapshot")).toBeGreaterThan(0);
 });
 
-test("Trusted Sources omits explanatory headings and counts while retaining source controls", async ({ page, appURL, api }) => {
+test("Trusted Sources omits explanatory headings, counts, and the top table filter", async ({ page, appURL, api }) => {
+  api.snapshot.trusted_sources = [
+    { name: "Primary LDAP", provider: "LDAP", actor_cn: "directory-a", health: "working", last_lookup_ms: 1780000000000 },
+    { name: "Secondary Directory", provider: "LDAP", actor_cn: "directory-b", health: "unverified", last_lookup_ms: null },
+  ];
   await page.goto(appURL + "/#sources");
   const sources = page.locator("#page-sources");
   await expect(sources).toBeVisible();
@@ -4538,8 +4585,11 @@ test("Trusted Sources omits explanatory headings and counts while retaining sour
   await expect(sources).not.toContainText("attribute sources");
   await expect(sources).not.toContainText("Lookup labels reflect actual attribute requests");
   await expect(page.locator("#trusted-count")).toHaveCount(0);
-  await expect(page.getByRole("searchbox", { name: "Filter trusted sources", exact: true })).toBeVisible();
+  await expect(page.locator("#sources-filter")).toHaveCount(0);
   await expect(sources.locator("table[data-sort-page=sources]")).toBeVisible();
+  await expect(sources.locator("#trusted-list tr[data-inspect-source]")).toHaveCount(2);
+  const browser = sources.locator("trusted-source-browser");
+  await expect(browser.locator("[data-source-title]")).toHaveText("Trusted source: Trusted LDAP");
 });
 
 test("GUI raw scenario editor switches to YAML and analyzes before saving", async ({ page, appURL, api }) => {
@@ -4584,7 +4634,7 @@ test("Control Room sidebar links Adapter Logs internally and promotes external m
 test("Control Room trusted source panel browses records read-only", async ({ page, appURL, api }) => {
   await page.goto(appURL + "/#sources");
   const browser = page.locator("trusted-source-browser");
-  await expect(browser.locator("[data-source-title]")).toHaveText("Trusted LDAP");
+  await expect(browser.locator("[data-source-title]")).toHaveText("Trusted source: Trusted LDAP");
   await expect(browser.locator("[data-source-meta]")).toContainText("dc=alpha,dc=test");
   await expect(browser.locator(".trusted-source-table")).toContainText("alice");
   await browser.getByRole("tab", { name: "Groups" }).click();
@@ -4596,6 +4646,36 @@ test("Control Room trusted source panel browses records read-only", async ({ pag
   await expect(browser.locator(".trusted-source-table")).not.toContainText("title");
   await expect(browser.getByRole("button", { name: /Save|Edit|Delete|Publish/ })).toHaveCount(0);
   expect(api.counts.get("/api/assertions/source")).toBeGreaterThan(0);
+});
+
+test("Control Room Trusted Sources shows one-day metadata-only updates with cursor paging", async ({ page, appURL, api }) => {
+  await page.goto(appURL + "/#sources");
+  const browser = page.locator("trusted-source-browser");
+  await browser.getByRole("tab", { name: "Updates (24h)" }).click();
+  await expect(browser.getByRole("combobox", { name: "Trusted source update feed" })).toHaveValue("great_lakes_ldap");
+  await expect(browser.locator(".trusted-source-changes")).toContainText("uid=alice,dc=alpha,dc=test");
+  await expect(browser.locator(".trusted-source-changes")).toContainText("mail, title");
+  await expect(browser.locator(".trusted-source-changes")).not.toContainText("alice@example.test");
+  const nextPage = browser.getByRole("button", { name: "Load more updates" });
+  await expect(nextPage).toBeVisible();
+  await nextPage.click();
+  await expect(browser.locator(".trusted-source-changes tbody tr")).toHaveCount(2);
+  await expect(browser.locator(".trusted-source-changes")).toContainText("uid=alice,ou=People,dc=alpha,dc=test");
+  expect(api.counts.get("/api/trusted-sources/change-feeds") || 0).toBe(1);
+  expect(api.counts.get("/api/trusted-sources/change-feeds/great_lakes_ldap/changes") || 0).toBe(2);
+});
+
+test("Control Room Trusted Sources can continue through an empty update page", async ({ page, appURL, api }) => {
+  api.trustedChanges = { changes: [], cursor: "empty-page-cursor", more: true };
+  await page.goto(appURL + "/#sources");
+  const browser = page.locator("trusted-source-browser");
+  await browser.getByRole("tab", { name: "Updates (24h)" }).click();
+  await expect(browser.locator("[data-source-message]")).toHaveText("No updates on this page; more history is available.");
+  const nextPage = browser.getByRole("button", { name: "Load more updates" });
+  await expect(nextPage).toBeVisible();
+  await nextPage.click();
+  await expect(browser.locator(".trusted-source-changes tbody tr")).toHaveCount(1);
+  await expect(browser.locator(".trusted-source-changes")).toContainText("uid=alice,dc=alpha,dc=test");
 });
 
 test("Trusted Sources tables sort, split group cn/objectClass and condense people rows", async ({ page, appURL, api }) => {
@@ -6625,7 +6705,7 @@ test(`map pulses only the requesting adapter for new grants and denials (${reduc
 test("service types share table and map colors and gateways have clouds", async ({ page, appURL, api }) => {
   const kinds = ["BuiltIn", "Regular", "Visa", "Gateway", "ZPR", "Policy", "Control", "Auth", "Attribute", "Application", "Node", "Logger", 'Trusted("file")', 'Trusted("rest/1")', null, 'Trusted("custom")'];
   api.snapshot.actors = [{ cn: "adapter", node: false, zpr_addr: "fd00::1" }];
-  api.snapshot.services = kinds.map((kind, index) => ({ service_name: `service-${index}`, service_kind: kind, actor_cn: "adapter", zpr_addr: "fd00::1", service_endpoints: "tcp:8080" }));
+  api.snapshot.services = kinds.map((kind, index) => ({ service_name: `service-${index}`, service_kind: kind, actor_cn: "adapter", zpr_addr: "fd00::1", service_endpoints: "tcp:8080", ...(kind === "Gateway" ? { external_network_connection: "partner-network" } : {}) }));
   await page.goto(appURL + "/#services");
   const chips = page.locator(".service-type-chip");
   await expect(chips).toHaveCount(kinds.length);
@@ -6661,8 +6741,12 @@ test("service types share table and map colors and gateways have clouds", async 
   await badges.evaluateAll((elements) => elements.forEach((element) => element.classList.replace("arriving", "graph-exiting")));
   expect(await readMapColors()).toEqual(colors);
   await expect(page.locator(".graph-cloud")).toHaveCount(1);
-  await expect(page.locator(".graph-cloud")).toHaveCSS("fill", "rgb(69, 69, 69)");
+  await expect(page.locator(".graph-cloud")).toHaveCSS("fill", "rgb(217, 234, 243)");
+  await expect(page.locator(".graph-cloud-label")).toHaveText("partner-network");
+  await expect(page.locator(".graph-external-network")).toHaveAttribute("aria-label", "Gateway connection to partner-network");
   await expect(page.locator(".gateway-cloud-link")).toHaveCount(1);
+  await expect(page.locator(".gateway-cloud-link")).toHaveCSS("stroke", "rgb(49, 95, 120)");
+  await expect(page.locator(".gateway-cloud-link")).toHaveCSS("stroke-width", "3px");
 });
 
 test("Gateways edits multiple gateway drafts with the policy editor paradigm without activating them", async ({ page, appURL, api }) => {
@@ -7477,6 +7561,7 @@ test("GUI Map connectors meet actual glyph edges for every shape", async ({ page
     Array.from({ length: 5 }, (_, slot) => ({
       actor_cn: actor, service_name: `${actor}-service-${slot}`,
       service_kind: index === 2 ? "Visa" : index === 3 ? "Gateway" : "Application",
+      ...(index === 3 ? { external_network_connection: "partner-network" } : {}),
       service_endpoints: "TCP/443",
     })));
   await page.goto(appURL + "/#map");
@@ -7543,6 +7628,10 @@ test("GUI Map connectors meet actual glyph edges for every shape", async ({ page
     }
   });
   await verify();
+  await expect(page.locator(".graph-cloud-label")).toHaveText("partner-network");
+  await page.getByRole("button", { name: "World Map", exact: true }).click();
+  await verify();
+  await expect(page.locator(".graph-cloud-label")).toHaveText("partner-network");
 });
 
 test("GUI Map keeps Dark mode hidden on populated and empty maps", async ({ page, appURL, api }) => {

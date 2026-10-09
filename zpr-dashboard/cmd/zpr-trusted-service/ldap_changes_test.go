@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"strings"
 	"testing"
 	"time"
@@ -213,20 +214,64 @@ func TestChangesHandler(t *testing.T) {
 		t.Fatalf("poll: %d %s", poll.Code, poll.Body)
 	}
 	for target, status := range map[string]int{
-		"/v1/changes?cursor=bogus":                                        http.StatusBadRequest,
-		"/v1/changes?limit=0&cursor=" + encodeChangeCursor(now):           http.StatusBadRequest,
-		"/v1/changes?limit=501&cursor=" + encodeChangeCursor(now):         http.StatusBadRequest,
-		"/v1/changes?since=1":                                             http.StatusBadRequest,
-		"/v1/changes?cursor=" + encodeChangeCursor(now.Add(-3*time.Hour)): http.StatusGone,
+		"/v1/changes?cursor=bogus":                                                      http.StatusBadRequest,
+		"/v1/changes?limit=0&cursor=" + encodeChangeCursor(now):                         http.StatusBadRequest,
+		"/v1/changes?limit=501&cursor=" + encodeChangeCursor(now):                       http.StatusBadRequest,
+		"/v1/changes?since=1":                                                           http.StatusBadRequest,
+		"/v1/changes?cursor=" + encodeChangeCursor(now) + "&since=2026-10-07T14:00:00Z": http.StatusBadRequest,
+		"/v1/changes?cursor=" + encodeChangeCursor(now.Add(-3*time.Hour)):               http.StatusGone,
+		"/v1/changes?since=2026-10-07T13:00:00Z":                                        http.StatusGone,
+		"/v1/changes?since=2h":                                                          http.StatusGone,
+		"/v1/changes?since=2026-10-07T16:00:00Z":                                        http.StatusBadRequest,
+		"/v1/changes?since=1ns":                                                         http.StatusBadRequest,
 	} {
 		if got := request(target).Code; got != status {
 			t.Fatalf("%s: got %d want %d", target, got, status)
 		}
 	}
+
 	recorder := httptest.NewRecorder()
 	handler(fileProvider{"unused"}, nil).ServeHTTP(recorder, httptest.NewRequest(http.MethodGet, "/v1/changes", nil))
 	if recorder.Code != http.StatusNotFound {
 		t.Fatalf("changes must be disabled without a change source: %d", recorder.Code)
+	}
+}
+
+func TestChangesHandlerSupportsBoundedDurationLookback(t *testing.T) {
+	now := time.Date(2026, 10, 7, 15, 0, 0, 0, time.UTC)
+	log := &fakeAccessLog{entries: []*ldap.Entry{accessLogEntry(now.Add(-time.Minute), "add", "uid=a,dc=x", "cn:+ A")}}
+	source := testAccessLog(now, log)
+	source.retention = 48 * time.Hour
+	recorder := httptest.NewRecorder()
+	changesHandler(source).ServeHTTP(recorder, httptest.NewRequest(http.MethodGet, "/v1/changes?since=24h", nil))
+	if recorder.Code != http.StatusOK || !strings.Contains(recorder.Body.String(), `"type":"add"`) {
+		t.Fatalf("24-hour lookback: %d %s", recorder.Code, recorder.Body)
+	}
+}
+
+func TestLDAPChangesSupportInclusiveSinceBootstrap(t *testing.T) {
+	now := time.Date(2026, 10, 7, 15, 0, 0, 0, time.UTC)
+	since := now.Add(-time.Minute).Add(250 * time.Millisecond)
+	log := &fakeAccessLog{entries: []*ldap.Entry{
+		accessLogEntry(since.Truncate(time.Second).Add(time.Microsecond), "modify", "uid=boundary,dc=x", "title:= v"),
+		accessLogEntry(since.Add(time.Second), "modify", "uid=later,dc=x", "mail:= v"),
+	}}
+	handler := changesHandler(testAccessLog(now, log))
+	recorder := httptest.NewRecorder()
+	request := httptest.NewRequest(http.MethodGet, "/v1/changes?since="+url.QueryEscape(since.Format(time.RFC3339Nano))+"&limit=1", nil)
+	handler.ServeHTTP(recorder, request)
+	var response changesResponse
+	if recorder.Code != http.StatusOK || json.Unmarshal(recorder.Body.Bytes(), &response) != nil {
+		t.Fatalf("since response: %d %s", recorder.Code, recorder.Body)
+	}
+	if len(response.Changes) != 1 || response.Changes[0].DN != "uid=boundary,dc=x" || !response.More {
+		t.Fatalf("first page omitted inclusive boundary change: %+v", response)
+	}
+	recorder = httptest.NewRecorder()
+	request = httptest.NewRequest(http.MethodGet, "/v1/changes?cursor="+url.QueryEscape(response.Cursor)+"&limit=10", nil)
+	handler.ServeHTTP(recorder, request)
+	if recorder.Code != http.StatusOK || !strings.Contains(recorder.Body.String(), "uid=later,dc=x") {
+		t.Fatalf("cursor continuation: %d %s", recorder.Code, recorder.Body)
 	}
 }
 

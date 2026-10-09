@@ -50,10 +50,14 @@ immediately, without waiting for the next poll.
 Auto-fit and Fit use the network components' bounds, excluding the geographic
 basemap; when no nodes or adapters are reported, the map remains available and
 Fit falls back to the full basemap extent.
-Adapters docked to a node are arranged in a compact arc on the side with the
-greatest angular clearance from that node's inter-node links, in both map
-views. The existing spaced ring is retained when a large child set cannot fit
-in a compact arc.
+Adapters docked to a node are arranged in a compact arc in the largest gap
+between that node's inter-node links, in both map views. The radius grows as
+needed to fit the children, service rings and gateway clouds without wrapping
+the arc across the link corridors. Nodes without inter-node links retain a
+spaced ring.
+Gateway components show a distinct connector to a labeled cloud for their
+external network; connector endpoints meet the gateway and cloud outlines in
+both views.
 
 Configure coordinates as optional node properties in the Visa Service TOML,
 keyed by the exact node actor CN, for example:
@@ -226,6 +230,47 @@ back to the page preserve the records, filter, and expanded LDAP branches.
 Diagnostics still follows global polling; standalone source pages retain their
 own refresh action.
 
+The Control Room **Updates (24h)** tab shows trusted-source LDAP change metadata
+for the previous 24 hours. It lists the event time, operation, entry DN, rename
+target, and attribute names; attribute values are never included. The page reads
+the existing `zpr-trusted-service` `/v1/changes` feed through Control-Service,
+which owns a separate mTLS client identity. The browser sees neither feed URLs
+nor certificates or keys, and the feed must be configured independently of
+Simulator.
+
+Configure `ZPR_TRUSTED_CHANGE_FEEDS_FILE` on Control-Service with feed identifiers
+matching the names in `ZPR_ASSERTION_SOURCES_FILE`:
+
+```json
+{
+  "sources": [{
+    "name": "great_lakes_ldap",
+    "display_name": "Great Lakes LDAP",
+    "url": "https://trusted-service.example:8443",
+    "server_name": "trusted-service.example",
+    "ca_file": "/absolute/path/to/.local-runtime/trusted-service-ca.pem",
+    "client_cert_file": "/absolute/path/to/.local-runtime/control-service-trusted-client.crt",
+    "client_key_file": "/absolute/path/to/.local-runtime/control-service-trusted-client.key"
+  }]
+}
+```
+
+With `scripts/dashboard-stack.sh`, keep the JSON file and TLS files under the
+mounted `.local-runtime` directory and set their absolute container-visible
+paths in that JSON plus `ZPR_TRUSTED_CHANGE_FEEDS_FILE` (for example,
+`/absolute/path/to/.local-runtime/dashboard-stack/trusted-change-feeds.json`).
+Restart Control-Service
+with `sh scripts/dashboard-stack.sh restart-control-service` to load changes.
+Protect the private key and the runtime directory from untrusted users.
+
+The trusted-service listener must trust that Control-Service client certificate.
+Set its `-ldap-changes-retention` and slapd `logpurge` age to 24 hours (neither
+may be shorter);
+the shipped retention default is 24 hours. The UI uses the feed's server-clock
+`since=24h` bootstrap and cursor pagination. If history has expired or the feed
+is unavailable, the page reports the error rather than replacing it with an
+empty result.
+
 Every Trusted Sources table (People, Groups and Attributes, on both the Control
 Room page and the Simulator page) has sortable column headings with the same
 treatment as other Control Room tables: click a heading for ascending order,
@@ -341,6 +386,17 @@ Optional gateway annotations come from the operator-owned
 `ZPR_PLATFORM_SERVICES` JSON setting and default to an empty list. Set
 `ZPR_ASSERTION_LDAP_CONTAINER` explicitly to enable LDAP attribute discovery;
 the demo LDAP editor URL is not forwarded to Control-Service.
+For example, an operator may classify an already reported service for map
+display with:
+
+```sh
+ZPR_PLATFORM_SERVICES='[{"service_name":"internet-gateway.svc.zpr","actor_cn":"internet-gateway","service_kind":"Gateway","external_network_connection":"public-internet"}]'
+```
+
+Include the setting when starting or restarting Control-Service, alongside the
+active organization's Admin API connection settings. These annotations enable
+gateway/cloud rendering but are operator-provided display metadata, not proof
+that the external-network claim was verified from installed policy.
 
 The ZPR browser-based GUIs, including Control Room and Simulator, support desktop
 and iPad-like tablet devices when the available viewport resolution is sufficient

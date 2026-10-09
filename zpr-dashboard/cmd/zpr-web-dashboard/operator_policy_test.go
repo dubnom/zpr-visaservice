@@ -31,6 +31,8 @@ func TestControlRoomAPIPermissionMap(t *testing.T) {
 		{http.MethodGet, "/api/snapshot", "monitor.read", true},
 		{http.MethodGet, "/api/actors/device-1/visas", "monitor.read", true},
 		{http.MethodGet, "/api/dns/stats/json/v1/server", "monitor.read", true},
+		{http.MethodGet, "/api/trusted-sources/change-feeds", "policy.read", true},
+		{http.MethodGet, "/api/trusted-sources/change-feeds/great_lakes_ldap/changes", "policy.read", true},
 		{http.MethodGet, "/api/policy", "policy.read", true},
 		{http.MethodGet, "/api/policy/records/example/revisions", "policy.read", true},
 		{http.MethodPost, "/api/policy/check", "policy.analyze", true},

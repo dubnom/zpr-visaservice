@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"regexp"
 	"sort"
 	"strconv"
 	"strings"
@@ -22,7 +23,11 @@ const (
 	changeWindowSizeLimit = 500
 )
 
+var changeLookbackPattern = regexp.MustCompile(`^[0-9]+(h|m|s)$`)
+
 var errChangeCursorExpired = errors.New("change cursor is older than the retained change log")
+var errChangeLookbackExpired = errors.New("change lookback is older than the retained change log")
+var errChangeLookbackFuture = errors.New("change lookback is in the future")
 
 type ldapChange struct {
 	Cursor     string    `json:"cursor"`
@@ -42,6 +47,8 @@ type changesResponse struct {
 
 type changeSource interface {
 	changes(ctx context.Context, cursor time.Time, limit int) (changesResponse, error)
+	changesSince(ctx context.Context, since time.Time, limit int) (changesResponse, error)
+	changesWithin(ctx context.Context, lookback time.Duration, limit int) (changesResponse, error)
 	head() time.Time
 }
 
@@ -64,6 +71,32 @@ func (c accessLogChanges) head() time.Time {
 }
 
 func (c accessLogChanges) changes(ctx context.Context, cursor time.Time, limit int) (changesResponse, error) {
+	return c.readChanges(ctx, cursor, limit, true)
+}
+
+func (c accessLogChanges) changesSince(ctx context.Context, since time.Time, limit int) (changesResponse, error) {
+	now := c.now().UTC()
+	if since.Before(now.Add(-c.retention)) {
+		return changesResponse{}, errChangeLookbackExpired
+	}
+	if since.After(c.head()) {
+		return changesResponse{}, errChangeLookbackFuture
+	}
+	// Accesslog fractions are sequence stamps within a second, so start just
+	// before the requested second to include every write in that second.
+	cursor := since.UTC().Truncate(time.Second).Add(-time.Microsecond)
+	return c.readChanges(ctx, cursor, limit, false)
+}
+
+func (c accessLogChanges) changesWithin(ctx context.Context, lookback time.Duration, limit int) (changesResponse, error) {
+	if lookback <= 0 || lookback > c.retention {
+		return changesResponse{}, errChangeLookbackExpired
+	}
+	cursor := c.now().UTC().Add(-lookback).Truncate(time.Second).Add(-time.Microsecond)
+	return c.readChanges(ctx, cursor, limit, false)
+}
+
+func (c accessLogChanges) readChanges(ctx context.Context, cursor time.Time, limit int, validateAnchor bool) (changesResponse, error) {
 	upper := c.head()
 	if !cursor.Before(upper) {
 		return changesResponse{Changes: []ldapChange{}, Cursor: encodeChangeCursor(cursor)}, nil
@@ -73,7 +106,7 @@ func (c accessLogChanges) changes(ctx context.Context, cursor time.Time, limit i
 		return changesResponse{}, err
 	}
 	defer closeConnection()
-	if cursor.Before(c.now().UTC().Add(-c.retention)) {
+	if validateAnchor && cursor.Before(c.now().UTC().Add(-c.retention)) {
 		anchored, err := c.entryExists(searcher, cursor)
 		if err != nil {
 			return changesResponse{}, err
@@ -212,10 +245,14 @@ func changesHandler(source changeSource) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		query := r.URL.Query()
 		for name := range query {
-			if name != "cursor" && name != "limit" {
+			if name != "cursor" && name != "limit" && name != "since" {
 				http.Error(w, "invalid changes request", http.StatusBadRequest)
 				return
 			}
+		}
+		if query.Has("cursor") && query.Has("since") {
+			http.Error(w, "cursor and since are mutually exclusive", http.StatusBadRequest)
+			return
 		}
 		limit := defaultChangeLimit
 		if value := query.Get("limit"); value != "" {
@@ -228,6 +265,41 @@ func changesHandler(source changeSource) http.HandlerFunc {
 		}
 		w.Header().Set("Cache-Control", "no-store")
 		if !query.Has("cursor") {
+			if query.Has("since") {
+				sinceText := query.Get("since")
+				lookback, durationErr := time.ParseDuration(sinceText)
+				var response changesResponse
+				var err error
+				if durationErr == nil {
+					if !changeLookbackPattern.MatchString(sinceText) {
+						http.Error(w, "invalid since", http.StatusBadRequest)
+						return
+					}
+					response, err = source.changesWithin(r.Context(), lookback, limit)
+				} else {
+					since, parseErr := time.Parse(time.RFC3339Nano, sinceText)
+					if parseErr != nil {
+						http.Error(w, "invalid since", http.StatusBadRequest)
+						return
+					}
+					response, err = source.changesSince(r.Context(), since, limit)
+				}
+				if errors.Is(err, errChangeCursorExpired) || errors.Is(err, errChangeLookbackExpired) {
+					writeChangesJSON(w, http.StatusGone, map[string]string{"error": "cursor_expired"})
+					return
+				}
+				if errors.Is(err, errChangeLookbackFuture) {
+					http.Error(w, "invalid since", http.StatusBadRequest)
+					return
+				}
+				if err != nil {
+					logChangeFailure(err)
+					http.Error(w, "change log unavailable", http.StatusServiceUnavailable)
+					return
+				}
+				writeChangesJSON(w, http.StatusOK, response)
+				return
+			}
 			writeChangesJSON(w, http.StatusOK, changesResponse{Changes: []ldapChange{}, Cursor: encodeChangeCursor(source.head())})
 			return
 		}

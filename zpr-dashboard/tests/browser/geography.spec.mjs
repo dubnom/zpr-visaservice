@@ -176,6 +176,47 @@ test("Topology and World Map cluster attached adapters away from inter-node link
   }
 });
 
+test("gateway and service-heavy children stay together outside multiple link corridors in both maps", async ({ page, appURL, snapshot }) => {
+  const children = ["adapter1", "internet-gateway", "ociweb", "simulator-control", "vs"];
+  const hub = node("node-a", 43.04, -87.91);
+  hub.node_details.adapters = children;
+  snapshot.actors = [hub, { ...node("node-b", 22.54, 114.06), zpr_addr: "fd00::2" },
+    { ...node("node-c", 32.51, -117.04), zpr_addr: "fd00::3" },
+    ...children.map((cn) => ({ cn, node: false }))];
+  snapshot.network = ["fd00::2", "fd00::3"].map((address) => ({ node_a_addr: "fd00::1", node_b_addr: address, ctype: "UP" }));
+  snapshot.services = children.flatMap((cn) => Array.from({ length: cn === "vs" ? 3 : 2 }, (_, i) => ({
+    actor_cn: cn, service_name: `${cn}-${i}`, service_kind: cn === "internet-gateway" ? "Gateway" : cn === "vs" ? "Visa" : "Regular",
+  })));
+  await page.emulateMedia({ reducedMotion: "reduce" });
+  await openGeography(page, appURL);
+  for (const view of ["World Map", "Topology"]) {
+    await page.getByRole("button", { name: view, exact: true }).click();
+    const geometry = await page.evaluate((children) => {
+      const point = (cn) => {
+        const el = document.querySelector(`.graph-vertex[data-inspect-actor="${cn}"]`);
+        return { x: Number(el.dataset.originX), y: Number(el.dataset.originY) };
+      };
+      const hub = point("node-a");
+      const angles = children.map((cn) => {
+        const p = point(cn);
+        return Math.atan2(p.y - hub.y, p.x - hub.x);
+      }).sort((a, b) => a - b);
+      const largestGap = Math.max(...angles.map((angle, i) => (i === angles.length - 1 ? angles[0] + 2 * Math.PI : angles[i + 1]) - angle));
+      const directionAngles = ["node-b", "node-c"].map((cn) => {
+        const p = point(cn);
+        return Math.atan2(p.y - hub.y, p.x - hub.x);
+      });
+      return {
+        span: 2 * Math.PI - largestGap,
+        clearance: Math.min(...angles.flatMap((a) => directionAngles.map((b) => Math.abs(Math.atan2(Math.sin(a - b), Math.cos(a - b)))))),
+      };
+    }, children);
+    expect(geometry.span, view).toBeLessThan(Math.PI);
+    expect(geometry.clearance, view).toBeGreaterThan(0.6);
+    await expect(page.locator(".graph-cloud")).toHaveCount(1);
+  }
+});
+
 test("World Map Fit falls back to the full basemap when no network components exist", async ({ page, appURL, snapshot }) => {
   snapshot.actors = [];
   await openGeography(page, appURL);

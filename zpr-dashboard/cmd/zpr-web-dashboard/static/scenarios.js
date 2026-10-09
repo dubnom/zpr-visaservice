@@ -30,9 +30,7 @@ const scenarioHistory = scenarioEditorPage.createHistory({
 });
 
 function scenarioEscape(value) {
-  return String(value ?? "").replace(/[&<>"']/g, (character) => ({
-    "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;",
-  })[character]);
+  return window.ZPRSafeDisplay.escapeHTML(value);
 }
 
 function renderScenarioList(scenarios, maxMachines) {
@@ -632,9 +630,7 @@ const scenarioAssistant = window.mountSimulatorDesignAssistant("scenario-assista
 });
 
 async function postScenarioAction(url) {
-  const response = await fetch(url, { method: "POST" });
-  const body = await response.json();
-  if (!response.ok) throw new Error(body.error || `HTTP ${response.status}`);
+  await scenarioRequest(url, { method: "POST" });
   await refreshScenariosNow();
 }
 

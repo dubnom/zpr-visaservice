@@ -11,9 +11,7 @@ let pendingOrganizationActivation = null;
 let pendingOrganizationRestore = null;
 
 function organizationEscape(value) {
-  return String(value ?? "").replace(/[&<>"']/g, (character) => ({
-    "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;",
-  })[character]);
+  return window.ZPRSafeDisplay.escapeHTML(value);
 }
 
 function organizationItems(items, title, emptyLabel) {

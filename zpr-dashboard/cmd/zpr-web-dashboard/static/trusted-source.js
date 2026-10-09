@@ -44,16 +44,23 @@
               <button type="button" role="tab" data-source-tab="people" aria-selected="${this.simulatorPage ? "false" : "true"}"${this.simulatorPage ? ' tabindex="-1"' : ""}>People</button>
               <button type="button" role="tab" data-source-tab="groups" aria-selected="false" tabindex="-1">Groups</button>
               <button type="button" role="tab" data-source-tab="attributes" aria-selected="false" tabindex="-1">Attributes</button>
+              ${this.simulatorPage ? "" : `<button type="button" role="tab" data-source-tab="updates" aria-selected="false" tabindex="-1">Updates (24h)</button>`}
             </div>
             <label class="trusted-source-filter"><span>Filter</span><input type="search" data-source-filter aria-label="Filter trusted source records"></label>
             <span class="trusted-source-count" data-source-count></span>
           </div>
+          ${this.simulatorPage ? "" : `<div class="trusted-source-update-controls" data-source-update-controls hidden>
+            <label><span>Update feed</span><select data-source-feed aria-label="Trusted source update feed"></select></label>
+            <button type="button" class="button" data-source-load-more hidden>Load more updates</button>
+          </div>`}
           <p class="trusted-source-message" data-source-message role="status" aria-live="polite">Loading trusted source…</p>
           <div class="trusted-source-results" data-source-results hidden></div>
         </section>`;
       this.addEventListener("click", (event) => {
         const refresh = event.target.closest("[data-source-refresh]");
-        if (refresh) this.load();
+        if (refresh) this.view === "updates" ? this.loadUpdates(true) : this.load();
+        const loadMore = event.target.closest("[data-source-load-more]");
+        if (loadMore) this.loadUpdates(false);
         const person = event.target.closest("tr.trusted-source-person");
         if (person && !String(window.getSelection?.() || "")) {
           const uid = person.querySelector("[data-source-person]")?.dataset.sourcePerson;
@@ -69,13 +76,18 @@
             button.tabIndex = selected ? 0 : -1;
           }
           this.render();
+          if (this.view === "updates") this.loadUpdates(true);
         }
       });
       this.querySelector("[data-source-filter]").addEventListener("input", () => this.render());
       if (this.closest("#page-sources")) {
         this.querySelector("[data-source-refresh]").hidden = true;
+        this.querySelector("[data-source-feed]").addEventListener("change", () => this.loadUpdates(true));
         document.addEventListener("control-room:refresh-requested", () => {
-          if (location.hash === "#sources") this.load();
+          if (location.hash === "#sources") {
+            if (this.view === "updates") this.loadUpdates(true);
+            else this.load();
+          }
         });
       }
     }
@@ -94,7 +106,7 @@
           if (!response.ok) throw new Error(data.error || `Source read failed (${response.status})`);
           if (!data.directory) throw new Error("Trusted source did not return browseable records");
           this.snapshot = data;
-          this.querySelector("[data-source-title]").textContent = data.source_name || "Trusted source";
+          this.querySelector("[data-source-title]").textContent = `${this.dataset.titlePrefix || ""}${data.source_name || "Trusted source"}`;
           this.querySelector("[data-source-meta]").textContent = [data.organization_name, data.base_dn, data.observed_at && window.ZPRSafeDisplay.formatDateTime(data.observed_at)].filter(Boolean).join(" · ");
           this.querySelector("[data-source-summary]").textContent = `${data.people || 0} people · ${(data.groups || []).length} groups · ${(data.attributes || []).length} attributes`;
           this.render();
@@ -113,6 +125,10 @@
 
     render() {
       if (!this.snapshot) return;
+      if (this.view === "updates") {
+        this.renderUpdates();
+        return;
+      }
       const directory = this.snapshot.directory;
       const query = this.querySelector("[data-source-filter]").value.trim().toLowerCase();
       const results = this.querySelector("[data-source-results]");
@@ -128,6 +144,124 @@
       message.textContent = count ? "" : `No ${this.view} match this filter.`;
       message.hidden = count > 0;
       results.hidden = false;
+    }
+
+    async loadUpdates(reset = true) {
+      if (!this.closest("#page-sources") || this.updatesPending) return this.updatesPending;
+      const controls = this.querySelector("[data-source-update-controls]");
+      const message = this.querySelector("[data-source-message]");
+      const results = this.querySelector("[data-source-results]");
+      const moreButton = this.querySelector("[data-source-load-more]");
+      controls.hidden = false;
+      message.hidden = false;
+      results.hidden = true;
+      message.textContent = "Loading trusted source updates…";
+      moreButton.disabled = true;
+      this.updatesPending = (async () => {
+        try {
+          if (!this.updateSources) {
+            const response = await fetch("/api/trusted-sources/change-feeds", { cache: "no-store", headers: { Accept: "application/json" } });
+            const data = await response.json();
+            if (!response.ok) throw new Error(data.error || `Change feeds could not be read (${response.status})`);
+            if (!Array.isArray(data.sources)) throw new Error("Change feed list is malformed");
+            this.updateSources = data.sources;
+            const select = this.querySelector("[data-source-feed]");
+            select.replaceChildren(...this.updateSources.map((source) => {
+              const option = element("option", "", source.display_name || source.name);
+              option.value = source.name;
+              return option;
+            }));
+            if (this.updateSources.length) select.value = this.updateSources[0].name;
+          }
+          const sourceName = this.querySelector("[data-source-feed]").value;
+          if (!sourceName) {
+            this.updates = [];
+            this.updateCursor = "";
+            this.updateMore = false;
+            this.updateEmptyMessage = "No trusted-source change feeds are configured.";
+            this.renderUpdates();
+            return;
+          }
+          if (reset || sourceName !== this.updateSourceName) {
+            this.updates = [];
+            this.updateCursor = "";
+            this.updateMore = true;
+            this.updateSourceName = sourceName;
+          }
+          this.querySelector("[data-source-feed]").disabled = true;
+          const query = new URLSearchParams({ limit: "100" });
+          if (this.updateCursor) query.set("cursor", this.updateCursor);
+          const response = await fetch(`/api/trusted-sources/change-feeds/${encodeURIComponent(sourceName)}/changes?${query}`, { cache: "no-store", headers: { Accept: "application/json" } });
+          const data = await response.json();
+          if (!response.ok) {
+            if (response.status === 410) throw new Error("This update history expired. Refresh to load the current 24-hour window.");
+            throw new Error(data.error || `Trusted source updates could not be read (${response.status})`);
+          }
+          if (!Array.isArray(data.changes) || typeof data.cursor !== "string" || typeof data.more !== "boolean") {
+            throw new Error("Trusted source update response is malformed");
+          }
+          this.updates.push(...data.changes);
+          this.updateCursor = data.cursor;
+          this.updateMore = data.more;
+          this.updateEmptyMessage = "No trusted-source updates in the last 24 hours.";
+          this.renderUpdates();
+        } catch (error) {
+          results.hidden = true;
+          message.hidden = false;
+          message.textContent = error.message || "Trusted source updates could not be read";
+          moreButton.hidden = true;
+        } finally {
+          this.querySelector("[data-source-feed]").disabled = false;
+          moreButton.disabled = false;
+          this.updatesPending = null;
+        }
+      })();
+      return this.updatesPending;
+    }
+
+    renderUpdates() {
+      const results = this.querySelector("[data-source-results]");
+      const message = this.querySelector("[data-source-message]");
+      const count = this.querySelector("[data-source-count]");
+      const moreButton = this.querySelector("[data-source-load-more]");
+      const changes = this.updates || [];
+      const query = this.querySelector("[data-source-filter]").value.trim().toLowerCase();
+      const shown = query ? changes.filter((change) => [
+        change.time, change.type, change.dn, change.new_dn, ...(change.attributes || []),
+      ].some((value) => String(value || "").toLowerCase().includes(query))) : changes;
+      const table = element("table", "trusted-source-table trusted-source-changes");
+      const head = element("thead");
+      const heading = element("tr");
+      for (const label of ["WHEN", "CHANGE", "ENTRY DN", "NEW DN", "ATTRIBUTE NAMES"]) {
+        heading.append(element("th", "", label));
+      }
+      head.append(heading);
+      table.append(head);
+      const body = element("tbody");
+      for (const change of shown) {
+        const row = element("tr");
+        const values = [
+          window.ZPRSafeDisplay.formatDateTime(change.time),
+          change.type,
+          change.dn,
+          change.new_dn || "—",
+          Array.isArray(change.attributes) && change.attributes.length ? change.attributes.join(", ") : "—",
+        ];
+        for (const value of values) row.append(element("td", "", value));
+        body.append(row);
+      }
+      table.append(body);
+      results.replaceChildren(table);
+      results.hidden = false;
+      count.textContent = query ? `${shown.length} of ${changes.length} updates` : `${changes.length} updates`;
+      message.hidden = shown.length > 0;
+      message.textContent = shown.length ? "" : query && changes.length
+        ? "No updates match this filter."
+        : this.updateMore && changes.length === 0
+          ? "No updates on this page; more history is available."
+          : this.updateEmptyMessage || "No trusted-source updates in the last 24 hours.";
+      moreButton.hidden = !this.updateMore;
+      moreButton.disabled = Boolean(this.updatesPending);
     }
 
     renderGraph(results, directory) {

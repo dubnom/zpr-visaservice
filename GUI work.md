@@ -299,12 +299,13 @@
   - [x] Migrate Simulator Activity polling to the shared navigation lifecycle; abort on departure and ignore late responses while retaining the last successful activity data.
   - [x] Migrate Simulator Scenario polling to the shared navigation lifecycle; abort on departure, serialize periodic/manual refreshes and ignore late catalog/run responses.
   - [x] Migrate Simulator Organization catalog polling to the shared navigation lifecycle; keep last-good catalog data and preserve faster polling during activation.
-- [ ] Extract shared sortable-table helpers for column definitions, comparators, accessible sort headings and empty states, starting with Control Room tables and Simulator Activity.
+- [x] Extract shared sortable-table helpers for column definitions, comparators, accessible sort headings and empty states, starting with Control Room tables and Simulator Activity.
   - [x] Share value comparison, accessible sortable heading setup, and empty-row rendering between Control Room tables and Simulator Activity; keep dataset-specific columns, stable tie-breaking, and row rendering owned by each view.
   - [x] Reuse shared value comparison and accessible sort headings in the Trusted Sources browser while retaining its empty-values-last ordering and stable row tie-breaks.
-- [ ] Consolidate safe text rendering and timestamp/protocol display helpers without changing API contracts or losing integer precision.
+- [x] Consolidate safe text rendering and timestamp/protocol display helpers without changing API contracts or losing integer precision.
   - [x] Share HTML escaping across Control Room and Assertion rendering, and reuse protocol labels in Control Room and Activity; retain caller-specific fallback text for unknown protocol numbers.
   - [x] Route date/time locale formatting through shared helpers without changing caller-selected date/time style, input values, or seconds-to-milliseconds conversions.
+  - [x] Replace the remaining Activity, Organization and Scenario local escaping implementations with the shared HTML-escape helper; retain Activity's em-dash fallback.
 - [ ] Consolidate HTTP/JSON error handling and cancellation; keep authentication, same-origin CSRF handling and mutation retry/uncertainty policies explicit.
   - [x] Share injected JSON transport for Config, Assertions and Gateways. Preserve structured errors and abort identity; report malformed JSON explicitly rather than defaulting to empty success. Keep Gateway validation-result acceptance local to Analyze and reject failed saves without retrying or replacing unsaved drafts.
   - [x] Use shared injected JSON transport for Simulator Directory artifact/revision reads, Save and Publish. Retain explicit operation errors, unsaved drafts, expected-revision payloads and separate publish/reseed semantics without retries or production dependencies.
@@ -313,6 +314,7 @@
   - [x] Use shared authenticated JSON transport for Policy workspace, record, History and revision reads. Show load failures separately from analysis diagnostics, retain source on failed reads and clear load status on recovery/new drafts. Preserve History/dirty-confirmation behavior without retries or production/Simulator dependencies.
   - [x] Use shared authenticated JSON transport for Policy revision Save, draft creation through Save and confirmed Stage. Preserve revision payloads, error dialogs and explicit confirmation without automatic retries or treating undecodable mutation responses as success.
   - [x] Use shared JSON response/error parsing for Simulator Organization and Scenario polling reads; retain their independent service endpoints, abort signals, error surfaces and last-good data, with no mutation retries.
+  - [x] Use shared JSON response/error parsing for Scenario run/cancel/clear mutations; report undecodable responses explicitly and preserve single-attempt semantics.
 - [x] Reuse the existing shared `machine-logs.js` viewer rather than introducing separate Control Room and Simulator log implementations.
 - [x] Add shared JavaScript component contract tests and desktop/tablet integration coverage for each migration, preserving intended behavior and accessibility.
 - [x] Verify Control Room works with Simulator unavailable; shared JavaScript must receive independent production endpoints/configuration and must not introduce Simulator data, authorization or runtime dependencies.
@@ -354,7 +356,8 @@
 - [x] What happened to showing visa routes? Routes now draw as thick glowing blue lines with moving dashes and pulsing routed components; right-click only toggles routes (count badge click opens the visa list).
 - [x] Link forward and reverse visas for display: paired on the Visas page (PAIR column) and in Map visa lists.
 - [x] Make clicking away from the component info dialog close the window.
-- [x] In both map views, arrange each node's docked adapters into a compact arc positioned for maximum angular clearance from inter-node links; retain a spaced ring if a large child set cannot fit the arc.
+- [x] In both map views, arrange each node's docked adapters into a compact arc in the largest link-free sector. Grow the radius to account for gateway clouds and service rings rather than letting a wide arc wrap across inter-node connectors. Nodes without inter-node links retain a spaced ring. Cover gateway-heavy, multi-link layouts in desktop/tablet regression tests.
+- [x] Show each gateway with a visible connector to a labeled, cloud-shaped external-network component in both Topology and World Map.
 
 ### World map
 - [x] `worldmap.svg` is available in the `zpr-dashboard` folder.
@@ -462,9 +465,9 @@
 - [x] All the tables should be sortable and use the same visual treatment as above.
 - [x] Groups should make the cn and objectclass their own columns
 - [x] People should condense each row and toggle viewing when clicked.
-- [ ] Add a page to view updates from the trusted source
-- [ ] Remove filter from the top table.
-- [ ] Rename lower table "Trusted source: {great_lakes_ldap}".
+- [x] Add a page to view updates from the trusted source (Control Room reads the mTLS-protected trusted-service change feed through Control-Service; the Updates tab shows one day of metadata only, never attribute values).
+- [x] Remove filter from the top table.
+- [x] Rename lower table "Trusted source: {great_lakes_ldap}" using the source name returned by the directory endpoint.
 
 ### Gateways
 - [x] Add a Control Room page listing installed ZPL Gateway services by organization and editing their versioned runtime drafts.
