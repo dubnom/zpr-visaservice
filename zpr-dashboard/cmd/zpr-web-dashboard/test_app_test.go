@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"encoding/json"
+	"io"
 	"net"
 	"net/http"
 	"net/http/httptest"
@@ -150,6 +151,77 @@ func TestTestClientCallsRealService(t *testing.T) {
 	}
 	if len(events) != 4 || events[2].ClientID != "machine-04" || events[3].ClientID != "machine-04" {
 		t.Fatalf("service did not identify both clients: %+v", events)
+	}
+}
+
+type webGatewayTestRoundTripper func(*http.Request) (*http.Response, error)
+
+func (roundTrip webGatewayTestRoundTripper) RoundTrip(request *http.Request) (*http.Response, error) {
+	return roundTrip(request)
+}
+
+func TestValidateWebGatewayPageTarget(t *testing.T) {
+	allowedHosts := []string{"*.google.com"}
+	for _, test := range []struct {
+		name     string
+		target   string
+		expected string
+		wantErr  bool
+	}{
+		{name: "google allowed", target: "https://www.google.com/", expected: "allow"},
+		{name: "apple deny probe", target: "http://www.apple.com/", expected: "deny"},
+		{name: "non-allowlisted allow", target: "https://www.apple.com/", expected: "allow", wantErr: true},
+		{name: "unrelated deny probe", target: "http://example.com/", expected: "deny", wantErr: true},
+		{name: "unsupported port", target: "https://www.google.com:8443/", expected: "allow", wantErr: true},
+		{name: "unsupported scheme", target: "file:///etc/passwd", expected: "allow", wantErr: true},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			err := validateWebGatewayPageTarget(test.target, test.expected, allowedHosts)
+			if (err != nil) != test.wantErr {
+				t.Fatalf("validation error = %v, wantErr %v", err, test.wantErr)
+			}
+		})
+	}
+}
+
+func TestRequestWebGatewayPageLogsBodyAndExpectedDenial(t *testing.T) {
+	for _, test := range []struct {
+		name     string
+		target   string
+		expected string
+		status   int
+		body     string
+	}{
+		{name: "google page", target: "https://www.google.com/", expected: "allow", status: http.StatusOK, body: strings.Repeat("google page ", webGatewayPagePreviewLimit)},
+		{name: "apple blocked", target: "http://www.apple.com/", expected: "deny", status: http.StatusForbidden, body: "web gateway destination is not allowed"},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			client := &http.Client{Transport: webGatewayTestRoundTripper(func(request *http.Request) (*http.Response, error) {
+				if request.URL.String() != test.target {
+					t.Fatalf("request URL = %q, want %q", request.URL, test.target)
+				}
+				return &http.Response{StatusCode: test.status, Status: http.StatusText(test.status), Header: make(http.Header), Body: io.NopCloser(strings.NewReader(test.body)), Request: request}, nil
+			})}
+			var events []testAppEvent
+			writeEvent := func(_ string, event testAppEvent) error {
+				events = append(events, event)
+				return nil
+			}
+			event, err := requestWebGatewayPage(t.Context(), client, test.target, "machine-03", "finance-client", test.expected, writeEvent)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if event.Status != test.status || len(events) != 2 || events[0].Direction != "sent" || events[1].Direction != "received" {
+				t.Fatalf("web gateway result/events = %+v / %+v", event, events)
+			}
+			if test.status == http.StatusOK {
+				if !event.BodyTruncated || event.BodyBytes != len(test.body) || len(event.BodyPreview) != webGatewayPagePreviewLimit || !strings.HasPrefix(event.BodyPreview, "google page") {
+					t.Fatalf("Google body was not bounded and logged: %+v", event)
+				}
+			} else if event.BodyPreview != test.body {
+				t.Fatalf("Apple denial body = %q, want %q", event.BodyPreview, test.body)
+			}
+		})
 	}
 }
 

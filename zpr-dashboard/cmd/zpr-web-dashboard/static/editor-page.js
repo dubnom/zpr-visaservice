@@ -104,7 +104,7 @@
   }
 
   // Wires a textarea, highlight overlay and diagnostic gutter into one code surface.
-  function createSourceSurface({ source, highlight: pre, gutter, language, label = "Source", onMarker }) {
+  function createSourceSurface({ source, highlight: pre, gutter, language, label = "Source", onMarker, markerText = "!" }) {
     let diagnostic = null;
     const container = source.closest(".config-source-editor");
     const languageName = () => typeof language === "function" ? language() : language;
@@ -127,10 +127,13 @@
         if (diagnostic?.line === index + 1) {
           const marker = document.createElement("button");
           marker.type = "button";
-          marker.className = "config-error-marker";
+          marker.className = markerText === "ERR" ? "policy-test-line-result" : "config-error-marker";
+          if (markerText === "ERR") {
+            marker.dataset.effect = "error";
+          }
           marker.title = diagnostic.message;
           marker.setAttribute("aria-label", `${typeof label === "function" ? label() : label} error on line ${index + 1}: ${diagnostic.message}`);
-          marker.textContent = "!";
+          marker.textContent = markerText;
           marker.addEventListener("click", () => {
             selectLine(index + 1);
             onMarker?.(diagnostic);

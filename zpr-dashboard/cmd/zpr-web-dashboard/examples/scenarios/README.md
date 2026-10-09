@@ -17,7 +17,7 @@ Supported step actions are `start_machine`, `wait_controller`, `login`,
 `select_workloads`, `start_workload`, `traffic`, `resolve_dns`, `stop_workload`, `logout`,
 `stop_machine`, `start_test_service`, `request_test_service`,
 `stop_test_service`, `start_service_fleet`, `stop_service_fleet`,
-`stress_traffic`, `benchmark_test_service`, and `delay`. Steps are run in order. `traffic` probes the
+`request_web_gateway`, `stress_traffic`, `benchmark_test_service`, and `delay`. Steps are run in order. `traffic` probes the
 component's manifest namespace and target, or an explicit IPv6 `target`, and
 requires `expected` to be `allow` or `deny`.
 
@@ -89,11 +89,12 @@ simulator-only `internet-gateway` bootstrap key must be installed in the rig.
 Great Lakes organization deployment starts the `internet-gateway` adapter and
 allowlisted web proxy as a persistent service. The
 `great-lakes-finance-web-gateway.json` scenario starts only a Finance client,
-resolves `internet-gateway.svc.zpr`, and probes `/health` over ZPR; it does not
-start or stop the Gateway. While the organization is active, configure an HTTP
-proxy client to `internet-gateway.svc.zpr:8082`. It accepts HTTP requests on
-port 80 and HTTPS CONNECT tunnels on port 443 only for `google.com` and its
-subdomains. The Great Lakes runtime policy grants access only to
+resolves `internet-gateway.svc.zpr`, probes `/health`, fetches
+`https://www.google.com/`, and records a bounded response-body preview in the
+Finance workload log. It then requests `http://www.apple.com/` and records the
+expected HTTP 403 allowlist rejection. The scenario does not start or stop the
+Gateway. The proxy accepts HTTP requests on port 80 and HTTPS CONNECT tunnels
+on port 443 only for `google.com` and its subdomains. The Great Lakes runtime policy grants access only to
 `MilwaukeeFinance`; the gateway rejects non-public DNS results and pins each
 connection to a validated public address. This is Simulator-only and does not
 configure production Control Room gateways.

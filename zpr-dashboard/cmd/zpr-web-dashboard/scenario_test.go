@@ -145,6 +145,42 @@ func TestBundledSimulatorScenariosLoad(t *testing.T) {
 	}
 }
 
+func TestGreatLakesGatewayScenarioFetchesGoogleAndChecksApple(t *testing.T) {
+	scenarioData, err := os.ReadFile(filepath.Join("examples", "scenarios", "great-lakes-finance-web-gateway.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var gatewayScenario simulatorScenario
+	if err := json.Unmarshal(scenarioData, &gatewayScenario); err != nil {
+		t.Fatal(err)
+	}
+	organization, err := loadSimulatorOrganization(filepath.Join("examples", "organizations"), "great-lakes")
+	if err != nil {
+		t.Fatal(err)
+	}
+	var webRequests []simulatorScenarioStep
+	for _, step := range gatewayScenario.Steps {
+		if step.Action == "request_web_gateway" {
+			webRequests = append(webRequests, step)
+		}
+	}
+	if len(webRequests) != 2 {
+		t.Fatalf("web gateway requests = %+v, want Google and Apple probes", webRequests)
+	}
+	if webRequests[0].Target != "https://www.google.com/" || webRequests[0].Expected != "allow" || webRequests[1].Target != "http://www.apple.com/" || webRequests[1].Expected != "deny" {
+		t.Fatalf("web gateway request order/results = %+v", webRequests)
+	}
+	if len(webRequests[0].After) != 1 || webRequests[0].After[0] != "gateway-health" || len(webRequests[1].After) != 1 || webRequests[1].After[0] != "google-page" {
+		t.Fatalf("web gateway request dependencies = Google:%v Apple:%v", webRequests[0].After, webRequests[1].After)
+	}
+	manifest := scenarioTestManifest()
+	for _, step := range webRequests {
+		if err := validateSimulatorScenarioStep(step, manifest, organization, false); err != nil {
+			t.Fatalf("Gateway page step is invalid: %v", err)
+		}
+	}
+}
+
 func TestGreatLakesWorkdayCoversAllEmployeesAndCleanup(t *testing.T) {
 	organization, err := loadSimulatorOrganization(filepath.Join("examples", "organizations"), "great-lakes")
 	if err != nil {

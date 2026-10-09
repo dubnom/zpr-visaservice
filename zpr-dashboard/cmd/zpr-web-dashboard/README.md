@@ -384,7 +384,14 @@ query fields or Simulator data.
 The Control-Service launcher does not read Simulator manifests or profiles.
 Optional gateway annotations come from the operator-owned
 `ZPR_PLATFORM_SERVICES` JSON setting and default to an empty list. Set
-`ZPR_ASSERTION_LDAP_CONTAINER` explicitly to enable LDAP attribute discovery;
+`ZPR_ASSERTION_LDAP_CONTAINER`, `ZPR_ASSERTION_LDAP_BASE_DN` and
+`ZPR_ASSERTION_LDAP_BIND_DN` explicitly to enable Assertion Analyze and LDAP
+attribute discovery. Use the directory's read-only service bind identity, not
+its admin identity: the reader uses the configured directory credential file.
+Preserve these operator settings when recreating Control-Service. The assertion
+editor uses the standard white lower-left scrollbar corner on horizontal overflow;
+Assertion Analyze shows one tag per source line, with ERR > FAIL > WARN > PASS
+precedence. Clicking the tag shows all results and warnings on that line.
 the demo LDAP editor URL is not forwarded to Control-Service.
 For example, an operator may classify an already reported service for map
 display with:
@@ -439,6 +446,14 @@ the Policy Repository's `ZPR Config` category. It validates TOML syntax and
 preserves immutable revisions. Drafts are not runtime configuration: saving or
 validating never applies, stages, or activates them.
 
+## Operator Login Navigation
+
+Operator sign-in preserves the current application path, query and navigation
+fragment in per-tab session storage, restoring it after authentication. Failed
+sign-in retries retain the original destination. Only same-origin application
+locations are restored, never authentication endpoints or external URLs.
+This preserves navigation, not unsaved editor contents across a full-page login.
+
 ## Gateway Drafts
 
 The Control Room Gateways page edits one versioned JSON draft per installed
@@ -452,6 +467,29 @@ enabled only after the unchanged source has been analyzed as valid, and creates
 a new revision via `POST /api/gateways/configs/{id}/revisions`. Gateway identity
 fields come from the installed contract. Saving never activates the runtime
 gateway. The editor uses Control Room APIs only and does not depend on Simulator.
+
+Gateways opens in the raw JSON editor. **Form editor** switches to a separate
+structured view for HTTPS origins, one path prefix per line, GET/HEAD methods,
+timeout and response limits; installed identity fields are read-only.
+**Raw JSON editor** returns to the source. Both views edit the same draft:
+switching alone preserves exact source formatting; form edits preserve other
+JSON fields and require fresh analysis. Unsupported JSON shapes or methods
+must be corrected in Raw before opening the form, rather than silently discarded.
+Form errors appear inside the form, while Raw uses the ERR gutter. Find/Replace,
+Wrap and Format are raw-only; History, File operations and Ctrl/Command-S
+work in either view. A new draft
+starts with a blank origin: enter your intended HTTPS hostname before Analyze.
+Wildcard hosts are not supported; `/` allows every path at that origin.
+The same prefix may be allowed at different origins, but duplicates within one
+origin are rejected. Editing destinations changes only the draft and requires
+fresh analysis before saving; it does not read or change the live gateway's
+allowlist.
+
+Analyze preserves the submitted JSON formatting and reports source line numbers
+for destination, path-prefix, method, schema and limit validation errors.
+Source errors never appear in the top status area. Click the standard **ERR**
+gutter marker to select the offending line and open its error details. Editing or switching
+drafts clears the marker; live contract/inventory errors have no invented line.
 
 The Policy editor is the blueprint for every source editor. Gateways, ZPR
 Config, the Simulator directory (LDIF) editor and the Simulator scenario editor

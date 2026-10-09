@@ -2,6 +2,15 @@
 
 ## Deployment status
 
+- Deployed the separate Gateway Form/Raw editor to Control Room on 2026-10-08.
+  Form fields cover destination origins/path prefixes, GET/HEAD methods and
+  request limits, with read-only installed identity. Drafts share one JSON
+  source; no runtime activation is added. Eighteen focused desktop/tablet
+  regressions, gateway Go tests and two authenticated live checks pass.
+  During verification, Control-Service had reverted to the disconnected
+  port-8184 Admin endpoint. With explicit approval, restored the Great Lakes
+  port-8185 connection, gateway metadata and read-only trusted-directory settings.
+  Snapshot is connected, nodes synchronized and Assertion sources configured.
 - Deployed to local Control Room and Simulator on 2026-10-08 at 19:20 EDT:
   pending Policy, Scenario and Directory JSON-transport migrations below.
   Build succeeded; all eight shared/editor JavaScript assets match source on
@@ -378,6 +387,7 @@
   - [x] Use high-contrast dark text on light inactive buttons and white text on dark-blue selected buttons.
   - [x] Remove the placed/unplaced-node count, Node location overview, Nodes with locations list, and "Countries..." text. Preserve keyboard-accessible co-location choices in the main graph and explicit missing/invalid-location inspection. Deployed and verified through real Dex login on desktop and tablet.
   - [x] Auto-fit and Fit frame the network components rather than the full geographic basemap. When there are no reported nodes or adapters, keep the basemap visible and Fit falls back to its full extent.
+  - [ ] Autofit and fit aren't doing what I asked above.
 
 ### Navigation
 - [x] Keep Map as the main view and group Adapters, Actors, Services, Visas, Denials, and DNS under horizontal Status tabs with counts.
@@ -413,6 +423,8 @@
 - [x] Flag sustained aggregate DNS NXDOMAIN probing in Security Review as an unattributed review finding; do not raise the high-priority nav alert from server-wide counters.
 
 ### Editor
+- [x] Show one Assertion Analyze gutter tag per source line, with ERR > FAIL > WARN > PASS precedence; clicking retains every result and warning for that line.
+- [x] Restore Assertion Analyze's production trusted-directory configuration and match the standard editor's white lower-left scrollbar corner on horizontal overflow.
 - [x] If there is a horizontal scrollbar, color the forbidden area under the gutter white.
 - [x] Keep every source-located Analyze warning in the gutter on its reported line; never render a duplicate warning list above or below the editor. Keep line-less analysis failures in the status area rather than inventing line 1.
 - [x] Analyze of a define-only policy turned red with no message. Keep line-less compiler/analysis errors visible while Analyze is red, and omit directory attributes the ZPT fixture format cannot carry (e.g. Great Lakes `user.l` with commas) instead of failing every analysis; fail with a named-attribute message only when the policy references one.
@@ -449,7 +461,7 @@
 - [x] Move the picker to be under the adapter title when opened.
 - [x] The error message "Unexpected token 'C', "Client sen"... is not valid JSON" makes no sense when the real issue is the Visa service being unavailable.
 
-### ZPR Config
+### Config
 - [x] Adopt the same look-and-feel as the policy editor. If ZPR config is limited to one file, there is no need for Browse, or some of the File commands. Refresh Attributes is also not relevant.
 - [x] Keep ZPR Config toolbar roles aligned with the Policy editor: File on the left, editor mode centered, Analyze/Format in the right-side action group, and History/utilities at the right. Match the blue pending-analysis state, enabled/disabled Format styling, success/error colors, and responsive placement.
 - [x] Still things to do to get the look and feel better. "Validate syntax" should act like "Analyze". There should be a gutter for errors. A Format button, a file button.
@@ -457,6 +469,7 @@
 - [x] Remove "New draft" at the bottom of the editor, and use that space for the editor.
 - [x] Remove line numbers from the gutter.
 - [x] Gutter looks different from the other editors.
+- [ ] Create a form editor.
 
 ### Trusted Sources
 - [x] Get rid of "Read Only"
@@ -470,12 +483,16 @@
 - [x] Rename lower table "Trusted source: {great_lakes_ldap}" using the source name returned by the directory endpoint.
 
 ### Gateways
+- [x] Add a Gateway form editor with draft-only HTTPS origin/path-prefix controls synchronized with the raw JSON view; keep form controls out of the raw editor and Analyze/Save separate from runtime enforcement. Include GET/HEAD, timeout/response limits, read-only installed identity, lossless unknown-field preservation and form/raw validation coverage.
+- [x] Report Gateway Analyze source-line errors only through standard ERR gutter markers; clicking opens error details and selects the source line. Never put source-line diagnostics at the top of the editor; preserve exact formatting and keep live inventory/contract errors separate.
+- [x] Align Gateway ERR markers at the gutter's left inset and suppress the textarea's clipped native focus outline while retaining the editor's focus-within indicator.
 - [x] Add a Control Room page listing installed ZPL Gateway services by organization and editing their versioned runtime drafts.
 - [x] Validate destination/path/method/timeout/response-size settings through Control-Service before saving; keep drafts organization-scoped and do not activate them.
 - [ ] Add verified external-network policy metadata, gateway runtime health, and explicit reviewed activation/rollback after the production provisioning contract is implemented.
 - [x] There can be multiple gateways, so lets use the exact same editor paradigm, colors, and behavior as the polic editor.
 
 ### Header
+- [x] Preserve the current application path, query and navigation fragment across operator re-login, including expired sessions and sign-in retries; restore only same-origin app locations after successful authentication.
 - [x] Show the verified OIDC display name or verified email in the signed-in UI; keep the subject as an internal authorization/audit key.
 
 

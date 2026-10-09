@@ -234,6 +234,9 @@ func main() {
 	clientID := flag.String("client-id", "", "Client identifier for test-client mode")
 	logWorkload := flag.String("log-workload", "", "Workload for test log reader mode")
 	testService := flag.String("test-service-name", "", "Expected service for test-client mode")
+	gatewayProxy := flag.String("gateway-proxy", "", "IPv6 HTTP proxy address for web-gateway-client mode")
+	gatewayURL := flag.String("gateway-url", "", "Page URL for web-gateway-client mode")
+	gatewayExpected := flag.String("gateway-expected", "", "Expected web gateway result: allow or deny")
 	stressServiceCount := flag.Int("service-count", 0, "Number of services for stress-test modes")
 	stressBasePort := flag.Int("base-port", 0, "First TCP port for stress-test services")
 	stressClientCount := flag.Int("client-count", 0, "Number of logical clients for stress-client mode")
@@ -332,6 +335,10 @@ func main() {
 		}
 	case "test-client":
 		if err := runTestClient(*listen, *zprAddress, *clientID, *logWorkload, *testService); err != nil {
+			log.Fatal(err)
+		}
+	case "web-gateway-client":
+		if err := runWebGatewayClient(*gatewayProxy, *gatewayURL, *zprAddress, *clientID, *logWorkload, *gatewayExpected); err != nil {
 			log.Fatal(err)
 		}
 	case "benchmark-client":

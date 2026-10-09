@@ -32,6 +32,7 @@ type gatewayConfigSaveRequest struct {
 type gatewayConfigCheckResponse struct {
 	Valid       bool                    `json:"valid"`
 	Diagnostics string                  `json:"diagnostics"`
+	SourceLine  int                     `json:"source_line,omitempty"`
 	Contract    gatewayInstanceContract `json:"contract,omitempty"`
 }
 
@@ -93,7 +94,7 @@ func newGatewayAPI(organizationID string, readSnapshot gatewaySnapshotReader, st
 				return
 			}
 			if _, err := parseGatewayInstanceConfig(request.Config, contract); err != nil {
-				writeJSON(w, http.StatusUnprocessableEntity, gatewayConfigCheckResponse{Valid: false, Diagnostics: err.Error(), Contract: contract})
+				writeJSON(w, http.StatusUnprocessableEntity, gatewayConfigCheckResponse{Valid: false, Diagnostics: err.Error(), SourceLine: gatewayDiagnosticLine(request.Config, err), Contract: contract})
 				return
 			}
 			writeJSON(w, http.StatusOK, gatewayConfigCheckResponse{Valid: true, Diagnostics: "Gateway draft matches the live Gateway service identity; runtime configuration is unchanged.", Contract: contract})

@@ -353,6 +353,19 @@ func validateSimulatorScenarioStep(step simulatorScenarioStep, manifest simulato
 		if testServicePorts[step.Target] == "" {
 			return errors.New("test request target must be a supported service")
 		}
+	case "request_web_gateway":
+		if !manifestHasMachine(manifest, step.Machine) || !testClientWorkloads[step.Component] {
+			return errors.New("web gateway request requires a known machine and supported client component")
+		}
+		if _, err := readSimulatorComponent(manifest, step.Component); err != nil {
+			return err
+		}
+		if organization.WebGateway == nil {
+			return errors.New("organization has no configured web gateway")
+		}
+		if err := validateWebGatewayPageTarget(step.Target, step.Expected, organization.WebGateway.AllowedHosts); err != nil {
+			return err
+		}
 	case "resolve_dns":
 		if !manifestHasMachine(manifest, step.Machine) || net.ParseIP(manifest.DNSServer) == nil || !testClientWorkloads[step.Component] || !validScenarioDNSName(step.Target) {
 			return errors.New("DNS lookup requires a known machine, client workload, configured DNS server, and .zpr name")
@@ -1053,6 +1066,40 @@ func simulatorScenarioExecutorForManifest(ctx context.Context, manifest simulato
 			return scenarioCommand(ctx, "docker", "exec", machineContainerName(step.Machine), "/usr/local/bin/zpr-machine-controller", "-mode", "benchmark-client", "-listen", address, "-zpr-addr", sourceAddress)
 		}
 		return scenarioCommand(ctx, "docker", "exec", machineContainerName(step.Machine), "/usr/local/bin/zpr-machine-controller", "-mode", "test-client", "-listen", address, "-zpr-addr", sourceAddress, "-client-id", step.Machine, "-log-workload", step.Component, "-test-service-name", step.Target)
+	case "request_web_gateway":
+		profile, err := simulatorWebGatewayForManifest(manifest)
+		if err != nil {
+			return "", err
+		}
+		if profile == nil {
+			return "", errors.New("organization web gateway profile is unavailable")
+		}
+		if err := validateWebGatewayPageTarget(step.Target, step.Expected, profile.AllowedHosts); err != nil {
+			return "", err
+		}
+		if err := requireScenarioWorkload(step.Machine, step.Component); err != nil {
+			return "", err
+		}
+		sourceAddress, err := scenarioClientAddress(ctx, step.Machine, step.Component)
+		if err != nil {
+			return "", err
+		}
+		dnsName, err := scenarioServiceDNSName(manifest, "internet-gateway")
+		if err != nil {
+			return "", err
+		}
+		proxyAddress, err := resolveScenarioDNSAddress(ctx, step.Machine, step.Component, manifest.DNSServer, dnsName)
+		if err != nil {
+			return "", err
+		}
+		routeCommand, err := scenarioWorkloadServiceRouteCommand(step.Machine, step.Component, proxyAddress)
+		if err != nil {
+			return "", err
+		}
+		if output, err := scenarioCommand(ctx, routeCommand.Path, routeCommand.Args[1:]...); err != nil {
+			return output, fmt.Errorf("route Gateway through Finance workload adapter: %w", err)
+		}
+		return scenarioCommand(ctx, "docker", "exec", machineContainerName(step.Machine), "/usr/local/bin/zpr-machine-controller", "-mode", "web-gateway-client", "-gateway-proxy", net.JoinHostPort(proxyAddress, "8082"), "-gateway-url", step.Target, "-gateway-expected", step.Expected, "-zpr-addr", sourceAddress, "-client-id", step.Machine, "-log-workload", step.Component)
 	case "resolve_dns":
 		if err := requireScenarioWorkload(step.Machine, step.Component); err != nil {
 			return "", err

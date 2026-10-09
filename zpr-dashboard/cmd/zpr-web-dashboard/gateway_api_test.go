@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -50,6 +51,51 @@ func TestGatewayConfigCheckBindsDraftToInstalledContractWithoutApplying(t *testi
 	}
 	if !strings.Contains(response.Body.String(), `"valid":true`) || !strings.Contains(response.Body.String(), "runtime configuration is unchanged") {
 		t.Fatalf("check response = %s", response.Body)
+	}
+}
+
+func TestGatewayConfigCheckReportsExactSourceLine(t *testing.T) {
+	snapshotData := snapshot{
+		APIStatus: "connected",
+		Actors:    []actor{{CN: "gateway-public-egress"}},
+		Services:  []service{{Name: "public-egress.svc.zpr", ActorCN: "gateway-public-egress", Kind: "Gateway"}},
+	}
+	handler := newGatewayAPI("northstar", func(context.Context) (snapshot, error) { return snapshotData, nil }, nil)
+	config := `{
+  "schema_version": 1,
+  "organization_id": "northstar",
+  "instance_id": "public-egress",
+  "adapter_cn": "gateway-public-egress",
+  "service_name": "public-egress.svc.zpr",
+  "destinations": [
+    {"origin": "https://first.example.com", "path_prefixes": ["/"]},
+    {
+      "origin": "",
+      "path_prefixes": ["/"]
+    }
+  ],
+  "methods": ["GET"], "timeout_ms": 8000, "max_response_bytes": 1024
+}`
+	response := gatewayAPIRequest(handler, http.MethodPost, "/api/gateways/config/check", []byte(`{"config":`+config+`}`))
+	var result gatewayConfigCheckResponse
+	if err := json.Unmarshal(response.Body.Bytes(), &result); err != nil {
+		t.Fatal(err)
+	}
+	if response.Code != http.StatusUnprocessableEntity || result.Valid || result.SourceLine != 10 {
+		t.Fatalf("check status=%d result=%+v; expected destination error on line 10", response.Code, result)
+	}
+	if line := gatewayDiagnosticLine([]byte(config), gatewayFieldError("missing field", "absent")); line != 0 {
+		t.Fatalf("missing field was assigned line %d", line)
+	}
+	if line := gatewayDiagnosticLine([]byte(config), gatewayFieldError("bad prefix", "destinations", 1, "path_prefixes", 0)); line != 11 {
+		t.Fatalf("prefix line = %d, want 11", line)
+	}
+	if line := gatewayDiagnosticLine([]byte(config), errors.New("live inventory unavailable")); line != 0 {
+		t.Fatalf("inventory error was assigned line %d", line)
+	}
+	duplicate := []byte("{\n\"origin\":\"https://valid.example.com\",\n\"Origin\":\"\"\n}")
+	if line := gatewayDiagnosticLine(duplicate, gatewayFieldError("blank origin", "origin")); line != 3 {
+		t.Fatalf("duplicate-field line = %d, want last field on line 3", line)
 	}
 }
 

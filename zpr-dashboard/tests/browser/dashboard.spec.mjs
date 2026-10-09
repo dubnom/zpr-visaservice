@@ -29,6 +29,54 @@ async function selectAdapterLogSource(panel, label, kind = "adapter") {
 }
 
 function registerAssertionBrowserTests() {
+for (const [worst, states, warnings, error] of [
+  ["error", ["pass", "fail"], true, "line 1: evaluation error"],
+  ["fail", ["pass", "fail"], true, ""],
+  ["warning", ["pass", "pass"], true, ""],
+  ["pass", ["pass", "pass"], false, ""],
+]) {
+  test(`Assertion gutter has one ${worst} tag per line and retains all details`, async ({ page, appURL, api }) => {
+    api.handlers.set("/api/assertions/evaluate", route => route.fulfill({ json: {
+      revision: 0, status: error ? "error" : "pass", error, finished_at: "2026-10-05T12:00:00Z",
+      results: states.map((status, index) => ({
+        rule: { line: 1, kind: "group", group: `Group${index}`, operator: ">=", limit: 1 },
+        status, message: `result-${index}`, subjects: [`subject-${index}`],
+      })),
+      warnings: warnings ? [
+        { line: 1, code: "FIRST_WARNING", message: "first warning" },
+        { line: 1, code: "SECOND_WARNING", message: "second warning" },
+      ] : [],
+    } }));
+    await openAssertionRecord(page, appURL);
+    await page.locator("#assertion-source").fill('assert true; assert false;');
+    await page.locator("#assertion-analyze").click();
+    const marker = page.locator('#assertion-result-lines [data-line="1"] button');
+    await expect(marker).toHaveCount(1);
+    await expect(marker).toHaveAttribute("data-state", worst);
+    await marker.click();
+    const dialog = page.getByRole("dialog", { name: `Assertion ${worst}` });
+    for (const detail of ["result-0", "result-1", "subject-0", "subject-1"]) await expect(dialog).toContainText(detail);
+    if (warnings) {
+      await expect(dialog).toContainText("first warning");
+      await expect(dialog).toContainText("second warning");
+    }
+    if (error) await expect(dialog).toContainText(error);
+  });
+}
+
+test("Assertion scrollbar corner matches the standard editor on overflow only", async ({ page, appURL, api }) => {
+  await openAssertionRecord(page, appURL);
+  const source = page.locator("#assertion-source");
+  const editor = page.locator("#assertion-editor");
+  await source.fill(`group "${"Operators".repeat(80)}" members >= 2;`);
+  await expect(editor).toHaveAttribute("data-horizontal-overflow", "true");
+  expect(await editor.evaluate(element => {
+    const corner = getComputedStyle(element, "::after");
+    return { background: corner.backgroundColor, width: corner.width, left: corner.left, bottom: corner.bottom };
+  })).toEqual({ background: "rgb(255, 255, 255)", width: "68px", left: "0px", bottom: "0px" });
+  await source.fill('group "Operators" members >= 2;');
+  await expect(editor).toHaveAttribute("data-horizontal-overflow", "false");
+});
 test("assertion editor shares policy file controls and clears the scrollbar gutter", async ({ page, appURL, api }) => {
   await openAssertionRecord(page, appURL);
   await expect(page.locator(".assertion-syntax")).toHaveCount(0);
@@ -6803,9 +6851,12 @@ test("Gateways edits multiple gateway drafts with the policy editor paradigm wit
   await source.fill((await source.inputValue()).replace('"origin": ""', '"origin": "https://api.example.com",'));
   await analyze.click();
   await expect(analyze).toHaveAttribute("data-analysis-state", "error");
-  await expect(page.locator("#gateway-gutter .config-error-marker")).toHaveCount(1);
+  await expect(page.locator("#gateway-gutter .policy-test-line-result")).toHaveCount(1);
   await expect(page.locator("#gateway-draft-message")).toBeHidden();
-  await page.locator("#gateway-gutter .config-error-marker").click();
+  await page.locator("#gateway-gutter .policy-test-line-result").click();
+  await expect(page.locator("#gateway-error-dialog")).toBeVisible();
+  await expect(page.locator("#gateway-error-text")).toContainText("Invalid JSON");
+  await page.getByRole("button", { name: "Close Gateway Analyze error", exact: true }).click();
   await expect(source).toBeFocused();
   await expect(page.locator("#gateway-draft-message")).toBeHidden();
 
@@ -6840,6 +6891,182 @@ test("Gateways edits multiple gateway drafts with the policy editor paradigm wit
   await page.locator('#gateway-history [data-revision="1"]').click();
   await expect(source).toHaveValue(/old\.partner\.example/);
   await expect(page.getByRole("button", { name: "Activate", exact: true })).toHaveCount(0);
+});
+
+test("Gateway form and raw editors share one draft, preserve fields, and save only analyzed revisions", async ({ page, appURL, api }) => {
+  const contract = { organization_id: "alpha", instance_id: "egress", adapter_cn: "egress", service_name: "egress.svc.zpr" };
+  api.handlers.set("/api/gateways/contracts", route => route.fulfill({ json: { contracts: [contract] } }));
+  api.handlers.set("/api/gateways/configs", route => route.fulfill({ json: { configs: [] } }));
+  const checks = [];
+  const saves = [];
+  api.handlers.set("/api/gateways/config/check", route => {
+    checks.push(route.request().postDataJSON().config);
+    return route.fulfill({ json: { valid: true, diagnostics: "Runtime unchanged." } });
+  });
+  api.handlers.set("/api/gateways/configs/egress/revisions", route => {
+    const body = route.request().postDataJSON();
+    saves.push(body);
+    return route.fulfill({ json: { instance_id: "egress", current_revision: 1, revisions: [{ revision: 1, config: body.config }] } });
+  });
+  await page.goto(`${appURL}/#gateways`);
+  const source = page.locator("#gateway-source");
+  await expect(source).toHaveValue(/"instance_id":/);
+  const config = JSON.parse(await source.inputValue());
+  config.extra = { preserve: true };
+  config.destinations[0].extra = "also preserved";
+  const original = JSON.stringify(config, null, 4);
+  await source.fill(original);
+  await page.getByRole("button", { name: "Form editor", exact: true }).click();
+  await expect(source).toBeHidden();
+  await expect(page.getByRole("region", { name: "Gateway draft form" })).toBeVisible();
+  expect(await source.inputValue()).toBe(original);
+  await expect(page.locator("#gateway-form-identity")).toContainText("egress.svc.zpr");
+  await page.getByRole("textbox", { name: "Destination 1 HTTPS origin", exact: true }).fill("https://api.example.com");
+  await page.getByRole("textbox", { name: "Destination 1 path prefixes", exact: true }).fill("/v1/\n/health");
+  await page.getByRole("button", { name: "Add destination", exact: true }).click();
+  await page.getByRole("textbox", { name: "Destination 2 HTTPS origin", exact: true }).fill("https://other.example.com");
+  await page.getByRole("checkbox", { name: "HEAD", exact: true }).uncheck();
+  await page.getByRole("spinbutton", { name: "Timeout (milliseconds)", exact: true }).fill("9000");
+  await page.getByRole("spinbutton", { name: "Maximum response size (bytes)", exact: true }).fill("1024");
+  const edited = JSON.parse(await source.inputValue());
+  expect(edited.extra).toEqual({ preserve: true });
+  expect(edited.destinations[0]).toEqual({ origin: "https://api.example.com", path_prefixes: ["/v1/", "/health"], extra: "also preserved" });
+  expect(edited.methods).toEqual(["GET"]);
+  expect(edited.timeout_ms).toBe(9000);
+  expect(edited.max_response_bytes).toBe(1024);
+  await page.getByRole("button", { name: "Raw JSON editor", exact: true }).click();
+  await expect(source).toBeVisible();
+  await expect(page.locator("#gateway-form")).toBeHidden();
+  expect(JSON.parse(await source.inputValue())).toEqual(edited);
+  await page.getByRole("button", { name: "Form editor", exact: true }).click();
+  await page.locator("#gateway-analyze").click();
+  await expect(page.locator("#gateway-analyze")).toHaveAttribute("data-analysis-state", "success");
+  await page.getByRole("textbox", { name: "Destination 1 HTTPS origin", exact: true }).fill("https://changed.example.com");
+  await expect(page.locator("#gateway-analyze")).not.toHaveAttribute("data-analysis-state", /.+/);
+  await page.locator("#gateway-files-toggle").click();
+  await expect(page.locator("#gateway-save")).toBeDisabled();
+  await page.keyboard.press("Escape");
+  await page.locator("#gateway-analyze").click();
+  await expect(page.locator("#gateway-analyze")).toHaveAttribute("data-analysis-state", "success");
+  const origin = page.getByRole("textbox", { name: "Destination 1 HTTPS origin", exact: true });
+  await origin.focus();
+  await page.keyboard.press("Control+s");
+  await expect(page.locator("#gateway-draft-message")).toContainText("Saved draft revision 1");
+  expect(saves).toHaveLength(1);
+  expect(saves[0].expected_revision).toBe(0);
+  expect(saves[0].config).toEqual(checks.at(-1));
+  await expect(page.getByRole("button", { name: "Activate", exact: true })).toHaveCount(0);
+});
+
+test("Gateway form rejects incompatible raw drafts and incomplete numbers without overwriting source", async ({ page, appURL, api }) => {
+  const contract = { organization_id: "alpha", instance_id: "egress", adapter_cn: "egress", service_name: "egress.svc.zpr" };
+  api.handlers.set("/api/gateways/contracts", route => route.fulfill({ json: { contracts: [contract] } }));
+  api.handlers.set("/api/gateways/configs", route => route.fulfill({ json: { configs: [] } }));
+  api.handlers.set("/api/gateways/config/check", route => route.fulfill({
+    status: 422, json: { valid: false, diagnostics: "destination 1 requires an HTTPS origin", source_line: 10 },
+  }));
+  await page.goto(`${appURL}/#gateways`);
+  const source = page.locator("#gateway-source");
+  await expect(source).toHaveValue(/"instance_id":/);
+  const original = await source.inputValue();
+  for (const invalid of ["{broken", JSON.stringify({ ...JSON.parse(original), methods: ["POST"] })]) {
+    await source.fill(invalid);
+    await page.getByRole("button", { name: "Form editor", exact: true }).click();
+    await expect(page.locator("#gateway-draft-message")).toContainText("Cannot open form editor");
+    await expect(source).toHaveValue(invalid);
+    await expect(page.locator("#gateway-form")).toBeHidden();
+  }
+  await source.fill(original);
+  await page.getByRole("button", { name: "Form editor", exact: true }).click();
+  const timeout = page.getByRole("spinbutton", { name: "Timeout (milliseconds)", exact: true });
+  await timeout.fill("");
+  await expect(page.locator("#gateway-analyze")).toBeDisabled();
+  expect(await source.inputValue()).toBe(original);
+  await page.getByRole("button", { name: "Raw JSON editor", exact: true }).click();
+  await expect(page.locator("#gateway-form-error")).toContainText("Enter numeric");
+  await expect(source).toBeHidden();
+  await timeout.fill("8000");
+  await page.locator("#gateway-analyze").click();
+  await expect(page.locator("#gateway-form-error")).toContainText("requires an HTTPS origin");
+  await expect(page.locator("#gateway-draft-message")).toBeHidden();
+  await page.getByRole("button", { name: "Raw JSON editor", exact: true }).click();
+  await expect(page.locator("#gateway-form-error")).toBeHidden();
+  await page.locator("#gateway-analyze").click();
+  await expect(page.locator("#gateway-gutter .policy-test-line-result")).toHaveCount(1);
+  await expect(page.locator("#gateway-draft-message")).toBeHidden();
+});
+
+test("Gateway raw editor keeps destination form controls separate without runtime activation", async ({ page, appURL, api }) => {
+  const contract = { organization_id: "alpha", instance_id: "egress", adapter_cn: "egress", service_name: "egress.svc.zpr" };
+  api.handlers.set("/api/gateways/contracts", route => route.fulfill({ json: { organization_id: "alpha", contracts: [contract] } }));
+  api.handlers.set("/api/gateways/configs", route => route.fulfill({ json: { configs: [] } }));
+  const checks = [];
+  api.handlers.set("/api/gateways/config/check", route => {
+    checks.push(route.request().postDataJSON().config);
+    return route.fulfill({ json: { valid: true, diagnostics: "Runtime is unchanged." } });
+  });
+  await page.goto(`${appURL}/#gateways`);
+  const source = page.getByRole("textbox", { name: "Gateway draft JSON" });
+  await expect(source).toHaveValue(/"instance_id":/);
+  await expect(page.locator("#gateway-destinations")).toHaveCount(0);
+  await expect(page.getByRole("button", { name: "Add destination" })).toHaveCount(0);
+  const config = JSON.parse(await source.inputValue());
+  config.destinations = [
+    { origin: "https://api.example.com", path_prefixes: ["/"] },
+    { origin: "https://other.example.com", path_prefixes: ["/v1/", "/health"] },
+  ];
+  await source.fill(JSON.stringify(config, null, 2));
+  await page.getByRole("button", { name: "Analyze", exact: true }).click();
+  await expect(page.locator("#gateway-analyze")).toHaveAttribute("data-analysis-state", "success");
+  expect(checks[0].destinations).toEqual([
+    { origin: "https://api.example.com", path_prefixes: ["/"] },
+    { origin: "https://other.example.com", path_prefixes: ["/v1/", "/health"] },
+  ]);
+  config.destinations.pop();
+  await source.fill(JSON.stringify(config, null, 2));
+  await expect(page.locator("#gateway-analyze")).not.toHaveAttribute("data-analysis-state", /.+/);
+  expect(JSON.parse(await source.inputValue()).destinations).toHaveLength(1);
+  await expect(page.getByRole("button", { name: "Activate", exact: true })).toHaveCount(0);
+});
+
+test("Gateway Analyze preserves source lines and selects the offending destination", async ({ page, appURL, api }) => {
+  const contract = { organization_id: "alpha", instance_id: "egress", adapter_cn: "egress", service_name: "egress.svc.zpr" };
+  api.handlers.set("/api/gateways/contracts", route => route.fulfill({ json: { contracts: [contract] } }));
+  api.handlers.set("/api/gateways/configs", route => route.fulfill({ json: { configs: [] } }));
+  let submitted = "";
+  api.handlers.set("/api/gateways/config/check", route => {
+    submitted = route.request().postData();
+    const line = submitted.split("\n").findIndex(value => value.includes('"origin"')) + 1;
+    return route.fulfill({ status: 422, json: { valid: false, diagnostics: "destination requires an HTTPS origin", source_line: line } });
+  });
+  await page.goto(`${appURL}/#gateways`);
+  const source = page.getByRole("textbox", { name: "Gateway draft JSON" });
+  await expect(source).toHaveValue(/"origin": ""/);
+  const original = await source.inputValue();
+  const line = original.split("\n").findIndex(value => value.includes('"origin"')) + 1;
+  await page.getByRole("button", { name: "Analyze", exact: true }).click();
+  await expect(page.locator("#gateway-draft-message")).toBeHidden();
+  await expect(page.locator("#gateway-error-dialog")).toBeHidden();
+  expect(submitted).toBe(`{"config":${original}}`);
+  const marker = page.locator("#gateway-gutter .policy-test-line-result");
+  const geometry = await marker.evaluate(element => {
+    const marker = element.getBoundingClientRect();
+    const gutter = element.closest(".config-source-gutter").getBoundingClientRect();
+    return { left: marker.left - gutter.left, right: gutter.right - marker.right };
+  });
+  expect(geometry.left).toBeCloseTo(10, 0);
+  expect(geometry.right).toBeGreaterThan(4);
+  await page.getByRole("button", { name: `Gateway draft error on line ${line}: destination requires an HTTPS origin` }).click();
+  await expect(page.locator("#gateway-error-dialog")).toBeVisible();
+  await expect(page.locator("#gateway-error-text")).toHaveText("destination requires an HTTPS origin");
+  await expect(page.locator("#gateway-draft-message")).toBeHidden();
+  await page.keyboard.press("Escape");
+  await expect(source).toBeFocused();
+  await expect(source).toHaveCSS("outline-style", "none");
+  expect(await source.evaluate(element => element.value.slice(element.selectionStart, element.selectionEnd))).toContain('"origin": ""');
+  await source.fill(original.replace('"origin": ""', '"origin": "https://example.com"'));
+  await expect(page.locator("#gateway-gutter .policy-test-line-result")).toHaveCount(0);
+  await expect(page.locator("#gateway-draft-message")).toBeHidden();
 });
 
 test("adding topology parents keeps existing nodes at the same screen position", async ({ page, appURL, api }) => {
@@ -7958,6 +8185,46 @@ test("GUI operator login remains unavailable on HTTP even when configuration cla
 
 test.describe("GUI operator HTTPS login", () => {
   test.use({ ignoreHTTPSErrors: true });
+
+  for (const path of ["/#gateways", "/?view=operator#gateways", "/scenarios.html"]) {
+    test(`operator re-login restores the original application location ${path}`, async ({ page, secureAppURL: appURL }) => {
+      let signedIn = false;
+      await page.route("**/auth/operator/config", route => route.fulfill({ json: { enabled: true } }));
+      await page.route("**/auth/operator/session", route => route.fulfill(signedIn ? { json: {
+        identity: { issuer: "https://identity.example", subject: "operator", organizations: ["*"], permissions: ["read"] },
+        csrf: "return-location-proof",
+      } } : { status: 401 }));
+      await page.addInitScript(() => document.addEventListener("submit", event => {
+        if (event.target.id === "operator-login-form") event.preventDefault();
+      }));
+      await page.goto(appURL + path);
+      await expect.poll(() => page.evaluate(() => sessionStorage.getItem("zpr.operator-login.return-location"))).toBe(path);
+      await page.goto(`${appURL}/?operator_login=failed`);
+      await expect(page.locator("#operator-login-status")).toContainText("Sign-in failed");
+      await page.getByRole("button", { name: "Sign in", exact: true }).click();
+      expect(await page.evaluate(() => sessionStorage.getItem("zpr.operator-login.return-location"))).toBe(path);
+      signedIn = true;
+      await page.goto(appURL + "/");
+      await expect(page).toHaveURL(appURL + path);
+      await expect(page.locator("#operator-login-status")).toHaveText("Signed in");
+      expect(await page.evaluate(() => sessionStorage.getItem("zpr.operator-login.return-location"))).toBeNull();
+    });
+  }
+
+  for (const target of ["https://outside.example/#gateways", "//outside.example/", "/auth/operator/login", "/\\outside.example/"]) {
+    test(`operator login refuses unsafe return location ${target}`, async ({ page, secureAppURL: appURL }) => {
+      await page.addInitScript(value => sessionStorage.setItem("zpr.operator-login.return-location", value), target);
+      await page.route("**/auth/operator/config", route => route.fulfill({ json: { enabled: true } }));
+      await page.route("**/auth/operator/session", route => route.fulfill({ json: {
+        identity: { issuer: "https://identity.example", subject: "operator", organizations: ["*"], permissions: ["read"] },
+        csrf: "return-location-proof",
+      } }));
+      await page.goto(appURL + "/#map");
+      await expect(page.locator("#operator-login-status")).toHaveText("Signed in");
+      await expect(page).toHaveURL(appURL + "/#map");
+      expect(await page.evaluate(() => sessionStorage.getItem("zpr.operator-login.return-location"))).toBeNull();
+    });
+  }
 
   test("failed sign-in stays reachable and scrollable on short viewports", async ({ page, secureAppURL: appURL }) => {
     await page.setViewportSize({ width: 390, height: 160 });

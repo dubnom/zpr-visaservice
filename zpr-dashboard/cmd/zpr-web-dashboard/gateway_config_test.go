@@ -125,3 +125,31 @@ func gatewayInstanceConfigJSON(t *testing.T, overrides map[string]any) []byte {
 	}
 	return data
 }
+
+func TestGatewayDestinationAllowlistDiagnosticsAndPrefixScope(t *testing.T) {
+	contract := gatewayInstanceContract{OrganizationID: "northstar", InstanceID: "public-egress", AdapterCN: "gateway-public-egress", ServiceName: "public-egress.svc.zpr"}
+	tests := []struct {
+		name         string
+		destinations []gatewayDestinationConfig
+		errorText    string
+	}{
+		{"blank origin", []gatewayDestinationConfig{{Origin: "", PathPrefixes: []string{"/"}}}, "destination 1 requires an HTTPS origin"},
+		{"shared prefix across origins", []gatewayDestinationConfig{
+			{Origin: "https://api.example.com", PathPrefixes: []string{"/"}},
+			{Origin: "https://other.example.com", PathPrefixes: []string{"/"}},
+		}, ""},
+		{"duplicate prefix at one origin", []gatewayDestinationConfig{{Origin: "https://api.example.com", PathPrefixes: []string{"/", "/"}}}, "duplicate gateway path prefix"},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			_, err := parseGatewayInstanceConfig(gatewayInstanceConfigJSON(t, map[string]any{"destinations": test.destinations}), contract)
+			if test.errorText == "" {
+				if err != nil {
+					t.Fatal(err)
+				}
+			} else if err == nil || !strings.Contains(err.Error(), test.errorText) {
+				t.Fatalf("expected %q, got %v", test.errorText, err)
+			}
+		})
+	}
+}

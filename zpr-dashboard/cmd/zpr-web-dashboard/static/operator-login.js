@@ -21,6 +21,14 @@
     let loginStarting = false;
     let automaticLogin = true;
     let loginFailure = "";
+    const returnLocationKey = "zpr.operator-login.return-location";
+    function localReturnLocation(value) {
+      if (typeof value !== "string" || !value.startsWith("/") || value.startsWith("//") || /[\\\u0000-\u001f\u007f]/.test(value)) return null;
+      const target = new URL(value, location.origin);
+      if (target.origin !== location.origin || target.pathname.startsWith("/auth/")) return null;
+      target.searchParams.delete("operator_login");
+      return `${target.pathname}${target.search}${target.hash}`;
+    }
     const retry = document.createElement("button");
     retry.type = "button";
     retry.className = "button button-quiet operator-login-retry";
@@ -130,6 +138,14 @@
           status.textContent = "Signed in, but this identity has no application permissions.";
           return;
         }
+        const returnLocation = localReturnLocation(sessionStorage.getItem(returnLocationKey));
+        sessionStorage.removeItem(returnLocationKey);
+        if (returnLocation && returnLocation !== `${location.pathname}${location.search}${location.hash}`) {
+          const target = new URL(returnLocation, location.origin);
+          const sameDocument = target.pathname === location.pathname && target.search === location.search;
+          location.replace(returnLocation);
+          if (!sameDocument) return;
+        }
         csrf = session.csrf;
         logout.hidden = false;
         const humanLabel = identity.display_name || identity.email || "";
@@ -158,7 +174,20 @@
     widget.operatorRefresh = readState;
     widget.operatorRefreshAfterAPIRejection = () => readState({ preserveSession: true });
     retry.addEventListener("click", () => void readState());
-    login.addEventListener("submit", () => { loginStarting = true; });
+    login.addEventListener("submit", event => {
+      try {
+        const previous = loginFailure && localReturnLocation(sessionStorage.getItem(returnLocationKey));
+        const target = previous || localReturnLocation(`${location.pathname}${location.search}${location.hash}`);
+        if (!target) throw new Error("Unable to preserve the current application location for sign-in.");
+        sessionStorage.setItem(returnLocationKey, target);
+        loginStarting = true;
+      } catch (error) {
+        event.preventDefault();
+        loginStarting = false;
+        automaticLogin = false;
+        status.textContent = `Sign-in could not start: ${error.message}`;
+      }
+    });
 
     logout.addEventListener("click", async () => {
       if (busy || !csrf) return;

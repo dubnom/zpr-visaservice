@@ -19,6 +19,7 @@
 .policy-assertion-editor .assertion-editor { min-height: 360px; flex: 1; }
 .assertion-editor { position: relative; min-width: 0; height: 360px; border: 1px solid #344a40; border-radius: 3px; background: #17211e; }
 .assertion-editor { --assertion-gutter-width: 68px; }
+.assertion-editor[data-horizontal-overflow="true"]::after { position: absolute; z-index: 1; bottom: 0; left: 0; width: 68px; height: 15px; background: white; content: ""; pointer-events: none; }
 .assertion-editor #assertion-source, .assertion-editor #assertion-highlight { left: var(--assertion-gutter-width); width: calc(100% - var(--assertion-gutter-width)); padding-left: 0; }
 .assertion-result-gutter { position: absolute; z-index: 2; top: 15px; left: 10px; width: 48px; height: calc(100% - 15px); padding-right: 4px; overflow: hidden; border-right: 1px solid #60756a; background: transparent; box-sizing: border-box; pointer-events: none; }
 .assertion-result-lines { width: 100%; }

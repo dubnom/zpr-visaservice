@@ -9,12 +9,12 @@
     <link rel="stylesheet" href="/geography.css?v=3">
     <script src="/geography.js?v=3" defer></script>
     <link rel="stylesheet" href="/machine-logs.css?v=18">
-    <link rel="stylesheet" href="/assertions.css?v=12">
+    <link rel="stylesheet" href="/assertions.css?v=13">
     <link rel="stylesheet" href="/sidebar.css?v=8">
     <link rel="stylesheet" href="/trusted-source.css?v=4">
     <link rel="stylesheet" href="/security-review.css?v=8">
     <link rel="stylesheet" href="/diagnostics.css?v=2">
-    <link rel="stylesheet" href="/gateways.css?v=3">
+    <link rel="stylesheet" href="/gateways.css?v=7">
     <link rel="stylesheet" href="/provisioning.css?v=3">
     <link rel="stylesheet" href="/editor-assistant.css?v=6">
     <script src="/sidebar.js?v=39" defer></script>
@@ -395,6 +395,7 @@
                     <button id="gateway-format" class="button" type="button" title="Format gateway draft" aria-label="Format gateway draft" disabled>Format</button>
                   </div>
                   <div class="policy-editor-utilities">
+                    <button id="gateway-mode-toggle" class="button" type="button" aria-pressed="false" disabled>Form editor</button>
                     <span data-editor-search-target="gateway-source"></span>
                     <details id="gateway-history-menu" class="policy-history-menu">
                       <summary class="button policy-history-toggle" aria-label="Version history">History <span id="gateway-history-count">—</span><span class="policy-picker-chevron" aria-hidden="true">⌄</span></summary>
@@ -402,8 +403,32 @@
                     </details>
                   </div>
                 </div>
+                <section id="gateway-form" class="gateway-form" aria-label="Gateway draft form" hidden>
+                  <p>Draft only. Analyze validates and Save stores a revision; neither changes the running gateway.</p>
+                  <fieldset id="gateway-form-fields" disabled>
+                    <legend>Gateway settings</legend>
+                    <dl id="gateway-form-identity" class="gateway-form-identity"></dl>
+                    <h3>Destination allowlist</h3>
+                    <p>Use exact HTTPS origins on port 443, without credentials, paths, queries or fragments. Wildcard hosts are not supported. Enter one allowed path prefix per line; "/" allows every path at that origin.</p>
+                    <div id="gateway-form-destinations"></div>
+                    <button id="gateway-form-add-destination" class="button" type="button">Add destination</button>
+                    <div class="gateway-form-limits">
+                      <fieldset><legend>Allowed methods</legend><label><input id="gateway-form-get" type="checkbox"> GET</label><label><input id="gateway-form-head" type="checkbox"> HEAD</label></fieldset>
+                      <label>Timeout (milliseconds)<input id="gateway-form-timeout" type="number" min="100" max="30000" step="1"></label>
+                      <label>Maximum response size (bytes)<input id="gateway-form-response-limit" type="number" min="1" step="1"></label>
+                    </div>
+                  </fieldset>
+                  <p id="gateway-form-error" role="alert" hidden></p>
+                </section>
                 <div class="config-source-editor gateway-source-editor"><div id="gateway-gutter" class="config-source-gutter" aria-label="Gateway draft errors by source line"></div><div class="config-code-surface"><pre id="gateway-highlight" aria-hidden="true"></pre><textarea id="gateway-source" class="zpr-config-source" aria-label="Gateway draft JSON" spellcheck="false" maxlength="1048576" wrap="off" disabled></textarea></div></div>
                 <p id="gateway-draft-message" class="editor-page-status" role="status" aria-live="polite" hidden></p>
+                <dialog id="gateway-error-dialog" class="policy-dialog policy-test-dialog" aria-label="Gateway Analyze error details">
+                  <div class="policy-test-modal">
+                    <div class="dialog-heading"><h2>Gateway Analyze error</h2><button id="gateway-error-close" class="inspector-close" type="button" aria-label="Close Gateway Analyze error">×</button></div>
+                    <div class="policy-test-subjects"><div id="gateway-error-text" class="policy-test-subject policy-test-diagnostic"></div></div>
+                    <div class="dialog-actions"><button id="gateway-error-dismiss" class="button" type="button">Close</button></div>
+                  </div>
+                </dialog>
               </div>
             </div>
           </section>
@@ -546,18 +571,18 @@
     <script src="/safe-display.js?v=1" defer></script>
     <script src="/table-sort.js?v=1" defer></script>
     <script src="/trusted-source.js?v=8" defer></script>
-    <script src="/editor-page.js?v=14" defer></script>
+    <script src="/editor-page.js?v=15" defer></script>
     <script src="/assistant-core.js?v=1" defer></script>
     <script src="/app.js?v=132" defer></script>
     <script src="/log-format.js?v=1" defer></script>
     <script src="/machine-logs.js?v=23" defer></script>
-    <script src="/assertions.js?v=23" defer></script>
+    <script src="/assertions.js?v=25" defer></script>
     <script src="/config-editor.js?v=18" defer></script>
-    <script src="/gateways.js?v=14" defer></script>
+    <script src="/gateways.js?v=18" defer></script>
     <script src="/provisioning-contract.js?v=2" defer></script>
     <script src="/provisioning.js?v=3" defer></script>
     <script src="/provisioning-registry.js?v=4" defer></script>
-    <script src="/operator-login.js?v=8" defer></script>
+    <script src="/operator-login.js?v=10" defer></script>
     <script src="/editor-assistant.js?v=3" defer></script>
     <script src="/editor-search.js?v=7" defer></script>
     <script src="/diagnostics.js?v=4" defer></script>

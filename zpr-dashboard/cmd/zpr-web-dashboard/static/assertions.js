@@ -54,6 +54,7 @@
   const sourceLayout = window.ZPREditorPage.bindSourceLayout({
     source, highlight: element("assertion-highlight"),
     gutterContent: element("assertion-result-lines"),
+    container: element("assertion-editor"),
     onResize: updateGutterBounds,
   });
 
@@ -314,18 +315,23 @@
       const row = document.createElement("div");
       row.className = "assertion-result-line";
       row.dataset.line = String(line);
-      for (const entry of byLine.get(line) || []) {
+      const entries = byLine.get(line) || [];
+      if (entries.length) {
+        const severity = { pass: 0, warning: 1, fail: 2, error: 3 };
+        const entryStatus = entry => entry.warning ? "warning" : entry.error ? "error" : entry.result.status;
+        const worst = entries.reduce((worst, entry) =>
+          (severity[entryStatus(entry)] ?? 3) > (severity[entryStatus(worst)] ?? 3) ? entry : worst);
         const button = document.createElement("button");
-        const status = entry.warning ? "warning" : entry.error ? "error" : entry.result.status;
+        const status = entryStatus(worst);
         button.type = "button";
         button.className = "assertion-result-marker";
         button.dataset.state = status;
         button.textContent = status === "warning" ? "WARN" : status === "pass" ? "PASS" : status === "fail" ? "FAIL" : "ERR";
-        const rule = entry.result?.rule;
-        const label = entry.warning ? `Warning [${entry.warning.code}]: ${entry.warning.message}` : rule ? ruleLabel(rule) : "Assertion evaluation error";
+        const rule = worst.result?.rule;
+        const label = worst.warning ? `Warning [${worst.warning.code}]: ${worst.warning.message}` : rule ? ruleLabel(rule) : "Assertion evaluation error";
         button.title = `Line ${line} · ${button.textContent} · ${label}`;
         button.setAttribute("aria-label", `${button.title}; show details`);
-        button.addEventListener("click", () => showResultDetail(line, entry.result, entry.error, entry.warning));
+        button.addEventListener("click", () => showResultDetail(line, entries, status));
         row.append(button);
       }
       fragment.append(row);
@@ -336,12 +342,12 @@
     resultLines.style.transform = `translateY(${-source.scrollTop}px)`;
   }
 
-  function showResultDetail(line, result, error, warning) {
+  function showResultDetail(line, entries, state) {
     const dialog = element("policy-test-dialog");
     const subjects = element("policy-test-subjects");
-    const status = warning ? "WARNING" : error ? "ERROR" : String(result.status || "error").toUpperCase();
+    const status = state.toUpperCase();
     element("policy-test-title").textContent = `Assertion ${status.toLowerCase()}`;
-    element("policy-test-subject-title").textContent = warning ? `Line ${line} lint warning` : error ? `Line ${line} diagnostic` : `Line ${line} details`;
+    element("policy-test-subject-title").textContent = `Line ${line} details`;
     subjects.replaceChildren();
     const appendDetail = (text, meta = "") => {
       const item = document.createElement("div");
@@ -354,13 +360,15 @@
       }
       subjects.append(item);
     };
-    if (error) {
-      appendDetail(error);
-    } else if (warning) {
-      appendDetail(`Warning [${warning.code}]`, warning.message);
-    } else {
-      appendDetail(ruleLabel(result.rule), `${result.status.toUpperCase()} · ${result.message || `${result.checked} checked; ${result.violations} violations`}`);
-      for (const subject of result.subjects || []) appendDetail(subject);
+    for (const { result, error, warning } of entries) {
+      if (error) {
+        appendDetail(error);
+      } else if (warning) {
+        appendDetail(`Warning [${warning.code}]`, warning.message);
+      } else {
+        appendDetail(ruleLabel(result.rule), `${result.status.toUpperCase()} · ${result.message || `${result.checked} checked; ${result.violations} violations`}`);
+        for (const subject of result.subjects || []) appendDetail(subject);
+      }
     }
     dialog.showModal();
   }

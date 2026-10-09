@@ -3,3 +3,17 @@
 .gateway-record-item small { grid-column: 2; overflow: hidden; color: var(--muted); font: 8px var(--mono); text-overflow: ellipsis; white-space: nowrap; }
 .gateway-record-item[data-kind="gateway"] .policy-kind-icon { color: #c98612; }
 .gateway-source-editor .zpr-config-source:disabled { cursor: not-allowed; }
+.gateway-source-editor .config-gutter-line { width: 100%; grid-template-columns: 40px; justify-items: start; }
+.gateway-source-editor .zpr-config-source:focus { outline: none; }
+.gateway-form { padding: 12px; overflow: auto; max-height: calc(100dvh - 240px); }
+.gateway-form[hidden], .gateway-source-editor[hidden] { display: none; }
+.gateway-form fieldset { border: 1px solid var(--line); padding: 12px; min-width: 0; }
+.gateway-form-identity { display: grid; grid-template-columns: auto minmax(0, 1fr); gap: 4px 12px; }
+.gateway-form-identity dd { margin: 0; overflow-wrap: anywhere; }
+.gateway-form-destination, .gateway-form-limits { display: flex; flex-wrap: wrap; gap: 12px; margin: 12px 0; align-items: start; }
+.gateway-form-destination label, .gateway-form-limits > label { flex: 1 1 180px; }
+.gateway-form-destination input, .gateway-form-destination textarea, .gateway-form-limits > label input { display: block; width: 100%; box-sizing: border-box; }
+.gateway-form textarea { border: 1px solid var(--line); background: var(--panel); color: var(--ink); }
+#gateway-form-error { color: #a43830; }
+[data-gateway-manager][data-gateway-mode="form"] .editor-search-tools,
+[data-gateway-manager][data-gateway-mode="form"] .editor-wrap-toggle { display: none; }

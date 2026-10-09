@@ -2,7 +2,7 @@
   const root = document.querySelector("[data-gateway-manager]");
   if (!root) return;
 
-  const state = { contracts: [], configs: [], selected: null, record: null, saved: "", validDraft: "", revision: 0, diagnostic: null, busy: false, loaded: false };
+  const state = { contracts: [], configs: [], selected: null, record: null, saved: "", validDraft: "", revision: 0, diagnostic: null, busy: false, loaded: false, formMode: false };
   const byId = (id) => document.getElementById(id);
   const source = byId("gateway-source");
   const gutter = byId("gateway-gutter");
@@ -19,12 +19,17 @@
   const message = byId("gateway-draft-message");
   const analysisScope = page.createAnalysisScope(() => [
     source.value, state.selected?.organization_id, state.selected?.instance_id,
-    state.selected?.adapter_cn, state.selected?.service_name, state.revision,
+    state.selected?.adapter_cn, state.selected?.service_name, state.revision, state.formMode,
   ]);
   page.placeStatus(message);
   window.getGatewayAssistantContext = () => [state.selected?.organization_id, state.selected?.instance_id, state.selected?.adapter_cn, state.selected?.service_name, state.revision];
   const surface = page.createSourceSurface({
     source, highlight, gutter, language: "json", label: "Gateway draft",
+    markerText: "ERR",
+    onMarker: diagnostic => {
+      byId("gateway-error-text").textContent = diagnostic.message;
+      byId("gateway-error-dialog").showModal();
+    },
   });
   const historyMenu = page.createHistory({
     menu: byId("gateway-history-menu"), list: byId("gateway-history"), count: byId("gateway-history-count"),
@@ -54,7 +59,9 @@
   }
 
   const pretty = (config) => `${JSON.stringify(config, null, 2)}\n`;
-  const isDirty = () => Boolean(state.selected) && source.value !== state.saved;
+  const isDirty = () => Boolean(state.selected) && (source.value !== state.saved || hasIncompleteFormNumber());
+  const hasIncompleteFormNumber = () => state.formMode &&
+    ["gateway-form-timeout", "gateway-form-response-limit"].some(id => !Number.isFinite(byId(id).valueAsNumber));
 
   function setMessage(text, kind = "") {
     page.setStatus(message, text, kind);
@@ -90,6 +97,11 @@
     analysisScope.invalidate();
     state.validDraft = "";
     surface.setDiagnostic(null);
+    const dialog = byId("gateway-error-dialog");
+    if (dialog.open) dialog.close();
+    byId("gateway-error-text").textContent = "";
+    byId("gateway-form-error").textContent = "";
+    byId("gateway-form-error").hidden = true;
     page.setAnalysisState(analyzeButton);
   }
 
@@ -97,25 +109,192 @@
     const selected = Boolean(state.selected);
     const empty = !source.value.trim();
     source.disabled = !selected;
-    analyzeButton.disabled = state.busy || !selected || empty;
-    formatButton.disabled = state.busy || !selected || empty;
+    analyzeButton.disabled = state.busy || !selected || empty || hasIncompleteFormNumber();
+    formatButton.disabled = state.busy || !selected || empty || state.formMode;
     formatButton.classList.toggle("button-save-as-ready", !formatButton.disabled);
     analyzeButton.classList.toggle("button-next-evaluate", !analyzeButton.disabled && !analyzeButton.dataset.analysisState);
-    const canSave = !state.busy && selected && isDirty() && state.validDraft === source.value;
+    const canSave = !state.busy && selected && !hasIncompleteFormNumber() && isDirty() && state.validDraft === source.value;
     saveButton.disabled = !canSave;
     saveButton.classList.toggle("button-save-next", !canSave);
     saveButton.classList.toggle("button-save-as-ready", canSave);
     byId("gateway-open").disabled = state.busy || !selected;
     byId("gateway-download").disabled = !selected || empty;
     byId("gateway-discard").disabled = state.busy || !isDirty();
-    byId("gateway-refresh").disabled = state.busy;
+    byId("gateway-refresh").disabled = state.busy || hasIncompleteFormNumber();
+    byId("gateway-mode-toggle").disabled = state.busy || !selected;
+    byId("gateway-form-fields").disabled = state.busy || !selected;
   }
 
-  function renderSource() {
+  function renderSource(refreshForm = true) {
     surface.render();
+    if (state.formMode && refreshForm) renderForm();
     renderIdentity();
     updateControls();
+    if (state.formMode) {
+      const parsed = parseSource();
+      if (parsed.error || formConfigError(parsed.config)) byId("gateway-form-fields").disabled = true;
+    }
   }
+
+  function formConfigError(config) {
+    if (!config || typeof config !== "object" || Array.isArray(config)) return "The draft must be a JSON object.";
+    if (!Array.isArray(config.destinations) || !config.destinations.every(destination =>
+      destination && typeof destination === "object" && !Array.isArray(destination) &&
+      typeof destination.origin === "string" && Array.isArray(destination.path_prefixes) &&
+      destination.path_prefixes.every(prefix => typeof prefix === "string" && !/[\r\n]/.test(prefix)))) {
+      return "Destinations must contain origins and string path-prefix arrays.";
+    }
+    if (!Array.isArray(config.methods) || !config.methods.every(method => method === "GET" || method === "HEAD") ||
+        new Set(config.methods).size !== config.methods.length ||
+        !Number.isFinite(config.timeout_ms) || !Number.isFinite(config.max_response_bytes)) {
+      return "The form requires unique GET/HEAD methods and numeric timeout/response limits.";
+    }
+    return "";
+  }
+
+  function setFormError(text) {
+    byId("gateway-form-error").textContent = text;
+    byId("gateway-form-error").hidden = !text;
+  }
+
+  function updateFormDraft(edit, refreshForm = false) {
+    if (state.busy || !state.selected) return;
+    if (refreshForm && hasIncompleteFormNumber()) {
+      setFormError("Enter numeric timeout and response limits before adding or removing destinations.");
+      return;
+    }
+    const parsed = parseSource();
+    const error = parsed.error || formConfigError(parsed.config);
+    if (error) {
+      setFormError(`${error} Switch to the raw editor to correct the draft.`);
+      return;
+    }
+    edit(parsed.config);
+    source.value = pretty(parsed.config);
+    clearAnalysis();
+    setMessage("");
+    renderSource(refreshForm);
+    if (hasIncompleteFormNumber()) setFormError("Enter numeric timeout and response limits before analyzing or saving.");
+  }
+
+  function renderForm() {
+    const parsed = parseSource();
+    const error = parsed.error || formConfigError(parsed.config);
+    if (error) {
+      byId("gateway-form-fields").disabled = true;
+      setFormError(`${error} Switch to the raw editor to correct the draft.`);
+      return;
+    }
+    const config = parsed.config;
+    const identity = byId("gateway-form-identity");
+    identity.replaceChildren();
+    for (const [field, label] of [
+      ["schema_version", "Schema version"], ["organization_id", "Organization"],
+      ["instance_id", "Instance"], ["adapter_cn", "Adapter"], ["service_name", "Service"],
+    ]) {
+      const term = document.createElement("dt");
+      term.textContent = label;
+      const value = document.createElement("dd");
+      value.textContent = String(config[field] ?? "(missing)");
+      identity.append(term, value);
+    }
+    const rows = byId("gateway-form-destinations");
+    rows.replaceChildren();
+    config.destinations.forEach((destination, index) => {
+      const row = document.createElement("fieldset");
+      row.className = "gateway-form-destination";
+      const legend = document.createElement("legend");
+      legend.textContent = `Destination ${index + 1}`;
+      row.append(legend);
+      for (const [field, label, value] of [
+        ["origin", `Destination ${index + 1} HTTPS origin`, destination.origin],
+        ["path_prefixes", `Destination ${index + 1} path prefixes`, destination.path_prefixes.join("\n")],
+      ]) {
+        const wrapper = document.createElement("label");
+        wrapper.textContent = label;
+        const input = document.createElement(field === "origin" ? "input" : "textarea");
+        input.value = value;
+        if (field === "origin") {
+          input.type = "text";
+          input.placeholder = "https://api.example.com";
+        } else {
+          input.rows = 3;
+        }
+        input.addEventListener("input", () => updateFormDraft(draft => {
+          draft.destinations[index][field] = field === "origin" ? input.value :
+            input.value.split("\n");
+        }));
+        wrapper.append(input);
+        row.append(wrapper);
+      }
+      const remove = document.createElement("button");
+      remove.type = "button";
+      remove.className = "button";
+      remove.textContent = "Remove";
+      remove.setAttribute("aria-label", `Remove destination ${index + 1}`);
+      remove.addEventListener("click", () => updateFormDraft(draft => draft.destinations.splice(index, 1), true));
+      row.append(remove);
+      rows.append(row);
+    });
+    byId("gateway-form-add-destination").disabled = config.destinations.length >= 32;
+    byId("gateway-form-get").checked = config.methods.includes("GET");
+    byId("gateway-form-head").checked = config.methods.includes("HEAD");
+    byId("gateway-form-timeout").value = config.timeout_ms;
+    byId("gateway-form-response-limit").value = config.max_response_bytes;
+  }
+
+  function setMode(formMode) {
+    state.formMode = formMode;
+    root.dataset.gatewayMode = formMode ? "form" : "raw";
+    clearAnalysis();
+    setMessage("");
+    byId("gateway-form").hidden = !formMode;
+    source.closest(".config-source-editor").hidden = formMode;
+    const toggle = byId("gateway-mode-toggle");
+    toggle.textContent = formMode ? "Raw JSON editor" : "Form editor";
+    toggle.setAttribute("aria-pressed", String(formMode));
+    renderSource();
+  }
+  byId("gateway-mode-toggle").addEventListener("click", () => {
+    if (state.formMode) {
+      if (hasIncompleteFormNumber()) {
+        setFormError("Enter numeric timeout and response limits before switching to the raw editor.");
+        return;
+      }
+      setMode(false);
+      source.focus();
+      return;
+    }
+    const parsed = parseSource();
+    const error = parsed.error || formConfigError(parsed.config);
+    if (error) {
+      setMessage(`Cannot open form editor: ${error} Correct the raw JSON first.`, "error");
+      return;
+    }
+    setMode(true);
+  });
+  byId("gateway-form-add-destination").addEventListener("click", () =>
+    updateFormDraft(config => config.destinations.push({ origin: "", path_prefixes: ["/"] }), true));
+  for (const id of ["gateway-form-get", "gateway-form-head"]) {
+    byId(id).addEventListener("input", () => updateFormDraft(config => {
+      config.methods = ["GET", "HEAD"].filter(method => byId(`gateway-form-${method.toLowerCase()}`).checked);
+    }));
+  }
+  for (const [id, field] of [["gateway-form-timeout", "timeout_ms"], ["gateway-form-response-limit", "max_response_bytes"]]) {
+    byId(id).addEventListener("input", () => {
+      const value = byId(id).valueAsNumber;
+      if (!Number.isFinite(value)) {
+        clearAnalysis();
+        setFormError("Enter a numeric value before analyzing or saving.");
+        renderIdentity();
+        updateControls();
+        return;
+      }
+      updateFormDraft(config => { config[field] = value; });
+    });
+  }
+  byId("gateway-error-close").addEventListener("click", () => byId("gateway-error-dialog").close());
+  byId("gateway-error-dismiss").addEventListener("click", () => byId("gateway-error-dialog").close());
 
   function renderContracts() {
     contractList.replaceChildren();
@@ -207,7 +386,7 @@
       setMessage(`Gateway inventory unavailable: ${error.message}`, "error");
     } finally {
       state.busy = false;
-      updateControls();
+      renderSource();
     }
   }
 
@@ -224,7 +403,7 @@
   }
 
   function loadRevision(revision) {
-    if (!page.confirmDiscard(source.value !== pretty(revision.config) && isDirty(), "Discard unsaved gateway draft edits?")) return;
+    if (!page.confirmDiscard((source.value !== pretty(revision.config) || hasIncompleteFormNumber()) && isDirty(), "Discard unsaved gateway draft edits?")) return;
     state.revision = revision.revision;
     source.value = pretty(revision.config);
     clearAnalysis();
@@ -234,7 +413,7 @@
   }
 
   async function analyzeDraft() {
-    if (!state.selected || state.busy) return;
+    if (!state.selected || state.busy || hasIncompleteFormNumber()) return;
     const parsed = parseSource();
     if (parsed.error) {
       surface.setDiagnostic({ line: parsed.line, message: parsed.error });
@@ -251,10 +430,22 @@
     updateControls();
     try {
       const result = await readJSON("/api/gateways/config/check", {
-        method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ config: parsed.config }),
+        method: "POST", headers: { "Content-Type": "application/json" }, body: `{"config":${analyzed}}`,
       }, { acceptError: (result) => result?.valid === false });
       if (!isCurrent()) return;
-      if (!result.valid) throw new Error(result.diagnostics || "Gateway draft analysis failed.");
+      if (!result.valid) {
+        const diagnostic = result.diagnostics || "Gateway draft analysis failed.";
+        if (Number.isInteger(result.source_line) && result.source_line > 0 &&
+            result.source_line <= analyzed.split("\n").length) {
+          surface.setDiagnostic({ line: result.source_line, message: diagnostic });
+          if (state.formMode) setFormError(diagnostic);
+          setMessage("");
+          page.setAnalysisState(analyzeButton, "error");
+          state.validDraft = "";
+          return;
+        }
+        throw new Error(diagnostic);
+      }
       state.validDraft = analyzed;
       surface.setDiagnostic(null);
       page.setAnalysisState(analyzeButton, "success");
@@ -321,7 +512,7 @@
     setMessage("");
     renderSource();
   });
-  page.bindSaveShortcut({ root: source, button: saveButton });
+  page.bindSaveShortcut({ root, button: saveButton });
   analyzeButton.addEventListener("click", () => void analyzeDraft());
   formatButton.addEventListener("click", formatDraft);
   saveButton.addEventListener("click", () => void saveDraft());

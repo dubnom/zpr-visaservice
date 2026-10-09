@@ -3,7 +3,7 @@
   "organization_id": "great-lakes",
   "folder": "Finance",
   "name": "Great Lakes Finance web gateway",
-  "description": "Verify the organization-started, allowlisted Google web proxy from Milwaukee Finance over ZPR. Configure a client HTTP proxy to internet-gateway.svc.zpr:8082.",
+  "description": "Fetch and log a Google page through the Finance web gateway, then verify Apple is blocked by the host allowlist.",
   "parallel": true,
   "steps": [
     {"id": "finance-machine", "action": "start_machine", "machine": "machine-03"},
@@ -12,7 +12,9 @@
     {"id": "finance-selection", "action": "select_workloads", "machine": "machine-03", "workloads": ["finance-client"]},
     {"id": "finance-workload", "action": "start_workload", "machine": "machine-03", "component": "finance-client"},
     {"id": "gateway-dns", "after": ["finance-workload"], "action": "resolve_dns", "machine": "machine-03", "component": "finance-client", "target": "internet-gateway.svc.zpr", "timeout_seconds": 10},
-    {"id": "gateway-health", "after": ["gateway-dns"], "action": "request_test_service", "machine": "machine-03", "component": "finance-client", "target": "internet-gateway"}
+    {"id": "gateway-health", "after": ["gateway-dns"], "action": "request_test_service", "machine": "machine-03", "component": "finance-client", "target": "internet-gateway"},
+    {"id": "google-page", "after": ["gateway-health"], "action": "request_web_gateway", "machine": "machine-03", "component": "finance-client", "target": "https://www.google.com/", "expected": "allow"},
+    {"id": "apple-page", "after": ["google-page"], "action": "request_web_gateway", "machine": "machine-03", "component": "finance-client", "target": "http://www.apple.com/", "expected": "deny"}
   ],
   "cleanup": [
     {"action": "stop_workload", "machine": "machine-03", "component": "finance-client"},
