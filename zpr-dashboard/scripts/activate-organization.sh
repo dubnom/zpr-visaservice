@@ -48,6 +48,10 @@ compiler=${ZPR_ZPLC_BIN:-$dashboard_dir/../../zpr-compiler/target/debug/zplc}
 pregen="$runtime_dir/linux-integration/pregen"
 multinode_dir="$dashboard_dir/../../zpr-demo/multinode-demo"
 multinode_deploy="$multinode_dir/local-compute/deploy-docker.sh"
+healthy_multinode_snapshot() {
+    jq -e --argjson expected "$configured_node_count" \
+        '.api_status=="connected" and (.errors|length)==0 and ([.actors[] | select(.node)] | length)==$expected and all(.actors[] | select(.node); .node_details.in_sync==true)'
+}
 install_multinode_policy() {
     runtime_policy_config="$runtime_dir/multinode/$organization/admin/multinode-demo.zplc"
     [ -r "$runtime_policy_config" ] || { echo "multinode runtime policy config missing: $runtime_policy_config" >&2; return 1; }
@@ -56,9 +60,25 @@ install_multinode_policy() {
         -policy-config-base "$policy_config" \
         -policy-config-runtime "$runtime_policy_config" \
         -policy-config-bootstrap-dir "$runtime_dir/multinode/$organization/include" \
-        -policy-output "$install_policy_config"
-    "$compiler" "$bundle_dir/runtime.zpl" -c "$install_policy_config" \
-        -k "$pregen/zpr-rsa-key.pem" -d "$bundle_dir" -o runtime.bin2
+        -policy-output "$install_policy_config" || return 1
+    # This function is called in a conditional, where set -e does not apply.
+    compile_directory=$(mktemp -d "$bundle_dir/compile.XXXXXX") || return 1
+    if ! "$compiler" "$bundle_dir/runtime.zpl" -c "$install_policy_config" \
+        -k "$pregen/zpr-rsa-key.pem" -d "$compile_directory" -o runtime.bin2; then
+        rm -rf "$compile_directory"
+        echo "organization policy compilation failed; no policy installed" >&2
+        return 1
+    fi
+    if [ ! -s "$compile_directory/runtime.bin2" ]; then
+        rm -rf "$compile_directory"
+        echo "organization policy compiler produced no bundle; no policy installed" >&2
+        return 1
+    fi
+    if ! mv "$compile_directory/runtime.bin2" "$bundle_dir/runtime.bin2"; then
+        rm -rf "$compile_directory"
+        return 1
+    fi
+    rm -rf "$compile_directory"
     docker run --rm \
         -v "$bundle_dir:/runtime/policy:ro" \
         -v "$multinode_dir/zpr-conf/include:/runtime/include:ro" \
@@ -260,6 +280,7 @@ if [ "$action" = "restore-base" ]; then
     restore_organization_base
 fi
 report_activation_status "Starting $organization runtime"
+control_changed=yes
 start_runtime "$organization"
 if [ "$organization_driver" = "docker-multinode" ]; then
     report_activation_status "Compiling and installing policy with deployed bootstrap keys"
@@ -328,7 +349,7 @@ if [ "$organization_driver" = docker-multinode ]; then
     control_attempt=0
     while [ "$control_attempt" -lt 60 ]; do
         control_snapshot=$(control_room_curl --silent --show-error --max-time 15 "$control_room_url/api/snapshot" || true)
-        if printf '%s' "$control_snapshot" | jq -e '.api_status=="connected" and (.errors|length)==0' >/dev/null 2>&1; then
+        if printf '%s' "$control_snapshot" | healthy_multinode_snapshot >/dev/null 2>&1; then
             break
         fi
         control_attempt=$((control_attempt + 1))
@@ -336,7 +357,7 @@ if [ "$organization_driver" = docker-multinode ]; then
     done
     if [ "$control_attempt" -ge 60 ]; then
         control_summary=$(printf '%s' "$control_snapshot" | jq -c '{api_status,errors}' 2>/dev/null || printf '%s' "$control_snapshot")
-        echo "Control Service did not report a healthy snapshot for $organization: $control_summary" >&2
+        echo "Control Service did not report a healthy snapshot with $configured_node_count synchronized nodes for $organization: $control_summary" >&2
         exit 1
     fi
 else
@@ -381,6 +402,11 @@ control_snapshot=$(control_room_curl --silent --show-error --max-time 15 "$contr
 if ! printf '%s' "$control_snapshot" | jq -e '.api_status=="connected" and (.errors|length)==0' >/dev/null 2>&1; then
     snapshot_summary=$(printf '%s' "$control_snapshot" | jq -c '{api_status,errors}' 2>/dev/null || printf '%s' "$control_snapshot")
     echo "Control Service snapshot is not healthy: $snapshot_summary" >&2
+    exit 1
+fi
+if [ "$organization_driver" = docker-multinode ] &&
+    ! printf '%s' "$control_snapshot" | healthy_multinode_snapshot >/dev/null 2>&1; then
+    echo "Control Service snapshot lost synchronized nodes before activation completed for $organization" >&2
     exit 1
 fi
 adapter_logs=$(control_room_curl --silent --show-error --max-time 15 "$control_room_url/api/adapter-logs" || true)

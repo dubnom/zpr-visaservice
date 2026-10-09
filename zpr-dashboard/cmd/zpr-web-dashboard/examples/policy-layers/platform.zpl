@@ -30,27 +30,27 @@ provide ZprDNS at dns.svc.zpr over TCP 53.
   allow AuthenticatedDevice.
   allow VisaDnsPublisher.
 define SimulatorControl as adapter with zpr.adapter.cn:'simulator-control'.
-define SimulatorControlService as service with device.zpr.adapter.cn:'simulator-control' and zpr.addr:'fd5a:5052:adda:1:ffff:ffff:ffff:fffe'.
-define Machine01 as a device with zpr.adapter.cn:'machine-01'.
-define Machine02 as a device with zpr.adapter.cn:'machine-02'.
-define Machine03 as a device with zpr.adapter.cn:'machine-03'.
-define Machine04 as a device with zpr.adapter.cn:'machine-04'.
-define Machine05 as a device with zpr.adapter.cn:'machine-05'.
-define Machine06 as a device with zpr.adapter.cn:'machine-06'.
-define Machine07 as a device with zpr.adapter.cn:'machine-07'.
-define Machine08 as a device with zpr.adapter.cn:'machine-08'.
-define Machine09 as a device with zpr.adapter.cn:'machine-09'.
-define Machine10 as a device with zpr.adapter.cn:'machine-10'.
-define Machine11 as a device with zpr.adapter.cn:'machine-11'.
-define Machine12 as a device with zpr.adapter.cn:'machine-12'.
-define Machine13 as a device with zpr.adapter.cn:'machine-13'.
-define Machine14 as a device with zpr.adapter.cn:'machine-14'.
-define Machine15 as a device with zpr.adapter.cn:'machine-15'.
-define Machine16 as a device with zpr.adapter.cn:'machine-16'.
-define Machine17 as a device with zpr.adapter.cn:'machine-17'.
-define Machine18 as a device with zpr.adapter.cn:'machine-18'.
-define Machine19 as a device with zpr.adapter.cn:'machine-19'.
-define Machine20 as a device with zpr.adapter.cn:'machine-20'.
+define SimulatorControlService as service with device.zpr.adapter.cn:'simulator-control'.
+define Machine01 as an adapter with zpr.adapter.cn:'machine-01'.
+define Machine02 as an adapter with zpr.adapter.cn:'machine-02'.
+define Machine03 as an adapter with zpr.adapter.cn:'machine-03'.
+define Machine04 as an adapter with zpr.adapter.cn:'machine-04'.
+define Machine05 as an adapter with zpr.adapter.cn:'machine-05'.
+define Machine06 as an adapter with zpr.adapter.cn:'machine-06'.
+define Machine07 as an adapter with zpr.adapter.cn:'machine-07'.
+define Machine08 as an adapter with zpr.adapter.cn:'machine-08'.
+define Machine09 as an adapter with zpr.adapter.cn:'machine-09'.
+define Machine10 as an adapter with zpr.adapter.cn:'machine-10'.
+define Machine11 as an adapter with zpr.adapter.cn:'machine-11'.
+define Machine12 as an adapter with zpr.adapter.cn:'machine-12'.
+define Machine13 as an adapter with zpr.adapter.cn:'machine-13'.
+define Machine14 as an adapter with zpr.adapter.cn:'machine-14'.
+define Machine15 as an adapter with zpr.adapter.cn:'machine-15'.
+define Machine16 as an adapter with zpr.adapter.cn:'machine-16'.
+define Machine17 as an adapter with zpr.adapter.cn:'machine-17'.
+define Machine18 as an adapter with zpr.adapter.cn:'machine-18'.
+define Machine19 as an adapter with zpr.adapter.cn:'machine-19'.
+define Machine20 as an adapter with zpr.adapter.cn:'machine-20'.
 
 provide SimulatorControlService at simulator-control.svc.zpr over TCP 8792.
   allow Machine01.

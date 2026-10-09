@@ -50,7 +50,7 @@
     ? selectedRecord?.isDraft ? Boolean(source.value.trim() || element("policy-draft-name").value.trim()) : source.value !== savedSource
     : source.value !== savedSource || enabled.checked !== savedEnabled || Number(interval.value) !== savedInterval;
   const stale = () => Boolean(status && (recordMode ? recordStale || status.organization_id !== loadedOrganizationID : status.settings.revision !== loadedRevision || (status.organization_id && status.organization_id !== loadedOrganizationID)));
-  const escape = (text) => String(text ?? "").replace(/[&<>"']/g, (character) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[character]);
+  const escape = window.ZPRSafeDisplay.escapeHTML;
   const sourceLayout = window.ZPREditorPage.bindSourceLayout({
     source, highlight: element("assertion-highlight"),
     gutterContent: element("assertion-result-lines"),
@@ -113,7 +113,7 @@
     const selected = catalogs.find((catalog) => catalog.name === catalogSource.value);
     const qualifier = selected ? ` from ${JSON.stringify(selected.name)}` : "";
     summary = selected || summary;
-    element("assertion-source-summary").textContent = summary ? `${summary.people} people / ${summary.groups.length} groups / ${new Date(summary.observed_at).toLocaleString()}` : "Not read";
+    element("assertion-source-summary").textContent = summary ? `${summary.people} people / ${summary.groups.length} groups / ${window.ZPRSafeDisplay.formatDateTime(summary.observed_at)}` : "Not read";
     const rows = element("assertion-group-rows");
     rows.replaceChildren();
     for (const group of summary?.groups || []) {
@@ -180,7 +180,8 @@
 
   function renderRun(run) {
     if (run) {
-      window.ZPREditorPage.setAnalysisState(element("assertion-analyze"), run.status === "error" ? "error" : "success");
+      const state = run.status === "error" ? "error" : run.warnings?.length ? "warning" : "success";
+      window.ZPREditorPage.setAnalysisState(element("assertion-analyze"), state);
     } else {
       window.ZPREditorPage.setAnalysisState(element("assertion-analyze"));
     }
@@ -188,18 +189,20 @@
     const rows = element("assertion-result-rows");
     rows.replaceChildren();
     heading.dataset.state = run?.status || "";
-    heading.textContent = run ? `${run.status.toUpperCase()} / ${run.draft ? "Draft" : "Saved"} r${run.revision} / ${new Date(run.finished_at).toLocaleString()}${run.revision !== loadedRevision ? " / Stale revision" : ""}` : "Not evaluated";
+    heading.textContent = run ? `${run.status.toUpperCase()} / ${run.draft ? "Draft" : "Saved"} r${run.revision} / ${window.ZPRSafeDisplay.formatDateTime(run.finished_at)}${run.revision !== loadedRevision ? " / Stale revision" : ""}` : "Not evaluated";
     element("assertion-run-error").textContent = run?.error || "";
     if (run?.status === "error" || run?.error) {
       message(assertionErrorLine(run.error) === null ? run.error || "Assertion evaluation failed." : "", "error");
     }
     lintWarnings.replaceChildren();
+    const lineCount = Math.max(1, source.value.split("\n").length);
     for (const warning of run?.warnings || []) {
+      if (window.ZPREditorPage.sourceLine(warning.line, lineCount) !== null) continue;
       const item = document.createElement("li");
-      item.textContent = `Line ${warning.line} · Warning [${warning.code}]: ${warning.message}`;
+      item.textContent = `Warning [${warning.code}]: ${warning.message}`;
       lintWarnings.append(item);
     }
-    lintWarnings.hidden = !run?.warnings?.length;
+    lintWarnings.hidden = !lintWarnings.childElementCount;
     renderResultGutter(run);
     for (const result of run?.results || []) {
       const row = document.createElement("tr");
@@ -239,7 +242,6 @@
         recordLastRun = run;
       }
       renderRun(run);
-      window.ZPREditorPage.setAnalysisState(element("assertion-analyze"), run.status === "error" ? "error" : "success");
       message(run.status === "error" && assertionErrorLine(run.error) === null ? run.error || "Assertion evaluation failed." : "", "error");
     } catch (error) {
       if (error.name !== "AbortError" && !controller.signal.aborted && isCurrent()) {
@@ -294,6 +296,12 @@
       if (!byLine.has(line)) byLine.set(line, []);
       byLine.get(line).push({ result, error: "" });
     }
+    for (const warning of run.warnings || []) {
+      const line = window.ZPREditorPage.sourceLine(warning.line, lineCount);
+      if (line === null) continue;
+      if (!byLine.has(line)) byLine.set(line, []);
+      byLine.get(line).push({ warning, result: null, error: "" });
+    }
     if (run.error || run.status === "error" && !byLine.size) {
       const line = assertionErrorLine(run.error);
       if (line !== null) {
@@ -308,16 +316,16 @@
       row.dataset.line = String(line);
       for (const entry of byLine.get(line) || []) {
         const button = document.createElement("button");
-        const status = entry.error ? "error" : entry.result.status;
+        const status = entry.warning ? "warning" : entry.error ? "error" : entry.result.status;
         button.type = "button";
         button.className = "assertion-result-marker";
         button.dataset.state = status;
-        button.textContent = status === "pass" ? "PASS" : status === "fail" ? "FAIL" : "ERR";
+        button.textContent = status === "warning" ? "WARN" : status === "pass" ? "PASS" : status === "fail" ? "FAIL" : "ERR";
         const rule = entry.result?.rule;
-        const label = rule ? ruleLabel(rule) : "Assertion evaluation error";
+        const label = entry.warning ? `Warning [${entry.warning.code}]: ${entry.warning.message}` : rule ? ruleLabel(rule) : "Assertion evaluation error";
         button.title = `Line ${line} · ${button.textContent} · ${label}`;
         button.setAttribute("aria-label", `${button.title}; show details`);
-        button.addEventListener("click", () => showResultDetail(line, entry.result, entry.error));
+        button.addEventListener("click", () => showResultDetail(line, entry.result, entry.error, entry.warning));
         row.append(button);
       }
       fragment.append(row);
@@ -328,12 +336,12 @@
     resultLines.style.transform = `translateY(${-source.scrollTop}px)`;
   }
 
-  function showResultDetail(line, result, error) {
+  function showResultDetail(line, result, error, warning) {
     const dialog = element("policy-test-dialog");
     const subjects = element("policy-test-subjects");
-    const status = error ? "ERROR" : String(result.status || "error").toUpperCase();
+    const status = warning ? "WARNING" : error ? "ERROR" : String(result.status || "error").toUpperCase();
     element("policy-test-title").textContent = `Assertion ${status.toLowerCase()}`;
-    element("policy-test-subject-title").textContent = error ? `Line ${line} diagnostic` : `Line ${line} details`;
+    element("policy-test-subject-title").textContent = warning ? `Line ${line} lint warning` : error ? `Line ${line} diagnostic` : `Line ${line} details`;
     subjects.replaceChildren();
     const appendDetail = (text, meta = "") => {
       const item = document.createElement("div");
@@ -348,6 +356,8 @@
     };
     if (error) {
       appendDetail(error);
+    } else if (warning) {
+      appendDetail(`Warning [${warning.code}]`, warning.message);
     } else {
       appendDetail(ruleLabel(result.rule), `${result.status.toUpperCase()} · ${result.message || `${result.checked} checked; ${result.violations} violations`}`);
       for (const subject of result.subjects || []) appendDetail(subject);

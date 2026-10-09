@@ -147,6 +147,9 @@ func TestBundledPolicyLayersPreserveInfrastructureAndIsolateCompanies(t *testing
 				t.Fatalf("%s dropped shared infrastructure %s", organizationID, required)
 			}
 		}
+		if !strings.Contains(source, "define SimulatorControlService as service with device.zpr.adapter.cn:'simulator-control'.") || strings.Contains(source, "define SimulatorControlService as service with device.zpr.adapter.cn:'simulator-control' and zpr.addr:") {
+			t.Fatalf("%s must identify SimulatorControl by adapter CN without pinning its dynamically assigned ZPR address", organizationID)
+		}
 		visaScope := "provide VisaService at visa-admin.svc.zpr over TCP 443."
 		visaOffset := strings.Index(source, visaScope)
 		followingLines := strings.SplitN(source[visaOffset+len(visaScope):], "\n", 3)
@@ -155,6 +158,9 @@ func TestBundledPolicyLayersPreserveInfrastructureAndIsolateCompanies(t *testing
 		}
 		if strings.Count(source, `service A2Svc as json`) != 1 {
 			t.Fatalf("%s does not have one target-free A2Svc policy group", organizationID)
+		}
+		if !strings.Contains(source, "define Machine03 as an adapter with zpr.adapter.cn:'machine-03'.") {
+			t.Fatalf("%s must bind SimulatorControl access classes to machine adapter identities", organizationID)
 		}
 		if organizationID != "northstar" && organizationID != "great-lakes" && strings.Contains(source, "provide InternetGatewayWeb") {
 			t.Fatalf("%s inherited Northstar's gateway grant", organizationID)

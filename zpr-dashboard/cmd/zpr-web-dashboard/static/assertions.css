@@ -27,6 +27,7 @@
 .assertion-result-marker { display: inline-flex; min-width: 30px; max-width: 40px; align-items: center; justify-content: center; overflow: hidden; padding: 1px 2px; border: 1px solid #6c8671; border-radius: 2px; background: #23362b; color: #d2e7d1; font: 8px/1.4 var(--mono); text-overflow: ellipsis; white-space: nowrap; pointer-events: auto; cursor: pointer; }
 .assertion-result-marker[data-state="fail"] { border-color: #a96358; background: #402a29; color: #ffc0b5; }
 .assertion-result-marker[data-state="error"] { border-color: #ac7a39; background: #403725; color: #ffe0a7; }
+.assertion-result-marker[data-state="warning"] { border-color: #ac7a39; background: #403725; color: #ffe0a7; }
 .assertion-result-marker:hover { filter: brightness(1.2); }
 .assertion-result-marker:focus-visible { outline: 2px solid #b5e34f; outline-offset: 1px; }
 #assertion-source, #assertion-highlight { position: absolute; inset: 0; width: 100%; height: 100%; margin: 0; padding: 15px; border: 0; font: 12px/1.65 var(--mono); white-space: pre; tab-size: 2; overflow: auto; }

@@ -23,6 +23,14 @@
 .editor-page-main { padding-top: 0; }
 .editor-page .policy-workbench { border-top: 0; }
 .editor-page .policy-editor-pane { padding-top: 0; }
+body.editor-page-maximized { overflow: hidden; }
+.editor-page-maximized { position: fixed; z-index: 1100; inset: 0; box-sizing: border-box; display: flex; width: 100vw; height: 100vh; height: 100dvh; min-height: 0; max-height: none; flex-direction: column; overflow: auto; padding: 12px; background: var(--panel); }
+dialog.editor-page-maximized { width: 100vw; max-width: none; }
+.editor-page-maximized > .editor-page { display: flex; flex: 1; min-height: 0; flex-direction: column; }
+.editor-page-maximized .editor-page-workbench, .editor-page-maximized .editor-assistant-layout { flex: 1; min-height: 0; }
+.editor-page-maximized .editor-page-main { display: flex; flex: 1; min-height: 0; flex-direction: column; }
+.editor-page-maximized .config-source-editor, .editor-page-maximized #policy-code-editor { height: auto; min-height: 0; max-height: none; flex: 1 1 auto; }
+.editor-page-maximized #policy-source-surface { min-height: 0; flex: 1 1 auto; }
 .policy-identity { overflow: visible; }
 .policy-identity > .policy-history-menu { flex: 0 0 auto; }
 .policy-identity > .policy-history-menu .policy-history { left: 0; right: auto; }

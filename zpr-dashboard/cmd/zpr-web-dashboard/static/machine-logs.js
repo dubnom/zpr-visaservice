@@ -547,7 +547,7 @@
       machines = retainSourceTails(result);
       render();
       document.getElementById("machine-logs-error").hidden = true;
-      document.getElementById("machine-logs-time").textContent = new Date(result.updated_at).toLocaleTimeString();
+      document.getElementById("machine-logs-time").textContent = window.ZPRSafeDisplay.formatTime(result.updated_at);
       const status = paused ? "Paused" : "Live";
       document.getElementById("machine-logs-status").textContent = controlRoom ? status : `${result.organization_id} / ${status}`;
     } catch (error) {

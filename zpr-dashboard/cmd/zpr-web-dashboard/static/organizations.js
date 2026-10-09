@@ -3,9 +3,6 @@ let activeOrganizationID = "";
 let organizationActivationStatus = { state: "idle" };
 let selectedOrganizationID = "";
 let organizationCatalogSignature = "";
-let organizationRefreshTimer;
-let organizationRefreshInterval = 0;
-let organizationRefreshPromise;
 let directoryEditorArtifact;
 let directoryEditorOrganizationID = "";
 let directoryEditorDirty = false;
@@ -188,7 +185,7 @@ function renderDirectoryHistory() {
   directoryEditorHistory.render(directoryEditorRevisions, {
     current: directoryEditorViewing || directoryEditorArtifact?.revision,
     detail: (revision) => revision.summary || "",
-    meta: (revision) => [revision.author, revision.created_at ? new Date(revision.created_at).toLocaleString() : ""].filter(Boolean).join(" · "),
+    meta: (revision) => [revision.author, revision.created_at ? window.ZPRSafeDisplay.formatDateTime(revision.created_at) : ""].filter(Boolean).join(" · "),
     onSelect: (revision) => {
       loadDirectoryRevision(revision.number).catch((error) => setDirectoryEditorStatus(error.message || "Could not load revision.", "error"));
     },
@@ -245,51 +242,44 @@ function renderOrganizationListSelection() {
   });
 }
 
-async function refreshOrganizations() {
-  if (organizationRefreshPromise) return organizationRefreshPromise;
-  organizationRefreshPromise = (async () => {
-    const error = document.getElementById("organization-error");
-    try {
-      const response = await fetch("/api/simulator/organizations", { cache: "no-store" });
-      const data = await response.json();
-      if (!response.ok) throw new Error(data.error || `HTTP ${response.status}`);
-      const nextOrganizations = data.organizations || [];
-      const nextActiveID = data.active_id || "";
-      organizationActivationStatus = data.activation || { state: "idle" };
-      resetLogLink.hidden = organizationActivationStatus.state !== "failed";
-      window.dispatchEvent(new CustomEvent("simulator:organization-context", {
-        detail: nextOrganizations.find((item) => item.id === nextActiveID) || null,
-      }));
-      const signature = JSON.stringify({ active_id: nextActiveID, organizations: nextOrganizations, activation: organizationActivationStatus });
-      if (signature !== organizationCatalogSignature) {
-        organizationCatalog = nextOrganizations;
-        activeOrganizationID = nextActiveID;
-        organizationCatalogSignature = signature;
-        if (!organizationCatalog.some((item) => item.id === selectedOrganizationID)) selectedOrganizationID = activeOrganizationID;
-        renderOrganizationList();
-      }
-      document.getElementById("organization-connection").textContent = organizationActivationStatus.state === "resetting"
-        ? `Resetting ZPR · ${organizationActivationStatus.progress || "Preparing organization reset"}`
-        : "Directory ready";
-      error.hidden = organizationActivationStatus.state !== "failed";
-      if (!error.hidden) error.textContent = organizationActivationStatus.error || "Organization activation failed";
-    } catch (failure) {
-      error.textContent = failure.message || "Organization catalog unavailable";
-      error.hidden = false;
-      document.getElementById("organization-connection").textContent = "Organization service unavailable";
-    }
-  })();
-  try { await organizationRefreshPromise; } finally { organizationRefreshPromise = undefined; }
-  if (organizationRefreshTimer) scheduleOrganizationRefresh();
+async function refreshOrganizations({ signal, isCurrent }) {
+  const data = await directoryRequest("/api/simulator/organizations", { cache: "no-store", signal });
+  if (!isCurrent()) return;
+  const error = document.getElementById("organization-error");
+  const nextOrganizations = data.organizations || [];
+  const nextActiveID = data.active_id || "";
+  organizationActivationStatus = data.activation || { state: "idle" };
+  resetLogLink.hidden = organizationActivationStatus.state !== "failed";
+  window.dispatchEvent(new CustomEvent("simulator:organization-context", {
+    detail: nextOrganizations.find((item) => item.id === nextActiveID) || null,
+  }));
+  const signature = JSON.stringify({ active_id: nextActiveID, organizations: nextOrganizations, activation: organizationActivationStatus });
+  if (signature !== organizationCatalogSignature) {
+    organizationCatalog = nextOrganizations;
+    activeOrganizationID = nextActiveID;
+    organizationCatalogSignature = signature;
+    if (!organizationCatalog.some((item) => item.id === selectedOrganizationID)) selectedOrganizationID = activeOrganizationID;
+    renderOrganizationList();
+  }
+  document.getElementById("organization-connection").textContent = organizationActivationStatus.state === "resetting"
+    ? `Resetting ZPR · ${organizationActivationStatus.progress || "Preparing organization reset"}`
+    : "Directory ready";
+  error.hidden = organizationActivationStatus.state !== "failed";
+  if (!error.hidden) error.textContent = organizationActivationStatus.error || "Organization activation failed";
 }
 
-function scheduleOrganizationRefresh() {
-  const interval = organizationActivationStatus.state === "resetting" ? 1000 : 5000;
-  if (organizationRefreshTimer && organizationRefreshInterval === interval) return;
-  clearInterval(organizationRefreshTimer);
-  organizationRefreshInterval = interval;
-  organizationRefreshTimer = setInterval(refreshOrganizations, interval);
-}
+const organizationPoller = window.ZPRSimulatorNavigation.createPagePoller({
+  path: "/organizations.html",
+  run: refreshOrganizations,
+  interval: () => organizationActivationStatus.state === "resetting" ? 1000 : 5000,
+  onError: (failure) => {
+    const error = document.getElementById("organization-error");
+    error.textContent = failure.message || "Organization catalog unavailable";
+    error.hidden = false;
+    document.getElementById("organization-connection").textContent = "Organization service unavailable";
+  },
+});
+const refreshOrganizationsNow = () => organizationPoller.refresh();
 
 const designButton = document.createElement("button");
 designButton.className = "quiet";
@@ -415,7 +405,7 @@ organizationRestoreConfirm.addEventListener("click", async () => {
     if (!response.ok) throw new Error(result.error || `HTTP ${response.status}`);
     organizationActivationStatus = result.activation || { state: "resetting", operation: "restore-base", progress: "Preparing organization base restore" };
     renderOrganizationList();
-    await refreshOrganizations();
+    await refreshOrganizationsNow();
   } catch (error) {
     const message = document.getElementById("organization-error");
     message.textContent = error.message || "Could not restore organization base state";
@@ -444,7 +434,7 @@ organizationSwitchConfirm.addEventListener("click", async () => {
     if (!response.ok) throw new Error(result.error || `HTTP ${response.status}`);
     organizationActivationStatus = result.activation || { state: "resetting", progress: "Preparing organization reset" };
     renderOrganizationList();
-    await refreshOrganizations();
+    await refreshOrganizationsNow();
   } catch (error) {
     const message = document.getElementById("organization-error");
     message.textContent = error.message || "Could not activate organization";
@@ -455,7 +445,7 @@ organizationSwitchConfirm.addEventListener("click", async () => {
   }
 });
 
-document.getElementById("organization-refresh").addEventListener("click", refreshOrganizations);
+document.getElementById("organization-refresh").addEventListener("click", () => void refreshOrganizationsNow());
 document.getElementById("organization-list").addEventListener("click", (event) => {
   const button = event.target.closest("[data-organization-id]");
   const organization = organizationCatalog.find((item) => item.id === button?.dataset.organizationId);
@@ -534,16 +524,7 @@ document.getElementById("directory-editor-dialog").addEventListener("close", () 
   directoryEditorSource.value = directoryEditorSaved = "";
   directoryEditorDirty = false;
 });
-document.addEventListener("simulator:activate", (event) => {
-  if (event.detail.path !== "/organizations.html" || organizationRefreshTimer) return;
-  refreshOrganizations();
-  organizationRefreshInterval = 5000;
-  organizationRefreshTimer = setInterval(refreshOrganizations, organizationRefreshInterval);
-});
 document.addEventListener("simulator:deactivate", (event) => {
   if (event.detail.path !== "/organizations.html") return;
   if (organizationSwitchDialog.open) organizationSwitchDialog.close();
-  clearInterval(organizationRefreshTimer);
-  organizationRefreshTimer = undefined;
-  organizationRefreshInterval = 0;
 });

@@ -56,7 +56,7 @@
       if (hadSession) window.dispatchEvent(new Event("operator-session-cleared"));
     }
 
-    async function readState() {
+    async function readState({ preserveSession = false } = {}) {
       const current = ++generation;
       const url = new URL(location.href);
       const loginResult = url.searchParams.get("operator_login");
@@ -66,7 +66,7 @@
         url.searchParams.delete("operator_login");
         history.replaceState(history.state, "", `${url.pathname}${url.search}${url.hash}`);
       }
-      clearSession();
+      if (!preserveSession) clearSession();
       retry.hidden = true;
       status.textContent = "Checking operator login";
       try {
@@ -91,6 +91,7 @@
         const response = await fetch("/auth/operator/session", { cache: "no-store", credentials: "same-origin", redirect: "error" });
         if (current !== generation) return;
         if (response.status === 401) {
+          clearSession();
           login.hidden = false;
           setGate(true);
           status.textContent = loginFailure === "denied"
@@ -155,6 +156,7 @@
       }
     }
     widget.operatorRefresh = readState;
+    widget.operatorRefreshAfterAPIRejection = () => readState({ preserveSession: true });
     retry.addEventListener("click", () => void readState());
     login.addEventListener("submit", () => { loginStarting = true; });
 

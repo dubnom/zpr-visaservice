@@ -517,6 +517,14 @@ start_multinode_dns_service() {
     stop_service "$DNS_STATS_RELAY_PID"
     echo_address=$(jq -r '[.policy_test_services[]? | select(.id == "echo-web.svc.zpr") | .zpr_address // empty][0] // empty' "$dns_profile")
     metrics_address=$(jq -r '[.policy_test_services[]? | select(.id == "metrics-web.svc.zpr") | .zpr_address // empty][0] // empty' "$dns_profile")
+    gateway_enabled=no
+    gateway_address=
+    if jq -e '.web_gateway.allowed_hosts | type == "array" and length > 0' "$dns_profile" >/dev/null; then
+        gateway_enabled=yes
+        gateway_container="${dns_organization}-internet-gateway"
+        gateway_address=$(docker exec "$gateway_container" ip -6 -o addr show dev tun10 scope global | awk '$4 ~ /^fd5a:5052:adda:1:/ { split($4, address, "/"); print address[1]; exit }' | tr -d '\r\n')
+        [ -n "$gateway_address" ] || { echo "Visa-assigned Gateway ZPR address unavailable" >&2; return 1; }
+    fi
     mkdir -p "$dns_zone_dir"
     if [ ! -r "$publisher_key" ]; then
         publisher_secret=$(openssl rand -base64 32 | tr -d '\n')
@@ -528,11 +536,13 @@ start_multinode_dns_service() {
         printf 'key "zpr-dns-viewer" {\n    algorithm hmac-sha256;\n    secret "%s";\n};\n' "$viewer_secret" > "$viewer_key"
         chmod 600 "$viewer_key"
     fi
+    docker stop "$DNS_CONTAINER" >/dev/null 2>&1 || true
     {
         printf '%s\n' '$TTL 30' '$ORIGIN svc.zpr.' '@ IN SOA dns.svc.zpr. hostmaster.svc.zpr. (1 60 60 86400 30)' '  IN NS dns.svc.zpr.'
         printf 'dns IN AAAA %s\n' "$DNS_SERVICE_ADDRESS"
         if [ -n "$echo_address" ]; then printf 'echo-web IN AAAA %s\n' "$echo_address"; fi
         if [ -n "$metrics_address" ]; then printf 'metrics-web IN AAAA %s\n' "$metrics_address"; fi
+        if [ -n "$gateway_address" ]; then printf 'internet-gateway IN AAAA %s\n' "$gateway_address"; fi
     } > "$dns_zone_file"
     cp "$DNS_PROFILE_DIR/named.conf.simulator" "$dns_runtime/named.conf"
     docker exec "$node_container" pkill -TERM -f '[p]h adapter.*--name adapter1' 2>/dev/null || true
@@ -573,6 +583,10 @@ start_multinode_dns_service() {
         "TCP-LISTEN:$DNS_STATS_RELAY_PORT,bind=0.0.0.0,reuseaddr,fork" \
         "SYSTEM:\"docker exec -i $node_container socat STDIO TCP:127.0.0.1:8053\""
     wait_for_url "http://127.0.0.1:$DNS_STATS_RELAY_PORT/json/v1/status" dns-stats-relay
+    if [ -n "$gateway_address" ]; then
+        gateway_dns_update=$(printf 'server %s\nzone svc.zpr.\nupdate delete internet-gateway.svc.zpr. AAAA\nupdate add internet-gateway.svc.zpr. 30 AAAA %s\nsend\n' "$DNS_SERVICE_ADDRESS" "$gateway_address")
+        printf '%s' "$gateway_dns_update" | docker exec -i "$DNS_CONTAINER" nsupdate -v -k /run/secrets/zpr-vs-publisher.key
+    fi
     start_service dns-records-relay "$DNS_RECORDS_RELAY_PID" socat \
         "TCP-LISTEN:$DNS_RECORDS_RELAY_PORT,bind=0.0.0.0,reuseaddr,fork" \
         "SYSTEM:\"docker exec -i $node_container socat STDIO TCP:[$DNS_SERVICE_ADDRESS]:53\""
@@ -585,12 +599,15 @@ start_multinode_dns_service() {
     [ "$attempts" -lt 50 ] || { echo "DNS records relay did not listen on $DNS_RECORDS_RELAY_PORT" >&2; return 1; }
     attempts=0
     while [ "$attempts" -lt 30 ]; do
-        if [ -n "$echo_address" ] || [ -n "$metrics_address" ]; then
+        if [ -n "$echo_address" ] || [ -n "$metrics_address" ] || [ "$gateway_enabled" = yes ]; then
             dns_records_ready=yes
             if [ -n "$echo_address" ] && ! docker exec "$DNS_CONTAINER" dig +tcp +time=1 +tries=1 +short AAAA @"$DNS_SERVICE_ADDRESS" echo-web.svc.zpr 2>/dev/null | grep -Fq "$echo_address"; then
                 dns_records_ready=no
             fi
             if [ -n "$metrics_address" ] && ! docker exec "$DNS_CONTAINER" dig +tcp +time=1 +tries=1 +short AAAA @"$DNS_SERVICE_ADDRESS" metrics-web.svc.zpr 2>/dev/null | grep -Fq "$metrics_address"; then
+                dns_records_ready=no
+            fi
+            if [ -n "$gateway_address" ] && ! docker exec "$DNS_CONTAINER" dig +tcp +time=1 +tries=1 +short AAAA @"$DNS_SERVICE_ADDRESS" internet-gateway.svc.zpr 2>/dev/null | grep -Fq "$gateway_address"; then
                 dns_records_ready=no
             fi
             if [ "$dns_records_ready" = yes ]; then return 0; fi
@@ -608,7 +625,12 @@ start_multinode_dns_service() {
 
 start_dns_service() {
     if [ "${ZPR_DASHBOARD_CONTAINER_RUNTIME:-}" != 1 ]; then
-        docker exec "$SIMULATOR_DOCKER_CONTAINER" sh "$SCRIPT_DIR/dashboard-stack.sh" start-dns
+        if [ -n "${SIMULATION_ORGANIZATION_ID:-}" ]; then
+            docker exec -e "SIMULATION_ORGANIZATION_ID=$SIMULATION_ORGANIZATION_ID" \
+                "$SIMULATOR_DOCKER_CONTAINER" sh "$SCRIPT_DIR/dashboard-stack.sh" start-dns
+        else
+            docker exec "$SIMULATOR_DOCKER_CONTAINER" sh "$SCRIPT_DIR/dashboard-stack.sh" start-dns
+        fi
         return
     fi
     dns_organization=${SIMULATION_ORGANIZATION_ID:-$(jq -r '.organization_id // "northstar"' "$SIMULATION_MANIFEST")}

@@ -102,13 +102,13 @@
     inventoryList("security-review-current-actors", current?.actors, baseline?.actors);
     inventoryList("security-review-current-services", current?.services, baseline?.services, true);
     byId("security-review-current").textContent = current ? `${current.actors.length} actors · ${current.services.length} services` : "Waiting";
-    byId("security-review-current-time").textContent = state.scannedAt ? new Date(state.scannedAt).toLocaleString() : "No snapshot";
+    byId("security-review-current-time").textContent = state.scannedAt ? window.ZPRSafeDisplay.formatDateTime(state.scannedAt) : "No snapshot";
     if (!state.baseline) {
       baselineLabel.textContent = "Not set";
       baselineTime.textContent = "No baseline";
       return;
     }
-    const date = new Date(state.baseline.saved_at).toLocaleString();
+    const date = window.ZPRSafeDisplay.formatDateTime(state.baseline.saved_at);
     baselineLabel.textContent = `${state.baseline.actors.length} actors · ${state.baseline.services.length} services`;
     baselineTime.textContent = date;
   }
@@ -182,7 +182,7 @@
       .filter((source) => source.health === "failed")
       .map((source) => {
         const lastLookup = Number(source.last_lookup_ms) || 0;
-        const evidence = [source.health_note || "The most recent attribute lookup failed.", lastLookup ? `Last lookup ${new Date(lastLookup).toLocaleString()}` : "Lookup time unavailable"]
+        const evidence = [source.health_note || "The most recent attribute lookup failed.", lastLookup ? `Last lookup ${window.ZPRSafeDisplay.formatDateTime(lastLookup)}` : "Lookup time unavailable"]
           .filter(Boolean).join(" · ");
         return makeFinding("Trusted-source lookup failed", source.name || "Unknown source", evidence, "review", lastLookup || Date.now());
       });
@@ -199,7 +199,7 @@
       if (details.in_sync !== false && !stale) return [];
       const evidence = [
         details.in_sync === false ? "Node reports out of sync" : "Node contact is stale",
-        lastContact ? `Last contact ${new Date(lastContact * 1000).toLocaleString()}` : "No contact time reported",
+        lastContact ? `Last contact ${window.ZPRSafeDisplay.formatDateTime(lastContact * 1000)}` : "No contact time reported",
         details.pending_install > 0 ? `${details.pending_install} pending installs` : "",
         details.pending_revocation > 0 ? `${details.pending_revocation} pending revocations` : "",
       ].filter(Boolean).join(" · ");
@@ -331,7 +331,7 @@
       const observed = document.createElement("td");
       observed.className = "security-observed";
       observed.dataset.sortCell = "observed";
-      observed.textContent = new Date(finding.observedAt).toLocaleString();
+      observed.textContent = window.ZPRSafeDisplay.formatDateTime(finding.observedAt);
       observed.dataset.sortValue = String(finding.observedAt);
       const indicator = document.createElement("td");
       indicator.className = "security-indicator";

@@ -10,8 +10,12 @@ laptops join the workday scenario; Chen Yu's Shenzhen laptop is `machine-09`.
 
 `directory.ldif` is the seed for `dc=greatlakes,dc=test`. It includes every
 employee, computer, application identity, department membership, site, and
-machine owner. The profile's `assertions_source` checks directory identity and
-attribute completeness, department/group alignment, and membership boundaries.
+machine owner. The synthetic `finance-client` workload has a non-human ZPR
+device identity with Milwaukee Finance attributes so its gateway smoke test
+uses the same trusted policy claims as the Finance department; it is excluded
+from the human directory roster. The profile's `assertions_source` checks
+directory identity and attribute completeness, department/group alignment, and
+membership boundaries.
 
 ## Policies And Services
 
@@ -22,6 +26,12 @@ and Quality Test. Workday Echo and Workday Metrics are additional simulation
 endpoints used to create observable client/server activity; Finance can reach
 Echo, while Operations and Telemetry can reach Metrics. Cross-service probes
 are expected to fail.
+
+The organization-started Internet Gateway runs with the Great Lakes Compose
+stack and is granted only to Milwaukee Finance. It accepts HTTP/80 and HTTPS
+CONNECT/443 for `google.com` and subdomains, rejecting non-public resolved
+addresses. The `Great Lakes Finance web gateway` scenario tests the persistent
+service; it does not start or stop the gateway.
 
 The three ZPR sites are named `mke.zpr`, `shenzhen.zpr`, and `tijuana.zpr`.
 The shared ZPR DNS service publishes service records such as

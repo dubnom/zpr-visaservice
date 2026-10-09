@@ -145,19 +145,31 @@ test("assertion lint warns on complexity without changing a passing result", asy
     const request = route.request().postDataJSON();
     await route.fulfill({ json: {
       revision: request.expected_revision, draft: true, status: "pass", finished_at: "2026-10-05T12:00:00Z", results: [],
-      warnings: [{ code: "ASSERT_COMPLEXITY", severity: "warning", line: 1, message: "Split this complex assertion into smaller checks." }],
+      warnings: [
+        { code: "ASSRT_HUMAN_SCOPE", severity: "warning", line: 4, message: "Review the scope for human identities." },
+        { code: "ASSERT_CONTEXT", severity: "warning", message: "Context could not be determined." },
+      ],
     } });
   });
   await openAssertionRecord(page, appURL);
   const editor = page.getByRole("textbox", { name: "Data assertion source", exact: true });
-  await editor.fill(`assert ${"1 + ".repeat(13)}1 > 0;`);
+  await editor.fill('group "Operators" members >= 2;\npeople >= 1;\npeople exactly_one ["alice"];\nassert true;');
   await page.locator("#assertion-analyze").click();
   await expect(page.locator("#assertion-run-status")).toContainText("PASS");
-  await expect(page.locator("#assertion-lint-warnings")).toContainText("ASSERT_COMPLEXITY");
+  await expect(page.locator("#assertion-lint-warnings")).toContainText("ASSERT_CONTEXT");
+  await expect(page.locator("#assertion-result-lines [data-line=\"4\"] .assertion-result-marker[data-state=\"warning\"]")).toHaveAttribute("aria-label", /ASSRT_HUMAN_SCOPE/);
+  await expect(page.locator("#assertion-result-lines [data-line=\"1\"] .assertion-result-marker")).toHaveCount(0);
+  await expect(page.locator("#assertion-analyze")).toHaveAttribute("data-analysis-state", "warning");
+  await page.mouse.move(0, 0);
+  await expect(page.locator("#assertion-analyze")).toHaveCSS("background-color", "rgb(231, 185, 63)");
   await expect(page.locator("#assertion-run-error")).toBeEmpty();
   await expect(page.getByRole("textbox", { name: "Data assertion source", exact: true })).toBeEditable();
+  await page.locator('#assertion-result-lines [data-line="4"] .assertion-result-marker').click();
+  await expect(page.getByRole("dialog", { name: "Assertion warning" })).toContainText("Review the scope for human identities.");
   await editor.fill('group "Operators" members >= 2;');
   await expect(page.locator("#assertion-lint-warnings")).toBeHidden();
+  await expect(page.locator("#assertion-result-gutter button")).toHaveCount(0);
+  await expect(page.locator("#assertion-analyze")).not.toHaveAttribute("data-analysis-state", /.+/);
 });
 
 test("organization assertions author, save and evaluate without policy compilation", async ({ page, appURL, api }) => {
@@ -881,6 +893,24 @@ test("Diagnostics toggles JSON bodies locally with Simulator unavailable", async
   expect(await bodies.first().textContent()).toBe(raw);
   expect(api.counts.get("/api/diagnostics")).toBe(collections);
   expect(simulationRequests).toEqual([]);
+});
+
+test("Control Room map and shared logs work while Simulator APIs are unavailable", async ({ page, appURL, api }) => {
+  const simulatorRequests = [];
+  page.on("request", (request) => {
+    if (new URL(request.url()).pathname.startsWith("/api/simulator/")) simulatorRequests.push(request.url());
+  });
+  await page.route("**/api/simulator/**", (route) => route.fulfill({
+    status: 503, json: { error: "Simulator is unavailable" },
+  }));
+  await page.goto(appURL + "/#map");
+  await expect(page.locator("#page-map")).toBeVisible();
+  await expect.poll(() => api.counts.get("/api/snapshot") || 0).toBeGreaterThan(0);
+  await page.evaluate(() => { location.hash = "#adapter-logs"; });
+  await expect(page.locator("#machine-logs-status")).toHaveText("Live");
+  await expect(page.locator(".machine-log-output").first()).toContainText("Control adapter entry 79");
+  expect(api.counts.get("/api/adapter-logs") || 0).toBeGreaterThan(0);
+  expect(simulatorRequests).toEqual([]);
 });
 
 test("Controller JSON formatting survives type switches, refresh and disconnection", async ({ page, appURL, api }) => {
@@ -3459,6 +3489,113 @@ test("shared source layout synchronizes overlay and both gutter modes and dispos
   expect(result.transform).toBe(result.translatedExpected);
 });
 
+test("Policy editor maximizes and restores with accessible focus, scroll and background ownership", async ({ page, appURL, api }) => {
+  await page.goto(appURL + "/#policy");
+  await openPolicyPicker(page);
+  await page.locator('[data-record-id="test-policy"]').click();
+  const source = page.locator("#policy-source");
+  const original = await source.inputValue();
+  const pane = page.locator("#policy-editor-pane");
+  const maximize = page.locator("#policy-editor-maximize");
+  const before = await pane.boundingBox();
+  await page.evaluate(() => { document.getElementById("policy-assistant-pane").inert = true; });
+  await maximize.click();
+  await expect(maximize).toHaveText("Restore");
+  await expect(maximize).toHaveAttribute("aria-label", "Restore editor");
+  await expect(maximize).toHaveAttribute("aria-pressed", "true");
+  await expect(pane).toHaveAttribute("role", "dialog");
+  await expect(pane).toHaveAttribute("aria-modal", "true");
+  await expect(maximize).toBeFocused();
+  const maximized = await pane.boundingBox();
+  const state = await page.evaluate(() => ({
+    viewport: [innerWidth, innerHeight],
+    assistantInert: document.getElementById("policy-assistant-pane").inert,
+    catalogInert: document.getElementById("policy-catalog-pane").inert,
+    navInert: document.querySelector(".topbar").inert,
+    bodyLocked: document.body.classList.contains("editor-page-maximized"),
+  }));
+  expect(Math.abs(maximized.x)).toBeLessThanOrEqual(1);
+  expect(Math.abs(maximized.y)).toBeLessThanOrEqual(1);
+  expect(Math.abs(maximized.width - state.viewport[0])).toBeLessThanOrEqual(1);
+  expect(Math.abs(maximized.height - state.viewport[1])).toBeLessThanOrEqual(1);
+  expect(state).toMatchObject({ assistantInert: true, catalogInert: true, navInert: true, bodyLocked: true });
+  const focusOrder = await pane.evaluate((element) => {
+    const focusable = [...element.querySelectorAll('a[href], button:not(:disabled), input:not(:disabled), select:not(:disabled), textarea:not(:disabled), summary, [tabindex]:not([tabindex="-1"])')].filter((item) => item.getClientRects().length && !item.closest("[hidden]"));
+    focusable[0].focus();
+    return { first: focusable[0].id, last: focusable.at(-1).id };
+  });
+  await page.keyboard.press("Shift+Tab");
+  await expect(page.locator(`#${focusOrder.last}`)).toBeFocused();
+  await maximize.click();
+  await expect(maximize).toHaveText("Maximize");
+  await expect(maximize).toHaveAttribute("aria-pressed", "false");
+  await expect(pane).not.toHaveAttribute("role", "dialog");
+  await expect(source).toHaveValue(original);
+  expect(await page.evaluate(() => ({
+    assistantInert: document.getElementById("policy-assistant-pane").inert,
+    catalogInert: document.getElementById("policy-catalog-pane").inert,
+    navInert: document.querySelector(".topbar").inert,
+    bodyLocked: document.body.classList.contains("editor-page-maximized"),
+  }))).toEqual({ assistantInert: true, catalogInert: false, navInert: false, bodyLocked: false });
+  const restored = await pane.boundingBox();
+  expect(restored.x).toBeCloseTo(before.x, 0);
+  expect(restored.y).toBeCloseTo(before.y, 0);
+});
+
+test("Policy editor restores from Escape and returns focus to the restore control", async ({ page, appURL, api }) => {
+  await page.goto(appURL + "/#policy");
+  const maximize = page.locator("#policy-editor-maximize");
+  await maximize.click();
+  await expect(maximize).toHaveAttribute("aria-pressed", "true");
+  await page.keyboard.press("Escape");
+  await expect(maximize).toHaveAttribute("aria-pressed", "false");
+  await expect(maximize).toBeFocused();
+  await expect(page.locator("#policy-editor-pane")).not.toHaveAttribute("aria-modal", "true");
+});
+
+test("Shared editor-page maximize works for Config, Gateways, Scenarios, and Directory", async ({ page, appURL, api }) => {
+  const maximizeAndRestore = async (buttonID, paneID, keepsDialogOpen = false) => {
+    const button = page.locator(`#${buttonID}`);
+    const pane = page.locator(`#${paneID}`);
+    await expect(button).toBeVisible();
+    await button.click();
+    await expect(button).toHaveAttribute("aria-pressed", "true");
+    await expect(button).toHaveText("Restore");
+    await expect(button).toBeFocused();
+    expect(await page.locator("body").evaluate((element) => element.classList.contains("editor-page-maximized"))).toBe(true);
+    expect(await page.locator(".topbar").evaluate((element) => element.inert)).toBe(true);
+    await expect.poll(async () => {
+      const box = await pane.boundingBox();
+      if (!box) return false;
+      const viewport = page.viewportSize();
+      return Math.abs(box.x) <= 1 && Math.abs(box.y) <= 1 &&
+        Math.abs(box.width - viewport.width) <= 1 && Math.abs(box.height - viewport.height) <= 1;
+    }).toBe(true);
+    await page.keyboard.press("Escape");
+    await expect(button).toHaveAttribute("aria-pressed", "false");
+    await expect(button).toHaveText("Maximize");
+    await expect(button).toBeFocused();
+    expect(await page.locator("body").evaluate((element) => element.classList.contains("editor-page-maximized"))).toBe(false);
+    if (keepsDialogOpen) await expect(pane).toHaveAttribute("open", "");
+    else await expect(pane).not.toHaveAttribute("role", "dialog");
+  };
+
+  await page.goto(appURL + "/#zpr-config");
+  await maximizeAndRestore("editor-maximize-page-zpr-config", "page-zpr-config");
+  await page.goto(appURL + "/#gateways");
+  await maximizeAndRestore("editor-maximize-page-gateways", "page-gateways");
+  await openRawScenario(page, appURL, api);
+  await maximizeAndRestore("editor-maximize-scenario-editor-dialog", "scenario-editor-dialog", true);
+  api.handlers.set("/api/simulator/organizations/alpha/directory", (route) => route.fulfill({ json: {
+    revision: 2, published_revision: 1, content: { base_dn: "dc=alpha,dc=test", ldif: "dn: dc=alpha,dc=test\n" },
+  } }));
+  api.handlers.set("/api/simulator/organizations/alpha/directory/revisions", (route) => route.fulfill({ json: [] }));
+  await page.goto(appURL + "/organizations.html");
+  await page.getByRole("button", { name: "Edit LDAP seed", exact: true }).click();
+  await expect(page.locator("#directory-editor-dialog")).toBeVisible();
+  await maximizeAndRestore("editor-maximize-directory-editor-dialog", "directory-editor-dialog", true);
+});
+
 test("Assertion scrolling retains highlighted nodes while synchronizing the overlay", async ({ page, appURL, api }) => {
   await openAssertionRecord(page, appURL);
   await page.locator("#assertion-source").fill(Array.from({ length: 100 }, () => `group "${"Operators".repeat(70)}" members >= 1;`).join("\n"));
@@ -3780,6 +3917,274 @@ test("Simulator Activity uses sortable tables and keeps Refresh beside stream st
   await expect(flow).toHaveAttribute("aria-sort", "descending");
   await expect(visas.locator("tbody tr").first()).toContainText("fd00::2");
   await expect(page.locator('table[data-sort-page="activity-denies"] tbody tr')).toHaveCount(2);
+});
+
+test("Simulator Activity uses shared empty rows for empty result sets", async ({ page, appURL, api }) => {
+  api.handlers.set("/api/simulator/activity", async (route) => route.fulfill({ json: {
+    generated_at: "2026-10-05T12:00:00Z",
+    stats: {},
+    visas: [],
+    denies: [],
+  } }));
+  await page.goto(appURL + "/activity.html");
+  const visas = page.locator('table[data-sort-page="activity-visas"] tbody tr');
+  const denials = page.locator('table[data-sort-page="activity-denies"] tbody tr');
+  await expect(visas).toHaveCount(1);
+  await expect(visas.locator("td")).toHaveAttribute("colspan", "5");
+  await expect(visas).toContainText("No visa activity yet.");
+  await expect(denials).toHaveCount(1);
+  await expect(denials.locator("td")).toHaveAttribute("colspan", "5");
+  await expect(denials).toContainText("No denied flows yet.");
+});
+
+test("shared sortable-table helpers preserve comparison, accessibility, idempotence and empty-row contracts", async ({ page, appURL }) => {
+  await page.goto(appURL + "/activity.html");
+  const result = await page.evaluate(() => {
+    const table = document.createElement("table");
+    const head = table.createTHead().insertRow();
+    for (const [key, label] of [["name", "Name"], ["count", "Count"]]) {
+      const header = document.createElement("th");
+      header.dataset.sortKey = key;
+      header.textContent = label;
+      head.append(header);
+    }
+    const body = table.createTBody();
+    document.body.append(table);
+    let sort = { key: "name", direction: 1 };
+    const changes = [];
+    const options = {
+      table,
+      getSort: () => sort,
+      onSort: (next) => { changes.push(next); sort = next; },
+    };
+    const binding = window.ZPRSortableTable.bindSortableHeaders(options);
+    const [name, count] = head.querySelectorAll("th");
+    name.click();
+    const afterReverse = { ariaSort: name.getAttribute("aria-sort"), label: name.querySelector("button").getAttribute("aria-label") };
+    count.click();
+    const afterSelect = { oldSort: name.getAttribute("aria-sort"), newSort: count.getAttribute("aria-sort") };
+    binding.update();
+    window.ZPRSortableTable.bindSortableHeaders(options);
+    count.click();
+    window.ZPRSortableTable.renderEmptyRow(body, 2, "<No rows>");
+    const cell = body.querySelector("td");
+    return {
+      numeric: window.ZPRSortableTable.compareValues(10, 2),
+      numericStrings: window.ZPRSortableTable.compareValues("10", "2", { numericStrings: true }),
+      natural: Math.sign(window.ZPRSortableTable.compareValues("entry 2", "entry 10")),
+      afterReverse,
+      afterSelect,
+      finalSort: count.getAttribute("aria-sort"),
+      changes,
+      empty: { rows: body.rows.length, columns: cell.colSpan, text: cell.textContent, children: cell.childElementCount },
+    };
+  });
+  expect(result.numeric).toBe(8);
+  expect(result.numericStrings).toBe(8);
+  expect(result.natural).toBe(-1);
+  expect(result.afterReverse).toEqual({ ariaSort: "descending", label: "Sort by Name, currently descending" });
+  expect(result.afterSelect).toEqual({ oldSort: "none", newSort: "ascending" });
+  expect(result.finalSort).toBe("descending");
+  expect(result.changes).toEqual([
+    { key: "name", direction: -1 },
+    { key: "count", direction: 1 },
+    { key: "count", direction: -1 },
+  ]);
+  expect(result.empty).toEqual({ rows: 1, columns: 2, text: "<No rows>", children: 0 });
+});
+
+test("shared safe display helpers escape HTML and label known protocols", async ({ page, appURL, api }) => {
+  await page.goto(appURL + "/#map");
+  const result = await page.evaluate(() => ({
+    escaped: window.ZPRSafeDisplay.escapeHTML(`<tag attr="&">'`),
+    protocols: [1, 6, 17, 58, 99, null].map((value) => window.ZPRSafeDisplay.protocolName(value)),
+    dates: ["2026-10-08T12:34:56Z", 1791487200000, "invalid"].map((value) => ({
+      dateTime: window.ZPRSafeDisplay.formatDateTime(value),
+      time: window.ZPRSafeDisplay.formatTime(value),
+      nativeDateTime: new Date(value).toLocaleString(),
+      nativeTime: new Date(value).toLocaleTimeString(),
+    })),
+  }));
+  expect(result.escaped).toBe("&lt;tag attr=&quot;&amp;&quot;&gt;&#39;");
+  expect(result.protocols).toEqual(["ICMP", "TCP", "UDP", "ICMPv6", "", ""]);
+  expect(result.dates.map(({ dateTime, nativeDateTime }) => dateTime)).toEqual(result.dates.map(({ nativeDateTime }) => nativeDateTime));
+  expect(result.dates.map(({ time, nativeTime }) => time)).toEqual(result.dates.map(({ nativeTime }) => nativeTime));
+});
+
+test("Simulator Activity polling aborts on navigation and rejects a late response", async ({ page, appURL, api }) => {
+  await page.addInitScript(() => {
+    const originalFetch = window.fetch.bind(window);
+    const pending = [];
+    window.fetch = (input, options = {}) => {
+      if (new URL(input, location.href).pathname !== "/api/simulator/activity") return originalFetch(input, options);
+      return new Promise((resolve) => pending.push({ signal: options.signal, resolve }));
+    };
+    window.pendingActivityRequests = pending;
+    window.resolveActivityRequest = (index, data) => pending[index].resolve(new Response(JSON.stringify(data), {
+      headers: { "Content-Type": "application/json" },
+    }));
+  });
+  await page.goto(appURL + "/activity.html");
+  await expect.poll(() => page.evaluate(() => window.pendingActivityRequests.length)).toBe(1);
+  await page.evaluate(() => {
+    document.getElementById("refresh").click();
+    document.getElementById("refresh").click();
+  });
+  await page.waitForTimeout(50);
+  expect(await page.evaluate(() => window.pendingActivityRequests.length)).toBe(1);
+  await page.evaluate(() => document.dispatchEvent(new CustomEvent("simulator:deactivate", {
+    detail: { path: "/activity.html" },
+  })));
+  expect(await page.evaluate(() => window.pendingActivityRequests[0].signal.aborted)).toBe(true);
+  await page.evaluate(() => window.resolveActivityRequest(0, {
+    generated_at: "2026-10-05T12:00:00Z",
+    stats: { visa_requests: 99, visa_requests_approved: 99, visa_requests_denied: 0 },
+    visas: [], denies: [],
+  }));
+  await expect(page.locator("#requests")).toHaveText("—");
+
+  await page.evaluate(() => document.dispatchEvent(new CustomEvent("simulator:activate", {
+    detail: { path: "/activity.html" },
+  })));
+  await expect.poll(() => page.evaluate(() => window.pendingActivityRequests.length)).toBe(2);
+  await page.evaluate(() => window.resolveActivityRequest(1, {
+    generated_at: "2026-10-05T12:00:00Z",
+    stats: { visa_requests: 4, visa_requests_approved: 3, visa_requests_denied: 1 },
+    visas: [], denies: [],
+  }));
+  await expect(page.locator("#requests")).toHaveText("4");
+});
+
+test("Simulator Scenario polling aborts on navigation and ignores late catalog responses", async ({ page, appURL, api }) => {
+  await page.addInitScript(() => {
+    const originalFetch = window.fetch.bind(window);
+    const pending = [];
+    window.fetch = (input, options = {}) => {
+      if (new URL(input, location.href).pathname !== "/api/simulator/scenarios") return originalFetch(input, options);
+      return new Promise((resolve) => pending.push({ signal: options.signal, resolve }));
+    };
+    window.pendingScenarioRequests = pending;
+    window.resolveScenarioRequest = (index, data) => pending[index].resolve(new Response(JSON.stringify(data), {
+      headers: { "Content-Type": "application/json" },
+    }));
+  });
+  await page.goto(appURL + "/scenarios.html");
+  await expect.poll(() => page.evaluate(() => window.pendingScenarioRequests.length)).toBe(1);
+  await page.evaluate(() => {
+    document.getElementById("scenario-refresh").click();
+    document.getElementById("scenario-refresh").click();
+  });
+  await page.waitForTimeout(50);
+  expect(await page.evaluate(() => window.pendingScenarioRequests.length)).toBe(1);
+  await page.evaluate(() => document.dispatchEvent(new CustomEvent("simulator:deactivate", {
+    detail: { path: "/scenarios.html" },
+  })));
+  expect(await page.evaluate(() => window.pendingScenarioRequests[0].signal.aborted)).toBe(true);
+  await page.evaluate(() => window.resolveScenarioRequest(0, {
+    active_organization_id: "stale-org",
+    organization: { name: "Stale Organization" },
+    scenarios: [{ id: "stale-scenario", name: "Stale Scenario", organization_id: "stale-org", steps: [], cleanup: [] }],
+    run: { state: "idle", steps: [] },
+  }));
+  await expect(page.locator("#scenario-connection")).not.toContainText("Stale Organization");
+  await expect(page.locator("#scenario-list")).not.toContainText("Stale Scenario");
+
+  await page.evaluate(() => document.dispatchEvent(new CustomEvent("simulator:activate", {
+    detail: { path: "/scenarios.html" },
+  })));
+  await expect.poll(() => page.evaluate(() => window.pendingScenarioRequests.length)).toBe(2);
+  await page.evaluate(() => window.resolveScenarioRequest(1, {
+    active_organization_id: "alpha",
+    organization: { name: "Alpha Labs" },
+    scenarios: [{ id: "fresh-scenario", name: "Fresh Scenario", organization_id: "alpha", steps: [], cleanup: [] }],
+    run: { state: "idle", steps: [] },
+  }));
+  await expect(page.locator("#scenario-connection")).toHaveText("Alpha Labs: 1 scenarios");
+  await expect(page.locator("#scenario-list")).toContainText("Fresh Scenario");
+});
+
+test("Simulator Organization polling aborts on navigation and ignores late catalog responses", async ({ page, appURL, api }) => {
+  await page.addInitScript(() => {
+    const originalFetch = window.fetch.bind(window);
+    const pending = [];
+    window.fetch = (input, options = {}) => {
+      if (new URL(input, location.href).pathname !== "/api/simulator/organizations" || !options.signal) return originalFetch(input, options);
+      return new Promise((resolve) => pending.push({ signal: options.signal, resolve }));
+    };
+    window.pendingOrganizationRequests = pending;
+    window.resolveOrganizationRequest = (index, data) => pending[index].resolve(new Response(JSON.stringify(data), {
+      headers: { "Content-Type": "application/json" },
+    }));
+  });
+  await page.goto(appURL + "/organizations.html");
+  await expect.poll(() => page.evaluate(() => window.pendingOrganizationRequests.length)).toBe(1);
+  await page.evaluate(() => document.dispatchEvent(new CustomEvent("simulator:deactivate", {
+    detail: { path: "/organizations.html" },
+  })));
+  expect(await page.evaluate(() => window.pendingOrganizationRequests[0].signal.aborted)).toBe(true);
+  await page.evaluate(() => window.resolveOrganizationRequest(0, {
+    active_id: "stale-org",
+    activation: { state: "idle" },
+    organizations: [{
+      id: "stale-org", name: "Stale Organization", policies: [], services: [], runtime: {},
+      directory: { base_dn: "dc=stale", people: [], groups: [], departments: [] },
+    }],
+  }));
+  await expect(page.locator("#organization-title")).not.toHaveText("Stale Organization");
+
+  await page.evaluate(() => document.dispatchEvent(new CustomEvent("simulator:activate", {
+    detail: { path: "/organizations.html" },
+  })));
+  await expect.poll(() => page.evaluate(() => window.pendingOrganizationRequests.length)).toBe(2);
+  await page.evaluate(() => window.resolveOrganizationRequest(1, {
+    active_id: "alpha",
+    activation: { state: "idle" },
+    organizations: [{
+      id: "alpha", name: "Alpha Labs", policies: [], services: [], runtime: {},
+      directory: { base_dn: "dc=alpha", people: [], groups: [], departments: [] },
+    }],
+  }));
+  await expect(page.locator("#organization-title")).toHaveText("Alpha Labs");
+});
+
+test("Simulator catalog pollers report malformed JSON and recover without losing last-good data", async ({ page, appURL, api }) => {
+  await page.goto(appURL + "/organizations.html");
+  await expect(page.locator("#organization-title")).toHaveText("Alpha Labs");
+  api.handlers.set("/api/simulator/organizations", (route) => route.fulfill({
+    status: 502, contentType: "text/html", body: "upstream unavailable",
+  }));
+  await page.locator("#organization-refresh").evaluate((button) => button.click());
+  await expect(page.locator("#organization-error")).toHaveText("HTTP 502: invalid JSON response");
+  await expect(page.locator("#organization-title")).toHaveText("Alpha Labs");
+
+  api.handlers.delete("/api/simulator/organizations");
+  await page.locator("#organization-refresh").evaluate((button) => button.click());
+  await expect(page.locator("#organization-error")).toBeHidden();
+  await expect(page.locator("#organization-title")).toHaveText("Alpha Labs");
+
+  api.handlers.set("/api/simulator/scenarios", async (route) => route.fulfill({ json: {
+    active_organization_id: "alpha",
+    organization: { name: "Alpha Labs" },
+    scenarios: [],
+    run: { state: "idle", steps: [] },
+  } }));
+  await page.goto(appURL + "/scenarios.html");
+  await expect(page.locator("#scenario-connection")).toHaveText("Alpha Labs: 0 scenarios");
+  api.handlers.set("/api/simulator/scenarios", (route) => route.fulfill({
+    status: 502, contentType: "text/html", body: "upstream unavailable",
+  }));
+  await page.locator("#scenario-refresh").evaluate((button) => button.click());
+  await expect(page.locator("#scenario-error")).toHaveText("HTTP 502: invalid JSON response");
+  await expect(page.locator("#scenario-connection")).toHaveText("Scenario service unavailable");
+  api.handlers.set("/api/simulator/scenarios", async (route) => route.fulfill({ json: {
+    active_organization_id: "alpha",
+    organization: { name: "Alpha Labs" },
+    scenarios: [],
+    run: { state: "idle", steps: [] },
+  } }));
+  await page.locator("#scenario-refresh").evaluate((button) => button.click());
+  await expect(page.locator("#scenario-error")).toBeHidden();
+  await expect(page.locator("#scenario-connection")).toHaveText("Alpha Labs: 0 scenarios");
 });
 
 test("Simulator Scenarios groups unfiled entries and clears only terminal run history", async ({ page, appURL, api }) => {
@@ -5531,13 +5936,13 @@ test("Adapter Logs polls only while its Control Room page is active", async ({ p
   await expect(page.locator(".adapter-log-column")).toHaveCount(2);
   await page.clock.runFor(2100);
   await expect.poll(() => api.counts.get("/api/adapter-logs")).toBeGreaterThanOrEqual(2);
-  await page.getByRole("link", { name: "Services", exact: true }).click();
+  await page.evaluate(() => { location.hash = "#services"; });
   await expect(page.locator("#page-services")).toBeVisible();
   await expect(page.locator("#page-adapter-logs")).toBeHidden();
   const before = api.counts.get("/api/adapter-logs");
   await page.clock.runFor(6000);
   expect(api.counts.get("/api/adapter-logs")).toBe(before);
-  await page.getByRole("link", { name: "Adapter Logs", exact: true }).click();
+  await page.evaluate(() => { location.hash = "#adapter-logs"; });
   await expect.poll(() => api.counts.get("/api/adapter-logs")).toBeGreaterThan(before);
 });
 
@@ -7619,6 +8024,75 @@ test.describe("GUI operator HTTPS login", () => {
       }
     });
     expect(externalCSRF).toBe("");
+  });
+
+  test("protected API rejection starts sign-in only when the operator session has expired", async ({ page, secureAppURL: appURL, api }) => {
+    let expired = false;
+    let sessionChecks = 0;
+    await page.addInitScript(() => {
+      window.loginSubmissions = 0;
+      document.addEventListener("submit", (event) => {
+        if (event.target.id !== "operator-login-form") return;
+        event.preventDefault();
+        window.loginSubmissions++;
+      });
+    });
+    await page.route("**/auth/operator/config", (route) => route.fulfill({ json: { enabled: true } }));
+    await page.route("**/auth/operator/session", (route) => {
+      sessionChecks++;
+      return route.fulfill(expired ? { status: 401 } : { json: {
+        identity: { issuer: "https://id.example", subject: "admin", display_name: "Admin Operator", organizations: ["*"], permissions: ["read"] },
+        csrf: "test-csrf",
+      } });
+    });
+    api.handlers.set("/api/operator-test/expired", (route) => route.fulfill({ status: 403 }));
+    api.handlers.set("/api/operator-test/permission-denied", (route) => route.fulfill({ status: 403 }));
+    api.handlers.set("/api/operator-test/unavailable", (route) => route.fulfill({ status: 503 }));
+
+    await page.goto(appURL + "/#map");
+    await expect(page.locator("#operator-login-status")).toHaveText("Signed in: Admin Operator");
+    expired = true;
+    const expiredStatus = await page.evaluate(async () =>
+      (await window.zprOperatorFetch("/api/operator-test/expired")).status);
+    expect(expiredStatus).toBe(403);
+    await expect.poll(() => page.evaluate(() => window.loginSubmissions)).toBe(1);
+    await expect(page.locator("#operator-login-status")).toHaveText("Opening sign-in page");
+    expect(sessionChecks).toBe(2);
+  });
+
+  test("permission denial and Visa Service outage do not trigger automatic sign-in", async ({ page, secureAppURL: appURL, api }) => {
+    let sessionChecks = 0;
+    await page.addInitScript(() => {
+      window.loginSubmissions = 0;
+      document.addEventListener("submit", (event) => {
+        if (event.target.id !== "operator-login-form") return;
+        event.preventDefault();
+        window.loginSubmissions++;
+      });
+    });
+    await page.route("**/auth/operator/config", (route) => route.fulfill({ json: { enabled: true } }));
+    await page.route("**/auth/operator/session", (route) => {
+      sessionChecks++;
+      return route.fulfill({ json: {
+        identity: { issuer: "https://id.example", subject: "admin", display_name: "Admin Operator", organizations: ["*"], permissions: ["read"] },
+        csrf: "test-csrf",
+      } });
+    });
+    api.handlers.set("/api/operator-test/permission-denied", (route) => route.fulfill({ status: 403 }));
+    api.handlers.set("/api/operator-test/unavailable", (route) => route.fulfill({ status: 503 }));
+
+    await page.goto(appURL + "/#map");
+    await expect(page.locator("#operator-login-status")).toHaveText("Signed in: Admin Operator");
+    await expect.poll(() => sessionChecks).toBe(1);
+    expect(await page.evaluate(async () =>
+      (await window.zprOperatorFetch("/api/operator-test/permission-denied")).status)).toBe(403);
+    await expect.poll(() => sessionChecks).toBe(2);
+    await expect(page.locator("#operator-login-status")).toHaveText("Signed in: Admin Operator");
+    expect(await page.evaluate(async () =>
+      (await window.zprOperatorFetch("/api/operator-test/unavailable")).status)).toBe(503);
+    await page.waitForTimeout(100);
+    expect(sessionChecks).toBe(2);
+    expect(await page.evaluate(() => window.loginSubmissions)).toBe(0);
   });
 
   test("opens sign-in directly with a same-origin native POST without asset details", async ({ page, secureAppURL: appURL, api }) => {

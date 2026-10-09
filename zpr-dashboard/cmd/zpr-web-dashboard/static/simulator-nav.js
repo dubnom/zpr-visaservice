@@ -8,6 +8,67 @@
 
   const pageKey = (url) => new URL(url, location.href).pathname;
   const dispatchPageEvent = (name, path) => document.dispatchEvent(new CustomEvent(name, { detail: { path } }));
+  function createPagePoller({ path, run, interval, onError }) {
+    let active = false;
+    let generation = 0;
+    let timer;
+    let operation;
+
+    async function poll(currentGeneration) {
+      if (!active || currentGeneration !== generation) return;
+      if (operation?.generation === currentGeneration) return operation.promise;
+      const controller = new AbortController();
+      const current = {
+        generation: currentGeneration,
+        controller,
+        promise: null,
+      };
+      const isCurrent = () => active && generation === currentGeneration &&
+        operation === current && !controller.signal.aborted;
+      current.promise = Promise.resolve()
+        .then(() => run({ signal: controller.signal, isCurrent }))
+        .catch((error) => { if (isCurrent()) onError(error); })
+        .finally(() => {
+          if (operation === current) operation = null;
+          if (active && generation === currentGeneration) {
+            const delay = typeof interval === "function" ? interval() : interval;
+            timer = window.setTimeout(() => void poll(currentGeneration), delay);
+          }
+        });
+      operation = current;
+      return current.promise;
+    }
+
+    function start() {
+      if (active) return;
+      active = true;
+      void poll(++generation);
+    }
+
+    function stop() {
+      if (!active && !operation) return;
+      active = false;
+      generation++;
+      window.clearTimeout(timer);
+      timer = undefined;
+      operation?.controller.abort();
+      operation = null;
+    }
+
+    document.addEventListener("simulator:activate", (event) => {
+      if (event.detail.path === path) start();
+    });
+    document.addEventListener("simulator:deactivate", (event) => {
+      if (event.detail.path === path) stop();
+    });
+    return {
+      refresh() { return active ? poll(generation) : Promise.resolve(); },
+      stop,
+    };
+  }
+
+  window.ZPRSimulatorNavigation = { createPagePoller };
+
   const setActiveOrganization = (organization) => {
     const status = document.querySelector(".main-content > .topbar .topbar-status");
     if (!status) return;

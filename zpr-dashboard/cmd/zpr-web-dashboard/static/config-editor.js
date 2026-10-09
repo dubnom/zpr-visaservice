@@ -65,7 +65,7 @@
       current: browsingRevision || record?.current_revision,
       onSelect: (revision) => void run(() => loadRevision(revision.number)),
       detail: (revision) => revision.summary || "",
-      meta: (revision) => [revision.author, revision.created_at ? new Date(revision.created_at).toLocaleString() : ""].filter(Boolean).join(" · "),
+      meta: (revision) => [revision.author, revision.created_at ? window.ZPRSafeDisplay.formatDateTime(revision.created_at) : ""].filter(Boolean).join(" · "),
     });
   }
   function renderRecords() {

@@ -89,6 +89,11 @@ test("policy and assertion Help includes valid syntax and the report-only trust 
   const assertionHelp = page.getByRole("dialog", { name: "Assertion editor" });
   await expect(assertionHelp).toContainText("do not define an access grant");
   await expect(assertionHelp.locator("#zpr-help-example")).toContainText('group "Operators" members >= 2;');
+  await expect(assertionHelp.locator("#zpr-help-example")).toContainText('people in "Employees" exactly_one ["Engineering", "Operations"];');
+  await expect(assertionHelp.locator("#zpr-help-example")).toContainText('people not_both ["Administrators", "Auditors"];');
+  await expect(assertionHelp.locator("#zpr-help-example")).toContainText('people attribute "mail" present;');
+  await expect(assertionHelp.locator("#zpr-help-example")).toContainText('people attribute "employeeType" in ["Employee", "Contractor"];');
+  await expect(assertionHelp.locator("#zpr-help-example")).toContainText('people attribute "title" contains "Reviewer";');
 });
 
 test("scenario Help documents the real client-service contract", async ({ page }) => {

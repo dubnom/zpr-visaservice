@@ -326,6 +326,18 @@ uid: finance-workspace
 cn: finance-workspace
 sn: Application
 
+dn: uid=finance-client,ou=Machines,dc=greatlakes,dc=test
+objectClass: inetOrgPerson
+objectClass: zprMachine
+uid: finance-client
+cn: finance-client
+sn: Simulator workload
+zprMachineId: finance-client
+zprMachineType: workload
+zprMachineLocation: Milwaukee, Wisconsin, USA
+ou: Finance
+zprMachineSecure: TRUE
+
 dn: uid=shipping-portal,ou=Machines,dc=greatlakes,dc=test
 objectClass: inetOrgPerson
 uid: shipping-portal

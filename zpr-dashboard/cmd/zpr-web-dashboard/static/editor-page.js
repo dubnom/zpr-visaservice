@@ -265,7 +265,7 @@
   }
 
   function setAnalysisState(button, state = "") {
-    if (!["", "pending", "success", "error"].includes(state)) {
+    if (!["", "pending", "success", "warning", "error"].includes(state)) {
       throw new Error(`Unsupported editor analysis state: ${state}`);
     }
     if (state) button.dataset.analysisState = state;
@@ -350,6 +350,122 @@
     schedule();
     return binding;
   }
+
+  function bindEditorMaximize() {
+    const registrations = [...document.querySelectorAll("[data-editor-maximize]")].map((button) => {
+      const pane = document.getElementById(button.dataset.editorMaximize);
+      if (!pane) throw new Error(`Editor maximize target not found: ${button.dataset.editorMaximize}`);
+      return { button, pane };
+    });
+    for (const editor of document.querySelectorAll(".editor-page")) {
+      const utilities = editor.querySelector(".policy-editor-utilities");
+      if (!utilities || utilities.querySelector("[data-editor-maximize]")) continue;
+      const pane = editor.closest(".page-view") || editor;
+      if (!pane.id) throw new Error("Editor maximize pane requires an id.");
+      const button = document.createElement("button");
+      button.id = `editor-maximize-${pane.id}`;
+      button.className = "button button-refresh";
+      button.type = "button";
+      button.dataset.editorMaximize = pane.id;
+      button.setAttribute("aria-label", "Maximize editor");
+      button.setAttribute("aria-pressed", "false");
+      button.title = "Maximize editor";
+      button.textContent = "Maximize";
+      utilities.append(button);
+      registrations.push({ button, pane });
+    }
+
+    for (const { button, pane } of registrations) {
+      const isDialog = pane instanceof HTMLDialogElement;
+      const originalRole = pane.getAttribute("role");
+      const originalModal = pane.getAttribute("aria-modal");
+      let modalDialog = false;
+      let inertSiblings = [];
+      let maximized = false;
+
+      function setMaximized(next, restoreFocus = false) {
+        if (maximized === next) {
+          if (restoreFocus) button.focus();
+          return;
+        }
+        maximized = next;
+        pane.classList.toggle("editor-page-maximized", maximized);
+        document.body.classList.toggle("editor-page-maximized", maximized);
+        button.setAttribute("aria-pressed", String(maximized));
+        button.textContent = maximized ? "Restore" : "Maximize";
+        button.setAttribute("aria-label", maximized ? "Restore editor" : "Maximize editor");
+        button.title = maximized ? "Restore editor" : "Maximize editor";
+
+        if (maximized) {
+          modalDialog = isDialog && pane.matches(":modal");
+          if (!modalDialog) {
+            pane.setAttribute("role", "dialog");
+            pane.setAttribute("aria-modal", "true");
+            inertSiblings = [];
+            let current = pane;
+            while (current !== document.body) {
+              const parent = current.parentElement;
+              for (const sibling of parent.children) {
+                if (sibling === current) continue;
+                inertSiblings.push([sibling, sibling.inert]);
+                sibling.inert = true;
+              }
+              current = parent;
+            }
+          }
+          button.focus();
+          return;
+        }
+
+        if (!modalDialog) {
+          if (originalRole === null) pane.removeAttribute("role");
+          else pane.setAttribute("role", originalRole);
+          if (originalModal === null) pane.removeAttribute("aria-modal");
+          else pane.setAttribute("aria-modal", originalModal);
+          for (const [element, wasInert] of inertSiblings) element.inert = wasInert;
+          inertSiblings = [];
+        }
+        if (restoreFocus) button.focus();
+      }
+
+      button.addEventListener("click", () => setMaximized(!maximized));
+      if (isDialog) {
+        pane.addEventListener("cancel", (event) => {
+          if (!maximized || !modalDialog) return;
+          event.preventDefault();
+          setMaximized(false, true);
+        });
+        pane.addEventListener("close", () => setMaximized(false));
+      }
+      document.addEventListener("keydown", (event) => {
+        if (!maximized || event.defaultPrevented) return;
+        if (event.key === "Escape" && !modalDialog &&
+            !document.querySelector("dialog:modal") &&
+            !pane.querySelector('[role="menu"]:not([hidden])') &&
+            !pane.querySelector(".policy-picker-menu:not([hidden])") &&
+            !pane.querySelector(".policy-catalog-pane:not([hidden])")) {
+          event.preventDefault();
+          setMaximized(false, true);
+          return;
+        }
+        if (event.key !== "Tab") return;
+        const focusable = [...pane.querySelectorAll(
+          'a[href], button:not(:disabled), input:not(:disabled), select:not(:disabled), textarea:not(:disabled), summary, [tabindex]:not([tabindex="-1"])',
+        )].filter((element) => element.getClientRects().length && !element.closest("[hidden]"));
+        const first = focusable[0];
+        const last = focusable.at(-1);
+        if (event.shiftKey && (document.activeElement === first || !pane.contains(document.activeElement))) {
+          event.preventDefault();
+          last?.focus();
+        } else if (!event.shiftKey && document.activeElement === last) {
+          event.preventDefault();
+          first?.focus();
+        }
+      });
+    }
+  }
+
+  bindEditorMaximize();
 
   // History owns version information; the identity row shows only name and dirty state.
   function renderIdentity({ title, version, modified }, { name = "", label = "", tooltip = "", dirty = false } = {}) {

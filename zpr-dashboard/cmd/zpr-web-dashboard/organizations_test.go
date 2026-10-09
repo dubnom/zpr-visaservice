@@ -265,10 +265,14 @@ func TestGreatLakesLDIFMatchesPeopleSiteAttributesAndGroups(t *testing.T) {
 			t.Errorf("machine %q entered employee assertion scope", identity)
 		}
 	}
-	for _, identity := range []string{"support-desk-app", "engineering-build-farm", "finance-workspace", "shipping-portal", "receiving-portal", "assembly-mes", "quality-test-bench"} {
+	for _, identity := range []string{"support-desk-app", "engineering-build-farm", "finance-workspace", "finance-client", "shipping-portal", "receiving-portal", "assembly-mes", "quality-test-bench"} {
 		if assertionPeople[identity] {
-			t.Errorf("application %q entered employee assertion scope", identity)
+			t.Errorf("application/workload %q entered employee assertion scope", identity)
 		}
+	}
+	financeClient := directory.PersonAttributes["finance-client"]
+	if len(financeClient["ou"]) != 1 || financeClient["ou"][0] != "Finance" || len(financeClient["zprMachineLocation"]) != 1 || financeClient["zprMachineLocation"][0] != "Milwaukee, Wisconsin, USA" {
+		t.Errorf("finance-client trusted attributes = %+v; want Milwaukee Finance", financeClient)
 	}
 	for _, person := range organization.Directory.People {
 		attributes, exists := directory.PersonAttributes[person.UID]
@@ -695,6 +699,7 @@ func TestGreatLakesThreeSiteRuntimeScenarioIsSeeded(t *testing.T) {
 		"great-lakes-runtime-verification": false,
 	}
 	var workdayContent []byte
+	var gatewayScenario *simulatorScenario
 	for _, artifact := range artifacts {
 		if _, exists := wantScenarios[artifact.ID]; !exists || artifact.PublishedRevision != 1 {
 			t.Fatalf("unexpected Great Lakes scenario seed = %#v", artifact)
@@ -703,10 +708,25 @@ func TestGreatLakesThreeSiteRuntimeScenarioIsSeeded(t *testing.T) {
 		if artifact.ID == "great-lakes-five-minute-workday" {
 			workdayContent = artifact.Content
 		}
+		if artifact.ID == "great-lakes-finance-web-gateway" {
+			var scenario simulatorScenario
+			if err := json.Unmarshal(artifact.Content, &scenario); err != nil {
+				t.Fatal(err)
+			}
+			gatewayScenario = &scenario
+		}
 	}
 	for scenarioID, found := range wantScenarios {
 		if !found {
 			t.Errorf("Great Lakes scenario seed %q is missing", scenarioID)
+		}
+	}
+	if gatewayScenario == nil {
+		t.Fatal("Great Lakes gateway smoke scenario is missing")
+	}
+	for _, step := range append(append([]simulatorScenarioStep(nil), gatewayScenario.Steps...), gatewayScenario.Cleanup...) {
+		if step.Component == "internet-gateway" || step.Target == "internet-gateway" && step.Action != "request_test_service" {
+			t.Errorf("gateway smoke scenario owns gateway lifecycle: %+v", step)
 		}
 	}
 	for _, artifact := range artifacts {

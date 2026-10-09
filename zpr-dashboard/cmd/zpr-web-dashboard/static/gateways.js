@@ -157,7 +157,7 @@
       current: state.revision,
       onSelect: loadRevision,
       detail: (revision) => revision.revision === state.record.current_revision ? "Latest saved draft" : "Earlier draft",
-      meta: (revision) => revision.saved_at ? new Date(revision.saved_at).toLocaleString() : "",
+      meta: (revision) => revision.saved_at ? window.ZPRSafeDisplay.formatDateTime(revision.saved_at) : "",
     });
   }
 

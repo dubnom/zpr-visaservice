@@ -54,15 +54,6 @@
       this.addEventListener("click", (event) => {
         const refresh = event.target.closest("[data-source-refresh]");
         if (refresh) this.load();
-        const sortHeading = event.target.closest("[data-source-sort-key]");
-        if (sortHeading) {
-          const key = sortHeading.dataset.sourceSortKey;
-          const previous = this.sorts[this.view];
-          this.sorts[this.view] = { key, direction: previous.key === key ? previous.direction * -1 : 1 };
-          this.render();
-          this.querySelector(`[data-source-sort-key="${CSS.escape(key)}"] .sort-button`)?.focus();
-          return;
-        }
         const person = event.target.closest("tr.trusted-source-person");
         if (person && !String(window.getSelection?.() || "")) {
           const uid = person.querySelector("[data-source-person]")?.dataset.sourcePerson;
@@ -104,7 +95,7 @@
           if (!data.directory) throw new Error("Trusted source did not return browseable records");
           this.snapshot = data;
           this.querySelector("[data-source-title]").textContent = data.source_name || "Trusted source";
-          this.querySelector("[data-source-meta]").textContent = [data.organization_name, data.base_dn, data.observed_at && new Date(data.observed_at).toLocaleString()].filter(Boolean).join(" · ");
+          this.querySelector("[data-source-meta]").textContent = [data.organization_name, data.base_dn, data.observed_at && window.ZPRSafeDisplay.formatDateTime(data.observed_at)].filter(Boolean).join(" · ");
           this.querySelector("[data-source-summary]").textContent = `${data.people || 0} people · ${(data.groups || []).length} groups · ${(data.attributes || []).length} attributes`;
           this.render();
         } catch (error) {
@@ -333,9 +324,7 @@
         const emptyA = a === "" || a === undefined || a === null;
         const emptyB = b === "" || b === undefined || b === null;
         if (emptyA || emptyB) return emptyA === emptyB ? 0 : emptyA ? 1 : -1;
-        const result = typeof a === "number" && typeof b === "number"
-          ? a - b
-          : String(a).localeCompare(String(b), undefined, { numeric: true, sensitivity: "base" });
+        const result = window.ZPRSortableTable.compareValues(a, b);
         return result * sort.direction;
       };
       const sorted = items.map((item, index) => ({ item, index })).sort((left, right) => {
@@ -349,15 +338,9 @@
       const head = element("thead");
       const header = element("tr");
       for (const candidate of columns) {
-        const heading = element("th", "sortable-heading");
-        heading.dataset.sourceSortKey = candidate.key;
-        const active = candidate.key === column.key;
-        const direction = sort.direction === 1 ? "ascending" : "descending";
-        heading.setAttribute("aria-sort", active ? direction : "none");
-        const button = element("button", "sort-button", candidate.label);
-        button.type = "button";
-        button.setAttribute("aria-label", active ? `Sort by ${candidate.label}, currently ${direction}` : `Sort by ${candidate.label}, ascending`);
-        heading.append(button);
+        const heading = element("th");
+        heading.dataset.sortKey = candidate.key;
+        heading.textContent = candidate.label;
         header.append(heading);
       }
       head.append(header);
@@ -369,6 +352,15 @@
         body.append(row, ...afterRow(row, item));
       }
       table.append(head, body);
+      window.ZPRSortableTable.bindSortableHeaders({
+        table,
+        getSort: () => this.sorts[view],
+        onSort: (nextSort) => {
+          this.sorts[view] = nextSort;
+          this.render();
+          this.querySelector(`[data-source-view="${CSS.escape(view)}"] th[data-sort-key="${CSS.escape(nextSort.key)}"] .sort-button`)?.focus();
+        },
+      });
       scroll.append(table);
       target.append(scroll);
       return table;

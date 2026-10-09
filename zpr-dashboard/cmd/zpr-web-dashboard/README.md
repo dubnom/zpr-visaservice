@@ -32,13 +32,28 @@ the editor.
 
 ## GUI controls
 
-### Node geography
+### World Map
 
-Map offers **Topology** (the default) and **Geography**. Geography places only
-nodes, using optional `latitude` and `longitude` from the Visa Service's
-`node_details` contract. It uses the existing snapshot refresh and node inspector;
-it does not fetch Simulator profiles or geocode names. Links, routes, adapters,
-services and runtime topology remain in Topology.
+Map offers **Topology** (the default) and **World Map**. Both use the same network
+renderer, snapshot, component inspectors, visa routes, counts, search, legend,
+zoom, pan, Fit and Auto-fit controls. Each view retains its own camera and Auto-fit
+setting when switching. World Map anchors nodes to optional `latitude` and
+`longitude` from the Visa Service's `node_details` contract; adapters and services
+are arranged around their nodes, not assigned invented geographic coordinates.
+Components without a located node appear outside the basemap. Selecting a
+co-located node in the main graph opens a keyboard-accessible chooser for the
+overlapping nodes. Missing or invalid locations have explicit inspection choices;
+there is no separate node-location overview, placed-node count, or located-node
+list above the graph. It does not fetch Simulator profiles
+or geocode names. Switching views renders connectors and active route highlights
+immediately, without waiting for the next poll.
+Auto-fit and Fit use the network components' bounds, excluding the geographic
+basemap; when no nodes or adapters are reported, the map remains available and
+Fit falls back to the full basemap extent.
+Adapters docked to a node are arranged in a compact arc on the side with the
+greatest angular clearance from that node's inter-node links, in both map
+views. The existing spaced ring is retained when a large child set cannot fit
+in a compact arc.
 
 Configure coordinates as optional node properties in the Visa Service TOML,
 keyed by the exact node actor CN, for example:
@@ -71,19 +86,21 @@ Existing running services retain their old configuration until redeployed.
 
 Nodes without coordinates are listed as **Location not configured**, not placed
 at an invented location. Invalid upstream values are explicitly listed as
-**Invalid coordinates**. Co-located nodes share a count marker that opens a
+**Invalid coordinates**. In the node-location overview, co-located nodes share a count marker that opens a
 node chooser; **Nodes with locations** also provides ordinary inspection buttons
 for small screens. Enter/Space activate markers and existing node inspection.
 
-The checked-in `geography-land.svg` uses public-domain Natural Earth 1:110m land,
+The checked-in `geography-land.svg` uses public-domain Natural Earth 1:110m countries,
 projected equirectangularly into `1800 x 900` coordinates:
 `x = (longitude + 180) * 5`, `y = (90 - latitude) * 5`.
-The overlay uses the same projection with padding for boundary markers.
+The overview uses this projection; the shared graph scales it by two, with nodes
+remaining exactly anchored, and fits the basemap and component bounds together.
+The light ocean/land colors and country borders keep the network overlay readable.
 The original `worldmap.svg` has CC-BY-4.0 attribution requirements but no
 documented projection in the supplied file, so it is retained and not used for
 coordinate placement. Regenerate the new asset with
 `node scripts/build-geography-basemap.mjs INPUT.geojson OUTPUT.svg`, using
-Natural Earth's `ne_110m_land.geojson`; source and license URLs are recorded
+Natural Earth's `ne_110m_admin_0_countries.geojson`; source and license URLs are recorded
 in the generated SVG. No external basemap request is required at runtime.
 
 Page-specific Help opens a keyboard-accessible dialog beside uptime and refresh
@@ -999,3 +1016,31 @@ Catalogs use each organization's demo configuration. Shared one-node runtime
 layers use `ZPR_POLICY_RUNTIME_CONFIG_FILE`; Great Lakes uses its multi-node
 demo configuration. These are compiler checks, not proof of live forwarding or
 policy deployment. Catalog imports do not overwrite existing saved revisions.
+
+Simulator multi-node activation merges the organization's compiler configuration
+with the generated runtime topology and bootstrap key paths. Redwood includes
+the shared bootstrap/platform service contracts as well as its illustrative
+company contracts; these definitions do not add company access grants.
+Policy installation explicitly stops on merge or compile failures, requires a
+new nonempty bundle from a temporary compile directory, and never uploads an old
+bundle after a failed build. Activation requires all configured nodes to appear
+in the production snapshot and be in sync, not merely a connected Admin API.
+Rollback refreshes Control-Service credentials after recreating the previous
+runtime.
+
+To test the installer failure paths and node-readiness guard:
+
+```sh
+go test ./cmd/zpr-web-dashboard -run 'TestOrganizationPolicyInstall|TestOrganizationActivationRequires'
+```
+
+To build Redwood's complete composed policy against generated runtime keys:
+
+```sh
+ZPR_ZPLC_BIN="$PWD/../../zpr-compiler/target/debug/zplc" \
+ZPR_POLICY_RUNTIME_CONFIG_FILE="$PWD/../../.local-runtime/multinode/redwood/admin/multinode-demo.zplc" \
+ZPR_POLICY_BOOTSTRAP_DIR="$PWD/../../.local-runtime/multinode/redwood/include" \
+go test ./cmd/zpr-web-dashboard -run '^TestRedwoodComposedPolicyBuildsWithRuntimeBootstrap$' -count=1
+```
+
+This compiler test requires previously generated Redwood runtime assets.

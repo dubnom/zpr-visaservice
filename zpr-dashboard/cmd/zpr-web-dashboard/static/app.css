@@ -97,6 +97,8 @@ body.operator-auth-gated .operator-login form button, body.operator-auth-gated .
 :is(#policy-check, #assertion-analyze, #zpr-config-validate, #scenario-source-analyze, #gateway-analyze)[data-analysis-state="pending"]:hover { border-color: #17416f; background: #1d5088; }
 :is(#policy-check, #assertion-analyze, #zpr-config-validate, #scenario-source-analyze, #gateway-analyze)[data-analysis-state="success"] { border-color: #23754c; background: #23754c; color: white; }
 :is(#policy-check, #assertion-analyze, #zpr-config-validate, #scenario-source-analyze, #gateway-analyze)[data-analysis-state="success"]:hover { border-color: #195c3a; background: #195c3a; }
+:is(#policy-check, #assertion-analyze, #zpr-config-validate, #scenario-source-analyze, #gateway-analyze)[data-analysis-state="warning"] { border-color: #ac7a13; background: #e7b93f; color: #322508; }
+:is(#policy-check, #assertion-analyze, #zpr-config-validate, #scenario-source-analyze, #gateway-analyze)[data-analysis-state="warning"]:hover { border-color: #875d0a; background: #d6a82e; }
 :is(#policy-check, #assertion-analyze, #zpr-config-validate, #scenario-source-analyze, #gateway-analyze)[data-analysis-state="error"] { border-color: #a53232; background: #b83b3b; color: white; }
 :is(#policy-check, #assertion-analyze, #zpr-config-validate, #scenario-source-analyze, #gateway-analyze)[data-analysis-state="error"]:hover { border-color: #892626; background: #992f2f; }
 .button-save-as-ready { border-color: #91ab99; background: #e9f3eb; color: #174d3d; }

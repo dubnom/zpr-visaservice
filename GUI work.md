@@ -257,9 +257,9 @@
 - [x] Make sure AI changes are able to be undone. Text Insert supports native/fallback undo/redo; Scenario and organization-directory Apply provide guarded Undo AI change/Redo AI change without saving or publishing.
 - [x] Does the AI assistant also send attributes and groups to Anthropic? Policy/Assertions attach source/group definitions and configured attribute definitions, but never load a People catalog or memberships. Per clarification, do not expand disclosure or change Directory/Scenario payloads.
 - [x] Change 'Ask about this policy' to 'How can I help?' in every assistant.
-- [ ] Put the lint warnings (Line 4 - Warning [ASSRT_HUMAN_SCOPE]...) in the gutter.
-- [ ] If there are warnings, color Analyze button yellow.
-- [ ] Add the most used expressions as examples in their help text.
+- [x] Put source-located assertion lint warnings in the gutter as clickable warning markers; keep warnings without valid source lines visible below the controls rather than assigning invented locations.
+- [x] If an assertion evaluation has warnings, color Analyze yellow while keeping errors red and warning-free success green.
+- [x] Add common assertion expressions to the contextual help: group cardinality, exactly-one and mutually exclusive membership, attribute presence, approved values, and exact-value matching.
 
 ### All log viewers
 - [x] Word wrap checkbox defaults to disabled; users can enable it per view.
@@ -270,7 +270,7 @@
 ### Logging in and out
 - [x] If there isn't a properly authenticated and permissioned user don't show anything other than a sign in box with similar styling can colors as the app. Failure to sign in should show the error and allow retries.
 - [x] Skip the "you're not logged in" dialog box and go directly to the identity provider login page. Failed/denied callbacks remain retryable, and explicit sign-out does not automatically sign back in.
-- [ ] We have to log back in whenever the visa service disconnects, so can we just go to the login page instead of waiting for me to click on something?
+- [x] Recheck the operator session after protected API 401/403 responses and open sign-in when the session is expired; a still-valid session/permission denial or Visa Service outage does not trigger a login redirect.
 
 ### JavaScript reuse refactoring
 - [ ] Extract a shared editor controller for Policy, Assertions, ZPR Config, Gateways, Simulator Directory and Scenario, with explicit adapters for load, analyze, save and domain-specific rendering.
@@ -296,8 +296,15 @@
 - [x] Extract a shared AI assistant shell and conversation controller from `editor-assistant.js` and `design-assistant.js`: messages, model/token controls, usage counters, pending/error states and collapse behavior. Policy/Assertion uses the same `assistant-core.js` controller.
 - [x] Share assistant stale-context/proposal protection while keeping undoable text Insert and validated structured Apply as separate adapters; never save, publish, activate or run automatically. Reject edited-then-restored source, changed record/revision/organization, reset conversations and stale failures.
 - [ ] Extract shared page polling/lifecycle helpers: start/stop on navigation, prevent overlapping requests, abort obsolete requests, reject late responses and retain last-good data with explicit errors.
+  - [x] Migrate Simulator Activity polling to the shared navigation lifecycle; abort on departure and ignore late responses while retaining the last successful activity data.
+  - [x] Migrate Simulator Scenario polling to the shared navigation lifecycle; abort on departure, serialize periodic/manual refreshes and ignore late catalog/run responses.
+  - [x] Migrate Simulator Organization catalog polling to the shared navigation lifecycle; keep last-good catalog data and preserve faster polling during activation.
 - [ ] Extract shared sortable-table helpers for column definitions, comparators, accessible sort headings and empty states, starting with Control Room tables and Simulator Activity.
+  - [x] Share value comparison, accessible sortable heading setup, and empty-row rendering between Control Room tables and Simulator Activity; keep dataset-specific columns, stable tie-breaking, and row rendering owned by each view.
+  - [x] Reuse shared value comparison and accessible sort headings in the Trusted Sources browser while retaining its empty-values-last ordering and stable row tie-breaks.
 - [ ] Consolidate safe text rendering and timestamp/protocol display helpers without changing API contracts or losing integer precision.
+  - [x] Share HTML escaping across Control Room and Assertion rendering, and reuse protocol labels in Control Room and Activity; retain caller-specific fallback text for unknown protocol numbers.
+  - [x] Route date/time locale formatting through shared helpers without changing caller-selected date/time style, input values, or seconds-to-milliseconds conversions.
 - [ ] Consolidate HTTP/JSON error handling and cancellation; keep authentication, same-origin CSRF handling and mutation retry/uncertainty policies explicit.
   - [x] Share injected JSON transport for Config, Assertions and Gateways. Preserve structured errors and abort identity; report malformed JSON explicitly rather than defaulting to empty success. Keep Gateway validation-result acceptance local to Analyze and reject failed saves without retrying or replacing unsaved drafts.
   - [x] Use shared injected JSON transport for Simulator Directory artifact/revision reads, Save and Publish. Retain explicit operation errors, unsaved drafts, expected-revision payloads and separate publish/reseed semantics without retries or production dependencies.
@@ -305,9 +312,10 @@
   - [x] Use shared authenticated JSON transport for Policy compiler checks and runtime fixture/evaluation requests. Preserve non-success compiler diagnostic priority/warnings, separate runtime errors and cancellation-safe pending/Save ownership without retries or Simulator dependencies.
   - [x] Use shared authenticated JSON transport for Policy workspace, record, History and revision reads. Show load failures separately from analysis diagnostics, retain source on failed reads and clear load status on recovery/new drafts. Preserve History/dirty-confirmation behavior without retries or production/Simulator dependencies.
   - [x] Use shared authenticated JSON transport for Policy revision Save, draft creation through Save and confirmed Stage. Preserve revision payloads, error dialogs and explicit confirmation without automatic retries or treating undecodable mutation responses as success.
-- [ ] Reuse the existing shared `machine-logs.js` viewer rather than introducing separate Control Room and Simulator log implementations.
-- [ ] Add shared JavaScript component contract tests and desktop/tablet integration coverage for each migration, preserving intended behavior and accessibility.
-- [ ] Verify Control Room works with Simulator unavailable; shared JavaScript must receive independent production endpoints/configuration and must not introduce Simulator data, authorization or runtime dependencies.
+  - [x] Use shared JSON response/error parsing for Simulator Organization and Scenario polling reads; retain their independent service endpoints, abort signals, error surfaces and last-good data, with no mutation retries.
+- [x] Reuse the existing shared `machine-logs.js` viewer rather than introducing separate Control Room and Simulator log implementations.
+- [x] Add shared JavaScript component contract tests and desktop/tablet integration coverage for each migration, preserving intended behavior and accessibility.
+- [x] Verify Control Room works with Simulator unavailable; shared JavaScript must receive independent production endpoints/configuration and must not introduce Simulator data, authorization or runtime dependencies.
 
 ## Control Room
 
@@ -346,21 +354,27 @@
 - [x] What happened to showing visa routes? Routes now draw as thick glowing blue lines with moving dashes and pulsing routed components; right-click only toggles routes (count badge click opens the visa list).
 - [x] Link forward and reverse visas for display: paired on the Visas page (PAIR column) and in Map visa lists.
 - [x] Make clicking away from the component info dialog close the window.
+- [x] In both map views, arrange each node's docked adapters into a compact arc positioned for maximum angular clearance from inter-node links; retain a spaced ring if a large child set cannot fit the arc.
 
 ### World map
 - [x] `worldmap.svg` is available in the `zpr-dashboard` folder.
 - [x] Plan for a geographic network view using node latitude/longitude:
   - [x] Add optional validated latitude/longitude properties to production node metadata and the Visa Service Admin API; never infer coordinates from location names or read Simulator profiles in Control Room.
   - [x] Inspect the supplied SVG license/viewBox; because its projection is undocumented, use a public-domain Natural Earth basemap generated in a known equirectangular projection with explicit bounds and a clear no-coordinate state.
-  - [x] Add a separate node-only Geography view so the existing topology graph remains available and authoritative for links and runtime state.
-  - [x] Reuse node details/selection, make markers keyboard accessible, and group duplicate/co-located nodes with an explicit chooser and a small-screen node list.
+  - [x] Add a separate World Map view while retaining Topology as the default; both now share authoritative component, link, route and runtime-state rendering.
+  - [x] Reuse node details/selection and keyboard-accessible graph components; selecting duplicate/co-located nodes in the main graph opens an explicit responsive chooser without a separate location overview.
   - [x] Test projection bounds, missing/invalid/zero coordinates, mobile sizing, replacement node sets, and Simulator-unavailable production metadata pass-through.
   - [x] Seed all eight nodes across the five bundled Simulator organizations with explicit approximate coordinates and per-node guess notes; provision them into Visa Service config under actual runtime CNs without adding a reverse Simulator dependency to Control Room.
-  - [ ] Review profile-derived approximate coordinates for actual node CNs and verify geographic placement against a second organization. Great Lakes was redeployed with its profile coordinates; no second organization has been checked in the live map.
-  - [ ] Worldmap should support the same controls as the map for zooming and panning. Display the network components on the map with nodes constrained.
-  - [ ] Rename Geography to "World Map".
-  - [ ] We need country borders.
-  - [ ] Needs to be a light colored map because of our overlay.
+  - [x] Deploy to authenticated Control Room on HTTPS 8787 and verify Great Lakes through real Dex login: all three actual node CNs match their profile coordinates and all reported network components render.
+  - [x] Complete second-organization live certification. Repaired Redwood's shared compiler contracts and made policy installation fail closed on merge/build/missing-output errors instead of uploading stale bundles. Real Dex-authenticated desktop/tablet checks passed for Redwood's two nodes (Eureka and Sacramento), then Great Lakes was restored and passed the same live checks for its three nodes (Milwaukee, Shenzhen, and Tijuana). Activation requires every configured node synchronized; Great Lakes is active with no snapshot errors, and no Redwood containers remain.
+  - [x] World Map supports the same zoom, wheel, pan, Fit, Auto-fit, inspection, counts, route focus, search and legend controls as Topology; both use the same renderer with geographically constrained nodes and independent saved cameras.
+  - [x] Rename Geography to "World Map".
+  - [x] Add country borders using a locally served public-domain Natural Earth country polygon basemap.
+  - [x] Use light land/ocean colors so the existing network overlay stays readable.
+  - [x] Switching back to Topology rebuilds connectors and route highlights immediately, without waiting for polling or a cross-layout animation.
+  - [x] Use high-contrast dark text on light inactive buttons and white text on dark-blue selected buttons.
+  - [x] Remove the placed/unplaced-node count, Node location overview, Nodes with locations list, and "Countries..." text. Preserve keyboard-accessible co-location choices in the main graph and explicit missing/invalid-location inspection. Deployed and verified through real Dex login on desktop and tablet.
+  - [x] Auto-fit and Fit frame the network components rather than the full geographic basemap. When there are no reported nodes or adapters, keep the basemap visible and Fit falls back to its full extent.
 
 ### Navigation
 - [x] Keep Map as the main view and group Adapters, Actors, Services, Visas, Denials, and DNS under horizontal Status tabs with counts.
@@ -408,7 +422,7 @@
 - [x] Change Nav from "Policy" to "Policy/Assertions".
 - [x] Remove Syntax from the bottom of the assertions editor.
 - [x] Change "Analyze" color to blue instead of orange across Policy, Assertions, Config, Gateways and Scenario, including hover and pending states. Keep success green and errors red.
-- [ ] Support Maximize/Restore.
+- [x] Support Maximize/Restore across Policy/Assertions, Config, Gateways, Scenario, and Directory editors through the shared editor-page foundation. Maximize fills the viewport, prevents background interaction and page scrolling, and restores focus; Scenario/Directory dialogs remain open when Escape restores their normal layout.
 
 ### Status
 - [x] I noticed on the "adapters" page that even when sorted, the records moved around (though nothing changed). I think sorting only sorts on its primary field but if that field has duplicates this occurs. A solution would be to always have a secondary field (or more) that is/are automatically attached. The user has nothing to do with this but the results would be deterministic.

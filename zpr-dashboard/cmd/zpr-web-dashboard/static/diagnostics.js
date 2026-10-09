@@ -45,7 +45,7 @@
       heading.append(identity);
       appendText(heading, "span", "diagnostics-state", source.state || "unavailable");
       article.append(heading);
-      const lastUpdated = source.last_updated ? new Date(source.last_updated).toLocaleString() : "No telemetry received";
+      const lastUpdated = source.last_updated ? window.ZPRSafeDisplay.formatDateTime(source.last_updated) : "No telemetry received";
       appendText(article, "p", "diagnostics-last-update", `Last update · ${lastUpdated}`);
       if (source.error) appendText(article, "p", "diagnostics-source-error", source.error);
       if ((source.metrics || []).length) {
@@ -63,7 +63,7 @@
       logs.className = "diagnostics-logs";
       for (const log of source.logs || []) {
         const row = document.createElement("li");
-        const stamp = log.timestamp ? new Date(log.timestamp).toLocaleTimeString() : "—";
+        const stamp = log.timestamp ? window.ZPRSafeDisplay.formatTime(log.timestamp) : "—";
         appendText(row, "time", "diagnostics-log-time", stamp);
         if (log.severity) appendText(row, "span", "diagnostics-log-severity", log.severity);
         const body = log.body || "";
@@ -90,7 +90,7 @@
       responseData = result;
       error.hidden = true;
       error.textContent = "";
-      updated.textContent = `Updated ${new Date(result.generated_at).toLocaleTimeString()} · ${result.state}`;
+      updated.textContent = `Updated ${window.ZPRSafeDisplay.formatTime(result.generated_at)} · ${result.state}`;
       render();
     } catch (failure) {
       if (failure.name !== "AbortError" && active) {

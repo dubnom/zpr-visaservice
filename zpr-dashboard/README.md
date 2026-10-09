@@ -1259,6 +1259,9 @@ straight to the identity provider's login page through the same-origin native
 POST login form. Failed or denied callbacks retain a retryable sign-in screen
 instead of automatically redirecting again. Explicit sign-out leaves the user
 signed out with a Sign in button, avoiding immediate single-sign-on reentry.
+Protected API authorization responses trigger a session recheck; only an
+expired session starts sign-in automatically. Permission denials and Visa
+Service availability errors do not redirect to the identity provider.
 Unconfigured local login retains its existing behavior; HTTP never starts OIDC.
 
 Visit **https://localhost:8787**, choose **Sign in**, and enter `dubnom` in the
@@ -1907,6 +1910,11 @@ attribute presence/value/integer checks. Manual draft
 evaluation and opt-in periodic checks are available; source failures and missing
 groups are errors, never successful checks. See [ASSERTIONS.md](ASSERTIONS.md)
 for syntax, source configuration, API contracts, and current limits.
+Source-located assertion lint warnings appear as clickable yellow `WARN`
+markers on their source lines; clicking a marker opens its details. The Analyze
+button turns yellow when a successful evaluation includes warnings. Warnings
+without a valid source line remain visible below the editor controls rather
+than being assigned an invented line.
 
 ## Organization Activation
 
@@ -2131,6 +2139,13 @@ resize observer, removes window listeners and restores the original inline
 height and priority. A disposed container may be bound again. The existing
 viewport inset and minimum-height rules are unchanged; the binding has no
 service or editor-domain dependencies.
+The shared editor-page foundation supplies Maximize/Restore to Policy,
+Assertions, Config, Gateways, Scenario, and Directory editors. It fills the
+viewport, keeps focus within non-modal editor pages, and locks background
+scrolling. Scenario and Directory dialogs remain open when Escape restores
+their normal layout. The maximized editor exposes modal semantics and makes
+surrounding content inert; restoring returns focus to the toolbar control and
+preserves any pre-existing inert states.
 All six source editors share `bindSourceLayout` for highlight-overlay scroll,
 native gutter scrolling or translated result rows, resize observation and
 horizontal-overflow detection where supported. Policy and Assertion retain

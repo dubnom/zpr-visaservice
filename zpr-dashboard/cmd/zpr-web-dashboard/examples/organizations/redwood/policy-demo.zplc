@@ -1,5 +1,5 @@
-# Redwood Freight Cooperative illustrative policy configuration.
-# Services are examples only and are not deployed endpoints.
+# Redwood Freight Cooperative policy configuration.
+# Company services are illustrative; shared platform contracts support the composed runtime.
 
 [resolver]
 order = ["hosts", "dns"]
@@ -36,4 +36,37 @@ protocol = "ping"
 protocol = "ping"
 
 [services.ShipmentLedger]
+protocol = "ping"
+
+[services.PingableVs]
+protocol = "ping"
+
+[services.PingableNode]
+protocol = "ping"
+
+[services.A1Svc]
+protocol = "ping"
+
+[services.A2Svc]
+protocol = "ping"
+
+[services.A3Svc]
+protocol = "ping"
+
+[services.PolicyService]
+protocol = "ping"
+
+[services.ControlService]
+protocol = "ping"
+
+[services.ControlRoom]
+protocol = "ping"
+
+[services.AttributeService]
+protocol = "ping"
+
+[services.EchoService]
+protocol = "ping"
+
+[services.MetricsService]
 protocol = "ping"

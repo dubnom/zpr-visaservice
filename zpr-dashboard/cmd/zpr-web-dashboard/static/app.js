@@ -9,6 +9,10 @@ let previousPolledValues = null;
 let graphAutoFit = true;
 let graphDarkMode = false;
 let graphVisaFocus = null;
+const mapViewports = new Map();
+window.addEventListener("zpr-map-view", () => {
+  if (state.snapshot) renderTopology(state.snapshot);
+});
 const policySourceLayout = window.ZPREditorPage.bindSourceLayout({
   source: byId("policy-source"), highlight: byId("policy-highlight"),
   gutterContent: byId("policy-test-gutter-content"), container: byId("policy-code-editor"),
@@ -211,11 +215,7 @@ function checkProvisioningAccess() {
 }
 byId("provisioning-recheck").addEventListener("click", () => void checkProvisioningAccess());
 
-function escapeHTML(value) {
-  return String(value ?? "").replace(/[&<>"']/g, (char) => ({
-    "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;"
-  })[char]);
-}
+const escapeHTML = window.ZPRSafeDisplay.escapeHTML;
 
 function actorDisplayName(actor) {
   return dnsNameForAddress(actor?.zpr_addr) || actor?.cn || "—";
@@ -242,7 +242,7 @@ function dnsNumber(counters, key) {
 function renderDNSStats(status, server, zones) {
   const counters = server.nsstats || {};
   const requests = num(counters.Requestv4) + num(counters.Requestv6);
-  byId("dns-stats-status").textContent = `BIND ${server.version || "9"} · Updated ${new Date(status["current-time"]).toLocaleTimeString()}`;
+  byId("dns-stats-status").textContent = `BIND ${server.version || "9"} · Updated ${window.ZPRSafeDisplay.formatTime(status["current-time"])}`;
   byId("dns-stat-requests").textContent = formatNumber(requests);
   byId("dns-stat-success").textContent = dnsNumber(counters, "QrySuccess");
   byId("dns-stat-nxdomain").textContent = dnsNumber(counters, "QryNXDOMAIN");
@@ -385,8 +385,7 @@ function visibleRows(page, rows, columns) {
   return filtered.sort((left, right) => {
     const a = columns[sort.key](left) ?? "";
     const b = columns[sort.key](right) ?? "";
-    const comparison = typeof a === "number" && typeof b === "number"
-      ? a - b : String(a).localeCompare(String(b), undefined, { numeric: true, sensitivity: "base" });
+    const comparison = window.ZPRSortableTable.compareValues(a, b);
     return (comparison || compareStableRows(left, right, columns)) * sort.direction;
   });
 }
@@ -418,9 +417,7 @@ function sortControlRoomTableRows(page) {
     const b = String(value(right));
     const numericA = Number(a.replaceAll(",", ""));
     const numericB = Number(b.replaceAll(",", ""));
-    const comparison = a !== "" && b !== "" && Number.isFinite(numericA) && Number.isFinite(numericB)
-      ? numericA - numericB
-      : a.localeCompare(b, undefined, { numeric: true, sensitivity: "base" });
+    const comparison = window.ZPRSortableTable.compareValues(a, b, { numericStrings: true });
     return (comparison || compareStableRows(left, right,
       Object.fromEntries([...table.tHead.rows[0].cells].map((_, index) =>
         [index, (row) => row.cells[index]?.dataset.sortValue ?? row.cells[index]?.textContent.trim() ?? ""])))) * sort.direction;
@@ -467,7 +464,7 @@ function updateConnection(snapshot) {
   const apiState = snapshot.api_status || "disconnected";
   stateEl.dataset.state = apiState === "connected" ? "connected" : apiState === "partial" ? "partial" : "disconnected";
   byId("api-state-text").textContent = apiState === "connected" ? "Visa Service connected" : apiState === "partial" ? "Partial API response" : apiState === "not configured" ? "Admin API not configured" : "Visa Service unavailable";
-  byId("last-updated").textContent = snapshot.generated_at ? `Updated ${new Date(snapshot.generated_at).toLocaleTimeString()}` : "Waiting for first snapshot";
+  byId("last-updated").textContent = snapshot.generated_at ? `Updated ${window.ZPRSafeDisplay.formatTime(snapshot.generated_at)}` : "Waiting for first snapshot";
 
   const issues = [];
   if (snapshot.config_error) issues.push(snapshot.config_error);
@@ -563,7 +560,7 @@ function visaPairLabel(group, visa) {
 function currentVisaList(visas) {
   if (!visas.length) return `<p>No current visas.</p>`;
   const groups = pairVisas(visas).sort((a, b) => num(a.members[0].id) - num(b.members[0].id) || String(a.members[0].id).localeCompare(String(b.members[0].id)));
-  const item = (group, visa) => `<div class="detail-item"><strong>Visa ${escapeHTML(visa.id)} · ${escapeHTML(visa.proto)}</strong><span title="${escapeHTML(visaEndpointTitle(visa.source_addr, visa.dest_addr))}">${escapeHTML(visaEndpoint(visa.source_addr, visa.source_port, visa.dest_addr, visa.dest_port))}</span><span>Direction: ${escapeHTML(visa.direction || "Not reported")} · Pair: ${escapeHTML(visaPairLabel(group, visa))}</span><span>Expires: ${escapeHTML(new Date(num(visa.expires) * 1000).toLocaleString())}</span><span>Node: ${escapeHTML(visa.requesting_node || "Not reported")} · Policy: ${escapeHTML(visa.policy_id || "Not reported")}</span><span>Route: ${escapeHTML(visa.path?.length ? visa.path.join(" → ") : "Not reported")}</span></div>`;
+  const item = (group, visa) => `<div class="detail-item"><strong>Visa ${escapeHTML(visa.id)} · ${escapeHTML(visa.proto)}</strong><span title="${escapeHTML(visaEndpointTitle(visa.source_addr, visa.dest_addr))}">${escapeHTML(visaEndpoint(visa.source_addr, visa.source_port, visa.dest_addr, visa.dest_port))}</span><span>Direction: ${escapeHTML(visa.direction || "Not reported")} · Pair: ${escapeHTML(visaPairLabel(group, visa))}</span><span>Expires: ${escapeHTML(window.ZPRSafeDisplay.formatDateTime(num(visa.expires) * 1000))}</span><span>Node: ${escapeHTML(visa.requesting_node || "Not reported")} · Policy: ${escapeHTML(visa.policy_id || "Not reported")}</span><span>Route: ${escapeHTML(visa.path?.length ? visa.path.join(" → ") : "Not reported")}</span></div>`;
   const heading = group => group.forward && group.reverse
     ? `Connection · Visa ${group.forward.id} ↔ ${group.reverse.id}`
     : group.single ? `Visa ${group.single.id} · direction not reported` : group.forward ? `Visa ${group.forward.id} · no reverse visa` : `Visa ${group.reverse.id} · no forward visa`;
@@ -642,7 +639,7 @@ function renderInspector() {
     sections.push(detailSection("Visa inventory", [
       detailField("Scope", service ? `Service on ${actorDisplayName(actor)}` : "Adapter source or destination"),
       detailField("Active visas", visas?.length ?? "Unavailable"),
-      detailField("Snapshot", data.generated_at ? new Date(data.generated_at).toLocaleString() : "Not reported"),
+      detailField("Snapshot", data.generated_at ? window.ZPRSafeDisplay.formatDateTime(data.generated_at) : "Not reported"),
     ]));
     const content = visas == null
       ? `<p role="status">Active visa inventory unavailable. Recent decisions are not a complete current inventory.</p>`
@@ -658,12 +655,12 @@ function renderInspector() {
       detailField("Buffered denials", details.buffered_denials ?? "Unavailable"),
       detailField("Local denial occurrences", details.local_denials ?? "Unavailable"),
       ...(details.denial_stats_error ? [detailField("Telemetry", details.denial_stats_error)] : []),
-      detailField("Snapshot", data.generated_at ? new Date(data.generated_at).toLocaleString() : "Not reported"),
+      detailField("Snapshot", data.generated_at ? window.ZPRSafeDisplay.formatDateTime(data.generated_at) : "Not reported"),
     ]));
     const docked = new Set((details.adapters || []).map(name => data.actors.find(item => item.cn === name)?.zpr_addr).filter(Boolean).map(dnsAddressKey));
     const denials = (data.recent_denies || []).filter(record => record.source_addr && docked.has(dnsAddressKey(record.source_addr)))
       .sort((left, right) => num(right.last_deny_ms) - num(left.last_deny_ms));
-    const items = denials.map(record => `<div class="detail-item"><strong>${escapeHTML(record.deny_code || "Denied")} · ${escapeHTML(`${protocolName(record.protocol)}/${record.dest_port}`)}</strong><span title="${escapeHTML(visaEndpointTitle(record.source_addr, record.dest_addr))}">${escapeHTML(`${dnsAddressLabel(record.source_addr)} → ${dnsAddressLabel(record.dest_addr)}`)}</span><span>Count: ${escapeHTML(formatNumber(record.count))} · Last: ${record.last_deny_ms ? escapeHTML(new Date(num(record.last_deny_ms)).toLocaleString()) : "Not reported"}</span></div>`).join("");
+    const items = denials.map(record => `<div class="detail-item"><strong>${escapeHTML(record.deny_code || "Denied")} · ${escapeHTML(`${protocolName(record.protocol)}/${record.dest_port}`)}</strong><span title="${escapeHTML(visaEndpointTitle(record.source_addr, record.dest_addr))}">${escapeHTML(`${dnsAddressLabel(record.source_addr)} → ${dnsAddressLabel(record.dest_addr)}`)}</span><span>Count: ${escapeHTML(formatNumber(record.count))} · Last: ${record.last_deny_ms ? escapeHTML(window.ZPRSafeDisplay.formatDateTime(num(record.last_deny_ms))) : "Not reported"}</span></div>`).join("");
     const content = !docked.size
       ? `<p role="status">No docked adapters with ZPR addresses are reported for this node.</p>`
       : items
@@ -682,7 +679,7 @@ function renderInspector() {
 		 detailField("Role", actor.node ? "Node / forwarder" : gatewayService ? "External-network gateway" : kindLabel === "VISA SERVICE ADAPTER" ? "Visa Service adapter" : "Adapter"),
       detailField("Common name", actor.cn, "mono"),
       detailDNSAddressField("DNS name", actor.zpr_addr, actor.cn),
-      detailField("Authentication expires", actor.auth_exp ? new Date(actor.auth_exp * 1000).toLocaleString() : "No expiry reported"),
+      detailField("Authentication expires", actor.auth_exp ? window.ZPRSafeDisplay.formatDateTime(actor.auth_exp * 1000) : "No expiry reported"),
     ]));
     if (gatewayService) {
       sections.push(detailSection("Gateway boundary", [
@@ -722,7 +719,7 @@ function renderInspector() {
         ]));
       } else {
         sections.push(detailSection("Packet-processing counters", [
-          detailField("Sample time", details.counters_updated_at ? new Date(details.counters_updated_at).toLocaleString() : "Not reported"),
+          detailField("Sample time", details.counters_updated_at ? window.ZPRSafeDisplay.formatDateTime(details.counters_updated_at) : "Not reported"),
           detailField("Scope", "Cumulative since runtime restart or counter reset; per worker, not per route or link."),
         ]));
         const groups = new Map();
@@ -773,7 +770,7 @@ function renderInspector() {
     sections.push(detailSection("Live state", [
       detailField("Actor present", actor ? "Present in Visa Service" : "Not returned"),
       detailField("Last lookup", isTrusted ? (source?.health || "Unreported") : "Not applicable"),
-      detailField("Observed at", source?.last_lookup_ms ? new Date(source.last_lookup_ms).toLocaleString() : "Not reported"),
+      detailField("Observed at", source?.last_lookup_ms ? window.ZPRSafeDisplay.formatDateTime(source.last_lookup_ms) : "Not reported"),
     ]));
   } else if (state.selection.kind === "source") {
     const source = data.trusted_sources.find((item) => item.name === state.selection.key);
@@ -788,8 +785,8 @@ function renderInspector() {
     ]));
     sections.push(detailSection("Lookup status", [
       detailField("Last outcome", lookupOutcome(source.health)),
-      detailField("Last lookup", source.last_lookup_ms ? new Date(source.last_lookup_ms).toLocaleString() : "Never observed"),
-      detailField("Last success", source.last_success_ms ? new Date(source.last_success_ms).toLocaleString() : "Never observed"),
+      detailField("Last lookup", source.last_lookup_ms ? window.ZPRSafeDisplay.formatDateTime(source.last_lookup_ms) : "Never observed"),
+      detailField("Last success", source.last_success_ms ? window.ZPRSafeDisplay.formatDateTime(source.last_success_ms) : "Never observed"),
       detailField("Basis", source.health_note || "No lookup status from the admin API"),
     ]));
     if (source.editor_url) {
@@ -967,6 +964,19 @@ function renderTopology(data, exitComponents = []) {
 
   const stage = byId("topology-stage");
   const darkModeControl = `<label class="graph-auto-fit" hidden><input type="checkbox" data-graph-dark-mode${graphDarkMode ? " checked" : ""}>Dark mode</label>`;
+  const geographic = byId("page-map").dataset.mapView === "geography";
+  const mapView = geographic ? "geography" : "topology";
+  const viewChanged = stage.dataset.renderedMapView !== mapView;
+  if (viewChanged) {
+    if (stage.dataset.renderedMapView) mapViewports.set(stage.dataset.renderedMapView, {
+      camera: state.graphCamera ? { ...state.graphCamera } : null, autoFit: graphAutoFit,
+      viewBox: stage.querySelector(".topology-graph")?.getAttribute("viewBox"),
+    });
+    const saved = mapViewports.get(mapView);
+    state.graphCamera = saved?.camera ? { ...saved.camera } : null;
+    graphAutoFit = saved?.autoFit ?? true;
+    stage.dataset.renderedMapView = mapView;
+  }
   const positions = new Map();
   const servicePositions = new Map();
   const servicesByActor = new Map();
@@ -984,6 +994,13 @@ function renderTopology(data, exitComponents = []) {
   if (byId("page-map").hidden) return;
 
   if (!actors.length && !exitComponents.length) {
+    if (geographic) {
+      stage.innerHTML = `<div class="graph-controls" aria-label="Topology graph controls">${darkModeControl}<label class="graph-auto-fit"><input type="checkbox" data-graph-auto-fit${graphAutoFit ? " checked" : ""}>Auto-fit</label><button class="graph-control" data-graph-action="in" type="button" aria-label="Zoom in" title="Zoom in">+</button><button class="graph-control" data-graph-action="out" type="button" aria-label="Zoom out" title="Zoom out">−</button><button class="graph-control graph-fit" data-graph-action="fit" type="button" aria-label="Fit graph" title="Fit graph">Fit</button></div><svg class="topology-graph" viewBox="0 0 3600 1800" role="img" aria-label="World Map; no nodes or adapters reported"><g id="graph-world"><image href="/geography-land.svg?v=2" width="3600" height="1800" class="graph-geographic-basemap"/></g></svg><p class="empty-state" role="status">No nodes or adapters reported. The World Map is shown at its full extent.</p>`;
+      setupGraphAppearance(stage);
+      setupGraphControls(stage, 3600, 1800, null);
+      applyMapVisaFocus(data);
+      return;
+    }
     const message = data.api_status === "connected"
       ? "No nodes or adapters reported. Visa Service returned an empty topology."
       : "Topology unavailable. Check the Visa Service connection and reported errors.";
@@ -1036,6 +1053,11 @@ function renderTopology(data, exitComponents = []) {
       x: margin + maxChildExtent + (slot % nodeColumns) * nodeSpacing,
       y: margin + maxChildExtent + Math.floor(slot / nodeColumns) * nodeSpacing,
     };
+    if (geographic) {
+      const point = window.ZPRGeography.project(node.node_details?.latitude, node.node_details?.longitude);
+      nodeCenter.x = point ? point.x * 2 : 4500 + (slot % nodeColumns) * nodeSpacing;
+      nodeCenter.y = point ? point.y * 2 : margin + Math.floor(slot / nodeColumns) * nodeSpacing;
+    }
     positions.set(node.cn, nodeCenter);
   });
   nodes.forEach((node) => {
@@ -1053,24 +1075,50 @@ function renderTopology(data, exitComponents = []) {
       const other = positions.get(edge.from.cn === node.cn ? edge.to.cn : edge.from.cn);
       return Math.atan2(other.y - nodeCenter.y, other.x - nodeCenter.x);
     });
-    const angles = [];
-    let angle = -Math.PI / 2;
-    for (const gap of gaps) {
-      angles.push(angle);
-      angle += gap + spareAngle;
-    }
-    let rotation = 0, clearance = -1;
-    // Rotate the adapter ring away from inter-node corridors without changing its spacing.
-    for (let step = 0; directions.length && step < 120; step++) {
-      const candidate = step * Math.PI / 60;
-      let distance = Infinity;
-      for (const a of angles) for (const b of directions) {
-        distance = Math.min(distance, Math.abs(Math.atan2(Math.sin(a + candidate - b), Math.cos(a + candidate - b))));
+    const offsets = [0];
+    for (let slot = 0; slot < attached.length - 1; slot++) offsets.push(offsets.at(-1) + gaps[slot]);
+    const span = offsets.at(-1);
+    let centerAngle = -Math.PI / 2;
+    if (directions.length && span < 2 * Math.PI) {
+      const packedOffsets = offsets.map((offset) => offset - span / 2);
+      let clearance = -1;
+      // Pack children into one arc, then place that arc at maximum angular distance from links.
+      for (let step = 0; step < 180; step++) {
+        const candidate = -Math.PI + step * Math.PI / 90;
+        let distance = Infinity;
+        for (const offset of packedOffsets) for (const direction of directions) {
+          const delta = candidate + offset - direction;
+          distance = Math.min(distance, Math.abs(Math.atan2(Math.sin(delta), Math.cos(delta))));
+        }
+        if (distance > clearance) {
+          clearance = distance;
+          centerAngle = candidate;
+        }
       }
-      if (distance > clearance) { clearance = distance; rotation = candidate; }
+    } else if (span >= 2 * Math.PI) {
+      const angles = [];
+      let angle = -Math.PI / 2;
+      for (const gap of gaps) {
+        angles.push(angle);
+        angle += gap + spareAngle;
+      }
+      let rotation = 0, clearance = -1;
+      for (let step = 0; directions.length && step < 120; step++) {
+        const candidate = step * Math.PI / 60;
+        let distance = Infinity;
+        for (const a of angles) for (const b of directions) {
+          distance = Math.min(distance, Math.abs(Math.atan2(Math.sin(a + candidate - b), Math.cos(a + candidate - b))));
+        }
+        if (distance > clearance) { clearance = distance; rotation = candidate; }
+      }
+      attached.forEach((adapter, slot) => {
+        const angle = angles[slot] + rotation;
+        positions.set(adapter.cn, { x: nodeCenter.x + Math.cos(angle) * radius, y: nodeCenter.y + Math.sin(angle) * radius });
+      });
+      return;
     }
     attached.forEach((adapter, slot) => {
-      const angle = angles[slot] + rotation;
+      const angle = centerAngle + offsets[slot] - span / 2;
       positions.set(adapter.cn, { x: nodeCenter.x + Math.cos(angle) * radius, y: nodeCenter.y + Math.sin(angle) * radius });
     });
   });
@@ -1081,7 +1129,7 @@ function renderTopology(data, exitComponents = []) {
     const column = index % unconnectedColumns;
     const row = Math.floor(index / unconnectedColumns);
     positions.set(host.cn, {
-      x: margin + column * (hostRingRadius * 2 + 100),
+      x: (geographic ? 4500 : margin) + column * (hostRingRadius * 2 + 100),
       y: margin + nodeRows * nodeSpacing + row * (hostRingRadius * 2 + 100),
     });
   });
@@ -1135,8 +1183,8 @@ function renderTopology(data, exitComponents = []) {
   const bounds = measureTopologyBounds();
   const paddingX = bounds.width * (5 / 90);
   const paddingY = bounds.height * (5 / 90);
-  const offsetX = paddingX - bounds.minX;
-  const offsetY = paddingY - bounds.minY;
+  const offsetX = geographic ? 0 : paddingX - bounds.minX;
+  const offsetY = geographic ? 0 : paddingY - bounds.minY;
   for (const position of positions.values()) {
     position.x += offsetX;
     position.y += offsetY;
@@ -1146,7 +1194,7 @@ function renderTopology(data, exitComponents = []) {
     position.y += offsetY;
   }
 
-  const oldGraph = stage.querySelector(".topology-graph");
+  const oldGraph = viewChanged ? null : stage.querySelector(".topology-graph");
   const oldViewBox = oldGraph?.viewBox.baseVal;
   const previousViewport = oldGraph ? {
     viewBox: oldGraph.getAttribute("viewBox"),
@@ -1294,6 +1342,15 @@ function renderTopology(data, exitComponents = []) {
   stage.innerHTML = `<div class="graph-controls" aria-label="Topology graph controls">${darkModeControl}<label class="graph-auto-fit"><input type="checkbox" data-graph-auto-fit${graphAutoFit ? " checked" : ""}>Auto-fit</label><button class="graph-control" data-graph-action="in" type="button" aria-label="Zoom in" title="Zoom in">+</button><button class="graph-control" data-graph-action="out" type="button" aria-label="Zoom out" title="Zoom out">−</button><button class="graph-control graph-fit" data-graph-action="fit" type="button" aria-label="Fit graph" title="Fit graph">Fit</button></div><svg class="topology-graph" viewBox="0 0 ${width} ${height}" role="img" aria-label="Topology graph with ${nodes.length} nodes, ${adapters.length} adapters, ${dockEdges.length} dock connections, ${networkEdges.length} inter-node links, and ${(data.services || []).filter((service) => servicesByActor.has(service.actor_cn)).length} registered services"><g id="graph-world">${edgeMarkup}${serviceEdgeMarkup.join("")}${serviceMarkup.join("")}<g class="graph-exit-layer" aria-hidden="true">${exiting("service")}</g>${vertexMarkup.slice(nodes.length).join("")}<g class="graph-exit-layer" aria-hidden="true">${exiting("adapter")}</g>${vertexMarkup.slice(0, nodes.length).join("")}<g class="graph-exit-layer" aria-hidden="true">${exiting("node")}</g></g></svg>`;
   setupGraphAppearance(stage);
   const world = stage.querySelector("#graph-world");
+  if (geographic) {
+    const basemap = document.createElementNS("http://www.w3.org/2000/svg", "image");
+    basemap.setAttribute("href", "/geography-land.svg?v=2");
+    basemap.setAttribute("width", "3600");
+    basemap.setAttribute("height", "1800");
+    basemap.setAttribute("class", "graph-geographic-basemap");
+    world.prepend(basemap);
+    stage.querySelector(".topology-graph").setAttribute("aria-label", `World Map with ${nodes.length} nodes and ${adapters.length} adapters; nodes without coordinates are outside the basemap`);
+  }
   const shapes = new Map([...world.querySelectorAll(":scope > [data-topology-component]")].map((component) => [
     component.dataset.topologyComponent,
     component.querySelector(":scope > .graph-node, :scope > .graph-adapter, :scope > .graph-gateway, :scope > .graph-visa, :scope > rect"),
@@ -1332,8 +1389,15 @@ function renderTopology(data, exitComponents = []) {
     height = previousViewport.height;
     stage.querySelector(".topology-graph").setAttribute("viewBox", previousViewport.viewBox);
   }
+  if (viewChanged && !graphAutoFit && mapViewports.get(mapView)?.viewBox) {
+    const savedBox = mapViewports.get(mapView).viewBox;
+    stage.querySelector(".topology-graph").setAttribute("viewBox", savedBox);
+    const values = savedBox.split(/\s+/).map(Number);
+    width = values[2];
+    height = values[3];
+  }
 
-  if (state.graphAnimations) {
+  if (state.graphAnimations && !viewChanged) {
     for (const component of stage.querySelectorAll("#graph-world > [data-topology-component]")) {
       const previous = previousPositions.get(component.dataset.topologyComponent);
       if (!previous) continue;
@@ -1439,9 +1503,21 @@ function setupGraphControls(stage, width, height, previousViewport) {
     point.y = event.clientY;
     return point.matrixTransform(svg.getScreenCTM().inverse());
   };
+  const fitBounds = () => {
+    const elements = [...world.children].filter((element) => !element.classList.contains("graph-geographic-basemap"));
+    if (!elements.length) return world.getBBox();
+    const boxes = elements.map((element) => element.getBBox())
+      .filter((box) => box.width > 0 || box.height > 0);
+    if (!boxes.length) return world.getBBox();
+    const left = Math.min(...boxes.map((box) => box.x));
+    const top = Math.min(...boxes.map((box) => box.y));
+    const right = Math.max(...boxes.map((box) => box.x + box.width));
+    const bottom = Math.max(...boxes.map((box) => box.y + box.height));
+    return { x: left, y: top, width: right - left, height: bottom - top };
+  };
   const fit = (cancelAnimation = true) => {
     if (cancelAnimation) cancelViewportAnimation();
-    const bounds = world.getBBox();
+    const bounds = fitBounds();
     camera.scale = Math.min((width * 0.9) / Math.max(1, bounds.width), (height * 0.9) / Math.max(1, bounds.height));
     camera.x = viewBox.x + width / 2 - (bounds.x + bounds.width / 2) * camera.scale;
     camera.y = viewBox.y + height / 2 - (bounds.y + bounds.height / 2) * camera.scale;
@@ -1470,14 +1546,16 @@ function setupGraphControls(stage, width, height, previousViewport) {
   svg.addEventListener("pointerdown", (event) => {
     if (event.button !== 0) return;
     if (event.target.closest("[data-inspect-actor], [data-inspect-service], [data-inspect-link]")) return;
-    drag = { pointerId: event.pointerId, clientX: event.clientX, clientY: event.clientY, x: camera.x, y: camera.y };
+    const point = pointAt(event);
+    drag = { pointerId: event.pointerId, point, x: camera.x, y: camera.y };
     svg.classList.add("panning");
     svg.setPointerCapture(event.pointerId);
   });
   svg.addEventListener("pointermove", (event) => {
     if (!drag || drag.pointerId !== event.pointerId) return;
-    const x = drag.x + (event.clientX - drag.clientX) * width / svg.clientWidth;
-    const y = drag.y + (event.clientY - drag.clientY) * height / svg.clientHeight;
+    const point = pointAt(event);
+    const x = drag.x + point.x - drag.point.x;
+    const y = drag.y + point.y - drag.point.y;
     if (x === camera.x && y === camera.y) return;
     beginManualNavigation();
     camera.x = x;
@@ -1577,7 +1655,7 @@ function renderTrusted(data) {
     const actorLabel = source.actor_cn || "No actor reported";
       const statusText = lookupOutcome(source.health);
     const editorAction = source.editor_url ? `<a class="source-editor-link" href="${escapeHTML(source.editor_url)}" target="zpr-directory-manager" data-reuse-window="zpr-directory-manager" rel="noopener noreferrer" title="Manage ${escapeHTML(source.name)} in LDAP editor"><span>Manage</span><span aria-hidden="true">↗</span></a>` : "";
-    return `<tr class="selectable-row" data-inspect-source="${escapeHTML(source.name)}" tabindex="0" role="button" aria-label="Inspect trusted source ${escapeHTML(source.name)}"><td class="source-primary">${sourceName}</td><td>${escapeHTML(providerDescription(source.provider))}</td><td>${escapeHTML(actorLabel)}</td><td><span class="health-badge ${["working", "failed"].includes(source.health) ? source.health : ""}">${escapeHTML(statusText)}</span></td><td><span class="source-time">${source.last_lookup_ms ? escapeHTML(new Date(source.last_lookup_ms).toLocaleString()) : "No lookup recorded"}</span>${source.last_success_ms ? `<small class="source-secondary">Last success ${escapeHTML(new Date(source.last_success_ms).toLocaleString())}</small>` : ""}${editorAction ? `<small class="source-secondary">${editorAction}</small>` : ""}</td></tr>`;
+    return `<tr class="selectable-row" data-inspect-source="${escapeHTML(source.name)}" tabindex="0" role="button" aria-label="Inspect trusted source ${escapeHTML(source.name)}"><td class="source-primary">${sourceName}</td><td>${escapeHTML(providerDescription(source.provider))}</td><td>${escapeHTML(actorLabel)}</td><td><span class="health-badge ${["working", "failed"].includes(source.health) ? source.health : ""}">${escapeHTML(statusText)}</span></td><td><span class="source-time">${source.last_lookup_ms ? escapeHTML(window.ZPRSafeDisplay.formatDateTime(source.last_lookup_ms)) : "No lookup recorded"}</span>${source.last_success_ms ? `<small class="source-secondary">Last success ${escapeHTML(window.ZPRSafeDisplay.formatDateTime(source.last_success_ms))}</small>` : ""}${editorAction ? `<small class="source-secondary">${editorAction}</small>` : ""}</td></tr>`;
   }).join("") : `<tr><td colspan="5" class="empty-row">${sources.length ? "No matching trusted sources" : "No trusted services reported by the Visa Service."}</td></tr>`;
 }
 
@@ -2426,7 +2504,7 @@ function renderPolicyHistory() {
   policyHistory.render(state.policy.revisions, {
     current: state.policy.browsingRevision || state.policy.revision,
     detail: (revision) => revision.summary || "No change summary",
-    meta: (revision) => `${revision.author} · ${new Date(revision.created_at).toLocaleString()}`,
+    meta: (revision) => `${revision.author} · ${window.ZPRSafeDisplay.formatDateTime(revision.created_at)}`,
     onSelect: (revision) => { void browsePolicyRevision(revision.number); },
   });
 }
@@ -3569,12 +3647,12 @@ function renderVisas(data) {
   byId("visa-rows").innerHTML = shown.length ? shown.flatMap((group) => group.members.map((visa, index) => {
     const flow = visaEndpoint(visa.source_addr, visa.source_port, visa.dest_addr, visa.dest_port);
     const classes = ["visa-row", index ? "visa-pair-partner" : "visa-pair-lead", group.forward && group.reverse ? "paired" : "unpaired"].join(" ");
-    return `<tr class="${classes}" data-visa-id="${escapeHTML(visa.id)}"><td class="mono">${escapeHTML(visa.id)}</td><td class="mono" title="${escapeHTML(visaEndpointTitle(visa.source_addr, visa.dest_addr))}">${escapeHTML(flow)}</td><td>${escapeHTML(visa.proto || "—")}</td><td>${escapeHTML(visa.requesting_node || "—")}</td><td class="mono">${escapeHTML(new Date(num(visa.expires) * 1000).toLocaleTimeString())}</td><td class="mono visa-pair-cell">${escapeHTML(visaPairLabel(group, visa))}</td></tr>`;
+    return `<tr class="${classes}" data-visa-id="${escapeHTML(visa.id)}"><td class="mono">${escapeHTML(visa.id)}</td><td class="mono" title="${escapeHTML(visaEndpointTitle(visa.source_addr, visa.dest_addr))}">${escapeHTML(flow)}</td><td>${escapeHTML(visa.proto || "—")}</td><td>${escapeHTML(visa.requesting_node || "—")}</td><td class="mono">${escapeHTML(window.ZPRSafeDisplay.formatTime(num(visa.expires) * 1000))}</td><td class="mono visa-pair-cell">${escapeHTML(visaPairLabel(group, visa))}</td></tr>`;
   })).join("") : `<tr><td colspan="6" class="empty-row">${rows.length ? "No matching visas" : "No active visas returned"}</td></tr>`;
 }
 
 function protocolName(number) {
-  return ({ 1: "ICMP", 6: "TCP", 17: "UDP", 58: "ICMPv6" })[number] || `IP ${number}`;
+  return window.ZPRSafeDisplay.protocolName(number) || `IP ${number}`;
 }
 
 function renderDenies(data) {
@@ -4235,35 +4313,15 @@ for (const [page, renderPage] of Object.entries(pageRenderers)) {
 for (const table of document.querySelectorAll("table[data-sort-page]")) {
   const page = table.dataset.sortPage;
   const renderPage = pageRenderers[page];
-  for (const header of table.querySelectorAll("th[data-sort-key]")) {
-    const button = document.createElement("button");
-    button.type = "button";
-    button.className = "sort-button";
-    button.textContent = header.textContent;
-    header.classList.add("sortable-heading");
-    header.replaceChildren(button);
-    const sort = state.sorts[page];
-    const active = sort.key === header.dataset.sortKey;
-    header.setAttribute("aria-sort", active ? sort.direction === 1 ? "ascending" : "descending" : "none");
-    button.setAttribute("aria-label", active
-      ? `Sort by ${button.textContent}, currently ${sort.direction === 1 ? "ascending" : "descending"}`
-      : `Sort by ${button.textContent}, ascending`);
-    header.addEventListener("click", () => {
-      const previous = state.sorts[page];
-      const direction = previous.key === header.dataset.sortKey ? previous.direction * -1 : 1;
-      state.sorts[page] = { key: header.dataset.sortKey, direction };
-      for (const column of table.querySelectorAll("th[data-sort-key]")) {
-        const selected = column === header;
-        const selectedDirection = direction === 1 ? "ascending" : "descending";
-        column.setAttribute("aria-sort", selected ? selectedDirection : "none");
-        column.querySelector(".sort-button").setAttribute("aria-label", selected
-          ? `Sort by ${column.textContent}, currently ${selectedDirection}`
-          : `Sort by ${column.textContent}, ascending`);
-      }
+  window.ZPRSortableTable.bindSortableHeaders({
+    table,
+    getSort: () => state.sorts[page],
+    onSort: (sort) => {
+      state.sorts[page] = sort;
       if (renderPage && state.snapshot) renderPage(state.snapshot);
       else sortControlRoomTableRows(page);
-    });
-  }
+    },
+  });
 }
 
 mountPolicyAssertionEditor();

@@ -3,29 +3,20 @@
   "organization_id": "great-lakes",
   "folder": "Finance",
   "name": "Great Lakes Finance web gateway",
-  "description": "Start the allowlisted Google web proxy for Milwaukee Finance and verify its service over ZPR. Configure a client HTTP proxy to internet-gateway.svc.zpr:8082 while the gateway workload is running.",
+  "description": "Verify the organization-started, allowlisted Google web proxy from Milwaukee Finance over ZPR. Configure a client HTTP proxy to internet-gateway.svc.zpr:8082.",
   "parallel": true,
   "steps": [
     {"id": "finance-machine", "action": "start_machine", "machine": "machine-03"},
-    {"id": "gateway-machine", "action": "start_machine", "machine": "machine-07"},
     {"id": "finance-controller", "action": "wait_controller", "machine": "machine-03", "timeout_seconds": 90},
-    {"id": "gateway-controller", "action": "wait_controller", "machine": "machine-07", "timeout_seconds": 90},
     {"id": "finance-login", "action": "login", "machine": "machine-03", "user": "olivia.chen"},
-    {"id": "gateway-login", "action": "login", "machine": "machine-07", "user": "lucia.torres"},
     {"id": "finance-selection", "action": "select_workloads", "machine": "machine-03", "workloads": ["finance-client"]},
-    {"id": "gateway-selection", "action": "select_workloads", "machine": "machine-07", "workloads": ["internet-gateway"]},
     {"id": "finance-workload", "action": "start_workload", "machine": "machine-03", "component": "finance-client"},
-    {"id": "gateway-workload", "action": "start_workload", "machine": "machine-07", "component": "internet-gateway"},
-    {"id": "gateway-ready", "after": ["gateway-workload"], "action": "start_test_service", "machine": "machine-07", "component": "internet-gateway"},
-    {"id": "gateway-health", "after": ["finance-workload", "gateway-ready"], "action": "request_test_service", "machine": "machine-03", "component": "finance-client", "target": "internet-gateway"}
+    {"id": "gateway-dns", "after": ["finance-workload"], "action": "resolve_dns", "machine": "machine-03", "component": "finance-client", "target": "internet-gateway.svc.zpr", "timeout_seconds": 10},
+    {"id": "gateway-health", "after": ["gateway-dns"], "action": "request_test_service", "machine": "machine-03", "component": "finance-client", "target": "internet-gateway"}
   ],
   "cleanup": [
-    {"action": "stop_test_service", "machine": "machine-07", "component": "internet-gateway"},
     {"action": "stop_workload", "machine": "machine-03", "component": "finance-client"},
-    {"action": "stop_workload", "machine": "machine-07", "component": "internet-gateway"},
     {"action": "logout", "machine": "machine-03"},
-    {"action": "logout", "machine": "machine-07"},
-    {"action": "stop_machine", "machine": "machine-03"},
-    {"action": "stop_machine", "machine": "machine-07"}
+    {"action": "stop_machine", "machine": "machine-03"}
   ]
 }

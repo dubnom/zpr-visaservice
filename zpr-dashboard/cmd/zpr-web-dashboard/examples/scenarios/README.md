@@ -86,25 +86,17 @@ ordinary egress path; the client-to-gateway request and reply traverse ZPR.
 The runtime policy must be rebuilt with the `InternetGatewayWeb` grant and the
 simulator-only `internet-gateway` bootstrap key must be installed in the rig.
 
-`great-lakes-finance-web-gateway.json` starts the Simulator web proxy for
-Milwaukee Finance and verifies the `internet-gateway.svc.zpr:8082` service over
-ZPR. While the scenario is running, configure an HTTP proxy client to
-`internet-gateway.svc.zpr:8082`. It accepts HTTP requests on port 80 and HTTPS
-CONNECT tunnels on port 443 only for `google.com` and its subdomains. The
-Great Lakes runtime policy grants the service only to `MilwaukeeFinance`; the
-gateway rejects non-public DNS results and pins each connection to a validated
-public address. This is Simulator-only and does not configure production
-Control Room gateways.
-
-`great-lakes-finance-web-gateway.json` starts the Simulator web proxy for
-Milwaukee Finance and verifies the `internet-gateway.svc.zpr:8082` service over
-ZPR. While the scenario is running, configure an HTTP proxy client to
-`internet-gateway.svc.zpr:8082`. It accepts HTTP requests on port 80 and HTTPS
-CONNECT tunnels on port 443 only for `google.com` and its subdomains. The
-Great Lakes runtime policy grants the service only to `MilwaukeeFinance`; the
-gateway rejects non-public DNS results and pins each connection to a validated
-public address. This is Simulator-only and does not configure production
-Control Room gateways.
+Great Lakes organization deployment starts the `internet-gateway` adapter and
+allowlisted web proxy as a persistent service. The
+`great-lakes-finance-web-gateway.json` scenario starts only a Finance client,
+resolves `internet-gateway.svc.zpr`, and probes `/health` over ZPR; it does not
+start or stop the Gateway. While the organization is active, configure an HTTP
+proxy client to `internet-gateway.svc.zpr:8082`. It accepts HTTP requests on
+port 80 and HTTPS CONNECT tunnels on port 443 only for `google.com` and its
+subdomains. The Great Lakes runtime policy grants access only to
+`MilwaukeeFinance`; the gateway rejects non-public DNS results and pins each
+connection to a validated public address. This is Simulator-only and does not
+configure production Control Room gateways.
 
 `active-team-cycle.json` runs for about five minutes: four users and four
 client/service workloads generate recurring denial probes and real HTTP requests

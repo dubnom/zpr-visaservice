@@ -1,7 +1,5 @@
 const scenarioById = new Map();
 let scenarioRun;
-let scenarioRefreshTimer;
-let scenarioRefreshPromise;
 let scenarioCatalogSignature = "";
 let scenarioRunSignature = "";
 let activeScenarioOrganization = "";
@@ -178,7 +176,7 @@ function renderScenarioRun(run) {
     const waiting = phase === "run" ? scenarioRun.state === "running" : busy;
     let detail = result?.error || result?.output || (active ? "Running" : status === "pending" ? waiting ? "Waiting" : "Not run" : "Completed");
     if (scenarioRun.state === "cancelled" && /^context canceled\.?$/i.test(String(detail).trim())) detail = "";
-    const time = result?.finished_at ? new Date(result.finished_at).toLocaleTimeString() : "";
+    const time = result?.finished_at ? window.ZPRSafeDisplay.formatTime(result.finished_at) : "";
     const machine = step.machine || "Shared";
     const lane = lanes.get(machine) || [];
     lane.push(`<li class="scenario-step ${scenarioEscape(status)} ${phase === "cleanup" ? "cleanup" : ""}"><span class="scenario-step-mark" aria-hidden="true"></span><div class="scenario-step-copy"><div><span class="scenario-step-number">${index + 1}</span><strong>${scenarioEscape(step.action.replaceAll("_", " "))}</strong>${step.component ? `<span>${scenarioEscape(step.component)}</span>` : ""}${phase === "cleanup" ? `<span>Cleanup</span>` : ""}</div>${detail ? `<p>${scenarioEscape(detail)}</p>` : ""}</div><time>${scenarioEscape(time)}</time></li>`);
@@ -191,42 +189,44 @@ function renderScenarioRun(run) {
   }
 }
 
-async function refreshScenarios() {
-  if (scenarioRefreshPromise) return scenarioRefreshPromise;
-  scenarioRefreshPromise = (async () => {
-    const error = document.getElementById("scenario-error");
-    try {
-      const response = await fetch("/api/simulator/scenarios", { cache: "no-store" });
-      const data = await response.json();
-      if (!response.ok) throw new Error(data.error || `HTTP ${response.status}`);
-      error.hidden = true;
-      activeScenarioOrganization = data.active_organization_id || activeScenarioOrganization;
-      if (scenarioEditorOrganization && scenarioEditorOrganization !== activeScenarioOrganization && document.getElementById("scenario-editor-dialog").open) {
-        document.getElementById("scenario-editor-dialog").close();
-      }
-      const scenarios = data.scenarios || [];
-      const catalogSignature = JSON.stringify({ scenarios, active: activeScenarioOrganization });
-      const catalogChanged = catalogSignature !== scenarioCatalogSignature;
-      if (catalogChanged) {
-        scenarioCatalogSignature = catalogSignature;
-        renderScenarioList(scenarios, data.max_machines || 10);
-      }
-      const runSignature = JSON.stringify(data.run || {});
-      if (runSignature !== scenarioRunSignature || catalogChanged) {
-        scenarioRunSignature = runSignature;
-        renderScenarioRun(data.run);
-      }
-      const organizationName = data.organization?.name || activeScenarioOrganization;
-      document.getElementById("scenario-organization").textContent = organizationName;
-      document.getElementById("scenario-connection").textContent = `${organizationName}: ${scenarios.length} scenarios`;
-    } catch (failure) {
-      error.textContent = failure.message || "Scenario catalog unavailable";
-      error.hidden = false;
-      document.getElementById("scenario-connection").textContent = "Scenario service unavailable";
-    }
-  })();
-  try { await scenarioRefreshPromise; } finally { scenarioRefreshPromise = undefined; }
+async function refreshScenarios({ signal, isCurrent }) {
+  const data = await scenarioRequest("/api/simulator/scenarios", { cache: "no-store", signal });
+  if (!isCurrent()) return;
+  const error = document.getElementById("scenario-error");
+  error.hidden = true;
+  activeScenarioOrganization = data.active_organization_id || activeScenarioOrganization;
+  if (scenarioEditorOrganization && scenarioEditorOrganization !== activeScenarioOrganization && document.getElementById("scenario-editor-dialog").open) {
+    document.getElementById("scenario-editor-dialog").close();
+  }
+  const scenarios = data.scenarios || [];
+  const catalogSignature = JSON.stringify({ scenarios, active: activeScenarioOrganization });
+  const catalogChanged = catalogSignature !== scenarioCatalogSignature;
+  if (catalogChanged) {
+    scenarioCatalogSignature = catalogSignature;
+    renderScenarioList(scenarios, data.max_machines || 10);
+  }
+  const runSignature = JSON.stringify(data.run || {});
+  if (runSignature !== scenarioRunSignature || catalogChanged) {
+    scenarioRunSignature = runSignature;
+    renderScenarioRun(data.run);
+  }
+  const organizationName = data.organization?.name || activeScenarioOrganization;
+  document.getElementById("scenario-organization").textContent = organizationName;
+  document.getElementById("scenario-connection").textContent = `${organizationName}: ${scenarios.length} scenarios`;
 }
+
+const scenarioPoller = window.ZPRSimulatorNavigation.createPagePoller({
+  path: "/scenarios.html",
+  run: refreshScenarios,
+  interval: 1000,
+  onError: (failure) => {
+    const error = document.getElementById("scenario-error");
+    error.textContent = failure.message || "Scenario catalog unavailable";
+    error.hidden = false;
+    document.getElementById("scenario-connection").textContent = "Scenario service unavailable";
+  },
+});
+const refreshScenariosNow = () => scenarioPoller.refresh();
 
 function setScenarioEditorStatus(message, state = "") {
   scenarioEditorPage.setStatus(document.getElementById("scenario-editor-status"), message || "", state === "saved" ? "success" : state);
@@ -520,7 +520,7 @@ async function saveScenarioDraft() {
   setScenarioEditorStatus(`Saved version ${scenarioEditorArtifact.revision}. Publish it to enable runs.`, "saved");
   await refreshScenarioRevisions();
   updateScenarioEditorActions();
-  await refreshScenarios();
+  await refreshScenariosNow();
 }
 
 async function publishScenarioRevision() {
@@ -535,7 +535,7 @@ async function publishScenarioRevision() {
   setScenarioEditorStatus(`Published version ${artifact.published_revision} for ${scenarioEditorOrganization}.`, "saved");
   updateScenarioEditorActions();
   await refreshScenarioRevisions();
-  await refreshScenarios();
+  await refreshScenariosNow();
 }
 
 async function loadScenarioRevision(number) {
@@ -568,7 +568,7 @@ async function archiveScenario(scenarioID, organizationID, revision) {
     scenarioEditorDirty = false;
     document.getElementById("scenario-editor-dialog").close();
   }
-  await refreshScenarios();
+  await refreshScenariosNow();
 }
 
 const scenarioAssistant = window.mountSimulatorDesignAssistant("scenario-assistant-slot", {
@@ -635,11 +635,11 @@ async function postScenarioAction(url) {
   const response = await fetch(url, { method: "POST" });
   const body = await response.json();
   if (!response.ok) throw new Error(body.error || `HTTP ${response.status}`);
-  await refreshScenarios();
+  await refreshScenariosNow();
 }
 
 
-document.getElementById("scenario-refresh").addEventListener("click", refreshScenarios);
+document.getElementById("scenario-refresh").addEventListener("click", () => void refreshScenariosNow());
 document.getElementById("scenario-new").addEventListener("click", openNewScenarioEditor);
 document.getElementById("scenario-editor-dialog").addEventListener("close", () => scenarioFormAnalysisScope.invalidate());
 document.getElementById("scenario-editor-advanced").addEventListener("toggle", () => scenarioFormAnalysisScope.invalidate());
@@ -754,7 +754,7 @@ document.getElementById("scenario-list").addEventListener("click", async (event)
       message.textContent = error.message || "Could not delete scenario";
       message.hidden = false;
     } finally {
-      await refreshScenarios();
+      await refreshScenariosNow();
     }
     return;
   }
@@ -768,7 +768,7 @@ document.getElementById("scenario-list").addEventListener("click", async (event)
     message.textContent = error.message || "Could not start scenario";
     message.hidden = false;
   } finally {
-    await refreshScenarios();
+    await refreshScenariosNow();
   }
 });
 document.getElementById("scenario-cancel").addEventListener("click", async (event) => {
@@ -787,7 +787,7 @@ document.getElementById("scenario-clear").addEventListener("click", async (event
   button.disabled = true;
   try {
     await postScenarioAction("/api/simulator/scenarios/clear");
-    await refreshScenarios();
+    await refreshScenariosNow();
   } catch (error) {
     const message = document.getElementById("scenario-error");
     message.textContent = error.message || "Could not clear scenario run";
@@ -795,14 +795,4 @@ document.getElementById("scenario-clear").addEventListener("click", async (event
   } finally {
     button.disabled = false;
   }
-});
-document.addEventListener("simulator:activate", (event) => {
-  if (event.detail.path !== "/scenarios.html" || scenarioRefreshTimer) return;
-  refreshScenarios();
-  scenarioRefreshTimer = setInterval(refreshScenarios, 1000);
-});
-document.addEventListener("simulator:deactivate", (event) => {
-  if (event.detail.path !== "/scenarios.html") return;
-  clearInterval(scenarioRefreshTimer);
-  scenarioRefreshTimer = undefined;
 });

@@ -197,7 +197,7 @@ class ZPRPolicyBrowser extends HTMLElement {
     this.text(".pb-title", this.record.name);
     const revision = this.revisions.find((item) => item.number === number);
     const date = revision?.created_at || (version.number ? version.created_at : this.record.updated_at || version.created_at);
-    const metadata = [this.record.kind === "policy" ? "Policy" : "Assertions", `r${number}`, revision?.author, revision?.summary, date ? new Date(date).toLocaleString() : ""];
+    const metadata = [this.record.kind === "policy" ? "Policy" : "Assertions", `r${number}`, revision?.author, revision?.summary, date ? window.ZPRSafeDisplay.formatDateTime(date) : ""];
     this.text(".pb-meta", metadata.filter(Boolean).join(" / "));
     const schedule = this.querySelector(".pb-schedule");
     schedule.hidden = true;
