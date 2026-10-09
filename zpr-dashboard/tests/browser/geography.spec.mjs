@@ -129,20 +129,90 @@ test("World Map auto-fit and Fit target network components, not the basemap", as
   snapshot.actors = [node("single-node", 43.04, -87.91)];
   await openGeography(page, appURL);
   const world = page.locator("#graph-world");
-  const initialTransform = await world.getAttribute("transform");
-  const initialScale = Number(initialTransform.match(/scale\(([^)]+)\)/)[1]);
-  expect(initialScale).toBeGreaterThan(5);
   expect(await world.locator(".graph-geographic-basemap").count()).toBe(1);
+  const fitState = async () => world.evaluate((world) => {
+    const svg = world.closest("svg");
+    const viewBox = svg.viewBox.baseVal;
+    const viewport = svg.getBoundingClientRect();
+    const bounds = [...world.children]
+      .filter((element) => !element.classList.contains("graph-geographic-basemap") && !element.classList.contains("graph-exit-layer"))
+      .map((element) => element.getBBox())
+      .filter((box) => box.width > 0 || box.height > 0);
+    const left = Math.min(...bounds.map((box) => box.x));
+    const top = Math.min(...bounds.map((box) => box.y));
+    const right = Math.max(...bounds.map((box) => box.x + box.width));
+    const bottom = Math.max(...bounds.map((box) => box.y + box.height));
+    const matrix = world.transform.baseVal.consolidate().matrix;
+    const pixelsPerUnit = Math.min(viewport.width / viewBox.width, viewport.height / viewBox.height);
+    const offsetX = (viewport.width - viewBox.width * pixelsPerUnit) / 2;
+    const offsetY = (viewport.height - viewBox.height * pixelsPerUnit) / 2;
+    const screenLeft = viewport.left + offsetX + (left * matrix.a + matrix.e - viewBox.x) * pixelsPerUnit;
+    const screenRight = viewport.left + offsetX + (right * matrix.a + matrix.e - viewBox.x) * pixelsPerUnit;
+    const screenTop = viewport.top + offsetY + (top * matrix.d + matrix.f - viewBox.y) * pixelsPerUnit;
+    const screenBottom = viewport.top + offsetY + (bottom * matrix.d + matrix.f - viewBox.y) * pixelsPerUnit;
+    return {
+      viewBoxWidth: viewBox.width,
+      horizontalCoverage: (screenRight - screenLeft) / viewport.width,
+      verticalCoverage: (screenBottom - screenTop) / viewport.height,
+      insideViewport: screenLeft >= viewport.left - 1 && screenRight <= viewport.right + 1 && screenTop >= viewport.top - 1 && screenBottom <= viewport.bottom + 1,
+    };
+  });
+  const assertNetworkFit = async () => {
+    const fit = await fitState();
+    expect(fit.viewBoxWidth).toBeLessThan(1800);
+    expect(Math.max(fit.horizontalCoverage, fit.verticalCoverage)).toBeGreaterThan(0.75);
+    expect(Math.max(fit.horizontalCoverage, fit.verticalCoverage)).toBeLessThan(0.95);
+    expect(fit.insideViewport).toBe(true);
+  };
+  await assertNetworkFit();
 
   await page.getByRole("button", { name: "Topology", exact: true }).click();
   await page.getByRole("button", { name: "World Map", exact: true }).click();
   await page.locator("[data-graph-auto-fit]").check();
-  const autoFitScale = Number((await world.getAttribute("transform")).match(/scale\(([^)]+)\)/)[1]);
-  expect(autoFitScale).toBeGreaterThan(5);
+  await assertNetworkFit();
 
   await page.getByRole("button", { name: "Fit graph", exact: true }).click();
-  const fitScale = Number((await world.getAttribute("transform")).match(/scale\(([^)]+)\)/)[1]);
-  expect(fitScale).toBeGreaterThan(5);
+  await assertNetworkFit();
+});
+
+test("World Map frames network components at mobile viewport aspect", async ({ page, appURL, snapshot }) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  snapshot.actors = [node("mobile-node", 43.04, -87.91), node("mobile-peer", 22.54, 114.06)];
+  await openGeography(page, appURL);
+  const world = page.locator("#graph-world");
+  const fit = await world.evaluate((world) => {
+    const svg = world.closest("svg");
+    const viewBox = svg.viewBox.baseVal;
+    const viewport = svg.getBoundingClientRect();
+    const matrix = world.transform.baseVal.consolidate().matrix;
+    const pixelsPerUnit = Math.min(viewport.width / viewBox.width, viewport.height / viewBox.height);
+    const offsetX = (viewport.width - viewBox.width * pixelsPerUnit) / 2;
+    const offsetY = (viewport.height - viewBox.height * pixelsPerUnit) / 2;
+    const bounds = [...world.children]
+      .filter((element) => !element.classList.contains("graph-geographic-basemap") && !element.classList.contains("graph-exit-layer"))
+      .map((element) => element.getBBox())
+      .filter((box) => box.width > 0 || box.height > 0);
+    const width = Math.max(...bounds.map((box) => box.x + box.width)) - Math.min(...bounds.map((box) => box.x));
+    const height = Math.max(...bounds.map((box) => box.y + box.height)) - Math.min(...bounds.map((box) => box.y));
+    const left = Math.min(...bounds.map((box) => box.x));
+    const top = Math.min(...bounds.map((box) => box.y));
+    const right = Math.max(...bounds.map((box) => box.x + box.width));
+    const bottom = Math.max(...bounds.map((box) => box.y + box.height));
+    const screenLeft = viewport.left + offsetX + (left * matrix.a + matrix.e - viewBox.x) * pixelsPerUnit;
+    const screenRight = viewport.left + offsetX + (right * matrix.a + matrix.e - viewBox.x) * pixelsPerUnit;
+    const screenTop = viewport.top + offsetY + (top * matrix.d + matrix.f - viewBox.y) * pixelsPerUnit;
+    const screenBottom = viewport.top + offsetY + (bottom * matrix.d + matrix.f - viewBox.y) * pixelsPerUnit;
+    return {
+      viewBoxWidth: viewBox.width,
+      horizontalCoverage: (screenRight - screenLeft) / viewport.width,
+      verticalCoverage: (screenBottom - screenTop) / viewport.height,
+      insideViewport: screenLeft >= viewport.left - 1 && screenRight <= viewport.right + 1 && screenTop >= viewport.top - 1 && screenBottom <= viewport.bottom + 1,
+    };
+  });
+  expect(fit.viewBoxWidth).toBeLessThan(3600);
+  expect(Math.max(fit.horizontalCoverage, fit.verticalCoverage)).toBeGreaterThan(0.75);
+  expect(Math.max(fit.horizontalCoverage, fit.verticalCoverage)).toBeLessThan(0.95);
+  expect(fit.insideViewport).toBe(true);
 });
 
 test("Topology and World Map cluster attached adapters away from inter-node links", async ({ page, appURL, snapshot }) => {
@@ -215,6 +285,36 @@ test("gateway and service-heavy children stay together outside multiple link cor
     expect(geometry.clearance, view).toBeGreaterThan(0.6);
     await expect(page.locator(".graph-cloud")).toHaveCount(1);
   }
+});
+
+test("World Map keeps boundary-adjacent adapter fan-out inside the basemap when possible", async ({ page, appURL, snapshot }) => {
+  const children = ["adapter1", "internet-gateway", "ociweb", "simulator-control", "vs"];
+  const hub = node("edge-node", 90, 180);
+  hub.node_details.adapters = children;
+  snapshot.actors = [hub, ...children.map((cn) => ({ cn, node: false }))];
+  snapshot.network = [];
+  snapshot.services = children.flatMap((cn) => Array.from({ length: cn === "vs" ? 3 : 2 }, (_, index) => ({
+    actor_cn: cn,
+    service_name: `${cn}-${index}`,
+    service_kind: cn === "internet-gateway" ? "Gateway" : cn === "vs" ? "Visa" : "Regular",
+    external_network_connection: cn === "internet-gateway" ? "public-internet" : "",
+  })));
+  await page.emulateMedia({ reducedMotion: "reduce" });
+  await openGeography(page, appURL);
+  const outside = await page.evaluate((children) => {
+    const world = document.querySelector("#graph-world");
+    const components = children.flatMap((cn) => [
+      world.querySelector(`.graph-vertex[data-inspect-actor="${cn}"]`),
+      ...world.querySelectorAll(`.graph-service-badge[data-service-actor="${cn}"]`),
+    ]).filter(Boolean);
+    return components.flatMap((component) => {
+      const box = component.getBBox();
+      return box.x < -0.5 || box.y < -0.5 || box.x + box.width > 3600.5 || box.y + box.height > 1800.5
+        ? [{ name: component.dataset.inspectActor || component.dataset.inspectService, box: { x: box.x, y: box.y, width: box.width, height: box.height } }]
+        : [];
+    });
+  }, children);
+  expect(outside).toEqual([]);
 });
 
 test("World Map Fit falls back to the full basemap when no network components exist", async ({ page, appURL, snapshot }) => {

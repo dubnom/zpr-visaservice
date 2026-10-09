@@ -134,13 +134,16 @@ func parseGatewayInstanceConfig(data []byte, contract gatewayInstanceContract) (
 	if len(config.Destinations) == 0 || len(config.Destinations) > maxGatewayDestinations {
 		return config, gatewayFieldError(fmt.Sprintf("gateway configuration requires 1 to %d destinations", maxGatewayDestinations), "destinations")
 	}
-	if len(config.Methods) == 0 || len(config.Methods) > 2 {
-		return config, gatewayFieldError("gateway methods must contain GET, HEAD, or both", "methods")
+	if len(config.Methods) == 0 || len(config.Methods) > 7 {
+		return config, gatewayFieldError("gateway methods must contain 1 to 7 unique GET, HEAD, POST, PUT, PATCH, DELETE or OPTIONS values", "methods")
 	}
 	seenMethods := make(map[string]bool, len(config.Methods))
 	for _, method := range config.Methods {
-		if method != "GET" && method != "HEAD" || seenMethods[method] {
-			return config, gatewayFieldError("gateway methods must contain unique GET and/or HEAD values", "methods")
+		if !allowedGatewayMethod(method) {
+			return config, gatewayFieldError(fmt.Sprintf("unsupported gateway method %q; use GET, HEAD, POST, PUT, PATCH, DELETE or OPTIONS", method), "methods")
+		}
+		if seenMethods[method] {
+			return config, gatewayFieldError(fmt.Sprintf("duplicate gateway method %q", method), "methods")
 		}
 		seenMethods[method] = true
 	}
@@ -186,24 +189,6 @@ func parseGatewayInstanceConfig(data []byte, contract gatewayInstanceContract) (
 		}
 	}
 	return config, nil
-}
-
-func validGatewayFQDN(hostname string) bool {
-	hostname = strings.TrimSuffix(strings.ToLower(hostname), ".")
-	if len(hostname) > 253 || !strings.Contains(hostname, ".") {
-		return false
-	}
-	for _, label := range strings.Split(hostname, ".") {
-		if len(label) == 0 || len(label) > 63 || label[0] == '-' || label[len(label)-1] == '-' {
-			return false
-		}
-		for _, character := range label {
-			if (character < 'a' || character > 'z') && (character < '0' || character > '9') && character != '-' {
-				return false
-			}
-		}
-	}
-	return true
 }
 
 func validateGatewayContract(contract gatewayInstanceContract) error {

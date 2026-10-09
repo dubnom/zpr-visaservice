@@ -3,6 +3,7 @@
   if (!root) return;
 
   const state = { contracts: [], configs: [], selected: null, record: null, saved: "", validDraft: "", revision: 0, diagnostic: null, busy: false, loaded: false, formMode: false };
+  const allowedMethods = ["GET", "HEAD", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"];
   const byId = (id) => document.getElementById(id);
   const source = byId("gateway-source");
   const gutter = byId("gateway-gutter");
@@ -17,11 +18,17 @@
   const saveButton = byId("gateway-save");
   const page = window.ZPREditorPage;
   const message = byId("gateway-draft-message");
-  const analysisScope = page.createAnalysisScope(() => [
-    source.value, state.selected?.organization_id, state.selected?.instance_id,
-    state.selected?.adapter_cn, state.selected?.service_name, state.revision, state.formMode,
-  ]);
-  page.placeStatus(message);
+  const editor = page.createController({
+    source, status: message, isDirty: () => isDirty(),
+    readContext: () => [source.value, state.selected?.organization_id, state.selected?.instance_id,
+      state.selected?.adapter_cn, state.selected?.service_name, state.revision, state.formMode],
+    identity: { title: byId("gateway-record-title"), version: byId("gateway-revision-label"), modified: byId("gateway-modified-indicator") },
+    menu: { root: byId("gateway-actions"), toggle: filesToggle, menu: fileMenu },
+    history: { menu: byId("gateway-history-menu"), list: byId("gateway-history"), count: byId("gateway-history-count"), isAvailable: () => Boolean(state.selected) },
+    adapters: { load: loadInventory, analyze: analyzeDraft, save: saveDraft, render: renderSource },
+    syncControls: updateControls,
+  });
+  const analysisScope = editor.createScope("analyze");
   window.getGatewayAssistantContext = () => [state.selected?.organization_id, state.selected?.instance_id, state.selected?.adapter_cn, state.selected?.service_name, state.revision];
   const surface = page.createSourceSurface({
     source, highlight, gutter, language: "json", label: "Gateway draft",
@@ -31,12 +38,9 @@
       byId("gateway-error-dialog").showModal();
     },
   });
-  const historyMenu = page.createHistory({
-    menu: byId("gateway-history-menu"), list: byId("gateway-history"), count: byId("gateway-history-count"),
-    isAvailable: () => Boolean(state.selected),
-  });
+  const historyMenu = editor.history;
   const picker = page.createPicker({ toggle: pickerToggle, pane, close: byId("gateway-picker-close"), focus: contractList });
-  const files = page.createMenu({ root: byId("gateway-actions"), toggle: filesToggle, menu: fileMenu });
+  const files = editor.files;
 
   const readJSON = (path, options = {}, responsePolicy) => page.requestJSON(
     (...args) => window.zprOperatorFetch(...args), path,
@@ -64,20 +68,17 @@
     ["gateway-form-timeout", "gateway-form-response-limit"].some(id => !Number.isFinite(byId(id).valueAsNumber));
 
   function setMessage(text, kind = "") {
-    page.setStatus(message, text, kind);
+    editor.setStatus(text, kind);
   }
 
   function renderIdentity() {
     const selected = state.selected;
-    page.renderIdentity(
-      { title: byId("gateway-record-title"), version: byId("gateway-revision-label"), modified: byId("gateway-modified-indicator") },
-      {
+    editor.renderIdentity({
         name: selected?.service_name || "",
         label: !selected ? "" : state.revision ? `Version ${state.revision}` : "New · unsaved",
         tooltip: selected ? `${selected.instance_id} · ${selected.adapter_cn}` : "",
         dirty: isDirty(),
-      },
-    );
+    });
   }
 
   // Parses the draft locally so syntax errors get a gutter marker before the server is asked.
@@ -102,7 +103,7 @@
     byId("gateway-error-text").textContent = "";
     byId("gateway-form-error").textContent = "";
     byId("gateway-form-error").hidden = true;
-    page.setAnalysisState(analyzeButton);
+    editor.setAnalysisState();
   }
 
   function updateControls() {
@@ -113,7 +114,7 @@
     formatButton.disabled = state.busy || !selected || empty || state.formMode;
     formatButton.classList.toggle("button-save-as-ready", !formatButton.disabled);
     analyzeButton.classList.toggle("button-next-evaluate", !analyzeButton.disabled && !analyzeButton.dataset.analysisState);
-    const canSave = !state.busy && selected && !hasIncompleteFormNumber() && isDirty() && state.validDraft === source.value;
+    const canSave = !state.busy && selected && !hasIncompleteFormNumber() && (isDirty() || !state.record) && !empty;
     saveButton.disabled = !canSave;
     saveButton.classList.toggle("button-save-next", !canSave);
     saveButton.classList.toggle("button-save-as-ready", canSave);
@@ -144,10 +145,10 @@
       destination.path_prefixes.every(prefix => typeof prefix === "string" && !/[\r\n]/.test(prefix)))) {
       return "Destinations must contain origins and string path-prefix arrays.";
     }
-    if (!Array.isArray(config.methods) || !config.methods.every(method => method === "GET" || method === "HEAD") ||
+    if (!Array.isArray(config.methods) || !config.methods.every(method => allowedMethods.includes(method)) ||
         new Set(config.methods).size !== config.methods.length ||
         !Number.isFinite(config.timeout_ms) || !Number.isFinite(config.max_response_bytes)) {
-      return "The form requires unique GET/HEAD methods and numeric timeout/response limits.";
+      return "The form requires unique GET, HEAD, POST, PUT, PATCH, DELETE or OPTIONS methods and numeric timeout/response limits.";
     }
     return "";
   }
@@ -201,24 +202,26 @@
     const rows = byId("gateway-form-destinations");
     rows.replaceChildren();
     config.destinations.forEach((destination, index) => {
-      const row = document.createElement("fieldset");
+      const row = document.createElement("div");
       row.className = "gateway-form-destination";
-      const legend = document.createElement("legend");
-      legend.textContent = `Destination ${index + 1}`;
-      row.append(legend);
+      const actions = document.createElement("div");
+      actions.className = "gateway-form-destination-actions";
       for (const [field, label, value] of [
-        ["origin", `Destination ${index + 1} HTTPS origin`, destination.origin],
-        ["path_prefixes", `Destination ${index + 1} path prefixes`, destination.path_prefixes.join("\n")],
+        ["origin", "Base URL", destination.origin],
+        ["path_prefixes", "Paths", destination.path_prefixes.join("\n")],
       ]) {
         const wrapper = document.createElement("label");
         wrapper.textContent = label;
         const input = document.createElement(field === "origin" ? "input" : "textarea");
+        input.setAttribute("aria-label", `${label} for destination ${index + 1}`);
         input.value = value;
         if (field === "origin") {
           input.type = "text";
           input.placeholder = "https://api.example.com";
         } else {
           input.rows = 3;
+          input.placeholder = "/health\n/api/";
+          input.title = 'One path prefix per line. "/" allows every path.';
         }
         input.addEventListener("input", () => updateFormDraft(draft => {
           draft.destinations[index][field] = field === "origin" ? input.value :
@@ -231,14 +234,17 @@
       remove.type = "button";
       remove.className = "button";
       remove.textContent = "Remove";
+      remove.title = "Delete this destination and all its allowed path prefixes from the draft";
       remove.setAttribute("aria-label", `Remove destination ${index + 1}`);
       remove.addEventListener("click", () => updateFormDraft(draft => draft.destinations.splice(index, 1), true));
-      row.append(remove);
+      actions.append(remove);
+      row.append(actions);
       rows.append(row);
     });
     byId("gateway-form-add-destination").disabled = config.destinations.length >= 32;
-    byId("gateway-form-get").checked = config.methods.includes("GET");
-    byId("gateway-form-head").checked = config.methods.includes("HEAD");
+    for (const method of allowedMethods) {
+      byId(`gateway-form-${method.toLowerCase()}`).checked = config.methods.includes(method);
+    }
     byId("gateway-form-timeout").value = config.timeout_ms;
     byId("gateway-form-response-limit").value = config.max_response_bytes;
   }
@@ -275,9 +281,10 @@
   });
   byId("gateway-form-add-destination").addEventListener("click", () =>
     updateFormDraft(config => config.destinations.push({ origin: "", path_prefixes: ["/"] }), true));
-  for (const id of ["gateway-form-get", "gateway-form-head"]) {
+  for (const method of allowedMethods) {
+    const id = `gateway-form-${method.toLowerCase()}`;
     byId(id).addEventListener("input", () => updateFormDraft(config => {
-      config.methods = ["GET", "HEAD"].filter(method => byId(`gateway-form-${method.toLowerCase()}`).checked);
+      config.methods = allowedMethods.filter(method => byId(`gateway-form-${method.toLowerCase()}`).checked);
     }));
   }
   for (const [id, field] of [["gateway-form-timeout", "timeout_ms"], ["gateway-form-response-limit", "max_response_bytes"]]) {
@@ -417,15 +424,14 @@
     const parsed = parseSource();
     if (parsed.error) {
       surface.setDiagnostic({ line: parsed.line, message: parsed.error });
-      page.setAnalysisState(analyzeButton, "error");
+      editor.setAnalysisState("error");
       setMessage(surface.diagnostic ? "" : parsed.error, "error");
       renderSource();
       return;
     }
     const analyzed = source.value;
-    const isCurrent = analysisScope.begin();
+    const isCurrent = editor.beginAnalysis();
     state.busy = true;
-    page.setAnalysisState(analyzeButton, "pending");
     setMessage("");
     updateControls();
     try {
@@ -440,7 +446,7 @@
           surface.setDiagnostic({ line: result.source_line, message: diagnostic });
           if (state.formMode) setFormError(diagnostic);
           setMessage("");
-          page.setAnalysisState(analyzeButton, "error");
+          editor.setAnalysisState("error");
           state.validDraft = "";
           return;
         }
@@ -448,15 +454,17 @@
       }
       state.validDraft = analyzed;
       surface.setDiagnostic(null);
-      page.setAnalysisState(analyzeButton, "success");
+      editor.setAnalysisState("success");
       setMessage(`${result.diagnostics} No runtime changes were made.`, "success");
+      return true;
     } catch (error) {
       if (!isCurrent()) return;
       state.validDraft = "";
-      page.setAnalysisState(analyzeButton, "error");
+      editor.setAnalysisState("error");
       setMessage(error.message, "error");
     } finally {
       state.busy = false;
+      isCurrent.finish();
       renderSource();
     }
   }
@@ -465,7 +473,7 @@
     const parsed = parseSource();
     if (parsed.error) {
       surface.setDiagnostic({ line: parsed.line, message: parsed.error });
-      page.setAnalysisState(analyzeButton, "error");
+      editor.setAnalysisState("error");
       setMessage(surface.diagnostic ? "" : parsed.error, "error");
       renderSource();
       return;
@@ -485,6 +493,8 @@
       setMessage("The installed gateway needs a name other than Untitled before its draft can be saved.", "error");
       return;
     }
+    if (!await analyzeDraft() || state.validDraft !== source.value || (!isDirty() && state.record)) return;
+    const submittedSource = source.value;
     const parsed = parseSource();
     if (parsed.error) return;
     state.busy = true;
@@ -497,7 +507,7 @@
       state.record = record;
       state.configs = [...state.configs.filter((item) => item.instance_id !== record.instance_id), record];
       state.revision = record.current_revision;
-      state.saved = source.value;
+      state.saved = submittedSource;
       setMessage(`Saved draft revision ${record.current_revision}. Runtime is unchanged.`, "success");
     } catch (error) {
       setMessage(error.message, "error");
@@ -512,11 +522,10 @@
     setMessage("");
     renderSource();
   });
-  page.bindSaveShortcut({ root, button: saveButton });
-  analyzeButton.addEventListener("click", () => void analyzeDraft());
+  editor.bind("save", { button: saveButton, shortcutRoot: root });
+  editor.bind("analyze", { button: analyzeButton });
   formatButton.addEventListener("click", formatDraft);
-  saveButton.addEventListener("click", () => void saveDraft());
-  byId("gateway-refresh").addEventListener("click", () => void loadInventory());
+  editor.bind("load", { button: byId("gateway-refresh") });
   byId("gateway-discard").addEventListener("click", () => {
     if (!isDirty() || !page.confirmDiscard(true, "Discard unsaved gateway draft edits?")) return;
     source.value = state.saved;
@@ -545,8 +554,8 @@
     if (isDirty()) event.preventDefault();
   });
   window.addEventListener("hashchange", () => {
-    if (location.hash === "#gateways" && !state.loaded) void loadInventory();
+    if (location.hash === "#gateways" && !state.loaded) void editor.perform("load");
   });
   renderSelection();
-  if (location.hash === "#gateways") void loadInventory();
+  if (location.hash === "#gateways") void editor.perform("load");
 })();

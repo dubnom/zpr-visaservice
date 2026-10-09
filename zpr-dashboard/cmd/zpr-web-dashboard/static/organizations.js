@@ -95,7 +95,15 @@ const directoryRequest = (path, options) => directoryEditorPage.requestJSON(
   (...args) => window.fetch(...args), path, options,
 );
 const directoryEditorSource = document.getElementById("directory-editor-source");
-directoryEditorPage.placeStatus(document.getElementById("directory-editor-status"));
+const directoryEditorController = directoryEditorPage.createController({
+  source: directoryEditorSource, status: document.getElementById("directory-editor-status"),
+  analyzeButton: null,
+  isDirty: () => directoryEditorSource.value !== directoryEditorSaved,
+  identity: { title: document.getElementById("directory-editor-title"), version: document.getElementById("directory-editor-revision-label"), modified: document.getElementById("directory-editor-modified") },
+  menu: { root: document.getElementById("directory-editor-actions"), toggle: document.getElementById("directory-editor-files-toggle"), menu: document.getElementById("directory-editor-file-menu") },
+  history: { menu: document.getElementById("directory-editor-history-menu"), list: document.getElementById("directory-editor-history"), count: document.getElementById("directory-editor-history-count"), isAvailable: () => Boolean(directoryEditorArtifact) },
+  adapters: { load: openDirectoryEditor, save: saveDirectoryDraft, render: renderDirectoryEditor },
+});
 const directoryEditorSurface = directoryEditorPage.createSourceSurface({
   source: directoryEditorSource,
   highlight: document.getElementById("directory-editor-highlight"),
@@ -103,17 +111,8 @@ const directoryEditorSurface = directoryEditorPage.createSourceSurface({
   language: "ldif",
   label: "Directory",
 });
-const directoryEditorMenu = directoryEditorPage.createMenu({
-  root: document.getElementById("directory-editor-actions"),
-  toggle: document.getElementById("directory-editor-files-toggle"),
-  menu: document.getElementById("directory-editor-file-menu"),
-});
-const directoryEditorHistory = directoryEditorPage.createHistory({
-  menu: document.getElementById("directory-editor-history-menu"),
-  list: document.getElementById("directory-editor-history"),
-  count: document.getElementById("directory-editor-history-count"),
-  isAvailable: () => Boolean(directoryEditorArtifact),
-});
+const directoryEditorMenu = directoryEditorController.files;
+const directoryEditorHistory = directoryEditorController.history;
 let directoryEditorSaved = "";
 let directoryEditorSummary = "";
 let directoryEditorRevisions = [];
@@ -121,7 +120,7 @@ let directoryEditorViewing = 0;
 window.getDirectoryAssistantContext = () => [directoryEditorOrganizationID, directoryEditorArtifact?.id, directoryEditorArtifact?.revision, directoryEditorViewing];
 
 function setDirectoryEditorStatus(message, state = "") {
-  directoryEditorPage.setStatus(document.getElementById("directory-editor-status"), message, state === "saved" ? "success" : state);
+  directoryEditorController.setStatus(message, state === "saved" ? "success" : state);
 }
 
 function updateDirectoryEditorActions() {
@@ -132,11 +131,7 @@ function updateDirectoryEditorActions() {
   document.getElementById("directory-editor-discard").disabled = !directoryEditorDirty;
   const organization = organizationCatalog.find((item) => item.id === directoryEditorOrganizationID);
   const revision = directoryEditorViewing || current;
-  directoryEditorPage.renderIdentity({
-    title: document.getElementById("directory-editor-title"),
-    version: document.getElementById("directory-editor-revision-label"),
-    modified: document.getElementById("directory-editor-modified"),
-  }, {
+  directoryEditorController.renderIdentity({
     name: directoryEditorArtifact ? `${organization?.name || directoryEditorOrganizationID} directory` : "",
     label: directoryEditorArtifact ? `Version ${revision}${directoryEditorViewing ? "" : published ? (published === current ? " · published" : ` · published v${published}`) : " · not published"}` : "",
     tooltip: directoryEditorArtifact?.content?.base_dn || "",
@@ -343,7 +338,7 @@ const organizationAssistant = window.mountSimulatorDesignAssistant("organization
     if (directoryEditorOrganizationID === organization && document.getElementById("directory-editor-dialog").open) insert();
     else {
       if (!directoryEditorPage.confirmDiscard(directoryEditorDirty, "Open the proposed directory and discard unsaved changes in the other directory?")) throw new Error("AI apply cancelled; the directory is unchanged.");
-      await openDirectoryEditor(organization, isCurrent, insert);
+      await directoryEditorController.perform("load", organization, isCurrent, insert);
     }
     return history;
   },
@@ -477,7 +472,7 @@ document.querySelector(".organization-detail").addEventListener("click", async (
   }
   const button = event.target.closest("[data-edit-directory]");
   if (!button) return;
-  try { await openDirectoryEditor(button.dataset.editDirectory); }
+  try { await directoryEditorController.perform("load", button.dataset.editDirectory); }
   catch (error) {
     const message = document.getElementById("organization-error");
     message.textContent = error.message || "Could not open LDAP directory editor";
@@ -489,11 +484,10 @@ directoryEditorSource.addEventListener("input", () => {
   setDirectoryEditorStatus("");
   renderDirectoryEditor();
 });
-directoryEditorPage.bindSaveShortcut({ root: directoryEditorSource, button: document.getElementById("directory-editor-save") });
-document.getElementById("directory-editor-save").addEventListener("click", async () => {
-  directoryEditorMenu.setOpen(false);
-  try { await saveDirectoryDraft(); }
-  catch (error) { setDirectoryEditorStatus(error.message || "Could not save directory.", "error"); }
+directoryEditorController.bind("save", {
+  button: document.getElementById("directory-editor-save"),
+  shortcutRoot: directoryEditorSource,
+  onError: error => setDirectoryEditorStatus(error.message || "Could not save directory.", "error"),
 });
 document.getElementById("directory-editor-publish").addEventListener("click", async () => {
   directoryEditorMenu.setOpen(false);

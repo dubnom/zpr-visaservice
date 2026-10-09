@@ -400,7 +400,7 @@ func validateSimulatorOrganization(organization simulatorOrganization) error {
 		}
 	}
 	if organization.WebGateway != nil {
-		if _, err := newSimulatorWebGateway(organization.WebGateway.AllowedHosts); err != nil {
+		if _, err := newInternetWebGateway(organization.WebGateway.AllowedHosts); err != nil {
 			return fmt.Errorf("web gateway profile: %w", err)
 		}
 	}

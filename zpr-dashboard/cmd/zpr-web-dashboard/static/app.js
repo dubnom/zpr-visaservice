@@ -23,8 +23,17 @@ const policyAnalysisContext = () => [
   state.policy.record?.isDraft, state.policy.record?.current_revision,
   state.policy.revision, state.policy.browsingRevision, state.policy.organizationID,
 ];
-const policyCheckScope = window.ZPREditorPage.createAnalysisScope(policyAnalysisContext);
-const policyTestScope = window.ZPREditorPage.createAnalysisScope(policyAnalysisContext);
+const policyEditorController = window.ZPREditorPage.createController({
+  source: byId("policy-source"), status: byId("policy-file-status"), viewport: byId("policy-code-editor"),
+  readContext: policyAnalysisContext, isDirty: () => hasUnsavedPolicyChanges(state.policy),
+  identity: { title: byId("policy-record-title"), version: byId("policy-revision-label"), modified: byId("policy-modified-indicator") },
+  menu: { root: byId("policy-actions"), toggle: byId("policy-files-toggle"), menu: byId("policy-file-menu") },
+  history: { menu: byId("policy-history-menu"), list: byId("policy-history"), count: byId("policy-history-count"), isAvailable: () => Boolean(state.policy.record) },
+  adapters: { load: loadPolicyRecord, analyze: evaluateAndTestPolicy, save: savePolicy, render: updatePolicyDirtyState },
+  syncControls: updatePolicyDirtyState,
+});
+const policyCheckScope = policyEditorController.createScope("compiler");
+const policyTestScope = policyEditorController.createScope("runtime");
 
 function invalidatePolicyAnalysis() {
   policyCheckScope.invalidate();
@@ -1070,6 +1079,13 @@ function renderTopology(data, exitComponents = []) {
       const other = positions.get(edge.from.cn === node.cn ? edge.to.cn : edge.from.cn);
       return other.x === nodeCenter.x && other.y === nodeCenter.y ? null : Math.atan2(other.y - nodeCenter.y, other.x - nodeCenter.x);
     }).filter((direction) => direction != null).sort((a, b) => a - b);
+    if (geographic) {
+      const containedFanout = geographicAdapterFanout(nodeCenter, attached, extents, radius, directions);
+      if (containedFanout) {
+        for (const [adapter, position] of containedFanout) positions.set(adapter.cn, position);
+        return;
+      }
+    }
     let centerAngle = -Math.PI / 2;
     if (!directions.length) {
       attached.forEach((adapter, slot) => {
@@ -1362,13 +1378,13 @@ function renderTopology(data, exitComponents = []) {
     registerConnection([owner.dataset.topologyComponent], cloud.querySelectorAll("line"), shapes.get(owner.dataset.topologyComponent), cloud.querySelector(".graph-cloud"));
   }
 
-  const renderedBounds = stage.querySelector("#graph-world").getBBox();
-  if (renderedBounds.width > 0 && renderedBounds.height > 0) {
-    const paddingX = renderedBounds.width * (5 / 90);
-    const paddingY = renderedBounds.height * (5 / 90);
-    width = renderedBounds.width + paddingX * 2;
-    height = renderedBounds.height + paddingY * 2;
-    stage.querySelector(".topology-graph").setAttribute("viewBox", `${renderedBounds.x - paddingX} ${renderedBounds.y - paddingY} ${width} ${height}`);
+  const graph = stage.querySelector(".topology-graph");
+  const renderedBounds = graphContentBounds(world);
+  if (renderedBounds) {
+    const frame = graphViewBox(renderedBounds);
+    width = frame.width;
+    height = frame.height;
+    graph.setAttribute("viewBox", `${frame.x} ${frame.y} ${width} ${height}`);
   }
   if (!graphAutoFit && previousViewport) {
     width = previousViewport.width;
@@ -1490,16 +1506,7 @@ function setupGraphControls(stage, width, height, previousViewport) {
     return point.matrixTransform(svg.getScreenCTM().inverse());
   };
   const fitBounds = () => {
-    const elements = [...world.children].filter((element) => !element.classList.contains("graph-geographic-basemap"));
-    if (!elements.length) return world.getBBox();
-    const boxes = elements.map((element) => element.getBBox())
-      .filter((box) => box.width > 0 || box.height > 0);
-    if (!boxes.length) return world.getBBox();
-    const left = Math.min(...boxes.map((box) => box.x));
-    const top = Math.min(...boxes.map((box) => box.y));
-    const right = Math.max(...boxes.map((box) => box.x + box.width));
-    const bottom = Math.max(...boxes.map((box) => box.y + box.height));
-    return { x: left, y: top, width: right - left, height: bottom - top };
+    return graphContentBounds(world) || world.getBBox();
   };
   const fit = (cancelAnimation = true) => {
     if (cancelAnimation) cancelViewportAnimation();
@@ -1711,6 +1718,124 @@ function policyCategoriesInUnifiedHierarchy(policy = state.policy) {
     const hasChildren = policy.categories.some((item) => item.parent_id === category.id);
     return hasChildren || !records.length || records.some((record) => record.kind !== "assertions");
   });
+}
+
+function graphContentBounds(world) {
+  const boxes = [...world.children]
+    .filter((element) => !element.classList.contains("graph-geographic-basemap") && !element.classList.contains("graph-exit-layer"))
+    .map((element) => element.getBBox())
+    .filter((box) => box.width > 0 || box.height > 0);
+  if (!boxes.length) return null;
+  const left = Math.min(...boxes.map((box) => box.x));
+  const top = Math.min(...boxes.map((box) => box.y));
+  const right = Math.max(...boxes.map((box) => box.x + box.width));
+  const bottom = Math.max(...boxes.map((box) => box.y + box.height));
+  return { x: left, y: top, width: Math.max(1, right - left), height: Math.max(1, bottom - top) };
+}
+
+function graphViewBox(bounds) {
+  const centerX = bounds.x + bounds.width / 2;
+  const centerY = bounds.y + bounds.height / 2;
+  const paddingX = bounds.width * (5 / 90);
+  const paddingY = bounds.height * (5 / 90);
+  const width = bounds.width + paddingX * 2;
+  const height = bounds.height + paddingY * 2;
+  return { x: centerX - width / 2, y: centerY - height / 2, width, height };
+}
+
+function geographicAdapterFanout(nodeCenter, adapters, extents, initialRadius, directions) {
+  const bounds = { left: 0, top: 0, right: 3600, bottom: 1800 };
+  const inwardAngle = Math.atan2(900 - nodeCenter.y, 1800 - nodeCenter.x);
+  const positionsAt = (centerAngle, radius, offsets) => {
+    const span = offsets.at(-1);
+    return adapters.map((adapter, index) => {
+      const angle = centerAngle + offsets[index] - span / 2;
+      return { adapter, extent: extents[index], x: nodeCenter.x + Math.cos(angle) * radius, y: nodeCenter.y + Math.sin(angle) * radius };
+    });
+  };
+  const marginFor = (positions) => {
+    let margin = Infinity;
+    for (const position of positions) {
+      const left = position.x - position.extent;
+      const right = position.x + position.extent;
+      const top = position.y - position.extent;
+      const bottom = position.y + position.extent;
+      if (left < bounds.left || right > bounds.right || top < bounds.top || bottom > bounds.bottom) return null;
+      margin = Math.min(margin, left - bounds.left, bounds.right - right, top - bounds.top, bounds.bottom - bottom);
+    }
+    return margin;
+  };
+  if (!directions.length) {
+    const ring = adapters.map((adapter, index) => {
+      const angle = -Math.PI / 2 + (2 * Math.PI * index) / adapters.length;
+      return { adapter, extent: extents[index], x: nodeCenter.x + Math.cos(angle) * initialRadius, y: nodeCenter.y + Math.sin(angle) * initialRadius };
+    });
+    if (marginFor(ring) != null) return ring.map(({ adapter, x, y }) => [adapter, { x, y }]);
+  }
+
+  const sectors = [];
+  if (directions.length) {
+    directions.forEach((start, index) => {
+      const end = index + 1 < directions.length ? directions[index + 1] : directions[0] + 2 * Math.PI;
+      sectors.push({ start, end, width: end - start });
+    });
+  } else {
+    sectors.push({ start: inwardAngle - Math.PI / 2, end: inwardAngle + Math.PI / 2, width: Math.PI });
+  }
+  let best = null;
+  let bestScore = -Infinity;
+  for (const sector of sectors) {
+    const availableAngle = Math.min(Math.PI, sector.width * 0.75);
+    const inset = (sector.width - availableAngle) / 2;
+    let radius = initialRadius;
+    for (let attempt = 0; attempt < 48; attempt++) {
+      let offsets = [0];
+      for (let index = 1; index < adapters.length; index++) {
+        offsets.push(offsets.at(-1) + 2 * Math.asin(Math.min(1, (extents[index - 1] + extents[index] + 20) / (2 * radius))));
+      }
+      const largestExtent = Math.max(...extents);
+      const arcWidth = offsets.at(-1) + 2 * Math.asin(Math.min(1, largestExtent / radius));
+      if (arcWidth > availableAngle) {
+        radius *= 1.15;
+        continue;
+      }
+      const centerMin = sector.start + inset + arcWidth / 2;
+      const centerMax = sector.end - inset - arcWidth / 2;
+      if (centerMin > centerMax) {
+        radius *= 1.15;
+        continue;
+      }
+      const angleCandidates = [centerMin, centerMax, (centerMin + centerMax) / 2];
+      let nearestInward = null;
+      let nearestDistance = Infinity;
+      for (let turn = -2; turn <= 2; turn++) {
+        const angle = inwardAngle + turn * 2 * Math.PI;
+        const clamped = Math.max(centerMin, Math.min(centerMax, angle));
+        const distance = Math.abs(angle - clamped);
+        if (distance < nearestDistance) {
+          nearestDistance = distance;
+          nearestInward = clamped;
+        }
+      }
+      angleCandidates.push(nearestInward);
+      let foundContainedPosition = false;
+      for (const centerAngle of new Set(angleCandidates)) {
+        const candidate = positionsAt(centerAngle, radius, offsets);
+        const margin = marginFor(candidate);
+        if (margin == null) continue;
+        foundContainedPosition = true;
+        const preferredCenter = (sector.start + sector.end) / 2;
+        const score = sector.width * 1_000_000 - Math.abs(centerAngle - preferredCenter) * 1_000 + margin;
+        if (score > bestScore) {
+          best = candidate;
+          bestScore = score;
+        }
+      }
+      if (foundContainedPosition) break;
+      radius *= 1.15;
+    }
+  }
+  return best?.map(({ adapter, x, y }) => [adapter, { x, y }]) || null;
 }
 
 async function loadPolicyWorkspace() {
@@ -2091,7 +2216,7 @@ function clearPolicySelection() {
   byId("policy-test-gutter").hidden = false;
   byId("policy-test-status").hidden = true;
   hidePolicyTestDetails();
-  window.ZPREditorPage.setAnalysisState(byId("policy-check"));
+  policyEditorController.setAnalysisState();
   byId("policy-check-result").textContent = "Policy source is not loaded.";
   byId("policy-check-result").hidden = true;
   renderPolicyHistory();
@@ -2099,7 +2224,11 @@ function clearPolicySelection() {
   renderPolicyCatalog();
 }
 
-async function selectPolicyRecord(id, fetchRecord = true, discardEdits = false, closePicker = true) {
+function selectPolicyRecord(...args) {
+  return policyEditorController.perform("load", ...args);
+}
+
+async function loadPolicyRecord(id, fetchRecord = true, discardEdits = false, closePicker = true) {
   const policy = state.policy;
   const pickerWasOpen = !byId("policy-catalog-pane").hidden;
   if (policy.record?.id === id) {
@@ -2189,7 +2318,7 @@ function renderPolicyIdentity(record = state.policy.record, version = state.poli
   const identity = { title, version: byId("policy-revision-label"), modified };
   draftName.hidden = !record?.isDraft;
   if (!record) {
-    window.ZPREditorPage.renderIdentity(identity);
+    policyEditorController.renderIdentity({}, identity);
     return;
   }
   const categoryID = record.kind === "assertions" ? organizationPolicyCategoryID(state.policy) : record.category_id;
@@ -2197,13 +2326,13 @@ function renderPolicyIdentity(record = state.policy.record, version = state.poli
   const path = [category?.path, record.name].filter(Boolean).join("/");
   const draftNameValue = record.isDraft ? record.name : "";
   if (draftName.value !== draftNameValue) draftName.value = draftNameValue;
-  window.ZPREditorPage.renderIdentity(identity, {
+  policyEditorController.renderIdentity({
     name: record.name,
     tooltip: path,
     dirty: record.kind === "assertions"
       ? Boolean(window.policyAssertionDirty?.())
       : !record.isDraft && byId("policy-source").value !== state.policy.savedSource,
-  });
+  }, identity);
 }
 
 window.addEventListener("policy-assertion-saved", () => {
@@ -2230,7 +2359,7 @@ window.addEventListener("policy-assertion-created", async (event) => {
   renderPolicyIdentity(record, record.current_revision, record.content_hash);
   renderPolicyCatalog();
   try { await loadPolicyHistory(record.id); }
-  catch (error) { byId("policy-file-status").textContent = error.message; }
+  catch (error) { setPolicyFileStatus(error.message, true); }
   updatePolicyDirtyState();
 });
 
@@ -2651,9 +2780,7 @@ function beginNewAssertionDraft() {
 }
 
 function setPolicyFileStatus(text, isError = false) {
-  const status = byId("policy-file-status");
-  status.textContent = text;
-  status.dataset.state = isError ? "error" : "";
+  policyEditorController.setStatus(text, isError ? "error" : "");
 }
 
 function nextRecordCopyName(record, categoryID) {
@@ -2858,7 +2985,7 @@ function updatePolicyDirtyState() {
   byId("policy-stage").disabled = policy.stagePending || policy.testPending || policy.checkPending;
   byId("policy-check").disabled = !canEdit || !canTest || !policy.compilerReady || !policy.testerReady || policy.testPending || policy.checkPending;
   byId("policy-check").textContent = "Analyze";
-  if (!checked && !policy.testPending && !policy.checkPending) window.ZPREditorPage.setAnalysisState(byId("policy-check"));
+  if (!checked && !policy.testPending && !policy.checkPending) policyEditorController.setAnalysisState();
   byId("policy-format").disabled = !canEdit;
   byId("policy-format").classList.toggle("button-save-as-ready", canEdit);
   byId("policy-source").disabled = !canViewSource;
@@ -2899,13 +3026,13 @@ async function runPolicyTest(source = byId("policy-source").value) {
   const policy = state.policy;
   if (policy.testPending || !source.trim()) return { passed: false, error: "Policy test could not start for this source." };
   const controller = new AbortController();
-  const isCurrent = policyTestScope.begin();
+  const isCurrent = policyEditorController.beginAnalysis("runtime");
   const current = () => !controller.signal.aborted && isCurrent() && source === byId("policy-source").value;
   clearPolicyTestResults();
   policy.testPending = true;
   policy.testAbort = controller;
   byId("policy-test-status").hidden = true;
-  window.ZPREditorPage.setAnalysisState(byId("policy-check"), "pending");
+  policyEditorController.setAnalysisState("pending");
   hidePolicyTestDetails();
   updatePolicyDirtyState();
   let outcome = { passed: false, error: "Policy test did not complete." };
@@ -2930,7 +3057,7 @@ async function runPolicyTest(source = byId("policy-source").value) {
     policy.testSource = source;
     policy.testWarnings = result.warnings || [];
     renderPolicyLintWarnings();
-    window.ZPREditorPage.setAnalysisState(byId("policy-check"), "success");
+    policyEditorController.setAnalysisState("success");
     renderPolicyTestGutter(result);
     outcome = { passed: true, result };
   } catch (error) {
@@ -2938,7 +3065,7 @@ async function runPolicyTest(source = byId("policy-source").value) {
     const parsedLines = policyTestErrorLines(error.message, source.split("\n").length);
     policy.testResult = { error: error.message };
     policy.testSource = source;
-    window.ZPREditorPage.setAnalysisState(byId("policy-check"), "error");
+    policyEditorController.setAnalysisState("error");
     if (parsedLines.length) {
       renderPolicyTestErrorGutter(error.message, parsedLines, errorTitle);
       byId("policy-test-status").hidden = true;
@@ -2951,6 +3078,7 @@ async function runPolicyTest(source = byId("policy-source").value) {
     }
     outcome = { passed: false, error: error.message };
   } finally {
+    isCurrent.finish();
     if (policy.testAbort === controller) {
       policy.testAbort = null;
       policy.testPending = false;
@@ -3126,7 +3254,7 @@ function stopPolicyTest() {
   invalidatePolicyTest();
   clearPolicyTestResults();
   if (byId("policy-check").dataset.analysisState === "pending") {
-    window.ZPREditorPage.setAnalysisState(byId("policy-check"), policy.validSource === policy.evaluatedSource ? "success" : "");
+    policyEditorController.setAnalysisState(policy.validSource === policy.evaluatedSource ? "success" : "");
   }
   byId("policy-test-gutter-content").replaceChildren();
   byId("policy-test-gutter").hidden = false;
@@ -3237,7 +3365,7 @@ async function checkPolicy(source = byId("policy-source").value) {
   const button = byId("policy-check");
   if (state.policy.checkPending) return false;
   const controller = new AbortController();
-  const isCurrent = policyCheckScope.begin();
+  const isCurrent = policyEditorController.beginAnalysis("compiler");
   state.policy.checkAbort = controller;
   state.policy.checkPending = true;
   state.policy.lintWarnings = [];
@@ -3247,7 +3375,7 @@ async function checkPolicy(source = byId("policy-source").value) {
   state.policy.errorOffsets = [];
   updatePolicyHighlight();
   button.disabled = true;
-  window.ZPREditorPage.setAnalysisState(button, "pending");
+  policyEditorController.setAnalysisState("pending");
   byId("policy-check-result").textContent = "Checking with ZPLC…";
   updatePolicyDirtyState();
   let valid = false;
@@ -3264,6 +3392,7 @@ async function checkPolicy(source = byId("policy-source").value) {
     if (error.name === "AbortError" || controller.signal.aborted || !isCurrent() || source !== byId("policy-source").value) return null;
     policySetCheckResult(false, error.details?.diagnostics || error.details?.error || error.message, source, error.details?.warnings || []);
   } finally {
+    isCurrent.finish();
     if (state.policy.checkAbort === controller) {
       state.policy.checkAbort = null;
       state.policy.checkPending = false;
@@ -3373,7 +3502,7 @@ function policySetCheckResult(valid, diagnostics, source, warnings = []) {
   result.hidden = true;
   result.textContent = "";
   result.dataset.state = valid ? "valid" : "invalid";
-  window.ZPREditorPage.setAnalysisState(byId("policy-check"), valid ? "success" : "error");
+  policyEditorController.setAnalysisState(valid ? "success" : "error");
   byId("policy-test-status").hidden = true;
   byId("policy-test-status").textContent = "";
   if (!valid) {
@@ -4023,26 +4152,15 @@ function setPolicyPickerOpen(open, restoreFocus = false) {
   else if (restoreFocus) button.focus();
 }
 
-const policyFileMenu = window.ZPREditorPage.createMenu({
-  root: byId("policy-actions"),
-  toggle: byId("policy-files-toggle"),
-  menu: byId("policy-file-menu"),
-});
+const policyFileMenu = policyEditorController.files;
 function setPolicyFileMenuOpen(open, restoreFocus = false) {
   policyFileMenu.setOpen(open, restoreFocus);
 }
 
 byId("policy-picker-toggle").addEventListener("click", () => setPolicyPickerOpen(byId("policy-catalog-pane").hidden));
 byId("policy-picker-close").addEventListener("click", () => setPolicyPickerOpen(false, true));
-const policyHistory = window.ZPREditorPage.createHistory({
-  menu: byId("policy-history-menu"),
-  list: byId("policy-history"),
-  count: byId("policy-history-count"),
-  isAvailable: () => Boolean(state.policy.record),
-});
-window.ZPREditorPage.fitSourceToViewport(byId("policy-code-editor"));
+const policyHistory = policyEditorController.history;
 byId("policy-source-surface").prepend(byId("policy-test-status"));
-window.ZPREditorPage.placeStatus(byId("policy-file-status"));
 setPolicyPickerOpen(false);
 window.ZPRAssistant.bindCollapse({
   pane: byId("policy-assistant-pane"), toggle: byId("policy-assistant-toggle"),
@@ -4140,7 +4258,7 @@ byId("policy-source").addEventListener("input", () => {
   showPolicyCompletions();
 });
 byId("policy-format").addEventListener("click", formatPolicySource);
-byId("policy-check").addEventListener("click", evaluateAndTestPolicy);
+policyEditorController.bind("analyze", { button: byId("policy-check") });
 byId("policy-stage-cancel").addEventListener("click", () => byId("policy-stage-dialog").close());
 byId("policy-stage-confirm").addEventListener("click", confirmPolicyStage);
 byId("policy-test-details-close").addEventListener("click", hidePolicyTestDetails);
@@ -4183,8 +4301,7 @@ byId("policy-source").addEventListener("keydown", (event) => {
 byId("policy-source").addEventListener("blur", (event) => {
   if (!event.relatedTarget?.closest("#policy-completions")) hidePolicyCompletions();
 });
-byId("policy-save").addEventListener("click", savePolicy);
-window.ZPREditorPage.bindSaveShortcut({ root: byId("policy-source"), button: byId("policy-save") });
+policyEditorController.bind("save", { button: byId("policy-save"), shortcutRoot: byId("policy-source") });
 byId("policy-stage").addEventListener("click", stageSelectedPolicy);
 byId("pause-poll").addEventListener("click", (event) => {
   state.paused = !state.paused;

@@ -69,7 +69,7 @@ func TestParseGatewayInstanceConfigRejectsUnsafeOrUnsupportedValues(t *testing.T
 		"unsafe path prefix": func(config map[string]any) {
 			config["destinations"] = []any{map[string]any{"origin": "https://example.com", "path_prefixes": []string{"/safe/../admin"}}}
 		},
-		"unsupported method": func(config map[string]any) { config["methods"] = []string{"POST"} },
+		"unsupported method": func(config map[string]any) { config["methods"] = []string{"TRACE"} },
 		"response limit":     func(config map[string]any) { config["max_response_bytes"] = maxGatewayResponseBytes + 1 },
 		"timeout limit":      func(config map[string]any) { config["timeout_ms"] = 0 },
 	}
@@ -116,6 +116,7 @@ func gatewayInstanceConfigJSON(t *testing.T, overrides map[string]any) []byte {
 		"timeout_ms":         8000,
 		"max_response_bytes": 2097152,
 	}
+
 	for key, value := range overrides {
 		config[key] = value
 	}
@@ -126,6 +127,26 @@ func gatewayInstanceConfigJSON(t *testing.T, overrides map[string]any) []byte {
 	return data
 }
 
+func TestGatewayDraftMethods(t *testing.T) {
+	contract := gatewayInstanceContract{OrganizationID: "northstar", InstanceID: "public-egress", AdapterCN: "gateway-public-egress", ServiceName: "public-egress.svc.zpr"}
+	for _, method := range []string{"GET", "HEAD", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"} {
+		t.Run(method, func(t *testing.T) {
+			config, err := parseGatewayInstanceConfig(gatewayInstanceConfigJSON(t, map[string]any{"methods": []string{method}}), contract)
+			if err != nil || len(config.Methods) != 1 || config.Methods[0] != method {
+				t.Fatalf("method %s: config=%+v, error=%v", method, config, err)
+			}
+		})
+	}
+	all := []string{"GET", "HEAD", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"}
+	if _, err := parseGatewayInstanceConfig(gatewayInstanceConfigJSON(t, map[string]any{"methods": all}), contract); err != nil {
+		t.Fatalf("all allowed methods: %v", err)
+	}
+	for _, methods := range [][]string{nil, {}, {"GET", "GET"}, {"POST", "POST"}, {"TRACE"}, {"CONNECT"}, {"post"}, {"CUSTOM"}, append(all, "GET")} {
+		if _, err := parseGatewayInstanceConfig(gatewayInstanceConfigJSON(t, map[string]any{"methods": methods}), contract); err == nil {
+			t.Fatalf("accepted invalid methods %v", methods)
+		}
+	}
+}
 func TestGatewayDestinationAllowlistDiagnosticsAndPrefixScope(t *testing.T) {
 	contract := gatewayInstanceContract{OrganizationID: "northstar", InstanceID: "public-egress", AdapterCN: "gateway-public-egress", ServiceName: "public-egress.svc.zpr"}
 	tests := []struct {

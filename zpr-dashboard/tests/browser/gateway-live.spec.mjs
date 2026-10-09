@@ -25,7 +25,9 @@ test("deployed Gateway Analyze highlights exact source lines and validates the d
   const invalid = JSON.stringify(draft, null, 2);
   await source.fill(invalid);
   const line = invalid.split("\n").findIndex(value => value.includes('"origin"')) + 1;
-  await page.getByRole("button", { name: "Analyze", exact: true }).click();
+  await page.locator("#gateway-files-toggle").click();
+  await expect(page.locator("#gateway-save")).toBeEnabled();
+  await page.locator("#gateway-save").click();
   await expect(page.locator("#gateway-analyze")).toHaveAttribute("data-analysis-state", "error");
   await expect(page.locator("#gateway-draft-message")).toBeHidden();
   await expect(page.locator("#gateway-destinations")).toHaveCount(0);
@@ -42,9 +44,23 @@ test("deployed Gateway Analyze highlights exact source lines and validates the d
   expect(await source.evaluate(element => element.value.slice(element.selectionStart, element.selectionEnd))).toContain('"origin": ""');
   await page.getByRole("button", { name: "Form editor", exact: true }).click();
   await expect(source).toBeHidden();
-  await page.getByRole("textbox", { name: "Destination 1 HTTPS origin", exact: true }).fill("https://api.example.com");
+  const addDestination = page.getByRole("button", { name: "Add destination", exact: true });
+  await expect(addDestination).toHaveText("Add Destination");
+  await expect(addDestination).toBeInViewport();
+  await expect(page.getByRole("heading", { name: "Destinations Allowed", exact: true })).toBeVisible();
+  await expect(page.getByRole("button", { name: "Add", exact: true })).toHaveCount(0);
+  await expect(page.locator(".gateway-form-destination legend")).toHaveCount(0);
+  const prefixes = page.getByRole("textbox", { name: "Paths for destination 1", exact: true });
+  await prefixes.fill("/\n/health");
+  expect(JSON.parse(await page.locator("#gateway-source").inputValue()).destinations[0].path_prefixes).toEqual(["/", "/health"]);
+  await prefixes.fill("/");
+  await page.getByRole("textbox", { name: "Base URL for destination 1", exact: true }).fill("https://api.example.com");
   await page.getByRole("button", { name: "Add destination", exact: true }).click();
-  await page.getByRole("textbox", { name: "Destination 2 HTTPS origin", exact: true }).fill("https://other.example.com");
+  await page.getByRole("textbox", { name: "Base URL for destination 2", exact: true }).fill("https://other.example.com");
+  for (const method of ["POST", "PUT", "PATCH", "DELETE", "OPTIONS"]) {
+    await page.getByRole("checkbox", { name: method, exact: true }).check();
+  }
+  expect(JSON.parse(await page.locator("#gateway-source").inputValue()).methods).toEqual(["GET", "HEAD", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"]);
   await page.getByRole("button", { name: "Analyze", exact: true }).click();
   await expect(page.locator("#gateway-analyze")).toHaveAttribute("data-analysis-state", "success");
   await expect(page.locator("#gateway-draft-message")).toContainText("runtime configuration is unchanged");

@@ -1480,6 +1480,60 @@ async function openRawScenario(page, appURL, api, assistantReady = false) {
   await expect(page.locator("#scenario-editor-source")).toBeVisible();
 }
 
+test("GUI Scenario editor fills the viewport and follows the pending Analyze protocol", async ({ page, appURL, api }) => {
+  await page.setViewportSize({ width: 1280, height: 720 });
+  await openRawScenario(page, appURL, api);
+  await expect.poll(() => page.evaluate(() => Math.abs(
+    document.querySelector(".scenario-source-editor").getBoundingClientRect().bottom - innerHeight * .96,
+  ))).toBeLessThanOrEqual(12);
+
+  const source = page.locator("#scenario-editor-source");
+  const scenario = JSON.parse(await source.inputValue());
+  scenario.name = "Analysis protocol check";
+  scenario.description = "Verify the editor analysis lifecycle.";
+  await source.fill(JSON.stringify(scenario, null, 2));
+  let finishResponse;
+  api.handlers.set("/api/simulator/organizations/alpha/scenario-check", async (route) => {
+    await new Promise((resolve) => { finishResponse = resolve; });
+    await route.fulfill({ json: {
+      valid: true,
+      diagnostics: "Scenario source and definition valid. Nothing saved, published, or run.",
+      scenario,
+      canonical_json: JSON.stringify(scenario, null, 2),
+      canonical_yaml: "",
+    } });
+  });
+  const analyze = page.locator("#scenario-source-analyze");
+  await analyze.click();
+  await expect(analyze).toBeEnabled();
+  await expect(analyze).toHaveAttribute("data-analysis-state", "pending");
+  await expect.poll(() => typeof finishResponse).toBe("function");
+  finishResponse();
+  await expect(analyze).toBeEnabled();
+  await expect(analyze).toHaveAttribute("data-analysis-state", "success");
+
+  await page.locator("#scenario-editor-mode-toggle").click();
+  await expect(page.locator("#scenario-editor-name")).toHaveValue("Analysis protocol check");
+  let finishFormResponse;
+  api.handlers.set("/api/simulator/organizations/alpha/scenario-check", async (route) => {
+    const formScenario = JSON.parse(route.request().postDataJSON().source);
+    await new Promise((resolve) => { finishFormResponse = resolve; });
+    await route.fulfill({ json: {
+      valid: true,
+      diagnostics: "Scenario source and definition valid. Nothing saved, published, or run.",
+      scenario: formScenario,
+    } });
+  });
+  await page.locator("#scenario-editor-name").fill("Form analysis protocol check");
+  await analyze.click();
+  await expect(analyze).toBeEnabled();
+  await expect(analyze).toHaveAttribute("data-analysis-state", "pending");
+  await expect.poll(() => typeof finishFormResponse).toBe("function");
+  finishFormResponse();
+  await expect(analyze).toBeEnabled();
+  await expect(analyze).toHaveAttribute("data-analysis-state", "success");
+});
+
 for (const mode of ["raw", "form"]) {
   test(`Scenario JSON transport rejects invalid successful ${mode} analysis responses without assuming an HTTP status`, async ({ page, appURL, api }) => {
     await openRawScenario(page, appURL, api);
@@ -2243,6 +2297,155 @@ for (const editor of [
   });
 }
 
+test("shared editor controller owns commands, scopes, pending cleanup and disposable bindings", async ({ page, appURL }) => {
+  await page.goto(appURL + "/#map");
+  const result = await page.evaluate(async () => {
+    const root = document.createElement("section");
+    root.className = "policy-page";
+    root.innerHTML = '<div class="policy-identity"><strong></strong><span></span><i></i></div><div class="policy-editor-tools"></div><p></p><textarea></textarea><button id="controller-analyze">Analyze</button><div class="controller-files"><button class="toggle">File</button><div role="menu" hidden><button class="save">Save</button></div></div><details><summary>History <b></b></summary><div></div></details>';
+    document.body.append(root);
+    const source = root.querySelector("textarea");
+    const status = root.querySelector("p");
+    const analyze = root.querySelector("#controller-analyze");
+    const save = root.querySelector(".save");
+    const toggle = root.querySelector(".toggle");
+    const menu = root.querySelector('[role="menu"]');
+    const history = root.querySelector("details");
+    let revision = 1, dirty = false, saves = 0, selected = 0, syncs = 0;
+    const options = {
+      source, root, status, viewport: null, analyzeButton: analyze,
+      readContext: () => [source.value, revision], isDirty: () => dirty,
+      identity: { title: root.querySelector("strong"), version: root.querySelector(".policy-identity span"), modified: root.querySelector("i") },
+      menu: { root: root.querySelector(".controller-files"), toggle, menu },
+      history: { menu: history, list: history.querySelector("div"), count: history.querySelector("b"), isAvailable: () => true },
+      adapters: { load: value => { source.value = value; }, analyze: () => "checked", save: () => { saves++; }, render: () => "rendered" },
+      syncControls: () => { syncs++; },
+    };
+    const editor = window.ZPREditorPage.createController(options);
+    const registered = window.ZPREditorPage.getController(source) === editor;
+    let duplicate = "";
+    try { window.ZPREditorPage.createController(options); } catch (error) { duplicate = error.message; }
+    editor.perform("load", "original");
+    const commands = [editor.perform("analyze"), editor.perform("render")];
+    dirty = true;
+    editor.renderIdentity({ name: "  " });
+    const identity = [root.querySelector("strong").textContent, root.querySelector("i").hidden, editor.dirty];
+    const scope = editor.createScope("analyze");
+    const first = editor.beginAnalysis();
+    const second = editor.beginAnalysis();
+    first.finish();
+    const supersession = [first(), second(), editor.pending, analyze.dataset.analysisState, syncs];
+    source.value = "edited"; scope.invalidate(); source.value = "original";
+    const editReturn = [second(), editor.pending, analyze.dataset.analysisState || ""];
+    const third = editor.beginAnalysis();
+    revision++;
+    const contextChanged = third();
+    third.finish();
+    const staleCleanup = [editor.pending, analyze.dataset.analysisState || "", syncs];
+    const fourth = editor.beginAnalysis();
+    editor.setAnalysisState("warning");
+    fourth.finish();
+    const warning = [editor.pending, analyze.dataset.analysisState];
+    const a = editor.beginAnalysis("compiler");
+    const b = editor.beginAnalysis("runtime");
+    a.finish();
+    const independent = [editor.pending, analyze.dataset.analysisState];
+    editor.setAnalysisState("success"); b.finish();
+    editor.bind("save", { button: save, shortcutRoot: source });
+    editor.files.setOpen(true); save.click();
+    await Promise.resolve(); await Promise.resolve();
+    const key = new KeyboardEvent("keydown", { key: "s", ctrlKey: true, bubbles: true, cancelable: true });
+    source.dispatchEvent(key);
+    await Promise.resolve(); await Promise.resolve();
+    editor.history.render([{ number: 1 }], { onSelect: () => { selected++; } });
+    history.querySelector(".history-item").click();
+    const active = editor.beginAnalysis();
+    editor.dispose(); editor.dispose();
+    save.click();
+    source.dispatchEvent(new KeyboardEvent("keydown", { key: "s", ctrlKey: true, bubbles: true, cancelable: true }));
+    history.querySelector(".history-item").click();
+    await Promise.resolve(); await Promise.resolve();
+    let disposedError = "";
+    try { editor.perform("save"); } catch (error) { disposedError = error.message; }
+    const disposed = [active(), editor.pending, window.ZPREditorPage.getController(source) === undefined, saves, selected];
+    const rebound = window.ZPREditorPage.createController(options);
+    toggle.click();
+    const singleMenu = !menu.hidden;
+    rebound.bind("save", { button: save, shortcutRoot: source });
+    save.click(); await Promise.resolve(); await Promise.resolve();
+    rebound.history.render([{ number: 2 }], { onSelect: () => { selected++; } });
+    history.querySelector(".history-item").click();
+    rebound.dispose();
+    const directory = window.ZPREditorPage.createController({ source, root, viewport: null, analyzeButton: null, adapters: { save: () => {} } });
+    let noAnalyze = "";
+    try { directory.perform("analyze"); } catch (error) { noAnalyze = error.message; }
+    directory.dispose(); root.remove();
+    return { registered, duplicate: duplicate.startsWith("Editor already registered"), commands, identity, supersession, editReturn, contextChanged, staleCleanup, warning, independent, disposed, disposedError: disposedError.startsWith("Editor is disposed"), singleMenu, saves, selected, noAnalyze };
+  });
+  expect(result).toEqual({
+    registered: true, duplicate: true, commands: ["checked", "rendered"], identity: ["Untitled", false, true],
+    supersession: [false, true, true, "pending", 0], editReturn: [false, false, ""], contextChanged: false,
+    staleCleanup: [false, "", 1], warning: [false, "warning"], independent: [true, "pending"],
+    disposed: [false, false, true, 2, 1], disposedError: true, singleMenu: true, saves: 3, selected: 2,
+    noAnalyze: "Editor command not configured: analyze",
+  });
+});
+
+test("editor viewport sizing retains geometry while switching records on short screens", async ({ page, appURL, api }) => {
+  await page.setViewportSize({ width: 1280, height: 720 });
+  await page.goto(appURL + "/#policy");
+  await openPolicyPicker(page);
+  await page.locator('[data-record-id="test-policy"]').click();
+  await expect.poll(() => page.locator("#policy-code-editor").evaluate(element => {
+    const rect = element.getBoundingClientRect();
+    return Math.abs(rect.bottom - innerHeight * .96);
+  })).toBeLessThanOrEqual(2);
+});
+
+test("all six editors register the shared controller and use its responsive source viewport", async ({ page, appURL, api }) => {
+  await page.setViewportSize({ width: 1280, height: 900 });
+  const assertEditor = async (sourceID) => {
+    expect(await page.locator(`#${sourceID}`).evaluate(source => {
+      const editor = window.ZPREditorPage.getController(source);
+      const viewport = source.closest('[data-editor-source-viewport="true"]');
+      return Boolean(editor && viewport && editor.perform("render") === undefined);
+    })).toBe(true);
+    await expect.poll(() => page.locator(`#${sourceID}`).evaluate(source => {
+      const viewport = source.closest('[data-editor-source-viewport="true"]');
+      const pane = viewport.closest(".policy-editor-pane, .editor-assistant-main") || viewport.closest(".editor-page-main");
+      const padding = parseFloat(getComputedStyle(viewport.closest(".main-content")).paddingBottom) + parseFloat(getComputedStyle(pane).paddingBottom);
+      const rect = viewport.getBoundingClientRect();
+      const expectedBottom = Math.max(rect.top + scrollY + 320, innerHeight - Math.min(innerHeight * .04, padding));
+      return Math.abs(rect.bottom + scrollY - expectedBottom);
+    })).toBeLessThanOrEqual(2);
+  };
+  await page.goto(appURL + "/#policy");
+  await openPolicyPicker(page);
+  await page.locator('[data-record-id="test-policy"]').click();
+  await assertEditor("policy-source");
+  await openAssertionRecord(page, appURL);
+  await assertEditor("assertion-source");
+  await page.goto(appURL + "/#zpr-config");
+  await assertEditor("zpr-config-source");
+  await page.goto(appURL + "/#gateways");
+  await assertEditor("gateway-source");
+  await openRawScenario(page, appURL, api);
+  await assertEditor("scenario-editor-source");
+  api.handlers.set("/api/simulator/organizations/alpha/directory", route => route.fulfill({ json: {
+    revision: 2, published_revision: 1, content: { base_dn: "dc=alpha,dc=test", ldif: "dn: dc=alpha,dc=test\n" },
+  } }));
+  api.handlers.set("/api/simulator/organizations/alpha/directory/revisions", route => route.fulfill({ json: [] }));
+  await page.goto(appURL + "/organizations.html");
+  await page.getByRole("button", { name: "Edit LDAP seed", exact: true }).click();
+  await assertEditor("directory-editor-source");
+  expect(await page.locator("#directory-editor-source").evaluate(source => {
+    try { window.ZPREditorPage.getController(source).perform("analyze"); } catch (error) {
+      return error.message === "Editor command not configured: analyze";
+    }
+    return false;
+  })).toBe(true);
+});
+
 test("shared analysis scope rejects superseded runs, context changes and edit-return cycles", async ({ page, appURL, api }) => {
   await page.goto(appURL + "/#map");
   const states = await page.evaluate(() => {
@@ -2305,7 +2508,7 @@ for (const outcome of ["success", "error"]) {
     await expect(page.locator("#gateway-draft-message")).toBeHidden();
     await expect(page.locator("#gateway-gutter button")).toHaveCount(0);
     await page.locator("#gateway-files-toggle").click();
-    await expect(page.locator("#gateway-save")).toBeDisabled();
+    await expect(page.locator("#gateway-save")).toBeEnabled();
     expect([...api.counts.keys()].some((path) => path.startsWith("/api/simulator"))).toBe(false);
   });
 
@@ -3497,7 +3700,7 @@ test("Gateways rejects malformed analysis and failed saves without retrying or r
   await page.getByRole("button", { name: "File..." }).click();
   await expect(page.locator("#gateway-save")).toBeEnabled();
   expect(api.counts.get("/api/gateways/configs/public-egress/revisions")).toBe(1);
-  expect(api.counts.get("/api/gateways/config/check")).toBe(2);
+  expect(api.counts.get("/api/gateways/config/check")).toBe(3);
 });
 
 test("shared source layout synchronizes overlay and both gutter modes and disposes scroll and resize wiring", async ({ page, appURL }) => {
@@ -6863,7 +7066,7 @@ test("Gateways edits multiple gateway drafts with the policy editor paradigm wit
   await source.fill((await source.inputValue()).replace(",,", ","));
   await expect(analyze).not.toHaveAttribute("data-analysis-state", /.+/);
   await page.getByRole("button", { name: "File..." }).click();
-  await expect(page.getByRole("menuitem", { name: "Save", exact: true })).toBeDisabled();
+  await expect(page.getByRole("menuitem", { name: "Save", exact: true })).toBeEnabled();
   await page.keyboard.press("Escape");
   await analyze.click();
   await expect(analyze).toHaveAttribute("data-analysis-state", "success");
@@ -6921,10 +7124,10 @@ test("Gateway form and raw editors share one draft, preserve fields, and save on
   await expect(page.getByRole("region", { name: "Gateway draft form" })).toBeVisible();
   expect(await source.inputValue()).toBe(original);
   await expect(page.locator("#gateway-form-identity")).toContainText("egress.svc.zpr");
-  await page.getByRole("textbox", { name: "Destination 1 HTTPS origin", exact: true }).fill("https://api.example.com");
-  await page.getByRole("textbox", { name: "Destination 1 path prefixes", exact: true }).fill("/v1/\n/health");
+  await page.getByRole("textbox", { name: "Base URL for destination 1", exact: true }).fill("https://api.example.com");
+  await page.getByRole("textbox", { name: "Paths for destination 1", exact: true }).fill("/v1/\n/health");
   await page.getByRole("button", { name: "Add destination", exact: true }).click();
-  await page.getByRole("textbox", { name: "Destination 2 HTTPS origin", exact: true }).fill("https://other.example.com");
+  await page.getByRole("textbox", { name: "Base URL for destination 2", exact: true }).fill("https://other.example.com");
   await page.getByRole("checkbox", { name: "HEAD", exact: true }).uncheck();
   await page.getByRole("spinbutton", { name: "Timeout (milliseconds)", exact: true }).fill("9000");
   await page.getByRole("spinbutton", { name: "Maximum response size (bytes)", exact: true }).fill("1024");
@@ -6941,14 +7144,12 @@ test("Gateway form and raw editors share one draft, preserve fields, and save on
   await page.getByRole("button", { name: "Form editor", exact: true }).click();
   await page.locator("#gateway-analyze").click();
   await expect(page.locator("#gateway-analyze")).toHaveAttribute("data-analysis-state", "success");
-  await page.getByRole("textbox", { name: "Destination 1 HTTPS origin", exact: true }).fill("https://changed.example.com");
+  await page.getByRole("textbox", { name: "Base URL for destination 1", exact: true }).fill("https://changed.example.com");
   await expect(page.locator("#gateway-analyze")).not.toHaveAttribute("data-analysis-state", /.+/);
   await page.locator("#gateway-files-toggle").click();
-  await expect(page.locator("#gateway-save")).toBeDisabled();
+  await expect(page.locator("#gateway-save")).toBeEnabled();
   await page.keyboard.press("Escape");
-  await page.locator("#gateway-analyze").click();
-  await expect(page.locator("#gateway-analyze")).toHaveAttribute("data-analysis-state", "success");
-  const origin = page.getByRole("textbox", { name: "Destination 1 HTTPS origin", exact: true });
+  const origin = page.getByRole("textbox", { name: "Base URL for destination 1", exact: true });
   await origin.focus();
   await page.keyboard.press("Control+s");
   await expect(page.locator("#gateway-draft-message")).toContainText("Saved draft revision 1");
@@ -6956,6 +7157,81 @@ test("Gateway form and raw editors share one draft, preserve fields, and save on
   expect(saves[0].expected_revision).toBe(0);
   expect(saves[0].config).toEqual(checks.at(-1));
   await expect(page.getByRole("button", { name: "Activate", exact: true })).toHaveCount(0);
+});
+
+test("Gateway form uses simple unboxed destination rows with editable Paths and Remove", async ({ page, appURL, api }) => {
+  const contract = { organization_id: "alpha", instance_id: "egress", adapter_cn: "egress", service_name: "egress.svc.zpr" };
+  api.handlers.set("/api/gateways/contracts", route => route.fulfill({ json: { contracts: [contract] } }));
+  api.handlers.set("/api/gateways/configs", route => route.fulfill({ json: { configs: [] } }));
+  await page.goto(`${appURL}/#gateways`);
+  const source = page.locator("#gateway-source");
+  await expect(source).toHaveValue(/"instance_id":/);
+  await page.getByRole("button", { name: "Form editor", exact: true }).click();
+  const add = page.getByRole("button", { name: "Add destination", exact: true });
+  await expect(add).toHaveText("Add Destination");
+  await expect(add).toBeInViewport();
+  expect((await add.boundingBox()).y).toBeLessThan((await page.locator(".gateway-form-destination").boundingBox()).y);
+  await add.click();
+  await expect(page.locator(".gateway-form-destination")).toHaveCount(2);
+  await expect(page.getByRole("heading", { name: "Destinations Allowed", exact: true })).toBeVisible();
+  await expect(page.locator("#gateway-form")).not.toContainText("Use exact");
+  await expect(page.locator("#gateway-form")).not.toContainText("Within each");
+  await expect(page.locator(".gateway-form-destination legend")).toHaveCount(0);
+  await expect(page.getByRole("button", { name: "Add", exact: true })).toHaveCount(0);
+  const row = page.locator(".gateway-form-destination").nth(1);
+  expect(await row.evaluate(element => element.tagName)).toBe("DIV");
+  await expect(row).toHaveCSS("border-top-style", "none");
+  expect(await row.locator("label").allTextContents()).toEqual(["Base URL", "Paths"]);
+  const prefixes = page.getByRole("textbox", { name: "Paths for destination 2", exact: true });
+  const remove = page.getByRole("button", { name: "Remove destination 2", exact: true });
+  await prefixes.fill("/\n/health");
+  expect(JSON.parse(await source.inputValue()).destinations[1].path_prefixes).toEqual(["/", "/health"]);
+  await remove.click();
+  await expect(page.locator(".gateway-form-destination")).toHaveCount(1);
+  expect(JSON.parse(await source.inputValue()).destinations).toHaveLength(1);
+  await add.click();
+  for (let index = 0; index < 5; index++) await add.click();
+  await page.getByRole("button", { name: "Remove destination 7", exact: true }).scrollIntoViewIfNeeded();
+  await expect(add).toBeInViewport();
+});
+
+test("Gateway form supports seven draft methods through Raw Analyze and Save without enabling extras by default", async ({ page, appURL, api }) => {
+  const contract = { organization_id: "alpha", instance_id: "egress", adapter_cn: "egress", service_name: "egress.svc.zpr" };
+  api.handlers.set("/api/gateways/contracts", route => route.fulfill({ json: { contracts: [contract] } }));
+  api.handlers.set("/api/gateways/configs", route => route.fulfill({ json: { configs: [] } }));
+  let checked;
+  let saved;
+  api.handlers.set("/api/gateways/config/check", route => {
+    checked = route.request().postDataJSON().config;
+    return route.fulfill({ json: { valid: true, diagnostics: "Valid draft; runtime unchanged." } });
+  });
+  api.handlers.set("/api/gateways/configs/egress/revisions", route => {
+    saved = route.request().postDataJSON().config;
+    return route.fulfill({ json: { instance_id: "egress", current_revision: 1, revisions: [{ revision: 1, config: saved }] } });
+  });
+  await page.goto(`${appURL}/#gateways`);
+  const source = page.locator("#gateway-source");
+  await expect(source).toHaveValue(/"instance_id":/);
+  expect(JSON.parse(await source.inputValue()).methods).toEqual(["GET", "HEAD"]);
+  await page.getByRole("button", { name: "Form editor", exact: true }).click();
+  const methods = ["GET", "HEAD", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"];
+  for (const method of methods.slice(2)) {
+    const checkbox = page.getByRole("checkbox", { name: method, exact: true });
+    await expect(checkbox).not.toBeChecked();
+    await checkbox.check();
+  }
+  expect(JSON.parse(await source.inputValue()).methods).toEqual(methods);
+  await page.getByRole("button", { name: "Raw JSON editor", exact: true }).click();
+  await page.getByRole("button", { name: "Form editor", exact: true }).click();
+  for (const method of methods) await expect(page.getByRole("checkbox", { name: method, exact: true })).toBeChecked();
+  await page.locator("#gateway-files-toggle").click();
+  await page.locator("#gateway-save").click();
+  await expect(page.locator("#gateway-draft-message")).toContainText("Saved draft revision 1");
+  expect(checked.methods).toEqual(methods);
+  expect(saved.methods).toEqual(methods);
+  await page.getByRole("checkbox", { name: "POST", exact: true }).uncheck();
+  expect(JSON.parse(await source.inputValue()).methods).toEqual(methods.filter(method => method !== "POST"));
+  await expect(page.locator("#gateway-analyze")).not.toHaveAttribute("data-analysis-state", /.+/);
 });
 
 test("Gateway form rejects incompatible raw drafts and incomplete numbers without overwriting source", async ({ page, appURL, api }) => {
@@ -6969,7 +7245,7 @@ test("Gateway form rejects incompatible raw drafts and incomplete numbers withou
   const source = page.locator("#gateway-source");
   await expect(source).toHaveValue(/"instance_id":/);
   const original = await source.inputValue();
-  for (const invalid of ["{broken", JSON.stringify({ ...JSON.parse(original), methods: ["POST"] })]) {
+  for (const invalid of ["{broken", JSON.stringify({ ...JSON.parse(original), methods: ["TRACE"] })]) {
     await source.fill(invalid);
     await page.getByRole("button", { name: "Form editor", exact: true }).click();
     await expect(page.locator("#gateway-draft-message")).toContainText("Cannot open form editor");
@@ -6994,6 +7270,72 @@ test("Gateway form rejects incompatible raw drafts and incomplete numbers withou
   await page.locator("#gateway-analyze").click();
   await expect(page.locator("#gateway-gutter .policy-test-line-result")).toHaveCount(1);
   await expect(page.locator("#gateway-draft-message")).toBeHidden();
+});
+
+test("Gateway Save analyzes first and never writes invalid or superseded raw drafts", async ({ page, appURL, api }) => {
+  const contract = { organization_id: "alpha", instance_id: "egress", adapter_cn: "egress", service_name: "egress.svc.zpr" };
+  api.handlers.set("/api/gateways/contracts", route => route.fulfill({ json: { contracts: [contract] } }));
+  api.handlers.set("/api/gateways/configs", route => route.fulfill({ json: { configs: [] } }));
+  let checkCount = 0;
+  let saveCount = 0;
+  let complete;
+  let delayed = false;
+  let unavailable = false;
+  api.handlers.set("/api/gateways/config/check", async route => {
+    checkCount++;
+    if (unavailable) return route.fulfill({ status: 503, json: { error: "Gateway analysis unavailable" } });
+    if (delayed) await new Promise(resolve => { complete = resolve; });
+    const config = route.request().postDataJSON().config;
+    const valid = Boolean(config.destinations[0].origin);
+    await route.fulfill({ status: valid ? 200 : 422, json: {
+      valid, diagnostics: valid ? "Valid draft" : "destination requires HTTPS origin", source_line: valid ? undefined : 10,
+    } });
+  });
+  api.handlers.set("/api/gateways/configs/egress/revisions", route => {
+    saveCount++;
+    return route.fulfill({ json: { instance_id: "egress", current_revision: 1, revisions: [] } });
+  });
+  await page.goto(`${appURL}/#gateways`);
+  const source = page.locator("#gateway-source");
+  await expect(source).toHaveValue(/"instance_id":/);
+  const original = await source.inputValue();
+  await source.fill("{broken");
+  await page.locator("#gateway-files-toggle").click();
+  await page.locator("#gateway-save").click();
+  await expect(page.locator("#gateway-analyze")).toHaveAttribute("data-analysis-state", "error");
+  expect(checkCount).toBe(0);
+  expect(saveCount).toBe(0);
+  await expect(page.locator("#gateway-gutter .policy-test-line-result")).toHaveCount(1);
+  await source.fill(original + "\n");
+  await source.focus();
+  await page.keyboard.press("Control+s");
+  await expect.poll(() => checkCount).toBe(1);
+  await expect(page.locator("#gateway-analyze")).toHaveAttribute("data-analysis-state", "error");
+  expect(saveCount).toBe(0);
+  await expect(page.locator("#gateway-draft-message")).toBeHidden();
+  const valid = original.replace('"origin": ""', '"origin": "https://api.example.com"');
+  await source.fill(valid);
+  unavailable = true;
+  await source.focus();
+  await page.keyboard.press("Control+s");
+  await expect(page.locator("#gateway-draft-message")).toContainText("Gateway analysis unavailable");
+  expect(saveCount).toBe(0);
+  await expect(source).toHaveValue(valid);
+  unavailable = false;
+  delayed = true;
+  await source.focus();
+  await page.keyboard.press("Control+s");
+  await expect.poll(() => Boolean(complete)).toBe(true);
+  await source.fill(valid + "\n");
+  complete();
+  await expect(page.locator("#gateway-analyze")).toBeEnabled();
+  expect(saveCount).toBe(0);
+  delayed = false;
+  await source.focus();
+  await page.keyboard.press("Control+s");
+  await expect(page.locator("#gateway-draft-message")).toContainText("Saved draft revision 1");
+  expect(saveCount).toBe(1);
+  expect(checkCount).toBe(4);
 });
 
 test("Gateway raw editor keeps destination form controls separate without runtime activation", async ({ page, appURL, api }) => {

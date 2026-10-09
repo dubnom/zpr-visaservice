@@ -330,7 +330,7 @@ func main() {
 			log.Fatal(err)
 		}
 	case "web-gateway-service":
-		if err := runSimulatorWebGatewayService(*listen, *logWorkload, strings.Split(*gatewayAllowedHosts, ",")); err != nil {
+		if err := runInternetWebGatewayService(*listen, *logWorkload, strings.Split(*gatewayAllowedHosts, ",")); err != nil {
 			log.Fatal(err)
 		}
 	case "test-client":

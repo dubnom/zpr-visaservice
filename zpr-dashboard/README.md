@@ -2062,6 +2062,15 @@ The former Agents page redirects to Workers at `/machine-logs.html`, and the
 navigation has one Workers entry rather than separate Agents and Workload Logs.
 Word wrap is initially disabled and can be enabled in editors and log viewers.
 
+All six source editors register a shared `editor-page.js` controller with
+explicit load/save/render adapters and Analyze adapters where supported.
+Scenario form/raw modes share one controller; Assertions reuse Policy's
+File/History controls without duplicating their listeners. Controllers own
+identity/status, scoped analysis ownership, command and Save-shortcut bindings,
+and responsive source-frame setup. Domain-specific service contracts,
+cancellation, diagnostics, confirmations and mutation handling remain separate.
+Disposal invalidates requests, removes owned listeners and releases layout
+observers; obsolete request cleanup cannot release a newer operation.
 All six source editors share Ctrl+S / Cmd+S handling through `editor-page.js`.
 Their title rows also use its shared identity renderer for Untitled, safe title
 text, path tooltips, and Modified visibility. Each editor retains its own dirty
@@ -2132,13 +2141,15 @@ replacement forms. Only the newest Analyze may update status; closing and
 reopening the editor cannot resurrect an old response. Raw Scenario checks
 also include the viewed revision and editor open state. These adapters retain
 Simulator-only endpoints and do not change Save, Publish or Run contracts.
-Shared Policy/Config viewport sizing returns an idempotent binding per source
+Shared viewport sizing across all six editors returns an idempotent binding per source
 container. Its `schedule()` coalesces layout requests into one animation frame
 and skips hidden containers; `dispose()` cancels queued work, disconnects the
 resize observer, removes window listeners and restores the original inline
 height and priority. A disposed container may be bound again. The existing
 viewport inset and minimum-height rules are unchanged; the binding has no
-service or editor-domain dependencies.
+service or editor-domain dependencies. Controllers reschedule when frames open,
+mode changes alter visibility or the viewport resizes; maximized frames use
+their full-page sizing instead. Scenario and Directory remain nonmodal pages.
 The shared editor-page foundation supplies Maximize/Restore to Policy,
 Assertions, Config, Gateways, Scenario, and Directory editors. It fills the
 viewport, keeps focus within non-modal editor pages, and locks background

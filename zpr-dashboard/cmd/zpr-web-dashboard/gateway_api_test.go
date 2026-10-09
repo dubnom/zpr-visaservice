@@ -54,6 +54,45 @@ func TestGatewayConfigCheckBindsDraftToInstalledContractWithoutApplying(t *testi
 	}
 }
 
+func TestGatewayDraftAPIAnalyzesAndSavesExpandedMethods(t *testing.T) {
+	snapshotData := snapshot{
+		APIStatus: "connected",
+		Actors:    []actor{{CN: "gateway-public-egress"}},
+		Services:  []service{{Name: "public-egress.svc.zpr", ActorCN: "gateway-public-egress", Kind: "Gateway"}},
+	}
+	store, err := newGatewayConfigStore(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	handler := newGatewayAPI("northstar", func(context.Context) (snapshot, error) { return snapshotData, nil }, store)
+	methods := []string{"GET", "HEAD", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"}
+	config := gatewayInstanceConfigJSON(t, map[string]any{"methods": methods})
+	checked := gatewayAPIRequest(handler, http.MethodPost, "/api/gateways/config/check", gatewayConfigCheckBody(t, config))
+	if checked.Code != http.StatusOK {
+		t.Fatalf("check status=%d body=%s", checked.Code, checked.Body)
+	}
+	saved := gatewayAPIRequest(handler, http.MethodPost, "/api/gateways/configs/public-egress/revisions", gatewayConfigSaveBody(t, 0, config))
+	if saved.Code != http.StatusOK {
+		t.Fatalf("save status=%d body=%s", saved.Code, saved.Body)
+	}
+	listed := gatewayAPIRequest(handler, http.MethodGet, "/api/gateways/configs/public-egress", nil)
+	if listed.Code != http.StatusOK || !strings.Contains(listed.Body.String(), `"methods":["GET","HEAD","POST","PUT","PATCH","DELETE","OPTIONS"]`) {
+		t.Fatalf("stored methods status=%d body=%s", listed.Code, listed.Body)
+	}
+	for _, invalid := range [][]string{{"TRACE"}, {"CONNECT"}, {"POST", "POST"}, {}} {
+		config = gatewayInstanceConfigJSON(t, map[string]any{"methods": invalid})
+		for path, body := range map[string][]byte{
+			"/api/gateways/config/check":                    gatewayConfigCheckBody(t, config),
+			"/api/gateways/configs/public-egress/revisions": gatewayConfigSaveBody(t, 1, config),
+		} {
+			response := gatewayAPIRequest(handler, http.MethodPost, path, body)
+			if response.Code != http.StatusUnprocessableEntity {
+				t.Fatalf("invalid methods %v path=%s status=%d body=%s", invalid, path, response.Code, response.Body)
+			}
+		}
+	}
+}
+
 func TestGatewayConfigCheckReportsExactSourceLine(t *testing.T) {
 	snapshotData := snapshot{
 		APIStatus: "connected",

@@ -166,6 +166,8 @@
 
   // Policy-style button menu (File...): toggle button + role=menu popover, Escape and outside click close it.
   function createMenu({ root, toggle, menu }) {
+    const listeners = new AbortController();
+    const options = { signal: listeners.signal };
     const availableItems = () => [...menu.querySelectorAll("button:not(:disabled)")]
       .filter((button) => button.getClientRects().length > 0);
     function setOpen(open, restoreFocus = false) {
@@ -174,8 +176,8 @@
       if (open) availableItems()[0]?.focus();
       else if (restoreFocus) toggle.focus();
     }
-    toggle.addEventListener("click", () => setOpen(menu.hidden));
-    menu.addEventListener("click", (event) => { if (event.target.closest("button:not(:disabled)")) setOpen(false); });
+    toggle.addEventListener("click", () => setOpen(menu.hidden), options);
+    menu.addEventListener("click", (event) => { if (event.target.closest("button:not(:disabled)")) setOpen(false); }, options);
     menu.addEventListener("keydown", (event) => {
       if (!["ArrowDown", "ArrowUp", "Home", "End"].includes(event.key)) return;
       const items = availableItems();
@@ -184,12 +186,12 @@
       const current = items.indexOf(document.activeElement);
       const next = event.key === "Home" ? 0 : event.key === "End" ? items.length - 1 : (current + (event.key === "ArrowDown" ? 1 : -1) + items.length) % items.length;
       items[next].focus();
-    });
-    document.addEventListener("pointerdown", (event) => { if (!menu.hidden && !root.contains(event.target)) setOpen(false); });
+    }, options);
+    document.addEventListener("pointerdown", (event) => { if (!menu.hidden && !root.contains(event.target)) setOpen(false); }, options);
     document.addEventListener("keydown", (event) => {
       if (event.key === "Escape" && !menu.hidden) { event.preventDefault(); setOpen(false, true); }
-    });
-    return { setOpen, get open() { return !menu.hidden; } };
+    }, options);
+    return { setOpen, get open() { return !menu.hidden; }, dispose() { setOpen(false); listeners.abort(); } };
   }
 
   // Policy-style Browse... picker pane.
@@ -218,16 +220,18 @@
   }
 
   function createHistory({ menu, list, count, isAvailable }) {
+    const listeners = new AbortController();
+    const options = { signal: listeners.signal };
     placeHistory(menu);
     const summary = menu.querySelector("summary");
-    summary.addEventListener("click", (event) => { if (!isAvailable()) event.preventDefault(); });
-    document.addEventListener("pointerdown", (event) => { if (menu.open && !menu.contains(event.target)) menu.open = false; });
+    summary.addEventListener("click", (event) => { if (!isAvailable()) event.preventDefault(); }, options);
+    document.addEventListener("pointerdown", (event) => { if (menu.open && !menu.contains(event.target)) menu.open = false; }, options);
     document.addEventListener("keydown", (event) => {
       if (event.key !== "Escape" || !menu.open) return;
       event.preventDefault();
       menu.open = false;
       summary.focus();
-    });
+    }, options);
     function render(revisions, { current, onSelect, title, detail, meta } = {}) {
       count.textContent = isAvailable() ? `${revisions.length} version${revisions.length === 1 ? "" : "s"}` : "—";
       list.replaceChildren();
@@ -252,11 +256,11 @@
         const small = document.createElement("small");
         small.textContent = meta ? meta(revision) : "";
         button.append(strong, span, small);
-        button.addEventListener("click", () => { menu.open = false; onSelect?.(revision); });
+        button.addEventListener("click", () => { menu.open = false; onSelect?.(revision); }, options);
         list.append(button);
       }
     }
-    return { render, close() { menu.open = false; } };
+    return { render, close() { menu.open = false; }, dispose() { menu.open = false; listeners.abort(); } };
   }
 
   function isNamed(name) {
@@ -304,6 +308,103 @@
     return () => root.removeEventListener("keydown", onKeydown);
   }
 
+  const editorControllers = new WeakMap();
+
+  function createController({ source, root = source.closest(".policy-page"), readContext = () => [source.value],
+    isDirty = () => false, identity, status, statusInFrame = true, menu, history, viewport = source.closest(".config-source-editor"),
+    analyzeButton = root.querySelector('[id$="-analyze"], #policy-check, #zpr-config-validate'),
+    adapters = {}, syncControls = () => {} }) {
+    if (editorControllers.has(source)) throw new Error(`Editor already registered: ${source.id}`);
+    const scopes = new Map();
+    const active = new Map();
+    const cleanups = [];
+    let disposed = false;
+    if (status && statusInFrame) placeStatus(status);
+    const files = menu ? createMenu(menu) : null;
+    const versions = history ? createHistory(history) : null;
+    if (files) cleanups.push(files.dispose);
+    if (versions) cleanups.push(versions.dispose);
+    const layout = viewport ? fitSourceToViewport(viewport) : null;
+    if (layout) {
+      root.dataset.editorViewport = "true";
+      viewport.dataset.editorSourceViewport = "true";
+      const observer = new MutationObserver(layout.schedule);
+      observer.observe(root, { attributes: true, attributeFilter: ["open", "hidden", "class"], subtree: true });
+      root.addEventListener("toggle", layout.schedule, true);
+      cleanups.push(() => { observer.disconnect(); root.removeEventListener("toggle", layout.schedule, true); layout.dispose(); });
+    }
+    const controller = {
+      files,
+      history: versions,
+      get dirty() { return isDirty(); },
+      get pending() { return active.size > 0; },
+      renderIdentity(value, elements = identity) {
+        if (!elements) throw new Error(`Editor identity not configured: ${source.id}`);
+        renderIdentity(elements, { ...value, dirty: value?.dirty ?? isDirty() });
+      },
+      setStatus(text = "", kind = "") {
+        if (!status) throw new Error(`Editor status not configured: ${source.id}`);
+        setStatus(status, text, kind);
+      },
+      setAnalysisState(state = "") {
+        if (!analyzeButton) throw new Error(`Editor has no Analyze action: ${source.id}`);
+        setAnalysisState(analyzeButton, state);
+      },
+      confirmDiscard(message, dirty = isDirty()) { return confirmDiscard(dirty, message); },
+      createScope(name, context = readContext) {
+        if (scopes.has(name)) return scopes.get(name);
+        const scope = createAnalysisScope(context);
+        const registered = {
+          begin() {
+            active.delete(name);
+            return scope.begin();
+          },
+          invalidate() {
+            scope.invalidate();
+            if (active.delete(name) && !active.size && analyzeButton.dataset.analysisState === "pending") controller.setAnalysisState();
+          },
+        };
+        scopes.set(name, registered);
+        return registered;
+      },
+      beginAnalysis(name = "analyze") {
+        if (disposed) throw new Error(`Editor is disposed: ${source.id}`);
+        const isCurrent = controller.createScope(name).begin();
+        active.set(name, isCurrent);
+        controller.setAnalysisState("pending");
+        isCurrent.finish = () => {
+          if (active.get(name) !== isCurrent) return;
+          active.delete(name);
+          if (!active.size && analyzeButton.dataset.analysisState === "pending") controller.setAnalysisState();
+          syncControls();
+        };
+        return isCurrent;
+      },
+      perform(command, ...args) {
+        if (disposed) throw new Error(`Editor is disposed: ${source.id}`);
+        if (typeof adapters[command] !== "function") throw new Error(`Editor command not configured: ${command}`);
+        return adapters[command](...args);
+      },
+      bind(command, { button, shortcutRoot, onError = error => controller.setStatus(error.message, "error") }) {
+        const click = () => {
+          Promise.resolve().then(() => controller.perform(command)).catch(onError);
+        };
+        button.addEventListener("click", click);
+        cleanups.push(() => button.removeEventListener("click", click));
+        if (shortcutRoot) cleanups.push(bindSaveShortcut({ root: shortcutRoot, button }));
+      },
+      dispose() {
+        if (disposed) return;
+        disposed = true;
+        for (const scope of scopes.values()) scope.invalidate();
+        for (const cleanup of cleanups) cleanup();
+        editorControllers.delete(source);
+      },
+    };
+    editorControllers.set(source, controller);
+    return controller;
+  }
+
   const viewportBindings = new WeakMap();
 
   function fitSourceToViewport(container) {
@@ -318,7 +419,7 @@
       if (disposed || animationFrame !== null) return;
       animationFrame = requestAnimationFrame(() => {
         animationFrame = null;
-        if (!container.getClientRects().length) return;
+        if (!container.getClientRects().length || frame.closest(".editor-page-maximized")) return;
         const top = container.getBoundingClientRect().top + window.scrollY;
         const main = container.closest(".main-content");
         const pane = container.closest(".policy-editor-pane, .editor-assistant-main") || container.closest(".editor-page-main");
@@ -488,5 +589,5 @@
     if (kind) element.dataset.state = kind; else delete element.dataset.state;
   }
 
-  window.ZPREditorPage = { highlight, sourceLine, placeStatus, requestJSON, createAnalysisScope, bindSourceLayout, createSourceSurface, createMenu, createPicker, createHistory, placeHistory, isNamed, confirmDiscard, setAnalysisState, bindSaveShortcut, fitSourceToViewport, renderIdentity, setStatus };
+  window.ZPREditorPage = { highlight, sourceLine, placeStatus, requestJSON, createAnalysisScope, createController, getController: source => editorControllers.get(source), bindSourceLayout, createSourceSurface, createMenu, createPicker, createHistory, placeHistory, isNamed, confirmDiscard, setAnalysisState, bindSaveShortcut, fitSourceToViewport, renderIdentity, setStatus };
 })();

@@ -12,10 +12,90 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 )
 
+func TestWebGatewayForwardsSevenMethodsAndBodiesOverHTTPAndHTTPS(t *testing.T) {
+	for _, secure := range []bool{false, true} {
+		t.Run(fmt.Sprintf("HTTPS=%t", secure), func(t *testing.T) {
+			upstreamHandler := http.HandlerFunc(func(w http.ResponseWriter, request *http.Request) {
+				body, err := io.ReadAll(request.Body)
+				if err != nil || string(body) != "request payload" || request.URL.RequestURI() != "/api/item?q=1" || request.Header.Get("Content-Type") != "text/plain" {
+					t.Errorf("upstream method=%s URL=%s body=%q err=%v", request.Method, request.URL, body, err)
+				}
+				if request.Header.Get("Proxy-Authorization") != "" {
+					t.Error("proxy credentials leaked to upstream")
+				}
+				w.Header().Set("X-Upstream-Method", request.Method)
+				w.WriteHeader(http.StatusCreated)
+				_, _ = io.WriteString(w, "response payload")
+			})
+			var upstream *httptest.Server
+			if secure {
+				upstream = httptest.NewTLSServer(upstreamHandler)
+			} else {
+				upstream = httptest.NewServer(upstreamHandler)
+			}
+			defer upstream.Close()
+			gateway, err := newInternetWebGateway([]string{"example.com"})
+			if err != nil {
+				t.Fatal(err)
+			}
+			defer gateway.transport.CloseIdleConnections()
+			dial := func(ctx context.Context, network, address string) (net.Conn, error) {
+				want := "example.com:80"
+				if secure {
+					want = "example.com:443"
+				}
+				if address != want {
+					return nil, fmt.Errorf("unexpected destination %q", address)
+				}
+				return (&net.Dialer{}).DialContext(ctx, network, upstream.Listener.Addr().String())
+			}
+			gateway.dial = dial
+			gateway.transport.DialContext = dial
+			proxy := httptest.NewServer(gateway)
+			defer proxy.Close()
+			proxyRequest := httptest.NewRequest(http.MethodGet, proxy.URL, nil)
+			transport := &http.Transport{Proxy: http.ProxyURL(proxyRequest.URL)}
+			if secure {
+				transport.TLSClientConfig = upstream.Client().Transport.(*http.Transport).TLSClientConfig.Clone()
+			}
+			defer transport.CloseIdleConnections()
+			client := &http.Client{Transport: transport, Timeout: 5 * time.Second}
+			scheme := "http"
+			if secure {
+				scheme = "https"
+			}
+			for _, method := range []string{"GET", "HEAD", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"} {
+				request, err := http.NewRequest(method, scheme+"://example.com/api/item?q=1", strings.NewReader("request payload"))
+				if err != nil {
+					t.Fatal(err)
+				}
+				request.Header.Set("Content-Type", "text/plain")
+				if !secure {
+					request.Header.Set("Proxy-Authorization", "local-proxy-credential")
+				}
+				response, err := client.Do(request)
+				if err != nil {
+					t.Fatalf("%s forwarding failed: %v", method, err)
+				}
+				body, err := io.ReadAll(response.Body)
+				response.Body.Close()
+				want := "response payload"
+				if method == http.MethodHead {
+					want = ""
+				}
+				if err != nil || response.StatusCode != http.StatusCreated || response.Header.Get("X-Upstream-Method") != method || string(body) != want {
+					t.Fatalf("%s response=%d body=%q err=%v", method, response.StatusCode, body, err)
+				}
+			}
+		})
+	}
+}
+
 func TestSimulatorWebGatewayForwardsAllowlistedHTTP(t *testing.T) {
-	gateway, err := newSimulatorWebGateway([]string{"*.google.com"})
+	gateway, err := newInternetWebGateway([]string{"*.google.com"})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -42,7 +122,7 @@ func TestSimulatorWebGatewayForwardsAllowlistedHTTP(t *testing.T) {
 }
 
 func TestSimulatorWebGatewayRejectsUnlistedHostsAndPorts(t *testing.T) {
-	gateway, err := newSimulatorWebGateway([]string{"*.google.com"})
+	gateway, err := newInternetWebGateway([]string{"*.google.com"})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -67,7 +147,7 @@ func TestSimulatorWebGatewayRejectsUnlistedHostsAndPorts(t *testing.T) {
 }
 
 func TestSimulatorWebGatewayHostPatternsAndAddressSafety(t *testing.T) {
-	gateway, err := newSimulatorWebGateway([]string{"*.google.com"})
+	gateway, err := newInternetWebGateway([]string{"*.google.com"})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -112,14 +192,14 @@ func TestSimulatorWebGatewayRejectsInvalidAllowlist(t *testing.T) {
 		{"127.0.0.1"},
 		{"google.*.com"},
 	} {
-		if _, err := newSimulatorWebGateway(hosts); err == nil {
-			t.Errorf("newSimulatorWebGateway(%v) unexpectedly succeeded", hosts)
+		if _, err := newInternetWebGateway(hosts); err == nil {
+			t.Errorf("newInternetWebGateway(%v) unexpectedly succeeded", hosts)
 		}
 	}
 }
 
 func TestSimulatorWebGatewayRejectsUnlistedConnectWithoutDial(t *testing.T) {
-	gateway, err := newSimulatorWebGateway([]string{"*.google.com"})
+	gateway, err := newInternetWebGateway([]string{"*.google.com"})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -138,7 +218,7 @@ func TestSimulatorWebGatewayRejectsUnlistedConnectWithoutDial(t *testing.T) {
 }
 
 func TestSimulatorWebGatewayEstablishesAllowedConnectTunnel(t *testing.T) {
-	gateway, err := newSimulatorWebGateway([]string{"*.google.com"})
+	gateway, err := newInternetWebGateway([]string{"*.google.com"})
 	if err != nil {
 		t.Fatal(err)
 	}

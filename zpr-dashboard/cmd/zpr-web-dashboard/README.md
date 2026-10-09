@@ -463,14 +463,48 @@ saves, opens, downloads or discards a draft; **Analyze** validates the exact
 source through `POST /api/gateways/config/check` (local JSON syntax errors get a
 gutter marker); **Format** pretty-prints valid JSON; **History** reloads an earlier
 revision; Find & Replace matches the other editors. Save draft (or Ctrl/⌘-S) is
-enabled only after the unchanged source has been analyzed as valid, and creates
+enabled for new or modified, nonempty drafts. Save automatically runs Analyze and
+stops on validation errors or superseded source/context; a valid result creates
 a new revision via `POST /api/gateways/configs/{id}/revisions`. Gateway identity
 fields come from the installed contract. Saving never activates the runtime
 gateway. The editor uses Control Room APIs only and does not depend on Simulator.
 
 Gateways opens in the raw JSON editor. **Form editor** switches to a separate
-structured view for HTTPS origins, one path prefix per line, GET/HEAD methods,
+structured view for HTTPS origins, one path prefix per line, GET, HEAD, POST,
+PUT, PATCH, DELETE and OPTIONS methods,
 timeout and response limits; installed identity fields are read-only.
+**Add Destination** stays above the **Destinations Allowed** list. Each unboxed
+row contains **Base URL**, **Paths**, and **Remove**. Enter one path prefix per
+line in Paths; Remove deletes the whole destination and its prefixes from the draft.
+Save stores the edited draft only and does not alter runtime filtering.
+New drafts still default to GET and HEAD. TRACE, CONNECT, duplicate methods
+and empty method lists are rejected by Analyze/Save. Additional method choices
+are draft settings only; Save does not configure either forwarding handler.
+The fixed-upstream `gateway-service` forwards all seven methods on `/fetch`
+and `/fetch/...`, including request bodies up to 2 MiB (larger requests get
+HTTP 413 before contacting the upstream). `/health` remains GET/HEAD-only.
+It forwards content/accept, conditional-request and idempotency headers, but
+does not forward caller credentials, cookies or proxy/hop-by-hop headers.
+Responses remain bounded to 2 MiB; redirects are returned rather than followed.
+The separate `web-gateway-service` already forwards methods and bodies over
+HTTP and HTTPS CONNECT tunnels, subject to its host/port allowlist. It does not
+read saved drafts or enforce their method selections; HTTPS tunnel contents
+are opaque to it.
+
+Both Internet-egress modes share the independent forwarding core in
+`gateway_forwarding.go`: hostname validation, method validation, redirect
+handling, hop-by-hop header removal, and response forwarding. The fixed-upstream
+mode deliberately uses selected headers and bounded responses; the web proxy
+preserves end-to-end headers and streams responses. CLI mode names and existing
+launch configuration remain compatible. The web proxy constructor consumes
+explicit host configuration, not Simulator profiles or APIs. Simulator callers
+may supply their configuration to it, but the forwarding core has no reverse
+dependency. The browser-access gateway remains a separate application proxy.
+
+Still pending: a shared deployed runtime configuration contract, reviewed
+activation/rollback, and migration of fixed-upstream callers before retiring
+that mode. Draft methods and paths cannot be enforced inside opaque CONNECT
+tunnels without a separate HTTPS inspection/termination design.
 **Raw JSON editor** returns to the source. Both views edit the same draft:
 switching alone preserves exact source formatting; form edits preserve other
 JSON fields and require fresh analysis. Unsupported JSON shapes or methods
@@ -491,9 +525,22 @@ Source errors never appear in the top status area. Click the standard **ERR**
 gutter marker to select the offending line and open its error details. Editing or switching
 drafts clears the marker; live contract/inventory errors have no invented line.
 
-The Policy editor is the blueprint for every source editor. Gateways, ZPR
-Config, the Simulator directory (LDIF) editor and the Simulator scenario editor
-are built on the shared `editor-page.js` core (`window.ZPREditorPage`), which
+The Policy editor is the blueprint for every source editor. Policy, Assertions,
+Gateways, ZPR Config, Simulator Directory (LDIF) and Simulator Scenario
+register one controller per source in `editor-page.js` (`window.ZPREditorPage`).
+Scenario form and raw modes use the same controller; Assertions share Policy's
+File/History chrome without registering duplicate menu listeners. Explicit
+load, analyze, save and render adapters preserve each domain's service contracts.
+Directory deliberately has no Analyze adapter.
+The controller owns command/Save-shortcut bindings, named analysis scopes,
+request-owned pending cleanup, identity/status and responsive source sizing.
+Domain adapters retain cancellation, diagnostic rendering, warning details,
+validation-before-save and publish/stage confirmations. Superseded cleanup
+cannot release a newer analysis; disposing removes owned bindings and menus.
+All six source viewports use the same bottom-inset/minimum-height calculation,
+reschedule after opening, mode switches and resize, and defer to the full-page
+Maximize layout while maximized. Small screens retain natural scrolling.
+The shared core also
 provides the identity row (name, History dropdown and modified dot), the **File…**
 menu, the history menu, syntax highlighting, the gutter and the status line.
 Editor pages have no kind label and no idle or "Select a…" placeholder text;

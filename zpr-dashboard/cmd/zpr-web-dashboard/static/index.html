@@ -14,9 +14,9 @@
     <link rel="stylesheet" href="/trusted-source.css?v=4">
     <link rel="stylesheet" href="/security-review.css?v=8">
     <link rel="stylesheet" href="/diagnostics.css?v=2">
-    <link rel="stylesheet" href="/gateways.css?v=7">
+    <link rel="stylesheet" href="/gateways.css?v=9">
     <link rel="stylesheet" href="/provisioning.css?v=3">
-    <link rel="stylesheet" href="/editor-assistant.css?v=6">
+    <link rel="stylesheet" href="/editor-assistant.css?v=7">
     <script src="/sidebar.js?v=39" defer></script>
 
     <script src="/policy-record-icons.js?v=1" defer></script>
@@ -408,12 +408,13 @@
                   <fieldset id="gateway-form-fields" disabled>
                     <legend>Gateway settings</legend>
                     <dl id="gateway-form-identity" class="gateway-form-identity"></dl>
-                    <h3>Destination allowlist</h3>
-                    <p>Use exact HTTPS origins on port 443, without credentials, paths, queries or fragments. Wildcard hosts are not supported. Enter one allowed path prefix per line; "/" allows every path at that origin.</p>
+                    <div class="gateway-form-destination-heading">
+                      <h3>Destinations Allowed</h3>
+                      <button id="gateway-form-add-destination" class="button" type="button" aria-label="Add destination">Add Destination</button>
+                    </div>
                     <div id="gateway-form-destinations"></div>
-                    <button id="gateway-form-add-destination" class="button" type="button">Add destination</button>
                     <div class="gateway-form-limits">
-                      <fieldset><legend>Allowed methods</legend><label><input id="gateway-form-get" type="checkbox"> GET</label><label><input id="gateway-form-head" type="checkbox"> HEAD</label></fieldset>
+                      <fieldset><legend>Allowed methods</legend><label><input id="gateway-form-get" type="checkbox"> GET</label><label><input id="gateway-form-head" type="checkbox"> HEAD</label><label><input id="gateway-form-post" type="checkbox"> POST</label><label><input id="gateway-form-put" type="checkbox"> PUT</label><label><input id="gateway-form-patch" type="checkbox"> PATCH</label><label><input id="gateway-form-delete" type="checkbox"> DELETE</label><label><input id="gateway-form-options" type="checkbox"> OPTIONS</label></fieldset>
                       <label>Timeout (milliseconds)<input id="gateway-form-timeout" type="number" min="100" max="30000" step="1"></label>
                       <label>Maximum response size (bytes)<input id="gateway-form-response-limit" type="number" min="1" step="1"></label>
                     </div>
@@ -571,14 +572,14 @@
     <script src="/safe-display.js?v=1" defer></script>
     <script src="/table-sort.js?v=1" defer></script>
     <script src="/trusted-source.js?v=8" defer></script>
-    <script src="/editor-page.js?v=15" defer></script>
+    <script src="/editor-page.js?v=16" defer></script>
     <script src="/assistant-core.js?v=1" defer></script>
-    <script src="/app.js?v=132" defer></script>
+    <script src="/app.js?v=133" defer></script>
     <script src="/log-format.js?v=1" defer></script>
     <script src="/machine-logs.js?v=23" defer></script>
-    <script src="/assertions.js?v=25" defer></script>
-    <script src="/config-editor.js?v=18" defer></script>
-    <script src="/gateways.js?v=18" defer></script>
+    <script src="/assertions.js?v=26" defer></script>
+    <script src="/config-editor.js?v=19" defer></script>
+    <script src="/gateways.js?v=24" defer></script>
     <script src="/provisioning-contract.js?v=2" defer></script>
     <script src="/provisioning.js?v=3" defer></script>
     <script src="/provisioning-registry.js?v=4" defer></script>

@@ -39,7 +39,10 @@ dialog.editor-page-maximized { width: 100vw; max-width: none; }
 #page-zpr-config .config-source-editor { position: relative; flex: 1; height: auto; min-height: 56vh; }
 #page-zpr-config .config-source-gutter { position: absolute; top: 0; bottom: 0; left: 0; width: 58px; }
 #page-zpr-config .config-code-surface { margin-left: 68px; }
-#policy-code-editor, #page-zpr-config .config-source-editor { flex: 0 0 auto; height: var(--editor-source-height, 56vh); min-height: 320px; }
+:is([data-editor-source-viewport="true"], #policy-code-editor, #assertion-editor, #page-zpr-config .config-source-editor) { flex: 0 0 auto; height: var(--editor-source-height, 56vh); min-height: 320px; }
+.editor-page-maximized :is([data-editor-source-viewport="true"], #policy-code-editor, #assertion-editor, #page-zpr-config .config-source-editor) { height: auto; min-height: 0; max-height: none; flex: 1 1 auto; }
+.editor-page-maximized .editor-assistant-main { display: flex; min-height: 0; flex-direction: column; }
+.editor-page-maximized .scenario-advanced[open] { display: flex; flex: 1; min-height: 0; flex-direction: column; }
 .editor-page .policy-identity input:not([hidden]) { width: min(270px, 40vw); min-width: 120px; min-height: 32px; padding: 5px 8px; border: 1px solid #aab9ad; border-radius: 2px; outline: none; background: white; color: var(--ink); font: 600 12px var(--sans); }
 .editor-page .policy-identity input:focus { border-color: #62856f; box-shadow: 0 0 0 2px #b5e34f42; }
 .editor-page .policy-identity input[hidden] { display: none; }

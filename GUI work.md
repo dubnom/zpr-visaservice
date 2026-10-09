@@ -282,14 +282,16 @@
 - [x] Recheck the operator session after protected API 401/403 responses and open sign-in when the session is expired; a still-valid session/permission denial or Visa Service outage does not trigger a login redirect.
 
 ### JavaScript reuse refactoring
-- [ ] Extract a shared editor controller for Policy, Assertions, ZPR Config, Gateways, Simulator Directory and Scenario, with explicit adapters for load, analyze, save and domain-specific rendering.
+- [x] Extract a shared editor controller for Policy, Assertions, ZPR Config, Gateways, Simulator Directory and Scenario, with explicit adapters for load, analyze, save and domain-specific rendering.
+  - [x] Register one controller per source; share Scenario form/raw ownership and retain Policy/Assertion's shared File/History chrome without duplicate listeners. Directory has no Analyze adapter.
+  - [x] Centralize command/Save-shortcut bindings, named request scopes, pending cleanup and disposable menu/History/viewport setup. Preserve independent production and Simulator contracts, domain cancellation, diagnostics, warnings and save/publish/stage confirmations.
   - [x] Share File menu interaction across all six editors: visible/enabled action focus, arrow/Home/End navigation, Escape focus restoration and outside-click dismissal.
-- [ ] Consolidate editor title/Untitled handling, reserved-name validation, History placement, dirty state, discard confirmation and Save keyboard shortcuts.
+- [x] Consolidate editor title/Untitled handling, reserved-name validation, History placement, dirty state, discard confirmation and Save keyboard shortcuts.
   - [x] Share Ctrl/Cmd+S handling across Policy, Assertions, Config, Gateways, Directory and Scenario. Use each editor's enabled Save action; ignore modified, composing, repeated and already-handled shortcuts.
   - [x] Use the shared identity renderer in all six editors, including Policy/Assertions; preserve domain-owned dirty checks and draft naming. Clear obsolete version tooltips when identities change.
   - [x] Share dirty-state discard confirmation across all six editors, preserving action-specific warnings, cancellation and reset behavior.
   - [x] Use the shared History controller and version renderer for Policy/Assertions as well as Config, Gateways, Directory and Scenario. Keep revision loading domain-owned and prevent another editor's History selection from invoking Policy revision loading.
-- [ ] Consolidate Analyze state, source-owned diagnostics, diagnostic clearing and stale-response rejection without mixing service/configuration errors with source-line errors.
+- [x] Consolidate Analyze state, source-owned diagnostics, diagnostic clearing and stale-response rejection without mixing service/configuration errors with source-line errors.
   - [x] Share valid source-line bounds checking across source surfaces and Policy/Assertion gutter rendering. Place non-line editor errors under controls; Assertion errors without valid locations remain visible there instead of receiving line-1/clamped markers.
   - [x] Share source/context analysis guards for Gateway and raw Scenario. Reject superseded runs, edited-then-restored source, and changed record/revision/organization/format context without applying obsolete success or error results.
   - [x] Use the shared analysis-context guard for Config Analyze and validation-before-Format. Keep mutation error handling separate; stale responses cannot format replaced text or attach obsolete diagnostics.
@@ -299,9 +301,33 @@
   - [x] Use the shared analysis-context guard for Policy runtime fixtures/evaluation with independent request ownership. Reject late results, dimensions, warnings and failures; cancel source/record/revision/organization replacements and stop obsolete Save/Save As/Stage continuations without releasing a newer pre-save test.
   - [x] Use the shared analysis-context guard for structured Scenario Analyze. Reject superseded requests, edited-then-restored/replaced forms and changed identity/revision/organization/viewed revision/mode/open state. Raw analysis also rejects closed-editor and viewed-revision changes.
   - [x] Share explicit idle/pending/success/error button-state transitions in the five Analyze-capable editors. Preserve readiness, disabled actions, diagnostic rendering and stale-response guards; do not add an Analyze action to Directory.
-- [ ] Consolidate JavaScript editor-frame setup and responsive viewport sizing so individual editors do not duplicate layout wiring.
+- [x] Consolidate JavaScript editor-frame setup and responsive viewport sizing so individual editors do not duplicate layout wiring.
+  - [x] Apply the shared source viewport contract to all six editors; reschedule on open/visibility/mode/resize changes, preserve minimum usable source height and natural small-screen scrolling, and let Maximize own full-page sizing.
   - [x] Give the existing shared Policy/Config viewport binding idempotent setup, coalesced scheduling and disposal/rebind contracts without changing sizing rules. Test hidden containers, pending-frame cancellation, restored inline height/priority and responsive geometry.
   - [x] Share source scrolling and resize observation across all six editors, preserving overlay alignment, native versus translated gutters, domain-specific gutter bounds and Policy completion positioning. Expose disposal through bindings/source surfaces; avoid rebuilding Assertion highlights on scroll/resize.
+
+Editor-controller completion was deployed to local Control Room and Simulator
+on 2026-10-09 at 00:49 EDT using `zpr-editor-ui:20261009-unified`.
+The editor assets match the working-tree source on both dashboards, including
+shared core v16, Control Room application v133, Scenario v37/raw v9 and
+Directory v20. The build preserves the recorded 04:33 backend baseline and
+seven-method draft validator, excluding the later source-only Gateway
+forwarding/consolidation changes. Container configuration is unchanged.
+Only the two UI containers were replaced; Control-Service, Policy-Service,
+DNS and all Great Lakes runtime start times are unchanged. Simulator DNS
+statistics/records relays were restored and verified. Great Lakes remains
+active with activation idle and three scenarios. A live read-only Scenario
+Analyze succeeded without saving, publishing or running. Operator login
+readiness and signed-out protected API rejection remain correct. Stopped
+rollback containers are retained. Source changes are not yet committed.
+The combined desktop/tablet regression run passed 261 cases;
+five trace-cleanup failures (missing shared artifact files, not editor
+assertions) passed in an isolated container-local rerun of 22 cases, including
+all six registrations/viewports, pending lifecycle, History, cancellation and
+Maximize/Restore. Focused Go editor/API and production-boundary tests pass.
+The older Assertion transparent-gutter expectation and hidden Gateway-toolbar
+tests also fail against committed baseline assets; neither test was changed.
+
 - [x] Extract a shared AI assistant shell and conversation controller from `editor-assistant.js` and `design-assistant.js`: messages, model/token controls, usage counters, pending/error states and collapse behavior. Policy/Assertion uses the same `assistant-core.js` controller.
 - [x] Share assistant stale-context/proposal protection while keeping undoable text Insert and validated structured Apply as separate adapters; never save, publish, activate or run automatically. Reject edited-then-restored source, changed record/revision/organization, reset conversations and stale failures.
 - [ ] Extract shared page polling/lifecycle helpers: start/stop on navigation, prevent overlapping requests, abort obsolete requests, reject late responses and retain last-good data with explicit errors.
@@ -483,6 +509,12 @@
 - [x] Rename lower table "Trusted source: {great_lakes_ldap}" using the source name returned by the directory endpoint.
 
 ### Gateways
+- [x] Gateway Save and Ctrl/Command-S automatically Analyze modified drafts, show errors without saving invalid drafts, and save a revision only after successful exact-source validation.
+- [x] Support GET, HEAD, POST, PUT, PATCH, DELETE and OPTIONS in Gateway draft Form/Raw, Analyze and Save; retain GET/HEAD defaults and reject TRACE/CONNECT. This does not expand runtime handler support.
+- [x] Expand fixed-upstream gateway forwarding to the seven draft methods with bounded bodies and safe headers; retain GET/HEAD health checks. Verify all seven methods and bodies through the separate HTTP/HTTPS-tunnel web proxy. Draft activation remains separate.
+- [x] Consolidate shared Internet-egress forwarding primitives (hostname/method validation, redirect handling, header filtering and response forwarding); remove Simulator-specific naming from the reusable web proxy while preserving both CLI modes and protocol behavior.
+- [ ] Unify deployed Gateway runtime configuration with the editor contract and migrate fixed-upstream callers before retiring that mode. Define enforcement capabilities for opaque HTTPS tunnels; do not imply draft methods/paths are enforced there.
+- [ ] Refine Gateway form usability: make destination versus path-prefix add/delete operations unambiguous, improve individual prefix management, and review wildcard requirements against gateway validation and runtime matching before adding support.
 - [x] Add a Gateway form editor with draft-only HTTPS origin/path-prefix controls synchronized with the raw JSON view; keep form controls out of the raw editor and Analyze/Save separate from runtime enforcement. Include GET/HEAD, timeout/response limits, read-only installed identity, lossless unknown-field preservation and form/raw validation coverage.
 - [x] Report Gateway Analyze source-line errors only through standard ERR gutter markers; clicking opens error details and selects the source line. Never put source-line diagnostics at the top of the editor; preserve exact formatting and keep live inventory/contract errors separate.
 - [x] Align Gateway ERR markers at the gutter's left inset and suppress the textarea's clipped native focus outline while retaining the editor's focus-within indicator.

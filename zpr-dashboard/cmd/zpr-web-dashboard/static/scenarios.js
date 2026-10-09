@@ -15,19 +15,23 @@ const scenarioEditorPage = window.ZPREditorPage;
 const scenarioRequest = (path, options) => scenarioEditorPage.requestJSON(
   (...args) => window.fetch(...args), path, options,
 );
-const scenarioFormAnalysisScope = scenarioEditorPage.createAnalysisScope(() => [
+const scenarioEditorController = scenarioEditorPage.createController({
+  source: document.getElementById("scenario-editor-source"),
+  status: document.getElementById("scenario-editor-status"),
+  isDirty: () => scenarioEditorDirty,
+  identity: { title: document.getElementById("scenario-editor-title"), version: document.getElementById("scenario-editor-revision-label"), modified: document.getElementById("scenario-editor-modified") },
+  menu: { root: document.getElementById("scenario-editor-actions"), toggle: document.getElementById("scenario-editor-files-toggle"), menu: document.getElementById("scenario-editor-file-menu") },
+  history: { menu: document.getElementById("scenario-editor-history-menu"), list: document.getElementById("scenario-editor-history"), count: document.getElementById("scenario-editor-history-count"), isAvailable: () => Boolean(scenarioEditorArtifact) },
+  adapters: { load: openExistingScenarioEditor, analyze: analyzeScenarioEditor, save: saveScenarioDraft, render: updateScenarioEditorActions },
+  syncControls: updateScenarioEditorActions,
+});
+const scenarioFormAnalysisScope = scenarioEditorController.createScope("form", () => [
   JSON.stringify(readScenarioEditorForm()), scenarioEditorOrganization,
   scenarioEditorArtifact?.id, scenarioEditorArtifact?.revision, scenarioEditorViewing,
   document.getElementById("scenario-editor-dialog").open,
   document.getElementById("scenario-editor-advanced").open,
 ]);
-scenarioEditorPage.placeStatus(document.getElementById("scenario-editor-status"));
-const scenarioHistory = scenarioEditorPage.createHistory({
-  menu: document.getElementById("scenario-editor-history-menu"),
-  list: document.getElementById("scenario-editor-history"),
-  count: document.getElementById("scenario-editor-history-count"),
-  isAvailable: () => Boolean(scenarioEditorArtifact),
-});
+const scenarioHistory = scenarioEditorController.history;
 
 function scenarioEscape(value) {
   return window.ZPRSafeDisplay.escapeHTML(value);
@@ -227,7 +231,7 @@ const scenarioPoller = window.ZPRSimulatorNavigation.createPagePoller({
 const refreshScenariosNow = () => scenarioPoller.refresh();
 
 function setScenarioEditorStatus(message, state = "") {
-  scenarioEditorPage.setStatus(document.getElementById("scenario-editor-status"), message || "", state === "saved" ? "success" : state);
+  scenarioEditorController.setStatus(message || "", state === "saved" ? "success" : state);
 }
 
 function renderScenarioIdentity() {
@@ -239,17 +243,13 @@ function renderScenarioIdentity() {
       : artifact.published_revision ? `published v${artifact.published_revision}` : "not published";
     label = scenarioEditorViewing ? `Viewing version ${scenarioEditorViewing}` : `Version ${artifact.revision} · ${published}`;
   }
-  scenarioEditorPage.renderIdentity({
-    title: document.getElementById("scenario-editor-title"),
-    version: document.getElementById("scenario-editor-revision-label"),
-    modified: document.getElementById("scenario-editor-modified"),
-  }, { name, label, tooltip: artifact?.id || "", dirty: scenarioEditorDirty });
+  scenarioEditorController.renderIdentity({ name, label, tooltip: artifact?.id || "", dirty: scenarioEditorDirty });
 }
 
 function setScenarioAnalyzeState(state = "") {
   for (const button of document.querySelectorAll("#scenario-source-analyze")) {
     if (!button) continue;
-    scenarioEditorPage.setAnalysisState(button, state);
+    scenarioEditorController.setAnalysisState(state);
     button.classList.toggle("button-next-evaluate", !state);
   }
 }
@@ -377,7 +377,8 @@ async function analyzeScenarioEditor() {
     const result = await window.analyzeScenarioSourceEditor();
     return result?.scenario || null;
   }
-  const isCurrent = scenarioFormAnalysisScope.begin();
+  const isCurrent = scenarioEditorController.beginAnalysis("form");
+  setScenarioEditorStatus("");
   try {
     const scenario = readScenarioEditorForm();
     const result = await scenarioRequest(`/api/simulator/organizations/${encodeURIComponent(scenarioEditorOrganization)}/scenario-check`, {
@@ -395,6 +396,8 @@ async function analyzeScenarioEditor() {
     setScenarioAnalyzeState("error");
     setScenarioEditorStatus(error.message || "Scenario analysis failed.", "error");
     return null;
+  } finally {
+    isCurrent.finish();
   }
 }
 
@@ -637,7 +640,9 @@ async function postScenarioAction(url) {
 
 document.getElementById("scenario-refresh").addEventListener("click", () => void refreshScenariosNow());
 document.getElementById("scenario-new").addEventListener("click", openNewScenarioEditor);
-document.getElementById("scenario-editor-dialog").addEventListener("close", () => scenarioFormAnalysisScope.invalidate());
+document.getElementById("scenario-editor-dialog").addEventListener("close", () => {
+  scenarioFormAnalysisScope.invalidate();
+});
 document.getElementById("scenario-editor-advanced").addEventListener("toggle", () => scenarioFormAnalysisScope.invalidate());
 document.getElementById("scenario-editor-dialog").addEventListener("input", (event) => {
   if (event.target.id === "scenario-editor-source") {
@@ -674,7 +679,7 @@ document.getElementById("scenario-editor-advanced").addEventListener("toggle", (
   }
   })();
 });
-document.getElementById("scenario-source-analyze").addEventListener("click", analyzeScenarioEditor);
+scenarioEditorController.bind("analyze", { button: document.getElementById("scenario-source-analyze") });
 document.getElementById("scenario-editor-mode-toggle").addEventListener("click", async () => {
   const advanced = document.getElementById("scenario-editor-advanced");
   advanced.open = !advanced.open;
@@ -699,9 +704,10 @@ document.getElementById("scenario-editor-dialog").addEventListener("click", (eve
   renderScenarioStepGroup(isCleanup ? "scenario-editor-cleanup" : "scenario-editor-steps", steps);
   markScenarioEditorDirty();
 });
-document.getElementById("scenario-editor-save").addEventListener("click", async () => {
-  try { await saveScenarioDraft(); }
-  catch (error) { setScenarioEditorStatus(error.sourceDiagnostic ? "" : error.message || "Could not save scenario.", "error"); }
+scenarioEditorController.bind("save", {
+  button: document.getElementById("scenario-editor-save"),
+  shortcutRoot: document.getElementById("scenario-editor-dialog"),
+  onError: error => setScenarioEditorStatus(error.sourceDiagnostic ? "" : error.message || "Could not save scenario.", "error"),
 });
 document.getElementById("scenario-editor-publish").addEventListener("click", async () => {
   try { await publishScenarioRevision(); }
@@ -723,7 +729,6 @@ document.getElementById("scenario-editor-form").addEventListener("submit", (even
   closeScenarioEditorPage();
 });
 document.getElementById("scenario-editor-form").noValidate = true;
-scenarioEditorPage.bindSaveShortcut({ root: document.getElementById("scenario-editor-dialog"), button: document.getElementById("scenario-editor-save") });
 document.getElementById("scenario-editor-delete").addEventListener("click", async () => {
   if (!scenarioEditorArtifact) return;
   try { await archiveScenario(scenarioEditorArtifact.id, scenarioEditorOrganization, scenarioEditorArtifact.revision); }
@@ -732,7 +737,7 @@ document.getElementById("scenario-editor-delete").addEventListener("click", asyn
 document.getElementById("scenario-list").addEventListener("click", async (event) => {
   const editButton = event.target.closest("[data-edit-scenario]");
   if (editButton) {
-    try { await openExistingScenarioEditor(editButton.dataset.editScenario); }
+    try { await scenarioEditorController.perform("load", editButton.dataset.editScenario); }
     catch (error) {
       const message = document.getElementById("scenario-error");
       message.textContent = error.message || "Could not open scenario";

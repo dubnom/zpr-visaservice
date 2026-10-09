@@ -5,12 +5,10 @@
   const page = window.ZPREditorPage;
   let draftName = "";
   const status = byId("zpr-config-status");
-  page.placeStatus(status);
   const records = byId("zpr-config-records");
   const recordMenu = byId("zpr-config-record-menu");
   const analyze = byId("zpr-config-validate");
   const format = byId("zpr-config-format");
-  page.fitSourceToViewport(source.closest(".config-source-editor"));
   let record = null;
   let catalog;
   let revisions = [];
@@ -19,27 +17,29 @@
   let pending = false;
   let sourceVersion = 0;
   let menuRecordID = "";
-  const analysisScope = page.createAnalysisScope(() => [
-    source.value, catalog?.organization_id, record?.id,
-    record?.current_revision, browsingRevision,
-  ]);
+  const editor = page.createController({
+    source, status, isDirty: () => source.value !== saved,
+    readContext: () => [source.value, catalog?.organization_id, record?.id, record?.current_revision, browsingRevision],
+    menu: { root: byId("zpr-config-actions"), toggle: byId("zpr-config-files-toggle"), menu: byId("zpr-config-file-menu") },
+    history: { menu: byId("zpr-config-history-menu"), list: byId("zpr-config-history"), count: byId("zpr-config-history-count"), isAvailable: () => Boolean(record) },
+    identity: { title: byId("zpr-config-title"), version: byId("zpr-config-revision-label"), modified: byId("zpr-config-modified") },
+    adapters: { load: loadRecord, analyze: () => runSourceAction(checkConfig), save: () => run(saveConfig), render: renderEditor },
+    syncControls: syncAnalysisButtons,
+  });
+  const analysisScope = editor.createScope("analyze");
   window.getConfigAssistantContext = () => [catalog?.organization_id, record?.id, record?.current_revision, browsingRevision];
   const surface = page.createSourceSurface({
     source, highlight: byId("zpr-config-highlight"), gutter: byId("zpr-config-gutter"), language: "toml", label: "Configuration",
   });
   const picker = page.createPicker({ toggle: byId("zpr-config-picker-toggle"), pane: byId("zpr-config-catalog-pane"), close: byId("zpr-config-picker-close"), focus: records });
-  page.createMenu({ root: byId("zpr-config-actions"), toggle: byId("zpr-config-files-toggle"), menu: byId("zpr-config-file-menu") });
-  const history = page.createHistory({
-    menu: byId("zpr-config-history-menu"), list: byId("zpr-config-history"), count: byId("zpr-config-history-count"),
-    isAvailable: () => Boolean(record),
-  });
+  const history = editor.history;
   const dirty = () => source.value !== saved;
-  const setStatus = (text = "", kind = "") => page.setStatus(status, text, kind);
+  const setStatus = (text = "", kind = "") => editor.setStatus(text, kind);
   function clearAnalysis() {
     sourceVersion++;
     analysisScope.invalidate();
     surface.setDiagnostic(null);
-    page.setAnalysisState(analyze);
+    editor.setAnalysisState();
   }
   function syncAnalysisButtons() {
     const disabled = pending || !source.value.trim();
@@ -50,15 +50,12 @@
     byId("zpr-config-discard").disabled = pending || !dirty();
   }
   function renderIdentity() {
-    page.renderIdentity(
-      { title: byId("zpr-config-title"), version: byId("zpr-config-revision-label"), modified: byId("zpr-config-modified") },
-      {
+    editor.renderIdentity({
         name: record?.name || draftName,
         label: record ? `Version ${browsingRevision || record.current_revision}` : "",
         tooltip: record ? `ZPR Config/${record.name}` : "",
         dirty: dirty(),
-      },
-    );
+    });
   }
   function renderHistory() {
     history.render(revisions.map((revision) => ({ ...revision, number: revision.number || revision.revision })).sort((a, b) => b.number - a.number), {
@@ -101,8 +98,8 @@
       item.append(icon, title, detail);
       item.addEventListener("click", () => void run(async () => {
         if (record?.id === entry.id) { picker.setOpen(false, true); return; }
-        if (!page.confirmDiscard(dirty(), "Discard unsaved configuration changes?")) return;
-        await loadRecord(entry.id);
+        if (!editor.confirmDiscard("Discard unsaved configuration changes?")) return;
+        await editor.perform("load", entry.id);
         picker.setOpen(false, true);
       }));
       records.append(item);
@@ -141,10 +138,10 @@
     try { await action(); } catch (error) {
       if (isCurrent ? !isCurrent() : version !== sourceVersion) return;
       surface.setDiagnostic(error.line ? { line: error.line, message: error.message } : null);
-      if (error.details?.valid === false) page.setAnalysisState(analyze, "error");
+      if (error.details?.valid === false) editor.setAnalysisState("error");
       setStatus(surface.diagnostic ? "" : error.message, "error");
     }
-    finally { pending = false; document.querySelectorAll("[data-config-command]").forEach((button) => { button.disabled = false; }); renderEditor(); }
+    finally { pending = false; isCurrent?.finish(); document.querySelectorAll("[data-config-command]").forEach((button) => { button.disabled = false; }); renderEditor(); }
   };
   async function loadCatalog() {
     catalog = await request("/api/policy");
@@ -202,16 +199,17 @@
   }
   const runSourceAction = (action) => {
     if (pending) return;
-    const isCurrent = analysisScope.begin();
+    const isCurrent = editor.beginAnalysis();
     return run(() => action(isCurrent), isCurrent);
   };
-  analyze.addEventListener("click", () => runSourceAction(async (isCurrent) => {
+  async function checkConfig(isCurrent) {
     const result = await post("/api/policy/config/check", { source: source.value });
     if (!isCurrent()) return;
     surface.setDiagnostic(null);
-    page.setAnalysisState(analyze, "success");
+    editor.setAnalysisState("success");
     setStatus(result.diagnostics, "success");
-  }));
+  }
+  editor.bind("analyze", { button: analyze });
   format.addEventListener("click", () => runSourceAction(async (isCurrent) => {
     const original = source.value;
     await post("/api/policy/config/check", { source: original });
@@ -220,7 +218,7 @@
     clearAnalysis();
     setStatus("");
   }));
-  byId("zpr-config-save").addEventListener("click", () => run(async () => {
+  async function saveConfig() {
     if (!record && !page.isNamed(draftName)) {
       const entered = prompt("Configuration name", "");
       if (entered === null) return;
@@ -234,19 +232,20 @@
     if (catalog && current.organization_id !== catalog.organization_id) throw new Error("Organization changed; reload before saving.");
     if (record) {
       await post(`/api/policy/records/${encodeURIComponent(record.id)}/revisions`, { content: source.value, expected_revision: record.current_revision, summary: "Updated ZPLC configuration draft" });
-      await loadRecord(record.id);
+      await editor.perform("load", record.id);
     } else {
       let category = current.categories.find((entry) => entry.path === "ZPR Config");
       if (!category) category = await post("/api/policy/categories", { name: "ZPR Config" });
       record = await post("/api/policy/records", { category_id: category.id, name: draftName, kind: "configuration", content_type: "text/vnd.zpr.zplc", metadata: { language: "toml" }, content: source.value, summary: "Initial ZPLC configuration draft" });
-      await loadRecord(record.id);
+      await editor.perform("load", record.id);
     }
     await loadCatalog();
     setStatus(`Saved version ${record.current_revision}; runtime unchanged.`, "success");
-  }));
+  }
+  editor.bind("save", { button: byId("zpr-config-save"), shortcutRoot: source });
   byId("zpr-config-discard").addEventListener("click", () => {
     if (!dirty() || !page.confirmDiscard(true, "Discard unsaved configuration changes?")) return;
-    if (record) void run(() => loadRecord(record.id));
+    if (record) void run(() => editor.perform("load", record.id));
     else reset();
   });
   records.addEventListener("contextmenu", (event) => {
@@ -314,7 +313,6 @@
     anchor.click();
     URL.revokeObjectURL(url);
   });
-  page.bindSaveShortcut({ root: source, button: byId("zpr-config-save") });
   window.addEventListener("hashchange", () => { if (location.hash === "#zpr-config" && !catalog) void run(loadCatalog); });
   if (location.hash === "#zpr-config") void run(loadCatalog);
   renderRecords();

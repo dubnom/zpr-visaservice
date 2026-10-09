@@ -13,10 +13,11 @@
   let sourceFormat = "json";
   let lastScenario = null;
   let lastError = null;
-  const analysisScope = page.createAnalysisScope(() => [
+  const editor = scenarioEditorController;
+  const analysisScope = editor.createScope("raw", () => [
     source.value, sourceFormat, scenarioEditorOrganization,
     scenarioEditorArtifact?.id, scenarioEditorArtifact?.revision,
-    scenarioEditorViewing, document.getElementById("scenario-editor-dialog").open,
+    scenarioEditorViewing, document.getElementById("scenario-editor-dialog").open, advanced.open,
   ]);
 
   function sourceFormatName() {
@@ -30,11 +31,7 @@
     language: () => sourceFormat,
     label: sourceFormatName,
   });
-  window.scenarioFileMenu = page.createMenu({
-    root: document.getElementById("scenario-editor-actions"),
-    toggle: document.getElementById("scenario-editor-files-toggle"),
-    menu: document.getElementById("scenario-editor-file-menu"),
-  });
+  window.scenarioFileMenu = editor.files;
 
   function setAnalysisState(state = "") {
     setScenarioAnalyzeState(state);
@@ -71,7 +68,7 @@
     lastError = null;
     setScenarioEditorStatus("");
     fileVersion++;
-    const isCurrent = analysisScope.begin();
+    const isCurrent = editor.beginAnalysis("raw");
     const original = source.value;
     const organization = scenarioEditorOrganization;
     try {
@@ -98,6 +95,8 @@
       setScenarioEditorStatus(surface.diagnostic ? "" : error.message, "error");
       render();
       return null;
+    } finally {
+      isCurrent.finish();
     }
   }
 

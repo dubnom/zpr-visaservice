@@ -521,7 +521,7 @@ func validateWebGatewayPageTarget(targetURL, expected string, allowedHosts []str
 	if (parsed.Scheme == "http" && port != "" && port != "80") || (parsed.Scheme == "https" && port != "" && port != "443") {
 		return errors.New("web gateway page request supports only ports 80 and 443")
 	}
-	gateway, err := newSimulatorWebGateway(allowedHosts)
+	gateway, err := newInternetWebGateway(allowedHosts)
 	if err != nil {
 		return err
 	}

@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"log"
 	"net"
 	"net/http"
 	"net/netip"
@@ -27,14 +28,14 @@ var blockedWebGatewayNetworks = []netip.Prefix{
 	netip.MustParsePrefix("2001:2::/48"),
 }
 
-type simulatorWebGateway struct {
+type internetWebGateway struct {
 	allowedHosts []string
 	client       *http.Client
 	transport    *http.Transport
 	dial         func(context.Context, string, string) (net.Conn, error)
 }
 
-func newSimulatorWebGateway(allowedHosts []string) (*simulatorWebGateway, error) {
+func newInternetWebGateway(allowedHosts []string) (*internetWebGateway, error) {
 	if len(allowedHosts) == 0 || len(allowedHosts) > maxWebGatewayHosts {
 		return nil, fmt.Errorf("web gateway requires 1 to %d allowed hosts", maxWebGatewayHosts)
 	}
@@ -52,7 +53,7 @@ func newSimulatorWebGateway(allowedHosts []string) (*simulatorWebGateway, error)
 		seen[host] = true
 		normalized = append(normalized, host)
 	}
-	gateway := &simulatorWebGateway{allowedHosts: normalized}
+	gateway := &internetWebGateway{allowedHosts: normalized}
 	gateway.dial = gateway.dialPublicHost
 	gateway.transport = &http.Transport{
 		DialContext:           gateway.dial,
@@ -60,20 +61,17 @@ func newSimulatorWebGateway(allowedHosts []string) (*simulatorWebGateway, error)
 		IdleConnTimeout:       30 * time.Second,
 		TLSHandshakeTimeout:   10 * time.Second,
 	}
-	gateway.client = &http.Client{
+	gateway.client = gatewayForwardingClient(&http.Client{
 		Transport: gateway.transport,
-		CheckRedirect: func(*http.Request, []*http.Request) error {
-			return http.ErrUseLastResponse
-		},
-	}
+	})
 	return gateway, nil
 }
 
-func runSimulatorWebGatewayService(address, workload string, allowedHosts []string) error {
+func runInternetWebGatewayService(address, workload string, allowedHosts []string) error {
 	if address == "" || workload != "internet-gateway" {
 		return errors.New("web gateway requires a listen address and internet-gateway workload name")
 	}
-	gateway, err := newSimulatorWebGateway(allowedHosts)
+	gateway, err := newInternetWebGateway(allowedHosts)
 	if err != nil {
 		return err
 	}
@@ -86,7 +84,7 @@ func runSimulatorWebGatewayService(address, workload string, allowedHosts []stri
 	return server.Serve(listener)
 }
 
-func (gateway *simulatorWebGateway) ServeHTTP(w http.ResponseWriter, request *http.Request) {
+func (gateway *internetWebGateway) ServeHTTP(w http.ResponseWriter, request *http.Request) {
 	if request.Method == http.MethodGet && request.URL != nil && !request.URL.IsAbs() && request.URL.Path == "/health" {
 		w.Header().Set("Content-Type", "application/json")
 		_, _ = io.WriteString(w, `{"service":"internet-gateway","status":"ok"}`)
@@ -113,22 +111,20 @@ func (gateway *simulatorWebGateway) ServeHTTP(w http.ResponseWriter, request *ht
 	outbound.URL = &urlCopy
 	outbound.RequestURI = ""
 	outbound.Host = urlCopy.Host
-	outbound.Header = request.Header.Clone()
-	removeProxyHopHeaders(outbound.Header)
+	outbound.Header = make(http.Header)
+	copyGatewayHeaders(outbound.Header, request.Header, nil)
 	response, err := gateway.client.Do(outbound)
 	if err != nil {
 		http.Error(w, "web gateway upstream is unavailable", http.StatusBadGateway)
 		return
 	}
 	defer response.Body.Close()
-	copyGatewayHeaders(w.Header(), response.Header)
-	w.WriteHeader(response.StatusCode)
-	if request.Method != http.MethodHead {
-		_, _ = io.Copy(w, response.Body)
+	if err := forwardGatewayResponse(w, request, response, 0, nil); err != nil {
+		log.Printf("Web gateway response forwarding failed: %v", err)
 	}
 }
 
-func (gateway *simulatorWebGateway) allowsHost(host string) bool {
+func (gateway *internetWebGateway) allowsHost(host string) bool {
 	host = strings.TrimSuffix(strings.ToLower(host), ".")
 	for _, allowed := range gateway.allowedHosts {
 		if strings.HasPrefix(allowed, "*.") {
@@ -143,7 +139,7 @@ func (gateway *simulatorWebGateway) allowsHost(host string) bool {
 	return false
 }
 
-func (gateway *simulatorWebGateway) dialPublicHost(ctx context.Context, network, address string) (net.Conn, error) {
+func (gateway *internetWebGateway) dialPublicHost(ctx context.Context, network, address string) (net.Conn, error) {
 	host, port, err := net.SplitHostPort(address)
 	if err != nil || (port != "80" && port != "443") || !gateway.allowsHost(host) {
 		return nil, errors.New("web gateway destination is not allowed")
@@ -184,7 +180,7 @@ func publicWebGatewayIP(ip netip.Addr) bool {
 	return true
 }
 
-func (gateway *simulatorWebGateway) serveConnect(w http.ResponseWriter, request *http.Request) {
+func (gateway *internetWebGateway) serveConnect(w http.ResponseWriter, request *http.Request) {
 	host, port, err := net.SplitHostPort(request.Host)
 	if err != nil || port != "443" || !gateway.allowsHost(host) {
 		http.Error(w, "web gateway destination is not allowed", http.StatusForbidden)
@@ -231,23 +227,4 @@ func (gateway *simulatorWebGateway) serveConnect(w http.ResponseWriter, request 
 	<-finished
 	_ = client.Close()
 	_ = upstream.Close()
-}
-
-func removeProxyHopHeaders(header http.Header) {
-	for _, value := range header.Values("Connection") {
-		for _, name := range strings.Split(value, ",") {
-			header.Del(strings.TrimSpace(name))
-		}
-	}
-	for _, name := range []string{"Connection", "Keep-Alive", "Proxy-Authenticate", "Proxy-Authorization", "Proxy-Connection", "TE", "Trailer", "Transfer-Encoding", "Upgrade"} {
-		header.Del(name)
-	}
-}
-
-func copyGatewayHeaders(destination, source http.Header) {
-	copy := source.Clone()
-	removeProxyHopHeaders(copy)
-	for name, values := range copy {
-		destination[name] = values
-	}
 }

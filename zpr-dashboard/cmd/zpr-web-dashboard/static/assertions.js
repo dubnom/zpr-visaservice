@@ -41,10 +41,16 @@
   let recordLastRun = null;
   let loadedRecordID = "";
   let timer;
-  const analysisScope = window.ZPREditorPage.createAnalysisScope(() => [
-    source.value, loadedRecordID, recordMode, loadedRevision,
-    loadedOrganizationID, status?.organization_id, status?.settings?.revision,
-  ]);
+  const editor = window.ZPREditorPage.createController({
+    source, viewport: element("assertion-editor"), analyzeButton: element("assertion-analyze"),
+    status: element("assertion-message"), statusInFrame: false,
+    isDirty: () => dirty(),
+    readContext: () => [source.value, loadedRecordID, recordMode, loadedRevision, loadedOrganizationID, status?.organization_id, status?.settings?.revision],
+    identity: { title: element("policy-record-title"), version: element("policy-revision-label"), modified: element("policy-modified-indicator") },
+    adapters: { load, analyze: analyzeAssertions, save: () => command("save"), render: actions },
+    syncControls: actions,
+  });
+  const analysisScope = editor.createScope("analyze");
   const active = () => location.hash === "#policy" && !element("policy-assertion-editor")?.hidden;
   const dirty = () => recordMode
     ? selectedRecord?.isDraft ? Boolean(source.value.trim() || element("policy-draft-name").value.trim()) : source.value !== savedSource
@@ -100,8 +106,7 @@
   }
 
   function message(text, state = "") {
-    element("assertion-message").textContent = text;
-    element("assertion-message").dataset.state = state;
+    editor.setStatus(text, state);
   }
 
   function renderSummary(summary) {
@@ -182,9 +187,9 @@
   function renderRun(run) {
     if (run) {
       const state = run.status === "error" ? "error" : run.warnings?.length ? "warning" : "success";
-      window.ZPREditorPage.setAnalysisState(element("assertion-analyze"), state);
+      editor.setAnalysisState(state);
     } else {
-      window.ZPREditorPage.setAnalysisState(element("assertion-analyze"));
+      editor.setAnalysisState();
     }
     const heading = element("assertion-run-status");
     const rows = element("assertion-result-rows");
@@ -224,9 +229,9 @@
     testAbort = controller;
     pending = true;
     const analyzedSource = source.value;
-    const isCurrent = analysisScope.begin();
+    const isCurrent = editor.beginAnalysis();
     renderRun(null);
-    window.ZPREditorPage.setAnalysisState(element("assertion-analyze"), "pending");
+    editor.setAnalysisState("pending");
     message("");
     actions();
     try {
@@ -248,10 +253,11 @@
       if (error.name !== "AbortError" && !controller.signal.aborted && isCurrent()) {
         const failure = { status: "error", error: error.message, revision: loadedRevision, draft: source.value !== savedSource, finished_at: new Date().toISOString(), results: [] };
         renderRun(failure);
-        window.ZPREditorPage.setAnalysisState(element("assertion-analyze"), "error");
+        editor.setAnalysisState("error");
         message(assertionErrorLine(error.message) === null ? error.message : "", "error");
       }
     } finally {
+      isCurrent.finish();
       if (testAbort === controller) {
         testAbort = null;
         testPending = false;
@@ -518,12 +524,11 @@
     finally { pending = false; actions(); }
   }
 
-  for (const control of [source, enabled, interval]) control.addEventListener("input", () => { analysisScope.invalidate(); window.ZPREditorPage.setAnalysisState(element("assertion-analyze")); highlight(); renderRun(null); actions(); });
+  for (const control of [source, enabled, interval]) control.addEventListener("input", () => { analysisScope.invalidate(); editor.setAnalysisState(); highlight(); renderRun(null); actions(); });
   source.addEventListener("keydown", (event) => {
     if (event.key === "Tab") { event.preventDefault(); source.setRangeText("  ", source.selectionStart, source.selectionEnd, "end"); source.dispatchEvent(new InputEvent("input", { bubbles: true })); }
   });
-  element("assertion-save").addEventListener("click", () => command("save"));
-  window.ZPREditorPage.bindSaveShortcut({ root: source, button: element("assertion-save") });
+  editor.bind("save", { button: element("assertion-save"), shortcutRoot: source, onError: error => message(error.message, "error") });
   async function formatAssertions() {
     if (pending || testPending || !status || stale() || !source.value.trim() || source.disabled || source.readOnly) return;
     const controller = new AbortController();
@@ -548,7 +553,7 @@
         return item;
       });
       window.ZPRAssistant.editText(source, result.source, true);
-      window.ZPREditorPage.setAnalysisState(element("assertion-analyze"));
+      editor.setAnalysisState();
       renderRun(null);
       highlight();
       lintWarnings.replaceChildren(...warnings);
@@ -566,10 +571,10 @@
       }
     }
   }
-  element("assertion-analyze").addEventListener("click", analyzeAssertions);
+  editor.bind("analyze", { button: element("assertion-analyze"), onError: error => message(error.message, "error") });
   element("assertion-format").addEventListener("click", formatAssertions);
   element("assertion-read-source").addEventListener("click", () => command("read"));
-  element("assertion-reload").addEventListener("click", () => { if (window.ZPREditorPage.confirmDiscard(dirty(), "Discard unsaved assertion changes?")) load(true); });
+  element("assertion-reload").addEventListener("click", () => { if (editor.confirmDiscard("Discard unsaved assertion changes?")) editor.perform("load", true); });
   element("policy-draft-name").addEventListener("input", actions);
   window.policyAssertionDirty = () => recordMode ? dirty() : false;
   window.addEventListener("policy-record-kind-changed", (event) => {
