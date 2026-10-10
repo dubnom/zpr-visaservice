@@ -173,6 +173,7 @@ struct VSGateImpl {
 struct VSHandleImpl {
     asm: Arc<Assembly>,
     node: Actor,
+    _session: crate::actor_mgr::NodeSession,
 }
 
 impl VSGateImpl {
@@ -200,8 +201,13 @@ impl VSGateImpl {
 }
 
 impl VSHandleImpl {
-    fn new(asm: Arc<Assembly>, node: Actor) -> Self {
-        VSHandleImpl { asm, node }
+    fn new(asm: Arc<Assembly>, node: Actor, node_addr: IpAddr) -> Self {
+        let session = asm.actor_mgr.node_session(&node_addr);
+        VSHandleImpl {
+            asm,
+            node,
+            _session: session,
+        }
     }
 
     /// Squash (but log) any errors.
@@ -786,8 +792,11 @@ impl vsapi::visa_service::Server for VisaServiceImpl {
         }
 
         // Skip ahead to the handle:
-        let vs_handle: vsapi::v_s_handle::Client =
-            capnp_rpc::new_client(VSHandleImpl::new(self.asm.clone(), existing_actor));
+        let vs_handle: vsapi::v_s_handle::Client = capnp_rpc::new_client(VSHandleImpl::new(
+            self.asm.clone(),
+            existing_actor,
+            node_zpr_addr,
+        ));
         let mut res_builder = results.get().init_resp();
         res_builder.set_ok(vs_handle)?;
         Ok(())
@@ -994,13 +1003,13 @@ impl vsapi::v_s_gate::Server for VSGateImpl {
         // Note that the node may have services on it in addition to its node-ness.
 
         if !self.reconnect {
-            if let Err(e) = self.asm.visa_mgr.clear_node_state(&node_zpr_addr).await {
+            if let Err(e) = self.asm.visa_mgr.reset_node_state(&node_zpr_addr).await {
                 error!(target: API, "failed to clear node state for {:?}: {}", &node_cn, e);
                 undo.undo(&self.asm).await;
                 return self.ok_with_authenticate_error(
                     results,
                     vsapi::ErrorCode::Internal,
-                    "failed to clear node state",
+                    "failed to revoke previous node visas",
                 );
             }
             // A fresh connect explicitly clears stale router topology, including persisted edges.
@@ -1082,8 +1091,11 @@ impl vsapi::v_s_gate::Server for VSGateImpl {
         // nodes must be updated. Detect it now while the actor is still in the DB.
         event_mgr::record_auth_change_if_provider(&self.asm, &node_zpr_addr).await;
 
-        let vs_handle: vsapi::v_s_handle::Client =
-            capnp_rpc::new_client(VSHandleImpl::new(self.asm.clone(), node_actor));
+        let vs_handle: vsapi::v_s_handle::Client = capnp_rpc::new_client(VSHandleImpl::new(
+            self.asm.clone(),
+            node_actor,
+            node_zpr_addr,
+        ));
         let mut res_builder = results.get().init_res();
         res_builder.set_ok(vs_handle)?;
 

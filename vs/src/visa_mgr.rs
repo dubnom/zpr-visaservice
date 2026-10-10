@@ -50,6 +50,11 @@ enum VCtx {
     Egress,
 }
 
+enum SessionKeys {
+    AuthenticatedActors,
+    Bootstrap,
+}
+
 /// Outcome of re-checking an existing visa against a newer policy snapshot.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum VisaRecheck {
@@ -332,7 +337,7 @@ impl VisaMgr {
         // so a peer with two connected neighbours needs one visa per neighbour. Sharing one
         // would leave the second neighbour off the visa's path -- its own copy could not be
         // actualized, and the peer's copy would forward over the wrong link.
-        if let Some(visa) = self
+        while let Some(visa) = self
             .find_node_visa_by_five_tuple(
                 future_peer,
                 &ft,
@@ -344,8 +349,30 @@ impl VisaMgr {
             )
             .await?
         {
-            Ok(visa)
-        } else {
+            let all_hops_staged = self
+                .repo
+                .get_visa_metadata_by_id(visa.issuer_id)?
+                .path
+                .as_ref()
+                .is_some_and(|path| {
+                    path.iter().all(|node| {
+                        matches!(
+                            self.repo.get_node_visa_state(visa.issuer_id, node),
+                            Some(db::NodeVisaState::Installed | db::NodeVisaState::PendingInstall)
+                        )
+                    })
+                });
+            if all_hops_staged
+                && visa.dock_pep.as_ref().is_some_and(|pep| {
+                    pep.session_key.ingress_key.is_empty() && pep.session_key.egress_key.is_empty()
+                })
+            {
+                return Ok(visa);
+            }
+            warn!(target: VISA, "revoking bootstrap visa {} with retained session keys or missing live-hop references for peer {future_peer}", visa.issuer_id);
+            self.mark_visa_revoked(visa.issuer_id).await?;
+        }
+        {
             let pkt_data = PacketDesc {
                 five_tuple: ft,
                 comm_flags: CommFlag::BiDirectional,
@@ -384,6 +411,7 @@ impl VisaMgr {
                     policy.get_version().unwrap_or(0),
                     policy.vinst(),
                     SystemTime::now() + config::MAX_VISA_LIFETIME,
+                    SessionKeys::Bootstrap,
                 )
                 .await?;
             Ok(visawmd.visa)
@@ -527,6 +555,7 @@ impl VisaMgr {
             policy_version,
             vinst,
             expiration_time,
+            SessionKeys::AuthenticatedActors,
         )
         .await
     }
@@ -545,6 +574,7 @@ impl VisaMgr {
         policy_version: u64,
         vinst: u64,
         expiration_time: SystemTime,
+        session_keys: SessionKeys,
     ) -> Result<VisaWithMetadata, ServiceError> {
         let (source_port, dest_port) = match pdesc.five_tuple.l4_protocol {
             ip_proto::TCP | ip_proto::UDP => {
@@ -610,8 +640,15 @@ impl VisaMgr {
             metadata.signal_msgs.push(sig.message.clone());
         }
 
-        let mut ingress_key = a2a_dh_pubkey_bytes(asm, &pdesc.five_tuple.source_addr).await?;
-        let mut egress_key = a2a_dh_pubkey_bytes(asm, &pdesc.five_tuple.dest_addr).await?;
+        // A future peer has not authenticated its current ephemeral key yet. Retained
+        // actor keys belong to the previous process and cannot protect bootstrap traffic.
+        let (mut ingress_key, mut egress_key) = match session_keys {
+            SessionKeys::AuthenticatedActors => (
+                a2a_dh_pubkey_bytes(asm, &pdesc.five_tuple.source_addr).await?,
+                a2a_dh_pubkey_bytes(asm, &pdesc.five_tuple.dest_addr).await?,
+            ),
+            SessionKeys::Bootstrap => (Vec::new(), Vec::new()),
+        };
 
         if ingress_key.is_empty() || egress_key.is_empty() {
             ingress_key.clear();
@@ -867,11 +904,17 @@ impl VisaMgr {
         }
     }
 
-    /// Designed to be used to setup database in clean state as we prepare for a
-    /// fresh node joining.
+    /// Clear only one node's references when constructing test state.
+    #[cfg(test)]
     pub async fn clear_node_state(&self, node_addr: &IpAddr) -> Result<(), ServiceError> {
         self.repo.clear_node_state(node_addr).await?;
         Ok(())
+    }
+
+    /// Reset forwarding state without revoking the key-free VSAPI transport
+    /// on which the node is currently authenticating.
+    pub async fn reset_node_state(&self, node_addr: &IpAddr) -> Result<(), ServiceError> {
+        self.clear_previous_node_visas(node_addr, true).await
     }
 
     /// Remove all visas tied to the given node -- assumes that `node_addr` has departed.
@@ -891,19 +934,54 @@ impl VisaMgr {
     /// it re-request everything. When that story is settled this teardown likely
     /// needs to preserve or snapshot state instead of dropping it. TBD.
     pub async fn remove_visas_for_node(&self, node_addr: &IpAddr) -> Result<(), ServiceError> {
+        self.clear_previous_node_visas(node_addr, false).await
+    }
+
+    async fn clear_previous_node_visas(
+        &self,
+        node_addr: &IpAddr,
+        retain_bootstrap: bool,
+    ) -> Result<(), ServiceError> {
         // Capture the referencing visas before clear_node_state unindexes the node.
         let ids = self.repo.get_all_visa_ids_for_node(node_addr)?;
 
         // 1. Revoke each from the other nodes still holding it. Log-and-continue
         //    so one failure can't strand the rest.
         for &id in &ids {
+            if retain_bootstrap {
+                if let Some(record) = self.get_visa_with_metadata_by_id(id).await? {
+                    if record.metadata.zpl == BOOTSTRAP_VISA_ZPL
+                        && record.visa.dock_pep.as_ref().is_some_and(|pep| {
+                            pep.session_key.ingress_key.is_empty()
+                                && pep.session_key.egress_key.is_empty()
+                        })
+                    {
+                        self.repo
+                            .transition_node_visa_state(
+                                *node_addr,
+                                id,
+                                db::NodeVisaState::Installed,
+                                db::NodeVisaState::PendingInstall,
+                            )
+                            .await?;
+                        continue;
+                    }
+                }
+                self.repo.mark_visa_revoked(id).await?;
+                self.repo
+                    .remove_node_if_pending_revoke(*node_addr, id)
+                    .await?;
+                continue;
+            }
             if let Err(e) = self.repo.mark_visa_revoked(id).await {
                 warn!(target: VISA, "failed to mark visa {id} revoked for departed node {node_addr}: {e}");
             }
         }
 
         // 2. Force-drop the departed node's own refs in one atomic pass (no RPC).
-        self.repo.clear_node_state(node_addr).await?;
+        if !retain_bootstrap {
+            self.repo.clear_node_state(node_addr).await?;
+        }
 
         // 3. Remove any visa now orphaned (no node refs) rather than wait for TTL.
         for id in ids {
@@ -1482,6 +1560,50 @@ mod tests {
                 .get_node_visa_state(visa.issuer_id, &via_node),
             Some(db::NodeVisaState::Installed),
             "the relay's install ack must apply"
+        );
+    }
+
+    #[tokio::test]
+    async fn bootstrap_replaces_cached_visa_missing_a_relay_reference() {
+        let asm = Arc::new(crate::assembly::tests::new_assembly_for_tests(None).await);
+        let via_node = add_vs_docking_node(&asm).await;
+        let peer: IpAddr = "fd5a:5052:3000::7".parse().unwrap();
+        let policy = asm.policy_mgr.get_current();
+        let old = asm
+            .visa_mgr
+            .vsapi_bootstrap_visa_for_future_peer(
+                &asm,
+                &policy,
+                &peer,
+                &via_node,
+                Direction::Forward,
+            )
+            .await
+            .unwrap();
+        asm.visa_mgr.repo.clear_node_state(&via_node).await.unwrap();
+
+        let new = asm
+            .visa_mgr
+            .vsapi_bootstrap_visa_for_future_peer(
+                &asm,
+                &policy,
+                &peer,
+                &via_node,
+                Direction::Forward,
+            )
+            .await
+            .unwrap();
+
+        assert_ne!(new.issuer_id, old.issuer_id);
+        assert_eq!(
+            asm.visa_mgr
+                .repo
+                .get_node_visa_state(new.issuer_id, &via_node),
+            Some(db::NodeVisaState::PendingInstall)
+        );
+        assert_eq!(
+            asm.visa_mgr.repo.get_node_visa_state(old.issuer_id, &peer),
+            Some(db::NodeVisaState::PendingRevoke)
         );
     }
 
@@ -2077,6 +2199,109 @@ mod tests {
             .unwrap();
     }
 
+    #[tokio::test]
+    async fn restart_bootstrap_revokes_cached_visa_with_retained_ephemeral_keys() {
+        let asm = crate::assembly::tests::new_assembly_for_tests(None).await;
+        let via_node = add_vs_docking_node(&asm).await;
+        let peer: IpAddr = "fd5a:5052:3000::7".parse().unwrap();
+        let vs_addr = asm.config.get_vs_addr();
+        let mut actor = make_node_actor_defexp(&peer.to_string(), "peer", "10.0.0.7:5001");
+        actor
+            .add_attribute(
+                Attribute::builder(key::A2A_DH_PUBKEY)
+                    .value(encode_public_key(&PublicKey::new(&[1; 32]))),
+            )
+            .unwrap();
+        asm.actor_mgr.add_node(&actor, false).await.unwrap();
+        add_keyed_adapter(&asm, &vs_addr.to_string(), "vs", &[2; 32]).await;
+        asm.actor_mgr.refresh_state().await.unwrap();
+        assert!(!asm.actor_mgr.is_node_connected(&peer));
+
+        for direction in [Direction::Forward, Direction::Reverse] {
+            let port = asm.config.core.vsapi_port.unwrap_or(config::VSAPI_PORT);
+            let (source, dest, source_port, dest_port) = match direction {
+                Direction::Forward => (peer, vs_addr, 0, port),
+                Direction::Reverse => (vs_addr, peer, port, 0),
+            };
+            let packet = PacketDesc {
+                five_tuple: make_fivetuple_tcp(source, dest, source_port, dest_port).unwrap(),
+                comm_flags: CommFlag::BiDirectional,
+            };
+            let mut path = vec![peer, via_node];
+            if direction == Direction::Reverse {
+                path.reverse();
+            }
+            let old = asm
+                .visa_mgr
+                .create_visa_with_path(
+                    &asm,
+                    &path[0],
+                    &packet,
+                    &Hit::new_no_signal(0, direction),
+                    Some(path.clone()),
+                    BOOTSTRAP_VISA_ZPL,
+                    0,
+                    0,
+                    SystemTime::now() + config::MAX_VISA_LIFETIME,
+                    SessionKeys::AuthenticatedActors,
+                )
+                .await
+                .unwrap()
+                .visa;
+            assert!(
+                !old.dock_pep
+                    .as_ref()
+                    .unwrap()
+                    .session_key
+                    .ingress_key
+                    .is_empty()
+            );
+            let new = asm
+                .visa_mgr
+                .vsapi_bootstrap_visa_for_future_peer(
+                    &asm,
+                    &asm.policy_mgr.get_current(),
+                    &peer,
+                    &via_node,
+                    direction,
+                )
+                .await
+                .unwrap();
+            assert_ne!(old.issuer_id, new.issuer_id);
+            let keys = &new.dock_pep.as_ref().unwrap().session_key;
+            assert!(keys.ingress_key.is_empty());
+            assert!(keys.egress_key.is_empty());
+            for node in &path {
+                assert!(
+                    asm.visa_mgr
+                        .get_pending_revoke_visa_ids_for_node(node)
+                        .await
+                        .unwrap()
+                        .contains(&old.issuer_id)
+                );
+            }
+            let dedup = asm
+                .visa_mgr
+                .vsapi_bootstrap_visa_for_future_peer(
+                    &asm,
+                    &asm.policy_mgr.get_current(),
+                    &peer,
+                    &via_node,
+                    direction,
+                )
+                .await
+                .unwrap();
+            assert_eq!(new.issuer_id, dedup.issuer_id);
+        }
+        assert!(
+            asm.actor_mgr
+                .get_actor_by_zpr_addr(&peer)
+                .await
+                .unwrap()
+                .is_some()
+        );
+    }
+
     /// Both adapters' keys land in the session key, source as ingress and dest as egress.
     #[tokio::test]
     async fn test_create_visa_session_key_carries_adapter_pubkeys() {
@@ -2486,6 +2711,97 @@ mod tests {
         }
         // Visa still present -- housekeeping removes it on ack.
         assert!(mgr.repo.get_visa_by_id(1000).is_ok());
+    }
+
+    #[tokio::test]
+    async fn node_reset_removes_old_vss_visa_from_live_relay_lookup() {
+        let mgr = make_mgr().await;
+        let relay: IpAddr = "fd5a:5052:90de::10".parse().unwrap();
+        let remote: IpAddr = "fd5a:5052:90de::12".parse().unwrap();
+        let vs: IpAddr = "fd5a:5052::1".parse().unwrap();
+        let mut visa = make_visa(1001, Duration::from_secs(60));
+        let pep = visa.dock_pep.as_mut().unwrap();
+        pep.source_addr = vs;
+        pep.dest_addr = remote;
+        pep.pep = DockPepType::TCP(TcpUdpPep {
+            source_port: 0,
+            dest_port: 8183,
+            endpoint: EndpointT::Any,
+        });
+        let packet = PacketDesc {
+            five_tuple: make_fivetuple_tcp(vs, remote, 0, 8183).unwrap(),
+            comm_flags: CommFlag::BiDirectional,
+        };
+        let metadata = db::VisaMetadata::new(
+            relay,
+            0,
+            0,
+            String::new(),
+            Direction::Forward,
+            Some(vec![relay, remote]),
+            &packet,
+        );
+        mgr.repo
+            .store_visa(&visa, metadata, db::NodeVisaState::Installed)
+            .await
+            .unwrap();
+        assert!(
+            mgr.get_node_visa_by_five_tuple(&relay, &packet.five_tuple)
+                .await
+                .unwrap()
+                .is_some()
+        );
+
+        mgr.reset_node_state(&remote).await.unwrap();
+
+        assert!(
+            mgr.get_node_visa_by_five_tuple(&relay, &packet.five_tuple)
+                .await
+                .unwrap()
+                .is_none()
+        );
+        assert_eq!(
+            mgr.repo
+                .get_visa_ids_for_node_by_state(&relay, db::NodeVisaState::PendingRevoke)
+                .unwrap(),
+            vec![1001]
+        );
+    }
+
+    #[tokio::test]
+    async fn node_reset_preserves_key_free_bootstrap_on_live_relay() {
+        let mgr = make_mgr().await;
+        let relay: IpAddr = "fd5a:5052:90de::10".parse().unwrap();
+        let remote: IpAddr = "fd5a:5052:90de::12".parse().unwrap();
+        let mut visa = make_visa(1002, Duration::from_secs(60));
+        visa.dock_pep.as_mut().unwrap().session_key = KeySet::default();
+        let metadata = db::VisaMetadata::new(
+            relay,
+            0,
+            0,
+            BOOTSTRAP_VISA_ZPL.to_owned(),
+            Direction::Forward,
+            Some(vec![relay, remote]),
+            &make_pdesc(),
+        );
+        mgr.repo
+            .store_visa(&visa, metadata, db::NodeVisaState::Installed)
+            .await
+            .unwrap();
+
+        mgr.visa_installed(1002, &remote).await.unwrap();
+        mgr.reset_node_state(&remote).await.unwrap();
+
+        assert_eq!(
+            mgr.repo
+                .get_visa_ids_for_node_by_state(&relay, db::NodeVisaState::Installed)
+                .unwrap(),
+            vec![1002]
+        );
+        assert_eq!(
+            mgr.repo.get_node_visa_state(1002, &remote),
+            Some(db::NodeVisaState::PendingInstall)
+        );
     }
 
     /// A visa referencing only the departed node is captured (snapshot before

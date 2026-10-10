@@ -563,6 +563,95 @@ func TestSimulatorScenarioManagerRunsParallelLanesWithDependencies(t *testing.T)
 	}
 }
 
+func TestScenarioMachineStartQueuePreservesExecutionBudget(t *testing.T) {
+	scenarioMachineStartSlot <- struct{}{}
+	released := false
+	defer func() {
+		if !released {
+			<-scenarioMachineStartSlot
+		}
+	}()
+	manager := newSimulatorScenarioManager()
+	done := make(chan error, 1)
+	executed := make(chan time.Duration, 1)
+	go func() {
+		done <- manager.executeStep(context.Background(), scenarioTestManifest(),
+			simulatorScenarioStep{Action: "start_machine", Machine: "machine-01", TimeoutSeconds: 1},
+			func(ctx context.Context, _ simulatorManifest, _ simulatorScenarioStep) (string, error) {
+				deadline, ok := ctx.Deadline()
+				if !ok {
+					return "", errors.New("missing execution deadline")
+				}
+				executed <- time.Until(deadline)
+				return "started", ctx.Err()
+			}, "run", 1, true)
+	}()
+	select {
+	case err := <-done:
+		t.Fatalf("queued launch finished before admission: %v", err)
+	case <-time.After(1100 * time.Millisecond):
+	}
+	<-scenarioMachineStartSlot
+	released = true
+	select {
+	case err := <-done:
+		if err != nil {
+			t.Fatal(err)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("queued launch did not resume")
+	}
+	if remaining := <-executed; remaining < 900*time.Millisecond {
+		t.Fatalf("queue consumed execution budget: %v remaining", remaining)
+	}
+	run := manager.snapshot()
+	if len(run.Steps) != 1 || run.Steps[0].Status != "completed" || len(run.ActiveSteps) != 0 {
+		t.Fatalf("launch result not recorded: %+v", run)
+	}
+}
+
+func TestScenarioMachineStartQueueCancellation(t *testing.T) {
+	scenarioMachineStartSlot <- struct{}{}
+	defer func() { <-scenarioMachineStartSlot }()
+	manager := newSimulatorScenarioManager()
+	ctx, cancel := context.WithCancel(context.Background())
+	done := make(chan error, 1)
+	go func() {
+		done <- manager.executeStep(ctx, scenarioTestManifest(),
+			simulatorScenarioStep{Action: "start_machine", Machine: "machine-01"},
+			func(context.Context, simulatorManifest, simulatorScenarioStep) (string, error) {
+				return "", errors.New("cancelled queued launch executed")
+			}, "run", 1, true)
+	}()
+	cancel()
+	select {
+	case err := <-done:
+		if !errors.Is(err, context.Canceled) {
+			t.Fatalf("cancellation error = %v", err)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("cancelled launch waited for the occupied slot")
+	}
+	run := manager.snapshot()
+	if len(run.Steps) != 1 || run.Steps[0].Status != "failed" || len(run.ActiveSteps) != 0 {
+		t.Fatalf("cancellation not recorded: %+v", run)
+	}
+}
+
+func TestScenarioMachineStartSlotReleasedAfterFailure(t *testing.T) {
+	want := errors.New("launch failed")
+	if _, err := withScenarioMachineStart(context.Background(), func() (string, error) {
+		return "", want
+	}); !errors.Is(err, want) {
+		t.Fatalf("launch error = %v", err)
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+	defer cancel()
+	if _, err := withScenarioMachineStart(ctx, func() (string, error) { return "started", nil }); err != nil {
+		t.Fatalf("failed launch retained slot: %v", err)
+	}
+}
+
 func TestSimulatorScenarioManagerParallelFailureCancelsLanesBeforeCleanup(t *testing.T) {
 	manager := newSimulatorScenarioManager()
 	blocked := make(chan struct{})

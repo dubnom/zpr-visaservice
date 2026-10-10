@@ -115,7 +115,7 @@ pub async fn vss_worker_loop(
     asm: Arc<Assembly>,
     node_addr: SocketAddr,
     mut cmd_rx: mpsc::Receiver<VssCmd>,
-) {
+) -> Result<(), VssSyncError> {
     // Open connect to VSS.
     info!(target: VSS, "connecting to VSS at {}", node_addr);
 
@@ -124,7 +124,7 @@ pub async fn vss_worker_loop(
         Err(e) => {
             error!(target: VSS, "failed to connect to VSS at {}: {}", node_addr, e);
             asm.counters.incr(CounterType::VssErrors);
-            return;
+            return Err(e);
         }
     };
 
@@ -235,11 +235,12 @@ pub async fn vss_worker_loop(
                     ping_timeout.as_mut().reset(tokio::time::Instant::now() + Duration::from_secs(1));
                 } else {
                     error!(target: VSS, "too many VSS ping failures to {}, exiting VSS worker", node_addr);
-                    return;
+                    return Err(VssSyncError::ConnClosed);
                 }
             }
         }
     }
+    Ok(())
 }
 
 /// Perform TCP connect, TLS handshake, Cap'n Proto RPC bootstrap, and the initial

@@ -26,6 +26,7 @@ pub struct ActorMgr {
     node_db: db::NodeRepo,
     counters: Arc<Counters>,
     connection_table: Arc<DashMap<IpAddr, IpAddr>>, // adapter_zpr_addr -> docking_node_zpr_addr
+    live_nodes: Arc<DashMap<IpAddr, Arc<()>>>,
 
     /// Maps AAA address → (docking_node, expiry). Registered on the request side when an
     /// unauthenticated adapter contacts an auth service. Looked up on the response side to
@@ -48,6 +49,20 @@ pub struct ServiceDetail {
     pub connect_via: Option<IpAddr>,
 }
 
+pub struct NodeSession {
+    live_nodes: Arc<DashMap<IpAddr, Arc<()>>>,
+    node_addr: IpAddr,
+    generation: Arc<()>,
+}
+
+impl Drop for NodeSession {
+    fn drop(&mut self) {
+        self.live_nodes.remove_if(&self.node_addr, |_, generation| {
+            Arc::ptr_eq(generation, &self.generation)
+        });
+    }
+}
+
 impl ActorMgr {
     pub fn new(
         actor_repo: db::ActorRepo,
@@ -59,6 +74,7 @@ impl ActorMgr {
             node_db: node_repo,
             counters,
             connection_table: Arc::new(DashMap::new()),
+            live_nodes: Arc::new(DashMap::new()),
             aaa_table: DashMap::new(),
         }
     }
@@ -71,6 +87,7 @@ impl ActorMgr {
     ///
     /// For non-expired nodes, we wipe their vss info.
     pub async fn refresh_state(&self) -> Result<(), ServiceError> {
+        self.live_nodes.clear();
         for node_addr in &self.node_db.list_node_addrs().await? {
             let node_actor = match self.actor_db.get_actor_by_zpr_addr(node_addr).await {
                 Ok(actor) => actor,
@@ -146,7 +163,35 @@ impl ActorMgr {
         self.node_db
             .update_last_seen_time(actor.get_zpr_addr().unwrap())
             .await?;
+        self.live_nodes
+            .insert(*actor.get_zpr_addr().unwrap(), Arc::new(()));
         Ok(())
+    }
+
+    pub fn is_node_connected(&self, node_addr: &IpAddr) -> bool {
+        self.live_nodes.contains_key(node_addr)
+    }
+
+    pub(crate) fn node_session_generation(&self, node_addr: &IpAddr) -> Option<Arc<()>> {
+        self.live_nodes
+            .get(node_addr)
+            .map(|entry| entry.value().clone())
+    }
+
+    pub(crate) fn invalidate_node_session(&self, node_addr: &IpAddr, generation: &Arc<()>) -> bool {
+        self.live_nodes
+            .remove_if(node_addr, |_, current| Arc::ptr_eq(current, generation))
+            .is_some()
+    }
+
+    pub fn node_session(&self, node_addr: &IpAddr) -> NodeSession {
+        let generation = Arc::new(());
+        self.live_nodes.insert(*node_addr, generation.clone());
+        NodeSession {
+            live_nodes: self.live_nodes.clone(),
+            node_addr: *node_addr,
+            generation,
+        }
     }
 
     // TODO: This probably updates too much ... all we really need is to update the attributes.
@@ -162,6 +207,7 @@ impl ActorMgr {
     ///
     /// Also updates our internal connection table.
     pub async fn remove_node(&self, node_addr: &IpAddr) -> Result<(), ServiceError> {
+        self.live_nodes.remove(node_addr);
         self.node_db.remove_node(node_addr).await?;
 
         // Remove any connections that point to this node.  Could be slow to iterate if
@@ -312,6 +358,7 @@ impl ActorMgr {
 
     /// Remove actor state from the database. If removing a node, also call [ActorMgr::remove_node].
     pub async fn remove_actor_by_zpr_addr(&self, zpra: &IpAddr) -> Result<(), ServiceError> {
+        self.live_nodes.remove(zpra);
         self.actor_db.rm_actor_by_zpr_addr(zpra).await?;
         self.connection_table.remove(zpra);
         Ok(())

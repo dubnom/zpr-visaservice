@@ -608,11 +608,20 @@ func (manager *simulatorScenarioManager) executeStep(parent context.Context, man
 	} else if step.Action == "delay" {
 		timeout += time.Second
 	}
-	ctx, cancel := context.WithTimeout(parent, timeout)
-	defer cancel()
 	started := time.Now()
 	manager.beginStep(number, parallel)
-	output, err := execute(ctx, manifest, step)
+	executeTimed := func() (string, error) {
+		ctx, cancel := context.WithTimeout(parent, timeout)
+		defer cancel()
+		return execute(ctx, manifest, step)
+	}
+	var output string
+	var err error
+	if step.Action == "start_machine" {
+		output, err = withScenarioMachineStart(parent, executeTimed)
+	} else {
+		output, err = executeTimed()
+	}
 	finished := time.Now()
 	result := simulatorScenarioStepResult{
 		Number: number, Phase: phase, Action: step.Action, Machine: step.Machine, Component: step.Component,
@@ -1409,11 +1418,22 @@ func scenarioWorkloadServiceRouteCommand(machineID, agent, serviceAddress string
 	return exec.Command("docker", "exec", machineContainerName(machineID), "ip", "-6", "route", "replace", parsedAddress.String()+"/128", "dev", config.tun), nil
 }
 
-var scenarioMachineStartMu sync.Mutex
+var scenarioMachineStartSlot = make(chan struct{}, 1)
+
+func withScenarioMachineStart(ctx context.Context, execute func() (string, error)) (string, error) {
+	select {
+	case scenarioMachineStartSlot <- struct{}{}:
+		defer func() { <-scenarioMachineStartSlot }()
+	case <-ctx.Done():
+		return "", ctx.Err()
+	}
+	if err := ctx.Err(); err != nil {
+		return "", err
+	}
+	return execute()
+}
 
 func startScenarioMachine(ctx context.Context, manifest simulatorManifest, machineID string) (string, error) {
-	scenarioMachineStartMu.Lock()
-	defer scenarioMachineStartMu.Unlock()
 	states := simulatorMachineContainerStates([]string{machineID})
 	var output string
 	var err error

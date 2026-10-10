@@ -13,6 +13,35 @@ deployed. Commit/push state is separate; retain each dated entry's scope.
 
 ## Deployment status
 
+- Simulator launch-queue recovery deployed 2026-10-10 at 05:32:17 UTC as
+  `zpr-simulator:20261010-launch-queue`. Executable SHA-256:
+  `b7c84cc78ffc7a87a563ae2023d4830242ad75d2811e19ffea79006846bad97d`.
+  Reconstructed the previous Simulator executable byte-for-byte
+  (`d4d9e8a7b0908fba540f4aacb3893cd8adedbde3c6736fe0c324f5fb12b6dcad`)
+  before overlaying only the scenario scheduling fix. All 62 embedded UI assets,
+  container configuration, mounts, ports and organization settings are unchanged;
+  all 19 unrelated running service start times were preserved.
+  Stopped `zpr-simulator-before-launch-queue-20261010` retains the rollback.
+  Machine launches remain serialized through capacity checks and provisioning,
+  but acquire a cancellable slot before starting their execution deadline.
+  Queue time remains included in recorded elapsed time; other action deadlines
+  are unchanged. All 39 scenario-file tests pass, including queue-budget,
+  cancellation and failed-launch slot-release regressions; targeted scenario
+  race suites pass in both current source and the deployed baseline.
+  The full Great Lakes workday ran from 05:32:30 to 05:37:12 UTC and completed
+  all 157 steps with no failures: twelve launches, twelve controller-readiness
+  checks, twelve logins, three DNS resolutions, thirty service requests returning
+  HTTP 200, and three expected-denial traffic probes. All 34 cleanup steps
+  passed, including twelve machine stops; no scenario machines remained running.
+  The live browser displayed completed, 157 / 157. At 05:37:26 all three nodes'
+  API/VSS socket pairs remained established and every node-peer link was Active
+  bilaterally, without restarting VS or the nodes for this run. No VS timeout/
+  VSS-failure log lines occurred during this workday. This establishes a passing
+  end-to-end workday after the earlier independent Tijuana restart recovery;
+  it does not explain the intermittent Redis stalls observed before this run
+  or certify indefinite stability. No policy, identity or Redis durability
+  settings were changed.
+
 - Great Lakes reconnect follow-up deployed 2026-10-10 at 05:10 UTC.
   Visa Service SHA-256:
   `84bf016b9aa7797efb31c9c87f01a49a30f90638efe03ae0f158b21c65ae4d89`;

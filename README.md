@@ -2,6 +2,26 @@
 
 ZPR visa service implementation (under active development).
 
+On a state-preserving restart, retained node identities are not evidence of a
+live node session. Policy-authorized peer bootstrap visas remain available until
+the peer authenticates in the current Visa Service process, allowing remote
+nodes to reconnect without clearing the organization database.
+Live-session tracking follows the RPC handle lifetime, including soft reconnects.
+A failed VSS connection also invalidates its associated session, so half-open
+VSAPI sockets cannot suppress restart bootstrap. Failure of an older VSS worker
+or dropping an older RPC handle cannot clear a newer session. Bootstrap requests
+check session liveness even when both endpoint identities remain in the database.
+Bootstrap visas do not reuse
+retained ephemeral A2A keys: those keys must be learned again through authentication.
+Bootstrap transport retains authenticated hop encryption and the VSAPI TLS session.
+A fresh node reset revokes that node's previous non-bootstrap visas on the live relays before
+issuing replacements; clearing only the restarting node's references would leave
+relays matching obsolete VSS visas and ephemeral keys.
+Key-free bootstrap copies remain on live relays to preserve the VSAPI connection
+used to authenticate the restarting node; its own copies are queued for reinstall.
+Cached bootstrap visas missing any relay's installation reference are replaced,
+so a relay reset cannot strand a future peer with an undeliverable visa.
+
 See [Features Added Since the Upstream Fork](FEATURES_SINCE_ZPR_ORG.md) for a
 high-level overview of the operator, policy, trusted-service, DNS, observability,
 and simulator capabilities added in this fork.
@@ -77,5 +97,3 @@ packages a third-party open-source log and metrics server behind a dedicated
 ZPR adapter. It specifies OTLP/HTTP ingestion, authenticated reader access,
 and the required Visa Service exporter interfaces. The profile does not
 provision an adapter, install policy, or export existing metrics automatically.
-
-

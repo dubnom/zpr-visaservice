@@ -1,6 +1,6 @@
 //! Bootstrap visas: the visas that let a node reach VSAPI *before* it has connected.
 //!
-//! A node declared in policy as a peer of an already-connected node has no actor and no route
+//! A node declared in policy as a peer of an already-connected node has no live session
 //! until its link comes up, and the way it brings that link up is by reaching the visa service
 //! over VSAPI. Policy evaluation cannot answer for it, so these visas are minted directly from
 //! the policy-declared peering, which *is* the authorization.
@@ -58,7 +58,7 @@ pub const BOOTSTRAP_VISA_ZPL: &str = "<bootstrap: policy peering>";
 /// visa carries one dock PEP and one path orientation, so neither can stand in for the other --
 /// see `VisaMgr::vsapi_bootstrap_visa_for_future_peer`.
 ///
-/// Returns no visas for a peer that has already connected: it has an actor and a route, so it
+/// Returns no visas for a peer that has already connected in this process, so it
 /// asks for what it needs over its own VSAPI session. Minting for it is not just redundant but
 /// wrong -- [path_for_future_peer] stitches the peer on in front of `via_node`'s route to the
 /// visa service, and for a connected peer that route can run back through the peer itself,
@@ -75,12 +75,7 @@ pub async fn visas_for_link(
     future_peer: &IpAddr,
     via_node: &IpAddr,
 ) -> Result<Vec<Visa>, ServiceError> {
-    if asm
-        .actor_mgr
-        .get_actor_by_zpr_addr(future_peer)
-        .await?
-        .is_some()
-    {
+    if asm.actor_mgr.is_node_connected(future_peer) {
         debug!(target: VSS, "peer {future_peer} of node {via_node} is already connected: no bootstrap visas needed");
         return Ok(Vec::new());
     }
@@ -133,17 +128,28 @@ pub async fn visa_for_future_peer_request(
     let vs_addr = asm.config.get_vs_addr();
     let vsapi_port = asm.config.core.vsapi_port.unwrap_or(config::VSAPI_PORT);
 
-    // Which end is the peer, which direction of the flow is this, and is the peer's actor the
-    // missing one? A connected peer's VSAPI traffic must go through policy like anything else.
-    let (peer_addr, direction, peer_actor_missing) =
+    // Retained node identities survive restart, but their sessions do not.
+    let (peer_addr, direction, peer_needs_bootstrap) =
         if ft.dest_addr == vs_addr && ft.dest_port == vsapi_port {
-            (ft.source_addr, Direction::Forward, source_actor.is_none())
+            (
+                ft.source_addr,
+                Direction::Forward,
+                source_actor.is_none()
+                    || (source_actor.as_ref().is_some_and(Actor::is_node)
+                        && !asm.actor_mgr.is_node_connected(&ft.source_addr)),
+            )
         } else if ft.source_addr == vs_addr && ft.source_port == vsapi_port {
-            (ft.dest_addr, Direction::Reverse, dest_actor.is_none())
+            (
+                ft.dest_addr,
+                Direction::Reverse,
+                dest_actor.is_none()
+                    || (dest_actor.as_ref().is_some_and(Actor::is_node)
+                        && !asm.actor_mgr.is_node_connected(&ft.dest_addr)),
+            )
         } else {
             return None;
         };
-    if !peer_actor_missing {
+    if !peer_needs_bootstrap {
         return None;
     }
 
@@ -257,6 +263,11 @@ pub fn path_for_future_peer(
             .into_iter()
             .map(IpAddr::from),
     );
+    if path[1..].contains(future_peer) {
+        return Err(ServiceError::Internal(format!(
+            "bootstrap path for {future_peer} through {via_node} revisits the peer"
+        )));
+    }
     Ok(path)
 }
 
@@ -543,6 +554,136 @@ mod tests {
             resent_ids, ids,
             "re-sending topology must not mint duplicates"
         );
+    }
+
+    #[tokio::test]
+    async fn retained_node_identity_does_not_suppress_restart_bootstrap() {
+        let via_node: IpAddr = "fd5a:5052:3000::1".parse().unwrap();
+        let peer: IpAddr = "fd5a:5052:3000::7".parse().unwrap();
+        let asm = build_bootstrap_test_asm(via_node, peer).await;
+        asm.actor_mgr
+            .add_node(
+                &make_node_actor_defexp(&peer.to_string(), "peer-node", "10.0.0.7:5001"),
+                false,
+            )
+            .await
+            .unwrap();
+        assert!(asm.actor_mgr.is_node_connected(&peer));
+        asm.actor_mgr.refresh_state().await.unwrap();
+        assert!(!asm.actor_mgr.is_node_connected(&peer));
+        assert!(
+            asm.actor_mgr
+                .get_actor_by_zpr_addr(&peer)
+                .await
+                .unwrap()
+                .is_some()
+        );
+        let vs_actor = crate::test_helpers::make_adapter_actor_defexp(
+            &asm.config.get_vs_addr().to_string(),
+            "vs.zpr",
+        );
+        asm.actor_mgr
+            .add_adapter_via_node(&vs_actor, &via_node)
+            .await
+            .unwrap();
+        let asm = Arc::new(asm);
+        let visas = visas_for_link(&asm, &asm.policy_mgr.get_current(), &peer, &via_node)
+            .await
+            .unwrap();
+        assert_eq!(visas.len(), 2);
+        let (syn, reply) = bootstrap_flow_packets(&asm, &peer);
+        for packet in [syn, reply] {
+            assert!(matches!(
+                process_visa_request_for_test(asm.clone(), via_node, packet).await,
+                VisaDecision::Allow(_, _)
+            ));
+        }
+    }
+
+    #[tokio::test]
+    async fn bootstrap_path_rejects_retained_peer_on_vs_segment() {
+        let via_node: IpAddr = "fd5a:5052:3000::1".parse().unwrap();
+        let peer: IpAddr = "fd5a:5052:3000::7".parse().unwrap();
+        let asm = build_bootstrap_test_asm(via_node, peer).await;
+        asm.topo_mgr.add_node(peer).unwrap();
+        asm.topo_mgr
+            .add_link(via_node, peer, LinkId("link-vp".into()), vec![], 1)
+            .unwrap();
+        asm.actor_mgr.hack_set_vs_docking_node(&peer).await.unwrap();
+        assert!(path_for_future_peer(&asm, &peer, &via_node).is_err());
+    }
+
+    #[tokio::test]
+    async fn node_session_loss_preserves_identity_and_ignores_stale_session_drop() {
+        let via_node: IpAddr = "fd5a:5052:3000::1".parse().unwrap();
+        let peer: IpAddr = "fd5a:5052:3000::7".parse().unwrap();
+        let asm = build_bootstrap_test_asm(via_node, peer).await;
+        let actor = make_node_actor_defexp(&peer.to_string(), "peer-node", "10.0.0.7:5001");
+        asm.actor_mgr.add_node(&actor, false).await.unwrap();
+        let old_session = asm.actor_mgr.node_session(&peer);
+        asm.actor_mgr.add_node(&actor, true).await.unwrap();
+        let new_session = asm.actor_mgr.node_session(&peer);
+        drop(old_session);
+        assert!(asm.actor_mgr.is_node_connected(&peer));
+        drop(new_session);
+        assert!(!asm.actor_mgr.is_node_connected(&peer));
+        assert!(
+            asm.actor_mgr
+                .get_actor_by_zpr_addr(&peer)
+                .await
+                .unwrap()
+                .is_some()
+        );
+        let asm = Arc::new(asm);
+        assert_eq!(
+            visas_for_link(&asm, &asm.policy_mgr.get_current(), &peer, &via_node)
+                .await
+                .unwrap()
+                .len(),
+            2
+        );
+    }
+
+    #[tokio::test]
+    async fn retained_node_soft_open_restores_live_session() {
+        let via_node: IpAddr = "fd5a:5052:3000::1".parse().unwrap();
+        let peer: IpAddr = "fd5a:5052:3000::7".parse().unwrap();
+        let asm = build_bootstrap_test_asm(via_node, peer).await;
+        let actor = make_node_actor_defexp(&peer.to_string(), "peer-node", "10.0.0.7:5001");
+        asm.actor_mgr.add_node(&actor, false).await.unwrap();
+        asm.actor_mgr.refresh_state().await.unwrap();
+        assert!(!asm.actor_mgr.is_node_connected(&peer));
+        let session = asm.actor_mgr.node_session(&peer);
+        assert!(asm.actor_mgr.is_node_connected(&peer));
+        drop(session);
+        assert!(!asm.actor_mgr.is_node_connected(&peer));
+        assert!(
+            asm.actor_mgr
+                .get_actor_by_zpr_addr(&peer)
+                .await
+                .unwrap()
+                .is_some()
+        );
+    }
+
+    #[tokio::test]
+    async fn failed_vss_invalidates_only_its_own_node_session() {
+        let via_node: IpAddr = "fd5a:5052:3000::1".parse().unwrap();
+        let peer: IpAddr = "fd5a:5052:3000::7".parse().unwrap();
+        let asm = build_bootstrap_test_asm(via_node, peer).await;
+        let old_session = asm.actor_mgr.node_session(&peer);
+        let old_generation = asm.actor_mgr.node_session_generation(&peer).unwrap();
+        let new_session = asm.actor_mgr.node_session(&peer);
+        assert!(
+            !asm.actor_mgr
+                .invalidate_node_session(&peer, &old_generation)
+        );
+        drop(old_session);
+        assert!(asm.actor_mgr.is_node_connected(&peer));
+        let generation = asm.actor_mgr.node_session_generation(&peer).unwrap();
+        assert!(asm.actor_mgr.invalidate_node_session(&peer, &generation));
+        assert!(!asm.actor_mgr.is_node_connected(&peer));
+        drop(new_session);
     }
 
     /// A topology send to a node whose peer has already connected carries no bootstrap visas.

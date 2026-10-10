@@ -739,6 +739,13 @@ fails, the progress badge and summary retain the original failed run step even
 after cleanup advances the step counter. Cleanup-only failures show their own
 step instead.
 
+Machine launches remain serialized to protect shared provisioning and the
+machine-capacity check. A launch's `timeout_seconds` (90 seconds by default)
+starts after admission to that queue, not while waiting for another launch.
+Waiting launches remain cancellable by scenario stop or another lane's failure.
+Recorded start/finish times include queue time; other actions retain their
+existing execution deadlines.
+
 During a running or cleaning scenario, running machines have miniature log
 windows above their track headings. The previews show bounded recent text from
 the existing Simulator log sources and link to **Workers** for full-size logs.

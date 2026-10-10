@@ -175,4 +175,14 @@ No new priority or implementation approval is implied for backend rollouts.
 
 ## Larger planned work
 
+- [ ] Multi-site BIND 9 DNS resilience for Great Lakes: plan DNS instances in
+  Milwaukee, Shenzhen and Tijuana, with one primary and authoritative
+  secondaries for internal ZPR zones, authenticated AXFR/IXFR transfers and
+  NOTIFY, and site-local recursive resolution with multiple client resolver
+  addresses. Define independent production configuration and ZPR policy for
+  DNS queries and zone transfers; do not depend on Simulator. Verify zone
+  update propagation, actual client failover, primary/site outages, secondary
+  zone expiry and recovery. BIND configuration and recursive caches are not
+  replicated automatically. Anycast is an optional separate routing/health
+  design decision, not assumed in this task. Track only; no deployment yet.
 - [ ] Organization creation/editing: Duplicate -> edit draft -> validate -> review activation first. The [detailed plan](Organization%20editor%20plan.md) owns the individual requirements; production administration remains independent of Simulator.

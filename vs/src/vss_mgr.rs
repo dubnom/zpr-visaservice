@@ -37,6 +37,7 @@ enum Job {
         asm: Arc<Assembly>,
         node_addr: IpAddr,
         vss_addr: SocketAddr,
+        generation: Option<Arc<()>>,
         delay: std::time::Duration,
         cmd_rx: mpsc::Receiver<VssCmd>,
     },
@@ -89,6 +90,7 @@ impl VssMgr {
         let (cmd_tx, cmd_rx) = mpsc::channel::<VssCmd>(16);
 
         let job = Job::StartVssWorker {
+            generation: asm.actor_mgr.node_session_generation(node_addr),
             asm,
             node_addr: node_addr.clone(),
             vss_addr: *vss_addr,
@@ -125,6 +127,7 @@ impl VssMgr {
             dashmap::Entry::Vacant(slot) => {
                 let (cmd_tx, cmd_rx) = mpsc::channel::<VssCmd>(16);
                 let job = Job::StartVssWorker {
+                    generation: asm.actor_mgr.node_session_generation(node_addr),
                     asm,
                     node_addr: *node_addr,
                     vss_addr: *vss_addr,
@@ -236,17 +239,27 @@ async fn run_vss_job(job: Job) {
             asm,
             node_addr,
             vss_addr,
+            generation,
             delay,
             cmd_rx,
         } => {
             debug!(target: VSS, "starting VSS worker for node {} at {}", node_addr, vss_addr);
             tokio::time::sleep(delay).await;
-            vss_worker::vss_worker_loop(asm.clone(), vss_addr, cmd_rx).await;
+            if let Err(e) = vss_worker::vss_worker_loop(asm.clone(), vss_addr, cmd_rx).await {
+                tracing::warn!(target: VSS, "VSS connection to node {node_addr} failed: {e}");
+                if let Some(generation) = generation {
+                    if asm
+                        .actor_mgr
+                        .invalidate_node_session(&node_addr, &generation)
+                    {
+                        tracing::warn!(target: VSS, "node {node_addr} lost its live session; restart bootstrap is available");
+                    }
+                }
+            }
             // When we exit the worker loop, we are done but the handle is still sitting in
             // the manager. So we clean it out here:
             asm.vss_mgr.clear_handle(&node_addr);
             info!(target: VSS, "VSS worker for node {} has exited", node_addr);
-            // TODO: Do we need to track somewhere that we are no longer in communication with this node?
         }
     }
 }
