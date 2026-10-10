@@ -45,7 +45,7 @@ func TestOIDCExpiredOrMissingLoginRecoversWithoutAuthenticating(t *testing.T) {
 				t.Fatal("recovery page lacks HTML type or privacy/security headers")
 			}
 			body := response.Body.String()
-			for _, content := range []string{`method="post" action="/auth/operator/login"`, `<button type="submit">Timed out. Try again.</button>`} {
+			for _, content := range []string{`method="get" action="/"`, `<button type="submit">Timed out. Try again.</button>`} {
 				if !strings.Contains(body, content) {
 					t.Fatalf("recovery action missing: %s", content)
 				}
@@ -55,6 +55,9 @@ func TestOIDCExpiredOrMissingLoginRecoversWithoutAuthenticating(t *testing.T) {
 			}
 			if strings.Contains(body, state) || strings.Contains(body, "test-code") {
 				t.Fatal("callback secrets reflected in recovery page")
+			}
+			if strings.Contains(body, `action="/auth/operator/login"`) {
+				t.Fatal("recovery bypasses the application's same-origin login initiation")
 			}
 			for _, cookie := range response.Result().Cookies() {
 				if cookie.Name == a.cookie && cookie.MaxAge >= 0 {

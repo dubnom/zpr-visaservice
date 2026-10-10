@@ -1120,7 +1120,10 @@ When enabled on direct HTTPS, the handler supports:
   signed ID-token validation, explicit grant lookup, and opaque session cookie.
   Expired, missing-browser, lost-state and replayed login attempts remain HTTP
   403, but display a recovery page with a single **Timed out. Try again.** action
-  (a same-origin POST starting fresh state/nonce/PKCE). Recovery
+  (a GET back to Control Room, which initiates a same-origin POST with fresh
+  state/nonce/PKCE). Do not POST directly from the timeout page: its
+  `no-referrer` policy suppresses the POST Origin, and its restrictive
+  `form-action 'self'` policy blocks the authorization-provider redirect. Recovery
   never exchanges the rejected code or reflects callback parameters. The
   five-minute login timeout and all authorization checks remain unchanged.
 - `GET /auth/operator/session`: same-origin identity and CSRF token only,
@@ -1667,7 +1670,7 @@ durable audit archive. **Workers** merges passive device/runtime inventory and
 workload logs, with device-type filtering. Control Room remains the read-only network and policy monitor at
 `http://127.0.0.1:8787`.
 
-The Control Room sidebar lists Map, Status, Security, Diagnostics, Trusted
+The Control Room sidebar lists Map, Status, Security, Services, Nodes, Trusted
 Sources, Adapter Logs, and the external Log Manager (marked with a green ↗
 arrow). Policy/Assertions, Gateways, and Config follow under a small
 **Configuration** label; the label is hidden in condensed and mobile layouts.
@@ -1676,8 +1679,9 @@ The top header uses concise **Control Room** and **Visa Service** titles.
 Visa Service uptime is on its secondary line; healthy states do not repeat
 "Available" or "connected". Independent green/red lamps distinguish Control Room
 transport from Visa Service source health. Partial, unavailable, unconfigured
-and snapshot-transport failures remain explicitly labelled; transport failure
-clears the displayed uptime until a successful snapshot restores it.
+and snapshot-transport failures use the single secondary label **Unavailable**;
+unavailable source uptime is hidden until a healthy snapshot restores it.
+Detailed failures remain in the alert strip rather than the top banner.
 
 Control Room groups Adapters, Actors, Services, Visas, Denials, and DNS under
 counted Status tabs. The summary metrics stay on Map rather than repeating on
@@ -1905,9 +1909,12 @@ and restores the running style. Retained tails are browser-memory only, scoped
 to the active organization, and cleared when organizations change or the page
 is reloaded; they are not a durable archive.
 
-Control Room's **Adapter Logs** page shows the manifest fleet with Controller,
-Control adapter, and assigned-workload adapter logs. Its read-only API passes
-through the authenticated Control Service to the simulator's adapter collector.
+Control Room's **Adapter Logs** page shows independently configured production
+adapter/controller log sources. Its read-only API passes through the
+authenticated Control Service to the production collector, without reading
+Simulator manifests or calling Simulator APIs.
+Locally generated log panel titles use only the source name (for example,
+`web0-adapter`); organization prefixes remain in internal IDs, not display titles.
 The **Adapter logs** and **Controller logs** buttons at the top switch log types
 using the same horizontal panels. Each panel remembers its adapter/controller
 selection and source scroll/follow state; changing types needs no additional
@@ -1942,20 +1949,102 @@ background colors (standard, bright, 256-color, and RGB), bold, faint, italic,
 and underline are rendered using the vendored MIT-licensed `ansi_up` 6.0.6
 browser module. Log text is HTML-escaped, terminal hyperlinks stay inert, and
 only approved color and text-emphasis styles are applied without relaxing CSP.
-Diagnostics log bodies use the same `colored-log.js` renderer as
-Adapter/Controller Logs and Workers, preserving provider-supplied ANSI colors
+
+Control Room's **Nodes** page includes the selected node's production source
+health, sortable source metrics and logs below its statistics. Health shows
+source identity/address, state, last update and whether the displayed metric
+sample is current, stale, partial or unavailable. Source metrics and Diagnostics
+service metrics share `source-metrics.js`, including exact integer sorting
+without rounding large counter strings and change pulses on refreshed values.
+Select nodes from the horizontal tab navigation; each tab switches the node
+summary, counters, source health/metrics and logs together. Arrow keys, Home
+and End move between node tabs.
+When the node tabs exceed the available selector width, they are replaced by a
+node pulldown. Resizing or updating node names/counts reevaluates the fit.
+Both selector modes keep the selected node and the second navigation's active
+data area unchanged.
+Within the selected node, a second horizontal navigation row separates
+**Overview**, **Counters**, **Health & metrics**, and **Logs**. Only the selected
+area is visible. Area selection survives node changes and snapshot refreshes;
+returning to Logs restores its scroll/follow state without an additional request.
+Nodes, Adapter/Controller Logs and Simulator Workers use the shared
+`log-panel.js` component for panel construction, safe rendering, retained scroll
+position, follow-tail behavior and standard Maximize/Restore icons.
+Nodes uses the same black terminal surface, with a 360px scrollport in the normal
+view and an expanded scrollport when maximized. Escape restores the panel and
+returns focus to its window control; navigation restores and detaches the panel.
+Each visited node remembers its scroll/follow state. Scrolling back suspends
+following; scrolling to the bottom resumes it.
+
+Node log bodies remain raw, with no Format JSON control or synthetic date/time/
+severity columns. Provider ANSI styling resets independently for each record;
+HTML and terminal links remain inert. **Wrap lines** is initially off.
+The viewer loads on entering Nodes or selecting another node, then refreshes
+with Control Room's successful snapshot refreshes. Its local **Pause/Resume**
+controls the source health/metrics/log request, not node counters; **Refresh**
+can query the source while locally paused. Leaving Nodes or changing selection cancels the pending request,
+and obsolete successes/failures cannot affect the new view.
+Initial Loading, empty logs, stale/partial/unavailable sources and request errors
+remain distinct. Failed reads retain the selected node's last observed logs with
+an explicit last-known warning, never another node's content. Healthy/stale
+metric samples are retained independently from partial log samples, so a log
+refresh cannot discard the last usable metrics or mislabel them as current.
+Session loss clears retained node source data and cancels pending requests.
+
+Nodes calls the independent production
+`GET /api/diagnostics?source=node%3A<encoded-node-CN>` contract through the
+authenticated Control Room/Control-Service boundary. The optional `source`
+parameter accepts one inventory ID (at most 512 bytes). Unknown IDs return 404;
+empty, repeated, oversized or malformed query parameters return 400. The
+server resolves the source from production inventory before querying its
+provider, rather than accepting caller-supplied provider identities. A selected
+source is resolved before aggregate source/log caps, so unrelated sources cannot
+exhaust its budget; the existing per-source bounds still apply.
+The unfiltered Diagnostics API remains unchanged. Its Control Room page is
+named **Services**, retaining `#diagnostics` for existing bookmarks (`#services`
+already identifies the Status service-descriptor tab). Services shows only
+non-node service/trusted-source telemetry: metrics, logs, freshness and errors.
+The main Services page has a service selector and the standard shared
+`log-panel.js` viewer, rather than separate log lists for every source.
+Selecting a service displays its health, sortable metrics and logs; the service
+count and telemetry summary still cover the non-node inventory. Filtering
+matches service identity, metrics and log bodies. Selection survives reordered
+refreshes, and each service retains its own scroll/follow position.
+The viewer provides Pause/Resume, explicit Refresh even while paused, Wrap lines
+(initially off), and standard maximize/restore controls with Escape support.
+Failed reads retain the last usable logs with explicit last-known warnings;
+navigation cancels requests and session loss clears retained data.
+This frontend-only selector change is verified locally and awaiting deployment.
+It uses the existing aggregate Diagnostics API and its bounds, not a new
+selected-service request or an expanded log budget. The Status service-descriptor
+tab remains unchanged.
+Node rows, logs and metrics remain exclusively in Nodes. Service counts and
+the telemetry summary exclude nodes, even when node health changes the API's
+overall aggregate state. Adapter Logs and Trusted Sources retain their own
+dedicated log and provider-management workflows.
+Rollout of this feature requires the Control-Service source filter as well as
+the Control Room assets; changing Simulator or deploying unrelated enrollment,
+review or gateway backend work is not required.
+The health/metrics merger is a frontend-only change, deployed to Control Room
+on 2026-10-10 at 00:50 UTC. Scoped rollouts must include the new
+`source-metrics.js` asset together with the updated Diagnostics/Nodes assets
+and index cache references. The node-source backend filter is already deployed;
+this merger needs no additional backend or Simulator change.
+
+Services log bodies use the shared viewer's `colored-log.js` renderer, like
+Nodes, Adapter/Controller Logs and Workers, preserving provider-supplied ANSI colors
 and emphasis instead of showing escape sequences as plain text. Each Diagnostics
 record starts with fresh terminal styling, so color cannot leak into the next
 record. Diagnostics displays provider text without JSON reformatting and has no
 Format JSON control. Provider HTML
 and terminal hyperlinks remain inert. No severity colors are invented and
-plain messages retain the existing Diagnostics appearance.
+plain messages use the standard black-background, white-text terminal display.
 Diagnostics log entries show only the full-width body, without separate
 timestamp or severity columns. Dates, times and levels already included in
 provider text remain intact; no prefix is synthesized or stripped.
 Diagnostics uses the available application width, including wide monitors.
-Metrics span their detail panel, and source tables/logs grow naturally with
-their bounded response data rather than using fixed-height nested scroll panes.
+Metrics span their selected-service detail panel. The standard log panel is
+360 pixels tall normally, scrolls internally, and can be maximized.
 The page scrolls vertically; narrow source tables can still scroll horizontally.
 An initial **Loading** indicator is shown until the first request finishes.
 Diagnostics does not display a recurring Querying/Updated status line;

@@ -193,8 +193,15 @@ func validDiagnosticsEndpoint(endpoint *url.URL) bool {
 }
 
 func diagnosticsSourcesFromSnapshot(data snapshot, mappings map[string]diagnosticsOTelIdentity) []diagnosticsSource {
+	return diagnosticsSourcesFromSnapshotForSource(data, mappings, "")
+}
+
+func diagnosticsSourcesFromSnapshotForSource(data snapshot, mappings map[string]diagnosticsOTelIdentity, sourceID string) []diagnosticsSource {
 	sources := make([]diagnosticsSource, 0, len(data.Actors)+len(data.Services)+len(data.Trusted))
 	appendSource := func(id, name, kind, identity, address, serviceName string) {
+		if sourceID != "" && id != sourceID {
+			return
+		}
 		mapping := mappings[id]
 		serviceName = mapping.ServiceName
 		instanceID := mapping.InstanceID
@@ -393,16 +400,33 @@ func newDiagnosticsHandler(snapshotFn func(context.Context) snapshot, provider d
 			writePolicyError(w, http.StatusMethodNotAllowed, "Diagnostics are read-only.")
 			return
 		}
-		search := strings.TrimSpace(r.URL.Query().Get("search"))
+		parameters, err := url.ParseQuery(r.URL.RawQuery)
+		if err != nil {
+			writePolicyError(w, http.StatusBadRequest, "Diagnostics query parameters are invalid.")
+			return
+		}
+		search := strings.TrimSpace(parameters.Get("search"))
 		if len(search) > 200 {
 			writePolicyError(w, http.StatusBadRequest, "Diagnostics search is limited to 200 characters.")
 			return
+		}
+		sourceID := ""
+		if values, present := parameters["source"]; present {
+			if len(values) != 1 || strings.TrimSpace(values[0]) == "" || len(values[0]) > 512 {
+				writePolicyError(w, http.StatusBadRequest, "Diagnostics source must be one nonempty inventory ID of at most 512 bytes.")
+				return
+			}
+			sourceID = values[0]
 		}
 		ctx, cancel := context.WithTimeout(r.Context(), 18*time.Second)
 		defer cancel()
 		snapshot := snapshotFn(ctx)
 		mappings := diagnosticsSourceMappings()
-		sources := diagnosticsSourcesFromSnapshot(snapshot, mappings)
+		sources := diagnosticsSourcesFromSnapshotForSource(snapshot, mappings, sourceID)
+		if sourceID != "" && len(sources) == 0 {
+			writePolicyError(w, http.StatusNotFound, "Selected diagnostics source is absent from the production inventory.")
+			return
+		}
 		response := diagnosticsResponse{GeneratedAt: time.Now().UTC(), State: "available", Sources: sources}
 		if len(response.Sources) == 0 {
 			response.State = "unavailable"

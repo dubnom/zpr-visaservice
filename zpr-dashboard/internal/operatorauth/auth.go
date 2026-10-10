@@ -253,7 +253,7 @@ button { padding: 12px 20px; font: inherit; cursor: pointer; }
 <main>
 <h1>Sign-in attempt expired or unavailable</h1>
 <p>Your sign-in attempt may have timed out, already been used, or lost its browser session. Start a new sign-in attempt to continue.</p>
-<form method="post" action="/auth/operator/login"><button type="submit">Timed out. Try again.</button></form>
+<form method="get" action="/"><button type="submit">Timed out. Try again.</button></form>
 </main>
 </body>
 </html>`); err != nil {

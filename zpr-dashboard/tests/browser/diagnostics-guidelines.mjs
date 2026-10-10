@@ -4,7 +4,7 @@ export function registerDiagnosticsGuidelineTests(test, expect) {
       let release;
       const gate = new Promise(resolve => { release = resolve; });
       const payload = { state: "available", generated_at: "2026-10-09T19:45:00Z",
-        sources: [{ id: "node:one", name: "Production node", kind: "ZPR node", metrics: [], logs: [{ body: "Live log" }] }] };
+        sources: [{ id: "service:one", name: "Production service", kind: "Required service", metrics: [], logs: [{ body: "Live log" }] }] };
       api.handlers.set("/api/diagnostics", async route => {
         await gate;
         await route.fulfill(firstResult === "success" ? { json: payload } : { status: 503, json: { error: "Provider unavailable" } });
@@ -45,7 +45,7 @@ export function registerDiagnosticsGuidelineTests(test, expect) {
     const logs = Array.from({ length: 100 }, (_, index) => ({ body: `2026-10-09 INFO entry ${index} ${"details ".repeat(12)}` }));
     api.handlers.set("/api/diagnostics", route => route.fulfill({ json: {
       state: "available", generated_at: "2026-10-09T19:40:00Z",
-      sources: [{ id: "node:one", name: "Production node", kind: "ZPR node",
+      sources: [{ id: "service:one", name: "Production service", kind: "Required service",
         metrics: [{ name: "requests", value: "123" }], logs }],
     } }));
     await page.goto(appURL + "/#diagnostics");
@@ -90,7 +90,7 @@ export function registerDiagnosticsGuidelineTests(test, expect) {
     const body = "2026-10-09 19:35:00 INFO \u001b[32mAdapter connected\u001b[0m\nContinuation details";
     api.handlers.set("/api/diagnostics", route => route.fulfill({ json: {
       state: "available", generated_at: "2026-10-09T19:35:00Z",
-      sources: [{ id: "node:one", name: "Production node", kind: "ZPR node", metrics: [], logs: [
+      sources: [{ id: "service:one", name: "Production service", kind: "Required service", metrics: [], logs: [
         { timestamp: "2026-10-09T19:35:00Z", severity: "INFO", body },
         { timestamp: "2026-10-09T19:35:01Z", severity: "WARN", body: "" },
       ] }],
@@ -125,7 +125,7 @@ export function registerDiagnosticsGuidelineTests(test, expect) {
     let logs = [colored, "plain next record", unsafe, link, '{"id":18446744073709551615,"ok":true}'];
     api.handlers.set("/api/diagnostics", route => route.fulfill({ json: {
       state: "available", generated_at: "2026-10-09T19:30:00Z",
-      sources: [{ id: "node:one", name: "Production node", kind: "ZPR node", metrics: [], logs: logs.map(body => ({ body, severity: "INFO" })) }],
+      sources: [{ id: "service:one", name: "Production service", kind: "Required service", metrics: [], logs: logs.map(body => ({ body, severity: "INFO" })) }],
     } }));
     await page.goto(appURL + "/#diagnostics");
     await page.locator("#pause-poll").click();
@@ -173,7 +173,7 @@ export function registerDiagnosticsGuidelineTests(test, expect) {
       state: "partial",
       sources: [
         {
-          id: "node:z", name: "Zulu node", kind: "ZPR node", identity: "a-identity",
+          id: "service:z", name: "Zulu node", kind: "Required service", identity: "a-identity",
           address: "zpr://zulu", state: "stale", last_updated: "2026-10-09T13:59:00Z",
           metrics: [
             { name: "a-larger", value: "9007199254740993", unit: "events" },
@@ -182,7 +182,7 @@ export function registerDiagnosticsGuidelineTests(test, expect) {
           logs: [{ timestamp: "2026-10-09T13:58:00Z", severity: "INFO", body: '{"started":true}' }],
         },
         {
-          id: "node:a", name: "Alpha node", kind: "ZPR node", identity: "z-identity",
+          id: "service:a", name: "Alpha node", kind: "Required service", identity: "z-identity",
           state: "unavailable", error: "Production provider offline", metrics: [], logs: [],
         },
       ],
@@ -190,7 +190,7 @@ export function registerDiagnosticsGuidelineTests(test, expect) {
     api.handlers.set("/api/diagnostics", route => route.fulfill({ json: payload }));
 
     await page.goto(`${appURL}/#diagnostics`);
-    const overview = page.getByRole("table", { name: "Diagnostics source overview" });
+    const overview = page.getByRole("table", { name: "Services overview" });
     await expect(overview).toBeVisible();
     await expect(overview.locator(":scope > thead th")).toHaveText(["Source", "Identity", "Kind", "State", "Last update"]);
     const sourceRows = page.locator(".diagnostics-source-row");
@@ -207,7 +207,7 @@ export function registerDiagnosticsGuidelineTests(test, expect) {
     expect(await page.locator(".diagnostics-metric-value").evaluateAll(values =>
       values.every(value => value.getAnimations().length === 0))).toBe(true);
 
-    const zuluDetails = page.locator('.diagnostics-details-row[data-source-key="node:z"]');
+    const zuluDetails = page.locator('.diagnostics-details-row[data-source-key="service:z"]');
     await expect(zuluDetails).toBeVisible();
     await expect(page.getByRole("table", { name: "Metrics for Zulu node" }).getByRole("columnheader"))
       .toHaveText(["Metric", "Value", "Unit"]);
@@ -219,8 +219,8 @@ export function registerDiagnosticsGuidelineTests(test, expect) {
     await page.getByRole("button", { name: "Show details for Zulu node" }).click();
     await expect(zuluDetails).toBeVisible();
 
-    await page.getByRole("checkbox", { name: "Format JSON", exact: true }).check();
-    await expect(zuluDetails.locator(".diagnostics-log-body")).toHaveText('{\n  "started": true\n}');
+    await expect(page.locator("#diagnostics-json")).toHaveCount(0);
+    await expect(zuluDetails.locator(".diagnostics-log-body")).toHaveText('{"started":true}');
     const countBeforeLocalChanges = api.counts.get("/api/diagnostics");
     await page.locator("#diagnostics-filter").fill("a-identity");
     await expect(sourceRows).toHaveCount(1);
@@ -243,7 +243,7 @@ export function registerDiagnosticsGuidelineTests(test, expect) {
     payload = {
       ...payload,
       generated_at: "2026-10-09T14:01:00Z",
-      sources: payload.sources.map(source => source.id === "node:z"
+      sources: payload.sources.map(source => source.id === "service:z"
         ? {
           ...source,
           last_updated: "2026-10-09T14:01:00Z",
@@ -265,11 +265,11 @@ export function registerDiagnosticsGuidelineTests(test, expect) {
       await dispatchRefresh();
       await expect.poll(() => api.counts.get("/api/diagnostics")).toBe(previousReads + 1);
     };
-    payload.sources = payload.sources.map(source => source.id === "node:a"
+    payload.sources = payload.sources.map(source => source.id === "service:a"
       ? { ...source, metrics: [{ name: "hidden metric", value: "1", unit: "items" }] }
       : source);
     await refreshDiagnostics();
-    payload.sources = payload.sources.map(source => source.id === "node:a"
+    payload.sources = payload.sources.map(source => source.id === "service:a"
       ? { ...source, metrics: [{ name: "hidden metric", value: "2", unit: "items" }] }
       : source);
     await refreshDiagnostics();
@@ -279,14 +279,14 @@ export function registerDiagnosticsGuidelineTests(test, expect) {
     await expect(sourceRows.nth(0)).toContainText("Zulu node");
     await expect(sourceRows.nth(1)).toContainText("Alpha node");
     await expect(sourceRows.nth(1)).toContainText("Not reported");
-    const alphaDetails = page.locator('.diagnostics-details-row[data-source-key="node:a"]');
+    const alphaDetails = page.locator('.diagnostics-details-row[data-source-key="service:a"]');
     await expect(alphaDetails).toBeVisible();
     await expect(alphaDetails).toContainText("Production provider offline");
     await expect(alphaDetails.locator(".diagnostics-metric-value")).toHaveText("2");
     await expect(alphaDetails).toContainText("No logs in the current window.");
     expect(await alphaDetails.locator(".diagnostics-metric-value").evaluate(value =>
       value.getAnimations().length === 0)).toBe(true);
-    payload.sources = payload.sources.map(source => source.id === "node:a"
+    payload.sources = payload.sources.map(source => source.id === "service:a"
       ? { ...source, metrics: [{ name: "hidden metric", value: "3", unit: "items" }] }
       : source);
     await refreshDiagnostics();

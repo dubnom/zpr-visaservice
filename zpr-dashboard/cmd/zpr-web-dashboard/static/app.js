@@ -167,7 +167,7 @@ const pages = {
   gateways: "GATEWAYS",
   "security-review": "SECURITY REVIEW",
   "zpr-config": "ZPR CONFIG",
-  diagnostics: "DIAGNOSTICS",
+  diagnostics: "SERVICES",
   "node-stats": "NODE STATS",
   "provisioning-adapters": "ADAPTER PROVISIONING",
 };
@@ -494,14 +494,15 @@ function updateConnection(snapshot, transportAvailable = true) {
   const stateEl = byId("connection-state");
   const apiState = snapshot.api_status || "disconnected";
   stateEl.dataset.state = transportAvailable ? "connected" : "disconnected";
-  byId("api-state-text").textContent = transportAvailable ? "Control Room" : "Control Room unavailable";
+  byId("api-state-text").textContent = "Control Room";
   const sourceAvailable = transportAvailable && apiState === "connected";
   byId("visa-service-state").dataset.state = sourceAvailable ? "connected" : "disconnected";
   const sourceStatus = byId("snapshot-source-status");
   sourceStatus.hidden = sourceAvailable;
-  sourceStatus.textContent = sourceAvailable ? "" : !transportAvailable ? "Snapshot unavailable" : apiState === "partial" ? "Partial response" : apiState === "not configured" ? "Not configured" : "Unavailable";
+  sourceStatus.textContent = sourceAvailable ? "" : "Unavailable";
+  byId("metric-uptime").closest("small").hidden = !sourceAvailable;
   if (!transportAvailable) byId("metric-uptime").textContent = "—";
-  byId("last-updated").textContent = snapshot.generated_at ? `Updated ${window.ZPRSafeDisplay.formatTime(snapshot.generated_at)}` : "Waiting for first snapshot";
+  byId("last-updated").textContent = !transportAvailable ? "Unavailable" : snapshot.generated_at ? `Updated ${window.ZPRSafeDisplay.formatTime(snapshot.generated_at)}` : "Waiting for first snapshot";
 
   const issues = [];
   if (snapshot.config_error) issues.push(snapshot.config_error);
@@ -1070,6 +1071,9 @@ function renderTopology(data, exitComponents = []) {
   renderConnections(edges, unconnected);
   // Hidden SVGs do not provide usable geometry for fitting or connector intersections.
   if (byId("page-map").hidden) return;
+  const viewport = stage.getBoundingClientRect();
+  const viewportAspect = viewport.width > 0 && viewport.height > 0 ? viewport.width / viewport.height : 1;
+  stage.graphLayoutAspect = viewportAspect;
 
   if (!actors.length && !exitComponents.length) {
     if (geographic) {
@@ -1118,13 +1122,24 @@ function renderTopology(data, exitComponents = []) {
       : 0;
     return Math.max(nodeClearance, ringRequirement, pairClearance);
   };
-  if (nodes.length && !state.topologyNodeColumns) state.topologyNodeColumns = Math.ceil(Math.sqrt(nodes.length));
+  if (nodes.length && (!state.topologyNodeColumns || Math.abs(Math.log(viewportAspect / (stage.topologyLayoutAspect || viewportAspect))) > 0.1)) {
+    let bestScore = Infinity;
+    for (let columns = 1; columns <= nodes.length; columns++) {
+      const rows = Math.ceil(nodes.length / columns);
+      const orientationPenalty = viewportAspect > 1.1 && columns <= rows || viewportAspect < 0.9 && columns >= rows ? 0.75 : 0;
+      const score = Math.abs(Math.log(columns / rows / viewportAspect)) + (columns * rows - nodes.length) / nodes.length + orientationPenalty;
+      if (score < bestScore) {
+        state.topologyNodeColumns = columns;
+        bestScore = score;
+      }
+    }
+    stage.topologyLayoutAspect = viewportAspect;
+  }
   const nodeColumns = Math.max(1, state.topologyNodeColumns || Math.ceil(Math.sqrt(nodes.length)));
   let nextNodeSlot = Math.max(-1, ...state.topologyNodeSlots.values()) + 1;
   for (const node of nodes) {
     if (!state.topologyNodeSlots.has(node.cn)) state.topologyNodeSlots.set(node.cn, nextNodeSlot++);
   }
-  const nodeRows = Math.max(1, ...nodes.map((node) => Math.floor(state.topologyNodeSlots.get(node.cn) / nodeColumns) + 1));
   const maximumClusterRadius = Math.max(340, ...nodes.map(clusterRadius));
   const margin = maximumClusterRadius + 150;
   const nodeSpacing = maximumClusterRadius * 2 + 180;
@@ -1154,13 +1169,13 @@ function renderTopology(data, exitComponents = []) {
       return other.x === nodeCenter.x && other.y === nodeCenter.y ? null : Math.atan2(other.y - nodeCenter.y, other.x - nodeCenter.x);
     }).filter((direction) => direction != null).sort((a, b) => a - b);
     if (geographic) {
-      const containedFanout = geographicAdapterFanout(nodeCenter, attached, extents, radius, directions);
+      const containedFanout = geographicAdapterFanout(nodeCenter, attached, extents, actorRadius(node), directions, viewportAspect);
       if (containedFanout) {
         for (const [adapter, position] of containedFanout) positions.set(adapter.cn, position);
         return;
       }
     }
-    let centerAngle = -Math.PI / 2;
+    let centerAngle = attached.length === 2 && viewportAspect >= 1 ? 0 : -Math.PI / 2;
     if (!directions.length) {
       attached.forEach((adapter, slot) => {
         const angle = centerAngle + slot * 2 * Math.PI / attached.length;
@@ -1198,16 +1213,46 @@ function renderTopology(data, exitComponents = []) {
     });
   });
   const unconnectedHosts = adapters.filter((host) => !positions.has(host.cn));
-  const unconnectedColumns = Math.max(1, Math.min(4, unconnectedHosts.length));
-  const hostRingRadius = Math.max(64, ...unconnectedHosts.map((host) => actorExtent(host) + 18));
-  unconnectedHosts.forEach((host, index) => {
-    const column = index % unconnectedColumns;
-    const row = Math.floor(index / unconnectedColumns);
-    positions.set(host.cn, {
-      x: (geographic ? 4500 : margin) + column * (hostRingRadius * 2 + 100),
-      y: margin + nodeRows * nodeSpacing + row * (hostRingRadius * 2 + 100),
+  if (unconnectedHosts.length) {
+    const placed = actors.filter(actor => positions.has(actor.cn)).map(actor => {
+      const point = positions.get(actor.cn);
+      const extent = Math.max(actorExtent(actor) + 18, Math.min((displayNames.get(actor.cn) || actor.cn).length, 20) * 3.5);
+      return { left: point.x - extent, right: point.x + extent, top: point.y - extent, bottom: point.y + extent };
     });
-  });
+    const occupied = placed.length ? {
+      left: Math.min(...placed.map(box => box.left)), right: Math.max(...placed.map(box => box.right)),
+      top: Math.min(...placed.map(box => box.top)), bottom: Math.max(...placed.map(box => box.bottom)),
+    } : null;
+    const extent = Math.max(64, ...unconnectedHosts.map(host => actorExtent(host) + 18));
+    const gap = 40;
+    const spacing = extent * 2 + gap;
+    let best = null;
+    let bestScore = Infinity;
+    for (let columns = 1; columns <= unconnectedHosts.length; columns++) {
+      const rows = Math.ceil(unconnectedHosts.length / columns);
+      const width = columns * spacing - gap;
+      const height = rows * spacing - gap;
+      const origins = occupied ? [
+        { x: occupied.right + gap, y: (occupied.top + occupied.bottom - height) / 2 },
+        { x: (occupied.left + occupied.right - width) / 2, y: occupied.bottom + gap },
+      ] : [{ x: (geographic ? 1800 : margin) - width / 2, y: (geographic ? 900 : margin) - height / 2 }];
+      for (const origin of origins) {
+        const left = Math.min(origin.x, occupied?.left ?? origin.x);
+        const right = Math.max(origin.x + width, occupied?.right ?? origin.x + width);
+        const top = Math.min(origin.y, occupied?.top ?? origin.y);
+        const bottom = Math.max(origin.y + height, occupied?.bottom ?? origin.y + height);
+        const score = Math.max((right - left) / viewportAspect, bottom - top);
+        if (score < bestScore) {
+          best = { ...origin, columns };
+          bestScore = score;
+        }
+      }
+    }
+    unconnectedHosts.forEach((host, index) => positions.set(host.cn, {
+      x: best.x + extent + (index % best.columns) * spacing,
+      y: best.y + extent + Math.floor(index / best.columns) * spacing,
+    }));
+  }
   for (const service of services) {
     const ownerPosition = positions.get(service.actor_cn);
     const registered = servicesByActor.get(service.actor_cn) || [];
@@ -1604,7 +1649,7 @@ function setupGraphControls(stage, width, height, previousViewport) {
       }
     }
     const bounds = fitBounds();
-    if (byId("page-map").dataset.mapView === "geography" && (world.graphFitBounds || graphContentBounds(world)) && svg.clientWidth > 0 && svg.clientHeight > 0) {
+    if ((world.graphFitBounds || graphContentBounds(world)) && svg.clientWidth > 0 && svg.clientHeight > 0) {
       const aspect = svg.clientWidth / svg.clientHeight;
       const frame = graphViewBox(bounds);
       width = Math.max(frame.width, frame.height * aspect);
@@ -1669,10 +1714,19 @@ function setupGraphControls(stage, width, height, previousViewport) {
   let viewportWidth = svg.clientWidth;
   let viewportHeight = svg.clientHeight;
   stage.graphResizeObserver = new ResizeObserver(() => {
-    if (viewportWidth === svg.clientWidth && viewportHeight === svg.clientHeight) return;
+    const layoutChanged = svg.clientWidth > 0 && svg.clientHeight > 0 &&
+      Math.abs(Math.log(svg.clientWidth / svg.clientHeight / stage.graphLayoutAspect)) > 0.1;
+    if (viewportWidth === svg.clientWidth && viewportHeight === svg.clientHeight && !layoutChanged) return;
     viewportWidth = svg.clientWidth;
     viewportHeight = svg.clientHeight;
-    if (graphAutoFit && byId("page-map").dataset.mapView === "geography" && stage.querySelector(".topology-graph") === svg) {
+    if (viewportWidth <= 0 || viewportHeight <= 0 || stage.querySelector(".topology-graph") !== svg) return;
+    const aspect = viewportWidth / viewportHeight;
+    if (Math.abs(Math.log(aspect / stage.graphLayoutAspect)) > 0.1 && state.snapshot) {
+      cancelViewportAnimation();
+      renderTopology(state.snapshot);
+      return;
+    }
+    if (graphAutoFit) {
       cancelViewportAnimation();
       fit(false);
     }
@@ -1761,7 +1815,7 @@ function renderTrusted(data) {
     const sourceName = `<strong>${escapeHTML(source.name)}</strong>`;
     const actorLabel = source.actor_cn || "No actor reported";
       const statusText = lookupOutcome(source.health);
-    const editorAction = source.editor_url ? `<a class="source-editor-link button button-refresh" href="${escapeHTML(source.editor_url)}" target="zpr-directory-manager" data-reuse-window="zpr-directory-manager" rel="noopener noreferrer" title="Manage ${escapeHTML(source.name)}"><span>Manage</span><span aria-hidden="true">↗</span></a>` : "";
+    const editorAction = source.editor_url ? `<a class="source-editor-link button" href="${escapeHTML(source.editor_url)}" target="zpr-directory-manager" data-reuse-window="zpr-directory-manager" rel="noopener noreferrer" title="Manage ${escapeHTML(source.name)}"><span>Manage</span><span aria-hidden="true">↗</span></a>` : "";
     return `<tr class="selectable-row" data-inspect-source="${escapeHTML(source.name)}" tabindex="0" role="button" aria-label="Inspect trusted source ${escapeHTML(source.name)}"><td class="source-primary">${sourceName}</td><td>${escapeHTML(providerDescription(source.provider))}</td><td>${escapeHTML(actorLabel)}</td><td><span class="health-badge ${["working", "failed"].includes(source.health) ? source.health : ""}">${escapeHTML(statusText)}</span></td><td><span class="source-time">${source.last_lookup_ms ? escapeHTML(window.ZPRSafeDisplay.formatDateTime(source.last_lookup_ms)) : "No lookup recorded"}</span>${source.last_success_ms ? `<small class="source-secondary">Last success ${escapeHTML(window.ZPRSafeDisplay.formatDateTime(source.last_success_ms))}</small>` : ""}</td><td>${editorAction}</td></tr>`;
   }).join("") : `<tr><td colspan="6" class="empty-row">${sources.length ? "No matching trusted sources" : "No trusted services reported by the Visa Service."}</td></tr>`;
 }
@@ -1869,13 +1923,15 @@ function graphViewBox(bounds) {
   return { x: centerX - width / 2, y: centerY - height / 2, width, height };
 }
 
-function geographicAdapterFanout(nodeCenter, adapters, extents, initialRadius, directions) {
+function geographicAdapterFanout(nodeCenter, adapters, extents, nodeRadius, directions, viewportAspect) {
   const bounds = { left: 0, top: 0, right: 3600, bottom: 1800 };
   const inwardAngle = Math.atan2(900 - nodeCenter.y, 1800 - nodeCenter.x);
-  const positionsAt = (centerAngle, radius, offsets) => {
+  const minimumRadii = extents.map(extent => nodeRadius + extent + 20);
+  const positionsAt = (centerAngle, radii, offsets) => {
     const span = offsets.at(-1);
     return adapters.map((adapter, index) => {
       const angle = centerAngle + offsets[index] - span / 2;
+      const radius = radii[index];
       return { adapter, extent: extents[index], x: nodeCenter.x + Math.cos(angle) * radius, y: nodeCenter.y + Math.sin(angle) * radius };
     });
   };
@@ -1893,10 +1949,16 @@ function geographicAdapterFanout(nodeCenter, adapters, extents, initialRadius, d
   };
   if (!directions.length) {
     const ring = adapters.map((adapter, index) => {
-      const angle = -Math.PI / 2 + (2 * Math.PI * index) / adapters.length;
-      return { adapter, extent: extents[index], x: nodeCenter.x + Math.cos(angle) * initialRadius, y: nodeCenter.y + Math.sin(angle) * initialRadius };
+      const angle = (viewportAspect >= 1 ? 0 : -Math.PI / 2) + (2 * Math.PI * index) / adapters.length;
+      const radius = minimumRadii[index];
+      const stretch = Math.min(1.2, Math.sqrt(Math.max(viewportAspect, 1 / viewportAspect)));
+      return { adapter, extent: extents[index],
+        x: nodeCenter.x + Math.cos(angle) * radius * (viewportAspect >= 1 ? stretch : 1),
+        y: nodeCenter.y + Math.sin(angle) * radius * (viewportAspect < 1 ? stretch : 1) };
     });
-    if (marginFor(ring) != null) return ring.map(({ adapter, x, y }) => [adapter, { x, y }]);
+    const separated = ring.every((position, index) => ring.slice(index + 1).every(other =>
+      Math.hypot(position.x - other.x, position.y - other.y) >= position.extent + other.extent + 20));
+    if (separated && marginFor(ring) != null) return ring.map(({ adapter, x, y }) => [adapter, { x, y }]);
   }
 
   const sectors = [];
@@ -1910,28 +1972,49 @@ function geographicAdapterFanout(nodeCenter, adapters, extents, initialRadius, d
   }
   let best = null;
   let bestScore = -Infinity;
+  let outside = null;
+  let outsideScore = -Infinity;
   for (const sector of sectors) {
     const availableAngle = Math.min(Math.PI, sector.width * 0.75);
     const inset = (sector.width - availableAngle) / 2;
-    let radius = initialRadius;
+    const minimumAngle = Math.min(0.15, availableAngle / (adapters.length * 2));
+    let scale = 1;
     for (let attempt = 0; attempt < 48; attempt++) {
-      let offsets = [0];
+      const radii = minimumRadii.map(radius => radius * scale);
+      const offsets = [0];
       for (let index = 1; index < adapters.length; index++) {
-        offsets.push(offsets.at(-1) + 2 * Math.asin(Math.min(1, (extents[index - 1] + extents[index] + 20) / (2 * radius))));
+        let offset = 0;
+        for (let previous = 0; previous < index; previous++) {
+          const separation = extents[previous] + extents[index] + 20;
+          // The cosine rule allows unequal dock lengths while keeping whole components apart.
+          const cosine = (radii[previous] ** 2 + radii[index] ** 2 - separation ** 2) / (2 * radii[previous] * radii[index]);
+          const angle = Math.max(minimumAngle, Math.acos(Math.max(-1, Math.min(1, cosine))));
+          offset = Math.max(offset, offsets[previous] + angle);
+        }
+        offsets.push(offset);
       }
-      const largestExtent = Math.max(...extents);
-      const arcWidth = offsets.at(-1) + 2 * Math.asin(Math.min(1, largestExtent / radius));
+      const clearances = extents.map((extent, index) => Math.asin(Math.min(1, extent / radii[index])));
+      const arcStart = Math.min(...offsets.map((offset, index) => offset - clearances[index]));
+      const arcEnd = Math.max(...offsets.map((offset, index) => offset + clearances[index]));
+      const arcWidth = arcEnd - arcStart;
       if (arcWidth > availableAngle) {
-        radius *= 1.15;
+        scale *= 1.15;
         continue;
       }
-      const centerMin = sector.start + inset + arcWidth / 2;
-      const centerMax = sector.end - inset - arcWidth / 2;
+      const corridorClearance = directions.length ? Math.min(0.65, sector.width / 4) : 0;
+      const centerMin = Math.max(sector.start + inset + offsets.at(-1) / 2 - arcStart,
+        sector.start + corridorClearance + offsets.at(-1) / 2);
+      const centerMax = Math.min(sector.end - inset - offsets.at(-1) / 2 - arcEnd,
+        sector.end - corridorClearance - offsets.at(-1) / 2);
       if (centerMin > centerMax) {
-        radius *= 1.15;
+        scale *= 1.15;
         continue;
       }
       const angleCandidates = [centerMin, centerMax, (centerMin + centerMax) / 2];
+      for (let turn = -2; turn <= 2; turn++) {
+        const preferredAxis = (viewportAspect >= 1 ? Math.PI / 2 : 0) + turn * Math.PI;
+        angleCandidates.push(Math.max(centerMin, Math.min(centerMax, preferredAxis)));
+      }
       let nearestInward = null;
       let nearestDistance = Infinity;
       for (let turn = -2; turn <= 2; turn++) {
@@ -1946,22 +2029,32 @@ function geographicAdapterFanout(nodeCenter, adapters, extents, initialRadius, d
       angleCandidates.push(nearestInward);
       let foundContainedPosition = false;
       for (const centerAngle of new Set(angleCandidates)) {
-        const candidate = positionsAt(centerAngle, radius, offsets);
+        const candidate = positionsAt(centerAngle, radii, offsets);
+        const preferredCenter = (sector.start + sector.end) / 2;
+        const cluster = [{ x: nodeCenter.x, y: nodeCenter.y, extent: nodeRadius }, ...candidate];
+        const clusterWidth = Math.max(...cluster.map(p => p.x + p.extent)) - Math.min(...cluster.map(p => p.x - p.extent));
+        const clusterHeight = Math.max(...cluster.map(p => p.y + p.extent)) - Math.min(...cluster.map(p => p.y - p.extent));
+        const aspectPenalty = Math.abs(Math.log(clusterWidth / clusterHeight / viewportAspect));
+        const preference = sector.width * 1_000_000 - aspectPenalty * 10_000 - Math.abs(centerAngle - preferredCenter) * 1_000;
+        const fallbackScore = preference - Math.max(...radii);
+        if (fallbackScore > outsideScore) {
+          outside = candidate;
+          outsideScore = fallbackScore;
+        }
         const margin = marginFor(candidate);
         if (margin == null) continue;
         foundContainedPosition = true;
-        const preferredCenter = (sector.start + sector.end) / 2;
-        const score = sector.width * 1_000_000 - Math.abs(centerAngle - preferredCenter) * 1_000 + margin;
+        const score = preference + margin;
         if (score > bestScore) {
           best = candidate;
           bestScore = score;
         }
       }
       if (foundContainedPosition) break;
-      radius *= 1.15;
+      scale *= 1.15;
     }
   }
-  return best?.map(({ adapter, x, y }) => [adapter, { x, y }]) || null;
+  return (best || outside)?.map(({ adapter, x, y }) => [adapter, { x, y }]) || null;
 }
 
 async function loadPolicyWorkspace() {

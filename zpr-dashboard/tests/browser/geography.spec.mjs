@@ -62,6 +62,126 @@ async function openGeography(page, appURL) {
   await expect(page.locator(".graph-geographic-basemap")).toHaveCount(1);
 }
 
+test("both maps lay out free components along the viewport and respond to rotation", async ({ page, appURL, snapshot }) => {
+  snapshot.actors = ["a", "b", "c"].map((cn, index) => ({
+    ...node(cn, 0, 0), zpr_addr: `fd00::${index + 1}`,
+  }));
+  const positions = () => page.locator("#graph-world > .graph-vertex").evaluateAll(elements =>
+    elements.map(element => ({ x: Number(element.dataset.originX), y: Number(element.dataset.originY) })));
+  await page.setViewportSize({ width: 1600, height: 700 });
+  await page.goto(`${appURL}/#map`);
+  await expect.poll(async () => new Set((await positions()).map(p => p.y)).size).toBe(1);
+  let points = await positions();
+  expect(new Set(points.map(p => p.y)).size).toBe(1);
+  expect(new Set(points.map(p => p.x)).size).toBe(3);
+  await page.setViewportSize({ width: 600, height: 1200 });
+  await expect.poll(async () => new Set((await positions()).map(p => p.x)).size).toBe(1);
+  expect(new Set((await positions()).map(p => p.y)).size).toBe(3);
+
+  const hub = node("hub", 0, 0);
+  hub.node_details.adapters = ["child-a", "child-b"];
+  snapshot.actors = [hub, ...hub.node_details.adapters.map(cn => ({ cn, node: false }))];
+  await page.locator("#refresh-now").click();
+  await page.getByRole("button", { name: "World Map", exact: true }).click();
+  const dimensions = () => page.evaluate(() => {
+    const points = ["child-a", "child-b"].map(cn => {
+      const el = document.querySelector(`.graph-vertex[data-inspect-actor="${cn}"]`);
+      return { x: Number(el.dataset.originX), y: Number(el.dataset.originY) };
+    });
+    return { width: Math.abs(points[0].x - points[1].x), height: Math.abs(points[0].y - points[1].y) };
+  });
+  let size = await dimensions();
+  expect(size.height).toBeGreaterThan(size.width);
+  await page.setViewportSize({ width: 1600, height: 700 });
+  await expect.poll(async () => { const size = await dimensions(); return size.width > size.height; }).toBe(true);
+  await expect(page.locator('.graph-vertex[data-inspect-actor="hub"]')).toHaveAttribute("data-origin-x", "1800");
+  await expect(page.locator('.graph-vertex[data-inspect-actor="hub"]')).toHaveAttribute("data-origin-y", "900");
+  const before = await dimensions();
+  await page.locator("#refresh-now").click();
+  expect(await dimensions()).toEqual(before);
+  await page.getByRole("button", { name: "Topology", exact: true }).click();
+  size = await dimensions();
+  expect(size.width).toBeGreaterThan(size.height);
+  await page.getByRole("button", { name: "Zoom in", exact: true }).click();
+  const camera = await page.locator("#graph-world").getAttribute("transform");
+  await page.setViewportSize({ width: 600, height: 1200 });
+  await expect.poll(async () => { const size = await dimensions(); return size.height > size.width; }).toBe(true);
+  await expect(page.locator("[data-graph-auto-fit]")).not.toBeChecked();
+  await expect(page.locator("#graph-world")).toHaveAttribute("transform", camera);
+});
+
+for (const viewport of [{ width: 1600, height: 700 }, { width: 600, height: 1200 }]) {
+  test(`unconnected components sit beside occupied bounds at ${viewport.width}x${viewport.height}`, async ({ page, appURL, snapshot }) => {
+    await page.setViewportSize(viewport);
+    const hub = node("hub", 0, 0);
+    hub.node_details.adapters = ["attached"];
+    snapshot.actors = [hub, ...["attached", "free-a", "free-b", "free-gateway"].map(cn => ({ cn, node: false }))];
+    snapshot.services = [{ actor_cn: "free-gateway", service_name: "Internet", service_kind: "Gateway", external_network_connection: "public-internet" }];
+    await openGeography(page, appURL);
+    const geometry = () => page.evaluate(() => {
+      const point = cn => {
+        const element = document.querySelector(`.graph-vertex[data-inspect-actor="${cn}"]`);
+        return { cn, x: Number(element.dataset.originX), y: Number(element.dataset.originY) };
+      };
+      const hub = point("hub");
+      const attached = point("attached");
+      const occupied = {
+        left: Math.min(hub.x - 72, attached.x - 50), right: Math.max(hub.x + 72, attached.x + 50),
+        top: Math.min(hub.y - 72, attached.y - 50), bottom: Math.max(hub.y + 72, attached.y + 50),
+      };
+      const free = ["free-a", "free-b", "free-gateway"].map(point);
+      const bounds = {
+        left: Math.min(...free.map(p => p.x - 284)), right: Math.max(...free.map(p => p.x + 284)),
+        top: Math.min(...free.map(p => p.y - 284)), bottom: Math.max(...free.map(p => p.y + 284)),
+      };
+      return { hub, free, gapX: bounds.left - occupied.right, gapY: bounds.top - occupied.bottom };
+    });
+    for (const view of ["World Map", "Topology"]) {
+      await page.getByRole("button", { name: view, exact: true }).click();
+      const before = await geometry();
+      expect(Math.min(Math.abs(before.gapX - 40), Math.abs(before.gapY - 40))).toBeLessThan(0.001);
+      for (let i = 0; i < before.free.length; i++) {
+        for (let j = i + 1; j < before.free.length; j++) {
+          expect(Math.hypot(before.free[i].x - before.free[j].x, before.free[i].y - before.free[j].y))
+            .toBeGreaterThanOrEqual(608 - 0.001);
+        }
+      }
+      await expect(page.locator(".graph-cloud")).toHaveCount(1);
+      if (view === "World Map") expect(before.hub).toEqual({ cn: "hub", x: 1800, y: 900 });
+      await page.locator("#refresh-now").click();
+      expect(await geometry()).toEqual(before);
+      snapshot.actors.reverse();
+      await page.locator("#refresh-now").click();
+      expect(await geometry()).toEqual(before);
+      await page.getByRole("button", { name: "Fit graph", exact: true }).click();
+      await expect.poll(() => page.locator(".topology-graph").evaluate(svg => {
+        const viewport = svg.getBoundingClientRect();
+        return [...svg.querySelectorAll(".graph-vertex")].every(element => {
+          const box = element.getBoundingClientRect();
+          return box.left >= viewport.left - 1 && box.right <= viewport.right + 1 &&
+            box.top >= viewport.top - 1 && box.bottom <= viewport.bottom + 1;
+        });
+      })).toBe(true);
+    }
+  });
+}
+
+test("unconnected-only maps use a compact centered layout without a staging offset", async ({ page, appURL, snapshot }) => {
+  snapshot.actors = ["free-a", "free-b"].map(cn => ({ cn, node: false }));
+  await openGeography(page, appURL);
+  const bounds = await page.locator("#graph-world > .graph-vertex").evaluateAll(elements => {
+    const points = elements.map(el => ({ x: Number(el.dataset.originX), y: Number(el.dataset.originY) }));
+    return {
+      centerX: (Math.min(...points.map(p => p.x)) + Math.max(...points.map(p => p.x))) / 2,
+      centerY: (Math.min(...points.map(p => p.y)) + Math.max(...points.map(p => p.y))) / 2,
+      distance: Math.hypot(points[0].x - points[1].x, points[0].y - points[1].y),
+    };
+  });
+  expect(bounds.centerX).toBe(1800);
+  expect(bounds.centerY).toBe(900);
+  expect(bounds.distance).toBe(168);
+});
+
 test("geography projects valid coordinates exactly and rejects invalid values", async ({ page, appURL, snapshot }) => {
   snapshot.actors = [node("zero", 0, 0)];
   await openGeography(page, appURL);
@@ -93,14 +213,14 @@ test("operator node names label maps and Nodes without changing identity or sele
   await expect(page.locator("#component-inspector")).toContainText("node0.demo");
   await page.locator("#inspector-close").click();
   await page.getByRole("link", { name: "Nodes", exact: true }).click();
-  const select = page.locator("#node-stats-select");
-  await expect(select.locator("option")).toHaveText(["Milwaukee", "Shenzhen", "Tijuana"]);
-  await select.selectOption("node1.demo");
+  const navigation = page.locator("#node-stats-nav");
+  await expect(navigation.getByRole("tab")).toHaveText(["Milwaukee", "Shenzhen", "Tijuana"]);
+  await navigation.getByRole("tab", { name: "Shenzhen", exact: true }).click();
   await expect(page.locator("#node-stats-summary h2")).toHaveText("Shenzhen");
   await expect(page.locator("#node-stats-summary")).toContainText("node1.demo");
   snapshot.actors[1].display_name = "Shenzhen <Office>";
   await page.locator("#refresh-now").click();
-  await expect(select).toHaveValue("node1.demo");
+  await expect(navigation.getByRole("tab", { name: "Shenzhen <Office>", exact: true })).toHaveAttribute("aria-selected", "true");
   await expect(page.locator("#node-stats-summary h2")).toHaveText("Shenzhen <Office>");
   await expect(page.locator("#node-stats-summary office")).toHaveCount(0);
 });
@@ -181,6 +301,103 @@ test("geography uses only the main network graph and distinguishes missing from 
   await expect(page.locator("#topology-stage")).toBeVisible();
   await expect(page.locator(".geography-panel")).toBeHidden();
   expect(errors).toEqual([]);
+});
+
+for (const linked of [false, true]) {
+  test(`World Map allows unequal dock lengths for mixed component sizes ${linked ? "with" : "without"} network links`, async ({ page, appURL, snapshot }) => {
+    const children = ["plain", "gateway", "visa"];
+    const hub = node("hub", 43.04, -87.91);
+    hub.node_details.adapters = [...children];
+    snapshot.actors = [hub, ...children.map(cn => ({ cn, node: false }))];
+    if (linked) {
+      snapshot.actors.push({ ...node("peer", 43.04, -70), zpr_addr: "fd00::2" });
+      snapshot.network = [{ node_a_addr: "fd00::1", node_b_addr: "fd00::2", ctype: "UP" }];
+    }
+    snapshot.services = [
+      { actor_cn: "gateway", service_name: "Internet", service_kind: "Gateway", external_network_connection: "public-internet" },
+      { actor_cn: "visa", service_name: "Visa", service_kind: "Visa" },
+    ];
+    await page.emulateMedia({ reducedMotion: "reduce" });
+    await openGeography(page, appURL);
+    const geometry = () => page.evaluate(children => {
+      const point = cn => {
+        const element = document.querySelector(`.graph-vertex[data-inspect-actor="${cn}"]`);
+        return { x: Number(element.dataset.originX), y: Number(element.dataset.originY) };
+      };
+      const hub = point("hub");
+      const positions = children.map(point);
+      return { hub, positions, radii: positions.map(p => Math.hypot(p.x - hub.x, p.y - hub.y)) };
+    }, children);
+    const before = await geometry();
+    expect(before.hub).toEqual({ x: 920.9, y: 469.6 });
+    expect(before.radii[1]).toBeGreaterThan(before.radii[0] * 2);
+    expect(before.radii[2]).toBeGreaterThan(before.radii[0]);
+    const extents = [50, 284, 121];
+    for (let index = 0; index < children.length; index++) {
+      expect(before.radii[index]).toBeGreaterThanOrEqual(54 + extents[index] + 20 - 0.001);
+      for (let other = index + 1; other < children.length; other++) {
+        expect(Math.hypot(before.positions[index].x - before.positions[other].x, before.positions[index].y - before.positions[other].y))
+          .toBeGreaterThanOrEqual(extents[index] + extents[other] + 20 - 0.001);
+      }
+    }
+    await expect(page.locator(".graph-cloud")).toHaveCount(1);
+    await page.locator("#refresh-now").click();
+    expect(await geometry()).toEqual(before);
+    snapshot.actors.reverse();
+    hub.node_details.adapters.reverse();
+    await page.locator("#refresh-now").click();
+    expect(await geometry()).toEqual(before);
+    await page.getByRole("button", { name: "Topology", exact: true }).click();
+    const topology = await geometry();
+    expect(Math.max(...topology.radii) - Math.min(...topology.radii)).toBeLessThan(0.001);
+    await page.getByRole("button", { name: "World Map", exact: true }).click();
+    expect(await geometry()).toEqual(before);
+  });
+}
+
+test("World Map unequal dock lengths survive basemap overflow without moving an unlocated node", async ({ page, appURL, snapshot }) => {
+  const hub = node("hub");
+  hub.node_details.adapters = ["plain", "gateway"];
+  snapshot.actors = [hub, { cn: "plain", node: false }, { cn: "gateway", node: false }];
+  snapshot.services = [{ actor_cn: "gateway", service_name: "Internet", service_kind: "Gateway", external_network_connection: "public-internet" }];
+  await openGeography(page, appURL);
+  await expect(page.locator(".geography-unplaced")).toContainText("Location not configured");
+  const geometry = await page.evaluate(() => {
+    const point = cn => {
+      const element = document.querySelector(`.graph-vertex[data-inspect-actor="${cn}"]`);
+      return { x: Number(element.dataset.originX), y: Number(element.dataset.originY) };
+    };
+    const hub = point("hub");
+    const plain = point("plain");
+    const gateway = point("gateway");
+    return { hub, plainRadius: Math.hypot(plain.x - hub.x, plain.y - hub.y), gatewayRadius: Math.hypot(gateway.x - hub.x, gateway.y - hub.y) };
+  });
+  expect(geometry.hub.x).toBe(4500);
+  expect(geometry.gatewayRadius).toBeGreaterThan(geometry.plainRadius * 2);
+  await expect(page.locator(".graph-cloud")).toHaveCount(1);
+});
+
+test("World Map dense fan-outs do not fall back to equal-length docks", async ({ page, appURL, snapshot }) => {
+  const children = Array.from({ length: 32 }, (_, index) => `adapter-${String(index).padStart(2, "0")}`);
+  const hub = node("hub", 0, 0);
+  hub.node_details.adapters = children;
+  snapshot.actors = [hub, ...children.map(cn => ({ cn, node: false }))];
+  snapshot.services = [{ actor_cn: children[0], service_name: "Internet", service_kind: "Gateway", external_network_connection: "public-internet" }];
+  await openGeography(page, appURL);
+  const radii = await page.evaluate(children => {
+    const point = cn => {
+      const element = document.querySelector(`.graph-vertex[data-inspect-actor="${cn}"]`);
+      return { x: Number(element.dataset.originX), y: Number(element.dataset.originY) };
+    };
+    const hub = point("hub");
+    return children.map(cn => {
+      const position = point(cn);
+      return Math.hypot(position.x - hub.x, position.y - hub.y);
+    });
+  }, children);
+  expect(radii.every(Number.isFinite)).toBe(true);
+  expect(radii[0]).toBeGreaterThan(radii[1] * 2);
+  await expect(page.locator("#graph-world > .graph-vertex")).toHaveCount(33);
 });
 
 test("geography groups colocated nodes and reuses keyboard-accessible node inspection", async ({ page, appURL, snapshot }) => {

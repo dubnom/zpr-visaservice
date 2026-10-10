@@ -1,11 +1,39 @@
 (() => {
+  const navigation = document.getElementById("node-stats-nav");
+  if (!navigation) return;
+  const selectorContainer = document.getElementById("node-stats-selector");
   const selector = document.getElementById("node-stats-select");
-  if (!selector) return;
   const status = document.getElementById("node-stats-status");
   const error = document.getElementById("node-stats-error");
+  const content = document.getElementById("node-stats-content");
   const summary = document.getElementById("node-stats-summary");
   const groups = document.getElementById("node-stats-groups");
+  const areaTabs = [...document.querySelectorAll("#node-stats-section-nav [role=tab]")];
+  function selectArea(tab) {
+    if (tab.getAttribute("aria-selected") === "true") return;
+    window.dispatchEvent(new Event("node-stats-area-changing"));
+    for (const candidate of areaTabs) {
+      const selected = candidate === tab;
+      candidate.setAttribute("aria-selected", String(selected));
+      candidate.tabIndex = selected ? 0 : -1;
+      document.getElementById(candidate.getAttribute("aria-controls")).hidden = !selected;
+    }
+    window.dispatchEvent(new Event("node-stats-area-changed"));
+  }
+  for (const [index, tab] of areaTabs.entries()) {
+    tab.addEventListener("click", () => selectArea(tab));
+    tab.addEventListener("keydown", event => {
+      const next = event.key === "ArrowRight" ? (index + 1) % areaTabs.length
+        : event.key === "ArrowLeft" ? (index - 1 + areaTabs.length) % areaTabs.length
+        : event.key === "Home" ? 0 : event.key === "End" ? areaTabs.length - 1 : -1;
+      if (next < 0) return;
+      event.preventDefault();
+      selectArea(areaTabs[next]);
+      areaTabs[next].focus();
+    });
+  }
   let nodes = [];
+  let selectedNodeID = "";
   let snapshotReceived = false;
   let connectionError = "";
   let adaptersExpandedFor = "";
@@ -24,7 +52,74 @@
   }
 
   function selectedNode() {
-    return nodes.find((node) => node.cn === selector.value);
+    return nodes.find((node) => node.cn === selectedNodeID);
+  }
+
+  function selectNode(id) {
+    if (!nodes.some(node => node.cn === id) || id === selectedNodeID) return;
+    selectedNodeID = id;
+    renderNavigation();
+    renderNode();
+    window.dispatchEvent(new CustomEvent("node-stats-selection-changed", { detail: { nodeID: id } }));
+  }
+
+  function updateSelectorLayout() {
+    if (!selectorContainer.clientWidth || !nodes.length) return;
+    const overflow = navigation.scrollWidth > navigation.clientWidth;
+    const tabFocused = navigation.contains(document.activeElement);
+    const selectFocused = document.activeElement === selector;
+    selectorContainer.classList.toggle("dropdown", overflow);
+    selector.hidden = !overflow;
+    content.setAttribute("aria-labelledby", overflow ? selector.id : `node-stats-tab-${nodes.findIndex(node => node.cn === selectedNodeID)}`);
+    if (overflow && tabFocused || !overflow && selectFocused) {
+      requestAnimationFrame(() => {
+        if (selector.hidden) navigation.querySelector('[aria-selected="true"]')?.focus();
+        else selector.focus();
+      });
+    }
+  }
+
+  function renderNavigation() {
+    const focusedNodeID = navigation.contains(document.activeElement) ? document.activeElement.dataset.nodeId : "";
+    const scrollLeft = navigation.scrollLeft;
+    navigation.replaceChildren();
+    selector.replaceChildren();
+    navigation.hidden = !nodes.length;
+    selector.disabled = !nodes.length;
+    if (!nodes.length) {
+      selector.hidden = true;
+      selectorContainer.classList.remove("dropdown");
+    }
+    for (const [index, node] of nodes.entries()) {
+      text(selector, "option", node.display_name || node.cn).value = node.cn;
+      const tab = text(navigation, "button", node.display_name || node.cn);
+      tab.type = "button";
+      tab.id = `node-stats-tab-${index}`;
+      tab.dataset.nodeId = node.cn;
+      tab.setAttribute("role", "tab");
+      tab.setAttribute("aria-controls", "node-stats-content");
+      const selected = node.cn === selectedNodeID;
+      tab.setAttribute("aria-selected", String(selected));
+      tab.tabIndex = selected ? 0 : -1;
+      tab.addEventListener("click", () => selectNode(node.cn));
+      tab.addEventListener("keydown", event => {
+        let nextIndex;
+        if (event.key === "ArrowRight") nextIndex = (index + 1) % nodes.length;
+        else if (event.key === "ArrowLeft") nextIndex = (index - 1 + nodes.length) % nodes.length;
+        else if (event.key === "Home") nextIndex = 0;
+        else if (event.key === "End") nextIndex = nodes.length - 1;
+        else return;
+        event.preventDefault();
+        selectNode(nodes[nextIndex].cn);
+        navigation.querySelectorAll('[role="tab"]')[nextIndex].focus();
+      });
+    }
+    selector.value = selectedNodeID;
+    if (focusedNodeID) {
+      [...navigation.children].find(tab => tab.dataset.nodeId === focusedNodeID)?.focus();
+    }
+    navigation.scrollLeft = scrollLeft;
+    requestAnimationFrame(updateSelectorLayout);
   }
 
   function renderAdapters(parent, node) {
@@ -64,7 +159,7 @@
   function statValue(parent, value, identity) {
     const span = text(parent, "span", value);
     span.className = "node-stats-value poll-value";
-    span.dataset.nodeStatKey = JSON.stringify([selector.value, ...identity]);
+    span.dataset.nodeStatKey = JSON.stringify([selectedNodeID, ...identity]);
     return span;
   }
 
@@ -149,6 +244,8 @@
     summary.replaceChildren();
     groups.replaceChildren();
     const node = selectedNode();
+    content.hidden = !node;
+    if (node) content.setAttribute("aria-labelledby", `node-stats-tab-${nodes.indexOf(node)}`);
     if (!node) {
       updateStatus();
       return;
@@ -223,30 +320,38 @@
       if (sorts.fastpath.key !== "counter" && !workers.includes(sorts.fastpath.key)) sorts.fastpath = { key: "counter", direction: 1 };
       renderCounterTable("fastpath", "Fastpath workers", workers.map((worker) => [worker, worker]), [...countersByName.values()]);
     }
+    if (!groups.children.length) text(groups, "p", "Packet counters unavailable.");
     updateStatus();
   }
 
   window.addEventListener("zpr-snapshot", ({ detail }) => {
-    const previous = selector.value;
+    const previous = selectedNodeID;
     actors = detail.actors || [];
     nodes = actors.filter((actor) => actor.node);
     snapshotReceived = true;
     connectionError = "";
-    selector.replaceChildren();
-    for (const node of nodes) text(selector, "option", node.display_name || node.cn).value = node.cn;
-    if (nodes.some((node) => node.cn === previous)) selector.value = previous;
-    selector.disabled = !nodes.length;
+    selectedNodeID = nodes.some(node => node.cn === previous) ? previous : nodes[0]?.cn || "";
+    renderNavigation();
     document.getElementById("node-stats-count").textContent = `${nodes.length} nodes`;
     renderNode();
+    if (selectedNodeID !== previous) {
+      window.dispatchEvent(new CustomEvent("node-stats-selection-changed", { detail: { nodeID: selectedNodeID } }));
+    }
   });
+  window.addEventListener("node-stats-select-node", ({ detail }) => selectNode(detail?.nodeID));
+  selector.addEventListener("change", () => selectNode(selector.value));
+  new ResizeObserver(updateSelectorLayout).observe(selectorContainer);
+  document.fonts.ready.then(updateSelectorLayout);
   window.addEventListener("zpr-snapshot-error", ({ detail }) => {
     connectionError = detail;
     updateStatus();
   });
-  selector.addEventListener("change", renderNode);
   // Age the last sample while polling is paused, without making another request.
   setInterval(() => {
     if (location.hash === "#node-stats") updateStatus();
   }, 1000);
-  window.addEventListener("hashchange", updateStatus);
+  window.addEventListener("hashchange", () => {
+    updateStatus();
+    requestAnimationFrame(updateSelectorLayout);
+  });
 })();

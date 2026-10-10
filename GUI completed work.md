@@ -11,6 +11,211 @@ not competing current requirements. References such as "above", "below" and
 "this deployment" retain their original context from the former combined tracker;
 use the dated deployment ledger when checking release scope.
 
+## Services selector and standard log display
+
+### GUI-only publication verification
+
+The 2026-10-10 GUI-only source snapshot excludes unfinished Mac provisioning,
+Great Lakes Rust/runtime changes, provider-manager launcher changes and
+file-source runtime-state backend changes. It includes completed GUI changes
+and the directly required Diagnostics node-source filter and login retry fix.
+Historical "no commit or push" statements below describe their deployment time.
+
+Verification in an isolated snapshot: 144 desktop/tablet browser cases pass
+for Nodes, Services, maps and shared logs; targeted production Diagnostics/
+log-boundary/node-name race tests, operator-auth race tests and the embedded
+dashboard build pass. The full dashboard Go package run has four unrelated
+organization/Simulator fixture failures (missing directory seeds/manifest and
+LDAP identity expectations); it is not claimed passing. No additional deploy
+is part of publication.
+
+- [x] Replace the main Services page's multiple log lists with a service
+  selector and the shared `log-panel.js` viewer. Show only the selected service's
+  health and sortable metrics, preserving non-node service/trusted-source
+  inventory counts, aggregate health and identity/metric/log filtering.
+  Leave the Status service-descriptor tab unchanged.
+- [x] Preserve exact raw JSON, inert provider HTML and independent ANSI record
+  styles. Provide Pause/Resume, manual Refresh while paused, Wrap initially off,
+  standard maximize/restore/Escape/focus, per-service scroll/follow retention,
+  navigation cancellation and session-loss clearing.
+- Verification: all 14 desktop/tablet Services cases pass, plus 18 existing
+  Nodes ownership/shared-viewer and window-control regression cases.
+  Focused production Diagnostics API tests and the
+  embedded dashboard build pass; edited JavaScript has no editor problems.
+  Empty inventory, stale/partial/unavailable samples, cached-log retention,
+  duplicate IDs and malformed metrics/logs are covered.
+  Legacy Diagnostics tests still describe multiple ordered log lists, uncapped
+  log height and all-source detail tables; those expectations are superseded,
+  not rewritten without approval or claimed passing.
+- **Verified; awaiting deployment.** Frontend only: existing aggregate API caps
+  still apply; no selected-service API request or backend/Simulator change.
+  No deployment, commit or push.
+
+## Diagnostics/Nodes ownership merger
+
+- [x] Move selected-node source health and metrics into Nodes alongside its
+  shared log viewer. Retain aggregate health and the source overview in
+  Diagnostics, with non-node service/trusted-source details unchanged.
+  Node overview rows select and navigate to Nodes; unknown inventory nodes
+  have disabled navigation with an explicit explanation.
+- [x] Share exact sortable metric rendering between the two views. Preserve
+  large integer strings, units, refreshed change pulses and per-node sort
+  choices. Keep last healthy/stale metrics independent from partial log
+  samples; transport failures retain both with explicit last-known labels.
+  Selection/navigation cancellation rejects obsolete health/metric/log
+  responses, and session loss clears the selected-source caches.
+- Verification: 96 desktop/tablet browser cases pass, covering merger ownership,
+  aggregate/service retention, exact integers/sorting/pulses, malformed metrics,
+  partial logs and failed reads, narrow source-panel bounds, inert provider text,
+  session-loss cancellation, node switching and shared Adapter/Controller/Worker
+  rendering/window regressions. Embedded dashboard build, editor problems and
+  whitespace checks pass. Presentation fixtures now use non-node services
+  with user approval. The previously superseded Diagnostics JSON-toggle test,
+  known legacy picker lookup and topology-parent position failures are excluded;
+  those tests are not rewritten to hide failures.
+- **Deployed to Control Room**, verified 2026-10-10T00:50:31Z. Rollout includes
+  `source-metrics.js` v1, `node-logs.js` v2, `node-stats.css` v7,
+  `diagnostics.js` v11 and the corresponding index references. Reuses the
+  deployed Control-Service node-source filter; no backend change, Simulator
+  request or Simulator rollout is required for this merger.
+- All 96 cases pass against exact release assets. Real Dex-authenticated
+  desktop/tablet checks verify selected-source health, exact returned metrics
+  and logs, pause/refresh/resume/window controls, aggregate health, 10 non-node
+  detail sources and navigation from Diagnostics to the selected node.
+  Maps/Fit and timeout retry remain working. All 69 served asset hashes,
+  configuration/network contracts and 17 unrelated container starts verified.
+  First attempt rolled back because the old map smoke required docks absent
+  from the current production inventory; corrected snapshot-grounded checks
+  verify two geographic anchors and zero expected docks. No map code change.
+  Rollback retained stopped; no commit or push. See deployment ledger.
+
+## Compact unconnected components
+
+- [x] Bring undocked adapters next to the occupied graph area in both maps.
+  Placement measures existing actors/service/cloud extents and packs a separate
+  group to the right or below with 40-unit clearance. Side and column count
+  minimize viewport-fit size. No fixed x=4500 offset or node-row staging gap.
+  Unconnected-only World Map groups are centered on the basemap without
+  inventing geographic coordinates or dock/network edges.
+- Verification: 50 desktop/tablet geography cases pass, including six new
+  landscape/portrait, mixed-size gateway, exact gap, component separation,
+  refresh/reordering stability, Fit containment and unconnected-only checks.
+  Geographic anchors and existing map tests are preserved. Embedded build,
+  editor problems and whitespace checks pass.
+- **Deployed to Control Room**, verified 2026-10-10 00:15 UTC. `app.js` v148.
+  All 50 cases also pass against the exact release assets. Live desktop/tablet
+  checks verify four real undocked components at the exact 40-unit group
+  clearance in both maps, geographic anchors, Fit, Nodes logs and Diagnostics.
+  Backend unchanged; no commit or push. See the deployment ledger.
+
+## Viewport-aware map layout
+
+- [x] Base both map layouts on the actual graph viewport, not a square grid or
+  fixed vertical fan-out. Topology scores node rows/columns against aspect and
+  orientation while retaining stable slots. Free-host columns are aspect-aware.
+  Two-adapter clusters follow landscape/portrait orientation; World Map fan-out
+  scoring balances aspect fit with component separation, inter-node corridors
+  and basemap containment. Geographic coordinates remain authoritative.
+- Significant aspect changes recalculate layout in both views. Manual camera
+  transforms and disabled Auto-fit remain preserved; Fit/Auto-fit use the actual
+  viewport aspect for both maps. Hidden/zero-size viewports are ignored.
+- Verification: 44 desktop/tablet geography cases pass, including landscape to
+  portrait rotation, exact geographic anchors, refresh stability, Topology dock
+  orientation and manual-camera retention. Existing geography tests are
+  unchanged; embedded build, editor problems and whitespace checks pass.
+- **Deployed to Control Room**, verified 2026-10-10 00:09 UTC. `app.js` v147.
+  All 44 geography cases also pass against the exact release assets. Live
+  Dex desktop/tablet checks verify both maps' viewport-aspect Fit, geographic
+  anchors, selected-node logs, Diagnostics and no Simulator API requests.
+  Only app.js and its captured live index cache link changed. Backend unchanged;
+  no commit or push. See the deployment ledger for rollback and hash evidence.
+
+## Login-timeout retry correction
+
+- [x] Fix the bare "Operator authentication unavailable or denied." response
+  after the timeout retry action. Chromium reproduces `Origin: null` on the old
+  direct POST under `no-referrer`; changing only that policy still leaves the
+  provider redirect blocked by `form-action 'self'`. The single existing button
+  now GETs Control Room, whose normal page initiates the exact same-origin login
+  POST and allows the provider redirect. Timeout-page privacy/CSP, HTTP 403,
+  one-time login validation and strict login origin checks remain unchanged.
+- Verification: desktop/tablet browser cases use actual recovery markup and
+  Control Room assets, verifying one fresh POST with the exact origin, no
+  callback-parameter referrer leakage, and no CSP redirect violation. Full
+  operator-auth race tests and embedded dashboard build pass. The directly
+  related old recovery action expectation was updated with user approval.
+- **Deployed to Control Room**, verified 2026-10-10 00:24 UTC. Exact-release
+  desktop/tablet tests and isolated authentication race tests pass. Real Dex
+  desktop/tablet checks verify the timeout button reaches a fresh login through
+  an exact same-origin POST and successful subsequent authentication.
+  Current maps, Nodes logs and Diagnostics remain verified; no commit or push.
+
+## World Map variable dock lengths
+
+- [x] Remove the equal-length dock constraint in World Map while retaining
+  configured geographic node positions. Adapter distances now account for
+  individual service rings and gateway clouds. Cosine-rule angular spacing
+  separates differently sized components and retains link-corridor clearance;
+  contained placements are preferred, with size-aware outside placements when
+  the fan-out cannot fit. Topology spacing is unchanged. This is not a global
+  collision solver for separate nodes' clusters.
+- Verification: 42 desktop/tablet geography cases, including eight new cases
+  for linked/unlinked mixed-size docks, exact anchors, component separation,
+  unchanged/reordered refreshes, Topology preservation, missing geography and
+  dense fan-outs. Existing tests remain unchanged. Current static assets build
+  against the committed backend in isolation; the working-tree build was blocked
+  by concurrent enrollment syntax errors, which were not modified.
+- Status: **Deployed to Control Room** on 2026-10-09 at 21:04 UTC, `app.js`
+  v146. Real authenticated desktop/tablet checks verify three geographic node
+  anchors, five adapter docks with variable lengths and Fit on production data.
+  No commit or push. See [deployment evidence](GUI%20deployments.md).
+
+## Selected-node logs and shared viewer
+
+- [x] Add the selected production node's logs below its statistics on Nodes.
+  Use stable node identity for queries and operator display names for headings.
+  Keep the aggregate Diagnostics page, including service/trusted-source logs,
+  metrics and source health, until replacement views are ready.
+- [x] Extract `log-panel.js` and wire Nodes, Adapter/Controller Logs and Simulator
+  Workers to the same panel construction, safe ANSI rendering, scroll/follow
+  behavior and Maximize/Restore controls. Preserve adapter/Worker JSON formatting,
+  source selection, disconnected tails, filtering, layout and polling contracts.
+- [x] Keep node bodies raw and body-only; reset ANSI state per provider record,
+  leave HTML/terminal links inert and preserve exact large-integer JSON text.
+  Use standard black terminal styling, Wrap initially off, local Pause/Resume,
+  manual Refresh while paused and Escape/focus restoration. Restore/detach the
+  viewer on navigation and remember each node's scroll/follow state.
+- [x] Use the authenticated independent production Diagnostics API with an
+  optional inventory-validated `source` filter. Resolve before aggregate caps
+  and query only the selected source; retain the existing unfiltered behavior.
+  Reject invalid/unknown IDs explicitly. No Simulator endpoint, configuration,
+  manifest, workload or availability dependency is introduced.
+- [x] Preserve initial Loading, explicit request/source failures, stale/partial
+  signals and the selected node's last observed logs. Cancel on navigation/
+  selection changes and reject obsolete responses without showing another
+  node's data.
+- Verification on 2026-10-09: **96 desktop/tablet browser cases pass**, including
+  16 new Nodes/shared-panel cases plus existing terminal layout, icons, exact
+  raw/formatted JSON, source filtering, disconnected tails, Nodes/geography and
+  Diagnostics regressions. Focused production Diagnostics/log-boundary/node-name
+  Go tests pass with the race detector; the complete embedded dashboard builds.
+  New Go cases verify source-scoped provider queries, selection beyond aggregate
+  inventory/log caps, exact metric strings, provider absence without Simulator,
+  invalid/repeated/malformed IDs and rejection without provider calls.
+- Baseline exceptions: two older picker tests (four desktop/tablet cases) still
+  request a combobox for a multi-option listbox, and the topology-parent animation
+  position test (two cases) fails its existing expectation. Both failures were
+  reproduced against committed HEAD assets/tests and left unchanged by this
+  task; the final passing selection excludes them. A new current-contract picker
+  regression verifies per-type selection and per-source scroll retention.
+- Status: **Deployed to Control Room/Control-Service** on 2026-10-09 at
+  21:04 UTC. Real authenticated desktop/tablet checks compare selected-node
+  rendered logs with actual provider records for two production nodes; verify
+  Loading, Pause/Refresh/Resume, window controls, navigation restoration and
+  aggregate Diagnostics. No Simulator API requests or Simulator restart.
+  Shared Worker-panel rendering still awaits Simulator asset rollout.
+  No commit or push. See [deployment evidence](GUI%20deployments.md).
+
 ## Control Room guideline follow-up
 
 - [x] Standardize window-control button styling, not only SVG geometry:

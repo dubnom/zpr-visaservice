@@ -3,6 +3,12 @@
 .diagnostics-toolbar { display: flex; align-items: center; gap: 10px; margin-bottom: 12px; }
 .diagnostics-toolbar label { color: var(--muted); font: 11px var(--mono); text-transform: uppercase; }
 .diagnostics-toolbar input[type="search"] { flex: 1; min-width: 120px; min-height: 32px; padding: 5px 8px; border: 1px solid var(--line); border-radius: 2px; color: var(--ink); background: white; font: 11px var(--sans); }
+.diagnostics-toolbar select { flex: 1; min-width: 120px; max-width: 100%; min-height: 32px; padding: 5px 8px; border: 1px solid var(--line); border-radius: 2px; color: var(--ink); background: white; font: 11px var(--sans); }
+#service-logs { margin-top: 16px; }
+.service-log-panel:not(.maximized) .machine-log-output { flex: 0 1 auto; height: 360px; }
+.service-log-panel header { flex-wrap: wrap; }
+.service-log-panel h2 { min-width: 0; overflow-wrap: anywhere; }
+.service-logs-toolbar { margin: 0; padding: 8px 12px; border-bottom: 1px solid var(--line); }
 .diagnostics-table-scroll { overflow-x: auto; border: 1px solid var(--line); background: var(--panel); }
 .diagnostics-source-table, .diagnostics-metrics-table { width: 100%; border-collapse: collapse; font-size: 11px; }
 .diagnostics-source-table th, .diagnostics-source-table td, .diagnostics-metrics-table th, .diagnostics-metrics-table td { padding: 8px 10px; border-bottom: 1px solid var(--line); text-align: left; vertical-align: top; overflow-wrap: anywhere; }

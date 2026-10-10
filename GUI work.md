@@ -23,6 +23,70 @@ Do not infer current runtime health from a historical verification entry.
 
 ## In progress
 
+Services selector and standard log display are **Verified; awaiting deployment**.
+The main Services page selects one non-node service/trusted telemetry source
+and shows its health, sortable metrics and shared log viewer. Aggregate service
+health/counts and filtering remain; the Status service inventory is unchanged.
+Pause/Resume, paused manual Refresh, Wrap, standard maximize/Escape and
+per-service scroll retention reuse the existing viewer/runtime contracts.
+No backend or Simulator change, deployment, commit or push. See
+[verification evidence](GUI%20completed%20work.md#services-selector-and-standard-log-display).
+
+The Diagnostics/Nodes ownership merger is **Deployed to Control Room**
+(2026-10-10 00:50 UTC).
+Nodes owns selected-node source health, exact sortable metrics and logs.
+Diagnostics retains aggregate/source overview and non-node service details,
+with node rows navigating to Nodes rather than duplicating their detail panels.
+96 desktop/tablet merger/shared-viewer regression cases and the embedded
+dashboard build pass. The existing production source-filter backend is reused;
+rollout contains the new shared metrics asset and updated Room assets only.
+Real desktop/tablet checks verify node health/metrics/logs, aggregate health,
+10 non-node detail sources and node navigation. No commit or push. See
+[completed work](GUI%20completed%20work.md#diagnosticsnodes-ownership-merger).
+
+Compact unconnected-component placement is **Deployed to Control Room**
+(2026-10-10 00:15 UTC).
+Undocked adapters sit beside occupied bounds in both maps rather than the
+distant staging grid, with service/cloud clearance and viewport-aware packing.
+`app.js` v148. See
+[verification evidence](GUI%20completed%20work.md#compact-unconnected-components).
+See [deployment evidence](GUI%20deployments.md). No commit or push.
+
+Viewport-aware Topology/World Map layout is **Deployed to Control Room**
+(2026-10-10 00:09 UTC).
+Landscape/portrait node rows, free-host columns and adapter placement follow
+the graph area's dimensions; geographic anchors and manual cameras remain
+preserved. `app.js` v147. See
+[verification evidence](GUI%20completed%20work.md#viewport-aware-map-layout).
+See [deployment evidence](GUI%20deployments.md). No commit or push.
+
+Login-timeout retry origin/CSP correction is **Deployed to Control Room**
+(2026-10-10 00:24 UTC).
+The single retry button returns to Control Room before a fresh login POST;
+it no longer POSTs from the restrictive timeout page. Strict origin checks
+remain unchanged. See [verification evidence](GUI%20completed%20work.md#login-timeout-retry-correction).
+See [deployment evidence](GUI%20deployments.md). No commit or push.
+
+World Map variable-length adapter docks are **Deployed to Control Room**
+(2026-10-09 21:04 UTC).
+Nodes remain geographically anchored; each attached adapter's distance accounts
+for its own service ring/gateway cloud rather than a shared radius. Topology
+layout is unchanged. See the [verification evidence](GUI%20completed%20work.md#world-map-variable-dock-lengths).
+See [deployment evidence](GUI%20deployments.md). No commit or push for this rollout.
+
+Selected-node logs on Nodes and the shared log-panel component are
+**Deployed to Control Room/Control-Service; Simulator awaiting deployment**
+(2026-10-09 21:04 UTC). Nodes, Adapter/Controller
+Logs and Workers share rendering, scrolling and window controls. Nodes queries
+an inventory-validated production Diagnostics source rather than Simulator or
+the all-source log budget. The deployed merger above moves node details to
+Nodes while keeping
+aggregate health and non-node details. 96 desktop/tablet browser cases, focused
+production Diagnostics/log-boundary race tests and the embedded build pass.
+Control Room assets and the Control-Service source filter are deployed;
+shared Worker-panel rollout remains pending. No commit or push. See
+[completed work](GUI%20completed%20work.md#selected-node-logs-and-shared-viewer).
+
 Shared JavaScript page-runtime reuse is **Deployed to Control Room; Simulator awaiting deployment**.
 See the [implementation and test evidence](GUI%20completed%20work.md#javascript-reuse-refactoring).
 Control Room rollout: 2026-10-09 19:13 UTC. This work has not been committed or pushed.
@@ -69,6 +133,9 @@ No new priority or implementation approval is implied for backend rollouts.
 
 ### Config
 - [ ] Create a form editor.
+
+### Logs and diagnostics
+- [ ] Expose the shared viewer for Services and Trusted Sources; move their metrics/freshness/errors to suitable detail views before retiring the aggregate Diagnostics page.
 
 ### Gateways
 - [ ] Deploy the committed forwarding/consolidation changes through a separately reviewed rollout; preserve production settings and verify the actual gateway binary and protocol behavior, not just UI assets.

@@ -1,5 +1,5 @@
 (async () => {
-  const { renderColoredLog } = await import("/colored-log.js?v=1");
+  const { createLogPanel, updateLogPanel, setLogPanelMaximized } = await import("/log-panel.js?v=1");
   const grid = document.getElementById("machine-logs-grid");
   const controlRoom = grid.dataset.site === "control-room";
   const followLogs = () => controlRoom || document.getElementById("machine-logs-follow").checked;
@@ -54,28 +54,9 @@
     return retained;
   }
 
-  function renderSource(output, source, emptyMessage) {
-    output.replaceChildren();
-    if (!source || source.disconnected || source.error) {
-      const status = document.createElement("p");
-      status.className = "machine-log-error";
-      status.textContent = source?.error || (source?.disconnected ? "Disconnected" : emptyMessage);
-      output.append(status);
-    }
-    if (source && (source.lines.length || !source.disconnected && !source.error)) {
-      const content = document.createElement("pre");
-      const lines = jsonToggle.checked ? source.lines.map(window.ZPRLogFormat.formatJSON) : source.lines;
-      renderColoredLog(content, lines.join("\n") || "No log entries.");
-      output.append(content);
-    }
-  }
-
   function setMaximized(card, maximized) {
-    card.panel.classList.toggle("maximized", maximized);
-    window.ZPRSafeDisplay.renderWindowControl(card.maximizeButton, maximized,
-      card.id ? `adapter panel ${card.id}` : `logs for ${card.name?.textContent || card.title?.textContent || "adapter"}`);
-    document.body.classList.toggle("machine-log-maximized", maximized);
-    if (followLogs() && card.following) card.output.scrollTop = card.output.scrollHeight;
+    setLogPanelMaximized(card, maximized,
+      card.id ? `adapter panel ${card.id}` : `logs for ${card.name?.textContent || card.title?.textContent || "adapter"}`, followLogs());
   }
 
   function maximizeCard(card, maximized) {
@@ -124,17 +105,9 @@
 
   function makeAdapterColumn() {
     grid.querySelector(".adapter-columns-empty")?.remove();
-    const panel = document.createElement("article");
-    panel.className = "machine-log-panel adapter-log-column";
-    const header = document.createElement("header");
-    const title = document.createElement("h2");
-    title.textContent = "Choose adapter";
-    const actions = document.createElement("div");
-    actions.className = "machine-log-panel-actions";
-    const maximizeButton = document.createElement("button");
-    maximizeButton.className = "quiet";
-    maximizeButton.type = "button";
-    maximizeButton.setAttribute("aria-pressed", "false");
+    const view = createLogPanel("Choose adapter");
+    const { panel, header, title, actions, maximizeButton, output } = view;
+    panel.classList.add("adapter-log-column");
     const removeButton = document.createElement("button");
     removeButton.type = "button";
     removeButton.className = "adapter-column-remove";
@@ -182,14 +155,11 @@
     const toolbar = document.createElement("div");
     toolbar.className = "machine-log-source-toolbar adapter-column-picker";
     select.setAttribute("aria-label", `Select adapter for panel ${nextAdapterColumnID}`);
-    const output = document.createElement("div");
-    output.className = "machine-log-output";
-    output.tabIndex = 0;
-    const column = {
+    const column = Object.assign(view, {
       id: nextAdapterColumnID++, panel, title, maximizeButton, removeButton, select, pickerButton, pickerDialog,
       toolbar, output, selectedKey: "", selectedKeys: new Map(), choices: "", signature: "", sourceViews: new Map(),
       following: true, nextScrollTop: undefined,
-    };
+    });
     window.ZPRSafeDisplay.renderWindowControl(maximizeButton, false, `adapter panel ${column.id}`);
     maximizeButton.addEventListener("click", () => maximizeAdapterColumn(column, !panel.classList.contains("maximized")));
     removeButton.addEventListener("click", () => removeAdapterColumn(column));
@@ -211,12 +181,9 @@
         pickerDialog.close();
       }
     });
-    output.addEventListener("scroll", () => {
-      if (output.clientHeight) column.following = output.scrollHeight - output.clientHeight - output.scrollTop <= 8;
-    });
-    actions.append(removeButton, maximizeButton);
+    actions.prepend(removeButton);
     toolbar.append(pickerButton);
-    header.append(title, toolbar, actions);
+    header.insertBefore(toolbar, actions);
     panel.append(header, output, pickerDialog);
     grid.append(panel);
     adapterColumns.push(column);
@@ -327,17 +294,7 @@
       column.pickerButton.title = selected ? `Choose log source: ${entry.machine.id} / ${source.name}` : `Choose ${type} log source`;
       column.pickerButton.disabled = choices.length === 0;
       column.output.setAttribute("aria-label", selected ? `${entry.machine.id} ${source.name} logs` : `${type} logs`);
-      const contentSignature = JSON.stringify({ state: entry?.state || "missing", source, formatJSON: jsonToggle.checked });
-      if (contentSignature !== column.signature) {
-        const scrollTop = column.nextScrollTop ?? column.output.scrollTop;
-        column.nextScrollTop = undefined;
-        renderSource(column.output, source, `No ${type} logs available.`);
-        column.signature = contentSignature;
-        column.output.scrollTop = scrollTop;
-      }
-    }
-    if (followLogs()) for (const column of adapterColumns) {
-      if (column.following && column.selectedKey) column.output.scrollTop = column.output.scrollHeight;
+      updateLogPanel(column, source, `No ${type} logs available.`, { formatJSON: jsonToggle.checked, follow: followLogs() && !column.panel.hidden });
     }
   }
 
@@ -363,24 +320,13 @@
       present.add(machine.id);
       let card = cards.get(machine.id);
       if (!card) {
-        const panel = document.createElement("article");
-        panel.className = "machine-log-panel";
-        const header = document.createElement("header");
+        const view = createLogPanel(`logs for ${machine.id}`);
+        const { panel, header, title: name, actions, maximizeButton, output } = view;
         const identity = document.createElement("div");
-        const name = document.createElement("h2");
         const meta = document.createElement("small");
         const status = document.createElement("span");
         status.className = "machine-log-state";
-        const actions = document.createElement("div");
-        actions.className = "machine-log-panel-actions";
-        const maximizeButton = document.createElement("button");
-        maximizeButton.className = "quiet";
-        maximizeButton.type = "button";
-        window.ZPRSafeDisplay.renderWindowControl(maximizeButton, false, `logs for ${machine.id}`);
         maximizeButton.addEventListener("click", () => maximizeCard(card, !panel.classList.contains("maximized")));
-        const output = document.createElement("div");
-        output.className = "machine-log-output";
-        output.tabIndex = 0;
         output.id = `machine-log-output-${machine.id}`;
         output.setAttribute("aria-label", `${machine.id} logs`);
         const sourceToolbar = document.createElement("div");
@@ -399,14 +345,11 @@
         const inventory = document.createElement("div");
         details.append(summary, inventory);
         identity.append(name, meta);
-        actions.append(status, maximizeButton);
-        header.append(identity, actions);
+        actions.prepend(status);
+        header.replaceChildren(identity, actions);
         panel.append(header, details, sourceToolbar, output);
         grid.append(panel);
-        card = { panel, name, meta, status, maximizeButton, output, sourceOptions, inventory, sourceViews: new Map(), selectedSource: "", sourceChoices: "", signature: "", following: true };
-        output.addEventListener("scroll", () => {
-          if (output.clientHeight) card.following = output.scrollHeight - output.clientHeight - output.scrollTop <= 8;
-        });
+        card = Object.assign(view, { name, meta, status, sourceOptions, inventory, sourceViews: new Map(), selectedSource: "", sourceChoices: "" });
         cards.set(machine.id, card);
       }
       card.name.textContent = machine.id;
@@ -466,17 +409,10 @@
       card.panel.classList.toggle("running", entry.state === "running" && !source?.disconnected);
       if (source?.disconnected) card.status.textContent = "disconnected";
       card.output.setAttribute("aria-label", `${machine.id} ${card.selectedSource || "machine"} logs`);
-      const signature = JSON.stringify({ state: entry.state, source, formatJSON: jsonToggle.checked });
-      if (signature !== card.signature) {
-        const scrollTop = card.nextScrollTop ?? card.output.scrollTop;
-        card.nextScrollTop = undefined;
-        renderSource(card.output, source, entry.state === "running" ? "No application/service logs assigned." : "Machine is not running.");
-        card.signature = signature;
-        card.output.scrollTop = scrollTop;
-      }
       const matches = !query || JSON.stringify(entry).toLowerCase().includes(query);
       const type = document.getElementById("machine-type-filter").value;
       card.panel.hidden = !matches || (runningOnly && entry.state !== "running") || (type !== "all" && machine.type !== type);
+      updateLogPanel(card, source, entry.state === "running" ? "No application/service logs assigned." : "Machine is not running.", { formatJSON: jsonToggle.checked, follow: follow && !card.panel.hidden });
       if (!card.panel.hidden) visible++;
     }
     for (const [id, card] of cards) {
@@ -497,9 +433,6 @@
       }
       empty.textContent = machines.length ? "No workers match the filters." : "No workers available.";
     } else empty?.remove();
-    if (follow) for (const card of cards.values()) {
-      if (card.following && !card.panel.hidden) card.output.scrollTop = card.output.scrollHeight;
-    }
   }
 
   async function collectLogs({ signal, isCurrent }) {

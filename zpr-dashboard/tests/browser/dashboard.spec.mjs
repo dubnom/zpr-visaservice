@@ -578,6 +578,8 @@ import { registerWorkflowGuidelineTests } from "./workflow-guidelines.mjs";
 import { registerTrustedSourceGUITests } from "./trusted-source-gui.mjs";
 import { registerPageRuntimeTests } from "./page-runtime.mjs";
 import { registerWindowControlTests } from "./window-controls.mjs";
+import { registerNodeLogTests } from "./node-logs.mjs";
+import { registerServiceLogTests } from "./service-logs.mjs";
 
 const assets = fileURLToPath(new URL("../../cmd/zpr-web-dashboard/static/", import.meta.url));
 const csp = "default-src 'self'; style-src 'self'; script-src 'self'; connect-src 'self'; img-src 'self' data:";
@@ -776,6 +778,8 @@ registerAssertionBrowserTests();
 registerControlRoomGuidelineTests(test, expect);
 registerPageRuntimeTests(test, expect);
 registerWindowControlTests(test, expect);
+registerNodeLogTests(test, expect);
+registerServiceLogTests(test, expect);
 registerDiagnosticsGuidelineTests(test, expect);
 registerWorkflowGuidelineTests(test, expect);
 registerTrustedSourceGUITests(test, expect);
@@ -2269,8 +2273,8 @@ test("Control Room keeps Adapter Logs internal, Log Manager beneath it, and a Co
   await expect(manager).toContainText("Log Manager");
   await expect(manager.locator(".external-arrow")).toHaveCSS("color", "rgb(181, 227, 79)");
   const labels = await page.locator(".primary-nav").evaluate((nav) => [...nav.querySelectorAll(".nav-link, .nav-group-label")].map((item) => item.textContent.replace("↗", "").trim()));
-  expect(labels).toEqual(["Monitoring", "Map", "Status", "Security", "Diagnostics", "Trusted Sources", "Adapter Logs", "Log Manager", "Configuration", "Policy/Assertions", "Gateways", "Config", "Provisioning", "Adapters"]);
-  await expect(page.getByRole("group", { name: "Monitoring" }).getByRole("link")).toHaveCount(7);
+  expect(labels).toEqual(["Monitoring", "Map", "Status", "Security", "Services", "Nodes", "Trusted Sources", "Adapter Logs", "Log Manager", "Configuration", "Policy/Assertions", "Gateways", "Config", "Provisioning", "Adapters"]);
+  await expect(page.getByRole("group", { name: "Monitoring" }).getByRole("link")).toHaveCount(8);
   await expect(page.getByRole("group", { name: "Configuration" }).getByRole("link")).toHaveCount(3);
   await expect(page.getByRole("group", { name: "Provisioning" }).getByRole("link", { name: "Adapters", exact: true })).toHaveAttribute("href", "#provisioning-adapters");
   await expect(manager).toHaveAttribute("href", "http://127.0.0.1:8800/");
@@ -4231,7 +4235,7 @@ test("Diagnostics shows source identity, current metrics, searchable bounded log
   page.on("request", (request) => { if (request.url().includes("/api/simulator/")) simulationRequests.push(request.url()); });
   api.handlers.set("/api/diagnostics", async (route) => route.fulfill({ json: {
     generated_at: "2026-10-05T12:00:00Z", state: "partial", sources: [
-      { id: "node:node-a", name: "node-a", kind: "ZPR node", identity: "node-a", address: "fd00::1", state: "available", last_updated: "2026-10-05T11:59:00Z", metrics: [{ name: "packets_forwarded", value: "12", unit: "1" }], logs: [{ timestamp: "2026-10-05T11:59:00Z", severity: "INFO", body: "node forwarding ready" }] },
+      { id: "service:forwarding", name: "forwarding service", kind: "Required service", identity: "forwarding-service", address: "fd00::1", state: "available", last_updated: "2026-10-05T11:59:00Z", metrics: [{ name: "packets_forwarded", value: "12", unit: "1" }], logs: [{ timestamp: "2026-10-05T11:59:00Z", severity: "INFO", body: "node forwarding ready" }] },
       { id: "trusted:ldap", name: "ldap", kind: "Trusted service · rest/1", identity: "ldap-service", state: "stale", last_updated: "2026-10-05T10:00:00Z", metrics: [], logs: [{ timestamp: "2026-10-05T10:00:00Z", body: "directory lookup ready" }] },
       { id: "service:auth", name: "AuthService", kind: "Required service · Auth", identity: "auth", state: "unavailable", error: "No OpenTelemetry signals received", metrics: [], logs: [] },
     ],
@@ -4242,9 +4246,9 @@ test("Diagnostics shows source identity, current metrics, searchable bounded log
   await expect(page.locator('.diagnostics-source[data-state="available"]')).toContainText("12");
   await expect(page.locator('.diagnostics-source[data-state="stale"]')).toContainText("stale");
   await expect(page.locator('.diagnostics-source[data-state="unavailable"]')).toContainText("No OpenTelemetry signals received");
-  await page.getByRole("searchbox", { name: "Filter logs and sources" }).fill("forwarding ready");
+  await page.getByRole("searchbox", { name: "Filter services and logs" }).fill("forwarding ready");
   await expect(page.locator(".diagnostics-source")).toHaveCount(1);
-  await expect(page.locator(".diagnostics-source")).toContainText("node-a");
+  await expect(page.locator(".diagnostics-source")).toContainText("forwarding service");
   expect(simulationRequests).toEqual([]);
 });
 
@@ -4586,6 +4590,7 @@ test("Scenario machine log previews are compact, bounded and limited to running 
   await expect(preview.locator("script")).toHaveCount(0);
   await expect(page.locator(".scenario-log-preview")).toHaveCount(1);
   expect(await preview.locator("pre").evaluate(el => el.textContent.length)).toBeLessThanOrEqual(8192);
+  await expect(preview.locator("pre")).toHaveCSS("overflow", "hidden");
   const dimensions = await preview.boundingBox();
   const title = await page.locator('[data-scenario-machine="machine-01"] h3').boundingBox();
   expect(dimensions.height).toBeLessThanOrEqual(120);
@@ -8301,7 +8306,7 @@ test("GUI Nodes dock count opens a sorted adapter table and follows snapshots an
   await expect(count).toHaveText("3");
   await expect(count).toHaveAttribute("aria-expanded", "true");
   await expect(table.locator("tbody th")).toHaveText(["zeta", "beta", "<alpha>"]);
-  await page.locator("#node-stats-select").selectOption("node-b");
+  await page.locator('#node-stats-nav [data-node-id="node-b"]').click();
   const emptyCount = page.getByRole("button", { name: "Show docked adapters for node-b" });
   await expect(emptyCount).toHaveText("0");
   await expect(page.locator("#node-stats-adapters")).toBeHidden();
@@ -8333,17 +8338,23 @@ test("GUI Node Stats routes, groups exact counters and preserves selection on re
   await expect(page.locator("#page-node-stats")).toBeVisible();
   await expect(page.locator('[data-page-link="node-stats"]')).toHaveAttribute("aria-current", "page");
   await expect(page.locator("#node-stats-count")).toHaveText("2 nodes");
+  const nodeTabs = page.getByRole("tablist", { name: "Node information and logs" });
+  await expect(nodeTabs.getByRole("tab")).toHaveText(["node-a", "node-b"]);
+  await expect(nodeTabs.getByRole("tab", { name: "node-a" })).toHaveAttribute("aria-selected", "true");
   await expect(page.locator("#node-stats-status")).toContainText("Fresh counter sample");
+  await page.getByRole("tab", { name: "Counters", exact: true }).click();
   const groups = page.locator("#node-stats-groups");
   for (const text of ["Management counters", "Fastpath workers", "18446744073709551615"]) {
     await expect(groups).toContainText(text);
   }
   await expect(page.locator("#node-stats-summary")).toContainText(new Date(1791547200000).toLocaleString("en-US"));
   await page.locator("#pause-poll").click();
-  await page.locator("#node-stats-select").selectOption("node-b");
+  await page.locator('#node-stats-nav [data-node-id="node-a"]').focus();
+  await page.keyboard.press("ArrowRight");
+  await expect(page.locator('#node-stats-nav [data-node-id="node-b"]')).toBeFocused();
   api.snapshot.actors[1].node_details.counters[1].value = "12";
   await page.locator("#refresh-now").click();
-  await expect(page.locator("#node-stats-select")).toHaveValue("node-b");
+  await expect(page.locator('#node-stats-nav [data-node-id="node-b"]')).toHaveAttribute("aria-selected", "true");
   await expect(groups).not.toContainText("18446744073709551615");
   await expect(groups.locator("td", { hasText: /^12$/ })).toHaveCount(1);
   await page.locator('[data-page-link="diagnostics"]').click();
@@ -8367,6 +8378,7 @@ test("GUI Node Stats compares workers in a sortable precision-safe table beside 
     ],
   } }];
   await page.goto(appURL + "/#node-stats");
+  await page.getByRole("tab", { name: "Counters", exact: true }).click();
   await page.locator("#pause-poll").click();
   const table = page.getByRole("table", { name: "Fastpath workers", exact: true });
   await expect(table.locator("thead th")).toHaveText(["Counter", "0", "2", "10"]);
@@ -8426,6 +8438,7 @@ test(`GUI Node Stats pulses only changed values with ${reducedMotion} motion`, a
     { cn: "node-b", node: true, node_details: details() },
   ];
   await page.goto(appURL + "/#node-stats");
+  await page.getByRole("tab", { name: "Counters", exact: true }).click();
   await page.locator("#pause-poll").click();
   const pulses = page.locator("#page-node-stats .poll-changed");
   await expect(pulses).toHaveCount(0);
@@ -8452,7 +8465,7 @@ test(`GUI Node Stats pulses only changed values with ${reducedMotion} motion`, a
   await expect(pulses).toHaveCount(0);
   await page.locator('.node-stats-fastpath th[data-sort-key="0"] button').click();
   await expect(pulses).toHaveCount(0);
-  await page.locator("#node-stats-select").selectOption("node-b");
+  await page.locator('#node-stats-nav [data-node-id="node-b"]').click();
   await expect(pulses).toHaveCount(0);
   await page.locator("#refresh-now").click();
   await expect(pulses).toHaveCount(0);
@@ -8477,13 +8490,13 @@ test("GUI Node Stats reports partial telemetry, missing details and node removal
   await expect(page.locator("#node-stats-summary")).not.toContainText("9");
   api.snapshot.actors = [{ cn: "node-b", node: true }];
   await page.locator("#refresh-now").click();
-  await expect(page.locator("#node-stats-select")).toHaveValue("node-b");
+  await expect(page.locator('#node-stats-nav [data-node-id="node-b"]')).toHaveAttribute("aria-selected", "true");
   await expect(page.locator("#node-stats-summary")).toContainText("Unavailable");
   await expect(page.locator("#node-stats-error")).toBeHidden();
   api.snapshot.actors = [];
   await page.locator("#refresh-now").click();
   await expect(page.locator("#node-stats-status")).toHaveText("No nodes in the production snapshot.");
-  await expect(page.locator("#node-stats-select")).toBeDisabled();
+  await expect(page.locator("#node-stats-nav")).toBeHidden();
   await expect(page.locator("#node-stats-summary")).toBeEmpty();
 });
 

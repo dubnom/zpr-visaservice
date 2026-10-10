@@ -77,7 +77,7 @@ export function registerPageRuntimeTests(test, expect) {
     test(`Shared page runtime rejects obsolete Diagnostics ${completion} after navigation and return`, async ({ page, appURL, api }) => {
       api.handlers.set("/api/diagnostics", route => route.fulfill({ json: {
         state: "available", generated_at: "2026-10-09T12:00:00Z",
-        sources: [{ id: "node:one", name: "Initial source", kind: "ZPR node", metrics: [], logs: [] }],
+        sources: [{ id: "service:one", name: "Initial source", kind: "Required service", metrics: [], logs: [] }],
       } }));
       await page.goto(appURL + "/#diagnostics");
       await expect(page.locator(".diagnostics-source-row")).toContainText("Initial source");
@@ -91,7 +91,7 @@ export function registerPageRuntimeTests(test, expect) {
             signal: options.signal,
             finish(name) { resolve(new Response(JSON.stringify({
               state: "available", generated_at: "2026-10-09T12:01:00Z",
-              sources: [{ id: "node:one", name, kind: "ZPR node", metrics: [], logs: [] }],
+              sources: [{ id: "service:one", name, kind: "Required service", metrics: [], logs: [] }],
             }), { status: 200 })); },
             fail() { reject(new Error("Obsolete provider failure")); },
           }));

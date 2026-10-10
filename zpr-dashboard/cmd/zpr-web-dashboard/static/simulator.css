@@ -263,7 +263,7 @@ pre { margin: 0; padding: 14px; min-height: 110px; max-height: 180px; overflow: 
 .scenario-log-preview { height: 98px; display: grid; grid-template-rows: auto minmax(0, 1fr) auto; gap: 4px; margin-top: 8px; padding: 6px; overflow: hidden; border: 1px solid var(--line); border-radius: 3px; background: #000; color: #fff; }
 .scenario-log-preview-status { font: 9px var(--mono); overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
 .scenario-log-preview.unavailable .scenario-log-preview-status { color: #ffcf95; }
-.scenario-log-preview pre { min-height: 0; margin: 0; overflow: auto; font: 5px/1.3 var(--mono); white-space: pre; }
+.scenario-log-preview pre { min-height: 0; margin: 0; overflow: hidden; font: 5px/1.3 var(--mono); white-space: pre; }
 .scenario-log-preview a { color: #b2ddff; font: 9px var(--mono); justify-self: end; }
 .scenario-log-preview a:focus-visible { outline: 2px solid #fff; outline-offset: 2px; }
 .scenario-lane h3 { margin: 0; padding: 10px 2px 4px; font: 600 11px var(--mono); }

@@ -1,12 +1,44 @@
 (async () => {
   const page = document.querySelector("[data-diagnostics]");
   if (!page) return;
-  const { renderColoredLog } = await import("/colored-log.js?v=1");
+  const { createLogPanel, updateLogPanel, setLogPanelMaximized } = await import("/log-panel.js?v=1");
+  const { renderSourceMetrics } = await import("/source-metrics.js?v=1");
   const sourceList = document.getElementById("diagnostics-sources");
   const loading = document.getElementById("diagnostics-loading");
   const error = document.getElementById("diagnostics-error");
   const filter = document.getElementById("diagnostics-filter");
   const count = document.getElementById("diagnostics-count");
+  const selector = document.getElementById("diagnostics-service-select");
+  const logHost = document.getElementById("service-logs");
+  const view = createLogPanel("Service logs");
+  view.panel.classList.add("service-log-panel", "logs-nowrap");
+  const pause = document.createElement("button");
+  pause.type = "button";
+  pause.textContent = "Pause";
+  pause.setAttribute("aria-label", "Pause service log updates");
+  pause.setAttribute("aria-pressed", "false");
+  const refresh = document.createElement("button");
+  refresh.type = "button";
+  refresh.textContent = "Refresh";
+  refresh.setAttribute("aria-label", "Refresh service logs");
+  view.actions.prepend(pause, refresh);
+  const toolbar = document.createElement("div");
+  toolbar.className = "machine-logs-toolbar service-logs-toolbar";
+  const wrapLabel = document.createElement("label");
+  const wrap = document.createElement("input");
+  wrap.type = "checkbox";
+  wrapLabel.append(wrap, "Wrap lines");
+  toolbar.append(wrapLabel);
+  view.output.before(toolbar);
+  const positions = new Map();
+  const logCache = new Map();
+  let selectedKey = "";
+  let pending = false;
+  let paused = false;
+  const aggregate = document.createElement("p");
+  aggregate.id = "diagnostics-aggregate";
+  aggregate.setAttribute("role", "status");
+  loading.after(aggregate);
   const tracker = window.ZPRPollingDisplay.createTracker();
   let responseData = null;
   let active = location.hash === "#diagnostics";
@@ -30,6 +62,44 @@
     return source.name || source.id || "Unnamed source";
   }
 
+  function selectSource(key) {
+    if (key === selectedKey) return;
+    if (selectedKey && view.panel.isConnected) {
+      positions.set(selectedKey, { scrollTop: view.output.scrollTop, following: view.following });
+    }
+    setLogPanelMaximized(view, false, "Service logs");
+    selectedKey = key;
+    const saved = positions.get(key);
+    view.following = saved?.following ?? true;
+    view.nextScrollTop = saved?.scrollTop ?? 0;
+  }
+
+  function renderLogs(source) {
+    if (!active || !source) {
+      setLogPanelMaximized(view, false, "Service logs");
+      view.panel.remove();
+      return;
+    }
+    if (!view.panel.isConnected) logHost.append(view.panel);
+    const name = sourceName(source);
+    const label = `service logs for ${name}`;
+    view.title.textContent = `Logs for ${name}`;
+    view.output.setAttribute("aria-label", label);
+    window.ZPRSafeDisplay.renderWindowControl(view.maximizeButton, view.panel.classList.contains("maximized"), label);
+    refresh.disabled = pending;
+    const unavailable = !error.hidden ? error.textContent : source.error ||
+      (source.state === "unavailable" ? "Service log source unavailable." : "");
+    const cached = logCache.get(selectedKey);
+    const logs = unavailable && !source.logs.length && cached ? cached : source.logs;
+    updateLogPanel(view, {
+      lines: logs.map(log => log.body == null || log.body === "" ? "No log body reported." : log.body),
+      disconnected: Boolean(unavailable),
+      error: unavailable ? `${unavailable}${logs.length ? " Displayed logs are last known." : ""}`
+        : source.state === "stale" ? "Log sample is stale; displayed logs are last known."
+        : source.state === "partial" ? "Service log sample is partial." : "",
+    }, "No service logs available.", { independentRecords: true });
+  }
+
   function sourceIdentity(source) {
     const identity = displayMissing(source.identity);
     return source.address ? `${identity} · ${source.address}` : identity;
@@ -44,17 +114,6 @@
     return Number.isFinite(Date.parse(value))
       ? window.ZPRSafeDisplay.formatDateTime(value)
       : "Invalid timestamp";
-  }
-
-  function compareMetricValues(left, right) {
-    const a = String(left ?? "");
-    const b = String(right ?? "");
-    if (/^-?\d+$/.test(a) && /^-?\d+$/.test(b)) {
-      const integerA = BigInt(a);
-      const integerB = BigInt(b);
-      return integerA < integerB ? -1 : integerA > integerB ? 1 : 0;
-    }
-    return window.ZPRSortableTable.compareValues(a, b, { numericStrings: true });
   }
 
   function compareSources(left, right) {
@@ -120,66 +179,11 @@
   }
 
   function renderMetricTable(parent, source, key, changes) {
-    const heading = appendText(parent, "h4", "", "Metrics");
-    const table = document.createElement("table");
-    table.className = "diagnostics-metrics-table";
-    table.setAttribute("aria-label", `Metrics for ${sourceName(source)}`);
-    const head = document.createElement("thead");
-    const headerRow = document.createElement("tr");
-    for (const [sortKey, label] of [["name", "Metric"], ["value", "Value"], ["unit", "Unit"]]) {
-      const cell = appendText(headerRow, "th", "", label);
-      cell.scope = "col";
-      cell.dataset.sortKey = sortKey;
-      if (sortKey === "value") cell.dataset.numeric = "true";
-    }
-    head.append(headerRow);
-    const body = document.createElement("tbody");
-    const occurrences = new Map();
-    const metrics = (source.metrics || []).map((metric, index) => {
-      const name = displayMissing(metric.name);
-      const occurrence = occurrences.get(name) || 0;
-      occurrences.set(name, occurrence + 1);
-      return { metric, index, name, occurrence };
+    renderSourceMetrics(parent, source, {
+      sort: metricSorts.get(key) || { key: "name", direction: 1 },
+      onSort: nextSort => { metricSorts.set(key, nextSort); render(); },
+      track: (fields, node, value) => track(changes, [key, ...fields], node, value),
     });
-    const sort = metricSorts.get(key) || { key: "name", direction: 1 };
-
-    metrics.sort((left, right) => {
-      const leftValue = left.metric[sort.key];
-      const rightValue = right.metric[sort.key];
-      const order = sort.key === "value"
-        ? compareMetricValues(leftValue, rightValue)
-        : window.ZPRSortableTable.compareValues(leftValue, rightValue);
-      return order * sort.direction
-        || window.ZPRSortableTable.compareValues(left.metric.name, right.metric.name)
-        || left.index - right.index;
-    });
-
-    if (!metrics.length) {
-      window.ZPRSortableTable.renderEmptyRow(body, 3, "No metrics in the current window.");
-    } else {
-      for (const { metric, index, name, occurrence } of metrics) {
-        const row = document.createElement("tr");
-        appendText(row, "th", "", name).scope = "row";
-        const valueCell = document.createElement("td");
-        const value = appendText(valueCell, "span", "diagnostics-metric-value", displayMissing(metric.value, "Unavailable"));
-        track(changes, [key, "metric", name, occurrence], value, value.textContent);
-        row.append(valueCell);
-        const unit = appendText(row, "td", "", displayMissing(metric.unit));
-        track(changes, [key, "metric-unit", name, occurrence], unit, unit.textContent);
-        body.append(row);
-      }
-    }
-    table.append(head, body);
-    window.ZPRPollingDisplay.markNumericColumns(table);
-    window.ZPRSortableTable.bindSortableHeaders({
-      table,
-      getSort: () => metricSorts.get(key) || { key: "name", direction: 1 },
-      onSort: nextSort => {
-        metricSorts.set(key, nextSort);
-        render();
-      },
-    });
-    parent.append(heading, table);
   }
 
   function renderDetails(row, source, key, changes, visible) {
@@ -200,28 +204,21 @@
     }
     renderMetricTable(details, source, key, changes);
 
-    const logHeading = appendText(details, "h4", "", "Logs");
-    const logs = document.createElement("ol");
-    logs.className = "diagnostics-logs";
-    logs.setAttribute("aria-labelledby", logHeading.id || (logHeading.id = `diagnostics-logs-${encodeURIComponent(key)}`));
-    for (const log of source.logs || []) {
-      const logRow = document.createElement("li");
-      const body = log.body == null || log.body === "" ? "No log body reported." : log.body;
-      const logBody = appendText(logRow, "span", "diagnostics-log-body", "");
-      renderColoredLog(logBody, body);
-      logs.append(logRow);
-    }
-    if (!logs.children.length) appendText(logs, "li", "diagnostics-no-logs", "No logs in the current window.");
-    details.append(logs);
     cell.append(details);
     detailsRow.append(cell);
     row.after(detailsRow);
   }
 
   function render(trackChanges = false) {
-    sourceList.replaceChildren();
+    for (const child of [...sourceList.children]) if (child !== logHost) child.remove();
     const query = filter.value.trim().toLowerCase();
-    const allSources = (responseData?.sources || []).map((source, index) => ({ source, index }));
+    const allSources = (responseData?.sources || [])
+      .filter(source => source.kind !== "ZPR node" && !String(source.id || "").startsWith("node:"))
+      .map((source, index) => ({ source, index }));
+    const unavailable = allSources.filter(({ source }) => source.state !== "available").length;
+    aggregate.textContent = responseData && allSources.length
+      ? `Service telemetry: ${allSources.length - unavailable} current · ${unavailable} stale, partial, or unavailable.`
+      : "";
     const sources = allSources.filter(({ source }) => {
       const content = [
         source.name, source.kind, source.identity, source.address, source.state, source.error,
@@ -230,13 +227,39 @@
       ].join(" ").toLowerCase();
       return !query || content.includes(query);
     }).sort(compareSources);
-    count.textContent = `${sources.length} / ${responseData?.sources?.length || 0} sources`;
+    count.textContent = `${sources.length} / ${allSources.length} services`;
+    const keys = new Set(allSources.map(({ source }) => sourceKey(source)));
+    for (const key of positions.keys()) if (!keys.has(key)) positions.delete(key);
+    for (const key of logCache.keys()) if (!keys.has(key)) logCache.delete(key);
+    for (const key of metricSorts.keys()) if (!keys.has(key)) metricSorts.delete(key);
+    for (const key of collapsedSources) if (!keys.has(key)) collapsedSources.delete(key);
+    const options = sources.map(({ source }) => {
+      const option = document.createElement("option");
+      option.value = sourceKey(source);
+      option.textContent = `${sourceName(source)}${source.identity ? ` · ${source.identity}` : ""}`;
+      return option;
+    });
+    if (!options.length) {
+      const option = document.createElement("option");
+      option.value = "";
+      option.textContent = responseData ? "No matching services" : "Loading services...";
+      options.push(option);
+    }
+    selectSource(sources.some(({ source }) => sourceKey(source) === selectedKey) ? selectedKey : options[0].value);
+    selector.replaceChildren(...options);
+    selector.value = selectedKey;
+    selector.disabled = !sources.length;
+    const selected = sources.find(({ source }) => sourceKey(source) === selectedKey)?.source;
+    renderLogs(selected);
     const changes = new Map();
     if (trackChanges) {
       for (const { source } of allSources) trackSourceSnapshot(changes, source, sourceKey(source));
     }
     if (!sources.length) {
-      appendText(sourceList, "p", "diagnostics-empty", responseData ? "No sources match this filter." : "No diagnostics data loaded.");
+      const empty = appendText(sourceList, "p", "diagnostics-empty", responseData
+        ? allSources.length ? "No services match this filter." : "No service telemetry sources configured."
+        : "No service telemetry loaded.");
+      logHost.before(empty);
       if (trackChanges) tracker.update(changes);
       return;
     }
@@ -245,7 +268,7 @@
     scroll.className = "diagnostics-table-scroll";
     const table = document.createElement("table");
     table.className = "diagnostics-source-table";
-    table.setAttribute("aria-label", "Diagnostics source overview");
+    table.setAttribute("aria-label", "Selected service health");
     const head = document.createElement("thead");
     const headerRow = document.createElement("tr");
     for (const [key, label] of [
@@ -257,7 +280,7 @@
       cell.dataset.sortKey = key;
     }
     head.append(headerRow);
-    for (const { source, index } of sources) {
+    for (const { source } of sources.filter(({ source }) => sourceKey(source) === selectedKey)) {
       const key = sourceKey(source);
       const body = document.createElement("tbody");
       body.className = "diagnostics-source";
@@ -303,39 +326,101 @@
       onSort: sort => { sourceSort = sort; render(); },
     });
     scroll.append(table);
-    sourceList.append(scroll);
+    logHost.before(scroll);
     if (trackChanges) tracker.update(changes);
   }
 
   async function load({ signal, isCurrent }) {
     const result = await window.ZPRPageRuntime.requestJSON(window.zprOperatorFetch, "/api/diagnostics", { signal, headers: { Accept: "application/json" } });
     if (!isCurrent()) return;
+    if (!Array.isArray(result?.sources) || result.sources.some(source => !source || typeof source !== "object" ||
+        typeof source.id !== "string" || !source.id || !Array.isArray(source.logs) || !Array.isArray(source.metrics) ||
+        source.logs.some(log => !log || typeof log !== "object" || log.body != null && typeof log.body !== "string") ||
+        source.metrics.some(metric => !metric || typeof metric !== "object" || typeof metric.name !== "string" ||
+          !["string", "number"].includes(typeof metric.value) && metric.value != null ||
+          metric.unit != null && typeof metric.unit !== "string")) ||
+        new Set(result.sources.map(source => source.id)).size !== result.sources.length) {
+      throw new Error("Service telemetry response contains invalid source or log records.");
+    }
     responseData = result;
     error.textContent = result.error || "";
     error.hidden = !result.error;
+    for (const source of result.sources) {
+      if (source.kind === "ZPR node" || source.id.startsWith("node:")) continue;
+      if (source.logs.length || !source.error && ["available", "stale"].includes(source.state)) {
+        logCache.set(sourceKey(source), source.logs);
+      }
+    }
     render(true);
   }
 
   const poller = window.ZPRPageRuntime.createPoller({
     run: load,
-    onPending(pending) { loading.hidden = !pending || responseData !== null; },
+    onPending(value) {
+      pending = value;
+      loading.hidden = !pending || responseData !== null;
+      refresh.disabled = pending;
+    },
     onError(failure) {
-      error.textContent = failure.message || "Diagnostics unavailable.";
+      error.textContent = failure.message || "Service telemetry unavailable.";
       error.hidden = false;
+      render();
     },
   });
 
   function setActive() {
     const next = location.hash === "#diagnostics";
     if (active && !next) {
+      if (selectedKey) positions.set(selectedKey, { scrollTop: view.output.scrollTop, following: view.following });
       poller.stop();
+      setLogPanelMaximized(view, false, "Service logs");
+      view.panel.remove();
+    }
+    if (!active && next) {
+      const saved = positions.get(selectedKey);
+      view.following = saved?.following ?? true;
+      view.nextScrollTop = saved?.scrollTop ?? 0;
     }
     active = next;
+    render();
     if (active) poller.start();
   }
 
   filter.addEventListener("input", render);
-  document.addEventListener("control-room:refreshed", () => { if (active) void poller.refresh(); });
+  selector.addEventListener("change", () => { selectSource(selector.value); render(); });
+  pause.addEventListener("click", () => {
+    paused = !paused;
+    pause.textContent = paused ? "Resume" : "Pause";
+    pause.setAttribute("aria-label", paused ? "Resume service log updates" : "Pause service log updates");
+    pause.setAttribute("aria-pressed", String(paused));
+    poller.setPaused(paused);
+    if (!paused && active) void poller.refresh();
+  });
+  refresh.addEventListener("click", () => { if (active) void poller.refresh(); });
+  wrap.addEventListener("change", () => view.panel.classList.toggle("logs-nowrap", !wrap.checked));
+  view.maximizeButton.addEventListener("click", () => setLogPanelMaximized(view, !view.panel.classList.contains("maximized"), `service logs for ${view.title.textContent.slice(9)}`));
+  document.addEventListener("keydown", event => {
+    if (event.key === "Escape" && view.panel.classList.contains("maximized")) {
+      setLogPanelMaximized(view, false, `service logs for ${view.title.textContent.slice(9)}`);
+      view.maximizeButton.focus();
+    }
+  });
+  window.addEventListener("operator-session-cleared", () => {
+    poller.stop();
+    responseData = null;
+    positions.clear();
+    logCache.clear();
+    metricSorts.clear();
+    collapsedSources.clear();
+    tracker.reset();
+    selectedKey = "";
+    view.output.replaceChildren();
+    view.signature = "";
+    error.textContent = "Operator session ended. Sign in to load service logs.";
+    error.hidden = false;
+    render();
+  });
+  document.addEventListener("control-room:refreshed", () => { if (active && !paused) void poller.refresh(); });
   window.addEventListener("hashchange", setActive);
   setActive();
 })();

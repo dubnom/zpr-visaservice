@@ -13,8 +13,8 @@
     <link rel="stylesheet" href="/sidebar.css?v=8">
     <link rel="stylesheet" href="/trusted-source.css?v=6">
     <link rel="stylesheet" href="/security-review.css?v=9">
-    <link rel="stylesheet" href="/diagnostics.css?v=6">
-    <link rel="stylesheet" href="/node-stats.css?v=5">
+    <link rel="stylesheet" href="/diagnostics.css?v=7">
+    <link rel="stylesheet" href="/node-stats.css?v=10">
     <link rel="stylesheet" href="/gateways.css?v=9">
     <link rel="stylesheet" href="/provisioning.css?v=4">
     <link rel="stylesheet" href="/editor-assistant.css?v=7">
@@ -36,7 +36,7 @@
           <a class="nav-link active" href="#map" data-page-link="map">Map</a>
           <a class="nav-link" href="#connections" data-page-group="status">Status</a>
           <a class="nav-link" href="#security-review" data-page-link="security-review">Security</a>
-          <a class="nav-link" href="#diagnostics" data-page-link="diagnostics">Diagnostics</a>
+          <a class="nav-link" href="#diagnostics" data-page-link="diagnostics">Services</a>
           <a class="nav-link" href="#node-stats" data-page-link="node-stats">Nodes</a>
           <a class="nav-link" href="#sources" data-page-link="sources">Trusted Sources</a>
           <a class="nav-link" href="#adapter-logs" data-page-link="adapter-logs">Adapter Logs</a>
@@ -70,7 +70,7 @@
             </div>
             <div class="connection-state visa-service-state" id="visa-service-state" data-state="disconnected" role="status">
               <span class="state-lamp" aria-hidden="true"></span>
-              <div><strong>Visa Service</strong><small>Uptime <span id="metric-uptime">—</span></small><small id="snapshot-source-status">Waiting for Visa Service snapshot</small></div>
+              <div><strong>Visa Service</strong><small hidden>Uptime <span id="metric-uptime">—</span></small><small id="snapshot-source-status">Unavailable</small></div>
             </div>
           </div>
           <div class="top-actions">
@@ -526,21 +526,32 @@
             </section>
           </section>
         </section>
-        <section class="page-view" id="page-diagnostics" data-page="diagnostics" aria-label="ZPR diagnostics" hidden>
+        <section class="page-view" id="page-diagnostics" data-page="diagnostics" aria-label="Services" hidden>
           <section class="section-block diagnostics" data-diagnostics>
-            <div class="diagnostics-toolbar"><label for="diagnostics-filter">Filter logs and sources</label><input id="diagnostics-filter" type="search" maxlength="200" placeholder="Identity, source, message, metric"><span id="diagnostics-count" class="count-label">—</span></div>
+            <p>Service health, metrics, and logs. Node details are in Nodes; adapter logs are in Adapter Logs.</p>
+            <div class="diagnostics-toolbar"><label for="diagnostics-service-select">Service</label><select id="diagnostics-service-select" aria-label="Select service" disabled><option value="">Loading services...</option></select><label for="diagnostics-filter">Filter services and logs</label><input id="diagnostics-filter" type="search" maxlength="200" placeholder="Identity, service, message, metric"><span id="diagnostics-count" class="count-label">—</span></div>
             <p id="diagnostics-loading" class="diagnostics-loading" role="status">Loading</p>
             <p id="diagnostics-error" class="diagnostics-error" role="status" hidden></p>
-            <div id="diagnostics-sources" class="diagnostics-sources" aria-live="polite"></div>
+            <div id="diagnostics-sources" class="diagnostics-sources" aria-live="polite"><section id="service-logs" aria-label="Selected service logs"></section></div>
           </section>
         </section>
         <section class="page-view" id="page-node-stats" data-page="node-stats" aria-label="Nodes" hidden>
           <section class="section-block node-stats">
-            <div class="node-stats-toolbar"><label for="node-stats-select">Node</label><select id="node-stats-select" disabled></select><span id="node-stats-count"></span></div>
+            <div class="node-stats-toolbar"><div id="node-stats-selector" class="node-stats-selector"><nav id="node-stats-nav" class="node-stats-nav" role="tablist" aria-label="Node information and logs"></nav><select id="node-stats-select" aria-label="Node information and logs" aria-controls="node-stats-content" hidden disabled></select></div><span id="node-stats-count" class="node-stats-count"></span></div>
             <p id="node-stats-status" role="status" aria-live="polite">Waiting for a production snapshot.</p>
             <p id="node-stats-error" class="node-stats-error" role="status" hidden></p>
-            <div id="node-stats-summary"></div>
-            <div id="node-stats-groups" class="node-stats-groups"></div>
+            <div id="node-stats-content" class="node-stats-content" role="tabpanel" tabindex="0" hidden>
+              <div id="node-stats-section-nav" class="node-stats-nav node-stats-section-nav" role="tablist" aria-label="Node data areas">
+                <button type="button" id="node-area-overview" role="tab" aria-selected="true" aria-controls="node-stats-summary">Overview</button>
+                <button type="button" id="node-area-counters" role="tab" aria-selected="false" aria-controls="node-stats-groups" tabindex="-1">Counters</button>
+                <button type="button" id="node-area-health" role="tab" aria-selected="false" aria-controls="node-source-info" tabindex="-1">Health &amp; metrics</button>
+                <button type="button" id="node-area-logs" role="tab" aria-selected="false" aria-controls="node-logs" tabindex="-1">Logs</button>
+              </div>
+              <div id="node-stats-summary" role="tabpanel" aria-labelledby="node-area-overview" tabindex="0"></div>
+              <div id="node-stats-groups" class="node-stats-groups" role="tabpanel" aria-labelledby="node-area-counters" tabindex="0" hidden></div>
+              <div id="node-source-info" role="tabpanel" aria-labelledby="node-area-health" tabindex="0" hidden></div>
+              <section id="node-logs" role="tabpanel" aria-labelledby="node-area-logs" tabindex="0" hidden></section>
+            </div>
           </section>
         </section>
         <section class="page-view" id="page-security-review" data-page="security-review" aria-label="Security review">
@@ -578,10 +589,11 @@
     <script src="/trusted-source.js?v=11" defer></script>
     <script src="/editor-page.js?v=18" defer></script>
     <script src="/assistant-core.js?v=2" defer></script>
-    <script src="/node-stats.js?v=6" defer></script>
-    <script src="/app.js?v=145" defer></script>
+    <script src="/node-stats.js?v=9" defer></script>
+    <script src="/node-logs.js?v=4" defer></script>
+    <script src="/app.js?v=151" defer></script>
     <script src="/log-format.js?v=1" defer></script>
-    <script src="/machine-logs.js?v=26" defer></script>
+    <script src="/machine-logs.js?v=27" defer></script>
     <script src="/assertions.js?v=29" defer></script>
     <script src="/config-editor.js?v=19" defer></script>
     <script src="/gateways.js?v=25" defer></script>
@@ -591,7 +603,7 @@
     <script src="/operator-login.js?v=10" defer></script>
     <script src="/editor-assistant.js?v=3" defer></script>
     <script src="/editor-search.js?v=7" defer></script>
-    <script src="/diagnostics.js?v=10" defer></script>
+    <script src="/diagnostics.js?v=14" defer></script>
       <script src="/security-review.js?v=16" defer></script>
   </body>
 </html>

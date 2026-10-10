@@ -31,7 +31,7 @@ export function registerControlRoomGuidelineTests(test, expect) {
       expect(geometry.noOverflow).toBe(true);
     };
     await checkHeader();
-    for (const [state, label] of [["partial", "Partial response"], ["not configured", "Not configured"], ["disconnected", "Unavailable"]]) {
+    for (const state of ["partial", "not configured", "disconnected"]) {
       api.snapshot.api_status = state;
       api.snapshot.stats = {};
       await page.locator("#refresh-now").click();
@@ -39,7 +39,8 @@ export function registerControlRoomGuidelineTests(test, expect) {
       await expect(control).toHaveAttribute("data-state", "connected");
       await expect(visa).toHaveAttribute("data-state", "disconnected");
       await expect(visa.locator("#snapshot-source-status")).toBeVisible();
-      await expect(visa.locator("#snapshot-source-status")).toHaveText(label);
+      await expect(visa.locator("#snapshot-source-status")).toHaveText("Unavailable");
+      await expect(visa.locator("small").first()).toBeHidden();
       await expect(visa.locator(".state-lamp")).toHaveCSS("background-color", "rgb(232, 128, 112)");
       await expect(visa.locator("#metric-uptime")).toHaveText("—");
     }
@@ -50,9 +51,11 @@ export function registerControlRoomGuidelineTests(test, expect) {
     await expect(visa.locator("#snapshot-source-status")).toBeHidden();
     api.handlers.set("/api/snapshot", route => route.fulfill({ status: 503, json: { error: "Service offline" } }));
     await page.locator("#refresh-now").click();
-    await expect(control.locator("strong")).toHaveText("Control Room unavailable");
+    await expect(control.locator("strong")).toHaveText("Control Room");
+    await expect(control.locator("#last-updated")).toHaveText("Unavailable");
     await expect(control).toHaveAttribute("data-state", "disconnected");
-    await expect(visa.locator("#snapshot-source-status")).toHaveText("Snapshot unavailable");
+    await expect(visa.locator("#snapshot-source-status")).toHaveText("Unavailable");
+    await expect(page.locator("#alert-strip")).toContainText("Service offline");
     await expect(visa.locator("#snapshot-source-status")).toBeVisible();
     await expect(visa.locator("#metric-uptime")).toHaveText("—");
     api.handlers.delete("/api/snapshot");
@@ -79,15 +82,15 @@ export function registerControlRoomGuidelineTests(test, expect) {
     await expect(page.locator(".topbar-status > .connection-state")).toHaveCount(2);
     await expect(page.locator(".snapshot-source-summary")).toHaveCount(0);
     await expect(page.locator(".topbar")).not.toContainText("Visa Service connected");
-    for (const [state, label] of [["partial", "Partial response"], ["disconnected", "Unavailable"], ["not configured", "Not configured"]]) {
+    for (const state of ["partial", "disconnected", "not configured"]) {
       api.snapshot.api_status = state;
       api.snapshot.stats = {};
       await page.locator("#refresh-now").click();
       await expect(source).toHaveAttribute("data-state", "disconnected");
-      await expect(source.locator("#snapshot-source-status")).toHaveText(label);
+      await expect(source.locator("#snapshot-source-status")).toHaveText("Unavailable");
       await expect(source.locator("#metric-uptime")).toHaveText("—");
       await expect(source.locator(".state-lamp")).toHaveCSS("background-color", "rgb(232, 128, 112)");
-      await expect(page.locator("#api-state-text")).toHaveText("Control Room connected");
+      await expect(page.locator("#api-state-text")).toHaveText("Control Room");
     }
     api.snapshot.api_status = "connected";
     api.snapshot.stats = { uptime: "0" };
@@ -95,8 +98,9 @@ export function registerControlRoomGuidelineTests(test, expect) {
     await expect(source.locator("#metric-uptime")).toHaveText("0m 0s");
     api.handlers.set("/api/snapshot", route => route.fulfill({ status: 503, json: { error: "offline" } }));
     await page.locator("#refresh-now").click();
-    await expect(page.locator("#api-state-text")).toHaveText("Control Room unavailable");
-    await expect(source.locator("#snapshot-source-status")).toHaveText("Snapshot unavailable");
+    await expect(page.locator("#api-state-text")).toHaveText("Control Room");
+    await expect(page.locator("#last-updated")).toHaveText("Unavailable");
+    await expect(source.locator("#snapshot-source-status")).toHaveText("Unavailable");
     await expect(source.locator("#metric-uptime")).toHaveText("—");
     api.handlers.delete("/api/snapshot");
     api.snapshot.stats = { uptime: "180" };
@@ -110,10 +114,11 @@ export function registerControlRoomGuidelineTests(test, expect) {
     api.snapshot.errors = ["Visa Service timeout"];
     api.snapshot.stats = { uptime: 120 };
     await page.goto(appURL + "/#node-stats");
-    await expect(page.locator("#api-state-text")).toHaveText("Control Room connected");
+    await expect(page.locator("#api-state-text")).toHaveText("Control Room");
     await expect(page.locator("#snapshot-source-status")).toHaveText("Unavailable");
     await expect(page.locator("#alert-strip")).toContainText("Visa Service timeout");
-    await expect(page.locator(".topbar")).toContainText("Visa Service uptime");
+    await expect(page.locator("#visa-service-state strong")).toHaveText("Visa Service");
+    await expect(page.locator("#metric-uptime")).toBeHidden();
     await expect(page.locator(".topbar #metric-uptime")).toHaveCount(1);
     await expect(page.locator("#page-node-stats")).not.toContainText("Counters are cumulative");
     await page.locator(".help-trigger").click();
