@@ -204,6 +204,7 @@ function mountPolicyAssertionEditor() {
 }
 
 function showPage(page = currentPage()) {
+  if (page !== "map") setMapMaximized(false);
   const statusPage = statusPages.has(page);
   document.querySelector(".status-banner").hidden = page !== "map";
   byId("status-tabs").hidden = !statusPage;
@@ -223,6 +224,17 @@ function showPage(page = currentPage()) {
   if (page === "security-review" && !state.paused) void refresh();
   if (page === "map" && state.snapshot) renderTopology(state.snapshot);
 }
+
+function setMapMaximized(maximized) {
+  byId("page-map").classList.toggle("map-maximized", maximized);
+  document.body.classList.toggle("map-maximized", maximized);
+  window.ZPRSafeDisplay.renderWindowControl(byId("map-maximize"), maximized, "map");
+}
+
+setMapMaximized(false);
+byId("map-maximize").addEventListener("click", () => {
+  setMapMaximized(!byId("page-map").classList.contains("map-maximized"));
+});
 
 function checkProvisioningAccess() {
   window.dispatchEvent(new Event("provisioning-refresh"));
@@ -4706,6 +4718,12 @@ document.addEventListener("keydown", (event) => {
   closeInspector();
   if (currentPage() !== "map" || event.defaultPrevented) return;
   if (inspectorOpen) return;
+  if (byId("page-map").classList.contains("map-maximized")) {
+    event.preventDefault();
+    setMapMaximized(false);
+    byId("map-maximize").focus({ preventScroll: true });
+    return;
+  }
   clearMapHighlight();
 });
 

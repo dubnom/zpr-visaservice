@@ -143,6 +143,13 @@ geographic node anchor.
 
 ## 6. Resize, Fit and camera behavior
 
+Both maps share a Maximize/Restore window control. Maximizing fills the browser
+viewport while retaining map selection, legend, Detached tray and graph controls.
+The existing resize observer recalculates layout and Auto-fit for the new space;
+manual cameras remain governed by the existing Auto-fit setting. Restore or
+Escape returns to the normal layout; an open component inspector closes before
+Escape restores the map. Leaving the map page clears maximization.
+
 - Re-layout when the graph viewport's aspect change exceeds:
 
 ```text

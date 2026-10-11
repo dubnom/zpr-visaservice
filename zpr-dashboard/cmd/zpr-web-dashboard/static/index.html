@@ -5,7 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <meta name="theme-color" content="#17211e">
     <title>ZPR Control Room</title>
-    <link rel="stylesheet" href="/app.css?v=94">
+    <link rel="stylesheet" href="/app.css?v=95">
     <link rel="stylesheet" href="/geography.css?v=4">
     <script src="/page-runtime.js?v=1"></script><script src="/geography.js?v=3" defer></script>
     <link rel="stylesheet" href="/machine-logs.css?v=19">
@@ -133,6 +133,7 @@
         <section class="page-view" id="page-map" data-page="map" aria-label="Map">
           <section class="section-block topology-page">
           <zpr-geography></zpr-geography>
+          <button id="map-maximize" type="button" aria-label="Maximize map" aria-pressed="false" title="Maximize map"></button>
           <div class="section-heading">
             <div class="legend" role="group" aria-label="Map legend: click a type to highlight it"><input id="topology-search" class="topology-search" type="search" placeholder="Highlight" aria-label="Highlight topology graph"><button class="legend-item" type="button" data-legend-kind="node" aria-pressed="false" title="Highlight node on the map"><i class="legend-node"></i>NODE</button><button class="legend-item" type="button" data-legend-kind="visa" aria-pressed="false" title="Highlight visa service on the map"><i class="legend-visa"></i>VISA SERVICE</button><button class="legend-item" type="button" data-legend-kind="gateway" aria-pressed="false" title="Highlight gateway on the map"><i class="legend-gateway"></i>GATEWAY</button><button class="legend-item" type="button" data-legend-kind="adapter" aria-pressed="false" title="Highlight adapter on the map"><i class="legend-adapter"></i>ADAPTER</button><button class="legend-item" type="button" data-legend-kind="service" aria-pressed="false" title="Highlight service on the map"><i class="legend-service"></i>SERVICE</button><button class="legend-item" type="button" data-legend-kind="registration" aria-pressed="false" title="Highlight registration on the map"><i class="legend-service-link"></i>REGISTRATION</button><button class="legend-item" type="button" data-legend-kind="trusted-file" aria-pressed="false" title="Highlight trusted file on the map"><i class="legend-trusted-file"></i>TRUSTED FILE</button><button class="legend-item" type="button" data-legend-kind="trusted-rest-1" aria-pressed="false" title="Highlight trusted rest/1 on the map"><i class="legend-trusted-rest"></i>TRUSTED REST/1</button><button class="legend-item" type="button" data-legend-kind="dock" aria-pressed="false" title="Highlight docked on the map"><i class="legend-dock"></i>DOCKED</button><button class="legend-item" type="button" data-legend-kind="inter-node" aria-pressed="false" title="Highlight inter-node on the map"><i class="legend-up"></i>INTER-NODE</button><button class="map-clear-highlight" id="map-clear-highlight" type="button" hidden title="Clear highlighting and dimming (Esc)">Clear highlight</button></div>
           </div>
@@ -595,7 +596,7 @@
     <script src="/assistant-core.js?v=2" defer></script>
     <script src="/node-stats.js?v=9" defer></script>
     <script src="/node-logs.js?v=4" defer></script>
-    <script src="/app.js?v=153" defer></script>
+    <script src="/app.js?v=154" defer></script>
     <script src="/log-format.js?v=1" defer></script>
     <script src="/machine-logs.js?v=27" defer></script>
     <script src="/assertions.js?v=29" defer></script>

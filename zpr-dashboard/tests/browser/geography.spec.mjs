@@ -63,6 +63,35 @@ async function openGeography(page, appURL) {
 }
 
 for (const geographic of [false, true]) {
+  test(`${geographic ? "World Map" : "Topology"} maximizes and restores with shared controls`, async ({ page, appURL, snapshot }) => {
+    snapshot.actors = [node("map-node", 40, -80)];
+    await page.goto(`${appURL}/#map`);
+    if (geographic) await page.getByRole("button", { name: "World Map", exact: true }).click();
+    const control = page.getByRole("button", { name: "Maximize map", exact: true });
+    await expect(control.locator("svg[data-window-control=maximize]")).toHaveCount(1);
+    await control.click();
+    const restore = page.getByRole("button", { name: "Restore map", exact: true });
+    await expect(restore).toHaveAttribute("aria-pressed", "true");
+    await expect(page.locator("#page-map")).toHaveClass(/map-maximized/);
+    await page.getByRole("button", { name: geographic ? "Topology" : "World Map", exact: true }).click();
+    await expect(restore).toHaveAttribute("aria-pressed", "true");
+    await page.getByRole("button", { name: geographic ? "World Map" : "Topology", exact: true }).click();
+    await expect.poll(() => page.locator("#page-map").evaluate(el => Math.abs(el.getBoundingClientRect().height - innerHeight))).toBeLessThan(2);
+    await page.getByRole("button", { name: "Fit graph", exact: true }).click();
+    await expect.poll(() => page.locator(".topology-graph").evaluate(svg =>
+      Math.abs(svg.viewBox.baseVal.width / svg.viewBox.baseVal.height - svg.clientWidth / svg.clientHeight))).toBeLessThan(0.01);
+    await restore.click();
+    await expect(control).toHaveAttribute("aria-pressed", "false");
+    await control.click();
+    await page.keyboard.press("Escape");
+    await expect(control).toBeFocused();
+    await expect(page.locator("body")).not.toHaveClass(/map-maximized/);
+    await control.click();
+    await page.evaluate(() => { location.hash = "#actors"; });
+    await expect(page.locator("body")).not.toHaveClass(/map-maximized/);
+    await page.evaluate(() => { location.hash = "#map"; });
+    await expect(control).toHaveAttribute("aria-pressed", "false");
+  });
   test(`Unattached tray keeps adapters out of ${geographic ? "world" : "topology"} map and tracks real attachments`, async ({ page, appURL, snapshot }) => {
     const isolated = node("isolated", 42, -85);
     snapshot.actors = [isolated, { cn: "loose", node: false, zpr_addr: "fd00::2" }];

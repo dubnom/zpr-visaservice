@@ -689,6 +689,14 @@ th[data-numeric="true"] .sort-button { text-align: right; justify-content: flex-
 .status-banner .metric small { display: none; }
 .status-banner .alert-strip { margin: 0; padding: 6px 9px; }
 .topology-page { margin-top: 12px; padding-top: 12px; }
+.topology-page { position: relative; }
+#map-maximize { position: absolute; top: 12px; right: 0; }
+.topology-page zpr-geography { padding-right: 40px; }
+body.map-maximized { overflow: hidden; }
+#page-map.map-maximized { position: fixed; inset: 0; z-index: 1000; height: 100vh; height: 100dvh; padding: 12px; background: var(--paper); }
+#page-map.map-maximized > .topology-page { margin-top: 0; padding-top: 0; }
+#page-map.map-maximized #map-maximize { top: 0; }
+body.map-maximized .component-inspector { z-index: 1001; }
 .main-content:has(#page-map.active) { display: flex; height: 100vh; min-height: 0; flex-direction: column; padding-bottom: 8px; }
 #page-map.active { display: flex; flex: 1 1 auto; min-height: 0; }
 #page-map > .topology-page { display: flex; flex: 1 1 auto; min-height: 0; flex-direction: column; }
