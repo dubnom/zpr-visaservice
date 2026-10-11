@@ -18,8 +18,6 @@
     let generation = 0;
     let authConfigured = false;
     let canAttemptLogin = false;
-    let loginStarting = false;
-    let automaticLogin = true;
     let loginFailure = "";
     const returnLocationKey = "zpr.operator-login.return-location";
     function localReturnLocation(value) {
@@ -68,9 +66,8 @@
       const current = ++generation;
       const url = new URL(location.href);
       const loginResult = url.searchParams.get("operator_login");
-      if (loginResult === "failed" || loginResult === "denied") {
+      if (loginResult === "failed" || loginResult === "denied" || loginResult === "expired") {
         loginFailure = loginResult;
-        automaticLogin = false;
         url.searchParams.delete("operator_login");
         history.replaceState(history.state, "", `${url.pathname}${url.search}${url.hash}`);
       }
@@ -104,11 +101,9 @@
           setGate(true);
           status.textContent = loginFailure === "denied"
             ? "This account is not authorized. Contact your operator administrator."
-            : loginFailure === "failed" ? "Sign-in failed. Check your credentials and try again." : "Not signed in";
-          if (automaticLogin && !loginStarting) {
-            status.textContent = "Opening sign-in page";
-            login.requestSubmit();
-          }
+            : loginFailure === "failed" ? "Sign-in failed. Check your credentials and try again."
+            : loginFailure === "expired" ? "Your previous sign-in attempt expired or is no longer available. Select Sign in to start a fresh attempt."
+            : "Not signed in";
           return;
         }
         if (!response.ok) throw new Error(`Operator session unavailable (HTTP ${response.status}).`);
@@ -122,8 +117,6 @@
           throw new Error("Invalid operator session response.");
         }
         loginFailure = "";
-        loginStarting = false;
-        automaticLogin = true;
         const simulator = widget.dataset.operatorApplication === "simulator";
         const appPermissions = simulator
           ? ["simulator.", "organization.", "scenario.", "directory.", "device."]
@@ -161,7 +154,6 @@
         window.dispatchEvent(new CustomEvent("operator-session-ready", { detail: { identity, csrf } }));
       } catch (error) {
         if (current !== generation) return;
-        automaticLogin = false;
         clearSession();
         status.textContent = error.message;
         setGate(true);
@@ -180,11 +172,8 @@
         const target = previous || localReturnLocation(`${location.pathname}${location.search}${location.hash}`);
         if (!target) throw new Error("Unable to preserve the current application location for sign-in.");
         sessionStorage.setItem(returnLocationKey, target);
-        loginStarting = true;
       } catch (error) {
         event.preventDefault();
-        loginStarting = false;
-        automaticLogin = false;
         status.textContent = `Sign-in could not start: ${error.message}`;
       }
     });
@@ -201,9 +190,7 @@
           headers: { "X-ZPR-CSRF": csrf },
         });
         if (response.status !== 204) throw new Error(`Sign out was not confirmed (HTTP ${response.status}). Retry or reload to check the session.`);
-        automaticLogin = false;
         loginFailure = "";
-        loginStarting = false;
         clearSession();
         await readState();
       } catch (error) {

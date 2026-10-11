@@ -2,6 +2,7 @@
 
 <div class="theme-panel">
   {{ if eq .ErrMsg "Requested resource does not exist." }}
+  <meta http-equiv="refresh" content="0; url=https://localhost:8787/?operator_login=expired">
   <h2 class="theme-heading">Sign-in timed out</h2>
   <p>This sign-in attempt is no longer available.</p>
   <p><a class="dex-btn" href="https://localhost:8787/" referrerpolicy="no-referrer">Timed out. Try again.</a></p>

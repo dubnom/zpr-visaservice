@@ -240,6 +240,7 @@ func loginRecovery(w http.ResponseWriter) {
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
+<meta http-equiv="refresh" content="0; url=/?operator_login=expired">
 <title>Timed out. Try again. - ZPR Operator Access</title>
 <style>
 body { margin: 0; padding: 24px; background: #f3f6f2; color: #17211e; font: 16px system-ui, sans-serif; }
@@ -349,6 +350,7 @@ func (a *Auth) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		}
 		a.mu.Unlock()
 		if !ok {
+			setCookie(w, a.flow, "", -1)
 			loginRecovery(w)
 			return
 		}
