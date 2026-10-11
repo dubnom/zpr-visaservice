@@ -23,6 +23,13 @@ Do not infer current runtime health from a historical verification entry.
 
 ## In progress
 
+Map Maximize/Restore is **Deployed to Control Room** (2026-10-11 20:09 UTC).
+Both maps share window controls, Escape restoration and navigation cleanup.
+All 62 geography tests and the embedded build pass. Live desktop/tablet checks
+verify empty-map controls; the production Visa snapshot is disconnected.
+See [deployment evidence](GUI%20deployments.md).
+
+
 Services selector and standard log display are **Deployed** (2026-10-10).
 Services shows one selected non-node service/trusted source's health and logs.
 The provisional filter, metrics display and introductory text are removed.

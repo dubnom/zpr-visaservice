@@ -82,6 +82,13 @@ For trusted local HTTPS certificates, use the existing Node trust mechanism
 
 Execution behavior:
 
+Multi-node activation requires every configured node to be synchronized, not
+just a connected Admin endpoint or Active substrate peers. Readiness failures
+include each reported node's identity, last contact and pending visa operations.
+The PH Visa API client bounds each TCP dial to ten seconds and retries through
+its existing reconnect loop; activation does not bypass readiness or extend
+its wait to accommodate the operating system's much longer SYN timeout.
+
 - Require no running/cleaning scenario or ongoing activation before starting.
   Require machine users logged out, workload selections empty, and all reported
   scenario-machine containers stopped/exited/missing. A normal empty session's
@@ -138,6 +145,26 @@ server; they never touch the live Simulator:
 ```sh
 node --test scripts/simulator-matrix.test.mjs
 ```
+
+World Map keeps nodes anchored at their configured latitude/longitude, but
+attached adapters do not have to use equal-length dock connections. Distances
+account for each adapter's service ring and gateway cloud; angular spacing keeps
+components separated and avoids inter-node link corridors. Fan-outs prefer
+positions inside the basemap, with outside positions retained when the cluster
+cannot fit. Both maps use the graph viewport's dimensions for layout: Topology
+chooses landscape/portrait node rows, free hosts use aspect-aware columns, and
+World Map adapter fan-outs favor the available orientation without moving
+geographic anchors. Significant aspect changes trigger layout recalculation;
+manual cameras and disabled Auto-fit remain preserved. Fit uses the actual
+viewport aspect in both views. Refreshes are deterministic
+for unchanged inputs and viewport dimensions; this is a size-aware layout, not a global collision solver
+for different nodes' clusters.
+Unconnected adapters are placed alongside the occupied component bounds with
+a 40-unit clearance instead of a distant fixed staging offset. Their grid
+chooses the side and column count that best fits the viewport, reserving room
+for service rings and gateway clouds. When no nodes or docked adapters exist,
+World Map centers the unconnected-only group on the basemap; this is display
+placement, not inferred geography or an implied network connection.
 
 ## Project layout
 
@@ -1225,13 +1252,19 @@ When enabled on direct HTTPS, the handler supports:
 - `GET /auth/operator/callback`: one-time state/browser cookie, code exchange,
   signed ID-token validation, explicit grant lookup, and opaque session cookie.
   Expired, missing-browser, lost-state and replayed login attempts remain HTTP
-  403, but display a recovery page with a single **Timed out. Try again.** action
-  (a GET back to Control Room, which initiates a same-origin POST with fresh
-  state/nonce/PKCE). Do not POST directly from the timeout page: its
+  403, clear the stale flow cookie, and return once to the application's stable
+  sign-in screen using a fixed recovery target. A **Timed out. Try again.**
+  action remains as a fallback when automatic navigation is unavailable.
+  The application waits for an explicit **Sign in** click before its same-origin
+  POST creates fresh state/nonce/PKCE. Do not POST directly from the timeout page: its
   `no-referrer` policy suppresses the POST Origin, and its restrictive
   `form-action 'self'` policy blocks the authorization-provider redirect. Recovery
   never exchanges the rejected code or reflects callback parameters. The
   five-minute login timeout and all authorization checks remain unchanged.
+  The application sign-in screen itself does not expire or automatically open
+  the provider. An expired attempt displays a clear explanation without a retry
+  loop, and the existing validated, same-origin browser return location is retained
+  until successful sign-in.
 - `GET /auth/operator/session`: same-origin identity and CSRF token only,
   `no-store`; no provider tokens or client secret.
 - `POST /auth/operator/logout`: same-origin CSRF-protected local session
@@ -1360,8 +1393,9 @@ verification when they expire.
 
 The local error template replaces Dex's "Requested resource does not exist."
 error for expired login pages (including refresh) with **Sign-in timed out**
-and one **Timed out. Try again.** action. That action opens the fixed trusted
-Control Room URL; its normal same-origin login POST creates a fresh attempt.
+and a one-time return to the fixed trusted Control Room sign-in screen, with a
+**Timed out. Try again.** fallback action. A new attempt starts only when the
+operator selects **Sign in** on that screen.
 No stale state/code or browser-supplied return URL is reused. Other provider
 errors remain visible. The recovery target is Control Room, not Simulator.
 New configurations select `frontend.dir: "/srv/dex/web"` and new IdP containers
@@ -2031,6 +2065,10 @@ authenticated Control Service to the production collector, without reading
 Simulator manifests or calling Simulator APIs.
 Locally generated log panel titles use only the source name (for example,
 `web0-adapter`); organization prefixes remain in internal IDs, not display titles.
+File-backed sources may include a `runtime_container` identity for runtime-state checks;
+logs still come from the configured file. **Running only** uses that container's
+state, not the presence of retained log history. Files without an associated
+runtime remain unknown and are excluded; unknown is never treated as running.
 The **Adapter logs** and **Controller logs** buttons at the top switch log types
 using the same horizontal panels. Each panel remembers its adapter/controller
 selection and source scroll/follow state; changing types needs no additional
@@ -2065,6 +2103,17 @@ background colors (standard, bright, 256-color, and RGB), bold, faint, italic,
 and underline are rendered using the vendored MIT-licensed `ansi_up` 6.0.6
 browser module. Log text is HTML-escaped, terminal hyperlinks stay inert, and
 only approved color and text-emphasis styles are applied without relaxing CSP.
+
+Trusted Sources **Manage** links are configured per trusted-service name, not
+as one shared LDAP editor. The local launcher merges the operator registry
+`dashboard-stack/provider-managers.json` with `ZPR_PROVIDER_MANAGER_URLS`;
+explicit environment entries take precedence. Override the registry path with
+`ZPR_PROVIDER_MANAGER_URLS_FILE` and restart Control-Service after updates.
+Organization deployments provision their own loopback-only directory managers
+and register links for their actual Visa-configured source names. Control Room
+uses only the resulting operator configuration and does not query Simulator.
+The browser authenticates directly to the manager with a separate LDAP admin
+login; Control Room does not receive the LDAP admin password.
 
 Control Room's **Nodes** page includes the selected node's production source
 health, sortable source metrics and logs below its statistics. Health shows

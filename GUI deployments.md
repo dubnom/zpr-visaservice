@@ -6,13 +6,82 @@ This is a historical release ledger, not a live health report. Keep dated test,
 asset, configuration, scope and rollback evidence here. Feature-local release
 notes also remain in the completed-work archive to preserve their context.
 
-Latest recorded Control Room/Control-Service release: Detached tray and actor
-inventory update (2026-10-10 06:12 UTC), image
-`sha256:7033868be58dbe43b55b62d71ce3d2b30ce50595e427061277ee83ed71bf4bbd`.
+Latest recorded Control Room release: `zpr-editor-ui:20261011-map-maximize`
+(2026-10-11 20:09 UTC). Control-Service remains at the separately recorded
+Detached tray/actor-inventory release of 2026-10-10 06:12 UTC.
 This does not imply every source change was deployed. Commit/push state is
 separate; retain each dated entry's scope.
 
 ## Deployment status
+
+- Map Maximize/Restore deployed to Control Room at 2026-10-11 20:09 UTC,
+  verified at 20:09:06 UTC, as `zpr-editor-ui:20261011-map-maximize`.
+  Both maps use the shared window-control icons; Restore/Escape and navigation
+  cleanup preserve the existing resize/Fit and camera behavior.
+  Reconstructed the previous live executable byte-for-byte (SHA-256
+  `15b2660cc8e35a2fe9e358cc04241f115b7aab386ffb4faf83e0329ef94dc192`).
+  Only `app.js`, `app.css`, and map-control/cache markup in `index.html`
+  changed; concurrent login, assistant, organization and backend edits are
+  excluded. All 72 served assets, configuration and network contract verified;
+  all 16 unrelated running service start times unchanged.
+  All 62 desktop/tablet geography tests and the build pass. Real desktop/tablet
+  login verifies both map window controls, Escape, navigation cleanup, and
+  World Map Fit with no browser errors or Simulator API requests.
+  The production snapshot is disconnected with zero map actors and seven
+  reported errors: populated-map acceptance is covered by regression fixtures,
+  not a live connected network. Backend state was not changed.
+  Initial live smoke assumptions about populated maps caused automatic
+  rollbacks; corrected empty-map checks passed. Stopped
+  `zpr-control-room-before-map-maximize` retains rollback.
+  Room sessions reset; operators must sign in again. No Simulator/backend
+  deployment, commit or push is included.
+
+- Visa API TCP-connect recovery packaged and exercised 2026-10-10 UTC.
+  PH SHA-256:
+  `c49c9a5334069c6d5aadd45fed9d87a5e8ce073f4271e5ec360052acce8d24c9`.
+  The previous PH executable was reconstructed byte-for-byte before overlaying
+  only a ten-second TCP dial deadline. The existing reconnect loop now retries
+  stalled dials instead of waiting for the operating system's SYN timeout;
+  shutdown remains interruptible. All four libnode2 tests and 551 PH test
+  executions passed (four PH tests ignored). Packaged PH and `zpr-multinode:latest`
+  persist the change; `zpr-multinode:before-tcp-connect-timeout-20261010` and
+  private binary backups retain rollback. Activation failure diagnostics now
+  report node identities, last contact and pending visa operations without
+  weakening the all-configured-nodes synchronization requirement.
+  The live fail-fast matrix confirmed Great Lakes activation completed:
+  Shenzhen and Tijuana each timed out their initial stalled dial and
+  authenticated/registered VSS within approximately seventeen seconds of PH
+  startup. All three published Great Lakes scenarios passed, including the
+  157-step workday. The matrix then stopped before Load Lab scenarios because
+  Load Lab had retained identity files but no recoverable Visa database;
+  activation correctly refused an implicit policy reset. The runner's explicit
+  Great Lakes restoration subsequently failed readiness with Shenzhen absent
+  from live synchronization, despite repeated bounded dials. Its script rollback
+  ultimately recovered all three API/VSS pairs and bilateral peer links.
+  Thus the TCP stall is fixed and Great Lakes acceptance passed once, but
+  repeatable activation/restoration is not yet certified; this is not a full
+  matrix pass. Report and diagnostic artifacts are retained privately. No
+  Load Lab state was erased or recreated.
+
+- PH visa-expiration worker deployed and validated 2026-10-10 UTC.
+  PH SHA-256:
+  `4becee67682b81b3e0535e97115b1897eb98684365c3649e84b1d84bc1bcd5dc`.
+  Root cause traced during isolated Shenzhen restart: Milwaukee repeatedly
+  matched expired visa `1518` for VS->VSS flow `(fd5a:5052::1 -> fd5a:5052:90de::11, tcp 8183)`
+  while Shenzhen had already dropped that visa, causing repeated bind rejects
+  and persistent VS socket `SYN-SENT`. The stale entry survived because PH
+  expiration cleanup ran in tests but not in the live node process.
+  Fix: added a one-second PH expiration worker and guarded expiration queue
+  handling so an older queue entry cannot revoke a reinstalled same-ID visa
+  with a later expiry. New regressions cover stale-match replacement and
+  reinstalled-ID safety. PH tests passed (267 lib + 288 bin; four ignored).
+  After deploying only this PH change, two consecutive fail-fast Great Lakes
+  matrix executions passed all three published scenarios with restoration
+  `restored-selection`, and a direct Shenzhen restart no longer selected stale
+  visa `1518` (Milwaukee matched fresh visas `1524` and `1725` instead).
+  Runtime remains synchronized across all three nodes with pending install/revoke
+  counts at zero. This validates the Great Lakes restart path; Load Lab remains
+  blocked by missing recoverable Visa DB and was not reset.
 
 - Detached tray rename, actor attachment details, and duplicate actor-inventory
   resolution deployed to Control Room and Control-Service at 2026-10-10
