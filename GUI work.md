@@ -29,6 +29,42 @@ All 62 geography tests and the embedded build pass. Live desktop/tablet checks
 verify empty-map controls; the production Visa snapshot is disconnected.
 See [deployment evidence](GUI%20deployments.md).
 
+Simulator organization definition/editing is **In progress**.
+The draft/source-editor slices are **Deployed to Simulator** (2026-10-11 20:18 UTC) and add existing-organization profile drafts, name/description and
+JSON editing, validation, immutable history and AI before/after review with
+guarded local Undo/Redo. Saving does not alter source files, linked documents or
+runtime. Bundled-definition **Duplicate -> review -> create private draft ->
+AI edit -> save -> validate** is also deployed. Copies are stored as
+unpublished coherent bundle snapshots, separately from runnable organizations.
+Passwords/certificates and live/session/enrollment/run state are not copied.
+Source base DN, desired addresses and identifiers remain explicit review items.
+Source-read/target-create scopes, stale previews, concurrent IDs, persistent
+creation receipts and lost-response reconciliation are covered.
+**New/Import -> review -> create private incomplete draft -> AI edit/save ->
+validate gaps**, plus portable saved-definition export, are deployed.
+Missing sections do not fabricate runtime configuration or block draft saves;
+malformed supplied configuration, unsafe definitions and detected credentials
+are rejected. Creation receipts reconcile uncertain responses and concurrent IDs.
+Deployed **Edit supporting definitions** provides profile/document selection,
+source editing, add/remove and typed paths/kinds, atomic whole-bundle saves,
+coherent history and reviewed cross-document AI with guarded Undo/Redo.
+Private profile history opens the matching complete bundle. Conflicting or
+uncertain saves retain local edits; explicit reload reconciles persisted state.
+AI discloses the full unsaved fictional bundle and respects bounded context;
+no creation receipts or runtime data are sent.
+Structured section editors, full reference/compiler checks, section-only AI
+context and activation review are next; production administration remains separate.
+Live desktop/tablet checks confirm private revision persistence across Simulator
+replacement. Great Lakes/Load Lab supporting-definition mounts are read-only;
+no shared staging or runtime activation changed. See
+[deployment evidence](GUI%20deployments.md). No commit/push.
+See [the execution plan](Organization%20editor%20plan.md).
+52 desktop/tablet creation/import/duplication/profile/definition/directory/scenario AI cases,
+including fresh 390px AI editing, and focused Go race tests
+pass, along with build/vet/syntax/editor checks. Full `make test` still fails
+on Redwood's LDAP identity expectation and assistant setup's unbound
+`SCRIPT_DIR`; neither is changed by this slice.
+No deployment, activation, commit or push.
 
 Services selector and standard log display are **Deployed** (2026-10-10).
 Services shows one selected non-node service/trusted source's health and logs.
@@ -152,11 +188,18 @@ No new priority or implementation approval is implied for backend rollouts.
 - [ ] **Mac pilot first:** provision one Apple Silicon Mac (macOS 13+) through
   the selected Great Lakes invitation to live ZPR connectivity. The user can
   operate the laptop and authorize administrator prompts. Complete trusted
-  credential issuance, non-exporting Keychain-to-runtime handoff, adapter
+  credential issuance, enrollment-key-preserving runtime handoff, adapter
   admission, allowed/denied traffic checks, and route/DNS rollback verification.
   Do not consume the invitation until issuance and delivery can complete; no
   enrollment code belongs in this tracker. See the
   [Mac pilot blockers](../Provisioning%20plan.md#first-release-decisions-and-progress).
+  The selected handoff uses a signed root helper, one-time local IPC, and
+  direct System Keychain import of the separate runtime key after one admin
+  authorization. Private enrollment-backed BAS implementation is local only;
+  signed runtime-key import approval delivery is implemented locally with
+  pinned Ed25519 verification and native-only receipt retention. Adapter
+  configuration delivery, helper/runtime integration, and live rollout remain
+  open. The BAS client ID/subject derives from inventory asset ID.
 - [ ] After the Mac pilot passes, certify native Windows install/browser launch,
   DPAPI/ACL and two-user isolation; sign and deliver releases. No Windows
   adapter/driver/service or credential issuance is included in the enrollment

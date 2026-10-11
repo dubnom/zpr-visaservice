@@ -10,8 +10,34 @@ document or those prototypes.
 The current device-flow prototype binds a separate BAS runtime RSA public key
 and fingerprint alongside the enrollment proof key. Claim and status proofs
 must be signed by both private keys, and operator review/cancellation binds
-both displayed fingerprints and the invitation revision. This does not issue a
-BAS credential or implement the approved, one-time Keychain-to-root handoff.
+both displayed fingerprints and the invitation revision. This binding alone
+does not deliver runtime credentials or implement the approved, one-time
+Keychain-to-root handoff.
+
+The separate [private BAS command](./cmd/zpr-enrollment-bas/main.go) now
+implements durable one-time nonce/code exchanges and HS384 access tokens for
+approved runtime keys, with a distinct mTLS-only token listener. It derives
+the adapter client ID/subject from the inventory asset ID within an explicit
+organization scope and emits only configured trusted inventory claims.
+This is local implementation, not deployment or installer credential delivery.
+Installation-result receipts and revocation propagation remain open;
+the BAS HMAC secret must never be supplied to the device or root helper.
+
+An opt-in `runtime-key-import` device challenge/proof now delivers a durable,
+short-lived Ed25519 approval receipt for the Mac helper. It binds the issuer,
+helper audience, purpose/platform, organization/invitation, inventory asset
+ID, revision, and both fingerprints. The client requires an independently
+provisioned issuer public-key pin. Native setup retains the verified receipt
+without exposing it to the browser. This authorizes only runtime-key import;
+it does not deliver adapter configuration or prove installation. The helper
+must enforce durable single-import semantics across receipt refreshes and
+verify its signed IPC peer and actual key. Local Mac helper primitives now
+validate the actual runtime key, durably reconcile imports across refreshed
+receipts, and import/sign in an explicitly selected native Keychain. The signed
+IPC peer-verification primitive is also tested with kernel audit tokens and
+independently pinned code requirements; the actual one-time IPC transfer
+protocol, privileged helper command/installation and adapter wiring are
+not implemented; these primitives have no production listener or setup action.
 
 ## Service boundary
 

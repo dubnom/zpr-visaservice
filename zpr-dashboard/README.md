@@ -516,6 +516,208 @@ registry connection, key-authenticated status, admin route isolation, exact
 Host checks, certificate trust, launch readiness, and graceful shutdown with
 Simulator configuration unavailable.
 
+### Private enrollment-backed BAS (local implementation, not deployed)
+
+`cmd/zpr-enrollment-bas` implements the adapter's `/preauthorize` and
+`/authorize` exchange and a separate, mTLS-only `/token` listener for Visa
+Service `validation/2`. It uses the same local enrollment registry as the
+device and review services. It does not read Simulator configuration or expose
+administration, enrollment, GUI, or proxy routes.
+
+The adapter client ID and JWT subject are the **inventory asset ID**, not the
+display name, invitation ID, or a device-submitted identity. Each BAS process
+is explicitly scoped to one organization, so identically named asset IDs in
+another organization cannot be used through this issuer.
+The adapter's configured authentication CN/name (including its Noise
+certificate CN when present) must therefore equal that inventory asset ID.
+Installer configuration delivery must establish this binding; setting only
+the asset's display name is insufficient.
+
+Only an approved invitation with a stored, distinct BAS runtime public key
+and recorded review can authenticate. Enrollment keys cannot sign BAS
+nonces. Every authorization/redemption transaction rechecks the approved
+state, invitation, revision, and runtime fingerprint. This prevents pending,
+rejected, cancelled, changed-key, or changed-revision records from redeeming
+an outstanding exchange. It is not a complete revocation service: an issued
+JWT remains valid until expiry, and active-link termination still needs the
+production Visa Service revocation contract.
+
+Nonces are 32 random bytes, signed using RSA PKCS#1 v1.5/SHA-256. Nonces and
+authorization codes have explicit short lifetimes, are stored only as
+SHA-256 verifiers, and are consumed atomically once across restarts and
+registry connections. A lost authorization/redemption response is not
+replayed; begin a fresh exchange. The service caps outstanding exchanges at
+8 per organization/client and 1024 globally, and each listener applies the
+existing source/global request rate policy and a 32-request concurrency limit.
+
+JWTs use HS384, `iss=zpr/bas`, `aud=zpr`, `sub=<asset ID>`, `iat`, `exp`, and a
+random `jti`. Only operator-configured `z/` mappings from trusted `organization`,
+`asset_id`, `owner`, `type`, and `profile` fields are emitted. No claims come
+from adapter requests, and enrollment recipient/display fields are not
+claim sources.
+
+Build without starting or deploying:
+
+```sh
+go build -o bin/zpr-enrollment-bas ./cmd/zpr-enrollment-bas
+```
+
+Example operator configuration (values are illustrative, not a live Great
+Lakes configuration):
+
+```json
+{
+  "version": 1,
+  "organization": "company",
+  "allow_non_loopback": false,
+  "database_file": "/etc/zpr/enrollment/registry.sqlite",
+  "signing_key_file": "/etc/zpr/bas-private/token-signing.key",
+  "visa_service_ca_file": "/etc/zpr/bas/visa-service-ca.crt",
+  "visa_service_peers": [
+    {
+      "name": "visa-service",
+      "certificate_sha256": "<lowercase SHA-256 of authorized client certificate DER>"
+    }
+  ],
+  "adapter": {
+    "listen": "127.0.0.1:4000",
+    "origin": "https://auth.zpr:4000",
+    "certificate_file": "/etc/zpr/bas/server.crt",
+    "key_file": "/etc/zpr/bas/server.key"
+  },
+  "token": {
+    "listen": "127.0.0.1:3999",
+    "origin": "https://auth.zpr:3999",
+    "certificate_file": "/etc/zpr/bas/server.crt",
+    "key_file": "/etc/zpr/bas/server.key"
+  },
+  "nonce_lifetime_seconds": 60,
+  "code_lifetime_seconds": 60,
+  "token_lifetime_seconds": 300,
+  "claim_sources": {
+    "asset_id": "asset_id",
+    "organization": "organization",
+    "profile": "profile"
+  }
+}
+```
+
+Both origins must use `auth.zpr` and their explicit listener port; the TLS
+certificates must currently be valid for that hostname and server usage.
+TLS 1.3 and exact Host matching are required. The token listener requires
+both a CA-verified client certificate at the TLS handshake and an explicitly
+listed certificate fingerprint at the application boundary. Browser requests
+are rejected. Pin rotation requires explicit configuration and restart.
+
+Provision at least 48 random bytes as the raw binary HMAC signing key.
+The key and its containing directory must be owned by the service account
+and owner-only; symlinks and additional hard links to the key are rejected.
+Provision the same secret independently in the Visa Service `validation/2`
+verification-key configuration. **Never distribute it to the Mac, browser,
+package download server, or privileged helper.** Relative configuration file
+paths resolve against the configuration directory. Missing settings, unknown
+JSON fields, untrusted CA data, and unsafe signing-key files fail explicitly.
+
+Start only after separate rollout authorization:
+
+```sh
+bin/zpr-enrollment-bas -config /etc/zpr/private-bas.json
+```
+
+Nonce/code lifetimes are 1-300 seconds; token lifetime is 1-3600 seconds.
+SIGINT/SIGTERM gracefully shuts down both listeners. If either listener
+cannot start or subsequently fails, the other is shut down too.
+
+Tests cover real TLS adapter-to-token exchanges, required mTLS, rejection
+of CA-trusted but unapproved peers, route isolation, durable replay
+protection, concurrent redemption, expiry boundaries, trusted claims, and
+server startup/shutdown with Simulator unavailable. This implements the
+BAS exchange only: installer credential/configuration issuance and signed
+approval delivery, privileged Keychain handoff, adapter installation, live
+Authentication policy/provider activation, and end-to-end traffic remain
+open. The wizard still correctly reports credentials not installed.
+
+### Signed Mac runtime-key import approval (local implementation)
+
+The device service can now issue a short-lived, Ed25519-signed authorization
+for **importing the separate BAS runtime key**. This is not an adapter
+configuration, Noise certificate, BAS JWT, installation result, or proof of
+connectivity. The approval issuer is independent of the BAS HS384 signing key;
+only its public key belongs on the Mac.
+
+This feature is opt-in. Add both fields to the device-service configuration:
+
+```json
+{
+  "runtime_import_seed_file": "/etc/zpr/enrollment-private/runtime-import.seed",
+  "runtime_import_lifetime_seconds": 60
+}
+```
+
+The file is exactly 32 raw random Ed25519 seed bytes, held in an owner-only
+directory and owner-only regular file owned by the service account. The
+existing private-file checks reject symlinks and extra hard links. Relative
+paths resolve against the service configuration file. The seed must not be
+published to the Mac, helper, browser, or download server.
+
+Independently provision the corresponding 32-byte public key in trusted
+desktop setup configuration as canonical standard base64:
+
+```json
+{
+  "runtime_import_public_key": "<base64 Ed25519 public key>"
+}
+```
+
+When that pin is configured, approved setup status triggers a fresh
+`runtime-key-import` challenge using the existing device challenge/proof
+routes. Both the enrollment key and runtime key must sign. The service
+rechecks approval and both key bindings in the same transaction as receipt
+persistence, audit, and challenge consumption. Ordinary claim/status never
+returns this receipt, and unconfigured services cannot issue one.
+
+The receipt signs the exact decoded JSON bytes, with version, HTTPS issuer,
+audience `com.zpr.enrollment.helper`, purpose `runtime-key-import`, platform
+`macos`, random operation ID, organization, invitation, trusted asset ID,
+approval revision, both fingerprints, issue time, and expiry. Lifetimes are
+explicitly 1-300 seconds, with no future-time/expiry skew allowance. The
+native client verifies signature and context against its trusted issuer pin
+and saved identity before reporting authorization. The receipt stays in
+native memory; the loopback browser gets only `runtime_import_authorized`,
+never the signed receipt or private keys.
+
+The `macos` field scopes the target helper; it is not platform attestation or
+proof that the requesting device is running macOS. Native platform and signed
+application identity checks belong to the helper's IPC boundary.
+
+Fresh dual-key proofs reconcile the same unexpired receipt after an
+uncertain response or restart. Once expired, a fresh proof can request a new
+short-lived operation. A future helper must durably enforce **at most one
+import for the approved organization/invitation/runtime-key binding**, not
+merely one use of an operation ID; refreshed receipts must not permit a
+second independent installation or key replacement. It must independently
+pin the issuer/audience/organization, verify the actual transferred key
+fingerprint, authenticate the signed IPC peer, and reconcile uncertain
+Keychain imports without retrying blindly.
+
+Local Mac helper primitives now implement the native runtime vault and durable
+receipt-to-import reconciliation described below. The authenticated signed IPC
+helper and adapter integration are not implemented; setup still has no import
+action and no runtime key is transferred by the wizard.
+
+Offline receipts cannot reflect a revocation made after signing until they
+expire. They authorize only the narrow import operation; BAS independently
+rechecks current approval before authentication. Complete revocation and
+active-link termination remain separate release gates.
+
+Tests cover real TLS receipt delivery, wrong issuer pins, tampering, wrong
+purpose/platform/organization/revision/key context, expiry, durable
+reconciliation, dual-key proof/replay checks, approval changes between
+challenge and proof, and setup restart/browser exclusion. Neither a helper
+nor adapter Keychain signing is implemented yet, so the wizard explicitly
+reports that no key has been transferred and runtime installation remains
+unimplemented.
+
 ### Enrollment client core
 
 `internal/enrollment.NewClient` implements the installer's claim/status
@@ -997,16 +1199,23 @@ explicit warning retains the URL for manual opening. The launcher requires the
 Keychain mode exactly; omission or unavailable native support fails rather than
 falling back to plaintext. The existing key-fingerprint verification, separately
 delivered enrollment code, claim/status and uncertain-response flow is unchanged.
-Approval remains only an administrative decision.
+Approval remains only an administrative decision. Before using the selected Mac
+pilot invitation, confirm the reachable device listener, active Authentication/
+BAS policy and secure runtime installation path; do not consume a real invitation
+for a local package smoke test. For signed runtime-import authorization, supply
+the independently trusted `runtime_import_public_key` described in
+[signed import approval](#signed-mac-runtime-key-import-approval-local-implementation).
+No pin is accepted from the invitation or device response. A pinned receipt does
+not install a helper, import a runtime key or configure the adapter.
 
-The full RSA-3072 software identity and enrollment metadata are stored in the
+The separate RSA-3072 enrollment-proof/runtime keys and enrollment metadata are stored in the
 current user's configured default **macOS Keychain** as a generic-password item
 with service `com.zpr.enrollment.development` and label
 `ZPR development enrollment identity`. Only an owner-private, single-link
 reference file is published on disk:
 `~/Library/Application Support/ZPR/EnrollmentDevelopment/identity.keychain.json`.
 Keychain encryption/access control protects storage; the authorized wizard still
-loads the software key in memory. This is not Secure Enclave-backed, TPM
+loads the software keys in memory. This is not Secure Enclave-backed, TPM
 attestation or a production adapter credential.
 
 The native implementation uses Apple's Security/CoreFoundation frameworks via
@@ -1060,9 +1269,79 @@ CGO_ENABLED=0 go test ./internal/enrollment
 Mac-specific tests use disposable, explicitly scoped test Keychains—not the login
 Keychain—to verify key persistence/proof signing, fresh-process reload, competing
 publishers, deletion recovery, corrupt/unsafe references, legacy rejection,
-configuration-parent checks and protection labels. The no-CGO suite proves that
+configuration-parent checks and protection labels. The native
+[Mac pilot test](internal/enrollment/keychain_pilot_darwin_test.go) also performs
+a dual-key claim and named review against a disposable TLS device service, then
+starts a fresh process that reloads both keys from an isolated Keychain, proves
+possession without the code, and reconciles the same signed import receipt.
+It verifies browser receipt isolation, wrong issuer rejection and a reference-only
+state directory. No real invitation, login/System Keychain, helper, tunnel, route,
+DNS, Simulator or production service is used. The no-CGO suite proves that
 Keychain configuration fails at startup without native support. Shared browser
 flows and Linux/Windows builds remain separate regression gates.
+
+Local pilot refresh verified 2026-10-10 UTC: native enrollment/wizard race tests,
+no-CGO enrollment tests, vet, and the fresh-process Mac pilot test pass. The
+rebuilt `0.1.1` arm64 development DMG passes packaged signature/resource/binary
+comparison and authenticated/anonymous loopback startup checks. Its SHA-256 is
+`c2a8997f56b810aed5d802cf84c3e4fe06977a4827905883931bb5795b2ed1d2`.
+It is still ad-hoc signed and not notarized; no installation, real invitation
+claim, default/System Keychain import or privileged runtime operation occurred.
+The required `make test` passes enrollment and all other package suites except
+the existing `TestRedwoodLDIFMatchesOrganizationPeopleSitesAndGroups` mismatch
+(53 LDAP identities instead of 53 people plus three machines), left unchanged.
+
+### Local native runtime handoff primitives (not installed or wired)
+
+[runtime_vault_darwin_cgo.go](internal/enrollment/runtime_vault_darwin_cgo.go)
+uses native `SecItemImport` to store only the separate RSA-3072 runtime key as
+a permanent, sensitive, non-extractable Keychain key. It requires an explicit
+Keychain path, uses a deterministic binding label, refuses duplicate imports,
+verifies the stored non-extractable attribute and retrieves only the public key.
+Nonce signatures use native `SecKeyCreateSignature` with SHA-256 PKCS#1 v1.5;
+private-key files, command-line keys and plaintext exports are not used.
+Non-extractability does not claim hardware protection or protection from an
+authorized process that held the original software key.
+
+[runtime_import_darwin.go](internal/enrollment/runtime_import_darwin.go) is an
+unexposed helper primitive. It independently verifies the issuer pin and
+organization, signed receipt, expiry and actual transferred runtime key.
+A separate helper-owned ledger records only non-secret binding metadata and
+intent before the native side effect. The issuer/organization/invitation binding,
+not the refreshable operation ID, identifies one import. Asset, revision and
+either fingerprint changes are rejected rather than replacing an existing key.
+After restart or a lost response, an existing matching native key is proven by
+signature and reconciled without another import. Missing/unavailable native state
+after persisted intent remains explicitly unresolved; no automatic retry,
+replacement or success-shaped fallback is allowed.
+
+Native tests use explicitly scoped disposable Keychains and test ledgers, never
+the login/System Keychain or the live invitation. The Mac pilot TLS regression
+also imports the approved runtime key locally and uses its native Keychain
+signature to complete the isolated enrollment-backed BAS authorization/token
+exchange. Runtime vault/import/pilot race tests, all enrollment race tests,
+no-CGO tests and vet pass. This verifies compatible signing, not a running PH
+adapter or Visa Service admission.
+
+The local [IPC peer verifier](internal/enrollment/runtime_peer_darwin_cgo.go)
+checks the kernel-provided Unix-socket `LOCAL_PEERTOKEN`, effective UID and an
+independently pinned code-signing requirement via `SecCodeCopyGuestWithAttributes`
+and strict `SecCodeCheckValidityWithErrors`. It does not trust a claimed PID,
+process path or peer-supplied signing identifier. Isolated tests authenticate
+both directions using their own exact ad-hoc code requirement and reject a
+different executable, wrong user, malformed requirement and missing connection.
+The requirement and expected UID must be fixed by trusted installation/config,
+not a browser or IPC request.
+
+These primitives are **not a privileged helper or an end-to-end installer**.
+Before exposing them, integrate the tested signed-peer/audit-token checks, trusted
+System Keychain/ledger configuration, bounded one-time IPC, the helper's signed
+installation/authorization lifecycle, PH runtime signing integration, approved
+adapter configuration delivery, and explicit installation-result/revocation
+contracts. No production command, network listener, root operation, or wizard
+import action has been added. The user selected isolated ad-hoc development
+testing because no Developer ID identity is available; laptop distribution and
+production helper installation remain blocked. No Gatekeeper bypass is allowed.
 
 ### Existing Mac adapter runtime
 
@@ -2243,6 +2522,247 @@ button turns yellow when a successful evaluation includes warnings. Warnings
 without a valid source line remain visible below the editor controls rather
 than being assigned an invented line.
 
+## Organization Profile Drafts
+
+The Simulator Organizations page offers **Edit organization draft** for existing
+bundled organizations. Name/description fields and advanced JSON edit the same
+profile. **Save draft** persists an unpublished profile revision in the private
+per-organization SQLite workspace; it never rewrites bundled profiles, edits
+linked LDAP/policy/scenario documents, switches the active organization, or
+changes running machines. **History** loads an immutable revision for review;
+saving it creates a new revision rather than rewriting history.
+
+**Validate profile** checks the accepted profile schema and structural rules.
+It does not certify linked-document consistency or runtime readiness. This first
+slice supports valid existing profiles, not incomplete new-organization drafts.
+Unknown fields are rejected rather than silently stripped; the stable ID cannot
+change. Save conflicts retain local edits; after an uncertain response, reload
+and reconcile the saved revision before retrying.
+
+The AI pane sends the unsaved fictional profile and conversation, with a visible
+disclosure. Linked files and live runtime state are not included. A validated
+proposal opens a before/after field review; only **Insert reviewed draft** changes
+the editor. Undo/Redo remain local. AI never saves, publishes or activates, and
+changed editor/revision context invalidates old proposals.
+Small top-level `profile_patch` proposals are merged into the submitted draft
+and validated as a full profile; unchanged definitions need not consume the
+assistant's bounded output budget.
+
+Organization-scoped routes:
+
+| Method | Route suffix under `/api/simulator/organizations/{id}` | Permission |
+| --- | --- | --- |
+| GET | `/profile`, `/profile/revisions`, `/profile/revisions/{revision}` | `organization.read` |
+| PUT | `/profile` | `organization.edit` |
+| POST | `/profile/check`, `/profile/assistant` | `organization.analyze` |
+
+PUT takes `profile`, a required positive `expected_revision`, and `summary`.
+Revision author records the authenticated operator subject. Operators require
+explicit new analyze/edit grants; existing read/activate grants are not expanded.
+These routes are Simulator-only and are not exposed through Control Room.
+These draft/editor slices were deployed to Simulator on 2026-10-11 20:18 UTC.
+No source/runtime activation or production Control Room change is implied.
+New/Import, bundled-definition duplication and coherent document/AI editing are
+described below. Structured section editors, full reference/compiler checks and
+reviewed activation of edited drafts remain planned in
+[Organization editor plan](../Organization%20editor%20plan.md).
+
+### New and Import organization drafts
+
+Choose **New organization**, enter a stable ID, name and description, and
+optionally a directory base DN. **Review proposed draft** displays the profile
+and missing definition sections; confirm before **Create draft**. New drafts
+have no fabricated sites, identities, addresses, directory or policy documents.
+They are private, unpublished bundles, not runnable catalog entries.
+
+Choose **Import organization** to load a local JSON file or paste a portable
+definition bundle:
+
+```json
+{
+  "version": 1,
+  "profile": {
+    "id": "fictional-org",
+    "name": "Fictional organization",
+    "description": "Private incomplete draft",
+    "directory": { "base_dn": "dc=fictional,dc=test" }
+  },
+  "documents": []
+}
+```
+
+The target ID must match `profile.id` and each scenario's `organization_id`.
+IDs/base DNs/namespaces are not silently rewritten. Documents contain `path`,
+`kind` and `content`: directory (`.ldif`), policy (`.zpl`), policy-config
+(`.zplc`), policy-catalog (`.json`), or scenario (`.json`). Supplied profile
+references must resolve to matching bundle documents. Paths must be safe,
+unique and relative; import never extracts an archive or writes these paths.
+
+Limits: 256 KiB per profile/document, 128 documents, 8 MiB encoded bundle.
+Unknown schema fields, internal creation metadata and runtime-state document
+kinds are rejected. Imported LDAP passwords/auth-passwords, certificates and
+PKCS12 attributes are rejected rather than removed. Detected secret assignments
+and private-key markers also reject imports. Catalog records must be accepted
+policy/configuration/assertion definitions with matching content types;
+metadata allows only `demo` and `live` flags. These checks cannot guarantee
+arbitrary free-form text is secret-free: use fictional definitions only and
+review all content before confirmation or explicit AI disclosure.
+Loading/importing does not send content to an AI provider.
+
+Incomplete private profiles remain saveable and editable with reviewed AI
+proposals. **Validate profile** checks supplied schema, local references and
+directory containment, returns `readiness_gaps`, and always reports
+`runnable: false`. Missing sections are gaps; malformed supplied sections are
+errors. Compiler certification, full scenario-reference checks and
+activation remain separate future work. Existing bundled-profile validation
+has not been relaxed.
+
+**Export saved definitions** downloads this portable format without operation
+IDs, request hashes or creation receipts. Save unsaved edits first; export
+validates the saved document schema and rejects unsupported content explicitly.
+
+Preview and creation require target `organization.create`, independently of
+later read/analyze/edit grants. Confirmed requests include `operation_id`,
+`reviewed_hash` and `confirmed`. Browser-tab retained operations support exact
+retry and **Check creation result** after uncertain responses, including reload.
+Changed retries and conflicting IDs never overwrite the original bundle.
+
+| Method | Route | Permission |
+| --- | --- | --- |
+| POST | `/api/simulator/organizations/{id}/create/check` | target `organization.create` |
+| POST | `/api/simulator/organizations/{id}/create` | target `organization.create` |
+| GET | `/api/simulator/organizations/{id}/draft/export` | target `organization.read` |
+
+This slice is deployed to Simulator (2026-10-11 20:18 UTC). No source/runtime
+activation, production Control Room dependency, or live permission-grant change
+is implied. See [deployment evidence](../GUI%20deployments.md) for the exact
+release, approved read-only supporting definitions, persistent-draft checks and
+stopped rollback. Structured editors and runtime certification remain pending.
+
+### Coherent supporting definitions and AI editing
+
+Open a private organization profile, then choose **Edit supporting definitions**.
+Save any profile-only edits first or explicitly discard them when switching.
+The full-definition workspace loads the saved profile and documents together;
+it never silently saves the profile on navigation.
+
+Use **Definition file** to select the profile JSON or directory/policy/compiler/
+catalog/scenario source. **Add document** creates an unsaved local entry;
+set its path, kind and content. **Remove document** requires confirmation.
+Update related profile references before saving. Invalid local drafts remain
+editable, but **Validate all definitions** and **Save all definitions** reject
+unsafe, malformed, credential-bearing or inconsistent supplied definitions.
+These use the same bounded portable-definition contract as Import.
+
+**Save all definitions** appends one immutable profile/document bundle revision,
+requires the loaded `expected_revision`, and preserves initial creation receipts
+and provenance server-side. Conflicts do not overwrite newer revisions or erase
+local edits. A failed/uncertain save instructs **Reload definitions** to reconcile
+before another attempt. Draft checks never save and always return
+`runnable: false` with explicit readiness gaps.
+
+History loads the entire matching snapshot. Private profile history also opens
+this workspace with the corresponding complete bundle; it does not mix an old
+profile with current directory/policy content. Saving reviewed history appends a
+new revision using the current expected revision, not the historical number.
+Profile-only saves still preserve the current supporting documents.
+
+The AI pane explicitly discloses that **Send** sends the entire unsaved fictional
+profile, every supporting document and conversation to Anthropic. Check for
+credentials first; free-form text cannot be guaranteed secret-free. No internal
+creation receipts or observed runtime data are included. The existing 2 MiB
+assistant request/context limit is enforced with an error, not silent omission.
+Section-only context for larger organizations is still planned.
+
+AI returns top-level profile patches plus complete document upserts/deletions.
+The server merges these into the submitted unsaved bundle, preserving untouched
+fields/documents, then validates the combined result. Incomplete sections remain
+explicit gaps; it does not fabricate configuration to imply readiness.
+**Review definition proposal** shows changed fields/documents before/after.
+**Insert reviewed definitions** changes only local state. Undo/Redo restores the
+combined change; source/revision changes invalidate stale responses or undo
+attempts. **Save all definitions** remains a separate operator action.
+
+| Method | Route suffix under `/api/simulator/organizations/{id}/draft/definitions` | Permission |
+| --- | --- | --- |
+| GET | root, `/revisions`, `/revisions/{revision}` | target `organization.read` |
+| PUT | root | target `organization.edit` |
+| POST | `/check`, `/assistant` | target `organization.analyze` |
+
+PUT/check take `bundle` (portable version/profile/documents),
+`expected_revision` (required for PUT) and `summary`.
+Assistant requests use `scope: "organization-definitions"`, matching
+`organization_id`, `bundle`, `messages`, `model` and `max_tokens`.
+Responses expose portable definitions, not private operation receipts.
+Scoped permissions remain independent; no live grants are automatically changed.
+
+This is locally verified source editing and reviewed cross-document assistance,
+not complete structured section editors, policy compiler certification, full
+scenario/service/group reference checks or activation. Draft operations never
+write bundled files, publish to other workspaces, run scenarios, provision
+machines or depend on Simulator runtime availability. Production Control Room
+and Control-Service remain independent.
+
+### Duplicate organization definitions
+
+On Simulator Organizations, select a bundled organization and choose
+**Duplicate organization**. Enter a new stable ID, name and description, then
+**Review proposed draft**. The preview displays the profile and sanitized
+supporting definitions. Confirm review before **Create draft**.
+
+The source is the bundled definitions, not unsaved profile/directory/policy
+workspace edits. LDAP passwords/auth-passwords and user certificate/PKCS12
+attributes are removed (including folded/base64 values). Unsafe paths,
+symlinks, oversized files and detected credential-bearing configuration fail
+explicitly. No enrollment credentials, approvals, live inventory, sessions or
+run history are collected. Only explicitly organization-scoped bundled
+scenario definitions are copied; unscoped legacy scenarios are not inferred.
+
+The new profile and copied documents form a single unpublished revision in
+`organization-drafts.db` beside the configured Simulator workspace databases.
+This private draft catalog is separate from the runnable organization catalog.
+Open a private draft for profile/AI editing, Save, Validate and History.
+Each profile save preserves supporting documents in a new whole-bundle revision.
+Supporting document editing is available through **Edit supporting definitions**,
+described below. Policy compilation, full cross-document semantic checks and
+activation of these bundles are not yet implemented.
+
+The source base DN, desired node addresses, device/service identifiers and
+policy namespace remain unchanged and are disclosed for review. Typed profile
+file references become bundle-local references; copied scenarios bind to the
+new organization ID. No textual namespace replacement occurs. Changing base DN
+without matching directory edits fails validation. Never treat this copied
+bundle as ready to provision or activate.
+
+The creation operation and reviewed sanitized source hash are frozen and
+retained in browser-tab session storage before sending. The initial immutable
+bundle revision records the operation/request hash. A matching retry returns
+the current bundle without re-copying source files or overwriting later edits.
+Changed retries or conflicting organization IDs return 409. After a lost
+response, **Check creation result** looks up the retained operation. A source
+change requires a fresh preview; an unresolved response never silently generates
+a new operation. Operation IDs are scoped to the target organization.
+Creation and retry responses contain only operation/revision receipt metadata;
+retrieving draft content requires a separate target `organization.read` request.
+Logout clears browser data and ignores delayed responses; persisted server
+drafts remain discoverable after authorized login and catalog refresh.
+
+| Method | Route | Permission |
+| --- | --- | --- |
+| GET | `/api/simulator/organization-drafts` | `organization.read`; target-scope filtered |
+| POST | `/api/simulator/organizations/{source}/duplicates/{target}/check` | source `organization.analyze` and `organization.read` |
+| POST | `/api/simulator/organizations/{source}/duplicates/{target}` | target `organization.create` and source `organization.read` |
+| GET | `/api/simulator/organizations/{target}/draft` | target `organization.read` |
+| GET/PUT/POST | `/api/simulator/organizations/{target}/draft/profile` and its `/check`, `/assistant`, `/revisions`, `/revisions/{revision}` routes | same read/edit/analyze split as the existing profile routes |
+
+Preview takes `name` and `description`. Creation also requires `confirmed: true`,
+`operation_id` and `expected_source_hash`. Preview/creation never writes bundled
+files or invokes runtime operations. Draft profile AI sends only the unsaved
+profile, not copied documents or runtime state, and validates proposed
+bundle-local file references before offering insertion. Operators need explicit
+target create/read/analyze/edit grants; no live authorization configuration is
+changed by this source-only implementation.
+
 ## Organization Activation
 
 Selecting a profile does not activate it. **Activate organization** opens a
@@ -2253,6 +2773,17 @@ is focused by default; Cancel or Escape sends no activation request. Only
 while the dialog is open, cancel and review the new state before trying again.
 The backend still requires scenarios to be finished/cancelled and machine users
 to be logged out.
+
+For `docker-multinode` profiles, switching/redeploying preserves generated node
+identities, API credentials and the active Visa policy in an organization-scoped
+persistent Redis directory. Legacy in-memory databases are checkpointed before
+their container is removed. First activation installs the composed policy with
+the deployed keys; later activations do not replace reviewed policy with the
+base policy. Missing database state or partial/mismatched identities fail
+explicitly. **Restore base**, not ordinary activation, authorizes a backed-up
+policy/directory reset. Validation uses a temporary runtime rather than rewriting
+live identity/configuration files. DNS is rebound to the current node container
+on redeploy and its service records are checked before readiness.
 
 **See Logs** appears on the Simulator Organizations page only when the latest
 activation or base restore reports a failure. It opens the local reset log in a

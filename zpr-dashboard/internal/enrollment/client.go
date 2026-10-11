@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"crypto"
+	"crypto/ed25519"
 	"crypto/rand"
 	"crypto/rsa"
 	"crypto/sha256"
@@ -44,6 +45,7 @@ type Client struct {
 	fingerprint   string
 	runtimeKey    string
 	runtimeFP     string
+	approvalKey   ed25519.PublicKey
 	now           func() time.Time
 }
 
@@ -55,7 +57,20 @@ func NewClientWithRuntimeKey(audience string, roots *x509.CertPool, signer, runt
 	if runtimeSigner == nil {
 		return nil, ErrInvalid
 	}
+
 	return newClient(audience, roots, signer, runtimeSigner)
+}
+
+func NewClientWithImportApproval(audience string, roots *x509.CertPool, signer, runtimeSigner crypto.Signer, publicKey ed25519.PublicKey) (*Client, error) {
+	if len(publicKey) != ed25519.PublicKeySize {
+		return nil, ErrInvalid
+	}
+	client, err := NewClientWithRuntimeKey(audience, roots, signer, runtimeSigner)
+	if err != nil {
+		return nil, err
+	}
+	client.approvalKey = append(ed25519.PublicKey(nil), publicKey...)
+	return client, nil
 }
 
 func newClient(audience string, roots *x509.CertPool, signer, runtimeSigner crypto.Signer) (*Client, error) {
@@ -137,6 +152,13 @@ func (c *Client) Status(ctx context.Context, organization, invitation string) (D
 	return c.exchange(ctx, organization, invitation, "status", "")
 }
 
+func (c *Client) RuntimeImportApproval(ctx context.Context, organization, invitation string) (DeviceStatus, error) {
+	if len(c.approvalKey) != ed25519.PublicKeySize || c.runtimeSigner == nil {
+		return DeviceStatus{}, ErrInvalid
+	}
+	return c.exchange(ctx, organization, invitation, RuntimeImportPurpose, "")
+}
+
 func (c *Client) exchange(ctx context.Context, organization, invitation, purpose, code string) (DeviceStatus, error) {
 	if !validText(organization) || !validText(invitation) {
 		return DeviceStatus{}, ErrInvalid
@@ -193,6 +215,18 @@ func (c *Client) exchange(ctx context.Context, organization, invitation, purpose
 		result.RuntimeKeyFingerprint != c.runtimeFP || result.Revision < 2 ||
 		result.CredentialsIssued || !slices.Contains([]string{"pending_approval", "approved", "rejected", "cancelled", "approval_expired"}, result.State) ||
 		(result.State == "pending_approval" && (result.ApprovalExpiresAt == nil || !c.now().Before(*result.ApprovalExpiresAt))) {
+		return DeviceStatus{}, ErrInvalidResponse
+	}
+	if purpose == RuntimeImportPurpose {
+		if result.State != "approved" || result.ImportApproval == nil {
+			return DeviceStatus{}, ErrInvalidResponse
+		}
+		binding := ApprovalBinding{Issuer: c.audience, Organization: organization, InvitationID: invitation,
+			Revision: result.Revision, KeyFingerprint: c.fingerprint, RuntimeKeyFingerprint: c.runtimeFP}
+		if _, err := VerifyRuntimeImportApproval(*result.ImportApproval, c.approvalKey, binding, c.now()); err != nil {
+			return DeviceStatus{}, ErrInvalidResponse
+		}
+	} else if result.ImportApproval != nil {
 		return DeviceStatus{}, ErrInvalidResponse
 	}
 	return result, nil

@@ -14,6 +14,57 @@ separate; retain each dated entry's scope.
 
 ## Deployment status
 
+### Simulator organization definitions (2026-10-11 20:18 UTC)
+
+- Deployed only `zpr-simulator:20261011-organization-definitions`, image
+  `sha256:3d6060ce7ccda2daa073ff91bf2f9a6328b84c7deb04623fe0dbf8f846d46132`.
+  Started `2026-10-11T20:18:56.543634Z`; verified at
+  `2026-10-11T20:18:59.815Z`.
+- Existing-profile drafts, New/Import/Duplicate, portable Export, coherent
+  supporting-document editing/history and reviewed cross-document AI are live.
+  Saving remains private and does not make a definition runnable.
+- Reconstructed the preceding executable byte-for-byte:
+  `e03088b433ee77218f104dac61491fb80338a419f3ada310708b5970ca5ed890`.
+  Organization-only overlays retain live login/runtime/scenario code; the
+  development Load Lab 50-client change and login changes were excluded.
+  Linux arm64, Go 1.26.4, CGO disabled, `go build -trimpath`. New binary:
+  `d9976e3409ae127f8a575b68628771be8ca87a438558f7a18566583efb000c2f`.
+  Image layering preserves the exact preceding runtime image.
+- All 74 served asset hashes and two static redirects verified. All 16 other
+  running container start times were preserved. Config/env/network contracts
+  are unchanged except explicitly approved read-only supporting definitions.
+  No Control Room, production service, login, scenario execution, organization
+  activation or runtime reset was deployed.
+- The live isolated source lacked Great Lakes and Load Lab `policy-demo.zplc`.
+  User approved supplying these existing files. Two read-only organization
+  support-directory snapshots retain all preceding files unchanged and add
+  only the missing compiler configurations; the shared staging is untouched.
+  Live Duplicate previews validate 7 Great Lakes and 6 Load Lab documents.
+  Config hashes: Great Lakes
+  `ee027285c134a335121204f3a698d8c8a7e94d044e78ee56f8a7c795eb6523aa`;
+  Load Lab `f3217976d9fd0aa416b08f89d0bfb5099c4d2391af66ee9cd3a6a2358c24e5d4`.
+- Focused Go race tests, build/vet and 52 exact-release desktop/tablet browser
+  cases pass. A bounded LDAP-editor layout correction fixes a tablet
+  pointer-interception regression exposed by release testing.
+  Real candidate GUI creation, atomic profile/document save and history/export
+  used persistent private storage with no Docker socket or runtime-write
+  capability. Final live desktop/tablet reopen verifies persistence across
+  replacement. Retained fictional inactive draft:
+  `editor-release-smoke-20261011`, revision 2.
+  No real AI prompt was sent; fake-provider tests cover AI and live assistant
+  status reports ready.
+- Two guarded attempts restored the preceding Simulator before final rollout:
+  nested file mounts could not create targets inside the read-only source mount;
+  a GUI smoke lacked asynchronous loading waits. Directory mounts were tested
+  in a networkless container; the smoke now waits for loaded revisions.
+  Rollback readiness retry is explicit. Temporary preflight containers removed.
+- Rollback `zpr-simulator-organization-definitions-rollback` is retained stopped,
+  with the preceding image/config/mounts. Private drafts remain on the existing
+  durable runtime mount. Keep the read-only release snapshots for this release;
+  a generic source rebuild/recreate is not an equivalent organization-only
+  deployment. Structured editors, full semantic/compiler certification and
+  draft activation review remain unfinished. No commit or push.
+
 - Map Maximize/Restore deployed to Control Room at 2026-10-11 20:09 UTC,
   verified at 20:09:06 UTC, as `zpr-editor-ui:20261011-map-maximize`.
   Both maps use the shared window-control icons; Restore/Escape and navigation

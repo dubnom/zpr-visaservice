@@ -5,10 +5,12 @@ package enrollment
 import (
 	"bytes"
 	"context"
+	"crypto/ed25519"
 	"crypto/rand"
 	"crypto/subtle"
 	"crypto/x509"
 	"embed"
+	"encoding/base64"
 	"errors"
 	"fmt"
 	"log"
@@ -33,9 +35,17 @@ type SetupConfig struct {
 	StateDirectory           string `json:"state_directory"`
 	AllowSoftwareDevelopment bool   `json:"allow_software_development"`
 	KeyProtection            string `json:"key_protection,omitempty"`
+	RuntimeImportPublicKey   string `json:"runtime_import_public_key,omitempty"`
 }
 
 func (c SetupConfig) Validate() error {
+	if c.RuntimeImportPublicKey != "" {
+		key, err := base64.StdEncoding.Strict().DecodeString(c.RuntimeImportPublicKey)
+		if err != nil || len(key) != ed25519.PublicKeySize ||
+			base64.StdEncoding.EncodeToString(key) != c.RuntimeImportPublicKey {
+			return errors.New("runtime_import_public_key must be a pinned canonical base64 Ed25519 public key")
+		}
+	}
 	if c.Version != 1 || validateAudience(c.Audience) != nil || !c.AllowSoftwareDevelopment ||
 		!filepath.IsAbs(c.StateDirectory) || filepath.Clean(c.StateDirectory) != c.StateDirectory ||
 		filepath.Dir(c.StateDirectory) == c.StateDirectory {
@@ -83,35 +93,37 @@ func loadSetupConfig(path, userState string) (SetupConfig, error) {
 }
 
 type SetupServer struct {
-	config    SetupConfig
-	roots     *x509.CertPool
-	listener  net.Listener
-	server    *http.Server
-	origin    string
-	token     string
-	expires   time.Time
-	mu        sync.Mutex
-	client    *Client
-	identity  *SoftwareIdentity
-	status    *DeviceStatus
-	uncertain bool
-	checked   bool
-	recovery  bool
-	next      time.Time
+	config         SetupConfig
+	roots          *x509.CertPool
+	listener       net.Listener
+	server         *http.Server
+	origin         string
+	token          string
+	expires        time.Time
+	mu             sync.Mutex
+	client         *Client
+	identity       *SoftwareIdentity
+	status         *DeviceStatus
+	importApproval *ApprovalReceipt
+	uncertain      bool
+	checked        bool
+	recovery       bool
+	next           time.Time
 }
 
 type setupView struct {
-	Audience           string           `json:"audience"`
-	Metadata           *LocalEnrollment `json:"metadata,omitempty"`
-	Fingerprint        string           `json:"fingerprint,omitempty"`
-	RuntimeFingerprint string           `json:"runtime_fingerprint,omitempty"`
-	Status             *DeviceStatus    `json:"status,omitempty"`
-	Uncertain          bool             `json:"uncertain"`
-	CanClaim           bool             `json:"can_claim"`
-	ConfirmRecovery    bool             `json:"confirm_recovery"`
-	RetryAfter         int              `json:"retry_after_seconds"`
-	Message            string           `json:"message"`
-	KeyProtection      string           `json:"key_protection"`
+	Audience                string           `json:"audience"`
+	Metadata                *LocalEnrollment `json:"metadata,omitempty"`
+	Fingerprint             string           `json:"fingerprint,omitempty"`
+	RuntimeFingerprint      string           `json:"runtime_fingerprint,omitempty"`
+	Status                  *DeviceStatus    `json:"status,omitempty"`
+	Uncertain               bool             `json:"uncertain"`
+	CanClaim                bool             `json:"can_claim"`
+	ConfirmRecovery         bool             `json:"confirm_recovery"`
+	RetryAfter              int              `json:"retry_after_seconds"`
+	Message                 string           `json:"message"`
+	KeyProtection           string           `json:"key_protection"`
+	RuntimeImportAuthorized bool             `json:"runtime_import_authorized"`
 }
 
 func NewSetupServer(config SetupConfig) (*SetupServer, error) {
@@ -160,7 +172,13 @@ func (s *SetupServer) attach(identity *SoftwareIdentity) error {
 	}
 	var client *Client
 	var err error
-	if runtimeSigner := identity.RuntimeSigner(); runtimeSigner != nil {
+	if s.config.RuntimeImportPublicKey != "" {
+		publicKey, decodeErr := base64.StdEncoding.Strict().DecodeString(s.config.RuntimeImportPublicKey)
+		if decodeErr != nil {
+			return decodeErr
+		}
+		client, err = NewClientWithImportApproval(s.config.Audience, s.roots, identity, identity.RuntimeSigner(), ed25519.PublicKey(publicKey))
+	} else if runtimeSigner := identity.RuntimeSigner(); runtimeSigner != nil {
 		client, err = NewClientWithRuntimeKey(s.config.Audience, s.roots, identity, runtimeSigner)
 	} else {
 		client, err = NewClient(s.config.Audience, s.roots, identity)
@@ -363,9 +381,25 @@ func (s *SetupServer) serveHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	s.checked, s.uncertain, s.recovery, s.status = true, false, false, &status
+	s.importApproval = nil
 	message := "Enrollment state: " + status.State + "."
 	if status.State == "approved" {
 		message = "Administrator approved this request. Credentials are not issued and ZPR connectivity is not established."
+		if s.config.RuntimeImportPublicKey != "" {
+			approved, err := s.client.RuntimeImportApproval(ctx, metadata.Organization, metadata.InvitationID)
+			if err != nil {
+				s.uncertain = true
+				s.reply(w, http.StatusBadGateway, "Runtime import approval unavailable or invalid. No runtime key was transferred; check fresh status after the retry delay.")
+				return
+			}
+			if approved.Revision != status.Revision {
+				s.uncertain = true
+				s.reply(w, http.StatusBadGateway, "Enrollment changed while obtaining runtime import approval. No runtime key was transferred; check fresh status.")
+				return
+			}
+			s.importApproval = approved.ImportApproval
+			message = "Administrator approval and signed runtime-key import authorization verified. Runtime installation is not implemented; no key was transferred and ZPR connectivity is not established."
+		}
 	} else if status.State == "pending_approval" {
 		message = "Waiting for administrator approval. Share both key fingerprints through your authenticated verification channel."
 	} else {
@@ -376,6 +410,24 @@ func (s *SetupServer) serveHTTP(w http.ResponseWriter, r *http.Request) {
 
 func (s *SetupServer) reply(w http.ResponseWriter, code int, message string) {
 	view := setupView{Audience: s.config.Audience, Status: s.status, Uncertain: s.uncertain, Message: message}
+	if s.status != nil {
+		status := *s.status
+		status.ImportApproval = nil
+		view.Status = &status
+	}
+	if !s.uncertain && s.importApproval != nil && s.status != nil && s.client != nil {
+		metadata := s.identity.Metadata()
+		_, err := VerifyRuntimeImportApproval(*s.importApproval, s.client.approvalKey, ApprovalBinding{
+			Issuer: metadata.Audience, Organization: metadata.Organization, InvitationID: metadata.InvitationID,
+			Revision: s.status.Revision, KeyFingerprint: s.client.fingerprint, RuntimeKeyFingerprint: s.client.runtimeFP,
+		}, time.Now())
+		if err != nil {
+			log.Printf("Runtime import approval no longer valid: %T", err)
+			view.Message = "Runtime import authorization expired or is invalid. No key was transferred; check fresh status before installation."
+		} else {
+			view.RuntimeImportAuthorized = true
+		}
+	}
 	view.KeyProtection = "Software development key, not hardware-backed or encrypted at rest."
 	if runtime.GOOS == "windows" {
 		view.KeyProtection = "Software development key protected at rest by Windows user-bound DPAPI, not hardware-backed. Other Windows users require separate enrollment."

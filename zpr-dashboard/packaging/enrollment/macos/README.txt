@@ -20,7 +20,12 @@ Administrator preparation:
 3. Optionally set ca_file to a trusted PEM CA file beside setup.json (relative
    path) or a trusted absolute path inside the user's home. No CA is imported.
 4. Keep key_protection exactly "macos-keychain", omit state_directory, and
-   never include an enrollment code or key in configuration.
+   never include an enrollment code, private key or BAS HMAC secret in configuration.
+   For the runtime-import pilot, independently provision runtime_import_public_key
+   as the canonical base64 Ed25519 public key of the approved receipt issuer.
+   Do not obtain this trust pin from the invitation or a device response.
+   Without this pin the app can inspect claim/status but cannot verify an
+   import authorization. The pin is public, not a runtime credential.
 5. User/root-owned config/CA parents must not be shared-writable or symlinks.
    Use mode 0700 for dedicated user directories and 0600 for configuration.
    Configuration/CA must be inside the trusted real desktop home (including
@@ -32,20 +37,30 @@ Do not share that URL. Press Ctrl-C when finished. No background startup task,
 firewall change, CA trust change or networking setup happens on app installation.
 If default-browser opening fails, use the private URL printed in Terminal.
 
-Prepare the key using your organization and invitation ID. Verify its fingerprint
-with the administrator through an authenticated channel, then enter the code
-provided separately. Check fresh status after uncertain/lost responses.
-Approval is a review decision, NOT credential issuance or connectivity.
+Do not enter the selected pilot code until the administrator has confirmed a
+reachable device service, current Authentication/BAS policy authorization, and
+an approved runtime installation/handoff path. This package does not supply
+those services or the privileged helper. An invitation should not be consumed
+merely to test the local wizard.
 
-The RSA-3072 software identity and enrollment metadata are stored as a generic
+Prepare the two keys using your organization and invitation ID. Verify BOTH
+the enrollment-proof and runtime-key fingerprints with the administrator
+through an authenticated channel, then enter the separately supplied code.
+Check fresh status after uncertain/lost responses. Approval is a review
+decision, NOT credential issuance or connectivity. With an independent issuer
+pin, fresh dual-key proofs can obtain a short-lived signed runtime-import
+authorization. It remains in native memory, not the browser or a receipt file.
+The app explicitly reports that runtime installation is not implemented.
+
+Separate RSA-3072 enrollment-proof/runtime keys and enrollment metadata are stored as a generic
 password item in the desktop user's default macOS Keychain:
   service: com.zpr.enrollment.development
   label: ZPR development enrollment identity
 Only a private persistent reference is stored on disk:
   ~/Library/Application Support/ZPR/EnrollmentDevelopment/identity.keychain.json
-The key is not written as a plaintext identity file and is not Secure
+Neither key is written as a plaintext identity file and neither is Secure
 Enclave-backed or device attestation. Keychain encrypts storage and controls
-access; the authorized running wizard still holds the software key in memory.
+access; the authorized running wizard still holds the software keys in memory.
 The user/privileged processes or Keychain recovery can still expose this identity.
 Do not grant arbitrary apps access to it.
 
@@ -61,6 +76,10 @@ does not revoke enrollment, and deleting only the reference leaves a Keychain
 item behind. Never delete either to retry. Identity retirement/recovery requires
 administrator action and revocation, not an uninstall script.
 
-Credential issuance and secure handoff to a future privileged adapter runtime
-remain unfinished. Do not pass this user's Keychain identity to a root service
-by exporting a plaintext private key.
+Secure handoff and adapter installation remain unfinished. The selected design
+requires a signed, authenticated one-time IPC helper, durable duplicate-import
+protection and direct runtime-key import into the System Keychain. The enrollment-
+proof key must never cross into root. Neither private key may be staged in a
+plaintext file. The BAS HMAC signing secret must never be supplied to the Mac.
+Privileged helper installation, tunnel/route/DNS operations and live invitation
+claim require separate explicit approval; this development app performs none.

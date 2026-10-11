@@ -19,15 +19,17 @@ import (
 )
 
 type ServerConfig struct {
-	Version                  int    `json:"version"`
-	Listen                   string `json:"listen"`
-	AllowNonLoopback         bool   `json:"allow_non_loopback"`
-	Audience                 string `json:"audience"`
-	DatabaseFile             string `json:"database_file"`
-	CertificateFile          string `json:"certificate_file"`
-	KeyFile                  string `json:"key_file"`
-	ChallengeLifetimeSeconds int    `json:"challenge_lifetime_seconds"`
-	ApprovalLifetimeSeconds  int    `json:"approval_lifetime_seconds"`
+	Version                      int    `json:"version"`
+	Listen                       string `json:"listen"`
+	AllowNonLoopback             bool   `json:"allow_non_loopback"`
+	Audience                     string `json:"audience"`
+	DatabaseFile                 string `json:"database_file"`
+	CertificateFile              string `json:"certificate_file"`
+	KeyFile                      string `json:"key_file"`
+	ChallengeLifetimeSeconds     int    `json:"challenge_lifetime_seconds"`
+	ApprovalLifetimeSeconds      int    `json:"approval_lifetime_seconds"`
+	RuntimeImportSeedFile        string `json:"runtime_import_seed_file,omitempty"`
+	RuntimeImportLifetimeSeconds int    `json:"runtime_import_lifetime_seconds,omitempty"`
 }
 
 func LoadServerConfig(path string) (ServerConfig, error) {
@@ -54,7 +56,7 @@ func LoadServerConfig(path string) (ServerConfig, error) {
 	if err != nil {
 		return ServerConfig{}, err
 	}
-	for _, field := range []*string{&config.DatabaseFile, &config.CertificateFile, &config.KeyFile} {
+	for _, field := range []*string{&config.DatabaseFile, &config.CertificateFile, &config.KeyFile, &config.RuntimeImportSeedFile} {
 		if *field != "" && !filepath.IsAbs(*field) {
 			*field = filepath.Join(base, *field)
 		}
@@ -66,6 +68,10 @@ func LoadServerConfig(path string) (ServerConfig, error) {
 }
 
 func (c ServerConfig) Validate() error {
+	if (c.RuntimeImportSeedFile == "" && c.RuntimeImportLifetimeSeconds != 0) ||
+		(c.RuntimeImportSeedFile != "" && (c.RuntimeImportLifetimeSeconds < 1 || c.RuntimeImportLifetimeSeconds > 300)) {
+		return errors.New("runtime import approval requires both a private Ed25519 seed file and an explicit 1-300 second lifetime")
+	}
 	if c.Version != 1 || c.DatabaseFile == "" || c.CertificateFile == "" || c.KeyFile == "" {
 		return errors.New("device service requires version 1 and database, certificate, and key files")
 	}
@@ -102,11 +108,7 @@ func newDeviceServer(config ServerConfig) (*http.Server, *Store, error) {
 	if err := config.Validate(); err != nil {
 		return nil, nil, err
 	}
-	certificate, err := tls.LoadX509KeyPair(config.CertificateFile, config.KeyFile)
-	if err != nil {
-		return nil, nil, fmt.Errorf("load device service TLS identity: %w", err)
-	}
-	leaf, err := x509.ParseCertificate(certificate.Certificate[0])
+	certificate, err := loadServiceTLSIdentity(config.CertificateFile, config.KeyFile, config.Audience)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -114,22 +116,16 @@ func newDeviceServer(config ServerConfig) (*http.Server, *Store, error) {
 	if err != nil {
 		return nil, nil, err
 	}
-	if err := leaf.VerifyHostname(audience.Hostname()); err != nil {
-		return nil, nil, fmt.Errorf("device service certificate does not match audience: %w", err)
-	}
-	now := time.Now()
-	if now.Before(leaf.NotBefore) || !now.Before(leaf.NotAfter) {
-		return nil, nil, errors.New("device service certificate is not currently valid")
-	}
-	if len(leaf.ExtKeyUsage) > 0 {
-		serverAuth := false
-		for _, usage := range leaf.ExtKeyUsage {
-			if usage == x509.ExtKeyUsageServerAuth || usage == x509.ExtKeyUsageAny {
-				serverAuth = true
-			}
+	var issuer *ApprovalIssuer
+	if config.RuntimeImportSeedFile != "" {
+		seed, err := readPrivateServiceFile(config.RuntimeImportSeedFile)
+		if err != nil {
+			return nil, nil, fmt.Errorf("read runtime import signing seed: %w", err)
 		}
-		if !serverAuth {
-			return nil, nil, errors.New("device service certificate is not valid for server authentication")
+		issuer, err = NewApprovalIssuer(seed, time.Duration(config.RuntimeImportLifetimeSeconds)*time.Second)
+		clear(seed)
+		if err != nil {
+			return nil, nil, fmt.Errorf("configure runtime import issuer: %w", err)
 		}
 	}
 	store, err := Open(config.DatabaseFile)
@@ -137,8 +133,9 @@ func newDeviceServer(config ServerConfig) (*http.Server, *Store, error) {
 		return nil, nil, err
 	}
 	service, err := NewDeviceService(store, DeviceConfig{Audience: config.Audience,
-		ChallengeLifetime: time.Duration(config.ChallengeLifetimeSeconds) * time.Second,
-		ApprovalLifetime:  time.Duration(config.ApprovalLifetimeSeconds) * time.Second})
+		ChallengeLifetime:    time.Duration(config.ChallengeLifetimeSeconds) * time.Second,
+		ApprovalLifetime:     time.Duration(config.ApprovalLifetimeSeconds) * time.Second,
+		ImportApprovalIssuer: issuer})
 	if err != nil {
 		_ = store.Close()
 		return nil, nil, err
@@ -181,6 +178,40 @@ func newDeviceServer(config ServerConfig) (*http.Server, *Store, error) {
 		TLSConfig:      &tls.Config{MinVersion: tls.VersionTLS13, Certificates: []tls.Certificate{certificate}},
 	}
 	return server, store, nil
+}
+
+func loadServiceTLSIdentity(certificateFile, keyFile, origin string) (tls.Certificate, error) {
+	certificate, err := tls.LoadX509KeyPair(certificateFile, keyFile)
+	if err != nil {
+		return tls.Certificate{}, fmt.Errorf("load service TLS identity: %w", err)
+	}
+	leaf, err := x509.ParseCertificate(certificate.Certificate[0])
+	if err != nil {
+		return tls.Certificate{}, err
+	}
+	audience, err := url.Parse(origin)
+	if err != nil {
+		return tls.Certificate{}, err
+	}
+	if err := leaf.VerifyHostname(audience.Hostname()); err != nil {
+		return tls.Certificate{}, fmt.Errorf("service certificate does not match audience: %w", err)
+	}
+	now := time.Now()
+	if now.Before(leaf.NotBefore) || !now.Before(leaf.NotAfter) {
+		return tls.Certificate{}, errors.New("service certificate is not currently valid")
+	}
+	if len(leaf.ExtKeyUsage) > 0 {
+		serverAuth := false
+		for _, usage := range leaf.ExtKeyUsage {
+			if usage == x509.ExtKeyUsageServerAuth || usage == x509.ExtKeyUsageAny {
+				serverAuth = true
+			}
+		}
+		if !serverAuth {
+			return tls.Certificate{}, errors.New("service certificate is not valid for server authentication")
+		}
+	}
+	return certificate, nil
 }
 
 func RunDeviceServer(ctx context.Context, config ServerConfig) (result error) {

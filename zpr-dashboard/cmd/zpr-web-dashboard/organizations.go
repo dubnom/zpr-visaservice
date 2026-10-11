@@ -428,8 +428,8 @@ func validateOrganizationDefinition(organization simulatorOrganization, incomple
 		if !testClientWorkloads[profile.ClientWorkload] || testServicePorts[profile.ServiceWorkload] == "" {
 			return errors.New("load test requires a supported client and service workload")
 		}
-		if profile.ClientCount < 100 || profile.ClientCount > 512 || profile.ServiceCount < 100 || profile.ServiceCount > 512 {
-			return errors.New("load test client and service counts must be between 100 and 512")
+		if profile.ClientCount < 50 || profile.ClientCount > 512 || profile.ServiceCount < 100 || profile.ServiceCount > 512 {
+			return errors.New("load test client count must be between 50 and 512 and service count between 100 and 512")
 		}
 		if profile.BasePort < 1024 || profile.BasePort+profile.ServiceCount-1 > 65535 {
 			return errors.New("load test service port range is invalid")

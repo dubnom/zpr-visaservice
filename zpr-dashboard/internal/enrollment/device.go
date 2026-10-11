@@ -20,9 +20,10 @@ import (
 var ErrChallengeLimit = errors.New("enrollment challenge capacity reached")
 
 type DeviceConfig struct {
-	Audience          string
-	ChallengeLifetime time.Duration
-	ApprovalLifetime  time.Duration
+	Audience             string
+	ChallengeLifetime    time.Duration
+	ApprovalLifetime     time.Duration
+	ImportApprovalIssuer *ApprovalIssuer
 }
 
 type DeviceService struct {
@@ -52,13 +53,14 @@ type Proof struct {
 }
 
 type DeviceStatus struct {
-	InvitationID          string     `json:"invitation_id"`
-	State                 string     `json:"state"`
-	Revision              int        `json:"revision"`
-	KeyFingerprint        string     `json:"key_fingerprint"`
-	RuntimeKeyFingerprint string     `json:"runtime_key_fingerprint,omitempty"`
-	ApprovalExpiresAt     *time.Time `json:"approval_expires_at,omitempty"`
-	CredentialsIssued     bool       `json:"credentials_issued"`
+	InvitationID          string           `json:"invitation_id"`
+	State                 string           `json:"state"`
+	Revision              int              `json:"revision"`
+	KeyFingerprint        string           `json:"key_fingerprint"`
+	RuntimeKeyFingerprint string           `json:"runtime_key_fingerprint,omitempty"`
+	ApprovalExpiresAt     *time.Time       `json:"approval_expires_at,omitempty"`
+	CredentialsIssued     bool             `json:"credentials_issued"`
+	ImportApproval        *ApprovalReceipt `json:"runtime_import_approval,omitempty"`
 }
 
 type challengePayload struct {
@@ -94,6 +96,14 @@ CREATE INDEX IF NOT EXISTS device_challenge_expiry ON device_challenges(expires_
 	}
 	if err := ensureChallengeRuntimeKeyColumn(store.db); err != nil {
 		return nil, err
+	}
+	if config.ImportApprovalIssuer != nil {
+		if err := initializeApprovalReceipts(store); err != nil {
+			return nil, err
+		}
+		issuer := *config.ImportApprovalIssuer
+		issuer.key = append(issuer.key[:0:0], issuer.key...)
+		config.ImportApprovalIssuer = &issuer
 	}
 	return &DeviceService{store: store, config: config}, nil
 }
@@ -153,7 +163,7 @@ func parseDeviceKey(encoded string) (*rsa.PublicKey, []byte, string, error) {
 
 func (s *DeviceService) Challenge(ctx context.Context, input ChallengeRequest, now time.Time) (Challenge, error) {
 	if !validText(input.Organization) || !validText(input.InvitationID) || now.IsZero() ||
-		(input.Purpose != "claim" && input.Purpose != "status") {
+		(input.Purpose != "claim" && input.Purpose != "status" && input.Purpose != RuntimeImportPurpose) {
 		return Challenge{}, ErrInvalid
 	}
 	_, der, fingerprint, err := parseDeviceKey(input.PublicKey)
@@ -181,6 +191,10 @@ func (s *DeviceService) Challenge(ctx context.Context, input ChallengeRequest, n
 		return Challenge{}, err
 	}
 	codeHash := ""
+	if input.Purpose == RuntimeImportPurpose && (s.config.ImportApprovalIssuer == nil ||
+		i.State != "approved" || runtimeFingerprint == "") {
+		return Challenge{}, ErrUnavailable
+	}
 	if input.Purpose == "claim" {
 		if len(input.Code) != 26 || i.State != "invited" {
 			return Challenge{}, ErrUnavailable
@@ -323,6 +337,17 @@ func (s *DeviceService) Verify(ctx context.Context, proof Proof, now time.Time) 
 	if err != nil {
 		return DeviceStatus{}, err
 	}
+	var receipt *ApprovalReceipt
+	if purpose == RuntimeImportPurpose {
+		if s.config.ImportApprovalIssuer == nil {
+			return DeviceStatus{}, ErrUnavailable
+		}
+		approved, err := s.config.ImportApprovalIssuer.receipt(ctx, tx, i, s.config.Audience, now)
+		if err != nil {
+			return DeviceStatus{}, err
+		}
+		receipt = &approved
+	}
 	if _, err := tx.ExecContext(ctx, `UPDATE device_challenges SET consumed=1 WHERE id=?`, proof.ChallengeID); err != nil {
 		return DeviceStatus{}, err
 	}
@@ -331,5 +356,5 @@ func (s *DeviceService) Verify(ctx context.Context, proof Proof, now time.Time) 
 	}
 	return DeviceStatus{InvitationID: i.ID, State: i.State, Revision: i.Revision,
 		KeyFingerprint: i.KeyFingerprint, RuntimeKeyFingerprint: i.RuntimeKeyFingerprint,
-		ApprovalExpiresAt: i.ApprovalExpiresAt, CredentialsIssued: false}, nil
+		ApprovalExpiresAt: i.ApprovalExpiresAt, CredentialsIssued: false, ImportApproval: receipt}, nil
 }
