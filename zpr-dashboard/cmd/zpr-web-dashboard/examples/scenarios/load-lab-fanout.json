@@ -1,8 +1,8 @@
 {
   "id": "load-lab-fanout",
   "organization_id": "load-lab",
-  "name": "Load Lab: randomized service fan-out",
-  "description": "Drive 200 logical clients across 200 TCP services for two minutes, with randomized requests and short client offline/restart cycles.",
+  "name": "Load Lab: 200-client randomized service fan-out",
+  "description": "Drive 200 logical clients across a fixed 200-service fleet for two minutes, with randomized requests and short client offline/restart cycles.",
   "steps": [
     {"action": "start_machine", "machine": "machine-03"},
     {"action": "start_machine", "machine": "machine-05"},
@@ -15,7 +15,7 @@
     {"action": "start_workload", "machine": "machine-03", "component": "finance-client"},
     {"action": "start_workload", "machine": "machine-05", "component": "echo-service"},
     {"action": "start_service_fleet", "machine": "machine-05"},
-    {"action": "stress_traffic", "machine": "machine-03", "component": "finance-client", "target": "echo-service", "timeout_seconds": 150}
+    {"action": "stress_traffic", "machine": "machine-03", "component": "finance-client", "target": "echo-service", "client_count": 200, "timeout_seconds": 150}
   ],
   "cleanup": [
     {"action": "stop_service_fleet", "machine": "machine-05"},

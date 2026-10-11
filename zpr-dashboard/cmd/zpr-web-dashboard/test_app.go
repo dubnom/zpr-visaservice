@@ -206,7 +206,7 @@ func runStressClientFleet(ctx context.Context, serviceAddress, sourceAddress, wo
 }
 
 func runStressClientFleetWithLogger(ctx context.Context, serviceAddress, sourceAddress, workload string, serviceCount, basePort, clientCount, requestDelayMinMS, requestDelayMaxMS, restartMinSeconds, restartMaxSeconds, restartPauseMinSeconds, restartPauseMaxSeconds int, writeEvent func(string, testAppEvent) error) error {
-	if !testClientWorkloads[workload] || serviceCount < 100 || serviceCount > 512 || clientCount < 100 || clientCount > 512 || basePort < 1024 || basePort+serviceCount-1 > 65535 {
+	if !testClientWorkloads[workload] || serviceCount < 100 || serviceCount > 512 || clientCount < 50 || clientCount > 512 || basePort < 1024 || basePort+serviceCount-1 > 65535 {
 		return errors.New("invalid stress client fleet configuration")
 	}
 	if requestDelayMinMS < 100 || requestDelayMaxMS < requestDelayMinMS || requestDelayMaxMS > 60000 || restartMinSeconds < 5 || restartMaxSeconds < restartMinSeconds || restartPauseMinSeconds < 1 || restartPauseMaxSeconds < restartPauseMinSeconds || restartPauseMaxSeconds > 30 {

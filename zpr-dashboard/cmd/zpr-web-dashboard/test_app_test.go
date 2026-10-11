@@ -83,7 +83,7 @@ func TestStressClientFleetRequestsAcrossGeneratedServices(t *testing.T) {
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
 	defer cancel()
-	err := runStressClientFleetWithLogger(ctx, "::1", "::1", "finance-client", serviceCount, basePort, 100, 1000, 1000, 5, 5, 1, 1, writeEvent)
+	err := runStressClientFleetWithLogger(ctx, "::1", "::1", "finance-client", serviceCount, basePort, 50, 1000, 1000, 5, 5, 1, 1, writeEvent)
 	if err != nil {
 		t.Fatal(err)
 	}

@@ -111,10 +111,13 @@ PH link rather than the machine-control link.
 Scenario files may reference at most ten distinct machines, and the runner also
 refuses to start a machine if that would put the live fleet above ten.
 
-`load-lab-fanout.json` starts 200 service ports on machine-05 and runs 200
-logical HTTP clients from machine-03 for two minutes. Each request opens a fresh
-TCP connection to a randomly selected service; each logical client periodically
-goes offline for a short pause and resumes. These clients share one
+The `load-lab-fanout-50.json`, `load-lab-fanout-100.json`,
+`load-lab-fanout-150.json`, and `load-lab-fanout.json` scenarios start the same
+200 service ports on machine-05 and run 50, 100, 150, or 200 logical HTTP clients
+from machine-03 for two minutes. This holds service fan-out constant while
+varying client load. Each request opens a fresh TCP connection to a randomly
+selected service; each logical client periodically goes offline for a short
+pause and resumes. These clients share one
 `finance-client` ZPR adapter identity/address, so this exercises flow and service
 fan-out rather than hundreds of independent adapter identities. Load Lab's
 README documents the generated runtime policy, provisioning steps, and bounds.

@@ -2,14 +2,19 @@
 
 Load Lab is a bounded local stress profile for the Simulator. It activates
 200 named TCP services on the existing `echo-service` adapter on machine-05,
-and 200 logical HTTP clients on the existing `finance-client` adapter on
-machine-03. The logical clients share one ZPR adapter identity and address, but
-open a fresh TCP connection for each request; this exercises flow grants and
-service fan-out, not 200 separately authenticated adapter identities.
+and a configurable 50-200 logical HTTP clients on the existing `finance-client`
+adapter on machine-03. The logical clients share one ZPR adapter identity and
+address, but open a fresh TCP connection for each request; this exercises flow
+grants and service fan-out, not 200 separately authenticated adapter identities.
+On Docker-multinode runs, the service fleet binds to the address granted on
+machine-05's `echo-service` TUN, and clients target that same address; the
+configured static address is retained for single-node runtimes.
 
-The `load-lab-fanout` scenario randomizes target service and request timing.
+The `load-lab-fanout-50`, `load-lab-fanout-100`, `load-lab-fanout-150`, and
+`load-lab-fanout` scenarios hold the 200-service fleet constant while increasing
+the client count from 50 to 200. Each randomizes target service and request timing.
 Each logical client periodically goes offline for a short randomized pause and
-then resumes. The scenario is limited to two machines, 200 clients, 200
+then resumes. The scenarios are limited to two machines, 200 clients, 200
 services, 120 seconds of traffic, and ports 10000-10199. Cleanup stops the
 traffic, service listeners, workloads, sessions, and machines.
 

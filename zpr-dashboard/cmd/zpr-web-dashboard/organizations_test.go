@@ -133,17 +133,28 @@ func TestLoadLabScenarioUsesBoundedTwoMachineStressProfile(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(scenarios) != 1 || scenarios[0].ID != "load-lab-fanout" {
+	if len(scenarios) != 4 {
 		t.Fatalf("Load Lab scenarios = %#v", scenarios)
 	}
 	machines := make(map[string]bool)
-	for _, step := range scenarios[0].Steps {
-		if step.Machine != "" {
-			machines[step.Machine] = true
+	clientCounts := make(map[int]bool)
+	for _, scenario := range scenarios {
+		for _, step := range scenario.Steps {
+			if step.Machine != "" {
+				machines[step.Machine] = true
+			}
+			if step.Action == "stress_traffic" {
+				clientCounts[step.ClientCount] = true
+			}
 		}
 	}
 	if len(machines) != 2 || !machines["machine-03"] || !machines["machine-05"] {
 		t.Fatalf("Load Lab scenario machines = %v", machines)
+	}
+	for _, count := range []int{50, 100, 150, 200} {
+		if !clientCounts[count] {
+			t.Errorf("Load Lab scenarios missing %d-client run", count)
+		}
 	}
 }
 

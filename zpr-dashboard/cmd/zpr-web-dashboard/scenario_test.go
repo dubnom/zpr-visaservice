@@ -93,6 +93,7 @@ func TestBundledSimulatorScenariosLoad(t *testing.T) {
 	if len(scenarios) != 5 {
 		t.Fatalf("loaded %d bundled scenarios, want 5", len(scenarios))
 	}
+
 	var gatewayScenario *simulatorScenario
 	for index := range scenarios {
 		if scenarios[index].ID == "internet-gateway-egress" {
@@ -142,6 +143,71 @@ func TestBundledSimulatorScenariosLoad(t *testing.T) {
 	}
 	if requests["finance-client:echo-service"] != 8 || requests["operations-client:metrics-service"] != 8 || len(requests) != 2 || services["echo-service"] != 1 || services["metrics-service"] != 2 || len(services) != 2 {
 		t.Fatalf("active-team HTTP cadence: requests=%v starts=%v", requests, services)
+	}
+}
+
+func TestLoadLabFanoutScenariosVaryClientCountOnly(t *testing.T) {
+	manifest := scenarioTestManifest()
+	manifest.OrganizationID = "load-lab"
+	manifest.Machines[2].Owner = "load.client"
+	manifest.Machines[4].Owner = "load.service"
+	for clientCount, name := range map[int]string{
+		50:  "load-lab-fanout-50.json",
+		100: "load-lab-fanout-100.json",
+		150: "load-lab-fanout-150.json",
+		200: "load-lab-fanout.json",
+	} {
+		data, err := os.ReadFile(filepath.Join("examples", "scenarios", name))
+		if err != nil {
+			t.Fatal(err)
+		}
+		var scenario simulatorScenario
+		if err := json.Unmarshal(data, &scenario); err != nil {
+			t.Fatalf("decode %s: %v", name, err)
+		}
+		if err := validateSimulatorScenario(scenario, manifest); err != nil {
+			t.Fatalf("%s rejected: %v", name, err)
+		}
+		if len(scenario.Steps) == 0 || scenario.Steps[len(scenario.Steps)-1].ClientCount != clientCount {
+			t.Errorf("%s client count override = %d, want %d", name, scenario.Steps[len(scenario.Steps)-1].ClientCount, clientCount)
+		}
+	}
+}
+
+func TestScenarioWorkloadAddressUsesGrantedMultinodeAddress(t *testing.T) {
+	commandCalls := 0
+	address, err := scenarioWorkloadAddress(context.Background(), "docker-multinode", "machine-05", "echo-service", func(_ context.Context, name string, args ...string) (string, error) {
+		commandCalls++
+		if name != "docker" || len(args) != 9 || !reflect.DeepEqual(args[2:], []string{"ip", "-j", "-6", "addr", "show", "dev", "tun3"}) {
+			t.Fatalf("unexpected workload address command: %s %v", name, args)
+		}
+		return `[{"addr_info":[{"local":"fd00:1:7::1","scope":"global"},{"local":"fd5a:5052:adda:1:1234::1","scope":"global"}]}]`, nil
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if address != "fd5a:5052:adda:1:1234::1" {
+		t.Fatalf("workload address = %q, want granted multinode address", address)
+	}
+	if commandCalls != 1 {
+		t.Fatalf("address command calls = %d, want 1", commandCalls)
+	}
+}
+
+func TestScenarioWorkloadAddressKeepsSingleNodeAddress(t *testing.T) {
+	commandCalls := 0
+	address, err := scenarioWorkloadAddress(context.Background(), "linux-one-node", "machine-05", "echo-service", func(context.Context, string, ...string) (string, error) {
+		commandCalls++
+		return "", errors.New("unexpected command")
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if address != "fd00:1:7::1" {
+		t.Fatalf("workload address = %q, want configured single-node address", address)
+	}
+	if commandCalls != 0 {
+		t.Fatalf("address command calls = %d, want 0", commandCalls)
 	}
 }
 
