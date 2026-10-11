@@ -101,7 +101,7 @@
     if (!operatorLoginScriptLoading) {
       operatorLoginScriptLoading = new Promise((resolve, reject) => {
         const script = document.createElement("script");
-        script.src = "/operator-login.js?v=7";
+        script.src = "/operator-login.js?v=11";
         script.addEventListener("load", resolve, { once: true });
         script.addEventListener("error", reject, { once: true });
         document.head.append(script);

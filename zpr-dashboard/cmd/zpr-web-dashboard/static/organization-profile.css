@@ -1,0 +1,67 @@
+.organization-duplicate-dialog [hidden],
+#organization-profile-editor [hidden],
+#organization-definitions-editor [hidden] {
+  display: none !important;
+}
+
+body:has(#organization-profile-editor[open], #organization-duplicate-dialog[open], #organization-definitions-editor[open], #directory-editor-dialog[open]) {
+  overflow: hidden;
+}
+
+.sim-editor-page:is(#organization-profile-editor, #organization-definitions-editor, #directory-editor-dialog)[open] {
+  position: fixed;
+  z-index: 6;
+  inset: 16px;
+  box-sizing: border-box;
+  width: calc(100vw - 32px);
+  height: calc(100dvh - 32px);
+  min-height: 0;
+  max-height: calc(100dvh - 32px);
+  overflow: auto;
+  padding: 16px;
+  background: var(--panel);
+}
+
+#organization-definitions-editor :is(input, select) {
+  box-sizing: border-box;
+  min-width: 0;
+  max-width: 100%;
+}
+
+dialog[aria-label="Review AI definition changes"] pre {
+  max-height: 50vh;
+  overflow: auto;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.organization-duplicate-dialog {
+  max-width: min(960px, calc(100vw - 32px));
+}
+
+.organization-duplicate-dialog pre {
+  max-height: 40vh;
+  overflow: auto;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.organization-duplicate-dialog input,
+.organization-duplicate-dialog textarea {
+  box-sizing: border-box;
+  min-width: 0;
+  max-width: 100%;
+}
+
+@media (max-width: 900px) {
+  .organization-duplicate-dialog :is(input:not([type="checkbox"]), textarea),
+  :is(#organization-profile-editor, #organization-definitions-editor, #directory-editor-dialog) :is(input, textarea, select) {
+    font-size: 16px;
+  }
+
+  @media (max-width: 700px) {
+    :is(.organization-duplicate-dialog, #organization-definitions-editor) .assistant-settings {
+      grid-template-columns: minmax(0, 1fr);
+    }
+  }
+}

@@ -287,19 +287,23 @@ func loadSimulatorLoadTestProfile(directory, organizationID string) (*simulatorL
 }
 
 func validateSimulatorOrganization(organization simulatorOrganization) error {
+	return validateOrganizationDefinition(organization, false)
+}
+
+func validateOrganizationDefinition(organization simulatorOrganization, incomplete bool) error {
 	if !validScenarioID(organization.ID) || strings.TrimSpace(organization.Name) == "" || strings.TrimSpace(organization.Description) == "" {
 		return errors.New("id, name, and description are required")
 	}
-	if organization.Runtime.Driver != "linux-one-node" && organization.Runtime.Driver != "docker-multinode" {
+	if organization.Runtime.Driver != "linux-one-node" && organization.Runtime.Driver != "docker-multinode" && !(incomplete && organization.Runtime.Driver == "") {
 		return errors.New("runtime driver must be linux-one-node or docker-multinode")
 	}
-	if organization.Runtime.Topology != "single-node" && organization.Runtime.Topology != "multi-node" {
+	if organization.Runtime.Topology != "single-node" && organization.Runtime.Topology != "multi-node" && !(incomplete && organization.Runtime.Topology == "") {
 		return errors.New("runtime topology must be single-node or multi-node")
 	}
-	if organization.Runtime.Driver == "linux-one-node" && organization.Runtime.Topology != "single-node" {
+	if organization.Runtime.Driver == "linux-one-node" && organization.Runtime.Topology != "single-node" && !(incomplete && organization.Runtime.Topology == "") {
 		return errors.New("linux-one-node runtime requires single-node topology")
 	}
-	if organization.Runtime.Topology == "single-node" && len(organization.Runtime.Nodes) != 1 || organization.Runtime.Topology == "multi-node" && len(organization.Runtime.Nodes) < 2 {
+	if (!incomplete || len(organization.Runtime.Nodes) > 0) && (organization.Runtime.Topology == "single-node" && len(organization.Runtime.Nodes) != 1 || organization.Runtime.Topology == "multi-node" && len(organization.Runtime.Nodes) < 2) {
 		return fmt.Errorf("runtime topology %q has an invalid node count", organization.Runtime.Topology)
 	}
 	seenNodes := make(map[string]bool, len(organization.Runtime.Nodes))
@@ -331,16 +335,16 @@ func validateSimulatorOrganization(organization simulatorOrganization) error {
 		}
 		seenNodes[node.ID] = true
 	}
-	if !strings.Contains(organization.Directory.BaseDN, "=") {
+	if !strings.Contains(organization.Directory.BaseDN, "=") && !(incomplete && organization.Directory.BaseDN == "") {
 		return errors.New("directory base_dn is required")
 	}
-	if organization.Directory.SeedMode != "pregen" && organization.Directory.SeedMode != "ldif" {
+	if organization.Directory.SeedMode != "pregen" && organization.Directory.SeedMode != "ldif" && !(incomplete && organization.Directory.SeedMode == "") {
 		return fmt.Errorf("unsupported directory seed_mode %q", organization.Directory.SeedMode)
 	}
-	if len(organization.Directory.LDIFFiles) == 0 {
+	if len(organization.Directory.LDIFFiles) == 0 && !incomplete {
 		return errors.New("directory requires at least one LDIF seed file")
 	}
-	if organization.Directory.HealthUID == "" || len(organization.Directory.IdentityMappings) == 0 || len(organization.Directory.Attributes) == 0 {
+	if !incomplete && (organization.Directory.HealthUID == "" || len(organization.Directory.IdentityMappings) == 0 || len(organization.Directory.Attributes) == 0) {
 		return errors.New("directory requires a health uid, identity mappings, and attributes")
 	}
 	for identity, attribute := range organization.Directory.UserIdentityMappings {

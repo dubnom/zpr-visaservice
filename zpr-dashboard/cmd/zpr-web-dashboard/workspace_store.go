@@ -105,7 +105,7 @@ func openWorkspaceRepository(path string) (*workspaceRepository, error) {
 	}
 	db.SetMaxOpenConns(1)
 	db.SetMaxIdleConns(1)
-	if _, err := db.Exec(`PRAGMA journal_mode = WAL; PRAGMA synchronous = FULL; PRAGMA foreign_keys = ON; PRAGMA busy_timeout = 5000;`); err != nil {
+	if _, err := db.Exec(`PRAGMA busy_timeout = 5000; PRAGMA journal_mode = WAL; PRAGMA synchronous = FULL; PRAGMA foreign_keys = ON;`); err != nil {
 		_ = db.Close()
 		return nil, fmt.Errorf("configure workspace database: %w", err)
 	}
@@ -390,7 +390,7 @@ func scanWorkspaceArtifact(row rowScanner) (workspaceArtifact, error) {
 }
 
 func validWorkspaceArtifact(kind, id string) bool {
-	if kind != "scenario" && kind != "directory" {
+	if kind != "scenario" && kind != "directory" && kind != workspaceOrganizationKind && kind != workspaceOrganizationBundleKind {
 		return false
 	}
 	return validScenarioID(id)

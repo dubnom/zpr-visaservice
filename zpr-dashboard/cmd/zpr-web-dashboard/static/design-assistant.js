@@ -8,12 +8,17 @@ window.mountSimulatorDesignAssistant = function mountSimulatorDesignAssistant(co
   const controller = window.ZPRAssistant.mount({
     ...options, pane, prefix: containerID,
     unavailableLabel: "Unavailable",
-    disclosure: "Asking Claude sends the current organization/scenario context and conversation to Anthropic. Suggestions never save, publish, activate or run automatically.",
+    disclosure: options.disclosure || "Asking Claude sends the current organization/scenario context and conversation to Anthropic. Suggestions never save, publish, activate or run automatically.",
     request: (conversation) => {
       const context = options.getContext();
-      return window.ZPRAssistant.jsonRequest("/api/simulator/design-assistant", {
+      return window.ZPRAssistant.jsonRequest(options.scope === "organization-definitions"
+        ? `/api/simulator/organizations/${encodeURIComponent(context.organization_id)}/draft/definitions/assistant`
+        : options.scope === "organization-profile"
+          ? `/api/simulator/organizations/${encodeURIComponent(context.organization_id)}/${context.draft_bundle ? "draft/" : ""}profile/assistant` : "/api/simulator/design-assistant", {
         method: "POST", headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ ...conversation, scope: options.scope, organization_id: context.organization_id, scenario: context.scenario }),
+        body: JSON.stringify({ ...conversation, scope: options.scope, organization_id: context.organization_id, scenario: context.scenario,
+          profile: options.scope === "organization-profile" ? JSON.parse(context.profile_source) : undefined,
+          bundle: options.scope === "organization-definitions" ? { version: 1, profile: JSON.parse(context.profile_source), documents: JSON.parse(context.documents_source) } : undefined }),
       });
     },
     watch(invalidate) {
@@ -31,5 +36,5 @@ window.mountSimulatorDesignAssistant = function mountSimulatorDesignAssistant(co
   });
   window.ZPRAssistant.jsonRequest("/api/simulator/assistant/status", { cache: "no-store" })
     .then(controller.setStatus).catch(controller.statusError);
-  return { reset: controller.reset };
+  return { reset: controller.reset, render: controller.render };
 };

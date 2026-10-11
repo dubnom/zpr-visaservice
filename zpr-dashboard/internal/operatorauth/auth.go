@@ -38,7 +38,7 @@ func ValidPermission(permission string) bool {
 		"gateway.read", "gateway.analyze", "gateway.edit",
 		"change.read", "change.submit", "change.review",
 		"simulator.read", "simulator.control",
-		"organization.read", "organization.activate", "organization.restore",
+		"organization.read", "organization.create", "organization.analyze", "organization.edit", "organization.activate", "organization.restore",
 		"scenario.read", "scenario.analyze", "scenario.edit", "scenario.publish", "scenario.archive", "scenario.run", "scenario.cancel",
 		"directory.read", "directory.edit", "directory.publish",
 		"device.lifecycle", "device.session", "device.workloads",

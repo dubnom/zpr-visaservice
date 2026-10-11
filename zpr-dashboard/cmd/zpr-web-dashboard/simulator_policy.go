@@ -33,6 +33,41 @@ func simulatorAPIPermission(method, requestPath string) (permission, explicitOrg
 	}
 	if organization != "" {
 		switch {
+		case len(parts) == 6 && parts[4] == "create" && parts[5] == "check" && method == http.MethodPost,
+			len(parts) == 5 && parts[4] == "create" && method == http.MethodPost:
+			return "organization.create", organization, true
+		case len(parts) == 6 && parts[4] == "draft" && parts[5] == "export" && method == http.MethodGet:
+			return "organization.read", organization, true
+		case len(parts) == 7 && parts[4] == "duplicates" && parts[6] == "check" && method == http.MethodPost:
+			return "organization.analyze", organization, true
+		case len(parts) == 6 && parts[4] == "duplicates" && method == http.MethodPost:
+			return "organization.create", parts[5], true
+		case len(parts) == 5 && parts[4] == "draft" && method == http.MethodGet:
+			return "organization.read", organization, true
+		case len(parts) == 6 && parts[4] == "draft" && parts[5] == "definitions" && method == http.MethodGet,
+			len(parts) == 7 && parts[4] == "draft" && parts[5] == "definitions" && parts[6] == "revisions" && method == http.MethodGet,
+			len(parts) == 8 && parts[4] == "draft" && parts[5] == "definitions" && parts[6] == "revisions" && method == http.MethodGet:
+			return "organization.read", organization, true
+		case len(parts) == 6 && parts[4] == "draft" && parts[5] == "definitions" && method == http.MethodPut:
+			return "organization.edit", organization, true
+		case len(parts) == 7 && parts[4] == "draft" && parts[5] == "definitions" && (parts[6] == "check" || parts[6] == "assistant") && method == http.MethodPost:
+			return "organization.analyze", organization, true
+		case len(parts) == 6 && parts[4] == "draft" && parts[5] == "profile" && method == http.MethodGet,
+			len(parts) == 7 && parts[4] == "draft" && parts[5] == "profile" && parts[6] == "revisions" && method == http.MethodGet,
+			len(parts) == 8 && parts[4] == "draft" && parts[5] == "profile" && parts[6] == "revisions" && method == http.MethodGet:
+			return "organization.read", organization, true
+		case len(parts) == 6 && parts[4] == "draft" && parts[5] == "profile" && method == http.MethodPut:
+			return "organization.edit", organization, true
+		case len(parts) == 7 && parts[4] == "draft" && parts[5] == "profile" && (parts[6] == "check" || parts[6] == "assistant") && method == http.MethodPost:
+			return "organization.analyze", organization, true
+		case len(parts) == 5 && parts[4] == "profile" && method == http.MethodGet,
+			len(parts) == 6 && parts[4] == "profile" && parts[5] == "revisions" && method == http.MethodGet,
+			len(parts) == 7 && parts[4] == "profile" && parts[5] == "revisions" && method == http.MethodGet:
+			return "organization.read", organization, true
+		case len(parts) == 5 && parts[4] == "profile" && method == http.MethodPut:
+			return "organization.edit", organization, true
+		case len(parts) == 6 && parts[4] == "profile" && (parts[5] == "check" || parts[5] == "assistant") && method == http.MethodPost:
+			return "organization.analyze", organization, true
 		case len(parts) == 5 && parts[4] == "activate" && method == http.MethodPost:
 			return "organization.activate", organization, true
 		case len(parts) == 5 && parts[4] == "restore-base" && method == http.MethodPost:
@@ -64,6 +99,8 @@ func simulatorAPIPermission(method, requestPath string) (permission, explicitOrg
 	}
 	if len(parts) == 3 {
 		switch {
+		case method == http.MethodGet && parts[2] == "organization-drafts":
+			return "organization.read", "", true
 		case method == http.MethodGet && strings.Contains("|status|machine-logs|adapter-logs|trusted-source|organizations|activation-log|activity|scenarios|", "|"+parts[2]+"|"):
 			permission := "simulator.read"
 			if parts[2] == "organizations" {
@@ -120,7 +157,7 @@ func simulatorAPIProxy(auth operatorRequestAuthorizer, resolveOrganization simul
 			writePolicyError(w, http.StatusForbidden, "No operator policy is defined for this Simulator API route.")
 			return
 		}
-		organizationCatalog := r.Method == http.MethodGet && r.URL.Path == "/api/simulator/organizations"
+		organizationCatalog := r.Method == http.MethodGet && (r.URL.Path == "/api/simulator/organizations" || r.URL.Path == "/api/simulator/organization-drafts")
 		if organization == "" && !organizationCatalog {
 			if resolveOrganization == nil {
 				writePolicyError(w, http.StatusServiceUnavailable, "Simulator operator organization context is unavailable.")
@@ -138,6 +175,14 @@ func simulatorAPIProxy(auth operatorRequestAuthorizer, resolveOrganization simul
 			log.Printf("Simulator API authorization denied (HTTP %d)", http.StatusForbidden)
 			writePolicyError(w, http.StatusForbidden, "An authorized named-user session, organization scope, and mutation CSRF proof are required.")
 			return
+		}
+		parts := strings.Split(strings.Trim(r.URL.Path, "/"), "/")
+		if len(parts) >= 6 && parts[2] == "organizations" && parts[4] == "duplicates" {
+			if _, err := auth.Authorize(r, parts[3], "organization.read"); err != nil {
+				log.Printf("Simulator organization duplication source read denied (HTTP %d)", http.StatusForbidden)
+				writePolicyError(w, http.StatusForbidden, "Organization duplication also requires source organization read access.")
+				return
+			}
 		}
 		r = r.WithContext(context.WithValue(r.Context(), simulatorIdentityContextKey{}, identity))
 		next.ServeHTTP(w, r)

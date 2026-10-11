@@ -205,6 +205,37 @@ func runSimulator(listen string) error {
 	mux.HandleFunc("GET /api/simulator/organizations", handleSimulatorOrganizations)
 	mux.HandleFunc("GET /api/simulator/activation-log", handleSimulatorActivationLog)
 	mux.HandleFunc("GET /api/simulator/organizations/{organization}/directory/revisions/{revision}", handleWorkspaceDirectoryRevisionGet)
+	mux.HandleFunc("GET /api/simulator/organizations/{organization}/profile", handleOrganizationDraft)
+	mux.HandleFunc("GET /api/simulator/organization-drafts", handleOrganizationDraftCatalog)
+	mux.HandleFunc("POST /api/simulator/organizations/{organization}/create/check", handleOrganizationCreate)
+	mux.HandleFunc("POST /api/simulator/organizations/{organization}/create", handleOrganizationCreate)
+	mux.HandleFunc("GET /api/simulator/organizations/{organization}/draft/export", handleOrganizationBundleExport)
+	mux.HandleFunc("POST /api/simulator/organizations/{organization}/duplicates/{target}/check", handleOrganizationDuplicate)
+	mux.HandleFunc("POST /api/simulator/organizations/{organization}/duplicates/{target}", handleOrganizationDuplicate)
+	mux.HandleFunc("GET /api/simulator/organizations/{organization}/draft/profile", handleOrganizationBundleProfile)
+	mux.HandleFunc("PUT /api/simulator/organizations/{organization}/draft/profile", handleOrganizationBundleProfile)
+	mux.HandleFunc("POST /api/simulator/organizations/{organization}/draft/profile/check", handleOrganizationBundleProfile)
+	mux.HandleFunc("GET /api/simulator/organizations/{organization}/draft/profile/revisions", handleOrganizationBundleHistory)
+	mux.HandleFunc("GET /api/simulator/organizations/{organization}/draft/profile/revisions/{revision}", handleOrganizationBundleHistory)
+	mux.HandleFunc("GET /api/simulator/organizations/{organization}/draft", handleOrganizationBundleGet)
+	mux.HandleFunc("GET /api/simulator/organizations/{organization}/draft/definitions", handleOrganizationDefinitions)
+	mux.HandleFunc("PUT /api/simulator/organizations/{organization}/draft/definitions", handleOrganizationDefinitions)
+	mux.HandleFunc("POST /api/simulator/organizations/{organization}/draft/definitions/check", handleOrganizationDefinitions)
+	mux.HandleFunc("GET /api/simulator/organizations/{organization}/draft/definitions/revisions", handleOrganizationDefinitionsHistory)
+	mux.HandleFunc("GET /api/simulator/organizations/{organization}/draft/definitions/revisions/{revision}", handleOrganizationDefinitionsHistory)
+	mux.HandleFunc("POST /api/simulator/organizations/{organization}/draft/definitions/assistant", func(w http.ResponseWriter, r *http.Request) {
+		simulatorDesignAssistantHandler(newClaudeAssistant())(w, r)
+	})
+	mux.HandleFunc("POST /api/simulator/organizations/{organization}/draft/profile/assistant", func(w http.ResponseWriter, r *http.Request) {
+		simulatorDesignAssistantHandler(newClaudeAssistant())(w, r)
+	})
+	mux.HandleFunc("PUT /api/simulator/organizations/{organization}/profile", handleOrganizationDraft)
+	mux.HandleFunc("POST /api/simulator/organizations/{organization}/profile/check", handleOrganizationDraft)
+	mux.HandleFunc("GET /api/simulator/organizations/{organization}/profile/revisions", handleOrganizationDraftHistory)
+	mux.HandleFunc("GET /api/simulator/organizations/{organization}/profile/revisions/{revision}", handleOrganizationDraftHistory)
+	mux.HandleFunc("POST /api/simulator/organizations/{organization}/profile/assistant", func(w http.ResponseWriter, r *http.Request) {
+		simulatorDesignAssistantHandler(newClaudeAssistant())(w, r)
+	})
 	mux.HandleFunc("GET /api/simulator/organizations/{organization}/directory/revisions", handleWorkspaceDirectoryRevisions)
 	mux.HandleFunc("GET /api/simulator/organizations/{organization}/directory", handleWorkspaceDirectoryGet)
 	mux.HandleFunc("PUT /api/simulator/organizations/{organization}/directory", handleWorkspaceDirectorySave)
@@ -237,7 +268,7 @@ func runSimulator(listen string) error {
 	mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path == "/" {
 			target := "/organizations.html"
-			if result := r.URL.Query().Get("operator_login"); result == "failed" || result == "denied" {
+			if result := r.URL.Query().Get("operator_login"); result == "failed" || result == "denied" || result == "expired" {
 				target += "?operator_login=" + result
 			}
 			http.Redirect(w, r, target, http.StatusFound)
