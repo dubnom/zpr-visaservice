@@ -33,6 +33,112 @@ explicit organization-switch approval/cancellation and stale-approval handling.
 These are deterministic UI regressions, not live network or multi-node acceptance
 tests; unfinished protocol, teardown, and recovery work remains separate.
 
+### Opt-in organization/scenario acceptance matrix
+
+`scripts/simulator-matrix.mjs` is a long-running Simulator-only acceptance
+runner. It is deliberately excluded from `make test`, `make test-all` and the
+normal Playwright suite. It needs Node.js 22+ and no additional packages.
+
+Review the plan first:
+
+```sh
+node scripts/simulator-matrix.mjs --url http://127.0.0.1:8788
+```
+
+Planning discovers each visible organization's published scenarios without
+activating organizations or starting scenarios. Catalog GETs may cause the
+Simulator's existing workspace seed importer to initialize its catalog.
+Unpublished scenarios fail preflight rather than being silently skipped or
+automatically published. Archived scenarios are not in the catalog. An
+organization with no scenarios is recorded with an empty list; an entirely
+empty matrix fails.
+
+Run only after explicitly reserving the Simulator/runtime for this test:
+
+```sh
+node scripts/simulator-matrix.mjs \
+  --url http://127.0.0.1:8788 \
+  --execute --exclusive-runtime \
+  --report /absolute/path/to/new-simulator-matrix-report.json
+```
+
+The report must be a new file in an existing directory. The runner creates it
+with owner-only permissions and atomically checkpoints progress. It records
+organization/scenario IDs, published revisions, timing, step action/status
+evidence, failures and restoration outcome, not raw log output or authentication
+headers. Exit status is nonzero for any scenario, preflight or restoration
+failure. No later scenario is started after the first error.
+
+For an authenticated Simulator, use `--headers-file /private/headers.json`
+containing the current authorized session's `Cookie` and `X-ZPR-CSRF` header
+values. Keep this file outside source control with owner-only permissions.
+The runner supplies the exact Simulator Origin on mutations, does not log
+headers, does not bypass authorization and does not automatically sign in.
+The session must cover the selected organizations and activation/run/cancel
+permissions for the duration of the test. Session expiry stops the test;
+recovery that cannot authenticate is reported for operator action.
+For trusted local HTTPS certificates, use the existing Node trust mechanism
+`NODE_EXTRA_CA_CERTS`; do not disable TLS verification.
+
+Execution behavior:
+
+- Require no running/cleaning scenario or ongoing activation before starting.
+  Require machine users logged out, workload selections empty, and all reported
+  scenario-machine containers stopped/exited/missing. A normal empty session's
+  `workloads: null` is accepted; unknown runtime states are not.
+- Sequentially activate each organization, wait for completed activation and
+  matching runtime/manifest identity, then run every published scenario.
+  Check that its published definition/revision has not changed before running.
+- Verify run identity, revision and complete step results, including cleanup.
+  Actual traffic success/denial checks are the scenario executor's assertions;
+  this runner does not invent extra traffic tests absent from a scenario.
+- Confirm logged-out sessions, empty workload selections and stopped scenario
+  machines after every run. This is state-leak/cleanup verification, not a
+  blanket assertion that every production service is stopped.
+- Stop on the first failed scenario, including an isolated traffic-step failure;
+  verify cleanup before attempting safe restoration and do not start later
+  scenarios or organizations. Also stop on any infrastructure
+  or cleanup-step failure, timeout, malformed/missing evidence, changed revision,
+  unexpected organization/run replacement, or API failure. Infrastructure
+  includes machine startup, controller readiness, login, DNS and other
+  non-traffic actions.
+- On timeout or SIGINT/SIGTERM, cancel only a run whose start identity the
+  runner owns and wait up to five minutes for cleanup. Never cancel an
+  unrelated run. Lost/ambiguous start acknowledgements require operator
+  recovery if a run remains active.
+- Restore the original **organization selection** through normal activation
+  when the runtime is idle and clean. This resets that organization's runtime;
+  it does not reconstruct prior containers, sessions or process state.
+  If cleanup, activation or ownership is unresolved, stop and report failed
+  restoration rather than resetting over evidence or another operator's work.
+- Use a local per-origin lock to prevent two copies of this runner overlapping.
+  The lock cannot exclude browser users, another host or other scripts:
+  `--exclusive-runtime` is an operator commitment, not a distributed lock.
+  SIGKILL/crash can leave a lock and an active run; inspect both and recover
+  the runtime before removing the specifically named stale lock.
+
+Optional controls: `--organizations alpha,beta` selects a subset and order;
+without it every organization visible to the authorized catalog is selected
+in ID order. Defaults are 20 minutes per activation, two hours per scenario
+and two seconds between polls. Override with `--activation-timeout-seconds`,
+`--scenario-timeout-seconds`, and `--poll-seconds`. The overall duration grows
+with the number and length of scenarios; no automatic schedule is enabled.
+
+**When to use it:** reserve a maintenance/acceptance window after organization
+activation, runtime lifecycle, bootstrap/session recovery, routing/policy or
+scenario-executor changes, and before a Simulator release. A manually approved
+overnight run is appropriate. Do not run it during Great Lakes recovery,
+provisioning pilots, demonstrations or unrelated GUI work. For a small change,
+use the focused tests first; choose a subset for diagnosis and the complete
+matrix for release certification. Decide the actual window before execution.
+
+Fast runner regression tests use fake APIs and a disposable loopback HTTP
+server; they never touch the live Simulator:
+
+```sh
+node --test scripts/simulator-matrix.test.mjs
+```
+
 ## Project layout
 
 ```
@@ -1909,6 +2015,16 @@ and restores the running style. Retained tails are browser-memory only, scoped
 to the active organization, and cleared when organizations change or the page
 is reloaded; they are not a durable archive.
 
+Both maps place adapters without reported node attachments in a collapsed
+**Detached** tray with Inspect actions and registered service names. They do
+not affect Fit or SVG bounds. Isolated nodes remain visible. Observed attachments
+move adapters onto the map; detachments return them to the tray, with a visible
+lost-connection count. History is browser-local and scoped to the organization;
+an unobserved attachment is not proof that a component has never connected.
+The tray stays expanded across refreshes and map switches.
+Actor details show the reported ZPR address, attachment status/node, registered
+services and snapshot time. Repeated Admin inventory entries for the same common
+name are resolved once by Control-Service, matching the Admin actor lookup key.
 Control Room's **Adapter Logs** page shows independently configured production
 adapter/controller log sources. Its read-only API passes through the
 authenticated Control Service to the production collector, without reading
@@ -2003,12 +2119,16 @@ exhaust its budget; the existing per-source bounds still apply.
 The unfiltered Diagnostics API remains unchanged. Its Control Room page is
 named **Services**, retaining `#diagnostics` for existing bookmarks (`#services`
 already identifies the Status service-descriptor tab). Services shows only
-non-node service/trusted-source telemetry: metrics, logs, freshness and errors.
+non-node service/trusted-source telemetry: logs, freshness and errors.
 The main Services page has a service selector and the standard shared
 `log-panel.js` viewer, rather than separate log lists for every source.
-Selecting a service displays its health, sortable metrics and logs; the service
-count and telemetry summary still cover the non-node inventory. Filtering
-matches service identity, metrics and log bodies. Selection survives reordered
+Selecting a service displays its health and logs; the service
+count and telemetry summary still cover the non-node inventory. The provisional
+filter and metrics display have been removed pending a future real filter.
+The API may return multiple service/trusted-source entries, but only the
+selected entry's health and logs are displayed. Metrics remain in the backend
+contract and Nodes; Services neither renders nor validates unused metrics.
+Selection survives reordered
 refreshes, and each service retains its own scroll/follow position.
 The viewer provides Pause/Resume, explicit Refresh even while paused, Wrap lines
 (initially off), and standard maximize/restore controls with Escape support.
