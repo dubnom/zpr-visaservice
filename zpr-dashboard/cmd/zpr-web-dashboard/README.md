@@ -218,6 +218,9 @@ unavailable sources, including disconnected retained history.
 adapter/controller type; **Hide all adapters** closes those panels. Individual
 panels can still be added or removed. The **Wrap** checkbox applies to every
 panel, including maximized panels, and starts checked on each page load.
+Bundled adapter titles use the source ID; the organization remains part of the
+internal inventory ID. The source ID identifies adapters without another
+“adapter” suffix.
 When no sources match the selected log type and running filter, the page states
 that no adapters/controllers are available and disables adding/showing panels.
 This differs from deliberately closing all panels when sources are available.
@@ -308,6 +311,13 @@ before the existing Control-Service is stopped. Use a dedicated Control-Service
 client certificate signed by the provider's trusted CA; do not reuse a Visa
 Service client key. Both services must support the exact `since=24h` bootstrap
 query (not Go's compound duration `24h0m0s`).
+
+During local organization activation, if the configured feed network is named
+`zpr-<organization-id>` and belongs to a different organization than the one
+being activated, the stack omits that feed and network for the new
+Control-Service instance. The operator files are left unchanged; activating the
+matching organization loads them again. This keeps an organization-scoped feed
+from coupling otherwise independent runtime networks.
 
 The trusted-service listener must trust that Control-Service client certificate.
 Set its `-ldap-changes-retention` and slapd `logpurge` age to 24 hours (neither
@@ -503,7 +513,7 @@ data. Older Visa Service versions without the status endpoint fall back to
 policy service descriptors and show **unreported**.
 The local `demo_ldap` source optionally links to a separate phpLDAPadmin tab if
 `ZPR_DEMO_LDAP_EDITOR_URL` is set to a `http://127.0.0.1:<port>/` URL. No other
-source receives an editor link; the browser authenticates directly to the
+source receives this legacy fallback; the browser authenticates directly to the
 editor with a separate LDAP admin login. The monitor does not proxy LDAP edits
 or store the admin password.
 
@@ -512,6 +522,11 @@ Control-Service can provide additional provider manager links with
 HTTPS is accepted for remote managers; plain HTTP is limited to loopback.
 URLs containing credentials or unsupported schemes are ignored. The setting is
 server-side and the browser receives only the validated link for each source.
+The local stack also loads `dashboard-stack/provider-managers.json` (override
+with `ZPR_PROVIDER_MANAGER_URLS_FILE`). Explicit `ZPR_PROVIDER_MANAGER_URLS`
+entries override registered entries by source name, preserving other sources.
+Restart Control-Service after changing this registry; Control Room does not
+read Simulator state or discover manager URLs through Simulator.
 
 ## ZPR Config Drafts
 

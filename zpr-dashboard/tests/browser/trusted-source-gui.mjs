@@ -17,6 +17,28 @@ export function registerTrustedSourceGUITests(test, expect) {
     await expect(manager).toContainText("↗");
     await expect(manager).toHaveAttribute("href", `${appURL}/?manager=ldap`);
     await expect(manager).toHaveAttribute("target", "zpr-directory-manager");
+    const assertReadable = async () => {
+      const contrast = await manager.evaluate(link => {
+        const channels = value => value.match(/[\d.]+/g).slice(0, 3).map(Number);
+        const luminance = value => channels(value).map(channel => {
+          const normalized = channel / 255;
+          return normalized <= 0.04045 ? normalized / 12.92 : ((normalized + 0.055) / 1.055) ** 2.4;
+        }).reduce((sum, channel, index) => sum + channel * [0.2126, 0.7152, 0.0722][index], 0);
+        const background = luminance(getComputedStyle(link).backgroundColor);
+        return [...link.querySelectorAll("span")].map(span => {
+          const foreground = luminance(getComputedStyle(span).color);
+          return (Math.max(foreground, background) + 0.05) / (Math.min(foreground, background) + 0.05);
+        });
+      });
+      for (const ratio of contrast) expect(ratio).toBeGreaterThanOrEqual(4.5);
+    };
+    await assertReadable();
+    await manager.hover();
+    await assertReadable();
+    await page.mouse.move(0, 0);
+    await manager.focus();
+    await expect(manager).toBeFocused();
+    await assertReadable();
     await expect(rows.last().getByRole("link")).toHaveCount(0);
     await expect(page.locator('#page-sources th').filter({ hasText: /^MANAGE$/ })).toHaveCSS("font-weight", "700");
   });

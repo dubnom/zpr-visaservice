@@ -139,6 +139,23 @@ previous_profile="$dashboard_dir/cmd/zpr-web-dashboard/examples/organizations/$p
 previous_driver=$(jq -er '.runtime.driver' "$previous_profile")
 previous_base_dn=$(jq -er '.directory.base_dn' "$previous_profile")
 previous_bind_dn="cn=zpr-reader,ou=Service Accounts,$previous_base_dn"
+trusted_change_feeds_disabled=
+trusted_change_feeds_network=${ZPR_TRUSTED_CHANGE_FEEDS_NETWORK:-}
+if [ -z "$trusted_change_feeds_network" ] &&
+   [ -r "$runtime_dir/dashboard-stack/trusted-change-feeds.network" ]; then
+    trusted_change_feeds_network=$(tr -d '\r\n' < "$runtime_dir/dashboard-stack/trusted-change-feeds.network")
+fi
+case "$trusted_change_feeds_network" in
+    zpr-*)
+        trusted_change_feeds_organization=${trusted_change_feeds_network#zpr-}
+        trusted_change_feeds_profile="$dashboard_dir/cmd/zpr-web-dashboard/examples/organizations/$trusted_change_feeds_organization.json"
+        if [ -r "$trusted_change_feeds_profile" ] &&
+           [ "$trusted_change_feeds_organization" != "$organization" ]; then
+            trusted_change_feeds_disabled=1
+            echo "Omitting trusted feed scoped to $trusted_change_feeds_organization while activating $organization"
+        fi
+        ;;
+esac
 if [ "$organization_driver" = docker-multinode ] || [ "$previous_driver" = docker-multinode ]; then
     report_activation_status "Preparing trusted-service helper before stopping runtime"
     sh "$script_dir/prepare-trusted-service.sh"
@@ -189,6 +206,10 @@ restore_organization_base() {
     fi
 
     if [ "$organization_driver" = "docker-multinode" ]; then
+        visa_state="$runtime_dir/multinode/$organization/state/redis"
+        if [ -d "$visa_state" ]; then
+            cp -R "$visa_state" "$backup_directory/visa-redis"
+        fi
         directory_root="$runtime_dir/multinode/$organization/directory"
         for file_path in "$directory_root/seed-complete" "$directory_root/company.ldif" "$directory_root/slapd.conf"; do
             if [ -f "$file_path" ]; then
@@ -217,7 +238,12 @@ start_runtime() {
             ;;
         docker-multinode)
             stop_linux_one_node_runtime
-            ZPR_ORGANIZATION_ID="$runtime_id" ZPR_RUNTIME_ROOT="$(multinode_runtime_dir "$runtime_id")" bash "$multinode_deploy" deploy
+            runtime_restore=0
+            if [ "${2:-}" = restore-base ] ||
+               [ -f "$(multinode_runtime_dir "$runtime_id")/fresh-visa-state-approved" ]; then
+                runtime_restore=1
+            fi
+            ZPR_RESTORE_BASE="$runtime_restore" ZPR_ORGANIZATION_ID="$runtime_id" ZPR_RUNTIME_ROOT="$(multinode_runtime_dir "$runtime_id")" bash "$multinode_deploy" deploy
             ;;
         *) echo "unsupported runtime driver: $runtime_driver" >&2; return 1 ;;
     esac
@@ -274,6 +300,11 @@ mv "$request_temp" "$request_file"
 changed=yes
 report_activation_status "Stopping previous runtime"
 "$script_dir/dashboard-stack.sh" stop-observability-collector
+if [ "$previous_driver" = "docker-multinode" ]; then
+    control_changed=yes
+    report_activation_status "Stopping Control Service before removing previous ZPR network"
+    "$script_dir/dashboard-stack.sh" stop-control-service
+fi
 stop_runtime "$previous_organization"
 if [ "$action" = "restore-base" ]; then
     report_activation_status "Backing up and restoring organization base state"
@@ -281,13 +312,16 @@ if [ "$action" = "restore-base" ]; then
 fi
 report_activation_status "Starting $organization runtime"
 control_changed=yes
-start_runtime "$organization"
-if [ "$organization_driver" = "docker-multinode" ]; then
+start_runtime "$organization" "$action"
+if [ "$organization_driver" = "docker-multinode" ] &&
+   [ -f "$runtime_dir/multinode/$organization/policy-bootstrap-required" ]; then
     report_activation_status "Compiling and installing policy with deployed bootstrap keys"
     if ! install_multinode_policy; then
         echo "organization runtime policy installation failed" >&2
         exit 1
     fi
+    rm "$runtime_dir/multinode/$organization/policy-bootstrap-required"
+    rm -f "$runtime_dir/multinode/$organization/fresh-visa-state-approved"
 fi
 if [ "$organization_driver" = linux-one-node ]; then
     report_activation_status "Starting DNS and platform relays"
@@ -332,9 +366,7 @@ fi
 policy_changed=yes
 report_activation_status "Applying organization runtime policy"
 "$script_dir/dashboard-stack.sh" restart-policy-context "$organization" "$bundle_dir/runtime.zpl"
-control_room_curl -fsS --max-time 10 "$control_room_url/api/policy/context" | jq -e --arg id "$organization" '.organization_id==$id' >/dev/null
 control_changed=yes
-report_activation_status "Checking Control Service readiness"
 if [ "$organization_driver" = docker-multinode ]; then
     multinode_runtime=$(multinode_runtime_dir "$organization")
     SIMULATION_ORGANIZATION_ID="$organization" \
@@ -344,7 +376,12 @@ if [ "$organization_driver" = docker-multinode ]; then
     ZPR_ADMIN_URL="https://127.0.0.1:8185" \
     ZPR_ADMIN_CA_FILE="$multinode_dir/zpr-conf/include/admin-tls-cert.pem" \
     ZPR_ADMIN_KEY_FILE="$multinode_runtime/bob/web-monitor.key" \
+    ZPR_TRUSTED_CHANGE_FEEDS_DISABLED="$trusted_change_feeds_disabled" \
         "$script_dir/dashboard-stack.sh" restart-control-service
+fi
+control_room_curl -fsS --max-time 10 "$control_room_url/api/policy/context" | jq -e --arg id "$organization" '.organization_id==$id' >/dev/null
+report_activation_status "Checking Control Service readiness"
+if [ "$organization_driver" = docker-multinode ]; then
     control_snapshot=
     control_attempt=0
     while [ "$control_attempt" -lt 60 ]; do
@@ -356,7 +393,7 @@ if [ "$organization_driver" = docker-multinode ]; then
         sleep 1
     done
     if [ "$control_attempt" -ge 60 ]; then
-        control_summary=$(printf '%s' "$control_snapshot" | jq -c '{api_status,errors}' 2>/dev/null || printf '%s' "$control_snapshot")
+        control_summary=$(printf '%s' "$control_snapshot" | jq -c '{api_status,errors,nodes:[.actors[]? | select(.node) | {cn,zpr_addr,in_sync:.node_details.in_sync,last_contact:.node_details.last_contact,pending_install:.node_details.pending_install,pending_revocation:.node_details.pending_revocation}]}' 2>/dev/null || printf '%s' "$control_snapshot")
         echo "Control Service did not report a healthy snapshot with $configured_node_count synchronized nodes for $organization: $control_summary" >&2
         exit 1
     fi

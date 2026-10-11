@@ -25,11 +25,12 @@ type adapterLogTarget struct {
 }
 
 type adapterLogSourceConfig struct {
-	Name      string `json:"name"`
-	Kind      string `json:"kind"`
-	File      string `json:"file,omitempty"`
-	Container string `json:"container,omitempty"`
-	Path      string `json:"path,omitempty"`
+	Name             string `json:"name"`
+	Kind             string `json:"kind"`
+	File             string `json:"file,omitempty"`
+	Container        string `json:"container,omitempty"`
+	Path             string `json:"path,omitempty"`
+	RuntimeContainer string `json:"runtime_container,omitempty"`
 }
 
 type adapterLogOutput struct {
@@ -41,10 +42,14 @@ type adapterLogOutput struct {
 }
 
 func adapterLogRuntimeState(ctx context.Context, source adapterLogSourceConfig) string {
-	if source.Container == "" {
+	container := source.RuntimeContainer
+	if container == "" {
+		container = source.Container
+	}
+	if container == "" {
 		return "unknown"
 	}
-	output, err := exec.CommandContext(ctx, "docker", "inspect", "--format", "{{.State.Status}}", source.Container).Output()
+	output, err := exec.CommandContext(ctx, "docker", "inspect", "--format", "{{.State.Status}}", container).Output()
 	if err != nil {
 		return "unavailable"
 	}
@@ -87,6 +92,9 @@ func readAdapterLogInventory(path string) (adapterLogInventory, error) {
 		}
 		seen[adapter.ID] = true
 		for _, source := range adapter.Sources {
+			if source.RuntimeContainer != "" && !adapterLogContainerName.MatchString(source.RuntimeContainer) {
+				return inventory, errors.New("invalid runtime container")
+			}
 			if source.Name == "" || source.Kind != "adapter" && source.Kind != "controller" {
 				return inventory, errors.New("invalid adapter log source")
 			}
@@ -151,10 +159,14 @@ func newAdapterLogsHandler() http.Handler {
 		for _, adapter := range inventory.Adapters {
 			entry := adapterLogEntry{ID: adapter.ID, Name: adapter.Name, State: "unknown", Sources: []adapterLogOutput{}}
 			for _, source := range adapter.Sources {
-				state, known := runtimeStates[source.Container]
+				container := source.RuntimeContainer
+				if container == "" {
+					container = source.Container
+				}
+				state, known := runtimeStates[container]
 				if !known {
 					state = adapterLogRuntimeState(ctx, source)
-					runtimeStates[source.Container] = state
+					runtimeStates[container] = state
 				}
 				output, err := readAdapterLogSource(ctx, source)
 				log := adapterLogOutput{Name: source.Name, Kind: source.Kind, State: state, Lines: []string{}}

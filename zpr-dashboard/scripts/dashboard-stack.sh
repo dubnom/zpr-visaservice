@@ -540,6 +540,25 @@ configure_multinode_service_return_route() {
     docker exec "$route_node" ip -6 rule add pref "$route_table" from "$route_source/128" table "$route_table"
 }
 
+stop_multinode_dns_adapter() {
+    dns_stop_container=$1
+    dns_adapter_pids=$(docker exec "$dns_stop_container" ps -eo pid,args |
+        awk '$2=="/app/bin/ph" && $3=="adapter" { for (i=4;i<NF;i++) if ($i=="--name" && $(i+1)=="adapter1") print $1 }')
+    for dns_adapter_pid in $dns_adapter_pids; do
+        case "$dns_adapter_pid" in *[!0-9]*) echo "invalid DNS adapter PID" >&2; return 1 ;; esac
+        docker exec "$dns_stop_container" sh -c '
+            if kill -0 "$1" 2>/dev/null; then
+                kill "$1" || exit 1
+                attempt=0
+                while kill -0 "$1" 2>/dev/null; do
+                    [ "$attempt" -lt 30 ] || { echo "DNS adapter did not stop" >&2; exit 1; }
+                    attempt=$((attempt + 1))
+                    sleep 0.2
+                done
+            fi' dns-stop "$dns_adapter_pid"
+    done
+}
+
 start_multinode_dns_service() {
     dns_organization=$1
     dns_profile="$ORGANIZATIONS_DIR/$dns_organization.json"
@@ -573,7 +592,9 @@ start_multinode_dns_service() {
         printf 'key "zpr-dns-viewer" {\n    algorithm hmac-sha256;\n    secret "%s";\n};\n' "$viewer_secret" > "$viewer_key"
         chmod 600 "$viewer_key"
     fi
-    docker stop "$DNS_CONTAINER" >/dev/null 2>&1 || true
+    if docker inspect "$DNS_CONTAINER" >/dev/null 2>&1; then
+        docker rm -f "$DNS_CONTAINER" >/dev/null
+    fi
     {
         printf '%s\n' '$TTL 30' '$ORIGIN svc.zpr.' '@ IN SOA dns.svc.zpr. hostmaster.svc.zpr. (1 60 60 86400 30)' '  IN NS dns.svc.zpr.'
         printf 'dns IN AAAA %s\n' "$DNS_SERVICE_ADDRESS"
@@ -582,13 +603,13 @@ start_multinode_dns_service() {
         if [ -n "$gateway_address" ]; then printf 'internet-gateway IN AAAA %s\n' "$gateway_address"; fi
     } > "$dns_zone_file"
     cp "$DNS_PROFILE_DIR/named.conf.simulator" "$dns_runtime/named.conf"
-    docker exec "$node_container" pkill -TERM -f '[p]h adapter.*--name adapter1' 2>/dev/null || true
+    stop_multinode_dns_adapter "$node_container"
     docker exec "$node_container" ip link del tun6 2>/dev/null || true
     docker exec "$node_container" ip tuntap add name tun6 mode tun multi_queue
     docker exec "$node_container" ip -6 addr add "$DNS_SERVICE_ADDRESS/32" dev tun6
     docker exec "$node_container" ip link set tun6 up
     docker exec -d "$node_container" sh -c \
-        'exec env ZPR_ADAPTER_SERVICES=ZprDNS,ZprDNSStatistics /app/bin/ph adapter -c /conf/adapter-dns-conf.toml --name adapter1 --node-addr "$1:5000" >>/logs/adapter1-dns.log 2>&1' \
+        'echo $$ >/var/run/zpr/adapter1-dns.pid; exec env ZPR_ADAPTER_SERVICES=ZprDNS,ZprDNSStatistics /app/bin/ph adapter -c /conf/adapter-dns-conf.toml --name adapter1 --node-addr "$1:5000" >>/logs/adapter1-dns.log 2>&1' \
         adapter1-dns "$(jq -er '.runtime.nodes[0].substrate_address' "$dns_profile")"
     attempts=0
     while [ "$attempts" -lt 45 ]; do
@@ -603,7 +624,6 @@ start_multinode_dns_service() {
         echo "ZPR DNS adapter did not become active on $node_container" >&2
         return 1
     fi
-    docker rm -f "$DNS_CONTAINER" >/dev/null 2>&1 || true
     docker build -t "$DNS_IMAGE" "$DNS_PROFILE_DIR"
     docker run -d --name "$DNS_CONTAINER" --network "container:$node_container" --pid="container:$node_container" --privileged \
         -e ZPR_DNS_ADAPTER_NAME=adapter1 \
@@ -747,7 +767,9 @@ stop_dns_service() {
         stop_service "$DNS_RECORDS_RELAY_PID"
         stop_service "$DNS_STATS_RELAY_PID"
         docker rm -f "$DNS_CONTAINER" >/dev/null 2>&1 || true
-        docker exec "$dns_node_container" pkill -TERM -f '[p]h adapter.*--name adapter1' 2>/dev/null || true
+        if [ "$(docker inspect -f '{{.State.Running}}' "$dns_node_container" 2>/dev/null || true)" = true ]; then
+            stop_multinode_dns_adapter "$dns_node_container"
+        fi
         docker exec "$dns_node_container" ip link del tun6 2>/dev/null || true
         return
     fi
@@ -854,12 +876,22 @@ start_observability_collector() {
             --arg type "$source_type" --arg path "/org-logs/$source_file" \
             '. + [{service_name:$name,service_instance_id:$instance,source_type:$type,log_file:$path}]')
         case "$source_id" in
-            *-adapter) adapter_kind=adapter; adapter_title="$source_id adapter" ;;
+            *-adapter) adapter_kind=adapter; adapter_title="$source_id" ;;
             *) adapter_kind=controller; adapter_title="$source_id" ;;
         esac
-        adapter_targets=$(printf '%s' "$adapter_targets" | jq -c --arg id "$organization-$source_id" --arg title "$organization $adapter_title" \
-            --arg name "$source_id" --arg kind "$adapter_kind" --arg file "$source_path" \
-            '. + [{id:$id,name:$title,sources:[{name:$name,kind:$kind,file:$file}]}]')
+        case "$source_id" in
+            node[0-9]*) adapter_container="$organization-$source_id" ;;
+            adapter1-dns) adapter_container="$organization-node0" ;;
+            vs-adapter) adapter_container="$organization-vs" ;;
+            web0-adapter) adapter_container="$organization-web0" ;;
+            web1-adapter) adapter_container="$organization-web1" ;;
+            alice-adapter) adapter_container="$organization-alice" ;;
+            internet-gateway-*) adapter_container="$organization-internet-gateway" ;;
+            *) adapter_container="" ;;
+        esac
+        adapter_targets=$(printf '%s' "$adapter_targets" | jq -c --arg id "$organization-$source_id" --arg title "$adapter_title" \
+            --arg name "$source_id" --arg kind "$adapter_kind" --arg file "$source_path" --arg container "$adapter_container" \
+            '. + [{id:$id,name:$title,sources:[({name:$name,kind:$kind,file:$file} + if $container == "" then {} else {runtime_container:$container} end)]}]')
     done
     printf '%s\n' "$(jq -n --argjson adapters "$adapter_targets" '{adapters:$adapters}')" > "$STATE_DIR/adapter-logs.json"
     chmod 600 "$STATE_DIR/adapter-logs.json"
@@ -900,6 +932,10 @@ start_observability_collector() {
 }
 
 start_control_service() {
+    . "$SCRIPT_DIR/provider-managers.sh"
+    control_provider_manager_urls=$(provider_manager_urls \
+        "${ZPR_PROVIDER_MANAGER_URLS_FILE:-$STATE_DIR/provider-managers.json}" \
+        "${ZPR_PROVIDER_MANAGER_URLS:-}") || return 1
     control_diagnostics_username=${ZPR_DIAGNOSTICS_USERNAME:-}
     if [ -z "$control_diagnostics_username" ] && [ -f "$STATE_DIR/diagnostics/query.username" ]; then
         control_diagnostics_username=$(cat "$STATE_DIR/diagnostics/query.username")
@@ -915,13 +951,17 @@ start_control_service() {
     if [ -z "$control_node_names_file" ] && [ -f "$STATE_DIR/node-display-names.json" ]; then
         control_node_names_file="$STATE_DIR/node-display-names.json"
     fi
-    control_change_feeds_file=${ZPR_TRUSTED_CHANGE_FEEDS_FILE:-}
-    if [ -z "$control_change_feeds_file" ] && [ -f "$STATE_DIR/trusted-change-feeds.json" ]; then
-        control_change_feeds_file="$STATE_DIR/trusted-change-feeds.json"
-    fi
-    control_change_feeds_network=${ZPR_TRUSTED_CHANGE_FEEDS_NETWORK:-}
-    if [ -z "$control_change_feeds_network" ] && [ -f "$STATE_DIR/trusted-change-feeds.network" ]; then
-        control_change_feeds_network=$(cat "$STATE_DIR/trusted-change-feeds.network")
+    control_change_feeds_file=
+    control_change_feeds_network=
+    if [ "${ZPR_TRUSTED_CHANGE_FEEDS_DISABLED:-}" != 1 ]; then
+        control_change_feeds_file=${ZPR_TRUSTED_CHANGE_FEEDS_FILE:-}
+        if [ -z "$control_change_feeds_file" ] && [ -f "$STATE_DIR/trusted-change-feeds.json" ]; then
+            control_change_feeds_file="$STATE_DIR/trusted-change-feeds.json"
+        fi
+        control_change_feeds_network=${ZPR_TRUSTED_CHANGE_FEEDS_NETWORK:-}
+        if [ -z "$control_change_feeds_network" ] && [ -f "$STATE_DIR/trusted-change-feeds.network" ]; then
+            control_change_feeds_network=$(cat "$STATE_DIR/trusted-change-feeds.network")
+        fi
     fi
     if [ -n "$control_change_feeds_network" ]; then
         docker network inspect "$control_change_feeds_network" >/dev/null
@@ -977,7 +1017,7 @@ start_control_service() {
         -e ZPR_TRUSTED_CHANGE_FEEDS_FILE="$control_change_feeds_file" \
         -e ZPR_NODE_DISPLAY_NAMES_FILE="$control_node_names_file" \
         -e ZPR_ADAPTER_LOG_CONFIG_FILE="${ZPR_ADAPTER_LOG_CONFIG_FILE:-$STATE_DIR/adapter-logs.json}" \
-        -e ZPR_PROVIDER_MANAGER_URLS="${ZPR_PROVIDER_MANAGER_URLS:-}" \
+        -e ZPR_PROVIDER_MANAGER_URLS="$control_provider_manager_urls" \
         -e ZPR_DIAGNOSTICS_CONFIG_FILE="${ZPR_DIAGNOSTICS_CONFIG_FILE:-$STATE_DIR/diagnostics/openobserve.json}" \
         -e ZPR_DIAGNOSTICS_USERNAME="$control_diagnostics_username" \
         -e ZPR_DIAGNOSTICS_TOKEN_FILE="${ZPR_DIAGNOSTICS_TOKEN_FILE:-$STATE_DIR/diagnostics/query.token}" \
@@ -1408,8 +1448,15 @@ prepare_machine_workloads() {
     machine_profile="$ORGANIZATIONS_DIR/$machine_organization.json"
     machine_runtime_driver=$(jq -er '.runtime.driver' "$machine_profile")
     workload_runtime_marker="$machine_runtime_driver:$machine_organization:$workload_arch"
-    if [ "$(cat "$MACHINE_WORKLOAD_DIR/.runtime" 2>/dev/null || true)" = "$workload_runtime_marker" ] && [ -x "$MACHINE_WORKLOAD_DIR/ph" ]; then
-        return 0
+    if [ "$(cat "$MACHINE_WORKLOAD_DIR/.runtime" 2>/dev/null || true)" = "$workload_runtime_marker" ] &&
+        [ -x "$MACHINE_WORKLOAD_DIR/ph" ] && [ -x "$MACHINE_WORKLOAD_DIR/ph-cli" ]; then
+        stale_source=$(find "$PROJECT_ROOT/zpr-core" \
+            -type d \( -name .git -o -name target \) -prune -o \
+            -type f \( -name '*.rs' -o -name Cargo.toml -o -name Cargo.lock -o -name build.rs -o -name '*.capnp' \) \
+            -newer "$MACHINE_WORKLOAD_DIR/ph" -print -quit)
+        if [ -z "$stale_source" ]; then
+            return 0
+        fi
     fi
     rm -f "$MACHINE_WORKLOAD_DIR"/*
     rm -f "$MACHINE_WORKLOAD_DIR/.runtime"
@@ -1743,6 +1790,7 @@ case "${1:-start}" in
     restart-control-room) restart_control_room ;;
     restart-simulator) restart_simulator ;;
     restart-simulator-ui) restart_simulator_ui ;;
+    stop-control-service) stop_control_service ;;
     restart-control-service)
         start_control_service
         ;;
@@ -1760,5 +1808,5 @@ case "${1:-start}" in
         [ "$#" -eq 3 ] || { echo "usage: $0 restart-policy-context organization source" >&2; exit 2; }
         restart_policy_context "$2" "$3"
         ;;
-    *) echo "usage: $0 {start|stop|restart|status|start-admin-relay|stop-admin-relay|start-dns|stop-dns|start-ui-relays|stop-ui-relays|start-browser-gateway|stop-browser-gateway|restart-control-room|restart-simulator|restart-control-service|reload-assistant|stop-policy-service|restart-policy-service|restart-simulator-control|start-observability-collector organization-id|stop-observability-collector}" >&2; exit 2 ;;
+    *) echo "usage: $0 {start|stop|restart|status|start-admin-relay|stop-admin-relay|start-dns|stop-dns|start-ui-relays|stop-ui-relays|start-browser-gateway|stop-browser-gateway|restart-control-room|restart-simulator|stop-control-service|restart-control-service|reload-assistant|stop-policy-service|restart-policy-service|restart-simulator-control|start-observability-collector organization-id|stop-observability-collector}" >&2; exit 2 ;;
 esac
