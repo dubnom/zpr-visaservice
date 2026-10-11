@@ -165,7 +165,7 @@ export function registerNodeLogTests(test, expect) {
     await expect(page.locator("#diagnostics-aggregate")).toHaveText("Service telemetry: 1 current · 0 stale, partial, or unavailable.");
     await expect(page.locator("#diagnostics-count")).toHaveText("1 / 1 services");
     await expect(page.locator("#diagnostics-sources")).toContainText("Service retained");
-    await expect(page.locator("#diagnostics-sources")).toContainText("Service-only");
+    await expect(page.locator("#diagnostics-sources")).not.toContainText("Service-only");
     await expect(page.locator("#diagnostics-sources")).not.toContainText("North logs");
     await expect(page.locator("#diagnostics-sources")).not.toContainText("Huge");
     await expect(page.locator(".diagnostics-source-row")).toHaveCount(1);

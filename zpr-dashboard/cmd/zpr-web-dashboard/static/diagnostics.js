@@ -2,11 +2,9 @@
   const page = document.querySelector("[data-diagnostics]");
   if (!page) return;
   const { createLogPanel, updateLogPanel, setLogPanelMaximized } = await import("/log-panel.js?v=1");
-  const { renderSourceMetrics } = await import("/source-metrics.js?v=1");
   const sourceList = document.getElementById("diagnostics-sources");
   const loading = document.getElementById("diagnostics-loading");
   const error = document.getElementById("diagnostics-error");
-  const filter = document.getElementById("diagnostics-filter");
   const count = document.getElementById("diagnostics-count");
   const selector = document.getElementById("diagnostics-service-select");
   const logHost = document.getElementById("service-logs");
@@ -43,7 +41,6 @@
   let responseData = null;
   let active = location.hash === "#diagnostics";
   let sourceSort = { key: "source", direction: 1 };
-  const metricSorts = new Map();
   const collapsedSources = new Set();
 
   function appendText(parent, tag, className, text) {
@@ -165,25 +162,6 @@
       track(changes, [key, field === "error" ? "error" : "source", ...(field === "error" ? [] : [field])], placeholder(value), value);
     }
 
-    const occurrences = new Map();
-    for (const metric of source.metrics || []) {
-      const name = displayMissing(metric.name);
-      const occurrence = occurrences.get(name) || 0;
-      occurrences.set(name, occurrence + 1);
-      const metricKey = [key, "metric", name, occurrence];
-      const metricValue = displayMissing(metric.value, "Unavailable");
-      const unit = displayMissing(metric.unit);
-      track(changes, metricKey, placeholder(metricValue), metricValue);
-      track(changes, [key, "metric-unit", name, occurrence], placeholder(unit), unit);
-    }
-  }
-
-  function renderMetricTable(parent, source, key, changes) {
-    renderSourceMetrics(parent, source, {
-      sort: metricSorts.get(key) || { key: "name", direction: 1 },
-      onSort: nextSort => { metricSorts.set(key, nextSort); render(); },
-      track: (fields, node, value) => track(changes, [key, ...fields], node, value),
-    });
   }
 
   function renderDetails(row, source, key, changes, visible) {
@@ -202,7 +180,6 @@
       const sourceError = appendText(details, "p", "diagnostics-source-error", source.error);
       track(changes, [key, "error"], sourceError, sourceError.textContent);
     }
-    renderMetricTable(details, source, key, changes);
 
     cell.append(details);
     detailsRow.append(cell);
@@ -211,7 +188,6 @@
 
   function render(trackChanges = false) {
     for (const child of [...sourceList.children]) if (child !== logHost) child.remove();
-    const query = filter.value.trim().toLowerCase();
     const allSources = (responseData?.sources || [])
       .filter(source => source.kind !== "ZPR node" && !String(source.id || "").startsWith("node:"))
       .map((source, index) => ({ source, index }));
@@ -219,19 +195,11 @@
     aggregate.textContent = responseData && allSources.length
       ? `Service telemetry: ${allSources.length - unavailable} current · ${unavailable} stale, partial, or unavailable.`
       : "";
-    const sources = allSources.filter(({ source }) => {
-      const content = [
-        source.name, source.kind, source.identity, source.address, source.state, source.error,
-        ...(source.logs || []).map(log => log.body),
-        ...(source.metrics || []).map(metric => `${metric.name} ${metric.value} ${metric.unit}`),
-      ].join(" ").toLowerCase();
-      return !query || content.includes(query);
-    }).sort(compareSources);
+    const sources = [...allSources].sort(compareSources);
     count.textContent = `${sources.length} / ${allSources.length} services`;
     const keys = new Set(allSources.map(({ source }) => sourceKey(source)));
     for (const key of positions.keys()) if (!keys.has(key)) positions.delete(key);
     for (const key of logCache.keys()) if (!keys.has(key)) logCache.delete(key);
-    for (const key of metricSorts.keys()) if (!keys.has(key)) metricSorts.delete(key);
     for (const key of collapsedSources) if (!keys.has(key)) collapsedSources.delete(key);
     const options = sources.map(({ source }) => {
       const option = document.createElement("option");
@@ -242,7 +210,7 @@
     if (!options.length) {
       const option = document.createElement("option");
       option.value = "";
-      option.textContent = responseData ? "No matching services" : "Loading services...";
+      option.textContent = responseData ? "No services" : "Loading services...";
       options.push(option);
     }
     selectSource(sources.some(({ source }) => sourceKey(source) === selectedKey) ? selectedKey : options[0].value);
@@ -257,7 +225,7 @@
     }
     if (!sources.length) {
       const empty = appendText(sourceList, "p", "diagnostics-empty", responseData
-        ? allSources.length ? "No services match this filter." : "No service telemetry sources configured."
+        ? "No service telemetry sources configured."
         : "No service telemetry loaded.");
       logHost.before(empty);
       if (trackChanges) tracker.update(changes);
@@ -292,17 +260,19 @@
       row.dataset.state = source.state || "unavailable";
       const nameCell = document.createElement("th");
       nameCell.scope = "row";
-      const button = appendText(nameCell, "button", "diagnostics-expand", sourceName(source));
-      button.type = "button";
-      const isExpanded = !collapsedSources.has(key);
-      button.setAttribute("aria-expanded", String(isExpanded));
-      button.setAttribute("aria-label", `${isExpanded ? "Hide" : "Show"} details for ${sourceName(source)}`);
-      button.setAttribute("aria-controls", `diagnostics-details-${encodeURIComponent(key)}`);
-      button.addEventListener("click", () => {
-        if (collapsedSources.has(key)) collapsedSources.delete(key);
-        else collapsedSources.add(key);
-        render();
-      });
+      const button = appendText(nameCell, source.error ? "button" : "span", source.error ? "diagnostics-expand" : "", sourceName(source));
+      if (source.error) {
+        button.type = "button";
+        const isExpanded = !collapsedSources.has(key);
+        button.setAttribute("aria-expanded", String(isExpanded));
+        button.setAttribute("aria-label", `${isExpanded ? "Hide" : "Show"} details for ${sourceName(source)}`);
+        button.setAttribute("aria-controls", `diagnostics-details-${encodeURIComponent(key)}`);
+        button.addEventListener("click", () => {
+          if (collapsedSources.has(key)) collapsedSources.delete(key);
+          else collapsedSources.add(key);
+          render();
+        });
+      }
       row.append(nameCell);
       appendText(row, "td", "", sourceIdentity(source));
       appendText(row, "td", "", displayMissing(source.kind));
@@ -314,7 +284,7 @@
       track(changes, [key, "source", "state"], state, state.textContent);
       track(changes, [key, "source", "last_updated"], row.cells[4], row.cells[4].textContent);
       body.append(row);
-      renderDetails(row, source, key, changes, !collapsedSources.has(key));
+      if (source.error) renderDetails(row, source, key, changes, !collapsedSources.has(key));
       table.append(body);
     }
 
@@ -334,11 +304,8 @@
     const result = await window.ZPRPageRuntime.requestJSON(window.zprOperatorFetch, "/api/diagnostics", { signal, headers: { Accept: "application/json" } });
     if (!isCurrent()) return;
     if (!Array.isArray(result?.sources) || result.sources.some(source => !source || typeof source !== "object" ||
-        typeof source.id !== "string" || !source.id || !Array.isArray(source.logs) || !Array.isArray(source.metrics) ||
-        source.logs.some(log => !log || typeof log !== "object" || log.body != null && typeof log.body !== "string") ||
-        source.metrics.some(metric => !metric || typeof metric !== "object" || typeof metric.name !== "string" ||
-          !["string", "number"].includes(typeof metric.value) && metric.value != null ||
-          metric.unit != null && typeof metric.unit !== "string")) ||
+        typeof source.id !== "string" || !source.id || !Array.isArray(source.logs) ||
+        source.logs.some(log => !log || typeof log !== "object" || log.body != null && typeof log.body !== "string")) ||
         new Set(result.sources.map(source => source.id)).size !== result.sources.length) {
       throw new Error("Service telemetry response contains invalid source or log records.");
     }
@@ -386,7 +353,6 @@
     if (active) poller.start();
   }
 
-  filter.addEventListener("input", render);
   selector.addEventListener("change", () => { selectSource(selector.value); render(); });
   pause.addEventListener("click", () => {
     paused = !paused;
@@ -410,7 +376,6 @@
     responseData = null;
     positions.clear();
     logCache.clear();
-    metricSorts.clear();
     collapsedSources.clear();
     tracker.reset();
     selectedKey = "";

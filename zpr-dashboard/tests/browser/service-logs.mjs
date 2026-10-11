@@ -29,7 +29,10 @@ export function registerServiceLogTests(test, expect) {
     await expect(output).toHaveCSS("white-space", "pre-wrap");
     await expect(page.locator(".diagnostics-log-body, .diagnostics-logs")).toHaveCount(0);
     await expect(page.locator(".diagnostics-source-row")).toHaveCount(1);
-    await expect(page.locator(".diagnostics-metrics-table")).toContainText("18446744073709551615");
+    await expect(page.locator(".diagnostics-metrics-table")).toHaveCount(0);
+    await expect(page.locator("#diagnostics-filter")).toHaveCount(0);
+    await expect(page.getByRole("searchbox", { name: "Filter services and logs" })).toHaveCount(0);
+    await expect(page.locator("#diagnostics-count")).toHaveText("2 / 2 services");
     await expect(page.locator("#diagnostics-aggregate")).toContainText("2 current");
     await selector.selectOption("trusted:b");
     await expect(panel.locator("h2")).toHaveText("Logs for Beta");
@@ -113,11 +116,6 @@ export function registerServiceLogTests(test, expect) {
     await panel.getByRole("button", { name: "Resume service log updates" }).click();
     await expect(page.locator("#diagnostics-error")).toBeHidden();
     await expect(panel.locator(".machine-log-error")).toHaveCount(0);
-    await page.locator("#diagnostics-filter").fill("absent");
-    await expect(panel).toHaveCount(0);
-    await expect(page.locator("#diagnostics-service-select")).toBeDisabled();
-    await page.locator("#diagnostics-filter").fill("Retained log");
-    await expect(panel.locator(".machine-log-output")).toContainText("Retained log");
     await page.evaluate(() => window.dispatchEvent(new Event("operator-session-cleared")));
     await expect(panel).toHaveCount(0);
     await expect(page.locator("#diagnostics-error")).toContainText("Operator session ended");
@@ -162,7 +160,7 @@ export function registerServiceLogTests(test, expect) {
     await expect(panel.locator(".machine-log-error")).toContainText("partial");
     for (const invalid of [
       [source("service:a", "Alpha"), source("service:a", "Duplicate")],
-      [{ ...source("service:a", "Alpha"), metrics: [{ name: "requests", value: {} }] }],
+      [{ ...source("service:a", "Alpha"), logs: [{ body: {} }] }],
     ]) {
       sources = invalid;
       await refresh(page);
@@ -203,4 +201,16 @@ export function registerServiceLogTests(test, expect) {
       await expect(page.locator("#diagnostics-error")).toBeHidden();
     });
   }
+
+  test("Services ignores unused metrics and supports a single telemetry source", async ({ page, appURL, api }) => {
+    api.handlers.set("/api/diagnostics", route => route.fulfill({ json: { sources: [
+      { ...source("service:a", "Alpha", ["Only source"]), metrics: { notDisplayed: true } },
+    ] } }));
+    await page.goto(appURL + "/#diagnostics");
+    await expect(page.locator("#service-logs")).toContainText("Only source");
+    await expect(page.locator("#diagnostics-service-select option")).toHaveCount(1);
+    await expect(page.locator("#diagnostics-error")).toBeHidden();
+    await expect(page.locator(".diagnostics-metrics-table, #diagnostics-filter")).toHaveCount(0);
+    await expect(page.getByRole("button", { name: "Hide details for Alpha" })).toHaveCount(0);
+  });
 }

@@ -62,6 +62,58 @@ async function openGeography(page, appURL) {
   await expect(page.locator(".graph-geographic-basemap")).toHaveCount(1);
 }
 
+for (const geographic of [false, true]) {
+  test(`Unattached tray keeps adapters out of ${geographic ? "world" : "topology"} map and tracks real attachments`, async ({ page, appURL, snapshot }) => {
+    const isolated = node("isolated", 42, -85);
+    snapshot.actors = [isolated, { cn: "loose", node: false, zpr_addr: "fd00::2" }];
+    snapshot.services = [{ actor_cn: "loose", service_name: "Loose service", service_kind: "Required" }];
+    if (geographic) await openGeography(page, appURL);
+    else await page.goto(`${appURL}/#map`);
+    const tray = page.locator("#map-unattached");
+    await expect(tray).toBeVisible();
+    await expect(tray).not.toHaveAttribute("open", "");
+    await expect(page.locator(".graph-vertex")).toHaveCount(1);
+    await expect(page.locator(".graph-service-badge")).toHaveCount(0);
+    await page.locator("#map-unattached-summary").click();
+    await expect(tray).toContainText("No attachment observed");
+    await expect(tray).toContainText("Loose service");
+    const initialBounds = await page.locator(".topology-graph").getAttribute("viewBox");
+    snapshot.actors.push({ cn: "another", node: false, zpr_addr: "fd00::3" });
+    await page.locator("#refresh-now").click();
+    await expect(page.locator("#map-unattached-summary")).toHaveText("Detached · 2");
+    await expect(page.locator(".topology-graph")).toHaveAttribute("viewBox", initialBounds);
+    await expect(tray).toHaveAttribute("open", "");
+    await tray.getByRole("button", { name: "Inspect loose", exact: true }).click();
+    await expect(page.locator("#inspector-title")).toContainText("loose");
+    await expect(page.locator("#inspector-body")).toContainText("fd00::2");
+    await expect(page.locator("#inspector-body")).toContainText("No attachment observed");
+    await expect(page.locator("#inspector-body")).toContainText("Loose service");
+    await page.locator("#inspector-close").click();
+    isolated.node_details.adapters = ["loose"];
+    await page.locator("#refresh-now").click();
+    await expect(page.locator('.graph-vertex[data-inspect-actor="loose"]')).toHaveCount(1);
+    await expect(page.locator(".graph-service-badge")).toHaveCount(1);
+    await expect(tray.locator('[data-unattached-actor="loose"]')).toHaveCount(0);
+    isolated.node_details.adapters = [];
+    await page.locator("#refresh-now").click();
+    await expect(page.locator("#map-unattached-summary")).toHaveText("Detached · 2 · 1 lost connection");
+    await expect(tray.locator('[data-unattached-actor="loose"]')).toContainText("Lost connection");
+    await expect(page.locator(".graph-vertex")).toHaveCount(1);
+    snapshot.api_status = "disconnected";
+    await page.locator("#refresh-now").click();
+    await expect(tray).toContainText("Attachment unavailable");
+  });
+
+  test(`Unattached-only ${geographic ? "world" : "topology"} map has a usable empty state`, async ({ page, appURL, snapshot }) => {
+    snapshot.actors = [{ cn: "loose", node: false }];
+    if (geographic) await openGeography(page, appURL);
+    else await page.goto(`${appURL}/#map`);
+    await expect(page.locator("#map-unattached-summary")).toHaveText("Detached · 1");
+    await expect(page.locator(".graph-vertex")).toHaveCount(0);
+    await expect(page.locator("#topology-stage .empty-state")).toBeVisible();
+  });
+}
+
 test("both maps lay out free components along the viewport and respond to rotation", async ({ page, appURL, snapshot }) => {
   snapshot.actors = ["a", "b", "c"].map((cn, index) => ({
     ...node(cn, 0, 0), zpr_addr: `fd00::${index + 1}`,
@@ -111,7 +163,7 @@ test("both maps lay out free components along the viewport and respond to rotati
 });
 
 for (const viewport of [{ width: 1600, height: 700 }, { width: 600, height: 1200 }]) {
-  test(`unconnected components sit beside occupied bounds at ${viewport.width}x${viewport.height}`, async ({ page, appURL, snapshot }) => {
+  test(`unattached components stay outside map bounds at ${viewport.width}x${viewport.height}`, async ({ page, appURL, snapshot }) => {
     await page.setViewportSize(viewport);
     const hub = node("hub", 0, 0);
     hub.node_details.adapters = ["attached"];
@@ -125,28 +177,14 @@ for (const viewport of [{ width: 1600, height: 700 }, { width: 600, height: 1200
       };
       const hub = point("hub");
       const attached = point("attached");
-      const occupied = {
-        left: Math.min(hub.x - 72, attached.x - 50), right: Math.max(hub.x + 72, attached.x + 50),
-        top: Math.min(hub.y - 72, attached.y - 50), bottom: Math.max(hub.y + 72, attached.y + 50),
-      };
-      const free = ["free-a", "free-b", "free-gateway"].map(point);
-      const bounds = {
-        left: Math.min(...free.map(p => p.x - 284)), right: Math.max(...free.map(p => p.x + 284)),
-        top: Math.min(...free.map(p => p.y - 284)), bottom: Math.max(...free.map(p => p.y + 284)),
-      };
-      return { hub, free, gapX: bounds.left - occupied.right, gapY: bounds.top - occupied.bottom };
+      return { hub, attached };
     });
     for (const view of ["World Map", "Topology"]) {
       await page.getByRole("button", { name: view, exact: true }).click();
       const before = await geometry();
-      expect(Math.min(Math.abs(before.gapX - 40), Math.abs(before.gapY - 40))).toBeLessThan(0.001);
-      for (let i = 0; i < before.free.length; i++) {
-        for (let j = i + 1; j < before.free.length; j++) {
-          expect(Math.hypot(before.free[i].x - before.free[j].x, before.free[i].y - before.free[j].y))
-            .toBeGreaterThanOrEqual(608 - 0.001);
-        }
-      }
-      await expect(page.locator(".graph-cloud")).toHaveCount(1);
+      await expect(page.locator(".graph-vertex")).toHaveCount(2);
+      await expect(page.locator("#map-unattached-summary")).toHaveText("Detached · 3");
+      await expect(page.locator(".graph-cloud")).toHaveCount(0);
       if (view === "World Map") expect(before.hub).toEqual({ cn: "hub", x: 1800, y: 900 });
       await page.locator("#refresh-now").click();
       expect(await geometry()).toEqual(before);
@@ -166,20 +204,12 @@ for (const viewport of [{ width: 1600, height: 700 }, { width: 600, height: 1200
   });
 }
 
-test("unconnected-only maps use a compact centered layout without a staging offset", async ({ page, appURL, snapshot }) => {
+test("unattached-only maps preserve the full basemap without inventing positions", async ({ page, appURL, snapshot }) => {
   snapshot.actors = ["free-a", "free-b"].map(cn => ({ cn, node: false }));
   await openGeography(page, appURL);
-  const bounds = await page.locator("#graph-world > .graph-vertex").evaluateAll(elements => {
-    const points = elements.map(el => ({ x: Number(el.dataset.originX), y: Number(el.dataset.originY) }));
-    return {
-      centerX: (Math.min(...points.map(p => p.x)) + Math.max(...points.map(p => p.x))) / 2,
-      centerY: (Math.min(...points.map(p => p.y)) + Math.max(...points.map(p => p.y))) / 2,
-      distance: Math.hypot(points[0].x - points[1].x, points[0].y - points[1].y),
-    };
-  });
-  expect(bounds.centerX).toBe(1800);
-  expect(bounds.centerY).toBe(900);
-  expect(bounds.distance).toBe(168);
+  await expect(page.locator("#graph-world > .graph-vertex")).toHaveCount(0);
+  await expect(page.locator("#map-unattached-summary")).toHaveText("Detached · 2");
+  await expect(page.locator(".topology-graph")).toHaveAttribute("viewBox", "0 0 3600 1800");
 });
 
 test("geography projects valid coordinates exactly and rejects invalid values", async ({ page, appURL, snapshot }) => {

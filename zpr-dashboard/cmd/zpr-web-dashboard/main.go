@@ -652,6 +652,15 @@ func mergePlatformServices(out *snapshot) {
 }
 
 func (a *application) fetchActors(ctx context.Context, entries []actorEntry, errs *[]string, mu *sync.Mutex) []actor {
+	unique := make([]actorEntry, 0, len(entries))
+	seen := make(map[string]bool, len(entries))
+	for _, entry := range entries {
+		if !seen[entry.CN] {
+			seen[entry.CN] = true
+			unique = append(unique, entry)
+		}
+	}
+	entries = unique
 	items := make([]actor, len(entries))
 	var wg sync.WaitGroup
 	for i, entry := range entries {

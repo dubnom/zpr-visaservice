@@ -23,14 +23,12 @@ Do not infer current runtime health from a historical verification entry.
 
 ## In progress
 
-Services selector and standard log display are **Verified; awaiting deployment**.
-The main Services page selects one non-node service/trusted telemetry source
-and shows its health, sortable metrics and shared log viewer. Aggregate service
-health/counts and filtering remain; the Status service inventory is unchanged.
-Pause/Resume, paused manual Refresh, Wrap, standard maximize/Escape and
-per-service scroll retention reuse the existing viewer/runtime contracts.
-No backend or Simulator change, deployment, commit or push. See
-[verification evidence](GUI%20completed%20work.md#services-selector-and-standard-log-display).
+Services selector and standard log display are **Deployed** (2026-10-10).
+Services shows one selected non-node service/trusted source's health and logs.
+The provisional filter, metrics display and introductory text are removed.
+Nodes metrics and backend contracts are unchanged. Eighteen focused browser
+cases and the build pass; live desktop/tablet login, selection and logs were
+verified. See [deployment evidence](GUI%20deployments.md).
 
 The Diagnostics/Nodes ownership merger is **Deployed to Control Room**
 (2026-10-10 00:50 UTC).

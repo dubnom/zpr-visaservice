@@ -6,12 +6,57 @@ This is a historical release ledger, not a live health report. Keep dated test,
 asset, configuration, scope and rollback evidence here. Feature-local release
 notes also remain in the completed-work archive to preserve their context.
 
-Latest recorded Control Room release: `zpr-editor-ui:20261010-node-merger`
-(2026-10-10 00:50 UTC), with unchanged Control-Service
-`zpr-control-service:20261009-node-log-source`. This does not imply Simulator or every source change was
-deployed. Commit/push state is separate; retain each dated entry's scope.
+Latest recorded Control Room/Control-Service release: Detached tray and actor
+inventory update (2026-10-10 06:12 UTC), image
+`sha256:7033868be58dbe43b55b62d71ce3d2b30ce50595e427061277ee83ed71bf4bbd`.
+This does not imply every source change was deployed. Commit/push state is
+separate; retain each dated entry's scope.
 
 ## Deployment status
+
+- Detached tray rename, actor attachment details, and duplicate actor-inventory
+  resolution deployed to Control Room and Control-Service at 2026-10-10
+  06:12 UTC. Running image for both:
+  `sha256:7033868be58dbe43b55b62d71ce3d2b30ce50595e427061277ee83ed71bf4bbd`.
+  HTTPS verification confirms the Detached summary, `app.js?v=153`, and the
+  Attachment detail section. The live snapshot is connected with no errors,
+  17 actor identities, and no duplicate common names. Actor-inventory and
+  snapshot tests passed; 14 desktop/tablet tray checks passed before rollout.
+  Existing Great Lakes Admin/LDAP endpoint configuration was retained.
+  Simulator and all three node start times were unchanged. Room sessions reset
+  on restart. No Simulator rollout, commit, or push is included.
+
+- Services simplification deployed to Control Room at 2026-10-10 06:06 UTC
+  as `zpr-editor-ui:20261010-services-simplified`, verified at 06:06:40 UTC.
+  Removed the introductory paragraph, provisional service/log filter and
+  Services metrics display; retained service selection, source health and logs.
+  Nodes metrics and the latest Unattached map tray remain unchanged.
+  Reconstructed the live executable byte-for-byte (SHA-256
+  `76fa4da10e04deadce78e7ca214b9e84ec1d4134ea7f5d0f9ab23ce485d4910f`)
+  before overlaying only `diagnostics.js` and Services markup/cache reference
+  in `index.html`. The concurrent actor-inventory backend change is excluded.
+  All 72 served assets, container configuration and network contract were
+  verified; all 19 unrelated service start times were unchanged.
+  Real Dex login and Services selection/health/logs were verified on desktop
+  and tablet with 20 production source entries, no filter/metrics, map/Fit and
+  no Simulator API requests. All 18 focused browser cases and the build pass.
+  An initial smoke assertion incorrectly used the selector's combined
+  name/identity as the log title; automatic rollback restored the baseline.
+  Corrected verification uses the production source name, and the retry passed.
+  Stopped `zpr-control-room-before-services-simplified` retains rollback.
+  Room sessions reset; operators must sign in again. No Simulator, backend,
+  provisioning, commit or push changes are included.
+
+- Unattached map tray deployed to Control Room at 2026-10-10 05:55 UTC using
+  the documented `restart-control-room` command. Running image:
+  `sha256:b816b6bb4d12adbdb8e52ebd47b147a571bf7f6c748f01a691147a3b55c4a928`.
+  HTTPS checks confirm `app.js?v=152`, `app.css?v=94`, and the Unattached tray
+  markup/function are served. Both Topology and World Map use the tray; isolated
+  nodes remain visible and unattached adapters do not affect Fit.
+  All 58 desktop/tablet geography tests passed before rollout. Control-Service,
+  Simulator (including its launch-queue recovery), and all three Great Lakes node
+  start times were unchanged. Room sessions reset on restart. No Simulator
+  deployment, commit, or push is implied by this entry.
 
 - Simulator launch-queue recovery deployed 2026-10-10 at 05:32:17 UTC as
   `zpr-simulator:20261010-launch-queue`. Executable SHA-256:

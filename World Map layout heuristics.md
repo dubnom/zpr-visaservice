@@ -126,33 +126,20 @@ Choose the highest-scoring contained candidate across sectors. If none is
 contained, use the highest-scoring outside-map fallback without moving the
 geographic node anchor.
 
-## 5. Unconnected adapter placement
+## 5. Detached adapter tray
 
-- Measure the occupied bounds of already placed actors, including service
-  rings, gateway clouds and a label-width allowance.
-- Pack unconnected adapters as a separate group, rather than putting them
-  into the distant node staging area.
-- Use a common group cell extent equal to the largest unconnected footprint,
-  with a minimum of 64.
-- Leave 40 layout units between occupied bounds and the group.
-- Leave 40 units between adjacent cells:
-
-```text
-cell spacing = 2 * group extent + 40
-```
-
-- Try every column count from 1 through the number of unconnected adapters.
-- For each column count, try placement to the right of the occupied bounds
-  and below them, centered along the other axis.
-- Select the arrangement minimizing:
-
-```text
-max(combined bounds width / viewport aspect, combined bounds height)
-```
-
-- If there are no placed actors, center the group at basemap position
-  (1800, 900).
-- These placements imply neither geographic coordinates nor network links.
+- Adapters without a reported node dock appear in a collapsed **Detached**
+  tray outside the SVG in both maps, with an inventory count and Inspect actions.
+- Their registered service names are listed with them; service rings and gateway
+  clouds do not enter map bounds or affect Fit until the adapter attaches.
+- Nodes, including isolated nodes and disconnected node networks, remain visible.
+- Reported docks move adapters onto the map; removal returns them to the tray.
+- The tray retains its open state across refreshes and map switches.
+- **Lost connection** means an attachment was previously observed in this browser
+  for the same organization. **No attachment observed** does not claim the adapter
+  has never connected. Unavailable snapshots explicitly mark attachment unknown.
+- This is presentation only: no invented links, inferred coordinates, or manual
+  attachment actions.
 
 ## 6. Resize, Fit and camera behavior
 

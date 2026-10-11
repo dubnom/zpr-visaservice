@@ -23,6 +23,13 @@ body { margin: 0; background: var(--paper); color: var(--ink); font-family: var(
 button, input, select { font: inherit; }
 button, select { cursor: pointer; }
 a { color: inherit; text-decoration: none; }
+.map-unattached { margin-bottom: 12px; padding: 10px 12px; border: 1px solid var(--line); border-radius: 3px; background: var(--panel); }
+.map-unattached summary { cursor: pointer; color: var(--ink); font-weight: 650; }
+.map-unattached p { color: var(--muted); font-size: 12px; }
+.map-unattached ul { display: flex; flex-wrap: wrap; gap: 12px; list-style: none; padding: 0; }
+.map-unattached li { display: flex; flex-direction: column; align-items: flex-start; gap: 5px; max-width: 100%; padding: 8px; border: 1px solid var(--line); overflow-wrap: anywhere; }
+.map-unattached li span, .map-unattached li small { font-size: 12px; }
+.map-unattached-warning { color: #a43830; font-weight: 650; }
 
 .app-shell { min-height: 100vh; }
 .sidebar { position: fixed; z-index: 5; inset: 0 auto 0 0; width: 230px; display: flex; flex-direction: column; padding: 18px 17px; background: var(--ink); color: #f4f7f2; }
