@@ -78,7 +78,7 @@ impl EvalContext {
                 "only TCP/UDP/ICMPv6 protocols supported".into(),
             )));
         }
-        let rdr = match self.policy.get_policy_reader() {
+        let rdr = match self.policy.get_policy_reader()? {
             Some(r) => r,
             None => {
                 return Ok(PartialEvalResult::deny_no_match(
@@ -115,7 +115,7 @@ impl EvalContext {
         hit: &Hit,
         request: &PacketDesc,
     ) -> Result<VisaProps, EvalError> {
-        let rdr = match self.policy.get_policy_reader() {
+        let rdr = match self.policy.get_policy_reader()? {
             Some(r) => r,
             None => {
                 return Err(EvalError::EmptyPolicy);

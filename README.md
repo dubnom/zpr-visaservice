@@ -26,8 +26,15 @@ See [Features Added Since the Upstream Fork](FEATURES_SINCE_ZPR_ORG.md) for a
 high-level overview of the operator, policy, trusted-service, DNS, observability,
 and simulator capabilities added in this fork.
 
+See [NATTY: session-scoped address indirection](NATTY.md) for a proposed,
+not-yet-implemented design for adapter-local address aliases and their session,
+visa, and replay-protection requirements.
 
 ## Crates / Packages / Libraries
+
+Policy evaluations use a fresh Cap'n Proto reader traversal budget for each
+request. Repeated evaluation of an unchanged policy cannot exhaust a shared
+reader's lifetime budget; parsing errors remain explicit.
 
 - `vs` - The ZPR Visa Service. Aka "v2vs" -- the "v2" used to differentiate it
   from the "v1", prototype visa service.

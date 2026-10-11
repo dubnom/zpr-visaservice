@@ -169,8 +169,19 @@ impl Policy {
 
     pub fn get_policy_reader(
         &self,
-    ) -> Option<Arc<capnp::message::Reader<capnp::serialize::OwnedSegments>>> {
-        self.policy_rdr.clone()
+    ) -> Result<Option<capnp::message::Reader<capnp::serialize::OwnedSegments>>, capnp::Error> {
+        if self.policy_rdr.is_none() {
+            return Ok(None);
+        }
+
+        // A Cap'n Proto reader's traversal budget is shared by all readers cloned
+        // from it. Evaluation repeatedly walks the same immutable policy, so hand
+        // out a freshly parsed reader to give each evaluation its own budget.
+        let reader = capnp::serialize::read_message(
+            self.serialized.clone().reader(),
+            capnp::message::ReaderOptions::new(),
+        )?;
+        Ok(Some(reader))
     }
 
     /// Returns the serialized Cap'n Proto `Policy` struct that created this [Policy].
@@ -715,6 +726,23 @@ mod test {
         let mut bytes: Vec<u8> = Vec::new();
         capnp::serialize::write_message(&mut bytes, &msg).unwrap();
         Policy::new_from_policy_bytes(Bytes::from(bytes)).unwrap()
+    }
+
+    #[test]
+    fn policy_reader_has_a_fresh_traversal_budget() {
+        let zpl = "x".repeat(1024);
+        let zpls = vec![zpl.as_str(); 200];
+        let policy = policy_with_cpol_sources(&zpls);
+
+        for _ in 0..400 {
+            let reader = policy.get_policy_reader().unwrap().unwrap();
+            let root = reader.get_root::<policy_capnp::policy::Reader>().unwrap();
+            let policies = root.get_com_policies().unwrap();
+            assert_eq!(policies.len(), 200);
+            for com_policy in policies.iter() {
+                assert_eq!(com_policy.get_zpl().unwrap().len(), zpl.len());
+            }
+        }
     }
 
     #[test]
