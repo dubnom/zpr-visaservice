@@ -199,6 +199,15 @@ func TestOperatorDelegationRealTLSLoginToAuditedEnrollment(t *testing.T) {
 	room.StartTLS()
 	defer room.Close()
 	if os.Getenv("ZPR_OPERATOR_BROWSER_FIXTURE") == "1" {
+		if _, err := store.SavePreflight(context.Background(), enrollment.PreflightAttestation{
+			Organization: "production", Mode: "production", HostLabel: "browser-fixture",
+			HostAddress: "192.168.1.20", DeliveryChannel: "production-portal",
+			DNSVerified: true, ACMEVerified: true, TLSVerified: true, NetworkVerified: true,
+			DockerVerified: true, ListenersVerified: true, PackageVerified: true,
+			RecoveryVerified: true, BackupVerified: true,
+		}, "fixture-reviewer", time.Now()); err != nil {
+			t.Fatal(err)
+		}
 		item, code, err := store.Create(context.Background(), enrollment.Asset{Organization: "production", AssetID: "INV-BROWSER", Name: "Fixture laptop", Owner: "Operations", Type: "laptop", Profile: "standard", Recipient: "owner@example.org"}, "fixture-reviewer", time.Now(), time.Now().Add(time.Hour))
 		if err != nil {
 			t.Fatal(err)
@@ -292,6 +301,10 @@ func TestOperatorDelegationRealTLSLoginToAuditedEnrollment(t *testing.T) {
 	body := []byte(`{"organization":"production","asset_id":"INV-7","name":"Laptop 7","owner":"Operations","type":"laptop","profile":"standard","recipient":"owner@example.org"}`)
 	if code, _, _ := do("POST", enrollment.APIPrefix+"invitations", body, ""); code != 403 {
 		t.Fatalf("missing CSRF=%d", code)
+	}
+	preflight := []byte(`{"organization":"production","deployment_mode":"production","host_label":"test-host","host_address":"192.168.1.20","delivery_channel":"production-portal","dns_verified":true,"acme_verified":true,"tls_verified":true,"network_verified":true,"docker_verified":true,"listeners_verified":true,"package_verified":true,"recovery_verified":true,"backup_verified":true}`)
+	if code, data, _ := do("POST", enrollment.APIPrefix+"preflight", preflight, session.CSRF); code != 200 {
+		t.Fatalf("save preflight=%d %s", code, data)
 	}
 	code, data, _ = do("POST", enrollment.APIPrefix+"invitations", body, session.CSRF)
 	if code != 201 {

@@ -2,13 +2,20 @@
 set -eu
 umask 022
 
-if [ "$#" -ne 3 ]; then
-    echo "usage: sh build-macos.sh macos-arm64-binary version new-output.dmg" >&2
+if [ "$#" -ne 3 ] && [ "$#" -ne 4 ]; then
+    echo "usage: sh build-macos.sh macos-arm64-binary version new-output.dmg [Developer-ID-Application-identity]" >&2
     exit 2
 fi
 binary=$1
 version=$2
 output=$3
+identity=${4:-}
+if [ -n "$identity" ]; then
+    case "$identity" in
+        "Developer ID Application: "*) ;;
+        *) echo "distribution signing requires a Developer ID Application identity" >&2; exit 2 ;;
+    esac
+fi
 if [ "$(uname -s)" != Darwin ]; then
     echo "macOS host required for native app signing and DMG packaging" >&2
     exit 1
@@ -40,6 +47,10 @@ install -m 0755 "$binary" "$app/Contents/MacOS/zpr-enrollment-setup"
 install -m 0755 "$assets/macos/launch" "$app/Contents/MacOS/launch"
 install -m 0644 "$assets/macos/launch.applescript" "$app/Contents/Resources/launch.applescript"
 install -m 0644 "$assets/macos/README.txt" "$app/Contents/Resources/README.txt"
+if [ -n "$identity" ]; then
+    sed 's/This local build is ad-hoc signed, NOT Developer ID signed or notarized./This build is Developer ID signed. Notarization must be verified separately./' \
+        "$assets/macos/README.txt" > "$app/Contents/Resources/README.txt"
+fi
 install -m 0644 "$assets/macos/setup.example.json" "$app/Contents/Resources/setup.example.json"
 cat > "$app/Contents/Info.plist" <<EOF
 <?xml version="1.0" encoding="UTF-8"?>
@@ -59,11 +70,22 @@ cat > "$app/Contents/Info.plist" <<EOF
 </dict></plist>
 EOF
 plutil -lint "$app/Contents/Info.plist"
-codesign --force --sign - --timestamp=none --identifier com.zpr.enrollment.development.wizard "$app/Contents/MacOS/zpr-enrollment-setup"
-codesign --force --sign - "$app"
+if [ -n "$identity" ]; then
+    codesign --force --sign "$identity" --options runtime --timestamp --identifier com.zpr.enrollment.development.wizard "$app/Contents/MacOS/zpr-enrollment-setup"
+    codesign --force --sign "$identity" --options runtime --timestamp "$app"
+else
+    codesign --force --sign - --timestamp=none --identifier com.zpr.enrollment.development.wizard "$app/Contents/MacOS/zpr-enrollment-setup"
+    codesign --force --sign - "$app"
+fi
 codesign --verify --deep --strict "$app"
 osacompile -o "$stage/launch-test.scpt" "$assets/macos/launch.applescript"
 rm "$stage/launch-test.scpt"
-cp "$assets/macos/README.txt" "$stage/READ-ME-FIRST.txt"
+cp "$app/Contents/Resources/README.txt" "$stage/READ-ME-FIRST.txt"
 hdiutil create -quiet -format UDZO -volname "ZPR Enrollment Development" -srcfolder "$stage" "$output"
-echo "Created AD-HOC-SIGNED, NOT NOTARIZED development image: $output"
+if [ -n "$identity" ]; then
+    codesign --force --sign "$identity" --timestamp "$output"
+    codesign --verify --strict "$output"
+    echo "Created DEVELOPER-ID-SIGNED, NOT YET NOTARIZED enrollment-only image: $output"
+else
+    echo "Created AD-HOC-SIGNED, NOT NOTARIZED development image: $output"
+fi

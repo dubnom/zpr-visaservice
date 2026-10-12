@@ -54,12 +54,295 @@ const node = (cn, latitude, longitude) => ({
   cn, node: true, zpr_addr: "fd00::1",
   node_details: { latitude, longitude, adapters: [], links: [], visas: [], in_sync: true },
 });
+for (const view of ["Topology", "World Map"]) {
+  test(`${view} attached components grow from their parent and retract with their connections`, async ({ page, appURL, snapshot }) => {
+    await page.emulateMedia({ reducedMotion: "no-preference" });
+    const parent = node("parent", 0, 0);
+    snapshot.actors = [parent, { cn: "child", node: false, zpr_addr: "fd00::2" }];
+    snapshot.services = [{ actor_cn: "child", service_name: "API", service_kind: "Application", service_endpoints: "TCP/443" }];
+    await page.goto(`${appURL}/#map`);
+    await page.getByRole("button", { name: view, exact: true }).click();
+    await expect(page.locator('[data-inspect-attachment-group="detached"]')).toContainText("Detached 1");
+    await page.locator("#pause-poll").click();
+    parent.node_details.adapters = ["child"];
+    await page.locator("#refresh-now").click();
+    const child = page.locator('#graph-world > .graph-vertex[data-inspect-actor="child"]');
+    await expect(child.locator(".graph-arrival-ring")).toHaveCount(1);
+    await expect(page.locator(".graph-service-badge .graph-arrival-ring")).toHaveCount(1);
+    const measure = async (component, time) => component.evaluate(async (element, time) => {
+      const world = element.closest("#graph-world");
+      for (const component of world.querySelectorAll("[data-topology-component]")) {
+        if (!component.graphMotion) continue;
+        component.graphMotion.animation.pause();
+        component.graphMotion.animation.currentTime = time;
+        const { x, y, scale } = graphMotionAt(component);
+        const centerX = Number(component.dataset.originX), centerY = Number(component.dataset.originY);
+        component.setAttribute("transform", `translate(${x} ${y}) translate(${centerX} ${centerY}) scale(${scale}) translate(${-centerX} ${-centerY})`);
+      }
+      const { x, y, scale } = graphMotionAt(element);
+      for (const connections of world.graphConnections.values()) {
+        for (const connection of connections) connectGraphShapes(connection.lines, connection.from, connection.to, world);
+      }
+      const wire = [...world.querySelectorAll('.graph-edge[data-dock-adapter="child"] .graph-link')]
+        .find(line => element.classList.contains("graph-exiting") === Boolean(line.closest(".graph-exit-layer")));
+      return { x, y, scale, length: Math.hypot(
+        Number(wire.getAttribute("x2")) - Number(wire.getAttribute("x1")),
+        Number(wire.getAttribute("y2")) - Number(wire.getAttribute("y1"))) };
+    }, time);
+    const start = await measure(child, 0);
+    const finish = await measure(child, 900);
+    expect(Math.hypot(start.x, start.y)).toBeGreaterThan(10);
+    expect(finish.scale).toBe(1);
+    expect(finish.length).toBeGreaterThan(start.length);
+    await child.evaluate(element => element.graphMotion.animation.finish());
+    parent.node_details.adapters = [];
+    await page.locator("#refresh-now").click();
+    const departing = page.locator('.graph-exit-layer .graph-vertex[data-topology-component=\'actor:"child"\']');
+    await expect(departing).toHaveCount(1);
+    await expect(page.locator(".graph-exit-layer .graph-edge")).toHaveCount(1);
+    const exitStart = await measure(departing, 0);
+    const exitEnd = await measure(departing, 899);
+    expect(exitEnd.length).toBeLessThan(exitStart.length);
+    expect(exitEnd.scale).toBeCloseTo(0.1);
+    await departing.evaluate(element => element.graphMotion.animation.finish());
+    await expect(departing).toHaveCount(0);
+    await expect(page.locator(".graph-exit-layer .graph-edge")).toHaveCount(0);
+    await expect(page.locator('[data-inspect-attachment-group="lost"]')).toContainText("Lost 1");
+    await page.locator("#refresh-now").click();
+    await expect(page.locator(".graph-arrival-ring, .graph-exiting")).toHaveCount(0);
+  });
+}
+  for (const view of ["Topology", "World Map"]) {
+    test(`${view} shows bottom-right Detached and Lost overlay buttons with inspectable members`, async ({ page, appURL, snapshot }) => {
+      const parent = node("parent", 0, 0);
+      parent.node_details.adapters = ["was-attached"];
+      snapshot.actors = [parent, { cn: "was-attached", node: false, zpr_addr: "fd00::2" }, { cn: "never-attached", node: false, zpr_addr: "fd00::3" }];
+      snapshot.services = [{ actor_cn: "never-attached", service_name: "Offline API", service_kind: "Application" }];
+      await page.goto(`${appURL}/#map`);
+      await page.getByRole("button", { name: view, exact: true }).click();
+      await page.locator("#pause-poll").click();
+      parent.node_details.adapters = [];
+      await page.locator("#refresh-now").click();
+      const groups = page.locator(".graph-attachment-group");
+      await expect(groups).toHaveCount(2);
+      await expect(page.locator("#map-unattached")).toHaveCount(0);
+      await expect(page.locator("#graph-world > .graph-vertex")).toHaveCount(1);
+      await expect(page.locator("#graph-world > .graph-edge")).toHaveCount(0);
+      for (const [kind, member] of [["detached", "never-attached"], ["lost", "was-attached"]]) {
+        const group = page.locator(`[data-inspect-attachment-group="${kind}"]`);
+        await expect(group).toHaveAttribute("aria-label", new RegExp(": 1 adapters"));
+        await expect(group).toHaveJSProperty("tagName", "BUTTON");
+        await expect(group.locator("polygon")).toHaveCount(0);
+        await group.focus();
+        await group.press(kind === "lost" ? " " : "Enter");
+        await expect(page.locator("#component-inspector")).toContainText(member);
+        await expect(page.locator("#component-inspector")).not.toContainText(kind === "lost" ? "never-attached" : "was-attached");
+        await page.locator(`#inspector-body [data-inspect-actor="${member}"]`).click();
+        await expect(page.locator("#inspector-title")).toHaveText(member);
+        await page.locator("#inspector-close").click();
+      }
+      await expect(page.locator("#graph-world .graph-attachment-group")).toHaveCount(0);
+      const geometry = await page.locator(".graph-attachment-controls").evaluate(controls => {
+        const stage = controls.parentElement.getBoundingClientRect();
+        const box = controls.getBoundingClientRect();
+        return { right: stage.right - box.right, bottom: stage.bottom - box.bottom };
+      });
+      expect(geometry.right).toBeCloseTo(10);
+      expect(geometry.bottom).toBeCloseTo(9);
+      const beforeZoom = await groups.first().boundingBox();
+      await page.getByRole("button", { name: "Zoom in", exact: true }).click();
+      await page.getByRole("button", { name: "Fit graph", exact: true }).click();
+      expect(await groups.first().boundingBox()).toEqual(beforeZoom);
+      parent.node_details.adapters = ["was-attached", "never-attached"];
+      await page.locator("#refresh-now").click();
+      await expect(groups.locator(".graph-attachment-count")).toHaveText(["0", "0"]);
+      snapshot.actors = [{ cn: "only-detached", node: false }];
+      snapshot.services = [];
+      await page.locator("#refresh-now").click();
+      await expect(groups).toHaveCount(2);
+      await expect(groups.locator(".graph-attachment-count")).toHaveText(["1", "0"]);
+      snapshot.actors = [];
+      await page.locator("#refresh-now").click();
+      await expect(groups).toHaveCount(0);
+      await expect(page.locator("#topology-stage .empty-state")).toBeVisible();
+    });
+  }
+
+test("grant pulses include active visas outside the recent ten and do not replay unchanged grants", async ({ page, appURL, snapshot }) => {
+  await page.emulateMedia({ reducedMotion: "no-preference" });
+  const parent = node("parent", 0, 0);
+  parent.node_details.adapters = ["requester", "provider"];
+  snapshot.actors = [parent, { cn: "requester", node: false, zpr_addr: "fd00::2" }, { cn: "provider", node: false, zpr_addr: "fd00::3" }];
+  snapshot.services = [{ actor_cn: "provider", service_name: "API", service_kind: "Application", service_endpoints: "TCP/443" }];
+  snapshot.active_visas = [];
+  await page.goto(`${appURL}/#map`);
+  await page.locator("#pause-poll").click();
+  snapshot.active_visas.push({ id: 11, source_addr: "fd00::2", dest_addr: "fd00::3", dest_port: 443, proto: "TCP", expires: Date.now() / 1000 + 60 });
+  await page.locator("#refresh-now").click();
+  await expect(page.locator('.graph-vertex[data-inspect-actor="requester"] .graph-decision-ring')).toHaveCount(1);
+  await expect(page.locator('.graph-service-badge[data-inspect-service="API"] .graph-service-decision-ring')).toHaveCount(1);
+  await expect(page.locator(".graph-decision-ring, .graph-service-decision-ring")).toHaveCount(0);
+  await page.locator("#refresh-now").click();
+  await expect(page.locator(".graph-decision-ring, .graph-service-decision-ring")).toHaveCount(0);
+});
+
+test("Map legend is hidden by default and opens via popup disclosure with search and dismiss behavior", async ({ page, appURL, snapshot }) => {
+  const hub = node("hub", 0, 0);
+  hub.node_details.adapters = ["client"];
+  snapshot.actors = [hub, { cn: "client", node: false, zpr_addr: "fd00::2" }];
+  await page.goto(`${appURL}/#map`);
+
+  const legendDetails = page.locator("#map-legend-key");
+  const legendSummary = legendDetails.locator("summary");
+  const legendPanel = legendDetails.locator(".legend");
+  const searchInput = legendPanel.locator("#topology-search");
+  const clearButton = page.locator("#map-clear-highlight");
+
+  await expect(page.locator(".map-traffic-controls #map-legend-key")).toBeVisible();
+  await expect(legendDetails).not.toHaveAttribute("open", "");
+  await expect(legendPanel).toBeHidden();
+  await expect(legendSummary).toHaveText("Filter...");
+
+  await legendSummary.click();
+  await expect(legendDetails).toHaveAttribute("open", "");
+  await expect(legendPanel).toBeVisible();
+  await expect(searchInput).toBeVisible();
+  await expect(clearButton).toBeHidden();
+
+  const nodeButton = legendPanel.locator('[data-legend-kind="node"]');
+  await nodeButton.click();
+  await expect(nodeButton).toHaveAttribute("aria-pressed", "true");
+  await expect(clearButton).toBeVisible();
+  await expect(page.locator('.graph-vertex.node')).toHaveClass(/highlighted/);
+
+  await page.keyboard.press("Escape");
+  await expect(legendDetails).not.toHaveAttribute("open", "");
+  await expect(legendPanel).toBeHidden();
+  await expect(legendSummary).toBeFocused();
+
+  await legendSummary.click();
+  await expect(legendDetails).toHaveAttribute("open", "");
+  await expect(nodeButton).toHaveAttribute("aria-pressed", "true");
+  await expect(clearButton).toBeVisible();
+
+  await clearButton.click();
+  await expect(nodeButton).toHaveAttribute("aria-pressed", "false");
+  await expect(clearButton).toBeHidden();
+
+  await searchInput.fill("client");
+  await expect(clearButton).toBeVisible();
+  await expect(page.locator('.graph-vertex.adapter')).toHaveClass(/highlighted/);
+
+  await page.locator("#page-map").click({ position: { x: 10, y: 10 } });
+  await expect(legendDetails).not.toHaveAttribute("open", "");
+  await expect(legendPanel).toBeHidden();
+
+  await page.keyboard.press("Escape");
+  await expect(clearButton).toBeHidden();
+  await expect(page.locator('.graph-vertex.adapter')).not.toHaveClass(/highlighted/);
+});
 async function openGeography(page, appURL) {
   await page.goto(`${appURL}/#map`);
   await page.getByRole("button", { name: "World Map", exact: true }).click();
   await expect(page.locator("#page-map")).toHaveAttribute("data-map-view", "geography");
   await expect(page.locator(".geography-status, .geography-overview, .geography-located, .geography-attribution")).toHaveCount(0);
   await expect(page.locator(".graph-geographic-basemap")).toHaveCount(1);
+}
+
+function trafficSample(actor, time, receive, transmit) {
+  actor.node_details.counters_updated_at = new Date(time).toISOString();
+  actor.node_details.counters = [
+    { group: "fastpath.0", name: "inbound_packets_received", value: String(receive) },
+    { group: "fastpath.0", name: "outbound_packets_sent", value: String(transmit) },
+    { group: "management", name: "visa_requests", value: "500000" },
+  ];
+}
+
+for (const geographic of [false, true]) {
+  test(`${geographic ? "World Map" : "Topology"} shows measured node packet volume and shared controls`, async ({ page, appURL, snapshot }) => {
+    await page.clock.install({ time: new Date("2026-10-12T15:00:00Z") });
+    const time = Date.parse("2026-10-12T15:00:00Z") - 7000;
+    const errors = [];
+    page.on("pageerror", error => errors.push(error.message));
+    const actor = node("traffic-node", 40, -80);
+    actor.node_details.adapters = ["attached"];
+    trafficSample(actor, time, 100, 200);
+    snapshot.actors = [actor, { cn: "attached", node: false, zpr_addr: "fd00::2" }];
+    if (geographic) await openGeography(page, appURL);
+    else await page.goto(`${appURL}/#map`);
+    const halo = page.locator('[data-traffic-node="traffic-node"]');
+    await expect(halo).toHaveAttribute("data-traffic-status", "waiting");
+    await expect(page.locator(".graph-traffic-halo")).toHaveCount(1);
+    trafficSample(actor, time + 5000, 1100, 700);
+    await page.locator("#refresh-now").click();
+    await expect(halo).toHaveAttribute("data-traffic-status", "ready");
+    await expect(halo).toHaveClass(/band-2/);
+    await expect(halo).toHaveAttribute("aria-label", /RX 200 packets\/sec, TX 100 packets\/sec/);
+    await expect(halo.locator("rect")).toHaveCSS("stroke-width", "3px");
+    await expect(page.locator('[data-inspect-actor="traffic-node"] > title')).toContainText("Includes control traffic");
+    await page.locator("#map-traffic-key summary").click();
+    await expect(page.locator("#map-traffic-legend")).toBeVisible();
+    await expect(page.locator("#map-traffic-legend")).toContainText("includes control traffic");
+    await page.locator("#map-traffic-key summary").click();
+    const bounds = await page.locator(".topology-graph").getAttribute("viewBox");
+    await page.locator("#map-traffic").selectOption("off");
+    await expect(halo).toBeHidden();
+    await expect(page.locator("#map-traffic-legend")).toBeHidden();
+    await expect(page.locator(".topology-graph")).toHaveAttribute("viewBox", bounds);
+    await page.getByRole("button", { name: geographic ? "Topology" : "World Map", exact: true }).click();
+    await expect(page.locator("#map-traffic")).toHaveValue("off");
+    await page.locator("#map-traffic").selectOption("packets");
+    await expect(halo).toBeVisible();
+    await expect(halo).toHaveClass(/band-2/);
+    await page.locator('[data-inspect-actor="traffic-node"].graph-vertex').click();
+    await expect(page.locator("#map-traffic-details")).toContainText("RX 200 packets/sec");
+    trafficSample(actor, time + 6000, 1200, 750);
+    await page.clock.fastForward(5000);
+    await expect.poll(() => page.evaluate(() => mapTraffic.get("traffic-node").history.length)).toBe(2);
+    expect(errors).toEqual([]);
+    await expect(page.locator(".map-traffic-history")).toHaveCount(1);
+    await expect(page.locator("#map-traffic-details")).toContainText("RX 100 packets/sec");
+    await expect(page.locator(".map-traffic-history")).toHaveAttribute("aria-label", /Recent RX \+ TX packet I\/O over 1.0 seconds/);
+  });
+  test(`${geographic ? "World Map" : "Topology"} distinguishes zero, stale, reset, and disconnected packet telemetry`, async ({ page, appURL, snapshot }) => {
+    await page.clock.install({ time: new Date("2026-10-12T15:00:00Z") });
+    const now = Date.parse("2026-10-12T15:00:00Z");
+    const actor = node("traffic-node", 40, -80);
+    trafficSample(actor, now - 5000, 100, 100);
+    snapshot.actors = [actor];
+    if (geographic) await openGeography(page, appURL);
+    else await page.goto(`${appURL}/#map`);
+    const halo = page.locator('[data-traffic-node="traffic-node"]');
+    await expect(halo).toHaveAttribute("data-traffic-status", "waiting");
+    trafficSample(actor, now, 100, 100);
+    await page.locator("#refresh-now").click();
+    await expect(halo).toHaveClass(/band-0/);
+    await expect(halo).toHaveAttribute("aria-label", /RX 0 packets\/sec, TX 0 packets\/sec/);
+    trafficSample(actor, now + 1000, 100, 100);
+    await page.clock.fastForward(1000);
+    await page.locator("#refresh-now").click();
+    await page.locator('[data-inspect-actor="traffic-node"].graph-vertex').click();
+    await expect(page.locator(".map-traffic-history")).toHaveAttribute("aria-label", /peak 0 packets\/sec/);
+    await page.locator("#inspector-close").click();
+    await page.locator("#pause-poll").click();
+    await page.clock.fastForward(11000);
+    await expect(halo).toHaveAttribute("data-traffic-status", "stale");
+    await expect(halo).toHaveClass(/band-unknown/);
+    trafficSample(actor, now + 11000, 0, 0);
+    await page.locator("#refresh-now").click();
+    await expect(halo).toHaveAttribute("data-traffic-status", "waiting");
+    snapshot.api_status = "disconnected";
+    await page.locator("#refresh-now").click();
+    await expect(halo).toHaveAttribute("data-traffic-status", "unavailable");
+    snapshot.api_status = "connected";
+    delete actor.node_details.counters;
+    await page.locator("#refresh-now").click();
+    await expect(halo).toHaveAttribute("data-traffic-status", "unavailable");
+    await expect(halo).toHaveAttribute("aria-label", /incomplete RX\/TX/);
+    await page.route("**/api/snapshot", route => route.fulfill({ status: 503, json: { error: "Telemetry offline" } }));
+    await page.locator("#refresh-now").click();
+    await expect(halo).toHaveAttribute("aria-label", /disconnected/);
+  });
 }
 
 for (const geographic of [false, true]) {
@@ -92,27 +375,27 @@ for (const geographic of [false, true]) {
     await page.evaluate(() => { location.hash = "#map"; });
     await expect(control).toHaveAttribute("aria-pressed", "false");
   });
-  test(`Unattached tray keeps adapters out of ${geographic ? "world" : "topology"} map and tracks real attachments`, async ({ page, appURL, snapshot }) => {
+  test(`Attachment groups keep individual adapters out of ${geographic ? "world" : "topology"} map and track real attachments`, async ({ page, appURL, snapshot }) => {
     const isolated = node("isolated", 42, -85);
     snapshot.actors = [isolated, { cn: "loose", node: false, zpr_addr: "fd00::2" }];
     snapshot.services = [{ actor_cn: "loose", service_name: "Loose service", service_kind: "Required" }];
     if (geographic) await openGeography(page, appURL);
     else await page.goto(`${appURL}/#map`);
-    const tray = page.locator("#map-unattached");
-    await expect(tray).toBeVisible();
-    await expect(tray).not.toHaveAttribute("open", "");
+    const detached = page.locator('[data-inspect-attachment-group="detached"]');
+    const lost = page.locator('[data-inspect-attachment-group="lost"]');
     await expect(page.locator(".graph-vertex")).toHaveCount(1);
     await expect(page.locator(".graph-service-badge")).toHaveCount(0);
-    await page.locator("#map-unattached-summary").click();
-    await expect(tray).toContainText("No attachment observed");
-    await expect(tray).toContainText("Loose service");
+    await detached.click();
+    await expect(page.locator("#inspector-body")).toContainText("No attachment observed");
+    await expect(page.locator("#inspector-body")).toContainText("Loose service");
+    await page.locator("#inspector-close").click();
     const initialBounds = await page.locator(".topology-graph").getAttribute("viewBox");
     snapshot.actors.push({ cn: "another", node: false, zpr_addr: "fd00::3" });
     await page.locator("#refresh-now").click();
-    await expect(page.locator("#map-unattached-summary")).toHaveText("Detached · 2");
+    await expect(detached.locator(".graph-attachment-count")).toHaveText("2");
     await expect(page.locator(".topology-graph")).toHaveAttribute("viewBox", initialBounds);
-    await expect(tray).toHaveAttribute("open", "");
-    await tray.getByRole("button", { name: "Inspect loose", exact: true }).click();
+    await detached.click();
+    await page.locator('#inspector-body [data-inspect-actor="loose"]').click();
     await expect(page.locator("#inspector-title")).toContainText("loose");
     await expect(page.locator("#inspector-body")).toContainText("fd00::2");
     await expect(page.locator("#inspector-body")).toContainText("No attachment observed");
@@ -122,24 +405,27 @@ for (const geographic of [false, true]) {
     await page.locator("#refresh-now").click();
     await expect(page.locator('.graph-vertex[data-inspect-actor="loose"]')).toHaveCount(1);
     await expect(page.locator(".graph-service-badge")).toHaveCount(1);
-    await expect(tray.locator('[data-unattached-actor="loose"]')).toHaveCount(0);
+    await expect(detached.locator(".graph-attachment-count")).toHaveText("1");
     isolated.node_details.adapters = [];
     await page.locator("#refresh-now").click();
-    await expect(page.locator("#map-unattached-summary")).toHaveText("Detached · 2 · 1 lost connection");
-    await expect(tray.locator('[data-unattached-actor="loose"]')).toContainText("Lost connection");
+    await expect(lost.locator(".graph-attachment-count")).toHaveText("1");
+    await lost.click();
+    await expect(page.locator("#inspector-body")).toContainText("previously observed");
+    await page.locator("#inspector-close").click();
     await expect(page.locator(".graph-vertex")).toHaveCount(1);
     snapshot.api_status = "disconnected";
     await page.locator("#refresh-now").click();
-    await expect(tray).toContainText("Attachment unavailable");
+    await lost.click();
+    await expect(page.locator("#inspector-body")).toContainText("Attachment unavailable");
   });
 
   test(`Unattached-only ${geographic ? "world" : "topology"} map has a usable empty state`, async ({ page, appURL, snapshot }) => {
     snapshot.actors = [{ cn: "loose", node: false }];
     if (geographic) await openGeography(page, appURL);
     else await page.goto(`${appURL}/#map`);
-    await expect(page.locator("#map-unattached-summary")).toHaveText("Detached · 1");
+    await expect(page.locator('[data-inspect-attachment-group="detached"] .graph-attachment-count')).toHaveText("1");
     await expect(page.locator(".graph-vertex")).toHaveCount(0);
-    await expect(page.locator("#topology-stage .empty-state")).toBeVisible();
+    await expect(page.locator(".graph-attachment-group")).toHaveCount(2);
   });
 }
 
@@ -212,7 +498,7 @@ for (const viewport of [{ width: 1600, height: 700 }, { width: 600, height: 1200
       await page.getByRole("button", { name: view, exact: true }).click();
       const before = await geometry();
       await expect(page.locator(".graph-vertex")).toHaveCount(2);
-      await expect(page.locator("#map-unattached-summary")).toHaveText("Detached · 3");
+      await expect(page.locator('[data-inspect-attachment-group="detached"] .graph-attachment-count')).toHaveText("3");
       await expect(page.locator(".graph-cloud")).toHaveCount(0);
       if (view === "World Map") expect(before.hub).toEqual({ cn: "hub", x: 1800, y: 900 });
       await page.locator("#refresh-now").click();
@@ -233,12 +519,12 @@ for (const viewport of [{ width: 1600, height: 700 }, { width: 600, height: 1200
   });
 }
 
-test("unattached-only maps preserve the full basemap without inventing positions", async ({ page, appURL, snapshot }) => {
+test("unattached-only maps retain a basemap and aggregate inventory without inventing actor positions", async ({ page, appURL, snapshot }) => {
   snapshot.actors = ["free-a", "free-b"].map(cn => ({ cn, node: false }));
   await openGeography(page, appURL);
   await expect(page.locator("#graph-world > .graph-vertex")).toHaveCount(0);
-  await expect(page.locator("#map-unattached-summary")).toHaveText("Detached · 2");
-  await expect(page.locator(".topology-graph")).toHaveAttribute("viewBox", "0 0 3600 1800");
+  await expect(page.locator('[data-inspect-attachment-group="detached"] .graph-attachment-count')).toHaveText("2");
+  await expect(page.locator(".graph-geographic-basemap")).toHaveCount(1);
 });
 
 test("geography projects valid coordinates exactly and rejects invalid values", async ({ page, appURL, snapshot }) => {

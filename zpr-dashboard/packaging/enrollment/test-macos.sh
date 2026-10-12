@@ -32,11 +32,20 @@ plutil -lint "$app/Contents/Info.plist"
 [ "$(lipo -archs "$app/Contents/MacOS/zpr-enrollment-setup")" = arm64 ]
 cmp "$assets/macos/launch" "$app/Contents/MacOS/launch"
 cmp "$assets/macos/launch.applescript" "$app/Contents/Resources/launch.applescript"
-cmp "$assets/macos/README.txt" "$app/Contents/Resources/README.txt"
+if codesign -d --verbose=4 "$app" 2>&1 | grep -q '^Authority=Developer ID Application:'; then
+    sed 's/This local build is ad-hoc signed, NOT Developer ID signed or notarized./This build is Developer ID signed. Notarization must be verified separately./' \
+        "$assets/macos/README.txt" > "$stage/README.txt"
+    cmp "$stage/README.txt" "$app/Contents/Resources/README.txt"
+else
+    cmp "$assets/macos/README.txt" "$app/Contents/Resources/README.txt"
+fi
 cmp "$assets/macos/setup.example.json" "$app/Contents/Resources/setup.example.json"
 cp "$binary" "$stage/original"
 cp "$app/Contents/MacOS/zpr-enrollment-setup" "$stage/packaged"
+codesign --remove-signature "$stage/original"
+codesign --remove-signature "$stage/packaged"
 codesign --force --sign - --timestamp=none --identifier com.zpr.enrollment.development.wizard "$stage/original"
+codesign --force --sign - --timestamp=none --identifier com.zpr.enrollment.development.wizard "$stage/packaged"
 cmp "$stage/original" "$stage/packaged"
 mkdir -p "$stage/home/Library/Application Support/ZPR/EnrollmentSetup"
 config="$stage/home/Library/Application Support/ZPR/EnrollmentSetup/setup.json"

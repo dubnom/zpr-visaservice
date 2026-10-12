@@ -2,6 +2,9 @@
 set -eu
 
 SCRIPT_DIR=$(CDPATH='' cd -- "$(dirname -- "$0")" && pwd)
+. "$SCRIPT_DIR/multinode-admin.sh"
+. "$SCRIPT_DIR/machine-runtime.sh"
+. "$SCRIPT_DIR/multinode-platform.sh"
 DASHBOARD_DIR=$(CDPATH='' cd -- "$SCRIPT_DIR/.." && pwd)
 RUNTIME_DIR=$(CDPATH='' cd -- "$DASHBOARD_DIR/../../.local-runtime" && pwd)
 PROJECT_ROOT=$(CDPATH='' cd -- "$DASHBOARD_DIR/../.." && pwd)
@@ -154,11 +157,25 @@ docker_socket_path() {
     printf '%s\n' "${ZPR_DOCKER_SOCKET:-/var/run/docker.sock}"
 }
 
+simulator_stack_action() {
+    simulator_stack_script="$SCRIPT_DIR/dashboard-stack.sh"
+    if ! docker exec "$SIMULATOR_DOCKER_CONTAINER" test -r "$simulator_stack_script" 2>/dev/null; then
+        simulator_stack_script=$(docker inspect --format '{{range .Config.Env}}{{println .}}{{end}}' "$SIMULATOR_DOCKER_CONTAINER" |
+            sed -n 's/^SIMULATION_STACK_SCRIPT=//p')
+        if [ -z "$simulator_stack_script" ] ||
+            ! docker exec "$SIMULATOR_DOCKER_CONTAINER" test -r "$simulator_stack_script"; then
+            echo "Simulator stack script is unavailable inside $SIMULATOR_DOCKER_CONTAINER" >&2
+            return 1
+        fi
+    fi
+    docker exec "$SIMULATOR_DOCKER_CONTAINER" sh "$simulator_stack_script" "$1"
+}
+
 stop_simulator() {
     if [ "${ZPR_DASHBOARD_CONTAINER_RUNTIME:-}" != 1 ]; then
         if [ "$(docker inspect -f '{{.State.Running}}' "$SIMULATOR_DOCKER_CONTAINER" 2>/dev/null || true)" = true ]; then
             for action in stop-admin-relay stop-dns stop-ui-relays; do
-                docker exec "$SIMULATOR_DOCKER_CONTAINER" sh "$SCRIPT_DIR/dashboard-stack.sh" "$action" >/dev/null 2>&1 || true
+                simulator_stack_action "$action" >/dev/null 2>&1 || true
             done
         else
             stop_host_relays
@@ -182,7 +199,10 @@ stop_stack() {
     ZPR_OBSERVABILITY_LOCAL_CONTAINER="$OBSERVABILITY_LOCAL_CONTAINER" \
         sh "$OBSERVABILITY_PROFILE_DIR/run.sh" stop-local || true
     for number in $(seq -w 1 20); do
-        docker rm -f "zpr-machine-$number" >/dev/null 2>&1 || true
+        machine_container_id=$(docker ps -aq --filter "name=^/zpr-machine-$number$")
+        if [ -n "$machine_container_id" ]; then
+            docker rm -f "$machine_container_id" >/dev/null
+        fi || true
     done
     stop_service "$BROWSER_GATEWAY_PID"
     if [ "$(docker inspect -f '{{.State.Running}}' "$SIMULATOR_DOCKER_CONTAINER" 2>/dev/null || true)" = true ]; then
@@ -245,6 +265,11 @@ start_simulator() {
     if [ "$(docker inspect -f '{{.State.Running}}' "$SIMULATOR_DOCKER_CONTAINER" 2>/dev/null || true)" = true ]; then
         return 0
     fi
+    if docker inspect "$SIMULATOR_DOCKER_CONTAINER" >/dev/null 2>&1; then
+        inherit_multinode_platform "$SIMULATOR_DOCKER_CONTAINER"
+    fi
+    load_multinode_platform_file "$STATE_DIR/multinode-platform.json"
+    configure_multinode_platform
     docker rm -f "$SIMULATOR_DOCKER_CONTAINER" >/dev/null 2>&1 || true
     docker build -f "$SCRIPT_DIR/Dockerfile.simulator" -t "$SIMULATOR_IMAGE" "$DASHBOARD_DIR"
     simulator_socket=$(docker_socket_path)
@@ -298,6 +323,11 @@ start_simulator() {
         -p 127.0.0.1:8798:8798 \
         -e SIMULATION_MANIFEST="$SIMULATION_MANIFEST" \
         -e SIMULATION_ORGANIZATION_ID="$organization_id" \
+        -e ZPR_MULTINODE_PLATFORM="$ZPR_MULTINODE_PLATFORM" \
+        -e ZPR_MULTINODE_IMAGE="$ZPR_MULTINODE_IMAGE" \
+        -e ZPR_MULTINODE_DIRECTORY_IMAGE="$ZPR_MULTINODE_DIRECTORY_IMAGE" \
+        -e ZPR_MULTINODE_DIRECTORY_MANAGER_IMAGE="$ZPR_MULTINODE_DIRECTORY_MANAGER_IMAGE" \
+        -e ZPR_TRUSTED_SERVICE_BINARY="${ZPR_TRUSTED_SERVICE_BINARY:-}" \
         -e SIMULATION_ORGANIZATIONS_DIR="$ORGANIZATIONS_DIR" \
         -e SIMULATION_WORKSPACE_DB_DIR="$STATE_DIR/policy-private" \
         -e SIMULATION_PREGEN_DIR="$RUNTIME_DIR/linux-integration/pregen" \
@@ -453,6 +483,11 @@ restart_control_room() {
 }
 
 restart_simulator() {
+    if docker inspect "$SIMULATOR_DOCKER_CONTAINER" >/dev/null 2>&1; then
+        inherit_multinode_platform "$SIMULATOR_DOCKER_CONTAINER"
+    fi
+    load_multinode_platform_file "$STATE_DIR/multinode-platform.json"
+    configure_multinode_platform
     stop_simulator
     start_simulator
 }
@@ -463,6 +498,11 @@ restart_simulator_ui() {
         echo "UI-only restart refused: Simulator hosts live relays; use a planned full UI/relay restart" >&2
         return 1
     fi
+    if docker inspect "$SIMULATOR_DOCKER_CONTAINER" >/dev/null 2>&1; then
+        inherit_multinode_platform "$SIMULATOR_DOCKER_CONTAINER"
+    fi
+    load_multinode_platform_file "$STATE_DIR/multinode-platform.json"
+    configure_multinode_platform
     ui_organization=${SIMULATION_ORGANIZATION_ID:-}
     if [ -z "$ui_organization" ] && [ -r "$ACTIVE_ORGANIZATION_FILE" ]; then
         ui_organization=$(tr -d '\r\n' < "$ACTIVE_ORGANIZATION_FILE")
@@ -507,7 +547,7 @@ start_browser_gateway() {
 
 start_admin_relay() {
     if [ "${ZPR_DASHBOARD_CONTAINER_RUNTIME:-}" != 1 ]; then
-        docker exec "$SIMULATOR_DOCKER_CONTAINER" sh "$SCRIPT_DIR/dashboard-stack.sh" start-admin-relay
+        simulator_stack_action start-admin-relay
         return
     fi
     if pid_running "$ADMIN_RELAY_PID"; then
@@ -524,7 +564,7 @@ start_admin_relay() {
 
 stop_admin_relay() {
     if [ "${ZPR_DASHBOARD_CONTAINER_RUNTIME:-}" != 1 ]; then
-        docker exec "$SIMULATOR_DOCKER_CONTAINER" sh "$SCRIPT_DIR/dashboard-stack.sh" stop-admin-relay
+        simulator_stack_action stop-admin-relay
         return
     fi
     stop_service "$ADMIN_RELAY_PID"
@@ -686,7 +726,7 @@ start_dns_service() {
             docker exec -e "SIMULATION_ORGANIZATION_ID=$SIMULATION_ORGANIZATION_ID" \
                 "$SIMULATOR_DOCKER_CONTAINER" sh "$SCRIPT_DIR/dashboard-stack.sh" start-dns
         else
-            docker exec "$SIMULATOR_DOCKER_CONTAINER" sh "$SCRIPT_DIR/dashboard-stack.sh" start-dns
+            simulator_stack_action start-dns
         fi
         return
     fi
@@ -754,7 +794,7 @@ start_dns_service() {
 
 stop_dns_service() {
     if [ "${ZPR_DASHBOARD_CONTAINER_RUNTIME:-}" != 1 ]; then
-        docker exec "$SIMULATOR_DOCKER_CONTAINER" sh "$SCRIPT_DIR/dashboard-stack.sh" stop-dns
+        simulator_stack_action stop-dns
         return
     fi
     dns_organization=${SIMULATION_ORGANIZATION_ID:-$(jq -r '.organization_id // "northstar"' "$SIMULATION_MANIFEST")}
@@ -780,7 +820,7 @@ stop_dns_service() {
 
 start_ui_relays() {
     if [ "${ZPR_DASHBOARD_CONTAINER_RUNTIME:-}" != 1 ]; then
-        docker exec "$SIMULATOR_DOCKER_CONTAINER" sh "$SCRIPT_DIR/dashboard-stack.sh" start-ui-relays
+        simulator_stack_action start-ui-relays
         return
     fi
     start_service ldap-ui-relay "$LDAP_UI_RELAY_PID" socat \
@@ -793,7 +833,7 @@ start_ui_relays() {
 
 stop_ui_relays() {
     if [ "${ZPR_DASHBOARD_CONTAINER_RUNTIME:-}" != 1 ]; then
-        docker exec "$SIMULATOR_DOCKER_CONTAINER" sh "$SCRIPT_DIR/dashboard-stack.sh" stop-ui-relays
+        simulator_stack_action stop-ui-relays
         return
     fi
     stop_service "$OBSERVABILITY_UI_RELAY_PID"
@@ -917,6 +957,7 @@ start_observability_collector() {
     printf '%s\n' "$source_map" > "$STATE_DIR/diagnostics/source-map.json"
     chmod 600 "$STATE_DIR/diagnostics/source-map.json"
 
+    collector_admin_port=$(multinode_admin_port "$organization")
     stop_observability_collector
     docker run -d --name "$OBSERVABILITY_COLLECTOR_CONTAINER" --restart unless-stopped \
         --network "$OBSERVABILITY_LOCAL_NETWORK" --add-host vs.zpr:host-gateway \
@@ -925,7 +966,7 @@ start_observability_collector() {
         -v "$OBSERVABILITY_PROFILE_DIR/collector.py:/app/collector.py:ro" \
         -e ZPR_RUNTIME_DIR=/runtime -e ZPR_ORGANIZATION_ID="$organization" \
         -e ZPR_VS_INSTANCE_ID="$organization-vs" \
-        -e ZPR_VS_ADMIN_URL=https://vs.zpr:8185 \
+        -e ZPR_VS_ADMIN_URL="https://vs.zpr:$collector_admin_port" \
         -e ZPR_OBSERVABILITY_URL="http://$OBSERVABILITY_LOCAL_CONTAINER:5080" \
         -e ZPR_VS_LOG_FILE=/org-logs/vs.log \
         --entrypoint python3 zpr-observability:local -u /app/collector.py >/dev/null
@@ -1151,34 +1192,6 @@ start_machine_controllers() {
     start_machine_container machine-01
 }
 
-resolve_machine_placement() {
-    machine_owner=$(jq -r --arg id "$machine" '.machine_owners[$id][0] // empty' "$machine_profile")
-    if [ -n "$machine_owner" ]; then
-        machine_location=$(jq -er --arg owner "$machine_owner" '
-            [.directory.people[] | select(.uid == $owner) | .location][0] |
-            if type == "string" and length > 0 then . else error("machine owner has no organization location") end
-        ' "$machine_profile")
-    else
-        machine_owner=$(jq -r --arg id "$machine" '.machines[] | select(.id == $id) | .owner // ""' "$SIMULATION_MANIFEST")
-        machine_location=$(jq -er --arg id "$machine" '.machines[] | select(.id == $id) | .location' "$SIMULATION_MANIFEST")
-        if [ "$machine_runtime_driver" = docker-multinode ]; then
-            machine_location=$(jq -er '
-                if .runtime.topology == "single-node" and (.runtime.nodes | length) == 1 then
-                    .runtime.nodes[0].location
-                else error("multi-node machine requires a configured organization owner") end
-            ' "$machine_profile")
-
-        fi
-    fi
-    if [ "$machine_runtime_driver" = docker-multinode ]; then
-        machine_node_index=$(jq -er --arg location "$machine_location" '
-            [.runtime.nodes | to_entries[] | select(.value.location == $location) | .key] |
-            if length == 1 then .[0] else error("machine location must match exactly one configured node") end
-        ' "$machine_profile")
-        machine_node_ip=$(jq -er --argjson index "$machine_node_index" '.runtime.nodes[$index].substrate_address' "$machine_profile")
-    fi
-}
-
 refresh_multinode_services_if_idle() {
     organization_id=$1
     running_machine_containers=$(docker ps --filter label=zpr.machine.id --filter status=running -q)
@@ -1194,14 +1207,7 @@ start_machine_container() {
         *) echo "invalid machine id: $machine" >&2; return 2 ;;
     esac
     container="zpr-$machine"
-    machine_organization=${SIMULATION_ORGANIZATION_ID:-$(jq -r '.organization_id // "northstar"' "$SIMULATION_MANIFEST")}
-    if [ -r "$ACTIVE_ORGANIZATION_FILE" ]; then
-        selected_organization=$(tr -d '\r\n' < "$ACTIVE_ORGANIZATION_FILE")
-        [ -z "$selected_organization" ] || machine_organization=$selected_organization
-    fi
-    case "$machine_organization" in ''|*[!a-z0-9-]*) echo "invalid active organization: $machine_organization" >&2; return 1 ;; esac
-    machine_profile="$ORGANIZATIONS_DIR/$machine_organization.json"
-    machine_runtime_driver=$(jq -er '.runtime.driver' "$machine_profile")
+    resolve_machine_runtime
     resolve_machine_placement
     case "$machine_runtime_driver" in
         linux-one-node) machine_arch=arm64 ;;
@@ -1217,6 +1223,11 @@ start_machine_container() {
     esac
     existing=$(docker inspect -f '{{.State.Status}}' "$container" 2>/dev/null || true)
     if [ "$existing" = running ]; then
+        existing_scope=$(docker inspect -f '{{index .Config.Labels "zpr.organization.id"}}:{{index .Config.Labels "zpr.runtime.generation"}}' "$container")
+        if [ "$existing_scope" != "$machine_organization:$machine_generation" ]; then
+            echo "$container belongs to another organization or generation; stop it before starting this runtime" >&2
+            return 1
+        fi
         return 0
     fi
     if [ "$existing" = exited ] || [ "$existing" = created ]; then
@@ -1246,18 +1257,26 @@ start_machine_container() {
     fi
     machine_controller_binary=$MACHINE_CONTROLLER_BIN
     if [ "$machine_arch" = amd64 ]; then machine_controller_binary=$MACHINE_CONTROLLER_AMD64_BIN; fi
+    if [ ! -x "$MACHINE_WORKLOAD_DIR/controller" ]; then
+        cp "$machine_controller_binary" "$MACHINE_WORKLOAD_DIR/controller"
+        chmod 700 "$MACHINE_WORKLOAD_DIR/controller"
+    fi
     set -- docker run -d --name "$container"
     if [ -n "$machine_network" ]; then set -- "$@" --network "$machine_network"; fi
     set -- "$@" \
         --privileged --device /dev/net/tun \
         --label zpr.simulator=true \
+        --label "zpr.organization.id=$machine_organization" \
+        --label "zpr.runtime.generation=$machine_generation" \
         --label "zpr.machine.id=$machine" \
         --label "zpr.machine.type=$(jq -r --arg id "$machine" '.machines[] | select(.id == $id) | .type' "$SIMULATION_MANIFEST")" \
         --label "zpr.machine.location=$machine_location" \
         --label "zpr.machine.model=$(jq -r --arg id "$machine" '.machines[] | select(.id == $id) | .model' "$SIMULATION_MANIFEST")" \
         --label "zpr.machine.owner=$machine_owner" \
         --label "zpr.machine.secure=$(jq -r --arg id "$machine" '.machines[] | select(.id == $id) | .secure' "$SIMULATION_MANIFEST")" \
-        -v "$machine_controller_binary:/usr/local/bin/zpr-machine-controller:ro" \
+        -e "SIMULATION_ORGANIZATION_ID=$machine_organization" \
+        -e "SIMULATION_RUNTIME_GENERATION=$machine_generation" \
+        -v "$MACHINE_WORKLOAD_DIR/controller:/usr/local/bin/zpr-machine-controller:ro" \
         -v "$MACHINE_CERT_DIR/$machine:/run/zpr-machine:ro" \
         -v "$MACHINE_WORKLOAD_DIR:/opt/zpr-workloads:ro" \
         "$MACHINE_IMAGE" \
@@ -1283,22 +1302,25 @@ start_zpr_machine_control_service() {
     service_log="$service_dir/adapter.log"
     proxy_log="$service_dir/proxy.log"
     key_dir=/work/.local-runtime/linux-integration/pregen/machine-control
-    machine_organization=${SIMULATION_ORGANIZATION_ID:-$(jq -r '.organization_id // "northstar"' "$SIMULATION_MANIFEST")}
-    if [ -r "$ACTIVE_ORGANIZATION_FILE" ]; then
-        selected_organization=$(tr -d '\r\n' < "$ACTIVE_ORGANIZATION_FILE")
-        [ -z "$selected_organization" ] || machine_organization=$selected_organization
-    fi
-    machine_profile="$ORGANIZATIONS_DIR/$machine_organization.json"
-    machine_runtime_driver=$(jq -er '.runtime.driver' "$machine_profile")
+    resolve_machine_runtime
     if [ "$machine_runtime_driver" = docker-multinode ]; then
         node_container="$machine_organization-node0"
         node_ip=$(jq -er '.runtime.nodes[0].substrate_address' "$machine_profile")
-        proxy_in_node=/tmp/zpr-machine-control-proxy-linux-amd64
+        case "${ZPR_MULTINODE_PLATFORM:-linux/amd64}" in
+            linux/arm64)
+                proxy_in_node=/tmp/zpr-machine-control-proxy-linux-arm64
+                node_proxy_binary=$MACHINE_CONTROL_PROXY_BIN
+                ;;
+            linux/amd64)
+                proxy_in_node=/tmp/zpr-machine-control-proxy-linux-amd64
+                node_proxy_binary=$MACHINE_CONTROL_PROXY_AMD64_BIN
+                ;;
+            *) echo "unsupported multi-node platform: $ZPR_MULTINODE_PLATFORM" >&2; return 1 ;;
+        esac
         service_dir=/tmp/zpr-machine-control
         service_socket="$service_dir/control.sock"
         key_dir="$RUNTIME_DIR/linux-integration/pregen/machine-control"
         docker exec "$node_container" mkdir -p "$service_dir"
-        docker cp "$MACHINE_CONTROL_PROXY_AMD64_BIN" "$node_container:$proxy_in_node"
         if ! docker exec "$node_container" /app/bin/ph-cli -p "$service_socket" link show 2>/dev/null | grep -q '(Active)'; then
             stop_multinode_control_processes "$node_container" adapter
             stop_multinode_control_processes "$node_container" proxy
@@ -1334,6 +1356,7 @@ start_zpr_machine_control_service() {
             END { exit !found }
         '; then
             stop_multinode_control_processes "$node_container" proxy
+            docker cp "$node_proxy_binary" "$node_container:$proxy_in_node"
             docker exec -d "$node_container" sh -c \
             'exec "$1" --mode machine-control-proxy --proxy-listen "[::]:8792" --proxy-upstream "$3" >>"$2" 2>&1' \
             machine-control-proxy "$proxy_in_node" "$service_dir/proxy.log" "$control_upstream_ip:8791"
@@ -1388,7 +1411,8 @@ start_zpr_machine_control_service() {
 stop_multinode_control_processes() {
     control_processes=$(docker exec "$1" ps -eo pid,args)
     control_process_ids=$(printf '%s\n' "$control_processes" | awk -v kind="$2" '
-        kind == "proxy" && $2 == "/tmp/zpr-machine-control-proxy-linux-amd64" { print $1 }
+        kind == "proxy" && ($2 == "/tmp/zpr-machine-control-proxy-linux-amd64" ||
+                           $2 == "/tmp/zpr-machine-control-proxy-linux-arm64") { print $1 }
         kind == "adapter" && $2 == "/app/bin/ph" && $3 == "adapter" {
             for (i = 4; i < NF; i++) if ($i == "--name" && $(i+1) == "simulator-control") print $1
         }
@@ -1438,15 +1462,9 @@ build_arm64_machine_workload_tools() {
 
 prepare_machine_workloads() {
     workload_arch=$1
+    resolve_machine_runtime
     mkdir -p "$MACHINE_WORKLOAD_DIR"
     chmod 700 "$MACHINE_WORKLOAD_DIR"
-    machine_organization=${SIMULATION_ORGANIZATION_ID:-$(jq -r '.organization_id // "northstar"' "$SIMULATION_MANIFEST")}
-    if [ -r "$ACTIVE_ORGANIZATION_FILE" ]; then
-        selected_organization=$(tr -d '\r\n' < "$ACTIVE_ORGANIZATION_FILE")
-        [ -z "$selected_organization" ] || machine_organization=$selected_organization
-    fi
-    machine_profile="$ORGANIZATIONS_DIR/$machine_organization.json"
-    machine_runtime_driver=$(jq -er '.runtime.driver' "$machine_profile")
     workload_runtime_marker="$machine_runtime_driver:$machine_organization:$workload_arch"
     if [ "$(cat "$MACHINE_WORKLOAD_DIR/.runtime" 2>/dev/null || true)" = "$workload_runtime_marker" ] &&
         [ -x "$MACHINE_WORKLOAD_DIR/ph" ] && [ -x "$MACHINE_WORKLOAD_DIR/ph-cli" ]; then
@@ -1457,6 +1475,8 @@ prepare_machine_workloads() {
         if [ -z "$stale_source" ]; then
             return 0
         fi
+        scope_running=$(docker ps --filter "label=zpr.organization.id=$machine_organization" --filter "label=zpr.runtime.generation=$machine_generation" --filter label=zpr.machine.id -q)
+        [ -z "$scope_running" ] || { echo "machine tools changed while this runtime is in use; activate a new generation" >&2; return 1; }
     fi
     rm -f "$MACHINE_WORKLOAD_DIR"/*
     rm -f "$MACHINE_WORKLOAD_DIR/.runtime"
@@ -1679,6 +1699,11 @@ restart_policy_service() {
 
 start_stack() {
     mkdir -p "$STATE_DIR"
+    if docker inspect "$SIMULATOR_DOCKER_CONTAINER" >/dev/null 2>&1; then
+        inherit_multinode_platform "$SIMULATOR_DOCKER_CONTAINER"
+    fi
+    load_multinode_platform_file "$STATE_DIR/multinode-platform.json"
+    configure_multinode_platform
     stop_stack
     create_machine_control_pki
     start_simulator
@@ -1698,11 +1723,12 @@ start_stack() {
         start_machine_controllers
     else
         multinode_runtime="$RUNTIME_DIR/multinode/$startup_organization"
+        startup_admin_port=$(multinode_admin_port "$startup_organization")
         SIMULATION_ORGANIZATION_ID="$startup_organization" \
         ZPR_ASSERTION_LDAP_CONTAINER="${startup_organization}-directory" \
         ZPR_ASSERTION_LDAP_BASE_DN="$(jq -er '.directory.base_dn' "$startup_profile")" \
         ZPR_ASSERTION_LDAP_BIND_DN="cn=zpr-reader,ou=Service Accounts,$(jq -er '.directory.base_dn' "$startup_profile")" \
-        ZPR_ADMIN_URL=https://127.0.0.1:8185 \
+        ZPR_ADMIN_URL="https://127.0.0.1:$startup_admin_port" \
         ZPR_ADMIN_CA_FILE="$DASHBOARD_DIR/../../zpr-demo/multinode-demo/zpr-conf/include/admin-tls-cert.pem" \
         ZPR_ADMIN_KEY_FILE="$multinode_runtime/bob/web-monitor.key" \
         ZPR_GATEWAY_ORGANIZATION_ID="$startup_organization" \
@@ -1774,8 +1800,12 @@ case "${1:-start}" in
     start) start_stack ;;
     start-machine)
         if [ "$#" -ne 2 ]; then echo "usage: $0 start-machine machine-NN" >&2; exit 2; fi
+        acquire_machine_runtime_lock
+        trap release_machine_runtime_lock EXIT
+        trap 'exit 1' HUP INT TERM
         start_machine_container "$2"
         ;;
+    stop-runtime-machines) stop_runtime_machines ;;
     stop) stop_stack ;;
     restart) start_stack ;;
     status) status_stack ;;
@@ -1799,7 +1829,12 @@ case "${1:-start}" in
         stop_policy_service
         ;;
     restart-policy-service) restart_policy_service ;;
-    restart-simulator-control) start_zpr_machine_control_service ;;
+    restart-simulator-control)
+        acquire_machine_runtime_lock
+        trap release_machine_runtime_lock EXIT
+        trap 'exit 1' HUP INT TERM
+        start_zpr_machine_control_service
+        ;;
     start-observability-collector) [ "$#" -eq 2 ] || { echo "usage: $0 start-observability-collector organization-id" >&2; exit 2; }; start_observability_collector "$2" ;;
     stop-observability-collector) stop_observability_collector ;;
     stop-legacy-workloads) stop_legacy_named_workloads ;;

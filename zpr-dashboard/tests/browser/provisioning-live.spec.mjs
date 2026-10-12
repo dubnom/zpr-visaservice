@@ -55,6 +55,12 @@ async function login(page, fixture) {
 }
 
 async function create(page, assetID) {
+  const preflight = page.locator("#provisioning-preflight");
+  await preflight.locator('[name="host_label"]').fill("Live test host");
+  await preflight.locator('[name="host_address"]').fill("192.168.1.20");
+  for (const check of await preflight.locator('.provisioning-preflight-checks input[type="checkbox"]:visible').all()) await check.check();
+  await preflight.getByRole("button", { name: "Evaluate readiness", exact: true }).click();
+  await expect(page.locator("#provisioning-preflight-status")).toHaveAttribute("data-state", "ready");
   const form = page.locator("#provisioning-draft");
   await form.locator('[name="organization"]').selectOption("production");
   await form.locator('[name="type"]').selectOption("laptop");

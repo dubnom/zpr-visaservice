@@ -211,6 +211,27 @@ authority for observed node/admission/connectivity data; Policy-Service remains
 the authority for policy. If either source is unavailable or stale, report
 unknown/unavailable rather than successful admission.
 
+## Current prototype readiness gate
+
+The current Control-Service prototype exposes
+`GET /api/enrollment/v1/preflight?organization=...` and
+`POST /api/enrollment/v1/preflight`. Both operations are organization- and
+permission-scoped; POST stores the operator's readiness attestation and an
+append-only audit entry in the invitation registry. Invitation creation
+rechecks a valid attestation inside its registry transaction, including for
+direct certificate-authorized administration. Records expire 30 days after
+their last explicit submission; re-attesting the same values creates a new
+revision and audit entry. Expired or missing records block creation with a
+conflict response.
+
+This gate makes the GUI checkbox workflow persistently auditable and
+server-enforced, but does not verify the underlying DNS, TLS, network, Docker,
+package, recovery, or code-delivery conditions. The prototype has no operator
+revocation endpoint for a saved readiness record; clearing the browser form
+does not remove it. Re-attest after material environment changes, and do not
+treat this mechanism as production verification or as evidence that the
+prototype service/package is production-ready.
+
 ## Migration and acceptance
 
 This contract intentionally separates production ownership from the current

@@ -13,6 +13,13 @@
 .provisioning-fields label { display: grid; gap: 6px; color: var(--ink); font-size: 12px; }
 .provisioning-fields input, .provisioning-fields select { width: 100%; min-width: 0; padding: 8px; border: 1px solid var(--line); background: white; color: var(--ink); font: 12px var(--sans); }
 .provisioning-panel [hidden] { display: none; }
+.provisioning-preflight-checks { display: grid; gap: 10px; margin: 16px 0; padding: 14px; border: 1px solid var(--line); }
+.provisioning-preflight-checks legend { padding: 0 6px; color: var(--muted); font-size: 12px; }
+.provisioning-preflight-checks label { display: grid; grid-template-columns: 18px minmax(0, 1fr); gap: 8px; align-items: start; color: var(--ink); font-size: 12px; line-height: 1.5; }
+.provisioning-preflight-checks input { margin-top: 2px; }
+#provisioning-preflight-blockers { margin-top: 0; color: #8a321f; font-size: 12px; line-height: 1.5; }
+#provisioning-preflight-status[data-state="ready"] { border-left: 3px solid #54775e; padding-left: 10px; }
+#provisioning-preflight code { overflow-wrap: anywhere; }
 #provisioning-one-time-code { display: block; padding: 12px; user-select: all; overflow-wrap: anywhere; border: 1px solid var(--line); font: 16px var(--mono); }
 .provisioning-review label { display: block; margin: 12px 0; font-size: 12px; }
 .provisioning-review textarea { display: block; width: 100%; min-height: 64px; margin-top: 6px; padding: 8px; box-sizing: border-box; border: 1px solid var(--line); color: var(--ink); font: 12px var(--sans); }

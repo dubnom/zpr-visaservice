@@ -10,7 +10,7 @@ import path from "node:path";
 import crypto from "node:crypto";
 import { fileURLToPath } from "node:url";
 
-function fixture({ fail = {}, leak = false, busy = false, mutate = false, hold = false, onStart = () => {} } = {}) {
+function fixture({ fail = {}, leak = false, runningMachine = false, busy = false, mutate = false, hold = false, onStart = () => {} } = {}) {
   let active = "original";
   let run = { state: busy ? "running" : "idle" };
   let generation = 0;
@@ -31,7 +31,7 @@ function fixture({ fail = {}, leak = false, busy = false, mutate = false, hold =
     if (route === "/api/simulator/status") return {
       manifest: { organization_id: active, machines: [{ id: "machine" }] }, organization: { id: active },
       sessions: { machine: { authenticated: leak && run.state === "failed", workloads: [] } },
-      machine_containers: { machine: "stopped" },
+      machine_containers: { machine: runningMachine && run.state === "completed" ? "running" : "stopped" },
     };
     if (route.startsWith("/api/simulator/organizations/") && method === "POST") {
       active = route.split("/")[4];
@@ -126,6 +126,17 @@ test("cleanup failure stops immediately", async () => {
   const report = await runMatrix(options(f));
   assert.equal(starts(f).length, 1);
   assert.equal(report.results[0].state, "serious");
+});
+
+test("completed steps cannot report a pass when a machine remains running", async () => {
+  const f = fixture({ runningMachine: true });
+  const report = await runMatrix(options(f));
+  assert.equal(report.state, "failed");
+  assert.equal(report.results[0].state, "serious");
+  assert.equal(starts(f).length, 1);
+  assert.match(report.error, /Machine machine is not stopped/);
+  assert.equal(report.restoration, "failed");
+  assert.equal(f.active(), "alpha");
 });
 
 test("leaked sessions stop execution and prevent destructive restoration", async () => {

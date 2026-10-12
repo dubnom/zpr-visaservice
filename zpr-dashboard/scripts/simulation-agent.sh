@@ -13,7 +13,7 @@ case "$agent" in
   telemetry-client) zpr=fd00:1:6::1; node=10.0.0.1; key=client-telemetry-rsa.key; tun=tun2; services='' ;;
   echo-service) zpr=fd00:1:7::1; node=10.0.0.1; key=service-echo-rsa.key; tun=tun3; services=EchoService ;;
   metrics-service) zpr=fd00:1:8::1; node=10.0.0.1; key=service-metrics-rsa.key; tun=tun4; services=MetricsService ;;
-  internet-gateway) zpr=fd00:1:9::1; node=10.0.0.1; key=internet-gateway-rsa.key; tun=tun5; services=internet-gateway ;;
+  internet-gateway) zpr=fd00:1:9::1; node=10.0.0.1; key=internet-gateway-rsa.key; tun=zgateway0; services=internet-gateway ;;
   *) echo "unknown simulated workload: $agent" >&2; exit 2 ;;
 esac
 case "$machine" in

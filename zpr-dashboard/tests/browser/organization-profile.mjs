@@ -1,4 +1,29 @@
 export function registerOrganizationProfileTests(test, expect) {
+  test("Organization section links jump to identity, policy and services without changing organization", async ({ page, appURL, api }) => {
+    await page.goto(appURL + "/organizations.html");
+    await expect(page.locator("#organization-title")).toHaveText("Alpha Labs");
+    const links = page.getByRole("navigation", { name: "Organization sections", exact: true });
+    for (const [label, id, heading] of [
+      ["IDENTITY", "organization-identity", /Directory/],
+      ["POLICY", "organization-policy", "Policies"],
+      ["SERVICES", "organization-services", "Services"],
+    ]) {
+      const link = links.getByRole("link", { name: label, exact: true });
+      await expect(link).toHaveAttribute("href", `#${id}`);
+      await link.focus();
+      await link.press("Enter");
+      await expect(page).toHaveURL(`${appURL}/organizations.html#${id}`);
+      await expect(page.locator(`#${id}`)).toBeFocused();
+      await expect(page.locator(`#${id}`).getByRole("heading")).toHaveText(heading);
+      await expect(page.locator("#organization-title")).toHaveText("Alpha Labs");
+      const bounds = await page.locator(`#${id}`).evaluate(element => {
+        const rect = element.getBoundingClientRect();
+        return { top: rect.top, bottom: rect.bottom, height: innerHeight };
+      });
+      expect(bounds.bottom).toBeGreaterThan(0);
+      expect(bounds.top).toBeLessThan(bounds.height);
+    }
+  });
   const endpoint = "/api/simulator/organizations/alpha/profile";
   const initial = () => ({
     id: "alpha", name: "Alpha Labs", description: "Fictional organization",

@@ -1,8 +1,16 @@
 #!/bin/sh
 set -eu
 script_dir=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
+. "$script_dir/multinode-admin.sh"
+. "$script_dir/machine-runtime.sh"
+. "$script_dir/multinode-platform.sh"
+configure_multinode_platform
 dashboard_dir=$(CDPATH= cd -- "$script_dir/.." && pwd)
 runtime_dir=$(CDPATH= cd -- "$dashboard_dir/../../.local-runtime" && pwd)
+STATE_DIR="$runtime_dir/dashboard-stack"
+acquire_machine_runtime_lock
+trap release_machine_runtime_lock EXIT
+trap 'exit 1' HUP INT TERM
 rig=${SIMULATION_CONTAINER:-zpr-local-linux-node}
 action=${1:-}
 organization=${2:-}
@@ -14,6 +22,13 @@ case "$organization" in ''|*[!a-z0-9-]*) echo "invalid organization id" >&2; exi
 profile="$dashboard_dir/cmd/zpr-web-dashboard/examples/organizations/$organization.json"
 [ -r "$profile" ] || { echo "organization profile missing" >&2; exit 1; }
 organization_driver=$(jq -er '.runtime.driver' "$profile")
+if [ "$organization_driver" = docker-multinode ]; then
+    verify_multinode_platform
+    SIMULATION_MANIFEST=${SIMULATION_MANIFEST:-$runtime_dir/simulation-environment.json}
+    machine_profile=$profile
+    machine_runtime_driver=$organization_driver
+    select_machine_readiness_probes >/dev/null
+fi
 policy_config_relative=$(jq -er '.policy_config' "$profile")
 policy_config="$dashboard_dir/cmd/zpr-web-dashboard/examples/$policy_config_relative"
 runtime_policy_config="$policy_config"
@@ -83,7 +98,7 @@ install_multinode_policy() {
         -v "$bundle_dir:/runtime/policy:ro" \
         -v "$multinode_dir/zpr-conf/include:/runtime/include:ro" \
         -v "$runtime_dir/multinode/$organization/bob:/runtime/operator:ro" \
-        zpr-multinode /app/bin/vs-admin \
+        --platform "$ZPR_MULTINODE_PLATFORM" "$ZPR_MULTINODE_IMAGE" /app/bin/vs-admin \
         --svc-url "https://host.docker.internal:${ZPR_ADMIN_PORT:-8185}" \
         --ca-cert /runtime/include/admin-tls-cert.pem \
         --api-key-file /runtime/operator/client.key \
@@ -139,23 +154,8 @@ previous_profile="$dashboard_dir/cmd/zpr-web-dashboard/examples/organizations/$p
 previous_driver=$(jq -er '.runtime.driver' "$previous_profile")
 previous_base_dn=$(jq -er '.directory.base_dn' "$previous_profile")
 previous_bind_dn="cn=zpr-reader,ou=Service Accounts,$previous_base_dn"
-trusted_change_feeds_disabled=
-trusted_change_feeds_network=${ZPR_TRUSTED_CHANGE_FEEDS_NETWORK:-}
-if [ -z "$trusted_change_feeds_network" ] &&
-   [ -r "$runtime_dir/dashboard-stack/trusted-change-feeds.network" ]; then
-    trusted_change_feeds_network=$(tr -d '\r\n' < "$runtime_dir/dashboard-stack/trusted-change-feeds.network")
-fi
-case "$trusted_change_feeds_network" in
-    zpr-*)
-        trusted_change_feeds_organization=${trusted_change_feeds_network#zpr-}
-        trusted_change_feeds_profile="$dashboard_dir/cmd/zpr-web-dashboard/examples/organizations/$trusted_change_feeds_organization.json"
-        if [ -r "$trusted_change_feeds_profile" ] &&
-           [ "$trusted_change_feeds_organization" != "$organization" ]; then
-            trusted_change_feeds_disabled=1
-            echo "Omitting trusted feed scoped to $trusted_change_feeds_organization while activating $organization"
-        fi
-        ;;
-esac
+ORGANIZATIONS_DIR="$dashboard_dir/cmd/zpr-web-dashboard/examples/organizations"
+configure_activation_trusted_feeds "$organization"
 if [ "$organization_driver" = docker-multinode ] || [ "$previous_driver" = docker-multinode ]; then
     report_activation_status "Preparing trusted-service helper before stopping runtime"
     sh "$script_dir/prepare-trusted-service.sh"
@@ -252,7 +252,10 @@ rollback() {
     result=$?
     trap - EXIT HUP INT TERM
     if [ "$result" -ne 0 ] && [ "$changed" = yes ]; then
+        failed_phase=$(cat "$status_file")
+        report_activation_status "Activation failed at $failed_phase; restoring previous runtime"
         echo "Activation failed; restoring previous rig context"
+        "$script_dir/dashboard-stack.sh" stop-runtime-machines || echo "Rollback could not stop target machines" >&2
         "$script_dir/dashboard-stack.sh" stop-observability-collector || true
         stop_runtime "$organization" || true
         if [ "$had_request" = yes ]; then cp "$backup" "$request_file"; else rm -f "$request_file"; fi
@@ -268,28 +271,47 @@ rollback() {
             "$script_dir/dashboard-stack.sh" restart-policy-context "$previous_organization" "$previous_source" || true
         fi
         if [ "$control_changed" = yes ]; then
+            configure_activation_trusted_feeds "$previous_organization"
             if [ "$previous_driver" = docker-multinode ]; then
                 previous_runtime=$(multinode_runtime_dir "$previous_organization")
+                previous_admin_port=$(multinode_admin_port "$previous_organization")
                 SIMULATION_ORGANIZATION_ID="$previous_organization" \
                 ZPR_ASSERTION_LDAP_CONTAINER="${previous_organization}-directory" \
                 ZPR_ASSERTION_LDAP_BASE_DN="$previous_base_dn" \
                 ZPR_ASSERTION_LDAP_BIND_DN="$previous_bind_dn" \
-                ZPR_ADMIN_URL="https://127.0.0.1:8185" \
+                ZPR_ADMIN_URL="https://127.0.0.1:$previous_admin_port" \
                 ZPR_ADMIN_CA_FILE="$multinode_dir/zpr-conf/include/admin-tls-cert.pem" \
                 ZPR_ADMIN_KEY_FILE="$previous_runtime/bob/web-monitor.key" \
+                ZPR_TRUSTED_CHANGE_FEEDS_DISABLED="$trusted_change_feeds_disabled" \
                     "$script_dir/dashboard-stack.sh" restart-control-service || true
             else
                 SIMULATION_ORGANIZATION_ID="$previous_organization" \
                 ZPR_ASSERTION_LDAP_BASE_DN="$previous_base_dn" \
                 ZPR_ASSERTION_LDAP_BIND_DN="$previous_bind_dn" \
+                ZPR_TRUSTED_CHANGE_FEEDS_DISABLED="$trusted_change_feeds_disabled" \
                     "$script_dir/dashboard-stack.sh" restart-control-service || true
             fi
         fi
         if [ "$previous_driver" = docker-multinode ]; then
             "$script_dir/dashboard-stack.sh" start-observability-collector "$previous_organization" || true
         fi
+        report_activation_status "Verifying restored machine-control runtime"
+        if ! SIMULATION_ORGANIZATION_ID="$previous_organization" sh "$script_dir/verify-machine-control.sh"; then
+            echo "ROLLBACK FAILED: previous organization machine-control runtime is not ready" >&2
+            report_activation_status "Activation failed at $failed_phase; rollback machine-control verification FAILED"
+        else
+            echo "Previous organization machine-control runtime verified"
+            if ! control_room_curl -fsS --max-time 15 "$control_room_url/api/policy/context" | jq -e --arg id "$previous_organization" '.organization_id==$id' >/dev/null ||
+               ! control_room_curl -fsS --max-time 15 "$control_room_url/api/snapshot" | jq -e '.api_status=="connected" and (.errors|length)==0 and all(.actors[] | select(.node); .node_details.in_sync==true)' >/dev/null; then
+                echo "ROLLBACK FAILED: previous operator-service context is not healthy" >&2
+                report_activation_status "Activation failed at $failed_phase; rollback operator-service verification FAILED"
+            else
+                report_activation_status "Activation failed at $failed_phase; previous runtime restored and verified"
+            fi
+        fi
     fi
     rm -f "$backup"
+    release_machine_runtime_lock
     exit "$result"
 }
 trap rollback EXIT
@@ -299,6 +321,8 @@ jq -n --arg organization_id "$organization" --arg generation "$generation" --arg
 mv "$request_temp" "$request_file"
 changed=yes
 report_activation_status "Stopping previous runtime"
+"$script_dir/dashboard-stack.sh" stop-runtime-machines
+rm -f "$runtime_dir/dashboard-stack/multinode-machine-control-address.txt"
 "$script_dir/dashboard-stack.sh" stop-observability-collector
 if [ "$previous_driver" = "docker-multinode" ]; then
     control_changed=yes
@@ -313,14 +337,19 @@ fi
 report_activation_status "Starting $organization runtime"
 control_changed=yes
 start_runtime "$organization" "$action"
+if [ "$organization_driver" = docker-multinode ]; then
+    ZPR_ADMIN_PORT=$(multinode_admin_port "$organization")
+fi
 if [ "$organization_driver" = "docker-multinode" ] &&
-   [ -f "$runtime_dir/multinode/$organization/policy-bootstrap-required" ]; then
+   { [ -f "$runtime_dir/multinode/$organization/policy-bootstrap-required" ] ||
+     [ ! -f "$runtime_dir/multinode/$organization/dynamic-control-policy-v1" ]; }; then
     report_activation_status "Compiling and installing policy with deployed bootstrap keys"
     if ! install_multinode_policy; then
         echo "organization runtime policy installation failed" >&2
         exit 1
     fi
-    rm "$runtime_dir/multinode/$organization/policy-bootstrap-required"
+    touch "$runtime_dir/multinode/$organization/dynamic-control-policy-v1"
+    rm -f "$runtime_dir/multinode/$organization/policy-bootstrap-required"
     rm -f "$runtime_dir/multinode/$organization/fresh-visa-state-approved"
 fi
 if [ "$organization_driver" = linux-one-node ]; then
@@ -373,7 +402,7 @@ if [ "$organization_driver" = docker-multinode ]; then
     ZPR_ASSERTION_LDAP_CONTAINER="${organization}-directory" \
     ZPR_ASSERTION_LDAP_BASE_DN="$organization_base_dn" \
     ZPR_ASSERTION_LDAP_BIND_DN="$organization_bind_dn" \
-    ZPR_ADMIN_URL="https://127.0.0.1:8185" \
+    ZPR_ADMIN_URL="https://127.0.0.1:$ZPR_ADMIN_PORT" \
     ZPR_ADMIN_CA_FILE="$multinode_dir/zpr-conf/include/admin-tls-cert.pem" \
     ZPR_ADMIN_KEY_FILE="$multinode_runtime/bob/web-monitor.key" \
     ZPR_TRUSTED_CHANGE_FEEDS_DISABLED="$trusted_change_feeds_disabled" \
@@ -463,5 +492,7 @@ if [ "$organization_driver" = linux-one-node ]; then
         exit 1
     fi
 fi
+report_activation_status "Verifying machine-control round-trip at each configured node"
+SIMULATION_ORGANIZATION_ID="$organization" sh "$script_dir/verify-machine-control.sh"
 write_runtime_context "$organization" "$organization_base_dn" "$generation"
 echo "Organization policy, directory, and ZPR context ready"

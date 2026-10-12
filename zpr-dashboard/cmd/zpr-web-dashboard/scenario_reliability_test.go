@@ -194,6 +194,10 @@ func TestScenarioCleanupSurfacesDockerFailure(t *testing.T) {
 }
 
 func TestMachineControlProxyRefreshesChangedUpstream(t *testing.T) {
+	runtimeHelper, err := os.ReadFile("../../scripts/machine-runtime.sh")
+	if err != nil {
+		t.Fatal(err)
+	}
 	profiles, err := filepath.Abs(filepath.Join("examples", "organizations"))
 	if err != nil {
 		t.Fatal(err)
@@ -232,9 +236,9 @@ func TestMachineControlProxyRefreshesChangedUpstream(t *testing.T) {
 	}
 	`
 			cmd := exec.Command("sh")
-			cmd.Stdin = strings.NewReader(harness + stackFunctionForTest(t, "stop_multinode_control_processes") + stackFunctionForTest(t, "start_zpr_machine_control_service") + "\nstart_zpr_machine_control_service\n")
+			cmd.Stdin = strings.NewReader(harness + string(runtimeHelper) + stackFunctionForTest(t, "stop_multinode_control_processes") + stackFunctionForTest(t, "start_zpr_machine_control_service") + "\nstart_zpr_machine_control_service\n")
 			dir := t.TempDir()
-			cmd.Env = append(os.Environ(), "ORGANIZATIONS_DIR="+profiles, "ACTIVE_ORGANIZATION_FILE="+filepath.Join(dir, "absent"), "MACHINE_CONTROL_ADDRESS_FILE="+filepath.Join(dir, "address"), "MACHINE_CONTROL_PROXY_AMD64_BIN=/test/proxy", "RUNTIME_DIR="+dir, "OLD_UPSTREAM="+tc.upstream)
+			cmd.Env = append(os.Environ(), "ORGANIZATIONS_DIR="+profiles, "ACTIVE_ORGANIZATION_FILE="+filepath.Join(dir, "absent"), "MACHINE_CONTROL_ADDRESS_FILE="+filepath.Join(dir, "address"), "MACHINE_CONTROL_PROXY_AMD64_BIN=/test/proxy", "RUNTIME_DIR="+dir, "STATE_DIR="+dir, "OLD_UPSTREAM="+tc.upstream)
 			output, err := cmd.CombinedOutput()
 			if err != nil {
 				t.Fatalf("proxy readiness failed: %v: %s", err, output)

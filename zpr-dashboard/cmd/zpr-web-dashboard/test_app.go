@@ -698,7 +698,7 @@ func runBenchmarkClient(address, sourceAddress string) error {
 	defer transport.CloseIdleConnections()
 	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
 	defer cancel()
-	result, err := benchmarkHTTP(ctx, &http.Client{Transport: transport, Timeout: 10 * time.Second}, "http://"+address)
+	result, err := benchmarkHTTP(ctx, &http.Client{Transport: transport}, "http://"+address)
 	if err != nil {
 		return err
 	}

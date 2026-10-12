@@ -93,6 +93,23 @@ func TestBundledSimulatorScenariosLoad(t *testing.T) {
 	if len(scenarios) != 5 {
 		t.Fatalf("loaded %d bundled scenarios, want 5", len(scenarios))
 	}
+	for _, scenario := range scenarios {
+		for _, step := range scenario.Steps {
+			if step.Action != "start_machine" {
+				continue
+			}
+			stopped := false
+			for _, cleanup := range scenario.Cleanup {
+				if cleanup.Action == "stop_machine" && cleanup.Machine == step.Machine {
+					stopped = true
+					break
+				}
+			}
+			if !stopped {
+				t.Errorf("scenario %s starts %s without stopping it in cleanup", scenario.ID, step.Machine)
+			}
+		}
+	}
 
 	var gatewayScenario *simulatorScenario
 	for index := range scenarios {
@@ -334,8 +351,12 @@ func TestVerifyMultinodeRuntimeUsesConfiguredNodeCount(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	for _, nodeCount := range []int{2, 3, 4} {
-		t.Run(fmt.Sprintf("%d nodes", nodeCount), func(t *testing.T) {
+	for _, fixture := range []struct {
+		nodeCount int
+		subnet    string
+	}{{2, "172.30.0"}, {3, "172.31.0"}, {4, "192.0.2"}} {
+		nodeCount, subnet := fixture.nodeCount, fixture.subnet
+		t.Run(fmt.Sprintf("%d nodes on %s", nodeCount, subnet), func(t *testing.T) {
 			organization := baseOrganization
 			organization.Runtime.Nodes = append([]simulatorOrganizationRuntimeNode(nil), baseOrganization.Runtime.Nodes...)
 			for len(organization.Runtime.Nodes) < nodeCount {
@@ -348,6 +369,10 @@ func TestVerifyMultinodeRuntimeUsesConfiguredNodeCount(t *testing.T) {
 				})
 			}
 			organization.Runtime.Nodes = organization.Runtime.Nodes[:nodeCount]
+			for index := range organization.Runtime.Nodes {
+				organization.Runtime.Nodes[index].SubstrateAddress = fmt.Sprintf("%s.%d", subnet, 13+index)
+			}
+			serviceAddresses := map[string]string{"great-lakes-vs": subnet + ".21", "great-lakes-web0": subnet + ".22"}
 			organizationDirectory := t.TempDir()
 			profile, err := json.Marshal(organization)
 			if err != nil {
@@ -367,6 +392,16 @@ func TestVerifyMultinodeRuntimeUsesConfiguredNodeCount(t *testing.T) {
 				switch args[0] {
 				case "inspect":
 					container := args[len(args)-1]
+					if strings.Contains(args[2], ".NetworkSettings.Networks") {
+						if !strings.Contains(args[2], `"zpr-great-lakes"`) {
+							return "", fmt.Errorf("service address read from wrong organization network")
+						}
+						address, exists := serviceAddresses[container]
+						if !exists {
+							return "", fmt.Errorf("unexpected service address lookup: %s", container)
+						}
+						return address, nil
+					}
 					if strings.HasPrefix(container, "great-lakes-node") {
 						seenNodeContainers[container] = true
 					}
@@ -379,8 +414,9 @@ func TestVerifyMultinodeRuntimeUsesConfiguredNodeCount(t *testing.T) {
 						for _, node := range organization.Runtime.Nodes {
 							fmt.Fprintf(&summary, "%s:5000 (Active)\n", node.SubstrateAddress)
 						}
-						fmt.Fprintln(&summary, "172.30.0.11:38430 (Active)")
-						fmt.Fprintln(&summary, "172.30.0.14:38431 (Active)")
+						for _, address := range serviceAddresses {
+							fmt.Fprintf(&summary, "%s:38430 (Active)\n", address)
+						}
 						return summary.String(), nil
 					}
 					if len(args) > 2 && args[2] == "curl" {

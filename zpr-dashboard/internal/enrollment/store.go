@@ -6,8 +6,10 @@ import (
 	"crypto/sha256"
 	"database/sql"
 	"encoding/hex"
+	"encoding/json"
 	"errors"
 	"fmt"
+	"net"
 	"net/url"
 	"os"
 	"path/filepath"
@@ -24,7 +26,10 @@ var (
 	ErrUnavailable = errors.New("enrollment invitation unavailable")
 	ErrConflict    = errors.New("asset already has an active invitation")
 	ErrRevision    = errors.New("enrollment revision conflict")
+	ErrPreflight   = errors.New("service readiness preflight required")
 )
+
+const preflightLifetime = 30 * 24 * time.Hour
 
 type Asset struct {
 	Organization string `json:"organization"`
@@ -51,6 +56,30 @@ type Invitation struct {
 	DecisionBy            string     `json:"decision_by,omitempty"`
 	DecisionReason        string     `json:"decision_reason,omitempty"`
 	DecidedAt             *time.Time `json:"decided_at,omitempty"`
+}
+
+type PreflightAttestation struct {
+	Organization      string `json:"organization"`
+	Mode              string `json:"deployment_mode"`
+	HostLabel         string `json:"host_label"`
+	HostAddress       string `json:"host_address"`
+	DeliveryChannel   string `json:"delivery_channel"`
+	DNSVerified       bool   `json:"dns_verified"`
+	ACMEVerified      bool   `json:"acme_verified"`
+	TLSVerified       bool   `json:"tls_verified"`
+	NetworkVerified   bool   `json:"network_verified"`
+	DockerVerified    bool   `json:"docker_verified"`
+	ListenersVerified bool   `json:"listeners_verified"`
+	PackageVerified   bool   `json:"package_verified"`
+	RecoveryVerified  bool   `json:"recovery_verified"`
+	BackupVerified    bool   `json:"backup_verified"`
+}
+
+type PreflightRecord struct {
+	Attestation PreflightAttestation `json:"attestation"`
+	UpdatedBy   string               `json:"updated_by"`
+	UpdatedAt   time.Time            `json:"updated_at"`
+	Revision    int                  `json:"revision"`
 }
 
 type Store struct {
@@ -122,6 +151,21 @@ CREATE TABLE IF NOT EXISTS operator_delegation_replay (
  token_hash TEXT PRIMARY KEY,
  expires_at INTEGER NOT NULL
 );
+CREATE TABLE IF NOT EXISTS enrollment_preflight (
+ organization TEXT PRIMARY KEY,
+ attestation_json TEXT NOT NULL,
+ updated_by TEXT NOT NULL,
+ updated_at INTEGER NOT NULL,
+ revision INTEGER NOT NULL
+);
+CREATE TABLE IF NOT EXISTS enrollment_preflight_audit (
+ sequence INTEGER PRIMARY KEY,
+ organization TEXT NOT NULL,
+ principal TEXT NOT NULL,
+ revision INTEGER NOT NULL,
+ occurred_at INTEGER NOT NULL,
+ attestation_json TEXT NOT NULL
+);
 COMMIT;`)
 	if err != nil {
 		_ = db.Close()
@@ -182,6 +226,116 @@ func digest(value string) string {
 	return hex.EncodeToString(hash[:])
 }
 
+func (p PreflightAttestation) Validate() error {
+	for _, value := range []string{p.Organization, p.HostLabel, p.HostAddress} {
+		if !validText(value) {
+			return ErrInvalid
+		}
+	}
+	if p.Mode != "pilot" && p.Mode != "production" {
+		return ErrInvalid
+	}
+	if p.DeliveryChannel != "pilot-secure-share" && p.DeliveryChannel != "pilot-verified-handoff" &&
+		p.DeliveryChannel != "production-portal" {
+		return ErrInvalid
+	}
+	ip := net.ParseIP(p.HostAddress)
+	if ip == nil || ip.To4() == nil || ip.String() != p.HostAddress ||
+		!(ip.IsPrivate() || ip.To4()[0] == 100 && ip.To4()[1] >= 64 && ip.To4()[1] <= 127) ||
+		ip.IsLoopback() || ip.IsLinkLocalUnicast() || ip.IsMulticast() || ip.IsUnspecified() {
+		return ErrInvalid
+	}
+	if !p.DNSVerified || !p.ACMEVerified || !p.TLSVerified || !p.NetworkVerified ||
+		!p.DockerVerified || !p.ListenersVerified || !p.PackageVerified || !p.RecoveryVerified {
+		return ErrInvalid
+	}
+	if p.Mode == "production" && (p.DeliveryChannel != "production-portal" || !p.BackupVerified) {
+		return ErrInvalid
+	}
+	if p.Mode == "pilot" && p.DeliveryChannel == "production-portal" {
+		return ErrInvalid
+	}
+	return nil
+}
+
+func (s *Store) SavePreflight(ctx context.Context, attestation PreflightAttestation, principal string, now time.Time) (PreflightRecord, error) {
+	if err := attestation.Validate(); err != nil {
+		return PreflightRecord{}, err
+	}
+	if !validText(principal) || now.IsZero() {
+		return PreflightRecord{}, ErrInvalid
+	}
+	data, err := json.Marshal(attestation)
+	if err != nil {
+		return PreflightRecord{}, err
+	}
+	tx, err := s.db.BeginTx(ctx, nil)
+	if err != nil {
+		return PreflightRecord{}, err
+	}
+	defer tx.Rollback()
+	record := PreflightRecord{Attestation: attestation, UpdatedBy: principal, UpdatedAt: now.UTC(), Revision: 1}
+	var revision int
+	err = tx.QueryRowContext(ctx, `SELECT revision
+ FROM enrollment_preflight WHERE organization=?`, attestation.Organization).
+		Scan(&revision)
+	if err != nil && !errors.Is(err, sql.ErrNoRows) {
+		return PreflightRecord{}, err
+	}
+	if err == nil {
+		record.Revision = revision + 1
+	}
+	_, err = tx.ExecContext(ctx, `INSERT INTO enrollment_preflight
+ (organization,attestation_json,updated_by,updated_at,revision) VALUES(?,?,?,?,?)
+ ON CONFLICT(organization) DO UPDATE SET attestation_json=excluded.attestation_json,
+ updated_by=excluded.updated_by,updated_at=excluded.updated_at,revision=excluded.revision`,
+		attestation.Organization, string(data), principal, now.UTC().UnixNano(), record.Revision)
+	if err != nil {
+		return PreflightRecord{}, err
+	}
+	if _, err := tx.ExecContext(ctx, `INSERT INTO enrollment_preflight_audit
+ (organization,principal,revision,occurred_at,attestation_json) VALUES(?,?,?,?,?)`,
+		attestation.Organization, principal, record.Revision, now.UTC().UnixNano(), string(data)); err != nil {
+		return PreflightRecord{}, err
+	}
+	if err := tx.Commit(); err != nil {
+		return PreflightRecord{}, err
+	}
+	return record, nil
+}
+
+func (s *Store) GetPreflight(ctx context.Context, organization string, now time.Time) (PreflightRecord, bool, error) {
+	if now.IsZero() {
+		return PreflightRecord{}, false, ErrInvalid
+	}
+	var record PreflightRecord
+	var data string
+	var updatedAt int64
+	err := s.db.QueryRowContext(ctx, `SELECT attestation_json,updated_by,updated_at,revision
+ FROM enrollment_preflight WHERE organization=?`, organization).
+		Scan(&data, &record.UpdatedBy, &updatedAt, &record.Revision)
+	if errors.Is(err, sql.ErrNoRows) {
+		return PreflightRecord{}, false, nil
+	}
+	if err != nil {
+		return PreflightRecord{}, false, err
+	}
+	if err := json.Unmarshal([]byte(data), &record.Attestation); err != nil {
+		return PreflightRecord{}, false, fmt.Errorf("decode stored enrollment preflight: %w", err)
+	}
+	record.UpdatedAt = time.Unix(0, updatedAt).UTC()
+	if record.Attestation.Organization != organization {
+		return PreflightRecord{}, false, errors.New("stored enrollment preflight organization does not match its key")
+	}
+	if err := record.Attestation.Validate(); err != nil {
+		return PreflightRecord{}, false, fmt.Errorf("stored enrollment preflight is invalid: %w", err)
+	}
+	if record.UpdatedAt.After(now) || !record.UpdatedAt.After(now.Add(-preflightLifetime)) {
+		return record, false, nil
+	}
+	return record, true, nil
+}
+
 // Authorization and approved profile/inventory lookup belong to the service
 // boundary; callers must not take the principal or organization from a device.
 func (s *Store) Create(ctx context.Context, asset Asset, principal string, now, expires time.Time) (Invitation, string, error) {
@@ -202,6 +356,28 @@ func (s *Store) Create(ctx context.Context, asset Asset, principal string, now, 
 		return Invitation{}, "", err
 	}
 	defer tx.Rollback()
+	var preflight string
+	var preflightUpdatedAt int64
+	if err := tx.QueryRowContext(ctx, `SELECT attestation_json,updated_at FROM enrollment_preflight WHERE organization=?`,
+		asset.Organization).Scan(&preflight, &preflightUpdatedAt); errors.Is(err, sql.ErrNoRows) {
+		return Invitation{}, "", ErrPreflight
+	} else if err != nil {
+		return Invitation{}, "", err
+	}
+	preflightTime := time.Unix(0, preflightUpdatedAt)
+	if preflightTime.After(now) || !preflightTime.After(now.Add(-preflightLifetime)) {
+		return Invitation{}, "", ErrPreflight
+	}
+	var attestation PreflightAttestation
+	if err := json.Unmarshal([]byte(preflight), &attestation); err != nil {
+		return Invitation{}, "", fmt.Errorf("decode stored enrollment preflight: %w", err)
+	}
+	if attestation.Organization != asset.Organization {
+		return Invitation{}, "", ErrPreflight
+	}
+	if err := attestation.Validate(); err != nil {
+		return Invitation{}, "", fmt.Errorf("stored enrollment preflight is invalid: %w", err)
+	}
 	if err := expireAssetInvitations(ctx, tx, asset, now); err != nil {
 		return Invitation{}, "", err
 	}

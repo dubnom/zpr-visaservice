@@ -113,9 +113,10 @@ func operatorEnrollmentProxy(auth *operatorauth.Auth, signer *operatordelegation
 		parts := strings.Split(path, "/")
 		permission := ""
 		switch {
-		case r.Method == "GET" && (path == "catalog" || path == "invitations" || (len(parts) == 2 && parts[0] == "invitations" && parts[1] != "")):
+		case r.Method == "GET" && (path == "catalog" || path == "invitations" || path == "preflight" ||
+			(len(parts) == 2 && parts[0] == "invitations" && parts[1] != "")):
 			permission = "read"
-		case r.Method == "POST" && path == "invitations":
+		case r.Method == "POST" && (path == "invitations" || path == "preflight"):
 			permission = "create"
 		case r.Method == "POST" && len(parts) == 3 && parts[0] == "invitations" && parts[1] != "" &&
 			slices.Contains([]string{"cancel", "approve", "reject"}, parts[2]):

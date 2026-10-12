@@ -31,13 +31,58 @@ func testStore(t *testing.T) *Store {
 	return s
 }
 
+func testPreflight(organization string) PreflightAttestation {
+	return PreflightAttestation{
+		Organization: organization, Mode: "pilot", HostLabel: "test-host",
+		HostAddress: "192.168.1.20", DeliveryChannel: "pilot-secure-share",
+		DNSVerified: true, ACMEVerified: true, TLSVerified: true,
+		NetworkVerified: true, DockerVerified: true, ListenersVerified: true,
+		PackageVerified: true, RecoveryVerified: true,
+	}
+}
+
 func createInvitation(t *testing.T, s *Store, now time.Time) (Invitation, string) {
 	t.Helper()
+	if _, err := s.SavePreflight(context.Background(), testPreflight("company"), "admin", now); err != nil {
+		t.Fatal(err)
+	}
 	i, code, err := s.Create(context.Background(), testAsset(), "admin", now, now.Add(time.Hour))
 	if err != nil {
 		t.Fatal(err)
 	}
 	return i, code
+}
+
+func TestPreflightExpiresAndCanBeReattested(t *testing.T) {
+	ctx := context.Background()
+	store := testStore(t)
+	now := time.Date(2025, 1, 1, 0, 0, 0, 0, time.UTC)
+	attestation := testPreflight("company")
+	first, err := store.SavePreflight(ctx, attestation, "admin", now)
+	if err != nil || first.Revision != 1 {
+		t.Fatalf("save initial preflight = %+v, %v", first, err)
+	}
+	if _, ready, err := store.GetPreflight(ctx, "company", now.Add(preflightLifetime-time.Second)); err != nil || !ready {
+		t.Fatalf("preflight before expiry ready=%v err=%v", ready, err)
+	}
+	expiry := now.Add(preflightLifetime)
+	if _, ready, err := store.GetPreflight(ctx, "company", expiry); err != nil || ready {
+		t.Fatalf("preflight at expiry ready=%v err=%v", ready, err)
+	}
+	if _, _, err := store.Create(ctx, testAsset(), "admin", expiry, expiry.Add(time.Hour)); !errors.Is(err, ErrPreflight) {
+		t.Fatalf("creation with expired preflight = %v", err)
+	}
+	renewed, err := store.SavePreflight(ctx, attestation, "admin", expiry)
+	if err != nil || renewed.Revision != 2 || !renewed.UpdatedAt.Equal(expiry) {
+		t.Fatalf("reattest unchanged values = %+v, %v", renewed, err)
+	}
+	if _, _, err := store.Create(ctx, testAsset(), "admin", expiry, expiry.Add(time.Hour)); err != nil {
+		t.Fatalf("creation after reattestation = %v", err)
+	}
+	var audits int
+	if err := store.db.QueryRow(`SELECT count(*) FROM enrollment_preflight_audit WHERE organization='company'`).Scan(&audits); err != nil || audits != 2 {
+		t.Fatalf("preflight audit rows=%d err=%v", audits, err)
+	}
 }
 
 func TestPersistenceAndSecretExclusion(t *testing.T) {

@@ -7,9 +7,9 @@
     "driver": "docker-multinode",
     "topology": "multi-node",
     "nodes": [
-      {"id": "milwaukee-hq", "location": "Milwaukee, Wisconsin, USA", "latitude": 43.04, "longitude": -87.91, "coordinate_note": "Simulation approximation: Milwaukee city center, not a verified company address.", "substrate_address": "172.30.0.13", "zpr_address": "fd5a:5052:90de::10"},
-      {"id": "shenzhen-office", "location": "Shenzhen, China", "latitude": 22.54, "longitude": 114.06, "coordinate_note": "Simulation approximation: Shenzhen city center, not a verified office address.", "substrate_address": "172.30.0.10", "zpr_address": "fd5a:5052:90de::11"},
-      {"id": "tijuana-plant", "location": "Tijuana, Mexico", "latitude": 32.51, "longitude": -117.04, "coordinate_note": "Simulation approximation: Tijuana city center, not a verified plant address.", "substrate_address": "172.30.0.17", "zpr_address": "fd5a:5052:90de::12"}
+      {"id": "milwaukee-hq", "location": "Milwaukee, Wisconsin, USA", "latitude": 43.04, "longitude": -87.91, "coordinate_note": "Simulation approximation: Milwaukee city center, not a verified company address.", "substrate_address": "172.31.0.13", "zpr_address": "fd5a:5052:90de::10"},
+      {"id": "shenzhen-office", "location": "Shenzhen, China", "latitude": 22.54, "longitude": 114.06, "coordinate_note": "Simulation approximation: Shenzhen city center, not a verified office address.", "substrate_address": "172.31.0.10", "zpr_address": "fd5a:5052:90de::11"},
+      {"id": "tijuana-plant", "location": "Tijuana, Mexico", "latitude": 32.51, "longitude": -117.04, "coordinate_note": "Simulation approximation: Tijuana city center, not a verified plant address.", "substrate_address": "172.31.0.17", "zpr_address": "fd5a:5052:90de::12"}
     ]
   },
   "directory": {

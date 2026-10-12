@@ -5,6 +5,7 @@ import (
 	"crypto/tls"
 	"crypto/x509"
 	"encoding/json"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -40,11 +41,69 @@ func requestAPI(handler http.Handler, method, path string, body []byte, cert str
 func testAPI(t *testing.T) (*Store, http.Handler) {
 	t.Helper()
 	store := testStore(t)
+	if _, err := store.SavePreflight(t.Context(), testPreflight("company"), "admin", time.Now().UTC()); err != nil {
+		t.Fatal(err)
+	}
 	handler, err := NewAdminHandler(store, apiConfig())
 	if err != nil {
 		t.Fatal(err)
 	}
 	return store, handler
+}
+
+func TestAdminAPICreationRequiresPersistentOrganizationPreflight(t *testing.T) {
+	store := testStore(t)
+	handler, err := NewAdminHandler(store, apiConfig())
+	if err != nil {
+		t.Fatal(err)
+	}
+	create := func() *httptest.ResponseRecorder {
+		return requestAPI(handler, http.MethodPost, APIPrefix+"invitations", assetJSON(t, testAsset()), "admin-cert")
+	}
+	response := create()
+	if response.Code != http.StatusConflict || !strings.Contains(response.Body.String(), "preflight") {
+		t.Fatalf("creation without preflight = %d %s", response.Code, response.Body.String())
+	}
+
+	attestation := testPreflight("company")
+	body, err := json.Marshal(attestation)
+	if err != nil {
+		t.Fatal(err)
+	}
+	response = requestAPI(handler, http.MethodPost, APIPrefix+"preflight", body, "reader-cert")
+	if response.Code != http.StatusForbidden {
+		t.Fatalf("reader preflight write = %d %s", response.Code, response.Body.String())
+	}
+	response = requestAPI(handler, http.MethodPost, APIPrefix+"preflight", body, "admin-cert")
+	if response.Code != http.StatusOK || !strings.Contains(response.Body.String(), `"revision":1`) {
+		t.Fatalf("save preflight = %d %s", response.Code, response.Body.String())
+	}
+	response = requestAPI(handler, http.MethodGet, APIPrefix+"preflight?organization=company", nil, "reader-cert")
+	if response.Code != http.StatusOK || !strings.Contains(response.Body.String(), `"ready":true`) ||
+		!strings.Contains(response.Body.String(), `"host_address":"192.168.1.20"`) {
+		t.Fatalf("read preflight = %d %s", response.Code, response.Body.String())
+	}
+	response = create()
+	if response.Code != http.StatusCreated {
+		t.Fatalf("creation with persisted preflight = %d %s", response.Code, response.Body.String())
+	}
+	var audits int
+	if err := store.db.QueryRow(`SELECT count(*) FROM enrollment_preflight_audit WHERE organization='company' AND revision=1`).Scan(&audits); err != nil || audits != 1 {
+		t.Fatalf("preflight audit rows=%d err=%v", audits, err)
+	}
+}
+
+func TestPreflightRequiresValidAttestations(t *testing.T) {
+	store := testStore(t)
+	invalid := []PreflightAttestation{
+		{Organization: "company", Mode: "pilot", HostLabel: "host", HostAddress: "8.8.8.8", DeliveryChannel: "pilot-secure-share"},
+		{Organization: "company", Mode: "production", HostLabel: "host", HostAddress: "192.168.1.20", DeliveryChannel: "pilot-secure-share", DNSVerified: true, ACMEVerified: true, TLSVerified: true, NetworkVerified: true, DockerVerified: true, ListenersVerified: true, PackageVerified: true, RecoveryVerified: true, BackupVerified: true},
+	}
+	for _, attestation := range invalid {
+		if _, err := store.SavePreflight(t.Context(), attestation, "admin", time.Now()); !errors.Is(err, ErrInvalid) {
+			t.Fatalf("invalid preflight accepted: %+v, %v", attestation, err)
+		}
+	}
 }
 
 func assetJSON(t *testing.T, asset Asset) []byte {

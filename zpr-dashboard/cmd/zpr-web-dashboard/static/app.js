@@ -14,6 +14,49 @@ let graphAutoFit = true;
 let graphDarkMode = false;
 let graphVisaFocus = null;
 const mapViewports = new Map();
+const mapTraffic = window.ZPRMapTraffic.createTracker();
+const mapTrafficEnabled = () => byId("map-traffic").value === "packets";
+byId("map-traffic").addEventListener("change", () => {
+  byId("map-traffic-legend").hidden = !mapTrafficEnabled();
+  byId("map-traffic-key").hidden = !mapTrafficEnabled();
+  updateMapTrafficDisplay();
+});
+function mapTrafficDetails(cn) {
+  const entry = mapTraffic.get(cn);
+  const description = window.ZPRMapTraffic.describe(entry);
+  const history = entry.history;
+  let chart = "";
+  if (entry.status === "ready" && history.length > 1) {
+    const peak = Math.max(...history.map(sample => sample.total));
+    const max = Math.max(1, peak);
+    const start = history[0].time, duration = history.at(-1).time - start;
+    const points = history.map(sample => `${((sample.time - start) / duration * 180).toFixed(2)},${(35 - sample.total / max * 30).toFixed(2)}`).join(" ");
+    const label = `Recent RX + TX packet I/O over ${(duration / 1000).toFixed(1)} seconds; peak ${window.ZPRMapTraffic.formatRate(peak)} packets/sec`;
+    chart = `<svg class="map-traffic-history" viewBox="0 0 180 40" role="img" aria-label="${escapeHTML(label)}"><title>${escapeHTML(label)}</title><polyline points="${points}"/></svg>`;
+  }
+  return `<p>${escapeHTML(description)}</p>${chart}`;
+}
+function updateMapTrafficDisplay() {
+  byId("topology-stage").classList.toggle("map-traffic-off", !mapTrafficEnabled());
+  for (const halo of byId("topology-stage").querySelectorAll("[data-traffic-node]")) {
+    const entry = mapTraffic.get(halo.dataset.trafficNode);
+    const description = window.ZPRMapTraffic.describe(entry);
+    halo.setAttribute("class", `graph-traffic-halo ${entry.status === "ready" ? `band-${window.ZPRMapTraffic.band(entry.smoothed)}` : "band-unknown"}`);
+    halo.dataset.trafficStatus = entry.status;
+    halo.setAttribute("aria-label", description);
+    halo.querySelector("title").textContent = description;
+    halo.setAttribute("aria-hidden", String(!mapTrafficEnabled()));
+    const vertex = halo.closest(".graph-vertex");
+    if (mapTrafficEnabled()) vertex.setAttribute("aria-description", description);
+    else vertex.removeAttribute("aria-description");
+    vertex.querySelector(":scope > title").textContent = `${vertex.dataset.baseTitle}${mapTrafficEnabled() ? ` · ${description}` : ""}`;
+  }
+  const details = byId("map-traffic-details");
+  if (details && state.selection?.kind === "actor") details.innerHTML = mapTrafficDetails(state.selection.key);
+}
+window.setInterval(() => {
+  if (!byId("page-map").hidden || byId("map-traffic-details")) updateMapTrafficDisplay();
+}, 1000);
 window.addEventListener("zpr-map-view", () => {
   if (state.snapshot) renderTopology(state.snapshot);
 });
@@ -715,7 +758,22 @@ function renderInspector() {
   let title = state.selection.key;
   let sections = [];
 
-  if (state.selection.kind === "visa-count") {
+  if (state.selection.kind === "attachment-group") {
+    const lost = state.selection.key === "lost";
+    title = lost ? "Lost" : "Detached";
+    kindLabel = "UNCONNECTED ADAPTERS";
+    const attached = new Set(data.actors.filter(actor => actor.node).flatMap(actor => actor.node_details?.adapters || []));
+    const members = data.actors.filter(actor => !actor.node && !attached.has(actor.cn) && mapAttachedHistory.has(actor.cn) === lost);
+    sections.push(detailSection("Attachment inventory", [
+      detailField("Adapters", members.length),
+      detailField("Meaning", lost ? "Attachment was previously observed in this browser." : "No attachment observed in this browser."),
+      ...(data.api_status !== "connected" ? [detailField("Snapshot", "Attachment unavailable; membership is last reported.")] : []),
+    ]));
+    sections.push(`<section class="detail-section"><h3>Members</h3><div class="detail-list">${members.map(actor => {
+      const services = (data.services || []).filter(service => service.actor_cn === actor.cn).map(service => service.service_name);
+      return `<button class="detail-item" type="button" data-inspect-actor="${escapeHTML(actor.cn)}"><strong>${escapeHTML(actorDisplayName(actor))}</strong><span>${escapeHTML(actor.zpr_addr || "Address not reported")}</span>${services.length ? `<span>${escapeHTML(services.join(", "))}</span>` : ""}</button>`;
+    }).join("") || "<p>No adapters in this group.</p>"}</div></section>`);
+  } else if (state.selection.kind === "visa-count") {
     const selection = JSON.parse(state.selection.key);
     const actor = data.actors.find(item => item.cn === selection.actorCN);
     const service = selection.kind === "service"
@@ -793,6 +851,7 @@ function renderInspector() {
     }
     if (actor.node && actor.node_details) {
       const details = actor.node_details;
+      sections.push(`<section class="detail-section"><h3>Packet volume</h3><div id="map-traffic-details">${mapTrafficDetails(actor.cn)}</div></section>`);
       const attached = details.adapters || [];
       const outgoing = (details.links || []).map((name) => {
         const linkedActor = data.actors.find((item) => item.cn === name);
@@ -1049,24 +1108,6 @@ function renderUnattached(data, adapters, dockEdges) {
     for (const edge of dockEdges) mapAttachedHistory.add(edge.to.cn);
   }
   const unattached = adapters.filter(adapter => !dockEdges.some(edge => edge.to.cn === adapter.cn));
-  const tray = byId("map-unattached");
-  const list = byId("map-unattached-list");
-  const focusedActor = list.contains(document.activeElement) ? document.activeElement.dataset.inspectActor : null;
-  const lost = unattached.filter(actor => mapAttachedHistory.has(actor.cn)).length;
-  tray.hidden = unattached.length === 0;
-  byId("map-unattached-summary").textContent = `Detached · ${unattached.length}${lost ? ` · ${lost} lost connection` : ""}`;
-  list.innerHTML = unattached.map(actor => {
-    const lostConnection = mapAttachedHistory.has(actor.cn);
-    const services = (data.services || []).filter(service => service.actor_cn === actor.cn);
-    const status = data.api_status !== "connected" ? "Attachment unavailable"
-      : lostConnection ? "Lost connection" : "No attachment observed";
-    return `<li data-unattached-actor="${escapeHTML(actor.cn)}"><button class="detail-link" type="button" data-inspect-actor="${escapeHTML(actor.cn)}" aria-label="Inspect ${escapeHTML(actorDisplayName(actor))}">${escapeHTML(actorDisplayName(actor))}</button><span class="${lostConnection ? "map-unattached-warning" : ""}">${status}</span>${services.length ? `<small>${escapeHTML(services.map(service => service.service_name).join(", "))}</small>` : ""}</li>`;
-  }).join("");
-  if (focusedActor) {
-    const replacement = [...list.querySelectorAll("[data-inspect-actor]")].find(button => button.dataset.inspectActor === focusedActor);
-    if (replacement) replacement.focus({ preventScroll: true });
-    else if (!tray.hidden) byId("map-unattached-summary").focus({ preventScroll: true });
-  }
   return unattached;
 }
 
@@ -1134,7 +1175,7 @@ function renderTopology(data, exitComponents = []) {
   const viewportAspect = viewport.width > 0 && viewport.height > 0 ? viewport.width / viewport.height : 1;
   stage.graphLayoutAspect = viewportAspect;
 
-  if (!visibleActors.length) {
+  if (!actors.length) {
     if (geographic) {
       stage.innerHTML = `<div class="graph-controls" aria-label="Topology graph controls">${darkModeControl}<label class="graph-auto-fit"><input type="checkbox" data-graph-auto-fit${graphAutoFit ? " checked" : ""}>Auto-fit</label><button class="graph-control" data-graph-action="in" type="button" aria-label="Zoom in" title="Zoom in">+</button><button class="graph-control" data-graph-action="out" type="button" aria-label="Zoom out" title="Zoom out">−</button><button class="graph-control graph-fit" data-graph-action="fit" type="button" aria-label="Fit graph" title="Fit graph">Fit</button></div><svg class="topology-graph" viewBox="0 0 3600 1800" role="img" aria-label="World Map; no nodes or adapters reported"><g id="graph-world"><image href="/geography-land.svg?v=2" width="3600" height="1800" class="graph-geographic-basemap"/></g></svg><p class="empty-state" role="status">No nodes or adapters reported. The World Map is shown at its full extent.</p>`;
       setupGraphAppearance(stage);
@@ -1384,7 +1425,12 @@ function renderTopology(data, exitComponents = []) {
   for (const component of stage.querySelectorAll("#graph-world > [data-topology-component]")) {
     const movement = graphMotionAt(component);
     const key = component.dataset.topologyComponent;
-    previousMovement.set(key, movement);
+    const nextPosition = positions.get(component.dataset.inspectActor);
+    previousMovement.set(key, nextPosition ? {
+      x: Number(component.dataset.originX) + movement.x - nextPosition.x,
+      y: Number(component.dataset.originY) + movement.y - nextPosition.y,
+      scale: movement.scale,
+    } : movement);
     previousPositions.set(key, {
       x: Number(component.dataset.originX) + movement.x,
       y: Number(component.dataset.originY) + movement.y,
@@ -1440,7 +1486,11 @@ function renderTopology(data, exitComponents = []) {
       : isVisaService ? { x: 17.5, y: -17.5 }
       : { x: 29 / Math.SQRT2, y: -29 / Math.SQRT2 };
     const count = visaCountBadge(counts.get(componentKey), pos.x + countAnchor.x, pos.y + countAnchor.y, isNode);
-    return `<g class="graph-vertex ${isNode ? "node" : isGateway ? "gateway" : isVisaService ? "visa" : "adapter"}${arrivingClass} ${highlighted}" data-topology-component="${escapeHTML(componentKey)}" data-origin-x="${pos.x}" data-origin-y="${pos.y}"${positionAttributes} data-inspect-actor="${escapeHTML(actor.cn)}" tabindex="0" role="button" aria-label="Inspect ${escapeHTML(isGateway ? "gateway " : "")}${escapeHTML(displayName)}"><title>${escapeHTML(isGateway ? "ZPR gateway · " : "")}${escapeHTML(displayName)} · ${escapeHTML(actor.cn)} · ${escapeHTML(dnsAddressTitle(actor.zpr_addr))}</title>${cloudMarkup}${glyph}${marker}<text class="graph-label" x="${pos.x}" y="${pos.y + 3}">${escapeHTML(shortName)}</text>${count}</g>`;
+    const baseTitle = `${isGateway ? "ZPR gateway · " : ""}${displayName} · ${actor.cn} · ${dnsAddressTitle(actor.zpr_addr)}`;
+    const traffic = isNode ? mapTraffic.get(actor.cn) : null;
+    const trafficDescription = traffic ? window.ZPRMapTraffic.describe(traffic) : "";
+    const halo = traffic ? `<g class="graph-traffic-halo ${traffic.status === "ready" ? `band-${window.ZPRMapTraffic.band(traffic.smoothed)}` : "band-unknown"}" data-traffic-node="${escapeHTML(actor.cn)}" data-traffic-status="${traffic.status}" role="img" aria-label="${escapeHTML(trafficDescription)}"><title>${escapeHTML(trafficDescription)}</title><rect x="${pos.x - 50}" y="${pos.y - 29}" width="100" height="58" rx="10"/></g>` : "";
+    return `<g class="graph-vertex ${isNode ? "node" : isGateway ? "gateway" : isVisaService ? "visa" : "adapter"}${arrivingClass} ${highlighted}" data-topology-component="${escapeHTML(componentKey)}" data-origin-x="${pos.x}" data-origin-y="${pos.y}"${positionAttributes} data-inspect-actor="${escapeHTML(actor.cn)}" data-base-title="${escapeHTML(baseTitle)}"${traffic ? ` aria-description="${escapeHTML(trafficDescription)}"` : ""} tabindex="0" role="button" aria-label="Inspect ${escapeHTML(isGateway ? "gateway " : "")}${escapeHTML(displayName)}"><title>${escapeHTML(baseTitle)}${traffic ? ` · ${escapeHTML(trafficDescription)}` : ""}</title>${cloudMarkup}${halo}${glyph}${marker}<text class="graph-label" x="${pos.x}" y="${pos.y + 3}">${escapeHTML(shortName)}</text>${count}</g>`;
   });
 
   const serviceEdgeMarkup = [];
@@ -1481,6 +1531,40 @@ function renderTopology(data, exitComponents = []) {
   stage.innerHTML = `<div class="graph-controls" aria-label="Topology graph controls">${darkModeControl}<label class="graph-auto-fit"><input type="checkbox" data-graph-auto-fit${graphAutoFit ? " checked" : ""}>Auto-fit</label><button class="graph-control" data-graph-action="in" type="button" aria-label="Zoom in" title="Zoom in">+</button><button class="graph-control" data-graph-action="out" type="button" aria-label="Zoom out" title="Zoom out">−</button><button class="graph-control graph-fit" data-graph-action="fit" type="button" aria-label="Fit graph" title="Fit graph">Fit</button></div><svg class="topology-graph" viewBox="0 0 ${width} ${height}" role="img" aria-label="Topology graph with ${nodes.length} nodes, ${adapters.length} adapters, ${dockEdges.length} dock connections, ${networkEdges.length} inter-node links, and ${(data.services || []).filter((service) => servicesByActor.has(service.actor_cn)).length} registered services"><g id="graph-world">${edgeMarkup}${serviceEdgeMarkup.join("")}${serviceMarkup.join("")}<g class="graph-exit-layer" aria-hidden="true">${exiting("service")}</g>${vertexMarkup.slice(nodes.length).join("")}<g class="graph-exit-layer" aria-hidden="true">${exiting("adapter")}</g>${vertexMarkup.slice(0, nodes.length).join("")}<g class="graph-exit-layer" aria-hidden="true">${exiting("node")}</g></g></svg>`;
   setupGraphAppearance(stage);
   const world = stage.querySelector("#graph-world");
+  const attachmentControls = document.createElement("div");
+  attachmentControls.className = "graph-controls graph-attachment-controls";
+  attachmentControls.setAttribute("aria-label", "Disconnected adapter inventory");
+  for (const kind of ["detached", "lost"]) {
+    const members = unconnected.filter(actor => mapAttachedHistory.has(actor.cn) === (kind === "lost"));
+    const label = kind === "lost" ? "Lost" : "Detached";
+    const group = document.createElement("button");
+    group.type = "button";
+    group.className = "graph-control graph-attachment-group";
+    group.dataset.inspectAttachmentGroup = kind;
+    group.setAttribute("aria-label", `${label}: ${members.length} adapters. Show members`);
+    group.title = `${label} · ${members.length} adapters${data.api_status !== "connected" ? " · attachment unavailable" : ""}`;
+    group.innerHTML = `${label} <span class="graph-attachment-count">${members.length}</span>`;
+    attachmentControls.append(group);
+  }
+  stage.append(attachmentControls);
+  const exitEdges = document.createElementNS("http://www.w3.org/2000/svg", "g");
+  exitEdges.setAttribute("class", "graph-exit-layer");
+  exitEdges.setAttribute("aria-hidden", "true");
+  exitEdges.innerHTML = exiting("edge");
+  world.prepend(exitEdges);
+  const renderedComponents = new Map([...world.querySelectorAll("[data-topology-component]")].map(component => [component.dataset.topologyComponent, component]));
+  for (const component of world.querySelectorAll(".graph-exit-layer > [data-topology-component]")) {
+    let parent = renderedComponents.get(component.dataset.topologyParent);
+    const visited = new Set();
+    while (parent?.classList.contains("graph-exiting") && !visited.has(parent)) {
+      visited.add(parent);
+      parent = renderedComponents.get(parent.dataset.topologyParent);
+    }
+    if (parent && !parent.classList.contains("graph-exiting")) {
+      component.dataset.exitDx = String(Number(parent.dataset.originX) - Number(component.dataset.originX));
+      component.dataset.exitDy = String(Number(parent.dataset.originY) - Number(component.dataset.originY));
+    }
+  }
   stage.querySelector(".topology-graph").setAttribute("aria-label",
     `Topology graph with ${nodes.length} nodes, ${attachedAdapterCount} attached adapters, ${dockEdges.length} dock connections, ${networkEdges.length} inter-node links; ${unconnected.length} adapters in Detached`);
   if (geographic) {
@@ -1492,7 +1576,7 @@ function renderTopology(data, exitComponents = []) {
     world.prepend(basemap);
     stage.querySelector(".topology-graph").setAttribute("aria-label", `World Map with ${nodes.length} nodes and ${attachedAdapterCount} attached adapters; ${unconnected.length} adapters in Detached; nodes without coordinates are outside the basemap`);
   }
-  const shapes = new Map([...world.querySelectorAll(":scope > [data-topology-component]")].map((component) => [
+  const shapes = new Map([...world.querySelectorAll(":scope > [data-topology-component], .graph-exit-layer > [data-topology-component]")].map((component) => [
     component.dataset.topologyComponent,
     component.querySelector(":scope > .graph-node, :scope > .graph-adapter, :scope > .graph-gateway, :scope > .graph-visa, :scope > rect"),
   ]));
@@ -1576,6 +1660,7 @@ function renderTopology(data, exitComponents = []) {
   applyMapVisaFocus(data);
   pulseAdapterDecisions(data);
   pulseMapCounts(counts);
+  updateMapTrafficDisplay();
 }
 
 function renderConnections(edges, unconnected) {
@@ -1703,7 +1788,7 @@ function setupGraphControls(stage, width, height, previousViewport) {
   let drag = null;
   svg.addEventListener("pointerdown", (event) => {
     if (event.button !== 0) return;
-    if (event.target.closest("[data-inspect-actor], [data-inspect-service], [data-inspect-link]")) return;
+    if (event.target.closest("[data-inspect-actor], [data-inspect-service], [data-inspect-link], [data-inspect-attachment-group]")) return;
     const point = pointAt(event);
     drag = { pointerId: event.pointerId, point, x: camera.x, y: camera.y };
     svg.classList.add("panning");
@@ -1761,9 +1846,11 @@ function setupGraphControls(stage, width, height, previousViewport) {
       { opacity: 0.65, offset: 0.8 },
       { opacity: 0 },
     ], { duration: GRAPH_REMOVAL_DURATION, easing: "ease-in", fill: "forwards" });
-    animateGraphMotion(component, animation,
-      { x: Number(component.dataset.exitStartX || 0), y: Number(component.dataset.exitStartY || 0), scale: Number(component.dataset.exitStartScale || 1) },
-      { x: moving ? Number(exitX) : 0, y: moving ? Number(exitY) : 0, scale: 0.1 }, 0.8);
+    if (component.hasAttribute("data-topology-component")) {
+      animateGraphMotion(component, animation,
+        { x: Number(component.dataset.exitStartX || 0), y: Number(component.dataset.exitStartY || 0), scale: Number(component.dataset.exitStartScale || 1) },
+        { x: moving ? Number(exitX) : 0, y: moving ? Number(exitY) : 0, scale: 0.1 }, 0.8);
+    }
     const removalTimer = window.setTimeout(() => component.remove(), GRAPH_REMOVAL_DURATION + 150);
     animation.onfinish = () => {
       window.clearTimeout(removalTimer);
@@ -2105,6 +2192,10 @@ async function loadPolicyWorkspace() {
       stagedCandidate: data.staged_candidate || null,
       assistantReady: data.assistant_ready,
     });
+    if (organizationChanged) {
+      mapTraffic.reset();
+      updateMapTrafficDisplay();
+    }
     renderPolicyAttributes();
     if (organizationChanged) {
       policy.treeInitialized = false;
@@ -3901,14 +3992,26 @@ const serviceTypePalette = new Map([
 ]);
 
 document.addEventListener("click", (event) => {
-  const key = document.querySelector(".service-type-key");
-  if (key.open && !key.contains(event.target)) key.open = false;
+  const serviceKey = document.querySelector(".service-type-key");
+  if (serviceKey && serviceKey.open && !serviceKey.contains(event.target)) serviceKey.open = false;
+  const legendKey = document.getElementById("map-legend-key");
+  const clearBtn = document.getElementById("map-clear-highlight");
+  if (legendKey && legendKey.open && !legendKey.contains(event.target) && (!clearBtn || !clearBtn.contains(event.target))) {
+    legendKey.open = false;
+  }
 });
 document.addEventListener("keydown", (event) => {
-  const key = document.querySelector(".service-type-key");
-  if (event.key === "Escape" && key.open) {
-    key.open = false;
-    key.querySelector("summary").focus();
+  const serviceKey = document.querySelector(".service-type-key");
+  if (event.key === "Escape" && serviceKey && serviceKey.open) {
+    serviceKey.open = false;
+    serviceKey.querySelector("summary")?.focus();
+    event.preventDefault();
+  }
+  const legendKey = document.getElementById("map-legend-key");
+  if (event.key === "Escape" && legendKey && legendKey.open) {
+    legendKey.open = false;
+    legendKey.querySelector("summary")?.focus();
+    event.preventDefault();
   }
 });
 
@@ -4083,7 +4186,7 @@ function snapshotRemovedTopologyComponents(keys) {
     }
     return { x, y };
   };
-  return [...components.values()]
+  const exits = [...components.values()]
     .filter((component) => removed.has(component.dataset.topologyComponent))
     .map((component) => {
       const bounds = component.getBBox();
@@ -4114,6 +4217,15 @@ function snapshotRemovedTopologyComponents(keys) {
       const kind = component.classList.contains("graph-service-badge") ? "service" : component.classList.contains("node") ? "node" : "adapter";
       return { kind, markup: clone.outerHTML };
     });
+  for (const edge of world.querySelectorAll(":scope > [data-connector-from]")) {
+    if (!removed.has(edge.dataset.connectorFrom) && !removed.has(edge.dataset.connectorTo)) continue;
+    const clone = edge.cloneNode(true);
+    clone.classList.add("graph-exiting");
+    for (const attribute of ["tabindex", "role", "data-inspect-link", "data-topology-edge"]) clone.removeAttribute(attribute);
+    clone.setAttribute("aria-hidden", "true");
+    exits.push({ kind: "edge", markup: clone.outerHTML });
+  }
+  return exits;
 }
 
 const adapterDecisionPulses = new Map();
@@ -4196,8 +4308,11 @@ function serviceMatchesVisa(service, visa, actors) {
 function recordAdapterDecisions(data, previous) {
   if (!previous || data === previous) return;
   const decisions = new Map();
-  const visaIDs = new Set((previous.recent_visas || []).map((visa) => String(visa.id)));
-  for (const visa of data.recent_visas || []) {
+  const observedVisas = snapshot => [...new Map([
+    ...(activeMapVisas(snapshot) || []), ...(snapshot.recent_visas || []),
+  ].map(visa => [String(visa.id), visa])).values()];
+  const visaIDs = new Set(observedVisas(previous).map((visa) => String(visa.id)));
+  for (const visa of observedVisas(data)) {
     const requester = String(visa.direction || "").toLowerCase() === "reverse" ? visa.dest_addr : visa.source_addr;
     if (!visaIDs.has(String(visa.id))) {
       if (requester) decisions.set(dnsAddressKey(requester), "grant");
@@ -4293,10 +4408,13 @@ function pulseAdapterDecisions(data) {
 
 function render(data) {
   const previousSnapshot = state.snapshot;
+  mapTraffic.update(data.actors, state.policy.organizationID || "", data.api_status === "connected");
   recordAdapterDecisions(data, previousSnapshot);
+  const attached = new Set(data.actors.filter(actor => actor.node).flatMap(actor => actor.node_details?.adapters || []));
+  const visibleActors = new Set(data.actors.filter(actor => actor.node || attached.has(actor.cn)).map(actor => actor.cn));
   const componentKeys = new Set([
-    ...data.actors.map((actor) => `actor:${JSON.stringify(actor.cn)}`),
-    ...(data.services || []).map((service) => `service:${JSON.stringify([service.actor_cn, service.service_name])}`),
+    ...data.actors.filter(actor => visibleActors.has(actor.cn)).map((actor) => `actor:${JSON.stringify(actor.cn)}`),
+    ...(data.services || []).filter(service => visibleActors.has(service.actor_cn)).map((service) => `service:${JSON.stringify([service.actor_cn, service.service_name])}`),
   ]);
   const now = Date.now();
   const removedKeys = state.topologyComponents
@@ -4348,6 +4466,8 @@ const snapshotPoller = window.ZPRPageRuntime.createPoller({
   onPending(value) { byId("refresh-now").disabled = value; },
   onError(error) {
     updateConnection({ api_status: "disconnected", errors: [error.message] }, false);
+    mapTraffic.update(state.snapshot?.actors || [], state.policy.organizationID || "", false);
+    updateMapTrafficDisplay();
     window.dispatchEvent(new CustomEvent("zpr-snapshot-error", { detail: error.message }));
     if (!state.snapshot) byId("topology-stage").querySelector(".empty-state").textContent = "Unable to load topology. Check the connection error above or use Refresh to retry.";
   },
@@ -4561,6 +4681,11 @@ function clearMapHighlight() {
   syncMapClearHighlight();
   return had;
 }
+byId("map-legend-key")?.addEventListener("toggle", (event) => {
+  if (event.target.open) {
+    byId("topology-search")?.focus();
+  }
+});
 byId("topology-search").addEventListener("input", () => { if (state.snapshot) renderTopology(state.snapshot); syncMapClearHighlight(); });
 for (const item of document.querySelectorAll("[data-legend-kind]")) {
   item.addEventListener("click", () => {
@@ -4685,6 +4810,8 @@ document.addEventListener("click", (event) => {
 
 document.addEventListener("click", (event) => {
   if (event.target.closest(".source-editor-link")) return;
+  const group = event.target.closest("[data-inspect-attachment-group]");
+  if (group) { openInspector("attachment-group", group.dataset.inspectAttachmentGroup); return; }
   const target = event.target.closest("[data-inspect-actor], [data-inspect-service], [data-inspect-source], [data-inspect-link]");
   if (!target) return;
   if (target.dataset.inspectActor) openInspector("actor", target.dataset.inspectActor);
@@ -4696,12 +4823,18 @@ document.addEventListener("click", (event) => {
 document.addEventListener("pointerdown", (event) => {
   const inspector = byId("component-inspector");
   if (!inspector.classList.contains("open") || inspector.contains(event.target) ||
-      event.target.closest("[data-inspect-actor], [data-inspect-service], [data-inspect-source], [data-inspect-link]")) return;
+      event.target.closest("[data-inspect-actor], [data-inspect-service], [data-inspect-source], [data-inspect-link], [data-inspect-attachment-group]")) return;
   closeInspector();
 });
 
 document.addEventListener("keydown", (event) => {
   if (event.target.closest(".source-editor-link")) return;
+  const group = event.target.closest("[data-inspect-attachment-group]");
+  if (group && (event.key === "Enter" || event.key === " ")) {
+    event.preventDefault();
+    openInspector("attachment-group", group.dataset.inspectAttachmentGroup);
+    return;
+  }
   const target = event.target.closest("[data-inspect-actor], [data-inspect-service], [data-inspect-source], [data-inspect-link]");
   if (!target || (event.key !== "Enter" && event.key !== " ")) return;
   event.preventDefault();

@@ -25,6 +25,8 @@ const (
 	machineHeartbeatInterval = 3 * time.Second
 	machineHeartbeatTimeout  = 12 * time.Second
 	machineCommandWait       = 4 * time.Second
+	machineControlTun        = "tun5"
+	simulatorPacketIOEngine  = "posix_unbatched"
 )
 
 type machineControllerStatus struct {
@@ -197,7 +199,7 @@ func runMachineController(machineID, controlURL, caFile, certFile, keyFile, phBi
 	if err != nil {
 		return fmt.Errorf("open machine PH log: %w", err)
 	}
-	phArgs := []string{"adapter", "--logging", "all=INFO", "--control-path", phControlPath, "--capture-path", phCapturePath, "--self-addr", "0.0.0.0:0", "--ca-file", "/opt/zpr-workloads/ca.crt", "--bootstrap-key", bootstrapKey, "--name", machineID, "--km-impl", "noise", "--tun-if", "tun5", "--node-addr", nodeAddress}
+	phArgs := []string{"adapter", "--io-engine", simulatorPacketIOEngine, "--logging", "all=INFO", "--control-path", phControlPath, "--capture-path", phCapturePath, "--self-addr", "0.0.0.0:0", "--ca-file", "/opt/zpr-workloads/ca.crt", "--bootstrap-key", bootstrapKey, "--name", machineID, "--km-impl", "noise", "--tun-if", machineControlTun, "--node-addr", nodeAddress}
 	if zprAddress != "" {
 		phArgs = append(phArgs, "--zpr-addr", zprAddress)
 	}
@@ -242,16 +244,21 @@ func runMachineController(machineID, controlURL, caFile, certFile, keyFile, phBi
 	if !roots.AppendCertsFromPEM(caPEM) {
 		return errors.New("invalid simulator control CA")
 	}
-	client := &http.Client{
-		Timeout: 6 * time.Second,
-		Transport: &http.Transport{TLSClientConfig: &tls.Config{
-			MinVersion:   tls.VersionTLS13,
-			RootCAs:      roots,
-			Certificates: []tls.Certificate{certificate},
-			ServerName:   "host.docker.internal",
-		}},
+	scope := machineControlScope{OrganizationID: os.Getenv("SIMULATION_ORGANIZATION_ID"), Generation: os.Getenv("SIMULATION_RUNTIME_GENERATION")}
+	if !validScenarioID(scope.OrganizationID) || !validMachineControlGeneration(scope.Generation) {
+		return errors.New("machine controller requires organization and runtime generation")
 	}
-	defer client.CloseIdleConnections()
+	transport := &http.Transport{TLSClientConfig: &tls.Config{
+		MinVersion:   tls.VersionTLS13,
+		RootCAs:      roots,
+		Certificates: []tls.Certificate{certificate},
+		ServerName:   "host.docker.internal",
+	}}
+	client := &http.Client{
+		Timeout:   6 * time.Second,
+		Transport: scopedMachineTransport{base: transport, scope: scope},
+	}
+	defer transport.CloseIdleConnections()
 
 	for {
 		link, _ := exec.Command("/opt/zpr-workloads/ph-cli", "-p", phControlPath, "link", "show").CombinedOutput()
@@ -355,6 +362,8 @@ func executeMachineControlCommand(machineID string, command machineControlComman
 		return result
 	}
 	switch command.Action {
+	case "probe":
+		result.Output = command.ID
 	case "login":
 		if strings.TrimSpace(command.User) == "" {
 			result.Error = "simulated user is required"
@@ -395,20 +404,21 @@ func executeMachineControlCommand(machineID string, command machineControlComman
 }
 
 type machineWorkloadConfig struct {
-	address  string
-	key      string
-	tun      string
-	services string
+	address    string
+	key        string
+	tun        string
+	services   string
+	routeTable int
 }
 
 func machineWorkload(agent string) (machineWorkloadConfig, bool) {
 	workloads := map[string]machineWorkloadConfig{
-		"finance-client":    {address: "fd00:1:4::1", key: "client-finance-rsa.key", tun: "tun0"},
-		"operations-client": {address: "fd00:1:5::1", key: "client-operations-rsa.key", tun: "tun1"},
-		"telemetry-client":  {address: "fd00:1:6::1", key: "client-telemetry-rsa.key", tun: "tun2"},
-		"echo-service":      {address: "fd00:1:7::1", key: "service-echo-rsa.key", tun: "tun3", services: "EchoService"},
-		"metrics-service":   {address: "fd00:1:8::1", key: "service-metrics-rsa.key", tun: "tun4", services: "MetricsService"},
-		"internet-gateway":  {address: "fd00:1:9::1", key: "internet-gateway-rsa.key", tun: "tun5", services: "internet-gateway"},
+		"finance-client":    {address: "fd00:1:4::1", key: "client-finance-rsa.key", tun: "tun0", routeTable: 100},
+		"operations-client": {address: "fd00:1:5::1", key: "client-operations-rsa.key", tun: "tun1", routeTable: 101},
+		"telemetry-client":  {address: "fd00:1:6::1", key: "client-telemetry-rsa.key", tun: "tun2", routeTable: 102},
+		"echo-service":      {address: "fd00:1:7::1", key: "service-echo-rsa.key", tun: "tun3", services: "EchoService", routeTable: 103},
+		"metrics-service":   {address: "fd00:1:8::1", key: "service-metrics-rsa.key", tun: "tun4", services: "MetricsService", routeTable: 104},
+		"internet-gateway":  {address: "fd00:1:9::1", key: "internet-gateway-rsa.key", tun: "zgateway0", services: "internet-gateway", routeTable: 105},
 	}
 	config, ok := workloads[agent]
 	return config, ok
@@ -486,7 +496,7 @@ func startMachineWorkload(agent string, serviceNames []string) error {
 	if err != nil {
 		return err
 	}
-	command := exec.Command(filepath.Join(assets, "ph"), "adapter", "--logging", "all=INFO", "--control-path", socket, "--capture-path", filepath.Join(runtimeDir, agent+"_cap.sock"), "--self-addr", substrateAddress, "--ca-file", filepath.Join(assets, "ca.crt"), "--bootstrap-key", filepath.Join(assets, config.key), "--name", agent, "--km-impl", "noise", "--tun-if", config.tun, "--node-addr", nodeAddress, "--zpr-addr", config.address)
+	command := exec.Command(filepath.Join(assets, "ph"), "adapter", "--io-engine", simulatorPacketIOEngine, "--logging", "all=INFO", "--control-path", socket, "--capture-path", filepath.Join(runtimeDir, agent+"_cap.sock"), "--self-addr", substrateAddress, "--ca-file", filepath.Join(assets, "ca.crt"), "--bootstrap-key", filepath.Join(assets, config.key), "--name", agent, "--km-impl", "noise", "--tun-if", config.tun, "--node-addr", nodeAddress, "--zpr-addr", config.address)
 	registeredServices := config.services
 	if len(serviceNames) > 0 {
 		registeredServices = strings.Join(serviceNames, ",")
@@ -582,6 +592,7 @@ func runMachineControlListener(listen, certFile, keyFile, clientCAFile, manifest
 		return errors.New("invalid machine controller CA")
 	}
 	mux := http.NewServeMux()
+	mux.HandleFunc("POST /internal/readiness", handleMachineControlReadiness(manifestPath))
 	mux.HandleFunc("POST /internal/heartbeat", func(w http.ResponseWriter, r *http.Request) {
 		if r.TLS == nil || len(r.TLS.PeerCertificates) == 0 {
 			http.Error(w, "machine certificate required", http.StatusUnauthorized)
@@ -642,7 +653,7 @@ func runMachineControlListener(listen, certFile, keyFile, clientCAFile, manifest
 	})
 	server := &http.Server{
 		Addr:              listen,
-		Handler:           securityHeaders(mux),
+		Handler:           securityHeaders(machineControlScopeHandler(manifestPath, mux)),
 		ReadHeaderTimeout: 5 * time.Second,
 		TLSConfig: &tls.Config{
 			MinVersion: tls.VersionTLS13,

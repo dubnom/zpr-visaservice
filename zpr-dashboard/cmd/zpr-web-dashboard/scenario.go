@@ -739,14 +739,18 @@ func verifyMultinodeRuntimeWithCommand(ctx context.Context, manifest simulatorMa
 			}
 		}
 	}
-	for _, link := range []struct {
-		nodeIndex int
-		endpoint  string
-	}{
-		{0, "172.30.0.11:"},
-		{0, "172.30.0.14:"},
-	} {
-		if err := activeLink(fmt.Sprintf("%snode%d", prefix, link.nodeIndex), link.endpoint); err != nil {
+	for _, service := range []string{"vs", "web0"} {
+		container := prefix + service
+		template := fmt.Sprintf("{{(index .NetworkSettings.Networks %q).IPAddress}}", "zpr-"+organizationID)
+		address, err := command(ctx, "docker", "inspect", "-f", template, container)
+		if err != nil {
+			return "", fmt.Errorf("inspect service %s organization network: %w", container, err)
+		}
+		address = strings.TrimSpace(address)
+		if ip := net.ParseIP(address); ip == nil || ip.To4() == nil {
+			return "", fmt.Errorf("service %s has no valid IPv4 address on organization network zpr-%s", container, organizationID)
+		}
+		if err := activeLink(prefix+"node0", net.JoinHostPort(address, "")); err != nil {
 			return "", err
 		}
 	}
@@ -1412,7 +1416,7 @@ func waitForMachineWorkloadLink(ctx context.Context, machineID, agent string, ac
 				if _, err := scenarioCommand(ctx, "docker", "exec", container, "ip", "-6", "addr", "replace", workloadConfig.address+"/32", "dev", workloadConfig.tun); err != nil {
 					return fmt.Errorf("configure service ZPR TUN address: %w", err)
 				}
-				table := "10" + strings.TrimPrefix(workloadConfig.tun, "tun")
+				table := strconv.Itoa(workloadConfig.routeTable)
 				for _, prefix := range []string{"fd5a:5052::/32", "fd00:1::/32"} {
 					if _, err := scenarioCommand(ctx, "docker", "exec", container, "ip", "-6", "route", "replace", prefix, "dev", workloadConfig.tun, "table", table); err != nil {
 						return fmt.Errorf("configure service reply route: %w", err)

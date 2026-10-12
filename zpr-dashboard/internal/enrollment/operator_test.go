@@ -27,6 +27,9 @@ func TestOperatorEnrollmentAuditsIndependentUserAndDurableReplay(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	if _, err := store.SavePreflight(context.Background(), testPreflight("company"), "oidc:fixture", time.Now().UTC()); err != nil {
+		t.Fatal(err)
+	}
 	defer func() {
 		if err := store.Close(); err != nil {
 			t.Error(err)
@@ -214,6 +217,9 @@ func TestOperatorInvitationCreationOptInAndCatalogCapabilities(t *testing.T) {
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			store := testStore(t)
+			if _, err := store.SavePreflight(context.Background(), testPreflight("company"), "oidc:fixture", time.Now().UTC()); err != nil {
+				t.Fatal(err)
+			}
 			config := apiConfig()
 			config.GUIInvitationCreation = test.enabled
 			handler, err := newAdminHandler(store, config, true)
@@ -309,7 +315,11 @@ func TestDirectCertificateCreationUnaffectedByGUIOptIn(t *testing.T) {
 	for _, enabled := range []bool{false, true} {
 		config := apiConfig()
 		config.GUIInvitationCreation = enabled
-		handler, err := NewAdminHandler(testStore(t), config)
+		store := testStore(t)
+		if _, err := store.SavePreflight(context.Background(), testPreflight("company"), "admin", time.Now().UTC()); err != nil {
+			t.Fatal(err)
+		}
+		handler, err := NewAdminHandler(store, config)
 		if err != nil {
 			t.Fatal(err)
 		}

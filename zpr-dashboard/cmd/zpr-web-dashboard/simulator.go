@@ -261,9 +261,9 @@ func runSimulator(listen string) error {
 	mux.HandleFunc("/machine-logs.html", func(w http.ResponseWriter, r *http.Request) { serveStaticPage(staticRoot, "machine-logs.html", w) })
 	mux.HandleFunc("/trusted-source.html", func(w http.ResponseWriter, r *http.Request) { serveStaticPage(staticRoot, "trusted-source.html", w) })
 	mux.HandleFunc("/scenarios.html", func(w http.ResponseWriter, r *http.Request) { serveStaticPage(staticRoot, "scenarios.html", w) })
-	mux.HandleFunc("POST /api/simulator/action/{action}", handleSimulatorAction)
-	mux.HandleFunc("POST /api/simulator/machines/{machine}/{action}", handleSimulatorMachineSession)
-	mux.HandleFunc("PUT /api/simulator/machines/{machine}/workloads", handleSimulatorMachineWorkloads)
+	mux.HandleFunc("POST /api/simulator/action/{action}", simulatorRuntimeMutationGuard(handleSimulatorAction))
+	mux.HandleFunc("POST /api/simulator/machines/{machine}/{action}", simulatorRuntimeMutationGuard(handleSimulatorMachineSession))
+	mux.HandleFunc("PUT /api/simulator/machines/{machine}/workloads", simulatorRuntimeMutationGuard(handleSimulatorMachineWorkloads))
 	staticServer := revalidateStatic(http.FileServer(http.FS(staticRoot)))
 	mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path == "/" {
@@ -646,7 +646,7 @@ func configureSimulatorMachineControlReturnRoute(ctx context.Context, manifest s
 	ticker := time.NewTicker(250 * time.Millisecond)
 	defer ticker.Stop()
 	for {
-		output, err := scenarioCommand(waitContext, "docker", "exec", machineContainerName(machineID), "ip", "-6", "-o", "addr", "show", "dev", "tun5", "scope", "global")
+		output, err := scenarioCommand(waitContext, "docker", "exec", machineContainerName(machineID), "ip", "-6", "-o", "addr", "show", "dev", machineControlTun, "scope", "global")
 		if err == nil {
 			address := firstIPv6InterfaceAddress(output)
 			if address != "" {

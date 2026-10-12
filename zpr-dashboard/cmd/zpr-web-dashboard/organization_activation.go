@@ -42,6 +42,9 @@ var activeOrganizationActivation = &organizationActivationManager{
 		command.Cancel = func() error { return command.Process.Signal(syscall.SIGTERM) }
 		command.WaitDelay = 2 * time.Minute
 		if err := command.Run(); err != nil {
+			if progress, readErr := os.ReadFile(simulatorActiveOrganizationPath() + ".progress"); readErr == nil && strings.TrimSpace(string(progress)) != "" {
+				return errors.New(strings.TrimSpace(string(progress)) + "; check the local reset log")
+			}
 			return errors.New("organization reset failed; check the local reset log")
 		}
 		return nil
@@ -86,7 +89,9 @@ func (manager *organizationActivationManager) execute(operation, organizationID,
 	go manager.watchProgress(progressFile, progressDone)
 	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Minute)
 	defer cancel()
+	clearMachineControlRuntime()
 	err := manager.reset(ctx, organizationID, operation)
+	clearMachineControlRuntime()
 	close(progressDone)
 	if err == nil {
 		manager.setProgress("Saving active organization")

@@ -134,6 +134,8 @@ func newAdminHandler(store *Store, config Config, operator bool) (http.Handler, 
 	api := &adminAPI{store: store, config: snapshot, now: time.Now, operator: operator}
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET "+APIPrefix+"catalog", api.catalog)
+	mux.HandleFunc("GET "+APIPrefix+"preflight", api.getPreflight)
+	mux.HandleFunc("POST "+APIPrefix+"preflight", api.savePreflight)
 	mux.HandleFunc("GET "+APIPrefix+"invitations", api.list)
 	mux.HandleFunc("POST "+APIPrefix+"invitations", api.create)
 	mux.HandleFunc("GET "+APIPrefix+"invitations/{id}", api.get)
@@ -155,6 +157,52 @@ func newAdminHandler(store *Store, config Config, operator bool) (http.Handler, 
 		}
 		mux.ServeHTTP(w, r)
 	}), nil
+}
+
+func (api *adminAPI) getPreflight(w http.ResponseWriter, r *http.Request) {
+	organization := r.URL.Query().Get("organization")
+	if _, ok := api.authorize(w, r, organization, "read"); !ok {
+		return
+	}
+	record, ready, err := api.store.GetPreflight(r.Context(), organization, api.now())
+	if err != nil {
+		storeError(w, err)
+		return
+	}
+	apiJSON(w, http.StatusOK, struct {
+		Ready     bool             `json:"ready"`
+		Preflight *PreflightRecord `json:"preflight,omitempty"`
+	}{ready, optionalPreflight(record, ready)})
+}
+
+func optionalPreflight(record PreflightRecord, ready bool) *PreflightRecord {
+	if !ready {
+		return nil
+	}
+	return &record
+}
+
+func (api *adminAPI) savePreflight(w http.ResponseWriter, r *http.Request) {
+	var attestation PreflightAttestation
+	if !readBody(w, r, &attestation) {
+		return
+	}
+	principal, ok := api.authorize(w, r, attestation.Organization, "create")
+	if !ok {
+		return
+	}
+	if err := attestation.Validate(); err != nil {
+		storeError(w, err)
+		return
+	}
+	record, err := api.store.SavePreflight(r.Context(), attestation, principal.Name, api.now())
+	if err != nil {
+		storeError(w, err)
+		return
+	}
+	apiJSON(w, http.StatusOK, struct {
+		Preflight PreflightRecord `json:"preflight"`
+	}{record})
 }
 
 func (api *adminAPI) principal(r *http.Request) (Principal, bool) {
@@ -445,6 +493,8 @@ func storeError(w http.ResponseWriter, err error) {
 		apiError(w, http.StatusNotFound, "Invitation not found.")
 	case errors.Is(err, ErrRevision):
 		apiError(w, http.StatusConflict, "Enrollment changed since review; reload it before deciding.")
+	case errors.Is(err, ErrPreflight):
+		apiError(w, http.StatusConflict, "A current, organization-scoped service readiness preflight is required before invitation creation; attestations expire after 30 days.")
 	case errors.Is(err, ErrConflict), errors.Is(err, ErrUnavailable):
 		apiError(w, http.StatusConflict, "The asset or invitation is not available for this operation.")
 	default:

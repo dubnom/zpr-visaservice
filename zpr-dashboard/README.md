@@ -88,6 +88,9 @@ include each reported node's identity, last contact and pending visa operations.
 The PH Visa API client bounds each TCP dial to ten seconds and retries through
 its existing reconnect loop; activation does not bypass readiness or extend
 its wait to accommodate the operating system's much longer SYN timeout.
+Runtime-verification scenarios resolve supporting service addresses from the
+selected organization's actual Docker network rather than assuming a shared
+`172.30.0.0/24` subnet.
 
 - Require no running/cleaning scenario or ongoing activation before starting.
   Require machine users logged out, workload selections empty, and all reported
@@ -102,6 +105,14 @@ its wait to accommodate the operating system's much longer SYN timeout.
 - Confirm logged-out sessions, empty workload selections and stopped scenario
   machines after every run. This is state-leak/cleanup verification, not a
   blanket assertion that every production service is stopped.
+  Completed steps with leaked runtime state are reported as a serious failure,
+  not a passing case. Bundled machine scenarios stop every machine they start
+  in their cleanup, including the managed-laptop policy-denial case.
+  Failed machine-control readiness records bounded controller/adapter logs,
+  kernel UDP receive/drop counters, socket queues and fastpath thread wait
+  states before removing the probe. Multi-node diagnostics cover every configured
+  node and the Visa adapter; a diagnostic failure is reported and never turns
+  failed readiness into success.
 - Stop on the first failed scenario, including an isolated traffic-step failure;
   verify cleanup before attempting safe restoration and do not start later
   scenarios or organizations. Also stop on any infrastructure
@@ -165,6 +176,19 @@ chooses the side and column count that best fits the viewport, reserving room
 for service rings and gateway clouds. When no nodes or docked adapters exist,
 World Map centers the unconnected-only group on the basemap; this is display
 placement, not inferred geography or an implied network connection.
+
+Both Control Room maps offer a shared **Traffic: Off / Packets** control.
+Node halos show measured substrate RX + TX packets/sec in fixed bands; **Scale**
+explains the bands and dashed waiting/unavailable/stale outlines. Hover or select
+a node for separate RX/TX rates, sample age, and recent history. These counters
+include control traffic, not just application packets. No per-adapter, per-link,
+or map-wide throughput is inferred. Rates expire after ten seconds even when
+updates are paused; use the three- or five-second refresh for live traffic.
+Counter resets and inventory/session changes establish a new baseline.
+See [World Map layout heuristics](../World%20Map%20layout%20heuristics.md) for the
+measurement and display rules. Rate arithmetic regressions run with
+`node --test scripts/map-traffic.test.mjs`; both map views are covered by
+`tests/browser/geography.spec.mjs` with Simulator unavailable.
 
 ## Project layout
 
@@ -1293,6 +1317,37 @@ the existing `TestRedwoodLDIFMatchesOrganizationPeopleSitesAndGroups` mismatch
 
 ### Local native runtime handoff primitives (not installed or wired)
 
+#### Developer ID package preparation
+
+`packaging/enrollment/build-macos.sh` accepts an optional fourth argument:
+the full `Developer ID Application: ...` identity name. With that argument it
+signs the native wizard and app using hardened runtime and secure timestamps,
+then signs the DMG. Without it, existing ad-hoc development behavior remains.
+The package is still enrollment-only: no helper, adapter, invitation, private
+key, service secret, route or DNS installation is included.
+
+`packaging/enrollment/test-macos.sh` verifies the signed app before comparing
+disposable copies with normalized ad-hoc signatures. This accounts for
+Developer ID signature metadata without changing the distributed payload.
+It checks packaged resources and authenticated/anonymous loopback startup
+without creating a default-Keychain identity or contacting enrollment services.
+
+Notarization is a separate explicitly approved upload to Apple. Store its
+credentials through `xcrun notarytool store-credentials` with a hidden password
+prompt; never put passwords in scripts or repository files. Submit with
+`xcrun notarytool submit IMAGE --keychain-profile zpr-notary --wait`, inspect
+the final status, then staple/validate the accepted image and assess Gatekeeper.
+Neither a signing certificate nor a pending submission is notarization success.
+
+The enrollment-only Apple Silicon `0.1.2` DMG was accepted by Apple under
+submission `5dbef621-a6bb-408c-9976-c5124a527852`. Its ticket was stapled and
+validated; Gatekeeper reports `accepted`, source `Notarized Developer ID`.
+Final stapled-image SHA-256:
+`9dbb67a2db60b6e4cf42dffc0eb0ad54271030b52e955d3dbb510e1467d4c17b`.
+Packaged signature/content and native loopback startup checks pass after
+stapling. This is local distribution verification, not clean-laptop
+certification, helper installation, invitation claim, or adapter connectivity.
+
 [runtime_vault_darwin_cgo.go](internal/enrollment/runtime_vault_darwin_cgo.go)
 uses native `SecItemImport` to store only the separate RSA-3072 runtime key as
 a permanent, sensitive, non-extractable Keychain key. It requires an explicit
@@ -1948,6 +2003,49 @@ reference, and instruction recipient. **Review worksheet** submits nothing.
 codes are saved in browser storage. Never paste an enrollment code or private key
 into this form.
 
+#### Local deployment readiness preflight
+
+Before preparing an invitation, an operator can complete the **Service
+readiness preflight** in the same page. It collects a Docker host label and
+private IPv4 address, then asks the operator to attest to the pilot/production
+mode's private dnsmasq answer (with no public service address record), Route 53
+DNS-01 IAM scope limited to
+`_acme-challenge.enrollment.zpr.net`, direct TLS 1.3 certificate, LAN/VPN firewall,
+isolated Compose/data volume, separate admin/device listeners, package
+readiness, recovery/audit, and code-delivery checks. The canonical service name
+is now `enrollment.zpr.net`, following the purchase of `zpr.net`. Registration
+does not itself configure DNS delegation, the private dnsmasq answer, the
+Route 53 validation record, or a TLS certificate; those remain deployment
+steps. Configure the public DNS authority for DNS-01 validation without
+publishing a public service A/AAAA record, and configure dnsmasq to resolve the
+service hostname privately for target clients. Update the Route 53 DNS-01 IAM
+policy to the exact `_acme-challenge.enrollment.zpr.net` record before enabling
+automation. The address is validated as a private IPv4 address, including the
+ZeroTier CGNAT range.
+
+The pilot is explicitly disposable and does not require backups. Production
+requires the encrypted backup/recovery attestation and an authenticated SSO/MFA
+code-delivery portal. Pilot code delivery must use a password-manager secure
+share or a verified phone/in-person handoff, always separate from the installer
+link. No AWS credentials, passwords, invitation codes, keys, or other secrets
+belong in the form.
+
+The readiness checks are **operator attestations, not network probes**. On
+submission, the Enrollment Service stores the organization-scoped values and
+operator identity in its SQLite registry, appends an audit record, and requires
+a valid record for invitation creation through both direct administration and
+the Control Room operator flow. Records expire 30 days after the last explicit
+submission; every submission, including an unchanged re-attestation, advances
+the revision and audit history. The service still cannot independently verify
+DNS, TLS, firewall, Docker, package, recovery, or delivery-channel claims.
+Clearing the form or signing out only clears the page; it does not revoke the
+persisted record. Re-attest after relevant infrastructure changes and at least
+every 30 days. Do not mark an item ready unless it has actually been verified.
+The service contract and macOS package are still prototypes: the notarized
+macOS package is enrollment-only and does not install the adapter, so it cannot
+currently satisfy the package-readiness check or provide end-to-end
+provisioning.
+
 Without an authorized catalog, fields are explicitly unvalidated requests and
 creation is locked. With configured HTTPS/OIDC login and independently verified
 delegation, the form uses approved organization/type/profile selects; changing
@@ -2328,13 +2426,18 @@ and restores the running style. Retained tails are browser-memory only, scoped
 to the active organization, and cleared when organizations change or the page
 is reloaded; they are not a durable archive.
 
-Both maps place adapters without reported node attachments in a collapsed
-**Detached** tray with Inspect actions and registered service names. They do
-not affect Fit or SVG bounds. Isolated nodes remain visible. Observed attachments
-move adapters onto the map; detachments return them to the tray, with a visible
-lost-connection count. History is browser-local and scoped to the organization;
-an unobserved attachment is not proof that a component has never connected.
-The tray stays expanded across refreshes and map switches.
+Both maps show **Detached** and **Lost** text-button overlays in the map's
+bottom-right corner, styled like Fit and zoom controls, each with an adapter count.
+Click or keyboard-activate either group to inspect its members, addresses and
+registered services, then open individual actor details. The overlays remain
+fixed while panning/zooming and do not affect layout, SVG bounds or Fit.
+Individual unattached adapters and their service shapes also remain outside the map.
+Both groups remain visible with zero counts when inventory exists. Truly empty
+inventory retains the empty state. Isolated nodes remain visible. Observed
+attachments move adapters onto the map; detachments move them into **Lost**.
+**Detached** means no attachment has been observed in this browser. **Lost**
+means one was previously observed. History is browser-local and scoped to the
+organization; an unobserved attachment is not proof of never having connected.
 Actor details show the reported ZPR address, attachment status/node, registered
 services and snapshot time. Repeated Admin inventory entries for the same common
 name are resolved once by Control-Service, matching the Admin actor lookup key.
@@ -2523,6 +2626,10 @@ without a valid source line remain visible below the editor controls rather
 than being assigned an invented line.
 
 ## Organization Profile Drafts
+
+The Simulator Organizations page's **IDENTITY**, **POLICY**, and **SERVICES**
+links jump to the selected organization's directory, policies, and services
+sections, respectively, with keyboard-accessible in-page navigation.
 
 The Simulator Organizations page offers **Edit organization draft** for existing
 bundled organizations. Name/description fields and advanced JSON edit the same
@@ -2878,16 +2985,84 @@ The simulator defines 20 Docker machine profiles but initially creates only
 `zpr-machine-01`, from the `debian:trixie` image. Starting another machine in
 a scenario creates it on demand. Each running container has its own
 Linux/ARM64 machine controller and PH adapter with a unique bootstrapped ZPR
-identity. Machine adapters use dynamic `fd5a:5052::/32` addresses; the
-simulator-control provider uses a reserved `fd5a:5052:adda:1::/64` address so
-it is reachable through the PH-advertised overlay route.
-Controllers reach the TCP `SimulatorControlService`
-(`[fd5a:5052:adda:1:ffff:ffff:ffff:fffe]:8792`) over
-ZPR. The service is published by the dedicated `simulator-control` actor and
+identity. Machine adapters use dynamic `fd5a:5052::/32` addresses. In multinode
+organizations the simulator-control provider also receives a dynamic address;
+its policy provider matches the authenticated adapter identity, not a requested
+fixed address. Controllers reach TCP `SimulatorControlService` on port `8792`
+at the address actually assigned to the control adapter, over ZPR.
+The service is published by the dedicated `simulator-control` actor and
 only the 20 machine identities are authorized to access it. The service
 gateway forwards the mutually authenticated TLS protocol to the simulator's
 local listener; the ZPR adapter link and per-machine TLS client certificate
 are both required.
+
+Organization switching stops and verifies all running managed machine containers
+before removing the previous network. Machine software/credential assets are
+prepared under `dashboard-stack/machine-runtimes/<organization>/<generation>`,
+not overwritten in one shared workload directory. Running containers carry both
+scope labels and cannot be reused for another organization or generation.
+Controller heartbeats, command polling and results must carry the current
+organization/generation; stale controllers are rejected before changing state.
+Manual machine mutations are blocked during activation, and provisioning scripts
+share an exclusive runtime lock. A lock left by a forcibly killed operation is
+not automatically broken: inspect `dashboard-stack/machine-runtime.lock` and
+confirm no mutation is running before removing its token/pid files and directory.
+
+Activation requires a disposable machine at every configured node to send a
+heartbeat and acknowledge an actual command over the ZPR/mTLS path. Each probe
+is stopped and removed; success is not inferred from synchronized nodes alone.
+Readiness and machine launch share the same placement resolver, including
+single-node profiles without explicit machine ownership mappings. Candidate
+coverage is checked before stopping the previous runtime; uncovered nodes or
+invalid placement fail explicitly instead of selecting an arbitrary node.
+The machine controller retains its reserved `tun5` interface; Internet Gateway
+uses `zgateway0`, independently of controller and telemetry tunnels. Workload
+startup must not reuse the controller's interface or disrupt its command path.
+Workload routing tables are explicit numeric IDs (100-105), not derived from
+interface names; Gateway retains table 105 with its distinct `zgateway0` interface.
+Simulator machine images include the system CA bundle for Gateway HTTPS upstream
+verification; missing trust roots must not be worked around by disabling TLS checks.
+Velocity's 100 warmed requests and exact 16 MiB transfer share a bounded
+60-second benchmark deadline (inside the scenario's 75-second step deadline).
+There is no separate 10-second body deadline that would prematurely reject a
+valid slower transfer. This does not change transport keepalive timers or
+introduce a minimum throughput requirement.
+Simulator machine controller/workload adapters explicitly use the supported
+`posix_unbatched` packet-I/O engine. Native ARM64 Docker testing reproduced an
+`io_uring` receive-worker stall during the benchmark: its substrate receive ring
+filled, kernel UDP drops increased and dock keepalive failed despite zero
+application backpressure counters. Selecting POSIX for these adapters completed
+the exact transfer without changing queues, policy or transport deadlines.
+This is a Simulator launch choice, not a change to production PH defaults.
+Rollback performs the same controller check. Trusted-feed scope is
+recalculated for the restored organization so
+Control-Service does not join a removed, other-organization feed network.
+The one-time
+`dynamic-control-policy-v1` migration recompiles and installs the composed runtime
+policy to remove the historical fixed-address provider constraint. Directory
+data and editor drafts are retained, but separately installed runtime-only policy
+changes must be exported before this migration. Later switches preserve installed
+policies rather than repeating that migration.
+
+On Apple Silicon, multi-node Simulator infrastructure can run entirely as
+Linux/ARM64 instead of relying on Docker Desktop's x86 emulator. See the
+[native build instructions](../../zpr-demo/multinode-demo/README.md#how-to-deploy--run-zpr-local-docker-env)
+for the separate ARM64 artifacts and images. Configure
+`ZPR_MULTINODE_PLATFORM=linux/arm64`, `ZPR_MULTINODE_IMAGE`,
+`ZPR_MULTINODE_DIRECTORY_IMAGE` and `ZPR_MULTINODE_DIRECTORY_MANAGER_IMAGE`
+in the Simulator container environment so switches and rollback consistently
+use native images. Simulator recreation/restart preserves those settings unless
+explicit host environment overrides are supplied. The trusted-service helper
+and control proxy follow that
+platform; a cached helper with the wrong ELF architecture is rejected.
+For a complete stop/start that removes the Simulator container, save the
+same `ZPR_MULTINODE_*` settings (and any explicit trusted-service binary path)
+as a JSON object in `dashboard-stack/multinode-platform.json`. Startup loads
+this operator configuration without executing it; unknown keys, non-string
+values and corrupted JSON are rejected. Explicit environment settings take
+precedence. Production services do not load this Simulator configuration.
+The existing amd64 configuration remains the default. Control Room has no
+dependency on this Simulator configuration.
 
 Simulator mode runs in the Linux `zpr-simulator` container, built from source
 with a containerized Go toolchain. Its UI is published on `127.0.0.1:8788` and
@@ -3195,6 +3370,16 @@ and Redwood retain their multi-node topologies. Activate another profile
 through the Organizations page so its directory, policy, and services are
 reseeded together. Set `SIMULATION_MANIFEST` to use a different machine/runtime
 manifest.
+
+Multi-node activation, rollback, stack startup, policy upload, and observability
+discover the Visa admin host port from the running `<organization>-vs`
+container's published `8183/tcp` binding. They do not assume every organization
+uses host port 8185: the runtime may publish Great Lakes or other profiles on
+8186 or a custom port. Missing, stopped, ambiguous, or invalid local bindings
+fail explicitly instead of falling back to another organization's endpoint.
+Run `node --test scripts/multinode-admin.test.mjs` for endpoint regressions.
+This discovery belongs to Simulator provisioning only; production operator
+services still receive an explicit independent admin URL.
 
 The Simulator's Claude design assistant can review scenario drafts and
 organization profiles. It keeps `ANTHROPIC_API_KEY` server-side and only applies

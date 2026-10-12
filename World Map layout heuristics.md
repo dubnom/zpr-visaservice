@@ -8,6 +8,36 @@ Implementation: [app.js](zpr-dashboard/cmd/zpr-web-dashboard/static/app.js),
 primarily `renderTopology`, `geographicAdapterFanout`, `graphContentBounds`
 and `setupGraphControls`.
 
+## Packet volume overlay
+
+- Both maps share a Traffic Off / Packets selector, initially set to Packets.
+- Node halos indicate substrate RX + TX packet I/O across fastpath workers.
+  RX uses `inbound_packets_received`; TX uses `outbound_packets_sent`.
+  Actor-side counters are not added again. Substrate counters include control
+  traffic and are not a measure of unique application packets.
+- Rates use exact unsigned 64-bit counter deltas divided by exporter sample
+  elapsed time, not browser refresh time. Repeated samples retain the last rate.
+- Fixed bands are 0, below 100, 100–999, 1,000–9,999, and at least 10,000
+  packets/sec. Halo thickness uses a five-second exponential smoothing time
+  constant; zero becomes a thin neutral outline immediately. Numeric RX/TX
+  details always show the latest unsmoothed rates.
+- Dashed neutral outlines mean waiting, unavailable, or stale telemetry, with
+  the specific reason on hover and in the inspector. Samples expire after ten
+  seconds, matching the production node-counter freshness ceiling, including
+  while polling is paused. A thirty-second refresh setting will therefore show
+  stale intervals; use the three- or five-second refresh for live traffic.
+- Counter resets, worker inventory/address changes, gaps over sixty seconds,
+  disconnected telemetry, node removal, and organization changes require a new
+  baseline. No negative deltas or outage-spanning rate spikes are displayed.
+- The node inspector includes RX/TX, sample age, and up to twelve valid rate
+  samples in a time-spaced recent-history sparkline. Its vertical scale is local
+  to that history; the map bands remain fixed across nodes and maps.
+- Halos are static, preserve health/denial colors, and do not change node
+  positions, camera behavior, or connector endpoints. There is no inferred
+  adapter/link traffic or summed map-wide throughput.
+- Telemetry comes only from the existing operator snapshot; Simulator is not
+  required.
+
 ## 1. Geographic node anchors
 
 - Nodes with valid latitude/longitude are projected onto the 3600 x 1800 basemap.
@@ -126,16 +156,28 @@ Choose the highest-scoring contained candidate across sectors. If none is
 contained, use the highest-scoring outside-map fallback without moving the
 geographic node anchor.
 
-## 5. Detached adapter tray
+## 5. Detached and Lost adapter groups
 
-- Adapters without a reported node dock appear in a collapsed **Detached**
-  tray outside the SVG in both maps, with an inventory count and Inspect actions.
-- Their registered service names are listed with them; service rings and gateway
-  clouds do not enter map bounds or affect Fit until the adapter attaches.
+- Both maps show **Detached** and **Lost** text buttons as fixed bottom-right
+  overlays, styled like Fit and zoom controls. Each displays its adapter
+  count and opens a member inspector by click, Enter or Space.
+- Member lists show addresses and registered service names with actor-detail
+  actions. Individual service rings and gateway clouds do not enter map bounds
+  until their adapter attaches. Overlay buttons are outside the SVG and do not
+  affect layout, map bounds or Fit; they remain fixed while panning and zooming.
+- Both groups remain visible with zero counts when inventory exists. Truly empty
+  inventory retains the empty state.
 - Nodes, including isolated nodes and disconnected node networks, remain visible.
-- Reported docks move adapters onto the map; removal returns them to the tray.
-- The tray retains its open state across refreshes and map switches.
-- **Lost connection** means an attachment was previously observed in this browser
+- Reported docks move adapters onto the map; removal moves them into **Lost**.
+- With normal motion enabled, attaching an existing Detached adapter is an
+  arrival: the adapter and its services grow from their parents. Detachment
+  retracts the components and their connection lines toward the surviving parent,
+  accounting for layout changes. Exit layers do not affect Fit.
+- Grant pulses compare both active visas and the bounded recent-visa list, so
+  grants outside the ten recent entries still highlight the requester and matching
+  service. Unchanged snapshots do not replay completed pulses. Reduced-motion
+  preferences continue to suppress component travel and retain decision feedback.
+- **Lost** means an attachment was previously observed in this browser
   for the same organization. **No attachment observed** does not claim the adapter
   has never connected. Unavailable snapshots explicitly mark attachment unknown.
 - This is presentation only: no invented links, inferred coordinates, or manual
@@ -144,7 +186,7 @@ geographic node anchor.
 ## 6. Resize, Fit and camera behavior
 
 Both maps share a Maximize/Restore window control. Maximizing fills the browser
-viewport while retaining map selection, legend, Detached tray and graph controls.
+viewport while retaining map selection, legend, attachment groups and graph controls.
 The existing resize observer recalculates layout and Auto-fit for the new space;
 manual cameras remain governed by the existing Auto-fit setting. Restore or
 Escape returns to the normal layout; an open component inspector closes before

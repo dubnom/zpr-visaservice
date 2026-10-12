@@ -210,8 +210,13 @@ func TestRedwoodLDIFMatchesOrganizationPeopleSitesAndGroups(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(organization.Directory.People) != 53 || len(directory.People) != 56 {
-		t.Fatalf("profile people=%d, LDAP identities=%d; want 53 people plus 3 machines", len(organization.Directory.People), len(directory.People))
+	if len(organization.Directory.People) != 53 || len(directory.PersonAttributes) != 56 {
+		t.Fatalf("profile people=%d, LDAP identities=%d; want 53 people plus 3 machines", len(organization.Directory.People), len(directory.PersonAttributes))
+	}
+	for machineID := range organization.MachineOwners {
+		if _, exists := directory.PersonAttributes[machineID]; !exists {
+			t.Errorf("machine %q is missing from the LDAP seed", machineID)
+		}
 	}
 	locations := make(map[string]int)
 	for _, person := range organization.Directory.People {

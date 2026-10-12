@@ -14,9 +14,9 @@ function organizationEscape(value) {
   return window.ZPRSafeDisplay.escapeHTML(value);
 }
 
-function organizationItems(items, title, emptyLabel) {
-  if (!items?.length) return `<section class="organization-section"><h3>${organizationEscape(title)}</h3><p class="organization-empty">No ${organizationEscape(emptyLabel)}.</p></section>`;
-  return `<section class="organization-section"><h3>${organizationEscape(title)}</h3><div class="organization-list-items">${items.map((item) => `<div class="organization-item"><strong>${organizationEscape(item.name || item.uid || item.id)}</strong><small>${organizationEscape(item.description || [item.title, item.department, item.location, item.endpoint].filter(Boolean).join(" · "))}</small></div>`).join("")}</div></section>`;
+function organizationItems(items, title, emptyLabel, sectionID) {
+  if (!items?.length) return `<section id="${organizationEscape(sectionID)}" class="organization-section" tabindex="-1"><h3>${organizationEscape(title)}</h3><p class="organization-empty">No ${organizationEscape(emptyLabel)}.</p></section>`;
+  return `<section id="${organizationEscape(sectionID)}" class="organization-section" tabindex="-1"><h3>${organizationEscape(title)}</h3><div class="organization-list-items">${items.map((item) => `<div class="organization-item"><strong>${organizationEscape(item.name || item.uid || item.id)}</strong><small>${organizationEscape(item.description || [item.title, item.department, item.location, item.endpoint].filter(Boolean).join(" · "))}</small></div>`).join("")}</div></section>`;
 }
 
 function organizationRuntimeLabel(organization) {
@@ -60,9 +60,9 @@ function renderOrganizationDetails(organization) {
     <div class="organization-summary"><span>${organizationEscape(organization.description)}</span></div>
     <div id="organization-scenario-summary" class="organization-summary" aria-label="Organization scenarios">Loading scenarios</div>
     <div class="organization-sections">
-      <section class="organization-section"><div class="organization-directory-heading"><h3>Directory · ${organizationEscape(directory.base_dn)}</h3><button class="quiet" type="button" data-edit-directory="${organizationEscape(organization.id)}">Edit LDAP seed</button></div><div class="organization-summary"><span>${(directory.departments || []).length} departments</span><span>${(directory.people || []).length} people</span><span>${(directory.groups || []).length} groups</span><span>LDAP seed: ${organizationEscape(directory.seed_mode)}</span><span>Runtime profile: ${organizationEscape(organizationRuntimeLabel(organization))}</span></div><ldap-org-graph></ldap-org-graph></section>
-      ${organizationItems(organization.policies || [], "Policies", "policy records")}
-      ${organizationItems(organization.services || [], "Services", "services")}
+      <section id="organization-identity" class="organization-section" tabindex="-1"><div class="organization-directory-heading"><h3>Directory · ${organizationEscape(directory.base_dn)}</h3><button class="quiet" type="button" data-edit-directory="${organizationEscape(organization.id)}">Edit LDAP seed</button></div><div class="organization-summary"><span>${(directory.departments || []).length} departments</span><span>${(directory.people || []).length} people</span><span>${(directory.groups || []).length} groups</span><span>LDAP seed: ${organizationEscape(directory.seed_mode)}</span><span>Runtime profile: ${organizationEscape(organizationRuntimeLabel(organization))}</span></div><ldap-org-graph></ldap-org-graph></section>
+      ${organizationItems(organization.policies || [], "Policies", "policy records", "organization-policy")}
+      ${organizationItems(organization.services || [], "Services", "services", "organization-services")}
     </div>`;
   document.querySelector("#organization-detail ldap-org-graph").directory = directory;
   renderOrganizationListSelection();

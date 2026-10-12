@@ -13,6 +13,10 @@ func TestAssistantSetupForwardsKeyToControlService(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	scriptDir, err := filepath.Abs("../../scripts")
+	if err != nil {
+		t.Fatal(err)
+	}
 	script := string(content)
 	start := strings.Index(script, "start_control_service() {")
 	if start < 0 {
@@ -61,10 +65,12 @@ docker() {
 `
 			cmd := exec.Command("sh")
 			cmd.Stdin = strings.NewReader(harness + launch + "\nstart_control_service\n")
+			cmd.Env = append(cmd.Env, "SCRIPT_DIR="+scriptDir)
 			for _, entry := range os.Environ() {
-				if !strings.HasPrefix(entry, "ANTHROPIC_API_KEY=") && !strings.HasPrefix(entry, "EXPECTED_KEY=") {
-					cmd.Env = append(cmd.Env, entry)
+				if strings.HasPrefix(entry, "ANTHROPIC_API_KEY=") || strings.HasPrefix(entry, "EXPECTED_KEY=") {
+					continue
 				}
+				cmd.Env = append(cmd.Env, entry)
 			}
 			key := ""
 			if configured {

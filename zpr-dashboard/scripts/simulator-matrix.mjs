@@ -170,7 +170,13 @@ export async function runMatrix({ api, execute = false, exclusiveRuntime = false
         result.started_at = finished.run.started_at;
         result.finished_at = finished.run.finished_at;
         persist();
-        assertClean(await api("GET", "/api/simulator/status"), id);
+        try {
+          assertClean(await api("GET", "/api/simulator/status"), id);
+        } catch (error) {
+          result.state = "serious";
+          persist();
+          throw error;
+        }
         log(`${id}/${entry.id}: ${result.state}`);
         requireThat(result.state !== "serious", "Infrastructure or cleanup scenario failure; matrix stopped");
         requireThat(result.state === "passed", "Traffic scenario failure; matrix stopped on first error");

@@ -1,6 +1,14 @@
 (() => {
+  const preflightForm = document.getElementById("provisioning-preflight");
   const form = document.getElementById("provisioning-draft");
-  if (!form) return;
+  if (!preflightForm || !form) return;
+  const preflightStatus = document.getElementById("provisioning-preflight-status");
+  const preflightBlockers = document.getElementById("provisioning-preflight-blockers");
+  const preflightOrganization = preflightForm.elements.namedItem("organization");
+  const preflightMode = preflightForm.elements.namedItem("deployment_mode");
+  const hostAddress = preflightForm.elements.namedItem("host_address");
+  const backupCheck = document.getElementById("provisioning-backup-check");
+  const preflightSubmit = preflightForm.querySelector('[type="submit"]');
   const status = document.getElementById("provisioning-draft-status");
   const createStatus = document.getElementById("provisioning-create-status");
   const createButton = document.getElementById("provisioning-create");
@@ -12,6 +20,8 @@
     ["profile", "Profile"], ["recipient", "Instruction recipient"],
   ];
   const requestedFields = ["organization", "type", "profile"];
+  const text = (value) => typeof value === "string" && value.trim().length > 0 &&
+    value.trim() === value && value.length <= 256 && !/[\0\r\n]/.test(value);
   let dialog = null;
   let catalog = null;
   let session = null;
@@ -19,10 +29,38 @@
   let uncertain = null;
   let secretVisible = false;
   let confirmedSummary = "";
+  let preflightReady = false;
+  let preflightPending = false;
+  let preflightGeneration = 0;
+  let preflightController = null;
+  let preflightSaveController = null;
+  let preflightExpiresAt = 0;
+  let preflightExpiryTimer = null;
 
   const input = (name) => form.elements.namedItem(name);
   const active = () => location.hash === "#provisioning-adapters";
+  const privateIPv4 = (value) => {
+    if (!/^\d{1,3}(?:\.\d{1,3}){3}$/.test(value)) return false;
+    const octets = value.split(".").map(Number);
+    if (octets.length !== 4 || octets.some((octet) => !Number.isInteger(octet) || octet < 0 || octet > 255)) return false;
+    return octets[0] === 10 || (octets[0] === 172 && octets[1] >= 16 && octets[1] <= 31) ||
+      (octets[0] === 192 && octets[1] === 168) ||
+      (octets[0] === 100 && octets[1] >= 64 && octets[1] <= 127);
+  };
+  const preflightChecks = [
+    ["dns_verified", "Verify the private dnsmasq answer from the target laptop."],
+    ["acme_verified", "Configure narrowly scoped Route 53 DNS-01 automation."],
+    ["tls_verified", "Verify the direct TLS 1.3 certificate and complete chain."],
+    ["network_verified", "Restrict TCP 443 to the intended LAN/VPN; keep public ingress closed."],
+    ["docker_verified", "Use an isolated Compose project and dedicated service volume."],
+    ["listeners_verified", "Deploy and test separate administrative and device listeners."],
+    ["package_verified", "Verify a signed, notarized package that installs the adapter/runtime."],
+    ["recovery_verified", "Test invitation recovery, cancellation/revocation and audit review."],
+  ];
   const canCreate = () => active() && location.protocol === "https:" && session &&
+    preflightReady &&
+    preflightExpiresAt > Date.now() &&
+    preflightOrganization.value === input("organization").value &&
     session.identity.permissions.includes("create") &&
     (session.identity.organizations.includes("*") || session.identity.organizations.includes(input("organization").value)) &&
     catalog?.gui_create_organizations?.includes(input("organization").value);
@@ -30,9 +68,212 @@
   function updateControls() {
     createButton.disabled = !canCreate() || Boolean(pending || uncertain || secretVisible);
     reconcileButton.hidden = !uncertain || Boolean(pending);
+    preflightSubmit.disabled = preflightPending || !active() || location.protocol !== "https:" ||
+      !session?.csrf || !session.identity.permissions.includes("create") ||
+      !(session.identity.organizations.includes("*") || session.identity.organizations.includes(preflightOrganization.value)) ||
+      !catalog?.organizations?.[preflightOrganization.value];
     for (const control of form.elements) {
       if (control !== createButton && control !== reconcileButton) control.disabled = Boolean(pending);
     }
+    for (const control of preflightForm.elements) {
+      if (control !== preflightSubmit) control.disabled = preflightPending;
+    }
+  }
+
+  function clearPreflightExpiry() {
+    if (preflightExpiryTimer !== null) clearTimeout(preflightExpiryTimer);
+    preflightExpiryTimer = null;
+    preflightExpiresAt = 0;
+  }
+
+  function setPreflightExpiry(updatedAt) {
+    clearPreflightExpiry();
+    preflightExpiresAt = Date.parse(updatedAt) + 30 * 24 * 60 * 60 * 1000;
+    const expire = () => {
+      const remaining = preflightExpiresAt - Date.now();
+      if (remaining > 0) {
+        preflightExpiryTimer = setTimeout(expire, Math.min(remaining, 2147483647));
+        return;
+      }
+      preflightExpiryTimer = null;
+      preflightReady = false;
+      preflightStatus.dataset.state = "blocked";
+      preflightStatus.textContent = "The saved readiness attestation has expired. Re-attest before creating invitations.";
+      updateControls();
+    };
+    expire();
+  }
+
+  function cancelPreflightRequests() {
+    ++preflightGeneration;
+    preflightController?.abort();
+    preflightController = null;
+    preflightSaveController?.abort();
+    preflightSaveController = null;
+    preflightPending = false;
+    preflightReady = false;
+    clearPreflightExpiry();
+  }
+
+  function preflightPayload() {
+    return {
+      organization: preflightOrganization.value,
+      deployment_mode: preflightMode.value,
+      host_label: preflightForm.elements.namedItem("host_label").value.trim(),
+      host_address: hostAddress.value.trim(),
+      delivery_channel: preflightForm.elements.namedItem("delivery_channel").value,
+      dns_verified: preflightForm.elements.namedItem("dns_verified").checked,
+      acme_verified: preflightForm.elements.namedItem("acme_verified").checked,
+      tls_verified: preflightForm.elements.namedItem("tls_verified").checked,
+      network_verified: preflightForm.elements.namedItem("network_verified").checked,
+      docker_verified: preflightForm.elements.namedItem("docker_verified").checked,
+      listeners_verified: preflightForm.elements.namedItem("listeners_verified").checked,
+      package_verified: preflightForm.elements.namedItem("package_verified").checked,
+      recovery_verified: preflightForm.elements.namedItem("recovery_verified").checked,
+      backup_verified: preflightForm.elements.namedItem("backup_verified").checked,
+    };
+  }
+
+  function validPreflightRecord(record, organization) {
+    const attestation = record?.attestation;
+    return attestation && attestation.organization === organization &&
+      ["pilot", "production"].includes(attestation.deployment_mode) &&
+      text(attestation.host_label) && privateIPv4(attestation.host_address) &&
+      ["pilot-secure-share", "pilot-verified-handoff", "production-portal"].includes(attestation.delivery_channel) &&
+      [...preflightChecks.map(([name]) => name), "backup_verified"].every((name) => typeof attestation[name] === "boolean") &&
+      Number.isSafeInteger(record.revision) && record.revision > 0 &&
+      text(record.updated_by) && Number.isFinite(Date.parse(record.updated_at));
+  }
+
+  function populatePreflight(attestation) {
+    preflightMode.value = attestation.deployment_mode;
+    preflightForm.elements.namedItem("host_label").value = attestation.host_label;
+    hostAddress.value = attestation.host_address;
+    preflightForm.elements.namedItem("delivery_channel").value = attestation.delivery_channel;
+    for (const [name] of preflightChecks) {
+      preflightForm.elements.namedItem(name).checked = attestation[name];
+    }
+    preflightForm.elements.namedItem("backup_verified").checked = attestation.backup_verified;
+    backupCheck.hidden = attestation.deployment_mode !== "production";
+  }
+
+  async function loadPreflight() {
+    const organization = preflightOrganization.value;
+    ++preflightGeneration;
+    const current = preflightGeneration;
+    preflightController?.abort();
+    preflightController = null;
+    preflightReady = false;
+    clearPreflightExpiry();
+    updateControls();
+    if (!organization || !session || !active()) {
+      preflightStatus.dataset.state = "blocked";
+      preflightStatus.textContent = "Choose an authorized organization and sign in to load its service readiness record.";
+      return;
+    }
+    const controller = new AbortController();
+    preflightController = controller;
+    preflightStatus.textContent = "Loading the saved organization readiness attestation…";
+    try {
+      const response = await fetch(`/api/enrollment/v1/preflight?organization=${encodeURIComponent(organization)}`, {
+        cache: "no-store", credentials: "same-origin", redirect: "error", signal: controller.signal,
+        headers: { Accept: "application/json" },
+      });
+      if (!response.ok || !response.headers.get("Content-Type")?.includes("application/json")) {
+        throw new Error(`HTTP ${response.status} while reading preflight.`);
+      }
+      const result = await window.ZPRPageRuntime.readJSON(response);
+      if (current !== preflightGeneration || controller.signal.aborted || !active()) return;
+      if (result.ready === false && result.preflight === undefined) {
+        preflightStatus.dataset.state = "blocked";
+        preflightStatus.textContent = "No current readiness attestation exists for this organization. Attestations expire after 30 days; complete and submit the checks before preparing an invitation.";
+        preflightBlockers.replaceChildren();
+        updateControls();
+        return;
+      }
+      const record = result.preflight;
+      if (result.ready !== true || !validPreflightRecord(record, organization)) {
+        throw new Error("Invalid readiness attestation response.");
+      }
+      populatePreflight(record.attestation);
+      const blockers = preflightBlockersFor(preflightPayload());
+      if (blockers.length) throw new Error("Saved readiness attestation is incomplete.");
+      preflightBlockers.replaceChildren();
+      preflightReady = true;
+      setPreflightExpiry(record.updated_at);
+      preflightStatus.dataset.state = "ready";
+      preflightStatus.textContent = `Saved ${preflightMode.value} readiness attestation revision ${record.revision}, updated ${new Date(record.updated_at).toLocaleString()} by ${record.updated_by}. These are persisted operator attestations, not automated network tests.`;
+    } catch (error) {
+      if (current !== preflightGeneration || controller.signal.aborted) return;
+      preflightStatus.dataset.state = "blocked";
+      preflightStatus.textContent = `Could not load saved readiness: ${error.message}`;
+    } finally {
+      if (current === preflightGeneration) {
+        preflightController = null;
+        updateControls();
+      }
+    }
+  }
+
+  function preflightBlockersFor(payload) {
+    const blockers = [];
+    if (!payload.organization) blockers.push("Choose an authorized organization.");
+    if (!payload.host_label) blockers.push("Enter the Docker host label.");
+    if (!privateIPv4(payload.host_address)) blockers.push("Enter a valid private host IPv4 address.");
+    for (const [name, message] of preflightChecks) {
+      if (!payload[name]) blockers.push(message);
+    }
+    if (payload.deployment_mode === "production") {
+      if (payload.delivery_channel !== "production-portal") blockers.push("Production requires an authenticated SSO/MFA code-delivery portal.");
+      if (!payload.backup_verified) blockers.push("Production requires encrypted backups and a tested recovery process.");
+    } else if (payload.deployment_mode !== "pilot") {
+      blockers.push("Choose a supported deployment mode.");
+    } else if (!["pilot-secure-share", "pilot-verified-handoff"].includes(payload.delivery_channel)) {
+      blockers.push("Choose a secure, separate code-delivery channel for the pilot.");
+    }
+    return blockers;
+  }
+
+  function updatePreflight(complete = false) {
+    preflightReady = false;
+    clearPreflightExpiry();
+    preflightStatus.dataset.state = "blocked";
+    backupCheck.hidden = preflightMode.value !== "production";
+    hostAddress.setCustomValidity(hostAddress.value.trim() && !privateIPv4(hostAddress.value.trim())
+      ? "Enter a private LAN or ZeroTier IPv4 address." : "");
+    const payload = preflightPayload();
+    const blockers = preflightBlockersFor(payload);
+    preflightBlockers.replaceChildren(...blockers.map((message) => {
+      const item = document.createElement("li");
+      item.textContent = message;
+      return item;
+    }));
+    if (complete && blockers.length === 0) {
+      preflightStatus.dataset.state = "ready";
+      preflightStatus.textContent = "All checks are complete. Submitting the organization-scoped attestation to the Enrollment Service…";
+    } else {
+      preflightStatus.textContent = blockers.length
+        ? `Preflight incomplete: ${blockers.length} readiness blocker${blockers.length === 1 ? "" : "s"} remain. Invitation creation is locked.`
+        : "All checks are complete. Select Evaluate readiness to attest and unlock the invitation worksheet.";
+    }
+    updateControls();
+    return blockers;
+  }
+
+  function clearPreflightState() {
+    preflightReady = false;
+    clearPreflightExpiry();
+    preflightStatus.dataset.state = "blocked";
+    preflightStatus.textContent = "Invitation creation remains locked until this preflight is complete.";
+    preflightBlockers.replaceChildren();
+    backupCheck.hidden = true;
+    hostAddress.setCustomValidity("");
+    updateControls();
+  }
+
+  function clearPreflight() {
+    preflightForm.reset();
+    clearPreflightState();
   }
 
   function closeDialog() {
@@ -184,6 +425,7 @@
 
   function invalidate() {
     closeDialog();
+    cancelPreflightRequests();
     if (pending && !pending.rejected) {
       markUncertain(pending.asset);
       pending.controller.abort();
@@ -292,6 +534,77 @@
     showDialog("Review invitation worksheet", content);
     status.textContent = "Worksheet reviewed locally. No invitation was created.";
   });
+  preflightForm.addEventListener("input", () => {
+    preflightController?.abort();
+    preflightController = null;
+    ++preflightGeneration;
+    updatePreflight();
+  });
+  preflightForm.addEventListener("change", (event) => {
+    if (event.target !== preflightOrganization) {
+      preflightController?.abort();
+      preflightController = null;
+      ++preflightGeneration;
+    }
+    updatePreflight();
+    if (event.target === preflightOrganization) void loadPreflight();
+  });
+  preflightForm.addEventListener("submit", async (event) => {
+    event.preventDefault();
+    hostAddress.value = hostAddress.value.trim();
+    const blockers = updatePreflight(true);
+    if (blockers.length) return;
+    if (!session?.csrf || preflightPending) {
+      preflightStatus.textContent = "A signed-in operator session with create permission is required to save preflight.";
+      return;
+    }
+    const payload = preflightPayload();
+    const attempt = new AbortController();
+    const generation = ++preflightGeneration;
+    const submittingSession = session;
+    preflightSaveController = attempt;
+    preflightPending = true;
+    preflightReady = false;
+    updateControls();
+    preflightStatus.textContent = "Saving organization readiness attestation to the Enrollment Service…";
+    try {
+      const result = await provisioningContract.postMutation(
+        "/api/enrollment/v1/preflight", payload, session.csrf, attempt.signal, 200,
+      );
+      if (generation !== preflightGeneration || attempt.signal.aborted || !active() || session !== submittingSession) return;
+      if (result.rejected) {
+        preflightStatus.dataset.state = "blocked";
+        preflightStatus.textContent = `The Enrollment Service rejected the readiness attestation (HTTP ${result.rejected}); invitation creation remains locked.`;
+        return;
+      }
+      const record = result.value.preflight;
+      if (!validPreflightRecord(record, payload.organization) ||
+          Object.entries(payload).some(([key, value]) => record.attestation[key] !== value)) {
+        throw new Error("The service response did not match the submitted readiness attestation.");
+      }
+      preflightReady = true;
+      setPreflightExpiry(record.updated_at);
+      preflightStatus.dataset.state = "ready";
+      const expiresAt = new Date(Date.parse(record.updated_at) + 30 * 24 * 60 * 60 * 1000);
+      preflightStatus.textContent = `Saved ${record.attestation.deployment_mode} readiness attestation revision ${record.revision} at ${new Date(record.updated_at).toLocaleString()} by ${record.updated_by}; expires ${expiresAt.toLocaleString()}. These are persisted operator attestations, not automated network tests.`;
+    } catch (error) {
+      if (generation !== preflightGeneration || attempt.signal.aborted || !active() || session !== submittingSession) return;
+      preflightStatus.dataset.state = "blocked";
+      preflightStatus.textContent = `Preflight save could not be confirmed: ${error.message}. Creation remains locked; repeating the same attestation is safe.`;
+    } finally {
+      if (generation === preflightGeneration) {
+        preflightSaveController = null;
+        preflightPending = false;
+        updateControls();
+      }
+    }
+  });
+  preflightForm.addEventListener("reset", () => {
+    cancelPreflightRequests();
+    preflightReady = false;
+    updateControls();
+    setTimeout(clearPreflightState, 0);
+  });
   createButton.addEventListener("click", () => {
     const asset = readAsset();
     if (!asset || !canCreate() || pending || uncertain) return;
@@ -352,21 +665,32 @@
   window.addEventListener("provisioning-catalog-cleared", () => { clearCatalog(); });
   window.addEventListener("provisioning-catalog-ready", (event) => {
     catalog = event.detail;
+    const selected = preflightOrganization.value;
+    const organizations = Object.keys(catalog.organizations).sort();
+    preflightOrganization.replaceChildren(new Option("Choose authorized organization", ""), ...organizations.map((name) => new Option(name, name)));
+    preflightOrganization.value = organizations.includes(selected) ? selected : organizations.length === 1 ? organizations[0] : "";
     choice("organization", Object.keys(catalog.organizations).sort());
     updateDependentChoices();
     note.textContent = "Choose an authorized organization and approved type/profile. These are administrative claims, not verified device attributes. Creation also requires named-user create permission and backend opt-in.";
+    void loadPreflight();
   });
   window.addEventListener("operator-session-ready", (event) => {
     session = event.detail || null;
     updateControls();
+    void loadPreflight();
   });
   window.addEventListener("operator-session-cleared", () => {
     session = null;
+    clearPreflight();
     invalidate();
   });
-  window.addEventListener("hashchange", () => { if (!active()) invalidate(); });
+  window.addEventListener("hashchange", () => {
+    if (active()) void loadPreflight();
+    else invalidate();
+  });
   window.addEventListener("pagehide", () => {
     session = null;
+    clearPreflight();
     invalidate();
     form.reset();
     status.textContent = "";

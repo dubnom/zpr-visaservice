@@ -6,13 +6,405 @@ This is a historical release ledger, not a live health report. Keep dated test,
 asset, configuration, scope and rollback evidence here. Feature-local release
 notes also remain in the completed-work archive to preserve their context.
 
-Latest recorded Control Room release: `zpr-editor-ui:20261011-map-maximize`
-(2026-10-11 20:09 UTC). Control-Service remains at the separately recorded
-Detached tray/actor-inventory release of 2026-10-10 06:12 UTC.
+Latest recorded Control Room release: `zpr-editor-ui:20261012-map-overlay`
+(2026-10-12 20:56 UTC). This Room-only rollout did not replace or restart
+Control-Service; retain the separately recorded service release history below.
 This does not imply every source change was deployed. Commit/push state is
 separate; retain each dated entry's scope.
 
 ## Deployment status
+
+### Source publication validation (2026-10-12)
+
+- User authorized committing and pushing all pending source/documentation work,
+  with the older detached Simulator experiment preserved on a separate archive
+  branch rather than merged over the current implementation. Runtime databases,
+  credentials, generated releases and private test receipts are not included.
+- Current dashboard/trusted-service build and focused benchmark, bundled
+  scenario, machine-control and delegation Go regressions pass. All 56 script
+  tests pass; the enrollment package suite passes. Existing unpublished Rust
+  recovery commit passes `cargo test -p ph --lib`: 268 passed, 2 ignored.
+  Native live acceptance remains the separately recorded 15/15 full-matrix pass.
+- Broad dashboard Go validation is **not green**: failing groups are
+  `TestEnrollmentAdministrationOverVerifiedTLSWithoutSimulator` (missing current
+  readiness preflight in its invitation fixture),
+  `TestOrganizationPolicyInstallNeverUploadsStaleBundle` (extracted shell fixture
+  lacks platform initialization), `TestScenarioPlacementPreflightMatchesLauncher`
+  (helper moved out of the stack script), and
+  `TestTrustedServiceBuildPublishesAtomicallyAndKeepsFreshArtifact` (fake build
+  output is not an architecture-valid ELF executable). These failures are
+  recorded, not skipped to claim a clean broad suite or changed during
+  publication. Local staged-content credential-pattern scan found no private-key
+  material or recognized credential tokens; whitespace and deployment shell
+  syntax checks pass.
+
+### Control Room disconnected inventory overlays (2026-10-12 20:56 UTC)
+
+- Deployed only `zpr-editor-ui:20261012-map-overlay`, immutable image
+  `sha256:4c3a58c06ec48828368f89e34b09bebda55038da6f960a03e2204abe80c618db`.
+  Started `2026-10-12T20:56:47.210514125Z`; verified
+  `2026-10-12T20:56:52.673Z` on HTTPS port 8787.
+- Replaced the preceding SVG trapezoids with Detached/Lost text-button
+  overlays fixed in the map's bottom-right corner, styled like Fit/zoom
+  controls. Counts and member inspectors remain; disconnected inventory no
+  longer affects geometry or Fit. Buttons remain fixed during zooming.
+- Reconstructed the preceding live executable byte-for-byte, preserving the
+  backend and all but three of 77 assets: only `app.js`, `app.css` and
+  `index.html` changed. Linux arm64, Go 1.26.4, CGO disabled, `go build -trimpath`;
+  release binary SHA-256
+  `30ce9bad311a2d3c1dbc08bb3142ab083ad7426835cf98ba78f9d99bcc42d8cf`.
+- All 78 selected exact-release desktop/tablet map cases passed. The two
+  previously confirmed baseline World Map Fit coverage failures remain
+  excluded and unresolved. Real desktop/tablet login verifies HTML buttons
+  outside the SVG, bottom-right placement, stable screen position across
+  Zoom/Fit, group counts/member lists, keyboard activation and Maximize.
+  No browser errors or Simulator API requests occurred.
+- All 77 served asset hashes, unsigned API rejection, preserved container
+  configuration/network contract and unchanged starts of 19 other running
+  services verified. Simulator, Control-Service and Policy-Service untouched;
+  no runtime/scenario mutations, commit or push performed by this rollout.
+  Stopped `zpr-control-room-before-map-overlay` retains rollback.
+  Operator sessions reset; sign in again.
+
+### Control Room disconnected groups and map animation recovery (2026-10-12 20:50 UTC)
+
+- Deployed only `zpr-editor-ui:20261012-map-groups`, immutable image
+  `sha256:f9354e3f10c1cf0f33e1c181fc0d3b3cd8b4a0aab7108b6881619eb40769e04c`.
+  Started `2026-10-12T20:50:03.018356841Z`; verified
+  `2026-10-12T20:50:08.589Z` on the existing HTTPS port 8787.
+- Both maps show separate brown Detached/Lost trapezoids below/right of the
+  network, with aggregate adapter counts, keyboard activation and member
+  inspectors. Groups have no connecting lines and participate in Fit.
+  Attachment history remains browser-local and organization-scoped.
+- Restored parent-relative component growth/retraction and retiring connection
+  lines, including moving-parent layouts. Active grants outside the ten recent
+  entries now trigger decision feedback without replaying unchanged grants.
+- Captured all 77 preceding live assets and reconstructed the preceding binary
+  byte-for-byte (`0a17e78f4391ac849e199bb0d9cf8816f3712047fdabdafb1c2be0ff213a1356`).
+  Only `app.js`, `app.css` and `index.html` changed; existing traffic assets,
+  backend and unrelated UI assets were preserved. Linux arm64, Go 1.26.4,
+  CGO disabled, `go build -trimpath`; release binary SHA-256
+  `c270ba790c2b1e04b1036334f15aa745a8a2d6943bfe845bd26cffe9d065a862`.
+- All 78 selected exact-release desktop/tablet geography cases passed with
+  Simulator APIs prohibited. The two previously confirmed baseline World Map
+  Fit coverage failures remain excluded and unresolved.
+- Verified all 77 served hashes, unsigned API rejection, identical container
+  configuration/network contract and unchanged starts of 20 other services.
+  Real desktop/tablet login verified both groups, counts/member lists, Fit,
+  keyboard activation and Maximize without browser errors or Simulator API
+  requests. Live group counts were zero; nonzero transitions are fixture-tested.
+- Stopped `zpr-control-room-before-map-groups` retains rollback. Operator
+  sessions reset; sign in again. No Simulator, Control-Service, Policy-Service,
+  runtime/scenario changes, commit or push performed by this rollout.
+
+### Simulator switching isolation and native ARM64 infrastructure (2026-10-12)
+
+- Final post-soak native v7 acceptance passed **15/15 published scenarios**
+  from `2026-10-12T22:52:03.882Z` to `2026-10-12T23:19:23.012Z`:
+  Velocity 1, Load Lab 4 (200/100/150/50 clients), Great Lakes 3, Redwood 2,
+  Northstar 5, including denial cleanup revision 2. Every case passed published
+  steps and independent stopped-machine/logged-out/empty-workload verification.
+  Original Northstar selection restoration passed. Independently checked
+  `Organization ready`, no running managed machines, no authenticated sessions
+  or workloads and released runtime mutation lock after completion.
+  Private report: `simulator-matrix-native-v7-post-soak-full-20261012.json`.
+  The earlier intermittent Great Lakes authorization/readiness failure remains
+  unexplained; this full pass plus three passing switching-soak cycles is
+  acceptance evidence, not a claim that every intermittent failure is fixed.
+  Expanded failure diagnostics remain enabled. No commit or push performed.
+- Independent v5/CA matrix recovered Great Lakes and passed all three published
+  scenarios. Approved Visa-only initialization completed for Redwood and
+  Velocity; approval markers consumed. Redwood passed both published scenarios.
+  Velocity passed startup/readiness and health traffic but failed the benchmark;
+  all cleanup and verified Northstar restoration passed.
+  A targeted repeat preserved the exact error: `Client.Timeout ... while reading
+  body`, caused by a 10-second HTTP body deadline inside an otherwise 60-second
+  benchmark/75-second scenario budget. Workload links remained active until
+  cleanup; this is distinct from the open Load Lab keepalive issue.
+- Corrected benchmark client to use its existing 60-second overall context
+  rather than an additional 10-second body timeout. Tests verify 100 warmed
+  latency samples, exactly 16 MiB, response failures and an actual 11-second
+  response body. Scoped v6 backend/controller deployed, retaining 70 assets,
+  unchanged configuration/network contract and starts of 16 other services.
+  Executable SHA-256
+  `c17402386de38546f11e631c6e682f074f2348e9a0a77449efed7106d4a4abae`;
+  image `zpr-simulator:20261012-switching-isolation-v6`,
+  `sha256:98decad9899937c729d987e586792ba861c008ad6b763f8d075339e7a6c94170`.
+  Previous controller/backend retained for rollback. Live Velocity still failed
+  at its existing overall deadline; all cleanup and Northstar restoration passed.
+  Timer correction alone is not a datapath fix.
+- Live v6 TCP/kernel evidence isolates a real receive-path stall: client delivery
+  stopped near 1.9 MiB; service acknowledged-byte count stayed at 1,925,267 while
+  TCP retransmissions/backoff increased. The client workload substrate socket
+  retained 214,784 queued bytes against a 212,992 receive-buffer limit and
+  dropped 142 datagrams in the kernel. Application queue-backpressure counters
+  stayed zero, so they do not detect this receive-ring failure. Client dock
+  keepalive then failed before benchmark completion. Logs show the active packet
+  I/O engine is `io_uring`. A reversible diagnostic selects the already-supported
+  `posix_unbatched` engine only for Simulator machine adapters, retaining existing
+  queues, policies and transport deadlines; original controller is restored by
+  the diagnostic runner. Rust source/production services remain unchanged.
+- POSIX A/B acceptance passed the full Velocity scenario and all cleanup:
+  100 measured samples, exactly 16,777,216 bytes, ~994 Mbps transfer,
+  p50 0.423 ms / p95 0.567 ms / p99 0.603 ms. Both workload logs confirm
+  `posix_unbatched`, with no dock keepalive failures. Northstar restoration and
+  restoration of the released v6 controller were independently verified.
+- Promoted this Simulator-only adapter launch fix in scoped v7:
+  `zpr-simulator:20261012-switching-isolation-v7`,
+  image `sha256:6ab37ddf9939ef196fd0082bb3351983ea96e0795a5740a68dfce4e4814f3e0b`,
+  backend/controller SHA-256
+  `426263b15ef8c34eebf727d37626326dfd6f86db4885e6d3b1ff46e04b837a4a`.
+  Preserved 70 served assets, configuration/network contracts and starts of all
+  16 other currently running services. Focused Go regressions and 32 targeted
+  runtime/matrix Node tests pass. Native full 15-case acceptance remains pending;
+  the isolated Velocity pass is not proof of Load Lab or the complete matrix.
+- Full v7 native execution reached all 15 scenarios; all published steps
+  completed, including all four Load Lab cases (200/100/150/50 clients),
+  Great Lakes 3/3, Redwood 2/2 and Northstar 5/5. The matrix nevertheless failed
+  final state-leak verification: Northstar's last `machine-policy-deny` definition
+  stopped its workload and logged out but omitted `stop_machine`; machine-01
+  remained running. Safe restoration was correctly blocked. This report remains
+  failed and is not retroactively relabeled as acceptance success.
+- Recovered only that test-owned machine through Simulator's normal stop API.
+  Verified all machine containers stopped/exited/missing and sessions/workloads
+  empty. Added the missing cleanup to the bundled scenario and a regression
+  requiring every bundled machine start to have a matching cleanup stop.
+  Published revision 2 through the workspace's optimistic revision API; checked
+  no unpublished draft existed, permitted only the cleanup/description delta,
+  and retained revision 1. No directory/credential/policy reset was performed.
+- Matrix reporting now marks completed steps with leaked runtime state as a
+  serious case failure, rather than leaving the individual result as `passed`
+  while the overall report fails. Bundled-scenario Go regression and all
+  23 matrix Node regressions pass, including a completed-run machine-leak test.
+  Targeted live denial revision-2 verification passed every step, including
+  machine stop, logged-out/empty-workload/stopped-machine verification and clean
+  Northstar restoration. The corrected complete 15-case acceptance is being
+  repeated; only its terminal report can certify full acceptance.
+- Corrected full v7 rerun passed Velocity and all four Load Lab cases again but
+  failed Great Lakes activation before its scenarios started. The failure was
+  machine-07's real controller readiness request returning HTTP 504; node2's
+  `RegisterAA` authorization timed out and its Visa API connection closed.
+  Node0 logs show repeated controller/DNS actor disconnects. This is not the
+  corrected denial cleanup issue and the full matrix remains failed.
+  Activation rolled back and the runner restored Northstar; independently
+  checked `Organization ready`, no running managed machines and no authenticated
+  sessions/workloads. A bounded Great Lakes activation retry records kernel UDP
+  receive queues and actual fastpath worker wait states before any further
+  packet-I/O changes; transport deadlines/readiness gates remain unchanged.
+- The isolated Great Lakes activation/runtime-verification retry passed all
+  three node-placement controller probes, the published readiness case and clean
+  Northstar restoration. Its kernel observer measured zero UDP receive errors
+  and buffer drops on nodes 0–2 and the Visa adapter, with sampled fastpath
+  workers waiting normally in poll. This successful retry does not establish the
+  prior failure's root cause or certify reliable switching.
+- Failed readiness now emits bounded controller/adapter logs, UDP counters,
+  receive queues and thread wait states before probe removal; infrastructure
+  diagnostics cover every configured node plus Visa/SimulatorControl adapters.
+  Source is mounted into the live Simulator, so this script change persists
+  without replacing its binary or production service defaults. Shell syntax,
+  whitespace and 34 runtime/matrix Node regressions pass.
+- All three bounded Great Lakes↔Northstar activation soak cycles passed the
+  three configured node-placement controller probes, published runtime readiness
+  scenario and original-selection restoration. Independently verified Northstar
+  `Organization ready`, no running managed machines and empty authenticated
+  sessions/workloads afterward. This does not resolve the earlier intermittent
+  failure's root cause. The complete 15-case acceptance is being repeated with
+  expanded failure diagnostics and corrected denial revision 2; certification
+  remains pending its terminal report and clean restoration.
+- WAL-aware logical comparison after approved initializations retains every
+  previous policy revision and all workspace artifacts/revisions exactly.
+  Redwood and Velocity each append one `configured-source-import` Effective
+  network policy revision; the existing record changes only its current-revision
+  pointer and updated timestamp. Northstar tables are unchanged from the
+  21:19:55 logical baseline. These refreshes are not installation acknowledgements
+  and are recorded rather than concealed or reverted.
+- Follow-up backend release at `2026-10-12T21:21:18.710107001Z`:
+  `zpr-simulator:20261012-switching-isolation-v5`, immutable image
+  `sha256:0e5dd30bf95f63cec78cc7f2c41ef7bb564324d7f3182f085790621de9fb6e57`.
+  Backend SHA-256
+  `30aa0630dacdae96ac7d1f06c4cc063dce6d1f31d9948bebbcf8079ec262bab9`.
+  Verified-baseline overlays contain only Gateway/controller tunnel separation,
+  matching workload-address discovery and explicit numeric routing tables.
+  All 70 served static assets and configuration/network contracts preserved;
+  starts of 19 unrelated services unchanged. No Control Room rollout.
+  Machine controller remains the separately installed tunnel-isolated ARM64
+  binary `70aaa36cfae5c9c4e971d09943232288866efa26fb6512a1960abb5a9d732508`.
+- Gateway originally reused controller `tun5`, disrupting cleanup. It now uses
+  `zgateway0`; backend discovery follows that interface. Live v4 exposed the
+  derived, invalid routing table `10zgateway0`; v5 preserves table 105 explicitly.
+  The v5 live case reached the Gateway but returned HTTP 502; all cleanup passed.
+  An isolated standard-library HTTPS probe reproduced missing CA trust roots
+  in the machine image. Adding `ca-certificates` changes that same probe to
+  `200 OK` without bypassing certificate validation.
+  Promoted native machine image
+  `sha256:1d88b42ecacb4c935707f7adff9e960ee9a6f0a9f527f4ebf4ce8d912298b064`;
+  preceding image retained under `zpr-sim-machine:before-20261012-ca`.
+  The targeted Northstar Gateway retry starting at 21:30:40 UTC passed all
+  19 published steps, including real upstream HTTPS traffic and every cleanup
+  step. Final restoration to the original Northstar selection passed;
+  activation reports Organization ready, no managed machines are running,
+  no authenticated sessions/workloads remain and the mutation lock is released.
+  This does not verify Great Lakes recovery or the complete organization matrix.
+- The v5 case's Great Lakes restoration failed during infrastructure startup:
+  Visa-adapter/node keepalive timeouts and failed reconnects occurred even
+  without Load Lab. Rollback restored Northstar's machine-control path but
+  failed operator verification: Control-Service tried to join the removed
+  Great Lakes trusted-feed network. Activation and rollback now recalculate
+  feed scope for the organization being started/restored. No automatic
+  healthy-restoration claim is made for that failed run. The subsequent
+  Northstar recovery and targeted Gateway run passed; Great Lakes recovery
+  remains to be independently retried.
+- Deployed the switching backend as
+  `zpr-simulator:20261012-switching-isolation-v3`, immutable image
+  `sha256:4323cba33a17c02bcb22d172ffb26e075cacb534e07870124d403d9d20a140ef`.
+  Linux/ARM64, Go 1.26.4, CGO disabled; executable SHA-256
+  `1c912c2433a217d5ed5b9a184a3bda29bb4affe589a254a4e820e4c576bf8703`.
+  Reconstructed the verified backend baseline and retained the exact live UI,
+  rather than deploying unrelated dirty-source changes.
+- Fixed the composed SimulatorControlService provider to match authenticated
+  adapter identity without constraining its dynamically assigned ZPR address.
+  The approved one-time `dynamic-control-policy-v1` migration preserves
+  directory data/editor drafts; subsequent switches preserve installed policy.
+  Admin endpoints and runtime-verification service IPv4 addresses are discovered
+  from actual Docker bindings/networks, not guessed ports or old subnets.
+- Machine assets and controller requests are organization/generation scoped.
+  Running containers with a different scope are rejected; old controllers
+  cannot update the new runtime. API/script mutations are guarded during
+  switching, and all managed running machines are stopped and verified.
+  Activation and rollback require a disposable machine at every configured
+  node to heartbeat and acknowledge a real command over ZPR/mTLS. Failure
+  reports its phase and whether the previous runtime was independently verified.
+- Earlier live matrix runs passed Great Lakes traffic cases but exposed an
+  intermittent x86 Rosetta assertion, exit 133, and an old-subnet verifier.
+  The v3 verifier corrects the subnet assumption. After explicit approval,
+  built native ARM64 infrastructure to remove x86 emulation from Simulator
+  nodes, Visa, adapters, gateway, directory/manager and helper processes:
+  - `zpr-multinode:20261012-arm64`:
+    `sha256:aa33d157f43a0ed77a675d652ae6d6a5001850dc4751bc82b9ae1b0b89eca3e7`.
+  - Initial `zpr-multinode-directory:20261012-arm64`:
+    `sha256:d40f91cc78ae53a6d9d7be49abe764431a65f50989c7a037f2b9ec648b98b6d3`.
+  - Initial `zpr-multinode-directory-manager:20261012-arm64`:
+    `sha256:fe49b337142d03e918b3201282ce98a75f15e177fb46314cbef0311178ccb478`.
+  Cached rebuilds subsequently moved directory/manager tags. Observed current
+  image IDs at 21:23 UTC are respectively
+  `sha256:dd37c362c4f3f3487673f4d07623bf70dd81eeb03c409bae2e4ac9baba5f102d`
+  and `sha256:22224a0cee5a6b2d4e7899fa4a00976786712da395b42b0c78ec9c1b86995de9`.
+- Native Rust/runtime libraries share Debian trixie's ABI. The runtime retains
+  Ubuntu 24.04's Redis 7 package, avoiding an incidental Redis 8/database-format
+  upgrade. All eight baked executables have ARM64 ELF headers and successful
+  loader/help checks; native Redis 7 startup/PING round-trip passes.
+  Architecture preflight rejects mismatched images and cached helper binaries
+  before activation stops the previous runtime. Existing amd64 binaries/tags
+  remain available; native settings survive Simulator recreation/restart.
+- Simulator native provisioning configuration persisted at
+  `2026-10-12T19:56:31.943531549Z`, retaining the same v3 executable/image.
+  Verified 72 served asset responses unchanged, identical mounts/ports/network
+  contract and unchanged starts of 19 other services. Only five explicit native
+  provisioning environment settings changed. No Docker Desktop restart.
+  Control Room was untouched by this Simulator work; subsequent independent
+  Control Room rollouts are recorded separately above.
+- Validation: 45 targeted Node platform/scope/admin/matrix regressions, focused
+  Go controller/activation/runtime-state/multi-subnet verifier tests, shell
+  syntax, whitespace and editor diagnostics pass. Native Great Lakes activation
+  passed all three controller-location probes and all three published scenarios.
+  Load Lab activation/readiness passed, but its 200-client fanout failed when
+  both ends of the service dock link timed out waiting for reliable keepalive
+  acknowledgements. Cleanup and verified Great Lakes restoration passed; the
+  Rust transport investigation remains open. No Rosetta assertion occurred.
+- The independent remaining-organization matrix stopped before scenarios at
+  Northstar's missing Visa database. Great Lakes restoration passed. Read-only
+  inspection found the same missing-state condition in Redwood and Velocity.
+  With explicit approval for all three, corrected the database guard to honor
+  the existing Visa-only initialization approval without silently resetting an
+  unapproved runtime. Existing credentials, directory data and drafts remain
+  intact; runtime-only policies from missing databases cannot be recovered.
+  One-time approval markers are consumed after composed-policy installation.
+  The first approved recovery initialized Northstar's Visa state, then exposed
+  a readiness-selector bug: it assumed explicit machine ownership mappings,
+  which Northstar's supported single-node profile omits. Rollback restored
+  Great Lakes. Initial main-file checks reported all 180 fingerprints unchanged,
+  but later SQLite WAL checkpointing exposed a Northstar policy database change:
+  a `configured-source-import` appended revision 8 of Effective network policy
+  at 20:34 UTC. The other 179 main-file fingerprints were unchanged; 38 older
+  policy revisions remain. Raw main-file hashes do not prove draft preservation.
+  Consistent SQLite backups including WAL state and logical table receipts for
+  Northstar, Redwood and Velocity were captured at 21:19:55 UTC before further
+  approved recovery. No database was reverted to conceal the discrepancy.
+  Readiness now reuses actual machine-launch placement,
+  validates all five profiles in regression tests and checks node coverage
+  before stopping the old runtime. Northstar activation and its active-team,
+  client-service and default-deny scenarios passed; the subsequent targeted
+  Gateway case also passed, but the fifth case is untested. Redwood/Velocity approval markers
+  remain pending initialization. Remaining acceptance is being retried;
+  full five-organization/15-scenario acceptance is not complete.
+- Simulator runtime reservation remains held until acceptance and cleanup.
+  This is switching/runtime isolation, not separate installations or independent
+  trust roots: Simulator, operator services, engine and the machine TLS identity
+  directory remain shared. No commit or push performed by this work.
+
+### Great Lakes organization-switch recovery (2026-10-12 16:03 UTC)
+
+- The Load Lab to Great Lakes switch failed its Control-Service readiness gate:
+  Great Lakes published Visa admin container port `8183/tcp` on host port 8186,
+  while activation hardcoded the operator endpoint to 8185. Snapshot requests
+  reported connection refused. The original attempt rolled back to Load Lab.
+- With explicit approval to fix and recover, added shared published-port
+  discovery to Simulator provisioning scripts. Activation and rollback,
+  bootstrap policy upload, stack startup, and the observability collector now
+  use the running organization's actual local Visa admin binding. Invalid or
+  ambiguous bindings fail explicitly. Production services still receive
+  independently configured URLs, with no Simulator dependency.
+- Four endpoint-discovery regression tests, shell syntax/whitespace checks and
+  focused Go activation/readiness/policy-upload/independent-service tests pass.
+  Existing shared provisioning-script changes were preserved. The scripts are
+  mounted into the existing Simulator, so no Simulator image replacement was
+  necessary.
+- Retried through the existing Organizations UI and confirmation flow. Final
+  API state is `completed`, active organization `great-lakes`, progress
+  `Organization ready`; GUI shows Great Lakes active and Directory ready.
+  Independent mTLS Control-Service snapshot is connected with no errors,
+  all three nodes synchronized, 17 actors and 12 registered services.
+- Control-Service now uses `https://host.docker.internal:8186`; collector uses
+  `https://vs.zpr:8186`, with logs and metrics successfully exported. The
+  unchanged Control Room packet-volume image remains running with its original
+  `2026-10-12T15:52:20.737017587Z` start time. No restore-base/database reset,
+  full scenario matrix, commit or push was performed.
+
+### Control Room packet volume maps (2026-10-12 15:52 UTC)
+
+- Deployed only `zpr-editor-ui:20261012-map-traffic`, image
+  `sha256:a60966b9f2dccf552d2bfc5c091d951b7f943d39dd39f9abadf03de488730311`.
+  Started `2026-10-12T15:52:20.737017587Z`; verified
+  `2026-10-12T15:52:25.132Z` on the existing HTTPS port 8787.
+- Both maps share Traffic Off / Packets, fixed-rate node halos and a Scale
+  popover. Hover and inspector show substrate RX/TX, sample age and recent
+  history. Substrate packet I/O includes control traffic; no adapter/link
+  rates or unique application throughput are inferred. Zero differs from
+  dashed waiting/unavailable/stale telemetry. Samples expire during pauses.
+- Captured all 76 preceding live assets and reconstructed the actual live
+  executable byte-for-byte: SHA-256
+  `1dce322f959eec57902904921910d9bf9932e6ed75b43981d34f71f2bca62057`.
+  Baseline image was `zpr-simulator:local` with immutable ID
+  `sha256:db02a48a9d1a2348917c0ab2a550f1e9c8ac90035e0c5afbfea4185ac363bbf1`;
+  its tag alone was not used to identify backend behavior.
+- Only `app.js`, `app.css`, the map toolbar/cache references in `index.html`,
+  and new `map-traffic.js` changed. All other served assets and backend sources
+  are preserved, excluding concurrent provisioning/sidebar/organization work.
+  Linux arm64, Go 1.26.4, CGO disabled, `go build -trimpath`; release binary
+  SHA-256 `0a17e78f4391ac849e199bb0d9cf8816f3712047fdabdafb1c2be0ff213a1356`.
+- All 70 exact-release desktop/tablet geography tests and eight packet-rate
+  arithmetic tests pass, including uint64 precision, worker aggregation,
+  reset/inventory/session boundaries, stale/outage handling and zero history.
+  All 77 served asset hashes, unsigned API rejection, container configuration,
+  network contract and unchanged starts of 25 unrelated services verified.
+- Real desktop/tablet login verifies both map selectors, Scale, traffic toggle,
+  unchanged camera on toggle and Maximize/Restore, without browser errors or
+  Simulator API calls. Production currently reports disconnected with zero
+  nodes: measured populated halos/history are verified by isolated fixtures,
+  not claimed as live traffic acceptance. No backend state was changed.
+- Stopped `zpr-control-room-before-map-traffic` retains rollback. Operator
+  sessions reset; sign in again. No Simulator or Control-Service deployment,
+  commit or push.
 
 ### Simulator organization definitions (2026-10-11 20:18 UTC)
 

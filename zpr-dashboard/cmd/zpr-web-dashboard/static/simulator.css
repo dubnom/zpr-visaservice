@@ -227,6 +227,8 @@ pre { margin: 0; padding: 14px; min-height: 110px; max-height: 180px; overflow: 
 .organization-summary { display: flex; flex-wrap: wrap; align-items: center; gap: 9px; margin-bottom: 18px; color: var(--muted); font-size: 12px; }
 .organization-sections { display: grid; gap: 22px; }
 .organization-section { min-width: 0; border-top: 1px solid var(--line); padding-top: 12px; }
+.organization-section-links a { color: inherit; text-underline-offset: 3px; }
+.organization-section { scroll-margin-top: 16px; }
 .organization-section h3 { margin: 0 0 10px; font: 600 11px var(--mono); text-transform: uppercase; }
 .organization-list-items { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 210px), 1fr)); gap: 8px; }
 .organization-item { min-width: 0; padding: 9px 0; border-bottom: 1px solid var(--line); }

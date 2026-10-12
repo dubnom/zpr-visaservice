@@ -8846,6 +8846,7 @@ test("GUI Map legend items highlight their component type and right-click matche
   api.snapshot.active_visas = [];
   await page.goto(appURL + "/#map");
   await page.getByRole("button", { name: "Pause updates", exact: true }).click();
+  await page.locator("#map-legend-key summary").click();
   const legendNode = page.locator('[data-legend-kind="node"]');
   await legendNode.click();
   await expect(legendNode).toHaveAttribute("aria-pressed", "true");
@@ -8894,6 +8895,7 @@ test("GUI Map Clear highlight and Esc remove highlighting; the info panel is ind
   await expect(page.locator('.graph-vertex[data-inspect-actor="n1"]')).toBeVisible();
   await expect(clear).toBeHidden();
 
+  await page.locator("#map-legend-key summary").click();
   await page.locator('[data-legend-kind="node"]').click();
   await expect(highlighted).not.toHaveCount(0);
   await clear.click();
@@ -8928,6 +8930,7 @@ test("GUI Map Clear highlight and Esc remove highlighting; the info panel is ind
   await expect(clear).toBeHidden();
 
   await client.locator(".graph-visa-count").dispatchEvent("contextmenu", { bubbles: true });
+  await page.locator("#map-legend-key summary").click();
   await page.locator('[data-legend-kind="service"]').click();
   await clear.click();
   await expect(stage).not.toHaveClass(/graph-visa-focused/);
@@ -9676,9 +9679,23 @@ async function mockInvitationCreator(page, api, enabled = true) {
     ...provisioningCatalog(), gui_create_organizations: enabled ? ["alpha"] : [],
   } }));
   api.handlers.set("/api/enrollment/v1/invitations", (route) => route.fulfill({ json: { invitations: [] } }));
+  let preflight = null;
+  api.handlers.set("/api/enrollment/v1/preflight", (route) => {
+    if (route.request().method() === "GET") return route.fulfill({ json: preflight ? { ready: true, preflight } : { ready: false } });
+    preflight = { attestation: route.request().postDataJSON(), updated_by: "oidc:creator",
+      updated_at: new Date().toISOString(), revision: preflight?.revision + 1 || 1 };
+    return route.fulfill({ json: { preflight } });
+  });
 }
 
 async function fillApprovedInvitation(page) {
+  const preflight = page.locator("#provisioning-preflight");
+  await preflight.locator('[name="organization"]').selectOption("alpha");
+  await preflight.locator('[name="host_label"]').fill("Browser test host");
+  await preflight.locator('[name="host_address"]').fill("192.168.1.20");
+  for (const check of await preflight.locator('.provisioning-preflight-checks input[type="checkbox"]:visible').all()) await check.check();
+  await preflight.getByRole("button", { name: "Evaluate readiness", exact: true }).click();
+  await expect(page.locator("#provisioning-preflight-status")).toHaveAttribute("data-state", "ready");
   const form = page.locator("#provisioning-draft");
   await form.locator('[name="organization"]').selectOption("alpha");
   await form.locator('[name="type"]').selectOption("laptop");
@@ -9705,6 +9722,57 @@ function createdInvitationResponse(asset) {
 
 test.describe("GUI provisioning invitation creation", () => {
   test.use({ ignoreHTTPSErrors: true });
+  test("requires an evaluated pilot preflight and production-only backup and portal checks", async ({ page, secureAppURL: appURL, api }) => {
+    await mockInvitationCreator(page, api);
+    const requests = [];
+    page.on("request", request => requests.push({ path: new URL(request.url()).pathname, method: request.method(), body: request.postData() }));
+    await page.goto(appURL + "/#provisioning-adapters");
+    const draft = page.locator("#provisioning-draft");
+    await draft.locator('[name="organization"]').selectOption("alpha");
+    await draft.locator('[name="type"]').selectOption("laptop");
+    await draft.locator('[name="profile"]').selectOption("standard");
+    for (const [name, value] of Object.entries({
+      name: "Created laptop", owner: "Operations", asset_id: "INV-CREATE", recipient: "owner@example.org",
+    })) await draft.locator(`[name="${name}"]`).fill(value);
+    const preflight = page.locator("#provisioning-preflight");
+    await preflight.locator('[name="organization"]').selectOption("alpha");
+    const create = page.getByRole("button", { name: "Create invitation", exact: true });
+    await expect(create).toBeDisabled();
+    await expect(page.locator("#provisioning-preflight-status")).toContainText("No current readiness attestation exists");
+    await preflight.locator('[name="host_label"]').fill("Browser test host");
+    await preflight.locator('[name="host_address"]').fill("192..1.20");
+    for (const check of await preflight.locator('.provisioning-preflight-checks input[type="checkbox"]:visible').all()) await check.check();
+    await preflight.getByRole("button", { name: "Evaluate readiness", exact: true }).click();
+    await expect(page.locator("#provisioning-preflight-blockers")).toContainText("valid private host IPv4");
+    await expect(create).toBeDisabled();
+    await preflight.locator('[name="host_address"]').fill("192.168.1.20");
+    await preflight.getByRole("button", { name: "Evaluate readiness", exact: true }).click();
+    await expect(page.locator("#provisioning-preflight-status")).toHaveAttribute("data-state", "ready");
+    await expect(create).toBeEnabled();
+
+    await preflight.locator('[name="deployment_mode"]').selectOption("production");
+    await expect(create).toBeDisabled();
+    await expect(preflight.locator('[name="backup_verified"]')).toBeVisible();
+    await preflight.getByRole("button", { name: "Evaluate readiness", exact: true }).click();
+    await expect(page.locator("#provisioning-preflight-blockers")).toContainText("SSO/MFA");
+    await expect(page.locator("#provisioning-preflight-blockers")).toContainText("encrypted backups");
+    await preflight.locator('[name="delivery_channel"]').selectOption("production-portal");
+    await preflight.locator('[name="backup_verified"]').check();
+    await preflight.getByRole("button", { name: "Evaluate readiness", exact: true }).click();
+    await expect(page.locator("#provisioning-preflight-status")).toHaveAttribute("data-state", "ready");
+    await expect(create).toBeEnabled();
+    await preflight.getByRole("button", { name: "Clear readiness fields", exact: true }).click();
+    await expect(preflight.locator('[name="host_address"]')).toHaveValue("");
+    await expect(create).toBeDisabled();
+    const mutations = requests.filter(request => request.method !== "GET");
+    expect(mutations.map(request => request.path)).toEqual([
+      "/api/enrollment/v1/preflight", "/api/enrollment/v1/preflight",
+    ]);
+    expect(mutations.every(request => request.body?.includes("192.168.1.20"))).toBe(true);
+    expect(mutations.every(request => !request.body?.includes("INV-CREATE") && !request.body?.includes("Operations"))).toBe(true);
+    expect(await page.evaluate(() => [JSON.stringify(localStorage), JSON.stringify(sessionStorage)].some(value => value.includes("192.168.1.20")))).toBe(false);
+  });
+
   test("requires backend opt-in and both scopes while selecting approved catalog values", async ({ page, secureAppURL: appURL, api }) => {
     await mockInvitationCreator(page, api, false);
     await page.goto(appURL + "/#provisioning-adapters");
