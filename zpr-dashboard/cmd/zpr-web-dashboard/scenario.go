@@ -66,6 +66,7 @@ type simulatorScenarioStep struct {
 	Target         string   `json:"target,omitempty"`
 	Expected       string   `json:"expected,omitempty"`
 	TimeoutSeconds int      `json:"timeout_seconds,omitempty"`
+	ClientCount    int      `json:"client_count,omitempty"`
 }
 
 type simulatorScenarioStepResult struct {
@@ -307,6 +308,9 @@ func validScenarioID(id string) bool {
 }
 
 func validateSimulatorScenarioStep(step simulatorScenarioStep, manifest simulatorManifest, organization simulatorOrganization, cleanup bool) error {
+	if step.ClientCount != 0 && step.Action != "stress_traffic" {
+		return errors.New("client count override is only valid for stress traffic")
+	}
 	switch step.Action {
 	case "verify_multinode_runtime":
 		if cleanup || organization.Runtime.Driver != "docker-multinode" || organization.Runtime.Topology != "multi-node" || len(organization.Runtime.Nodes) < 2 {
@@ -999,7 +1003,14 @@ func simulatorScenarioExecutorForManifest(ctx context.Context, manifest simulato
 		if err := requireScenarioWorkload(step.Machine, profile.ServiceWorkload); err != nil {
 			return "", err
 		}
-		serviceAddress := machineWorkloadAddress(profile.ServiceWorkload)
+		runtimeDriver, err := simulatorRuntimeDriverForManifest(manifest)
+		if err != nil {
+			return "", err
+		}
+		serviceAddress, err := scenarioWorkloadAddress(ctx, runtimeDriver, step.Machine, profile.ServiceWorkload, scenarioCommand)
+		if err != nil {
+			return "", err
+		}
 		serviceCount := strconv.Itoa(profile.ServiceCount)
 		basePort := strconv.Itoa(profile.BasePort)
 		if _, err := scenarioCommand(ctx, "docker", "exec", "-d", machineContainerName(step.Machine), "/usr/local/bin/zpr-machine-controller", "-mode", "stress-service-fleet", "-listen", serviceAddress, "-log-workload", profile.ServiceWorkload, "-service-count", serviceCount, "-base-port", basePort); err != nil {
@@ -1039,7 +1050,19 @@ func simulatorScenarioExecutorForManifest(ctx context.Context, manifest simulato
 		if err != nil {
 			return "", err
 		}
-		return scenarioCommand(ctx, "docker", "exec", machineContainerName(step.Machine), "/usr/local/bin/zpr-machine-controller", "-mode", "stress-client", "-listen", machineWorkloadAddress(profile.ServiceWorkload), "-zpr-addr", sourceAddress, "-log-workload", profile.ClientWorkload, "-client-count", strconv.Itoa(profile.ClientCount), "-service-count", strconv.Itoa(profile.ServiceCount), "-base-port", strconv.Itoa(profile.BasePort), "-duration-seconds", strconv.Itoa(profile.DurationSeconds), "-request-delay-min-ms", strconv.Itoa(profile.RequestDelayMinMilliseconds), "-request-delay-max-ms", strconv.Itoa(profile.RequestDelayMaxMilliseconds), "-restart-interval-min-seconds", strconv.Itoa(profile.RestartIntervalMinSeconds), "-restart-interval-max-seconds", strconv.Itoa(profile.RestartIntervalMaxSeconds), "-restart-pause-min-seconds", strconv.Itoa(profile.RestartPauseMinSeconds), "-restart-pause-max-seconds", strconv.Itoa(profile.RestartPauseMaxSeconds))
+		runtimeDriver, err := simulatorRuntimeDriverForManifest(manifest)
+		if err != nil {
+			return "", err
+		}
+		serviceAddress, err := scenarioWorkloadAddress(ctx, runtimeDriver, profile.ServiceMachine, profile.ServiceWorkload, scenarioCommand)
+		if err != nil {
+			return "", err
+		}
+		clientCount := profile.ClientCount
+		if step.ClientCount != 0 {
+			clientCount = step.ClientCount
+		}
+		return scenarioCommand(ctx, "docker", "exec", machineContainerName(step.Machine), "/usr/local/bin/zpr-machine-controller", "-mode", "stress-client", "-listen", serviceAddress, "-zpr-addr", sourceAddress, "-log-workload", profile.ClientWorkload, "-client-count", strconv.Itoa(clientCount), "-service-count", strconv.Itoa(profile.ServiceCount), "-base-port", strconv.Itoa(profile.BasePort), "-duration-seconds", strconv.Itoa(profile.DurationSeconds), "-request-delay-min-ms", strconv.Itoa(profile.RequestDelayMinMilliseconds), "-request-delay-max-ms", strconv.Itoa(profile.RequestDelayMaxMilliseconds), "-restart-interval-min-seconds", strconv.Itoa(profile.RestartIntervalMinSeconds), "-restart-interval-max-seconds", strconv.Itoa(profile.RestartIntervalMaxSeconds), "-restart-pause-min-seconds", strconv.Itoa(profile.RestartPauseMinSeconds), "-restart-pause-max-seconds", strconv.Itoa(profile.RestartPauseMaxSeconds))
 	case "request_test_service", "benchmark_test_service":
 		if err := requireScenarioWorkload(step.Machine, step.Component); err != nil {
 			return "", err
@@ -1217,6 +1240,21 @@ func simulatorTestServiceLaunch(manifest simulatorManifest, component simulatorC
 func machineWorkloadAddress(agent string) string {
 	config, _ := machineWorkload(agent)
 	return config.address
+}
+
+func scenarioWorkloadAddress(ctx context.Context, runtimeDriver, machineID, workload string, command scenarioCommandFunc) (string, error) {
+	config, configured := machineWorkload(workload)
+	if !configured {
+		return "", fmt.Errorf("workload %q has no TUN configuration", workload)
+	}
+	if runtimeDriver != "docker-multinode" {
+		return config.address, nil
+	}
+	output, err := command(ctx, "docker", "exec", machineContainerName(machineID), "ip", "-j", "-6", "addr", "show", "dev", config.tun)
+	if err != nil {
+		return "", fmt.Errorf("read workload ZPR address: %w", err)
+	}
+	return grantedScenarioClientAddress(output, workload)
 }
 
 func scenarioClientAddress(ctx context.Context, machineID, agent string) (string, error) {

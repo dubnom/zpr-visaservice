@@ -388,6 +388,43 @@ func TestGrantedScenarioClientAddress(t *testing.T) {
 	}
 }
 
+func TestScenarioWorkloadAddressUsesGrantedMultinodeAddress(t *testing.T) {
+	commandCalls := 0
+	address, err := scenarioWorkloadAddress(context.Background(), "docker-multinode", "machine-05", "echo-service", func(_ context.Context, name string, args ...string) (string, error) {
+		commandCalls++
+		if name != "docker" || len(args) != 9 || !reflect.DeepEqual(args[2:], []string{"ip", "-j", "-6", "addr", "show", "dev", "tun3"}) {
+			t.Fatalf("unexpected workload address command: %s %v", name, args)
+		}
+		return `[{"addr_info":[{"local":"fd00:1:7::1","scope":"global"},{"local":"fd5a:5052:adda:1:1234::1","scope":"global"}]}]`, nil
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if address != "fd5a:5052:adda:1:1234::1" {
+		t.Fatalf("workload address = %q, want granted multinode address", address)
+	}
+	if commandCalls != 1 {
+		t.Fatalf("address command calls = %d, want 1", commandCalls)
+	}
+}
+
+func TestScenarioWorkloadAddressKeepsSingleNodeAddress(t *testing.T) {
+	commandCalls := 0
+	address, err := scenarioWorkloadAddress(context.Background(), "linux-one-node", "machine-05", "echo-service", func(context.Context, string, ...string) (string, error) {
+		commandCalls++
+		return "", errors.New("unexpected command")
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if address != "fd00:1:7::1" {
+		t.Fatalf("workload address = %q, want configured single-node address", address)
+	}
+	if commandCalls != 0 {
+		t.Fatalf("address command calls = %d, want 0", commandCalls)
+	}
+}
+
 func TestScenarioWorkloadServiceRouteUsesExactDestination(t *testing.T) {
 	command, err := scenarioWorkloadServiceRouteCommand("machine-04", "operations-client", "fd5a:5052:adda:1:1234::1")
 	if err != nil {
