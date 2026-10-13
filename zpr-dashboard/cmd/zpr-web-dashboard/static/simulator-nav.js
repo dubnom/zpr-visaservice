@@ -24,27 +24,71 @@
 
   window.ZPRSimulatorNavigation = { createPagePoller };
 
-  const setActiveOrganization = (organization) => {
+  let bannerSnapshot;
+  let bannerError;
+  let bannerOrganizationID;
+  const renderBanner = () => {
     const status = document.querySelector(".main-content > .topbar .topbar-status");
     if (!status) return;
-    let badge = status.querySelector(".simulator-active-organization");
-    if (!badge) {
-      badge = document.createElement("span");
-      badge.className = "simulator-active-organization";
-      badge.setAttribute("aria-label", "Active organization");
-      status.append(badge);
+    let banner = status.querySelector(".simulator-runtime-banner");
+    if (!banner) {
+      banner = document.createElement("div");
+      banner.className = "simulator-runtime-banner";
+      banner.setAttribute("role", "status");
+      banner.setAttribute("aria-live", "polite");
+      for (const [key, label] of [["backend", "Simulator backend"], ["organization", "Organization"], ["scenario", "Scenario"]]) {
+        const item = document.createElement("div");
+        item.className = `simulator-banner-${key} connection-state`;
+        const content = document.createElement("div");
+        const heading = document.createElement("strong");
+        heading.textContent = label;
+        const value = document.createElement("small");
+        value.dataset.bannerValue = key;
+        content.append(heading, value);
+        if (key === "backend") {
+          const lamp = document.createElement("span");
+          lamp.className = "state-lamp";
+          lamp.setAttribute("aria-hidden", "true");
+          item.append(lamp);
+        }
+        item.append(content);
+        banner.append(item);
+      }
+      for (const child of status.children) child.hidden = true;
+      status.prepend(banner);
     }
-    badge.textContent = organization?.name || organization?.id || "Organization unavailable";
-    badge.hidden = !organization;
+    const setValue = (key, text) => { banner.querySelector(`[data-banner-value="${key}"]`).textContent = text; };
+    banner.dataset.state = bannerError ? "disconnected" : bannerSnapshot ? "connected" : "loading";
+    setValue("backend", bannerError ? "Unavailable" : bannerSnapshot ? "Connected" : "Connecting");
+    banner.title = bannerError?.message || "";
+    setValue("organization", bannerSnapshot?.organization?.name || bannerSnapshot?.active_organization_id || "Unavailable");
+    const run = bannerSnapshot?.run;
+    const scenario = (bannerSnapshot?.scenarios || []).find(item => item.id === run?.scenario_id);
+    setValue("scenario", !bannerSnapshot ? "Unavailable" : run?.scenario_id
+      ? `${run.scenario_name || scenario?.name || run.scenario_id} · ${run.state || "unknown"}`
+      : "No scenario running · idle");
   };
-  const refreshActiveOrganization = async () => {
-    try {
-      const data = await window.ZPRPageRuntime.requestJSON(window.fetch.bind(window), "/api/simulator/organizations");
-      setActiveOrganization((data.organizations || []).find((item) => item.id === data.active_id));
-    } catch {
-      setActiveOrganization(null);
-    }
-  };
+  const bannerPoller = window.ZPRPageRuntime.createPoller({
+    interval: 3000,
+    run: async ({ signal, isCurrent }) => {
+      const data = await window.ZPRPageRuntime.requestJSON(window.fetch.bind(window), "/api/simulator/scenarios", { signal });
+      if (!isCurrent()) return;
+      if (typeof data?.active_organization_id !== "string" || !data.active_organization_id ||
+          !data.organization || data.organization.id !== data.active_organization_id ||
+          !Array.isArray(data.scenarios) || typeof data.run?.state !== "string") {
+        throw new Error("Invalid simulator status response.");
+      }
+      bannerSnapshot = data;
+      bannerOrganizationID = data.active_organization_id;
+      bannerError = null;
+      renderBanner();
+    },
+    onError: error => {
+      bannerSnapshot = null;
+      bannerError = error;
+      renderBanner();
+    },
+  });
   let operatorLoginScriptLoading;
   const mountOperatorLogin = () => {
     const topbar = document.querySelector(".main-content > .topbar");
@@ -87,7 +131,8 @@
       signOut.textContent = "Sign out";
       signOut.hidden = true;
       widget.append(title, description, status, login, signOut);
-      topbar.append(widget);
+      const actions = topbar.querySelector(".top-actions") || topbar;
+      actions.insertBefore(widget, actions.querySelector(".help-trigger"));
       const scope = document.createElement("p");
       scope.id = "operator-scope";
       scope.className = "simulator-operator-scope";
@@ -101,7 +146,7 @@
     if (!operatorLoginScriptLoading) {
       operatorLoginScriptLoading = new Promise((resolve, reject) => {
         const script = document.createElement("script");
-        script.src = "/operator-login.js?v=11";
+        script.src = "/operator-login.js?v=12";
         script.addEventListener("load", resolve, { once: true });
         script.addEventListener("error", reject, { once: true });
         document.head.append(script);
@@ -158,11 +203,29 @@
     nav.querySelectorAll("a[data-simulator-nav]").forEach((link) => {
       link.classList.toggle("active", pageKey(link.href) === currentPath);
     });
-    void refreshActiveOrganization();
+    renderBanner();
+    bannerPoller.start();
+    void bannerPoller.refresh();
     mountOperatorLogin();
   };
 
-  window.addEventListener("simulator:organization-context", (event) => setActiveOrganization(event.detail));
+  window.addEventListener("simulator:organization-context", (event) => {
+    if (event.detail?.id === bannerOrganizationID) return;
+    bannerOrganizationID = event.detail?.id;
+    bannerPoller.stop();
+    bannerSnapshot = null;
+    bannerError = null;
+    renderBanner();
+    bannerPoller.start();
+  });
+  window.addEventListener("operator-session-ready", () => { void bannerPoller.refresh(); });
+  window.addEventListener("operator-session-cleared", () => {
+    bannerPoller.stop();
+    bannerSnapshot = null;
+    bannerError = null;
+    renderBanner();
+    bannerPoller.start();
+  });
 
   const fetchPage = async (url) => {
     const key = pageKey(url);

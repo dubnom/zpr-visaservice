@@ -33,6 +33,22 @@ explicit organization-switch approval/cancellation and stale-approval handling.
 These are deterministic UI regressions, not live network or multi-node acceptance
 tests; unfinished protocol, teardown, and recovery work remains separate.
 
+### Simulator top banner
+
+Every Simulator page shares a top banner showing backend connectivity, the active
+organization, and the current scenario's name and run state (including cleanup
+and terminal outcomes). With no selected run it shows an idle state. The banner
+refreshes every three seconds from the Simulator scenario API and remains active
+across in-app navigation. Failed or invalid responses clear organization/scenario
+values instead of presenting stale data as current; the connection indicator
+shows unavailable and its tooltip gives the error.
+
+The operator user section sits before Help, following the Control Room header
+layout. When authentication is disabled it shows `User: Not signed in`, rather
+than the login-configuration message. Configured sign-in gates and sign-out
+behavior are unchanged. The Control Room does not use this Simulator banner or
+its APIs.
+
 ### Config form editor
 
 Control Room's **Config** page keeps raw ZPLC TOML and a **Form** view of the

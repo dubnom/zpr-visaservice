@@ -14,6 +14,37 @@ separate; retain each dated entry's scope.
 
 ## Deployment status
 
+### Simulator shared top banner (2026-10-13 19:32 UTC)
+
+- Deployed `zpr-simulator:20261013-top-banner`, immutable image
+  `sha256:9c16fa17bfba01cf5df8935f0c2e315ca2421799326b8b40bd399ac28558e7de`.
+  Executable SHA-256:
+  `39ad0fa644a3f3f4d9680df0f12a0b53f714263839e5e3bc6f9673b501a948a9`.
+  The final container started at `2026-10-13T19:30:35.345292293Z`.
+- The user approved a planned Simulator UI/relay restart after the completed
+  Great Lakes workday scenario. Preserved the prior container configuration
+  and host configuration exactly, except for the release image. Great Lakes
+  remains active. In-memory scenario history reset to idle as disclosed.
+- Restored the two live DNS socat relays, including their PID tracking. The
+  internal DNS statistics endpoint returned version 1.8. The original process
+  listing also contained 21 defunct socat processes, not additional live relays.
+  Great Lakes runtime containers, Control Room, Control-Service, Policy-Service,
+  and every other previously running service retained their IDs and start times.
+- Verified the served Simulator navigation, operator-login and Simulator CSS
+  hashes against the worktree. Live Organizations and Scenarios browser checks
+  show backend Connected, Great Lakes Instruments, no running scenario/idle,
+  and User: Not signed in before Help, without page error alerts. No scenarios,
+  organization activations or production policy writes were triggered.
+- Live verification caught and fixed removal of hidden organization status
+  elements still used by the page controller; the banner now preserves them.
+  All 36 focused desktop/tablet Help/banner tests pass after this correction.
+- Rollback retains the stopped
+  `zpr-simulator-before-top-banner-20261013` container and image
+  `zpr-simulator:before-top-banner-20261013`
+  (`sha256:66bd2883b5da7dd7d175529a80448d19ad4f19bafbe4dc66e2b7da4a58f1cb8a`).
+  The deployed implementation, regression tests and rollout record were
+  committed and pushed after deployment verification.
+
 ### Control Room GUI and config form (2026-10-13 19:06 UTC)
 
 - Rebuilt from the pushed `main` worktree at

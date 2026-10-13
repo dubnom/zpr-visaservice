@@ -23,10 +23,23 @@ Do not infer current runtime health from a historical verification entry.
 
 ## In progress
 
-Map Maximize/Restore is **Deployed to Control Room** (2026-10-11 20:09 UTC).
-Both maps share window controls, Escape restoration and navigation cleanup.
-All 62 geography tests and the embedded build pass. Live desktop/tablet checks
-verify empty-map controls; the production Visa snapshot is disconnected.
+The Simulator shared status banner is **Deployed** (2026-10-13 19:32 UTC).
+It shows backend connectivity, active organization, scenario/run state and
+signed-in identity across Simulator pages. All 36 focused desktop/tablet
+Help/banner tests pass; live Organizations and Scenarios checks confirmed the
+connected/idle state and `User` label. See
+[deployment evidence](GUI%20deployments.md).
+
+Simulator GUI design-guideline fixes are **Deployed** (2026-10-13 12:23 EDT):
+graph Maximize/Restore, Activity metrics, Help/top-bar placement and the 11px
+text minimum. The 18 focused desktop/tablet regressions pass. See
+[deployment evidence](GUI%20deployments.md).
+
+Map Maximize/Restore is **Deployed to Control Room and Simulator**
+(Control Room 2026-10-11; Simulator 2026-10-13). Both maps share window
+controls, Escape restoration and navigation cleanup. All 62 geography tests
+and the embedded build pass; live desktop/tablet checks verify empty-map
+controls. The production Visa snapshot was disconnected during those checks.
 See [deployment evidence](GUI%20deployments.md).
 
 Simulator organization definition/editing is **In progress**.
@@ -118,45 +131,46 @@ for its own service ring/gateway cloud rather than a shared radius. Topology
 layout is unchanged. See the [verification evidence](GUI%20completed%20work.md#world-map-variable-dock-lengths).
 See [deployment evidence](GUI%20deployments.md). No commit or push for this rollout.
 
-Selected-node logs on Nodes and the shared log-panel component are
-**Deployed to Control Room/Control-Service; Simulator awaiting deployment**
-(2026-10-09 21:04 UTC). Nodes, Adapter/Controller
+Selected-node logs on Nodes are **Deployed to Control Room/Control-Service**.
+The shared log-panel component and Worker-panel assets are **Deployed to
+Simulator** (2026-10-13 19:32 UTC). Nodes, Adapter/Controller
 Logs and Workers share rendering, scrolling and window controls. Nodes queries
 an inventory-validated production Diagnostics source rather than Simulator or
 the all-source log budget. The deployed merger above moves node details to
 Nodes while keeping
 aggregate health and non-node details. 96 desktop/tablet browser cases, focused
 production Diagnostics/log-boundary race tests and the embedded build pass.
-Control Room assets and the Control-Service source filter are deployed;
-shared Worker-panel rollout remains pending. No commit or push. See
+Control Room assets and the Control-Service source filter are deployed; the
+Simulator top-banner release also deployed the shared Worker-panel assets. See
 [completed work](GUI%20completed%20work.md#selected-node-logs-and-shared-viewer).
 
-Shared JavaScript page-runtime reuse is **Deployed to Control Room; Simulator awaiting deployment**.
+Shared JavaScript page-runtime reuse is **Deployed to Control Room and Simulator**.
 See the [implementation and test evidence](GUI%20completed%20work.md#javascript-reuse-refactoring).
-Control Room rollout: 2026-10-09 19:13 UTC. This work has not been committed or pushed.
+Control Room rollout: 2026-10-09 19:13 UTC; Simulator rollout: 2026-10-13.
 
 Control Room header guideline cleanup is **Deployed** (2026-10-09 19:13 UTC).
 See the [completed guideline work](GUI%20completed%20work.md#control-room-guideline-follow-up).
 
 Consistent Maximize/Restore window icons across Control Room and Simulator are
-**Deployed to Control Room; Simulator awaiting deployment**. See the
+**Deployed to Control Room and Simulator**. See the
 [completed guideline work](GUI%20completed%20work.md#control-room-guideline-follow-up).
 
-Window-control color/style consistency is **Deployed to Control Room; Simulator awaiting deployment**:
+Window-control color/style consistency is **Deployed to Control Room and Simulator**:
 editor and log controls share dark icons on white 32px buttons and identical
 hover, active, disabled and keyboard-focus styles (`app.css` v93,
 `safe-display.js` v3). All six editors and adapter/controller/Worker logs are
 covered by 24 passing desktop/tablet runtime/header/window cases; embedded build
 and editor diagnostics pass. Control Room rollout verified 2026-10-09 19:24 UTC;
-no commit or push.
+Simulator assets deployed 2026-10-13.
 
 Diagnostics ANSI log colors are **Deployed to Control Room** (2026-10-09 19:29 UTC).
 Diagnostics and adapter/controller/Worker logs share the safe colored-text
 renderer; 48 desktop/tablet checks and the embedded build pass. See the
 [completed guideline work](GUI%20completed%20work.md#control-room-guideline-follow-up).
 
-Shared Worker-log renderer rollout to Simulator remains pending; no Simulator
-restart, commit or push was performed.
+The shared Worker-log renderer is now deployed to Simulator with the
+2026-10-13 top-banner release; earlier pending-deployment notes below describe
+the prior rollout state.
 
 Diagnostics body-only/raw/full-space layout and initial-loading cleanup are
 **Deployed to Control Room** (2026-10-09 19:45 UTC):
@@ -254,6 +268,7 @@ No new priority or implementation approval is implied for backend rollouts.
 - [ ] No banner information at the bottom.
 
 ## Application Wide
-- [ ] Change "Pause updates" to "Pause"/
-- [ ] Changed "Signed in" in top header to "User".
+- [ ] Change "Pause updates" to "Pause".
+- [x] Use "User" for the signed-in identity label in the Simulator banner;
+  live desktop/tablet verification confirms the deployed `User` label.
 - [ ] Remove "Live state and policy records" from bottom of Control Room.

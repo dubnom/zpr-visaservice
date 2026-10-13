@@ -84,7 +84,9 @@
           authConfigured = false;
           canAttemptLogin = false;
           setGate(false);
-          status.textContent = "Operator login not configured";
+          status.textContent = widget.dataset.operatorApplication === "simulator"
+            ? "User: Not signed in"
+            : "Operator login not configured";
           return;
         }
         authConfigured = true;
@@ -141,7 +143,7 @@
         }
         csrf = session.csrf;
         logout.hidden = false;
-        const humanLabel = identity.display_name || identity.email || "";
+        const humanLabel = identity.display_name || identity.email || (simulator ? identity.subject : "");
         status.textContent = humanLabel ? `User: ${humanLabel}` : "User";
         setGate(false);
         scope.hidden = false;

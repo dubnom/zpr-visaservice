@@ -62,7 +62,7 @@ for (const { path, refreshId, heading } of simulatorPages) {
     const help = page.locator(".main-content .top-actions > .help-trigger, .main-content .topbar > .help-trigger");
     await expect(help).toBeVisible();
     await expect(page.locator(".sidebar .help-trigger")).toHaveCount(0);
-    await expect(page.locator(".main-content > .topbar .connection-state")).toHaveCount(0);
+    await expect(page.locator(".main-content > .topbar .simulator-runtime-banner")).toBeVisible();
     await expect(page.locator(".main-content > .topbar .machine-logs-actions")).toHaveCount(0);
     await expect(help).toHaveAttribute("aria-haspopup", "dialog");
     if (refreshId) await expect(page.locator(refreshId)).toBeHidden();
@@ -132,11 +132,20 @@ test("organization Help explains profile separation and activation effects", asy
 test("Simulator headers show the active organization name on every page", async ({ page }) => {
   await page.route("**/auth/operator/config", (route) => route.fulfill({ json: { enabled: false } }));
   await page.route("**/api/simulator/organizations", (route) => route.fulfill({ json: {
-    active_id: "alpha", organizations: [{ id: "alpha", name: "Alpha Labs" }],
+    active_id: "alpha", organizations: [{
+      id: "alpha", name: "Alpha Labs", directory: { base_dn: "dc=alpha,dc=test" },
+      policies: [], services: [],
+    }],
+  } }));
+  await page.route("**/api/simulator/scenarios", (route) => route.fulfill({ json: {
+    active_organization_id: "alpha", organization: { id: "alpha", name: "Alpha Labs" },
+    scenarios: [], run: { state: "idle", steps: [] },
   } }));
   await page.goto(`${appURL}/organizations.html`);
-  const name = page.locator(".simulator-active-organization");
+  const name = page.locator('[data-banner-value="organization"]');
   await expect(name).toHaveText("Alpha Labs");
+  await expect(page.locator("#organization-error")).toBeHidden();
+  await expect(page.locator("#organization-active-name")).toHaveCount(1);
   await expect(page.locator("#organization-active-name")).toBeHidden();
   await expect(page.locator("#organization-active-id")).toBeHidden();
   await page.locator('.primary-nav a[href="/scenarios.html"]').click();
@@ -148,6 +157,81 @@ test("Simulator headers show the active organization name on every page", async 
   await expect(name).toHaveText("Alpha Labs");
   await page.locator('.primary-nav a[href="/trusted-source.html"]').click();
   await expect(name).toHaveText("Alpha Labs");
+});
+
+test("Simulator banner tracks runs, backend failures, recovery and organization changes", async ({ page }) => {
+  let snapshot = {
+    active_organization_id: "alpha", organization: { id: "alpha", name: "Alpha Labs" },
+    scenarios: [{ id: "smoke", name: "Network smoke" }],
+    run: { scenario_id: "smoke", state: "running", steps: [] },
+  };
+  let unavailable = false;
+  await page.route("**/api/simulator/scenarios", route => route.fulfill(unavailable
+    ? { status: 503, json: { error: "Simulator backend offline" } }
+    : { json: snapshot }));
+  await page.goto(`${appURL}/activity.html`);
+  const banner = page.locator(".simulator-runtime-banner");
+  await expect(banner).toHaveAttribute("data-state", "connected");
+  await expect(banner).toContainText("Alpha Labs");
+  await expect(banner).toContainText("Network smoke · running");
+  await expect(page.locator("#operator-login-status")).toHaveText("User: Not signed in");
+  await expect(page.locator("body")).not.toContainText("Operator login not configured");
+  expect(await page.locator(".simulator-operator-login").evaluate(widget =>
+    Boolean(widget.compareDocumentPosition(document.querySelector(".help-trigger")) & Node.DOCUMENT_POSITION_FOLLOWING))).toBe(true);
+
+  for (const state of ["cleaning", "failed", "completed"]) {
+    snapshot.run.state = state;
+    await expect(banner).toContainText(`Network smoke · ${state}`);
+  }
+  unavailable = true;
+  await expect(banner).toHaveAttribute("data-state", "disconnected");
+  await expect(banner).toHaveAttribute("title", "Simulator backend offline");
+  await expect(banner).not.toContainText("Alpha Labs");
+  await expect(banner).not.toContainText("Network smoke");
+
+  unavailable = false;
+  snapshot = {
+    active_organization_id: "beta", organization: { id: "beta", name: "Beta Labs" },
+    scenarios: [], run: { state: "idle", steps: [] },
+  };
+  await expect(banner).toHaveAttribute("data-state", "connected");
+  await expect(banner).toContainText("Beta Labs");
+  await expect(banner).toContainText("No scenario running · idle");
+});
+
+test("Simulator banner does not report malformed status responses as connected", async ({ page }) => {
+  await page.route("**/api/simulator/scenarios", route => route.fulfill({ json: {} }));
+  await page.goto(`${appURL}/activity.html`);
+  await expect(page.locator(".simulator-runtime-banner")).toHaveAttribute("data-state", "disconnected");
+  await expect(page.locator(".simulator-runtime-banner")).toHaveAttribute("title", "Invalid simulator status response.");
+});
+
+test("Simulator banner shows the signed-in user before Help without changing Control Room login", async ({ page }) => {
+  await page.route("https://simulator.example/**", async route => {
+    const path = new URL(route.request().url()).pathname;
+    if (path === "/auth/operator/config") return route.fulfill({ json: { enabled: true } });
+    if (path === "/auth/operator/session") return route.fulfill({ json: {
+      csrf: "test-only-csrf", identity: {
+        subject: "operator", issuer: "https://issuer.example", display_name: "Test Operator",
+        organizations: ["alpha"], permissions: ["read"],
+      },
+    } });
+    if (path.startsWith("/api/")) return route.fulfill({ status: 503, json: { error: "Unavailable" } });
+    const filePath = resolve(staticRoot, `.${path}`);
+    if (!filePath.startsWith(`${staticRoot}${sep}`)) return route.fulfill({ status: 403 });
+    try {
+      return route.fulfill({ body: await readFile(filePath), contentType: mimeTypes[extname(filePath)] || "application/octet-stream" });
+    } catch {
+      return route.fulfill({ status: 404 });
+    }
+  });
+  await page.goto("https://simulator.example/activity.html");
+  await expect(page.locator("#operator-login-status")).toHaveText("User: Test Operator");
+  await expect(page.locator("#operator-logout")).toBeVisible();
+  expect(await page.locator(".simulator-operator-login").evaluate(widget =>
+    Boolean(widget.compareDocumentPosition(document.querySelector(".help-trigger")) & Node.DOCUMENT_POSITION_FOLLOWING))).toBe(true);
+  await page.goto(`${appURL}/index.html`);
+  await expect(page.locator("#operator-login-status")).toHaveText("Operator login not configured");
 });
 
 test("Active and Activate organization controls share visual geometry", async ({ page }) => {

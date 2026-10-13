@@ -105,8 +105,10 @@ pre { margin: 0; padding: 14px; min-height: 110px; max-height: 180px; overflow: 
 .simulator-page-status .connection-state strong { font-size: 13px; }
 .simulator-page-status .connection-state small { max-width: 60vw; font-size: 11px; }
 .main-content .topbar > .topbar-status { min-width: 0; flex: 1 1 auto; }
-.simulator-active-organization { min-width: 0; margin-left: auto; padding: 5px 8px; border: 1px solid var(--line); border-radius: 4px; color: var(--ink-soft); font: 11px var(--mono); overflow-wrap: anywhere; }
-.simulator-active-organization[hidden] { display: none; }
+.simulator-runtime-banner { display: flex; min-width: 0; align-items: center; flex-wrap: wrap; gap: 12px 24px; padding: 10px 0; }
+.simulator-runtime-banner[data-state="loading"] .state-lamp { background: #a68a35; box-shadow: 0 0 0 4px #f3ecd2; }
+.simulator-runtime-banner[data-state="disconnected"] .state-lamp { background: #b34b45; box-shadow: 0 0 0 4px #f5e0de; }
+.simulator-runtime-banner[data-state="connected"] .state-lamp { background: #547c55; box-shadow: 0 0 0 4px #e1ecdf; }
 .main-content .topbar:has(#organization-active-name) .uptime-status, .main-content .topbar .scenario-org-select { display: none; }
 .main-content .topbar .connection-state > div { min-width: 0; }
 .main-content .topbar .connection-state strong, .main-content .topbar .connection-state small { overflow-wrap: anywhere; }
