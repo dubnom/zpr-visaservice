@@ -6,14 +6,37 @@ This is a historical release ledger, not a live health report. Keep dated test,
 asset, configuration, scope and rollback evidence here. Feature-local release
 notes also remain in the completed-work archive to preserve their context.
 
-Latest recorded Control Room release: `zpr-editor-ui:20261013-config-form`
-(2026-10-13 05:49 UTC), paired with
-`zpr-policy-service:20261013-config-form`. Control-Service was not replaced or
+Latest recorded Control Room release: `zpr-editor-ui:20261013-control-room-guidelines`
+(2026-10-13 19:06 UTC). Policy-Service and Control-Service were not replaced or
 restarted; retain the separately recorded service release history below.
 This does not imply every source change was deployed. Commit/push state is
 separate; retain each dated entry's scope.
 
 ## Deployment status
+
+### Control Room GUI and config form (2026-10-13 19:06 UTC)
+
+- Rebuilt from the pushed `main` worktree at
+  `25be3e91c67e439fe14aadf615c6e5f3a5349599`, tagged
+  `zpr-editor-ui:20261013-control-room-guidelines`, image
+  `sha256:eeca92b7a7884cecbd7c4cf5cee1adf98012409629c255da2264c290214a9a19`.
+  The dashboard executable SHA-256 is
+  `194f60aeb656bb624c21b9040c99c38d31a69912bdb8ea05a8be36fdbd9648a8`.
+- Replaced only the Control Room container on HTTPS port 8787. It started at
+  `2026-10-13T19:06:37.317834586Z`. HTTPS `/` returned 200 and the
+  `/auth/operator/config` endpoint confirmed operator login is enabled. All
+  74 embedded static assets match the source worktree byte-for-byte.
+- Policy-Service was not restarted; its mutual-TLS config-form endpoint
+  returned HTTP 200 for a draft-only transformation check, and the focused
+  config-form Go tests pass. Control-Service and Simulator were not restarted.
+  Their existing containers remained running. Focused desktop/tablet Simulator
+  and config-form browser regressions previously passed 18/18 each; no full
+  dashboard suite pass is claimed.
+- Rollback image retained as
+  `zpr-editor-ui:before-worktree-completion-20261013`
+  (`sha256:c50aa7012713308d77f55af798d66aa55f39e34ddea7b14786eb6efb4aa248a6`).
+  The Control Room restart resets operator sessions; reload and sign in again
+  if prompted. No runtime policy writes or Simulator operations were performed.
 
 ### Simulator GUI design guidelines (2026-10-13 12:23 EDT)
 
