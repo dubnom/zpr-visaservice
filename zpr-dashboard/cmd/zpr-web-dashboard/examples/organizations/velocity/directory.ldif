@@ -43,7 +43,7 @@ sn: Rivera
 mail: alex.rivera@velocity.example
 ou: Performance
 title: Client Benchmark Operator
-l: Performance Lab
+l: San Jose, California
 
 dn: uid=sam.chen,ou=People,dc=velocity,dc=test
 objectClass: inetOrgPerson
@@ -53,7 +53,7 @@ sn: Chen
 mail: sam.chen@velocity.example
 ou: Performance
 title: Service Benchmark Operator
-l: Performance Lab
+l: San Jose, California
 
 dn: uid=machine-03,ou=Machines,dc=velocity,dc=test
 objectClass: inetOrgPerson
@@ -64,7 +64,7 @@ sn: Endpoint
 zprMachineId: machine-03
 zprMachineType: laptop
 zprMachineModel: Benchmark Client
-zprMachineLocation: Performance Lab
+zprMachineLocation: San Jose, California
 zprMachineOwner: alex.rivera
 zprMachineSecure: TRUE
 
@@ -77,7 +77,7 @@ sn: Endpoint
 zprMachineId: machine-05
 zprMachineType: desktop
 zprMachineModel: Benchmark Server
-zprMachineLocation: Performance Lab
+zprMachineLocation: San Jose, California
 zprMachineOwner: sam.chen
 zprMachineSecure: TRUE
 

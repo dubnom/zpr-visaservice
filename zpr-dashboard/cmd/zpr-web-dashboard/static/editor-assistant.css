@@ -5,8 +5,8 @@
 .editor-assistant-toggle[aria-expanded="false"] > .pane-toggle-icon { transform: rotate(225deg); }
 .editor-assistant-pane[data-collapsed="true"] .assistant-heading > :not(.editor-assistant-toggle) { display: none; }
 .assistant-code-block { display: grid; gap: 5px; margin: 6px 0; }
-.assistant-message pre.assistant-code { max-height: 260px; overflow: auto; padding: 7px 8px; border: 1px solid var(--line); border-radius: 2px; background: #fbfcfa; color: var(--ink); font: 10px/1.5 var(--mono); white-space: pre; overflow-wrap: normal; }
-.assistant-insert { justify-self: end; min-height: 24px; padding: 3px 9px; font-size: 10px; }
+.assistant-message pre.assistant-code { max-height: 260px; overflow: auto; padding: 7px 8px; border: 1px solid var(--line); border-radius: 2px; background: #fbfcfa; color: var(--ink); font: 11px/1.5 var(--mono); white-space: pre; overflow-wrap: normal; }
+.assistant-insert { justify-self: end; min-height: 24px; padding: 3px 9px; font-size: 11px; }
 .directory-editor-dialog:has(.editor-assistant-layout) { width: min(1240px, calc(100% - 28px)); max-width: 1240px; }
 .directory-editor-dialog .editor-assistant-pane { max-height: 70vh; }
 
@@ -34,7 +34,7 @@ dialog.editor-page-maximized { width: 100vw; max-width: none; }
 .policy-identity { overflow: visible; }
 .policy-identity > .policy-history-menu { flex: 0 0 auto; }
 .policy-identity > .policy-history-menu .policy-history { left: 0; right: auto; }
-.policy-identity > .policy-history-menu summary { min-height: 26px; padding: 3px 8px; font-size: 10px; }
+.policy-identity > .policy-history-menu summary { min-height: 26px; padding: 3px 8px; font-size: 11px; }
 #page-zpr-config .editor-assistant-main, #page-zpr-config .editor-page-main { display: flex; flex: 1; min-height: 0; flex-direction: column; }
 #page-zpr-config .config-source-editor { position: relative; flex: 1; height: auto; min-height: 56vh; }
 #page-zpr-config .config-source-gutter { position: absolute; top: 0; bottom: 0; left: 0; width: 58px; }
@@ -50,10 +50,10 @@ dialog.editor-page-maximized { width: 100vw; max-width: none; }
 .editor-page-status[hidden] { display: none; }
 .editor-page-status[data-state="success"] { color: var(--forest); }
 .editor-page-status[data-state="error"] { color: var(--red, #b42318); }
-.editor-assistant-pane .assistant-settings label { display: grid; min-width: 0; gap: 4px; color: var(--muted); font: 9px var(--mono); }
+.editor-assistant-pane .assistant-settings label { display: grid; min-width: 0; gap: 4px; color: var(--muted); font: 11px var(--mono); }
 .editor-assistant-pane .assistant-settings .assistant-enable { display: flex; align-items: center; gap: 6px; color: var(--ink-soft); }
-.editor-assistant-pane .assistant-settings select { width: 100%; min-height: 30px; padding: 4px 6px; border: 1px solid var(--line); border-radius: 2px; background: white; color: var(--ink); font: 10px var(--sans); }
-.editor-assistant-pane .assistant-form label { color: var(--muted); font: 9px var(--mono); }
+.editor-assistant-pane .assistant-settings select { width: 100%; min-height: 30px; padding: 4px 6px; border: 1px solid var(--line); border-radius: 2px; background: white; color: var(--ink); font: 11px var(--sans); }
+.editor-assistant-pane .assistant-form label { color: var(--muted); font: 11px var(--mono); }
 .assistant-options { margin: 10px 0; }
 .assistant-options > summary { cursor: pointer; color: var(--ink-soft); font: 11px var(--sans); }
 .assistant-options:not([open]) > .assistant-settings { display: none; }

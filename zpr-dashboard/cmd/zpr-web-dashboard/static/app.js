@@ -4659,7 +4659,7 @@ policyEditorController.bind("save", { button: byId("policy-save"), shortcutRoot:
 byId("policy-stage").addEventListener("click", stageSelectedPolicy);
 byId("pause-poll").addEventListener("click", (event) => {
   state.paused = !state.paused;
-  event.currentTarget.textContent = state.paused ? "Resume updates" : "Pause updates";
+  event.currentTarget.textContent = state.paused ? "Resume updates" : "Pause";
   event.currentTarget.setAttribute("aria-pressed", String(state.paused));
   byId("pause-status").hidden = !state.paused;
   setPollTimer();

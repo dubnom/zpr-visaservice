@@ -1,6 +1,8 @@
 #!/bin/sh
 set -eu
 
+export DOCKER_BUILDKIT=${DOCKER_BUILDKIT:-1}
+
 SCRIPT_DIR=$(CDPATH='' cd -- "$(dirname -- "$0")" && pwd)
 . "$SCRIPT_DIR/multinode-admin.sh"
 . "$SCRIPT_DIR/machine-runtime.sh"
@@ -336,6 +338,7 @@ start_simulator() {
         -e SIMULATION_STACK_SCRIPT="$SCRIPT_DIR/dashboard-stack.sh" \
         -e SIMULATION_ORGANIZATION_RESET_SCRIPT="$SCRIPT_DIR/activate-organization.sh" \
         -e SIMULATION_ACTIVATION_LOG_FILE="$STATE_DIR/organization-reset.log" \
+        -e DOCKER_BUILDKIT=1 \
         -e ZPR_WEB_DASHBOARD_BIN=/usr/local/bin/zpr-web-dashboard \
         -e ZPR_ZPT_BIN="$POLICY_TOOLS_DIR/zpt" \
         -e ZPR_ZPLC_BIN="$POLICY_TOOLS_DIR/zplc" \

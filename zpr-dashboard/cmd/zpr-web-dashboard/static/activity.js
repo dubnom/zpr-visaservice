@@ -6,11 +6,12 @@ const activitySort = {
 	"activity-denies": { key: "count", direction: -1 },
 };
 let activityData;
+const activityMetrics = window.ZPRPollingDisplay.createTracker();
 
 const visaColumns = [
 	{ key: "flow", label: "FLOW", value: (visa) => `${visa.source_addr || ""} ${visa.dest_addr || ""}`, render: (visa) => `${visa.source_addr || "—"} → ${visa.dest_addr || "—"}` },
 	{ key: "proto", label: "PROTO", value: (visa) => visa.proto || visa.protocol || "", render: (visa) => visa.proto || visa.protocol || "—" },
-	{ key: "port", label: "PORT", value: (visa) => Number(visa.dest_port) || 0, render: (visa) => visa.dest_port ?? "—" },
+	{ key: "port", label: "PORT", numeric: true, value: (visa) => Number(visa.dest_port) || 0, render: (visa) => visa.dest_port ?? "—" },
 	{ key: "policy", label: "POLICY", value: (visa) => visa.policy_id || "", render: (visa) => visa.policy_id || "—" },
 	{ key: "expires", label: "EXPIRES", value: (visa) => Number(visa.expires) || Date.parse(visa.expires || "") || 0, render: (visa) => { const value = Number(visa.expires) ? Number(visa.expires) * 1000 : Date.parse(visa.expires || ""); return Number.isFinite(value) && value > 0 ? window.ZPRSafeDisplay.formatDateTime(value) : "—"; } },
 ];
@@ -19,7 +20,7 @@ const denyColumns = [
 	{ key: "destination", label: "DESTINATION", value: (deny) => deny.dest_addr || "", render: (deny) => deny.dest_addr || "—" },
 	{ key: "protocol", label: "PROTOCOL / PORT", value: (deny) => `${deny.protocol ?? ""} ${deny.dest_port ?? ""}`, render: (deny) => `${window.ZPRSafeDisplay.protocolName(deny.protocol) || deny.protocol || "—"} / ${deny.dest_port ?? "—"}` },
 	{ key: "reason", label: "REASON", value: (deny) => deny.code || "", render: (deny) => deny.code || "—" },
-	{ key: "count", label: "HITS", value: (deny) => Number(deny.count) || 0, render: (deny) => deny.count ?? "—" },
+	{ key: "count", label: "HITS", numeric: true, value: (deny) => Number(deny.count) || 0, render: (deny) => deny.count ?? "—" },
 ];
 
 function compareActivityRows(left, right, sort, columns) {
@@ -40,7 +41,7 @@ function renderActivityTable(page, items, columns, emptyText) {
 	  return;
 	}
 	body.innerHTML = ordered.map((item) =>
-	  `<tr>${columns.map((column) => `<td data-sort-cell="${column.key}" data-sort-value="${esc(column.value(item))}">${esc(column.render(item))}</td>`).join("")}</tr>`,
+	  `<tr>${columns.map((column) => `<td data-sort-cell="${column.key}" data-sort-value="${esc(column.value(item))}"${column.numeric ? ' data-numeric="true"' : ""}>${esc(column.render(item))}</td>`).join("")}</tr>`,
 	).join("");
 }
 
@@ -71,6 +72,12 @@ async function activityRefresh({ signal, isCurrent }) {
 	$("#approved").textContent = stats.visa_requests_approved || "0";
 	$("#denied").textContent = stats.visa_requests_denied || "0";
 	$("#visa-count").textContent = visas.length;
+	activityMetrics.update([
+		["requests", { value: $("#requests").textContent, node: $("#requests") }],
+		["approved", { value: $("#approved").textContent, node: $("#approved") }],
+		["denied", { value: $("#denied").textContent, node: $("#denied") }],
+		["visa-count", { value: $("#visa-count").textContent, node: $("#visa-count") }],
+	]);
 	$("#activity-state").textContent = "LIVE";
 	$("#activity-time").textContent = window.ZPRSafeDisplay.formatTime(activityData.generated_at);
 	renderActivityTables();

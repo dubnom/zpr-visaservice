@@ -8,8 +8,11 @@ unrelated failures recorded below. Bundled-definition duplication into a private
 draft bundle is also locally verified. New/Import now create reviewed private
 incomplete bundles with readiness gaps and portable definition export.
 Private multi-document source editing, coherent history and reviewed
-cross-document AI are now wired and locally verified. Structured section editors,
-full reference/compiler certification and activation remain unfinished. This is the detailed
+cross-document AI are now wired and locally verified. Structured section editors
+(Sites/Topology, Directory, Services/Workloads) with bi-directional JSON
+synchronization, live topology cards, and LDAP hierarchy graph previews are now
+implemented and locally verified across 34 desktop/tablet browser tests. Full
+reference/compiler certification and activation review remain unfinished. This is the detailed
 requirements source for the backlog's organization-editor deliverable, not an
 implementation or activation approval. Track commit and deployment separately.
 Production Control Room must use independent production contracts and never
@@ -265,12 +268,12 @@ commit or push is implied by implementation approval.
 - [ ] Use an audited, idempotent creation API with explicit organization.create authorization, confirmation, revision/conflict handling and uncertain-response reconciliation.
 - [ ] Add a full-page organization workspace using the shared editor styling, organization name and History.
 - [ ] Add full readiness summary distinguishing incomplete drafts, validation failures and runtime not provisioned (name/description profile fields implemented).
-- [ ] Add structured Sites & topology tables and a topology preview.
-- [ ] Add Directory tree/tables for people and groups alongside the existing LDIF source editor.
-- [ ] Add Services & workloads tables with references to available machines and workloads.
+- [x] Add structured Sites & topology tables and a topology preview.
+- [x] Add Directory tree/tables for people and groups alongside the existing LDIF source editor.
+- [x] Add Services & workloads tables with references to available machines and workloads.
 - [ ] Open organization-scoped Policy, Assertions and ZPR Config through the existing editors.
 - [ ] Add an organization-scoped Scenarios list opening the existing Scenario editor.
-- [ ] Offer Advanced source for the organization profile as an alternative view of the same draft, not an independently editable copy; preserve unsupported fields through structured edits.
+- [x] Offer Advanced source for the organization profile as an alternative view of the same draft, not an independently editable copy; preserve unsupported fields through structured edits.
 - [ ] Keep Save draft, Validate and Activate/Apply separate; saving must not change the runtime.
 - [ ] Validate individual documents and cross-document references, including group members, service references, duplicate IDs and directory base-DN containment.
 - [ ] Save coherent organization revisions across related documents; provide History and rollback without combining incompatible document versions.

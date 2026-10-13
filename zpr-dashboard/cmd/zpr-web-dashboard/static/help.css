@@ -17,7 +17,7 @@
 }
 .zpr-help-dialog::backdrop { background: #101a1870; }
 .zpr-help-dialog header { display: flex; align-items: flex-start; justify-content: space-between; gap: 14px; padding-bottom: 12px; border-bottom: 1px solid #dbe2dc; }
-.zpr-help-dialog header .eyebrow { margin: 0 0 5px; color: #68766e; font: 10px/1.4 var(--mono, monospace); }
+.zpr-help-dialog header .eyebrow { margin: 0 0 5px; color: #68766e; font: 11px/1.4 var(--mono, monospace); }
 .zpr-help-dialog h2 { margin: 0; font-size: 20px; }
 .zpr-help-dialog h3 { margin: 16px 0 6px; font-size: 13px; }
 .zpr-help-dialog p, .zpr-help-dialog li { color: #3e4d45; font-size: 13px; line-height: 1.55; }

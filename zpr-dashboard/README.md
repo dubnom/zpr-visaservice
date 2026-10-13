@@ -33,6 +33,44 @@ explicit organization-switch approval/cancellation and stale-approval handling.
 These are deterministic UI regressions, not live network or multi-node acceptance
 tests; unfinished protocol, teardown, and recovery work remains separate.
 
+### Config form editor
+
+Control Room's **Config** page keeps raw ZPLC TOML and a **Form** view of the
+same draft. The form covers resolver order/hosts, nodes and substrate interfaces,
+links, Visa Service docking, trusted services and attribute mappings, protocols
+and ICMP/port settings, service refinements, and bootstrap public-key paths.
+Use the add/remove controls for named entries, provider pairs, peers and maps.
+String arrays use one entry per line; ICMP codes use comma-separated integers.
+Blank optional fields are omitted. Leave certificate/public-key paths here,
+not private keys or credentials.
+
+Form changes apply when a field is committed (blur/Tab). The independent
+Policy-Service `POST /api/policy/config/form` endpoint parses the supplied
+draft and patches only the requested field; it does not read runtime or
+Simulator configuration. It reparses the result and verifies that no other
+settings changed. Comments, unfamiliar fields and untouched formatting are
+preserved. Comments inside a replaced array move above its assignment.
+Inline-table or array-of-table layouts that cannot be safely patched, and
+values outside the form's supported types, remain available in **Raw TOML**.
+Failures leave the source unchanged and appear in the form. Incomplete input
+blocks Analyze/Save; switching to raw mode prompts before discarding unapplied
+input. Browser requests retain normal operator authorization (`policy.edit`).
+
+Browse, History, New, local import/download, Discard and Ctrl/Command-S Save
+operate on the same draft in either view. **Analyze checks TOML syntax only**;
+it is not a complete compiler-semantic check. **Save creates a configuration
+revision with optimistic revision protection; runtime remains unchanged.**
+No installation, organization activation or Simulator API is involved.
+The form requires the corresponding Policy-Service endpoint alongside the UI;
+deploying only the static assets is insufficient.
+
+Focused validation:
+
+```sh
+go test ./cmd/zpr-web-dashboard -run '^TestConfigurationForm'
+make test-browser # includes desktop/tablet form tests using the real TOML endpoint
+```
+
 ### Opt-in organization/scenario acceptance matrix
 
 `scripts/simulator-matrix.mjs` is a long-running Simulator-only acceptance

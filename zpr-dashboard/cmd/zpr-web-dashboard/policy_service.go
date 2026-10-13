@@ -198,6 +198,7 @@ func policyServiceMux(workspace *policyWorkspace) http.Handler {
 	mux.HandleFunc("POST /api/policy/records/{id}/stage", app.handleStagePolicyRecord)
 	mux.HandleFunc("POST /api/policy/check", app.handleCheckPolicy)
 	mux.HandleFunc("POST /api/policy/config/check", app.handleCheckConfiguration)
+	mux.HandleFunc("POST /api/policy/config/form", app.handleConfigurationForm)
 	mux.HandleFunc("POST /api/policy/categories", app.handleCreatePolicyCategory)
 	mux.HandleFunc("POST /api/policy/records", app.handleCreatePolicyRecord)
 	mux.HandleFunc("POST /api/policy/records/{id}/duplicate", app.handleDuplicatePolicyRecord)

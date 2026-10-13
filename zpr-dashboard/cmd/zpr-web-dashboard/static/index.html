@@ -5,19 +5,19 @@
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <meta name="theme-color" content="#17211e">
     <title>ZPR Control Room</title>
-    <link rel="stylesheet" href="/app.css?v=100">
+    <link rel="stylesheet" href="/app.css?v=104">
     <link rel="stylesheet" href="/geography.css?v=4">
     <script src="/page-runtime.js?v=1"></script><script src="/geography.js?v=3" defer></script>
-    <link rel="stylesheet" href="/machine-logs.css?v=19">
+    <link rel="stylesheet" href="/machine-logs.css?v=20">
     <link rel="stylesheet" href="/assertions.css?v=14">
-    <link rel="stylesheet" href="/sidebar.css?v=8">
+    <link rel="stylesheet" href="/sidebar.css?v=9">
     <link rel="stylesheet" href="/trusted-source.css?v=6">
     <link rel="stylesheet" href="/security-review.css?v=9">
     <link rel="stylesheet" href="/diagnostics.css?v=7">
     <link rel="stylesheet" href="/node-stats.css?v=10">
     <link rel="stylesheet" href="/gateways.css?v=9">
     <link rel="stylesheet" href="/provisioning.css?v=6">
-    <link rel="stylesheet" href="/editor-assistant.css?v=7">
+    <link rel="stylesheet" href="/editor-assistant.css?v=8">
     <link rel="stylesheet" href="/control-room-typography.css?v=1">
     <script src="/sidebar.js?v=44" defer></script>
 
@@ -55,10 +55,6 @@
             <a class="nav-link" href="#provisioning-adapters" data-page-link="provisioning-adapters">Adapters</a>
           </div>
         </nav>
-        <div class="sidebar-foot">
-          <span class="tiny-dot"></span>
-          <span>LIVE STATE + POLICY RECORDS</span>
-        </div>
       </aside>
 
       <main class="main-content" id="app-main">
@@ -89,7 +85,7 @@
                 <option value="30">30 sec</option>
               </select>
             </label>
-            <button id="pause-poll" class="button button-quiet button-pause" type="button" aria-pressed="false">Pause updates</button>
+            <button id="pause-poll" class="button button-quiet button-pause" type="button" aria-pressed="false">Pause</button>
             <span id="pause-status" class="pause-status" role="status" aria-live="polite" hidden>Updates paused</span>
             <button id="refresh-now" class="button button-refresh" type="button" title="Refresh now">Refresh <span aria-hidden="true">↻</span></button>
           </div>
@@ -478,7 +474,7 @@
                       <input id="zpr-config-file-input" type="file" accept=".toml,.zplc,text/plain" hidden>
                     </div>
                   </div>
-                  <div class="policy-attribute-toolbar"><button id="zpr-config-validate" class="button" data-config-command type="button" disabled>Analyze</button><button id="zpr-config-format" class="button" data-config-command type="button" disabled>Format</button></div>
+                  <div class="policy-attribute-toolbar"><button id="zpr-config-validate" class="button" data-config-command type="button" disabled>Analyze</button><button id="zpr-config-format" class="button" data-config-command type="button" disabled>Format</button><button id="zpr-config-mode-toggle" class="button button-refresh" type="button" aria-controls="zpr-config-form" aria-pressed="false">Form</button></div>
                   <div class="policy-editor-utilities">
                     <span data-editor-search-target="zpr-config-source"></span>
                     <details id="zpr-config-history-menu" class="policy-history-menu">
@@ -488,6 +484,11 @@
                   </div>
                 </div>
                 <div class="config-source-editor"><div id="zpr-config-gutter" class="config-source-gutter" aria-label="Configuration errors by source line"></div><div class="config-code-surface"><pre id="zpr-config-highlight" aria-hidden="true"></pre><textarea id="zpr-config-source" class="zpr-config-source" aria-label="ZPLC configuration source" spellcheck="false" maxlength="1048576" wrap="off"></textarea></div></div>
+                <div id="zpr-config-form" class="config-form" hidden>
+                  <p>Draft only. Changes update TOML; Save creates a revision, not a runtime installation. Analyze checks TOML syntax, not compiler semantics. Blank optional fields are omitted.</p>
+                  <p id="zpr-config-form-error" role="alert" hidden></p>
+                  <fieldset id="zpr-config-form-fields" aria-label="Configuration fields"></fieldset>
+                </div>
                 <p id="zpr-config-status" class="editor-page-status" role="status" aria-live="polite" hidden></p>
               </div>
             </div>
@@ -635,7 +636,8 @@
     <script src="/log-format.js?v=1" defer></script>
     <script src="/machine-logs.js?v=27" defer></script>
     <script src="/assertions.js?v=29" defer></script>
-    <script src="/config-editor.js?v=19" defer></script>
+    <script src="/config-form.js?v=1" defer></script>
+    <script src="/config-editor.js?v=20" defer></script>
     <script src="/gateways.js?v=25" defer></script>
     <script src="/provisioning-contract.js?v=3" defer></script>
     <script src="/provisioning.js?v=6" defer></script>

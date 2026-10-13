@@ -9,6 +9,12 @@ class LDAPOrgGraph extends HTMLElement {
     this._selected = null;
     this._collapsed = new Set();
     this._query = "";
+    this.addEventListener("keydown", (event) => {
+      if (event.key !== "Escape" || !this.classList.contains("maximized")) return;
+      event.preventDefault();
+      this.setMaximized(false);
+      this.querySelector(".ldap-graph-toolbar .window-control")?.focus();
+    });
   }
 
   set directory(value) {
@@ -118,6 +124,11 @@ class LDAPOrgGraph extends HTMLElement {
       this._collapsed = new Set(nodes.filter((node) => node.children.length && node !== root).map((node) => node.id));
       this.render();
     });
+    const maximize = document.createElement("button");
+    maximize.type = "button";
+    window.ZPRSafeDisplay.renderWindowControl(maximize, this.classList.contains("maximized"), "directory graph");
+    maximize.addEventListener("click", () => this.setMaximized(!this.classList.contains("maximized")));
+    toolbar.append(maximize);
     const svg = this.svgElement("svg", { viewBox: `0 0 ${this._width} ${this._height}`, role: "group", "aria-label": "LDAP organizational relationships" });
     this._svg = svg;
     const world = this.svgElement("g");
@@ -233,6 +244,12 @@ class LDAPOrgGraph extends HTMLElement {
     this.append(toolbar, svg, dialog);
     this.applyCamera();
     this.select(visible.find((node) => node.id === this._selected) || root, false);
+  }
+
+  setMaximized(maximized) {
+    this.classList.toggle("maximized", maximized);
+    const button = this.querySelector(".ldap-graph-toolbar .window-control");
+    if (button) window.ZPRSafeDisplay.renderWindowControl(button, maximized, "directory graph");
   }
 
   toggleBranch(node, collapsed = !this._collapsed.has(node.id)) {

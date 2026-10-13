@@ -65,3 +65,220 @@ dialog[aria-label="Review AI definition changes"] pre {
     }
   }
 }
+
+.organization-editor-tabs {
+  margin: 12px 0 8px;
+  display: flex;
+  gap: 4px;
+  border-bottom: 1px solid var(--line);
+  padding-bottom: 0;
+  overflow-x: auto;
+}
+
+.organization-editor-tabs button[role="tab"] {
+  background: transparent;
+  border: none;
+  border-bottom: 2px solid transparent;
+  padding: 8px 12px;
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--ink-soft);
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  white-space: nowrap;
+}
+
+.organization-editor-tabs button[role="tab"]:hover {
+  color: var(--forest);
+  background: var(--panel);
+}
+
+.organization-editor-tabs button[role="tab"].active {
+  border-bottom-color: var(--forest);
+  color: var(--forest);
+  font-weight: 650;
+}
+
+.tab-badge {
+  background: #e8eee9;
+  color: var(--muted);
+  font: 11px var(--mono);
+  padding: 1px 6px;
+  border-radius: 10px;
+}
+
+.organization-editor-tabs button[role="tab"].active .tab-badge {
+  background: var(--leaf-wash);
+  color: var(--forest);
+}
+
+.organization-section-panel {
+  padding: 8px 0;
+}
+
+.organization-section-panel[hidden] {
+  display: none !important;
+}
+
+.organization-metrics-strip {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(130px, 1fr));
+  gap: 12px;
+  margin: 16px 0;
+}
+
+.metric-card {
+  background: #f8faf7;
+  border: 1px solid var(--line);
+  border-radius: 4px;
+  padding: 10px 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.metric-label {
+  font: 11px var(--mono);
+  color: var(--muted);
+  text-transform: uppercase;
+}
+
+.metric-card strong {
+  font-size: 18px;
+  color: var(--ink);
+  font-family: var(--mono);
+}
+
+.section-subhead {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin: 12px 0 8px;
+}
+
+.section-subhead h3 {
+  margin: 0;
+  font-size: 14px;
+}
+
+.section-subhead-summary {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  cursor: pointer;
+  padding: 8px 0;
+  font-weight: 600;
+  font-size: 13px;
+  color: var(--ink);
+}
+
+.directory-subsection, .services-subsection {
+  border-top: 1px solid var(--line);
+  padding: 8px 0;
+  margin-top: 8px;
+}
+
+.compact-input {
+  box-sizing: border-box;
+  width: 100%;
+  min-height: 26px;
+  padding: 2px 6px;
+  font: 11px var(--mono);
+  border: 1px solid var(--line);
+  border-radius: 2px;
+  background: white;
+  color: var(--ink);
+}
+
+.compact-input:focus {
+  border-color: #62856f;
+  box-shadow: 0 0 0 1px #b5e34f42;
+  outline: none;
+}
+
+.button-delete {
+  color: var(--red);
+  font-size: 11px;
+  padding: 2px 6px;
+  border: 1px solid transparent;
+  background: transparent;
+  cursor: pointer;
+}
+
+.button-delete:hover {
+  background: #fbeae9;
+  border-color: #f0c5c3;
+  border-radius: 2px;
+}
+
+.button.small {
+  padding: 2px 8px;
+  font-size: 11px;
+  min-height: 24px;
+}
+
+.topology-preview-box, .directory-graph-preview-box {
+  margin-top: 16px;
+  border: 1px solid var(--line);
+  border-radius: 4px;
+  padding: 12px;
+  background: #fcfdfc;
+}
+
+.topology-nodes-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+  gap: 12px;
+  margin-top: 8px;
+}
+
+.topology-node-card {
+  background: white;
+  border: 1px solid var(--line);
+  border-radius: 3px;
+  padding: 8px 10px;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+
+.topology-node-card strong {
+  font-size: 12px;
+  color: var(--forest);
+}
+
+.topology-node-card span {
+  font: 11px var(--mono);
+  color: var(--muted);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.organization-profile-advanced {
+  margin-top: 16px;
+  border-top: 1px solid var(--line);
+  padding-top: 12px;
+}
+
+.organization-profile-advanced summary {
+  cursor: pointer;
+  margin-bottom: 8px;
+  display: inline-block;
+}
+
+.preview-title {
+  margin: 0 0 8px 0;
+  font-size: 12px;
+  color: var(--ink);
+}
+
+.input-coord {
+  width: 65px;
+}
+
+.input-port {
+  width: 70px;
+}

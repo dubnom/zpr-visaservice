@@ -142,7 +142,7 @@
         csrf = session.csrf;
         logout.hidden = false;
         const humanLabel = identity.display_name || identity.email || "";
-        status.textContent = humanLabel ? `Signed in: ${humanLabel}` : "Signed in";
+        status.textContent = humanLabel ? `User: ${humanLabel}` : "User";
         setGate(false);
         scope.hidden = false;
         const suffix = widget.dataset.operatorApplication === "simulator"

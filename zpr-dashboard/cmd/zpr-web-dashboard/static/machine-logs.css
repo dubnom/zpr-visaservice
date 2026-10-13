@@ -1,8 +1,8 @@
 .machine-logs-actions { display: flex; gap: 8px; }
-.machine-logs-actions button, .machine-log-panel-actions button { min-height: 30px; padding: 5px 9px; border: 1px solid var(--line); border-radius: 3px; background: var(--panel); color: var(--ink); font: 10px var(--mono); cursor: pointer; }
+.machine-logs-actions button, .machine-log-panel-actions button { min-height: 30px; padding: 5px 9px; border: 1px solid var(--line); border-radius: 3px; background: var(--panel); color: var(--ink); font: 11px var(--mono); cursor: pointer; }
 .adapter-logs-heading { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 12px; }
 .adapter-logs-heading h2 { margin: 0; font-size: 18px; }
-.adapter-logs-meta { display: flex; flex-wrap: wrap; gap: 12px; margin-top: 10px; color: var(--muted); font: 10px var(--mono); }
+.adapter-logs-meta { display: flex; flex-wrap: wrap; gap: 12px; margin-top: 10px; color: var(--muted); font: 11px var(--mono); }
 .machine-logs-error { margin-top: 12px; padding: 8px 10px; border: 1px solid #e2ada5; background: #fff0ed; color: #a43830; font: 11px var(--mono); overflow-wrap: anywhere; }
 .machine-logs-toolbar { display: flex; flex-wrap: wrap; align-items: center; gap: 16px; margin: 22px 0 16px; }
 .machine-logs-toolbar > input { flex: 1 1 200px; min-width: 0; padding: 8px 10px; border: 1px solid var(--line); border-radius: 3px; background: var(--panel); color: var(--ink); font: 12px var(--mono); }
@@ -49,7 +49,7 @@
 .adapter-log-column { flex: 0 0 min(420px, calc(100vw - 48px)); scroll-snap-align: start; }
 .adapter-column-picker { align-items: center; }
 .adapter-column-picker > label { flex: 0 0 auto; padding-top: 0; }
-.adapter-column-picker select { flex: 1; min-width: 0; min-height: 30px; padding: 4px 7px; border: 1px solid var(--line); border-radius: 3px; background: var(--panel); color: var(--ink); font: 10px var(--mono); }
+.adapter-column-picker select { flex: 1; min-width: 0; min-height: 30px; padding: 4px 7px; border: 1px solid var(--line); border-radius: 3px; background: var(--panel); color: var(--ink); font: 11px var(--mono); }
 .adapter-columns-empty { flex: 1 0 100%; padding: 24px; border: 1px dashed var(--line); color: var(--muted); text-align: center; font: 11px var(--mono); }
 .machine-log-panel { display: flex; flex-direction: column; min-width: 0; border: 1px solid var(--line); border-radius: 5px; background: var(--panel); }
 .machine-log-panel[hidden] { display: none; }
@@ -57,20 +57,20 @@
 .machine-log-panel-actions { display: flex; align-items: center; gap: 10px; margin-left: auto; }
 .machine-log-panel-actions button { white-space: nowrap; }
 .machine-log-panel h2 { margin: 0; font: 600 13px var(--mono); }
-.machine-log-panel header small { display: block; margin-top: 4px; color: var(--muted); font: 10px/1.4 var(--mono); overflow-wrap: anywhere; }
-.machine-log-state { flex: 0 0 auto; color: var(--muted); font: 10px var(--mono); }
+.machine-log-panel header small { display: block; margin-top: 4px; color: var(--muted); font: 11px/1.4 var(--mono); overflow-wrap: anywhere; }
+.machine-log-state { flex: 0 0 auto; color: var(--muted); font: 11px var(--mono); }
 .machine-log-panel.running .machine-log-state { color: #21845b; }
 .machine-log-source-toolbar { display: flex; align-items: start; gap: 9px; padding: 8px 12px; border-bottom: 1px solid var(--line); }
-.machine-log-source-toolbar > span { flex: 0 0 auto; padding-top: 6px; color: var(--muted); font: 10px var(--mono); }
+.machine-log-source-toolbar > span { flex: 0 0 auto; padding-top: 6px; color: var(--muted); font: 11px var(--mono); }
 .machine-log-source-options { display: flex; flex: 1; flex-wrap: wrap; min-width: 0; gap: 5px; }
-.machine-log-source-options label { display: flex; align-items: center; min-width: 0; max-width: 100%; gap: 5px; padding: 5px 7px; border: 1px solid var(--line); border-radius: 3px; background: var(--panel); color: var(--ink); font: 10px var(--mono); cursor: pointer; }
+.machine-log-source-options label { display: flex; align-items: center; min-width: 0; max-width: 100%; gap: 5px; padding: 5px 7px; border: 1px solid var(--line); border-radius: 3px; background: var(--panel); color: var(--ink); font: 11px var(--mono); cursor: pointer; }
 .machine-log-source-options label:has(input:checked) { border-color: #62856f; background: #eaf4d9; color: #294b36; }
 .machine-log-source-options label:focus-within { outline: 2px solid #62856f; outline-offset: 1px; }
 .machine-log-source-options label span { min-width: 0; overflow-wrap: anywhere; }
 .machine-log-source-options input { flex: 0 0 auto; margin: 0; accent-color: #398463; }
-.machine-log-source-empty { padding: 6px 0; color: var(--muted); font: 10px var(--mono); }
+.machine-log-source-empty { padding: 6px 0; color: var(--muted); font: 11px var(--mono); }
 .machine-log-output { flex: 1 0 280px; min-height: 280px; overflow: auto; padding: 10px 12px; background: #000; color: #fff; color-scheme: dark; font: 11px/1.5 var(--mono); white-space: pre-wrap; overflow-wrap: anywhere; }
-.machine-log-output h3 { margin: 12px 0 6px; color: var(--teal, var(--forest)); font: 600 10px var(--mono); }
+.machine-log-output h3 { margin: 12px 0 6px; color: var(--teal, var(--forest)); font: 600 11px var(--mono); }
 .machine-log-output h3:first-child { margin-top: 0; }
 .machine-log-output pre { min-height: 0; max-height: none; margin: 0; padding: 0; overflow: visible; color: inherit; font: inherit; white-space: pre-wrap; overflow-wrap: anywhere; }
 .machine-log-output p { margin: 0 0 6px; color: var(--muted); }

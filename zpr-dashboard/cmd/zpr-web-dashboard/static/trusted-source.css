@@ -1,7 +1,7 @@
 trusted-source-browser { display: block; }
 .trusted-source-browser-panel { margin-top: 22px; border-top: 1px solid var(--line); padding-top: 20px; }
 .trusted-source-browser-head { display: flex; align-items: center; justify-content: space-between; gap: 16px; }
-.trusted-source-browser-head .eyebrow { margin: 0 0 4px; color: var(--muted); font: 9px var(--mono); }
+.trusted-source-browser-head .eyebrow { margin: 0 0 4px; color: var(--muted); font: 11px var(--mono); }
 .trusted-source-browser-head h3 { margin: 0; font-size: 17px; }
 .trusted-source-meta { margin: 5px 0 0; color: var(--muted); font: 11px var(--mono); overflow-wrap: anywhere; }
 .trusted-source-summary { margin-top: 16px; color: var(--ink-soft); font: 11px var(--mono); }
@@ -11,7 +11,7 @@ trusted-source-browser { display: block; }
 .trusted-source-tabs button[aria-selected="true"] { border-color: var(--forest); color: var(--ink); font-weight: 650; }
 .trusted-source-filter { display: flex; align-items: center; gap: 8px; margin: 0 0 7px auto; color: var(--muted); font-size: 11px; }
 .trusted-source-filter input { width: min(260px, 38vw); min-height: 32px; border: 1px solid var(--line); border-radius: 3px; padding: 5px 8px; background: var(--panel); color: var(--ink); }
-.trusted-source-count { margin-bottom: 15px; color: var(--muted); font: 10px var(--mono); white-space: nowrap; }
+.trusted-source-count { margin-bottom: 15px; color: var(--muted); font: 11px var(--mono); white-space: nowrap; }
 .trusted-source-update-controls { display: flex; align-items: end; gap: 10px; margin: 12px 0; }
 .trusted-source-heading-select { max-width: 100%; min-height: 32px; border: 1px solid var(--line); border-radius: 3px; padding: 5px 8px; background: var(--panel); color: var(--ink); font: 600 17px var(--mono); }
 .trusted-source-message { margin: 15px 0; color: var(--muted); font-size: 12px; }
@@ -38,7 +38,7 @@ trusted-source-browser { display: block; }
 .trusted-source-changes { min-width: 760px; }
 .trusted-source-changes td:first-child { white-space: nowrap; }
 .trusted-source-attributes dl { display: grid; grid-template-columns: minmax(88px, 0.35fr) minmax(140px, 1fr); gap: 4px 12px; margin: 0; }
-.trusted-source-attributes dt { color: var(--muted); font: 10px var(--mono); overflow-wrap: anywhere; }
+.trusted-source-attributes dt { color: var(--muted); font: 11px var(--mono); overflow-wrap: anywhere; }
 .trusted-source-attributes dd { margin: 0; overflow-wrap: anywhere; }
 .trusted-source-number { font-variant-numeric: tabular-nums; }
 .trusted-source-tree, .trusted-source-tree ul { padding-left: 20px; list-style: none; }

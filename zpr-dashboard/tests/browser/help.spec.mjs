@@ -62,6 +62,8 @@ for (const { path, refreshId, heading } of simulatorPages) {
     const help = page.locator(".main-content .top-actions > .help-trigger, .main-content .topbar > .help-trigger");
     await expect(help).toBeVisible();
     await expect(page.locator(".sidebar .help-trigger")).toHaveCount(0);
+    await expect(page.locator(".main-content > .topbar .connection-state")).toHaveCount(0);
+    await expect(page.locator(".main-content > .topbar .machine-logs-actions")).toHaveCount(0);
     await expect(help).toHaveAttribute("aria-haspopup", "dialog");
     if (refreshId) await expect(page.locator(refreshId)).toBeHidden();
 
@@ -73,6 +75,19 @@ for (const { path, refreshId, heading } of simulatorPages) {
     await expect(help).toBeFocused();
   });
 }
+
+test("Simulator text stays at least 11px outside maps and graphs", async ({ page }) => {
+  for (const path of ["/activity.html", "/organizations.html", "/scenarios.html", "/machine-logs.html", "/trusted-source.html"]) {
+    await page.goto(`${appURL}${path}`);
+    const smallText = await page.locator("body *").evaluateAll(elements => elements
+      .filter(element => element.getClientRects().length && !element.closest("svg"))
+      .map(element => ({ element, size: Number.parseFloat(getComputedStyle(element).fontSize) }))
+      .filter(({ size }) => size < 11)
+      .map(({ element, size }) => `${element.tagName.toLowerCase()}.${element.className?.baseVal || element.className || ""}: ${size}px`)
+      .slice(0, 10));
+    expect(smallText, `${path} contains text below 11px`).toEqual([]);
+  }
+});
 
 test("policy and assertion Help includes valid syntax and the report-only trust boundary", async ({ page }) => {
   await page.goto(`${appURL}/index.html#policy`);

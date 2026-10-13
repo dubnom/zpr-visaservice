@@ -597,6 +597,17 @@ selection. No dependency, deployment, commit or push was added by this task.
 - [x] Keep each log viewport and its horizontal scrollbar at the panel bottom. Shared column-flex layout fills space beneath uneven headers and source/detail controls; maximized panels remain bounded and independently scrollable. Deployed to Control Room at 2026-10-09 16:55 UTC; Simulator remains unchanged. Not yet committed: 38 related desktop/tablet checks pass, including 12 new state/style/geometry cases, plus the embedded build and whitespace checks. Two older picker tests fail in both viewports because they expect a combobox instead of a listbox; the same failures were reproduced on committed baseline `59f0bda` and those tests were not changed.
 
 ### Config
+- [x] Create a full draft-only ZPLC form editor for resolver order/hosts, nodes/provider attributes/substrate interfaces, links/peers/attributes, Visa Service, trusted services and attribute mappings, protocols/ICMP/ports, service refinements and bootstrap public-key paths. Named entries and mapping rows can be added/removed; Form and Raw TOML share the existing revision, import, download, New, Discard, Analyze and Save workflows. Field patches preserve unrelated source, unfamiliar settings, comments and newline style; ambiguous inline/array-of-table layouts remain editable in raw mode rather than being destructively serialized. Incomplete form input blocks Analyze/Save and participates in discard guards; late responses cannot overwrite another source or record. Uses the existing Policy-Service TOML parser and independent production contracts, with Simulator deliberately unavailable in tests. Analyze remains TOML-syntax-only and Save creates a draft revision, never installation/activation. Deployed 2026-10-13; not committed or pushed.
+  Validation: focused Go form/authorization/proxy tests and the dashboard build pass.
+  Fifty-two desktop/tablet browser cases pass, including 18 new form cases
+  against the real TOML endpoint and existing raw-editor regressions. The
+  existing shared Policy bottom-margin test fails on both committed baseline
+  and current assets (13-pixel deviation against a 2-pixel limit); it was
+  left unchanged and excluded from the passing focused rerun. No full-suite
+  pass is claimed. Deployed to Control Room and Policy-Service at
+  2026-10-13 05:49 UTC; exact-release tests and real authenticated
+  desktop/tablet checks pass, saved drafts/configuration preserved and
+  all other services untouched. See [deployment evidence](GUI%20deployments.md#config-form-editor-2026-10-13-0549-utc).
 - [x] Adopt the same look-and-feel as the policy editor. If ZPR config is limited to one file, there is no need for Browse, or some of the File commands. Refresh Attributes is also not relevant.
 - [x] Keep ZPR Config toolbar roles aligned with the Policy editor: File on the left, editor mode centered, Analyze/Format in the right-side action group, and History/utilities at the right. Match the blue pending-analysis state, enabled/disabled Format styling, success/error colors, and responsive placement.
 - [x] Still things to do to get the look and feel better. "Validate syntax" should act like "Analyze". There should be a gutter for errors. A Format button, a file button.

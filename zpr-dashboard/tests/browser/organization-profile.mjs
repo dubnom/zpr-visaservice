@@ -147,4 +147,64 @@ export function registerOrganizationProfileTests(test, expect) {
     expect(state.writes).toHaveLength(0);
     await expect(page.locator("#organization-profile-source")).toHaveValue("{ broken");
   });
+  test("Organization profile structured section editors synchronize with Advanced JSON and previews", async ({ page, appURL, api }) => {
+    fixture(api);
+    await open(page, appURL);
+    const editor = page.locator("#organization-profile-editor");
+
+    // Overview tab is active initially with metrics
+    await expect(editor.locator('[data-editor-tab="overview"]')).toHaveAttribute("aria-selected", "true");
+    await expect(editor.locator("#metric-sites-count")).toHaveText("1");
+    await expect(editor.locator("#metric-services-count")).toHaveText("0");
+
+    // Sites & Topology section
+    await editor.locator('[data-editor-tab="sites"]').click();
+    await expect(editor.locator('[data-editor-tab="sites"]')).toHaveAttribute("aria-selected", "true");
+    await expect(editor.locator("#section-panel-sites")).toBeVisible();
+    await expect(editor.locator('#tbody-sites input[data-field="id"]').first()).toHaveValue("node-1");
+
+    // Add a new runtime node and verify two-way sync
+    await editor.locator('[data-action="add-site"]').click();
+    const siteRows = editor.locator("#tbody-sites tr");
+    await expect(siteRows).toHaveCount(2);
+    await expect(editor.locator("#topology-nodes-preview .topology-node-card")).toHaveCount(2);
+    let parsed = JSON.parse(await page.locator("#organization-profile-source").inputValue());
+    expect(parsed.runtime.nodes).toHaveLength(2);
+    expect(parsed.runtime.nodes[1].id).toBe("site-2");
+
+    // Directory section
+    await editor.locator('[data-editor-tab="directory"]').click();
+    await expect(editor.locator('[data-editor-tab="directory"]')).toHaveAttribute("aria-selected", "true");
+    await expect(editor.locator("#section-panel-directory")).toBeVisible();
+
+    // Add department and person
+    await editor.locator('[data-action="add-department"]').click();
+    await expect(editor.locator("#tbody-departments tr")).toHaveCount(1);
+    await editor.locator('[data-action="add-person"]').click();
+    await expect(editor.locator("#tbody-people tr")).toHaveCount(1);
+
+    parsed = JSON.parse(await page.locator("#organization-profile-source").inputValue());
+    expect(parsed.directory.departments).toHaveLength(1);
+    expect(parsed.directory.departments[0].name).toBe("Department 1");
+    expect(parsed.directory.people).toHaveLength(1);
+    expect(parsed.directory.people[0].uid).toBe("user-1");
+
+    // Services & Workloads section
+    await editor.locator('[data-editor-tab="services"]').click();
+    await expect(editor.locator('[data-editor-tab="services"]')).toHaveAttribute("aria-selected", "true");
+    await expect(editor.locator("#section-panel-services")).toBeVisible();
+
+    await editor.locator('[data-action="add-service"]').click();
+    await expect(editor.locator("#tbody-services tr")).toHaveCount(1);
+    parsed = JSON.parse(await page.locator("#organization-profile-source").inputValue());
+    expect(parsed.services).toHaveLength(1);
+    expect(parsed.services[0].name).toBe("Service 1");
+
+    // Check updated metrics on Overview tab
+    await editor.locator('[data-editor-tab="overview"]').click();
+    await expect(editor.locator("#metric-sites-count")).toHaveText("2");
+    await expect(editor.locator("#metric-services-count")).toHaveText("1");
+    await expect(editor.locator("#metric-people-count")).toHaveText("1");
+    await expect(editor.locator("#metric-depts-count")).toHaveText("1");
+  });
 }

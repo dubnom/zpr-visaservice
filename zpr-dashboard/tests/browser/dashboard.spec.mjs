@@ -583,6 +583,7 @@ import { registerServiceLogTests } from "./service-logs.mjs";
 import { registerOrganizationProfileTests } from "./organization-profile.mjs";
 import { registerOrganizationDuplicateTests } from "./organization-duplicate.mjs";
 import { registerOrganizationDefinitionsTests } from "./organization-definitions.mjs";
+import { registerConfigFormTests } from "./config-form.mjs";
 
 const assets = fileURLToPath(new URL("../../cmd/zpr-web-dashboard/static/", import.meta.url));
 const csp = "default-src 'self'; style-src 'self'; script-src 'self'; connect-src 'self'; img-src 'self' data:";
@@ -786,6 +787,7 @@ registerServiceLogTests(test, expect);
 registerOrganizationProfileTests(test, expect);
 registerOrganizationDuplicateTests(test, expect);
 registerOrganizationDefinitionsTests(test, expect);
+registerConfigFormTests(test, expect);
 registerDiagnosticsGuidelineTests(test, expect);
 registerWorkflowGuidelineTests(test, expect);
 registerTrustedSourceGUITests(test, expect);

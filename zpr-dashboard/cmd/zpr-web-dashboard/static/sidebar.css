@@ -5,7 +5,7 @@
 .sidebar-toggle span { font: 24px/1 var(--sans); }
 .nav-separator { height: 1px; margin: 5px 10px; background: #3a4841; }
 .nav-group { display: grid; gap: 3px; }
-.nav-group-label { margin: 2px 10px 1px; color: #84938a; font: 8px var(--mono); letter-spacing: .12em; text-transform: uppercase; }
+.nav-group-label { margin: 2px 10px 1px; color: #84938a; font: 11px var(--mono); letter-spacing: .12em; text-transform: uppercase; }
 .primary-nav .sidebar-external-link .external-arrow { color: #b5e34f; font: 700 14px/1 var(--sans); }
 .primary-nav .sidebar-external-link:hover .external-arrow { color: #d4f58a; }
 .primary-nav .nav-sub-link { margin-left: 8px; padding-left: 16px; color: #a3b2a9; font-size: 11px; }

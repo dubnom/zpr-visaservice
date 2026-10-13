@@ -3,7 +3,7 @@
   dialog.id = "organization-definitions-editor";
   dialog.className = "sim-editor-page section-block policy-page editor-page config-editor-panel";
   dialog.setAttribute("aria-labelledby", "organization-definitions-title");
-  dialog.innerHTML = `<div class="policy-toolbar"><div class="policy-identity"><strong id="organization-definitions-title">Organization definitions</strong><span id="organization-definitions-revision"></span><span data-definitions-modified hidden>Modified</span></div><button type="button" class="quiet" data-definitions-close>Close definitions</button></div>
+  dialog.innerHTML = `<div class="policy-toolbar"><div class="policy-identity"><strong id="organization-definitions-title">Organization definitions</strong><span id="organization-definitions-revision"></span><span data-definitions-modified hidden>Modified</span></div><button type="button" class="quiet" data-definitions-close aria-label="Close organization definitions" title="Close organization definitions">×</button></div>
     <div class="editor-page-workbench"><div class="editor-page-main">
     <div class="policy-editor-tools"><div class="policy-editor-utilities"><button type="button" data-definitions-save>Save all definitions</button><button type="button" data-definitions-check>Validate all definitions</button><button type="button" data-definitions-reload>Reload definitions</button><details class="policy-history-menu"><summary class="button">History</summary><div id="organization-definitions-history" class="policy-history"></div></details></div></div>
     <p id="organization-definitions-status" role="status" aria-live="polite"></p>

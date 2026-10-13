@@ -6,13 +6,125 @@ This is a historical release ledger, not a live health report. Keep dated test,
 asset, configuration, scope and rollback evidence here. Feature-local release
 notes also remain in the completed-work archive to preserve their context.
 
-Latest recorded Control Room release: `zpr-editor-ui:20261012-map-overlay`
-(2026-10-12 20:56 UTC). This Room-only rollout did not replace or restart
-Control-Service; retain the separately recorded service release history below.
+Latest recorded Control Room release: `zpr-editor-ui:20261013-config-form`
+(2026-10-13 05:49 UTC), paired with
+`zpr-policy-service:20261013-config-form`. Control-Service was not replaced or
+restarted; retain the separately recorded service release history below.
 This does not imply every source change was deployed. Commit/push state is
 separate; retain each dated entry's scope.
 
 ## Deployment status
+
+### Simulator GUI design guidelines (2026-10-13 12:23 EDT)
+
+- Deployed the local Simulator as `zpr-simulator:20261013-gui-guidelines`,
+  image `sha256:66bd2883b5da7dd7d175529a80448d19ad4f19bafbe4dc66e2b7da4a58f1cb8a`;
+  executable SHA-256
+  `6ade4855208c9cc13241639a8adb550ae0ffd74d25a618241a0a92a916fd615f`.
+  The user explicitly selected deployment of the entire current dashboard
+  worktree rather than a GUI-only overlay; other pending edits in that worktree
+  are included in this Simulator build.
+- Replaced only the Simulator container using the UI-restart path. The active
+  organization remains Velocity, activation is idle, and no scenario machines
+  or relays were running. The Simulator restarted at
+  `2026-10-13T16:23:09.515Z`; Control Room, Control-Service and Policy-Service
+  were not restarted. The restart resets in-memory Simulator history.
+- All 74 directly served static assets match the worktree byte-for-byte; the
+  root, `/index.html` and `/agents.html` redirects were checked separately.
+  Focused desktop/tablet browser regressions pass: 18/18, covering graph
+  maximize/restore, Activity metric pulses and numeric alignment, Help/top-bar
+  placement, and the 11px text minimum.
+- The focused Simulator-page Go test passes. The full dashboard Go suite was
+  attempted but did not pass: failures cover enrollment preflight,
+  `ZPR_MULTINODE_PLATFORM`, scenario placement-helper and Linux-ELF tests. No
+  commit or push.
+- Rollback image retained as
+  `zpr-simulator:before-gui-guidelines-20261013`
+  (`sha256:a35607c2fb95a615f8b261165dcc4b3a4374efebd5833c02c37b55a11a341674`).
+
+### Config form editor (2026-10-13 05:49 UTC)
+
+- Deployed Control Room on its usual HTTPS port 8787 and Policy-Service on
+  mutual-TLS port 8789. Control-Service continues proxying through its existing
+  production contract; it was not replaced or restarted.
+- Room image `zpr-editor-ui:20261013-config-form`, immutable image
+  `sha256:c50aa7012713308d77f55af798d66aa55f39e34ddea7b14786eb6efb4aa248a6`,
+  binary SHA-256
+  `40e0416a92de75508f87e0486d03c5e88ee3f6d8b467e4302571abfb469b4566`.
+  Policy image `zpr-policy-service:20261013-config-form`, immutable image
+  `sha256:d297936154ac4442ca4141aa3a027c1daccc60305566de1ac5666d2882adec80`,
+  binary SHA-256
+  `64ace285a174c42e129550eb85dec1f8b844e3d16bd868ad0f25a8572fc2a7b5`.
+  Verified at `2026-10-13T05:49:46.884Z`.
+- Reconstructed both prior live binaries byte-for-byte before applying the
+  scoped release. Room changes only four assets: Config form/editor scripts,
+  Config markup/cache versions, and Config-only styles. All 78 served assets
+  verified. Existing map filter fix and unrelated live UI preserved; pending
+  organization-editor changes excluded.
+- Policy-Service adds only the stateless `POST /api/policy/config/form`
+  draft transformation and route. No runtime installation or activation,
+  migrations, organization switches or Simulator API calls.
+- Exact-release Go form tests pass. All 52 focused desktop/tablet browser
+  cases pass against the release UI and actual endpoint, including invalid
+  input, comments/unknown fields, revision ownership and stale-response
+  protection. The previously documented baseline Policy bottom-margin
+  failure remains excluded; no full-suite pass is claimed.
+- Real OIDC-authenticated desktop/tablet live checks verify Form/Raw
+  synchronization, production proxying, syntax Analyze, preserved comments
+  and unfamiliar settings, and responsive layout. No persistent writes or
+  Simulator calls in those checks. Saved policy database, catalog and
+  organization context unchanged; container settings, mounts, TLS and
+  network contracts preserved. All 15 other running service start times
+  unchanged, including Simulator, Control-Service and infrastructure.
+- Stopped rollback containers retained:
+  `zpr-control-room-before-config-form-20261013` and
+  `zpr-policy-service-before-config-form-20261013`.
+  Operator sessions reset; reload Control Room and sign in again.
+  No commit or push.
+
+### Control Room map filter popup clipping fix (2026-10-13 00:44 UTC)
+
+- Deployed only `zpr-editor-ui:20261012-filter-popup`, immutable image
+  `sha256:46f247c80e559bd402e86b0980b7138faee43f6a584c80a3a004deab72eb2eb5`.
+  Started `2026-10-13T00:44:50Z`; verified
+  `2026-10-13T00:45:17Z` on HTTPS port 8787.
+- Resolved popup clipping bug: removed `.topology-page .legend { flex: 1; max-width: 100%; justify-content: flex-start; }`
+  and set `.map-legend-key .legend, .topology-page .map-legend-key .legend` to
+  `flex: none`, `width: min(620px, calc(100vw - 60px))`, and `max-width: min(620px, calc(100vw - 60px))`.
+  Popup now expands to full 620px width without collapsing to the `<details>` summary button width (74px).
+  Bumped stylesheet cache bust to `app.css?v=101`.
+- Release binary SHA-256
+  `55d8b16df52b32538623e1b7256d00c77acfa02a0bbc65eecd1920fbdbf54ba9`.
+- Verified popup layout, bounding box (620px × 77px), and children dimensions
+  in Playwright.
+- Served markup, direct TLS enforcement, preserved container configuration,
+  and unchanged start times of all 16 other running services verified.
+  Simulator, Control-Service and Policy-Service untouched; no runtime/scenario
+  mutations, commit, or push performed by this rollout.
+  Stopped `zpr-control-room-before-filter-popup` retains rollback.
+  Operator sessions reset; sign in again.
+
+### Control Room map filter popup (2026-10-13 00:13 UTC)
+
+- Deployed only `zpr-editor-ui:20261012-filter-popup`, immutable image
+  `sha256:50acaf4e7ae98e7169a8c001ca6bd8d410a6ea4ef83d04825e607569f7fc8bd3`.
+  Started `2026-10-13T00:13:51.072139834Z`; verified
+  `2026-10-13T00:13:55.210Z` on HTTPS port 8787.
+- Embedded `#topology-search` and the component type legend within the
+  `<details id="map-legend-key">` disclosure popup triggered by a button labeled
+  "Filter..." positioned in the upper right toolbar near Traffic controls.
+  Kept "Clear highlight" accessible outside the popup in the toolbar. Added
+  responsive column wrapping on viewports below 700px.
+- Release binary SHA-256
+  `212bf5240612f2012f2474e0b6949ca10ec24179a65e08f930f419810b069077`.
+- All 82 geography desktop/tablet tests passed; all 26 map legend and filter
+  tests passed.
+- Served markup, direct TLS enforcement, preserved container configuration,
+  and unchanged start times of all 16 other running services verified.
+  Simulator, Control-Service and Policy-Service untouched; no runtime/scenario
+  mutations, commit, or push performed by this rollout.
+  Stopped `zpr-control-room-before-filter-popup` retains rollback.
+  Operator sessions reset; sign in again.
 
 ### Source publication validation (2026-10-12)
 

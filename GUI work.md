@@ -52,17 +52,20 @@ Private profile history opens the matching complete bundle. Conflicting or
 uncertain saves retain local edits; explicit reload reconciles persisted state.
 AI discloses the full unsaved fictional bundle and respects bounded context;
 no creation receipts or runtime data are sent.
-Structured section editors, full reference/compiler checks, section-only AI
-context and activation review are next; production administration remains separate.
+Structured section editors (Sites/Topology, Directory, Services/Workloads) with
+bi-directional Advanced JSON synchronization, live topology cards, and live
+`<ldap-org-graph>` preview are **Verified** locally.
+Full reference/compiler checks, section-only AI context and activation review
+are next; production administration remains separate.
 Live desktop/tablet checks confirm private revision persistence across Simulator
 replacement. Great Lakes/Load Lab supporting-definition mounts are read-only;
 no shared staging or runtime activation changed. See
 [deployment evidence](GUI%20deployments.md). No commit/push.
 See [the execution plan](Organization%20editor%20plan.md).
-52 desktop/tablet creation/import/duplication/profile/definition/directory/scenario AI cases,
-including fresh 390px AI editing, and focused Go race tests
-pass, along with build/vet/syntax/editor checks. Full `make test` still fails
-on Redwood's LDAP identity expectation and assistant setup's unbound
+34 desktop/tablet organization/profile/definitions/duplication browser cases pass
+(including newly added structured editor sync and preview tests), along with
+focused Go race tests and build/vet/syntax/editor checks. Full `make test` still
+fails on Redwood's LDAP identity expectation and assistant setup's unbound
 `SCRIPT_DIR`; neither is changed by this slice.
 No deployment, activation, commit or push.
 
@@ -169,11 +172,10 @@ No commit or push. See the [release evidence](GUI%20deployments.md) and
 ## Next
 
 The open requirements below retain their original scope.
-The Config form editor is the next larger GUI item.
 No new priority or implementation approval is implied for backend rollouts.
 
 ### Config
-- [ ] Create a form editor.
+- [x] Create a full draft-only form editor synchronized with raw TOML. Deployed to Control Room and Policy-Service at 2026-10-13 05:49 UTC; verified without runtime changes. See [completed Config work](GUI%20completed%20work.md#config) and [deployment evidence](GUI%20deployments.md#config-form-editor-2026-10-13-0549-utc).
 
 ### Logs and diagnostics
 - [ ] Expose the shared viewer for Services and Trusted Sources; move their metrics/freshness/errors to suitable detail views before retiring the aggregate Diagnostics page.
@@ -234,3 +236,24 @@ No new priority or implementation approval is implied for backend rollouts.
   replicated automatically. Anycast is an optional separate routing/health
   design decision, not assumed in this task. Track only; no deployment yet.
 - [ ] Organization creation/editing: Duplicate -> edit draft -> validate -> review activation first. The [detailed plan](Organization%20editor%20plan.md) owns the individual requirements; production administration remains independent of Simulator.
+
+## Miscellany
+
+### Organization
+- [ ] Velocity labs city name doesn't match location.
+
+#### Editor
+- [ ] Follow design guidelines.
+- [ ] Add raw/form support.
+- [ ] Deledte "Draft loaded..." and "draft only..."
+- [ ] Description should be a multiline text box.
+
+### Maps
+- [ ] Make left and right clicks off a component act the same.
+- [ ] Worldmap component placement sucks.
+- [ ] No banner information at the bottom.
+
+## Application Wide
+- [ ] Change "Pause updates" to "Pause"/
+- [ ] Changed "Signed in" in top header to "User".
+- [ ] Remove "Live state and policy records" from bottom of Control Room.

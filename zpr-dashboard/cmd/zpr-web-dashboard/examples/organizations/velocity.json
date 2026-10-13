@@ -6,7 +6,7 @@
   "runtime": {
     "driver": "docker-multinode",
     "topology": "single-node",
-    "nodes": [{"id": "velocity-node", "location": "Performance Lab", "latitude": 37.34, "longitude": -121.89, "coordinate_note": "Simulation guess: fictional performance lab near San Jose, California; no geographic location specified.", "substrate_address": "172.30.0.13", "zpr_address": "fd5a:5052:90de::10"}]
+    "nodes": [{"id": "velocity-node", "location": "San Jose, California", "latitude": 37.34, "longitude": -121.89, "coordinate_note": "Simulation guess: fictional performance lab near San Jose, California; no geographic location specified.", "substrate_address": "172.30.0.13", "zpr_address": "fd5a:5052:90de::10"}]
   },
   "directory": {
     "base_dn": "dc=velocity,dc=test",
@@ -19,8 +19,8 @@
     "user_attributes": ["cn", "mail", "ou", "title"],
     "departments": [{"name": "Performance"}],
     "people": [
-      {"uid": "alex.rivera", "name": "Alex Rivera", "email": "alex.rivera@velocity.example", "department": "Performance", "title": "Client Benchmark Operator", "location": "Performance Lab"},
-      {"uid": "sam.chen", "name": "Sam Chen", "email": "sam.chen@velocity.example", "department": "Performance", "title": "Service Benchmark Operator", "location": "Performance Lab"}
+      {"uid": "alex.rivera", "name": "Alex Rivera", "email": "alex.rivera@velocity.example", "department": "Performance", "title": "Client Benchmark Operator", "location": "San Jose, California"},
+      {"uid": "sam.chen", "name": "Sam Chen", "email": "sam.chen@velocity.example", "department": "Performance", "title": "Service Benchmark Operator", "location": "San Jose, California"}
     ],
     "groups": [{"name": "BenchmarkOperators", "members": ["alex.rivera", "sam.chen"]}]
   },

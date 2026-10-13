@@ -17,8 +17,9 @@
   let pending = false;
   let sourceVersion = 0;
   let menuRecordID = "";
+  let form;
   const editor = page.createController({
-    source, status, isDirty: () => source.value !== saved,
+    source, status, isDirty: () => source.value !== saved || form?.dirty(),
     readContext: () => [source.value, catalog?.organization_id, record?.id, record?.current_revision, browsingRevision],
     menu: { root: byId("zpr-config-actions"), toggle: byId("zpr-config-files-toggle"), menu: byId("zpr-config-file-menu") },
     history: { menu: byId("zpr-config-history-menu"), list: byId("zpr-config-history"), count: byId("zpr-config-history-count"), isAvailable: () => Boolean(record) },
@@ -33,7 +34,7 @@
   });
   const picker = page.createPicker({ toggle: byId("zpr-config-picker-toggle"), pane: byId("zpr-config-catalog-pane"), close: byId("zpr-config-picker-close"), focus: records });
   const history = editor.history;
-  const dirty = () => source.value !== saved;
+  const dirty = () => source.value !== saved || form?.dirty();
   const setStatus = (text = "", kind = "") => editor.setStatus(text, kind);
   function clearAnalysis() {
     sourceVersion++;
@@ -42,12 +43,13 @@
     editor.setAnalysisState();
   }
   function syncAnalysisButtons() {
-    const disabled = pending || !source.value.trim();
+    const disabled = pending || form?.blocked() || !source.value.trim();
     analyze.disabled = disabled;
-    format.disabled = disabled;
-    format.classList.toggle("button-save-as-ready", !disabled);
+    format.disabled = disabled || form?.active();
+    format.classList.toggle("button-save-as-ready", !format.disabled);
     analyze.classList.toggle("button-next-evaluate", !disabled && !analyze.dataset.analysisState);
     byId("zpr-config-discard").disabled = pending || !dirty();
+    byId("zpr-config-save").disabled = pending || form?.blocked();
   }
   function renderIdentity() {
     editor.renderIdentity({
@@ -109,9 +111,16 @@
     syncAnalysisButtons();
     surface.render();
     renderIdentity();
+    form?.sync(pending);
   }
   const request = (url, options) => page.requestJSON((...args) => window.zprOperatorFetch(...args), url, options);
   const post = (url, body) => request(url, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
+  form = window.ZPRConfigForm.create({
+    source, request: post,
+    context: () => [source.value, catalog?.organization_id, record?.id, record?.current_revision, browsingRevision, sourceVersion],
+    onChange: () => source.dispatchEvent(new Event("input", { bubbles: true })),
+    onStateChange: () => { syncAnalysisButtons(); renderIdentity(); form?.sync(pending); },
+  });
   function closeRecordMenu(restoreFocus = false) {
     if (recordMenu.hidden) return;
     recordMenu.hidden = true;
@@ -133,13 +142,14 @@
   const run = async (action, isCurrent = null) => {
     if (pending) return;
     pending = true;
+    form.sync(true);
     const version = sourceVersion;
     document.querySelectorAll("[data-config-command]").forEach((button) => { button.disabled = true; });
     try { await action(); } catch (error) {
       if (isCurrent ? !isCurrent() : version !== sourceVersion) return;
       surface.setDiagnostic(error.line ? { line: error.line, message: error.message } : null);
       if (error.details?.valid === false) editor.setAnalysisState("error");
-      setStatus(surface.diagnostic ? "" : error.message, "error");
+      setStatus(surface.diagnostic && !form.active() ? "" : error.message, "error");
     }
     finally { pending = false; isCurrent?.finish(); document.querySelectorAll("[data-config-command]").forEach((button) => { button.disabled = false; }); renderEditor(); }
   };
@@ -169,6 +179,7 @@
     browsingRevision = 0;
     draftName = record.name;
     source.value = saved = record.content;
+    form.reset();
     revisions = await request(`/api/policy/records/${encodeURIComponent(id)}/revisions`);
     setStatus("");
     renderHistory();
@@ -181,6 +192,7 @@
     clearAnalysis();
     browsingRevision = number === record.current_revision ? 0 : number;
     source.value = revision.content;
+    form.reset();
     saved = browsingRevision ? "" : revision.content;
     setStatus("");
     renderHistory();
@@ -192,6 +204,7 @@
     clearAnalysis();
     draftName = "";
     source.value = saved = "";
+    form.reset();
     setStatus("");
     renderHistory();
     renderRecords();
@@ -219,6 +232,7 @@
     setStatus("");
   }));
   async function saveConfig() {
+    if (form.blocked()) throw new Error("Complete the form fields or return to raw TOML before saving.");
     if (!record && !page.isNamed(draftName)) {
       const entered = prompt("Configuration name", "");
       if (entered === null) return;
@@ -242,7 +256,7 @@
     await loadCatalog();
     setStatus(`Saved version ${record.current_revision}; runtime unchanged.`, "success");
   }
-  editor.bind("save", { button: byId("zpr-config-save"), shortcutRoot: source });
+  editor.bind("save", { button: byId("zpr-config-save"), shortcutRoot: byId("page-zpr-config") });
   byId("zpr-config-discard").addEventListener("click", () => {
     if (!dirty() || !page.confirmDiscard(true, "Discard unsaved configuration changes?")) return;
     if (record) void run(() => editor.perform("load", record.id));

@@ -209,6 +209,11 @@ test("Map legend is hidden by default and opens via popup disclosure with search
   await expect(searchInput).toBeVisible();
   await expect(clearButton).toBeHidden();
 
+  // Verify the popup is not clipped or collapsed to summary width
+  const legendBox = await legendPanel.boundingBox();
+  expect(legendBox).not.toBeNull();
+  expect(legendBox.width).toBeGreaterThan(250);
+
   const nodeButton = legendPanel.locator('[data-legend-kind="node"]');
   await nodeButton.click();
   await expect(nodeButton).toHaveAttribute("aria-pressed", "true");
