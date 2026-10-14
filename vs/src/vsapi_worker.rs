@@ -1704,59 +1704,34 @@ impl vsapi::v_s_handle::Server for VSHandleImpl {
             return Ok(());
         }
 
-        // Have to know what visas the node is actually allowed to know about
-        // TODO would it be better to make a function that gets a visa by id but only if it is installed on a given node?
-        // I don't think so because I think this would result in more db access than the current strategy
-        let installed_visas_res = self
+        let visas_res = self
             .asm
             .visa_mgr
-            .get_installed_visa_ids_for_node(requestor_addr)
+            .get_visas_by_id_for_node(requestor_addr, &ids)
             .await;
 
-        match installed_visas_res {
-            Ok(installed_visas) => {
-                // Remove all ids that are not installed on the node
-                let installed_set: std::collections::HashSet<u64> =
-                    installed_visas.into_iter().collect();
-                let filtered_ids: Vec<u64> = ids
-                    .into_iter()
-                    .filter(|id| installed_set.contains(id))
-                    .collect();
-
-                // Create vec of actualized visas
-                let mut visas = Vec::new();
-                for id in filtered_ids.iter() {
-                    match self.asm.visa_mgr.get_visa_with_metadata_by_id(*id).await {
-                        Ok(Some(visa_with_metadata)) => {
-                            match self
-                                .asm
-                                .visa_mgr
-                                .actualize_visa_for_target_node(
-                                    visa_with_metadata.visa,
-                                    requestor_addr,
-                                )
-                                .await
-                            {
-                                Ok(v) => visas.push(v),
-                                Err(_) => {
-                                    debug!(target: API, "Node {requestor_addr} requested visa {id} but actualization failed")
-                                }
-                            };
-                        }
-                        _ => {
-                            debug!(target: API, "Node {requestor_addr} requested visa {id} but not found")
-                        }
-                    }
-                }
-
+        match visas_res {
+            Ok(visas) => {
                 let mut ok_builder = res_builder.initn_ok(visas.len() as u32);
 
                 for (i, v) in visas.iter().enumerate() {
                     let mut visa_bldr = ok_builder.reborrow().get(i as u32);
                     v.write_to(&mut visa_bldr);
                 }
+
+                for visa in &visas {
+                    if let Err(e) = self
+                        .asm
+                        .visa_mgr
+                        .visa_installed(visa.issuer_id, requestor_addr)
+                        .await
+                    {
+                        warn!(target: API, "failed to mark pulled visa {} as installed on {requestor_addr}: {e}", visa.issuer_id);
+                    }
+                }
             }
-            Err(_) => {
+            Err(e) => {
+                error!(target: API, "failed to retrieve requested visas for node {requestor_addr}: {e}");
                 let mut err_builder = res_builder.init_error();
                 write_error(
                     &mut err_builder,
@@ -1774,6 +1749,65 @@ impl vsapi::v_s_handle::Server for VSHandleImpl {
 mod tests {
     use super::*;
     use capnp::message::Builder;
+
+    #[tokio::test]
+    async fn visa_request_by_id_delivers_pending_visa_before_vss_connects() {
+        use crate::assembly::tests::new_assembly_for_tests;
+        use crate::db::{NodeVisaState, VisaMetadata, VisaRepo};
+        use crate::test_helpers::{make_node_actor_defexp, make_pdesc, make_visa};
+        use crate::visa_mgr::VisaMgr;
+        use libeval::eval_result::Direction;
+
+        let local = tokio::task::LocalSet::new();
+        local
+            .run_until(async {
+                let mut asm = new_assembly_for_tests(None).await;
+                let repo = VisaRepo::new(asm.state_db.clone(), 1).await.unwrap();
+                asm.visa_mgr = VisaMgr::new(repo.clone());
+                let node_addr: IpAddr = "fd5a:5052:90de::11".parse().unwrap();
+                let ingress: IpAddr = "fd5a:5052:90de::10".parse().unwrap();
+                let node = make_node_actor_defexp(
+                    &node_addr.to_string(),
+                    "node1.demo",
+                    "[fd5a:5052::100]:1234",
+                );
+                asm.actor_mgr.add_node(&node, false).await.unwrap();
+                let visa = make_visa(2643, Duration::from_secs(60));
+                let metadata = VisaMetadata::new(
+                    ingress,
+                    0,
+                    0,
+                    String::new(),
+                    Direction::Forward,
+                    Some(vec![ingress, node_addr]),
+                    &make_pdesc(),
+                );
+                repo.store_visa(&visa, metadata, NodeVisaState::PendingInstall)
+                    .await
+                    .unwrap();
+                let client: vsapi::v_s_handle::Client =
+                    capnp_rpc::new_client(VSHandleImpl::new(Arc::new(asm), node, node_addr));
+                let mut request = client.visa_request_by_id_request();
+                request.get().init_req(1).set(0, 2643);
+                let response = request.send().promise.await.unwrap();
+                let result = response.get().unwrap().get_res().unwrap();
+                let vsapi::result::Which::Ok(visas) = result.which().unwrap() else {
+                    panic!("pending visa pull returned an API error");
+                };
+                let visas = visas.unwrap();
+                assert_eq!(visas.len(), 1);
+                assert_eq!(visas.get(0).get_issuer_id(), 2643);
+                assert_eq!(
+                    repo.get_node_visa_state(2643, &node_addr),
+                    Some(NodeVisaState::Installed)
+                );
+                assert_eq!(
+                    repo.get_node_visa_state(2643, &ingress),
+                    Some(NodeVisaState::PendingInstall)
+                );
+            })
+            .await;
+    }
 
     /// Helper function to create a v_s_connect_request message with the given params
     fn build_connect_request(

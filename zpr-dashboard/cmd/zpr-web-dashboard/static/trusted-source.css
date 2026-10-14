@@ -1,5 +1,6 @@
 trusted-source-browser { display: block; }
 .trusted-source-browser-panel { margin-top: 22px; border-top: 1px solid var(--line); padding-top: 20px; }
+.trusted-source-simulator .trusted-source-browser-panel { margin-top: 0; border-top: 0; padding-top: 0; }
 .trusted-source-browser-head { display: flex; align-items: center; justify-content: space-between; gap: 16px; }
 .trusted-source-browser-head .eyebrow { margin: 0 0 4px; color: var(--muted); font: 11px var(--mono); }
 .trusted-source-browser-head h3 { margin: 0; font-size: 17px; }
@@ -7,8 +8,9 @@ trusted-source-browser { display: block; }
 .trusted-source-summary { margin-top: 16px; color: var(--ink-soft); font: 11px var(--mono); }
 .trusted-source-browser-tools { display: flex; align-items: end; gap: 16px; margin-top: 14px; border-bottom: 1px solid var(--line); }
 .trusted-source-tabs { display: flex; gap: 4px; }
-.trusted-source-tabs button { border: 0; border-bottom: 2px solid transparent; padding: 9px 11px; background: transparent; color: var(--muted); font-size: 12px; }
+.trusted-source-tabs button { display: inline-flex; align-items: center; gap: 6px; border: 0; border-bottom: 2px solid transparent; padding: 9px 11px; background: transparent; color: var(--muted); font-size: 12px; }
 .trusted-source-tabs button[aria-selected="true"] { border-color: var(--forest); color: var(--ink); font-weight: 650; }
+.trusted-source-tab-count { color: var(--muted); font: 11px var(--mono); font-variant-numeric: tabular-nums; }
 .trusted-source-filter { display: flex; align-items: center; gap: 8px; margin: 0 0 7px auto; color: var(--muted); font-size: 11px; }
 .trusted-source-filter input { width: min(260px, 38vw); min-height: 32px; border: 1px solid var(--line); border-radius: 3px; padding: 5px 8px; background: var(--panel); color: var(--ink); }
 .trusted-source-count { margin-bottom: 15px; color: var(--muted); font: 11px var(--mono); white-space: nowrap; }

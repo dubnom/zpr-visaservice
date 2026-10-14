@@ -1,3 +1,13 @@
+.main-content .help-trigger {
+  min-height: 31px;
+  padding: 0 11px;
+  border: 1px solid var(--line);
+  border-radius: 3px;
+  background: transparent;
+  color: var(--ink-soft);
+  font-size: 11px;
+}
+.main-content .help-trigger:hover { border-color: #a5b4aa; background: white; }
 .main-content .topbar > .help-trigger {
   flex: 0 0 auto;
   margin-left: auto;
@@ -34,5 +44,4 @@
 @media (max-width: 520px) {
   .zpr-help-dialog { padding: 16px; }
   .zpr-help-dialog footer { align-items: flex-start; }
-  .main-content .topbar > .help-trigger { padding-inline: 8px; }
 }

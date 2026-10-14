@@ -56,6 +56,33 @@ and plain-text error responses. It has no Simulator or environment dependency,
 enforced by a standard-library-only transitive dependency check. DNS record
 transfers, independent relay configuration and authorization are unchanged.
 
+The signed DNS record viewer and BIND key parser now live in
+[`internal/dnsrecords`](../../internal/dnsrecords/). The command still resolves
+`ZPR_DNS_TRANSFER_ADDR` and `ZPR_DNS_TRANSFER_TSIG_KEY_FILE` on each request and
+owns the authenticated `GET /api/dns/records` route. The package uses only explicit
+inputs, the standard library and the existing DNS library. Zone, TSIG algorithm,
+timeouts, per-request key reload, sorted/deduplicated JSON and error responses
+are preserved; no Simulator configuration or service is consulted.
+
+Policy-Service forwarding now lives in
+[`internal/policyclient`](../../internal/policyclient/), using an explicit
+validated origin and configured mTLS transport. The command retains configuration,
+authorization, assistant-context fetching, assistant-status enrichment, JSON
+errors and logging. Credential removal, Host rewriting, the existing
+`X-Forwarded-Host` fallback/forwarded-for behavior, paths/queries and 100ms
+streaming flush are unchanged. This standard-library-only package is independent
+of Simulator and intentionally retains a different forwarding policy from
+Control Room's proxy; it does not move the repository/server implementation.
+
+Remote assistant attribute fetching also lives in
+[`internal/policyclient/attributes.go`](../../internal/policyclient/attributes.go).
+The command retains local-workspace selection, configuration and transport
+cleanup. Its attribute type is an alias to the package's unchanged two-field
+JSON contract. The fetch preserves GET/Accept headers, 12-second timeout,
+redirect refusal, exact 4 MiB limit, configured-workspace requirement and error
+messages. It exposes only attributes, not people or record contents; existing
+assistant context isolation and authorization are unchanged.
+
 The assertion editor uses the policy editor's Browse/File toolbar, Analyze/Format
 placement, analysis colors, and persistent results gutter. **Analyze** parses,
 lints, and evaluates source against configured trusted sources, showing clickable

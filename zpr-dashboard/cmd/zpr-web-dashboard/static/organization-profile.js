@@ -942,13 +942,20 @@
       return { undo: () => restore(after, before), redo: () => restore(before, after) };
     },
   });
-  document.addEventListener("click", event => {
-    if (!event.target.closest("#organization-edit-profile")) return;
-    if (selectedOrganizationID) void load(selectedOrganizationID);
-  });
   document.addEventListener("organization-profile:open", event => {
     if (dialog.open && !window.ZPREditorPage.confirmDiscard(dirty(), "Discard unsaved organization draft changes?")) return;
     void load(event.detail.id, "Private draft bundle loaded. Definitions are not runnable; no runtime or linked source files changed.", true);
+  });
+  document.addEventListener("organization-profile:edit", event => {
+    if (dialog.open && !window.ZPREditorPage.confirmDiscard(dirty(), "Discard unsaved organization draft changes?")) return;
+    void load(event.detail.id, event.detail.draftOnly
+      ? "Private draft bundle loaded. Definitions are not runnable; no runtime or linked source files changed."
+      : undefined, Boolean(event.detail.draftOnly)).then(() => {
+      if (!event.detail.focusName || !dialog.open || organizationID !== event.detail.id) return;
+      name.focus();
+      name.select();
+      status.textContent = "Edit the private draft name, then save to create a new revision.";
+    });
   });
   window.addEventListener("operator-session-cleared", () => {
     generation++;
@@ -968,10 +975,4 @@
     if (dialog.open) dialog.close();
     render();
   });
-  const button = document.createElement("button");
-  button.id = "organization-edit-profile";
-  button.className = "quiet";
-  button.type = "button";
-  button.textContent = "Edit organization draft";
-  document.querySelector(".organization-top-actions").prepend(button);
 })();

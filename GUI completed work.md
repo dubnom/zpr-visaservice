@@ -11,6 +11,153 @@ not competing current requirements. References such as "above", "below" and
 "this deployment" retain their original context from the former combined tracker;
 use the dated deployment ledger when checking release scope.
 
+## Control Room and Simulator GUI polish
+
+Verified locally on 2026-10-14. Simulator portion deployed at 2026-10-14
+22:35 UTC; Control Room portion deployed at 22:43 UTC. No commit or push.
+
+- [x] Restyle the shared Help trigger consistently across Control Room and
+  Simulator.
+- [x] Tighten Simulator Trusted Sources spacing and show People, Groups and
+  Attributes counts beside their tabs.
+- [x] Simplify scenario cards: remove redundant runner/version/internal-name
+  details and Delete controls, place the title first, keep Edit under File...,
+  preserve the actual Finance/Runtime/Workday folders, and move the machine
+  limit into Scenario Help.
+- [x] Simplify Security Review table headers while retaining the selection
+  checkbox; label observed time as TIME and use the shared bold monospace
+  header treatment.
+- [x] Remove redundant Activity timestamp, stream-state and request/approval
+  metrics while keeping explicit failure status.
+- [x] Keep Control Room Trusted Sources' Updates (24h) feed as live change
+  metadata, separate from Simulator's record browser.
+- [x] Move Simulator organization editing into the right-side viewer's File...
+  actions; allow Rename/Delete only for private drafts, protect bundled and
+  active organizations, confirm deletion and use revision-checked soft
+  archival. Consolidate New, Import and Duplicate under New organization.
+
+Focused Go archive/permission tests and the operator-auth package tests pass.
+After the Simulator deployment, 76 directly served assets matched the
+worktree; live browser checks confirmed the connected organization viewer,
+draft-only File actions, New/Import/Duplicate mode switching, scenario folders
+Trusted Sources counts, Activity's Recent visas/Recent denials view without the
+removed metrics, and Scenario Help's machine limit. Control Room restarted
+with the updated executable; its root and operator-config endpoint return 200,
+the unauthenticated snapshot remains 403, and all 76 served assets match the
+worktree. The signed-out browser showed the operator login prompt; no
+authenticated post-login browser check was performed. The Playwright suite
+could not be run because Node/npm are unavailable; no automated browser-suite
+pass is claimed.
+
+## Migration discovery CLI
+
+Verified locally on 2026-10-14; not deployed, committed or pushed.
+
+### Unlimited target ranges and list configuration
+
+- [x] Remove the 256-host and CIDR-size restrictions in parsing/scanning and
+  the fixed imported-host count limit (retain the 2 MiB import-size limit).
+  Store sorted, merged inclusive ranges and iterate hosts lazily instead of
+  preallocating a record for every requested address. Reject ranges crossing
+  unsupported address types rather than silently trimming them.
+- [x] Require config `targets` to be a nonempty string array with one IP,
+  CIDR or dash range per item. Support full inclusive IPv4/IPv6 endpoints
+  and IPv4 final-octet shorthand. Preserve CLI comma-separated targets and
+  whole-list CLI replacement. Reject old string-valued config targets,
+  empty/invalid arrays and wrong element types.
+- [x] Introduce version-2 report/preview scope contracts with compact ranges
+  and exact decimal-string host/planned-check counts (including counts above
+  64 bits). Keep reached/queued hosts and all imported evidence in partial
+  exports; unrepresented scoped hosts mean not attempted, never absent/down.
+  Keep version-1 adapter import compatibility. Existing authorization,
+  rate/worker/time, output privacy and no-overwrite restrictions remain.
+
+All 86 focused checks in the editor runner pass, as do focused engine/CLI race
+tests, vet, formatting, native build and Linux/Windows cross-builds. Tests cover
+508-host multi-CIDR unions, a /22 and /8, a 2^96-address IPv6 scope, inclusive
+cross-subnet/IPv6/shorthand ranges, invalid/intersecting address types, overlap
+deduplication, early iterator termination, bounded large-scope cancellation,
+300 imported hosts retained before scanning, config-list/CLI precedence and
+loopback dash-range export. The sample config preview and a no-network preview
+of 1,063 targets (a /22 plus a dash range) pass. No real subnet scan was run.
+
+Required `make test` was rerun. The same four dashboard failures described in
+the original-slice section remain, plus
+`TestOrganizationDraftArchiveRequiresCurrentRevisionAndHidesDraft` reports
+HTTP 404 `unknown organization` while testing stale archive behavior. That
+organization/archive code has concurrent changes and was not modified by this
+discovery update. No full-suite pass or Linux/Windows runtime certification
+is claimed.
+
+### Ping, reverse lookup and config-file extension
+
+- [x] Enable one ICMP echo and one system-resolver reverse lookup per explicit
+  target by default, independently disableable with `-ping=false` and
+  `-reverse-dns=false`. Never skip TCP checks because of host-check results.
+  macOS/Linux use their installed ping utilities without a shell or privilege
+  escalation; other platforms require disabling ping. Missing utilities and
+  permission/resolver failures are explicit rather than silent fallbacks.
+- [x] Keep worker/start-rate limits and per-operation/overall deadlines shared
+  across TCP and host checks. Export separate host-check states, timestamps,
+  reverse names and error/attempt counters. Cancellation includes not-attempted
+  host checks; reverse names are unverified system-resolver evidence.
+- [x] Add bounded JSON config input, explicit CLI precedence (including false
+  switches), strict key/type/duplicate/null/trailing-data validation and a
+  documented sample. Authorization remains CLI-only; dry runs do not invoke
+  ping or DNS.
+
+Focused race tests, vet, native build and Linux/Windows cross-builds pass.
+New coverage includes ping utility statuses/diagnostics/deadlines, PTR lookup
+results/failures, config precedence, dry-run defaults, config-driven private
+export, disabled-check compatibility and TCP scanning despite failed ping.
+Real macOS IPv4/IPv6 loopback verification returned ping replies and `localhost`
+names, completed all 2 TCP and 4 host checks, and exported a private report.
+No subnet was scanned again for this extension. `make test` was rerun and
+still fails in the same four existing dashboard tests listed below; no
+full-suite pass or Linux/Windows runtime certification is claimed.
+
+### Original standalone slice
+
+- [x] Add the standalone `zpr-discover` command and standard-library-only
+  `internal/discovery` engine. No Simulator, Control Room, runtime manifest or
+  live adapter dependency is introduced.
+- [x] Require explicit IP/CIDR scope, TCP ports, scanner/organization labels and
+  operator authorization confirmation before scanning. A dry run validates and
+  prints scope without making network connections. Limit host/port counts,
+  concurrency, dial-start rate, per-operation timeout and overall scan duration.
+- [x] Export private, no-overwrite version-1 JSON inventories with per-target
+  results, explicit closed/timeout/unreachable/error/not-attempted distinctions,
+  scan provenance and cancellation/partial-result reporting.
+- [x] Keep common-port service hints separate from optional bounded SSH banner,
+  HTTP HEAD and certificate-verified TLS evidence. Do not follow redirects,
+  attempt authentication, send application requests on TLS-only checks, or
+  infer application protocols from TLS handshakes.
+- [x] Validate and preserve imported adapter listener inventory separately,
+  including bind addresses, TCP/UDP listeners, process/service labels and
+  timestamps. Mark it `imported_unverified`; no claim of live adapter
+  collection or remote reachability is made.
+
+Focused engine/CLI race tests and vet pass. Native macOS build and Linux amd64/
+Windows amd64 cross-builds pass; runtime execution on Linux/Windows is not
+claimed. The documented adapter-import dry run passes. Tests cover exact scope
+caps, deduplication, port states, pacing across workers, partial cancellation,
+bounded checks, untrusted TLS certificates, JSON contracts and private
+no-overwrite publication. Only local loopback/in-memory fixtures were used;
+no real network discovery run or policy change was performed.
+
+Required `make test` was run. It currently fails in the existing dashboard
+tests `TestEnrollmentAdministrationOverVerifiedTLSWithoutSimulator` (readiness
+preflight rejection), `TestOrganizationPolicyInstallNeverUploadsStaleBundle`
+(unbound platform variable), `TestScenarioPlacementPreflightMatchesLauncher`
+(missing extracted launcher function), and
+`TestTrustedServiceBuildPublishesAtomicallyAndKeepsFreshArtifact`
+(fixture is not a Linux amd64 executable). Those tests/code were not changed
+by this slice; no full-suite pass is claimed.
+
+Control Room discovery UI, remote scanner selection/control, authenticated
+adapter collection, UDP scanning and migration policy drafts remain future work.
+See [CLI usage and export contract](zpr-dashboard/cmd/zpr-discover/README.md).
+
 ## Editor gutter synchronization and undo
 
 Verified locally on 2026-10-13; not deployed, committed or pushed.

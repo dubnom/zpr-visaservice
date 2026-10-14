@@ -216,6 +216,7 @@ func runSimulator(listen string) error {
 	mux.HandleFunc("POST /api/simulator/organizations/{organization}/duplicates/{target}", handleOrganizationDuplicate)
 	mux.HandleFunc("GET /api/simulator/organizations/{organization}/draft/profile", handleOrganizationBundleProfile)
 	mux.HandleFunc("PUT /api/simulator/organizations/{organization}/draft/profile", handleOrganizationBundleProfile)
+	mux.HandleFunc("DELETE /api/simulator/organizations/{organization}/draft", handleOrganizationDraftArchive)
 	mux.HandleFunc("POST /api/simulator/organizations/{organization}/draft/profile/check", handleOrganizationBundleProfile)
 	mux.HandleFunc("GET /api/simulator/organizations/{organization}/draft/profile/revisions", handleOrganizationBundleHistory)
 	mux.HandleFunc("GET /api/simulator/organizations/{organization}/draft/profile/revisions/{revision}", handleOrganizationBundleHistory)

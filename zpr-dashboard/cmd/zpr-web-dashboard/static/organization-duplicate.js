@@ -8,23 +8,34 @@
   const list = section.querySelector("#organization-drafts-list");
   const catalogStatus = section.querySelector("#organization-drafts-status");
   let catalogGeneration = 0;
+  let selectedDraftID = "";
   async function refreshDrafts() {
     const current = ++catalogGeneration;
     try {
       const result = await request("/api/simulator/organization-drafts", { cache: "no-store" });
       if (current !== catalogGeneration) return;
       if (!Array.isArray(result.drafts)) throw new Error("Organization draft catalog is invalid.");
+      if (!result.drafts.some(draft => draft.id === selectedDraftID)) selectedDraftID = "";
       list.replaceChildren();
       for (const draft of result.drafts) {
         const button = document.createElement("button");
         button.type = "button";
-        button.className = "organization-card";
+        button.className = `organization-card${draft.id === selectedDraftID ? " selected" : ""}`;
+        button.dataset.organizationDraftId = draft.id;
+        button.setAttribute("aria-pressed", String(draft.id === selectedDraftID));
         const name = document.createElement("strong");
         name.textContent = draft.name;
         const detail = document.createElement("small");
         detail.textContent = `${draft.id} · draft revision ${draft.revision}${draft.source_id ? ` · duplicated from ${draft.source_id}` : " · private definitions"}`;
         button.append(name, detail);
-        button.addEventListener("click", () => document.dispatchEvent(new CustomEvent("organization-profile:open", { detail: { id: draft.id } })));
+        button.addEventListener("click", () => {
+          selectedDraftID = draft.id;
+          for (const card of list.querySelectorAll("[data-organization-draft-id]")) {
+            card.classList.toggle("selected", card.dataset.organizationDraftId === selectedDraftID);
+            card.setAttribute("aria-pressed", String(card.dataset.organizationDraftId === selectedDraftID));
+          }
+          document.dispatchEvent(new CustomEvent("organization-draft:selected", { detail: draft }));
+        });
         list.append(button);
       }
       catalogStatus.textContent = result.drafts.length ? "Open a draft to edit, use AI, validate or review history. Activation is not available." : "No private organization drafts.";
@@ -32,14 +43,22 @@
       if (current === catalogGeneration) catalogStatus.textContent = `Draft catalog unavailable: ${error.message}`;
     }
   }
-  section.querySelector("#organization-drafts-refresh").addEventListener("click", () => void refreshDrafts());
+  section.querySelector("#organization-drafts-refresh").addEventListener("click", () => {
+    void refreshDrafts();
+    if (selectedDraftID) document.dispatchEvent(new CustomEvent("organization-draft:refresh-selected", { detail: { id: selectedDraftID } }));
+  });
   document.addEventListener("organization-drafts:changed", () => void refreshDrafts());
+  document.addEventListener("organization-drafts:deleted", event => {
+    if (selectedDraftID === event.detail.id) selectedDraftID = "";
+  });
+  document.addEventListener("organization-draft:cleared", () => { selectedDraftID = ""; });
   const dialog = document.createElement("dialog");
   dialog.id = "organization-duplicate-dialog";
   dialog.className = "design-assistant-dialog organization-duplicate-dialog";
   dialog.setAttribute("aria-labelledby", "organization-duplicate-title");
   dialog.innerHTML = `<header class="design-assistant-dialog-head"><h2 id="organization-duplicate-title">Duplicate organization definitions</h2><button type="button" class="quiet" data-duplicate-close aria-label="Close organization dialog" title="Close organization dialog">×</button></header>
     <p id="organization-create-disclosure">Copies bundled fictional definitions only, not unsaved workspace edits. No credentials, enrollment, sessions, run history or live state. Source base DN and desired node/service identifiers and addresses are retained for review. This creates a private draft, never an active organization.</p>
+    <fieldset class="organization-create-modes"><legend>Creation type</legend><button type="button" data-create-mode="new">New</button><button type="button" data-create-mode="import">Import</button><button type="button" data-create-mode="duplicate">Duplicate</button></fieldset>
     <div class="assistant-settings"><label data-create-source>Source organization<input id="organization-duplicate-source" readonly></label><label>New organization ID<input id="organization-duplicate-id" maxlength="100"></label><label data-create-overview>Name<input id="organization-duplicate-name" maxlength="200"></label><label data-create-overview>Description<textarea id="organization-duplicate-description" maxlength="4000"></textarea></label><label data-create-new hidden>Directory base DN (optional)<input id="organization-create-base-dn" maxlength="512"></label></div>
     <section data-create-import hidden><label>Import bundle file<input type="file" id="organization-create-file" accept=".json,application/json"></label><label>Portable organization bundle JSON<textarea id="organization-create-import" rows="10" spellcheck="false"></textarea></label><p>Version 1 definition bundle only. Set profile.id and each scenario organization_id to the target ID before review. Unknown fields, credentials, unsafe paths and runtime state are rejected; namespaces are not rewritten.</p></section>
     <button type="button" data-duplicate-preview>Review proposed draft</button>
@@ -73,6 +92,10 @@
     for (const label of dialog.querySelectorAll("[data-create-overview]")) label.hidden = mode === "import";
     dialog.querySelector("[data-create-new]").hidden = mode !== "new";
     dialog.querySelector("[data-create-import]").hidden = mode !== "import";
+    for (const button of dialog.querySelectorAll("[data-create-mode]")) {
+      button.setAttribute("aria-pressed", String(button.dataset.createMode === mode));
+      button.disabled = busy || Boolean(pending);
+    }
     dialog.querySelector("#organization-duplicate-title").textContent = mode === "duplicate" ? "Duplicate organization definitions" : mode === "new" ? "New organization draft" : "Import organization definitions";
     dialog.querySelector("#organization-create-disclosure").textContent = mode === "duplicate"
       ? "Copies bundled fictional definitions only, not workspace edits. No credentials, enrollment, sessions, run history or live state. Source base DN and desired node/service identifiers and addresses are retained for review. Draft only, never activated."
@@ -191,7 +214,7 @@
   const duplicateButton = document.createElement("button");
   duplicateButton.type = "button";
   duplicateButton.className = "quiet";
-  duplicateButton.textContent = "Duplicate organization";
+  duplicateButton.textContent = "New organization";
   function openCreation(nextMode) {
     try {
       const retained = sessionStorage.getItem(storageKey);
@@ -209,9 +232,9 @@
         review.textContent = "An unresolved creation operation is retained. Check its result or retry the exact recorded request.";
         status.textContent = review.textContent;
       } else {
+        const selected = nextMode === "duplicate" ? organizationCatalog.find(organization => organization.id === selectedOrganizationID) : null;
+        if (nextMode === "duplicate" && !selected) throw new Error("Select a bundled source organization before duplicating.");
         mode = nextMode;
-        const selected = mode === "duplicate" ? organizationCatalog.find(organization => organization.id === selectedOrganizationID) : null;
-        if (mode === "duplicate" && !selected) throw new Error("Select a bundled source organization before duplicating.");
         source.value = selected?.id || "";
         id.value = "";
         name.value = selected ? `${selected.name} copy` : "";
@@ -220,19 +243,19 @@
         invalidate();
       }
       render();
-      dialog.showModal();
-    } catch (error) { catalogStatus.textContent = `Cannot open duplication: ${error.message}`; }
+      if (!dialog.open) dialog.showModal();
+    } catch (error) {
+      const message = `Cannot open organization creation: ${error.message}`;
+      if (dialog.open) status.textContent = message;
+      else catalogStatus.textContent = message;
+    }
   }
-  duplicateButton.addEventListener("click", () => openCreation("duplicate"));
+  duplicateButton.addEventListener("click", () => openCreation("new"));
   document.querySelector(".organization-top-actions").append(duplicateButton);
-  for (const [creationMode, label] of [["new", "New organization"], ["import", "Import organization"]]) {
-    const button = document.createElement("button");
-    button.type = "button";
-    button.className = "quiet";
-    button.textContent = label;
-    button.addEventListener("click", () => openCreation(creationMode));
-    document.querySelector(".organization-top-actions").append(button);
+  for (const button of dialog.querySelectorAll("[data-create-mode]")) {
+    button.addEventListener("click", () => openCreation(button.dataset.createMode));
   }
+  document.addEventListener("organization-duplicate:open", () => openCreation("duplicate"));
   window.addEventListener("operator-session-cleared", () => {
     generation++;
     catalogGeneration++;

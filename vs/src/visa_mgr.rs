@@ -711,6 +711,29 @@ impl VisaMgr {
         Ok(visa_ids)
     }
 
+    /// Pull authorized copies without depending on the reverse VSS connection
+    /// that these visas may themselves be needed to establish.
+    pub async fn get_visas_by_id_for_node(
+        &self,
+        node_addr: &IpAddr,
+        ids: &[u64],
+    ) -> Result<Vec<Visa>, ServiceError> {
+        let mut visas = Vec::new();
+        for &id in ids {
+            if !matches!(
+                self.repo.get_node_visa_state(id, node_addr),
+                Some(db::NodeVisaState::PendingInstall | db::NodeVisaState::Installed)
+            ) {
+                debug!(target: VISA, "node {node_addr} cannot pull visa {id}: not staged for installation or installed");
+                continue;
+            }
+            if let Some(visa) = self.get_visa_by_id(id).await? {
+                visas.push(self.actualize_visa_for_target_node(visa, node_addr).await?);
+            }
+        }
+        Ok(visas)
+    }
+
     pub async fn get_num_pending_install_visas(
         &self,
         node_addr: &IpAddr,
@@ -1751,6 +1774,75 @@ mod tests {
             .await
             .unwrap();
         visa
+    }
+
+    #[tokio::test]
+    async fn pull_pending_visa_actualizes_each_hop_without_vss() {
+        let mgr = make_mgr().await;
+        let path = three_node_path();
+        store_test_visa(&mgr, 501, Some(path.clone())).await;
+        mgr.visa_installed(501, &path[0]).await.unwrap();
+
+        for (index, node) in path.iter().enumerate() {
+            let visas = mgr.get_visas_by_id_for_node(node, &[501]).await.unwrap();
+            assert_eq!(visas.len(), 1);
+            assert_eq!(visas[0].issuer_id, 501);
+            if index == 1 {
+                assert_eq!(visas[0].visa_type, VisaType::ForwardOnly);
+                assert!(visas[0].dock_pep.is_none());
+            } else {
+                assert_eq!(visas[0].visa_type, VisaType::Full);
+            }
+            assert_eq!(
+                visas[0].fwd_pep.as_ref().map(|pep| pep.next_hop),
+                path.get(index + 1).copied()
+            );
+        }
+        assert!(
+            mgr.get_visas_by_id_for_node(&NODE_ADDR.parse().unwrap(), &[501])
+                .await
+                .unwrap()
+                .is_empty()
+        );
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn pull_visa_excludes_revoking_revoked_unknown_and_expired() {
+        let mgr = make_mgr().await;
+        let node = PATH_NODE_A.parse().unwrap();
+        for (id, state) in [
+            (501, db::NodeVisaState::PendingInstall),
+            (502, db::NodeVisaState::Installed),
+            (503, db::NodeVisaState::PendingRevoke),
+            (504, db::NodeVisaState::Revoked),
+        ] {
+            store_node_visa(&mgr, id, node, state).await;
+        }
+        let ids = [501, 502, 503, 504, 505];
+        let visas = mgr.get_visas_by_id_for_node(&node, &ids).await.unwrap();
+        assert_eq!(
+            visas.iter().map(|visa| visa.issuer_id).collect::<Vec<_>>(),
+            vec![501, 502]
+        );
+        mgr.repo.mark_visa_revoked(501).await.unwrap();
+        mgr.visa_installed(501, &node).await.unwrap();
+        assert_eq!(
+            mgr.repo.get_node_visa_state(501, &node),
+            Some(db::NodeVisaState::PendingRevoke)
+        );
+        assert!(
+            mgr.get_visas_by_id_for_node(&node, &[501])
+                .await
+                .unwrap()
+                .is_empty()
+        );
+        tokio::time::advance(Duration::from_secs(61)).await;
+        assert!(
+            mgr.get_visas_by_id_for_node(&node, &ids)
+                .await
+                .unwrap()
+                .is_empty()
+        );
     }
 
     /// No path in metadata → visa returned unchanged with no fwd_pep.

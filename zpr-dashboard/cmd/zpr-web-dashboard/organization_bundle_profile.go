@@ -3,6 +3,7 @@ package main
 import (
 	"encoding/json"
 	"errors"
+	"io"
 	"net/http"
 	"strconv"
 )
@@ -30,6 +31,38 @@ func handleOrganizationBundleGet(w http.ResponseWriter, r *http.Request) {
 	}
 	defer store.Close()
 	writeSimulatorJSON(w, artifact)
+}
+
+func handleOrganizationDraftArchive(w http.ResponseWriter, r *http.Request) {
+	var request workspacePublishRequest
+	decoder := json.NewDecoder(http.MaxBytesReader(w, r.Body, 1024))
+	if err := decoder.Decode(&request); err != nil || request.ExpectedRevision < 1 {
+		writeWorkspaceError(w, http.StatusBadRequest, "a valid expected_revision is required")
+		return
+	}
+	var trailing any
+	if err := decoder.Decode(&trailing); err != io.EOF {
+		writeWorkspaceError(w, http.StatusBadRequest, "delete request contains trailing data")
+		return
+	}
+	store, err := openOrganizationBundleStore()
+	if err != nil {
+		writeWorkspaceError(w, http.StatusInternalServerError, "organization draft workspace unavailable")
+		return
+	}
+	defer store.Close()
+	if err := store.Archive(r.Context(), r.PathValue("organization"), workspaceOrganizationBundleKind, "bundle", request.ExpectedRevision); err != nil {
+		switch {
+		case errors.Is(err, errWorkspaceArtifactNotFound):
+			writeWorkspaceError(w, http.StatusNotFound, "private organization draft not found")
+		case errors.Is(err, errWorkspaceRevisionConflict):
+			writeWorkspaceError(w, http.StatusConflict, "private organization draft changed; refresh before deleting")
+		default:
+			writeWorkspaceError(w, http.StatusInternalServerError, "private organization draft could not be deleted")
+		}
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
 }
 
 func handleOrganizationBundleProfile(w http.ResponseWriter, r *http.Request) {

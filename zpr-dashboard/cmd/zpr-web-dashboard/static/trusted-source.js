@@ -47,6 +47,7 @@
     initialize() {
       this.ready = true;
       this.simulatorPage = !this.closest("#page-sources");
+      this.classList.toggle("trusted-source-simulator", this.simulatorPage);
       this.view = this.simulatorPage ? "graph" : "people";
       this.sorts = { people: { key: "identity", direction: 1 }, groups: { key: "group", direction: 1 }, attributes: { key: "attribute", direction: 1 } };
       this.expandedPeople = new Set();
@@ -61,9 +62,9 @@
             <div class="trusted-source-tabs" role="tablist" aria-label="Trusted source records">
               ${this.simulatorPage ? `<button type="button" role="tab" data-source-tab="graph" aria-selected="true">LDAP graph</button>` : ""}
               <button type="button" role="tab" data-source-tab="tree" aria-selected="false" tabindex="-1">LDAP tree</button>
-              <button type="button" role="tab" data-source-tab="people" aria-selected="${this.simulatorPage ? "false" : "true"}"${this.simulatorPage ? ' tabindex="-1"' : ""}>People</button>
-              <button type="button" role="tab" data-source-tab="groups" aria-selected="false" tabindex="-1">Groups</button>
-              <button type="button" role="tab" data-source-tab="attributes" aria-selected="false" tabindex="-1">Attributes</button>
+              <button type="button" role="tab" data-source-tab="people" aria-selected="${this.simulatorPage ? "false" : "true"}"${this.simulatorPage ? ' tabindex="-1"' : ""}>People${this.simulatorPage ? '<span class="trusted-source-tab-count" data-record-count="people" aria-hidden="true">—</span>' : ""}</button>
+              <button type="button" role="tab" data-source-tab="groups" aria-selected="false" tabindex="-1">Groups${this.simulatorPage ? '<span class="trusted-source-tab-count" data-record-count="groups" aria-hidden="true">—</span>' : ""}</button>
+              <button type="button" role="tab" data-source-tab="attributes" aria-selected="false" tabindex="-1">Attributes${this.simulatorPage ? '<span class="trusted-source-tab-count" data-record-count="attributes" aria-hidden="true">—</span>' : ""}</button>
               ${this.simulatorPage ? "" : `<button type="button" role="tab" data-source-tab="updates" aria-selected="false" tabindex="-1">Updates (24h)</button>`}
             </div>
             <label class="trusted-source-filter"><span>Filter</span><input type="search" data-source-filter aria-label="Filter trusted source records"></label>
@@ -179,6 +180,17 @@
       const results = this.querySelector("[data-source-results]");
       const message = this.querySelector("[data-source-message]");
       results.replaceChildren();
+      if (this.simulatorPage) {
+        const counts = {
+          people: (directory.people || []).length,
+          groups: Object.keys(directory.groups || {}).length,
+          attributes: (this.snapshot.attributes || []).length,
+        };
+        for (const [view, value] of Object.entries(counts)) {
+          this.querySelector(`[data-record-count="${view}"]`).textContent = String(value);
+          this.querySelector(`[data-source-tab="${view}"]`).setAttribute("aria-label", `${view[0].toUpperCase()}${view.slice(1)} (${value} records)`);
+        }
+      }
       if (this.view === "graph") this.renderGraph(results, directory);
       else if (this.view === "tree") this.renderTree(results, directory, query);
       else if (this.view === "people") this.renderPeople(results, directory, query);

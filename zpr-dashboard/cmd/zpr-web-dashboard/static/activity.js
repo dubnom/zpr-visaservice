@@ -6,7 +6,6 @@ const activitySort = {
 	"activity-denies": { key: "count", direction: -1 },
 };
 let activityData;
-const activityMetrics = window.ZPRPollingDisplay.createTracker();
 
 const visaColumns = [
 	{ key: "flow", label: "FLOW", value: (visa) => `${visa.source_addr || ""} ${visa.dest_addr || ""}`, render: (visa) => `${visa.source_addr || "—"} → ${visa.dest_addr || "—"}` },
@@ -66,29 +65,17 @@ async function activityRefresh({ signal, isCurrent }) {
 	const nextData = await window.ZPRPageRuntime.requestJSON(window.fetch.bind(window), "/api/simulator/activity", { signal });
 	if (!isCurrent()) return;
 	activityData = nextData;
-	const stats = activityData.stats || {};
-	const visas = activityData.visas || [];
-	$("#requests").textContent = stats.visa_requests || "0";
-	$("#approved").textContent = stats.visa_requests_approved || "0";
-	$("#denied").textContent = stats.visa_requests_denied || "0";
-	$("#visa-count").textContent = visas.length;
-	activityMetrics.update([
-		["requests", { value: $("#requests").textContent, node: $("#requests") }],
-		["approved", { value: $("#approved").textContent, node: $("#approved") }],
-		["denied", { value: $("#denied").textContent, node: $("#denied") }],
-		["visa-count", { value: $("#visa-count").textContent, node: $("#visa-count") }],
-	]);
-	$("#activity-state").textContent = "LIVE";
-	$("#activity-time").textContent = window.ZPRSafeDisplay.formatTime(activityData.generated_at);
+	$("#activity-status").hidden = true;
+	$("#activity-status").textContent = "";
 	renderActivityTables();
 }
-const activityPoller = window.ZPRSimulatorNavigation.createPagePoller({
+window.ZPRSimulatorNavigation.createPagePoller({
 	path: "/activity.html",
 	run: activityRefresh,
 	interval: 4000,
-	onError: () => {
-		const status = $("#activity-state");
-		if (status) status.textContent = "UNAVAILABLE";
+	onError: (error) => {
+		const status = $("#activity-status");
+		status.textContent = `Activity feed unavailable: ${error.message || "request failed"}`;
+		status.hidden = false;
 	},
 });
-$("#refresh").addEventListener("click", () => void activityPoller.refresh());

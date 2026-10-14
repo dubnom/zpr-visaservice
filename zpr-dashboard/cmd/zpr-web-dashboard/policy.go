@@ -19,6 +19,7 @@ import (
 	"time"
 
 	"github.com/BurntSushi/toml"
+	"neboagency.com/zpr-dashborad/internal/policyclient"
 	"neboagency.com/zpr-dashborad/internal/servicehttp"
 )
 
@@ -71,10 +72,7 @@ type policyStatus struct {
 	Message            string                 `json:"message,omitempty"`
 }
 
-type policyAttribute struct {
-	Source    string `json:"source"`
-	Attribute string `json:"attribute"`
-}
+type policyAttribute = policyclient.Attribute
 
 type policyAttributeMapping struct {
 	policyAttribute

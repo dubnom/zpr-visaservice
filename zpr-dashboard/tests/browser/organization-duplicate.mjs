@@ -9,6 +9,7 @@ export function registerOrganizationDuplicateTests(test, expect) {
     let revision = 1;
     const creates = [];
     const saves = [];
+    const archives = [];
     api.handlers.set("/api/simulator/organization-drafts", route => route.fulfill({ json: { drafts: created ? [
       { id: "alpha-copy", name: current.name, revision, source_id: "alpha", draft_only: true },
     ] : [] } }));
@@ -22,7 +23,14 @@ export function registerOrganizationDuplicateTests(test, expect) {
       created = { organization_id: "alpha-copy", revision, content: { profile: current, operation_id: creates[0].operation_id } };
       return route.fulfill(lost ? { status: 503, json: { error: "Response lost after persistence" } } : { json: created });
     });
-    api.handlers.set("/api/simulator/organizations/alpha-copy/draft", route => route.fulfill(created ? { json: created } : { status: 404, json: { error: "No draft" } }));
+    api.handlers.set("/api/simulator/organizations/alpha-copy/draft", route => {
+      if (route.request().method() === "DELETE") {
+        archives.push(route.request().postDataJSON());
+        created = null;
+        return route.fulfill({ status: 204 });
+      }
+      return route.fulfill(created ? { json: created } : { status: 404, json: { error: "No draft" } });
+    });
     api.handlers.set(profilePath, route => {
       if (route.request().method() === "PUT") {
         const body = route.request().postDataJSON();
@@ -41,13 +49,33 @@ export function registerOrganizationDuplicateTests(test, expect) {
       const body = route.request().postDataJSON();
       return route.fulfill({ json: { answer: "Review a fictional draft.", proposal: { profile: { ...body.profile, description: "AI copied-organization description" } } } });
     });
-    return { creates, saves };
+    return { creates, saves, archives };
   }
+  test("New organization opens one dialog with new, import and duplicate modes", async ({ page, appURL, api }) => {
+    await page.goto(appURL + "/organizations.html");
+    await expect(page.locator("#organization-title")).toHaveText("Alpha Labs");
+    await expect(page.locator(".organization-top-actions button")).toHaveText(["New organization"]);
+    await page.getByRole("button", { name: "New organization", exact: true }).click();
+    const dialog = page.locator("#organization-duplicate-dialog");
+    await expect(dialog).toHaveRole("dialog");
+    await expect(dialog.getByRole("heading", { name: "New organization draft" })).toBeVisible();
+    await expect(dialog.locator("[data-create-mode='new']")).toHaveAttribute("aria-pressed", "true");
+    await expect(dialog.locator("[data-create-source]")).toBeHidden();
+    await dialog.getByRole("button", { name: "Import", exact: true }).click();
+    await expect(dialog.getByRole("heading", { name: "Import organization definitions" })).toBeVisible();
+    await expect(dialog.locator("[data-create-import]")).toBeVisible();
+    await dialog.getByRole("button", { name: "Duplicate", exact: true }).click();
+    await expect(dialog.getByRole("heading", { name: "Duplicate organization definitions" })).toBeVisible();
+    await expect(dialog.locator("[data-create-source]")).toBeVisible();
+    await expect(dialog.locator("#organization-duplicate-source")).toHaveValue("alpha");
+    await expect.poll(() => api.counts.get("/api/simulator/organizations/alpha-copy/create") || 0).toBe(0);
+  });
   async function review(page, appURL) {
     await page.goto(appURL + "/organizations.html");
     await expect(page.locator("#organization-title")).toHaveText("Alpha Labs");
-    await page.getByRole("button", { name: "Duplicate organization", exact: true }).click();
+    await page.getByRole("button", { name: "New organization", exact: true }).click();
     const dialog = page.locator("#organization-duplicate-dialog");
+    await dialog.getByRole("button", { name: "Duplicate", exact: true }).click();
     await dialog.getByLabel("New organization ID").fill("alpha-copy");
     await dialog.getByRole("button", { name: "Review proposed draft" }).click();
     await expect(dialog.locator("#organization-duplicate-review")).toContainText("directory.ldif");
@@ -90,6 +118,45 @@ export function registerOrganizationDuplicateTests(test, expect) {
     await expect(page.locator("#organization-drafts-list")).toContainText("Alpha copy");
     expect([...api.counts.keys()].some(path => /activate|restore-base|publish/.test(path))).toBe(false);
   });
+  test("Organization File actions protect bundled profiles and delete only confirmed private drafts", async ({ page, appURL, api }) => {
+    const state = fixture(api);
+    const dialog = await review(page, appURL);
+    await dialog.getByLabel("I reviewed these definitions").check();
+    await dialog.getByRole("button", { name: "Create draft", exact: true }).click();
+    const profileEditor = page.locator("#organization-profile-editor");
+    await expect(profileEditor).toBeVisible();
+    await profileEditor.getByRole("button", { name: "Close organization draft" }).click();
+    await expect(page.locator("#organization-title")).toHaveText("Alpha Labs");
+    await expect(page.locator(".organization-top-actions button")).toHaveText(["New organization"]);
+    const bundledMenu = page.locator(".organization-file-menu-items");
+    await expect(bundledMenu.getByRole("button", { name: "Duplicate", exact: true })).toBeEnabled();
+    await expect(bundledMenu.getByRole("button", { name: "Rename", exact: true })).toBeDisabled();
+    await expect(bundledMenu.getByRole("button", { name: "Restore", exact: true })).toBeEnabled();
+    await expect(bundledMenu.getByRole("button", { name: "Delete", exact: true })).toBeDisabled();
+
+    const draftCard = page.locator("#organization-drafts-list [data-organization-draft-id='alpha-copy']");
+    await expect(draftCard).toBeVisible();
+    await draftCard.click();
+    await expect(page.locator("#organization-title")).toHaveText("Alpha copy");
+    const draftMenu = page.locator(".organization-file-menu-items");
+    await expect(draftMenu.getByRole("button", { name: "Duplicate", exact: true })).toBeDisabled();
+    await expect(draftMenu.getByRole("button", { name: "Rename", exact: true })).toBeEnabled();
+    await expect(draftMenu.getByRole("button", { name: "Restore", exact: true })).toBeDisabled();
+    await expect(draftMenu.getByRole("button", { name: "Delete", exact: true })).toBeEnabled();
+    await draftMenu.getByRole("button", { name: "Rename", exact: true }).click();
+    await expect(profileEditor.locator("#organization-profile-name")).toBeFocused();
+    await profileEditor.getByRole("button", { name: "Close organization draft" }).click();
+    await page.locator(".organization-file-menu > summary").click();
+    await page.locator(".organization-file-menu-items").getByRole("button", { name: "Delete", exact: true }).click();
+    const deleteDialog = page.getByRole("dialog", { name: "Delete private organization draft?" });
+    await expect(deleteDialog).toContainText("Alpha copy");
+    await expect(state.archives).toHaveLength(0);
+    await deleteDialog.getByRole("button", { name: "Delete draft", exact: true }).click();
+    await expect(page.locator("#organization-title")).toHaveText("Alpha Labs");
+    await expect(draftCard).toHaveCount(0);
+    expect(state.archives).toEqual([{ expected_revision: 1 }]);
+    expect([...api.counts.keys()].some(path => /activate|restore-base|publish/.test(path))).toBe(false);
+  });
   test("Organization duplicate retains lost-response operation across reload and reconciles without re-creation", async ({ page, appURL, api }) => {
     const state = fixture(api, { lost: true });
     const dialog = await review(page, appURL);
@@ -99,7 +166,7 @@ export function registerOrganizationDuplicateTests(test, expect) {
     await expect(dialog.getByLabel("New organization ID")).toBeDisabled();
     const operation = state.creates[0].operation_id;
     await page.reload();
-    await page.getByRole("button", { name: "Duplicate organization", exact: true }).click();
+    await page.getByRole("button", { name: "New organization", exact: true }).click();
     await expect(dialog.getByLabel("New organization ID")).toHaveValue("alpha-copy");
     await dialog.getByRole("button", { name: "Check creation result" }).click();
     await expect(page.locator("#organization-profile-name")).toHaveValue("Alpha copy");

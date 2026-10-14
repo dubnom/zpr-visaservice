@@ -115,10 +115,9 @@ async function refreshScenarioLogPreviews({ signal, isCurrent }) {
   renderScenarioLogPreviews();
 }
 
-function renderScenarioList(scenarios, maxMachines) {
+function renderScenarioList(scenarios) {
   scenarioById.clear();
   for (const scenario of scenarios) scenarioById.set(scenario.id, scenario);
-  document.getElementById("scenario-machine-limit").textContent = `Maximum ${maxMachines} machines per run`;
   if (!scenarios.length) {
     document.getElementById("scenario-list").innerHTML = `<p class="scenario-empty">No scenarios in this organization. Create one to get started.</p>`;
     return;
@@ -139,7 +138,7 @@ function renderScenarioList(scenarios, maxMachines) {
       const topologySummary = topology?.nodes?.length ? `${topology.nodes.length} nodes · ${(topology.links || []).length} links` : "base topology";
       const published = Number(scenario.published_revision || 0);
       const canRun = scenario.organization_id === activeScenarioOrganization && published > 0 && !running;
-      return `<article class="scenario-card${selected ? " selected" : ""}"><div class="scenario-card-heading"><div><span class="scenario-id">${scenarioEscape(scenario.id)}</span><h3>${scenarioEscape(scenario.name)}</h3></div><span class="scenario-step-count">${topologySummary} · ${machines}/${maxMachines} machines · ${(scenario.steps || []).length} steps</span></div><p>${scenarioEscape(scenario.description)}</p><div class="scenario-card-actions"><span class="scenario-version${published ? " published" : ""}">${published ? `Version ${published}` : `Draft r${scenario.current_revision || 1}`}</span><button type="button" data-run-scenario="${scenarioEscape(scenario.id)}" data-run-organization="${scenarioEscape(scenario.organization_id)}" data-run-published="${published > 0}" ${canRun ? "" : "disabled"}>Run</button><button class="quiet" type="button" data-edit-scenario="${scenarioEscape(scenario.id)}">Edit</button><button class="quiet danger" type="button" data-delete-scenario="${scenarioEscape(scenario.id)}" data-delete-organization="${scenarioEscape(scenario.organization_id)}" data-delete-revision="${scenario.current_revision || 1}" ${running && selected ? "disabled" : ""}>Delete</button></div></article>`;
+      return `<article class="scenario-card${selected ? " selected" : ""}"><div class="scenario-card-heading"><h3>${scenarioEscape(scenario.name)}</h3></div><p>${scenarioEscape(scenario.description)}</p><div class="scenario-card-actions"><span class="scenario-step-count">${topologySummary} · ${machines} machines · ${(scenario.steps || []).length} steps</span><button type="button" data-run-scenario="${scenarioEscape(scenario.id)}" data-run-organization="${scenarioEscape(scenario.organization_id)}" data-run-published="${published > 0}" ${canRun ? "" : "disabled"}>Run</button><details class="scenario-card-file-menu"><summary class="button quiet">File...</summary><div class="scenario-card-file-menu-items" aria-label="${scenarioEscape(scenario.name)} file operations"><button class="quiet" type="button" data-edit-scenario="${scenarioEscape(scenario.id)}">Edit</button></div></details></div></article>`;
     }).join("");
     const items = `<div class="scenario-folder-items">${cards}</div>`;
     if (folder === "Unfiled") return `<div class="scenario-unfiled">${items}</div>`;
@@ -287,20 +286,22 @@ async function refreshScenarios({ signal, isCurrent }) {
     document.getElementById("scenario-editor-dialog").close();
   }
   const scenarios = data.scenarios || [];
-  const catalogSignature = JSON.stringify({ scenarios, active: activeScenarioOrganization });
+  const maxMachines = Number.isInteger(data.max_machines) && data.max_machines > 0 ? data.max_machines : 10;
+  if (window.ZPRSimulatorScenarioLimits?.maxMachines !== maxMachines) {
+    window.ZPRSimulatorScenarioLimits = { maxMachines };
+    window.dispatchEvent(new CustomEvent("simulator:scenario-limits"));
+  }
+  const catalogSignature = JSON.stringify({ scenarios, active: activeScenarioOrganization, maxMachines });
   const catalogChanged = catalogSignature !== scenarioCatalogSignature;
   if (catalogChanged) {
     scenarioCatalogSignature = catalogSignature;
-    renderScenarioList(scenarios, data.max_machines || 10);
+    renderScenarioList(scenarios);
   }
   const runSignature = JSON.stringify(data.run || {});
   if (runSignature !== scenarioRunSignature || catalogChanged) {
     scenarioRunSignature = runSignature;
     renderScenarioRun(data.run);
   }
-  const organizationName = data.organization?.name || activeScenarioOrganization;
-  document.getElementById("scenario-organization").textContent = organizationName;
-  document.getElementById("scenario-connection").textContent = `${organizationName}: ${scenarios.length} scenarios`;
 }
 
 const scenarioPoller = window.ZPRSimulatorNavigation.createPagePoller({
@@ -311,7 +312,6 @@ const scenarioPoller = window.ZPRSimulatorNavigation.createPagePoller({
     const error = document.getElementById("scenario-error");
     error.textContent = failure.message || "Scenario catalog unavailable";
     error.hidden = false;
-    document.getElementById("scenario-connection").textContent = "Scenario service unavailable";
   },
 });
 const refreshScenariosNow = () => scenarioPoller.refresh();
@@ -734,7 +734,6 @@ async function postScenarioAction(url) {
 }
 
 
-document.getElementById("scenario-refresh").addEventListener("click", () => void refreshScenariosNow());
 document.getElementById("scenario-new").addEventListener("click", openNewScenarioEditor);
 document.getElementById("scenario-editor-dialog").addEventListener("close", () => {
   scenarioFormAnalysisScope.invalidate();

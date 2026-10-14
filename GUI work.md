@@ -23,6 +23,28 @@ Do not infer current runtime health from a historical verification entry.
 
 ## In progress
 
+Migration network discovery is **In progress**; its standalone CLI slice is
+**Verified** locally. It has explicit authorized TCP scope, optional conservative
+protocol checks, versioned JSON export and imported adapter-listener enrichment.
+Ping and reverse names now default on without gating TCP checks; JSON config
+files supply options with explicit CLI overrides and command-line-only
+authorization. Ping requires the macOS/Linux utility (disable it elsewhere).
+Config targets are now a string list of IPs, CIDRs or inclusive dash ranges
+(including IPv4 final-octet shorthand). Host and CIDR-size caps are removed:
+compact scopes are deduplicated and iterated lazily under the existing
+rate/worker/time limits. Version-2 reports/previews store exact planned counts
+and full compact scopes, with host records only for reached/imported targets.
+Focused race tests, vet, native build, Linux/Windows cross-builds and the
+documented no-network preview pass. This extension was verified against
+IPv4/IPv6 loopback only; it does not repeat the earlier authorized subnet scan.
+Control Room scanner selection, authenticated live adapter inventory and
+reviewed migration drafts remain future work. Discovery must remain independent
+of Simulator, and remote observations must not be conflated with host-reported
+listeners or port-number service guesses. See the
+[CLI contract](zpr-dashboard/cmd/zpr-discover/README.md) and
+[verification evidence](GUI%20completed%20work.md#migration-discovery-cli).
+Not deployed, committed or pushed.
+
 Simulator organization-profile editor toolbar and mode alignment are **Deployed
 to Simulator** (2026-10-14 04:58 UTC): exclusive Raw/Form views,
 standard File.../Browse..., Analyze, Format
@@ -280,12 +302,34 @@ No new priority or implementation approval is implied for backend rollouts.
 
 ## Simulator
 
+- [ ] Help button is a different style than Control Room.
 ### Trusted sources
 - [ ] Remove extra line between the top header and the source title.
 - [ ] Put count of people, groups, and attributes to the right of their horizontal nav labels.
 
+### Scenarios
+- [ ] Remove "Scenario runner..." subheader. Redundant.
+- [ ] For each scenario, the Title should be on top and span the panel.
+- [ ] Version numbers of the main scenario page isn't useful.
+- [ ] Remove "Delete" from each scenario panel. Replace "Edit" with a "File..." pulldown.
+- [ ] The scenario internal name isn't useful, but the rest of the information on that line should be moved about the controls at the bottom of each panel.
+- [ ] Is the labels "Finance", "Runtime", and "Workday" folders? If not, they are redundant.
+- [ ] "Maximum # machines per run" doesn't belong here. Add it to the help text.
+
+### Organizations
+- [ ] Remove "Organization directory" and "Directory ready" from the subheader.
+- [ ] Move "Edit organization draft" to the org viewer on the right. Put a "File..." menu next to the "Active/Activate Scenario" indicator.
+- [ ] File... should show "Edit", "Duplicate", "Rename", "Restore" and "Delete".
+- [ ] Only button that remains is "New organization". This can offer a dialog for new/import/duplicate".
+
+### Activity
+- [ ] Use the status bar from the Control Room instead of - the time, stream, requests, approved..."
+
 ## Control room
+
+### Security
+- [ ] Remove "Select visible" but leave the check box. Change "Observed" to "time".
+- [ ] Why is "Action" table title not using the same format as the other titles?
 
 ### Trusted sources
 - [ ] Make the simulator and control room more aligned. The control room is the "live" view, so it needs "Updates (24h).
-- [ ] 

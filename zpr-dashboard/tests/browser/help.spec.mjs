@@ -49,9 +49,9 @@ test.afterAll(async () => {
 
 const simulatorPages = [
   { path: "/agents.html", refreshId: "#machine-logs-refresh", heading: "Workers" },
-  { path: "/activity.html", refreshId: "#refresh", heading: "Activity" },
-  { path: "/organizations.html", refreshId: "#organization-refresh", heading: "Organizations" },
-  { path: "/scenarios.html", refreshId: "#scenario-refresh", heading: "Scenarios" },
+  { path: "/activity.html", heading: "Activity" },
+  { path: "/organizations.html", heading: "Organizations" },
+  { path: "/scenarios.html", heading: "Scenarios" },
   { path: "/machine-logs.html", refreshId: "#machine-logs-refresh", heading: "Workers" },
   { path: "/trusted-source.html", heading: "Trusted Sources" },
 ];
@@ -66,6 +66,9 @@ for (const { path, refreshId, heading } of simulatorPages) {
     await expect(page.locator(".main-content > .topbar .machine-logs-actions")).toHaveCount(0);
     await expect(help).toHaveAttribute("aria-haspopup", "dialog");
     if (refreshId) await expect(page.locator(refreshId)).toBeHidden();
+    if (path === "/activity.html") await expect(page.locator("#refresh")).toHaveCount(0);
+    if (path === "/organizations.html") await expect(page.locator("#organization-refresh")).toHaveCount(0);
+    if (path === "/scenarios.html") await expect(page.locator("#scenario-refresh")).toHaveCount(0);
 
     await help.click();
     const dialog = page.getByRole("dialog", { name: heading });
@@ -87,6 +90,22 @@ test("Simulator text stays at least 11px outside maps and graphs", async ({ page
       .slice(0, 10));
     expect(smallText, `${path} contains text below 11px`).toEqual([]);
   }
+});
+
+test("Control Room and Simulator Help triggers share the same visual treatment", async ({ page }) => {
+  const styleFor = async path => {
+    await page.goto(`${appURL}${path}`);
+    const help = page.locator(".main-content .top-actions > .help-trigger, .main-content .topbar > .help-trigger");
+    await expect(help).toBeVisible();
+    return help.evaluate(element => {
+      const style = getComputedStyle(element);
+      return ["minHeight", "paddingTop", "paddingRight", "borderWidth", "borderRadius", "backgroundColor", "color", "fontSize"]
+        .map(property => style[property]);
+    });
+  };
+  const controlRoom = await styleFor("/index.html#map");
+  const simulator = await styleFor("/organizations.html");
+  expect(simulator).toEqual(controlRoom);
 });
 
 test("policy and assertion Help includes valid syntax and the report-only trust boundary", async ({ page }) => {

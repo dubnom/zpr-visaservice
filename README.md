@@ -21,6 +21,13 @@ Key-free bootstrap copies remain on live relays to preserve the VSAPI connection
 used to authenticate the restarting node; its own copies are queued for reinstall.
 Cached bootstrap visas missing any relay's installation reference are replaced,
 so a relay reset cannot strand a future peer with an undeliverable visa.
+Nodes may also pull visas by ID while their own delivery state is
+`PendingInstall`, not just `Installed`. This lets a relay bind a VSS flow before
+the reverse VSS channel exists, rather than requiring that channel to deliver
+its own prerequisite. Pulled copies are actualized for the requesting node;
+off-path, expired, pending-revoke and revoked visas are not returned. A successful
+reply uses the existing installation-state transition, which cannot override a
+concurrent revocation. The installed-visa inventory remains installed-only.
 
 See [Features Added Since the Upstream Fork](FEATURES_SINCE_ZPR_ORG.md) for a
 high-level overview of the operator, policy, trusted-service, DNS, observability,

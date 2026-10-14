@@ -6,13 +6,409 @@ This is a historical release ledger, not a live health report. Keep dated test,
 asset, configuration, scope and rollback evidence here. Feature-local release
 notes also remain in the completed-work archive to preserve their context.
 
-Latest recorded Control Room release: `zpr-editor-ui:20261014-authorization-local-request`
-(2026-10-14 15:57 UTC). Policy-Service and Control-Service were not replaced or
-restarted; retain the separately recorded service release history below.
+Latest recorded Control Room and Control-Service release:
+`zpr-editor-ui:20261014-dns-boundaries` (2026-10-14 16:26 UTC).
+Policy-Service and Simulator were not replaced or restarted; retain the
+separately recorded service release history below.
 This does not imply every source change was deployed. Commit/push state is
 separate; retain each dated entry's scope.
 
 ## Deployment status
+
+### Control Room GUI worktree executable (2026-10-14 22:43 UTC)
+
+- The user selected Control Room only and approved deploying the current
+  dashboard worktree, including its other pending dashboard changes. Built
+  `zpr-editor-ui:20261014-control-room-gui`, image ID
+  `sha256:200b9484e24aa6fe90035bf4ab5b713186da9e295d6a182020ad1d4f8665420c`
+  (`linux/arm64`). The embedded dashboard executable SHA-256 is
+  `3449abfc490d535bab303482df40caa26e87dd68e558833c297d28c2ae50f21c`.
+- Installed that executable into the existing `zpr-control-room` container's
+  writable layer and restarted only Control Room. Container ID
+  `2487b772996217b8964e53c63e1ef402b49f9cd9c0a0d0fa101c3ae71aa45567` and
+  its original image ID `sha256:359cdf6d682ca5ad65fba92b3db83f25b7845f2631abcf2ca0beb613ab493abd`
+  are unchanged; it started at `2026-10-14T22:43:45.087558591Z`. Existing
+  mounts, ports, certificates and operator settings were preserved. The exact
+  prior executable, SHA-256
+  `bdcdc1255dc81de1fed4cde4c47ed9f9e30aa1488ef1065fe615512f6bc128cb`, is
+  retained at `/usr/local/bin/zpr-web-dashboard-before-gui-20261014` and in
+  the session release artifact directory.
+- HTTPS `/` and `/auth/operator/config` return 200; operator login remains
+  enabled. The unauthenticated snapshot endpoint returns the expected 403.
+  Restart reset in-memory operator sessions, so operators must sign in again.
+- All 76 directly served static assets match the dashboard worktree byte for
+  byte; `/` returns 200 and `/index.html` retains its 301 redirect. The
+  signed-out browser displays the operator sign-in prompt; no authenticated
+  live-data or post-login browser test was performed.
+- Control-Service, Simulator, Policy-Service, DNS, gateways and runtime
+  containers were not restarted or replaced. The Simulator remains the
+  separately deployed 2026-10-14 GUI worktree release. No policy/provisioning
+  mutation was performed. No commit or push.
+- Rollback in this container: copy
+  `/usr/local/bin/zpr-web-dashboard-before-gui-20261014` back over
+  `/usr/local/bin/zpr-web-dashboard` and restart only `zpr-control-room`.
+  The previous immutable image also remains available.
+
+### Simulator GUI worktree executable (2026-10-14 22:35 UTC)
+
+- The user selected Simulator only and approved deploying the current dashboard
+  worktree, including its other pending dashboard edits. Built
+  `zpr-simulator:20261014-gui-work`, image ID
+  `sha256:6b6f7442ea71802352f1c1f3806f53ac9153f2d3de8b4198544e94297efca63a`
+  (`linux/arm64`). The embedded dashboard executable SHA-256 is
+  `3449abfc490d535bab303482df40caa26e87dd68e558833c297d28c2ae50f21c`.
+- Installed that executable into the existing `zpr-simulator` container's
+  writable layer and restarted only that container. Container ID
+  `8c7bbd7cc4ef4fc3ff014b4487763869d959be08237717f79ba341cbe011dcab` and
+  its original image ID `sha256:846314c15587aab6be4426bbea3d6f744834c1570a7155a392926f39c10b8894`
+  are unchanged; it started at `2026-10-14T22:35:44.089766049Z`. Container
+  configuration and mounts were not changed. The exact prior executable,
+  SHA-256 `739c44d113512ff544095b2c394c8740439d0fff8215d362ae9dcf410fd0b90d`,
+  is retained at `/usr/local/bin/zpr-web-dashboard-before-gui-20261014` and
+  in the session release artifact directory.
+- The Great Lakes five-minute workday had completed before restart. Great Lakes
+  remains active and the Simulator run state is idle afterward; in-memory run
+  history reset. No scenario, activation or policy write was performed.
+- Restart stopped the two Simulator-local DNS relay processes. Restored the
+  same 8054 statistics and 8055 DNS-record relay commands to `great-lakes-node0`;
+  the statistics endpoint responds and the records relay listens. BIND, the
+  DNS adapter, the separate `zpr-dns-stats-relay`, all Great Lakes runtime
+  containers, Control Room, Control-Service and Policy-Service were not
+  restarted or replaced.
+- All 76 directly served static assets match the dashboard worktree byte for
+  byte. `/index.html` still redirects with 301 to `/`; `/agents.html` still
+  redirects with 302 to `/machine-logs.html`. Live browser checks confirmed
+  Organizations connected to Great Lakes, New/Import/Duplicate dialog mode
+  switching, draft-only Rename/Delete availability, and Finance/Runtime/
+  Workday scenario grouping. Trusted Sources displayed People/Groups/
+  Attributes counts (19/8/12). Activity displayed Recent visas and Recent
+  denials without the removed timestamp/stream/request/approval metrics; no
+  page alerts were present. Scenario Help displayed the 12-machine limit.
+  Focused organization/archive/permission and operator-auth Go tests pass.
+- Rollback in this container: copy
+  `/usr/local/bin/zpr-web-dashboard-before-gui-20261014` back over
+  `/usr/local/bin/zpr-web-dashboard` and restart only `zpr-simulator`, then
+  restore the same two relay commands if they are not running. The prior
+  immutable image also remains available. Control Room GUI changes were not
+  deployed. No commit or push.
+
+### Visa Service-only visa-pull rollout (2026-10-14 21:43 UTC)
+
+- With explicit approval, gracefully stopped only Visa Service PID 51686 and
+  relaunched the unchanged `/app/bin/vs >>/logs/vs.log 2>&1` command from `/conf`
+  in its existing `vs` tmux session. New PID 25226 started at approximately
+  21:43:35 UTC. Shutdown released the instance lock normally; no manual lock
+  deletion, Redis reset, identity reset or policy change was performed.
+- Release source is clean `zpr-visaservice` commit
+  `ed27bca882b1d787420543fa22311948de389a5e` plus only `vs/src/visa_mgr.rs` and
+  `vs/src/vsapi_worker.rs`. It excludes concurrent dashboard/discovery edits.
+  Dependency source is clean `zpr-common`
+  `2756e9a01d5552965439f94314a6b0550832cf8f`, including pinned schema submodules
+  `zpr-policy` `d2ad9d8c1ca1007ff17b9364d2734392f44f6575` and `zpr-vsapi`
+  `a3401642d8bf6949a9a3afa73650c7d9ef6c8222`. All 496 Visa Service unit tests
+  pass again against this clean Linux arm64 release snapshot before deployment.
+- New VS executable SHA-256:
+  `490e33a1784e4c836e422fe4b0e351a1ce017920507ba981f069de7bd8b9f410`.
+  Image `zpr-visa-service:20261014-vss-pull`, ID
+  `sha256:cfc7646d43eace2081201f21991631673fea921cc49567de8eb2a23cee681627`,
+  extends the prior adapter-only release and replaces only `/app/bin/vs`.
+  Its PH hash remains
+  `e06906c77e749ef983d388276dd56e8e14a87ba656f6aa4ff9445783cc185c14`.
+- No containers were recreated. Visa adapter PID 5356, Redis PID 14 and node
+  PIDs 23674/13849/13794 are unchanged; so are VS/adapter configuration hashes
+  and raw active-policy hash. Control Room, Control-Service, Policy-Service,
+  Simulator and BIND were not replaced or restarted.
+- All three original nodes reauthenticated automatically at 21:43:38–39 UTC.
+  VSS completed new TCP, TLS and Cap'n Proto connect RPCs for node0/node1 at
+  21:43:42 UTC and node2 at 21:43:43 UTC. Previously blocked visas 2642/2643 now
+  show Installed at both hops; subsequent VSS visas and reverse-flow visas are
+  also Installed along their paths. Node2 briefly received NoRoute while node0
+  was still reconnecting; ordinary registration retry recovered automatically.
+- Production Control-Service mTLS snapshot at 21:44:30 UTC reports three
+  successful node authentications, 30 API pings, zero VSS errors, no snapshot
+  errors and all three topology edges UP. Fresh VSS sockets are established to
+  each node, rather than relying on the snapshot alone. DNS reads return six
+  records and BIND boot time remains `2026-10-14T16:56:32.090Z`.
+- **Bounded passive observation passed:** 33 production snapshots from
+  21:45:20 to 22:01:46 UTC span 985 seconds (16 minutes 25 seconds), beyond the
+  earlier recurrence window. All checks retained connected API, all three fresh
+  VSS connections, zero VSS errors, three UP topology edges and the same
+  VS/adapter/Redis/node processes. API ping count advanced from 60 to 650.
+  At 22:02 UTC there were no new VS WARN/ERROR records after initial
+  reconnection, packet counters continued advancing and all four adapter
+  fastpaths were polling normally. Policy/config hashes and container IDs/start
+  times remained unchanged. No full workday or deliberate failure-injection
+  run was performed; this is not certification across expiry/fault cycles.
+- The actual running container keeps the new executable in its writable layer.
+  For recreation, the persisted Great Lakes `compose-nodes.json` now selects
+  `zpr-visa-service:20261014-vss-pull` only for VS; merged Compose image selection
+  validates. Retain this override if organization tooling regenerates the file.
+  Shared multinode tags and all node images remain unchanged.
+- Exact rollback VS executable remains at
+  `/app/bin/vs-before-vss-pull-20261014`, SHA-256
+  `bdde537495a7855efc85c835de2fd6bcd7e41d61d9528431927ea555584ed672`,
+  with a private host copy and pre-rollout Compose override. Rollback is a
+  graceful stop of only the current VS PID, restoring that binary and the same
+  launch command; restore the previous adapter-only image selection for future
+  recreation too. Do not restart nodes, adapter or Redis, or clear state.
+- The by-ID defect is independently covered by the RPC regression. Live recovery
+  followed a patched-VS restart; this does not isolate the prior node0 local
+  handshake defect or explain earlier Redis delays.
+
+### VSS visa-pull recovery correction: source validated, not deployed (2026-10-14)
+
+- Continued diagnosis without restarting Visa Service, nodes, Redis or the
+  patched Visa adapter. Temporarily enabled targeted node flow/visa debug logs,
+  then restored those targets to INFO. A bounded node packet capture was closed
+  and its capture program removed. Header-only TUN observations did not capture
+  application payloads.
+- At 19:56:16 UTC node0 selected visa 2643 for the VS-to-node1 VSS flow and
+  requested its stream from node1. Node1 did not have that visa locally; its
+  authenticated VSAPI request for the same ID returned no copy, and it rejected
+  the bind. Read-only persisted metadata confirmed visa 2643 was Installed on
+  node0 but PendingInstall on node1. Visa 2642 had the equivalent node2 state.
+- The Visa Service by-ID handler filtered requests to Installed visas only.
+  That creates a circular dependency: the destination needs the pending visa
+  to establish VSS, while the VSS channel is expected to push that visa.
+  Corrected the pull path to permit PendingInstall as well as Installed for
+  the authenticated requesting node, and actualize each returned copy for that
+  node. Off-path, unknown, expired, PendingRevoke and Revoked copies remain
+  excluded. Reply delivery uses the existing PendingInstall-to-Installed CAS;
+  a concurrent revocation cannot be overwritten. Installed-only inventory
+  semantics are unchanged. Retrieval/actualization failures are logged and
+  returned as explicit API errors instead of an empty successful response.
+- Added a real Cap'n Proto handler regression with no VSS channel: a destination
+  pulls its pending copy and only its own installation state advances. Manager
+  regressions cover all three path roles, unrelated nodes, expiration, revoked
+  states and revocation winning an installation acknowledgement.
+- Validation: all 496 Visa Service binary unit tests pass on native macOS and
+  native Linux arm64 (release). The offline Linux run initially lacked locked
+  `linux-raw-sys` 0.12.1; fetched locked dependencies, then reran successfully
+  offline. No dependency manifests or lockfiles changed. Changed Rust files
+  pass rustfmt, editor diagnostics and diff whitespace checks. Crate-wide
+  rustfmt still reports an unrelated existing assertion layout in
+  `vs/src/connection_control.rs`; it was not changed.
+- **At source-validation completion, not yet deployed.** Visa Service PID 51686
+  still ran the previous binary; see the subsequently approved rollout above.
+  This proves a multi-hop bootstrap defect, not complete runtime recovery.
+  Node0's local VSS flow also still times out; a SYN-RECV socket was observed
+  there, but its missing handshake completion has not yet been explained.
+  Redis last-seen delays also remain open. The adapter's four fastpaths were
+  still polling normally at 20:04 UTC, approximately 16 minutes after rollout;
+  that observation is not a full-workday or recovery-convergence certification.
+
+### Visa adapter-only UDP I/O rollout (2026-10-14 19:48 UTC)
+
+- User selected Visa adapter only first. Gracefully stopped only adapter PID
+  51769 and relaunched the same `/conf/adapter-vs-conf.toml` through its existing
+  `vs-adapter` tmux session; replacement PID 5356 started at approximately
+  19:48:14 UTC. No containers were recreated. Visa Service PID 51686, Redis,
+  nodes, identities, active policy and configuration were preserved. Dashboard,
+  Simulator and Policy-Service releases were not changed.
+- Built from clean `zpr-core` commit `27854236725f279a1af8dfa37c168683292a2b30`
+  with only `adapter/ph/src/batch_io.rs` overlaid; unrelated in-progress platform
+  edits were excluded. Dependency source is clean `zpr-common` commit
+  `2756e9a01d5552965439f94314a6b0550832cf8f`. The clean release-source PH suites
+  pass 549 test executions with two ignored executions, including the
+  missed-cancellation regression and concurrent sparse UDP receive stress.
+  The rebuilt baseline was not byte-identical to the prior deployed executable;
+  the exact deployed executable was retained for rollback.
+- Deployed PH SHA-256:
+  `e06906c77e749ef983d388276dd56e8e14a87ba656f6aa4ff9445783cc185c14`.
+  Packaged as `zpr-visa-adapter:20261014-udp-dontwait`, image ID
+  `sha256:6fac51b62e3df951416106c931bf4e54d203ee0153ce2cc03103e1e36c1461b2`,
+  based on the existing arm64 image with only `/app/bin/ph` replaced.
+  Shared `zpr-multinode` tags and node binaries were not changed. Visa Service
+  executable remains
+  `bdde537495a7855efc85c835de2fd6bcd7e41d61d9528431927ea555584ed672`.
+- The current container retains the replacement in its writable layer across
+  container stop/start. The persisted Great Lakes `compose-nodes.json` adds a
+  VS-only image/platform override for future recreation; merged Compose image
+  selection validates without starting services. The generated override must be
+  retained if organization tooling regenerates that file; do not substitute the
+  shared node image or imply the running container itself was recreated.
+- All three existing nodes reauthenticated to Visa API at 19:48:16–17 UTC
+  without node or Visa Service restarts. The Visa adapter dock became Active,
+  its UDP counters resumed advancing and its fastpath workers returned to poll.
+  Verified backend mTLS reads return six DNS records and BIND statistics.
+- **Partial recovery only:** new reverse VSS TCP connections to all three nodes
+  timed out at 19:50:35 UTC and were retried. Old established sockets and the
+  dashboard's connected/UP snapshot are not proof of live VSS synchronization.
+  No passing workday or sustained-recovery certification is claimed. Leave
+  the narrower I/O correction deployed; broader node/VS restarts or rollout
+  were not performed. Preserve the remaining failure for follow-up diagnosis.
+- Rollback executable remains inside the container at
+  `/app/bin/ph-before-udp-dontwait-20261014`, SHA-256
+  `c5a9eade4352318b1d63d93a09e624aa299add6796bd9d5985a4eca01cbf7fed`,
+  with a private host copy and original Compose override retained in session
+  artifacts. To roll back, identify and gracefully stop only the current
+  adapter PID, restore that executable and launch the same tmux/config command;
+  restore the saved VS image override if rolling back future recreation too.
+  Do not restart Visa Service, clear Redis or reset identities/policy.
+
+### Recovery lifecycle investigation and UDP I/O correction (2026-10-14)
+
+- Investigated the preserved failed runtime without restarting Visa Service,
+  its adapter, nodes, Redis or dashboard services. No new runtime release was
+  deployed. Captured the existing binary hashes, socket/lease state, bounded
+  failure logs, thread kernel stacks and `io_uring` completion state.
+- The shared Visa adapter packet worker was blocked in `io_uring_enter`,
+  requesting 128 completions with only 127 present. The kernel poll list
+  retained opcode 10 (`RECVMSG`). The submission/completion indices and UDP
+  counters remained unchanged in follow-up observations at 19:09 and 19:23 UTC,
+  while the separate key-management task continued handshake retries.
+  This demonstrates a stalled packet worker, not merely a slow API dial.
+- At 17:08:42 UTC node0 timed out the Visa adapter's dock link and sent a
+  termination, followed by address/visa removal and failed API reconnects.
+  All three VSS workers failed seconds later. Without the Visa adapter's shared
+  packet path, bootstrap and reconnect retries cannot restore control traffic.
+  The earlier Redis timeouts remain unexplained; this does not establish them
+  as the trigger or prove a separate authentication/bootstrap design defect.
+- Source batch I/O submitted UDP receives without `MSG_DONTWAIT` and depended
+  on unlinked asynchronous cancellations before waiting for the whole batch.
+  `O_NONBLOCK` alone does not prevent an `io_uring` receive from waiting.
+  Corrected both receive variants in `zpr-core` to use `MSG_DONTWAIT`, removing
+  their dependence on cancellation for progress. Authorization, bootstrap
+  eligibility, session handling and reconnect deadlines are unchanged.
+- A deterministic fault-injection test uses the production receive builders but
+  omits cancellation, modeling a cancellation that failed to find its request.
+  Before the change it failed the 30-second watchdog; afterward both variants
+  complete with `EAGAIN` on empty sockets. All nine batch-I/O tests pass.
+  The full Linux PH library/binary suites pass 555 test executions with two
+  ignored executions; all eight native macOS batch-I/O tests pass. Changed-file
+  rustfmt, whitespace checks and editor diagnostics pass.
+  Sparse UDP arrival stress and separate investigative TUN stress did not
+  reproduce the exact live cancellation race; do not confuse that with the
+  deterministic dependency test. The kernel/scheduling trigger remains open.
+- Acceptance requires sustained packet-worker progress and automatic recovery
+  across workload/idle/fault and expiration cycles. A coordinated restart,
+  established TCP socket, passing unit suite or single workday is not sufficient.
+  At investigation completion, live rollout and sustained-recovery acceptance
+  were not yet performed; see the subsequent adapter-only rollout above.
+
+### Great Lakes workday outage and scoped recovery (2026-10-14 16:42–17:01 UTC)
+
+- Deployment of the ninth/tenth dashboard extractions was held after the user
+  reported a failed Five-Minute Workday. No new dashboard image was built or
+  deployed during this investigation; Control Room/Control-Service retain the
+  eight-extraction 16:26 UTC release and Simulator retains its 15:14 UTC image.
+- Recorded failed run: `16:42:33.013979508Z`–`16:43:30.813388756Z`.
+  The primary failed step was `start_machine` for `machine-05`, reporting
+  `ZPR DNS adapter did not become active on great-lakes-node0`; eight other
+  launch steps were canceled afterward. The DNS adapter repeatedly received
+  Hello responses without an ASA and was terminated. The DNS startup script
+  had already removed BIND before waiting for adapter readiness, so DNS was
+  absent after this failure.
+- Node0 lost its Visa API connection after ping timeouts at 16:33 UTC and
+  subsequent reconnects timed out. Visa logs show VSS connection failures and
+  expired destination-node authentication as early as 00:01 UTC, predating
+  today's dashboard extractions/deployments. This identifies an upstream runtime
+  failure path, not proof that every deployment interaction is ruled out.
+  The permanent authentication/reconnect/Redis-stall cause remains unresolved.
+- User explicitly approved scoped Great Lakes control-plane/DNS recovery and a
+  workday rerun, preserving identities, policy and databases. Checkpointed Redis
+  with SAVE and kept Redis running. Gracefully stopped only the specific VS,
+  VS-adapter and three PH node processes, waited for the existing Visa lease to
+  expire, then relaunched their existing binaries/configuration. No clear-state,
+  organization activation, key regeneration or database reset was performed.
+  The active policy hash is unchanged. Standard scoped DNS startup restored BIND
+  and its relays using the existing dedicated keys. New BIND boot time is
+  `2026-10-14T16:56:00.183Z`; six record-viewer records and statistics reads pass.
+- Published Five-Minute Workday rerun:
+  `16:56:27.762193713Z`–`17:00:56.791682671Z`, **completed 157/157**:
+  123 run steps and all 34 cleanup steps, with no recorded errors.
+  This includes twelve launches, twelve controller waits/logins, three DNS
+  resolutions, thirty test-service requests and three traffic checks.
+  No scenario-machine containers remain running. All three nodes' API/VSS
+  socket pairs remain established after cleanup.
+- Follow-up at approximately 17:24 UTC found that recovery was not sustained:
+  all three nodes had Visa API sockets in `SYN-SENT`, while their old VSS TCP
+  sockets still appeared established. Visa logged terminal VSS ping failures
+  for node1/node2 at 17:08:53 UTC; therefore an established TCP socket alone is
+  not evidence of a healthy application session. Node0 continued bounded API
+  reconnect attempts. No further restart or deployment was performed.
+  Redis answered PING, had no blocked clients, and the Visa instance lease still
+  had a positive TTL during inspection. These observations do not establish the
+  original cause of the Redis timeouts or the failed dataplane reconnection.
+- This is a successful recovery/run, not a permanent reliability fix. During
+  the successful run Visa still logged Redis lock/last-seen timeouts and node0
+  logged one Visa API ping timeout; no terminal workday failure resulted.
+  These warnings must not be hidden or treated as certified indefinite health.
+- The requested complete Go suite ran without exclusions and retained the same
+  four recorded baseline failures. The complete desktop/tablet browser suite
+  finished without exclusions (1,304 tests): **1,094 passed, 194 failed,
+  10 skipped and 6 did not run**, in approximately one hour. The
+  `make test-browser` command exited with status 2.
+  No full-suite pass is claimed, and dashboard deployment remains held.
+- Browser triage while the suite was still running found fixture startup/login
+  failures, old UI selectors/expectations, and editor assertions. For example,
+  Diagnostics tests expect `.diagnostics-log-body`, absent from the current
+  shared-log-panel implementation; provisioning fixture failures show
+  `Not signed in`, not the real deployed-login smoke result. Frontend resources,
+  browser tests and Playwright configuration have no diff from published
+  checkpoint `ed27bca`. This is evidence for specific fixture/UI mismatches,
+  not a claim that all browser failures predate the backend changes. No failing
+  pre-existing tests were edited, no failures were excluded and no passing
+  baseline browser run is claimed.
+
+### Control Room and Control-Service DNS boundary extractions (2026-10-14 16:26 UTC)
+
+- User selected both Control Room and Control-Service, preserving configuration.
+  Built the current worktree as `zpr-editor-ui:20261014-dns-boundaries`, image ID
+  `sha256:359cdf6d682ca5ad65fba92b3db83f25b7845f2631abcf2ca0beb613ab493abd`.
+  Both executables have SHA-256
+  `bdcdc1255dc81de1fed4cde4c47ed9f9e30aa1488ef1065fe615512f6bc128cb`.
+  Control-Service started at `2026-10-14T16:26:00.09858484Z`; Control Room
+  started at `2026-10-14T16:26:02.019433924Z`.
+- Both binaries include all eight backend extractions. The seventh statistics
+  proxy and eighth signed-record viewer are now active in Control-Service.
+  Simulator still runs the first-three-extraction image; Policy-Service and
+  separate gateway processes are unchanged. The first seven extractions are
+  committed/pushed as `ed27bca`; the eighth and this release documentation
+  remain uncommitted and unpushed.
+- Config and HostConfig match each predecessor exactly except for image.
+  Network membership, IPv4/IPv6 addresses and aliases are preserved: one network
+  for Control Room and four for Control-Service. All other 19 persistent running
+  containers retain their IDs, start times and running state, including
+  Simulator, Policy-Service, OIDC, BIND, independent DNS relay and runtime machines.
+- Verified Control Room HTTPS against its configured CA, client-certificate
+  backend reads, and unchanged exact unauthenticated denial responses.
+  Live DNS statistics status, server counters, zones and stylesheet reads pass.
+  All six DNS records match the pre-deployment JSON; BIND's boot time remains
+  `2026-10-14T14:05:37.750Z` and statistics version remains 1.8.
+  No DNS, relay or organization configuration was changed.
+- Real browser OIDC sign-in returned 200 for snapshot, policy context/status,
+  gateway contracts, signed enrollment catalog, DNS records, statistics
+  status/server/zones and stylesheet. Unknown API routes and a validation POST
+  without CSRF proof return 403; logout restores snapshot 403.
+  The missing-CSRF request is denied before forwarding. No policy/provisioning
+  mutation, activation or scenario run was performed by verification.
+- All 77 directly served non-index static files match source byte-for-byte;
+  the root response also matches the embedded index (78 byte comparisons total).
+  `/index.html` still redirects 301 to `./` and `/agents.html` is directly
+  served with 200. No frontend implementation changes or new full browser
+  fixture run are claimed; the real-login smoke test is separate evidence.
+  Local signed-transfer/race/dependency tests, vet and native/Linux builds pass.
+  The same four full-Go-suite baseline failures remain; all other tests pass
+  with those four explicitly excluded. Simulator-unavailable evidence is from
+  local tests; the live Simulator was not paused during this rollout.
+- Stopped rollback containers:
+  - `zpr-control-room-before-dns-boundaries-20261014`, previous image
+    `sha256:6c94a5798f33f080a869d53a626a7b41df4f9b749163f6f3b41db1ba483fe67c`.
+  - `zpr-control-service-before-dns-boundaries-20261014`, previous image
+    `sha256:66bd2883b5da7dd7d175529a80448d19ad4f19bafbe4dc66e2b7da4a58f1cb8a`.
+  Their network endpoints were disconnected to preserve the addresses on the
+  replacements. Rollback must remove/disconnect the corresponding replacement,
+  restore its original name, reconnect the saved networks/aliases and start it;
+  do not simply start a disconnected rollback container. Original addresses:
+  Control Room bridge `172.17.0.7`; Control-Service bridge `172.17.0.6`,
+  `zpr-diagnostics-read-only` `172.20.0.3`, `zpr-dns-stats-read-only`
+  `172.21.0.3`, and `zpr-great-lakes` `172.31.0.4`.
+  A nonsensitive endpoint recipe is retained with the session deployment result.
+  Operator sessions reset on replacement; sign in again.
+- Configuration/credentials remained in memory. No environment dump, private
+  keys, browser traces or screenshots were saved. Temporary helper removed;
+  only nonsensitive verification and rollback-network metadata retained.
 
 ### Control Room authorization and local-request extraction (2026-10-14 15:57 UTC)
 

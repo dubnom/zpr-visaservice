@@ -19,6 +19,7 @@ func TestSimulatorAPIPermissionMap(t *testing.T) {
 		{http.MethodGet, "/api/simulator/organizations", "organization.read", "", true},
 		{http.MethodPost, "/api/simulator/organizations/acme/activate", "organization.activate", "acme", true},
 		{http.MethodPost, "/api/simulator/organizations/acme/restore-base", "organization.restore", "acme", true},
+		{http.MethodDelete, "/api/simulator/organizations/acme/draft", "organization.archive", "acme", true},
 		{http.MethodGet, "/api/simulator/organizations/acme/directory", "directory.read", "acme", true},
 		{http.MethodPut, "/api/simulator/organizations/acme/directory", "directory.edit", "acme", true},
 		{http.MethodPost, "/api/simulator/organizations/acme/directory/publish", "directory.publish", "acme", true},
@@ -47,6 +48,9 @@ func TestSimulatorAPIPermissionMap(t *testing.T) {
 					test.permission, test.organization, test.want)
 			}
 		})
+	}
+	if !operatorauth.ValidPermission("organization.archive") {
+		t.Fatal("organization archive permission is not accepted by operator auth")
 	}
 }
 

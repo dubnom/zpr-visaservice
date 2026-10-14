@@ -1,0 +1,25 @@
+{
+  "schema_version": 1,
+  "hosts": [
+    {
+      "address": "192.0.2.10",
+      "adapter_id": "example-database-adapter",
+      "observed_at": "2026-10-14T12:00:00Z",
+      "listeners": [
+        {
+          "transport": "tcp",
+          "bind_address": "127.0.0.1",
+          "port": 5432,
+          "process": "postgres",
+          "service": "example-database"
+        },
+        {
+          "transport": "tcp",
+          "bind_address": "0.0.0.0",
+          "port": 22,
+          "process": "sshd"
+        }
+      ]
+    }
+  ]
+}

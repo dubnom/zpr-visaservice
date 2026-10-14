@@ -1,0 +1,18 @@
+{
+  "scanner-id": "migration-laptop",
+  "organization": "example",
+  "targets": [
+    "192.0.2.0/28",
+    "198.51.100.10-50",
+    "203.0.113.10-203.0.113.20"
+  ],
+  "ports": "22,53,80,135,389,443,445,636,1433,2049,3306,3389,5432,6379,8080,8443",
+  "ping": true,
+  "reverse-dns": true,
+  "protocol-checks": false,
+  "workers": 8,
+  "rate": 20,
+  "timeout": "1s",
+  "duration": "2m",
+  "output": "-"
+}

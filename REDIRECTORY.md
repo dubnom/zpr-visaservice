@@ -4,7 +4,7 @@ Status reconciled 2026-10-14. Most checklist items remain planned; the shared
 editor-controller reuse is implemented and deployed. The first backend
 extraction now places neutral Gateway forwarding and the HTTP/CONNECT runtime
 in `zpr-dashboard/internal/gateway`, with a standard-library-only dependency
-check. It is verified and deployed to Simulator only, uncommitted. The remaining
+check. It is verified and deployed to Simulator only. The remaining
 browser-access gateway host routing and TLS configuration are now extracted to
 `internal/browsergateway`, verified and included in Simulator's image only;
 the separate browser-gateway process was not updated. Other application
@@ -18,8 +18,19 @@ and named-user authorization into that same production package. A sixth extracti
 check into the existing standard-library-only `internal/servicehttp` package,
 also verified and deployed to Control Room only. The fifth and sixth increments
 are included in the 2026-10-14 15:57 UTC release; other services remain unchanged.
-The seventh extraction isolates DNS statistics forwarding in `internal/dnsstats`;
-it is locally verified but not deployed. Full production/Simulator separation is not
+The seventh extraction isolates DNS statistics forwarding in `internal/dnsstats`.
+The eighth extracts signed DNS record transfers into `internal/dnsrecords`.
+Both are verified and deployed in the Control Room/Control-Service current-worktree
+release at 2026-10-14 16:26 UTC, which includes all eight extractions.
+Simulator still runs the first three; Policy-Service and separate gateways
+were not updated. Earlier release scopes below are historical.
+The first seven extractions were committed and pushed as `ed27bca`; historical
+uncommitted labels below describe their state at the time of each increment.
+The eighth extraction is not committed or pushed. A ninth extraction now isolates
+Policy-Service forwarding in `internal/policyclient`; it is locally verified,
+uncommitted and not deployed. A tenth extraction adds the bounded assistant
+attribute client to that same package, also verified, uncommitted and not deployed.
+Full production/Simulator separation is not
 complete. Reorganize incrementally to
 make ownership and dependency boundaries enforceable without changing behavior.
 Keep the existing major project/crate boundaries unless a concrete dependency
@@ -71,11 +82,160 @@ Related trackers:
   and pushed as `51f612b`; that publication did not deploy additional targets.
   Use the deployment ledger for runtime scope.
 
+## Tenth backend extraction: Policy-Service assistant attributes (2026-10-14)
+
+**Implemented and locally verified; uncommitted, not deployed.** The live
+Control Room/Control-Service release still includes the first eight extractions.
+The ninth forwarding increment and this tenth increment remain local source.
+
+- Moved the remote assistant attribute request/decoding into the existing
+  [`internal/policyclient`](zpr-dashboard/internal/policyclient/attributes.go).
+  `FetchAttributes` takes a context, validated repository origin and configured
+  transport. The command retains local-workspace selection and locking, absent
+  service/configuration errors, environment/certificate setup and transport cleanup.
+- Moved the two-field JSON attribute contract into that production package;
+  the existing command name is a type alias, preserving all local consumers
+  without conversions or a duplicate schema. The client returns attributes only,
+  not people, records or unrelated repository fields.
+- Preserved GET `/api/policy`, Accept JSON, a fresh credential-free request,
+  12-second client timeout, refusal to follow redirects, context propagation,
+  the 4 MiB body limit with a one-byte overrun check, configured-workspace
+  requirement and exact status/size/decoding/workspace errors. Read/transport
+  failures remain errors rather than empty successful results. Nil versus
+  empty attribute arrays and unknown-field handling are unchanged.
+- Added explicit-origin tests with invalid Simulator/environment configuration,
+  exact-limit acceptance and one-byte-over rejection, malformed/type/trailing
+  JSON, HTTP errors, missing/unconfigured status, empty/null/missing attributes,
+  redirect refusal for 301/302/303/307/308, canceled contexts, read deadlines and
+  truncated responses. Command tests preserve local copy isolation, JSON shape,
+  local-workspace precedence and missing/invalid service errors. Existing real
+  mTLS assistant-context tests still ensure unrelated people/record data is
+  excluded and failed context prevents assistant invocation.
+- The existing standard-library-only package dependency test covers the new
+  client too. No dependencies, route/permission/CSRF, assistant prompts, repository
+  state, frontend resources, scripts or runtime configuration were changed.
+
+Passing validation:
+
+```sh
+go test -race ./internal/policyclient ./cmd/zpr-web-dashboard -run 'PolicyAttributes|PolicyAssistantAttributes|PolicyProxy|PolicyService|ControlServiceProxiesPolicy|ControlServiceAssistant|PolicyAndAssertionAssistantContext|PolicyAttribute' -count=1
+go vet ./internal/policyclient ./cmd/zpr-web-dashboard
+go build -o /dev/null ./cmd/zpr-web-dashboard
+GOOS=linux GOARCH=arm64 CGO_ENABLED=0 go build -o /dev/null ./cmd/zpr-web-dashboard
+GOOS=linux GOARCH=amd64 CGO_ENABLED=0 go build -o /dev/null ./cmd/zpr-web-dashboard
+```
+
+The editor runner reports 28 selected passing tests. `make test` retains exactly
+the same four baseline failures and causes recorded below; all remaining Go
+tests pass with those four explicitly excluded. Formatting and editor diagnostics
+pass. No image build, deployment, container restart, commit or push was performed.
+Full production composition and server/repository extraction remain open.
+
+## Ninth backend extraction: Policy-Service forwarding (2026-10-14)
+
+**Implemented and locally verified; uncommitted, not deployed.** The live
+Control Room/Control-Service release still includes the first eight extractions.
+This increment does not move Policy-Service's repository or server implementation.
+
+- Moved the Policy-Service reverse-proxy constructor and director into
+  [`internal/policyclient`](zpr-dashboard/internal/policyclient/). It takes an
+  already validated origin and configured mTLS transport. A transitive
+  standard-library-only dependency test prevents application/Simulator coupling.
+- Preserved upstream URL scheme/host and Host rewriting, escaped paths and raw
+  queries, methods/bodies, removal of Origin/Cookie/Authorization, original-host
+  fallback only when `X-Forwarded-Host` is empty, existing forwarded-for behavior
+  and 100ms streaming flush interval. This package intentionally does not reuse
+  Control Room's different credential/delegation/forwarding-header policy.
+- The command retains environment/origin/certificate validation, local-request
+  authorization, assistant-context fetching, assistant-status enrichment,
+  application JSON errors and error logging. Proxy hooks remain caller-owned.
+  No API route, permission, timeout, response shape, TLS or repository behavior
+  changed; no dependencies, frontend assets or scripts were added or changed.
+- Package tests cover forwarding with invalid Simulator/environment settings,
+  escaped paths/query/body, headers, upstream Host, incoming request immutability,
+  transport/flush selection, upstream status/body/redirect preservation, request
+  context, caller error/enrichment hooks and dependency boundaries. New command
+  tests cover enrichment matching by method/path/status, content length, secret
+  exclusion and exact JSON 502 errors for transport/malformed-response failures.
+  Existing real-mTLS and remote assistant-context regressions remain intact.
+
+Passing validation:
+
+```sh
+go test -race ./internal/policyclient ./cmd/zpr-web-dashboard -run 'PolicyProxy|PolicyService|ControlServiceProxiesPolicy|ControlServiceAssistant|PolicyAndAssertionAssistantContext' -count=1
+go vet ./internal/policyclient ./cmd/zpr-web-dashboard
+go build -o /dev/null ./cmd/zpr-web-dashboard
+GOOS=linux GOARCH=arm64 CGO_ENABLED=0 go build -o /dev/null ./cmd/zpr-web-dashboard
+GOOS=linux GOARCH=amd64 CGO_ENABLED=0 go build -o /dev/null ./cmd/zpr-web-dashboard
+```
+
+The editor runner reports 28 selected passing tests. `make test` retains exactly
+the same four baseline failures and causes recorded below; all remaining tests
+pass with those four explicitly excluded. Formatting and editor diagnostics pass.
+An initial new test expected the wrong JSON Content-Type; its expectation was
+corrected to the existing `application/json; charset=utf-8` contract, without
+changing production behavior or pre-existing tests.
+No image build, deployment, container restart, commit or push was performed.
+Complete production composition and policy repository extraction remain open.
+
+## Eighth backend extraction: DNS record viewer (2026-10-14)
+
+**Implemented, verified and deployed to Control Room/Control-Service; uncommitted.**
+The first seven extractions were committed and pushed as `ed27bca`.
+The 2026-10-14 16:26 UTC current-worktree release includes all eight; other
+services retain their previous deployment scopes.
+
+- Moved the signed AXFR record viewer, BIND TSIG key parser, record formatting,
+  deduplication and sorting into
+  [`internal/dnsrecords`](zpr-dashboard/internal/dnsrecords/). Its constructor
+  accepts an explicit transfer address and key-file path. The command retains
+  per-request `ZPR_DNS_TRANSFER_ADDR` and `ZPR_DNS_TRANSFER_TSIG_KEY_FILE` lookup
+  and the existing authenticated `GET /api/dns/records` route registration.
+- Preserved the fixed `svc.zpr.` zone, HMAC-SHA256 TSIG with 300s fudge, five-second
+  dial/read/write timeouts, key-file reload on every request, duplicate removal,
+  name/type/value sorting, JSON shape, success cache headers and exact plain-text
+  503/502 errors. Failed or incomplete transfers still return an error rather
+  than a partial record list. No transfer permissions or key configuration changed.
+- Existing parser and record-conversion tests moved with their implementation;
+  the command's missing-configuration test remains. Added real local TCP AXFR
+  tests verifying request TSIG and signed multi-envelope responses, exact sorted
+  JSON and duplicate SOA/record removal. Refused, incomplete and expired-signature
+  responses, configuration errors, key reload, explicit configuration with
+  invalid Simulator/environment settings, input immutability and per-request
+  command configuration are covered.
+- A transitive dependency allowlist permits only the standard library, this
+  package, the existing `github.com/miekg/dns` dependency and its platform-specific
+  `golang.org/x/sys` dependency. No dependencies were added and no Simulator
+  package, configuration or runtime is consulted.
+
+Passing validation:
+
+```sh
+go test -race ./internal/dnsrecords ./cmd/zpr-web-dashboard -run 'DNSRecord|ParseBINDTSIGKey|DNSStats|ControlServiceDNS|OperatorDNS' -count=1
+go vet ./internal/dnsrecords ./cmd/zpr-web-dashboard
+go build -o /dev/null ./cmd/zpr-web-dashboard
+GOOS=linux GOARCH=arm64 CGO_ENABLED=0 go build -o /dev/null ./cmd/zpr-web-dashboard
+GOOS=linux GOARCH=amd64 CGO_ENABLED=0 go build -o /dev/null ./cmd/zpr-web-dashboard
+```
+
+The editor runner reports 12 selected passing tests. `make test` retains exactly
+the same four baseline failures and causes recorded below; all remaining Go tests
+pass with those four explicitly excluded. Formatting and editor diagnostics pass.
+No frontend, relay, BIND, credentials, live configuration or container changes were
+made during implementation. The subsequent user-requested deployment replaced
+only Control Room and Control-Service, preserving Config/HostConfig and network
+membership, addresses and aliases. Live DNS records/statistics, real OIDC and
+authenticated reads/denials pass; all 19 other running containers are unchanged.
+See the [release ledger](GUI%20deployments.md) for image, scope and rollback
+evidence. No commit or push was performed for this increment.
+Full Control-Service composition and authorized production DNS transport remain open.
+
 ## Seventh backend extraction: DNS statistics proxy (2026-10-14)
 
-**Implemented and locally verified; uncommitted, not deployed.** Control Room
-still runs the sixth-extraction release. Control-Service, which composes the
-DNS statistics routes, has not been rebuilt or restarted for this extraction.
+**Implemented, verified, committed/pushed as `ed27bca`, and subsequently deployed
+to Control Room/Control-Service at 2026-10-14 16:26 UTC.** The implementation
+handoff below describes its pre-deployment validation; the
+[release ledger](GUI%20deployments.md) records current runtime scope.
 
 - Moved DNS statistics URL validation and HTTP/HTTPS forwarding into
   [`internal/dnsstats`](zpr-dashboard/internal/dnsstats/). Its two constructors
@@ -646,6 +806,16 @@ routing and staged assignments, not a second copy of these checklists.
   - DNS statistics URL validation and statistics/stylesheet forwarding now live
     in standard-library-only `internal/dnsstats`, with an explicit upstream;
     environment lookup and route registration remain command-owned.
+  - Signed DNS record transfers and TSIG parsing now live in `internal/dnsrecords`,
+    taking an explicit address/key path and using the existing DNS dependency.
+    Per-request environment lookup and route authorization remain command-owned.
+  - Policy-Service forwarding now lives in standard-library-only
+    `internal/policyclient`, taking an explicit validated origin and mTLS
+    transport. Assistant enrichment, environment/TLS configuration, authorization
+    and application errors remain command-owned.
+    The bounded assistant attribute fetch and two-field attribute contract now
+    also live in that package; local-workspace selection and configuration stay
+    in the command.
   - Control Room's upstream proxy, credential/delegation forwarding and slow-read
     transport selection are now in `internal/controlroom`. API permission mapping
     and named-user authorization are also extracted. The shared local-request

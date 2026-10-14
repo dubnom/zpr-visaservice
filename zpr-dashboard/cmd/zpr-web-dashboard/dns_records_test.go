@@ -3,48 +3,10 @@ package main
 import (
 	"net/http"
 	"net/http/httptest"
+	"os"
+	"path/filepath"
 	"testing"
-
-	"github.com/miekg/dns"
 )
-
-func TestParseBINDTSIGKey(t *testing.T) {
-	keyName, secret, err := parseBINDTSIGKey([]byte(`key "zpr-dns-viewer" {
-	algorithm hmac-sha256;
-	secret "c2VjcmV0";
-};`))
-	if err != nil {
-		t.Fatal(err)
-	}
-	if keyName != "zpr-dns-viewer." || secret != "c2VjcmV0" {
-		t.Fatalf("key = (%q, %q), want (%q, %q)", keyName, secret, "zpr-dns-viewer.", "c2VjcmV0")
-	}
-}
-
-func TestParseBINDTSIGKeyRejectsUnsupportedConfig(t *testing.T) {
-	for _, input := range []string{
-		`key "first" { algorithm hmac-sha256; secret "one"; }; key "second" { algorithm hmac-sha256; secret "two"; };`,
-		`key "zpr-dns-viewer" { algorithm hmac-md5; secret "c2VjcmV0"; };`,
-	} {
-		if _, _, err := parseBINDTSIGKey([]byte(input)); err == nil {
-			t.Fatalf("parseBINDTSIGKey(%q) succeeded; want error", input)
-		}
-	}
-}
-
-func TestDNSRecordFromRR(t *testing.T) {
-	rr, err := dns.NewRR("adapter2.svc.zpr. 30 IN AAAA fd00:1::2")
-	if err != nil {
-		t.Fatal(err)
-	}
-	record, ok := dnsRecordFromRR(rr)
-	if !ok {
-		t.Fatal("dnsRecordFromRR returned false")
-	}
-	if record.Name != "adapter2.svc.zpr." || record.TTL != 30 || record.Type != "AAAA" || record.Value != "fd00:1::2" {
-		t.Fatalf("record = %#v", record)
-	}
-}
 
 func TestDNSRecordsHandlerRequiresConfiguration(t *testing.T) {
 	t.Setenv("ZPR_DNS_TRANSFER_ADDR", "")
@@ -53,5 +15,41 @@ func TestDNSRecordsHandlerRequiresConfiguration(t *testing.T) {
 	newDNSRecordsHandler().ServeHTTP(response, httptest.NewRequest(http.MethodGet, "/api/dns/records", nil))
 	if response.Code != http.StatusServiceUnavailable {
 		t.Fatalf("status=%d, want %d", response.Code, http.StatusServiceUnavailable)
+	}
+}
+
+func TestDNSRecordsHandlerResolvesConfigurationPerRequest(t *testing.T) {
+	t.Setenv("ZPR_DNS_TRANSFER_ADDR", "")
+	t.Setenv("ZPR_DNS_TRANSFER_TSIG_KEY_FILE", "")
+	t.Setenv("SIMULATION_MANIFEST", "/unavailable/simulation.json")
+	t.Setenv("SIMULATION_ORGANIZATIONS_DIR", "/unavailable/organizations")
+	t.Setenv("ZPR_SIMULATOR_URL", "://invalid")
+	keyPath := filepath.Join(t.TempDir(), "viewer.key")
+	if err := os.WriteFile(keyPath, []byte("invalid BIND key"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	handler := newDNSRecordsHandler()
+	for _, test := range []struct {
+		address string
+		keyPath string
+		body    string
+	}{
+		{"", "", "DNS record viewer is not configured\n"},
+		{" \t ", keyPath, "DNS record viewer is not configured\n"},
+		{"127.0.0.1:1", "", "DNS record viewer is not configured\n"},
+		{"127.0.0.1:1", keyPath + ".missing", "DNS record viewer is not configured\n"},
+		{"127.0.0.1:1", keyPath, "DNS record viewer key is invalid\n"},
+		{"", "", "DNS record viewer is not configured\n"},
+	} {
+		t.Setenv("ZPR_DNS_TRANSFER_ADDR", test.address)
+		t.Setenv("ZPR_DNS_TRANSFER_TSIG_KEY_FILE", test.keyPath)
+		response := httptest.NewRecorder()
+		handler.ServeHTTP(response, httptest.NewRequest(http.MethodGet, "/api/dns/records", nil))
+		if response.Code != http.StatusServiceUnavailable || response.Body.String() != test.body {
+			t.Fatalf("status=%d body=%q, want 503 %q", response.Code, response.Body.String(), test.body)
+		}
+		if response.Header().Get("Content-Type") != "text/plain; charset=utf-8" {
+			t.Fatalf("content type=%q", response.Header().Get("Content-Type"))
+		}
 	}
 }

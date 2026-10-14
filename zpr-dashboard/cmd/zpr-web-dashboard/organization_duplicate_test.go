@@ -365,3 +365,42 @@ func TestOrganizationDuplicateRequiresSourceReadAndTargetCreate(t *testing.T) {
 		})
 	}
 }
+
+func TestOrganizationDraftArchiveRequiresCurrentRevisionAndHidesDraft(t *testing.T) {
+	configureOrganizationDuplicateTest(t)
+	if response := duplicateTestRequest(t, "archive-copy", "", preparedDuplicateRequest(t, "archive-copy")); response.Code != http.StatusOK {
+		t.Fatalf("create draft: %d %s", response.Code, response.Body)
+	}
+	archive := func(id string, expectedRevision int) *httptest.ResponseRecorder {
+		t.Helper()
+		body, err := json.Marshal(workspacePublishRequest{ExpectedRevision: expectedRevision})
+		if err != nil {
+			t.Fatal(err)
+		}
+		request := localPolicyRequest(http.MethodDelete, "/api/simulator/organizations/"+id+"/draft", string(body))
+		request.SetPathValue("organization", id)
+		response := httptest.NewRecorder()
+		handleOrganizationDraftArchive(response, request)
+		return response
+	}
+	if response := archive("archive-copy", 2); response.Code != http.StatusConflict {
+		t.Fatalf("stale archive: %d %s", response.Code, response.Body)
+	}
+	if response := archive("great-lakes", 1); response.Code != http.StatusNotFound {
+		t.Fatalf("bundled organization archive: %d %s", response.Code, response.Body)
+	}
+	if response := archive("archive-copy", 1); response.Code != http.StatusNoContent {
+		t.Fatalf("archive: %d %s", response.Code, response.Body)
+	}
+	if _, _, _, err := getOrganizationBundle(t.Context(), "archive-copy"); !errors.Is(err, errWorkspaceArtifactNotFound) {
+		t.Fatalf("archived draft remains visible: %v", err)
+	}
+	response := httptest.NewRecorder()
+	handleOrganizationDraftCatalog(response, localPolicyRequest(http.MethodGet, "/api/simulator/organization-drafts", ""))
+	if response.Code != http.StatusOK || strings.Contains(response.Body.String(), "archive-copy") {
+		t.Fatalf("archived draft remains in catalog: %d %s", response.Code, response.Body)
+	}
+	if _, err := loadSimulatorOrganization(simulatorOrganizationsDirectory(), "great-lakes"); err != nil {
+		t.Fatalf("bundled source was changed by archive request: %v", err)
+	}
+}

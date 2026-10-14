@@ -428,7 +428,9 @@ func handleOrganizationDraftCatalog(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	defer store.Close()
-	rows, err := store.db.QueryContext(r.Context(), `SELECT organization_id FROM workspace_artifacts WHERE kind=? ORDER BY organization_id`, workspaceOrganizationBundleKind)
+	rows, err := store.db.QueryContext(r.Context(), `SELECT a.organization_id FROM workspace_artifacts a WHERE a.kind=?
+		AND NOT EXISTS (SELECT 1 FROM workspace_artifact_archives x WHERE x.organization_id=a.organization_id AND x.kind=a.kind AND x.artifact_id=a.artifact_id)
+		ORDER BY a.organization_id`, workspaceOrganizationBundleKind)
 	if err != nil {
 		writeWorkspaceError(w, http.StatusInternalServerError, "draft catalog could not be read")
 		return

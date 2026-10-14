@@ -194,7 +194,13 @@
 
   function helpContent() {
     const simulator = document.querySelector(".sidebar .brand")?.textContent.includes("SIMULATOR");
-    if (simulator) return simulatorHelp[location.pathname.split("/").pop()] || simulatorHelp["machine-logs.html"];
+    if (simulator) {
+      const content = simulatorHelp[location.pathname.split("/").pop()] || simulatorHelp["machine-logs.html"];
+      const maximum = window.ZPRSimulatorScenarioLimits?.maxMachines;
+      return location.pathname.endsWith("/scenarios.html") && Number.isInteger(maximum)
+        ? { ...content, steps: [...content.steps, `Maximum machines per run: ${maximum}.`] }
+        : content;
+    }
     const page = location.hash.slice(1) || "map";
     if (page === "policy" && !document.querySelector("#policy-assertion-editor")?.hidden) return controlHelp.assertions;
     return controlHelp[page] || controlHelp.map;
@@ -227,7 +233,7 @@
     if (!document.querySelector("link[data-zpr-help-styles]")) {
       const stylesheet = document.createElement("link");
       stylesheet.rel = "stylesheet";
-      stylesheet.href = "/help.css?v=3";
+      stylesheet.href = "/help.css?v=4";
       stylesheet.dataset.zprHelpStyles = "true";
       document.head.append(stylesheet);
     }
@@ -343,6 +349,7 @@
     dialog.close();
   }, true);
   window.addEventListener("storage", (event) => { if (event.key === storageKey()) initialize(); });
+  window.addEventListener("simulator:scenario-limits", () => { if (document.querySelector("#zpr-help-dialog")?.open) updateHelp(); });
   window.addEventListener("hashchange", () => { if (document.querySelector("#zpr-help-dialog")?.open) updateHelp(); });
   window.addEventListener("policy-record-kind-changed", () => { if (document.querySelector("#zpr-help-dialog")?.open) updateHelp(); });
   document.addEventListener("simulator:activate", initialize);

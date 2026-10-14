@@ -4419,7 +4419,7 @@ test("Simulator Agents redirects to Workers with device filtering", async ({ pag
   await expect(page.locator("#machine-type-filter option[value=all]")).toHaveText("All devices");
 });
 
-test("Simulator Activity uses sortable tables and keeps Refresh beside stream state", async ({ page, appURL, api }) => {
+test("Simulator Activity keeps sortable tables without redundant stream metrics", async ({ page, appURL, api }) => {
   api.handlers.set("/api/simulator/activity", async (route) => route.fulfill({ json: {
     generated_at: "2026-10-05T12:00:00Z",
     stats: { visa_requests: 4, visa_requests_approved: 2, visa_requests_denied: 2 },
@@ -4433,8 +4433,10 @@ test("Simulator Activity uses sortable tables and keeps Refresh beside stream st
     ],
   } }));
   await page.goto(appURL + "/activity.html");
-  await expect(page.locator("#activity-state")).toHaveText("LIVE");
-  await expect(page.locator("#refresh").locator("xpath=..")).toHaveClass(/activity-stream-actions/);
+  await expect(page.locator("#activity-state")).toHaveCount(0);
+  await expect(page.locator("#refresh")).toHaveCount(0);
+  await expect(page.locator("#requests")).toHaveCount(0);
+  await expect(page.getByText("LIVE", { exact: true })).toHaveCount(0);
   await expect(page.getByText("DECISIONS", { exact: true })).toHaveCount(0);
   await expect(page.getByText("BLOCKED FLOWS", { exact: true })).toHaveCount(0);
 
@@ -4556,12 +4558,6 @@ test("Simulator Activity polling aborts on navigation and rejects a late respons
   });
   await page.goto(appURL + "/activity.html");
   await expect.poll(() => page.evaluate(() => window.pendingActivityRequests.length)).toBe(1);
-  await page.evaluate(() => {
-    document.getElementById("refresh").click();
-    document.getElementById("refresh").click();
-  });
-  await page.waitForTimeout(50);
-  expect(await page.evaluate(() => window.pendingActivityRequests.length)).toBe(1);
   await page.evaluate(() => document.dispatchEvent(new CustomEvent("simulator:deactivate", {
     detail: { path: "/activity.html" },
   })));
@@ -4571,7 +4567,7 @@ test("Simulator Activity polling aborts on navigation and rejects a late respons
     stats: { visa_requests: 99, visa_requests_approved: 99, visa_requests_denied: 0 },
     visas: [], denies: [],
   }));
-  await expect(page.locator("#requests")).toHaveText("—");
+  await expect(page.locator("#visas")).toContainText("Waiting for visa activity");
 
   await page.evaluate(() => document.dispatchEvent(new CustomEvent("simulator:activate", {
     detail: { path: "/activity.html" },
@@ -4582,7 +4578,7 @@ test("Simulator Activity polling aborts on navigation and rejects a late respons
     stats: { visa_requests: 4, visa_requests_approved: 3, visa_requests_denied: 1 },
     visas: [], denies: [],
   }));
-  await expect(page.locator("#requests")).toHaveText("4");
+  await expect(page.locator("#visas")).toContainText("No visa activity yet");
 });
 
 test("Simulator Scenario polling aborts on navigation and ignores late catalog responses", async ({ page, appURL, api }) => {
@@ -4600,12 +4596,6 @@ test("Simulator Scenario polling aborts on navigation and ignores late catalog r
   });
   await page.goto(appURL + "/scenarios.html");
   await expect.poll(() => page.evaluate(() => window.pendingScenarioRequests.length)).toBe(1);
-  await page.evaluate(() => {
-    document.getElementById("scenario-refresh").click();
-    document.getElementById("scenario-refresh").click();
-  });
-  await page.waitForTimeout(50);
-  expect(await page.evaluate(() => window.pendingScenarioRequests.length)).toBe(1);
   await page.evaluate(() => document.dispatchEvent(new CustomEvent("simulator:deactivate", {
     detail: { path: "/scenarios.html" },
   })));
@@ -4616,7 +4606,6 @@ test("Simulator Scenario polling aborts on navigation and ignores late catalog r
     scenarios: [{ id: "stale-scenario", name: "Stale Scenario", organization_id: "stale-org", steps: [], cleanup: [] }],
     run: { state: "idle", steps: [] },
   }));
-  await expect(page.locator("#scenario-connection")).not.toContainText("Stale Organization");
   await expect(page.locator("#scenario-list")).not.toContainText("Stale Scenario");
 
   await page.evaluate(() => document.dispatchEvent(new CustomEvent("simulator:activate", {
@@ -4629,7 +4618,6 @@ test("Simulator Scenario polling aborts on navigation and ignores late catalog r
     scenarios: [{ id: "fresh-scenario", name: "Fresh Scenario", organization_id: "alpha", steps: [], cleanup: [] }],
     run: { state: "idle", steps: [] },
   }));
-  await expect(page.locator("#scenario-connection")).toHaveText("Alpha Labs: 1 scenarios");
   await expect(page.locator("#scenario-list")).toContainText("Fresh Scenario");
 });
 
@@ -4683,12 +4671,20 @@ test("Simulator catalog pollers report malformed JSON and recover without losing
   api.handlers.set("/api/simulator/organizations", (route) => route.fulfill({
     status: 502, contentType: "text/html", body: "upstream unavailable",
   }));
-  await page.locator("#organization-refresh").evaluate((button) => button.click());
+  await page.evaluate(() => {
+    const detail = { path: location.pathname };
+    document.dispatchEvent(new CustomEvent("simulator:deactivate", { detail }));
+    document.dispatchEvent(new CustomEvent("simulator:activate", { detail }));
+  });
   await expect(page.locator("#organization-error")).toHaveText("HTTP 502: invalid JSON response");
   await expect(page.locator("#organization-title")).toHaveText("Alpha Labs");
 
   api.handlers.delete("/api/simulator/organizations");
-  await page.locator("#organization-refresh").evaluate((button) => button.click());
+  await page.evaluate(() => {
+    const detail = { path: location.pathname };
+    document.dispatchEvent(new CustomEvent("simulator:deactivate", { detail }));
+    document.dispatchEvent(new CustomEvent("simulator:activate", { detail }));
+  });
   await expect(page.locator("#organization-error")).toBeHidden();
   await expect(page.locator("#organization-title")).toHaveText("Alpha Labs");
 
@@ -4699,22 +4695,30 @@ test("Simulator catalog pollers report malformed JSON and recover without losing
     run: { state: "idle", steps: [] },
   } }));
   await page.goto(appURL + "/scenarios.html");
-  await expect(page.locator("#scenario-connection")).toHaveText("Alpha Labs: 0 scenarios");
+  await expect(page.locator("#scenario-list .scenario-empty")).toContainText("No scenarios");
   api.handlers.set("/api/simulator/scenarios", (route) => route.fulfill({
     status: 502, contentType: "text/html", body: "upstream unavailable",
   }));
-  await page.locator("#scenario-refresh").evaluate((button) => button.click());
+  await page.evaluate(() => {
+    const detail = { path: location.pathname };
+    document.dispatchEvent(new CustomEvent("simulator:deactivate", { detail }));
+    document.dispatchEvent(new CustomEvent("simulator:activate", { detail }));
+  });
   await expect(page.locator("#scenario-error")).toHaveText("HTTP 502: invalid JSON response");
-  await expect(page.locator("#scenario-connection")).toHaveText("Scenario service unavailable");
+  await expect(page.locator("#scenario-list .scenario-empty")).toContainText("No scenarios");
   api.handlers.set("/api/simulator/scenarios", async (route) => route.fulfill({ json: {
     active_organization_id: "alpha",
     organization: { name: "Alpha Labs" },
     scenarios: [],
     run: { state: "idle", steps: [] },
   } }));
-  await page.locator("#scenario-refresh").evaluate((button) => button.click());
+  await page.evaluate(() => {
+    const detail = { path: location.pathname };
+    document.dispatchEvent(new CustomEvent("simulator:deactivate", { detail }));
+    document.dispatchEvent(new CustomEvent("simulator:activate", { detail }));
+  });
   await expect(page.locator("#scenario-error")).toBeHidden();
-  await expect(page.locator("#scenario-connection")).toHaveText("Alpha Labs: 0 scenarios");
+  await expect(page.locator("#scenario-list .scenario-empty")).toContainText("No scenarios");
 });
 
 test("Scenario machine log previews are compact, bounded and limited to running machine tracks", async ({ page, appURL, api }) => {
@@ -4821,7 +4825,11 @@ test("Scenario machine log previews reject late run responses and stop polling o
   expect(api.counts.get("/api/simulator/machine-logs")).toBe(inFlightRequests);
   run.scenario_id = "second";
   run.started_at = "2026-10-09T12:01:00Z";
-  await page.locator("#scenario-refresh").evaluate(button => button.click());
+  await page.evaluate(() => {
+    const detail = { path: location.pathname };
+    document.dispatchEvent(new CustomEvent("simulator:deactivate", { detail }));
+    document.dispatchEvent(new CustomEvent("simulator:activate", { detail }));
+  });
   await pending.fulfill({ json: { organization_id: "alpha", machines: [{
     machine: { id: "machine-01" }, state: "running", sources: [{ name: "Controller", lines: ["obsolete run"] }],
   }] } });
@@ -4862,12 +4870,20 @@ test("Simulator Scenarios groups unfiled entries and clears only terminal run hi
   await expect(page.getByRole("button", { name: "Run", exact: true })).toBeVisible();
   await expect(page.getByRole("button", { name: "Run Published", exact: true })).toHaveCount(0);
   const scenarioCard = page.locator(`#scenario-list [data-run-scenario="${scenario.id}"]`).locator("xpath=ancestor::article");
-  await expect(scenarioCard.locator(".scenario-version")).toHaveText("Version 1");
-  await expect(scenarioCard.locator("button")).toHaveText(["Run", "Edit", "Delete"]);
+  await expect(scenarioCard.locator(".scenario-version")).toHaveCount(0);
+  await expect(scenarioCard).not.toContainText(scenario.id);
+  await expect(scenarioCard.locator("button")).toHaveText(["Run", "Edit"]);
+  await expect(scenarioCard.locator(".scenario-card-file-menu > summary")).toHaveText("File...");
+  await scenarioCard.locator(".scenario-card-file-menu > summary").click();
+  await expect(scenarioCard.getByRole("button", { name: "Edit", exact: true })).toBeVisible();
+  await expect(scenarioCard.getByRole("button", { name: "Delete", exact: true })).toHaveCount(0);
   await expect(page.locator("#scenario-run-title")).toHaveText("Sample flow");
   await expect(page.locator("#scenario-run-state .scenario-state-label")).toHaveText("completed");
   await expect(page.locator("#scenario-cancel")).toBeHidden();
   await expect(page.locator("#scenario-clear")).toBeVisible();
+  await page.locator(".main-content .top-actions > .help-trigger, .main-content .topbar > .help-trigger").click();
+  await expect(page.getByRole("dialog", { name: "Scenarios" })).toContainText("Maximum machines per run: 10.");
+  await page.keyboard.press("Escape");
 
   await page.evaluate(() => renderScenarioRun({ scenario_id: "sample-flow", scenario_name: "Sample flow", state: "running", steps: [], scenario: { steps: [], cleanup: [] } }));
   await expect(page.locator("#scenario-cancel")).toBeVisible();
@@ -4999,7 +5015,16 @@ test("Security Review reports denial and log evidence and compares new inventory
   expect(Math.abs(baselineTimeBox.x - currentTimeBox.x)).toBeLessThan(1);
   await expect(page.locator(".security-review-baseline-help")).toHaveCount(0);
   await expect(page.locator("#security-review-status")).not.toContainText("Scan complete");
-  await expect(page.locator(".security-review-select-visible")).toContainText("Select visible");
+  await expect(page.locator(".security-review-select-visible")).toHaveText("");
+  await expect(page.locator(".security-review-select-visible input")).toBeVisible();
+  const securityHeaders = page.locator(".security-review-table thead th");
+  await expect(securityHeaders.nth(1)).toHaveText("TIME");
+  await expect(securityHeaders.last()).toHaveText("ACTION");
+  const headerStyles = await securityHeaders.evaluateAll(headers => headers.map(header => {
+    const style = getComputedStyle(header);
+    return [style.fontSize, style.fontFamily, style.fontWeight];
+  }));
+  expect(new Set(headerStyles.map(style => JSON.stringify(style))).size).toBe(1);
   const findings = page.locator("#security-review-findings");
   await expect(findings).toContainText("Repeated policy denials");
   await expect(findings).toContainText("5 denied requests");
@@ -5374,8 +5399,12 @@ test("Simulator trusted source page uses the same read-only browser", async ({ p
   await expect(browser.locator("[data-source-title]")).toHaveText("Organization LDAP");
   await browser.getByRole("tab", { name: "People" }).click();
   await expect(browser.locator(".trusted-source-table")).toContainText("alice@example.test");
+  await expect(browser.locator('[data-source-tab="people"] [data-record-count="people"]')).toHaveText("2");
   await browser.getByRole("tab", { name: "Groups" }).click();
   await expect(browser.locator(".trusted-source-table")).toContainText("Operators");
+  await expect(browser.locator('[data-source-tab="groups"] [data-record-count="groups"]')).toHaveText("1");
+  await browser.getByRole("tab", { name: "Attributes" }).click();
+  await expect(browser.locator('[data-source-tab="attributes"] [data-record-count="attributes"]')).toHaveText("3");
   await expect(browser.getByRole("button", { name: /Save|Edit|Delete|Publish/ })).toHaveCount(0);
   expect(api.counts.get("/api/simulator/trusted-source")).toBeGreaterThan(0);
 });

@@ -88,6 +88,15 @@ Service publisher key or enable unauthenticated zone transfers. For other
 deployments, configure a dedicated TSIG key with transfer-only access and set
 `ZPR_DNS_TRANSFER_ADDR` and `ZPR_DNS_TRANSFER_TSIG_KEY_FILE` for Control-Service.
 
+The record-viewer implementation is owned by
+[`internal/dnsrecords`](../../zpr-dashboard/internal/dnsrecords/), using the
+existing DNS library and explicit transfer address/key-file inputs.
+Control-Service retains authenticated route registration and per-request
+environment lookup. The key is reread for every request; the zone, signing,
+timeouts, sorted/deduplicated JSON and error responses are unchanged.
+The package does not access Simulator state or require Simulator availability.
+This source extraction does not deploy or reconfigure any DNS or relay service.
+
 ```sh
 sudo install -d -m 700 /etc/bind/keys
 sudo tsig-keygen -a hmac-sha256 zpr-vs-publisher \

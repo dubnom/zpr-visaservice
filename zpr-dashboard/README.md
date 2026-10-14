@@ -6,6 +6,25 @@ This repository contains the Zero-Trust Packet Routing (ZPR) Terminal User Inter
 
 To setup your development environment, run `go mod download` to install the local dependencies. Finally, run `make run` to start the TUI.
 
+## Migration discovery CLI
+
+[`zpr-discover`](cmd/zpr-discover/README.md) is a standalone, production-independent
+TCP inventory command for the first migration-discovery slice. Run it on the
+operator-selected scanner machine with explicit authorized IP/CIDR targets and
+ports. It provides a no-network dry run, bounded concurrency/rate/timeouts,
+optional conservative protocol checks and private versioned JSON exports.
+Ping and reverse DNS are enabled by default without gating TCP checks; both
+can be disabled. JSON config files supply options with explicit CLI overrides.
+Ping currently requires the macOS/Linux system utility; other platforms can
+use `-ping=false`.
+Config `targets` is a string array of IPs, CIDRs or inclusive dash ranges.
+There is no host-count cap: scopes are compact and iterated lazily. Version-2
+exports retain the full scope and exact planned counts, with host records only
+for reached/imported targets. Rate, worker and time limits remain enforced.
+Imported adapter listener inventory stays separate and explicitly unverified.
+There is no live adapter collector, remote scanner control, Control Room page,
+UDP scan, automatic installation or policy generation in this first version.
+
 ## Backend package reorganization
 
 The existing web command remains the compatibility entry point for all modes.
@@ -65,6 +84,31 @@ check. Control-Service retains environment lookup and route registration.
 It neither reads Simulator configuration nor requires Simulator availability.
 DNS record transfers and independent relay scripts are unchanged.
 
+The eighth extraction moves signed AXFR record viewing and BIND TSIG parsing to
+[`internal/dnsrecords`](internal/dnsrecords/). It accepts an explicit transfer
+address and key-file path; the command retains per-request environment lookup
+and authenticated route registration. The fixed zone, signing/timeouts,
+key reload, sorted/deduplicated JSON and exact errors are unchanged. Real signed
+transfer tests and a dependency allowlist enforce the independent production
+boundary, reusing the existing DNS library without adding dependencies.
+
+The ninth extraction moves Policy-Service forwarding to
+[`internal/policyclient`](internal/policyclient/), accepting a validated origin
+and configured mTLS transport. It preserves credential removal, upstream Host,
+forwarding-header behavior, paths/queries and the 100ms flush interval.
+The command retains environment/TLS validation, authorization, assistant-status
+enrichment and application error hooks. It intentionally differs from the
+Control Room proxy's forwarding policy. Standard-library-only dependency tests,
+forwarding tests and existing real-mTLS integration enforce the boundary.
+
+The tenth extraction adds the bounded assistant attribute fetch and its
+two-field attribute contract to that same package. The command retains
+local-workspace selection/locking, environment/TLS setup and transport cleanup.
+The client preserves its 12-second timeout, redirect refusal, exact 4 MiB
+response limit, error messages and attributes-only decoding. Local consumers use
+a type alias, keeping their JSON schema unchanged. Tests cover exact size bounds,
+redirects, cancellation/read failures, unrelated-data exclusion and local copies.
+
 Mode names, flags, API behavior, embedded resources, scripts, and container
 build targets are unchanged. This is not full production/Simulator separation,
 production gateway activation, or deployment. See the
@@ -80,6 +124,8 @@ go test -race ./internal/servicehttp ./cmd/zpr-web-dashboard -run 'ServiceHTTP|M
 go test -race ./internal/servicehttp ./cmd/zpr-web-dashboard -run 'LocalRequest|LocalEditor|PolicyEditorRejects|ControlRoom' -count=1
 go test -race ./internal/controlroom ./cmd/zpr-web-dashboard -run 'ControlRoom|ControlService|OperatorAuthorization|OperatorConfig|OperatorEnrollment|OperatorDelegation|SimulatorAPI|ChangeReview|ConfigurationForm|GatewayAssistantPermissions|AdapterLog|LogComponents' -count=1
 go test -race ./internal/dnsstats ./cmd/zpr-web-dashboard -run 'DNSStats|ControlServiceDNS|OperatorDNS|ControlRoom' -count=1
+go test -race ./internal/dnsrecords ./cmd/zpr-web-dashboard -run 'DNSRecord|ParseBINDTSIGKey|DNSStats|ControlServiceDNS|OperatorDNS' -count=1
+go test -race ./internal/policyclient ./cmd/zpr-web-dashboard -run 'PolicyAttributes|PolicyAssistantAttributes|PolicyProxy|PolicyService|ControlServiceProxiesPolicy|ControlServiceAssistant|PolicyAndAssertionAssistantContext|PolicyAttribute' -count=1
 ```
 
 ## Tests
@@ -3000,12 +3046,21 @@ retrieving draft content requires a separate target `organization.read` request.
 Logout clears browser data and ignores delayed responses; persisted server
 drafts remain discoverable after authorized login and catalog refresh.
 
+The Simulator organization viewer exposes **New organization** with New,
+Import and Duplicate modes. Its **File…** actions keep editing scoped to the
+selected profile or private draft: Rename and confirmed Delete are available
+only for private drafts, while Restore is available only for bundled profiles.
+Deleting sends the draft's current revision, archives that private bundle and
+retains its revision history; bundled profiles, active organizations and
+runtime state are not changed.
+
 | Method | Route | Permission |
 | --- | --- | --- |
 | GET | `/api/simulator/organization-drafts` | `organization.read`; target-scope filtered |
 | POST | `/api/simulator/organizations/{source}/duplicates/{target}/check` | source `organization.analyze` and `organization.read` |
 | POST | `/api/simulator/organizations/{source}/duplicates/{target}` | target `organization.create` and source `organization.read` |
 | GET | `/api/simulator/organizations/{target}/draft` | target `organization.read` |
+| DELETE | `/api/simulator/organizations/{target}/draft` | target `organization.archive`; requires current `expected_revision` |
 | GET/PUT/POST | `/api/simulator/organizations/{target}/draft/profile` and its `/check`, `/assistant`, `/revisions`, `/revisions/{revision}` routes | same read/edit/analyze split as the existing profile routes |
 
 Preview takes `name` and `description`. Creation also requires `confirmed: true`,
@@ -3013,8 +3068,8 @@ Preview takes `name` and `description`. Creation also requires `confirmed: true`
 files or invokes runtime operations. Draft profile AI sends only the unsaved
 profile, not copied documents or runtime state, and validates proposed
 bundle-local file references before offering insertion. Operators need explicit
-target create/read/analyze/edit grants; no live authorization configuration is
-changed by this source-only implementation.
+target create/read/analyze/edit/archive grants; no live authorization
+configuration is changed by this implementation.
 
 ## Organization Activation
 

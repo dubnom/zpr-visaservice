@@ -44,6 +44,8 @@ func simulatorAPIPermission(method, requestPath string) (permission, explicitOrg
 			return "organization.create", parts[5], true
 		case len(parts) == 5 && parts[4] == "draft" && method == http.MethodGet:
 			return "organization.read", organization, true
+		case len(parts) == 5 && parts[4] == "draft" && method == http.MethodDelete:
+			return "organization.archive", organization, true
 		case len(parts) == 6 && parts[4] == "draft" && parts[5] == "definitions" && method == http.MethodGet,
 			len(parts) == 7 && parts[4] == "draft" && parts[5] == "definitions" && parts[6] == "revisions" && method == http.MethodGet,
 			len(parts) == 8 && parts[4] == "draft" && parts[5] == "definitions" && parts[6] == "revisions" && method == http.MethodGet:
