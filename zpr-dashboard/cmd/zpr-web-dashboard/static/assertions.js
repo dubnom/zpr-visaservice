@@ -191,10 +191,11 @@
       insert.title = `Insert a cardinality assertion for ${group.name}`;
       insert.setAttribute("aria-label", insert.title);
       insert.addEventListener("click", () => {
-        analysisScope.invalidate();
-        source.setRangeText(`group ${JSON.stringify(group.name)}${qualifier} members >= 2;\n`, source.selectionStart, source.selectionEnd, "end");
-        source.focus();
-        highlight(); actions();
+        try {
+          window.ZPREditorPage.editText(source, `group ${JSON.stringify(group.name)}${qualifier} members >= 2;\n`);
+        } catch (error) {
+          message(error.message, "error");
+        }
       });
       control.append(insert);
       row.append(name, count, control);
@@ -219,10 +220,12 @@
       insert.title = `Insert presence assertion for ${attribute.name}`;
       insert.setAttribute("aria-label", insert.title);
       insert.addEventListener("click", () => {
-        analysisScope.invalidate();
         const target = attribute.people === 0 && attribute.groups > 0 ? "each group" : "people";
-        source.setRangeText(`${target}${qualifier} attribute ${JSON.stringify(attribute.name)} present;\n`, source.selectionStart, source.selectionEnd, "end");
-        source.focus(); highlight(); actions();
+        try {
+          window.ZPREditorPage.editText(source, `${target}${qualifier} attribute ${JSON.stringify(attribute.name)} present;\n`);
+        } catch (error) {
+          message(error.message, "error");
+        }
       });
       cell.append(insert);
       row.append(cell);
@@ -362,24 +365,21 @@
     resultLines.replaceChildren();
     gutter.hidden = false;
     editor.dataset.resultState = "true";
-    if (!run) {
-      return;
-    }
     const lineCount = Math.max(1, source.value.split("\n").length);
     const byLine = new Map();
-    for (const result of run.results || []) {
+    for (const result of run?.results || []) {
       const line = window.ZPREditorPage.sourceLine(result.rule?.line, lineCount);
       if (line === null) continue;
       if (!byLine.has(line)) byLine.set(line, []);
       byLine.get(line).push({ result, error: "" });
     }
-    for (const warning of run.warnings || []) {
+    for (const warning of run?.warnings || []) {
       const line = window.ZPREditorPage.sourceLine(warning.line, lineCount);
       if (line === null) continue;
       if (!byLine.has(line)) byLine.set(line, []);
       byLine.get(line).push({ warning, result: null, error: "" });
     }
-    if (run.error || run.status === "error" && !byLine.size) {
+    if (run?.error || run?.status === "error" && !byLine.size) {
       const line = assertionErrorLine(run.error);
       if (line !== null) {
         if (!byLine.has(line)) byLine.set(line, []);
@@ -596,7 +596,14 @@
 
   for (const control of [source, enabled, interval]) control.addEventListener("input", () => { analysisScope.invalidate(); editor.setAnalysisState(); highlight(); renderRun(null); actions(); });
   source.addEventListener("keydown", (event) => {
-    if (event.key === "Tab") { event.preventDefault(); source.setRangeText("  ", source.selectionStart, source.selectionEnd, "end"); source.dispatchEvent(new InputEvent("input", { bubbles: true })); }
+    if (event.key === "Tab" && !event.shiftKey && !event.ctrlKey && !event.metaKey && !event.altKey) {
+      event.preventDefault();
+      try {
+        window.ZPREditorPage.editText(source, "  ");
+      } catch (error) {
+        message(error.message, "error");
+      }
+    }
   });
   editor.bind("save", { button: element("assertion-save"), shortcutRoot: source, onError: error => message(error.message, "error") });
   async function formatAssertions() {

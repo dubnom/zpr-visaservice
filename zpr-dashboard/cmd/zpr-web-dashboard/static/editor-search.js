@@ -165,12 +165,12 @@
       const control = host.contains(document.activeElement) ? document.activeElement : null;
       source.focus();
       source.setSelectionRange(start, end);
-      const edited = middle
-        ? document.execCommand("insertText", false, middle)
-        : document.execCommand("delete", false);
-      if (!edited || source.value.length !== length) {
-        source.setRangeText(middle, start, end, "end");
-        source.dispatchEvent(new InputEvent("input", { bubbles: true, inputType: "insertReplacementText" }));
+      try {
+        window.ZPREditorPage.editText(source, middle);
+      } catch (error) {
+        control?.focus();
+        status.textContent = error.message;
+        return;
       }
       const caret = start + middle.length;
       source.setSelectionRange(caret, caret);

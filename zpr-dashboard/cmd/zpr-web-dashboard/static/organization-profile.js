@@ -5,22 +5,42 @@
   dialog.setAttribute("aria-labelledby", "organization-profile-title");
   dialog.innerHTML = `<div class="policy-toolbar"><div class="policy-identity"><strong id="organization-profile-title">Organization draft</strong><span id="organization-profile-revision"></span><span id="organization-profile-modified" class="policy-modified-indicator" hidden>Modified</span></div><button class="quiet" type="button" data-profile-close aria-label="Close organization draft" title="Close organization draft">×</button></div>
     <div class="editor-page-workbench"><div class="editor-page-main">
-    <div class="policy-editor-tools"><div class="policy-editor-utilities"><button type="button" data-profile-save>Save draft</button><button type="button" data-profile-validate>Validate profile</button><button type="button" data-profile-reload>Reload draft</button><button type="button" data-profile-definitions hidden>Edit supporting definitions</button><button type="button" data-profile-export hidden>Export saved definitions</button><details class="policy-history-menu"><summary class="button">History</summary><div id="organization-profile-history" class="policy-history"></div></details></div></div>
+    <div class="policy-editor-tools">
+      <div class="policy-browser-controls">
+        <div id="organization-profile-actions" class="policy-files">
+          <button id="organization-profile-files-toggle" class="button button-refresh policy-files-toggle" type="button" aria-haspopup="menu" aria-controls="organization-profile-file-menu" aria-expanded="false">File... <span class="policy-picker-chevron" aria-hidden="true">⌄</span></button>
+          <div id="organization-profile-file-menu" class="policy-file-menu" role="menu" aria-label="Organization file operations" hidden>
+            <button class="button" type="button" role="menuitem" data-profile-save>Save</button>
+            <button class="button" type="button" role="menuitem" data-profile-reload>Discard</button>
+            <button class="button" type="button" role="menuitem" data-profile-definitions hidden>Edit supporting definitions</button>
+            <button class="button" type="button" role="menuitem" data-profile-export hidden>Export saved definitions</button>
+            <hr role="separator"><button class="button" type="button" role="menuitem" data-profile-menu-close>Close</button>
+          </div>
+        </div>
+        <button id="organization-profile-picker-toggle" class="button policy-picker-toggle" type="button" aria-expanded="false" aria-controls="organization-profile-catalog-pane">Browse... <span class="policy-picker-chevron" aria-hidden="true">⌄</span></button>
+      </div>
+      <div class="policy-attribute-toolbar"><button class="button button-next-evaluate" type="button" data-profile-validate>Analyze</button><button class="button button-save-as-ready" type="button" data-profile-format>Format</button></div>
+      <div class="policy-editor-utilities">
+        <button id="organization-profile-mode-toggle" class="button" type="button" aria-pressed="false">Raw</button>
+        <span data-editor-search-target="organization-profile-source"></span>
+        <details id="organization-profile-history-menu" class="policy-history-menu"><summary class="button policy-history-toggle" aria-label="Version history">History <span id="organization-profile-history-count">—</span><span class="policy-picker-chevron" aria-hidden="true">⌄</span></summary><div id="organization-profile-history" class="policy-history"></div></details>
+      </div>
+    </div>
+    <div id="organization-profile-catalog-pane" class="policy-catalog-pane" hidden><button class="pane-collapse-toggle" type="button" data-profile-picker-close aria-label="Close organization browser">×</button><p data-profile-picker-status role="status"></p><div id="organization-profile-records" class="policy-record-list" tabindex="-1"></div></div>
     <p id="organization-profile-status" role="status" aria-live="polite"></p>
-    <p>Draft only. Saving does not change bundled files, linked documents, the active organization or running machines. Profile validation is not runtime readiness.</p>
 
+    <div id="organization-profile-form">
     <nav class="status-tabs organization-editor-tabs" role="tablist" aria-label="Organization draft sections">
       <button type="button" role="tab" class="active" data-editor-tab="overview" aria-selected="true" aria-controls="section-panel-overview">Overview</button>
       <button type="button" role="tab" data-editor-tab="sites" aria-selected="false" aria-controls="section-panel-sites">Sites &amp; Topology <span class="tab-badge" id="badge-sites-count">0</span></button>
       <button type="button" role="tab" data-editor-tab="directory" aria-selected="false" aria-controls="section-panel-directory">Directory <span class="tab-badge" id="badge-directory-count">0</span></button>
       <button type="button" role="tab" data-editor-tab="services" aria-selected="false" aria-controls="section-panel-services">Services &amp; Workloads <span class="tab-badge" id="badge-services-count">0</span></button>
-      <button type="button" role="tab" data-editor-tab="source" aria-selected="false" aria-controls="section-panel-source">Advanced JSON</button>
     </nav>
 
     <div id="section-panel-overview" class="organization-section-panel" data-panel="overview" role="tabpanel">
       <div class="assistant-settings">
         <label>Name<input id="organization-profile-name"></label>
-        <label>Description<input id="organization-profile-description"></label>
+        <label>Description<textarea id="organization-profile-description" rows="3"></textarea></label>
       </div>
       <div class="assistant-settings">
         <label>Directory Base DN<input id="organization-profile-base-dn" placeholder="dc=example,dc=test"></label>
@@ -168,10 +188,10 @@
       </details>
     </div>
 
-    <details id="organization-profile-advanced" class="organization-profile-advanced" open>
-      <summary class="button">Advanced JSON source</summary>
+    </div>
+    <div id="organization-profile-advanced" class="organization-profile-advanced" hidden>
       <div class="config-source-editor"><div id="organization-profile-gutter" class="config-source-gutter"></div><div class="config-code-surface"><pre id="organization-profile-highlight" aria-hidden="true"></pre><textarea id="organization-profile-source" class="zpr-config-source" aria-label="Organization profile JSON" spellcheck="false" wrap="off"></textarea></div></div>
-    </details>
+    </div>
 
     </div><div id="organization-profile-assistant"></div></div>`;
   document.body.append(dialog);
@@ -197,9 +217,73 @@
   let busy = false;
   let draftBundle = false;
   let activeTab = "overview";
+  let rawMode = false;
   const dirty = () => source.value !== saved;
   const path = () => `/api/simulator/organizations/${encodeURIComponent(organizationID)}/${draftBundle ? "draft/" : ""}profile`;
   const request = (url, options) => window.ZPRPageRuntime.requestJSON(window.fetch.bind(window), url, options);
+  const fileMenu = window.ZPREditorPage.createMenu({
+    root: dialog.querySelector("#organization-profile-actions"),
+    toggle: dialog.querySelector("#organization-profile-files-toggle"),
+    menu: dialog.querySelector("#organization-profile-file-menu"),
+  });
+  window.ZPREditorPage.createHistory({
+    menu: dialog.querySelector("#organization-profile-history-menu"),
+    list: history, count: dialog.querySelector("#organization-profile-history-count"),
+    isAvailable: () => Boolean(revision) && !busy,
+  });
+  window.ZPREditorPage.bindSaveShortcut({ root: dialog, button: dialog.querySelector("[data-profile-save]") });
+  const picker = window.ZPREditorPage.createPicker({
+    toggle: dialog.querySelector("#organization-profile-picker-toggle"),
+    pane: dialog.querySelector("#organization-profile-catalog-pane"),
+    close: dialog.querySelector("[data-profile-picker-close]"),
+    focus: dialog.querySelector("#organization-profile-records"),
+  });
+  dialog.querySelector("#organization-profile-picker-toggle").addEventListener("click", async () => {
+    if (!picker.open) return;
+    const current = generation;
+    const records = dialog.querySelector("#organization-profile-records");
+    const pickerStatus = dialog.querySelector("[data-profile-picker-status]");
+    records.replaceChildren();
+    pickerStatus.textContent = "Loading organizations...";
+    try {
+      const catalog = await request("/api/simulator/organization-drafts", { cache: "no-store" });
+      if (current !== generation || !dialog.open) return;
+      if (!Array.isArray(catalog.drafts)) throw new Error("Organization draft catalog is invalid.");
+      for (const entry of [...organizationCatalog.map(item => ({ ...item, bundle: false })), ...catalog.drafts.map(item => ({ ...item, bundle: true }))]) {
+        const button = document.createElement("button");
+        button.type = "button";
+        button.className = "policy-record-item";
+        button.textContent = `${entry.name || entry.id}${entry.bundle ? " · Private draft" : ""}`;
+        button.addEventListener("click", () => {
+          if (busy || !window.ZPREditorPage.confirmDiscard(dirty(), "Discard unsaved organization draft changes?")) return;
+          picker.setOpen(false);
+          void load(entry.id, undefined, entry.bundle);
+        });
+        records.append(button);
+      }
+      pickerStatus.textContent = records.children.length ? "" : "No organization drafts.";
+    } catch (error) {
+      if (current === generation) pickerStatus.textContent = `Browse failed: ${error.message}`;
+    }
+  });
+  dialog.querySelector("#organization-profile-mode-toggle").addEventListener("click", () => {
+    if (!rawMode) {
+      rawMode = true;
+    } else {
+      try {
+        const profile = JSON.parse(source.value);
+        if (!profile || typeof profile !== "object" || Array.isArray(profile)) throw new Error("Organization profile must be a JSON object.");
+      }
+      catch (error) { status.textContent = `Form unavailable: ${error.message}`; return; }
+      rawMode = false;
+    }
+    render();
+    if (rawMode) source.focus();
+  });
+  dialog.querySelector("[data-profile-format]").addEventListener("click", () => {
+    try { window.ZPRAssistant.editText(source, JSON.stringify(JSON.parse(source.value), null, 2), true); }
+    catch (error) { status.textContent = `Format failed: ${error.message}`; }
+  });
 
   function escapeHTML(str) {
     if (window.ZPRSafeDisplay?.escapeHTML) return window.ZPRSafeDisplay.escapeHTML(str);
@@ -234,10 +318,6 @@
     }
     for (const panel of dialog.querySelectorAll(".organization-section-panel[data-panel]")) {
       panel.hidden = panel.dataset.panel !== tabName;
-    }
-    if (tabName === "source") {
-      dialog.querySelector("#organization-profile-advanced").open = true;
-      source.focus();
     }
     render();
   }
@@ -627,10 +707,21 @@
   });
 
   function render() {
+    dialog.querySelector("#organization-profile-form").hidden = rawMode;
+    dialog.querySelector("#organization-profile-advanced").hidden = !rawMode;
+    const mode = dialog.querySelector("#organization-profile-mode-toggle");
+    mode.textContent = rawMode ? "Form" : "Raw";
+    mode.setAttribute("aria-pressed", String(rawMode));
+    mode.disabled = busy || !revision;
+    dialog.querySelector("[data-profile-format]").disabled = busy || !revision || !rawMode;
+    const wrap = dialog.querySelector("[data-word-wrap]");
+    if (wrap) wrap.disabled = busy || !rawMode;
     surface.render();
     dialog.querySelector("#organization-profile-revision").textContent = revision ? `Draft revision ${revision}` : "Loading";
     dialog.querySelector("#organization-profile-modified").hidden = !dirty();
     for (const button of dialog.querySelectorAll("[data-profile-save], [data-profile-validate], [data-profile-reload]")) button.disabled = busy || !revision;
+    dialog.querySelector("[data-profile-reload]").disabled = busy || !revision || !dirty();
+    dialog.querySelector("#organization-profile-picker-toggle").disabled = busy;
     source.disabled = name.disabled = description.disabled = busy || !revision;
     dialog.querySelector("[data-profile-export]").hidden = !draftBundle;
     dialog.querySelector("[data-profile-export]").disabled = busy || !revision || dirty();
@@ -722,17 +813,26 @@
     if (!window.ZPREditorPage.confirmDiscard(dirty(), "Discard unsaved organization draft changes?")) return;
     generation++;
     assistant.reset();
+    fileMenu.setOpen(false);
+    picker.setOpen(false);
     dialog.close();
   }
   dialog.querySelector("[data-profile-close]").addEventListener("click", close);
+  dialog.querySelector("[data-profile-menu-close]").addEventListener("click", close);
   dialog.addEventListener("cancel", event => { event.preventDefault(); close(); });
   async function load(id, loadedMessage = "Draft loaded. Runtime and bundled configuration are unchanged.", bundle = false) {
+    const changingRecord = organizationID !== id || draftBundle !== bundle || !dialog.open;
     const current = ++generation;
     organizationID = id;
     draftBundle = bundle;
     revision = 0;
     saved = source.value = "";
     history.replaceChildren();
+    dialog.querySelector("#organization-profile-history-menu").open = false;
+    dialog.querySelector("#organization-profile-history-count").textContent = "—";
+    fileMenu.setOpen(false);
+    picker.setOpen(false);
+    if (changingRecord) rawMode = false;
     busy = true;
     assistant.reset();
     status.textContent = "Loading organization draft...";
@@ -747,12 +847,14 @@
       status.textContent = loadedMessage;
       const revisions = await request(path() + "/revisions");
       if (current !== generation) return;
+      dialog.querySelector("#organization-profile-history-count").textContent = `${revisions.length} versions`;
       for (const entry of revisions) {
         const button = document.createElement("button");
         button.type = "button";
         button.textContent = `Revision ${entry.revision}: ${entry.summary}`;
         button.addEventListener("click", async () => {
           if (busy || !window.ZPREditorPage.confirmDiscard(dirty(), "Replace unsaved changes with this historical profile?")) return;
+          dialog.querySelector("#organization-profile-history-menu").open = false;
           if (draftBundle) {
             generation++;
             assistant.reset();
@@ -856,6 +958,11 @@
     revision = 0;
     busy = false;
     history.replaceChildren();
+    fileMenu.setOpen(false);
+    picker.setOpen(false);
+    dialog.querySelector("#organization-profile-records").replaceChildren();
+    dialog.querySelector("[data-profile-picker-status]").textContent = "";
+    dialog.querySelector("#organization-profile-history-menu").open = false;
     assistant.reset();
     if (review.open) review.dispatchEvent(new Event("cancel", { cancelable: true }));
     if (dialog.open) dialog.close();

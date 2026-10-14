@@ -2540,7 +2540,7 @@ function clearPolicySelection() {
   state.policy.testResult = null;
   state.policy.testSource = "";
   state.policy.checkDiagnostics = "";
-  byId("policy-test-gutter-content").replaceChildren();
+  renderPolicyTestGutter({ services: [] });
   byId("policy-test-gutter").hidden = false;
   byId("policy-test-status").hidden = true;
   hidePolicyTestDetails();
@@ -2916,12 +2916,12 @@ function acceptPolicyCompletion(index = 0) {
   const start = Number(menu.dataset.start);
   const end = Number(menu.dataset.end);
   const insertion = option.dataset.insertion;
-  textarea.setRangeText(insertion, start, end, "end");
-  textarea.focus();
-  state.policy.evaluatedSource = null;
-  state.policy.validSource = null;
-  updatePolicyHighlight();
-  updatePolicyDirtyState();
+  textarea.setSelectionRange(start, end);
+  try {
+    window.ZPREditorPage.editText(textarea, insertion);
+  } catch (error) {
+    setPolicyFileStatus(error.message, true);
+  }
   hidePolicyCompletions();
 }
 
@@ -3556,7 +3556,7 @@ function clearPolicyTestResults() {
   policy.testResult = null;
   policy.testSource = "";
   policy.testDimensions = [];
-  byId("policy-test-gutter-content").replaceChildren();
+  renderPolicyTestGutter({ services: [] });
   byId("policy-test-gutter").hidden = false;
   byId("policy-check-result").hidden = true;
   byId("policy-check-result").textContent = "";
@@ -3574,7 +3574,7 @@ function stopPolicyTest() {
   if (byId("policy-check").dataset.analysisState === "pending") {
     policyEditorController.setAnalysisState(policy.validSource === policy.evaluatedSource ? "success" : "");
   }
-  byId("policy-test-gutter-content").replaceChildren();
+  renderPolicyTestGutter({ services: [] });
   byId("policy-test-gutter").hidden = false;
   byId("policy-test-status").hidden = true;
   byId("policy-test-status").textContent = "";
@@ -4647,9 +4647,11 @@ byId("policy-source").addEventListener("keydown", (event) => {
   if (event.key === "Escape" && open) { event.preventDefault(); hidePolicyCompletions(); return; }
   if (event.key === "Tab") {
     event.preventDefault();
-    const start = byId("policy-source").selectionStart;
-    byId("policy-source").setRangeText("  ", start, byId("policy-source").selectionEnd, "end");
-    byId("policy-source").dispatchEvent(new Event("input", { bubbles: true }));
+    try {
+      window.ZPREditorPage.editText(byId("policy-source"), "  ");
+    } catch (error) {
+      setPolicyFileStatus(error.message, true);
+    }
   }
 });
 byId("policy-source").addEventListener("blur", (event) => {

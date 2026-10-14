@@ -11,6 +11,32 @@ not competing current requirements. References such as "above", "below" and
 "this deployment" retain their original context from the former combined tracker;
 use the dated deployment ledger when checking release scope.
 
+## Editor gutter synchronization and undo
+
+Verified locally on 2026-10-13; not deployed, committed or pushed.
+
+- [x] Assertion and Policy gutters rebuild blank rows for the current logical
+  source lines after newline insertion/deletion and Undo/Redo. Obsolete analysis
+  markers are cleared rather than retained against changed source.
+- [x] Trusted Source group/attribute assertion insertions use the shared
+  undo-aware edit helper and dispatch normal input notifications, invalidating
+  prior analysis and keeping gutters, highlights and dirty state current.
+  Selection replacement, source qualification, read-only restrictions and
+  character limits remain enforced.
+- [x] Extract the existing native-edit/Undo/Redo fallback from the AI shell into
+  the service-independent editor blueprint. AI insertion remains compatible;
+  Find & Replace, policy completion, and Assertion/Policy/Scenario indentation
+  reuse the same helper instead of bypassing undo with `setRangeText`.
+- [x] Refresh shared asset versions and load the editor blueprint before the
+  AI shell on organization pages.
+
+Ninety focused desktop/tablet browser cases pass, including twelve new cases
+covering gutter row counts, newline deletion, wrapping, native and fallback
+catalog undo/redo, selected-text replacement, stale-marker clearing, input
+limits, policy completion, Scenario indentation and fallback Find & Replace.
+Related assertion analysis/format scope, shared scroll layout, search and AI
+tests also pass. The embedded dashboard build and editor diagnostics pass.
+
 ## Services selector and standard log display
 
 ### GUI-only publication verification

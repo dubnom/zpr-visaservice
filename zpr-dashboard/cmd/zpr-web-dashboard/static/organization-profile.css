@@ -28,6 +28,38 @@ body:has(#organization-profile-editor[open], #organization-duplicate-dialog[open
   max-width: 100%;
 }
 
+#organization-profile-form :is(input, textarea, select) {
+  box-sizing: border-box;
+  min-width: 0;
+  max-width: 100%;
+  width: 100%;
+}
+
+#organization-profile-editor .editor-page-main {
+  position: relative;
+}
+
+#organization-profile-catalog-pane {
+  box-sizing: border-box;
+  top: 48px;
+  left: 0;
+  max-width: 100%;
+}
+
+@media (max-width: 700px) {
+  #organization-profile-editor .policy-toolbar {
+    position: relative;
+  }
+  #organization-profile-history-menu {
+    position: static;
+  }
+  #organization-profile-history-menu .policy-history {
+    box-sizing: border-box;
+    left: 0;
+    width: 100%;
+  }
+}
+
 dialog[aria-label="Review AI definition changes"] pre {
   max-height: 50vh;
   overflow: auto;
@@ -60,7 +92,7 @@ dialog[aria-label="Review AI definition changes"] pre {
   }
 
   @media (max-width: 700px) {
-    :is(.organization-duplicate-dialog, #organization-definitions-editor) .assistant-settings {
+    :is(.organization-duplicate-dialog, #organization-profile-editor, #organization-definitions-editor) .assistant-settings {
       grid-template-columns: minmax(0, 1fr);
     }
   }
@@ -258,15 +290,7 @@ dialog[aria-label="Review AI definition changes"] pre {
 }
 
 .organization-profile-advanced {
-  margin-top: 16px;
-  border-top: 1px solid var(--line);
-  padding-top: 12px;
-}
-
-.organization-profile-advanced summary {
-  cursor: pointer;
-  margin-bottom: 8px;
-  display: inline-block;
+  margin-top: 8px;
 }
 
 .preview-title {

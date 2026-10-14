@@ -29,6 +29,157 @@ async function selectAdapterLogSource(panel, label, kind = "adapter") {
 }
 
 function registerAssertionBrowserTests() {
+test("GUI editor gutters follow newline edits and undo redo in assertion policy and config sources", async ({ page, appURL, api }) => {
+  await openAssertionRecord(page, appURL);
+  for (const [id, gutter, original] of [
+    ["assertion-source", "#assertion-result-lines", 'group "Operators" members >= 2;'],
+    ["policy-source", "#policy-test-gutter-content", "define Person as user."],
+    ["zpr-config-source", "#zpr-config-gutter", "port = 8080"],
+  ]) {
+    if (id === "policy-source") {
+      await openPolicyPicker(page);
+      await page.locator('[data-record-id="test-policy"]').click();
+    } else if (id === "zpr-config-source") {
+      await page.goto(appURL + "/#zpr-config");
+    }
+    const source = page.locator(`#${id}`);
+    const rows = page.locator(`${gutter} > div`);
+    await source.fill(original);
+    await expect(rows).toHaveCount(1);
+    await source.press("End");
+    await source.press("Enter");
+    await expect(source).toHaveValue(original + "\n");
+    await expect(rows).toHaveCount(2);
+    await source.press("ControlOrMeta+z");
+    await expect(source).toHaveValue(original);
+    await expect(rows).toHaveCount(1);
+    await source.press("ControlOrMeta+Shift+z");
+    await expect(source).toHaveValue(original + "\n");
+    await expect(rows).toHaveCount(2);
+    await source.press("Backspace");
+    await expect(source).toHaveValue(original);
+    await expect(rows).toHaveCount(1);
+    const wrap = source.locator("xpath=ancestor::*[contains(@class,'policy-page')]").getByRole("checkbox", { name: "Wrap" });
+    await wrap.check();
+    await source.fill(original.repeat(40) + "\nlast");
+    await expect(rows).toHaveCount(2);
+    await expect.poll(() => rows.first().evaluate(row => row.getBoundingClientRect().height)).toBeGreaterThan(30);
+    await source.press("End");
+    await source.press("Enter");
+    await expect(rows).toHaveCount(3);
+  }
+});
+
+for (const fallback of [false, true]) {
+  test(`GUI Trusted Source insertion participates in undo redo and clears obsolete analysis (${fallback ? "fallback" : "native"})`, async ({ page, appURL, api }) => {
+    api.handlers.set("/api/assertions/evaluate", route => route.fulfill({ json: {
+      revision: 0, status: "pass", finished_at: "2026-10-05T12:00:00Z",
+      results: [{ rule: { line: 1, kind: "group", group: "Original", operator: ">=", limit: 1 }, status: "pass", subjects: [] }],
+    } }));
+    await openAssertionRecord(page, appURL);
+    const source = page.locator("#assertion-source");
+    const original = 'group "Original" members >= 1;\n';
+    await source.fill(original);
+    await page.locator("#assertion-analyze").click();
+    await expect(page.locator("#assertion-analyze")).toHaveAttribute("data-analysis-state", "success");
+    await page.locator("#assertion-read-source").click();
+    const insert = page.getByRole("button", { name: "Insert a cardinality assertion for Operators", exact: true });
+    await expect(insert).toBeVisible();
+    await source.evaluate(element => element.setSelectionRange(element.value.length, element.value.length));
+    if (fallback) await page.evaluate(() => { document.execCommand = () => false; });
+    await insert.click();
+    const inserted = original + 'group "Operators" members >= 2;\n';
+    await expect(source).toHaveValue(inserted);
+    await expect(page.locator("#assertion-result-lines > div")).toHaveCount(3);
+    await expect(page.locator("#assertion-analyze")).not.toHaveAttribute("data-analysis-state", "success");
+    await expect(page.locator("#assertion-result-lines button")).toHaveCount(0);
+    await source.press("ControlOrMeta+z");
+    await expect(source).toHaveValue(original);
+    await expect(page.locator("#assertion-result-lines > div")).toHaveCount(2);
+    await source.press("ControlOrMeta+Shift+z");
+    await expect(source).toHaveValue(inserted);
+    await page.getByRole("tab", { name: "Attributes", exact: true }).click();
+    await source.evaluate(element => element.setSelectionRange(0, element.value.indexOf("\n") + 1));
+    await page.getByRole("button", { name: "Insert presence assertion for mail", exact: true }).click();
+    await expect(source).toHaveValue('people attribute "mail" present;\ngroup "Operators" members >= 2;\n');
+    await source.press("ControlOrMeta+z");
+    await expect(source).toHaveValue(inserted);
+    await source.press("ControlOrMeta+Shift+z");
+    await expect(source).toHaveValue('people attribute "mail" present;\ngroup "Operators" members >= 2;\n');
+    expect(api.counts.get("/api/policy/records/test-assertions/save") || 0).toBe(0);
+  });
+}
+
+test("GUI shared programmatic edits keep Tab and fallback Find Replace undoable", async ({ page, appURL, api }) => {
+  await openAssertionRecord(page, appURL);
+  const source = page.locator("#assertion-source");
+  await source.fill("original");
+  await source.press("End");
+  await source.press("Tab");
+  await expect(source).toHaveValue("original  ");
+  await source.press("ControlOrMeta+z");
+  await expect(source).toHaveValue("original");
+  await source.press("ControlOrMeta+Shift+z");
+  await expect(source).toHaveValue("original  ");
+  const tools = page.locator('[data-editor-search-target="policy-source,assertion-source"]');
+  await tools.getByRole("button", { name: "Find & Replace", exact: true }).click();
+  await tools.getByRole("textbox", { name: "Find what" }).fill("original");
+  await tools.getByRole("textbox", { name: "Replace with" }).fill("replacement");
+  await page.evaluate(() => { document.execCommand = () => false; });
+  await tools.getByRole("button", { name: "Replace All", exact: true }).click();
+  await expect(source).toHaveValue("replacement  ");
+  await expect(page.locator("#assertion-result-lines > div")).toHaveCount(1);
+  await tools.getByRole("button", { name: "Close", exact: true }).click();
+  await source.press("ControlOrMeta+z");
+  await expect(source).toHaveValue("original  ");
+  await expect(page.locator("#assertion-result-lines > div")).toHaveCount(1);
+  await source.press("ControlOrMeta+Shift+z");
+  await expect(source).toHaveValue("replacement  ");
+});
+
+test("GUI Trusted Source insertion respects read-only and size limits without changing text", async ({ page, appURL, api }) => {
+  await openAssertionRecord(page, appURL);
+  const source = page.locator("#assertion-source");
+  await source.fill("original");
+  await page.locator("#assertion-read-source").click();
+  const insert = page.getByRole("button", { name: "Insert a cardinality assertion for Operators", exact: true });
+  await source.evaluate(element => { element.maxLength = 8; });
+  await insert.click();
+  await expect(page.locator("#assertion-message")).toContainText("size limit");
+  await expect(source).toHaveValue("original");
+  await source.evaluate(element => { element.maxLength = 65536; element.readOnly = true; });
+  await insert.click();
+  await expect(page.locator("#assertion-message")).toContainText("read-only");
+  await expect(source).toHaveValue("original");
+  await expect(page.locator("#assertion-result-lines > div")).toHaveCount(1);
+});
+
+test("GUI shared programmatic edits keep policy completion and Scenario indentation undoable", async ({ page, appURL, api }) => {
+  await page.goto(appURL + "/#policy");
+  await openPolicyPicker(page);
+  await page.locator('[data-record-id="test-policy"]').click();
+  const policy = page.locator("#policy-source");
+  const original = "define Employee as user\n  with dep";
+  await policy.fill(original);
+  await expect(page.locator("#policy-completions")).toBeVisible();
+  await policy.press("Tab");
+  await expect(policy).toHaveValue("define Employee as user\n  with user.department:");
+  await policy.press("ControlOrMeta+z");
+  await expect(policy).toHaveValue(original);
+  await policy.press("ControlOrMeta+Shift+z");
+  await expect(policy).toHaveValue("define Employee as user\n  with user.department:");
+  await openRawScenario(page, appURL, api);
+  const scenario = page.locator("#scenario-editor-source");
+  const before = await scenario.inputValue();
+  await scenario.press("ControlOrMeta+Home");
+  await scenario.press("Tab");
+  await expect(scenario).toHaveValue("  " + before);
+  await scenario.press("ControlOrMeta+z");
+  await expect(scenario).toHaveValue(before);
+  await scenario.press("ControlOrMeta+Shift+z");
+  await expect(scenario).toHaveValue("  " + before);
+});
+
 for (const [worst, states, warnings, error] of [
   ["error", ["pass", "fail"], true, "line 1: evaluation error"],
   ["fail", ["pass", "fail"], true, ""],

@@ -221,8 +221,11 @@
       setScenarioEditorStatus("Indentation exceeds the editor character limit.", "error");
       return;
     }
-    source.setRangeText("  ", source.selectionStart, source.selectionEnd, "end");
-    source.dispatchEvent(new InputEvent("input", { bubbles: true }));
+    try {
+      window.ZPREditorPage.editText(source, "  ");
+    } catch (error) {
+      setScenarioEditorStatus(error.message, "error");
+    }
   });
   advanced.addEventListener("toggle", () => {
     form.classList.toggle("scenario-raw-mode", advanced.open);

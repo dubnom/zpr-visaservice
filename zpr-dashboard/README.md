@@ -49,6 +49,22 @@ than the login-configuration message. Configured sign-in gates and sign-out
 behavior are unchanged. The Control Room does not use this Simulator banner or
 its APIs.
 
+### Simulator organization-profile editor
+
+Organization profile drafts use mutually exclusive Form and Raw JSON views.
+The Raw/Form button switches modes without saving; invalid JSON remains in Raw
+with an explicit error instead of replacing the draft. Structured sections and
+raw source edit the same draft, including unfamiliar fields.
+
+File... contains Save, Discard and Close, plus supporting-definition editing
+and saved-definition export for private drafts. Browse... opens runnable
+organization profiles or private drafts without activation and confirms before
+discarding local edits. History sits beside the editor identity. Analyze checks
+the profile contract, not runtime readiness; Format reformats raw JSON without
+saving. Wrap defaults off, and Ctrl/Command-S uses the same draft-save action.
+Save creates a protected draft revision and never changes running machines,
+bundled source files or the active organization.
+
 ### Config form editor
 
 Control Room's **Config** page keeps raw ZPLC TOML and a **Form** view of the
@@ -3023,11 +3039,37 @@ remain in Control Room; Agents provides per-machine controls without stack-wide
 lifecycle buttons.
 
 The local stack also starts the BIND 9 DNS container from `../dns/bind9` using
-The local stack also starts the BIND 9 DNS container from `../dns/bind9` using
 the adapter1 ZPR network namespace. It expects the publisher TSIG key and
 `svc.zpr` zone file under `.local-runtime/dns-bind/`. BIND's HTTP statistics
-channel is loopback-only in the adapter namespace; a host-loopback `socat`
-relay feeds the Control Room DNS tab and is removed when the stack stops.
+channel is loopback-only in the adapter namespace. Simulator's internal relay
+is not a Control Room statistics origin.
+
+Control-Service requires an explicit `ZPR_DNS_STATS_URL` for an authorized
+production statistics origin. For this local Docker deployment, an independent
+operator-owned relay can instead read BIND's loopback listener. Create
+`.local-runtime/dashboard-stack/dns-stats-relay.json` with an explicit operator
+source, for example `{"source_container":"operator-dns-node"}`. That container
+must share BIND's network namespace and contain `socat`; do not derive its name
+from Simulator's active organization or profiles.
+
+Run `sh scripts/control-dns-stats.sh start /path/to/dns-stats-relay.json`.
+The relay has its own image, restart policy and internal Docker network
+(`zpr-dns-stats-read-only`), with no published ports or Simulator mounts.
+On the next Control-Service start, `dashboard-stack.sh` reads this operator
+configuration (or `ZPR_DNS_STATS_RELAY_CONFIG_FILE`), ensures the relay is ready,
+connects Control-Service to the private network, and uses
+`http://zpr-dns-stats-relay:8054`. An explicit `ZPR_DNS_STATS_URL` takes precedence;
+without either configuration, statistics remain explicitly unconfigured.
+The relay persists independently of Simulator UI shutdown/replacement.
+Use `sh scripts/control-dns-stats.sh stop` before changing its source.
+
+This local administrative transport uses the Docker socket, which grants
+host-level Docker privileges despite the read-only container filesystem.
+It is not an authenticated ZPR monitoring adapter and is not a production
+deployment recommendation. Production should use an authorized ZPR-connected
+origin as described in [BIND deployment requirements](../dns/bind9/README.md).
+BIND TCP/8053 must never be published on the host/underlay.
+
 The standard simulator's Exercise action resolves each component's FQDN target
 through the bootstrap DNS server in the manifest, then pings the returned ZPR
 address. Provider aliases are reconciled into `svc.zpr` by Visa Service using
@@ -3261,6 +3303,15 @@ completion positioning on scroll. Assertion scroll/resize no longer rebuilds
 highlighted token nodes. The returned binding (also exposed through source
 surfaces) can disconnect scroll/resize wiring with `dispose()`; disposal
 leaves rendered content and diagnostics intact.
+Policy and Assertion gutters retain one row per current logical source line
+after edits, including newline insertion/deletion, undo/redo and wrapped lines;
+editing clears obsolete analysis markers, not the gutter layout.
+The shared `ZPREditorPage.editText` helper owns undo-aware programmatic edits.
+Trusted Source assertion insertion, policy completions, Tab indentation,
+Find & Replace and AI text insertion use the same native input path (with the
+existing undo/redo fallback when native editing is unavailable). These edits
+invalidate stale analysis and remain unsaved; editor read-only and size limits
+are enforced before changing text.
 The dependency-free `page-runtime.js` supplies neutral JSON transport and page
 polling/lifecycle helpers. It has no endpoints, authentication defaults,
 organization lookup or Simulator dependencies. Load it before editor-page,

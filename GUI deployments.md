@@ -14,6 +14,92 @@ separate; retain each dated entry's scope.
 
 ## Deployment status
 
+### Simulator organization editor and full worktree (2026-10-14 04:58 UTC)
+
+- User selected deployment of the entire current dashboard worktree, including
+  pending shared editor/gutter/undo changes, rather than an organization-editor
+  overlay. Replaced only Simulator with
+  `zpr-simulator:20261014-organization-editor`, image
+  `sha256:3708380378f443737d271dd01919cf3d98e0e5e6ce94e2cb243f879aed2af025`;
+  executable SHA-256
+  `60d4b1751688b8465bdc8d8e9873707ce772654b805127b258afd2c546c8f581`.
+  Started at `2026-10-14T04:58:05.272000721Z`.
+- Container configuration and host configuration match the prior container
+  exactly except for its image. All 21 other running containers retained their
+  IDs/start times, including Control Room, Control-Service, Policy-Service,
+  independent operator DNS relay, BIND and Great Lakes runtime machines.
+  This does not deploy pending Control Room assets to Control Room.
+- Great Lakes remains selected and the scenario state is idle. The planned
+  Simulator restart resets in-memory history. Restored both prior DNS relay
+  commands and PID tracking; statistics return JSON version 1.8 and BIND's
+  original boot time is unchanged.
+- All 74 directly served static assets match the worktree byte-for-byte,
+  including exclusive Raw/Form, File.../Browse..., identity History and
+  shared Wrap/search controls. All 48 selected desktop/tablet organization
+  profile/definitions/duplicate/new/import tests pass after rollout. The
+  existing definitions-history test with a stale Close selector remains
+  excluded in both viewports; no full-suite pass is claimed.
+- The integrated live browser tool timed out, so no live interactive browser
+  check is claimed. Simulator APIs, served assets and relay processes were
+  verified independently. No scenario, activation or production policy write
+  was performed.
+- Rollback retains stopped container
+  `zpr-simulator-before-organization-editor-20261014` and image
+  `zpr-simulator:before-organization-editor-20261014`
+  (`sha256:9c16fa17bfba01cf5df8935f0c2e315ca2421799326b8b40bd399ac28558e7de`).
+  Restoring it also requires restoring the two Simulator DNS relays.
+  No commit or push.
+
+### Independent Control Room DNS statistics transport (2026-10-13 23:05 UTC)
+
+- Replaced the unreachable `http://host.docker.internal:8054` Control-Service
+  origin with `http://zpr-dns-stats-relay:8054` on the internal
+  `zpr-dns-stats-read-only` Docker network. No ports are published by the relay;
+  BIND TCP/8053 remains loopback-only and is not exposed on the host/underlay.
+- The standalone relay uses its own `zpr-dns-stats-relay:local` image
+  (`sha256:ea94d0da03b5f754aabc4b2a0f52eab33a054826259fb86bdfb31048a07101dc`),
+  restart policy and explicit operator configuration in
+  `.local-runtime/dashboard-stack/dns-stats-relay.json`, selecting
+  `great-lakes-node0` as BIND's network namespace. It reads no Simulator
+  profiles, active organization, sessions or workloads. It uses Docker socket
+  administrative access; this local transport is not a production ZPR adapter.
+- Control-Service's final container started at
+  `2026-10-13T23:05:25.256563968Z`, retaining its original immutable image
+  `sha256:66bd2883b5da7dd7d175529a80448d19ad4f19bafbe4dc66e2b7da4a58f1cb8a`.
+  Host configuration and all environment entries except `ZPR_DNS_STATS_URL`
+  match the prior container. Existing networks are preserved and the private
+  statistics network is added. A brief initial replacement resolved the
+  mutable image tag to a newer image; it was immediately corrected to the
+  original immutable image before verification.
+- Live `/api/dns/stats/json/v1/status`, `/server` and `/zones` requests using
+  Control Room's existing service client certificate return BIND 9.20.29,
+  JSON statistics version 1.8, real query counters and eight zone entries.
+  With the user's permission, paused Simulator, repeated all three mutual-TLS
+  checks successfully (193 IPv6 requests and 36 successes at that time), then
+  resumed Simulator without resetting scenario state. Relay start is idempotent
+  and its readiness check also passed after the pause.
+- Signed-in browser display verification was not completed: the shared Control
+  Room page remained logged out. The user elected to check the DNS display
+  themselves. The verified live route is the certificate-authorized
+  Control-Service API, not a claimed successful browser-login check.
+- Simulator, BIND, Control Room and Policy-Service retain their previous
+  container IDs and start times. Only Control-Service was replaced; no DNS
+  or policy configuration was changed. Focused Go relay/proxy regressions pass
+  with the race detector; shell syntax and editor diagnostics pass.
+- Stack startup now requires an explicit authorized `ZPR_DNS_STATS_URL` or
+  independent operator relay configuration, instead of silently defaulting to
+  Simulator's relay. An explicit origin takes precedence. The relay's lifecycle
+  is not tied to Simulator UI replacement/shutdown.
+- Rollback retains the stopped
+  `zpr-control-service-before-dns-stats-20261013` container. To roll back, stop
+  and remove only the current `zpr-control-service`, rename the retained
+  container back to `zpr-control-service` and start it. This restores the prior
+  (unreachable) origin. Remove the operator relay configuration if reverting
+  future startup behavior; stop the relay separately with
+  `sh scripts/control-dns-stats.sh stop`.
+- Temporary container-create payloads containing existing environment values
+  were permission-restricted and removed. No commit or push for this repair.
+
 ### Simulator shared top banner (2026-10-13 19:32 UTC)
 
 - Deployed `zpr-simulator:20261013-top-banner`, immutable image

@@ -62,6 +62,16 @@ to an HTTP origin that can reach the ZPR statistics listener, for example
 the ZPR network, use an authorized ZPR-connected relay as the origin. The
 browser accesses only the same-origin Control Room proxy, never BIND directly.
 
+For the local loopback-only Docker listener, the dashboard's
+[`control-dns-stats.sh`](../../zpr-dashboard/scripts/control-dns-stats.sh)
+provides an independent operator-owned relay on an internal Docker network.
+Its explicit source configuration must identify a container sharing BIND's
+network namespace with `socat` installed. It does not read Simulator state or
+require Simulator availability. This administrative relay needs Docker socket
+access (host-level privileges); production should use the authorized ZPR
+transport above instead. See the
+[local deployment configuration](../../zpr-dashboard/README.md).
+
 The Control Room also lists the `svc.zpr` resource records using an AXFR signed
 with a separate read-only TSIG key. The simulator stack generates and mounts
 that key, permits transfers only when it is presented, and connects it to

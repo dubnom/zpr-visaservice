@@ -1,57 +1,6 @@
 (() => {
-  const fallbackEdits = new WeakMap();
-
   function editText(source, text, replaceAll = false) {
-    if (!source || source.disabled || source.readOnly) throw new Error("This editor is read-only.");
-    const before = source.value;
-    const start = replaceAll ? 0 : source.selectionStart;
-    const end = replaceAll ? before.length : source.selectionEnd;
-    const after = before.slice(0, start) + text + before.slice(end);
-    if (source.maxLength >= 0 && after.length > source.maxLength) throw new Error("The suggestion exceeds the editor size limit.");
-    source.focus();
-    source.setSelectionRange(start, end);
-    const native = document.activeElement === source && typeof document.execCommand === "function" && document.execCommand(text ? "insertText" : "delete", false, text);
-    if (native && source.value === after) return;
-    let history = fallbackEdits.get(source);
-    if (!history) {
-      history = { undo: [], redo: [], editing: false, value: before };
-      fallbackEdits.set(source, history);
-      source.addEventListener("input", (event) => {
-        if (!history.editing) {
-          if (/^(insert|delete)/.test(event.inputType || "") && history.value !== source.value) {
-            history.undo.push({ before: history.value, after: source.value });
-          } else {
-            history.undo = [];
-          }
-          history.redo = [];
-        }
-        history.value = source.value;
-      });
-      source.addEventListener("keydown", (event) => {
-        if (!(event.ctrlKey || event.metaKey) || event.altKey || event.isComposing || source.disabled || source.readOnly) return;
-        const key = event.key.toLowerCase();
-        const redo = key === "y" || (key === "z" && event.shiftKey);
-        if (key !== "z" && key !== "y") return;
-        const from = redo ? history.redo : history.undo;
-        const to = redo ? history.undo : history.redo;
-        const entry = from.at(-1);
-        if (!entry || source.value !== (redo ? entry.before : entry.after)) return;
-        event.preventDefault();
-        history.editing = true;
-        source.value = redo ? entry.after : entry.before;
-        source.dispatchEvent(new InputEvent("input", { bubbles: true, inputType: redo ? "historyRedo" : "historyUndo" }));
-        history.editing = false;
-        to.push(from.pop());
-      });
-    }
-    if (history.value !== before) { history.undo = []; history.redo = []; }
-    history.editing = true;
-    source.value = after;
-    source.setSelectionRange(start + text.length, start + text.length);
-    source.dispatchEvent(new InputEvent("input", { bubbles: true, inputType: "insertReplacementText" }));
-    history.editing = false;
-    history.undo.push({ before, after });
-    history.redo = [];
+    window.ZPREditorPage.editText(source, text, replaceAll);
   }
 
   function content(text, insert) {

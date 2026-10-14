@@ -1025,12 +1025,19 @@ start_control_service() {
             control_dns_transfer_key_file="$RUNTIME_DIR/multinode/$control_gateway_organization/dns/zpr-dns-viewer.key"
         fi
     fi
+    control_dns_stats_url=${ZPR_DNS_STATS_URL:-}
+    control_dns_stats_network=
+    control_dns_stats_config=${ZPR_DNS_STATS_RELAY_CONFIG_FILE:-$STATE_DIR/dns-stats-relay.json}
+    if [ -z "$control_dns_stats_url" ] && [ -r "$control_dns_stats_config" ]; then
+        sh "$SCRIPT_DIR/control-dns-stats.sh" start "$control_dns_stats_config"
+        control_dns_stats_url=http://zpr-dns-stats-relay:8054
+        control_dns_stats_network=zpr-dns-stats-read-only
+    fi
+    control_dns_stats_url=$(printf '%s' "$control_dns_stats_url" | sed 's#://127\.0\.0\.1:#://host.docker.internal:#')
     stop_control_service
     start_local_observability
     control_admin_url=${ZPR_ADMIN_URL:-https://127.0.0.1:$ADMIN_RELAY_PORT}
     control_admin_url=$(printf '%s' "$control_admin_url" | sed 's#://127\.0\.0\.1:#://host.docker.internal:#')
-    control_dns_stats_url=${ZPR_DNS_STATS_URL:-http://127.0.0.1:$DNS_STATS_RELAY_PORT}
-    control_dns_stats_url=$(printf '%s' "$control_dns_stats_url" | sed 's#://127\.0\.0\.1:#://host.docker.internal:#')
     set --
     operator_directory=${OPERATOR_DIR:-$RUNTIME_DIR/operator-login}
     if [ -r "$operator_directory/stack.json" ]; then
@@ -1086,6 +1093,9 @@ start_control_service() {
     fi
     if [ -n "$control_change_feeds_network" ] && [ "$control_change_feeds_network" != "$OBSERVABILITY_LOCAL_NETWORK" ]; then
         docker network connect "$control_change_feeds_network" "$CONTROL_CONTAINER"
+    fi
+    if [ -n "$control_dns_stats_network" ]; then
+        docker network connect "$control_dns_stats_network" "$CONTROL_CONTAINER"
     fi
     wait_for_url https://127.0.0.1:8790/api/snapshot control-service \
         ${ZPR_DASHBOARD_CONTAINER_RUNTIME:+--connect-to 127.0.0.1:8790:host.docker.internal:8790} \

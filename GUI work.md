@@ -23,6 +23,33 @@ Do not infer current runtime health from a historical verification entry.
 
 ## In progress
 
+Simulator organization-profile editor toolbar and mode alignment are **Deployed
+to Simulator** (2026-10-14 04:58 UTC): exclusive Raw/Form views,
+standard File.../Browse..., Analyze, Format
+and Wrap controls, History beside the identity, and a multiline Description.
+Draft saves, private-definition export, reviewed AI changes and optimistic
+revision protection are preserved. The 48 selected desktop/tablet profile,
+definitions, duplicate/new/import regressions and embedded dashboard build pass.
+The existing definitions-history test has a stale Close-button selector and
+was excluded in both viewports. All 74 served assets match the worktree; see
+[deployment evidence](GUI%20deployments.md). Not committed or pushed.
+
+Editor gutter synchronization and Trusted Source insertion undo are **Verified**
+locally. Assertion/Policy gutter rows track source-line changes while clearing
+obsolete analysis; catalog insertions and shared programmatic edits participate
+in Undo/Redo. Ninety focused desktop/tablet regressions and the embedded
+dashboard build pass. See
+[verification evidence](GUI%20completed%20work.md#editor-gutter-synchronization-and-undo).
+Not deployed, committed or pushed.
+
+The independent Control Room DNS statistics transport is **Deployed**
+(2026-10-13 23:05 UTC). Control-Service now reads an operator-owned relay on a
+private Docker network, not Simulator's internal relay. Status, query-counter
+and zone endpoints pass live mutual-TLS checks, including while Simulator is
+paused. The local relay uses Docker administrative access; production still
+requires an authorized ZPR-connected origin. See
+[deployment evidence](GUI%20deployments.md). No commit/push for this repair.
+
 The Simulator shared status banner is **Deployed** (2026-10-13 19:32 UTC).
 It shows backend connectivity, active organization, scenario/run state and
 signed-in identity across Simulator pages. All 36 focused desktop/tablet
@@ -66,7 +93,7 @@ uncertain saves retain local edits; explicit reload reconciles persisted state.
 AI discloses the full unsaved fictional bundle and respects bounded context;
 no creation receipts or runtime data are sent.
 Structured section editors (Sites/Topology, Directory, Services/Workloads) with
-bi-directional Advanced JSON synchronization, live topology cards, and live
+bi-directional Raw/Form synchronization, live topology cards, and live
 `<ldap-org-graph>` preview are **Verified** locally.
 Full reference/compiler checks, section-only AI context and activation review
 are next; production administration remains separate.
@@ -250,25 +277,3 @@ No new priority or implementation approval is implied for backend rollouts.
   replicated automatically. Anycast is an optional separate routing/health
   design decision, not assumed in this task. Track only; no deployment yet.
 - [ ] Organization creation/editing: Duplicate -> edit draft -> validate -> review activation first. The [detailed plan](Organization%20editor%20plan.md) owns the individual requirements; production administration remains independent of Simulator.
-
-## Miscellany
-
-### Organization
-- [ ] Velocity labs city name doesn't match location.
-
-#### Editor
-- [ ] Follow design guidelines.
-- [ ] Add raw/form support.
-- [ ] Deledte "Draft loaded..." and "draft only..."
-- [ ] Description should be a multiline text box.
-
-### Maps
-- [ ] Make left and right clicks off a component act the same.
-- [ ] Worldmap component placement sucks.
-- [ ] No banner information at the bottom.
-
-## Application Wide
-- [ ] Change "Pause updates" to "Pause".
-- [x] Use "User" for the signed-in identity label in the Simulator banner;
-  live desktop/tablet verification confirms the deployed `User` label.
-- [ ] Remove "Live state and policy records" from bottom of Control Room.

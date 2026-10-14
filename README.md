@@ -26,6 +26,13 @@ See [Features Added Since the Upstream Fork](FEATURES_SINCE_ZPR_ORG.md) for a
 high-level overview of the operator, policy, trusted-service, DNS, observability,
 and simulator capabilities added in this fork.
 
+For engineering coordination, see the workspace
+[component work/status index](../COMPONENT_WORK.md) and
+[agent team charter](../AGENT_TEAM_STARTER.md). The
+[source reorganization plan](REDIRECTORY.md#inventory-and-target-layout-2026-10-14)
+records the current inventory and proposed layout; package extraction is planned,
+not implemented.
+
 See [NATTY: session-scoped address indirection](NATTY.md) for a proposed,
 not-yet-implemented design for adapter-local address aliases and their session,
 visa, and replay-protection requirements.

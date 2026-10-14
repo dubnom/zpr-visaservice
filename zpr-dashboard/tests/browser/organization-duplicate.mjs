@@ -82,9 +82,10 @@ export function registerOrganizationDuplicateTests(test, expect) {
     await page.getByRole("dialog", { name: "Review AI organization changes" }).getByRole("button", { name: "Insert reviewed draft" }).click();
     await expect(page.locator("#organization-profile-description")).toHaveValue("AI copied-organization description");
     expect(state.saves).toHaveLength(0);
-    await page.locator("#organization-profile-editor").getByRole("button", { name: "Save draft", exact: true }).click();
+    await page.locator("#organization-profile-editor").getByRole("button", { name: "File...", exact: true }).click();
+    await page.locator("#organization-profile-editor").getByRole("menuitem", { name: "Save", exact: true }).click();
     await expect(page.locator("#organization-profile-revision")).toHaveText("Draft revision 2");
-    await page.locator("#organization-profile-editor").getByRole("button", { name: "Validate profile" }).click();
+    await page.locator("#organization-profile-editor").getByRole("button", { name: "Analyze" }).click();
     await expect(page.locator("#organization-profile-status")).toContainText("draft not runnable");
     await expect(page.locator("#organization-drafts-list")).toContainText("Alpha copy");
     expect([...api.counts.keys()].some(path => /activate|restore-base|publish/.test(path))).toBe(false);
@@ -183,7 +184,8 @@ export function registerOrganizationDuplicateTests(test, expect) {
       expect(state.creates[0].expected_source_hash).toBeUndefined();
       if (mode === "import") expect(state.creates[0].bundle.profile.id).toBe("alpha-copy");
       const download = page.waitForEvent("download");
-      await page.getByRole("button", { name: "Export saved definitions", exact: true }).click();
+      await page.locator("#organization-profile-editor").getByRole("button", { name: "File...", exact: true }).click();
+      await page.getByRole("menuitem", { name: "Export saved definitions", exact: true }).click();
       expect((await download).suggestedFilename()).toBe("alpha-copy-draft.json");
       await expect(page.locator("#organization-profile-status")).toContainText("without creation receipts");
       expect([...api.counts.keys()].some(path => /activate|restore-base|publish/.test(path))).toBe(false);
@@ -244,7 +246,8 @@ export function registerOrganizationDuplicateTests(test, expect) {
       await page.getByRole("dialog", { name: "Review AI organization changes" }).getByRole("button", { name: "Insert reviewed draft" }).click();
       await expect(page.locator("#organization-profile-description")).toHaveValue("AI copied-organization description");
       expect(state.saves).toHaveLength(0);
-      await page.locator("#organization-profile-editor").getByRole("button", { name: "Save draft", exact: true }).click();
+      await page.locator("#organization-profile-editor").getByRole("button", { name: "File...", exact: true }).click();
+      await page.locator("#organization-profile-editor").getByRole("menuitem", { name: "Save", exact: true }).click();
       await expect(page.locator("#organization-profile-revision")).toHaveText("Draft revision 2");
     });
   });

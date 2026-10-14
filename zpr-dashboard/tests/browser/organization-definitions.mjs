@@ -46,7 +46,8 @@ export function registerOrganizationDefinitionsTests(test, expect) {
     await page.goto(appURL + "/organizations.html");
     await page.locator("#organization-drafts-list .organization-card").click();
     await expect(page.locator("#organization-profile-name")).toHaveValue("Alpha copy");
-    await page.getByRole("button", { name: "Edit supporting definitions", exact: true }).click();
+    await page.locator("#organization-profile-editor").getByRole("button", { name: "File...", exact: true }).click();
+    await page.getByRole("menuitem", { name: "Edit supporting definitions", exact: true }).click();
     const editor = page.locator("#organization-definitions-editor");
     await expect(editor).toBeVisible();
     await expect(editor.locator("#organization-definitions-revision")).toHaveText("Draft revision 1");
@@ -181,7 +182,7 @@ export function registerOrganizationDefinitionsTests(test, expect) {
     await editor.getByRole("button", { name: "Close definitions" }).click();
     await page.locator("#organization-drafts-list .organization-card").click();
     const profileEditor = page.locator("#organization-profile-editor");
-    await profileEditor.getByText("History", { exact: true }).click();
+    await profileEditor.getByLabel("Version history", { exact: true }).click();
     await profileEditor.getByRole("button", { name: "Revision 1: Initial snapshot" }).click();
     await expect(editor).toBeVisible();
     await expect(editor.locator("#organization-definitions-status")).toContainText("Profile and documents are from the same snapshot");
