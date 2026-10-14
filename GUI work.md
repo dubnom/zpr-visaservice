@@ -277,3 +277,15 @@ No new priority or implementation approval is implied for backend rollouts.
   replicated automatically. Anycast is an optional separate routing/health
   design decision, not assumed in this task. Track only; no deployment yet.
 - [ ] Organization creation/editing: Duplicate -> edit draft -> validate -> review activation first. The [detailed plan](Organization%20editor%20plan.md) owns the individual requirements; production administration remains independent of Simulator.
+
+## Simulator
+
+### Trusted sources
+- [ ] Remove extra line between the top header and the source title.
+- [ ] Put count of people, groups, and attributes to the right of their horizontal nav labels.
+
+## Control room
+
+### Trusted sources
+- [ ] Make the simulator and control room more aligned. The control room is the "live" view, so it needs "Updates (24h).
+- [ ] 

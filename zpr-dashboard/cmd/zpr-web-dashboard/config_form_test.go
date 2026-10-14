@@ -12,6 +12,7 @@ import (
 	"testing"
 
 	"github.com/BurntSushi/toml"
+	"neboagency.com/zpr-dashborad/internal/controlroom"
 )
 
 func TestConfigurationFormLosslessPatches(t *testing.T) {
@@ -139,7 +140,7 @@ func TestConfigurationFormEndpointWithoutSimulator(t *testing.T) {
 	if special.Code != http.StatusOK || json.Unmarshal(special.Body.Bytes(), &decoded) != nil || !strings.Contains(special.Body.String(), "raw_toml_float") {
 		t.Fatalf("special TOML float not representable: %d %s", special.Code, special.Body)
 	}
-	if permission, protected := controlRoomAPIPermission(http.MethodPost, "/api/policy/config/form"); !protected || permission != "policy.edit" {
+	if permission, protected := controlroom.APIPermission(http.MethodPost, "/api/policy/config/form"); !protected || permission != "policy.edit" {
 		t.Fatalf("form permission: %s %v", permission, protected)
 	}
 

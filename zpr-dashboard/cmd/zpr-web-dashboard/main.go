@@ -20,6 +20,8 @@ import (
 	"strings"
 	"sync"
 	"time"
+
+	"neboagency.com/zpr-dashborad/internal/gateway"
 )
 
 //go:embed static/*
@@ -331,7 +333,7 @@ func main() {
 			log.Fatal(err)
 		}
 	case "web-gateway-service":
-		if err := runInternetWebGatewayService(*listen, *logWorkload, strings.Split(*gatewayAllowedHosts, ",")); err != nil {
+		if err := gateway.RunWebService(*listen, *logWorkload, strings.Split(*gatewayAllowedHosts, ",")); err != nil {
 			log.Fatal(err)
 		}
 	case "test-client":

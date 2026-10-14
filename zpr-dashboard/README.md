@@ -6,6 +6,82 @@ This repository contains the Zero-Trust Packet Routing (ZPR) Terminal User Inter
 
 To setup your development environment, run `go mod download` to install the local dependencies. Finally, run `make run` to start the TUI.
 
+## Backend package reorganization
+
+The existing web command remains the compatibility entry point for all modes.
+The first staged extraction moves neutral forwarding and the allowlisted
+HTTP/CONNECT runtime into [`internal/gateway`](internal/gateway/). It accepts
+explicit host configuration and depends only on the Go standard library; a
+dependency test enforces that boundary. Simulator profile selection, test
+workload logging, and the fixed-upstream scenario handler remain in the command
+layer and call the extracted helpers.
+
+The second extraction puts the separate browser-access host router and mTLS
+configuration in [`internal/browsergateway`](internal/browsergateway/).
+It also has a standard-library-only dependency check. Its command file now
+contains only environment/default resolution, existing security-header wrapping,
+and HTTP server startup. Real certificate integration remains at the command
+boundary; package tests cover validation, credential stripping, error responses,
+and Control Room routing with the Simulator upstream unavailable.
+
+The third extraction moves service CA loading and mTLS client transport into
+[`internal/servicehttp`](internal/servicehttp/). Control Room, Policy-Service
+clients, trusted change feeds, and Simulator callers reuse explicit TLS
+primitives without importing each other's application configuration.
+Policy-specific certificate diagnostics remain in the Policy-Service adapter.
+The package has a standard-library-only dependency check and local TLS
+accept/reject tests; service routes and authorization remain command-owned.
+
+The fourth extraction puts Control Room's upstream proxy into
+[`internal/controlroom`](internal/controlroom/). It accepts an explicit service
+origin and configured mTLS transport, preserves browser-credential stripping,
+signed enrollment delegation and slow-read transport selection, and has no
+Simulator dependency. Its transitive in-module allowlist permits only existing
+production authentication/delegation packages. Environment configuration,
+authorization, signing, JSON errors and startup remain command-owned.
+
+The fifth extraction moves Control Room API permission mapping and the
+named-user authorization gate into that same production package. It accepts an
+explicit authorizer, organization, next handler and application error formatter.
+The command retains absent/typed-nil local-development fallback, peer/host/origin
+checks, login/session configuration and JSON errors. Existing permission names,
+route matching, organization binding, denial ordering and CSRF handling remain
+unchanged. No Simulator data or configuration is used by the package.
+
+The sixth extraction moves the shared local-request check into
+[`internal/servicehttp/local_request.go`](internal/servicehttp/local_request.go).
+It accepts an explicit trusted proxy IP and preserves verified-client TLS,
+loopback peer/host, exact same-origin and rejection-order behavior. The command
+retains per-request environment lookup and exact JSON error formatting through
+the existing adapter, so all current callers remain wired consistently.
+The package remains standard-library-only and has real TLS plus IPv4/IPv6,
+proxy, origin and forwarding-header compatibility tests.
+
+The seventh extraction puts DNS statistics and stylesheet forwarding in
+[`internal/dnsstats`](internal/dnsstats/). It takes an explicit upstream URL,
+preserves validation, paths, credential stripping, response/error contracts and
+default HTTP/HTTPS transport behavior, and has a standard-library-only dependency
+check. Control-Service retains environment lookup and route registration.
+It neither reads Simulator configuration nor requires Simulator availability.
+DNS record transfers and independent relay scripts are unchanged.
+
+Mode names, flags, API behavior, embedded resources, scripts, and container
+build targets are unchanged. This is not full production/Simulator separation,
+production gateway activation, or deployment. See the
+[migration evidence and remaining stages](../REDIRECTORY.md#first-backend-extraction-2026-10-14).
+
+Focused validation:
+
+```sh
+go test -race ./internal/gateway ./cmd/zpr-web-dashboard -run 'Gateway|WebGateway|ValidateWebGateway' -count=1
+go build -o /dev/null ./cmd/zpr-web-dashboard
+go test -race ./internal/browsergateway ./cmd/zpr-web-dashboard -run 'Browser' -count=1
+go test -race ./internal/servicehttp ./cmd/zpr-web-dashboard -run 'ServiceHTTP|MutualTLSClient|CertificateErrors|PolicyService|ControlService|ControlRoom|Trusted.*Change|Simulator.*(Snapshot|Operator)' -count=1
+go test -race ./internal/servicehttp ./cmd/zpr-web-dashboard -run 'LocalRequest|LocalEditor|PolicyEditorRejects|ControlRoom' -count=1
+go test -race ./internal/controlroom ./cmd/zpr-web-dashboard -run 'ControlRoom|ControlService|OperatorAuthorization|OperatorConfig|OperatorEnrollment|OperatorDelegation|SimulatorAPI|ChangeReview|ConfigurationForm|GatewayAssistantPermissions|AdapterLog|LogComponents' -count=1
+go test -race ./internal/dnsstats ./cmd/zpr-web-dashboard -run 'DNSStats|ControlServiceDNS|OperatorDNS|ControlRoom' -count=1
+```
+
 ## Tests
 
 `make test` runs the Go unit and component suites. Browser regressions run in

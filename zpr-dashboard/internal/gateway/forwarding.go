@@ -1,4 +1,4 @@
-package main
+package gateway
 
 import (
 	"errors"
@@ -10,22 +10,12 @@ import (
 var errGatewayResponseTooLarge = errors.New("gateway response exceeds the size limit")
 
 const (
-	maxGatewayResponseBytes = 2 << 20
-	maxGatewayRequestBytes  = 2 << 20
-	gatewayAllowedMethods   = "GET, HEAD, POST, PUT, PATCH, DELETE, OPTIONS"
+	MaxResponseBytes = 2 << 20
+	MaxRequestBytes  = 2 << 20
+	AllowedMethods   = "GET, HEAD, POST, PUT, PATCH, DELETE, OPTIONS"
 )
 
-var fixedGatewayRequestHeaders = []string{
-	"Content-Type", "Content-Encoding", "Accept", "Accept-Language",
-	"If-Match", "If-None-Match", "If-Modified-Since", "If-Unmodified-Since", "Idempotency-Key",
-}
-
-var fixedGatewayResponseHeaders = []string{
-	"Content-Type", "Content-Encoding", "Content-Language", "Allow", "Location",
-	"ETag", "Last-Modified", "Cache-Control", "Vary", "Retry-After",
-}
-
-func validGatewayFQDN(hostname string) bool {
+func ValidFQDN(hostname string) bool {
 	hostname = strings.TrimSuffix(strings.ToLower(hostname), ".")
 	if len(hostname) > 253 || !strings.Contains(hostname, ".") {
 		return false
@@ -43,7 +33,7 @@ func validGatewayFQDN(hostname string) bool {
 	return true
 }
 
-func allowedGatewayMethod(method string) bool {
+func AllowedMethod(method string) bool {
 	switch method {
 	case http.MethodGet, http.MethodHead, http.MethodPost, http.MethodPut, http.MethodPatch, http.MethodDelete, http.MethodOptions:
 		return true
@@ -52,7 +42,7 @@ func allowedGatewayMethod(method string) bool {
 	}
 }
 
-func gatewayForwardingClient(client *http.Client) *http.Client {
+func ForwardingClient(client *http.Client) *http.Client {
 	forwardClient := *client
 	forwardClient.CheckRedirect = func(*http.Request, []*http.Request) error {
 		return http.ErrUseLastResponse
@@ -71,7 +61,7 @@ func removeProxyHopHeaders(header http.Header) {
 	}
 }
 
-func copyGatewayHeaders(destination, source http.Header, allowed []string) {
+func CopyHeaders(destination, source http.Header, allowed []string) {
 	headers := source.Clone()
 	removeProxyHopHeaders(headers)
 	if allowed == nil {
@@ -89,7 +79,7 @@ func copyGatewayHeaders(destination, source http.Header, allowed []string) {
 
 // A zero response limit preserves streaming proxy behavior; fixed upstreams
 // buffer before committing the status so oversized responses can return 502.
-func forwardGatewayResponse(w http.ResponseWriter, request *http.Request, response *http.Response, limit int64, headers []string) error {
+func ForwardResponse(w http.ResponseWriter, request *http.Request, response *http.Response, limit int64, headers []string) error {
 	var body []byte
 	if limit > 0 {
 		var err error
@@ -103,7 +93,7 @@ func forwardGatewayResponse(w http.ResponseWriter, request *http.Request, respon
 			return errGatewayResponseTooLarge
 		}
 	}
-	copyGatewayHeaders(w.Header(), response.Header, headers)
+	CopyHeaders(w.Header(), response.Header, headers)
 	w.WriteHeader(response.StatusCode)
 	if request.Method == http.MethodHead || response.StatusCode == http.StatusNoContent ||
 		response.StatusCode == http.StatusNotModified || response.StatusCode < http.StatusOK {

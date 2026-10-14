@@ -4,6 +4,8 @@ import (
 	"encoding/json"
 	"strings"
 	"testing"
+
+	"neboagency.com/zpr-dashborad/internal/gateway"
 )
 
 func TestParseGatewayInstanceConfigRequiresDeclaredZPLIdentity(t *testing.T) {
@@ -70,7 +72,7 @@ func TestParseGatewayInstanceConfigRejectsUnsafeOrUnsupportedValues(t *testing.T
 			config["destinations"] = []any{map[string]any{"origin": "https://example.com", "path_prefixes": []string{"/safe/../admin"}}}
 		},
 		"unsupported method": func(config map[string]any) { config["methods"] = []string{"TRACE"} },
-		"response limit":     func(config map[string]any) { config["max_response_bytes"] = maxGatewayResponseBytes + 1 },
+		"response limit":     func(config map[string]any) { config["max_response_bytes"] = gateway.MaxResponseBytes + 1 },
 		"timeout limit":      func(config map[string]any) { config["timeout_ms"] = 0 },
 	}
 	for name, mutate := range tests {

@@ -62,6 +62,14 @@ to an HTTP origin that can reach the ZPR statistics listener, for example
 the ZPR network, use an authorized ZPR-connected relay as the origin. The
 browser accesses only the same-origin Control Room proxy, never BIND directly.
 
+The dashboard's statistics/stylesheet forwarding implementation lives in
+[`internal/dnsstats`](../../zpr-dashboard/internal/dnsstats/), taking an explicit
+upstream URL. Control-Service owns environment lookup and route registration;
+the package has no Simulator dependency. Existing credential stripping,
+HTTP/HTTPS validation, cache headers and error responses are unchanged.
+This source extraction does not deploy Control-Service or change BIND/relay
+configuration; consult the [release ledger](../../GUI%20deployments.md) for scope.
+
 For the local loopback-only Docker listener, the dashboard's
 [`control-dns-stats.sh`](../../zpr-dashboard/scripts/control-dns-stats.sh)
 provides an independent operator-owned relay on an internal Docker network.

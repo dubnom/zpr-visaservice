@@ -3,21 +3,17 @@ package main
 import (
 	"context"
 	"crypto/tls"
-	"crypto/x509"
 	"errors"
-	"fmt"
 	"io/fs"
 	"log"
-	"net"
 	"net/http"
-	"net/http/httputil"
 	"net/url"
 	"os"
-	"path/filepath"
 	"strings"
 	"time"
 
-	"neboagency.com/zpr-dashborad/internal/operatordelegation"
+	"neboagency.com/zpr-dashborad/internal/controlroom"
+	"neboagency.com/zpr-dashborad/internal/servicehttp"
 )
 
 func runControlRoom(listen string) error {
@@ -94,51 +90,16 @@ func newControlServiceProxy() (http.Handler, string) {
 	if serverName == "" {
 		serverName = baseURL.Hostname()
 	}
-	transport, message := mutualTLSClientTransport(clientCert, clientKey, caFile, serverName)
-	if transport == nil {
-		return nil, message
+	transport, err := servicehttp.MutualTLSClientTransport(clientCert, clientKey, caFile, serverName)
+	if err != nil {
+		return nil, err.Error()
 	}
-	proxy := httputil.NewSingleHostReverseProxy(baseURL)
-	logTransport := transport.Clone()
-	logTransport.ResponseHeaderTimeout = 20 * time.Second
-	proxy.Transport = controlRoomTransport{standard: transport, logs: logTransport}
-	proxy.FlushInterval = 100 * time.Millisecond
+	proxy := controlroom.NewProxy(baseURL, transport)
 	proxy.ErrorHandler = func(w http.ResponseWriter, _ *http.Request, err error) {
 		log.Printf("Control Service request failed: %T", err)
 		writePolicyError(w, http.StatusBadGateway, "Control Service is unavailable.")
 	}
-	proxy.Director = func(request *http.Request) {
-		request.URL.Scheme = baseURL.Scheme
-		request.URL.Host = baseURL.Host
-		request.Host = baseURL.Host
-		request.Header.Del("Origin")
-		request.Header.Del("Cookie")
-		request.Header.Del("Authorization")
-		request.Header.Del("X-ZPR-CSRF")
-		request.Header.Del("Sec-Fetch-Site")
-		request.Header.Del("Sec-Fetch-Mode")
-		request.Header.Del("Sec-Fetch-Dest")
-		request.Header.Del("Sec-Fetch-User")
-		request.Header.Del(operatordelegation.Header)
-		if token, ok := request.Context().Value(signedOperatorRequestKey{}).(string); ok && strings.HasPrefix(request.URL.Path, operatordelegation.Prefix) {
-			request.Header.Set(operatordelegation.Header, token)
-		}
-		request.Header.Del("X-Forwarded-Host")
-		request.Header["X-Forwarded-For"] = nil
-	}
 	return proxy, ""
-}
-
-type controlRoomTransport struct {
-	standard http.RoundTripper
-	logs     http.RoundTripper
-}
-
-func (transport controlRoomTransport) RoundTrip(request *http.Request) (*http.Response, error) {
-	if request.URL.Path == "/api/adapter-logs" || request.URL.Path == "/api/assertions/evaluate" || request.URL.Path == "/api/assertions/source" {
-		return transport.logs.RoundTrip(request)
-	}
-	return transport.standard.RoundTrip(request)
 }
 
 func runControlService() error {
@@ -149,7 +110,7 @@ func runControlService() error {
 	if certFile == "" || keyFile == "" || clientCAFile == "" {
 		return errors.New("control-service mode requires ZPR_CONTROL_SERVICE_CERT_FILE, ZPR_CONTROL_SERVICE_KEY_FILE, and ZPR_CONTROL_SERVICE_CLIENT_CA_FILE")
 	}
-	clientCAs, err := loadCertificateAuthorities(clientCAFile, "Control Service client")
+	clientCAs, err := servicehttp.LoadCertificateAuthorities(clientCAFile, "Control Service client")
 	if err != nil {
 		return err
 	}
@@ -236,32 +197,4 @@ func runControlService() error {
 		log.Printf("Policy Service is not configured: %s", policyErr)
 	}
 	return server.ListenAndServeTLS(certFile, keyFile)
-}
-
-func mutualTLSClientTransport(certFile, keyFile, caFile, serverName string) (*http.Transport, string) {
-	certificate, err := tls.LoadX509KeyPair(certFile, keyFile)
-	if err != nil {
-		return nil, fmt.Sprintf("read service client certificate: %v", err)
-	}
-	roots, err := loadCertificateAuthorities(caFile, "service server")
-	if err != nil {
-		return nil, err.Error()
-	}
-	return &http.Transport{
-		TLSClientConfig:     &tls.Config{MinVersion: tls.VersionTLS13, RootCAs: roots, Certificates: []tls.Certificate{certificate}, ServerName: serverName},
-		DialContext:         (&net.Dialer{Timeout: 5 * time.Second, KeepAlive: 30 * time.Second}).DialContext,
-		TLSHandshakeTimeout: 5 * time.Second, ResponseHeaderTimeout: 10 * time.Second, IdleConnTimeout: 60 * time.Second,
-	}, ""
-}
-
-func loadCertificateAuthorities(path, name string) (*x509.CertPool, error) {
-	caPEM, err := os.ReadFile(filepath.Clean(path))
-	if err != nil {
-		return nil, fmt.Errorf("read %s CA: %w", name, err)
-	}
-	pool := x509.NewCertPool()
-	if !pool.AppendCertsFromPEM(caPEM) {
-		return nil, fmt.Errorf("%s CA file contains no certificates", name)
-	}
-	return pool, nil
 }

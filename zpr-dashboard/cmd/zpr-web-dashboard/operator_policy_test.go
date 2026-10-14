@@ -23,39 +23,6 @@ func (authorizer *testOperatorAuthorizer) Authorize(_ *http.Request, organizatio
 	return operatorauth.Identity{}, authorizer.err
 }
 
-func TestControlRoomAPIPermissionMap(t *testing.T) {
-	tests := []struct {
-		method, path, permission string
-		want                     bool
-	}{
-		{http.MethodGet, "/api/snapshot", "monitor.read", true},
-		{http.MethodGet, "/api/actors/device-1/visas", "monitor.read", true},
-		{http.MethodGet, "/api/dns/stats/json/v1/server", "monitor.read", true},
-		{http.MethodGet, "/api/trusted-sources/change-feeds", "policy.read", true},
-		{http.MethodGet, "/api/trusted-sources/change-feeds/great_lakes_ldap/changes", "policy.read", true},
-		{http.MethodGet, "/api/policy", "policy.read", true},
-		{http.MethodGet, "/api/policy/records/example/revisions", "policy.read", true},
-		{http.MethodPost, "/api/policy/check", "policy.analyze", true},
-		{http.MethodPost, "/api/assertions/evaluate", "policy.analyze", true},
-		{http.MethodPost, "/api/policy/records", "policy.edit", true},
-		{http.MethodPost, "/api/policy/records/example/rename", "policy.edit", true},
-		{http.MethodDelete, "/api/policy/records/example", "policy.edit", true},
-		{http.MethodGet, "/api/gateways/contracts", "gateway.read", true},
-		{http.MethodPost, "/api/gateways/config/check", "gateway.analyze", true},
-		{http.MethodPost, "/api/gateways/configs/example/revisions", "gateway.edit", true},
-		{http.MethodGet, "/api/unmapped", "", false},
-		{http.MethodPost, "/api/snapshot", "", false},
-	}
-	for _, test := range tests {
-		t.Run(test.method+" "+test.path, func(t *testing.T) {
-			permission, ok := controlRoomAPIPermission(test.method, test.path)
-			if ok != test.want || permission != test.permission {
-				t.Fatalf("permission=%q ok=%t, want %q and %t", permission, ok, test.permission, test.want)
-			}
-		})
-	}
-}
-
 func TestOperatorConfigAcceptsControlRoomPermissions(t *testing.T) {
 	config := operatorauth.Config{
 		Version: 1, Issuer: "https://identity.example", ClientID: "control-room",
@@ -127,6 +94,35 @@ func TestControlRoomAPIProxyKeepsLoopbackDevelopmentMode(t *testing.T) {
 	}
 }
 
+func TestControlRoomAPIProxyErrorResponseCompatibility(t *testing.T) {
+	for _, test := range []struct {
+		name, path, organization, message string
+		err                               error
+		status                            int
+	}{
+		{"unknown route", "/api/unmapped", "production",
+			"No operator policy is defined for this Control Room API route.", nil, http.StatusForbidden},
+		{"missing organization", "/api/snapshot", " ",
+			"Control Room operator organization context is not configured.", nil, http.StatusServiceUnavailable},
+		{"denied identity", "/api/snapshot", "production",
+			"An authorized named-user session, organization scope, and mutation CSRF proof are required.", errors.New("denied"), http.StatusForbidden},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			authorizer := &testOperatorAuthorizer{err: test.err}
+			handler := controlRoomAPIProxy(authorizer, test.organization, http.HandlerFunc(func(http.ResponseWriter, *http.Request) {
+				t.Error("denied request reached upstream")
+			}))
+			response := httptest.NewRecorder()
+			handler.ServeHTTP(response, httptest.NewRequest(http.MethodGet, test.path, nil))
+			if response.Code != test.status || response.Header().Get("Cache-Control") != "no-store" ||
+				response.Header().Get("Content-Type") != "application/json; charset=utf-8" ||
+				response.Body.String() != "{\"error\":\""+test.message+"\"}\n" {
+				t.Fatalf("status=%d headers=%v body=%q", response.Code, response.Header(), response.Body.String())
+			}
+		})
+	}
+}
+
 func TestControlRoomAPIProxyTypedNilAuthPreservesLocalBoundary(t *testing.T) {
 	var auth *operatorauth.Auth
 	proxyCalls := 0
@@ -169,7 +165,32 @@ func TestOperatorAuthorizationDisabledOnlyForAbsentProductionAuth(t *testing.T) 
 	if !operatorAuthorizationDisabled(nil) || !operatorAuthorizationDisabled(absent) {
 		t.Fatal("absent operator authentication must preserve local mode")
 	}
+
 	if operatorAuthorizationDisabled(&operatorauth.Auth{}) || operatorAuthorizationDisabled(&testOperatorAuthorizer{}) {
 		t.Fatal("configured authorizers must retain authorization enforcement")
+	}
+}
+
+func TestControlRoomAuthorizedRequestsStillRequireLocalBoundary(t *testing.T) {
+	for _, test := range []struct{ name, remote, host, origin string }{
+		{"remote peer", "192.0.2.1:1234", "127.0.0.1:8787", ""},
+		{"non-loopback host", "127.0.0.1:1234", "attacker.example", ""},
+		{"cross-origin", "127.0.0.1:1234", "127.0.0.1:8787", "http://attacker.example"},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			t.Setenv("ZPR_CONTROL_ROOM_PROXY_IP", "")
+			authorizer := &testOperatorAuthorizer{}
+			handler := controlRoomAPIProxy(authorizer, "production", http.HandlerFunc(func(http.ResponseWriter, *http.Request) {
+				t.Error("request outside local boundary reached upstream")
+			}))
+			request := httptest.NewRequest(http.MethodGet, "http://127.0.0.1:8787/api/snapshot", nil)
+			request.RemoteAddr, request.Host = test.remote, test.host
+			request.Header.Set("Origin", test.origin)
+			response := httptest.NewRecorder()
+			handler.ServeHTTP(response, request)
+			if response.Code != http.StatusForbidden || authorizer.calls != 1 {
+				t.Fatalf("status=%d auth calls=%d body=%q", response.Code, authorizer.calls, response.Body.String())
+			}
+		})
 	}
 }

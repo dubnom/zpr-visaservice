@@ -1,4 +1,4 @@
-package main
+package gateway
 
 import (
 	"errors"
@@ -9,6 +9,12 @@ import (
 	"testing"
 	"time"
 )
+
+type gatewayRoundTripper func(*http.Request) (*http.Response, error)
+
+func (roundTripper gatewayRoundTripper) RoundTrip(request *http.Request) (*http.Response, error) {
+	return roundTripper(request)
+}
 
 func TestGatewaySharedResponseModes(t *testing.T) {
 	for _, test := range []struct {
@@ -35,12 +41,12 @@ func TestGatewaySharedResponseModes(t *testing.T) {
 				},
 				Body: io.NopCloser(strings.NewReader(test.body)),
 			}
-			headers := fixedGatewayResponseHeaders
+			headers := []string{"Content-Type"}
 			if test.limit == 0 {
 				headers = nil
 			}
 			w := httptest.NewRecorder()
-			err := forwardGatewayResponse(w, httptest.NewRequest(test.method, "/", nil), response, test.limit, headers)
+			err := ForwardResponse(w, httptest.NewRequest(test.method, "/", nil), response, test.limit, headers)
 			if test.status == http.StatusBadGateway {
 				if !errors.Is(err, errGatewayResponseTooLarge) {
 					t.Fatalf("overflow error=%v", err)
@@ -69,7 +75,7 @@ func TestGatewaySharedResponseSuppressesBodiesForNoContentStatuses(t *testing.T)
 		for _, limit := range []int64{0, 4} {
 			response := &http.Response{StatusCode: status, Header: make(http.Header), Body: io.NopCloser(strings.NewReader("data"))}
 			w := httptest.NewRecorder()
-			err := forwardGatewayResponse(w, httptest.NewRequest(http.MethodGet, "/", nil), response, limit, nil)
+			err := ForwardResponse(w, httptest.NewRequest(http.MethodGet, "/", nil), response, limit, nil)
 			if err != nil || w.Code != status || w.Body.Len() != 0 {
 				t.Fatalf("status=%d limit=%d response=%d %q err=%v", status, limit, w.Code, w.Body.String(), err)
 			}
@@ -87,7 +93,7 @@ func TestGatewaySharedClientPreservesTransportAndRejectsRedirects(t *testing.T) 
 				Body: http.NoBody, Request: request}, nil
 		}),
 	}
-	forward := gatewayForwardingClient(client)
+	forward := ForwardingClient(client)
 	if forward == client || forward.Timeout != client.Timeout || forward.Transport == nil || client.CheckRedirect != nil {
 		t.Fatal("forwarding client did not preserve settings or mutated the caller's client")
 	}
@@ -103,16 +109,37 @@ func TestGatewaySharedClientPreservesTransportAndRejectsRedirects(t *testing.T) 
 
 func TestGatewayForwardingConstructorsIgnoreSimulatorConfiguration(t *testing.T) {
 	t.Setenv("SIMULATION_ORGANIZATIONS_DIR", "/unavailable/gateway-test")
+	t.Setenv("SIMULATION_MANIFEST", "/unavailable/simulation.json")
+	t.Setenv("SIMULATION_ACTIVE_ORGANIZATION_FILE", "/unavailable/active-organization")
 	t.Setenv("SIMULATOR_URL", "http://127.0.0.1:1")
-	gateway, err := newInternetWebGateway([]string{"example.com"})
+	gateway, err := NewWebGateway([]string{"example.com"})
 	if err != nil {
 		t.Fatal(err)
 	}
 	defer gateway.transport.CloseIdleConnections()
-	if !gateway.allowsHost("example.com") || gateway.allowsHost("other.example.com") {
+	if !gateway.AllowsHost("example.com") || gateway.AllowsHost("other.example.com") {
 		t.Fatal("web gateway did not use its explicit operator configuration")
 	}
-	if _, err := newInternetGatewayHandler("internet-gateway", "https://example.com", nil, nil); err != nil {
-		t.Fatal(err)
+}
+
+func TestRunWebServiceRejectsInvalidConfigurationBeforeListening(t *testing.T) {
+	for _, test := range []struct {
+		name     string
+		address  string
+		workload string
+		hosts    []string
+		message  string
+	}{
+		{"missing address", "", "internet-gateway", []string{"example.com"}, "web gateway requires a listen address and internet-gateway workload name"},
+		{"wrong workload", "[::1]:0", "echo-service", []string{"example.com"}, "web gateway requires a listen address and internet-gateway workload name"},
+		{"missing hosts", "[::1]:0", "internet-gateway", nil, "web gateway requires 1 to 32 allowed hosts"},
+		{"invalid hosts", "[::1]:0", "internet-gateway", []string{"localhost"}, `invalid web gateway host "localhost"`},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			err := RunWebService(test.address, test.workload, test.hosts)
+			if err == nil || err.Error() != test.message {
+				t.Fatalf("startup error=%v, want %q", err, test.message)
+			}
+		})
 	}
 }

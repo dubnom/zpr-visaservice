@@ -14,6 +14,8 @@ import (
 	"strconv"
 	"strings"
 	"time"
+
+	"neboagency.com/zpr-dashborad/internal/servicehttp"
 )
 
 const (
@@ -116,7 +118,7 @@ func newTrustedSourceChanges(filePath string) (*trustedSourceChanges, error) {
 		if err != nil {
 			return nil, fmt.Errorf("read trusted change-feed client certificate for %s: %w", entry.Name, err)
 		}
-		roots, err := loadCertificateAuthorities(entry.CAFile, "trusted change-feed server")
+		roots, err := servicehttp.LoadCertificateAuthorities(entry.CAFile, "trusted change-feed server")
 		if err != nil {
 			return nil, err
 		}

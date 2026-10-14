@@ -2,7 +2,6 @@ package main
 
 import (
 	"bytes"
-	"context"
 	"crypto/ed25519"
 	"crypto/x509"
 	"encoding/json"
@@ -16,12 +15,11 @@ import (
 	"strings"
 	"time"
 
+	"neboagency.com/zpr-dashborad/internal/controlroom"
 	"neboagency.com/zpr-dashborad/internal/enrollment"
 	"neboagency.com/zpr-dashborad/internal/operatorauth"
 	"neboagency.com/zpr-dashborad/internal/operatordelegation"
 )
-
-type signedOperatorRequestKey struct{}
 
 func decodeOperatorConfig(data []byte, target any) error {
 	decoder := json.NewDecoder(bytes.NewReader(data))
@@ -164,7 +162,7 @@ func operatorEnrollmentProxy(auth *operatorauth.Auth, signer *operatordelegation
 			deny(http.StatusBadRequest, "Enrollment delegation could not be created for this request.")
 			return
 		}
-		request = request.WithContext(context.WithValue(request.Context(), signedOperatorRequestKey{}, token))
+		request = controlroom.WithOperatorDelegation(request, token)
 		request.Header.Del(operatordelegation.Header)
 		proxy.ServeHTTP(w, request)
 	})

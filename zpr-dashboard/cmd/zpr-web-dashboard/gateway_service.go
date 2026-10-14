@@ -12,7 +12,19 @@ import (
 	"net/url"
 	"strings"
 	"time"
+
+	"neboagency.com/zpr-dashborad/internal/gateway"
 )
+
+var fixedGatewayRequestHeaders = []string{
+	"Content-Type", "Content-Encoding", "Accept", "Accept-Language",
+	"If-Match", "If-None-Match", "If-Modified-Since", "If-Unmodified-Since", "Idempotency-Key",
+}
+
+var fixedGatewayResponseHeaders = []string{
+	"Content-Type", "Content-Encoding", "Content-Language", "Allow", "Location",
+	"ETag", "Last-Modified", "Cache-Control", "Vary", "Retry-After",
+}
 
 type gatewayRoundTripper func(*http.Request) (*http.Response, error)
 
@@ -42,13 +54,13 @@ func newInternetGatewayHandler(workload, upstream string, client *http.Client, l
 			Timeout: 8 * time.Second,
 		}
 	}
-	forwardClient := gatewayForwardingClient(client)
+	forwardClient := gateway.ForwardingClient(client)
 	if logEvent == nil {
 		logEvent = func(testAppEvent) {}
 	}
 	return http.HandlerFunc(func(w http.ResponseWriter, request *http.Request) {
-		if !allowedGatewayMethod(request.Method) {
-			w.Header().Set("Allow", gatewayAllowedMethods)
+		if !gateway.AllowedMethod(request.Method) {
+			w.Header().Set("Allow", gateway.AllowedMethods)
 			http.Error(w, "gateway method is not allowed", http.StatusMethodNotAllowed)
 			return
 		}
@@ -70,14 +82,14 @@ func newInternetGatewayHandler(workload, upstream string, client *http.Client, l
 		destination.Path = requestPath
 		destination.RawPath = ""
 		destination.RawQuery = request.URL.RawQuery
-		if request.ContentLength > maxGatewayRequestBytes {
+		if request.ContentLength > gateway.MaxRequestBytes {
 			http.Error(w, "gateway request exceeds the size limit", http.StatusRequestEntityTooLarge)
 			return
 		}
 		var body []byte
 		var err error
 		if request.Body != nil {
-			body, err = io.ReadAll(http.MaxBytesReader(w, request.Body, maxGatewayRequestBytes))
+			body, err = io.ReadAll(http.MaxBytesReader(w, request.Body, gateway.MaxRequestBytes))
 			if err != nil {
 				var tooLarge *http.MaxBytesError
 				if errors.As(err, &tooLarge) {
@@ -94,7 +106,7 @@ func newInternetGatewayHandler(workload, upstream string, client *http.Client, l
 			return
 		}
 		outbound.Header.Set("User-Agent", "ZPR-Simulator-Gateway/1.0")
-		copyGatewayHeaders(outbound.Header, request.Header, fixedGatewayRequestHeaders)
+		gateway.CopyHeaders(outbound.Header, request.Header, fixedGatewayRequestHeaders)
 		response, err := forwardClient.Do(outbound)
 		if err != nil {
 			logEvent(testAppEvent{Time: time.Now().UTC(), Role: "gateway", Direction: "failed", ClientID: request.Header.Get("X-ZPR-Test-Client"), Remote: request.RemoteAddr, Path: request.URL.Path, Status: http.StatusBadGateway})
@@ -119,7 +131,7 @@ func newInternetGatewayHandler(workload, upstream string, client *http.Client, l
 			logEvent(testAppEvent{Time: time.Now().UTC(), Role: "gateway", Direction: "received", ClientID: request.Header.Get("X-ZPR-Test-Client"), Remote: request.RemoteAddr, Path: request.URL.Path, Status: http.StatusOK})
 			return
 		}
-		if err := forwardGatewayResponse(w, request, response, maxGatewayResponseBytes, fixedGatewayResponseHeaders); err != nil {
+		if err := gateway.ForwardResponse(w, request, response, gateway.MaxResponseBytes, fixedGatewayResponseHeaders); err != nil {
 			log.Printf("Fixed-upstream gateway response forwarding failed: %v", err)
 			logEvent(testAppEvent{Time: time.Now().UTC(), Role: "gateway", Direction: "failed", ClientID: request.Header.Get("X-ZPR-Test-Client"), Remote: request.RemoteAddr, Path: request.URL.Path, Status: http.StatusBadGateway})
 			return

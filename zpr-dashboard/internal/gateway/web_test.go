@@ -1,4 +1,4 @@
-package main
+package gateway
 
 import (
 	"bufio"
@@ -9,7 +9,6 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"net/netip"
-	"path/filepath"
 	"strings"
 	"testing"
 	"time"
@@ -37,7 +36,7 @@ func TestWebGatewayForwardsSevenMethodsAndBodiesOverHTTPAndHTTPS(t *testing.T) {
 				upstream = httptest.NewServer(upstreamHandler)
 			}
 			defer upstream.Close()
-			gateway, err := newInternetWebGateway([]string{"example.com"})
+			gateway, err := NewWebGateway([]string{"example.com"})
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -95,7 +94,7 @@ func TestWebGatewayForwardsSevenMethodsAndBodiesOverHTTPAndHTTPS(t *testing.T) {
 }
 
 func TestSimulatorWebGatewayForwardsAllowlistedHTTP(t *testing.T) {
-	gateway, err := newInternetWebGateway([]string{"*.google.com"})
+	gateway, err := NewWebGateway([]string{"*.google.com"})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -122,7 +121,7 @@ func TestSimulatorWebGatewayForwardsAllowlistedHTTP(t *testing.T) {
 }
 
 func TestSimulatorWebGatewayRejectsUnlistedHostsAndPorts(t *testing.T) {
-	gateway, err := newInternetWebGateway([]string{"*.google.com"})
+	gateway, err := NewWebGateway([]string{"*.google.com"})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -147,7 +146,7 @@ func TestSimulatorWebGatewayRejectsUnlistedHostsAndPorts(t *testing.T) {
 }
 
 func TestSimulatorWebGatewayHostPatternsAndAddressSafety(t *testing.T) {
-	gateway, err := newInternetWebGateway([]string{"*.google.com"})
+	gateway, err := NewWebGateway([]string{"*.google.com"})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -162,7 +161,7 @@ func TestSimulatorWebGatewayHostPatternsAndAddressSafety(t *testing.T) {
 		{"google.com.evil.example", false},
 		{"127.0.0.1", false},
 	} {
-		if got := gateway.allowsHost(test.host); got != test.want {
+		if got := gateway.AllowsHost(test.host); got != test.want {
 			t.Errorf("allowsHost(%q) = %t, want %t", test.host, got, test.want)
 		}
 	}
@@ -192,14 +191,14 @@ func TestSimulatorWebGatewayRejectsInvalidAllowlist(t *testing.T) {
 		{"127.0.0.1"},
 		{"google.*.com"},
 	} {
-		if _, err := newInternetWebGateway(hosts); err == nil {
-			t.Errorf("newInternetWebGateway(%v) unexpectedly succeeded", hosts)
+		if _, err := NewWebGateway(hosts); err == nil {
+			t.Errorf("NewWebGateway(%v) unexpectedly succeeded", hosts)
 		}
 	}
 }
 
 func TestSimulatorWebGatewayRejectsUnlistedConnectWithoutDial(t *testing.T) {
-	gateway, err := newInternetWebGateway([]string{"*.google.com"})
+	gateway, err := NewWebGateway([]string{"*.google.com"})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -218,7 +217,7 @@ func TestSimulatorWebGatewayRejectsUnlistedConnectWithoutDial(t *testing.T) {
 }
 
 func TestSimulatorWebGatewayEstablishesAllowedConnectTunnel(t *testing.T) {
-	gateway, err := newInternetWebGateway([]string{"*.google.com"})
+	gateway, err := NewWebGateway([]string{"*.google.com"})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -260,24 +259,5 @@ func TestSimulatorWebGatewayEstablishesAllowedConnectTunnel(t *testing.T) {
 	response := make([]byte, 4)
 	if _, err := io.ReadFull(reader, response); err != nil || string(response) != "echo" {
 		t.Fatalf("CONNECT tunnel response = %q, err=%v", response, err)
-	}
-}
-
-func TestSimulatorTestServiceLaunchUsesOrganizationGateway(t *testing.T) {
-	t.Setenv("SIMULATION_ORGANIZATIONS_DIR", filepath.Join("examples", "organizations"))
-	component := simulatorComponent{Name: "internet-gateway", Agent: "internet-gateway", GatewayUpstream: "https://example.com/"}
-	mode, arguments, err := simulatorTestServiceLaunch(simulatorManifest{OrganizationID: "great-lakes"}, component)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if mode != "web-gateway-service" || len(arguments) != 2 || arguments[0] != "-gateway-allowed-hosts" || arguments[1] != "*.google.com" {
-		t.Fatalf("Great Lakes gateway launch = %q %v", mode, arguments)
-	}
-	mode, arguments, err = simulatorTestServiceLaunch(simulatorManifest{OrganizationID: "northstar"}, component)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if mode != "gateway-service" || len(arguments) != 2 || arguments[0] != "-gateway-upstream" || arguments[1] != component.GatewayUpstream {
-		t.Fatalf("Northstar gateway launch = %q %v", mode, arguments)
 	}
 }

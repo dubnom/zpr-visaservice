@@ -19,6 +19,8 @@ import (
 	"sync"
 	"syscall"
 	"time"
+
+	"neboagency.com/zpr-dashborad/internal/servicehttp"
 )
 
 type simulatorManifest struct {
@@ -1128,10 +1130,10 @@ func readControlRoomSnapshot() (snapshot, error) {
 			return snapshotData, errors.New("Simulator operator service must be an exact HTTPS origin")
 		}
 		serverName := envOr("SIMULATOR_OPERATOR_SERVICE_TLS_SERVER_NAME", u.Hostname())
-		transport, message := mutualTLSClientTransport(os.Getenv("SIMULATOR_OPERATOR_CLIENT_CERT_FILE"),
+		transport, transportErr := servicehttp.MutualTLSClientTransport(os.Getenv("SIMULATOR_OPERATOR_CLIENT_CERT_FILE"),
 			os.Getenv("SIMULATOR_OPERATOR_CLIENT_KEY_FILE"), os.Getenv("SIMULATOR_OPERATOR_SERVICE_CA_FILE"), serverName)
-		if transport == nil {
-			return snapshotData, errors.New(message)
+		if transportErr != nil {
+			return snapshotData, transportErr
 		}
 		defer transport.CloseIdleConnections()
 		client.Transport = transport

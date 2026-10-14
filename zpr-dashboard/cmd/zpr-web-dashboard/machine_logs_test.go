@@ -200,39 +200,6 @@ func TestAdapterLogsInventoryIsReadOnlyBoundedAndRedacted(t *testing.T) {
 	}
 }
 
-type logTestTransport func(*http.Request) (*http.Response, error)
-
-func (transport logTestTransport) RoundTrip(request *http.Request) (*http.Response, error) {
-	return transport(request)
-}
-
-func TestControlRoomUsesSlowTransportForLogsAndAssertionReads(t *testing.T) {
-	var selected string
-	transport := controlRoomTransport{
-		standard: logTestTransport(func(request *http.Request) (*http.Response, error) {
-			selected = "standard"
-			return &http.Response{StatusCode: http.StatusOK}, nil
-		}),
-		logs: logTestTransport(func(request *http.Request) (*http.Response, error) {
-			selected = "logs"
-			return &http.Response{StatusCode: http.StatusOK}, nil
-		}),
-	}
-	for _, test := range []struct{ route, want string }{
-		{"/api/adapter-logs", "logs"},
-		{"/api/assertions/evaluate", "logs"},
-		{"/api/assertions/source", "logs"},
-		{"/api/assertions", "standard"},
-		{"/api/snapshot", "standard"},
-		{"/api/policy", "standard"},
-	} {
-		_, err := transport.RoundTrip(httptest.NewRequest(http.MethodGet, test.route, nil))
-		if err != nil || selected != test.want {
-			t.Fatalf("route %s used %s transport, want %s", test.route, selected, test.want)
-		}
-	}
-}
-
 func TestOperatorLogComponentsDoNotReferenceSimulatorContracts(t *testing.T) {
 	for _, path := range []string{"control_service.go", "adapter_logs.go"} {
 		source, err := os.ReadFile(path)

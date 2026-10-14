@@ -6,13 +6,220 @@ This is a historical release ledger, not a live health report. Keep dated test,
 asset, configuration, scope and rollback evidence here. Feature-local release
 notes also remain in the completed-work archive to preserve their context.
 
-Latest recorded Control Room release: `zpr-editor-ui:20261013-control-room-guidelines`
-(2026-10-13 19:06 UTC). Policy-Service and Control-Service were not replaced or
+Latest recorded Control Room release: `zpr-editor-ui:20261014-authorization-local-request`
+(2026-10-14 15:57 UTC). Policy-Service and Control-Service were not replaced or
 restarted; retain the separately recorded service release history below.
 This does not imply every source change was deployed. Commit/push state is
 separate; retain each dated entry's scope.
 
 ## Deployment status
+
+### Control Room authorization and local-request extraction (2026-10-14 15:57 UTC)
+
+- User selected Control Room only, preserving configuration. Built and deployed
+  the current worktree as `zpr-editor-ui:20261014-authorization-local-request`,
+  image ID
+  `sha256:6c94a5798f33f080a869d53a626a7b41df4f9b749163f6f3b41db1ba483fe67c`.
+  Executable SHA-256:
+  `621b6ba9bc59558b9ec64f0f4501aa95061fbb4ace17624a30da00db5497a7fa`.
+  Container started at `2026-10-14T15:57:18.719536584Z`.
+- Config and HostConfig match the previous Control Room exactly except for image.
+  All 20 other persistent running containers retain their IDs/start times.
+  Simulator, Control-Service, Policy-Service, separate gateways, OIDC, DNS and
+  runtime machines were not replaced or restarted. Great Lakes remains idle.
+  Control Room's binary now includes all six extractions; this does not update
+  the other processes that use the shared executable.
+- Verified HTTPS against the configured CA, operator configuration readiness,
+  live client-certificate access to Control-Service snapshot, and unchanged
+  unauthenticated API denial statuses/bodies. Real browser OIDC login returned
+  200 for snapshot, policy context, policy status, gateway contracts and the
+  signed enrollment catalog. Unmapped routes and requests missing mutation CSRF
+  proof return 403; logout restores snapshot 403. The CSRF check used Analyze's
+  validation endpoint and was denied before forwarding; no policy or
+  provisioning mutation, scenario execution or activation was performed.
+- All 77 directly served static files match source byte-for-byte. Existing
+  `/index.html` -> `./` (301) and directly served `/agents.html` (200) behavior
+  is preserved. No frontend source changes were part of these two increments.
+- Focused race tests pass for local-request, TLS, authorization, delegation,
+  Control Room and affected application contracts. No new full browser fixture
+  suite is claimed for this backend-only release; the 62-case run from 15:40 UTC
+  remains historical evidence. The same four full-Go-suite baseline failures
+  remain documented in [migration evidence](REDIRECTORY.md).
+  Simulator-unavailable checks are local test evidence; the live Simulator was
+  not stopped for this Control Room-only deployment.
+- Rollback retains stopped container
+  `zpr-control-room-before-auth-local-request-20261014`, old image
+  `sha256:b2c62308411451307fe7153b7c40c55a17d19f5fc1485d9007808ab8e37b6b7c`.
+  Restore only that container if reverting. In-memory operator sessions reset
+  on replacement; sign in again.
+- Container configuration and login credentials stayed in memory; no secrets,
+  browser trace or screenshots were saved. Temporary deployment/login helpers
+  removed. Source and deployment documentation remain uncommitted and unpushed.
+
+### Control Room current worktree and proxy extraction (2026-10-14 15:40 UTC)
+
+- User explicitly selected Control Room only, deploying the current worktree.
+  Built and deployed `zpr-editor-ui:20261014-controlroom-package`, image ID
+  `sha256:b2c62308411451307fe7153b7c40c55a17d19f5fc1485d9007808ab8e37b6b7c`.
+  Executable SHA-256:
+  `86e92e64e2ab5eae233ea24a59f996f52b4531ad2ad0abd95317c8b7d3570c3c`.
+  Final container started at `2026-10-14T15:40:21.231455752Z`.
+- Config and HostConfig match the old Control Room exactly except for image:
+  mode, ports, mounts, certificates, operator settings and restart policy are
+  preserved. All 20 other persistent running containers retain their IDs and
+  start times, including Simulator, Control-Service, Policy-Service, local OIDC,
+  DNS and runtime machines. Great Lakes remains selected and idle.
+- The full-worktree binary includes all four backend extractions; only Control
+  Room is running this new image. Simulator still contains the first three;
+  separate gateway and backend-service processes were not updated. Current
+  shared editor assets are now served by Control Room as well as Simulator.
+- Verified HTTPS with the configured CA, operator-configuration readiness,
+  live Control Room client-certificate access to Control-Service snapshot,
+  and unauthenticated API denial. A real browser OIDC login then returned HTTP
+  200 from snapshot, policy context, policy status, gateway contracts and the
+  signed operator-enrollment catalog. Logout restored snapshot HTTP 403.
+  These checks were read-only; no policy save, provisioning mutation, activation,
+  scenario execution or backend restart was performed.
+- All 77 directly served static files match source byte-for-byte. The existing
+  `/index.html` -> `./` (301) redirect is preserved. Unlike Simulator, Control
+  Room serves `/agents.html` directly (200); that baseline behavior is preserved.
+  An initial check incorrectly expected Simulator's redirect and automatically
+  restored the old container. The corrected Control Room baseline check passed
+  on the final replacement; other services were unchanged throughout.
+- Focused Control Room race/mTLS/delegation regressions pass. All 62 selected
+  desktop/tablet shared-editor and organization fixture regressions pass; the
+  known definitions-history selector case remains excluded in both viewports.
+  The live-login helper was updated to wait for the actual Sign out control,
+  not the older "Signed in" status text. No full-suite pass is claimed: the four
+  known Go baseline failures remain in [migration evidence](REDIRECTORY.md).
+  Simulator-unavailable coverage is local test evidence; the live Simulator
+  was not paused during this Control Room-only release.
+- Rollback retains stopped container
+  `zpr-control-room-before-controlroom-package-20261014`, old image
+  `sha256:eeca92b7a7884cecbd7c4cf5cee1adf98012409629c255da2264c290214a9a19`.
+  Restore only that container if reverting; do not restart Simulator or services.
+  Restarting Control Room resets its in-memory operator sessions; sign in again.
+- Replacement configuration and login credentials remained in memory; no
+  credential/environment payload, browser trace or screenshot was saved.
+  Temporary deployment/login helpers removed. Source and documentation remain
+  uncommitted and unpushed.
+
+### Simulator service TLS package extraction (2026-10-14 15:14 UTC)
+
+- User selected Simulator only, preserving configuration. Built and deployed
+  `zpr-simulator:20261014-servicehttp-package` from the current worktree, image ID
+  `sha256:846314c15587aab6be4426bbea3d6f744834c1570a7155a392926f39c10b8894`.
+  Executable SHA-256:
+  `739c44d113512ff544095b2c394c8740439d0fff8215d362ae9dcf410fd0b90d`.
+  Container started at `2026-10-14T15:14:21.423808628Z`.
+- Config and HostConfig match the previous Simulator exactly except for image.
+  All 20 other persistent running containers retain their IDs/start times.
+  The temporary deployment helper was also checked and then exited; it is not
+  included in that count. Control Room, Control-Service, Policy-Service, the
+  separate browser gateway, runtime machines, BIND and the independent operator
+  DNS relay were not updated.
+- Great Lakes remains selected and idle. Both exact DNS relay commands and PID
+  files were restored; tracked processes are alive and 8054/8055 listen.
+  DNS statistics version remains 1.8 and BIND boot time remains
+  `2026-10-14T14:05:37.750Z`.
+- All 76 directly served static files match source byte-for-byte. Existing
+  `/index.html` -> `./` (301) and `/agents.html` -> `/machine-logs.html` (302)
+  redirects remain unchanged. Simulator API readiness was checked again after
+  the deployment helper exited.
+- Focused service TLS race regressions pass, including certificate accept/reject,
+  production proxy and Simulator-client integration coverage. This is not a live
+  production mTLS rollout or full-suite certification: the four known full-suite
+  baseline failures remain documented in [migration evidence](REDIRECTORY.md).
+  No new browser suite, scenario execution, activation or policy write was
+  performed for this backend-only release.
+- Rollback retains stopped container
+  `zpr-simulator-before-servicehttp-package-20261014`, old image
+  `sha256:88340bc45fb0346ddb22006093b1113a994dce870897e0aa2aa112057ea56920`.
+  Restore only that container and the same relay commands/PID files if reverting.
+- Replacement configuration stayed in memory; no environment/credential payload
+  was saved. Temporary helper removed. Source and deployment documentation
+  remain uncommitted and unpushed.
+
+### Simulator browser-access package extraction (2026-10-14 14:51 UTC)
+
+- User explicitly selected Simulator only, not the separate browser-access
+  gateway process. Built and deployed
+  `zpr-simulator:20261014-browsergateway-package`, image ID
+  `sha256:88340bc45fb0346ddb22006093b1113a994dce870897e0aa2aa112057ea56920`.
+  Executable SHA-256:
+  `5da600c512e715dc048b30f155d39a101c6eb5b26d6c7a7f2bb53527341d0b77`.
+  Container started at `2026-10-14T14:51:32.839106716Z`.
+- Config and HostConfig match the previous Simulator exactly except for image.
+  All 21 other running containers retain their IDs/start times. Control Room,
+  Control-Service, Policy-Service, runtime machines, BIND and the independent
+  operator DNS relay were not replaced. A separately running browser gateway
+  is not updated by embedding its extracted implementation in Simulator's binary.
+- Great Lakes remains selected and idle. Restored both exact prior DNS relay
+  commands and PID files; 8054/8055 listen and tracked processes are alive.
+  DNS statistics version remains 1.8; BIND boot time remains
+  `2026-10-14T14:05:37.750Z`.
+- All 76 directly served static files match source byte-for-byte; existing
+  `/index.html` -> `./` (301) and `/agents.html` -> `/machine-logs.html` (302)
+  redirects are unchanged. No static source changes occurred in this increment.
+- Focused gateway/browser gateway race regressions pass after rollout, including
+  real-mTLS integration, routing with Simulator unavailable, dependency checks
+  and the first extraction's forwarding coverage. Deployed binary smoke check
+  confirms browser-gateway mode rejects missing TLS configuration before
+  opening a listener. No live browser-gateway replacement, production
+  forwarding, scenario execution, activation, or policy write was performed.
+  No new desktop/tablet browser suite run is claimed for this backend-only release.
+- Rollback retains stopped container
+  `zpr-simulator-before-browsergateway-package-20261014`, old image
+  `sha256:597e94fd54b1f1672c9346273c4d5dc7dcd438e16989be11a9242b8e79ad3c8e`.
+  Restore only that container and the same two relay commands/PID files if
+  reverting; do not restart other services.
+- Replacement configuration remained in memory; no environment/credential
+  payload was saved. Temporary replacement helper removed. Source and
+  deployment documentation remain uncommitted and unpushed.
+
+### Simulator first backend package extraction (2026-10-14 14:38 UTC)
+
+- User selected Simulator-only deployment of the entire current worktree,
+  preserving runtime configuration. Built `zpr-simulator:20261014-gateway-package`;
+  deployed image ID
+  `sha256:597e94fd54b1f1672c9346273c4d5dc7dcd438e16989be11a9242b8e79ad3c8e`.
+  Executable SHA-256:
+  `ed568925654309380db1555e607779104dd234bbbaba27e7ff8359cdcf01ee42`.
+  Final container started at `2026-10-14T14:38:01.220246174Z`.
+- Container Config and HostConfig match the previous Simulator exactly except
+  for its image. All 21 other running containers retained their IDs and start
+  times, including Control Room, Control-Service, Policy-Service, the independent
+  operator DNS relay, BIND, and Great Lakes runtime machines. No production
+  gateway instance or other production service was replaced.
+- Great Lakes remains active. The previous run was in a failed terminal state,
+  not running; planned UI replacement reset in-memory run history to idle.
+  Restored the exact two prior DNS relay commands and PID files. Both 8054/8055
+  listeners and recorded PIDs are alive; statistics return version 1.8 and BIND
+  boot time remains `2026-10-14T14:05:37.750Z`.
+- All 76 directly served static files match source byte-for-byte. The other
+  two source HTML files have existing route redirects: `/index.html` returns
+  301 to `./`, and `/agents.html` returns 302 to `/machine-logs.html`; these
+  are not asset mismatches. No static source changes were part of extraction.
+- All 62 selected desktop/tablet shared-editor and organization regressions
+  pass after rollout using fixture APIs and real source assets. The known
+  definitions-history selector test remains excluded in both viewports.
+  These are automated source/UI regressions, not a live signed-in browser or
+  full-suite certification. The deployed executable's `web-gateway-service`
+  dispatch preserves its invalid-workload rejection without opening a listener.
+- Native/Linux builds, focused gateway race tests, vet, dependency checks, and
+  the unchanged four full-Go-suite baseline failures are documented in
+  [migration evidence](REDIRECTORY.md#first-backend-extraction-2026-10-14).
+  No scenario execution, organization activation, policy write, or live
+  Internet gateway forwarding test was performed.
+- Rollback retains stopped container
+  `zpr-simulator-before-gateway-package-20261014`, old image
+  `sha256:3708380378f443737d271dd01919cf3d98e0e5e6ce94e2cb243f879aed2af025`.
+  To revert, replace only the new Simulator with this retained container and
+  restore the same two DNS relays/PID files; other services must remain untouched.
+- Configuration-preserving replacement used Docker API state in memory,
+  without writing container environments/credentials to disk. Temporary helper
+  removed after verification. Extraction and this deployment record are not
+  committed or pushed.
 
 ### Simulator organization editor and full worktree (2026-10-14 04:58 UTC)
 

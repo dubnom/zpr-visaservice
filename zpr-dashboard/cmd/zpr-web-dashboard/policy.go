@@ -8,9 +8,7 @@ import (
 	"fmt"
 	"io"
 	"log"
-	"net"
 	"net/http"
-	"net/url"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -21,6 +19,7 @@ import (
 	"time"
 
 	"github.com/BurntSushi/toml"
+	"neboagency.com/zpr-dashborad/internal/servicehttp"
 )
 
 const (
@@ -1055,37 +1054,9 @@ func decodePolicyRequest(w http.ResponseWriter, r *http.Request, maxBytes int64,
 }
 
 func localEditorRequest(w http.ResponseWriter, r *http.Request) bool {
-	if r.TLS != nil && len(r.TLS.VerifiedChains) > 0 {
-		return true
-	}
-	remoteHost, _, err := net.SplitHostPort(r.RemoteAddr)
-	remoteIP := net.ParseIP(remoteHost)
-	proxyIP := net.ParseIP(strings.TrimSpace(os.Getenv("ZPR_CONTROL_ROOM_PROXY_IP")))
-	trustedProxy := remoteIP != nil && proxyIP != nil && proxyIP.Equal(remoteIP)
-	if err != nil || remoteIP == nil || (!remoteIP.IsLoopback() && !trustedProxy) {
-		writePolicyError(w, http.StatusForbidden, "Policy workspace is available only over loopback.")
+	if err := servicehttp.CheckLocalRequest(r, os.Getenv("ZPR_CONTROL_ROOM_PROXY_IP")); err != nil {
+		writePolicyError(w, http.StatusForbidden, err.Error())
 		return false
-	}
-	hostname := r.Host
-	if host, _, splitErr := net.SplitHostPort(r.Host); splitErr == nil {
-		hostname = host
-	}
-	hostname = strings.Trim(hostname, "[]")
-	hostIP := net.ParseIP(hostname)
-	if hostname != "localhost" && (hostIP == nil || !hostIP.IsLoopback()) {
-		writePolicyError(w, http.StatusForbidden, "Policy workspace requires a loopback host name.")
-		return false
-	}
-	if origin := r.Header.Get("Origin"); origin != "" {
-		scheme := "http"
-		if r.TLS != nil {
-			scheme = "https"
-		}
-		parsed, parseErr := url.Parse(origin)
-		if parseErr != nil || parsed.Scheme != scheme || parsed.Host != r.Host || origin != scheme+"://"+r.Host {
-			writePolicyError(w, http.StatusForbidden, "Cross-origin policy requests are not allowed.")
-			return false
-		}
 	}
 	return true
 }

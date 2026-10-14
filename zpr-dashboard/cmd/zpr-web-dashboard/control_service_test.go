@@ -16,6 +16,8 @@ import (
 )
 
 func TestControlRoomProxiesToControlServiceOverMutualTLS(t *testing.T) {
+	t.Setenv("SIMULATION_MANIFEST", "/unavailable/manifest.json")
+	t.Setenv("ZPR_SIMULATOR_URL", "http://127.0.0.1:0")
 	caCert, caKey, err := createTestPolicyCA()
 	if err != nil {
 		t.Fatal(err)
@@ -108,6 +110,36 @@ func TestControlRoomProxiesToControlServiceOverMutualTLS(t *testing.T) {
 	}
 	if upstream.browserHeadersSeen {
 		t.Fatal("browser credentials or forwarding headers reached Control-Service")
+	}
+	if err := service.Close(); err != nil {
+		t.Fatal(err)
+	}
+	response = httptest.NewRecorder()
+	localControlRoomProxy(proxy).ServeHTTP(response, request)
+	if response.Code != http.StatusBadGateway || response.Body.String() != "{\"error\":\"Control Service is unavailable.\"}\n" {
+		t.Fatalf("unavailable service response status=%d body=%s", response.Code, response.Body)
+	}
+}
+
+func TestControlServiceProxyConfigurationCompatibility(t *testing.T) {
+	for _, key := range []string{"ZPR_CONTROL_SERVICE_URL", "ZPR_CONTROL_CLIENT_CERT_FILE", "ZPR_CONTROL_CLIENT_KEY_FILE", "ZPR_CONTROL_SERVICE_CA_FILE"} {
+		t.Setenv(key, "")
+	}
+	proxy, message := newControlServiceProxy()
+	if proxy != nil || message != "Configure ZPR_CONTROL_SERVICE_URL, ZPR_CONTROL_CLIENT_CERT_FILE, ZPR_CONTROL_CLIENT_KEY_FILE, and ZPR_CONTROL_SERVICE_CA_FILE." {
+		t.Fatalf("missing configuration: proxy=%v message=%q", proxy, message)
+	}
+	for _, key := range []string{"ZPR_CONTROL_CLIENT_CERT_FILE", "ZPR_CONTROL_CLIENT_KEY_FILE", "ZPR_CONTROL_SERVICE_CA_FILE"} {
+		t.Setenv(key, "/unavailable/fixture")
+	}
+	for _, endpoint := range []string{"http://service.example", "https://service.example/path", "https://user@service.example", "https://service.example?query=1", "https://service.example#fragment", "not-an-origin"} {
+		t.Run(endpoint, func(t *testing.T) {
+			t.Setenv("ZPR_CONTROL_SERVICE_URL", endpoint)
+			proxy, message := newControlServiceProxy()
+			if proxy != nil || message != "ZPR_CONTROL_SERVICE_URL must be an HTTPS origin without a path." {
+				t.Fatalf("invalid endpoint: proxy=%v message=%q", proxy, message)
+			}
+		})
 	}
 }
 

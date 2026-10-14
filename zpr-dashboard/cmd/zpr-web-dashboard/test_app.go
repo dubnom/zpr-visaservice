@@ -19,6 +19,8 @@ import (
 	"sync"
 	"sync/atomic"
 	"time"
+
+	"neboagency.com/zpr-dashborad/internal/gateway"
 )
 
 type testAppEvent struct {
@@ -521,11 +523,11 @@ func validateWebGatewayPageTarget(targetURL, expected string, allowedHosts []str
 	if (parsed.Scheme == "http" && port != "" && port != "80") || (parsed.Scheme == "https" && port != "" && port != "443") {
 		return errors.New("web gateway page request supports only ports 80 and 443")
 	}
-	gateway, err := newInternetWebGateway(allowedHosts)
+	webGateway, err := gateway.NewWebGateway(allowedHosts)
 	if err != nil {
 		return err
 	}
-	allowed := gateway.allowsHost(parsed.Hostname())
+	allowed := webGateway.AllowsHost(parsed.Hostname())
 	switch expected {
 	case "allow":
 		if !allowed {

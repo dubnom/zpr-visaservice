@@ -9,6 +9,53 @@ owns its REST listener, SQLite journal, and ZPLC configuration. All three
 processes use the same Go executable with different `-mode` values and remain
 separate processes and trust boundaries.
 
+Service CA loading and mTLS client transport now live in
+[`internal/servicehttp`](../../internal/servicehttp/). Callers retain their
+endpoint validation, environment settings, authorization, proxy behavior, and
+service-specific error messages. The shared package reads only explicitly
+supplied certificate/CA paths and uses the supplied TLS server name; it has no
+Simulator or application configuration dependency. TLS 1.3, certificate/hostname
+verification, and existing transport timeouts are unchanged.
+
+Control Room's upstream proxy now lives in
+[`internal/controlroom`](../../internal/controlroom/). The command still owns
+service-origin validation, environment/certificate configuration, login/session
+and CSRF verification, delegation signing, application JSON errors and startup.
+The package strips the same browser credentials and forwarding headers, forwards
+only request-context signed assertions on operator-enrollment routes, and
+selects the existing 20s slow-read transport for logs and assertion reads.
+The standard transport retains its configured timeout. A transitive in-module
+dependency check allows only the production authentication/delegation packages,
+not Simulator implementation. This extraction does not move the complete
+Control Room application or change mode names, API routes, or static embedding.
+
+Control Room API permission mapping and the named-user authorization gate also
+live in that production package. The gate uses the supplied authorizer and
+operator-configured organization, then calls the command's local-request proxy.
+Unknown routes, missing organization, failed authorization and their response
+ordering/status/messages are unchanged. The command retains absent/typed-nil
+authentication detection and loopback-development fallback; authorized requests
+still pass existing local peer, host and origin checks. Enrollment and change
+review keep their separate handlers and permission contracts.
+
+The shared local-request check is now in
+[`internal/servicehttp/local_request.go`](../../internal/servicehttp/local_request.go).
+The existing command adapter still resolves `ZPR_CONTROL_ROOM_PROXY_IP` for each
+request and emits the same JSON errors. The package accepts that explicit IP
+and preserves verified-client TLS or local/trusted peer, loopback host and exact
+same-origin checks, in the same order. Forwarded headers do not establish trust.
+All existing editor/service callers retain the adapter; no route, authentication
+fallback or trust policy changed.
+
+DNS statistics and stylesheet forwarding now live in
+[`internal/dnsstats`](../../internal/dnsstats/), with an explicit upstream URL.
+Control-Service still resolves `ZPR_DNS_STATS_URL` and registers
+`/api/dns/stats/` and `/bind9.xsl`. The package preserves URL validation,
+credential stripping, prefix/query behavior, cache headers, default transport
+and plain-text error responses. It has no Simulator or environment dependency,
+enforced by a standard-library-only transitive dependency check. DNS record
+transfers, independent relay configuration and authorization are unchanged.
+
 The assertion editor uses the policy editor's Browse/File toolbar, Analyze/Format
 placement, analysis colors, and persistent results gutter. **Analyze** parses,
 lints, and evaluates source against configured trusted sources, showing clickable
@@ -581,7 +628,7 @@ read saved drafts or enforce their method selections; HTTPS tunnel contents
 are opaque to it.
 
 Both Internet-egress modes share the independent forwarding core in
-`gateway_forwarding.go`: hostname validation, method validation, redirect
+[`internal/gateway`](../../internal/gateway/): hostname validation, method validation, redirect
 handling, hop-by-hop header removal, and response forwarding. The fixed-upstream
 mode deliberately uses selected headers and bounded responses; the web proxy
 preserves end-to-end headers and streams responses. CLI mode names and existing
@@ -589,6 +636,20 @@ launch configuration remain compatible. The web proxy constructor consumes
 explicit host configuration, not Simulator profiles or APIs. Simulator callers
 may supply their configuration to it, but the forwarding core has no reverse
 dependency. The browser-access gateway remains a separate application proxy.
+Its host router and TLS configuration now live in
+[`internal/browsergateway`](../../internal/browsergateway/); the command retains
+the existing environment variables, defaults, security-header wrapper, and
+listener lifecycle. It does not import the Internet-egress gateway package or
+Simulator implementation.
+
+The HTTP/CONNECT runtime and its unit tests now live with that core. The
+`web-gateway-service` CLI dispatches to `gateway.RunWebService`; organization
+validation and scenario selection supply explicit configuration. The
+fixed-upstream handler, its workload-event logging adapter, and Simulator launch
+compatibility tests remain command-owned. A dependency test prevents the neutral
+package from importing any non-standard-library implementation, including
+Simulator or command code. Existing modes, headers, limits, and launch paths
+are preserved; source extraction alone does not deploy either runtime.
 
 Still pending: a shared deployed runtime configuration contract, reviewed
 activation/rollback, and migration of fixed-upstream callers before retiring

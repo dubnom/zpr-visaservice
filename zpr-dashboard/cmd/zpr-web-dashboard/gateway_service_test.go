@@ -11,6 +11,8 @@ import (
 	"net/http/httptest"
 	"strings"
 	"testing"
+
+	"neboagency.com/zpr-dashborad/internal/gateway"
 )
 
 func TestInternetGatewayForwardsMethodsBodiesAndSafeHeaders(t *testing.T) {
@@ -72,7 +74,7 @@ func TestInternetGatewayRejectsBodiesBeforeForwarding(t *testing.T) {
 	client := &http.Client{Transport: gatewayRoundTripper(func(request *http.Request) (*http.Response, error) {
 		calls++
 		body, err := io.ReadAll(request.Body)
-		if err != nil || len(body) != maxGatewayRequestBytes {
+		if err != nil || len(body) != gateway.MaxRequestBytes {
 			t.Fatalf("boundary body length=%d err=%v", len(body), err)
 		}
 		return &http.Response{StatusCode: http.StatusNoContent, Header: make(http.Header), Body: http.NoBody, Request: request}, nil
@@ -81,8 +83,8 @@ func TestInternetGatewayRejectsBodiesBeforeForwarding(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	for _, length := range []int64{maxGatewayRequestBytes + 1, -1} {
-		request := httptest.NewRequest(http.MethodPost, "/fetch/upload", strings.NewReader(strings.Repeat("x", maxGatewayRequestBytes+1)))
+	for _, length := range []int64{gateway.MaxRequestBytes + 1, -1} {
+		request := httptest.NewRequest(http.MethodPost, "/fetch/upload", strings.NewReader(strings.Repeat("x", gateway.MaxRequestBytes+1)))
 		request.ContentLength = length
 		response := httptest.NewRecorder()
 		handler.ServeHTTP(response, request)
@@ -90,7 +92,7 @@ func TestInternetGatewayRejectsBodiesBeforeForwarding(t *testing.T) {
 			t.Fatalf("length=%d status=%d upstream calls=%d", length, response.Code, calls)
 		}
 	}
-	request := httptest.NewRequest(http.MethodPut, "/fetch/upload", strings.NewReader(strings.Repeat("x", maxGatewayRequestBytes)))
+	request := httptest.NewRequest(http.MethodPut, "/fetch/upload", strings.NewReader(strings.Repeat("x", gateway.MaxRequestBytes)))
 	response := httptest.NewRecorder()
 	handler.ServeHTTP(response, request)
 	if response.Code != http.StatusNoContent || calls != 1 {

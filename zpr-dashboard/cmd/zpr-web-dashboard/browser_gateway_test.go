@@ -9,7 +9,10 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
+
+	"neboagency.com/zpr-dashborad/internal/browsergateway"
 )
 
 func TestBrowserAccessGatewayRequiresMTLSAndRoutesAllowlistedHosts(t *testing.T) {
@@ -39,14 +42,14 @@ func TestBrowserAccessGatewayRequiresMTLSAndRoutesAllowlistedHosts(t *testing.T)
 	defer control.Close()
 	simulator := newUpstream("simulator")
 	defer simulator.Close()
-	gateway, err := newBrowserAccessGateway("control.localhost", control.URL, "simulator.localhost", simulator.URL)
+	gateway, err := browsergateway.New("control.localhost", control.URL, "simulator.localhost", simulator.URL)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := newBrowserAccessGateway("control.localhost", control.URL, "control.localhost", simulator.URL); err == nil {
+	if _, err := browsergateway.New("control.localhost", control.URL, "control.localhost", simulator.URL); err == nil {
 		t.Fatal("duplicate gateway host was accepted")
 	}
-	if _, err := newBrowserAccessGateway("control.localhost", "http://192.0.2.1:8080", "simulator.localhost", simulator.URL); err == nil {
+	if _, err := browsergateway.New("control.localhost", "http://192.0.2.1:8080", "simulator.localhost", simulator.URL); err == nil {
 		t.Fatal("non-loopback upstream was accepted")
 	}
 
@@ -64,9 +67,12 @@ func TestBrowserAccessGatewayRequiresMTLSAndRoutesAllowlistedHosts(t *testing.T)
 	if err := os.WriteFile(clientCAPath, caPEM, 0o600); err != nil {
 		t.Fatal(err)
 	}
-	tlsConfig, err := browserAccessGatewayTLSConfig(serverCertPath, serverKeyPath, clientCAPath)
+	tlsConfig, err := browsergateway.TLSConfig(serverCertPath, serverKeyPath, clientCAPath)
 	if err != nil {
 		t.Fatal(err)
+	}
+	if tlsConfig.MinVersion != tls.VersionTLS13 || tlsConfig.ClientAuth != tls.RequireAndVerifyClientCert || len(tlsConfig.Certificates) != 1 || tlsConfig.ClientCAs == nil {
+		t.Fatal("browser gateway TLS policy changed")
 	}
 	server := httptest.NewUnstartedServer(gateway)
 	server.TLS = tlsConfig
@@ -145,4 +151,29 @@ func TestBrowserAccessGatewayRequiresMTLSAndRoutesAllowlistedHosts(t *testing.T)
 
 func pemEncodeTestCertificate(certificate *x509.Certificate) []byte {
 	return pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: certificate.Raw})
+}
+
+func TestBrowserGatewayCommandPreservesConfigurationErrors(t *testing.T) {
+	for _, name := range []string{"ZPR_ACCESS_GATEWAY_TLS_CERT_FILE", "ZPR_ACCESS_GATEWAY_TLS_KEY_FILE", "ZPR_ACCESS_GATEWAY_CLIENT_CA_FILE"} {
+		t.Setenv(name, "")
+	}
+	t.Setenv("SIMULATION_MANIFEST", "/unavailable/simulation.json")
+	if defaultBrowserGatewayListen != "127.0.0.1:8443" {
+		t.Fatal("default listen address changed")
+	}
+	err := runBrowserAccessGateway("")
+	if err == nil || err.Error() != "browser-gateway mode requires ZPR_ACCESS_GATEWAY_TLS_CERT_FILE, ZPR_ACCESS_GATEWAY_TLS_KEY_FILE, and ZPR_ACCESS_GATEWAY_CLIENT_CA_FILE" {
+		t.Fatalf("missing configuration error=%v", err)
+	}
+	for _, name := range []string{"ZPR_ACCESS_GATEWAY_TLS_CERT_FILE", "ZPR_ACCESS_GATEWAY_TLS_KEY_FILE", "ZPR_ACCESS_GATEWAY_CLIENT_CA_FILE"} {
+		t.Setenv(name, "/unavailable/certificate")
+	}
+	t.Setenv("ZPR_ACCESS_GATEWAY_CONTROL_HOST", "control.localhost")
+	t.Setenv("ZPR_ACCESS_GATEWAY_SIMULATOR_HOST", "simulator.localhost")
+	t.Setenv("ZPR_ACCESS_GATEWAY_CONTROL_UPSTREAM", "http://127.0.0.1:8787")
+	t.Setenv("ZPR_ACCESS_GATEWAY_SIMULATOR_UPSTREAM", "http://127.0.0.1:8788")
+	err = runBrowserAccessGateway("")
+	if err == nil || !strings.HasPrefix(err.Error(), "load browser gateway server certificate:") {
+		t.Fatalf("certificate error=%v", err)
+	}
 }

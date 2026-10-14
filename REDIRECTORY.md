@@ -1,10 +1,26 @@
 # Source and Project Reorganization Plan
 
 Status reconciled 2026-10-14. Most checklist items remain planned; the shared
-editor-controller reuse is implemented and deployed. Neutral Gateway forwarding
-helpers and naming cleanup are committed but not deployed; they remain inside
-the existing Go main package and do not complete production/Simulator package
-separation. Reorganize incrementally to
+editor-controller reuse is implemented and deployed. The first backend
+extraction now places neutral Gateway forwarding and the HTTP/CONNECT runtime
+in `zpr-dashboard/internal/gateway`, with a standard-library-only dependency
+check. It is verified and deployed to Simulator only, uncommitted. The remaining
+browser-access gateway host routing and TLS configuration are now extracted to
+`internal/browsergateway`, verified and included in Simulator's image only;
+the separate browser-gateway process was not updated. Other application
+domains still share the Go main package. A third extraction of service TLS
+transport primitives is verified and included in Simulator's image only.
+A fourth extraction places Control Room's upstream proxy in `internal/controlroom`,
+verified and deployed to Control Room only. That current-worktree image also
+includes the first three packages; separate gateway and backend-service processes
+were not updated. A fifth extraction moves Control Room API permission mapping
+and named-user authorization into that same production package. A sixth extraction moves the shared local-request
+check into the existing standard-library-only `internal/servicehttp` package,
+also verified and deployed to Control Room only. The fifth and sixth increments
+are included in the 2026-10-14 15:57 UTC release; other services remain unchanged.
+The seventh extraction isolates DNS statistics forwarding in `internal/dnsstats`;
+it is locally verified but not deployed. Full production/Simulator separation is not
+complete. Reorganize incrementally to
 make ownership and dependency boundaries enforceable without changing behavior.
 Keep the existing major project/crate boundaries unless a concrete dependency
 problem justifies changing them. This is not a framework migration, microservice
@@ -46,12 +62,407 @@ Related trackers:
 - **Shared editor fixes have distinct rollout scopes:** gutter synchronization
   and programmatic/catalog insertion Undo/Redo are locally verified with 90
   focused desktop/tablet cases. The user-approved full-worktree Simulator
-  release includes the shared assets; Control Room was not replaced by that
-  rollout, so its pending assets are not claimed deployed.
+  release includes the shared assets. The subsequent 2026-10-14 15:40 UTC
+  Control Room-only current-worktree release now includes those shared assets,
+  verified against source with 62 selected desktop/tablet fixture regressions.
 - These repairs and UI changes do not complete source inventory, thin-command
   extraction, feature-module reorganization, Rust subdivision or naming work.
-  The latest pending editor and DNS source/documentation changes are not yet
-  committed or pushed; use the deployment ledger for runtime scope.
+  The editor and DNS source/documentation changes were subsequently committed
+  and pushed as `51f612b`; that publication did not deploy additional targets.
+  Use the deployment ledger for runtime scope.
+
+## Seventh backend extraction: DNS statistics proxy (2026-10-14)
+
+**Implemented and locally verified; uncommitted, not deployed.** Control Room
+still runs the sixth-extraction release. Control-Service, which composes the
+DNS statistics routes, has not been rebuilt or restarted for this extraction.
+
+- Moved DNS statistics URL validation and HTTP/HTTPS forwarding into
+  [`internal/dnsstats`](zpr-dashboard/internal/dnsstats/). Its two constructors
+  accept an explicit upstream URL for the statistics prefix and stylesheet.
+  The command retains `ZPR_DNS_STATS_URL` lookup and existing route registration.
+  There is no Simulator API, configuration, manifest, runtime or availability
+  dependency; a standard-library-only transitive dependency test enforces this
+  package boundary.
+- Preserved HTTP/HTTPS origin validation, whitespace handling, path-prefix
+  behavior, root mapping, query/body/method forwarding, browser credential and
+  existing forwarding-header suppression, `no-store` upstream responses, default
+  Go HTTP transport and flush behavior. HTTPS certificate verification is not
+  bypassed. The upstream Host behavior is unchanged.
+- Missing/invalid configuration still produces the same plain-text 503 response;
+  upstream transport failures still produce the same 502 response. Upstream
+  HTTP error statuses and bodies are preserved with `no-store`.
+- Existing command-level forwarding/stylesheet tests and independent operator
+  relay/script tests remain intact. New package tests cover both constructors,
+  validation, path/query/body/headers, input immutability, upstream and transport
+  errors, prefix rejection, HTTPS trust verification and explicit operation
+  with invalid Simulator and unrelated DNS environment settings. New command
+  tests preserve configuration-error messages for both adapter constructors.
+- DNS record AXFR/TSIG behavior, relay processes, BIND configuration, production
+  transport selection and operator authorization are outside this extraction
+  and were not changed.
+
+Passing validation:
+
+```sh
+go test -race ./internal/dnsstats ./cmd/zpr-web-dashboard -run 'DNSStats|ControlServiceDNS|OperatorDNS|ControlRoom' -count=1
+go vet ./internal/dnsstats ./cmd/zpr-web-dashboard
+go build -o /dev/null ./cmd/zpr-web-dashboard
+GOOS=linux GOARCH=arm64 CGO_ENABLED=0 go build -o /dev/null ./cmd/zpr-web-dashboard
+GOOS=linux GOARCH=amd64 CGO_ENABLED=0 go build -o /dev/null ./cmd/zpr-web-dashboard
+```
+
+The editor runner reports 39 selected passing tests. `make test` retains exactly
+the same four baseline failures and causes recorded below; all remaining Go tests
+pass with those four explicitly excluded. Formatting, editor diagnostics and diff
+whitespace checks pass. No unrelated failing tests, dependencies, static assets,
+scripts, credentials, runtime configuration or live state were changed. No image
+build, deployment, commit or push was performed. Full Control-Service composition
+and an authorized production ZPR DNS transport remain separate work.
+
+## Sixth backend extraction: local request boundary (2026-10-14)
+
+**Implemented, verified and deployed to Control Room only; uncommitted.**
+The current-worktree release `zpr-editor-ui:20261014-authorization-local-request`
+started at 2026-10-14 15:57 UTC and includes the fifth and sixth increments.
+Simulator and backend services were not replaced or restarted. See the
+[deployment ledger](GUI%20deployments.md#control-room-authorization-and-local-request-extraction-2026-10-14-1557-utc).
+
+- Extracted the shared editor/service local-request check from `policy.go` into
+  [`internal/servicehttp/local_request.go`](zpr-dashboard/internal/servicehttp/local_request.go).
+  The existing standard-library-only HTTP/TLS package owns the check; no new
+  package or dependency was needed.
+- The function accepts the request and explicit trusted proxy IP. The command
+  retains `ZPR_CONTROL_ROOM_PROXY_IP` lookup on each request and writes the same
+  HTTP 403 JSON errors. All existing policy, assertion, gateway, Control Room
+  and other callers still use the unchanged `localEditorRequest` adapter.
+- Preserved verified-client-TLS acceptance, loopback or exact trusted-proxy
+  peer matching, loopback Host requirement, exact same-scheme/host Origin
+  matching, and peer-before-host-before-origin rejection order. Unverified TLS
+  does not skip local checks; forwarded headers do not establish peer trust.
+  Historical policy-workspace error messages remain exact, even for non-policy
+  callers. This is a behavior-preserving extraction, not a trust-policy change.
+- Package table tests cover IPv4/IPv6, mapped addresses, proxy configuration,
+  malformed peers/hosts/origins, precedence, forwarded-header spoofing, input
+  immutability, and verified/unverified TLS. Invalid Simulator settings and an
+  unrelated proxy environment value do not influence explicit package inputs.
+- A real TLS test accepts a verified client certificate on a production-host
+  request and rejects the same host without a client certificate. Command
+  tests verify exact JSON status/headers/body, configuration changes between
+  requests, and no response writes for accepted requests. Existing application
+  boundary and production/delegation regressions remain intact.
+- The package's standard-library-only dependency check continues to pass.
+  No application configuration, Simulator imports or hidden state were added.
+
+Passing validation:
+
+```sh
+go test -race ./internal/servicehttp ./internal/controlroom ./cmd/zpr-web-dashboard -run 'LocalRequest|LocalEditor|PolicyEditorRejects|ServiceHTTP|MutualTLSClient|ControlRoom|ControlService|OperatorAuthorization|OperatorEnrollment|OperatorDelegation|SimulatorAPI|ChangeReview' -count=1
+go vet ./internal/servicehttp ./cmd/zpr-web-dashboard
+go build -o /dev/null ./cmd/zpr-web-dashboard
+GOOS=linux GOARCH=arm64 CGO_ENABLED=0 go build -o /dev/null ./cmd/zpr-web-dashboard
+GOOS=linux GOARCH=amd64 CGO_ENABLED=0 go build -o /dev/null ./cmd/zpr-web-dashboard
+```
+
+The editor runner reports five selected passing tests. `make test` retains the
+same four baseline failures and causes recorded below; all remaining Go tests
+pass with those four explicitly excluded. Formatting, diagnostics and whitespace
+checks pass. No unrelated tests, assets, launch scripts, certificates, runtime
+configuration or state were changed by the extraction. The subsequent
+Control Room-only deployment preserved configuration and the other 20 containers,
+matched 77 served assets, and passed real OIDC login, authenticated reads and
+unmapped-route/CSRF denial checks. No commit or push was performed.
+Full application composition remains a subsequent stage.
+
+## Fifth backend extraction: Control Room API authorization (2026-10-14)
+
+**Implemented, verified and deployed to Control Room only; uncommitted.**
+The subsequent 2026-10-14 15:57 UTC current-worktree release includes this
+authorization extraction and the sixth local-request increment. Other services
+were not restarted. See the
+[deployment ledger](GUI%20deployments.md#control-room-authorization-and-local-request-extraction-2026-10-14-1557-utc).
+
+- Moved the API method/path permission map and named-user authorization gate
+  from command-local `operator_policy.go` into
+  [`internal/controlroom/authorization.go`](zpr-dashboard/internal/controlroom/authorization.go).
+  The gate accepts an authorizer, explicit organization, next handler and
+  application error formatter. It reads no environment or Simulator state.
+- The command retains absent/typed-nil authentication detection and local-only
+  development behavior, local peer/host/origin checks, dedicated enrollment
+  handling, error formatting, OIDC/session configuration and server startup.
+  Existing Simulator and change-review consumers reuse the authorizer interface
+  through a command type alias; neither contributes policy to Control Room.
+- Method/path matching and permission names are unchanged. Unknown routes are
+  rejected before organization lookup or authorization, missing organization
+  still returns 503, and failed authorization still returns the same 403 JSON.
+  Operator-configured organization is trimmed once and cannot be replaced by a
+  request query. Request identity, context, CSRF header, body and next-handler
+  ordering are unchanged.
+- Moved the original permission-map test with its implementation and expanded
+  method, prefix, unsupported-route and gateway coverage. Package gate tests
+  verify exact permission/scope, denial ordering, no-store responses and absence
+  of downstream calls on denial, with invalid/unavailable Simulator settings.
+  Command tests retain nil/typed-nil development fallback and verify exact JSON
+  error headers/bodies and local peer/host/origin rejection after authorization.
+- The package's existing transitive in-module allowlist still permits only
+  Control Room and production authentication/delegation packages. No new
+  dependencies, environment settings, routes, modes, assets or scripts were added.
+
+Passing validation:
+
+```sh
+go test -race ./internal/controlroom ./cmd/zpr-web-dashboard -run 'ControlRoom|ControlService|OperatorAuthorization|OperatorConfig|OperatorEnrollment|OperatorDelegation|SimulatorAPI|ChangeReview|ConfigurationForm|GatewayAssistantPermissions' -count=1
+go vet ./internal/controlroom ./cmd/zpr-web-dashboard
+go build -o /dev/null ./cmd/zpr-web-dashboard
+GOOS=linux GOARCH=arm64 CGO_ENABLED=0 go build -o /dev/null ./cmd/zpr-web-dashboard
+GOOS=linux GOARCH=amd64 CGO_ENABLED=0 go build -o /dev/null ./cmd/zpr-web-dashboard
+```
+
+The editor runner reports 70 selected passing tests. `make test` retains exactly
+the same four baseline failures and causes recorded below; all remaining Go
+tests pass with those four explicitly excluded. Formatting, editor diagnostics
+and diff whitespace checks pass. No unrelated failing tests, certificates,
+runtime configuration or live state were changed by the extraction. Its
+subsequent Control Room-only deployment passed real login/authenticated reads
+and authorization denial checks with configuration preserved. No commit or push
+was performed. The shared local-request check was subsequently
+extracted in the sixth increment above; complete operator composition remains
+pending.
+
+## Fourth backend extraction: Control Room upstream proxy (2026-10-14)
+
+**Implemented, verified and deployed to Control Room only; uncommitted.**
+The current-worktree release `zpr-editor-ui:20261014-controlroom-package` started
+at 2026-10-14 15:40 UTC. Simulator retains the first three extractions; backend
+services and separate gateways were not replaced. See the
+[deployment ledger](GUI%20deployments.md#control-room-current-worktree-and-proxy-extraction-2026-10-14-1540-utc).
+
+- Extracted Control Room-to-Control-Service proxy behavior into
+  [`internal/controlroom`](zpr-dashboard/internal/controlroom/). It consumes an
+  explicitly validated service origin and configured mTLS transport; it reads
+  no environment variables, Simulator configuration, profiles or runtime state.
+- The command retains endpoint and certificate configuration, origin validation,
+  login/authorization, CSRF, delegation signing, JSON error responses/logging,
+  API registration, static embedding and server lifecycle.
+- Browser credentials, CSRF/fetch metadata and existing forwarding-header
+  suppression are unchanged. Only the server-signed request-context assertion
+  reaches the operator-enrollment prefix; browser-supplied assertions are removed.
+  The private context key moved with the proxy; the existing signer attaches the
+  assertion through the package helper only after successful authorization/signing.
+- The supplied standard transport is retained; the slow-read clone keeps the
+  20s response-header timeout for adapter logs and assertion evaluation/source.
+  Other requests retain the configured timeout (10s in the command). Flush
+  interval remains 100ms. Paths, escaped paths, queries, bodies, response status
+  and JSON error text remain compatible.
+- Moved transport-selection tests with their implementation, retained command
+  real-mTLS and signed-enrollment integration coverage, and added package tests
+  for stripping, delegation scope, transport cloning, unavailable upstreams and
+  operation with invalid/unavailable Simulator configuration. Command tests
+  preserve missing/invalid configuration messages and the exact 502 JSON body.
+- A transitive dependency check permits only this package and the existing
+  production `operatorauth`/`operatordelegation` packages within the dashboard
+  module. Existing authentication dependencies remain unchanged; unlike the
+  neutral leaf packages, this production package is not standard-library-only.
+  No new dependencies were added.
+
+Passing validation:
+
+```sh
+go test -race ./internal/controlroom ./cmd/zpr-web-dashboard -run 'ControlRoom|ControlService|OperatorEnrollment|OperatorDelegation|AdapterLog|LogComponents' -count=1
+go vet ./internal/controlroom ./cmd/zpr-web-dashboard
+go build -o /dev/null ./cmd/zpr-web-dashboard
+GOOS=linux GOARCH=arm64 CGO_ENABLED=0 go build -o /dev/null ./cmd/zpr-web-dashboard
+GOOS=linux GOARCH=amd64 CGO_ENABLED=0 go build -o /dev/null ./cmd/zpr-web-dashboard
+```
+
+The editor test runner also reports 16 passing selected tests. `make test`
+retains exactly the four baseline failures recorded below with the same causes;
+all remaining Go tests pass with those four explicitly excluded. No unrelated
+failing tests, assets, scripts, production certificates or runtime state were
+changed by the extraction. Its subsequent Control Room-only deployment preserved
+configuration and the other 20 running containers, matched 77 served assets,
+and passed real OIDC login plus authenticated production-service reads,
+including signed enrollment-catalog forwarding. No commit or push was performed.
+Full operator application composition and its complete transitive
+Simulator boundary remain subsequent stages.
+
+## Third backend extraction: service TLS transport (2026-10-14)
+
+**Implemented, verified, included in Simulator image only; uncommitted.**
+The Simulator release `zpr-simulator:20261014-servicehttp-package` started at
+2026-10-14 15:14 UTC and includes all three extractions. That release did not
+update other services. The subsequent Control Room current-worktree release
+also includes these TLS primitives; Control-Service, Policy-Service and separate
+gateways remain unchanged. See the
+[deployment ledger](GUI%20deployments.md#simulator-service-tls-package-extraction-2026-10-14-1514-utc).
+
+- Extracted CA loading and mTLS client transport into
+  [`internal/servicehttp`](zpr-dashboard/internal/servicehttp/). Its inputs are
+  explicit paths, certificate/root objects, and TLS server name; it reads no
+  environment variables, profiles, manifests, or runtime state beyond those
+  certificate files. A standard-library-only dependency test enforces the leaf
+  boundary.
+- Control Room's Control-Service proxy, Control-Service's incoming client-CA
+  setup, trusted change-feed CA loading, and Simulator's explicitly configured
+  operator-service client now use that package. The Policy-Service client
+  reuses the identical transport construction while retaining its existing
+  service-specific certificate/CA diagnostics.
+- TLS 1.3 minimum, CA/hostname verification, client certificates, dial timeout
+  (5s), keepalive (30s), handshake timeout (5s), response-header timeout (10s),
+  idle timeout (60s), and no implicit environment proxy are unchanged. The
+  Control Room slow-read transport still clones and overrides its timeout in
+  the application layer.
+- Service routes, proxy/header/delegation policies, environment variables,
+  defaults, server lifecycle, and listener/client identity ownership remain
+  unchanged. Shared transport errors are now Go errors with wrapped causes;
+  existing string-based proxy adapters preserve their user-visible messages.
+  No fallback to Simulator or system trust was introduced.
+- Local certificate tests accept valid mutual TLS and reject wrong hostname,
+  untrusted server, missing/untrusted client certificate, missing certificate/key,
+  and missing/invalid CA. Tests verify transport defaults and explicit operation
+  with invalid Simulator settings. Existing production proxy, trusted-feed,
+  authorization, and Simulator client integration tests pass unchanged.
+
+Passing validation:
+
+```sh
+go test -race ./internal/servicehttp ./cmd/zpr-web-dashboard -run 'ServiceHTTP|MutualTLSClient|CertificateErrors|PolicyService|ControlService|ControlRoom|Trusted.*Change|Simulator.*(Snapshot|Operator)' -count=1
+go vet ./internal/servicehttp ./cmd/zpr-web-dashboard
+go build -o /dev/null ./cmd/zpr-web-dashboard
+GOOS=linux GOARCH=arm64 CGO_ENABLED=0 go build -o /dev/null ./cmd/zpr-web-dashboard
+GOOS=linux GOARCH=amd64 CGO_ENABLED=0 go build -o /dev/null ./cmd/zpr-web-dashboard
+```
+
+`make test` retains exactly the four baseline failures recorded below; all other
+Go tests pass with those four explicitly excluded. No baseline failing tests,
+dependencies, assets, scripts, production certificates, or runtime configuration
+were changed by the extraction. The subsequent Simulator-only deployment
+preserved configuration and DNS relays, matched all 76 directly served assets,
+and left the other 20 persistent running containers unchanged. Focused service
+TLS race regressions pass; production runtime TLS acceptance remains separate.
+Application composition and the complete production/Simulator dependency barrier
+remain subsequent stages.
+
+## Second backend extraction: browser access gateway (2026-10-14)
+
+**Implemented, verified, included in Simulator image only; uncommitted.**
+The subsequent Simulator release `zpr-simulator:20261014-browsergateway-package`
+started at 2026-10-14 14:51 UTC. The separate browser-access gateway process
+and production services were not replaced. See the
+[deployment ledger](GUI%20deployments.md#simulator-browser-access-package-extraction-2026-10-14-1451-utc).
+
+- Moved host routing, loopback-origin validation, proxy credential/header
+  stripping, HSTS, error responses and mTLS configuration into
+  [`internal/browsergateway`](zpr-dashboard/internal/browsergateway/).
+  Only `New` (returning `http.Handler`) and `TLSConfig` are exported; route maps,
+  normalization and proxy internals remain private.
+- The existing command retains environment/default resolution, security-header
+  wrapping, timeouts, logging and listener startup. No flags, default upstreams,
+  mode names, resources, deployment scripts or runtime state were changed.
+  The optional browser gateway still routes its explicitly configured two
+  hosts; that is not a Control Room dependency on Simulator.
+- Added package tests for invalid/duplicate host configuration, loopback-only
+  upstreams, verified-client requirements, unknown hosts, stripped browser/proxy
+  credentials, preserved query/path/status/body, HSTS, and upstream failure.
+  Control Room routing passes with the configured Simulator upstream offline
+  and invalid Simulator environment settings.
+- Kept the existing real certificate/HTTPS integration test at the command
+  boundary because it uses the command's certificate fixtures. It now invokes
+  the extracted APIs and explicitly checks TLS 1.3 minimum and required verified
+  client certificates. A command test preserves missing-configuration/certificate
+  error behavior. Package-local unit tests live with the extracted implementation.
+- A second `go list -deps` test enforces standard-library-only dependencies
+  for browser access routing, separate from Internet-egress forwarding.
+
+Passing validation:
+
+```sh
+go test -race ./internal/browsergateway ./internal/gateway ./cmd/zpr-web-dashboard -run 'Browser|Gateway|ValidateWebGateway' -count=1
+go vet ./internal/browsergateway ./internal/gateway ./cmd/zpr-web-dashboard
+go build -o /dev/null ./cmd/zpr-web-dashboard
+GOOS=linux GOARCH=arm64 CGO_ENABLED=0 go build -o /dev/null ./cmd/zpr-web-dashboard
+GOOS=linux GOARCH=amd64 CGO_ENABLED=0 go build -o /dev/null ./cmd/zpr-web-dashboard
+```
+
+`make test` retains exactly the same four failures described in the first
+extraction baseline below; all other Go tests pass with those four explicitly
+excluded. No pre-existing failing test was changed. These implementation
+checks did not use live host certificates or perform production forwarding.
+The later Simulator-only deployment preserved configuration, restored both
+relays, verified assets and left all 21 other running containers unchanged.
+It does not establish rollout or acceptance of the separate gateway process.
+Control Room/Control-Service composition and full application dependency
+enforcement remain open.
+
+## First backend extraction (2026-10-14)
+
+**Implemented, verified, deployed to Simulator only; uncommitted.** This is the
+first bounded backend increment, not completion of the proposed dashboard tree.
+Simulator release `zpr-simulator:20261014-gateway-package` started at
+2026-10-14 14:38 UTC with configuration preserved; production services and
+runtime machines were not replaced. See the
+[deployment ledger](GUI%20deployments.md#simulator-first-backend-package-extraction-2026-10-14-1438-utc).
+
+- Moved `gateway_forwarding.go` and `web_gateway.go` into
+  [`internal/gateway`](zpr-dashboard/internal/gateway/), with their neutral
+  unit tests. The command calls explicit package APIs for dispatch, validation,
+  forwarding, and host checks; there are no legacy wrapper implementations.
+- Kept the fixed-upstream scenario handler, workload-event logging, organization
+  profile lookup, and Simulator launch-selection tests command-owned. Header
+  allowlists specific to the fixed-upstream adapter remain with that adapter.
+- Added a dependency test over `go list -deps`: the extracted package can depend
+  only on the standard library. This enforces one neutral leaf, not every
+  production/Simulator import direction.
+- Preserved all 20 mode names, flag/default definitions, JSON/error behavior,
+  forwarding limits, allowlist/tunnel semantics, and public asset paths.
+  No static files, examples, skills, scripts, manifests, module identifiers,
+  dependencies, or protected runtime state were moved or changed.
+- Next: capture a production service/client or Simulator-owned boundary with
+  its route, authorization, and configuration contracts before another
+  extraction. Full Control Room/Control-Service isolation and thin command
+  composition remain open.
+
+### Validation and baseline
+
+Before extraction, `go test ./...` failed in four top-level tests. After
+extraction, `make test` fails in exactly the same four, with the same causes:
+
+| Existing failing test | Baseline cause |
+|---|---|
+| `TestEnrollmentAdministrationOverVerifiedTLSWithoutSimulator` | Invitation creation returns HTTP 409 for missing current readiness preflight |
+| `TestOrganizationPolicyInstallNeverUploadsStaleBundle` | Extracted shell fixture has unset `ZPR_MULTINODE_PLATFORM` |
+| `TestScenarioPlacementPreflightMatchesLauncher` | Shell fixture cannot find `resolve_machine_placement` |
+| `TestTrustedServiceBuildPublishesAtomicallyAndKeepsFreshArtifact` | Mock artifact is not accepted as a Linux amd64 ELF executable on this host |
+
+These tests were not changed or suppressed in the normal test workflow.
+All other Go packages/tests pass when those four are explicitly excluded:
+
+```sh
+go test ./... -skip '^(TestEnrollmentAdministrationOverVerifiedTLSWithoutSimulator|TestOrganizationPolicyInstallNeverUploadsStaleBundle|TestScenarioPlacementPreflightMatchesLauncher|TestTrustedServiceBuildPublishesAtomicallyAndKeepsFreshArtifact)$' -count=1
+```
+
+Additional passing checks on macOS with Go 1.26.1:
+
+```sh
+go test -race ./internal/gateway ./cmd/zpr-web-dashboard -run 'Gateway|WebGateway|ValidateWebGateway' -count=1
+go vet ./internal/gateway ./cmd/zpr-web-dashboard
+go build -o /dev/null ./cmd/zpr-web-dashboard
+GOOS=linux GOARCH=arm64 CGO_ENABLED=0 go build -o /dev/null ./cmd/zpr-web-dashboard
+GOOS=linux GOARCH=amd64 CGO_ENABLED=0 go build -o /dev/null ./cmd/zpr-web-dashboard
+```
+
+Gateway coverage retains real local HTTP/HTTPS method/body forwarding, CONNECT
+tunnels, destination/port rejection, header filtering, size limits, redirect
+behavior, and Great Lakes/Northstar launch arguments. New checks cover the
+dependency graph, invalid startup configuration, and construction with invalid
+Simulator settings. CLI smoke verification confirms `web-gateway-service`
+still dispatches to its existing workload validation without starting a server.
+These pre-deployment checks did not claim live network or browser certification;
+native and both Linux builds compile the existing embedded resources.
+The later image build and Simulator-only deployment passed configuration,
+asset, relay, and service-isolation checks; 62 selected desktop/tablet fixture
+regressions also pass. This is not production gateway rollout or live forwarding
+acceptance.
 
 ## Inventory and target layout (2026-10-14)
 
@@ -76,7 +487,7 @@ Large-file examples: `static/app.js` has 4,865 lines; `vs/src/visa_mgr.rs`
 has 2,833; `vs/src/admin_service.rs` has 2,515; web `scenario.go` has 1,640.
 These measurements identify review candidates, not line-count splitting targets.
 
-Current ownership is obscured by the shared web `package main`: production
+At inventory time, ownership was obscured by the shared web `package main`: production
 services, Simulator, gateway runtimes, machine control, and test workloads can
 access each other's unexported functions and globals. For example,
 `policy_layers.go` loads Simulator organization definitions; that composition
@@ -183,9 +594,10 @@ Runtime keys, protected configuration, databases, authenticated profiles, and
 active organization state are outside source moves. Do not reset or migrate
 state incidentally. Unrelated pending changes are not part of an extraction.
 
-The inventory is read-only: `go list` succeeded, but no new build/test baseline,
+The inventory itself was read-only: `go list` succeeded, but no new build/test baseline,
 full cross-domain call audit, source relocation, commit, push, or deployment was
-performed for it. The checklist below deliberately keeps the broad inventory
+performed for it. The later first extraction and its validation are recorded
+separately above. The checklist below deliberately keeps the broad inventory
 gates open until their remaining contract, call, and baseline evidence exists.
 Use the [component index](../COMPONENT_WORK.md#suggested-first-assignments) for
 routing and staged assignments, not a second copy of these checklists.
@@ -210,8 +622,18 @@ routing and staged assignments, not a second copy of these checklists.
 - [ ] Keep Control Room and Control-Service dependent only on production contracts and operator configuration, never Simulator packages or availability.
 - [ ] Allow Simulator to exercise operator services through explicit public contracts without introducing reverse dependencies.
 - [ ] Extract neutral API contracts and rendering/helper code only where they contain no Simulator-specific defaults or hidden runtime access.
+  - Neutral forwarding and allowlisted HTTP/CONNECT runtime are extracted to
+    `internal/gateway`; fixed-upstream workload adapters remain command-owned.
+  - Browser-access routing/TLS and service CA/client TLS primitives are also
+    extracted to independent `internal/browsergateway` and `internal/servicehttp`
+    packages; application composition is still command-owned.
 - [ ] Define allowed dependency directions and avoid a catch-all shared package that recreates the current coupling.
 - [ ] Add dependency-boundary checks that fail when production packages import Simulator implementation.
+  - The first leaf check enforces standard-library-only dependencies for
+    `internal/gateway`; application-wide transitive checks remain pending.
+  - `internal/controlroom` now enforces a transitive in-module allowlist limited
+    to itself and production authentication/delegation packages. The remaining
+    shared command application is not covered by this package-level check.
 - [ ] Test production startup and operator features with Simulator unavailable and Simulator environment settings unset or invalid.
   - DNS statistics transport was verified with Simulator paused; complete
     startup/feature coverage and package import enforcement remain pending.
@@ -221,6 +643,15 @@ routing and staged assignments, not a second copy of these checklists.
 - [ ] Move domain behavior out of cmd/zpr-web-dashboard into cohesive internal packages.
 - [ ] Keep command entry points focused on flags/configuration, dependency assembly, lifecycle and server startup.
 - [ ] Extract production operator application/HTTP handlers and clients with explicit injected dependencies.
+  - DNS statistics URL validation and statistics/stylesheet forwarding now live
+    in standard-library-only `internal/dnsstats`, with an explicit upstream;
+    environment lookup and route registration remain command-owned.
+  - Control Room's upstream proxy, credential/delegation forwarding and slow-read
+    transport selection are now in `internal/controlroom`. API permission mapping
+    and named-user authorization are also extracted. The shared local-request
+    check now lives in `internal/servicehttp` with explicit proxy configuration.
+    Development-mode selection, signing, environment lookup, application
+    composition and startup remain command-owned.
 - [ ] Extract policy repository and versioned document behavior without exposing storage internals to unrelated domains.
 - [ ] Extract trusted-source connectors, assertion evaluation and runtime coordination with clear interfaces.
 - [ ] Extract assistant transport and task prompt ownership while preserving endpoint permissions, request bounds and response contracts.

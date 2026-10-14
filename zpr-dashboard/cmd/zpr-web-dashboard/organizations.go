@@ -12,6 +12,8 @@ import (
 	"path/filepath"
 	"sort"
 	"strings"
+
+	"neboagency.com/zpr-dashborad/internal/gateway"
 )
 
 const defaultSimulatorOrganizationID = "northstar"
@@ -404,7 +406,7 @@ func validateOrganizationDefinition(organization simulatorOrganization, incomple
 		}
 	}
 	if organization.WebGateway != nil {
-		if _, err := newInternetWebGateway(organization.WebGateway.AllowedHosts); err != nil {
+		if _, err := gateway.NewWebGateway(organization.WebGateway.AllowedHosts); err != nil {
 			return fmt.Errorf("web gateway profile: %w", err)
 		}
 	}

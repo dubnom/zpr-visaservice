@@ -9,7 +9,6 @@ import (
 	"fmt"
 	"io"
 	"log"
-	"net"
 	"net/http"
 	"net/http/httputil"
 	"net/url"
@@ -17,6 +16,8 @@ import (
 	"path/filepath"
 	"strings"
 	"time"
+
+	"neboagency.com/zpr-dashborad/internal/servicehttp"
 )
 
 func (a *application) policyAssistantAttributes(ctx context.Context) ([]policyAttribute, error) {
@@ -168,14 +169,7 @@ func newPolicyServiceTransport() (*url.URL, *http.Transport, string) {
 	if serverName == "" {
 		serverName = baseURL.Hostname()
 	}
-	transport := &http.Transport{
-		TLSClientConfig: &tls.Config{
-			MinVersion: tls.VersionTLS13, RootCAs: roots, Certificates: []tls.Certificate{certificate}, ServerName: serverName,
-		},
-		DialContext:         (&net.Dialer{Timeout: 5 * time.Second, KeepAlive: 30 * time.Second}).DialContext,
-		TLSHandshakeTimeout: 5 * time.Second, ResponseHeaderTimeout: 10 * time.Second,
-		IdleConnTimeout: 60 * time.Second,
-	}
+	transport := servicehttp.ClientTransport(certificate, roots, serverName)
 	return baseURL, transport, ""
 }
 

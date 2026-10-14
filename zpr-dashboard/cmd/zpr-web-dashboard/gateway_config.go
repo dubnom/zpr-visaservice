@@ -10,6 +10,8 @@ import (
 	"path"
 	"strings"
 	"unicode"
+
+	"neboagency.com/zpr-dashborad/internal/gateway"
 )
 
 const (
@@ -139,7 +141,7 @@ func parseGatewayInstanceConfig(data []byte, contract gatewayInstanceContract) (
 	}
 	seenMethods := make(map[string]bool, len(config.Methods))
 	for _, method := range config.Methods {
-		if !allowedGatewayMethod(method) {
+		if !gateway.AllowedMethod(method) {
 			return config, gatewayFieldError(fmt.Sprintf("unsupported gateway method %q; use GET, HEAD, POST, PUT, PATCH, DELETE or OPTIONS", method), "methods")
 		}
 		if seenMethods[method] {
@@ -150,8 +152,8 @@ func parseGatewayInstanceConfig(data []byte, contract gatewayInstanceContract) (
 	if config.TimeoutMS < minGatewayTimeoutMS || config.TimeoutMS > maxGatewayTimeoutMS {
 		return config, gatewayFieldError(fmt.Sprintf("gateway timeout must be between %d and %d milliseconds", minGatewayTimeoutMS, maxGatewayTimeoutMS), "timeout_ms")
 	}
-	if config.MaxResponseBytes < 1 || config.MaxResponseBytes > maxGatewayResponseBytes {
-		return config, gatewayFieldError(fmt.Sprintf("gateway response limit must be between 1 and %d bytes", maxGatewayResponseBytes), "max_response_bytes")
+	if config.MaxResponseBytes < 1 || config.MaxResponseBytes > gateway.MaxResponseBytes {
+		return config, gatewayFieldError(fmt.Sprintf("gateway response limit must be between 1 and %d bytes", gateway.MaxResponseBytes), "max_response_bytes")
 	}
 
 	seenOrigins := make(map[string]bool, len(config.Destinations))
@@ -163,7 +165,7 @@ func parseGatewayInstanceConfig(data []byte, contract gatewayInstanceContract) (
 		if err != nil {
 			return config, gatewayFieldError(fmt.Sprintf("invalid gateway destination: %v", err), "destinations", index, "origin")
 		}
-		if !validGatewayFQDN(upstream.Hostname()) {
+		if !gateway.ValidFQDN(upstream.Hostname()) {
 			return config, gatewayFieldError("gateway destination must use a fully qualified DNS hostname", "destinations", index, "origin")
 		}
 		if upstream.Path != "" && upstream.Path != "/" || upstream.Port() != "" && upstream.Port() != "443" {

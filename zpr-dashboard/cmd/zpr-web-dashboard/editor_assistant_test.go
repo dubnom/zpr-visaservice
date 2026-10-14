@@ -6,6 +6,8 @@ import (
 	"net/http/httptest"
 	"strings"
 	"testing"
+
+	"neboagency.com/zpr-dashborad/internal/controlroom"
 )
 
 func TestEditorAssistantSystemCoversEachEditor(t *testing.T) {
@@ -109,7 +111,7 @@ func TestEditorAssistantHandlers(t *testing.T) {
 
 func TestGatewayAssistantPermissions(t *testing.T) {
 	for _, test := range []struct{ method, want string }{{http.MethodGet, "gateway.read"}, {http.MethodPost, "gateway.analyze"}} {
-		if permission, ok := controlRoomAPIPermission(test.method, "/api/gateways/assistant"); !ok || permission != test.want {
+		if permission, ok := controlroom.APIPermission(test.method, "/api/gateways/assistant"); !ok || permission != test.want {
 			t.Errorf("%s permission = %q %v, want %s", test.method, permission, ok, test.want)
 		}
 	}
