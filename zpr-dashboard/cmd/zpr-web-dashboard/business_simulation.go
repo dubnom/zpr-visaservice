@@ -188,16 +188,10 @@ func executeBusinessRequestWithCommand(ctx context.Context, manifest simulatorMa
 	if _, err := command(ctx, "docker", "exec", machineContainerName(step.Machine), "ip", "-6", "route", "replace", destination+"/128", "dev", machineControlTun); err != nil {
 		return "", err
 	}
-	var admin *adminClient
 	var before uint64
 	if step.Expected == "deny" {
-		var message string
-		admin, message = newAdminClient()
-		if admin == nil {
-			return "", fmt.Errorf("denial verification requires Visa Admin API: %s", message)
-		}
-		var entries []deny
-		if err := admin.getJSON(ctx, "/admin/visas/denies?limit=500", &entries); err != nil {
+		entries, err := readBusinessDenials(ctx)
+		if err != nil {
 			return "", err
 		}
 		before = businessDenyCount(entries, source, destination, spec.Port)
@@ -212,8 +206,8 @@ func executeBusinessRequestWithCommand(ctx context.Context, manifest simulatorMa
 		return output, errors.New("business request succeeded but denial was required")
 	}
 	for {
-		var entries []deny
-		if err := admin.getJSON(ctx, "/admin/visas/denies?limit=500", &entries); err != nil {
+		entries, err := readBusinessDenials(ctx)
+		if err != nil {
 			return output, fmt.Errorf("verify business denial: %w", err)
 		}
 		if businessDenyCount(entries, source, destination, spec.Port) > before {
@@ -225,6 +219,32 @@ func executeBusinessRequestWithCommand(ctx context.Context, manifest simulatorMa
 		case <-time.After(200 * time.Millisecond):
 		}
 	}
+}
+
+func readBusinessDenials(ctx context.Context) ([]deny, error) {
+	if strings.TrimSpace(os.Getenv("SIMULATOR_OPERATOR_SERVICE_URL")) != "" ||
+		strings.TrimSpace(os.Getenv("SIMULATOR_CONTROL_ROOM_URL")) != "" {
+		current, err := readControlRoomSnapshotWithContext(ctx)
+		if err != nil {
+			return nil, fmt.Errorf("read business denial evidence: %w", err)
+		}
+		for _, message := range current.Errors {
+			if strings.HasPrefix(message, "denies:") {
+				return nil, fmt.Errorf("read business denial evidence: %s", message)
+			}
+		}
+		if current.APIStatus == "disconnected" {
+			return nil, errors.New("business denial evidence unavailable: operator service is disconnected")
+		}
+		return current.RecentDenies, nil
+	}
+	admin, message := newAdminClient()
+	if admin == nil {
+		return nil, fmt.Errorf("denial verification requires Visa Admin API or Simulator operator service: %s", message)
+	}
+	var entries []deny
+	err := admin.getJSON(ctx, "/admin/visas/denies?limit=500", &entries)
+	return entries, err
 }
 
 func firstGrantedMachineAddress(output string) string {

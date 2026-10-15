@@ -26,6 +26,12 @@ resetLogLink.textContent = "See Logs";
 resetLogLink.hidden = true;
 const topActions = document.querySelector(".topbar .organization-top-actions");
 topActions.append(resetLogLink);
+const restoreProgressDialog = document.createElement("dialog");
+restoreProgressDialog.className = "organization-switch-dialog";
+restoreProgressDialog.setAttribute("aria-labelledby", "organization-restore-progress-title");
+restoreProgressDialog.innerHTML = '<h2 id="organization-restore-progress-title">Restore in progress</h2><div data-restore-progress-content></div>';
+restoreProgressDialog.addEventListener("cancel", (event) => event.preventDefault());
+document.body.append(restoreProgressDialog);
 
 function organizationEscape(value) {
   return window.ZPRSafeDisplay.escapeHTML(value);
@@ -78,6 +84,14 @@ function renderOrganizationOperationStatus() {
     status.textContent = `${target} · ${action} failed · ${error || progress || "See Logs for details"}`;
   } else if (state === "completed") {
     status.textContent = `${target} · ${action} completed · ${progress || "Organization ready"}`;
+  }
+  if (busy && operation === "restore-base") {
+    restoreProgressDialog.querySelector("[data-restore-progress-content]").append(status, resetLogLink);
+    if (!restoreProgressDialog.open) restoreProgressDialog.showModal();
+  } else {
+    if (restoreProgressDialog.open) restoreProgressDialog.close();
+    document.getElementById("organization-error").after(status);
+    topActions.append(resetLogLink);
   }
 }
 

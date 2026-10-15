@@ -47,9 +47,16 @@ configuration is in `assistant_config.go`, protected file reading is neutral in
 This M2 source slice is verified locally and included in the Simulator worktree
 release and current publication; the production service processes have not been
 updated for this slice. It does not complete the production application boundary.
-Great Lakes Restore exposed an unresolved assertion-seeding verification failure
-and rolled back successfully. Keep that repair under independent production
-configuration contracts, not a restored Simulator-profile fallback.
+Great Lakes Restore exposed an assertion-seeding verification failure and
+rolled back successfully. The 01:53 UTC Policy-Service repair replaces silent
+Simulator-profile discovery with explicit `ZPR_POLICY_ASSERTIONS_SOURCE_FILE`;
+the provisioning owner exports the seed and context restarts retain the deployed
+service image. Invalid explicit seeds fail; nonempty operator rules are preserved.
+Focused race/launcher tests pass and all 28 live LDAP assertions pass. The user's
+subsequent Restore completed successfully. Regional Business acceptance later
+passed all 106 steps after node-session renewal/runtime and denial-source
+repairs; HQ/Shenzhen and sustained authentication-lifetime recovery remain
+pending. This does not complete M3 repository/fixture ownership.
 Full production/Simulator separation is not
 complete. Reorganize incrementally to
 make ownership and dependency boundaries enforceable without changing behavior.

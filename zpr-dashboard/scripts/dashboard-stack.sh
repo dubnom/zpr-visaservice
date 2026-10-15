@@ -638,6 +638,8 @@ start_multinode_dns_service() {
     if docker inspect "$DNS_CONTAINER" >/dev/null 2>&1; then
         docker rm -f "$DNS_CONTAINER" >/dev/null
     fi
+    # A replacement base zone cannot replay updates against its previous contents.
+    rm -f "$dns_zone_file.jnl"
     {
         printf '%s\n' '$TTL 30' '$ORIGIN svc.zpr.' '@ IN SOA dns.svc.zpr. hostmaster.svc.zpr. (1 60 60 86400 30)' '  IN NS dns.svc.zpr.'
         printf 'dns IN AAAA %s\n' "$DNS_SERVICE_ADDRESS"
@@ -1152,6 +1154,12 @@ reload_assistant() {
 }
 
 stop_policy_service() {
+    if docker inspect "$POLICY_CONTAINER" >/dev/null 2>&1; then
+        mkdir -p "$STATE_DIR"
+        policy_image_temp=$(mktemp "$STATE_DIR/policy-service-image.XXXXXX")
+        docker inspect --format '{{.Config.Image}}' "$POLICY_CONTAINER" > "$policy_image_temp"
+        mv "$policy_image_temp" "$STATE_DIR/policy-service-image"
+    fi
     docker rm -f "$POLICY_CONTAINER" >/dev/null 2>&1 || true
     stop_service "$POLICY_PID"
 }
@@ -1667,6 +1675,23 @@ start_policy_context_container() {
     context_catalog="$DASHBOARD_DIR/cmd/zpr-web-dashboard/examples/$(jq -er '.policy_catalog' "$context_profile")"
     context_base_dn=$(jq -er '.directory.base_dn' "$context_profile")
     context_ldap_container=$(policy_ldap_container "$context_organization")
+    context_assertions_dir="$STATE_DIR/policy-assertion-seeds"
+    mkdir -p "$context_assertions_dir"
+    context_assertions_temp=$(mktemp "$context_assertions_dir/$context_organization.XXXXXX")
+    if ! jq -er '.assertions_source | select(type=="string" and length>0)' "$context_profile" > "$context_assertions_temp"; then
+        rm -f "$context_assertions_temp"
+        echo "organization assertion defaults unavailable: $context_organization" >&2
+        return 1
+    fi
+    chmod 600 "$context_assertions_temp"
+    context_assertions_source="$context_assertions_dir/$context_organization.assertions"
+    mv "$context_assertions_temp" "$context_assertions_source"
+    context_image=${ZPR_POLICY_SERVICE_IMAGE:-$SIMULATOR_IMAGE}
+    if [ -z "${ZPR_POLICY_SERVICE_IMAGE:-}" ] && docker inspect "$POLICY_CONTAINER" >/dev/null 2>&1; then
+        context_image=$(docker inspect --format '{{.Config.Image}}' "$POLICY_CONTAINER")
+    elif [ -z "${ZPR_POLICY_SERVICE_IMAGE:-}" ] && [ -s "$STATE_DIR/policy-service-image" ]; then
+        context_image=$(cat "$STATE_DIR/policy-service-image")
+    fi
     stop_policy_service
     docker run -d --name "$POLICY_CONTAINER" \
         --label zpr.policy-service=true \
@@ -1684,6 +1709,7 @@ start_policy_context_container() {
         -e ZPR_POLICY_ORGANIZATION_ID="$context_organization" \
         -e ZPR_POLICY_ORGANIZATION_NAME="$(jq -er '.name' "$context_profile")" \
         -e ZPR_POLICY_ORGANIZATION_BASE_DN="$context_base_dn" \
+        -e ZPR_POLICY_ASSERTIONS_SOURCE_FILE="$context_assertions_source" \
         -e ZPR_POLICY_CONFIG_FILE="$context_config" \
         -e ZPR_POLICY_SOURCE_FILE="$context_source" \
         -e ZPR_POLICY_SEED_CATEGORY="$context_seed_category" \
@@ -1694,12 +1720,10 @@ start_policy_context_container() {
         -e ZPR_POLICY_LDAP_CONTAINER="$context_ldap_container" \
         -e ZPR_POLICY_LDAP_BASE_DN="$context_base_dn" \
         -e ZPR_POLICY_LDAP_BIND_DN="cn=zpr-reader,ou=Service Accounts,$context_base_dn" \
-        -e SIMULATION_MANIFEST="$SIMULATION_MANIFEST" \
-        -e SIMULATION_ORGANIZATIONS_DIR="$ORGANIZATIONS_DIR" \
         -e ZPR_ZPT_BIN="$POLICY_TOOLS_DIR/zpt" \
         -e ZPR_ZPLC_BIN="$POLICY_TOOLS_DIR/zplc" \
         --entrypoint /usr/local/bin/zpr-web-dashboard \
-        "$SIMULATOR_IMAGE" -mode policy-service >/dev/null
+        "$context_image" -mode policy-service >/dev/null
 }
 
 policy_ldap_container() {

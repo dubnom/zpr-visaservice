@@ -11,6 +11,69 @@ not competing current requirements. References such as "above", "below" and
 "this deployment" retain their original context from the former combined tracker;
 use the dated deployment ledger when checking release scope.
 
+## Runtime repairs and Scenario browser publication (2026-10-15 UTC)
+
+This publication checkpoint includes independent assertion seeding and image
+retention, blocking Restore progress, Gateway registration/DNS lifecycle repair,
+node authentication renewal, operator-backed Business denial evidence, and the
+Scenario Browse/File/compact-track changes. Dated deployment entries retain
+their original publication state; source publication does not imply a new rollout
+or completion of a refactoring milestone.
+
+Pre-publication checks:
+
+- Full Rust workspace `cargo test` passes, including 497 Visa tests.
+- Focused Go race tests, `go vet ./...`, `go build ./...`, changed Go formatting
+  and launcher shell syntax checks pass.
+- Required dashboard `make test` retains exactly the four known failure groups:
+  enrollment readiness, stale-bundle platform fixture, placement shell
+  extraction and trusted-service ELF fixture.
+- Twenty focused desktop/tablet browser checks pass for Scenario browsing,
+  compact running steps/log previews and Restore progress/outcome/log access.
+  An initial broader 26-check selection passed 20 and failed six legacy checks
+  at the documented obsolete `#scenario-organization` locator. No full
+  browser-suite pass is claimed, and those tests were not changed.
+- Local discovery scan output and a Vim swap file are excluded from publication.
+  The diverged `zpr-common` branch is explicitly outside this publication.
+  The existing `zpr-core` feature-branch commit was confirmed already published.
+
+## Scenario browsing and compact running steps (2026-10-15 UTC)
+
+- [x] Browse... opens a dialog with collapsible folders (including Unfiled).
+  Selecting a file leaves one compact scenario card on the page without
+  starting a run or replacing the active run display.
+- [x] File... offers New Scenario... and Edit through the shared accessible
+  menu. Saving a new draft selects it; running still requires a published
+  revision in the active organization and no run/cleanup already in progress.
+- [x] Runner/Results use the full page width, retaining synchronized top
+  scrolling when machine tracks overflow.
+- [x] During running/cleanup, verbose output is collapsed under Details and
+  routine Waiting/Running placeholders are omitted. Open disclosures persist
+  across updates of the same run and reset for a different run. Failures remain
+  explicit; terminal runs show full output.
+- [x] Updated page Help and the dashboard web README.
+
+Verification: 20 selected desktop/tablet browser checks pass (12 new checks
+plus eight existing editor-window, Clear/history, failure-progress and Results
+checks). Includes a 390px Browse dialog check, selected-file run requests,
+save/publish selection, unpublished/busy guards, organization changes, explicit
+load errors, safe output text and API-backed overflow scrolling. Embedded
+dashboard build, JavaScript syntax, editor diagnostics and whitespace checks pass.
+
+This is not a full browser-suite pass. A broader 70-check selection had 56
+failures at the obsolete `#scenario-organization` locator (representative tests
+also fail with unchanged Scenario assets); 14 passed. The existing late-catalog
+and late-log tests also fail in both viewports with unchanged assets. One legacy
+direct-render scrollbar check failed intermittently in a later run; the new
+API-backed scrolling check passes in both viewports. These unrelated tests were
+not weakened to obtain a green run; UI selectors for the intentional File/menu
+change were adapted separately.
+
+Deployed to Simulator at 2026-10-15 16:24 UTC. Live Browse/select/File/full-width
+checks pass without API writes; no workload was started for release verification.
+See the [deployment record](GUI%20deployments.md#scenario-browser-deployment-2026-10-15-1624-utc).
+Not committed or pushed by this task.
+
 ## Publication reconciliation (2026-10-15 UTC)
 
 This checkpoint publishes the pending dashboard/discovery source, regression

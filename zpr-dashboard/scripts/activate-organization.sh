@@ -352,6 +352,10 @@ if [ "$organization_driver" = "docker-multinode" ] &&
     rm -f "$runtime_dir/multinode/$organization/policy-bootstrap-required"
     rm -f "$runtime_dir/multinode/$organization/fresh-visa-state-approved"
 fi
+if [ "$organization_driver" = docker-multinode ]; then
+    report_activation_status "Registering organization Gateway with effective policy"
+    refresh_multinode_gateway "$organization"
+fi
 if [ "$organization_driver" = linux-one-node ]; then
     report_activation_status "Starting DNS and platform relays"
     "$script_dir/dashboard-stack.sh" start-admin-relay

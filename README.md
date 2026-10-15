@@ -29,6 +29,13 @@ off-path, expired, pending-revoke and revoked visas are not returned. A successf
 reply uses the existing installation-state transition, which cannot override a
 concurrent revocation. The installed-visa inventory remains installed-only.
 
+Node RPC pings request a reconnect when the session's authenticated identity
+has less than one minute remaining. The node's existing ping-failure/reconnect
+path performs a fresh signed challenge with retained-state semantics. An idle,
+healthy RPC socket must not keep expired node authentication alive while Visa
+deliveries to that node fail. Expired and near-expiry sessions receive
+`AuthError`; this does not extend credentials without reauthentication.
+
 See [Features Added Since the Upstream Fork](FEATURES_SINCE_ZPR_ORG.md) for a
 high-level overview of the operator, policy, trusted-service, DNS, observability,
 and simulator capabilities added in this fork.

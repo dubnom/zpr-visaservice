@@ -898,8 +898,15 @@ Simulator navigation is ordered Organizations, Scenarios, Trusted Sources,
 Activity, then Workers; this order is retained across page switches. The Simulator
 root and brand link open Organizations.
 
-Simulator Scenarios groups cards by folder and places entries without a folder
-under **Unfiled**. **Clear** is available only after a run reaches a terminal
+Simulator Scenarios uses **Browse...** to select a file from collapsible folders
+(**Unfiled** for entries without a folder). Only the selected scenario stays on
+the page; **File...** offers New and Edit, and **Run** still requires a published
+revision in the active organization. Browsing never starts a run or changes the
+current run display. Runner/Results use the full page width.
+While running or cleaning up, verbose step output is collapsed under **Details**,
+and routine Waiting/Running text is omitted. Open details remain open across
+polls of the same run; failures stay visible and terminal runs show full text.
+**Clear** is available only after a run reaches a terminal
 state; it clears run history, not the scenario definition or machine logs.
 Running and cleanup states use saturated blue; failures use red. When a run
 fails, the progress badge and summary retain the original failed run step even

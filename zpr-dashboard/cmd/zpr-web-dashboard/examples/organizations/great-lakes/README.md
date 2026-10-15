@@ -42,6 +42,18 @@ CONNECT/443 for `google.com` and subdomains, rejecting non-public resolved
 addresses. The `Great Lakes Finance web gateway` scenario tests the persistent
 service; it does not start or stop the gateway.
 
+Organization activation reconnects the Gateway after effective policy
+installation and verifies its registration in Visa Admin before publishing its
+current Visa-assigned address. A connected adapter or local health response
+alone does not establish policy-authorized service registration. DNS startup
+replaces its base zone only after stopping BIND and discarding the previous
+zone's dynamic update journal.
+
+Live Finance acceptance passed twice on 2026-10-15: all twelve scenario steps,
+including Gateway health (200), Google HTTPS (200), Apple HTTP denied (403),
+and workload/logout/machine cleanup. This does not certify the two Business
+access matrices below.
+
 The three ZPR sites are named `mke.zpr`, `shenzhen.zpr`, and `tijuana.zpr`.
 The shared ZPR DNS service publishes service records such as
 `echo-web.svc.zpr` and `metrics-web.svc.zpr`. The workday scenario explicitly
@@ -79,6 +91,19 @@ requests require an increasing Visa Admin denial counter for the exact
 source/destination/TCP/port tuple; DNS failure, service failure, stale counters,
 and timeout alone do not pass. They do not test real human authentication.
 
+Denial checks use the configured Simulator operator snapshot connection,
+including its mTLS Control-Service transport, rather than requiring a second
+set of direct Visa Admin credentials in Simulator. Explicit direct Admin
+configuration remains supported when no operator connection is selected.
+Unavailable denial data fails the check; a snapshot error or failed HTTP
+request cannot stand in for a matching, increasing Visa denial counter.
+
+Regional live acceptance passed on 2026-10-15 at 15:12 UTC: all 106 steps,
+42 employee/service pairs (six allowed operations and 36 evidenced denials),
+and all 28 cleanup steps. The HQ/Shenzhen matrix remains pending. This
+short-run acceptance does not certify sustained operation beyond the normal
+node authentication lifetime.
+
 The APIs expose `GET /health`, `GET /records`, `POST /records` with an
 `id` and `summary`, `GET /records/{id}`, and `POST /records/{id}/advance`.
 IDs are at most 80 lowercase letters/digits/hyphens; summaries are nonempty and
@@ -111,8 +136,11 @@ Restore failed policy-assertion verification and the previous runtime was
 restored and verified; a post-rollback settings probe found an empty assertion
 source. Neither live Business matrix has run.
 
-Repair and verify assertion seeding before a separately reviewed Restore retry,
-then run both scenarios for live forwarding acceptance. Restore backs up and
+The independent assertion seed repair was deployed to Policy-Service at
+2026-10-15 01:53 UTC; all 28 rules now pass against the live directory. Restore
+subsequently completed successfully after the 02:03 UTC image-retention follow-up.
+Both Business scenarios still need to run for live forwarding acceptance.
+Restore backs up and
 resets saved policy/directory configuration; it does not install a new executable
 or automatically run the Business scenarios. The Organizations page shows
 progress, rollback and outcomes with logs during execution; operation status

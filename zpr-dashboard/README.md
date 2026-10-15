@@ -3141,10 +3141,12 @@ policy/directory reset. Validation uses a temporary runtime rather than rewritin
 live identity/configuration files. DNS is rebound to the current node container
 on redeploy and its service records are checked before readiness.
 
-The Simulator Organizations page shows a persistent operation status above the
-catalog while activation or Restore is running, including its current phase and
-rollback progress, even for the already-active organization or when another card
-is selected. Completion and failure remain visible until the next operation or
+The Simulator Organizations page shows Restore progress in a blocking modal,
+including the current phase, rollback progress and **See Logs**. Background
+controls are unavailable and Escape does not dismiss it; it closes automatically
+on completion or failure. Activation uses the status above the catalog.
+Both work for the already-active organization. Completion and failure remain
+visible above the catalog until the next operation or
 Simulator restart. Restore shows an immediate submitting status and disables
 duplicate Restore actions.
 
@@ -3155,6 +3157,25 @@ Operation status is currently in memory: restarting Simulator clears it, but doe
 not delete the local reset log.
 
 ## LDAP Organization Graph
+
+### Independent assertion seed configuration
+
+Policy-Service accepts optional `ZPR_POLICY_ASSERTIONS_SOURCE_FILE`, an explicit
+UTF-8 assertion source file (up to 1 MiB, with at least one valid rule). Missing,
+empty or invalid explicitly configured files fail workspace initialization.
+Without this setting, a new production workspace starts with empty assertions;
+it never discovers defaults through Simulator profiles or manifests.
+Configured defaults fill an empty assertion record, preserving its schedule and
+all nonempty operator-authored rules.
+
+The Simulator provisioning launcher exports its selected fictional defaults to
+an atomic file under `policy-assertion-seeds/` and supplies this production input
+contract. Policy-Service does not receive Simulator environment variables.
+Organization context restarts retain the currently deployed Policy-Service image
+instead of reverting to an older Simulator default. Stopping the service saves
+its image reference in `policy-service-image` under the launcher state directory,
+so separate Restore stop/start commands retain it after container removal. Set
+`ZPR_POLICY_SERVICE_IMAGE` to override that image explicitly.
 
 The simulator's Organizations page uses the reusable `<ldap-org-graph>` custom
 element from `cmd/zpr-web-dashboard/static/ldap-org-graph.js` and its scoped

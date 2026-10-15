@@ -7,7 +7,7 @@ asset, configuration, scope and rollback evidence here. Feature-local release
 notes also remain in the completed-work archive to preserve their context.
 
 Latest recorded dashboard executable deployments: Simulator
-Restore-feedback release (2026-10-15 01:03 UTC), and Control Room
+`zpr-simulator:20261015-scenario-browser` (2026-10-15 16:24 UTC), and Control Room
 `zpr-editor-ui:20261014-control-room-gui` (2026-10-14 22:43 UTC). Simulator was
 recreated from its tagged image; Control Room was updated in its existing
 container's writable layer. These software deployments did not replace or
@@ -22,6 +22,192 @@ the current reconciliation and pending implementation.
 "No commit or push" in dated entries records the state at release time.
 Publication does not deploy additional CLI/service changes or expand prior
 verification claims.
+
+## Scenario browser deployment (2026-10-15 16:24 UTC)
+
+- Deployed Simulator only as `zpr-simulator:20261015-scenario-browser`, image
+  `sha256:ff5cb4db4f1001300d14ca0d966c9fcd5d4d3939073568a32825e0adf3ec7c5e`,
+  started at `2026-10-15T16:24:55.482945882Z`. The user explicitly approved
+  building the current dashboard worktree, including pending backend changes,
+  rather than isolating the embedded Scenario assets.
+- Browse... now opens scenario folders in a dialog; File... offers New/Edit.
+  Only the selected file remains on the page, with full-width Runner/Results.
+  Running/cleanup output is collapsed under Details; failures remain visible.
+- Confirmed no active scenario or organization operation before replacing the
+  container. Preserved environment, bind mounts, ports, network, entrypoint and
+  restart policy; normalized configuration comparison passes. Great Lakes
+  remains active and all five catalog entries are available. Restart cleared
+  the completed in-memory Regional run; its API response was saved first.
+- Restored Simulator-hosted DNS statistics and records relays. Statistics
+  returns valid BIND status JSON; the records relay accepts TCP connections.
+  Control Room, Control-Service and Policy-Service retain their exact previous
+  image IDs and start timestamps. No Restore, activation or scenario was run.
+- Four served assets match source byte-for-byte: scenarios.html, scenarios.js,
+  simulator.css and sidebar.js. A live Chromium check passes Browse/folders,
+  file selection, File menu and full-width tracks with API writes blocked
+  (none attempted). The pre-deployment 20 focused desktop/tablet browser checks
+  and embedded build pass; broader regression limitations remain documented in
+  the completed-work archive. Live running-step collapse was not exercised by
+  starting a workload; it is covered by fixture-based browser tests.
+- Rollback: retain stopped container
+  `zpr-simulator-before-scenario-browser-20261015` and its previous
+  `zpr-simulator:20261015-business-denials` image. To roll back, stop and rename
+  the new container, restore the retained container's name to `zpr-simulator`,
+  start it, then restore both hosted DNS relays. Private configuration and
+  pre-release API snapshots plus live screenshot/check evidence are in session
+  `files/scenario-browser-release/`.
+- No commit or push was performed.
+
+## Regional Business runtime recovery (2026-10-15 15:04–15:12 UTC)
+
+- Preserved the user's 14:54 UTC regional failure. All seven providers started;
+  machine-07's Tijuana controller then timed out connecting to SimulatorControl.
+  Reproduced with only that controller, without business mutations, and stopped
+  the reproduction container afterwards.
+- HQ and Shenzhen node authentication had expired although RPC pings still
+  succeeded and node links appeared Active. Visa pushes remained queued and VSS
+  requests were denied with `DestAuthError`. The running October 12 Visa binary
+  also lacked the source's pending-visa pull recovery.
+- Visa RPC pings now return `AuthError` within one minute of authentication
+  expiry. The existing client ping/reconnect path performs a fresh signed
+  challenge without deliberately resetting node state. Regression tests cover
+  expired, near-expiry and valid authentication.
+- Built and deployed `zpr-multinode:20261015-node-renewal`, image
+  `sha256:d8fceb90d790ee248ac4878c8567611374ae59386c4cc670e09ea8d75625b882`.
+  Used normal retained-state deployment (`ZPR_RESTORE_BASE=0`) and reconnected
+  nodes. This updates Visa only within the runtime image; packet-handler
+  binaries remain unchanged. Existing policies, directory and business data
+  were preserved; no Restore was performed.
+- The retry connected across sites but exposed a second problem: Business
+  denial checks required direct Visa Admin environment variables absent from
+  deployed Simulator. Checks now use its configured operator snapshot transport
+  (mTLS Control-Service), retaining the exact source/destination/TCP/port
+  counter-increment requirement. Missing/failed denial data cannot pass.
+  Explicit direct Admin remains supported when no operator connection is selected.
+- Deployed Simulator `zpr-simulator:20261015-business-denials` at
+  `2026-10-15T15:09:07.638307429Z`, image
+  `sha256:b411fa97ad750851146d64638c7036cdc82763c6d4047d4be92c7aa5bf664ed1`.
+  Preserved configuration/mounts/ports, restored DNS relays, retained
+  `zpr-simulator-before-business-denials-20261015`, and persisted the new runtime
+  image in both Simulator environment and `multinode-platform.json`.
+  The old runtime image is retained as `zpr-multinode:before-node-renewal-20261015`;
+  the original October 12 alias was restored after deployment.
+- Live regional acceptance completed at **15:12:39 UTC: 106/106 steps**,
+  **42/42 employee/service pairs**, including six allowed business transactions
+  and 36 denials with fresh matching Visa evidence. All 28 cleanup steps passed;
+  no machine containers remain running. HQ/Shenzhen Business acceptance and
+  sustained operation past the normal authentication lifetime remain unverified.
+- Full Rust workspace `cargo test` passes (including 497 Visa tests); focused Go
+  race tests pass. Required dashboard `make test` retains exactly the four known
+  failing groups. Formatting, whitespace and editor diagnostics pass.
+  Source changes are not committed or pushed.
+- Session evidence: `files/scenario-failure-20261015-1456.json`,
+  `files/regional-after-renewal.json`, `files/regional-deployed-acceptance.json`,
+  `files/regional-runtime-deploy.txt`, `files/regional-cargo-workspace.txt`,
+  `files/regional-go-make-test.txt`.
+
+## Finance Gateway activation repair (2026-10-15 UTC)
+
+- Preserved the failed Finance scenario: DNS resolved, but the Gateway health
+  request received a Visa `NoMatch` denial. The client's live trusted claims
+  were correctly Finance/Milwaukee; the trusted LDAP provider was healthy.
+  The Gateway had connected before effective policy installation and was
+  absent from Visa Admin's registered service inventory.
+- Activation now reconnects the configured Gateway after effective policy
+  installation and requires its service registration before publishing DNS.
+  Failed registration fails activation rather than reporting readiness.
+- Reconnecting changes the Visa address. This exposed a coupled DNS restart
+  defect: the launcher replaced its base zone while retaining the old dynamic
+  journal, causing BIND `journal rollforward failed: not exact` and SERVFAIL.
+  The launcher now discards the previous journal after stopping BIND and before
+  replacing that zone.
+- These launcher scripts are read-only host bind mounts in the running
+  Simulator; changes are live without replacing its executable. Exercised the
+  new helper both from the host and inside Simulator, republished through the
+  normal scenario DNS startup, and completed the Finance scenario twice:
+  all 12 steps pass, health is HTTP 200, Google HTTPS is HTTP 200, Apple HTTP
+  is denied with HTTP 403, and workload/logout/machine cleanup completes.
+  No machine containers remain running. No Restore was initiated and no
+  Policy-Service, Control-Service or Control Room executable was replaced.
+- Gateway lifecycle and DNS journal regression tests pass with the race
+  detector; shell syntax and editor checks pass. Required `make test` retains
+  exactly the same four known failing groups. Both Business matrices remain
+  pending. Source changes are not yet committed or pushed.
+- Session evidence: `files/finance-gateway-failure-latest.json`,
+  `files/finance-gateway-after-lifecycle-fix.json`,
+  `files/finance-gateway-deployed-context-acceptance.json` and
+  `files/finance-gateway-make-test.txt`.
+
+## Restore progress modal (2026-10-15 02:07 UTC)
+
+- Restore now displays a native blocking dialog with its current phase,
+  rollback progress and log link. Background controls are inert; Escape does
+  not dismiss progress. Completion/failure closes the dialog and leaves the
+  existing result above the catalog. Activation retains its inline status.
+- Six focused desktop/tablet regressions pass, including real blocked background
+  clicks, Escape prevention, rollback updates, completion/failure closure and
+  log retention. Editor diagnostics and whitespace checks pass.
+- Waited for the user's running Restore to finish before deployment. Its API
+  reported `completed` / `Organization ready`; retained that response in session
+  `files/restore-modal/restore-feedback-before.json`. This establishes successful
+  Restore after the image-retention fix, not business-matrix acceptance.
+- Deployed only Simulator as `zpr-simulator:20261015-restore-modal` at
+  `2026-10-15T02:07:56.830683054Z`, image
+  `sha256:884ab799270305ae26c47fe98858a2af42cbb653ca2a827695bb823c1822de7f`.
+  Retained `zpr-simulator-before-restore-modal-20261015`, preserved environment/
+  mounts/ports, restored both hosted DNS relays and checked statistics response.
+  Served JavaScript contains the modal and HTML loads `organizations.js?v=27`.
+  Restart clears in-memory completion to idle; no Restore was initiated here.
+  No production services or controller prebuilds were replaced for this UI change.
+
+## Assertion seed repair (2026-10-15 01:53 UTC)
+
+Follow-up, 02:03 UTC: the user's next Restore exposed an incomplete image-retention
+fix. `restore_organization_base` removes Policy-Service in a separate command
+before context restart, so inspecting only a still-present container could not
+retain its image. Verification again saw an empty revision-1 source from the old
+default image; runtime rollback completed successfully. The initial live seed
+evaluation below was valid but did not certify this lifecycle.
+
+The launcher now atomically saves the image reference before container removal
+and reads it on context startup when no container exists. Explicit image overrides
+still take precedence. Added actual launcher-function tests covering separate
+stop, repeated stop, context restart and overrides. Focused race checks pass.
+Redeployed only Policy-Service at 02:03:31 UTC, then exercised real separate
+`stop-policy-service` / `restart-policy-context` commands from the Simulator
+container. At `2026-10-15T02:03:44.818513173Z` the service retained
+`zpr-simulator:20261015-assertion-seed`; all 28 live LDAP assertions pass again.
+No additional Restore or organization reset was initiated. Retained the prior
+container as `zpr-policy-before-image-retention-20261015` and the failed reset log
+in session artifacts. Full end-to-end Restore acceptance remains pending.
+
+- The failed Restore recreated Policy-Service from `zpr-simulator:local`,
+  built on 2026-10-13. Its saved Great Lakes assertion record remained empty.
+  Current source also silently discovered defaults through Simulator profiles;
+  replaced that production dependency with explicit
+  `ZPR_POLICY_ASSERTIONS_SOURCE_FILE`. Provisioning exports the seed atomically,
+  without passing Simulator environment variables to Policy-Service.
+- Context restarts now retain the deployed Policy-Service image; explicit
+  `ZPR_POLICY_SERVICE_IMAGE` overrides it. This prevents Restore/rollback from
+  silently selecting the older default image again.
+- Deployed only Policy-Service from `zpr-simulator:20261015-assertion-seed`
+  at `2026-10-15T01:53:56.369188721Z`, image
+  `sha256:37d0f73ca071bb3199ffdadcb9d618f30c95b0db147c473b2fb24bb7d4639f92`.
+  Preserved existing mounts, ports, production configuration and restart policy;
+  retained stopped `zpr-policy-before-assertion-seed-20261015` plus database
+  backup in the session artifacts. Other service containers were not restarted.
+- Live mTLS settings now return Great Lakes, matching base DN, revision 2 and
+  2,337 source characters. LDAP reports twelve people/eight groups, and all
+  28 assertions evaluate `pass` through Control-Service. Existing nonempty
+  operator assertions are preserved by regression-tested seeding semantics.
+- Focused race tests pass for seed inputs, empty-record repair, operator-rule
+  retention, bundled directory consistency, service transport and launcher image/
+  seed wiring. Invalid/missing/oversize/empty explicit files fail. Tests use
+  unavailable Simulator configuration. Vet and shell syntax pass; full `make
+  test` retains exactly the four documented baseline failures.
+- No Restore retry, directory/policy reset, controller rollout or live Business
+  scenario was performed. The assertion blocker is repaired; complete
+  reprovisioning and both access-matrix runs remain pending reviewed execution.
 
 ## Restore feedback deployment (2026-10-15 01:03 UTC)
 

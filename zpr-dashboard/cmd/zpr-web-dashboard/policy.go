@@ -221,9 +221,11 @@ func newPolicyWorkspace() (*policyWorkspace, string) {
 		_ = store.Close()
 		return nil, "Unable to import the configured demo policy catalog."
 	}
-	assertionDefaults := ""
-	if organization, err := loadSimulatorOrganization(simulatorOrganizationsDirectory(), os.Getenv("ZPR_POLICY_ORGANIZATION_ID")); err == nil {
-		assertionDefaults = organization.AssertionsSource
+	assertionDefaults, err := configuredPolicyAssertionDefaults()
+	if err != nil {
+		_ = store.Close()
+		log.Printf("Policy assertion seed configuration failed: %v", err)
+		return nil, "Unable to read configured organization assertion defaults."
 	}
 	if err := seedOrganizationAssertions(context.Background(), store, assertionDefaults); err != nil {
 		_ = store.Close()

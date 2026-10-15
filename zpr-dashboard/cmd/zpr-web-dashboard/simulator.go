@@ -1145,8 +1145,12 @@ func simulatorMachineAgentLinkState(machineID, agent string) string {
 }
 
 func readControlRoomSnapshot() (snapshot, error) {
+	return readControlRoomSnapshotWithContext(context.Background())
+}
+
+func readControlRoomSnapshotWithContext(parent context.Context) (snapshot, error) {
 	var snapshotData snapshot
-	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	ctx, cancel := context.WithTimeout(parent, 2*time.Second)
 	defer cancel()
 	endpoint := strings.TrimRight(envOr("SIMULATOR_CONTROL_ROOM_URL", "http://127.0.0.1:8787"), "/")
 	client := &http.Client{Timeout: 2 * time.Second, CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }}

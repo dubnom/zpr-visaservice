@@ -735,6 +735,7 @@ import { registerOrganizationProfileTests } from "./organization-profile.mjs";
 import { registerOrganizationDuplicateTests } from "./organization-duplicate.mjs";
 import { registerOrganizationDefinitionsTests } from "./organization-definitions.mjs";
 import { registerConfigFormTests } from "./config-form.mjs";
+import { registerScenarioBrowserTests } from "./scenario-browser.mjs";
 
 const assets = fileURLToPath(new URL("../../cmd/zpr-web-dashboard/static/", import.meta.url));
 const csp = "default-src 'self'; style-src 'self'; script-src 'self'; connect-src 'self'; img-src 'self' data:";
@@ -939,6 +940,7 @@ registerOrganizationProfileTests(test, expect);
 registerOrganizationDuplicateTests(test, expect);
 registerOrganizationDefinitionsTests(test, expect);
 registerConfigFormTests(test, expect);
+registerScenarioBrowserTests(test, expect);
 registerDiagnosticsGuidelineTests(test, expect);
 registerWorkflowGuidelineTests(test, expect);
 registerTrustedSourceGUITests(test, expect);
@@ -1686,6 +1688,7 @@ test("GUI editor search works in Simulator scenario JSON without saving or runni
   } }));
   await page.goto(appURL + "/scenarios.html");
   await expect(page.locator("#scenario-organization")).toHaveText("Alpha Labs");
+  await page.locator("#scenario-files-toggle").click();
   await page.locator("#scenario-new").click();
   const tools = page.locator('[data-editor-search-target="scenario-editor-source"]');
   await tools.getByRole("button", { name: "Find & Replace", exact: true }).click();
@@ -1732,6 +1735,7 @@ async function openRawScenario(page, appURL, api, assistantReady = false) {
   });
   await page.goto(appURL + "/scenarios.html");
   await expect(page.locator("#scenario-organization")).toHaveText("Alpha Labs");
+  await page.locator("#scenario-files-toggle").click();
   await page.locator("#scenario-new").click();
   await page.locator("#scenario-editor-mode-toggle").click();
   await expect(page.locator("#scenario-editor-source")).toBeVisible();
@@ -1967,6 +1971,7 @@ for (const outcome of ["success", "error"]) {
         page.once("dialog", (dialog) => dialog.accept());
         await page.locator("#scenario-editor-close").click();
         await expect(page.locator("#scenario-editor-dialog")).not.toHaveAttribute("open");
+        await page.locator("#scenario-files-toggle").click();
         await page.locator("#scenario-new").click();
       }
       if (change === "close-reopen") {
@@ -2232,6 +2237,7 @@ test("GUI raw scenario assistant discards a proposal changed before Apply and af
   page.once("dialog", (dialog) => dialog.accept());
   await page.locator("#scenario-editor-dialog").getByRole("button", { name: "Close editor" }).click();
   await expect(page.locator("#scenario-editor-dialog")).toBeHidden();
+  await page.locator("#scenario-files-toggle").click();
   await page.locator("#scenario-new").click();
   complete();
   await expect(assistant.locator("[data-assistant-thread]")).not.toContainText("Old conversation");
@@ -4979,10 +4985,10 @@ test("Simulator Scenarios groups unfiled entries and clears only terminal run hi
   });
   await page.goto(appURL + "/scenarios.html");
   await expect(page.locator("#scenario-new")).toHaveText("New Scenario...");
-  await expect(page.locator(".scenario-list-pane #scenario-new")).toBeVisible();
+  await expect(page.locator("#scenario-browse")).toBeVisible();
   await expect(page.locator("#scenario-count")).toHaveCount(0);
   await expect(page.getByText("Available scenarios", { exact: true })).toHaveCount(0);
-  await expect(page.locator(".scenario-folder")).toHaveCount(0);
+  await expect(page.locator("#scenario-browser-list .scenario-folder")).toHaveCount(1);
   await expect(page.locator("#scenario-list")).toContainText("Sample flow");
   await expect(page.getByText("EXECUTION PLAN", { exact: true })).toHaveCount(0);
   await expect(page.getByRole("button", { name: "Run", exact: true })).toBeVisible();
@@ -4990,10 +4996,11 @@ test("Simulator Scenarios groups unfiled entries and clears only terminal run hi
   const scenarioCard = page.locator(`#scenario-list [data-run-scenario="${scenario.id}"]`).locator("xpath=ancestor::article");
   await expect(scenarioCard.locator(".scenario-version")).toHaveCount(0);
   await expect(scenarioCard).not.toContainText(scenario.id);
-  await expect(scenarioCard.locator("button")).toHaveText(["Run", "Edit"]);
-  await expect(scenarioCard.locator(".scenario-card-file-menu > summary")).toHaveText("File...");
-  await scenarioCard.locator(".scenario-card-file-menu > summary").click();
-  await expect(scenarioCard.getByRole("button", { name: "Edit", exact: true })).toBeVisible();
+  await expect(scenarioCard.locator("button")).toHaveText(["Run"]);
+  await expect(page.locator("#scenario-files-toggle")).toHaveText("File...");
+  await page.locator("#scenario-files-toggle").click();
+  await expect(page.getByRole("menuitem", { name: "Edit", exact: true })).toBeVisible();
+  await page.keyboard.press("Escape");
   await expect(scenarioCard.getByRole("button", { name: "Delete", exact: true })).toHaveCount(0);
   await expect(page.locator("#scenario-run-title")).toHaveText("Sample flow");
   await expect(page.locator("#scenario-run-state .scenario-state-label")).toHaveText("completed");
@@ -5037,6 +5044,7 @@ test("Simulator Scenarios groups unfiled entries and clears only terminal run hi
   await expect(page.locator("#scenario-run-title")).toHaveText("Scenario");
   await expect(page.locator("#scenario-clear")).toBeHidden();
   expect(api.counts.get("/api/simulator/scenarios/clear")).toBe(1);
+  await page.locator("#scenario-files-toggle").click();
   await page.locator("#scenario-new").click();
   const editorAction = page.locator('#scenario-editor-steps [data-step-key="action"]');
   await expect(editorAction).toHaveValue("delay");
@@ -10622,7 +10630,15 @@ test("active organization restore keeps progress and its outcome visible", async
   await expect(status).toHaveAttribute("aria-busy", "true");
   await expect(page.locator('[data-restore-base="alpha"]')).toBeDisabled();
   await expect(page.locator(".organization-reset-log")).toBeVisible();
-  await page.locator('[data-organization-id="beta"]').click();
+  const progressDialog = page.getByRole("dialog", { name: "Restore in progress", exact: true });
+  await expect(progressDialog).toBeVisible();
+  await expect(progressDialog).toContainText("Starting alpha runtime");
+  await expect(progressDialog.getByRole("link", { name: "See Logs" })).toBeVisible();
+  await page.keyboard.press("Escape");
+  await expect(progressDialog).toBeVisible();
+  await expect(progressDialog).toHaveJSProperty("open", true);
+  await expect(page.locator('[data-organization-id="beta"]').click({ trial: true, timeout: 300 })).rejects.toThrow();
+  await expect(page.locator('[data-organization-id="beta"]')).not.toBeFocused();
   await expect(status).toContainText("Alpha Labs · Restore in progress");
   api.organizations.activation.progress = "Activation failed; restoring previous runtime";
   await page.clock.runFor(1100);
@@ -10630,10 +10646,15 @@ test("active organization restore keeps progress and its outcome visible", async
   api.organizations.activation = { state: "failed", operation: "restore-base", organization_id: "alpha", error: "Policy assertion settings do not match organization alpha" };
   await page.clock.runFor(1100);
   await expect(status).toContainText("Restore failed");
+  await expect(progressDialog).not.toBeVisible();
   await expect(status).toContainText("Policy assertion settings do not match");
   await expect(status).toHaveAttribute("aria-busy", "false");
+  api.organizations.activation = { state: "resetting", operation: "restore-base", organization_id: "alpha", progress: "Verifying runtime" };
+  await page.clock.runFor(5100);
+  await expect(progressDialog).toBeVisible();
   api.organizations.activation = { state: "completed", operation: "restore-base", organization_id: "alpha", progress: "Organization ready" };
   await page.clock.runFor(5100);
+  await expect(progressDialog).not.toBeVisible();
   await expect(status).toContainText("Restore completed · Organization ready");
   await expect(page.locator(".organization-reset-log")).toBeHidden();
 });

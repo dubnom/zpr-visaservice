@@ -1544,6 +1544,23 @@ impl vsapi::v_s_handle::Server for VSHandleImpl {
     ) -> Result<(), capnp::Error> {
         let node_cn = self.node.get_cn().unwrap_or("<unknown>");
         trace!(target: API, "ping from {node_cn}");
+        // A live RPC connection must not outlast the authentication needed for VSS delivery.
+        if self
+            .node
+            .get_authentication_expiration()
+            .is_some_and(|expires| {
+                expires <= std::time::SystemTime::now() + Duration::from_secs(60)
+            })
+        {
+            info!(target: API, "node {node_cn} must reconnect to renew authentication");
+            let mut error = results.get().init_res().init_error();
+            write_error(
+                &mut error,
+                vsapi::ErrorCode::AuthError,
+                "node authentication requires renewal; reconnect",
+            );
+            return Ok(());
+        }
         if let Some(addr) = self.node.get_zpr_addr() {
             self.update_last_seen_time(addr).await;
         }
@@ -1749,6 +1766,46 @@ impl vsapi::v_s_handle::Server for VSHandleImpl {
 mod tests {
     use super::*;
     use capnp::message::Builder;
+
+    #[tokio::test]
+    async fn ping_requires_reauthentication_before_node_authentication_expires() {
+        use crate::assembly::tests::new_assembly_for_tests;
+        use crate::test_helpers::make_node_actor_defexp;
+
+        tokio::task::LocalSet::new()
+            .run_until(async {
+                for remaining in [0, 30, 3600] {
+                    let asm = Arc::new(new_assembly_for_tests(None).await);
+                    let addr: IpAddr = "fd5a:5052:90de::11".parse().unwrap();
+                    let mut node = make_node_actor_defexp(
+                        &addr.to_string(),
+                        "node1.demo",
+                        "[fd5a:5052::100]:1234",
+                    );
+                    node.add_attribute(
+                        Attribute::builder(key::DEVICE_AUTHORITY)
+                            .expires(std::time::SystemTime::now() + Duration::from_secs(remaining))
+                            .value("zpr-bootstrap"),
+                    )
+                    .unwrap();
+                    let client: vsapi::v_s_handle::Client =
+                        capnp_rpc::new_client(VSHandleImpl::new(asm, node, addr));
+                    let response = client.ping_request().send().promise.await.unwrap();
+                    let result = response.get().unwrap().get_res().unwrap();
+                    match result.which().unwrap() {
+                        vsapi::ok_or_error::Which::Ok(()) => assert_eq!(remaining, 3600),
+                        vsapi::ok_or_error::Which::Error(error) => {
+                            assert!(remaining < 60);
+                            assert_eq!(
+                                error.unwrap().get_code().unwrap(),
+                                vsapi::ErrorCode::AuthError
+                            );
+                        }
+                    }
+                }
+            })
+            .await;
+    }
 
     #[tokio::test]
     async fn visa_request_by_id_delivers_pending_visa_before_vss_connects() {

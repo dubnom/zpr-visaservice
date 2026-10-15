@@ -7,10 +7,121 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
 )
+
+func TestPolicyContextLauncherSeedsIndependentAssertions(t *testing.T) {
+	for _, test := range []struct{ name, override, want, stopFirst string }{
+		{"retain deployed", "", "deployed-policy-image", ""},
+		{"explicit override", "operator-policy-image", "operator-policy-image", ""},
+		{"restore removes service before context restart", "", "deployed-policy-image", "yes"},
+		{"explicit override after removal", "operator-policy-image", "operator-policy-image", "yes"},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			dashboard, err := filepath.Abs("../..")
+			if err != nil {
+				t.Fatal(err)
+			}
+			state := t.TempDir()
+			script := `set -eu
+docker() {
+    case "$1" in
+        inspect)
+            if [ -f "$STATE_DIR/removed" ]; then return 1; fi
+            if [ "${2:-}" = --format ]; then printf '%s\n' deployed-policy-image; fi
+            ;;
+        rm) touch "$STATE_DIR/removed" ;;
+        run) printf '%s\n' "$@" > "$STATE_DIR/docker-args" ;;
+    esac
+}
+stop_service() { :; }
+docker_socket_path() { printf /var/run/docker.sock; }
+policy_ldap_container() { printf great-lakes-directory; }
+` + stackFunctionForTest(t, "stop_policy_service") + "\n" + stackFunctionForTest(t, "start_policy_context_container") + `
+if [ "$STOP_FIRST" = yes ]; then stop_policy_service; stop_policy_service; fi
+start_policy_context_container great-lakes /runtime/runtime.zpl Network/Effective Effective /runtime/stage
+`
+			command := exec.Command("sh", "-c", script)
+			command.Env = append(os.Environ(),
+				"DASHBOARD_DIR="+dashboard, "STATE_DIR="+state,
+				"ORGANIZATIONS_DIR="+filepath.Join(dashboard, "cmd/zpr-web-dashboard/examples/organizations"),
+				"POLICY_CONTAINER=test-policy", "SIMULATOR_IMAGE=old-default",
+				"ZPR_POLICY_SERVICE_IMAGE="+test.override, "RUNTIME_DIR=/runtime",
+				"SERVICE_CERTS=/certs", "POLICY_TOOLS_DIR=/tools")
+			command.Env = append(command.Env, "STOP_FIRST="+test.stopFirst, "POLICY_PID=/unused")
+			if output, err := command.CombinedOutput(); err != nil {
+				t.Fatalf("launcher: %v: %s", err, output)
+			}
+			args, err := os.ReadFile(filepath.Join(state, "docker-args"))
+			if err != nil {
+				t.Fatal(err)
+			}
+			if strings.Contains(string(args), "SIMULATION_") || !strings.Contains(string(args), "\n"+test.want+"\n") ||
+				!strings.Contains(string(args), "ZPR_POLICY_ASSERTIONS_SOURCE_FILE=") {
+				t.Fatalf("incorrect production seed/image arguments: %s", args)
+			}
+			t.Setenv("ZPR_POLICY_ASSERTIONS_SOURCE_FILE", filepath.Join(state, "policy-assertion-seeds/great-lakes.assertions"))
+			if source, err := configuredPolicyAssertionDefaults(); err != nil || source == "" {
+				t.Fatalf("generated seed = %q, %v", source, err)
+			}
+		})
+	}
+}
+
+func TestPolicyAssertionDefaultsUseIndependentConfiguration(t *testing.T) {
+	t.Setenv("SIMULATION_MANIFEST", "/unavailable/manifest.json")
+	t.Setenv("SIMULATION_ORGANIZATIONS_DIR", "/unavailable/profiles")
+	t.Setenv("ZPR_POLICY_ORGANIZATION_ID", "great-lakes")
+	t.Setenv("ZPR_POLICY_ASSERTIONS_SOURCE_FILE", "")
+	if source, err := configuredPolicyAssertionDefaults(); err != nil || source != "" {
+		t.Fatalf("unconfigured defaults = %q, %v", source, err)
+	}
+	path := filepath.Join(t.TempDir(), "organization.assertions")
+	source := `people attribute "mail" present;`
+	if err := os.WriteFile(path, []byte(source), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("ZPR_POLICY_ASSERTIONS_SOURCE_FILE", path)
+	if got, err := configuredPolicyAssertionDefaults(); err != nil || got != source {
+		t.Fatalf("configured defaults = %q, %v", got, err)
+	}
+	store, err := openSQLitePolicyRepository(filepath.Join(privatePolicyTestDir(t), "independent.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer store.Close()
+	if err := seedOrganizationAssertions(context.Background(), store); err != nil {
+		t.Fatal(err)
+	}
+	defaults, err := configuredPolicyAssertionDefaults()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := seedOrganizationAssertions(context.Background(), store, defaults); err != nil {
+		t.Fatal(err)
+	}
+	settings, err := loadOrganizationAssertionSettings(context.Background(), store)
+	if err != nil || settings.Source != source || settings.Revision != 2 {
+		t.Fatalf("empty-record repair = %+v, %v", settings, err)
+	}
+	for _, invalid := range []string{"", "// no rules", "not an assertion", strings.Repeat("x", maxPolicySourceBytes+1)} {
+		if err := os.WriteFile(path, []byte(invalid), 0o600); err != nil {
+			t.Fatal(err)
+		}
+		if _, err := configuredPolicyAssertionDefaults(); err == nil {
+			t.Fatal("invalid explicit assertion source accepted")
+		}
+	}
+	if err := os.Remove(path); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := configuredPolicyAssertionDefaults(); err == nil {
+		t.Fatal("missing explicit assertion source silently ignored")
+	}
+}
 
 func TestOrganizationAssertionDefaultsPreserveOperatorRules(t *testing.T) {
 	store, err := openSQLitePolicyRepository(filepath.Join(privatePolicyTestDir(t), "defaults.db"))

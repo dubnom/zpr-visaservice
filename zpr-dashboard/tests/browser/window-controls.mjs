@@ -65,6 +65,7 @@ export function registerWindowControlTests(test, expect) {
       await toggle(page, page.locator(`#editor-maximize-page-${route}`), page.locator(`#page-${route}`));
     }
     await page.goto(appURL + "/scenarios.html");
+    await page.locator("#scenario-files-toggle").click();
     await page.locator("#scenario-new").click();
     await toggle(page, page.locator("#editor-maximize-scenario-editor-dialog"), page.locator("#scenario-editor-dialog"));
     await expect(page.locator("#scenario-editor-dialog")).toHaveAttribute("open", "");

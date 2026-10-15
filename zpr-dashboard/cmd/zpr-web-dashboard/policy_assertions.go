@@ -113,6 +113,37 @@ func (store *policyServiceAssertionSettingsStore) do(request *http.Request) (ass
 	return result, nil
 }
 
+func configuredPolicyAssertionDefaults() (string, error) {
+	path := strings.TrimSpace(os.Getenv("ZPR_POLICY_ASSERTIONS_SOURCE_FILE"))
+	if path == "" {
+		return "", nil
+	}
+	resolved, err := resolvedRegularFile(path)
+	if err != nil {
+		return "", fmt.Errorf("assertion seed file unavailable: %w", err)
+	}
+	file, err := os.Open(resolved)
+	if err != nil {
+		return "", err
+	}
+	defer file.Close()
+	source, err := io.ReadAll(io.LimitReader(file, maxPolicySourceBytes+1))
+	if err != nil {
+		return "", err
+	}
+	if len(source) > maxPolicySourceBytes {
+		return "", errors.New("assertion seed exceeds source size limit")
+	}
+	rules, err := parseAssertions(string(source))
+	if err != nil {
+		return "", fmt.Errorf("invalid assertion seed: %w", err)
+	}
+	if len(rules) == 0 {
+		return "", errors.New("configured assertion seed contains no rules")
+	}
+	return string(source), nil
+}
+
 func seedOrganizationAssertions(ctx context.Context, repository policyRepository, defaults ...string) error {
 	source := ""
 	if len(defaults) > 0 {

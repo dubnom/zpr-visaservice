@@ -1,7 +1,7 @@
 # GUI work
 
-Active GUI backlog, reconciled on 2026-10-15 UTC (2026-10-14 EDT) after the
-Great Lakes business-service and Restore-feedback deployments.
+Active GUI backlog, reconciled on 2026-10-15 UTC after the
+Simulator Scenario browser deployment.
 Completed checklists and dated release evidence live in the linked records.
 
 ## Document map
@@ -24,26 +24,54 @@ Do not infer current runtime health from a historical verification entry.
 
 ## Current status
 
+- **Publication checkpoint:** pending Restore/runtime repairs and Scenario
+  browsing source are included in this 2026-10-15 publication. Historical
+  uncommitted notes describe their dated releases, not a new deployment.
+  See [publication checks and exceptions](GUI%20completed%20work.md#runtime-repairs-and-scenario-browser-publication-2026-10-15-utc).
+- **Regional Business repaired and live-verified:** node session pings now
+  trigger signed reauthentication before expiry; current Visa runtime includes
+  pending-visa pull recovery. Business denial checks use Simulator's configured
+  independent operator connection. Regional acceptance passed all 106 steps and
+  42 pairs (six allowed, 36 evidenced denials) with complete cleanup.
+  Simulator and Visa runtime fixes are deployed; policies/directory/business
+  state were preserved without Restore. HQ/Shenzhen acceptance and sustained
+  recovery beyond the normal authentication lifetime remain pending.
+  See the [deployment evidence](GUI%20deployments.md#regional-business-runtime-recovery-2026-10-15-15041512-utc).
 - **Publication:** `e1b24ab` is the previous publication checkpoint. The
   this source checkpoint includes the 2026-10-15 reconciliation and pending work;
   dated "not committed or pushed" notes remain historical evidence. Publication
   does not deploy the discovery CLI, new Results navigation or backend services.
-- **Deployed:** Simulator `zpr-simulator:20261015-restore-feedback` at
-  2026-10-15 01:03 UTC, following the business-service release at 00:56 UTC;
-  Control Room remains at its 2026-10-14 22:43 UTC GUI release. The UI-only
-  feedback deployment did not restart production services. The user's separate
-  Restore attempt did reprovision runtime components before rolling back.
-  See [deployment scope and verification](GUI%20deployments.md).
-- **Restore blocked:** Great Lakes Restore failed its assertion-settings
+- **Deployed:** Simulator `zpr-simulator:20261015-scenario-browser` at
+  2026-10-15 16:24 UTC, following the 15:09 UTC Business denial repair.
+  Browse.../File..., one selected scenario, full-width tracks and compact
+  running-step details are live. Configuration/mounts/ports were preserved;
+  DNS relays were restored. Restart cleared in-memory scenario history.
+  Control Room remains at its 2026-10-14 22:43 UTC GUI release; no production
+  service was restarted. See
+  [deployment scope and verification](GUI%20deployments.md#scenario-browser-deployment-2026-10-15-1624-utc).
+- **Restore repair deployed:** Great Lakes Restore failed its assertion-settings
   verification and the previous runtime was restored and verified. A read-only
   probe after rollback found the correct organization/base DN but empty assertion
-  source. Feedback is fixed and deployed; assertion seeding is not repaired,
-  Restore was not retried, and business forwarding is not live-certified.
+  source. Independent seed configuration and deployed-image retention are now
+  installed in Policy-Service (01:53 UTC); all 28 live LDAP assertions pass.
+  A subsequent Restore exposed the separate-stop retention gap; the 02:03 UTC
+  follow-up persists the image before removal. Real separate stop/context restart
+  now retains the repaired image and all 28 assertions still pass.
+  The user's subsequent Restore completed successfully before the 02:07 UTC
+  progress-modal deployment. Regional Business acceptance subsequently passed;
+  HQ/Shenzhen acceptance remains pending.
 - **Completed GUI polish:** shared Help styling, Trusted Sources spacing/counts,
-  scenario cards/folders, organization viewer File actions and consolidated
+  scenario Browse/File selection, organization viewer File actions and consolidated
   New/Import/Duplicate, Activity cleanup, and Security Review headers.
   Control Room retains its live Updates (24h) feed and independent service
   contracts. See the [completed checklist](GUI%20completed%20work.md#control-room-and-simulator-gui-polish).
+- **Finance Gateway repaired and live-verified:** activation reconnects the
+  Gateway after effective policy installation and checks service registration
+  before DNS publication. DNS base-zone rebuilds discard the previous update
+  journal. Two complete live runs pass all 12 steps, including health, Google
+  allowed, Apple denied and cleanup. Regional Business acceptance subsequently
+  passed; HQ/Shenzhen remains pending;
+  see the [deployment evidence](GUI%20deployments.md#finance-gateway-activation-repair-2026-10-15-utc).
 - **Verification limits:** Current native core Rust tests and shared socket
   utility tests pass. The full dashboard `make test` still has four known
   failing groups. Focused race checks and 16 selected desktop/tablet browser
@@ -55,7 +83,7 @@ Do not infer current runtime health from a historical verification entry.
 
 ## In progress
 
-Scenario gateway response capture is **Deployed (live acceptance pending)**:
+Scenario gateway response capture is **Deployed (Finance live acceptance passed)**:
 a Results section
 shows HTTP status, request/final URL, elapsed time, bytes read, redacted bounded
 headers and inert raw HTML/JSON/text (base64 for non-UTF-8). Observations survive
@@ -67,7 +95,10 @@ currently belong to the current run only; durable archives and other result
 types remain future work. Simulator and controller binaries were updated from an
 isolated Results-only release on 2026-10-15 00:49 UTC; production services were
 not restarted. The later business-service executable resolved the observed
-manifest-unavailable error; live forwarding acceptance has not been run.
+manifest-unavailable error. After the Gateway activation/DNS repair, two
+complete Finance scenario runs verified Google HTTPS 200 and Apple HTTP 403
+with captured results; this does not certify other scenarios or the Business
+matrices.
 The isolated full suite has the same 13 failures as its clean base, including
 external-runtime/seed-dependent failures. The subsequent Runner/Results tabs are
 verified locally, not separately deployed. See the
@@ -154,10 +185,10 @@ The open requirements below retain their original scope.
 No new priority or implementation approval is implied for backend rollouts.
 
 ### Logs and diagnostics
-- [ ] Repair Great Lakes assertion seeding/verification through an independent
-  production policy configuration contract; identify why source is empty before
-  any reviewed Restore retry. Preserve rollback and record exact failure details.
-- [ ] After a successful reviewed Restore, run both Great Lakes Business
+- [x] Repair Great Lakes assertion seeding/verification through independent
+  production configuration and retain the deployed image across context
+  restarts. Deployed 01:53 UTC; 28 live assertions pass, rollback retained.
+- [ ] After the successful Restore, run both Great Lakes Business
   scenarios and verify all 84 expected decisions with actual forwarding and fresh
   denial evidence. Do not mark software deployment as live policy acceptance.
 - [ ] Retain organization operation outcomes across Simulator restart; current
@@ -220,3 +251,13 @@ No new priority or implementation approval is implied for backend rollouts.
   replicated automatically. Anycast is an optional separate routing/health
   design decision, not assumed in this task. Track only; no deployment yet.
 - [ ] Organization creation/editing: Duplicate -> edit draft -> validate -> review activation first. The [detailed plan](Organization%20editor%20plan.md) owns the individual requirements; production administration remains independent of Simulator.
+
+## Scenarios
+- [x] Elide detailed text for steps while running; successful output is available under Details, while failures remain visible.
+- [x] Replace the folder/card list with Browse... and File..., one selected scenario, and full-width tracks.
+
+Deployed to Simulator on 2026-10-15 at 16:24 UTC. See
+[Scenario browsing and compact running steps](GUI%20completed%20work.md#scenario-browsing-and-compact-running-steps-2026-10-15-utc)
+for coverage and existing regression-suite limitations, and the
+[deployment record](GUI%20deployments.md#scenario-browser-deployment-2026-10-15-1624-utc)
+for live checks and rollback.

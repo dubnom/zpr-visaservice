@@ -1,6 +1,7 @@
 const scenarioById = new Map();
 let scenarioRun;
 let scenarioCatalogSignature = "";
+let selectedScenarioID = "";
 let scenarioRunSignature = "";
 let activeScenarioOrganization = "";
 let scenarioLogContext = "";
@@ -118,8 +119,10 @@ async function refreshScenarioLogPreviews({ signal, isCurrent }) {
 function renderScenarioList(scenarios) {
   scenarioById.clear();
   for (const scenario of scenarios) scenarioById.set(scenario.id, scenario);
+  if (!scenarioById.has(selectedScenarioID)) selectedScenarioID = scenarios[0]?.id || "";
+  renderSelectedScenario();
   if (!scenarios.length) {
-    document.getElementById("scenario-list").innerHTML = `<p class="scenario-empty">No scenarios in this organization. Create one to get started.</p>`;
+    document.getElementById("scenario-browser-list").innerHTML = `<p class="scenario-empty">No scenarios in this organization. Create one from File... to get started.</p>`;
     return;
   }
   const folders = new Map();
@@ -129,21 +132,27 @@ function renderScenarioList(scenarios) {
     entries.push(scenario);
     folders.set(folder, entries);
   }
-  document.getElementById("scenario-list").innerHTML = [...folders].sort(([left], [right]) => left.localeCompare(right)).map(([folder, entries]) => {
-    const cards = entries.map((scenario) => {
-      const running = scenarioRun?.state === "running" || scenarioRun?.state === "cleaning";
-      const selected = scenarioRun?.scenario_id === scenario.id;
-      const machines = new Set([...(scenario.steps || []), ...(scenario.cleanup || [])].map((step) => step.machine).filter(Boolean)).size;
-      const topology = scenario.topology;
-      const topologySummary = topology?.nodes?.length ? `${topology.nodes.length} nodes · ${(topology.links || []).length} links` : "base topology";
-      const published = Number(scenario.published_revision || 0);
-      const canRun = scenario.organization_id === activeScenarioOrganization && published > 0 && !running;
-      return `<article class="scenario-card${selected ? " selected" : ""}"><div class="scenario-card-heading"><h3>${scenarioEscape(scenario.name)}</h3></div><p>${scenarioEscape(scenario.description)}</p><div class="scenario-card-actions"><span class="scenario-step-count">${topologySummary} · ${machines} machines · ${(scenario.steps || []).length} steps</span><button type="button" data-run-scenario="${scenarioEscape(scenario.id)}" data-run-organization="${scenarioEscape(scenario.organization_id)}" data-run-published="${published > 0}" ${canRun ? "" : "disabled"}>Run</button><details class="scenario-card-file-menu"><summary class="button quiet">File...</summary><div class="scenario-card-file-menu-items" aria-label="${scenarioEscape(scenario.name)} file operations"><button class="quiet" type="button" data-edit-scenario="${scenarioEscape(scenario.id)}">Edit</button></div></details></div></article>`;
-    }).join("");
-    const items = `<div class="scenario-folder-items">${cards}</div>`;
-    if (folder === "Unfiled") return `<div class="scenario-unfiled">${items}</div>`;
-    return `<section class="scenario-folder"><header><h3>${scenarioEscape(folder)}</h3><span>${entries.length}</span></header>${items}</section>`;
+  const browser = document.getElementById("scenario-browser-list");
+  const openFolders = new Set([...browser.querySelectorAll("details[open]")].map(item => item.dataset.folder));
+  browser.innerHTML = [...folders].sort(([left], [right]) => left.localeCompare(right)).map(([folder, entries]) => {
+    const items = entries.slice().sort((a, b) => a.name.localeCompare(b.name)).map(scenario =>
+      `<button class="scenario-browser-item quiet" type="button" data-select-scenario="${scenarioEscape(scenario.id)}" aria-pressed="${scenario.id === selectedScenarioID}"><strong>${scenarioEscape(scenario.name)}</strong><span>${scenarioEscape(scenario.description)}</span></button>`).join("");
+    return `<details class="scenario-folder" data-folder="${scenarioEscape(folder)}" ${openFolders.has(folder) || entries.some(item => item.id === selectedScenarioID) ? "open" : ""}><summary>${scenarioEscape(folder)} <span>(${entries.length})</span></summary><div class="scenario-folder-items">${items}</div></details>`;
   }).join("");
+}
+
+function renderSelectedScenario() {
+  const scenario = scenarioById.get(selectedScenarioID);
+  document.getElementById("scenario-edit-selected").disabled = !scenario;
+  const list = document.getElementById("scenario-list");
+  if (!scenario) {
+    list.innerHTML = `<p class="scenario-empty">No scenarios in this organization. Create one from File... to get started.</p>`;
+    return;
+  }
+  const busy = ["running", "cleaning"].includes(scenarioRun?.state);
+  const published = Number(scenario.published_revision || 0) > 0;
+  const canRun = scenario.organization_id === activeScenarioOrganization && published && !busy;
+  list.innerHTML = `<article class="scenario-card selected"><div><h3>${scenarioEscape(scenario.name)}</h3><p>${scenarioEscape(scenario.description)}</p><span class="scenario-step-count">${scenarioEscape(scenario.folder || "Unfiled")} · ${(scenario.steps || []).length} steps${published ? "" : " · Unpublished draft"}</span></div><button type="button" data-run-scenario="${scenarioEscape(scenario.id)}" data-run-organization="${scenarioEscape(scenario.organization_id)}" data-run-published="${published}" ${canRun ? "" : "disabled"}>Run</button></article>`;
 }
 
 function updateScenarioTrackScroll() {
@@ -188,6 +197,7 @@ function updateScenarioTrackScroll() {
 }
 
 function renderScenarioRun(run) {
+  const sameRun = scenarioRun?.scenario_id === run?.scenario_id && scenarioRun?.started_at === run?.started_at;
   const previousProgress = JSON.stringify([scenarioRun?.scenario_id, scenarioRun?.state, scenarioRun?.current_step, scenarioRun?.results]);
   scenarioRun = run || { state: "idle", steps: [] };
   const logContext = scenarioPreviewContext();
@@ -253,6 +263,7 @@ function renderScenarioRun(run) {
     ...(scenario.cleanup || []).map((step) => ({ ...step, phase: "cleanup" })),
   ] : results;
   const finished = new Map(results.map((step) => [step.number, step]));
+  const openDetails = new Set(sameRun ? [...document.querySelectorAll(".scenario-step-details[open]")].map(item => item.dataset.step) : []);
   const activeSteps = new Set(scenarioRun.active_steps || []);
   const lanes = new Map();
   planned.forEach((step, index) => {
@@ -266,12 +277,16 @@ function renderScenarioRun(run) {
     const time = result?.finished_at ? window.ZPRSafeDisplay.formatTime(result.finished_at) : "";
     const machine = step.machine || "Shared";
     const lane = lanes.get(machine) || [];
-    lane.push(`<li class="scenario-step ${scenarioEscape(status)} ${phase === "cleanup" ? "cleanup" : ""}"><span class="scenario-step-mark" aria-hidden="true"></span><div class="scenario-step-copy"><div><span class="scenario-step-number">${index + 1}</span><strong>${scenarioEscape(step.action.replaceAll("_", " "))}</strong>${step.component ? `<span>${scenarioEscape(step.component)}</span>` : ""}${phase === "cleanup" ? `<span>Cleanup</span>` : ""}</div>${detail ? `<p>${scenarioEscape(detail)}</p>` : ""}</div><time>${scenarioEscape(time)}</time></li>`);
+    const detailMarkup = !detail ? "" : busy && !result?.error && status !== "failed"
+      ? result?.output ? `<details class="scenario-step-details" data-step="${index + 1}" ${openDetails.has(String(index + 1)) ? "open" : ""}><summary>Details</summary><p>${scenarioEscape(detail)}</p></details>` : ""
+      : `<p>${scenarioEscape(detail)}</p>`;
+    lane.push(`<li class="scenario-step ${scenarioEscape(status)} ${phase === "cleanup" ? "cleanup" : ""}"><span class="scenario-step-mark" aria-hidden="true"></span><div class="scenario-step-copy"><div><span class="scenario-step-number">${index + 1}</span><strong>${scenarioEscape(step.action.replaceAll("_", " "))}</strong>${step.component ? `<span>${scenarioEscape(step.component)}</span>` : ""}${phase === "cleanup" ? `<span>Cleanup</span>` : ""}</div>${detailMarkup}</div><time>${scenarioEscape(time)}</time></li>`);
     lanes.set(machine, lane);
   });
   document.getElementById("scenario-steps").innerHTML = [...lanes].map(([machine, steps]) => `<section class="scenario-lane"${machine === "Shared" ? "" : ` data-scenario-machine="${scenarioEscape(machine)}"`}><h3>${scenarioEscape(machine)}</h3><ol class="scenario-steps">${steps.join("")}</ol></section>`).join("");
   renderScenarioLogPreviews();
   updateScenarioTrackScroll();
+  renderSelectedScenario();
   for (const button of document.querySelectorAll("[data-run-scenario]")) {
     button.disabled = busy || button.dataset.runOrganization !== activeScenarioOrganization || button.dataset.runPublished !== "true";
   }
@@ -405,7 +420,12 @@ async function refreshScenarios({ signal, isCurrent }) {
   if (!isCurrent()) return;
   const error = document.getElementById("scenario-error");
   error.hidden = true;
-  activeScenarioOrganization = data.active_organization_id || activeScenarioOrganization;
+  const organization = data.active_organization_id || activeScenarioOrganization;
+  if (organization !== activeScenarioOrganization) {
+    selectedScenarioID = "";
+    document.getElementById("scenario-browser-dialog").close();
+  }
+  activeScenarioOrganization = organization;
   if (scenarioEditorOrganization && scenarioEditorOrganization !== activeScenarioOrganization && document.getElementById("scenario-editor-dialog").open) {
     document.getElementById("scenario-editor-dialog").close();
   }
@@ -738,6 +758,7 @@ async function saveScenarioDraft() {
   scenarioEditorSummary = "";
   scenarioEditorViewing = 0;
   renderScenarioEditor(scenario);
+  if (scenarioEditorOrganization === activeScenarioOrganization) selectedScenarioID = scenario.id;
   setScenarioEditorStatus(`Saved version ${scenarioEditorArtifact.revision}. Publish it to enable runs.`, "saved");
   await refreshScenarioRevisions();
   updateScenarioEditorActions();
@@ -858,6 +879,36 @@ async function postScenarioAction(url) {
 }
 
 
+scenarioEditorPage.createMenu({
+  root: document.getElementById("scenario-files"),
+  toggle: document.getElementById("scenario-files-toggle"),
+  menu: document.getElementById("scenario-file-menu"),
+});
+document.getElementById("scenario-browse").addEventListener("click", () => {
+  document.getElementById("scenario-browser-dialog").showModal();
+});
+document.getElementById("scenario-browser-close").addEventListener("click", () => {
+  document.getElementById("scenario-browser-dialog").close();
+});
+document.getElementById("scenario-browser-dialog").addEventListener("close", () => {
+  document.getElementById("scenario-browse").focus();
+});
+document.getElementById("scenario-browser-list").addEventListener("click", event => {
+  const button = event.target.closest("[data-select-scenario]");
+  if (!button || !scenarioById.has(button.dataset.selectScenario)) return;
+  selectedScenarioID = button.dataset.selectScenario;
+  renderScenarioList([...scenarioById.values()]);
+  document.getElementById("scenario-browser-dialog").close();
+});
+document.getElementById("scenario-edit-selected").addEventListener("click", async () => {
+  if (!scenarioById.has(selectedScenarioID)) return;
+  try { await scenarioEditorController.perform("load", selectedScenarioID); }
+  catch (error) {
+    const message = document.getElementById("scenario-error");
+    message.textContent = error.message || "Could not open scenario";
+    message.hidden = false;
+  }
+});
 document.getElementById("scenario-new").addEventListener("click", openNewScenarioEditor);
 document.getElementById("scenario-editor-dialog").addEventListener("close", () => {
   scenarioFormAnalysisScope.invalidate();
