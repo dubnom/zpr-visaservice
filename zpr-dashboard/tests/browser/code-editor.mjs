@@ -5,6 +5,139 @@ const colorHashes = colorStyles.map(color => `'sha256-${createHash("sha256").upd
 const editorCSP = `default-src 'self'; style-src 'self'; style-src-attr 'unsafe-hashes' ${colorHashes}; script-src 'self'; connect-src 'self'; img-src 'self' data:`;
 
 export function registerCodeEditorTests(test, expect) {
+  test("CodeMirror formats policy and assertions as isolated undoable edits", async ({ page, appURL, api }) => {
+    api.handlers.set("/api/assertions/format", route => route.fulfill({ json: { source: 'group "Operators" members >= 2;\n', warnings: [] } }));
+    await enable(page, appURL);
+    const samples = [
+      ["policy-source", "#policy-format", "define    Employee as user.   \n\n\n"],
+      ["assertion-source", "#assertion-format", 'group   "Operators" members >= 2;   \n'],
+    ];
+    for (const [id, format, original] of samples) {
+      if (id === "assertion-source") page.once("dialog", dialog => dialog.accept());
+      const editor = id === "policy-source" ? content(page) : await assertions(page);
+      await editor.fill(original);
+      await editor.press("ControlOrMeta+End");
+      await editor.pressSequentially(" ");
+      const beforeFormat = original + " ";
+      await page.locator(format).click();
+      await expect(page.locator(`#${id}`)).not.toHaveValue(beforeFormat);
+      const formatted = await page.locator(`#${id}`).inputValue();
+      await page.locator(format).press("ControlOrMeta+z");
+      await expect(page.locator(`#${id}`)).toHaveValue(beforeFormat);
+      await page.locator(format).press("ControlOrMeta+Shift+Z");
+      await expect(page.locator(`#${id}`)).toHaveValue(formatted);
+      await editor.press("ControlOrMeta+z");
+      await expect(page.locator(`#${id}`)).toHaveValue(beforeFormat);
+      await editor.press("ControlOrMeta+z");
+      await expect(page.locator(`#${id}`)).toHaveValue(original);
+    }
+    expect(api.counts.get("/api/policy/records/test-policy/revisions")).toBe(1);
+    expect(api.counts.get("/api/policy/records/test-assertions/revisions")).toBe(1);
+  });
+
+  test("CodeMirror places clicks and the caret correctly after two-axis scrolling", async ({ page, appURL, api }) => {
+    await enable(page, appURL);
+    const original = Array.from({ length: 450 }, (_, index) => `# Row ${String(index).padStart(3, "0")} ${"abcdefghij".repeat(18)}`).join("\n");
+    await content(page).fill(original);
+    const scroller = host(page).locator(".cm-scroller");
+    for (const [top, left] of [[2300, 450], [4800, 700], [600, 120]]) {
+      await scroller.evaluate((element, [top, left]) => { element.scrollTop = top; element.scrollLeft = left; }, [top, left]);
+      await expect.poll(async () => host(page).evaluate(element => {
+        const root = element.shadowRoot;
+        const viewport = root.querySelector(".cm-scroller").getBoundingClientRect();
+        const line = [...root.querySelectorAll(".cm-line")].find(line => {
+          const box = line.getBoundingClientRect();
+          return box.top > viewport.top + 40 && box.bottom < viewport.bottom - 20;
+        });
+        return Boolean(line);
+      })).toBe(true);
+      const target = await host(page).evaluate(element => {
+        const root = element.shadowRoot;
+        const viewport = root.querySelector(".cm-scroller").getBoundingClientRect();
+        const line = [...root.querySelectorAll(".cm-line")].find(line => {
+          const box = line.getBoundingClientRect();
+          return box.top > viewport.top + 40 && box.bottom < viewport.bottom - 20;
+        });
+        const walker = document.createTreeWalker(line, NodeFilter.SHOW_TEXT);
+        let node, offset = 0;
+        while ((node = walker.nextNode())) {
+          for (let index = 0; index < node.length; index++) {
+            const range = document.createRange();
+            range.setStart(node, index);
+            range.setEnd(node, index + 1);
+            const box = range.getBoundingClientRect();
+            if (box.left > viewport.left + 150 && box.right < viewport.right - 30) {
+              return { x: box.left + 0.2, y: (box.top + box.bottom) / 2, index: document.getElementById("policy-source").value.indexOf(line.textContent) + offset + index, top: box.top, bottom: box.bottom };
+            }
+          }
+          offset += node.length;
+        }
+        throw new Error("No visible character after scrolling");
+      });
+      await page.mouse.click(target.x, target.y);
+      await expect.poll(() => page.locator("#policy-source").evaluate(source => source.selectionStart)).toBe(target.index);
+      const caret = await host(page).evaluate(element => {
+        const selection = element.shadowRoot.getSelection?.() || document.getSelection();
+        const box = selection.getRangeAt(0).getBoundingClientRect();
+        return { top: box.top, bottom: box.bottom, left: box.left };
+      });
+      expect(Math.abs(caret.top - target.top)).toBeLessThan(2);
+      expect(Math.abs(caret.left - target.x)).toBeLessThan(2);
+      await expect.poll(() => host(page).locator(".cm-cursor").first().evaluate(cursor => cursor.getBoundingClientRect().top)).toBeGreaterThan(target.top - 2);
+      const drawn = await host(page).locator(".cm-cursor").first().boundingBox();
+      expect(Math.abs(drawn.y - target.top)).toBeLessThan(3);
+      expect(Math.abs(drawn.x - target.x)).toBeLessThan(3);
+      await expect(content(page)).toHaveCSS("caret-color", "rgba(0, 0, 0, 0)");
+      await scroller.evaluate(element => { element.scrollTop += 18; });
+      await expect.poll(async () => {
+        const drawn = await host(page).locator(".cm-cursor").first().boundingBox();
+        return Math.abs(drawn.y - (target.top - 18));
+      }).toBeLessThan(3);
+      await page.keyboard.type("X");
+      await expect(page.locator("#policy-source")).toHaveValue(original.slice(0, target.index) + "X" + original.slice(target.index));
+      await content(page).press("ControlOrMeta+z");
+      await expect(page.locator("#policy-source")).toHaveValue(original);
+    }
+    page.once("dialog", dialog => dialog.accept());
+    const assertion = await assertions(page);
+    await assertion.fill(Array.from({ length: 250 }, (_, index) => `// Row ${index} ${"word ".repeat(20)}`).join("\n"));
+    await assertion.press("ControlOrMeta+End");
+    await assertion.press("Home");
+    await assertion.press("ArrowRight");
+    const assertionHost = page.locator('.code-editor-host[data-source="assertion-source"]');
+    const beforeScroll = await assertionHost.locator(".cm-cursor").first().boundingBox();
+    await assertionHost.locator(".cm-scroller").evaluate(element => { element.scrollTop -= 18; });
+    await expect.poll(async () => {
+      const drawn = await assertionHost.locator(".cm-cursor").first().boundingBox();
+      return Math.abs(drawn.y - (beforeScroll.y + 18));
+    }).toBeLessThan(3);
+  });
+
+  test("CodeMirror toolbar Undo and Redo work after Analyze without intercepting assistant text fields", async ({ page, appURL, api }) => {
+    assistantReady(api);
+    api.handlers.set("/api/policy/check", route => route.fulfill({ json: { valid: false, diagnostics: "Error at line 1, column 1: sample error" } }));
+    api.handlers.set("/api/assertions/evaluate", route => route.fulfill({ json: { status: "pass", results: [] } }));
+    await enable(page, appURL);
+    for (const [id, analyze] of [["policy-source", "#policy-check"], ["assertion-source", "#assertion-analyze"]]) {
+      const editor = id === "policy-source" ? content(page) : await assertions(page);
+      const before = await page.locator(`#${id}`).inputValue();
+      await editor.press("ControlOrMeta+End");
+      await editor.pressSequentially("extra");
+      await page.locator(analyze).click();
+      await expect(page.locator(analyze)).not.toHaveAttribute("data-analysis-state", "pending");
+      await page.locator(analyze).press("ControlOrMeta+z");
+      await expect(page.locator(`#${id}`)).toHaveValue(before);
+      await page.locator(analyze).press("ControlOrMeta+Shift+Z");
+      await expect(page.locator(`#${id}`)).toHaveValue(before + "extra");
+      await editor.press("ControlOrMeta+z");
+      await expect(page.locator(`#${id}`)).toHaveValue(before);
+    }
+    const sourceBefore = await page.locator("#assertion-source").inputValue();
+    await page.locator("#assistant-question").fill("separate question");
+    await page.locator("#assistant-question").press("ControlOrMeta+z");
+    await expect(page.locator("#assertion-source")).toHaveValue(sourceBefore);
+  });
+
   const host = page => page.locator('.code-editor-host[data-source="policy-source"]');
   const content = page => host(page).locator(".cm-content");
   async function editorPage(page, appURL) {
@@ -20,8 +153,8 @@ export function registerCodeEditorTests(test, expect) {
     await editorPage(page, appURL);
     await page.goto(appURL + "/#policy");
     await expect(page.locator("#policy-source")).toBeEnabled();
-    await page.locator("#code-editor-trial").check();
-    await expect(page.locator("#code-editor-trial-status")).toContainText("CodeMirror trial on");
+    await expect(page.locator("#code-editor-status")).toHaveText("");
+    await expect(page.locator("#code-editor-trial")).toHaveCount(0);
     await expect(content(page)).toBeVisible();
   }
   async function assertions(page) {
@@ -39,7 +172,7 @@ export function registerCodeEditorTests(test, expect) {
     await page.locator("#assistant-send").click();
   }
 
-  test("CodeMirror trial matches previous policy and assertion font metrics", async ({ page, appURL, api }) => {
+  test("CodeMirror matches previous policy and assertion font metrics", async ({ page, appURL, api }) => {
     await enable(page, appURL);
     for (const id of ["policy-source", "assertion-source"]) {
       if (id === "assertion-source") await assertions(page);
@@ -52,7 +185,7 @@ export function registerCodeEditorTests(test, expect) {
     }
   });
 
-  test("CodeMirror trial matches legacy policy and assertion token colors and classifications", async ({ page, appURL, api }) => {
+  test("CodeMirror matches legacy policy and assertion token colors and classifications", async ({ page, appURL, api }) => {
     await enable(page, appURL);
     const samples = [
       ["policy-source", 'define Employee as user.\nallow Employee with department: "Finance" to access service.\n# Comment\n'],
@@ -72,7 +205,7 @@ export function registerCodeEditorTests(test, expect) {
     }
   });
 
-  test("CodeMirror trial applies AI line replacements and insertions as one isolated undoable unsaved edit", async ({ page, appURL, api }) => {
+  test("CodeMirror applies AI line replacements and insertions as one isolated undoable unsaved edit", async ({ page, appURL, api }) => {
     assistantReady(api);
     const requests = [];
     api.handlers.set("/api/policy/assistant", route => {
@@ -94,7 +227,8 @@ export function registerCodeEditorTests(test, expect) {
     await ask(page);
     const afterAI = beforeAI.replace("define First as user.", "define First as device.").replace("# Keep this line.\n", "# Keep this line.\n# Inserted by AI.\n");
     await expect(page.locator("#policy-source")).toHaveValue(afterAI);
-    await expect(page.locator("#assistant-messages")).toContainText("Applied as one unsaved edit");
+    await expect(page.locator("#assistant-messages")).toContainText("Updated the definition and inserted a comment.");
+    await expect(page.locator("#assistant-messages")).not.toContainText("Applied as one unsaved");
     await expect(page.locator("#assistant-messages .assistant-insert")).toHaveCount(0);
     expect(requests[0]).toMatchObject({ editor: "policy", direct_edits: true, source: beforeAI });
     await content(page).press("ControlOrMeta+z");
@@ -105,7 +239,7 @@ export function registerCodeEditorTests(test, expect) {
     expect(api.counts.get("/api/policy/records/test-policy/revisions")).toBe(1);
   });
 
-  test("CodeMirror trial rejects malformed ambiguous overlapping and oversized AI edits atomically", async ({ page, appURL, api }) => {
+  test("CodeMirror rejects malformed ambiguous overlapping oversized and no-op AI edits atomically", async ({ page, appURL, api }) => {
     assistantReady(api);
     let answer;
     api.handlers.set("/api/policy/assistant", route => route.fulfill({ json: { answer } }));
@@ -119,6 +253,7 @@ export function registerCodeEditorTests(test, expect) {
       [[{ before: "", after: "x" }], /ambiguous/],
       [[{ before: "unique", after: "x".repeat(100) }], /size limit/],
       [[{ before: "unique", after: null }], /before and after/],
+      [[{ before: "unique", after: "unique" }], /do not change/],
     ]) {
       answer = JSON.stringify({ answer: "Attempted change", edits });
       await ask(page);
@@ -131,7 +266,54 @@ export function registerCodeEditorTests(test, expect) {
     await expect(page.locator("#policy-source")).toHaveValue("abc\nabc\nunique\n");
   });
 
-  test("CodeMirror trial applies assertion AI edits without saving and rejects responses for another record", async ({ page, appURL, api }) => {
+  test("CodeMirror distinguishes answers without edits and reports per-request and session usage without retrying", async ({ page, appURL, api }) => {
+    assistantReady(api);
+    let output = 90;
+    let fail = false;
+    const requests = [];
+    api.handlers.set("/api/policy/assistant", route => {
+      requests.push(route.request().postDataJSON());
+      if (fail) return route.fulfill({ status: 502, json: { error: "Output limit reached. No changes were applied.", input_tokens: 11, output_tokens: 300 } });
+      return route.fulfill({ json: { answer: JSON.stringify({ answer: "Here is the explanation.", edits: [] }), input_tokens: 10, output_tokens: output } });
+    });
+    await enable(page, appURL);
+    const original = await page.locator("#policy-source").inputValue();
+    await expect(page.locator("#assistant-disclosure")).toHaveText("Submitting sends the current draft and chat history to Anthropic.");
+    await expect(page.locator("#assistant-usage")).toBeHidden();
+    await expect(page.locator("#policy-assistant-pane .assistant-options summary")).toHaveText("Model and Tokens");
+    await page.locator("#policy-assistant-pane .assistant-options summary").click();
+    await expect(page.locator("#policy-assistant-pane .assistant-options #assistant-usage")).toBeVisible();
+    await expect(page.locator("#assistant-max-tokens")).toHaveValue("2400");
+    expect(await page.locator("#assistant-max-tokens option").evaluateAll(options => options.map(option => Number(option.value)))).toEqual([900, 1800, 2400, 3600, 7200]);
+    for (const max of [900, 1800, 2400, 3600, 7200]) {
+      await page.locator("#assistant-max-tokens").selectOption(String(max));
+      await ask(page, "Explain this policy");
+      await expect(page.locator("#assistant-messages .assistant-empty")).toHaveText("No editor changes were returned.");
+      await expect(page.locator("#assistant-messages .assistant-error")).toHaveCount(0);
+      await expect(page.locator("#assistant-usage")).toContainText(`90 output / ${max.toLocaleString()} max`);
+      await expect(page.locator("#policy-source")).toHaveValue(original);
+    }
+    expect(requests.map(request => request.max_tokens)).toEqual([900, 1800, 2400, 3600, 7200]);
+    expect(requests.every(request => request.direct_edits === true)).toBe(true);
+    await expect(page.locator("#assistant-usage")).toContainText("Session: 50 input · 450 output tokens");
+    await page.locator("#assistant-max-tokens").selectOption("900");
+    fail = true;
+    await ask(page);
+    await expect(page.locator("#assistant-messages .assistant-error")).toContainText("Output limit reached");
+    await expect(page.locator("#assistant-usage")).toContainText("Session: 61 input · 750 output tokens");
+    fail = false;
+    output = 950;
+    await ask(page);
+    await expect(page.locator("#assistant-messages .assistant-error")).toContainText("provider reported 950");
+    await expect(page.locator("#assistant-usage")).toContainText("950 output / 900 max");
+    await expect(page.locator("#assistant-usage")).toContainText("Session: 71 input · 1,700 output tokens");
+    await expect(page.locator("#policy-source")).toHaveValue(original);
+    expect(requests).toHaveLength(7);
+    await page.locator("#policy-assistant-pane [data-assistant-clear]").click();
+    await expect(page.locator("#assistant-usage")).toHaveText("Session: 0 input · 0 output tokens");
+  });
+
+  test("CodeMirror applies assertion AI edits without saving and rejects responses for another record", async ({ page, appURL, api }) => {
     assistantReady(api);
     const record = api.policy.records.find(record => record.id === "test-assertions");
     record.content_type = "text/vnd.zpr.assertions";
@@ -164,7 +346,7 @@ export function registerCodeEditorTests(test, expect) {
     expect(api.counts.get("/api/policy/records/test-assertions/revisions")).toBe(1);
   });
 
-  test("CodeMirror trial keeps drafts intact on structured response errors and allows a successful retry", async ({ page, appURL, api }) => {
+  test("CodeMirror keeps drafts intact on structured response errors and allows a successful retry", async ({ page, appURL, api }) => {
     assistantReady(api);
     let fail = true;
     api.handlers.set("/api/policy/assistant", route => fail
@@ -184,7 +366,7 @@ export function registerCodeEditorTests(test, expect) {
     expect(api.counts.get("/api/policy/records/test-policy/revisions")).toBe(1);
   });
 
-  test("CodeMirror trial rejects delayed AI changes after edits and mode changes and preserves legacy Insert", async ({ page, appURL, api }) => {
+  test("CodeMirror rejects delayed AI changes after source and permission changes without legacy Insert", async ({ page, appURL, api }) => {
     assistantReady(api);
     let release;
     let direct;
@@ -206,20 +388,17 @@ export function registerCodeEditorTests(test, expect) {
     release = null;
     await ask(page);
     await expect.poll(() => Boolean(release)).toBe(true);
-    await page.locator("#code-editor-trial").uncheck();
+    await page.evaluate(() => { document.getElementById("policy-source").readOnly = true; });
     release();
     await expect(page.locator("#assistant-messages")).toContainText("mode or permissions changed");
     await expect(page.locator("#policy-source")).toHaveValue("original");
-    release = null;
-    await ask(page);
-    await expect.poll(() => Boolean(release)).toBe(true);
-    expect(direct).toBeUndefined();
-    release();
-    await expect(page.locator("#assistant-messages .assistant-insert")).toBeVisible();
+    expect(direct).toBe(true);
+    await expect(page.locator("#assistant-send")).toBeDisabled();
+    await expect(page.locator("#assistant-messages .assistant-insert")).toHaveCount(0);
     await expect(page.locator("#policy-source")).toHaveValue("original");
   });
 
-  test("CodeMirror trial preserves text, edits, undo, completion and fallback without writes", async ({ page, appURL, api }) => {
+  test("CodeMirror starts automatically and preserves text, undo and completion without writes", async ({ page, appURL, api }) => {
     await enable(page, appURL);
     const initial = await page.locator("#policy-source").inputValue();
     await content(page).click();
@@ -236,16 +415,154 @@ export function registerCodeEditorTests(test, expect) {
     await expect(page.locator("#policy-source")).toHaveValue('define Test as user.\n  ');
     await content(page).press("ControlOrMeta+z");
     await expect(page.locator("#policy-source")).toHaveValue('define Test as user.\n');
-    await page.locator("#code-editor-trial").uncheck();
-    await expect(page.locator("#policy-source")).toBeVisible();
+    await expect(page.locator("#policy-source")).not.toBeVisible();
     await expect(page.locator("#policy-source")).toHaveValue('define Test as user.\n');
-    await page.locator("#code-editor-trial").check();
     await expect(content(page)).toHaveText('define Test as user.');
+    await page.reload();
+    await expect(content(page)).toBeVisible();
+    await expect(page.locator("#policy-source")).not.toBeVisible();
     expect(initial.length).toBeGreaterThan(0);
     expect([...api.counts.keys()].some(path => /\/(save|check|test|evaluate|stage)$/.test(path))).toBe(false);
   });
 
-  test("CodeMirror trial shares Find Replace and Wrap across policy and assertions", async ({ page, appURL, api }) => {
+  test("CodeMirror completes LDAP attributes by short and qualified names with undo", async ({ page, appURL, api }) => {
+    await enable(page, appURL);
+    for (const prefix of ["dep", "user.dep", "tit", "user."]) {
+      const attribute = prefix === "tit" ? "user.title:" : "user.department:";
+      const original = `define Employee as user\n  with ${prefix}`;
+      await content(page).fill(original);
+      await content(page).press("ControlOrMeta+End");
+      await content(page).press("Control+Space");
+      await expect(host(page).getByRole("option", { name: attribute, exact: true })).toBeVisible();
+      await expect(host(page).getByRole("option", { name: "device.secure:", exact: true })).toHaveCount(0);
+      await host(page).getByRole("option", { name: attribute, exact: true }).click();
+      await expect(page.locator("#policy-source")).toHaveValue(`define Employee as user\n  with ${attribute}`);
+      await content(page).press("ControlOrMeta+z");
+      await expect(page.locator("#policy-source")).toHaveValue(original);
+    }
+  });
+
+  test("CodeMirror automatically completes LDAP namespaces after dots for adapter definitions", async ({ page, appURL, api }) => {
+    api.policy.attributes.push(
+      { attribute: "greatlakes.department", source: "LDAP" },
+      { attribute: "greatlakes.location", source: "LDAP" },
+      { attribute: "zpr.adapter.cn", source: "LDAP" },
+    );
+    await enable(page, appURL);
+    for (const [prefix, attribute] of [
+      ["define great as adapter with greatlakes", "greatlakes.department:"],
+      ["define great as an adapter with zpr.adapter", "zpr.adapter.cn:"],
+    ]) {
+      await content(page).fill(prefix);
+      await content(page).press("ControlOrMeta+End");
+      await content(page).pressSequentially(".");
+      await expect(host(page).getByRole("option", { name: attribute, exact: true })).toBeVisible();
+      await host(page).getByRole("option", { name: attribute, exact: true }).click();
+      await expect(page.locator("#policy-source")).toHaveValue(prefix.slice(0, prefix.lastIndexOf(" ") + 1) + attribute);
+      await content(page).press("ControlOrMeta+z");
+      await expect(page.locator("#policy-source")).toHaveValue(prefix + ".");
+    }
+    for (const text of [
+      "define great as adapter.",
+      "# define great as adapter with greatlakes.",
+      'define great as adapter with greatlakes.department:"unfinished.',
+      "define great as adapter with greatlakes.department:Finance.",
+    ]) {
+      await content(page).fill(text);
+      await content(page).press("ControlOrMeta+End");
+      await content(page).press("Control+Space");
+      await expect(host(page).getByRole("option")).toHaveCount(0);
+    }
+  });
+
+  test("CodeMirror completes production-shaped LDAP names in a multi-statement policy", async ({ page, appURL, api }) => {
+    api.policy.attributes = [
+      { attribute: "device.greatlakes.department", source: "ou" },
+      { attribute: "device.greatlakes.location", source: "zprMachineLocation" },
+    ];
+    await enable(page, appURL);
+    for (const prefix of ["greatlakes.", "greatlakes.dep", "device.greatlakes."]) {
+      const previous = 'define First as adapter.\ndefine Second as device.\n';
+      await content(page).fill(previous + "define great as adapter with ");
+      await content(page).press("ControlOrMeta+End");
+      await content(page).pressSequentially(prefix);
+      const attribute = prefix.startsWith("device.") ? "device.greatlakes.department:" : "greatlakes.department:";
+      const option = host(page).getByRole("option", { name: attribute, exact: true });
+      await expect(option).toBeVisible();
+      await option.click();
+      await expect(page.locator("#policy-source")).toHaveValue(previous + "define great as adapter with " + attribute);
+      await content(page).press("ControlOrMeta+z");
+      await expect(page.locator("#policy-source")).toHaveValue(previous + "define great as adapter with " + prefix);
+    }
+  });
+
+  test("CodeMirror adapter completion offers namespace then attributes without injecting a type prefix or colon", async ({ page, appURL, api }) => {
+    api.policy.attributes = [
+      { attribute: "device.greatlakes.department", source: "ou" },
+      { attribute: "device.greatlakes.location", source: "zprMachineLocation" },
+    ];
+    await enable(page, appURL);
+    const original = "define foo as adapter with grea";
+    await content(page).fill("define foo as adapter with ");
+    await content(page).press("ControlOrMeta+End");
+    await content(page).pressSequentially("grea");
+    await expect(host(page).getByRole("option")).toHaveCount(1);
+    await expect(host(page).getByRole("option", { name: "greatlakes.", exact: true })).toBeVisible();
+    await host(page).getByRole("option", { name: "greatlakes.", exact: true }).click();
+    await expect(page.locator("#policy-source")).toHaveValue("define foo as adapter with greatlakes.");
+    await expect(host(page).getByRole("option", { name: "greatlakes.location:", exact: true })).toBeVisible();
+    await expect(host(page).getByRole("option", { name: "greatlakes.department:", exact: true })).toBeVisible();
+    await host(page).getByRole("option", { name: "greatlakes.location:", exact: true }).click();
+    await expect(page.locator("#policy-source")).toHaveValue("define foo as adapter with greatlakes.location:");
+    await content(page).press("ControlOrMeta+z");
+    await expect(page.locator("#policy-source")).toHaveValue("define foo as adapter with greatlakes.");
+    await content(page).press("ControlOrMeta+z");
+    await expect(page.locator("#policy-source")).toHaveValue(original);
+  });
+
+  test("CodeMirror Discard cancels safely or reloads the saved policy and resets source history", async ({ page, appURL, api }) => {
+    await enable(page, appURL);
+    const original = await page.locator("#policy-source").inputValue();
+    await content(page).fill("define Changed as adapter.\n");
+    await page.locator("#policy-files-toggle").click();
+    page.once("dialog", dialog => dialog.dismiss());
+    await page.locator("#policy-refresh").click();
+    await expect(page.locator("#policy-source")).toHaveValue("define Changed as adapter.\n");
+    await page.locator("#policy-files-toggle").click();
+    page.once("dialog", dialog => dialog.accept());
+    await page.locator("#policy-refresh").click();
+    await expect(page.locator("#policy-source")).toHaveValue(original);
+    await content(page).press("ControlOrMeta+z");
+    await expect(page.locator("#policy-source")).toHaveValue(original);
+    await expect(page.locator("#policy-modified-indicator")).not.toBeVisible();
+    expect([...api.counts.keys()].some(path => /\/(save|check|test|evaluate|stage)$/.test(path))).toBe(false);
+  });
+
+  test("CodeMirror Discard reports a reload failure without losing the draft", async ({ page, appURL, api }) => {
+    await enable(page, appURL);
+    await content(page).fill("define KeepDraft as adapter.\n");
+    api.handlers.set("/api/policy/records/test-policy", route => route.fulfill({ status: 503, json: { error: "Repository unavailable" } }));
+    await page.locator("#policy-files-toggle").click();
+    page.once("dialog", dialog => dialog.accept());
+    await page.locator("#policy-refresh").click();
+    await expect(page.locator("#policy-load-status")).toContainText("Repository unavailable");
+    await expect(page.locator("#policy-source")).toHaveValue("define KeepDraft as adapter.\n");
+  });
+
+  test("CodeMirror assertion Discard reloads saved source and resets history", async ({ page, appURL, api }) => {
+    await enable(page, appURL);
+    const editor = await assertions(page);
+    const original = await page.locator("#assertion-source").inputValue();
+    await editor.fill('group "Changed" members >= 2;\n');
+    await page.locator("#policy-files-toggle").click();
+    page.once("dialog", dialog => dialog.accept());
+    await page.locator("#assertion-reload").click();
+    await expect(page.locator("#assertion-source")).toHaveValue(original);
+    await editor.press("ControlOrMeta+z");
+    await expect(page.locator("#assertion-source")).toHaveValue(original);
+  });
+
+  test("CodeMirror shares Find Replace and Wrap across policy and assertions", async ({ page, appURL, api }) => {
     await enable(page, appURL);
     await content(page).fill("define One as user.\ndefine Two as user.\n");
     await content(page).press("ControlOrMeta+h");
@@ -269,12 +586,11 @@ export function registerCodeEditorTests(test, expect) {
     await tools.getByRole("button", { name: "Close", exact: true }).click();
     await page.getByRole("checkbox", { name: "Wrap", exact: true }).first().check();
     await expect(page.locator('.code-editor-host[data-source="assertion-source"] .cm-content')).toHaveClass(/cm-lineWrapping/);
-    await page.locator("#code-editor-trial").uncheck();
     await expect(page.locator("#assertion-source")).toHaveValue('group "Reviewers" members >= 2;\n');
-    await expect(page.locator("#assertion-source")).toBeVisible();
+    await expect(page.locator("#assertion-source")).not.toBeVisible();
   });
 
-  test("CodeMirror trial restores read-only states, source-owned diagnostics and result actions", async ({ page, appURL, api }) => {
+  test("CodeMirror restores read-only states, source-owned diagnostics and result actions", async ({ page, appURL, api }) => {
     await enable(page, appURL);
     await page.evaluate(() => {
       const source = document.getElementById("policy-source");
@@ -334,17 +650,40 @@ export function registerCodeEditorTests(test, expect) {
     await expect(page.locator("#policy-source")).toHaveValue("abc");
   });
 
-  test("CodeMirror trial reports bundle-load failure and keeps current source usable", async ({ page, appURL, api }) => {
+  test("CodeMirror disables AI until startup completes and uses current record permissions", async ({ page, appURL, api }) => {
+    assistantReady(api);
+    let release;
+    await page.route("**/vendor/code-editor.js?*", async route => {
+      await new Promise(resolve => { release = resolve; });
+      await route.continue();
+    });
+    await page.goto(appURL + "/#policy", { waitUntil: "domcontentloaded" });
+    await expect(page.locator("#policy-source")).toBeEnabled();
+    await expect(page.locator("#code-editor-status")).toHaveText("Loading editor…");
+    await expect(page.locator("#policy-source")).not.toBeVisible();
+    await expect(page.locator("#assistant-question")).toBeDisabled();
+    await expect.poll(() => Boolean(release)).toBe(true);
+    release();
+    await expect(content(page)).toBeVisible();
+    await expect(content(page)).toHaveAttribute("contenteditable", "true");
+    await expect(page.locator("#assistant-question")).toBeEnabled();
+    expect(api.counts.get("/api/policy/assistant") || 0).toBe(0);
+  });
+
+  test("CodeMirror reports bundle-load failure without exposing a legacy editor or sending AI requests", async ({ page, appURL, api }) => {
+    assistantReady(api);
     await page.route("**/vendor/code-editor.js?*", route => route.abort());
     await page.goto(appURL + "/#policy");
     await expect(page.locator("#policy-source")).toBeEnabled();
-    await page.locator("#code-editor-trial").click();
-    await expect(page.locator("#code-editor-trial-status")).toContainText("Could not load CodeMirror");
-    await expect(page.locator("#code-editor-trial")).not.toBeChecked();
-    await expect(page.locator("#policy-source")).toBeVisible();
+    await expect(page.locator("#code-editor-status")).toContainText("Could not load the editor");
+    await expect(page.locator("#code-editor-trial")).toHaveCount(0);
+    await expect(page.locator("#policy-source")).not.toBeVisible();
+    await expect(page.locator("#assistant-question")).toBeDisabled();
+    await expect(page.locator("#assistant-send")).toBeDisabled();
+    expect(api.counts.get("/api/policy/assistant") || 0).toBe(0);
   });
 
-  test("CodeMirror trial analyzes exact policy text, rejects stale responses and keeps Save confirmation", async ({ page, appURL, api }) => {
+  test("CodeMirror analyzes exact policy text, rejects stale responses and keeps Save confirmation", async ({ page, appURL, api }) => {
     const submitted = [];
     let complete;
     api.handlers.set("/api/policy/check", async route => {
@@ -375,7 +714,7 @@ export function registerCodeEditorTests(test, expect) {
     await page.locator("#version-dialog").getByRole("button", { name: "Cancel", exact: true }).click();
   });
 
-  test("CodeMirror trial saves exact assertion text through the shared shortcut and clears markers on record changes", async ({ page, appURL, api }) => {
+  test("CodeMirror saves exact assertion text through the shared shortcut and clears markers on record changes", async ({ page, appURL, api }) => {
     const record = api.policy.records.find(record => record.id === "test-assertions");
     record.content_type = "text/vnd.zpr.assertions";
     record.content = 'group "Operators" members >= 1;\n';
@@ -398,7 +737,7 @@ export function registerCodeEditorTests(test, expect) {
     await page.locator('[data-record-id="test-policy"]').click();
     await expect(content(page)).toBeVisible();
     await expect(host(page).getByRole("button")).toHaveCount(0);
-    await page.locator("#code-editor-trial").uncheck();
+    await expect(page.locator("#assertion-source")).not.toBeVisible();
     await expect(page.locator("#assertion-source")).toHaveValue(text);
   });
 

@@ -815,28 +815,55 @@ on by default and the choice is remembered per editor in browser storage. Line
 gutters size each row to its wrapped height so numbers and markers stay aligned
 with their logical lines; uncheck the box to restore horizontal scrolling.
 
-### CodeMirror trial
+### Policy and assertion editor
 
-The **CodeMirror trial** checkbox in Policy/Assertions enables an optional
-CodeMirror 6 editor for these two source types only. It adds syntax colors,
+Policy/Assertions always use the locally bundled CodeMirror 6 editor.
+There is no legacy-editor switch or interactive textarea fallback.
+It adds syntax colors,
 line numbers, bracket matching, policy completion and undo/redo. Its font size,
 font family and line height match the previous editor's computed typography.
 Token classification and colors come from the existing policy/assertion
 highlighters, rather than a separate editor tokenizer or palette.
+Attribute completion accepts configured LDAP namespaces such as `greatlakes.`
+and multi-part namespaces such as `zpr.adapter.` in definition attribute slots;
+their dots are not mistaken for statement terminators. Completion remains
+undoable. Comments, strings,
+completed attribute values and statement-ending dots do not trigger suggestions.
+Typing `greatlakes.` also matches production catalog entries such as
+`device.greatlakes.department`. For adapter definitions, completion omits the
+catalog's built-in type prefix unless explicitly typed: `with grea` offers only
+`greatlakes.`, then opens its attributes. Choosing `location` inserts
+`greatlakes.location:` with no leading colon or injected `device.`.
+Multi-part namespaces advance one segment at a time. Namespace and leaf
+acceptance are separate Undo steps. User/device/service definitions retain
+their existing type-filtered qualified completions. Each statement is parsed
+separately.
+Discard explicitly reloads the selected saved policy, even when its ID has not
+changed, and resets source Undo history. Cancel preserves the draft; failed
+reloads report an error without replacing it. Ordinary same-record selection
+and assertion-save behavior do not force a reload.
+CodeMirror draws and remeasures its own caret/selection when scrolling rather
+than relying on Chromium's native contenteditable caret painting.
+Undo/Redo shortcuts also work while focus is on that editor's buttons (including
+Analyze). Other input fields, such as assistant questions and Find/Replace,
+retain their own native Undo; switching records still resets source history.
 Existing
 Find/Replace, Wrap, Analyze, Format, Save confirmation and Ctrl/Command-S
 continue through the same controllers and API contracts. Source diagnostics
 and clickable result markers remain owned by those controllers, not a second
 compiler or evaluator.
 
-The trial defaults **off on every page load**. Uncheck it to restore the current
-textarea editors without losing unsaved text or the selection. Switching editor
-implementations starts a fresh local undo history; programmatic replacements
-(including record loads and formatting) also reset history so Undo cannot restore
-a previous record's text. This is not a
+The editor starts automatically on every page load. Hidden source elements and
+highlight/result models remain internal controller bridges, not a second editing
+UI. Record loads reset history so Undo cannot restore a previous record's text.
+Permissions and Wrap are read afresh on each record load. Format uses the shared
+edit transaction instead: one Undo restores the exact pre-format draft, Redo
+restores formatting, and an earlier Undo can still undo preceding text edits.
+Shared insertion/replacement edits are history-isolated; no-op replacements
+leave history unchanged. This is not a
 change to Gateway, ZPR Config, Scenario or directory editors.
 
-The bundle is loaded lazily from the same-origin
+The bundle is loaded automatically from the same-origin
 `static/vendor/code-editor.js`; there is no CDN, external editor service or
 Simulator dependency. Run `npm ci` then `npm run build:editor` from
 `zpr-dashboard` after changing `browser/code-editor.js` or its pinned
@@ -848,18 +875,29 @@ can carry token colors into inline attributes, so `style-src-attr` permits only
 nine exact color declarations via CSP hashes. Keep the palette, Go CSP allowlist
 and editor browser tests aligned when changing colors. Arbitrary inline styles,
 inline scripts and `eval` remain prohibited; no `unsafe-inline` is enabled.
-Bundle-load failure reports an explicit error and leaves the current editor
-usable.
+Bundle-load failure reports an explicit reload-to-retry error; hidden backing
+textareas are never exposed as a fallback, and AI requests stay disabled until
+the editor is ready.
 
-With the trial enabled, sending an AI request permits the assistant to apply
+Sending an AI request permits the assistant to apply
 requested policy/assertion source changes directly, without an Insert action.
-Control-Service requests a forced `propose_editor_edits` tool payload rather
-than parsing JSON written as free-form model text. Only one complete payload
+Control-Service requests native JSON-schema output using `output_config.format`,
+not forced tool calls (the configured Sonnet model rejects those with HTTP 400).
+Control Room uses a dedicated 75-second response-header budget for POSTs to
+`/api/policy/assistant` and `/api/gateways/assistant`, allowing context lookup
+and the existing 45-second provider request to finish. Other API timeouts are
+unchanged, TLS settings are preserved, and browser cancellation still propagates.
+Only one complete response
 with an explanation and a bounded list of exact before/after strings is accepted;
-this tool does not execute or save anything. The browser still checks the
+this response does not execute or save anything. The browser still checks the
 current record/source and validates all edits atomically before applying them.
+The provider may precede that JSON text with `thinking` or `redacted_thinking`
+blocks. Those known reasoning blocks are skipped, never returned to the editor
+or interpreted as edits. Missing/multiple text payloads, unknown content blocks,
+truncated responses and invalid edit schemas remain rejected. Server validation
+logs identify the failed check without including source, reasoning or payloads.
 Responses stopped by the output-token limit are rejected with an explicit
-message to increase **Model and max tokens -> Max tokens** or request a smaller
+message to increase **Model and Tokens -> Max tokens** or request a smaller
 change; no partial edits are applied and no automatic retry sends the draft.
 The request includes `direct_edits: true`; Control-Service asks for JSON
 `{"answer":"explanation","edits":[{"before":"unique original text","after":"replacement text"}]}`.
@@ -870,15 +908,29 @@ unique neighboring line as an anchor; an empty original is accepted only for an
 empty document. Other text, including unrelated unsaved changes, is retained.
 Ctrl/Command-Z undoes the complete AI response and Redo restores it.
 
-Source/record changes invalidate pending responses; disabling the trial or
-making the source read-only prevents application. Invalid/truncated edit JSON
+Source/record changes invalidate pending responses; making the source read-only
+prevents application. Invalid/truncated edit JSON
 reports an error without changing source. Questions can return an empty edits
-list. These edits never invoke Save, Analyze, Stage, Publish, activation or a
-runtime action automatically. In the previous textarea editors the assistant
-continues using explicit **Insert**; other editor assistants are unchanged.
+list, shown with a neutral "No editor changes were returned" notice rather than
+an implied change. Nonempty replacement lists that leave the source identical
+are rejected. Applied text is verified against both CodeMirror and its controller
+bridge before displaying the assistant's answer, without an appended success
+sentence. These edits never invoke Save, Analyze, Stage, Publish, activation or a
+runtime action automatically. Other editor assistants are unchanged.
 Direct editing requires the updated Control-Service prompt contract as well
 as the Control Room assets; deploying only the UI against an older service is
 not a compatible rollout for this feature.
+
+**Max tokens** is passed unchanged as the per-request provider `max_tokens`,
+including reasoning and structured edit JSON. It is not a session quota or a
+billing guarantee controlled by this application. Usage shows the last request's
+reported output and requested maximum separately from session totals. Direct-edit
+responses that are truncated or report output above the requested maximum are
+rejected without retrying or applying edits. Their provider-reported input/output
+usage is preserved in the API error and displayed, rather than discarded.
+The approved synthetic 300-token replacement check returned 77 output tokens;
+it did not reproduce the reported first-request overrun. No real policy or chat
+history was sent during that check.
 
 ## Activity and Navigation
 
@@ -1481,17 +1533,128 @@ aliases keep assistant/review JSON types unchanged; there is one validator/store
 implementation. Neutral upstream parsing lives in `internal/gateway`, not a
 Simulator workload owner. The
 [extraction record](../../../REDIRECTORY.md#fourteenth-extraction-production-gateway-draft-owner-2026-10-15)
-lists verification and the remaining command-owned composition. This slice is
-locally verified, not deployed or published.
+lists verification and the remaining command-owned composition. This slice
+was published in `990d54a`; publication does not expand dated deployment evidence.
 
 The [production inventory audit](../../../REDIRECTORY.md#m1-production-inventory-acquisition-and-enrichment-audit-2026-10-15)
 records the seven Admin reads, detail concurrency, snapshot enrichment order,
 partial/disconnected states and `null` versus empty inventory shapes.
 `inventory_compatibility_test.go` guards Admin TLS/key/redirect/decoder behavior
 and snapshot contracts with synthetic Admin services and Simulator unavailable.
-The web Admin client still lives in the command; TUI client defaults and trust
-semantics differ, so they are not interchangeable. This audit changes no runtime
-behavior and does not qualify a live service or release.
+The subsequent
+[Admin read-client extraction](../../../REDIRECTORY.md#fifteenth-extraction-explicit-config-production-admin-read-client-2026-10-15)
+puts explicit configuration, TLS/credential loading and bounded JSON reads in
+[`internal/controlservice/adminapi`](../../internal/controlservice/adminapi/).
+[`admin_client.go`](admin_client.go) remains the environment/error compatibility
+adapter.
+TUI defaults and trust semantics differ, so the clients are not interchangeable.
+The owner has standard-library-only dependencies and no environment or Simulator
+discovery. Existing inventory regressions pass unchanged, with new owner and
+configuration-message tests. This is locally verified, not a deployment or
+live-service qualification.
+
+The [snapshot-owner extraction](../../../REDIRECTORY.md#sixteenth-extraction-production-snapshot-inventory-owner-2026-10-15)
+now puts the wire types, seven concurrent Admin reads, detail expansion and
+pure platform/trusted assembly in
+[`internal/controlservice/inventory`](../../internal/controlservice/inventory/).
+[`inventory.go`](inventory.go) retains aliases/compatibility adapters and
+supplies the explicit reader, configured manager-link resolver and ordered
+platform/display/telemetry enrichment. The package finalizes health afterward,
+preserving the existing gateway error gate and actor-local telemetry errors.
+HTTP routes, no-client shapes, deadlines, environment discovery and diagnostics
+provider selection remain in this command. Existing tests pass unchanged;
+new independent package guards cover concurrency, health, wire shapes and
+dependencies. The actor-visa route retains its separate sequential semantics.
+No deployment or publication was performed for this slice.
+
+The subsequent
+[node-enrichment extraction](../../../REDIRECTORY.md#seventeenth-extraction-explicit-node-inventory-enrichment-2026-10-15)
+puts display-name loading/application and pure node denial/counter enrichment
+in the same production inventory owner. The command retains environment/path
+selection, diagnostics catalog/mappings and OTLP/OpenObserve discovery/query
+adapters; explicit file paths and source-ID/query callbacks cross the boundary.
+Refresh-time reads, capped source identity, limit-1 sequential queries, counter/
+freshness limits and distinct top-level display versus actor-local telemetry
+errors are unchanged. New owner/adapter tests and existing consumer races pass.
+This slice is not deployed or published.
+
+The subsequent
+[diagnostics-acquisition extraction](../../../REDIRECTORY.md#eighteenth-extraction-production-diagnostics-acquisition-owner-2026-10-15)
+moves source/log/response/provider contracts, catalog construction and explicit
+OpenObserve/OTLP query implementations into
+[`internal/controlservice/diagnostics`](../../internal/controlservice/diagnostics/).
+This command keeps configuration validation/file loading/environment selection,
+compatibility aliases/adapters and authorized HTTP result aggregation. Existing
+catalog identities/selected-source caps, response limits, partial signals,
+OTLP resource identity and query/parsing/redaction contracts are unchanged.
+The package receives an operator-validated endpoint/client/credentials or
+explicit OTLP identity paths and performs no configuration discovery.
+New owner/adapter and unchanged consumer regressions pass. No deployment/
+publication in this slice.
+
+The subsequent
+[diagnostics aggregation boundary](../../../REDIRECTORY.md#production-diagnostics-aggregation-boundary-2026-10-15)
+moves result aggregation into the same production package with explicit
+catalog/provider/context/freshness/search inputs. The command retains HTTP
+method/query validation, source mapping refresh, unknown-source rejection,
+18s deadline, authorization composition and shared JSON response writing
+(including `no-store` even when the provider is unavailable).
+Four concurrent queries, query limit 50, latest/source/overall states,
+500-log/1,000-metric budgets before search and field truncation are unchanged.
+Nonpositive freshness now defaults per call rather than mutating the shared
+handler closure. New exact-bound, cancellation and concurrent HTTP tests plus
+unchanged consumers pass under race; vet and both Linux builds pass. All seven
+milestone gates remain open. Remaining startup/operator-config and nested-route
+ownership is the next audit, not an assertion of complete production separation
+or packaging acceptance. This slice is not deployed or published.
+
+The subsequent
+[production startup/HTTP composition audit](../../../REDIRECTORY.md#m1-production-startup-and-http-composition-audit-2026-10-15)
+records startup failure ordering and lifetime, startup-versus-request config
+reads, and exact root/delegated registrations. New source guards pin route
+bindings and distinct server/TLS defaults; runtime tests verify fail-fast
+configuration behavior and request-time organization context with Simulator
+unavailable. Five tests/21 editor-runner cases and focused races pass; runtime
+code and existing tests are unchanged. Required full tests retain the four
+baseline failure groups. Next is explicit-input production Control-Service
+HTTP composition for its fifteen direct plus eight delegated registrations.
+Environment resolution, persistence, scheduler lifetime and listener/TLS remain
+command-owned in that bounded move. All seven milestone gates remain open;
+this audit is not deployment, publication or full application separation.
+
+The subsequent
+[Control-Service HTTP composition owner](../../../REDIRECTORY.md#m2-explicit-handler-control-service-http-composition-2026-10-15)
+is [`internal/controlservice/httpapi`](../../internal/controlservice/httpapi/).
+The command supplies already-built domain handlers to `NewMux`; the package owns
+all fifteen formerly direct registrations and six assertion/two trusted-feed
+registrations. Compatibility `register` methods use the same package owner.
+Assertion inline bodies became named methods without changing domain behavior.
+The command retains configuration read timing, scheduler/store lifecycle,
+local-request/domain checks, security headers and server/TLS/listener setup.
+New served-mux and real-domain integration tests cover route precedence,
+wildcards, methods/HEAD, error/header/context forwarding and independent
+production operation; source guards now follow the moved ownership and pin
+command handler bindings. Package/consumer races, 83 editor-runner cases, vet
+and both Linux builds pass. Full tests retain the four known baseline groups.
+Next is explicit-input operator web-security loading/request protection without
+Simulator discovery. All seven milestone gates remain open; no publication or
+deployment occurred in this slice.
+
+The subsequent
+[operator web-security owner](../../../REDIRECTORY.md#m2-explicit-input-operator-web-security-owner-2026-10-15)
+is [`internal/operatorweb`](../../internal/operatorweb/), with explicit
+`Config`, `Security`, TLS/OIDC loading, auth factory, request protection,
+auth-route registration and cleanup. This command supplies independent
+Control Room/Simulator environment mappings and retains its private compatibility
+fields/helpers, JSON/error writers, server lifetime and permission/delegation/
+review assembly. The shared owner discovers no environment or Simulator state.
+Management/direct-TLS/development, exact host/peer/origin checks, protected file
+limits and OIDC callback/secret/error behavior remain unchanged. New bounds,
+request-boundary, concurrent synthetic IdP/CA and independent adapter tests plus
+unchanged consumers pass under race; 38 editor-runner cases, vet and both Linux
+builds pass. Required full tests retain the four known baseline groups.
+Next is explicit-handler Control Room root HTTP composition. All seven milestone
+gates remain open; this is not publication or deployment.
 
 ## Policy test API
 
@@ -1589,20 +1752,27 @@ zsh scripts/configure-assistant.sh
 
 When Claude is configured, the UI discloses that submitting a question sends
 the current policy and chat history to Anthropic. The key stays server-side;
-assistant responses remain unsaved. With the CodeMirror trial enabled, requested
-policy/assertion line edits apply directly as one Undo step; otherwise applying
-suggestions requires the editor's Insert/Apply action.
+assistant responses remain unsaved. Requested policy/assertion line edits apply
+directly as one Undo step; the other editors retain their Insert/Apply action.
 Run this from the dashboard module directory; the script prompts for the key
 without echoing it, persists it in a protected runtime file, and reloads the
 existing Control-Service container in place while preserving operator settings.
 Do not put the key in browser storage, the Policy Repository, shell history,
 or this repository. The assistant is ready when the service is configured;
 there is no "Use assistant" checkbox and no request is sent until Send is used.
-**Model and max tokens** expands the initially collapsed preferences. The
-server default model or Haiku 4.5 and per-request limits of 300, 600, 1200, or
-2400 tokens are available. The question prompt is **How can I help?**. Displayed
-input/output token totals come from successful responses and reset on page
-reload; they are not a billing or organization-wide usage limit.
+**Model and Tokens** expands the initially collapsed preferences and token usage.
+The policy/assertion disclosure is limited to the draft/chat transmission notice.
+The
+server default model or Haiku 4.5 and per-request choices of 900, 1800, 2400,
+3600 or 7200 tokens are available, with 2400 as the browser/server default.
+The original four choices were tripled, with the doubled default added.
+Older open clients may still submit 300, 600 or 1200; server validation retains
+those values for compatibility. The question prompt is **How can I help?**. Displayed
+input/output token totals come from provider-reported responses, including
+structured-edit validation/limit failures when usage is available, and reset on
+Clear, record/conversation reset or page reload. Last-request output and requested
+maximum are also shown. Unreported failures and obsolete responses are not a
+complete billing ledger; these totals are not an organization-wide usage limit.
 
 The same AI Assistant pane is available beside the assertion, Gateways
 and ZPR Config editors in Control Room, and beside the Simulator's LDAP seed
@@ -1611,8 +1781,8 @@ use `POST /api/policy/assistant` with `editor` set to `assertion` or
 `zpr-config` (assertions also include the attribute catalog), Gateways uses
 `GET`/`POST /api/gateways/assistant` (`gateway.read`/`gateway.analyze`), and
 the Simulator uses its own `POST /api/simulator/editor-assistant` with its own
-key, so Control Room never calls the Simulator. Outside the CodeMirror
-policy/assertion trial's [direct-edit mode](#codemirror-trial), suggested replacement text is
+key, so Control Room never calls the Simulator. Outside the policy/assertion
+[direct-edit mode](#policy-and-assertion-editor), suggested replacement text is
 shown as a code block with an **Insert** button that places it at the cursor
 (replacing any selection) as an ordinary, undoable unsaved edit; nothing is
 saved, staged, published or activated by the assistant.

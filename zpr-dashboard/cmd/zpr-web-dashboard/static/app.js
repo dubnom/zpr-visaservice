@@ -2246,14 +2246,14 @@ async function loadPolicyWorkspace() {
 const policyAssistant = window.ZPRAssistant.mount({
   pane: byId("policy-assistant-pane"), prefix: "assistant",
   getTarget: policyAssistantTarget,
-  directEdits: () => Boolean(window.ZPRCodeEditor?.active(policyAssistantTarget())),
+  directEdits: () => true,
   getContext: () => ({
     source: policyAssistantTarget().value, id: state.policy.record?.id,
     kind: state.policy.record?.kind, revision: state.policy.revision,
     browsing: state.policy.browsingRevision, organization: state.policy.organizationID,
   }),
-  editable: () => state.policy.configured && ["policy", "assertions"].includes(state.policy.record?.kind) && !policyAssistantTarget().disabled && !policyAssistantTarget().readOnly,
-  disclosure: "Submitting sends the current draft and chat history to Anthropic. In CodeMirror, requested AI changes apply directly as one undoable unsaved edit. Otherwise use Insert. Ctrl/Command+Z undoes changes; nothing is saved automatically.",
+  editable: () => state.policy.configured && ["policy", "assertions"].includes(state.policy.record?.kind) && Boolean(window.ZPRCodeEditor?.active(policyAssistantTarget())) && !policyAssistantTarget().disabled && !policyAssistantTarget().readOnly,
+  disclosure: "Submitting sends the current draft and chat history to Anthropic.",
   request: (conversation) => window.ZPRAssistant.jsonRequest("/api/policy/assistant", {
     method: "POST", headers: { "Content-Type": "application/json", Accept: "application/json" },
     body: JSON.stringify({ ...conversation, editor: state.policy.record?.kind === "assertions" ? "assertion" : "policy", source: policyAssistantTarget().value }),
@@ -2264,6 +2264,7 @@ const policyAssistant = window.ZPRAssistant.mount({
       new MutationObserver(() => policyAssistant.render()).observe(byId(id), { attributes: true, attributeFilter: ["disabled", "readonly"] });
     }
     document.addEventListener("zpr:policy-record-kind", reset);
+    document.addEventListener("zpr:editor-ready", () => policyAssistant.render());
   },
 });
 
@@ -2369,11 +2370,10 @@ function formatZPL(source) {
 
 function formatPolicySource() {
   const textarea = byId("policy-source");
-  if (textarea.disabled) return;
+  if (textarea.disabled || textarea.readOnly) return;
   const formatted = formatZPL(textarea.value);
   if (formatted === textarea.value) return;
-  textarea.value = formatted;
-  textarea.dispatchEvent(new Event("input", { bubbles: true }));
+  window.ZPREditorPage.editText(textarea, formatted, true);
 }
 
 function renderPolicyCatalog() {
@@ -2557,10 +2557,10 @@ function selectPolicyRecord(...args) {
   return policyEditorController.perform("load", ...args);
 }
 
-async function loadPolicyRecord(id, fetchRecord = true, discardEdits = false, closePicker = true) {
+async function loadPolicyRecord(id, fetchRecord = true, discardEdits = false, closePicker = true, forceReload = false) {
   const policy = state.policy;
   const pickerWasOpen = !byId("policy-catalog-pane").hidden;
-  if (policy.record?.id === id) {
+  if (policy.record?.id === id && !forceReload) {
     if (pickerWasOpen && closePicker) setPolicyPickerOpen(false, true);
     return;
   }
@@ -2794,9 +2794,10 @@ function completionCandidates(source, cursor) {
   if (blocked) return empty;
   const boundaries = [...context.matchAll(/\.[ \t]*(?:\r?\n|$)/g)];
   const boundary = boundaries.at(-1);
-  const qualifiedAttribute = /^(?:user|device|service|link)\.$/i.test(word) && /\bdefine\b[\s\S]*\bwith\b/i.test(context.slice(boundaries.at(-2)?.index + 1 || 0));
+  const qualifiedAttribute = word.endsWith(".") && /\bdefine\b[\s\S]*\bwith\b/i.test(context.slice(boundaries.at(-2)?.index + 1 || 0));
   if (boundary && !context.slice(boundary.index).includes("\n") && !qualifiedAttribute) return empty;
-  const statementStart = boundary && !qualifiedAttribute ? boundary.index + boundary[0].length : boundaries.at(-2)?.index + 1 || 0;
+  const statementBoundary = qualifiedAttribute ? boundaries.at(-2) : boundary;
+  const statementStart = statementBoundary ? statementBoundary.index + statementBoundary[0].length : 0;
   const line = context.slice(statementStart).replace(/\s+/g, " ");
   const trimmed = line.trimStart();
   let candidates;
@@ -2808,6 +2809,14 @@ function completionCandidates(source, cursor) {
     if (!/(?:^|\band\s+(?:with\s+)?|,)\s*(?:(?:optional|multiple|tag|tags)\s+)*[\p{L}\p{N}_.-]*$/iu.test(attributes)) return empty;
     const parent = trimmed.match(/^define\s+\S+\s+(?:aka\s+\S+\s+)?as\s+(?:a\s+|an\s+)?(user|device|service)\b/i)?.[1]?.toLowerCase();
     candidates = (state.policy.attributes || []).map((item) => item.attribute).filter((attribute) => !parent || !/^(user|device|service|link)\./i.test(attribute) || attribute.toLowerCase().startsWith(`${parent}.`)).map((attribute) => `${attribute}:`);
+    if (/^define\s+\S+\s+(?:aka\s+\S+\s+)?as\s+(?:a\s+|an\s+)?adapter\b/i.test(trimmed)) {
+      const explicitType = /^(?:user|device|service|link)\./i.test(word);
+      const namespaceEnd = word.lastIndexOf(".") + 1;
+      candidates = candidates.map(attribute => explicitType ? attribute : attribute.replace(/^(?:user|device|service|link)\./i, "")).map(attribute => {
+        const nextDot = attribute.indexOf(".", namespaceEnd);
+        return nextDot < 0 ? attribute : attribute.slice(0, nextDot + 1);
+      });
+    }
   } else if (/^[\p{L}\p{N}_-]*$/u.test(trimmed)) {
     candidates = ["allow", "never allow", "define"];
     filterPrefix = trimmed;
@@ -2827,7 +2836,12 @@ function completionCandidates(source, cursor) {
     candidates = ["with", "and", "on", "over", "signal", "tag", "tags", "optional", "multiple"];
   } else return empty;
   const unique = [...new Set(candidates)];
-  const filtered = filterPrefix ? unique.filter((item) => (item.toLowerCase().startsWith(filterPrefix.toLowerCase()) || attributeMode && !filterPrefix.includes(".") && item.split(".").at(-1).toLowerCase().startsWith(filterPrefix.toLowerCase())) && item.toLowerCase() !== filterPrefix.toLowerCase()) : unique;
+  const filtered = filterPrefix ? unique.filter((item) => {
+    const candidate = item.toLowerCase();
+    const prefix = filterPrefix.toLowerCase();
+    const unqualified = attributeMode ? candidate.replace(/^(?:user|device|service|link)\./, "") : candidate;
+    return (candidate.startsWith(prefix) || unqualified.startsWith(prefix) || attributeMode && !prefix.includes(".") && candidate.split(".").at(-1).startsWith(prefix)) && candidate !== prefix;
+  }) : unique;
   let end = cursor + (source.slice(cursor).match(/^[\p{L}\p{N}_-]*(?:\.[\p{L}\p{N}_-]+)*/u)?.[0].length || 0);
   if (attributeMode && source[end] === ":") end++;
   return { word, start: cursor - word.length, end, items: filtered.slice(0, 8) };
@@ -3674,7 +3688,7 @@ async function reloadPolicyWorkspace() {
     clearPolicySelection();
     return;
   }
-  await selectPolicyRecord(state.policy.record.id, true, true);
+  await selectPolicyRecord(state.policy.record.id, true, true, true, true);
 }
 
 const policyEditorRequest = (path, options) => window.ZPREditorPage.requestJSON(

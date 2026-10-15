@@ -9,6 +9,13 @@ separately policy-authorized ZPR flow. BIND never opens a public/underlay DNS
 listener or accepts unauthenticated dynamic updates. Service identity and
 client permissions are ordinary ZPL policy, not DNS ACLs alone.
 
+For the paired system/Simulator packages, this is the **protected ZPR DNS**
+role, separate from the companion's bootstrap DNS for initial login/setup.
+The [lab bootstrap generator](../../zpr-dashboard/packaging/simulator/README.md#separate-bootstrap-and-protected-zpr-dns)
+can now render both configurations, zones and independent TSIG credentials
+from explicit addresses. It does not deploy the adapter or activate policy;
+the complete combined network is not yet packaged or certified.
+
 ## ZPR policy
 
 Compile [`zpr-dns.zpl`](zpr-dns.zpl) with the network policy. It declares

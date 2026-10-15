@@ -18,7 +18,28 @@ The latest recorded combined Control Room/Control-Service release is
 `zpr-editor-ui:20261015-font-ai-edits` (17:47 UTC).
 Control-Service alone was subsequently updated to
 `zpr-editor-ui:20261015-structured-edits` at 18:13 UTC; Control Room remains
-on the 17:59 color/analyze executable.
+on the 17:59 color/analyze executable in that entry. Both were subsequently
+updated to `zpr-editor-ui:20261015-scroll-schema` at 18:29 UTC, replacing the
+unsupported forced-tool protocol and adding caret/history fixes.
+Control Room alone was subsequently updated to
+`zpr-editor-ui:20261015-format-budget` at 18:38 UTC for Format history and the
+assistant proxy timeout correction; Control-Service remains on the 18:29 binary.
+Control-Service alone was subsequently updated to
+`zpr-editor-ui:20261015-reasoning-envelope` at 18:45 UTC; Control Room stays on
+the 18:38 Format/budget executable.
+Both Control Room and Control-Service were subsequently updated in place to the
+executable from `zpr-editor-ui:20261015-sole-editor` at 19:12 UTC. Their container
+image configuration labels remain unchanged; the executable lives in each
+existing writable layer.
+Control Room alone was subsequently updated from
+`zpr-editor-ui:20261015-ldap-tokens` at 19:36 UTC for compact assistant settings
+and LDAP namespace completion. Control-Service remains on the 19:12 executable.
+Both Control Room and Control-Service were subsequently updated in place from
+`zpr-editor-ui:20261015-tokens-discard` at 19:55 UTC for increased token
+limits/default, production-shaped LDAP completion and Discard.
+Control Room alone was subsequently updated from
+`zpr-editor-ui:20261015-namespace-steps` at 20:06 UTC for the clarified
+hierarchical adapter LDAP completion UX. Control-Service remains at 19:55.
 Retain each dated entry's precise scope and rollback evidence.
 
 Publication follow-up: `c3a3836` is the preceding source checkpoint for the
@@ -28,6 +49,180 @@ production-boundary refactoring and system-release preparation work.
 "No commit or push" in dated entries records the state at release time.
 Publication does not deploy additional CLI/service changes or expand prior
 verification claims.
+
+## Hierarchical adapter LDAP completion (2026-10-15 20:06 UTC)
+
+- Approved scope: Control Room only after draft secured. Build tag
+  `zpr-editor-ui:20261015-namespace-steps`; executable SHA-256
+  `5c8333202acfb209828903805f01268342af0282b31179972fdf3fbe34b5686a`.
+  Existing Room container executable replaced in place without recreation;
+  started `2026-10-15T20:06:00.920206175Z`.
+- Clarified requirement supersedes the previous full-catalog insertion behavior:
+  in adapter definitions `with grea` offers only `greatlakes.`; accepting opens
+  its attributes, and location completes to `greatlakes.location:`.
+  No injected built-in type prefix unless explicitly typed, no leading colon,
+  one namespace segment per step and separate namespace/leaf Undo.
+  User/device/service qualified completions retain existing behavior.
+- All 52 desktop/tablet editor checks pass. No Go changes or provider requests.
+  Complete Room Config/HostConfig/mounts/ID preserved, all backend/Simulator
+  identity/image/start baselines unchanged, executable hash matches and
+  verified-mTLS compiler/tester/assistant readiness passes.
+- Actual served HTML/46 assets byte-match source. Actual-CSP browser verification
+  uses production-shaped catalog data and confirms the single namespace option,
+  immediate child menu, exact leaf insertion and both Undo steps. Sign-in gate
+  preserved; no browser errors/CSP violations. Browser APIs mocked; no Save,
+  Analyze, provider call or backend mutation.
+- Private session artifacts: `files/namespace-release-20261015/` contains the
+  release/rollback executables, private inspect snapshots, unchanged service
+  baselines and verification script. Never publish inspect files.
+- Rollback: stop Control Room only, restore `control-room-before` from that
+  directory to `/usr/local/bin/zpr-web-dashboard`, start and verify. Container
+  also retains `/usr/local/bin/zpr-web-dashboard.before-namespace-steps-20261015`.
+  Prior version is the 19:55 tokens/Discard release. Refresh/sign in again.
+  Not committed or pushed.
+
+## Token limits, production LDAP completion and Discard (2026-10-15 19:55 UTC)
+
+- Approved scope: Control Room and Control-Service after draft secured.
+  Policy-Service and Simulator untouched. Build tag
+  `zpr-editor-ui:20261015-tokens-discard`; executable SHA-256
+  `ffdfcb4156425ca9ac959f97b840d17e088fbf56e52350911f47b60c0188643f`.
+  Replace `/usr/local/bin/zpr-web-dashboard` in existing containers without
+  recreation or using the image's default Simulator entrypoint.
+  Control-Service started `2026-10-15T19:55:57.624806882Z`;
+  Control Room started `2026-10-15T19:55:58.718916674Z`.
+- Triple selectable token choices to 900/1800/3600/7200, with doubled default
+  2400 added. Both backend validators default to 2400 and accept the new values;
+  preserve 300/600/1200 for older open clients. No automatic retries or raising
+  requested limits.
+- Correct prior autocomplete fixture mismatch: production advertises
+  `device.greatlakes.*`, not bare `greatlakes.*`. Short namespace matching
+  inserts the exact full catalog name. Fix active-statement boundaries in
+  multi-statement policies, without directory-record/API/provider disclosure.
+- Discard explicitly forces same-record policy reload; ordinary same-record
+  selection and assertion-save behavior remain unchanged. Cancel preserves the
+  draft, failed reload is explicit and non-destructive, and successful Discard
+  resets source history.
+- All 54 selected browser checks pass, including production-shaped catalog,
+  multi-statement completion/insertion/Undo, policy/assertion Discard, failed
+  reload, cancellation, choices/default and shared assistants. Focused Go race
+  tests/vet pass; required full `make test` retains the four known failures.
+- Production verification: exact Room/Service IDs, complete Config/HostConfig
+  and mounts unchanged; Policy-Service/Simulator identity/image/start baselines
+  unchanged. Both deployed hashes match. Verified-mTLS policy readiness reports
+  configured with compiler/tester/assistant ready.
+- Served HTML and 46 assets byte-match source. Actual-CSP browser verification
+  confirms choices/default, production-shaped LDAP completion in multi-statement
+  text, insertion/Undo, Discard cancellation/reload/history reset and sign-in
+  gate, with no browser errors or CSP violations. Browser API calls mocked;
+  no Save/Analyze/provider request or runtime mutation.
+- Private artifacts: session `files/tokens-discard-release-20261015/`, with both
+  prior executables, new executable, private before/after inspect snapshots,
+  untouched baselines and isolated verification script. Do not publish inspect
+  files, which may contain operator secrets.
+- Rollback: stop only the affected Room or Service container, restore its
+  matching `control-room-before` or `control-service-before` executable to
+  `/usr/local/bin/zpr-web-dashboard`, start and recheck readiness.
+  Each also retains
+  `/usr/local/bin/zpr-web-dashboard.before-tokens-discard-20261015`.
+  Previous versions: Room 19:36 LDAP/tokens UI, Service 19:12 sole-editor.
+  Refresh/sign in again to load the update. Not committed or pushed.
+
+## Assistant settings and LDAP namespace completion (2026-10-15 19:36 UTC)
+
+- Approved scope: Control Room only, after the operator confirmed the draft
+  was secured. Control-Service, Policy-Service and Simulator were not updated.
+  No Go logic changed in this follow-up; embedded UI assets require a new
+  shared executable, built from the current worktree.
+- Build tag `zpr-editor-ui:20261015-ldap-tokens`; executable SHA-256
+  `7a5e86244ba79eaec7091503bba8c13d0c7174372090cb5b948f479d1b8c51e5`.
+  Replace `/usr/local/bin/zpr-web-dashboard` in the existing Room container;
+  preserve its entrypoint, arguments, configuration and mounts rather than
+  using the image's default Simulator entrypoint. Room started
+  `2026-10-15T19:36:03.556122551Z`.
+- Remove the requested direct-edit/Undo/autosave disclosure sentences; retain
+  only the draft/chat transmission notice. Rename the shared section
+  **Model and Tokens** and move token stats inside it. Update related help
+  and asset cache versions.
+- Reproduce `define great as adapter with greatlakes.`: the completion parser
+  mistook non-built-in namespace dots for statement endings. Repair arbitrary
+  and multi-part LDAP attribute namespaces, preserving comments/string/value
+  suppression and existing attribute filtering. No new LDAP API/provider calls.
+- All 44 selected desktop/tablet editor/shared-assistant checks passed, including
+  automatic namespaced suggestions, insertion/Undo, short/qualified names and
+  exact disclosure/stats layout. Editor problems and whitespace checks pass.
+- Production verification: exact Room container ID, complete `Config`,
+  `HostConfig` and mounts unchanged. All backend/Simulator container identities,
+  image labels and start times unchanged. Verified-mTLS policy readiness reports
+  configured Great Lakes with compiler/tester/assistant ready.
+  Executable hash matches; actual served HTML and 46 assets byte-match source.
+  Actual-CSP browser checks verify exact text, renamed section, hidden/expanded
+  stats, automatic `greatlakes.` suggestions/insertion/Undo and sign-in gate,
+  without browser errors or CSP violations. All browser APIs mocked; no policy
+  saves, Analyze, AI-provider requests or backend runtime changes.
+- Private session artifacts: `files/ldap-tokens-release-20261015/`, including
+  release/rollback executables, before/after private inspect files, untouched
+  service baselines and isolated verification script. Never publish inspection
+  files, which may contain operator secrets.
+- Rollback: stop only Control Room, restore `control-room-before` from that
+  private directory to `/usr/local/bin/zpr-web-dashboard`, start and recheck.
+  The container also retains
+  `/usr/local/bin/zpr-web-dashboard.before-ldap-tokens-20261015`.
+  Previous executable is the 19:12 sole-editor release. Refresh/sign in again
+  to load this update. Not committed or pushed.
+
+## Sole editor and explicit AI edit/usage results (2026-10-15 19:12 UTC)
+
+- Approved scope: Control Room and Control-Service only, after the operator
+  confirmed the draft was secured. The shared executable also includes the
+  concurrent diagnostics refactor, explicitly disclosed and approved. No
+  diagnostics source changes were made by this editor follow-up.
+- Build tag: `zpr-editor-ui:20261015-sole-editor`.
+  Executable SHA-256:
+  `008d2eaa467ef644349f0619ee9a259da86477fc79e35f49e9d77dfe6f4b9c9d`.
+  Replaced `/usr/local/bin/zpr-web-dashboard` inside each existing container,
+  without using the image's default Simulator entrypoint or recreating services.
+  Control-Service started `2026-10-15T19:12:09.132458429Z`; Control Room started
+  `2026-10-15T19:12:20.096753128Z`.
+- CodeMirror is the sole policy/assertion editing UI, initialized automatically.
+  Hidden source/highlight/result models remain controller bridges. No legacy
+  switch or interactive fallback; startup failure is explicit and AI stays
+  disabled. Source changes are verified; no-op edits are rejected, no-edit
+  answers are identified neutrally, and the appended success sentence is gone.
+- Show per-request output/requested maximum separately from session usage.
+  Preserve reported usage on structured-response failures, reject reported
+  overruns, and never automatically retry. The sole approved provider probe
+  used synthetic-only input: 381 input / 77 output, with a 300-output maximum,
+  complete edits and `end_turn`. It did not reproduce the first-request
+  overrun; no claim of guaranteed billing enforcement or provider defect fix.
+- Verification: 38 editor and 12 selected other-assistant desktop/tablet checks
+  passed; focused Go race tests/vet passed. Full `make test` retains the four
+  known failures. Two selected Scenario browser checks fail before assistant
+  interaction on an unchanged, obsolete setup selector and were not modified.
+- Production: both executable hashes match the release. Complete
+  `Config`, `HostConfig`, mounts and container IDs are unchanged. Independent
+  Policy-Service and Simulator image/start/ID baselines are unchanged.
+  Verified-mTLS policy status reports configured Great Lakes and assistant,
+  compiler and tester ready.
+- Actual served HTML and 46 checked assets byte-match source. Actual CSP browser
+  checks pass for automatic startup with no old editor, mocked direct AI visible
+  source edits, one-step Undo/Redo, usage, no appended sentence/Insert, Format
+  history and the sign-in gate. API calls in that verification were intercepted;
+  no real policy or history went to AI, and no Save/Analyze/Restore/runtime
+  mutation was performed.
+- Private artifact directory: session
+  `files/sole-editor-release-20261015/`, containing the release executable,
+  both rollback executables, before/after inspect snapshots, unchanged-service
+  baselines, policy readiness response and the isolated verification script.
+  Inspection files are private and may contain operator secrets; do not publish.
+- Rollback: stop only the affected Room or Service container; copy its matching
+  `control-room-before` or `control-service-before` executable back to
+  `/usr/local/bin/zpr-web-dashboard`; start and repeat readiness checks.
+  Each container also retains
+  `/usr/local/bin/zpr-web-dashboard.before-sole-editor-20261015`.
+  The prior Room/Service versions are the 18:38 Format/budget and 18:45
+  reasoning-envelope executables respectively. This follow-up is not committed
+  or pushed. Refresh and sign in again to load the new editor.
 
 ## Source publication checkpoint (2026-10-15 18:20 UTC)
 
@@ -53,6 +248,130 @@ verification claims.
 - This is source publication only: no service deployment, restart, Restore,
   live model request or policy mutation is performed by this checkpoint.
   The dated deployment scopes above and below remain authoritative.
+
+## Assistant reasoning-envelope repair (2026-10-15 18:45 UTC)
+
+- User approved a synthetic-only refactor probe and then deployment to
+  Control-Service only. Real provider response metadata: `end_turn`, one
+  `thinking` block followed by one complete JSON text payload. The old parser
+  incorrectly rejected that envelope. No operator policy, directory data or
+  conversation history was sent during the probe.
+- Built Linux arm64 image `zpr-editor-ui:20261015-reasoning-envelope`, image ID
+  `sha256:ae990823a821852b550b29f08429c96b4987a405cb55b996a3f6dced3d67c737`.
+  Installed executable SHA-256:
+  `aa7ef8106b3bcfaccc3b88c232088f85d082cb8de216e062bcf8ff7ce2f890cf`.
+  Control-Service started at `2026-10-15T18:45:29.677215466Z`.
+- Skip only known reasoning blocks, strictly validate the single text/edit
+  payload, and retain truncation/unknown-block/tool/schema rejection. Errors
+  identify the failing validation stage without source, payload or reasoning.
+- Captured synthetic multi-line refactor replay through the actual parser
+  passes with nonempty edits and preserved usage. Permanent transport/route
+  tests cover reasoning envelopes and negative cases; focused race tests/vet
+  and whitespace checks pass. Required full Go tests retain four known baseline
+  failures. Browser assets are unchanged; no browser rerun for this backend fix.
+- Existing Control-Service container ID, Config/HostConfig and normalized
+  mounts compare equal. Only its writable-layer executable was replaced.
+  Recreating from its original image discards this update; shared image
+  defaults require explicit existing production settings/mode for recreation.
+- Production verified-mTLS status reads Great Lakes configured and assistant,
+  compiler and tester ready. Control Room, Policy-Service and Simulator
+  start/image baselines remain unchanged. Open editor pages need no refresh.
+  No actual operator refactor, policy save, Restore, runtime mutation, commit
+  or push; operator retry remains live policy acceptance.
+- Rollback executable retained privately and in Control-Service at
+  `/usr/local/bin/zpr-web-dashboard-before-reasoning-envelope-20261015`,
+  prior SHA-256
+  `a30c07e498f22bbb57ebd660326f97b4b8ae8e072eb06ada948c05031ced9858`.
+  Restore it and restart only Control-Service while preserving configuration.
+  Rollback reinstates the reasoning-envelope validation bug.
+
+## Format history and assistant proxy budget (2026-10-15 18:38 UTC)
+
+- User approved updating only Control Room after securing the draft. Built
+  Linux arm64 image `zpr-editor-ui:20261015-format-budget`, image ID
+  `sha256:be9bc2e466aa207022274138a35ce9b54adc4c1f3741a8523e187d83a77d3991`.
+  Installed executable SHA-256:
+  `aa5fd385183e57611a6962b2c347b84dd2a150a6e70fc519c987711cdf3266cc`.
+  Control Room started at `2026-10-15T18:38:34.416243969Z`.
+- Existing container ID, full Config/HostConfig and normalized mounts compare
+  equal. Only its writable-layer executable changed; recreating from the
+  original image loses this update. Shared artifact defaults are not suitable
+  for production recreation without explicit existing production settings.
+- Policy Format now uses the shared edit helper. Shared CodeMirror replacement
+  transactions are history-isolated, so Format is one Undo/Redo step and earlier
+  typing remains undoable. Assertion Format uses the same path. App cache
+  version is 164; trial/bootstrap bundle versions are 5.
+- At 18:34:10 the previous Room proxy timed out the assistant and canceled its
+  upstream model call. Exact POST policy/gateway assistant routes now use a
+  75-second response-header budget for context lookup plus the existing
+  45-second provider request. Ordinary/log API budgets and mTLS settings are
+  unchanged. Browser cancellation continues to reach the upstream request.
+- All 34 selected desktop/tablet editor checks pass, including exact
+  Format Undo/Redo and earlier edit restoration for both source types.
+  Focused proxy/assistant route race tests, vet, deterministic bundle, syntax
+  and whitespace checks pass. Required full Go suite retains the same four
+  known failures. Proxy tests verify exact route/method/budget/TLS behavior,
+  delayed response survival and cancellation with Simulator unavailable.
+- Root HTML and 46 checked assets match source. Actual served assets/CSP with
+  intercepted APIs verify Format history, mock AI and Undo without CSP/script
+  errors. Operator login gate is intact and live verified-mTLS readiness
+  reports Great Lakes configured and assistant ready. No live model request
+  or actual Milwaukee refactor was sent during validation; operator retry
+  remains the live end-to-end acceptance.
+- Control-Service, Policy-Service and Simulator image/start baselines are
+  unchanged. No policy save, Restore, runtime change, commit or push.
+- Rollback executable retained privately and inside Control Room at
+  `/usr/local/bin/zpr-web-dashboard-before-format-budget-20261015`, SHA-256
+  `a30c07e498f22bbb57ebd660326f97b4b8ae8e072eb06ada948c05031ced9858`.
+  Restore that executable and restart only Control Room, preserving settings.
+  The rollback reinstates the old assistant proxy budget and Format behavior.
+  Refresh/sign in again and enable CodeMirror trial to load the new UI.
+
+## Scroll-aware caret, toolbar history and supported AI schema (2026-10-15 18:29 UTC)
+
+- User approved updating Control Room and Control-Service after securing the
+  unsaved draft. Built Linux arm64 image
+  `zpr-editor-ui:20261015-scroll-schema`, image ID
+  `sha256:9a24d128a1ee3ec79ded2bc2070668cc8229c14ff256c2aa3adccbd3d413fb79`.
+  Installed executable SHA-256 for both:
+  `a30c07e498f22bbb57ebd660326f97b4b8ae8e072eb06ada948c05031ced9858`.
+- Control-Service started at `2026-10-15T18:29:51.485948712Z`, then Control
+  Room at `2026-10-15T18:29:52.369860255Z`. Both retain the same container IDs,
+  complete Config/HostConfig and normalized mounts; only writable-layer
+  executables changed. Recreating from original images loses these updates;
+  shared artifact defaults must not be used without explicit production modes
+  and existing settings.
+- Actual provider rejection was HTTP 400: the configured model does not
+  support forced `tool_choice` values. Replaced the 18:13 forced-tool protocol
+  with native JSON-schema output. Approved live synthetic-only probes confirmed
+  both no-edit and exact replacement payloads. No policy/directory data or
+  conversation history was sent to the provider for testing.
+- CodeMirror uses its own measured caret and selection layers. Tests check
+  exact click/insertion positions and caret alignment/following after scrolling.
+  Toolbar Undo/Redo now targets the visible source, including focus on Analyze;
+  other text fields retain their own history. Browser cache versions advanced
+  to 4. Refresh/sign in again and re-enable CodeMirror trial.
+- All 32 selected desktop/tablet browser checks, focused transport/route race
+  tests, vet, syntax, deterministic bundle and whitespace checks pass. Required
+  full Go suite retains the four known failures (enrollment readiness,
+  stale-bundle platform fixture, placement shell extraction and trusted-service
+  ELF fixture).
+- Root HTML and 46 checked served assets match source. A browser using actual
+  served assets/CSP with intercepted APIs verifies scroll-following caret,
+  Undo/Redo from Analyze, mock AI application and Undo, without JavaScript/CSP
+  errors. Operator login gate remains intact. Production verified-mTLS status
+  reports Great Lakes configured and assistant/compiler/tester ready.
+- Policy-Service and Simulator image/start baselines are unchanged. No policy
+  save, Restore, organization/runtime mutation, commit or push.
+- Both rollback executables are retained privately and in the affected
+  containers at `/usr/local/bin/zpr-web-dashboard-before-scroll-schema-20261015`.
+  Previous Control Room SHA-256:
+  `eefbe4ab627dee2834645ef46eceb5d7f0063026d181fa06d4fd9e5d17af2c01`;
+  previous Control-Service SHA-256:
+  `5a6fd0bb5ec71904ae8d8c4757e1c0d4c0ad2e1c05feb1cbfe4fccdf4e646b9e`.
+  Restore the corresponding backup executable and restart only affected
+  containers. The previous Control-Service version contains the now-proven
+  unsupported forced-tool protocol.
 
 ## Structured AI editor responses (2026-10-15 18:13 UTC)
 

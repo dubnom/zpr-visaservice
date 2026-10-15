@@ -8,6 +8,27 @@ Production appliance work is tracked in the
 `-check-files` opts into read-only local TLS/OIDC credential-file checks.
 It is not an installer or runtime activation command.
 
+The separately planned Simulator/LDAP/OIDC/DNS companion now has an initial
+[`zpr-lab-bootstrap` trust-generation tool](packaging/simulator/README.md).
+It creates protected per-install lab TLS identities and service-secret files;
+optional explicit network inputs also generate separate bootstrap/ZPR BIND
+configuration, zones and TSIG credentials. Existing network DNS is the default:
+underlay addresses generate record requests, while a bootstrap BIND server
+requires explicit `-host-bootstrap-dns`; protected ZPR DNS is independent.
+It does not apply configuration or
+start services, and no companion bundle is ready.
+Optional `-identity-services` now also renders protected OpenLDAP/Dex config,
+per-install lab users/groups, separate safe initialization/startup scripts and
+an integration inventory. Real LDAP-backed OIDC/PKCE was verified in isolated
+engineering containers; automatic named operator grants and the complete
+installer remain unfinished.
+Optional `-identity-compose` also generates a separate pinned-image LDAP/Dex
+stack with private-IP host bindings, one-time initialization and independent
+persistent state. Generated-stack LDAPS health, live OIDC login and preserved
+identity after container recreation passed arm64 engineering tests without
+Simulator. See the [same-host startup instructions](packaging/simulator/README.md#same-host-independent-identity-stack);
+Ubuntu amd64 release images and complete paired packages remain unfinished.
+
 # Development
 
 To setup your development environment, run `go mod download` to install the local dependencies. Finally, run `make run` to start the TUI.
@@ -171,8 +192,99 @@ checks/saves still require it. Neutral fixed-upstream parsing now belongs to
 `internal/gateway`, shared with Simulator through its existing adapter.
 JSON schema, storage encoding/permissions/revision retention, diagnostics and
 review-only behavior are unchanged. Dependency and compatibility race checks
-pass locally; this extraction is not deployed or published. See the
+pass locally; this extraction was published in `990d54a`, without expanding
+dated deployment evidence. See the
 [gateway-owner verification and remaining scope](../REDIRECTORY.md#fourteenth-extraction-production-gateway-draft-owner-2026-10-15).
+
+The fifteenth extraction puts the explicit-config production Admin read
+transport in
+[`internal/controlservice/adminapi`](internal/controlservice/adminapi/).
+The command retains environment configuration, existing error messages and
+compatibility adapters; the package owns credential-file loading, TLS and
+bounded JSON GETs. It has only standard-library dependencies and no environment,
+Simulator or TUI discovery. The audited TLS/redirect/timeout/status/decoder
+behavior is unchanged. This slice is locally verified, not deployed or published;
+see the [Admin read-owner record](../REDIRECTORY.md#fifteenth-extraction-explicit-config-production-admin-read-client-2026-10-15).
+
+The sixteenth extraction puts snapshot DTOs, concurrent Admin acquisition and
+pure service/trusted assembly in
+[`internal/controlservice/inventory`](internal/controlservice/inventory/).
+An explicit reader and callbacks preserve trusted-before-platform and
+enrichment-before-health ordering; the command keeps environment/provider
+selection, HTTP routes and compatibility aliases. Existing wire shapes,
+health/error gates, detail concurrency, recent/active visas and identity
+semantics are unchanged. Package and consumer race checks pass, along with
+vet and both Linux builds; the full suite retains four known baseline groups.
+This is locally verified, not deployed or published. See the
+[snapshot-owner record](../REDIRECTORY.md#sixteenth-extraction-production-snapshot-inventory-owner-2026-10-15)
+for remaining provider and application ownership.
+
+The seventeenth extraction adds explicit display-name loading/application and
+node telemetry enrichment to the inventory package. The command supplies the
+refresh-time file path, original capped diagnostics catalog and query callback;
+provider discovery/OTLP/OpenObserve collection stay outside the owner.
+Existing freshness, uint64/counter limits, node-only scope, error text and
+health behavior are preserved. New exact-bound and catalog-adapter tests plus
+unchanged consumer races pass; full tests retain four baseline failure groups.
+See the [node-enrichment record](../REDIRECTORY.md#seventeenth-extraction-explicit-node-inventory-enrichment-2026-10-15).
+This is locally verified, not deployed or published.
+
+The eighteenth extraction puts diagnostics catalog/wire/provider contracts and
+explicit OpenObserve/OTLP acquisition in
+[`internal/controlservice/diagnostics`](internal/controlservice/diagnostics/).
+The command retains operator configuration validation/selection and authorized
+HTTP aggregation, with compatibility aliases/read adapters. Catalog selection/
+caps, query scoping, response bounds, resource binding, parsing/redaction and
+partial signals are preserved. No environment or Simulator discovery belongs to
+the package. New owner/adapter and unchanged consumer tests pass; this is locally
+verified, not deployed or published. See the
+[diagnostics-acquisition record](../REDIRECTORY.md#eighteenth-extraction-production-diagnostics-acquisition-owner-2026-10-15).
+
+Diagnostics result aggregation now also belongs to the production diagnostics
+package. `Aggregate` takes an explicit catalog/provider and caller context,
+retaining four-query concurrency, source/overall states, latest timestamps,
+ordered 500-log/1,000-metric budgets, field truncation and post-budget search.
+The command keeps HTTP validation, authorization composition, request deadlines
+and operator configuration. The five-minute default is per call, not a shared
+handler write. New bounds/concurrency/HTTP tests and unchanged consumers pass
+under race; vet and both Linux builds pass. Full tests retain four known baseline
+groups. This is locally verified, not deployed or published; all seven milestone
+gates remain open. See the
+[aggregation boundary and next audit](../REDIRECTORY.md#production-diagnostics-aggregation-boundary-2026-10-15).
+
+The subsequent
+[production startup/composition audit](../REDIRECTORY.md#m1-production-startup-and-http-composition-audit-2026-10-15)
+records initialization/failure order, configuration read timing, exact nested
+route bindings and distinct server defaults. Five new source/runtime tests
+(21 editor-runner cases) and focused race suites pass; no runtime code changed.
+Full tests retain the four baseline failure groups. Next is an explicit-input
+production Control-Service HTTP composition owner for its fifteen direct and
+eight delegated registrations, without moving environment resolution,
+persistence, scheduler lifetime or TLS/listener configuration in that slice.
+All seven milestone gates remain open; no publication/deployment in this audit.
+
+The subsequent [Control-Service HTTP composition owner](../REDIRECTORY.md#m2-explicit-handler-control-service-http-composition-2026-10-15)
+is [`internal/controlservice/httpapi`](internal/controlservice/httpapi/): an
+explicit-handler, standard-library-only mux for all 23 production registrations.
+The command still supplies domain handlers and owns startup/configuration,
+security headers, persistence/scheduler lifetime and TLS/listener setup.
+Method specificity, broad-route fallthrough, path values and error/header
+behavior are covered by new mux/integration tests and updated source ownership
+guards (83 editor-runner cases). Races, vet and both Linux builds pass; full
+tests retain four known baseline groups. Next is the explicit-input operator
+web-security loader/boundary, with independent production/Simulator environment
+adapters. All seven gates remain open; this slice is not deployed or published.
+
+The subsequent [operator web-security owner](../REDIRECTORY.md#m2-explicit-input-operator-web-security-owner-2026-10-15)
+is [`internal/operatorweb`](internal/operatorweb/). It loads explicit protected
+TLS/OIDC files and owns request protection/auth routes/cleanup, reusing existing
+production helpers. The command retains separate Control Room/Simulator
+environment adapters and server/permission/store lifecycle. Existing management,
+direct HTTPS and development behavior is preserved; CA-path normalization is
+outside the reusable factory closure to avoid concurrent writes. Owner/dependency
+and unchanged consumer races, 38 editor-runner cases, vet and both Linux builds
+pass; full tests retain the four baseline groups. Next is Control Room root HTTP
+composition. All seven gates remain open; no publication/deployment in this slice.
 
 Mode names, flags, API behavior, embedded resources, scripts, and container
 build targets are unchanged. This is not full production/Simulator separation,
@@ -184,6 +296,13 @@ Focused validation:
 ```sh
 go test -race ./internal/gateway ./cmd/zpr-web-dashboard -run 'Gateway|WebGateway|ValidateWebGateway' -count=1
 go test -race ./internal/controlservice/gatewaydraft ./internal/gateway ./cmd/zpr-web-dashboard -run '^Test(Gateway|ParseGateway|ParseUpstream|ConfigSize|DiagnosticLine|InstalledContracts|Store|ProductionContract|ChangeReview|InternetGateway)' -count=1 -timeout=180s
+go test -race ./internal/controlservice/adminapi
+go test -race ./internal/controlservice/inventory
+go test -race ./internal/controlservice/diagnostics
+go test -race ./internal/controlservice/httpapi -count=3 -timeout=120s
+go test -race ./internal/operatorweb ./internal/operatorauth ./internal/servicehttp ./internal/systemconfig -count=3 -timeout=180s
+go test -race ./cmd/zpr-web-dashboard -run '^TestProductionComposition' -count=3 -timeout=120s
+go test -race ./cmd/zpr-web-dashboard -run '^Test(AdminClientConfiguration|InventoryCompatibility|ProductionContract|CommandCompatibility)' -count=1 -timeout=180s
 go build -o /dev/null ./cmd/zpr-web-dashboard
 go test -race ./internal/browsergateway ./cmd/zpr-web-dashboard -run 'Browser' -count=1
 go test -race ./internal/servicehttp ./cmd/zpr-web-dashboard -run 'ServiceHTTP|MutualTLSClient|CertificateErrors|PolicyService|ControlService|ControlRoom|Trusted.*Change|Simulator.*(Snapshot|Operator)' -count=1

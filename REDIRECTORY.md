@@ -60,8 +60,9 @@ pending. This does not complete M3 repository/fixture ownership.
 The next M3 input slice is now locally verified: production policy fixtures use
 explicit `ZPR_POLICY_TEST_FIXTURES_FILE` metadata and live configured LDAP,
 with no profile/manifest reads or fictional identity defaults. Simulator
-provisioning exports the independent contract. This slice is not deployed or
-published and does not close a milestone; see the verification record below.
+provisioning exports the independent contract. It was deployed to Policy-Service
+at 17:59 UTC and published in `990d54a`; this does not close a milestone or expand
+the deployment evidence. See the verification record below.
 The subsequent M1 nested production contract audit records enrollment,
 gateway-draft and change-review routing, authorization and storage semantics.
 Four new compatibility tests are locally verified with Simulator unavailable;
@@ -72,7 +73,34 @@ installed-identity selection and revision storage into
 `internal/controlservice/gatewaydraft`. Its inventory input is independent of
 the shared command snapshot; a command adapter preserves existing Admin health
 gating. Neutral upstream parsing is in `internal/gateway`, not a Simulator
-workload file. This slice is locally verified, not deployed or published.
+workload file. The work through the inventory audit was published in `990d54a`;
+publication does not expand the dated deployment evidence.
+The fifteenth extraction now moves the explicit-config Admin read transport
+into `internal/controlservice/adminapi`, with environment/error compatibility
+remaining in the command. This new slice is locally verified, not deployed or
+published. The sixteenth extraction moves snapshot DTO/acquisition and pure
+service/trusted assembly into `internal/controlservice/inventory`. Explicit
+callbacks retain command-owned enrichment/configuration and its existing order.
+The seventeenth extraction adds explicit display-name and node telemetry
+enrichment to that owner. The command supplies file paths, capped catalog IDs
+and a query callback; diagnostics/provider discovery and HTTP lifecycle remain
+outside. These owners are locally verified, not deployed or published;
+the eighteenth extraction moves the diagnostics catalog, wire/provider
+contracts and explicit OTLP/OpenObserve acquisition to
+`internal/controlservice/diagnostics`. Operator configuration and authorized
+HTTP aggregation/composition remain command-owned at that checkpoint. The
+subsequent aggregation extraction moves source queries, response states and
+budgets into that production package. HTTP validation/deadlines, authorization
+composition and operator configuration remain command-owned.
+The subsequent production-composition audit records their startup ordering,
+configuration timing and exact route/server guards. Its subsequent move gives
+all 23 Control-Service registrations one explicit-handler production HTTP owner
+in `internal/controlservice/httpapi`; command composition still supplies domain
+handlers, configuration, security headers and server lifetime.
+The operator web-security loader/request boundary now also has an explicit-input
+owner in `internal/operatorweb`, shared by independent Control Room/Simulator
+configuration adapters. Control Room HTTP composition, domain/application
+ownership and final acceptance remain open.
 Full production/Simulator separation is not
 complete. Reorganize incrementally to
 make ownership and dependency boundaries enforceable without changing behavior.
@@ -168,10 +196,10 @@ destinations refine the existing tree rather than authorizing new applications.
 
 | Files | Current responsibility and destination |
 | --- | --- |
-| `main.go`, `control_service.go` | Mixed dispatcher, shared application/models, Visa Admin client/snapshot, Control Room and Control-Service startup. Keep flags/assembly/lifecycle at the entry point; move production inventory and HTTP/application behavior to production owners. Static embedding currently stays here. |
-| `operator_login.go`, `operator_policy.go`, `operator_delegation.go`, `enrollment.go`, `change_review.go` | Production security/enrollment/review composition using existing packages. `operator_login.go` also assembles Simulator security: separate caller configuration from neutral security mechanisms rather than importing a Simulator owner into Control Room. |
-| `node_denials.go`, `node_display_names.go` | Production inventory enrichment/configuration; candidate owner `controlservice/inventory`. Denial/counter collection currently shares diagnostics types and provider selection. |
-| `adapter_logs.go`, `diagnostics.go`, `dns_records.go`, `dns_stats.go`, `trusted_changes.go` | Production operator logs/metrics, DNS and change feeds. Adapter inventory, DNS transport and log formatting already have packages; remaining HTTP/provider/collection composition belongs to Control-Service. |
+| `main.go`, `control_service.go`, `admin_client.go`, `inventory.go` | Dispatcher, Control Room/Control-Service startup and explicit configuration/composition. `control_service.go` supplies handlers to the production `internal/controlservice/httpapi` route owner; Control Room routing remains command-local. `admin_client.go` adapts environment/error compatibility to `internal/controlservice/adminapi`. `inventory.go` aliases production DTOs and delegates acquisition/pure service assembly to `internal/controlservice/inventory`, while selecting enrichment in the original order. Keep flags/assembly/lifecycle and static embedding at the entry point; provider and remaining HTTP/application ownership are still open. |
+| `operator_login.go`, `operator_policy.go`, `operator_delegation.go`, `enrollment.go`, `change_review.go` | Production security/enrollment/review composition using existing packages. `operator_login.go` now supplies independent Control Room/Simulator environment inputs and compatibility projections to `internal/operatorweb`, which owns TLS/OIDC loading, request protection, auth-route registration and auth cleanup. Permission/delegation/review domain composition and startup remain command-local. |
+| `node_denials.go`, `node_display_names.go` | Command configuration/provider/catalog adapters. Explicit display-name loading/application and pure denial/counter enrichment belong to `internal/controlservice/inventory`. OTLP acquisition and catalog ownership now belong to `internal/controlservice/diagnostics`; provider selection and mapping-file discovery remain command-local. |
+| `adapter_logs.go`, `diagnostics.go`, `dns_records.go`, `dns_stats.go`, `trusted_changes.go` | Production operator logs/metrics, DNS and change feeds. Adapter inventory, DNS transport and log formatting already have packages. Diagnostics wire/catalog/provider acquisition and result aggregation now belong to `internal/controlservice/diagnostics`, with compatibility aliases/adapters in the command; configuration, authorized HTTP lifecycle and remaining application composition still need ownership. |
 | `gateway_api.go`, `gateway_draft.go`, `gateway_inventory.go` | Production gateway HTTP composition, compatibility aliases and Admin inventory projection. Validation, diagnostics, installed-identity selection and revision storage now belong to `internal/controlservice/gatewaydraft`; the old `gateway_config.go`/`gateway_config_store.go` implementations moved there. Keep separate from Simulator workload execution and actual gateway activation. |
 | `browser_gateway.go`, `gateway_service.go` | Browser-access runtime adapter and mixed gateway runtime/workload adapters. Reuse `browsergateway`/`gateway` cores; move fixed-upstream scenario logging to the Simulator/test-workload owner, not the production transport. |
 | `policy.go`, `policy_service.go`, `policy_store.go`, `policy_staging.go`, `policy_attributes.go`, `policy_assertions.go`, `policy_test_api.go`, `policy_test_fixtures.go`, `config_form.go` | Policy repository/API/configuration/staging/attributes/assertion settings and policy-test contracts. Assertion seed and fixture inputs are now explicit production contracts, but HTTP utilities, shared command types and composition still need cohesive owners before package movement. |
@@ -187,11 +215,14 @@ destinations refine the existing tree rather than authorizing new applications.
 
 ### Production entry points and compatibility contracts
 
-Authoritative registration remains in
-[`control_service.go`](zpr-dashboard/cmd/zpr-web-dashboard/control_service.go),
-[`policy_service.go`](zpr-dashboard/cmd/zpr-web-dashboard/policy_service.go),
+Authoritative Control-Service registration now belongs to
+[`httpapi/routes.go`](zpr-dashboard/internal/controlservice/httpapi/routes.go).
+Control Room and Policy-Service registration remains in
+[`control_service.go`](zpr-dashboard/cmd/zpr-web-dashboard/control_service.go)
+and [`policy_service.go`](zpr-dashboard/cmd/zpr-web-dashboard/policy_service.go).
 [`assertion_runtime.go`](zpr-dashboard/cmd/zpr-web-dashboard/assertion_runtime.go)
-and [`trusted_changes.go`](zpr-dashboard/cmd/zpr-web-dashboard/trusted_changes.go).
+and [`trusted_changes.go`](zpr-dashboard/cmd/zpr-web-dashboard/trusted_changes.go)
+supply domain handlers and compatibility registration forwarders.
 This route-family inventory includes delegated registrations; it is not a
 replacement router specification.
 
@@ -755,7 +786,7 @@ Diagnostics catalog/provider and node enrichment types are intertwined, so do
 not copy them or pull the whole diagnostics HTTP layer into an Admin transport
 package.
 
-**Next bounded extraction:** an explicit-config production Admin read client
+**Next bounded extraction at this audit checkpoint (completed below):** an explicit-config production Admin read client
 under `internal/controlservice`, with current typed status/decoder/TLS behavior
 and a command-local environment adapter. Then compose snapshot DTO/acquisition
 and enrichment through explicit providers while preserving the above ordering,
@@ -779,6 +810,620 @@ test tool found no tests; terminal results are authoritative. Required
 No runtime edit, build/installer qualification, service restart, deployment,
 commit or push was performed for this audit. All seven milestone gates remain
 open, including remaining cross-domain and packaging acceptance.
+
+### Fifteenth extraction: explicit-config production Admin read client (2026-10-15)
+
+**Verified locally; not deployed or published.** The production transport now
+belongs to
+[`internal/controlservice/adminapi`](zpr-dashboard/internal/controlservice/adminapi/).
+Its `Config` accepts the URL, inline key or key-file path, CA-file path and
+optional server name. There is no environment/default discovery, Simulator
+lookup, TUI configuration import, snapshot DTO or HTTP authorization here.
+The dependency regression permits only the standard library.
+
+The command's
+[`admin_client.go`](zpr-dashboard/cmd/zpr-web-dashboard/admin_client.go)
+reads the same five environment variables and preserves all existing
+configuration messages. Its thin read adapter retains the existing private
+client fields for command fixtures and translates the package status error
+back to the existing command type. There is one TLS/HTTP/decoder implementation,
+not a second transport. Control-Service startup, snapshot/actor/visa/gateway
+consumers and the allowed Simulator Business-denial caller remain unchanged.
+No existing test was rewritten to accommodate the move.
+
+The owner preserves URL validation and trailing-slash behavior, trimmed
+inline-key precedence/file fallback, system-plus-configured CA roots, TLS 1.2
+minimum, optional name/chain-only verification, 8s timeout, redirect refusal,
+GET/API-key headers, caller context, typed status errors, 4096-byte error
+drain and one-value 2 MiB JSON decoding. This does not harden URL semantics,
+require name checking, reject trailing JSON, add retries/cache or otherwise
+change the audited contract.
+
+Five package tests cover explicit inputs despite unavailable environment
+values, real local TLS/name rejection, configuration errors/file keys,
+status/drain/close/cancellation/no retries, exact decoder limits,
+unknown/trailing JSON, redirects and dependency/environment boundaries.
+A new command test guards exact configuration-error messages. Existing
+inventory and production-contract race tests pass without changes, including
+untrusted-CA rejection and snapshot health/wire/enrichment/concurrency shapes.
+The new package passes three consecutive race runs; the editor test runner
+also reports 22 passing cases for the new owner/adapter tests.
+`go vet ./...`, full-module formatting, whitespace/editor diagnostics and
+CGO-free Linux arm64/amd64 command builds pass. Required `make test` retains
+the same four baseline failure groups: enrollment readiness, stale-bundle
+platform fixture, placement shell extraction and trusted-service ELF fixture.
+Tests use synthetic endpoints/files; no live credentials or runtime state.
+
+```sh
+go test -race ./internal/controlservice/adminapi
+go test -race ./cmd/zpr-web-dashboard -run '^Test(AdminClientConfiguration|InventoryCompatibility|FetchSnapshot|ActorInventory|ActorVisas|ActorSnapshot|MergePlatform|MapSnapshot|VisaOrdered|NodePacket|NodeDenial|NodeDisplay|GeographyNode|GatewayInventory|GatewayAPIIndependent|ProductionContract|CommandCompatibility)' -count=1 -timeout=180s
+```
+
+**Next bounded move at this checkpoint (completed below):** give production snapshot DTO/acquisition an independent
+owner and explicit inputs, then compose enrichment through explicit providers.
+Preserve seven-read completion/health behavior, detail limits, optional 404s,
+ordering and null-versus-empty shapes. Keep authorization/routes, environment
+discovery and Simulator dispatch outside that owner; do not pull the diagnostics
+HTTP layer into the transport. All seven milestone gates remain open.
+
+### Sixteenth extraction: production snapshot inventory owner (2026-10-15)
+
+**Verified locally; not deployed or published.** The production
+[`internal/controlservice/inventory`](zpr-dashboard/internal/controlservice/inventory/)
+package now owns snapshot/actor/node/network/service/trusted/visa/denial wire
+types, seven concurrent Admin reads, detail expansion, trusted-source assembly,
+explicit platform-service merging and final health/error sorting.
+It accepts an explicit `Reader` (`GetJSON`) and `Options`; it performs no
+environment, filesystem, Simulator or TUI discovery. Its only non-standard
+dependency is the production `adminapi` package for typed HTTP status errors.
+
+The command's
+[`inventory.go`](zpr-dashboard/cmd/zpr-web-dashboard/inventory.go)
+keeps compatibility type aliases and thin detail/helper adapters. It supplies
+an explicit Admin client and trusted-editor-link resolver, then synchronously
+composes platform metadata, display names and telemetry through `Enrich`.
+The callback runs after trusted assembly and before health is finalized, so
+display-name errors still make the snapshot partial and block gateway checks,
+while actor-local telemetry failures still do not. Provider/link configuration
+is read at the same stage as before, not eagerly cached at startup.
+
+HTTP route authorization, no-client response, response headers and 10s snapshot/
+15s actor-visa deadlines stay in the command. The sequential actor-visa route
+is unchanged, not replaced by the snapshot's concurrent visa acquisition.
+All existing consumers, including diagnostics, gateway projection and Simulator
+callers, keep the same JSON contract through aliases. No existing test was
+changed. This is a source ownership move, not a claim that the entire mixed
+command or transitive provider graph is now separated.
+
+Preserved contracts include:
+
+- Seven top-level reads and completion-order detail processing, without an
+  added owner deadline; only successful top-level endpoints establish
+  reachability. Optional trusted 404 does not count as a success.
+- Actor CN deduplication/escaping and requested-CN failure placeholders;
+  service non-deduplication, escaping and existing failure values. Their
+  detail fanout remains uncapped.
+- Visa listing count, descending ID order, 16-detail concurrency limit,
+  expected 404 removal, incomplete-inventory errors, newest-ten successful
+  recent details and complete unexpired active inventory.
+- Original trusted/provider metadata/health strings, explicit manager-link
+  resolution, platform identity-preserving merge and no invented actors.
+- Sorted final errors, enrichment-before-health, trusted-before-platform
+  ordering, all JSON tags and `null` versus empty shapes, including successful
+  Admin null stats/network/denials.
+
+New package tests verify simultaneous top-level launch with a barrier,
+unchanged caller context, exact Admin path/query surface, health/reachability/
+enrichment order, detail failures, missing versus failed visas, wire shapes,
+identity escaping/deduplication, complete active/recent inventories, retained
+network/denial ordering, provider joins, cancellation and dependency/discovery
+boundaries. Existing command inventory/snapshot/actor/visa/geography/node/
+gateway/diagnostics/production/dispatch compatibility race tests pass unchanged.
+The package passes three consecutive race runs. Full-module formatting,
+`go vet ./...`, whitespace/editor diagnostics and CGO-free Linux arm64/amd64
+command builds pass. Required `make test` retains exactly the four known
+baseline groups: enrollment readiness, stale-bundle platform fixture, placement
+shell extraction and trusted-service ELF fixture. No live credentials,
+configuration or runtime state were inspected.
+
+```sh
+go test -race ./internal/controlservice/inventory ./internal/controlservice/adminapi -count=3
+go test -race ./cmd/zpr-web-dashboard -run '^Test(AdminClientConfiguration|InventoryCompatibility|FetchSnapshot|ActorInventory|ActorVisas|ActorSnapshot|MergePlatform|MapSnapshot|VisaOrdered|NodePacket|NodeDenial|NodeDisplay|Geography|Gateway|DemoLDAPEditorURL|ProviderManager|TrustedSources|ProductionContract|CommandCompatibility|DiagnosticsSources|Simulator.*(Snapshot|Operator))' -count=1 -timeout=180s
+```
+
+**Next bounded move at this checkpoint (completed below):** separate explicit display-name/telemetry enrichment
+contracts from diagnostics HTTP/provider discovery, then move the production
+implementation behind them. Audit the shared catalog, freshness and error
+semantics before moving that intertwined graph. Keep operator configuration and
+HTTP authorization in composition, preserve refresh-time reads and existing
+health gating, and never add reverse Simulator dependencies. All seven
+milestone gates remain open.
+
+### Seventeenth extraction: explicit node inventory enrichment (2026-10-15)
+
+**Verified locally; not deployed or published.** Explicit display-name loading/
+application and node denial/counter enrichment now live in
+[`internal/controlservice/inventory`](zpr-dashboard/internal/controlservice/inventory/).
+Display-name application receives a file path, not an environment variable.
+`NodeTelemetry` receives the existing catalog source IDs, a context-aware query
+callback, provider freshness and provider-error text. Its nil query denotes an
+unavailable provider; empty/missing catalog identity is a distinct actor-local
+error. The production metric DTO retains the exact diagnostics JSON tags and
+is shared through a command alias, without importing diagnostics HTTP types.
+
+The command still reads/normalizes the explicit display-name environment path
+on every refresh, selects the OTLP/OpenObserve provider, loads diagnostics
+mappings and builds the same sorted/capped catalog. Its query adapter passes
+the complete original first-matching diagnostics source and limit 1 to the
+provider, preserving source identity, provider-specific node behavior and the
+100-source catalog limit. It does not reconstruct uncapped identities or query
+all nodes independently of that existing catalog. OTLP file parsing and
+OpenObserve transport/configuration remain command-owned for a subsequent
+cohesive extraction; no reverse production-to-Simulator dependency was added.
+
+The owner preserves:
+
+- Display JSON's 64 KiB limit, single-value/non-null map contract, IPv6
+  normalization and duplicate-address rejection, nonempty trimmed/control-free
+  names up to 80 runes, node-only application and identity preservation.
+  The explicit file is re-read per refresh. Invalid configuration still adds
+  the same top-level error and affects snapshot/gateway health; unconfigured
+  paths remain optional.
+- Sequential eligible-node queries with the caller context, reset of previous
+  counter/denial values and errors before every refresh, nil-provider/missing-
+  identity/query-error distinctions and original error text.
+- Latest-sample selection (first retained on equal timestamps), decimal uint64
+  values without float conversion, 512 distinct counter names, management and
+  complete fastpath groups, sorted group/name output and the oldest included
+  counter timestamp.
+- Provider freshness capped at 10s, acceptance at the exact threshold and
+  rejection of older/future/zero/invalid samples. Denial values and counter
+  completeness fail independently; telemetry errors stay actor-local rather
+  than changing top-level API health.
+
+New owner tests cover exact/over byte, rune, counter-count and freshness bounds,
+refresh-time file changes, node/identity scope, latest/tie timestamps, uint64
+maximum/overflow, complete counter ordering, stale-data clearing, explicit
+catalog/context/query ordering, provider and identity errors, freshness caps
+and independent denial/counter failures. A new command contract regression
+verifies the exact 100-source capped catalog, complete source DTO forwarding,
+mapping, original actor query order and limit 1 with Simulator unavailable.
+The dependency guard now covers every runtime file and permits file access
+only in the explicit display-name loader; environment discovery remains banned.
+No existing tests were modified.
+
+The inventory package passes three consecutive race runs; unchanged node,
+diagnostics, inventory, snapshot, gateway, geography and production-contract
+consumer races pass. Editor-discovered cases pass; terminal race runs cover
+the complete selected suites, including the final rune-bound assertions.
+`go vet ./...`, full-module formatting, whitespace/editor
+diagnostics and CGO-free Linux arm64/amd64 command builds pass. Required
+`make test` retains exactly the same four known baseline failure groups.
+No live configuration/credentials/runtime state were read, no service was
+restarted, and no commit/push/deployment was performed for this slice.
+
+```sh
+go test -race ./internal/controlservice/inventory -count=3
+go test -race ./cmd/zpr-web-dashboard -run '^Test(AdminClientConfiguration|InventoryCompatibility|FetchSnapshot|ActorInventory|ActorVisas|ActorSnapshot|MergePlatform|MapSnapshot|VisaOrdered|Node|Diagnostics|Geography|GatewayInventory|GatewayAPIIndependent|DemoLDAPEditorURL|ProviderManager|TrustedSources|ProductionContract|CommandCompatibility)' -count=1 -timeout=180s
+```
+
+**Next bounded move at this checkpoint (completed below):** extract the diagnostics catalog/provider contracts and
+explicit OTLP/OpenObserve acquisition into a production owner, keeping HTTP
+authorization, operator environment selection and refresh-time composition in
+the command. Preserve catalog filtering/caps, query bounds, source identity,
+freshness and distinct diagnostics-versus-node error behavior before moving
+the graph. All seven reorganization milestone gates remain open.
+
+### Eighteenth extraction: production diagnostics acquisition owner (2026-10-15)
+
+**Verified locally; not deployed or published.** The production
+[`internal/controlservice/diagnostics`](zpr-dashboard/internal/controlservice/diagnostics/)
+package owns diagnostics source/log/response and provider contracts, catalog
+assembly, OpenObserve query/response parsing and explicit OTLP file acquisition.
+Metric data remains the inventory metric type, preserving JSON tags and avoiding
+two independently maintained shapes. The package depends only on production
+inventory/Admin and neutral log redaction plus the standard library.
+
+`OpenObserve` receives the already operator-validated endpoint, organization/
+streams, credentials and HTTP client. `OTLPFiles` receives the explicitly
+configured identity-to-file map. Neither discovers environment variables,
+Simulator state, TUI defaults, operator credentials or configuration files.
+The command still validates origins/stream identifiers, loads the private token,
+creates the 12s HTTP client and selects configured providers. Compatibility
+types/methods forward existing fixtures and consumers to one query/parser
+implementation; there are no duplicate acquisitions.
+
+Catalog behavior is unchanged: only node actors, nonempty services and trusted
+sources; existing identity fallbacks/partial OTel mappings; initial unavailable
+state and empty signal arrays; kind/name sorting without new deduplication;
+100-source aggregate cap. Explicit selected-source filtering occurs before
+that cap. The unused suggested service-name argument was removed from the
+pure helper; existing mapping-or-identity fallback remains unchanged, rather
+than silently replacing a node's service identity with `zpr-core`.
+
+OpenObserve preserves sequential log/metric searches, the same one-hour window,
+POST/query envelope, configured organization/service/instance predicates and
+single-quote escaping, Basic credentials and media types. Requested log limit
+is caller-selected; metric request size remains 50 or 1024 for `ZPR node`.
+These are query limits, not a newly enforced local per-response metric cap.
+Response bytes remain bounded at 512 KiB, with existing status/JSON/transport
+errors, body closure, no new retry or redirect policy. Parsing preserves field/
+timestamp precedence, string metric precision, existing numeric JSON handling,
+descending timestamps, log body/redaction and eight safe-attribute bounds.
+Partial signals survive either search failing, with errors joined as before.
+
+OTLP reads the supplied file on every query (64 KiB maximum), matches exact
+`service.name` and `service.instance.id`, appends gauge then sum points, retains
+decimal `asInt` strings and integer nanosecond timestamp precision, and reports
+the same missing-map/file/identity/timestamp/JSON errors. Its historical local
+file reader does not use the context or per-query result limit; this extraction
+does not change that behavior. Node enrichment/freshness remains the separate
+inventory owner.
+
+New package tests cover catalog classes/order/mapping/null-empty shapes,
+selection before caps, query scope/escaping/envelope/context/path/headers,
+sequential requests, exact 512 KiB and 64 KiB limits, response closure and
+errors, partial logs and metrics, timestamps, attribute/truncation bounds,
+OTLP resource binding/gauge+sum/precision/file replacement, and allowed
+dependencies with no environment discovery. A new command regression uses
+synthetic credentials/files/endpoints with Simulator unavailable and verifies
+12s client/freshness bounds, absent implicit OTLP fallback, invalid implicit
+configuration refusal and missing explicit configuration refusal. Existing
+diagnostics/node/snapshot/gateway/production compatibility tests pass unchanged.
+No existing test was edited.
+
+The new package passes three race runs; focused owner/consumer races and 18
+editor test cases pass. `go vet ./...`, full-module formatting, whitespace/editor
+diagnostics and CGO-free Linux arm64/amd64 command builds pass. Required
+`make test` retains the four known baseline groups: enrollment readiness,
+stale-bundle platform fixture, placement shell extraction and trusted-service
+ELF fixture. No live state/configuration/credentials were read; no restart,
+deployment, commit or push was performed.
+
+```sh
+go test -race ./internal/controlservice/diagnostics -count=3
+go test -race ./cmd/zpr-web-dashboard -run '^Test(AdminClientConfiguration|InventoryCompatibility|FetchSnapshot|ActorInventory|ActorVisas|ActorSnapshot|MergePlatform|MapSnapshot|VisaOrdered|Node|Diagnostics|Geography|GatewayInventory|GatewayAPIIndependent|DemoLDAPEditorURL|ProviderManager|TrustedSources|ProductionContract|CommandCompatibility)' -count=1 -timeout=180s
+```
+
+**Next bounded move at this checkpoint (completed below):** separate diagnostics result aggregation from HTTP:
+explicit catalog/provider inputs, four concurrent source queries, stale/partial/
+unavailable state, total signal budgets, field truncation and search filtering.
+Keep authorization, query validation, 18s request deadline and operator
+configuration/refresh timing in command composition. Preserve no-provider/
+selected-source behavior and existing headers rather than silently changing
+them during the move. All seven reorganization milestone gates remain open.
+
+### Production diagnostics aggregation boundary (2026-10-15)
+
+**Verified locally; not deployed or published. M2 remains in progress; all seven
+milestone gates remain open.** Production
+[`diagnostics.Aggregate`](zpr-dashboard/internal/controlservice/diagnostics/aggregate.go)
+now receives an explicit catalog, provider, provider error, freshness duration,
+search text and caller context. The owner takes the catalog/provider result
+slices for in-place aggregation; it does not discover configuration or acquire
+inventory. The command keeps method/query validation, source-map refresh and
+selected-source 404 ordering, the 18s request context, configured provider
+selection, authorization composition and JSON writing. A thin adapter preserves
+existing command-local provider fixtures without changing their tests.
+
+The move preserves four concurrent source queries and limit-50 provider calls,
+original catalog order regardless of completion order, partial query results,
+latest log/metric timestamp selection, and source unavailable/partial/stale/
+available states. Stale sources alone still leave the overall state available;
+any source error makes it partial. Missing-provider errors override the empty-
+inventory message as before. Nil provider-returned arrays remain null; catalog
+and budget-cleared arrays remain empty arrays. Future timestamps retain the
+historical available state.
+
+Budgets remain 500 logs and 1,000 metrics in catalog order, applied before search.
+There is no new local per-source cap: 50 is the provider query argument.
+Metric fields retain byte-based 128/128/32 truncation plus the existing ellipsis.
+Case-insensitive search matches log body or source name/identity, never metrics
+or attributes, and does not recompute freshness/state after signals are removed.
+The command's shared JSON writer already emits `Cache-Control: no-store` for
+both configured and unavailable providers; the redundant handler-only write was
+removed without changing headers.
+
+The nonpositive freshness default is now local to each aggregation call instead
+of writing a variable captured by the HTTP handler. This removes a concurrent-
+request data race while preserving the five-minute default. New tests exercise
+20 simultaneous requests to the same zero-default handler, with configured and
+missing providers and Simulator unavailable. They also verify HTTP validation
+limits, source whitespace/selection semantics, context/deadline forwarding and
+unchanged response/header shapes.
+
+Owner tests measure four queries actually in flight, exact ordered 500/1,000
+budgets including partial boundary slices, filtering after budgets, 127/128/129
+and 31/32/33 metric-field boundaries, source and overall states, timestamp
+selection, cancellation and wire null/empty distinctions. Existing owner and
+command diagnostics/node/inventory/gateway/production compatibility tests pass
+unchanged under three race runs. The final editor test runner reports 26 passing
+cases; `go vet ./...`, full formatting, whitespace/editor diagnostics and
+CGO-free Linux arm64/amd64 builds pass. Required `make test` retains the same
+four baseline groups: enrollment readiness, stale-bundle platform fixture,
+placement shell extraction and trusted-service ELF fixture. Concurrent
+assistant test edits briefly blocked the first command/full-suite/vet attempts;
+after those edits completed, the checks above were rerun. Those files were not
+modified by this extraction.
+
+```sh
+go test -race ./internal/controlservice/diagnostics ./cmd/zpr-web-dashboard -run '^Test(Aggregate|Diagnostics|AdminClientConfiguration|InventoryCompatibility|FetchSnapshot|ActorInventory|ActorVisas|ActorSnapshot|MergePlatform|MapSnapshot|VisaOrdered|Node|Geography|GatewayInventory|GatewayAPIIndependent|DemoLDAPEditorURL|ProviderManager|TrustedSources|ProductionContract|CommandCompatibility)' -count=3 -timeout=180s
+```
+
+**Next bounded deliverable at this checkpoint (completed below):** resume the M1 audit of remaining production
+startup/operator configuration and nested route ownership before selecting the
+next cohesive M2/M3 move. Inventory and diagnostics cores no longer need a
+convenient-leaf extraction; production HTTP/application composition, policy/
+trusted-source ownership and integrated packaging acceptance remain open.
+No new dependency, frontend change, live configuration/credential read, restart,
+deployment, commit or push was performed.
+
+### M1 production startup and HTTP composition audit (2026-10-15)
+
+**Verified locally; no runtime code changed.** This audit covers the remaining
+Control Room, Control-Service and Policy-Service startup roots and their nested
+route registrations. It complements, rather than replaces, the existing
+compatibility-mode, enrollment/review/gateway and inventory contracts.
+[`production_composition_contract_test.go`](zpr-dashboard/cmd/zpr-web-dashboard/production_composition_contract_test.go)
+adds five tests with 21 editor-runner cases: source-level exact route/delegation
+and server-field guards, plus real startup failure-order and request-time
+context tests with Simulator unavailable. Source guards prove the current
+wiring only; they are not a complete started-service or transitive-dependency
+acceptance test.
+
+#### Startup, failure and lifetime contracts
+
+| Root | Current sequence and outcome to preserve |
+| --- | --- |
+| Control Room | A 20s setup context initializes explicit operator web security, then optional delegation signer, required Control-Service proxy, embedded static root, operator auth routes and change-review store. Missing service transport fails before review configuration or listening. Review and auth cleanup are deferred. Configured TLS uses the preloaded certificate; unconfigured loopback development retains the plain HTTP branch. The server wraps `security.protect` with security headers, reads headers within 5s, idles at 60s and caps headers at 32,768 bytes. This setup context is not the lifetime context for the HTTP listener. |
+| Control-Service | Require listener certificate/key/client CA, load the client CA, configure enrollment (remote relay or local registry), then Admin client, trusted feeds, assertion runtime/settings store and scheduler, policy proxy, diagnostics and assistant, optional gateway draft store, routes, and listener. Missing listener credentials/CA, invalid enrollment, feeds or assertion sources abort startup in that order. Admin/policy/diagnostics absence and gateway-store errors remain degraded feature states/logged errors, not new startup failures. The assertion settings refresh/migration has a 12s setup context; the scheduler has a separate canceled-on-return context. Enrollment cleanup is deferred. The listener uses TLS >=1.3 and verified client certificates, header timeout 5s and idle timeout 60s. |
+| Policy-Service | Require listener certificate/key/client CA, load client CA, open/seed the explicitly configured production policy workspace, then build routes and listen. Missing CA fails before opening the repository. Compiler configuration may leave the repository usable with compiler-unavailable status; repository/seed failures abort. TLS >=1.3 and verified client certificates plus 5s header timeout remain unchanged. Unlike the other two roots, this server currently has no explicit idle timeout or maximum-header override. Do not silently normalize defaults during a move. |
+
+The new runtime tests exercise exact missing-credential errors, client-CA failure
+before enrollment/repository access, enrollment before feed initialization,
+feeds before assertions, and assertion configuration before scheduler startup.
+They use a synthetic client CA and absent temporary paths, never start a listener,
+and assert that failed Policy-Service startup does not create its database.
+Control Room is tested with absent production settings and deliberately invalid
+Simulator settings; no Simulator configuration enables production TLS/OIDC.
+Successful full service startup/shutdown and persistent-state rollout remain
+acceptance gates, not claims made by these fail-fast tests.
+
+#### Nested route ownership
+
+| Composition owner today | Exact registrations and delegation |
+| --- | --- |
+| Control Room command | Five root registrations: review prefix, signed enrollment prefix, generic authorized API prefix, stylesheet GET and static root. Operator security separately mounts auth config/login/callback handling. Enrollment/review must keep precedence over `/api/`; static resources remain independently embedded. |
+| Control-Service command | Fifteen direct registrations: both enrollment prefixes, gateway prefix and separate GET/POST gateway assistant, snapshot, actor visas, diagnostics, adapter logs, DNS records/stats/stylesheet, policy assistant and both exact/prefix policy proxy paths. Six assertion registrations and two trusted-feed registrations are delegated to command-local owners. The new source guard pins all 23 registrations and their handler bindings plus those delegation calls. |
+| Policy-Service command | Twenty-one method-specific registrations: policy status/context, assertion settings GET/PUT, attribute rescan, policy test/fixtures, stage/check/config check/form, categories/records, duplicate/rename/archive/restore, and revision list/save/read. Assertion settings here are repository operations, not Control-Service's evaluation/settings view; do not merge the two surfaces. |
+| Enrollment command adapter | Local configuration mounts the existing `enrollment.APIPrefix` and `operatordelegation.Prefix` handlers. Any remote-enrollment setting selects the relay configuration path; remote settings cannot coexist with local registry/catalog/trust. Only canonical signed named-user delegation routes cross the remote relay; mounting both top-level prefixes does not enable certificate-only remote administration. Existing relay/delegation tests cover that boundary. |
+
+Keep Go method-specific routing, GET/HEAD behavior and path wildcards intact;
+handler method checks are not interchangeable with method-specific registration.
+Specific gateway assistant and policy assistant routes must continue to win over
+their broad gateway/policy prefixes. Control Room named-user permission checks,
+local-request checks and backend mTLS are separate boundaries. The nonmanagement
+stylesheet proxy uses the local boundary; the management stylesheet path also
+requires named-user authorization. Change review and enrollment keep their own
+organization/domain/delegation checks, not the generic API permission gate.
+
+#### Configuration read timing and existing owners
+
+- Startup snapshots: listener/TLS/OIDC/signer/review/enrollment inputs and service
+  transports, trusted-feed config, assertion source config, main diagnostics
+  provider config and gateway store. Control Room organization is supplied when
+  mounting its proxies. Preserve production origin validation and distinct Admin
+  chain/name verification rather than reusing a differently strict validator.
+- Request/refresh inputs remain distinct: snapshot platform/provider/display/
+  node-telemetry composition, diagnostics source-map reads, DNS-transfer
+  address/key selection and Policy-Service organization context/settings reads.
+  The new context test changes organization settings between requests to one
+  already constructed Policy-Service handler and verifies the second value.
+- Adapter logs capture the configured inventory path when the handler is built
+  but reread its file for each request. DNS statistics captures the configured
+  origin at handler construction. Main diagnostics captures its configured
+  provider at startup, while node enrichment selects its provider per refresh.
+  The policy proxy rereads assistant availability when rewriting successful
+  policy status. A new application owner must not turn all these into one
+  immutable configuration snapshot or add implicit reloads.
+- Reuse `controlroom`, `servicehttp`, `operatorauth`, `operatordelegation`,
+  `enrollment`, `changereview`, `policyclient`, production inventory/diagnostics/
+  gatewaydraft and existing DNS/log owners. Command-local domain handlers,
+  workspace/assertion runtime and startup composition still prevent claiming
+  complete M2/M3 package separation.
+
+**Evidence:** all new composition tests pass three race runs; unchanged focused
+operator/security/transport/assertion/review/enrollment/gateway and CLI contracts
+pass under race. Complete `controlroom`, `servicehttp` and `policyclient` package
+race suites pass. The editor runner reports 21 passing cases; vet, full-module
+formatting, whitespace and changed-file diagnostics pass. Required `make test`
+retains the same four known baseline groups: enrollment readiness, stale-bundle
+platform fixture, placement shell extraction and trusted-service ELF fixture.
+No existing test was edited. No dependency, asset, runtime configuration, live
+credential/state, listener, deployment, commit or push changed in this audit.
+
+```sh
+go test -race ./cmd/zpr-web-dashboard -run '^TestProductionComposition' -count=3 -timeout=120s
+go test -race ./internal/controlroom ./internal/servicehttp ./internal/policyclient -count=1 -timeout=120s
+```
+
+**Next cohesive M2 scope at this audit checkpoint (completed below):** give Control-Service HTTP composition a production
+owner with explicit already-built handler inputs. Move its fifteen direct and
+eight delegated registrations together, retaining specificity, local checks,
+error/no-store behavior and independent production contracts. Add served-mux
+tests with synthetic handlers and Simulator unavailable, not only source guards.
+Keep environment/file resolution, scheduler startup/cancellation, persistence,
+TLS server/listener and CLI in the command for this slice. Do not pull policy/
+assertion/Simulator implementations into the new owner or disguise callbacks
+that discover Simulator as neutral dependencies.
+
+M1 remains open for complete ownership reconciliation and packaging contracts;
+M2 for remaining production application/configuration/lifecycle ownership; M3
+for cohesive policy/trusted-source packages. M4-M7 remain open as previously
+recorded. This audit authorizes no state migration or publication.
+
+### M2 explicit-handler Control-Service HTTP composition (2026-10-15)
+
+**Verified locally; not deployed or published. All seven milestone gates remain
+open.** The standard-library-only
+[`internal/controlservice/httpapi`](zpr-dashboard/internal/controlservice/httpapi/)
+package owns all 23 Control-Service route registrations: fifteen previously
+direct, six assertion and two trusted-feed routes. `NewMux` takes explicit
+already-built `http.Handler` fields, including grouped `Assertions` and
+`TrustedChanges`. No environment, files, service discovery, listener, scheduler
+or Simulator implementation belongs to the route owner. Missing handlers retain
+the standard mux's explicit construction panic, not an omitted route or
+success-shaped fallback; callers supply real unavailable-feature handlers.
+
+The command retains configuration read timing, enrollment/store setup and
+cleanup, assertion settings refresh/migration and scheduler cancellation,
+provider selection, gateway inventory/store construction, application/domain
+handlers, security headers, server/TLS options and listener lifetime. Existing
+assertion inline handlers became named methods with unchanged bodies; their
+local-request checks, error/status shapes, locking, context/deadlines and
+organization/source guards remain. Assertion and trusted-feed `register`
+compatibility methods forward to the package registrations, so existing domain
+tests use the same route table rather than a duplicate implementation.
+
+Method-specific patterns, GET/HEAD behavior, path wildcards, both enrollment
+prefixes, exact/prefix policy routes and assistant precedence are preserved.
+Other gateway methods still fall through to the broad gateway handler; non-POST
+policy assistant requests still fall through to the policy proxy. Do not replace
+these contracts with generic 405 responses during later domain extractions.
+The mux forwards request context, query, headers and bodies and preserves
+handler responses/errors; it does not invent authentication or no-store headers.
+Those stay in the existing handlers/security wrappers, with runtime integration
+tests confirming both allowed and denied local requests.
+
+New production mux tests exercise every registration with Simulator unavailable,
+specific/broad route precedence, actor/source path values (including an escaped
+slash in a single segment), GET/HEAD, 404/405 and `Allow`, canonical path
+redirects, header/body/context forwarding, error preservation and required
+handler construction. The current Go runtime emits 307 canonical redirects;
+the initial new-test expectation of 301 was corrected after observing the
+unchanged standard mux behavior, without changing runtime routing.
+An import/dependency guard permits only `net/http` in runtime source and rejects
+listener startup. New command tests pin every handler binding and exercise real
+snapshot, diagnostics, actor-visa, assertion, trusted-feed and policy handlers
+through the production mux with synthetic unavailable services.
+
+The prior, passing source-registration audit test was deliberately updated to
+follow registrations into the new owner and support receiver-qualified methods.
+It still checks all 23 routes and server boundaries; new command-binding tests
+retain the lost command-to-route linkage. No pre-existing failing test was
+modified and no baseline failure was suppressed.
+
+**Evidence:** the new package passes three race runs; focused unchanged
+composition/auth/enrollment/review/assertion/feed/gateway/diagnostics/inventory
+and CLI regressions pass under race. The editor runner reports 83 passing cases
+across the new mux/integration and updated composition tests. Vet, full-module
+formatting, whitespace/editor diagnostics and CGO-free Linux arm64/amd64 command
+builds pass. Required `make test` retains the four known baseline groups:
+enrollment readiness, stale-bundle platform fixture, placement shell extraction
+and trusted-service ELF fixture. No dependency, frontend, live state/credential,
+runtime configuration, restart, deployment, commit or push changed in this slice.
+
+```sh
+go test -race ./internal/controlservice/httpapi -count=3 -timeout=120s
+go test -race ./cmd/zpr-web-dashboard -run '^Test(ControlHTTP|ProductionComposition|ProductionContract|CommandCompatibility|ControlRoom|ControlService|PolicyService|Operator|Management|LocalRequest|LocalEditor|ChangeReview|EnrollmentService|EnrollmentServiceRelay|Assertion|LegacyAssertions|TrustedChanges|TrustedSourceChanges|GatewayAPIIndependent|PolicyAndAssertionAssistantContext|Diagnostics|InventoryCompatibility|FetchSnapshot|ActorInventory|ActorVisas|ActorSnapshot|Node)' -count=1 -timeout=180s
+```
+
+**Next cohesive M2 scope at this checkpoint (completed below):** separate the operator web-security loader and
+request boundary from command environment discovery. Reuse `operatorauth`,
+`servicehttp` and `systemconfig` with explicit web options and preserve Control
+Room management/direct-TLS/development behavior, OIDC factory/cleanup, approved
+peer/host/origin rules and configuration timing. Simulator keeps its own
+environment adapter and may call the shared mechanism; the production owner
+must not discover Simulator options. Do not move live state or normalize the
+distinct server/transport defaults as part of that move. Policy/trusted-source
+ownership and integrated packaging acceptance remain separate open gates.
+
+### M2 explicit-input operator web-security owner (2026-10-15)
+
+**Verified locally; not deployed or published. All seven milestone gates remain
+open.** [`internal/operatorweb`](zpr-dashboard/internal/operatorweb/) owns
+explicit TLS/OIDC loading, the reusable auth factory, request protection,
+operator auth-route registration and authorization-client cleanup. It reuses
+`operatorauth`, protected-file reads from `servicehttp`, and management endpoint/
+certificate/access validation from `systemconfig`. No dependency was added.
+Its dependency guard permits only the existing production/neutral graph and
+rejects raw environment/filesystem/process imports in runtime code.
+
+The command retains separate Control Room and Simulator environment adapters,
+setup contexts, server/listener selection, security-header wrapping, permission/
+delegation/review composition and cleanup timing. The two production loader
+entry points now share one Control Room environment projection; Simulator
+supplies only its own independently named settings. Existing private config/
+security fields and helper methods remain compatibility projections rather
+than duplicate implementations, so prior tests and consumers are unchanged.
+There is no production read of Simulator settings or dependency on its
+availability. Simulator may call the neutral mechanism with its own inputs.
+
+`Load` receives a listen address, explicit config and auth factory. It preserves
+the no-config development passthrough, exact HTTPS-origin validation, fixed-port
+loopback or explicitly trusted-peer listeners, protected 64 KiB certificate/key/
+OIDC files, certificate hostname/time/server-usage checks and TLS >=1.3.
+Management remains Control Room only: explicit management interface, production
+DNS origin, current server certificate, exact organization/grants and initialized
+named-user OIDC are required; it cannot combine with a trusted proxy peer.
+Raw management-interface/organization semantics and existing error text were
+not normalized as part of this extraction.
+
+OIDC retains strict single-document JSON, callback binding, protected 4 KiB
+single-line secret handling (including terminal LF/CRLF removal), explicit
+optional IdP CA and caller-context forwarding. Factory errors abort loading.
+The optional CA path is trimmed before capturing the reusable factory, rather
+than writing the captured path during each invocation. This removes a shared
+write under concurrent factory calls without changing when the CA file is read:
+the supplied file is reread per invocation and missing/invalid roots fail.
+Auth-client cleanup still delegates to `operatorauth.Auth.Close`.
+
+Request protection preserves direct TLS/exact host/approved peer checks and
+management foreign-Origin/forwarding-header refusal. The historical direct
+loopback boundary is not silently given the stricter management rules.
+Management still requires an auth instance at request time. Authenticated GET
+login documents use `same-origin` referrers; callbacks/non-document requests
+retain the caller's policy. Auth availability exposes only `enabled`; absent
+auth mounts the same explicit 503 handler, not an enabled-looking fallback.
+The caller supplies existing JSON/error writers, preserving headers and shapes.
+Named-user permission checks remain distinct from this connection boundary.
+
+New owner tests exercise explicit inputs despite invalid ambient config,
+65,536/65,537-byte OIDC and 4,096/4,097-byte secret boundaries, strict JSON,
+secret format/factory errors/context, development/direct-TLS loading, origin
+validation, request/referrer/auth-route behavior and concurrent synthetic HTTPS
+IdP discovery with explicit CA rereads and cleanup. New command tests verify
+that invalid Simulator settings do not affect Control Room and vice versa,
+plus real TLS/peer projection through both adapters. Existing management,
+OIDC, direct HTTPS, Simulator HTTPS, real login/delegation, authorization and
+composition tests pass unchanged. No existing test was edited.
+
+**Evidence:** complete owner, `operatorauth`, `servicehttp` and `systemconfig`
+suites pass three race runs; unchanged focused command consumers pass under
+race. The editor runner reports 38 passing cases. Vet, full formatting,
+whitespace/editor diagnostics and CGO-free Linux arm64/amd64 command builds
+pass. An initial formatting assertion overlapped concurrent edits; it was rerun
+clean without changing unrelated files. Required `make test` retains the same
+four known baseline groups: enrollment readiness, stale-bundle platform fixture,
+placement shell extraction and trusted-service ELF fixture. No live credential/
+state/configuration was read or changed; no frontend, restart, deployment,
+commit or push occurred.
+
+```sh
+go test -race ./internal/operatorweb ./internal/operatorauth ./internal/servicehttp ./internal/systemconfig -count=3 -timeout=180s
+go test -race ./cmd/zpr-web-dashboard -run '^Test(OperatorWeb|ControlRoom|ControlService|PolicyService|SimulatorHTTPS|Management|Operator|ProductionComposition|ProductionContract|ControlHTTP|ChangeReview|EnrollmentService|LocalRequest|LocalEditor)' -count=1 -timeout=180s
+```
+
+**Next cohesive M2 scope:** give Control Room root HTTP composition an
+explicit-handler owner alongside its existing production proxy/authorization
+package. Preserve auth-config/login route precedence, review and signed
+enrollment overrides over the generic API proxy, static/stylesheet routing and
+management-versus-development authorization wrappers. Keep security/config
+loading, signing/review stores, embedded resources and server lifetime in the
+command. Exercise the complete composed mux with Simulator unavailable rather
+than claiming package separation from route-source checks alone. Policy/
+trusted-source ownership, lifecycle/configuration assembly and integrated
+acceptance remain open gates.
 
 ### Verified cross-domain call findings
 

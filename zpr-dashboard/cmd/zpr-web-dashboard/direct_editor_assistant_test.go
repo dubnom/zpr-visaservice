@@ -13,8 +13,8 @@ func TestDirectEditorAssistantPromptAndScope(t *testing.T) {
 	calls := 0
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		var body struct {
-			System string            `json:"system"`
-			Tools  []json.RawMessage `json:"tools"`
+			System       string          `json:"system"`
+			OutputConfig json.RawMessage `json:"output_config"`
 		}
 
 		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
@@ -22,10 +22,13 @@ func TestDirectEditorAssistantPromptAndScope(t *testing.T) {
 		}
 		system = body.System
 		calls++
-		if len(body.Tools) > 0 {
+		if len(body.OutputConfig) > 0 {
 			_ = json.NewEncoder(w).Encode(map[string]any{
-				"stop_reason": "tool_use",
-				"content":     []map[string]any{{"type": "tool_use", "name": "propose_editor_edits", "input": map[string]any{"answer": "No change needed.", "edits": []any{}}}},
+				"stop_reason": "end_turn",
+				"content": []map[string]string{
+					{"type": "thinking", "thinking": "Not operator-facing source or explanation."},
+					{"type": "text", "text": `{"answer":"No change needed.","edits":[]}`},
+				},
 			})
 		} else {
 			_ = json.NewEncoder(w).Encode(map[string]any{"content": []map[string]string{{"type": "text", "text": "No change needed."}}})
@@ -77,6 +80,7 @@ func TestDirectEditorAssistantReportsIncompleteResponse(t *testing.T) {
 					assistant: &claudeAssistant{apiKey: "test", model: "test-model", url: server.URL, http: server.Client()},
 					policy:    &policyWorkspace{},
 				}
+
 				response := httptest.NewRecorder()
 				app.handlePolicyAssistant(response, localPolicyRequest(http.MethodPost, "/api/policy/assistant",
 					`{"editor":"`+editor+`","direct_edits":true,"source":"original","messages":[{"role":"user","content":"Edit"}]}`))
@@ -88,6 +92,47 @@ func TestDirectEditorAssistantReportsIncompleteResponse(t *testing.T) {
 					t.Fatalf("incomplete response not explained: %d %s", response.Code, response.Body)
 				}
 			})
+		}
+	}
+}
+
+func TestDirectEditorAssistantReportsProviderUsageOnLimitFailure(t *testing.T) {
+	for _, over := range []bool{false, true} {
+		tokens, reason := 600, "max_tokens"
+		if over {
+			tokens, reason = 701, "end_turn"
+		}
+		calls := 0
+		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			calls++
+			_ = json.NewEncoder(w).Encode(map[string]any{
+				"stop_reason": reason,
+				"content":     []map[string]string{{"type": "text", "text": `{"answer":"Changed","edits":[{"before":"a","after":"b"}]}`}},
+				"usage":       map[string]int{"input_tokens": 498, "output_tokens": tokens},
+			})
+		}))
+		app := &application{
+			assistant: &claudeAssistant{apiKey: "test", model: "test-model", url: server.URL, http: server.Client()},
+			policy:    &policyWorkspace{},
+		}
+		response := httptest.NewRecorder()
+		app.handlePolicyAssistant(response, localPolicyRequest(http.MethodPost, "/api/policy/assistant",
+			`{"editor":"policy","direct_edits":true,"max_tokens":600,"source":"a","messages":[{"role":"user","content":"Edit"}]}`))
+		server.Close()
+		var result struct {
+			Error        string `json:"error"`
+			Answer       string `json:"answer"`
+			InputTokens  int    `json:"input_tokens"`
+			OutputTokens int    `json:"output_tokens"`
+		}
+		if err := json.Unmarshal(response.Body.Bytes(), &result); err != nil {
+			t.Fatal(err)
+		}
+		if response.Code != http.StatusBadGateway || result.Answer != "" || !strings.Contains(result.Error, "No changes were applied") || result.InputTokens != 498 || result.OutputTokens != tokens || calls != 1 {
+			t.Fatalf("usage or limit failure lost: %d %+v calls=%d", response.Code, result, calls)
+		}
+		if over && !strings.Contains(result.Error, "requested 600 limit") {
+			t.Fatalf("provider overrun not identified: %+v", result)
 		}
 	}
 }

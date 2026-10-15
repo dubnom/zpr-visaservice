@@ -1,8 +1,8 @@
 import { Compartment, EditorSelection, EditorState, Transaction } from "@codemirror/state";
-import { Decoration, EditorView, GutterMarker, gutter, keymap, lineNumbers } from "@codemirror/view";
-import { defaultKeymap, history, historyKeymap, indentWithTab, isolateHistory } from "@codemirror/commands";
+import { Decoration, EditorView, GutterMarker, drawSelection, gutter, keymap, lineNumbers } from "@codemirror/view";
+import { defaultKeymap, history, historyKeymap, indentWithTab, isolateHistory, redo, undo } from "@codemirror/commands";
 import { bracketMatching } from "@codemirror/language";
-import { autocompletion, completionKeymap } from "@codemirror/autocomplete";
+import { autocompletion, completionKeymap, startCompletion } from "@codemirror/autocomplete";
 
 const instances = new Map();
 // Keep the palette aligned with the color-only CSP declarations in main.go.
@@ -57,10 +57,10 @@ function mount(source, hooks) {
   host.className = "code-editor-host";
   host.dataset.source = source.id;
   const root = host.attachShadow({ mode: "open" });
-  if (!root.adoptedStyleSheets || !window.CSSStyleSheet) throw new Error("This browser does not support the CodeMirror trial's CSP-safe styles. Use the current editor.");
+  if (!root.adoptedStyleSheets || !window.CSSStyleSheet) throw new Error("This browser cannot load the editor's CSP-safe styles. Use a browser with constructed stylesheet support.");
   const styles = document.createElement("link");
   styles.rel = "stylesheet";
-  styles.href = "/code-editor-trial.css?v=1";
+  styles.href = "/code-editor.css?v=2";
   root.append(styles);
   surface.append(host);
   const nativeValue = Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, "value");
@@ -93,11 +93,19 @@ function mount(source, hooks) {
     if (source.id !== "policy-source") return null;
     const result = hooks.complete(context.state.doc.toString(), context.pos);
     if (!context.explicit && !result.word) return null;
-    return { from: result.start, to: result.end, options: result.items.map(label => ({ label, type: "keyword" })) };
+    return { from: result.start, to: result.end, options: result.items.map(label => ({
+      label, type: label.endsWith(".") ? "namespace" : "keyword",
+      ...(label.endsWith(".") ? { apply(editor, _completion, from, to) {
+        editor.dispatch({
+          changes: { from, to, insert: label }, selection: { anchor: from + label.length },
+          annotations: [Transaction.userEvent.of("input.complete"), isolateHistory.of("full")],
+        });
+        startCompletion(editor);
+      } } : {}),
+    })) };
   }
   const extensions = [
-    history(), theme, typography, lineNumbers(), bracketMatching(),
-    controls.of(editable()), wrapping.of(source.wrap === "off" ? [] : EditorView.lineWrapping),
+    history(), theme, typography, lineNumbers(), bracketMatching(), drawSelection(),
     autocompletion({ override: [completion] }),
     keymap.of([...completionKeymap, ...defaultKeymap, ...historyKeymap, indentWithTab]),
     EditorState.transactionFilter.of(transaction => {
@@ -134,10 +142,24 @@ function mount(source, hooks) {
     const { from, to } = view.state.selection.main;
     nativeSelection.call(source, from, to);
   }
-  const createState = text => EditorState.create({ doc: text, extensions });
+  const createState = text => EditorState.create({ doc: text, extensions: [
+    ...extensions, controls.of(editable()), wrapping.of(source.wrap === "off" ? [] : EditorView.lineWrapping),
+  ] });
   try { view = new EditorView({ state: createState(source.value), parent: root, root }); }
   catch (error) { host.remove(); throw error; }
   const descriptors = {};
+  const pageRoot = source.closest(".policy-page");
+  function toolbarHistory(event) {
+    if (event.defaultPrevented || event.isComposing || !(event.ctrlKey || event.metaKey) || event.altKey || source.disabled || source.readOnly || !host.getClientRects().length) return;
+    const target = event.composedPath()[0];
+    if (!(target instanceof Element) || target.closest("input, textarea, select, [contenteditable], [role='textbox']") || root.contains(target)) return;
+    const key = event.key.toLowerCase();
+    if (key !== "z" && key !== "y") return;
+    event.preventDefault();
+    (key === "y" || event.shiftKey ? redo : undo)(view);
+    view.focus();
+  }
+  pageRoot.addEventListener("keydown", toolbarHistory);
   function property(name, descriptor) {
     descriptors[name] = Object.getOwnPropertyDescriptor(source, name);
     Object.defineProperty(source, name, { configurable: true, ...descriptor });
@@ -222,16 +244,24 @@ function mount(source, hooks) {
       }
       const length = changes.reduce((length, change) => length + change.insert.length - (change.to - change.from), text.length);
       if (source.maxLength >= 0 && length > source.maxLength) throw new Error("The AI edit exceeds the editor size limit.");
+      const expected = changes.reduceRight((value, change) => value.slice(0, change.from) + change.insert + value.slice(change.to), text);
+      if (changes.length && expected === text) throw new Error("The assistant returned replacements that do not change the source. No changes were applied; ask again.");
       if (changes.length) view.dispatch({
         changes, annotations: [Transaction.userEvent.of("input.ai"), isolateHistory.of("full")],
       });
+      if (view.state.doc.toString() !== expected || source.value !== expected) throw new Error("The editor did not apply the AI changes. Review the draft before retrying.");
+      return expected !== text;
     },
     replace(text, all) {
       if (source.disabled || source.readOnly) throw new Error("This editor is read-only.");
       const from = all ? 0 : view.state.selection.main.from;
       const to = all ? view.state.doc.length : view.state.selection.main.to;
       if (source.maxLength >= 0 && view.state.doc.length - (to - from) + text.length > source.maxLength) throw new Error("The edit exceeds the editor size limit.");
-      view.dispatch({ changes: { from, to, insert: text }, selection: { anchor: from + text.length }, scrollIntoView: true });
+      if (view.state.sliceDoc(from, to) === text) return;
+      view.dispatch({
+        changes: { from, to, insert: text }, selection: { anchor: from + text.length }, scrollIntoView: true,
+        annotations: [Transaction.userEvent.of("input.replace"), isolateHistory.of("full")],
+      });
       view.focus();
     },
     destroy() {
@@ -239,6 +269,7 @@ function mount(source, hooks) {
       const selection = view.state.selection.main;
       attributes.disconnect();
       results.disconnect();
+      pageRoot.removeEventListener("keydown", toolbarHistory);
       source.removeEventListener("input", externalInput);
       view.destroy();
       host.remove();
@@ -254,20 +285,17 @@ function mount(source, hooks) {
 }
 
 window.ZPRCodeEditor = {
-  enable(hooks) {
+  initialize(hooks) {
     try {
       for (const [id, options] of Object.entries(hooks)) {
         const source = document.getElementById(id);
         if (!instances.has(source)) instances.set(source, mount(source, options));
       }
     } catch (error) {
-      this.disable();
+      for (const instance of instances.values()) instance.destroy();
+      instances.clear();
       throw error;
     }
-  },
-  disable() {
-    for (const instance of instances.values()) instance.destroy();
-    instances.clear();
   },
   active: source => instances.has(source),
   visible: source => Boolean(instances.get(source)?.host.getClientRects().length),
@@ -279,7 +307,7 @@ window.ZPRCodeEditor = {
   },
   applyEdits(source, edits) {
     const instance = instances.get(source);
-    if (!instance) throw new Error("Direct AI editing requires the CodeMirror trial. Ask again after enabling it.");
-    instance.applyEdits(edits);
+    if (!instance) throw new Error("The editor is unavailable. Reload before asking for AI edits.");
+    return instance.applyEdits(edits);
   },
 };

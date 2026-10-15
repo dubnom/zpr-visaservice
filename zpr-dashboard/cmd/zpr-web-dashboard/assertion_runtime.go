@@ -13,6 +13,8 @@ import (
 	"strings"
 	"sync"
 	"time"
+
+	"neboagency.com/zpr-dashborad/internal/controlservice/httpapi"
 )
 
 type assertionSettings struct {
@@ -398,106 +400,117 @@ func handleAssertionSourceTools(w http.ResponseWriter, r *http.Request) {
 }
 
 func (runtime *assertionRuntime) register(mux *http.ServeMux) {
-	mux.HandleFunc("POST /api/assertions/analyze", handleAssertionSourceTools)
-	mux.HandleFunc("POST /api/assertions/format", handleAssertionSourceTools)
-	mux.HandleFunc("GET /api/assertions/source", func(w http.ResponseWriter, r *http.Request) {
-		if !localEditorRequest(w, r) {
-			return
-		}
-		if err := runtime.refreshSettings(r.Context()); err != nil {
-			writeJSON(w, http.StatusBadGateway, map[string]string{"error": "Policy Repository assertion settings are unavailable"})
-			return
-		}
-		runtime.mu.Lock()
-		if runtime.running || !runtime.ldapConfigured() {
-			runtime.mu.Unlock()
-			writeJSON(w, http.StatusConflict, map[string]string{"error": "Trusted sources are unavailable or an evaluation is already running"})
-			return
-		}
-		readOrganizationID, baseDN, bindDN := runtime.organizationID, runtime.baseDN, runtime.bindDN
-		runtime.running = true
+	runtime.handlers().Register(mux)
+}
+
+func (runtime *assertionRuntime) handlers() httpapi.Assertions {
+	return httpapi.Assertions{
+		Analyze: http.HandlerFunc(handleAssertionSourceTools), Format: http.HandlerFunc(handleAssertionSourceTools),
+		Source: http.HandlerFunc(runtime.handleSource), Status: http.HandlerFunc(runtime.handleStatus),
+		Save: http.HandlerFunc(runtime.handleSave), Evaluate: http.HandlerFunc(runtime.handleEvaluate),
+	}
+}
+
+func (runtime *assertionRuntime) handleSource(w http.ResponseWriter, r *http.Request) {
+	if !localEditorRequest(w, r) {
+		return
+	}
+	if err := runtime.refreshSettings(r.Context()); err != nil {
+		writeJSON(w, http.StatusBadGateway, map[string]string{"error": "Policy Repository assertion settings are unavailable"})
+		return
+	}
+	runtime.mu.Lock()
+	if runtime.running || !runtime.ldapConfigured() {
 		runtime.mu.Unlock()
-		ctx, cancel := context.WithTimeout(r.Context(), 10*time.Second)
-		defer cancel()
-		directory, err := runtime.readDirectory(ctx, readOrganizationID, baseDN, bindDN)
-		runtime.mu.Lock()
-		runtime.running = false
-		if err == nil && (runtime.organizationID != readOrganizationID || runtime.baseDN != baseDN || runtime.bindDN != bindDN) {
-			err = errors.New("Organization changed during source read; reload and try again")
-		}
-		observedAt := time.Now().UTC()
-		if err == nil {
-			runtime.lastSource = assertionSourceSummary(directory, observedAt)
-		}
-		organizationID, organizationName := runtime.organizationID, runtime.organizationName
-		runtime.mu.Unlock()
-		if err != nil {
-			writeJSON(w, http.StatusBadGateway, map[string]string{"error": err.Error()})
-			return
-		}
-		w.Header().Set("Cache-Control", "no-store")
-		response := trustedSourceBrowserResponse("Trusted sources", organizationID, organizationName, baseDN, directory, observedAt)
-		response["sources"] = assertionSourceSummaries(directory, observedAt)
-		response["default_source"] = runtime.defaultSource
-		writeJSON(w, http.StatusOK, response)
-	})
-	mux.HandleFunc("GET /api/assertions", func(w http.ResponseWriter, r *http.Request) {
-		if !localEditorRequest(w, r) {
-			return
-		}
-		if err := runtime.refreshSettings(r.Context()); err != nil {
-			writeJSON(w, http.StatusBadGateway, map[string]string{"error": "Policy Repository assertion settings are unavailable"})
-			return
-		}
-		w.Header().Set("Cache-Control", "no-store")
-		writeJSON(w, http.StatusOK, runtime.status())
-	})
-	mux.HandleFunc("PUT /api/assertions", func(w http.ResponseWriter, r *http.Request) {
-		if !localEditorRequest(w, r) {
-			return
-		}
-		var request struct {
-			Source           string `json:"source"`
-			Enabled          bool   `json:"enabled"`
-			IntervalSeconds  int    `json:"interval_seconds"`
-			ExpectedRevision int    `json:"expected_revision"`
-		}
-		err := decodeAssertionRequest(w, r, &request)
-		if err == nil {
-			err = runtime.refreshSettings(r.Context())
-		}
-		if err == nil {
-			err = runtime.save(r.Context(), assertionSettings{Source: request.Source, Enabled: request.Enabled, IntervalSeconds: request.IntervalSeconds}, request.ExpectedRevision)
-		}
-		if err != nil {
-			assertionHTTPError(w, err)
-			return
-		}
-		writeJSON(w, http.StatusOK, runtime.status())
-	})
-	mux.HandleFunc("POST /api/assertions/evaluate", func(w http.ResponseWriter, r *http.Request) {
-		if !localEditorRequest(w, r) {
-			return
-		}
-		var request struct {
-			Source           string `json:"source"`
-			ExpectedRevision int    `json:"expected_revision"`
-		}
-		if err := decodeAssertionRequest(w, r, &request); err != nil {
-			assertionHTTPError(w, err)
-			return
-		}
-		if err := runtime.refreshSettings(r.Context()); err != nil {
-			writeJSON(w, http.StatusBadGateway, map[string]string{"error": "Policy Repository assertion settings are unavailable"})
-			return
-		}
-		run, err := runtime.evaluate(r.Context(), request.Source, request.ExpectedRevision)
-		if err != nil {
-			assertionHTTPError(w, err)
-			return
-		}
-		writeJSON(w, http.StatusOK, run)
-	})
+		writeJSON(w, http.StatusConflict, map[string]string{"error": "Trusted sources are unavailable or an evaluation is already running"})
+		return
+	}
+	readOrganizationID, baseDN, bindDN := runtime.organizationID, runtime.baseDN, runtime.bindDN
+	runtime.running = true
+	runtime.mu.Unlock()
+	ctx, cancel := context.WithTimeout(r.Context(), 10*time.Second)
+	defer cancel()
+	directory, err := runtime.readDirectory(ctx, readOrganizationID, baseDN, bindDN)
+	runtime.mu.Lock()
+	runtime.running = false
+	if err == nil && (runtime.organizationID != readOrganizationID || runtime.baseDN != baseDN || runtime.bindDN != bindDN) {
+		err = errors.New("Organization changed during source read; reload and try again")
+	}
+	observedAt := time.Now().UTC()
+	if err == nil {
+		runtime.lastSource = assertionSourceSummary(directory, observedAt)
+	}
+	organizationID, organizationName := runtime.organizationID, runtime.organizationName
+	runtime.mu.Unlock()
+	if err != nil {
+		writeJSON(w, http.StatusBadGateway, map[string]string{"error": err.Error()})
+		return
+	}
+	w.Header().Set("Cache-Control", "no-store")
+	response := trustedSourceBrowserResponse("Trusted sources", organizationID, organizationName, baseDN, directory, observedAt)
+	response["sources"] = assertionSourceSummaries(directory, observedAt)
+	response["default_source"] = runtime.defaultSource
+	writeJSON(w, http.StatusOK, response)
+}
+
+func (runtime *assertionRuntime) handleStatus(w http.ResponseWriter, r *http.Request) {
+	if !localEditorRequest(w, r) {
+		return
+	}
+	if err := runtime.refreshSettings(r.Context()); err != nil {
+		writeJSON(w, http.StatusBadGateway, map[string]string{"error": "Policy Repository assertion settings are unavailable"})
+		return
+	}
+	w.Header().Set("Cache-Control", "no-store")
+	writeJSON(w, http.StatusOK, runtime.status())
+}
+
+func (runtime *assertionRuntime) handleSave(w http.ResponseWriter, r *http.Request) {
+	if !localEditorRequest(w, r) {
+		return
+	}
+	var request struct {
+		Source           string `json:"source"`
+		Enabled          bool   `json:"enabled"`
+		IntervalSeconds  int    `json:"interval_seconds"`
+		ExpectedRevision int    `json:"expected_revision"`
+	}
+	err := decodeAssertionRequest(w, r, &request)
+	if err == nil {
+		err = runtime.refreshSettings(r.Context())
+	}
+	if err == nil {
+		err = runtime.save(r.Context(), assertionSettings{Source: request.Source, Enabled: request.Enabled, IntervalSeconds: request.IntervalSeconds}, request.ExpectedRevision)
+	}
+	if err != nil {
+		assertionHTTPError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, runtime.status())
+}
+
+func (runtime *assertionRuntime) handleEvaluate(w http.ResponseWriter, r *http.Request) {
+	if !localEditorRequest(w, r) {
+		return
+	}
+	var request struct {
+		Source           string `json:"source"`
+		ExpectedRevision int    `json:"expected_revision"`
+	}
+	if err := decodeAssertionRequest(w, r, &request); err != nil {
+		assertionHTTPError(w, err)
+		return
+	}
+	if err := runtime.refreshSettings(r.Context()); err != nil {
+		writeJSON(w, http.StatusBadGateway, map[string]string{"error": "Policy Repository assertion settings are unavailable"})
+		return
+	}
+	run, err := runtime.evaluate(r.Context(), request.Source, request.ExpectedRevision)
+	if err != nil {
+		assertionHTTPError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, run)
 }
 
 func assertionHTTPError(w http.ResponseWriter, err error) {

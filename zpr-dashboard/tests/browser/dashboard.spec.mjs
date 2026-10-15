@@ -10788,7 +10788,9 @@ test("AI shared shell defaults to collapsed options and safe, undoable insertion
   await expect(pane.getByRole("checkbox")).toHaveCount(0);
   await expect(pane.getByLabel("Model", { exact: true })).toBeHidden();
   await expect(pane.getByLabel("Max tokens", { exact: true })).toBeHidden();
-  await pane.getByText("Model and max tokens", { exact: true }).click();
+  await expect(pane.locator(".assistant-options .assistant-usage")).toBeHidden();
+  await pane.getByText("Model and Tokens", { exact: true }).click();
+  await expect(pane.locator(".assistant-options .assistant-usage")).toBeVisible();
   await expect(pane.getByLabel("Max tokens", { exact: true })).toBeVisible();
   await pane.getByLabel("Model", { exact: true }).selectOption("second-model");
   await pane.getByLabel("Max tokens", { exact: true }).selectOption("2400");
@@ -10974,7 +10976,7 @@ test("GUI gateway editor AI Assistant is ready without opt-in, sends the draft, 
   await pane.getByRole("button", { name: "Send" }).click();
   await expect(pane.locator(".assistant-code")).toHaveText('{"origin": "https://api.example.com"}');
   expect(requests).toHaveLength(1);
-  expect(requests[0]).toMatchObject({ editor: "gateway", source: original, model: "test-model", max_tokens: 1200, messages: [{ role: "user", content: "Add an origin" }] });
+  expect(requests[0]).toMatchObject({ editor: "gateway", source: original, model: "test-model", max_tokens: 2400, messages: [{ role: "user", content: "Add an origin" }] });
   await expect(pane.locator(".assistant-usage")).toContainText("40 input");
   await source.evaluate((element) => element.setSelectionRange(0, element.value.length));
   await pane.getByRole("button", { name: "Insert" }).click();

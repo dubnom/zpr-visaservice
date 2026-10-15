@@ -1,5 +1,7 @@
-.code-editor-toggle { display: inline-flex; align-items: center; gap: 5px; white-space: nowrap; font-size: 11px; }
-.code-editor-trial-status { font-size: 11px; color: var(--muted); }
+#code-editor-status { font-size: 11px; color: var(--muted); }
+#policy-source, #assertion-source, #policy-highlight, #assertion-highlight,
+#policy-test-gutter, .assertion-result-gutter, #policy-completions { display: none !important; }
+.policy-code-editor::after, .assertion-editor::after { display: none !important; }
 .code-editor-active > textarea, .code-editor-active > pre,
 .code-editor-active > .policy-test-gutter, .code-editor-active > .assertion-result-gutter { display: none !important; }
 .code-editor-active::after { display: none !important; }

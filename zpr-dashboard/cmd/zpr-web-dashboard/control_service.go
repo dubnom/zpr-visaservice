@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"neboagency.com/zpr-dashborad/internal/controlroom"
+	"neboagency.com/zpr-dashborad/internal/controlservice/httpapi"
 	"neboagency.com/zpr-dashborad/internal/servicehttp"
 )
 
@@ -160,31 +161,24 @@ func runControlService() error {
 			log.Printf("Gateway draft store is unavailable: %T", err)
 		}
 	}
-	mux := http.NewServeMux()
-	mux.Handle("/api/enrollment/", enrollmentAPI)
-	mux.Handle("/api/operator-enrollment/", enrollmentAPI)
-	assertions.register(mux)
-	trustedChanges.register(mux)
 	gatewayAPI := newGatewayAPI(strings.TrimSpace(os.Getenv("ZPR_GATEWAY_ORGANIZATION_ID")), gatewayInventoryReaderFromApplication(app), gatewayStore)
-	mux.Handle("/api/gateways/", gatewayAPI)
-	mux.HandleFunc("GET /api/snapshot", app.handleSnapshot)
 	readDiagnosticsSnapshot := func(ctx context.Context) snapshot {
 		if app.admin == nil {
 			return snapshot{APIStatus: "disconnected", Errors: []string{app.configErr}}
 		}
 		return app.fetchSnapshot(ctx)
 	}
-	mux.Handle("GET /api/diagnostics", newDiagnosticsHandler(readDiagnosticsSnapshot, diagnostics, diagnosticsErr, diagnosticsStaleAfter))
-	mux.HandleFunc("GET /api/actors/{actor}/visas", app.handleActorVisas)
-	mux.Handle("GET /api/adapter-logs", newAdapterLogsHandler())
-	mux.Handle("GET /api/dns/records", newDNSRecordsHandler())
-	mux.HandleFunc("POST /api/policy/assistant", app.handlePolicyAssistant)
-	mux.HandleFunc("GET /api/gateways/assistant", app.handleGatewayAssistantStatus)
-	mux.HandleFunc("POST /api/gateways/assistant", app.handleGatewayAssistant)
-	mux.Handle("/api/dns/stats/", newDNSStatsProxy())
-	mux.Handle("GET /bind9.xsl", newDNSStatsAssetProxy())
-	mux.Handle("/api/policy", app.policyProxyHandler())
-	mux.Handle("/api/policy/", app.policyProxyHandler())
+	mux := httpapi.NewMux(httpapi.Handlers{
+		Enrollment: enrollmentAPI, Gateways: gatewayAPI,
+		Assertions: assertions.handlers(), TrustedChanges: trustedChanges.handlers(),
+		Snapshot:    http.HandlerFunc(app.handleSnapshot),
+		Diagnostics: newDiagnosticsHandler(readDiagnosticsSnapshot, diagnostics, diagnosticsErr, diagnosticsStaleAfter),
+		ActorVisas:  http.HandlerFunc(app.handleActorVisas), AdapterLogs: newAdapterLogsHandler(),
+		DNSRecords: newDNSRecordsHandler(), DNSStats: newDNSStatsProxy(), DNSStylesheet: newDNSStatsAssetProxy(),
+		PolicyAssistant:        http.HandlerFunc(app.handlePolicyAssistant),
+		GatewayAssistantStatus: http.HandlerFunc(app.handleGatewayAssistantStatus),
+		GatewayAssistant:       http.HandlerFunc(app.handleGatewayAssistant), Policy: app.policyProxyHandler(),
+	})
 	server := &http.Server{
 		Addr: listen, Handler: securityHeaders(mux), ReadHeaderTimeout: 5 * time.Second, IdleTimeout: 60 * time.Second,
 		TLSConfig: &tls.Config{MinVersion: tls.VersionTLS13, ClientAuth: tls.RequireAndVerifyClientCert, ClientCAs: clientCAs},

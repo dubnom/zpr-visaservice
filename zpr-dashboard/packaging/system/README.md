@@ -16,7 +16,16 @@ system release yet. Nothing here starts or changes the development runtime.
   implemented; production container-network/installer integration is not.
 - Company-provided existing OIDC provider; no bundled identity provider.
 - Company-provided existing directory and DNS; do not bundle demo LDAP or BIND
-  as production defaults. Protocol/mapping/credential integration remains open.
+  as replacements for company infrastructure. A separate policy-controlled
+  BIND9 service behind a real ZPR adapter is required for the combined-package
+  demonstration; it is not bootstrap DNS. Protocol/mapping/credential and
+  adapter packaging integration remain open.
+- A separate [Simulator companion package](../../../System%20release%20plan.md#simulator-companion-package)
+  is also approved: Simulator plus lab LDAP, OIDC and DNS. It supplies ordinary
+  external integration endpoints to this same production package, not a
+  Simulator-dependent ZPR build. No companion installer/bundle exists yet.
+  Its initial [local trust bootstrap](../simulator/README.md) generates unique
+  protected lab TLS identities and service secrets only; no service is started.
 - Next user-test deliverable is the
   [complete from-scratch installation package](../../../System%20release%20plan.md#next-operator-test-deliverable),
   including all required ZPR services, not a standalone Control Room image.
@@ -30,6 +39,45 @@ or device enrollment to the public Internet. Device enrollment retains its
 existing private corporate underlay/VPN boundary. Management network/firewall
 rules/verification, directory integration, certificate reload/recovery integration, Docker
 version qualification, resource sizing and release owners remain open.
+
+## Companion lab versus production installation
+
+Production continues to use company-provided directory, OIDC, DNS and TLS.
+For a lab, the separately installed Simulator companion will supply LDAP, OIDC
+and protected ZPR DNS plus explicit endpoint, identity/mapping and trust inputs to the normal
+ZPR installer. This does not make Simulator a runtime dependency or let the
+production package read simulation manifests, profiles or sessions.
+
+Existing network DNS resolves bootstrap/login hostnames by default, also in
+the lab. Companion-hosted bootstrap DNS is an explicit isolated-lab option,
+not an installation prerequisite. The lab generator can export the required
+underlay records without generating a bootstrap server; protected ZPR BIND
+configuration is independently selectable. mDNS/`.local` support is not added.
+
+Supporting services must run independently of the Simulator application.
+Acceptance must demonstrate the same ZPR artifacts operating when Simulator is
+unavailable but LDAP/OIDC/DNS are healthy, and explicit failures/recovery when a
+required dependency is unavailable. Per-install lab secrets/trust, isolated
+state, safe reset/removal, networking and compatible release IDs must be
+documented and qualified. Lab TLS must be verified, not bypassed.
+
+The current management-bootstrap example/validator below is still partial;
+it does not yet implement this handoff or full directory/DNS configuration.
+Paired lab acceptance does not replace independent fresh-company qualification.
+Both packages together must demonstrate real node/adapter admission, an allowed
+and an evidenced denied traffic flow, protected ZPR DNS, revocation and restart.
+Running containers or displaying scenario data alone is not acceptance.
+
+The companion now renders optional OpenLDAP/Dex configuration and a
+[lab identity input inventory](../simulator/README.md#ldap-backed-oidc-identity-configuration).
+Real LDAP-backed OIDC/PKCE and preserved-subject provider restart are verified
+in isolated engineering containers. This inventory is not yet consumed by the
+real installer; verified named-subject grants and trusted attribute mappings
+remain explicit unfinished prerequisites, not implicit demo authorization.
+The companion also generates an independent LDAP/Dex Compose stack for the
+approved same-server, separate-state topology. See its
+[startup and recovery instructions](../simulator/README.md#same-host-independent-identity-stack).
+This does not add a dependency on Simulator or complete the production installer.
 
 ## Company management-bootstrap configuration
 
@@ -247,7 +295,7 @@ merely because its port is listed.
 | Authentication | [`zpr-bas`](../../../../zpr-bas/), `cargo build --locked --release` | BAS TLS identity, protected actor records and shared BAS/VS token-verification secret | Package supported enrollment-backed authentication and issuance, not demonstration records; OIDC human login is a different trust path |
 | Compiler/evaluator | [`zplc`](../../../../zpr-compiler/), `cargo build --locked --release`; `zpt` from Visa workspace | ZPLC configuration, per-company signing material, input schema and policy binary compatibility | Pin compiler/common-library versions and native runtime dependencies; no compiler source checkout on customer host |
 | Operator identity/directory | External company OIDC and directory services | Issuer/subject grants, redirect origin, TLS, protected client/bind credentials and configured attribute mappings | Company-provided OIDC and directory approved; directory protocols/mappings and first-admin recovery remain open. Do not install demo Dex/LDAP as production defaults |
-| DNS | Company-provided DNS; existing [`dns/bind9`](../../../dns/bind9/) is integration prior art, not a bundled requirement | Explicit company resolver/authority, records and any separately authorized update trust/configuration | External company DNS approved; define records/resolution and optional update contract. Do not install BIND/acme-dns merely to install ZPR |
+| DNS | Existing network DNS (optional companion bootstrap DNS for isolated labs), distinct from [`ZPR BIND9`](../../../dns/bind9/) behind an adapter | Explicit bootstrap endpoints; protected DNS address/policy, publisher and separate viewer TSIG identities | Protected BIND9 approved for the combined demonstration; package its adapter and independent supervised namespace. Bootstrap must not depend on ZPR DNS. Config generation exists, not service deployment; no automatic acme-dns |
 | Gateway | Existing gateway runtime and [`rollout contract`](../../scripts/gateway-runtime-rollout.md) | Independent installed identity, allowlist, destination/forwarding configuration and adapter link | Decide whether bundled or optional; editor activation/rollback and CONNECT enforcement limits remain unresolved |
 | Telemetry | Existing [`observability`](../../../observability/) and configured logs/metrics sources | Persistent backend data, retention, operator endpoints and credentials | Decide required diagnostic baseline versus optional backend; missing optional telemetry must not masquerade as healthy/empty data |
 | Simulator | Development/test tooling only | Simulation profiles, workloads and manifests | Excluded from the production appliance and its startup dependencies |

@@ -27,6 +27,69 @@ Do not infer current runtime health from a historical verification entry.
 
 ## Current status
 
+- **Hierarchical adapter LDAP completion:** **Deployed to Control Room at
+  20:06 UTC; not committed or pushed.**
+  Per clarified requirement, `define foo as adapter with grea` offers only
+  `greatlakes.`. Accepting it opens attributes; selecting location inserts
+  exactly `greatlakes.location:`, not `device.greatlakes.location:`.
+  Multi-part namespaces advance segment by segment, explicit type prefixes
+  remain explicit, and each acceptance is undoable. All 52 editor browser
+  checks pass with production-shaped catalog data; no Go/provider changes.
+  Actual served HTML/46 assets, strict CSP, exact namespace/leaf text and both
+  Undo steps verified. Configuration/mounts preserved; all other services
+  unchanged. Refresh/sign in again. See
+  [rollout/rollback](GUI%20deployments.md#hierarchical-adapter-ldap-completion-2026-10-15-2006-utc).
+- **Token limits, production LDAP completion and Discard:** **Deployed to Control
+  Room and Control-Service at 19:55 UTC; not committed or pushed.**
+  Choices 900/1800/2400/3600/7200, default 2400; browser and both
+  backend request validators agree, with old open-client values accepted.
+  Production catalog definitions are `device.greatlakes.*`, not the bare
+  namespaces used by the previous mocked check. Match short namespace input
+  while inserting the full catalog name; fix current-statement boundaries.
+  Discard now forces a same-record reload without changing ordinary selection
+  or assertion-save behavior. All 54 selected browser checks and focused Go
+  race/vet pass; full Go suite retains four known failures. No AI requests.
+  Actual served HTML/46 assets and strict-CSP checks verify the increased
+  choices/default, production-shaped LDAP completion in multi-statement text,
+  insertion/Undo and Discard cancellation/reload/history reset. Exact container
+  configuration/mounts/IDs preserved; Policy-Service and Simulator unchanged.
+  Refresh/sign in again. See
+  [rollout/rollback](GUI%20deployments.md#token-limits-production-ldap-completion-and-discard-2026-10-15-1955-utc).
+- **Assistant compact settings and LDAP namespace completion:** **Deployed to
+  Control Room at 19:36 UTC; not committed or pushed.** Remove the requested direct-edit/Undo/autosave
+  disclosure sentences. Rename the collapsed section **Model and Tokens** and
+  move all token usage inside it. Reproduce and repair
+  `define great as adapter with greatlakes.`: namespaced attribute dots are no
+  longer treated as statement terminators. Short/qualified and multi-part LDAP
+  names complete with Undo; comments, strings and completed values stay silent.
+  All 44 selected desktop/tablet editor/shared-assistant checks pass; editor
+  diagnostics and whitespace checks pass. No Go changes or AI-provider requests.
+  Actual served HTML/46 assets, strict CSP, exact disclosure, collapsed stats,
+  automatic `greatlakes.` insertion/Undo and login gate verified. Room
+  configuration/mounts preserved; backend services and Simulator unchanged.
+  Refresh/sign in again. See
+  [rollout/rollback](GUI%20deployments.md#assistant-settings-and-ldap-namespace-completion-2026-10-15-1936-utc).
+- **Sole policy/assertion editor and explicit AI edit/usage results: Deployed
+  to Control Room and Control-Service at 19:12 UTC; this follow-up is not
+  committed or pushed.** CodeMirror starts automatically, with
+  no legacy switch or editable fallback. Direct AI requests are gated on editor
+  readiness; real replacements are checked against the visible document and
+  source bridge. No-op lists are rejected, empty edit lists receive a neutral
+  notice, and the appended "Applied as one unsaved..." sentence is removed.
+  Last-request output/requested maximum and cumulative usage are distinct;
+  structured-response failures retain reported usage and overruns are explicit.
+  The approved synthetic request used 77/300 output tokens and did not reproduce
+  the reported first-request overrun. The application cannot guarantee provider
+  billing. All 38 editor browser checks and 12 selected unchanged assistant
+  checks pass. Two Scenario checks fail during setup on the old
+  `#scenario-organization` selector before reaching assistant code; untouched.
+  Focused Go race tests/vet pass; `make test` retains the four known failures.
+  Both production containers preserve their exact configuration/mounts/IDs.
+  Served HTML and 46 assets match source; actual CSP, sole-editor startup,
+  mock AI visible edits/Undo/Redo, usage, Format and sign-in gate pass.
+  Policy-Service and Simulator were not updated. Refresh/sign in again.
+  See [implementation evidence](GUI%20completed%20work.md#sole-editor-and-ai-editusage-verification-2026-10-15-utc).
+  See [rollout/rollback](GUI%20deployments.md#sole-editor-and-explicit-ai-editusage-results-2026-10-15-1912-utc).
 - **Policy/Assertions CodeMirror trial:** **Deployed to Control Room**
   (2026-10-15 17:30 UTC).
   An opt-in checkbox enables the locally bundled editor; switching back preserves
@@ -56,8 +119,29 @@ Do not infer current runtime health from a historical verification entry.
   All 28 editor browser checks pass. Control Room was not restarted; no refresh
   is required to retry. See
   [structured-edit rollout](GUI%20deployments.md#structured-ai-editor-responses-2026-10-15-1813-utc).
+  **Correction and editor fixes deployed at 18:29 UTC:** the configured model
+  rejects forced tool calls; native JSON-schema output is now used and verified
+  with approved synthetic no-edit and replacement requests. CodeMirror renders
+  its own scroll-aware caret/selection, and Undo/Redo works from Analyze and
+  other editor buttons without stealing other text fields' history. All 32
+  selected browser checks pass. Refresh/sign in again and enable CodeMirror.
+  See [latest rollout](GUI%20deployments.md#scroll-aware-caret-toolbar-history-and-supported-ai-schema-2026-10-15-1829-utc).
+  **Follow-up deployed to Control Room at 18:38 UTC:** policy Format now uses
+  one isolated undoable edit instead of resetting history; assertion Format
+  shares the same isolated replacement path. The assistant proxy now allows
+  its bounded context/provider request to finish instead of canceling after
+  the ordinary 10-second API budget. All 34 editor checks pass. Refresh/sign
+  in again to load the UI. See
+  [Format/proxy rollout](GUI%20deployments.md#format-history-and-assistant-proxy-budget-2026-10-15-1838-utc).
+  **AI envelope repair deployed to Control-Service at 18:45 UTC:** a synthetic
+  refactor reproduced a valid JSON answer preceded by a provider `thinking`
+  block, which the prior parser incorrectly rejected. Known reasoning blocks
+  are now skipped while the single edit payload remains strictly validated.
+  The captured synthetic response passes the actual parser. No refresh needed;
+  the operator's real policy was not sent to AI during verification. See
+  [envelope repair](GUI%20deployments.md#assistant-reasoning-envelope-repair-2026-10-15-1845-utc).
 - **Directory/code refactoring:** independent production policy-fixture inputs
-  are **Deployed to Policy-Service at 17:59 UTC**, not published. Policy-Service now uses
+  are **Deployed to Policy-Service at 17:59 UTC** and published in `990d54a`. Policy-Service now uses
   explicit operator JSON plus live LDAP; Simulator provisioning exports that
   contract rather than being read by production. The compatibility audit now
   records all 23 modes, 40 flags, Simulator state/default paths and packaging
@@ -65,7 +149,8 @@ Do not infer current runtime health from a historical verification entry.
   gateway-draft and change-review route/auth/persistence audit is also
   **Verified locally**, with four new production-contract tests and the six
   audited internal-package suites passing under race. The subsequent gateway
-  draft-owner extraction is now **Verified locally**, not deployed or published:
+  draft-owner extraction is now **Verified locally** and published in `990d54a`;
+  publication does not expand dated deployment evidence:
   validation/storage/identity selection live in a production package with an
   independent inventory contract; neutral upstream parsing is shared without
   Simulator workload ownership. Focused race tests, vet and both Linux builds
@@ -74,8 +159,64 @@ Do not infer current runtime health from a historical verification entry.
   now **Verified locally**, with five new compatibility tests covering Admin
   TLS/decoder boundaries, health/wire shapes, enrichment ordering and the
   measured 16-request visa worker limit. No runtime code changed in this audit.
-  Next is an explicit-config production Admin read-client extraction, followed
-  by snapshot/provider composition and remaining packaging acceptance. See the
+  The subsequent explicit-config Admin read-client extraction is now
+  **Verified locally**, not deployed or published: production TLS/credentials/
+  JSON GETs have a standard-library-only owner, with environment/error
+  compatibility retained in the command. Owner/consumer race tests, vet and
+  both Linux builds pass; the same four full-suite baseline failures remain.
+  The sixteenth extraction now also gives snapshot DTO/acquisition and pure
+  service/trusted assembly an independent production owner, with an explicit
+  Admin reader and enrichment callbacks. It is **Verified locally**, not
+  deployed or published. Existing consumer tests pass unchanged; new package
+  guards verify concurrency, health, wire shapes and dependency boundaries.
+  The seventeenth extraction adds explicit display-name and node telemetry
+  enrichment to the production inventory owner, with file paths and
+  catalog/query callbacks rather than provider discovery. It is
+  **Verified locally**, not deployed or published. Boundary/consumer races,
+  vet and both Linux builds pass; full tests retain the four baseline groups.
+  The eighteenth extraction adds a production diagnostics owner for catalog/
+  wire/provider contracts and explicit OTLP/OpenObserve acquisition. Operator
+  configuration and authorized HTTP composition stay in the command. It is
+  **Verified locally**, not deployed or published: new boundary/bounds/partial-
+  signal tests and unchanged consumers pass, along with vet/both Linux builds;
+  the full suite retains four baseline failure groups.
+  Diagnostics result aggregation is now also **Verified locally**, not deployed
+  or published: explicit provider/catalog inputs, four-query concurrency,
+  source/overall states and ordered 500-log/1,000-metric budgets live in the
+  production diagnostics package. HTTP validation, authorization composition,
+  request deadlines and operator config remain command-owned. Per-call
+  freshness defaults eliminate a shared-handler write; new exact-bound and
+  concurrent-request regressions plus unchanged consumer races pass.
+  Vet and both Linux builds pass; the four full-suite baseline groups remain.
+  The remaining startup/operator-config and nested-route composition audit is
+  now **Verified locally**, with no runtime changes. Five new tests pin root/
+  delegated route bindings, server/TLS fields, startup failure ordering and
+  request-time policy context; 21 editor-runner cases and focused races pass.
+  Explicit-input Control-Service HTTP composition is now **Verified locally**:
+  `internal/controlservice/httpapi` owns all fifteen direct and eight delegated
+  registrations. Domain handlers/local checks, startup configuration, scheduler/
+  store lifetime, security headers and TLS/listener behavior stay command-owned.
+  Served-mux/integration and updated ownership guards report 83 passing editor
+  cases; package/consumer races, vet and both Linux builds pass. Full tests retain
+  the four baseline groups. No publication/deployment in this slice.
+  The explicit-input operator web-security loader/request boundary is now
+  **Verified locally** in `internal/operatorweb`, with independent Control Room
+  and Simulator environment adapters. Existing management/direct-TLS/OIDC/
+  development/login/delegation behavior is preserved; protected-file and
+  synthetic IdP/factory regressions report 38 passing editor cases. Owner/
+  dependency and unchanged consumer races, vet and both Linux builds pass.
+  Full tests retain the four baseline groups. No publication/deployment.
+  Next is Control Room root HTTP composition with explicit auth/review/
+  enrollment/API/static handlers; configuration/stores/lifetime remain outside.
+  Packaging acceptance and all seven milestone gates remain open. See the
+  [operator web-security owner](REDIRECTORY.md#m2-explicit-input-operator-web-security-owner-2026-10-15),
+  [Control-Service HTTP composition owner](REDIRECTORY.md#m2-explicit-handler-control-service-http-composition-2026-10-15),
+  [startup and HTTP composition audit](REDIRECTORY.md#m1-production-startup-and-http-composition-audit-2026-10-15),
+  [diagnostics aggregation boundary](REDIRECTORY.md#production-diagnostics-aggregation-boundary-2026-10-15),
+  [diagnostics-acquisition extraction](REDIRECTORY.md#eighteenth-extraction-production-diagnostics-acquisition-owner-2026-10-15),
+  [node-enrichment extraction](REDIRECTORY.md#seventeenth-extraction-explicit-node-inventory-enrichment-2026-10-15),
+  [snapshot-owner extraction](REDIRECTORY.md#sixteenth-extraction-production-snapshot-inventory-owner-2026-10-15),
+  [Admin read-owner extraction](REDIRECTORY.md#fifteenth-extraction-explicit-config-production-admin-read-client-2026-10-15),
   [inventory contract audit](REDIRECTORY.md#m1-production-inventory-acquisition-and-enrichment-audit-2026-10-15),
   [gateway-owner extraction](REDIRECTORY.md#fourteenth-extraction-production-gateway-draft-owner-2026-10-15),
   [M1 compatibility audit](REDIRECTORY.md#m1-compatibility-mode-and-packaging-audit-2026-10-15) and
@@ -243,6 +384,66 @@ The open requirements below retain their original scope.
 No new priority or implementation approval is implied for backend rollouts.
 
 ### System packaging and releases
+- **Companion LDAP/OIDC slice (2026-10-15):** added opt-in OpenLDAP/Dex
+  configuration generation with explicit matching HTTPS origins, per-install
+  lab-user passwords/groups and separate one-time initializer/startup scripts
+  that never reseed existing state. Relative-file identity inventory does not
+  invent operator subjects or grants. Isolated real-provider test verifies
+  LDAPS trust, restricted reader ACLs, PKCE/signed OIDC login, group/subject
+  mapping and stable identities across preserved-state LDAP/Dex restart without
+  Simulator. Focused race/provider/BIND tests, vet and Linux amd64 build pass;
+  required full Go suite retains the same four recorded dashboard failures.
+  Existing runtime stacks unchanged; qualified images,
+  first-admin grants, trusted attribute mappings and complete network remain
+  open. See [identity packaging](zpr-dashboard/packaging/simulator/README.md#ldap-backed-oidc-identity-configuration).
+- **Companion independent identity Compose (2026-10-15):** approved same-server,
+  separate-stack topology. Added opt-in generated immutable-image LDAP/Dex
+  stack, private-IP publication, invoking UID/GID, isolated persistent state
+  and explicit networkless initialization. Generated Compose passed real
+  authenticated LDAPS readiness, PKCE/OIDC login and container recreation with
+  stable subjects, without Simulator, using isolated arm64 engineering images.
+  Ubuntu amd64 qualification, real Room grants and complete paired-package
+  acceptance remain open. See [startup/recovery instructions](zpr-dashboard/packaging/simulator/README.md#same-host-independent-identity-stack).
+- **Existing bootstrap DNS default (2026-10-15):** decoupled underlay record
+  requests from protected ZPR DNS generation. Existing network DNS is the default
+  for company and lab setup/login; companion bootstrap BIND now requires explicit
+  `-host-bootstrap-dns`. Underlay-only, protected-only and combined modes produce
+  only their selected files/references. No resolver changes, automatic fallback
+  or mDNS/`.local` support. Focused race tests, isolated BIND configuration
+  loading, vet and Linux amd64 build pass; full Go suite retains the same four
+  recorded dashboard failures. No running service changed. See
+  [DNS configuration modes](zpr-dashboard/packaging/simulator/README.md#separate-bootstrap-and-protected-zpr-dns).
+- **Combined network / DNS rendering (2026-10-15):** user clarified that the
+  two packages together must demonstrate real ZPR admission and allowed/denied
+  traffic, not merely infrastructure. Approved OpenLDAP/Dex and protected BIND9
+  behind a real ZPR adapter, with separate companion bootstrap DNS. Added
+  explicit optional bootstrap/Room/ZPR addresses and client prefix to the
+  [lab bootstrap](zpr-dashboard/packaging/simulator/README.md#separate-bootstrap-and-protected-zpr-dns):
+  separate BIND configurations/zones, independent publisher/viewer TSIG keys,
+  Visa update and least-privilege policy fragments. No applied configuration or
+  daemon startup. Focused race/vet/Linux build pass, plus isolated BIND 9.20.29
+  arm64 configuration/zone loading; full Go suite retains the same four
+  recorded failures. Real adapter/installer/policy wiring and working-network
+  acceptance remain open; running validators is not traffic evidence.
+- **Companion trust-bootstrap slice (2026-10-15):** added standalone
+  [`zpr-lab-bootstrap`](zpr-dashboard/packaging/simulator/README.md) to create
+  unique lab CA and Room/Simulator/LDAP/OIDC server identities plus independent
+  LDAP/OIDC service-secret files in a new protected directory. Existing output
+  is never overwritten; a versioned relative-file inventory is written last.
+  Focused race tests, vet and Linux amd64 build pass; required full Go suite
+  retains the same four recorded dashboard failure groups. Provider rendering,
+  accounts/client registration, DNS, installer handoff, resumable recovery and
+  the installable companion bundle remain open. No runtime change/deployment.
+- **Simulator companion scope approved (2026-10-15):** provide a separately
+  installable Simulator package including lab LDAP, OIDC and DNS. The same real
+  ZPR package consumes their explicit standard integration inputs; production
+  keeps company-provided services and no dependency on Simulator. Supporting
+  services must survive Simulator application shutdown. Define unique lab
+  credentials/trust, protected handoff, isolated state/reset/removal and exact
+  release compatibility; qualify paired lab operation and dependency outages
+  without substituting it for independent company acceptance. No companion
+  bundle exists yet. See the
+  [companion deliverable and implementation sequence](System%20release%20plan.md#simulator-companion-package).
 - **Enrollment ownership slice (2026-10-15):** added an opt-in separate mTLS
   administration listener to the standalone Enrollment Service, sharing its own
   device registry within one process. Control-Service can relay existing signed

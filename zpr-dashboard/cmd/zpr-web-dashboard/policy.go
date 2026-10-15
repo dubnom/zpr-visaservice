@@ -1077,12 +1077,23 @@ func (a *application) handlePolicyAssistant(w http.ResponseWriter, r *http.Reque
 	}
 	if err != nil {
 		log.Printf("Policy editor assistant request failed: %v", err)
+		fail := func(message string) {
+			writeJSON(w, http.StatusBadGateway, struct {
+				Error        string `json:"error"`
+				InputTokens  int    `json:"input_tokens"`
+				OutputTokens int    `json:"output_tokens"`
+			}{message, answer.InputTokens, answer.OutputTokens})
+		}
+		if request.DirectEdits && answer.OutputTokens > request.MaxTokens {
+			fail(fmt.Sprintf("The provider reported %d output tokens despite the requested %d limit. No changes were applied. Provider-reported usage is shown; this limit is not a billing guarantee.", answer.OutputTokens, request.MaxTokens))
+			return
+		}
 		if errors.Is(err, assistant.ErrEditorOutputLimit) {
-			writePolicyError(w, http.StatusBadGateway, "The assistant reached the output token limit before completing its edits. No changes were applied. Increase the output limit or request a smaller change.")
+			fail("The assistant reached the output token limit before completing its edits. No changes were applied. Increase the output limit or request a smaller change.")
 			return
 		}
 		if errors.Is(err, assistant.ErrEditorResponse) {
-			writePolicyError(w, http.StatusBadGateway, "The assistant did not return a complete structured edit response. No changes were applied; retry using a smaller, specific request.")
+			fail("The assistant did not return a complete structured edit response. No changes were applied; retry using a smaller, specific request.")
 			return
 		}
 		writePolicyError(w, http.StatusBadGateway, "Claude could not complete the request.")

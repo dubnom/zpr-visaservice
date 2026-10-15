@@ -19,10 +19,10 @@
     <link rel="stylesheet" href="/provisioning.css?v=6">
     <link rel="stylesheet" href="/editor-assistant.css?v=8">
     <link rel="stylesheet" href="/control-room-typography.css?v=1">
-    <script src="/sidebar.js?v=45" defer></script>
+    <script src="/sidebar.js?v=46" defer></script>
 
     <script src="/policy-record-icons.js?v=1" defer></script>
-    <link rel="stylesheet" href="/code-editor-trial.css?v=1">
+    <link rel="stylesheet" href="/code-editor.css?v=2">
   </head>
   <body class="control-room">
     <div class="app-shell">
@@ -268,8 +268,7 @@
                   </div>
                   <div class="policy-editor-utilities" id="policy-editor-utilities">
                     <button id="policy-attribute-rescan" class="button button-save-as-ready" type="button" disabled>Refresh Attributes</button>
-                    <label class="code-editor-toggle" title="Try CodeMirror for policy and assertions; turn off to restore the current editor without losing text"><input id="code-editor-trial" type="checkbox"> CodeMirror trial</label>
-                    <span id="code-editor-trial-status" class="code-editor-trial-status" role="status"></span>
+                    <span id="code-editor-status" role="status">Loading editor…</span>
                     <span data-editor-search-target="policy-source,assertion-source"></span>
                     <button id="policy-editor-maximize" class="button button-refresh" type="button" data-editor-maximize="policy-editor-pane" aria-label="Maximize editor" aria-pressed="false" title="Maximize editor"></button>
                     <details id="policy-history-menu" class="policy-history-menu">
@@ -631,11 +630,11 @@
     <script src="/table-sort.js?v=2" defer></script>
     <script src="/trusted-source.js?v=12" defer></script>
     <script src="/editor-page.js?v=20" defer></script>
-    <script src="/assistant-core.js?v=4" defer></script>
+    <script src="/assistant-core.js?v=7" defer></script>
     <script src="/node-stats.js?v=9" defer></script>
     <script src="/node-logs.js?v=4" defer></script>
     <script src="/map-traffic.js?v=1" defer></script>
-    <script src="/app.js?v=163" defer></script>
+    <script src="/app.js?v=168" defer></script>
     <script src="/log-format.js?v=1" defer></script>
     <script src="/machine-logs.js?v=27" defer></script>
     <script src="/assertions.js?v=30" defer></script>
@@ -648,7 +647,7 @@
     <script src="/operator-login.js?v=11" defer></script>
     <script src="/editor-assistant.js?v=3" defer></script>
     <script src="/editor-search.js?v=9" defer></script>
-    <script src="/code-editor-trial.js?v=3" defer></script>
+    <script src="/code-editor.js?v=7" defer></script>
     <script src="/diagnostics.js?v=15" defer></script>
       <script src="/security-review.js?v=16" defer></script>
   </body>

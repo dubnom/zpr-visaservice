@@ -24,7 +24,10 @@ func NewProxy(baseURL *url.URL, transport *http.Transport) *httputil.ReverseProx
 	proxy := httputil.NewSingleHostReverseProxy(baseURL)
 	logTransport := transport.Clone()
 	logTransport.ResponseHeaderTimeout = 20 * time.Second
-	proxy.Transport = upstreamTransport{standard: transport, logs: logTransport}
+	assistantTransport := transport.Clone()
+	// Allow context lookup plus the assistant's 45-second provider request.
+	assistantTransport.ResponseHeaderTimeout = 75 * time.Second
+	proxy.Transport = upstreamTransport{standard: transport, logs: logTransport, assistant: assistantTransport}
 	proxy.FlushInterval = 100 * time.Millisecond
 	proxy.Director = func(request *http.Request) {
 		request.URL.Scheme = baseURL.Scheme
@@ -49,11 +52,15 @@ func NewProxy(baseURL *url.URL, transport *http.Transport) *httputil.ReverseProx
 }
 
 type upstreamTransport struct {
-	standard http.RoundTripper
-	logs     http.RoundTripper
+	standard  http.RoundTripper
+	logs      http.RoundTripper
+	assistant http.RoundTripper
 }
 
 func (transport upstreamTransport) RoundTrip(request *http.Request) (*http.Response, error) {
+	if request.Method == http.MethodPost && (request.URL.Path == "/api/policy/assistant" || request.URL.Path == "/api/gateways/assistant") {
+		return transport.assistant.RoundTrip(request)
+	}
 	if request.URL.Path == "/api/adapter-logs" || request.URL.Path == "/api/assertions/evaluate" || request.URL.Path == "/api/assertions/source" {
 		return transport.logs.RoundTrip(request)
 	}

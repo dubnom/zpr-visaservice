@@ -41,35 +41,31 @@ func (a *Client) CompleteEditorEdits(ctx context.Context, system string, message
 	return a.complete(ctx, system, messages, model, maxTokens, true)
 }
 
-func (a *Client) complete(ctx context.Context, system string, messages []Message, model string, maxTokens int, editorEdits bool) (Reply, error) {
+func (a *Client) complete(ctx context.Context, system string, messages []Message, model string, maxTokens int, editorEdits bool) (reply Reply, replyErr error) {
 	type contentBlock struct {
-		Type  string          `json:"type"`
-		Text  string          `json:"text"`
-		Name  string          `json:"name"`
-		Input json.RawMessage `json:"input"`
+		Type string `json:"type"`
+		Text string `json:"text"`
 	}
 	type apiMessage struct {
 		Role    string `json:"role"`
 		Content string `json:"content"`
 	}
 	requestBody := struct {
-		Model      string       `json:"model"`
-		MaxTokens  int          `json:"max_tokens"`
-		System     string       `json:"system"`
-		Messages   []apiMessage `json:"messages"`
-		Tools      []any        `json:"tools,omitempty"`
-		ToolChoice any          `json:"tool_choice,omitempty"`
+		Model        string       `json:"model"`
+		MaxTokens    int          `json:"max_tokens"`
+		System       string       `json:"system"`
+		Messages     []apiMessage `json:"messages"`
+		OutputConfig any          `json:"output_config,omitempty"`
 	}{Model: model, MaxTokens: maxTokens, System: system, Messages: make([]apiMessage, len(messages))}
 	if editorEdits {
-		requestBody.Tools = []any{map[string]any{
-			"name":        "propose_editor_edits",
-			"description": "Return requested unsaved editor changes, or an explanation with no edits. This does not execute or save anything.",
-			"input_schema": map[string]any{
+		requestBody.OutputConfig = map[string]any{"format": map[string]any{
+			"type": "json_schema",
+			"schema": map[string]any{
 				"type": "object", "additionalProperties": false, "required": []string{"answer", "edits"},
 				"properties": map[string]any{
-					"answer": map[string]any{"type": "string", "minLength": 1},
+					"answer": map[string]any{"type": "string"},
 					"edits": map[string]any{
-						"type": "array", "maxItems": 100,
+						"type": "array",
 						"items": map[string]any{
 							"type": "object", "additionalProperties": false, "required": []string{"before", "after"},
 							"properties": map[string]any{"before": map[string]string{"type": "string"}, "after": map[string]string{"type": "string"}},
@@ -78,7 +74,6 @@ func (a *Client) complete(ctx context.Context, system string, messages []Message
 				},
 			},
 		}}
-		requestBody.ToolChoice = map[string]any{"type": "tool", "name": "propose_editor_edits", "disable_parallel_tool_use": true}
 	}
 	for index, message := range messages {
 		requestBody.Messages[index] = apiMessage{Role: message.Role, Content: message.Content}
@@ -125,21 +120,31 @@ func (a *Client) complete(ctx context.Context, system string, messages []Message
 		return Reply{}, err
 	}
 	if editorEdits {
+		defer func() {
+			reply.InputTokens = response.Usage.InputTokens
+			reply.OutputTokens = response.Usage.OutputTokens
+		}()
+		if response.Usage.OutputTokens > maxTokens {
+			return Reply{}, fmt.Errorf("%w: provider reported %d output tokens for requested maximum %d", ErrEditorOutputLimit, response.Usage.OutputTokens, maxTokens)
+		}
 		if response.StopReason == "max_tokens" {
 			return Reply{}, ErrEditorOutputLimit
 		}
-		if response.StopReason != "tool_use" {
-			return Reply{}, ErrEditorResponse
+		if response.StopReason != "end_turn" {
+			return Reply{}, fmt.Errorf("%w: unexpected stop reason", ErrEditorResponse)
 		}
 		var payload json.RawMessage
 		for _, block := range response.Content {
-			if block.Type != "tool_use" {
+			if block.Type == "thinking" || block.Type == "redacted_thinking" {
 				continue
 			}
-			if block.Name != "propose_editor_edits" || payload != nil {
-				return Reply{}, ErrEditorResponse
+			if block.Type != "text" || payload != nil {
+				return Reply{}, fmt.Errorf("%w: unexpected content block or multiple text blocks", ErrEditorResponse)
 			}
-			payload = block.Input
+			payload = json.RawMessage(block.Text)
+		}
+		if payload == nil {
+			return Reply{}, fmt.Errorf("%w: missing text payload", ErrEditorResponse)
 		}
 		var editResponse struct {
 			Answer *string `json:"answer"`
@@ -150,12 +155,18 @@ func (a *Client) complete(ctx context.Context, system string, messages []Message
 		}
 		decoder := json.NewDecoder(bytes.NewReader(payload))
 		decoder.DisallowUnknownFields()
-		if err := decoder.Decode(&editResponse); err != nil || editResponse.Answer == nil || strings.TrimSpace(*editResponse.Answer) == "" || editResponse.Edits == nil || len(*editResponse.Edits) > 100 {
-			return Reply{}, ErrEditorResponse
+		if err := decoder.Decode(&editResponse); err != nil {
+			return Reply{}, fmt.Errorf("%w: payload JSON or schema mismatch", ErrEditorResponse)
+		}
+		if editResponse.Answer == nil || strings.TrimSpace(*editResponse.Answer) == "" || editResponse.Edits == nil || len(*editResponse.Edits) > 100 {
+			return Reply{}, fmt.Errorf("%w: missing explanation, missing edits or edit count exceeded", ErrEditorResponse)
+		}
+		if decoder.Decode(new(any)) != io.EOF {
+			return Reply{}, fmt.Errorf("%w: trailing payload data", ErrEditorResponse)
 		}
 		for _, edit := range *editResponse.Edits {
 			if edit.Before == nil || edit.After == nil {
-				return Reply{}, ErrEditorResponse
+				return Reply{}, fmt.Errorf("%w: missing replacement text", ErrEditorResponse)
 			}
 		}
 		encoded, err := json.Marshal(editResponse)

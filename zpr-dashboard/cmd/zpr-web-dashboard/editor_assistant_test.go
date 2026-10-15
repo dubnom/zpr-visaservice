@@ -37,8 +37,14 @@ func TestEditorAssistantSystemCoversEachEditor(t *testing.T) {
 
 func TestValidateAssistantRequestDefaultsAndBounds(t *testing.T) {
 	request := assistantRequest{Messages: []assistantMessage{{Role: "user", Content: "Help"}}}
-	if message := validateAssistantRequest(&request, "test-model"); message != "" || request.Model != "test-model" || request.MaxTokens != 1200 {
+	if message := validateAssistantRequest(&request, "test-model"); message != "" || request.Model != "test-model" || request.MaxTokens != 2400 {
 		t.Fatalf("defaults: %q %+v", message, request)
+	}
+	for _, limit := range []int{900, 1800, 2400, 3600, 7200} {
+		request.MaxTokens = limit
+		if message := validateAssistantRequest(&request, "test-model"); message != "" || request.MaxTokens != limit {
+			t.Fatalf("limit %d was rejected or changed: %q %+v", limit, message, request)
+		}
 	}
 	for _, request := range []assistantRequest{
 		{Messages: nil},

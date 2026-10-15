@@ -15,6 +15,7 @@ import (
 	"strings"
 	"time"
 
+	"neboagency.com/zpr-dashborad/internal/controlservice/httpapi"
 	"neboagency.com/zpr-dashborad/internal/servicehttp"
 )
 
@@ -147,8 +148,11 @@ func newTrustedSourceChanges(filePath string) (*trustedSourceChanges, error) {
 }
 
 func (service *trustedSourceChanges) register(mux *http.ServeMux) {
-	mux.HandleFunc("GET /api/trusted-sources/change-feeds", service.listFeeds)
-	mux.HandleFunc("GET /api/trusted-sources/change-feeds/{source}/changes", service.readChanges)
+	service.handlers().Register(mux)
+}
+
+func (service *trustedSourceChanges) handlers() httpapi.TrustedChanges {
+	return httpapi.TrustedChanges{List: http.HandlerFunc(service.listFeeds), Read: http.HandlerFunc(service.readChanges)}
 }
 
 func (service *trustedSourceChanges) listFeeds(w http.ResponseWriter, _ *http.Request) {

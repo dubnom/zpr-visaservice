@@ -64,11 +64,12 @@
     }
     const body = document.createElement("div");
     body.className = "assistant-body";
-    body.innerHTML = `<details class="assistant-options"><summary>Model and max tokens</summary><div class="assistant-settings">
+    body.innerHTML = `<details class="assistant-options"><summary>Model and Tokens</summary><div class="assistant-settings">
       <label for="${prefix}-model">Model<select id="${prefix}-model" data-assistant-model aria-label="Model" disabled></select></label>
-      <label for="${prefix}-max-tokens">Max tokens<select id="${prefix}-max-tokens" data-assistant-tokens aria-label="Max tokens" disabled><option value="300">300 tokens</option><option value="600">600 tokens</option><option value="1200" selected>1,200 tokens</option><option value="2400">2,400 tokens</option></select></label>
-      </div></details>
+      <label for="${prefix}-max-tokens" title="Per-request output limit sent to the provider, including reasoning and structured edit JSON; not a session or billing quota.">Max tokens<select id="${prefix}-max-tokens" data-assistant-tokens aria-label="Max tokens" disabled><option value="900">900 tokens</option><option value="1800">1,800 tokens</option><option value="2400" selected>2,400 tokens</option><option value="3600">3,600 tokens</option><option value="7200">7,200 tokens</option></select></label>
+      </div>
       <span id="${prefix}-usage" class="assistant-usage" data-assistant-usage role="status">Session: 0 input · 0 output tokens</span>
+      </details>
       <p id="${prefix}-disclosure" class="assistant-disclosure"></p>
       <div id="${prefix}-messages" class="assistant-messages" data-assistant-thread role="log" aria-live="polite"></div>
       <div id="${prefix}-form" class="assistant-form" data-assistant-form><label for="${prefix}-question">Message</label><textarea id="${prefix}-question" data-assistant-question rows="3" maxlength="12000" placeholder="How can I help?" disabled></textarea>
@@ -88,7 +89,7 @@
     const disclosure = body.querySelector(".assistant-disclosure");
     disclosure.textContent = options.disclosure || "Suggestions never save, publish, activate or run automatically.";
     const label = pane.querySelector(".assistant-state");
-    const state = { ready: false, pending: false, error: "", messages: [], input: 0, output: 0, proposal: null };
+    const state = { ready: false, pending: false, error: "", notice: "", messages: [], input: 0, output: 0, lastUsage: "", proposal: null };
     let generation = 0;
     let proposalContext = "";
     let proposalGeneration = 0;
@@ -112,7 +113,7 @@
       undo.disabled = redo.disabled = state.pending || !editable;
       label.textContent = state.pending ? "Thinking" : state.ready ? "Ready" : statusFailure ? "Unavailable" : options.unavailableLabel || "Not configured";
       label.classList.toggle("ready", state.ready);
-      usage.textContent = `Session: ${state.input.toLocaleString()} input · ${state.output.toLocaleString()} output tokens`;
+      usage.textContent = `${state.lastUsage}Session: ${state.input.toLocaleString()} input · ${state.output.toLocaleString()} output tokens`;
       thread.replaceChildren();
       if (!state.messages.length && !state.error) {
         const empty = document.createElement("p");
@@ -136,10 +137,10 @@
         entry.append(author, content(message.content, insert));
         thread.append(entry);
       }
-      if (state.error || statusFailure || state.pending) {
+      if (state.error || statusFailure || state.pending || state.notice) {
         const notice = document.createElement("p");
-        notice.className = state.pending ? "assistant-pending" : "assistant-error";
-        notice.textContent = state.pending ? "Claude is responding…" : state.error || statusFailure;
+        notice.className = state.pending ? "assistant-pending" : state.error || statusFailure ? "assistant-error" : "assistant-empty";
+        notice.textContent = state.pending ? "Claude is responding…" : state.error || statusFailure || state.notice;
         thread.append(notice);
       }
       thread.scrollTop = thread.scrollHeight;
@@ -147,6 +148,7 @@
 
     function invalidate() {
       generation++;
+      state.notice = "";
       if (state.pending) state.error = "The editor changed while Claude was responding. Ask again using the current draft.";
       state.pending = false;
       render();
@@ -159,6 +161,7 @@
       state.proposal = null;
       state.error = "";
       state.input = state.output = 0;
+      state.lastUsage = "";
       undoHistory.length = redoHistory.length = 0;
       question.value = "";
       render();
@@ -170,22 +173,29 @@
       state.messages.push({ role: "user", content: question.value.trim() });
       question.value = "";
       state.error = "";
+      state.notice = "";
       state.proposal = null;
       state.pending = true;
       const current = ++generation;
       const directEdits = options.directEdits?.() ?? false;
+      const maxTokens = Number(tokens.value);
+      function recordUsage(result) {
+        state.input += Number(result.input_tokens) || 0;
+        state.output += Number(result.output_tokens) || 0;
+        state.lastUsage = `Last request: ${(Number(result.output_tokens) || 0).toLocaleString()} output / ${maxTokens.toLocaleString()} max · `;
+      }
       let context;
       try {
         context = fingerprint();
         render();
         const result = await options.request({
           messages: state.messages.map(({ role, content }) => ({ role, content })),
-          model: model.value, max_tokens: Number(tokens.value),
+          model: model.value, max_tokens: maxTokens,
           ...(directEdits ? { direct_edits: true } : {}),
         });
         if (current !== generation) return;
-        state.input += Number(result.input_tokens) || 0;
-        state.output += Number(result.output_tokens) || 0;
+        recordUsage(result);
+        if (directEdits && Number(result.output_tokens) > maxTokens) throw new Error(`The provider reported ${Number(result.output_tokens).toLocaleString()} output tokens despite the requested ${maxTokens.toLocaleString()} limit. No changes were applied. Provider-reported usage is shown; this limit is not a billing guarantee.`);
         if (context !== fingerprint()) throw new Error("The editor changed while Claude was responding. Ask again using the current draft.");
         if (typeof result.answer !== "string" || !result.answer.trim()) throw new Error("The assistant returned an empty response.");
         if (directEdits) {
@@ -196,8 +206,9 @@
           if (!response || typeof response.answer !== "string" || !response.answer.trim() || !Array.isArray(response.edits)) throw new Error("The assistant returned an invalid edit response. No changes were applied; ask again.");
           // Applying emits input and invalidates pending requests, including this one.
           state.pending = false;
-          window.ZPRCodeEditor.applyEdits(options.getTarget(), response.edits);
-          state.messages.push({ role: "assistant", content: response.answer + (response.edits.length ? "\nApplied as one unsaved edit. Undo with Ctrl/Command+Z." : ""), directEdits: true });
+          const changed = window.ZPRCodeEditor.applyEdits(options.getTarget(), response.edits);
+          state.messages.push({ role: "assistant", content: response.answer, directEdits: true });
+          if (!changed) state.notice = "No editor changes were returned.";
           render();
           return;
         }
@@ -207,7 +218,10 @@
         proposalGeneration = current;
         if (result.proposal_error) state.error = `Proposal not applied: ${result.proposal_error}`;
       } catch (error) {
-        if (current === generation) state.error = error.message;
+        if (current === generation) {
+          if (error.details && ("input_tokens" in error.details || "output_tokens" in error.details)) recordUsage(error.details);
+          state.error = error.message;
+        }
       } finally {
         if (current === generation) { state.pending = false; render(); }
       }

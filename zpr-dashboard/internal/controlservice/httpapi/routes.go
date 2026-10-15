@@ -1,0 +1,58 @@
+// Package httpapi owns production Control-Service route composition.
+package httpapi
+
+import "net/http"
+
+type Assertions struct {
+	Analyze, Format, Source, Status, Save, Evaluate http.Handler
+}
+
+func (handlers Assertions) Register(mux *http.ServeMux) {
+	mux.Handle("POST /api/assertions/analyze", handlers.Analyze)
+	mux.Handle("POST /api/assertions/format", handlers.Format)
+	mux.Handle("GET /api/assertions/source", handlers.Source)
+	mux.Handle("GET /api/assertions", handlers.Status)
+	mux.Handle("PUT /api/assertions", handlers.Save)
+	mux.Handle("POST /api/assertions/evaluate", handlers.Evaluate)
+}
+
+type TrustedChanges struct {
+	List, Read http.Handler
+}
+
+func (handlers TrustedChanges) Register(mux *http.ServeMux) {
+	mux.Handle("GET /api/trusted-sources/change-feeds", handlers.List)
+	mux.Handle("GET /api/trusted-sources/change-feeds/{source}/changes", handlers.Read)
+}
+
+type Handlers struct {
+	Enrollment, Gateways, Snapshot, Diagnostics, ActorVisas           http.Handler
+	AdapterLogs, DNSRecords, DNSStats, DNSStylesheet                  http.Handler
+	PolicyAssistant, GatewayAssistantStatus, GatewayAssistant, Policy http.Handler
+	Assertions                                                        Assertions
+	TrustedChanges                                                    TrustedChanges
+}
+
+// NewMux requires every handler, including explicit unavailable-feature handlers.
+// Authentication, security headers and server lifetime remain caller-owned.
+func NewMux(handlers Handlers) *http.ServeMux {
+	mux := http.NewServeMux()
+	mux.Handle("/api/enrollment/", handlers.Enrollment)
+	mux.Handle("/api/operator-enrollment/", handlers.Enrollment)
+	handlers.Assertions.Register(mux)
+	handlers.TrustedChanges.Register(mux)
+	mux.Handle("/api/gateways/", handlers.Gateways)
+	mux.Handle("GET /api/snapshot", handlers.Snapshot)
+	mux.Handle("GET /api/diagnostics", handlers.Diagnostics)
+	mux.Handle("GET /api/actors/{actor}/visas", handlers.ActorVisas)
+	mux.Handle("GET /api/adapter-logs", handlers.AdapterLogs)
+	mux.Handle("GET /api/dns/records", handlers.DNSRecords)
+	mux.Handle("POST /api/policy/assistant", handlers.PolicyAssistant)
+	mux.Handle("GET /api/gateways/assistant", handlers.GatewayAssistantStatus)
+	mux.Handle("POST /api/gateways/assistant", handlers.GatewayAssistant)
+	mux.Handle("/api/dns/stats/", handlers.DNSStats)
+	mux.Handle("GET /bind9.xsl", handlers.DNSStylesheet)
+	mux.Handle("/api/policy", handlers.Policy)
+	mux.Handle("/api/policy/", handlers.Policy)
+	return mux
+}

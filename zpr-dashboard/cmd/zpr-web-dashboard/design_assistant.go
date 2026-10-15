@@ -118,13 +118,13 @@ func simulatorDesignAssistantHandler(assistant *claudeAssistant) http.HandlerFun
 			request.Model = assistant.model
 		}
 		if request.MaxTokens == 0 {
-			request.MaxTokens = 1200
+			request.MaxTokens = 2400
 		}
 		if !containsString(assistantModels(assistant.model), request.Model) {
 			writeWorkspaceError(w, http.StatusBadRequest, "unsupported assistant model")
 			return
 		}
-		if request.MaxTokens != 300 && request.MaxTokens != 600 && request.MaxTokens != 1200 && request.MaxTokens != 2400 {
+		if !supportedAssistantOutputLimit(request.MaxTokens) {
 			writeWorkspaceError(w, http.StatusBadRequest, "unsupported assistant output limit")
 			return
 		}

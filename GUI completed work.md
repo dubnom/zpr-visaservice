@@ -11,6 +11,262 @@ not competing current requirements. References such as "above", "below" and
 "this deployment" retain their original context from the former combined tracker;
 use the dated deployment ledger when checking release scope.
 
+## Hierarchical adapter LDAP completion (2026-10-15 UTC)
+
+**Deployed to Control Room at 20:06 UTC; not committed or pushed.**
+
+- [x] Clarify expected output rather than retaining the prior full-catalog-name
+  assumption: `with grea` should offer only `greatlakes.`, followed by its
+  attributes; the final source should be `greatlakes.location:`.
+- [x] For adapter definitions, remove a catalog built-in type prefix unless the
+  operator explicitly typed it, and offer one namespace segment at a time.
+  Keep user/device/service type-filtered completion behavior unchanged.
+  Accepting a namespace automatically opens its children without adding a
+  colon; accepting a leaf adds its single trailing colon.
+- [x] Namespace/leaf acceptance are separate Undo steps. The exact clarified
+  workflow is tested with the production-shaped `device.greatlakes.*` catalog,
+  alongside multi-statement, explicit-prefix, multi-part namespace, existing
+  short/qualified completions and editor regressions.
+  All 52 selected desktop/tablet editor checks pass; editor problems and
+  whitespace checks pass. Bundle rebuilt; no Go or provider calls.
+- [x] Approved Room-only deployment preserves complete configuration/mounts/ID;
+  all backend/Simulator image/start/ID baselines unchanged. Matching executable
+  hash, actual served HTML/46 assets, exact two-stage insertion and both Undo
+  steps under strict CSP, sign-in gate and verified-mTLS readiness pass.
+  All browser APIs mocked; no source sent to AI or saved/analyzed.
+
+See [rollout/rollback](GUI%20deployments.md#hierarchical-adapter-ldap-completion-2026-10-15-2006-utc).
+
+## Token limits, production LDAP completion and Discard (2026-10-15 UTC)
+
+**Deployed to Control Room and Control-Service at 19:55 UTC; not committed
+or pushed.**
+
+- [x] Triple the original token choices to 900/1800/3600/7200 and add the doubled
+  default 2400. Update the shared browser settings, editor validator and design
+  assistant validator. Retain old 300/600/1200 inputs for already-open clients;
+  requested limits are forwarded unchanged, never raised or retried implicitly.
+- [x] Read production's attribute definitions safely: the catalog contains
+  `device.greatlakes.department` and `device.greatlakes.location`, not the bare
+  `greatlakes.*` fixture used in the earlier check. Match input without the
+  built-in type prefix while inserting the full catalog name and colon. Correct
+  statement-boundary selection for completion after preceding definitions.
+  Test production-shaped catalog entries in multi-statement policy text, with
+  automatic suggestions while typing and exact insertion/Undo.
+- [x] Find Discard's same-record early return. Add an explicit force-reload
+  argument used only by Discard, preserving same-record selection and assertion
+  save messages/history. Verify cancel, successful reload/reset history,
+  failure with draft preservation, and assertion Discard.
+- [x] All 54 selected desktop/tablet browser checks pass. Focused assistant
+  transport/route/validation race tests and Go vet pass; required `make test`
+  retains the four known Enrollment readiness, runtime-platform fixture,
+  Scenario shell extraction and ELF fixture failures. Editor problem checks
+  pass. No real policy/chat sent to a provider; production inspection read
+  attribute definitions only, not directory membership or individual records.
+- [x] With approval and draft secured, replace both service executables in place.
+  Exact configuration/mounts/IDs preserved, Policy-Service and Simulator
+  unchanged, hashes match and verified-mTLS readiness passes. Actual served
+  HTML/46 assets match source; actual-CSP isolated browser verification passes
+  for choices/default, production-shaped LDAP suggestions/insertion/Undo,
+  Discard cancel/reload/history reset and sign-in gate. APIs mocked, no writes
+  or provider requests.
+
+See [rollout/rollback](GUI%20deployments.md#token-limits-production-ldap-completion-and-discard-2026-10-15-1955-utc).
+
+## Assistant compact settings and LDAP completion (2026-10-15 UTC)
+
+**Deployed to Control Room at 19:36 UTC; not committed or pushed.**
+
+- [x] Remove the requested direct-edit/Undo/autosave sentences from the
+  policy/assertion disclosure, keeping the draft/chat transmission notice.
+  Rename the shared collapsed section **Model and Tokens** and put token usage
+  inside it, hidden until expanded. Update sidebar help, documentation and
+  source asset cache versions.
+- [x] Reproduce the operator's synthetic example
+  `define great as adapter with greatlakes.` in both desktop/tablet tests.
+  The completion parser special-cased only built-in namespaces before a dot,
+  incorrectly treating arbitrary LDAP namespace dots as statement endings.
+  Accept dotted identifiers in definition attribute slots without hardcoding
+  provider names or fetching directory data.
+- [x] Verify automatic suggestions and insertion/Undo for `greatlakes.` and
+  `zpr.adapter.`, short and qualified LDAP attributes, parent filtering and
+  suppression in comments, strings, completed values and statement endings.
+  All 44 selected editor/shared-assistant browser checks pass. Editor problem
+  checks and whitespace validation pass. No Go changes; no provider requests,
+  policy saves, Analyze or runtime changes.
+- [x] With approval and the draft secured, update Control Room only. Verify
+  matching executable and served HTML/46 assets; exact disclosure and renamed
+  section, stats visible only when expanded, automatic `greatlakes.` completion
+  insertion and Undo under actual CSP, no browser errors and preserved sign-in
+  gate. All browser APIs mocked. Complete Room configuration/mounts/ID and
+  Control-Service/Policy-Service/Simulator identity/image/start baselines match.
+  Independent backend readiness remains healthy over verified mutual TLS.
+
+See [rollout/rollback](GUI%20deployments.md#assistant-settings-and-ldap-namespace-completion-2026-10-15-1936-utc).
+
+## Sole editor and AI edit/usage verification (2026-10-15 UTC)
+
+**Deployed to Control Room and Control-Service at 19:12 UTC; this follow-up is
+not committed or pushed.** Supersedes the opt-in
+editor/fallback UX described in historical entries below.
+
+- [x] Start CodeMirror automatically for policy/assertions. Remove the checkbox,
+  public disable path and interactive legacy fallback. Rename bootstrap/style
+  assets and update cache versions. Keep hidden source/highlight/result elements
+  solely as controller bridges for existing Save, Analyze, diagnostics and
+  classification. Other editor types retain their own editing implementations.
+- [x] Disable policy/assertion assistant requests until the editor is ready;
+  all requests use direct edits. Bundle-load failure is explicit and never
+  exposes an old editor. Fresh record states read current permissions and Wrap
+  rather than reusing startup's disabled state.
+- [x] Require requested modifications in the actual edit list, not just the
+  explanation. Verify the resulting CodeMirror text and backing source, reject
+  nonempty no-op replacement lists, and give empty edit lists a neutral notice.
+  Remove the appended "Applied as one unsaved..." success text. Preserve atomic
+  validation, one-step Undo/Redo, unsaved changes and stale-response rejection.
+  The original operator response was not retained, so its precise no-edit
+  cause has not been established.
+- [x] Forward every selected output maximum unchanged, with no automatic retry.
+  Preserve provider usage on structured validation/token-limit errors. Explicitly
+  reject and report responses whose provider output count exceeds the requested
+  maximum; do not misrepresent this as preventing already-incurred billing.
+  Show last-request output/requested maximum separately from session totals.
+- [x] With explicit approval, send one synthetic-only replacement request to
+  the configured provider: requested maximum 300, reported input 381/output 77,
+  `end_turn`, complete nonempty edits. No real policy/chat history sent. This
+  check did not reproduce the reported first-request overrun; don't claim a
+  provider billing defect was reproduced or fixed.
+- [x] All 38 desktop/tablet editor checks pass, including delayed startup,
+  load failure, font/color parity, scrolling caret, policy/assertion application
+  and Undo, Format/Analyze/Save, no-ops, usage, all four requested maxima,
+  no retries, stale changes, permissions and strict CSP. Twelve selected
+  Config/Gateway/directory/organization assistant checks also pass.
+  Two selected Scenario checks fail in the unchanged setup helper on missing
+  `#scenario-organization`, before assistant interaction; not modified.
+- [x] Focused assistant transport/route race tests and `go vet` pass. Full
+  `make test` retains the four known Enrollment readiness, missing runtime
+  platform, Scenario shell extraction and ELF fixture failures. No unrelated
+  diagnostics/inventory files or failing tests changed.
+
+- [x] With user approval and the draft secured, deploy both services in place.
+  Verify exact IDs/configuration/mounts, unchanged Policy-Service/Simulator
+  baselines, matching executable hashes, verified-mTLS readiness and actual
+  served HTML plus 46 matching assets. Verify automatic sole-editor startup,
+  visible mocked AI source changes, Undo/Redo, no success suffix/Insert,
+  per-request/session usage, Format history, strict CSP and login gate.
+  All browser APIs were mocked; no real policy or chat was sent to AI.
+
+The provider maximum includes reasoning and structured edit JSON; it is not an
+application-enforced financial quota.
+See [rollout/rollback](GUI%20deployments.md#sole-editor-and-explicit-ai-editusage-results-2026-10-15-1912-utc).
+
+## Assistant reasoning-envelope repair (2026-10-15 UTC)
+
+**Deployed to Control-Service only at 18:45 UTC; not committed or pushed.**
+
+- [x] The 18:40:36 failure was a server response-validation rejection. With
+  explicit approval, send a synthetic multi-line refactor prompt, not operator
+  policy/directory/conversation data. The real provider returned `end_turn`,
+  a `thinking` block and one complete JSON `text` block. The prior parser
+  rejected any non-text block before inspecting the edit payload.
+- [x] Skip only known `thinking`/`redacted_thinking` blocks; never expose them
+  as editor text or edits. Continue rejecting unknown blocks, tools, missing or
+  multiple text payloads, truncation, invalid schemas and oversized edits.
+- [x] Add content-free validation check labels to server errors/logs without
+  including source, payload or reasoning. Preserve `errors.Is` classification
+  and the existing browser answer contract.
+- [x] Replay the captured synthetic provider response through the actual parser:
+  complete nonempty edits accepted, token usage preserved. Remove the temporary
+  private-fixture replay test afterward. Permanent transport/route regressions
+  cover both reasoning block types, no-edit/edit payloads and unsafe envelopes.
+  Focused race tests/vet and whitespace checks pass; full Go suite retains the
+  four known failures. No UI changes or browser test rerun in this backend fix.
+- [x] Production verified-mTLS status reports configured Great Lakes and
+  assistant/compiler/tester ready. Complete container configuration/mounts
+  unchanged; Control Room, Policy-Service and Simulator start/image baselines
+  unchanged. No refresh, policy save, Restore or runtime changes.
+
+The captured synthetic refactor reproduces the validation bug; the original
+operator response was not retained or replayed. The actual Milwaukee request
+remains for operator retry.
+See [rollout/rollback](GUI%20deployments.md#assistant-reasoning-envelope-repair-2026-10-15-1845-utc).
+
+## Format history and assistant proxy budget (2026-10-15 UTC)
+
+**Deployed to Control Room only at 18:38 UTC; not committed or pushed.**
+
+- [x] Confirm the user's requirement: Format should be undone as one source edit.
+  Policy Format previously assigned textarea value directly, resetting
+  CodeMirror history. Route it through the shared edit helper. All shared
+  CodeMirror replacement/insertion transactions are isolated; no-op replacements
+  leave history alone. Assertion Format already uses that helper.
+- [x] Verify exact pre-format text restoration, Redo, and an additional Undo of
+  preceding typing for both policy/assertion Format, including shortcuts from
+  the Format button. No record save occurs.
+- [x] Diagnose the actual assistant failure at 18:34:10: Control Room logged a
+  timeout and Control-Service's provider call was canceled. Control Room had
+  applied the ordinary 10-second response-header timeout to assistant requests,
+  despite the provider's existing 45-second budget.
+- [x] Route exact POST policy/gateway assistant endpoints through a separate
+  cloned mTLS transport with a 75-second response-header budget, allowing
+  context lookup plus the provider call. Preserve all ordinary API/log
+  timeouts and browser cancellation; no unlimited request or automatic retry.
+- [x] New proxy tests verify exact route/method selection, budget values,
+  preserved TLS settings, response survival beyond the ordinary timeout and
+  upstream cancellation with Simulator unavailable. All 34 selected
+  desktop/tablet editor checks pass; focused Go race tests, vet, deterministic
+  bundle, syntax and whitespace checks pass. Required full Go suite retains
+  the same four known failures.
+- [x] Actual served assets/CSP verify policy Format as one Undo/Redo step,
+  earlier typing Undo and mock AI/Undo without JavaScript/CSP errors.
+  Live verified-mTLS readiness passes. No model request was sent during this
+  repair; the operator's actual Milwaukee refactor remains to be retried.
+
+Only Control Room restarted; its full configuration/mounts are unchanged.
+Control-Service, Policy-Service and Simulator start/image baselines are
+unchanged. No policy saves, Restore or runtime changes.
+See [rollout/rollback](GUI%20deployments.md#format-history-and-assistant-proxy-budget-2026-10-15-1838-utc).
+
+## Scroll-aware caret, toolbar history and supported AI schema (2026-10-15 UTC)
+
+**Deployed to Control Room and Control-Service at 18:29 UTC; not committed or
+pushed.** Supersedes the 18:13 forced-tool protocol.
+
+- [x] Diagnose actual AI rejection: provider HTTP 400,
+  `tool_choice: type "tool" and "any" are not supported for this model.`
+  With approval, synthetic-only provider probes confirmed native
+  `output_config.format` JSON-schema output works for the configured model.
+  Both an empty edit list and an exact synthetic `original` -> `updated`
+  replacement were returned successfully. No policy, directory data or
+  conversation history was sent in those probes.
+- [x] Replace forced tools with native response-schema output. Retain complete
+  response, token-limit, bounded payload/schema and atomic browser validation;
+  preserve the answer envelope expected by already-open editor pages.
+- [x] Use CodeMirror's measured caret/selection rendering rather than native
+  contenteditable caret painting. Long-document tests verify exact click/text
+  positions, caret geometry within 3 pixels and scroll-following geometry in
+  policy/assertion editors on desktop/tablet, including horizontal scrolling.
+  The user's original native caret painting drift was not independently
+  reproduced by the initial click tests; this removes that native rendering
+  path and verifies the replacement rather than claiming a proven browser cause.
+- [x] Clarify Undo expectation with the user: Undo the last source edit while
+  focus remains on Analyze. Route Undo/Redo from editor controls to the visible
+  editable CodeMirror instance, then return focus to it. Do not intercept other
+  editable fields or read-only/hidden sources. Record-switch history isolation
+  remains unchanged.
+- [x] All 32 focused desktop/tablet editor checks pass, including toolbar
+  Undo/Redo after policy/assertion Analyze, failed responses/retry and atomic AI
+  history. Focused Go race tests, vet, syntax, deterministic bundle and
+  whitespace checks pass. Required full Go suite retains four known failures.
+- [x] Actual served assets/CSP pass measured-caret scrolling, Analyze-toolbar
+  Undo/Redo, mock AI edits and Undo without CSP/JavaScript errors. All browser
+  API traffic was intercepted; no live policy was saved or analyzed. Production
+  verified-mTLS readiness passes. Both service configurations are unchanged;
+  Policy-Service and Simulator were not restarted.
+
+Refresh/sign in again and re-enable the opt-in trial to load the new UI.
+See [rollout/rollback](GUI%20deployments.md#scroll-aware-caret-toolbar-history-and-supported-ai-schema-2026-10-15-1829-utc).
+
 ## Structured AI editor responses (2026-10-15 UTC)
 
 **Deployed to Control-Service only at 18:13 UTC; not committed or pushed.**
