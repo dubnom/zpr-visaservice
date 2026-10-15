@@ -736,7 +736,9 @@ import { registerOrganizationDuplicateTests } from "./organization-duplicate.mjs
 import { registerOrganizationDefinitionsTests } from "./organization-definitions.mjs";
 import { registerConfigFormTests } from "./config-form.mjs";
 import { registerScenarioBrowserTests } from "./scenario-browser.mjs";
+import { registerOrganizationBrowserTests } from "./organization-browser.mjs";
 import { registerCodeEditorTests } from "./code-editor.mjs";
+import { registerRemainingCodeEditorTests } from "./remaining-code-editors.mjs";
 
 const assets = fileURLToPath(new URL("../../cmd/zpr-web-dashboard/static/", import.meta.url));
 const csp = "default-src 'self'; style-src 'self'; script-src 'self'; connect-src 'self'; img-src 'self' data:";
@@ -942,7 +944,9 @@ registerOrganizationDuplicateTests(test, expect);
 registerOrganizationDefinitionsTests(test, expect);
 registerConfigFormTests(test, expect);
 registerScenarioBrowserTests(test, expect);
+registerOrganizationBrowserTests(test, expect);
 registerCodeEditorTests(test, expect);
+registerRemainingCodeEditorTests(test, expect);
 registerDiagnosticsGuidelineTests(test, expect);
 registerWorkflowGuidelineTests(test, expect);
 registerTrustedSourceGUITests(test, expect);
@@ -10510,6 +10514,7 @@ test("organization activation requires explicit approval and is cancel-safe", as
   await expect(page.locator("#organization-connection")).not.toContainText("profiles");
   await expect(page.getByRole("heading", { name: "Organizations", exact: true })).toHaveCount(0);
   await expect(page.locator("#organization-count")).toHaveCount(0);
+  await page.locator("#organization-browse").click();
   await page.locator('[data-organization-id="beta"]').click();
   await expect(page.locator("#organization-detail")).toContainText("multi-node · 2 nodes · North Hub / Regional Yard");
   const activate = page.locator('[data-activate-organization="beta"]');
@@ -10560,8 +10565,10 @@ test("organization base restore requires explicit confirmation", async ({ page, 
     await route.fulfill({ status: 202, json: { activation: api.organizations.activation } });
   });
   await page.goto(appURL + "/organizations.html");
+  await page.locator("#organization-browse").click();
   await page.locator('[data-organization-id="beta"]').click();
   const restore = page.locator('[data-restore-base="beta"]');
+  await page.locator("#organization-files-toggle").click();
   await restore.click();
   const dialog = page.getByRole("dialog", { name: "Restore base state?", exact: true });
   await expect(dialog).toBeVisible();
@@ -10572,6 +10579,7 @@ test("organization base restore requires explicit confirmation", async ({ page, 
   await expect(dialog).not.toBeVisible();
   expect(api.counts.get(restorePath) || 0).toBe(0);
 
+  await page.locator("#organization-files-toggle").click();
   await restore.click();
   await dialog.getByRole("button", { name: "Restore base state", exact: true }).click();
   await expect.poll(() => api.counts.get(restorePath)).toBe(1);
@@ -10581,6 +10589,7 @@ test("organization base restore requires explicit confirmation", async ({ page, 
 test("organization approval is rejected after the active organization changes", async ({ page, appURL, api }) => {
   await page.clock.install();
   await page.goto(appURL + "/organizations.html");
+  await page.locator("#organization-browse").click();
   await page.locator('[data-organization-id="beta"]').click();
   await page.locator('[data-activate-organization="beta"]').click();
   const dialog = page.getByRole("dialog", { name: "Switch organization?", exact: true });
@@ -10639,8 +10648,8 @@ test("active organization restore keeps progress and its outcome visible", async
   await page.keyboard.press("Escape");
   await expect(progressDialog).toBeVisible();
   await expect(progressDialog).toHaveJSProperty("open", true);
-  await expect(page.locator('[data-organization-id="beta"]').click({ trial: true, timeout: 300 })).rejects.toThrow();
-  await expect(page.locator('[data-organization-id="beta"]')).not.toBeFocused();
+  await expect(page.locator("#organization-browse").click({ trial: true, timeout: 300 })).rejects.toThrow();
+  await expect(page.locator("#organization-browse")).not.toBeFocused();
   await expect(status).toContainText("Alpha Labs · Restore in progress");
   api.organizations.activation.progress = "Activation failed; restoring previous runtime";
   await page.clock.runFor(1100);
@@ -10685,6 +10694,7 @@ test("organization switching shows reset progress in the Simulator", async ({ pa
   api.organizations.activation = { state: "resetting", organization_id: "beta", progress: "Waiting for ZPR node and company LDAP" };
   await page.goto(appURL + "/organizations.html");
   await expect(page.locator("#organization-connection")).toContainText("Waiting for ZPR node and company LDAP");
+  await page.locator("#organization-browse").click();
   await page.locator('[data-organization-id="beta"]').click();
   const activationButton = page.locator('[data-activate-organization="beta"]');
   await expect(activationButton).toBeDisabled();

@@ -196,7 +196,7 @@ destinations refine the existing tree rather than authorizing new applications.
 
 | Files | Current responsibility and destination |
 | --- | --- |
-| `main.go`, `control_service.go`, `admin_client.go`, `inventory.go` | Dispatcher, Control Room/Control-Service startup and explicit configuration/composition. `control_service.go` supplies handlers to the production `internal/controlservice/httpapi` route owner; Control Room routing remains command-local. `admin_client.go` adapts environment/error compatibility to `internal/controlservice/adminapi`. `inventory.go` aliases production DTOs and delegates acquisition/pure service assembly to `internal/controlservice/inventory`, while selecting enrichment in the original order. Keep flags/assembly/lifecycle and static embedding at the entry point; provider and remaining HTTP/application ownership are still open. |
+| `main.go`, `control_service.go`, `admin_client.go`, `inventory.go` | Dispatcher, Control Room/Control-Service startup and explicit configuration/composition. `control_service.go` supplies prebuilt handlers to the production `internal/controlservice/httpapi` and `internal/controlroom/httpapi` route owners; authorization wrapper selection remains command-local. `admin_client.go` adapts environment/error compatibility to `internal/controlservice/adminapi`. `inventory.go` aliases production DTOs and delegates acquisition/pure service assembly to `internal/controlservice/inventory`, while selecting enrichment in the original order. Keep flags/assembly/lifecycle and static embedding at the entry point; provider and remaining HTTP/application ownership are still open. |
 | `operator_login.go`, `operator_policy.go`, `operator_delegation.go`, `enrollment.go`, `change_review.go` | Production security/enrollment/review composition using existing packages. `operator_login.go` now supplies independent Control Room/Simulator environment inputs and compatibility projections to `internal/operatorweb`, which owns TLS/OIDC loading, request protection, auth-route registration and auth cleanup. Permission/delegation/review domain composition and startup remain command-local. |
 | `node_denials.go`, `node_display_names.go` | Command configuration/provider/catalog adapters. Explicit display-name loading/application and pure denial/counter enrichment belong to `internal/controlservice/inventory`. OTLP acquisition and catalog ownership now belong to `internal/controlservice/diagnostics`; provider selection and mapping-file discovery remain command-local. |
 | `adapter_logs.go`, `diagnostics.go`, `dns_records.go`, `dns_stats.go`, `trusted_changes.go` | Production operator logs/metrics, DNS and change feeds. Adapter inventory, DNS transport and log formatting already have packages. Diagnostics wire/catalog/provider acquisition and result aggregation now belong to `internal/controlservice/diagnostics`, with compatibility aliases/adapters in the command; configuration, authorized HTTP lifecycle and remaining application composition still need ownership. |
@@ -217,9 +217,10 @@ destinations refine the existing tree rather than authorizing new applications.
 
 Authoritative Control-Service registration now belongs to
 [`httpapi/routes.go`](zpr-dashboard/internal/controlservice/httpapi/routes.go).
-Control Room and Policy-Service registration remains in
-[`control_service.go`](zpr-dashboard/cmd/zpr-web-dashboard/control_service.go)
-and [`policy_service.go`](zpr-dashboard/cmd/zpr-web-dashboard/policy_service.go).
+Control Room root registration belongs to
+[`controlroom/httpapi/routes.go`](zpr-dashboard/internal/controlroom/httpapi/routes.go).
+The command supplies already wrapped handlers; Policy-Service registration
+remains in [`policy_service.go`](zpr-dashboard/cmd/zpr-web-dashboard/policy_service.go).
 [`assertion_runtime.go`](zpr-dashboard/cmd/zpr-web-dashboard/assertion_runtime.go)
 and [`trusted_changes.go`](zpr-dashboard/cmd/zpr-web-dashboard/trusted_changes.go)
 supply domain handlers and compatibility registration forwarders.
@@ -1424,6 +1425,70 @@ command. Exercise the complete composed mux with Simulator unavailable rather
 than claiming package separation from route-source checks alone. Policy/
 trusted-source ownership, lifecycle/configuration assembly and integrated
 acceptance remain open gates.
+
+### M2 explicit-handler Control Room root HTTP composition (2026-10-15)
+
+**Verified locally; not deployed or published. All seven milestone gates remain
+open.** [`internal/controlroom/httpapi`](zpr-dashboard/internal/controlroom/httpapi/)
+owns all seven root registrations through explicit required handlers. Runtime
+code imports only `net/http`; there is no configuration, discovery, service
+startup or Simulator dependency. Missing handlers fail mux construction rather
+than silently dropping routes.
+
+Auth configuration retains GET/HEAD precedence over the login prefix; other
+methods still reach the login handler. Review and signed enrollment retain
+their more-specific overrides over the generic `/api/` proxy. The separate
+`/api/operator-enrollment/` path still reaches the generic API wrapper, not the
+signed browser enrollment handler. Stylesheet GET/HEAD retains precedence over
+static fallback; other methods still reach the file server. Standard mux
+canonical redirects and handler-owned errors/headers remain unchanged.
+
+`operatorweb.Security` now exposes its existing configuration/login handlers
+individually; its compatibility `Register` method delegates to those same
+implementations. There is no duplicate auth implementation or new auth policy.
+The command still prepares these handlers before review setup, selects
+management-versus-local API/stylesheet wrappers, and owns TLS/OIDC configuration,
+signer, review stores/cleanup, static filesystem and revalidation, security
+headers, server fields and listener lifetime. Environment read timing and
+startup error ordering are preserved.
+
+Served-mux tests exercise every root registration, methods/HEAD, prefix
+precedence/fallthrough, request context/body/query/header forwarding, canonical
+redirects, required handlers, exact errors and dependency boundaries. Command
+integration serves real auth configuration, unconfigured review, signed
+enrollment refusal, API/stylesheet boundaries and embedded static resources
+with Simulator unavailable in both development and management modes.
+Management still requires named authorization; development API remains local,
+and its stylesheet deliberately retains the historical local-only wrapper.
+Full composition checks retain CSP/referrer/cache semantics and deny foreign
+origins/forwarding/remote requests without reaching the backend.
+
+The previously passing route-source guard was deliberately evolved to follow
+the moved owner, and command handler-binding coverage now pins the new literal.
+No pre-existing failing test was edited. A new static-404 assertion initially
+expected `no-cache`; Go's file server removes it on error. The new test was
+corrected to pin that existing behavior rather than change runtime caching.
+
+**Evidence:** 91 editor-runner cases pass. Complete Control Room, root router,
+operator-web/auth, service-HTTP and system-config suites pass three race runs;
+focused unchanged command consumers pass under race. Vet, full formatting,
+whitespace/editor diagnostics and CGO-free Linux arm64/amd64 command builds
+pass. Required `make test` retains exactly the four known baseline groups:
+enrollment readiness, stale-bundle platform fixture, placement shell extraction
+and trusted-service ELF fixture. No live credentials/state/configuration,
+frontend, restart, deployment, commit or push was part of this slice.
+
+```sh
+go test -race ./internal/controlroom/... ./internal/operatorweb ./internal/operatorauth ./internal/servicehttp ./internal/systemconfig -count=3 -timeout=180s
+go test -race ./cmd/zpr-web-dashboard -run '^Test(ControlRoom|ControlService|PolicyService|Operator|Management|SimulatorHTTPS|ProductionComposition|ProductionContract|ControlHTTP|ChangeReview|LocalRequest|LocalEditor)' -count=1 -timeout=180s
+```
+
+**Next cohesive M2 scope:** explicit-handler Policy-Service root HTTP
+composition, preserving per-request organization context and all domain method/
+path bindings. Keep repository/configuration/seed/compiler initialization,
+security/TLS and service lifetime command-owned. Broader application ownership,
+configuration/lifecycle assembly, packaging and integrated acceptance remain
+open; the completed root routers do not close those gates.
 
 ### Verified cross-domain call findings
 

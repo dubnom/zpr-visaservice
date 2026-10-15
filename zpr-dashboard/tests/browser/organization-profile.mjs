@@ -55,8 +55,8 @@ export function registerOrganizationProfileTests(test, expect) {
   }
   async function open(page, appURL) {
     await page.goto(appURL + "/organizations.html");
-    await page.locator(".organization-file-menu > summary").click();
-    await page.locator(".organization-file-menu-items").getByRole("button", { name: "Edit", exact: true }).click();
+    await page.locator("#organization-files-toggle").click();
+    await page.locator("#organization-file-menu").getByRole("menuitem", { name: "Edit", exact: true }).click();
     await expect(page.locator("#organization-profile-name")).toHaveValue("Alpha Labs");
   }
   test("Organization profile drafts preserve structured/source fields, save separately and load history", async ({ page, appURL, api }) => {

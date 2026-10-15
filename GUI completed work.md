@@ -11,6 +11,102 @@ not competing current requirements. References such as "above", "below" and
 "this deployment" retain their original context from the former combined tracker;
 use the dated deployment ledger when checking release scope.
 
+## Source and tracker reconciliation (2026-10-15 UTC)
+
+The earlier accumulated work was published in `d741cec`. The accompanying
+source checkpoint adds the remaining-editor migration, Organizations UI repair,
+Control Room root router and refreshed capability/roadmap records. Historical
+"not committed or pushed" notes below retain their original stage; source
+publication does not imply a deployment or close an acceptance gate.
+
+Combined publication validation reports 110 passing and 22 failing selected
+browser cases. CodeMirror/Browse/layout pass; profile tests encounter hidden
+source controls and definition tests encounter ambiguous source labels.
+Historical narrower pass counts below do not certify the combined workspace.
+No failing test was patched. Go vet/formatting/whitespace pass; full Go tests
+retain the four known baseline groups.
+
+## Control Room root HTTP composition (2026-10-15 UTC)
+
+**Verified locally; not deployed by this extraction.**
+
+- [x] Move all seven root registrations into explicit-handler
+  `internal/controlroom/httpapi`, importing only `net/http`.
+- [x] Preserve auth-config/login precedence, review/signed-enrollment overrides,
+  generic API and stylesheet/static fallthrough; reuse operator-web auth
+  handlers rather than duplicate login behavior.
+- [x] Keep management/local authorization selection, configuration timing,
+  signer/review stores and cleanup, embedded files, headers and listener
+  lifetime command-owned.
+- [x] Verify complete composed requests with Simulator unavailable. All 91
+  selected editor-runner cases, owner/consumer races, vet, formatting and
+  Linux arm64/amd64 builds pass. Required full Go tests retain the four known
+  baseline groups. All seven reorganization gates remain open.
+
+See [ownership and exact evidence](REDIRECTORY.md#m2-explicit-handler-control-room-root-http-composition-2026-10-15).
+
+## Organizations Browse/File and layout (2026-10-15 UTC)
+
+**Deployed to Simulator; network recovery is not certified.**
+
+- [x] Move organization selection into Browse, keep detail content full-width
+  and browsing separate from activation. Preserve private-draft selection,
+  polling, error handling, dismissal and existing authorization/state guards.
+- [x] Reuse the File menu for New/Edit/Duplicate/Rename/Delete/Restore, with
+  Import in the creation dialog; retain explicit creation, confirmation and
+  runtime-action boundaries.
+- [x] Fix served HTML/JavaScript mismatch and control rebinding after
+  Simulator navigation; compact the title/directory summaries and collapse
+  runtime/scenario details. At the tested 1440x900 viewport the graph is at
+  least 600px high; 390px checks avoid horizontal page overflow.
+- [x] Owning-session verification reports 22 desktop/tablet tests and live
+  real-mouse Browse/File/Edit checks with no JavaScript errors.
+- [ ] Restore the DNS adapter's node-to-Visa-Service connection and verify
+  adapter reattachment. DNS queries/statistics were restored during rollout,
+  but the final owning-session report retains this runtime blocker.
+
+See [rollout scope and outstanding recovery](GUI%20deployments.md#organizations-browsefile-bundle-repair-2026-10-15).
+
+## Remaining source editor migration (2026-10-15 UTC)
+
+**Deployed to Control Room and Simulator at 20:34 UTC; not committed or pushed.**
+
+- [x] Replace Gateway JSON, ZPR Config TOML, Simulator Directory LDIF and raw
+  Scenario JSON/YAML editing surfaces with the existing bundled CodeMirror
+  editor. Preserve native form/description/chat inputs and Raw/Form toggles.
+- [x] Reuse existing controller source/highlight/result bridges and language
+  colors. Hide legacy source/gutter surfaces, use one scrollable editor with
+  line numbers, and preserve computed font size/family/line height.
+- [x] Keep Find/Replace, Wrap, read-only and size limits, clickable diagnostics
+  and analysis invalidation. Keep the dynamic Scenario JSON/YAML accessible
+  label synchronized with the backing source.
+- [x] Make Gateway, Config and raw Scenario Format native undoable transactions,
+  separate from preceding edits. Preserve source reload/history boundaries,
+  including explicit Scenario format conversion.
+- [x] Keep saves/publish/runtime operations explicit and existing endpoint
+  contracts unchanged. Gate shared editor assistants on editor readiness;
+  loading errors remain visible without exposing legacy editing.
+- [x] Rebuild bundle. All 78 selected desktop/tablet CodeMirror checks pass,
+  covering existing Policy/Assertion behavior plus migration typography/colors,
+  Wrap, Find/Replace/Undo, Format/Undo/Redo, Analyze and clickable diagnostics,
+  read-only/length limits, record reload history, Directory save/Discard/close,
+  YAML conversion/Format Undo/form round-trip and bundle-load failure.
+  Strict-CSP browser checks use mocked APIs; Control Room runs without Simulator
+  API requests. Editor problem checks and whitespace checks pass. No new
+  dependency, Go change or live provider call.
+- [x] Approved isolated release from `d741cec` plus explicit editor file
+  allowlist; all 78 checks also pass against that exact staged release.
+  Actual served HTML, 46 Room assets and 28 Simulator assets match the release.
+  All four migrated editors pass strict-CSP language-color, editing and exact
+  Undo checks, including Format where available. Sign-in gate and verified-mTLS
+  backend readiness pass. Room configuration/mounts/ID preserved and both backend
+  service baselines unchanged. Another operation concurrently recreated
+  Simulator; user approved verifying its replacement as-is, without restoring
+  its earlier configuration. Replacement configuration remained unchanged during
+  verification. No browser writes/provider requests reached real APIs.
+
+See [release and rollback](GUI%20deployments.md#remaining-source-editors-2026-10-15-2034-utc).
+
 ## Hierarchical adapter LDAP completion (2026-10-15 UTC)
 
 **Deployed to Control Room at 20:06 UTC; not committed or pushed.**

@@ -815,15 +815,23 @@ on by default and the choice is remembered per editor in browser storage. Line
 gutters size each row to its wrapped height so numbers and markers stay aligned
 with their logical lines; uncheck the box to restore horizontal scrolling.
 
-### Policy and assertion editor
+### Code editors
 
-Policy/Assertions always use the locally bundled CodeMirror 6 editor.
+Policy, Assertions, Gateway JSON, ZPR Config TOML, Simulator Directory LDIF and
+Simulator Scenario JSON/YAML always use the locally bundled CodeMirror 6 editor.
 There is no legacy-editor switch or interactive textarea fallback.
 It adds syntax colors,
 line numbers, bracket matching, policy completion and undo/redo. Its font size,
 font family and line height match the previous editor's computed typography.
-Token classification and colors come from the existing policy/assertion
+Token classification and colors come from the existing language-specific
 highlighters, rather than a separate editor tokenizer or palette.
+Ordinary form fields, descriptions and assistant questions remain native inputs.
+Raw/Form toggles and save/publish operations retain their existing controllers
+and endpoints; migrating the editing surface does not introduce a dependency
+from Control Room to Simulator. Source-load failures are shown explicitly and
+do not expose a legacy editing surface.
+
+Policy LDAP completion is unchanged:
 Attribute completion accepts configured LDAP namespaces such as `greatlakes.`
 and multi-part namespaces such as `zpr.adapter.` in definition attribute slots;
 their dots are not mistaken for statement terminators. Completion remains
@@ -860,8 +868,9 @@ Permissions and Wrap are read afresh on each record load. Format uses the shared
 edit transaction instead: one Undo restores the exact pre-format draft, Redo
 restores formatting, and an earlier Undo can still undo preceding text edits.
 Shared insertion/replacement edits are history-isolated; no-op replacements
-leave history unchanged. This is not a
-change to Gateway, ZPR Config, Scenario or directory editors.
+leave history unchanged. Gateway JSON, Config TOML and raw Scenario Format also
+use those shared transactions. Scenario JSON/YAML conversion remains a source
+reload/history boundary so Undo cannot restore text in the wrong format.
 
 The bundle is loaded automatically from the same-origin
 `static/vendor/code-editor.js`; there is no CDN, external editor service or
@@ -1019,6 +1028,16 @@ not a browser session. The development gateway is not a substitute for this logi
 Simulator navigation is ordered Organizations, Scenarios, Trusted Sources,
 Activity, then Workers; this order is retained across page switches. The Simulator
 root and brand link open Organizations.
+
+Simulator Organizations uses **Browse...** to select bundled profiles or private
+drafts. Only the selected organization's details occupy the main page, at full
+width. **File...** groups New organization, Edit, Duplicate, Rename, Restore and
+Delete. Rename and Delete are private-draft-only; Duplicate and Restore are
+bundled-profile-only. Browsing does not activate an organization or reset runtime
+state; activation and restore retain their explicit confirmation dialogs.
+The directory graph uses the available viewport height. Scenario links and
+runtime configuration expand on demand; policies and services share a row on
+wide screens and stack on phones.
 
 Simulator Scenarios uses **Browse...** to select a file from collapsible folders
 (**Unfiled** for entries without a folder). Only the selected scenario stays on
@@ -1655,6 +1674,21 @@ unchanged consumers pass under race; 38 editor-runner cases, vet and both Linux
 builds pass. Required full tests retain the four known baseline groups.
 Next is explicit-handler Control Room root HTTP composition. All seven milestone
 gates remain open; this is not publication or deployment.
+
+The subsequent
+[Control Room root HTTP composition owner](../../../REDIRECTORY.md#m2-explicit-handler-control-room-root-http-composition-2026-10-15)
+is [`internal/controlroom/httpapi`](../../internal/controlroom/httpapi/).
+The command supplies seven already-built handlers for auth config/login, review,
+signed enrollment, generic API, stylesheet and static root. `operatorweb` exposes
+its auth handlers individually and retains the existing registration forwarder.
+Root route precedence, method/HEAD behavior, canonical redirects and errors are
+unchanged. Management/local authorization wrapper selection, configuration read
+timing, stores/cleanup, embedded resources and listener lifetime remain here.
+Served-mux/real command boundary tests run with Simulator unavailable; 91
+editor-runner cases, complete owner and unchanged consumer races, vet and both
+Linux builds pass. Required full tests retain the four known baseline groups.
+Next is Policy-Service root HTTP composition, preserving request-time context.
+All seven gates remain open; no publication or deployment occurred in this slice.
 
 ## Policy test API
 

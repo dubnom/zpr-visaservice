@@ -238,17 +238,24 @@ func (s *Security) Protect(next http.Handler, writeError ErrorWriter) http.Handl
 }
 
 func (s *Security) Register(mux *http.ServeMux, writeJSON JSONWriter, writeError ErrorWriter) {
-	mux.HandleFunc("GET /auth/operator/config", func(w http.ResponseWriter, r *http.Request) {
+	mux.Handle("GET /auth/operator/config", s.ConfigHandler(writeJSON))
+	mux.Handle("/auth/operator/", s.LoginHandler(writeError))
+}
+
+func (s *Security) ConfigHandler(writeJSON JSONWriter) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusOK, struct {
 			Enabled bool `json:"enabled"`
 		}{s.Auth != nil})
 	})
+}
+
+func (s *Security) LoginHandler(writeError ErrorWriter) http.Handler {
 	if s.Auth != nil {
-		mux.Handle("/auth/operator/", s.Auth)
-	} else {
-		mux.HandleFunc("/auth/operator/", func(w http.ResponseWriter, r *http.Request) {
-			log.Print("Operator login requested but not configured")
-			writeError(w, http.StatusServiceUnavailable, "Named operator login is not configured.")
-		})
+		return s.Auth
 	}
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		log.Print("Operator login requested but not configured")
+		writeError(w, http.StatusServiceUnavailable, "Named operator login is not configured.")
+	})
 }

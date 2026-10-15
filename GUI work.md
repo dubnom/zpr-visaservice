@@ -1,7 +1,7 @@
 # GUI work
 
-Active GUI backlog, reconciled on 2026-10-15 UTC after the
-Simulator Scenario browser deployment.
+Active GUI backlog, reconciled on 2026-10-15 UTC after the remaining source
+editor migration, Organizations Browse/File repair and Control Room route extraction.
 Completed checklists and dated release evidence live in the linked records.
 
 ## Document map
@@ -27,6 +27,57 @@ Do not infer current runtime health from a historical verification entry.
 
 ## Current status
 
+**Source reconciliation:** `d741cec` published the earlier editor/backend/
+bootstrap work. The accompanying publication checkpoint includes the remaining
+editor migration, Organizations Browse/File/layout repair, Control Room root
+router and this documentation reconciliation. Older "not committed or pushed"
+labels below describe their dated verification/deployment stage, not the new
+source checkpoint. Publication does not deploy or certify additional services.
+
+- **Organizations Browse/File and layout:** **Deployed to Simulator** on
+  2026-10-15. Browse selects bundled organizations/private drafts without
+  activation; File reuses New/Edit/Duplicate/Rename/Delete/Restore, with Import
+  in the creation dialog and existing restrictions. Matching HTML/JavaScript
+  fixes inert controls after navigation; compact headings/collapsible summaries give the graph at least
+  600px at the tested 1440x900 viewport. The owning session reports 22 passing
+  desktop/tablet checks and real live Browse/File/Edit clicks without JS errors.
+  DNS queries/statistics were restored during rollout; the DNS adapter's
+  reattachment remains blocked by its node's disconnected Visa Service
+  connection. Do not treat UI deployment as network-health acceptance.
+  See [completed evidence](GUI%20completed%20work.md#organizations-browsefile-and-layout-2026-10-15-utc)
+  and [rollout limits](GUI%20deployments.md#organizations-browsefile-bundle-repair-2026-10-15).
+- **Next refactoring slice:** Policy-Service root HTTP composition with
+  request-time organization context preserved. Control Room's seven root
+  registrations are locally verified; configuration/stores/lifetime stay
+  command-owned. All seven gates remain open.
+- **Open acceptance:** private organization draft activation and cross-document/
+  compiler certification, HQ/Shenzhen Business matrix, sustained recovery
+  across authentication expiry/fault injection, production/companion installation
+  bundles and fresh-host acceptance. The Regional Business matrix's 106 steps
+  passed; that does not close these separate gates.
+- **Publication validation follow-up:** the combined editor/Organization browser
+  selection reports **110 passed, 22 failed**. CodeMirror and Browse/layout
+  checks pass; Organization profile controls are hidden in older source-mode
+  checks and definition-source accessible labels match two elements. Keep this
+  regression work open; the narrower historical 22/78-case successes below are
+  not a current all-Organization-suite pass. No failing tests were patched.
+  Required Go tests retain the same four known baseline groups; vet,
+  formatting and whitespace checks pass.
+
+- **Remaining source editors:** **Deployed to Control Room and Simulator at
+  20:34 UTC; not committed or pushed.**
+  Gateway JSON, ZPR Config TOML, Simulator Directory LDIF and Scenario JSON/YAML
+  now use the same CodeMirror editor as Policy/Assertions. Preserve original
+  typography/colors, source-owned diagnostics, Find/Replace, Wrap, read-only and
+  size limits, explicit saves and history boundaries. Format is undoable;
+  Scenario conversion still resets history at the format boundary.
+  All 78 desktop/tablet CodeMirror checks pass with strict CSP and mocked APIs.
+  Isolated release excludes concurrent backend/Organization UI changes.
+  Actual served HTML/assets and all four migrated editors verified; backend
+  services untouched. Simulator was concurrently recreated by another operation
+  and verified as-is with explicit approval. No provider requests.
+  See [deployment](GUI%20deployments.md#remaining-source-editors-2026-10-15-2034-utc).
+  See [verification](GUI%20completed%20work.md#remaining-source-editor-migration-2026-10-15-utc).
 - **Hierarchical adapter LDAP completion:** **Deployed to Control Room at
   20:06 UTC; not committed or pushed.**
   Per clarified requirement, `define foo as adapter with grea` offers only
@@ -206,9 +257,16 @@ Do not infer current runtime health from a historical verification entry.
   synthetic IdP/factory regressions report 38 passing editor cases. Owner/
   dependency and unchanged consumer races, vet and both Linux builds pass.
   Full tests retain the four baseline groups. No publication/deployment.
-  Next is Control Room root HTTP composition with explicit auth/review/
-  enrollment/API/static handlers; configuration/stores/lifetime remain outside.
+  Control Room root HTTP composition is now **Verified locally** in
+  `internal/controlroom/httpapi`: seven explicit auth/review/enrollment/API/
+  stylesheet/static handlers preserve precedence and management/local wrappers.
+  Configuration, stores, embedded files and lifetime remain command-owned.
+  Served-mux/real-boundary regressions report 91 passing editor-runner cases;
+  owner/consumer races, vet and both Linux builds pass. Full tests retain the
+  four baseline groups. No publication/deployment in this slice.
+  Next is Policy-Service root HTTP composition with request-time context intact.
   Packaging acceptance and all seven milestone gates remain open. See the
+  [Control Room HTTP composition owner](REDIRECTORY.md#m2-explicit-handler-control-room-root-http-composition-2026-10-15),
   [operator web-security owner](REDIRECTORY.md#m2-explicit-input-operator-web-security-owner-2026-10-15),
   [Control-Service HTTP composition owner](REDIRECTORY.md#m2-explicit-handler-control-service-http-composition-2026-10-15),
   [startup and HTTP composition audit](REDIRECTORY.md#m1-production-startup-and-http-composition-audit-2026-10-15),

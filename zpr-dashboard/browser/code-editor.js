@@ -52,7 +52,7 @@ function mount(source, hooks) {
     "&": { fontSize: sourceStyle.fontSize },
     ".cm-scroller": { fontFamily: sourceStyle.fontFamily, lineHeight: sourceStyle.lineHeight },
   });
-  const surface = source.parentElement;
+  const surface = source.closest(".config-source-editor") || source.parentElement;
   const host = document.createElement("div");
   host.className = "code-editor-host";
   host.dataset.source = source.id;
@@ -60,7 +60,7 @@ function mount(source, hooks) {
   if (!root.adoptedStyleSheets || !window.CSSStyleSheet) throw new Error("This browser cannot load the editor's CSP-safe styles. Use a browser with constructed stylesheet support.");
   const styles = document.createElement("link");
   styles.rel = "stylesheet";
-  styles.href = "/code-editor.css?v=2";
+  styles.href = "/code-editor.css?v=3";
   root.append(styles);
   surface.append(host);
   const nativeValue = Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, "value");
@@ -90,7 +90,7 @@ function mount(source, hooks) {
     return [EditorState.readOnly.of(source.disabled || source.readOnly), EditorView.editable.of(!source.disabled && !source.readOnly)];
   }
   function completion(context) {
-    if (source.id !== "policy-source") return null;
+    if (!hooks.complete) return null;
     const result = hooks.complete(context.state.doc.toString(), context.pos);
     if (!context.explicit && !result.word) return null;
     return { from: result.start, to: result.end, options: result.items.map(label => ({
@@ -112,17 +112,17 @@ function mount(source, hooks) {
       const limit = source.maxLength;
       return transaction.docChanged && limit >= 0 && transaction.newDoc.length > limit && transaction.newDoc.length > transaction.startState.doc.length ? [] : transaction;
     }),
-    EditorView.contentAttributes.of({
+    EditorView.contentAttributes.of(() => ({
       "aria-label": source.getAttribute("aria-label"),
       "aria-describedby": source.getAttribute("aria-describedby") || "",
       spellcheck: "false",
-    }),
+    })),
     EditorView.domEventHandlers({ keydown: forwardKey }),
     gutter({
       class: "cm-result-gutter",
       lineMarker(editor, line) {
         const number = editor.state.doc.lineAt(line.from).number;
-        const buttons = [...(resultRows.querySelector(`[data-line="${number}"]`)?.querySelectorAll("button") || [])];
+        const buttons = [...(resultRows?.querySelector(`[data-line="${number}"]`)?.querySelectorAll("button") || [])];
         return buttons.length ? new ResultMarker(buttons) : null;
       },
       lineMarkerChange: update => update.transactions.some(transaction => transaction.annotation(Transaction.userEvent) === "results"),
@@ -200,7 +200,7 @@ function mount(source, hooks) {
       wrapping.reconfigure(source.wrap === "off" ? [] : EditorView.lineWrapping),
     ] });
   });
-  attributes.observe(source, { attributes: true, attributeFilter: ["disabled", "readonly", "wrap"] });
+  attributes.observe(source, { attributes: true, attributeFilter: ["disabled", "readonly", "wrap", "aria-label", "aria-describedby"] });
   function resultsChanged() {
     if (destroyed) return;
     const ranges = [];

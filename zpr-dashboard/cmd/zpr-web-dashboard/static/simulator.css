@@ -228,7 +228,32 @@ pre { margin: 0; padding: 14px; min-height: 110px; max-height: 180px; overflow: 
 .scenario-card button { padding: 7px 10px; font-size: 11px; }
 .scenario-card button:disabled { cursor: not-allowed; opacity: .45; }
 .scenario-card .danger, .scenario-editor-dialog .danger { color: #a1432b; }
-.organization-layout { display: grid; grid-template-columns: minmax(230px, .7fr) minmax(400px, 1.3fr); gap: 26px; margin-top: 26px; }
+.organization-layout { display: grid; grid-template-columns: minmax(0, 1fr); gap: 16px; margin-top: 12px; }
+.organization-browser-controls { justify-content: flex-start; gap: 8px; }
+.organization-layout > .organization-detail { display: grid; grid-template-columns: auto minmax(0, 1fr); column-gap: 18px; }
+.organization-browser-controls { align-self: center; }
+#organization-detail { grid-column: 1 / -1; }
+.organization-detail > .section-head { margin-bottom: 8px; }
+.organization-detail > .section-head h2 { margin: 3px 0; }
+.organization-description { margin: 0 0 6px; color: var(--muted); font-size: 12px; line-height: 1.4; }
+.organization-scenarios, .organization-runtime-details { margin: 6px 0; color: var(--muted); font-size: 12px; }
+.organization-scenarios summary, .organization-runtime-details summary { width: fit-content; cursor: pointer; }
+.organization-scenarios .organization-summary, .organization-runtime-details .organization-summary { margin: 8px 0; }
+.organization-directory-counts { color: var(--muted); font-size: 11px; }
+.organization-directory-actions { display: flex; flex-wrap: wrap; gap: 6px; margin-left: auto; }
+.organization-directory-heading { flex-wrap: wrap; margin-bottom: 8px; }
+.organization-directory-heading h3 { margin: 0; }
+#organization-identity { grid-column: 1 / -1; }
+#organization-identity ldap-org-graph:not(.maximized) > svg { height: clamp(360px, calc(100dvh - 300px), 850px); }
+.organization-detail .organization-sections { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 14px; }
+@media (max-width: 700px) {
+  .organization-layout > .organization-detail { grid-template-columns: minmax(0, 1fr); }
+  .organization-browser-controls { display: flex; }
+  .organization-directory-actions { margin-left: 0; }
+  .organization-detail .organization-sections { grid-template-columns: minmax(0, 1fr); }
+}
+#organization-file-menu button { width: 100%; text-align: left; }
+#organization-file-menu button:disabled { cursor: not-allowed; opacity: .48; }
 .organization-list { display: grid; gap: 8px; }
 .organization-card { width: 100%; padding: 12px; border: 1px solid var(--line); border-radius: 5px; background: var(--panel); color: var(--ink); text-align: left; cursor: pointer; }
 .organization-card.selected { border-color: #6c9078; box-shadow: inset 3px 0 var(--lime); }
@@ -242,14 +267,6 @@ pre { margin: 0; padding: 14px; min-height: 110px; max-height: 180px; overflow: 
 .organization-activate, .organization-active-status { display: inline-flex; min-height: 34px; align-items: center; justify-content: center; padding: 7px 10px; border: 1px solid var(--teal); border-radius: 4px; font: 600 11px var(--mono); }
 .organization-active-status { background: #e6f1bc; border-color: #81a53d; color: #3e642f; }
 .organization-draft-status { display: inline-flex; min-height: 34px; align-items: center; color: var(--muted); font: 600 11px var(--mono); }
-.organization-file-menu { position: relative; }
-.organization-file-menu > summary { display: inline-flex; min-height: 34px; align-items: center; padding: 7px 10px; list-style: none; cursor: pointer; }
-.organization-file-menu > summary::-webkit-details-marker { display: none; }
-.organization-file-menu[open] > summary { background: var(--leaf-wash); }
-.organization-file-menu-items { position: absolute; z-index: 12; top: calc(100% + 3px); right: 0; display: grid; min-width: 155px; padding: 5px; border: 1px solid var(--line); border-radius: 4px; background: var(--panel); box-shadow: 0 8px 24px #17211e22; }
-.organization-file-menu-items button { width: 100%; text-align: left; }
-.organization-file-menu-items button:disabled { cursor: not-allowed; opacity: .48; }
-.organization-file-menu-items hr { width: 100%; margin: 4px 0; border: 0; border-top: 1px solid var(--line); }
 .organization-create-modes { display: flex; flex-wrap: wrap; gap: 7px; margin: 0 0 14px; padding: 10px; border: 1px solid var(--line); }
 .organization-create-modes legend { padding: 0 5px; color: var(--muted); font: 11px var(--mono); }
 .organization-create-modes button[aria-pressed="true"] { border-color: var(--teal); background: var(--leaf-wash); color: var(--ink); }

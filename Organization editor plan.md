@@ -18,6 +18,22 @@ implementation or activation approval. Track commit and deployment separately.
 Production Control Room must use independent production contracts and never
 require Simulator templates, manifests or availability.
 
+**2026-10-15 reconciliation:** the Organizations Browse/File/layout follow-up is
+deployed to Simulator, with 22 reported desktop/tablet checks and live control
+verification. Browse does not activate; File retains existing draft/runtime
+restrictions. The creation/coherent-source checkboxes below now reflect their
+previously recorded implemented slices rather than leaving completed work open.
+Full activation, compiler/reference certification and section-only AI context
+remain unfinished. See [completed evidence](GUI%20completed%20work.md#organizations-browsefile-and-layout-2026-10-15-utc)
+and [deployment/recovery limits](GUI%20deployments.md#organizations-browsefile-bundle-repair-2026-10-15).
+
+**Current regression gate:** the broader publication browser selection reports
+110 passed and 22 failed. The profile/definition cases fail on hidden source
+controls or ambiguous definition-source labels; Browse/layout and CodeMirror
+cases pass. Older slice-specific successes below do not establish a current
+full organization-suite pass. Resolve these failures before claiming combined
+organization certification; no existing failing test was changed in reconciliation.
+
 ## Approved scope and execution plan
 
 On 2026-10-11 the user selected **Simulator organization design first**:
@@ -258,15 +274,16 @@ GUI tracker with verified scope and remaining gaps. No deployment, activation,
 commit or push is implied by implementation approval.
 
 #### Organization creation and editing
+- [ ] Resolve the 2026-10-15 combined profile/definition browser regressions and rerun full organization acceptance.
 - [ ] Complete Duplicate organization -> edit draft -> validate -> review activation as the first end-to-end workflow (draft-only steps verified; activation pending).
-- [ ] Add New, Duplicate and Import actions to the organization list.
+- [x] Add New, Duplicate and Import actions, now grouped in the organization File menu.
 - [ ] Add a short creation wizard with blank/template/existing-organization starting points.
-- [ ] Collect display name, stable organization ID, description and directory base DN; suggest IDs and allow review before creation.
+- [x] Collect display name, stable organization ID, description and optional directory base DN; allow review before creation.
 - [ ] Collect initial sites/departments and topology without requiring people, services or scenarios to be complete.
-- [ ] Show a creation review with the proposed artifacts and missing configuration; finish with Create draft, never automatic activation.
-- [ ] Exclude credentials, enrollment identities, sessions and runtime state from duplication and reject them from imports.
-- [ ] Use an audited, idempotent creation API with explicit organization.create authorization, confirmation, revision/conflict handling and uncertain-response reconciliation.
-- [ ] Add a full-page organization workspace using the shared editor styling, organization name and History.
+- [x] Show a creation review with the proposed artifacts and missing configuration; finish with Create draft, never automatic activation.
+- [x] Exclude credentials, enrollment identities, sessions and runtime state from duplication and reject them from imports within the documented portable-format checks; arbitrary free text still requires operator review.
+- [x] Use an audited, idempotent creation API with explicit organization.create authorization, confirmation, revision/conflict handling and uncertain-response reconciliation.
+- [x] Add a full-page organization workspace using the shared editor styling, organization name and History.
 - [ ] Add full readiness summary distinguishing incomplete drafts, validation failures and runtime not provisioned (name/description profile fields implemented).
 - [x] Add structured Sites & topology tables and a topology preview.
 - [x] Add Directory tree/tables for people and groups alongside the existing LDIF source editor.
@@ -274,11 +291,11 @@ commit or push is implied by implementation approval.
 - [ ] Open organization-scoped Policy, Assertions and ZPR Config through the existing editors.
 - [ ] Add an organization-scoped Scenarios list opening the existing Scenario editor.
 - [x] Offer Advanced source for the organization profile as an alternative view of the same draft, not an independently editable copy; preserve unsupported fields through structured edits.
-- [ ] Keep Save draft, Validate and Activate/Apply separate; saving must not change the runtime.
+- [x] Keep Save draft and Validate separate from runtime actions; draft saves do not activate or provision. Private-draft activation remains unimplemented.
 - [ ] Validate individual documents and cross-document references, including group members, service references, duplicate IDs and directory base-DN containment.
-- [ ] Save coherent organization revisions across related documents; provide History and rollback without combining incompatible document versions.
+- [x] Save coherent organization revisions across related documents; provide History and reviewed historical-snapshot saves without combining incompatible document versions.
 - [ ] Require an explicit activation review showing runtime effects, prerequisites and changes before applying anything.
 - [ ] Make AI assistance section-aware for overview, directory, policy/configuration and scenarios; disclose exactly which context will be sent.
-- [ ] Show AI proposals as reviewable diffs across affected documents; never silently replace, save or activate an organization.
+- [x] Show AI proposals as reviewable diffs across affected documents; never silently replace, save or activate an organization.
 - [ ] Test invalid proposals/imports, stale context, structured/source round trips, cancellation, duplicate IDs, concurrent revisions, lost responses, coherent rollback and runtime isolation on draft saves.
 - [ ] Keep production Control Room organization administration separate, using independently authorized production service contracts with no Simulator template, manifest or availability dependencies.

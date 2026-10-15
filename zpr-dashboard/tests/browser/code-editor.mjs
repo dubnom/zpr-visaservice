@@ -2,7 +2,7 @@ import { createHash } from "node:crypto";
 
 const colorStyles = ["229, 166, 108", "215, 167, 207", "130, 145, 136", "216, 189, 128", "146, 197, 223", "194, 216, 138", "184, 215, 139", "186, 201, 191", "228, 235, 229"];
 const colorHashes = colorStyles.map(color => `'sha256-${createHash("sha256").update(`color: rgb(${color});`).digest("base64")}'`).join(" ");
-const editorCSP = `default-src 'self'; style-src 'self'; style-src-attr 'unsafe-hashes' ${colorHashes}; script-src 'self'; connect-src 'self'; img-src 'self' data:`;
+export const editorCSP = `default-src 'self'; style-src 'self'; style-src-attr 'unsafe-hashes' ${colorHashes}; script-src 'self'; connect-src 'self'; img-src 'self' data:`;
 
 export function registerCodeEditorTests(test, expect) {
   test("CodeMirror formats policy and assertions as isolated undoable edits", async ({ page, appURL, api }) => {

@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"neboagency.com/zpr-dashborad/internal/controlroom"
+	roomhttp "neboagency.com/zpr-dashborad/internal/controlroom/httpapi"
 	"neboagency.com/zpr-dashborad/internal/controlservice/httpapi"
 	"neboagency.com/zpr-dashborad/internal/servicehttp"
 )
@@ -37,18 +38,20 @@ func runControlRoom(listen string) error {
 	if err != nil {
 		return err
 	}
-	mux := http.NewServeMux()
-	security.register(mux)
+	web := security.boundary()
+	authConfig, authLogin := web.ConfigHandler(writeJSON), web.LoginHandler(writePolicyError)
 	changeReview, closeReview, err := configuredChangeReview(security.auth, proxy)
 	if err != nil {
 		return err
 	}
 	defer closeReview()
-	mux.Handle("/api/change-review/", changeReview)
-	mux.Handle("/api/enrollment/", operatorEnrollmentProxy(security.auth, signer, proxy))
-	mux.Handle("/api/", security.apiProxy(os.Getenv("ZPR_CONTROL_ROOM_ORGANIZATION_ID"), proxy))
-	mux.Handle("GET /bind9.xsl", security.assetProxy(os.Getenv("ZPR_CONTROL_ROOM_ORGANIZATION_ID"), proxy))
-	mux.Handle("/", revalidateStatic(http.FileServer(http.FS(staticRoot))))
+	mux := roomhttp.NewMux(roomhttp.Handlers{
+		AuthConfig: authConfig, Auth: authLogin, ChangeReview: changeReview,
+		Enrollment:    operatorEnrollmentProxy(security.auth, signer, proxy),
+		API:           security.apiProxy(os.Getenv("ZPR_CONTROL_ROOM_ORGANIZATION_ID"), proxy),
+		DNSStylesheet: security.assetProxy(os.Getenv("ZPR_CONTROL_ROOM_ORGANIZATION_ID"), proxy),
+		Static:        revalidateStatic(http.FileServer(http.FS(staticRoot))),
+	})
 	server := &http.Server{
 		Addr: listen, Handler: securityHeaders(security.protect(mux)), ReadHeaderTimeout: 5 * time.Second, IdleTimeout: 60 * time.Second,
 		TLSConfig: security.tls, MaxHeaderBytes: 32768,

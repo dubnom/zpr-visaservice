@@ -480,9 +480,7 @@
     }
     const formatted = pretty(parsed.config);
     if (formatted === source.value) return;
-    source.focus();
-    source.select();
-    if (!document.execCommand("insertText", false, formatted)) source.value = formatted;
+    page.editText(source, formatted, true);
     clearAnalysis();
     renderSource();
   }

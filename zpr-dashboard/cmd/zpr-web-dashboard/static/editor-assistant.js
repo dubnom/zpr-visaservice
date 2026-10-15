@@ -25,7 +25,7 @@
     });
     const controller = window.ZPRAssistant.mount({
       pane, prefix: id, getContext: context, getTarget: () => source,
-      editable: () => !source.disabled && !source.readOnly,
+      editable: () => !source.disabled && !source.readOnly && Boolean(window.ZPRCodeEditor?.active(source)),
       disclosure: options.disclosure,
       request: (conversation) => window.ZPRAssistant.jsonRequest(options.askURL, {
         method: "POST", headers: { "Content-Type": "application/json", Accept: "application/json" },
@@ -48,6 +48,7 @@
           }
         };
         source.addEventListener("input", () => observeContext(true));
+        document.addEventListener("zpr:editor-ready", () => controller.render());
         new MutationObserver(() => { observeContext(); controller.render(); }).observe(source, { attributes: true, attributeFilter: ["disabled", "readonly"] });
         for (const identity of [options.identityID, options.revisionID]) {
           const element = document.getElementById(identity);

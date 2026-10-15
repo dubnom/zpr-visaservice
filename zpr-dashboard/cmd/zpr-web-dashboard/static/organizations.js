@@ -61,12 +61,34 @@ function renderOrganizationList() {
   const selected = selectedOrganizationID || activeOrganizationID;
   document.getElementById("organization-list").innerHTML = organizationCatalog.map((organization) => {
     const active = organization.id === activeOrganizationID;
-    return `<button class="organization-card${organization.id === selected ? " selected" : ""}" type="button" data-organization-id="${organizationEscape(organization.id)}"><strong>${organizationEscape(organization.name)}${active ? " · ACTIVE" : ""}</strong><small>${organizationEscape(organization.directory.base_dn)} · ${organizationEscape(organizationRuntimeLabel(organization))} · ${organization.policies.length} policies · ${organization.services.length} services</small></button>`;
-  }).join("");
+    return `<button class="organization-card${organization.id === selected ? " selected" : ""}" type="button" data-organization-id="${organizationEscape(organization.id)}" aria-pressed="${organization.id === selected}"><strong>${organizationEscape(organization.name)}${active ? " · ACTIVE" : ""}</strong><small>${organizationEscape(organization.directory.base_dn)} · ${organizationEscape(organizationRuntimeLabel(organization))} · ${organization.policies.length} policies · ${organization.services.length} services</small></button>`;
+  }).join("") || '<p class="organization-empty">No bundled organizations available.</p>';
   const organization = organizationCatalog.find((item) => item.id === selected);
   if (organization) renderOrganizationDetails(organization);
   else if (selectedOrganizationDraft) renderOrganizationDetails(selectedOrganizationDraft.profile, selectedOrganizationDraft);
   else if (organizationCatalog[0]) renderOrganizationDetails(organizationCatalog[0]);
+  else {
+    selectedOrganizationID = "";
+    document.getElementById("organization-title").textContent = "Organization details";
+    document.querySelector("[data-organization-activation-control]")?.remove();
+    document.getElementById("organization-detail").innerHTML = '<p class="organization-empty">Choose an organization from Browse... or create a private draft from File....</p>';
+    updateOrganizationFileActions(null);
+  }
+}
+
+function updateOrganizationFileActions(organization, draft = null) {
+  const busy = organizationActivationInFlight || organizationActivationStatus.state === "resetting";
+  for (const [attribute, enabled] of [
+    ["data-organization-edit", Boolean(organization)],
+    ["data-organization-duplicate", Boolean(organization) && !draft],
+    ["data-organization-rename", Boolean(draft)],
+    ["data-restore-base", Boolean(organization) && !draft && !busy],
+    ["data-organization-delete", Boolean(draft)],
+  ]) {
+    const button = document.querySelector(`#organization-file-menu [${attribute}]`);
+    button.setAttribute(attribute, organization?.id || "");
+    button.disabled = !enabled;
+  }
 }
 
 function renderOrganizationOperationStatus() {
@@ -114,18 +136,19 @@ function renderOrganizationDetails(organization, draft = null) {
     : isActive
       ? '<span class="organization-active-status">Active</span>'
       : `<button class="organization-activate" type="button" data-activate-organization="${draftID}" ${activationBusy ? "disabled" : ""}>${activationBusy ? `${operationLabel} · ${organizationEscape(activationProgress)}` : "Activate organization"}</button>`;
-  control.innerHTML = `${activationAction}<details class="organization-file-menu"><summary class="button">File…</summary><div class="organization-file-menu-items" role="group" aria-label="Organization file operations"><button class="quiet" type="button" data-organization-edit="${draftID}">Edit</button><button class="quiet" type="button" data-organization-duplicate="${draftID}" ${draft ? "disabled" : ""}>Duplicate</button><button class="quiet" type="button" data-organization-rename="${draftID}" ${draft ? "" : "disabled"}>Rename</button><button class="quiet" type="button" data-restore-base="${draftID}" ${draft || activationBusy ? "disabled" : ""}>Restore</button><hr><button class="quiet danger" type="button" data-organization-delete="${draftID}" ${draft ? "" : "disabled"}>Delete</button></div></details>`;
+  control.innerHTML = activationAction;
   heading.append(control);
+  updateOrganizationFileActions(organization, draft);
   document.getElementById("organization-detail").innerHTML = `
-    <div class="organization-summary"><span>${organizationEscape(organization.description)}</span></div>
-    <div id="organization-scenario-summary" class="organization-summary" aria-label="Organization scenarios">${draft ? "Private draft · not runnable." : "Loading scenarios"}</div>
+    <p class="organization-description">${organizationEscape(organization.description)}</p>
+    <details class="organization-scenarios"><summary>Scenarios</summary><div id="organization-scenario-summary" class="organization-summary" aria-label="Organization scenarios">${draft ? "Private draft · not runnable." : "Loading scenarios"}</div></details>
     <div class="organization-sections">
-      <section id="organization-identity" class="organization-section" tabindex="-1"><div class="organization-directory-heading"><h3>Directory · ${organizationEscape(directory.base_dn || "not defined")}</h3>${draft ? "" : `<button class="quiet" type="button" data-edit-directory="${draftID}">Edit LDAP seed</button>`}</div><div class="organization-summary"><span>${(directory.departments || []).length} departments</span><span>${(directory.people || []).length} people</span><span>${(directory.groups || []).length} groups</span><span>LDAP seed: ${organizationEscape(directory.seed_mode || "not defined")}</span><span>Runtime profile: ${organizationEscape(organizationRuntimeLabel(organization))}</span></div><ldap-org-graph></ldap-org-graph></section>
+      <section id="organization-identity" class="organization-section" tabindex="-1"><div class="organization-directory-heading"><h3>Directory · ${organizationEscape(directory.base_dn || "not defined")}</h3><span class="organization-directory-counts">${(directory.departments || []).length} departments · ${(directory.people || []).length} people · ${(directory.groups || []).length} groups</span><div class="organization-directory-actions">${draft ? "" : `<button class="quiet" type="button" data-edit-directory="${draftID}">Edit LDAP seed</button>`}</div></div><ldap-org-graph></ldap-org-graph><details class="organization-runtime-details"><summary>Runtime and directory configuration</summary><div class="organization-summary"><span>LDAP seed: ${organizationEscape(directory.seed_mode || "not defined")}</span><span>Runtime profile: ${organizationEscape(organizationRuntimeLabel(organization))}</span></div></details></section>
       ${organizationItems(organization.policies || [], "Policies", "policy records", "organization-policy")}
       ${organizationItems(organization.services || [], "Services", "services", "organization-services")}
     </div>`;
   document.querySelector("#organization-detail ldap-org-graph").directory = directory;
-  const directoryHeading = document.querySelector("#organization-identity .organization-directory-heading");
+  const directoryHeading = document.querySelector("#organization-identity .organization-directory-actions");
   const assistantButton = designButton;
   if (!draft && assistantButton) directoryHeading.append(assistantButton);
   renderOrganizationListSelection();
@@ -155,8 +178,9 @@ const directoryEditorPage = window.ZPREditorPage;
 const directoryRequest = (path, options) => directoryEditorPage.requestJSON(
   (...args) => window.fetch(...args), path, options,
 );
-async function selectOrganizationDraft(draft) {
+async function selectOrganizationDraft(draft, { closeBrowser = false } = {}) {
   const generation = ++organizationDraftSelectionGeneration;
+  document.getElementById("organization-browser-error").hidden = true;
   try {
     const artifact = await directoryRequest(`/api/simulator/organizations/${encodeURIComponent(draft.id)}/draft/profile`);
     if (generation !== organizationDraftSelectionGeneration) return;
@@ -164,20 +188,21 @@ async function selectOrganizationDraft(draft) {
       throw new Error("Private organization draft profile is invalid.");
     }
     selectedOrganizationDraft = { ...draft, revision: artifact.revision, profile: artifact.content, draft_only: true };
-    document.querySelectorAll("#organization-drafts-list [data-organization-draft-id]").forEach((button) => {
-      button.classList.toggle("selected", button.dataset.organizationDraftId === draft.id);
-    });
     renderOrganizationDetails(artifact.content, selectedOrganizationDraft);
     document.getElementById("organization-error").hidden = true;
+    if (closeBrowser) organizationBrowserDialog.close();
   } catch (error) {
     if (generation !== organizationDraftSelectionGeneration) return;
     const message = document.getElementById("organization-error");
     message.textContent = error.message || "Could not open private organization draft";
     message.hidden = false;
+    const browserError = document.getElementById("organization-browser-error");
+    browserError.textContent = message.textContent;
+    browserError.hidden = false;
   }
 }
 document.addEventListener("organization-draft:selected", (event) => {
-  void selectOrganizationDraft(event.detail);
+  void selectOrganizationDraft(event.detail, { closeBrowser: true });
 });
 document.addEventListener("organization-draft:refresh-selected", (event) => {
   if (selectedOrganizationDraft?.id === event.detail.id) void selectOrganizationDraft(selectedOrganizationDraft);
@@ -328,8 +353,10 @@ async function loadDirectoryRevision(revisionNumber) {
 }
 
 function renderOrganizationListSelection() {
-  document.querySelectorAll("[data-organization-id]").forEach((button) => {
-    button.classList.toggle("selected", button.dataset.organizationId === selectedOrganizationID);
+  document.querySelectorAll("[data-organization-id], [data-organization-draft-id]").forEach((button) => {
+    const selected = (button.dataset.organizationId || button.dataset.organizationDraftId) === selectedOrganizationID;
+    button.classList.toggle("selected", selected);
+    button.setAttribute("aria-pressed", String(selected));
   });
 }
 
@@ -539,6 +566,22 @@ organizationSwitchConfirm.addEventListener("click", async () => {
   }
 });
 
+const organizationFiles = directoryEditorPage.createMenu({
+  root: document.getElementById("organization-files"),
+  toggle: document.getElementById("organization-files-toggle"),
+  menu: document.getElementById("organization-file-menu"),
+});
+const organizationBrowserDialog = document.getElementById("organization-browser-dialog");
+document.getElementById("organization-browse").addEventListener("click", () => {
+  organizationFiles.setOpen(false);
+  document.getElementById("organization-browser-error").hidden = true;
+  organizationBrowserDialog.showModal();
+});
+document.getElementById("organization-browser-close").addEventListener("click", () => organizationBrowserDialog.close());
+organizationBrowserDialog.addEventListener("close", () => {
+  organizationDraftSelectionGeneration++;
+  document.getElementById("organization-browse").focus();
+});
 document.getElementById("organization-list").addEventListener("click", (event) => {
   const button = event.target.closest("[data-organization-id]");
   const organization = organizationCatalog.find((item) => item.id === button?.dataset.organizationId);
@@ -547,12 +590,13 @@ document.getElementById("organization-list").addEventListener("click", (event) =
     selectedOrganizationDraft = null;
     document.dispatchEvent(new CustomEvent("organization-draft:cleared"));
     renderOrganizationDetails(organization);
+    organizationBrowserDialog.close();
   }
 });
 document.querySelector(".organization-detail").addEventListener("click", async (event) => {
   const editProfile = event.target.closest("[data-organization-edit]");
   if (editProfile) {
-    editProfile.closest(".organization-file-menu")?.removeAttribute("open");
+    organizationFiles.setOpen(false);
     document.dispatchEvent(new CustomEvent("organization-profile:edit", {
       detail: {
         id: editProfile.dataset.organizationEdit,
@@ -563,13 +607,13 @@ document.querySelector(".organization-detail").addEventListener("click", async (
   }
   const duplicate = event.target.closest("[data-organization-duplicate]");
   if (duplicate) {
-    duplicate.closest(".organization-file-menu")?.removeAttribute("open");
+    organizationFiles.setOpen(false);
     document.dispatchEvent(new CustomEvent("organization-duplicate:open"));
     return;
   }
   const rename = event.target.closest("[data-organization-rename]");
   if (rename) {
-    rename.closest(".organization-file-menu")?.removeAttribute("open");
+    organizationFiles.setOpen(false);
     if (!selectedOrganizationDraft) return;
     document.dispatchEvent(new CustomEvent("organization-profile:edit", {
       detail: { id: rename.dataset.organizationRename, draftOnly: true, focusName: true },
@@ -578,7 +622,7 @@ document.querySelector(".organization-detail").addEventListener("click", async (
   }
   const deleteDraft = event.target.closest("[data-organization-delete]");
   if (deleteDraft) {
-    deleteDraft.closest(".organization-file-menu")?.removeAttribute("open");
+    organizationFiles.setOpen(false);
     if (!selectedOrganizationDraft) return;
     pendingOrganizationDelete = selectedOrganizationDraft;
     document.getElementById("organization-delete-target").textContent = `Delete ${selectedOrganizationDraft.profile.name} (${selectedOrganizationDraft.id})?`;
@@ -589,6 +633,7 @@ document.querySelector(".organization-detail").addEventListener("click", async (
   }
   const restore = event.target.closest("[data-restore-base]");
   if (restore) {
+    organizationFiles.setOpen(false);
     if (organizationActivationInFlight || organizationActivationStatus.state === "resetting") return;
     const target = organizationCatalog.find((item) => item.id === restore.dataset.restoreBase);
     if (!target) return;
@@ -660,5 +705,7 @@ document.getElementById("directory-editor-dialog").addEventListener("close", () 
 });
 document.addEventListener("simulator:deactivate", (event) => {
   if (event.detail.path !== "/organizations.html") return;
+  organizationFiles.setOpen(false);
+  if (organizationBrowserDialog.open) organizationBrowserDialog.close();
   if (organizationSwitchDialog.open) organizationSwitchDialog.close();
 });

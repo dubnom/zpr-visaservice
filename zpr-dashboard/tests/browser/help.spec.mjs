@@ -278,6 +278,7 @@ test("Active and Activate organization controls share visual geometry", async ({
     };
   });
   const activeStyle = await measure(active);
+  await page.locator("#organization-browse").click();
   await page.locator('[data-organization-id="beta"]').click();
   const activate = page.locator('[data-activate-organization="beta"]');
   await expect(activate).toBeVisible();

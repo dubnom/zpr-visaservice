@@ -227,7 +227,7 @@
     const original = source.value;
     await post("/api/policy/config/check", { source: original });
     if (!isCurrent()) return;
-    source.value = formatTOMLSpacing(original);
+    page.editText(source, formatTOMLSpacing(original), true);
     clearAnalysis();
     setStatus("");
   }));

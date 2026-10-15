@@ -44,7 +44,10 @@ export function registerOrganizationDefinitionsTests(test, expect) {
   }
   async function open(page, appURL) {
     await page.goto(appURL + "/organizations.html");
+    await page.locator("#organization-browse").click();
     await page.locator("#organization-drafts-list .organization-card").click();
+    await page.locator("#organization-files-toggle").click();
+    await page.locator("#organization-file-menu").getByRole("menuitem", { name: "Edit", exact: true }).click();
     await expect(page.locator("#organization-profile-name")).toHaveValue("Alpha copy");
     await page.locator("#organization-profile-editor").getByRole("button", { name: "File...", exact: true }).click();
     await page.getByRole("menuitem", { name: "Edit supporting definitions", exact: true }).click();
@@ -180,7 +183,10 @@ export function registerOrganizationDefinitionsTests(test, expect) {
     await editor.getByRole("button", { name: "Save all definitions" }).click();
     await expect(editor.locator("#organization-definitions-revision")).toHaveText("Draft revision 2");
     await editor.getByRole("button", { name: "Close definitions" }).click();
+    await page.locator("#organization-browse").click();
     await page.locator("#organization-drafts-list .organization-card").click();
+    await page.locator("#organization-files-toggle").click();
+    await page.locator("#organization-file-menu").getByRole("menuitem", { name: "Edit", exact: true }).click();
     const profileEditor = page.locator("#organization-profile-editor");
     await profileEditor.getByLabel("Version history", { exact: true }).click();
     await profileEditor.getByRole("button", { name: "Revision 1: Initial snapshot" }).click();

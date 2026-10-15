@@ -286,6 +286,18 @@ and unchanged consumer races, 38 editor-runner cases, vet and both Linux builds
 pass; full tests retain the four baseline groups. Next is Control Room root HTTP
 composition. All seven gates remain open; no publication/deployment in this slice.
 
+The subsequent [Control Room root HTTP composition owner](../REDIRECTORY.md#m2-explicit-handler-control-room-root-http-composition-2026-10-15)
+is [`internal/controlroom/httpapi`](internal/controlroom/httpapi/). Its seven
+registrations receive explicit prebuilt handlers, preserving auth-config/login,
+review/enrollment/API precedence and stylesheet/static fallthrough. The command
+still selects management/local authorization wrappers and owns configuration,
+signer/review stores, embedded files, headers and server lifetime. Operator-web
+auth handlers are exposed individually and reused by its compatibility
+registration method. Served-mux/real-boundary regressions report 91 passing
+editor-runner cases; owner/consumer races, vet and both Linux builds pass.
+Full tests retain the four baseline groups. Next is Policy-Service root HTTP
+composition. All seven gates remain open; this slice is not published/deployed.
+
 Mode names, flags, API behavior, embedded resources, scripts, and container
 build targets are unchanged. This is not full production/Simulator separation,
 production gateway activation, or deployment. See the
@@ -300,6 +312,7 @@ go test -race ./internal/controlservice/adminapi
 go test -race ./internal/controlservice/inventory
 go test -race ./internal/controlservice/diagnostics
 go test -race ./internal/controlservice/httpapi -count=3 -timeout=120s
+go test -race ./internal/controlroom/... ./cmd/zpr-web-dashboard -run '^Test(Root|ControlRoom|ControlHTTP|ProductionComposition|Management|Operator)' -count=1 -timeout=180s
 go test -race ./internal/operatorweb ./internal/operatorauth ./internal/servicehttp ./internal/systemconfig -count=3 -timeout=180s
 go test -race ./cmd/zpr-web-dashboard -run '^TestProductionComposition' -count=3 -timeout=120s
 go test -race ./cmd/zpr-web-dashboard -run '^Test(AdminClientConfiguration|InventoryCompatibility|ProductionContract|CommandCompatibility)' -count=1 -timeout=180s

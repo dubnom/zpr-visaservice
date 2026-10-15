@@ -4,6 +4,7 @@
 
   function editText(source, text, replaceAll = false) {
     if (!source || source.disabled || source.readOnly) throw new Error("This editor is read-only.");
+    if (source.closest(".code-editor-loading")) throw new Error("The editor is unavailable. Reload before editing.");
     if (window.ZPRCodeEditor?.edit(source, text, replaceAll)) return;
     const before = source.value;
     const start = replaceAll ? 0 : source.selectionStart;

@@ -46,13 +46,15 @@ func TestProductionCompositionRouteRegistrations(t *testing.T) {
 		routes         map[string]string
 		delegates      []string
 	}{
-		{"control_service.go", "runControlRoom", map[string]string{
-			"/api/change-review/": "changeReview",
-			"/api/enrollment/":    "operatorEnrollmentProxy(security.auth, signer, proxy)",
-			"/api/":               `security.apiProxy(os.Getenv("ZPR_CONTROL_ROOM_ORGANIZATION_ID"), proxy)`,
-			"GET /bind9.xsl":      `security.assetProxy(os.Getenv("ZPR_CONTROL_ROOM_ORGANIZATION_ID"), proxy)`,
-			"/":                   "revalidateStatic(http.FileServer(http.FS(staticRoot)))",
-		}, []string{"security.register(mux)"}},
+		{"../../internal/controlroom/httpapi/routes.go", "NewMux", map[string]string{
+			"GET /auth/operator/config": "handlers.AuthConfig",
+			"/auth/operator/":           "handlers.Auth",
+			"/api/change-review/":       "handlers.ChangeReview",
+			"/api/enrollment/":          "handlers.Enrollment",
+			"/api/":                     "handlers.API",
+			"GET /bind9.xsl":            "handlers.DNSStylesheet",
+			"/":                         "handlers.Static",
+		}, nil},
 		{"../../internal/controlservice/httpapi/routes.go", "NewMux", map[string]string{
 			"/api/enrollment/":              "handlers.Enrollment",
 			"/api/operator-enrollment/":     "handlers.Enrollment",

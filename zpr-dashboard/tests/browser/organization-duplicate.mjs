@@ -1,4 +1,9 @@
 export function registerOrganizationDuplicateTests(test, expect) {
+  async function openCreation(page, mode = "new") {
+    await page.locator("#organization-files-toggle").click();
+    await page.getByRole("menuitem", { name: "New organization", exact: true }).click();
+    if (mode !== "new") await page.locator(`#organization-duplicate-dialog [data-create-mode="${mode}"]`).click();
+  }
   const source = "/api/simulator/organizations/alpha/duplicates/alpha-copy";
   const profilePath = "/api/simulator/organizations/alpha-copy/draft/profile";
   const profile = () => ({ id: "alpha-copy", name: "Alpha copy", description: "Fictional copied definitions",
@@ -54,8 +59,8 @@ export function registerOrganizationDuplicateTests(test, expect) {
   test("New organization opens one dialog with new, import and duplicate modes", async ({ page, appURL, api }) => {
     await page.goto(appURL + "/organizations.html");
     await expect(page.locator("#organization-title")).toHaveText("Alpha Labs");
-    await expect(page.locator(".organization-top-actions button")).toHaveText(["New organization"]);
-    await page.getByRole("button", { name: "New organization", exact: true }).click();
+    await expect(page.locator("#organization-file-menu").getByRole("menuitem", { name: "New organization", exact: true, includeHidden: true })).toHaveCount(1);
+    await openCreation(page);
     const dialog = page.locator("#organization-duplicate-dialog");
     await expect(dialog).toHaveRole("dialog");
     await expect(dialog.getByRole("heading", { name: "New organization draft" })).toBeVisible();
@@ -73,7 +78,7 @@ export function registerOrganizationDuplicateTests(test, expect) {
   async function review(page, appURL) {
     await page.goto(appURL + "/organizations.html");
     await expect(page.locator("#organization-title")).toHaveText("Alpha Labs");
-    await page.getByRole("button", { name: "New organization", exact: true }).click();
+    await openCreation(page);
     const dialog = page.locator("#organization-duplicate-dialog");
     await dialog.getByRole("button", { name: "Duplicate", exact: true }).click();
     await dialog.getByLabel("New organization ID").fill("alpha-copy");
@@ -127,27 +132,30 @@ export function registerOrganizationDuplicateTests(test, expect) {
     await expect(profileEditor).toBeVisible();
     await profileEditor.getByRole("button", { name: "Close organization draft" }).click();
     await expect(page.locator("#organization-title")).toHaveText("Alpha Labs");
-    await expect(page.locator(".organization-top-actions button")).toHaveText(["New organization"]);
-    const bundledMenu = page.locator(".organization-file-menu-items");
-    await expect(bundledMenu.getByRole("button", { name: "Duplicate", exact: true })).toBeEnabled();
-    await expect(bundledMenu.getByRole("button", { name: "Rename", exact: true })).toBeDisabled();
-    await expect(bundledMenu.getByRole("button", { name: "Restore", exact: true })).toBeEnabled();
-    await expect(bundledMenu.getByRole("button", { name: "Delete", exact: true })).toBeDisabled();
+    await page.locator("#organization-files-toggle").click();
+    const bundledMenu = page.locator("#organization-file-menu");
+    await expect(bundledMenu.getByRole("menuitem", { name: "New organization", exact: true })).toBeEnabled();
+    await expect(bundledMenu.getByRole("menuitem", { name: "Duplicate", exact: true })).toBeEnabled();
+    await expect(bundledMenu.getByRole("menuitem", { name: "Rename", exact: true })).toBeDisabled();
+    await expect(bundledMenu.getByRole("menuitem", { name: "Restore", exact: true })).toBeEnabled();
+    await expect(bundledMenu.getByRole("menuitem", { name: "Delete", exact: true })).toBeDisabled();
 
+    await page.locator("#organization-browse").click();
     const draftCard = page.locator("#organization-drafts-list [data-organization-draft-id='alpha-copy']");
     await expect(draftCard).toBeVisible();
     await draftCard.click();
     await expect(page.locator("#organization-title")).toHaveText("Alpha copy");
-    const draftMenu = page.locator(".organization-file-menu-items");
-    await expect(draftMenu.getByRole("button", { name: "Duplicate", exact: true })).toBeDisabled();
-    await expect(draftMenu.getByRole("button", { name: "Rename", exact: true })).toBeEnabled();
-    await expect(draftMenu.getByRole("button", { name: "Restore", exact: true })).toBeDisabled();
-    await expect(draftMenu.getByRole("button", { name: "Delete", exact: true })).toBeEnabled();
-    await draftMenu.getByRole("button", { name: "Rename", exact: true }).click();
+    await page.locator("#organization-files-toggle").click();
+    const draftMenu = page.locator("#organization-file-menu");
+    await expect(draftMenu.getByRole("menuitem", { name: "Duplicate", exact: true })).toBeDisabled();
+    await expect(draftMenu.getByRole("menuitem", { name: "Rename", exact: true })).toBeEnabled();
+    await expect(draftMenu.getByRole("menuitem", { name: "Restore", exact: true })).toBeDisabled();
+    await expect(draftMenu.getByRole("menuitem", { name: "Delete", exact: true })).toBeEnabled();
+    await draftMenu.getByRole("menuitem", { name: "Rename", exact: true }).click();
     await expect(profileEditor.locator("#organization-profile-name")).toBeFocused();
     await profileEditor.getByRole("button", { name: "Close organization draft" }).click();
-    await page.locator(".organization-file-menu > summary").click();
-    await page.locator(".organization-file-menu-items").getByRole("button", { name: "Delete", exact: true }).click();
+    await page.locator("#organization-files-toggle").click();
+    await page.locator("#organization-file-menu").getByRole("menuitem", { name: "Delete", exact: true }).click();
     const deleteDialog = page.getByRole("dialog", { name: "Delete private organization draft?" });
     await expect(deleteDialog).toContainText("Alpha copy");
     await expect(state.archives).toHaveLength(0);
@@ -166,7 +174,7 @@ export function registerOrganizationDuplicateTests(test, expect) {
     await expect(dialog.getByLabel("New organization ID")).toBeDisabled();
     const operation = state.creates[0].operation_id;
     await page.reload();
-    await page.getByRole("button", { name: "New organization", exact: true }).click();
+    await openCreation(page);
     await expect(dialog.getByLabel("New organization ID")).toHaveValue("alpha-copy");
     await dialog.getByRole("button", { name: "Check creation result" }).click();
     await expect(page.locator("#organization-profile-name")).toHaveValue("Alpha copy");
@@ -218,7 +226,7 @@ export function registerOrganizationDuplicateTests(test, expect) {
       const state = fixture(api, { creationMode: mode });
       await page.goto(appURL + "/organizations.html");
       await expect(page.locator("#organization-title")).toHaveText("Alpha Labs");
-      await page.getByRole("button", { name: mode === "new" ? "New organization" : "Import organization", exact: true }).click();
+      await openCreation(page, mode);
       const dialog = page.locator("#organization-duplicate-dialog");
       await dialog.getByLabel("New organization ID").fill("alpha-copy");
       if (mode === "new") {
@@ -261,7 +269,7 @@ export function registerOrganizationDuplicateTests(test, expect) {
   test("Organization new retains creation across reload and reconciles without re-creation", async ({ page, appURL, api }) => {
     const state = fixture(api, { creationMode: "new", lost: true });
     await page.goto(appURL + "/organizations.html");
-    await page.getByRole("button", { name: "New organization", exact: true }).click();
+    await openCreation(page);
     const dialog = page.locator("#organization-duplicate-dialog");
     await dialog.getByLabel("New organization ID").fill("alpha-copy");
     await dialog.getByLabel("Name", { exact: true }).fill("Alpha copy");
@@ -271,7 +279,7 @@ export function registerOrganizationDuplicateTests(test, expect) {
     await dialog.getByRole("button", { name: "Create draft", exact: true }).click();
     await expect(dialog.locator("#organization-duplicate-status")).toContainText("Creation is not confirmed");
     await page.reload();
-    await page.getByRole("button", { name: "Import organization", exact: true }).click();
+    await openCreation(page);
     await expect(dialog.getByRole("heading")).toHaveText("New organization draft");
     await expect(dialog.getByLabel("New organization ID")).toBeDisabled();
     await dialog.getByRole("button", { name: "Check creation result" }).click();
@@ -282,7 +290,7 @@ export function registerOrganizationDuplicateTests(test, expect) {
   test("Organization import rejects invalid JSON locally without creation or AI disclosure", async ({ page, appURL, api }) => {
     fixture(api, { creationMode: "import" });
     await page.goto(appURL + "/organizations.html");
-    await page.getByRole("button", { name: "Import organization", exact: true }).click();
+    await openCreation(page, "import");
     const dialog = page.locator("#organization-duplicate-dialog");
     await dialog.getByLabel("New organization ID").fill("alpha-copy");
     await dialog.getByLabel("Portable organization bundle JSON").fill("{");
@@ -297,7 +305,7 @@ export function registerOrganizationDuplicateTests(test, expect) {
     test("Organization new supports reviewed AI editing at a fresh narrow viewport", async ({ page, appURL, api }) => {
       const state = fixture(api, { creationMode: "new" });
       await page.goto(appURL + "/organizations.html");
-      await page.getByRole("button", { name: "New organization", exact: true }).click();
+      await openCreation(page);
       const dialog = page.locator("#organization-duplicate-dialog");
       await dialog.getByLabel("New organization ID").fill("alpha-copy");
       await dialog.getByLabel("Name", { exact: true }).fill("Alpha copy");

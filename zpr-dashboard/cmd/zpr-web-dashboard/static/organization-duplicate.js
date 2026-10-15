@@ -20,9 +20,10 @@
       for (const draft of result.drafts) {
         const button = document.createElement("button");
         button.type = "button";
-        button.className = `organization-card${draft.id === selectedDraftID ? " selected" : ""}`;
+        const selected = draft.id === selectedOrganizationID;
+        button.className = `organization-card${selected ? " selected" : ""}`;
         button.dataset.organizationDraftId = draft.id;
-        button.setAttribute("aria-pressed", String(draft.id === selectedDraftID));
+        button.setAttribute("aria-pressed", String(selected));
         const name = document.createElement("strong");
         name.textContent = draft.name;
         const detail = document.createElement("small");
@@ -30,10 +31,6 @@
         button.append(name, detail);
         button.addEventListener("click", () => {
           selectedDraftID = draft.id;
-          for (const card of list.querySelectorAll("[data-organization-draft-id]")) {
-            card.classList.toggle("selected", card.dataset.organizationDraftId === selectedDraftID);
-            card.setAttribute("aria-pressed", String(card.dataset.organizationDraftId === selectedDraftID));
-          }
           document.dispatchEvent(new CustomEvent("organization-draft:selected", { detail: draft }));
         });
         list.append(button);
@@ -213,7 +210,8 @@
   dialog.addEventListener("cancel", event => { event.preventDefault(); close(); });
   const duplicateButton = document.createElement("button");
   duplicateButton.type = "button";
-  duplicateButton.className = "quiet";
+  duplicateButton.className = "button quiet";
+  duplicateButton.setAttribute("role", "menuitem");
   duplicateButton.textContent = "New organization";
   function openCreation(nextMode) {
     try {
@@ -247,11 +245,15 @@
     } catch (error) {
       const message = `Cannot open organization creation: ${error.message}`;
       if (dialog.open) status.textContent = message;
-      else catalogStatus.textContent = message;
+      else {
+        const error = document.getElementById("organization-error");
+        error.textContent = message;
+        error.hidden = false;
+      }
     }
   }
   duplicateButton.addEventListener("click", () => openCreation("new"));
-  document.querySelector(".organization-top-actions").append(duplicateButton);
+  document.getElementById("organization-file-menu").prepend(duplicateButton);
   for (const button of dialog.querySelectorAll("[data-create-mode]")) {
     button.addEventListener("click", () => openCreation(button.dataset.createMode));
   }

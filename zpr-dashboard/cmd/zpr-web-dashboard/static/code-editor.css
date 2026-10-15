@@ -4,6 +4,11 @@
 .policy-code-editor::after, .assertion-editor::after { display: none !important; }
 .code-editor-active > textarea, .code-editor-active > pre,
 .code-editor-active > .policy-test-gutter, .code-editor-active > .assertion-result-gutter { display: none !important; }
+.config-source-editor.code-editor-active,
+.config-source-editor.code-editor-loading { position: relative; }
+.config-source-editor:is(.code-editor-active, .code-editor-loading) > .config-source-gutter,
+.config-source-editor:is(.code-editor-active, .code-editor-loading) > .config-code-surface { display: none !important; }
+.code-editor-error { padding: 12px; color: var(--danger, #ffb49e); }
 .code-editor-active::after { display: none !important; }
 .code-editor-host { position: absolute; inset: 0; }
 .code-editor-host .cm-editor { outline: none; }

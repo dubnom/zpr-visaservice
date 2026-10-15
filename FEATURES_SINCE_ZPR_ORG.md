@@ -1,7 +1,8 @@
 # Features Added Since the Upstream Fork
 
-**Snapshot:** 2026-10-07
-**Baseline:** `origin/main` at `abb1acd` (2026-09-03)
+**Snapshot:** 2026-10-15
+**Baseline:** upstream fork point `abb1acd` (2026-09-03; historically recorded
+as `origin/main`, not the fork's current moving branch)
 
 This is a capability overview of the work added in this fork after its upstream
 baseline. It is intentionally not a commit log. The existing Visa Service,
@@ -9,6 +10,62 @@ policy evaluator, compiler, and wire formats remain the foundation; the work
 below adds service integrations, operator tools, simulation workflows, and
 policy-management capabilities around them. Implementation and security
 contracts remain authoritative where this overview is shorter.
+
+## Latest Maintained Additions
+
+- Replaced all six source-editing surfaces with the bundled CodeMirror editor:
+  Policy/Assertions, Gateway JSON, ZPR Config TOML, Simulator Directory LDIF
+  and Scenario JSON/YAML. Preserve source-owned diagnostics, typography and
+  language colors, Find/Replace, Wrap, explicit saves and revision boundaries.
+  Format participates in Undo/Redo; Scenario format conversion remains a
+  separate history boundary. Loading failures are explicit, not a silent
+  return to legacy editing.
+- Added guarded structured AI edits, visible-document/source checks, no-op
+  rejection and distinct last-request/cumulative token usage. Shared choices
+  are 900/1800/2400/3600/7200 with default 2400; legacy open-client values remain
+  accepted. Model limits are requested, not billing guarantees. Compact
+  settings, hierarchical LDAP namespace completion and same-record Discard
+  preserve unsaved-edit and failure behavior.
+- Added a Simulator Organizations **Browse...** dialog and **File...** menu
+  for New, Edit, Duplicate, Rename, Delete and Restore, with permission/state
+  restrictions; Import remains in the creation dialog. Browsing does not
+  activate an organization. Fixed matching HTML/JavaScript deployment and
+  navigation rebinding; compact summaries give
+  the directory graph more screen space. Private drafts remain non-runnable.
+- Added private New/Import/Duplicate organization bundles, immutable coherent
+  profile/supporting-document revisions, reviewed cross-document AI insertion,
+  structured Sites/Directory/Services editors and separate validation/history.
+  Full cross-document/compiler certification, section-only AI context and
+  reviewed private-draft activation remain unfinished.
+- Added explicit production owners for Admin API reads, inventory/enrichment,
+  diagnostics acquisition/aggregation, Control-Service routing, operator web
+  TLS/OIDC boundaries and Control Room root routing. Production inputs are
+  explicit; Simulator may exercise services but is not their configuration or
+  availability dependency. Application/configuration/lifecycle separation is
+  still in progress; all seven reorganization gates remain open.
+- Added production independent assertion seed/test-fixture contracts and an
+  opt-in Enrollment-process mTLS administration relay with independent signed
+  named-user verification. This is not the full enrollment lifecycle/sole-writer
+  API; the standalone BAS registry ownership gap remains.
+- Added company-installation and Simulator-companion package contracts plus
+  lab bootstrap generation for OpenLDAP/Dex and independent underlay/protected
+  DNS selections. Neither complete downloadable bundle nor fresh-Ubuntu
+  installation/network/recovery acceptance is available yet. Production does
+  not receive demo infrastructure defaults.
+
+Source publication and deployment are separate. The editor migration and
+Organizations repair have dated local deployment evidence; Control Room root
+routing is locally verified, not deployed by its extraction. Publication does
+not synchronize the running components. See the [completed-work record](GUI%20completed%20work.md),
+[deployment ledger](GUI%20deployments.md), [reorganization plan](REDIRECTORY.md)
+and [system release plan](System%20release%20plan.md) for exact scope, checks,
+remaining gaps and rollback evidence.
+
+Current combined-workspace publication checks report 110 passing and 22 failing
+selected browser cases (Organization profile/definition source controls/labels);
+the CodeMirror and Browse/layout cases pass. Full Go tests retain four known
+failure groups. These capabilities are not a full-suite or release-readiness
+claim.
 
 ## Control Room
 
@@ -48,7 +105,9 @@ contracts remain authoritative where this overview is shorter.
 - Added direct HTTPS OpenID Connect operator sign-in, named identity and scope
   display, explicit session failures, and CSRF-protected sign-out. The local
   Control Room deployment uses a real Dex provider and dedicated development
-  CA; Simulator retains its separate unauthenticated local HTTP configuration.
+  CA. Simulator has independent optional HTTPS/OIDC settings; production does
+  not read them. Remote private-management HTTPS configuration and validation
+  are implemented, but this is not a certified remote company installation.
 
 ## Enrollment And Platform Setup
 
@@ -202,9 +261,10 @@ contracts remain authoritative where this overview is shorter.
 - Added loopback and origin checks, bounded API inputs and outputs, private
   repository storage, log redaction, browser CSP protections, and browser
   regression coverage for desktop and mobile workflows.
-- The current browser deployment remains loopback-only. Named-user OIDC
-  authentication and explicit enrollment permission grants are implemented;
-  remote hosting, general-purpose role management, per-viewer directory
+- Recorded local browser deployments use loopback access. Named-user OIDC,
+  explicit enrollment permission grants and direct private-management HTTPS
+  configuration are implemented; certified remote installation,
+  general-purpose role management, per-viewer directory
   authorization and complete multi-organization runtime isolation are not
   established by these additions. Provisioning read/create/cancel browser
   workflows have real OIDC/mTLS/SQLite coverage with Simulator unavailable.

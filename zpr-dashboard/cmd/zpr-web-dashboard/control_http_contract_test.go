@@ -17,6 +17,13 @@ func TestControlHTTPCommandHandlerBindings(t *testing.T) {
 		file, function, literal string
 		fields                  map[string]string
 	}{
+		{"control_service.go", "runControlRoom", "roomhttp.Handlers", map[string]string{
+			"AuthConfig": "authConfig", "Auth": "authLogin", "ChangeReview": "changeReview",
+			"Enrollment":    "operatorEnrollmentProxy(security.auth, signer, proxy)",
+			"API":           `security.apiProxy(os.Getenv("ZPR_CONTROL_ROOM_ORGANIZATION_ID"), proxy)`,
+			"DNSStylesheet": `security.assetProxy(os.Getenv("ZPR_CONTROL_ROOM_ORGANIZATION_ID"), proxy)`,
+			"Static":        "revalidateStatic(http.FileServer(http.FS(staticRoot)))",
+		}},
 		{"control_service.go", "runControlService", "httpapi.Handlers", map[string]string{
 			"Enrollment": "enrollmentAPI", "Gateways": "gatewayAPI", "Assertions": "assertions.handlers()", "TrustedChanges": "trustedChanges.handlers()",
 			"Snapshot":    "http.HandlerFunc(app.handleSnapshot)",

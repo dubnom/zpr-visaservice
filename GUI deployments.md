@@ -42,6 +42,68 @@ Control Room alone was subsequently updated from
 hierarchical adapter LDAP completion UX. Control-Service remains at 19:55.
 Retain each dated entry's precise scope and rollback evidence.
 
+## Organizations Browse/File bundle repair (2026-10-15)
+
+- The owning Organizations session rebuilt/restarted Simulator for the
+  Browse/File UI, then repaired a live mismatch: new HTML was served with old
+  JavaScript lacking the menu handlers. The matching bundle was verified
+  before redeployment. Browse, File and Edit now work after navigation with
+  real mouse clicks on the live page and no JavaScript errors.
+- Compact heading/summary layout gives the directory graph a 600px canvas at
+  the tested 900px screen height. The session reports 22 passing desktop/tablet
+  checks. Browsing does not activate an organization; private drafts remain
+  separate from runnable organizations.
+- This is a separate operation from the 20:34 editor-only release below.
+  Do not infer one combined immutable image or claim a synchronized backend
+  rollout. Exact runtime identity/configuration preservation from another
+  entry must not be applied to this restart.
+- DNS recovery was required because the restart helper stops DNS as a side
+  effect. The session reports restored BIND, DNS queries and statistics, but
+  the DNS adapter cannot reattach while its node reports a disconnected Visa
+  Service connection. Full network health/recovery remains open; no successful
+  adapter reattachment or sustained recovery is claimed.
+- This entry reconciles the completed owning-session report; it is not a new
+  live inspection, deployment or authorization to reset runtime state.
+
+## Remaining source editors (2026-10-15 20:34 UTC)
+
+- Scope: Control Room and Simulator editing surfaces only. User explicitly
+  selected isolation from concurrent uncommitted backend/Organization UI work.
+  Build context is clean `d741cec` plus an explicit editor migration file
+  allowlist; image `zpr-editor-ui:20261015-all-editors`, executable SHA-256
+  `f873f11e9fa3e44593e60ef3acc044c7a4a8a34c814c4ea18c8636dc253f23fc`.
+  Container image labels remain unchanged; executable installed in writable
+  layers. Room started `2026-10-15T20:34:48.679628502Z`, Simulator
+  `2026-10-15T20:34:50.04039217Z`.
+- Gateway JSON, ZPR Config TOML, Directory LDIF and Scenario JSON/YAML now use
+  the shared CodeMirror editor. Preserve original typography, language colors,
+  native form inputs, source-owned diagnostics, permissions/limits, explicit
+  save/publish semantics, Find/Replace and Wrap. Format is undoable. Scenario
+  format conversion retains its source/history boundary.
+- All 78 desktop/tablet editor checks pass against the exact isolated release.
+  Actual served HTML and 46 Room/28 Simulator assets byte-match staged sources.
+  All four served editors verify language colors, hidden legacy editing, exact
+  edit Undo and Format Undo where supported under actual CSP. Actual Room
+  sign-in gate and verified-mTLS compiler/tester/assistant readiness pass.
+  Browser APIs mocked; no live save, analyze, publish, provider or runtime calls.
+- Room exact configuration/mounts/ID preserved. Control-Service and
+  Policy-Service identity/image/start baselines unchanged.
+- Concurrent operation recreated Simulator between the initial snapshot and
+  installation. This rollout did not recreate it. Verification stopped at that
+  discrepancy; user approved testing the replacement as-is without modifying
+  its configuration. Original Simulator configuration preservation is not
+  claimed. Replacement ID/configuration/sorted mounts stayed unchanged through
+  verification; release executable hash matches in both running containers.
+- Private artifacts: `files/all-editors-release-20261015/` in session storage
+  contain isolated build sources, executable, rollback binaries, private inspect
+  snapshots, test results and live verification script. Do not publish inspect
+  files. Rollback each executable only: stop the affected current container,
+  restore `control-room-before` or `simulator-before` to
+  `/usr/local/bin/zpr-web-dashboard`, start and verify. Do not restore old
+  Simulator container configuration over the concurrent replacement.
+  Both containers also retain the named `.before-all-editors-20261015` binary.
+- Refresh/reopen editor pages. No commit or push performed.
+
 Publication follow-up: `c3a3836` is the preceding source checkpoint for the
 Restore/runtime repairs and Scenario browser. The current source checkpoint
 also includes the subsequent editor, management HTTPS, enrollment ownership,

@@ -174,8 +174,7 @@
   formatButton.addEventListener("click", async () => {
     const result = await check({ quiet: true });
     if (!result) return;
-    source.value = sourceFormat === "json" ? result.canonical_json : result.canonical_yaml;
-    source.dispatchEvent(new InputEvent("input", { bubbles: true }));
+    page.editText(source, sourceFormat === "json" ? result.canonical_json : result.canonical_yaml, true);
     lastScenario = result.scenario;
   });
   const input = document.querySelector("#scenario-editor-dialog [data-source-file]");
