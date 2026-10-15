@@ -51,7 +51,7 @@ function organizationRuntimeLabel(organization) {
 }
 
 function renderOrganizationList() {
-  resetLogLink.hidden = organizationActivationStatus.state !== "failed";
+  renderOrganizationOperationStatus();
   const selected = selectedOrganizationID || activeOrganizationID;
   document.getElementById("organization-list").innerHTML = organizationCatalog.map((organization) => {
     const active = organization.id === activeOrganizationID;
@@ -61,6 +61,24 @@ function renderOrganizationList() {
   if (organization) renderOrganizationDetails(organization);
   else if (selectedOrganizationDraft) renderOrganizationDetails(selectedOrganizationDraft.profile, selectedOrganizationDraft);
   else if (organizationCatalog[0]) renderOrganizationDetails(organizationCatalog[0]);
+}
+
+function renderOrganizationOperationStatus() {
+  const { state, organization_id: organizationID, operation, progress, error } = organizationActivationStatus;
+  const status = document.getElementById("organization-operation-status");
+  const busy = organizationActivationInFlight || state === "resetting";
+  resetLogLink.hidden = !busy && state !== "failed";
+  status.hidden = !busy && state !== "completed" && state !== "failed";
+  status.setAttribute("aria-busy", String(busy));
+  const target = organizationCatalog.find((item) => item.id === organizationID)?.name || organizationID || "Organization";
+  const action = operation === "restore-base" ? "Restore" : "Activation";
+  if (busy) {
+    status.textContent = `${target} · ${action} in progress · ${progress || "Submitting request"}. Please wait; do not start another restore.`;
+  } else if (state === "failed") {
+    status.textContent = `${target} · ${action} failed · ${error || progress || "See Logs for details"}`;
+  } else if (state === "completed") {
+    status.textContent = `${target} · ${action} completed · ${progress || "Organization ready"}`;
+  }
 }
 
 function renderOrganizationDetails(organization, draft = null) {
@@ -308,7 +326,6 @@ async function refreshOrganizations({ signal, isCurrent }) {
   const nextOrganizations = data.organizations || [];
   const nextActiveID = data.active_id || "";
   organizationActivationStatus = data.activation || { state: "idle" };
-  resetLogLink.hidden = organizationActivationStatus.state !== "failed";
   window.dispatchEvent(new CustomEvent("simulator:organization-context", {
     detail: nextOrganizations.find((item) => item.id === nextActiveID) || null,
   }));
@@ -462,6 +479,7 @@ organizationRestoreConfirm.addEventListener("click", async () => {
     return;
   }
   organizationActivationInFlight = true;
+  organizationActivationStatus = { state: "resetting", operation: "restore-base", organization_id: organizationID, progress: "Submitting restore request" };
   organizationRestoreDialog.close();
   renderOrganizationList();
   try {
@@ -470,6 +488,7 @@ organizationRestoreConfirm.addEventListener("click", async () => {
     renderOrganizationList();
     await refreshOrganizationsNow();
   } catch (error) {
+    organizationActivationStatus = { state: "failed", operation: "restore-base", organization_id: organizationID, error: error.message || "Could not restore organization base state" };
     const message = document.getElementById("organization-error");
     message.textContent = error.message || "Could not restore organization base state";
     message.hidden = false;

@@ -4842,6 +4842,124 @@ test("Scenario machine log previews reject late run responses and stop polling o
   expect(api.counts.get("/api/simulator/machine-logs")).toBe(requests);
 });
 
+test("Simulator gateway results show inert raw HTML and exact JSON separately from expectations", async ({ page, appURL, api }) => {
+  const html = '<!doctype html><html><script>window.gatewayExecuted = true</script><img src="/gateway-exfil" onerror="window.gatewayExecuted = true"></html>';
+  const rawJSON = '{"large":9007199254740993,"text":"<script>unsafe()</script>"}\n';
+  const result = (body, status = 200) => ({
+    schema_version: 1, kind: "http", method: "GET", requested_url: "https://example.com/",
+    final_url: "https://example.com/page", status_code: status, status_text: status === 200 ? "OK" : "Bad Gateway",
+    duration_ms: 184.25, bytes_read: 12345, read_limited: true, content_type: "text/html",
+    headers: { "Content-Type": ["text/html"], "Set-Cookie": ["[redacted]"] },
+    body, body_encoding: "utf-8", body_truncated: true,
+  });
+  const run = {
+    scenario_id: "gateway-results", scenario_name: "Gateway results", state: "failed", started_at: "2026-10-15T00:00:00Z",
+    current_step: 2, total_steps: 2,
+    scenario: { steps: [
+      { action: "request_web_gateway", target: "https://example.com/" },
+      { action: "request_web_gateway", target: "https://example.com/", expected: "allow" },
+    ] },
+    steps: [
+      { number: 1, action: "request_web_gateway", status: "completed", result: result(html) },
+      { number: 2, action: "request_web_gateway", status: "failed", error: "unexpected HTTP 502", result: result(rawJSON, 502) },
+    ],
+  };
+  api.handlers.set("/api/simulator/scenarios", async route => route.fulfill({ json: {
+    active_organization_id: "alpha", scenarios: [], run,
+  } }));
+  await page.goto(appURL + "/scenarios.html");
+  const results = page.locator("#scenario-results");
+  await expect(results).toBeHidden();
+  await page.getByRole("tab", { name: "Results (2)", exact: true }).click();
+  await expect(results).toBeVisible();
+  await expect(results).toContainText("HTTP 200 OK");
+  await expect(results).toContainText("HTTP 502 Bad Gateway");
+  await expect(results).toContainText("Expectation: none (observational)");
+  await expect(results).toContainText("Expectation: allow · Step failed");
+  await expect(results).toContainText("184.3 ms");
+  await expect(results).toContainText("at least 12345 body bytes read");
+  await expect(results).toContainText("Final URL: https://example.com/page");
+  await expect(results).toContainText("truncated");
+  const sources = results.locator('pre[aria-label$="raw response body"]');
+  expect(await sources.nth(0).textContent()).toBe(html);
+  expect(await sources.nth(1).textContent()).toBe(rawJSON);
+  await expect(results.locator("script, iframe, img")).toHaveCount(0);
+  expect(await page.evaluate(() => window.gatewayExecuted)).toBeUndefined();
+  expect(api.counts.get("/gateway-exfil") || 0).toBe(0);
+  await results.locator("details").first().locator("summary").click();
+  await expect(results).toContainText("Set-Cookie: [redacted]");
+  await page.evaluate(value => renderScenarioRun(value), run);
+  await expect(results.locator("details").first()).toHaveAttribute("open", "");
+  await page.evaluate(() => renderScenarioRun({ state: "idle", steps: [] }));
+  await expect(results).toBeHidden();
+  await expect(page.getByRole("tab", { name: "Runner", exact: true })).toHaveAttribute("aria-selected", "true");
+  await expect(page.getByRole("tab", { name: "Results (0)", exact: true })).toBeDisabled();
+  await expect(results).not.toContainText("9007199254740993");
+});
+
+test("Simulator gateway results remain reachable above long runner tracks", async ({ page, appURL, api }) => {
+  api.handlers.set("/api/simulator/scenarios", async route => route.fulfill({ json: {
+    active_organization_id: "alpha", scenarios: [], run: { state: "idle", steps: [] },
+  } }));
+  await page.goto(appURL + "/scenarios.html");
+  await page.evaluate(() => {
+    const run = {
+      scenario_id: "long-run", state: "completed", current_step: 40, total_steps: 40,
+      steps: Array.from({ length: 40 }, (_, index) => ({
+        number: index + 1, action: "request_web_gateway", machine: "machine-01", status: "completed",
+        ...(index === 39 ? { result: {
+          schema_version: 1, kind: "http", status_code: 200, body: "Reachable result", body_encoding: "utf-8",
+        } } : {}),
+      })),
+    };
+    renderScenarioRun(run);
+    window.testLongRun = run;
+  });
+  const runner = page.getByRole("tab", { name: "Runner", exact: true });
+  const resultsTab = page.getByRole("tab", { name: "Results (1)", exact: true });
+  await expect(resultsTab).toBeInViewport();
+  await expect(page.locator(".scenario-step")).toHaveCount(40);
+  await runner.focus();
+  await page.keyboard.press("ArrowRight");
+  await expect(resultsTab).toBeFocused();
+  await expect(resultsTab).toHaveAttribute("aria-selected", "true");
+  await expect(page.locator(".scenario-track-frame")).toBeHidden();
+  await expect(page.getByText("Reachable result", { exact: true })).toBeInViewport();
+  await page.evaluate(() => renderScenarioRun(window.testLongRun));
+  await expect(resultsTab).toHaveAttribute("aria-selected", "true");
+  await page.keyboard.press("Home");
+  await expect(runner).toBeFocused();
+  await expect(page.locator(".scenario-track-frame")).toBeVisible();
+  await expect(page.locator("#scenario-results")).toBeHidden();
+});
+
+test("Simulator gateway results distinguish no response, binary bodies and unavailable evidence", async ({ page, appURL, api }) => {
+  api.handlers.set("/api/simulator/scenarios", async route => route.fulfill({ json: {
+    active_organization_id: "alpha", scenarios: [], run: { state: "idle", steps: [] },
+  } }));
+  await page.goto(appURL + "/scenarios.html");
+  await page.evaluate(() => renderScenarioRun({
+    scenario_id: "errors", state: "failed",
+    steps: [
+      { number: 1, action: "request_web_gateway", status: "failed", result: {
+        schema_version: 1, kind: "http", requested_url: "https://example.com/", method: "GET",
+        duration_ms: 1000, bytes_read: 0, error: "TLS handshake failed", body: "", body_encoding: "utf-8",
+      } },
+      { number: 2, action: "request_web_gateway", status: "completed", result: {
+        schema_version: 1, kind: "http", status_code: 200, body: "/wD+", body_encoding: "base64",
+      } },
+      { number: 3, action: "request_web_gateway", status: "failed", result_error: "structured gateway result unavailable; rebuild the machine controller and rerun" },
+    ],
+  }));
+  const results = page.locator("#scenario-results");
+  await page.getByRole("tab", { name: "Results (3)", exact: true }).click();
+  await expect(results).toContainText("No HTTP response");
+  await expect(results).toContainText("TLS handshake failed");
+  await expect(results).toContainText("base64 (non-UTF-8 bytes)");
+  await expect(results).toContainText("/wD+");
+  await expect(results).toContainText("rebuild the machine controller");
+});
+
 test("Simulator Scenarios groups unfiled entries and clears only terminal run history", async ({ page, appURL, api }) => {
   await page.emulateMedia({ reducedMotion: "no-preference" });
   const scenario = {
@@ -10468,7 +10586,7 @@ test("organization approval is rejected after the active organization changes", 
   await expect(dialog).not.toBeVisible();
 });
 
-test("Organizations shows See Logs only for a failed activation or base restore", async ({ page, appURL, api }) => {
+test("Organizations shows See Logs for a running or failed activation or base restore", async ({ page, appURL, api }) => {
   await page.clock.install();
   await page.goto(appURL + "/organizations.html");
   await expect(page.locator("#organization-title")).toHaveText("Alpha Labs");
@@ -10486,10 +10604,38 @@ test("Organizations shows See Logs only for a failed activation or base restore"
     for (const state of ["resetting", "completed", "idle"]) {
       api.organizations.activation = { state, operation, organization_id: "beta" };
       await page.clock.runFor(5100);
-      await expect(resetLog).toBeHidden();
+      if (state === "resetting") await expect(resetLog).toBeVisible();
+      else await expect(resetLog).toBeHidden();
       await expect(page.locator("#organization-error")).toBeHidden();
     }
   }
+});
+
+test("active organization restore keeps progress and its outcome visible", async ({ page, appURL, api }) => {
+  await page.clock.install();
+  api.organizations.activation = { state: "resetting", operation: "restore-base", organization_id: "alpha", progress: "Starting alpha runtime" };
+  await page.goto(appURL + "/organizations.html");
+  const status = page.locator("#organization-operation-status");
+  await expect(status).toBeVisible();
+  await expect(status).toContainText("Alpha Labs · Restore in progress");
+  await expect(status).toContainText("Starting alpha runtime");
+  await expect(status).toHaveAttribute("aria-busy", "true");
+  await expect(page.locator('[data-restore-base="alpha"]')).toBeDisabled();
+  await expect(page.locator(".organization-reset-log")).toBeVisible();
+  await page.locator('[data-organization-id="beta"]').click();
+  await expect(status).toContainText("Alpha Labs · Restore in progress");
+  api.organizations.activation.progress = "Activation failed; restoring previous runtime";
+  await page.clock.runFor(1100);
+  await expect(status).toContainText("restoring previous runtime");
+  api.organizations.activation = { state: "failed", operation: "restore-base", organization_id: "alpha", error: "Policy assertion settings do not match organization alpha" };
+  await page.clock.runFor(1100);
+  await expect(status).toContainText("Restore failed");
+  await expect(status).toContainText("Policy assertion settings do not match");
+  await expect(status).toHaveAttribute("aria-busy", "false");
+  api.organizations.activation = { state: "completed", operation: "restore-base", organization_id: "alpha", progress: "Organization ready" };
+  await page.clock.runFor(5100);
+  await expect(status).toContainText("Restore completed · Organization ready");
+  await expect(page.locator(".organization-reset-log")).toBeHidden();
 });
 
 test("Organizations retains failure log access when the catalog becomes unavailable", async ({ page, appURL, api }) => {

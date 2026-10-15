@@ -83,6 +83,52 @@ redirect refusal, exact 4 MiB limit, configured-workspace requirement and error
 messages. It exposes only attributes, not people or record contents; existing
 assistant context isolation and authorization are unchanged.
 
+Claude's shared HTTP completion transport now lives in
+[`internal/assistant`](../../internal/assistant/). It accepts an explicit endpoint,
+API key and HTTP client plus caller-owned system/messages/model/token settings;
+the command's message and reply types are aliases to the unchanged wire schema.
+The command retains key lookup, model selection, 45-second timeout, redirect
+refusal, permissions, validation, skills and task-specific context/prompts.
+The transport performs no Simulator, environment or filesystem lookup.
+The neutral package also owns the protected `ReadAPIKeyFile` reader, which
+reads only an explicitly supplied path and has no configuration discovery.
+Its standard-library-only dependency check and isolated transport tests
+preserve headers/JSON, text joining, usage, errors and the existing 64 KiB
+response-reader truncation semantics.
+
+Production key discovery is now isolated in `assistant_config.go`.
+Control-Service startup and policy-status enrichment use `ANTHROPIC_API_KEY`
+first, then `ZPR_ANTHROPIC_API_KEY_FILE`, then the existing protected
+`assistant/api-key` sibling of `ZPR_GATEWAY_CONFIG_STORE_DIR`. They never use
+`SIMULATION_MANIFEST` to discover a key. Production installations formerly
+depending on that fallback must configure `ZPR_ANTHROPIC_API_KEY_FILE`;
+the local stack already supplies it. Simulator status and every assistant route
+use a separate constructor retaining their previous manifest-sibling fallback
+and per-request reload. An invalid selected file does not fall through to a
+different source; the assistant stays unavailable and logs only the error type,
+never key text or file contents. Model selection, HTTP policy, permissions and
+prompts are unchanged. Full production/Simulator separation remains incomplete.
+
+Production adapter-log inventory types and validation now live in
+[`internal/controlservice/adapterlogs`](../../internal/controlservice/adapterlogs/).
+The parser reads an explicitly supplied operator file on every call and has a
+standard-library-only dependency check; it does not resolve environment or
+Simulator configuration. The command retains `ZPR_ADAPTER_LOG_CONFIG_FILE`
+selection, routes, JSON errors, the collection deadline, file/container reads,
+runtime-state inspection and redaction. Type aliases retain the inventory JSON
+schema, exact validation/errors and target/source limits. The existing bounded
+single-decode behavior (including trailing-data acceptance) is preserved, not
+silently tightened by this extraction.
+
+Shared log text formatting and credential redaction now live in
+[`internal/logview`](../../internal/logview/), with no configuration, collection
+or Simulator dependency and a standard-library-only dependency test. Production
+adapter logs call its bounded `Lines` helper directly; diagnostics call `Redact`
+after their existing truncation. Simulator's `machineLogLines` is a compatibility
+adapter. The existing regex, byte/line selection, whitespace handling and empty
+JSON array shape are unchanged. Redaction remains the existing heuristic,
+not an exhaustive credential detector or a new output-size guarantee.
+
 The assertion editor uses the policy editor's Browse/File toolbar, Analyze/Format
 placement, analysis colors, and persistent results gutter. **Analyze** parses,
 lints, and evaluates source against configured trusted sources, showing clickable
@@ -541,7 +587,12 @@ query fields or Simulator data.
 
 The Control-Service launcher does not read Simulator manifests or profiles.
 Optional gateway annotations come from the operator-owned
-`ZPR_PLATFORM_SERVICES` JSON setting and default to an empty list. Set
+`ZPR_PLATFORM_SERVICES` JSON setting, or the local stack's persistent
+`dashboard-stack/platform-services.json` file (override its location with
+`ZPR_PLATFORM_SERVICES_FILE`). An explicit JSON setting takes precedence;
+`[]` disables annotations. With neither configured, annotations default to an
+empty list. The launcher validates this configuration before stopping the
+running Control-Service; invalid or explicitly missing files fail startup. Set
 `ZPR_ASSERTION_LDAP_CONTAINER`, `ZPR_ASSERTION_LDAP_BASE_DN` and
 `ZPR_ASSERTION_LDAP_BIND_DN` explicitly to enable Assertion Analyze and LDAP
 attribute discovery. Use the directory's read-only service bind identity, not
@@ -558,10 +609,23 @@ display with:
 ZPR_PLATFORM_SERVICES='[{"service_name":"internet-gateway.svc.zpr","actor_cn":"internet-gateway","service_kind":"Gateway","external_network_connection":"public-internet"}]'
 ```
 
-Include the setting when starting or restarting Control-Service, alongside the
-active organization's Admin API connection settings. These annotations enable
+Persist the JSON array in the operator-owned file to retain it across
+Control-Service recreations, alongside the active network's Admin API connection
+settings. Use the service name reported by the Admin API, not a workload alias,
+and update the annotations when changing networks. These annotations enable
 gateway/cloud rendering but are operator-provided display metadata, not proof
 that the external-network claim was verified from installed policy.
+
+To verify a configured gateway against the live Control Room through its real
+operator login, on desktop and tablet and in both map modes:
+
+```sh
+ZPR_EXPECT_GATEWAY_SERVICE=internet-gateway.svc.zpr \
+ZPR_EXPECT_GATEWAY_NETWORK=public-internet \
+sh scripts/test-local-operator-browser.sh --grep 'configured gateway cloud'
+```
+
+This test reads production snapshot data, not Simulator profiles or APIs.
 
 The ZPR browser-based GUIs, including Control Room and Simulator, support desktop
 and iPad-like tablet devices when the available viewport resolution is sufficient
@@ -841,6 +905,55 @@ Running and cleanup states use saturated blue; failures use red. When a run
 fails, the progress badge and summary retain the original failed run step even
 after cleanup advances the step counter. Cleanup-only failures show their own
 step instead.
+
+### Scenario response results
+
+The run heading has Runner and Results tabs. Results shows the current observation
+count and is disabled until evidence arrives. Selecting it replaces the runner
+tracks rather than placing responses below them; polling preserves the selected
+view. Clearing results returns to Runner. Arrow keys and Home/End switch tabs.
+
+Gateway fetch steps (`request_web_gateway`) now retain a version-1 structured
+HTTP observation under each run step's `result`, separate from the step's
+execution/expectation status. The Scenarios **Results** section displays:
+
+- HTTP status code/reason, requested and final URL, GET method, content type,
+  elapsed request/body-read time and decoded body bytes read.
+- Bounded response headers. Only content metadata, date/server/cache metadata,
+  Allow and Retry-After values are exposed; sensitive and unrecognized values
+  (including Set-Cookie, authentication headers and Location) are redacted.
+  Header retention is capped at 64 names, 16 values/name, 2 KiB/value and a
+  16 KiB retained name/value budget. Header truncation is explicit.
+- The original body preview as inert, selectable raw source. HTML/JavaScript
+  is never rendered or executed. JSON is not parsed/reformatted, preserving
+  original whitespace and large numeric values. Non-UTF-8 previews are shown
+  as base64 so their original bytes are not silently replaced.
+- Explicit network/TLS/read errors, including partial body evidence when
+  available. No HTTP response is distinct from an HTTP error such as 502;
+  failed expectations still retain their observed response.
+
+Body reads stop at 2 MiB plus one detection byte; previews stop at 8 KiB.
+`bytes_read` is the actual number of decoded body bytes consumed, not a claimed
+Content-Length or wire-byte measurement. When the read cap is reached, the
+display says **at least** that count. `body_truncated`, `read_limited` and
+`headers_limited` distinguish incomplete evidence. Request duration is not
+reported as authorization-only or per-stage network timing.
+
+Omit `expected` (or use an empty value) for an observational fetch: HTTP error
+responses are data, not assertion failures. Explicit `allow` still requires
+2xx; `deny` still requires HTTP 403. Neither a timeout nor missing evidence
+proves policy denial. Existing destination validation remains in force:
+observational/allow fetches require organization-allowlisted hosts; denial
+probes retain their existing restricted destination scope.
+
+Results belong to the current run snapshot and are cleared with that run;
+this slice does not add durable multi-run archives, downloads, JSON formatting,
+throughput result views or a general assertion language. Response bodies/URLs
+may contain sensitive data; body content is not automatically redacted.
+Rebuild/redeploy both the Simulator and its machine-controller executable
+before live use. Old client binaries produce an explicit **result unavailable**
+message rather than invented measurements. No gateway/Control Room deployment
+or reverse dependency on Simulator is introduced.
 
 Machine launches remain serialized to protect shared provisioning and the
 machine-capacity check. A launch's `timeout_seconds` (90 seconds by default)
@@ -1422,6 +1535,22 @@ name, set `ZPR_ADMIN_SERVER_NAME` to enforce that name as well. Use
 the key-file option is preferred.
 
 ## Development checks
+
+Great Lakes' optional business simulations live in
+`internal/simulator/business`, with Simulator-only lifecycle integration and
+separate `business-service`, `business-client`, and `business-health` modes.
+`-business-state-dir` defaults to `/var/lib/zpr-business`. They are not exposed
+through production Control Room/Control-Service APIs. The
+[Great Lakes guide](examples/organizations/great-lakes/README.md) documents all
+seven services, machine-identity authorization, two complete access matrices,
+state limits, and separately approved deployment/live acceptance requirements.
+
+Focused source-only regression checks:
+
+```sh
+go test -race ./internal/simulator/business ./cmd/zpr-web-dashboard \
+  -run 'Business|GreatLakes|BundledOrganizationsHaveSeparate' -count=1
+```
 
 ```sh
 go test ./cmd/zpr-web-dashboard

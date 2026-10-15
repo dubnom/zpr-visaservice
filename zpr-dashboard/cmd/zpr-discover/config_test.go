@@ -14,7 +14,7 @@ import (
 
 func TestConfigAndCLIOverrides(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "discovery.json")
-	config := `{"scanner-id":"from-file","organization":"example","targets":["127.0.0.1"],"ports":"22,443","workers":3,"rate":5,"timeout":"200ms","duration":"3m","protocol-checks":true,"ping":false,"reverse-dns":false}`
+	config := `{"scanner-id":"from-file","organization":"example","targets":["127.0.0.1"],"ports":"22,443","workers":3,"rate":5,"timeout":"200ms","protocol-checks":true,"ping":false,"reverse-dns":false}`
 	if err := os.WriteFile(path, []byte(config), 0o600); err != nil {
 		t.Fatal(err)
 	}
@@ -26,7 +26,7 @@ func TestConfigAndCLIOverrides(t *testing.T) {
 	}
 	if err := json.Unmarshal(stdout.Bytes(), &plan); err != nil || code != 0 ||
 		plan.Scope.ScannerID != "from-file" || plan.Scope.Workers != 4 || plan.Scope.Rate != 5 ||
-		plan.Scope.TimeoutMS != 200 || plan.Scope.DurationMS != 180000 || plan.Scope.ProtocolChecks ||
+		plan.Scope.TimeoutMS != 200 || plan.Scope.ProtocolChecks ||
 		!plan.Scope.Ping || !plan.Scope.ReverseDNS || plan.Scope.HostChecks != "2" {
 		t.Fatalf("config precedence/dry-run: code=%d stdout=%s stderr=%s err=%v", code, &stdout, &stderr, err)
 	}

@@ -27,7 +27,6 @@ type scopePlan struct {
 	Workers        int                      `json:"workers"`
 	Rate           int                      `json:"attempts_per_second"`
 	TimeoutMS      int64                    `json:"timeout_ms"`
-	DurationMS     int64                    `json:"duration_ms"`
 	ProtocolChecks bool                     `json:"protocol_checks"`
 	Ping           bool                     `json:"ping"`
 	ReverseDNS     bool                     `json:"reverse_dns"`
@@ -57,7 +56,6 @@ func run(ctx context.Context, args []string, stdout, stderr io.Writer) int {
 	workers := flags.Int("workers", 8, "concurrent TCP/host checks (1-32)")
 	rate := flags.Int("rate", 20, "maximum TCP/host check starts per second (1-100; no retries)")
 	timeout := flags.Duration("timeout", time.Second, "timeout for each TCP/host check and separately each protocol check (10ms-5s)")
-	duration := flags.Duration("duration", 2*time.Minute, "total scan budget (1s-30m); interruption exports a partial report and exits nonzero")
 	adapterFile := flags.String("adapter-inventory", "", "optional version-1 imported adapter inventory JSON; not live or authenticated")
 	output := flags.String("output", "-", "JSON destination; '-' is stdout; files are private and never overwritten")
 	if err := flags.Parse(args); err != nil {
@@ -80,9 +78,6 @@ func run(ctx context.Context, args []string, stdout, stderr io.Writer) int {
 	}
 	if !*dryRun && !*authorized {
 		return fail(errors.New("scanning requires -authorized confirmation; use -dry-run to preview scope"))
-	}
-	if *duration < time.Second || *duration > 30*time.Minute {
-		return fail(errors.New("duration must be between 1s and 30m"))
 	}
 	targets, err := discovery.ParseTargets(*targetText)
 	if err != nil {
@@ -141,26 +136,40 @@ func run(ctx context.Context, args []string, stdout, stderr io.Writer) int {
 			Options: scopePlan{ScannerID: *scannerID, Organization: *organization,
 				Targets: targets.Ranges(), HostCount: targets.Count().String(), Ports: ports, Transport: "tcp", Planned: options.PlannedChecks(len(ports)),
 				Workers: *workers, Rate: *rate, TimeoutMS: timeout.Milliseconds(),
-				DurationMS: duration.Milliseconds(), ProtocolChecks: *checks,
-				Ping: *ping, ReverseDNS: *reverseDNS, HostChecks: options.HostChecksPlanned()},
+				ProtocolChecks: *checks,
+				Ping:           *ping, ReverseDNS: *reverseDNS, HostChecks: options.HostChecksPlanned()},
 		}
 		if err := writeJSON(stdout, *output, plan); err != nil {
 			return fail(err)
 		}
 		return 0
 	}
-	fmt.Fprintf(stderr, "Scanning %s explicit hosts x %d TCP ports from %s; limit %d starts/s, %d workers, budget %s. No host or policy changes.\n",
-		targets.Count().String(), len(ports), *scannerID, *rate, *workers, *duration)
+	fmt.Fprintf(stderr, "Scanning %s explicit hosts x %d TCP ports from %s; limit %d starts/s, %d workers; no overall deadline. Ctrl+C stops and exports partial results. No host or policy changes.\n",
+		targets.Count().String(), len(ports), *scannerID, *rate, *workers)
 	fmt.Fprintf(stderr, "Host checks: ping=%t, reverse-dns=%t; %s planned. TCP checks are independent of host-check results.\n",
 		*ping, *reverseDNS, options.HostChecksPlanned())
-	scanContext, cancel := context.WithTimeout(ctx, *duration)
+	scanContext, cancel := context.WithCancel(ctx)
 	defer cancel()
+	var progressErr error
+	display := newProgressDisplay(stderr)
+	options.OnProgress = func(progress discovery.Progress) {
+		if progressErr != nil {
+			return
+		}
+		progressErr = display.write(progress)
+		if progressErr != nil {
+			cancel()
+		}
+	}
 	report, scanErr := discovery.Scan(scanContext, options)
 	if report == nil {
 		return fail(scanErr)
 	}
 	if err := writeJSON(stdout, *output, report); err != nil {
 		return fail(fmt.Errorf("write report: %w", err))
+	}
+	if progressErr != nil {
+		return fail(fmt.Errorf("write progress: %w", progressErr))
 	}
 	fmt.Fprintf(stderr, "Inventory exported: %d/%s endpoints attempted; %d unexpected endpoint errors; complete=%t.\n",
 		report.Attempted, report.Planned, report.EndpointErrors, report.Complete)

@@ -26,6 +26,7 @@ type Options struct {
 	Ping           bool
 	ReverseDNS     bool
 	Adapter        *AdapterInventory
+	OnProgress     func(Progress)
 }
 
 type Report struct {
@@ -205,6 +206,8 @@ func scan(ctx context.Context, options Options, probes hostProbes) (*Report, err
 	)
 	jobs := make(chan job)
 	var workers sync.WaitGroup
+	progress := newScanProgress(options, report.StartedAt)
+	finishProgress := progress.start(options.OnProgress)
 	// Bound actual TCP/host check starts, not just queue submissions.
 	ticker := time.NewTicker(time.Second / time.Duration(options.Rate))
 	defer ticker.Stop()
@@ -220,16 +223,22 @@ func scan(ctx context.Context, options Options, probes hostProbes) (*Report, err
 					return
 				}
 				host := item.host
+				progress.begin()
+				var state string
 				switch item.port {
 				case pingJob:
 					result := probes.ping(ctx, host.Address, options.Timeout)
 					host.Ping = &result
+					state = result.State
 				case reverseDNSJob:
 					result := probes.reverseDNS(ctx, host.Address, options.Timeout)
 					host.ReverseDNS = &result
+					state = result.State
 				default:
 					host.TCP[item.port] = scanEndpoint(ctx, host.Address, options.Ports[item.port], options)
+					state = host.TCP[item.port].State
 				}
+				progress.finish(host.Address, item.port < 0, state)
 			}
 		})
 	}
@@ -264,6 +273,7 @@ enqueue:
 	}
 	close(jobs)
 	workers.Wait()
+	finishProgress()
 	for _, host := range hosts {
 		for _, result := range []*HostCheck{host.Ping, host.ReverseDNS} {
 			if result != nil && result.State != "not_attempted" {

@@ -11,10 +11,158 @@ not competing current requirements. References such as "above", "below" and
 "this deployment" retain their original context from the former combined tracker;
 use the dated deployment ledger when checking release scope.
 
+## Publication reconciliation (2026-10-15 UTC)
+
+This checkpoint publishes the pending dashboard/discovery source, regression
+tests and tracker updates after `e1b24ab`. Historical uncommitted/not-deployed
+notes retain their original dates; they do not override the latest deployment
+ledger. Publication includes the assistant/configuration and log-boundary
+extractions, business simulations, Results navigation and Restore feedback.
+It does not install undeployed production-service or standalone CLI changes.
+
+Pre-publication checks:
+
+- Full dashboard `make test`: exactly the four previously recorded failure
+  groups (enrollment readiness, stale-bundle platform fixture, placement shell
+  extraction and trusted-service ELF fixture); other packages pass.
+- Selected business, Great Lakes, assistant, platform services, Results,
+  discovery/progress/deadline and package-boundary race checks pass.
+- Sixteen selected desktop/tablet browser checks pass, covering Restore status
+  and logs, gateway Results/raw evidence/navigation, and existing assertion/
+  policy-result behavior. This is not a full browser-suite pass.
+- No additional Restore, business forwarding scenario, gateway rollout or
+  production-service restart was performed for publication.
+
+## Great Lakes business simulations and Restore feedback
+
+Software deployed 2026-10-15 UTC; live business acceptance remains blocked.
+See [business release](GUI%20deployments.md#great-lakes-business-service-deployment-2026-10-15-0056-utc)
+and [feedback release](GUI%20deployments.md#restore-feedback-deployment-2026-10-15-0103-utc).
+
+- [x] Implement seven stateful services: support, engineering builds, finance,
+  shipping, receiving, assembly and quality, all on dedicated `machine-13`.
+  Real create/read/advance/read HTTP flows persist per organization/generation/
+  machine, with strict identity/schema checks, atomic writes and bounded records.
+- [x] Provision independent provider keys, the directory service host and group
+  memberships; complete department/site runtime grants and all five standalone
+  catalog records. Runtime and each catalog record compile independently.
+  Catalog examples remain authoring records, not automatically published edits.
+- [x] Add two 42-pair Business scenarios covering twelve employees and seven
+  services: 13 allows and 71 denials. Check provider readiness before DNS;
+  enforce cross-host placement and fresh tuple-specific denial telemetry.
+- [x] Verify persistence/reload, strict inputs, corruption, concurrent exact
+  1,000-record capacity, write/audit failure semantics, policy/directory
+  consistency, placement, readiness, key preservation and state-bind isolation.
+  Focused race tests, compiler checks, vet, formatting, shell/JS checks and
+  macOS/Linux arm64/Linux amd64 builds pass. Full Go baseline exceptions remain.
+- [x] Deploy Simulator software and controller/proxy prebuilds while preserving
+  runtime configuration, production services and both hosted DNS relays.
+  Verify manifest/status/scenario APIs and both Business cards.
+- [x] Show organization Restore progress, rollback and completed/failed outcomes
+  above the catalog, regardless of active/selected card. Show immediate submit
+  feedback and logs during execution; retain failure log access on catalog errors.
+  Six focused desktop/tablet feedback tests and live version/status-element
+  checks pass; the embedded fix is installed.
+
+The user's Restore failed at policy-assertion settings verification and the
+previous runtime was restored and verified. A read-only post-rollback probe
+found matching organization/base DN but empty assertion source at revision 1.
+No repair or retry is claimed. New provider provisioning and both live access
+matrices are still unverified. The operation result is in memory and was cleared
+by the UI deployment restart; the local reset log remains available.
+
+## Scenario gateway response results
+
+Results navigation follow-up (2026-10-15 UTC): added Runner / Results tabs
+beside the run heading, including an observation count, disabled empty state,
+keyboard navigation and selection preservation across polling. Results replace
+the tracks instead of appearing below a long runner. Clearing evidence returns
+to Runner. Eight desktop/tablet browser checks pass, including a 40-step runner,
+viewport visibility and existing status/action placement. This UI follow-up is
+verified locally, not deployed; the release below predates the tabs.
+
+Verified locally on 2026-10-15 UTC (2026-10-14 EDT). An isolated Results-only
+release was installed in Simulator and the controller binaries at 00:49 UTC;
+live acceptance was blocked by the pre-existing manifest error at that release.
+The 00:56 UTC business-service executable subsequently resolved that error;
+no live forwarding acceptance run is claimed. Source is included in the current
+publication; Runner/Results tab rollout remains separate.
+
+- [x] Retain a versioned structured HTTP observation from the gateway client
+  through scenario execution/API snapshots, including responses that fail
+  allow/deny expectations, network errors and interrupted response bodies.
+  Emit observations before propagating command failure; keep verdict separate.
+- [x] Show a Results section with response code/reason, URLs, elapsed time,
+  decoded bytes read, content type, bounded/redacted headers and original
+  bounded raw body source. Never execute fetched HTML or parse/reformat raw
+  JSON; preserve non-UTF-8 bytes as labeled base64. Mark truncation, read-limit
+  byte counts and missing/old-controller evidence explicitly.
+- [x] Permit gateway fetches with no expectation, while retaining existing
+  organization allowlist and denial-probe restrictions. Preserve explicit
+  allow/deny behavior. Clear results when changing/clearing runs and avoid
+  rebuilding unchanged result views on polling.
+
+Six desktop/tablet browser checks pass, including inert malicious-looking
+HTML, exact JSON/large-number retention, failed expectations versus observed
+responses, empty/no-response/binary/unavailable states, and existing scenario
+run controls. Focused Go race tests, vet and embedded dashboard build pass.
+Go tests exercise real loopback redirects/HTTP 502, response header redaction
+at both ends, partial-body/network errors, output emission on failure, byte/
+preview bounds, binary preservation, duplicate/invalid/missing contracts and
+observational destination validation. Required `make test` still fails in
+four existing groups: enrollment readiness, stale policy-bundle installation,
+scenario placement fixture extraction and trusted-service Linux executable
+fixture validation. No full-suite pass is claimed.
+
+Current-run storage only; durable result history, downloads and other result
+types are not implemented. Both Simulator and machine-controller executables
+have been updated; exact release assets/hashes and restored DNS relay traffic
+are verified. The isolated release's full suite has the same 13 failing groups
+as its clean base, including nine additional external-runtime/seed-dependent
+failures outside the original workspace. No network scenario run or Control
+Room/production-service dependency change was performed. See the
+[deployment and rollback record](GUI%20deployments.md#scenario-gateway-results-deployment-2026-10-15-0049-utc).
+
+## Publication status (2026-10-14)
+
+All pending repository source, tests and documentation were committed and
+pushed to `origin/main` in `e1b24ab` (`Complete GUI workflows and service
+updates`). Historical "not committed or pushed" statements below describe the
+state at the time of those checks, not the current publication state.
+
+The full dashboard worktree executable was deployed to Simulator at 22:35 UTC
+and Control Room at 22:43 UTC on 2026-10-14. This includes shared editor
+gutter/undo changes, organization structured editors and toolbar alignment,
+and the GUI polish below. It does not deploy the standalone discovery CLI,
+replace Control-Service or Policy-Service, certify draft activation, or imply
+an authenticated Control Room browser check. See the [release ledger](GUI%20deployments.md#deployment-status).
+
+Final pre-publication validation: `cargo test --workspace` passes and
+`git diff --check` passes. The full dashboard `go test ./...` run passes the
+discovery CLI/engine, DNS-record, policy-client and operator-auth packages, but
+fails four dashboard test groups:
+
+- `TestEnrollmentAdministrationOverVerifiedTLSWithoutSimulator`: invitation
+  creation lacks a current organization-scoped readiness preflight.
+- `TestOrganizationPolicyInstallNeverUploadsStaleBundle`: its success fixture
+  lacks `ZPR_MULTINODE_PLATFORM`.
+- `TestScenarioPlacementPreflightMatchesLauncher`: its extraction cannot find
+  `resolve_machine_placement`.
+- `TestTrustedServiceBuildPublishesAtomicallyAndKeepsFreshArtifact`: its helper
+  fixture is not a Linux amd64 ELF executable.
+
+The earlier organization archive HTTP 404 failure recorded under discovery
+verification was fixed before publication; focused archive/permission tests
+pass and it is absent from the final full-suite failures. No full Go-suite
+pass is claimed. The Playwright suite was not rerun for the final release
+because Node/npm were unavailable; earlier selected browser results remain
+historical evidence.
+
 ## Control Room and Simulator GUI polish
 
 Verified locally on 2026-10-14. Simulator portion deployed at 2026-10-14
-22:35 UTC; Control Room portion deployed at 22:43 UTC. No commit or push.
+22:35 UTC; Control Room portion deployed at 22:43 UTC. Committed and pushed
+in `e1b24ab`; see the publication status above.
 
 - [x] Restyle the shared Help trigger consistently across Control Room and
   Simulator.
@@ -51,7 +199,26 @@ pass is claimed.
 
 ## Migration discovery CLI
 
-Verified locally on 2026-10-14; not deployed, committed or pushed.
+The original slice was published in `e1b24ab`; subsequent progress/deadline
+changes are included in the current publication. The standalone CLI is not
+deployed by dashboard-only releases.
+
+### Progress and scan lifetime follow-up (2026-10-15 UTC)
+
+- [x] Remove the overall scan deadline and reject obsolete `duration` config/
+  CLI options. Preserve bounded per-operation timeouts, worker/start-rate limits,
+  explicit authorization and interrupted partial-report export.
+- [x] Emit progress immediately, periodically while waiting, and on completed
+  checks. Keep report JSON separate on stdout; stderr adapts to terminal width/
+  resize or emits plain redirected lines. Never fabricate completion on cancel.
+- [x] Distinguish pingable clients with completed/no-open-port checks from hosts
+  with open TCP endpoints; count services as observed open endpoints, not
+  inferred application identities. Progress-output failure cancels scanning and
+  exports partial results before reporting the error.
+
+Current CLI/engine race checks and full-suite package tests pass. No new
+authorized real-subnet scan, remote scanner selection, authenticated adapter
+collection or migration-policy generation is claimed.
 
 ### Unlimited target ranges and list configuration
 

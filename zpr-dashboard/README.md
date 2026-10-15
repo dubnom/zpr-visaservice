@@ -109,6 +109,51 @@ response limit, error messages and attributes-only decoding. Local consumers use
 a type alias, keeping their JSON schema unchanged. Tests cover exact size bounds,
 redirects, cancellation/read failures, unrelated-data exclusion and local copies.
 
+The eleventh extraction puts the shared Claude HTTP completion transport in
+[`internal/assistant`](internal/assistant/), using explicit credentials, endpoint,
+HTTP client and caller-provided prompts. Message/reply aliases preserve the JSON
+contracts at every command caller. The command retains key discovery, model
+selection, the 45-second timeout and redirect refusal, permissions, task skills,
+request validation and production-versus-Simulator context selection. The neutral
+transport reads no environment or files and has a standard-library-only dependency
+check. The same package now owns `ReadAPIKeyFile`, which reads only a
+caller-selected path and preserves the protected regular-file/link/size/text
+checks; it performs no environment lookup or path discovery. Request
+headers/JSON, text-block joining, token usage, errors and the
+existing 64 KiB response-reader truncation behavior are preserved.
+
+Production assistant configuration now lives in command-local
+`assistant_config.go`, independent of Simulator discovery. Control-Service
+startup and policy-status enrichment use only `ANTHROPIC_API_KEY`, then
+`ZPR_ANTHROPIC_API_KEY_FILE`, then the existing `assistant/api-key` sibling of
+`ZPR_GATEWAY_CONFIG_STORE_DIR`. Production no longer derives a key path from
+`SIMULATION_MANIFEST`: configure the explicit file instead. Simulator status
+and all design/editor/profile/definition routes use a separate constructor,
+preserving manifest-sibling discovery and request-time key reload. Invalid
+selected files leave the assistant unavailable and log the error type without
+key text or file contents. Shared model/HTTP policy and task prompts are unchanged.
+This closes the audited assistant fallback leak, not the full production
+application/package boundary.
+
+The twelfth extraction moves production adapter-log inventory types and parsing
+into [`internal/controlservice/adapterlogs`](internal/controlservice/adapterlogs/).
+It reads only an explicit operator configuration file and uses only the standard
+library, enforced by a dependency test. Command aliases preserve the JSON schema;
+configuration selection, HTTP handling, log collection, runtime-state lookup and
+redaction stay command-owned. Validation, errors, 100-target/8-source limits and
+the existing single-decode/65,537-byte-reader behavior are unchanged. Package
+tests cover exact bounds, invalid sources, decoder compatibility, reload and
+operation without Simulator; existing production log integrations remain intact.
+
+The thirteenth extraction puts shared text formatting/redaction in
+[`internal/logview`](internal/logview/). Production adapter logs and diagnostics
+now call that neutral package directly rather than a Simulator machine-log
+helper or regex. Simulator retains a compatibility adapter. The exact existing
+byte-tail, line-count, whitespace and redaction behavior is preserved; diagnostics
+keep their separate text bounds. Tests cover exact boundaries and credential
+formats, and a standard-library-only dependency test enforces isolation. The
+helper receives only text and performs no configuration lookup or collection.
+
 Mode names, flags, API behavior, embedded resources, scripts, and container
 build targets are unchanged. This is not full production/Simulator separation,
 production gateway activation, or deployment. See the
@@ -126,6 +171,9 @@ go test -race ./internal/controlroom ./cmd/zpr-web-dashboard -run 'ControlRoom|C
 go test -race ./internal/dnsstats ./cmd/zpr-web-dashboard -run 'DNSStats|ControlServiceDNS|OperatorDNS|ControlRoom' -count=1
 go test -race ./internal/dnsrecords ./cmd/zpr-web-dashboard -run 'DNSRecord|ParseBINDTSIGKey|DNSStats|ControlServiceDNS|OperatorDNS' -count=1
 go test -race ./internal/policyclient ./cmd/zpr-web-dashboard -run 'PolicyAttributes|PolicyAssistantAttributes|PolicyProxy|PolicyService|ControlServiceProxiesPolicy|ControlServiceAssistant|PolicyAndAssertionAssistantContext|PolicyAttribute' -count=1
+go test -race ./internal/assistant ./cmd/zpr-web-dashboard -run 'Assistant|Claude|DesignReply|DesignProposal|Complete' -count=1 -timeout=90s
+go test -race ./internal/controlservice/adapterlogs ./cmd/zpr-web-dashboard -run 'AdapterLog|AdapterFile|FileLogSources|ControlService.*Log|OperatorLogComponents|LogComponents' -count=1 -timeout=90s
+go test -race ./internal/logview ./cmd/zpr-web-dashboard -run 'LogLines|LogRedaction|MachineLog|AdapterLog|FileLogSources|OperatorLogComponents|LogComponents|Diagnostics' -count=1 -timeout=90s
 ```
 
 ## Tests
@@ -3093,10 +3141,18 @@ policy/directory reset. Validation uses a temporary runtime rather than rewritin
 live identity/configuration files. DNS is rebound to the current node container
 on redeploy and its service records are checked before readiness.
 
-**See Logs** appears on the Simulator Organizations page only when the latest
-activation or base restore reports a failure. It opens the local reset log in a
-separate tab. The link disappears when a retry is resetting, completes, or returns
-to idle; a catalog refresh failure retains access to the last known failed reset.
+The Simulator Organizations page shows a persistent operation status above the
+catalog while activation or Restore is running, including its current phase and
+rollback progress, even for the already-active organization or when another card
+is selected. Completion and failure remain visible until the next operation or
+Simulator restart. Restore shows an immediate submitting status and disables
+duplicate Restore actions.
+
+**See Logs** is available while an operation runs or after it fails. It opens the
+local reset log in a separate tab. The link disappears after completion or a return
+to idle; a catalog refresh failure retains access to the last known operation.
+Operation status is currently in memory: restarting Simulator clears it, but does
+not delete the local reset log.
 
 ## LDAP Organization Graph
 
@@ -3661,3 +3717,13 @@ The individual process environment is documented in
 non-local deployments.
 
 Open `http://127.0.0.1:8787` for the Control Room UI.
+
+### Great Lakes business-service simulations
+
+Great Lakes includes seven stateful simulated business APIs and two 42-pair
+access-matrix scenarios. They use a dedicated provider host, authenticated
+employee machine adapters, persistent records, and fresh Visa denial evidence.
+They are not commercial applications or human/group-claim authentication tests.
+See the [Great Lakes guide](cmd/zpr-web-dashboard/examples/organizations/great-lakes/README.md)
+for the service/policy matrix, persistence limits, and deployment prerequisites.
+This source addition does not deploy providers into existing running containers.

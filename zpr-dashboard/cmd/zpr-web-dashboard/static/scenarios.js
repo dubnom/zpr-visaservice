@@ -247,6 +247,7 @@ function renderScenarioRun(run) {
   }
   const results = scenarioRun.steps || [];
   const scenario = scenarioRun.scenario || listedScenario?.published_scenario || listedScenario;
+  renderScenarioResults(scenarioRun, scenario);
   const planned = scenario ? [
     ...(scenario.steps || []).map((step) => ({ ...step, phase: "run" })),
     ...(scenario.cleanup || []).map((step) => ({ ...step, phase: "cleanup" })),
@@ -273,6 +274,129 @@ function renderScenarioRun(run) {
   updateScenarioTrackScroll();
   for (const button of document.querySelectorAll("[data-run-scenario]")) {
     button.disabled = busy || button.dataset.runOrganization !== activeScenarioOrganization || button.dataset.runPublished !== "true";
+  }
+}
+
+function renderScenarioResults(run, scenario) {
+  let section = document.getElementById("scenario-results");
+  if (!section) {
+    section = document.createElement("section");
+    section.id = "scenario-results";
+    section.className = "scenario-results";
+    section.setAttribute("aria-label", "Scenario results");
+    section.setAttribute("role", "tabpanel");
+    section.setAttribute("aria-labelledby", "scenario-results-tab");
+    const tracks = document.querySelector(".scenario-track-frame");
+    tracks.id = "scenario-runner-panel";
+    tracks.setAttribute("role", "tabpanel");
+    tracks.setAttribute("aria-labelledby", "scenario-runner-tab");
+    const tabs = document.createElement("div");
+    tabs.className = "scenario-view-tabs";
+    tabs.setAttribute("role", "tablist");
+    tabs.setAttribute("aria-label", "Scenario run views");
+    const selectView = (results) => {
+      for (const tab of tabs.children) {
+        const selected = (tab.id === "scenario-results-tab") === results;
+        tab.setAttribute("aria-selected", String(selected));
+        tab.tabIndex = selected ? 0 : -1;
+      }
+      tracks.hidden = results;
+      section.hidden = !results;
+      if (!results) updateScenarioTrackScroll();
+    };
+    for (const [id, label, panel] of [
+      ["scenario-runner-tab", "Runner", tracks.id],
+      ["scenario-results-tab", "Results (0)", section.id],
+    ]) {
+      const tab = document.createElement("button");
+      tab.id = id;
+      tab.type = "button";
+      tab.textContent = label;
+      tab.setAttribute("role", "tab");
+      tab.setAttribute("aria-controls", panel);
+      tab.addEventListener("click", () => selectView(id === "scenario-results-tab"));
+      tabs.append(tab);
+    }
+    tabs.addEventListener("keydown", (event) => {
+      if (!["ArrowLeft", "ArrowRight", "Home", "End"].includes(event.key)) return;
+      event.preventDefault();
+      const enabled = [...tabs.children].filter(tab => !tab.disabled);
+      const index = enabled.indexOf(document.activeElement);
+      const next = event.key === "Home" ? 0 : event.key === "End" ? enabled.length - 1 :
+        (index + (event.key === "ArrowLeft" ? -1 : 1) + enabled.length) % enabled.length;
+      enabled[next].click();
+      enabled[next].focus();
+    });
+    document.querySelector(".scenario-run-heading").insertBefore(tabs, document.getElementById("scenario-run-state"));
+    tracks.after(section);
+    selectView(false);
+  }
+  const steps = (run.steps || []).filter(step => step.result || step.result_error);
+  const resultsTab = document.getElementById("scenario-results-tab");
+  resultsTab.textContent = `Results (${steps.length})`;
+  resultsTab.disabled = steps.length === 0;
+  if (!steps.length && resultsTab.getAttribute("aria-selected") === "true") {
+    const restoreFocus = document.activeElement === resultsTab;
+    document.getElementById("scenario-runner-tab").click();
+    if (restoreFocus) document.getElementById("scenario-runner-tab").focus();
+  }
+  const signature = JSON.stringify([run.scenario_id, run.started_at, steps, scenario?.steps, scenario?.cleanup]);
+  if (section.dataset.signature === signature) return;
+  section.dataset.signature = signature;
+  section.replaceChildren();
+  if (!steps.length) return;
+  const heading = document.createElement("h3");
+  heading.textContent = "Results";
+  section.append(heading);
+  const planned = [...(scenario?.steps || []), ...(scenario?.cleanup || [])];
+  const text = (parent, tag, content, className = "") => {
+    const element = document.createElement(tag);
+    element.textContent = content;
+    if (className) element.className = className;
+    parent.append(element);
+    return element;
+  };
+  for (const step of steps) {
+    const card = document.createElement("article");
+    card.className = "scenario-result";
+    const definition = planned[step.number - 1];
+    text(card, "h4", `Step ${step.number}${step.machine ? ` · ${step.machine}` : ""} · Gateway fetch`);
+    if (!step.result) {
+      text(card, "p", step.result_error || "Result unavailable", "scenario-run-error");
+      section.append(card);
+      continue;
+    }
+    const result = step.result;
+    if (result.schema_version !== 1 || result.kind !== "http") {
+      text(card, "p", "Unsupported result format", "scenario-run-error");
+      section.append(card);
+      continue;
+    }
+    const status = result.status_code ? `HTTP ${result.status_code} ${result.status_text || ""}`.trim() : "No HTTP response";
+    text(card, "p", `${status} · ${Number(result.duration_ms || 0).toFixed(1)} ms · ${result.read_limited ? "at least " : ""}${result.bytes_read || 0} body bytes read`, "scenario-result-summary");
+    text(card, "p", `${result.method || "GET"} ${result.requested_url || ""}`);
+    if (result.final_url) text(card, "p", `Final URL: ${result.final_url}`);
+    text(card, "p", `Content type: ${result.content_type || "not supplied"}`);
+    const expected = definition?.expected;
+    text(card, "p", expected
+      ? `Expectation: ${expected} · Step ${step.status}${step.error ? `: ${step.error}` : ""}`
+      : `Expectation: none (observational) · Step ${step.status}${step.error ? `: ${step.error}` : ""}`);
+    if (result.error) text(card, "p", result.error, "scenario-run-error");
+    const headers = document.createElement("details");
+    text(headers, "summary", `Response headers (sensitive/unrecognized values redacted)${result.headers_limited ? " · truncated" : ""}`);
+    const headerText = Object.entries(result.headers || {}).map(([name, values]) =>
+      `${name}: ${Array.isArray(values) ? values.join("\n") : String(values)}`).join("\n");
+    text(headers, "pre", headerText || "No response headers", "scenario-result-source");
+    card.append(headers);
+    const body = document.createElement("details");
+    body.open = true;
+    text(body, "summary", `Response body · ${result.body_encoding === "base64" ? "base64 (non-UTF-8 bytes)" : "raw source"}${result.body_truncated ? " · truncated" : ""}`);
+    if (result.body_truncated) text(body, "p", "Only a bounded response preview is shown; this is not the complete body.");
+    const source = text(body, "pre", result.body || (result.status_code ? "(empty body)" : "(no response body)"), "scenario-result-source");
+    source.tabIndex = 0;
+    source.setAttribute("aria-label", `Step ${step.number} raw response body`);
+    card.append(body);
+    section.append(card);
   }
 }
 
@@ -362,14 +486,14 @@ function updateScenarioEditorActions() {
 const scenarioStepActions = [
   "start_machine", "wait_controller", "login", "select_workloads", "logout", "stop_machine",
   "start_workload", "stop_workload", "start_test_service", "stop_test_service",
-  "request_test_service", "benchmark_test_service", "start_service_fleet",
+  "request_test_service", "request_business_service", "benchmark_test_service", "start_service_fleet",
   "stop_service_fleet", "stress_traffic", "traffic", "resolve_dns", "delay",
 ];
 
 function scenarioStepMarkup(step, index) {
   const actions = step.action && !scenarioStepActions.includes(step.action) ? [...scenarioStepActions, step.action] : scenarioStepActions;
   const actionOptions = actions.map((action) => `<option value="${scenarioEscape(action)}" ${step.action === action ? "selected" : ""}>${scenarioEscape(action.replaceAll("_", " "))}</option>`).join("");
-  const expectedOptions = ["", "allow", "deny"].map((value) => `<option value="${value}" ${step.expected === value ? "selected" : ""}>${value || "Not set"}</option>`).join("");
+  const expectedOptions = ["", "allow", "deny"].map((value) => `<option value="${value}" ${step.expected === value ? "selected" : ""}>${value || (step.action === "request_web_gateway" ? "None (observe only)" : "Not set")}</option>`).join("");
   const values = {
     id: step.id || "",
     machine: step.machine || "",

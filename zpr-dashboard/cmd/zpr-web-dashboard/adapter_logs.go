@@ -2,36 +2,23 @@ package main
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
 	"io"
 	"net/http"
 	"os"
 	"os/exec"
-	"path/filepath"
-	"regexp"
 	"strings"
 	"time"
+
+	"neboagency.com/zpr-dashborad/internal/controlservice/adapterlogs"
+	"neboagency.com/zpr-dashborad/internal/logview"
 )
 
-type adapterLogInventory struct {
-	Adapters []adapterLogTarget `json:"adapters"`
-}
+type adapterLogInventory = adapterlogs.Inventory
 
-type adapterLogTarget struct {
-	ID      string                   `json:"id"`
-	Name    string                   `json:"name"`
-	Sources []adapterLogSourceConfig `json:"sources"`
-}
+type adapterLogTarget = adapterlogs.Target
 
-type adapterLogSourceConfig struct {
-	Name             string `json:"name"`
-	Kind             string `json:"kind"`
-	File             string `json:"file,omitempty"`
-	Container        string `json:"container,omitempty"`
-	Path             string `json:"path,omitempty"`
-	RuntimeContainer string `json:"runtime_container,omitempty"`
-}
+type adapterLogSourceConfig = adapterlogs.SourceConfig
 
 type adapterLogOutput struct {
 	Name  string   `json:"name"`
@@ -68,46 +55,8 @@ type adapterLogEntry struct {
 	Sources []adapterLogOutput `json:"sources"`
 }
 
-var adapterLogContainerName = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9_.-]{0,127}$`)
-
 func readAdapterLogInventory(path string) (adapterLogInventory, error) {
-	var inventory adapterLogInventory
-	file, err := os.Open(path)
-	if err != nil {
-		return inventory, err
-	}
-	defer file.Close()
-	decoder := json.NewDecoder(io.LimitReader(file, 65537))
-	decoder.DisallowUnknownFields()
-	if err := decoder.Decode(&inventory); err != nil {
-		return inventory, err
-	}
-	if len(inventory.Adapters) > 100 {
-		return inventory, errors.New("too many adapter log targets")
-	}
-	seen := make(map[string]bool)
-	for _, adapter := range inventory.Adapters {
-		if adapter.ID == "" || adapter.Name == "" || seen[adapter.ID] || len(adapter.Sources) > 8 {
-			return inventory, errors.New("invalid adapter log target")
-		}
-		seen[adapter.ID] = true
-		for _, source := range adapter.Sources {
-			if source.RuntimeContainer != "" && !adapterLogContainerName.MatchString(source.RuntimeContainer) {
-				return inventory, errors.New("invalid runtime container")
-			}
-			if source.Name == "" || source.Kind != "adapter" && source.Kind != "controller" {
-				return inventory, errors.New("invalid adapter log source")
-			}
-			if source.File != "" {
-				if !filepath.IsAbs(source.File) || source.Container != "" || source.Path != "" {
-					return inventory, errors.New("invalid file log source")
-				}
-			} else if !adapterLogContainerName.MatchString(source.Container) || source.Path != "" && !filepath.IsAbs(source.Path) {
-				return inventory, errors.New("invalid container log source")
-			}
-		}
-	}
-	return inventory, nil
+	return adapterlogs.ReadInventory(path)
 }
 
 func readAdapterLogSource(ctx context.Context, source adapterLogSourceConfig) (string, error) {
@@ -173,7 +122,7 @@ func newAdapterLogsHandler() http.Handler {
 				if err != nil {
 					log.Error = "Log source unavailable"
 				} else {
-					log.Lines = machineLogLines(output)
+					log.Lines = logview.Lines(output)
 				}
 				if state == "running" || entry.State == "unknown" {
 					entry.State = state

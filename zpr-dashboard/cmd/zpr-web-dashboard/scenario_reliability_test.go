@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -26,6 +27,106 @@ func stackFunctionForTest(t *testing.T, name string) string {
 		t.Fatalf("stack function %s incomplete", name)
 	}
 	return script[start : start+end+3]
+}
+
+func TestMachineControllerInstallReplacesOnlyInvalidDestinations(t *testing.T) {
+	function := stackFunctionForTest(t, "install_machine_controller")
+	directory := t.TempDir()
+	source := filepath.Join(directory, "source-controller")
+	if err := os.WriteFile(source, []byte("new executable"), 0700); err != nil {
+		t.Fatal(err)
+	}
+	run := func(destination string) error {
+		command := exec.Command("sh", "-c", function+"\ninstall_machine_controller \"$1\" \"$2\"\n", "sh", source, destination)
+		if output, err := command.CombinedOutput(); err != nil {
+			return fmt.Errorf("%w: %s", err, output)
+		}
+		return nil
+	}
+	assertInstalled := func(destination string) {
+		t.Helper()
+		info, err := os.Stat(destination)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if !info.Mode().IsRegular() || info.Mode().Perm() != 0700 {
+			t.Fatalf("installed mode=%v, want regular mode 0700", info.Mode())
+		}
+		content, err := os.ReadFile(destination)
+		if err != nil || string(content) != "new executable" {
+			t.Fatalf("installed controller=%q error=%v", content, err)
+		}
+	}
+
+	t.Run("missing binary destination", func(t *testing.T) {
+		destination := filepath.Join(directory, "missing", "controller")
+		if err := os.Mkdir(filepath.Dir(destination), 0700); err != nil {
+			t.Fatal(err)
+		}
+		if err := run(destination); err != nil {
+			t.Fatal(err)
+		}
+		assertInstalled(destination)
+	})
+	t.Run("empty directory destination", func(t *testing.T) {
+		destination := filepath.Join(directory, "empty-directory")
+		if err := os.Mkdir(destination, 0700); err != nil {
+			t.Fatal(err)
+		}
+		if err := run(destination); err != nil {
+			t.Fatal(err)
+		}
+		assertInstalled(destination)
+	})
+	t.Run("nonexecutable file destination", func(t *testing.T) {
+		destination := filepath.Join(directory, "nonexecutable")
+		if err := os.WriteFile(destination, []byte("stale"), 0600); err != nil {
+			t.Fatal(err)
+		}
+		if err := run(destination); err != nil {
+			t.Fatal(err)
+		}
+		assertInstalled(destination)
+	})
+	t.Run("valid executable is retained", func(t *testing.T) {
+		destination := filepath.Join(directory, "valid")
+		if err := os.WriteFile(destination, []byte("existing executable"), 0700); err != nil {
+			t.Fatal(err)
+		}
+		if err := run(destination); err != nil {
+			t.Fatal(err)
+		}
+		content, err := os.ReadFile(destination)
+		if err != nil || string(content) != "existing executable" {
+			t.Fatalf("existing executable changed to %q error=%v", content, err)
+		}
+	})
+	t.Run("nonempty directory is preserved", func(t *testing.T) {
+		destination := filepath.Join(directory, "nonempty-directory")
+		if err := os.Mkdir(destination, 0700); err != nil {
+			t.Fatal(err)
+		}
+		kept := filepath.Join(destination, "keep")
+		if err := os.WriteFile(kept, []byte("preserve"), 0600); err != nil {
+			t.Fatal(err)
+		}
+		if err := run(destination); err == nil {
+			t.Fatal("nonempty controller directory was replaced")
+		}
+		content, err := os.ReadFile(kept)
+		if err != nil || string(content) != "preserve" {
+			t.Fatalf("nonempty destination changed: content=%q error=%v", content, err)
+		}
+		entries, err := os.ReadDir(directory)
+		if err != nil {
+			t.Fatal(err)
+		}
+		for _, entry := range entries {
+			if strings.HasPrefix(entry.Name(), "nonempty-directory.tmp.") {
+				t.Fatalf("temporary controller file was left behind: %s", entry.Name())
+			}
+		}
+	})
 }
 
 func TestScenarioPlacementPreflightMatchesLauncher(t *testing.T) {

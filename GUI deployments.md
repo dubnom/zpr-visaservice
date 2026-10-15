@@ -6,12 +6,211 @@ This is a historical release ledger, not a live health report. Keep dated test,
 asset, configuration, scope and rollback evidence here. Feature-local release
 notes also remain in the completed-work archive to preserve their context.
 
-Latest recorded Control Room and Control-Service release:
-`zpr-editor-ui:20261014-dns-boundaries` (2026-10-14 16:26 UTC).
-Policy-Service and Simulator were not replaced or restarted; retain the
-separately recorded service release history below.
-This does not imply every source change was deployed. Commit/push state is
-separate; retain each dated entry's scope.
+Latest recorded dashboard executable deployments: Simulator
+Restore-feedback release (2026-10-15 01:03 UTC), and Control Room
+`zpr-editor-ui:20261014-control-room-gui` (2026-10-14 22:43 UTC). Simulator was
+recreated from its tagged image; Control Room was updated in its existing
+container's writable layer. These software deployments did not replace or
+restart Control-Service or Policy-Service; the user's subsequent Restore and
+rollback did restart organization runtime components. The latest recorded combined Control Room/Control-Service
+release remains `zpr-editor-ui:20261014-dns-boundaries` (16:26 UTC).
+Retain each dated entry's precise scope and rollback evidence.
+
+Publication follow-up: `e1b24ab` on 2026-10-14 is the preceding source checkpoint,
+not publication of the 2026-10-15 releases. This source checkpoint includes
+the current reconciliation and pending implementation.
+"No commit or push" in dated entries records the state at release time.
+Publication does not deploy additional CLI/service changes or expand prior
+verification claims.
+
+## Restore feedback deployment (2026-10-15 01:03 UTC)
+
+- Investigated the user's Restore without starting another operation. It failed
+  during `Verifying policy, assertions, LDAP, DNS, and logs`, reporting
+  `Policy assertion settings do not match organization great-lakes`.
+  Automatic rollback finished with `previous runtime restored and verified`.
+  A read-only mTLS settings probe after rollback returned Great Lakes and the
+  correct base DN but zero assertion-source characters at revision 1. No
+  assertion-settings repair or Restore retry was performed.
+- Fixed the missing active-organization progress surface: operation phase and
+  rollback progress now appear above the catalog for any selected card, followed
+  by a visible completed/failed result. Added immediate submitting feedback and
+  log access during execution, not just after failure. Logs remain local;
+  Simulator's operation state remains in memory and resets on restart.
+- Six focused desktop/tablet browser checks pass for running/failure/completion
+  feedback and retained log access. A broader initial selection also exposed
+  existing confirmation-test File-menu visibility assumptions and a removed
+  `organization-connection` selector; these unrelated old tests were not changed.
+- After confirming rollback finished and no machines were running, deployed
+  `zpr-simulator:20261015-restore-feedback`, image
+  `sha256:31705057ef603f84694c1b304e87af3e7afdb1c702fe54f03caec2d7a433e448`,
+  at `2026-10-15T01:03:15.558744674Z`. Only Simulator was recreated; restored
+  both hosted DNS relays and verified statistics responsiveness. Retained prior
+  container as `zpr-simulator-before-restore-feedback-20261015`.
+- Live browser loads `organizations.js?v=26` and the new accessible status
+  element; backend is connected and Great Lakes remains active. Restart cleared
+  the completed failure from the API to idle; exact failure evidence and
+  pre-deployment state are retained in session `files/restore-failure-final.json`
+  and `files/restore-feedback-before.json`. The reset log remains unchanged.
+  No organization reset, service scenario or commit/push was initiated.
+
+## Great Lakes business-service deployment (2026-10-15 00:56 UTC)
+
+- User authorized deployment after source-only validation. Built the current
+  dashboard worktree as `zpr-simulator:20261015-business-services`, image
+  `sha256:0e716fce3a9828a201cc3c70a442ac896c5b90df5373d400655c9fe25d80282a`.
+  This is not an isolated patch release; it retains the current worktree's
+  Results and other existing source changes.
+- Recreated only `zpr-simulator`, preserving its environment, bind mounts,
+  published ports, labels and bridge network. Started at
+  `2026-10-15T00:56:10.540347213Z`. Kept the stopped prior container as
+  `zpr-simulator-before-business-20261015` for rollback.
+- Installed Linux arm64/amd64 controller and proxy prebuilds and refreshed the
+  current Great Lakes generation's cached controller. No machines were running.
+  Arm64 controller SHA-256:
+  `e1e3a310fb8f9164de6b3a1a81d65739230ca52f63200d76c82deb9d54982218`;
+  amd64:
+  `185b7cfcdf2277447ed9dc74fb250220c4f943e3f4da6337b59053cf0fd284a6`.
+  Prior binaries and restricted container configuration are retained in this
+  session's `files/business-before-*` and `files/business-simulator-before.json`.
+- Restored the two Simulator-hosted DNS relays and their PID files without
+  recreating DNS or its adapter. Statistics relay responds successfully.
+  Control Room, Control-Service, Visa Service, DNS and Internet Gateway image
+  IDs and start times remain unchanged.
+- Live scenario/status APIs respond successfully; Great Lakes exposes thirteen
+  components and both new Business scenarios. Browser verification shows both
+  scenario cards, a connected backend, and no manifest-unavailable error.
+  This resolves the preceding release's observed manifest 503 with the new
+  executable; no manifest or saved organization configuration was edited.
+- Source validation: focused race tests, runtime policy and all five catalog
+  ZPLC checks, vet, macOS/Linux arm64/Linux amd64 builds, formatting and shell/JS
+  syntax passed. Required full `make test` still has the same four known
+  baseline failure groups; no full-suite pass is claimed.
+- No organization Restore, network reprovision, directory/policy reset, business
+  service launch or live access-matrix execution was performed. Great Lakes
+  still needs Restore/reprovision to seed its new provider identities and
+  directory host, followed by both Business scenarios for forwarding acceptance.
+  No commit or push was made for this deployment.
+
+## Scenario gateway Results deployment (2026-10-15 00:49 UTC)
+
+- User selected only Results changes on the previous release source and
+  explicitly approved proceeding despite the pre-existing Simulator
+  `503 {"error":"simulation manifest unavailable"}`. Preserved the configured
+  manifest and `SIMULATION_ORGANIZATION_ID=velocity`; did not repair or switch
+  organizations. No network scenario was started.
+- Built an isolated `e1b24ab` snapshot with only the HTTP observation contract,
+  gateway client capture/export, scenario result storage, Results UI/styles,
+  optional-expectation help, focused tests and related documentation. Excluded
+  concurrent business-service, assistant, log and production-service changes.
+  Source, reviewed patches, binaries, exact prior binaries, container-state
+  comparisons and test logs are retained in
+  `../../../.copilot/session-state/c597bffb-ead1-4da7-bae2-8b7f15caf752/files/scenario-results-release/`.
+- Linux arm64 executable SHA-256:
+  `96101948a8a3a8436623ec4b465b3c13e5ebd71765c43fca71dcb00eeb58339a`.
+  Linux amd64 controller SHA-256:
+  `120f3bd2a2053a025942920648f7fd439a2aa581395c97f8152c1b52ac71f3eb`.
+  Installed arm64 into the existing Simulator writable layer and both controller
+  prebuild paths under `.local-runtime/dashboard-stack`. Also updated the
+  installed controller for the current persisted runtime request,
+  `machine-runtimes/great-lakes/28882a1946384a40e1bdf0c7e99e864e/controller`.
+  Historical inactive generations were not rewritten. No machine containers
+  were running; future generations use the updated prebuilt binaries.
+- Restarted only `zpr-simulator` at `2026-10-15T00:49:59.14940675Z`.
+  Its container ID and original image ID are unchanged. Restored its two socat
+  relays with the original quoted `SYSTEM:"docker exec ..."` arguments.
+  Updated their existing PID files to container PIDs 68 and 74.
+  Verified statistics relay HTTP 200 and a framed DNS-over-TCP response through
+  the records relay (the diagnostic query was refused by upstream policy, not
+  a claim of successful DNS resolution). Production container IDs, image IDs
+  and start times match the captured pre-deployment baseline.
+- Verified running executable/controller hashes and executable file modes.
+  Served HTML, JS and new CSS match the isolated release byte-for-byte.
+  Live browser loads the new renderer, but the existing manifest error still
+  prevents the scenario catalog/run API from working. This is an installed
+  release, not live end-to-end gateway acceptance.
+- Isolated focused Go race checks, vet, formatting, both Linux builds and six
+  desktop/tablet browser checks pass. Required `make test` has the same 13
+  failing groups on both the clean base and isolated release: four previously
+  recorded failures plus nine external-runtime/seed-dependent failures in this
+  standalone snapshot. No full-suite pass is claimed.
+- Rollback: exact prior Simulator executable is retained both in the release
+  backups and `/usr/local/bin/zpr-web-dashboard-before-results-20261015` inside
+  Simulator (SHA-256
+  `3449abfc490d535bab303482df40caa26e87dd68e558833c297d28c2ae50f21c`).
+  Restore it to `/usr/local/bin/zpr-web-dashboard`, restart only Simulator and
+  restore both recorded relays. Restore `backups/controller-prebuilt-arm64`,
+  `backups/controller-prebuilt-amd64` and
+  `backups/controller-installed-great-lakes-28882a1946384a40e1bdf0c7e99e864e`
+  to their corresponding paths with mode 0700. Old arm64 controller SHA-256:
+  `426263b15ef8c34eebf727d37626326dfd6f86db4885e6d3b1ff46e04b837a4a`;
+  old amd64:
+  `10c2c69fb2f9df7bf06e30e44a192d1048789a74ebf8686d4f900607382ddcf1`.
+  The architecture marker was backed up but not changed. As with the preceding
+  releases, recreating Simulator from its original image loses the writable-layer
+  executable; retain these release artifacts for reinstallation. No commit/push.
+
+## Gateway cloud metadata recovery (2026-10-15 00:16 UTC)
+
+- The live Admin API reported `internet-gateway.svc.zpr` on the
+  `internet-gateway` actor as `Regular`. Control-Service had
+  `ZPR_PLATFORM_SERVICES=[]`, so the existing map renderer could not classify
+  the gateway or draw its external-network cloud. This was missing operator
+  configuration after removal of the old Simulator-manifest fallback, not a
+  gateway availability failure.
+- Added persistent operator-owned `dashboard-stack/platform-services.json`
+  configuration to the local launcher, with `ZPR_PLATFORM_SERVICES_FILE` as
+  an alternate path and explicit `ZPR_PLATFORM_SERVICES` taking precedence.
+  Validate a single JSON array and required descriptor identities before
+  stopping Control-Service. No Simulator-manifest/profile fallback was added.
+- With user approval, recreated only `zpr-control-service` at
+  `2026-10-15T00:16:24.497264762Z`, retaining image
+  `sha256:359cdf6d682ca5ad65fba92b3db83f25b7845f2631abcf2ca0beb613ab493abd`
+  and its existing operator connection settings/network attachments.
+  Installed the persistent annotation for `internet-gateway.svc.zpr`,
+  actor `internet-gateway`, kind `Gateway`, external network `public-internet`.
+  No binary rebuild, unrelated local extraction deployment, commit or push.
+- Verified the production snapshot over existing mTLS: connected, no errors,
+  gateway classified correctly, and live address/endpoints/actor retained.
+  Focused Go race tests, vet, shell syntax and diff checks pass. Added and ran
+  a real-Dex operator browser regression: desktop and tablet both verify the
+  labeled cloud and connecting line in Topology and World Map (2/2 pass).
+  The new browser test explicitly submits the current sign-in form and uses
+  the current `User: ...` status; pre-existing login tests were not modified.
+- Simulator (`22:35:44 UTC`), Control Room (`22:43:45 UTC`) and the persistent
+  gateway (`2026-10-13 16:33:17 UTC`) were not restarted. To remove the
+  annotations, set `ZPR_PLATFORM_SERVICES=[]` when recreating Control-Service,
+  or remove the persistent file and recreate without an explicit override.
+
+## Live scenario failure and launcher fix (2026-10-14 23:55 UTC)
+
+- The `great-lakes-finance-web-gateway` run failed on step 2 of 10 while waiting
+  for `machine-03`'s controller. The Simulator reported
+  `machine-03 controller did not connect: context deadline exceeded`; scenario
+  cleanup steps completed. The machine container exited with code 126 and its
+  final output was `/bin/sh: 1: exec: /usr/local/bin/zpr-machine-controller:
+  Permission denied`.
+- Root cause was in `scripts/dashboard-stack.sh`: it used `-x` alone to decide
+  whether `machine-workloads/controller` was an installed executable. The
+  controller path was an empty directory; directories can pass `-x`, so the
+  launcher skipped the copy and bind-mounted that directory at the executable
+  path. The prebuilt Linux arm64 and amd64 controller binaries are present.
+- Fixed the launcher to install through a temporary regular file with mode 0700,
+  replacing only an empty directory (and refusing symlinks, nonempty directories
+  and special files). Added a shell-function regression covering absent, empty
+  directory, non-executable file, already valid and nonempty directory cases.
+  `bash -n`, the new Go test, the related idle-refresh test, `go vet` and
+  `git diff --check` pass.
+- The script source is on a directory mounted into the running Simulator, so
+  the next machine start read the corrected installer. With the user's approval,
+  retried the same published scenario at 2026-10-15 00:07 UTC. Controller wait,
+  login, workload selection/start, DNS resolution and test-service request all
+  completed; workload stop, logout and machine stop cleanup also completed. The
+  run ended `completed` at step 10/10 with no error. No Simulator/Control-Service/
+  Policy-Service restart, policy mutation or organization change occurred. The
+  machine container is stopped after scenario cleanup; no labeled machine
+  containers remain running. This is a focused end-to-end scenario recovery,
+  not a full workday or broader fault-cycle acceptance.
 
 ## Deployment status
 

@@ -64,7 +64,7 @@ docker() {
 
 `
 			cmd := exec.Command("sh")
-			cmd.Stdin = strings.NewReader(harness + launch + "\nstart_control_service\n")
+			cmd.Stdin = strings.NewReader(harness + stackFunctionForTest(t, "control_platform_services") + "\n" + launch + "\nstart_control_service\n")
 			cmd.Env = append(cmd.Env, "SCRIPT_DIR="+scriptDir)
 			for _, entry := range os.Environ() {
 				if strings.HasPrefix(entry, "ANTHROPIC_API_KEY=") || strings.HasPrefix(entry, "EXPECTED_KEY=") {

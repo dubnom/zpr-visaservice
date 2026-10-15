@@ -70,16 +70,18 @@ type simulatorScenarioStep struct {
 }
 
 type simulatorScenarioStepResult struct {
-	Number     int       `json:"number"`
-	Phase      string    `json:"phase"`
-	Action     string    `json:"action"`
-	Machine    string    `json:"machine,omitempty"`
-	Component  string    `json:"component,omitempty"`
-	Status     string    `json:"status"`
-	StartedAt  time.Time `json:"started_at"`
-	FinishedAt time.Time `json:"finished_at"`
-	Output     string    `json:"output,omitempty"`
-	Error      string    `json:"error,omitempty"`
+	Number      int                 `json:"number"`
+	Phase       string              `json:"phase"`
+	Action      string              `json:"action"`
+	Machine     string              `json:"machine,omitempty"`
+	Component   string              `json:"component,omitempty"`
+	Status      string              `json:"status"`
+	StartedAt   time.Time           `json:"started_at"`
+	FinishedAt  time.Time           `json:"finished_at"`
+	Output      string              `json:"output,omitempty"`
+	Error       string              `json:"error,omitempty"`
+	Result      *scenarioHTTPResult `json:"result,omitempty"`
+	ResultError string              `json:"result_error,omitempty"`
 }
 
 type simulatorScenarioRun struct {
@@ -346,6 +348,14 @@ func validateSimulatorScenarioStep(step simulatorScenarioStep, manifest simulato
 		}
 		if _, err := readSimulatorComponent(manifest, step.Component); err != nil {
 			return err
+		}
+		if component, ok := businessComponent(organization, step.Component); ok && step.Machine != component.Machine {
+			return errors.New("business service requires its dedicated provider host")
+		}
+	case "request_business_service":
+		if component, ok := businessComponent(organization, step.Component); !ok || step.Machine == component.Machine ||
+			!manifestHasMachine(manifest, step.Machine) || (step.Expected != "allow" && step.Expected != "deny") || cleanup {
+			return errors.New("business request requires a configured service, employee machine and explicit allow/deny expectation")
 		}
 	case "request_test_service", "benchmark_test_service":
 		if !manifestHasMachine(manifest, step.Machine) || !testClientWorkloads[step.Component] {
@@ -633,6 +643,16 @@ func (manager *simulatorScenarioManager) executeStep(parent context.Context, man
 	result := simulatorScenarioStepResult{
 		Number: number, Phase: phase, Action: step.Action, Machine: step.Machine, Component: step.Component,
 		Status: "completed", StartedAt: started, FinishedAt: finished, Output: strings.TrimSpace(output),
+	}
+	if step.Action == "request_web_gateway" {
+		observation, resultErr := parseScenarioHTTPResult(output, step.Target)
+		result.Result = observation
+		// Do not duplicate the response in generic output, where unredacted
+		// headers from older clients could otherwise escape the result boundary.
+		result.Output = ""
+		if resultErr != nil {
+			result.ResultError = resultErr.Error()
+		}
 	}
 	if err != nil {
 		result.Status = "failed"
@@ -975,6 +995,13 @@ func simulatorScenarioExecutorForManifest(ctx context.Context, manifest simulato
 		if _, err := scenarioCommand(ctx, "docker", arguments...); err != nil {
 			return "", err
 		}
+		if mode == "business-service" {
+			if _, err := scenarioCommand(ctx, "docker", "exec", machineContainerName(step.Machine),
+				"/usr/local/bin/zpr-machine-controller", "-mode", "business-health", "-listen", address,
+				"-log-workload", step.Component); err != nil {
+				return "", err
+			}
+		}
 		if runtimeDriver, err := simulatorRuntimeDriverForManifest(manifest); err != nil {
 			return "", err
 		} else if runtimeDriver == "docker-multinode" {
@@ -1070,6 +1097,8 @@ func simulatorScenarioExecutorForManifest(ctx context.Context, manifest simulato
 			clientCount = step.ClientCount
 		}
 		return scenarioCommand(ctx, "docker", "exec", machineContainerName(step.Machine), "/usr/local/bin/zpr-machine-controller", "-mode", "stress-client", "-listen", serviceAddress, "-zpr-addr", sourceAddress, "-log-workload", profile.ClientWorkload, "-client-count", strconv.Itoa(clientCount), "-service-count", strconv.Itoa(profile.ServiceCount), "-base-port", strconv.Itoa(profile.BasePort), "-duration-seconds", strconv.Itoa(profile.DurationSeconds), "-request-delay-min-ms", strconv.Itoa(profile.RequestDelayMinMilliseconds), "-request-delay-max-ms", strconv.Itoa(profile.RequestDelayMaxMilliseconds), "-restart-interval-min-seconds", strconv.Itoa(profile.RestartIntervalMinSeconds), "-restart-interval-max-seconds", strconv.Itoa(profile.RestartIntervalMaxSeconds), "-restart-pause-min-seconds", strconv.Itoa(profile.RestartPauseMinSeconds), "-restart-pause-max-seconds", strconv.Itoa(profile.RestartPauseMaxSeconds))
+	case "request_business_service":
+		return executeBusinessRequest(ctx, manifest, step)
 	case "request_test_service", "benchmark_test_service":
 		if err := requireScenarioWorkload(step.Machine, step.Component); err != nil {
 			return "", err
@@ -1229,6 +1258,16 @@ func simulatorScenarioExecutorForManifest(ctx context.Context, manifest simulato
 }
 
 func simulatorTestServiceLaunch(manifest simulatorManifest, component simulatorComponent) (string, []string, error) {
+	if _, ok := businessWorkload(component.Name); ok {
+		organization, err := loadSimulatorOrganization(simulatorOrganizationsDirectory(), activeSimulatorOrganizationID(manifest))
+		if err != nil {
+			return "", nil, err
+		}
+		if !organization.BusinessSimulation {
+			return "", nil, errors.New("business simulations are not enabled for this organization")
+		}
+		return "business-service", nil, nil
+	}
 	if component.Name == "internet-gateway" {
 		gateway, err := simulatorWebGatewayForManifest(manifest)
 		if err != nil {

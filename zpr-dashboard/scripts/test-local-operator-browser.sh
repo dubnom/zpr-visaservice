@@ -14,6 +14,7 @@ chrome_args=$(jq -nc --arg pins "$room_pin,$idp_pin" --arg ip "$host_ip" \
 # No blanket ignoreHTTPSErrors, password traces, screenshots, or private-key mounts.
 docker run --rm --user "$(id -u):$(id -g)" -e HOME=/tmp \
     -e ZPR_LOCAL_OPERATOR_DIR=/operator -e ZPR_LOCAL_OPERATOR_CHROME_ARGS="$chrome_args" \
+    -e ZPR_EXPECT_GATEWAY_SERVICE -e ZPR_EXPECT_GATEWAY_NETWORK \
     -v "$directory/stack.json:/operator/stack.json:ro" \
     -v "$directory/oidc.json:/operator/oidc.json:ro" \
     -v "$directory/operator-password:/operator/operator-password:ro" \

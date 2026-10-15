@@ -338,6 +338,20 @@ zprMachineLocation: Milwaukee, Wisconsin, USA
 ou: Finance
 zprMachineSecure: TRUE
 
+dn: uid=machine-13,ou=Machines,dc=greatlakes,dc=test
+objectClass: inetOrgPerson
+objectClass: zprMachine
+uid: machine-13
+cn: machine-13
+sn: Simulation service host
+zprMachineId: machine-13
+zprMachineType: desktop
+zprMachineModel: Simulated Business Service Host
+zprMachineLocation: Milwaukee, Wisconsin, USA
+ou: Engineering
+zprMachineOwner: james.wu
+zprMachineSecure: TRUE
+
 dn: uid=shipping-portal,ou=Machines,dc=greatlakes,dc=test
 objectClass: inetOrgPerson
 uid: shipping-portal

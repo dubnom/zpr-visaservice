@@ -21,21 +21,23 @@ import (
 	"time"
 
 	"neboagency.com/zpr-dashborad/internal/gateway"
+	"neboagency.com/zpr-dashborad/internal/simulator/business"
 )
 
 type testAppEvent struct {
-	Time          time.Time `json:"time"`
-	Role          string    `json:"role"`
-	Direction     string    `json:"direction"`
-	ClientID      string    `json:"client_id,omitempty"`
-	Service       string    `json:"service,omitempty"`
-	Remote        string    `json:"remote,omitempty"`
-	Path          string    `json:"path"`
-	Status        int       `json:"status"`
-	BodyPreview   string    `json:"body_preview,omitempty"`
-	BodyBytes     int       `json:"body_bytes,omitempty"`
-	BodyTruncated bool      `json:"body_truncated,omitempty"`
-	Error         string    `json:"error,omitempty"`
+	Time          time.Time           `json:"time"`
+	Role          string              `json:"role"`
+	Direction     string              `json:"direction"`
+	ClientID      string              `json:"client_id,omitempty"`
+	Service       string              `json:"service,omitempty"`
+	Remote        string              `json:"remote,omitempty"`
+	Path          string              `json:"path"`
+	Status        int                 `json:"status"`
+	BodyPreview   string              `json:"body_preview,omitempty"`
+	BodyBytes     int                 `json:"body_bytes,omitempty"`
+	BodyTruncated bool                `json:"body_truncated,omitempty"`
+	Error         string              `json:"error,omitempty"`
+	Result        *scenarioHTTPResult `json:"result,omitempty"`
 }
 
 const webGatewayPagePreviewLimit = 8 << 10
@@ -46,7 +48,14 @@ var testLogPorts = map[string]int{
 	"echo-service": 18084, "metrics-service": 18085, "internet-gateway": 18086,
 }
 
-var testServicePorts = map[string]string{"echo-service": "8080", "metrics-service": "8081", "internet-gateway": "8082"}
+var testServicePorts = func() map[string]string {
+	ports := map[string]string{"echo-service": "8080", "metrics-service": "8081", "internet-gateway": "8082"}
+	for _, spec := range business.Specs() {
+		ports[spec.Workload] = strconv.Itoa(spec.Port)
+		testLogPorts[spec.Workload] = 18100 + spec.Port - 8443
+	}
+	return ports
+}()
 var testClientWorkloads = map[string]bool{"finance-client": true, "operations-client": true, "telemetry-client": true}
 
 var testLogServers = struct {
@@ -529,7 +538,7 @@ func validateWebGatewayPageTarget(targetURL, expected string, allowedHosts []str
 	}
 	allowed := webGateway.AllowsHost(parsed.Hostname())
 	switch expected {
-	case "allow":
+	case "", "allow":
 		if !allowed {
 			return errors.New("expected web gateway host is not in the organization allowlist")
 		}
@@ -539,13 +548,13 @@ func validateWebGatewayPageTarget(targetURL, expected string, allowedHosts []str
 			return errors.New("web gateway denial probes are limited to apple.com hosts outside the allowlist")
 		}
 	default:
-		return errors.New("web gateway page request expected result must be allow or deny")
+		return errors.New("web gateway page request expected result must be empty, allow or deny")
 	}
 	return nil
 }
 
 func runWebGatewayClient(proxyAddress, targetURL, sourceAddress, clientID, workload, expected string) error {
-	if !testClientWorkloads[workload] || clientID == "" || (expected != "allow" && expected != "deny") {
+	if !testClientWorkloads[workload] || clientID == "" || (expected != "" && expected != "allow" && expected != "deny") {
 		return errors.New("web gateway client requires a supported workload, client id, and expected result")
 	}
 	source := net.ParseIP(strings.TrimSpace(sourceAddress))
@@ -562,22 +571,29 @@ func runWebGatewayClient(proxyAddress, targetURL, sourceAddress, clientID, workl
 	}
 	proxyURL := &url.URL{Scheme: "http", Host: proxyAddress}
 	transport := &http.Transport{
-		Proxy:                 http.ProxyURL(proxyURL),
-		DialContext:           (&net.Dialer{Timeout: 3 * time.Second, KeepAlive: 30 * time.Second, LocalAddr: &net.TCPAddr{IP: source}}).DialContext,
-		ResponseHeaderTimeout: 15 * time.Second,
-		TLSHandshakeTimeout:   10 * time.Second,
+		Proxy:                  http.ProxyURL(proxyURL),
+		DialContext:            (&net.Dialer{Timeout: 3 * time.Second, KeepAlive: 30 * time.Second, LocalAddr: &net.TCPAddr{IP: source}}).DialContext,
+		ResponseHeaderTimeout:  15 * time.Second,
+		TLSHandshakeTimeout:    10 * time.Second,
+		MaxResponseHeaderBytes: 64 << 10,
 	}
 	client := &http.Client{Transport: transport, Timeout: 25 * time.Second}
 	defer client.CloseIdleConnections()
 	event, err := requestWebGatewayPage(context.Background(), client, targetURL, clientID, workload, expected, appendTestEvent)
-	if err != nil {
-		return err
+	return writeWebGatewayResult(os.Stdout, event, err)
+}
+
+func writeWebGatewayResult(writer io.Writer, event testAppEvent, requestErr error) error {
+	if event.Result != nil {
+		if err := json.NewEncoder(writer).Encode(event); err != nil {
+			return errors.Join(requestErr, fmt.Errorf("write gateway result: %w", err))
+		}
 	}
-	return json.NewEncoder(os.Stdout).Encode(event)
+	return requestErr
 }
 
 func requestWebGatewayPage(ctx context.Context, client *http.Client, targetURL, clientID, workload, expected string, writeEvent func(string, testAppEvent) error) (testAppEvent, error) {
-	if client == nil || clientID == "" || !testClientWorkloads[workload] || (expected != "allow" && expected != "deny") {
+	if client == nil || clientID == "" || !testClientWorkloads[workload] || (expected != "" && expected != "allow" && expected != "deny") {
 		return testAppEvent{}, errors.New("invalid web gateway page request")
 	}
 	sent := testAppEvent{Time: time.Now().UTC(), Role: "client", Direction: "sent", ClientID: clientID, Service: "internet-gateway", Remote: targetURL, Path: targetURL}
@@ -588,12 +604,19 @@ func requestWebGatewayPage(ctx context.Context, client *http.Client, targetURL, 
 	if err != nil {
 		return testAppEvent{}, err
 	}
+	started := time.Now()
+	result := &scenarioHTTPResult{
+		SchemaVersion: 1, Kind: "http", Method: http.MethodGet, RequestedURL: targetURL, BodyEncoding: "utf-8",
+	}
 	response, err := client.Do(request)
 	if err != nil {
 		failed := sent
 		failed.Time = time.Now().UTC()
 		failed.Direction = "failed"
 		failed.Error = err.Error()
+		result.DurationMS = float64(time.Since(started)) / float64(time.Millisecond)
+		result.Error = err.Error()
+		failed.Result = result
 		if logErr := writeEvent(workload, failed); logErr != nil {
 			return failed, errors.Join(err, logErr)
 		}
@@ -601,11 +624,18 @@ func requestWebGatewayPage(ctx context.Context, client *http.Client, targetURL, 
 	}
 	defer response.Body.Close()
 	body, readErr := io.ReadAll(io.LimitReader(response.Body, webGatewayPageBodyLimit+1))
-	if readErr != nil {
-		return testAppEvent{}, readErr
+	result.DurationMS = float64(time.Since(started)) / float64(time.Millisecond)
+	result.StatusCode, result.StatusText = response.StatusCode, http.StatusText(response.StatusCode)
+	result.FinalURL = targetURL
+	if response.Request != nil && response.Request.URL != nil {
+		result.FinalURL = response.Request.URL.String()
 	}
-	truncated := len(body) > webGatewayPageBodyLimit
-	if truncated {
+	result.ContentType = response.Header.Get("Content-Type")
+	result.Headers, result.HeadersLimited = gatewayResultHeaders(response.Header)
+	result.BytesRead = len(body)
+	result.ReadLimited = len(body) > webGatewayPageBodyLimit
+	truncated := len(body) > webGatewayPageBodyLimit || readErr != nil
+	if len(body) > webGatewayPageBodyLimit {
 		body = body[:webGatewayPageBodyLimit]
 	}
 	bodyBytes := len(body)
@@ -613,13 +643,23 @@ func requestWebGatewayPage(ctx context.Context, client *http.Client, targetURL, 
 		body = body[:webGatewayPagePreviewLimit]
 		truncated = true
 	}
+	setGatewayResultBody(result, body)
+	result.BodyTruncated = truncated
+	if readErr != nil {
+		result.Error = fmt.Sprintf("read response body: %v", readErr)
+	}
 	event := testAppEvent{
 		Time: time.Now().UTC(), Role: "client", Direction: "received", ClientID: clientID,
 		Service: "internet-gateway", Remote: targetURL, Path: targetURL, Status: response.StatusCode,
 		BodyPreview: string(body), BodyBytes: bodyBytes, BodyTruncated: truncated,
+		Result: result,
 	}
+	event.Error = result.Error
 	if err := writeEvent(workload, event); err != nil {
-		return event, err
+		return event, errors.Join(readErr, err)
+	}
+	if readErr != nil {
+		return event, readErr
 	}
 	if expected == "allow" && (response.StatusCode < http.StatusOK || response.StatusCode >= http.StatusMultipleChoices) {
 		return event, fmt.Errorf("web gateway page request returned unexpected HTTP %d", response.StatusCode)

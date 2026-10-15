@@ -15,10 +15,10 @@ import (
 	"sort"
 	"strings"
 	"sync"
-	"syscall"
 	"time"
 
 	"github.com/BurntSushi/toml"
+	"neboagency.com/zpr-dashborad/internal/assistant"
 	"neboagency.com/zpr-dashborad/internal/policyclient"
 	"neboagency.com/zpr-dashborad/internal/servicehttp"
 )
@@ -150,10 +150,7 @@ type policyCheckResponse struct {
 	Line        int              `json:"line,omitempty"`
 }
 
-type assistantMessage struct {
-	Role    string `json:"role"`
-	Content string `json:"content"`
-}
+type assistantMessage = assistant.Message
 
 type assistantRequest struct {
 	Editor    string             `json:"editor,omitempty"`
@@ -163,11 +160,7 @@ type assistantRequest struct {
 	MaxTokens int                `json:"max_tokens"`
 }
 
-type assistantReply struct {
-	Answer       string `json:"answer"`
-	InputTokens  int    `json:"input_tokens"`
-	OutputTokens int    `json:"output_tokens"`
-}
+type assistantReply = assistant.Reply
 
 type claudeAssistant struct {
 	apiKey string
@@ -466,65 +459,6 @@ func resolvedRegularFile(path string) (string, error) {
 		return "", errors.New("not a regular file")
 	}
 	return resolved, nil
-}
-
-func newClaudeAssistant() *claudeAssistant {
-	key := assistantAPIKey()
-	if key == "" {
-		return nil
-	}
-	return &claudeAssistant{
-		apiKey: key,
-		model:  envOr("ANTHROPIC_MODEL", defaultAssistantModel),
-		url:    "https://api.anthropic.com/v1/messages",
-		http: &http.Client{
-			Timeout:       45 * time.Second,
-			CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse },
-		},
-	}
-}
-
-func assistantAPIKey() string {
-	if key := strings.TrimSpace(os.Getenv("ANTHROPIC_API_KEY")); key != "" {
-		return key
-	}
-	keyFile := strings.TrimSpace(os.Getenv("ZPR_ANTHROPIC_API_KEY_FILE"))
-	if keyFile == "" {
-		if manifest := strings.TrimSpace(os.Getenv("SIMULATION_MANIFEST")); manifest != "" {
-			keyFile = filepath.Join(filepath.Dir(manifest), "dashboard-stack", "assistant", "api-key")
-		} else if store := strings.TrimSpace(os.Getenv("ZPR_GATEWAY_CONFIG_STORE_DIR")); store != "" {
-			keyFile = filepath.Join(filepath.Dir(store), "assistant", "api-key")
-		}
-	}
-	if keyFile == "" {
-		return ""
-	}
-	info, err := os.Lstat(keyFile)
-	if err != nil || !info.Mode().IsRegular() || info.Mode().Perm()&0o077 != 0 {
-		return ""
-	}
-	stat, ok := info.Sys().(*syscall.Stat_t)
-	if !ok || stat.Nlink != 1 || info.Size() > 4096 {
-		return ""
-	}
-	file, err := os.OpenFile(keyFile, os.O_RDONLY|syscall.O_NOFOLLOW|syscall.O_NONBLOCK, 0)
-	if err != nil {
-		return ""
-	}
-	defer file.Close()
-	opened, err := file.Stat()
-	if err != nil || !os.SameFile(info, opened) || !opened.Mode().IsRegular() {
-		return ""
-	}
-	data, err := io.ReadAll(io.LimitReader(file, 4097))
-	if err != nil || len(data) > 4096 {
-		return ""
-	}
-	key := strings.TrimSuffix(strings.TrimSuffix(string(data), "\n"), "\r")
-	if key == "" || strings.TrimSpace(key) != key || strings.ContainsAny(key, "\r\n\x00") {
-		return ""
-	}
-	return key
 }
 
 func (a *application) handleGetPolicy(w http.ResponseWriter, r *http.Request) {
@@ -1143,67 +1077,6 @@ func (a *claudeAssistant) reply(ctx context.Context, source string, attributes [
 }
 
 func (a *claudeAssistant) complete(ctx context.Context, system string, messages []assistantMessage, model string, maxTokens int) (assistantReply, error) {
-	type contentBlock struct {
-		Type string `json:"type"`
-		Text string `json:"text"`
-	}
-	type apiMessage struct {
-		Role    string `json:"role"`
-		Content string `json:"content"`
-	}
-	requestBody := struct {
-		Model     string       `json:"model"`
-		MaxTokens int          `json:"max_tokens"`
-		System    string       `json:"system"`
-		Messages  []apiMessage `json:"messages"`
-	}{Model: model, MaxTokens: maxTokens, System: system, Messages: make([]apiMessage, len(messages))}
-	for index, message := range messages {
-		requestBody.Messages[index] = apiMessage{Role: message.Role, Content: message.Content}
-	}
-	body, err := json.Marshal(requestBody)
-	if err != nil {
-		return assistantReply{}, err
-	}
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost, a.url, bytes.NewReader(body))
-	if err != nil {
-		return assistantReply{}, err
-	}
-	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set("x-api-key", a.apiKey)
-	req.Header.Set("anthropic-version", "2023-06-01")
-	resp, err := a.http.Do(req)
-	if err != nil {
-		return assistantReply{}, err
-	}
-	defer resp.Body.Close()
-	responseBody, err := io.ReadAll(io.LimitReader(resp.Body, 64<<10))
-	if err != nil {
-		return assistantReply{}, err
-	}
-	if resp.StatusCode != http.StatusOK {
-		return assistantReply{}, fmt.Errorf("Anthropic returned HTTP %d", resp.StatusCode)
-	}
-	var response struct {
-		Content []contentBlock `json:"content"`
-		Usage   struct {
-			InputTokens  int `json:"input_tokens"`
-			OutputTokens int `json:"output_tokens"`
-		} `json:"usage"`
-	}
-	if err := json.Unmarshal(responseBody, &response); err != nil {
-		return assistantReply{}, err
-	}
-	var answer strings.Builder
-	for _, block := range response.Content {
-		if block.Type == "text" {
-			if answer.Len() > 0 {
-				answer.WriteString("\n")
-			}
-			answer.WriteString(block.Text)
-		}
-	}
-	if answer.Len() == 0 {
-		return assistantReply{}, errors.New("Claude response contained no text")
-	}
-	return assistantReply{Answer: answer.String(), InputTokens: response.Usage.InputTokens, OutputTokens: response.Usage.OutputTokens}, nil
+	client := assistant.Client{APIKey: a.apiKey, URL: a.url, HTTP: a.http}
+	return client.Complete(ctx, system, messages, model, maxTokens)
 }

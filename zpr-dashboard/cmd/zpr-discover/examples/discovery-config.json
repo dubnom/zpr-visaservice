@@ -13,6 +13,5 @@
   "workers": 8,
   "rate": 20,
   "timeout": "1s",
-  "duration": "2m",
   "output": "-"
 }

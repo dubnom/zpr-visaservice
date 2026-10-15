@@ -14,6 +14,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"sort"
 	"strconv"
 	"strings"
 	"sync"
@@ -135,7 +136,26 @@ func readSimulatorManifest() (simulatorManifest, error) {
 		err = validateSimulatorManifest(manifest)
 	}
 	if err == nil {
-		_, err = loadSimulatorOrganization(simulatorOrganizationsDirectory(), manifest.OrganizationID)
+		var organization simulatorOrganization
+		organization, err = loadSimulatorOrganization(simulatorOrganizationsDirectory(), manifest.OrganizationID)
+		if err == nil {
+			names := make([]string, 0, len(organization.WorkloadServices))
+			for name := range organization.WorkloadServices {
+				names = append(names, name)
+			}
+			sort.Strings(names)
+			for _, name := range names {
+				if component, ok := businessComponent(organization, name); ok {
+					found := false
+					for _, existing := range manifest.Components {
+						found = found || existing.Name == name
+					}
+					if !found {
+						manifest.Components = append(manifest.Components, component)
+					}
+				}
+			}
+		}
 	}
 	return manifest, err
 }
@@ -199,10 +219,10 @@ func runSimulator(listen string) error {
 	mux.Handle("GET /api/simulator/trusted-source", simulatorTrustedSourceHandler(readAssertionLDAP))
 	mux.HandleFunc("GET /api/simulator/assistant/status", handleSimulatorAssistantStatus)
 	mux.HandleFunc("POST /api/simulator/design-assistant", func(w http.ResponseWriter, r *http.Request) {
-		simulatorDesignAssistantHandler(newClaudeAssistant())(w, r)
+		simulatorDesignAssistantHandler(newSimulatorClaudeAssistant())(w, r)
 	})
 	mux.HandleFunc("POST /api/simulator/editor-assistant", func(w http.ResponseWriter, r *http.Request) {
-		simulatorEditorAssistantHandler(newClaudeAssistant())(w, r)
+		simulatorEditorAssistantHandler(newSimulatorClaudeAssistant())(w, r)
 	})
 	mux.HandleFunc("GET /api/simulator/organizations", handleSimulatorOrganizations)
 	mux.HandleFunc("GET /api/simulator/activation-log", handleSimulatorActivationLog)
@@ -227,17 +247,17 @@ func runSimulator(listen string) error {
 	mux.HandleFunc("GET /api/simulator/organizations/{organization}/draft/definitions/revisions", handleOrganizationDefinitionsHistory)
 	mux.HandleFunc("GET /api/simulator/organizations/{organization}/draft/definitions/revisions/{revision}", handleOrganizationDefinitionsHistory)
 	mux.HandleFunc("POST /api/simulator/organizations/{organization}/draft/definitions/assistant", func(w http.ResponseWriter, r *http.Request) {
-		simulatorDesignAssistantHandler(newClaudeAssistant())(w, r)
+		simulatorDesignAssistantHandler(newSimulatorClaudeAssistant())(w, r)
 	})
 	mux.HandleFunc("POST /api/simulator/organizations/{organization}/draft/profile/assistant", func(w http.ResponseWriter, r *http.Request) {
-		simulatorDesignAssistantHandler(newClaudeAssistant())(w, r)
+		simulatorDesignAssistantHandler(newSimulatorClaudeAssistant())(w, r)
 	})
 	mux.HandleFunc("PUT /api/simulator/organizations/{organization}/profile", handleOrganizationDraft)
 	mux.HandleFunc("POST /api/simulator/organizations/{organization}/profile/check", handleOrganizationDraft)
 	mux.HandleFunc("GET /api/simulator/organizations/{organization}/profile/revisions", handleOrganizationDraftHistory)
 	mux.HandleFunc("GET /api/simulator/organizations/{organization}/profile/revisions/{revision}", handleOrganizationDraftHistory)
 	mux.HandleFunc("POST /api/simulator/organizations/{organization}/profile/assistant", func(w http.ResponseWriter, r *http.Request) {
-		simulatorDesignAssistantHandler(newClaudeAssistant())(w, r)
+		simulatorDesignAssistantHandler(newSimulatorClaudeAssistant())(w, r)
 	})
 	mux.HandleFunc("GET /api/simulator/organizations/{organization}/directory/revisions", handleWorkspaceDirectoryRevisions)
 	mux.HandleFunc("GET /api/simulator/organizations/{organization}/directory", handleWorkspaceDirectoryGet)
@@ -795,7 +815,9 @@ func validateMachineWorkloadSelection(manifest simulatorManifest, workloads []st
 	selected := make(map[string]struct{}, len(workloads))
 	for _, name := range workloads {
 		if _, exists := known[name]; !exists {
-			return errors.New("unknown simulated workload")
+			if _, err := readSimulatorComponent(manifest, name); err != nil {
+				return errors.New("unknown simulated workload")
+			}
 		}
 		if _, duplicate := selected[name]; duplicate {
 			return errors.New("duplicate simulated workload")
@@ -1007,6 +1029,11 @@ func firstIPv6Address(output string) string {
 func readSimulatorComponent(manifest simulatorManifest, name string) (simulatorComponent, error) {
 	for _, component := range manifest.Components {
 		if component.Name == name {
+			return component, nil
+		}
+	}
+	if organization, err := loadSimulatorOrganization(simulatorOrganizationsDirectory(), activeSimulatorOrganizationID(manifest)); err == nil {
+		if component, ok := businessComponent(organization, name); ok {
 			return component, nil
 		}
 	}

@@ -1,0 +1,15 @@
+.scenario-run-heading { flex-wrap: wrap; }
+.scenario-view-tabs { display: flex; gap: 4px; }
+.scenario-view-tabs [role="tab"] { padding: 7px 10px; font-size: 12px; }
+.scenario-view-tabs [aria-selected="true"] { background: var(--leaf-wash); border-color: var(--teal); }
+.scenario-view-tabs [role="tab"]:disabled { cursor: not-allowed; opacity: .5; }
+.scenario-results { min-width: 0; margin-top: 16px; }
+.scenario-results[hidden], .scenario-track-frame[hidden] { display: none; }
+.scenario-results h3 { margin: 0 0 12px; }
+.scenario-result { min-width: 0; border: 1px solid var(--line); border-radius: 6px; padding: 12px; margin-bottom: 12px; }
+.scenario-result h4 { margin: 0 0 8px; font-size: 13px; }
+.scenario-result p { margin: 6px 0; font-size: 12px; overflow-wrap: anywhere; }
+.scenario-result-summary { font-family: var(--mono); }
+.scenario-result details { margin-top: 12px; min-width: 0; }
+.scenario-result summary { cursor: pointer; font-size: 12px; }
+.scenario-result-source { max-height: 360px; overflow: auto; padding: 10px; border: 1px solid var(--line); font: 12px/1.5 var(--mono); white-space: pre-wrap; overflow-wrap: anywhere; user-select: text; }

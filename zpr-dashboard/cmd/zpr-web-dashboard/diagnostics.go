@@ -20,6 +20,8 @@ import (
 	"strings"
 	"sync"
 	"time"
+
+	"neboagency.com/zpr-dashborad/internal/logview"
 )
 
 const (
@@ -259,7 +261,7 @@ func (provider *openObserveDiagnosticsProvider) query(ctx context.Context, sourc
 		if len(body) > 2048 {
 			body = body[:2048] + "…"
 		}
-		parsedLogs = append(parsedLogs, diagnosticsLog{Timestamp: timestamp, Severity: diagnosticsHitString(hit, "severity_text", "severity", "level"), Body: machineLogSecrets.ReplaceAllString(body, "[REDACTED]"), Attributes: diagnosticsSafeAttributes(hit)})
+		parsedLogs = append(parsedLogs, diagnosticsLog{Timestamp: timestamp, Severity: diagnosticsHitString(hit, "severity_text", "severity", "level"), Body: logview.Redact(body), Attributes: diagnosticsSafeAttributes(hit)})
 	}
 	metricLimit := maxDiagnosticsMetrics
 	if source.Kind == "ZPR node" {

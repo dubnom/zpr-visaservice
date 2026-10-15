@@ -236,10 +236,11 @@ func main() {
 	machineID := flag.String("machine-id", "", "Machine identity for machine-controller mode")
 	clientID := flag.String("client-id", "", "Client identifier for test-client mode")
 	logWorkload := flag.String("log-workload", "", "Workload for test log reader mode")
+	businessState := flag.String("business-state-dir", "/var/lib/zpr-business", "Persistent directory for simulated business records")
 	testService := flag.String("test-service-name", "", "Expected service for test-client mode")
 	gatewayProxy := flag.String("gateway-proxy", "", "IPv6 HTTP proxy address for web-gateway-client mode")
 	gatewayURL := flag.String("gateway-url", "", "Page URL for web-gateway-client mode")
-	gatewayExpected := flag.String("gateway-expected", "", "Expected web gateway result: allow or deny")
+	gatewayExpected := flag.String("gateway-expected", "", "Optional web gateway expectation: allow or deny; empty records observations only")
 	stressServiceCount := flag.Int("service-count", 0, "Number of services for stress-test modes")
 	stressBasePort := flag.Int("base-port", 0, "First TCP port for stress-test services")
 	stressClientCount := flag.Int("client-count", 0, "Number of logical clients for stress-client mode")
@@ -334,6 +335,22 @@ func main() {
 		}
 	case "web-gateway-service":
 		if err := gateway.RunWebService(*listen, *logWorkload, strings.Split(*gatewayAllowedHosts, ",")); err != nil {
+			log.Fatal(err)
+		}
+	case "business-service":
+		if err := runBusinessService(*listen, *logWorkload, *businessState); err != nil {
+			log.Fatal(err)
+		}
+	case "business-client":
+		ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
+		defer cancel()
+		if err := runBusinessClient(ctx, *listen, *zprAddress, *logWorkload); err != nil {
+			log.Fatal(err)
+		}
+	case "business-health":
+		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+		defer cancel()
+		if err := checkBusinessService(ctx, *listen, *logWorkload); err != nil {
 			log.Fatal(err)
 		}
 	case "test-client":

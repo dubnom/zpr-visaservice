@@ -35,6 +35,7 @@ type simulatorOrganization struct {
 	WorkloadServices   map[string][]string            `json:"workload_services,omitempty"`
 	WebGateway         *simulatorWebGatewayProfile    `json:"web_gateway,omitempty"`
 	LoadTest           *simulatorLoadTestProfile      `json:"load_test,omitempty"`
+	BusinessSimulation bool                           `json:"business_simulation,omitempty"`
 }
 
 type simulatorWebGatewayProfile struct {
@@ -293,6 +294,9 @@ func validateSimulatorOrganization(organization simulatorOrganization) error {
 }
 
 func validateOrganizationDefinition(organization simulatorOrganization, incomplete bool) error {
+	if err := validateBusinessSimulationOrganization(organization); err != nil {
+		return err
+	}
 	if !validScenarioID(organization.ID) || strings.TrimSpace(organization.Name) == "" || strings.TrimSpace(organization.Description) == "" {
 		return errors.New("id, name, and description are required")
 	}

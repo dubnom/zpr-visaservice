@@ -52,10 +52,10 @@ bin/zpr-discover -config my-discovery.json -authorized -output inventory.json
 
 Keys match flag names without the leading dash, including `scanner-id`,
 `organization`, `targets`, `ports`, `ping`, `reverse-dns`, `protocol-checks`,
-`workers`, `rate`, `timeout`, `duration`, `adapter-inventory`, `output` and
+`workers`, `rate`, `timeout`, `adapter-inventory`, `output` and
 `dry-run`. **`targets` is a nonempty list of strings, one IP, CIDR or dash
 range per item** (not a comma-separated string). Port specifications and
-durations remain strings; worker/rate values are integers; switches are JSON
+timeouts remain strings; worker/rate values are integers; switches are JSON
 booleans. For example:
 
 ```json
@@ -87,8 +87,12 @@ must convert a string `targets` value to an array; the old type is rejected.
 command-line authorization. Unknown/duplicate keys, nulls, wrong types, trailing
 data and files over 64 KiB are rejected before network activity. File paths
 in the config are relative to the process working directory, not the config
-directory. The existing specification-size/port, timeout, duration and concurrency limits
+directory. The existing specification-size/port, timeout and concurrency limits
 also apply to configuration values.
+
+There is no overall scan deadline. Remove `duration` from older configuration
+files and omit the former `-duration` flag; these options are no longer accepted.
+Scans run until the requested scope finishes or you interrupt them.
 
 ## Ping and reverse names
 
@@ -118,10 +122,45 @@ Dry runs perform neither check and do not require a ping executable.
 - Neither result gates TCP checks, changes the target IP, or enables additional
   targets. No ping reply or PTR record does not mean a host is absent.
 - Each host check has the same per-operation timeout as a TCP connection.
-  Host checks share the worker pool, start-rate limiter and total scan budget
-  with TCP checks. They can make a previously sufficient budget too short.
+  Host checks share the worker pool and start-rate limiter with TCP checks.
+  Enabling them increases the total work, not an overall deadline.
 
 ## Run an authorized scan
+
+While scanning, the command writes status to **stderr** immediately, every
+second, and when checks finish. In an interactive terminal, a single line
+updates in place with a progress bar and percentage across TCP and host checks:
+
+```text
+[=====-----] 50.00% Scanning 10/20 12s | clients: 4  hosts: 2  services: 3
+```
+
+The line fits the terminal width (trailing details are clipped on narrow
+terminals), adapts when resized, and ends with a newline before the export
+summary. Interrupted scans show `Stopped` with their actual partial percentage,
+never a fabricated full bar. Redirected stderr and `TERM=dumb` retain plain,
+newline-separated status without terminal control sequences.
+
+Status places the completed/planned ping and reverse-DNS check count and elapsed
+time beside the scanning percentage, followed by clients, hosts and services.
+The percentage still includes all requested TCP and host checks.
+A host is a distinct target IP with at least one open TCP port.
+A client is a pingable IP only after all its requested TCP checks finish
+without an open port. Pending, cancelled or unexpectedly failed TCP checks do
+not establish client status. This means no open ports were found among the
+requested ports, not that every possible port was checked.
+Clients and hosts are disjoint; multiple ports never double-count a host.
+Services count open TCP endpoints (IP/port pairs), not verified application
+protocols. Reverse names, imported listener data, closed ports and timeouts
+do not increase discovery counts. Completed checks include failed and
+cancelled operations. Planned counts remain exact for large scopes.
+Active-work/error counters are omitted from the status line; errors remain in
+the report and final export/error summaries.
+Waiting for rate limits or slow checks still produces periodic updates.
+The final export summary distinguishes a complete scan from a partial one.
+
+Status never enters the JSON report on stdout or in `-output` files. Redirect
+stderr separately to save the status log; dry-run output remains JSON-only.
 
 After reviewing the dry-run output, replace `-dry-run` with `-authorized`:
 
@@ -135,7 +174,6 @@ bin/zpr-discover \
   -rate 20 \
   -workers 8 \
   -timeout 1s \
-  -duration 2m \
   -output inventory.json
 ```
 
@@ -169,12 +207,10 @@ Limits:
   100 across all workers, with no retry bursts.
 - Connection timeout defaults to 1 second; allowed range 10 milliseconds to
   5 seconds. An optional protocol check has a separate timeout of the same size.
-- Overall budget defaults to 2 minutes, allowed range 1 second to 30 minutes.
-  A large scope can exceed this budget; the export will be explicitly partial.
-  Removing the host cap does not remove the rate, timeout or duration limits.
-  Large scopes may need multiple operator-selected, non-overlapping runs;
-  there is no automatic continuation/resume.
-- Ctrl-C/SIGTERM or budget expiry stops new work, cancels in-flight work, and
+- There is no overall scan budget or automatic duration cutoff. Large scopes
+  continue under the same rate, worker and per-check timeout limits until
+  completion or interruption; there is no automatic continuation/resume.
+- Ctrl-C/SIGTERM stops new work, cancels in-flight work, and
   exports a partial report when output remains writable.
 
 Exit codes: `0` for a fully attempted scope without unexpected check
@@ -256,7 +292,7 @@ their meanings; incompatible changes require a new schema version.
 |---|---|
 | `schema_version` | `2` for both reports and dry-run previews; adapter imports remain version `1` |
 | `scanner_id`, `organization` | Operator-assigned labels |
-| `started_at`, `finished_at`, `deadline` | UTC scan timing and total deadline |
+| `started_at`, `finished_at` | UTC scan timing; CLI scans have no overall deadline |
 | `transport`, `ports` | Explicit remote probe scope (`tcp` only) |
 | `targets` | Compact sorted/merged ranges: `[{"first":"IP","last":"IP"}, ...]`, inclusive endpoints |
 | `host_count` | Exact unique target count as a decimal string |

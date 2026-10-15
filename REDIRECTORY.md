@@ -1,6 +1,6 @@
 # Source and Project Reorganization Plan
 
-Status reconciled 2026-10-14. Most checklist items remain planned; the shared
+Status reconciled 2026-10-15 UTC (2026-10-14 EDT). Most checklist items remain planned; the shared
 editor-controller reuse is implemented and deployed. The first backend
 extraction now places neutral Gateway forwarding and the HTTP/CONNECT runtime
 in `zpr-dashboard/internal/gateway`, with a standard-library-only dependency
@@ -26,10 +26,30 @@ Simulator still runs the first three; Policy-Service and separate gateways
 were not updated. Earlier release scopes below are historical.
 The first seven extractions were committed and pushed as `ed27bca`; historical
 uncommitted labels below describe their state at the time of each increment.
-The eighth extraction is not committed or pushed. A ninth extraction now isolates
-Policy-Service forwarding in `internal/policyclient`; it is locally verified,
-uncommitted and not deployed. A tenth extraction adds the bounded assistant
-attribute client to that same package, also verified, uncommitted and not deployed.
+The eighth through tenth extractions were subsequently committed and pushed in
+`e1b24ab`; the ninth isolates Policy-Service forwarding in `internal/policyclient`,
+and the tenth adds its bounded assistant attribute client. The 22:35 UTC Simulator
+and 22:43 UTC Control Room dashboard-only releases include that published source;
+they did not update Control-Service, Policy-Service or separate gateways.
+Earlier uncommitted/not-deployed labels below are historical verification states,
+not current publication status. An eleventh extraction isolates neutral
+Claude HTTP completion in `internal/assistant`. A twelfth extraction moves
+production adapter-log inventory types and validation into
+`internal/controlservice/adapterlogs`.
+The thirteenth extracts shared log formatting/redaction into `internal/logview`,
+removing production adapter-log and diagnostics calls to Simulator-owned
+helpers. All three increments are locally verified and included in the
+2026-10-15 Simulator worktree release; Control Room/Control-Service rollout
+remains open. They are included in the current source publication.
+The audited production assistant key fallback is now isolated: production
+configuration is in `assistant_config.go`, protected file reading is neutral in
+`internal/assistant`, and manifest-sibling discovery is Simulator-only.
+This M2 source slice is verified locally and included in the Simulator worktree
+release and current publication; the production service processes have not been
+updated for this slice. It does not complete the production application boundary.
+Great Lakes Restore exposed an unresolved assertion-seeding verification failure
+and rolled back successfully. Keep that repair under independent production
+configuration contracts, not a restored Simulator-profile fallback.
 Full production/Simulator separation is not
 complete. Reorganize incrementally to
 make ownership and dependency boundaries enforceable without changing behavior.
@@ -46,6 +66,264 @@ Related trackers:
 - [Scaling](SCALING.md): performance and capacity changes.
 - [Repository guidance](AGENTS.repo.md): production/Simulator boundary.
 - [Deployment history](GUI%20deployments.md): dated release scope and verification.
+
+## Remaining delivery milestones (2026-10-14)
+
+**Seven milestones remain open.** These are completion gates, not estimates of
+seven edits, seven sessions or seven deployments. The thirteen extractions above
+are evidence toward these gates, not thirteen completed milestones. Do not add
+another milestone merely because implementation needs another package.
+
+The audited command set comprises 59 non-`_test.go` Go files (58 at the initial
+ownership audit, plus `assistant_config.go`); this is a scope
+measurement, not a target file count or a classification of every file's role.
+Concurrent additions outside this slice are not covered by this measured set.
+The older inventory below remains historical. No milestone is complete until
+its exit evidence is recorded here.
+
+| ID | Deliverable | Status | Exit criteria |
+| --- | --- | --- | --- |
+| M1 | Compatibility and ownership baseline | In progress | Map all current command files and affected assets/scripts to owners; inventory production routes, auth/TLS/CSRF, defaults and persistent paths; identify cross-domain calls; record focused baseline commands and unrelated failures. Every remaining move has an owner and compatibility contract. |
+| M2 | Production application boundary | In progress | Control Room and Control-Service handlers, inventory, diagnostics, operator configuration and lifecycle are composed from production packages. They cannot import Simulator implementation directly or transitively, read its configuration, or require its availability. Dependency checks and production startup/feature tests with Simulator unavailable enforce this. |
+| M3 | Policy and trusted-source ownership | Planned | Repository/versioned documents, configuration forms, trusted connectors and assertion evaluation have cohesive owners and explicit contracts. Separate Simulator seeding/provisioning from production repository defaults; preserve storage ordering, authorization, source-owned diagnostics and task prompt/context boundaries. Reuse existing authentication/enrollment/delegation packages. |
+| M4 | Simulator ownership and thin dispatcher | Planned | Organizations/drafts, workspaces, scenarios, machines/sessions/workloads and provisioning live in Simulator-owned packages; test workload runtimes have an explicit owner. Resolve cross-document organization authority before behavior depends on it. The compatibility command retains only flags/configuration, assembly and lifecycle, with no remaining domain implementation hidden in adapters. |
+| M5 | Frontend and embedded-resource ownership | In progress | Explicit Control Room/Simulator page adapters and cohesive feature controllers use neutral shared utilities. Preserve public asset URLs, skill selection, embedding/load order, editor behavior and cancellation. Desktop/tablet regressions and production features with Simulator unavailable pass; builds contain all required assets/skills. |
+| M6 | Rust and naming disposition | Planned | Review the identified Rust manager/admin responsibilities and misleading names. Record justified splits or explicit retain-as-is decisions; implement only approved changes with invariant tests and compatibility checks. No arbitrary line-count split, repository/module rename or incidental runtime-data migration is required. |
+| M7 | Integrated acceptance and handoff | Planned | Review final dependency directions, reconcile architecture/README/index links and artifact locations, and verify native/cross-target builds plus container/installer packaging and required Go/Rust/browser suites. Record all remaining baseline failures as exceptions, not a full pass. Commit/push and deployment remain separately authorized actions; any requested rollout needs persistent-state preservation, rollback and served-asset/service checks. |
+
+### Execution order and stopping rule
+
+1. Finish M1 before choosing the next extraction; use a file-ownership and
+   cross-domain call inventory rather than selecting another convenient leaf.
+2. Deliver M2 and M3 as cohesive production slices. Each may contain several
+   reviewable implementation changes; each change must advance an exit criterion.
+3. Finish M4 after production contracts are explicit. M5 can proceed independently
+   once its service adapters are defined; existing shared-editor work counts
+   toward M5 but does not close it.
+4. M6 starts with a review, not an automatic Rust rewrite. Retaining sound modules
+   or compatibility names is an acceptable documented outcome.
+5. Close M7 only after the implementation gates and acceptance evidence are
+   complete. Structural completion does not itself require deploying live systems.
+
+Organization profile-versus-directory authority and any runtime-data/name
+migration require explicit decisions rather than assumptions. Record those
+decisions under the affected milestone; unresolved decisions block that scope,
+not unrelated work. Preserve unrelated worktree edits and never change an
+existing failing test without permission.
+
+**Current bounded deliverable:** the M1 source ownership and production-contract
+audit below is recorded and its focused baseline passes. Exhaustive per-mode
+configuration/default and packaging acceptance remains open; M1 is not closed.
+The audited assistant configuration slice is implemented and locally verified,
+as recorded below. Production repository seeding and fixture inputs remain
+Simulator-coupled and are the next bounded ownership work. Report progress as milestones closed/open and the current
+milestone's remaining gates, not a running count of tiny extractions.
+
+The detailed checklists below remain the requirement inventory. They refine these
+seven gates rather than creating another delivery sequence. A scope increase
+must be explicit; unrelated feature, reliability or scaling work does not silently
+extend this reorganization.
+
+## M1 audit: command ownership and production contracts (2026-10-14)
+
+This is a source audit of the current worktree, not a runtime health assessment.
+The 59 audited command-directory non-`_test.go` Go files are assigned below
+(the original 58 plus production `assistant_config.go`). Several are
+mixed files: an ownership assignment does not mean that an independent package
+already exists or that every function has been audited. Tests remain with their
+current implementations until the corresponding extraction.
+
+### Current file ownership map
+
+Paths in this table are relative to
+[`cmd/zpr-web-dashboard`](zpr-dashboard/cmd/zpr-web-dashboard/). The proposed
+destinations refine the existing tree rather than authorizing new applications.
+
+| Files | Current responsibility and destination |
+| --- | --- |
+| `main.go`, `control_service.go` | Mixed dispatcher, shared application/models, Visa Admin client/snapshot, Control Room and Control-Service startup. Keep flags/assembly/lifecycle at the entry point; move production inventory and HTTP/application behavior to production owners. Static embedding currently stays here. |
+| `operator_login.go`, `operator_policy.go`, `operator_delegation.go`, `enrollment.go`, `change_review.go` | Production security/enrollment/review composition using existing packages. `operator_login.go` also assembles Simulator security: separate caller configuration from neutral security mechanisms rather than importing a Simulator owner into Control Room. |
+| `node_denials.go`, `node_display_names.go` | Production inventory enrichment/configuration; candidate owner `controlservice/inventory`. Denial/counter collection currently shares diagnostics types and provider selection. |
+| `adapter_logs.go`, `diagnostics.go`, `dns_records.go`, `dns_stats.go`, `trusted_changes.go` | Production operator logs/metrics, DNS and change feeds. Adapter inventory, DNS transport and log formatting already have packages; remaining HTTP/provider/collection composition belongs to Control-Service. |
+| `gateway_api.go`, `gateway_config.go`, `gateway_config_store.go` | Production gateway contracts, validation and draft revisions; keep separate from Simulator workload execution and actual gateway activation. |
+| `browser_gateway.go`, `gateway_service.go` | Browser-access runtime adapter and mixed gateway runtime/workload adapters. Reuse `browsergateway`/`gateway` cores; move fixed-upstream scenario logging to the Simulator/test-workload owner, not the production transport. |
+| `policy.go`, `policy_service.go`, `policy_store.go`, `policy_staging.go`, `policy_attributes.go`, `policy_assertions.go`, `policy_test_api.go`, `policy_test_fixtures.go`, `config_form.go` | Policy repository/API/configuration/staging/attributes/assertion settings and policy-test contracts. Mixed files still contain HTTP utilities and Simulator-derived initialization/fixtures; these must not move wholesale into a production package. |
+| `assistant_config.go` | Production assistant environment/path resolution and shared model/HTTP client composition. No Simulator discovery; protected file reading is in neutral `internal/assistant`. Keep only production/neutral dependencies when moving this composition into a production package. |
+| `assertions.go`, `assertion_expressions.go`, `assertion_ldap.go`, `assertion_runtime.go`, `assertion_sources.go`, `lint.go` | Parser/evaluator/lint, provider connectors and Control-Service assertion scheduling. Separate reusable evaluation contracts from production runtime, repository settings and Simulator consumers; preserve source-owned diagnostics. |
+| `assistant_skills.go`, `editor_assistant.go`, `design_assistant.go` | Embedded task resources and mixed task dispatch. Neutral completion is extracted; policy/config/assertion/gateway prompts belong to their domains, design/directory/scenario/organization context to Simulator. Keep explicit embedding ownership. |
+| `organizations.go`, `organization_activation.go`, `organization_bundle_profile.go`, `organization_create.go`, `organization_definitions.go`, `organization_duplicate.go`, `organization_workspace.go` | Simulator organization profiles, private bundles, portable definitions, creation and activation. Do not treat these as production repository configuration. |
+| `directory_workspace.go`, `simulator_workspace.go`, `workspace_store.go`, `trusted_source.go` | Simulator directory/workspace revisions and live directory viewer. `workspace_store.go` is Simulator artifact persistence despite its generic name; `trusted_source.go` loads active Simulator organization/container data despite its generic name. |
+| `simulator.go`, `simulator_policy.go`, `scenario.go`, `scenario_check.go`, `scenario_reliability.go` | Simulator routing/security/manifest/component composition and scenario execution/placement. Destinations are Simulator application/scenario owners; production may not import them. |
+| `machine_control.go`, `machine_control_scope.go`, `machine_logs.go` | Simulator controller/session/runtime-generation transport, orchestration and logs. Neutral text formatting is extracted; machine/container/workload selection is not neutral. |
+| `policy_layers.go`, `test_app.go` | Simulator provisioning policy composition and test/stress/benchmark workloads. The former loads organization profiles; the latter also has workload-log HTTP adapters. Preserve CLI modes but do not place these in production repository/default initialization. |
+
+### Production entry points and compatibility contracts
+
+Authoritative registration remains in
+[`control_service.go`](zpr-dashboard/cmd/zpr-web-dashboard/control_service.go),
+[`policy_service.go`](zpr-dashboard/cmd/zpr-web-dashboard/policy_service.go),
+[`assertion_runtime.go`](zpr-dashboard/cmd/zpr-web-dashboard/assertion_runtime.go)
+and [`trusted_changes.go`](zpr-dashboard/cmd/zpr-web-dashboard/trusted_changes.go).
+This route-family inventory includes delegated registrations; it is not a
+replacement router specification.
+
+| Surface | Current contract to preserve |
+| --- | --- |
+| Compatibility CLI | 20 dispatched modes; default `control-room`, `ZPR_WEB_MODE`/`-mode`, `ZPR_WEB_LISTEN`/`-listen` default `127.0.0.1:8787`. Keep all machine/workload/proxy/policy-composition flags in `main.go`, even when implementations move. |
+| Control Room | Static `/`, `/auth/operator/*`, `/api/change-review/`, signed `/api/enrollment/`, authorized `/api/` proxy and local `GET /bind9.xsl`. Keep direct-TLS/host/approved-peer boundary, OIDC sessions and CSRF; preserve typed-nil/no-auth loopback development behavior and enrollment's distinct authorization. |
+| Control-Service | Default listen `127.0.0.1:8790`; server cert/key/client CA required; TLS 1.3 with verified client certificates. Registers snapshot, actor visas, diagnostics, adapter logs, DNS records/stats/stylesheet, gateway contracts/drafts/assistant, policy assistant/proxy, assertion runtime, change feeds and both enrollment prefixes. Preserve route specificity and permission/method behavior. |
+| Snapshot/actor visas | `GET /api/snapshot`, `GET /api/actors/{actor}/visas`; preserve JSON tags, empty/null distinctions, partial/disconnected/configuration statuses, sorted output, deduplication, live visa expiry and 404 handling. Snapshot deadline 10s; actor-visas deadline 15s; Admin HTTP timeout 8s and decoder bound 2 MiB. |
+| Operator monitoring | `GET /api/diagnostics`, `/api/adapter-logs`, `/api/dns/records`, `/api/dns/stats/` and `/bind9.xsl`; preserve independent operator origins/inventory, stale/error reporting, caps, redaction and no-store headers. File history must not imply a running process. |
+| Policy-Service | Default listen `127.0.0.1:8789`; TLS 1.3/verified client cert required. `/api/policy` status/context; categories, records, duplicate/rename/archive/restore, revisions, staging, checks/config-form conversion, tests/fixtures, attributes/rescan; assertion settings GET/PUT. Repository storage/configuration and compiler contracts stay production-owned. |
+| Assertions/change feeds | Analyze/format/source, GET/PUT assertion settings view and evaluation; trusted-source feed list and per-source changes. Preserve scheduling/last-update/error behavior and existing source validation and request ownership. |
+| Assistants/gateways | Policy and gateway assistant status/completion remain Control-Service-owned; no raw browser credentials or key. Preserve task skills, allowed editors/models, size/token limits and error contracts. Gateway draft validation/revisions are not deployment/activation. |
+
+The permission source of truth is
+[`controlroom.APIPermission`](zpr-dashboard/internal/controlroom/authorization.go):
+monitoring uses `monitor.read`; policy/assertion routes use
+`policy.read`/`policy.analyze`/`policy.edit`; gateways use
+`gateway.read`/`gateway.analyze`/`gateway.edit`. Unknown routes fail closed.
+Change review and enrollment have their own domain/organization/delegation
+checks, not this generic gate.
+[`localEditorRequest`](zpr-dashboard/cmd/zpr-web-dashboard/policy.go) retains
+the verified-client/peer/host/origin check via `servicehttp`, with explicit
+`ZPR_CONTROL_ROOM_PROXY_IP`; it is not equivalent to named-user authorization.
+Do not replace one boundary with the other during a move.
+
+### Configuration, state and resource ownership
+
+- Production connections: Control Room uses `ZPR_CONTROL_SERVICE_URL`,
+  `ZPR_CONTROL_CLIENT_CERT_FILE`/`KEY_FILE`, service CA/server-name settings;
+  Control-Service uses its `ZPR_CONTROL_SERVICE_*` listener credentials and
+  `ZPR_ADMIN_*` Visa Admin settings plus `ZPR_POLICY_SERVICE_*`/
+  `ZPR_POLICY_CLIENT_*` transport settings. Preserve the existing Admin
+  certificate-chain verification and optional configured server-name semantics;
+  do not substitute the different service-mTLS transport as a cosmetic cleanup.
+- Production monitoring: `ZPR_PLATFORM_SERVICES`, `ZPR_PROVIDER_MANAGER_URLS`,
+  `ZPR_DEMO_LDAP_EDITOR_URL`, `ZPR_NODE_DISPLAY_NAMES_FILE`,
+  `ZPR_NODE_DENIAL_METRICS_FILE`, `ZPR_DIAGNOSTICS_*`,
+  `ZPR_ADAPTER_LOG_CONFIG_FILE`, `ZPR_DNS_STATS_URL` and
+  `ZPR_DNS_TRANSFER_*` are operator configuration, not Simulator inventory.
+  Node denial config currently derives a sibling filename from diagnostics
+  configuration if not explicitly supplied; preserve or explicitly change it,
+  never replace it with a simulation default.
+- Production persistence: keep `ZPR_POLICY_DB_FILE` (fallback is the user's
+  `zpr-control-room/policy-records.db`), policy compiler/config/staging paths,
+  assertion sources/legacy settings, `ZPR_ENROLLMENT_DATABASE_FILE`,
+  gateway draft store, change-review store and operator signing/session/OIDC
+  material outside source moves. Resolve their configuration through owners,
+  not by relocating or recreating live state.
+- Simulator owns manifest/profile/scenario directories,
+  `SIMULATION_WORKSPACE_DB_DIR`, private organization bundles, selected
+  organization and machine/session/workload state. Similar SQLite/versioning
+  mechanics do not make these production repository inputs.
+- `staticFiles` embeds `static/*`; `assistant_skills.go` embeds seven
+  task-specific `skills/*/SKILL.md` files. Preserve the compile-time resources,
+  URL mappings, browser fixture roots and task boundaries before any relocation.
+  `scripts/Dockerfile.simulator` builds the shared command used by multiple
+  modes. `dashboard-stack.sh` also builds native/Linux machine binaries and
+  references command-local examples; `activate-organization.sh` and
+  `verify-machine-control.sh` depend on those examples too. Browser container
+  tests compile this command's tests, and vendor tooling writes its static
+  directory. The TUI Make build alone is not acceptance for these paths.
+
+### Verified cross-domain call findings
+
+1. **Production assistant configuration read Simulator configuration (repaired locally).**
+   `runControlService` and `newPolicyServiceProxy` call `newClaudeAssistant`,
+   which calls `assistantAPIKey`. Without an explicit key/file,
+   `assistantAPIKey` uses `SIMULATION_MANIFEST` to locate a sibling key file.
+   The explicit-environment tests and neutral transport dependency tests do
+   not reject this fallback. Extracting the transport did not repair it.
+   The subsequent M2 slice below removes this fallback from production and
+   adds a real protected manifest-sibling key regression.
+2. **Production repository initialization loads Simulator organizations.**
+   `runPolicyService -> newPolicyWorkspace` calls
+   `loadSimulatorOrganization(simulatorOrganizationsDirectory(), ...)` to seed
+   assertions. That behavior belongs in explicit provisioning or a separately
+   configured production seed contract, not a production-default dependency.
+3. **Policy fixtures are Simulator-derived.**
+   `policyServiceMux -> handlePolicyTestFixtures -> policyTestFixtures` reaches
+   `manifestForOrganization` and Simulator profile/machine/directory data.
+   Production fixture generation needs independent operator/provider contracts;
+   moving `policy_test_fixtures.go` unchanged would preserve the wrong boundary.
+4. **Main-package shared types hide dependency direction.**
+   Snapshot types are consumed by diagnostics, counters, gateways, Simulator
+   views and tests; diagnostics providers also enrich snapshots. Move ownership
+   and introduce explicit provider/configuration inputs before splitting these
+   into mutually importing packages. The command's `application` also combines
+   production Admin, local policy repository, remote proxy and assistant roles.
+5. **Some apparent sharing is already neutral.**
+   Adapter logs/diagnostics now use `logview`; transport/proxy packages have
+   narrow dependency checks. Preserve that progress, but these package checks
+   cannot prove isolation of the still-shared `main` application.
+
+These findings are observed call paths, not an exhaustive repository audit or
+a claim that the running services currently selected a Simulator fallback.
+No runtime keys, configuration contents or protected state were read for this audit.
+
+### Baseline and next implementation slice
+
+Passing current-worktree production contract baseline:
+
+```sh
+go test -race ./internal/assistant ./internal/controlservice/adapterlogs ./internal/logview ./internal/controlroom ./internal/policyclient ./internal/servicehttp ./cmd/zpr-web-dashboard -run 'Snapshot|ActorInventory|ActorVisas|NodeCounter|NodeDenial|NodeDisplay|ControlRoom|ControlService|Diagnostics|OperatorLogComponents|LogComponents|AdapterLog|FileLogSources|AssistantAPIKey|AssistantTransport|PolicyAndAssertion|DependencyBoundary' -count=1 -timeout=120s
+```
+
+This is selected coverage, not a full-suite pass. The previously recorded four
+Go failures remain unmodified: enrollment readiness preflight, stale-bundle
+platform fixture, scenario placement shell fixture and trusted-service ELF
+fixture. Full Rust/browser suites and packaging/rollout were not run for this
+documentation-only audit.
+
+**M2 slice completed locally: production assistant configuration isolation.**
+
+- Moved production key resolution and shared client construction out of mixed
+  `policy.go` into `assistant_config.go`. Control-Service startup and policy
+  status retain `newClaudeAssistant`, now production-only; neither discovers
+  credentials through `SIMULATION_MANIFEST`. Preserve environment-key, explicit
+  file and operator gateway-store sibling precedence. Explicitly configure
+  `ZPR_ANTHROPIC_API_KEY_FILE` instead of the removed production manifest fallback.
+- Moved the protected single-link regular-file reader into neutral
+  `internal/assistant.ReadAPIKeyFile`, with explicit path input, unchanged
+  permission/size/text checks and no environment discovery. Invalid selected
+  files now emit a sanitized error-type log and leave the assistant unavailable.
+- Added `newSimulatorClaudeAssistant` in the Simulator design owner and wired
+  status plus all five design/editor/profile/definition assistant routes to it.
+  It preserves explicit settings, manifest-sibling discovery, gateway-store
+  fallback when no manifest is selected, and per-request reload.
+- Tests use a real protected manifest-sibling key to distinguish ignored
+  production discovery from preserved Simulator discovery, verify explicit
+  override precedence and missing-file refusal, and exercise policy-status
+  readiness through the proxy with dynamic explicit-file changes. Neutral
+  reader tests cover valid text/CRLF, exact size limits, invalid text, missing
+  files, directories, symlinks, hard links and permission failures.
+- Repaired the assistant launch test's extracted shell-function harness to
+  include `control_platform_services`, introduced by the immediately preceding
+  gateway fix. This was a failure caused by that local change, not one of the
+  unrelated baseline failures.
+- Focused production/assistant/Simulator race tests, neutral dependency checks,
+  `go vet`, native and Linux arm64/amd64 builds, formatting and editor
+  diagnostics pass. `make test` was run: all other packages pass, and the web
+  command still has exactly the four recorded baseline failures (enrollment
+  readiness, stale-bundle platform fixture, placement shell fixture and
+  trusted-service ELF fixture). Those tests were not modified.
+- No runtime credential/state reads, service restarts, deployments, commit or
+  push for this slice. This is not full package isolation or full-suite acceptance.
+
+**Next bounded scope:** define independent production assertion seed and policy
+fixture input contracts before moving repository initialization/fixture code.
+Simulator provisioning may call those contracts, not supply production defaults
+through reverse profile/manifest reads. Preserve repository persistence and
+provider-authorized fixture semantics; resolve contract/behavior decisions
+explicitly rather than replacing them with empty success-shaped fixtures.
+
+Remaining M1 gates: exhaustive environment/default/error and persistence
+contracts for all non-production modes, full nested enrollment/gateway/review
+contract mapping, cross-domain call coverage beyond the paths traced above and
+installer/CI/resource dependency acceptance. The ownership map is complete for
+the original 58-file set and the new production configuration file; these deeper
+audit gates are not.
 
 ## Progress reconciliation (2026-10-14)
 
@@ -81,6 +359,137 @@ Related trackers:
   The editor and DNS source/documentation changes were subsequently committed
   and pushed as `51f612b`; that publication did not deploy additional targets.
   Use the deployment ledger for runtime scope.
+
+## Thirteenth backend extraction: neutral log formatting (2026-10-14)
+
+**Implemented and locally verified; uncommitted, not deployed.** The eleventh
+and twelfth increments remain local too. No runtime configuration or process
+was changed.
+
+- Moved shared log-text formatting and the existing credential regex from the
+  Simulator machine-log file into
+  [`internal/logview`](zpr-dashboard/internal/logview/lines.go). The neutral
+  package uses only the standard library, enforced by a transitive dependency
+  test, and accepts only caller-supplied text.
+- Production adapter logs call `logview.Lines` directly; production diagnostics
+  call `logview.Redact` directly. Neither relies on the Simulator machine-log
+  helper or regex anymore. Simulator retains a thin `machineLogLines`
+  compatibility adapter so existing consumers and tests remain unchanged.
+- Preserved byte-tail selection at 65,536 bytes, first-partial-line removal,
+  outer whitespace trimming, last-100-line selection, non-nil empty lists and
+  the exact redaction regex/replacement. These are existing heuristics, not a
+  claim of exhaustive secret detection or a new post-redaction byte cap.
+  Diagnostics retain their separate 2,048-byte truncation and attributes policy;
+  raw redaction does not trim, split or truncate the supplied text.
+- Tests measure exact byte/line boundaries, missing-newline behavior, partial
+  lines, blank/CRLF handling, empty JSON arrays, credential formats, unchanged
+  ordinary text and unbounded redaction layout. Invalid Simulator/operator
+  environment settings do not affect the helper. Existing production log,
+  Simulator log and diagnostics regressions pass without modifications.
+
+Passing validation:
+
+```sh
+go test -race ./internal/logview ./cmd/zpr-web-dashboard -run 'LogLines|LogRedaction|MachineLog|AdapterLog|FileLogSources|OperatorLogComponents|LogComponents|Diagnostics' -count=1 -timeout=90s
+go vet ./internal/logview ./cmd/zpr-web-dashboard
+go build -o /dev/null ./cmd/zpr-web-dashboard
+GOOS=linux GOARCH=arm64 go build -o /dev/null ./cmd/zpr-web-dashboard
+GOOS=linux GOARCH=amd64 go build -o /dev/null ./cmd/zpr-web-dashboard
+```
+
+Formatting, changed-file editor diagnostics and diff checks pass. This adds no
+dependency, route, frontend, resource path, script or mode change. Full Go/browser
+suites were not rerun, and unrelated failing tests were not modified.
+
+## Twelfth backend extraction: production adapter-log inventory (2026-10-14)
+
+**Implemented and locally verified; uncommitted, not deployed.** The preceding
+assistant transport extraction is still local too. No process, runtime inventory
+or deployment configuration was changed by either increment.
+
+- Moved the operator-owned adapter log inventory schema and file parser into
+  [`internal/controlservice/adapterlogs`](zpr-dashboard/internal/controlservice/adapterlogs/inventory.go).
+  `ReadInventory` accepts only the explicitly supplied file path, reads it afresh
+  on every invocation and does not inspect environment or Simulator state.
+  A standard-library-only transitive dependency test enforces package isolation.
+- The command uses type aliases and a forwarding adapter, preserving every
+  existing inventory consumer and JSON field. Environment selection, authenticated
+  route registration, HTTP method/status/error handling, file/container log
+  collection, runtime-state inspection, timeouts and log redaction remain in
+  their current owners. This slice does not extract the complete log service.
+- Preserved exact target/source limits (100/8), unique nonempty IDs, required
+  names/kinds, absolute-path and mutually exclusive file/container validation,
+  safe container/runtime identifiers and error strings/order. Tests measure the
+  limits and 128-character container-name boundary, configuration reload and
+  independence with Simulator unavailable.
+- Decoder compatibility is explicit: unknown fields are rejected at every
+  level; null/missing versus empty lists retain their JSON shape; the existing
+  65,537-byte limited reader is unchanged. This is still a single JSON decode,
+  not a strict file-size or trailing-data check. Tests preserve acceptance of
+  trailing data and existing duplicate-field behavior rather than changing
+  those semantics during extraction.
+- Existing production HTTP, retained-history, runtime-state, redaction and
+  Simulator-independence tests remain unchanged. The editor test runner reports
+  36 passing cases across the new package and selected runtime-state test files.
+
+Passing validation:
+
+```sh
+go test -race ./internal/controlservice/adapterlogs ./cmd/zpr-web-dashboard -run 'AdapterLog|AdapterFile|FileLogSources|ControlService.*Log|OperatorLogComponents|LogComponents' -count=1 -timeout=90s
+go vet ./internal/controlservice/adapterlogs ./cmd/zpr-web-dashboard
+go build -o /dev/null ./cmd/zpr-web-dashboard
+GOOS=linux GOARCH=arm64 go build -o /dev/null ./cmd/zpr-web-dashboard
+GOOS=linux GOARCH=amd64 go build -o /dev/null ./cmd/zpr-web-dashboard
+```
+
+Formatting, editor diagnostics and diff checks pass. No new dependency, frontend,
+resource path, mode, script or runtime change is included. Full Go/browser suites
+were not rerun; recorded unrelated failing tests were not modified.
+
+## Eleventh backend extraction: neutral assistant HTTP transport (2026-10-14)
+
+**Implemented and locally verified; uncommitted, not deployed.** This increment
+does not restart services or change runtime configuration. The first ten
+extractions are published in `e1b24ab`; consult the deployment ledger for each
+process's release scope rather than the historical labels below.
+
+- Moved Claude HTTP completion and its message/reply JSON types into
+  [`internal/assistant`](zpr-dashboard/internal/assistant/client.go). The client
+  takes explicit endpoint, key, HTTP client, context, system text, messages,
+  model and token limit. It has no environment/filesystem/Simulator access,
+  enforced by a standard-library-only transitive dependency test.
+- The existing command adapter and type aliases keep policy, editor,
+  organization, gateway and Simulator design callers wired to the same transport
+  without schema conversion. Key discovery, model/default configuration,
+  45-second timeout, redirect policy, task skills, permissions and all
+  production-versus-Simulator context selection remain command-owned.
+  Legacy command-layer key discovery is deliberately not moved into the
+  neutral package; this is not complete production/Simulator separation.
+- Preserved request method, endpoint/query, JSON fields, nil-message `[]` shape,
+  headers, text-only concatenation including empty text blocks, usage counts,
+  body closure, context/transport/read/status/JSON errors and their ordering.
+  The existing 64 KiB limited reader still truncates rather than checking for
+  an extra byte; the exact-limit and beyond-limit compatibility cases are tested.
+- New tests use only local HTTP servers or injected transports. They cover
+  explicit configuration with invalid Simulator settings, malformed/type/trailing
+  JSON, empty/nontext content, HTTP errors, transport/read failures, body closure,
+  cancellation, client timeout, and redirect refusal for 301/302/303/307/308.
+  Existing caller security, task-skill, proposal and context tests are unchanged.
+
+Passing validation:
+
+```sh
+go test -race ./internal/assistant ./cmd/zpr-web-dashboard -run 'Assistant|Claude|DesignReply|DesignProposal|Complete' -count=1 -timeout=90s
+go vet ./internal/assistant ./cmd/zpr-web-dashboard
+go build -o /dev/null ./cmd/zpr-web-dashboard
+GOOS=linux GOARCH=arm64 go build -o /dev/null ./cmd/zpr-web-dashboard
+GOOS=linux GOARCH=amd64 go build -o /dev/null ./cmd/zpr-web-dashboard
+```
+
+Changed Go files pass formatting/editor diagnostics. No dependency, frontend,
+resource path, script, CLI mode, runtime state or deployment change is included.
+The full Go/browser suites were not rerun; no full-suite pass is claimed and
+the four recorded unrelated Go failures were not modified.
 
 ## Tenth backend extraction: Policy-Service assistant attributes (2026-10-14)
 
@@ -903,11 +1312,6 @@ routing and staged assignments, not a second copy of these checklists.
 
 ## Recommended delivery order
 
-- [ ] Complete inventory, baseline checks and dependency ownership decisions.
-- [ ] Enforce production/Simulator separation through package extraction.
-- [ ] Thin the web command and extract remaining cohesive Go domains.
-- [ ] Split frontend feature controllers and consolidate shared editor behavior.
-- [ ] Resolve organization artifact authority before delivering the new organization editor.
-- [ ] Address misleading names through explicit compatibility decisions.
-- [ ] Subdivide Rust modules where responsibility boundaries justify it.
-- [ ] Finish documentation indexing and end-to-end build/package/deployment verification.
+Use the [seven remaining milestones](#remaining-delivery-milestones-2026-10-14)
+and their execution order as the delivery sequence. Sections 1-9 above supply
+the detailed requirements and evidence; they are not nine additional milestones.

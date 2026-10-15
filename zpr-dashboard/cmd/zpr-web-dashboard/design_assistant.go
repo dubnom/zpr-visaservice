@@ -6,6 +6,8 @@ import (
 	"errors"
 	"io"
 	"net/http"
+	"os"
+	"path/filepath"
 	"strings"
 )
 
@@ -47,11 +49,21 @@ type simulatorDesignAssistantModelReply struct {
 	} `json:"proposal"`
 }
 
+func newSimulatorClaudeAssistant() *claudeAssistant {
+	if strings.TrimSpace(os.Getenv("ANTHROPIC_API_KEY")) == "" &&
+		strings.TrimSpace(os.Getenv("ZPR_ANTHROPIC_API_KEY_FILE")) == "" {
+		if manifest := strings.TrimSpace(os.Getenv("SIMULATION_MANIFEST")); manifest != "" {
+			return newClaudeAssistantWithKey(assistantKeyFromFile(filepath.Join(filepath.Dir(manifest), "dashboard-stack", "assistant", "api-key")))
+		}
+	}
+	return newClaudeAssistant()
+}
+
 func handleSimulatorAssistantStatus(w http.ResponseWriter, r *http.Request) {
 	if !localEditorRequest(w, r) {
 		return
 	}
-	assistant := newClaudeAssistant()
+	assistant := newSimulatorClaudeAssistant()
 	writeSimulatorJSON(w, assistantStatus(assistant))
 }
 

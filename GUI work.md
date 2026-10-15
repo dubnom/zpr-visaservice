@@ -1,7 +1,8 @@
 # GUI work
 
-Active GUI backlog. Requirements and historical evidence were reorganized on
-2026-10-09; this reorganization does not implement, deploy, commit or push work.
+Active GUI backlog, reconciled on 2026-10-15 UTC (2026-10-14 EDT) after the
+Great Lakes business-service and Restore-feedback deployments.
+Completed checklists and dated release evidence live in the linked records.
 
 ## Document map
 
@@ -21,7 +22,57 @@ test evidence to the completed-work archive; put rollout evidence in deployments
 Keep this file focused on open deliverables rather than test logs or release history.
 Do not infer current runtime health from a historical verification entry.
 
+## Current status
+
+- **Publication:** `e1b24ab` is the previous publication checkpoint. The
+  this source checkpoint includes the 2026-10-15 reconciliation and pending work;
+  dated "not committed or pushed" notes remain historical evidence. Publication
+  does not deploy the discovery CLI, new Results navigation or backend services.
+- **Deployed:** Simulator `zpr-simulator:20261015-restore-feedback` at
+  2026-10-15 01:03 UTC, following the business-service release at 00:56 UTC;
+  Control Room remains at its 2026-10-14 22:43 UTC GUI release. The UI-only
+  feedback deployment did not restart production services. The user's separate
+  Restore attempt did reprovision runtime components before rolling back.
+  See [deployment scope and verification](GUI%20deployments.md).
+- **Restore blocked:** Great Lakes Restore failed its assertion-settings
+  verification and the previous runtime was restored and verified. A read-only
+  probe after rollback found the correct organization/base DN but empty assertion
+  source. Feedback is fixed and deployed; assertion seeding is not repaired,
+  Restore was not retried, and business forwarding is not live-certified.
+- **Completed GUI polish:** shared Help styling, Trusted Sources spacing/counts,
+  scenario cards/folders, organization viewer File actions and consolidated
+  New/Import/Duplicate, Activity cleanup, and Security Review headers.
+  Control Room retains its live Updates (24h) feed and independent service
+  contracts. See the [completed checklist](GUI%20completed%20work.md#control-room-and-simulator-gui-polish).
+- **Verification limits:** Current native core Rust tests and shared socket
+  utility tests pass. The full dashboard `make test` still has four known
+  failing groups. Focused race checks and 16 selected desktop/tablet browser
+  checks pass using the existing container runner; no full browser-suite pass
+  is claimed. Control Room's
+  post-restart browser check was signed out, not an authenticated live-data
+  check. See the [publication verification](GUI%20completed%20work.md#publication-reconciliation-2026-10-15-utc).
+  These records do not assert current runtime health.
+
 ## In progress
+
+Scenario gateway response capture is **Deployed (live acceptance pending)**:
+a Results section
+shows HTTP status, request/final URL, elapsed time, bytes read, redacted bounded
+headers and inert raw HTML/JSON/text (base64 for non-UTF-8). Observations survive
+failed expectations and partial-body errors; empty expectations allow
+observation-only fetches within existing destination restrictions. Six
+desktop/tablet browser checks, focused Go race tests, vet and the embedded build
+pass; the required full Go suite retains four unrelated failures. Results
+currently belong to the current run only; durable archives and other result
+types remain future work. Simulator and controller binaries were updated from an
+isolated Results-only release on 2026-10-15 00:49 UTC; production services were
+not restarted. The later business-service executable resolved the observed
+manifest-unavailable error; live forwarding acceptance has not been run.
+The isolated full suite has the same 13 failures as its clean base, including
+external-runtime/seed-dependent failures. The subsequent Runner/Results tabs are
+verified locally, not separately deployed. See the
+[deployment record](GUI%20deployments.md#scenario-gateway-results-deployment-2026-10-15-0049-utc) and
+[verification evidence](GUI%20completed%20work.md#scenario-gateway-response-results).
 
 Migration network discovery is **In progress**; its standalone CLI slice is
 **Verified** locally. It has explicit authorized TCP scope, optional conservative
@@ -35,7 +86,11 @@ compact scopes are deduplicated and iterated lazily under the existing
 rate/worker/time limits. Version-2 reports/previews store exact planned counts
 and full compact scopes, with host records only for reached/imported targets.
 Focused race tests, vet, native build, Linux/Windows cross-builds and the
-documented no-network preview pass. This extension was verified against
+documented no-network preview pass. The follow-up removes the overall deadline
+(former `duration` options are rejected) while preserving per-check timeouts and
+Ctrl+C partial export, and adds stderr progress with terminal-width-aware
+rendering and distinct client/host/open-endpoint counts. Current engine/CLI race
+checks pass. This extension was verified against
 IPv4/IPv6 loopback only; it does not repeat the earlier authorized subnet scan.
 Control Room scanner selection, authenticated live adapter inventory and
 reviewed migration drafts remain future work. Discovery must remain independent
@@ -43,53 +98,20 @@ of Simulator, and remote observations must not be conflated with host-reported
 listeners or port-number service guesses. See the
 [CLI contract](zpr-dashboard/cmd/zpr-discover/README.md) and
 [verification evidence](GUI%20completed%20work.md#migration-discovery-cli).
-Not deployed, committed or pushed.
+The original slice was published in `e1b24ab`; follow-up progress/deadline changes
+are included in the current publication. This standalone CLI was not deployed by
+the dashboard-only releases.
 
-Simulator organization-profile editor toolbar and mode alignment are **Deployed
-to Simulator** (2026-10-14 04:58 UTC): exclusive Raw/Form views,
-standard File.../Browse..., Analyze, Format
-and Wrap controls, History beside the identity, and a multiline Description.
-Draft saves, private-definition export, reviewed AI changes and optimistic
-revision protection are preserved. The 48 selected desktop/tablet profile,
-definitions, duplicate/new/import regressions and embedded dashboard build pass.
-The existing definitions-history test has a stale Close-button selector and
-was excluded in both viewports. All 74 served assets match the worktree; see
-[deployment evidence](GUI%20deployments.md). Not committed or pushed.
-
-Editor gutter synchronization and Trusted Source insertion undo are **Verified**
-locally. Assertion/Policy gutter rows track source-line changes while clearing
-obsolete analysis; catalog insertions and shared programmatic edits participate
-in Undo/Redo. Ninety focused desktop/tablet regressions and the embedded
-dashboard build pass. See
-[verification evidence](GUI%20completed%20work.md#editor-gutter-synchronization-and-undo).
-Not deployed, committed or pushed.
-
-The independent Control Room DNS statistics transport is **Deployed**
-(2026-10-13 23:05 UTC). Control-Service now reads an operator-owned relay on a
-private Docker network, not Simulator's internal relay. Status, query-counter
-and zone endpoints pass live mutual-TLS checks, including while Simulator is
-paused. The local relay uses Docker administrative access; production still
-requires an authorized ZPR-connected origin. See
-[deployment evidence](GUI%20deployments.md). No commit/push for this repair.
-
-The Simulator shared status banner is **Deployed** (2026-10-13 19:32 UTC).
-It shows backend connectivity, active organization, scenario/run state and
-signed-in identity across Simulator pages. All 36 focused desktop/tablet
-Help/banner tests pass; live Organizations and Scenarios checks confirmed the
-connected/idle state and `User` label. See
-[deployment evidence](GUI%20deployments.md).
-
-Simulator GUI design-guideline fixes are **Deployed** (2026-10-13 12:23 EDT):
-graph Maximize/Restore, Activity metrics, Help/top-bar placement and the 11px
-text minimum. The 18 focused desktop/tablet regressions pass. See
-[deployment evidence](GUI%20deployments.md).
-
-Map Maximize/Restore is **Deployed to Control Room and Simulator**
-(Control Room 2026-10-11; Simulator 2026-10-13). Both maps share window
-controls, Escape restoration and navigation cleanup. All 62 geography tests
-and the embedded build pass; live desktop/tablet checks verify empty-map
-controls. The production Visa snapshot was disconnected during those checks.
-See [deployment evidence](GUI%20deployments.md).
+Great Lakes business simulations are **Implemented, verified and deployed;
+live acceptance blocked**. Seven stateful providers are configured for dedicated
+`machine-13`, with complete department/site policy grants, directory groups,
+provider identities and two 42-pair scenarios (84 total: 13 allow, 71 deny).
+Denials require fresh tuple-specific Visa Service evidence, not timeouts.
+Writable state is isolated by organization/generation/machine. Source tests,
+race checks, runtime plus five standalone catalog compiler checks and native/
+Linux builds pass. The software and controller prebuilds are installed, but the
+failed Restore did not complete provisioning; neither matrix has run live.
+See [completed implementation](GUI%20completed%20work.md#great-lakes-business-simulations-and-restore-feedback).
 
 Simulator organization definition/editing is **In progress**.
 The draft/source-editor slices are **Deployed to Simulator** (2026-10-11 20:18 UTC) and add existing-organization profile drafts, name/description and
@@ -119,129 +141,28 @@ bi-directional Raw/Form synchronization, live topology cards, and live
 `<ldap-org-graph>` preview are **Verified** locally.
 Full reference/compiler checks, section-only AI context and activation review
 are next; production administration remains separate.
-Live desktop/tablet checks confirm private revision persistence across Simulator
-replacement. Great Lakes/Load Lab supporting-definition mounts are read-only;
-no shared staging or runtime activation changed. See
-[deployment evidence](GUI%20deployments.md). No commit/push.
-See [the execution plan](Organization%20editor%20plan.md).
-34 desktop/tablet organization/profile/definitions/duplication browser cases pass
-(including newly added structured editor sync and preview tests), along with
-focused Go race tests and build/vet/syntax/editor checks. Full `make test` still
-fails on Redwood's LDAP identity expectation and assistant setup's unbound
-`SCRIPT_DIR`; neither is changed by this slice.
-No deployment, activation, commit or push.
-
-Services selector and standard log display are **Deployed** (2026-10-10).
-Services shows one selected non-node service/trusted source's health and logs.
-The provisional filter, metrics display and introductory text are removed.
-Nodes metrics and backend contracts are unchanged. Eighteen focused browser
-cases and the build pass; live desktop/tablet login, selection and logs were
-verified. See [deployment evidence](GUI%20deployments.md).
-
-The Diagnostics/Nodes ownership merger is **Deployed to Control Room**
-(2026-10-10 00:50 UTC).
-Nodes owns selected-node source health, exact sortable metrics and logs.
-Diagnostics retains aggregate/source overview and non-node service details,
-with node rows navigating to Nodes rather than duplicating their detail panels.
-96 desktop/tablet merger/shared-viewer regression cases and the embedded
-dashboard build pass. The existing production source-filter backend is reused;
-rollout contains the new shared metrics asset and updated Room assets only.
-Real desktop/tablet checks verify node health/metrics/logs, aggregate health,
-10 non-node detail sources and node navigation. No commit or push. See
-[completed work](GUI%20completed%20work.md#diagnosticsnodes-ownership-merger).
-
-Compact unconnected-component placement is **Deployed to Control Room**
-(2026-10-10 00:15 UTC).
-Undocked adapters sit beside occupied bounds in both maps rather than the
-distant staging grid, with service/cloud clearance and viewport-aware packing.
-`app.js` v148. See
-[verification evidence](GUI%20completed%20work.md#compact-unconnected-components).
-See [deployment evidence](GUI%20deployments.md). No commit or push.
-
-Viewport-aware Topology/World Map layout is **Deployed to Control Room**
-(2026-10-10 00:09 UTC).
-Landscape/portrait node rows, free-host columns and adapter placement follow
-the graph area's dimensions; geographic anchors and manual cameras remain
-preserved. `app.js` v147. See
-[verification evidence](GUI%20completed%20work.md#viewport-aware-map-layout).
-See [deployment evidence](GUI%20deployments.md). No commit or push.
-
-Login-timeout retry origin/CSP correction is **Deployed to Control Room**
-(2026-10-10 00:24 UTC).
-The single retry button returns to Control Room before a fresh login POST;
-it no longer POSTs from the restrictive timeout page. Strict origin checks
-remain unchanged. See [verification evidence](GUI%20completed%20work.md#login-timeout-retry-correction).
-See [deployment evidence](GUI%20deployments.md). No commit or push.
-
-World Map variable-length adapter docks are **Deployed to Control Room**
-(2026-10-09 21:04 UTC).
-Nodes remain geographically anchored; each attached adapter's distance accounts
-for its own service ring/gateway cloud rather than a shared radius. Topology
-layout is unchanged. See the [verification evidence](GUI%20completed%20work.md#world-map-variable-dock-lengths).
-See [deployment evidence](GUI%20deployments.md). No commit or push for this rollout.
-
-Selected-node logs on Nodes are **Deployed to Control Room/Control-Service**.
-The shared log-panel component and Worker-panel assets are **Deployed to
-Simulator** (2026-10-13 19:32 UTC). Nodes, Adapter/Controller
-Logs and Workers share rendering, scrolling and window controls. Nodes queries
-an inventory-validated production Diagnostics source rather than Simulator or
-the all-source log budget. The deployed merger above moves node details to
-Nodes while keeping
-aggregate health and non-node details. 96 desktop/tablet browser cases, focused
-production Diagnostics/log-boundary race tests and the embedded build pass.
-Control Room assets and the Control-Service source filter are deployed; the
-Simulator top-banner release also deployed the shared Worker-panel assets. See
-[completed work](GUI%20completed%20work.md#selected-node-logs-and-shared-viewer).
-
-Shared JavaScript page-runtime reuse is **Deployed to Control Room and Simulator**.
-See the [implementation and test evidence](GUI%20completed%20work.md#javascript-reuse-refactoring).
-Control Room rollout: 2026-10-09 19:13 UTC; Simulator rollout: 2026-10-13.
-
-Control Room header guideline cleanup is **Deployed** (2026-10-09 19:13 UTC).
-See the [completed guideline work](GUI%20completed%20work.md#control-room-guideline-follow-up).
-
-Consistent Maximize/Restore window icons across Control Room and Simulator are
-**Deployed to Control Room and Simulator**. See the
-[completed guideline work](GUI%20completed%20work.md#control-room-guideline-follow-up).
-
-Window-control color/style consistency is **Deployed to Control Room and Simulator**:
-editor and log controls share dark icons on white 32px buttons and identical
-hover, active, disabled and keyboard-focus styles (`app.css` v93,
-`safe-display.js` v3). All six editors and adapter/controller/Worker logs are
-covered by 24 passing desktop/tablet runtime/header/window cases; embedded build
-and editor diagnostics pass. Control Room rollout verified 2026-10-09 19:24 UTC;
-Simulator assets deployed 2026-10-13.
-
-Diagnostics ANSI log colors are **Deployed to Control Room** (2026-10-09 19:29 UTC).
-Diagnostics and adapter/controller/Worker logs share the safe colored-text
-renderer; 48 desktop/tablet checks and the embedded build pass. See the
-[completed guideline work](GUI%20completed%20work.md#control-room-guideline-follow-up).
-
-The shared Worker-log renderer is now deployed to Simulator with the
-2026-10-13 top-banner release; earlier pending-deployment notes below describe
-the prior rollout state.
-
-Diagnostics body-only/raw/full-space layout and initial-loading cleanup are
-**Deployed to Control Room** (2026-10-09 19:45 UTC):
-no duplicate timestamp/level columns, Format JSON or recurring Querying/Updated
-line; full available width and natural-height content; initial Loading only.
-The isolated embedded build passes using the exact preserved live backend;
-16 desktop/tablet cases pass against the release assets. Real authenticated
-desktop/tablet checks verify provider logs, layout and loading behavior.
-Only three frontend assets changed; backend services and Simulator untouched.
-No commit or push. See the [release evidence](GUI%20deployments.md) and
-[completed guideline work](GUI%20completed%20work.md#control-room-guideline-follow-up).
+The 2026-10-14 22:35 UTC Simulator worktree deployment includes the structured
+editors and toolbar/mode alignment; source is committed and pushed. Earlier
+targeted browser evidence remains recorded, but no full browser-suite rerun or
+runtime activation is claimed for this release. See
+[deployment evidence](GUI%20deployments.md) and
+[the execution plan](Organization%20editor%20plan.md).
 
 ## Next
 
 The open requirements below retain their original scope.
 No new priority or implementation approval is implied for backend rollouts.
 
-### Config
-- [x] Create a full draft-only form editor synchronized with raw TOML. Deployed to Control Room and Policy-Service at 2026-10-13 05:49 UTC; verified without runtime changes. See [completed Config work](GUI%20completed%20work.md#config) and [deployment evidence](GUI%20deployments.md#config-form-editor-2026-10-13-0549-utc).
-
 ### Logs and diagnostics
-- [ ] Expose the shared viewer for Services and Trusted Sources; move their metrics/freshness/errors to suitable detail views before retiring the aggregate Diagnostics page.
+- [ ] Repair Great Lakes assertion seeding/verification through an independent
+  production policy configuration contract; identify why source is empty before
+  any reviewed Restore retry. Preserve rollback and record exact failure details.
+- [ ] After a successful reviewed Restore, run both Great Lakes Business
+  scenarios and verify all 84 expected decisions with actual forwarding and fresh
+  denial evidence. Do not mark software deployment as live policy acceptance.
+- [ ] Retain organization operation outcomes across Simulator restart; current
+  progress/result feedback is in memory and local logs survive independently.
+- [ ] Complete the remaining Trusted Sources viewer and metrics/freshness/error detail placement before retiring the aggregate Diagnostics page. The Services selector and shared log viewer are already deployed; see [completed Services work](GUI%20completed%20work.md#services-selector-and-standard-log-display).
 
 ### Gateways
 - [ ] Deploy the committed forwarding/consolidation changes through a separately reviewed rollout; preserve production settings and verify the actual gateway binary and protocol behavior, not just UI assets.
@@ -299,37 +220,3 @@ No new priority or implementation approval is implied for backend rollouts.
   replicated automatically. Anycast is an optional separate routing/health
   design decision, not assumed in this task. Track only; no deployment yet.
 - [ ] Organization creation/editing: Duplicate -> edit draft -> validate -> review activation first. The [detailed plan](Organization%20editor%20plan.md) owns the individual requirements; production administration remains independent of Simulator.
-
-## Simulator
-
-- [ ] Help button is a different style than Control Room.
-### Trusted sources
-- [ ] Remove extra line between the top header and the source title.
-- [ ] Put count of people, groups, and attributes to the right of their horizontal nav labels.
-
-### Scenarios
-- [ ] Remove "Scenario runner..." subheader. Redundant.
-- [ ] For each scenario, the Title should be on top and span the panel.
-- [ ] Version numbers of the main scenario page isn't useful.
-- [ ] Remove "Delete" from each scenario panel. Replace "Edit" with a "File..." pulldown.
-- [ ] The scenario internal name isn't useful, but the rest of the information on that line should be moved about the controls at the bottom of each panel.
-- [ ] Is the labels "Finance", "Runtime", and "Workday" folders? If not, they are redundant.
-- [ ] "Maximum # machines per run" doesn't belong here. Add it to the help text.
-
-### Organizations
-- [ ] Remove "Organization directory" and "Directory ready" from the subheader.
-- [ ] Move "Edit organization draft" to the org viewer on the right. Put a "File..." menu next to the "Active/Activate Scenario" indicator.
-- [ ] File... should show "Edit", "Duplicate", "Rename", "Restore" and "Delete".
-- [ ] Only button that remains is "New organization". This can offer a dialog for new/import/duplicate".
-
-### Activity
-- [ ] Use the status bar from the Control Room instead of - the time, stream, requests, approved..."
-
-## Control room
-
-### Security
-- [ ] Remove "Select visible" but leave the check box. Change "Observed" to "time".
-- [ ] Why is "Action" table title not using the same format as the other titles?
-
-### Trusted sources
-- [ ] Make the simulator and control room more aligned. The control room is the "live" view, so it needs "Updates (24h).

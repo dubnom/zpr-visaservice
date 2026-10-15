@@ -412,6 +412,9 @@ type machineWorkloadConfig struct {
 }
 
 func machineWorkload(agent string) (machineWorkloadConfig, bool) {
+	if config, ok := businessWorkload(agent); ok {
+		return config, true
+	}
 	workloads := map[string]machineWorkloadConfig{
 		"finance-client":    {address: "fd00:1:4::1", key: "client-finance-rsa.key", tun: "tun0", routeTable: 100},
 		"operations-client": {address: "fd00:1:5::1", key: "client-operations-rsa.key", tun: "tun1", routeTable: 101},

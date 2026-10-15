@@ -8,10 +8,10 @@ import (
 	"io"
 	"net/http"
 	"os/exec"
-	"regexp"
-	"strings"
 	"sync"
 	"time"
+
+	"neboagency.com/zpr-dashborad/internal/logview"
 )
 
 type machineLogSource struct {
@@ -56,26 +56,8 @@ func workerWorkloads(components []simulatorComponent, selected []string, states 
 	return workloads
 }
 
-var machineLogSecrets = regexp.MustCompile(`(?i)(\bBearer\s+[A-Za-z0-9._~+/=-]+|\bzpr_vsapi\.[0-9a-f]{8}\.[A-Za-z0-9_-]+|(?:authorization|x-api-key|password|secret|token)["']?\s*[:=]\s*["']?(?:bearer\s+)?[^\s,;"}]+)`)
-
 func machineLogLines(output string) []string {
-	if len(output) > 65536 {
-		output = output[len(output)-65536:]
-		if boundary := strings.IndexByte(output, '\n'); boundary >= 0 {
-			output = output[boundary+1:]
-		}
-	}
-	lines := strings.Split(strings.TrimSpace(output), "\n")
-	if len(lines) == 1 && lines[0] == "" {
-		return []string{}
-	}
-	if len(lines) > 100 {
-		lines = lines[len(lines)-100:]
-	}
-	for index, line := range lines {
-		lines[index] = machineLogSecrets.ReplaceAllString(line, "[REDACTED]")
-	}
-	return lines
+	return logview.Lines(output)
 }
 
 func readMachineLogSources(ctx context.Context, machineID string, workloads []string, execute func(context.Context, string, ...string) (string, error)) []machineLogSource {

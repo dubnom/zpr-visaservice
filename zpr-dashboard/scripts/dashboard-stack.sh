@@ -975,7 +975,30 @@ start_observability_collector() {
         --entrypoint python3 zpr-observability:local -u /app/collector.py >/dev/null
 }
 
+control_platform_services() {
+    if [ "${ZPR_PLATFORM_SERVICES+x}" = x ]; then
+        printf '%s\n' "$ZPR_PLATFORM_SERVICES"
+    elif [ -n "${ZPR_PLATFORM_SERVICES_FILE:-}" ] || [ -e "$STATE_DIR/platform-services.json" ]; then
+        cat "${ZPR_PLATFORM_SERVICES_FILE:-$STATE_DIR/platform-services.json}" || return 1
+    else
+        printf '[]\n'
+    fi | jq -ecs '
+        if length == 1 then .[0]
+        else error("platform services must contain exactly one JSON array")
+        end |
+        if type == "array" and all(.[];
+            type == "object" and
+            (.service_name | type == "string" and length > 0) and
+            (.actor_cn | type == "string" and length > 0) and
+            (.service_kind // "" | type == "string") and
+            (.external_network_connection // "" | type == "string"))
+        then .
+        else error("platform services must be an array of service descriptors with service_name and actor_cn")
+        end'
+}
+
 start_control_service() {
+    control_platform_services_json=$(control_platform_services) || return 1
     . "$SCRIPT_DIR/provider-managers.sh"
     control_provider_manager_urls=$(provider_manager_urls \
         "${ZPR_PROVIDER_MANAGER_URLS_FILE:-$STATE_DIR/provider-managers.json}" \
@@ -1073,7 +1096,7 @@ start_control_service() {
         -e ZPR_DIAGNOSTICS_USERNAME="$control_diagnostics_username" \
         -e ZPR_DIAGNOSTICS_TOKEN_FILE="${ZPR_DIAGNOSTICS_TOKEN_FILE:-$STATE_DIR/diagnostics/query.token}" \
         -e ZPR_DIAGNOSTICS_SOURCE_MAP_FILE="${ZPR_DIAGNOSTICS_SOURCE_MAP_FILE:-$STATE_DIR/diagnostics/source-map.json}" \
-        -e ZPR_PLATFORM_SERVICES="${ZPR_PLATFORM_SERVICES:-[]}" \
+        -e ZPR_PLATFORM_SERVICES="$control_platform_services_json" \
         -e ZPR_ADMIN_URL="$control_admin_url" \
         -e ZPR_ADMIN_CA_FILE="${ZPR_ADMIN_CA_FILE:-$RUNTIME_DIR/local-admin-cert.pem}" \
         -e ZPR_ADMIN_KEY_FILE="${ZPR_ADMIN_KEY_FILE:-$RUNTIME_DIR/admin-read.key}" \
@@ -1270,11 +1293,15 @@ start_machine_container() {
     fi
     machine_controller_binary=$MACHINE_CONTROLLER_BIN
     if [ "$machine_arch" = amd64 ]; then machine_controller_binary=$MACHINE_CONTROLLER_AMD64_BIN; fi
-    if [ ! -x "$MACHINE_WORKLOAD_DIR/controller" ]; then
-        cp "$machine_controller_binary" "$MACHINE_WORKLOAD_DIR/controller"
-        chmod 700 "$MACHINE_WORKLOAD_DIR/controller"
-    fi
+    install_machine_controller "$machine_controller_binary" "$MACHINE_WORKLOAD_DIR/controller"
     set -- docker run -d --name "$container"
+    if [ "$machine_runtime_driver" = docker-multinode ] &&
+        [ "$(jq -r '.business_simulation // false' "$machine_profile")" = true ]; then
+        business_state_dir="$STATE_DIR/business-state/$machine_organization/$machine_generation/$machine"
+        mkdir -p "$business_state_dir"
+        chmod 700 "$business_state_dir"
+        set -- "$@" -v "$business_state_dir:/var/lib/zpr-business"
+    fi
     if [ -n "$machine_network" ]; then set -- "$@" --network "$machine_network"; fi
     set -- "$@" \
         --privileged --device /dev/net/tun \
@@ -1305,6 +1332,42 @@ start_machine_container() {
     "$@" >/dev/null
     if [ "$machine_runtime_driver" = linux-one-node ]; then
         docker exec "$container" ip route replace 10.0.0.0/8 via "$RIG_IP"
+    fi
+}
+
+install_machine_controller() {
+    machine_controller_source_binary=$1
+    machine_controller_destination=$2
+    if [ ! -f "$machine_controller_source_binary" ] || [ ! -x "$machine_controller_source_binary" ]; then
+        echo "machine controller binary is unavailable or not executable: $machine_controller_source_binary" >&2
+        return 1
+    fi
+    if [ -f "$machine_controller_destination" ] && [ -x "$machine_controller_destination" ] && [ ! -L "$machine_controller_destination" ]; then
+        return 0
+    fi
+    machine_controller_temporary=$(mktemp "$machine_controller_destination.tmp.XXXXXX") || return 1
+    if ! cp "$machine_controller_source_binary" "$machine_controller_temporary" || ! chmod 700 "$machine_controller_temporary"; then
+        rm -f "$machine_controller_temporary"
+        return 1
+    fi
+    if [ -L "$machine_controller_destination" ]; then
+        rm -f "$machine_controller_temporary"
+        echo "refusing to replace a symbolic link with the machine controller binary" >&2
+        return 1
+    elif [ -d "$machine_controller_destination" ]; then
+        if ! rmdir "$machine_controller_destination"; then
+            rm -f "$machine_controller_temporary"
+            echo "refusing to replace a nonempty machine controller directory" >&2
+            return 1
+        fi
+    elif [ -e "$machine_controller_destination" ] && [ ! -f "$machine_controller_destination" ]; then
+        rm -f "$machine_controller_temporary"
+        echo "machine controller destination is not a regular file" >&2
+        return 1
+    fi
+    if ! mv -f "$machine_controller_temporary" "$machine_controller_destination"; then
+        rm -f "$machine_controller_temporary"
+        return 1
     fi
 }
 
@@ -1478,6 +1541,14 @@ prepare_machine_workloads() {
     resolve_machine_runtime
     mkdir -p "$MACHINE_WORKLOAD_DIR"
     chmod 700 "$MACHINE_WORKLOAD_DIR"
+    if [ "$machine_runtime_driver" = docker-multinode ] &&
+        [ "$(jq -r '.business_simulation // false' "$machine_profile")" = true ]; then
+        . "$SCRIPT_DIR/business-workloads.sh"
+        for business_name in $(business_workload_names); do
+            cp "$RUNTIME_DIR/multinode/$machine_organization/business-keys/$business_name.key" "$MACHINE_WORKLOAD_DIR/$business_name.key"
+            chmod 600 "$MACHINE_WORKLOAD_DIR/$business_name.key"
+        done
+    fi
     workload_runtime_marker="$machine_runtime_driver:$machine_organization:$workload_arch"
     if [ "$(cat "$MACHINE_WORKLOAD_DIR/.runtime" 2>/dev/null || true)" = "$workload_runtime_marker" ] &&
         [ -x "$MACHINE_WORKLOAD_DIR/ph" ] && [ -x "$MACHINE_WORKLOAD_DIR/ph-cli" ]; then
@@ -1504,6 +1575,11 @@ prepare_machine_workloads() {
             docker cp "$node_container:/app/bin/ph-cli" "$MACHINE_WORKLOAD_DIR/ph-cli"
         fi
         cp "$runtime_root/conf/node0/include/auth-ca.crt" "$MACHINE_WORKLOAD_DIR/ca.crt"
+        if [ "$(jq -r '.business_simulation // false' "$machine_profile")" = true ]; then
+            for business_name in $(business_workload_names); do
+                cp "$runtime_root/business-keys/$business_name.key" "$MACHINE_WORKLOAD_DIR/$business_name.key"
+            done
+        fi
         for file in client-finance-rsa.key client-operations-rsa.key client-telemetry-rsa.key service-echo-rsa.key service-metrics-rsa.key internet-gateway-rsa.key; do
             cp "$pregen/$file" "$MACHINE_WORKLOAD_DIR/$file"
         done
