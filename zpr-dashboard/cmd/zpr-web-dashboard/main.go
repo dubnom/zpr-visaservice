@@ -2,9 +2,11 @@ package main
 
 import (
 	"context"
+	"crypto/sha256"
 	"crypto/tls"
 	"crypto/x509"
 	"embed"
+	"encoding/base64"
 	"encoding/json"
 	"errors"
 	"flag"
@@ -378,11 +380,34 @@ func main() {
 	}
 }
 
+// Chromium preserves token colors as inline styles while editing contenteditable text.
+// Hash only these color declarations, not arbitrary inline styles or scripts.
+var codeEditorStyleAttributes = []string{
+	"color: rgb(229, 166, 108);",
+	"color: rgb(215, 167, 207);",
+	"color: rgb(130, 145, 136);",
+	"color: rgb(216, 189, 128);",
+	"color: rgb(146, 197, 223);",
+	"color: rgb(194, 216, 138);",
+	"color: rgb(184, 215, 139);",
+	"color: rgb(186, 201, 191);",
+	"color: rgb(228, 235, 229);",
+}
+
+func codeEditorStylePolicy() string {
+	policy := "style-src-attr 'unsafe-hashes'"
+	for _, declaration := range codeEditorStyleAttributes {
+		hash := sha256.Sum256([]byte(declaration))
+		policy += " 'sha256-" + base64.StdEncoding.EncodeToString(hash[:]) + "'"
+	}
+	return policy
+}
+
 func securityHeaders(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("X-Content-Type-Options", "nosniff")
 		w.Header().Set("Referrer-Policy", "no-referrer")
-		w.Header().Set("Content-Security-Policy", "default-src 'self'; style-src 'self'; script-src 'self'; connect-src 'self'; img-src 'self' data:")
+		w.Header().Set("Content-Security-Policy", "default-src 'self'; style-src 'self'; "+codeEditorStylePolicy()+"; script-src 'self'; connect-src 'self'; img-src 'self' data:")
 		next.ServeHTTP(w, r)
 	})
 }

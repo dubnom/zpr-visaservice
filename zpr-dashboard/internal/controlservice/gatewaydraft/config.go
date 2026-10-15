@@ -1,4 +1,4 @@
-package main
+package gatewaydraft
 
 import (
 	"bytes"
@@ -15,15 +15,15 @@ import (
 )
 
 const (
-	gatewayInstanceSchemaVersion = 1
-	maxGatewayConfigBytes        = 64 << 10
-	maxGatewayDestinations       = 32
-	maxGatewayPathPrefixes       = 32
-	minGatewayTimeoutMS          = 100
-	maxGatewayTimeoutMS          = 30_000
+	SchemaVersion          = 1
+	MaxConfigBytes         = 64 << 10
+	maxGatewayDestinations = 32
+	maxGatewayPathPrefixes = 32
+	minGatewayTimeoutMS    = 100
+	maxGatewayTimeoutMS    = 30_000
 )
 
-type gatewayInstanceContract struct {
+type Contract struct {
 	OrganizationID  string `json:"organization_id"`
 	InstanceID      string `json:"instance_id"`
 	AdapterCN       string `json:"adapter_cn"`
@@ -31,19 +31,19 @@ type gatewayInstanceContract struct {
 	ExternalNetwork string `json:"external_network"`
 }
 
-type gatewayInstanceConfig struct {
-	SchemaVersion    int                        `json:"schema_version"`
-	OrganizationID   string                     `json:"organization_id"`
-	InstanceID       string                     `json:"instance_id"`
-	AdapterCN        string                     `json:"adapter_cn"`
-	ServiceName      string                     `json:"service_name"`
-	Destinations     []gatewayDestinationConfig `json:"destinations"`
-	Methods          []string                   `json:"methods"`
-	TimeoutMS        int                        `json:"timeout_ms"`
-	MaxResponseBytes int64                      `json:"max_response_bytes"`
+type Config struct {
+	SchemaVersion    int           `json:"schema_version"`
+	OrganizationID   string        `json:"organization_id"`
+	InstanceID       string        `json:"instance_id"`
+	AdapterCN        string        `json:"adapter_cn"`
+	ServiceName      string        `json:"service_name"`
+	Destinations     []Destination `json:"destinations"`
+	Methods          []string      `json:"methods"`
+	TimeoutMS        int           `json:"timeout_ms"`
+	MaxResponseBytes int64         `json:"max_response_bytes"`
 }
 
-type gatewayDestinationConfig struct {
+type Destination struct {
 	Origin       string   `json:"origin"`
 	PathPrefixes []string `json:"path_prefixes"`
 }
@@ -59,7 +59,7 @@ func gatewayFieldError(message string, path ...any) error {
 	return &gatewaySourceError{message: message, path: path}
 }
 
-func gatewayDiagnosticLine(data []byte, err error) int {
+func DiagnosticLine(data []byte, err error) int {
 	var sourceError *gatewaySourceError
 	if !errors.As(err, &sourceError) {
 		return 0
@@ -110,9 +110,9 @@ func gatewayJSONFieldOffset(data []byte, path []any) (int, bool) {
 	return resultOffset, resultFound
 }
 
-func parseGatewayInstanceConfig(data []byte, contract gatewayInstanceContract) (gatewayInstanceConfig, error) {
-	var config gatewayInstanceConfig
-	if len(data) == 0 || len(data) > maxGatewayConfigBytes {
+func Parse(data []byte, contract Contract) (Config, error) {
+	var config Config
+	if len(data) == 0 || len(data) > MaxConfigBytes {
 		return config, errors.New("gateway configuration must be between 1 byte and 64 KiB")
 	}
 	decoder := json.NewDecoder(bytes.NewReader(data))
@@ -124,10 +124,10 @@ func parseGatewayInstanceConfig(data []byte, contract gatewayInstanceContract) (
 	if err := decoder.Decode(&extra); err != io.EOF {
 		return config, errors.New("gateway configuration must contain exactly one JSON object")
 	}
-	if err := validateGatewayContract(contract); err != nil {
+	if err := ValidateContract(contract); err != nil {
 		return config, err
 	}
-	if config.SchemaVersion != gatewayInstanceSchemaVersion {
+	if config.SchemaVersion != SchemaVersion {
 		return config, gatewayFieldError(fmt.Sprintf("unsupported gateway schema version %d", config.SchemaVersion), "schema_version")
 	}
 	if config.OrganizationID != contract.OrganizationID || config.InstanceID != contract.InstanceID || config.AdapterCN != contract.AdapterCN || config.ServiceName != contract.ServiceName {
@@ -161,7 +161,7 @@ func parseGatewayInstanceConfig(data []byte, contract gatewayInstanceContract) (
 		if strings.TrimSpace(destination.Origin) == "" {
 			return config, gatewayFieldError(fmt.Sprintf("destination %d requires an HTTPS origin, for example https://api.example.com; set allowed paths in path_prefixes", index+1), "destinations", index, "origin")
 		}
-		upstream, err := parseGatewayUpstream(destination.Origin)
+		upstream, err := gateway.ParseUpstream(destination.Origin)
 		if err != nil {
 			return config, gatewayFieldError(fmt.Sprintf("invalid gateway destination: %v", err), "destinations", index, "origin")
 		}
@@ -193,26 +193,26 @@ func parseGatewayInstanceConfig(data []byte, contract gatewayInstanceContract) (
 	return config, nil
 }
 
-func validateGatewayContract(contract gatewayInstanceContract) error {
+func ValidateContract(contract Contract) error {
 	for label, value := range map[string]string{
 		"organization ID":     contract.OrganizationID,
 		"gateway instance ID": contract.InstanceID,
 		"adapter CN":          contract.AdapterCN,
 	} {
-		if !validGatewayIdentifier(value) {
+		if !ValidIdentifier(value) {
 			return fmt.Errorf("declared gateway %s is invalid", label)
 		}
 	}
-	if contract.ExternalNetwork != "" && !validGatewayIdentifier(contract.ExternalNetwork) {
+	if contract.ExternalNetwork != "" && !ValidIdentifier(contract.ExternalNetwork) {
 		return errors.New("declared gateway external-network metadata is invalid")
 	}
-	if !strings.HasSuffix(contract.ServiceName, ".svc.zpr") || !validGatewayIdentifier(strings.TrimSuffix(contract.ServiceName, ".svc.zpr")) {
+	if !strings.HasSuffix(contract.ServiceName, ".svc.zpr") || !ValidIdentifier(strings.TrimSuffix(contract.ServiceName, ".svc.zpr")) {
 		return errors.New("declared gateway service must be a valid name under svc.zpr")
 	}
 	return nil
 }
 
-func validGatewayIdentifier(value string) bool {
+func ValidIdentifier(value string) bool {
 	if len(value) == 0 || len(value) > 63 || value[0] < 'a' || value[0] > 'z' || value[len(value)-1] == '-' {
 		return false
 	}

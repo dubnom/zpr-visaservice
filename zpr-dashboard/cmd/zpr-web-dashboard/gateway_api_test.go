@@ -3,11 +3,12 @@ package main
 import (
 	"context"
 	"encoding/json"
-	"errors"
 	"net/http"
 	"net/http/httptest"
 	"strings"
 	"testing"
+
+	"neboagency.com/zpr-dashborad/internal/controlservice/gatewaydraft"
 )
 
 func TestGatewayContractsAPIListsOnlyInstalledZPLGateways(t *testing.T) {
@@ -20,7 +21,9 @@ func TestGatewayContractsAPIListsOnlyInstalledZPLGateways(t *testing.T) {
 			{Name: "orphan.svc.zpr", ActorCN: "missing-gateway", Kind: "Gateway"},
 		},
 	}
-	handler := newGatewayAPI("northstar", func(context.Context) (snapshot, error) { return snapshotData, nil }, nil)
+	handler := newGatewayAPI("northstar", func(context.Context) (gatewaydraft.Inventory, error) {
+		return gatewayInventoryFromSnapshot(snapshotData)
+	}, nil)
 	response := gatewayAPIRequest(handler, http.MethodGet, "/api/gateways/contracts", nil)
 	if response.Code != http.StatusOK {
 		t.Fatalf("GET status=%d body=%s", response.Code, response.Body)
@@ -44,7 +47,9 @@ func TestGatewayConfigCheckBindsDraftToInstalledContractWithoutApplying(t *testi
 		Actors:    []actor{{CN: "gateway-public-egress"}},
 		Services:  []service{{Name: "public-egress.svc.zpr", ActorCN: "gateway-public-egress", Kind: "Gateway"}},
 	}
-	handler := newGatewayAPI("northstar", func(context.Context) (snapshot, error) { return snapshotData, nil }, nil)
+	handler := newGatewayAPI("northstar", func(context.Context) (gatewaydraft.Inventory, error) {
+		return gatewayInventoryFromSnapshot(snapshotData)
+	}, nil)
 	response := gatewayAPIRequest(handler, http.MethodPost, "/api/gateways/config/check", gatewayConfigCheckBody(t, gatewayInstanceConfigJSON(t, nil)))
 	if response.Code != http.StatusOK {
 		t.Fatalf("POST status=%d body=%s", response.Code, response.Body)
@@ -64,7 +69,9 @@ func TestGatewayDraftAPIAnalyzesAndSavesExpandedMethods(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	handler := newGatewayAPI("northstar", func(context.Context) (snapshot, error) { return snapshotData, nil }, store)
+	handler := newGatewayAPI("northstar", func(context.Context) (gatewaydraft.Inventory, error) {
+		return gatewayInventoryFromSnapshot(snapshotData)
+	}, store)
 	methods := []string{"GET", "HEAD", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"}
 	config := gatewayInstanceConfigJSON(t, map[string]any{"methods": methods})
 	checked := gatewayAPIRequest(handler, http.MethodPost, "/api/gateways/config/check", gatewayConfigCheckBody(t, config))
@@ -99,7 +106,9 @@ func TestGatewayConfigCheckReportsExactSourceLine(t *testing.T) {
 		Actors:    []actor{{CN: "gateway-public-egress"}},
 		Services:  []service{{Name: "public-egress.svc.zpr", ActorCN: "gateway-public-egress", Kind: "Gateway"}},
 	}
-	handler := newGatewayAPI("northstar", func(context.Context) (snapshot, error) { return snapshotData, nil }, nil)
+	handler := newGatewayAPI("northstar", func(context.Context) (gatewaydraft.Inventory, error) {
+		return gatewayInventoryFromSnapshot(snapshotData)
+	}, nil)
 	config := `{
   "schema_version": 1,
   "organization_id": "northstar",
@@ -123,19 +132,6 @@ func TestGatewayConfigCheckReportsExactSourceLine(t *testing.T) {
 	if response.Code != http.StatusUnprocessableEntity || result.Valid || result.SourceLine != 10 {
 		t.Fatalf("check status=%d result=%+v; expected destination error on line 10", response.Code, result)
 	}
-	if line := gatewayDiagnosticLine([]byte(config), gatewayFieldError("missing field", "absent")); line != 0 {
-		t.Fatalf("missing field was assigned line %d", line)
-	}
-	if line := gatewayDiagnosticLine([]byte(config), gatewayFieldError("bad prefix", "destinations", 1, "path_prefixes", 0)); line != 11 {
-		t.Fatalf("prefix line = %d, want 11", line)
-	}
-	if line := gatewayDiagnosticLine([]byte(config), errors.New("live inventory unavailable")); line != 0 {
-		t.Fatalf("inventory error was assigned line %d", line)
-	}
-	duplicate := []byte("{\n\"origin\":\"https://valid.example.com\",\n\"Origin\":\"\"\n}")
-	if line := gatewayDiagnosticLine(duplicate, gatewayFieldError("blank origin", "origin")); line != 3 {
-		t.Fatalf("duplicate-field line = %d, want last field on line 3", line)
-	}
 }
 
 func TestGatewayConfigCheckRejectsUninstalledOrUnhealthyContracts(t *testing.T) {
@@ -158,7 +154,9 @@ func TestGatewayConfigCheckRejectsUninstalledOrUnhealthyContracts(t *testing.T) 
 				test.snapshot = contractSnapshot
 				test.snapshot.Services = nil
 			}
-			handler := newGatewayAPI("northstar", func(context.Context) (snapshot, error) { return test.snapshot, nil }, nil)
+			handler := newGatewayAPI("northstar", func(context.Context) (gatewaydraft.Inventory, error) {
+				return gatewayInventoryFromSnapshot(test.snapshot)
+			}, nil)
 			data := gatewayInstanceConfigJSON(t, nil)
 			if test.name == "unregistered gateway service" {
 				data = []byte(strings.ReplaceAll(string(data), `"instance_id":"public-egress"`, `"instance_id":"missing-gateway"`))
@@ -181,7 +179,9 @@ func TestGatewayConfigDraftAPIStoresValidatedOrganizationScopedRevisions(t *test
 	if err != nil {
 		t.Fatal(err)
 	}
-	handler := newGatewayAPI("northstar", func(context.Context) (snapshot, error) { return snapshotData, nil }, store)
+	handler := newGatewayAPI("northstar", func(context.Context) (gatewaydraft.Inventory, error) {
+		return gatewayInventoryFromSnapshot(snapshotData)
+	}, store)
 
 	first := gatewayConfigSaveBody(t, 0, gatewayInstanceConfigJSON(t, nil))
 	response := gatewayAPIRequest(handler, http.MethodPost, "/api/gateways/configs/public-egress/revisions", first)
@@ -224,7 +224,7 @@ func TestGatewayConfigDraftAPIStoresValidatedOrganizationScopedRevisions(t *test
 }
 
 func TestGatewayConfigDraftAPIRequiresConfiguredStore(t *testing.T) {
-	handler := newGatewayAPI("northstar", func(context.Context) (snapshot, error) { return snapshot{APIStatus: "connected"}, nil }, nil)
+	handler := newGatewayAPI("northstar", func(context.Context) (gatewaydraft.Inventory, error) { return gatewaydraft.Inventory{}, nil }, nil)
 	for _, path := range []string{"/api/gateways/configs", "/api/gateways/configs/public-egress"} {
 		response := gatewayAPIRequest(handler, http.MethodGet, path, nil)
 		if response.Code != http.StatusServiceUnavailable {

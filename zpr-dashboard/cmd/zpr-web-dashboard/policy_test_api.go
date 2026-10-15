@@ -219,9 +219,6 @@ func validatePolicyTestRequest(request policyTestRequest) error {
 	if len(request.Actors) == 0 || len(request.Actors) > maxPolicyTestActors {
 		return fmt.Errorf("Policy tests require between 1 and %d actors.", maxPolicyTestActors)
 	}
-	if len(request.Services) == 0 || len(request.Services) > maxPolicyTestServices {
-		return fmt.Errorf("Policy tests require between 1 and %d services.", maxPolicyTestServices)
-	}
 	if len(request.Actors)*len(request.Services) > maxPolicyTestPairs {
 		return fmt.Errorf("Policy test matrix exceeds the %d actor-service pair limit.", maxPolicyTestPairs)
 	}
@@ -249,8 +246,15 @@ func validatePolicyTestRequest(request policyTestRequest) error {
 			return fmt.Errorf("Actor %q: %w", actor.ID, err)
 		}
 	}
-	serviceIDs := make(map[string]bool, len(request.Services))
-	for _, service := range request.Services {
+	return validatePolicyTestServices(request.Services)
+}
+
+func validatePolicyTestServices(services []policyTestServiceInput) error {
+	if len(services) == 0 || len(services) > maxPolicyTestServices {
+		return fmt.Errorf("Policy tests require between 1 and %d services.", maxPolicyTestServices)
+	}
+	serviceIDs := make(map[string]bool, len(services))
+	for _, service := range services {
 		if !policyTestValueSafe(service.ID) || strings.TrimSpace(service.ID) == "" || len(service.ID) > 200 || serviceIDs[service.ID] {
 			return errors.New("Service IDs must be unique, nonempty, safe, and at most 200 characters.")
 		}

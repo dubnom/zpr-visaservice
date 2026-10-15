@@ -10,4 +10,4 @@ docker run --rm \
     -v "$dashboard_dir:/workspace" \
     -w /workspace \
     node:22-bookworm-slim \
-    sh -c 'npm ci --ignore-scripts && mkdir -p cmd/zpr-web-dashboard/static/vendor && cp node_modules/pluralize/pluralize.js cmd/zpr-web-dashboard/static/vendor/pluralize.js && cp node_modules/pluralize/LICENSE cmd/zpr-web-dashboard/static/vendor/PLURALIZE-LICENSE'
+    sh -c 'npm ci --ignore-scripts && mkdir -p cmd/zpr-web-dashboard/static/vendor && cp node_modules/pluralize/pluralize.js cmd/zpr-web-dashboard/static/vendor/pluralize.js && cp node_modules/pluralize/LICENSE cmd/zpr-web-dashboard/static/vendor/PLURALIZE-LICENSE && npm run build:editor'

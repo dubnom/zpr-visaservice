@@ -1,13 +1,13 @@
 package main
 
 import (
-	"context"
 	"encoding/json"
 	"errors"
-	"fmt"
 	"net/http"
 	"os"
 	"strings"
+
+	"neboagency.com/zpr-dashborad/internal/controlservice/gatewaydraft"
 )
 
 type gatewayContractsResponse struct {
@@ -36,25 +36,23 @@ type gatewayConfigCheckResponse struct {
 	Contract    gatewayInstanceContract `json:"contract,omitempty"`
 }
 
-type gatewaySnapshotReader func(context.Context) (snapshot, error)
-
-func newGatewayAPI(organizationID string, readSnapshot gatewaySnapshotReader, store *gatewayConfigStore) http.Handler {
+func newGatewayAPI(organizationID string, readInventory gatewaydraft.Reader, store *gatewayConfigStore) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if !localEditorRequest(w, r) {
 			return
 		}
-		if organizationID == "" || readSnapshot == nil {
+		if organizationID == "" || readInventory == nil {
 			writePolicyError(w, http.StatusServiceUnavailable, "Gateway organization context is unavailable.")
 			return
 		}
 		switch {
 		case r.Method == http.MethodGet && r.URL.Path == "/api/gateways/contracts":
-			data, err := readSnapshot(r.Context())
-			if err != nil || data.APIStatus != "connected" || len(data.Errors) > 0 {
+			data, err := readInventory(r.Context())
+			if err != nil {
 				writePolicyError(w, http.StatusServiceUnavailable, "Live gateway service inventory is unavailable; contracts cannot be verified.")
 				return
 			}
-			contracts := installedGatewayContracts(organizationID, data)
+			contracts := gatewaydraft.InstalledContracts(organizationID, data)
 			writeJSON(w, http.StatusOK, gatewayContractsResponse{OrganizationID: organizationID, Contracts: contracts})
 		case r.Method == http.MethodGet && r.URL.Path == "/api/gateways/configs":
 			if store == nil {
@@ -83,18 +81,18 @@ func newGatewayAPI(organizationID string, readSnapshot gatewaySnapshotReader, st
 				writePolicyError(w, http.StatusBadRequest, "Gateway configuration must include an instance_id.")
 				return
 			}
-			data, err := readSnapshot(r.Context())
-			if err != nil || data.APIStatus != "connected" || len(data.Errors) > 0 {
+			data, err := readInventory(r.Context())
+			if err != nil {
 				writePolicyError(w, http.StatusServiceUnavailable, "Live gateway service inventory is unavailable; config was not checked.")
 				return
 			}
-			contract, found := findInstalledGatewayContract(organizationID, identity.InstanceID, data)
+			contract, found := gatewaydraft.FindInstalledContract(organizationID, identity.InstanceID, data)
 			if !found {
 				writePolicyError(w, http.StatusConflict, "No live Gateway service matches this organization and instance ID.")
 				return
 			}
 			if _, err := parseGatewayInstanceConfig(request.Config, contract); err != nil {
-				writeJSON(w, http.StatusUnprocessableEntity, gatewayConfigCheckResponse{Valid: false, Diagnostics: err.Error(), SourceLine: gatewayDiagnosticLine(request.Config, err), Contract: contract})
+				writeJSON(w, http.StatusUnprocessableEntity, gatewayConfigCheckResponse{Valid: false, Diagnostics: err.Error(), SourceLine: gatewaydraft.DiagnosticLine(request.Config, err), Contract: contract})
 				return
 			}
 			writeJSON(w, http.StatusOK, gatewayConfigCheckResponse{Valid: true, Diagnostics: "Gateway draft matches the live Gateway service identity; runtime configuration is unchanged.", Contract: contract})
@@ -135,12 +133,12 @@ func newGatewayAPI(organizationID string, readSnapshot gatewaySnapshotReader, st
 					writePolicyError(w, http.StatusBadRequest, "expected_revision cannot be negative.")
 					return
 				}
-				data, err := readSnapshot(r.Context())
-				if err != nil || data.APIStatus != "connected" || len(data.Errors) > 0 {
+				data, err := readInventory(r.Context())
+				if err != nil {
 					writePolicyError(w, http.StatusServiceUnavailable, "Live gateway service inventory is unavailable; draft was not saved.")
 					return
 				}
-				contract, found := findInstalledGatewayContract(organizationID, instanceID, data)
+				contract, found := gatewaydraft.FindInstalledContract(organizationID, instanceID, data)
 				if !found {
 					writePolicyError(w, http.StatusConflict, "No live Gateway service matches this organization and instance ID.")
 					return
@@ -166,53 +164,4 @@ func newGatewayAPI(organizationID string, readSnapshot gatewaySnapshotReader, st
 			writePolicyError(w, http.StatusMethodNotAllowed, "Gateway endpoint method or path is not supported.")
 		}
 	})
-}
-
-func installedGatewayContracts(organizationID string, data snapshot) []gatewayInstanceContract {
-	contracts := make([]gatewayInstanceContract, 0)
-	actors := make(map[string]bool, len(data.Actors))
-	for _, actor := range data.Actors {
-		if actor.CN != "" {
-			actors[actor.CN] = true
-		}
-	}
-	for _, service := range data.Services {
-		if !strings.EqualFold(service.Kind, "Gateway") || !actors[service.ActorCN] {
-			continue
-		}
-		instanceID := strings.TrimSuffix(service.Name, ".svc.zpr")
-		if strings.TrimSpace(organizationID) == "" || !validGatewayIdentifier(instanceID) {
-			continue
-		}
-		contract := gatewayInstanceContract{
-			OrganizationID: organizationID, InstanceID: instanceID, AdapterCN: service.ActorCN,
-			ServiceName: service.Name, ExternalNetwork: service.ExternalNetworkConnection,
-		}
-		if validateGatewayContract(contract) == nil {
-			contracts = append(contracts, contract)
-		}
-	}
-	return contracts
-}
-
-func findInstalledGatewayContract(organizationID, instanceID string, data snapshot) (gatewayInstanceContract, bool) {
-	for _, contract := range installedGatewayContracts(organizationID, data) {
-		if contract.InstanceID == instanceID {
-			return contract, true
-		}
-	}
-	return gatewayInstanceContract{}, false
-}
-
-func gatewaySnapshotReaderFromApplication(app *application) gatewaySnapshotReader {
-	return func(ctx context.Context) (snapshot, error) {
-		if app == nil || app.admin == nil {
-			return snapshot{}, errors.New("Visa Service Admin API is unavailable")
-		}
-		data := app.fetchSnapshot(ctx)
-		if data.APIStatus != "connected" || len(data.Errors) > 0 {
-			return data, fmt.Errorf("Visa Service snapshot is not complete")
-		}
-		return data, nil
-	}
 }

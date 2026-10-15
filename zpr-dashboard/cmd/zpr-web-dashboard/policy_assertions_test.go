@@ -26,6 +26,10 @@ func TestPolicyContextLauncherSeedsIndependentAssertions(t *testing.T) {
 				t.Fatal(err)
 			}
 			state := t.TempDir()
+			manifest := filepath.Join(state, "manifest.json")
+			if err := os.WriteFile(manifest, []byte(`{"machines":[{"id":"machine-01","type":"laptop","model":"Example","location":"Office","owner":"it-pool","secure":true}]}`), 0o600); err != nil {
+				t.Fatal(err)
+			}
 			script := `set -eu
 docker() {
     case "$1" in
@@ -47,6 +51,7 @@ start_policy_context_container great-lakes /runtime/runtime.zpl Network/Effectiv
 			command := exec.Command("sh", "-c", script)
 			command.Env = append(os.Environ(),
 				"DASHBOARD_DIR="+dashboard, "STATE_DIR="+state,
+				"SIMULATION_MANIFEST="+manifest,
 				"ORGANIZATIONS_DIR="+filepath.Join(dashboard, "cmd/zpr-web-dashboard/examples/organizations"),
 				"POLICY_CONTAINER=test-policy", "SIMULATOR_IMAGE=old-default",
 				"ZPR_POLICY_SERVICE_IMAGE="+test.override, "RUNTIME_DIR=/runtime",
@@ -66,6 +71,17 @@ start_policy_context_container great-lakes /runtime/runtime.zpl Network/Effectiv
 			t.Setenv("ZPR_POLICY_ASSERTIONS_SOURCE_FILE", filepath.Join(state, "policy-assertion-seeds/great-lakes.assertions"))
 			if source, err := configuredPolicyAssertionDefaults(); err != nil || source == "" {
 				t.Fatalf("generated seed = %q, %v", source, err)
+			}
+			fixtures, err := os.ReadFile(filepath.Join(state, "policy-test-fixtures/great-lakes.json"))
+			if err != nil || !strings.Contains(string(args), "ZPR_POLICY_TEST_FIXTURES_FILE=") {
+				t.Fatalf("independent fixture input not passed to service: %v", err)
+			}
+			var config policyFixtureConfig
+			if err := json.Unmarshal(fixtures, &config); err != nil {
+				t.Fatal(err)
+			}
+			if err := validatePolicyFixtureConfig(config, "great-lakes", config.BaseDN, nil); err != nil {
+				t.Fatalf("exported fixture configuration is invalid: %v", err)
 			}
 		})
 	}

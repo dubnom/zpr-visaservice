@@ -9,7 +9,8 @@ import (
 )
 
 func TestGatewayConfigStoreSavesPrivateOrganizationScopedRevisions(t *testing.T) {
-	store, err := newGatewayConfigStore(filepath.Join(t.TempDir(), "gateway-store"))
+	root := filepath.Join(t.TempDir(), "gateway-store")
+	store, err := newGatewayConfigStore(root)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -38,11 +39,11 @@ func TestGatewayConfigStoreSavesPrivateOrganizationScopedRevisions(t *testing.T)
 		t.Fatalf("other organization records=%+v err=%v", records, err)
 	}
 
-	organizationInfo, err := os.Stat(filepath.Join(store.root, "northstar"))
+	organizationInfo, err := os.Stat(filepath.Join(root, "northstar"))
 	if err != nil || organizationInfo.Mode().Perm() != 0o700 {
 		t.Fatalf("organization directory mode=%v err=%v", organizationInfo.Mode().Perm(), err)
 	}
-	recordInfo, err := os.Stat(filepath.Join(store.root, "northstar", "public-egress.json"))
+	recordInfo, err := os.Stat(filepath.Join(root, "northstar", "public-egress.json"))
 	if err != nil || recordInfo.Mode().Perm() != 0o600 {
 		t.Fatalf("gateway record mode=%v err=%v", recordInfo.Mode().Perm(), err)
 	}
@@ -69,11 +70,12 @@ func TestGatewayConfigStoreRejectsUnsafeIdentityAndContents(t *testing.T) {
 
 func TestGatewayConfigStoreRejectsSymlinkedRecords(t *testing.T) {
 	directory := t.TempDir()
-	store, err := newGatewayConfigStore(filepath.Join(directory, "gateway-store"))
+	root := filepath.Join(directory, "gateway-store")
+	store, err := newGatewayConfigStore(root)
 	if err != nil {
 		t.Fatal(err)
 	}
-	orgDir := filepath.Join(store.root, "northstar")
+	orgDir := filepath.Join(root, "northstar")
 	if err := os.MkdirAll(orgDir, 0o700); err != nil {
 		t.Fatal(err)
 	}
@@ -95,7 +97,7 @@ func TestGatewayConfigStoreRejectsSymlinkedRecords(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(outsideDirectory, "public-egress.json"), []byte(`{"organization_id":"redwood"}`), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.Symlink(outsideDirectory, filepath.Join(store.root, "redwood")); err != nil {
+	if err := os.Symlink(outsideDirectory, filepath.Join(root, "redwood")); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := store.Get("redwood", "public-egress"); err == nil {

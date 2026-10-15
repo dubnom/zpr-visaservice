@@ -11,6 +11,151 @@ not competing current requirements. References such as "above", "below" and
 "this deployment" retain their original context from the former combined tracker;
 use the dated deployment ledger when checking release scope.
 
+## Structured AI editor responses (2026-10-15 UTC)
+
+**Deployed to Control-Service only at 18:13 UTC; not committed or pushed.**
+
+- [x] Replace prompt-only JSON output in direct-edit mode with the forced
+  `propose_editor_edits` tool contract. Require exactly one complete response,
+  bounded edits and explicit before/after strings. Text blocks are never
+  interpreted as edit payloads. The existing browser JSON contract remains
+  compatible with open Control Room pages.
+- [x] Reject token-limited responses before applying anything, including
+  otherwise parseable partial tool results. Report the output-limit cause and
+  direct operators to increase Max tokens or request smaller changes.
+- [x] Preserve atomic validation, stale-record/source guards, direct unsaved
+  edits and Undo. Legacy editor assistants continue using their previous text
+  transport and Insert behavior.
+- [x] Mock-provider transport/route tests cover structured requests, escaped
+  source, usage, truncation, wrong/missing/duplicate tools and invalid schema.
+  All 28 desktop/tablet browser checks pass, including preserved drafts on
+  errors and a successful undoable retry. Focused Go race tests and vet pass.
+  Required full Go tests retain the same four known failures.
+- [x] Live verified-mTLS readiness confirms Great Lakes configured and
+  assistant/compiler/tester ready. Only Control-Service restarted, with exact
+  Config/HostConfig/mounts preserved. No live model request, policy save,
+  Restore or runtime mutation; no Control Room refresh required.
+
+This corrects the fragile response protocol; the user's original raw provider
+response was not available, so malformed text versus truncation was not proven
+for that individual failure. See
+[deployment/rollback](GUI%20deployments.md#structured-ai-editor-responses-2026-10-15-1813-utc).
+
+## Editor color parity and Analyze repair (2026-10-15 UTC)
+
+**Deployed to Control Room and Policy-Service at 17:59 UTC; not committed or
+pushed.**
+
+- [x] CodeMirror decorations reuse the legacy policy/assertion token
+  classification and exact colors, including base text. No second tokenizer.
+- [x] Nine exact color-only CSP hashes support native Chromium editing without
+  permitting arbitrary inline styles/scripts. Font metrics and direct undoable
+  AI edits remain unchanged.
+- [x] Diagnose production Analyze: compilation worked, but the fixture endpoint
+  returned HTTP 503 because Policy-Service had an old executable and no
+  independent fixture-file setting.
+- [x] Export the existing provisioning inputs once through the existing adapter,
+  then configure Policy-Service to read only the independent version-1 operator
+  contract plus live LDAP. No production profile/manifest/API dependency on
+  Simulator, Restore, policy save or organization runtime changes.
+- [x] Verify fixture GET and a non-saving Analyze over production verified mTLS:
+  HTTP 200, 38 actors, 10 services, 380 actor/service evaluations.
+  The existing Effective network policy also returns HTTP 200 with 380
+  evaluations; it references none of the omitted attributes.
+- [x] All 26 focused desktop/tablet editor checks pass; focused race tests and vet
+  pass. Required full Go suite retains the same four known baseline failures.
+- [x] Actual served assets/CSP pass isolated token parity, typing, mock AI and
+  Undo/Redo checks with no JavaScript/CSP errors. API calls in that browser are
+  intercepted; this is not an authenticated operator Analyze click or real
+  model request.
+
+Existing fixture-format limits remain explicit: three coordinate-valued
+attributes cannot be represented in ZPT and are reported as omitted. Policies
+referencing them cannot be analyzed. Refresh, sign in again if prompted, then
+enable the opt-in CodeMirror trial.
+See [deployment/rollback](GUI%20deployments.md#editor-color-parity-and-analyze-repair-2026-10-15-1759-utc).
+
+## CodeMirror font parity and direct AI edits (2026-10-15 UTC)
+
+**Deployed to Control Room and Control-Service at 17:47 UTC; not committed or
+pushed.** The user approved
+automatic application of requested AI line changes as undoable, unsaved edits,
+rather than retaining explicit Insert/Apply in the CodeMirror trial.
+
+- CodeMirror takes font size, family and line height from each original
+  textarea's computed styles, matching both policy and assertion editors.
+- Policy/assertion requests in CodeMirror opt into structured exact-match
+  replacement edits. Accepted edits apply together as one isolated Undo step;
+  Redo restores them. Other unsaved text is preserved, and nothing is saved,
+  analyzed, staged or activated automatically.
+- Reject malformed/truncated responses, missing/ambiguous/overlapping anchors,
+  oversize edits, stale source/record responses and mode/permission changes.
+  Validation is atomic: a rejected edit leaves the entire source unchanged.
+  The previous textarea editors retain explicit Insert; other assistants keep
+  their existing contracts.
+- All 26 selected desktop/tablet checks pass: typography parity, policy and
+  assertion direct edits, Undo/Redo, rejection paths, record changes, legacy
+  Insert and existing trial/Config-assistant regressions. Focused assistant/CSP
+  race tests and embedded build pass. Required full Go tests retain the four
+  known failures documented below; no full-suite pass is claimed.
+
+The user approved the coordinated current-worktree rollout, including other
+pending backend changes. Both service configurations are unchanged; Simulator
+and Policy-Service were not restarted. Live HTML/assets match source; the real
+server CSP permits matching font metrics and a mocked direct-edit/Undo/Redo
+browser check without JavaScript/CSP errors. Verified mTLS read of independent
+production policy context succeeds. No live AI request or policy save was
+performed. See [rollout and rollback](GUI%20deployments.md#control-roomservice-font-parity-and-direct-ai-edits-2026-10-15-1747-utc).
+
+## Policy/Assertions CodeMirror trial (2026-10-15 UTC)
+
+**Deployed to Control Room at 2026-10-15 17:30 UTC; not committed or pushed
+as part of this trial.** Simulator was not updated.
+
+- [x] Opt-in CodeMirror 6 for policy and assertions only, with syntax colors,
+  bracket matching, line numbers, policy completion, undo/redo and shared
+  Find/Replace/Wrap.
+- [x] Switch back without losing text/selection; default off after reload.
+  Implementation changes and record loads reset local undo history.
+- [x] Preserve existing Save shortcuts/confirmation, revision payloads,
+  Analyze source/context guards, source-error marks and clickable result actions.
+- [x] Bundle locally, load only on opt-in, retain dependency licenses and report
+  load failure without disabling the current editor.
+- [x] User-approved exact-color CSP hashes only; arbitrary inline styles and
+  scripts remain blocked. No external editor service or Simulator dependency.
+
+Verification: 14 trial browser checks pass across desktop/tablet, including
+exact Save/Analyze text, stale-response rejection, fallback and negative CSP
+checks. The broader 36-check editor selection passes 34; two legacy assertion
+toolbar-spacing checks fail at 27px versus the expected 9px. Removing the trial
+controls and stylesheet still yields 27px in both viewports; the existing tests
+were not changed. Focused CSP race test, embedded Go build and editor diagnostics
+pass. Required dashboard `make test` retains the four known failures: enrollment
+readiness, stale-bundle platform fixture, placement shell extraction and
+trusted-service ELF fixture. No full-suite pass is claimed.
+The deployment rerun passes all 14 trial checks and the focused CSP race test;
+the full Go suite retains those same four failures. The bundle-load-failure test
+now uses a click rather than a checked-state assertion because the intended
+failure handler immediately resets the checkbox.
+
+The user approved deploying the current worktree, including pending
+policy-fixture/operator-file refactoring changes. Control Room alone restarted.
+Forty-seven served assets match source byte-for-byte, and configuration/mounts/
+ports are unchanged. Live sign-in protection and actual server CSP are verified;
+a separate isolated browser fixture verifies typing and editor fallback with
+live assets, no unexpected JavaScript/CSP errors and all API writes blocked
+(none attempted). This is not an authenticated live-data or real Save/Analyze
+check. See [deployment and rollback](GUI%20deployments.md#control-room-codemirror-trial-2026-10-15-1730-utc).
+
+At the user's request, an isolated loopback-only preview runs at
+`http://127.0.0.1:8796/#policy`, with a conspicuous sample-data banner.
+Its static assets are mounted read-only; sample Save revisions exist only in
+memory, and Analyze emits a labeled sample diagnostic rather than invoking a
+compiler. Browser verification confirms exact assertion Save text/revision
+round-trip and the CodeMirror policy diagnostic marker. No live service is
+connected or restarted. This preview is not a deployment and does not provide
+real validation, formatting or assistant services.
+
 ## Runtime repairs and Scenario browser publication (2026-10-15 UTC)
 
 This publication checkpoint includes independent assertion seeding and image

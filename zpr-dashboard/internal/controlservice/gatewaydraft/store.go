@@ -1,4 +1,4 @@
-package main
+package gatewaydraft
 
 import (
 	"encoding/json"
@@ -17,27 +17,27 @@ const (
 	maxGatewayConfigRevisions   = 50
 )
 
-type gatewayConfigRevision struct {
+type Revision struct {
 	Revision int             `json:"revision"`
 	SavedAt  time.Time       `json:"saved_at"`
 	Config   json.RawMessage `json:"config"`
 }
 
-type gatewayConfigRecord struct {
-	OrganizationID  string                  `json:"organization_id"`
-	InstanceID      string                  `json:"instance_id"`
-	CurrentRevision int                     `json:"current_revision"`
-	Revisions       []gatewayConfigRevision `json:"revisions"`
+type Record struct {
+	OrganizationID  string     `json:"organization_id"`
+	InstanceID      string     `json:"instance_id"`
+	CurrentRevision int        `json:"current_revision"`
+	Revisions       []Revision `json:"revisions"`
 }
 
-type gatewayConfigStore struct {
+type Store struct {
 	root string
 	mu   sync.Mutex
 }
 
-var errGatewayConfigRevisionConflict = errors.New("gateway configuration revision conflict")
+var ErrRevisionConflict = errors.New("gateway configuration revision conflict")
 
-func newGatewayConfigStore(root string) (*gatewayConfigStore, error) {
+func Open(root string) (*Store, error) {
 	if root == "" || !filepath.IsAbs(root) {
 		return nil, errors.New("gateway configuration store directory must be an absolute path")
 	}
@@ -52,19 +52,19 @@ func newGatewayConfigStore(root string) (*gatewayConfigStore, error) {
 	if err := os.Chmod(root, 0o700); err != nil {
 		return nil, err
 	}
-	return &gatewayConfigStore{root: root}, nil
+	return &Store{root: root}, nil
 }
 
-func (store *gatewayConfigStore) recordPath(organizationID, instanceID string) (string, string, error) {
-	if store == nil || store.root == "" || !validGatewayIdentifier(organizationID) || !validGatewayIdentifier(instanceID) {
+func (store *Store) recordPath(organizationID, instanceID string) (string, string, error) {
+	if store == nil || store.root == "" || !ValidIdentifier(organizationID) || !ValidIdentifier(instanceID) {
 		return "", "", errors.New("invalid gateway configuration store identity")
 	}
 	directory := filepath.Join(store.root, organizationID)
 	return directory, filepath.Join(directory, instanceID+".json"), nil
 }
 
-func (store *gatewayConfigStore) List(organizationID string) ([]gatewayConfigRecord, error) {
-	if store == nil || store.root == "" || !validGatewayIdentifier(organizationID) {
+func (store *Store) List(organizationID string) ([]Record, error) {
+	if store == nil || store.root == "" || !ValidIdentifier(organizationID) {
 		return nil, errors.New("invalid gateway organization ID")
 	}
 	store.mu.Lock()
@@ -77,18 +77,18 @@ func (store *gatewayConfigStore) List(organizationID string) ([]gatewayConfigRec
 	}
 	entries, err := os.ReadDir(directory)
 	if errors.Is(err, os.ErrNotExist) {
-		return []gatewayConfigRecord{}, nil
+		return []Record{}, nil
 	}
 	if err != nil {
 		return nil, err
 	}
-	records := make([]gatewayConfigRecord, 0, len(entries))
+	records := make([]Record, 0, len(entries))
 	for _, entry := range entries {
 		if entry.IsDir() || filepath.Ext(entry.Name()) != ".json" {
 			continue
 		}
 		instanceID := entry.Name()[:len(entry.Name())-len(filepath.Ext(entry.Name()))]
-		if !validGatewayIdentifier(instanceID) {
+		if !ValidIdentifier(instanceID) {
 			continue
 		}
 		record, err := store.readRecord(organizationID, instanceID)
@@ -101,67 +101,67 @@ func (store *gatewayConfigStore) List(organizationID string) ([]gatewayConfigRec
 	return records, nil
 }
 
-func (store *gatewayConfigStore) Get(organizationID, instanceID string) (gatewayConfigRecord, error) {
+func (store *Store) Get(organizationID, instanceID string) (Record, error) {
 	if store == nil {
-		return gatewayConfigRecord{}, errors.New("gateway configuration store is unavailable")
+		return Record{}, errors.New("gateway configuration store is unavailable")
 	}
 	store.mu.Lock()
 	defer store.mu.Unlock()
 	return store.readRecord(organizationID, instanceID)
 }
 
-func (store *gatewayConfigStore) Save(organizationID, instanceID string, expectedRevision int, config json.RawMessage) (gatewayConfigRecord, error) {
+func (store *Store) Save(organizationID, instanceID string, expectedRevision int, config json.RawMessage) (Record, error) {
 	if store == nil {
-		return gatewayConfigRecord{}, errors.New("gateway configuration store is unavailable")
+		return Record{}, errors.New("gateway configuration store is unavailable")
 	}
 	store.mu.Lock()
 	defer store.mu.Unlock()
 	if expectedRevision < 0 {
-		return gatewayConfigRecord{}, errors.New("expected gateway revision cannot be negative")
+		return Record{}, errors.New("expected gateway revision cannot be negative")
 	}
 	directory, filePath, err := store.recordPath(organizationID, instanceID)
 	if err != nil {
-		return gatewayConfigRecord{}, err
+		return Record{}, err
 	}
-	if len(config) == 0 || len(config) > maxGatewayConfigBytes {
-		return gatewayConfigRecord{}, errors.New("gateway configuration is empty or too large")
+	if len(config) == 0 || len(config) > MaxConfigBytes {
+		return Record{}, errors.New("gateway configuration is empty or too large")
 	}
 	if err := os.MkdirAll(directory, 0o700); err != nil {
-		return gatewayConfigRecord{}, err
+		return Record{}, err
 	}
 	if info, err := os.Lstat(directory); err != nil || !info.IsDir() || info.Mode()&os.ModeSymlink != 0 {
-		return gatewayConfigRecord{}, errors.New("gateway organization store is not a real directory")
+		return Record{}, errors.New("gateway organization store is not a real directory")
 	}
 	if err := os.Chmod(directory, 0o700); err != nil {
-		return gatewayConfigRecord{}, err
+		return Record{}, err
 	}
 	record, err := store.readRecord(organizationID, instanceID)
 	if errors.Is(err, os.ErrNotExist) {
-		record = gatewayConfigRecord{OrganizationID: organizationID, InstanceID: instanceID, Revisions: []gatewayConfigRevision{}}
+		record = Record{OrganizationID: organizationID, InstanceID: instanceID, Revisions: []Revision{}}
 	} else if err != nil {
-		return gatewayConfigRecord{}, err
+		return Record{}, err
 	}
 	if record.CurrentRevision != expectedRevision {
-		return gatewayConfigRecord{}, errGatewayConfigRevisionConflict
+		return Record{}, ErrRevisionConflict
 	}
 	copyConfig := append(json.RawMessage(nil), config...)
 	if !json.Valid(copyConfig) {
-		return gatewayConfigRecord{}, errors.New("gateway configuration is not valid JSON")
+		return Record{}, errors.New("gateway configuration is not valid JSON")
 	}
-	revision := gatewayConfigRevision{Revision: record.CurrentRevision + 1, SavedAt: time.Now().UTC(), Config: copyConfig}
+	revision := Revision{Revision: record.CurrentRevision + 1, SavedAt: time.Now().UTC(), Config: copyConfig}
 	record.CurrentRevision = revision.Revision
 	record.Revisions = append(record.Revisions, revision)
 	if len(record.Revisions) > maxGatewayConfigRevisions {
-		record.Revisions = append([]gatewayConfigRevision(nil), record.Revisions[len(record.Revisions)-maxGatewayConfigRevisions:]...)
+		record.Revisions = append([]Revision(nil), record.Revisions[len(record.Revisions)-maxGatewayConfigRevisions:]...)
 	}
 	if err := store.writeRecord(directory, filePath, record); err != nil {
-		return gatewayConfigRecord{}, err
+		return Record{}, err
 	}
 	return record, nil
 }
 
-func (store *gatewayConfigStore) readRecord(organizationID, instanceID string) (gatewayConfigRecord, error) {
-	var record gatewayConfigRecord
+func (store *Store) readRecord(organizationID, instanceID string) (Record, error) {
+	var record Record
 	directory, filePath, err := store.recordPath(organizationID, instanceID)
 	if err != nil {
 		return record, err
@@ -202,7 +202,7 @@ func (store *gatewayConfigStore) readRecord(organizationID, instanceID string) (
 		return record, errors.New("stored gateway configuration record is invalid")
 	}
 	for index, revision := range record.Revisions {
-		if revision.Revision < 1 || !json.Valid(revision.Config) || len(revision.Config) > maxGatewayConfigBytes || index > 0 && revision.Revision <= record.Revisions[index-1].Revision {
+		if revision.Revision < 1 || !json.Valid(revision.Config) || len(revision.Config) > MaxConfigBytes || index > 0 && revision.Revision <= record.Revisions[index-1].Revision {
 			return record, errors.New("stored gateway configuration revision is invalid")
 		}
 	}
@@ -212,7 +212,7 @@ func (store *gatewayConfigStore) readRecord(organizationID, instanceID string) (
 	return record, nil
 }
 
-func (store *gatewayConfigStore) writeRecord(directory, filePath string, record gatewayConfigRecord) error {
+func (store *Store) writeRecord(directory, filePath string, record Record) error {
 	data, err := json.Marshal(record)
 	if err != nil || len(data) > maxGatewayStoredRecordBytes {
 		return errors.New("gateway configuration record exceeds its size limit")

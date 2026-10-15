@@ -51,9 +51,13 @@ func DecodeConfig(reader io.Reader) (Config, error) {
 }
 
 func (c Config) Validate() error {
+	return c.validate(true)
+}
+
+func (c Config) validate(requirePrincipals bool) error {
 	if c.Version != 1 || c.InvitationLifetimeSeconds < 1 || c.InvitationLifetimeSeconds > 30*24*60*60 ||
-		len(c.Principals) == 0 || len(c.Organizations) == 0 {
-		return errors.New("enrollment configuration requires version 1, explicit lifetime (1 second to 30 days), principals, and organizations")
+		(requirePrincipals && len(c.Principals) == 0) || len(c.Organizations) == 0 {
+		return errors.New("enrollment configuration requires version 1, explicit lifetime (1 second to 30 days), organizations, and principals for direct certificate administration")
 	}
 	if c.ApprovalLifetimeSeconds < 0 || c.ApprovalLifetimeSeconds > 30*24*60*60 {
 		return errors.New("enrollment approval lifetime must be between 1 second and 30 days when configured")
@@ -119,7 +123,7 @@ func newAdminHandler(store *Store, config Config, operator bool) (http.Handler, 
 	if store == nil {
 		return nil, errors.New("enrollment registry is required")
 	}
-	if err := config.Validate(); err != nil {
+	if err := config.validate(!operator); err != nil {
 		return nil, err
 	}
 	// Snapshot configuration so later caller mutation cannot change permissions.

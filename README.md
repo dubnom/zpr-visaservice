@@ -40,16 +40,27 @@ See [Features Added Since the Upstream Fork](FEATURES_SINCE_ZPR_ORG.md) for a
 high-level overview of the operator, policy, trusted-service, DNS, observability,
 and simulator capabilities added in this fork.
 
+Policy test fixture generation uses explicit operator configuration and live
+LDAP, without loading Simulator manifests or profiles. Simulator provisioning
+exports its fictional metadata into the same production input contract. See the
+[fixture configuration contract](zpr-dashboard/cmd/zpr-web-dashboard/README.md#independent-fixture-configuration);
+this incremental input boundary does not complete the application/package split.
+
 For engineering coordination, see the workspace
 [component work/status index](../COMPONENT_WORK.md) and
 [agent team charter](../AGENT_TEAM_STARTER.md). The
 [source reorganization plan](REDIRECTORY.md#inventory-and-target-layout-2026-10-14)
-records the current inventory and proposed layout; package extraction is planned,
-not implemented.
+records the current inventory, verified incremental extractions and remaining
+milestone gates; the full application/package split is not complete.
 
 See [NATTY: session-scoped address indirection](NATTY.md) for a proposed,
 not-yet-implemented design for adapter-local address aliases and their session,
 visa, and replay-protection requirements.
+
+See the [system packaging and release plan](System%20release%20plan.md) for
+planned clean-company installation milestones and the recurring qualification,
+signing, publication, rollout and recovery process for real system releases.
+The plan is not a claim that a production installer is currently available.
 
 ## Crates / Packages / Libraries
 

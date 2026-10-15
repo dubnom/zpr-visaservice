@@ -15,10 +15,11 @@ import (
 	"net/url"
 	"os"
 	"strings"
-	"syscall"
 	"time"
 
 	"neboagency.com/zpr-dashborad/internal/operatorauth"
+	"neboagency.com/zpr-dashborad/internal/servicehttp"
+	"neboagency.com/zpr-dashborad/internal/systemconfig"
 )
 
 type controlRoomSecurity struct {
@@ -26,39 +27,18 @@ type controlRoomSecurity struct {
 	tls         *tls.Config
 	allowedPeer net.IP
 	auth        *operatorauth.Auth
+	management  bool
 }
 
 type operatorWebConfig struct {
 	application, certPath, keyPath, origin string
 	configPath, secretPath, caPath         string
 	trustedPeerIP                          string
+	managementIP, organization             string
 }
 
 func readOperatorFile(path string, limit int64, private bool) ([]byte, error) {
-	info, err := os.Lstat(path)
-	if err != nil {
-		return nil, errors.New("operator configuration file is unavailable")
-	}
-	stat, ok := info.Sys().(*syscall.Stat_t)
-	if !ok || !info.Mode().IsRegular() || stat.Nlink != 1 ||
-		(stat.Uid != 0 && stat.Uid != uint32(os.Geteuid())) || info.Mode().Perm()&0o022 != 0 ||
-		(private && info.Mode().Perm()&0o077 != 0) {
-		return nil, errors.New("operator files require a regular, single-link, root/current-user-owned file with protected permissions")
-	}
-	file, err := os.OpenFile(path, os.O_RDONLY|syscall.O_NOFOLLOW|syscall.O_NONBLOCK, 0)
-	if err != nil {
-		return nil, errors.New("operator configuration file could not be opened safely")
-	}
-	defer file.Close()
-	opened, err := file.Stat()
-	if err != nil || !os.SameFile(info, opened) || info.Mode() != opened.Mode() || info.Size() != opened.Size() {
-		return nil, errors.New("operator configuration file changed while opening")
-	}
-	data, err := io.ReadAll(io.LimitReader(file, limit+1))
-	if err != nil || int64(len(data)) > limit {
-		return nil, errors.New("operator configuration file could not be read or exceeds its size limit")
-	}
-	return data, nil
+	return servicehttp.ReadOperatorFile(path, limit, private)
 }
 
 func configuredControlRoomSecurity(ctx context.Context, listen string) (*controlRoomSecurity, error) {
@@ -68,6 +48,8 @@ func configuredControlRoomSecurity(ctx context.Context, listen string) (*control
 		configPath: os.Getenv("ZPR_OPERATOR_OIDC_CONFIG_FILE"), secretPath: os.Getenv("ZPR_OPERATOR_OIDC_SECRET_FILE"),
 		caPath:        os.Getenv("ZPR_OPERATOR_OIDC_CA_FILE"),
 		trustedPeerIP: os.Getenv("ZPR_CONTROL_ROOM_OPERATOR_TRUSTED_PEER_IP"),
+		managementIP:  os.Getenv("ZPR_CONTROL_ROOM_MANAGEMENT_IP"),
+		organization:  os.Getenv("ZPR_CONTROL_ROOM_ORGANIZATION_ID"),
 	}
 	return loadOperatorWebSecurity(ctx, listen, config, newOperatorAuthFactory(config.caPath))
 }
@@ -79,6 +61,8 @@ func loadControlRoomSecurity(ctx context.Context, listen string, newAuth func(co
 		configPath: os.Getenv("ZPR_OPERATOR_OIDC_CONFIG_FILE"), secretPath: os.Getenv("ZPR_OPERATOR_OIDC_SECRET_FILE"),
 		caPath:        os.Getenv("ZPR_OPERATOR_OIDC_CA_FILE"),
 		trustedPeerIP: os.Getenv("ZPR_CONTROL_ROOM_OPERATOR_TRUSTED_PEER_IP"),
+		managementIP:  os.Getenv("ZPR_CONTROL_ROOM_MANAGEMENT_IP"),
+		organization:  os.Getenv("ZPR_CONTROL_ROOM_ORGANIZATION_ID"),
 	}
 	return loadOperatorWebSecurity(ctx, listen, config, newAuth)
 }
@@ -119,6 +103,18 @@ func loadOperatorWebSecurity(ctx context.Context, listen string, webConfig opera
 	secretPath := strings.TrimSpace(webConfig.secretPath)
 	caPath := strings.TrimSpace(webConfig.caPath)
 	trustedPeerRaw := strings.TrimSpace(webConfig.trustedPeerIP)
+	management := webConfig.managementIP != ""
+	if management {
+		if webConfig.application != "Control Room" || trustedPeerRaw != "" {
+			return nil, errors.New("management HTTPS is Control Room only and cannot use a trusted proxy peer")
+		}
+		if err := systemconfig.ValidateManagementEndpoint(origin, webConfig.managementIP); err != nil {
+			return nil, err
+		}
+		if configPath == "" || secretPath == "" {
+			return nil, errors.New("management HTTPS requires named-user OIDC configuration and secret")
+		}
+	}
 	var trustedPeer net.IP
 	if trustedPeerRaw != "" {
 		trustedPeer = net.ParseIP(trustedPeerRaw)
@@ -129,7 +125,7 @@ func loadOperatorWebSecurity(ctx context.Context, listen string, webConfig opera
 	if caPath != "" && (configPath == "" || secretPath == "") {
 		return nil, errors.New("operator OIDC CA configuration requires OIDC config and secret")
 	}
-	if certPath == "" && keyPath == "" && origin == "" && configPath == "" && secretPath == "" && caPath == "" && trustedPeerRaw == "" {
+	if certPath == "" && keyPath == "" && origin == "" && configPath == "" && secretPath == "" && caPath == "" && trustedPeerRaw == "" && !management {
 		return &controlRoomSecurity{}, nil
 	}
 	if certPath == "" || keyPath == "" || origin == "" {
@@ -149,7 +145,11 @@ func loadOperatorWebSecurity(ctx context.Context, listen string, webConfig opera
 	}
 	loopbackListener := listenIP != nil && listenIP.IsLoopback()
 	proxyListener := listenIP != nil && listenIP.IsUnspecified() && trustedPeer != nil
-	if err != nil || (!loopbackListener && !proxyListener) || port == "0" || originPort != port ||
+	if management {
+		if err != nil || host != webConfig.managementIP || port == "0" || originPort != port {
+			return nil, errors.New("management HTTPS requires the explicit management IP listener on the exact origin port")
+		}
+	} else if err != nil || (!loopbackListener && !proxyListener) || port == "0" || originPort != port ||
 		(u.Hostname() != "localhost" && (originIP == nil || !originIP.IsLoopback())) {
 		return nil, errors.New("direct HTTPS requires a loopback listener or an explicitly trusted proxy peer, plus a loopback origin on the same fixed port")
 	}
@@ -160,6 +160,12 @@ func loadOperatorWebSecurity(ctx context.Context, listen string, webConfig opera
 	keyPEM, err := readOperatorFile(keyPath, 65536, true)
 	if err != nil {
 		return nil, fmt.Errorf("%s key: %w", webConfig.application, err)
+	}
+	defer clear(keyPEM)
+	if management {
+		if err := systemconfig.CheckServerCertificate(origin, certPEM, keyPEM, time.Now()); err != nil {
+			return nil, err
+		}
 	}
 	certificate, err := tls.X509KeyPair(certPEM, keyPEM)
 	if err != nil || len(certificate.Certificate) == 0 {
@@ -178,7 +184,7 @@ func loadOperatorWebSecurity(ctx context.Context, listen string, webConfig opera
 	}
 	security := &controlRoomSecurity{origin: origin, allowedPeer: trustedPeer, tls: &tls.Config{
 		MinVersion: tls.VersionTLS13, Certificates: []tls.Certificate{certificate},
-	}}
+	}, management: management}
 	if configPath == "" && secretPath == "" {
 		return security, nil
 	}
@@ -205,10 +211,16 @@ func loadOperatorWebSecurity(ctx context.Context, listen string, webConfig opera
 	if config.RedirectURL != origin+"/auth/operator/callback" {
 		return nil, errors.New("OIDC callback must match the configured direct HTTPS origin exactly")
 	}
+	if management {
+		if err := systemconfig.ValidateOperatorAccess(webConfig.organization, origin, config); err != nil {
+			return nil, err
+		}
+	}
 	secretData, err := readOperatorFile(secretPath, 4096, true)
 	if err != nil {
 		return nil, fmt.Errorf("operator OIDC secret: %w", err)
 	}
+	defer clear(secretData)
 	secret := strings.TrimSuffix(strings.TrimSuffix(string(secretData), "\n"), "\r")
 	if secret == "" || strings.TrimSpace(secret) != secret || strings.ContainsAny(secret, "\r\n\x00") {
 		return nil, errors.New("OIDC client secret must be a nonempty single line")
@@ -216,6 +228,9 @@ func loadOperatorWebSecurity(ctx context.Context, listen string, webConfig opera
 	auth, err := newAuth(ctx, config, secret)
 	if err != nil {
 		return nil, err
+	}
+	if management && auth == nil {
+		return nil, errors.New("management HTTPS requires initialized named-user OIDC authorization")
 	}
 	security.auth = auth
 	return security, nil
@@ -235,7 +250,16 @@ func (s *controlRoomSecurity) protect(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		remoteHost, _, err := net.SplitHostPort(r.RemoteAddr)
 		ip := net.ParseIP(remoteHost)
-		remoteAllowed := ip != nil && (ip.IsLoopback() || s.allowedPeer != nil && ip.Equal(s.allowedPeer))
+		remoteAllowed := ip != nil && (ip.IsLoopback() || s.allowedPeer != nil && ip.Equal(s.allowedPeer) ||
+			s.management && ip.IsGlobalUnicast())
+		if s.management && (s.auth == nil ||
+			(r.Header.Get("Origin") != "" && r.Header.Get("Origin") != s.origin) ||
+			r.Header.Get("Forwarded") != "" || r.Header.Get("X-Forwarded-Host") != "" ||
+			r.Header.Get("X-Forwarded-Proto") != "" || r.Header.Get("X-Forwarded-For") != "") {
+			log.Print("Management HTTPS operator application boundary denied a request")
+			writePolicyError(w, http.StatusForbidden, "Management access requires configured direct HTTPS/OIDC without forwarded headers or a foreign origin.")
+			return
+		}
 		if r.TLS == nil || r.Host != u.Host || err != nil || !remoteAllowed {
 			log.Print("Direct HTTPS operator application boundary denied a request")
 			writePolicyError(w, http.StatusForbidden, "Operator application requires direct TLS, the configured host, and an approved connection.")

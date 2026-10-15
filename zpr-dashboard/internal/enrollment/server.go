@@ -19,17 +19,18 @@ import (
 )
 
 type ServerConfig struct {
-	Version                      int    `json:"version"`
-	Listen                       string `json:"listen"`
-	AllowNonLoopback             bool   `json:"allow_non_loopback"`
-	Audience                     string `json:"audience"`
-	DatabaseFile                 string `json:"database_file"`
-	CertificateFile              string `json:"certificate_file"`
-	KeyFile                      string `json:"key_file"`
-	ChallengeLifetimeSeconds     int    `json:"challenge_lifetime_seconds"`
-	ApprovalLifetimeSeconds      int    `json:"approval_lifetime_seconds"`
-	RuntimeImportSeedFile        string `json:"runtime_import_seed_file,omitempty"`
-	RuntimeImportLifetimeSeconds int    `json:"runtime_import_lifetime_seconds,omitempty"`
+	Version                      int                   `json:"version"`
+	Listen                       string                `json:"listen"`
+	AllowNonLoopback             bool                  `json:"allow_non_loopback"`
+	Audience                     string                `json:"audience"`
+	DatabaseFile                 string                `json:"database_file"`
+	CertificateFile              string                `json:"certificate_file"`
+	KeyFile                      string                `json:"key_file"`
+	ChallengeLifetimeSeconds     int                   `json:"challenge_lifetime_seconds"`
+	ApprovalLifetimeSeconds      int                   `json:"approval_lifetime_seconds"`
+	RuntimeImportSeedFile        string                `json:"runtime_import_seed_file,omitempty"`
+	RuntimeImportLifetimeSeconds int                   `json:"runtime_import_lifetime_seconds,omitempty"`
+	Administration               *AdministrationConfig `json:"administration,omitempty"`
 }
 
 func LoadServerConfig(path string) (ServerConfig, error) {
@@ -59,6 +60,14 @@ func LoadServerConfig(path string) (ServerConfig, error) {
 	for _, field := range []*string{&config.DatabaseFile, &config.CertificateFile, &config.KeyFile, &config.RuntimeImportSeedFile} {
 		if *field != "" && !filepath.IsAbs(*field) {
 			*field = filepath.Join(base, *field)
+		}
+		if config.Administration != nil {
+			admin := config.Administration
+			for _, field := range []*string{&admin.CertificateFile, &admin.KeyFile, &admin.ClientCAFile, &admin.CatalogFile, &admin.DelegationTrustFile} {
+				if *field != "" && !filepath.IsAbs(*field) {
+					*field = filepath.Join(base, *field)
+				}
+			}
 		}
 	}
 	if err := config.Validate(); err != nil {
@@ -100,6 +109,11 @@ func (c ServerConfig) Validate() error {
 	if c.ChallengeLifetimeSeconds < 1 || c.ChallengeLifetimeSeconds > 300 ||
 		c.ApprovalLifetimeSeconds < 1 || c.ApprovalLifetimeSeconds > 30*24*60*60 {
 		return errors.New("device service requires explicit challenge (1-300 seconds) and approval (1 second-30 days) lifetimes")
+	}
+	if c.Administration != nil {
+		if err := c.Administration.Validate(c); err != nil {
+			return err
+		}
 	}
 	return nil
 }
@@ -185,6 +199,10 @@ func loadServiceTLSIdentity(certificateFile, keyFile, origin string) (tls.Certif
 	if err != nil {
 		return tls.Certificate{}, fmt.Errorf("load service TLS identity: %w", err)
 	}
+	return validateServiceTLSIdentity(certificate, origin)
+}
+
+func validateServiceTLSIdentity(certificate tls.Certificate, origin string) (tls.Certificate, error) {
 	leaf, err := x509.ParseCertificate(certificate.Certificate[0])
 	if err != nil {
 		return tls.Certificate{}, err
@@ -223,33 +241,60 @@ func RunDeviceServer(ctx context.Context, config ServerConfig) (result error) {
 		return err
 	}
 	defer func() { result = errors.Join(result, store.Close()) }()
-	listener, err := net.Listen("tcp", server.Addr)
-	if err != nil {
-		return fmt.Errorf("listen for device enrollment: %w", err)
+	servers := []*http.Server{server}
+	if config.Administration != nil {
+		admin, err := newAdministrationServer(*config.Administration, store)
+		if err != nil {
+			return err
+		}
+		servers = append(servers, admin)
 	}
-	defer listener.Close()
-	stopped := make(chan struct{})
-	shutdown := make(chan error, 1)
-	go func() {
-		select {
-		case <-ctx.Done():
-			timeout, cancel := context.WithTimeout(context.Background(), 15*time.Second)
-			defer cancel()
-			err := server.Shutdown(timeout)
-			if err != nil {
-				err = errors.Join(err, server.Close())
-			}
-			shutdown <- err
-		case <-stopped:
-			shutdown <- nil
+	return runEnrollmentServers(ctx, servers)
+}
+
+func runEnrollmentServers(ctx context.Context, servers []*http.Server) error {
+	var listeners []net.Listener
+	defer func() {
+		for _, listener := range listeners {
+			_ = listener.Close()
 		}
 	}()
-	log.Printf("ZPR device enrollment HTTPS service listening on %s (no administration routes)", listener.Addr())
-	err = server.ServeTLS(listener, "", "")
-	close(stopped)
-	shutdownErr := <-shutdown
-	if !errors.Is(err, http.ErrServerClosed) {
-		return errors.Join(err, shutdownErr)
+	for _, server := range servers {
+		listener, err := net.Listen("tcp", server.Addr)
+		if err != nil {
+			return fmt.Errorf("listen for enrollment service: %w", err)
+		}
+		listeners = append(listeners, listener)
 	}
-	return shutdownErr
+	results := make(chan error, len(servers))
+	for i, server := range servers {
+		listener := listeners[i]
+		log.Printf("ZPR enrollment TLS listener %s (administration on a separate mTLS listener when configured)", listener.Addr())
+		go func() { results <- server.ServeTLS(listener, "", "") }()
+	}
+	var result error
+	completed := 0
+	select {
+	case <-ctx.Done():
+	case err := <-results:
+		completed++
+		if !errors.Is(err, http.ErrServerClosed) {
+			result = err
+		}
+	}
+	timeout, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+	defer cancel()
+	for _, server := range servers {
+		if err := server.Shutdown(timeout); err != nil {
+			result = errors.Join(result, err, server.Close())
+		}
+	}
+	for completed < len(servers) {
+		err := <-results
+		completed++
+		if !errors.Is(err, http.ErrServerClosed) {
+			result = errors.Join(result, err)
+		}
+	}
+	return result
 }

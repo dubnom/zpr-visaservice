@@ -125,7 +125,7 @@
         entry.className = `assistant-message design-assistant-message ${message.role}`;
         const author = document.createElement("strong");
         author.textContent = message.role === "user" ? "YOU" : "CLAUDE";
-        const insert = message.role === "assistant" && options.getTarget ? (text) => {
+        const insert = message.role === "assistant" && !message.directEdits && options.getTarget ? (text) => {
           try {
             if (message.generation !== generation || message.context !== fingerprint()) throw new Error("The editor changed after this suggestion. Ask again using the current draft.");
             editText(options.getTarget(), text);
@@ -173,6 +173,7 @@
       state.proposal = null;
       state.pending = true;
       const current = ++generation;
+      const directEdits = options.directEdits?.() ?? false;
       let context;
       try {
         context = fingerprint();
@@ -180,12 +181,26 @@
         const result = await options.request({
           messages: state.messages.map(({ role, content }) => ({ role, content })),
           model: model.value, max_tokens: Number(tokens.value),
+          ...(directEdits ? { direct_edits: true } : {}),
         });
         if (current !== generation) return;
         state.input += Number(result.input_tokens) || 0;
         state.output += Number(result.output_tokens) || 0;
         if (context !== fingerprint()) throw new Error("The editor changed while Claude was responding. Ask again using the current draft.");
         if (typeof result.answer !== "string" || !result.answer.trim()) throw new Error("The assistant returned an empty response.");
+        if (directEdits) {
+          if (!options.directEdits?.() || !(options.editable?.() ?? true)) throw new Error("The editor mode or permissions changed. No AI changes were applied; ask again.");
+          let response;
+          try { response = JSON.parse(result.answer); }
+          catch { throw new Error("The assistant returned invalid edit JSON. No changes were applied; ask again."); }
+          if (!response || typeof response.answer !== "string" || !response.answer.trim() || !Array.isArray(response.edits)) throw new Error("The assistant returned an invalid edit response. No changes were applied; ask again.");
+          // Applying emits input and invalidates pending requests, including this one.
+          state.pending = false;
+          window.ZPRCodeEditor.applyEdits(options.getTarget(), response.edits);
+          state.messages.push({ role: "assistant", content: response.answer + (response.edits.length ? "\nApplied as one unsaved edit. Undo with Ctrl/Command+Z." : ""), directEdits: true });
+          render();
+          return;
+        }
         state.messages.push({ role: "assistant", content: result.answer, context, generation: current });
         state.proposal = result.proposal_error ? null : result.proposal || null;
         proposalContext = context;

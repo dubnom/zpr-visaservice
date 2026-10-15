@@ -11,6 +11,9 @@ Completed checklists and dated release evidence live in the linked records.
 - [Deployments](GUI%20deployments.md): dated release, verification and rollback records.
 - [Organization editor plan](Organization%20editor%20plan.md): detailed creation/editing workflow.
 - [Provisioning plan](../Provisioning%20plan.md): machine/adapter enrollment architecture.
+- [System packaging and release plan](System%20release%20plan.md): initial
+  production installer milestones and recurring real-release qualification,
+  publication, rollout and recovery gates.
 
 ## Tracking conventions
 
@@ -24,6 +27,60 @@ Do not infer current runtime health from a historical verification entry.
 
 ## Current status
 
+- **Policy/Assertions CodeMirror trial:** **Deployed to Control Room**
+  (2026-10-15 17:30 UTC).
+  An opt-in checkbox enables the locally bundled editor; switching back preserves
+  unsaved text. Defaults off each reload. Save/Analyze contracts and source-owned
+  diagnostics remain unchanged. An isolated sample-data
+  [local preview](http://127.0.0.1:8796/#policy) is running for evaluation;
+  it does not connect to live services. Control Room rollout preserves operator
+  configuration and defaults the trial off; sign in again, then enable
+  **CodeMirror trial** in Policy/Assertions. Simulator was not updated.
+  See the [trial checks and limits](GUI%20completed%20work.md#policyassertions-codemirror-trial-2026-10-15-utc)
+  and [rollout/rollback evidence](GUI%20deployments.md#control-room-codemirror-trial-2026-10-15-1730-utc).
+  **Follow-up deployed at 17:47 UTC:** matching font metrics and requested AI
+  line changes applied directly as one undoable unsaved edit. Control Room and
+  Control-Service were updated together; existing configuration was preserved.
+  Refresh/sign in again to use it. See
+  [coordinated rollout](GUI%20deployments.md#control-roomservice-font-parity-and-direct-ai-edits-2026-10-15-1747-utc) and
+  [follow-up verification](GUI%20completed%20work.md#codemirror-font-parity-and-direct-ai-edits-2026-10-15-utc).
+  **Follow-up deployed at 17:59 UTC:** CodeMirror now uses the previous
+  highlighters' token classification/colors. Analyze's missing fixture context
+  was repaired by updating Policy-Service and configuring an independent
+  operator fixture contract. A non-saving live Analyze evaluated 38 actors
+  against 10 services (380 pairs). No Restore, policy save or runtime mutation.
+  See [repair rollout](GUI%20deployments.md#editor-color-parity-and-analyze-repair-2026-10-15-1759-utc).
+  **AI response repair deployed to Control-Service at 18:13 UTC:** direct edits
+  now use a required structured tool payload instead of free-form JSON text.
+  Incomplete/token-limited responses explicitly leave the draft unchanged.
+  All 28 editor browser checks pass. Control Room was not restarted; no refresh
+  is required to retry. See
+  [structured-edit rollout](GUI%20deployments.md#structured-ai-editor-responses-2026-10-15-1813-utc).
+- **Directory/code refactoring:** independent production policy-fixture inputs
+  are **Deployed to Policy-Service at 17:59 UTC**, not published. Policy-Service now uses
+  explicit operator JSON plus live LDAP; Simulator provisioning exports that
+  contract rather than being read by production. The compatibility audit now
+  records all 23 modes, 40 flags, Simulator state/default paths and packaging
+  owners, with new dispatcher/path regressions. The nested enrollment,
+  gateway-draft and change-review route/auth/persistence audit is also
+  **Verified locally**, with four new production-contract tests and the six
+  audited internal-package suites passing under race. The subsequent gateway
+  draft-owner extraction is now **Verified locally**, not deployed or published:
+  validation/storage/identity selection live in a production package with an
+  independent inventory contract; neutral upstream parsing is shared without
+  Simulator workload ownership. Focused race tests, vet and both Linux builds
+  pass; full Go tests retain the same four baseline failures. Seven milestone
+  gates remain open. The production inventory acquisition/enrichment audit is
+  now **Verified locally**, with five new compatibility tests covering Admin
+  TLS/decoder boundaries, health/wire shapes, enrichment ordering and the
+  measured 16-request visa worker limit. No runtime code changed in this audit.
+  Next is an explicit-config production Admin read-client extraction, followed
+  by snapshot/provider composition and remaining packaging acceptance. See the
+  [inventory contract audit](REDIRECTORY.md#m1-production-inventory-acquisition-and-enrichment-audit-2026-10-15),
+  [gateway-owner extraction](REDIRECTORY.md#fourteenth-extraction-production-gateway-draft-owner-2026-10-15),
+  [M1 compatibility audit](REDIRECTORY.md#m1-compatibility-mode-and-packaging-audit-2026-10-15) and
+  [nested production contract audit](REDIRECTORY.md#m1-nested-production-contracts-audit-2026-10-15), plus the
+  [M3 fixture-boundary record](REDIRECTORY.md#m3-input-slice-independent-production-policy-fixtures-2026-10-15).
 - **Publication checkpoint:** pending Restore/runtime repairs and Scenario
   browsing source are included in this 2026-10-15 publication. Historical
   uncommitted notes describe their dated releases, not a new deployment.
@@ -46,8 +103,9 @@ Do not infer current runtime health from a historical verification entry.
   Browse.../File..., one selected scenario, full-width tracks and compact
   running-step details are live. Configuration/mounts/ports were preserved;
   DNS relays were restored. Restart cleared in-memory scenario history.
-  Control Room remains at its 2026-10-14 22:43 UTC GUI release; no production
-  service was restarted. See
+  Control Room subsequently received the CodeMirror trial at 2026-10-15
+  17:30 UTC, followed by the coordinated Control Room/Control-Service font/AI
+  update at 17:47 UTC. Policy-Service was not restarted. See
   [deployment scope and verification](GUI%20deployments.md#scenario-browser-deployment-2026-10-15-1624-utc).
 - **Restore repair deployed:** Great Lakes Restore failed its assertion-settings
   verification and the previous runtime was restored and verified. A read-only
@@ -183,6 +241,78 @@ runtime activation is claimed for this release. See
 
 The open requirements below retain their original scope.
 No new priority or implementation approval is implied for backend rollouts.
+
+### System packaging and releases
+- **Enrollment ownership slice (2026-10-15):** added an opt-in separate mTLS
+  administration listener to the standalone Enrollment Service, sharing its own
+  device registry within one process. Control-Service can relay existing signed
+  operator routes without opening a registry; mixed remote/local configuration
+  fails. Enrollment verifies the original Room assertion plus its independently
+  pinned Control-Service transport and grants/replay ledger. This is not the
+  full proposed lifecycle API. BAS still opens its configured registry; that
+  remaining ownership boundary, bootstrap and endpoint-delivery/package work
+  remain open. Full enrollment/delegation race suites, focused relay/audience/
+  management regressions, vet and Linux amd64 Enrollment Service/dashboard builds
+  pass. Required `make test` retains the same four recorded dashboard failures.
+  No running service changed. See
+  [configuration and limits](zpr-dashboard/README.md#enrollment-owned-administration-api).
+- **Next test deliverable (2026-10-15):** user selected a complete from-scratch
+  company installation package, not a Control Room-only image or manual
+  source-run test. Package all required ZPR services; company supplies its
+  existing OIDC, directory and DNS. Require a versioned loadable bundle,
+  install/verify/recovery instructions and fresh-Ubuntu evidence including
+  first endpoint admission and allowed/denied traffic without Simulator.
+  No such package is available yet: enrollment ownership/API, supervised node,
+  trust/bootstrap, image/network/rendering and endpoint-delivery work remain.
+  See [package handoff and blockers](System%20release%20plan.md#next-operator-test-deliverable).
+- **Management HTTPS slice (2026-10-15):** approved direct HTTPS on a company
+  management IP, corporate network/VPN only, not a reverse proxy or public
+  endpoint. Added explicit private-IP runtime opt-in with required scoped
+  company OIDC and supplied TLS, exact listener/Host/Origin/callback checks and
+  forwarded-header rejection. API/DNS asset access retains named permissions;
+  existing loopback and Simulator behavior is unchanged. Local verification
+  covers real hostname-verified TLS/OIDC/PKCE, CSRF/scopes/logout and independent
+  mTLS backend forwarding with Simulator unavailable. A total of 238 selected
+  checks, focused race tests, vet and Linux amd64 validator/dashboard builds pass
+  in the final shared worktree; full `make test` retains the same four failures.
+  An intervening unrelated gateway-refactor compile failure resolved before the
+  final run; isolated source-HEAD verification also matches its clean baseline.
+  Firewall/routing, actual
+  Ubuntu and container-network/installer integration remain open; no deployment.
+  See [management HTTPS](zpr-dashboard/README.md#direct-management-https).
+- **Offline credential slice (2026-10-15):** added opt-in `-check-files` to the
+  management-bootstrap validator, reusing runtime operator-file protection.
+  Checks local TLS key/hostname/validity/supplied chain and OIDC secret/CA files
+  without network access or writes. A total of 158 selected configuration/file/
+  CLI and existing operator regressions pass; focused race tests, vet and Linux
+  amd64 validator/dashboard builds pass.
+  Full Go suite retains the same four recorded failures. Company/browser trust,
+  live IdP, installer integration and mount access remain open. Management
+  HTTPS runtime opt-in was subsequently added above.
+  No runtime change or deployment. See
+  [offline checks and limits](zpr-dashboard/packaging/system/README.md#offline-credential-file-checks).
+- **Configuration slice (2026-10-15):** approved company-provided OIDC and
+  company-supplied/renewed TLS files. Added a strict, read-only company
+  management-bootstrap validator and example, reusing operator OIDC validation.
+  Ninety-three selected checks, focused race tests, vet and Linux amd64 build
+  pass; full Go suite retains four recorded failures. Offline file checks were
+  subsequently added above; trust/liveness checks and rendering remain
+  unimplemented. Management HTTPS runtime opt-in was also added above. See the
+  [configuration contract](zpr-dashboard/packaging/system/README.md#company-management-bootstrap-configuration).
+- **In progress (2026-10-15):** approved Ubuntu 24.04 LTS x86-64 dedicated
+  server/VM, Docker Engine/Compose v2 appliance with signed installer, and
+  company-hostname remote HTTPS. The
+  [initial production inventory and host preflight](zpr-dashboard/packaging/system/README.md)
+  identify production image/bootstrap/access gaps. Nineteen isolated preflight
+  regressions pass; real Ubuntu acceptance, resource/runtime qualification and
+  broader deployment decisions remain open. No installer or release is ready;
+  no runtime was changed.
+- [ ] Approve the initial deployment/support decisions and owners in the
+  [system release plan](System%20release%20plan.md#decisions-required-before-implementation).
+- [ ] Complete the production packaging/bootstrap, endpoint admission,
+  operations and release-automation milestones. Qualify every real system
+  release through the plan's repeatable gates; source publication and local
+  component deployments are not whole-system certification.
 
 ### Logs and diagnostics
 - [x] Repair Great Lakes assertion seeding/verification through independent

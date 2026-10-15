@@ -45,8 +45,8 @@ func runControlRoom(listen string) error {
 	defer closeReview()
 	mux.Handle("/api/change-review/", changeReview)
 	mux.Handle("/api/enrollment/", operatorEnrollmentProxy(security.auth, signer, proxy))
-	mux.Handle("/api/", controlRoomAPIProxy(security.auth, os.Getenv("ZPR_CONTROL_ROOM_ORGANIZATION_ID"), proxy))
-	mux.Handle("GET /bind9.xsl", localControlRoomProxy(proxy))
+	mux.Handle("/api/", security.apiProxy(os.Getenv("ZPR_CONTROL_ROOM_ORGANIZATION_ID"), proxy))
+	mux.Handle("GET /bind9.xsl", security.assetProxy(os.Getenv("ZPR_CONTROL_ROOM_ORGANIZATION_ID"), proxy))
 	mux.Handle("/", revalidateStatic(http.FileServer(http.FS(staticRoot))))
 	server := &http.Server{
 		Addr: listen, Handler: securityHeaders(security.protect(mux)), ReadHeaderTimeout: 5 * time.Second, IdleTimeout: 60 * time.Second,
@@ -165,7 +165,7 @@ func runControlService() error {
 	mux.Handle("/api/operator-enrollment/", enrollmentAPI)
 	assertions.register(mux)
 	trustedChanges.register(mux)
-	gatewayAPI := newGatewayAPI(strings.TrimSpace(os.Getenv("ZPR_GATEWAY_ORGANIZATION_ID")), gatewaySnapshotReaderFromApplication(app), gatewayStore)
+	gatewayAPI := newGatewayAPI(strings.TrimSpace(os.Getenv("ZPR_GATEWAY_ORGANIZATION_ID")), gatewayInventoryReaderFromApplication(app), gatewayStore)
 	mux.Handle("/api/gateways/", gatewayAPI)
 	mux.HandleFunc("GET /api/snapshot", app.handleSnapshot)
 	readDiagnosticsSnapshot := func(ctx context.Context) snapshot {

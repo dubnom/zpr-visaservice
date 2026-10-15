@@ -1686,6 +1686,18 @@ start_policy_context_container() {
     chmod 600 "$context_assertions_temp"
     context_assertions_source="$context_assertions_dir/$context_organization.assertions"
     mv "$context_assertions_temp" "$context_assertions_source"
+    context_fixtures_dir="$STATE_DIR/policy-test-fixtures"
+    mkdir -p "$context_fixtures_dir"
+    context_fixtures_temp=$(mktemp "$context_fixtures_dir/$context_organization.XXXXXX")
+    if ! jq -en --slurpfile profile "$context_profile" --slurpfile manifest "$SIMULATION_MANIFEST" \
+        -f "$DASHBOARD_DIR/scripts/export-policy-fixtures.jq" > "$context_fixtures_temp"; then
+        rm -f "$context_fixtures_temp"
+        echo "organization policy test fixture export failed: $context_organization" >&2
+        return 1
+    fi
+    chmod 600 "$context_fixtures_temp"
+    context_fixtures_source="$context_fixtures_dir/$context_organization.json"
+    mv "$context_fixtures_temp" "$context_fixtures_source"
     context_image=${ZPR_POLICY_SERVICE_IMAGE:-$SIMULATOR_IMAGE}
     if [ -z "${ZPR_POLICY_SERVICE_IMAGE:-}" ] && docker inspect "$POLICY_CONTAINER" >/dev/null 2>&1; then
         context_image=$(docker inspect --format '{{.Config.Image}}' "$POLICY_CONTAINER")
@@ -1710,6 +1722,7 @@ start_policy_context_container() {
         -e ZPR_POLICY_ORGANIZATION_NAME="$(jq -er '.name' "$context_profile")" \
         -e ZPR_POLICY_ORGANIZATION_BASE_DN="$context_base_dn" \
         -e ZPR_POLICY_ASSERTIONS_SOURCE_FILE="$context_assertions_source" \
+        -e ZPR_POLICY_TEST_FIXTURES_FILE="$context_fixtures_source" \
         -e ZPR_POLICY_CONFIG_FILE="$context_config" \
         -e ZPR_POLICY_SOURCE_FILE="$context_source" \
         -e ZPR_POLICY_SEED_CATEGORY="$context_seed_category" \

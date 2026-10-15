@@ -153,11 +153,12 @@ type policyCheckResponse struct {
 type assistantMessage = assistant.Message
 
 type assistantRequest struct {
-	Editor    string             `json:"editor,omitempty"`
-	Source    string             `json:"source"`
-	Messages  []assistantMessage `json:"messages"`
-	Model     string             `json:"model"`
-	MaxTokens int                `json:"max_tokens"`
+	DirectEdits bool               `json:"direct_edits,omitempty"`
+	Editor      string             `json:"editor,omitempty"`
+	Source      string             `json:"source"`
+	Messages    []assistantMessage `json:"messages"`
+	Model       string             `json:"model"`
+	MaxTokens   int                `json:"max_tokens"`
 }
 
 type assistantReply = assistant.Reply
@@ -1059,13 +1060,31 @@ func (a *application) handlePolicyAssistant(w http.ResponseWriter, r *http.Reque
 	}
 	var answer assistantReply
 	var err error
-	if request.Editor == "" || request.Editor == "policy" {
+	if request.DirectEdits {
+		var system string
+		if request.Editor == "policy" {
+			system = policyAssistantSkill + "\n\n<available-attributes>\n" + attributeCatalogContext(attributes) + "\n</available-attributes>\n<policy-source>\n" + request.Source + "\n</policy-source>"
+		} else {
+			system, _ = editorAssistantSystem(request.Editor, request.Source, attributes)
+		}
+		client := assistant.Client{APIKey: a.assistant.apiKey, URL: a.assistant.url, HTTP: a.assistant.http}
+		answer, err = client.CompleteEditorEdits(r.Context(), system+"\n\n"+directEditorAssistantGuardrails, request.Messages, request.Model, request.MaxTokens)
+	} else if request.Editor == "" || request.Editor == "policy" {
 		answer, err = a.assistant.reply(r.Context(), request.Source, attributes, request.Messages, request.Model, request.MaxTokens)
 	} else {
 		system, _ := editorAssistantSystem(request.Editor, request.Source, attributes)
 		answer, err = a.assistant.complete(r.Context(), system, request.Messages, request.Model, request.MaxTokens)
 	}
 	if err != nil {
+		log.Printf("Policy editor assistant request failed: %v", err)
+		if errors.Is(err, assistant.ErrEditorOutputLimit) {
+			writePolicyError(w, http.StatusBadGateway, "The assistant reached the output token limit before completing its edits. No changes were applied. Increase the output limit or request a smaller change.")
+			return
+		}
+		if errors.Is(err, assistant.ErrEditorResponse) {
+			writePolicyError(w, http.StatusBadGateway, "The assistant did not return a complete structured edit response. No changes were applied; retry using a smaller, specific request.")
+			return
+		}
 		writePolicyError(w, http.StatusBadGateway, "Claude could not complete the request.")
 		return
 	}

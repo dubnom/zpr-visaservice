@@ -25,3 +25,26 @@ func controlRoomAPIProxy(auth operatorRequestAuthorizer, organization string, pr
 	}
 	return controlroom.AuthorizeAPI(auth, organization, localProxy, writePolicyError)
 }
+
+func (s *controlRoomSecurity) apiProxy(organization string, proxy http.Handler) http.Handler {
+	if !s.management {
+		return controlRoomAPIProxy(s.auth, organization, proxy)
+	}
+	return managementControlRoomProxy(s.auth, organization, proxy)
+}
+
+func (s *controlRoomSecurity) assetProxy(organization string, proxy http.Handler) http.Handler {
+	if !s.management {
+		return localControlRoomProxy(proxy)
+	}
+	return managementControlRoomProxy(s.auth, organization, proxy)
+}
+
+func managementControlRoomProxy(auth operatorRequestAuthorizer, organization string, proxy http.Handler) http.Handler {
+	if operatorAuthorizationDisabled(auth) {
+		return http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+			writePolicyError(w, http.StatusForbidden, "Management access requires named-user authorization.")
+		})
+	}
+	return controlroom.AuthorizeAPI(auth, organization, proxy, writePolicyError)
+}

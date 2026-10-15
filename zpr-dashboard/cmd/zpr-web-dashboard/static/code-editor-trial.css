@@ -1,0 +1,15 @@
+.code-editor-toggle { display: inline-flex; align-items: center; gap: 5px; white-space: nowrap; font-size: 11px; }
+.code-editor-trial-status { font-size: 11px; color: var(--muted); }
+.code-editor-active > textarea, .code-editor-active > pre,
+.code-editor-active > .policy-test-gutter, .code-editor-active > .assertion-result-gutter { display: none !important; }
+.code-editor-active::after { display: none !important; }
+.code-editor-host { position: absolute; inset: 0; }
+.code-editor-host .cm-editor { outline: none; }
+.code-editor-host .cm-scroller { scrollbar-width: auto; }
+.code-editor-host .cm-result-gutter button { vertical-align: middle; }
+:host { display: block; }
+.cm-result-gutter button { padding: 1px 3px; border: 1px solid #6c8671; border-radius: 2px; background: #23362b; color: #d2e7d1; font: 11px/1.4 var(--mono); cursor: pointer; }
+.cm-result-gutter button[data-effect="error"], .cm-result-gutter button[data-state="error"],
+.cm-result-gutter button[data-state="fail"] { color: #ffc0b5; border-color: #a96358; }
+.cm-result-gutter button[data-effect="warning"], .cm-result-gutter button[data-state="warning"] { color: #ffe0a7; border-color: #ac7a39; }
+.cm-result-gutter button:focus-visible { outline: 2px solid #b5e34f; }

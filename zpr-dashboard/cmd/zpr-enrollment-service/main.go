@@ -12,7 +12,7 @@ import (
 )
 
 func main() {
-	path := flag.String("config", "", "Required device enrollment service JSON configuration file")
+	path := flag.String("config", "", "Required enrollment JSON configuration (device HTTPS and optional private administration mTLS)")
 	flag.Parse()
 	if *path == "" || flag.NArg() != 0 {
 		log.Fatal("usage: zpr-enrollment-service -config /path/to/device-enrollment.json")

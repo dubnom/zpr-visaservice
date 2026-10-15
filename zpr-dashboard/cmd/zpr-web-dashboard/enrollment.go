@@ -14,6 +14,9 @@ import (
 )
 
 func configuredEnrollmentHandler() (http.Handler, func() error, error) {
+	if handler, closeProxy, configured, err := configuredEnrollmentServiceProxy(); configured {
+		return handler, closeProxy, err
+	}
 	configPath := strings.TrimSpace(os.Getenv("ZPR_ENROLLMENT_CONFIG_FILE"))
 	databasePath := strings.TrimSpace(os.Getenv("ZPR_ENROLLMENT_DATABASE_FILE"))
 	if configPath == "" && databasePath == "" {

@@ -35,7 +35,7 @@
       panel.dataset.mode = mode;
     }
     const status = host.querySelector("[data-search-status]");
-    const target = () => sources.find((source) => source.getClientRects().length) || sources[0];
+    const target = () => sources.find((source) => source.getClientRects().length || window.ZPRCodeEditor?.visible(source)) || sources[0];
 
     let patternError = "";
 
@@ -112,6 +112,10 @@
       match ||= backward ? found.at(-1) : found[0];
       source.focus();
       source.setSelectionRange(match.index, match.index + match[0].length);
+      if (window.ZPRCodeEditor?.active(source)) {
+        status.textContent = `Match ${found.indexOf(match) + 1} of ${found.length}`;
+        return match;
+      }
       const before = source.value.slice(0, match.index);
       const style = getComputedStyle(source);
       const lineHeight = Number.parseFloat(style.lineHeight) || Number.parseFloat(style.fontSize) * 1.6;

@@ -8,20 +8,240 @@ notes also remain in the completed-work archive to preserve their context.
 
 Latest recorded dashboard executable deployments: Simulator
 `zpr-simulator:20261015-scenario-browser` (2026-10-15 16:24 UTC), and Control Room
-`zpr-editor-ui:20261014-control-room-gui` (2026-10-14 22:43 UTC). Simulator was
+`zpr-editor-ui:20261015-color-analyze` (2026-10-15 17:59 UTC). Simulator was
 recreated from its tagged image; Control Room was updated in its existing
-container's writable layer. These software deployments did not replace or
-restart Control-Service or Policy-Service; the user's subsequent Restore and
-rollback did restart organization runtime components. The latest recorded combined Control Room/Control-Service
-release remains `zpr-editor-ui:20261014-dns-boundaries` (16:26 UTC).
+container's writable layer. The 17:59 release recreated Policy-Service from
+the same color/analyze image with independent fixture configuration, retaining
+the prior container stopped for rollback. The 17:47 release updates Control-Service; earlier
+Restore/rollback operations separately restarted organization runtime components.
+The latest recorded combined Control Room/Control-Service release is
+`zpr-editor-ui:20261015-font-ai-edits` (17:47 UTC).
+Control-Service alone was subsequently updated to
+`zpr-editor-ui:20261015-structured-edits` at 18:13 UTC; Control Room remains
+on the 17:59 color/analyze executable.
 Retain each dated entry's precise scope and rollback evidence.
 
-Publication follow-up: `e1b24ab` on 2026-10-14 is the preceding source checkpoint,
-not publication of the 2026-10-15 releases. This source checkpoint includes
-the current reconciliation and pending implementation.
+Publication follow-up: `c3a3836` is the preceding source checkpoint for the
+Restore/runtime repairs and Scenario browser. The current source checkpoint
+also includes the subsequent editor, management HTTPS, enrollment ownership,
+production-boundary refactoring and system-release preparation work.
 "No commit or push" in dated entries records the state at release time.
 Publication does not deploy additional CLI/service changes or expand prior
 verification claims.
+
+## Source publication checkpoint (2026-10-15 18:20 UTC)
+
+- User requested committing and pushing all pending work. This checkpoint
+  includes the implementation, regression tests, browser bundle/licenses,
+  packaging preparation and documentation accumulated since `c3a3836`.
+  System-release preparation remains scaffolding, not production readiness;
+  all seven reorganization milestone gates remain open.
+- Publication checks pass: focused command compatibility, production
+  contracts, inventory, gateway, fixtures, management HTTPS, enrollment relay
+  and editor race tests; race suites for the affected internal owners and
+  system-config command; all 28 selected desktop/tablet CodeMirror browser
+  checks; all 19 fixture-based host preflight checks; Go vet, formatting and
+  whitespace checks.
+- Required `make test` retains exactly four known failure groups: enrollment
+  readiness, stale-bundle platform fixture, placement shell extraction and
+  trusted-service ELF fixture. No existing failing test was changed to hide
+  these failures.
+- Private discovery scan and editor swap artifacts remain outside publication.
+  The previously excluded, diverged `zpr-common` repository is unchanged.
+  Refreshed remote state confirms the existing `zpr-core` checkpoint
+  `561fa73` is already published.
+- This is source publication only: no service deployment, restart, Restore,
+  live model request or policy mutation is performed by this checkpoint.
+  The dated deployment scopes above and below remain authoritative.
+
+## Structured AI editor responses (2026-10-15 18:13 UTC)
+
+- User approved deployment to Control-Service only, with Control Room kept open.
+  Built image `zpr-editor-ui:20261015-structured-edits`, image ID
+  `sha256:1b4033cf74c0cf55ff0f21ffcbc265e68ebc4b426da281fae66c667986d7c747`.
+  Installed executable SHA-256:
+  `5a6fd0bb5ec71904ae8d8c4757e1c0d4c0ad2e1c05feb1cbfe4fccdf4e646b9e`.
+  Control-Service started at `2026-10-15T18:13:11.063946805Z`.
+- Only the existing Control-Service container's writable-layer executable
+  changed. Container ID, complete Config/HostConfig and normalized mounts
+  compare equal before/after. Recreating it from its original image loses this
+  executable update; the artifact's default mode is Simulator and must not be
+  used for production recreation without explicit existing production settings.
+- Direct-edit requests now force a structured tool response, validate it server
+  side and return the existing browser answer envelope. Token truncation has
+  a specific no-changes-applied error; no partial application or automatic
+  retry. Browser source/record guards and atomic undoable edits are unchanged.
+  Existing open pages can retry without refreshing.
+- Transport/route race tests and vet pass; all 28 selected editor browser
+  checks pass, including failed-request draft preservation and safe retry.
+  Required full Go suite retains the same four known baseline failures.
+- A live verified-mTLS GET from Control Room through Control-Service returns
+  Great Lakes configured, assistant ready, compiler ready and tester ready.
+  Control Room, Policy-Service and Simulator image/start baselines are
+  unchanged. No live provider/model request or policy save was performed.
+  Mocked provider tests verify the structured protocol; live-model acceptance
+  remains for the operator's retry.
+- Rollback executable retained privately and at
+  `/usr/local/bin/zpr-web-dashboard-before-structured-edits-20261015` inside
+  Control-Service. Prior SHA-256:
+  `3bbfb29370ef734c710af0379fe9655a4a04eba6120a3700c3d3f754d67194b0`.
+  Restore the backup executable and restart only Control-Service, retaining
+  existing configuration. No Restore, runtime changes, commit or push.
+
+## Editor color parity and Analyze repair (2026-10-15 17:59 UTC)
+
+- User approved the highlighting deployment and independent-fixture repair
+  including Policy-Service update/restart, without Restore or policy mutation.
+  Built Linux arm64 image `zpr-editor-ui:20261015-color-analyze`, image ID
+  `sha256:27adf4ce6bb85adc081ea81d465d6f6866268014d6c6216a71b00909d110714b`.
+  Installed executable SHA-256 for both affected services:
+  `eefbe4ab627dee2834645ef46eceb5d7f0063026d181fa06d4fd9e5d17af2c01`.
+- Policy-Service started at `2026-10-15T17:59:12.10978875Z`; Control Room
+  started at `2026-10-15T17:59:29.911814217Z`. Control Room retains its existing
+  container/image/configuration with a writable-layer executable replacement.
+  Recreating it from its old image would lose that replacement.
+- Policy-Service was recreated with its exact original Config/HostConfig/mounts,
+  changing only the image and adding `ZPR_POLICY_TEST_FIXTURES_FILE`. Its
+  explicit `-mode policy-service` entrypoint/settings remain intact; shared
+  image defaults are not used. The launcher policy-service image marker now
+  points to this release. The old container remains stopped as
+  `zpr-policy-service-before-color-analyze-20261015`.
+- A one-time provisioning export using the existing jq adapter produced the
+  version-1 Great Lakes operator fixture JSON under the runtime
+  `dashboard-stack/policy-test-fixtures/` directory (mode 0600). Production
+  reads that independent contract and live LDAP, not Simulator sources/APIs.
+  There are no organization/runtime switches or Restore operations.
+- Live fixture GET now returns HTTP 200 with 38 actors and 10 services.
+  A non-saving `POST /api/policy/test` with a small definition-only source
+  returned HTTP 200, API version 1 and 380 evaluated actor/service pairs.
+  The actual existing Effective network policy also returned HTTP 200 with
+  38 actors, 19 result rows and 380 evaluations, without saving it. It references
+  none of the omitted attributes.
+  Requests used the existing verified mTLS Control Room -> Control-Service
+  path. Three unsupported coordinate-valued attributes remain explicitly
+  omitted by the fixture format; policies referencing them remain unsupported.
+- Root HTML and all 46 checked assets match source. Actual served assets/CSP
+  pass legacy token/color parity, native typing, mock-AI direct edits and
+  Undo/Redo without JavaScript/CSP errors. Browser API traffic was intercepted;
+  no live model call, policy save or authenticated operator Analyze click was
+  performed. The login gate is intact; refresh/sign in again and re-enable
+  CodeMirror trial, which still defaults off.
+- All 26 selected browser checks, focused CSP/fixture/Analyze/assistant race
+  tests and vet pass. Required full Go tests retain the four existing failures:
+  enrollment readiness, stale-bundle platform fixture, placement shell
+  extraction and trusted-service ELF fixture.
+- Simulator and Control-Service image/start baselines are unchanged; assertion
+  records are byte-identical before/after. No commit or push.
+  The isolated sample preview was restarted with the matching nine-color CSP;
+  its sample-only in-memory state reset, and its health endpoint responds.
+- Rollback Control Room using
+  `/usr/local/bin/zpr-web-dashboard-before-color-analyze-20261015` then restart
+  only that container. Rollback Policy-Service by stopping/renaming the new
+  container and renaming/starting the retained old container; never run both
+  against the same DB. Restore its launcher image marker to
+  `zpr-simulator:20261015-assertion-seed` if rolling back. Both prior executables
+  and exact configuration snapshots are retained privately.
+
+## Control Room/Service font parity and direct AI edits (2026-10-15 17:47 UTC)
+
+- The user approved deploying the current worktree to Control Room and
+  Control-Service, including other pending backend changes. Built Linux arm64
+  artifact image `zpr-editor-ui:20261015-font-ai-edits`, image ID
+  `sha256:a510f6bcbd10f3b860cbe7700ac1566f5bddf32419b6a83ffd33ca60a6d22f0a`.
+  Both installed executable SHA-256 values are
+  `3bbfb29370ef734c710af0379fe9655a4a04eba6120a3700c3d3f754d67194b0`.
+- Existing containers, original image IDs and configuration remain unchanged;
+  only their writable-layer executables were replaced. Control-Service started
+  at `2026-10-15T17:47:49.467275545Z`, followed by Control Room at
+  `2026-10-15T17:47:50.189710045Z`. Both restart counts remain zero. Full
+  Config/HostConfig and normalized mount comparisons pass, preserving
+  certificates, settings, ports and entrypoints. Recreating either container
+  from its original image would discard the executable update; the build
+  artifact uses the shared Simulator Dockerfile and requires explicit production
+  mode/configuration if used for container recreation.
+- CodeMirror policy/assertion typography matches the previous editor. AI
+  requests in the trial use structured exact-match edits applied directly as
+  one isolated undoable unsaved change. Other editors retain Insert. No
+  automatic Save/Analyze/staging/runtime action is introduced. Refresh the page,
+  sign in again and enable CodeMirror trial; it still defaults off.
+- Root HTML and 46 checked assets (HTML references plus the lazy editor bundle)
+  match source byte-for-byte. HTTPS and enabled operator login respond
+  successfully; the browser sign-in gate is preserved. A real verified mTLS
+  request from Control Room to Control-Service reads Great Lakes policy context.
+  No credentials were disclosed.
+- A separate mocked-data browser check using actual served assets/CSP verifies
+  matching font size/family/line height, direct AI line replacement/insertion
+  and complete Undo/Redo with no JavaScript/CSP errors. All API traffic in that
+  check is intercepted locally; no live AI request or policy save was made.
+  This is not authenticated live-model acceptance.
+- Pre-rollout: all 26 selected desktop/tablet checks, focused assistant/CSP
+  race tests, vet, embedded build, syntax, reproducible bundle and whitespace
+  checks pass. Required `make test` retains the same four known failures:
+  enrollment readiness, stale-bundle platform fixture, placement shell
+  extraction and trusted-service ELF fixture.
+- Simulator and Policy-Service image IDs/start times are unchanged. No policy,
+  runtime, directory or organization mutation, commit or push.
+- Rollback executables are retained at
+  `/usr/local/bin/zpr-web-dashboard-before-font-ai-20261015` in each container,
+  and in private session artifacts. Prior Control Room executable:
+  `27f13d9ed041ef23ed238115388abbd3e8f2a32384463b6abc2a37a1650edebc`;
+  prior Control-Service executable:
+  `194f60aeb656bb624c21b9040c99c38d31a69912bdb8ea05a8be36fdbd9648a8`.
+  Roll back both together: copy each backup to a temporary executable path,
+  atomically move over `/usr/local/bin/zpr-web-dashboard`, then restart only the
+  two affected containers. Preserve executable permissions and configuration.
+  Private inspect snapshots contain environment settings; do not publish them.
+
+## Control Room CodeMirror trial (2026-10-15 17:30 UTC)
+
+- The user selected Control Room deployment and explicitly approved the current
+  worktree, including pending policy-fixture and operator-file refactoring
+  changes. Built the Linux arm64 artifact image
+  `zpr-editor-ui:20261015-codemirror-trial`, image ID
+  `sha256:96cf509733d5d2ec2102151d30fdbf43a60813bcb6def648df0e6f787daf2523`.
+  Installed executable SHA-256:
+  `27f13d9ed041ef23ed238115388abbd3e8f2a32384463b6abc2a37a1650edebc`.
+- Updated the existing `zpr-control-room` container's writable-layer executable;
+  container ID
+  `2487b772996217b8964e53c63e1ef402b49f9cd9c0a0d0fa101c3ae71aa45567`
+  and original image ID are unchanged. It restarted at
+  `2026-10-15T17:30:30.678490592Z`. The image tag above is the build artifact,
+  not a replacement container configuration; recreating from the original image
+  would discard the writable-layer update. The build Dockerfile's default
+  entrypoint is Simulator mode; do not run the artifact image without explicit
+  Control Room mode and the preserved production configuration.
+- Full `Config`/`HostConfig` comparison and destination-normalized mount
+  comparison pass: environment, entrypoint, command, ports, certificates,
+  operator settings and mounts are preserved. Control-Service, Policy-Service
+  and Simulator image IDs/start times are unchanged. No runtime or policy
+  mutation, Simulator update, commit or push.
+- **CodeMirror trial** is opt-in under Policy/Assertions and defaults off on
+  each reload. Existing text survives switching implementations. Only the five
+  approved exact color declarations are allowed by CSP hashes; arbitrary
+  inline styles/scripts remain prohibited. Restart cleared in-memory sessions;
+  operators must sign in again.
+- All 47 checked assets (HTML-referenced resources plus the lazy editor bundle
+  and license file), and the root HTML, match the worktree byte-for-byte. HTTPS `/` and
+  `/auth/operator/config` return 200, operator login remains enabled,
+  `/index.html` retains its 301 redirect, and signed-out `/api/snapshot` returns
+  403. A browser confirms the operator sign-in gate. A separate no-write,
+  mocked-data browser check against the served assets/actual CSP verifies
+  typing, switching back and re-enabling, with no JavaScript/CSP errors.
+  All API writes were blocked; none were attempted. No authenticated live-data,
+  real compiler or persisted Save check is claimed.
+- Pre-rollout validation: 14 desktop/tablet trial checks and focused CSP race
+  test pass; Linux embedded build succeeds. Required `make test` retains the
+  same four known failures: enrollment readiness, stale-bundle platform fixture,
+  placement shell extraction and trusted-service ELF fixture.
+- Exact prior executable SHA-256:
+  `3449abfc490d535bab303482df40caa26e87dd68e558833c297d28c2ae50f21c`,
+  retained in-container at
+  `/usr/local/bin/zpr-web-dashboard-before-codemirror-20261015` and in the private
+  session release artifacts. Roll back by copying that backup to a temporary
+  executable path, atomically moving it over `/usr/local/bin/zpr-web-dashboard`,
+  then restarting only `zpr-control-room`. Preserve its executable permissions.
+  Configuration snapshots and verification screenshots remain private session
+  artifacts; do not publish the snapshots, which contain environment settings.
 
 ## Scenario browser deployment (2026-10-15 16:24 UTC)
 

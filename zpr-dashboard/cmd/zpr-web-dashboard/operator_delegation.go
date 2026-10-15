@@ -51,8 +51,12 @@ func configuredOperatorSigner(security *controlRoomSecurity) (*operatordelegatio
 	if err := decodeOperatorConfig(data, &config); err != nil {
 		return nil, err
 	}
-	if config.Audience != strings.TrimSpace(os.Getenv("ZPR_CONTROL_SERVICE_URL")) {
-		return nil, errors.New("operator delegation audience must exactly equal ZPR_CONTROL_SERVICE_URL")
+	audience := strings.TrimSpace(os.Getenv("ZPR_OPERATOR_DELEGATION_AUDIENCE"))
+	if audience == "" {
+		audience = strings.TrimSpace(os.Getenv("ZPR_CONTROL_SERVICE_URL"))
+	}
+	if config.Audience != audience {
+		return nil, errors.New("operator delegation audience must exactly equal its configured service audience")
 	}
 	keyData, err := readOperatorFile(keyPath, 65536, true)
 	if err != nil {

@@ -33,15 +33,7 @@ func (roundTripper gatewayRoundTripper) RoundTrip(request *http.Request) (*http.
 }
 
 func parseGatewayUpstream(raw string) (*url.URL, error) {
-	upstream, err := url.Parse(strings.TrimSpace(raw))
-	if err != nil || upstream.Scheme != "https" || upstream.Host == "" || upstream.User != nil || upstream.RawQuery != "" || upstream.Fragment != "" {
-		return nil, errors.New("gateway upstream must be an HTTPS origin/path without credentials, query, or fragment")
-	}
-	host := strings.TrimSuffix(strings.ToLower(upstream.Hostname()), ".")
-	if net.ParseIP(host) != nil || host == "localhost" || strings.HasSuffix(host, ".localhost") || strings.HasSuffix(host, ".local") {
-		return nil, errors.New("gateway upstream must use a public DNS hostname")
-	}
-	return upstream, nil
+	return gateway.ParseUpstream(raw)
 }
 
 func newInternetGatewayHandler(workload, upstream string, client *http.Client, logEvent func(testAppEvent)) (http.Handler, error) {

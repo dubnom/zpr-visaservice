@@ -1,9 +1,15 @@
 # Enrollment Service API Contract
 
-**Status:** proposed version-1 production contract; not implemented or deployed.
-The current administration handlers run in Control-Service and use the current
-SQLite invitation store. The standalone device listener implements only the
-challenge/proof claim and status flow. Do not infer production inventory,
+**Status:** proposed version-1 production lifecycle contract; not implemented or deployed.
+Legacy administration handlers run in Control-Service and use the current
+SQLite invitation store. An opt-in compatibility bridge now lets the standalone
+Enrollment Service own device and delegated-administration handlers in one
+process, with Control-Service acting only as an mTLS relay and no registry mount.
+See [configuration and trust-hop details](README.md#enrollment-owned-administration-api).
+It retains `/api/operator-enrollment/v1/` routes, not the proposed `/v1` lifecycle
+API below. The standalone BAS command still accesses its configured registry;
+removing that remaining cross-process ownership is open. The device listener
+implements the challenge/proof claim and status flow. Do not infer production inventory,
 credential issuance, admission, renewal, revocation, or retirement from this
 document or those prototypes.
 

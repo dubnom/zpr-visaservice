@@ -1,0 +1,31 @@
+{
+  "schema_version": 1,
+  "organization": {
+    "id": "example-company",
+    "name": "Example Company"
+  },
+  "control_room": {
+    "origin": "https://control.example.com",
+    "management_ip": "10.20.30.40",
+    "certificate_file": "/etc/zpr/tls/control-room-chain.pem",
+    "key_file": "/etc/zpr/secrets/control-room-key.pem"
+  },
+  "oidc": {
+    "config": {
+      "version": 1,
+      "issuer": "https://login.example.com",
+      "client_id": "zpr-control-room",
+      "redirect_url": "https://control.example.com/auth/operator/callback",
+      "session_lifetime_seconds": 900,
+      "grants": [
+        {
+          "issuer": "https://login.example.com",
+          "subject": "replace-with-exact-oidc-subject",
+          "organizations": ["example-company"],
+          "permissions": ["monitor.read"]
+        }
+      ]
+    },
+    "client_secret_file": "/etc/zpr/secrets/oidc-client-secret"
+  }
+}

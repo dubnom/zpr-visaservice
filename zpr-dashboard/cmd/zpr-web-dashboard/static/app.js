@@ -2246,13 +2246,14 @@ async function loadPolicyWorkspace() {
 const policyAssistant = window.ZPRAssistant.mount({
   pane: byId("policy-assistant-pane"), prefix: "assistant",
   getTarget: policyAssistantTarget,
+  directEdits: () => Boolean(window.ZPRCodeEditor?.active(policyAssistantTarget())),
   getContext: () => ({
     source: policyAssistantTarget().value, id: state.policy.record?.id,
     kind: state.policy.record?.kind, revision: state.policy.revision,
     browsing: state.policy.browsingRevision, organization: state.policy.organizationID,
   }),
   editable: () => state.policy.configured && ["policy", "assertions"].includes(state.policy.record?.kind) && !policyAssistantTarget().disabled && !policyAssistantTarget().readOnly,
-  disclosure: "Submitting sends the current draft and chat history to Anthropic. Suggestions are unsaved edits; use Insert to apply and Ctrl/Command+Z to undo.",
+  disclosure: "Submitting sends the current draft and chat history to Anthropic. In CodeMirror, requested AI changes apply directly as one undoable unsaved edit. Otherwise use Insert. Ctrl/Command+Z undoes changes; nothing is saved automatically.",
   request: (conversation) => window.ZPRAssistant.jsonRequest("/api/policy/assistant", {
     method: "POST", headers: { "Content-Type": "application/json", Accept: "application/json" },
     body: JSON.stringify({ ...conversation, editor: state.policy.record?.kind === "assertions" ? "assertion" : "policy", source: policyAssistantTarget().value }),
@@ -2868,6 +2869,7 @@ function positionPolicyCompletions() {
 }
 
 function showPolicyCompletions(force = false) {
+  if (window.ZPRCodeEditor?.active(byId("policy-source"))) return hidePolicyCompletions();
   const textarea = byId("policy-source");
   if (textarea.disabled || textarea.selectionStart !== textarea.selectionEnd) return hidePolicyCompletions();
   const lineStart = textarea.value.lastIndexOf("\n", textarea.selectionStart - 1) + 1;

@@ -2,6 +2,12 @@
 
 This repository contains the Zero-Trust Packet Routing (ZPR) Terminal User Interface application. The dashboard application allows you to manage your ZPR infrastructure quickly through an easy-to-understand and easy-to-use interface.
 
+Production appliance work is tracked in the
+[system packaging foundation](packaging/system/README.md). The new
+`zpr-system-config` command validates only company management-bootstrap input;
+`-check-files` opts into read-only local TLS/OIDC credential-file checks.
+It is not an installer or runtime activation command.
+
 # Development
 
 To setup your development environment, run `go mod download` to install the local dependencies. Finally, run `make run` to start the TUI.
@@ -154,6 +160,20 @@ keep their separate text bounds. Tests cover exact boundaries and credential
 formats, and a standard-library-only dependency test enforces isolation. The
 helper receives only text and performs no configuration lookup or collection.
 
+The fourteenth extraction puts gateway draft validation, source-owned JSON
+diagnostics, installed-identity selection and versioned file storage in
+[`internal/controlservice/gatewaydraft`](internal/controlservice/gatewaydraft/).
+The package receives explicit organization/inventory data and paths, with no
+Simulator or Admin snapshot types. HTTP composition remains in the command;
+an Admin adapter preserves existing snapshot health checks and projects only
+the required identity fields. Draft reads work without live inventory;
+checks/saves still require it. Neutral fixed-upstream parsing now belongs to
+`internal/gateway`, shared with Simulator through its existing adapter.
+JSON schema, storage encoding/permissions/revision retention, diagnostics and
+review-only behavior are unchanged. Dependency and compatibility race checks
+pass locally; this extraction is not deployed or published. See the
+[gateway-owner verification and remaining scope](../REDIRECTORY.md#fourteenth-extraction-production-gateway-draft-owner-2026-10-15).
+
 Mode names, flags, API behavior, embedded resources, scripts, and container
 build targets are unchanged. This is not full production/Simulator separation,
 production gateway activation, or deployment. See the
@@ -163,6 +183,7 @@ Focused validation:
 
 ```sh
 go test -race ./internal/gateway ./cmd/zpr-web-dashboard -run 'Gateway|WebGateway|ValidateWebGateway' -count=1
+go test -race ./internal/controlservice/gatewaydraft ./internal/gateway ./cmd/zpr-web-dashboard -run '^Test(Gateway|ParseGateway|ParseUpstream|ConfigSize|DiagnosticLine|InstalledContracts|Store|ProductionContract|ChangeReview|InternetGateway)' -count=1 -timeout=180s
 go build -o /dev/null ./cmd/zpr-web-dashboard
 go test -race ./internal/browsergateway ./cmd/zpr-web-dashboard -run 'Browser' -count=1
 go test -race ./internal/servicehttp ./cmd/zpr-web-dashboard -run 'ServiceHTTP|MutualTLSClient|CertificateErrors|PolicyService|ControlService|ControlRoom|Trusted.*Change|Simulator.*(Snapshot|Operator)' -count=1
@@ -603,7 +624,8 @@ listener nor the installer has been deployed, and the GUI remains blocked.
 
 The proposed production ownership split and versioned lifecycle APIs are
 documented in the [Enrollment Service API contract](ENROLLMENT_SERVICE_CONTRACT.md).
-That contract is not implemented; details below describe the current prototype.
+The full lifecycle contract is not implemented; details below describe the
+current prototype and its opt-in separate administration listener.
 
 `NewDeviceService` and `NewDeviceHandler` implement the device-facing protocol
 independently of the administration handler. They are **not registered on
@@ -750,8 +772,8 @@ on this listener. The service accepts devices without client certificates
 because initial identity is established through the invitation and signed
 challenge, not through a credential they do not yet possess.
 
-The device service and private Control-Service administration process must
-point to the **same enrollment database on the same host**, with owner-only
+In the **legacy prototype mode**, the device service and private Control-Service
+administration process point to the **same enrollment database on the same host**, with owner-only
 permissions under an operator-controlled parent directory. The current SQLite
 design is not a network-filesystem or multi-host deployment contract.
 Immediate transactions serialize claims/reviews across database connections.
@@ -774,6 +796,94 @@ budget; enforce remote-client abuse limits there as well. Certificate renewal,
 gateway policy, service supervision, operational monitoring, and remote
 deployment approval remain operator work. This change does not configure or
 expose any running service.
+
+### Enrollment-owned administration API
+
+The standalone Enrollment Service can now host both the existing device protocol
+and a **separate private mTLS named-user administration listener**, sharing one
+Enrollment-owned `Store` within that process. Control-Service selects an explicit
+remote relay instead of opening the registry. This is a compatibility bridge for
+the existing invitation APIs, **not** completion of the proposed `/v1` lifecycle
+contract, fresh-company bootstrap or an installable appliance.
+
+Add this optional object to the device service JSON above:
+
+```json
+{
+  "administration": {
+    "listen": "10.20.30.40:9444",
+    "audience": "https://enrollment-admin.example.com:9444",
+    "certificate_file": "/etc/zpr/enrollment/admin-chain.pem",
+    "key_file": "/etc/zpr/enrollment/admin-key.pem",
+    "client_ca_file": "/etc/zpr/enrollment/control-service-ca.pem",
+    "catalog_file": "/etc/zpr/enrollment/catalog.json",
+    "delegation_trust_file": "/etc/zpr/enrollment/delegation-trust.json"
+  }
+}
+```
+
+The listener requires a fixed, explicit loopback/private IP and its own audience
+on the same fixed port, separate from the device listener. No wildcard or public
+bind is supported for administration. Both listeners must bind successfully before
+either starts serving; failure or shutdown of one stops both. Only the device
+listener accepts clients without certificates. Administration requires TLS 1.3
+and verified client certificates, exact Host, a valid signed delegation, and
+independent issuer/subject/organization/operation grants. It exposes only the
+existing `/api/operator-enrollment/v1/` routes; certificate-only administration,
+device, inventory and GUI routes are not added to this listener.
+
+The catalog uses the existing enrollment JSON contract (organization/profile/type,
+invitation/approval lifetimes and GUI-creation flag). `principals` may be empty
+or omitted **for this delegated listener only**; direct-certificate administration
+still requires explicit principals. Independent named-user rights come from the
+delegation trust file, not this optional list. Keep the device and catalog approval
+lifetimes aligned. Certificate/key, client CA, catalog and trust files use the
+bounded protected operator-file reader (64 KiB, root/current-user-owned,
+single-link regular files; private key owner-only). Protect parent directories
+and runtime mounts separately. No keys, catalogs or grants are generated.
+
+Configure **Control-Service**, not Control Room, with:
+
+```sh
+export ZPR_ENROLLMENT_SERVICE_URL=https://enrollment-admin.example.com:9444
+export ZPR_ENROLLMENT_SERVICE_CA_FILE=/etc/zpr/control-service/enrollment-ca.pem
+export ZPR_ENROLLMENT_CLIENT_CERT_FILE=/etc/zpr/control-service/enrollment-client.pem
+export ZPR_ENROLLMENT_CLIENT_KEY_FILE=/etc/zpr/control-service/enrollment-client-key.pem
+```
+
+An optional `ZPR_ENROLLMENT_SERVICE_TLS_SERVER_NAME` explicitly selects the
+verified service hostname; otherwise the URL hostname is used. A partial or
+invalid remote configuration aborts startup. Remote mode rejects any simultaneous
+`ZPR_ENROLLMENT_DATABASE_FILE`, `ZPR_ENROLLMENT_CONFIG_FILE` or
+`ZPR_OPERATOR_DELEGATION_TRUST_FILE`; there is no fallback to a local registry.
+It relays only the signed operator route, not `/api/enrollment/v1/` direct
+administration, and rejects browser credentials, unsigned requests and oversized
+bodies. The incoming Control Room connection must also be verified mTLS.
+Unavailable transport returns an explicit `502` warning that a mutation may
+have an uncertain outcome; reconcile with a fresh read rather than blindly retry.
+
+In **Control Room**, set `ZPR_OPERATOR_DELEGATION_AUDIENCE` to the Enrollment
+administration audience and use that exact audience in its signer JSON.
+Control Room still sends requests to its existing `ZPR_CONTROL_SERVICE_URL`;
+the original short-lived assertion and body pass unchanged through the relay.
+No relay signing key is introduced. Without the new audience variable, legacy
+signer validation still requires the Control-Service URL.
+
+At the **Enrollment Service**, the existing delegation trust format now pins the
+**Control-Service-to-Enrollment client certificate**, together with the trusted
+Control Room Ed25519 public signing key. It does not pin the original Room
+transport certificate, which is not the peer on this hop. Only accept relays
+authorized for this purpose; never trust a browser-supplied client-certificate
+header. Enrollment independently verifies the original signature, audience,
+method/path/body, named-user scope and durable replay nonce. Its trust audience,
+the Room signer audience and the service URL must match exactly.
+
+This opt-in does not migrate data, start containers, change the local stack or
+make BAS a network client. The standalone BAS command still opens its configured
+registry: **do not share that volume in a production package** or claim complete
+sole-writer lifecycle ownership until BAS access is redesigned. Asset lifecycle,
+idempotency/reconciliation, complete credential delivery, supervision, trust
+bootstrap and package acceptance remain open. No deployment is implied.
 
 Live TLS integration tests cover device claim, approval from a separate
 registry connection, key-authenticated status, admin route isolation, exact
@@ -1879,14 +1989,14 @@ go test -race ./internal/operatorauth ./internal/enrollment
 
 ### Direct HTTPS configuration
 
-The approved initial integration terminates TLS in Control Room itself. This
-increment preserves the existing loopback-only browser/API exposure: use a literal
+Control Room terminates TLS itself. With no management-IP opt-in, it preserves
+the existing loopback-only browser/API exposure: use a literal
 loopback `-listen` address and a `localhost`/loopback origin with the same fixed
 port. A container may listen on `0.0.0.0` only with an explicit
 `ZPR_CONTROL_ROOM_OPERATOR_TRUSTED_PEER_IP`; the Docker host port must still bind
 to `127.0.0.1`, and the handler requires actual TLS, the exact loopback Host,
-and a loopback or exact configured peer address. Other wildcard/remote binding is rejected; remote-operator exposure needs a
-separate reviewed authorization boundary for all existing APIs, not just enrollment.
+and a loopback or exact configured peer address. Other wildcard/remote binding
+is rejected unless the explicit management mode below is selected.
 Forwarded headers and the existing browser gateway cannot establish TLS or a
 named-user identity for these handlers.
 
@@ -1905,7 +2015,7 @@ go run ./cmd/zpr-web-dashboard -mode control-room -listen 127.0.0.1:8787
 Provision a current server-auth certificate covering the origin hostname; the
 browser must independently trust its issuer. TLS minimum is 1.3. All three TLS
 variables are required together; omitting both OIDC variables enables HTTPS
-without login. A partial configuration or failed discovery aborts startup,
+without login **in loopback mode only**. A partial configuration or failed discovery aborts startup,
 never falls back to HTTP. No automatic HTTP redirect/listener is started.
 Register the exact callback URI in the operator-selected confidential OIDC client,
 which must support S256 PKCE and the library's RS256/ES256 signed-token contract.
@@ -1932,7 +2042,66 @@ browser storage. Session expiry is rechecked on page load/window focus; logout i
 not reported successful without HTTP 204. A login/config failure is shown explicitly.
 The signing/trust configuration below covers only enrollment; it does not
 delegate unrelated monitoring/editor operations or replace their separate
-operator-policy and loopback requirements.
+operator-policy requirements.
+
+#### Direct management HTTPS
+
+The first production topology is direct HTTPS on a company-selected private
+management IP, reachable only through the corporate network/VPN, not a reverse
+proxy or public-Internet deployment. Opt in explicitly:
+
+```sh
+export ZPR_CONTROL_ROOM_MANAGEMENT_IP=10.20.30.40
+export ZPR_CONTROL_ROOM_ORGANIZATION_ID=example-company
+export ZPR_CONTROL_ROOM_ORIGIN=https://control.example.com:8787
+# Set the TLS, OIDC and independent Control-Service mTLS variables described above.
+go run ./cmd/zpr-web-dashboard -mode control-room -listen 10.20.30.40:8787
+```
+
+This is an engineering invocation, not a signed appliance installation command.
+The management IP must be a canonical private IPv4 or IPv6 address (RFC1918 or
+ULA), present in the process's network namespace. The listener must bind that
+exact literal IP and the origin's exact port (443 if omitted). Wildcards,
+loopback/public management IPs, hostname listeners, ephemeral ports and a
+simultaneously configured `ZPR_CONTROL_ROOM_OPERATOR_TRUSTED_PEER_IP` are rejected.
+The origin must use a lowercase dotted company DNS hostname, not an IP,
+localhost or `.local`. Company DNS, routing and firewall rules must be configured
+separately. Bind failure is a startup error, never a wildcard fallback.
+
+**The application is not a firewall/VPN verifier.** Direct unicast clients may
+connect; their address does not establish identity. The company must restrict
+the listener to authorized corporate/VPN networks and avoid public NAT/port
+forwarding. No firewall rules, DNS, containers or listeners are created by the
+configuration validator. Container networking/published-port integration is not
+implemented: do not relax the exact-IP listener check to fit a bridge container.
+
+Management mode requires both OIDC inputs and initialized authentication; no
+anonymous HTTPS fallback exists. The organization ID and every issuer/subject
+grant must satisfy the same single-company production scope rules as the
+[company bootstrap configuration](packaging/system/README.md#company-management-bootstrap-configuration):
+no wildcard/multiple-company or Simulator permissions, and at least one explicit
+`monitor.read` grant. Register the exact company callback with the company IdP.
+Discovery/trust failure aborts startup. No local Dex or Simulator input is used.
+The example's fictional organization, hostname, IP and subject are not credentials.
+
+The handler requires actual TLS and exact Host; foreign Origin and nonempty
+`Forwarded`/`X-Forwarded-For`/`X-Forwarded-Host`/`X-Forwarded-Proto` headers are
+rejected, not trusted. A reverse proxy is not a supported management topology.
+Static/login resources remain available to reach Sign in, but all upstream API
+access requires a named session and explicit route/company permissions; unknown
+routes fail closed. DNS's `bind9.xsl` asset also requires `monitor.read`.
+Enrollment still needs separate verified delegation and backend grants; change
+review still needs its independent configuration. Neither becomes deployment.
+Existing exact-origin CSRF, state/nonce/PKCE, secure host-only cookies, session
+expiry and logout checks remain in force. Browser credentials are stripped
+before forwarding over the independent Control-Service mTLS connection.
+
+Startup also checks the supplied leaf-first TLS chain's validity, hostname,
+signatures/path constraints, server authentication and TLS 1.3 signing use,
+using the offline validator's checks. It does not prove browser/company trust
+or check revocation. Company renewal remains company-managed; files are startup
+snapshots, so replacement requires a controlled restart, not a hot-reload claim.
+No running service is changed by adding this opt-in mode.
 
 ### Local development operator login
 
@@ -3157,6 +3326,23 @@ Operation status is currently in memory: restarting Simulator clears it, but doe
 not delete the local reset log.
 
 ## LDAP Organization Graph
+
+### Independent policy-test fixture configuration
+
+Policy-Service's `GET /api/policy/test/fixtures` now requires explicit
+`ZPR_POLICY_TEST_FIXTURES_FILE` metadata plus its configured live LDAP reader.
+The strict version-1 JSON contract supplies directory mappings, identity
+authority, device inventory/ownership and service test inputs. Missing, invalid
+or context-mismatched configuration produces an unavailable error; production
+never reads Simulator manifests or profiles. Direct `POST /api/policy/test`
+remains independent and accepts caller-supplied fixtures.
+
+Simulator provisioning exports its fictional metadata to an atomic protected
+file in the launcher's `policy-test-fixtures/` directory before stopping the
+previous service. Export failure preserves the previous file and running service.
+Deploy the updated Policy-Service executable and regenerate its context to use
+this contract; a source change alone does not update the running service.
+See the [fixture input contract](cmd/zpr-web-dashboard/README.md#independent-fixture-configuration).
 
 ### Independent assertion seed configuration
 

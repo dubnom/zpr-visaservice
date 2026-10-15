@@ -815,6 +815,71 @@ on by default and the choice is remembered per editor in browser storage. Line
 gutters size each row to its wrapped height so numbers and markers stay aligned
 with their logical lines; uncheck the box to restore horizontal scrolling.
 
+### CodeMirror trial
+
+The **CodeMirror trial** checkbox in Policy/Assertions enables an optional
+CodeMirror 6 editor for these two source types only. It adds syntax colors,
+line numbers, bracket matching, policy completion and undo/redo. Its font size,
+font family and line height match the previous editor's computed typography.
+Token classification and colors come from the existing policy/assertion
+highlighters, rather than a separate editor tokenizer or palette.
+Existing
+Find/Replace, Wrap, Analyze, Format, Save confirmation and Ctrl/Command-S
+continue through the same controllers and API contracts. Source diagnostics
+and clickable result markers remain owned by those controllers, not a second
+compiler or evaluator.
+
+The trial defaults **off on every page load**. Uncheck it to restore the current
+textarea editors without losing unsaved text or the selection. Switching editor
+implementations starts a fresh local undo history; programmatic replacements
+(including record loads and formatting) also reset history so Undo cannot restore
+a previous record's text. This is not a
+change to Gateway, ZPR Config, Scenario or directory editors.
+
+The bundle is loaded lazily from the same-origin
+`static/vendor/code-editor.js`; there is no CDN, external editor service or
+Simulator dependency. Run `npm ci` then `npm run build:editor` from
+`zpr-dashboard` after changing `browser/code-editor.js` or its pinned
+dependencies. The build also regenerates `static/vendor/CODEMIRROR-LICENSES`.
+The existing browser-vendoring script includes this build step.
+
+The editor uses Shadow DOM and constructed stylesheets. Chromium native editing
+can carry token colors into inline attributes, so `style-src-attr` permits only
+nine exact color declarations via CSP hashes. Keep the palette, Go CSP allowlist
+and editor browser tests aligned when changing colors. Arbitrary inline styles,
+inline scripts and `eval` remain prohibited; no `unsafe-inline` is enabled.
+Bundle-load failure reports an explicit error and leaves the current editor
+usable.
+
+With the trial enabled, sending an AI request permits the assistant to apply
+requested policy/assertion source changes directly, without an Insert action.
+Control-Service requests a forced `propose_editor_edits` tool payload rather
+than parsing JSON written as free-form model text. Only one complete payload
+with an explanation and a bounded list of exact before/after strings is accepted;
+this tool does not execute or save anything. The browser still checks the
+current record/source and validates all edits atomically before applying them.
+Responses stopped by the output-token limit are rejected with an explicit
+message to increase **Model and max tokens -> Max tokens** or request a smaller
+change; no partial edits are applied and no automatic retry sends the draft.
+The request includes `direct_edits: true`; Control-Service asks for JSON
+`{"answer":"explanation","edits":[{"before":"unique original text","after":"replacement text"}]}`.
+The browser validates every replacement against the exact submitted source,
+rejects missing/ambiguous/overlapping or oversized edits atomically, and applies
+the accepted edits as **one isolated undoable, unsaved change**. Insertions use a
+unique neighboring line as an anchor; an empty original is accepted only for an
+empty document. Other text, including unrelated unsaved changes, is retained.
+Ctrl/Command-Z undoes the complete AI response and Redo restores it.
+
+Source/record changes invalidate pending responses; disabling the trial or
+making the source read-only prevents application. Invalid/truncated edit JSON
+reports an error without changing source. Questions can return an empty edits
+list. These edits never invoke Save, Analyze, Stage, Publish, activation or a
+runtime action automatically. In the previous textarea editors the assistant
+continues using explicit **Insert**; other editor assistants are unchanged.
+Direct editing requires the updated Control-Service prompt contract as well
+as the Control Room assets; deploying only the UI against an older service is
+not a compatible rollout for this feature.
+
 ## Activity and Navigation
 
 Simulator Activity reads the current Control Room feed while its page is active.
@@ -870,7 +935,12 @@ Read access does not unlock mutations or imply live adapter connectivity.
 It never calls Simulator.
 
 Direct HTTPS with operator-configured certificates and OIDC is opt-in in
-`-mode control-room`, currently restricted to a loopback listener/origin.
+`-mode control-room`. Existing loopback listener/origin behavior is preserved.
+Explicit `ZPR_CONTROL_ROOM_MANAGEMENT_IP` enables a fixed private management-IP
+listener with a company DNS origin, required single-company OIDC authorization
+and direct TLS. Company firewall/VPN policy is separately required; no public
+Internet, reverse-proxy or production container-network rollout is certified.
+See [direct management HTTPS](../../README.md#direct-management-https).
 Sign in uses the native same-origin POST; callback creates an opaque secure
 session cookie. The GUI displays the verified subject and configured enrollment
 scope and offers CSRF-protected Sign out. Login is not mounted on default HTTP,
@@ -1373,6 +1443,56 @@ records do not yet have per-user permissions. There is no deploy action; the
 Visa Service Admin API exposes compiled policy bundles, not editable ZPL
 source.
 
+## Compatibility command ownership
+
+The shared executable currently dispatches 23 modes with 40 flags, including
+production applications, Simulator, machine controllers/proxies, test workloads
+and provisioning commands. The default mode is `control-room`; changing
+`-mode` does not change the default `-listen` value (`127.0.0.1:8787`).
+Simulator's usual `8788` listener is an explicit packaged/launcher setting.
+Policy-Service and Control-Service use their own environment-configured
+listeners instead of `-listen`.
+
+Keep runtime state/configuration separate from relocated source, and do not
+infer ownership from a shared binary or its image name. The
+[mode/default/path and packaging audit](../../../REDIRECTORY.md#m1-compatibility-mode-and-packaging-audit-2026-10-15)
+records all dispatched modes, error/output contracts, path precedence,
+embedded resources, launcher artifacts and remaining acceptance limits.
+`command_compatibility_test.go` guards the dispatch/flag/path contract without
+starting services or reading private runtime state. Runtime behavior and release
+certification still require their domain tests.
+
+The [nested production contract audit](../../../REDIRECTORY.md#m1-nested-production-contracts-audit-2026-10-15)
+records enrollment certificate/delegation authorization, gateway draft
+permissions and live-inventory binding, and change-review revision/approval
+semantics. Their registry, draft store and review database are independently
+configured production state, not Simulator workspaces. Draft saves and review
+approval do not deploy. `production_contract_compatibility_test.go` adds
+permission-wiring, persistence/reopen and response-limit checks with Simulator
+unavailable; it does not certify live TLS/OIDC, installers or deployment.
+
+Gateway draft validation, diagnostics, installed-contract selection and revision
+storage now live in
+[`internal/controlservice/gatewaydraft`](../../internal/controlservice/gatewaydraft/).
+The HTTP adapter accepts the package's independent inventory reader; the
+command's Admin projection preserves existing disconnected/partial/error
+handling. Saved-draft reads remain independent of live inventory. Compatibility
+aliases keep assistant/review JSON types unchanged; there is one validator/store
+implementation. Neutral upstream parsing lives in `internal/gateway`, not a
+Simulator workload owner. The
+[extraction record](../../../REDIRECTORY.md#fourteenth-extraction-production-gateway-draft-owner-2026-10-15)
+lists verification and the remaining command-owned composition. This slice is
+locally verified, not deployed or published.
+
+The [production inventory audit](../../../REDIRECTORY.md#m1-production-inventory-acquisition-and-enrichment-audit-2026-10-15)
+records the seven Admin reads, detail concurrency, snapshot enrichment order,
+partial/disconnected states and `null` versus empty inventory shapes.
+`inventory_compatibility_test.go` guards Admin TLS/key/redirect/decoder behavior
+and snapshot contracts with synthetic Admin services and Simulator unavailable.
+The web Admin client still lives in the command; TUI client defaults and trust
+semantics differ, so they are not interchangeable. This audit changes no runtime
+behavior and does not qualify a live service or release.
+
 ## Policy test API
 
 `POST /api/policy/test` is a reusable, non-deploying evaluator API. Its request
@@ -1385,12 +1505,81 @@ the candidate source hash. Actor `dimensions` (for example `user` and `device`)
 allow clients to report unique identity counts without changing evaluator
 semantics. Requests are limited to 500 actors, 100 services, and 2,000 pairs.
 
-The editor uses `GET /api/policy/test/fixtures` as a separate demo adapter to
-construct the generic actor/service request from its current test data. Other
-clients can supply their own fixtures directly to `POST /api/policy/test`.
+The editor uses `GET /api/policy/test/fixtures` to construct the generic
+actor/service request from explicit operator fixture configuration and a fresh
+read of the configured LDAP directory. Other clients can supply their own
+fixtures directly to `POST /api/policy/test`.
 Candidate bundles are written only to a private temporary directory and are
 never installed. Route-constrained rules currently return an explicit error
 because ZPT does not yet resolve route-dependent decisions.
+
+### Independent fixture configuration
+
+Set `ZPR_POLICY_TEST_FIXTURES_FILE` to an operator-controlled JSON file (one
+version-1 document, regular file, at most 4 MiB). It is re-read on each fixtures
+request. Unknown fields, invalid service transports/attributes, duplicate IDs
+and mismatched organization/base DN fail explicitly with HTTP 503. Missing
+configuration does not discover Simulator profiles or return empty success.
+This setting is optional for repository use and direct `POST` evaluation.
+
+Example input, using independent production names rather than Simulator data:
+
+```json
+{
+  "version": 1,
+  "organization_id": "operator-org",
+  "base_dn": "dc=operator,dc=test",
+  "user_authority": "operator-identity",
+  "directory": {
+    "attributes": [],
+    "user_attributes": ["cn", "mail"],
+    "identity_mappings": {"device.zpr.adapter.cn": "uid"},
+    "user_identity_mappings": {"user.sub": "uid"}
+  },
+  "devices": [{
+    "id": "laptop",
+    "attributes": {
+      "device.zpr.authority": ["operator-bootstrap"],
+      "device.zpr.adapter.cn": ["laptop"]
+    }
+  }],
+  "device_owners": {"laptop": ["alice"]},
+  "services": [{
+    "id": "Payroll", "name": "Payroll", "protocol": "TCP", "port": 443,
+    "attributes": [{"key": "device.zpr.adapter.cn", "values": ["payroll-provider"]}]
+  }]
+}
+```
+
+`organization_id` must equal `ZPR_POLICY_ORGANIZATION_ID`; `base_dn` must equal
+the workspace's `ZPR_POLICY_LDAP_BASE_DN`. LDAP still uses
+`ZPR_POLICY_LDAP_CONTAINER` and `ZPR_POLICY_LDAP_BIND_DN`, the existing protected
+reader credentials and approved nonsensitive attribute filter. Attribute lists
+and mapping sources are combined with the policy configuration's mappings.
+Group memberships supply mapped roles and tags; configured directory values
+override static device attributes. Unsafe ZPT values remain omitted with
+`omitted_attributes` and warnings, not silently repaired.
+
+Optional `device_scope` restricts directory devices to explicit IDs; omitted or
+empty means no device-ID restriction. `devices` supplies operator inventory,
+not fabricated machine models/locations or default identity authorities.
+Directory-only devices can contribute mapped live attributes without invented
+metadata. Device classification uses configured inventory/ownership/scope or
+directory object classes, not a Simulator-specific ID prefix.
+`device_owners` supplies the user/device combinations; there is no production
+manifest-owner fallback. Optional `user_labels` supplies display-name fallbacks
+and `warnings` carries explicit provisioning omissions. Services use the same
+validation as the evaluator API (TCP, UDP or ICMP6); the returned actor population
+is limited to 500, and empty populations/services are unavailable errors.
+
+Simulator provisioning owns `scripts/export-policy-fixtures.jq`: it converts
+fictional profiles and machine metadata into this contract, including its demo
+authorities, ownership fallback, service omissions and Load Lab leading-port
+behavior. The launcher atomically writes a protected file under
+`policy-test-fixtures/` and passes only `ZPR_POLICY_TEST_FIXTURES_FILE` to
+Policy-Service. Export failure leaves the previous fixture file and service
+running. The production fixture reader never opens those source profiles or
+manifests. This is input isolation, not completion of package separation.
 
 Claude is optional and disabled unless the server has an Anthropic key:
 
@@ -1400,7 +1589,9 @@ zsh scripts/configure-assistant.sh
 
 When Claude is configured, the UI discloses that submitting a question sends
 the current policy and chat history to Anthropic. The key stays server-side;
-assistant responses are suggestions and are never applied automatically.
+assistant responses remain unsaved. With the CodeMirror trial enabled, requested
+policy/assertion line edits apply directly as one Undo step; otherwise applying
+suggestions requires the editor's Insert/Apply action.
 Run this from the dashboard module directory; the script prompts for the key
 without echoing it, persists it in a protected runtime file, and reloads the
 existing Control-Service container in place while preserving operator settings.
@@ -1420,7 +1611,8 @@ use `POST /api/policy/assistant` with `editor` set to `assertion` or
 `zpr-config` (assertions also include the attribute catalog), Gateways uses
 `GET`/`POST /api/gateways/assistant` (`gateway.read`/`gateway.analyze`), and
 the Simulator uses its own `POST /api/simulator/editor-assistant` with its own
-key, so Control Room never calls the Simulator. Suggested replacement text is
+key, so Control Room never calls the Simulator. Outside the CodeMirror
+policy/assertion trial's [direct-edit mode](#codemirror-trial), suggested replacement text is
 shown as a code block with an **Insert** button that places it at the cursor
 (replacing any selection) as an ordinary, undoable unsaved edit; nothing is
 saved, staged, published or activated by the assistant.

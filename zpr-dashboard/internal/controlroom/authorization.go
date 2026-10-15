@@ -15,7 +15,7 @@ type Authorizer interface {
 func APIPermission(method, path string) (string, bool) {
 	if method == http.MethodGet || method == http.MethodHead {
 		switch path {
-		case "/api/snapshot", "/api/diagnostics", "/api/adapter-logs", "/api/dns/records":
+		case "/api/snapshot", "/api/diagnostics", "/api/adapter-logs", "/api/dns/records", "/bind9.xsl":
 			return "monitor.read", true
 		case "/api/trusted-sources/change-feeds":
 			return "policy.read", true
