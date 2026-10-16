@@ -1,9 +1,10 @@
 # Simulator Administrator Workflow Migration
 
 Date: 2026-10-16<br>
-Status: Stopped at a verified bounded helper/recovery milestone. Both workers
-completed and released their source reservations. The coordinator independently
-verified the combined fake-only helper/native selectors and both actual HTTPS
+Prior milestone status: Stopped at a verified bounded helper/recovery
+milestone. Both workers completed and released their source reservations. The
+coordinator independently verified the combined fake-only helper/native
+selectors and both actual HTTPS
 receiver modes under race tests, scoped vet/formatting and the safe no-CGo full
 Go suite. No daemon or independent worker-chat links are claimed.
 Native generation is implemented source with compile/fake-backed evidence only;
@@ -134,8 +135,8 @@ chosen option, rationale, affected workstreams and acceptance changes here.
 | D2 | Approved 2026-10-16: separate-tab navigation to existing Control Room through a deployment-administrator-configured trusted URL. Simulator configuration reads, validates and exposes only that navigation value; Control Room retains its own login/auth/editors. Shared modules deferred. | W3 | Navigation/configuration implementation |
 | D3 | Approved: one macOS PH adapter on AuthCode/BAS with an endpoint-generated protected key, no private-key copy/export, trusted locally authenticated helper policy and immutable pre-claim reference. Native runtime qualification remains gated. | W2 + W4 | Provisioning vertical slice |
 | D4 | Approved 2026-10-16: durable operation identity for one explicitly selected Visa Service current-policy target; named approving actor; candidate digest/source revision and expected current state; retry/lost-response reconciliation by operation ID; independent applied-state readback; explicit failure state; rollback separately approved and never implicit on timeout. Visa Service owns guarded install/readback; Policy-Service owns durable operation/approval record and invokes Visa Service through an authenticated production API. | W1, C0 | Production apply implementation and client/UI integration |
-| D5 | Retain identity, revoke/re-enroll and reset behavior; disposable lab targets and allowed mutations | W2 + W4 | Reset/rebuild migration and live tests |
-| D6 | First acceptance host/topology and independently supervised endpoints/providers | W5 | Package/live acceptance |
+| D5 | Approved 2026-10-16: reset clears scenario state only and retains endpoint identity; revoke/re-enroll is a separate action requiring named human approval. Reset remains scoped to the explicitly configured disposable lab organization and requires named approval under D1. | W2 + W4, C0 | Any identity-changing reset/re-enrollment migration; live acceptance remains gated by D6 |
+| D6 | Approved 2026-10-16 by C0 with user delegation: first acceptance is one isolated disposable Linux lab stack and one separate Apple Silicon Mac running macOS 13+ with a single PH/AuthCode/BAS adapter. Include the required Authentication actor/`validation/2` and one configured trusted attribute provider, each operated independently of Simulator. Prove production operator services remain available with Simulator stopped. No Great Lakes/production target. | W5, C0 | Selection complete; qualification still requires D1/D3 prerequisites and separate execution approval |
 
 Do not assume a new authentication grant type, automatic approval, iframe
 embedding, shared-origin sessions or direct browser token access. Prefer existing
@@ -160,6 +161,13 @@ key provisioning and runtime trust remain unconfigured implementation/deploy
 details. No new grant type, service credential, approval shortcut or weakened
 existing authorization is approved. Use compatible existing source patterns
 and fail closed when required trust is absent.
+
+For the D5 scenario-only reset, the user selected an authenticated named human
+session with explicit organization binding and per-reset confirmation. Before
+W4 changes the handler, W1/Control-Service must verify that an existing
+supported identity/authorization contract can enforce this. Do not share
+Control Room tokens or sessions with Simulator. Until that source check passes,
+the reset handler remains unchanged.
 
 ### D2 decision record (2026-10-16)
 
@@ -198,6 +206,35 @@ do not add self-asserted actor identity or a new grant type. If named approval
 cannot be enforced safely, keep the apply client gated while completing only a
 safe receiver producer slice. Fixture tests are synthetic and do not establish
 live capability.
+
+### D5 decision record (2026-10-16)
+
+**Approved reset boundary:** reset may clear Simulator scenario state only and
+must retain the endpoint's existing identity. It must not implicitly revoke,
+re-enroll, erase enrollment/repository state, or restart production services.
+Revocation and re-enrollment are separate actions requiring named human
+approval. Reset remains restricted to the explicitly configured disposable
+lab organization and requires named human approval under D1. This selects
+source/test behavior only; it does not authorize service mutation or live
+execution.
+
+### D6 decision record (2026-10-16)
+
+**Selected first acceptance topology:** one isolated disposable Linux lab
+stack for the Visa Service, Policy-Service, Control-Service/Control Room and
+Simulator, plus one separate Apple Silicon Mac running macOS 13 or newer with
+one PH/AuthCode/BAS adapter. The lab must include the Authentication actor
+and its advertised `validation/2` service, plus one configured trusted
+attribute provider. The provider and endpoint lifecycles must be independently
+supervised and remain usable without Simulator; acceptance must verify
+production operator services while Simulator is stopped. Use only the
+explicitly configured disposable lab organization, not Great Lakes or another
+production target. This selects scope only: it does not approve deployment,
+live changes, credential use, native Keychain operations or privileged host
+changes. This matches the existing local Linux one-node test runtime and the
+provisioning plan's first-release Mac target; broader fleet and multi-node
+acceptance are deferred. D1 authority and D3 native/helper qualification gates
+remain in force.
 
 ## 5. Common Handoff Contracts
 
@@ -1440,3 +1477,557 @@ Related sources:
 [provisioning](../Provisioning%20plan.md),
 [team charter](../AGENT_TEAM_STARTER.md), and
 [implementation progress](../zpr-dev-context/docs/IMPLEMENTATION_PROGRESS.md).
+
+## 12. Coordinator Continuation (2026-10-16)
+
+**Current status:** C0 has resumed coordination with five visible specialist
+chats. W1 and W5 completed two disjoint test-only changes and released their
+reservations. W1's read-only D1 check concluded that the existing reset path
+is insufficient. W2's repository/owner check concluded blocked; W3/W4
+completed blocked recovery. Initial recovery has concluded; W4 completed the
+user-requested read-only durable audit/approval contract addendum and stopped
+pending review.
+The subsequent generic continuation does not approve reset implementation.
+W4's corrected store reservation is released and independently verified.
+The next server-only integration reservation below is active. The
+Visa Service worktree is `main` ahead of `origin/main` by one commit, with
+pre-existing untracked/modified discovery-example files that are outside this
+work; they must be preserved. No production/configuration mutation, privileged
+host operation, Keychain operation, deployment or publication is authorized.
+
+| Chat | Workstream | Current state | Chat |
+|---|---|---|---|
+| W1 | Production Configuration & Apply | Verified: auth matrix passed worker and C0 focused/race checks; single-file reservation released | [Open W1](agent-host-session://ahp-session/9f3ba312-b177-4a44-9bde-a87fb262392b?chat=48fe60db-adca-4e2b-b528-9698c88e7356) |
+| W2 | Endpoint Provisioning & Trusted Helper | Blocked: PH adapter location documented, but authoritative AuthCode/BAS client files and named owner unestablished; no source reservation | [Open W2](agent-host-session://ahp-session/9f3ba312-b177-4a44-9bde-a87fb262392b?chat=c87009be-310e-41c6-8262-87142a456b7a) |
+| W3 | Control Room Editors & Operator UX | Verified: corrected Simulator reset UI passed C0 90/90 repeated desktop/tablet fixtures; reservation released; D2 editor scope remains blocked | [Open W3](agent-host-session://ahp-session/9f3ba312-b177-4a44-9bde-a87fb262392b?chat=e3463d35-38ea-462b-b50e-aab6cb368d08) |
+| W4 | Simulator Orchestration | Verified source/test milestone: server reservation released; C0 backend/auth/store checks passed; UI/live qualification pending | [Open W4](agent-host-session://ahp-session/9f3ba312-b177-4a44-9bde-a87fb262392b?chat=a595039b-c2fd-44ff-81d5-73dca1000a03) |
+| W5 | Packaging & Acceptance Evidence | Verified: HTTP handler restart acceptance plus combined C0 reset tests/race/vet passed; reservation released | [Open W5](agent-host-session://ahp-session/9f3ba312-b177-4a44-9bde-a87fb262392b?chat=44243e25-2e51-4e13-91e7-df02352f36cb) |
+
+**Verified W1 test:** `TestPolicyStatusRejectsPinnedVerifiedCertificateWithoutClientAuth`
+proves a pinned, chain-verified serverAuth-only certificate receives 403 before
+any upstream status lookup. W1's first attempt overlapped W5's incomplete Go
+test file and did not reach execution; after W5 completed, C0's combined
+focused test passed. This first W1 reservation was released before the separate
+D1 authorization-contract check.
+
+**Verified W5 fixtures:** `vs/src/policy_recovery_fixture.rs` seeds actual
+RedisDb-backed pending-before-commit and committed-with-pending-receipt states;
+`zpr-dashboard/cmd/zpr-web-dashboard/policy_apply_crash_window_interop_test.go`
+restarts an owned Visa Service receiver and asserts binding, exact-once
+readback/replay, and stale-CAS rejection. The fixture uses an owned private
+loopback Valkey with a dynamic port and temporary AOF directory. Both source
+reservations were released. This is synthetic intermediate-state recovery,
+not power-loss or upstream Redis qualification.
+
+**Combined verification:** With `CGO_ENABLED=0`, the focused Go command
+`go test ./cmd/zpr-web-dashboard -run '^(TestPolicyStatusRejectsPinnedVerifiedCertificateWithoutClientAuth|TestPolicyApplyRustCrashWindowRecoveryInterop)$' -count=1 -v`
+passed (both crash-window subtests and the ClientAuth rejection test). Offline
+`cargo test -p vs` passed 6 library tests and 511 service tests; 8 were ignored,
+including the Go-owned fixture which the Go integration selector executed
+separately. The new Rust fixture target also compiled via `cargo test --no-run`;
+Go/Rust formatting and `git diff --check` passed. The same two Go selectors
+passed with `-race` under `CGO_ENABLED=1`; no enrollment/Keychain test was
+selected or run.
+
+After both Go runs, the exact owned receiver PIDs were absent and no
+`zpr-policy-crash-window-*` temp directories remained.
+
+**Open boundaries:** Native generation/lookup/signing remain closed until an
+actual exclusive helper-only key-use ACL, protected helper identity and
+installation policy are approved and represented. PH/BAS wiring remains
+blocked until its reviewed authenticated opaque-signer transport is ready.
+D5 is resolved: scenario reset retains endpoint identity, while
+revoke/re-enroll remains a separate named-human-approved action under D1.
+D1's approval requirements still apply. D6's initial topology is selected,
+but integrated/live acceptance is not authorized or qualified until D1/D3
+prerequisites are met and execution is separately approved. No operation
+against a production or lab service is inferred from source/test work.
+
+**W3 scope gate:** the next editor acceptance slice needs explicit production
+organization/target context. D2 forbids Simulator from selecting or handing off
+that context, but permits independent selection and confirmation inside
+independently authenticated Control Room. W3's read-only report identifies
+that D2-compatible route; a D2 change is needed only if Simulator context
+handoff is required. No UI/source change or browser test was authorized.
+Before reserving implementation, bound one production-owned authoring/revision
+fixture slice and its ownership. Keep draft validation distinct from scenarios,
+retain optimistic conflicts/drafts and stale-response guards, and test with
+Simulator unavailable. The full apply/readback/scenario roundtrip remains
+subject to the separate approval and execution gates.
+
+**W2 blocker:** the frozen Go helper IPC v1 is only a transport prerequisite;
+W2 found no PH consumer path in the inspected isolated Visa Service tree.
+Its follow-up found `../zpr-core/README.md:53` documents the Rust `ph` adapter
+under `adapter/ph`; `../Provisioning plan.md:30` describes the connected,
+policy-authorized Authentication actor prerequisite and line 39 records a
+local PH AuthCode client prerequisite. These references do not establish that
+the adapter tree implements or owns that client. W2 found no `AuthCode`,
+`auth.zpr`, `validation/2` or `BAS` references in that tree and no documented
+named PH/AuthCode/BAS owner or exact client/test file pair. The inspected Core
+checkout was on `work/macos-tun-address`, tracking
+`personal/work/macos-tun-address`; it was not edited or tested.
+Before PH fake-stream implementation, C0 must establish the authoritative PH
+repository/files and obtain PH/BAS owner confirmation of the v1 mapping. No
+native ACL, helper installation, Keychain operation or PH integration is
+reserved.
+
+**W4 blocker:** D5 permits only scenario-state reset while retaining endpoint
+identity. For D1, the user selected named-session confirmation with explicit
+organization binding and per-reset confirmation, without token/session
+sharing. W1's completed read-only check found no sufficient existing end-to-end
+contract. Simulator has independent named OIDC sessions (`operator_login.go:55`)
+and session/CSRF/org/permission authorization (`internal/operatorauth/auth.go:474`).
+However, `simulator_policy.go:127-128,150-204` authorizes cancel with an implicit
+manifest organization. Clear uses the same generic permission and implicit
+organization. Cancel only stops an active run (`scenario.go:1664-1671`); clear
+only clears inactive state. Neither establishes distinct per-reset human
+confirmation; CSRF is not that confirmation. Control Room authorization is
+independent, its proxy strips credentials/CSRF, and it exposes no Simulator
+route. Control-Service route composition leaves caller authentication to its
+owner and supplies no missing Simulator approval contract. Existing sessions
+are reusable building blocks, not approval to invent or enable a new reset
+contract. W4 proposed only local scenario-state changes in `scenario.go`,
+`simulator_policy.go` and their tests; no source reservation was granted.
+
+**W4 reset contract proposal (unapproved):** the user authorized contract
+drafting only. W4 completed the read-only proposal and stopped without edits,
+tests or processes. Proposed action: an explicit-org POST reset route, exact
+`scenario.reset` permission, independently authenticated Simulator OIDC session,
+same-origin CSRF, and explicit human confirmation binding configured disposable
+lab org and expected run generation. Immutable actor is verified issuer/subject,
+not caller-supplied identity or display name. Under one manager lock, terminal
+scenario state clears and generation increments; active/cleaning runs conflict.
+No definitions, endpoint identity, machine/controller/session state, service
+clients, activation scripts or production state may be changed.
+
+The proposal uses an operation ID and actor/org/generation binding for exact
+in-process retries, conflicts on stale generation or distinct concurrent resets,
+and makes no durable receipt claim after process restart. Proposed audit fields
+include actor, action, org, operation, expected/result generation, timestamp and
+outcome. No audit sink, retention policy, durable approval or idempotency store
+has been established. User review must choose volatile/process-local evidence
+with explicitly accepted restart limitations or an approved durable audit/
+approval contract before implementation. Proposed denials never mutate state;
+unavailable authorization/audit prerequisites fail closed.
+
+C0 review also requires resolving the existing `/clear` entry point: a new
+guarded reset route must not leave an equivalent generic-permission bypass.
+Preserve cancel as a distinct active-run action. Specify confirmation expiry,
+bounded dedup retention, same-ID/different-payload conflicts, and audit/mutation
+failure ordering before calling the contract complete. Existing OIDC/CSRF
+helpers do not provide these additions automatically.
+
+Candidate source/test scope remains `simulator_policy.go`,
+`simulator_policy_test.go`, `scenario.go`, and `scenario_test.go`; permission
+registration, startup/config validation, route registration and UI callers must
+also be mapped before an exact reservation can be complete. UI confirmation
+and its browser coverage are not implicitly reserved. Only explicit offline
+test selectors may run after approval; no unrestricted package/CGo enrollment
+tests. No implementation or native/live authorization is inferred.
+
+**Reset audit decision:** the user selected durable audit/approval evidence;
+continue contract design only. Process-local-only approval/audit evidence is
+not accepted. No storage, owner, protocol or runtime enablement is approved by
+this choice.
+
+**W4 durable addendum (proposed, not approved):** no existing generic Simulator
+audit sink was found. Control Room's `internal/changereview.Store` and
+Policy-Service's policy-operation tables are private, purpose-specific contracts,
+not available for direct Simulator database access. W4 recommends a dedicated
+Simulator-owned private SQLite store using the existing driver, one writer,
+with explicit configuration and protected file/parent ownership. This is local
+durable evidence, not independent or tamper-evident evidence. An independent
+operator-service approval/audit API is an alternative requiring a new contract;
+it must not introduce an operator-service dependency on Simulator.
+
+Proposed workflow: explicit-org reset intent and named confirmation, two-minute
+expiry, immutable issuer/subject binding, durable operation ID, durable startup
+epoch and run generation. Persist consumption/applying before volatile clear;
+persist terminal outcome afterward. There is no transaction spanning SQLite
+and in-memory scenario state. Startup reconciles old-epoch unfinished operations
+as interrupted/indeterminate, never resumes mutation or invents success.
+Audit unavailability prevents mutation; final-write failure yields unknown/
+unavailable outcome requiring status reconciliation. Same-ID changed binding
+conflicts; exact retries read stored status without another clear. Prior epochs
+and stale generations cannot mutate state. Detailed transaction/lock ordering,
+clock/expiry behavior and status authorization require implementation review.
+
+Proposed retention: 365 days for operation/audit evidence, seven days for
+expired-unconfirmed intent detail, permanent epoch/replay protection. User must
+approve or replace this policy, including legal hold/backup requirements.
+Any intent-detail purge must preserve required audit evidence for its full
+retention period; append-only within retention is not indefinite retention.
+Legacy `/clear` should return 410 without mutation, even with auth disabled;
+cancel remains separate. A temporary alias is an alternative only if it uses
+the entire explicit target/approval guard.
+
+Affected surfaces exceed the initial four-file candidate: permission registry
+`internal/operatorauth/auth.go`; reset routes and scope tests; `simulator.go`
+startup/config/store lifecycle; dedicated store and transaction tests; scenario
+manager/handlers/tests; `static/scenarios.js` and `static/scenarios.html`,
+matching browser tests; dashboard command documentation/config guidance.
+No grants, deployment mount, service configuration or new dependency is approved.
+W4 ran no tests/processes and made no edits.
+
+**User contract decisions (2026-10-16):** approved dedicated Simulator-owned
+SQLite evidence (not independently tamper-evident); two-step same-actor intent/
+confirm, two-minute expiry, epoch/generation binding, exact retries and
+indeterminate restart semantics; 365-day operation/audit retention and seven-day
+expired-intent detail purge preserving audit, with permanent replay protection;
+legacy clear permanently returns 410 without mutation. These decisions
+supersede the corresponding unapproved options above, not the live-operation
+gates. Backup/legal-hold/deployment policy remains a release prerequisite.
+
+**Exclusive W4 reservation:** only new
+`zpr-dashboard/internal/simulatorreset/store.go` and `store_test.go`, implementing
+the approved durable-store primitives and offline SQLite tests using the existing
+driver. No route, UI, permission, grant, startup/config or service wiring yet.
+No other worker may edit these files. W4 reports actual tests and releases the
+reservation before C0 integration verification. C0 alone edits shared trackers.
+
+**First store review/verification:** W4 released the initial increment; C0
+independently passed focused no-CGo tests, focused CGo race tests (only this
+package, no enrollment) and no-CGo vet. The store remains unwired.
+C0 requested corrections within the same exclusive two-file reservation:
+align `scenario.state.reset` to the approved `scenario.reset` action; verify
+filesystem ownership, hardlinks, ancestor/lock/SQLite sidecar safety rather than
+claim owner protection from mode checks alone; add concurrent exactly-one
+consumption and failed-final-audit/reopen-indeterminate tests. W4 must stop for
+scope approval if more files/platform separation is required. Linux/macOS-only
+`Flock` support is an explicit integration limitation, not portable qualification.
+
+C0 ran `CGO_ENABLED=0 GOPROXY=off GOSUMDB=off make test` in the dashboard module:
+exit 2 with exactly the five documented pre-existing dashboard failure groups
+(`TestAssistantSkillsEmbeddedAndTaskSpecific`,
+`TestEnrollmentAdministrationOverVerifiedTLSWithoutSimulator`,
+`TestOrganizationPolicyInstallNeverUploadsStaleBundle`,
+`TestScenarioPlacementPreflightMatchesLauncher`,
+`TestTrustedServiceBuildPublishesAtomicallyAndKeepsFreshArtifact`).
+The new store package passed; enrollment passed. No failing test was changed.
+An initial invocation at workspace root had no `test` target and was corrected
+to the module directory. The complete module run is in C0's session artifact
+`files/reset-store-make-test.log`, not a new repository tracking file.
+
+**Corrected store acceptance:** W4 released both files after corrections.
+C0 directly reviewed the corrected path/action implementation and added tests;
+independent no-CGo package tests, focused package race tests, vet and formatting
+passed. Exact action is now `scenario.reset`; Linux/macOS build constraints and
+no-follow directory-relative file opens, UID/mode/link/identity checks and
+SQLite sidecar checks are present. Concurrent confirmation consumes exactly once;
+failed final audit rolls back and reopen reconciles as indeterminate.
+This is local durable evidence, not defense against a compromised same-user
+process, native qualification or atomic memory/SQLite commit.
+C0 reran the safe full Go baseline after corrections: the same five known
+dashboard groups failed; store and enrollment passed. Log:
+`files/reset-store-corrected-make-test.log` in C0 session artifacts.
+
+**Next exclusive W4 reservation (server-only):**
+`zpr-dashboard/internal/operatorauth/auth.go` and `auth_test.go`;
+`zpr-dashboard/cmd/zpr-web-dashboard/simulator.go`,
+`simulator_policy.go`, `simulator_policy_test.go`, `scenario.go`,
+`scenario_test.go`, new `simulator_reset.go`, new `simulator_reset_test.go`,
+and `cmd/zpr-web-dashboard/README.md`. The store files are released and not
+reserved for further changes. Stop for additional paths if required.
+Implement opt-in explicit disposable-org/private-store configuration with
+startup validation/closure, exact reset permission and explicit-org intent/
+confirm/status APIs, verified identity/CSRF enforcement, manager epoch/run
+generation and safe mutation/outcome ordering, and legacy clear 410 without
+mutation (including auth-disabled mode). Preserve cancel as a separate action.
+No implicit permission grants or default store/org; disabled/missing auth/store
+must never permit reset. This is offline source/test wiring only, not permission
+to configure or invoke any running service.
+
+**Parallel work activation:** user requested existing workers advance disjoint
+work while W4 implements. W4 retains all server reservations and must confirm
+exact routes/bodies/responses/config/identity interface once for consumers.
+W1 prepares a bounded auth acceptance matrix and helper mapping, read-only;
+proposed new `cmd/zpr-web-dashboard/simulator_reset_authorization_test.go`
+is not reserved until that interface is confirmed.
+W3 prepares the Simulator-only confirmation state machine/caller and browser
+file scope, read-only pending the same interface. This is not the blocked D2
+production-editor handoff. W2 remains blocked; no native/PH workaround.
+
+**Released W5 reservation:** only new
+`zpr-dashboard/internal/simulatorreset/store_acceptance_test.go`, external test
+package using the accepted public API. Implement owned subprocess restart/
+reopen evidence for pending/consumed operations without graceful store closure,
+exact retry and changed-binding rejection. Use private temporary SQLite and
+bounded owned/reaped test children; no service/listener/shared resource.
+Run only explicit `TestResetStoreAcceptance` selectors offline, including race.
+This is process-restart evidence, not power-loss/database-crash qualification.
+Store implementation and W4 server files remain outside W5 ownership.
+
+**W5 acceptance verified:** W5 completed and released the file; C0 read it and
+independently passed all store unit plus acceptance tests without CGo, all store
+tests under race, vet and formatting. Three owned subprocess modes cover pending,
+consumed and 24 concurrent confirmations before `os.Exit` without `Close`, then
+reopen validates epoch advancement, interrupted/indeterminate state, immutable
+exact retries, changed-binding conflicts and system-attributed reconciliation.
+Each child is waited/reaped, with exact PID kill/wait on timeout and private
+temporary storage. This is application subprocess exit/reopen, not SIGKILL,
+kernel/SQLite crash, power loss or production acceptance. Store API/backend
+integration remains separately owned by W4.
+
+**Frozen server interface:** C0 accepted W4's source-only wire contract.
+Configuration is explicit `SIMULATOR_RESET_ORGANIZATION` plus
+`SIMULATOR_RESET_DB_PATH`; both absent disables reset, partial configuration
+or configured reset without named auth fails startup. No defaults or grants.
+All routes under `/api/simulator/organizations/{organization}/scenario-reset`
+require exact `scenario.reset`, explicit org and verified identity:
+GET `/status` supplies org/epoch/generation/run_state;
+POST `/intents` accepts operation_id/org/epoch/generation (201 new, 200 retry);
+POST `/operations/{operation_id}/confirm` accepts org/epoch/generation
+(200 completion/retry, 410 expiry, 409 active/stale/conflict, 503 unknown outcome);
+GET `/operations/{operation_id}` returns evidence for original actor/org only
+(404 unknown, 410 purged). Mutations use existing same-origin CSRF.
+Wire fields use `organization`, not abbreviated `org`, and `operation_id`.
+No actor is accepted from client headers/body. Legacy clear always returns 410.
+For the exact retired POST `/api/simulator/scenarios/clear`, return the
+non-mutating 410 tombstone before proxy authorization/organization resolution,
+and independently in the direct handler. It must not call the authorizer,
+manifest resolver, store or manager. C0 rejected a proposed empty-org
+`scenario.reset` authorization exception: no such grant or relaxed test fixture
+is needed for a route that cannot execute. New reset routes remain fully
+authenticated and explicitly org-scoped; cancel retains its separate behavior.
+Manager starts at nonzero generation and advances on each run replacement/start/
+reset, guarding cross-org and stale approval. Detailed status evidence preserves
+honest consumed/indeterminate state, never authorizing repeat mutation.
+
+**Extended W4 reservation:** C0 explicitly adds only
+`cmd/zpr-web-dashboard/simulator_reset_unsupported.go` for unsupported-platform
+fail-closed/build-compatible behavior; no Unix-only store import may silently
+break existing other-platform builds. Existing server reservation otherwise
+unchanged. No platform runtime qualification is claimed.
+
+**Exclusive W1 reservation:** only new
+`cmd/zpr-web-dashboard/simulator_reset_authorization_test.go`, implementing its
+matrix against actual handlers/proxy/store and verified fake identity. Prefix
+`TestSimulatorResetAuthorization`; explicit offline/race selectors only.
+W4 supplies exact test constructor seam; W1 does not edit backend files.
+
+**Exclusive W3 reservation:** only `cmd/zpr-web-dashboard/static/scenarios.js`,
+`static/scenarios.html`, and new
+`tests/browser/simulator-reset-confirmation.spec.mjs`. Implement explicit
+org/run/named-actor confirmation, exact operation retry/reconciliation, expiry/
+unknown/conflict UX and desktop/tablet fixtures. Do not call legacy clear,
+auto-confirm, transfer context to Control Room or repeat D2 navigation tests.
+Coordinate owned browser fixture resources before starting; no live operations.
+
+**W3 runner decision:** local Node and Playwright shebang execution failed with
+exit 127; no installation was attempted. C0 found the matching cached
+`mcr.microsoft.com/playwright:v1.63.0-noble` image. The user approved a temporary
+offline container only: `--pull=never`, `--network=none`, no host ports/socket/
+credentials, read-only dashboard mount, existing node_modules, temporary output,
+owned exact-name cleanup. JS syntax and the new reset browser fixture only;
+no npm install, container-script dependency restore, deployment or live service
+access. W3 may use an owned fixture listener inside that isolated container.
+Browser results remain pending; container availability is not acceptance.
+
+**W3 first independent browser result:** W3 reported 28/28 and released its
+three files; C0 reran the approved offline cached container: JS syntax passed,
+27/28 browser cases passed, but tablet success confirmation lost its dialog
+before showing completion (spec line 239). The container exited and was removed.
+Review identifies unconditional run-signature invalidation during the reset's
+own successful refresh as a likely race. C0 renewed only W3's same three-file
+reservation for a root-cause fix and deterministic post-success-refresh
+regression, retaining unrelated run/org/session stale-intent protection.
+Repeated desktop/tablet verification is required; UI is not yet accepted.
+
+**Corrected W3 acceptance:** W3 fixed the reset's own completion-refresh race
+within its three files and released the reservation. The narrow in-flight
+confirmation guard preserves the operation while its response is pending;
+expected subsequent idle transition requires same org and operation epoch,
+current generation exactly original+1 and no scenario ID. Pending intents and
+unrelated org/session/run changes remain invalidated. A deterministic fixture
+holds the confirm response until post-reset run refresh occurs, then checks
+visible completion and exactly one confirm.
+C0 reviewed the guard/regression and independently reran the approved isolated
+cached browser container: JS syntax passed; 90/90 cases passed (15 cases,
+three repetitions, desktop and tablet). Exact container cleanup was verified.
+Log: `files/reset-ui-corrected-browser.log` in C0 session artifacts.
+
+The final safe offline no-CGo `make test` after UI correction still has exactly
+the five known dashboard failure groups, with enrollment/operatorauth/
+simulatorreset passing. Log: `files/reset-integrated-final-make-test.log`.
+All tracked whitespace checks passed; pre-existing discovery changes remain.
+No failing test was edited to hide a result.
+
+**Integrated milestone/handoff:** approved scenario-only durable reset now has
+source wiring, explicit named-session/org permission/CSRF guards, legacy clear
+tombstone, confirmed UI and independently verified offline store/auth/HTTP/
+browser fixtures. This is NOT deployment, publication, real OIDC browser-to-
+backend acceptance, live lab reset, database power-loss or native qualification.
+The new browser suite mocks HTTP; the backend fixtures use synthetic verified
+identity and HTTP recorders. Existing legacy-clear browser assertions were not
+changed or rerun; deliberate migration of those previously passing assertions
+and a single real-browser-to-owned-backend fixture remain next acceptance work,
+with exact file/resource reservations required before writes.
+No permission grants, running-service config, credentials or endpoint identities
+were changed. All W1/W3/W4/W5 reservations are released; W2 remains blocked on
+PH/AuthCode/BAS ownership and native prerequisites.
+
+**Next action:** integrate the disjoint backend/auth-test/UI changes after each
+reservation is released, run combined safe selectors and baseline, and validate
+fixture-only desktop/tablet and HTTP restart acceptance. No new worker or
+repeated discovery is needed.
+
+**Backend integration verification:** W4 released all server/auth/docs/stub
+files. C0 reviewed configuration/route composition, handler binding and durable
+consumption/outcome ordering, manager generation and retired-route protection.
+Combined explicit `TestSimulatorReset`, policy-map/proxy and manager-clear
+selectors passed without CGo and under race; all operatorauth and simulatorreset
+package tests passed without CGo. The full safe offline `make test` again has
+exactly the same five documented dashboard failure groups; enrollment,
+operatorauth and simulatorreset passed. Evidence log:
+`files/reset-backend-make-test.log` in C0 session artifacts.
+Windows cross-build is not qualified: W4 reports pre-existing unreserved
+`internal/assistant/key.go` syscall errors; the new unsupported-platform stub
+does not import the Unix-only store.
+
+W1's auth matrix passed C0's combined selector and W1's exact offline no-CGo/
+race selectors; formatting passed and its single-file reservation is released.
+W3 retains UI reservation to fix three concrete
+wire mismatches: `intent` not `pending`, 32 lowercase-hex operation IDs not
+hyphenated UUIDs, and HTTP 200 `expired` operation status. Required browser
+fixtures must assert those exact shapes. Browser acceptance remains pending.
+
+**Exclusive W5 HTTP acceptance reservation:** only new
+`cmd/zpr-web-dashboard/simulator_reset_restart_test.go`, Linux/macOS.
+Use actual handlers/proxy, verified synthetic identity and private SQLite with
+manager/store reopen to check seeded pending/consumed and completed receipt
+reconciliation, actor/binding preservation and no repeated mutation across epoch
+change. Explicit `TestSimulatorResetRestartAcceptance` selectors only, offline
+and race; no listener or runtime service. This is seeded boundary/graceful
+reopen evidence, not a process crash or live acceptance claim.
+
+**W5 HTTP acceptance released/verified:** three cases seed consumed-before-
+outcome, pending intent and completed outcome through the public store API,
+close/reopen, then exercise actual handler/proxy via HTTP recorders. They assert
+indeterminate/interrupted/completed evidence, exact retry without mutation of
+a distinct retained terminal manager state, unchanged audit, changed-binding
+409 and new stale-epoch operation rejection. C0 read the fixture and passed
+all `TestSimulatorReset` tests without CGo and under race, plus vet for dashboard,
+operatorauth and simulatorreset. W5's own exact selectors passed; reservation
+released. This is internal `package main` integration coverage, not an external
+Go test package. Seeded boundaries and orderly Close/reopen do not establish
+API-server crash, power-loss, real OIDC login or live acceptance.
+Also confirm the authoritative
+PH/BAS repository and v1 owner mapping before PH fake-stream work; ask for a
+separate D2 decision only if production organization/target handoff is
+required. For W3, bound the independent Control Room organization-selection/
+authoring fixture slice before granting any source/browser reservation; do not
+repeat the completed 72-case navigation milestone. Native ACL/installation,
+PH wiring and live acceptance remain
+blocked. The next acceptance reservations below supersede the released milestone.
+This is chat-based coordination,
+not a daemon or continuous-monitoring guarantee.
+
+### Next offline integration acceptance (2026-10-16 continuation)
+
+The current ledger distinguishes verified mocked browser fixtures, real
+handler/proxy/SQLite recorder tests and store subprocess restart evidence.
+No browser has yet exercised the real reset routes/store end to end.
+Production/Control Room independence remains unchanged; no reverse dependency
+is added. The next increment closes that specific gap rather than repeating
+completed discovery or claiming real OIDC/live qualification.
+
+Exclusive reservations:
+
+| Worker | Exact files | Deliverable |
+|---|---|---|
+| W4 | New `cmd/zpr-web-dashboard/simulator_reset_browser_fixture_test.go` | Owned loopback Go test fixture serving embedded UI and real reset proxy/handlers/store, synthetic named auth and private temp SQLite; compile before execution |
+| W5 | New `tests/browser/simulator-reset-live-fixture.spec.mjs` | Actual browser-to-fixture HTTP acceptance, no reset-response mocks; owned subprocess lifecycle, completion/retry/denial/reopen evidence |
+| W3 | `tests/browser/scenario-browser.mjs`, `tests/browser/dashboard.spec.mjs` | Deliberate migration of directly affected previously passing legacy-clear assertions, preserving cancel and unrelated coverage |
+
+W4/W5 must synchronize exact test-process protocol before coupling code; no
+production route/helper changes are reserved. W1 remains verified/unreserved;
+W2 remains blocked. No new workers. Known failing tests must not be altered.
+C0 owns combined verification, shared tracking and directly related handoff.
+
+The user approved extending the cached offline Playwright runner to these
+fixtures/selectors: compile the Go fixture with no CGo/offline modules, mount
+the test binary read-only, start only an owned ephemeral loopback test backend
+inside the network-disabled container. Source read-only, state/output temporary,
+no host ports/socket/credentials/installs, bounded/reaped children and exact
+container cleanup. This is not a lab/production service or live reset.
+
+Next action: receive the synchronized fixture protocol and released files,
+compile and run the targeted actual-HTTP/browser plus migrated regression cases,
+review results and reconcile the ledger. Do not label mocked or synthetic-auth
+evidence as real OIDC, live deployment, abrupt database crash or power loss.
+No commit/push/tag/publication, native Keychain work or PH ownership decision
+is authorized by continuation.
+
+### Parent-coordinated browser acceptance (2026-10-16)
+
+Cross-chat messages are blocked by the reported 100-message service limit,
+including in the replacement supervisor. Reading worker results still works.
+The old supervisor's last turn and both fixture workers' latest turns were
+complete when the parent continued verification; no worker message or explicit
+reservation-release acknowledgement was delivered. The user explicitly
+authorized the parent to take over W5's browser spec for harness corrections
+and verification. No Go fixture or production source was changed.
+
+The first actual run rejected the cookie because Playwright accepts a cookie
+URL or domain/path, not URL and path together. The spec now uses URL only.
+The next run exposed an incorrect post-reopen visibility expectation: the
+fixture recreates an idle scenario manager, so the reset button must be hidden,
+not visible. The spec now asserts both idle status and the hidden button while
+retaining the durable interrupted-operation and no-confirmation-replay checks.
+
+Independent parent verification passed all **6/6** cases, covering three cases
+on desktop and tablet: cancelled confirmation with interrupted evidence after
+reopen, completion with exact idempotent HTTP retry, and missing identity/CSRF
+plus legacy-clear denial without mutation. The Linux arm64 fixture binary was
+compiled using `CGO_ENABLED=0 GOOS=linux GOARCH=arm64 GOPROXY=off GOSUMDB=off
+go test -c ./cmd/zpr-web-dashboard`. The cached Playwright 1.63.0 container ran
+only `simulator-reset-live-fixture.spec.mjs` with one worker, no external
+network, read-only source and no published ports. The container was removed
+and tracked whitespace validation passed.
+
+This closes the real embedded-browser/reset-route/private-SQLite gap for
+these six checks. Identity/session endpoints remain synthetic; real client
+login/session/CSRF fetch code runs, but real OIDC is not qualified. Restart
+means orderly store close/reopen with manager recreation inside the fixture,
+not listener/process crash, database power loss, or live service recovery.
+The migrated legacy regression selectors and final combined acceptance ledger
+still require reconciliation before declaring the whole source milestone done.
+No deployment, live reset, publication, native qualification or full migration
+completion is claimed.
+
+### Fresh-chat checkpoint handoff (2026-10-16)
+
+The user requested a local checkpoint commit and retirement of the old chats.
+This is an engineering checkpoint, not full acceptance or a deployment.
+Discovery example port-list changes are included after inspection; the
+untracked `zpr-dashboard/cmd/zpr-discover/foo` is an interrupted discovery
+result artifact and is deliberately excluded, preserved locally.
+
+Checkpoint verification: offline `cargo test -p vs` passed 6 library tests
+and 511 service tests, with 8 ignored. The safe
+`CGO_ENABLED=0 GOPROXY=off GOSUMDB=off make test` rerun retained these five
+previously recorded dashboard failure groups:
+
+- `TestAssistantSkillsEmbeddedAndTaskSpecific/scenario`
+- `TestEnrollmentAdministrationOverVerifiedTLSWithoutSimulator`
+- `TestOrganizationPolicyInstallNeverUploadsStaleBundle`
+- `TestScenarioPlacementPreflightMatchesLauncher`
+- `TestTrustedServiceBuildPublishesAtomicallyAndKeepsFreshArtifact`
+
+All other Go packages passed or had no tests. The six real-fixture browser
+cases passed as recorded above; the earlier 90-case UI evidence remains
+separate. Opt-in receiver/crash-window fixtures were not re-executed for this
+checkpoint. No existing failing test was modified to hide these failures.
+
+Start the next fresh session here, inspect the checkpoint commit and working
+tree, then reconcile the migrated legacy browser selectors and combined
+acceptance ledger. Preserve the five known failure groups as explicit open
+items. Do not repeat completed reset discovery or mistake fixture evidence
+for real OIDC, crash/power-loss recovery, deployment or full migration
+acceptance. PH/AuthCode/BAS ownership and native helper qualification remain
+separate blocked workstreams. No live operations are authorized.
+
+Old chat messaging has reached its service limit. The deletion tool refused
+to delete the encompassing current session; no old chat is claimed deleted.
+Retire the old team through the VS Code UI before starting a new team, rather
+than creating another sibling replacement that may share the same limit.

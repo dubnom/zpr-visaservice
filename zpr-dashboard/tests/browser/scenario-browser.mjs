@@ -25,8 +25,7 @@ export function registerScenarioBrowserTests(test, expect) {
       return route.fulfill({ json: data.run });
     });
     api.handlers.set("/api/simulator/scenarios/clear", route => {
-      data.run = { state: "idle", steps: [] };
-      return route.fulfill({ json: data.run });
+      return route.fulfill({ status: 410, json: { error: "Legacy scenario clear is retired." } });
     });
     await page.goto(appURL + "/scenarios.html");
     await expect(page.locator("#scenario-list")).toContainText("Scenario one");
@@ -85,9 +84,12 @@ export function registerScenarioBrowserTests(test, expect) {
       await expect(page.locator("#scenario-start")).toBeVisible();
       await expect.poll(() => page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
     }
-    await page.locator("#scenario-clear").click();
-    await expect(page.locator("#scenario-run-state")).toHaveClass(/idle/);
-    expect(api.counts.get("/api/simulator/scenarios/clear")).toBe(1);
+    await expect(page.locator("#scenario-clear")).toHaveCount(0);
+    await expect(page.locator("#scenario-reset")).toBeVisible();
+    await expect(page.locator("#scenario-reset")).toBeDisabled();
+    await expect(page.locator("#scenario-run-title")).toHaveText(two.name);
+    await expect(page.locator("#scenario-run-state")).toHaveClass(/passed/);
+    expect(api.counts.get("/api/simulator/scenarios/clear") || 0).toBe(0);
     data.active_organization_id = "beta";
     await expect(page.locator("#scenario-start")).toBeDisabled();
     expect(api.counts.get("/api/simulator/scenarios/two/run")).toBe(1);

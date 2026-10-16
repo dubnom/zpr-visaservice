@@ -65,6 +65,36 @@ func TestPolicyApplyPermissionRequiresExplicitSessionGrant(t *testing.T) {
 	}
 }
 
+func TestScenarioResetPermissionRequiresExplicitSessionGrant(t *testing.T) {
+	if !ValidPermission("scenario.reset") {
+		t.Fatal("scenario.reset is not configurable through operator auth")
+	}
+	now := time.Now()
+	for _, test := range []struct {
+		permissions   []string
+		organizations []string
+		wantAllowed   bool
+	}{
+		{permissions: []string{"scenario.cancel"}, organizations: []string{"disposable-lab"}},
+		{permissions: []string{"scenario.reset"}, organizations: []string{"another-org"}},
+		{permissions: []string{"scenario.reset"}, organizations: []string{"disposable-lab"}, wantAllowed: true},
+	} {
+		a := &Auth{origin: "https://room.example", cookie: "session", now: func() time.Time { return now },
+			sessions: map[string]session{"fixture": {
+				grant: Grant{Issuer: "https://idp.example", Subject: "operator", Organizations: test.organizations, Permissions: test.permissions},
+				csrf:  "csrf-proof", expires: now.Add(time.Hour),
+			}}}
+		request := httptest.NewRequest("POST", "https://room.example/api/simulator/organizations/disposable-lab/scenario-reset/intents", nil)
+		request.AddCookie(&http.Cookie{Name: "session", Value: "fixture"})
+		request.Header.Set("Origin", a.origin)
+		request.Header.Set("X-ZPR-CSRF", "csrf-proof")
+		identity, err := a.Authorize(request, "disposable-lab", "scenario.reset")
+		if (err == nil) != test.wantAllowed {
+			t.Fatalf("permissions=%v organizations=%v: identity=%+v error=%v", test.permissions, test.organizations, identity, err)
+		}
+	}
+}
+
 func newProvider(t *testing.T) *providerFixture {
 	t.Helper()
 	key, err := rsa.GenerateKey(rand.Reader, 2048)

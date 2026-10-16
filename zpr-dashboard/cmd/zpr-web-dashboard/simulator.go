@@ -197,7 +197,7 @@ func simulatorScript() string {
 	return "scripts/dashboard-stack.sh"
 }
 
-func runSimulator(listen string) error {
+func runSimulator(listen string) (runErr error) {
 	securityContext, cancelSecurity := context.WithTimeout(context.Background(), 20*time.Second)
 	security, err := configuredSimulatorSecurity(securityContext, listen)
 	cancelSecurity()
@@ -205,6 +205,15 @@ func runSimulator(listen string) error {
 		return err
 	}
 	defer security.close()
+	resetHandler, closeResetStore, err := configureSimulatorReset(security.auth, activeSimulatorScenario)
+	if err != nil {
+		return err
+	}
+	defer func() {
+		if err := closeResetStore(); err != nil {
+			runErr = errors.Join(runErr, fmt.Errorf("close Simulator reset store: %w", err))
+		}
+	}()
 	policyStatusClient, err := newSimulatorPolicyStatusClientFromEnv()
 	if err != nil {
 		return err
@@ -219,6 +228,10 @@ func runSimulator(listen string) error {
 	mux := http.NewServeMux()
 	security.register(mux)
 	mux.HandleFunc("GET /simulator-navigation.json", handleSimulatorNavigationConfig)
+	mux.HandleFunc("GET /api/simulator/organizations/{organization}/scenario-reset/status", resetHandler.ServeHTTP)
+	mux.HandleFunc("POST /api/simulator/organizations/{organization}/scenario-reset/intents", resetHandler.ServeHTTP)
+	mux.HandleFunc("GET /api/simulator/organizations/{organization}/scenario-reset/operations/{operation_id}", resetHandler.ServeHTTP)
+	mux.HandleFunc("POST /api/simulator/organizations/{organization}/scenario-reset/operations/{operation_id}/confirm", resetHandler.ServeHTTP)
 	mux.Handle("/api/simulator/policy-operations/status/", simulatorPolicyStatusHandler(policyStatusClient))
 	mux.HandleFunc("POST /api/simulator/organizations/{organization}/activate", handleSimulatorOrganizationActivate)
 	mux.HandleFunc("POST /api/simulator/organizations/{organization}/restore-base", handleSimulatorOrganizationRestoreBase)

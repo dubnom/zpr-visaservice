@@ -29,8 +29,13 @@ func TestSimulatorAPIPermissionMap(t *testing.T) {
 		{http.MethodPost, "/api/simulator/organizations/acme/scenarios/allow-web/publish", "scenario.publish", "acme", true},
 		{http.MethodPut, "/api/simulator/organizations/acme/scenarios/allow-web", "scenario.edit", "acme", true},
 		{http.MethodDelete, "/api/simulator/organizations/acme/scenarios/allow-web", "scenario.archive", "acme", true},
+		{http.MethodGet, "/api/simulator/organizations/acme/scenario-reset/status", "scenario.reset", "acme", true},
+		{http.MethodPost, "/api/simulator/organizations/acme/scenario-reset/intents", "scenario.reset", "acme", true},
+		{http.MethodGet, "/api/simulator/organizations/acme/scenario-reset/operations/0123456789abcdef0123456789abcdef", "scenario.reset", "acme", true},
+		{http.MethodPost, "/api/simulator/organizations/acme/scenario-reset/operations/0123456789abcdef0123456789abcdef/confirm", "scenario.reset", "acme", true},
 		{http.MethodPost, "/api/simulator/scenarios/allow-web/run", "scenario.run", "", true},
 		{http.MethodPost, "/api/simulator/scenarios/cancel", "scenario.cancel", "", true},
+		{http.MethodPost, "/api/simulator/scenarios/clear", "", "", false},
 		{http.MethodPost, "/api/simulator/action/start-component", "simulator.control", "", true},
 		{http.MethodPost, "/api/simulator/machines/machine-01/start", "device.lifecycle", "", true},
 		{http.MethodPost, "/api/simulator/machines/machine-01/login", "device.session", "", true},
@@ -51,6 +56,9 @@ func TestSimulatorAPIPermissionMap(t *testing.T) {
 	}
 	if !operatorauth.ValidPermission("organization.archive") {
 		t.Fatal("organization archive permission is not accepted by operator auth")
+	}
+	if !operatorauth.ValidPermission("scenario.reset") {
+		t.Fatal("scenario reset permission is not accepted by operator auth")
 	}
 }
 

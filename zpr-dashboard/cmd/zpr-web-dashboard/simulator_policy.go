@@ -36,6 +36,11 @@ func simulatorAPIPermission(method, requestPath string) (permission, explicitOrg
 	}
 	if organization != "" {
 		switch {
+		case len(parts) == 6 && parts[4] == "scenario-reset" && parts[5] == "status" && method == http.MethodGet,
+			len(parts) == 6 && parts[4] == "scenario-reset" && parts[5] == "intents" && method == http.MethodPost,
+			len(parts) == 7 && parts[4] == "scenario-reset" && parts[5] == "operations" && method == http.MethodGet,
+			len(parts) == 8 && parts[4] == "scenario-reset" && parts[5] == "operations" && parts[7] == "confirm" && method == http.MethodPost:
+			return "scenario.reset", organization, true
 		case len(parts) == 6 && parts[4] == "create" && parts[5] == "check" && method == http.MethodPost,
 			len(parts) == 5 && parts[4] == "create" && method == http.MethodPost:
 			return "organization.create", organization, true
@@ -124,7 +129,7 @@ func simulatorAPIPermission(method, requestPath string) (permission, explicitOrg
 	if len(parts) == 4 && parts[2] == "assistant" && parts[3] == "status" && method == http.MethodGet {
 		return "simulator.read", "", true
 	}
-	if len(parts) == 4 && parts[2] == "scenarios" && (parts[3] == "clear" || parts[3] == "cancel") && method == http.MethodPost {
+	if len(parts) == 4 && parts[2] == "scenarios" && parts[3] == "cancel" && method == http.MethodPost {
 		return "scenario.cancel", "", true
 	}
 	if len(parts) == 5 {
@@ -148,8 +153,9 @@ func simulatorAPIPermission(method, requestPath string) (permission, explicitOrg
 }
 
 func simulatorAPIProxy(auth operatorRequestAuthorizer, resolveOrganization simulatorOrganizationResolver, next http.Handler) http.Handler {
+	var guarded http.Handler
 	if operatorAuthorizationDisabled(auth) {
-		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		guarded = http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			if strings.HasPrefix(r.URL.Path, simulatorPolicyStatusPrefix) {
 				w.Header().Set("Cache-Control", "no-store")
 				writePolicyError(w, http.StatusServiceUnavailable, "Named-user authorization is required for policy status.")
@@ -157,47 +163,56 @@ func simulatorAPIProxy(auth operatorRequestAuthorizer, resolveOrganization simul
 			}
 			next.ServeHTTP(w, r)
 		})
+	} else {
+		guarded = http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			if !strings.HasPrefix(r.URL.Path, "/api/") {
+				next.ServeHTTP(w, r)
+				return
+			}
+			w.Header().Set("Cache-Control", "no-store")
+			permission, organization, ok := simulatorAPIPermission(r.Method, r.URL.Path)
+			if !ok {
+				writePolicyError(w, http.StatusForbidden, "No operator policy is defined for this Simulator API route.")
+				return
+			}
+			organizationCatalog := r.Method == http.MethodGet && (r.URL.Path == "/api/simulator/organizations" || r.URL.Path == "/api/simulator/organization-drafts")
+			if organization == "" && !organizationCatalog {
+				if resolveOrganization == nil {
+					writePolicyError(w, http.StatusServiceUnavailable, "Simulator operator organization context is unavailable.")
+					return
+				}
+				var err error
+				organization, err = resolveOrganization(r)
+				if err != nil || strings.TrimSpace(organization) == "" {
+					writePolicyError(w, http.StatusServiceUnavailable, "Simulator operator organization context is unavailable.")
+					return
+				}
+			}
+			identity, err := auth.Authorize(r, organization, permission)
+			if err != nil {
+				log.Printf("Simulator API authorization denied (HTTP %d)", http.StatusForbidden)
+				writePolicyError(w, http.StatusForbidden, "An authorized named-user session, organization scope, and mutation CSRF proof are required.")
+				return
+			}
+			parts := strings.Split(strings.Trim(r.URL.Path, "/"), "/")
+			if len(parts) >= 6 && parts[2] == "organizations" && parts[4] == "duplicates" {
+				if _, err := auth.Authorize(r, parts[3], "organization.read"); err != nil {
+					log.Printf("Simulator organization duplication source read denied (HTTP %d)", http.StatusForbidden)
+					writePolicyError(w, http.StatusForbidden, "Organization duplication also requires source organization read access.")
+					return
+				}
+			}
+			r = r.WithContext(context.WithValue(r.Context(), simulatorIdentityContextKey{}, identity))
+			next.ServeHTTP(w, r)
+		})
 	}
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if !strings.HasPrefix(r.URL.Path, "/api/") {
-			next.ServeHTTP(w, r)
+		if r.Method == http.MethodPost && r.URL.Path == "/api/simulator/scenarios/clear" {
+			w.Header().Set("Cache-Control", "no-store")
+			http.Error(w, "legacy scenario clear is permanently disabled", http.StatusGone)
 			return
 		}
-		w.Header().Set("Cache-Control", "no-store")
-		permission, organization, ok := simulatorAPIPermission(r.Method, r.URL.Path)
-		if !ok {
-			writePolicyError(w, http.StatusForbidden, "No operator policy is defined for this Simulator API route.")
-			return
-		}
-		organizationCatalog := r.Method == http.MethodGet && (r.URL.Path == "/api/simulator/organizations" || r.URL.Path == "/api/simulator/organization-drafts")
-		if organization == "" && !organizationCatalog {
-			if resolveOrganization == nil {
-				writePolicyError(w, http.StatusServiceUnavailable, "Simulator operator organization context is unavailable.")
-				return
-			}
-			var err error
-			organization, err = resolveOrganization(r)
-			if err != nil || strings.TrimSpace(organization) == "" {
-				writePolicyError(w, http.StatusServiceUnavailable, "Simulator operator organization context is unavailable.")
-				return
-			}
-		}
-		identity, err := auth.Authorize(r, organization, permission)
-		if err != nil {
-			log.Printf("Simulator API authorization denied (HTTP %d)", http.StatusForbidden)
-			writePolicyError(w, http.StatusForbidden, "An authorized named-user session, organization scope, and mutation CSRF proof are required.")
-			return
-		}
-		parts := strings.Split(strings.Trim(r.URL.Path, "/"), "/")
-		if len(parts) >= 6 && parts[2] == "organizations" && parts[4] == "duplicates" {
-			if _, err := auth.Authorize(r, parts[3], "organization.read"); err != nil {
-				log.Printf("Simulator organization duplication source read denied (HTTP %d)", http.StatusForbidden)
-				writePolicyError(w, http.StatusForbidden, "Organization duplication also requires source organization read access.")
-				return
-			}
-		}
-		r = r.WithContext(context.WithValue(r.Context(), simulatorIdentityContextKey{}, identity))
-		next.ServeHTTP(w, r)
+		guarded.ServeHTTP(w, r)
 	})
 }
 

@@ -840,6 +840,32 @@ func TestSimulatorScenarioManagerClearRunRejectsActiveRuns(t *testing.T) {
 	}
 }
 
+func TestSimulatorScenarioManagerGenerationAdvancesAcrossRunsAndClear(t *testing.T) {
+	manager := newSimulatorScenarioManager()
+	if manager.snapshot().Generation == 0 {
+		t.Fatal("initial scenario generation must be nonzero")
+	}
+	for index, expected := range []uint64{2, 3} {
+		scenario := simulatorScenario{ID: fmt.Sprintf("run-%d", index), OrganizationID: "disposable-lab"}
+		if err := manager.startVersioned(scenario, simulatorManifest{}, nil, scenario.OrganizationID, 0); err != nil {
+			t.Fatal(err)
+		}
+		manager.mu.RLock()
+		done := manager.done
+		manager.mu.RUnlock()
+		<-done
+		if got := manager.snapshot(); got.Generation != expected || got.State != "completed" {
+			t.Fatalf("run %d state/generation=%s/%d, want completed/%d", index, got.State, got.Generation, expected)
+		}
+	}
+	if !manager.clearRun() {
+		t.Fatal("terminal scenario should be clearable internally")
+	}
+	if got := manager.snapshot(); got.Generation != 4 || got.State != "idle" {
+		t.Fatalf("cleared run state/generation=%s/%d, want idle/4", got.State, got.Generation)
+	}
+}
+
 func TestSimulatorScenarioManagerRunsStepsAndCleanupInOrder(t *testing.T) {
 	manager := newSimulatorScenarioManager()
 	var got []string

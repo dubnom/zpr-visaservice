@@ -8,6 +8,7 @@ let scenarioLogContext = "";
 let scenarioLogMachines = new Map();
 let scenarioLogError = "";
 let scenarioLogsLoaded = false;
+let scenarioResetRunSignature = "";
 let scenarioEditorArtifact;
 let scenarioEditorOrganization = "";
 let scenarioEditorDirty = false;
@@ -20,6 +21,24 @@ const scenarioEditorPage = window.ZPREditorPage;
 const scenarioRequest = (path, options) => scenarioEditorPage.requestJSON(
   (...args) => window.fetch(...args), path, options,
 );
+let scenarioResetIdentity = null;
+let scenarioResetStatus = null;
+let scenarioResetStatusOrganization = "";
+let scenarioResetFlow = null;
+let scenarioResetRequestSerial = 0;
+let scenarioResetExpiryTimer = null;
+const scenarioResetPath = (organization) =>
+  `/api/simulator/organizations/${encodeURIComponent(organization)}/scenario-reset`;
+const scenarioResetRequest = (path, options = {}) => {
+  if (typeof window.zprOperatorFetch !== "function") {
+    throw new Error("Authenticated Simulator operator requests are unavailable.");
+  }
+  return scenarioEditorPage.requestJSON(
+    (...args) => window.zprOperatorFetch(...args),
+    path,
+    { cache: "no-store", ...options },
+  );
+};
 const scenarioEditorController = scenarioEditorPage.createController({
   source: document.getElementById("scenario-editor-source"),
   status: document.getElementById("scenario-editor-status"),
@@ -267,7 +286,8 @@ function renderScenarioRun(run) {
   }
   document.getElementById("scenario-cancel").hidden = !busy;
   document.getElementById("scenario-cancel").disabled = !busy;
-  document.getElementById("scenario-clear").hidden = busy || !scenarioRun.scenario_id;
+  document.getElementById("scenario-reset").hidden = busy || !scenarioRun.scenario_id;
+  renderScenarioResetControl();
   const summary = document.getElementById("scenario-run-summary");
   if (!scenarioRun.scenario_id) {
     summary.hidden = false;
@@ -441,17 +461,475 @@ function renderScenarioResults(run, scenario) {
   }
 }
 
+function scenarioResetActorMatches(identity, actor) {
+  return Boolean(identity?.issuer && identity?.subject &&
+    actor?.issuer === identity.issuer && actor?.subject === identity.subject);
+}
+
+function scenarioResetHasPermission(identity, organization) {
+  return Boolean(identity?.issuer && identity?.subject && organization &&
+    Array.isArray(identity.organizations) &&
+    (identity.organizations.includes(organization) || identity.organizations.includes("*")) &&
+    Array.isArray(identity.permissions) && identity.permissions.includes("scenario.reset"));
+}
+
+function scenarioResetActorLabel(identity) {
+  const label = identity?.display_name || identity?.email || identity?.subject || "Unknown operator";
+  return `${label} (${identity?.issuer || "unknown issuer"} / ${identity?.subject || "unknown subject"})`;
+}
+
+function scenarioResetAvailability(message) {
+  const element = document.getElementById("scenario-reset-availability");
+  element.textContent = message;
+  element.hidden = !message;
+}
+
+function renderScenarioResetControl() {
+  const button = document.getElementById("scenario-reset");
+  const hasRun = Boolean(scenarioRun?.scenario_id);
+  const busy = ["running", "cleaning"].includes(scenarioRun?.state);
+  button.hidden = !hasRun || busy;
+  if (!hasRun || busy) {
+    button.disabled = true;
+    scenarioResetAvailability("");
+    return;
+  }
+  const organization = activeScenarioOrganization;
+  if (!scenarioResetHasPermission(scenarioResetIdentity, organization)) {
+    button.disabled = true;
+    scenarioResetAvailability(organization
+      ? "Sign in with the named Simulator identity and scenario.reset permission for this organization to reset scenario state."
+      : "Select a Simulator organization before resetting scenario state.");
+    return;
+  }
+  if (scenarioResetStatusOrganization !== organization || !scenarioResetStatus) {
+    button.disabled = true;
+    scenarioResetAvailability(scenarioResetAvailabilityMessage ||
+      `Checking reset availability for ${organization}…`);
+    return;
+  }
+  const runState = scenarioResetStatus.run_state;
+  const stateAllowsReset = ["idle", "completed", "cancelled", "failed"].includes(runState);
+  button.disabled = !stateAllowsReset;
+  if (!stateAllowsReset) {
+    scenarioResetAvailability(`Reset unavailable while the configured organization reports ${runState}.`);
+  } else if (scenarioResetFlow?.organization === organization &&
+      scenarioResetFlow.phase === "pending") {
+    scenarioResetAvailability("A reset intent is awaiting explicit confirmation.");
+  } else {
+    scenarioResetAvailability("");
+  }
+  button.textContent = scenarioResetFlow?.organization === organization &&
+    ["pending", "unknown", "indeterminate", "interrupted"].includes(scenarioResetFlow.phase)
+    ? "Review reset status"
+    : "Reset scenario state…";
+}
+
+let scenarioResetAvailabilityMessage = "";
+
+function clearScenarioResetExpiryTimer() {
+  if (scenarioResetExpiryTimer !== null) {
+    clearInterval(scenarioResetExpiryTimer);
+    scenarioResetExpiryTimer = null;
+  }
+}
+
+function closeScenarioResetDialog() {
+  const dialog = document.getElementById("scenario-reset-dialog");
+  if (dialog.open) dialog.close();
+  clearScenarioResetExpiryTimer();
+}
+
+function invalidateScenarioReset(message) {
+  scenarioResetRequestSerial++;
+  scenarioResetStatus = null;
+  scenarioResetStatusOrganization = "";
+  scenarioResetFlow = null;
+  closeScenarioResetDialog();
+  scenarioResetAvailabilityMessage = message || "";
+  renderScenarioResetControl();
+}
+
+function resetOperationIsValid(operation, flow) {
+  const identity = scenarioResetIdentity;
+  const created = Date.parse(operation?.created_at);
+  const expires = Date.parse(operation?.expires_at);
+  const updated = operation?.updated_at === undefined ? null : Date.parse(operation.updated_at);
+  const hasCurrentEpoch = operation?.current_epoch !== undefined;
+  const hasCurrentGeneration = operation?.current_generation !== undefined;
+  return Boolean(operation && operation.operation_id === flow.operationID &&
+    operation.organization === flow.organization &&
+    operation.action === "scenario.reset" &&
+    ["intent", "consumed", "completed", "failed", "indeterminate", "interrupted", "expired"].includes(operation.state) &&
+    scenarioResetActorMatches(identity, operation.actor) &&
+    operation.epoch === flow.epoch && operation.generation === flow.generation &&
+    Number.isSafeInteger(operation.epoch) && operation.epoch > 0 &&
+    Number.isSafeInteger(operation.generation) && operation.generation > 0 &&
+    (!hasCurrentEpoch && !hasCurrentGeneration ||
+      Number.isSafeInteger(operation.current_epoch) && operation.current_epoch > 0 &&
+      Number.isSafeInteger(operation.current_generation) && operation.current_generation > 0) &&
+    Number.isFinite(created) && Number.isFinite(expires) &&
+    (updated === null || Number.isFinite(updated)) &&
+    expires > created && expires - created <= 120_000 &&
+    (operation.outcome === undefined || typeof operation.outcome === "string") &&
+    (operation.error_code === undefined || typeof operation.error_code === "string"));
+}
+
+function resetOperationStatusIsValid(operation, flow) {
+  return resetOperationIsValid(operation, flow) &&
+    Number.isSafeInteger(operation.current_epoch) && operation.current_epoch > 0 &&
+    Number.isSafeInteger(operation.current_generation) && operation.current_generation > 0 &&
+    Number.isFinite(Date.parse(operation.updated_at));
+}
+
+function resetOwnRunTransitionIsCurrent(flow, organization, run) {
+  return Boolean(flow && flow.organization === organization &&
+    ["completed", "unknown", "indeterminate", "interrupted"].includes(flow.phase) &&
+    ["completed", "consumed", "indeterminate", "interrupted"].includes(flow.operation?.state) &&
+    flow.operation.current_epoch === flow.epoch &&
+    Number.isSafeInteger(flow.generation) && flow.generation < Number.MAX_SAFE_INTEGER &&
+    flow.operation.current_generation === flow.generation + 1 &&
+    run.state === "idle" && !run.scenario_id);
+}
+
+function scenarioResetIntentIsCurrent(flow) {
+  return Boolean(flow && scenarioResetIdentity && activeScenarioOrganization === flow.organization &&
+    scenarioResetHasPermission(scenarioResetIdentity, flow.organization) &&
+    scenarioResetActorMatches(scenarioResetIdentity, flow.operation?.actor) &&
+    flow.operation?.organization === flow.organization &&
+    flow.operation?.action === "scenario.reset" &&
+    flow.operation?.epoch === flow.epoch && flow.operation?.generation === flow.generation &&
+    scenarioResetStatusOrganization === flow.organization &&
+    scenarioResetStatus?.organization === flow.organization &&
+    scenarioResetStatus.epoch === flow.epoch && scenarioResetStatus.generation === flow.generation);
+}
+
+function renderScenarioResetDialog() {
+  const dialog = document.getElementById("scenario-reset-dialog");
+  const flow = scenarioResetFlow;
+  if (!flow) return;
+  const operation = flow.operation;
+  const identity = scenarioResetIdentity;
+  const pending = flow.phase === "pending";
+  const expired = !operation || !Number.isFinite(Date.parse(operation.expires_at)) ||
+    Date.parse(operation.expires_at) <= Date.now();
+  const validForConfirm = pending && !expired && scenarioResetIntentIsCurrent(flow);
+  document.getElementById("scenario-reset-organization").textContent = flow.organization;
+  document.getElementById("scenario-reset-generation").textContent =
+    `${flow.epoch} / ${flow.generation}`;
+  document.getElementById("scenario-reset-actor").textContent = scenarioResetActorLabel(identity);
+  document.getElementById("scenario-reset-expiry").textContent = operation?.expires_at
+    ? new Date(operation.expires_at).toLocaleString()
+    : "Not available";
+  document.getElementById("scenario-reset-effect").textContent =
+    "Clear only the selected organization's scenario run state. Definitions, machines, and endpoint identities are retained; production state is not changed.";
+  const detail = document.getElementById("scenario-reset-dialog-status");
+  const phaseMessages = {
+    creating: "Creating a time-limited reset intent. No scenario state has been changed.",
+    pending: expired ? "This reset intent has expired; it cannot be confirmed." :
+      "Review the exact target and effect, then explicitly confirm before scenario state changes.",
+    confirming: "Confirmation was sent once. Checking its recorded outcome; do not repeat the reset.",
+    checking: "Checking the recorded operation status only. No reset mutation is being retried.",
+    unknown: flow.note || "The reset outcome is unknown. Check operation status; do not repeat the mutation.",
+    expired: "This reset intent has expired; it cannot be confirmed.",
+    stale: flow.note || "The selected organization or run generation changed. This intent cannot be confirmed.",
+    completed: "Scenario state reset completed.",
+    failed: flow.note || "The reset failed. No successful reset is claimed.",
+    indeterminate: flow.note || "The reset outcome is indeterminate. Do not repeat the mutation.",
+    interrupted: flow.note || "The reset was interrupted. Do not repeat the mutation.",
+  };
+  detail.textContent = phaseMessages[flow.phase] || "Reset operation status is unavailable.";
+  detail.dataset.state = flow.phase;
+  document.getElementById("scenario-reset-confirm").disabled =
+    !validForConfirm || flow.confirmAttempted;
+  document.getElementById("scenario-reset-confirm").hidden = !pending;
+  document.getElementById("scenario-reset-check-status").hidden =
+    !["unknown", "indeterminate", "interrupted"].includes(flow.phase);
+  document.getElementById("scenario-reset-close").textContent = pending ? "Not now" : "Close";
+  if (pending && !expired && !scenarioResetExpiryTimer) {
+    scenarioResetExpiryTimer = setInterval(() => {
+      if (scenarioResetFlow !== flow) {
+        clearScenarioResetExpiryTimer();
+        return;
+      }
+      if (Date.parse(operation.expires_at) <= Date.now()) {
+        flow.phase = "expired";
+        clearScenarioResetExpiryTimer();
+      }
+      renderScenarioResetDialog();
+    }, 1000);
+  } else if ((!pending || expired) && scenarioResetExpiryTimer) {
+    clearScenarioResetExpiryTimer();
+  }
+  if (!dialog.open) dialog.showModal();
+  renderScenarioResetControl();
+}
+
+function validScenarioResetStatus(status, organization) {
+  return Boolean(status && status.organization === organization &&
+    Number.isSafeInteger(status.epoch) && status.epoch > 0 &&
+    Number.isSafeInteger(status.generation) && status.generation > 0 &&
+    ["idle", "running", "cleaning", "completed", "cancelled", "failed", "other-organization"]
+      .includes(status.run_state));
+}
+
+async function refreshScenarioResetStatus(organization = activeScenarioOrganization) {
+  const serial = ++scenarioResetRequestSerial;
+  const identity = scenarioResetIdentity;
+  scenarioResetStatus = null;
+  scenarioResetStatusOrganization = organization;
+  scenarioResetAvailabilityMessage = `Checking reset availability for ${organization || "the selected organization"}…`;
+  renderScenarioResetControl();
+  if (!scenarioResetHasPermission(identity, organization)) {
+    scenarioResetAvailabilityMessage = "";
+    scenarioResetStatusOrganization = organization;
+    renderScenarioResetControl();
+    return null;
+  }
+  try {
+    const status = await scenarioResetRequest(
+      `${scenarioResetPath(organization)}/status`,
+    );
+    if (serial !== scenarioResetRequestSerial || organization !== activeScenarioOrganization ||
+        !scenarioResetActorMatches(scenarioResetIdentity, {
+          issuer: identity.issuer, subject: identity.subject,
+        })) return null;
+    if (!validScenarioResetStatus(status, organization)) {
+      throw new Error("Reset status does not match the selected organization or has invalid generation data.");
+    }
+    scenarioResetStatus = status;
+    scenarioResetStatusOrganization = organization;
+    scenarioResetAvailabilityMessage = "";
+    if (scenarioResetFlow?.organization === organization && scenarioResetFlow.phase === "pending" &&
+        (scenarioResetFlow.epoch !== status.epoch || scenarioResetFlow.generation !== status.generation)) {
+      scenarioResetFlow.phase = "stale";
+      scenarioResetFlow.note = "The selected organization's epoch or run generation changed; this reset intent is no longer valid.";
+      if (document.getElementById("scenario-reset-dialog").open) renderScenarioResetDialog();
+    }
+    renderScenarioResetControl();
+    return status;
+  } catch (error) {
+    if (serial !== scenarioResetRequestSerial) return null;
+    scenarioResetAvailabilityMessage = `Reset unavailable: ${error.message}`;
+    scenarioResetStatus = null;
+    scenarioResetStatusOrganization = organization;
+    if (scenarioResetFlow?.organization === organization && scenarioResetFlow.phase === "pending") {
+      scenarioResetFlow.phase = "unknown";
+      scenarioResetFlow.note = "Current target status could not be verified. Confirmation is disabled; check status before any further action.";
+      if (document.getElementById("scenario-reset-dialog").open) renderScenarioResetDialog();
+    }
+    renderScenarioResetControl();
+    return null;
+  }
+}
+
+function mapScenarioResetOperation(operation) {
+  if (operation.state === "intent") return "pending";
+  if (operation.state === "completed") return "completed";
+  if (operation.state === "failed") return "failed";
+  if (operation.state === "indeterminate") return "indeterminate";
+  if (operation.state === "interrupted") return "interrupted";
+  if (operation.state === "expired") return "expired";
+  return "unknown";
+}
+
+async function checkScenarioResetOperation(flow = scenarioResetFlow) {
+  if (!flow || flow !== scenarioResetFlow || !scenarioResetIdentity ||
+      activeScenarioOrganization !== flow.organization ||
+      !scenarioResetHasPermission(scenarioResetIdentity, flow.organization)) return;
+  flow.phase = "checking";
+  flow.note = "";
+  renderScenarioResetDialog();
+  try {
+    const operation = await scenarioResetRequest(
+      `${scenarioResetPath(flow.organization)}/operations/${encodeURIComponent(flow.operationID)}`,
+    );
+    if (flow !== scenarioResetFlow || !resetOperationStatusIsValid(operation, flow)) {
+      throw new Error("Operation status does not match this target, intent, or signed-in identity.");
+    }
+    flow.operation = operation;
+    if (operation.state === "intent") {
+      if (flow.confirmAttempted) {
+        flow.phase = "unknown";
+        flow.note = "The confirmation response was ambiguous. The operation is still an intent; no mutation was retried.";
+      } else {
+        const status = await refreshScenarioResetStatus(flow.organization);
+        flow.phase = Date.parse(operation.expires_at) <= Date.now() ? "expired"
+          : status && status.epoch === flow.epoch && status.generation === flow.generation
+            ? "pending" : "stale";
+      }
+    } else {
+      flow.phase = mapScenarioResetOperation(operation);
+      if (operation.state === "consumed") {
+        flow.phase = "unknown";
+        flow.note = "The operation is consumed but has no definitive outcome. It remains unknown; do not retry the reset.";
+      }
+      if (flow.phase === "completed") {
+        void refreshScenariosNow();
+        void refreshScenarioResetStatus(flow.organization);
+      }
+    }
+  } catch (error) {
+    if (flow !== scenarioResetFlow) return;
+    flow.phase = "unknown";
+    flow.note = `Operation status unavailable: ${error.message}. No mutation was retried.`;
+  }
+  if (flow === scenarioResetFlow) renderScenarioResetDialog();
+}
+
+async function beginScenarioReset() {
+  const organization = activeScenarioOrganization;
+  const identity = scenarioResetIdentity;
+  if (!scenarioResetHasPermission(identity, organization) ||
+      !scenarioRun?.scenario_id || ["running", "cleaning"].includes(scenarioRun.state)) return;
+  if (scenarioResetFlow?.organization === organization &&
+      ["pending", "unknown", "indeterminate", "interrupted"].includes(scenarioResetFlow.phase)) {
+    renderScenarioResetDialog();
+    return;
+  }
+  const status = await refreshScenarioResetStatus(organization);
+  if (!status || !scenarioResetActorMatches(scenarioResetIdentity, {
+    issuer: identity.issuer, subject: identity.subject,
+  }) || activeScenarioOrganization !== organization) return;
+  const operationBytes = crypto.getRandomValues(new Uint8Array(16));
+  const operationID = [...operationBytes].map(byte => byte.toString(16).padStart(2, "0")).join("");
+  const flow = {
+    organization,
+    epoch: status.epoch,
+    generation: status.generation,
+    operationID,
+    operation: null,
+    phase: "creating",
+    confirmAttempted: false,
+    note: "",
+  };
+  scenarioResetFlow = flow;
+  renderScenarioResetDialog();
+  try {
+    const operation = await scenarioResetRequest(`${scenarioResetPath(organization)}/intents`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        operation_id: operationID,
+        organization,
+        epoch: status.epoch,
+        generation: status.generation,
+      }),
+    });
+    if (scenarioResetFlow !== flow || !resetOperationIsValid(operation, flow) ||
+        operation.state !== "intent" || Date.parse(operation.expires_at) <= Date.now() ||
+        !scenarioResetIntentIsCurrent({ ...flow, operation })) {
+      throw new Error("Reset intent did not match the selected target, generation, actor, or expiry.");
+    }
+    flow.operation = operation;
+    flow.phase = "pending";
+  } catch (error) {
+    if (scenarioResetFlow !== flow) return;
+    flow.phase = "unknown";
+    flow.note = `Intent response was ambiguous or invalid: ${error.message}. Checking operation status without retrying creation.`;
+    renderScenarioResetDialog();
+    await checkScenarioResetOperation(flow);
+    return;
+  }
+  renderScenarioResetDialog();
+}
+
+async function confirmScenarioReset() {
+  const flow = scenarioResetFlow;
+  if (!flow || flow.phase !== "pending" || flow.confirmAttempted ||
+      !scenarioResetIntentIsCurrent(flow) ||
+      Date.parse(flow.operation?.expires_at) <= Date.now()) {
+    if (flow) {
+      flow.phase = "stale";
+      flow.note = "The signed-in identity, selected organization, run generation, or intent expiry changed. No confirmation was sent.";
+      renderScenarioResetDialog();
+    }
+    return;
+  }
+  const status = await refreshScenarioResetStatus(flow.organization);
+  if (!status || !scenarioResetIntentIsCurrent(flow) ||
+      status.epoch !== flow.epoch || status.generation !== flow.generation ||
+      Date.parse(flow.operation.expires_at) <= Date.now()) {
+    flow.phase = "stale";
+    flow.note = "The latest target status no longer matches this intent. No confirmation was sent.";
+    renderScenarioResetDialog();
+    return;
+  }
+  flow.confirmAttempted = true;
+  flow.phase = "confirming";
+  renderScenarioResetDialog();
+  try {
+    const operation = await scenarioResetRequest(
+      `${scenarioResetPath(flow.organization)}/operations/${encodeURIComponent(flow.operationID)}/confirm`,
+      {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          organization: flow.organization,
+          epoch: flow.epoch,
+          generation: flow.generation,
+        }),
+      },
+    );
+    if (flow !== scenarioResetFlow || !resetOperationStatusIsValid(operation, flow) ||
+        operation.state !== "completed") {
+      throw new Error("Confirmation response does not match the original intent.");
+    }
+    flow.operation = operation;
+    flow.phase = operation.state === "consumed" ? "unknown" : mapScenarioResetOperation(operation);
+    if (flow.phase === "unknown") {
+      flow.note = "The reset operation is consumed but its outcome is unknown. Check status; do not retry the mutation.";
+    }
+    if (flow.phase === "completed") {
+      void refreshScenariosNow();
+      void refreshScenarioResetStatus(flow.organization);
+    }
+  } catch (error) {
+    if (flow !== scenarioResetFlow) return;
+    flow.phase = "unknown";
+    flow.note = `Confirmation outcome is unknown: ${error.message}. Checking status only; the reset will not be retried.`;
+    renderScenarioResetDialog();
+    await checkScenarioResetOperation(flow);
+    return;
+  }
+  renderScenarioResetDialog();
+}
+
 async function refreshScenarios({ signal, isCurrent }) {
   const data = await scenarioRequest("/api/simulator/scenarios", { cache: "no-store", signal });
   if (!isCurrent()) return;
   const error = document.getElementById("scenario-error");
   error.hidden = true;
   const organization = data.active_organization_id || activeScenarioOrganization;
+  const runSignature = JSON.stringify(data.run || {});
+  const run = data.run || {};
+  const resetRunSignature = JSON.stringify({
+    organization,
+    scenario: run.scenario_id || "",
+    started: run.started_at || "",
+    generation: run.generation,
+    state: run.state || "idle",
+  });
+  const runChanged = scenarioResetRunSignature !== "" &&
+    resetRunSignature !== scenarioResetRunSignature;
+  scenarioResetRunSignature = resetRunSignature;
+  const resetFlow = scenarioResetFlow;
+  const confirmationInFlight = resetFlow?.organization === organization &&
+    resetFlow.phase === "confirming" && resetFlow.confirmAttempted;
+  const expectedResetTransition =
+    resetOwnRunTransitionIsCurrent(resetFlow, organization, run);
   if (organization !== activeScenarioOrganization) {
     selectedScenarioID = "";
     if (activeScenarioOrganization) document.getElementById("scenario-browser-dialog").close();
+    invalidateScenarioReset("Reset availability is being checked for the selected Simulator organization.");
+  } else if (runChanged && !confirmationInFlight && !expectedResetTransition) {
+    invalidateScenarioReset("Scenario run state changed; reset evidence is being refreshed.");
   }
   activeScenarioOrganization = organization;
+  if (organization && scenarioResetIdentity &&
+      (scenarioResetStatusOrganization !== organization || runChanged)) {
+    void refreshScenarioResetStatus(organization);
+  }
   if (scenarioEditorOrganization && scenarioEditorOrganization !== activeScenarioOrganization && document.getElementById("scenario-editor-dialog").open) {
     document.getElementById("scenario-editor-dialog").close();
   }
@@ -467,7 +945,6 @@ async function refreshScenarios({ signal, isCurrent }) {
     scenarioCatalogSignature = catalogSignature;
     renderScenarioList(scenarios);
   }
-  const runSignature = JSON.stringify(data.run || {});
   if (runSignature !== scenarioRunSignature || catalogChanged) {
     scenarioRunSignature = runSignature;
     renderScenarioRun(data.run);
@@ -1081,17 +1558,38 @@ document.getElementById("scenario-cancel").addEventListener("click", async (even
     message.hidden = false;
   }
 });
-document.getElementById("scenario-clear").addEventListener("click", async (event) => {
-  const button = event.currentTarget;
-  button.disabled = true;
-  try {
-    await postScenarioAction("/api/simulator/scenarios/clear");
-    await refreshScenariosNow();
-  } catch (error) {
-    const message = document.getElementById("scenario-error");
-    message.textContent = error.message || "Could not clear scenario run";
-    message.hidden = false;
-  } finally {
-    button.disabled = false;
+document.getElementById("scenario-reset").addEventListener("click", () => { void beginScenarioReset(); });
+document.getElementById("scenario-reset-confirm").addEventListener("click", () => { void confirmScenarioReset(); });
+document.getElementById("scenario-reset-check-status").addEventListener("click", () => {
+  void checkScenarioResetOperation();
+});
+document.getElementById("scenario-reset-close").addEventListener("click", closeScenarioResetDialog);
+document.getElementById("scenario-reset-close-icon").addEventListener("click", closeScenarioResetDialog);
+document.getElementById("scenario-reset-dialog").addEventListener("close", () => {
+  clearScenarioResetExpiryTimer();
+  document.getElementById("scenario-reset").focus();
+});
+window.addEventListener("operator-session-ready", event => {
+  const identity = event.detail?.identity;
+  if (!identity?.issuer || !identity?.subject) {
+    scenarioResetIdentity = null;
+    invalidateScenarioReset("A verified named Simulator operator session is required for reset.");
+    return;
   }
+  document.dispatchEvent(new Event("operator-login-checked"));
+  if (scenarioResetIdentity && !scenarioResetActorMatches(identity, {
+    issuer: scenarioResetIdentity.issuer, subject: scenarioResetIdentity.subject,
+  })) invalidateScenarioReset("The signed-in operator changed; the previous reset intent was discarded.");
+  scenarioResetIdentity = identity;
+  if (scenarioResetFlow &&
+      !scenarioResetHasPermission(identity, scenarioResetFlow.organization)) {
+    invalidateScenarioReset("The signed-in identity is not authorized for this reset target.");
+  } else {
+    renderScenarioResetControl();
+    if (activeScenarioOrganization) void refreshScenarioResetStatus(activeScenarioOrganization);
+  }
+});
+window.addEventListener("operator-session-cleared", () => {
+  scenarioResetIdentity = null;
+  invalidateScenarioReset("Sign in again to check reset availability.");
 });

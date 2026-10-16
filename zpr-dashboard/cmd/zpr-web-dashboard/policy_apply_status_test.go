@@ -146,6 +146,48 @@ func TestPolicyStatusScopedReadOnlyLookup(t *testing.T) {
 	}
 }
 
+func TestPolicyStatusRejectsPinnedVerifiedCertificateWithoutClientAuth(t *testing.T) {
+	f, resources, workspace, _, _ := policyApplyServiceFixture(t)
+	ca, caKey, err := createTestPolicyCA()
+	if err != nil {
+		t.Fatal(err)
+	}
+	cert, _, err := createTestPolicyLeaf(ca, caKey, "server-only-status", []x509.ExtKeyUsage{x509.ExtKeyUsageServerAuth}, false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	leaf, err := x509.ParseCertificate(cert.Certificate[0])
+	if err != nil {
+		t.Fatal(err)
+	}
+	roots := x509.NewCertPool()
+	roots.AddCert(ca)
+	chains, err := leaf.Verify(x509.VerifyOptions{Roots: roots, KeyUsages: []x509.ExtKeyUsage{x509.ExtKeyUsageServerAuth}})
+	if err != nil || len(chains) == 0 {
+		t.Fatal("synthetic status certificate did not verify", err)
+	}
+	hash := sha256.Sum256(leaf.Raw)
+	peer := &tls.ConnectionState{PeerCertificates: []*x509.Certificate{leaf}, VerifiedChains: chains}
+	resources.statusReaders = []policyStatusReader{{
+		CertificateSHA256: hex.EncodeToString(hash[:]),
+		Organization:      f.trust.Organization,
+		TargetID:          f.trust.TargetID,
+	}}
+	upstreamCalls := 0
+	resources.client.http = &http.Client{Transport: policyApplyTransport(func(*http.Request) (*http.Response, error) {
+		upstreamCalls++
+		return nil, errors.New("unexpected upstream status lookup")
+	})}
+	handler := policyServiceHandler(workspace, resources)
+	request := httptest.NewRequest(http.MethodGet, policyStatusPrefix+f.trust.Organization+"/"+f.trust.TargetID+"/unknown", nil)
+	request.TLS = peer
+	response := httptest.NewRecorder()
+	handler.ServeHTTP(response, request)
+	if response.Code != http.StatusForbidden || upstreamCalls != 0 {
+		t.Fatalf("status lookup returned %d after %d upstream calls; want 403 and no upstream call", response.Code, upstreamCalls)
+	}
+}
+
 func TestPolicyStatusAuthorizationCanonicalURIAndGate(t *testing.T) {
 	f, resources, workspace, _, posts := policyApplyServiceFixture(t)
 	peer, pin := policyStatusPeer(t)

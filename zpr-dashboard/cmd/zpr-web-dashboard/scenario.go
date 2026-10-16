@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"math"
 	"net"
 	"net/http"
 	"os"
@@ -91,6 +92,7 @@ type simulatorScenarioRun struct {
 	OrganizationID    string                        `json:"organization_id,omitempty"`
 	WorkspaceRevision int                           `json:"workspace_revision,omitempty"`
 	State             string                        `json:"state"`
+	Generation        uint64                        `json:"generation"`
 	CurrentStep       int                           `json:"current_step"`
 	ActiveSteps       []int                         `json:"active_steps,omitempty"`
 	TotalSteps        int                           `json:"total_steps"`
@@ -103,16 +105,20 @@ type simulatorScenarioRun struct {
 type simulatorScenarioExecutor func(context.Context, simulatorManifest, simulatorScenarioStep) (string, error)
 
 type simulatorScenarioManager struct {
-	mu     sync.RWMutex
-	run    simulatorScenarioRun
-	cancel context.CancelFunc
-	done   chan struct{}
+	mu         sync.RWMutex
+	run        simulatorScenarioRun
+	cancel     context.CancelFunc
+	done       chan struct{}
+	generation uint64
 }
 
 var activeSimulatorScenario = newSimulatorScenarioManager()
 
 func newSimulatorScenarioManager() *simulatorScenarioManager {
-	return &simulatorScenarioManager{run: simulatorScenarioRun{State: "idle", Steps: []simulatorScenarioStepResult{}}}
+	return &simulatorScenarioManager{
+		run:        simulatorScenarioRun{State: "idle", Generation: 1, Steps: []simulatorScenarioStepResult{}},
+		generation: 1,
+	}
 }
 
 func simulatorScenarioDirectory() string {
@@ -472,6 +478,10 @@ func (manager *simulatorScenarioManager) startVersioned(scenario simulatorScenar
 	if manager.run.State == "running" || manager.run.State == "cleaning" {
 		return errScenarioAlreadyRunning
 	}
+	if manager.generation == math.MaxUint64 {
+		return errors.New("scenario generation is outside the supported range")
+	}
+	manager.generation++
 	ctx, cancel := context.WithCancel(context.Background())
 	if scenario.Topology != nil && scenario.Topology.Components != nil {
 		manifest.Components = append([]simulatorComponent(nil), scenario.Topology.Components...)
@@ -480,7 +490,8 @@ func (manager *simulatorScenarioManager) startVersioned(scenario simulatorScenar
 	manager.cancel = cancel
 	manager.done = make(chan struct{})
 	manager.run = simulatorScenarioRun{
-		ScenarioID: scenario.ID, ScenarioName: scenario.Name, Scenario: &scenario, OrganizationID: organizationID, WorkspaceRevision: revision, State: "running",
+		ScenarioID: scenario.ID, ScenarioName: scenario.Name, Scenario: &scenario, OrganizationID: organizationID,
+		WorkspaceRevision: revision, State: "running", Generation: manager.generation,
 		TotalSteps: len(scenario.Steps) + len(scenario.Cleanup), StartedAt: &now,
 		Steps: []simulatorScenarioStepResult{},
 	}
@@ -503,13 +514,46 @@ func (manager *simulatorScenarioManager) cancelRun() bool {
 func (manager *simulatorScenarioManager) clearRun() bool {
 	manager.mu.Lock()
 	defer manager.mu.Unlock()
-	if manager.run.State == "running" || manager.run.State == "cleaning" {
+	if err := manager.resetLocked(manager.run.OrganizationID); err != nil {
 		return false
 	}
-	manager.run = simulatorScenarioRun{State: "idle", Steps: []simulatorScenarioStepResult{}}
+	return true
+}
+
+func (manager *simulatorScenarioManager) resetLocked(organization string) error {
+	if manager.run.State == "running" || manager.run.State == "cleaning" {
+		return errors.New("an active scenario cannot be reset")
+	}
+	if manager.run.State != "idle" && manager.run.OrganizationID != organization {
+		return errors.New("scenario belongs to another organization")
+	}
+	if manager.generation == math.MaxUint64 {
+		return errors.New("scenario reset binding is invalid")
+	}
+	manager.generation++
+	manager.run = simulatorScenarioRun{State: "idle", Generation: manager.generation, Steps: []simulatorScenarioStepResult{}}
 	manager.cancel = nil
 	manager.done = nil
-	return true
+	return nil
+}
+
+func (manager *simulatorScenarioManager) validateResetLocked(organization string, epoch, generation, currentEpoch uint64) error {
+	if organization == "" || epoch == 0 || generation == 0 || epoch != currentEpoch {
+		return errors.New("reset request belongs to a stale store epoch")
+	}
+	if generation != manager.generation {
+		return errors.New("reset request belongs to a stale scenario generation")
+	}
+	if manager.run.State == "running" || manager.run.State == "cleaning" {
+		return errors.New("an active scenario cannot be reset")
+	}
+	if manager.run.State != "idle" && manager.run.OrganizationID != organization {
+		return errors.New("scenario belongs to another organization")
+	}
+	if manager.generation == math.MaxUint64 {
+		return errors.New("scenario generation is outside the supported range")
+	}
+	return nil
 }
 
 func (manager *simulatorScenarioManager) snapshot() simulatorScenarioRun {
@@ -1671,9 +1715,5 @@ func handleSimulatorScenarioCancel(w http.ResponseWriter, _ *http.Request) {
 }
 
 func handleSimulatorScenarioClear(w http.ResponseWriter, _ *http.Request) {
-	if !activeSimulatorScenario.clearRun() {
-		http.Error(w, "cannot clear an active scenario", http.StatusConflict)
-		return
-	}
-	writeSimulatorJSON(w, activeSimulatorScenario.snapshot())
+	http.Error(w, "legacy scenario clear is permanently disabled; use the approved reset workflow", http.StatusGone)
 }

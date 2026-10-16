@@ -4974,7 +4974,7 @@ test("Simulator gateway results distinguish no response, binary bodies and unava
   await expect(results).toContainText("rebuild the machine controller");
 });
 
-test("Simulator Scenarios groups unfiled entries and clears only terminal run history", async ({ page, appURL, api }) => {
+test("Simulator Scenarios groups unfiled entries and keeps terminal run history", async ({ page, appURL, api }) => {
   await page.emulateMedia({ reducedMotion: "no-preference" });
   const scenario = {
     id: "sample-flow", name: "Sample flow", folder: "", description: "A browser fixture.",
@@ -4988,8 +4988,7 @@ test("Simulator Scenarios groups unfiled entries and clears only terminal run hi
     active_organization_id: "alpha", organization: { name: "Alpha Labs" }, scenarios: [scenario], run, max_machines: 10,
   } }));
   api.handlers.set("/api/simulator/scenarios/clear", async (route) => {
-    run = { state: "idle", steps: [] };
-    await route.fulfill({ json: run });
+    await route.fulfill({ status: 410, json: { error: "Legacy scenario clear is retired." } });
   });
   await page.goto(appURL + "/scenarios.html");
   await expect(page.locator("#scenario-new")).toHaveText("New Scenario...");
@@ -5013,14 +5012,17 @@ test("Simulator Scenarios groups unfiled entries and clears only terminal run hi
   await expect(page.locator("#scenario-run-title")).toHaveText("Sample flow");
   await expect(page.locator("#scenario-run-state .scenario-state-label")).toHaveText("completed");
   await expect(page.locator("#scenario-cancel")).toBeHidden();
-  await expect(page.locator("#scenario-clear")).toBeVisible();
+  await expect(page.locator("#scenario-clear")).toHaveCount(0);
+  await expect(page.locator("#scenario-reset")).toBeVisible();
+  await expect(page.locator("#scenario-reset")).toBeDisabled();
   await page.locator(".main-content .top-actions > .help-trigger, .main-content .topbar > .help-trigger").click();
   await expect(page.getByRole("dialog", { name: "Scenarios" })).toContainText("Maximum machines per run: 10.");
   await page.keyboard.press("Escape");
 
   await page.evaluate(() => renderScenarioRun({ scenario_id: "sample-flow", scenario_name: "Sample flow", state: "running", steps: [], scenario: { steps: [], cleanup: [] } }));
   await expect(page.locator("#scenario-cancel")).toBeVisible();
-  await expect(page.locator("#scenario-clear")).toBeHidden();
+  await expect(page.locator("#scenario-clear")).toHaveCount(0);
+  await expect(page.locator("#scenario-reset")).toBeHidden();
   await page.evaluate(() => renderScenarioRun({ scenario_id: "sample-flow", scenario_name: "Sample flow", state: "running", current_step: 2, total_steps: 5, steps: [], scenario: { steps: [], cleanup: [] } }));
   await expect(page.locator("#scenario-run-state")).toContainText("2 / 5");
   const animationCount = await page.locator("#scenario-run-state").evaluate((element) => element.getAnimations().length);
@@ -5044,14 +5046,16 @@ test("Simulator Scenarios groups unfiled entries and clears only terminal run hi
   await expect(page.locator("#scenario-run-summary")).toBeHidden();
   await expect(page.locator(".scenario-run-pane")).not.toContainText("Context canceled");
   await expect(page.locator("#scenario-cancel")).toBeHidden();
-  await expect(page.locator("#scenario-clear")).toBeVisible();
+  await expect(page.locator("#scenario-clear")).toHaveCount(0);
+  await expect(page.locator("#scenario-reset")).toBeVisible();
+  await expect(page.locator("#scenario-reset")).toBeDisabled();
   await page.evaluate(() => renderScenarioRun({ scenario_id: "sample-flow", scenario_name: "Sample flow", state: "completed", steps: [], scenario: { steps: [], cleanup: [] } }));
   await expect(page.locator("#scenario-cancel")).toBeHidden();
-  await expect(page.locator("#scenario-clear")).toBeVisible();
-  await page.locator("#scenario-clear").click();
-  await expect(page.locator("#scenario-run-title")).toHaveText("Scenario");
-  await expect(page.locator("#scenario-clear")).toBeHidden();
-  expect(api.counts.get("/api/simulator/scenarios/clear")).toBe(1);
+  await expect(page.locator("#scenario-clear")).toHaveCount(0);
+  await expect(page.locator("#scenario-reset")).toBeVisible();
+  await expect(page.locator("#scenario-reset")).toBeDisabled();
+  await expect(page.locator("#scenario-run-title")).toHaveText("Sample flow");
+  expect(api.counts.get("/api/simulator/scenarios/clear") || 0).toBe(0);
   await page.locator("#scenario-files-toggle").click();
   await page.locator("#scenario-new").click();
   const editorAction = page.locator('#scenario-editor-steps [data-step-key="action"]');
@@ -5060,7 +5064,7 @@ test("Simulator Scenarios groups unfiled entries and clears only terminal run hi
   await expect(editorAction).toHaveValue("resolve_dns");
 });
 
-test("Scenario run-state mutations report malformed JSON without retrying", async ({ page, appURL, api }) => {
+test("Scenario cancel reports malformed JSON without retrying", async ({ page, appURL, api }) => {
   const scenario = {
     id: "sample-flow", name: "Sample flow", folder: "", description: "A browser fixture.",
     organization_id: "alpha", current_revision: 1, published_revision: 1, steps: [], cleanup: [],
@@ -5069,16 +5073,18 @@ test("Scenario run-state mutations report malformed JSON without retrying", asyn
     active_organization_id: "alpha",
     organization: { name: "Alpha Labs" },
     scenarios: [scenario],
-    run: { scenario_id: scenario.id, scenario_name: scenario.name, state: "completed", steps: [] },
+    run: { scenario_id: scenario.id, scenario_name: scenario.name, state: "running", steps: [] },
   } }));
-  api.handlers.set("/api/simulator/scenarios/clear", (route) => route.fulfill({
+  api.handlers.set("/api/simulator/scenarios/cancel", (route) => route.fulfill({
     status: 502, contentType: "text/html", body: "upstream unavailable",
   }));
   await page.goto(appURL + "/scenarios.html");
-  await page.locator("#scenario-clear").click();
+  await expect(page.locator("#scenario-reset")).toBeHidden();
+  await expect(page.locator("#scenario-clear")).toHaveCount(0);
+  await page.locator("#scenario-cancel").click();
   await expect(page.locator("#scenario-error")).toHaveText("HTTP 502: invalid JSON response");
-  await expect(page.locator("#scenario-clear")).toBeEnabled();
-  expect(api.counts.get("/api/simulator/scenarios/clear")).toBe(1);
+  expect(api.counts.get("/api/simulator/scenarios/cancel")).toBe(1);
+  expect(api.counts.get("/api/simulator/scenarios/clear") || 0).toBe(0);
 });
 
 test("assertion picker lines omit counts and revisions and distinguish record kinds by color", async ({ page, appURL, api }) => {
@@ -8380,7 +8386,9 @@ test("GUI scenario failure progress preserves the original step through cleanup"
   await expect(page.locator(".scenario-progress")).toHaveText("Failed step 1 / 9");
   await expect(page.locator("#scenario-run-summary")).toContainText("Owner missing");
   await expect(page.locator("#scenario-run-summary .scenario-run-error")).toHaveCount(1);
-  await expect(page.locator("#scenario-clear")).toBeVisible();
+  await expect(page.locator("#scenario-clear")).toHaveCount(0);
+  await expect(page.locator("#scenario-reset")).toBeVisible();
+  await expect(page.locator("#scenario-reset")).toBeDisabled();
   await page.evaluate(() => renderScenarioRun({
     ...window.guiFailureRun, state: "failed",
     steps: [{ number: 8, phase: "cleanup", action: "stop_workload", status: "failed", error: "Cleanup failed" }],

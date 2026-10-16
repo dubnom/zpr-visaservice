@@ -1047,8 +1047,9 @@ current run display. Runner/Results use the full page width.
 While running or cleaning up, verbose step output is collapsed under **Details**,
 and routine Waiting/Running text is omitted. Open details remain open across
 polls of the same run; failures stay visible and terminal runs show full text.
-**Clear** is available only after a run reaches a terminal
-state; it clears run history, not the scenario definition or machine logs.
+The legacy **Clear** API is permanently disabled with HTTP 410; it does not
+mutate run history. The browser sources now use the explicit reset-intent
+confirmation workflow instead.
 Running and cleanup states use saturated blue; failures use red. When a run
 fails, the progress badge and summary retain the original failed run step even
 after cleanup advances the step counter. Cleanup-only failures show their own
@@ -1098,6 +1099,35 @@ Results belong to the current run snapshot and are cleared with that run;
 this slice does not add durable multi-run archives, downloads, JSON formatting,
 throughput result views or a general assertion language. Response bodies/URLs
 may contain sensitive data; body content is not automatically redacted.
+
+### Opt-in Simulator scenario reset API
+
+Server-side scenario-state reset wiring is opt-in and currently Linux/macOS
+only. Configure both `SIMULATOR_RESET_ORGANIZATION` and the absolute,
+private `SIMULATOR_RESET_DB_PATH`; there are no organization or database-path
+defaults. Setting only one variable, using an invalid path/organization, or
+enabling reset without named-user OIDC authorization fails Simulator startup.
+The operator's explicit issuer/subject grant must include the exact
+`scenario.reset` permission for the configured organization; the Simulator
+does not add grants automatically.
+
+The API exposes explicit-organization status, intent, confirmation and
+operation-status routes under
+`/api/simulator/organizations/{organization}/scenario-reset/`. The intent and
+confirmation requests bind the organization, durable store epoch, manager
+generation and verified actor; mutation routes retain the normal same-origin
+CSRF requirement. Consumed operations are never replayed. If completion cannot
+be durably recorded after the in-memory reset, the API reports an unknown
+outcome and operation status is the reconciliation path; restart reconciliation
+may mark it indeterminate. The SQLite transaction cannot be atomic with
+in-memory scenario state.
+
+The browser sources include this confirmation/status workflow, but it has not
+been browser- or live-service-qualified in this increment. No native,
+deployment or end-to-end reset qualification is claimed. The old
+`POST /api/simulator/scenarios/clear` route always returns 410 without changing
+scenario state. Reset clears only Simulator scenario state; it does not change
+endpoint identity, activate/restore organizations, or run lifecycle scripts.
 Rebuild/redeploy both the Simulator and its machine-controller executable
 before live use. Old client binaries produce an explicit **result unavailable**
 message rather than invented measurements. No gateway/Control Room deployment
