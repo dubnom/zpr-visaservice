@@ -1,5 +1,72 @@
 # GUI deployments
 
+## Sign-out also opens provider sign-in (2026-10-16 15:10 UTC)
+
+- User clarified that sign-out must not leave the interim operator-access page
+  visible either. Supersedes the previous release's explicit-logout/manual
+  reentry behavior: after confirmed local session invalidation, Control Room
+  opens provider sign-in once through the existing native POST. Failed attempts
+  still allow manual retry to prevent loops. Simulator behavior is unchanged.
+  Local logout does not terminate provider SSO; its existing policy still applies.
+- All 22 focused desktop/tablet authentication browser checks passed, including
+  sign-out using real Control Room markup, session invalidation, one provider
+  navigation, permission rejection, expiry and recovery. Editor diagnostics,
+  whitespace check, and Linux/ARM64 embedded build passed. No Go source changes.
+- Control Room only restarted at `2026-10-16T15:10:33.222923503Z`.
+  Executable SHA-256:
+  `241384529a765428dd00a1acef6ff5e425bdd25f307b630454f567e5ef106532`.
+  Live HTTPS returns 200 and served login JS byte-matches source; script cache
+  version incremented to 13. No live credentials entered.
+- Control-Service, identity provider and Simulator start times unchanged.
+  Rollback: `/usr/local/bin/zpr-web-dashboard.before-direct-signout-20261016`
+  (previous SHA-256
+  `bd7fedd85fcd8a62e6a957c207840c3b30fad4e3ff681d5600c172cc08aafaaf`).
+  Stop only Control Room, restore the executable and start it. No commit or push.
+
+## Direct Control Room sign-in and session expiry (2026-10-16 15:07 UTC)
+
+- User approved Control Room-only deployment after confirming unsaved work was
+  secured. Removed the initial Operator Access/checking screen: a signed-out
+  visit now submits the existing native same-origin login POST directly to the
+  identity provider. Signed-in focus checks retain the current interface.
+- Confirmed session loss displays "Session expired. Redirecting to sign in..."
+  for 1.5 seconds before one automatic sign-in attempt. Reload retains knowledge
+  of a previous session and the safe application destination. Failed/expired
+  login attempts offer manual retry instead of automatic redirect loops;
+  explicit logout does not immediately reenter sign-in. Simulator retains its
+  explicit sign-in behavior.
+- Expired/unavailable callback attempts now return a fixed HTTP 303 to
+  `/?operator_login=expired`, without an interim HTML/meta-refresh page.
+  Rejected callbacks still cannot exchange codes or create sessions; malformed
+  requests retain their existing denial responses.
+- Validation: 20 focused desktop/tablet browser tests passed, including actual
+  Control Room HTML/CSS expiry visibility with other origins unavailable,
+  focus/reload/API-triggered expiry, permission rejection, logout, configuration
+  failures, and callback retry. Auth package race tests, related dashboard
+  Operator/Login/ControlRoomHTTP tests, Linux/ARM64 build, formatting, editor
+  diagnostics, and whitespace checks passed.
+- `make test` was attempted but is not green: unrelated failures remain in
+  assistant scenario instructions, enrollment administration, organization
+  policy installation, scenario placement, and trusted-service helper builds.
+  Those tests and their implementations were not changed for this request.
+- Installed the embedded executable into the existing Control Room container;
+  started `2026-10-16T15:07:26.211989333Z`. SHA-256:
+  `bd7fedd85fcd8a62e6a957c207840c3b30fad4e3ff681d5600c172cc08aafaaf`.
+  Live HTTPS returns 200; served login JS/CSS byte-match source; unauthenticated
+  session returns 401; an unavailable, correctly shaped callback attempt returns
+  the expected fixed 303. Shared browser reload opens the real identity
+  provider's "Log in to Your Account" page directly and remains there without
+  refreshing. No credentials entered or live authenticated expiry exercised.
+- Only Control Room restarted; Control-Service, identity provider, Simulator,
+  and production backends were not restarted. Existing operator sessions were
+  invalidated by the restart. No policy/configuration changes, commit, or push.
+- Rollback executable:
+  `/usr/local/bin/zpr-web-dashboard.before-direct-signin-20261016`
+  (SHA-256 `f873f11e9fa3e44593e60ef3acc044c7a4a8a34c814c4ea18c8636dc253f23fc`).
+  Stop only Control Room, restore this executable to
+  `/usr/local/bin/zpr-web-dashboard`, start it, and verify HTTPS. Recreating the
+  container from its original image does not retain this writable-layer update.
+
 ## Monitoring first with separate Simulate execution (2026-10-16 03:10 UTC)
 
 - Reordered Simulator sidebar groups: MONITORING (Simulate, Activity, Workers),

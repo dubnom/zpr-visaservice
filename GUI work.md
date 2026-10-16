@@ -27,6 +27,44 @@ Do not infer current runtime health from a historical verification entry.
 
 ## Current status
 
+- **Pre-methodology engineering checkpoint (2026-10-16):**
+  `checkpoint-2026-10-16-pre-simulator-admin` marks the source before implementing
+  the newly agreed administrator-driven Simulator setup. Includes outstanding
+  login changes and methodology/provisioning/editor plans, not completed
+  methodology migration or a production-qualified release. Operator-auth race
+  tests, formatting, vet and whitespace pass. Login browser selection reports
+  20 passed and two failed (desktop/tablet application-expiry callback navigation
+  receives `ERR_CONNECTION_REFUSED` at fixture `https://localhost:8787`).
+  Full Go tests retain the five groups recorded in the preceding publication.
+  These failures remain open; no test was changed to hide them. Tagging performs
+  no deployment and does not close release, recovery or packaging gates.
+
+- **Simulator administrator methodology (2026-10-16): Planned.** Set up lab ZPR
+  through the same configuration, stage, compile and push workflow offered to
+  real administrators in Control Room, using its authorized production service
+  contracts. Simulator retains simulated machine/adapter/workload control, not
+  a second production configuration/installation authority. First inventory
+  launcher bypasses and missing operator APIs, then decide scoped automation
+  authorization and prove one policy/config-to-applied-state vertical slice.
+  Do not silently bypass missing push/rollback support or change runtime yet.
+  See [ownership, migration and acceptance](System%20release%20plan.md#simulator-methodology-act-as-a-zpr-administrator).
+
+- **Simulated adapter provisioning: design required.** Separate Simulator
+  machine control from production invitation, approval, credential issuance/
+  delivery and admission. Define endpoint-owned keys, secure noninteractive
+  enrollment, scoped operator authority and reset/revocation behavior before
+  replacing current bootstrap paths. No copied identities or direct registry
+  writes. See [proposed lifecycle and open decisions](System%20release%20plan.md#provisioning-simulated-adapters).
+
+- **Production editors for Simulator environment authoring: Planned.** Reuse
+  Control Room's policy/assertion/configuration/Gateway editor workflows and
+  production validation/test/revision contracts to create and maintain lab
+  environments. Keep draft tests distinct from live scenarios against an
+  explicitly applied revision, and keep machine/workload/scenario authoring
+  Simulator-owned. Navigation versus production-owned module reuse remains
+  undecided; no duplicated editor/backend or shared-session shortcut.
+  See [editor ownership and acceptance](System%20release%20plan.md#control-room-editors-for-environment-authoring).
+
 - **Source publication validation (2026-10-16):** the accompanying checkpoint
   includes the priorities document, Scenario AI structured/compact proposals,
   Simulator navigation/Simulate separation, Organization UI refinements and

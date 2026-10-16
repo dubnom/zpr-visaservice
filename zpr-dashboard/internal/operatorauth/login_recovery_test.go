@@ -35,23 +35,17 @@ func TestOIDCExpiredOrMissingLoginRecoversWithoutAuthenticating(t *testing.T) {
 			}
 			exchanges, sessions := f.exchanges, len(a.sessions)
 			response := callback(a, state, browser)
-			if response.Code != http.StatusForbidden || f.exchanges != exchanges || len(a.sessions) != sessions {
+			if response.Code != http.StatusSeeOther || f.exchanges != exchanges || len(a.sessions) != sessions {
 				t.Fatal("invalid callback exchanged a code or authenticated a session")
 			}
-			if response.Header().Get("Content-Type") != "text/html; charset=utf-8" ||
+			if response.Header().Get("Location") != "/?operator_login=expired" ||
 				response.Header().Get("Cache-Control") != "no-store" ||
-				response.Header().Get("Referrer-Policy") != "no-referrer" ||
-				!strings.Contains(response.Header().Get("Content-Security-Policy"), "form-action 'self'") {
-				t.Fatal("recovery page lacks HTML type or privacy/security headers")
+				response.Header().Get("Referrer-Policy") != "no-referrer" {
+				t.Fatal("recovery redirect lacks fixed destination or privacy headers")
 			}
 			body := response.Body.String()
-			for _, content := range []string{`method="get" action="/"`, `<button type="submit">Timed out. Try again.</button>`} {
-				if !strings.Contains(body, content) {
-					t.Fatalf("recovery action missing: %s", content)
-				}
-				if strings.Contains(body, "<a ") || strings.Contains(body, "Sign in again") {
-					t.Fatal("recovery page includes an unwanted alternative action")
-				}
+			if strings.Contains(body, "http-equiv") || strings.Contains(body, "<form") {
+				t.Fatal("recovery still renders an interim page")
 			}
 			if strings.Contains(body, state) || strings.Contains(body, "test-code") {
 				t.Fatal("callback secrets reflected in recovery page")

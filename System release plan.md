@@ -108,6 +108,178 @@ documented configuration and protocols, not an alternate ZPR build or a hidden
 Simulator-aware mode. Simulator may configure and exercise ZPR through supported
 service contracts; Control Room and Control-Service never read Simulator state.
 
+### Simulator methodology: act as a ZPR administrator
+
+**Direction approved 2026-10-16; migration not implemented.** Simulator should
+set up its environment as a real ZPR administrator would: configure through
+Control Room's supported operator workflows, stage a reviewed revision, compile/
+validate it, and explicitly push/apply the resulting candidate through production
+services. Simulator continues to own simulated machine/adapter lifecycle,
+user activity, workloads, fault injection and scenario execution.
+
+Control Room is the operator interface, not a new backend dependency: automated
+setup should use the same supported, authorized Control-Service/Policy-Service
+contracts behind that interface. Browser acceptance must also exercise the
+actual Control Room workflow. Do not add a Simulator-specific configuration API,
+read production databases directly or treat an internal package call as proof
+that the operator path works.
+
+Ownership and limits:
+
+- Production services own configuration records/revisions, validation,
+  compilation/signing, staged artifacts, authorized deployment, applied-state
+  reporting and rollback. Missing production capabilities must be implemented
+  there, not bypassed in a Simulator launcher.
+- Simulator supplies proposed lab configuration and desired identities through
+  those contracts, observes explicit results, then drives simulated endpoints.
+  Adapter enrollment/admission and credentials must follow production contracts;
+  controlling a simulated machine does not grant permission to mint credentials
+  or mutate an enrollment registry.
+- The standard installer/bootstrap establishes the initial services, trust and
+  operator access before this workflow. Simulator must not need a working ZPR
+  policy to create the only identity capable of installing that first policy.
+  Lab LDAP/OIDC/DNS remain independently supervised companion services.
+- Automation must have explicit organization scope and attributable, least-
+  privilege authorization. How automation receives its operator authority is
+  still a design decision; do not copy browser cookies, bypass CSRF or reuse a
+  service TLS identity as unrestricted administrator authority.
+- Configure, stage, compile and push are distinct recorded outcomes, even where
+  today's service combines compile/sign/stage in one operation. A saved draft
+  or compiled candidate is not an applied policy. Record exact revision,
+  candidate digest, target, operation result and applied-state readback.
+- Push/activation and rollback require explicit authorization and reviewed
+  targets. Timeouts/lost responses require operation reconciliation, not blind
+  resubmission. Scenario reset must not erase production state or restart shared
+  services implicitly.
+- Dependency direction remains Simulator -> production operator services.
+  Control Room/Control-Service/Policy-Service must work with Simulator absent;
+  stopping Simulator must not remove an installed configuration or its services.
+
+Migration checklist:
+
+- [ ] Inventory current activation/Restore setup steps, mapping direct policy
+  compilation/install, file writes, service restarts and registry access to
+  production operator contracts or explicit installer/machine-control duties.
+- [ ] Identify which Control Room configuration/stage/compile/push/readback/
+  rollback contracts exist and which are missing. Current policy staging
+  compiles/signs a candidate; it is not a complete production push workflow.
+- [ ] Decide the scoped automation authorization and approval model before
+  wiring privileged setup requests.
+- [ ] Prove one vertical slice: Simulator proposes a policy/config revision,
+  the operator workflow validates/stages/compiles/applies it, production reports
+  the exact applied revision, and simulated adapters demonstrate real allowed/
+  denied traffic. Include denied authorization and stale-revision failures.
+- [ ] Replace equivalent launcher bypasses only after that path passes.
+  Preserve explicit preflight and non-destructive failure/rollback; no silent
+  fallback to the old direct install path.
+- [ ] Migrate remaining organization setup and Restore operations, keeping
+  machine/workload control Simulator-owned and separating production recovery
+  from scenario reset.
+- [ ] Certify browser and automated operator-path parity, lost-response
+  reconciliation, audit and rollback; stop Simulator and verify production
+  configuration, services and independently driven traffic remain operational.
+
+This changes the intended setup methodology, not the runtime today. Existing
+direct launcher behavior and historical deployment evidence are not certification
+of the new path.
+
+#### Control Room editors for environment authoring
+
+**Requirement added 2026-10-16; integration design remains open.** Simulator
+operators need the Control Room editing workflows to create, maintain and test
+their environments, not just an automated setup client. Production policy,
+assertions, ZPR configuration and Gateway configuration must use the same
+domain editors, validation/test contracts and revision lifecycle as real
+administration. Sharing CodeMirror alone is not workflow parity.
+
+- Reuse production-owned editor modules and supported service APIs rather than
+  fork their behavior into Simulator-specific editors. Environment selection
+  must resolve to explicit production organization/repository/target context;
+  a Simulator manifest is not production configuration authority.
+- Preserve permissions, source-owned diagnostics, unsaved edits, History,
+  revision conflicts, reviewed AI insertion and explicit save/stage/compile/
+  push boundaries. Clearly distinguish local edits, saved revisions, test
+  results, staged candidates and verified applied state.
+- Separate draft validation and non-deploying policy tests from live scenario
+  execution against an explicitly applied revision. Record which exact source/
+  configuration revision each result tests; editing or testing must not
+  implicitly provision endpoints, activate an environment or push policy.
+- Keep machine models, simulated people/activity, workloads, fault injection
+  and scenario timelines Simulator-owned. Lab directory content uses its
+  documented provider/provisioning contracts; do not imply a general production
+  directory-write editor already exists.
+- Production editors must remain usable with Simulator unavailable. Shared
+  code belongs to production or neutral UI modules, never a production import
+  of Simulator controllers or environment-discovery code.
+
+Open implementation decisions and acceptance:
+
+- [ ] Inventory editor capabilities and missing environment-management APIs;
+  map each document to its production or Simulator owner.
+- [ ] Choose how operators access the production editors from Simulator:
+  navigation into Control Room or reuse of production-owned UI modules.
+  Neither embedding nor cross-origin session sharing is approved implicitly;
+  preserve each application's login, CSRF and authorization boundary.
+- [ ] Prove one environment round trip: create/edit through the production
+  editor, validate/test, save a revision, explicitly stage/compile/push, read
+  back the applied revision, then execute a Simulator scenario against it.
+- [ ] Verify equivalent editor behavior from both entry points, wrong-target/
+  unauthorized requests, revision conflicts, stale diagnostics/test results,
+  unsaved-navigation cancellation and production operation with Simulator off.
+
+This is a requirement for operator workflow reuse, not a claim that all
+Control Room editors or deployment operations already support environment setup.
+
+#### Provisioning simulated adapters
+
+**Open design requirement added 2026-10-16.** Controlling simulated endpoints
+and authorizing their admission are separate responsibilities. Simulator may
+create/start an endpoint and drive its enrollment client; production services
+must decide whether that endpoint is approved and issue its credentials through
+the normal provisioning contracts. No Simulator-only credential issuer, copied
+adapter identity, direct registry insertion or pre-admitted manifest identity.
+
+Proposed lifecycle, pending authorization and headless-client design:
+
+1. A scoped administrator registers/invites the intended lab asset through the
+   production enrollment administration workflow, with explicit organization,
+   owner and approved profile. A simulated user is not automatically an
+   administrator.
+2. The endpoint generates its own key and claims the invitation with proof of
+   possession through the production enrollment client/protocol. Each adapter
+   has a distinct identity and protected per-endpoint state. Credentials and
+   one-time codes must not appear in manifests, scenario source or logs.
+3. Production approval, issuance and secure runtime delivery complete before
+   Simulator declares the adapter provisioned. Invitation creation, claim,
+   approval, issuance, admission and actual connectivity remain distinct states.
+4. Simulator starts/controls the adapter using the delivered identity and
+   observes real admission and allowed/denied traffic. Restart preserves that
+   endpoint's identity; cloning creates a new identity and requires enrollment.
+5. Reset/rebuild explicitly distinguishes retained identity, re-enrollment and
+   authorized revocation/removal. Scenario reset alone must not erase production
+   enrollment records or silently create replacement identities.
+
+Decisions and acceptance still required:
+
+- [ ] Inventory current simulated adapter types and credential/bootstrap paths;
+  identify a supported first endpoint/client rather than assuming all adapters
+  use the same enrollment mechanism.
+- [ ] Define supported noninteractive enrollment and secure invitation delivery.
+  The current loopback setup wizard is not already a headless provisioning API.
+- [ ] Choose how scoped automation requests invitations and how a named operator
+  approves them; unattended approval is not implied by this methodology.
+- [ ] Define endpoint key storage and secure credential handoff, including
+  the limits of software-backed identities on simulated machines.
+- [ ] Prove two independently enrolled adapters, denied/unapproved enrollment,
+  replay/duplicate-claim rejection, restart identity preservation, expiry/
+  renewal, revocation and explicit reset/re-enrollment reconciliation.
+- [ ] Verify issued credentials and production admission continue to work with
+  Simulator orchestration stopped and the endpoint processes still running.
+
+Track production issuance/runtime-delivery gaps in the
+[provisioning plan](../Provisioning%20plan.md); do not solve them with lab-only
+shortcuts. This lifecycle is a proposed contract, not implemented provisioning.
+
 On 2026-10-15 the user clarified the outcome: **both packages together must
 demonstrate a working ZPR network**, not merely running infrastructure or
 populated dashboards. OpenLDAP and Dex backed by LDAP are approved companion

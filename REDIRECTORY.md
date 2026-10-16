@@ -1,5 +1,13 @@
 # Source and Project Reorganization Plan
 
+**Methodology direction (2026-10-16):** Simulator environment setup must migrate
+to the real administrator configuration/stage/compile/push workflow through the
+same authorized production contracts used by Control Room. Production owns
+configuration, compilation/signing, deployment/readback and rollback; Simulator
+owns simulated machine/adapter/workload control. This is planned, not implemented.
+Do not extract current launcher bypasses unchanged and call that separation.
+See the [migration boundary and checklist](System%20release%20plan.md#simulator-methodology-act-as-a-zpr-administrator).
+
 Status reconciled 2026-10-15 UTC (2026-10-14 EDT). Most checklist items remain planned; the shared
 editor-controller reuse is implemented and deployed. The first backend
 extraction now places neutral Gateway forwarding and the HTTP/CONNECT runtime

@@ -156,7 +156,7 @@ func TestOIDCLoginGrantsCSRFLogoutAndExpiry(t *testing.T) {
 	if !browser.Secure || !browser.HttpOnly || browser.SameSite != http.SameSiteLaxMode || browser.Path != "/" {
 		t.Fatal("unsafe login cookie")
 	}
-	if denied := callback(a, state, nil); denied.Code != 403 || f.exchanges != 0 {
+	if denied := callback(a, state, nil); denied.Code != http.StatusSeeOther || denied.Header().Get("Location") != "/?operator_login=expired" || f.exchanges != 0 {
 		t.Fatal("login not bound to initiating browser")
 	}
 	w := callback(a, state, browser)
@@ -172,7 +172,7 @@ func TestOIDCLoginGrantsCSRFLogoutAndExpiry(t *testing.T) {
 	if cookie == nil || !cookie.Secure || !cookie.HttpOnly || cookie.MaxAge > 600 {
 		t.Fatal("unsafe session cookie")
 	}
-	if replay := callback(a, state, browser); replay.Code != 403 || f.exchanges != 1 {
+	if replay := callback(a, state, browser); replay.Code != http.StatusSeeOther || replay.Header().Get("Location") != "/?operator_login=expired" || f.exchanges != 1 {
 		t.Fatal("callback replay accepted")
 	}
 	r := authRequest("GET", "/api/enrollment/v1/catalog")
@@ -404,7 +404,7 @@ func TestOIDCConfigAndRequestBoundary(t *testing.T) {
 	}
 	state, browser := begin(t, a, f)
 	a.now = func() time.Time { return time.Now().Add(6 * time.Minute) }
-	if w := callback(a, state, browser); w.Code != 403 {
+	if w := callback(a, state, browser); w.Code != http.StatusSeeOther || w.Header().Get("Location") != "/?operator_login=expired" || f.exchanges != 0 {
 		t.Fatal("expired login accepted")
 	}
 	r := authRequest("GET", "/api/enrollment/v1/catalog")

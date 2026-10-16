@@ -20,6 +20,13 @@
     let canAttemptLogin = false;
     let loginFailure = "";
     const returnLocationKey = "zpr.operator-login.return-location";
+    const directSignIn = widget.dataset.operatorApplication !== "simulator";
+    const sessionKey = "zpr.operator-login.signed-in";
+    const automaticKey = "zpr.operator-login.automatic-attempt";
+    const expiryKey = "zpr.operator-login.session-expired";
+    let redirecting = false;
+    let expiryTimer;
+    if (directSignIn && title) title.textContent = "Sign in";
     function localReturnLocation(value) {
       if (typeof value !== "string" || !value.startsWith("/") || value.startsWith("//") || /[\\\u0000-\u001f\u007f]/.test(value)) return null;
       const target = new URL(value, location.origin);
@@ -63,6 +70,8 @@
     }
 
     async function readState({ preserveSession = false } = {}) {
+      if (redirecting) return;
+      const firstCheck = generation === 0;
       const current = ++generation;
       const url = new URL(location.href);
       const loginResult = url.searchParams.get("operator_login");
@@ -71,10 +80,12 @@
         url.searchParams.delete("operator_login");
         history.replaceState(history.state, "", `${url.pathname}${url.search}${url.hash}`);
       }
-      if (!preserveSession) clearSession();
       retry.hidden = true;
-      status.textContent = "Checking operator login";
+      if (firstCheck && !preserveSession && scope.hidden && directSignIn) widget.classList.add("operator-auth-checking");
+      if (!directSignIn) status.textContent = "Checking operator login";
       try {
+        const hadSession = !scope.hidden || directSignIn && sessionStorage.getItem(sessionKey) === "true";
+        if (directSignIn && !loginFailure && sessionStorage.getItem(expiryKey) === "true") loginFailure = "session_expired";
         const configResponse = await fetch("/auth/operator/config", { cache: "no-store", credentials: "same-origin", redirect: "error" });
         if (!configResponse.ok) throw new Error(`Login configuration unavailable (HTTP ${configResponse.status}).`);
         const config = await configResponse.json();
@@ -98,6 +109,13 @@
         const response = await fetch("/auth/operator/session", { cache: "no-store", credentials: "same-origin", redirect: "error" });
         if (current !== generation) return;
         if (response.status === 401) {
+          if (hadSession && directSignIn) {
+            loginFailure = "session_expired";
+            if (directSignIn) {
+              sessionStorage.removeItem(sessionKey);
+              sessionStorage.setItem(expiryKey, "true");
+            }
+          }
           clearSession();
           login.hidden = false;
           setGate(true);
@@ -105,7 +123,24 @@
             ? "This account is not authorized. Contact your operator administrator."
             : loginFailure === "failed" ? "Sign-in failed. Check your credentials and try again."
             : loginFailure === "expired" ? "Your previous sign-in attempt expired or is no longer available. Select Sign in to start a fresh attempt."
+            : loginFailure === "session_expired" ? "Session expired. Redirecting to sign in..."
             : "Not signed in";
+          if (directSignIn && (!loginFailure || loginFailure === "session_expired") &&
+              sessionStorage.getItem(automaticKey) !== "true") {
+            redirecting = true;
+            sessionStorage.setItem(automaticKey, "true");
+            if (title) title.hidden = true;
+            if (description) description.hidden = true;
+            login.hidden = true;
+            if (loginFailure === "session_expired") {
+              widget.classList.remove("operator-auth-checking");
+              expiryTimer = setTimeout(() => login.requestSubmit(), 1500);
+            } else {
+              login.requestSubmit();
+            }
+          } else if (loginFailure === "session_expired") {
+            status.textContent = "Session expired. Sign in again to continue.";
+          }
           return;
         }
         if (!response.ok) throw new Error(`Operator session unavailable (HTTP ${response.status}).`);
@@ -118,7 +153,13 @@
             !validList(identity.permissions) || typeof session.csrf !== "string" || !session.csrf) {
           throw new Error("Invalid operator session response.");
         }
+        login.hidden = true;
         loginFailure = "";
+        if (directSignIn) {
+          sessionStorage.setItem(sessionKey, "true");
+          sessionStorage.removeItem(automaticKey);
+          sessionStorage.removeItem(expiryKey);
+        }
         const simulator = widget.dataset.operatorApplication === "simulator";
         const appPermissions = simulator
           ? ["simulator.", "organization.", "scenario.", "directory.", "device."]
@@ -161,7 +202,9 @@
         setGate(true);
         login.hidden = !canAttemptLogin;
         retry.hidden = false;
+        loginFailure = "failed";
       } finally {
+        if (!redirecting) widget.classList.remove("operator-auth-checking");
         if (current === generation) window.dispatchEvent(new Event("operator-login-checked"));
       }
     }
@@ -176,6 +219,9 @@
         sessionStorage.setItem(returnLocationKey, target);
       } catch (error) {
         event.preventDefault();
+        redirecting = false;
+        widget.classList.remove("operator-auth-checking");
+        login.hidden = false;
         status.textContent = `Sign-in could not start: ${error.message}`;
       }
     });
@@ -192,7 +238,12 @@
           headers: { "X-ZPR-CSRF": csrf },
         });
         if (response.status !== 204) throw new Error(`Sign out was not confirmed (HTTP ${response.status}). Retry or reload to check the session.`);
-        loginFailure = "";
+        loginFailure = directSignIn ? "" : "signed_out";
+        if (directSignIn) {
+          sessionStorage.removeItem(sessionKey);
+          sessionStorage.removeItem(automaticKey);
+          sessionStorage.removeItem(expiryKey);
+        }
         clearSession();
         await readState();
       } catch (error) {
@@ -202,9 +253,9 @@
         busy = false;
       }
     });
-    window.addEventListener("focus", () => { if (widget.isConnected && !busy) void readState(); });
+    window.addEventListener("focus", () => { if (widget.isConnected && !busy) void readState({ preserveSession: true }); });
     window.addEventListener("pageshow", (event) => { if (widget.isConnected && event.persisted && !busy) void readState(); });
-    window.addEventListener("pagehide", () => { if (widget.isConnected) { ++generation; clearSession(); } });
+    window.addEventListener("pagehide", () => { if (widget.isConnected) { clearTimeout(expiryTimer); ++generation; clearSession(); } });
     void readState();
   }
 

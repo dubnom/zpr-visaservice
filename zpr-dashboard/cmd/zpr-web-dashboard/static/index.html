@@ -5,7 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <meta name="theme-color" content="#17211e">
     <title>ZPR Control Room</title>
-    <link rel="stylesheet" href="/app.css?v=104">
+    <link rel="stylesheet" href="/app.css?v=105">
     <link rel="stylesheet" href="/geography.css?v=4">
     <script src="/page-runtime.js?v=1"></script><script src="/geography.js?v=3" defer></script>
     <link rel="stylesheet" href="/machine-logs.css?v=20">
@@ -72,9 +72,9 @@
           </div>
           <div class="top-actions">
             <div class="operator-login" aria-label="Operator login">
-              <h2 class="operator-login-title" id="operator-login-title" hidden>ZPR Operator Access</h2>
+              <h2 class="operator-login-title" id="operator-login-title" hidden>Sign in</h2>
               <p class="operator-login-description" id="operator-login-description" hidden>Sign in with an authorized operator account to continue.</p>
-              <span id="operator-login-status" role="status" aria-live="polite">Checking operator login</span>
+              <span id="operator-login-status" role="status" aria-live="polite"></span>
               <form id="operator-login-form" method="post" action="/auth/operator/login" hidden><button class="button" type="submit">Sign in</button></form>
               <button id="operator-logout" class="button button-quiet" type="button" hidden>Sign out</button>
             </div>
@@ -644,7 +644,7 @@
     <script src="/provisioning-contract.js?v=3" defer></script>
     <script src="/provisioning.js?v=6" defer></script>
     <script src="/provisioning-registry.js?v=7" defer></script>
-    <script src="/operator-login.js?v=11" defer></script>
+    <script src="/operator-login.js?v=13" defer></script>
     <script src="/editor-assistant.js?v=4" defer></script>
     <script src="/editor-search.js?v=9" defer></script>
     <script src="/code-editor.js?v=8" defer></script>

@@ -2096,24 +2096,21 @@ When enabled on direct HTTPS, the handler supports:
   S256 PKCE and only the `openid` scope.
 - `GET /auth/operator/callback`: one-time state/browser cookie, code exchange,
   signed ID-token validation, explicit grant lookup, and opaque session cookie.
-  Expired, missing-browser, lost-state and replayed login attempts remain HTTP
-  403, clear the stale flow cookie, and return once to the application's stable
-  sign-in screen using a fixed recovery target. A **Timed out. Try again.**
-  action remains as a fallback when automatic navigation is unavailable.
-  The application waits for an explicit **Sign in** click before its same-origin
-  POST creates fresh state/nonce/PKCE. Do not POST directly from the timeout page: its
-  `no-referrer` policy suppresses the POST Origin, and its restrictive
-  `form-action 'self'` policy blocks the authorization-provider redirect. Recovery
-  never exchanges the rejected code or reflects callback parameters. The
-  five-minute login timeout and all authorization checks remain unchanged.
-  The application sign-in screen itself does not expire or automatically open
-  the provider. An expired attempt displays a clear explanation without a retry
-  loop, and the existing validated, same-origin browser return location is retained
-  until successful sign-in.
+  Expired, missing-browser, lost-state and replayed login attempts clear the
+  stale flow cookie and return an HTTP 303 to the fixed recovery target
+  `/?operator_login=expired`. There is no interim HTML or meta-refresh page.
+  Recovery never exchanges the rejected code or reflects callback parameters.
+  The five-minute login-attempt timeout and authorization checks are unchanged.
+  Failed/expired attempts retain an explicit retry rather than an automatic
+  loop; the validated same-origin return location survives until successful
+  sign-in.
 - `GET /auth/operator/session`: same-origin identity and CSRF token only,
   `no-store`; no provider tokens or client secret.
 - `POST /auth/operator/logout`: same-origin CSRF-protected local session
   invalidation. It does not log the user out of the identity provider.
+  Control Room then opens provider sign-in directly, without the interim
+  operator-access page; the provider's existing SSO policy still applies.
+  Simulator retains its explicit sign-in button.
 
 All routes require actual TLS and the exact configured callback authority.
 Forwarded headers cannot turn plaintext into trusted HTTPS. Cookies use
@@ -2353,9 +2350,15 @@ signed out with a Sign in button, avoiding immediate single-sign-on reentry.
 Protected API authorization responses trigger a session recheck; only an
 expired session starts sign-in automatically. Permission denials and Visa
 Service availability errors do not redirect to the identity provider.
+Control Room no longer shows a refreshing Operator Access/checking screen.
+Successful focus rechecks leave the signed-in UI visible. Session loss on a
+protected API recheck, focus, or reload displays **Session expired. Redirecting
+to sign in...** for 1.5 seconds before opening the provider. Automatic initiation
+is limited to one attempt until a successful session is established; manual
+retry remains available after failed or interrupted sign-in.
 Unconfigured local login retains its existing behavior; HTTP never starts OIDC.
 
-Visit **https://localhost:8787**, choose **Sign in**, and enter `dubnom` in the
+Visit **https://localhost:8787** and enter `dubnom` in the
 IdP's login field and the locally saved password. Do not use the old HTTP or
 `https://127.0.0.1:8787` URL: the configured origin/callback is exactly localhost.
 No HTTP redirect listener is provided. Login-bearing documents use

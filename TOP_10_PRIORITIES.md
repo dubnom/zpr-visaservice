@@ -1,6 +1,6 @@
 # Top 10 ZPR Priorities
 
-Snapshot: 2026-10-15. Listed in suggested priority order, not as an approved
+Snapshot: 2026-10-16. Listed in suggested priority order, not as an approved
 execution schedule. This summary does not replace the detailed acceptance
 criteria in the linked work plans.
 
@@ -12,7 +12,8 @@ criteria in the linked work plans.
 2. **End-to-end enrollment and endpoint setup**
    Finish Enrollment/BAS ownership, credential issuance and secure delivery to
    adapters. Prove a new endpoint can install, enroll, join and carry authorized
-   traffic.
+   traffic. Define simulated adapter provisioning through the same production
+   enrollment path, with distinct endpoint identities and explicit approval.
 
 3. **Complete production installation package**
    Deliver a versioned company-installation bundle with all required services,
@@ -21,8 +22,10 @@ criteria in the linked work plans.
 
 4. **Self-contained Simulator companion package**
    Package Simulator plus independent LDAP, OIDC and lab DNS, exercising the
-   same production artifacts. Normal production operation must continue when
-   Simulator stops.
+   same production artifacts. Simulator sets up ZPR through the real operator
+   configure/stage/compile/push workflow, while controlling simulated machines
+   and adapters. Reuse Control Room editors to create, maintain and test those
+   environments. Production must continue when Simulator stops.
 
 5. **Organization creation through reviewed activation**
    Complete the private-draft workflow: linked editors, cross-document/compiler
@@ -58,6 +61,7 @@ criteria in the linked work plans.
 - [Implementation progress](../zpr-dev-context/docs/IMPLEMENTATION_PROGRESS.md)
 - [GUI backlog](GUI%20work.md)
 - [System release plan](System%20release%20plan.md)
+- [Simulator administrator methodology and migration](System%20release%20plan.md#simulator-methodology-act-as-a-zpr-administrator)
 - [Source reorganization](REDIRECTORY.md)
 - [Organization editor plan](Organization%20editor%20plan.md)
 

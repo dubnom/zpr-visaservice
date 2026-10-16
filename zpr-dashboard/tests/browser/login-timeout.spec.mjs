@@ -5,8 +5,6 @@ import { createServer } from "node:http";
 const assets = process.env.ZPR_LOGIN_TEST_ASSETS
   ? new URL(`file://${process.env.ZPR_LOGIN_TEST_ASSETS}/`)
   : new URL("../../cmd/zpr-web-dashboard/static/", import.meta.url);
-const authSource = await readFile(process.env.ZPR_LOGIN_TEST_AUTH_SOURCE || new URL("../../internal/operatorauth/auth.go", import.meta.url), "utf8");
-const recovery = authSource.match(/io\.WriteString\(w, `([\s\S]*?)`\)/)[1];
 
 const test = base.extend({
   provider: async ({}, use) => {
@@ -34,12 +32,12 @@ test("expired login retry returns through Control Room before starting a fresh p
     const path = new URL(request.url()).pathname;
     if (path === "/auth/operator/callback") {
       await route.fulfill({
-        status: 403, contentType: "text/html",
+        status: 303,
         headers: {
           "Referrer-Policy": "no-referrer",
-          "Content-Security-Policy": "default-src 'none'; style-src 'unsafe-inline'; form-action 'self'; base-uri 'none'; frame-ancestors 'none'",
+          Location: "https://room.example/?operator_login=expired",
         },
-        body: recovery,
+        body: "",
       });
     } else if (path === "/auth/operator/config") {
       await route.fulfill({ json: { enabled: true } });
@@ -70,9 +68,10 @@ test("expired login retry returns through Control Room before starting a fresh p
       });
     }
   });
-  await page.goto("https://room.example/auth/operator/callback?state=expired&code=rejected");
-  await expect(page.getByRole("button", { name: "Timed out. Try again.", exact: true })).toBeVisible();
-  await page.getByRole("button", { name: "Timed out. Try again.", exact: true }).click();
+  // The callback's fixed HTTP redirect is covered by the operatorauth tests.
+  await page.goto("https://room.example/?operator_login=expired");
+  await expect(page.locator("#operator-login-status")).toContainText("sign-in attempt expired");
+  await page.getByRole("button", { name: "Sign in", exact: true }).click();
   await expect(page.getByRole("heading", { name: "Fresh provider sign-in" })).toBeVisible();
   expect(posts).toHaveLength(1);
   expect(posts[0].method).toBe("POST");

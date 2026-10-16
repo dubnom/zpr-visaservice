@@ -20,10 +20,10 @@ func TestExpiredLoginReturnsToStableScreenAndClearsFlow(t *testing.T) {
 	state, browser := begin(t, a, f)
 	now = now.Add(5 * time.Minute)
 	response := callback(a, state, browser)
-	if response.Code != http.StatusForbidden || f.exchanges != 0 || len(a.sessions) != 0 {
+	if response.Code != http.StatusSeeOther || f.exchanges != 0 || len(a.sessions) != 0 {
 		t.Fatal("expired callback authenticated or exchanged its code")
 	}
-	if !strings.Contains(response.Body.String(), `<meta http-equiv="refresh" content="0; url=/?operator_login=expired">`) {
+	if response.Header().Get("Location") != "/?operator_login=expired" || strings.Contains(response.Body.String(), "http-equiv") {
 		t.Fatal("expired callback does not return to the fixed stable sign-in screen")
 	}
 	cleared := false
