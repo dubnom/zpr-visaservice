@@ -28,7 +28,7 @@ use zpr::vsapi_types::{DockPepType, KeyFormat, KeySet, Visa};
 use libeval::attribute::{Attribute, ROLE_NODE, key};
 use rustls::ServerConfig;
 use rustls::pki_types::PrivateKeyDer;
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 use std::time::SystemTime;
 use tokio::net::TcpListener;
 use tokio_rustls::TlsAcceptor;
@@ -38,7 +38,7 @@ use crate::admin_apikeys::Permission;
 use crate::apikey::ApiKey;
 use crate::assembly::Assembly;
 use crate::counters::CounterType;
-use crate::db::Role;
+use crate::db::{PolicyOperationReceipt, PolicyOperationRequest, Role};
 use crate::error::ServiceError;
 use crate::event_mgr::VsEvent;
 use crate::logging::targets::ADMIN;
@@ -111,6 +111,355 @@ impl AdminState {
     }
 }
 
+const POLICY_OPERATION_ROUTE: &str = "/admin/policy-operations";
+const POLICY_OPERATION_CURRENT_ROUTE: &str = "/admin/policy-operations/current";
+const POLICY_APPROVAL_PURPOSE: &str = "visa-service-policy-operation";
+
+/// Authoritative CAS inputs; an observation is not a reservation or approval.
+#[derive(Debug, Deserialize, Serialize, PartialEq, Eq)]
+struct GuardedPolicyCurrentState {
+    target_id: String,
+    organization: String,
+    current_digest: String,
+    current_vinst: u64,
+}
+
+/// Ed25519 over exact decoded payload bytes, using enrollment ApprovalReceipt's
+/// standard-base64 envelope. This is not an enrollment or Control Room token.
+#[derive(Clone, Deserialize, Serialize)]
+#[serde(deny_unknown_fields)]
+struct PolicyApprovalProof {
+    payload: String,
+    signature: String,
+}
+
+#[derive(Clone, Deserialize, Serialize)]
+#[serde(deny_unknown_fields)]
+struct PolicyApprovalClaims {
+    version: u32,
+    key_id: String,
+    issuer: String,
+    audience: String,
+    purpose: String,
+    approver_issuer: String,
+    approver_subject: String,
+    organization: String,
+    action: String,
+    method: String,
+    route: String,
+    operation: PolicyOperationRequest,
+    iat: u64,
+    exp: u64,
+    nonce: String,
+}
+
+#[derive(Deserialize, Serialize)]
+#[serde(deny_unknown_fields)]
+struct GuardedPolicyCommand {
+    operation: PolicyOperationRequest,
+    bundle: PolicyBundle,
+    proof: PolicyApprovalProof,
+}
+
+#[derive(Serialize)]
+struct PolicyApprovalBinding<'a> {
+    signer_issuer: &'a str,
+    approver_issuer: &'a str,
+    approver_subject: &'a str,
+    audience: &'a str,
+    organization: &'a str,
+    action: &'a str,
+    operation: &'a PolicyOperationRequest,
+}
+
+fn approval_text(value: &str) -> bool {
+    !value.is_empty()
+        && value.len() <= 256
+        && value.trim() == value
+        && !value.chars().any(char::is_control)
+}
+
+fn approval_https(value: &str) -> bool {
+    approval_text(value)
+        && reqwest::Url::parse(value).is_ok_and(|url| {
+            url.scheme() == "https"
+                && url.host_str().is_some()
+                && url.username().is_empty()
+                && url.password().is_none()
+                && url.query().is_none()
+                && url.fragment().is_none()
+        })
+}
+
+fn approval_audience(value: &str) -> bool {
+    approval_https(value)
+        && reqwest::Url::parse(value).is_ok_and(|url| url.origin().ascii_serialization() == value)
+}
+
+fn approval_base64(value: &str) -> Result<Vec<u8>, StatusCode> {
+    use base64::{Engine, engine::general_purpose::STANDARD};
+    let decoded = STANDARD.decode(value).map_err(|_| StatusCode::FORBIDDEN)?;
+    if STANDARD.encode(&decoded) != value {
+        return Err(StatusCode::FORBIDDEN);
+    }
+    Ok(decoded)
+}
+
+fn validate_policy_approval_config(
+    config: &crate::config::GuardedPolicyConfig,
+) -> Result<(), StatusCode> {
+    if !approval_audience(&config.audience)
+        || !approval_audience(&config.policy_service_audience)
+        || config.audience == config.policy_service_audience
+        || !approval_text(&config.target_id)
+        || !approval_text(&config.organization)
+        || config.keys.is_empty()
+        || config.grants.is_empty()
+    {
+        return Err(StatusCode::SERVICE_UNAVAILABLE);
+    }
+    let mut ids = HashSet::new();
+    for key in &config.keys {
+        if !approval_text(&key.key_id)
+            || !ids.insert(&key.key_id)
+            || !approval_https(&key.issuer)
+            || !approval_base64(&key.public_key).is_ok_and(|public| public.len() == 32)
+            || key.expires_unix == 0
+        {
+            return Err(StatusCode::SERVICE_UNAVAILABLE);
+        }
+    }
+    for grant in &config.grants {
+        if !approval_https(&grant.issuer)
+            || !approval_text(&grant.subject)
+            || grant.organization != config.organization
+            || grant.actions.is_empty()
+            || grant
+                .actions
+                .iter()
+                .any(|action| !matches!(action.as_str(), "install" | "rollback"))
+        {
+            return Err(StatusCode::SERVICE_UNAVAILABLE);
+        }
+    }
+    Ok(())
+}
+
+fn verify_policy_approval(
+    config: &crate::config::GuardedPolicyConfig,
+    proof: &PolicyApprovalProof,
+    operation: &PolicyOperationRequest,
+    candidate: &[u8],
+    now: u64,
+) -> Result<PolicyApprovalClaims, StatusCode> {
+    use openssl::pkey::{Id, PKey};
+    use openssl::sign::Verifier;
+
+    validate_policy_approval_config(config)?;
+    if proof.payload.len() > 8192 || proof.signature.len() != 88 {
+        return Err(StatusCode::FORBIDDEN);
+    }
+    let payload = approval_base64(&proof.payload)?;
+    let signature = approval_base64(&proof.signature)?;
+    let claims: PolicyApprovalClaims =
+        serde_json::from_slice(&payload).map_err(|_| StatusCode::FORBIDDEN)?;
+    let trusted = config
+        .keys
+        .iter()
+        .find(|key| key.key_id == claims.key_id && key.issuer == claims.issuer)
+        .ok_or(StatusCode::FORBIDDEN)?;
+    if trusted.expires_unix <= now || claims.exp > trusted.expires_unix {
+        return Err(StatusCode::FORBIDDEN);
+    }
+    let public = approval_base64(&trusted.public_key)?;
+    let key = PKey::public_key_from_raw_bytes(&public, Id::ED25519)
+        .map_err(|_| StatusCode::SERVICE_UNAVAILABLE)?;
+    if signature.len() != 64
+        || !Verifier::new_without_digest(&key)
+            .and_then(|mut verifier| verifier.verify_oneshot(&signature, &payload))
+            .map_err(|_| StatusCode::FORBIDDEN)?
+    {
+        return Err(StatusCode::FORBIDDEN);
+    }
+    if claims.version != 1
+        || claims.audience != config.audience
+        || claims.purpose != POLICY_APPROVAL_PURPOSE
+        || claims.organization != config.organization
+        || claims.operation.target_id != config.target_id
+        || claims.operation != *operation
+        || claims.operation.candidate_digest != hex::encode(openssl::sha::sha256(candidate))
+        || claims.method != "POST"
+        || claims.route != POLICY_OPERATION_ROUTE
+        || !matches!(claims.action.as_str(), "install" | "rollback")
+        || claims.iat == 0
+        || claims.iat > now
+        || claims.exp <= now
+        || claims.exp <= claims.iat
+        || claims.exp - claims.iat > 300
+        || !approval_text(&claims.nonce)
+        || claims.nonce.len() < 26
+        || !claims
+            .nonce
+            .bytes()
+            .all(|c| c.is_ascii_alphanumeric() || c == b'-' || c == b'_')
+        || !config.grants.iter().any(|grant| {
+            grant.issuer == claims.approver_issuer
+                && grant.subject == claims.approver_subject
+                && grant.organization == claims.organization
+                && grant.actions.contains(&claims.action)
+        })
+    {
+        return Err(StatusCode::FORBIDDEN);
+    }
+    Ok(claims)
+}
+
+/// GET /admin/policy-operations/current requires a read-capable API key and
+/// valid guarded configuration. No approval proof is needed for this read.
+async fn guarded_policy_current(
+    Extension(perm): Extension<Permission>,
+    State(state): State<SharedState>,
+) -> Result<Json<GuardedPolicyCurrentState>, StatusCode> {
+    if !perm.can_read() {
+        return Err(StatusCode::FORBIDDEN);
+    }
+    let rstate = state.read().await;
+    let config = rstate.asm.config.guarded_policy.as_ref().ok_or_else(|| {
+        warn!(target: ADMIN, "guarded current-policy read requires guarded configuration");
+        StatusCode::SERVICE_UNAVAILABLE
+    })?;
+    validate_policy_approval_config(config).map_err(|status| {
+        error!(target: ADMIN, "guarded current-policy configuration is invalid");
+        status
+    })?;
+    let now = SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map_err(|_| StatusCode::SERVICE_UNAVAILABLE)?
+        .as_secs();
+    if !config.keys.iter().any(|key| key.expires_unix > now) {
+        error!(target: ADMIN, "guarded current-policy trust has expired");
+        return Err(StatusCode::SERVICE_UNAVAILABLE);
+    }
+    let repo = crate::db::PolicyRepo::new(rstate.asm.state_db.clone());
+    let current = repo
+        .get_current_identifier()
+        .await
+        .map_err(|error| {
+            error!(target: ADMIN, "guarded current-policy identifier read failed: {error}");
+            StatusCode::SERVICE_UNAVAILABLE
+        })?
+        .ok_or_else(|| {
+            error!(target: ADMIN, "guarded current-policy state is absent");
+            StatusCode::SERVICE_UNAVAILABLE
+        })?;
+    match repo.current_matches(&current.phash, current.vinst).await {
+        Ok(true) => Ok(Json(GuardedPolicyCurrentState {
+            target_id: config.target_id.clone(),
+            organization: config.organization.clone(),
+            current_digest: current.phash,
+            current_vinst: current.vinst,
+        })),
+        result => {
+            error!(target: ADMIN, "guarded current-policy readback is unavailable or changed: {result:?}");
+            Err(StatusCode::SERVICE_UNAVAILABLE)
+        }
+    }
+}
+
+async fn guarded_policy_operation(
+    Extension(perm): Extension<Permission>,
+    State(state): State<SharedState>,
+    uri: axum::http::Uri,
+    EJson(command): EJson<GuardedPolicyCommand>,
+) -> Result<Json<PolicyOperationReceipt>, StatusCode> {
+    if !perm.can_write() {
+        return Err(StatusCode::FORBIDDEN);
+    }
+    if uri
+        .path_and_query()
+        .is_none_or(|path| path.as_str() != POLICY_OPERATION_ROUTE)
+    {
+        return Err(StatusCode::BAD_REQUEST);
+    }
+    let rstate = state.read().await;
+    let config = rstate
+        .asm
+        .config
+        .guarded_policy
+        .as_ref()
+        .ok_or(StatusCode::SERVICE_UNAVAILABLE)?;
+    let candidate = command
+        .bundle
+        .decode()
+        .map_err(|_| StatusCode::BAD_REQUEST)?;
+    let now = SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map_err(|_| StatusCode::SERVICE_UNAVAILABLE)?
+        .as_secs();
+    let claims =
+        verify_policy_approval(config, &command.proof, &command.operation, &candidate, now)?;
+    command
+        .operation
+        .validate()
+        .map_err(|_| StatusCode::BAD_REQUEST)?;
+    let binding = PolicyApprovalBinding {
+        signer_issuer: &claims.issuer,
+        approver_issuer: &claims.approver_issuer,
+        approver_subject: &claims.approver_subject,
+        audience: &claims.audience,
+        organization: &claims.organization,
+        action: &claims.action,
+        operation: &claims.operation,
+    };
+    let approval =
+        serde_json::to_string(&binding).map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+    let nonce_hash = hex::encode(openssl::sha::sha256(
+        &serde_json::to_vec(&(&claims.issuer, &claims.key_id, &claims.nonce))
+            .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?,
+    ));
+    let result = rstate
+        .asm
+        .state_db
+        .authorize_policy_operation(
+            &format!("policy:approval-nonces:{nonce_hash}"),
+            &format!("policy:approvals:{}", command.operation.operation_id),
+            &approval,
+        )
+        .await
+        .map_err(|error| {
+            error!(target: ADMIN, "policy approval persistence failed: {error}");
+            StatusCode::SERVICE_UNAVAILABLE
+        })?;
+    if result != 0 {
+        return Err(StatusCode::CONFLICT);
+    }
+    let receipt = rstate
+        .asm
+        .policy_mgr
+        .apply_policy_operation(&command.operation, candidate)
+        .await
+        .map_err(|error| {
+            error!(target: ADMIN, "guarded policy operation failed: {error}");
+            StatusCode::CONFLICT
+        })?;
+    if receipt.status == crate::db::PolicyOperationStatus::Succeeded {
+        if let Err(error) = rstate
+            .asm
+            .event_mgr
+            .record_event(VsEvent::PolicyUpdated(
+                receipt
+                    .applied_vinst
+                    .ok_or(StatusCode::INTERNAL_SERVER_ERROR)?,
+            ))
+            .await
+        {
+            error!(target: ADMIN, "guarded policy applied but notification failed: {error}");
+            return Err(StatusCode::SERVICE_UNAVAILABLE);
+        }
+    }
+    Ok(Json(receipt))
+}
+
 fn rustls_tls_acceptor(key_file: &Path, cert_file: &Path) -> TlsAcceptor {
     let cert_pem = std::fs::read(cert_file).expect("failed to read admin cert file");
     let certs: Vec<_> = rustls_pemfile::certs(&mut &cert_pem[..])
@@ -171,6 +520,8 @@ fn admin_app(state: SharedState) -> Router {
         .route("/admin/policies/{capture}", get(get_policy))
         .route("/admin/policies/curr", get(get_curr_policy))
         .route("/admin/policies", post(install_policy))
+        .route(POLICY_OPERATION_ROUTE, post(guarded_policy_operation))
+        .route(POLICY_OPERATION_CURRENT_ROUTE, get(guarded_policy_current))
         .route("/admin/visas", get(get_visas).with_state(state.clone()))
         .route("/admin/visas/denies", get(get_denies))
         .route("/admin/visas/{capture}", get(get_visa))
@@ -313,12 +664,15 @@ async fn install_policy(
     }
     debug!(target: ADMIN, "POST /admin/policies");
 
+    let rstate = state.read().await;
+    if rstate.asm.config.guarded_policy.is_some() {
+        return Err(StatusCode::FORBIDDEN);
+    }
     let container_bytes = body.decode().map_err(|e| {
         error!(target: ADMIN, "error decoding policy bundle: {}", e);
         StatusCode::BAD_REQUEST
     })?;
 
-    let rstate = state.read().await;
     match rstate
         .asm
         .policy_mgr
@@ -1149,6 +1503,8 @@ mod tests {
 
     use super::*;
 
+    include!("policy_interop_fixture.rs");
+
     /// Visa expiration used by the tests in this module.
     const DEFAULT_VISA_EXPIRATION: std::time::Duration =
         std::time::Duration::from_secs(4 * 60 * 60);
@@ -1218,6 +1574,586 @@ mod tests {
             &inner,
         );
         PolicyBundle::new_from_policy_container(0, container.into()).unwrap()
+    }
+
+    fn policy_operation_trust_fixture(
+        now: u64,
+    ) -> (
+        crate::config::GuardedPolicyConfig,
+        openssl::pkey::PKey<openssl::pkey::Private>,
+    ) {
+        use base64::{Engine, engine::general_purpose::STANDARD};
+        let key = openssl::pkey::PKey::generate_ed25519().unwrap();
+        let config = crate::config::GuardedPolicyConfig {
+            audience: "https://vs.example.test".into(),
+            policy_service_audience: "https://policy.example.test".into(),
+            target_id: "vs-fixture".into(),
+            organization: "org-fixture".into(),
+            keys: vec![crate::config::PolicyApprovalKey {
+                key_id: "cr-fixture-key".into(),
+                issuer: "https://control-room.example.test".into(),
+                public_key: STANDARD.encode(key.raw_public_key().unwrap()),
+                expires_unix: now + 3600,
+            }],
+            grants: vec![crate::config::PolicyApprovalGrant {
+                issuer: "https://idp.example.test".into(),
+                subject: "named-operator".into(),
+                organization: "org-fixture".into(),
+                actions: vec!["install".into(), "rollback".into()],
+            }],
+        };
+        (config, key)
+    }
+
+    fn sign_policy_operation_fixture(
+        claims: &PolicyApprovalClaims,
+        key: &openssl::pkey::PKey<openssl::pkey::Private>,
+    ) -> PolicyApprovalProof {
+        use base64::{Engine, engine::general_purpose::STANDARD};
+        let payload = serde_json::to_vec(claims).unwrap();
+        let signature = openssl::sign::Signer::new_without_digest(key)
+            .unwrap()
+            .sign_oneshot_to_vec(&payload)
+            .unwrap();
+        PolicyApprovalProof {
+            payload: STANDARD.encode(payload),
+            signature: STANDARD.encode(signature),
+        }
+    }
+
+    fn policy_operation_claims_fixture(
+        config: &crate::config::GuardedPolicyConfig,
+        operation: PolicyOperationRequest,
+        now: u64,
+    ) -> PolicyApprovalClaims {
+        PolicyApprovalClaims {
+            version: 1,
+            key_id: config.keys[0].key_id.clone(),
+            issuer: config.keys[0].issuer.clone(),
+            audience: config.audience.clone(),
+            purpose: POLICY_APPROVAL_PURPOSE.into(),
+            approver_issuer: config.grants[0].issuer.clone(),
+            approver_subject: config.grants[0].subject.clone(),
+            organization: config.organization.clone(),
+            action: "install".into(),
+            method: "POST".into(),
+            route: POLICY_OPERATION_ROUTE.into(),
+            operation,
+            iat: now,
+            exp: now + 30,
+            nonce: "fixture-nonce-0000000000000001".into(),
+        }
+    }
+
+    async fn get_policy_operation_current_fixture(app: &Router, api_key: Option<&str>) -> Response {
+        let mut request = Request::builder().uri(POLICY_OPERATION_CURRENT_ROUTE);
+        if let Some(key) = api_key {
+            request = request.header("X-API-Key", key);
+        }
+        app.clone()
+            .oneshot(request.body(Body::empty()).unwrap())
+            .await
+            .unwrap()
+    }
+
+    #[tokio::test]
+    async fn test_policy_operation_current_reads_authoritative_cas_state_with_read_auth() {
+        let now = SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_secs();
+        let (trust, _) = policy_operation_trust_fixture(now);
+        let mut asm = new_assembly_for_tests(None).await;
+        asm.config.guarded_policy = Some(trust.clone());
+        let asm = Arc::new(asm);
+        let app = admin_app(Arc::new(tokio::sync::RwLock::new(AdminState::new(
+            asm.clone(),
+        ))));
+        for key in [None, Some("invalid-key")] {
+            assert_eq!(
+                get_policy_operation_current_fixture(&app, key)
+                    .await
+                    .status(),
+                StatusCode::UNAUTHORIZED
+            );
+        }
+
+        // Advance only persisted state: the endpoint must not use PolicyMgr's cache.
+        let candidate = make_valid_policy_bundle().decode().unwrap();
+        let digest = hex::encode(openssl::sha::sha256(&candidate));
+        let vinst = (1u64 << 53) + 1;
+        asm.state_db
+            .atomic_pipeline(&[
+                crate::db::DbOp::SetBin {
+                    key: format!("policies:{digest}:container"),
+                    value: candidate,
+                },
+                crate::db::DbOp::HSet {
+                    hash_key: "policy:current".into(),
+                    field: "phash".into(),
+                    value: digest.clone(),
+                },
+                crate::db::DbOp::HSet {
+                    hash_key: "policy:current".into(),
+                    field: "vinst".into(),
+                    value: vinst.to_string(),
+                },
+            ])
+            .await
+            .unwrap();
+        assert_ne!(asm.policy_mgr.get_current_snapshot().vinst(), vinst);
+        for permission in [Permission::Read, Permission::ReadWrite] {
+            let key = setup_test_api_key_with_perm(&asm, permission);
+            let response = get_policy_operation_current_fixture(&app, Some(&key)).await;
+            assert_eq!(response.status(), StatusCode::OK);
+            let body = response.into_body().collect().await.unwrap().to_bytes();
+            let value: serde_json::Value = serde_json::from_slice(&body).unwrap();
+            assert_eq!(
+                value,
+                serde_json::json!({
+                    "target_id": trust.target_id,
+                    "organization": trust.organization,
+                    "current_digest": digest,
+                    "current_vinst": vinst,
+                })
+            );
+        }
+    }
+
+    #[tokio::test]
+    async fn test_policy_operation_current_fails_closed_without_valid_guarded_config() {
+        let now = SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_secs();
+        let (trust, _) = policy_operation_trust_fixture(now);
+        let mutations: &[fn(&mut crate::config::GuardedPolicyConfig)] = &[
+            |c| c.target_id.clear(),
+            |c| c.organization.clear(),
+            |c| c.audience = c.policy_service_audience.clone(),
+            |c| c.audience = "http://vs.example.test".into(),
+            |c| c.keys.clear(),
+            |c| c.keys[0].public_key = "invalid".into(),
+            |c| c.keys[0].expires_unix = 1,
+            |c| c.grants.clear(),
+            |c| c.grants[0].organization = "wrong-org".into(),
+            |c| c.grants[0].actions = vec!["*".into()],
+        ];
+        let mut configs = vec![None];
+        for mutate in mutations {
+            let mut invalid = trust.clone();
+            mutate(&mut invalid);
+            configs.push(Some(invalid));
+        }
+        for config in configs {
+            let mut asm = new_assembly_for_tests(None).await;
+            asm.config.guarded_policy = config;
+            let asm = Arc::new(asm);
+            let key = setup_test_api_r_key(&asm);
+            let app = admin_app(Arc::new(tokio::sync::RwLock::new(AdminState::new(asm))));
+            assert_eq!(
+                get_policy_operation_current_fixture(&app, Some(&key))
+                    .await
+                    .status(),
+                StatusCode::SERVICE_UNAVAILABLE
+            );
+        }
+    }
+
+    #[tokio::test]
+    async fn test_policy_operation_current_rejects_missing_corrupt_or_unverified_state() {
+        let now = SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_secs();
+        let (trust, _) = policy_operation_trust_fixture(now);
+        let mut asm = new_assembly_for_tests(None).await;
+        asm.config.guarded_policy = Some(trust);
+        let asm = Arc::new(asm);
+        let key = setup_test_api_r_key(&asm);
+        let app = admin_app(Arc::new(tokio::sync::RwLock::new(AdminState::new(
+            asm.clone(),
+        ))));
+        let cases = [
+            None,
+            Some(("a".repeat(64), None)),
+            Some(("a".repeat(64), Some("not-a-version"))),
+            Some(("invalid-digest".into(), Some("1"))),
+            Some(("a".repeat(64), Some("1"))),
+        ];
+        for fields in cases {
+            asm.state_db.del("policy:current").await.unwrap();
+            if let Some((digest, vinst)) = fields {
+                asm.state_db
+                    .hset("policy:current", "phash", &digest)
+                    .await
+                    .unwrap();
+                if let Some(vinst) = vinst {
+                    asm.state_db
+                        .hset("policy:current", "vinst", vinst)
+                        .await
+                        .unwrap();
+                }
+            }
+            assert_eq!(
+                get_policy_operation_current_fixture(&app, Some(&key))
+                    .await
+                    .status(),
+                StatusCode::SERVICE_UNAVAILABLE
+            );
+        }
+        asm.state_db
+            .set_bin(
+                &format!("policies:{}:container", "a".repeat(64)),
+                b"wrong bytes",
+            )
+            .await
+            .unwrap();
+        assert_eq!(
+            get_policy_operation_current_fixture(&app, Some(&key))
+                .await
+                .status(),
+            StatusCode::SERVICE_UNAVAILABLE
+        );
+    }
+
+    #[test]
+    fn test_policy_operation_proof_rejects_wrong_scope_stale_and_untrusted_assertions() {
+        let now = 1_800_000_000;
+        let (config, key) = policy_operation_trust_fixture(now);
+        let candidate = make_valid_policy_bundle().decode().unwrap();
+        let operation = PolicyOperationRequest {
+            operation_id: "proof-fixture".into(),
+            target_id: config.target_id.clone(),
+            source_revision: 12,
+            candidate_digest: hex::encode(openssl::sha::sha256(&candidate)),
+            expected_current_digest: "a".repeat(64),
+            expected_current_vinst: 7,
+        };
+        let claims = policy_operation_claims_fixture(&config, operation.clone(), now);
+        let proof = sign_policy_operation_fixture(&claims, &key);
+        assert!(verify_policy_approval(&config, &proof, &operation, &candidate, now).is_ok());
+
+        let mutations: &[fn(&mut PolicyApprovalClaims)] = &[
+            |c| c.version = 2,
+            |c| c.key_id = "untrusted".into(),
+            |c| c.issuer = "https://untrusted.test".into(),
+            |c| c.audience = "https://policy.example.test".into(),
+            |c| c.purpose = "runtime-key-import".into(),
+            |c| c.approver_issuer = "https://untrusted-idp.test".into(),
+            |c| c.approver_subject = "caller-asserted-user".into(),
+            |c| c.organization = "another-org".into(),
+            |c| c.action = "read".into(),
+            |c| c.method = "GET".into(),
+            |c| c.route = "/admin/policies".into(),
+            |c| c.operation.operation_id = "another-operation".into(),
+            |c| c.operation.target_id = "another-vs".into(),
+            |c| c.operation.source_revision += 1,
+            |c| c.operation.candidate_digest = "b".repeat(64),
+            |c| c.operation.expected_current_digest = "c".repeat(64),
+            |c| c.operation.expected_current_vinst += 1,
+            |c| c.iat += 1,
+            |c| c.exp = c.iat,
+            |c| c.exp = c.iat + 301,
+            |c| c.nonce.clear(),
+        ];
+        for (index, mutate) in mutations.iter().enumerate() {
+            let mut wrong = claims.clone();
+            mutate(&mut wrong);
+            let proof = sign_policy_operation_fixture(&wrong, &key);
+            assert!(
+                verify_policy_approval(&config, &proof, &operation, &candidate, now).is_err(),
+                "mutation {index} must fail closed"
+            );
+        }
+        assert!(verify_policy_approval(&config, &proof, &operation, &candidate, now + 30).is_err());
+        assert!(
+            verify_policy_approval(&config, &proof, &operation, b"other candidate", now).is_err()
+        );
+        let other_key = openssl::pkey::PKey::generate_ed25519().unwrap();
+        let untrusted = sign_policy_operation_fixture(&claims, &other_key);
+        assert!(verify_policy_approval(&config, &untrusted, &operation, &candidate, now).is_err());
+        let mut malformed = proof.clone();
+        malformed.payload.push('=');
+        assert!(verify_policy_approval(&config, &malformed, &operation, &candidate, now).is_err());
+        let mut expired_trust = config.clone();
+        expired_trust.keys[0].expires_unix = now;
+        assert!(
+            verify_policy_approval(&expired_trust, &proof, &operation, &candidate, now).is_err()
+        );
+        let mut rollback = claims.clone();
+        rollback.action = "rollback".into();
+        let mut install_only = config.clone();
+        install_only.grants[0].actions = vec!["install".into()];
+        assert!(
+            verify_policy_approval(
+                &install_only,
+                &sign_policy_operation_fixture(&rollback, &key),
+                &operation,
+                &candidate,
+                now,
+            )
+            .is_err()
+        );
+        let mut another_target = operation.clone();
+        another_target.target_id = "another-vs".into();
+        let mut wrong_target = claims.clone();
+        wrong_target.operation = another_target.clone();
+        assert!(
+            verify_policy_approval(
+                &config,
+                &sign_policy_operation_fixture(&wrong_target, &key),
+                &another_target,
+                &candidate,
+                now,
+            )
+            .is_err()
+        );
+        let mut shared_audience = config.clone();
+        shared_audience.audience = shared_audience.policy_service_audience.clone();
+        assert_eq!(
+            verify_policy_approval(&shared_audience, &proof, &operation, &candidate, now).err(),
+            Some(StatusCode::SERVICE_UNAVAILABLE)
+        );
+    }
+
+    async fn post_policy_operation_fixture(
+        app: &Router,
+        path: &str,
+        api_key: Option<&str>,
+        command: &GuardedPolicyCommand,
+    ) -> Response {
+        let mut request = Request::builder()
+            .method("POST")
+            .uri(path)
+            .header("content-type", "application/json");
+        if let Some(key) = api_key {
+            request = request.header("X-API-Key", key);
+        }
+        app.clone()
+            .oneshot(
+                request
+                    .body(Body::from(serde_json::to_vec(command).unwrap()))
+                    .unwrap(),
+            )
+            .await
+            .unwrap()
+    }
+
+    #[tokio::test]
+    async fn test_policy_operation_route_dual_auth_replay_and_durable_reconciliation() {
+        let now = SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_secs();
+        let (trust, key) = policy_operation_trust_fixture(now);
+        let mut asm = new_assembly_for_tests(None).await;
+        asm.config.guarded_policy = Some(trust.clone());
+        let asm = Arc::new(asm);
+        let current = asm.policy_mgr.get_current_snapshot();
+        let bundle = make_valid_policy_bundle();
+        let candidate = bundle.decode().unwrap();
+        let operation = PolicyOperationRequest {
+            operation_id: "guarded-route-fixture".into(),
+            target_id: trust.target_id.clone(),
+            source_revision: 12,
+            candidate_digest: hex::encode(openssl::sha::sha256(&candidate)),
+            expected_current_digest: hex::encode(openssl::sha::sha256(
+                current.container().as_bytes(),
+            )),
+            expected_current_vinst: current.vinst(),
+        };
+        let mut claims = policy_operation_claims_fixture(&trust, operation.clone(), now);
+        let mut command = GuardedPolicyCommand {
+            operation,
+            bundle,
+            proof: sign_policy_operation_fixture(&claims, &key),
+        };
+        let app = admin_app(Arc::new(tokio::sync::RwLock::new(AdminState::new(
+            asm.clone(),
+        ))));
+        assert_eq!(
+            post_policy_operation_fixture(&app, POLICY_OPERATION_ROUTE, None, &command)
+                .await
+                .status(),
+            StatusCode::UNAUTHORIZED
+        );
+        let read_key = setup_test_api_r_key(&asm);
+        assert_eq!(
+            post_policy_operation_fixture(&app, POLICY_OPERATION_ROUTE, Some(&read_key), &command)
+                .await
+                .status(),
+            StatusCode::FORBIDDEN
+        );
+        let write_key = setup_test_api_rw_key(&asm);
+        assert_eq!(
+            post_policy_operation_fixture(
+                &app,
+                "/admin/policy-operations?bypass=1",
+                Some(&write_key),
+                &command
+            )
+            .await
+            .status(),
+            StatusCode::BAD_REQUEST
+        );
+        assert_eq!(asm.policy_mgr.get_current_snapshot().vinst(), 1);
+
+        let valid_proof = command.proof.clone();
+        command.proof = sign_policy_operation_fixture(
+            &claims,
+            &openssl::pkey::PKey::generate_ed25519().unwrap(),
+        );
+        assert_eq!(
+            post_policy_operation_fixture(&app, POLICY_OPERATION_ROUTE, Some(&write_key), &command)
+                .await
+                .status(),
+            StatusCode::FORBIDDEN
+        );
+        command.proof = valid_proof;
+        let response =
+            post_policy_operation_fixture(&app, POLICY_OPERATION_ROUTE, Some(&write_key), &command)
+                .await;
+        assert_eq!(response.status(), StatusCode::OK);
+        let receipt: PolicyOperationReceipt =
+            serde_json::from_slice(&response.into_body().collect().await.unwrap().to_bytes())
+                .unwrap();
+        assert_eq!(receipt.status, crate::db::PolicyOperationStatus::Succeeded);
+        assert_eq!(
+            receipt.applied_digest,
+            Some(claims.operation.candidate_digest.clone())
+        );
+        assert_eq!(
+            asm.policy_mgr.get_current_snapshot().container().as_bytes(),
+            candidate
+        );
+        let approval = asm
+            .state_db
+            .get("policy:approvals:guarded-route-fixture")
+            .await
+            .unwrap()
+            .unwrap();
+        assert!(approval.contains("named-operator"));
+        assert!(approval.contains(&claims.operation.candidate_digest));
+
+        assert_eq!(
+            post_policy_operation_fixture(&app, POLICY_OPERATION_ROUTE, Some(&write_key), &command)
+                .await
+                .status(),
+            StatusCode::CONFLICT
+        );
+        claims.nonce = "fixture-nonce-0000000000000002".into();
+        command.proof = sign_policy_operation_fixture(&claims, &key);
+        assert_eq!(
+            post_policy_operation_fixture(&app, POLICY_OPERATION_ROUTE, Some(&write_key), &command)
+                .await
+                .status(),
+            StatusCode::OK
+        );
+        assert_eq!(asm.policy_mgr.get_current_snapshot().vinst(), 2);
+
+        claims.action = "rollback".into();
+        claims.nonce = "fixture-nonce-0000000000000003".into();
+        command.proof = sign_policy_operation_fixture(&claims, &key);
+        assert_eq!(
+            post_policy_operation_fixture(&app, POLICY_OPERATION_ROUTE, Some(&write_key), &command)
+                .await
+                .status(),
+            StatusCode::CONFLICT
+        );
+        assert_eq!(asm.policy_mgr.get_current_snapshot().vinst(), 2);
+
+        command.bundle = PolicyBundle::new_from_policy_container(0, current.container()).unwrap();
+        command.operation.operation_id = "explicit-rollback-fixture".into();
+        command.operation.candidate_digest =
+            hex::encode(openssl::sha::sha256(current.container().as_bytes()));
+        command.operation.expected_current_digest = claims.operation.candidate_digest.clone();
+        command.operation.expected_current_vinst = 2;
+        claims.operation = command.operation.clone();
+        claims.nonce = "fixture-nonce-0000000000000004".into();
+        command.proof = sign_policy_operation_fixture(&claims, &key);
+        let response =
+            post_policy_operation_fixture(&app, POLICY_OPERATION_ROUTE, Some(&write_key), &command)
+                .await;
+        assert_eq!(response.status(), StatusCode::OK);
+        let receipt: PolicyOperationReceipt =
+            serde_json::from_slice(&response.into_body().collect().await.unwrap().to_bytes())
+                .unwrap();
+        assert_eq!(receipt.status, crate::db::PolicyOperationStatus::Succeeded);
+        assert_eq!(receipt.applied_vinst, Some(3));
+        assert_eq!(
+            asm.policy_mgr.get_current_snapshot().container().as_bytes(),
+            current.container().as_bytes()
+        );
+    }
+
+    #[tokio::test]
+    async fn test_policy_operation_guarded_mode_blocks_legacy_even_with_invalid_trust() {
+        let now = 1_800_000_000;
+        let (mut trust, key) = policy_operation_trust_fixture(now);
+        let bundle = make_valid_policy_bundle();
+        let operation = PolicyOperationRequest {
+            operation_id: "disabled-route-fixture".into(),
+            target_id: trust.target_id.clone(),
+            source_revision: 12,
+            candidate_digest: hex::encode(openssl::sha::sha256(&bundle.decode().unwrap())),
+            expected_current_digest: "a".repeat(64),
+            expected_current_vinst: 1,
+        };
+        let claims = policy_operation_claims_fixture(&trust, operation.clone(), now);
+        let command = GuardedPolicyCommand {
+            operation,
+            bundle,
+            proof: sign_policy_operation_fixture(&claims, &key),
+        };
+        trust.keys.clear();
+        for config in [None, Some(trust)] {
+            let mut asm = new_assembly_for_tests(None).await;
+            let guarded = config.is_some();
+            asm.config.guarded_policy = config;
+            let asm = Arc::new(asm);
+            let api_key = setup_test_api_rw_key(&asm);
+            let app = admin_app(Arc::new(tokio::sync::RwLock::new(AdminState::new(
+                asm.clone(),
+            ))));
+            assert_eq!(
+                post_policy_operation_fixture(
+                    &app,
+                    POLICY_OPERATION_ROUTE,
+                    Some(&api_key),
+                    &command
+                )
+                .await
+                .status(),
+                StatusCode::SERVICE_UNAVAILABLE
+            );
+            let response = app
+                .oneshot(
+                    Request::builder()
+                        .method("POST")
+                        .uri("/admin/policies")
+                        .header("X-API-Key", api_key)
+                        .header("content-type", "application/json")
+                        .body(Body::from(
+                            serde_json::to_vec(&make_valid_policy_bundle()).unwrap(),
+                        ))
+                        .unwrap(),
+                )
+                .await
+                .unwrap();
+            assert_eq!(
+                response.status(),
+                if guarded {
+                    StatusCode::FORBIDDEN
+                } else {
+                    StatusCode::OK
+                }
+            );
+            assert_eq!(
+                asm.policy_mgr.get_current_snapshot().vinst(),
+                if guarded { 1 } else { 2 }
+            );
+        }
     }
 
     /// GET /admin/policies returns the single current policy id (0) with a read key.

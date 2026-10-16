@@ -141,6 +141,68 @@ static OSStatus zpr_runtime_nonextractable(const char *path, const char *tag) {
     CFRelease(key);
     return status;
 }
+
+// Inspect the legacy Keychain's actual key header, not just requested attributes.
+static OSStatus zpr_native_key_policy(SecKeyRef key) {
+    const CSSM_KEY *cssm = NULL;
+    OSStatus status = SecKeyGetCSSMKey(key, &cssm);
+    if (status != errSecSuccess) return status;
+    if (!cssm || cssm->KeyHeader.AlgorithmId != CSSM_ALGID_RSA ||
+        cssm->KeyHeader.LogicalKeySizeInBits != 3072 ||
+        !(cssm->KeyHeader.KeyAttr & CSSM_KEYATTR_PERMANENT) ||
+        !(cssm->KeyHeader.KeyAttr & CSSM_KEYATTR_SENSITIVE) ||
+        !(cssm->KeyHeader.KeyAttr & CSSM_KEYATTR_ALWAYS_SENSITIVE) ||
+        !(cssm->KeyHeader.KeyAttr & CSSM_KEYATTR_NEVER_EXTRACTABLE) ||
+        (cssm->KeyHeader.KeyAttr & CSSM_KEYATTR_EXTRACTABLE))
+        return errSecAuthFailed;
+    CFDictionaryRef attrs = SecKeyCopyAttributes(key);
+    if (!attrs || CFDictionaryGetValue(attrs, kSecAttrIsExtractable) != kCFBooleanFalse)
+        status = errSecAuthFailed;
+    if (attrs) CFRelease(attrs);
+    return status;
+}
+
+static OSStatus zpr_native_bytes(const char *path, const char *tag, const void *digest,
+    size_t digest_size, void **bytes, size_t *size) {
+    // The default creator ACL is not sufficient authorization for signing.
+    if (digest) return errSecAuthFailed;
+    SecKeyRef key = NULL;
+    OSStatus status = zpr_runtime_find(path, tag, &key);
+    if (status != errSecSuccess) return status;
+    status = zpr_native_key_policy(key);
+    CFDataRef result = NULL;
+    CFErrorRef error = NULL;
+    if (status == errSecSuccess) {
+        if (digest) {
+            CFDataRef input = CFDataCreate(NULL, digest, (CFIndex)digest_size);
+            result = SecKeyCreateSignature(key, kSecKeyAlgorithmRSASignatureDigestPKCS1v15SHA256, input, &error);
+            CFRelease(input);
+        } else {
+            SecKeyRef public_key = SecKeyCopyPublicKey(key);
+            if (public_key) {
+                result = SecKeyCopyExternalRepresentation(public_key, &error);
+                CFRelease(public_key);
+            }
+        }
+        if (!result) status = error ? (OSStatus)CFErrorGetCode(error) : errSecDecode;
+    }
+    if (result) {
+        CFIndex length = CFDataGetLength(result);
+        if (length <= 0 || length > 8192) status = errSecDecode;
+        else {
+            *bytes = malloc((size_t)length);
+            if (!*bytes) status = errSecAllocate;
+            else {
+                memcpy(*bytes, CFDataGetBytePtr(result), (size_t)length);
+                *size = (size_t)length;
+            }
+        }
+        CFRelease(result);
+    }
+    if (error) CFRelease(error);
+    CFRelease(key);
+    return status;
+}
 */
 import "C"
 
@@ -154,14 +216,29 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"syscall"
 	"unsafe"
 )
 
 // runtimeKeyVault is not exposed to the browser or a network listener.
-// Its path must be supplied by the future authenticated helper, never a device.
+// Its path must be supplied by trusted helper configuration, never a device.
 type runtimeKeyVault struct{ path string }
 
 var errRuntimeKeyAbsent = errors.New("runtime Keychain key absent")
+var errNativeEndpointAccessControlUnavailable = errors.New("native endpoint key access is disabled because legacy Keychain ACLs cannot enforce helper-only access")
+
+// SecAccess trusted applications are allowed to skip confirmation; they do
+// not exclude other applications from requesting access. With no supported,
+// trusted helper-only policy, do not create a key using creator/default ACLs.
+func (v runtimeKeyVault) generateNative(tag string) error {
+	return errNativeEndpointAccessControlUnavailable
+}
+
+func (v runtimeKeyVault) nativeBytes(tag string, digest []byte) ([]byte, error) {
+	// Public lookup and signing share this gate: returning a public key here
+	// would qualify a native key whose access metadata is not enforceable.
+	return nil, errNativeEndpointAccessControlUnavailable
+}
 
 type runtimeVaultSigner struct {
 	vault runtimeKeyVault
@@ -181,6 +258,42 @@ func (v runtimeKeyVault) validate(tag string) error {
 	}
 	if !info.Mode().IsRegular() {
 		return errors.New("runtime Keychain must be an explicitly configured regular file, not a symlink")
+	}
+	return nil
+}
+
+func (v runtimeKeyVault) validateNativeEndpoint(tag string) error {
+	if err := v.validate(tag); err != nil {
+		return err
+	}
+	root, err := openIdentityDirectory(filepath.Dir(v.path), false)
+	if err != nil {
+		return fmt.Errorf("runtime Keychain parent must be protected: %w", err)
+	}
+	defer root.Close()
+	name := filepath.Base(v.path)
+	entry, err := root.Lstat(name)
+	if err != nil {
+		return fmt.Errorf("runtime Keychain path unavailable: %w", err)
+	}
+	if !entry.Mode().IsRegular() || !privateOwned(entry) {
+		return errors.New("runtime Keychain must be a private owner-only regular file")
+	}
+	file, err := root.OpenFile(name, os.O_RDONLY|syscall.O_NOFOLLOW|syscall.O_NONBLOCK, 0)
+	if err != nil {
+		return err
+	}
+	defer file.Close()
+	info, err := file.Stat()
+	if err != nil {
+		return err
+	}
+	stat, ok := info.Sys().(*syscall.Stat_t)
+	current, currentErr := root.Lstat(name)
+	if !ok || stat.Nlink != 1 || !info.Mode().IsRegular() || !privateOwned(info) ||
+		currentErr != nil || !current.Mode().IsRegular() || !privateOwned(current) ||
+		!os.SameFile(entry, info) || !os.SameFile(current, info) {
+		return errors.New("runtime Keychain path is unsafe or changed while opening")
 	}
 	return nil
 }
@@ -229,6 +342,8 @@ func (v runtimeKeyVault) importKey(tag string, key *rsa.PrivateKey) error {
 
 func (s *runtimeVaultSigner) Public() crypto.PublicKey { return s.key }
 
+// Sign preserves the existing explicit-import runtime path. The new native
+// endpoint vault uses nativeEndpointSigner and is denied by nativeBytes below.
 func (s *runtimeVaultSigner) Sign(_ io.Reader, digest []byte, opts crypto.SignerOpts) ([]byte, error) {
 	if opts == nil || opts.HashFunc() != crypto.SHA256 || len(digest) != sha256.Size {
 		return nil, errors.New("runtime Keychain signer requires a SHA-256 PKCS#1 v1.5 digest")

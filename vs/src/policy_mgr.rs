@@ -25,6 +25,7 @@ use zpr::policy_types::{NetAddr, NetworkHost, PolicyContainerBytes};
 
 use crate::config;
 use crate::db;
+use crate::db::{PolicyOperationReceipt, PolicyOperationRequest, PolicyOperationStatus};
 use crate::error::{ResolverError, ServiceError, StoreError, TopologyError};
 use crate::loaded_policy::LoadedPolicy;
 use crate::logging::targets::MAIN;
@@ -290,6 +291,201 @@ impl PolicyMgr {
             &config::POLICY_MIN_VERSION,
         )?;
         self.update_policy_internal(loaded).await
+    }
+
+    /// Apply a source-revision-bound operation with a durable operation ID and
+    /// compare-and-swap against the current target state. This receiver-side
+    /// method is used by the separately configured, signed-approval Admin path;
+    /// it does not authenticate its caller itself.
+    #[allow(dead_code)]
+    pub(crate) async fn apply_policy_operation(
+        &self,
+        request: &PolicyOperationRequest,
+        candidate_bytes: Vec<u8>,
+    ) -> Result<PolicyOperationReceipt, ServiceError> {
+        let _guard = self.update_lock.lock().await;
+        let mut candidate = LoadedPolicy::from_container(
+            PolicyContainerBytes::from(candidate_bytes),
+            &config::POLICY_MIN_VERSION,
+        )?;
+        let candidate_digest = candidate.hash_container_bytes()?.to_string();
+        if candidate_digest != request.candidate_digest {
+            return Err(ServiceError::Param(
+                "candidate bytes do not match the operation digest".into(),
+            ));
+        }
+        if request.target_id.trim().is_empty() || request.source_revision == 0 {
+            return Err(ServiceError::Param(
+                "policy operation target and positive source revision are required".into(),
+            ));
+        }
+        let next_vinst = request
+            .expected_current_vinst
+            .checked_add(1)
+            .ok_or_else(|| ServiceError::Param("policy vinst is exhausted".into()))?;
+
+        let mut receipt = self.repo.begin_operation(request).await?;
+        if receipt.status == PolicyOperationStatus::Succeeded {
+            self.reload_persisted_state().await?;
+            return Ok(receipt);
+        }
+        if receipt.status == PolicyOperationStatus::Failed {
+            return Ok(receipt);
+        }
+
+        if self
+            .repo
+            .current_matches(&request.candidate_digest, next_vinst)
+            .await?
+        {
+            receipt.status = PolicyOperationStatus::Succeeded;
+            receipt.applied_digest = Some(request.candidate_digest.clone());
+            receipt.applied_vinst = Some(next_vinst);
+            receipt.error = None;
+            self.repo.finish_operation(&receipt).await?;
+            self.reload_persisted_state().await?;
+            return Ok(receipt);
+        }
+
+        if !self
+            .repo
+            .current_matches(
+                &request.expected_current_digest,
+                request.expected_current_vinst,
+            )
+            .await?
+        {
+            if receipt.applied_digest.is_some() || receipt.applied_vinst.is_some() {
+                receipt.status = PolicyOperationStatus::Uncertain;
+                receipt.error = Some(
+                    "operation has persisted applied markers but current policy has changed; reconcile the operation ID and subsequent policy changes before any new apply".into(),
+                );
+            } else {
+                receipt.status = PolicyOperationStatus::Failed;
+                receipt.error = Some(
+                    "current policy no longer matches the expected pre-commit state; reload before creating a new operation".into(),
+                );
+            }
+            self.repo.finish_operation(&receipt).await?;
+            return Ok(receipt);
+        }
+
+        let mut current = self.get_current_snapshot();
+        let mut current_loaded =
+            LoadedPolicy::from_container(current.container(), &config::POLICY_MIN_VERSION)?;
+        let current_digest = current_loaded.hash_container_bytes()?;
+        if current_digest != request.expected_current_digest
+            || current.vinst() != request.expected_current_vinst
+        {
+            self.reload_persisted_state().await?;
+            current = self.get_current_snapshot();
+            current_loaded =
+                LoadedPolicy::from_container(current.container(), &config::POLICY_MIN_VERSION)?;
+        }
+        let current_digest = current_loaded.hash_container_bytes()?;
+        if current_digest != request.expected_current_digest
+            || current.vinst() != request.expected_current_vinst
+        {
+            receipt.status = PolicyOperationStatus::Uncertain;
+            receipt.error = Some(
+                "in-memory policy could not be synchronized with the expected current state".into(),
+            );
+            self.repo.finish_operation(&receipt).await?;
+            return Ok(receipt);
+        }
+
+        candidate.set_vinst(next_vinst);
+        let previous = self.state.load_full();
+        let candidate_state = match Self::build_state(
+            &self.resolver,
+            &candidate,
+            &self.file_ts_dir,
+            &self.http_services,
+            Some(&previous),
+        )
+        .await
+        {
+            Ok(state) => state,
+            Err(error) => {
+                receipt.status = PolicyOperationStatus::Failed;
+                receipt.error = Some(error.to_string());
+                self.repo.finish_operation(&receipt).await?;
+                return Err(error);
+            }
+        };
+
+        let commit_result = self
+            .repo
+            .commit_operation(request, candidate.container().as_bytes())
+            .await;
+        let mut receipt = match commit_result {
+            Ok(receipt) => receipt,
+            Err(commit_error) => match self.repo.get_operation(&request.operation_id).await {
+                Ok(receipt) => receipt,
+                Err(read_error) => {
+                    return Err(ServiceError::Internal(format!(
+                        "policy operation outcome is uncertain; commit error: {commit_error}; receipt read failed: {read_error}"
+                    )));
+                }
+            },
+        };
+        if receipt.status == PolicyOperationStatus::Succeeded {
+            self.reload_persisted_state().await?;
+            return Ok(receipt);
+        }
+        if receipt.status != PolicyOperationStatus::Pending {
+            return Ok(receipt);
+        }
+
+        match self
+            .repo
+            .current_matches(&request.candidate_digest, next_vinst)
+            .await
+        {
+            Ok(true) => {
+                receipt.status = PolicyOperationStatus::Succeeded;
+                receipt.applied_digest = Some(request.candidate_digest.clone());
+                receipt.applied_vinst = Some(next_vinst);
+                receipt.error = None;
+            }
+            Ok(false) => {
+                receipt.status = PolicyOperationStatus::Uncertain;
+                receipt.error =
+                    Some("candidate commit was not confirmed by current-policy readback".into());
+            }
+            Err(error) => {
+                receipt.status = PolicyOperationStatus::Uncertain;
+                receipt.error = Some(format!("current-policy readback failed: {error}"));
+            }
+        }
+        self.repo.finish_operation(&receipt).await?;
+        if receipt.status == PolicyOperationStatus::Succeeded {
+            self.publish(candidate_state);
+        }
+        Ok(receipt)
+    }
+
+    #[allow(dead_code)]
+    async fn reload_persisted_state(&self) -> Result<(), ServiceError> {
+        let mut loaded = self
+            .repo
+            .get_current_loaded_policy(&config::POLICY_MIN_VERSION)
+            .await?;
+        let identifier =
+            self.repo.get_current_identifier().await?.ok_or_else(|| {
+                ServiceError::Internal("current policy identifier is missing".into())
+            })?;
+        loaded.set_vinst(identifier.vinst);
+        let state = Self::build_state(
+            &self.resolver,
+            &loaded,
+            &self.file_ts_dir,
+            &self.http_services,
+            Some(&self.state.load_full()),
+        )
+        .await?;
+        self.publish(state);
+        Ok(())
     }
 
     /// Build the atomically-swapped policy state after resolving all policy topology.
@@ -1019,5 +1215,184 @@ mod tests {
         assert_eq!(resolved.len(), 1);
         assert_eq!(resolved[0].0, "link-h");
         assert_eq!(resolved[0].1, SocketAddr::new(resolved_ip, 5000));
+    }
+
+    fn policy_with_metadata(metadata: &str) -> Vec<u8> {
+        let mut message = capnp::message::Builder::new_default();
+        {
+            let mut policy = message.init_root::<zpr::policy::v1::policy::Builder>();
+            policy.set_created("2024-01-02T00:00:00Z");
+            policy.set_version(2);
+            policy.set_metadata(metadata);
+        }
+        let mut inner = Vec::new();
+        capnp::serialize::write_message(&mut inner, &message).unwrap();
+        crate::test_helpers::make_container_bytes(
+            config::POLICY_MIN_COMPILER_MAJOR,
+            config::POLICY_MIN_COMPILER_MINOR,
+            config::POLICY_MIN_COMPILER_PATCH,
+            &inner,
+        )
+    }
+
+    fn policy_operation_request(
+        operation_id: &str,
+        current: &PolicySnapshot,
+        candidate_bytes: &[u8],
+    ) -> PolicyOperationRequest {
+        let current_vinst = current.vinst();
+        let candidate = LoadedPolicy::from_container(
+            PolicyContainerBytes::from(candidate_bytes.to_vec()),
+            &config::POLICY_MIN_VERSION,
+        )
+        .unwrap();
+        let current =
+            LoadedPolicy::from_container(current.container(), &config::POLICY_MIN_VERSION).unwrap();
+        PolicyOperationRequest {
+            operation_id: operation_id.into(),
+            target_id: "visa-service-fixture".into(),
+            source_revision: 11,
+            candidate_digest: candidate.hash_container_bytes().unwrap(),
+            expected_current_digest: current.hash_container_bytes().unwrap(),
+            expected_current_vinst: current_vinst,
+        }
+    }
+
+    #[tokio::test]
+    async fn test_policy_operation_applies_once_and_replays_verified_receipt() {
+        let mgr = make_policy_mgr(policy_no_topology()).await;
+        let candidate = policy_with_metadata("migration-fixture");
+        let request =
+            policy_operation_request("policy-install-1", &mgr.get_current_snapshot(), &candidate);
+
+        let receipt = mgr
+            .apply_policy_operation(&request, candidate.clone())
+            .await
+            .unwrap();
+        assert_eq!(receipt.status, PolicyOperationStatus::Succeeded);
+        assert_eq!(
+            receipt.applied_digest.as_deref(),
+            Some(request.candidate_digest.as_str())
+        );
+        assert_eq!(receipt.applied_vinst, Some(2));
+        assert!(
+            mgr.repo
+                .current_matches(&request.candidate_digest, 2)
+                .await
+                .unwrap()
+        );
+        assert_eq!(mgr.get_current_snapshot().vinst(), 2);
+
+        let replay = mgr
+            .apply_policy_operation(&request, candidate)
+            .await
+            .unwrap();
+        assert_eq!(replay, receipt);
+        assert_eq!(mgr.get_current_snapshot().vinst(), 2);
+    }
+
+    #[tokio::test]
+    async fn test_policy_operation_rejects_candidate_digest_mismatch_without_mutation() {
+        let mgr = make_policy_mgr(policy_no_topology()).await;
+        let candidate = policy_with_metadata("migration-fixture");
+        let mut request = policy_operation_request(
+            "policy-install-bad-digest",
+            &mgr.get_current_snapshot(),
+            &candidate,
+        );
+        request.candidate_digest = "0".repeat(64);
+
+        assert!(
+            mgr.apply_policy_operation(&request, candidate)
+                .await
+                .is_err()
+        );
+        assert_eq!(mgr.get_current_snapshot().vinst(), 1);
+        assert!(matches!(
+            mgr.repo.get_operation(&request.operation_id).await,
+            Err(StoreError::NotFound(_))
+        ));
+    }
+
+    #[tokio::test]
+    async fn test_policy_operation_superseded_pending_commit_replays_as_uncertain() {
+        let mgr = make_policy_mgr(policy_no_topology()).await;
+        let candidate = policy_with_metadata("committed-candidate");
+        let request =
+            policy_operation_request("superseded-commit", &mgr.get_current_snapshot(), &candidate);
+        mgr.repo.begin_operation(&request).await.unwrap();
+        let committed = mgr
+            .repo
+            .commit_operation(&request, &candidate)
+            .await
+            .unwrap();
+        assert_eq!(committed.status, PolicyOperationStatus::Pending);
+        assert_eq!(committed.applied_vinst, Some(2));
+
+        // Restore the committed state as after restart, then supersede it via
+        // the compatibility path before the original operation is reconciled.
+        mgr.reload_persisted_state().await.unwrap();
+        let superseding = policy_with_metadata("subsequent-legacy-update");
+        assert_eq!(
+            mgr.update_policy_from_container_bytes(superseding.clone())
+                .await
+                .unwrap(),
+            3
+        );
+
+        let replay = mgr
+            .apply_policy_operation(&request, candidate.clone())
+            .await
+            .unwrap();
+        assert_eq!(replay.status, PolicyOperationStatus::Uncertain);
+        assert_eq!(replay.applied_digest, committed.applied_digest);
+        assert_eq!(replay.applied_vinst, committed.applied_vinst);
+        assert!(
+            replay
+                .error
+                .as_deref()
+                .unwrap()
+                .contains("reconcile the operation ID")
+        );
+        assert_eq!(
+            mgr.repo.get_operation(&request.operation_id).await.unwrap(),
+            replay
+        );
+        assert_eq!(mgr.get_current_snapshot().vinst(), 3);
+        assert_eq!(
+            mgr.get_current_snapshot().container().as_bytes(),
+            superseding
+        );
+        assert_eq!(
+            mgr.apply_policy_operation(&request, candidate)
+                .await
+                .unwrap(),
+            replay
+        );
+    }
+
+    #[tokio::test]
+    async fn test_policy_operation_stale_precommit_replay_fails_without_applied_markers() {
+        let mgr = make_policy_mgr(policy_no_topology()).await;
+        let candidate = policy_with_metadata("uncommitted-candidate");
+        let request =
+            policy_operation_request("stale-precommit", &mgr.get_current_snapshot(), &candidate);
+        mgr.repo.begin_operation(&request).await.unwrap();
+        mgr.update_policy_from_container_bytes(policy_with_metadata("subsequent-update"))
+            .await
+            .unwrap();
+
+        let replay = mgr
+            .apply_policy_operation(&request, candidate)
+            .await
+            .unwrap();
+        assert_eq!(replay.status, PolicyOperationStatus::Failed);
+        assert_eq!(replay.applied_digest, None);
+        assert_eq!(replay.applied_vinst, None);
+        assert_eq!(
+            mgr.repo.get_operation(&request.operation_id).await.unwrap(),
+            replay
+        );
+        assert_eq!(mgr.get_current_snapshot().vinst(), 2);
     }
 }

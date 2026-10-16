@@ -117,6 +117,42 @@ pub struct VSConfig {
     pub nodes: std::collections::BTreeMap<String, NodeGeography>,
     pub trusted_service_http: std::collections::BTreeMap<String, TrustedServiceHttpConfig>,
     pub dns_update: Option<DnsUpdateConfig>,
+    /// Presence enables guarded policy mode and disables legacy policy POST,
+    /// including when this trust configuration is invalid or expired.
+    pub guarded_policy: Option<GuardedPolicyConfig>,
+}
+
+#[derive(Deserialize, Serialize, Debug, Clone)]
+#[serde(deny_unknown_fields)]
+pub struct GuardedPolicyConfig {
+    pub audience: String,
+    /// Upstream delegation audience; must differ from the VS audience.
+    pub policy_service_audience: String,
+    pub target_id: String,
+    pub organization: String,
+    pub keys: Vec<PolicyApprovalKey>,
+    pub grants: Vec<PolicyApprovalGrant>,
+}
+
+#[derive(Deserialize, Serialize, Debug, Clone)]
+#[serde(deny_unknown_fields)]
+pub struct PolicyApprovalKey {
+    pub key_id: String,
+    /// Explicit trusted service signer issuer, separate from the named user.
+    pub issuer: String,
+    /// Canonical standard-base64 raw 32-byte Ed25519 public key.
+    pub public_key: String,
+    pub expires_unix: u64,
+}
+
+#[derive(Deserialize, Serialize, Debug, Clone)]
+#[serde(deny_unknown_fields)]
+pub struct PolicyApprovalGrant {
+    pub issuer: String,
+    pub subject: String,
+    pub organization: String,
+    /// Exact action names: "install" or "rollback"; no wildcard grants.
+    pub actions: Vec<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Default, PartialEq)]
@@ -243,6 +279,7 @@ impl Default for VSConfig {
             nodes: std::collections::BTreeMap::new(),
             trusted_service_http: std::collections::BTreeMap::new(),
             dns_update: None,
+            guarded_policy: None,
         }
     }
 }

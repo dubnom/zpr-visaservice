@@ -51,6 +51,7 @@ type policyWorkspace struct {
 	stageConfigPath      string
 	stageSigningKeyPath  string
 	stagedCandidate      *stagedPolicyCandidate
+	guardedApply         *policyApplyResources
 }
 
 type policyStatus struct {

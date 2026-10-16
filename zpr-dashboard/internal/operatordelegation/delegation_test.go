@@ -1,6 +1,8 @@
 package operatordelegation
 
 import (
+	"bytes"
+	"compress/gzip"
 	"context"
 	"crypto/ed25519"
 	"crypto/rand"
@@ -24,6 +26,168 @@ import (
 type replayMemory struct {
 	mu   sync.Mutex
 	keys map[string]bool
+}
+
+func policyPairFixture(t *testing.T) (PolicyTrust, *PolicySigner, PolicyOperation, time.Time) {
+	t.Helper()
+	now := time.Unix(1800000000, 0)
+	public, private, err := ed25519.GenerateKey(rand.Reader)
+	if err != nil {
+		t.Fatal(err)
+	}
+	trust := PolicyTrust{Audience: "https://policy.example", VisaServiceAudience: "https://vs.example",
+		Organization: "great-lakes", TargetID: "vs-one",
+		Keys:   []PolicyKey{{"cr-key", "https://control.example", base64.StdEncoding.EncodeToString(public), now.Unix() + 3600}},
+		Grants: []PolicyGrant{{"https://idp.example", "reviewer", "great-lakes", []string{"install"}}}}
+	signer, err := NewPolicySigner(trust, "cr-key", "https://control.example", private, now)
+	if err != nil {
+		t.Fatal(err)
+	}
+	op := PolicyOperation{"op-one", "vs-one", 3, strings.Repeat("a", 64), strings.Repeat("b", 64), 7}
+	return trust, signer, op, now
+}
+
+func TestPolicyPairDistinctAudienceSignatureAndExactRequest(t *testing.T) {
+	trust, signer, op, now := policyPairFixture(t)
+	container := []byte("synthetic policy container")
+	hash := sha256.Sum256(container)
+	op.CandidateDigest = hex.EncodeToString(hash[:])
+	var compressed bytes.Buffer
+	gz := gzip.NewWriter(&compressed)
+	if _, err := gz.Write(container); err != nil {
+		t.Fatal(err)
+	}
+	if err := gz.Close(); err != nil {
+		t.Fatal(err)
+	}
+	bundle, err := json.Marshal(PolicyBundle{Format: "base64;zip;fixture", Container: base64.StdEncoding.EncodeToString(compressed.Bytes())})
+	if err != nil {
+		t.Fatal(err)
+	}
+	actor := operatorauth.Identity{Issuer: "https://idp.example", Subject: "reviewer"}
+	const route = "/api/policy/operations"
+	body, proof, err := signer.SignPair(op, bundle, actor, "install", "POST", route, now)
+	if err != nil {
+		t.Fatal(err)
+	}
+	a, err := VerifyPolicyPair(trust, "POST", route, body, proof, now)
+	if err != nil || !a.Valid() || a.Claims().ApproverSubject != "reviewer" {
+		t.Fatal("valid pair rejected", err)
+	}
+	// The VS JSON contains exactly the receiver's fields, not PS body-binding fields.
+	var vs PolicyClaims
+	b, _ := base64.StdEncoding.DecodeString(a.Command().Proof.Payload)
+	if err = json.Unmarshal(b, &vs); err != nil {
+		t.Fatal(err)
+	}
+	if vs.Audience == a.Claims().Audience || vs.BodySHA256 != "" {
+		t.Fatal("audience/body scope conflated")
+	}
+	for _, mutate := range []func(*PolicyClaims){
+		func(c *PolicyClaims) { c.Audience = trust.Audience },
+		func(c *PolicyClaims) { c.ApproverSubject = "another-reviewer" },
+		func(c *PolicyClaims) { c.Action = "rollback" },
+		func(c *PolicyClaims) { c.Organization = "other-org" },
+		func(c *PolicyClaims) { c.Operation.ExpectedCurrentVinst++ },
+		func(c *PolicyClaims) { c.Route = "/admin/policies" },
+		func(c *PolicyClaims) { c.BodySHA256 = strings.Repeat("a", 64) },
+	} {
+		wrongVS := vs
+		mutate(&wrongVS)
+		command := a.Command()
+		command.Proof, err = signPolicyProof(wrongVS, signer.key)
+		if err != nil {
+			t.Fatal(err)
+		}
+		wrongBody, err := json.Marshal(command)
+		if err != nil {
+			t.Fatal(err)
+		}
+		ps := a.Claims()
+		hash := sha256.Sum256(wrongBody)
+		ps.BodySHA256 = hex.EncodeToString(hash[:])
+		psProof, err := signPolicyProof(ps, signer.key)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if _, err = VerifyPolicyPair(trust, "POST", route, wrongBody, psProof, now); err == nil {
+			t.Fatal("valid PS signature concealed a mismatched VS proof")
+		}
+	}
+	_, untrustedKey, err := ed25519.GenerateKey(rand.Reader)
+	if err != nil {
+		t.Fatal(err)
+	}
+	untrustedProof, err := signPolicyProof(a.Claims(), untrustedKey)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err = VerifyPolicyPair(trust, "POST", route, body, untrustedProof, now); err == nil {
+		t.Fatal("untrusted signer accepted")
+	}
+	for _, mutate := range []func(*PolicyClaims){
+		func(c *PolicyClaims) { c.Issuer = "https://forged.example" },
+		func(c *PolicyClaims) { c.ApproverIssuer = "https://forged.example" },
+		func(c *PolicyClaims) { c.ApproverSubject = "caller-asserted" },
+		func(c *PolicyClaims) { c.Organization = "other-org" },
+		func(c *PolicyClaims) { c.Action = "rollback" },
+		func(c *PolicyClaims) { c.Audience = trust.VisaServiceAudience },
+		func(c *PolicyClaims) { c.Method = "GET" },
+		func(c *PolicyClaims) { c.Route += "/other" },
+		func(c *PolicyClaims) { c.BodySHA256 = strings.Repeat("c", 64) },
+		func(c *PolicyClaims) { c.Operation.ExpectedCurrentVinst++ },
+		func(c *PolicyClaims) { c.Operation.CandidateDigest = strings.Repeat("c", 64) },
+		func(c *PolicyClaims) { c.Exp = c.Iat },
+		func(c *PolicyClaims) { c.Exp = c.Iat + 301 },
+		func(c *PolicyClaims) { c.Iat++ },
+		func(c *PolicyClaims) { c.Nonce = "" },
+	} {
+		c := a.Claims()
+		mutate(&c)
+		bad, err := signPolicyProof(c, signer.key)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if _, err = VerifyPolicyPair(trust, "POST", route, body, bad, now); err == nil {
+			t.Fatal("signed wrong scope accepted")
+		}
+	}
+	for _, bad := range []PolicyProof{a.Command().Proof, {proof.Payload, proof.Signature[:80]}, {proof.Payload + "=", proof.Signature}} {
+		if _, err = VerifyPolicyPair(trust, "POST", route, body, bad, now); err == nil {
+			t.Fatal("wrong/malformed proof accepted")
+		}
+	}
+	if _, err = VerifyPolicyPair(trust, "POST", route, append(body, ' '), proof, now); err == nil {
+		t.Fatal("changed exact body accepted")
+	}
+	if _, err = VerifyPolicyPair(trust, "POST", route+"?x=1", body, proof, now); err == nil {
+		t.Fatal("query accepted")
+	}
+	if _, err = VerifyPolicyPair(trust, "POST", route, body, proof, now.Add(30*time.Second)); err == nil {
+		t.Fatal("expired proof accepted")
+	}
+	for _, mutate := range []func(*PolicyTrust){
+		func(c *PolicyTrust) { c.Keys = nil },
+		func(c *PolicyTrust) { c.Grants = nil },
+		func(c *PolicyTrust) { c.Organization = "other" },
+		func(c *PolicyTrust) { c.Audience = c.VisaServiceAudience },
+	} {
+		wrong := trust
+		mutate(&wrong)
+		if _, err = VerifyPolicyPair(wrong, "POST", route, body, proof, now); err == nil {
+			t.Fatal("invalid trust accepted")
+		}
+	}
+	stale := trust
+	stale.Keys = append([]PolicyKey(nil), trust.Keys...)
+	stale.Keys[0].ExpiresUnix = now.Unix()
+	if _, err = VerifyPolicyPair(stale, "POST", route, body, proof, now); err == nil {
+		t.Fatal("stale trust accepted")
+	}
+	actor.Subject = "forged"
+	if _, _, err = signer.SignPair(op, json.RawMessage(`{}`), actor, "install", "POST", route, now); err == nil {
+		t.Fatal("ungranted actor signed")
+	}
 }
 
 func (m *replayMemory) ConsumeOperatorDelegation(_ context.Context, key string, _, _ time.Time) error {

@@ -7,7 +7,7 @@ use std::collections::{HashMap, HashSet};
 use tokio::sync::RwLock;
 use tokio::time::Instant;
 
-use crate::db::{DbConnection, DbOp, DbResult, LockDescriptor};
+use crate::db::{DbConnection, DbOp, DbResult, LockDescriptor, PolicyCommit};
 
 /// Fault-injection mode for a specific write op, used by write-through tests.
 #[allow(dead_code)]
@@ -99,6 +99,52 @@ impl Entry {
 
 #[allow(dead_code)]
 impl FakeDb {
+    fn get_string_with_lock(&self, key: &str) -> DbResult<Option<String>> {
+        let Some(entry) = self.store.get(key) else {
+            return Ok(None);
+        };
+        match &entry.value {
+            FakeDbValue::Str(value) => Ok(Some(value.clone())),
+            _ => Err(redis::RedisError::from((
+                redis::ErrorKind::UnexpectedReturnType,
+                "value is not a string",
+            ))),
+        }
+    }
+
+    fn set_string_with_lock(&self, key: &str, value: &str) {
+        self.store.insert(
+            key.to_string(),
+            Entry::new(FakeDbValue::Str(value.to_string())),
+        );
+    }
+
+    fn policy_state_with_lock(&self, key: &str) -> DbResult<(String, String)> {
+        let entry = self.store.get(key).ok_or_else(|| {
+            redis::RedisError::from((
+                redis::ErrorKind::UnexpectedReturnType,
+                "current policy state is missing",
+            ))
+        })?;
+        match &entry.value {
+            FakeDbValue::Hash(fields) => {
+                let digest = fields.get("phash").map(|value| value.value().clone());
+                let vinst = fields.get("vinst").map(|value| value.value().clone());
+                match (digest, vinst) {
+                    (Some(digest), Some(vinst)) => Ok((digest, vinst)),
+                    _ => Err(redis::RedisError::from((
+                        redis::ErrorKind::UnexpectedReturnType,
+                        "current policy state is incomplete",
+                    ))),
+                }
+            }
+            _ => Err(redis::RedisError::from((
+                redis::ErrorKind::UnexpectedReturnType,
+                "current policy state is not a hash",
+            ))),
+        }
+    }
+
     async fn exists_with_lock(&self, key: &str) -> DbResult<bool> {
         if let Some(entry) = self.store.get(key) {
             if Instant::now() > entry.exp {
@@ -537,6 +583,168 @@ impl DbConnection for FakeDb {
         }
 
         Ok(())
+    }
+
+    async fn begin_policy_operation(
+        &self,
+        operation_key: &str,
+        current_key: &str,
+        expected_digest: &str,
+        expected_vinst: &str,
+        pending_receipt: &str,
+    ) -> DbResult<i64> {
+        let _wlock = self.lock.write().await;
+        if let Some(value) = self.get_string_with_lock(operation_key)? {
+            let existing: serde_json::Value = serde_json::from_str(&value).map_err(|_| {
+                redis::RedisError::from((
+                    redis::ErrorKind::UnexpectedReturnType,
+                    "invalid operation JSON",
+                ))
+            })?;
+            let requested: serde_json::Value =
+                serde_json::from_str(pending_receipt).map_err(|_| {
+                    redis::RedisError::from((
+                        redis::ErrorKind::UnexpectedReturnType,
+                        "invalid receipt JSON",
+                    ))
+                })?;
+            return Ok(
+                if existing["request_fingerprint"] == requested["request_fingerprint"] {
+                    1
+                } else {
+                    -1
+                },
+            );
+        }
+        let (digest, vinst) = self.policy_state_with_lock(current_key)?;
+        if digest != expected_digest || vinst != expected_vinst {
+            return Ok(-2);
+        }
+        self.set_string_with_lock(operation_key, pending_receipt);
+        Ok(0)
+    }
+
+    async fn commit_policy_operation(&self, commit: PolicyCommit<'_>) -> DbResult<i64> {
+        let PolicyCommit {
+            operation_key,
+            current_key,
+            container_key,
+            expected_digest,
+            expected_vinst,
+            candidate_digest,
+            candidate_bytes,
+            next_vinst,
+            changed_at,
+            pending_receipt,
+        } = commit;
+        let _wlock = self.lock.write().await;
+        let Some(operation_json) = self.get_string_with_lock(operation_key)? else {
+            return Ok(-1);
+        };
+        let operation: serde_json::Value = serde_json::from_str(&operation_json).map_err(|_| {
+            redis::RedisError::from((
+                redis::ErrorKind::UnexpectedReturnType,
+                "invalid operation JSON",
+            ))
+        })?;
+        let applied: serde_json::Value = serde_json::from_str(pending_receipt).map_err(|_| {
+            redis::RedisError::from((
+                redis::ErrorKind::UnexpectedReturnType,
+                "invalid receipt JSON",
+            ))
+        })?;
+        if operation["request_fingerprint"] != applied["request_fingerprint"]
+            || operation["candidate_digest"] != candidate_digest
+        {
+            return Ok(-1);
+        }
+        if operation["status"] == "succeeded" {
+            return Ok(1);
+        }
+        if operation["status"] != "pending" && operation["status"] != "uncertain" {
+            return Ok(-3);
+        }
+        let (digest, vinst) = self.policy_state_with_lock(current_key)?;
+        if digest == candidate_digest && vinst == next_vinst {
+            return Ok(1);
+        }
+        if digest != expected_digest || vinst != expected_vinst {
+            return Ok(-2);
+        }
+        self.set_bin_with_lock(container_key, candidate_bytes)
+            .await?;
+        self.hset_multiple_with_lock(
+            current_key,
+            &[
+                ("phash".into(), candidate_digest.into()),
+                ("vinst".into(), next_vinst.into()),
+                ("ctime".into(), changed_at.into()),
+            ],
+        )
+        .await?;
+        self.set_string_with_lock(operation_key, pending_receipt);
+        Ok(0)
+    }
+
+    async fn finish_policy_operation(
+        &self,
+        operation_key: &str,
+        current_key: &str,
+        expected_receipt: &str,
+        receipt: &str,
+    ) -> DbResult<i64> {
+        let Some(updated) =
+            super::policy::validate_operation_transition(expected_receipt, receipt)?
+        else {
+            return Ok(-3);
+        };
+        let _wlock = self.lock.write().await;
+        let Some(existing_json) = self.get_string_with_lock(operation_key)? else {
+            return Ok(-1);
+        };
+        if existing_json != expected_receipt {
+            return Ok(-4);
+        }
+        let existing: serde_json::Value = serde_json::from_str(&existing_json).map_err(|_| {
+            redis::RedisError::from((
+                redis::ErrorKind::UnexpectedReturnType,
+                "invalid operation JSON",
+            ))
+        })?;
+        if existing["status"] != "pending" && existing["status"] != "uncertain" {
+            return Ok(1);
+        }
+        if updated.status == super::policy::PolicyOperationStatus::Succeeded {
+            let (digest, vinst) = self.policy_state_with_lock(current_key)?;
+            if Some(&digest) != updated.applied_digest.as_ref()
+                || Some(vinst) != updated.applied_vinst.map(|vinst| vinst.to_string())
+            {
+                return Ok(-2);
+            }
+        }
+        self.set_string_with_lock(operation_key, receipt);
+        Ok(0)
+    }
+
+    async fn authorize_policy_operation(
+        &self,
+        nonce_key: &str,
+        approval_key: &str,
+        approval: &str,
+    ) -> DbResult<i64> {
+        let _wlock = self.lock.write().await;
+        if self.store.contains_key(nonce_key) {
+            return Ok(-1);
+        }
+        if self
+            .get_string_with_lock(approval_key)?
+            .is_some_and(|existing| existing != approval)
+        {
+            return Ok(-2);
+        }
+        self.set_string_with_lock(nonce_key, approval_key);
+        self.set_string_with_lock(approval_key, approval);
+        Ok(0)
     }
 
     /// Return the set of keys that match the pattern.

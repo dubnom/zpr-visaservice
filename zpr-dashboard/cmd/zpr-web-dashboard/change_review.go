@@ -27,6 +27,7 @@ type changeReviewConfig struct {
 	Version           int    `json:"version"`
 	Database          string `json:"database"`
 	AllowSelfApproval bool   `json:"allow_self_approval"`
+	PolicyApplyConfig string `json:"policy_apply_config_file,omitempty"`
 }
 type changeReviewCapture func(context.Context, string, string, string, int) (changereview.Proposal, error)
 type changeReviewAPI struct {
@@ -34,6 +35,7 @@ type changeReviewAPI struct {
 	auth      operatorRequestAuthorizer
 	capture   changeReviewCapture
 	allowSelf bool
+	apply     *policyReviewApply
 }
 type changeReviewInput struct {
 	Organization    string `json:"organization"`
@@ -70,8 +72,19 @@ func configuredChangeReview(auth *operatorauth.Auth, proxy http.Handler) (http.H
 	if err != nil {
 		return nil, nil, err
 	}
-	return &changeReviewAPI{store: store, auth: auth, capture: changeReviewDomainCapture(proxy), allowSelf: config.AllowSelfApproval},
+	var apply *policyReviewApply
+	if config.PolicyApplyConfig != "" {
+		apply, err = loadPolicyReviewApply(config.PolicyApplyConfig)
+		if err != nil {
+			_ = store.Close()
+			return nil, nil, err
+		}
+	}
+	return &changeReviewAPI{store: store, auth: auth, capture: changeReviewDomainCapture(proxy), allowSelf: config.AllowSelfApproval, apply: apply},
 		func() {
+			if apply != nil {
+				apply.close()
+			}
 			if err := store.Close(); err != nil {
 				log.Printf("Change review database close failed: %T", err)
 			}
@@ -140,6 +153,11 @@ func (a *changeReviewAPI) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if r.Method == http.MethodGet && path == "capabilities" {
+		if a.apply != nil {
+			writeJSON(w, 200, map[string]any{"allow_self_approval": a.allowSelf, "application_enabled": true,
+				"message": "Policy application requires policy.apply, a candidate-bound approved review and verified Policy-Service reconciliation."})
+			return
+		}
 		writeJSON(w, 200, map[string]any{"allow_self_approval": a.allowSelf, "application_enabled": false,
 			"message": "Approval records a reviewed revision only. Production application contracts are not configured."})
 		return
@@ -219,13 +237,48 @@ func (a *changeReviewAPI) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if parts[2] == "apply" {
+		if record.Proposal.Kind == "policy" {
+			if _, err := a.auth.Authorize(r, input.Organization, "policy.apply"); err != nil {
+				fail(403, "Policy application requires explicit organization-scoped policy.apply permission.")
+				return
+			}
+			if a.apply != nil {
+				if input.Digest != record.Digest || input.ExpectedVersion != record.Version {
+					fail(409, "Reviewed request changed; reload before application.")
+					return
+				}
+				current := record.Proposal
+				if _, err := a.store.PolicyArtifact(r.Context(), input.Organization, record.ID, nil); errors.Is(err, changereview.ErrNotFound) {
+					current, err = a.capture(r.Context(), input.Organization, record.Proposal.Kind, record.Proposal.Target, record.Proposal.Revision)
+					if err != nil {
+						fail(409, "Current saved source/stage capture failed.")
+						return
+					}
+				} else if err != nil {
+					a.storeError(w, err)
+					return
+				}
+				result, err := a.apply.apply(r.Context(), a.store, record, current, a.allowSelf)
+				if err != nil {
+					if result.ID != "" {
+						writeJSON(w, 502, map[string]any{"operation_id": result.ID, "status": "uncertain", "error": "Policy-Service response unavailable; retry this reviewed request to reconcile."})
+						return
+					}
+					fail(409, "Policy application binding or service validation failed.")
+					return
+				}
+				writeJSON(w, 200, result)
+				return
+			}
+		}
 		fail(409, "Application is disabled: no reviewed production activation contract is configured. Approval is not deployment.")
 		return
 	}
 	if parts[2] == "approve" {
 		current, err := a.capture(r.Context(), input.Organization, record.Proposal.Kind, record.Proposal.Target, record.Proposal.Revision)
 		if err != nil || current.Validation != record.Proposal.Validation || current.After != record.Proposal.After || current.Before != record.Proposal.Before ||
-			current.Impact != record.Proposal.Impact || current.BaseRevision != record.Proposal.BaseRevision {
+			current.Impact != record.Proposal.Impact || current.BaseRevision != record.Proposal.BaseRevision ||
+			!sameReviewCandidate(current.Candidate, record.Proposal.Candidate) {
 			fail(409, "Source or validation context changed. Submit a newly validated change; this request was not approved.")
 			return
 		}
@@ -254,6 +307,10 @@ func (a *changeReviewAPI) storeError(w http.ResponseWriter, err error) {
 	}
 	log.Printf("Change review storage/decision failed (HTTP %d): %T", status, err)
 	writePolicyError(w, status, message)
+}
+
+func sameReviewCandidate(a, b *changereview.PolicyCandidate) bool {
+	return a == nil && b == nil || a != nil && b != nil && *a == *b
 }
 
 // The reader uses the existing production mTLS proxy, never browser content or Simulator.
@@ -349,6 +406,18 @@ func changeReviewDomainCapture(proxy http.Handler) changeReviewCapture {
 				return p, errors.New("Policy revision changed or is not a current policy draft.")
 			}
 			p.After = record.Content
+			if candidate := status.StagedCandidate; candidate != nil {
+				if candidate.RecordID != target || candidate.RecordRevision != revision {
+					return p, errors.New("Staged policy does not match the current saved revision.")
+				}
+				p.Candidate = &changereview.PolicyCandidate{
+					StageID: candidate.ID, SourceSHA256: candidate.SourceSHA256,
+					ConfigSHA256: candidate.ConfigSHA256, BundleSHA256: candidate.BundleSHA256,
+				}
+				if !p.Candidate.Valid(p.After) {
+					return p, errors.New("Staged policy source or artifact binding is invalid.")
+				}
+			}
 			if revision > 1 {
 				var previous policyRevision
 				if err := call("GET", "/api/policy/records/"+target+"/revisions/"+strconv.Itoa(revision-1), nil, &previous); err != nil {
@@ -375,6 +444,19 @@ func changeReviewDomainCapture(proxy http.Handler) changeReviewCapture {
 			if latest.ID != target || latest.Kind != "policy" || latest.Name != record.Name ||
 				latest.CurrentRevision != revision || latest.Content != p.After || latest.Archived {
 				return p, errors.New("Policy changed during validation.")
+			}
+			if p.Candidate != nil {
+				var latestStatus policyStatus
+				if err := call("GET", "/api/policy", nil, &latestStatus); err != nil {
+					return p, err
+				}
+				stage := latestStatus.StagedCandidate
+				if latestStatus.OrganizationID != org || !latestStatus.Configured || stage == nil ||
+					stage.RecordID != target || stage.RecordRevision != revision ||
+					stage.ID != p.Candidate.StageID || stage.BundleSHA256 != p.Candidate.BundleSHA256 ||
+					stage.SourceSHA256 != p.Candidate.SourceSHA256 || stage.ConfigSHA256 != p.Candidate.ConfigSHA256 {
+					return p, errors.New("Staged policy changed during validation.")
+				}
 			}
 			p.Validation = "Saved policy revision passes current compiler validation."
 			context, _ := json.Marshal(struct {

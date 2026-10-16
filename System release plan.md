@@ -110,8 +110,16 @@ service contracts; Control Room and Control-Service never read Simulator state.
 
 ### Simulator methodology: act as a ZPR administrator
 
-**Direction approved 2026-10-16; migration not implemented.** Simulator should
-set up its environment as a real ZPR administrator would: configure through
+Execution and chat coordination are tracked in the
+[parallel migration plan](SIMULATOR_ADMIN_MIGRATION_PLAN.md), including one
+user-facing coordinator, five bounded workstreams, decision gates, exclusive
+file ownership and integrated acceptance. No worker chats are launched by it.
+
+**Direction approved 2026-10-16; full migration and release acceptance remain
+incomplete.** The verified bounded source milestone is recorded in the
+[migration plan](SIMULATOR_ADMIN_MIGRATION_PLAN.md#verified-bounded-native-acl--ph-readiness-batch-2026-10-16);
+it does not qualify native key operations, production apply or deployment.
+Simulator should set up its environment as a real ZPR administrator would: configure through
 Control Room's supported operator workflows, stage a reviewed revision, compile/
 validate it, and explicitly push/apply the resulting candidate through production
 services. Simulator continues to own simulated machine/adapter lifecycle,

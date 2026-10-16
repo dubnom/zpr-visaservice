@@ -155,7 +155,12 @@ func policyServiceMux(workspace *policyWorkspace) http.Handler {
 	mux.HandleFunc("GET /api/policy/records/{id}/revisions", app.handlePolicyRecordRevisions)
 	mux.HandleFunc("POST /api/policy/records/{id}/revisions", app.handlePolicyRecordRevisions)
 	mux.HandleFunc("GET /api/policy/records/{id}/revisions/{revision}", app.handleGetPolicyRevision)
-	return securityHeaders(mux)
+	if workspace != nil && workspace.guardedApply != nil {
+		handler := workspace.guardedApply.handler(workspace)
+		mux.Handle(policyApplyProducerRoute, handler)
+		mux.Handle(policyApplyCandidateRoute, handler)
+	}
+	return securityHeaders(policyStatusMux(mux, workspace))
 }
 
 func runPolicyService() error {
@@ -178,6 +183,18 @@ func runPolicyService() error {
 	if workspace == nil {
 		return errors.New(message)
 	}
+	applyResources, err := configuredPolicyApplyResources()
+	if err != nil {
+		return fmt.Errorf("configure guarded policy application: %w", err)
+	}
+	if applyResources != nil {
+		defer func() {
+			if err := applyResources.Close(); err != nil {
+				log.Printf("Policy-Service operation store close failed: %v", err)
+			}
+		}()
+	}
+	workspace.guardedApply = applyResources
 	server := &http.Server{
 		Addr: listen, Handler: policyServiceMux(workspace), ReadHeaderTimeout: 5 * time.Second,
 		TLSConfig: &tls.Config{MinVersion: tls.VersionTLS13, ClientAuth: tls.RequireAndVerifyClientCert, ClientCAs: clientCAs},

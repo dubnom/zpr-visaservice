@@ -33,6 +33,287 @@ Ubuntu amd64 release images and complete paired packages remain unfinished.
 
 To setup your development environment, run `go mod download` to install the local dependencies. Finally, run `make run` to start the TUI.
 
+## Guarded policy composition (contract-verified; disabled by default)
+
+Change Review captures an optional immutable staged candidate alongside the saved
+source revision. Candidate-bearing reviews bind the source/config hashes and exact
+compiled-container SHA-256; draft-only reviews remain compatible but cannot
+authorize application. The producer derives the named reviewer from the stored
+approval event, rechecks source/stage identity, and enforces the current self-review
+policy (distinct reviewer by default).
+
+The policy-specific Ed25519 contract in
+[`internal/operatordelegation`](internal/operatordelegation/delegation.go) is
+separate from enrollment delegation. An explicitly trusted Control Room signer
+creates two standard-base64 `{payload, signature}` proofs:
+
+- Policy-Service audience, purpose `policy-service-policy-operation`, binding
+  the exact POST URI and SHA-256 of the complete command bytes.
+- Distinct Visa Service audience, purpose `visa-service-policy-operation`,
+  binding POST `/admin/policy-operations` and the exact operation. This proof,
+  not the Policy-Service proof, is included in the VS command.
+
+Both preserve the same signed reviewer issuer/subject, organization, action,
+target, operation ID, candidate digest/source revision and expected digest/version.
+Proofs last at most 30 seconds when produced here; verifiers reject lifetimes
+over 300 seconds. Policy trust requires explicit `audience`,
+`visa_service_audience`, `organization`, `target_id`, `keys` (unique `key_id`,
+HTTPS signer `issuer`, standard-base64 raw Ed25519 `public_key`, `expires_unix`)
+and `grants` (named-user `issuer`, `subject`, exact `organization`, explicit
+`actions`: `install`/`rollback`). No wildcard or inherited API-key approval exists.
+They are loaded from an explicitly configured protected trust file; no trust or
+grants are installed automatically.
+
+[`policy_apply.go`](cmd/zpr-web-dashboard/policy_apply.go) provides a gated,
+injected-transport client for the receiver's
+`GET /admin/policy-operations/current` and `POST /admin/policy-operations`
+contracts. It requires an explicit matching HTTPS origin and separate API key.
+Before POST, Policy-Service atomically consumes the PS nonce and records the
+immutable semantic command/approver binding in its separate protected SQLite
+operation ledger. Control Room calls only Policy-Service over verified mTLS;
+Policy-Service alone reads the Visa Service CAS state and dispatches operations
+over verified TLS with a separate API credential.
+Retries use the same operation and expected state with newly signed
+proofs/nonces; reusing an operation ID for changed bindings fails. Success
+requires a matching complete receipt/fingerprint and independent authoritative
+digest/version readback. Transport loss, malformed receipts and mismatches
+persist `uncertain`, not success or implicit rollback. Nonces currently have no
+cleanup; operation and approval records must survive reconciliation.
+
+**Apply remains disabled without explicit protected configuration.** Policy-Service
+loads `ZPR_POLICY_APPLY_CONFIG_FILE` only when supplied and requires
+`ZPR_POLICY_ORGANIZATION_ID` to match its trust organization. The strict version-1
+JSON config requires `operation_database`, `trust_file`, `visa_service`,
+`api_credential_file`, `client_certificate_file`, `client_key_file` and
+`server_ca_file`. Invalid supplied configuration fails startup; absent config
+leaves `/api/policy/operations` and `/api/policy/operations/candidate` unregistered.
+
+Change Review additionally requires `policy_apply_config_file` in its configuration.
+That protected version-1 JSON requires `trust_file`, `signing_key_file`, `key_id`,
+`issuer`, `policy_service`, `client_certificate_file`, `client_key_file` and
+`server_ca_file`. The signing key must be PKCS#8 Ed25519 matching the explicit
+trusted signer. All resource paths must be distinct canonical absolute paths;
+protected files must pass the existing ownership, permission and safe-open checks.
+No example private key, credential or production grant is supplied.
+
+With the full chain configured, policy application requires explicit org-scoped
+`policy.apply`, normal session/origin/CSRF checks and the separately stored
+candidate-bound reviewer approval. Neither generic edit permission nor mTLS/API
+credentials imply named approval. `GET /api/policy/operations/candidate` returns
+the verified staged artifact and authoritative VS current state through PS;
+`POST /api/policy/operations` requires the exact PS-audience proof in
+`X-ZPR-Policy-Approval` plus the VS command/proof body. Original artifact/CAS/
+operation identity is immutable in the review store before dispatch; retries use
+fresh nonces and reconcile the durable PS record, including after response loss
+or later stage/source replacement. Rollback remains unavailable. This is a
+synthetic integration milestone, not deployment or live capability verification.
+
+The isolated real-receiver fixture below now verifies the Go Policy-Service
+client against the actual guarded Rust router. Remaining production qualification
+includes crash-window durability, deployment topology and operator-provisioned
+trust/TLS configuration. No deployment keys, credentials or
+target grants are assumed, and no production activation/readiness is claimed.
+Existing enrollment routes and delegation remain unchanged.
+
+### Evidence boundaries for the migration integration batch
+
+These checkpoints are distinct; one does not imply the others:
+
+| Evidence | What it establishes | What it does not establish |
+| --- | --- | --- |
+| Go Control Room/Policy-Service contract fixtures | Approval binding, independent org/action checks, durable operation reconciliation and status projection against synthetic receiver responses | Actual Rust transport interoperability or production readiness |
+| Rust guarded router fixtures | Real receiver proof/API authorization, CAS and policy application using test state | Go wire/TLS compatibility or real-store restart durability |
+| Executed Go-to-Rust HTTPS fixture | Actual policy client/router interoperability, verified TLS, authorization, apply/readback, replay/CAS and response-suppression reconciliation after PS store reopen | Full production bootstrap, Redis durability, Rust restart, packet loss or live topology |
+| Executed persistent recovery HTTPS fixture | Actual RedisDb, receiver SIGKILL/restart, graceful AOF-backed Valkey restart and PS SQLite reopen retain the same operation/receipt/CAS and exact readback without a second install | Database crash/power loss, in-flight commit-window recovery, upstream Redis qualification or production startup |
+| Isolated Valkey-compatible Lua tests | Six operation/nonce/CAS cases against a private disposable store | Upstream Redis qualification, restart persistence or nonce cleanup |
+| Simulator browser fixtures | 72 verified desktop/tablet status/navigation cases | Live PS/VS, native identity or connected-adapter admission |
+| Endpoint producer and public binding journal fixtures | Exact identity/reference resume, exclusive creation reservation and fail-closed disk-state handling | Native Keychain nonexportability, authenticated helper IPC or PH/BAS use |
+
+The bounded source batch implemented a native producer and executed an
+opt-in real Go-to-Rust HTTPS fixture. Neither is a live deployment or a grant of
+apply authority. Native validation must remain compile/fake-backed only: do not
+invoke Keychain tests, install a helper or use host credentials for this batch.
+The receiver fixture may use only its own temporary keys, state, loopback
+listener and bounded children; it must verify TLS and exercise the actual
+receiver rather than a duplicate mock. Implementation and execution results
+are separate from the earlier checkpoints.
+
+The bounded source/test batch adds a trusted helper source boundary and
+persistent receiver recovery. The recovery fixture below has now executed
+independently under the coordinator's race run. The original FakeDb interop
+test still does not establish restart durability, and source/fake-backed
+verification does not establish an installed protected helper. No PH wire
+contract or native runtime authority is implied by this work.
+
+Independent approval/ledger/authority regression coverage can run without
+either worker's source or external services:
+
+```sh
+GOPROXY=off GOSUMDB=off go test -race -count=1 \
+  ./internal/changereview ./internal/operatordelegation ./internal/operatorauth
+```
+
+### Opt-in actual Rust guarded receiver interop
+
+From this directory, with the existing Rust/Go dependency caches populated:
+
+```sh
+CARGO_NET_OFFLINE=true GOPROXY=off GOSUMDB=off ZPR_RUST_POLICY_INTEROP=1 \
+  go test ./cmd/zpr-web-dashboard -run '^TestPolicyApplyRustInterop$' \
+  -count=1 -v -timeout=8m
+```
+
+The [Go test](cmd/zpr-web-dashboard/policy_apply_rust_interop_test.go) launches
+the [Rust in-binary fixture](../vs/src/policy_interop_fixture.rs) with the actual
+guarded admin router, coherent FakeDb and valid policy containers. This Unix-only
+test owns its prebound loopback listener, temporary CA/server/approval keys,
+API keys and SQLite state. TLS verifies the generated CA and IP SAN; it uses
+server-authenticated TLS plus API key and signed approval, **not mTLS**.
+No environment proxy, insecure verification, production bootstrap, Redis or
+Simulator is used.
+
+The opt-in run passed independently in the coordinator and again with the
+combined Go race tests. It verifies reviewed application and exact independent
+digest/version readback, missing/insufficient API-key rejection, wrong org/action
+and bad-proof refusal, exact-proof replay and stale-CAS HTTP 409, and identical
+receipt reconciliation with a fresh proof. One completed successful application
+reply is deliberately replaced with HTTP 503; reopening the PS store and retrying
+with a fresh proof reconciles without a second version increment. This is
+**application-response suppression, not physical packet loss**. Rust connection
+tasks are tracked/drained; the exact owned child is stopped and reaped and its
+private files removed. Compilation and normal skipped runs are not interop proof.
+
+The worker's full `cargo test -p vs` passed 517 tests with 7 ignored; the opt-in
+fixture was separately executed, not counted as a normal-suite pass.
+The offline full Go suite, run with `CGO_ENABLED=0` to avoid existing native
+Keychain tests, retains exactly the five known dashboard failures:
+`TestAssistantSkillsEmbeddedAndTaskSpecific`,
+`TestEnrollmentAdministrationOverVerifiedTLSWithoutSimulator`,
+`TestOrganizationPolicyInstallNeverUploadsStaleBundle`,
+`TestScenarioPlacementPreflightMatchesLauncher`, and
+`TestTrustedServiceBuildPublishesAtomicallyAndKeepsFreshArtifact`.
+No existing failing test was edited. This is not production acceptance.
+
+### Opt-in persistent receiver recovery
+
+With the existing dependency caches and `/opt/homebrew/bin/valkey-server`
+already present, run:
+
+```sh
+CARGO_NET_OFFLINE=true GOPROXY=off GOSUMDB=off \
+  ZPR_RUST_POLICY_INTEROP=1 ZPR_RUST_POLICY_RECOVERY_INTEROP=1 \
+  go test -race ./cmd/zpr-web-dashboard \
+  -run '^TestPolicyApplyRust(Interop|PersistentRecoveryInterop)$' \
+  -count=1 -v -timeout=8m
+```
+
+The [recovery test](cmd/zpr-web-dashboard/policy_apply_recovery_interop_test.go)
+reuses the actual client/router harness with a
+[test-only persistent assembly](../vs/src/policy_recovery_fixture.rs) whose
+repositories share the actual `RedisDb`. It owns a private loopback Valkey
+process and temporary AOF directory (`appendfsync=always`); it never uses a
+configured shared database or installs dependencies.
+
+After a completed receiver application whose reply was suppressed, the test
+kills/reaps the actual Rust receiver, gracefully stops/reaps and restarts
+Valkey, then starts a new receiver process loading the persisted policy.
+It separately closes/reopens PS SQLite, verifies the unchanged uncertain
+operation binding, reconciles with fresh proofs to the identical receipt,
+and checks exact digest/version readback without a second install. A new stale
+CAS request remains HTTP 409 after restart. The coordinator independently
+executed both interop modes under the policy regression race suite (7.694s).
+Owned processes are stopped/reaped and their exact temporary directory removed.
+
+This proves completed-receipt recovery across **receiver SIGKILL and graceful
+database restart**, not database crash/power-loss durability or interruption
+between pending/commit/receipt transitions. It is Valkey-compatible evidence,
+not upstream Redis or production bootstrap qualification. Nonce records still
+have no TTL; separately approved rollback, production trust, and live topology
+remain outside this fixture. The transport remains server-authenticated TLS plus
+API key and signed reviewer proof, not mTLS.
+
+## Read-only guarded policy operation lookup
+
+With protected PS guarded resources configured, optional `status_readers` entries
+in `ZPR_POLICY_APPLY_CONFIG_FILE` enable
+`GET /api/policy/operations/status/{organization}/{target_id}/{operation_id}`.
+Each entry requires `certificate_sha256` (64 lowercase hex SHA-256 of the client
+certificate DER), `organization` and `target_id`, exactly matching PS trust scope.
+Pins must be unique. A valid verified mTLS client-auth certificate AND its explicit
+scoped pin are required; mTLS alone, caller actor headers and human-supplied scope
+are not authorization. This identity needs neither a signing key nor `policy.apply`.
+Absent readers leave the endpoint unregistered; invalid readers fail startup.
+No reader credentials, trust or runtime configuration are provisioned here.
+
+Segments are literal `[A-Za-z0-9_-]{1,128}`; queries, escapes and bodies are rejected.
+The response contains `operation` (existing exact operation ID/target/source
+revision/candidate digest/expected digest/version), `organization`,
+`approver: {issuer, subject}`, `action`, `durable_status`, `record_version` and
+derived `status`. Optional `receipt` is previously recorded operation-specific VS
+evidence, with diagnostic `error` redacted to null; `recorded_readback` is historical
+verified evidence, while `current_readback` is separately fresh read-only VS state.
+No bundles, proofs, credentials or raw errors are exposed.
+
+Exact `succeeded` requires the durable successful operation, its full matching
+receipt/fingerprint/applied version, recorded readback and fresh exact state.
+`superseded` preserves verified historical success when fresh current version is
+higher, including the same digest at a later version. Other mismatches or failed
+fresh reads produce `uncertain`; pending/failed/uncertain records are never promoted
+by digest equality alone. `durable_status` remains unchanged. Readback errors are
+bounded codes `unavailable` or `invalid_evidence`. The lookup never applies, retries,
+consumes a nonce or changes the ledger. Concurrent durable snapshot changes return
+503 rather than mixed-version evidence.
+
+Known records return 200; unauthorized scope/identity returns 403 before lookup,
+unknown authorized operation returns 404, malformed request 400, non-GET 405 and
+unavailable/corrupt storage 503. Error JSON has a bounded `status` code; absent
+endpoint configuration uses ordinary 404. Handled responses are `no-store`, capped
+at 16 KiB with a 10-second context deadline. Existing protected VS TLS/API-key
+transport performs only its authoritative current-state GET. This is synthetic
+verification, not deployment readiness or live qualification.
+
+## Simulator read-only policy status
+
+The Simulator Organizations page can reconcile a human-supplied organization,
+target and operation ID through
+`GET /api/simulator/policy-operations/status/{organization}/{target_id}/{operation_id}`.
+It requires an authenticated named Simulator operator with `organization.read`
+for that organization. The browser never receives Policy-Service credentials.
+
+Configure all four values explicitly before starting Simulator:
+
+- `SIMULATION_POLICY_STATUS_URL`: exact HTTPS Policy-Service origin with no path.
+- `SIMULATION_POLICY_STATUS_CLIENT_CERT_FILE`: protected scoped read-identity
+  certificate.
+- `SIMULATION_POLICY_STATUS_CLIENT_KEY_FILE`: its protected private key.
+- `SIMULATION_POLICY_STATUS_SERVER_CA_FILE`: protected CA bundle for the
+  Policy-Service TLS endpoint.
+
+All values absent leaves the status client unavailable; a partial, malformed or
+unprotected configuration fails closed at startup. Simulator accepts no URL or
+credential from the browser, sends only GET requests, follows no redirects and
+uses verified TLS with the explicit client certificate and CA. Policy-Service
+must independently pin that certificate to the exact organization and target
+using `status_readers`; the request selectors are not authority. The client
+requires `no-store`, enforces the 16 KiB response cap and 10-second deadline,
+and rejects malformed or contradictory evidence. It never applies, signs,
+retries a mutation or falls back to local policy installation. `succeeded`
+means this exact operation's recorded receipt and fresh current readback agree;
+`superseded` remains distinct even when the current digest is identical at a
+higher version. This is a read-only fixture-verified client, not provisioned
+runtime identity or live-service qualification.
+
+Browser fixture verification (2026-10-16): 34 policy-status cases plus the 38
+existing D2 navigation cases pass across desktop and tablet (72 total), using
+the existing VS Code Electron Node runtime without installing Node or packages.
+The form clears obsolete evidence when inputs change or the page deactivates,
+ignores delayed results for obsolete inputs, rejects response identity
+mismatches, and never renders an HTTP error as success. Identifier patterns
+escape the hyphen for modern HTML validation. Tests also cover bounded error
+display, unavailable/malformed responses and safe text rendering. These are
+mocked browser fixtures, not real Policy-Service/VS interoperability, native
+Keychain, connected-adapter admission or production acceptance.
+
 ## Migration discovery CLI
 
 [`zpr-discover`](cmd/zpr-discover/README.md) is a standalone, production-independent
@@ -1346,7 +1627,163 @@ actual TLS claim/approval/status exchange using a key reloaded from disk
 without the enrollment code. The identity store does not issue credentials
 or provide live adapter admission; the development setup command below uses it.
 
-Run the focused tests with `go test -race ./internal/enrollment`. The complete
+### Fixture-only endpoint runtime-key producer
+
+`internal/enrollment/endpoint_key_fixture.go` joins a local-policy producer
+seam to `NewClientWithRuntimeKey`. Its policy checks the caller identity,
+code requirement, UID, and scope returned by an injected trusted-verifier
+interface; the endpoint key reference comes only from that policy. A bound
+reference resumes the exact signer and fingerprint. Missing keys, unbound
+existing keys, uncertain creation, and fingerprint changes fail closed rather
+than replacing a key. The client continues to use separate enrollment and
+runtime signers, and the seam exposes only the public key, fingerprint,
+reference, and opaque `crypto.Signer`—never private-key serialization.
+
+This is an **unexported fixture seam**, not a production helper or endpoint.
+The original producer tests use in-memory fake vault and binding stores. The
+Linux/macOS `endpoint_binding_store_unix.go` adapter now implements durable
+public reference/fingerprint storage using the existing enrollment safe-file
+patterns, without new dependencies. It remains unexported and has no helper
+route, native IPC verifier, or production wiring. The separate native source
+adapter described below adds generation without activating any helper.
+
+Trusted operator configuration selects a dedicated absolute, clean directory,
+an immutable reference, and trusted ancestors on a local filesystem honoring
+file/directory sync and advisory locking. Explicit first provisioning creates
+a **new directory only**; opening never creates directories or files. An
+existing empty directory, missing established journal, wrong reference,
+corrupt/truncated journal, symlink, extra hard link, foreign owner, or
+group/other-accessible state fails closed. The directory is owner-only and the
+single-link journal is owner-only and owned by the effective UID, matching
+the repository's enrollment identity storage rules. The journal contains
+version/reference/state/public fingerprint only, never a signer or key bytes.
+
+Cross-process exclusive locking serializes the append-only
+`empty → reserved → bound` journal. A reservation is synced **before** vault
+creation, so concurrent producers cannot both attempt creation. A surviving
+incomplete reservation blocks automatic creation even if the vault has no key.
+A failed binding write/sync returns no signer; reopening may recover only a
+complete, validated binding after syncing it again and verifying the exact
+vault fingerprint. Partial writes remain errors. No repair, deletion,
+replacement, rotation, reset, or adoption path exists. Do not delete/recreate
+state or fall back from open to create on error. Privileged tampering,
+owner-authorized rollback of valid historical state, storage ignoring sync,
+and real power-loss durability are not established by these tests.
+
+Offline tests cover disk reopen (including an independent reader process),
+cross-process reservation races, concurrent producer creation, immutable
+conflicts, missing/mismatched keys, corrupt/unsafe files, partial append, and
+injected sync failures. They reuse the existing opaque-signer client seam
+with an **in-memory software vault**; the signer itself is not disk-persisted.
+These tests prove the local adapter's behavior, not real Keychain protection,
+native caller authentication, per-signature authorization, admission, or
+production acceptance. Native helper ownership/ACL integration remains gated;
+D5 reset/revoke/re-enrollment remains undecided.
+
+### Native endpoint producer source (not runtime-qualified)
+
+The unexported
+[native vault](internal/enrollment/endpoint_native_vault.go) and
+[Darwin composition](internal/enrollment/endpoint_native_vault_darwin.go) join
+that same producer and durable reservation store. The native backend generates
+RSA-3072 inside an explicitly configured Keychain using `SecKeyCreatePair`,
+then inspects actual native key metadata: permanent, sensitive, always-sensitive,
+never-extractable and nonextractable. Unsupported policy metadata fails closed;
+there is no import, software or extractable fallback. Existing runtime-import
+behavior is unchanged.
+
+Only the public key and opaque SHA-256 PKCS#1-v1.5 signer are exposed. The
+configured immutable reference determines the key label; resume must match the
+durable public fingerprint. Each returned signature is checked against the
+pinned public key. Missing/replaced keys and uncertain creation cannot trigger
+replacement. A crash may leave an orphan native key; the durable reservation
+blocks another create rather than automatically deleting, repairing or adopting.
+
+Earlier native producer validation passed fake-backed race tests, vet,
+formatting, macOS CGo compile/link and Linux portable compile checks.
+**No Keychain operation was executed.** Deprecated native API runtime
+compatibility and reported protection metadata still need separately authorized
+qualification. Default local creator access is not an approved helper/caller
+ACL. The helper source boundary below explicitly disables native endpoint
+generation, public lookup and signing until an enforceable helper-only ACL is represented;
+existing explicit-import runtime behavior is unchanged.
+
+### Trusted helper source boundary (not installed)
+
+The unexported [helper seam](internal/enrollment/endpoint_helper.go) binds the
+existing producer to immutable trusted caller/code requirement/UID/scope/key
+reference configuration. Its
+[Darwin adapter](internal/enrollment/endpoint_helper_darwin_cgo.go) accepts a
+Unix connection and reuses kernel audit-token, effective UID and strict code
+requirement verification. Caller identity is never populated from request
+fields. The returned opaque signer re-verifies that same peer before every
+signature, rather than relying only on initial key resolution.
+
+The helper constructor requires protected owner-only
+path validation, no symlink or extra hard link, and consistent open-file
+identity. This source composition installs no listener, defines no wire
+protocol, provisions no UID/code requirement, and grants no runtime authority.
+Native endpoint generation, public lookup and signing return an explicit ACL-unavailable
+error; they cannot silently inherit default creator access. Fake tests cover
+trusted-policy authorization and per-signature denial, not actual kernel peer,
+installed ownership/ACL or native protection enforcement.
+
+The installed legacy `SecAccess` API documents trusted applications as allowed
+access without confirmation; that is not an exclusive helper-only allowlist.
+Inspecting those application lists therefore cannot establish the required
+deny-other-applications property. A separately trusted helper executable identity
+and an OS access-control primitive qualified to enforce exclusive helper use
+are still required before enabling the native path.
+
+The offline [authenticated signing-transport prerequisite](internal/enrollment/endpoint_helper_ipc.go)
+implements a frozen v1 contract: bounded strict JSON frames on an already connected
+Unix stream, reciprocal kernel UID/code verification, trusted reference/SPKI
+pins and locally verified RSA-3072 SHA-256 signatures. This is not an installed
+listener or a PH client. PH currently uses a concrete private-key object for BAS;
+its opaque signer and macOS peer authentication remain unwired.
+PH/AuthCode/BAS integration is therefore still blocked. D5 reset/revoke/re-enroll
+and D6 live acceptance remain separate decisions.
+
+The client revalidates the configured helper before each round trip; the server
+retains per-sign caller verification. Reference and public-key pins must come
+from independent trusted enrollment state, never the socket. Strict schema and
+frame bounds, configured deadlines, cancellation and serialized requests fail
+closed. `public` retains the existing producer's reserve-before-create/resume
+semantics; it introduces no creation retry or fallback. Ambiguous sign failures
+close the connection without retry. Authorized operation failures return a
+sanitized wire error and preserve the original error for the server owner.
+
+The coordinator independently passed fake-only helper/producer/journal and
+policy race selectors (enrollment 6.474s, dashboard 5.748s), scoped vet,
+formatting and Darwin compile/link without executing the binary. IPC fixtures
+also cover reconnect with unchanged pins, peer revocation, malformed responses,
+concurrent signing and lost responses without duplicate signing. The once-only
+full `CGO_ENABLED=0 make test` retained the five previously known dashboard
+failure groups; enrollment passed (11.650s). Reduced non-CGo coverage does not
+qualify actual kernel-peer enforcement, native ACLs or Keychain behavior.
+
+Final combined coordinator validation passed fake-only helper/producer/journal
+race selectors in the prior helper/recovery batch (enrollment 5.611s) alongside both actual receiver modes and policy
+regressions (dashboard 7.413s). Scoped vet, formatting and cleanup checks passed.
+The legacy non-operating producer constructor remains compatible; strict path
+checks apply to the helper constructor; native public lookup is now closed. This does not
+weaken the closed native generation/signing ACL gate. No existing test was
+changed to obtain the pass.
+
+To run only fake-backed producer/journal tests on macOS:
+
+```sh
+GOPROXY=off GOSUMDB=off go test -race -count=1 ./internal/enrollment \
+  -run '^Test(EndpointHelper|NativeEndpoint|FixtureEndpoint|EndpointBinding)'
+```
+
+Existing macOS CGo Keychain tests run native operations without an opt-in.
+When such operations are prohibited, use `CGO_ENABLED=0 GOPROXY=off GOSUMDB=off
+make test` for the full offline suite; this deliberately excludes native runtime
+coverage. Do not run the entire CGo enrollment package as a supposedly fake-only
+check. Use a short trusted workspace-local `TMPDIR` if Unix socket path limits
+apply to other selected local fixtures.
+The complete
 workflow and release decisions are in the
 [Provisioning plan](../../Provisioning%20plan.md).
 

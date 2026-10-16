@@ -27,6 +27,17 @@ Do not infer current runtime health from a historical verification entry.
 
 ## Current status
 
+- **Parallel administrator-methodology migration plan:** prepared in
+  [SIMULATOR_ADMIN_MIGRATION_PLAN.md](SIMULATOR_ADMIN_MIGRATION_PLAN.md).
+  This chat is the proposed coordinator/user contact; production lifecycle,
+  provisioning, editor reuse, Simulator orchestration and package/acceptance
+  work have separate bounded scopes and dependency gates. Work has advanced
+  beyond discovery to a verified bounded source milestone for operator apply/
+  status, recovery/interoperability fixtures and the protected endpoint helper.
+  Native generation, lookup and signing remain gated; no Keychain operation,
+  production apply or deployment is claimed. See the migration plan for the
+  exact evidence and remaining acceptance blockers.
+
 - **Pre-methodology engineering checkpoint (2026-10-16):**
   `checkpoint-2026-10-16-pre-simulator-admin` marks the source before implementing
   the newly agreed administrator-driven Simulator setup. Includes outstanding
@@ -39,7 +50,8 @@ Do not infer current runtime health from a historical verification entry.
   These failures remain open; no test was changed to hide them. Tagging performs
   no deployment and does not close release, recovery or packaging gates.
 
-- **Simulator administrator methodology (2026-10-16): Planned.** Set up lab ZPR
+- **Simulator administrator methodology (2026-10-16): In progress; bounded
+  source milestone verified, full migration not accepted.** Set up lab ZPR
   through the same configuration, stage, compile and push workflow offered to
   real administrators in Control Room, using its authorized production service
   contracts. Simulator retains simulated machine/adapter/workload control, not

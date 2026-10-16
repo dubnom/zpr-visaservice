@@ -12,7 +12,9 @@ pub use actor::{ActorRepo, Role, ServiceEntry};
 pub use db_redis::RedisDb;
 pub use link::LinkRepo;
 pub use node::{Node, NodeRepo};
-pub use policy::PolicyRepo;
+pub use policy::{
+    PolicyOperationReceipt, PolicyOperationRequest, PolicyOperationStatus, PolicyRepo,
+};
 pub use visa::{NodeVisaState, VisaMetadata, VisaRepo};
 
 #[cfg(test)]
@@ -34,6 +36,19 @@ pub enum LockType {
 }
 
 pub type DbResult<T> = redis::RedisResult<T>;
+
+pub struct PolicyCommit<'a> {
+    pub operation_key: &'a str,
+    pub current_key: &'a str,
+    pub container_key: &'a str,
+    pub expected_digest: &'a str,
+    pub expected_vinst: &'a str,
+    pub candidate_digest: &'a str,
+    pub candidate_bytes: &'a [u8],
+    pub next_vinst: &'a str,
+    pub changed_at: &'a str,
+    pub pending_receipt: &'a str,
+}
 
 // TODO: At some point remove this dead code and remove the unused functions.
 #[allow(dead_code)]
@@ -65,6 +80,50 @@ pub trait DbConnection: Send + Sync {
     async fn expire(&self, key: &str, seconds: i64) -> DbResult<()>;
 
     async fn atomic_pipeline(&self, ops: &[DbOp]) -> DbResult<()>;
+
+    /// Atomically create a pending policy operation only if the operation ID is
+    /// unused and the persisted current policy matches the expected digest and
+    /// vinst. Returns 0 for created, 1 for an identical replay, -1 for an
+    /// operation-ID conflict, and -2 for a stale expected state.
+    async fn begin_policy_operation(
+        &self,
+        operation_key: &str,
+        current_key: &str,
+        expected_digest: &str,
+        expected_vinst: &str,
+        pending_receipt: &str,
+    ) -> DbResult<i64>;
+
+    /// Atomically compare-and-swap the current policy and persist the still
+    /// pending operation receipt. The caller must independently verify
+    /// current-state readback before recording terminal success. Returns 0
+    /// for applied, 1 if the candidate state is already present, -1 for a
+    /// missing/mismatched operation, -2 for a stale current state, and -3 for
+    /// a terminal non-success operation.
+    async fn commit_policy_operation(&self, commit: PolicyCommit<'_>) -> DbResult<i64>;
+
+    /// Compare the exact stored receipt before a legal transition. Success
+    /// also requires an atomic current digest/version match. Returns 0 when
+    /// updated, 1 for an identical terminal replay, -1 when absent, -2 when
+    /// current state mismatches, -3 for an illegal transition, and -4 when
+    /// the receipt changed concurrently.
+    async fn finish_policy_operation(
+        &self,
+        operation_key: &str,
+        current_key: &str,
+        expected_receipt: &str,
+        receipt: &str,
+    ) -> DbResult<i64>;
+
+    /// Consume a fresh proof nonce and bind its trusted identity/action to an
+    /// operation atomically. Returns 0 when accepted, -1 for nonce reuse, and
+    /// -2 when the operation already has a different approval binding.
+    async fn authorize_policy_operation(
+        &self,
+        nonce_key: &str,
+        approval_key: &str,
+        approval: &str,
+    ) -> DbResult<i64>;
 
     async fn scan_match_all(&self, pattern: String) -> DbResult<Vec<String>>;
 

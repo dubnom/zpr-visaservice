@@ -30,6 +30,41 @@ type providerFixture struct {
 	discoveryToken   string
 }
 
+func TestPolicyApplyPermissionRequiresExplicitSessionGrant(t *testing.T) {
+	if !ValidPermission("policy.apply") {
+		t.Fatal("policy.apply is not configurable through the existing permission model")
+	}
+	now := time.Now()
+	for _, permissions := range [][]string{
+		{"policy.edit", "change.review"}, {"organization.activate", "approve"}, {"policy.apply"},
+	} {
+		a := &Auth{origin: "https://room.example", cookie: "session", now: func() time.Time { return now },
+			sessions: map[string]session{"fixture": {
+				grant: Grant{Issuer: "https://idp.example", Subject: "initiator", Organizations: []string{"production"}, Permissions: permissions},
+				csrf:  "csrf-proof", expires: now.Add(time.Hour),
+			}}}
+		request := httptest.NewRequest("POST", "https://room.example/api/change-review/requests/one/apply", nil)
+		request.AddCookie(&http.Cookie{Name: "session", Value: "fixture"})
+		request.Header.Set("Origin", a.origin)
+		request.Header.Set("X-ZPR-CSRF", "csrf-proof")
+		request.Header.Set("X-Actor", "administrator")
+		_, err := a.Authorize(request, "production", "policy.apply")
+		granted := len(permissions) == 1 && permissions[0] == "policy.apply"
+		if (err == nil) != granted {
+			t.Fatalf("permission grant %v: %v", permissions, err)
+		}
+		if granted {
+			if _, err := a.Authorize(request, "other-org", "policy.apply"); err == nil {
+				t.Fatal("policy.apply crossed organization scope")
+			}
+			request.Header.Del("X-ZPR-CSRF")
+			if _, err := a.Authorize(request, "production", "policy.apply"); err == nil {
+				t.Fatal("policy.apply bypassed mutation CSRF")
+			}
+		}
+	}
+}
+
 func newProvider(t *testing.T) *providerFixture {
 	t.Helper()
 	key, err := rsa.GenerateKey(rand.Reader, 2048)

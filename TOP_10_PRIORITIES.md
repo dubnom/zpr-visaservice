@@ -58,6 +58,7 @@ criteria in the linked work plans.
 
 ## Detailed Tracking
 
+- [Parallel Simulator administrator migration plan](SIMULATOR_ADMIN_MIGRATION_PLAN.md)
 - [Implementation progress](../zpr-dev-context/docs/IMPLEMENTATION_PROGRESS.md)
 - [GUI backlog](GUI%20work.md)
 - [System release plan](System%20release%20plan.md)

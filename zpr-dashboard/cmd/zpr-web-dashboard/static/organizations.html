@@ -8,6 +8,17 @@
 <div class="organization-top-actions"></div>
 <div id="organization-error" class="scenario-error" role="alert" hidden></div>
 <div id="organization-operation-status" class="organization-summary" role="status" aria-live="polite" aria-atomic="true" hidden></div>
+<section class="organization-section" aria-labelledby="policy-operation-status-title">
+<h2 id="policy-operation-status-title">Policy operation status</h2>
+<p class="organization-description">Read-only reconciliation for an operation submitted through Control Room. Enter the organization, target, and operation ID from the approved operation; this Simulator cannot approve or apply it.</p>
+<form id="policy-operation-status-form">
+<label>Organization ID <input name="organization" required maxlength="128" pattern="[A-Za-z0-9_\-]{1,128}" autocomplete="off"></label>
+<label>Target ID <input name="target" required maxlength="128" pattern="[A-Za-z0-9_\-]{1,128}" autocomplete="off"></label>
+<label>Operation ID <input name="operation" required maxlength="128" pattern="[A-Za-z0-9_\-]{1,128}" autocomplete="off"></label>
+<button class="button" type="submit">Check status</button>
+</form>
+<p id="policy-operation-status-result" class="organization-summary" role="status" aria-live="polite" aria-atomic="true" hidden></p>
+</section>
 <section class="organization-layout"><section class="organization-detail" aria-labelledby="organization-title">
 <div class="section-head organization-browser-controls"><button id="organization-browse" class="quiet" type="button" aria-haspopup="dialog" aria-controls="organization-browser-dialog">Browse...</button><div id="organization-files" class="policy-files"><button id="organization-files-toggle" class="button quiet" type="button" aria-haspopup="menu" aria-expanded="false" aria-controls="organization-file-menu">File...</button><div id="organization-file-menu" class="policy-file-menu" role="menu" aria-label="Selected organization file operations" hidden><button class="quiet" type="button" role="menuitem" data-organization-edit disabled>Edit</button><button class="quiet" type="button" role="menuitem" data-organization-duplicate disabled>Duplicate</button><button class="quiet" type="button" role="menuitem" data-organization-rename disabled>Rename</button><button class="quiet" type="button" role="menuitem" data-restore-base disabled>Restore</button><hr role="separator"><button class="quiet danger" type="button" role="menuitem" data-organization-delete disabled>Delete</button></div></div></div>
 <div class="section-head"><div><h2 id="organization-title">Organization details</h2></div></div><p id="organization-description" class="organization-description"></p><div id="organization-detail"></div></section></section>
@@ -21,4 +32,4 @@
 <div class="config-source-editor"><div id="directory-editor-gutter" class="config-source-gutter" aria-label="Directory seed lines"></div><div class="config-code-surface"><pre id="directory-editor-highlight" aria-hidden="true"></pre><textarea id="directory-editor-source" class="zpr-config-source" aria-label="LDIF seed" spellcheck="false" autocapitalize="off" autocomplete="off" autocorrect="off" wrap="off" required></textarea></div></div>
 <p id="directory-editor-status" class="editor-page-status" role="status" aria-live="polite" hidden></p>
 </div></div></form></dialog>
-</div></main></div><script src="/simulator-nav.js?v=20"></script><script src="/safe-display.js?v=3"></script><script src="/editor-page.js?v=21"></script><script src="/assistant-core.js?v=7"></script><script src="/design-assistant.js?v=7"></script><script src="/ldap-org-graph.js?v=3"></script><script src="/organizations.js?v=30"></script><script src="/organization-profile.js?v=8"></script><script src="/organization-definitions.js?v=2"></script><script src="/organization-duplicate.js?v=8"></script><script src="/editor-assistant.js?v=4"></script><script src="/editor-search.js?v=8"></script></body></html>
+</div></main></div><script src="/simulator-nav.js?v=20"></script><script src="/safe-display.js?v=3"></script><script src="/editor-page.js?v=21"></script><script src="/assistant-core.js?v=7"></script><script src="/design-assistant.js?v=7"></script><script src="/ldap-org-graph.js?v=3"></script><script src="/organizations.js?v=32"></script><script src="/organization-profile.js?v=8"></script><script src="/organization-definitions.js?v=2"></script><script src="/organization-duplicate.js?v=8"></script><script src="/editor-assistant.js?v=4"></script><script src="/editor-search.js?v=8"></script></body></html>

@@ -2,12 +2,69 @@ package changereview
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"errors"
 	"os"
 	"path/filepath"
+	"strings"
 	"sync"
 	"testing"
 )
+
+func TestApprovedPolicyUsesImmutableReviewerAndExactCandidate(t *testing.T) {
+	s := openTestStore(t)
+	ctx := context.Background()
+	p := proposal()
+	p.Kind = "policy"
+	h := sha256.Sum256([]byte(p.After))
+	p.Candidate = &PolicyCandidate{StageID: strings.Repeat("a", 64), BundleSHA256: strings.Repeat("a", 64),
+		SourceSHA256: hex.EncodeToString(h[:]), ConfigSHA256: strings.Repeat("b", 64)}
+	r, err := s.Submit(ctx, p)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, _, err = s.ApprovedPolicy(ctx, p.Organization, r.ID, p, false); err == nil {
+		t.Fatal("unapproved policy accepted")
+	}
+	reviewer := Principal{Issuer: p.Author.Issuer, Subject: "reviewer"}
+	r, err = s.Decide(ctx, p.Organization, r.ID, r.Digest, r.Version, "approve", "Reviewed exact artifact", reviewer, false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	// Request/capture actor assertions cannot replace the immutable reviewer.
+	p.Author = Principal{Issuer: "https://forged.example", Subject: "forged"}
+	_, actor, err := s.ApprovedPolicy(ctx, p.Organization, r.ID, p, false)
+	if err != nil || actor != reviewer {
+		t.Fatalf("reviewer provenance: %+v %v", actor, err)
+	}
+	for _, mutate := range []func(*Proposal){
+		func(p *Proposal) { p.After = "replaced source" },
+		func(p *Proposal) { p.Revision++ },
+		func(p *Proposal) { p.Candidate = nil },
+		func(p *Proposal) { c := *p.Candidate; c.BundleSHA256 = strings.Repeat("c", 64); p.Candidate = &c },
+		func(p *Proposal) { c := *p.Candidate; c.ConfigSHA256 = strings.Repeat("c", 64); p.Candidate = &c },
+	} {
+		wrong := p
+		mutate(&wrong)
+		if _, _, err = s.ApprovedPolicy(ctx, p.Organization, r.ID, wrong, false); err == nil {
+			t.Fatal("stale/replaced policy accepted")
+		}
+	}
+	self := proposal()
+	self.Kind, self.Candidate = "policy", p.Candidate
+	sr, err := s.Submit(ctx, self)
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, err = s.Decide(ctx, self.Organization, sr.ID, sr.Digest, 1, "approve", "Explicit self approval", self.Author, true)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, _, err = s.ApprovedPolicy(ctx, self.Organization, sr.ID, self, false); !errors.Is(err, ErrSelfReview) {
+		t.Fatal("current no-self-review policy not enforced")
+	}
+}
 
 func proposal() Proposal {
 	return Proposal{Organization: "great-lakes", Kind: "gateway", Target: "internet-gateway", Revision: 2, BaseRevision: 1,

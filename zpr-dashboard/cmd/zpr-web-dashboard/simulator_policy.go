@@ -27,6 +27,9 @@ func simulatorAPIPermission(method, requestPath string) (permission, explicitOrg
 	if len(parts) < 3 || parts[0] != "api" || parts[1] != "simulator" {
 		return "", "", false
 	}
+	if len(parts) == 7 && parts[2] == "policy-operations" && parts[3] == "status" && method == http.MethodGet {
+		return "organization.read", parts[4], true
+	}
 	organization := ""
 	if len(parts) >= 4 && parts[2] == "organizations" {
 		organization = parts[3]
@@ -146,7 +149,14 @@ func simulatorAPIPermission(method, requestPath string) (permission, explicitOrg
 
 func simulatorAPIProxy(auth operatorRequestAuthorizer, resolveOrganization simulatorOrganizationResolver, next http.Handler) http.Handler {
 	if operatorAuthorizationDisabled(auth) {
-		return next
+		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			if strings.HasPrefix(r.URL.Path, simulatorPolicyStatusPrefix) {
+				w.Header().Set("Cache-Control", "no-store")
+				writePolicyError(w, http.StatusServiceUnavailable, "Named-user authorization is required for policy status.")
+				return
+			}
+			next.ServeHTTP(w, r)
+		})
 	}
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if !strings.HasPrefix(r.URL.Path, "/api/") {

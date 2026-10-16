@@ -31,6 +31,52 @@
 
   window.ZPRSimulatorNavigation = { createPagePoller };
 
+  let controlRoomURL = "";
+  let controlRoomMessage = "Control Room: checking configuration.";
+  function renderControlRoomNavigation() {
+    const group = document.querySelector('[data-simulator-nav-group="CONFIGURATION"]');
+    if (!group) return;
+    group.querySelector("[data-control-room-navigation]")?.remove();
+    const item = document.createElement(controlRoomURL ? "a" : "span");
+    item.dataset.controlRoomNavigation = "";
+    item.className = "nav-link";
+    if (controlRoomURL) {
+      item.href = controlRoomURL;
+      item.target = "_blank";
+      item.rel = "noopener noreferrer";
+      item.referrerPolicy = "no-referrer";
+      item.textContent = "Control Room";
+      item.setAttribute("aria-label", "Control Room (opens in a separate tab)");
+      item.title = "Opens separately. Sign in to Control Room and verify its production organization; Simulator context is not transferred.";
+    } else {
+      item.textContent = controlRoomMessage;
+      item.title = "Ask the deployment administrator to configure ZPR_SIMULATOR_CONTROL_ROOM_URL.";
+      item.setAttribute("role", "status");
+      item.setAttribute("aria-live", "polite");
+    }
+    group.append(item);
+  }
+  async function loadControlRoomNavigation() {
+    try {
+      const config = await window.ZPRPageRuntime.requestJSON(window.fetch.bind(window), "/simulator-navigation.json", {
+        credentials: "same-origin", redirect: "error",
+      });
+      const raw = config?.control_room_url;
+      if (typeof raw !== "string" || /[\\?#%\s\u0000-\u001f\u007f]/.test(raw)) throw new Error("Invalid deployment navigation configuration.");
+      const url = new URL(raw);
+      const local = ["localhost", "127.0.0.1", "[::1]"].includes(url.hostname);
+      if ((url.protocol !== "https:" && !(url.protocol === "http:" && local)) ||
+          url.username || url.password || url.pathname !== "/" || url.search || url.hash) {
+        throw new Error("Invalid deployment navigation configuration.");
+      }
+      controlRoomURL = url.href;
+    } catch {
+      controlRoomURL = "";
+      controlRoomMessage = "Control Room unavailable: configuration needed.";
+    }
+    renderControlRoomNavigation();
+  }
+
   let bannerSnapshot;
   let bannerError;
   let bannerOrganizationID;
@@ -245,7 +291,7 @@
       nav.insertBefore(separator, configuration);
     }
     nav.insertBefore(nav.querySelector("[data-simulator-nav-separator]"), configuration);
-    nav.querySelectorAll("a").forEach((link) => {
+    nav.querySelectorAll("a:not([data-control-room-navigation])").forEach((link) => {
       const path = pageKey(link.href);
       const active = link === simulateLink ? simulating
         : path === "/organizations.html" ? !simulating && organizationPages.includes(currentPath)
@@ -256,6 +302,7 @@
       if (path === currentPath) delete link.dataset.simulatorNav;
       else link.dataset.simulatorNav = "";
     });
+    renderControlRoomNavigation();
     if (organizationPages.includes(currentPath)) {
       let sections = document.querySelector(".organization-navigation");
       if (!sections) {
@@ -438,6 +485,7 @@
       if (currentPath === "/organizations.html") organizationWorkspaceInitialized = true;
       await mountOrganizationWorkspace(currentPath);
       syncNavigation();
+      void loadControlRoomNavigation();
       pageCache.set(currentPath, Promise.resolve(document.documentElement.outerHTML));
       pageTitles.set(currentPath, document.title);
       document.querySelectorAll("a[data-simulator-nav]").forEach((link) => { fetchPage(link.href).catch(() => {}); });

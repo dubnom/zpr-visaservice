@@ -73,6 +73,8 @@ func TestProductionCompositionRouteRegistrations(t *testing.T) {
 			"/api/policy/":                  "handlers.Policy",
 		}, []string{"handlers.Assertions.Register(mux)", "handlers.TrustedChanges.Register(mux)"}},
 		{"policy_service.go", "policyServiceMux", map[string]string{
+			"policyApplyProducerRoute":                          "handler",
+			"policyApplyCandidateRoute":                         "handler",
 			"GET /api/policy":                                   "app.handleGetPolicy",
 			"GET /api/policy/context":                           "inline",
 			"GET /api/assertions/settings":                      "app.handleGetAssertionSettings",

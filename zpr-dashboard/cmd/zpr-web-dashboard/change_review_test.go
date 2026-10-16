@@ -21,6 +21,37 @@ type reviewAuthFixture struct {
 	denied  string
 }
 
+func TestChangeReviewPolicyApplyRequiresExplicitHumanPermissionAndStaysDisabled(t *testing.T) {
+	f := newPolicyApplyFixture(t)
+	auth := &reviewAuthFixture{subject: "initiator", denied: "policy.apply"}
+	api := &changeReviewAPI{store: f.store, auth: auth}
+	data, err := json.Marshal(changeReviewInput{Organization: f.trust.Organization,
+		Digest: "not-an-actor-proof", ExpectedVersion: 2, Reason: "Apply reviewed candidate"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	call := func() *httptest.ResponseRecorder {
+		request := httptest.NewRequest("POST", changeReviewPrefix+"requests/"+f.reviewID+"/apply", strings.NewReader(string(data)))
+		request.Header.Set("X-ZPR-CSRF", "proof")
+		request.Header.Set("X-Actor", "reviewer")
+		request.Header.Set("X-API-Key", "not-human-approval")
+		response := httptest.NewRecorder()
+		api.ServeHTTP(response, request)
+		return response
+	}
+	if response := call(); response.Code != 403 || !strings.Contains(response.Body.String(), "policy.apply") {
+		t.Fatalf("generic review/edit permissions authorized application: %d %s", response.Code, response.Body)
+	}
+	auth.denied = ""
+	if response := call(); response.Code != 409 || !strings.Contains(response.Body.String(), "Application is disabled") {
+		t.Fatalf("human permission bypassed remaining composition gate: %d %s", response.Code, response.Body)
+	}
+	record, err := f.store.Get(context.Background(), f.trust.Organization, f.reviewID)
+	if err != nil || record.State != "approved" || len(record.Events) != 2 || record.Events[1].Actor.Subject != "reviewer" {
+		t.Fatal("initiator/header replaced immutable approval identity", err)
+	}
+}
+
 func (f *reviewAuthFixture) Authorize(r *http.Request, org, permission string) (operatorauth.Identity, error) {
 	if org != "great-lakes" || permission == f.denied || (r.Method == "POST" && r.Header.Get("X-ZPR-CSRF") != "proof") {
 		return operatorauth.Identity{}, errors.New("denied")

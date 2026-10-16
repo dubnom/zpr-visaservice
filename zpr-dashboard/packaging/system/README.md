@@ -79,6 +79,40 @@ approved same-server, separate-state topology. See its
 [startup and recovery instructions](../simulator/README.md#same-host-independent-identity-stack).
 This does not add a dependency on Simulator or complete the production installer.
 
+## Simulator navigation to the production Control Room
+
+The deployment administrator may set `ZPR_SIMULATOR_CONTROL_ROOM_URL` in the
+**Simulator process environment** to the approved browser-facing Control Room
+origin, for example `https://control.company.example`. There is no default and
+no discovery from simulation manifests, query parameters, organizations or
+targets. This is a navigation-only setting, not a production service endpoint
+or an addition to the management-bootstrap JSON schema.
+
+The value must be an absolute HTTPS origin with a canonical lowercase DNS host
+or IP address and an optional port from 1 to 65535. An optional trailing `/`
+is accepted. Credentials, other paths, queries (including empty `?`), fragments,
+whitespace and escaped URL components are rejected. For explicit local
+development only, HTTP is also accepted for `localhost`, `127.0.0.1` and `[::1]`;
+there is no automatic localhost fallback. Use the approved HTTPS origin for
+company deployments.
+
+Simulator exposes only the validated, non-secret destination through its
+read-only, non-cacheable `GET /simulator-navigation.json` web configuration
+route, under the existing Simulator web boundary. It does not contact the
+destination or assert that Control Room is reachable. Missing configuration
+returns 503; invalid configuration returns 422 without echoing the supplied
+value. In either case navigation shows a configuration-needed state without
+an actionable destination. Restart Simulator after changing its environment.
+
+The **Control Room** navigation entry opens a separate tab with `noopener`,
+`noreferrer` and no referrer. It leaves Simulator and its unsaved context in
+the original tab and sends no token, source, organization or target in the
+destination URL. Control Room retains its independent login, authorization,
+CSRF checks and production-owned editors. Operators must verify the production
+organization there. No cookie/token sharing, iframe, shared-editor embedding,
+target handoff or reverse dependency is introduced: production services never
+read this Simulator setting and must work with Simulator unavailable.
+
 ## Company management-bootstrap configuration
 
 The version-1 [example](company.example.json) is a **partial installation input**

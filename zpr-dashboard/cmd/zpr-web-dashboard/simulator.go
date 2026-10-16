@@ -205,12 +205,21 @@ func runSimulator(listen string) error {
 		return err
 	}
 	defer security.close()
+	policyStatusClient, err := newSimulatorPolicyStatusClientFromEnv()
+	if err != nil {
+		return err
+	}
+	if policyStatusClient != nil {
+		defer policyStatusClient.client.CloseIdleConnections()
+	}
 	staticRoot, err := fs.Sub(staticFiles, "static")
 	if err != nil {
 		return err
 	}
 	mux := http.NewServeMux()
 	security.register(mux)
+	mux.HandleFunc("GET /simulator-navigation.json", handleSimulatorNavigationConfig)
+	mux.Handle("/api/simulator/policy-operations/status/", simulatorPolicyStatusHandler(policyStatusClient))
 	mux.HandleFunc("POST /api/simulator/organizations/{organization}/activate", handleSimulatorOrganizationActivate)
 	mux.HandleFunc("POST /api/simulator/organizations/{organization}/restore-base", handleSimulatorOrganizationRestoreBase)
 	mux.HandleFunc("GET /api/simulator/status", handleSimulatorStatus)
