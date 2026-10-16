@@ -374,6 +374,35 @@ its APIs.
 
 ### Simulator organization-profile editor
 
+Organizations places Browse, File, the organization name, and activation controls
+above the organization description and a horizontal navigation bar ordered
+Scenarios, Identity, Trusted Sources, Policy, and Services. Browse and File
+controls match the live Control Room: dark ink background, lime text,
+16px regular sans-serif labels and chevrons, and 31px minimum height in
+catalogs and editors.
+The same functional
+organization header and description persist across all five tabs, including
+direct visits to Scenarios and Trusted Sources. Identity no longer includes a
+separate Scenarios summary; use the Scenarios tab instead. The sidebar groups
+Simulate, Activity, and Workers under MONITORING first, followed by
+Organizations under CONFIGURATION, separated by the same divider used in
+Control Room. Identity omits the redundant departments/people/groups count
+summary above the directory graph. Policy and Services rely on their selected tabs
+instead of repeated panel headings,
+and Simulator Trusted Sources omits the source title and aggregate
+people/groups/attributes summary while retaining records and tab counts.
+Scenario browsing and editing remain in the organization's Scenarios tab.
+Execution controls, live runner, and results are available only under
+MONITORING > Simulate (`/scenarios.html#simulate`). Selecting a scenario or
+opening Simulate never starts a run; Run requires a published scenario in the
+active organization and is disabled while another run is busy.
+Scenarios and Trusted Sources are no longer
+separate sidebar entries; their existing URLs remain available. Identity,
+Policy, and Services select separate organization detail panels. The standalone
+organization "Design with Claude" action has been removed; the Scenario design
+assistant remains available. Zoom, branch-toggle, and dismiss glyphs use larger,
+heavier symbols, with keyboard focus indicators and labeled buttons.
+
 Organization profile drafts use mutually exclusive Form and Raw JSON views.
 The Raw/Form button switches modes without saving; invalid JSON remains in Raw
 with an explicit error instead of replacing the draft. Structured sections and
@@ -4015,8 +4044,15 @@ services still receive an explicit independent admin URL.
 The Simulator's Claude design assistant can review scenario drafts and
 organization profiles. It keeps `ANTHROPIC_API_KEY` server-side and only applies
 validated scenario or LDIF proposals to the open draft; saving and publishing
-remain explicit operator actions. `scripts/configure-assistant.sh` stores the
-key in a protected runtime file readable by both assistant services. Simulator
+remain explicit operator actions. Scenario structured responses require every
+schema key; optional scenario values use empty strings, arrays, `false`, or `0`
+to stay below Anthropic's union-type limit. New scenarios use the full schema;
+populated scenarios use a compact one-step patch that preserves and validates
+the existing scenario server-side. The assistant can propose simulated
+business-service access probes from existing expected-denial examples; it does
+not perform raw network scans or claim runtime outcomes.
+`scripts/configure-assistant.sh` stores the key in a protected runtime file
+readable by both assistant services. Simulator
 status and requests check that file dynamically; the existing Control-Service
 container is restarted in place by the setup command, not recreated from shell
 defaults. The stack forwards only the key-file path to

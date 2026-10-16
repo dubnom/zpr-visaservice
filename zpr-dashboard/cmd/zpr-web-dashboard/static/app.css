@@ -884,3 +884,32 @@ body.map-maximized .component-inspector { z-index: 1001; }
 :root body button.window-control:focus-visible { outline: 2px solid var(--forest); outline-offset: 2px; }
 :root body button.window-control:disabled { opacity: .48; cursor: not-allowed; }
 :root body button.window-control svg { display: block; flex: 0 0 16px; }
+
+/* Keep catalog and editor file controls identical across page themes. */
+button:is(.policy-files-toggle, .policy-picker-trigger, .policy-picker-toggle, #organization-browse, #organization-files-toggle, #scenario-browse, #scenario-files-toggle) {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 9px;
+  min-height: 31px;
+  padding: 0 11px;
+  border: 1px solid var(--ink);
+  border-radius: 3px;
+  background: var(--ink);
+  color: var(--leaf);
+  font: 400 16px/normal var(--sans);
+  letter-spacing: normal;
+  text-transform: none;
+  white-space: nowrap;
+}
+button:is(.policy-files-toggle, .policy-picker-trigger, .policy-picker-toggle, #organization-browse, #organization-files-toggle, #scenario-browse, #scenario-files-toggle):hover:not(:disabled) { background: var(--forest); border-color: var(--forest); }
+button:is(.policy-files-toggle, .policy-picker-trigger, .policy-picker-toggle, #organization-browse, #organization-files-toggle, #scenario-browse, #scenario-files-toggle):focus-visible { outline: 2px solid var(--forest); outline-offset: 2px; }
+button:is(.policy-files-toggle, .policy-picker-trigger, .policy-picker-toggle, #organization-browse, #organization-files-toggle, #scenario-browse, #scenario-files-toggle):disabled { opacity: .48; cursor: not-allowed; }
+button:is(.policy-files-toggle, .policy-picker-trigger, .policy-picker-toggle, #organization-browse, #organization-files-toggle, #scenario-browse, #scenario-files-toggle) > span { margin: 0; color: inherit; font: inherit; }
+button:is(.policy-files-toggle, .policy-picker-trigger, .policy-picker-toggle, #organization-browse, #organization-files-toggle, #scenario-browse, #scenario-files-toggle) > .policy-picker-chevron { display: none; }
+button:is(.policy-files-toggle, .policy-picker-trigger, .policy-picker-toggle, #organization-browse, #organization-files-toggle, #scenario-browse, #scenario-files-toggle)::after {
+  content: "⌄" / "";
+  display: inline-block;
+  font: 400 16px/1 var(--sans);
+}
+button:is(.policy-files-toggle, .policy-picker-trigger, .policy-picker-toggle, #organization-browse, #organization-files-toggle, #scenario-browse, #scenario-files-toggle)[aria-expanded="true"]::after { transform: rotate(180deg); }

@@ -1,5 +1,6 @@
 (() => {
   for (const host of document.querySelectorAll("[data-editor-search-target]")) {
+    if (host.classList.contains("editor-search-tools")) continue;
     const sources = host.dataset.editorSearchTarget.split(",").map((id) => document.getElementById(id)).filter(Boolean);
     host.classList.add("editor-search-tools");
     host.innerHTML = `<button class="button editor-search-toggle" type="button" data-search-toggle aria-expanded="false" aria-haspopup="dialog" title="Find and replace (Ctrl/⌘-F, Ctrl/⌘-H)">Find &amp; Replace</button>`

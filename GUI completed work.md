@@ -11,6 +11,70 @@ not competing current requirements. References such as "above", "below" and
 "this deployment" retain their original context from the former combined tracker;
 use the dated deployment ledger when checking release scope.
 
+## Scenario AI design response reliability (2026-10-15 UTC)
+
+**Initially deployed at 21:13 UTC; structured-output schema correction deployed
+to Simulator at 21:31 UTC. Not committed or pushed.**
+
+- [x] Trace the generic unreadable-response error to prompt-only design JSON
+  parsing; the generic provider transport previously ignored output-limit stop
+  reasons. The original operator response was not retained, so truncation is
+  a verified failure path, not a confirmed cause of that specific request.
+- [x] Request native JSON-schema Scenario output including optional topology and
+  step fields; reuse shared provider transport without forced tools or retries.
+  Preserve existing semantic scenario validation and explicit Apply/Save gates.
+- [x] Require every object property in the schema; use empty/zero defaults for
+  optional fields to stay below Anthropic's union limit. Normalize an empty
+  topology to absent before semantic validation. Focused scenario/assistant
+  race tests pass.
+- [x] Reject truncation, output overrun, missing/multiple text payloads, tools and
+  malformed JSON; ignore reasoning blocks. Return actionable errors and preserve
+  available provider token usage. Do not expose partial proposals or raise the
+  operator's token limit automatically.
+- [x] Synthetic transport and handler tests pass with race detection, alongside
+  existing assistant/direct-editor tests; vet passes. Desktop/tablet browser
+  checks verify failed requests leave the draft unchanged, expose no Apply
+  action, and display usage under Model and Tokens.
+- [x] Full `make test` retains four known failures:
+  `TestEnrollmentAdministrationOverVerifiedTLSWithoutSimulator`,
+  `TestOrganizationPolicyInstallNeverUploadsStaleBundle`,
+  `TestScenarioPlacementPreflightMatchesLauncher`,
+  `TestTrustedServiceBuildPublishesAtomicallyAndKeepsFreshArtifact`. At the
+  21:31 rollout stage, no live provider request, save, publish or scenario run
+  had been performed.
+- [x] Simulator-only rollout verified: updated executable hash, assistant
+  readiness, existing container identity/image/configuration/mounts preserved,
+  and other service identity/image/start baselines unchanged. The live Scenario
+  page reconnects and shows the existing organization and idle run. Prior
+  browser checks with mocked APIs preserve the draft and display budget-failure
+  usage without exposing Apply. See the
+  [21:31 schema rollout/rollback](GUI%20deployments.md#scenario-structured-output-schema-correction-2026-10-15-2131-utc)
+  and [initial rollout](GUI%20deployments.md#scenario-ai-structured-design-2026-10-15-2113-utc).
+
+### Follow-up diagnosis and compact patch (2026-10-15 22:05 UTC)
+
+- [x] Reproduced the structured-output failure: the original schema exceeded
+  Anthropic's 16-union limit (27 union-typed parameters). After correcting that,
+  reproducing the long existing scenario exhausted output tokens. Keep full
+  structured output for new scenarios; populated scenarios now use a compact
+  patch-only schema and server-side merge/validation.
+- [x] Add denied business-service probe candidates from the current scenario's
+  own login and expected-deny steps. The patch adds one step at a time, avoids
+  repeating the existing workday, and preserves its original order. The
+  business-service action models an application-level access probe, not a raw
+  network scan.
+- [x] Focused scenario/assistant race tests and `go vet` pass, including
+  full-schema transport, compact concurrent merge, preserved existing steps,
+  denied service probe validation and candidate selection.
+- [x] The exact reported prompt completed against the 78-step Great Lakes HQ
+  draft at the 2,400-token limit: HTTP 200, 15,115 input and 324 output tokens.
+  The 79-step proposal adds a denied service request after an employee login,
+  concurrent with the remaining ordinary work. The server returned no
+  `proposal_error`; a before/after catalog comparison confirmed no stored
+  changes. The proposal was not applied, saved, published or run, and no
+  denial outcome is claimed. See the
+  [final rollout and rollback](GUI%20deployments.md#scenario-assistant-compact-probe-patch-2026-10-15-2205-utc).
+
 ## Source and tracker reconciliation (2026-10-15 UTC)
 
 The earlier accumulated work was published in `d741cec`. The accompanying

@@ -1808,6 +1808,19 @@ Clear, record/conversation reset or page reload. Last-request output and request
 maximum are also shown. Unreported failures and obsolete responses are not a
 complete billing ledger; these totals are not an organization-wide usage limit.
 
+Simulator Scenario design requests use the provider's native JSON-schema output
+for the explanation and optional scenario proposal. The complete scenario schema
+includes steps, cleanup and optional topology; existing server-side validation
+still checks organization context, identities, actions and stable record IDs.
+Only one completed JSON text payload is accepted; reasoning blocks are not
+treated as proposal text. Output-limit stops, malformed payloads and incomplete
+responses fail explicitly without applying changes or automatically retrying.
+Provider-reported usage is preserved on these failures. An output-limit error
+suggests a larger limit in **Model and Tokens** or a smaller scenario request.
+The limit is not raised silently and no extra provider request is made.
+Valid proposals still require **Apply scenario draft**, then an explicit save;
+they never publish or run automatically.
+
 The same AI Assistant pane is available beside the assertion, Gateways
 and ZPR Config editors in Control Room, and beside the Simulator's LDAP seed
 (LDIF) editor. Each editor sends only its own draft: assertions and ZPR Config
@@ -1860,6 +1873,8 @@ Gateways; Simulator for its three tasks. No runtime filesystem or Simulator
 lookup is added to production assistants. Missing skill files fail the build.
 The text editors retain shared insertion/Analyze guardrails; design assistants
 retain their JSON answer/proposal contracts and server-side proposal validation.
+For populated scenarios, the Simulator assistant returns a compact one-step
+patch that the server merges and validates without regenerating existing work.
 Skills provide guidance, not tools, permissions, schema validation, or proof of
 execution. Only the relevant task skill and existing request context are sent
 in each system prompt.

@@ -4,17 +4,24 @@
   const pageCache = new Map();
   const pageViews = new Map();
   const pageTitles = new Map();
+  const organizationPages = ["/organizations.html", "/scenarios.html", "/trusted-source.html"];
+  const organizationScripts = new Set(["/organizations.js", "/organization-profile.js", "/organization-definitions.js", "/organization-duplicate.js"]);
+  let organizationWorkspace;
+  let organizationWorkspaceInitialized = false;
+  let resolveInitialPage;
+  const initialPageReady = new Promise(resolve => { resolveInitialPage = resolve; });
   let currentPath = location.pathname;
 
   const pageKey = (url) => new URL(url, location.href).pathname;
   const dispatchPageEvent = (name, path) => document.dispatchEvent(new CustomEvent(name, { detail: { path } }));
   function createPagePoller({ path, run, interval, onError }) {
+    const paths = Array.isArray(path) ? path : [path];
     const poller = window.ZPRPageRuntime.createPoller({ run, interval, onError });
     document.addEventListener("simulator:activate", (event) => {
-      if (event.detail.path === path) poller.start();
+      if (paths.includes(event.detail.path)) poller.start();
     });
     document.addEventListener("simulator:deactivate", (event) => {
-      if (event.detail.path === path) poller.stop();
+      if (paths.includes(event.detail.path)) poller.stop();
     });
     return {
       refresh: poller.refresh,
@@ -160,6 +167,25 @@
   const syncNavigation = () => {
     const nav = document.querySelector(".primary-nav");
     if (!nav) return;
+    const simulating = currentPath === "/scenarios.html" && location.hash === "#simulate";
+    if (currentPath === "/scenarios.html") document.title = simulating ? "ZPR Simulator Simulate" : "ZPR Simulator Scenarios";
+    document.body.classList.toggle("simulator-simulating", simulating);
+    if (organizationWorkspace) organizationWorkspace.hidden = simulating;
+    const runner = document.querySelector(".scenario-run-pane");
+    if (runner) runner.hidden = !simulating;
+    const catalog = document.querySelector(".scenario-list-pane");
+    if (catalog) catalog.hidden = simulating;
+    const simulateControls = document.getElementById("scenario-simulate-controls");
+    if (simulateControls) simulateControls.hidden = !simulating;
+    let simulateLink = nav.querySelector('a[href="/scenarios.html#simulate"]');
+    if (!simulateLink) {
+      simulateLink = document.createElement("a");
+      simulateLink.className = "nav-link";
+      simulateLink.dataset.simulatorNav = "";
+      simulateLink.href = "/scenarios.html#simulate";
+      simulateLink.textContent = "Simulate";
+      nav.append(simulateLink);
+    }
     let organizationLink = nav.querySelector('a[href="/organizations.html"]');
     if (!organizationLink) {
       organizationLink = document.createElement("a");
@@ -186,23 +212,85 @@
       brand.href = "/organizations.html";
       brand.setAttribute("aria-label", "ZPR Simulator organizations");
     }
-    let sourceLink = nav.querySelector('a[href="/trusted-source.html"]');
-    if (!sourceLink) {
-      sourceLink = document.createElement("a");
-      sourceLink.className = "nav-link";
-      sourceLink.dataset.simulatorNav = "";
-      sourceLink.href = "/trusted-source.html";
-      sourceLink.textContent = "Trusted Sources";
-      nav.insertBefore(sourceLink, nav.querySelector('a[href="/activity.html"]'));
+    nav.querySelector('a[href="/scenarios.html"]')?.remove();
+    nav.querySelector('a[href="/trusted-source.html"]')?.remove();
+    for (const [label, paths] of [
+      ["MONITORING", ["/scenarios.html#simulate", "/activity.html", "/machine-logs.html"]],
+      ["CONFIGURATION", ["/organizations.html"]],
+    ]) {
+      let group = nav.querySelector(`[data-simulator-nav-group="${label}"]`);
+      if (!group) {
+        group = document.createElement("div");
+        group.className = "nav-group";
+        group.dataset.simulatorNavGroup = label;
+        const heading = document.createElement("div");
+        heading.className = "nav-group-label";
+        heading.textContent = label;
+        group.append(heading);
+        nav.append(group);
+      }
+      for (const path of paths) {
+        const link = nav.querySelector(`a[href="${path}"]`);
+        if (link && link.parentElement !== group) group.append(link);
+      }
     }
-    sourceLink.textContent = "Trusted Sources";
-    for (const path of ["/organizations.html", "/scenarios.html", "/trusted-source.html", "/activity.html", "/machine-logs.html"]) {
-      const link = nav.querySelector(`a[href="${path}"]`);
-      if (link) nav.append(link);
+    const monitoring = nav.querySelector('[data-simulator-nav-group="MONITORING"]');
+    const configuration = nav.querySelector('[data-simulator-nav-group="CONFIGURATION"]');
+    nav.append(monitoring, configuration);
+    if (!nav.querySelector("[data-simulator-nav-separator]")) {
+      const separator = document.createElement("div");
+      separator.className = "nav-separator";
+      separator.dataset.simulatorNavSeparator = "";
+      separator.setAttribute("role", "separator");
+      nav.insertBefore(separator, configuration);
     }
-    nav.querySelectorAll("a[data-simulator-nav]").forEach((link) => {
-      link.classList.toggle("active", pageKey(link.href) === currentPath);
+    nav.insertBefore(nav.querySelector("[data-simulator-nav-separator]"), configuration);
+    nav.querySelectorAll("a").forEach((link) => {
+      const path = pageKey(link.href);
+      const active = link === simulateLink ? simulating
+        : path === "/organizations.html" ? !simulating && organizationPages.includes(currentPath)
+        : path === currentPath;
+      link.classList.toggle("active", active);
+      if (active) link.setAttribute("aria-current", "page");
+      else link.removeAttribute("aria-current");
+      if (path === currentPath) delete link.dataset.simulatorNav;
+      else link.dataset.simulatorNav = "";
     });
+    if (organizationPages.includes(currentPath)) {
+      let sections = document.querySelector(".organization-navigation");
+      if (!sections) {
+        sections = document.createElement("nav");
+        sections.className = "organization-navigation";
+        sections.setAttribute("aria-label", "Organization sections");
+        for (const [label, href] of [
+          ["Scenarios", "/scenarios.html"],
+          ["Identity", "/organizations.html#organization-identity"],
+          ["Trusted Sources", "/trusted-source.html"],
+          ["Policy", "/organizations.html#organization-policy"],
+          ["Services", "/organizations.html#organization-services"],
+        ]) {
+          const link = document.createElement("a");
+          link.textContent = label;
+          link.href = href;
+          if (new URL(link.href).pathname !== currentPath) link.dataset.simulatorNav = "";
+          sections.append(link);
+        }
+        const detail = document.getElementById("organization-detail");
+        if (detail) detail.before(sections);
+        else document.querySelector(".main-content > .topbar").after(sections);
+      }
+      for (const link of sections.querySelectorAll("a")) {
+        const url = new URL(link.href);
+        if (url.pathname !== currentPath) link.dataset.simulatorNav = "";
+        else delete link.dataset.simulatorNav;
+        const section = ["#organization-policy", "#organization-services"].includes(location.hash)
+          ? location.hash : "#organization-identity";
+        const active = url.pathname === currentPath &&
+          (currentPath !== "/organizations.html" || url.hash === section);
+        if (active) link.setAttribute("aria-current", "page");
+        else link.removeAttribute("aria-current");
+      }
+    }
     renderBanner();
     bannerPoller.start();
     void bannerPoller.refresh();
@@ -241,16 +329,72 @@
     return pageCache.get(key);
   };
 
+  function mountStyles(parsed) {
+    for (const stylesheet of parsed.head.querySelectorAll('link[rel="stylesheet"]')) {
+      const href = new URL(stylesheet.getAttribute("href"), location.href).href;
+      if (![...document.head.querySelectorAll('link[rel="stylesheet"]')].some(link => link.href === href)) {
+        const link = document.createElement("link");
+        link.rel = "stylesheet";
+        link.href = href;
+        document.head.append(link);
+      }
+    }
+  }
+
+  async function loadScript(src) {
+    const script = document.createElement("script");
+    script.src = src;
+    script.async = false;
+    const loaded = new Promise((resolve, reject) => {
+      script.addEventListener("load", resolve, { once: true });
+      script.addEventListener("error", () => reject(new Error(`Could not load ${src}`)), { once: true });
+    });
+    document.body.append(script);
+    await loaded;
+  }
+
+  async function mountOrganizationWorkspace(path) {
+    if (!organizationPages.includes(path)) return;
+    let parsed;
+    if (!organizationWorkspace) {
+      organizationWorkspace = document.getElementById("organization-workspace");
+      if (!organizationWorkspace) {
+        parsed = new DOMParser().parseFromString(await fetchPage("/organizations.html"), "text/html");
+        organizationWorkspace = parsed.getElementById("organization-workspace");
+        if (!organizationWorkspace) throw new Error("Organization workspace is unavailable.");
+        mountStyles(parsed);
+      }
+    }
+    const placeholder = document.getElementById("organization-workspace");
+    if (placeholder && placeholder !== organizationWorkspace) placeholder.replaceWith(organizationWorkspace);
+    else if (!document.body.contains(organizationWorkspace)) document.querySelector(".main-content > .topbar").after(organizationWorkspace);
+    if (parsed) {
+      const loadedScripts = new Set([...document.querySelectorAll("script[src]")].map(script => new URL(script.src).pathname));
+      for (const script of parsed.querySelectorAll("script[src]")) {
+        const src = script.getAttribute("src");
+        const scriptPath = pageKey(src);
+        if (!loadedScripts.has(scriptPath) || ["/editor-assistant.js", "/editor-search.js"].includes(scriptPath)) {
+          await loadScript(src);
+        }
+      }
+      organizationWorkspaceInitialized = true;
+    }
+  }
+
   const loadPage = async (url, push) => {
+    await initialPageReady;
     const nextPath = pageKey(url);
     if (nextPath === currentPath) {
       if (push) history.pushState({}, "", url);
+      syncNavigation();
+      dispatchPageEvent("simulator:activate", currentPath);
       return;
     }
 
     let html;
     if (!pageViews.has(nextPath)) html = await fetchPage(url);
     dispatchPageEvent("simulator:deactivate", currentPath);
+    organizationWorkspace?.remove();
     const previousView = document.createDocumentFragment();
     while (document.body.firstChild) previousView.append(document.body.firstChild);
     pageViews.set(currentPath, previousView);
@@ -258,34 +402,26 @@
     if (pageViews.has(nextPath)) {
       document.body.replaceChildren(pageViews.get(nextPath));
       document.title = pageTitles.get(nextPath) || document.title;
+      await mountOrganizationWorkspace(nextPath);
     } else {
       const parsed = new DOMParser().parseFromString(html, "text/html");
-      for (const stylesheet of parsed.head.querySelectorAll('link[rel="stylesheet"]')) {
-        const href = new URL(stylesheet.getAttribute("href"), location.href).href;
-        if (![...document.head.querySelectorAll('link[rel="stylesheet"]')].some((link) => link.href === href)) {
-          const link = document.createElement("link");
-          link.rel = "stylesheet";
-          link.href = href;
-          document.head.append(link);
-        }
-      }
+      mountStyles(parsed);
       document.title = parsed.title;
       pageTitles.set(nextPath, parsed.title);
       const scripts = [...parsed.body.querySelectorAll("script[src]")];
       scripts.forEach((script) => script.remove());
       document.body.replaceChildren(...parsed.body.childNodes);
+      await mountOrganizationWorkspace(nextPath);
       for (const oldScript of scripts) {
-        if (new URL(oldScript.src).pathname === "/simulator-nav.js") continue;
-        const script = document.createElement("script");
-        script.src = oldScript.src;
-        script.async = false;
-        document.body.append(script);
-        await new Promise((resolve, reject) => { script.addEventListener("load", resolve, { once: true }); script.addEventListener("error", reject, { once: true }); });
+        const scriptPath = new URL(oldScript.src).pathname;
+        if (scriptPath === "/simulator-nav.js" || organizationWorkspaceInitialized && organizationScripts.has(scriptPath)) continue;
+        await loadScript(oldScript.src);
       }
+      if (nextPath === "/organizations.html") organizationWorkspaceInitialized = true;
     }
     currentPath = nextPath;
-    syncNavigation();
     if (push) history.pushState({}, "", url);
+    syncNavigation();
     dispatchPageEvent("simulator:activate", currentPath);
   };
 
@@ -296,11 +432,24 @@
     loadPage(link.href, true).catch(() => { window.location.href = link.href; });
   });
   window.addEventListener("popstate", () => loadPage(window.location.href, false));
-  window.addEventListener("load", () => {
-    syncNavigation();
-    pageCache.set(currentPath, Promise.resolve(document.documentElement.outerHTML));
-    pageTitles.set(currentPath, document.title);
-    document.querySelectorAll("a[data-simulator-nav]").forEach((link) => { fetchPage(link.href).catch(() => {}); });
-    dispatchPageEvent("simulator:activate", currentPath);
+  window.addEventListener("hashchange", syncNavigation);
+  window.addEventListener("load", async () => {
+    try {
+      if (currentPath === "/organizations.html") organizationWorkspaceInitialized = true;
+      await mountOrganizationWorkspace(currentPath);
+      syncNavigation();
+      pageCache.set(currentPath, Promise.resolve(document.documentElement.outerHTML));
+      pageTitles.set(currentPath, document.title);
+      document.querySelectorAll("a[data-simulator-nav]").forEach((link) => { fetchPage(link.href).catch(() => {}); });
+      dispatchPageEvent("simulator:activate", currentPath);
+    } catch (error) {
+      const message = document.createElement("p");
+      message.className = "scenario-error";
+      message.setAttribute("role", "alert");
+      message.textContent = `Organization navigation unavailable: ${error.message}`;
+      document.querySelector(".main-content").prepend(message);
+    } finally {
+      resolveInitialPage();
+    }
   }, { once: true });
 })();

@@ -167,14 +167,15 @@ test("Simulator headers show the active organization name on every page", async 
   await expect(page.locator("#organization-active-name")).toHaveCount(1);
   await expect(page.locator("#organization-active-name")).toBeHidden();
   await expect(page.locator("#organization-active-id")).toBeHidden();
-  await page.locator('.primary-nav a[href="/scenarios.html"]').click();
+  await page.locator('.organization-navigation a[href="/scenarios.html"]').click();
   await expect(name).toHaveText("Alpha Labs");
   await expect(page.locator(".scenario-org-select")).toBeHidden();
   await page.locator('.primary-nav a[href="/activity.html"]').click();
   await expect(name).toHaveText("Alpha Labs");
   await page.locator('.primary-nav a[href="/machine-logs.html"]').click();
   await expect(name).toHaveText("Alpha Labs");
-  await page.locator('.primary-nav a[href="/trusted-source.html"]').click();
+  await page.locator('.primary-nav a[href="/organizations.html"]').click();
+  await page.locator('.organization-navigation a[href="/trusted-source.html"]').click();
   await expect(name).toHaveText("Alpha Labs");
 });
 

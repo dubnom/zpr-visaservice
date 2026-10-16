@@ -98,6 +98,7 @@ func TestCompleteResponseContracts(t *testing.T) {
 		{"no text", 200, `{"content":[{"type":"tool_use","text":"ignored"}]}`, "Claude response contained no text"},
 		{"empty text", 200, `{"content":[{"type":"text","text":""}]}`, "Claude response contained no text"},
 		{"missing content", 200, `{}`, "Claude response contained no text"},
+		{"invalid structured request", 400, `{"type":"error","error":{"type":"invalid_request_error","message":"Invalid schema at output_config.format.schema.properties.proposal"}}`, "Anthropic returned HTTP 400: invalid_request_error: Invalid schema at output_config.format.schema.properties.proposal"},
 		{"unauthorized", 401, `{"error":"private upstream detail"}`, "Anthropic returned HTTP 401"},
 		{"rate limited", 429, `{}`, "Anthropic returned HTTP 429"},
 		{"unavailable", 503, `{}`, "Anthropic returned HTTP 503"},
@@ -128,6 +129,21 @@ func TestCompleteResponseContracts(t *testing.T) {
 				t.Fatal("response body not closed")
 			}
 		})
+	}
+}
+
+func TestProviderErrorSummaryIsBoundedAndSingleLine(t *testing.T) {
+	message := strings.Repeat("schema error ", 100)
+	body, err := json.Marshal(map[string]any{"error": map[string]string{"type": "invalid_request_error", "message": "schema\n" + message}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	summary := providerErrorSummary(body)
+	if strings.Contains(summary, "\n") || len([]rune(summary)) > 550 || !strings.HasPrefix(summary, "invalid_request_error: schema ") {
+		t.Fatalf("provider error summary is not bounded/single-line: %q", summary)
+	}
+	if got := providerErrorSummary([]byte(`{"error":"unknown"}`)); got != "no provider error detail" {
+		t.Fatalf("malformed provider error summary=%q", got)
 	}
 }
 

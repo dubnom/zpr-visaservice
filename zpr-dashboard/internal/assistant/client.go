@@ -9,6 +9,7 @@ import (
 	"io"
 	"net/http"
 	"strings"
+	"unicode"
 )
 
 type Message struct {
@@ -32,16 +33,25 @@ type Client struct {
 
 var ErrEditorOutputLimit = errors.New("assistant edit response reached the output limit")
 var ErrEditorResponse = errors.New("assistant returned an invalid structured edit response")
+var ErrOutputLimit = errors.New("assistant response reached the output limit")
+var ErrStructuredResponse = errors.New("assistant returned an invalid structured response")
 
 func (a *Client) Complete(ctx context.Context, system string, messages []Message, model string, maxTokens int) (Reply, error) {
-	return a.complete(ctx, system, messages, model, maxTokens, false)
+	return a.complete(ctx, system, messages, model, maxTokens, false, nil)
 }
 
 func (a *Client) CompleteEditorEdits(ctx context.Context, system string, messages []Message, model string, maxTokens int) (Reply, error) {
-	return a.complete(ctx, system, messages, model, maxTokens, true)
+	return a.complete(ctx, system, messages, model, maxTokens, true, nil)
 }
 
-func (a *Client) complete(ctx context.Context, system string, messages []Message, model string, maxTokens int, editorEdits bool) (reply Reply, replyErr error) {
+func (a *Client) CompleteStructured(ctx context.Context, system string, messages []Message, model string, maxTokens int, schema map[string]any) (Reply, error) {
+	if len(schema) == 0 {
+		return Reply{}, errors.New("a structured response schema is required")
+	}
+	return a.complete(ctx, system, messages, model, maxTokens, false, schema)
+}
+
+func (a *Client) complete(ctx context.Context, system string, messages []Message, model string, maxTokens int, editorEdits bool, schema map[string]any) (reply Reply, replyErr error) {
 	type contentBlock struct {
 		Type string `json:"type"`
 		Text string `json:"text"`
@@ -75,6 +85,9 @@ func (a *Client) complete(ctx context.Context, system string, messages []Message
 			},
 		}}
 	}
+	if schema != nil {
+		requestBody.OutputConfig = map[string]any{"format": map[string]any{"type": "json_schema", "schema": schema}}
+	}
 	for index, message := range messages {
 		requestBody.Messages[index] = apiMessage{Role: message.Role, Content: message.Content}
 	}
@@ -95,7 +108,7 @@ func (a *Client) complete(ctx context.Context, system string, messages []Message
 	}
 	defer resp.Body.Close()
 	responseLimit := int64(64 << 10)
-	if editorEdits {
+	if editorEdits || schema != nil {
 		responseLimit++
 	}
 	responseBody, err := io.ReadAll(io.LimitReader(resp.Body, responseLimit))
@@ -103,11 +116,12 @@ func (a *Client) complete(ctx context.Context, system string, messages []Message
 		return Reply{}, err
 	}
 	if resp.StatusCode != http.StatusOK {
-		return Reply{}, fmt.Errorf("Anthropic returned HTTP %d", resp.StatusCode)
+		return Reply{}, fmt.Errorf("Anthropic returned HTTP %d: %s", resp.StatusCode, providerErrorSummary(responseBody))
 	}
-	if editorEdits && len(responseBody) > 64<<10 {
+	if (editorEdits || schema != nil) && len(responseBody) > 64<<10 {
 		return Reply{}, errors.New("Claude response exceeded the supported size limit")
 	}
+
 	var response struct {
 		StopReason string         `json:"stop_reason"`
 		Content    []contentBlock `json:"content"`
@@ -119,11 +133,39 @@ func (a *Client) complete(ctx context.Context, system string, messages []Message
 	if err := json.Unmarshal(responseBody, &response); err != nil {
 		return Reply{}, err
 	}
+	defer func() {
+		reply.InputTokens = response.Usage.InputTokens
+		reply.OutputTokens = response.Usage.OutputTokens
+	}()
+	if !editorEdits {
+		if response.StopReason == "max_tokens" || response.Usage.OutputTokens > maxTokens {
+			return Reply{}, ErrOutputLimit
+		}
+		if schema != nil {
+			if response.StopReason != "end_turn" {
+				return Reply{}, fmt.Errorf("%w: unexpected stop reason %q", ErrStructuredResponse, response.StopReason)
+			}
+			var payload *string
+			for _, block := range response.Content {
+				if block.Type == "thinking" || block.Type == "redacted_thinking" {
+					continue
+				}
+				if block.Type != "text" || payload != nil {
+					return Reply{}, fmt.Errorf("%w: unexpected content block or multiple text blocks", ErrStructuredResponse)
+				}
+				text := block.Text
+				payload = &text
+			}
+			if payload == nil {
+				return Reply{}, fmt.Errorf("%w: missing text payload", ErrStructuredResponse)
+			}
+			if !json.Valid([]byte(*payload)) {
+				return Reply{}, fmt.Errorf("%w: invalid JSON payload", ErrStructuredResponse)
+			}
+			return Reply{Answer: *payload}, nil
+		}
+	}
 	if editorEdits {
-		defer func() {
-			reply.InputTokens = response.Usage.InputTokens
-			reply.OutputTokens = response.Usage.OutputTokens
-		}()
 		if response.Usage.OutputTokens > maxTokens {
 			return Reply{}, fmt.Errorf("%w: provider reported %d output tokens for requested maximum %d", ErrEditorOutputLimit, response.Usage.OutputTokens, maxTokens)
 		}
@@ -188,4 +230,25 @@ func (a *Client) complete(ctx context.Context, system string, messages []Message
 		return Reply{}, errors.New("Claude response contained no text")
 	}
 	return Reply{Answer: answer.String(), InputTokens: response.Usage.InputTokens, OutputTokens: response.Usage.OutputTokens}, nil
+}
+
+func providerErrorSummary(body []byte) string {
+	var response struct {
+		Error struct {
+			Type    string `json:"type"`
+			Message string `json:"message"`
+		} `json:"error"`
+	}
+	if err := json.Unmarshal(body, &response); err != nil || strings.TrimSpace(response.Error.Message) == "" {
+		return "no provider error detail"
+	}
+	detail := strings.Join(strings.FieldsFunc(response.Error.Message, unicode.IsSpace), " ")
+	runes := []rune(detail)
+	if len(runes) > 512 {
+		detail = string(runes[:512]) + "…"
+	}
+	if response.Error.Type != "" {
+		return response.Error.Type + ": " + detail
+	}
+	return detail
 }

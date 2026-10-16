@@ -1,5 +1,315 @@
 # GUI deployments
 
+## Monitoring first with separate Simulate execution (2026-10-16 03:10 UTC)
+
+- Reordered Simulator sidebar groups: MONITORING (Simulate, Activity, Workers),
+  divider, then CONFIGURATION (Organizations).
+- Per user clarification, organization Scenarios retains Browse/File, selected
+  scenario details, and editing. Its Simulate shortcut opens the separate
+  execution view at `/scenarios.html#simulate`. Simulate contains scenario
+  selection, Run/Cancel/Clear, live tracks, logs, and results, without the
+  organization configuration header or catalog. No scenario starts merely by
+  selecting it or navigating. Published/active-organization/busy guards remain.
+- Reused the existing scenario workspace and polling lifecycle rather than
+  introducing a second runner or API. Hash-aware active navigation, browser
+  history, direct reload, and Configure scenarios preserve the correct view.
+  Switching between configuration and Simulate retains scenario selection.
+  Updated in-page help and README.
+- Validation: 30 desktop/tablet browser tests passed, covering separate panels,
+  run/cancel/clear fixture actions, results, draft and busy guards, foreign
+  organization restrictions, configuration editing, cached navigation, direct
+  reload/history, responsive widths, track scrolling, and output disclosure.
+  Linux/ARM64 build, editor diagnostics, and whitespace checks passed.
+- Final Simulator-only deployment: `2026-10-16T03:10:09.041146927Z`.
+  Executable SHA-256:
+  `1f5c092ce3a2bbeb55d2a47fcb25ba1c0c0dc1d669b86b9c647878cde9f113cf`.
+  Live navigation confirmed reordered groups, hidden configuration on Simulate,
+  hidden runner under configuration, working return shortcuts, and retained
+  selection. No live scenario was started; runtime stayed idle.
+- Rollback: `/usr/local/bin/zpr-web-dashboard.before-simulate-navigation-20261016`
+  (previous SHA-256 `400af31ebbcf5b2afc43a1bb47047964a28fa1a37a1e75eea96e720686d773ed`).
+  Restore the executable and restart only Simulator. Control Room unchanged.
+  No commit or push.
+
+## Simulator panel heading cleanup (2026-10-16 02:58 UTC)
+
+- Removed repeated Policies and Services headings inside their respective
+  organization tabs; accessible region labels and records remain intact.
+- Simulator Trusted Sources now hides its "Organization LDAP" source title
+  and aggregate people/groups/attributes summary, including before first load
+  and after tab changes. Record tabs, individual tab counts, metadata, and
+  records remain available. Control Room's source headings are unchanged.
+- Validation: 32 focused desktop/tablet tests passed, including new panel
+  cleanup coverage, records, reload, organization navigation, current Trusted
+  Sources GUI tests, and stale-response/error handling. Build, diagnostics,
+  and whitespace checks passed. An initial broader selection had 38 passes
+  and 14 failures in older editor selectors, source-heading/feed expectations,
+  and the obsolete Simulator sidebar active-link expectation; those tests
+  were not rewritten. The broader selection is not reported as passing.
+- Live verification confirmed no repeated Policy/Services headings, preserved
+  records in both panels, hidden Trusted Sources title/summary, and a visible
+  People table. Simulator assistant readiness is healthy.
+- Simulator-only deployment: `2026-10-16T02:58:12.750044553Z`.
+  SHA-256: `400af31ebbcf5b2afc43a1bb47047964a28fa1a37a1e75eea96e720686d773ed`.
+  Rollback: `/usr/local/bin/zpr-web-dashboard.before-panel-cleanup-20261016`
+  (previous SHA-256 `cd70361e8d51cd7215bd1ff4ced7a8623f1dbd032143598915fc3b43c1cf6d5f`).
+  Restore the executable and restart only Simulator. No commit or push.
+
+## Simulator sidebar divider and directory summary cleanup (2026-10-16 02:51 UTC)
+
+- Added the shared Control Room-style `nav-separator` between CONFIGURATION
+  and MONITORING. It persists without duplication through cached navigation
+  and reload, and becomes a vertical divider in the narrow horizontal nav.
+- Removed the redundant departments/people/groups count line above the Identity
+  directory graph, retaining the directory title, graph, and editing controls.
+- Validation: 14 focused desktop/tablet browser tests passed, including
+  navigation, reload, responsive divider dimensions, count removal, and
+  Browse/File style parity. Editor diagnostics, Linux/ARM64 build, and
+  whitespace checks passed. Live verification confirmed one 1px divider
+  between the correct groups and no redundant count summary.
+- Simulator-only deployment: `2026-10-16T02:51:26.670833421Z`.
+  Assistant ready; scenario runtime remains idle. Control Room unchanged.
+  Executable SHA-256:
+  `cd70361e8d51cd7215bd1ff4ced7a8623f1dbd032143598915fc3b43c1cf6d5f`.
+- Rollback: `/usr/local/bin/zpr-web-dashboard.before-nav-separators-20261016`
+  (previous SHA-256 `3f6ff10ab41104271b3ecaf4f0282fde74ff12619cfb294388f326c755f2d16a`).
+  Restore the executable and restart only Simulator. No commit or push.
+
+## Match live Control Room Browse/File appearance (2026-10-16 02:42 UTC)
+
+- Corrected the preceding rollout, which made Simulator controls internally
+  consistent but did not match the deployed Control Room.
+- Measured Control Room policy Browse/File visible labels and chevrons:
+  ink `#17211e` background, lime `#b5e34f` text, regular 16px Avenir Next /
+  Segoe UI sans-serif labels, 16px chevrons, 31px minimum height, 3px radius.
+  Simulator controls now use these reference values, not the earlier
+  forest-green/white 12px semibold design. Decorative chevrons do not change
+  accessible button names.
+- Added explicit reference-value assertions in addition to cross-control
+  parity assertions. All 36 related desktop/tablet browser tests passed;
+  Linux/ARM64 build and whitespace validation passed. Compared live Simulator
+  organization/scenario controls against live Control Room labels: colors,
+  visible font, and chevron font match. Control Room was not redeployed.
+- Final Simulator deployment: `2026-10-16T02:42:54.838490295Z`.
+  Assistant readiness is healthy; no organization activation or scenario run.
+  Executable SHA-256:
+  `3f6ff10ab41104271b3ecaf4f0282fde74ff12619cfb294388f326c755f2d16a`.
+- Rollback: `/usr/local/bin/zpr-web-dashboard.before-control-room-buttons-20261016`
+  (SHA-256 `0b3ad8065dda2942a633b0687f36db1900bd1522a6cfebc57f690b7931534895`).
+  Restore the executable and restart only Simulator. No commit or push.
+
+## Uniform Browse and File controls (2026-10-16 02:39 UTC)
+
+- Unified catalog and editor Browse/File button styling in shared `app.css`:
+  forest-green background, white labels, 12px semibold sans-serif typography,
+  36px minimum height, identical spacing, and a CSS-drawn chevron. Existing
+  text chevrons are hidden so each button has exactly one consistent indicator.
+  Expanded menus point upward; hover, keyboard focus, and disabled states use
+  the same styling across controls. Menu actions and behavior are unchanged.
+- Added computed-style parity checks covering organization and scenario
+  catalogs, organization and scenario editors, and operator policy, gateway,
+  and configuration controls. Checks also compare nested label typography and
+  run at desktop, tablet, and 390px widths.
+- Validation: 36 related desktop/tablet browser tests passed; Linux/ARM64
+  build, editor diagnostics, and whitespace checks passed. Live organization
+  and scenario controls report matching colors, font, height, and chevrons.
+- Deployed only Simulator at `2026-10-16T02:39:05.536324092Z`; Control Room
+  was not restarted. Assistant ready; organization `great-lakes` remains idle.
+  No organization activation or scenario execution was performed.
+- Executable SHA-256:
+  `0b3ad8065dda2942a633b0687f36db1900bd1522a6cfebc57f690b7931534895`.
+  Rollback: `/usr/local/bin/zpr-web-dashboard.before-uniform-file-buttons-20261016`
+  (previous executable `ac1b1f003e35e99b74b214d4b6a825777a8b7f22569092a6c394fbb28644a694`).
+  Restore that executable and restart only Simulator to roll back.
+  No commit or push.
+
+## Shared organization header across every tab (2026-10-16 02:31 UTC)
+
+- Corrected the earlier Identity-only header placement. All five organization
+  tabs now reuse one functional organization workspace, including direct entry
+  to Scenarios or Trusted Sources. Browse, File, organization name, and
+  activation controls remain above the organization description; the horizontal
+  navigation follows the description.
+- Removed the legacy Scenarios disclosure/summary from Identity and its
+  separate catalog request. Scenarios remains the first horizontal tab.
+  Organization selection, menus, dialogs, and drafts persist across tab changes.
+  Organization polling follows all organization tabs and stops on Monitoring.
+  Editor Find/Replace initialization is idempotent when the workspace returns.
+- Validation: 46 focused desktop/tablet tests passed, including all-tab
+  control/description placement, direct Scenarios and Trusted Sources visits,
+  Browse/File/edit/activation-cancel behavior, cached navigation and reload,
+  responsive widths, draft protections, scenario execution guards, profile
+  saving/AI review, duplicate creation, and window controls. Linux/ARM64 build,
+  editor diagnostics, and whitespace checks passed.
+- A broader 80-test editor/browser run had 58 passes and 22 failures. The
+  failures target hidden source textareas or ambiguous labels matching both
+  textarea and CodeMirror editors; they are not reported as passing. Those
+  unrelated editor tests were not rewritten as part of the layout change.
+- Deployed only to `zpr-simulator` at `2026-10-16T02:31:37.302407801Z`.
+  Executable SHA-256:
+  `ac1b1f003e35e99b74b214d4b6a825777a8b7f22569092a6c394fbb28644a694`.
+  Live measurements confirmed controls above description above tabs, no legacy
+  scenario summary, and exactly one workspace on all five tabs. Direct
+  Scenarios and Trusted Sources reloads also passed; Browse opened and closed
+  on Trusted Sources. Assistant ready; organization page HTTP 200. No
+  organization activation or scenario run was performed.
+- Rollback executable:
+  `/usr/local/bin/zpr-web-dashboard.before-shared-org-header-20261016`
+  (SHA-256 `e9b733d2465be11a57f3b2ac6bed9db1b31190856074b3213492983a7f133a58`).
+  Restore it over `/usr/local/bin/zpr-web-dashboard` and restart only Simulator
+  to roll back. No commit or push.
+
+## Simulator organization header order and sidebar groups (2026-10-16 02:17 UTC)
+
+- Moved organization Browse, File, name, and activation controls above the
+  horizontal navigation. Scenarios is now the first tab; Identity remains the
+  default view. Grouped the Simulator sidebar using the shared navigation-group
+  styles: CONFIGURATION contains Organizations; MONITORING contains Activity
+  and Workers. Control Room is unchanged.
+- All 36 focused desktop/tablet browser tests passed. New coverage checks DOM
+  and visual control order at 1440px, 820px, and 390px, active and inactive
+  organization controls, tab order, sidebar grouping through cached navigation
+  and reload, and absence of unintended activation. Linux/ARM64 build and
+  whitespace checks passed.
+- Deployed only to `zpr-simulator`, restarted at
+  `2026-10-16T02:17:55.20811792Z`. Executable SHA-256:
+  `e9b733d2465be11a57f3b2ac6bed9db1b31190856074b3213492983a7f133a58`.
+  Live checks confirmed all four organization controls above the tabs,
+  Scenarios first, both sidebar group titles, assistant readiness, and
+  organization page HTTP 200. Static assets revalidate with `Cache-Control:
+  no-cache`; reload existing tabs to load the update.
+- Rollback retained at
+  `/usr/local/bin/zpr-web-dashboard.before-header-order-20261016`
+  (SHA-256 `f39d7331efb20deb9771666ebfe814846f6a56d9559aa382efe46454fd02bd4e`).
+  Restore it over `/usr/local/bin/zpr-web-dashboard` and restart only Simulator
+  to roll back. No commit or push.
+
+## Simulator organization navigation and readable icons (2026-10-16 01:48 UTC)
+
+- Simulator only. Added horizontal organization navigation for Identity,
+  Trusted Sources, Policy, Services, and Scenarios; removed the Scenarios and
+  Trusted Sources sidebar entries. Existing URLs and cached in-app navigation
+  remain supported. Policy and Services now select individual detail panels.
+- Removed the standalone organization "Design with Claude" action and its
+  dialog. Scenario design and editor-local assistants are unchanged.
+- Enlarged zoom/dismiss glyphs to bold 26px symbols in 36px controls, and
+  directory branch symbols to bold 20px. Preserved labels, keyboard controls,
+  focus indicators, and directory graph screen space.
+- Validation: 36 focused desktop/tablet browser checks passed, including
+  navigation/history/deep links, narrow layouts, organization browsing and
+  draft protections, scenario browsing, editor/window controls, icon sizing,
+  keyboard dismissal, and organization Help. Linux/ARM64 build passed.
+  An additional existing header test still fails on its stale
+  `#organization-active-name` count assertion; that element was already absent
+  before this change. The full browser suite was not run.
+- Installed executable SHA-256:
+  `f39d7331efb20deb9771666ebfe814846f6a56d9559aa382efe46454fd02bd4e`.
+  Restarted only `zpr-simulator` at `2026-10-16T01:48:49.391528293Z`;
+  container ID, image, configuration, and mounts were preserved.
+- Live checks: assistant ready, organization page HTTP 200, all five
+  organization navigation destinations render with the correct current link.
+  Measured zoom and organization-dismiss controls at 26px/700 glyphs and
+  36px square buttons. No scenario was applied, saved, published, or run.
+- Rollback executable:
+  `/usr/local/bin/zpr-web-dashboard.before-organization-tabs-20261015`
+  (SHA-256 `4b8f43504d49e432273db76a96fa56df00e9d73c603beeb43de9824633ba4ecc`).
+  Restore it over `/usr/local/bin/zpr-web-dashboard` and restart only
+  `zpr-simulator` to roll back. No commit or push.
+
+## Scenario assistant compact probe patch (2026-10-15 22:05 UTC)
+
+- Simulator only. Installed a Linux/ARM64 dashboard executable in the existing
+  `zpr-simulator` container and restarted only that container. Executable
+  SHA-256: `4b8f43504d49e432273db76a96fa56df00e9d73c603beeb43de9824633ba4ecc`.
+  Container ID `d27412fbd2adf5a4314f549c1bd7e3df2024da829cd7ecbb25493e17ec859e5e`,
+  image ID `sha256:765e0dd6b5cd8056d51b7926d39574508f351e08f18692c3acdc74c7cdc0f400`,
+  configuration and mounts were preserved. Started
+  `2026-10-15T22:05:39.266018137Z`.
+- Diagnosis: Anthropic first rejected the earlier schema for 27 union-typed
+  parameters (limit 16). Once corrected, reproducing the 78-step scenario hit
+  the output limit. Combining full and patch response schemas exceeded the
+  grammar limit; an unbounded patch array also exhausted output. The final
+  implementation uses a patch-only schema for populated scenarios and keeps
+  the full-scenario schema for new ones. It preserves the base server-side and
+  adds one step at a time. Existing denied business-service pairs are provided
+  as grounded probe candidates.
+- Focused scenario/assistant race tests and `go vet` passed. A live request with
+  the exact reported prompt returned HTTP 200 at 2,400 maximum output tokens
+  (15,115 input, 324 output). The validated proposal keeps the existing 78
+  steps and adds one `request_business_service` denial probe after an employee
+  login, branching alongside the remaining normal work. This is an
+  application-level simulated service probe, not a raw network scan. The
+  expected denial is not claimed as a measured result. A before/after catalog
+  comparison confirmed the stored scenario was unchanged; no Apply, save,
+  publish or run occurred.
+- Assistant readiness is `true`; `/scenarios.html` returned HTTP 200. No other
+  service was restarted. Rollback copy retained in Simulator:
+  `/usr/local/bin/zpr-web-dashboard.before-compact-patch-20261015`
+  (SHA-256 `5db4f1a0af1523d083eb1043af245eda979fed7d4831a56816d02f6746c949a6`).
+  To roll back, restore that file over `/usr/local/bin/zpr-web-dashboard` and
+  restart only `zpr-simulator`.
+- No commit or push. Reload the Scenarios page before retrying.
+
+## Scenario structured-output schema correction (2026-10-15 21:31 UTC)
+
+- Simulator only. Built a Linux/ARM64 dashboard executable from the current
+  dashboard worktree using the Simulator Dockerfile build stage. Binary
+  SHA-256: `d8f50c098fabd71a1228db592be7cab8d6c0f8509bf810ae4031f6f9a0b03322`.
+- Replaced the executable in the existing `zpr-simulator` container and
+  restarted only that container; no image recreation or stack restart.
+  Container ID `d27412fbd2adf5a4314f549c1bd7e3df2024da829cd7ecbb25493e17ec859e5e`,
+  image `zpr-simulator:20261015-org-layout-fixed` and image ID
+  `sha256:765e0dd6b5cd8056d51b7926d39574508f351e08f18692c3acdc74c7cdc0f400`
+  stayed unchanged. Existing mounts and container configuration stayed
+  unchanged. Started `2026-10-15T21:31:36.184534719Z`.
+- Anthropic's returned 400 identified 27 union-typed schema parameters versus
+  its limit of 16. The schema now uses required empty/default values for
+  optional scenario fields and retains only the nullable proposal union.
+  Focused scenario/assistant race tests pass.
+- Post-deploy assistant readiness returned `ready: true`; scenario API reports
+  `great-lakes`, five scenarios and an idle run. The served Scenarios page
+  reconnects and displays Great Lakes Instruments. No live provider request,
+  scenario run, save, publish or other service restart was performed.
+- Control Room, Control-Service and Policy-Service container IDs, images and
+  start times were unchanged. Rollback executable retained in the Simulator
+  as `/usr/local/bin/zpr-web-dashboard.before-structured-schema-20261015`
+  (SHA-256 `2a67b9e61fc98e2bd23c79db443d3c218e946866999e680bbb394a22266ba892`).
+  To roll back, restore that file over `/usr/local/bin/zpr-web-dashboard` and
+  restart only `zpr-simulator`.
+- A temporary diagnostic build captured the provider's union-limit error in
+  local Simulator logs, then was replaced by the corrected build. Its rollback
+  copy is `/usr/local/bin/zpr-web-dashboard.before-provider-diagnostics-20261015`
+  (SHA-256 `d8f50c098fabd71a1228db592be7cab8d6c0f8509bf810ae4031f6f9a0b03322`).
+- No commit or push. Reload the Scenarios page before trying the design again.
+
+## Scenario AI structured design (2026-10-15 21:13 UTC)
+
+- Simulator only, existing container executable replaced without recreation.
+  Image `zpr-editor-ui:20261015-scenario-ai`, based on `59b4672` plus this
+  Scenario AI follow-up. Started `2026-10-15T21:13:11.26289543Z`.
+  Executable SHA-256:
+  `2a67b9e61fc98e2bd23c79db443d3c218e946866999e680bbb394a22266ba892`.
+- Native Scenario response schema and explicit incomplete/output-limit errors;
+  preserve failed-request usage and draft. No automatic retry or limit increase.
+  Existing proposal validation and explicit Apply/Save remain unchanged.
+- Focused Go race tests/vet and two desktop/tablet failure UI checks passed
+  before rollout. Full suite retains four recorded pre-existing failures.
+  Deployment verifies exact Simulator Config/HostConfig/sorted mounts/ID,
+  installed executable hash and real assistant readiness. Control Room,
+  Control-Service and Policy-Service identity/image/start baselines unchanged.
+- Served Scenario HTML and 18 assets match sources. Actual served browser
+  error/usage check uses mocked APIs: draft unchanged, no Apply, usage visible,
+  no JS/CSP errors. No live provider request, save, publish or scenario run.
+  Original operator provider response was not retained; its precise failure
+  cause remains unconfirmed and no live provider success is claimed.
+- Private artifacts: session `files/scenario-ai-release-20261015/` contains
+  executable, rollback, private inspect snapshots, unchanged-service baselines
+  and verification script. Do not publish private inspect files.
+  Rollback: stop Simulator only, restore `simulator-before` to
+  `/usr/local/bin/zpr-web-dashboard`, start and verify. In-container copy:
+  `/usr/local/bin/zpr-web-dashboard.before-scenario-ai-20261015`.
+- No commit/push. Reload the Scenarios page before retrying.
+
 [Active backlog](GUI%20work.md) | [Completed work](GUI%20completed%20work.md)
 
 This is a historical release ledger, not a live health report. Keep dated test,

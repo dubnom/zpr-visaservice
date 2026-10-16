@@ -10,13 +10,96 @@ export function registerScenarioBrowserTests(test, expect) {
     return data;
   };
 
+  test("Simulate separates monitoring execution from organization configuration and preserves run results", async ({ page, appURL, api }) => {
+    const one = scenario("one", "Runtime");
+    const two = scenario("two", "Runtime");
+    const draft = scenario("draft", "Drafts", 0);
+    const data = setup(api, [one, two, draft]);
+    api.handlers.set("/api/simulator/scenarios/two/run", route => {
+      expect(route.request().method()).toBe("POST");
+      data.run = { scenario_id: "two", state: "running", scenario: two, steps: [] };
+      return route.fulfill({ json: data.run });
+    });
+    api.handlers.set("/api/simulator/scenarios/cancel", route => {
+      data.run = { ...data.run, state: "cancelled" };
+      return route.fulfill({ json: data.run });
+    });
+    api.handlers.set("/api/simulator/scenarios/clear", route => {
+      data.run = { state: "idle", steps: [] };
+      return route.fulfill({ json: data.run });
+    });
+    await page.goto(appURL + "/scenarios.html");
+    await expect(page.locator("#scenario-list")).toContainText("Scenario one");
+    await expect(page.locator(".scenario-run-pane")).toBeHidden();
+    await expect(page.locator("#scenario-start")).toBeHidden();
+    await expect(page.locator(".organization-navigation")).toBeVisible();
+    const simulate = page.locator('.primary-nav a[href="/scenarios.html#simulate"]');
+    await simulate.click();
+    await expect(page).toHaveURL(appURL + "/scenarios.html#simulate");
+    await expect(simulate).toHaveAttribute("aria-current", "page");
+    await expect(page.locator("#organization-workspace")).toBeHidden();
+    await expect(page.locator(".scenario-list-pane")).toBeHidden();
+    await expect(page.locator(".scenario-run-pane")).toBeVisible();
+    await expect(page.locator("#scenario-run-selection")).toHaveValue("one");
+    expect(api.counts.get("/api/simulator/scenarios/two/run") || 0).toBe(0);
+    await page.locator("#scenario-run-selection").selectOption("draft");
+    await expect(page.locator("#scenario-start")).toBeDisabled();
+    await page.locator("#scenario-run-selection").selectOption("two");
+    await expect(page.locator("#scenario-start")).toBeEnabled();
+    await page.getByRole("link", { name: "Configure scenarios", exact: true }).click();
+    await expect(page.locator(".scenario-run-pane")).toBeHidden();
+    await expect(page.locator("#scenario-list")).toContainText(two.name);
+    await page.locator("#scenario-list").getByRole("link", { name: "Simulate", exact: true }).click();
+    await expect(page.locator("#scenario-run-selection")).toHaveValue("two");
+    await page.locator("#scenario-start").click();
+    await expect(page.locator("#scenario-run-title")).toHaveText(two.name);
+    await expect(page.locator("#scenario-start")).toBeDisabled();
+    expect(api.counts.get("/api/simulator/scenarios/two/run")).toBe(1);
+    await page.locator('.primary-nav a[href="/organizations.html"]').click();
+    await expect(page.locator("#organization-workspace")).toBeVisible();
+    await page.getByRole("navigation", { name: "Organization sections", exact: true }).getByRole("link", { name: "Scenarios", exact: true }).click();
+    await expect(page.locator(".scenario-run-pane")).toBeHidden();
+    await expect(page.locator("#scenario-list")).toContainText(two.name);
+    await simulate.click();
+    await expect(page.locator("#scenario-run-title")).toHaveText(two.name);
+    await page.locator("#scenario-cancel").click();
+    await expect(page.locator("#scenario-run-state")).toHaveClass(/cancelled/);
+    expect(api.counts.get("/api/simulator/scenarios/cancel")).toBe(1);
+    data.run = { ...data.run, state: "passed", steps: [{ index: 0, action: "delay", state: "passed", result_error: "Fixture result detail" }] };
+    await expect(page.locator("#scenario-run-state")).toHaveClass(/passed/);
+    await expect(page.locator("#scenario-start")).toBeEnabled();
+    await page.getByRole("tab", { name: /^Results/ }).click();
+    await expect(page.locator("#scenario-results")).toBeVisible();
+    await page.reload();
+    await expect(page.locator(".scenario-run-pane")).toBeVisible();
+    await expect(page.locator("#organization-workspace")).toBeHidden();
+    await expect(simulate).toHaveAttribute("aria-current", "page");
+    await expect(page.locator("#scenario-run-title")).toHaveText(two.name);
+    await page.goBack();
+    await expect(page.locator(".scenario-list-pane")).toBeVisible();
+    await expect(simulate).not.toHaveAttribute("aria-current", "page");
+    await page.goForward();
+    await expect(page.locator(".scenario-run-pane")).toBeVisible();
+    for (const width of [1440, 820, 390]) {
+      await page.setViewportSize({ width, height: 900 });
+      await expect(page.locator("#scenario-start")).toBeVisible();
+      await expect.poll(() => page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
+    }
+    await page.locator("#scenario-clear").click();
+    await expect(page.locator("#scenario-run-state")).toHaveClass(/idle/);
+    expect(api.counts.get("/api/simulator/scenarios/clear")).toBe(1);
+    data.active_organization_id = "beta";
+    await expect(page.locator("#scenario-start")).toBeDisabled();
+    expect(api.counts.get("/api/simulator/scenarios/two/run")).toBe(1);
+  });
+
   test("Scenario browser selects folder files without running and leaves full-width tracks", async ({ page, appURL, api }) => {
     const data = setup(api, [scenario("one", "Finance"), scenario("two", "Runtime"), scenario("three", "Runtime")]);
     await page.goto(appURL + "/scenarios.html");
     await expect(page.locator("#scenario-list article")).toHaveCount(1);
     await expect(page.locator("#scenario-list")).toContainText("Scenario one");
     await expect(page.locator("#scenario-browser-dialog")).not.toBeVisible();
-    await page.getByRole("button", { name: "Browse...", exact: true }).click();
+    await page.locator("#scenario-browse").click();
     const browser = page.getByRole("dialog", { name: "Browse scenarios" });
     await expect(browser).toBeVisible();
     await browser.locator('summary').filter({ hasText: "Runtime" }).click();
@@ -32,9 +115,12 @@ export function registerScenarioBrowserTests(test, expect) {
     await expect(browser.locator('[data-select-scenario="two"]')).toHaveAttribute("aria-pressed", "true");
     await page.keyboard.press("Escape");
     await expect(page.locator("#scenario-browse")).toBeFocused();
+    await page.locator('.primary-nav a[href="/scenarios.html#simulate"]').click();
     const layout = await page.locator(".scenario-layout").boundingBox();
     const tracks = await page.locator(".scenario-run-pane").boundingBox();
     expect(Math.abs(layout.width - tracks.width)).toBeLessThan(2);
+    await page.locator('.primary-nav a[href="/organizations.html"]').click();
+    await page.getByRole("navigation", { name: "Organization sections", exact: true }).getByRole("link", { name: "Scenarios", exact: true }).click();
     await page.setViewportSize({ width: 390, height: 844 });
     await page.locator("#scenario-browse").click();
     await expect.poll(() => browser.evaluate(element => {
@@ -89,10 +175,13 @@ export function registerScenarioBrowserTests(test, expect) {
     await page.goto(appURL + "/scenarios.html");
     await page.locator("#scenario-browse").click();
     await page.locator('[data-select-scenario="two"]').click();
+    await page.locator('.primary-nav a[href="/scenarios.html#simulate"]').click();
     await page.locator("[data-run-scenario]").click();
     await expect(page.locator("#scenario-run-title")).toHaveText(two.name);
     expect(api.counts.get("/api/simulator/scenarios/two/run")).toBe(1);
     expect(api.counts.get("/api/simulator/scenarios/one/run") || 0).toBe(0);
+    await page.locator('.primary-nav a[href="/organizations.html"]').click();
+    await page.getByRole("navigation", { name: "Organization sections", exact: true }).getByRole("link", { name: "Scenarios", exact: true }).click();
     await page.locator("#scenario-browse").click();
     await page.locator('[data-select-scenario="one"]').click();
     await expect(page.locator("#scenario-list")).toContainText(one.name);
@@ -153,7 +242,7 @@ export function registerScenarioBrowserTests(test, expect) {
     }));
     const data = setup(api, [definition]);
     data.run = { scenario_id: "lanes", scenario: definition, state: "running", total_steps: 8, current_step: 1, steps: [] };
-    await page.goto(appURL + "/scenarios.html");
+    await page.goto(appURL + "/scenarios.html#simulate");
     const scrollbar = page.locator(".scenario-track-scrollbar");
     const viewport = page.locator(".scenario-track-viewport");
     await expect(scrollbar).toBeVisible();
@@ -179,7 +268,7 @@ export function registerScenarioBrowserTests(test, expect) {
       current_step: 2, total_steps: 3, active_steps: [2], scenario: definition,
       steps: [{ number: 1, action: "delay", status: "completed", output: "Detailed output <script>inert</script>" }],
     };
-    await page.goto(appURL + "/scenarios.html");
+    await page.goto(appURL + "/scenarios.html#simulate");
     const details = page.locator(".scenario-step-details");
     await expect(details).toHaveCount(1);
     await expect(details.locator("p")).not.toBeVisible();

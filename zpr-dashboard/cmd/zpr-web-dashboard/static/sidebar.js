@@ -149,14 +149,14 @@
     "organizations.html": {
       title: "Organizations",
       intro: "Each organization selects a separate simulated policy, directory, DNS context, and runtime profile.",
-      steps: ["Review the target profile before activation.", "Switching resets the simulated runtime and can interrupt connections and workloads; finish/cancel scenarios and log out users first.", "See Logs appears after an activation or base-restore failure; use it to inspect the exact startup gate.", "Edit LDAP seed opens a full-page LDIF editor laid out like the Control Room Policy editor (File…, Analyze, Format, Wrap, Find & Replace, History). AI Assistant is ready when the Simulator has an Anthropic key. Sending shares the current LDIF draft and chat with Anthropic; Insert is an undoable, unsaved edit. Design Apply provides Undo AI change and Redo AI change, and never saves or publishes."],
+      steps: ["Use the horizontal navigation for Identity, Trusted Sources, Policy, Services, and Scenarios. Review the target profile before activation.", "Switching resets the simulated runtime and can interrupt connections and workloads; finish/cancel scenarios and log out users first.", "See Logs appears after an activation or base-restore failure; use it to inspect the exact startup gate.", "Edit LDAP seed opens a full-page LDIF editor laid out like the Control Room Policy editor (File…, Analyze, Format, Wrap, Find & Replace, History). AI Assistant is ready when the Simulator has an Anthropic key. Sending shares the current LDIF draft and chat with Anthropic; Insert is an undoable, unsaved edit."],
       recovery: "A failed activation rolls back the selected organization. Check the reset log, then verify policy, assertion source, LDAP, DNS, and Control-Service before retrying.",
       context: "Example: Great Lakes Instruments supplies its own directory base, identity mappings, services, and role checks. Activation changes Simulator context and may reset its workloads; it does not deploy network policy or reseed LDAP.",
       docs: "Organization runtime profiles", href: "https://github.com/org-zpr/zpr-visaservice/tree/main/zpr-dashboard/cmd/zpr-web-dashboard/examples/organizations",
     },
     "scenarios.html": {
       title: "Scenarios",
-      intro: "Scenarios are organization-specific, revisioned workflows. Use Browse... to select a file by folder, File... for New/Edit, and Run to start its published revision. Tracks use the full width; step output is collapsed under Details while running, but failures stay visible.",
+      intro: "Scenarios are organization-specific, revisioned workflows. Under Organizations, use Browse... to select a file by folder and File... for New/Edit. Open Monitoring > Simulate to select and run a published scenario and inspect its runner and results. Tracks use the full width; step output is collapsed under Details while running, but failures stay visible.",
       steps: ["Only published revisions can run.", "The scenario editor opens as a full page laid out like the Control Room Policy editor, with History beside the file name. Blank names show Untitled; enter a real name before saving. The toolbar has File… (Save, Publish revision, Open/Download source, Convert to YAML/JSON, Discard, Delete, Close), Analyze, Format, then Raw JSON editor, Wrap and Find & Replace. Raw mode edits JSON or YAML with syntax colors and gutter error markers. Cmd/Ctrl+S saves.", "Analyze validates the exact source and scenario definition without saving or running; JSON/YAML syntax errors with source lines appear in the gutter, while definition errors without source locations stay in the status message.", "The Claude assistant works in both editor modes; Ask sends the current context and chat to Anthropic, and Apply changes only the unsaved draft. Review, Save, and Publish separately.", "Review cleanup steps before publishing; cancel stops active work and still runs cleanup.", "Editing or publishing does not activate a different organization."],
       recovery: "Invalid JSON or YAML blocks returning to the form so it cannot be silently discarded. Select a source-local gutter marker or read the analysis status, fix the draft, and Analyze again. If the catalog is empty, confirm the active organization has bundled or workspace scenarios. Open the reset log for activation failures.",
       context: "Example: the Northstar `client-service` scenario runs `finance-client` on machine-03 against `echo-service` on machine-05. It requires the separately provisioned EchoWeb TCP 8080 grant; scenario execution does not modify policy.",
@@ -195,7 +195,8 @@
   function helpContent() {
     const simulator = document.querySelector(".sidebar .brand")?.textContent.includes("SIMULATOR");
     if (simulator) {
-      const content = simulatorHelp[location.pathname.split("/").pop()] || simulatorHelp["machine-logs.html"];
+      let content = simulatorHelp[location.pathname.split("/").pop()] || simulatorHelp["machine-logs.html"];
+      if (location.pathname === "/scenarios.html" && location.hash === "#simulate") content = { ...content, title: "Simulate" };
       const maximum = window.ZPRSimulatorScenarioLimits?.maxMachines;
       return location.pathname.endsWith("/scenarios.html") && Number.isInteger(maximum)
         ? { ...content, steps: [...content.steps, `Maximum machines per run: ${maximum}.`] }

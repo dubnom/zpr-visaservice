@@ -27,6 +27,34 @@ Do not infer current runtime health from a historical verification entry.
 
 ## Current status
 
+- **Source publication validation (2026-10-16):** the accompanying checkpoint
+  includes the priorities document, Scenario AI structured/compact proposals,
+  Simulator navigation/Simulate separation, Organization UI refinements and
+  their documentation/tests. All 28 selected desktop/tablet navigation/run-view
+  checks and focused assistant race tests pass; formatting, vet and whitespace
+  checks pass. Required full Go tests report five failing groups: the four
+  previously recorded groups plus `TestAssistantSkillsEmbeddedAndTaskSpecific/
+  scenario`, which expects the instruction text "proposal to null". This
+  assertion remains unresolved; no existing failing test was changed.
+  Publication does not perform a new deployment or certify the full suite.
+
+- **Scenario AI design response reliability:** **Deployed to Simulator at
+  22:05 UTC; not committed or pushed.** Full structured output remains for new
+  scenarios; populated scenarios use a compact one-step patch, merged and
+  semantically validated server-side so long workdays are not regenerated.
+  Existing denied business-service examples are supplied as candidate probe
+  points. Focused race tests and vet pass. The exact reported prompt now returns
+  a valid, unsaved 79-step proposal from the 78-step workday context (15,115
+  input/324 output tokens at a 2,400-token limit); the original 78 steps remain
+  intact and the added denial probe branches after an employee login. This is a
+  simulated business-service access probe, not a raw network scan, and no
+  runtime outcome is claimed. The stored draft was unchanged; nothing was
+  applied, saved, published or run. Simulator readiness and the Scenario page
+  were verified after restarting Simulator only. See the
+  [latest rollout](GUI%20deployments.md#scenario-assistant-compact-probe-patch-2026-10-15-2205-utc),
+  [completed evidence](GUI%20completed%20work.md#scenario-ai-design-response-reliability-2026-10-15-utc)
+  and [initial rollout](GUI%20deployments.md#scenario-ai-structured-design-2026-10-15-2113-utc).
+
 **Source reconciliation:** `d741cec` published the earlier editor/backend/
 bootstrap work. The accompanying publication checkpoint includes the remaining
 editor migration, Organizations Browse/File/layout repair, Control Room root

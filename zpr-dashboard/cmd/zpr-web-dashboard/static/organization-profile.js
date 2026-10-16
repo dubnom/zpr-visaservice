@@ -194,7 +194,7 @@
     </div>
 
     </div><div id="organization-profile-assistant"></div></div>`;
-  document.body.append(dialog);
+  document.getElementById("organization-workspace").append(dialog);
   const source = dialog.querySelector("#organization-profile-source");
   const name = dialog.querySelector("#organization-profile-name");
   const description = dialog.querySelector("#organization-profile-description");
@@ -910,7 +910,7 @@
   review.setAttribute("aria-label", "Review AI organization changes");
   review.className = "design-assistant-dialog";
   review.innerHTML = `<h2>Review AI organization changes</h2><p>Only the profile draft will change. Nothing is saved or activated.</p><pre></pre><button type="button" data-review-accept>Insert reviewed draft</button><button type="button" data-review-cancel>Cancel</button>`;
-  document.body.append(review);
+  document.getElementById("organization-workspace").append(review);
   const assistant = window.mountSimulatorDesignAssistant("organization-profile-assistant", {
     scope: "organization-profile", editorID: dialog.id, applyLabel: "Review profile proposal",
     editable: () => dialog.open && Boolean(revision) && !busy,

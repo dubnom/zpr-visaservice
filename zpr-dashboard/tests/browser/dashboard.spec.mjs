@@ -737,6 +737,7 @@ import { registerOrganizationDefinitionsTests } from "./organization-definitions
 import { registerConfigFormTests } from "./config-form.mjs";
 import { registerScenarioBrowserTests } from "./scenario-browser.mjs";
 import { registerOrganizationBrowserTests } from "./organization-browser.mjs";
+import { registerOrganizationNavigationTests } from "./organization-navigation.mjs";
 import { registerCodeEditorTests } from "./code-editor.mjs";
 import { registerRemainingCodeEditorTests } from "./remaining-code-editors.mjs";
 
@@ -945,6 +946,7 @@ registerOrganizationDefinitionsTests(test, expect);
 registerConfigFormTests(test, expect);
 registerScenarioBrowserTests(test, expect);
 registerOrganizationBrowserTests(test, expect);
+registerOrganizationNavigationTests(test, expect);
 registerCodeEditorTests(test, expect);
 registerRemainingCodeEditorTests(test, expect);
 registerDiagnosticsGuidelineTests(test, expect);
@@ -10521,12 +10523,12 @@ test("organization activation requires explicit approval and is cancel-safe", as
   const activationPlacement = await page.evaluate(() => {
     const title = document.getElementById("organization-title").getBoundingClientRect();
     const control = document.querySelector("[data-organization-activation-control]").getBoundingClientRect();
-    const description = document.querySelector("#organization-detail > .organization-summary").getBoundingClientRect();
+    const description = document.getElementById("organization-description").getBoundingClientRect();
     return { adjacent: control.left >= title.right && control.top < title.bottom, descriptionBelow: description.top >= control.bottom };
   });
   expect(activationPlacement.adjacent).toBeTruthy();
   expect(activationPlacement.descriptionBelow).toBeTruthy();
-  await expect(page.locator("#organization-scenario-summary a").first()).toBeVisible();
+  await expect(page.locator("#organization-scenario-summary")).toHaveCount(0);
   await activate.click();
   const dialog = page.getByRole("dialog", { name: "Switch organization?", exact: true });
   await expect(dialog).toBeVisible();
@@ -10936,33 +10938,6 @@ test("AI Scenario Apply supports exact raw Undo and Redo without saving or runni
   await expect(source).toHaveValue(second + "\n");
   expect(api.counts.get("/api/simulator/scenarios/run") || 0).toBe(0);
   expect(api.counts.get("/api/simulator/organizations/alpha/scenarios") || 0).toBe(0);
-});
-
-test("AI organization Apply is undoable and never saves or publishes the directory", async ({ page, appURL, api }) => {
-  const endpoint = "/api/simulator/organizations/alpha/directory";
-  const original = "dn: cn=Operators,dc=alpha,dc=test\ncn: Operators\n";
-  const proposed = "dn: cn=Reviewers,dc=alpha,dc=test\ncn: Reviewers\n";
-  const mutations = [];
-  api.handlers.set(endpoint, (route) => {
-    if (route.request().method() !== "GET") mutations.push(route.request().method());
-    return route.fulfill({ json: { revision: 1, published_revision: 0, content: { base_dn: "dc=alpha,dc=test", ldif: original } } });
-  });
-  api.handlers.set(endpoint + "/revisions", (route) => route.fulfill({ json: [{ revision: 1, summary: "Initial" }] }));
-  api.handlers.set("/api/simulator/assistant/status", (route) => route.fulfill({ json: { ready: true, model: "test-model", models: ["test-model"] } }));
-  api.handlers.set("/api/simulator/design-assistant", (route) => route.fulfill({ json: { answer: "Proposal", proposal: { directory_ldif: proposed } } }));
-  await page.goto(appURL + "/organizations.html");
-  await page.locator("#organization-design-assistant").click();
-  const pane = page.locator("#organization-assistant-slot");
-  await pane.locator("[data-assistant-question]").fill("Review");
-  await pane.locator("[data-assistant-submit]").click();
-  await pane.locator("[data-assistant-apply]").click();
-  await expect(page.locator("#directory-editor-source")).toHaveValue(proposed);
-  await pane.getByRole("button", { name: "Undo AI change", exact: true }).click();
-  await expect(page.locator("#directory-editor-source")).toHaveValue(original);
-  await pane.getByRole("button", { name: "Redo AI change", exact: true }).click();
-  await expect(page.locator("#directory-editor-source")).toHaveValue(proposed);
-  expect(mutations).toEqual([]);
-  expect(api.counts.get(endpoint + "/publish") || 0).toBe(0);
 });
 
 test("GUI gateway editor AI Assistant is ready without opt-in, sends the draft, and inserts suggestions undoably", async ({ page, appURL, api }) => {

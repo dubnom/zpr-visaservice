@@ -49,6 +49,27 @@ async function open(page, appURL, api, item) {
 }
 
 export function registerRemainingCodeEditorTests(test, expect) {
+  test("CodeMirror Scenario design failure preserves draft and displays provider usage", async ({ page, appURL, api }) => {
+    api.handlers.set("/api/simulator/assistant/status", route => route.fulfill({ json: { ready: true, model: "test-model", models: ["test-model"] } }));
+    const message = "Claude reached the output token limit before completing the design. No changes were applied. Increase the output limit in Model and Tokens or request a smaller scenario.";
+    api.handlers.set("/api/simulator/design-assistant", route => route.fulfill({ status: 502, json: {
+      error: message, input_tokens: 321, output_tokens: 2400,
+    } }));
+    const item = cases.find(item => item.name === "Scenario");
+    await open(page, appURL, api, item);
+    const pane = page.locator("#scenario-assistant-slot");
+    await pane.locator("[data-assistant-question]").fill("Create a fictional delay example");
+    await pane.locator("[data-assistant-submit]").click();
+    await expect(pane.locator("[data-assistant-thread]")).toContainText(message);
+    await expect(page.locator(`#${item.id}`)).toHaveValue(item.sample);
+    await expect(pane.locator("[data-assistant-apply]")).toBeHidden();
+    await pane.getByText("Model and Tokens", { exact: true }).click();
+    await expect(pane.locator("[data-assistant-usage]")).toContainText("2,400 output / 2,400 max");
+    await expect(pane.locator("[data-assistant-usage]")).toContainText("321 input");
+    expect(api.counts.get("/api/simulator/design-assistant")).toBe(1);
+    expect([...api.counts.keys()].some(path => /\/run$|\/publish$/.test(path))).toBe(false);
+  });
+
   for (const item of cases) {
     test(`CodeMirror ${item.name} source preserves typography, colors, wrapping, replacement and history`, async ({ page, appURL, api }) => {
       await open(page, appURL, api, item);

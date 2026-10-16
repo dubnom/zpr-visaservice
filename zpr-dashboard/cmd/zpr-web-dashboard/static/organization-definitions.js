@@ -12,7 +12,7 @@
     <div class="assistant-settings" data-definition-fields hidden><label>Document path<input id="organization-definition-path" maxlength="256"></label><label>Document kind<select id="organization-definition-kind" aria-label="Document kind"><option value="directory">Directory (LDIF)</option><option value="policy">Policy (ZPL)</option><option value="policy-config">Compiler configuration (ZPLC)</option><option value="policy-catalog">Policy catalog (JSON)</option><option value="scenario">Scenario (JSON)</option></select></label></div>
     <div class="config-source-editor"><div id="organization-definitions-gutter" class="config-source-gutter"></div><div class="config-code-surface"><pre id="organization-definitions-highlight" aria-hidden="true"></pre><textarea id="organization-definitions-source" class="zpr-config-source" aria-label="Selected organization definition source" spellcheck="false" wrap="off"></textarea></div></div>
     </div><div id="organization-definitions-assistant"></div></div>`;
-  document.body.append(dialog);
+  document.getElementById("organization-workspace").append(dialog);
   const source = dialog.querySelector("#organization-definitions-source");
   const selector = dialog.querySelector("#organization-definition-selector");
   const documentPath = dialog.querySelector("#organization-definition-path");
@@ -191,7 +191,7 @@
   review.className = "design-assistant-dialog";
   review.setAttribute("aria-label", "Review AI definition changes");
   review.innerHTML = `<h2>Review AI definition changes</h2><p>Review every changed profile field and document below. Insertion changes only this local draft; nothing is saved or activated.</p><pre></pre><button type="button" data-accept>Insert reviewed definitions</button><button type="button" data-cancel>Cancel</button>`;
-  document.body.append(review);
+  document.getElementById("organization-workspace").append(review);
   const assistant = window.mountSimulatorDesignAssistant("organization-definitions-assistant", {
     scope: "organization-definitions", editorID: dialog.id, applyLabel: "Review definition proposal",
     editable: () => dialog.open && Boolean(revision) && !busy,

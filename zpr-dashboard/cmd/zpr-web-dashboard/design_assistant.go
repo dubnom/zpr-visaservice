@@ -4,11 +4,15 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"io"
+	"log"
 	"net/http"
 	"os"
 	"path/filepath"
 	"strings"
+
+	assistantclient "neboagency.com/zpr-dashborad/internal/assistant"
 )
 
 type simulatorDesignAssistantRequest struct {
@@ -42,11 +46,19 @@ type simulatorDesignAssistantModelReply struct {
 	Answer   string `json:"answer"`
 	Proposal *struct {
 		Scenario      json.RawMessage               `json:"scenario"`
+		ScenarioPatch json.RawMessage               `json:"scenario_patch"`
 		DirectoryLDIF string                        `json:"directory_ldif"`
 		Profile       json.RawMessage               `json:"profile"`
 		ProfilePatch  json.RawMessage               `json:"profile_patch"`
 		Documents     *organizationDocumentProposal `json:"documents"`
 	} `json:"proposal"`
+}
+
+type simulatorScenarioDesignPatch struct {
+	Name                string                `json:"name"`
+	Description         string                `json:"description"`
+	AppendStep          simulatorScenarioStep `json:"append_step"`
+	ConcurrentAfterStep int                   `json:"concurrent_after_step"`
 }
 
 func newSimulatorClaudeAssistant() *claudeAssistant {
@@ -137,14 +149,41 @@ func simulatorDesignAssistantHandler(assistant *claudeAssistant) http.HandlerFun
 			writeWorkspaceError(w, http.StatusBadRequest, "design context exceeds the supported size limit")
 			return
 		}
-		completion, err := assistant.complete(r.Context(), system, request.Messages, request.Model, request.MaxTokens)
+		var completion assistantReply
+		if proposalKind == "scenario" {
+			client := assistantclient.Client{APIKey: assistant.apiKey, URL: assistant.url, HTTP: assistant.http}
+			schema := scenarioAssistantResponseSchema()
+			var currentScenario simulatorScenario
+			if err := json.Unmarshal(request.Scenario, &currentScenario); err == nil && len(currentScenario.Steps) > 0 {
+				schema = scenarioAssistantPatchResponseSchema()
+			}
+			completion, err = client.CompleteStructured(r.Context(), system, request.Messages, request.Model, request.MaxTokens, schema)
+		} else {
+			completion, err = assistant.complete(r.Context(), system, request.Messages, request.Model, request.MaxTokens)
+		}
+		fail := func(message string) {
+			writeJSON(w, http.StatusBadGateway, struct {
+				Error        string `json:"error"`
+				InputTokens  int    `json:"input_tokens"`
+				OutputTokens int    `json:"output_tokens"`
+			}{message, completion.InputTokens, completion.OutputTokens})
+		}
 		if err != nil {
-			writeWorkspaceError(w, http.StatusBadGateway, "Claude could not complete the design request.")
+			log.Printf("Simulator design assistant failed (%s): %v", proposalKind, err)
+			switch {
+			case errors.Is(err, assistantclient.ErrOutputLimit):
+				fail("Claude reached the output token limit before completing the design. No changes were applied. Increase the output limit in Model and Tokens or request a smaller scenario.")
+			case errors.Is(err, assistantclient.ErrStructuredResponse):
+				fail("Claude did not return a complete structured design response. No changes were applied; retry with a smaller, specific request.")
+			default:
+				fail("Claude could not complete the design request.")
+			}
 			return
 		}
 		modelReply, err := decodeSimulatorDesignReply(completion.Answer)
 		if err != nil {
-			writeWorkspaceError(w, http.StatusBadGateway, "Claude returned an unreadable design response.")
+			log.Printf("Simulator design assistant response decoding failed (%s): %v", proposalKind, err)
+			fail("Claude returned an invalid design response. No changes were applied; retry with a smaller, specific request.")
 			return
 		}
 		response := simulatorDesignAssistantResponse{Answer: modelReply.Answer, InputTokens: completion.InputTokens, OutputTokens: completion.OutputTokens}
@@ -193,10 +232,40 @@ func simulatorDesignAssistantHandler(assistant *claudeAssistant) http.HandlerFun
 					response.Proposal = &simulatorDesignProposal{Profile: profile}
 				}
 			} else {
-				response.Proposal, response.ProposalError = validateSimulatorDesignProposal(request, proposalKind, &struct {
-					Scenario      json.RawMessage `json:"scenario"`
-					DirectoryLDIF string          `json:"directory_ldif"`
-				}{modelReply.Proposal.Scenario, modelReply.Proposal.DirectoryLDIF})
+				candidateScenario := modelReply.Proposal.Scenario
+				if proposalKind == "scenario" {
+					hasScenario := len(candidateScenario) > 0 && string(candidateScenario) != "null"
+					hasPatch := len(modelReply.Proposal.ScenarioPatch) > 0 && string(modelReply.Proposal.ScenarioPatch) != "null"
+					if hasScenario == hasPatch {
+						response.ProposalError = "Claude must return exactly one complete scenario or scenario patch."
+					} else if hasPatch {
+						var patch simulatorScenarioDesignPatch
+						patchDecoder := json.NewDecoder(strings.NewReader(string(modelReply.Proposal.ScenarioPatch)))
+						patchDecoder.DisallowUnknownFields()
+						if err := patchDecoder.Decode(&patch); err != nil {
+							response.ProposalError = "Claude's scenario patch was not valid scenario JSON."
+						} else if err := patchDecoder.Decode(new(any)); err != io.EOF {
+							response.ProposalError = "Claude's scenario patch contained trailing data."
+						} else if patch.AppendStep.Action == "" && patch.Name == "" && patch.Description == "" {
+							writeSimulatorJSON(w, response)
+							return
+						} else {
+							var scenario simulatorScenario
+							scenario, err = applySimulatorScenarioDesignPatch(request, patch)
+							if err != nil {
+								response.ProposalError = "Claude's scenario patch could not be applied: " + err.Error()
+							} else if candidateScenario, err = json.Marshal(scenario); err != nil {
+								response.ProposalError = "Claude's scenario patch could not be encoded."
+							}
+						}
+					}
+				}
+				if response.ProposalError == "" {
+					response.Proposal, response.ProposalError = validateSimulatorDesignProposal(request, proposalKind, &struct {
+						Scenario      json.RawMessage `json:"scenario"`
+						DirectoryLDIF string          `json:"directory_ldif"`
+					}{candidateScenario, modelReply.Proposal.DirectoryLDIF})
+				}
 			}
 		}
 		writeSimulatorJSON(w, response)
@@ -276,7 +345,21 @@ Private draft bundles may have missing runtime/directory sections. Explain readi
 		if err != nil {
 			return "", "", err
 		}
-		return simulatorScenarioAssistantSystem(string(contextData)), "scenario", nil
+		system := simulatorScenarioAssistantSystem(string(contextData))
+		if candidates := simulatorScenarioDeniedBusinessProbePoints(scenario); len(candidates) > 0 {
+			candidateData, err := json.Marshal(candidates)
+			if err != nil {
+				return "", "", err
+			}
+			system += "\n\n<existing-denied-business-probe-points>\n" + string(candidateData) +
+				"\n</existing-denied-business-probe-points>\n" +
+				"These are candidate actor/service pairs already marked expected deny in the current draft. " +
+				"For a probe request, add one extra request_business_service step after the listed login " +
+				"using the same machine, component and expected value. Prefer the earliest candidate so " +
+				"the probe overlaps the most remaining ordinary work. This models an unauthorized " +
+				"business-service access attempt, not a raw network scan; do not claim a measured result."
+		}
+		return system, "scenario", nil
 	case "organization":
 		store, err := openSimulatorWorkspace(request.OrganizationID)
 		if err != nil {
@@ -302,6 +385,45 @@ Private draft bundles may have missing runtime/directory sections. Explain readi
 	default:
 		return "", "", errors.New("assistant scope must be scenario or organization")
 	}
+}
+
+type simulatorScenarioDeniedBusinessProbePoint struct {
+	AfterStep int    `json:"after_step"`
+	Machine   string `json:"machine"`
+	User      string `json:"user"`
+	Component string `json:"component"`
+	Expected  string `json:"expected"`
+}
+
+func simulatorScenarioDeniedBusinessProbePoints(scenario simulatorScenario) []simulatorScenarioDeniedBusinessProbePoint {
+	if scenario.Parallel {
+		return nil
+	}
+	type loginState struct {
+		step int
+		user string
+	}
+	loggedIn := make(map[string]loginState)
+	seenMachines := make(map[string]bool)
+	points := make([]simulatorScenarioDeniedBusinessProbePoint, 0)
+	for index, step := range scenario.Steps {
+		switch step.Action {
+		case "login":
+			loggedIn[step.Machine] = loginState{step: index, user: step.User}
+		case "logout", "stop_machine":
+			delete(loggedIn, step.Machine)
+		case "request_business_service":
+			login, ok := loggedIn[step.Machine]
+			if step.Expected == "deny" && ok && !seenMachines[step.Machine] {
+				points = append(points, simulatorScenarioDeniedBusinessProbePoint{
+					AfterStep: login.step, Machine: step.Machine, User: login.user,
+					Component: step.Component, Expected: step.Expected,
+				})
+				seenMachines[step.Machine] = true
+			}
+		}
+	}
+	return points
 }
 
 func simulatorScenarioAssistantSystem(contextData string) string {
@@ -335,6 +457,76 @@ func decodeSimulatorDesignReply(content string) (simulatorDesignAssistantModelRe
 	return result, nil
 }
 
+func applySimulatorScenarioDesignPatch(request simulatorDesignAssistantRequest, patch simulatorScenarioDesignPatch) (simulatorScenario, error) {
+	var scenario simulatorScenario
+	if err := json.Unmarshal(request.Scenario, &scenario); err != nil {
+		return simulatorScenario{}, errors.New("current scenario could not be read")
+	}
+	if patch.Name != "" {
+		scenario.Name = patch.Name
+	}
+	if patch.Description != "" {
+		scenario.Description = patch.Description
+	}
+	appendSteps := make([]simulatorScenarioStep, 0, 1)
+	if patch.AppendStep.Action != "" {
+		appendSteps = append(appendSteps, patch.AppendStep)
+	}
+	stepCount := len(scenario.Steps)
+	if len(appendSteps) > 0 && (patch.ConcurrentAfterStep < -1 || patch.ConcurrentAfterStep >= stepCount ||
+		patch.ConcurrentAfterStep >= 0 && patch.ConcurrentAfterStep+1 >= stepCount) {
+		return simulatorScenario{}, errors.New("concurrent_after_step must identify a step followed by existing work")
+	}
+	if len(appendSteps) > 0 && patch.ConcurrentAfterStep >= 0 && !scenario.Parallel {
+		for index := range scenario.Steps {
+			if scenario.Steps[index].ID != "" || len(scenario.Steps[index].After) != 0 {
+				return simulatorScenario{}, errors.New("sequential scenario unexpectedly contains parallel step dependencies")
+			}
+			scenario.Steps[index].ID = fmt.Sprintf("assistant-work-%d", index+1)
+			if index > 0 {
+				scenario.Steps[index].After = []string{scenario.Steps[index-1].ID}
+			}
+		}
+		scenario.Parallel = true
+	}
+	if scenario.Parallel && len(scenario.Steps) == 0 && len(appendSteps) > 0 {
+		return simulatorScenario{}, errors.New("parallel scenario has no existing step to continue")
+	}
+	for index, step := range appendSteps {
+		if scenario.Parallel {
+			step.ID = fmt.Sprintf("assistant-probe-%d", stepCount+index+1)
+			usedIDs := make(map[string]struct{}, len(scenario.Steps))
+			for _, existing := range scenario.Steps {
+				if existing.ID != "" {
+					usedIDs[existing.ID] = struct{}{}
+				}
+			}
+			for suffix := 1; ; suffix++ {
+				if _, exists := usedIDs[step.ID]; !exists {
+					break
+				}
+				step.ID = fmt.Sprintf("assistant-probe-%d-%d", stepCount+index+1, suffix)
+			}
+			switch {
+			case index > 0:
+				step.After = []string{scenario.Steps[len(scenario.Steps)-1].ID}
+			case patch.ConcurrentAfterStep >= 0:
+				step.After = []string{scenario.Steps[patch.ConcurrentAfterStep].ID}
+			default:
+				step.After = make([]string, 0, stepCount)
+				for _, existing := range scenario.Steps {
+					if existing.ID == "" {
+						return simulatorScenario{}, errors.New("parallel scenario contains a step without an id")
+					}
+					step.After = append(step.After, existing.ID)
+				}
+			}
+		}
+		scenario.Steps = append(scenario.Steps, step)
+	}
+	return scenario, nil
+}
+
 func validateSimulatorDesignProposal(request simulatorDesignAssistantRequest, proposalKind string, candidate *struct {
 	Scenario      json.RawMessage `json:"scenario"`
 	DirectoryLDIF string          `json:"directory_ldif"`
@@ -350,6 +542,10 @@ func validateSimulatorDesignProposal(request simulatorDesignAssistantRequest, pr
 		_ = json.Unmarshal(request.Scenario, &current)
 		if current.ID != "" && scenario.ID != current.ID {
 			return nil, "Claude changed the scenario ID; keep the current ID and try again."
+		}
+		if scenario.Topology != nil && len(scenario.Topology.Nodes) == 0 &&
+			len(scenario.Topology.Links) == 0 && len(scenario.Topology.Components) == 0 {
+			scenario.Topology = nil
 		}
 		scenario.OrganizationID = request.OrganizationID
 		manifest, _, err := manifestForOrganization(request.OrganizationID)

@@ -63,7 +63,7 @@
     <pre id="organization-duplicate-review" tabindex="0"></pre>
     <label><input id="organization-duplicate-confirm" type="checkbox" disabled>I reviewed these definitions and want to create a draft only.</label>
     <div class="assistant-actions"><button type="button" data-duplicate-create disabled>Create draft</button><button type="button" data-duplicate-reconcile hidden>Check creation result</button></div>`;
-  document.body.append(dialog);
+  document.getElementById("organization-workspace").append(dialog);
   const source = dialog.querySelector("#organization-duplicate-source");
   const id = dialog.querySelector("#organization-duplicate-id");
   const name = dialog.querySelector("#organization-duplicate-name");

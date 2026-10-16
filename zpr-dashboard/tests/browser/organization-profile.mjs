@@ -1,20 +1,25 @@
 export function registerOrganizationProfileTests(test, expect) {
-  test("Organization section links jump to identity, policy and services without changing organization", async ({ page, appURL, api }) => {
+  test("Organization section links select identity, policy and services without changing organization", async ({ page, appURL, api }) => {
     await page.goto(appURL + "/organizations.html");
     await expect(page.locator("#organization-title")).toHaveText("Alpha Labs");
     const links = page.getByRole("navigation", { name: "Organization sections", exact: true });
     for (const [label, id, heading] of [
-      ["IDENTITY", "organization-identity", /Directory/],
-      ["POLICY", "organization-policy", "Policies"],
-      ["SERVICES", "organization-services", "Services"],
+      ["Identity", "organization-identity", /Directory/],
+      ["Policy", "organization-policy", "Policies"],
+      ["Services", "organization-services", "Services"],
     ]) {
       const link = links.getByRole("link", { name: label, exact: true });
-      await expect(link).toHaveAttribute("href", `#${id}`);
+      await expect(link).toHaveAttribute("href", `/organizations.html#${id}`);
       await link.focus();
       await link.press("Enter");
       await expect(page).toHaveURL(`${appURL}/organizations.html#${id}`);
-      await expect(page.locator(`#${id}`)).toBeFocused();
-      await expect(page.locator(`#${id}`).getByRole("heading")).toHaveText(heading);
+      await expect(page.locator(`#${id}`)).toBeVisible();
+      await expect(link).toHaveAttribute("aria-current", "page");
+      if (id === "organization-identity") await expect(page.locator(`#${id}`).getByRole("heading")).toHaveText(heading);
+      else {
+        await expect(page.locator(`#${id}`).getByRole("heading")).toHaveCount(0);
+        await expect(page.locator(`#${id}`)).toHaveAttribute("aria-label", heading);
+      }
       await expect(page.locator("#organization-title")).toHaveText("Alpha Labs");
       const bounds = await page.locator(`#${id}`).evaluate(element => {
         const rect = element.getBoundingClientRect();

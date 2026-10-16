@@ -144,19 +144,45 @@ function renderScenarioList(scenarios) {
 function renderSelectedScenario() {
   const scenario = scenarioById.get(selectedScenarioID);
   document.getElementById("scenario-edit-selected").disabled = !scenario;
+  const selection = document.getElementById("scenario-run-selection");
+  selection.innerHTML = [...scenarioById.values()].map(item =>
+    `<option value="${scenarioEscape(item.id)}">${scenarioEscape(item.name)}${Number(item.published_revision || 0) > 0 ? "" : " (unpublished)"}</option>`).join("");
+  selection.value = selectedScenarioID;
+  const busy = ["running", "cleaning"].includes(scenarioRun?.state);
+  selection.disabled = busy || !scenario;
+  const start = document.getElementById("scenario-start");
+  start.disabled = !scenario || scenario.organization_id !== activeScenarioOrganization ||
+    Number(scenario.published_revision || 0) <= 0 || busy;
+  if (scenario) {
+    start.dataset.runScenario = scenario.id;
+    start.dataset.runOrganization = scenario.organization_id;
+    start.dataset.runPublished = Number(scenario.published_revision || 0) > 0;
+  } else {
+    delete start.dataset.runScenario;
+    delete start.dataset.runOrganization;
+    delete start.dataset.runPublished;
+  }
   const list = document.getElementById("scenario-list");
   if (!scenario) {
     list.innerHTML = `<p class="scenario-empty">No scenarios in this organization. Create one from File... to get started.</p>`;
     return;
   }
-  const busy = ["running", "cleaning"].includes(scenarioRun?.state);
   const published = Number(scenario.published_revision || 0) > 0;
-  const canRun = scenario.organization_id === activeScenarioOrganization && published && !busy;
-  list.innerHTML = `<article class="scenario-card selected"><div><h3>${scenarioEscape(scenario.name)}</h3><p>${scenarioEscape(scenario.description)}</p><span class="scenario-step-count">${scenarioEscape(scenario.folder || "Unfiled")} · ${(scenario.steps || []).length} steps${published ? "" : " · Unpublished draft"}</span></div><button type="button" data-run-scenario="${scenarioEscape(scenario.id)}" data-run-organization="${scenarioEscape(scenario.organization_id)}" data-run-published="${published}" ${canRun ? "" : "disabled"}>Run</button></article>`;
+  list.innerHTML = `<article class="scenario-card selected"><div><h3>${scenarioEscape(scenario.name)}</h3><p>${scenarioEscape(scenario.description)}</p><span class="scenario-step-count">${scenarioEscape(scenario.folder || "Unfiled")} · ${(scenario.steps || []).length} steps${published ? "" : " · Unpublished draft"}</span></div><a class="button" href="/scenarios.html#simulate">Simulate</a></article>`;
 }
+
+document.getElementById("scenario-run-selection").addEventListener("change", event => {
+  selectedScenarioID = event.target.value;
+  renderSelectedScenario();
+});
+window.addEventListener("hashchange", updateScenarioTrackScroll);
+document.addEventListener("simulator:activate", event => {
+  if (event.detail.path === "/scenarios.html") updateScenarioTrackScroll();
+});
 
 function updateScenarioTrackScroll() {
   const frame = document.querySelector(".scenario-track-frame");
+  if (!frame) return;
   const steps = document.getElementById("scenario-steps");
   let scrollbar = frame.querySelector(".scenario-track-scrollbar");
   let viewport = frame.querySelector(".scenario-track-viewport");
@@ -423,7 +449,7 @@ async function refreshScenarios({ signal, isCurrent }) {
   const organization = data.active_organization_id || activeScenarioOrganization;
   if (organization !== activeScenarioOrganization) {
     selectedScenarioID = "";
-    document.getElementById("scenario-browser-dialog").close();
+    if (activeScenarioOrganization) document.getElementById("scenario-browser-dialog").close();
   }
   activeScenarioOrganization = organization;
   if (scenarioEditorOrganization && scenarioEditorOrganization !== activeScenarioOrganization && document.getElementById("scenario-editor-dialog").open) {
@@ -1029,8 +1055,10 @@ document.getElementById("scenario-list").addEventListener("click", async (event)
     }
     return;
   }
-  const button = event.target.closest("[data-run-scenario]");
-  if (!button) return;
+});
+document.getElementById("scenario-start").addEventListener("click", async (event) => {
+  const button = event.currentTarget;
+  if (button.disabled || !button.dataset.runScenario) return;
   button.disabled = true;
   try {
     await postScenarioAction(`/api/simulator/scenarios/${encodeURIComponent(button.dataset.runScenario)}/run`);

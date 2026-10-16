@@ -12,11 +12,6 @@ let pendingOrganizationActivation = null;
 let pendingOrganizationRestore = null;
 let pendingOrganizationDelete = null;
 let organizationDraftSelectionGeneration = 0;
-const designButton = document.createElement("button");
-designButton.className = "quiet";
-designButton.id = "organization-design-assistant";
-designButton.type = "button";
-designButton.textContent = "Design with Claude";
 const resetLogLink = document.createElement("a");
 resetLogLink.className = "organization-reset-log";
 resetLogLink.href = "/api/simulator/activation-log";
@@ -24,14 +19,15 @@ resetLogLink.target = "_blank";
 resetLogLink.rel = "noopener noreferrer";
 resetLogLink.textContent = "See Logs";
 resetLogLink.hidden = true;
-const topActions = document.querySelector(".topbar .organization-top-actions");
+const organizationWorkspace = document.getElementById("organization-workspace");
+const topActions = organizationWorkspace.querySelector(".organization-top-actions");
 topActions.append(resetLogLink);
 const restoreProgressDialog = document.createElement("dialog");
 restoreProgressDialog.className = "organization-switch-dialog";
 restoreProgressDialog.setAttribute("aria-labelledby", "organization-restore-progress-title");
 restoreProgressDialog.innerHTML = '<h2 id="organization-restore-progress-title">Restore in progress</h2><div data-restore-progress-content></div>';
 restoreProgressDialog.addEventListener("cancel", (event) => event.preventDefault());
-document.body.append(restoreProgressDialog);
+organizationWorkspace.append(restoreProgressDialog);
 
 function organizationEscape(value) {
   return window.ZPRSafeDisplay.escapeHTML(value);
@@ -45,8 +41,8 @@ async function organizationRequestNoContent(path, options) {
 }
 
 function organizationItems(items, title, emptyLabel, sectionID) {
-  if (!items?.length) return `<section id="${organizationEscape(sectionID)}" class="organization-section" tabindex="-1"><h3>${organizationEscape(title)}</h3><p class="organization-empty">No ${organizationEscape(emptyLabel)}.</p></section>`;
-  return `<section id="${organizationEscape(sectionID)}" class="organization-section" tabindex="-1"><h3>${organizationEscape(title)}</h3><div class="organization-list-items">${items.map((item) => `<div class="organization-item"><strong>${organizationEscape(item.name || item.uid || item.id)}</strong><small>${organizationEscape(item.description || [item.title, item.department, item.location, item.endpoint].filter(Boolean).join(" · "))}</small></div>`).join("")}</div></section>`;
+  if (!items?.length) return `<section id="${organizationEscape(sectionID)}" class="organization-section" aria-label="${organizationEscape(title)}" tabindex="-1"><p class="organization-empty">No ${organizationEscape(emptyLabel)}.</p></section>`;
+  return `<section id="${organizationEscape(sectionID)}" class="organization-section" aria-label="${organizationEscape(title)}" tabindex="-1"><div class="organization-list-items">${items.map((item) => `<div class="organization-item"><strong>${organizationEscape(item.name || item.uid || item.id)}</strong><small>${organizationEscape(item.description || [item.title, item.department, item.location, item.endpoint].filter(Boolean).join(" · "))}</small></div>`).join("")}</div></section>`;
 }
 
 function organizationRuntimeLabel(organization) {
@@ -70,6 +66,7 @@ function renderOrganizationList() {
   else {
     selectedOrganizationID = "";
     document.getElementById("organization-title").textContent = "Organization details";
+    document.getElementById("organization-description").textContent = "";
     document.querySelector("[data-organization-activation-control]")?.remove();
     document.getElementById("organization-detail").innerHTML = '<p class="organization-empty">Choose an organization from Browse... or create a private draft from File....</p>';
     updateOrganizationFileActions(null);
@@ -127,6 +124,7 @@ function renderOrganizationDetails(organization, draft = null) {
   const directory = organization.directory || {};
   const draftID = organizationEscape(organization.id);
   document.getElementById("organization-title").textContent = organization.name;
+  document.getElementById("organization-description").textContent = organization.description || "";
   const heading = document.getElementById("organization-title").closest(".section-head");
   heading.querySelector("[data-organization-activation-control]")?.remove();
   const control = document.createElement("div");
@@ -140,39 +138,30 @@ function renderOrganizationDetails(organization, draft = null) {
   heading.append(control);
   updateOrganizationFileActions(organization, draft);
   document.getElementById("organization-detail").innerHTML = `
-    <p class="organization-description">${organizationEscape(organization.description)}</p>
-    <details class="organization-scenarios"><summary>Scenarios</summary><div id="organization-scenario-summary" class="organization-summary" aria-label="Organization scenarios">${draft ? "Private draft · not runnable." : "Loading scenarios"}</div></details>
     <div class="organization-sections">
-      <section id="organization-identity" class="organization-section" tabindex="-1"><div class="organization-directory-heading"><h3>Directory · ${organizationEscape(directory.base_dn || "not defined")}</h3><span class="organization-directory-counts">${(directory.departments || []).length} departments · ${(directory.people || []).length} people · ${(directory.groups || []).length} groups</span><div class="organization-directory-actions">${draft ? "" : `<button class="quiet" type="button" data-edit-directory="${draftID}">Edit LDAP seed</button>`}</div></div><ldap-org-graph></ldap-org-graph><details class="organization-runtime-details"><summary>Runtime and directory configuration</summary><div class="organization-summary"><span>LDAP seed: ${organizationEscape(directory.seed_mode || "not defined")}</span><span>Runtime profile: ${organizationEscape(organizationRuntimeLabel(organization))}</span></div></details></section>
+      <section id="organization-identity" class="organization-section" tabindex="-1"><div class="organization-directory-heading"><h3>Directory · ${organizationEscape(directory.base_dn || "not defined")}</h3><div class="organization-directory-actions">${draft ? "" : `<button class="quiet" type="button" data-edit-directory="${draftID}">Edit LDAP seed</button>`}</div></div><ldap-org-graph></ldap-org-graph><details class="organization-runtime-details"><summary>Runtime and directory configuration</summary><div class="organization-summary"><span>LDAP seed: ${organizationEscape(directory.seed_mode || "not defined")}</span><span>Runtime profile: ${organizationEscape(organizationRuntimeLabel(organization))}</span></div></details></section>
       ${organizationItems(organization.policies || [], "Policies", "policy records", "organization-policy")}
       ${organizationItems(organization.services || [], "Services", "services", "organization-services")}
     </div>`;
   document.querySelector("#organization-detail ldap-org-graph").directory = directory;
-  const directoryHeading = document.querySelector("#organization-identity .organization-directory-actions");
-  const assistantButton = designButton;
-  if (!draft && assistantButton) directoryHeading.append(assistantButton);
+  showOrganizationSection();
   renderOrganizationListSelection();
-  if (!draft) void loadOrganizationScenarioSummary(organization.id);
 }
 
-async function loadOrganizationScenarioSummary(organizationID) {
-  try {
-    const catalog = await window.ZPRPageRuntime.requestJSON(window.fetch.bind(window), `/api/simulator/scenarios?organization_id=${encodeURIComponent(organizationID)}`);
-    if (selectedOrganizationID !== organizationID) return;
-    const summary = document.getElementById("organization-scenario-summary");
-    summary.replaceChildren();
-    const scenarios = (catalog.scenarios || []).filter((scenario) => scenario.organization_id === organizationID);
-    if (!scenarios.length) { summary.textContent = "No scenarios"; return; }
-    for (const scenario of scenarios) {
-      const link = document.createElement("a");
-        link.href = `/scenarios.html?organization_id=${encodeURIComponent(organizationID)}#${encodeURIComponent(scenario.id)}`;
-      link.textContent = scenario.name || scenario.id;
-      summary.append(link);
-    }
-  } catch {
-    if (selectedOrganizationID === organizationID) document.getElementById("organization-scenario-summary").textContent = "Scenarios unavailable";
+function showOrganizationSection() {
+  const detail = document.getElementById("organization-detail");
+  if (!detail) return;
+  detail.hidden = location.pathname !== "/organizations.html";
+  const section = ["organization-policy", "organization-services"].includes(location.hash.slice(1))
+    ? location.hash.slice(1) : "organization-identity";
+  for (const panel of document.querySelectorAll("#organization-detail .organization-section")) {
+    panel.hidden = panel.id !== section;
   }
 }
+window.addEventListener("hashchange", showOrganizationSection);
+document.addEventListener("simulator:activate", event => {
+  if (["/organizations.html", "/scenarios.html", "/trusted-source.html"].includes(event.detail.path)) showOrganizationSection();
+});
 
 const directoryEditorPage = window.ZPREditorPage;
 const directoryRequest = (path, options) => directoryEditorPage.requestJSON(
@@ -383,7 +372,7 @@ async function refreshOrganizations({ signal, isCurrent }) {
 }
 
 const organizationPoller = window.ZPRSimulatorNavigation.createPagePoller({
-  path: "/organizations.html",
+  path: ["/organizations.html", "/scenarios.html", "/trusted-source.html"],
   run: refreshOrganizations,
   interval: () => organizationActivationStatus.state === "resetting" ? 1000 : 5000,
   onError: (failure) => {
@@ -394,77 +383,13 @@ const organizationPoller = window.ZPRSimulatorNavigation.createPagePoller({
 });
 const refreshOrganizationsNow = () => organizationPoller.refresh();
 
-const organizationDesignDialog = document.createElement("dialog");
-organizationDesignDialog.id = "organization-design-dialog";
-organizationDesignDialog.className = "design-assistant-dialog";
-organizationDesignDialog.setAttribute("aria-labelledby", "organization-design-title");
-organizationDesignDialog.innerHTML = `<header class="design-assistant-dialog-head"><div><p class="eyebrow">ORGANIZATION DESIGN</p><h2 id="organization-design-title">Design with Claude</h2></div><button class="quiet" type="button" aria-label="Close assistant" data-close-design-assistant>×</button></header><p class="design-assistant-dialog-context" id="organization-design-context"></p><div id="organization-assistant-slot"></div>`;
-document.body.append(organizationDesignDialog);
-let organizationAssistantID = "";
-const organizationAssistant = window.mountSimulatorDesignAssistant("organization-assistant-slot", {
-  scope: "organization",
-  editorID: "directory-editor-dialog",
-  applyLabel: "Apply LDIF draft",
-  emptyMessage: "Ask for organization, identity, group, service, or LDAP seed design advice.",
-  getContext: () => ({
-    organization_id: organizationAssistantID,
-    directory: directoryEditorOrganizationID === organizationAssistantID ? {
-      source: directoryEditorSource.value, revision: directoryEditorArtifact?.revision, viewing: directoryEditorViewing,
-    } : null,
-  }),
-  onApply: async (proposal, isCurrent) => {
-    if (!proposal.directory_ldif) throw new Error("Claude did not return an LDIF proposal.");
-    const organization = organizationAssistantID;
-    let history;
-    const insert = () => {
-      const before = directoryEditorSource.value;
-      const after = proposal.directory_ldif;
-      const previousSummary = directoryEditorSummary;
-      const revision = directoryEditorArtifact?.revision;
-      const viewing = directoryEditorViewing;
-      window.ZPRAssistant.editText(directoryEditorSource, after, true);
-      directoryEditorSummary = "Claude-assisted directory draft";
-      setDirectoryEditorStatus("Claude proposal loaded. Review it before saving or publishing.");
-      const restore = (expected, value, summary) => {
-        if (directoryEditorOrganizationID !== organization || directoryEditorArtifact?.revision !== revision || directoryEditorViewing !== viewing || directoryEditorSource.value !== expected || directoryEditorSource.disabled || directoryEditorSource.readOnly) {
-          throw new Error("The directory changed after the AI edit. Undo/redo is no longer available.");
-        }
-        window.ZPRAssistant.editText(directoryEditorSource, value, true);
-        directoryEditorSummary = summary;
-      };
-      history = {
-        undo: () => restore(after, before, previousSummary),
-        redo: () => restore(before, after, "Claude-assisted directory draft"),
-      };
-    };
-    if (directoryEditorOrganizationID === organization && document.getElementById("directory-editor-dialog").open) insert();
-    else {
-      if (!directoryEditorPage.confirmDiscard(directoryEditorDirty, "Open the proposed directory and discard unsaved changes in the other directory?")) throw new Error("AI apply cancelled; the directory is unchanged.");
-      await directoryEditorController.perform("load", organization, isCurrent, insert);
-    }
-    return history;
-  },
-});
-
-designButton.addEventListener("click", () => {
-  organizationAssistantID = selectedOrganizationID || activeOrganizationID;
-  const organization = organizationCatalog.find((item) => item.id === organizationAssistantID);
-  document.getElementById("organization-design-context").textContent = organization
-    ? `${organization.name} · ${organization.directory.base_dn}`
-    : "Select an organization profile first.";
-  organizationAssistant.reset();
-  organizationDesignDialog.showModal();
-});
-organizationDesignDialog.querySelector("[data-close-design-assistant]").addEventListener("click", () => organizationDesignDialog.close());
-organizationDesignDialog.addEventListener("close", () => organizationAssistant.reset());
-
 const organizationSwitchDialog = document.createElement("dialog");
 organizationSwitchDialog.id = "organization-switch-dialog";
 organizationSwitchDialog.className = "organization-switch-dialog";
 organizationSwitchDialog.setAttribute("aria-labelledby", "organization-switch-title");
 organizationSwitchDialog.setAttribute("aria-describedby", "organization-switch-warning");
 organizationSwitchDialog.innerHTML = `<h2 id="organization-switch-title">Switch organization?</h2><p id="organization-switch-target"></p><p id="organization-switch-warning">Switching organizations resets the simulated ZPR environment and can interrupt connections and workloads. This is not just a change of view. Finish or cancel any running scenario and log out all machine users before continuing.</p><p id="organization-switch-error" role="alert" hidden></p><div class="organization-switch-actions"><button class="quiet" type="button" data-cancel-organization-switch autofocus>Cancel</button><button type="button" data-confirm-organization-switch>Switch organization</button></div>`;
-document.body.append(organizationSwitchDialog);
+organizationWorkspace.append(organizationSwitchDialog);
 const organizationSwitchConfirm = organizationSwitchDialog.querySelector("[data-confirm-organization-switch]");
 const organizationSwitchError = document.getElementById("organization-switch-error");
 organizationSwitchDialog.querySelector("[data-cancel-organization-switch]").addEventListener("click", () => organizationSwitchDialog.close());
@@ -476,7 +401,7 @@ organizationRestoreDialog.className = "organization-switch-dialog";
 organizationRestoreDialog.setAttribute("aria-labelledby", "organization-restore-title");
 organizationRestoreDialog.setAttribute("aria-describedby", "organization-restore-warning");
 organizationRestoreDialog.innerHTML = `<h2 id="organization-restore-title">Restore base state?</h2><p id="organization-restore-target"></p><p id="organization-restore-warning">This replaces the selected organization's saved policy, assertions, scenarios, and LDAP edits with its bundled defaults, then reseeds its directory. The current state is backed up locally. Its runtime will restart and may interrupt connections.</p><p id="organization-restore-error" role="alert" hidden></p><div class="organization-switch-actions"><button class="quiet" type="button" data-cancel-organization-restore autofocus>Cancel</button><button type="button" data-confirm-organization-restore>Restore base state</button></div>`;
-document.body.append(organizationRestoreDialog);
+organizationWorkspace.append(organizationRestoreDialog);
 const organizationRestoreConfirm = organizationRestoreDialog.querySelector("[data-confirm-organization-restore]");
 const organizationRestoreError = document.getElementById("organization-restore-error");
 organizationRestoreDialog.querySelector("[data-cancel-organization-restore]").addEventListener("click", () => organizationRestoreDialog.close());
@@ -704,7 +629,7 @@ document.getElementById("directory-editor-dialog").addEventListener("close", () 
   directoryEditorDirty = false;
 });
 document.addEventListener("simulator:deactivate", (event) => {
-  if (event.detail.path !== "/organizations.html") return;
+  if (!["/organizations.html", "/scenarios.html", "/trusted-source.html"].includes(event.detail.path)) return;
   organizationFiles.setOpen(false);
   if (organizationBrowserDialog.open) organizationBrowserDialog.close();
   if (organizationSwitchDialog.open) organizationSwitchDialog.close();

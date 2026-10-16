@@ -54,10 +54,10 @@
       this.innerHTML = `
         <section class="trusted-source-browser-panel" aria-label="Trusted source browser">
           <header class="trusted-source-browser-head">
-            <div><h3 data-source-title>Trusted source</h3>${this.simulatorPage ? "" : `<select data-source-selector class="trusted-source-heading-select" aria-label="Trusted source" hidden></select>`}<p data-source-meta class="trusted-source-meta">Not loaded</p></div>
+            <div><h3 data-source-title${this.simulatorPage ? " hidden" : ""}>Trusted source</h3>${this.simulatorPage ? "" : `<select data-source-selector class="trusted-source-heading-select" aria-label="Trusted source" hidden></select>`}<p data-source-meta class="trusted-source-meta">Not loaded</p></div>
             <button type="button" class="button" data-source-refresh>Refresh</button>
           </header>
-          <div class="trusted-source-summary" data-source-summary role="status"></div>
+          <div class="trusted-source-summary" data-source-summary role="status"${this.simulatorPage ? " hidden" : ""}></div>
           <div class="trusted-source-browser-tools">
             <div class="trusted-source-tabs" role="tablist" aria-label="Trusted source records">
               ${this.simulatorPage ? `<button type="button" role="tab" data-source-tab="graph" aria-selected="true">LDAP graph</button>` : ""}
@@ -270,12 +270,12 @@
       const selector = this.querySelector("[data-source-selector]");
       const updates = !this.simulatorPage && this.view === "updates";
       this.querySelector("[data-source-meta]").hidden = updates;
-      this.querySelector("[data-source-summary]").hidden = updates;
+      this.querySelector("[data-source-summary]").hidden = this.simulatorPage || updates;
       const selected = updates && this.updateSources?.find(source => source.name === selector.value);
       title.textContent = selected
         ? selected.display_name || selected.name
         : `${this.simulatorPage ? this.dataset.titlePrefix || "" : ""}${this.directorySourceName() || (this.simulatorPage ? "Trusted source" : "Source unavailable")}`;
-      title.hidden = Boolean(updates && this.updateSources?.length > 1);
+      title.hidden = this.simulatorPage || Boolean(updates && this.updateSources?.length > 1);
       if (selector) selector.hidden = !title.hidden;
     }
 

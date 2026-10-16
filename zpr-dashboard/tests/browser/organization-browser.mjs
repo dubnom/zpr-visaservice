@@ -17,7 +17,7 @@ export function registerOrganizationBrowserTests(test, expect) {
       await page.getByRole("menuitem", { name: "New organization", exact: true }).click();
       await expect(page.locator("#organization-duplicate-dialog")).toBeVisible();
       await page.locator("[data-duplicate-close]").click();
-      await page.locator('.primary-nav a[href="/scenarios.html"]').click();
+      await page.locator('.organization-navigation a[href="/scenarios.html"]').click();
     }
   });
   test("Organization layout gives the graph screen height and keeps configuration accessible", async ({ page, appURL, api }) => {
@@ -30,8 +30,7 @@ export function registerOrganizationBrowserTests(test, expect) {
     expect(bounds.height).toBeGreaterThanOrEqual(600);
     await page.locator(".organization-runtime-details summary").click();
     await expect(page.locator(".organization-runtime-details")).toContainText("single-node");
-    await page.locator(".organization-scenarios summary").click();
-    await expect(page.locator("#organization-scenario-summary")).toBeVisible();
+    await expect(page.locator(".organization-scenarios, #organization-scenario-summary")).toHaveCount(0);
     await page.setViewportSize({ width: 390, height: 844 });
     await expect.poll(() => page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
     await page.locator("#organization-browse").click();
