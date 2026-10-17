@@ -10,6 +10,7 @@
   let controller = null;
   let busy = false;
   let uncertain = false;
+  const applications = new Map();
   let sortKey = "revision";
   let descending = true;
   const permissions = permission => identity?.permissions?.includes(permission);
@@ -20,7 +21,7 @@
   }
   function clearSession() {
     ++generation; controller?.abort();
-    identity = null; csrf = ""; selected = null; records = []; capabilities = null;
+    identity = null; csrf = ""; selected = null; records = []; capabilities = null; applications.clear();
     byId("identity").textContent = "";
     byId("workspace").disabled = true;
     byId("requests").replaceChildren();
@@ -39,7 +40,12 @@
       throw new Error("Your operator session or permissions changed. Sign in again.");
     }
     const data = await response.json();
-    if (!response.ok) throw new Error(data.error || `Request failed (HTTP ${response.status}).`);
+    if (!response.ok) {
+      const error = new Error(data.error || `Request failed (HTTP ${response.status}).`);
+      error.status = response.status;
+      error.data = data;
+      throw error;
+    }
     return data;
   }
   function organization() {
@@ -130,6 +136,32 @@
     byId("decision-note").textContent = uncertain ? "Outcome unknown. Reload the queue and reconcile before another decision."
       : sameAuthor(selected) && !capabilities?.allow_self_approval ? "Approval requires a different operator; single-operator approval is not enabled."
       : "Approval does not apply this revision.";
+    const application = applications.get(selected.id);
+    const apply = byId("apply-policy");
+    const canApply = capabilities?.application_enabled === true && p.kind === "policy" &&
+      selected.state === "approved" && permissions("change.review") && permissions("policy.apply");
+    apply.textContent = application?.status === "pending" || application?.status === "uncertain"
+      ? "Reconcile application" : capabilities?.application_enabled ? "Apply approved policy" : "Apply unavailable";
+    apply.disabled = !canApply || busy || uncertain ||
+      application?.status === "succeeded" || application?.status === "failed";
+    const applicationNote = byId("application-note");
+    if (application?.status === "succeeded") {
+      applicationNote.textContent = `Policy-Service reports success with verified receipt and readback for operation ${application.operationId}.`;
+    } else if (application?.status === "failed") {
+      applicationNote.textContent = `Policy-Service reports operation ${application.operationId} failed. Review its state before submitting a new change.`;
+    } else if (application?.status === "pending" || application?.status === "uncertain") {
+      applicationNote.textContent = `Operation ${application.operationId} is ${application.status}. Reload the queue, then explicitly reconcile this same approved operation. No automatic retry will occur.`;
+    } else if (!capabilities?.application_enabled) {
+      applicationNote.textContent = "Production application is not configured.";
+    } else if (!permissions("change.review") || !permissions("policy.apply")) {
+      applicationNote.textContent = "Applying requires organization-scoped change.review and policy.apply permissions.";
+    } else if (p.kind !== "policy") {
+      applicationNote.textContent = "Only reviewed policy changes can be applied.";
+    } else if (selected.state !== "approved") {
+      applicationNote.textContent = "Only an approved policy review can be applied.";
+    } else {
+      applicationNote.textContent = "Application changes runtime only after this explicit confirmation.";
+    }
   }
   async function load(offset = 0) {
     if (busy) return;
@@ -144,13 +176,17 @@
       ]);
       if (token !== generation) return;
       if (!page.requests?.every(recordValid) || typeof caps.allow_self_approval !== "boolean" ||
-          caps.application_enabled !== false || !Number.isInteger(page.next_offset)) throw new Error("Invalid review queue response.");
+          typeof caps.application_enabled !== "boolean" || !Number.isInteger(page.next_offset)) throw new Error("Invalid review queue response.");
       if (page.requests.some(record => record.proposal.organization !== org)) throw new Error("Review organization mismatch.");
       capabilities = caps; nextOffset = page.next_offset;
       records = offset ? [...new Map([...records, ...page.requests].map(record => [record.id, record])).values()] : page.requests;
       selected = records.find(record => record.id === selected?.id) || null;
       byId("capabilities").textContent = caps.allow_self_approval
-        ? "Single-operator self-approval explicitly enabled. Application disabled." : "A different operator must approve. Application disabled.";
+        ? `Single-operator self-approval explicitly enabled. Application ${caps.application_enabled ? "is separately configured." : "disabled."}`
+        : `A different operator must approve. Application ${caps.application_enabled ? "is separately configured." : "disabled."}`;
+      byId("application-boundary").textContent = caps.application_enabled
+        ? "Approval does not apply or deploy a revision. Applying an approved policy changes runtime only after explicit confirmation and requires organization-scoped permission; the server verifies the operation and applied-state readback."
+        : "Approval records a reviewed revision only. Production application is not configured.";
       uncertain = false;
       for (const button of byId("submission").querySelectorAll("button")) button.disabled = !permissions("change.submit");
       render(); status("Queue refreshed. Approval is separate from application.");
@@ -191,6 +227,68 @@
       for (const button of byId("submission").querySelectorAll("button")) button.disabled = uncertain || !permissions("change.submit");
     }
   }
+  async function applySelectedPolicy() {
+    if (busy || uncertain || !selected || !capabilities?.application_enabled ||
+        selected.state !== "approved" || selected.proposal.kind !== "policy" ||
+        !permissions("change.review") || !permissions("policy.apply")) return;
+    const previous = applications.get(selected.id);
+    const reconcile = previous?.status === "pending" || previous?.status === "uncertain";
+    if (!confirm(reconcile
+      ? `Reconcile operation ${previous.operationId} for this same approved policy?`
+      : `Apply the approved ${selected.proposal.organization} policy revision ${selected.proposal.revision} to runtime?`)) return;
+    busy = true; controller?.abort(); ++generation;
+    const token = generation;
+    const mutationController = new AbortController();
+    controller = mutationController;
+    const timer = setTimeout(() => mutationController.abort(), 120000);
+    const reviewId = selected.id;
+    renderSelected();
+    status(reconcile ? "Reconciling the approved policy operation" : "Applying the approved policy");
+    try {
+      const result = await request(`/api/change-review/requests/${encodeURIComponent(reviewId)}/apply`, {
+        method: "POST",
+        body: {
+          organization: selected.proposal.organization,
+          digest: selected.digest,
+          expected_version: selected.version,
+          reason: "Operator explicitly confirmed application of the approved policy.",
+        },
+        signal: mutationController.signal,
+      });
+      if (token !== generation) return;
+      if (typeof result.operation_id !== "string" || !result.operation_id ||
+          !["pending", "uncertain", "failed", "succeeded"].includes(result.status)) {
+        throw new Error("Invalid Policy-Service application response.");
+      }
+      applications.set(reviewId, { operationId: result.operation_id, status: result.status });
+      if (result.status === "succeeded") {
+        uncertain = false;
+        status(`Policy application succeeded with verified receipt and readback for operation ${result.operation_id}.`);
+      } else if (result.status === "failed") {
+        status(`Policy-Service reports operation ${result.operation_id} failed. Runtime state must be reviewed before a new change.`, true);
+      } else {
+        uncertain = true;
+        status(`Operation ${result.operation_id} is ${result.status}. Reload the queue, then explicitly reconcile this same operation. No automatic retry will occur.`, true);
+      }
+    } catch (error) {
+      if (token !== generation) return;
+      const operationId = error.data?.operation_id;
+      if (error.status === 502 && typeof operationId === "string" && operationId) {
+        applications.set(reviewId, { operationId, status: "uncertain" });
+      } else if (error.status !== undefined && error.status < 500) {
+        status(`Policy application was rejected: ${error.message}`, true);
+        return;
+      } else {
+        applications.set(reviewId, { operationId: "unknown", status: "uncertain" });
+      }
+      uncertain = true;
+      status("Application outcome is unknown. Reload the queue and explicitly reconcile the same approved review; no automatic retry will occur.", true);
+    } finally {
+      clearTimeout(timer);
+      busy = false;
+      renderSelected();
+    }
+  }
   byId("refresh").addEventListener("click", () => load().catch(error => status(error.message, true)));
   byId("more").addEventListener("click", () => load(nextOffset).catch(error => status(error.message, true)));
   byId("organization").addEventListener("input", () => {
@@ -214,6 +312,7 @@
       { organization: selected.proposal.organization, digest: selected.digest, expected_version: selected.version,
         reason: byId("decision-reason").value.trim() }, { approve: "approved", reject: "rejected", cancel: "cancelled" }[action]);
   });
+  byId("apply-policy").addEventListener("click", () => { void applySelectedPolicy(); });
   for (const button of document.querySelectorAll("[data-sort]")) button.addEventListener("click", () => {
     descending = sortKey === button.dataset.sort ? !descending : false; sortKey = button.dataset.sort; render();
   });
