@@ -11,9 +11,12 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"encoding/pem"
+	"errors"
+	"io"
 	"math/big"
 	"net"
 	"net/http"
+	"net/http/httptest"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -25,6 +28,7 @@ import (
 	"neboagency.com/zpr-dashborad/internal/changereview"
 	"neboagency.com/zpr-dashborad/internal/operatorauth"
 	"neboagency.com/zpr-dashborad/internal/operatordelegation"
+	"neboagency.com/zpr-dashborad/internal/servicehttp"
 )
 
 // This opt-in test owns its Rust test-binary child, listener, keys and state.
@@ -112,13 +116,19 @@ func testPolicyApplyRustInterop(t *testing.T, recovery bool) {
 	}
 	defer fd.Close()
 	endpoint := "https://" + listener.Addr().String()
+	policyListener, err := net.ListenTCP("tcp4", &net.TCPAddr{IP: net.IPv4(127, 0, 0, 1)})
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = policyListener.Close() })
+	policyEndpoint := "https://" + policyListener.Addr().String()
 	now := time.Now()
 	public, private, err := ed25519.GenerateKey(rand.Reader)
 	if err != nil {
 		t.Fatal(err)
 	}
 	trust := operatordelegation.PolicyTrust{
-		Audience: "https://policy.interop.invalid", VisaServiceAudience: endpoint,
+		Audience: policyEndpoint, VisaServiceAudience: endpoint,
 		Organization: "isolated-interop", TargetID: "owned-rust-router",
 		Keys: []operatordelegation.PolicyKey{{KeyID: "generated", Issuer: "https://control.interop.invalid",
 			PublicKey: base64.StdEncoding.EncodeToString(public), ExpiresUnix: now.Add(time.Hour).Unix()}},
@@ -306,8 +316,9 @@ func testPolicyApplyRustInterop(t *testing.T, recovery bool) {
 		Revision: 3, BaseRevision: 2, Before: "previous", After: "reviewed fixture policy",
 		Validation: "Validated", Impact: "Fixture only", Reason: "Actual Rust receiver integration",
 		Author: changereview.Principal{Issuer: actor.Issuer, Subject: "separate-author"}}
+	configData := []byte("isolated interop compiler configuration")
 	proposal.Candidate = &changereview.PolicyCandidate{StageID: digest, SourceSHA256: policyContainerDigest([]byte(proposal.After)),
-		ConfigSHA256: strings.Repeat("b", 64), BundleSHA256: digest}
+		ConfigSHA256: policyContainerDigest(configData), BundleSHA256: digest}
 	review, err := store.Submit(ctx, proposal)
 	if err != nil {
 		t.Fatal(err)
@@ -319,22 +330,136 @@ func testPolicyApplyRustInterop(t *testing.T, recovery bool) {
 	stage := stagedPolicyCandidate{ID: digest, RecordID: proposal.Target, RecordRevision: proposal.Revision,
 		SourceSHA256: proposal.Candidate.SourceSHA256, ConfigSHA256: proposal.Candidate.ConfigSHA256,
 		BundleSHA256: digest, BundleSize: int64(len(ready.Container))}
-	body, proof, err := prepareReviewedPolicyPair(ctx, store, signer, trust.Organization, review.ID, op.OperationID,
-		proposal, stage, ready.Container, initial, false, time.Now())
+	bundlePath := filepath.Join(dir, "staged-container.bin2")
+	configPath := filepath.Join(dir, "stage-config.json")
+	write("staged-container.bin2", ready.Container)
+	write("stage-config.json", configData)
+	workspace := &policyWorkspace{
+		store: &policyApplySourceFixture{record: policyRecord{
+			ID: proposal.Target, Kind: "policy", CurrentRevision: proposal.Revision, Content: proposal.After,
+		}},
+		stagedCandidate: &stage, stageConfigPath: configPath,
+	}
+	stage.bundlePath = bundlePath
+	psStore, err := changereview.Open(filepath.Join(dir, "policy-service.sqlite"))
 	if err != nil {
 		t.Fatal(err)
+	}
+	t.Cleanup(func() {
+		if psStore != nil {
+			if err := psStore.Close(); err != nil {
+				t.Error(err)
+			}
+		}
+	})
+	psRoots, psServerCertificate, crClientCertificate := interopPolicyServiceTLS(t, now)
+	type capturedPair struct {
+		body  []byte
+		proof operatordelegation.PolicyProof
+	}
+	captured := make(chan capturedPair, 1)
+	psHandler := policyServiceHandler(workspace, &policyApplyResources{store: psStore, client: client})
+	capturingHandler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method == http.MethodPost && r.URL.Path == policyApplyProducerRoute {
+			requestBody, readErr := io.ReadAll(r.Body)
+			if readErr != nil {
+				http.Error(w, "unable to capture fixture request", http.StatusBadRequest)
+				return
+			}
+			var requestProof operatordelegation.PolicyProof
+			if unmarshalErr := json.Unmarshal([]byte(r.Header.Get(policyApplyProofHeader)), &requestProof); unmarshalErr != nil {
+				http.Error(w, "invalid fixture proof", http.StatusBadRequest)
+				return
+			}
+			captured <- capturedPair{body: requestBody, proof: requestProof}
+			r.Body = io.NopCloser(bytes.NewReader(requestBody))
+		}
+		psHandler.ServeHTTP(w, r)
+	})
+	psServer := &http.Server{
+		Handler: capturingHandler,
+		TLSConfig: &tls.Config{
+			MinVersion: tls.VersionTLS13, ClientAuth: tls.RequireAndVerifyClientCert,
+			ClientCAs: psRoots, Certificates: []tls.Certificate{psServerCertificate},
+		},
+	}
+	psDone := make(chan error, 1)
+	go func() { psDone <- psServer.ServeTLS(policyListener, "", "") }()
+	t.Cleanup(func() {
+		shutdownCtx, shutdownCancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer shutdownCancel()
+		if err := psServer.Shutdown(shutdownCtx); err != nil {
+			t.Errorf("stop isolated Policy-Service HTTPS fixture: %v", err)
+		}
+		if err := <-psDone; err != nil && err != http.ErrServerClosed {
+			t.Errorf("isolated Policy-Service HTTPS fixture failed: %v", err)
+		}
+	})
+	psClientTransport := servicehttp.ClientTransport(crClientCertificate, psRoots, "127.0.0.1")
+	t.Cleanup(psClientTransport.CloseIdleConnections)
+	crApply := &policyReviewApply{
+		signer: signer, trust: trust,
+		http: &http.Client{Transport: psClientTransport, Timeout: 20 * time.Second,
+			CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }},
+	}
+	auth := &rustInteropReviewAuthorizer{organization: trust.Organization, subject: actor.Subject, denied: "policy.apply"}
+	api := &changeReviewAPI{store: store, auth: auth, apply: crApply,
+		capture: func(context.Context, string, string, string, int) (changereview.Proposal, error) {
+			return proposal, nil
+		}}
+	record, err := store.Get(ctx, trust.Organization, review.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	operatorBody, err := json.Marshal(changeReviewInput{
+		Organization: trust.Organization, Digest: record.Digest, ExpectedVersion: record.Version,
+		Reason: "Apply the approved isolated fixture candidate",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	callOperatorApply := func() *httptest.ResponseRecorder {
+		request := httptest.NewRequest(http.MethodPost, changeReviewPrefix+"requests/"+review.ID+"/apply", bytes.NewReader(operatorBody))
+		request.Header.Set("X-ZPR-CSRF", "interop-csrf")
+		response := httptest.NewRecorder()
+		api.ServeHTTP(response, request)
+		return response
+	}
+	if response := callOperatorApply(); response.Code != http.StatusForbidden || len(captured) != 0 {
+		t.Fatalf("operator without explicit policy.apply permission reached service: %d %s", response.Code, response.Body)
+	}
+	auth.denied = ""
+	operatorResponse := callOperatorApply()
+	if operatorResponse.Code != http.StatusOK {
+		t.Fatalf("actual Control Room apply route: HTTP %d %s", operatorResponse.Code, operatorResponse.Body)
+	}
+	var applied changereview.PolicyOperationRecord
+	if err = json.Unmarshal(operatorResponse.Body.Bytes(), &applied); err != nil || applied.Status != "succeeded" {
+		t.Fatalf("Control Room did not return verified application status: %+v %v", applied, err)
+	}
+	var pair capturedPair
+	select {
+	case pair = <-captured:
+	case <-ctx.Done():
+		t.Fatal("Control Room did not send the approved operation to Policy-Service")
+	}
+	var proof operatordelegation.PolicyProof
+	body, proof = pair.body, pair.proof
+	if _, err = operatordelegation.VerifyPolicyPair(trust, http.MethodPost, policyApplyProducerRoute, body, proof, time.Now()); err != nil {
+		t.Fatalf("Control Room did not produce an independently verifiable service proof: %v", err)
 	}
 	var prepared operatordelegation.PolicyCommand
 	if err = json.Unmarshal(body, &prepared); err != nil {
 		t.Fatal(err)
 	}
+	op = prepared.Operation
 	ready.Bundle = prepared.Bundle
-	applied, err := client.apply(ctx, store, body, proof, time.Now())
-	if err != nil || applied.Status != "succeeded" {
-		t.Fatalf("actual apply: status=%s err=%v result=%s", applied.Status, err, applied.Result)
+	psOperation, err := psStore.PolicyOperation(ctx, trust.Organization, applied.ID)
+	if err != nil || psOperation.Status != "succeeded" {
+		t.Fatalf("Policy-Service did not durably record actual operation: %+v %v", psOperation, err)
 	}
 	var result changereview.PolicyApplyResult
-	if err = json.Unmarshal(applied.Result, &result); err != nil || result.Receipt == nil || result.Readback == nil {
+	if err = json.Unmarshal(psOperation.Result, &result); err != nil || result.Receipt == nil || result.Readback == nil {
 		t.Fatalf("missing exact success evidence: %v", err)
 	}
 	if err = operatordelegation.ValidatePolicyReceipt(op, *result.Receipt); err != nil {
@@ -347,7 +472,7 @@ func testPolicyApplyRustInterop(t *testing.T, recovery bool) {
 	t.Log("actual reviewed apply and exact independent digest/vinst readback: succeeded")
 	expectHTTP("exact proof replay", ready.WriteKey, body, 409)
 	freshBody, freshProof := sign(op)
-	replayed, err := client.apply(ctx, store, freshBody, freshProof, time.Now())
+	replayed, err := client.apply(ctx, psStore, freshBody, freshProof, time.Now())
 	if err != nil || replayed.Status != "succeeded" {
 		t.Fatalf("durable PS replay: %+v %v", replayed, err)
 	}
@@ -371,7 +496,7 @@ func testPolicyApplyRustInterop(t *testing.T, recovery bool) {
 	suppressed.ExpectedCurrentDigest, suppressed.ExpectedCurrentVinst = readback.CurrentDigest, readback.CurrentVinst
 	suppressedBody, suppressedProof := sign(suppressed)
 	write("suppress-next-reply", nil)
-	uncertain, err := client.apply(ctx, store, suppressedBody, suppressedProof, time.Now())
+	uncertain, err := client.apply(ctx, psStore, suppressedBody, suppressedProof, time.Now())
 	if err != nil || uncertain.Status != "uncertain" {
 		t.Fatalf("suppressed reply must be uncertain: %+v %v", uncertain, err)
 	}
@@ -415,22 +540,23 @@ func testPolicyApplyRustInterop(t *testing.T, recovery bool) {
 		}
 		t.Logf("actual receiver SIGKILL/reap/restart PID %d -> %d; Valkey AOF graceful stop/reap/restart PID %d -> %d; exact digest/vinst retained", oldPID, ready.ReceiverPID, oldDBPID, newDBPID)
 	}
-	if err = store.Close(); err != nil {
+	if err = psStore.Close(); err != nil {
 		t.Fatal(err)
 	}
-	store, err = changereview.Open(filepath.Join(dir, "operations.sqlite"))
+	psStore = nil
+	psStore, err = changereview.Open(filepath.Join(dir, "policy-service.sqlite"))
 	if err != nil {
 		t.Fatal(err)
 	}
 	if recovery {
-		persisted, err := store.PolicyOperation(ctx, trust.Organization, suppressed.OperationID)
+		persisted, err := psStore.PolicyOperation(ctx, trust.Organization, suppressed.OperationID)
 		if err != nil || !reflect.DeepEqual(persisted, uncertain) {
 			t.Fatalf("reopened PS store did not retain exact uncertain operation/binding: %+v %v", persisted, err)
 		}
 		t.Log("Policy-Service SQLite store closed/reopened independently of both process restarts")
 	}
 	reconcileBody, reconcileProof := sign(suppressed)
-	reconciled, err := client.apply(ctx, store, reconcileBody, reconcileProof, time.Now())
+	reconciled, err := client.apply(ctx, psStore, reconcileBody, reconcileProof, time.Now())
 	if err != nil || reconciled.Status != "succeeded" {
 		t.Fatalf("fresh-proof reconciliation: %+v %v", reconciled, err)
 	}
@@ -498,4 +624,73 @@ func interopServerTLS(t *testing.T, now time.Time, write func(string, []byte)) *
 		t.Fatal("generated CA was not accepted")
 	}
 	return roots
+}
+
+func interopPolicyServiceTLS(t *testing.T, now time.Time) (*x509.CertPool, tls.Certificate, tls.Certificate) {
+	t.Helper()
+	caPublic, caKey, err := ed25519.GenerateKey(rand.Reader)
+	if err != nil {
+		t.Fatal(err)
+	}
+	ca := &x509.Certificate{
+		SerialNumber: big.NewInt(10), Subject: pkix.Name{CommonName: "isolated interop Policy-Service CA"},
+		NotBefore: now.Add(-time.Minute), NotAfter: now.Add(time.Hour), IsCA: true,
+		BasicConstraintsValid: true, KeyUsage: x509.KeyUsageCertSign,
+	}
+	caDER, err := x509.CreateCertificate(rand.Reader, ca, ca, caPublic, caKey)
+	if err != nil {
+		t.Fatal(err)
+	}
+	roots := x509.NewCertPool()
+	if !roots.AppendCertsFromPEM(pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: caDER})) {
+		t.Fatal("isolated Policy-Service CA was not accepted")
+	}
+	issue := func(serial int64, name string, usage x509.ExtKeyUsage, server bool) tls.Certificate {
+		t.Helper()
+		public, private, err := ed25519.GenerateKey(rand.Reader)
+		if err != nil {
+			t.Fatal(err)
+		}
+		leaf := &x509.Certificate{
+			SerialNumber: big.NewInt(serial), Subject: pkix.Name{CommonName: name},
+			NotBefore: now.Add(-time.Minute), NotAfter: now.Add(time.Hour),
+			ExtKeyUsage: []x509.ExtKeyUsage{usage}, KeyUsage: x509.KeyUsageDigitalSignature,
+		}
+		if server {
+			leaf.IPAddresses = []net.IP{net.IPv4(127, 0, 0, 1)}
+		}
+		der, err := x509.CreateCertificate(rand.Reader, leaf, ca, public, caKey)
+		if err != nil {
+			t.Fatal(err)
+		}
+		key, err := x509.MarshalPKCS8PrivateKey(private)
+		if err != nil {
+			t.Fatal(err)
+		}
+		certificate, err := tls.X509KeyPair(
+			pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: der}),
+			pem.EncodeToMemory(&pem.Block{Type: "PRIVATE KEY", Bytes: key}),
+		)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return certificate
+	}
+	return roots,
+		issue(11, "isolated Policy-Service", x509.ExtKeyUsageServerAuth, true),
+		issue(12, "isolated Control Room client", x509.ExtKeyUsageClientAuth, false)
+}
+
+type rustInteropReviewAuthorizer struct {
+	organization string
+	subject      string
+	denied       string
+}
+
+func (a *rustInteropReviewAuthorizer) Authorize(r *http.Request, organization, permission string) (operatorauth.Identity, error) {
+	if organization != a.organization || permission == a.denied ||
+		(r.Method == http.MethodPost && r.Header.Get("X-ZPR-CSRF") != "interop-csrf") {
+		return operatorauth.Identity{}, errors.New("isolated Control Room authorization denied")
+	}
+	return operatorauth.Identity{Issuer: "https://identity.interop.invalid", Subject: a.subject}, nil
 }
