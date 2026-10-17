@@ -222,6 +222,11 @@
 
         <section class="page-view" id="page-policy" data-page="policy" aria-label="Policy studio">
           <section class="section-block policy-page">
+            <section aria-label="Policy service readiness">
+              <p id="policy-readiness-status" class="editor-page-status" role="status" aria-live="polite" aria-atomic="true">Policy catalog readiness has not been checked.</p>
+              <p>Readiness describes editor services, not applied runtime state. Saving a revision or staging a candidate does not push or activate it.</p>
+              <button id="policy-readiness-refresh" class="button" type="button">Check policy services</button>
+            </section>
             <div class="policy-toolbar">
               <div id="policy-edit-state" class="policy-identity" aria-label="Selected policy">
                 <strong id="policy-record-title" hidden></strong><span id="policy-revision-label"></span><span id="policy-modified-indicator" class="policy-modified-indicator" role="status" hidden>Modified</span>

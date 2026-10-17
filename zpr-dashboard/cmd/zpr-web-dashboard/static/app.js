@@ -2164,6 +2164,28 @@ function geographicAdapterFanout(nodeCenter, adapters, extents, nodeRadius, dire
   return (best || outside)?.map(({ adapter, x, y }) => [adapter, { x, y }]) || null;
 }
 
+function renderPolicyReadiness(phase, message = "") {
+  const status = byId("policy-readiness-status");
+  byId("policy-readiness-refresh").disabled = phase === "loading";
+  if (phase === "loading") {
+    status.dataset.state = "pending";
+    status.textContent = "Checking policy catalog and editor services...";
+  } else if (phase === "error") {
+    status.dataset.state = "error";
+    status.textContent = `Policy catalog unavailable: ${message} Check the Control Room Policy-Service connection, then check policy services again. Compiler, draft tester and staging readiness could not be verified. Existing editor text is retained.`;
+  } else {
+    const policy = state.policy;
+    status.dataset.state = policy.configured && policy.compilerReady && policy.testerReady && policy.stagingReady ? "ready" : "warning";
+    status.textContent = [
+      policy.configured ? "Policy catalog available." : "Policy catalog not configured. Check the Control Room Policy-Service configuration.",
+      policy.compilerReady ? "Compiler configured." : "Compiler unavailable. Configure the policy compiler to analyze source.",
+      policy.testerReady ? "Draft tester available." : "Draft tester unavailable. Check the policy evaluation service before testing drafts.",
+      policy.stagingReady ? "Candidate staging configured." : "Candidate staging unavailable. Configure staging before creating a candidate.",
+      message,
+    ].filter(Boolean).join(" ");
+  }
+}
+
 async function loadPolicyWorkspace() {
   const policy = state.policy;
   if (policy.loaded) return;
@@ -2171,6 +2193,7 @@ async function loadPolicyWorkspace() {
   const editorSource = byId("policy-source").value;
   const hasUnsavedChanges = hasUnsavedPolicyChanges(policy, editorSource);
   setPolicyLoadStatus();
+  renderPolicyReadiness("loading");
   try {
     const data = await policyEditorRequest("/api/policy", { headers: { Accept: "application/json" } });
     const organizationChanged = policy.organizationID && data.organization_id && policy.organizationID !== data.organization_id;
@@ -2237,9 +2260,12 @@ async function loadPolicyWorkspace() {
     byId("new-policy-record").disabled = !policy.configured || !policy.categoryID;
     policyAssistant.setStatus(data);
     updateAssistantControls();
+    if (policy.record?.kind === "policy") updatePolicyDirtyState();
+    renderPolicyReadiness("ready", data.message || "");
   } catch (error) {
     policy.loaded = false;
     setPolicyLoadStatus(error.message);
+    renderPolicyReadiness("error", error.message);
   }
 }
 
@@ -4583,6 +4609,7 @@ document.addEventListener("keydown", (event) => {
 window.addEventListener("hashchange", () => closePolicyPickerMenu());
 window.addEventListener("resize", () => { closePolicyPickerMenu(); updatePolicyWorkbenchLayout(); });
 byId("policy-refresh").addEventListener("click", reloadPolicyWorkspace);
+byId("policy-readiness-refresh").addEventListener("click", refreshPolicyCatalog);
 byId("new-category").addEventListener("click", openCategoryDialog);
 byId("new-policy-record").addEventListener("click", beginNewPolicyDraft);
 byId("new-assertion-record").addEventListener("click", beginNewAssertionDraft);
