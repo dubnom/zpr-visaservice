@@ -150,7 +150,7 @@ export function registerOrganizationProfileTests(test, expect) {
     await page.getByRole("dialog", { name: "Review AI organization changes" }).getByRole("button", { name: "Cancel", exact: true }).click();
     await expect(page.locator("#organization-profile-name")).toHaveValue("Alpha Labs");
     await page.locator("#organization-profile-mode-toggle").click();
-    await page.locator("#organization-profile-source").fill("{ broken");
+    await page.locator('.code-editor-host[data-source="organization-profile-source"] .cm-content').fill("{ broken");
     await page.locator("#organization-profile-editor").getByRole("button", { name: "File...", exact: true }).click();
     await page.locator("#organization-profile-editor").getByRole("menuitem", { name: "Save", exact: true }).click();
     await expect(page.locator("#organization-profile-status")).toContainText("Save was not confirmed");
@@ -224,23 +224,25 @@ export function registerOrganizationProfileTests(test, expect) {
     const editor = page.locator("#organization-profile-editor");
     const mode = editor.locator("#organization-profile-mode-toggle");
     const source = editor.locator("#organization-profile-source");
+    // CodeMirror shows the editable source; the hidden textarea keeps the bridged value.
+    const sourceView = editor.locator('.code-editor-host[data-source="organization-profile-source"] .cm-content');
     await expect(editor.locator(".policy-identity #organization-profile-history-menu")).toHaveCount(1);
     await expect(editor.getByText("Advanced JSON source", { exact: true })).toHaveCount(0);
     await expect(editor.locator("#organization-profile-form")).toBeVisible();
-    await expect(source).toBeHidden();
+    await expect(sourceView).toBeHidden();
     await expect(mode).toHaveText("Raw");
     await editor.locator('[data-editor-tab="sites"]').click();
     await mode.click();
     await expect(mode).toHaveText("Form");
     await expect(editor.locator("#organization-profile-form")).toBeHidden();
-    await expect(source).toBeVisible();
+    await expect(sourceView).toBeVisible();
     await editor.getByLabel("Wrap", { exact: true }).check();
     await expect(source).toHaveAttribute("wrap", "soft");
     await expect(editor.locator(".config-code-surface")).toHaveClass(/editor-word-wrap/);
     await editor.getByLabel("Wrap", { exact: true }).uncheck();
     const profile = JSON.parse(await source.inputValue());
     profile.name = "Raw draft name";
-    await source.fill(JSON.stringify(profile));
+    await sourceView.fill(JSON.stringify(profile));
     await editor.getByRole("button", { name: "Format", exact: true }).click();
     await expect(source).toHaveValue(JSON.stringify(profile, null, 2));
     await mode.click();
@@ -248,12 +250,12 @@ export function registerOrganizationProfileTests(test, expect) {
     await editor.locator('[data-editor-tab="overview"]').click();
     await expect(editor.getByLabel("Name", { exact: true })).toHaveValue("Raw draft name");
     await mode.click();
-    await source.fill("{ invalid");
+    await sourceView.fill("{ invalid");
     await mode.click();
-    await expect(source).toBeVisible();
+    await expect(sourceView).toBeVisible();
     await expect(mode).toHaveText("Form");
     await expect(editor.locator("#organization-profile-status")).toContainText("Form unavailable");
-    await source.fill(JSON.stringify(profile));
+    await sourceView.fill(JSON.stringify(profile));
     await mode.click();
     page.once("dialog", dialog => dialog.dismiss());
     await editor.getByRole("button", { name: "Browse...", exact: true }).click();
@@ -261,9 +263,9 @@ export function registerOrganizationProfileTests(test, expect) {
     await expect(editor.getByLabel("Name", { exact: true })).toHaveValue("Raw draft name");
     expect(state.writes).toHaveLength(0);
     await mode.click();
-    await source.press("Control+s");
+    await sourceView.press("Control+s");
     await expect(editor.locator("#organization-profile-revision")).toHaveText("Draft revision 2");
-    await expect(source).toBeVisible();
+    await expect(sourceView).toBeVisible();
     await expect(mode).toHaveText("Form");
     expect(state.writes).toHaveLength(1);
     await mode.click();
@@ -325,9 +327,9 @@ export function registerOrganizationProfileTests(test, expect) {
     const definitions = page.locator("#organization-definitions-editor");
     await expect(definitions).toBeVisible();
     await expect(editor).not.toBeVisible();
-    await expect(definitions.getByLabel("Selected organization definition source")).toHaveValue(JSON.stringify(profile, null, 2));
+    await expect(definitions.locator("#organization-definitions-source")).toHaveValue(JSON.stringify(profile, null, 2));
     await definitions.getByLabel("Definition file", { exact: true }).selectOption("0");
-    await expect(definitions.getByLabel("Selected organization definition source")).toHaveValue(bundle.documents[0].content);
+    await expect(definitions.locator("#organization-definitions-source")).toHaveValue(bundle.documents[0].content);
     expect([...api.counts.keys()].some(path => /activate|restore-base|publish/.test(path))).toBe(false);
   });
 }

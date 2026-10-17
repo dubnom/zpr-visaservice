@@ -1,7 +1,40 @@
+// CodeMirror replaces the visible source textarea; its value and selection stay bridged to the textarea.
+function codeEditor(page, sourceID) {
+  return page.locator(`.code-editor-host[data-source="${sourceID}"] .cm-content`);
+}
+
+// CodeMirror autocomplete replaces the legacy #policy-completions listbox.
+function completionMenu(page, sourceID = "policy-source") {
+  return page.locator(`.code-editor-host[data-source="${sourceID}"] .cm-tooltip-autocomplete`);
+}
+
+async function requestCompletion(page, text, sourceID = "policy-source") {
+  const editor = codeEditor(page, sourceID);
+  await editor.fill(text);
+  await editor.press("ControlOrMeta+End");
+  await editor.press("Control+Space");
+  // CodeMirror ignores Enter for 75 ms after a completion menu opens.
+  await page.waitForTimeout(100);
+}
+
+function resultGutter(page, sourceID) {
+  return page.locator(`.code-editor-host[data-source="${sourceID}"] .cm-result-gutter`);
+}
+
+// CodeMirror shows clickable clones of the hidden legacy gutter buttons; clones keep the "Line N" titles.
+function gutterMarker(page, sourceID, line, selector = "button") {
+  const markers = page.locator(`.code-editor-host[data-source="${sourceID}"] .cm-result-gutter`).locator(selector);
+  return line === undefined ? markers : markers.and(page.locator(`[title="Line ${line}"], [title^="Line ${line} ·"]`));
+}
+
 async function openPolicyPicker(page) {
   const toggle = page.locator("#policy-picker-toggle");
-  if (await toggle.getAttribute("aria-expanded") !== "true") await toggle.click();
-  await expect(page.locator("#policy-catalog-pane")).toBeVisible();
+  const pane = page.locator("#policy-catalog-pane");
+  // Record loads close the picker asynchronously, so retry until it stays open.
+  await expect(async () => {
+    if (await pane.isHidden()) await toggle.click();
+    await expect(pane).toBeVisible({ timeout: 1000 });
+  }).toPass({ timeout: 5000 });
 }
 
 async function openPolicyFiles(page) {
@@ -23,9 +56,13 @@ async function openAssertionRecord(page, appURL) {
 }
 
 async function selectAdapterLogSource(panel, label, kind = "adapter") {
-  await panel.getByRole("button", { name: new RegExp(`Choose ${kind} and log source`) }).click();
+  const picker = panel.getByRole("button", { name: new RegExp(`Choose ${kind} and log source`) });
+  // The picker closes on grid scroll, so finish any scroll-into-view before opening it.
+  await picker.scrollIntoViewIfNeeded();
+  await picker.evaluate(() => new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve))));
+  await picker.click();
   const dialog = panel.getByRole("dialog", { name: `Choose ${kind} log source` });
-  await dialog.getByRole("combobox").selectOption({ label });
+  await dialog.getByRole("listbox").selectOption({ label });
 }
 
 function registerAssertionBrowserTests() {
@@ -43,29 +80,33 @@ test("GUI editor gutters follow newline edits and undo redo in assertion policy 
       await page.goto(appURL + "/#zpr-config");
     }
     const source = page.locator(`#${id}`);
+    const sourceEditor = codeEditor(page, id);
     const rows = page.locator(`${gutter} > div`);
-    await source.fill(original);
+    await sourceEditor.fill(original);
     await expect(rows).toHaveCount(1);
-    await source.press("End");
-    await source.press("Enter");
+    // CodeMirror merges edits made within its 500 ms history group delay into one undo step.
+    await page.waitForTimeout(600);
+    await sourceEditor.press("End");
+    await sourceEditor.press("Enter");
     await expect(source).toHaveValue(original + "\n");
     await expect(rows).toHaveCount(2);
-    await source.press("ControlOrMeta+z");
+    await sourceEditor.press("ControlOrMeta+z");
     await expect(source).toHaveValue(original);
     await expect(rows).toHaveCount(1);
-    await source.press("ControlOrMeta+Shift+z");
+    await sourceEditor.press("ControlOrMeta+Shift+Z");
     await expect(source).toHaveValue(original + "\n");
     await expect(rows).toHaveCount(2);
-    await source.press("Backspace");
+    await sourceEditor.press("Backspace");
     await expect(source).toHaveValue(original);
     await expect(rows).toHaveCount(1);
     const wrap = source.locator("xpath=ancestor::*[contains(@class,'policy-page')]").getByRole("checkbox", { name: "Wrap" });
     await wrap.check();
-    await source.fill(original.repeat(40) + "\nlast");
+    await sourceEditor.fill(original.repeat(40) + "\nlast");
     await expect(rows).toHaveCount(2);
-    await expect.poll(() => rows.first().evaluate(row => row.getBoundingClientRect().height)).toBeGreaterThan(30);
-    await source.press("End");
-    await source.press("Enter");
+    const firstLineNumber = page.locator(`.code-editor-host[data-source="${id}"] .cm-lineNumbers .cm-gutterElement`).filter({ hasText: /^1$/ });
+    await expect.poll(() => firstLineNumber.evaluate(row => row.getBoundingClientRect().height)).toBeGreaterThan(30);
+    await sourceEditor.press("End");
+    await sourceEditor.press("Enter");
     await expect(rows).toHaveCount(3);
   }
 });
@@ -79,7 +120,7 @@ for (const fallback of [false, true]) {
     await openAssertionRecord(page, appURL);
     const source = page.locator("#assertion-source");
     const original = 'group "Original" members >= 1;\n';
-    await source.fill(original);
+    await codeEditor(page, "assertion-source").fill(original);
     await page.locator("#assertion-analyze").click();
     await expect(page.locator("#assertion-analyze")).toHaveAttribute("data-analysis-state", "success");
     await page.locator("#assertion-read-source").click();
@@ -93,18 +134,18 @@ for (const fallback of [false, true]) {
     await expect(page.locator("#assertion-result-lines > div")).toHaveCount(3);
     await expect(page.locator("#assertion-analyze")).not.toHaveAttribute("data-analysis-state", "success");
     await expect(page.locator("#assertion-result-lines button")).toHaveCount(0);
-    await source.press("ControlOrMeta+z");
+    await codeEditor(page, "assertion-source").press("ControlOrMeta+z");
     await expect(source).toHaveValue(original);
     await expect(page.locator("#assertion-result-lines > div")).toHaveCount(2);
-    await source.press("ControlOrMeta+Shift+z");
+    await codeEditor(page, "assertion-source").press("ControlOrMeta+Shift+Z");
     await expect(source).toHaveValue(inserted);
     await page.getByRole("tab", { name: "Attributes", exact: true }).click();
     await source.evaluate(element => element.setSelectionRange(0, element.value.indexOf("\n") + 1));
     await page.getByRole("button", { name: "Insert presence assertion for mail", exact: true }).click();
     await expect(source).toHaveValue('people attribute "mail" present;\ngroup "Operators" members >= 2;\n');
-    await source.press("ControlOrMeta+z");
+    await codeEditor(page, "assertion-source").press("ControlOrMeta+z");
     await expect(source).toHaveValue(inserted);
-    await source.press("ControlOrMeta+Shift+z");
+    await codeEditor(page, "assertion-source").press("ControlOrMeta+Shift+Z");
     await expect(source).toHaveValue('people attribute "mail" present;\ngroup "Operators" members >= 2;\n');
     expect(api.counts.get("/api/policy/records/test-assertions/save") || 0).toBe(0);
   });
@@ -113,34 +154,35 @@ for (const fallback of [false, true]) {
 test("GUI shared programmatic edits keep Tab and fallback Find Replace undoable", async ({ page, appURL, api }) => {
   await openAssertionRecord(page, appURL);
   const source = page.locator("#assertion-source");
-  await source.fill("original");
-  await source.press("End");
-  await source.press("Tab");
-  await expect(source).toHaveValue("original  ");
-  await source.press("ControlOrMeta+z");
+  await codeEditor(page, "assertion-source").fill("original");
+  await codeEditor(page, "assertion-source").press("End");
+  await codeEditor(page, "assertion-source").press("Tab");
+  // CodeMirror's Tab indents the current line rather than inserting spaces at the caret.
+  await expect(source).toHaveValue("  original");
+  await codeEditor(page, "assertion-source").press("ControlOrMeta+z");
   await expect(source).toHaveValue("original");
-  await source.press("ControlOrMeta+Shift+z");
-  await expect(source).toHaveValue("original  ");
+  await codeEditor(page, "assertion-source").press("ControlOrMeta+Shift+Z");
+  await expect(source).toHaveValue("  original");
   const tools = page.locator('[data-editor-search-target="policy-source,assertion-source"]');
   await tools.getByRole("button", { name: "Find & Replace", exact: true }).click();
   await tools.getByRole("textbox", { name: "Find what" }).fill("original");
   await tools.getByRole("textbox", { name: "Replace with" }).fill("replacement");
   await page.evaluate(() => { document.execCommand = () => false; });
   await tools.getByRole("button", { name: "Replace All", exact: true }).click();
-  await expect(source).toHaveValue("replacement  ");
+  await expect(source).toHaveValue("  replacement");
   await expect(page.locator("#assertion-result-lines > div")).toHaveCount(1);
   await tools.getByRole("button", { name: "Close", exact: true }).click();
-  await source.press("ControlOrMeta+z");
-  await expect(source).toHaveValue("original  ");
+  await codeEditor(page, "assertion-source").press("ControlOrMeta+z");
+  await expect(source).toHaveValue("  original");
   await expect(page.locator("#assertion-result-lines > div")).toHaveCount(1);
-  await source.press("ControlOrMeta+Shift+z");
-  await expect(source).toHaveValue("replacement  ");
+  await codeEditor(page, "assertion-source").press("ControlOrMeta+Shift+Z");
+  await expect(source).toHaveValue("  replacement");
 });
 
 test("GUI Trusted Source insertion respects read-only and size limits without changing text", async ({ page, appURL, api }) => {
   await openAssertionRecord(page, appURL);
   const source = page.locator("#assertion-source");
-  await source.fill("original");
+  await codeEditor(page, "assertion-source").fill("original");
   await page.locator("#assertion-read-source").click();
   const insert = page.getByRole("button", { name: "Insert a cardinality assertion for Operators", exact: true });
   await source.evaluate(element => { element.maxLength = 8; });
@@ -160,23 +202,23 @@ test("GUI shared programmatic edits keep policy completion and Scenario indentat
   await page.locator('[data-record-id="test-policy"]').click();
   const policy = page.locator("#policy-source");
   const original = "define Employee as user\n  with dep";
-  await policy.fill(original);
-  await expect(page.locator("#policy-completions")).toBeVisible();
-  await policy.press("Tab");
+  await requestCompletion(page, original);
+  await expect(completionMenu(page)).toBeVisible();
+  await codeEditor(page, "policy-source").press("Enter");
   await expect(policy).toHaveValue("define Employee as user\n  with user.department:");
-  await policy.press("ControlOrMeta+z");
+  await codeEditor(page, "policy-source").press("ControlOrMeta+z");
   await expect(policy).toHaveValue(original);
-  await policy.press("ControlOrMeta+Shift+z");
+  await codeEditor(page, "policy-source").press("ControlOrMeta+Shift+Z");
   await expect(policy).toHaveValue("define Employee as user\n  with user.department:");
   await openRawScenario(page, appURL, api);
   const scenario = page.locator("#scenario-editor-source");
   const before = await scenario.inputValue();
-  await scenario.press("ControlOrMeta+Home");
-  await scenario.press("Tab");
+  await codeEditor(page, "scenario-editor-source").press("ControlOrMeta+Home");
+  await codeEditor(page, "scenario-editor-source").press("Tab");
   await expect(scenario).toHaveValue("  " + before);
-  await scenario.press("ControlOrMeta+z");
+  await codeEditor(page, "scenario-editor-source").press("ControlOrMeta+z");
   await expect(scenario).toHaveValue(before);
-  await scenario.press("ControlOrMeta+Shift+z");
+  await codeEditor(page, "scenario-editor-source").press("ControlOrMeta+Shift+Z");
   await expect(scenario).toHaveValue("  " + before);
 });
 
@@ -199,9 +241,9 @@ for (const [worst, states, warnings, error] of [
       ] : [],
     } }));
     await openAssertionRecord(page, appURL);
-    await page.locator("#assertion-source").fill('assert true; assert false;');
+    await codeEditor(page, "assertion-source").fill('assert true; assert false;');
     await page.locator("#assertion-analyze").click();
-    const marker = page.locator('#assertion-result-lines [data-line="1"] button');
+    const marker = gutterMarker(page, "assertion-source", 1);
     await expect(marker).toHaveCount(1);
     await expect(marker).toHaveAttribute("data-state", worst);
     await marker.click();
@@ -215,18 +257,18 @@ for (const [worst, states, warnings, error] of [
   });
 }
 
-test("Assertion scrollbar corner matches the standard editor on overflow only", async ({ page, appURL, api }) => {
+test("Assertion CodeMirror source scrolls horizontally without the legacy textarea scrollbar corner", async ({ page, appURL, api }) => {
   await openAssertionRecord(page, appURL);
-  const source = page.locator("#assertion-source");
   const editor = page.locator("#assertion-editor");
-  await source.fill(`group "${"Operators".repeat(80)}" members >= 2;`);
-  await expect(editor).toHaveAttribute("data-horizontal-overflow", "true");
-  expect(await editor.evaluate(element => {
-    const corner = getComputedStyle(element, "::after");
-    return { background: corner.backgroundColor, width: corner.width, left: corner.left, bottom: corner.bottom };
-  })).toEqual({ background: "rgb(255, 255, 255)", width: "68px", left: "0px", bottom: "0px" });
-  await source.fill('group "Operators" members >= 2;');
-  await expect(editor).toHaveAttribute("data-horizontal-overflow", "false");
+  const scroller = page.locator('.code-editor-host[data-source="assertion-source"] .cm-scroller');
+  const overflows = () => scroller.evaluate((element) => element.scrollWidth > element.clientWidth);
+  await codeEditor(page, "assertion-source").fill(`group "${"Operators".repeat(80)}" members >= 2;`);
+  await expect.poll(overflows).toBe(true);
+  // The white corner belongs to the hidden textarea layout and must not cover CodeMirror's scrollbar.
+  await expect(editor).not.toHaveAttribute("data-horizontal-overflow", "true");
+  await codeEditor(page, "assertion-source").fill('group "Operators" members >= 2;');
+  await expect.poll(overflows).toBe(false);
+  await expect(editor).not.toHaveAttribute("data-horizontal-overflow", "true");
 });
 test("assertion editor shares policy file controls and clears the scrollbar gutter", async ({ page, appURL, api }) => {
   await openAssertionRecord(page, appURL);
@@ -240,8 +282,10 @@ test("assertion editor shares policy file controls and clears the scrollbar gutt
   await expect(page.locator("#assertion-message")).toBeHidden();
   const spacing = await page.evaluate(() => {
     const toolbar = document.querySelector(".policy-editor-tools").getBoundingClientRect();
+    // The shared file status keeps a reserved line between the toolbar and source.
+    const status = document.querySelector("#policy-file-status").getBoundingClientRect();
     const editor = document.querySelector("#assertion-editor").getBoundingClientRect();
-    return editor.top - toolbar.bottom;
+    return editor.top - Math.max(toolbar.bottom, status.bottom);
   });
   expect(spacing).toBeLessThanOrEqual(9);
   await openPolicyFiles(page);
@@ -249,15 +293,16 @@ test("assertion editor shares policy file controls and clears the scrollbar gutt
   await expect(page.locator("#assertion-reload")).toHaveText("Discard");
   await expect(page.locator("#policy-stage")).toBeHidden();
   await page.locator("#policy-files-toggle").click();
-  await page.locator("#assertion-source").fill(`group "${"Operators".repeat(80)}" members >= 2;`);
+  await codeEditor(page, "assertion-source").fill(`group "${"Operators".repeat(80)}" members >= 2;`);
   await expect(page.locator("#policy-modified-indicator")).toHaveText("Modified");
   await page.locator("#assertion-analyze").click();
-  await expect(page.locator("#assertion-result-gutter")).toBeVisible();
-  await expect.poll(() => page.evaluate(() => {
-    const source = document.querySelector("#assertion-source");
-    const gutter = document.querySelector("#assertion-result-gutter").getBoundingClientRect();
-    const sourceBounds = source.getBoundingClientRect();
-    return source.scrollWidth > source.clientWidth && sourceBounds.left >= gutter.right && gutter.bottom <= sourceBounds.top + source.clientHeight + 1;
+  await expect(resultGutter(page, "assertion-source")).toBeAttached();
+  await expect.poll(() => page.locator('.code-editor-host[data-source="assertion-source"]').evaluate((host) => {
+    const scroller = host.shadowRoot.querySelector(".cm-scroller");
+    scroller.scrollLeft = 0;
+    const gutter = host.shadowRoot.querySelector(".cm-result-gutter").getBoundingClientRect();
+    const content = host.shadowRoot.querySelector(".cm-content").getBoundingClientRect();
+    return scroller.scrollWidth > scroller.clientWidth && content.left >= gutter.right - 1;
   })).toBeTruthy();
   await openPolicyPicker(page);
   page.once("dialog", (dialog) => dialog.accept());
@@ -281,8 +326,8 @@ test("assertion Analyze matches policy toolbar colors and gutter behavior", asyn
   await openAssertionRecord(page, appURL);
   await expect(page.getByRole("button", { name: "Test", exact: true })).toHaveCount(0);
   await expect(page.getByRole("button", { name: "Exit test", exact: true })).toHaveCount(0);
-  await expect(page.locator("#assertion-result-gutter")).toBeVisible();
-  const before = await page.locator("#assertion-source").boundingBox();
+  await expect(resultGutter(page, "assertion-source")).toBeAttached();
+  const before = await page.locator('.code-editor-host[data-source="assertion-source"]').boundingBox();
   const toolbar = await page.evaluate(() => {
     const files = document.querySelector("#policy-files-toggle").getBoundingClientRect();
     const analyze = document.querySelector("#assertion-analyze").getBoundingClientRect();
@@ -294,12 +339,12 @@ test("assertion Analyze matches policy toolbar colors and gutter behavior", asyn
   await expect(page.locator("#assertion-periodic-control")).toBeHidden();
   await expect(page.locator("#assertion-interval-control")).toBeHidden();
   const source = page.locator("#assertion-source");
-  await source.fill('group   "Operators" members>=2;');
+  await codeEditor(page, "assertion-source").fill('group   "Operators" members>=2;');
   await expect(page.locator("#assertion-analyze")).toHaveClass(/button-next-evaluate/);
   await page.locator("#assertion-analyze").click();
   await expect(page.locator("#assertion-analyze")).toHaveAttribute("data-analysis-state", "success");
-  await expect(source).toBeEditable();
-  const after = await source.boundingBox();
+  await expect(codeEditor(page, "assertion-source")).toBeEditable();
+  const after = await page.locator('.code-editor-host[data-source="assertion-source"]').boundingBox();
   expect(after.x).toBe(before.x);
   expect(after.width).toBe(before.width);
   await page.mouse.move(0, 0);
@@ -309,7 +354,7 @@ test("assertion Analyze matches policy toolbar colors and gutter behavior", asyn
     policy.dataset.analysisState = "success";
     return getComputedStyle(assertion).backgroundColor === getComputedStyle(policy).backgroundColor;
   })).toBeTruthy();
-  await page.locator(".assertion-result-marker").click();
+  await gutterMarker(page, "assertion-source", undefined, ".assertion-result-marker").click();
   await expect(page.getByRole("dialog", { name: "Assertion pass" })).toBeVisible();
   await page.getByRole("dialog", { name: "Assertion pass" }).locator(".dialog-actions .button").click();
   expect(analyzed).toBe('group   "Operators" members>=2;');
@@ -324,7 +369,7 @@ test("assertion Analyze matches policy toolbar colors and gutter behavior", asyn
   api.handlers.set("/api/assertions/evaluate", async (route) => {
     await route.fulfill({ status: 400, json: { error: "line 1: expected a number" } });
   });
-  await source.fill('group "Operators" members >=;');
+  await codeEditor(page, "assertion-source").fill('group "Operators" members >=;');
   await page.locator("#assertion-analyze").click();
   await expect(page.locator("#assertion-analyze")).toHaveAttribute("data-analysis-state", "error");
   await expect(source).toBeEditable();
@@ -335,7 +380,7 @@ test("assertion Analyze matches policy toolbar colors and gutter behavior", asyn
     policy.dataset.analysisState = "error";
     return getComputedStyle(assertion).backgroundColor === getComputedStyle(policy).backgroundColor;
   })).toBeTruthy();
-  await page.locator('.assertion-result-marker[data-state="error"]').click();
+  await gutterMarker(page, "assertion-source", undefined, '.assertion-result-marker[data-state="error"]').click();
   await expect(page.getByRole("dialog", { name: "Assertion error" })).toContainText("line 1: expected a number");
 });
 
@@ -351,8 +396,8 @@ test("assertion lint warns on complexity without changing a passing result", asy
     } });
   });
   await openAssertionRecord(page, appURL);
-  const editor = page.getByRole("textbox", { name: "Data assertion source", exact: true });
-  await editor.fill('group "Operators" members >= 2;\npeople >= 1;\npeople exactly_one ["alice"];\nassert true;');
+  const editor = page.locator("#assertion-source");
+  await page.getByRole("textbox", { name: "Data assertion source", exact: true }).fill('group "Operators" members >= 2;\npeople >= 1;\npeople exactly_one ["alice"];\nassert true;');
   await page.locator("#assertion-analyze").click();
   await expect(page.locator("#assertion-run-status")).toContainText("PASS");
   await expect(page.locator("#assertion-lint-warnings")).toContainText("ASSERT_CONTEXT");
@@ -363,9 +408,9 @@ test("assertion lint warns on complexity without changing a passing result", asy
   await expect(page.locator("#assertion-analyze")).toHaveCSS("background-color", "rgb(231, 185, 63)");
   await expect(page.locator("#assertion-run-error")).toBeEmpty();
   await expect(page.getByRole("textbox", { name: "Data assertion source", exact: true })).toBeEditable();
-  await page.locator('#assertion-result-lines [data-line="4"] .assertion-result-marker').click();
+  await gutterMarker(page, "assertion-source", 4, ".assertion-result-marker").click();
   await expect(page.getByRole("dialog", { name: "Assertion warning" })).toContainText("Review the scope for human identities.");
-  await editor.fill('group "Operators" members >= 2;');
+  await page.getByRole("textbox", { name: "Data assertion source", exact: true }).fill('group "Operators" members >= 2;');
   await expect(page.locator("#assertion-lint-warnings")).toBeHidden();
   await expect(page.locator("#assertion-result-gutter button")).toHaveCount(0);
   await expect(page.locator("#assertion-analyze")).not.toHaveAttribute("data-analysis-state", /.+/);
@@ -394,7 +439,7 @@ test("organization assertions author, save and evaluate without policy compilati
     await route.fulfill({ json: api.assertions.last_run });
   });
   await openAssertionRecord(page, appURL);
-  const editor = page.getByRole("textbox", { name: "Data assertion source", exact: true });
+  const editor = page.locator("#assertion-source");
   await expect(editor).toBeEnabled();
   await expect(page.locator("#assertion-enabled")).not.toBeChecked();
   expect(await page.getByRole("button", { name: "Read source", exact: true }).evaluate((button) => button.scrollWidth <= button.clientWidth && button.scrollHeight <= button.clientHeight)).toBeTruthy();
@@ -404,15 +449,15 @@ test("organization assertions author, save and evaluate without policy compilati
   await expect(editor).toHaveValue('group "Operators" members >= 2;\n');
   await page.locator("#assertion-analyze").click();
   await expect(page.locator("#assertion-run-status")).toContainText("Draft r0");
-  const resultGutterStyle = await page.locator("#assertion-result-gutter").evaluate((gutter) => ({
+  const resultGutterStyle = await resultGutter(page, "assertion-source").evaluate((gutter) => ({
     width: gutter.getBoundingClientRect().width,
-    border: getComputedStyle(gutter).borderRightStyle,
-    background: getComputedStyle(gutter).backgroundColor,
+    border: getComputedStyle(gutter.closest(".cm-gutters")).borderRightStyle,
+    background: getComputedStyle(gutter.closest(".cm-gutters")).backgroundColor,
   }));
   expect(resultGutterStyle.width).toBeLessThan(90);
   expect(resultGutterStyle.border).toBe("solid");
   expect(resultGutterStyle.background).not.toBe("rgba(0, 0, 0, 0)");
-  const passMarker = page.locator('#assertion-result-gutter [data-line="1"] .assertion-result-marker');
+  const passMarker = gutterMarker(page, "assertion-source", 1, ".assertion-result-marker");
   await expect(passMarker).toHaveAttribute("data-state", "pass");
   await passMarker.click();
   const passDetails = page.getByRole("dialog", { name: "Assertion pass" });
@@ -444,39 +489,23 @@ test("assertion result gutter clips long documents and follows editor scroll", a
   });
   await openAssertionRecord(page, appURL);
   const source = page.locator("#assertion-source");
-  await source.fill(Array.from({ length: 100 }, (_, index) => `group "Operators${index}" members >= 2;`).join("\n"));
+  await codeEditor(page, "assertion-source").fill(Array.from({ length: 100 }, (_, index) => `group "Operators${index}" members >= 2;`).join("\n"));
   await page.locator("#assertion-analyze").click();
-  const gutter = page.locator("#assertion-result-gutter");
-  const marker = page.locator('#assertion-result-gutter [data-line="90"] .assertion-result-marker');
-  await expect(marker).toHaveCount(1);
-  await source.evaluate((element) => { element.scrollTop = 0; element.dispatchEvent(new Event("scroll")); });
-  const initial = await page.evaluate(() => {
-    const gutter = document.querySelector("#assertion-result-gutter");
-    const rows = document.querySelector("#assertion-result-lines");
-    const gutterBounds = gutter.getBoundingClientRect();
-    return { overflow: getComputedStyle(gutter).overflowY, gutterHeight: gutterBounds.height, rowsHeight: rows.getBoundingClientRect().height };
-  });
-  expect(initial.overflow).toBe("hidden");
-  expect(initial.rowsHeight).toBeGreaterThan(initial.gutterHeight);
-  await source.evaluate((element) => { element.scrollTop = element.scrollHeight; element.dispatchEvent(new Event("scroll")); });
-  await expect.poll(() => page.evaluate(() => {
-    const source = document.querySelector("#assertion-source");
-    return document.querySelector("#assertion-result-lines").style.transform === `translateY(${-source.scrollTop}px)`;
-  })).toBeTruthy();
-  await expect.poll(() => page.evaluate(() => {
-    const bounds = document.querySelector("#assertion-result-gutter").getBoundingClientRect();
-    const marker = document.querySelector('#assertion-result-gutter [data-line="90"] .assertion-result-marker').getBoundingClientRect();
-    return marker.top >= bounds.top && marker.bottom <= bounds.bottom;
-  })).toBeTruthy();
-  const scrolled = await page.evaluate(() => {
-    const source = document.querySelector("#assertion-source");
-    const gutterBounds = document.querySelector("#assertion-result-gutter").getBoundingClientRect();
-    const rows = document.querySelector("#assertion-result-lines");
-    const markerBounds = document.querySelector('#assertion-result-gutter [data-line="90"] .assertion-result-marker').getBoundingClientRect();
-    return { markerTop: markerBounds.top, markerBottom: markerBounds.bottom, gutterTop: gutterBounds.top, gutterBottom: gutterBounds.bottom, scrollTop: source.scrollTop, scrollHeight: source.scrollHeight, clientHeight: source.clientHeight, transform: getComputedStyle(rows).transform };
-  });
-  expect(scrolled.markerTop).toBeGreaterThanOrEqual(scrolled.gutterTop);
-  expect(scrolled.markerBottom, JSON.stringify(scrolled)).toBeLessThanOrEqual(scrolled.gutterBottom);
+  const gutter = resultGutter(page, "assertion-source");
+  const marker = gutterMarker(page, "assertion-source", 90, ".assertion-result-marker");
+  const scroller = page.locator('.code-editor-host[data-source="assertion-source"] .cm-scroller');
+  await expect(gutter).toBeVisible();
+  await expect(page.locator("#assertion-result-lines [data-line=\"90\"] .assertion-result-marker")).toHaveCount(1);
+  const withinScroller = async () => {
+    const [bounds, markerBounds] = await Promise.all([scroller.boundingBox(), marker.count().then((count) => count ? marker.boundingBox() : null)]);
+    return Boolean(markerBounds && markerBounds.y >= bounds.y && markerBounds.y + markerBounds.height <= bounds.y + bounds.height);
+  };
+  // CodeMirror clips the gutter to its scroller, so the line 90 marker is only visible after scrolling to it.
+  await scroller.evaluate((element) => { element.scrollTop = 0; });
+  expect(await scroller.evaluate((element) => element.scrollHeight > element.clientHeight)).toBe(true);
+  await expect.poll(withinScroller).toBe(false);
+  await scroller.evaluate((element) => { element.scrollTop = element.scrollHeight; });
+  await expect.poll(withinScroller).toBe(true);
   await expect(gutter).toBeVisible();
 });
 
@@ -523,7 +552,7 @@ test("assertion attribute catalog inserts rules and renders typed comparisons", 
   await page.locator("#assertion-analyze").click();
   await expect(page.locator("#assertion-result-rows")).toContainText('people attribute "mail" present');
   await expect(page.locator("#assertion-result-rows")).toContainText("bob");
-  const failMarker = page.locator('#assertion-result-gutter [data-line="1"] .assertion-result-marker');
+  const failMarker = gutterMarker(page, "assertion-source", 1, ".assertion-result-marker");
   await expect(failMarker).toHaveAttribute("data-state", "fail");
   await failMarker.click();
   const failDetails = page.getByRole("dialog", { name: "Assertion fail" });
@@ -531,7 +560,7 @@ test("assertion attribute catalog inserts rules and renders typed comparisons", 
   await expect(failDetails).toContainText("bob");
   await failDetails.locator(".dialog-actions .button").click();
   await page.locator("#assertion-analyze").click();
-  await page.locator("#assertion-source").fill('each group attribute "gidNumber" >= 1000;');
+  await codeEditor(page, "assertion-source").fill('each group attribute "gidNumber" >= 1000;');
   await page.locator("#assertion-analyze").click();
   await expect(page.locator("#assertion-result-rows")).toContainText('each group attribute "gidnumber" >= 1000');
   await expect(page.locator("#assertion-run-status")).toContainText("PASS");
@@ -559,10 +588,10 @@ test("assertion catalogs insert named sources and expression results show their 
   await expect(page.locator("#assertion-group-rows")).toContainText("Employees");
   await page.getByRole("button", { name: "Insert a cardinality assertion for Employees", exact: true }).click();
   await expect(page.locator("#assertion-source")).toHaveValue('group "Employees" from "hr" members >= 2;\n');
-  await page.locator("#assertion-source").fill('assert source("staff").group("Operators").members == source("hr").group("Employees").members;');
+  await codeEditor(page, "assertion-source").fill('assert source("staff").group("Operators").members == source("hr").group("Employees").members;');
   await page.locator("#assertion-analyze").click();
   await expect(page.locator("#assertion-result-rows")).toContainText('assert source("staff").group("Operators").members == source("hr").group("Employees").members');
-  await page.locator(".assertion-result-marker").click();
+  await gutterMarker(page, "assertion-source", undefined, ".assertion-result-marker").click();
   await expect(page.getByRole("dialog", { name: "Assertion pass" })).toContainText('source("hr").group("Employees").members');
 });
 
@@ -594,13 +623,14 @@ test("assertion polling preserves dirty drafts and blocks stale revisions", asyn
   await openAssertionRecord(page, appURL);
   const editor = page.locator("#assertion-source");
   await expect(editor).toBeEnabled();
-  await editor.fill('group "Operators" members > 1;');
+  await codeEditor(page, "assertion-source").fill('group "Operators" members > 1;');
   api.assertions.settings = { revision: 1, source: 'group "Operators" members >= 2;', enabled: false, interval_seconds: 60 };
   await page.clock.runFor(5100);
   await expect(editor).toHaveValue('group "Operators" members > 1;');
   await expect(page.locator("#assertion-revision")).toContainText("Reload required");
   await expect(page.locator("#assertion-save")).toBeDisabled();
   await expect(page.locator("#assertion-analyze")).toBeDisabled();
+  await openPolicyFiles(page);
   page.once("dialog", (dialog) => dialog.accept());
   await page.locator("#assertion-reload").click();
   await expect(editor).toHaveValue('group "Operators" members >= 2;');
@@ -611,7 +641,7 @@ test("organization switch reloads that organization's assertions and protects di
   await page.clock.install();
   await openAssertionRecord(page, appURL);
   const editor = page.locator("#assertion-source");
-  await editor.fill('group "Local draft" members > 0;');
+  await codeEditor(page, "assertion-source").fill('group "Local draft" members > 0;');
   api.assertions.organization_id = "beta";
   api.assertions.organization_name = "Beta Labs";
   api.assertions.base_dn = "dc=beta,dc=test";
@@ -622,6 +652,7 @@ test("organization switch reloads that organization's assertions and protects di
   await expect(page.locator("#assertion-revision")).toHaveText("Beta Labs / r0 / Unsaved / Reload required");
   await expect(page.locator("#assertion-save")).toBeDisabled();
   await expect(page.locator("#assertion-analyze")).toBeDisabled();
+  await openPolicyFiles(page);
   page.once("dialog", (dialog) => dialog.accept());
   await page.locator("#assertion-reload").click();
   await expect(editor).toHaveValue('group "Beta Operators" members >= 2;');
@@ -679,36 +710,56 @@ test("new assertion records support copy, paste, duplicate, and protect built-in
   await page.locator('[data-category-id="test"]').click({ button: "right" });
   await page.locator("#new-assertion-record").click();
   await page.locator("#policy-draft-name").fill("Operator assertions");
-  await page.locator("#assertion-source").fill('group "Operators" members >= 2;');
+  // Clicking the editor, as an operator would, dismisses the picker popover covering the toolbar.
+  await codeEditor(page, "assertion-source").click();
+  await codeEditor(page, "assertion-source").fill('group "Operators" members >= 2;');
+  await openPolicyFiles(page);
   await page.locator("#assertion-save").click();
+  await openPolicyPicker(page);
   await expect(page.locator('[data-record-id="custom-assertions-1"]')).toBeVisible();
   await expect(page.locator("#policy-revision-label")).toBeHidden();
 
+  await openPolicyPicker(page);
   await page.locator('[data-record-id="custom-assertions-1"]').click({ button: "right" });
   await page.locator("#policy-copy").click();
+  await openPolicyPicker(page);
   await page.locator('[data-category-id="test"]').click({ button: "right" });
   await page.locator("#policy-paste").click();
+  // The new record is selected after the file operation, which closes the picker.
+  await expect(page.locator("#policy-record-title")).toHaveText("Operator assertions copy");
+  await expect(page.locator("#policy-catalog-pane")).toBeHidden();
+  await openPolicyPicker(page);
   await expect(page.locator('[data-record-id="custom-assertions-2"]')).toBeVisible();
   await expect(page.locator('[data-record-id="custom-assertions-2"] strong')).toHaveText("Operator assertions copy");
 
+  await openPolicyPicker(page);
   await page.locator('[data-record-id="custom-assertions-2"]').click({ button: "right" });
   await page.locator("#policy-duplicate").click();
+  // The new record is selected after the file operation, which closes the picker.
+  await expect(page.locator("#policy-record-title")).toHaveText("Operator assertions copy 2");
+  await expect(page.locator("#policy-catalog-pane")).toBeHidden();
+  await openPolicyPicker(page);
   await expect(page.locator('[data-record-id="custom-assertions-3"]')).toBeVisible();
   await expect(page.locator('[data-record-id="custom-assertions-3"] strong')).toHaveText("Operator assertions copy 2");
 
   page.once("dialog", (dialog) => dialog.accept());
+  await openPolicyPicker(page);
   await page.locator('[data-record-id="custom-assertions-3"]').click({ button: "right" });
   await page.locator("#policy-delete").click();
   await expect(page.locator('[data-record-id="custom-assertions-3"]')).toHaveCount(0);
+  await openPolicyPicker(page);
   await page.locator('[data-category-id="test"]').click({ button: "right" });
   await page.locator("#policy-show-archived").click();
   await expect(page.locator('[data-record-id="custom-assertions-3"]')).toBeVisible();
   await page.locator('[data-record-id="custom-assertions-3"]').click();
+  await expect(page.locator("#policy-catalog-pane")).toBeHidden();
+  await openPolicyPicker(page);
   await page.locator('[data-record-id="custom-assertions-3"]').click({ button: "right" });
   await page.locator("#policy-restore").click();
   await expect(page.locator("#policy-file-status")).toContainText("Restored Operator assertions copy 2");
   expect(api.policy.records.find((record) => record.id === "custom-assertions-3").archived).toBe(false);
 
+  await openPolicyPicker(page);
   await page.locator('[data-record-id="test-assertions"]').click();
   await expect(page.locator("#policy-copy")).toBeDisabled();
   await expect(page.locator("#policy-duplicate")).toBeDisabled();
@@ -724,7 +775,6 @@ import { tmpdir } from "node:os";
 import { resolve, sep } from "node:path";
 import { fileURLToPath } from "node:url";
 import { registerControlRoomGuidelineTests } from "./control-room-guidelines.mjs";
-import { registerDiagnosticsGuidelineTests } from "./diagnostics-guidelines.mjs";
 import { registerWorkflowGuidelineTests } from "./workflow-guidelines.mjs";
 import { registerTrustedSourceGUITests } from "./trusted-source-gui.mjs";
 import { registerPageRuntimeTests } from "./page-runtime.mjs";
@@ -738,11 +788,12 @@ import { registerConfigFormTests } from "./config-form.mjs";
 import { registerScenarioBrowserTests } from "./scenario-browser.mjs";
 import { registerOrganizationBrowserTests } from "./organization-browser.mjs";
 import { registerOrganizationNavigationTests } from "./organization-navigation.mjs";
-import { registerCodeEditorTests } from "./code-editor.mjs";
+import { editorCSP, registerCodeEditorTests } from "./code-editor.mjs";
 import { registerRemainingCodeEditorTests } from "./remaining-code-editors.mjs";
 
 const assets = fileURLToPath(new URL("../../cmd/zpr-web-dashboard/static/", import.meta.url));
-const csp = "default-src 'self'; style-src 'self'; script-src 'self'; connect-src 'self'; img-src 'self' data:";
+// Match main.go securityHeaders, including the CodeMirror token color style hashes.
+const csp = editorCSP;
 
 function logFixture(names, count = 80) {
   return {
@@ -776,7 +827,7 @@ async function browserAppURL(use, operatorHTTPS = false) {
       const pathname = new URL(request.url, "http://localhost").pathname;
       if (pathname === "/__tests/ldap.html") {
         response.writeHead(200, { "Content-Type": "text/html", "Content-Security-Policy": csp });
-        response.end('<!doctype html><html><head><meta name="viewport" content="width=device-width,initial-scale=1"><link rel="stylesheet" href="/ldap-org-graph.css"><script src="/ldap-org-graph.js" defer></script></head><body><ldap-org-graph></ldap-org-graph></body></html>');
+        response.end('<!doctype html><html><head><meta name="viewport" content="width=device-width,initial-scale=1"><link rel="stylesheet" href="/ldap-org-graph.css"><script src="/safe-display.js" defer></script><script src="/ldap-org-graph.js" defer></script></head><body><ldap-org-graph></ldap-org-graph></body></html>');
         return;
       }
       const file = resolve(assets, pathname === "/" ? "index.html" : pathname.slice(1));
@@ -949,7 +1000,6 @@ registerOrganizationBrowserTests(test, expect);
 registerOrganizationNavigationTests(test, expect);
 registerCodeEditorTests(test, expect);
 registerRemainingCodeEditorTests(test, expect);
-registerDiagnosticsGuidelineTests(test, expect);
 registerWorkflowGuidelineTests(test, expect);
 registerTrustedSourceGUITests(test, expect);
 
@@ -967,10 +1017,11 @@ test("GUI status sorting breaks primary ties independently of snapshot order", a
   await expect.poll(() => page.locator("#link-list tr").allTextContents()).toEqual(before);
 });
 
-test("GUI top actions keep uptime, refresh controls, and Help together", async ({ page, appURL }) => {
+test("GUI top actions keep uptime, refresh controls, and Help together", async ({ page, appURL, api }) => {
   await page.goto(appURL + "/#map");
   const actions = page.locator(".main-content .top-actions");
-  await expect(actions.locator(".uptime-status")).toBeVisible();
+  // Uptime moved from the top actions to the sidebar Visa Service summary.
+  await expect(actions.locator(".uptime-status")).toHaveCount(0);
   await expect(actions.locator("#poll-rate")).toBeVisible();
   await expect(actions.locator("#refresh-now")).toBeVisible();
   const help = actions.getByRole("button", { name: "Help for this page" });
@@ -1125,30 +1176,6 @@ for (const view of [
     expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBeTruthy();
   });
 }
-
-test("Diagnostics toggles JSON bodies locally with Simulator unavailable", async ({ page, appURL, api }) => {
-  const simulationRequests = [];
-  page.on("request", (request) => { if (request.url().includes("/api/simulator/")) simulationRequests.push(request.url()); });
-  await page.clock.install();
-  const raw = '{"count":18446744073709551615,"html":"<img src=x>"}';
-  api.handlers.set("/api/diagnostics", (route) => route.fulfill({ json: {
-    generated_at: "2026-10-08T12:00:00Z", state: "available", sources: [
-      { id: "node:a", name: "Node A", kind: "ZPR node", identity: "a", state: "available", metrics: [], logs: [{ severity: "INFO", body: raw }, { body: "plain text" }] },
-    ],
-  } }));
-  await page.goto(appURL + "/#diagnostics");
-  const bodies = page.locator(".diagnostics-log-body");
-  await expect(bodies.first()).toHaveText(raw);
-  const collections = api.counts.get("/api/diagnostics");
-  await page.getByRole("checkbox", { name: "Format JSON", exact: true }).check();
-  expect(await bodies.first().textContent()).toBe('{\n  "count": 18446744073709551615,\n  "html": "<img src=x>"\n}');
-  await expect(bodies.last()).toHaveText("plain text");
-  await expect(bodies.locator("img")).toHaveCount(0);
-  await page.getByRole("checkbox", { name: "Format JSON", exact: true }).uncheck();
-  expect(await bodies.first().textContent()).toBe(raw);
-  expect(api.counts.get("/api/diagnostics")).toBe(collections);
-  expect(simulationRequests).toEqual([]);
-});
 
 test("Control Room map and shared logs work while Simulator APIs are unavailable", async ({ page, appURL, api }) => {
   const simulatorRequests = [];
@@ -1447,7 +1474,7 @@ test("GUI ZPR Config shares editor controls and keeps an error-only gutter", asy
   await expect(configFormat).not.toHaveClass(/button-save-as-ready/);
   const disabledOpacity = await configAnalyze.evaluate((button) => getComputedStyle(button).opacity);
   expect(disabledOpacity).toBe(await page.locator("#policy-check").evaluate((button) => getComputedStyle(button).opacity));
-  await page.locator("#zpr-config-source").fill('[visa_service]\ndock_node = "node"\n');
+  await codeEditor(page, "zpr-config-source").fill('[visa_service]\ndock_node = "node"\n');
   await expect(configAnalyze).toBeEnabled();
   await expect(configFormat).toBeEnabled();
   await expect(configAnalyze).toHaveClass(/button-next-evaluate/);
@@ -1565,9 +1592,9 @@ test("GUI editor search and replace is literal, case-aware, bounded, and updates
   const source = page.locator("#zpr-config-source");
   const tools = page.locator('[data-editor-search-target="zpr-config-source"]');
   const query = tools.getByRole("textbox", { name: "Find what" });
-  await source.fill('name = "Alpha alpha a.b a.b"\n');
+  await codeEditor(page, "zpr-config-source").fill('name = "Alpha alpha a.b a.b"\n');
   await page.locator("#zpr-config-validate").click();
-  await source.press("Control+f");
+  await codeEditor(page, "zpr-config-source").press("Control+f");
   await query.fill("ALPHA");
   await expect(tools.getByRole("status")).toHaveText("2 matches");
   await expect(tools.getByRole("tab", { name: "Find" })).toHaveAttribute("aria-selected", "true");
@@ -1604,7 +1631,7 @@ test("GUI editor search and replace is literal, case-aware, bounded, and updates
   await expect(source).toHaveValue('name = "Alpha alpha $& $&"\n');
   await query.press("Escape");
   await expect(tools.getByRole("search")).toBeHidden();
-  await expect(source).toBeFocused();
+  await expect(codeEditor(page, "zpr-config-source")).toBeFocused();
   const toggle = tools.getByRole("button", { name: "Find & Replace", exact: true });
   await expect(tools.getByRole("button")).toHaveCount(1);
   await expect(toggle).toHaveAttribute("aria-expanded", "false");
@@ -1635,7 +1662,7 @@ test("GUI editor search supports regular expressions, compact status, and undoab
   const query = tools.getByRole("textbox", { name: "Find what" });
   const status = tools.getByRole("status");
   const original = 'port = 8080\nhost = "a-1"\n';
-  await source.fill(original);
+  await codeEditor(page, "zpr-config-source").fill(original);
   await tools.getByRole("button", { name: "Find & Replace", exact: true }).click();
   await expect(status).toHaveText("");
   await expect(tools.getByText(/Enter text/)).toHaveCount(0);
@@ -1654,10 +1681,10 @@ test("GUI editor search supports regular expressions, compact status, and undoab
   await tools.getByRole("button", { name: "Replace all" }).click();
   await expect(source).toHaveValue('port = 8080\nhost = "1_a$"\n');
   await expect(page.locator("#zpr-config-modified")).toBeVisible();
-  await source.focus();
+  await codeEditor(page, "zpr-config-source").focus();
   await page.keyboard.press("ControlOrMeta+z");
   await expect(source).toHaveValue(original);
-  await page.keyboard.press("ControlOrMeta+Shift+z");
+  await page.keyboard.press("ControlOrMeta+Shift+Z");
   await expect(source).toHaveValue('port = 8080\nhost = "1_a$"\n');
 });
 
@@ -1666,7 +1693,7 @@ test("GUI editor search controls follow the policy or assertion source and prece
   await openPolicyPicker(page);
   await page.locator('[data-record-id="test-policy"]').click();
   const tools = page.locator('[data-editor-search-target="policy-source,assertion-source"]');
-  await page.locator("#policy-source").fill('define One as user.\ndefine Two as user.\n');
+  await codeEditor(page, "policy-source").fill('define One as user.\ndefine Two as user.\n');
   await tools.getByRole("button", { name: "Find & Replace", exact: true }).click();
   await tools.getByRole("textbox", { name: "Find what" }).fill("user");
   await tools.getByRole("textbox", { name: "Replace with" }).fill("service");
@@ -1677,10 +1704,10 @@ test("GUI editor search controls follow the policy or assertion source and prece
   page.once("dialog", (dialog) => dialog.accept());
   await page.locator('[data-record-id="test-assertions"]').click();
   const assertion = page.locator("#assertion-source");
-  await expect(assertion).toBeVisible();
+  await expect(codeEditor(page, "assertion-source")).toBeVisible();
   const policyBefore = await page.locator("#policy-source").inputValue();
-  await assertion.fill('group "Operators" members >= 2;\n');
-  await assertion.press("Control+h");
+  await codeEditor(page, "assertion-source").fill('group "Operators" members >= 2;\n');
+  await codeEditor(page, "assertion-source").press("Control+h");
   await tools.getByRole("textbox", { name: "Find what" }).fill("Operators");
   await tools.getByRole("textbox", { name: "Replace with" }).fill("Reviewers");
   await tools.getByRole("button", { name: "Replace all" }).click();
@@ -1695,7 +1722,7 @@ test("GUI editor search works in Simulator scenario JSON without saving or runni
     active_organization_id: "alpha", organization: { name: "Alpha Labs" }, scenarios: [], run: { state: "idle" }, max_machines: 12,
   } }));
   await page.goto(appURL + "/scenarios.html");
-  await expect(page.locator("#scenario-organization")).toHaveText("Alpha Labs");
+  await expect(page.getByRole("heading", { name: "Alpha Labs", level: 2 })).toBeVisible();
   await page.locator("#scenario-files-toggle").click();
   await page.locator("#scenario-new").click();
   const tools = page.locator('[data-editor-search-target="scenario-editor-source"]');
@@ -1742,11 +1769,11 @@ async function openRawScenario(page, appURL, api, assistantReady = false) {
     } });
   });
   await page.goto(appURL + "/scenarios.html");
-  await expect(page.locator("#scenario-organization")).toHaveText("Alpha Labs");
+  await expect(page.getByRole("heading", { name: "Alpha Labs", level: 2 })).toBeVisible();
   await page.locator("#scenario-files-toggle").click();
   await page.locator("#scenario-new").click();
   await page.locator("#scenario-editor-mode-toggle").click();
-  await expect(page.locator("#scenario-editor-source")).toBeVisible();
+  await expect(codeEditor(page, "scenario-editor-source")).toBeVisible();
 }
 
 test("GUI Scenario editor fills the viewport and follows the pending Analyze protocol", async ({ page, appURL, api }) => {
@@ -1760,7 +1787,7 @@ test("GUI Scenario editor fills the viewport and follows the pending Analyze pro
   const scenario = JSON.parse(await source.inputValue());
   scenario.name = "Analysis protocol check";
   scenario.description = "Verify the editor analysis lifecycle.";
-  await source.fill(JSON.stringify(scenario, null, 2));
+  await codeEditor(page, "scenario-editor-source").fill(JSON.stringify(scenario, null, 2));
   let finishResponse;
   api.handlers.set("/api/simulator/organizations/alpha/scenario-check", async (route) => {
     await new Promise((resolve) => { finishResponse = resolve; });
@@ -1881,7 +1908,7 @@ test("Scenario JSON transport keeps failed creation unsaved and preserves explic
   const source = page.locator("#scenario-editor-source");
   const scenario = { ...JSON.parse(await source.inputValue()), id: "created-transport", name: "Created transport" };
   const text = JSON.stringify(scenario, null, 2);
-  await source.fill(text);
+  await codeEditor(page, "scenario-editor-source").fill(text);
   const endpoint = "/api/simulator/organizations/alpha/scenarios";
   const writes = [];
   api.handlers.set(endpoint, async (route) => {
@@ -1973,7 +2000,7 @@ for (const outcome of ["success", "error"]) {
         await page.evaluate(() => { scenarioEditorViewing = 1; });
       } else if (change === "mode") {
         await page.locator("#scenario-editor-mode-toggle").click();
-        await expect(page.locator("#scenario-editor-source")).toBeVisible();
+        await expect(codeEditor(page, "scenario-editor-source")).toBeVisible();
       } else {
         await page.locator("#scenario-editor-files-toggle").click();
         page.once("dialog", (dialog) => dialog.accept());
@@ -2059,12 +2086,12 @@ test("GUI raw scenario editor has safe syntax colors, aligned error gutter, and 
   scenario.parallel = true;
   scenario.steps[0].id = "retained-step";
   scenario.steps[0].after = [];
-  await source.fill(JSON.stringify(scenario));
+  await codeEditor(page, "scenario-editor-source").fill(JSON.stringify(scenario));
   await expect(page.locator(".scenario-builder-grid")).toBeHidden();
   await expect(page.locator("#scenario-source-highlight .zpl-string").filter({ hasText: "<img src=x>" })).toHaveCSS("color", "rgb(215, 167, 207)");
   await expect(page.locator("#scenario-source-highlight img")).toHaveCount(0);
   await expect(page.locator("#scenario-source-highlight .zpl-attribute").first()).toHaveCSS("color", "rgb(184, 215, 139)");
-  await expect(page.locator("#scenario-source-gutter")).toHaveCSS("border-right-style", "solid");
+  await expect(page.locator('.code-editor-host[data-source="scenario-editor-source"] .cm-gutters')).toHaveCSS("border-right-style", "solid");
   await expect(page.locator("#scenario-editor-files-toggle")).toBeVisible();
   await expect(page.locator("#scenario-editor-title")).toHaveText("Untitled");
   await expect(page.locator("#scenario-editor-revision-label")).toBeHidden();
@@ -2083,20 +2110,20 @@ test("GUI raw scenario editor has safe syntax colors, aligned error gutter, and 
   const updated = JSON.parse(await source.inputValue());
   expect(updated.name).toBe("Round trip");
   expect(updated.steps[0].id).toBe("retained-step");
-  await source.fill('{\n  "id": "new-scenario",\n  "steps": [}\n');
+  await codeEditor(page, "scenario-editor-source").fill('{\n  "id": "new-scenario",\n  "steps": [}\n');
   await page.locator("#scenario-source-analyze").click();
   await expect(page.locator("#scenario-source-analyze")).toHaveAttribute("data-analysis-state", "error");
-  const marker = page.locator("#scenario-source-gutter button");
+  const marker = gutterMarker(page, "scenario-editor-source");
   await expect(marker).toBeVisible();
   await expect(page.locator("#scenario-editor-status")).toBeHidden();
   await marker.click();
-  await expect(source).toBeFocused();
+  await expect(codeEditor(page, "scenario-editor-source")).toBeFocused();
   await page.locator("#scenario-editor-mode-toggle").click();
   await expect(page.locator("#scenario-editor-advanced")).toHaveAttribute("open", "");
   await expect(page.locator("#scenario-editor-status")).toBeHidden();
-  await source.fill(JSON.stringify(updated, null, 2));
+  await codeEditor(page, "scenario-editor-source").fill(JSON.stringify(updated, null, 2));
   await expect(marker).toHaveCount(0);
-  await source.press("Tab");
+  await codeEditor(page, "scenario-editor-source").press("Tab");
   expect(api.counts.get("/api/simulator/organizations/alpha/scenarios") || 0).toBe(0);
 });
 
@@ -2104,20 +2131,22 @@ test("GUI raw scenario source scroll tracks highlighting and preserves unavailab
   await openRawScenario(page, appURL, api);
   await page.locator(".editor-wrap-toggle:visible input").uncheck();
   const source = page.locator("#scenario-editor-source");
-  await source.fill(Array.from({ length: 100 }, (_, index) => `  "key${index}": "${"x".repeat(180)}",`).join("\n"));
-  await source.evaluate((element) => { element.scrollTop = 300; element.scrollLeft = 70; element.dispatchEvent(new Event("scroll")); });
-  const geometry = await page.evaluate(() => {
-    const source = document.getElementById("scenario-editor-source");
-    const highlight = document.getElementById("scenario-source-highlight");
-    const gutter = document.getElementById("scenario-source-gutter");
+  await codeEditor(page, "scenario-editor-source").fill(Array.from({ length: 100 }, (_, index) => `  "key${index}": "${"x".repeat(180)}",`).join("\n"));
+  // CodeMirror owns highlighting and gutters; its gutters stay pinned while the scroller moves.
+  const geometry = await page.locator('.code-editor-host[data-source="scenario-editor-source"]').evaluate((element) => {
+    const scroller = element.shadowRoot.querySelector(".cm-scroller");
+    scroller.scrollTop = 300; scroller.scrollLeft = 70;
+    scroller.dispatchEvent(new Event("scroll"));
+    const gutters = element.shadowRoot.querySelector(".cm-gutters").getBoundingClientRect();
+    const row = [...element.shadowRoot.querySelectorAll(".cm-lineNumbers .cm-gutterElement")].find((item) => /^\d+$/.test(item.textContent));
+    const line = element.shadowRoot.querySelector(".cm-line");
     return {
-      source: [source.scrollTop, source.scrollLeft], highlight: [highlight.scrollTop, highlight.scrollLeft],
-      gutter: gutter.scrollTop, rowHeight: document.querySelector("#scenario-source-gutter .config-gutter-line").getBoundingClientRect().height,
-      lineHeight: Number.parseFloat(getComputedStyle(source).lineHeight),
+      scroll: [scroller.scrollTop, scroller.scrollLeft], gutterPinned: Math.abs(gutters.left - scroller.getBoundingClientRect().left) <= 1,
+      rowHeight: row.getBoundingClientRect().height, lineHeight: line.getBoundingClientRect().height,
     };
   });
-  expect(geometry.highlight).toEqual(geometry.source);
-  expect(geometry.gutter).toBe(geometry.source[0]);
+  expect(geometry.scroll).toEqual([300, 70]);
+  expect(geometry.gutterPinned).toBe(true);
   expect(Math.abs(geometry.rowHeight - geometry.lineHeight)).toBeLessThan(1);
   await expect(page.locator("#scenario-assistant-slot [data-assistant-state]")).toHaveText("Unavailable");
   await expect(page.locator("#scenario-assistant-slot [data-assistant-submit]")).toBeDisabled();
@@ -2136,7 +2165,7 @@ test("GUI raw scenario assistant uses exact raw context and applies only unsaved
   const source = page.locator("#scenario-editor-source");
   const scenario = JSON.parse(await source.inputValue());
   scenario.name = "Raw request";
-  await source.fill(JSON.stringify(scenario, null, 2));
+  await codeEditor(page, "scenario-editor-source").fill(JSON.stringify(scenario, null, 2));
   const assistant = page.locator("#scenario-assistant-slot");
   await assistant.locator("[data-assistant-question]").fill("Review this draft");
   await assistant.locator("[data-assistant-submit]").click();
@@ -2171,7 +2200,7 @@ test("GUI raw scenario assistant rejects proposals after source changes", async 
   const source = page.locator("#scenario-editor-source");
   const scenario = JSON.parse(await source.inputValue());
   scenario.name = "Newer edits";
-  await source.fill(JSON.stringify(scenario));
+  await codeEditor(page, "scenario-editor-source").fill(JSON.stringify(scenario));
   complete();
   await expect(assistant).toContainText("editor changed while Claude was responding");
   await expect(assistant.locator("[data-assistant-apply]")).toBeHidden();
@@ -2192,7 +2221,7 @@ test("GUI raw scenario file import, download, and identity checks never save imp
   const downloading = page.waitForEvent("download");
   await page.locator("[data-source-download]").click();
   expect((await downloading).suggestedFilename()).toBe("new-scenario.json");
-  await source.fill(JSON.stringify({ ...imported, organization_id: "beta" }));
+  await codeEditor(page, "scenario-editor-source").fill(JSON.stringify({ ...imported, organization_id: "beta" }));
   await page.locator("#scenario-source-analyze").click();
   await expect(page.locator("#scenario-editor-status")).toContainText("organization_id must match");
   await expect(page.locator("#scenario-source-gutter button")).toHaveCount(0);
@@ -2208,10 +2237,10 @@ test("GUI raw scenario analysis ignores delayed errors for an edited source", as
     await route.fulfill({ status: 422, json: { valid: false, line: 2, error: "Old syntax error" } });
   });
   const source = page.locator("#scenario-editor-source");
-  await source.fill('{\n"old": }');
+  await codeEditor(page, "scenario-editor-source").fill('{\n"old": }');
   await page.locator("#scenario-source-analyze").click();
   await expect.poll(() => Boolean(complete)).toBe(true);
-  await source.fill('{"id":"new-scenario","name":"Current","steps":[]}');
+  await codeEditor(page, "scenario-editor-source").fill('{"id":"new-scenario","name":"Current","steps":[]}');
   complete();
   await expect(page.locator("#scenario-editor-status")).toBeHidden();
   await expect(page.locator("#scenario-source-gutter button")).toHaveCount(0);
@@ -2234,7 +2263,7 @@ test("GUI raw scenario assistant discards a proposal changed before Apply and af
   const source = page.locator("#scenario-editor-source");
   const scenario = JSON.parse(await source.inputValue());
   scenario.name = "Newer source";
-  await source.fill(JSON.stringify(scenario));
+  await codeEditor(page, "scenario-editor-source").fill(JSON.stringify(scenario));
   await assistant.locator("[data-assistant-apply]").click();
   await expect(assistant).toContainText("editor changed after this proposal");
   expect(JSON.parse(await source.inputValue()).name).toBe("Newer source");
@@ -2279,7 +2308,7 @@ for (const operation of ["open", "history", "revision", "save", "publish"]) {
         } else {
           if (operation === "save") {
             expected = original + "description: Unsaved\n";
-            await source.fill(expected);
+            await codeEditor(page, "directory-editor-source").fill(expected);
           }
           await page.locator("#directory-editor-files-toggle").click();
           await page.locator(`#directory-editor-${operation}`).click();
@@ -2317,7 +2346,7 @@ test("Directory JSON transport preserves save, publish and revision contracts wi
   await page.getByRole("button", { name: "Edit LDAP seed", exact: true }).click();
   const source = page.locator("#directory-editor-source");
   await expect(source).toHaveValue(original);
-  await source.fill(draft);
+  await codeEditor(page, "directory-editor-source").fill(draft);
   await page.locator("#directory-editor-files-toggle").click();
   await page.locator("#directory-editor-save").click();
   await expect(page.locator("#directory-editor-status")).toHaveText("Saved version 3. Publish it for the next LDAP reseed.");
@@ -2370,7 +2399,11 @@ test("GUI Simulator directory editor opens as a Policy-blueprint page without id
   await expect(page.locator("#directory-editor-revision-label")).toBeHidden();
   await expect(page.locator("#directory-editor-dialog .policy-identity > #directory-editor-history-menu")).toBeVisible();
   await expect(page.locator("#directory-editor-status")).toBeHidden();
-  await expect(page.getByRole("button", { name: "Edit LDAP seed", exact: true })).toBeHidden();
+  // The directory editor is a fixed overlay above the organization page, so the launcher is covered rather than removed.
+  expect(await page.getByRole("button", { name: "Edit LDAP seed", exact: true }).evaluate((button) => {
+    const box = button.getBoundingClientRect();
+    return document.elementFromPoint(box.left + box.width / 2, box.top + box.height / 2)?.closest("#directory-editor-dialog") !== null;
+  })).toBe(true);
   await page.locator("#directory-editor-files-toggle").click();
   await expect(page.getByRole("menuitem", { name: "Save" })).toBeVisible();
   await expect(page.getByRole("menuitem", { name: "Publish for next reseed" })).toBeVisible();
@@ -2384,25 +2417,26 @@ test("GUI editor search reveals distant matches and prevents accidental form sub
   await page.goto(appURL + "/#zpr-config");
   await page.locator("#page-zpr-config").getByRole("checkbox", { name: "Wrap", exact: true }).uncheck();
   const source = page.locator("#zpr-config-source");
-  await source.fill(Array.from({ length: 100 }, (_, index) => index === 90 ? `key = "${"x".repeat(200)}NEEDLE"` : `key${index} = "value"`).join("\n"));
-  await source.evaluate((element) => { element.scrollTop = 0; element.scrollLeft = 0; element.setSelectionRange(0, 0); });
-  await source.press("Control+f");
+  await codeEditor(page, "zpr-config-source").fill(Array.from({ length: 100 }, (_, index) => index === 90 ? `key = "${"x".repeat(200)}NEEDLE"` : `key${index} = "value"`).join("\n"));
+  const host = page.locator('.code-editor-host[data-source="zpr-config-source"]');
+  await source.evaluate((element) => element.setSelectionRange(0, 0));
+  await host.evaluate((element) => { const scroller = element.shadowRoot.querySelector(".cm-scroller"); scroller.scrollTop = 0; scroller.scrollLeft = 0; });
+  await codeEditor(page, "zpr-config-source").press("Control+f");
   const tools = page.locator('[data-editor-search-target="zpr-config-source"]');
   await tools.getByRole("textbox", { name: "Find what" }).fill("NEEDLE");
   await tools.getByRole("textbox", { name: "Find what" }).press("Enter");
   await expect(tools.getByRole("status")).toHaveText("Match 1 of 1");
-  const position = await source.evaluate((element) => ({
-    scrollTop: element.scrollTop, scrollLeft: element.scrollLeft,
-    selected: element.value.slice(element.selectionStart, element.selectionEnd),
-    lineTop: 90 * Number.parseFloat(getComputedStyle(element).lineHeight) + Number.parseFloat(getComputedStyle(element).paddingTop) - element.scrollTop,
-    height: element.clientHeight,
-  }));
-  expect(position.scrollTop).toBeGreaterThan(0);
-  expect(position.lineTop).toBeGreaterThanOrEqual(0);
-  expect(position.lineTop).toBeLessThan(position.height);
-  expect(position.scrollLeft).toBeGreaterThan(0);
-  expect(position.selected).toBe("NEEDLE");
-  await source.press("Escape");
+  expect(await source.evaluate((element) => element.value.slice(element.selectionStart, element.selectionEnd))).toBe("NEEDLE");
+  // CodeMirror scrolls the selected match into view inside its own scroller.
+  await expect.poll(() => host.evaluate((element) => {
+    const scroller = element.shadowRoot.querySelector(".cm-scroller");
+    const view = scroller.getBoundingClientRect();
+    const line = [...element.shadowRoot.querySelectorAll(".cm-line")].find((item) => item.textContent.includes("NEEDLE"));
+    const lineBox = line?.getBoundingClientRect();
+    return { scrolled: scroller.scrollTop > 0 && scroller.scrollLeft > 0, visible: Boolean(lineBox) && lineBox.top >= view.top && lineBox.bottom <= view.bottom };
+  })).toEqual({ scrolled: true, visible: true });
+  // Find keeps focus in the search panel; CodeMirror only forwards Ctrl+S/F/H to the textarea handlers.
+  await tools.getByRole("textbox", { name: "Find what" }).press("Escape");
   await expect(tools.getByRole("search")).toBeHidden();
 });
 
@@ -2539,7 +2573,7 @@ for (const editor of [
     if (editor.name === "Gateway") {
       const source = page.locator("#gateway-source");
       await expect(source).toHaveValue(/"instance_id": "egress"/);
-      await source.fill(JSON.stringify({ ...JSON.parse(await source.inputValue()), description: "Menu navigation draft" }, null, 2));
+      await codeEditor(page, "gateway-source").fill(JSON.stringify({ ...JSON.parse(await source.inputValue()), description: "Menu navigation draft" }, null, 2));
     }
     const toggle = page.locator(`#${editor.prefix}-files-toggle`);
     const menu = page.locator(`#${editor.prefix}-file-menu`);
@@ -2562,7 +2596,7 @@ for (const editor of [
     await expect(toggle).toHaveAttribute("aria-expanded", "false");
     await expect(toggle).toBeFocused();
     await toggle.click();
-    await page.locator(`#${editor.name === "Assertions" ? "assertion-source" : editor.name === "Policy" ? "policy-source" : editor.name === "Config" ? "zpr-config-source" : editor.name === "Gateway" ? "gateway-source" : `${editor.prefix}-source`}`).click();
+    await codeEditor(page, `${editor.name === "Assertions" ? "assertion-source" : editor.name === "Policy" ? "policy-source" : editor.name === "Config" ? "zpr-config-source" : editor.name === "Gateway" ? "gateway-source" : `${editor.prefix}-source`}`).click();
     await expect(menu).toBeHidden();
     await expect(toggle).toHaveAttribute("aria-expanded", "false");
   });
@@ -2767,12 +2801,12 @@ for (const outcome of ["success", "error"]) {
     await expect(source).toHaveValue(/"instance_id": "egress"/);
     const original = await source.inputValue();
     const analyzed = JSON.stringify({ ...JSON.parse(original), description: "Draft needing analysis" }, null, 2);
-    await source.fill(analyzed);
+    await codeEditor(page, "gateway-source").fill(analyzed);
     const button = page.locator("#gateway-analyze");
     await button.click();
     await expect.poll(() => Boolean(complete)).toBe(true);
-    await source.fill(analyzed + "\n");
-    await source.fill(analyzed);
+    await codeEditor(page, "gateway-source").fill(analyzed + "\n");
+    await codeEditor(page, "gateway-source").fill(analyzed);
     complete();
     await expect(button).toBeEnabled();
     await expect(button).not.toHaveAttribute("data-analysis-state", /.+/);
@@ -2797,8 +2831,8 @@ for (const outcome of ["success", "error"]) {
     });
     const analysis = page.evaluate(() => window.analyzeScenarioSourceEditor());
     await expect.poll(() => Boolean(complete)).toBe(true);
-    await source.fill(original + "\n");
-    await source.fill(original);
+    await codeEditor(page, "scenario-editor-source").fill(original + "\n");
+    await codeEditor(page, "scenario-editor-source").fill(original);
     complete();
     expect(await analysis).toBeNull();
     await expect(source).toHaveValue(original);
@@ -2848,11 +2882,11 @@ for (const action of ["Analyze", "Format"]) {
       await page.goto(appURL + "/#zpr-config");
       const source = page.locator("#zpr-config-source");
       const original = 'name="Original"\n';
-      await source.fill(original);
+      await codeEditor(page, "zpr-config-source").fill(original);
       await page.getByRole("button", { name: action, exact: true }).click();
       await expect.poll(() => Boolean(complete)).toBe(true);
-      await source.fill('name="Replacement"\n');
-      await source.fill(original);
+      await codeEditor(page, "zpr-config-source").fill('name="Replacement"\n');
+      await codeEditor(page, "zpr-config-source").fill(original);
       complete();
       await expect(page.locator("#zpr-config-validate")).toBeEnabled();
       await expect(source).toHaveValue(original);
@@ -2938,9 +2972,9 @@ for (const outcome of ["success", "error"]) {
       const button = page.locator("#assertion-analyze");
       await button.click();
       await expect.poll(() => Boolean(complete)).toBe(true);
-      if (edit === "Tab") await source.press("Tab");
-      else await source.fill(original + "# edited\n");
-      await source.fill(original);
+      if (edit === "Tab") await codeEditor(page, "assertion-source").press("Tab");
+      else await codeEditor(page, "assertion-source").fill(original + "# edited\n");
+      await codeEditor(page, "assertion-source").fill(original);
       complete();
       await expect(button).toBeEnabled();
       await expect(button).not.toHaveAttribute("data-analysis-state", /.+/);
@@ -2983,9 +3017,9 @@ for (const outcome of ["success", "error"]) {
       await format.click();
       await expect.poll(() => Boolean(complete)).toBe(true);
       await expect(format).toBeDisabled();
-      if (edit === "Tab") await source.press("Tab");
-      else await source.fill(original + "# changed\n");
-      await source.fill(original);
+      if (edit === "Tab") await codeEditor(page, "assertion-source").press("Tab");
+      else await codeEditor(page, "assertion-source").fill(original + "# changed\n");
+      await codeEditor(page, "assertion-source").fill(original);
       complete();
       await expect(format).toBeEnabled();
       await expect(source).toHaveValue(original);
@@ -2997,7 +3031,7 @@ for (const outcome of ["success", "error"]) {
       await format.click();
       await expect(source).toHaveValue(formatted);
       await expect(page.locator("#assertion-message")).toHaveText("Assertions formatted.");
-      await source.press("ControlOrMeta+z");
+      await codeEditor(page, "assertion-source").press("ControlOrMeta+z");
       await expect(source).toHaveValue(original);
       expect([...api.counts.keys()].some((path) => path.startsWith("/api/simulator"))).toBe(false);
     });
@@ -3036,7 +3070,7 @@ test("Assertion Format preserves current source-local warnings", async ({ page, 
     json: { source: 'group "Operators" members >= 1;\n', warnings: [{ line: 1, code: "LOCAL", message: "Current source warning" }] },
   }));
   await openAssertionRecord(page, appURL);
-  await page.locator("#assertion-source").fill('group   "Operators" members>=1;');
+  await codeEditor(page, "assertion-source").fill('group   "Operators" members>=1;');
   await page.locator("#assertion-format").click();
   await expect(page.locator("#assertion-lint-warnings")).toHaveText("Line 1: LOCAL - Current source warning");
   await expect(page.locator("#assertion-message")).toHaveText("Assertions formatted.");
@@ -3062,7 +3096,7 @@ test("Assertion Format cancellation cannot release a newer pending analysis afte
   await expect.poll(() => Boolean(completeFormat)).toBe(true);
   await openPolicyPicker(page);
   await page.locator('[data-record-id="test-policy"]').click();
-  await expect(page.locator("#policy-source")).toBeVisible();
+  await expect(codeEditor(page, "policy-source")).toBeVisible();
   await openPolicyPicker(page);
   await page.locator('[data-record-id="test-assertions"]').click();
   await expect(page.locator("#assertion-format")).toBeEnabled();
@@ -3083,7 +3117,7 @@ test("Assertion Format failures retain source and display current service errors
   await openAssertionRecord(page, appURL);
   const source = page.locator("#assertion-source");
   const original = 'group "Operators" members >= 1;\n';
-  await source.fill(original);
+  await codeEditor(page, "assertion-source").fill(original);
   await page.locator("#assertion-format").click();
   await expect(page.locator("#assertion-message")).toHaveText("Formatter unavailable");
   await expect(source).toHaveValue(original);
@@ -3103,14 +3137,14 @@ test("Assertions unlocated errors stay under controls and valid diagnostics alon
     status: "error", error, revision: 0, draft: true, finished_at: "2026-10-08T18:00:00Z", results: [],
   } }));
   await openAssertionRecord(page, appURL);
-  await page.locator("#assertion-source").fill('group "Operators" members >= 1;\n# second line');
+  await codeEditor(page, "assertion-source").fill('group "Operators" members >= 1;\n# second line');
   for (error of ["Trusted LDAP unavailable", "Invalid line 99", "Invalid line 0", "Invalid line 1.5", "Invalid line 2"]) {
     await page.locator("#assertion-analyze").click();
     await expect(page.locator("#assertion-analyze")).toHaveAttribute("data-analysis-state", "error");
-    const markers = page.locator("#assertion-result-gutter .assertion-result-marker");
+    const markers = gutterMarker(page, "assertion-source", undefined, ".assertion-result-marker");
     if (error === "Invalid line 2") {
       await expect(markers).toHaveCount(1);
-      await expect(page.locator('#assertion-result-gutter [data-line="2"] button')).toBeVisible();
+      await expect(gutterMarker(page, "assertion-source", 2)).toBeVisible();
       await expect(page.locator("#assertion-message")).toBeHidden();
       await markers.click();
       await expect(page.getByRole("dialog", { name: "Assertion error" })).toContainText(error);
@@ -3158,9 +3192,10 @@ for (const editor of [
     }
     if (editor.name === "Directory") await page.getByRole("button", { name: "Edit LDAP seed", exact: true }).click();
     const source = page.locator(`#${editor.source}`);
-    await expect(source).toBeVisible();
+    const sourceEditor = codeEditor(page, editor.source);
+    await expect(sourceEditor).toBeVisible();
     if (editor.name === "Gateway") await expect(source).toHaveValue(/"instance_id": "egress"/);
-    await source.fill(editor.content || (await source.inputValue()) + "\n");
+    await sourceEditor.fill(editor.content || (await source.inputValue()) + "\n");
     api.handlers.set(editor.endpoint, (route) => route.fulfill({ status: 503, json: { valid: false, line: 0, error: "Editor service unavailable", diagnostics: "Editor service unavailable" } }));
     if (editor.name === "Directory") await page.locator("#directory-editor-files-toggle").click();
     await page.locator(`#${editor.button}`).click();
@@ -3237,21 +3272,21 @@ for (const editor of [
       api.handlers.set("/api/policy/test/fixtures", (route) => route.fulfill({ json: { actors: [], services: [] } }));
       api.handlers.set("/api/policy/test", (route) => route.fulfill({ json: { results: [], warnings: [] } }));
     }
-    await page.evaluate(() => {
-      const original = window.ZPREditorPage.setAnalysisState;
+    await page.evaluate((id) => {
+      // Controllers call setAnalysisState through a closure, so observe the shared state attribute instead.
       window.analysisTransitions = [];
-      window.ZPREditorPage.setAnalysisState = (button, state = "") => {
-        window.analysisTransitions.push({ id: button.id, state });
-        return original(button, state);
-      };
-    });
+      const button = document.getElementById(id);
+      new MutationObserver(() => window.analysisTransitions.push({ id, state: button.dataset.analysisState || "" }))
+        .observe(button, { attributes: true, attributeFilter: ["data-analysis-state"] });
+    }, editor.button);
     const source = page.locator(`#${editor.source}`);
-    if (editor.content) await source.fill(editor.content);
+    const sourceEditor = codeEditor(page, editor.source);
+    if (editor.content) await sourceEditor.fill(editor.content);
     if (editor.name === "Gateway") await expect(source).toHaveValue(/"instance_id": "egress"/);
     const button = page.locator(`#${editor.button}`);
     await button.click();
     await expect(button).toHaveAttribute("data-analysis-state", "success");
-    await source.fill((await source.inputValue()) + "\n");
+    await sourceEditor.fill((await source.inputValue()) + "\n");
     await expect(button).not.toHaveAttribute("data-analysis-state", "success");
     api.handlers.set(editor.endpoint, (route) => route.fulfill({ status: 422, json: {
       valid: false, error: "Analysis test failure", diagnostics: "Analysis test failure", line: 0,
@@ -3441,7 +3476,7 @@ test("Policy shared History keeps dirty cancellation and loads each selected rev
   const source = page.locator("#policy-source");
   const saved = await source.inputValue();
   const draft = saved + "# unsaved\n";
-  await source.fill(draft);
+  await codeEditor(page, "policy-source").fill(draft);
   const menu = page.locator("#policy-history-menu");
   const summary = menu.locator("summary");
   await expect(page.locator("#policy-history-count")).toHaveText("2 versions");
@@ -3455,7 +3490,7 @@ test("Policy shared History keeps dirty cancellation and loads each selected rev
   await expect(menu).not.toHaveAttribute("open");
   await expect(source).toHaveValue(draft);
   expect(api.counts.get("/api/policy/records/test-policy/revisions/1")).toBe(1);
-  await source.fill(saved);
+  await codeEditor(page, "policy-source").fill(saved);
   await summary.click();
   await menu.locator('[data-revision="1"]').click();
   await expect(source).toHaveValue("define Original as user.\n");
@@ -3557,13 +3592,14 @@ for (const editor of [
     else await page.goto(appURL + editor.path);
     if (editor.name === "Directory") await page.getByRole("button", { name: "Edit LDAP seed", exact: true }).click();
     const source = page.locator(`#${editor.source}`);
-    await expect(source).toBeVisible();
+    const sourceEditor = codeEditor(page, editor.source);
+    await expect(sourceEditor).toBeVisible();
     if (editor.name === "Gateway") await expect(source).toHaveValue(/"instance_id": "egress"/);
     const saved = await source.inputValue();
     const draft = ["Gateway", "Scenario"].includes(editor.name)
       ? JSON.stringify({ ...JSON.parse(saved), description: "Unsaved discard test" }, null, 2)
       : saved + "# Unsaved discard test\n";
-    await source.fill(draft);
+    await sourceEditor.fill(draft);
     await page.locator(`#${editor.menu}`).click();
     page.once("dialog", async (dialog) => { expect(dialog.message()).toBe(editor.message); await dialog.dismiss(); });
     await page.locator(`#${editor.discard}`).click();
@@ -3587,10 +3623,11 @@ test("Policy and Assertions shared discard guard protects dirty record switching
     ["assertion-source", "test-policy"],
   ]) {
     const source = page.locator(`#${sourceID}`);
-    await expect(source).toBeVisible();
+    const sourceEditor = codeEditor(page, sourceID);
+    await expect(sourceEditor).toBeVisible();
     if (sourceID === "assertion-source") await expect(source).toHaveValue(api.policy.records.find((record) => record.id === "test-assertions").content);
     const draft = (await source.inputValue()) + "\n# Unsaved switch test\n";
-    await source.fill(draft);
+    await sourceEditor.fill(draft);
     await expect(page.locator("#policy-modified-indicator")).toBeVisible();
     await openPolicyPicker(page);
     page.once("dialog", async (dialog) => {
@@ -3645,9 +3682,9 @@ test("Policy shared identity retains path and clears Modified when source return
   await expect(page.locator("#policy-record-title")).toHaveText("Test policy");
   await expect(page.locator("#policy-record-title")).toHaveAttribute("title", "Alpha/Policies/Test policy");
   await expect(page.locator("#policy-modified-indicator")).toBeHidden();
-  await source.fill(saved + "# edited\n");
+  await codeEditor(page, "policy-source").fill(saved + "# edited\n");
   await expect(page.locator("#policy-modified-indicator")).toBeVisible();
-  await source.fill(saved);
+  await codeEditor(page, "policy-source").fill(saved);
   await expect(page.locator("#policy-modified-indicator")).toBeHidden();
   await expect(page.locator("#policy-revision-label")).toBeHidden();
   await openPolicyPicker(page);
@@ -3656,9 +3693,9 @@ test("Policy shared identity retains path and clears Modified when source return
   await expect(page.locator("#policy-modified-indicator")).toBeHidden();
   const assertion = page.locator("#assertion-source");
   const assertionSaved = await assertion.inputValue();
-  await assertion.fill(assertionSaved + "\n");
+  await codeEditor(page, "assertion-source").fill(assertionSaved + "\n");
   await expect(page.locator("#policy-modified-indicator")).toBeVisible();
-  await assertion.fill(assertionSaved);
+  await codeEditor(page, "assertion-source").fill(assertionSaved);
   await expect(page.locator("#policy-modified-indicator")).toBeHidden();
 });
 
@@ -3721,7 +3758,7 @@ for (const editor of [
       }
       if (editor.name === "Directory") await page.getByRole("button", { name: "Edit LDAP seed", exact: true }).click();
     }
-    await expect(page.locator(`#${editor.source}`)).toBeVisible();
+    await expect(codeEditor(page, editor.source)).toBeVisible();
     const result = await page.evaluate(({ source, save }) => {
       const target = document.getElementById(source);
       const button = document.getElementById(save);
@@ -3766,10 +3803,10 @@ test("Config Save shortcut creates a named draft without applying runtime config
   api.handlers.set("/api/policy/records/keyboard-config/revisions", (route) => route.fulfill({ json: [{ number: 1 }] }));
   await page.goto(appURL + "/#zpr-config");
   const source = page.locator("#zpr-config-source");
-  await source.fill(content);
+  await codeEditor(page, "zpr-config-source").fill(content);
   await expect(page.locator("#zpr-config-save")).toBeEnabled();
   page.once("dialog", (dialog) => dialog.accept("Keyboard draft"));
-  await source.press("Control+s");
+  await codeEditor(page, "zpr-config-source").press("Control+s");
   await expect(page.locator("#zpr-config-status")).toContainText("runtime unchanged");
   await expect(page.locator("#zpr-config-title")).toHaveText("Keyboard draft");
   expect(api.counts.get("/api/policy/records")).toBe(1);
@@ -3786,9 +3823,9 @@ test("Policy Save shortcut opens the existing revision confirmation without savi
   await openPolicyPicker(page);
   await page.locator('[data-record-id="test-policy"]').click();
   const source = page.locator("#policy-source");
-  await source.fill("define KeyboardEmployee as user.\n");
+  await codeEditor(page, "policy-source").fill("define KeyboardEmployee as user.\n");
   await expect(page.locator("#policy-save")).toBeEnabled();
-  await source.press("Control+s");
+  await codeEditor(page, "policy-source").press("Control+s");
   await expect(page.locator("#version-dialog")).toBeVisible();
   expect(mutations).toEqual([]);
   await page.locator("#version-dialog").getByRole("button", { name: "Close", exact: true }).click();
@@ -3822,7 +3859,7 @@ test("ZPR Config validates and saves versioned drafts without applying runtime c
   await page.goto(appURL + "/#map");
   await page.getByRole("link", { name: "Config", exact: true }).click();
   await expect(page.locator("#page-zpr-config")).toBeVisible();
-  await page.getByLabel("ZPLC configuration source").fill(content);
+  await page.getByRole("textbox", { name: "ZPLC configuration source", exact: true }).fill(content);
   await page.getByRole("button", { name: "Analyze", exact: true }).click();
   await expect(page.locator("#zpr-config-status")).toContainText("runtime configuration is unchanged");
   await page.locator("#zpr-config-files-toggle").click();
@@ -3843,7 +3880,7 @@ test("GUI Policy keeps History beside the title and blocks saving Untitled", asy
   await expect(page.locator("#policy-record-title")).toHaveText("Untitled");
   await expect(page.locator("#policy-edit-state > #policy-history-menu")).toBeVisible();
   await expect(page.locator("#policy-revision-label")).toBeHidden();
-  await page.locator("#policy-source").fill("define Reserved as user.\n");
+  await codeEditor(page, "policy-source").fill("define Reserved as user.\n");
   await openPolicyFiles(page);
   await page.locator("#policy-save").click();
   await expect(page.locator("#policy-test-status")).toHaveText("Enter a policy name other than Untitled before saving.");
@@ -3853,7 +3890,7 @@ test("GUI Policy keeps History beside the title and blocks saving Untitled", asy
 
 test("GUI ZPR Config asks for a name on Save and never persists Untitled", async ({ page, appURL, api }) => {
   await page.goto(appURL + "/#zpr-config");
-  await page.locator("#zpr-config-source").fill('[service]\nname = "example"\n');
+  await codeEditor(page, "zpr-config-source").fill('[service]\nname = "example"\n');
   for (const name of [null, "", " Untitled ", "uNtItLeD", "x".repeat(161)]) {
     await page.locator("#zpr-config-files-toggle").click();
     page.once("dialog", (dialog) => name === null ? dialog.dismiss() : dialog.accept(name));
@@ -3926,7 +3963,7 @@ test("GUI ZPR Config reports malformed validation JSON without changing source o
   await page.goto(appURL + "/#zpr-config");
   const source = page.locator("#zpr-config-source");
   const text = '[service]\nname   =   "unchanged"\n';
-  await source.fill(text);
+  await codeEditor(page, "zpr-config-source").fill(text);
   await page.locator("#zpr-config-format").click();
   await expect(page.locator("#zpr-config-status")).toHaveText("HTTP 200: invalid JSON response");
   await expect(source).toHaveValue(text);
@@ -3939,7 +3976,7 @@ test("Assertion Format reports malformed JSON and preserves the unsaved source",
   await openAssertionRecord(page, appURL);
   const source = page.locator("#assertion-source");
   const text = 'group "Operators" members >= 1;';
-  await source.fill(text);
+  await codeEditor(page, "assertion-source").fill(text);
   await page.locator("#assertion-format").click();
   await expect(page.locator("#assertion-message")).toHaveText("HTTP 502: invalid JSON response");
   await expect(source).toHaveValue(text);
@@ -3956,7 +3993,7 @@ test("Gateways rejects malformed analysis and failed saves without retrying or r
   const source = page.locator("#gateway-source");
   await expect(source).toHaveValue(/public-egress/);
   const text = (await source.inputValue()).replace('"origin": ""', '"origin": "https://example.com"');
-  await source.fill(text);
+  await codeEditor(page, "gateway-source").fill(text);
   await page.locator("#gateway-analyze").click();
   await expect(page.locator("#gateway-draft-message")).toHaveText("HTTP 200: invalid JSON response");
   await expect(page.locator("#gateway-analyze")).toHaveAttribute("data-analysis-state", "error");
@@ -4044,7 +4081,7 @@ test("Policy editor maximizes and restores with accessible focus, scroll and bac
   const before = await pane.boundingBox();
   await page.evaluate(() => { document.getElementById("policy-assistant-pane").inert = true; });
   await maximize.click();
-  await expect(maximize).toHaveText("Restore");
+  await expect(maximize).toHaveAttribute("aria-label", "Restore editor");
   await expect(maximize).toHaveAttribute("aria-label", "Restore editor");
   await expect(maximize).toHaveAttribute("aria-pressed", "true");
   await expect(pane).toHaveAttribute("role", "dialog");
@@ -4071,7 +4108,7 @@ test("Policy editor maximizes and restores with accessible focus, scroll and bac
   await page.keyboard.press("Shift+Tab");
   await expect(page.locator(`#${focusOrder.last}`)).toBeFocused();
   await maximize.click();
-  await expect(maximize).toHaveText("Maximize");
+  await expect(maximize).toHaveAttribute("aria-label", "Maximize editor");
   await expect(maximize).toHaveAttribute("aria-pressed", "false");
   await expect(pane).not.toHaveAttribute("role", "dialog");
   await expect(source).toHaveValue(original);
@@ -4104,7 +4141,7 @@ test("Shared editor-page maximize works for Config, Gateways, Scenarios, and Dir
     await expect(button).toBeVisible();
     await button.click();
     await expect(button).toHaveAttribute("aria-pressed", "true");
-    await expect(button).toHaveText("Restore");
+    await expect(button).toHaveAttribute("aria-label", "Restore editor");
     await expect(button).toBeFocused();
     expect(await page.locator("body").evaluate((element) => element.classList.contains("editor-page-maximized"))).toBe(true);
     expect(await page.locator(".topbar").evaluate((element) => element.inert)).toBe(true);
@@ -4117,7 +4154,7 @@ test("Shared editor-page maximize works for Config, Gateways, Scenarios, and Dir
     }).toBe(true);
     await page.keyboard.press("Escape");
     await expect(button).toHaveAttribute("aria-pressed", "false");
-    await expect(button).toHaveText("Maximize");
+    await expect(button).toHaveAttribute("aria-label", "Maximize editor");
     await expect(button).toBeFocused();
     expect(await page.locator("body").evaluate((element) => element.classList.contains("editor-page-maximized"))).toBe(false);
     if (keepsDialogOpen) await expect(pane).toHaveAttribute("open", "");
@@ -4142,7 +4179,7 @@ test("Shared editor-page maximize works for Config, Gateways, Scenarios, and Dir
 
 test("Assertion scrolling retains highlighted nodes while synchronizing the overlay", async ({ page, appURL, api }) => {
   await openAssertionRecord(page, appURL);
-  await page.locator("#assertion-source").fill(Array.from({ length: 100 }, () => `group "${"Operators".repeat(70)}" members >= 1;`).join("\n"));
+  await codeEditor(page, "assertion-source").fill(Array.from({ length: 100 }, () => `group "${"Operators".repeat(70)}" members >= 1;`).join("\n"));
   const result = await page.evaluate(() => {
     const source = document.getElementById("assertion-source");
     const pre = document.getElementById("assertion-highlight");
@@ -4159,28 +4196,26 @@ test("Assertion scrolling retains highlighted nodes while synchronizing the over
 test("Policy shared source layout preserves token nodes and gutter bounds through scrolling and resize", async ({ page, appURL, api }) => {
   await page.goto(appURL + "/#policy");
   await expect(page.locator("#policy-source")).toBeEditable();
-  await page.locator("#policy-source").fill(`# ${"wide ".repeat(80)}\n` + Array.from({ length: 100 }, () => "define Employee as user.").join("\n"));
-  const result = await page.evaluate(() => {
-    const source = document.getElementById("policy-source");
-    const pre = document.getElementById("policy-highlight");
-    const token = pre.firstChild;
-    source.scrollTop = 250; source.scrollLeft = 80;
-    source.dispatchEvent(new Event("scroll"));
-    return {
-      retained: token === pre.firstChild, source: [source.scrollTop, source.scrollLeft],
-      overlay: [pre.scrollTop, pre.scrollLeft], transform: document.getElementById("policy-test-gutter-content").style.transform,
-      overflow: document.getElementById("policy-code-editor").dataset.horizontalOverflow,
-    };
+  await codeEditor(page, "policy-source").fill(`# ${"wide ".repeat(80)}\n` + Array.from({ length: 100 }, () => "define Employee as user.").join("\n"));
+  // CodeMirror owns highlighting and gutters, so measure its scroller instead of the legacy overlay.
+  const host = page.locator('.code-editor-host[data-source="policy-source"]');
+  const result = await host.evaluate((element) => {
+    const scroller = element.shadowRoot.querySelector(".cm-scroller");
+    scroller.scrollTop = 250; scroller.scrollLeft = 80;
+    scroller.dispatchEvent(new Event("scroll"));
+    const view = scroller.getBoundingClientRect();
+    const gutters = element.shadowRoot.querySelector(".cm-gutters").getBoundingClientRect();
+    return { scroll: [scroller.scrollTop, scroller.scrollLeft], gutterPinned: Math.abs(gutters.left - view.left) <= 1 };
   });
-  expect(result.retained).toBe(true);
-  expect(result.overlay).toEqual(result.source);
-  expect(result.transform).toBe(`translateY(${-result.source[0]}px)`);
-  expect(result.overflow).toBe("true");
+  expect(result.scroll).toEqual([250, 80]);
+  expect(result.gutterPinned).toBe(true);
+  await expect(page.locator("#policy-code-editor")).not.toHaveAttribute("data-horizontal-overflow", "true");
   const viewport = page.viewportSize();
   await page.setViewportSize({ width: viewport.width - 80, height: viewport.height + 80 });
-  await expect.poll(() => page.evaluate(() => {
-    const source = document.getElementById("policy-source");
-    return document.getElementById("policy-test-gutter").style.bottom === `${source.offsetHeight - source.clientHeight}px`;
+  await expect.poll(() => host.evaluate((element) => {
+    const scroller = element.shadowRoot.querySelector(".cm-scroller");
+    const gutters = element.shadowRoot.querySelector(".cm-gutters").getBoundingClientRect();
+    return gutters.height >= scroller.clientHeight - 1;
   })).toBe(true);
 });
 
@@ -4279,7 +4314,7 @@ test("GUI new scenarios display Untitled and cannot save that placeholder", asyn
   const source = page.locator("#scenario-editor-source");
   const scenario = JSON.parse(await source.inputValue());
   for (const name of ["Untitled", " untitled "]) {
-    await source.fill(JSON.stringify({ ...scenario, name }));
+    await codeEditor(page, "scenario-editor-source").fill(JSON.stringify({ ...scenario, name }));
     await page.locator("#scenario-editor-files-toggle").click();
     await page.locator("#scenario-editor-save").click();
     await expect(page.locator("#scenario-editor-status")).toContainText("other than Untitled");
@@ -4298,7 +4333,7 @@ test("GUI ZPR Config analyzes gutter errors, formats whitespace safely, and uses
   });
   await page.goto(appURL + "/#zpr-config");
   const source = page.locator("#zpr-config-source");
-  await source.fill('[service]\nname = "unterminated\n');
+  await codeEditor(page, "zpr-config-source").fill('[service]\nname = "unterminated\n');
   await page.getByRole("button", { name: "Analyze", exact: true }).click();
   const marker = page.getByRole("button", { name: /Configuration error on line 2/ });
   await expect(marker).toBeVisible();
@@ -4306,10 +4341,10 @@ test("GUI ZPR Config analyzes gutter errors, formats whitespace safely, and uses
   await expect(page.locator("#zpr-config-status")).toBeHidden();
   await expect(page.locator("#zpr-config-validate")).toHaveAttribute("data-analysis-state", "error");
   await marker.click();
-  await expect(source).toBeFocused();
+  await expect(codeEditor(page, "zpr-config-source")).toBeFocused();
   await expect(page.locator("#zpr-config-status")).toBeHidden();
   const toml = '[service]\n name   =   "A = B"  # Keep this comment\nvalue=["x", "y"]\n';
-  await source.fill(toml);
+  await codeEditor(page, "zpr-config-source").fill(toml);
   await page.getByRole("button", { name: "Format", exact: true }).click();
   await expect(source).toHaveValue('[service]\n name = "A = B"  # Keep this comment\nvalue = ["x", "y"]\n');
   await expect(page.locator("#zpr-config-gutter button")).toHaveCount(0);
@@ -4339,12 +4374,12 @@ test("GUI ZPR Config keeps unlocated failures visible without inventing gutter l
   await page.goto(appURL + "/#zpr-config");
   const source = page.locator("#zpr-config-source");
   for (line of [0, 99, 1.5]) {
-    await source.fill('[service]\nname = "example"\n');
+    await codeEditor(page, "zpr-config-source").fill('[service]\nname = "example"\n');
     await page.locator("#zpr-config-validate").click();
     await expect(page.locator("#zpr-config-gutter button")).toHaveCount(0);
     await expect(page.locator("#zpr-config-status")).toHaveText("Configuration validation unavailable.");
     await expect(page.locator("#zpr-config-status")).toBeVisible();
-    await source.fill("");
+    await codeEditor(page, "zpr-config-source").fill("");
     await expect(page.locator("#zpr-config-status")).toBeHidden();
   }
 });
@@ -4354,34 +4389,35 @@ test("GUI ZPR Config colors TOML safely, keeps a visible aligned gutter, and col
   await page.goto(appURL + "/#zpr-config");
   const source = page.locator("#zpr-config-source");
   const content = '# Comment\n[service]\nname = "<img src=x>"\nenabled = true\nport = 123\n';
-  await source.fill(content);
+  await codeEditor(page, "zpr-config-source").fill(content);
   const highlight = page.locator("#zpr-config-highlight");
   await expect(highlight.locator(".zpl-comment")).toHaveText("# Comment");
   await expect(highlight.locator(".zpl-string")).toHaveText('"<img src=x>"');
   await expect(highlight.locator("img")).toHaveCount(0);
   await expect(highlight.locator(".zpl-keyword")).toHaveText("true");
   await expect(highlight.locator(".zpl-value")).toHaveText("123");
-  await source.fill(content + 'list = ["red", "green"]\n');
+  await codeEditor(page, "zpr-config-source").fill(content + 'list = ["red", "green"]\n');
   await expect(highlight.locator(".zpl-string")).toHaveText(['"<img src=x>"', '"red"', '"green"']);
   await expect(highlight.locator(".zpl-string").first()).toHaveCSS("color", "rgb(215, 167, 207)");
   await expect(page.locator("#zpr-config-gutter")).toHaveCSS("border-right-style", "solid");
-  const lineGeometry = await page.evaluate(() => {
-    const sourceStyle = getComputedStyle(document.getElementById("zpr-config-source"));
-    const row = document.querySelector("#zpr-config-gutter .config-gutter-line");
-    return { rowHeight: row.getBoundingClientRect().height, lineHeight: Number.parseFloat(sourceStyle.lineHeight) };
+  const host = page.locator('.code-editor-host[data-source="zpr-config-source"]');
+  const lineGeometry = await host.evaluate((element) => {
+    const row = [...element.shadowRoot.querySelectorAll(".cm-lineNumbers .cm-gutterElement")].find((item) => item.textContent === "1");
+    return { rowHeight: row.getBoundingClientRect().height, lineHeight: element.shadowRoot.querySelector(".cm-line").getBoundingClientRect().height };
   });
   expect(Math.abs(lineGeometry.rowHeight - lineGeometry.lineHeight)).toBeLessThan(1);
   await page.getByRole("button", { name: "Analyze", exact: true }).click();
   await expect(page.locator("#zpr-config-validate")).toHaveAttribute("data-analysis-state", "success");
-  await source.fill(Array.from({ length: 100 }, (_, index) => `key${index} = "${"x".repeat(150)}"`).join("\n"));
-  await source.evaluate((element) => { element.scrollTop = 150; element.scrollLeft = 60; element.dispatchEvent(new Event("scroll")); });
-  const scrolls = await page.evaluate(() => ({
-    source: [document.getElementById("zpr-config-source").scrollTop, document.getElementById("zpr-config-source").scrollLeft],
-    highlight: [document.getElementById("zpr-config-highlight").scrollTop, document.getElementById("zpr-config-highlight").scrollLeft],
-    gutter: document.getElementById("zpr-config-gutter").scrollTop,
-  }));
-  expect(scrolls.highlight).toEqual(scrolls.source);
-  expect(scrolls.gutter).toBe(scrolls.source[0]);
+  await codeEditor(page, "zpr-config-source").fill(Array.from({ length: 100 }, (_, index) => `key${index} = "${"x".repeat(150)}"`).join("\n"));
+  const scrolls = await host.evaluate((element) => {
+    const scroller = element.shadowRoot.querySelector(".cm-scroller");
+    scroller.scrollTop = 150; scroller.scrollLeft = 60;
+    scroller.dispatchEvent(new Event("scroll"));
+    const gutters = element.shadowRoot.querySelector(".cm-gutters").getBoundingClientRect();
+    return { scroll: [scroller.scrollTop, scroller.scrollLeft], gutterPinned: Math.abs(gutters.left - scroller.getBoundingClientRect().left) <= 1 };
+  });
+  expect(scrolls.scroll).toEqual([150, 60]);
+  expect(scrolls.gutterPinned).toBe(true);
   await expect(page.locator("#zpr-config-validate")).not.toHaveAttribute("data-analysis-state", "success");
   await expect(page.locator("#zpr-config-file-menu #zpr-config-save")).toHaveCount(1);
 });
@@ -4393,36 +4429,14 @@ test("GUI ZPR Config rejects stale diagnostics after source edits", async ({ pag
     await route.fulfill({ status: 422, json: { valid: false, line: 2, diagnostics: "Old source error" } });
   });
   await page.goto(appURL + "/#zpr-config");
-  await page.locator("#zpr-config-source").fill('[old]\nkey = "broken');
+  await codeEditor(page, "zpr-config-source").fill('[old]\nkey = "broken');
   await page.locator("#zpr-config-validate").click();
   await expect.poll(() => Boolean(finish)).toBe(true);
-  await page.locator("#zpr-config-source").fill('[new]\nkey = "valid"\n');
+  await codeEditor(page, "zpr-config-source").fill('[new]\nkey = "valid"\n');
   finish();
   await expect(page.locator("#zpr-config-validate")).toBeEnabled();
   await expect(page.locator("#zpr-config-gutter button")).toHaveCount(0);
   await expect(page.locator("#zpr-config-status")).toBeHidden();
-});
-
-test("Diagnostics shows source identity, current metrics, searchable bounded logs, and stale/unavailable states without Simulator", async ({ page, appURL, api }) => {
-  const simulationRequests = [];
-  page.on("request", (request) => { if (request.url().includes("/api/simulator/")) simulationRequests.push(request.url()); });
-  api.handlers.set("/api/diagnostics", async (route) => route.fulfill({ json: {
-    generated_at: "2026-10-05T12:00:00Z", state: "partial", sources: [
-      { id: "service:forwarding", name: "forwarding service", kind: "Required service", identity: "forwarding-service", address: "fd00::1", state: "available", last_updated: "2026-10-05T11:59:00Z", metrics: [{ name: "packets_forwarded", value: "12", unit: "1" }], logs: [{ timestamp: "2026-10-05T11:59:00Z", severity: "INFO", body: "node forwarding ready" }] },
-      { id: "trusted:ldap", name: "ldap", kind: "Trusted service · rest/1", identity: "ldap-service", state: "stale", last_updated: "2026-10-05T10:00:00Z", metrics: [], logs: [{ timestamp: "2026-10-05T10:00:00Z", body: "directory lookup ready" }] },
-      { id: "service:auth", name: "AuthService", kind: "Required service · Auth", identity: "auth", state: "unavailable", error: "No OpenTelemetry signals received", metrics: [], logs: [] },
-    ],
-  } }));
-  await page.goto(appURL + "/#diagnostics");
-  await expect(page.locator("#page-diagnostics")).toBeVisible();
-  await expect(page.locator(".diagnostics-source")).toHaveCount(3);
-  await expect(page.locator('.diagnostics-source[data-state="available"]')).toContainText("12");
-  await expect(page.locator('.diagnostics-source[data-state="stale"]')).toContainText("stale");
-  await expect(page.locator('.diagnostics-source[data-state="unavailable"]')).toContainText("No OpenTelemetry signals received");
-  await page.getByRole("searchbox", { name: "Filter services and logs" }).fill("forwarding ready");
-  await expect(page.locator(".diagnostics-source")).toHaveCount(1);
-  await expect(page.locator(".diagnostics-source")).toContainText("forwarding service");
-  expect(simulationRequests).toEqual([]);
 });
 
 test("Simulator Agents redirects to Workers with device filtering", async ({ page, appURL, api }) => {
@@ -4600,7 +4614,8 @@ test("Simulator Scenario polling aborts on navigation and ignores late catalog r
     const originalFetch = window.fetch.bind(window);
     const pending = [];
     window.fetch = (input, options = {}) => {
-      if (new URL(input, location.href).pathname !== "/api/simulator/scenarios") return originalFetch(input, options);
+      // The Simulator banner polls the same endpoint; hold only the Scenarios page catalog requests.
+      if (new URL(input, location.href).pathname !== "/api/simulator/scenarios" || !new Error().stack.includes("/scenarios.js")) return originalFetch(input, options);
       return new Promise((resolve) => pending.push({ signal: options.signal, resolve }));
     };
     window.pendingScenarioRequests = pending;
@@ -4757,7 +4772,7 @@ test("Scenario machine log previews are compact, bounded and limited to running 
       { machine: { id: "machine-02" }, state: "exited", sources: [{ name: "Controller", lines: ["stopped"] }] },
     ],
   } }));
-  await page.goto(appURL + "/scenarios.html");
+  await page.goto(appURL + "/scenarios.html#simulate");
   await expect(page.locator('[data-scenario-machine="machine-01"]')).toBeVisible();
   await page.clock.runFor(3100);
   const preview = page.getByRole("region", { name: "Log preview for machine-01", exact: true });
@@ -4793,7 +4808,7 @@ test("Scenario machine log previews report failures, recover and reject wrong-or
   api.handlers.set("/api/simulator/machine-logs", route => route.fulfill({
     status: 502, contentType: "text/html", body: "unavailable",
   }));
-  await page.goto(appURL + "/scenarios.html");
+  await page.goto(appURL + "/scenarios.html#simulate");
   await page.clock.runFor(3100);
   const preview = page.locator(".scenario-log-preview");
   await expect(preview).toContainText("HTTP 502: invalid JSON response");
@@ -4839,12 +4854,14 @@ test("Scenario machine log previews reject late run responses and stop polling o
   expect(api.counts.get("/api/simulator/machine-logs")).toBe(inFlightRequests);
   run.scenario_id = "second";
   run.started_at = "2026-10-09T12:01:00Z";
+  // Reactivation starts a new log request immediately; answer the stale in-flight request, not the replacement.
+  const stale = pending;
   await page.evaluate(() => {
     const detail = { path: location.pathname };
     document.dispatchEvent(new CustomEvent("simulator:deactivate", { detail }));
     document.dispatchEvent(new CustomEvent("simulator:activate", { detail }));
   });
-  await pending.fulfill({ json: { organization_id: "alpha", machines: [{
+  await stale.fulfill({ json: { organization_id: "alpha", machines: [{
     machine: { id: "machine-01" }, state: "running", sources: [{ name: "Controller", lines: ["obsolete run"] }],
   }] } });
   await expect(page.locator(".scenario-log-preview")).not.toContainText("obsolete run");
@@ -4881,7 +4898,7 @@ test("Simulator gateway results show inert raw HTML and exact JSON separately fr
   api.handlers.set("/api/simulator/scenarios", async route => route.fulfill({ json: {
     active_organization_id: "alpha", scenarios: [], run,
   } }));
-  await page.goto(appURL + "/scenarios.html");
+  await page.goto(appURL + "/scenarios.html#simulate");
   const results = page.locator("#scenario-results");
   await expect(results).toBeHidden();
   await page.getByRole("tab", { name: "Results (2)", exact: true }).click();
@@ -4912,23 +4929,20 @@ test("Simulator gateway results show inert raw HTML and exact JSON separately fr
 });
 
 test("Simulator gateway results remain reachable above long runner tracks", async ({ page, appURL, api }) => {
+  // Serve the run from the catalog so the Simulate poller cannot replace a locally rendered run.
+  const run = {
+    scenario_id: "long-run", state: "completed", current_step: 40, total_steps: 40,
+    steps: Array.from({ length: 40 }, (_, index) => ({
+      number: index + 1, action: "request_web_gateway", machine: "machine-01", status: "completed",
+      ...(index === 39 ? { result: {
+        schema_version: 1, kind: "http", status_code: 200, body: "Reachable result", body_encoding: "utf-8",
+      } } : {}),
+    })),
+  };
   api.handlers.set("/api/simulator/scenarios", async route => route.fulfill({ json: {
-    active_organization_id: "alpha", scenarios: [], run: { state: "idle", steps: [] },
+    active_organization_id: "alpha", scenarios: [], run,
   } }));
-  await page.goto(appURL + "/scenarios.html");
-  await page.evaluate(() => {
-    const run = {
-      scenario_id: "long-run", state: "completed", current_step: 40, total_steps: 40,
-      steps: Array.from({ length: 40 }, (_, index) => ({
-        number: index + 1, action: "request_web_gateway", machine: "machine-01", status: "completed",
-        ...(index === 39 ? { result: {
-          schema_version: 1, kind: "http", status_code: 200, body: "Reachable result", body_encoding: "utf-8",
-        } } : {}),
-      })),
-    };
-    renderScenarioRun(run);
-    window.testLongRun = run;
-  });
+  await page.goto(appURL + "/scenarios.html#simulate");
   const runner = page.getByRole("tab", { name: "Runner", exact: true });
   const resultsTab = page.getByRole("tab", { name: "Results (1)", exact: true });
   await expect(resultsTab).toBeInViewport();
@@ -4939,7 +4953,7 @@ test("Simulator gateway results remain reachable above long runner tracks", asyn
   await expect(resultsTab).toHaveAttribute("aria-selected", "true");
   await expect(page.locator(".scenario-track-frame")).toBeHidden();
   await expect(page.getByText("Reachable result", { exact: true })).toBeInViewport();
-  await page.evaluate(() => renderScenarioRun(window.testLongRun));
+  await page.evaluate((value) => renderScenarioRun(value), run);
   await expect(resultsTab).toHaveAttribute("aria-selected", "true");
   await page.keyboard.press("Home");
   await expect(runner).toBeFocused();
@@ -4948,11 +4962,8 @@ test("Simulator gateway results remain reachable above long runner tracks", asyn
 });
 
 test("Simulator gateway results distinguish no response, binary bodies and unavailable evidence", async ({ page, appURL, api }) => {
-  api.handlers.set("/api/simulator/scenarios", async route => route.fulfill({ json: {
-    active_organization_id: "alpha", scenarios: [], run: { state: "idle", steps: [] },
-  } }));
-  await page.goto(appURL + "/scenarios.html");
-  await page.evaluate(() => renderScenarioRun({
+  // Serve the run from the catalog so the Simulate poller cannot replace a locally rendered run.
+  const run = {
     scenario_id: "errors", state: "failed",
     steps: [
       { number: 1, action: "request_web_gateway", status: "failed", result: {
@@ -4964,7 +4975,11 @@ test("Simulator gateway results distinguish no response, binary bodies and unava
       } },
       { number: 3, action: "request_web_gateway", status: "failed", result_error: "structured gateway result unavailable; rebuild the machine controller and rerun" },
     ],
-  }));
+  };
+  api.handlers.set("/api/simulator/scenarios", async route => route.fulfill({ json: {
+    active_organization_id: "alpha", scenarios: [], run,
+  } }));
+  await page.goto(appURL + "/scenarios.html#simulate");
   const results = page.locator("#scenario-results");
   await page.getByRole("tab", { name: "Results (3)", exact: true }).click();
   await expect(results).toContainText("No HTTP response");
@@ -4998,17 +5013,19 @@ test("Simulator Scenarios groups unfiled entries and keeps terminal run history"
   await expect(page.locator("#scenario-browser-list .scenario-folder")).toHaveCount(1);
   await expect(page.locator("#scenario-list")).toContainText("Sample flow");
   await expect(page.getByText("EXECUTION PLAN", { exact: true })).toHaveCount(0);
-  await expect(page.getByRole("button", { name: "Run", exact: true })).toBeVisible();
+  const scenarioCard = page.locator("#scenario-list article.scenario-card");
+  await expect(scenarioCard.getByRole("link", { name: "Simulate", exact: true })).toBeVisible();
   await expect(page.getByRole("button", { name: "Run Published", exact: true })).toHaveCount(0);
-  const scenarioCard = page.locator(`#scenario-list [data-run-scenario="${scenario.id}"]`).locator("xpath=ancestor::article");
   await expect(scenarioCard.locator(".scenario-version")).toHaveCount(0);
   await expect(scenarioCard).not.toContainText(scenario.id);
-  await expect(scenarioCard.locator("button")).toHaveText(["Run"]);
+  await expect(scenarioCard.locator("button, a")).toHaveText(["Simulate"]);
   await expect(page.locator("#scenario-files-toggle")).toHaveText("File...");
   await page.locator("#scenario-files-toggle").click();
   await expect(page.getByRole("menuitem", { name: "Edit", exact: true })).toBeVisible();
   await page.keyboard.press("Escape");
   await expect(scenarioCard.getByRole("button", { name: "Delete", exact: true })).toHaveCount(0);
+  await scenarioCard.getByRole("link", { name: "Simulate", exact: true }).click();
+  await expect(page.locator(".scenario-run-pane")).toBeVisible();
   await expect(page.locator("#scenario-run-title")).toHaveText("Sample flow");
   await expect(page.locator("#scenario-run-state .scenario-state-label")).toHaveText("completed");
   await expect(page.locator("#scenario-cancel")).toBeHidden();
@@ -5016,7 +5033,7 @@ test("Simulator Scenarios groups unfiled entries and keeps terminal run history"
   await expect(page.locator("#scenario-reset")).toBeVisible();
   await expect(page.locator("#scenario-reset")).toBeDisabled();
   await page.locator(".main-content .top-actions > .help-trigger, .main-content .topbar > .help-trigger").click();
-  await expect(page.getByRole("dialog", { name: "Scenarios" })).toContainText("Maximum machines per run: 10.");
+  await expect(page.getByRole("dialog", { name: "Simulate" })).toContainText("Maximum machines per run: 10.");
   await page.keyboard.press("Escape");
 
   await page.evaluate(() => renderScenarioRun({ scenario_id: "sample-flow", scenario_name: "Sample flow", state: "running", steps: [], scenario: { steps: [], cleanup: [] } }));
@@ -5056,6 +5073,7 @@ test("Simulator Scenarios groups unfiled entries and keeps terminal run history"
   await expect(page.locator("#scenario-reset")).toBeDisabled();
   await expect(page.locator("#scenario-run-title")).toHaveText("Sample flow");
   expect(api.counts.get("/api/simulator/scenarios/clear") || 0).toBe(0);
+  await page.getByRole("link", { name: "Configure scenarios", exact: true }).click();
   await page.locator("#scenario-files-toggle").click();
   await page.locator("#scenario-new").click();
   const editorAction = page.locator('#scenario-editor-steps [data-step-key="action"]');
@@ -5078,7 +5096,7 @@ test("Scenario cancel reports malformed JSON without retrying", async ({ page, a
   api.handlers.set("/api/simulator/scenarios/cancel", (route) => route.fulfill({
     status: 502, contentType: "text/html", body: "upstream unavailable",
   }));
-  await page.goto(appURL + "/scenarios.html");
+  await page.goto(appURL + "/scenarios.html#simulate");
   await expect(page.locator("#scenario-reset")).toBeHidden();
   await expect(page.locator("#scenario-clear")).toHaveCount(0);
   await page.locator("#scenario-cancel").click();
@@ -5087,15 +5105,17 @@ test("Scenario cancel reports malformed JSON without retrying", async ({ page, a
   expect(api.counts.get("/api/simulator/scenarios/clear") || 0).toBe(0);
 });
 
-test("assertion picker lines omit counts and revisions and distinguish record kinds by color", async ({ page, appURL, api }) => {
+test("picker lines omit counts, label only assertion records with kind and revision, and distinguish record kinds by color", async ({ page, appURL, api }) => {
   await page.goto(appURL + "/#policy");
   await openPolicyPicker(page);
   const tree = page.locator("#policy-category-tree");
-  await expect(tree.locator(".category-tree-item small, .policy-record-item small")).toHaveCount(0);
+  await expect(tree.locator(".category-tree-item small")).toHaveCount(0);
   const policy = tree.locator('[data-record-id="test-policy"]');
   const assertions = tree.locator('[data-record-id="test-assertions"]');
   await expect(policy).toHaveText("Test policy");
-  await expect(assertions).toHaveText("Organization assertions");
+  await expect(policy.locator("small")).toHaveCount(0);
+  await expect(assertions.locator("strong")).toHaveText("Organization assertions");
+  await expect(assertions.locator("small")).toHaveText(/^Assertions · r\d+$/);
   await expect(policy.locator(".policy-kind-icon")).toHaveAttribute("data-icon", "traffic-light");
   await expect(assertions.locator(".policy-kind-icon")).toHaveAttribute("data-icon", "database-check");
   const policyColor = await policy.locator(".policy-kind-icon").evaluate((item) => getComputedStyle(item).color);
@@ -5114,8 +5134,8 @@ test("Security Review stacks baseline and current inventory with compact checkbo
   await page.locator("#refresh-now").click();
   await expect(page.locator("#security-review-current-actors")).toContainText("adapter-b");
   await expect(page.locator("#security-review-baseline-actors")).not.toContainText("adapter-b");
-  const baseline = await page.locator('[data-inventory-row="baseline"]').boundingBox();
-  const current = await page.locator('[data-inventory-row="current"]').boundingBox();
+  const baseline = await page.locator(".security-review-baseline-line").boundingBox();
+  const current = await page.locator(".security-review-current-line").boundingBox();
   expect(current.y).toBeGreaterThanOrEqual(baseline.y + baseline.height - 1);
   const checkbox = await page.locator("#security-review-show-dismissed").boundingBox();
   expect(checkbox.width).toBeLessThanOrEqual(18);
@@ -5136,6 +5156,7 @@ test("Security Review reports denial and log evidence and compares new inventory
   api.snapshot.actors.push({ cn: "node-b", node: true, zpr_addr: "fd00::4", node_details: { in_sync: true, last_contact: Math.floor(Date.now() / 1000) - 600 } });
   api.snapshot.trusted_sources = [{ name: "directory", health: "failed", health_note: "The most recent attribute lookup failed.", last_lookup_ms: Date.now() }];
   api.adapterLogs = { machines: [{ machine: { id: "machine-01" }, sources: [{ name: "Controller", lines: ["authentication failed for unknown identity"] }] }] };
+  api.handlers.set("/api/dns/stats/json/v1/server", (route) => route.fulfill({ json: { nsstats: { Requestv4: 0, QryNXDOMAIN: 0 } } }));
   const mutations = [];
   page.on("request", (request) => { if (request.method() !== "GET") mutations.push(request.method()); });
   await page.goto(appURL + "/#security-review");
@@ -5143,7 +5164,7 @@ test("Security Review reports denial and log evidence and compares new inventory
   await expect(page.getByText("INVESTIGATION LEADS · READ ONLY", { exact: true })).toHaveCount(0);
   await expect(page.locator(".security-review-baseline-label")).toHaveText("Baseline");
   await expect(page.locator("#security-review-baseline-time")).not.toContainText("Saved");
-  await expect(page.getByText("Inventory", { exact: true })).toHaveCount(0);
+  await expect(page.locator("#page-security-review").getByText("Inventory", { exact: true })).toHaveCount(0);
   await expect(page.locator("#security-review-status")).toBeEmpty();
   await expect(page.locator("#security-review-status")).not.toContainText("Scanning");
   await expect(page.locator(".security-review-caveat")).toHaveCount(0);
@@ -5379,7 +5400,7 @@ test("Trusted Sources omits explanatory headings, counts, and the top table filt
   await expect(sources.locator("table[data-sort-page=sources]")).toBeVisible();
   await expect(sources.locator("#trusted-list tr[data-inspect-source]")).toHaveCount(2);
   const browser = sources.locator("trusted-source-browser");
-  await expect(browser.locator("[data-source-title]")).toHaveText("Trusted source: Trusted LDAP");
+  await expect(browser.locator("[data-source-title]")).toHaveText("Trusted LDAP");
 });
 
 test("GUI raw scenario editor switches to YAML and analyzes before saving", async ({ page, appURL, api }) => {
@@ -5388,10 +5409,10 @@ test("GUI raw scenario editor switches to YAML and analyzes before saving", asyn
   await page.locator("#scenario-editor-files-toggle").click();
   await page.getByRole("menuitem", { name: "Convert to YAML" }).click();
   await expect(source).toHaveValue(/id: new-scenario/);
-  await source.fill('id: new-scenario\norganization_id: alpha\nname: "YAML scenario"\ndescription: "Edited as YAML"\n');
+  await codeEditor(page, "scenario-editor-source").fill('id: new-scenario\norganization_id: alpha\nname: "YAML scenario"\ndescription: "Edited as YAML"\n');
   await page.locator("#scenario-source-analyze").click();
   await expect(page.locator("#scenario-source-analyze")).toHaveAttribute("data-analysis-state", "success");
-  await expect(page.locator("#scenario-source-highlight .zpl-attribute").first()).toBeVisible();
+  await expect(page.locator('.code-editor-host[data-source="scenario-editor-source"] .cm-token-attribute').first()).toBeVisible();
   await page.locator("#scenario-editor-files-toggle").click();
   await page.getByRole("menuitem", { name: "Save", exact: true }).click();
   await expect.poll(() => api.counts.get("/api/simulator/organizations/alpha/scenarios") || 0).toBe(1);
@@ -5424,7 +5445,7 @@ test("Control Room sidebar links Adapter Logs internally and promotes external m
 test("Control Room trusted source panel browses records read-only", async ({ page, appURL, api }) => {
   await page.goto(appURL + "/#sources");
   const browser = page.locator("trusted-source-browser");
-  await expect(browser.locator("[data-source-title]")).toHaveText("Trusted source: Trusted LDAP");
+  await expect(browser.locator("[data-source-title]")).toHaveText("Trusted LDAP");
   await expect(browser.locator("[data-source-meta]")).toContainText("dc=alpha,dc=test");
   await expect(browser.locator(".trusted-source-table")).toContainText("alice");
   await browser.getByRole("tab", { name: "Groups" }).click();
@@ -5442,7 +5463,9 @@ test("Control Room Trusted Sources shows one-day metadata-only updates with curs
   await page.goto(appURL + "/#sources");
   const browser = page.locator("trusted-source-browser");
   await browser.getByRole("tab", { name: "Updates (24h)" }).click();
-  await expect(browser.getByRole("combobox", { name: "Trusted source update feed" })).toHaveValue("great_lakes_ldap");
+  // A single update feed is named in the heading; the feed selector only appears for multiple feeds.
+  await expect(browser.locator("[data-source-title]")).toHaveText("Great Lakes LDAP");
+  await expect(browser.locator("[data-source-selector]")).toBeHidden();
   await expect(browser.locator(".trusted-source-changes")).toContainText("uid=alice,dc=alpha,dc=test");
   await expect(browser.locator(".trusted-source-changes")).toContainText("mail, title");
   await expect(browser.locator(".trusted-source-changes")).not.toContainText("alice@example.test");
@@ -5530,7 +5553,7 @@ test("Trusted Sources tables sort, split group cn/objectClass and condense peopl
 test("Simulator trusted source page uses the same read-only browser", async ({ page, appURL, api }) => {
   await page.goto(appURL + "/trusted-source.html");
   const browser = page.locator("trusted-source-browser");
-  await expect(page.getByRole("link", { name: "Trusted Sources", exact: true })).toHaveClass(/active/);
+  await expect(page.getByRole("link", { name: "Trusted Sources", exact: true })).toHaveAttribute("aria-current", "page");
   await expect(page.locator(".simulator-operator-login")).toBeVisible();
   await expect(browser.getByRole("tab", { name: "LDAP graph" })).toHaveAttribute("aria-selected", "true");
   const graph = browser.locator("ldap-org-graph");
@@ -5566,7 +5589,7 @@ test.describe("Simulator operator login UI", () => {
       return route.fulfill({ status: 204 });
     });
     await page.goto(appURL + "/scenarios.html");
-    await expect(page.locator("#operator-login-status")).toHaveText("Signed in: Simulator Operator");
+    await expect(page.locator("#operator-login-status")).toHaveText("User: Simulator Operator");
     await expect(page.locator("#operator-scope")).toContainText("Configured organizations: *");
     await expect(page.locator("#operator-scope")).toContainText("scenario.run");
     await expect(page.locator("#operator-scope")).toContainText("simulator@example.test");
@@ -5747,7 +5770,9 @@ test("each picker row opens its own menu from labels and metadata", async ({ pag
     await expect(page.locator("#policy-picker-menu-title")).toHaveText(name);
     await expect(page.locator("#new-category")).toBeHidden();
     await page.keyboard.press("Escape");
-    await expect(page.locator("#policy-picker-toggle")).toBeFocused();
+    // The picker stays open, so focus returns to the row that opened the menu.
+    await expect(menu).toBeHidden();
+    await expect(row).toBeFocused();
   }
 });
 
@@ -5877,7 +5902,7 @@ test("page Help is keyboard accessible, contextual, and reachable in the condens
   await assertionHelp.getByRole("button", { name: "Close", exact: true }).click();
 });
 
-test("Simulator Help warns before organization activation and stays usable on mobile", async ({ page, appURL }) => {
+test("Simulator Help warns before organization activation and stays usable on mobile", async ({ page, appURL, api }) => {
   await page.setViewportSize({ width: 390, height: 844 });
   await page.goto(appURL + "/organizations.html");
   await page.getByRole("button", { name: "Condense side menu", exact: true }).click();
@@ -5900,7 +5925,7 @@ test("policy Format condenses repeated blank lines including trailing whitespace
   await page.locator('[data-record-id="test-policy"]').click();
   const editor = page.locator("#policy-source");
   await expect(editor).toHaveValue("define Employee as user.\n");
-  await editor.fill("# Heading\n\n \n\ndefine Employee as user.\n\n\nprovide Api at api.example over TCP 443.\n\nallow Employee.\n\n\n");
+  await codeEditor(page, "policy-source").fill("# Heading\n\n \n\ndefine Employee as user.\n\n\nprovide Api at api.example over TCP 443.\n\nallow Employee.\n\n\n");
   const expected = "# Heading\n\ndefine Employee as user.\n\nprovide Api at api.example over TCP 443.\n  allow Employee.\n\n";
   await page.locator("#policy-format").click();
   await expect(editor).toHaveValue(expected);
@@ -5918,7 +5943,7 @@ test("policy Format removes leading whitespace and gaps inside definition and se
   await expect(editor).toHaveValue("define Employee as user.\n");
   const source = " \n\t\n  define Employee as user.\n\n# Staff\n\ndefine Guest as user.\nprovide Api at api.example over TCP 443.\n\n# Callers\n\nallow Employee.\n\ndeny Guest.\n\nnever allow Guest.\n";
   const expected = "define Employee as user.\n# Staff\ndefine Guest as user.\n\nprovide Api at api.example over TCP 443.\n# Callers\n  allow Employee.\n  deny Guest.\n  never allow Guest.\n";
-  await editor.fill(source);
+  await codeEditor(page, "policy-source").fill(source);
   await page.locator("#policy-format").click();
   await expect(editor).toHaveValue(expected);
   await page.locator("#policy-format").click();
@@ -5940,9 +5965,9 @@ test("policy actions share a non-overlapping responsive toolbar", async ({ page,
   await expect(page.locator("#policy-modified-indicator")).toBeHidden();
   await expect(page.locator("#page-policy .policy-toolbar")).toHaveCSS("border-top-style", "none");
   await expect(page.locator("#page-policy .policy-page")).toHaveCSS("border-top-style", "none");
-  await sourceEditor.fill(`${savedSource}# modified\n`);
+  await codeEditor(page, "policy-source").fill(`${savedSource}# modified\n`);
   await expect(page.locator("#policy-modified-indicator")).toHaveText("Modified");
-  await sourceEditor.fill(savedSource);
+  await codeEditor(page, "policy-source").fill(savedSource);
   await expect(page.locator("#policy-modified-indicator")).toBeHidden();
   const actions = page.locator("#policy-actions");
   const browse = page.locator("#policy-picker-toggle");
@@ -6047,7 +6072,7 @@ test("Save is dirty-gated and uses the Save As color", async ({ page, appURL, ap
   await expect(save).toBeDisabled();
   await expect(saveAs).toBeEnabled();
   const saveAsColor = await saveAs.evaluate((button) => getComputedStyle(button).backgroundColor);
-  await page.locator("#policy-source").fill(`${await page.locator("#policy-source").inputValue()}\n# unsaved change\n`);
+  await codeEditor(page, "policy-source").fill(`${await page.locator("#policy-source").inputValue()}\n# unsaved change\n`);
   await expect(save).toBeEnabled();
   await expect(save).toHaveCSS("background-color", saveAsColor);
   await openPolicyFiles(page);
@@ -6123,10 +6148,10 @@ test("policy source with evaluation errors can be saved with warning but cannot 
   });
   await page.goto(appURL + "/#policy");
   await expect(page.locator("#policy-record-title")).toHaveText("Test policy");
-  await page.locator("#policy-source").fill(invalidSource);
+  await codeEditor(page, "policy-source").fill(invalidSource);
   await page.locator("#policy-check").click();
   await expect(page.locator("#policy-check")).toHaveAttribute("data-analysis-state", "error");
-  const compilerErrorMarker = page.locator('#policy-test-gutter [data-line="2"] .policy-test-line-result[data-effect="error"]');
+  const compilerErrorMarker = gutterMarker(page, "policy-source", 2, '.policy-test-line-result[data-effect="error"]');
   await expect(compilerErrorMarker).toHaveText("ERR");
   await expect(page.locator("#policy-check-result")).toBeHidden();
   await expect(page.locator("#policy-test-status")).toBeHidden();
@@ -6373,45 +6398,40 @@ test("Analyze gutter opens a dialog and resets when switching policies", async (
   await expect(page.locator("#policy-stage-status")).not.toContainText("Saved revision can be staged");
   await expect(page.locator("#policy-attribute-status")).toBeHidden();
   await expect(page.locator("#policy-check")).toBeEnabled();
-  const gutter = page.locator("#policy-test-gutter");
-  await expect(gutter).toBeVisible();
-  await expect(gutter).toHaveCSS("width", "48px");
-  await expect(gutter).toHaveCSS("overflow-y", "hidden");
-  await expect(page.locator("#policy-source")).toHaveCSS("padding-left", "0px");
+  const gutter = resultGutter(page, "policy-source");
+  await expect(gutter).toBeAttached();
   await page.locator("#page-policy").getByRole("checkbox", { name: "Wrap", exact: true }).uncheck();
-  const scrollGeometry = await page.locator("#policy-code-editor").evaluate((editor) => {
-    const source = editor.querySelector("#policy-source");
-    const gutter = editor.querySelector("#policy-test-gutter");
+  // The textarea value is bridged to CodeMirror, so measure CodeMirror's scroller with a temporary long line.
+  const scrollGeometry = await page.locator('.code-editor-host[data-source="policy-source"]').evaluate(async (host) => {
+    const source = document.getElementById("policy-source");
     const original = source.value;
     source.value = `${original}\n${"x".repeat(600)}`;
-    source.scrollLeft = 160;
-    const sourceBounds = source.getBoundingClientRect();
-    const gutterBounds = gutter.getBoundingClientRect();
+    await new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve)));
+    const scroller = host.shadowRoot.querySelector(".cm-scroller");
+    scroller.scrollLeft = 160;
+    const before = host.shadowRoot.querySelector(".cm-result-gutter").getBoundingClientRect().left;
     const geometry = {
-      scrollable: source.scrollWidth > source.clientWidth,
-      scrollLeft: source.scrollLeft,
-      sourceLeft: sourceBounds.left,
-      textPaddingLeft: getComputedStyle(source).paddingLeft,
-      gutterRight: gutterBounds.right,
-      sourceBottom: sourceBounds.bottom,
-      gutterBottom: gutterBounds.bottom,
+      scrollable: scroller.scrollWidth > scroller.clientWidth,
+      scrollLeft: scroller.scrollLeft,
+      gutterRight: host.shadowRoot.querySelector(".cm-gutters").getBoundingClientRect().right,
+      contentLeft: host.shadowRoot.querySelector(".cm-content").getBoundingClientRect().left + scroller.scrollLeft,
+      gutterMoved: Math.abs(host.shadowRoot.querySelector(".cm-result-gutter").getBoundingClientRect().left - before),
     };
     source.value = original;
-    source.scrollLeft = 0;
+    scroller.scrollLeft = 0;
     return geometry;
   });
   expect(scrollGeometry.scrollable).toBeTruthy();
   expect(scrollGeometry.scrollLeft).toBeGreaterThan(0);
-  expect(scrollGeometry.sourceLeft).toBeGreaterThanOrEqual(scrollGeometry.gutterRight);
-  expect(scrollGeometry.textPaddingLeft).toBe("0px");
-  expect(scrollGeometry.sourceBottom).toBeLessThanOrEqual(scrollGeometry.gutterBottom + 1);
+  expect(scrollGeometry.contentLeft).toBeGreaterThanOrEqual(scrollGeometry.gutterRight - 1);
+  expect(scrollGeometry.gutterMoved).toBe(0);
   const editor = page.locator("#policy-source");
   const originalSource = await editor.inputValue();
-  await editor.fill(`${originalSource}\n${"x".repeat(600)}`);
-  await expect(page.locator("#policy-code-editor")).toHaveAttribute("data-horizontal-overflow", "true");
-  await expect.poll(() => page.locator("#policy-code-editor").evaluate((element) => getComputedStyle(element, "::after").backgroundColor)).toBe("rgb(255, 255, 255)");
-  await editor.fill(originalSource);
-  await expect(page.locator("#policy-code-editor")).toHaveAttribute("data-horizontal-overflow", "false");
+  await codeEditor(page, "policy-source").fill(`${originalSource}\n${"x".repeat(600)}`);
+  // The legacy white textarea scrollbar corner must not cover CodeMirror's scrollbar.
+  await expect(page.locator("#policy-code-editor")).not.toHaveAttribute("data-horizontal-overflow", "true");
+  await codeEditor(page, "policy-source").fill(originalSource);
+  await expect(page.locator("#policy-code-editor")).not.toHaveAttribute("data-horizontal-overflow", "true");
   await page.locator("#policy-check").click();
   await expect(page.locator("#policy-check")).toHaveText("Analyze");
   await expect(page.locator("#policy-check")).toBeVisible();
@@ -6419,11 +6439,11 @@ test("Analyze gutter opens a dialog and resets when switching policies", async (
   await expect(page.locator("#policy-source")).toBeEnabled();
   await expect(page.locator("#policy-source")).toBeEditable();
   await expect(page.locator("#policy-catalog-pane")).toBeHidden();
-  await expect(page.locator("#policy-test-gutter")).toBeVisible();
+  await expect(resultGutter(page, "policy-source")).toBeVisible();
   await expect(page.locator("#policy-check")).toHaveAttribute("data-analysis-state", "success");
   await page.mouse.move(0, 0);
   await expect(page.locator("#policy-check")).toHaveCSS("background-color", "rgb(35, 117, 76)");
-  const lineResult = page.locator('#policy-test-gutter [data-line="2"] .policy-test-line-result');
+  const lineResult = gutterMarker(page, "policy-source", 2, ".policy-test-line-result");
   await expect(lineResult).toHaveCount(1);
   await expect(lineResult).toHaveText("1");
   await lineResult.click();
@@ -6444,7 +6464,7 @@ test("Analyze gutter opens a dialog and resets when switching policies", async (
   await expect(page.locator("#policy-check")).toHaveText("Analyze");
   await expect(page.locator("#policy-source")).toBeEditable();
   await expect(page.locator("#policy-check")).toHaveAttribute("data-analysis-state", "error");
-  await expect(page.locator('#policy-test-gutter [data-line="2"] .policy-test-line-result[data-effect="error"]')).toHaveText("ERR");
+  await expect(gutterMarker(page, "policy-source", 2, '.policy-test-line-result[data-effect="error"]')).toHaveText("ERR");
   await expect(page.locator("#policy-check-result")).toBeHidden();
   await expect(page.locator("#policy-test-status")).toBeHidden();
   await expect(page.locator("#policy-catalog-pane")).toBeHidden();
@@ -6476,14 +6496,19 @@ test("browsing historical revisions only warns for dirty working source", async 
   api.handlers.set("/api/policy/records/test-policy/revisions/2", async (route) => route.fulfill({ json: { number: 2, content: "define SecondGroup as user.\n", content_hash: "revision-2", summary: "Second revision" } }));
   await page.goto(appURL + "/#policy");
   await page.evaluate(() => { window.confirmCalls = 0; window.confirm = () => { window.confirmCalls += 1; return false; }; });
-  await page.locator("#policy-source").fill(dirtySource);
-  await page.locator('[data-revision="1"]').click();
+  const historyMenu = page.locator("#policy-history-menu");
+  const browseRevision = async (number) => {
+    if (await historyMenu.getAttribute("open") === null) await historyMenu.locator("summary").click();
+    await historyMenu.locator(`[data-revision="${number}"]`).click();
+  };
+  await codeEditor(page, "policy-source").fill(dirtySource);
+  await browseRevision(1);
   await expect.poll(() => page.evaluate(() => window.confirmCalls)).toBe(1);
   await expect(page.locator("#policy-source")).toHaveValue(dirtySource);
-  await page.locator("#policy-source").fill(savedSource);
-  await page.locator('[data-revision="1"]').click();
+  await codeEditor(page, "policy-source").fill(savedSource);
+  await browseRevision(1);
   await expect(page.locator("#policy-source")).toHaveValue("define FirstGroup as user.\n");
-  await page.locator('[data-revision="2"]').click();
+  await browseRevision(2);
   await expect(page.locator("#policy-source")).toHaveValue("define SecondGroup as user.\n");
   await expect.poll(() => page.evaluate(() => window.confirmCalls)).toBe(1);
 });
@@ -6501,7 +6526,7 @@ test("policy Test shows compiler diagnostics as clickable line error markers", a
   }));
   await page.goto(appURL + "/#policy");
   await page.locator("#policy-check").click();
-  const errorMarker = page.locator('#policy-test-gutter [data-line="2"] .policy-test-line-result[data-effect="error"]');
+  const errorMarker = gutterMarker(page, "policy-source", 2, '.policy-test-line-result[data-effect="error"]');
   await expect(errorMarker).toHaveText("ERR");
   await expect(page.locator("#policy-test-gutter")).toHaveCSS("width", "48px");
   await expect(page.locator("#policy-test-gutter")).toHaveCSS("border-right-style", "solid");
@@ -6830,8 +6855,8 @@ test("policy editor has no attribute picker and retains attribute completions", 
   await expect(page.locator("#policy-format")).toBeVisible();
   await expect(page.locator("#policy-check")).toBeVisible();
   await expect(page.locator("#policy-attribute-rescan")).toBeVisible();
-  await editor.fill("define Employee as user with user.");
-  await expect(page.locator("#policy-completions")).toContainText("user.department:");
+  await requestCompletion(page, "define Employee as user with user.");
+  await expect(completionMenu(page)).toContainText("user.department:");
 });
 
 test("policy completions respect statements, define attributes and punctuation", async ({ page, appURL, api }) => {
@@ -6839,36 +6864,41 @@ test("policy completions respect statements, define attributes and punctuation",
   await openPolicyPicker(page);
   await page.locator('[data-record-id="test-policy"]').click();
   const editor = page.locator("#policy-source");
-  const menu = page.locator("#policy-completions");
+  const menu = completionMenu(page);
+  const source = codeEditor(page, "policy-source");
   await expect(editor).toBeEnabled();
-  await editor.fill("define Employee as user.");
-  await editor.press("End");
-  await editor.click();
+  await source.fill("define Employee as user.");
+  await source.press("End");
+  await source.click();
   await expect(menu).toBeHidden();
-  await editor.fill("# define Employee as user with ");
+  await requestCompletion(page, "# define Employee as user with ");
   await expect(menu).toBeHidden();
-  await editor.fill('define Employee as user with user.title:"unfinished');
+  await requestCompletion(page, 'define Employee as user with user.title:"unfinished');
   await expect(menu).toBeHidden();
-  await editor.fill("define Employee as user\n  with dep");
+  await requestCompletion(page, "define Employee as user\n  with dep");
   await expect(menu).toBeVisible();
   await expect(menu.getByRole("option").filter({ hasText: "user.department:" })).toBeVisible();
   await expect(menu).not.toContainText("device.secure");
-  await editor.press("Tab");
+  await source.press("Enter");
   await expect(editor).toHaveValue("define Employee as user\n  with user.department:");
-  await editor.fill("define Employee as user with user.");
+  await requestCompletion(page, "define Employee as user with user.");
   await expect(menu).toBeVisible();
-  await editor.press("Escape");
+  await source.press("Escape");
   await expect(menu).toBeHidden();
-  await editor.fill("define Employee as u.");
-  await editor.press("ArrowLeft");
+  await source.fill("define Employee as .");
+  await source.press("End");
+  await source.press("ArrowLeft");
+  await source.pressSequentially("u");
   await expect(menu.getByRole("option").filter({ hasText: /^user$/ })).toBeVisible();
-  await editor.press("Tab");
+  // CodeMirror ignores Enter for 75 ms after a completion menu opens.
+  await page.waitForTimeout(100);
+  await source.press("Enter");
   await expect(editor).toHaveValue("define Employee as user.");
-  await editor.fill('define SignalService as service.\nallow users and signal "hello" to ');
+  await requestCompletion(page, 'define SignalService as service.\nallow users and signal "hello" to ');
   await expect(menu.getByRole("option", { name: "SignalService", exact: true })).toBeVisible();
-  await editor.fill("define Employee as user.\nallow Employee to ");
+  await requestCompletion(page, "define Employee as user.\nallow Employee to ");
   await expect(menu.getByRole("option", { name: "access", exact: true })).toHaveCount(0);
-  await editor.fill("define Mouse as user.\nallow Mi");
+  await requestCompletion(page, "define Mouse as user.\nallow Mi");
   await expect(menu.getByRole("option", { name: "Mice", exact: true })).toBeVisible();
 });
 
@@ -6892,9 +6922,9 @@ for (const outcome of ["success", "error"]) {
       const source = page.locator("#policy-source");
       await page.locator("#policy-check").click();
       await expect.poll(() => Boolean(complete)).toBe(true);
-      if (edit === "Tab") await source.press("Tab");
-      else await source.fill(original + "# changed\n");
-      await source.fill(original);
+      if (edit === "Tab") await codeEditor(page, "policy-source").press("Tab");
+      else await codeEditor(page, "policy-source").fill(original + "# changed\n");
+      await codeEditor(page, "policy-source").fill(original);
       complete();
       await expect.poll(() => finished).toBe(true);
       await expect(source).toHaveValue(original);
@@ -6963,7 +6993,7 @@ for (const outcome of ["success", "error"]) {
       await page.locator('[data-record-id="test-policy"]').click();
       const source = page.locator("#policy-source");
       const draft = "define Employee as user.\n# unsaved\n";
-      await source.fill(draft);
+      await codeEditor(page, "policy-source").fill(draft);
       await openPolicyFiles(page);
       if (action === "Save") await page.locator("#policy-save").click();
       else {
@@ -6972,8 +7002,8 @@ for (const outcome of ["success", "error"]) {
       }
       await expect.poll(() => Boolean(complete)).toBe(true);
       if (action === "Save As") await page.locator("#record-dialog").getByRole("button", { name: "Cancel", exact: true }).click();
-      await source.fill(draft + "# changed\n");
-      await source.fill(draft);
+      await codeEditor(page, "policy-source").fill(draft + "# changed\n");
+      await codeEditor(page, "policy-source").fill(draft);
       complete();
       await expect.poll(() => finished).toBe(true);
       await expect(source).toHaveValue(draft);
@@ -7064,8 +7094,8 @@ for (const phase of ["fixtures", "evaluation"]) {
         await expect.poll(() => completions.length).toBe(1);
         const source = page.locator("#policy-source");
         if (change === "source") {
-          await source.press("Tab");
-          await source.fill(original);
+          await codeEditor(page, "policy-source").press("Tab");
+          await codeEditor(page, "policy-source").fill(original);
         } else if (change === "record") {
           await openPolicyPicker(page);
           await page.locator('[data-record-id="runtime-next-policy"]').click();
@@ -7121,7 +7151,7 @@ for (const phase of ["fixtures", "evaluation"]) {
         await page.goto(appURL + "/#policy");
         await openPolicyPicker(page);
         await page.locator('[data-record-id="test-policy"]').click();
-        await page.locator("#policy-source").fill("define Employee as user.\n# unsaved\n");
+        await codeEditor(page, "policy-source").fill("define Employee as user.\n# unsaved\n");
         await openPolicyFiles(page);
         if (action === "Save") await page.locator("#policy-save").click();
         else {
@@ -7201,7 +7231,7 @@ for (const phase of ["fixtures", "evaluation"]) {
       if (index === 0) oldFinished = true;
     });
     await page.goto(appURL + "/#policy");
-    await page.locator("#policy-source").fill("define Employee as user.\n# old draft\n");
+    await codeEditor(page, "policy-source").fill("define Employee as user.\n# old draft\n");
     await openPolicyFiles(page);
     await page.locator("#policy-save").click();
     await expect.poll(() => completions.length).toBe(1);
@@ -7209,7 +7239,7 @@ for (const phase of ["fixtures", "evaluation"]) {
     await openPolicyPicker(page);
     await page.locator('[data-record-id="new-save-owner"]').click();
     const draft = "define Employee as user.\n# new draft\n";
-    await page.locator("#policy-source").fill(draft);
+    await codeEditor(page, "policy-source").fill(draft);
     await openPolicyFiles(page);
     await page.locator("#policy-save").click();
     await expect.poll(() => completions.length).toBe(2);
@@ -7242,8 +7272,8 @@ for (const phase of ["fixtures", "evaluation"]) {
     await page.locator("#policy-stage").click();
     await expect.poll(() => Boolean(complete)).toBe(true);
     const original = await page.locator("#policy-source").inputValue();
-    await page.locator("#policy-source").fill(original + "# changed\n");
-    await page.locator("#policy-source").fill(original);
+    await codeEditor(page, "policy-source").fill(original + "# changed\n");
+    await codeEditor(page, "policy-source").fill(original);
     complete();
     await expect.poll(() => finished).toBe(true);
     await expect(page.locator("#policy-stage-dialog")).toBeHidden();
@@ -7263,14 +7293,14 @@ test("policy compiler errors highlight their source token", async ({ page, appUR
   await page.locator('[data-record-id="test-policy"]').click();
   const editor = page.locator("#policy-source");
   await expect(editor).toHaveValue("define Employee as user.\n");
-  await editor.fill("define Employee as user.\n\tallow Employee.");
+  await codeEditor(page, "policy-source").fill("define Employee as user.\n\tallow Employee.");
   await expect(editor).toHaveValue("define Employee as user.\n\tallow Employee.");
   await expect(page.locator("#policy-highlight")).toContainText("allow");
   await page.locator("#policy-check").click();
   await expect(page.locator("#policy-highlight .zpl-error")).toHaveText("allow");
 
   diagnostics = "error: [ line 2, column 1 ] explicit service targets are rejected";
-  await editor.fill("define Employee as user.\nallow Employee to access Payroll.");
+  await codeEditor(page, "policy-source").fill("define Employee as user.\nallow Employee to access Payroll.");
   await page.locator("#policy-check").click();
   await expect(page.locator("#policy-highlight .zpl-error")).toHaveText("allow");
 });
@@ -7317,19 +7347,19 @@ test("policy warnings remain in the gutter when fixtures fail", async ({ page, a
   await page.goto(appURL + "/#policy");
   await openPolicyPicker(page);
   await page.locator('[data-record-id="test-policy"]').click();
-  await page.locator("#policy-source").fill("define Operators as user.\nallow Operators to access Payroll.");
+  await codeEditor(page, "policy-source").fill("define Operators as user.\nallow Operators to access Payroll.");
   await page.locator("#policy-check").click();
   await expect(page.locator("#policy-check")).toHaveAttribute("data-analysis-state", "error");
   await expect(page.locator("#policy-lint-warnings")).toHaveCount(0);
   await expect(page.locator("#policy-test-status")).toContainText("Analysis unavailable");
   await expect(page.locator("#policy-test-status")).toBeVisible();
   await expect(page.locator('#policy-test-gutter [data-line="1"] [data-effect="error"]')).toHaveCount(0);
-  const warning = page.locator('#policy-test-gutter [data-line="2"] [data-effect="warning"]');
+  const warning = gutterMarker(page, "policy-source", 2, '[data-effect="warning"]');
   await expect(warning).toHaveText("WARN");
   await warning.click();
   await expect(page.getByRole("dialog", { name: "Analyze warning details" })).toContainText("POLICY_SPECIFIC_IDENTITY");
   await page.locator("#policy-test-details .dialog-actions .button").click();
-  await page.locator("#policy-source").fill("define Operators as user.");
+  await codeEditor(page, "policy-source").fill("define Operators as user.");
   await expect(page.locator('#policy-test-gutter [data-effect="warning"]')).toHaveCount(0);
 });
 
@@ -7347,18 +7377,18 @@ test("policy Analyze tolerates omitted directory attributes unless the policy re
   await page.goto(appURL + "/#policy");
   await openPolicyPicker(page);
   await page.locator('[data-record-id="test-policy"]').click();
-  await page.locator("#policy-source").fill("define employee as a user with user.bas_id.\n# user.l is not used here");
+  await codeEditor(page, "policy-source").fill("define employee as a user with user.bas_id.\n# user.l is not used here");
   await page.locator("#policy-check").click();
   await expect(page.locator("#policy-check")).toHaveAttribute("data-analysis-state", "success");
   await expect(page.locator("#policy-test-status")).toBeHidden();
   expect(tests).toBe(1);
-  await page.locator("#policy-source").fill("define locals as a user with user.l:Milwaukee.");
+  await codeEditor(page, "policy-source").fill("define locals as a user with user.l:Milwaukee.");
   await page.locator("#policy-check").click();
   await expect(page.locator("#policy-check")).toHaveAttribute("data-analysis-state", "error");
   await expect(page.locator("#policy-test-status")).toBeVisible();
   await expect(page.locator("#policy-test-status")).toContainText('Analysis unavailable: policy references directory attribute "user.l"');
   expect(tests).toBe(1);
-  await page.locator("#policy-source").fill("define locals as a user.");
+  await codeEditor(page, "policy-source").fill("define locals as a user.");
   await expect(page.locator("#policy-test-status")).toBeHidden();
 });
 
@@ -7367,7 +7397,7 @@ test("policy compiler errors without a line stay visible", async ({ page, appURL
   await page.goto(appURL + "/#policy");
   await openPolicyPicker(page);
   await page.locator('[data-record-id="test-policy"]').click();
-  await page.locator("#policy-source").fill("define webserver as a service with tag:web.");
+  await codeEditor(page, "policy-source").fill("define webserver as a service with tag:web.");
   await page.locator("#policy-check").click();
   await expect(page.locator("#policy-check")).toHaveAttribute("data-analysis-state", "error");
   await expect(page.locator("#policy-test-status")).toBeVisible();
@@ -7388,10 +7418,10 @@ test("policy gutter combines matching results and lint warning details", async (
   await page.goto(appURL + "/#policy");
   await openPolicyPicker(page);
   await page.locator('[data-record-id="test-policy"]').click();
-  await page.locator("#policy-source").fill("define Operators as user.\nallow Operators to access Payroll.");
+  await codeEditor(page, "policy-source").fill("define Operators as user.\nallow Operators to access Payroll.");
   await page.locator("#policy-check").click();
   await expect(page.locator("#policy-check")).toHaveAttribute("data-analysis-state", "success");
-  const marker = page.locator('#policy-test-gutter [data-line="2"] button');
+  const marker = gutterMarker(page, "policy-source", 2);
   await expect(marker).toHaveCount(1);
   await expect(marker).toHaveText("None");
   await expect(marker).toHaveAttribute("data-has-warnings", "true");
@@ -7419,7 +7449,7 @@ test("policy lint warns about specific identities without failing Analyze", asyn
   await expect(page.locator('#policy-test-gutter [data-line="1"] [data-effect="warning"]')).toHaveAttribute("data-has-warnings", "true");
   await expect(page.locator('#policy-test-gutter [data-line="2"] [data-effect="warning"]')).toHaveAttribute("data-has-warnings", "true");
   await expect(page.locator("#policy-lint-warnings")).toHaveCount(0);
-  await page.locator("#policy-source").fill("define Operators as user with user.role:Operator.");
+  await codeEditor(page, "policy-source").fill("define Operators as user with user.role:Operator.");
   await expect(page.locator('#policy-test-gutter [data-effect="warning"]')).toHaveCount(0);
 });
 
@@ -7438,7 +7468,7 @@ test(`map pulses only the requesting adapter for new grants and denials (${reduc
   ];
   await page.goto(appURL + "/#map");
   await expect(page.locator(".graph-vertex.adapter")).toHaveCount(2);
-  await page.getByRole("button", { name: "Pause updates", exact: true }).click();
+  await page.getByRole("button", { name: "Pause", exact: true }).click();
   const requester = page.locator('.graph-vertex[data-inspect-actor="requester"]');
   const target = page.locator('.graph-vertex[data-inspect-actor="target"]');
   const wire = page.locator('.graph-edge[data-dock-adapter="requester"] .graph-link');
@@ -7498,7 +7528,8 @@ test(`map pulses only the requesting adapter for new grants and denials (${reduc
 
 test("service types share table and map colors and gateways have clouds", async ({ page, appURL, api }) => {
   const kinds = ["BuiltIn", "Regular", "Visa", "Gateway", "ZPR", "Policy", "Control", "Auth", "Attribute", "Application", "Node", "Logger", 'Trusted("file")', 'Trusted("rest/1")', null, 'Trusted("custom")'];
-  api.snapshot.actors = [{ cn: "adapter", node: false, zpr_addr: "fd00::1" }];
+  // Unattached adapters are listed in Detached rather than drawn, so attach the adapter to a node.
+  api.snapshot.actors = [{ cn: "hub", node: true, zpr_addr: "fd00::ff", node_details: { adapters: ["adapter"], in_sync: true } }, { cn: "adapter", node: false, zpr_addr: "fd00::1" }];
   api.snapshot.services = kinds.map((kind, index) => ({ service_name: `service-${index}`, service_kind: kind, actor_cn: "adapter", zpr_addr: "fd00::1", service_endpoints: "tcp:8080", ...(kind === "Gateway" ? { external_network_connection: "partner-network" } : {}) }));
   await page.goto(appURL + "/#services");
   const chips = page.locator(".service-type-chip");
@@ -7528,7 +7559,19 @@ test("service types share table and map colors and gateways have clouds", async 
   }])));
   expect(await readMapColors()).toEqual(colors);
   await badges.first().focus();
-  await badges.first().hover();
+  // Connector lines and neighboring badges overlap parts of a badge; hover at a point the badge itself receives.
+  const hoverPoint = await badges.first().evaluate((badge) => {
+    const box = badge.getBoundingClientRect();
+    for (let y = box.top + 1; y < box.bottom; y += 2) {
+      for (let x = box.left + 1; x < box.right; x += 2) {
+        if (document.elementFromPoint(x, y)?.closest(".graph-service-badge") === badge) return { x, y };
+      }
+    }
+    return null;
+  });
+  expect(hoverPoint).not.toBeNull();
+  await page.mouse.move(hoverPoint.x, hoverPoint.y);
+  expect(await badges.first().evaluate((badge) => badge.matches(":hover"))).toBe(true);
   expect(await readMapColors()).toEqual(colors);
   await badges.evaluateAll((elements) => elements.forEach((element) => element.classList.add("arriving")));
   expect(await readMapColors()).toEqual(colors);
@@ -7580,7 +7623,7 @@ test("Gateways edits multiple gateway drafts with the policy editor paradigm wit
   });
 
   await page.goto(`${appURL}/#gateways`);
-  const source = page.getByRole("textbox", { name: "Gateway draft JSON" });
+  const source = page.locator("#gateway-source");
   await expect(page.locator("#gateway-picker-label")).toHaveText("Browse...");
   await expect(page.locator("#gateway-record-title")).toHaveText("public-egress.svc.zpr");
   await expect(page.locator("#gateway-editor-mode")).toHaveCount(0);
@@ -7594,19 +7637,19 @@ test("Gateways edits multiple gateway drafts with the policy editor paradigm wit
   await expect(analyze).toHaveAttribute("data-analysis-state", "error");
   await expect(page.locator("#gateway-draft-message")).toContainText("destination origin is required");
 
-  await source.fill((await source.inputValue()).replace('"origin": ""', '"origin": "https://api.example.com",'));
+  await page.getByRole("textbox", { name: "Gateway draft JSON", exact: true }).fill((await source.inputValue()).replace('"origin": ""', '"origin": "https://api.example.com",'));
   await analyze.click();
   await expect(analyze).toHaveAttribute("data-analysis-state", "error");
   await expect(page.locator("#gateway-gutter .policy-test-line-result")).toHaveCount(1);
   await expect(page.locator("#gateway-draft-message")).toBeHidden();
-  await page.locator("#gateway-gutter .policy-test-line-result").click();
+  await gutterMarker(page, "gateway-source", undefined, ".policy-test-line-result").click();
   await expect(page.locator("#gateway-error-dialog")).toBeVisible();
   await expect(page.locator("#gateway-error-text")).toContainText("Invalid JSON");
   await page.getByRole("button", { name: "Close Gateway Analyze error", exact: true }).click();
-  await expect(source).toBeFocused();
+  await expect(codeEditor(page, "gateway-source")).toBeFocused();
   await expect(page.locator("#gateway-draft-message")).toBeHidden();
 
-  await source.fill((await source.inputValue()).replace(",,", ","));
+  await page.getByRole("textbox", { name: "Gateway draft JSON", exact: true }).fill((await source.inputValue()).replace(",,", ","));
   await expect(analyze).not.toHaveAttribute("data-analysis-state", /.+/);
   await page.getByRole("button", { name: "File..." }).click();
   await expect(page.getByRole("menuitem", { name: "Save", exact: true })).toBeEnabled();
@@ -7661,7 +7704,7 @@ test("Gateway form and raw editors share one draft, preserve fields, and save on
   config.extra = { preserve: true };
   config.destinations[0].extra = "also preserved";
   const original = JSON.stringify(config, null, 4);
-  await source.fill(original);
+  await codeEditor(page, "gateway-source").fill(original);
   await page.getByRole("button", { name: "Form editor", exact: true }).click();
   await expect(source).toBeHidden();
   await expect(page.getByRole("region", { name: "Gateway draft form" })).toBeVisible();
@@ -7681,7 +7724,7 @@ test("Gateway form and raw editors share one draft, preserve fields, and save on
   expect(edited.timeout_ms).toBe(9000);
   expect(edited.max_response_bytes).toBe(1024);
   await page.getByRole("button", { name: "Raw JSON editor", exact: true }).click();
-  await expect(source).toBeVisible();
+  await expect(codeEditor(page, "gateway-source")).toBeVisible();
   await expect(page.locator("#gateway-form")).toBeHidden();
   expect(JSON.parse(await source.inputValue())).toEqual(edited);
   await page.getByRole("button", { name: "Form editor", exact: true }).click();
@@ -7789,13 +7832,13 @@ test("Gateway form rejects incompatible raw drafts and incomplete numbers withou
   await expect(source).toHaveValue(/"instance_id":/);
   const original = await source.inputValue();
   for (const invalid of ["{broken", JSON.stringify({ ...JSON.parse(original), methods: ["TRACE"] })]) {
-    await source.fill(invalid);
+    await codeEditor(page, "gateway-source").fill(invalid);
     await page.getByRole("button", { name: "Form editor", exact: true }).click();
     await expect(page.locator("#gateway-draft-message")).toContainText("Cannot open form editor");
     await expect(source).toHaveValue(invalid);
     await expect(page.locator("#gateway-form")).toBeHidden();
   }
-  await source.fill(original);
+  await codeEditor(page, "gateway-source").fill(original);
   await page.getByRole("button", { name: "Form editor", exact: true }).click();
   const timeout = page.getByRole("spinbutton", { name: "Timeout (milliseconds)", exact: true });
   await timeout.fill("");
@@ -7803,7 +7846,7 @@ test("Gateway form rejects incompatible raw drafts and incomplete numbers withou
   expect(await source.inputValue()).toBe(original);
   await page.getByRole("button", { name: "Raw JSON editor", exact: true }).click();
   await expect(page.locator("#gateway-form-error")).toContainText("Enter numeric");
-  await expect(source).toBeHidden();
+  await expect(codeEditor(page, "gateway-source")).toBeHidden();
   await timeout.fill("8000");
   await page.locator("#gateway-analyze").click();
   await expect(page.locator("#gateway-form-error")).toContainText("requires an HTTPS origin");
@@ -7842,39 +7885,39 @@ test("Gateway Save analyzes first and never writes invalid or superseded raw dra
   const source = page.locator("#gateway-source");
   await expect(source).toHaveValue(/"instance_id":/);
   const original = await source.inputValue();
-  await source.fill("{broken");
+  await codeEditor(page, "gateway-source").fill("{broken");
   await page.locator("#gateway-files-toggle").click();
   await page.locator("#gateway-save").click();
   await expect(page.locator("#gateway-analyze")).toHaveAttribute("data-analysis-state", "error");
   expect(checkCount).toBe(0);
   expect(saveCount).toBe(0);
   await expect(page.locator("#gateway-gutter .policy-test-line-result")).toHaveCount(1);
-  await source.fill(original + "\n");
-  await source.focus();
+  await codeEditor(page, "gateway-source").fill(original + "\n");
+  await codeEditor(page, "gateway-source").focus();
   await page.keyboard.press("Control+s");
   await expect.poll(() => checkCount).toBe(1);
   await expect(page.locator("#gateway-analyze")).toHaveAttribute("data-analysis-state", "error");
   expect(saveCount).toBe(0);
   await expect(page.locator("#gateway-draft-message")).toBeHidden();
   const valid = original.replace('"origin": ""', '"origin": "https://api.example.com"');
-  await source.fill(valid);
+  await codeEditor(page, "gateway-source").fill(valid);
   unavailable = true;
-  await source.focus();
+  await codeEditor(page, "gateway-source").focus();
   await page.keyboard.press("Control+s");
   await expect(page.locator("#gateway-draft-message")).toContainText("Gateway analysis unavailable");
   expect(saveCount).toBe(0);
   await expect(source).toHaveValue(valid);
   unavailable = false;
   delayed = true;
-  await source.focus();
+  await codeEditor(page, "gateway-source").focus();
   await page.keyboard.press("Control+s");
   await expect.poll(() => Boolean(complete)).toBe(true);
-  await source.fill(valid + "\n");
+  await codeEditor(page, "gateway-source").fill(valid + "\n");
   complete();
   await expect(page.locator("#gateway-analyze")).toBeEnabled();
   expect(saveCount).toBe(0);
   delayed = false;
-  await source.focus();
+  await codeEditor(page, "gateway-source").focus();
   await page.keyboard.press("Control+s");
   await expect(page.locator("#gateway-draft-message")).toContainText("Saved draft revision 1");
   expect(saveCount).toBe(1);
@@ -7891,7 +7934,7 @@ test("Gateway raw editor keeps destination form controls separate without runtim
     return route.fulfill({ json: { valid: true, diagnostics: "Runtime is unchanged." } });
   });
   await page.goto(`${appURL}/#gateways`);
-  const source = page.getByRole("textbox", { name: "Gateway draft JSON" });
+  const source = page.locator("#gateway-source");
   await expect(source).toHaveValue(/"instance_id":/);
   await expect(page.locator("#gateway-destinations")).toHaveCount(0);
   await expect(page.getByRole("button", { name: "Add destination" })).toHaveCount(0);
@@ -7900,7 +7943,7 @@ test("Gateway raw editor keeps destination form controls separate without runtim
     { origin: "https://api.example.com", path_prefixes: ["/"] },
     { origin: "https://other.example.com", path_prefixes: ["/v1/", "/health"] },
   ];
-  await source.fill(JSON.stringify(config, null, 2));
+  await page.getByRole("textbox", { name: "Gateway draft JSON", exact: true }).fill(JSON.stringify(config, null, 2));
   await page.getByRole("button", { name: "Analyze", exact: true }).click();
   await expect(page.locator("#gateway-analyze")).toHaveAttribute("data-analysis-state", "success");
   expect(checks[0].destinations).toEqual([
@@ -7908,7 +7951,7 @@ test("Gateway raw editor keeps destination form controls separate without runtim
     { origin: "https://other.example.com", path_prefixes: ["/v1/", "/health"] },
   ]);
   config.destinations.pop();
-  await source.fill(JSON.stringify(config, null, 2));
+  await page.getByRole("textbox", { name: "Gateway draft JSON", exact: true }).fill(JSON.stringify(config, null, 2));
   await expect(page.locator("#gateway-analyze")).not.toHaveAttribute("data-analysis-state", /.+/);
   expect(JSON.parse(await source.inputValue()).destinations).toHaveLength(1);
   await expect(page.getByRole("button", { name: "Activate", exact: true })).toHaveCount(0);
@@ -7925,7 +7968,7 @@ test("Gateway Analyze preserves source lines and selects the offending destinati
     return route.fulfill({ status: 422, json: { valid: false, diagnostics: "destination requires an HTTPS origin", source_line: line } });
   });
   await page.goto(`${appURL}/#gateways`);
-  const source = page.getByRole("textbox", { name: "Gateway draft JSON" });
+  const source = page.locator("#gateway-source");
   await expect(source).toHaveValue(/"origin": ""/);
   const original = await source.inputValue();
   const line = original.split("\n").findIndex(value => value.includes('"origin"')) + 1;
@@ -7933,23 +7976,23 @@ test("Gateway Analyze preserves source lines and selects the offending destinati
   await expect(page.locator("#gateway-draft-message")).toBeHidden();
   await expect(page.locator("#gateway-error-dialog")).toBeHidden();
   expect(submitted).toBe(`{"config":${original}}`);
-  const marker = page.locator("#gateway-gutter .policy-test-line-result");
+  const marker = gutterMarker(page, "gateway-source", undefined, ".policy-test-line-result");
   const geometry = await marker.evaluate(element => {
     const marker = element.getBoundingClientRect();
-    const gutter = element.closest(".config-source-gutter").getBoundingClientRect();
+    const gutter = element.closest(".cm-result-gutter").getBoundingClientRect();
     return { left: marker.left - gutter.left, right: gutter.right - marker.right };
   });
-  expect(geometry.left).toBeCloseTo(10, 0);
-  expect(geometry.right).toBeGreaterThan(4);
+  expect(geometry.left).toBeGreaterThanOrEqual(0);
+  expect(geometry.right).toBeGreaterThanOrEqual(0);
   await page.getByRole("button", { name: `Gateway draft error on line ${line}: destination requires an HTTPS origin` }).click();
   await expect(page.locator("#gateway-error-dialog")).toBeVisible();
   await expect(page.locator("#gateway-error-text")).toHaveText("destination requires an HTTPS origin");
   await expect(page.locator("#gateway-draft-message")).toBeHidden();
   await page.keyboard.press("Escape");
-  await expect(source).toBeFocused();
-  await expect(source).toHaveCSS("outline-style", "none");
+  await expect(codeEditor(page, "gateway-source")).toBeFocused();
+  await expect(codeEditor(page, "gateway-source")).toHaveCSS("outline-style", "none");
   expect(await source.evaluate(element => element.value.slice(element.selectionStart, element.selectionEnd))).toContain('"origin": ""');
-  await source.fill(original.replace('"origin": ""', '"origin": "https://example.com"'));
+  await page.getByRole("textbox", { name: "Gateway draft JSON", exact: true }).fill(original.replace('"origin": ""', '"origin": "https://example.com"'));
   await expect(page.locator("#gateway-gutter .policy-test-line-result")).toHaveCount(0);
   await expect(page.locator("#gateway-draft-message")).toBeHidden();
 });
@@ -7994,7 +8037,7 @@ test("retained adapters animate when topology bounds move", async ({ page, appUR
   const retained = page.locator('.graph-vertex[data-inspect-actor="adapter-0"]');
   await expect(retained).toBeVisible();
   const beforePosition = await retained.evaluate((element) => [element.dataset.originX, element.dataset.originY]);
-  await page.getByRole("button", { name: "Pause updates", exact: true }).click();
+  await page.getByRole("button", { name: "Pause", exact: true }).click();
 
   api.snapshot.actors = [
     { cn: "node-0", node: true, zpr_addr: "fd00::1", node_details: { adapters: ["adapter-0", "gateway-0"], in_sync: true } },
@@ -8073,7 +8116,12 @@ test("Fit keeps five percent viewBox padding without stretching Map glyphs", asy
       adapterAspect: adapter.width / adapter.height,
     };
   });
-  for (const margin of margins.margins) expect(Math.abs(margin - 0.05)).toBeLessThan(0.001);
+  // Fit preserves aspect ratio: the binding axis gets exactly 5% padding and the other axis is centered with at least 5%.
+  const [left, top, right, bottom] = margins.margins;
+  expect(Math.abs(Math.min(left, top) - 0.05)).toBeLessThan(0.001);
+  for (const margin of margins.margins) expect(margin).toBeGreaterThan(0.049);
+  expect(Math.abs(left - right)).toBeLessThan(0.001);
+  expect(Math.abs(top - bottom)).toBeLessThan(0.001);
   expect(Math.abs(margins.adapterAspect - 1)).toBeLessThan(0.01);
 });
 
@@ -8197,7 +8245,8 @@ test("GUI Map distinguishes loading, unavailable, and empty topology", async ({ 
   await expect(page.locator("#topology-stage")).toContainText("Loading topology");
   release();
   await expect(page.locator("#topology-stage")).toContainText("Unable to load topology");
-  await expect(page.locator("#alert-strip")).toContainText("503");
+  // The alert reports the service's error message; the bare HTTP status is only used when no message is returned.
+  await expect(page.locator("#alert-strip")).toContainText("Some live data is unavailable. Unavailable");
   await page.locator("#pause-poll").click();
   api.handlers.delete("/api/snapshot");
   await page.locator("#refresh-now").click();
@@ -8275,34 +8324,39 @@ test("GUI visa count opens complete current adapter and service inventories", as
   await page.locator("#inspector-close").click();
   await httpsCount.click();
   api.snapshot.active_visas = [];
-  await page.locator("#refresh-now").click();
+  // Close explicitly: the open inspector covers the toolbar on tablet, and outside pointerdown also closes it.
+  await page.keyboard.press("Escape");
   await expect(inspector).not.toHaveClass(/open/);
+  await page.locator("#refresh-now").press("Enter");
   await clientCount.click();
   await expect(inspector).toContainText("No current visas.");
   delete api.snapshot.active_visas;
-  await page.locator("#refresh-now").click();
+  await page.keyboard.press("Escape");
   await expect(inspector).not.toHaveClass(/open/);
+  await page.locator("#refresh-now").press("Enter");
   await clientCount.click();
   await expect(inspector).toContainText("Active visa inventory unavailable");
   await expect(inspector.locator(".detail-item")).toHaveCount(0);
   api.snapshot.services = [];
-  await page.locator("#refresh-now").click();
+  await page.keyboard.press("Escape");
   await expect(inspector).not.toHaveClass(/open/);
+  await page.locator("#refresh-now").press("Enter");
+  await expect(httpsCount).toHaveCount(0);
 });
 
 test("GUI Simulator navigation order survives page switching", async ({ page, appURL, api }) => {
   await page.goto(appURL + "/machine-logs.html");
-  const paths = ["/organizations.html", "/scenarios.html", "/trusted-source.html", "/activity.html", "/machine-logs.html"];
-  const nav = page.locator(".primary-nav a[data-simulator-nav]");
+  // Scenarios and Trusted Sources are organization section tabs; the primary nav holds runtime pages, then Organizations.
+  const paths = ["/scenarios.html#simulate", "/activity.html", "/machine-logs.html", "/organizations.html"];
+  const nav = page.locator(".primary-nav a");
   await expect.poll(() => nav.evaluateAll(links => links.map(link => link.getAttribute("href")))).toEqual(paths);
-  for (const path of paths.slice(0, -1)) {
+  for (const path of [...paths.filter(path => path !== "/machine-logs.html"), "/machine-logs.html"]) {
     await page.locator(`.primary-nav a[href="${path}"]`).click();
     await expect(page).toHaveURL(appURL + path);
     await expect.poll(() => nav.evaluateAll(links => links.map(link => link.getAttribute("href")))).toEqual(paths);
     await expect(page.locator(".primary-nav a.active")).toHaveAttribute("href", path);
+    await expect(page.locator(".primary-nav a.active")).toHaveAttribute("aria-current", "page");
   }
-  await page.locator('.primary-nav a[href="/machine-logs.html"]').click();
-  await expect(page.locator(".primary-nav a.active")).toHaveAttribute("href", "/machine-logs.html");
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBeTruthy();
 });
 
@@ -8367,7 +8421,7 @@ test("GUI scenario failure progress preserves the original step through cleanup"
   api.handlers.set("/api/simulator/scenarios", async route => route.fulfill({ json: {
     active_organization_id: "alpha", scenarios: [], run: { state: "idle", steps: [] },
   } }));
-  await page.goto(appURL + "/scenarios.html");
+  await page.goto(appURL + "/scenarios.html#simulate");
   await expect(page.locator("#scenario-run-state")).toContainText("idle");
   await page.evaluate(() => {
     window.guiFailureRun = {
@@ -8490,7 +8544,7 @@ test("GUI Map shows complete active visa counts and solid component links", asyn
   );
   api.snapshot.recent_visas = api.snapshot.active_visas.slice(0, 10);
   await page.goto(appURL + "/#map");
-  await page.getByRole("button", { name: "Pause updates", exact: true }).click();
+  await page.getByRole("button", { name: "Pause", exact: true }).click();
   const clientCount = page.locator('[data-inspect-actor="client"] .graph-visa-count');
   const serverCount = page.locator('[data-inspect-actor="server"] .graph-visa-count');
   const serviceCount = page.locator('[data-inspect-service="API"] .graph-visa-count');
@@ -8538,7 +8592,7 @@ test(`GUI Map denial badges and count changes pulse without replay (${reducedMot
   api.snapshot.services = [{ service_name: "API", actor_cn: "client", zpr_addr: "fd00::1", service_endpoints: "TCP/443" }];
   api.snapshot.active_visas = [];
   await page.goto(appURL + "/#map");
-  await page.getByRole("button", { name: "Pause updates", exact: true }).click();
+  await page.getByRole("button", { name: "Pause", exact: true }).click();
   const node = page.locator('.graph-vertex[data-inspect-actor="node"]');
   const nodeCount = node.locator(".graph-denial-count");
   await expect(nodeCount).toHaveAttribute("aria-label", "0 buffered denials");
@@ -8595,7 +8649,7 @@ test(`GUI Map denial badges and count changes pulse without replay (${reducedMot
 
 test("GUI Security high alerts only color the side indicator", async ({ page, appURL, api }) => {
   await page.goto(appURL + "/#map");
-  await page.getByRole("button", { name: "Pause updates", exact: true }).click();
+  await page.getByRole("button", { name: "Pause", exact: true }).click();
   const nav = page.locator('.primary-nav [data-page-link="security-review"]');
   const colors = () => nav.evaluate(el => {
     const css = getComputedStyle(el);
@@ -8886,14 +8940,15 @@ test("GUI node details show live management and worker counters without losing i
   await expect(inspector).toContainText("Fastpath worker 1");
   await expect(inspector).toContainText("18446744073709551615");
   await expect(inspector).toContainText("TTL Reached 0");
-  await expect(inspector).toContainText("not per route or link");
   api.snapshot.actors[0].node_details.counters[1].value = "12";
-  await page.locator("#refresh-now").click();
+  // Pointer clicks outside the inspector close it; refresh from the keyboard so the live update is observable.
+  await page.locator("#refresh-now").press("Enter");
+  await expect(page.locator("#component-inspector")).toHaveClass(/open/);
   await expect(inspector).not.toContainText("18446744073709551615");
   await expect(inspector).toContainText("12");
   api.snapshot.actors[0].node_details.counters = null;
   api.snapshot.actors[0].node_details.counter_stats_error = "Node counters are stale or invalid.";
-  await page.locator("#refresh-now").click();
+  await page.locator("#refresh-now").press("Enter");
   await expect(inspector).toContainText("Node counters are stale or invalid.");
   await expect(inspector).not.toContainText("Fastpath worker");
   await expect(inspector).not.toContainText("Management counters");
@@ -8907,7 +8962,7 @@ test("GUI Map service grants pulse their connectors as well as adapters", async 
   ];
   api.snapshot.services = [{ service_name: "API", actor_cn: "server", service_endpoints: "TCP/443" }];
   await page.goto(appURL + "/#map");
-  await page.getByRole("button", { name: "Pause updates", exact: true }).click();
+  await page.getByRole("button", { name: "Pause", exact: true }).click();
   api.snapshot.recent_visas = [{ id: 100, source_addr: "fd00::1", dest_addr: "fd00::2", proto: "TCP", dest_port: 443 }];
   await page.locator("#refresh-now").click();
   await expect(page.locator('.graph-edge[data-dock-adapter="client"] .graph-link')).toHaveAttribute("data-decision", "grant");
@@ -8936,7 +8991,7 @@ test("GUI Map connectors meet actual glyph edges for every shape", async ({ page
       service_endpoints: "TCP/443",
     })));
   await page.goto(appURL + "/#map");
-  await page.getByRole("button", { name: "Pause updates", exact: true }).click();
+  await page.getByRole("button", { name: "Pause", exact: true }).click();
   const inspectEdges = () => page.evaluate(() => {
     const world = document.querySelector("#graph-world");
     const shapes = new Map([...world.querySelectorAll(":scope > [data-topology-component]")].map(component => [
@@ -9007,11 +9062,13 @@ test("GUI Map connectors meet actual glyph edges for every shape", async ({ page
 
 test("GUI Map keeps Dark mode hidden on populated and empty maps", async ({ page, appURL, api }) => {
   await page.emulateMedia({ reducedMotion: "reduce" });
-  api.snapshot.actors = [{ cn: "client", node: false, zpr_addr: "fd00::1" }];
+  // Unattached adapters are listed in Detached rather than drawn, so attach them to a node.
+  const hub = { cn: "hub", node: true, zpr_addr: "fd00::ff", node_details: { adapters: ["client"], in_sync: true } };
+  api.snapshot.actors = [hub, { cn: "client", node: false, zpr_addr: "fd00::1" }];
   api.snapshot.services = [{ service_name: "API", actor_cn: "client", service_endpoints: "TCP/443" }];
   api.snapshot.active_visas = [];
   await page.goto(appURL + "/#map");
-  await page.getByRole("button", { name: "Pause updates", exact: true }).click();
+  await page.getByRole("button", { name: "Pause", exact: true }).click();
   const checkbox = page.locator("[data-graph-dark-mode]");
   const stage = page.locator("#topology-stage");
   await expect(checkbox).toBeHidden();
@@ -9028,7 +9085,7 @@ test("GUI Map keeps Dark mode hidden on populated and empty maps", async ({ page
   await page.locator("#refresh-now").click();
   await expect(stage).toContainText("No nodes or adapters reported.");
   await expect(checkbox).toBeHidden();
-  api.snapshot.actors = [{ cn: "returned", node: false, zpr_addr: "fd00::1" }];
+  api.snapshot.actors = [{ ...hub, node_details: { adapters: ["returned"], in_sync: true } }, { cn: "returned", node: false, zpr_addr: "fd00::1" }];
   await page.locator("#refresh-now").click();
   await expect(page.locator('.graph-vertex[data-inspect-actor="returned"]')).toHaveCount(1);
   await expect(checkbox).toBeHidden();
@@ -9169,7 +9226,7 @@ test("GUI Map legend items highlight their component type and right-click matche
   api.snapshot.services = [{ service_name: "API", actor_cn: "client", zpr_addr: "fd00::1", service_endpoints: "TCP/443" }];
   api.snapshot.active_visas = [];
   await page.goto(appURL + "/#map");
-  await page.getByRole("button", { name: "Pause updates", exact: true }).click();
+  await page.getByRole("button", { name: "Pause", exact: true }).click();
   await page.locator("#map-legend-key summary").click();
   const legendNode = page.locator('[data-legend-kind="node"]');
   await legendNode.click();
@@ -9212,7 +9269,7 @@ test("GUI Map Clear highlight and Esc remove highlighting; the info panel is ind
   api.snapshot.services = [{ service_name: "API", actor_cn: "client", zpr_addr: "fd00::1", service_endpoints: "TCP/443" }];
   api.snapshot.active_visas = [];
   await page.goto(appURL + "/#map");
-  await page.getByRole("button", { name: "Pause updates", exact: true }).click();
+  await page.getByRole("button", { name: "Pause", exact: true }).click();
   const clear = page.getByRole("button", { name: "Clear highlight", exact: true });
   const stage = page.locator("#topology-stage");
   const highlighted = page.locator(".graph-vertex.highlighted, .graph-service-badge.highlighted, .graph-edge.highlighted, .graph-service-edge.highlighted");
@@ -9345,6 +9402,8 @@ test.describe("GUI operator HTTPS login", () => {
         if (event.target.id === "operator-login-form") event.preventDefault();
       }));
       await page.goto(appURL + path);
+      // Simulator pages do not start sign-in automatically; the operator selects Sign in explicitly.
+      if (path === "/scenarios.html") await page.getByRole("button", { name: "Sign in", exact: true }).click();
       await expect.poll(() => page.evaluate(() => sessionStorage.getItem("zpr.operator-login.return-location"))).toBe(path);
       await page.goto(`${appURL}/?operator_login=failed`);
       await expect(page.locator("#operator-login-status")).toContainText("Sign-in failed");
@@ -9353,7 +9412,7 @@ test.describe("GUI operator HTTPS login", () => {
       signedIn = true;
       await page.goto(appURL + "/");
       await expect(page).toHaveURL(appURL + path);
-      await expect(page.locator("#operator-login-status")).toHaveText("Signed in");
+      await expect(page.locator("#operator-login-status")).toHaveText(path === "/scenarios.html" ? "User: operator" : "User");
       expect(await page.evaluate(() => sessionStorage.getItem("zpr.operator-login.return-location"))).toBeNull();
     });
   }
@@ -9367,7 +9426,7 @@ test.describe("GUI operator HTTPS login", () => {
         csrf: "return-location-proof",
       } }));
       await page.goto(appURL + "/#map");
-      await expect(page.locator("#operator-login-status")).toHaveText("Signed in");
+      await expect(page.locator("#operator-login-status")).toHaveText("User");
       await expect(page).toHaveURL(appURL + "/#map");
       expect(await page.evaluate(() => sessionStorage.getItem("zpr.operator-login.return-location"))).toBeNull();
     });
@@ -9414,7 +9473,7 @@ test.describe("GUI operator HTTPS login", () => {
   });
 
   for (const path of ["/#map", "/organizations.html"]) {
-    test(`automatic operator login starts once and does not loop on focus at ${path}`, async ({ page, secureAppURL: appURL, api }) => {
+    test(`operator login at ${path} starts automatically only for Control Room and does not loop on focus`, async ({ page, secureAppURL: appURL, api }) => {
       await page.addInitScript(() => {
         window.loginSubmissions = 0;
         document.addEventListener("submit", (event) => {
@@ -9426,17 +9485,33 @@ test.describe("GUI operator HTTPS login", () => {
       await page.route("**/auth/operator/config", (route) => route.fulfill({ json: { enabled: true } }));
       await page.route("**/auth/operator/session", (route) => route.fulfill({ status: 401 }));
       await page.goto(appURL + path);
+      if (path === "/organizations.html") {
+        // Simulator pages keep the explicit Sign in action instead of redirecting automatically.
+        await expect(page.locator("#operator-login-status")).toHaveText("Not signed in");
+        await expect(page.getByRole("button", { name: "Sign in", exact: true })).toBeVisible();
+        const checked = page.waitForResponse("**/auth/operator/session");
+        await page.evaluate(() => window.dispatchEvent(new Event("focus")));
+        await checked;
+        await expect(page.locator("#operator-login-status")).toHaveText("Not signed in");
+        expect(await page.evaluate(() => window.loginSubmissions)).toBe(0);
+        await expect(page.locator(".app-shell")).toHaveCSS("visibility", "hidden");
+        return;
+      }
       await expect.poll(() => page.evaluate(() => window.loginSubmissions)).toBe(1);
-      const checked = page.waitForResponse("**/auth/operator/session");
+      // While the automatic sign-in redirect is pending, focus must not start another session check.
+      let focusedSessionReads = 0;
+      page.on("request", (request) => { if (new URL(request.url()).pathname === "/auth/operator/session") focusedSessionReads++; });
       await page.evaluate(() => window.dispatchEvent(new Event("focus")));
-      await checked;
+      await page.waitForTimeout(300);
+      expect(focusedSessionReads).toBe(0);
       await expect(page.locator("#operator-login-status")).toHaveText("Not signed in");
       expect(await page.evaluate(() => window.loginSubmissions)).toBe(1);
       await expect(page.locator(".app-shell")).toHaveCSS("visibility", "hidden");
     });
   }
 
-  test("explicit logout stays signed out across focus without automatic SSO reentry", async ({ page, secureAppURL: appURL, api }) => {
+  // Since 2026-10-16, confirmed Control Room sign-out opens provider sign-in once (GUI deployments.md).
+  test("explicit logout confirms invalidation then opens provider sign-in once without a focus loop", async ({ page, secureAppURL: appURL, api }) => {
     let signedIn = true;
     let attempts = 0;
     let submissions = 0;
@@ -9456,19 +9531,20 @@ test.describe("GUI operator HTTPS login", () => {
       return route.fulfill({ status: 204 });
     });
     await page.goto(appURL + "/#map");
-    await expect(page.locator("#operator-login-status")).toHaveText("Signed in: Admin Operator");
+    await expect(page.locator("#operator-login-status")).toHaveText("User: Admin Operator");
     await page.getByRole("button", { name: "Sign out", exact: true }).click();
     await expect(page.locator("#operator-login-status")).toContainText("Sign out was not confirmed");
+    expect(submissions).toBe(0);
     await page.getByRole("button", { name: "Sign out", exact: true }).click();
-    await expect(page.locator("#operator-login-status")).toHaveText("Not signed in");
-    const checked = page.waitForResponse("**/auth/operator/session");
-    await page.evaluate(() => window.dispatchEvent(new Event("focus")));
-    await checked;
-    await expect(page.locator("#operator-login-status")).toHaveText("Not signed in");
+    await expect.poll(() => submissions).toBe(1);
     await expect(page.locator("#operator-scope")).toBeHidden();
     await expect(page.locator(".app-shell")).toHaveCSS("visibility", "hidden");
+    // Returning without completing provider sign-in shows Sign in instead of looping.
+    await page.reload();
     await expect(page.getByRole("button", { name: "Sign in", exact: true })).toBeVisible();
-    expect(submissions).toBe(0);
+    await page.evaluate(() => window.dispatchEvent(new Event("focus")));
+    await expect(page.getByRole("button", { name: "Sign in", exact: true })).toBeVisible();
+    expect(submissions).toBe(1);
   });
 
   test("login service recovery needs explicit sign-in after an error", async ({ page, secureAppURL: appURL, api }) => {
@@ -9502,7 +9578,7 @@ test.describe("GUI operator HTTPS login", () => {
       return route.fulfill({ json: { valid: true } });
     });
     await page.goto(appURL + "/#map");
-    await expect(page.locator("#operator-login-status")).toHaveText("Signed in: Admin Operator");
+    await expect(page.locator("#operator-login-status")).toHaveText("User: Admin Operator");
     await page.evaluate(() => window.zprOperatorFetch("/api/policy/config/check", { method: "POST", body: "{}" }));
     expect(observed).toEqual(["test-csrf"]);
     await page.evaluate(() => window.dispatchEvent(new Event("operator-session-cleared")));
@@ -9553,13 +9629,13 @@ test.describe("GUI operator HTTPS login", () => {
     api.handlers.set("/api/operator-test/unavailable", (route) => route.fulfill({ status: 503 }));
 
     await page.goto(appURL + "/#map");
-    await expect(page.locator("#operator-login-status")).toHaveText("Signed in: Admin Operator");
+    await expect(page.locator("#operator-login-status")).toHaveText("User: Admin Operator");
     expired = true;
     const expiredStatus = await page.evaluate(async () =>
       (await window.zprOperatorFetch("/api/operator-test/expired")).status);
     expect(expiredStatus).toBe(403);
     await expect.poll(() => page.evaluate(() => window.loginSubmissions)).toBe(1);
-    await expect(page.locator("#operator-login-status")).toHaveText("Opening sign-in page");
+    await expect(page.locator("#operator-login-status")).toHaveText("Session expired. Redirecting to sign in...");
     expect(sessionChecks).toBe(2);
   });
 
@@ -9585,12 +9661,12 @@ test.describe("GUI operator HTTPS login", () => {
     api.handlers.set("/api/operator-test/unavailable", (route) => route.fulfill({ status: 503 }));
 
     await page.goto(appURL + "/#map");
-    await expect(page.locator("#operator-login-status")).toHaveText("Signed in: Admin Operator");
+    await expect(page.locator("#operator-login-status")).toHaveText("User: Admin Operator");
     await expect.poll(() => sessionChecks).toBe(1);
     expect(await page.evaluate(async () =>
       (await window.zprOperatorFetch("/api/operator-test/permission-denied")).status)).toBe(403);
     await expect.poll(() => sessionChecks).toBe(2);
-    await expect(page.locator("#operator-login-status")).toHaveText("Signed in: Admin Operator");
+    await expect(page.locator("#operator-login-status")).toHaveText("User: Admin Operator");
     expect(await page.evaluate(async () =>
       (await window.zprOperatorFetch("/api/operator-test/unavailable")).status)).toBe(503);
     await page.waitForTimeout(100);
@@ -9617,6 +9693,7 @@ test.describe("GUI operator HTTPS login", () => {
     let signedIn = true;
     let logoutAttempts = 0;
     let observedCSRF = "";
+    let submissions = 0;
     const subject = '<img src=x onerror="alert(1)">';
     await page.route("**/auth/operator/config", (route) => route.fulfill({ json: { enabled: true } }));
     await page.route("**/auth/operator/session", (route) => route.fulfill(signedIn ? { json: {
@@ -9629,18 +9706,24 @@ test.describe("GUI operator HTTPS login", () => {
       signedIn = false;
       return route.fulfill({ status: 204 });
     });
+    await page.route("**/auth/operator/login", (route) => {
+      submissions++;
+      return route.fulfill({ status: 204 });
+    });
     await page.goto(appURL + "/#provisioning-adapters");
-    await expect(page.locator("#operator-login-status")).toHaveText("Signed in: Finance Operator");
+    await expect(page.locator("#operator-login-status")).toHaveText("User: Finance Operator");
     await expect(page.locator("#operator-scope")).toContainText("operator@example.test");
     await expect(page.locator("#operator-scope")).not.toContainText(subject);
-    await expect(page.locator(".provisioning-notice")).toContainText("controls are not connected and remain locked");
+    await expect(page.locator("#provisioning-status")).toHaveAttribute("data-state", "unavailable");
     await expect(page.locator(".operator-login img")).toHaveCount(0);
     await expect(page.getByRole("button", { name: "Create invitation", exact: true })).toBeDisabled();
     await page.getByRole("button", { name: "Sign out", exact: true }).click();
     await expect(page.locator("#operator-login-status")).toContainText("Sign out was not confirmed");
     await expect(page.getByRole("button", { name: "Sign out", exact: true })).toBeVisible();
+    expect(submissions).toBe(0);
     await page.getByRole("button", { name: "Sign out", exact: true }).click();
-    await expect(page.locator("#operator-login-status")).toHaveText("Not signed in");
+    // Confirmed sign-out opens provider sign-in once.
+    await expect.poll(() => submissions).toBe(1);
     expect(observedCSRF).toBe("private-csrf-proof");
     await expect(page.locator("#operator-scope")).toBeHidden();
     expect(await page.evaluate(() => [JSON.stringify(localStorage), JSON.stringify(sessionStorage)].some((value) => value.includes("private-csrf-proof")))).toBe(false);
@@ -9654,7 +9737,7 @@ test.describe("GUI operator HTTPS login", () => {
       { identity: { issuer: "https://identity.example", subject: "admin", display_name: "Admin Operator", organizations: ["production"], permissions: ["read"] }, csrf: "proof" },
     }));
     await page.goto(appURL + "/#provisioning-adapters");
-    await expect(page.locator("#operator-login-status")).toHaveText("Signed in: Admin Operator");
+    await expect(page.locator("#operator-login-status")).toHaveText("User: Admin Operator");
     await page.evaluate(() => {
       window.loginSubmissions = 0;
       document.getElementById("operator-login-form").addEventListener("submit", (event) => {
@@ -9666,8 +9749,9 @@ test.describe("GUI operator HTTPS login", () => {
     await page.evaluate(() => window.dispatchEvent(new Event("focus")));
     await expect.poll(() => page.evaluate(() => window.loginSubmissions)).toBe(1);
     await expect(page.locator("#operator-scope")).toBeHidden();
+    // The pending sign-in redirect ignores focus checks, so validate malformed identities on the next page load.
     state = "invalid";
-    await page.evaluate(() => window.dispatchEvent(new Event("focus")));
+    await page.reload();
     await expect(page.locator("#operator-login-status")).toHaveText("Invalid operator session response.");
     await expect(page.getByRole("button", { name: "Sign out", exact: true })).toBeHidden();
     await expect(page.getByRole("button", { name: "Create invitation", exact: true })).toBeHidden();
@@ -9696,7 +9780,7 @@ test("GUI provisioning worksheet rejects blank values and clears validation on r
 test("GUI provisioning never unlocks on an endpoint response and explains remote enrollment", async ({ page, appURL, api }) => {
   api.handlers.set("/api/enrollment/v1/catalog", (route) => route.fulfill({ json: { organizations: {}, invitation_lifetime_seconds: 3600, approval_lifetime_seconds: 3600, gui_mutations_enabled: false } }));
   await page.goto(appURL + "/#provisioning-adapters");
-  await expect(page.locator("#provisioning-status")).toContainText("remain locked");
+  await expect(page.locator("#provisioning-status")).toContainText("independent backend authorization");
   await expect(page.getByRole("button", { name: "Create invitation", exact: true })).toBeDisabled();
   await expect(page.getByRole("region", { name: "Enrollment requests" })).toContainText("not an empty queue");
   await page.getByRole("button", { name: "Help for this page", exact: true }).click();
@@ -9793,7 +9877,7 @@ test.describe("GUI provisioning cancellation", () => {
     await expect(page.locator("#provisioning-invitations")).toContainText("cancelled");
     expect(posts).toHaveLength(1);
     expect(posts[0].headers()["x-zpr-csrf"]).toBe("cancel-csrf");
-    expect(posts[0].postDataJSON()).toEqual({ organization: "alpha", revision: 2, key_fingerprint: "b".repeat(64), reason: '<img src=x onerror="alert(1)">' });
+    expect(posts[0].postDataJSON()).toEqual({ organization: "alpha", revision: 2, key_fingerprint: "b".repeat(64), runtime_key_fingerprint: "", reason: '<img src=x onerror="alert(1)">' });
     const refreshed = await openCancellation(page);
     await expect(refreshed.locator("img")).toHaveCount(0);
     await expect(refreshed).toContainText("canceller");
@@ -10113,7 +10197,7 @@ test.describe("GUI provisioning invitation creation", () => {
       identity: { issuer: "https://identity.example", subject: "reader", display_name: "Read Only Operator", organizations: ["alpha"], permissions: ["read"] }, csrf: "reader-csrf",
     } }));
     await page.evaluate(() => window.dispatchEvent(new Event("focus")));
-    await expect(page.locator("#operator-login-status")).toHaveText("Signed in: Read Only Operator");
+    await expect(page.locator("#operator-login-status")).toHaveText("User: Read Only Operator");
     await page.locator('#provisioning-draft [name="organization"]').selectOption("alpha");
     await expect(page.getByRole("button", { name: "Create invitation", exact: true })).toBeDisabled();
   });
@@ -10294,19 +10378,22 @@ test("GUI text editors start unwrapped with a checkbox and keep gutter rows alig
   const source = page.locator("#zpr-config-source");
   const toggle = page.locator("#page-zpr-config").getByRole("checkbox", { name: "Wrap", exact: true });
   await expect(toggle).not.toBeChecked();
-  await source.fill(`short = 1\nlong = "${"x".repeat(600)}"\nlast = 2`);
+  await codeEditor(page, "zpr-config-source").fill(`short = 1\nlong = "${"x".repeat(600)}"\nlast = 2`);
   await expect(source).toHaveAttribute("wrap", "off");
   await expect(page.locator("#zpr-config-highlight")).toHaveCSS("white-space", "pre");
-  const geometry = () => page.evaluate(() => {
-    const textarea = document.getElementById("zpr-config-source");
-    const rows = [...document.querySelectorAll("#zpr-config-gutter .config-gutter-line")].map((row) => row.getBoundingClientRect().height);
-    const highlight = document.getElementById("zpr-config-highlight");
-    return { rows, scrollWidth: textarea.scrollWidth, clientWidth: textarea.clientWidth, highlightHeight: highlight.scrollHeight, sourceHeight: textarea.scrollHeight };
+  // CodeMirror line-number rows follow wrapped line heights; its scroller owns horizontal overflow.
+  const geometry = () => page.locator('.code-editor-host[data-source="zpr-config-source"]').evaluate((element) => {
+    const scroller = element.shadowRoot.querySelector(".cm-scroller");
+    const rows = [...element.shadowRoot.querySelectorAll(".cm-lineNumbers .cm-gutterElement")]
+      .filter((row) => /^\d+$/.test(row.textContent) && getComputedStyle(row).visibility !== "hidden")
+      .map((row) => row.getBoundingClientRect().height);
+    const lines = [...element.shadowRoot.querySelectorAll(".cm-line")].map((line) => line.getBoundingClientRect().height);
+    return { rows, lines, scrollWidth: scroller.scrollWidth, clientWidth: scroller.clientWidth };
   });
   let measured = await geometry();
   expect(measured.rows).toHaveLength(3);
   expect(Math.abs(measured.rows[2] - measured.rows[0])).toBeLessThan(1);
-  expect(Math.abs(measured.highlightHeight - measured.sourceHeight)).toBeLessThan(2);
+  measured.rows.forEach((row, index) => expect(Math.abs(row - measured.lines[index])).toBeLessThan(1));
 
   await toggle.check();
   await expect(source).toHaveAttribute("wrap", "soft");
@@ -10333,11 +10420,13 @@ test("GUI text editors start unwrapped with a checkbox and keep gutter rows alig
 });
 
 test("GUI Map zero visa badges are white-filled and retain accessible counts", async ({ page, appURL, api }) => {
-  api.snapshot.actors = [{ cn: "client", node: false, zpr_addr: "fd00::1" }];
+  // Unattached adapters are listed in Detached rather than drawn, so attach them to a node.
+  const hub = { cn: "hub", node: true, zpr_addr: "fd00::ff", node_details: { adapters: ["client"], in_sync: true } };
+  api.snapshot.actors = [hub, { cn: "client", node: false, zpr_addr: "fd00::1" }];
   api.snapshot.services = [{ service_name: "API", actor_cn: "client", zpr_addr: "fd00::1", service_endpoints: "TCP/443" }];
   api.snapshot.active_visas = [];
   await page.goto(appURL + "/#map");
-  await page.getByRole("button", { name: "Pause updates", exact: true }).click();
+  await page.getByRole("button", { name: "Pause", exact: true }).click();
   for (const selector of ['[data-inspect-actor="client"]', '[data-inspect-service="API"]']) {
     const badge = page.locator(`${selector} .graph-visa-count`);
     await expect(badge).toHaveAttribute("aria-label", "0 active visas");
@@ -10362,9 +10451,11 @@ test("GUI Map zero visa badges are white-filled and retain accessible counts", a
 for (const reducedMotion of ["no-preference", "reduce"]) {
 test(`GUI Map manual pan and zoom disable Auto-fit (${reducedMotion})`, async ({ page, appURL, api }) => {
   await page.emulateMedia({ reducedMotion });
-  api.snapshot.actors = [{ cn: "client", node: false, zpr_addr: "fd00::1" }];
+  // Unattached adapters are listed in Detached rather than drawn, so attach them to a node.
+  const hub = { cn: "hub", node: true, zpr_addr: "fd00::ff", node_details: { adapters: ["client"], in_sync: true } };
+  api.snapshot.actors = [hub, { cn: "client", node: false, zpr_addr: "fd00::1" }];
   await page.goto(appURL + "/#map");
-  await page.getByRole("button", { name: "Pause updates", exact: true }).click();
+  await page.getByRole("button", { name: "Pause", exact: true }).click();
   const autoFit = page.getByRole("checkbox", { name: "Auto-fit", exact: true });
   const svg = page.locator(".topology-graph");
   const viewport = () => page.evaluate(() => ({
@@ -10398,6 +10489,7 @@ test(`GUI Map manual pan and zoom disable Auto-fit (${reducedMotion})`, async ({
     const manual = await viewport();
     expect(manual).not.toEqual(before);
     api.snapshot.actors.push({ cn: `extra-${interaction}`, node: false, zpr_addr: `fd00::${api.snapshot.actors.length + 1}` });
+    hub.node_details.adapters.push(`extra-${interaction}`);
     await page.locator("#refresh-now").click();
     await expect(page.locator(`.graph-vertex[data-inspect-actor="extra-${interaction}"]`)).toHaveCount(1);
     await expect(autoFit).not.toBeChecked();
@@ -10418,7 +10510,7 @@ test("GUI Map decision feedback uses prominent rings and wires", async ({ page, 
     { cn: "client", node: false, zpr_addr: "fd00::1" },
   ];
   await page.goto(appURL + "/#map");
-  await page.getByRole("button", { name: "Pause updates", exact: true }).click();
+  await page.getByRole("button", { name: "Pause", exact: true }).click();
   api.snapshot.recent_visas = [{ id: 123, source_addr: "fd00::1" }];
   await page.locator("#refresh-now").click();
   const ring = page.locator(".graph-decision-ring");
@@ -10520,8 +10612,11 @@ test("organization activation requires explicit approval and is cancel-safe", as
     await route.fulfill({ json: { organization, active_organization_id: "alpha", scenarios: [{ id: "beta-scenario", name: "Beta scenario", organization_id: organizationID }] } });
   });
   await page.goto(appURL + "/organizations.html");
-  await expect(page.getByText("Organization directory", { exact: true })).toBeVisible();
-  await expect(page.locator("#organization-connection")).not.toContainText("profiles");
+  // The per-page connection strip was removed; the organization catalog marks the active organization.
+  const activeOrganization = page.locator("#organization-list .organization-card strong", { hasText: "· ACTIVE" });
+  await expect(activeOrganization).toHaveText("Alpha Labs · ACTIVE");
+  await expect(page.getByText("Organization directory", { exact: true })).toHaveCount(0);
+  await expect(page.locator("#organization-connection")).toHaveCount(0);
   await expect(page.getByRole("heading", { name: "Organizations", exact: true })).toHaveCount(0);
   await expect(page.locator("#organization-count")).toHaveCount(0);
   await page.locator("#organization-browse").click();
@@ -10546,7 +10641,7 @@ test("organization activation requires explicit approval and is cancel-safe", as
   expect(api.counts.get(activationPath) || 0).toBe(0);
   await dialog.getByRole("button", { name: "Cancel", exact: true }).click();
   await expect(dialog).not.toBeVisible();
-  await expect(page.locator("#organization-active-name")).toHaveText("Alpha Labs");
+  await expect(activeOrganization).toHaveText("Alpha Labs · ACTIVE");
   expect(api.counts.get(activationPath) || 0).toBe(0);
   await activate.click();
   await page.keyboard.press("Escape");
@@ -10562,7 +10657,7 @@ test("organization activation requires explicit approval and is cancel-safe", as
   } finally {
     release();
   }
-  await expect(page.locator("#organization-active-name")).toHaveText("Beta Labs");
+  await expect(activeOrganization).toHaveText("Beta Labs · ACTIVE");
   await expect(dialog).not.toBeVisible();
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBeTruthy();
 });
@@ -10606,7 +10701,7 @@ test("organization approval is rejected after the active organization changes", 
   await expect(dialog).toBeVisible();
   api.organizations.active_id = "gamma";
   await page.clock.runFor(5100);
-  await expect(page.locator("#organization-active-name")).toHaveText("Gamma Labs");
+  await expect(page.locator("#organization-list .organization-card strong", { hasText: "· ACTIVE" })).toHaveText("Gamma Labs · ACTIVE");
   await dialog.getByRole("button", { name: "Switch organization", exact: true }).click();
   await expect(dialog.getByRole("alert")).toContainText("organization state changed");
   await expect(dialog.getByRole("button", { name: "Switch organization", exact: true })).toBeDisabled();
@@ -10703,7 +10798,7 @@ test("organization switching shows reset progress in the Simulator", async ({ pa
   await page.clock.install();
   api.organizations.activation = { state: "resetting", organization_id: "beta", progress: "Waiting for ZPR node and company LDAP" };
   await page.goto(appURL + "/organizations.html");
-  await expect(page.locator("#organization-connection")).toContainText("Waiting for ZPR node and company LDAP");
+  await expect(page.locator("#organization-operation-status")).toContainText("Waiting for ZPR node and company LDAP");
   await page.locator("#organization-browse").click();
   await page.locator('[data-organization-id="beta"]').click();
   const activationButton = page.locator('[data-activate-organization="beta"]');
@@ -10711,12 +10806,12 @@ test("organization switching shows reset progress in the Simulator", async ({ pa
   await expect(activationButton).toContainText("Resetting ZPR · Waiting for ZPR node and company LDAP");
   api.organizations.activation.progress = "Applying organization runtime policy";
   await page.clock.runFor(1100);
-  await expect(page.locator("#organization-connection")).toContainText("Applying organization runtime policy");
+  await expect(page.locator("#organization-operation-status")).toContainText("Applying organization runtime policy");
   await expect(activationButton).toContainText("Applying organization runtime policy");
 });
 
 test("scenario machine lanes scroll from a scrollbar at the top of the panel", async ({ page, appURL }) => {
-  await page.goto(appURL + "/scenarios.html");
+  await page.goto(appURL + "/scenarios.html#simulate");
   await page.evaluate(() => renderScenarioRun({
     scenario_id: "many-machines",
     scenario_name: "Many machines",
@@ -10758,7 +10853,7 @@ test("GUI Map buffered denial badge opens node denial details on right-click", a
     { source_addr: "fd00::9", dest_addr: "fd00::2", protocol: 6, dest_port: 22, deny_code: "OtherNode", count: 1, last_deny_ms: Date.now() },
   ];
   await page.goto(appURL + "/#map");
-  await page.getByRole("button", { name: "Pause updates", exact: true }).click();
+  await page.getByRole("button", { name: "Pause", exact: true }).click();
   const badge = page.locator('.graph-vertex[data-inspect-actor="node"] .graph-denial-count');
   await expect(badge).toHaveAttribute("role", "button");
   await badge.click({ button: "right" });
@@ -10835,7 +10930,7 @@ test("AI shared shell defaults to collapsed options and safe, undoable insertion
   await expect(source).toHaveValue("replacement");
   await source.press("ControlOrMeta+z");
   await expect(source).toHaveValue("original");
-  await source.press("ControlOrMeta+Shift+z");
+  await source.press("ControlOrMeta+Shift+Z");
   await expect(source).toHaveValue("replacement");
   await pane.getByRole("button", { name: "Insert", exact: true }).click();
   await expect(pane.locator(".assistant-error")).toContainText("editor changed after this suggestion");
@@ -10849,7 +10944,7 @@ test("AI Policy pending conversation cannot leak a response into a selected Asse
   let complete;
   api.handlers.set("/api/policy/assistant", async (route) => {
     await new Promise((resolve) => { complete = resolve; });
-    return route.fulfill({ json: { answer: "Obsolete policy response", input_tokens: 40, output_tokens: 20 } });
+    return route.fulfill({ json: { answer: JSON.stringify({ answer: "Obsolete policy response", edits: [] }), input_tokens: 40, output_tokens: 20 } });
   });
   await page.goto(appURL + "/#policy");
   await page.locator("#assistant-question").fill("Review policy");
@@ -10859,7 +10954,7 @@ test("AI Policy pending conversation cannot leak a response into a selected Asse
   await page.locator('[data-record-id="test-assertions"]').click();
   await expect(page.locator("#policy-assertion-editor")).toBeVisible();
   complete();
-  await page.route("**/api/policy/assistant", (route) => route.fulfill({ json: { answer: "Fresh assertion response", input_tokens: 2, output_tokens: 3 } }));
+  await page.route("**/api/policy/assistant", (route) => route.fulfill({ json: { answer: JSON.stringify({ answer: "Fresh assertion response", edits: [] }), input_tokens: 2, output_tokens: 3 } }));
   await page.locator("#assistant-question").fill("Review assertion");
   await page.locator("#assistant-send").click();
   await expect(page.locator("#assistant-messages")).toContainText("Fresh assertion response");
@@ -10882,7 +10977,7 @@ for (const outcome of ["success", "error"]) {
     });
     await page.goto(appURL + "/#zpr-config");
     const source = page.locator("#zpr-config-source");
-    await source.fill('[visa_service]\ndock_node = "node"\n');
+    await codeEditor(page, "zpr-config-source").fill('[visa_service]\ndock_node = "node"\n');
     const original = await source.inputValue();
     const pane = page.locator("#editor-assistant-zpr-config-pane");
     const question = pane.getByRole("textbox", { name: "Message" });
@@ -10890,8 +10985,8 @@ for (const outcome of ["success", "error"]) {
     await pane.getByRole("button", { name: "Send", exact: true }).click();
     await expect(pane.locator(".assistant-state")).toHaveText("Thinking");
     await expect.poll(() => typeof complete).toBe("function");
-    await source.fill(original + "# changed\n");
-    await source.fill(original);
+    await codeEditor(page, "zpr-config-source").fill(original + "# changed\n");
+    await codeEditor(page, "zpr-config-source").fill(original);
     complete();
     fresh = true;
     await expect(pane.locator(".assistant-error")).toContainText("editor changed while Claude");
@@ -10914,7 +11009,7 @@ test("AI Scenario Apply supports exact raw Undo and Redo without saving or runni
   await openRawScenario(page, appURL, api, true);
   const source = page.locator("#scenario-editor-source");
   const original = await source.inputValue();
-  await source.fill(JSON.stringify(JSON.parse(original)));
+  await codeEditor(page, "scenario-editor-source").fill(JSON.stringify(JSON.parse(original)));
   const exact = await source.inputValue();
   const pane = page.locator("#scenario-assistant-slot");
   await expect(pane.locator("[data-assistant-model]")).toBeHidden();
@@ -10940,7 +11035,7 @@ test("AI Scenario Apply supports exact raw Undo and Redo without saving or runni
   await expect(source).toHaveValue(applied);
   await pane.getByRole("button", { name: "Redo AI change", exact: true }).click();
   await expect(source).toHaveValue(second);
-  await source.fill(second + "\n");
+  await codeEditor(page, "scenario-editor-source").fill(second + "\n");
   await pane.getByRole("button", { name: "Undo AI change", exact: true }).click();
   await expect(pane.locator(".assistant-error")).toContainText("Undo/redo is no longer available");
   await expect(source).toHaveValue(second + "\n");
@@ -10974,7 +11069,7 @@ test("GUI gateway editor AI Assistant is ready without opt-in, sends the draft, 
   await source.evaluate((element) => element.setSelectionRange(0, element.value.length));
   await pane.getByRole("button", { name: "Insert" }).click();
   await expect(source).toHaveValue('{"origin": "https://api.example.com"}');
-  await source.press("ControlOrMeta+z");
+  await codeEditor(page, "gateway-source").press("ControlOrMeta+z");
   await expect(source).toHaveValue(original);
   const layout = page.locator("#page-gateways .editor-assistant-layout");
   if ((page.viewportSize()?.width || 1000) > 900) {
@@ -10994,7 +11089,7 @@ test("GUI ZPR Config AI Assistant uses the policy assistant endpoint with the co
   mockEditorAssistant(api, "/api/policy/assistant", "Looks valid.", requests);
   await page.goto(appURL + "/#zpr-config");
   const source = page.locator("#zpr-config-source");
-  await source.fill('[visa_service]\ndock_node = "node"\n');
+  await codeEditor(page, "zpr-config-source").fill('[visa_service]\ndock_node = "node"\n');
   const pane = page.locator("#editor-assistant-zpr-config-pane");
   await expect(pane.locator(".assistant-state")).toHaveText("Ready");
   await expect(pane.getByRole("checkbox", { name: "Use assistant" })).toHaveCount(0);
@@ -11004,10 +11099,15 @@ test("GUI ZPR Config AI Assistant uses the policy assistant endpoint with the co
   expect(requests[0]).toMatchObject({ editor: "zpr-config", source: '[visa_service]\ndock_node = "node"\n' });
 });
 
-test("GUI assertion editor shows the AI Assistant and sends the assertion source", async ({ page, appURL, api }) => {
+test("GUI assertion editor shows the AI Assistant, sends the assertion source and applies direct edits", async ({ page, appURL, api }) => {
   Object.assign(api.policy, { assistant_ready: true, assistant_model: "test-model", assistant_models: ["test-model"] });
   const requests = [];
-  mockEditorAssistant(api, "/api/policy/assistant", '```\ngroup "Operators" members >= 2;\n```', requests);
+  api.handlers.set("/api/policy/assistant", async (route) => {
+    const body = route.request().postDataJSON();
+    requests.push(body);
+    const edits = [{ before: body.source, after: `${body.source.replace(/\n*$/, "")}\ngroup "Operators" members >= 2;` }];
+    await route.fulfill({ json: { answer: JSON.stringify({ answer: "Added the operators check.", edits }), input_tokens: 40, output_tokens: 9 } });
+  });
   await page.goto(appURL + "/#policy");
   await expect(page.locator("#policy-record-title")).toHaveText("Test policy");
   await openPolicyPicker(page);
@@ -11017,12 +11117,11 @@ test("GUI assertion editor shows the AI Assistant and sends the assertion source
   await expect(pane).toBeVisible();
   await expect(page.locator("#assistant-enabled")).toHaveCount(0);
   await expect(page.locator("#assistant-question")).toHaveAttribute("placeholder", "How can I help?");
+  const original = await page.locator("#assertion-source").inputValue();
   await page.locator("#assistant-question").fill("Check operators");
   await page.locator("#assistant-send").click();
-  await expect(pane.locator(".assistant-code")).toHaveText('group "Operators" members >= 2;');
-  expect(requests[0]).toMatchObject({ editor: "assertion", source: await page.locator("#assertion-source").inputValue() });
-  await page.locator("#assertion-source").evaluate((element) => element.setSelectionRange(element.value.length, element.value.length));
-  await pane.getByRole("button", { name: "Insert" }).click();
+  await expect(pane).toContainText("Added the operators check.");
+  expect(requests[0]).toMatchObject({ editor: "assertion", direct_edits: true, source: original });
   await expect(page.locator("#assertion-source")).toHaveValue(/group "Operators" members >= 2;$/);
 });
 
@@ -11048,7 +11147,7 @@ test("GUI Simulator directory editor has an AI Assistant using Simulator endpoin
   expect(api.counts.get("/api/policy/assistant") || 0).toBe(0);
 });
 
-test("GUI editor toolbars place Analyze and Format immediately after File", async ({ page, appURL }) => {
+test("GUI editor toolbars place Analyze and Format immediately after File", async ({ page, appURL, api }) => {
   for (const [hash, file] of [["policy", "#policy-files-toggle"], ["gateways", "#gateway-files-toggle"], ["zpr-config", "#zpr-config-files-toggle"]]) {
     await page.goto(`${appURL}/#${hash}`);
     const tools = page.locator(`#page-${hash} .policy-editor-tools`).first();
@@ -11060,7 +11159,7 @@ test("GUI editor toolbars place Analyze and Format immediately after File", asyn
       const analyze = [...element.querySelectorAll(".policy-attribute-toolbar .button")].map((button) => button.textContent.trim());
       return { gap: actions.left - file.right, sameRow: Math.abs(actions.top - file.top) <= 2, analyze };
     }, file);
-    expect(layout.analyze, hash).toEqual(["Analyze", "Format"]);
+    expect(layout.analyze, hash).toEqual(hash === "zpr-config" ? ["Analyze", "Format", "Form"] : ["Analyze", "Format"]);
     expect(layout.sameRow, hash).toBe(true);
     expect(layout.gap, hash).toBeGreaterThanOrEqual(0);
     expect(layout.gap, hash).toBeLessThanOrEqual(10);

@@ -584,6 +584,9 @@ test("World Map unchanged refreshes preserve screen positions without viewport a
     await document.fonts.ready;
     await new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)));
   });
+  // Narrow layouts transition the map width after load; measure once the graph fills its stage.
+  await expect.poll(() => page.evaluate(() => Math.abs(document.querySelector(".topology-graph").getBoundingClientRect().width -
+    document.getElementById("topology-stage").getBoundingClientRect().width))).toBeLessThan(1);
   const marker = page.locator('.graph-vertex[data-inspect-actor="steady"] .graph-node');
   const before = await marker.boundingBox();
   const viewBox = await page.locator(".topology-graph").getAttribute("viewBox");

@@ -6,7 +6,12 @@ or complete installer integration yet. Optional generated identity Compose
 requires explicit immutable images; it is not the complete companion. See the
 [approved companion scope](../../../System%20release%20plan.md#simulator-companion-package).
 
-The companion will supply Simulator, lab LDAP, OIDC and DNS. The real ZPR
+The companion will supply Simulator, lab LDAP, OIDC and optional bootstrap DNS.
+Protected ZPR service DNS belongs to the real ZPR package, including its adapter,
+Visa Service publisher integration and persistent state; it is not owned by
+Simulator. Existing bootstrap-tool generation of protected DNS configuration is
+an engineering input, not evidence that this packaging handoff is complete.
+The real ZPR
 package will consume their explicit standard integration settings, using the
 same artifacts and installer as a production company installation. Supporting
 services must remain available when the Simulator application is stopped.

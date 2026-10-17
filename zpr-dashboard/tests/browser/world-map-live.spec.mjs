@@ -17,7 +17,7 @@ test("deployed World Map anchors actual node CNs and renders network components"
   await page.locator('input[name="login"]').fill(settings.username);
   await page.locator('input[name="password"]').fill(readFileSync(`${directory}/operator-password`, "utf8").trim());
   await page.locator("#submit-login").click();
-  await expect(page.locator("#operator-login-status")).toHaveText(/^Signed in(?:: .+)?$/);
+  await expect(page.locator("#operator-login-status")).toHaveText(/^User(?:: .+)?$/);
   await page.getByRole("button", { name: "World Map", exact: true }).click();
   await expect(page.locator(".geography-status, .geography-overview, .geography-located, .geography-attribution")).toHaveCount(0);
   await expect(page.locator("zpr-geography svg")).toHaveCount(0);

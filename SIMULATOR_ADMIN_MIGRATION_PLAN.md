@@ -2031,3 +2031,110 @@ Old chat messaging has reached its service limit. The deletion tool refused
 to delete the encompassing current session; no old chat is claimed deleted.
 Retire the old team through the VS Code UI before starting a new team, rather
 than creating another sibling replacement that may share the same limit.
+
+### Fresh-session regression reconciliation (2026-10-16 evening)
+
+Two background workers launched for this step stalled (no tool progress for
+~110 minutes, no test processes or containers). They were told to stop and
+left no repository changes; C0 ran both tasks directly at `eb17e3c`.
+
+**Browser (cached Playwright 1.63.0 image `sha256:eff16c30e6f3`, arm64,
+`--pull=never --network=none`, read-only source, temporary fixture binary):**
+JS syntax passed for `scenario-browser.mjs` and `static/scenarios.js`. A
+targeted `--grep` run gave 46 passed / 12 failed. Both
+`simulator-reset-confirmation.spec.mjs` and
+`simulator-reset-live-fixture.spec.mjs` passed. All three migrated
+legacy-clear assertions in `dashboard.spec.mjs` fail on desktop and tablet:
+
+- `Simulator Scenarios groups unfiled entries and keeps terminal run history`
+  (line 5001: `Run` button not found).
+- `Scenario cancel reports malformed JSON without retrying` (line 5084:
+  `#scenario-cancel` click times out).
+- `GUI scenario failure progress preserves the original step through cleanup`
+  (line 8390: `#scenario-reset` expected visible, is hidden).
+
+Unrelated matching tests also fail on missing current UI elements
+(`#scenario-organization`, `#organization-connection`, `#policy-test-gutter`).
+An attempted full `dashboard.spec.mjs` run (1,284 cases) timed out on most
+early editor/assertion cases and was stopped. `dashboard.spec.mjs` appears
+broadly stale against the current UI; this is not attributed to the reset
+migration alone. No test was modified.
+
+**Five known Go failure groups (individually rerun, no CGo, offline):**
+
+| Test | Current failure |
+|---|---|
+| `TestAssistantSkillsEmbeddedAndTaskSpecific/scenario` | missing task instruction `"proposal to null"` |
+| `TestEnrollmentAdministrationOverVerifiedTLSWithoutSimulator` | 409: organization-scoped service readiness preflight required before invitation creation |
+| `TestOrganizationPolicyInstallNeverUploadsStaleBundle/success` | install script: `ZPR_MULTINODE_PLATFORM: unbound variable` |
+| `TestScenarioPlacementPreflightMatchesLauncher` (6 cases) | stack function `resolve_machine_placement` missing |
+| `TestTrustedServiceBuildPublishesAtomicallyAndKeepsFreshArtifact` | helper is not a Linux amd64 ELF executable (host/arch dependent) |
+
+These remain open; root-cause classification and fixes are not yet done.
+Next: decide whether to repair the stale `dashboard.spec.mjs` assertions
+(requires explicit approval to edit pre-existing tests) and fix or
+re-baseline the five Go groups. No commit, deployment or live operation.
+
+### Browser test reconciliation (2026-10-16 night)
+
+User approved updating the stale browser tests. Only `zpr-dashboard/tests/browser/`
+and one stale README sentence changed; no product code, commit, deployment or
+live operation. `diagnostics-guidelines.mjs` was removed (superseded by
+`service-logs.mjs`). Every edited module passes `node --check`.
+
+**Results (offline Playwright 1.63 container, `--network=none`):**
+
+| Project | Before | After |
+|---|---|---|
+| desktop | 326 passed / 289 failed | 731 passed / 11 failed / 27 skipped |
+| tablet | not run | 730 passed / 12 failed / 27 skipped |
+
+**Main causes of the stale tests:**
+- CodeMirror editor migration (hidden textareas, token classes, forwarded keys).
+- Picker popover and row menus.
+- Icon-only window controls and dialog close labels.
+- Simulate split to `/scenarios.html#simulate`, with run views and gateway
+  results moving there.
+- New Simulator primary navigation plus organization section tabs.
+- Unattached adapters moved to the Detached tray.
+- The inspector now closes on outside pointerdown.
+- Trusted Sources title and feed changes; Security Review markup and DNS probe.
+- Removed connection strip and `#organization-active-name` (the active org is
+  now shown by catalog cards and the banner).
+- Activity metric cards removed.
+- Provisioning copy and the `runtime_key_fingerprint` contract changed.
+- Sign-out now opens provider sign-in once (`GUI deployments.md`, 2026-10-16),
+  and the README was updated to match.
+- Test timing fixes: the banner poll needs more time, and the tablet map width
+  transition must settle before measuring.
+
+**Remaining failures, left failing because they are product issues (all
+reproduce on HEAD):**
+1. Scenario editors get a duplicate Wrap toggle. `simulator-nav.js` re-runs
+   `editor-search.js` without a guard (dashboard 2130,
+   `remaining-code-editors` 74).
+2. `.node-stats-count` is 10px, below the 11px Control Room minimum
+   (`node-stats.css`).
+3. The poll-change pulse makes inspector markup differ on every render, so
+   all rows are rebuilt and focus is lost (`app.js`; visa refresh test).
+4. The Directory editor stays inset 16px when maximized. The
+   `organization-profile.css` `[open]` rule overrides maximize (shared
+   maximize test).
+5. Adding topology parents moves existing map nodes by about 8px with no
+   viewport animation.
+6. The new read-only "Policy operation status" form on `organizations.html`
+   (from `6ab9bc9`) pushes the directory graph to y≈420, which breaks the
+   graph-height layout test. Move it below the detail or collapse it.
+7. Recovering from a login configuration outage shows "Sign-in failed. Check
+   your credentials" because the catch path reuses `loginFailure = "failed"`.
+   The no-loop guard is correct; only the message is misleading.
+8. Rare, unreproduced (0 of 355 stress runs): an intermittent
+   `Cannot read properties of null (reading 'dataset')` page error during
+   Simulator page switching on tablet.
+
+**Environment-only failures:**
+- `enrollment-live` 115 and `enrollment-setup` 68 need `go` inside the
+  browser container.
+- `stable-login` 174 needs a live callback listener on `localhost:8787`.
+
+The five Go failure groups above are unchanged and still open.

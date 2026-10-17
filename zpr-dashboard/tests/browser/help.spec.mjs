@@ -164,9 +164,7 @@ test("Simulator headers show the active organization name on every page", async 
   const name = page.locator('[data-banner-value="organization"]');
   await expect(name).toHaveText("Alpha Labs");
   await expect(page.locator("#organization-error")).toBeHidden();
-  await expect(page.locator("#organization-active-name")).toHaveCount(1);
-  await expect(page.locator("#organization-active-name")).toBeHidden();
-  await expect(page.locator("#organization-active-id")).toBeHidden();
+  await expect(page.locator("#organization-active-name, #organization-active-id")).toHaveCount(0);
   await page.locator('.organization-navigation a[href="/scenarios.html"]').click();
   await expect(name).toHaveText("Alpha Labs");
   await expect(page.locator(".scenario-org-select")).toBeHidden();
@@ -180,6 +178,8 @@ test("Simulator headers show the active organization name on every page", async 
 });
 
 test("Simulator banner tracks runs, backend failures, recovery and organization changes", async ({ page }) => {
+  // Each observed state waits for the 3s banner poll, so the full sequence exceeds the default timeout.
+  test.setTimeout(30_000);
   let snapshot = {
     active_organization_id: "alpha", organization: { id: "alpha", name: "Alpha Labs" },
     scenarios: [{ id: "smoke", name: "Network smoke" }],

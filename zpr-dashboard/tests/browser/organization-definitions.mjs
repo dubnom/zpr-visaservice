@@ -62,12 +62,12 @@ export function registerOrganizationDefinitionsTests(test, expect) {
   test("Organization definitions save profile and document edits together and restore coherent history", async ({ page, appURL, api }) => {
     const state = fixture(api);
     const editor = await open(page, appURL);
-    const source = editor.getByLabel("Selected organization definition source");
+    const source = editor.locator("#organization-definitions-source");
     const profile = initial().profile;
     profile.description = "Edited profile with directory";
-    await source.fill(JSON.stringify(profile, null, 2));
+    await editor.getByRole("textbox", { name: "Selected organization definition source", exact: true }).fill(JSON.stringify(profile, null, 2));
     await choose(editor, 0);
-    await source.fill("dn: dc=alpha,dc=test\nobjectClass: domain\ndc: alpha\n# unsaved directory\n");
+    await editor.getByRole("textbox", { name: "Selected organization definition source", exact: true }).fill("dn: dc=alpha,dc=test\nobjectClass: domain\ndc: alpha\n# unsaved directory\n");
     await choose(editor, 1);
     await expect(source).toHaveValue("Fictional initial policy\n");
     await editor.getByRole("button", { name: "Validate all definitions" }).click();
@@ -94,9 +94,9 @@ export function registerOrganizationDefinitionsTests(test, expect) {
   test("Organization definitions AI uses unsaved documents and reviews atomic insertion with undo redo", async ({ page, appURL, api }) => {
     const state = fixture(api);
     const editor = await open(page, appURL);
-    const source = editor.getByLabel("Selected organization definition source");
+    const source = editor.locator("#organization-definitions-source");
     await choose(editor, 0);
-    await source.fill("dn: dc=alpha,dc=test\nobjectClass: domain\ndc: alpha\n# unsaved requirement\n");
+    await editor.getByRole("textbox", { name: "Selected organization definition source", exact: true }).fill("dn: dc=alpha,dc=test\nobjectClass: domain\ndc: alpha\n# unsaved requirement\n");
     const pane = editor.locator("#organization-definitions-assistant");
     await expect(pane).toContainText("every supporting document");
     await pane.getByLabel("Message", { exact: true }).fill("Update profile and directory together");
@@ -126,11 +126,11 @@ export function registerOrganizationDefinitionsTests(test, expect) {
   test("Organization definitions add remove documents and preserve local edits on conflict", async ({ page, appURL, api }) => {
     const state = fixture(api, { conflict: true });
     const editor = await open(page, appURL);
-    const source = editor.getByLabel("Selected organization definition source");
+    const source = editor.locator("#organization-definitions-source");
     await editor.getByRole("button", { name: "Add document", exact: true }).click();
     await editor.getByLabel("Document path", { exact: true }).fill("new-policy.zpl");
     await editor.getByLabel("Document kind", { exact: true }).selectOption("policy");
-    await source.fill("Unsaved new policy\n");
+    await editor.getByRole("textbox", { name: "Selected organization definition source", exact: true }).fill("Unsaved new policy\n");
     await choose(editor, -1);
     await choose(editor, 2);
     await expect(source).toHaveValue("Unsaved new policy\n");
@@ -139,7 +139,7 @@ export function registerOrganizationDefinitionsTests(test, expect) {
     await editor.getByRole("button", { name: "Remove document", exact: true }).click();
     await expect(editor.getByLabel("Definition file", { exact: true }).locator("option")).toHaveCount(3);
     await choose(editor, 1);
-    await source.fill("Keep this unsaved policy\n");
+    await editor.getByRole("textbox", { name: "Selected organization definition source", exact: true }).fill("Keep this unsaved policy\n");
     await editor.getByRole("button", { name: "Save all definitions" }).click();
     await expect(editor.locator("#organization-definitions-status")).toContainText("Save not confirmed");
     await expect(source).toHaveValue("Keep this unsaved policy\n");
@@ -158,13 +158,13 @@ export function registerOrganizationDefinitionsTests(test, expect) {
       await route.fulfill({ json: { answer: "Delayed suggestion", proposal: { bundle: request.bundle } } });
     });
     const editor = await open(page, appURL);
-    const source = editor.getByLabel("Selected organization definition source");
+    const source = editor.locator("#organization-definitions-source");
     const pane = editor.locator("#organization-definitions-assistant");
     await pane.getByLabel("Message", { exact: true }).fill("Review definitions");
     await pane.getByRole("button", { name: "Send", exact: true }).click();
     await expect.poll(() => started).toBe(true);
     await choose(editor, 1);
-    await source.fill("Newer local policy");
+    await editor.getByRole("textbox", { name: "Selected organization definition source", exact: true }).fill("Newer local policy");
     const response = page.waitForResponse(result => new URL(result.url()).pathname === endpoint + "/assistant");
     release();
     await response;
@@ -179,10 +179,10 @@ export function registerOrganizationDefinitionsTests(test, expect) {
     const state = fixture(api);
     const editor = await open(page, appURL);
     await choose(editor, 0);
-    await editor.getByLabel("Selected organization definition source").fill("dn: dc=alpha,dc=test\nobjectClass: domain\ndc: alpha\n# changed directory\n");
+    await editor.getByRole("textbox", { name: "Selected organization definition source", exact: true }).fill("dn: dc=alpha,dc=test\nobjectClass: domain\ndc: alpha\n# changed directory\n");
     await editor.getByRole("button", { name: "Save all definitions" }).click();
     await expect(editor.locator("#organization-definitions-revision")).toHaveText("Draft revision 2");
-    await editor.getByRole("button", { name: "Close definitions" }).click();
+    await editor.getByRole("button", { name: "Close organization definitions", exact: true }).click();
     await page.locator("#organization-browse").click();
     await page.locator("#organization-drafts-list .organization-card").click();
     await page.locator("#organization-files-toggle").click();
@@ -193,7 +193,7 @@ export function registerOrganizationDefinitionsTests(test, expect) {
     await expect(editor).toBeVisible();
     await expect(editor.locator("#organization-definitions-status")).toContainText("Profile and documents are from the same snapshot");
     await choose(editor, 0);
-    await expect(editor.getByLabel("Selected organization definition source")).toHaveValue(initial().documents[0].content);
+    await expect(editor.locator("#organization-definitions-source")).toHaveValue(initial().documents[0].content);
     await editor.getByRole("button", { name: "Save all definitions" }).click();
     await expect(editor.locator("#organization-definitions-revision")).toHaveText("Draft revision 3");
     expect(state.saves[1].bundle).toEqual(initial());
@@ -213,8 +213,8 @@ export function registerOrganizationDefinitionsTests(test, expect) {
     });
     const editor = await open(page, appURL);
     await choose(editor, 1);
-    const source = editor.getByLabel("Selected organization definition source");
-    await source.fill("Saved but response uncertain\n");
+    const source = editor.locator("#organization-definitions-source");
+    await editor.getByRole("textbox", { name: "Selected organization definition source", exact: true }).fill("Saved but response uncertain\n");
     await editor.getByRole("button", { name: "Save all definitions" }).click();
     await expect(editor.locator("#organization-definitions-status")).toContainText("reload to reconcile");
     await expect(source).toHaveValue("Saved but response uncertain\n");
@@ -239,7 +239,7 @@ export function registerOrganizationDefinitionsTests(test, expect) {
     });
     const editor = await open(page, appURL);
     await choose(editor, 1);
-    await editor.getByLabel("Selected organization definition source").fill("Unsaved policy");
+    await editor.getByRole("textbox", { name: "Selected organization definition source", exact: true }).fill("Unsaved policy");
     await editor.getByRole("button", { name: "Save all definitions" }).click();
     await expect.poll(() => started).toBe(true);
     await page.evaluate(() => window.dispatchEvent(new Event("operator-session-cleared")));
@@ -248,7 +248,7 @@ export function registerOrganizationDefinitionsTests(test, expect) {
     await response;
     await page.evaluate(() => new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve))));
     await expect(editor).not.toBeVisible();
-    await expect(editor.getByLabel("Selected organization definition source")).toHaveValue("");
+    await expect(editor.locator("#organization-definitions-source")).toHaveValue("");
     await expect(page.locator("#organization-drafts-status")).toContainText("Operator session ended");
   });
   test.describe("Organization definitions narrow viewport", () => {
@@ -266,7 +266,7 @@ export function registerOrganizationDefinitionsTests(test, expect) {
       await pane.getByRole("button", { name: "Send", exact: true }).click();
       await pane.getByRole("button", { name: "Review definition proposal" }).click();
       await page.getByRole("dialog", { name: "Review AI definition changes" }).getByRole("button", { name: "Cancel", exact: true }).click();
-      await expect(editor.getByLabel("Selected organization definition source")).toHaveValue(initial().documents[0].content);
+      await expect(editor.locator("#organization-definitions-source")).toHaveValue(initial().documents[0].content);
       await editor.getByRole("button", { name: "Validate all definitions" }).click();
       await expect(editor.locator("#organization-definitions-status")).toContainText("not runnable");
     });

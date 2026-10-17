@@ -14,12 +14,34 @@ system release yet. Nothing here starts or changes the development runtime.
   Direct TLS on an explicitly selected private management IP, corporate/VPN
   network only; no reverse proxy or public-Internet topology. Runtime opt-in is
   implemented; production container-network/installer integration is not.
-- Company-provided existing OIDC provider; no bundled identity provider.
-- Company-provided existing directory and DNS; do not bundle demo LDAP or BIND
-  as replacements for company infrastructure. A separate policy-controlled
-  BIND9 service behind a real ZPR adapter is required for the combined-package
-  demonstration; it is not bootstrap DNS. Protocol/mapping/credential and
-  adapter packaging integration remain open.
+- Installer choice of existing company providers or bundled production services
+  for operator OIDC login, device/actor authentication and trusted attributes.
+  This 2026-10-17 approval supersedes the external-provider-only restriction.
+  Bundled providers require unique installation identities, explicit initial
+  administrator setup, least-privilege grants and recovery; no demo identities.
+- Installer choice of existing logging integration or bundled collection,
+  persistent storage and authorized querying. Define retention, disk bounds,
+  sensitive-data handling, backup and explicit failure reporting. Container
+  stdout alone is not the bundled logging deliverable.
+- Bundled providers/logging must be independently supervised, persist across
+  restart/upgrade and operate with Simulator absent. No automatic fallback from
+  failed external providers. Implementations/versions remain to qualify; BAS
+  is not selected or required by this decision.
+- Company-provided underlay/bootstrap DNS remains an input.
+- Optional zpr.net assistance is for initial setup only, followed by an explicit
+  authenticated handoff to installation-owned services. Keep private keys local;
+  hosted setup grants must be scoped, expiring and replay-protected. Website
+  accounts do not grant local admission or administrator rights. Daily operation,
+  login, enrollment, renewal/revocation, logging and recovery must not require
+  zpr.net. Verify these paths with zpr.net blocked after setup and setup grants
+  expired. Future gateway/federation coordination is separate, undecided scope.
+  See the [bootstrap boundary](../../../System%20release%20plan.md#optional-zprnet-bootstrap-assistance).
+- ZPR-managed service DNS is a required part of the ZPR package: protected BIND9,
+  its real ZPR adapter, Visa Service record publishing, configuration and
+  persistent state. ZPR feeds the records today and will control policy-aware
+  DNS behavior in future work. It is not bootstrap DNS or Simulator-owned
+  infrastructure. Protocol/mapping/credential and adapter packaging integration
+  remain open; per-client answer filtering is not yet implemented.
 - A separate [Simulator companion package](../../../System%20release%20plan.md#simulator-companion-package)
   is also approved: Simulator plus lab LDAP, OIDC and DNS. It supplies ordinary
   external integration endpoints to this same production package, not a
@@ -40,12 +62,42 @@ existing private corporate underlay/VPN boundary. Management network/firewall
 rules/verification, directory integration, certificate reload/recovery integration, Docker
 version qualification, resource sizing and release owners remain open.
 
+## Planned multi-host expansion
+
+The approved [multi-host deployment direction](../../../System%20release%20plan.md#multi-host-role-based-deployment)
+keeps the single-server pilot as the first deliverable while designing for
+separate management, routing-node, protected-DNS, supporting-service and endpoint
+roles. A host may run multiple explicitly configured roles; support must be
+qualified per role, OS, architecture and release. The current Ubuntu preflight
+and partial management configuration do not implement this model.
+
+The installation design must distinguish creating a network from joining one,
+with locally generated private keys and short-lived, administrator-approved,
+role-scoped join authorization. Define a versioned production host/service
+inventory, secret references, authenticated remote endpoints, health states and
+add/upgrade/drain/replace/revoke/remove operations. Preserve identities and
+customer state; do not assume localhost or shared filesystems. Inventory
+ownership/API design must respect existing sole-writer boundaries.
+
+After single-server acceptance, qualify a second routing host, then separately
+placed protected DNS, then DNS redundancy and selected mixed-platform/rolling
+upgrade paths. DNS authority, update ownership, replication and failover need
+explicit contracts. Multiple hosts alone are not high availability. All paths
+must operate without Simulator or zpr.net; neither provides production inventory
+or daily lifecycle services. Platform priorities and scale/availability targets
+remain open, and no additional topology or platform is certified by this plan.
+
 ## Companion lab versus production installation
 
-Production continues to use company-provided directory, OIDC, DNS and TLS.
-For a lab, the separately installed Simulator companion will supply LDAP, OIDC
-and protected ZPR DNS plus explicit endpoint, identity/mapping and trust inputs to the normal
-ZPR installer. This does not make Simulator a runtime dependency or let the
+Production uses explicitly selected existing or bundled identity/attribute and
+logging services, plus company-provided bootstrap DNS and TLS.
+Protected ZPR service DNS ships with the real ZPR package in both company
+and lab installations and must remain operational without Simulator.
+For a lab, the separately installed Simulator companion can supply lab LDAP,
+OIDC and optional bootstrap DNS through explicit endpoint, identity/mapping and
+trust inputs to the normal ZPR installer. Protected DNS remains ZPR-owned.
+Production bundled services are not owned by that companion.
+This does not make Simulator a runtime dependency or let the
 production package read simulation manifests, profiles or sessions.
 
 Existing network DNS resolves bootstrap/login hostnames by default, also in

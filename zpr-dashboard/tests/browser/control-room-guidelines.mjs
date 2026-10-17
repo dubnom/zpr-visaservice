@@ -125,7 +125,10 @@ export function registerControlRoomGuidelineTests(test, expect) {
     await expect(page.getByRole("dialog")).toContainText("Buffered denials are a current gauge");
     await page.keyboard.press("Escape");
     await page.goto(appURL + "/#provisioning-adapters");
-    await expect(page.locator(".provisioning-steps, .provisioning-notice")).toHaveCount(0);
+    await expect(page.locator(".provisioning-steps")).toHaveCount(0);
+    // Only the attestation disclaimer stays inline, beside the preflight it qualifies.
+    await expect(page.locator(".provisioning-notice")).toHaveCount(1);
+    await expect(page.locator("#provisioning-preflight > .provisioning-notice")).toContainText("audited operator attestation");
     await expect(page.locator("#provisioning-recipient-note")).toContainText("Never include an enrollment code in email");
     await page.locator(".help-trigger").click();
     await expect(page.getByRole("dialog")).toContainText("authenticated secure channel");

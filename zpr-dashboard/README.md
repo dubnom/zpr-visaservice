@@ -2782,8 +2782,9 @@ not: sign in again after a Room restart.
 When direct HTTPS operator login is configured, a signed-out user is sent
 straight to the identity provider's login page through the same-origin native
 POST login form. Failed or denied callbacks retain a retryable sign-in screen
-instead of automatically redirecting again. Explicit sign-out leaves the user
-signed out with a Sign in button, avoiding immediate single-sign-on reentry.
+instead of automatically redirecting again. Confirmed explicit sign-out opens
+provider sign-in once; returning without completing it shows a Sign in button
+rather than redirecting again. Local logout does not end provider SSO.
 Protected API authorization responses trigger a session recheck; only an
 expired session starts sign-in automatically. Permission denials and Visa
 Service availability errors do not redirect to the identity provider.

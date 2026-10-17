@@ -14,7 +14,7 @@ test("deployed Gateway Analyze highlights exact source lines and validates the d
   await page.locator('input[name="login"]').fill(settings.username);
   await page.locator('input[name="password"]').fill(readFileSync(`${directory}/operator-password`, "utf8").trim());
   await page.locator("#submit-login").click();
-  await expect(page.locator("#operator-login-status")).toHaveText(/^Signed in(?:: .+)?$/);
+  await expect(page.locator("#operator-login-status")).toHaveText(/^User(?:: .+)?$/);
   await expect(page).toHaveURL(settings.origin + "/#gateways");
   const source = page.getByRole("textbox", { name: "Gateway draft JSON" });
   await expect(source).toHaveValue(/"instance_id":/);
@@ -82,7 +82,7 @@ test("deployed Gateway Analyze highlights exact source lines and validates the d
   await page.locator('input[name="login"]').fill(settings.username);
   await page.locator('input[name="password"]').fill(readFileSync(`${directory}/operator-password`, "utf8").trim());
   await page.locator("#submit-login").click();
-  await expect(page.locator("#operator-login-status")).toHaveText(/^Signed in(?:: .+)?$/);
+  await expect(page.locator("#operator-login-status")).toHaveText(/^User(?:: .+)?$/);
   await expect(page).toHaveURL(settings.origin + "/#gateways");
   await expect(source).toBeVisible();
 });

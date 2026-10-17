@@ -14,7 +14,7 @@ test("deployed Assertion Analyze reads the production directory and uses a white
   await page.locator('input[name="login"]').fill(settings.username);
   await page.locator('input[name="password"]').fill(readFileSync(`${directory}/operator-password`, "utf8").trim());
   await page.locator("#submit-login").click();
-  await expect(page.locator("#operator-login-status")).toHaveText(/^Signed in(?:: .+)?$/);
+  await expect(page.locator("#operator-login-status")).toHaveText(/^User(?:: .+)?$/);
   const record = await page.evaluate(async () => {
     const catalog = await (await fetch("/api/policy")).json();
     const record = catalog.records.find(record => record.kind === "assertions" && !record.archived);

@@ -95,21 +95,23 @@ export function registerWindowControlTests(test, expect) {
     await toggle(page, panel.locator('button[aria-pressed]').filter({ has: page.locator("svg[data-window-control]") }), panel, false);
   });
 
-  test("Simulator activity refresh pulses changed metrics and right-aligns numeric sortable columns", async ({ page, appURL, api }) => {
+  test("Simulator activity refresh updates tables and right-aligns numeric sortable columns", async ({ page, appURL, api }) => {
     let refresh = 0;
     api.handlers.set("/api/simulator/activity", route => {
       refresh += 1;
       return route.fulfill({ json: {
         stats: { visa_requests: refresh, visa_requests_approved: refresh, visa_requests_denied: 0 },
         visas: [{ source_addr: "10.0.0.1", dest_addr: "10.0.0.2", dest_port: 443, expires: 1781265600 }],
-        denies: [{ source_addr: "10.0.0.3", dest_addr: "10.0.0.4", count: 3 }],
+        denies: [{ source_addr: "10.0.0.3", dest_addr: "10.0.0.4", count: refresh + 2 }],
         generated_at: "2026-10-13T12:00:00Z",
       } });
     });
     await page.goto(`${appURL}/activity.html`);
-    await expect(page.locator("#requests")).toHaveText("1");
+    // Activity no longer shows request metric cards; refreshes re-render the tables.
+    await expect(page.locator("#requests")).toHaveCount(0);
+    await expect(page.locator('td[data-sort-cell="count"]')).toHaveText("3");
     await expect.poll(() => refresh).toBeGreaterThan(1);
-    await expect(page.locator("#requests")).toHaveClass(/poll-changed/);
+    await expect(page.locator('td[data-sort-cell="count"]')).not.toHaveText("3");
     for (const column of ["port", "count"]) {
       const header = page.locator(`th[data-sort-key="${column}"]`);
       await expect(header).toHaveAttribute("data-numeric", "true");

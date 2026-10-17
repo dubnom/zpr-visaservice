@@ -108,7 +108,7 @@ export function registerWorkflowGuidelineTests(test, expect) {
     ];
     api.assertionSource.default_source = "staff";
     await openAssertionRecord(page, appURL);
-    await page.locator("#assertion-source").fill("");
+    await page.locator('.code-editor-host[data-source="assertion-source"] .cm-content').fill("");
     await page.locator("#assertion-read-source").click();
     const groups = firstColumn(page, "assertion-group-rows");
     await expect(groups).toHaveText(["Zeta", "Alpha", "Beta"]);
@@ -135,7 +135,7 @@ export function registerWorkflowGuidelineTests(test, expect) {
     await header(page, "assertion-attribute-rows", "groups").getByRole("button").click();
     await expect(attributes).toHaveText(["zeta", "alpha", "beta"]);
     await expect(page.locator("#assertion-group-rows .poll-changed, #assertion-attribute-rows .poll-changed")).toHaveCount(0);
-    await page.locator("#assertion-source").fill("");
+    await page.locator('.code-editor-host[data-source="assertion-source"] .cm-content').fill("");
     await page.getByRole("button", { name: "Insert presence assertion for beta", exact: true }).click();
     await expect(page.locator("#assertion-source")).toHaveValue('people from "staff" attribute "beta" present;\n');
     expect(api.counts.get("/api/assertions/source")).toBe(sourceReads);
@@ -148,7 +148,7 @@ export function registerWorkflowGuidelineTests(test, expect) {
     await expect(groups).toHaveText(["HR Z", "HR A"]);
     await expect(page.locator("#assertion-group-rows .poll-changed")).toHaveCount(0);
     await expect(members).toHaveAttribute("aria-sort", "descending");
-    await page.locator("#assertion-source").fill("");
+    await page.locator('.code-editor-host[data-source="assertion-source"] .cm-content').fill("");
     await page.getByRole("button", { name: "Insert a cardinality assertion for HR A", exact: true }).click();
     await expect(page.locator("#assertion-source")).toHaveValue('group "HR A" from "hr" members >= 2;\n');
   });
@@ -167,7 +167,7 @@ export function registerWorkflowGuidelineTests(test, expect) {
       results: failure ? [] : results,
     } }));
     await openAssertionRecord(page, appURL);
-    await page.locator("#assertion-source").fill(source);
+    await page.locator('.code-editor-host[data-source="assertion-source"] .cm-content').fill(source);
     await page.locator("#assertion-analyze").click();
     const lines = firstColumn(page, "assertion-result-rows");
     await expect(lines).toHaveText(["10", "2", "12"]);
@@ -190,9 +190,9 @@ export function registerWorkflowGuidelineTests(test, expect) {
     await expect(page.locator("#assertion-source")).toHaveValue(source);
     expect(api.counts.get("/api/assertions/evaluate")).toBe(evaluations);
     await expect(page.locator("#assertion-result-rows .poll-changed")).toHaveCount(0);
-    const marker = page.locator('#assertion-result-gutter [data-line="2"] .assertion-result-marker');
-    await expect(marker).toHaveAttribute("data-state", "fail");
-    await marker.click();
+    await expect(page.locator('#assertion-result-gutter [data-line="2"] .assertion-result-marker')).toHaveAttribute("data-state", "fail");
+    // CodeMirror renders a clickable clone of the hidden legacy marker in its result gutter.
+    await page.locator('.code-editor-host[data-source="assertion-source"] .cm-result-gutter button[title^="Line 2 ·"]').click();
     const detail = page.getByRole("dialog", { name: "Assertion fail" });
     await expect(detail).toContainText("Alpha");
     await expect(detail).toContainText("alice");

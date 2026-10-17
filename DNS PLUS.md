@@ -17,6 +17,16 @@ service adapter's own identity.
 
 ## Existing baseline
 
+### Product ownership
+
+Protected ZPR service DNS is part of the ZPR product and installation package.
+ZPR feeds its records today and is intended to control its policy-aware behavior.
+Ship its DNS service, ZPR adapter, publisher integration, configuration and
+persistent state with ZPR, independently of Simulator. Company underlay/bootstrap
+DNS remains separate so installation and login do not depend on prior ZPR
+admission. This ownership decision does not claim that the complete DNS package
+or the per-client filtering proposed below is implemented.
+
 - `dns/bind9/zpr-dns.zpl` publishes `dns.svc.zpr` on TCP/53 and currently
   allows authenticated devices to reach it.
 - `dns/bind9/README.md` describes a BIND 9 authoritative DNS service behind a

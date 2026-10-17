@@ -35,7 +35,15 @@ package**, not a Control Room-only image connected to an existing installation.
 Testing should require release artifacts and company inputs, not a source
 checkout, Go/Rust toolchain, or manual assembly of individual services.
 
-For production, the company supplies its existing OIDC provider, directory and DNS services.
+The installer offers existing company services or bundled production services
+for operator login, device/actor authentication and trusted attributes, and
+logging. Company underlay/bootstrap DNS remains an external input.
+**ZPR-managed service DNS is part of the ZPR package**,
+not an external company prerequisite or a Simulator-owned service. ZPR already
+feeds its service records and is intended to control its policy-aware behavior.
+The package must include the protected DNS service, its adapter, publisher
+integration, configuration and persistent state. Future per-client DNS policy
+filtering is planned work, not an implemented capability claim.
 The package must include all required ZPR services and their runtime dependencies;
 external company integrations must be explicit, validated configuration, never
 demo replacements. No existing Visa Service, Control-Service, production
@@ -93,6 +101,145 @@ Related plans:
 - [Deployment ledger](GUI%20deployments.md): historical component deployments,
   not certification of a complete system release.
 
+### Optional bundled trusted services and logging
+
+On 2026-10-17 the user approved an installer choice for both identity roles
+and logging. This supersedes the earlier existing-company-provider-only
+restriction; it does not approve substituting lab/demo services for production.
+
+- Offer explicit existing-provider or bundled-provider configuration for
+  operator login, device/actor authentication and trusted attributes, and logging.
+  A company without its own providers must have a complete bundled installation
+  path. Record the selected modes and validate every required integration.
+- Bundled operator login must satisfy the production OIDC contract. Device/actor
+  authentication and attribute publication are distinct contracts; operator
+  login alone does not admit an adapter or authorize traffic.
+- Bundled logging includes collection, persistent storage and authorized operator
+  querying, not merely container stdout. Define retention, bounded disk usage,
+  access controls, sensitive-data handling, backup and failure reporting.
+- Generate unique per-install identities/secrets; provide explicit initial
+  administrator setup, least-privilege grants and recovery. No shared passwords,
+  demo accounts, implicit grants or silent fallback when an external provider
+  fails. Preserve identities and persistent data across retries/upgrades.
+- These are independently supervised production services with explicit contracts
+  and operator configuration. They must run with Simulator absent and must not
+  read its manifests, sessions, profiles or workloads. Reuse appropriate provider
+  software, not Simulator-owned runtime state or lifecycle.
+- Provider implementations and versions remain to qualify. This does not select
+  BAS, LDAP/Dex or a logging backend as the production implementation, nor make
+  BAS mandatory. If BAS is selected, its registry ownership/API gaps must close.
+- Acceptance covers bundled and external-provider paths: operator login, actor
+  admission, trusted attributes, allowed/denied traffic, queryable logs,
+  restart/recovery and explicit dependency failures, with Simulator unavailable.
+
+This is an approved requirement, not an implemented installer feature.
+
+### Optional zpr.net bootstrap assistance
+
+On 2026-10-17 the user clarified that zpr.net should assist initial setup and
+getting an installation running, not become part of its daily operation.
+This is a scope requirement, not an implemented hosted service.
+
+- Keep bootstrap assistance optional; existing-provider and bundled-local
+  installation paths must remain available without a hosted account.
+- Define an explicit authenticated handoff to installation-owned services.
+  A website account or download password does not confer local administrator,
+  device-admission or network-access rights.
+- Generate and retain installation/device private keys locally. Any hosted
+  setup authorization must be narrowly scoped, short-lived and replay-protected;
+  do not install a permanent zpr.net runtime credential or shared trust secret.
+- After handoff, operator login, actor authentication/admission, trusted
+  attributes, policy decisions, ZPR DNS, logging, restart, credential renewal,
+  revocation and recovery use the selected installation-owned or company
+  services, not zpr.net. No periodic hosted token refresh, licensing heartbeat
+  or remote approval dependency is implied.
+- Acceptance must block access to zpr.net after setup and verify normal
+  operation, restart, new local enrollment and credential lifecycle behavior,
+  including after temporary bootstrap authorizations have expired.
+- Future cross-network gateway discovery, introduction or trust coordination
+  may use zpr.net, but is not selected or implemented by this decision.
+  Define bilateral authorization, trust scope and outage/data-path behavior
+  separately before adding any federation dependency.
+
+The public download portal remains separate from privileged bootstrap
+services. This does not authorize exposing private Control Room or service
+administration interfaces, select BAS, or change the current deployment.
+
+### Multi-host, role-based deployment
+
+On 2026-10-17 the user approved planning for a larger installation: additional
+ZPR nodes, protected DNS and supporting services on separate hosts, potentially
+using different operating systems and CPU architectures. The single-server
+pilot remains the first deliverable, but must be the simplest instance of this
+deployment model, not an installer design that assumes everything is local.
+This is an approved architectural direction, not implemented multi-host,
+multi-site, high-availability or additional-platform support.
+
+Deployment roles:
+
+| Role | Responsibility |
+| --- | --- |
+| Management | Control Room and installation-management services |
+| ZPR node | Additional packet-routing capacity or placement |
+| Protected DNS | ZPR-managed DNS, its adapter and record-publishing integration |
+| Supporting services | Selected identity, trusted-attribute, logging and storage services |
+| Endpoint adapter | Connect an endpoint or service to the installation |
+
+A host may run one or more explicitly selected roles. Support is qualified per
+**role + OS + architecture + release**, not by a blanket platform claim.
+For example, a Windows endpoint and Linux DNS host may belong to one
+installation once those combinations are implemented and certified.
+Successful compilation alone does not qualify a role.
+
+Required deployment contracts:
+
+- Distinguish **create a network** from **join an existing network**. Creation
+  establishes installation identity/trust, management, initial node and DNS.
+  Joining selects host roles, uses administrator-approved short-lived,
+  role-scoped, replay-protected authorization, generates private keys locally,
+  enrolls with installation-owned services, obtains configuration and verifies
+  readiness. Routing-node authorization must not confer management-admin rights.
+- Define a versioned production deployment inventory with stable host/service
+  identities, roles, platforms, service addresses, installed versions and
+  desired configuration. Store secrets separately through protected references.
+  Ownership and APIs remain to design; do not introduce another registry writer
+  or derive this inventory from Simulator state.
+- Use explicit authenticated service endpoints and contracts. Do not assume
+  shared filesystems, localhost addresses or shared host credentials between
+  services. Define ports, routing/firewall requirements, advertised addresses,
+  trust, dependencies and health checks for each placement.
+- Support adding, upgrading, draining, replacing, revoking and removing hosts.
+  Preserve installation identity and customer state; define partial-failure
+  recovery, compatible version skew, upgrade ordering and data ownership.
+  Distinguish installed, enrolled, configured and healthy states, with explicit
+  failures rather than treating process startup as deployment success.
+- Define protected DNS authority, record-update ownership, placement,
+  replication and failover before advertising redundant DNS. Preserve the
+  distinction between ZPR service DNS and company underlay/bootstrap DNS.
+- Multiple hosts do not imply high availability. Qualify management state,
+  identity, DNS and routing failure/recovery independently, with explicit
+  capacity and availability limits.
+- Creation, later joins and ongoing lifecycle operations must work without
+  Simulator or zpr.net. Optional hosted setup assistance does not become a
+  daily administration or trust dependency.
+
+Phased acceptance, after the complete single-server installation:
+
+1. Add a second routing node on a separate host through the supported join path;
+   verify admission, allowed/denied traffic and revocation/removal.
+2. Place protected DNS on a separate host and verify real record publication
+   and protected resolution; then qualify replication and failure/recovery
+   before claiming redundancy.
+3. Qualify selected mixed-platform role placements and rolling upgrades,
+   including incompatible versions, interrupted joins/upgrades, host replacement
+   and preservation of identities/state.
+
+Retain topology, role/platform/version matrix and failure/recovery evidence.
+Test with Simulator unavailable and zpr.net blocked after setup grants expire.
+Exact platform priorities, scale/HA targets, inventory/API design and service
+replication implementations remain decisions for the corresponding phase;
+this does not expand the initial certified deployment boundary.
+
 ### Simulator companion package
 
 On 2026-10-15 the user requested a separate companion package and approved
@@ -146,7 +293,8 @@ Ownership and limits:
 - The standard installer/bootstrap establishes the initial services, trust and
   operator access before this workflow. Simulator must not need a working ZPR
   policy to create the only identity capable of installing that first policy.
-  Lab LDAP/OIDC/DNS remain independently supervised companion services.
+  Lab LDAP/OIDC and optional bootstrap DNS remain independently supervised
+  companion services. Protected ZPR service DNS belongs to the ZPR package.
 - Automation must have explicit organization scope and attributable, least-
   privilege authorization. How automation receives its operator authority is
   still a design decision; do not copy browser cookies, bypass CSRF or reuse a
@@ -453,10 +601,12 @@ convert recommendations into requirements.
 | Deployment format | **Approved:** container appliance, Docker Engine/Compose v2, pinned images and signed installer. Exact runtime versions remain to qualify |
 | Access model | **Approved:** direct HTTPS on a selected private management IP and company hostname, corporate network/VPN only; required OIDC, no reverse proxy/public exposure. Runtime opt-in implemented; firewall/routing verification and container-network/installer integration remain open |
 | Initial endpoint | Complete and certify one platform; current Mac pilot priority remains unchanged unless explicitly reprioritized |
-| Identity sources | **Approved:** production uses company's existing OIDC provider and directory, not bundled demo identity/directory services. The separate Simulator companion supplies lab LDAP and OIDC through the same integration contracts. Supported directory protocol/mappings, credentials and first-admin recovery remain open |
+| Identity sources | **Updated approval (2026-10-17):** installer choice of existing company providers or bundled production services for operator OIDC login and device/actor authentication with trusted attributes. Bundled services are independent of Simulator, not demo identities. Provider qualification, protocols/mappings, credentials and first-admin recovery remain open |
+| Logging | **Approved (2026-10-17):** installer choice of an existing logging integration or bundled collection, persistent storage and authorized querying. Backend qualification, retention/resource bounds, access controls, backup and failure behavior remain implementation work |
 | DNS and certificates | **Approved:** existing network DNS for bootstrap in production and labs; companion-hosted bootstrap DNS is optional for isolated labs. Production uses supplied/renewed HTTPS files. The combined network must also include BIND9 behind a policy-controlled ZPR adapter, distinct from bootstrap DNS. Protected DNS does not replace company infrastructure DNS; no appliance ACME automation selected. Provider image/adapter packaging, DNS integration and certificate replacement/reload/recovery remain open |
 | Connectivity | State initial download/egress requirements; offline installation is unsupported unless separately built and tested |
 | Reliability and scale | Pilot capacity, acceptable downtime, backup destination, RPO/RTO and support lifetime |
+| Multi-host expansion | **Approved direction (2026-10-17):** role-based create/join and lifecycle model, followed by second node, separate/redundant DNS and qualified mixed-platform deployments. Exact platform priorities, inventory/API design, version skew and scale/HA targets remain open; see [multi-host deployment](#multi-host-role-based-deployment) |
 | Release authority | Named owners for build, test, signing, approval, deployment and support |
 
 ## Initial implementation milestones
@@ -480,6 +630,9 @@ audit, source lock or approved service-provider selection. Milestone remains ope
 - [ ] Record ports, protocols, trust relationships, storage, health contracts,
   required privileges and startup dependencies. Optional services must remain
   visibly optional; required missing services must block readiness.
+- [ ] Define the [multi-host role model](#multi-host-role-based-deployment),
+  placement contracts and role/OS/architecture/release qualification matrix,
+  without broadening the initial pilot's support claims.
 - [ ] Map every shipped component to its repository, source revision, build
   recipe, license and accountable owner. Include sibling repositories and
   external dependencies, not only the dashboard repository.
@@ -526,6 +679,9 @@ suite. Nothing was deployed.
 
 - [ ] Provide a versioned, validated company installation configuration, with
   secret references separated from ordinary editable configuration.
+- [ ] Design configuration for stable host/service identities, explicit role
+  placement and authenticated remote endpoints; define the production inventory
+  contract and role-scoped create/join lifecycle before multi-host implementation.
 - [ ] Implement non-mutating host/network preflight, explaining each failure
   before privileged changes. Do not upload discovered company data implicitly.
 - [ ] Provide a guided setup workflow: company identity, service endpoints,

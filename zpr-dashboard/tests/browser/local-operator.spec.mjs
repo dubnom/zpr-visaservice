@@ -79,7 +79,7 @@ test("deployed local operator signs in through real Dex and authorizes monitorin
   await expect(page.locator("#login-error")).toBeVisible();
   await page.locator('input[name="password"]').fill(password);
   await page.locator("#submit-login").click();
-  await expect(page.locator("#operator-login-status")).toHaveText(/^Signed in(?:: .+)?$/);
+  await expect(page.locator("#operator-login-status")).toHaveText(/^User(?:: .+)?$/);
   await expect(page.locator("#operator-login-status")).not.toContainText(config.grants[0].subject);
   await expect(page.locator("#operator-scope")).toContainText("Configured organizations: *");
   for (const path of ["/api/snapshot", "/api/policy/context", "/api/policy", "/api/gateways/contracts", "/api/enrollment/v1/catalog"]) {
@@ -101,7 +101,7 @@ test("deployed local operator signs in through real Dex and authorizes monitorin
   expect(response.request().headers()["x-zpr-csrf"]).toBeTruthy();
   await expect(page.locator("#zpr-config-status")).toContainText("runtime configuration is unchanged");
   await page.reload();
-  await expect(page.locator("#operator-login-status")).toHaveText(/^Signed in(?:: .+)?$/);
+  await expect(page.locator("#operator-login-status")).toHaveText(/^User(?:: .+)?$/);
   await expect(page.locator("#operator-login-status")).not.toContainText(config.grants[0].subject);
   await page.getByRole("button", { name: "Sign out", exact: true }).click();
   await expect(page.locator("#operator-login-status")).toHaveText("Not signed in");
