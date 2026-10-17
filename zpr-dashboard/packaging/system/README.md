@@ -2,8 +2,9 @@
 
 Status: **In progress**, 2026-10-15. This is the first M1 inventory and the initial
 M2 host-preflight/configuration slices of the [system release plan](../../../System%20release%20plan.md).
-There is no installable server bundle, production Compose definition or signed
-system release yet. Nothing here starts or changes the development runtime.
+There is no complete installable server bundle, whole-system Compose definition
+or signed system release yet. The engineering-only Control Room service
+descriptor below does not start or change the development runtime.
 
 ## Approved target
 
@@ -12,14 +13,18 @@ system release yet. Nothing here starts or changes the development runtime.
 - Signed installer with pinned release images; not source builds at install time.
 - Remote Control Room HTTPS on a company hostname, not a mandatory SSH tunnel.
   Direct TLS on an explicitly selected private management IP, corporate/VPN
-  network only; no reverse proxy or public-Internet topology. Runtime opt-in is
-  implemented; production container-network/installer integration is not.
-- Company-provided existing OIDC provider; no bundled identity provider.
-- Company-provided existing directory and DNS; do not bundle demo LDAP or BIND
-  as replacements for company infrastructure. A separate policy-controlled
-  BIND9 service behind a real ZPR adapter is required for the combined-package
-  demonstration; it is not bootstrap DNS. Protocol/mapping/credential and
-  adapter packaging integration remain open.
+  network only; no reverse proxy or public-Internet topology. Runtime opt-in and
+  a host-network Control Room descriptor are implemented; complete production
+  service orchestration and installer integration are not.
+- The installer must offer explicit existing-company or bundled production
+  services for operator login, device/actor authentication and trusted
+  attributes, and logging. Bundled providers must be independent of Simulator;
+  no demo service may silently replace a company integration. Provider
+  qualification, mappings, credentials, first-admin recovery and logging
+  operations remain open. Company underlay/bootstrap DNS is an external input;
+  ZPR-managed service DNS and its adapter belong in the package. A separate
+  policy-controlled BIND9 service behind a real ZPR adapter is required for
+  the combined-package demonstration; it is not bootstrap DNS.
 - A separate [Simulator companion package](../../../System%20release%20plan.md#simulator-companion-package)
   is also approved: Simulator plus lab LDAP, OIDC and DNS. It supplies ordinary
   external integration endpoints to this same production package, not a
@@ -42,11 +47,15 @@ version qualification, resource sizing and release owners remain open.
 
 ## Companion lab versus production installation
 
-Production continues to use company-provided directory, OIDC, DNS and TLS.
-For a lab, the separately installed Simulator companion will supply LDAP, OIDC
-and protected ZPR DNS plus explicit endpoint, identity/mapping and trust inputs to the normal
-ZPR installer. This does not make Simulator a runtime dependency or let the
-production package read simulation manifests, profiles or sessions.
+Production installation is approved to offer an explicit choice between
+existing company providers and independently bundled production services for
+operator login, device/actor authentication and trusted attributes, and
+logging. Company underlay/bootstrap DNS remains external; ZPR-managed service
+DNS and its adapter are part of the production package. Company TLS inputs
+remain required. The separately installed Simulator companion is optional for
+lab use; it can supply ordinary integration endpoints to the normal ZPR
+installer, but production startup must not depend on Simulator or read its
+manifests, profiles or sessions.
 
 Existing network DNS resolves bootstrap/login hostnames by default, also in
 the lab. Companion-hosted bootstrap DNS is an explicit isolated-lab option,
@@ -117,9 +126,12 @@ read this Simulator setting and must work with Simulator unavailable.
 
 The version-1 [example](company.example.json) is a **partial installation input**
 for company identity and operator access, not a complete server/node/adapter
-configuration. Neither the current dashboard nor a Compose installer consumes
-it yet. Do not pass it as `ZPR_OPERATOR_OIDC_CONFIG_FILE`: only its `oidc.config`
-object has that existing format; rendering protected runtime files is future work.
+configuration. The Control Room consumes only the rendered `oidc.config`
+object, not this source file. It also carries explicit Control-Service mTLS
+inputs for the Control Room client. Offline checks validate the supplied client
+key pair and CA files, but do not verify live service trust or reachability.
+The single-service renderer below does not produce change-review signing or
+storage, enrollment, the Control Service itself, or the rest of the system.
 
 Validate it from the dashboard source directory:
 
@@ -128,13 +140,87 @@ go run ./cmd/zpr-system-config -config packaging/system/company.example.json
 ```
 
 This is an engineering invocation, not a requirement to install Go on customer
-servers. The eventual signed release must ship the validator binary. The
-command is read-only, performs no network access and does not invoke Docker.
-Exit `0` means structural/reference validation only, `1` means unreadable/invalid
+servers. The eventual signed release must ship the validator binary. Validation
+is read-only, performs no network access and does not invoke Docker. Exit `0`
+means structural/reference validation only, `1` means unreadable/invalid
 configuration or output failure, and `2` means invalid command usage.
 Diagnostics never print configuration contents or source parser excerpts.
 With `-check-files`, exit `0` additionally means the referenced local files pass
 the offline checks below; it still does not mean the appliance is ready.
+
+Render the validated operator OIDC settings for the existing Control Room
+runtime:
+
+```sh
+zpr-system-config -config /path/to/company.json \
+  -render-operator-oidc-config /etc/zpr/operator-oidc.json
+```
+
+Rendering requires the Control Room TLS, Control-Service client identity and
+server CA, OIDC secret and optional IdP CA files to pass offline checks. It
+writes only the `oidc.config` object as a protected `0600` file; secret contents
+remain in their separately supplied files and are never copied. An identical
+protected output is safe to reuse; different, unsafe or linked existing output
+is not overwritten.
+
+For engineering evaluation, build a Simulator-independent Control Room image
+from source:
+
+```sh
+docker build -f packaging/system/Dockerfile.control-room \
+  -t zpr-control-room:engineering .
+```
+
+This is a source-build recipe, not a signed release image; it is intentionally
+not pinned by digest and is not suitable as the eventual customer installer.
+On the intended Linux host, render a service-only Compose descriptor:
+
+```sh
+zpr-system-config -config /path/to/company.json \
+  -render-operator-oidc-config /etc/zpr/operator-oidc.json \
+  -render-control-room-compose /etc/zpr/control-room.compose.yaml \
+  -control-room-image zpr-control-room:engineering
+docker compose -f /etc/zpr/control-room.compose.yaml config
+```
+
+Compose rendering requires `control_room.management_ip` and a matching OIDC
+runtime file. It binds the existing binary directly to that private IP and the
+origin's port (443 when omitted), uses `network_mode: host` without port
+publishing or Docker-socket access, never pulls the named image, drops
+capabilities, uses a read-only root filesystem, runs as the non-root UID/GID of
+the renderer, and mounts each credential/configuration file read-only. Render
+as the dedicated runtime owner that can read the inputs and access the local
+Docker Engine. Host networking is a Linux appliance target; Docker Desktop on
+macOS is not equivalent and was not used to start this service.
+
+Only on an isolated engineering Linux host, and only after confirming that the
+image and Control-Service/IdP are owned test services, start the Control Room
+through the guarded launcher:
+
+```sh
+sh start-control-room.sh /path/to/company.json \
+  /etc/zpr/operator-oidc.json /etc/zpr/control-room.compose.yaml \
+  zpr-control-room:engineering
+```
+
+The launcher repeats the read-only host preflight, runs the validator to
+render/check the protected OIDC and Compose inputs, requires the selected image
+to exist locally, checks that the Compose descriptor contains only
+`control-room` with that image, and refuses
+to restart or replace an existing `zpr-control-room-engineering` project. It
+starts no dependencies and performs no image build or pull. If start/status
+checking fails, it leaves the container in place for diagnosis rather than
+attempting rollback. A running container confirms process state only; it does
+not establish application readiness or safe use. Do not use this engineering
+launcher against a shared or production installation.
+
+The descriptor starts only the Control Room process and assumes the explicitly
+configured Control Service already exists and trusts the supplied mTLS client.
+It does not configure or start that backend, change-review signing/storage, or
+other ZPR services; policy review/apply is unavailable without its separate
+configuration. Compose parsing is not service readiness. OIDC discovery/login,
+backend TLS trust/reachability, host firewall/DNS, operator actions and packet
+traffic remain unverified. No service was started by rendering.
 
 | Input | Version-1 contract |
 | --- | --- |
@@ -142,8 +228,11 @@ the offline checks below; it still does not mean the appliance is ready.
 | `organization.id` | 1-64 lowercase ASCII letters/digits/hyphens, alphanumeric at both ends; no wildcard scopes |
 | `organization.name` | Nonempty trimmed display name, at most 256 bytes, no control characters |
 | `control_room.origin` | Exact `https://company-hostname[:port]`, lowercase dotted DNS hostname, no IP, localhost/`.local`, path, userinfo, query or fragment; optional canonical port 1-65535 |
-| `control_room.management_ip` | Optional canonical private IPv4/IPv6 (RFC1918/ULA); the direct-management runtime requires an explicit value matching its listener. Omission leaves binding unselected, not wildcard/defaulted |
+| `control_room.management_ip` | Optional canonical private IPv4/IPv6 (RFC1918/ULA) for structure-only input; the direct-management runtime and Compose renderer require an explicit value matching the host listener. Omission never defaults to wildcard |
 | `control_room.certificate_file`, `key_file` | Separate absolute canonical Linux file references; company supplies a current hostname-matching server certificate chain and its private key |
+| `control_service.url` | Exact HTTPS origin for the independently authenticated Control-Service client; it is resolved from the host network namespace and is not contacted by offline checks |
+| `control_service.client_certificate_file`, `client_key_file` | Separate file references for the Control Room's mTLS client identity; offline checks require a current matching PEM key pair permitting TLS client authentication |
+| `control_service.server_ca_file` | Required CA input for verifying the Control-Service TLS server; offline checks validate CA structure and validity but cannot establish the live service chain |
 | `oidc.config` | Existing operator OIDC version-1 shape: HTTPS issuer, client ID, exact callback, explicit 60-3600 second session lifetime and issuer/subject grants |
 | `oidc.config.redirect_url` | Exactly `control_room.origin` plus `/auth/operator/callback`; register this exact URI with the company provider |
 | `oidc.config.grants` | Each grant names an exact issuer/subject and scopes only this company. Production monitor/policy/gateway/change-review and enrollment permissions only, validated against existing operator permission names |
@@ -160,8 +249,9 @@ this file does not bypass those controls or implement first-admin recovery.
 
 The reader rejects unknown/miscased fields, duplicate object keys at every
 level, nulls, trailing documents, oversized input (64 KiB) and nesting above
-16 levels. All TLS/OIDC file references must be distinct, absolute Linux paths,
-with no `..`, redundant separators, trailing slash or shell expansion.
+16 levels. All TLS, Control-Service and OIDC file references must be distinct,
+absolute Linux paths, with no `..`, redundant separators, trailing slash or
+shell expansion.
 They describe intended installation-host paths, not paths resolved against the
 developer's machine, home directory, Simulator state or config-file directory.
 
@@ -190,29 +280,34 @@ Ubuntu 24.04 x86-64. Other platforms fail explicitly when this mode is selected.
   opened without following the final symlink and checked against their initial
   metadata. Parent-directory ownership/symlinks and runtime container identity/
   mount access are **not** audited; an installer must establish those separately.
-- Private key and OIDC secret files additionally require no group/other access
+- Private keys and OIDC secret files additionally require no group/other access
   (typically `0600`). Public certificate/CA files may be `0644`. The reader does
   not repair permissions or ownership.
 - Certificate, key and CA inputs are bounded to 64 KiB each, and the OIDC secret
   to 4096 bytes. A secret is a nonempty, unpadded single line, optionally ending
   in LF or CRLF, matching the current operator runtime contract.
-- TLS input must be a leaf-first PEM certificate chain and one unencrypted PEM
-  private key. Checks include key matching, company hostname/SAN, current
-  validity, HTTPS server-authentication use, TLS 1.3 digital-signature use when
-  key usage is specified, and supplied issuer signatures/path constraints.
-  A lone leaf or a chain omitting its root is permitted; the supplied chain tip
-  is an **inspection anchor only**, never proof that an operator trusts it.
-- An optional OIDC CA file must contain only currently valid CA certificates,
-  with certificate-signing use when key usage is specified. This does not prove
-  that the provider's certificate chains to these anchors or that login works.
+- Control Room TLS input must be a leaf-first PEM certificate chain and one
+  unencrypted PEM private key. Checks include key matching, company
+  hostname/SAN, current validity, HTTPS server-authentication use, TLS 1.3
+  digital-signature use when key usage is specified, and supplied issuer
+  signatures/path constraints. A lone leaf or a chain omitting its root is
+  permitted; the supplied chain tip is an **inspection anchor only**, never
+  proof that an operator trusts it.
+- Control-Service client TLS input must be a current, matching leaf-first PEM
+  key pair permitting client authentication, with a protected private key.
+  Its server CA and optional OIDC CA must contain only currently valid CA
+  certificates with certificate-signing use when key usage is specified.
+  These checks do not prove a live Control-Service TLS handshake or that the
+  OIDC provider chains to its anchors.
 - Errors name the failed configuration field without disclosing local paths,
   credential contents or raw TLS parser errors. Failure emits no success output.
 
 **Still not checked:** browser/company root trust, revocation, company IdP
-discovery/token/login, DNS, management firewall, listener reachability, or service
-readiness. This is a read-only snapshot, not an install/activation gate or a
-guarantee against later file changes. No configuration is emitted or applied.
-The command reports these limits even on success.
+discovery/token/login, Control-Service reachability/server trust, DNS,
+management firewall, listener reachability, or service readiness. This is a
+read-only snapshot, not an install/activation gate or a guarantee against later
+file changes. No configuration is emitted or applied by `-check-files`. The
+command reports these limits even on success.
 
 ### Remote HTTPS and identity implementation contract
 
@@ -220,26 +315,30 @@ The approved topology is direct HTTPS on a private management IP, corporate/VPN
 only. The [runtime opt-in](../../README.md#direct-management-https) requires
 `ZPR_CONTROL_ROOM_MANAGEMENT_IP`, an exact-IP `-listen` on the origin port,
 company hostname TLS and initialized single-company OIDC. Existing loopback and
-Simulator modes are unchanged. The handler checks actual TLS, exact Host and
+Simulator modes are unchanged. The host-network Compose renderer now wires the
+existing Control Room mode and explicit Control-Service mTLS inputs; it does
+not start or configure the backend. The handler checks actual TLS, exact Host and
 Origin, rejects forwarded headers, and retains named authorization/CSRF for API
 and DNS asset access. Enrollment delegation and change-review remain separate.
-The validator still does not render or activate this runtime configuration.
+The renderer does not start the process or render its independent review,
+storage, enrollment or backend configuration.
 
 Before a deployment can consume it:
 
 1. Establish and verify corporate/VPN routing/firewall rules and the IP within
-   the process/container network namespace. Runtime binding is not a firewall;
-   it accepts direct unicast peers without treating peer IP as identity. Do not
+   the selected host-network namespace. Runtime binding is not a firewall; it
+   accepts direct unicast peers without treating peer IP as identity. Do not
    expose backend administration listeners, use public forwarding, or introduce
-   wildcard listeners to work around unimplemented container-network integration.
+   wildcard listeners.
 2. Qualify the implemented direct-TLS/OIDC boundary on actual Ubuntu and with
    the company IdP/browser. Local synthetic login and boundary tests are not
    corporate-network or clean-install acceptance.
-3. Wire the offline protected-file checks into installation, then verify
-   installed mount access and company trust. The opt-in validator is implemented;
-   installation integration is not. Fail on absent, unsafe, mismatched, expired
-   or invalid inputs. Never ship the sample identities or generate replacement
-   company keys silently.
+3. Wire the offline protected-file checks into the complete installer, then
+   verify installed mount access and company trust. The opt-in validator and
+   single-service descriptor are implemented; complete installation
+   integration is not. Fail on absent, unsafe, mismatched, expired or invalid
+   inputs. Never ship the sample identities or generate replacement company
+   keys silently.
 4. Define company certificate replacement/reload and expiry reporting. Company
    renewal responsibility does not imply a running process reloads new files.
    Test replacement, interruption, rollback and administrator recovery.
@@ -303,12 +402,16 @@ Run isolated regressions without a Docker daemon:
 
 ```sh
 sh test-preflight.sh
+sh test-start-control-room.sh
 ```
 
 The tests substitute an OS fixture and stub uname/Docker on PATH. They cover
 unsupported OS/architecture, missing dependencies, remote endpoints, context
 precedence, unavailable engines, wrong server architecture and Compose versions.
-This is not Ubuntu clean-host acceptance.
+The launcher tests use command stubs to cover fail-closed input/image/Compose
+checks, refusal to replace an existing project, and start-state handling. They
+do not contact a Docker daemon or service and are not Ubuntu clean-host
+acceptance.
 
 ## M1 source audit: deployable roles and gaps
 
@@ -324,7 +427,7 @@ merely because its port is listed.
 | Endpoint/service adapter | [`ph`](../../../../zpr-core/adapter/ph/), `cargo build --locked --release -p ph` | Per-device identity, authentication trust, TUN/network state; credentials must come from the supported provisioning flow | Platform packaging, privileged handoff, revocation and traffic acceptance remain required; do not ship static demo bootstrap keys |
 | Policy-Service | [`policy_service.go`](../../cmd/zpr-web-dashboard/policy_service.go), dashboard Go binary in `policy-service` mode | mTLS, explicit organization and SQLite repository, compiler config/source/signing inputs; default 8789 | Package ZPLC/ZPT and independent fixtures/LDAP inputs; distinguish draft/staged policy from active runtime policy; readiness must exercise compile/evaluate |
 | Control-Service | [`control_service.go`](../../cmd/zpr-web-dashboard/control_service.go), same Go binary in `control-service` mode | mTLS default 8790; VS Admin URL/CA/key; Policy-Service mTLS; gateway draft store and configured trusted-service integrations | No dedicated production image yet; eliminate dependence on demo launcher paths and unnecessary host Docker access |
-| Control Room | Same Go binary in `control-room` mode; embedded browser assets | HTTPS default 8787, exact origin, OIDC config/secret/CA, grants/delegation and Control-Service client identity | [`operator_login.go`](../../cmd/zpr-web-dashboard/operator_login.go) preserves loopback mode and adds opt-in direct private management-IP/company-hostname access with required scoped OIDC; container-network/installer integration and live company acceptance remain open |
+| Control Room | Same Go binary in `control-room` mode; embedded browser assets; engineering-only source image recipe | HTTPS direct bind, exact origin, OIDC config/secret/CA and Control-Service mTLS client identity | [`operator_login.go`](../../cmd/zpr-web-dashboard/operator_login.go) preserves loopback mode and adds opt-in direct private management-IP/company-hostname access; a single host-network descriptor is renderable, but whole-system packaging and live company acceptance remain open |
 | Device Enrollment Service | [`zpr-enrollment-service`](../../cmd/zpr-enrollment-service/main.go), separate Go command | Explicit JSON, private device HTTPS and opt-in separate admin mTLS listener, owned SQLite registry and optional runtime-import signer | Opt-in Control-Service relay removes its registry dependency; BAS registry access and full lifecycle/credential/bootstrap contracts remain unfinished. No cross-service shared SQLite mount in the production package |
 | Authentication | [`zpr-bas`](../../../../zpr-bas/), `cargo build --locked --release` | BAS TLS identity, protected actor records and shared BAS/VS token-verification secret | Package supported enrollment-backed authentication and issuance, not demonstration records; OIDC human login is a different trust path |
 | Compiler/evaluator | [`zplc`](../../../../zpr-compiler/), `cargo build --locked --release`; `zpt` from Visa workspace | ZPLC configuration, per-company signing material, input schema and policy binary compatibility | Pin compiler/common-library versions and native runtime dependencies; no compiler source checkout on customer host |

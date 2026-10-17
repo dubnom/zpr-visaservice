@@ -10,6 +10,12 @@
     "certificate_file": "/etc/zpr/tls/control-room-chain.pem",
     "key_file": "/etc/zpr/secrets/control-room-key.pem"
   },
+  "control_service": {
+    "url": "https://control-service.example.internal:8790",
+    "client_certificate_file": "/etc/zpr/tls/control-room-client-chain.pem",
+    "client_key_file": "/etc/zpr/secrets/control-room-client-key.pem",
+    "server_ca_file": "/etc/zpr/tls/control-service-ca.pem"
+  },
   "oidc": {
     "config": {
       "version": 1,

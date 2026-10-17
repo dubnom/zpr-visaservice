@@ -62,14 +62,27 @@ func fileFixture(t *testing.T, editLeaf func(*x509.Certificate)) (Config, []byte
 		editLeaf(leaf)
 	}
 	leafPEM, keyPEM, _, _ := issueCertificate(t, leaf, root, rootKey)
+	serviceClient := &x509.Certificate{
+		SerialNumber: big.NewInt(3), Subject: pkix.Name{CommonName: "control-room client"},
+		NotBefore: fileCheckTime.Add(-time.Hour), NotAfter: fileCheckTime.Add(time.Hour),
+		KeyUsage: x509.KeyUsageDigitalSignature, ExtKeyUsage: []x509.ExtKeyUsage{x509.ExtKeyUsageClientAuth},
+		BasicConstraintsValid: true,
+	}
+	serviceClientPEM, serviceClientKeyPEM, _, _ := issueCertificate(t, serviceClient, root, rootKey)
 	directory := t.TempDir()
 	config := validConfig()
 	config.ControlRoom.CertificateFile = filepath.Join(directory, "chain.pem")
 	config.ControlRoom.KeyFile = filepath.Join(directory, "key.pem")
+	config.ControlService.ClientCertificateFile = filepath.Join(directory, "control-room-client.pem")
+	config.ControlService.ClientKeyFile = filepath.Join(directory, "control-room-client.key")
+	config.ControlService.ServerCAFile = filepath.Join(directory, "control-service-ca.pem")
 	config.OIDC.ClientSecretFile = filepath.Join(directory, "secret")
 	config.OIDC.CAFile = filepath.Join(directory, "ca.pem")
 	writeFixtureFile(t, config.ControlRoom.CertificateFile, append(bytes.Clone(leafPEM), rootPEM...), 0o644)
 	writeFixtureFile(t, config.ControlRoom.KeyFile, keyPEM, 0o600)
+	writeFixtureFile(t, config.ControlService.ClientCertificateFile, append(bytes.Clone(serviceClientPEM), rootPEM...), 0o644)
+	writeFixtureFile(t, config.ControlService.ClientKeyFile, serviceClientKeyPEM, 0o600)
+	writeFixtureFile(t, config.ControlService.ServerCAFile, rootPEM, 0o644)
 	writeFixtureFile(t, config.OIDC.ClientSecretFile, []byte("private-secret-value\r\n"), 0o600)
 	writeFixtureFile(t, config.OIDC.CAFile, rootPEM, 0o644)
 	return config, leafPEM, rootPEM
@@ -101,6 +114,9 @@ func TestCompanyFilesOfflineChecks(t *testing.T) {
 		{"invalid-config", func(c *Config, _, _ []byte) { c.SchemaVersion = 2 }, "schema_version"},
 		{"missing-certificate", func(c *Config, _, _ []byte) { c.ControlRoom.CertificateFile += ".absent" }, "control_room.certificate_file"},
 		{"missing-key", func(c *Config, _, _ []byte) { c.ControlRoom.KeyFile += ".absent" }, "control_room.key_file"},
+		{"missing-control-client-certificate", func(c *Config, _, _ []byte) { c.ControlService.ClientCertificateFile += ".absent" }, "control_service.client_certificate_file"},
+		{"missing-control-client-key", func(c *Config, _, _ []byte) { c.ControlService.ClientKeyFile += ".absent" }, "control_service.client_key_file"},
+		{"missing-control-server-ca", func(c *Config, _, _ []byte) { c.ControlService.ServerCAFile += ".absent" }, "control_service.server_ca_file"},
 		{"missing-secret", func(c *Config, _, _ []byte) { c.OIDC.ClientSecretFile += ".absent" }, "oidc.client_secret_file"},
 		{"missing-ca", func(c *Config, _, _ []byte) { c.OIDC.CAFile += ".absent" }, "oidc.ca_file"},
 		{"empty-certificate", func(c *Config, _, _ []byte) {
@@ -121,6 +137,22 @@ func TestCompanyFilesOfflineChecks(t *testing.T) {
 		{"invalid-key", func(c *Config, _, _ []byte) {
 			writeFixtureFile(t, c.ControlRoom.KeyFile, []byte("private-value"), 0o600)
 		}, "unencrypted PEM private key"},
+		{"control-client-key-mismatch", func(c *Config, _, _ []byte) {
+			other, _, _ := fileFixture(t, nil)
+			c.ControlService.ClientKeyFile = other.ControlService.ClientKeyFile
+		}, "matching PEM pair"},
+		{"control-client-server-only", func(c *Config, _, _ []byte) {
+			certificate, err := os.ReadFile(c.ControlRoom.CertificateFile)
+			if err != nil {
+				t.Fatal(err)
+			}
+			key, err := os.ReadFile(c.ControlRoom.KeyFile)
+			if err != nil {
+				t.Fatal(err)
+			}
+			writeFixtureFile(t, c.ControlService.ClientCertificateFile, certificate, 0o644)
+			writeFixtureFile(t, c.ControlService.ClientKeyFile, key, 0o600)
+		}, "permit TLS client authentication"},
 		{"key-trailer", func(c *Config, _, _ []byte) {
 			f, err := os.OpenFile(c.ControlRoom.KeyFile, os.O_APPEND|os.O_WRONLY, 0)
 			if err != nil {
@@ -163,6 +195,9 @@ func TestCompanyFilesOfflineChecks(t *testing.T) {
 		}, "protected permissions"},
 		{"ca-is-leaf", func(c *Config, leaf, _ []byte) {
 			writeFixtureFile(t, c.OIDC.CAFile, leaf, 0o644)
+		}, "certificate-signing CA"},
+		{"control-ca-is-leaf", func(c *Config, leaf, _ []byte) {
+			writeFixtureFile(t, c.ControlService.ServerCAFile, leaf, 0o644)
 		}, "certificate-signing CA"},
 		{"ca-junk", func(c *Config, _, _ []byte) {
 			writeFixtureFile(t, c.OIDC.CAFile, []byte("private-value"), 0o644)

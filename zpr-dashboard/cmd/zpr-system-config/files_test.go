@@ -7,6 +7,7 @@ import (
 	"crypto/ed25519"
 	"crypto/rand"
 	"crypto/x509"
+	"crypto/x509/pkix"
 	"encoding/json"
 	"encoding/pem"
 	"math/big"
@@ -32,21 +33,59 @@ func TestCompanyConfigCommandOfflineFiles(t *testing.T) {
 	directory := t.TempDir()
 	config.ControlRoom.CertificateFile = filepath.Join(directory, "tls.pem")
 	config.ControlRoom.KeyFile = filepath.Join(directory, "key.pem")
+	config.ControlService.ClientCertificateFile = filepath.Join(directory, "control-room-client.pem")
+	config.ControlService.ClientKeyFile = filepath.Join(directory, "control-room-client.key")
+	config.ControlService.ServerCAFile = filepath.Join(directory, "control-service-ca.pem")
 	config.OIDC.ClientSecretFile = filepath.Join(directory, "secret")
+	rootPublic, rootKey, err := ed25519.GenerateKey(rand.Reader)
+	if err != nil {
+		t.Fatal(err)
+	}
+	rootTemplate := &x509.Certificate{
+		SerialNumber: big.NewInt(1), Subject: pkix.Name{CommonName: "test root"},
+		IsCA: true, BasicConstraintsValid: true,
+		KeyUsage: x509.KeyUsageCertSign, NotBefore: time.Now().Add(-time.Hour),
+		NotAfter: time.Now().Add(time.Hour),
+	}
+	rootDER, err := x509.CreateCertificate(rand.Reader, rootTemplate, rootTemplate, rootPublic, rootKey)
+	if err != nil {
+		t.Fatal(err)
+	}
+	root, err := x509.ParseCertificate(rootDER)
+	if err != nil {
+		t.Fatal(err)
+	}
 	public, key, err := ed25519.GenerateKey(rand.Reader)
 	if err != nil {
 		t.Fatal(err)
 	}
 	certificate := &x509.Certificate{
-		SerialNumber: big.NewInt(1), DNSNames: []string{"control.example.com"},
+		SerialNumber: big.NewInt(2), DNSNames: []string{"control.example.com"},
 		NotBefore: time.Now().Add(-time.Hour), NotAfter: time.Now().Add(time.Hour),
 		KeyUsage: x509.KeyUsageDigitalSignature, ExtKeyUsage: []x509.ExtKeyUsage{x509.ExtKeyUsageServerAuth},
 	}
-	der, err := x509.CreateCertificate(rand.Reader, certificate, certificate, public, key)
+	der, err := x509.CreateCertificate(rand.Reader, certificate, root, public, rootKey)
 	if err != nil {
 		t.Fatal(err)
 	}
 	keyDER, err := x509.MarshalPKCS8PrivateKey(key)
+	if err != nil {
+		t.Fatal(err)
+	}
+	servicePublic, serviceKey, err := ed25519.GenerateKey(rand.Reader)
+	if err != nil {
+		t.Fatal(err)
+	}
+	serviceTemplate := &x509.Certificate{
+		SerialNumber: big.NewInt(3), Subject: pkix.Name{CommonName: "control-room client"},
+		NotBefore: time.Now().Add(-time.Hour), NotAfter: time.Now().Add(time.Hour),
+		KeyUsage: x509.KeyUsageDigitalSignature, ExtKeyUsage: []x509.ExtKeyUsage{x509.ExtKeyUsageClientAuth},
+	}
+	serviceDER, err := x509.CreateCertificate(rand.Reader, serviceTemplate, root, servicePublic, rootKey)
+	if err != nil {
+		t.Fatal(err)
+	}
+	serviceKeyDER, err := x509.MarshalPKCS8PrivateKey(serviceKey)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -56,10 +95,19 @@ func TestCompanyConfigCommandOfflineFiles(t *testing.T) {
 		t.Fatal(err)
 	}
 	files := map[string][]byte{
-		configFile:                         data,
-		config.ControlRoom.CertificateFile: pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: der}),
-		config.ControlRoom.KeyFile:         pem.EncodeToMemory(&pem.Block{Type: "PRIVATE KEY", Bytes: keyDER}),
-		config.OIDC.ClientSecretFile:       []byte("private-value\n"),
+		configFile: data,
+		config.ControlRoom.CertificateFile: append(
+			pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: der}),
+			pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: rootDER})...,
+		),
+		config.ControlRoom.KeyFile: pem.EncodeToMemory(&pem.Block{Type: "PRIVATE KEY", Bytes: keyDER}),
+		config.ControlService.ClientCertificateFile: append(
+			pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: serviceDER}),
+			pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: rootDER})...,
+		),
+		config.ControlService.ClientKeyFile: pem.EncodeToMemory(&pem.Block{Type: "PRIVATE KEY", Bytes: serviceKeyDER}),
+		config.ControlService.ServerCAFile:  pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: rootDER}),
+		config.OIDC.ClientSecretFile:        []byte("private-value\n"),
 	}
 	for path, contents := range files {
 		if err := os.WriteFile(path, contents, 0o600); err != nil {

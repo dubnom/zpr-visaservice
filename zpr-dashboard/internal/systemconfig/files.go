@@ -39,6 +39,25 @@ func (config Config) CheckFiles(now time.Time) error {
 	if err := CheckServerCertificate(config.ControlRoom.Origin, certPEM, keyPEM, now); err != nil {
 		return err
 	}
+	serviceCertPEM, err := read("control_service.client_certificate_file", config.ControlService.ClientCertificateFile, 65536, false)
+	if err != nil {
+		return err
+	}
+	serviceKeyPEM, err := read("control_service.client_key_file", config.ControlService.ClientKeyFile, 65536, true)
+	if err != nil {
+		return err
+	}
+	defer clear(serviceKeyPEM)
+	if err := CheckClientCertificate(serviceCertPEM, serviceKeyPEM, now); err != nil {
+		return err
+	}
+	serviceCAPEM, err := read("control_service.server_ca_file", config.ControlService.ServerCAFile, 65536, false)
+	if err != nil {
+		return err
+	}
+	if err := checkCertificateAuthorities(serviceCAPEM, "control_service.server_ca_file", now); err != nil {
+		return err
+	}
 	secret, err := read("oidc.client_secret_file", config.OIDC.ClientSecretFile, 4096, true)
 	if err != nil {
 		return err
@@ -53,15 +72,54 @@ func (config Config) CheckFiles(now time.Time) error {
 		if err != nil {
 			return err
 		}
-		certificates, err := parseCertificates(data)
-		if err != nil {
-			return errors.New("oidc.ca_file must contain only PEM certificates")
+		if err := checkCertificateAuthorities(data, "oidc.ca_file", now); err != nil {
+			return err
 		}
-		for _, certificate := range certificates {
-			if !certificate.IsCA || !certificate.BasicConstraintsValid ||
-				(certificate.KeyUsage != 0 && certificate.KeyUsage&x509.KeyUsageCertSign == 0) || !currentCertificate(certificate, now) {
-				return errors.New("oidc.ca_file requires currently valid certificate-signing CA certificates")
-			}
+	}
+	return nil
+}
+
+// CheckClientCertificate validates a client key pair locally; it does not
+// establish that a Control Service trusts the client identity.
+func CheckClientCertificate(certPEM, keyPEM []byte, now time.Time) error {
+	if _, err := tls.X509KeyPair(certPEM, keyPEM); err != nil {
+		return errors.New("control_service client certificate and key must be a matching PEM pair")
+	}
+	certificates, err := parseCertificates(certPEM)
+	if err != nil {
+		return errors.New("control_service.client_certificate_file must contain a leaf-first PEM certificate chain")
+	}
+	leaf := certificates[0]
+	if leaf.IsCA || (leaf.KeyUsage != 0 && leaf.KeyUsage&x509.KeyUsageDigitalSignature == 0) ||
+		!currentCertificate(leaf, now) {
+		return errors.New("Control-Service client certificate must be current, non-CA and permit digital signatures")
+	}
+	if len(leaf.ExtKeyUsage) > 0 {
+		clientAuth := false
+		for _, usage := range leaf.ExtKeyUsage {
+			clientAuth = clientAuth || usage == x509.ExtKeyUsageClientAuth || usage == x509.ExtKeyUsageAny
+		}
+		if !clientAuth {
+			return errors.New("Control-Service client certificate must permit TLS client authentication")
+		}
+	}
+	for i, certificate := range certificates[1:] {
+		if !currentCertificate(certificate, now) || certificates[i].CheckSignatureFrom(certificate) != nil {
+			return errors.New("Control-Service client certificate chain must be current and ordered leaf-first")
+		}
+	}
+	return nil
+}
+
+func checkCertificateAuthorities(data []byte, name string, now time.Time) error {
+	certificates, err := parseCertificates(data)
+	if err != nil {
+		return fmt.Errorf("%s must contain only PEM certificates", name)
+	}
+	for _, certificate := range certificates {
+		if !certificate.IsCA || !certificate.BasicConstraintsValid ||
+			(certificate.KeyUsage != 0 && certificate.KeyUsage&x509.KeyUsageCertSign == 0) || !currentCertificate(certificate, now) {
+			return fmt.Errorf("%s requires currently valid certificate-signing CA certificates", name)
 		}
 	}
 	return nil

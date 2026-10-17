@@ -20,10 +20,11 @@ const MaxConfigBytes = 64 << 10
 
 // Config is the management bootstrap input, not a complete runtime configuration.
 type Config struct {
-	SchemaVersion int          `json:"schema_version"`
-	Organization  Organization `json:"organization"`
-	ControlRoom   ControlRoom  `json:"control_room"`
-	OIDC          OIDC         `json:"oidc"`
+	SchemaVersion  int            `json:"schema_version"`
+	Organization   Organization   `json:"organization"`
+	ControlRoom    ControlRoom    `json:"control_room"`
+	ControlService ControlService `json:"control_service"`
+	OIDC           OIDC           `json:"oidc"`
 }
 
 type Organization struct {
@@ -36,6 +37,13 @@ type ControlRoom struct {
 	ManagementIP    string `json:"management_ip,omitempty"`
 	CertificateFile string `json:"certificate_file"`
 	KeyFile         string `json:"key_file"`
+}
+
+type ControlService struct {
+	URL                   string `json:"url"`
+	ClientCertificateFile string `json:"client_certificate_file"`
+	ClientKeyFile         string `json:"client_key_file"`
+	ServerCAFile          string `json:"server_ca_file"`
 }
 
 type OIDC struct {
@@ -135,10 +143,17 @@ func (config Config) Validate() error {
 	if err := ValidateManagementEndpoint(config.ControlRoom.Origin, config.ControlRoom.ManagementIP); err != nil {
 		return err
 	}
+	if err := ValidateControlServiceEndpoint(config.ControlService.URL); err != nil {
+		return err
+	}
 	if err := ValidateOperatorAccess(config.Organization.ID, config.ControlRoom.Origin, config.OIDC.Config); err != nil {
 		return err
 	}
-	files := []string{config.ControlRoom.CertificateFile, config.ControlRoom.KeyFile, config.OIDC.ClientSecretFile}
+	files := []string{
+		config.ControlRoom.CertificateFile, config.ControlRoom.KeyFile,
+		config.ControlService.ClientCertificateFile, config.ControlService.ClientKeyFile,
+		config.ControlService.ServerCAFile, config.OIDC.ClientSecretFile,
+	}
 	if config.OIDC.CAFile != "" {
 		files = append(files, config.OIDC.CAFile)
 	}
@@ -146,9 +161,20 @@ func (config Config) Validate() error {
 	for _, file := range files {
 		if !plainText(file, 4096) || !path.IsAbs(file) || path.Clean(file) != file ||
 			file == "/" || strings.ContainsAny(file, `\$`) || seen[file] {
-			return errors.New("TLS/OIDC file references must be distinct canonical absolute Linux file paths without expansion")
+			return errors.New("TLS, Control-Service and OIDC file references must be distinct canonical absolute Linux file paths without expansion")
 		}
 		seen[file] = true
+	}
+	return nil
+}
+
+// ValidateControlServiceEndpoint accepts only the explicit HTTPS origin used by
+// the Control Room's independently authenticated mTLS client.
+func ValidateControlServiceEndpoint(endpoint string) error {
+	address, err := url.Parse(endpoint)
+	if err != nil || !httpsAddress(address) || address.Path != "" ||
+		endpoint != "https://"+address.Host {
+		return errors.New("control_service.url must be an exact HTTPS origin without path, query or fragment")
 	}
 	return nil
 }

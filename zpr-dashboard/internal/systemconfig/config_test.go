@@ -18,6 +18,12 @@ func validConfig() Config {
 		ControlRoom: ControlRoom{
 			Origin: "https://control.example.com", CertificateFile: "/etc/zpr/tls/room.pem", KeyFile: "/etc/zpr/secrets/room.key",
 		},
+		ControlService: ControlService{
+			URL:                   "https://control-service.internal:8790",
+			ClientCertificateFile: "/etc/zpr/tls/control-room-client.pem",
+			ClientKeyFile:         "/etc/zpr/secrets/control-room-client.key",
+			ServerCAFile:          "/etc/zpr/tls/control-service-ca.pem",
+		},
 		OIDC: OIDC{
 			ClientSecretFile: "/etc/zpr/secrets/oidc",
 			Config: operatorauth.Config{
@@ -43,6 +49,7 @@ func TestReadCompanyConfiguration(t *testing.T) {
 	}
 	got, err := Read(strings.NewReader(string(data)))
 	if err != nil || got.Organization != config.Organization || got.ControlRoom != config.ControlRoom ||
+		got.ControlService != config.ControlService ||
 		got.OIDC.Config.RedirectURL != config.OIDC.Config.RedirectURL || got.OIDC.CAFile != config.OIDC.CAFile {
 		t.Fatalf("read config: %+v, %v", got, err)
 	}
@@ -74,6 +81,10 @@ func TestCompanyConfigurationValidation(t *testing.T) {
 		{"name-long", func(c *Config) { c.Organization.Name = strings.Repeat("a", 257) }},
 		{"missing-cert", func(c *Config) { c.ControlRoom.CertificateFile = "" }},
 		{"missing-key", func(c *Config) { c.ControlRoom.KeyFile = "" }},
+		{"missing-control-service-url", func(c *Config) { c.ControlService.URL = "" }},
+		{"missing-control-service-client-cert", func(c *Config) { c.ControlService.ClientCertificateFile = "" }},
+		{"missing-control-service-client-key", func(c *Config) { c.ControlService.ClientKeyFile = "" }},
+		{"missing-control-service-ca", func(c *Config) { c.ControlService.ServerCAFile = "" }},
 		{"missing-secret", func(c *Config) { c.OIDC.ClientSecretFile = "" }},
 		{"relative-key", func(c *Config) { c.ControlRoom.KeyFile = "secrets/key.pem" }},
 		{"unclean-key", func(c *Config) { c.ControlRoom.KeyFile = "/etc/zpr/../key" }},
@@ -97,6 +108,20 @@ func TestCompanyConfigurationValidation(t *testing.T) {
 		{"unknown-permission", func(c *Config) { c.OIDC.Config.Grants[0].Permissions = []string{"monitor.read", "admin"} }},
 		{"simulation-permission", func(c *Config) { c.OIDC.Config.Grants[0].Permissions = []string{"monitor.read", "simulator.control"} }},
 		{"wildcard-permission", func(c *Config) { c.OIDC.Config.Grants[0].Permissions = []string{"*"} }},
+	}
+	for _, endpoint := range []string{
+		"http://control-service.internal", "https://control-service.internal/path",
+		"https://control-service.internal?", "https://control-service.internal#fragment",
+		"https://user@control-service.internal", "https://control-service.internal:0",
+		"https://control-service.internal:65536", "https://control-service.internal:",
+	} {
+		t.Run("control-service-"+endpoint, func(t *testing.T) {
+			config := validConfig()
+			config.ControlService.URL = endpoint
+			if err := config.Validate(); err == nil {
+				t.Fatal("invalid Control-Service endpoint accepted")
+			}
+		})
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
