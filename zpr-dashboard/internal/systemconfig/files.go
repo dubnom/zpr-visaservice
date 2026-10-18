@@ -20,6 +20,11 @@ func (config Config) CheckFiles(now time.Time) error {
 	if err := config.Validate(); err != nil {
 		return err
 	}
+	if config.ControlService != nil {
+		if err := config.ControlService.checkFiles(); err != nil {
+			return err
+		}
+	}
 	read := func(name, path string, limit int64, private bool) ([]byte, error) {
 		data, err := servicehttp.ReadOperatorFile(path, limit, private)
 		if err != nil {
@@ -62,6 +67,26 @@ func (config Config) CheckFiles(now time.Time) error {
 				(certificate.KeyUsage != 0 && certificate.KeyUsage&x509.KeyUsageCertSign == 0) || !currentCertificate(certificate, now) {
 				return errors.New("oidc.ca_file requires currently valid certificate-signing CA certificates")
 			}
+		}
+	}
+	return nil
+}
+
+// checkFiles inspects access/protection only, not mTLS contents or service trust.
+func (service ControlService) checkFiles() error {
+	for _, file := range []struct {
+		name    string
+		path    string
+		private bool
+	}{
+		{"control_service.client_certificate_file", service.ClientCertificateFile, false},
+		{"control_service.client_key_file", service.ClientKeyFile, true},
+		{"control_service.ca_file", service.CAFile, false},
+	} {
+		data, err := servicehttp.ReadOperatorFile(file.path, 65536, file.private)
+		clear(data)
+		if err != nil {
+			return fmt.Errorf("%s: %w", file.name, err)
 		}
 	}
 	return nil

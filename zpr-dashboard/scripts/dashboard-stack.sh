@@ -7,6 +7,7 @@ SCRIPT_DIR=$(CDPATH='' cd -- "$(dirname -- "$0")" && pwd)
 . "$SCRIPT_DIR/multinode-admin.sh"
 . "$SCRIPT_DIR/machine-runtime.sh"
 . "$SCRIPT_DIR/multinode-platform.sh"
+. "$SCRIPT_DIR/simulator-image.sh"
 DASHBOARD_DIR=$(CDPATH='' cd -- "$SCRIPT_DIR/.." && pwd)
 RUNTIME_DIR=$(CDPATH='' cd -- "$DASHBOARD_DIR/../../.local-runtime" && pwd)
 PROJECT_ROOT=$(CDPATH='' cd -- "$DASHBOARD_DIR/../.." && pwd)
@@ -272,8 +273,8 @@ start_simulator() {
     fi
     load_multinode_platform_file "$STATE_DIR/multinode-platform.json"
     configure_multinode_platform
+    ensure_simulator_image "$SIMULATOR_IMAGE" "$SCRIPT_DIR/Dockerfile.simulator" "$DASHBOARD_DIR"
     docker rm -f "$SIMULATOR_DOCKER_CONTAINER" >/dev/null 2>&1 || true
-    docker build -f "$SCRIPT_DIR/Dockerfile.simulator" -t "$SIMULATOR_IMAGE" "$DASHBOARD_DIR"
     simulator_socket=$(docker_socket_path)
     organization_id=${SIMULATION_ORGANIZATION_ID:-$(jq -r '.organization_id // "northstar"' "$SIMULATION_MANIFEST")}
     simulator_proxy_ip=$(docker network inspect bridge --format '{{(index .IPAM.Config 0).Gateway}}')
@@ -417,8 +418,8 @@ start_control_room() {
         return 0
     fi
     configure_change_review
+    ensure_simulator_image "$SIMULATOR_IMAGE" "$SCRIPT_DIR/Dockerfile.simulator" "$DASHBOARD_DIR"
     docker rm -f "$CONTROL_ROOM_DOCKER_CONTAINER" >/dev/null 2>&1 || true
-    docker build -f "$SCRIPT_DIR/Dockerfile.simulator" -t "$SIMULATOR_IMAGE" "$DASHBOARD_DIR"
     control_room_proxy_ip=$(docker network inspect bridge --format '{{(index .IPAM.Config 0).Gateway}}')
     set --
     if [ -r "$OPERATOR_DIR/stack.json" ]; then
@@ -477,7 +478,7 @@ wait_for_control_room() {
 
 restart_control_room() {
     configure_change_review
-    docker build -f "$SCRIPT_DIR/Dockerfile.simulator" -t "$SIMULATOR_IMAGE" "$DASHBOARD_DIR"
+    ensure_simulator_image "$SIMULATOR_IMAGE" "$SCRIPT_DIR/Dockerfile.simulator" "$DASHBOARD_DIR"
     if [ -r "$OPERATOR_DIR/stack.json" ]; then
         sh "$SCRIPT_DIR/local-operator-login.sh" start
     fi
@@ -510,7 +511,7 @@ restart_simulator_ui() {
     if [ -z "$ui_organization" ] && [ -r "$ACTIVE_ORGANIZATION_FILE" ]; then
         ui_organization=$(tr -d '\r\n' < "$ACTIVE_ORGANIZATION_FILE")
     fi
-    docker build -f "$SCRIPT_DIR/Dockerfile.simulator" -t "$SIMULATOR_IMAGE" "$DASHBOARD_DIR"
+    ensure_simulator_image "$SIMULATOR_IMAGE" "$SCRIPT_DIR/Dockerfile.simulator" "$DASHBOARD_DIR"
     if docker inspect "$SIMULATOR_DOCKER_CONTAINER" >/dev/null 2>&1; then
         docker stop "$SIMULATOR_DOCKER_CONTAINER" >/dev/null
         docker rm "$SIMULATOR_DOCKER_CONTAINER" >/dev/null
@@ -1807,7 +1808,7 @@ start_policy_service() {
         return 1
     fi
     ensure_policy_tools
-    docker build -f "$SCRIPT_DIR/Dockerfile.simulator" -t "$SIMULATOR_IMAGE" "$DASHBOARD_DIR"
+    ensure_simulator_image "$SIMULATOR_IMAGE" "$SCRIPT_DIR/Dockerfile.simulator" "$DASHBOARD_DIR"
     start_policy_context_container "$organization_id" \
         "$RUNTIME_DIR/linux-integration/pregen/v4-1node-3actor-ping.zpl" \
         "Simulator/Runtime" "Simulator runtime policy" "$STATE_DIR/staged-policy"

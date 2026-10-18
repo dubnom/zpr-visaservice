@@ -20,10 +20,11 @@ const MaxConfigBytes = 64 << 10
 
 // Config is the management bootstrap input, not a complete runtime configuration.
 type Config struct {
-	SchemaVersion int          `json:"schema_version"`
-	Organization  Organization `json:"organization"`
-	ControlRoom   ControlRoom  `json:"control_room"`
-	OIDC          OIDC         `json:"oidc"`
+	SchemaVersion  int             `json:"schema_version"`
+	Organization   Organization    `json:"organization"`
+	ControlRoom    ControlRoom     `json:"control_room"`
+	ControlService *ControlService `json:"control_service,omitempty"`
+	OIDC           OIDC            `json:"oidc"`
 }
 
 type Organization struct {
@@ -36,6 +37,14 @@ type ControlRoom struct {
 	ManagementIP    string `json:"management_ip,omitempty"`
 	CertificateFile string `json:"certificate_file"`
 	KeyFile         string `json:"key_file"`
+}
+
+type ControlService struct {
+	URL                   string `json:"url"`
+	ClientCertificateFile string `json:"client_certificate_file"`
+	ClientKeyFile         string `json:"client_key_file"`
+	CAFile                string `json:"ca_file"`
+	TLSServerName         string `json:"tls_server_name,omitempty"`
 }
 
 type OIDC struct {
@@ -126,8 +135,25 @@ func checkJSONValue(decoder *json.Decoder, depth int) error {
 }
 
 func (config Config) Validate() error {
-	if config.SchemaVersion != 1 {
-		return errors.New("company configuration requires schema_version 1")
+	if config.SchemaVersion != 1 && config.SchemaVersion != 2 {
+		return errors.New("company configuration requires schema_version 1 or 2")
+	}
+	if config.SchemaVersion == 1 && config.ControlService != nil {
+		return errors.New("control_service requires schema_version 2")
+	}
+	if config.SchemaVersion == 2 {
+		if config.ControlService == nil {
+			return errors.New("schema_version 2 requires control_service")
+		}
+		service := config.ControlService
+		address, err := url.Parse(service.URL)
+		if err != nil || !httpsAddress(address) || address.Path != "" ||
+			service.URL != "https://"+address.Host {
+			return errors.New("control_service.url must be an exact HTTPS origin without credentials, path, query or fragment")
+		}
+		if service.TLSServerName != "" && !tlsServerName(service.TLSServerName) {
+			return errors.New("control_service.tls_server_name must be a host-only DNS name or unbracketed IP literal without a port, zone or URL components")
+		}
 	}
 	if !organizationID.MatchString(config.Organization.ID) || !plainText(config.Organization.Name, 256) {
 		return errors.New("organization requires a 1-64 character lowercase alphanumeric/hyphen ID and a nonempty name")
@@ -142,11 +168,14 @@ func (config Config) Validate() error {
 	if config.OIDC.CAFile != "" {
 		files = append(files, config.OIDC.CAFile)
 	}
+	if config.ControlService != nil {
+		files = append(files, config.ControlService.ClientCertificateFile, config.ControlService.ClientKeyFile, config.ControlService.CAFile)
+	}
 	seen := map[string]bool{}
 	for _, file := range files {
 		if !plainText(file, 4096) || !path.IsAbs(file) || path.Clean(file) != file ||
 			file == "/" || strings.ContainsAny(file, `\$`) || seen[file] {
-			return errors.New("TLS/OIDC file references must be distinct canonical absolute Linux file paths without expansion")
+			return errors.New("TLS/OIDC/Control-Service file references must be distinct canonical absolute Linux file paths without expansion")
 		}
 		seen[file] = true
 	}
@@ -219,6 +248,28 @@ func httpsAddress(address *url.URL) bool {
 		number, err := strconv.Atoi(port)
 		if err != nil || number < 1 || number > 65535 || strconv.Itoa(number) != port {
 			return false
+		}
+	}
+	return true
+}
+
+func tlsServerName(host string) bool {
+	if net.ParseIP(host) != nil {
+		return true
+	}
+	host = strings.TrimSuffix(host, ".")
+	if len(host) == 0 || len(host) > 253 {
+		return false
+	}
+	for _, label := range strings.Split(host, ".") {
+		if len(label) == 0 || len(label) > 63 || label[0] == '-' || label[len(label)-1] == '-' {
+			return false
+		}
+		for _, character := range label {
+			if !(character >= 'a' && character <= 'z' || character >= 'A' && character <= 'Z' ||
+				character >= '0' && character <= '9' || character == '-') {
+				return false
+			}
 		}
 	}
 	return true

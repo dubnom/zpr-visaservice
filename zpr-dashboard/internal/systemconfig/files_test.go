@@ -63,13 +63,19 @@ func fileFixture(t *testing.T, editLeaf func(*x509.Certificate)) (Config, []byte
 	}
 	leafPEM, keyPEM, _, _ := issueCertificate(t, leaf, root, rootKey)
 	directory := t.TempDir()
-	config := validConfig()
+	config := validControlServiceConfig()
 	config.ControlRoom.CertificateFile = filepath.Join(directory, "chain.pem")
 	config.ControlRoom.KeyFile = filepath.Join(directory, "key.pem")
+	config.ControlService.ClientCertificateFile = filepath.Join(directory, "control-service-client.pem")
+	config.ControlService.ClientKeyFile = filepath.Join(directory, "control-service-client.key")
+	config.ControlService.CAFile = filepath.Join(directory, "control-service-ca.pem")
 	config.OIDC.ClientSecretFile = filepath.Join(directory, "secret")
 	config.OIDC.CAFile = filepath.Join(directory, "ca.pem")
 	writeFixtureFile(t, config.ControlRoom.CertificateFile, append(bytes.Clone(leafPEM), rootPEM...), 0o644)
 	writeFixtureFile(t, config.ControlRoom.KeyFile, keyPEM, 0o600)
+	writeFixtureFile(t, config.ControlService.ClientCertificateFile, []byte("control-service client certificate fixture\n"), 0o644)
+	writeFixtureFile(t, config.ControlService.ClientKeyFile, []byte("control-service client key fixture\n"), 0o600)
+	writeFixtureFile(t, config.ControlService.CAFile, []byte("control-service CA fixture\n"), 0o644)
 	writeFixtureFile(t, config.OIDC.ClientSecretFile, []byte("private-secret-value\r\n"), 0o600)
 	writeFixtureFile(t, config.OIDC.CAFile, rootPEM, 0o644)
 	return config, leafPEM, rootPEM
@@ -98,7 +104,7 @@ func TestCompanyFilesOfflineChecks(t *testing.T) {
 		{"leaf-only", func(c *Config, leaf, _ []byte) {
 			writeFixtureFile(t, c.ControlRoom.CertificateFile, leaf, 0o644)
 		}, ""},
-		{"invalid-config", func(c *Config, _, _ []byte) { c.SchemaVersion = 2 }, "schema_version"},
+		{"invalid-config", func(c *Config, _, _ []byte) { c.SchemaVersion = 3 }, "schema_version"},
 		{"missing-certificate", func(c *Config, _, _ []byte) { c.ControlRoom.CertificateFile += ".absent" }, "control_room.certificate_file"},
 		{"missing-key", func(c *Config, _, _ []byte) { c.ControlRoom.KeyFile += ".absent" }, "control_room.key_file"},
 		{"missing-secret", func(c *Config, _, _ []byte) { c.OIDC.ClientSecretFile += ".absent" }, "oidc.client_secret_file"},

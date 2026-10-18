@@ -1,5 +1,5 @@
 {
-  "schema_version": 1,
+  "schema_version": 2,
   "organization": {
     "id": "example-company",
     "name": "Example Company"
@@ -9,6 +9,13 @@
     "management_ip": "10.20.30.40",
     "certificate_file": "/etc/zpr/tls/control-room-chain.pem",
     "key_file": "/etc/zpr/secrets/control-room-key.pem"
+  },
+  "control_service": {
+    "url": "https://control-service.example.com:8790",
+    "client_certificate_file": "/etc/zpr/tls/control-service-client-chain.pem",
+    "client_key_file": "/etc/zpr/secrets/control-service-client-key.pem",
+    "ca_file": "/etc/zpr/tls/control-service-ca.pem",
+    "tls_server_name": "control-service.example.com"
   },
   "oidc": {
     "config": {

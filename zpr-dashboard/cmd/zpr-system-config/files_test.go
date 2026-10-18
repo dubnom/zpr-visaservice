@@ -33,6 +33,9 @@ func TestCompanyConfigCommandOfflineFiles(t *testing.T) {
 	config.ControlRoom.CertificateFile = filepath.Join(directory, "tls.pem")
 	config.ControlRoom.KeyFile = filepath.Join(directory, "key.pem")
 	config.OIDC.ClientSecretFile = filepath.Join(directory, "secret")
+	config.ControlService.ClientCertificateFile = filepath.Join(directory, "control-service-client.pem")
+	config.ControlService.ClientKeyFile = filepath.Join(directory, "control-service-client.key")
+	config.ControlService.CAFile = filepath.Join(directory, "control-service-ca.pem")
 	public, key, err := ed25519.GenerateKey(rand.Reader)
 	if err != nil {
 		t.Fatal(err)
@@ -56,10 +59,13 @@ func TestCompanyConfigCommandOfflineFiles(t *testing.T) {
 		t.Fatal(err)
 	}
 	files := map[string][]byte{
-		configFile:                         data,
-		config.ControlRoom.CertificateFile: pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: der}),
-		config.ControlRoom.KeyFile:         pem.EncodeToMemory(&pem.Block{Type: "PRIVATE KEY", Bytes: keyDER}),
-		config.OIDC.ClientSecretFile:       []byte("private-value\n"),
+		configFile:                                  data,
+		config.ControlRoom.CertificateFile:          pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: der}),
+		config.ControlRoom.KeyFile:                  pem.EncodeToMemory(&pem.Block{Type: "PRIVATE KEY", Bytes: keyDER}),
+		config.OIDC.ClientSecretFile:                []byte("private-value\n"),
+		config.ControlService.ClientCertificateFile: []byte("control-service certificate fixture\n"),
+		config.ControlService.ClientKeyFile:         []byte("control-service key fixture\n"),
+		config.ControlService.CAFile:                []byte("control-service CA fixture\n"),
 	}
 	for path, contents := range files {
 		if err := os.WriteFile(path, contents, 0o600); err != nil {

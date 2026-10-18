@@ -1,9 +1,84 @@
-# Production system packaging foundation
+# System packaging
 
-Status: **In progress**, 2026-10-15. This is the first M1 inventory and the initial
-M2 host-preflight/configuration slices of the [system release plan](../../../System%20release%20plan.md).
-There is no installable server bundle, production Compose definition or signed
-system release yet. Nothing here starts or changes the development runtime.
+## Current objective: paired demo packages
+
+The immediate goal is a working ZPR demo archive and a separate, version-matched
+Simulator companion for an isolated disposable Ubuntu 26.04.1 LTS x86-64 host. The
+[demo package contract](DEMO-PACKAGE-CONTRACT.md) defines the allowed demo
+shortcuts, contents, downloaded-artifact acceptance and the remaining packaging
+blockers. In particular, Simulator's Docker-socket access is root-equivalent;
+the user approved it only for isolated disposable demo hosts. Nothing in the
+demo contract permits publishing or production use.
+For package-mode Simulator startup, the
+[multinode demo wrapper](../../../../zpr-demo/multinode-demo/packaging/run-simulator-package-mode.sh)
+requires an explicit dashboard support tree and locally loaded image reference,
+then forces `ZPR_SIMULATOR_PREBUILT_IMAGE=1`. The image helper verifies
+`linux/amd64`; default development mode still builds from source. This removes
+only image-build-on-start. The dashboard continues to require bind-mounted
+support trees, so the Simulator companion is not yet source-independent.
+
+## Production packaging remains separate
+
+This document also records production packaging work under the
+[system release plan](../../../System%20release%20plan.md). Host preflight,
+configuration validation, bundle-manifest validation and runtime rendering are
+engineering slices, not a production installer. There is no installable
+production server bundle, production Compose definition or signed system
+release. The [first-install runtime contract](INSTALLER-RUNTIME-CONTRACT.md)
+records production requirements; it does not make a demo or production bundle
+installable. Nothing here starts or changes the development runtime.
+
+## Linux/amd64 validator CLI engineering staging
+
+The `zpr-system-config` validator is built as a standalone Linux/amd64 binary;
+installation and use of the binary do not require Go or a source checkout.
+From the `zpr-dashboard` module directory, select an absolute output file path
+outside this repository whose parent exists and whose file does not:
+
+```sh
+sh packaging/system/build-cli-linux-amd64.sh /tmp/zpr-system-config-linux-amd64
+```
+
+The script records the exact local Go version, requires Go 1.26.1 or newer
+(the module minimum), disables toolchain/module downloads, and uses read-only
+module mode with `GOOS=linux`, `GOARCH=amd64`, `GOAMD64=v1` and
+`CGO_ENABLED=0`. It applies `-trimpath` and `-buildvcs=false`, then verifies the
+output is an ELF64 little-endian amd64 executable without running it. The exact
+caller-selected path is used; an existing path or any path inside the checkout
+is rejected. Build intermediates are temporary and cleaned on failure.
+
+These flags and an observed Go version make the staging step explicit, not
+byte-reproducible. The repository does not pin an exact Go toolchain, and these
+engineering outputs are unsigned, have no release provenance and are not
+release-qualified. No configuration, credential, key or trust material is
+included.
+
+Build the standalone manifest validator, archive packer, downloaded-archive
+verifier, detached-signature tool and Control Room runtime-input renderer
+together for an Ubuntu 24.04 x86-64 qualification host:
+
+```sh
+sh packaging/system/build-bundle-tools-linux-amd64.sh \
+  /tmp/zpr-bundle-tools-linux-amd64.tar.gz
+```
+
+The resulting engineering-tool archive contains five Linux/amd64 binaries,
+`SHA256SUMS` and `BUILD-INFO.txt`. Verify its contents and tool checksums before
+use. This is a convenience archive for qualification workflows, not a signed
+ZPR installation or Simulator companion package; it does not yet ship as a
+customer download.
+
+Run the isolated staging regression script with:
+
+```sh
+sh packaging/system/test-cli-linux-amd64.sh
+sh packaging/system/test-bundle-tools-linux-amd64.sh
+```
+
+The scripts build only into temporary directories that are removed on exit,
+exercise success and failure/no-write cases, and verify target metadata without
+executing the Linux binaries. Required module dependencies must already be
+cached; the checks do not download modules or toolchains.
 
 ## Approved target
 
@@ -167,9 +242,10 @@ read this Simulator setting and must work with Simulator unavailable.
 
 ## Company management-bootstrap configuration
 
-The version-1 [example](company.example.json) is a **partial installation input**
-for company identity and operator access, not a complete server/node/adapter
-configuration. Neither the current dashboard nor a Compose installer consumes
+The version-2 [example](company.example.json) is a **partial installation input**
+for company identity, operator access and Control Room's Control-Service mTLS
+connection, not a complete server/node/adapter configuration.
+Neither the current dashboard nor a Compose installer consumes
 it yet. Do not pass it as `ZPR_OPERATOR_OIDC_CONFIG_FILE`: only its `oidc.config`
 object has that existing format; rendering protected runtime files is future work.
 
@@ -188,9 +264,9 @@ Diagnostics never print configuration contents or source parser excerpts.
 With `-check-files`, exit `0` additionally means the referenced local files pass
 the offline checks below; it still does not mean the appliance is ready.
 
-| Input | Version-1 contract |
+| Input | Contract (versions 1 and 2 unless noted) |
 | --- | --- |
-| `schema_version` | Exactly `1`; unknown versions fail |
+| `schema_version` | `1` preserves the original company/operator input and rejects `control_service`; `2` requires `control_service`. Other versions fail |
 | `organization.id` | 1-64 lowercase ASCII letters/digits/hyphens, alphanumeric at both ends; no wildcard scopes |
 | `organization.name` | Nonempty trimmed display name, at most 256 bytes, no control characters |
 | `control_room.origin` | Exact `https://company-hostname[:port]`, lowercase dotted DNS hostname, no IP, localhost/`.local`, path, userinfo, query or fragment; optional canonical port 1-65535 |
@@ -201,6 +277,19 @@ the offline checks below; it still does not mean the appliance is ready.
 | `oidc.config.grants` | Each grant names an exact issuer/subject and scopes only this company. Production monitor/policy/gateway/change-review and enrollment permissions only, validated against existing operator permission names |
 | `oidc.client_secret_file` | Separate absolute canonical Linux file reference, never an inline client secret |
 | `oidc.ca_file` | Optional separate CA file reference for company IdP trust; omission means the existing system-root behavior, not disabled TLS verification |
+| `control_service.url` | Required in v2: exact HTTPS origin with a DNS host or IP and optional canonical port 1-65535; no credentials, path (including trailing `/`), query or fragment |
+| `control_service.client_certificate_file` | Required in v2: distinct canonical absolute Linux file reference for Control Room's backend client certificate |
+| `control_service.client_key_file` | Required in v2: distinct canonical absolute Linux file reference for that client's private key; never inline key material |
+| `control_service.ca_file` | Required in v2: distinct canonical absolute Linux file reference for Control-Service CA trust input |
+| `control_service.tls_server_name` | Optional in v2: host-only ASCII DNS name or unbracketed IPv4/IPv6 literal, without a port, IPv6 zone, URL components, wildcard or whitespace. DNS labels use letters/digits/hyphens, are 1-63 bytes and cannot start/end with a hyphen; the name is at most 253 bytes excluding an optional final dot. Single-label and mixed-case DNS names are accepted; international names must use ASCII A-labels. Omitted/empty retains the production proxy's URL-hostname fallback; otherwise supplies its TLS server-name override unchanged. Syntax only: this does not validate certificate SAN identity, CA trust or mTLS operation |
+
+These v2 fields represent the existing
+[`newControlServiceProxy`](../../cmd/zpr-web-dashboard/control_service.go)
+inputs, in order: `ZPR_CONTROL_SERVICE_URL`, `ZPR_CONTROL_CLIENT_CERT_FILE`,
+`ZPR_CONTROL_CLIENT_KEY_FILE`, `ZPR_CONTROL_SERVICE_CA_FILE` and optional
+`ZPR_CONTROL_SERVICE_TLS_SERVER_NAME`. The validator itself does not render
+environment or runtime files. The example contains only placeholder references;
+it does not provision client credentials or establish service CA trust.
 
 At least one named grant must include `monitor.read`, to avoid configuring no
 operator capable of viewing the Control Room. This does not grant administrative
@@ -212,8 +301,8 @@ this file does not bypass those controls or implement first-admin recovery.
 
 The reader rejects unknown/miscased fields, duplicate object keys at every
 level, nulls, trailing documents, oversized input (64 KiB) and nesting above
-16 levels. All TLS/OIDC file references must be distinct, absolute Linux paths,
-with no `..`, redundant separators, trailing slash or shell expansion.
+16 levels. All TLS/OIDC/Control-Service file references must be mutually distinct,
+absolute Linux paths, with no `..`, redundant separators, trailing slash or shell expansion.
 They describe intended installation-host paths, not paths resolved against the
 developer's machine, home directory, Simulator state or config-file directory.
 
@@ -242,14 +331,15 @@ Ubuntu 24.04 x86-64. Other platforms fail explicitly when this mode is selected.
   opened without following the final symlink and checked against their initial
   metadata. Parent-directory ownership/symlinks and runtime container identity/
   mount access are **not** audited; an installer must establish those separately.
-- Private key and OIDC secret files additionally require no group/other access
+- Private key (including the Control-Service client key) and OIDC secret files
+  additionally require no group/other access
   (typically `0600`). Public certificate/CA files may be `0644`. The reader does
   not repair permissions or ownership.
 - Certificate, key and CA inputs are bounded to 64 KiB each, and the OIDC secret
   to 4096 bytes. A secret is a nonempty, unpadded single line, optionally ending
   in LF or CRLF, matching the current operator runtime contract.
-- TLS input must be a leaf-first PEM certificate chain and one unencrypted PEM
-  private key. Checks include key matching, company hostname/SAN, current
+- Control Room TLS input must be a leaf-first PEM certificate chain and one
+  unencrypted PEM private key. Checks include key matching, company hostname/SAN, current
   validity, HTTPS server-authentication use, TLS 1.3 digital-signature use when
   key usage is specified, and supplied issuer signatures/path constraints.
   A lone leaf or a chain omitting its root is permitted; the supplied chain tip
@@ -257,14 +347,47 @@ Ubuntu 24.04 x86-64. Other platforms fail explicitly when this mode is selected.
 - An optional OIDC CA file must contain only currently valid CA certificates,
   with certificate-signing use when key usage is specified. This does not prove
   that the provider's certificate chains to these anchors or that login works.
+- In v2, the three Control-Service references receive protected-file access
+  checks only, with a 64 KiB limit each and private-file permissions on the
+  client key. Their contents are not parsed: client certificate/key format or
+  matching, client authentication suitability, service CA format/trust and
+  service reachability are **not established**. Passing these checks is not
+  runtime mTLS validation.
 - Errors name the failed configuration field without disclosing local paths,
   credential contents or raw TLS parser errors. Failure emits no success output.
 
-**Still not checked:** browser/company root trust, revocation, company IdP
+**Still not checked:** Control-Service runtime mTLS, browser/company root trust, revocation, company IdP
 discovery/token/login, DNS, management firewall, listener reachability, or service
 readiness. This is a read-only snapshot, not an install/activation gate or a
 guarantee against later file changes. No configuration is emitted or applied.
 The command reports these limits even on success.
+
+### Render Control Room runtime inputs
+
+The separate `zpr-system-config-render` engineering command maps schema-v2
+company inputs into the existing Control Room process environment and emits the
+operator OIDC runtime configuration. It requires offline file checks to pass,
+so the invoking installer identity must be able to read every referenced file.
+The output is a new JSON file with mode `0600`; existing output paths are never
+overwritten.
+
+```sh
+go build -o /tmp/zpr-system-config-render ./cmd/zpr-system-config-render
+/tmp/zpr-system-config-render \
+  -config /path/to/company.json \
+  -output /path/to/new/runtime-inputs.json
+```
+
+The JSON includes the listener address, exact existing Control Room and
+Control-Service environment names, a `0600` OIDC configuration at
+`/etc/zpr/config/operator-oidc.json`, and read-only file-mount references for
+the company certificate, key, secret and CA paths. The future container
+composition must mount those inputs at the reported destinations and install
+the generated OIDC JSON at its reported path. The renderer does not copy private
+files, generate identities, validate Control-Service certificate/key matching
+or remote CA trust, build Compose configuration, start services or apply
+settings. It is a configuration-rendering slice, not an installer or complete
+runtime configuration.
 
 ### Remote HTTPS and identity implementation contract
 
@@ -364,10 +487,13 @@ This is not Ubuntu clean-host acceptance.
 
 ## M1 source audit: deployable roles and gaps
 
-Role inclusion below is an engineering proposal, not a completed bundle or
-approval of an external-service provider. Ports are observed source defaults,
-not a customer firewall specification. No internal listener should be published
-merely because its port is listed.
+Role inclusion below reflects the user's 2026-10-17 first-install direction,
+including Gateway as required. It is a source inventory, not a completed or
+qualified bundle or approval of every provider implementation. Ports are
+observed source defaults, not a customer firewall specification. No internal
+listener should be published merely because its port is listed. Provisional
+source and image candidates are tracked in the
+[system release plan](../../../System%20release%20plan.md#first-install-bom-scope-and-provisional-candidates).
 
 | Role | Current source/build input | Configuration, trust and data | Packaging/readiness gap |
 | --- | --- | --- | --- |
@@ -378,13 +504,13 @@ merely because its port is listed.
 | Control-Service | [`control_service.go`](../../cmd/zpr-web-dashboard/control_service.go), same Go binary in `control-service` mode | mTLS default 8790; VS Admin URL/CA/key; Policy-Service mTLS; gateway draft store and configured trusted-service integrations | No dedicated production image yet; eliminate dependence on demo launcher paths and unnecessary host Docker access |
 | Control Room | Same Go binary in `control-room` mode; embedded browser assets | HTTPS default 8787, exact origin, OIDC config/secret/CA, grants/delegation and Control-Service client identity | [`operator_login.go`](../../cmd/zpr-web-dashboard/operator_login.go) preserves loopback mode and adds opt-in direct private management-IP/company-hostname access with required scoped OIDC; container-network/installer integration and live company acceptance remain open |
 | Device Enrollment Service | [`zpr-enrollment-service`](../../cmd/zpr-enrollment-service/main.go), separate Go command | Explicit JSON, private device HTTPS and opt-in separate admin mTLS listener, owned SQLite registry and optional runtime-import signer | Opt-in Control-Service relay removes its registry dependency; BAS registry access and full lifecycle/credential/bootstrap contracts remain unfinished. No cross-service shared SQLite mount in the production package |
-| Authentication | [`zpr-bas`](../../../../zpr-bas/), `cargo build --locked --release` | BAS TLS identity, protected actor records and shared BAS/VS token-verification secret | Package supported enrollment-backed authentication and issuance, not demonstration records; OIDC human login is a different trust path |
+| Authentication | [`zpr-bas`](../../../../zpr-bas/), `cargo build --locked --release` | BAS TLS identity, protected actor records and shared BAS/VS token-verification secret | BAS 0.1.0 is an approved engineering source candidate only; standalone BAS registry access must be reconciled with Enrollment sole-writer ownership before selecting it as the production provider. OIDC human login is a separate trust path |
 | Compiler/evaluator | [`zplc`](../../../../zpr-compiler/), `cargo build --locked --release`; `zpt` from Visa workspace | ZPLC configuration, per-company signing material, input schema and policy binary compatibility | Pin compiler/common-library versions and native runtime dependencies; no compiler source checkout on customer host |
-| Operator identity/directory | External company OIDC and directory services | Issuer/subject grants, redirect origin, TLS, protected client/bind credentials and configured attribute mappings | Company-provided OIDC and directory approved; directory protocols/mappings and first-admin recovery remain open. Do not install demo Dex/LDAP as production defaults |
-| DNS | Existing network DNS (optional companion bootstrap DNS for isolated labs), distinct from [`ZPR BIND9`](../../../dns/bind9/) behind an adapter | Explicit bootstrap endpoints; protected DNS address/policy, publisher and separate viewer TSIG identities | Protected BIND9 approved for the combined demonstration; package its adapter and independent supervised namespace. Bootstrap must not depend on ZPR DNS. Config generation exists, not service deployment; no automatic acme-dns |
-| Gateway | Existing gateway runtime and [`rollout contract`](../../scripts/gateway-runtime-rollout.md) | Independent installed identity, allowlist, destination/forwarding configuration and adapter link | Decide whether bundled or optional; editor activation/rollback and CONNECT enforcement limits remain unresolved |
-| Telemetry | Existing [`observability`](../../../observability/) and configured logs/metrics sources | Persistent backend data, retention, operator endpoints and credentials | Decide required diagnostic baseline versus optional backend; missing optional telemetry must not masquerade as healthy/empty data |
-| Simulator | Development/test tooling only | Simulation profiles, workloads and manifests | Excluded from the production appliance and its startup dependencies |
+| Operator identity/directory | Bundled production provider path or external company OIDC/directory | Issuer/subject grants, redirect origin, TLS, protected client/bind credentials and configured attribute mappings | User requires a bundled new-user path and documented external integrations. Dex v2.44.0 is only a provisional image candidate; OpenLDAP image/version, production mappings and first-admin recovery remain open. Lab provider state/config is not a production default |
+| DNS | Existing network DNS (optional companion bootstrap DNS for isolated labs), distinct from [`ZPR BIND9`](../../../dns/bind9/) behind an adapter | Explicit bootstrap endpoints; protected DNS address/policy, publisher and separate viewer TSIG identities | Protected BIND9 is required in the first-install BOM. Package its adapter and independent supervised namespace; Visa publisher requires `nsupdate`. Bootstrap must not depend on ZPR DNS. Config generation exists, not service deployment; BIND image/package remains unpinned, with no Ubuntu amd64 runtime qualification |
+| Gateway | Existing gateway runtime and [`rollout contract`](../../scripts/gateway-runtime-rollout.md) | Independent installed identity, allowlist, destination/forwarding configuration and adapter link | Required in the first-install BOM by user direction; editor activation/rollback, fresh-host packaging and CONNECT enforcement limits remain unresolved. Existing image overlays a baseline and is not a from-scratch gateway bundle |
+| Logging/telemetry | Existing [`observability`](../../../observability/) profile or a configured external logging service | Persistent backend data, retention, operator endpoints and protected credentials | Logging is a required capability with bundled or existing-provider mode. OpenObserve is a provisional pinned-image candidate, but the profile remains optional, needs license/runtime/access-control qualification, and is not a generic external-provider contract |
+| Simulator | Separate companion package | Simulation profiles, workloads and manifests; drives the installed ZPR services through supported production contracts | Excluded from the production appliance and its startup dependencies; companion must pair with the exact same ZPR release artifacts and use separate lab-provider state |
 
 The dashboard build input is currently `go build -trimpath
 ./cmd/zpr-web-dashboard`; the Enrollment Service is a separate command build.
@@ -466,6 +592,149 @@ an SBOM. Compiler source declares a git-tagged common-library dependency;
 Visa/core use a sibling common-library path. The lockfiles and protocol/policy
 compatibility must be reconciled, not replaced by this local HEAD table.
 Named component/release owners and exact distro image choices are still open.
+
+## Offline bundle-manifest validation
+
+The M2 engineering slice adds `cmd/zpr-system-bundle`, backed by
+`internal/systembundle`. It is a separate, read-only validator, not an
+installer. Invoke it from the dashboard source directory:
+
+```sh
+go run ./cmd/zpr-system-bundle \
+  -manifest manifest.json \
+  -bundle-dir /path/to/system-bundle
+
+go run ./cmd/zpr-system-bundle \
+  -manifest manifest.json \
+  -bundle-dir /path/to/companion-bundle \
+  -paired-system-manifest manifest.json \
+  -paired-system-dir /path/to/system-bundle
+```
+
+Manifest paths are relative to their corresponding bundle directory. Schema
+version 1 records `bundle_kind`, `release_id`, `qualification_status`, the
+Ubuntu 24.04 x86-64 target, and components. Each component declares an ID,
+scope (`zpr`, `production-support` or `companion`), install mode, provided
+capabilities, artifact platform, local payload path and SHA-256; OCI images
+also require a digest-qualified image reference. An OCI image payload is a
+plain OCI image-layout tar archive containing one platform image; validation
+checks the referenced manifest digest, index/platform agreement, config
+platform, and every declared config/layer blob digest. It does not execute or
+inspect image filesystems. Source-built binaries require a repository name and
+full Git revision. Do not include credentials or private configuration in the
+manifest.
+Every service artifact must declare the Ubuntu host platform (`linux/amd64`).
+The standalone `endpoint-adapter` artifact may declare its own `os/architecture`;
+that explicit value is not evidence that the platform is supported or qualified.
+
+System manifests must include the required ZPR service capabilities, including
+Gateway and protected DNS, plus bundled-default operator identity,
+actor-authentication, trusted-attribute and logging capabilities. These
+bundled artifacts remain available when an installation explicitly selects
+external providers instead. A production manifest rejects Simulator, lab-only
+and bootstrap-DNS capabilities. Companion manifests require Simulator and lab
+LDAP/OIDC, and may include bootstrap DNS only as a selectable lab service. The
+manifest does not encode or enforce runtime provider-state separation; that
+remains an installer and acceptance requirement. Pair validation requires
+identical ZPR component sets, artifact identities and target platforms.
+
+The validator hashes only declared local payload files, rejects traversal and
+symlink payload paths, and accepts `engineering-unqualified` manifests only.
+It does not verify signatures or manifest authenticity, inspect image
+contents, contact services, install/start containers, alter the host, sign,
+publish or qualify a release. It checks declared host-platform compatibility,
+not whether a component platform is actually supported or qualified. A
+successful result is not authorization to install. This source command is not
+yet included in a release bundle or a qualified build target.
+
+### Create an engineering bundle archive
+
+`cmd/zpr-system-bundle-pack` creates a deterministic `.tar.gz` from the
+manifest and exactly its declared payload files. It rechecks the payload
+hashes while writing, normalizes archive metadata, refuses symlinks and
+path traversal, and will not overwrite an existing output. The output path
+must be outside the source bundle directory. The command prints the archive
+SHA-256; record it with any separately reviewed release metadata.
+The output's parent directory must already exist, and the target filename must
+not exist.
+
+```sh
+go run ./cmd/zpr-system-bundle-pack \
+  -manifest manifest.json \
+  -bundle-dir /path/to/system-bundle \
+  -output /path/to/output/zpr-system-candidate.tar.gz
+
+go run ./cmd/zpr-system-bundle-pack \
+  -manifest manifest.json \
+  -bundle-dir /path/to/companion-bundle \
+  -output /path/to/output/zpr-simulator-candidate.tar.gz \
+  -paired-system-manifest manifest.json \
+  -paired-system-dir /path/to/system-bundle
+```
+
+Companion packaging requires a valid exact pairing with the system bundle, but
+does not embed the system archive into the companion archive. Only the listed
+manifest and artifacts are packaged; extra files in the input directory are
+excluded. The archive remains `engineering-unqualified`: it is unsigned and
+does not establish manifest authenticity, image contents, installation,
+runtime health or release qualification. No actual candidate service bundle
+or installer is available yet. This source command is not itself included in
+a qualified release.
+
+### Verify a downloaded bundle archive
+
+`cmd/zpr-system-bundle-verify` validates the archive directly without
+extracting files. It requires `manifest.json` as the first regular tar entry,
+then requires exactly the declared regular-file payloads, validates their
+SHA-256 hashes, checks the gzip stream, and prints the archive SHA-256. A
+companion archive must be paired with the matching system archive:
+
+```sh
+go run ./cmd/zpr-system-bundle-verify \
+  -archive /path/to/zpr-system-candidate.tar.gz
+
+go run ./cmd/zpr-system-bundle-verify \
+  -archive /path/to/zpr-simulator-candidate.tar.gz \
+  -paired-system-archive /path/to/zpr-system-candidate.tar.gz
+```
+
+This detects archive corruption and mismatched declared payloads. To create
+an optional detached Ed25519 signature, use a separately provisioned PKCS#8
+private key PEM protected with mode `0600` or stricter:
+
+```sh
+go run ./cmd/zpr-system-bundle-sign \
+  -archive /path/to/zpr-system-candidate.tar.gz \
+  -private-key /protected/offline/release-key.pem \
+  -signature /path/to/output/zpr-system-candidate.sig.json
+```
+
+Companion signing additionally requires `-paired-system-archive` with the
+matching system archive. The signing command refuses to overwrite an existing
+signature file. The signature binds the exact archive digest, bundle kind,
+release ID and Ed25519 public-key fingerprint. It does not qualify the
+engineering bundle. Do not put the private signing key in the tool archive,
+website, source checkout or test machine.
+
+Verify a signature with a separately obtained trusted public key PEM (PKIX,
+Ed25519). The trust key must come through an independent, authenticated channel;
+downloading it beside the archive does not authenticate it:
+
+```sh
+go run ./cmd/zpr-system-bundle-verify \
+  -archive /path/to/zpr-system-candidate.tar.gz \
+  -signature /path/to/zpr-system-candidate.sig.json \
+  -trusted-key /independently-provisioned/release-key.pub.pem
+```
+
+The signature is optional for explicitly engineering-unqualified candidates,
+and the verifier reports when no publisher signature was checked. Production
+release policy must require a signature and establish independent key custody,
+rotation/revocation and trusted-key distribution before publication. Signing
+does not prove image safety, installation, runtime health or release
+qualification. Verification does not extract files or install services. The
+command is currently a source-tree engineering tool, not part of a downloadable
+installation bundle.
 
 ## Next implementation gates
 

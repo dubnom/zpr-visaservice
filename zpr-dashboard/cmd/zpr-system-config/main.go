@@ -51,7 +51,10 @@ func run(args []string, stdout, stderr io.Writer) int {
 			fmt.Fprintf(stderr, "zpr-system-config: %v\n", err)
 			return 1
 		}
-		result = "Management bootstrap configuration and referenced local files pass offline checks.\nFile protection, TLS key/hostname/validity/supplied-chain checks, OIDC secret format and optional CA format/validity were checked.\nBrowser trust, revocation, OIDC discovery/login, DNS and service readiness have NOT been checked."
+		result = "Management bootstrap configuration and referenced local files pass offline checks.\nFile protection, Control Room TLS key/hostname/validity/supplied-chain checks, OIDC secret format and optional OIDC CA format/validity were checked.\nBrowser trust, revocation, OIDC discovery/login, DNS and service readiness have NOT been checked."
+		if config.ControlService != nil {
+			result += "\nControl-Service references passed protected-file access checks only; client certificate/key matching, service CA trust and service reachability have NOT been checked."
+		}
 	}
 	if _, err := fmt.Fprintln(stdout, result+"\nNo configuration was applied; runtime rendering and installation are not yet implemented."); err != nil {
 		fmt.Fprintln(stderr, "zpr-system-config: cannot write validation result")

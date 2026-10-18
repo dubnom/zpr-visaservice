@@ -1,10 +1,18 @@
 # Simulator companion packaging
 
-Status: **Trust, DNS and independently startable LDAP/OIDC slices**, 2026-10-15.
-There is no installable companion bundle, qualified release image selection
-or complete installer integration yet. Optional generated identity Compose
-requires explicit immutable images; it is not the complete companion. See the
-[approved companion scope](../../../System%20release%20plan.md#simulator-companion-package).
+Status: **Engineering slices only**. The immediate target is a
+version-matched Simulator companion archive paired with the ZPR demo package,
+not a production companion release. There is no installable companion archive
+or clean-host acceptance yet. See the [demo package
+contract](../system/DEMO-PACKAGE-CONTRACT.md) for its allowed shortcuts, exact
+acceptance test and current blockers, and the
+[approved production companion scope](../../../System%20release%20plan.md#simulator-companion-package)
+for the separate production requirements.
+
+The demo-only launcher mounts the host Docker socket into Simulator so it can
+manage scenario containers. This grants root-equivalent host access and is
+allowed only on an isolated disposable demo host. Do not use it on a shared,
+exposed or production host.
 
 The companion will supply Simulator, lab LDAP, OIDC and optional bootstrap DNS.
 Protected ZPR service DNS belongs to the real ZPR package, including its adapter,
@@ -24,6 +32,42 @@ revocation and restart. OpenLDAP and LDAP-backed Dex are approved providers.
 BIND9 has separate bootstrap and ZPR service roles; do not route setup/login
 DNS through a network that has not yet been admitted. See the
 [combined acceptance target](../../../System%20release%20plan.md#simulator-companion-package).
+
+## Linux/amd64 bootstrap CLI engineering staging
+
+The `zpr-lab-bootstrap` tool is built as a standalone Linux/amd64 binary;
+installation and use of the binary do not require Go or a source checkout.
+From the `zpr-dashboard` module directory, select an absolute output file path
+outside this repository whose parent exists and whose file does not:
+
+```sh
+sh packaging/simulator/build-cli-linux-amd64.sh /tmp/zpr-lab-bootstrap-linux-amd64
+```
+
+The script records the exact local Go version, requires Go 1.26.1 or newer
+(the module minimum), disables toolchain/module downloads, and uses read-only
+module mode with `GOOS=linux`, `GOARCH=amd64`, `GOAMD64=v1` and
+`CGO_ENABLED=0`. It applies `-trimpath` and `-buildvcs=false`, then verifies the
+output is an ELF64 little-endian amd64 executable without running it. The exact
+caller-selected path is used; an existing path or any path inside the checkout
+is rejected. Build intermediates are temporary and cleaned on failure.
+
+These flags and an observed Go version make the staging step explicit, not
+byte-reproducible. The repository does not pin an exact Go toolchain, and these
+engineering outputs are unsigned, have no release provenance and are not
+release-qualified. No configuration, credential, key or trust material is
+included.
+
+Run the isolated staging regression script with:
+
+```sh
+sh packaging/simulator/test-cli-linux-amd64.sh
+```
+
+It builds only into a temporary directory that is removed on exit, exercises
+success and failure/no-write cases, and verifies target metadata without
+executing the binary. Required module dependencies must already be cached;
+the checks do not download modules or toolchains.
 
 ## Local lab trust bootstrap
 

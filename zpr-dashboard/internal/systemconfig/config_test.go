@@ -61,7 +61,8 @@ func TestCompanyConfigurationValidation(t *testing.T) {
 		name string
 		edit func(*Config)
 	}{
-		{"schema", func(c *Config) { c.SchemaVersion = 2 }},
+		{"schema", func(c *Config) { c.SchemaVersion = 3 }},
+		{"v2-missing-control-service", func(c *Config) { c.SchemaVersion = 2 }},
 		{"missing-org", func(c *Config) { c.Organization.ID = "" }},
 		{"org-wildcard", func(c *Config) { c.Organization.ID = "*" }},
 		{"org-path", func(c *Config) { c.Organization.ID = "../company" }},
@@ -142,6 +143,180 @@ func TestCompanyConfigurationValidation(t *testing.T) {
 			config.OIDC.Config.RedirectURL = origin + "/auth/operator/callback"
 			if err := config.Validate(); err != nil {
 				t.Fatal(err)
+			}
+		})
+	}
+}
+
+func validControlServiceConfig() Config {
+	config := validConfig()
+	config.SchemaVersion = 2
+	config.ControlService = &ControlService{
+		URL:                   "https://control-service.example.com:8790",
+		ClientCertificateFile: "/etc/zpr/tls/control-client.pem",
+		ClientKeyFile:         "/etc/zpr/secrets/control-client.key",
+		CAFile:                "/etc/zpr/tls/control-service-ca.pem",
+	}
+	return config
+}
+
+func TestCompanyControlServiceConfiguration(t *testing.T) {
+	tests := []struct {
+		name string
+		edit func(*Config)
+	}{
+		{"missing-section", func(c *Config) { c.ControlService = nil }},
+		{"v1-section", func(c *Config) { c.SchemaVersion = 1 }},
+		{"v1-empty-section", func(c *Config) { c.SchemaVersion = 1; c.ControlService = &ControlService{} }},
+		{"missing-url", func(c *Config) { c.ControlService.URL = "" }},
+		{"missing-cert", func(c *Config) { c.ControlService.ClientCertificateFile = "" }},
+		{"missing-key", func(c *Config) { c.ControlService.ClientKeyFile = "" }},
+		{"missing-ca", func(c *Config) { c.ControlService.CAFile = "" }},
+		{"duplicate-client-files", func(c *Config) { c.ControlService.ClientKeyFile = c.ControlService.ClientCertificateFile }},
+		{"duplicate-ca", func(c *Config) { c.ControlService.CAFile = c.ControlService.ClientCertificateFile }},
+		{"duplicate-room-cert", func(c *Config) { c.ControlService.ClientCertificateFile = c.ControlRoom.CertificateFile }},
+		{"duplicate-room-key", func(c *Config) { c.ControlService.ClientKeyFile = c.ControlRoom.KeyFile }},
+		{"duplicate-oidc-secret", func(c *Config) { c.ControlService.CAFile = c.OIDC.ClientSecretFile }},
+		{"duplicate-oidc-ca", func(c *Config) { c.OIDC.CAFile = c.ControlService.CAFile }},
+		{"relative-cert", func(c *Config) { c.ControlService.ClientCertificateFile = "client.pem" }},
+		{"noncanonical-key", func(c *Config) { c.ControlService.ClientKeyFile = "/etc/zpr/../key" }},
+		{"repeated-slash-ca", func(c *Config) { c.ControlService.CAFile = "/etc//ca" }},
+		{"trailing-slash-cert", func(c *Config) { c.ControlService.ClientCertificateFile += "/" }},
+		{"root-ca", func(c *Config) { c.ControlService.CAFile = "/" }},
+		{"expanded-key", func(c *Config) { c.ControlService.ClientKeyFile = "/etc/$KEY" }},
+		{"windows-key", func(c *Config) { c.ControlService.ClientKeyFile = `C:\keys\key.pem` }},
+		{"padded-server-name", func(c *Config) { c.ControlService.TLSServerName = " service.example.com" }},
+		{"control-server-name", func(c *Config) { c.ControlService.TLSServerName = "service\n.example.com" }},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			config := validControlServiceConfig()
+			test.edit(&config)
+			data, err := json.Marshal(config)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if _, err := Read(strings.NewReader(string(data))); err == nil {
+				t.Fatal("invalid Control-Service configuration accepted")
+			}
+		})
+	}
+	for _, origin := range []string{
+		"http://service.example.com", "https://", "https:service.example.com", "service.example.com",
+		"https://user:password@service.example.com", "https://service.example.com/",
+		"https://service.example.com/path", "https://service.example.com/%2f",
+		"https://service.example.com?query=value", "https://service.example.com?",
+		"https://service.example.com#fragment", "https://service.example.com#",
+		"https://service.example.com:0", "https://service.example.com:65536",
+		"https://service.example.com:", "https://service.example.com:abc",
+		" https://service.example.com", "https://service.example.com\n",
+	} {
+		t.Run("url-"+origin, func(t *testing.T) {
+			config := validControlServiceConfig()
+			config.ControlService.URL = origin
+			if err := config.Validate(); err == nil {
+				t.Fatal("invalid Control-Service origin accepted")
+			}
+		})
+	}
+	for _, origin := range []string{
+		"https://control-service.example.com:8790", "https://localhost",
+		"https://10.20.30.40:8790", "https://[fd12:3456::1]:8790", "https://Service.internal",
+	} {
+		for _, serverName := range []string{"", "service.example.com", "10.20.30.40"} {
+			t.Run("valid-"+origin+"-"+serverName, func(t *testing.T) {
+				config := validControlServiceConfig()
+				config.ControlService.URL = origin
+				config.ControlService.TLSServerName = serverName
+				data, err := json.Marshal(config)
+				if err != nil {
+					t.Fatal(err)
+				}
+				got, err := Read(strings.NewReader(string(data)))
+				if err != nil {
+					t.Fatal(err)
+				}
+				if got.ControlService == nil || *got.ControlService != *config.ControlService {
+					t.Fatal("Control-Service inputs did not round trip")
+				}
+			})
+		}
+	}
+	data, err := json.Marshal(validControlServiceConfig())
+	if err != nil {
+		t.Fatal(err)
+	}
+	serviceData, err := json.Marshal(validControlServiceConfig().ControlService)
+	if err != nil {
+		t.Fatal(err)
+	}
+	valid := string(data)
+	for name, input := range map[string]string{
+		"unknown":       strings.Replace(valid, `"control_service":{`, `"control_service":{"unexpected":true,`, 1),
+		"type":          strings.Replace(valid, `"url":"https://control-service.example.com:8790"`, `"url":42`, 1),
+		"null-section":  strings.Replace(valid, `"control_service":`+string(serviceData), `"control_service":null`, 1),
+		"empty-section": strings.Replace(valid, `"control_service":`+string(serviceData), `"control_service":{}`, 1),
+		"duplicate-url": strings.Replace(valid, `"control_service":{`, `"control_service":{"url":"https://other.example.com",`, 1),
+		"miscased":      strings.Replace(valid, `"client_key_file"`, `"Client_Key_File"`, 1),
+	} {
+		t.Run(name, func(t *testing.T) {
+			if _, err := Read(strings.NewReader(input)); err == nil {
+				t.Fatal("invalid Control-Service JSON accepted")
+			}
+		})
+	}
+}
+
+func TestCompanyControlServiceTLSServerName(t *testing.T) {
+	maximumDNSName := strings.Repeat("a", 63) + "." + strings.Repeat("b", 63) + "." +
+		strings.Repeat("c", 63) + "." + strings.Repeat("d", 61)
+	for _, serverName := range []string{
+		"", "localhost", "control-service", "service.example.com", "Service.Example.COM",
+		"service.example.com.", "xn--bcher-kva.example", strings.Repeat("a", 63), maximumDNSName,
+		maximumDNSName + ".", "10.20.30.40", "::1", "fd12:3456::1", "::ffff:192.0.2.1",
+	} {
+		t.Run("valid-"+serverName, func(t *testing.T) {
+			config := validControlServiceConfig()
+			config.ControlService.TLSServerName = serverName
+			data, err := json.Marshal(config)
+			if err != nil {
+				t.Fatal(err)
+			}
+			got, err := Read(strings.NewReader(string(data)))
+			if err != nil {
+				t.Fatal(err)
+			}
+			if got.ControlService.TLSServerName != serverName {
+				t.Fatal("server-name syntax validation changed the configured override or empty fallback")
+			}
+		})
+	}
+	for _, serverName := range []string{
+		"https://service.example.com", "https:service.example.com",
+		"service.example.com:443", "127.0.0.1:443", "[::1]", "[::1]:443",
+		"service.example.com/path", `service.example.com\path`, "user@service.example.com",
+		"service.example.com?query", "service.example.com?", "service.example.com#fragment",
+		"service.example.com#", "*.example.com", "ser*vice.example.com",
+		" service.example.com", "service.example.com ", "service .example.com",
+		"service\texample.com", "service\nexample.com", "service\x00example.com",
+		"service\u00a0example.com", "b\u00fccher.example", "service_example.com",
+		".", ".example.com", "service..example.com", "service.example.com..",
+		"-service.example.com", "service-.example.com", strings.Repeat("a", 64) + ".example",
+		maximumDNSName + "e", "fe80::1%en0", "2001:db8::xyz", "service%2eexample.com",
+	} {
+		t.Run("invalid-"+serverName, func(t *testing.T) {
+			config := validControlServiceConfig()
+			config.ControlService.TLSServerName = serverName
+			data, err := json.Marshal(config)
+			if err != nil {
+				t.Fatal(err)
+			}
+			_, err = Read(strings.NewReader(string(data)))
+			if err == nil || !strings.Contains(err.Error(), "control_service.tls_server_name") {
+				t.Fatalf("missing server-name syntax failure: %v", err)
+			}
+			if err.Error() != "control_service.tls_server_name must be a host-only DNS name or unbracketed IP literal without a port, zone or URL components" {
+				t.Fatal("syntax failure did not use the fixed field-specific diagnostic")
 			}
 		})
 	}

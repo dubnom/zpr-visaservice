@@ -2138,3 +2138,357 @@ reproduce on HEAD):**
 - `stable-login` 174 needs a live callback listener on `localhost:8787`.
 
 The five Go failure groups above are unchanged and still open.
+
+## 13. Packaging Continuation (2026-10-17)
+
+**Scope:** User Control clarified the current request as making separate ZPR
+production and Simulator companion packages. This section records bounded
+engineering evidence only. It does not approve live service/host/network
+operations, credential use, privileged changes, signing, publication,
+deployment, or release qualification. The pre-existing untracked
+`zpr-dashboard/cmd/zpr-discover/foo` remains outside scope and must be
+preserved.
+
+### PKG-CLI-TOOLS-01 — W5
+
+**State:** Verified by C0 at bounded engineering-staging scope; no integration
+or release acceptance. W5 owns only new Linux/amd64 CLI build/test scripts
+and corresponding README updates in
+`zpr-dashboard/packaging/system/` and `zpr-dashboard/packaging/simulator/`.
+The reserved paths are `build-cli-linux-amd64.sh`,
+`test-cli-linux-amd64.sh`, and `README.md` in each directory. C0 reviewed
+these additions and independently ran `sh -n` on all four scripts and both
+staging regression scripts. Both regression suites passed their missing/old
+toolchain, argument, existing-output, build-failure/no-publish and successful
+ELF metadata cases; generated binaries were not executed. `git diff --check`
+passed and repository status showed only this plan edit, W5's four new scripts
+and two README edits, and the preserved discovery example. This slice stages
+existing `zpr-system-config` and `zpr-lab-bootstrap` commands; it is not a
+complete production or companion package, compatible pair, signed release, or
+fresh-host acceptance.
+
+The non-executing package vet and Linux/amd64 cross-builds also passed as
+recorded under PKG-CLI-ACCEPT-02. W5's final handoff confirms its unfiltered Go
+package tests executed fixtures that generated ephemeral private keys/secrets,
+contrary to the explicit assignment prohibition. Record this as an
+out-of-scope validation execution, not acceptable test or release evidence.
+Do not rerun any such tests without a newly scoped, explicit authorization.
+Exact commands/output remain pending. User Control confirms W5 released both
+packaging-directory reservations.
+The duplicate helper in the Simulator staging regression script was removed;
+C0 reran syntax and both script regressions against the corrected version.
+
+### PKG-CLI-ACCEPT-02 — W4
+
+**State:** Handoff received; no file reservation or edits. Under the explicit
+restriction against generating fixture keys/secrets, Go tests were skipped.
+C0 independently ran the two permitted non-executing checks from
+`zpr-dashboard/`:
+
+```sh
+GOPROXY=off GOSUMDB=off GOTOOLCHAIN=local GOFLAGS= go vet ./cmd/zpr-system-config ./cmd/zpr-lab-bootstrap
+GOPROXY=off GOSUMDB=off GOTOOLCHAIN=local GOFLAGS= GOOS=linux GOARCH=amd64 CGO_ENABLED=0 go build -o <private-temp>/zpr-system-config ./cmd/zpr-system-config
+GOPROXY=off GOSUMDB=off GOTOOLCHAIN=local GOFLAGS= GOOS=linux GOARCH=amd64 CGO_ENABLED=0 go build -o <private-temp>/zpr-lab-bootstrap ./cmd/zpr-lab-bootstrap
+```
+
+Vet and both builds passed with Go 1.27.1 on darwin/arm64 and Visa Service
+HEAD `29b4b13dc85dec9538f19012a7fa7e6e54ac8857`. C0 confirmed the outputs were
+statically linked x86-64 ELF binaries and removed them without execution.
+No Go tests ran; this is not test-suite, package-handoff, Ubuntu install, or
+runtime acceptance evidence.
+
+### PKG-GAP-MAP-03 — W3
+
+**State:** Read-only handoff complete; no reservation or edits. The map used
+only `git show 29b4b13:` snapshots of the system and Simulator packaging
+READMEs and System release plan, plus the current packaging file listing
+excluding W5-reserved files. It identifies source/build inputs and generated
+engineering configurations, but no installable production/companion bundle,
+production Compose appliance, signed manifest, compatible release lock, or
+qualified pinned image set. Runtime/provider/engine versions and named
+component/release owners remain unspecified in the inspected evidence.
+The map's component-level acceptance gaps include supervised production
+service composition, persistent state, endpoint admission/credential delivery,
+protected DNS integration, provider/logging qualification, and paired fresh-host
+acceptance with Simulator unavailable. W1/W2 dependencies are not assigned
+owners by these documents; do not infer them from role labels. The gap map is
+planning evidence, not a release manifest or acceptance report.
+
+### PKG-PROD-SERVICES-INV-04 — W1
+
+**State:** Withdrawn after a routing error. C0 sent W3's already-completed
+`PKG-GAP-MAP-03` prompt to W1's chat. The W1 transcript confirms W1 completed
+that read-only duplicate; its result is not counted separately from the
+canonical map already supplied to C0. C0 also misrouted W3's next source task
+to W1. W1 initiated five `git show` reads at the specified commit but reported
+that their outputs were moved to the background. W1 later read full output for
+`zpr-dashboard/cmd/zpr-lab-bootstrap/identity_stack.go` and
+`zpr-dashboard/cmd/zpr-system-config/main.go`; it saw only oversized-output
+previews for `providers.go` and `zpr-lab-bootstrap/main.go`, and the
+`zpr-system-config/config.go` read failed because that path was absent at the
+requested commit. No further source was read after those outputs. This was
+out-of-scope inspection after the stop, not a W3 handoff. W1 confirms no edits
+or reservation. C0 preserved the stop and did not accept the duplicate
+separately. No W1 source edits were visible in the shared Visa/Core worktrees.
+
+### PKG-PROD-ENTRYPOINTS-06 — W1
+
+**State:** Read-only source handoff complete; no reservation or edits. Base is
+Visa Service `main`, HEAD `29b4b13dc85dec9538f19012a7fa7e6e54ac8857`. W1
+reports its permitted reads were non-test entrypoints/build files, relevant
+config source, and a static asset filename listing. One exploratory pinned
+`git grep` used a `*.go` glob that matched test Go files; its offloaded output
+was not inspected or used and is excluded. No Go tests ran.
+
+The exact scope-slip command was:
+
+```sh
+git -C 'ZPR Docs/zpr-visaservice' grep -n -E 'ZPR_(ENROLLMENT|POLICY|ASSERTION|OPENOBSERVE|CONTROL_SERVICE|GATEWAY|TRUSTED|CONTROL_ROOM)' 29b4b13dc85dec9538f19012a7fa7e6e54ac8857 -- 'zpr-dashboard/cmd/zpr-web-dashboard/*.go'
+```
+
+The glob matched test files. Its 46.8 KB offloaded output at
+`/var/folders/3k/m6scq8tj6hb39xx8rwzmpshh0000gn/T/1792275976914-copilot-tool-output-64251-5db31f3f-a27d-4851-b580-8a79a95b9bea.txt`
+has not been opened or inspected and is excluded entirely. W1 states that its
+production report used only the pinned `go.mod`, `Makefile`,
+`cmd/zpr-web-dashboard/{main.go,control_service.go,policy_service.go,operator_login.go,admin_client.go}`,
+`cmd/zpr-enrollment-service/main.go`, and static asset filenames from
+`git ls-tree`; `git status --short` was used only to preserve state. No result
+from the wildcard grep contributes to the report. No tests/build/execution or
+edits occurred for this inventory, and W1 stopped without further reads.
+
+- `cmd/zpr-web-dashboard/main.go:165` selects `control-room` by default and
+  accepts `-mode`/`ZPR_WEB_MODE` and `-listen`/`ZPR_WEB_LISTEN`.
+  `control_service.go:21` composes Control Room; `operator_login.go:36`
+  reads OIDC/TLS settings. Its browser assets are embedded with `//go:embed
+  static/*` in `main.go:25`. Runtime inputs include TLS certificate/key,
+  OIDC config/secret/optional CA, organization/management settings, and an
+  mTLS client connection to Control-Service.
+- The same source binary has `control-service` and `policy-service` mode
+  branches at `main.go:224` and `main.go:220`. `runControlService` at
+  `control_service.go:109` uses mTLS and configures Visa Admin, Policy-Service,
+  enrollment handling, assertions/diagnostics, and optional gateway state.
+  Its entry code can continue to start the listener when some downstream
+  configuration is unavailable; listener start is not readiness evidence.
+  `runPolicyService` at `policy_service.go:166` requires mTLS listener files
+  and policy workspace/apply resources. No strict startup/readiness sequence
+  is encoded in these entrypoints.
+- `cmd/zpr-enrollment-service/main.go:14` is a separate `-config` driven
+  process that loads server config and runs the device HTTPS server. Its
+  config/registry/credential contract and its relationship to the
+  Control-Service enrollment handler remain unresolved.
+- `go.mod` declares Go 1.26.1 and module dependency versions. The Makefile's
+  `build` target produces `bin/zpr-dashboard` from
+  `./cmd/zpr-dashboard`, not `cmd/zpr-web-dashboard`; there is no named
+  Enrollment Service target. W1 did not build; C0 independently cross-built
+  `./cmd/zpr-web-dashboard` and `./cmd/zpr-enrollment-service` with Go 1.27.1,
+  `GOOS=linux GOARCH=amd64 CGO_ENABLED=0`, `-mod=readonly -trimpath
+  -buildvcs=false`. Both produced static x86-64 ELF files, were not executed,
+  and were removed from a temporary directory. This proves source buildability
+  at that toolchain/base only, not supported release artifacts or installability.
+
+The scope slip and its excluded output are recorded, not used as evidence.
+Remaining decisions include the release owner/source revision for each
+service, the production binary/image layout for the three dashboard modes,
+runtime config/secrets and downstream readiness contract, Enrollment Service
+ownership/schema, and a release build target. No supported tags, image pins,
+Compose composition, or ownership were inferred.
+
+### PKG-DNS-ADAPTER-INV-05 — W2
+
+**State:** Read-only handoff complete; no scoped source edits or reservations.
+W2 reports bases match the expected Core `work/macos-tun-address` HEAD
+`561fa7351795a723b74b5d1e57761d870722c77c` and Visa Service `main` HEAD
+`29b4b13dc85dec9538f19012a7fa7e6e54ac8857`. Unrelated pre-existing Visa
+packaging/docs changes were preserved. No builds or tests were run.
+
+- Artifacts in scope are the PH (`ph`) Cargo binary in workspace version
+  `0.7.0`, the Visa (`vs`) Cargo binary version `0.19.0` with Rust `1.98.1`,
+  and `dns/bind9`'s Dockerfile based on `debian:trixie-slim` with unversioned
+  apt packages. No `ph`/`vs` image or build handoff exists; BIND has no
+  immutable image digest or apt package pin.
+- PH's optional adapter loopback DNS stub is a client-side feature: it forwards
+  to a configured literal upstream over TCP through the adapter TUN. It is
+  distinct from the protected authoritative BIND service.
+- BIND's entrypoint requires the matching PH adapter process to be visible
+  through a shared PID namespace and enters its network namespace. Visa's DNS
+  publisher performs RFC2136 updates through external `nsupdate` (default
+  binary name), and requires the DNS service and adapter to be reachable first.
+  `dns_update` is optional; join/leave plus 30-second periodic reconciliation
+  is gated on policy-authorized registrations. BIND requires zone config/file
+  input; its entrypoint seeds reverse-zone files only.
+- PH inputs include a BAS RSA key and authentication TLS CA. Visa BAS
+  validation requires configured HTTPS mTLS CA/client certificate/key and a
+  token-verification key. The Visa DNS publisher's TSIG key file must match
+  BIND's included key; BIND copies the mounted key into its runtime path.
+- Open decisions: immutable artifact/version/platform pins; whether the Visa
+  runtime artifact includes `nsupdate`; adapter process/name and services
+  configuration alignment; namespace, startup/readiness, zone/config and
+  secret-mount handoffs; and the accountable package/integration owner.
+  Existing RFC2136/TSIG and BAS-validation contracts are source evidence, not
+  a proposal for a new protocol/API.
+
+The handoff text received ends mid-clause after `BAS validation/2.`; no
+continuation was available, so no meaning is inferred from that suffix.
+
+### PKG-COMPANION-CONFIG-INV-07 — W3
+
+**State:** Read-only source handoff complete; no reservation or edits. At Visa
+Service `main` HEAD `29b4b13dc85dec9538f19012a7fa7e6e54ac8857`, W3 traced the
+identity Compose path through `cmd/zpr-lab-bootstrap/main.go`,
+`providers.go`, and `identity_stack.go`; no binary ran and no secret values
+were read or reported.
+
+- Optional lab identity generation emits LDAP/Dex configs and handoff files;
+  it does not install or start services. `-identity-services` requires exact
+  Room/Simulator/OIDC HTTPS origins. `-identity-compose` also requires explicit
+  bind IP, LDAP/Dex immutable image IDs or digests, and platform; no actual
+  image names/digests or qualified provider versions are selected.
+- Generated Compose project/services are per-install `zpr-lab-identity-*`,
+  `ldap-initialize`, `ldap`, and `oidc`, with an identity bridge and private
+  LDAP/Dex state directories. Initialization is separate and only for empty
+  LDAP state; OIDC waits for LDAP health. This is configuration generation,
+  not activation or installer integration.
+- The generator emits per-lab TLS and service-secret material. Seeded lab
+  LDAP users/groups do not grant ZPR operator permissions; the handoff marks
+  grants unconfigured and requires verified live issuer/subject configuration.
+- `cmd/zpr-system-config/main.go` accepts company JSON and optional offline
+  credential-file checks; it performs no network/readiness check, config
+  rendering, or installation. W3 subsequently inspected the top-level schema
+  in `internal/systemconfig`; nested OIDC validation and the underlying
+  protected-file reader remain separate source dependencies.
+
+### PKG-COMPANION-SCHEMA-INV-08 — W3
+
+**State:** Read-only handoff complete; no edits/builds/tests. At Visa Service
+`main` HEAD `29b4b13dc85dec9538f19012a7fa7e6e54ac8857`, W3 inspected only the
+permitted `internal/systemconfig` production source.
+
+- `config.go:22-45` defines schema version 1 and top-level `organization`,
+  `control_room`, and `oidc` objects. Input is bounded to 64 KiB, exactly one
+  JSON document, no nulls, nesting <=16, lowercase unique keys, and no unknown
+  fields or wrong types (`config.go:19,51-76`). Organization ID/name and HTTPS
+  origin/private management-IP constraints are source-validated
+  (`config.go:128-156`).
+- Cert/key/secret references are required; CA is optional. Names must be
+  distinct canonical absolute Linux paths, not `/`, with shell expansion
+  characters rejected. The OIDC redirect must equal the Control Room origin
+  plus `/auth/operator/callback`; issuer must be HTTPS; grants are restricted
+  to exactly the configured organization, source-allowlisted permissions,
+  with at least one `monitor.read` grant (`config.go:174-209`).
+- `CheckFiles` applies size/content/TLS checks to referenced cert/key/secret/CA
+  files (`files.go:19-69`) and validates the server certificate against the supplied chain tip
+  as an inspection anchor. This does not prove browser trust, revocation,
+  provider discovery/login, network reachability, config application or
+  runtime readiness.
+- Nested `oidc.config` struct/validation is owned by `internal/operatorauth`;
+  actual filesystem permission/ownership/symlink/hardlink behavior is owned by
+  `internal/servicehttp.ReadOperatorFile`. W3 stopped at those dependencies
+  as required and did not inspect their source.
+
+### PKG-COMPANION-CONFIG-DEPS-09 — W3
+
+**State:** Read-only source handoff complete; no reservation or edits. W3
+confirmed Visa Service `main` HEAD
+`29b4b13dc85dec9538f19012a7fa7e6e54ac8857`; W5 modifications, packaging
+scripts, and the pre-existing `zpr-dashboard/cmd/zpr-discover/foo` remain
+unchanged. No builds, tests, or execution.
+
+- `internal/operatorauth/auth.go:26-30,47-54` defines nested OIDC `config` as
+  `version`, `issuer`, `client_id`, `redirect_url`,
+  `session_lifetime_seconds`, and `grants[]`; each grant has `issuer`,
+  `subject`, `organizations[]`, and `permissions[]`.
+- `auth.go:33-45,57-107` validates version 1; HTTPS issuer/redirect URLs with
+  hostname and no user/query/fragment/opaque components; the exact callback
+  path `/auth/operator/callback`; nonempty plain-text client ID of at most 256
+  bytes; session lifetime 60–3600 seconds; and at least one grant. Grant
+  issuer must match the configured issuer; subjects must be nonempty plain
+  text, at most 256 bytes, and unique. Organization and permission lists must
+  be nonempty and unique, with nonempty plain-text entries of at most 256
+  bytes and no controls or edge whitespace. Permissions must be in the
+  source-defined allowlist. The allowlist includes simulator/admin scopes;
+  that does not mean a company configuration grants them or that they are
+  appropriate to select. These checks validate config strings/scopes, not
+  actual identity, OIDC discovery/login, or applied authorization grants.
+- `internal/servicehttp/operator_file_unix.go:12-43` (`linux || darwin`)
+  `ReadOperatorFile` requires an available regular file with one hard link,
+  owned by root or the current effective UID, and disallows group/other write
+  bits; `private=true` also disallows all group/other permission bits. It
+  opens with `O_RDONLY|O_NOFOLLOW|O_NONBLOCK`, checks the opened file against
+  pre-open metadata, and performs a bounded `limit+1` read, rejecting
+  over-limit input and read errors. Final-component symlinks are rejected.
+  The helper does not check parent-directory ownership/modes or prohibit
+  intermediate-component symlinks.
+- `internal/servicehttp/operator_file_other.go:1-8` returns an explicit
+  unsupported protected-file-check error on platforms other than Linux/macOS.
+
+These checks do not establish parent-directory trust, immutability beyond the
+stated metadata comparison and bounded read, OIDC discovery/login, TLS/browser
+trust, revocation, service readiness, runtime configuration, installation, or
+active grants. The top-level system-config path validation still requires
+canonical absolute Linux paths. This closes the nested OIDC schema and
+protected-file helper inventory only; it does not provide provider ownership,
+runtime rendering, or an installable artifact.
+
+**Ranked M2 critical path toward the first company install:**
+
+1. **Release ownership and artifact inventory.** W1 has identified buildable
+   source entrypoints for the combined dashboard modes and standalone
+   Enrollment Service; C0 cross-built both for Linux/amd64 at Go 1.27.1 from
+   this checkout. The Makefile still targets a different dashboard command,
+   and no release artifact/pin/owner follows from those builds. W2's
+   protected-DNS/adapter source inventory is complete but identifies no
+   immutable `ph`/`vs`/BIND release artifacts or package owner; W3's external
+   config-dependency inventory is complete but does not establish release
+   ownership or runtime readiness. Decision needed: who owns each required production/companion
+   artifact and which exact source revision/toolchain/image version is the
+   supported candidate? Do not guess image tags or call a repo HEAD a release.
+2. **Production runtime composition.** W1 found Control Room depends on
+   Control-Service mTLS; Control-Service configures Visa Admin, Policy-Service,
+   enrollment handling, assertions/diagnostics and optional gateway state.
+   Services expose mode-specific listeners, but no strict startup/readiness
+   sequence is encoded, and Control-Service can start despite missing downstream
+   configuration. Obtain owner contracts for entrypoint/arguments, config and
+   secret references, readiness/failure, listener/network boundaries,
+   persistence, backup and recovery. Decision needed: who supplies and supports
+   the full Ubuntu Compose/runtime definition and upgrade/removal lifecycle?
+   No Compose file or installer can be responsibly authored without these
+   contracts.
+3. **Enrollment and endpoint admission.** W1 found a standalone Enrollment
+   Service `-config` entrypoint but not its config/registry/credential schema
+   or its relationship to Control-Service's separate enrollment handler.
+   Resolve Enrollment's sole-writer/API ownership, supervised node entrypoint,
+   endpoint-specific key/credential delivery, selected adapter support, and
+   revocation/restart behavior. These are prerequisites to first-endpoint
+   acceptance, not substitute services packaging may invent.
+4. **Provider, bootstrap and protected DNS handoffs.** Existing-vs-bundled
+   identity/logging modes are approved as installer choices, but provider
+   versions, identity/attribute mappings, first-admin creation/recovery,
+   logging persistence/authorization remain unspecified. W2 identified the
+   protected-DNS RFC2136/TSIG publisher path, BIND namespace/readiness
+   dependency, and PH/BAS inputs, but artifact pins, `nsupdate` inclusion,
+   process/config/secret-mount alignment, and the package/integration owner
+   remain unresolved. Company OIDC JSON and protected-file validation rules
+   are source-inventoried, but do not establish provider versions, active
+   grants, login, or runtime behavior. Company TLS and underlay DNS remain
+   explicit inputs. Decision needed: accountable owners for each interface
+   and its supported artifact/configuration contract.
+5. **Artifact assembly and fresh-host acceptance.** Only after the above pins
+   and contracts are agreed can an installer/package assemble release
+   artifacts and test a complete from-scratch Ubuntu host with named operator
+   login, endpoint admission, loaded policy, real allow/deny traffic, restart
+   and recovery. Signing/release qualification and any live installation still
+   require separate authorization.
+
+The approved target is already Ubuntu 24.04 LTS x86-64, a dedicated
+server/VM and a Docker Engine/Compose v2 appliance; provider modes are already
+approved. W1's inventory and non-executing cross-build evidence, W2's
+protected-DNS/adapter source inventory, and W3's identity-generator, schema,
+and config-dependency inventories are complete. These inventories confirm
+missing release/install handoffs and runtime readiness contracts. W2's
+received handoff text ends mid-clause after `BAS validation/2.`; no remainder
+is inferred. No additional user choice is presently required
+before those reports. The closest M2 implementation remains blocked on
+artifact owners and service contracts; do not create a source-dependent or
+fake installer.
+Fresh-host and D6 live acceptance remain separate gates with their own
+prerequisites and explicit execution authorization.

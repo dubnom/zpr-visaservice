@@ -1,8 +1,31 @@
 # ZPR system packaging and release plan
 
-Status: **In progress (M1; initial M2 preflight/configuration slices)**, created 2026-10-15. This document defines implementation
-milestones and the recurring process for real system releases. It does not
-certify the current system, authorize deployment, or claim an installer exists.
+Status: **In progress (M1 inventory; M2 host preflight, configuration and
+bundle-manifest validation, Control Room input renderer, and approved runtime
+contract)**, created 2026-10-15 and updated 2026-10-17. Installation
+implementation remains open. This document defines implementation milestones
+and the recurring process for real system releases. It does not certify the
+current system, authorize deployment, or claim an installer exists.
+
+## Current execution priority: demo, not production
+
+On 2026-10-17 the user clarified that the immediate objective is working ZPR
+and Simulator demo packages. Demo-only shortcuts are acceptable if their limits
+and required production fixes are recorded. The selected target is a pair of
+version-matched archives adapted from the existing `zpr-demo/multinode-demo`,
+tested on an isolated disposable Ubuntu 24.04 x86-64 host. The user explicitly
+allows the existing TUN/`NET_ADMIN`/privileged-container path and Simulator's
+root-equivalent Docker-socket access only on that isolated demo host. The
+first Gateway claim is limited to explicitly proxy-configured demo clients.
+
+The [demo package contract](zpr-dashboard/packaging/system/DEMO-PACKAGE-CONTRACT.md)
+is the immediate implementation and acceptance target. A source-tree launch,
+unit test, or validator pass is not a package test; both downloaded archives
+must pass their paired clean-host acceptance before the demo milestone is
+complete. Do not publish or deploy the candidate without separate authorization.
+The company-install and production-release requirements below remain valid
+follow-up work, not blockers to the limited demo package unless the contract
+calls them out as demo prerequisites.
 
 ## Objective and first-release boundary
 
@@ -34,6 +57,41 @@ On 2026-10-15 the user selected a **complete from-scratch company installation
 package**, not a Control Room-only image connected to an existing installation.
 Testing should require release artifacts and company inputs, not a source
 checkout, Go/Rust toolchain, or manual assembly of individual services.
+
+#### Fresh-install experience clarified on 2026-10-18
+
+The initial installation must be a fully working ZPR environment, not a
+simulated or mocked success and not a set of services that the operator must
+assemble or start individually. It starts independently of the organization's
+existing LDAP, monitoring, and other platform services so a new operator can
+begin without first integrating their company infrastructure. Where those
+capabilities are required at first run, the installation must provide real,
+operational bundled services and generated per-install state; bundled services
+must not be demo substitutes.
+
+The installer installs the required runtime dependencies, configures and
+supervises the complete initial ZPR service set, and starts it. The Control Room
+is the operator's path to configure company-specific identity, monitoring, and
+other platform integrations and then migrate the deployment toward the
+organization's environment. This migration path must be explicit, validated,
+and reversible; it must not silently replace providers or lose local state.
+Operators should not need to choose or launch individual ZPR components during
+a new installation.
+
+Simulator is a separate learning tool for understanding ZPR concepts and
+behavior. It is not required to install or operate ZPR, is not part of the
+production service set, and must not be a source of production state or
+service contracts. The download page should explain the install-to-Control-Room
+journey without exposing a dependency checklist. Until a complete installer
+passes its acceptance gates, current component snapshots must remain clearly
+identified as development downloads rather than presented as turnkey packages.
+
+The first-run flow must install required runtime dependencies and start the
+service set without asking the operator to assemble components. It must not
+weaken host privilege boundaries to make startup convenient. The initial
+operator must receive a secure, per-install administrative bootstrap path with
+no reusable default credential; Control Room access and recovery are explicit
+acceptance criteria.
 
 The installer offers existing company services or bundled production services
 for operator login, device/actor authentication and trusted attributes, and
@@ -68,9 +126,12 @@ Required handoff:
 sole-writer/API boundary, supervised node entry point, company trust/bootstrap
 ordering, production images/configuration/container networking and endpoint
 credential delivery. Passing Control Room tests or shipping its engineering
-binary does not meet this deliverable. Gateway/telemetry inclusion and company
-directory protocol/mapping details still need explicit component contracts;
-do not silently install demo services to close these gaps.
+binary does not meet this deliverable. Gateway is now required in the first
+install BOM by the 2026-10-17 user direction; its runtime activation/rollback
+and enforcement contract remains a release blocker. Logging is a required
+capability with bundled or existing-provider modes, but backend qualification
+and company directory/authentication/attribute protocols and mappings remain
+open. Do not silently install demo services to close these gaps.
 
 Enrollment ownership progress: an opt-in separate mTLS administration listener
 now serves existing delegated invitation routes in the Enrollment process,
@@ -101,7 +162,7 @@ Related plans:
 - [Deployment ledger](GUI%20deployments.md): historical component deployments,
   not certification of a complete system release.
 
-### Optional bundled trusted services and logging
+### Bundled-or-existing trusted services and logging
 
 On 2026-10-17 the user approved an installer choice for both identity roles
 and logging. This supersedes the earlier existing-company-provider-only
@@ -133,6 +194,125 @@ restriction; it does not approve substituting lab/demo services for production.
   restart/recovery and explicit dependency failures, with Simulator unavailable.
 
 This is an approved requirement, not an implemented installer feature.
+
+### First-install BOM scope and provisional candidates
+
+On 2026-10-17 the user directed the first-use package to bundle all service
+artifacts needed for a new installation, while documenting company-provider
+and logging integrations as alternatives. The recommended BOM split, approved
+for planning, is:
+
+- **Required production path:** Visa Service and its persistent state backend;
+  a supervised production node and one certified endpoint adapter; Policy-
+  Service, Control-Service and Control Room; Enrollment; compiler/evaluator;
+  protected BIND behind the ZPR adapter with Visa's RFC2136/TSIG publisher;
+  and Gateway. The service artifacts needed for a self-contained start path
+  belong in the downloadable bundle. External provider/logging selection may
+  omit starting the corresponding bundled instances, but must not trigger
+  silent fallback.
+- **Bundled-or-existing integration choices:** operator OIDC; device/actor
+  authentication and trusted attributes; persistent, authorized logging.
+  The bundled path must be independently supervised and Simulator-free. The
+  current company config documents operator OIDC only; provider and logging
+  handoffs still need explicit contracts and operator instructions.
+- **Separate companion:** Simulator and its lab LDAP/Dex services, plus
+  opt-in bootstrap BIND for isolated labs. The companion must pair with the
+  exact same ZPR release artifacts, use separate provider state, and exercise
+  production APIs. Simulator is not part of or required by the production
+  bundle. Company underlay DNS and supplied HTTPS certificate/key remain
+  external inputs.
+- **Optionality distinction:** company underlay/bootstrap DNS is external by
+  default; companion bootstrap BIND is optional. Protected ZPR DNS is
+  required. Gateway is required by the new direction, although its complete
+  runtime contract is not yet qualified. Identity and logging are required
+  capabilities, with a bundled path and supported existing-provider option.
+
+The user approved these source/image references for engineering qualification
+planning only, not as compatible release pins or production approvals:
+
+| Candidate | Current source reference | Known limit before it can enter a release lock |
+| --- | --- | --- |
+| Visa Service, dashboard modes, Enrollment and bootstrap/config tools | Visa Service `main` `29b4b13dc85dec9538f19012a7fa7e6e54ac8857`; dashboard Go module declares Go 1.26.1 | Source revision is a candidate snapshot, not a release; Go toolchain/image recipe and fresh-host qualification are not locked. Current Visa worktree has packaging/plan changes, not source artifacts to treat as a release. |
+| PH adapter and core libraries | Core `work/macos-tun-address` `561fa7351795a723b74b5d1e57761d870722c77c`; workspace version 0.7.0 | Work branch, no supported image/build handoff; current `libnode2` executable is `lntest`, not a qualified supervised production node. |
+| BAS device-auth candidate | BAS `main` `9de4a25192a21b61a2f92639104abf5985e223a8`; crate 0.1.0, Rust 1.98.1 | Candidate only; standalone BAS registry access conflicts with complete Enrollment sole-writer ownership until the API/ownership gap closes. |
+| ZPLC and shared source set | Compiler `work/rest-trusted-services` `6f0de17fd9052567394ad306552bc435efc3ed3f`; common `main` `2756e9a01d5552965439f94314a6b0550832cf8f`; policy `main` `d2ad9d8c1ca1007ff17b9364d2734392f44f6575`; VSAPI `main` `140748f926e7675f6923568f5c0f1fef00e482aa` | ZPLC 0.16.0 currently depends on `zpr-common` tag v0.24.0, while Visa/Core path dependencies use 0.25.2. Resolve and test compatibility before treating these revisions as a lock. |
+| Dex bundled OIDC candidate | `ghcr.io/dexidp/dex:v2.44.0@sha256:5d0656fce7d453c0e3b2706abf40c0d0ce5b371fb0b73b3cf714d05f35fa5f86` | Present in `Dockerfile.operator-idp`; engineering source reference, not production qualification. OpenLDAP image/version remains unselected. |
+| OpenObserve bundled logging candidate | `public.ecr.aws/zinclabs/openobserve@sha256:d4a878fac1f6c56003764f7f2a1625668917388f167e222c8c810de3f54c56ba` | Existing profile is optional and AGPL-3.0. Its wrapper uses mutable `debian:trixie-slim` and unpinned apt packages; license, target, data/retention and access-control qualification remain. |
+| Protected BIND | Visa `dns/bind9/Dockerfile`; isolated engineering test used BIND 9.20.29 on arm64 | No immutable digest or apt package pin and no Ubuntu amd64 runtime qualification. The user did not approve this as a release pin. |
+| State backend | Visa Service Redis-protocol state, default 6379 | Redis/Valkey implementation/version/image is not selected or pinned. |
+
+The candidate source set is not release-qualified or signed. No component
+owners are assigned by this table; the user remains accountable for owner
+designations before production. Exact immutable images, compatible source
+revision closure, toolchains, supported platform manifests, SBOM/license
+review, signing and acceptance remain open. No host/service/credential action
+is authorized by this planning decision.
+
+### M2 first implementation slice: offline bundle validation and archive creation
+
+**State:** Implemented in the current Visa Service worktree as
+`zpr-dashboard/internal/systembundle`, `cmd/zpr-system-bundle`,
+`cmd/zpr-system-bundle-pack`, `cmd/zpr-system-bundle-verify` and
+`cmd/zpr-system-bundle-sign`; an isolated Linux/amd64 staging archive now
+gathers the tools with local checksums and build metadata. Detached Ed25519
+signatures bind exact archive bytes and can be verified against an independently
+provided trusted public key. Focused Go and shell regressions have been
+reported; test evidence is qualified below. These remain engineering
+validation/packaging tools, not an installer or qualified release artifact;
+key custody, trust distribution, rotation/revocation and release policy remain
+open. The tool archive is not published as a customer download.
+The reported `go test ./internal/systembundle` run is excluded from acceptable
+evidence because that suite includes signature/key tests. Do not repeat it.
+This exclusion does not apply to the separately verified CLI-only test command
+below; C0 did not rerun the internal package suite.
+W5's `PKG-SYSTEM-BUNDLE-CLI-TESTS-01` adds command-level tests for valid system
+validation, exact companion pairing, and checksum-mismatch failure output.
+After W5 released `cmd/zpr-system-bundle/main_test.go`, C0 reran
+`GOPROXY=off GOSUMDB=off GOTOOLCHAIN=local go test -count=1 ./cmd/zpr-system-bundle`
+successfully. These tests use harmless temporary payloads and create no keys or
+secrets.
+W5 then added fail-closed CLI coverage for a companion without its required
+system pair, a system manifest supplied with companion-pair arguments, and a
+companion whose valid ZPR source revision differs from the system manifest.
+The new `cli_rejection_test.go` reservation is released. C0 reran the same
+CLI-only command after that handoff; it passed with `-count=1`. The
+`internal/systembundle` package test remains excluded and was not run.
+
+The version-1 manifest distinguishes system and companion bundles, records
+roles/capabilities, install selection, target platform, local payload hashes,
+immutable image references and optional full source revisions. System
+validation requires the approved production capabilities, including Gateway
+and protected DNS, and bundled-default identity, actor-authentication,
+trusted-attribute and logging paths. It rejects Simulator/lab-only and
+bootstrap-DNS roles in the production manifest. Companion validation requires
+Simulator plus lab LDAP/OIDC; bootstrap DNS, if present, is selectable. Pair
+validation requires the exact same ZPR component identities and target in both
+manifests.
+
+The validator checks local manifests and payload checksums. The archive builder
+rechecks payloads while creating a deterministic archive of the manifest and
+declared files. The archive verifier validates that downloaded archives contain
+exactly the declared regular-file payloads and prints their archive SHA-256;
+companion archives are checked against the paired system manifest. Detached
+Ed25519 signatures may be created with a separately supplied protected key and
+verified against a separately provisioned public key. Signing authenticates
+bytes only and is not production qualification. All manifests still accept
+`engineering-unqualified` status only. OCI layout archives now verify the
+manifest/config/layer blob digests and declared platform, but the tools do not
+inspect image filesystems, live dependencies, installation, provider-state
+separation, runtime health or production qualification. Non-endpoint artifacts
+must declare the Ubuntu host platform; the standalone endpoint artifact
+declares a separate platform that is not thereby certified. No services are
+started and no host changes are made. The tools reject tag-only image
+references and path traversal/symlink payloads; they do not publish.
+
+The candidate source set is not yet a release lock: ZPLC/common versions are
+skewed, and exact target-qualified BIND, OpenLDAP, state-backend and Gateway
+artifacts remain unavailable. No release manifest has been generated from
+these candidates. Production implementation still requires closure of those
+dependencies and the remaining service contracts/owner decisions. Consequently, the archive
+builder cannot yet produce a complete ZPR or Simulator package for the fresh
+installation test.
 
 ### Optional zpr.net bootstrap assistance
 
@@ -604,6 +784,7 @@ convert recommendations into requirements.
 | Identity sources | **Updated approval (2026-10-17):** installer choice of existing company providers or bundled production services for operator OIDC login and device/actor authentication with trusted attributes. Bundled services are independent of Simulator, not demo identities. Provider qualification, protocols/mappings, credentials and first-admin recovery remain open |
 | Logging | **Approved (2026-10-17):** installer choice of an existing logging integration or bundled collection, persistent storage and authorized querying. Backend qualification, retention/resource bounds, access controls, backup and failure behavior remain implementation work |
 | DNS and certificates | **Approved:** existing network DNS for bootstrap in production and labs; companion-hosted bootstrap DNS is optional for isolated labs. Production uses supplied/renewed HTTPS files. The combined network must also include BIND9 behind a policy-controlled ZPR adapter, distinct from bootstrap DNS. Protected DNS does not replace company infrastructure DNS; no appliance ACME automation selected. Provider image/adapter packaging, DNS integration and certificate replacement/reload/recovery remain open |
+| Gateway | **Required in first-install BOM (user direction 2026-10-17):** include the gateway service/runtime artifact; implementation, activation/rollback, external enforcement and package qualification remain open |
 | Connectivity | State initial download/egress requirements; offline installation is unsupported unless separately built and tested |
 | Reliability and scale | Pilot capacity, acceptable downtime, backup destination, RPO/RTO and support lifetime |
 | Multi-host expansion | **Approved direction (2026-10-17):** role-based create/join and lifecycle model, followed by second node, separate/redundant DNS and qualified mixed-platform deployments. Exact platform priorities, inventory/API design, version skew and scale/HA targets remain open; see [multi-host deployment](#multi-host-role-based-deployment) |
@@ -625,8 +806,10 @@ audit, source lock or approved service-provider selection. Milestone remains ope
 - [ ] Approve the decisions above and list supported/unsupported deployments.
 - [ ] Inventory Visa Service, node/adapter runtime, Policy-Service,
   Control-Service, Control Room, Enrollment/Authentication services, compiler
-  and policy tooling; classify DNS, directory, gateway and telemetry dependencies
-  as bundled, customer-provided or optional.
+  and policy tooling; implement the approved split: protected DNS and Gateway
+  are required; identity/attribute and logging capabilities have bundled and
+  existing-provider modes; companion bootstrap DNS is optional and lab-only.
+  Resolve remaining backend/provider implementations and contracts.
 - [ ] Record ports, protocols, trust relationships, storage, health contracts,
   required privileges and startup dependencies. Optional services must remain
   visibly optional; required missing services must block readiness.
@@ -659,9 +842,80 @@ TLS key/hostname/validity/supplied-chain and OIDC secret/CA checks, reusing the
 runtime's protected-file reader. A total of 158 selected configuration/file/CLI
 and existing operator regressions pass; focused race tests, vet and Linux amd64
 validator/dashboard builds pass, and the full suite retains four recorded failures. Browser/company trust, live IdP
-checks, installed file/mount access, full service configuration/rendering and
-production container-network integration remain open. File checks are not yet wired into an
-installer; the complete installation-config milestone is not checked.
+checks, installed file/mount access, complete service configuration, runtime
+composition and production container-network integration remain open. A
+separate Control Room runtime-input renderer now exists, but file checks are
+not wired into an installer and the renderer does not build or apply service
+composition. The complete installation-config milestone is not checked.
+
+On 2026-10-17, schema v2 added source-backed Control-Service connection inputs:
+the HTTPS origin, mTLS client certificate/key and service-CA file references,
+plus an optional TLS server-name override. Schema v1 remains unchanged. The
+offline checker applies protected-file access checks to the new references but
+does not validate client certificate/key matching, service-CA trust or
+reachability. The `zpr-system-config-render` command maps validated v2 inputs to
+the existing Control Room and Control-Service environment variables, exact
+host-and-port listener, read-only source-to-destination mount records, and
+operator OIDC JSON at `/etc/zpr/config/operator-oidc.json` with mode `0600`.
+The CLI requires offline file checks to pass, writes only a new mode-`0600`
+output file, and refuses to overwrite an existing output. The five-tool
+Linux/amd64 engineering archive includes the renderer. Reported focused tests
+for the renderer CLI and named key-free runtime-rendering cases passed; the
+bundle-tools script verified all five ELF files and checksums without executing
+them. Focused vet, formatting and `git diff --check` also passed. The full
+`internal/systemconfig` suite and key-generating file-check test were not run.
+
+This is a renderer only: it does not copy private files, provide the
+Control-Service server identity, configure provider/logging/node services,
+build Compose configuration, install or start services, or check service
+health. W5 completed the v2-reference update to
+`cmd/zpr-system-config/files_test.go`; the installation configuration remains
+incomplete.
+
+Client certificate/key matching, service-CA parsing/trust and certificate
+identity verification remain deferred: safe fixture-based coverage would
+require using key/certificate material, which is not authorized. Protected-file
+access checks do not establish runtime mTLS.
+W4 completed syntax-only validation of the optional TLS server-name override:
+host-only ASCII DNS names and unbracketed IP literals are accepted, while the
+empty fallback and original override value are preserved. The named
+configuration tests, `go vet`, formatting and `git diff --check` passed
+without file access or key/certificate material. This does not establish
+certificate SAN identity, CA trust or mTLS operation.
+
+The user-approved first-qualification profile and source-grounded requirements
+are recorded in the [first-install runtime
+contract](zpr-dashboard/packaging/system/INSTALLER-RUNTIME-CONTRACT.md). The
+profile is one Ubuntu 24.04 x86-64 host with local Docker Compose, an explicitly
+configured HTTP/HTTPS proxy Gateway (not transparent interception), and
+bundled Dex/OpenLDAP identity candidates and an OpenObserve logging candidate.
+Dex's image reference is provisional; OpenLDAP is unpinned, and OpenObserve
+still requires AGPL-3.0, image/runtime and data-handling review. Protected DNS
+and Gateway are required; Simulator remains a separate companion and is not a
+production dependency. Internal service mTLS uses per-install CA/service
+identities, but custody, algorithms, rotation, backup/restore and recovery
+remain gates. Gateway acceptance covers clients explicitly configured to use
+the proxy; endpoint admission is tested separately, and no automatic endpoint
+traffic routing is claimed. The contract defines roles, trust and persistent-
+state boundaries, readiness and recovery requirements, but is not a
+release-ready installer specification or a production artifact lock.
+Component ownership remains pending.
+
+Implementation still has seven blockers: (1) Enrollment lifecycle and
+credential-delivery ownership, including one production registry writer;
+(2) a supervised production node and supported, least-privilege endpoint
+adapter path; (3) compatible immutable service artifacts/build recipes,
+compiler compatibility, state backend and DNS package; (4) approval of the
+per-install service-CA algorithms, custody, rotation, compromise response,
+backup/restore and first-admin recovery; (5) protocol health probes,
+DNS/Gateway activation, client routing, firewall rules and bootstrap order,
+with Gateway tests limited to explicitly configured proxy clients until the
+adapter supports automatic routing; (6) pinning and qualification of Dex,
+OpenLDAP and OpenObserve, including the OpenObserve license review; and
+(7) complete per-service configuration, transaction recovery, Compose
+rendering and clean Ubuntu acceptance against the verified bundle. The
+contract does not authorize credential generation or use, installation, or
+deployment.
 
 Direct management HTTPS runtime support is now opt-in with an exact private-IP
 listener and company hostname. It requires initialized single-company OIDC,
