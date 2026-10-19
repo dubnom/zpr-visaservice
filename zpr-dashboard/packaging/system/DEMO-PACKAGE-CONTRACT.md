@@ -102,11 +102,42 @@ The builder requires Python 3, Docker CLI/daemon, and both candidate images
 already loaded locally. The verifier/loader also require the Python script,
 Python 3, and Docker. SHA-256 sidecars detect corruption only when compared
 with a separately trusted checksum; they are not signatures or provenance.
-This staging script and the generated image-only archives are engineering
-artifacts, not complete downloadable packages: the verification command is
-not yet embedded in the archives, runtime files and lifecycle commands are
-absent, and installation still requires the helper script/source checkout.
-Do not use this slice as evidence of the downloaded-artifact acceptance test.
+This staging script and its generated inner image-only archives are engineering
+artifacts, not complete installable packages: the verification command is
+not embedded in these inner archives, and runtime files and lifecycle commands
+are absent. Importing the inner archives requires the separate helper script;
+the published outer downloads below include that helper.
+Do not use this slice as evidence of the complete downloaded-artifact acceptance
+test.
+
+### Published image-import checkpoint (October 18, 2026)
+
+The authenticated zpr.net portal now publishes matching outer `.tar.gz`
+downloads at version `dev-2026-10-18.1`. They wrap the inner image-only pair
+`demo-candidate-20261018-safe-context`, checksum sidecars, and README
+instructions. The ZPR wrapper includes `package-demo-images.py`; unlike the
+inner archives alone, these downloads do not require a source checkout to
+verify the pair and import images.
+
+| Outer download | SHA-256 |
+| --- | --- |
+| `zpr-dev-2026-10-18.1-linux-x86_64.tar.gz` | `ef64a73263f5341d27aee0122c472957f57576b05e0dae53ffd5e60d9cdfecce` |
+| `simulator-dev-2026-10-18.1-linux-x86_64.tar.gz` | `40f2e07512cc7274ae6634fa92a79cc440fec58e59a45164baf1b22383ad59be` |
+
+Publication readback confirmed both catalog versions and checksums; anonymous
+HTTPS requests returned 401. Local extraction of the outer downloads and
+verification with their included helper passed. Authenticated HTTPS download
+was not independently captured.
+
+The operator subsequently reported successful download, extraction, and
+loading of both images into Docker on the designated Ubuntu host. This closes
+only the operator-reported image-import milestone. No captured host preflight,
+container-TUN validation, service startup, policy/workload test, or lifecycle
+acceptance has occurred. The next implementation must generate demo identities
+and configuration on the target host and supply a source-independent runtime
+with start/stop/status commands. Do not rebuild images merely to repeat the
+completed image-import step, and do not describe image loading as service
+installation or startup.
 
 ## Runtime and lifecycle boundary
 

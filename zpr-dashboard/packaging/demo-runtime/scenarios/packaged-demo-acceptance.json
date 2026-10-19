@@ -1,0 +1,12 @@
+{
+  "id": "packaged-demo-acceptance",
+  "organization_id": "demo",
+  "name": "Installed demo: allowed HTTP and policy denial",
+  "description": "Exercises the installed Linux demo without changing identities or policy. Verifies allowed Alice-to-OciWeb HTTP, a healthy temporary listener on TCP 18080, an explicit fresh Visa policy denial for that port, cleanup, and continued allowed traffic. Does not provision a lab, LDAP, DNS, or machine sessions.",
+  "steps": [
+    {
+      "action": "verify_packaged_demo",
+      "timeout_seconds": 90
+    }
+  ]
+}

@@ -1,9 +1,12 @@
 # Simulator companion packaging
 
-Status: **Engineering slices only**. The immediate target is a
+Status: **Engineering slices only**. Linux/amd64 paired runtime archives now
+provide an installed ZPR demo and an unprovisioned Simulator UI. They are not
+a full Simulator lab. A separate acceptance candidate described below runs a
+bounded traffic scenario against the installed demo. The immediate target is a
 version-matched Simulator companion archive paired with the ZPR demo package,
-not a production companion release. There is no installable companion archive
-or clean-host acceptance yet. See the [demo package
+not a production companion release. Full lab provisioning and clean-host scenario
+acceptance remain unfinished. See the [demo package
 contract](../system/DEMO-PACKAGE-CONTRACT.md) for its allowed shortcuts, exact
 acceptance test and current blockers, and the
 [approved production companion scope](../../../System%20release%20plan.md#simulator-companion-package)
@@ -26,12 +29,179 @@ services must remain available when the Simulator application is stopped.
 Production Control Room/Control-Service must not read Simulator state or call
 Simulator APIs.
 
+## Installed-demo acceptance candidate (Linux/amd64)
+
+The candidate adds the published `packaged-admission-acceptance` scenario to Simulator.
+Its `verify_packaged_demo` action uses an explicitly configured, packaged probe
+script; scenario authors cannot supply container names, commands or destinations.
+Only the expected running Compose project and exact ZPR image are accepted.
+It verifies:
+
+- Alice can fetch OciWeb over ZPR TCP 80.
+- Simulator creates an ephemeral workload from the exact installed ZPR image,
+  sharing only web0's network namespace. Its HTTP listener binds only OciWeb's
+  ZPR address on TCP 18080 and is healthy locally. The container is non-root,
+  read-only, capability-free, with no mounts, identity keys or published ports;
+  memory, CPU and process counts are bounded.
+- Alice's TCP 18080 request times out **and** a fresh Visa log entry for Alice's
+  source address, that destination and port explicitly says `no matching policy`.
+  A timeout, missing destination or unrelated denial is not sufficient.
+- Allowed HTTP still works, the active policy hash is unchanged, and the
+  workload container, temporary listener and probe lock are removed.
+- A separate adapter generates its own fresh RSA bootstrap key inside private
+  tmpfs. It uses the existing Docker substrate network, a read-only rootfs,
+  dropped capabilities except NET_ADMIN, TUN access, bounded resources, no host
+  mounts or published ports, and only the public CA. No existing private keys
+  are copied. A fresh Visa log must explicitly reject that unique identity with
+  `no key found in policy`; a timeout or unrelated failure cannot pass.
+- Existing Alice HTTP remains healthy, active policy stays unchanged, and the
+  independent adapter and private-key tmpfs are removed on completion or cancellation.
+
+No approved network identities, active policy, LDAP, DNS or machine sessions are
+provisioned or changed. The generated identity is deliberately unapproved:
+this is a negative admission check, not successful enrollment or full lab acceptance.
+The original UI fixture still shows unprovisioned machines; it is not a claim
+that those machines are running. The candidate uses its own private state and
+loopback port **8786**, leaving the installed bootstrap UI on 8788 unchanged.
+Control Room/Control-Service do not depend on this candidate.
+
+Build from the dashboard module directory with cached dependencies and the
+previous Simulator base image already loaded. Use a new absolute build directory:
+
+```sh
+build_dir=/absolute/new-simulator-candidate-build
+mkdir "$build_dir"
+GOOS=linux GOARCH=amd64 CGO_ENABLED=0 GOPROXY=off GOTOOLCHAIN=local \
+  go build -trimpath -buildvcs=false -o "$build_dir/zpr-web-dashboard" ./cmd/zpr-web-dashboard
+cp packaging/demo-runtime/verify-packaged-{demo,identity,admission}.sh \
+  packaging/demo-runtime/scenarios/packaged-{workload,admission}-acceptance.json "$build_dir/"
+docker build --network none --platform linux/amd64 \
+  -f packaging/demo-runtime/Dockerfile.acceptance \
+  -t zpr-simulator:scenario-acceptance-local "$build_dir"
+docker save -o "$build_dir/simulator-acceptance.tar" zpr-simulator:scenario-acceptance-local
+```
+
+The build context contains only the prebuilt binary, probe and scenario, not the
+source tree or local credentials. Record the loaded base ID, candidate ID, source
+revision/dirty state, Go version and tar SHA-256 with a candidate handoff.
+Transfer the tar plus `simulator-acceptance-runtime.sh` and
+`test-simulator-acceptance.sh` to the disposable Ubuntu host. No source tree or
+toolchain is needed there:
+
+```sh
+export DOCKER_HOST=unix:///var/run/docker.sock
+docker load -i /path/to/simulator-acceptance.tar
+export ZPR_SIMULATOR_ACCEPTANCE_IMAGE="$(docker image inspect --format '{{.Id}}' zpr-simulator:scenario-acceptance-local)"
+export ZPR_SIMULATOR_PACKAGE_DIR=/absolute/installed/release/simulator
+export ZPR_SIMULATOR_STATE_DIR=/absolute/new-private-acceptance-state
+export SIMULATION_DEMO_PROJECT=zprdemo-INSTALLEDPROJECT
+export SIMULATION_DEMO_IMAGE=sha256:EXACT_INSTALLED_ZPR_IMAGE_ID
+sh simulator-acceptance-runtime.sh start
+sh test-simulator-acceptance.sh
+sh simulator-acceptance-runtime.sh stop
+```
+
+The launcher checks candidate ownership before reuse and refuses conflicting
+state/images/users. `stop` requests scenario cancellation and waits for cleanup
+before stopping the candidate; it never stops the ZPR backbone. The probe listener
+also has a 30-second lease if Simulator is forcibly killed. A forced interruption
+can leave an exited `<compose-project>-scenario-http` workload container and
+`/tmp/zpr-packaged-demo-probe` in web0. Inspect the exact workload ID, image,
+`zpr.simulator.workload.project` and `zpr.simulator.workload.role` labels and
+running scenarios before removing that owned, exited container by ID. Remove
+the **empty lock directory only** with
+`docker exec <verified-web0-container> rmdir /tmp/zpr-packaged-demo-probe`.
+Retries deliberately refuse an existing lock rather than taking it over.
+The independent adapter has the same 30-second lease. Forced interruption can
+leave an exited `<compose-project>-scenario-identity` container; inspect its ID,
+image and project/role/identity labels before explicitly removing it by ID.
+Its private key lives only in tmpfs, not the container image or host state.
+Workbench SIGKILL fault injection verified that this independent adapter also
+exits with timeout status 124 after Simulator is killed; active policy remains
+unchanged and the owned exited container can be explicitly removed before restart.
+Workbench fault injection also verified that killing Simulator with SIGKILL
+leaves the workload lease in force: the listener exits with timeout status 124,
+active policy remains unchanged, and the owned exited container and empty lock
+can then be explicitly removed before restart.
+
+Workbench acceptance on 2026-10-19 verified fresh-key admission rejection,
+independent-adapter restrictions, cancellation and name conflicts, plus provisioned-container restrictions,
+successful scenario completion, explicit policy-denial evidence, cancellation
+cleanup, refusal to adopt/delete a conflicting container, successful reruns and
+stop/start persistence. The immutable paired archives remain unchanged. The website installer
+now supports a separately downloaded `simulator-scenario-admission-20261019-r6.tar`
+image through `simulator-install`, `simulator-start --disposable-host`,
+`simulator-test`, `simulator-status`, and `simulator-stop`. This additive package
+does not replace either required runtime archive.
+After importing r6, `simulator-start` upgrades only the exact reviewed r4/r5 images
+with matching state, project, ZPR image and invoking-user labels. It waits for
+scenario cleanup, replaces only that managed Simulator container and retains
+the workspace, including old published scenarios. Standalone launcher users
+must explicitly set `ZPR_SIMULATOR_PREVIOUS_IMAGE` (or `ZPR_SIMULATOR_LEGACY_IMAGE`)
+to a reviewed predecessor image ID to authorize this transition; otherwise
+differing images are refused. Older published scenarios remain, but all packaged
+verification actions execute the updated fixed probe including identity rejection.
+
+Run the dependency-free probe regression from `packaging/demo-runtime` with
+`node --test identity-probe.test.mjs`. It rejects missing or unrelated Visa
+evidence, ownership mismatches and name conflicts without adopting containers.
+The exact generated installer passed its full lifecycle with fresh root-owned
+Simulator state against the existing installed workbench runtime pair. Execution
+used a temporary root container with the Ubuntu host's OS metadata, Docker socket
+and real package/state paths; this was not a fresh-machine installation or reboot
+test. The old user candidate was stopped and retained, not adopted.
+
 The two packages together must demonstrate a real ZPR network: node/adapter
 admission, real allowed traffic, evidenced policy denials, protected DNS,
 revocation and restart. OpenLDAP and LDAP-backed Dex are approved providers.
 BIND9 has separate bootstrap and ZPR service roles; do not route setup/login
 DNS through a network that has not yet been admitted. See the
 [combined acceptance target](../../../System%20release%20plan.md#simulator-companion-package).
+
+## Independent approved-bootstrap acceptance
+
+The separately downloaded ZPR CLI exposes
+`sudo bash zpr-cli simulator-identity-lab --disposable-host`. This runs
+`verify-approved-identity-lab.py`, embedded from `packaging/demo-runtime`,
+against the installed pinned ZPR image and package assets. It does not call
+Simulator or Control Room and is not yet a Simulator UI action.
+
+The command creates an internal, automatically addressed Docker network,
+independent node/Visa/service identities, policy and Redis. An endpoint creates
+its own private key inside tmpfs and exports only the public key for explicit
+lab bootstrap-policy approval. Acceptance requires the exact Visa actor and
+trusted access attribute, a known HTTP response under attribute policy, and
+fresh Visa rejection of another key claiming the same name without replacing
+the approved actor or interrupting its traffic. No installed baseline policy,
+credentials or identities are modified. This is not production enrollment,
+user login, or live policy application.
+
+The lab also withdraws the approved endpoint's trusted `access:cloud` attribute
+and refreshes only its independent `attrfile` provider. Previously installed
+HTTP visa IDs must be removed from the synchronized node with zero pending
+revocations, corroborated by a fresh attribute-change revocation sweep. A new
+request must receive a fresh exact-flow TCP-80 policy denial while the server
+still serves locally. Restoring the original attribute must restore HTTP for
+the same admitted actor, with no policy replacement or service restart.
+This is authorization withdrawal/recovery, not identity/key revocation;
+the actor/auth-revocation API endpoints remain placeholders.
+
+All lab containers are read-only, resource-bounded, no-new-privileges and
+NET_ADMIN/TUN-only; there are no published ports. Endpoints have no host mounts.
+Node/Visa/service mounts contain only their required freshly generated keys,
+not the CA signing key or existing baseline credentials. Normal completion or
+SIGTERM removes recorded container/network IDs only after matching run-label
+checks; successful runs delete only their exact temporary state directory.
+Failures retain private state under `/var/lib/zpr-demo-state/identity-labs/`.
+SIGKILL may leave exited containers, network and state; the ten-minute process
+leases are not an automatic cleanup mechanism. Inspect ownership before recovery.
+
+Run `python3 test-approved-identity-lab.py` from `packaging/demo-runtime` for
+ownership, unsafe-path, failure cleanup and bounded-wait regressions.
+The exact embedded CLI passed on workbench with Simulator stopped, including
+SIGTERM cleanup and a subsequent successful rerun. Baseline identity/configuration
+fingerprints and complete active Redis policy were unchanged; separate operator
+compiler checks passed. This does not qualify production enrollment or host reboot.
 
 ## Linux/amd64 bootstrap CLI engineering staging
 

@@ -1,0 +1,12 @@
+{
+  "id": "packaged-admission-acceptance",
+  "organization_id": "demo",
+  "name": "Identity admission: unapproved key rejected",
+  "description": "Provisions and removes an isolated HTTP workload, checks allowed traffic and explicit policy denial, then creates a separate adapter with its own fresh private bootstrap key in tmpfs. Requires explicit Visa rejection of the unapproved identity and continued Alice HTTP. No existing private identity keys are copied and active policy is unchanged. This is a negative admission test, not successful enrollment or full lab provisioning.",
+  "steps": [
+    {
+      "action": "verify_packaged_demo",
+      "timeout_seconds": 90
+    }
+  ]
+}

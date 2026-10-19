@@ -1,0 +1,29 @@
+{
+  "name": "Unprovisioned Simulator UI Bootstrap Fixture",
+  "organization_id": "demo",
+  "agents": [],
+  "services": [],
+  "machines": [
+    {"id":"demo-machine-01","type":"laptop","model":"Unprovisioned Fixture","location":"Not provisioned","owner":"","secure":false},
+    {"id":"demo-machine-02","type":"laptop","model":"Unprovisioned Fixture","location":"Not provisioned","owner":"","secure":false},
+    {"id":"demo-machine-03","type":"laptop","model":"Unprovisioned Fixture","location":"Not provisioned","owner":"","secure":false},
+    {"id":"demo-machine-04","type":"laptop","model":"Unprovisioned Fixture","location":"Not provisioned","owner":"","secure":false},
+    {"id":"demo-machine-05","type":"laptop","model":"Unprovisioned Fixture","location":"Not provisioned","owner":"","secure":false},
+    {"id":"demo-machine-06","type":"laptop","model":"Unprovisioned Fixture","location":"Not provisioned","owner":"","secure":false},
+    {"id":"demo-machine-07","type":"laptop","model":"Unprovisioned Fixture","location":"Not provisioned","owner":"","secure":false},
+    {"id":"demo-machine-08","type":"laptop","model":"Unprovisioned Fixture","location":"Not provisioned","owner":"","secure":false},
+    {"id":"demo-machine-09","type":"laptop","model":"Unprovisioned Fixture","location":"Not provisioned","owner":"","secure":false},
+    {"id":"demo-machine-10","type":"laptop","model":"Unprovisioned Fixture","location":"Not provisioned","owner":"","secure":false},
+    {"id":"demo-machine-11","type":"desktop","model":"Unprovisioned Fixture","location":"Not provisioned","owner":"","secure":false},
+    {"id":"demo-machine-12","type":"desktop","model":"Unprovisioned Fixture","location":"Not provisioned","owner":"","secure":false},
+    {"id":"demo-machine-13","type":"desktop","model":"Unprovisioned Fixture","location":"Not provisioned","owner":"","secure":false},
+    {"id":"demo-machine-14","type":"desktop","model":"Unprovisioned Fixture","location":"Not provisioned","owner":"","secure":false},
+    {"id":"demo-machine-15","type":"desktop","model":"Unprovisioned Fixture","location":"Not provisioned","owner":"","secure":false},
+    {"id":"demo-machine-16","type":"desktop","model":"Unprovisioned Fixture","location":"Not provisioned","owner":"","secure":false},
+    {"id":"demo-machine-17","type":"desktop","model":"Unprovisioned Fixture","location":"Not provisioned","owner":"","secure":false},
+    {"id":"demo-machine-18","type":"desktop","model":"Unprovisioned Fixture","location":"Not provisioned","owner":"","secure":false},
+    {"id":"demo-machine-19","type":"desktop","model":"Unprovisioned Fixture","location":"Not provisioned","owner":"","secure":false},
+    {"id":"demo-machine-20","type":"desktop","model":"Unprovisioned Fixture","location":"Not provisioned","owner":"","secure":false}
+  ],
+  "components": []
+}

@@ -1,0 +1,38 @@
+{
+  "id": "demo",
+  "name": "ZPR Demo UI Bootstrap",
+  "description": "Unprovisioned UI-only profile; no paired ZPR runtime or scenario is configured.",
+  "runtime": {
+    "driver": "docker-multinode",
+    "topology": "multi-node",
+    "nodes": [
+      {
+        "id": "demo-node-a",
+        "location": "Demo Lab A",
+        "substrate_address": "192.0.2.10",
+        "zpr_address": "2001:db8::10"
+      },
+      {
+        "id": "demo-node-b",
+        "location": "Demo Lab B",
+        "substrate_address": "192.0.2.11",
+        "zpr_address": "2001:db8::11"
+      }
+    ]
+  },
+  "directory": {
+    "base_dn": "dc=demo,dc=test",
+    "seed_mode": "ldif",
+    "ldif_files": ["demo.ldif"],
+    "health_uid": "demo-adapter",
+    "identity_mappings": {
+      "device.zpr.adapter.cn": "uid"
+    },
+    "attributes": ["uid"],
+    "departments": [],
+    "people": [],
+    "groups": []
+  },
+  "policies": [],
+  "services": []
+}

@@ -1,0 +1,12 @@
+{
+  "id": "packaged-workload-acceptance",
+  "organization_id": "demo",
+  "name": "Provisioned workload: allowed HTTP and policy denial",
+  "description": "Simulator creates an isolated non-root HTTP workload container in the installed web0 network namespace, with no identity keys, host mounts or capabilities. Checks real allowed HTTP and explicit Visa policy denial on an ungranted port, then removes the workload. Cancellation also removes it. Does not provision machine identities, LDAP, DNS or change active policy.",
+  "steps": [
+    {
+      "action": "verify_packaged_demo",
+      "timeout_seconds": 90
+    }
+  ]
+}

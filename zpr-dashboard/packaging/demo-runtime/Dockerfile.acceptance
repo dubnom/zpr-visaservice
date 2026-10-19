@@ -1,0 +1,10 @@
+ARG SIMULATOR_BASE=zpr-simulator:demo-candidate-20261018
+FROM ${SIMULATOR_BASE}
+COPY zpr-web-dashboard /usr/local/bin/zpr-web-dashboard
+COPY verify-packaged-demo.sh /opt/zpr-simulator/acceptance/verify-packaged-demo.sh
+COPY verify-packaged-identity.sh /opt/zpr-simulator/acceptance/verify-packaged-identity.sh
+COPY verify-packaged-admission.sh /opt/zpr-simulator/acceptance/verify-packaged-admission.sh
+COPY packaged-workload-acceptance.json /opt/zpr-simulator/acceptance/scenarios/packaged-workload-acceptance.json
+COPY packaged-admission-acceptance.json /opt/zpr-simulator/acceptance/scenarios/packaged-admission-acceptance.json
+ENV SIMULATION_PACKAGED_DEMO_SCRIPT=/opt/zpr-simulator/acceptance/verify-packaged-admission.sh
+ENV SIMULATION_SCENARIOS_DIR=/opt/zpr-simulator/acceptance/scenarios

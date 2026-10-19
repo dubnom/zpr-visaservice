@@ -320,6 +320,17 @@ func validateSimulatorScenarioStep(step simulatorScenarioStep, manifest simulato
 		return errors.New("client count override is only valid for stress traffic")
 	}
 	switch step.Action {
+	case "verify_packaged_demo":
+		if cleanup || strings.TrimSpace(os.Getenv("SIMULATION_PACKAGED_DEMO_SCRIPT")) == "" {
+			return errors.New("packaged demo verification requires an explicitly configured probe script and cannot be cleanup")
+		}
+		if step.Machine != "" || step.Component != "" || step.Target != "" || step.Expected != "" ||
+			step.User != "" || len(step.Workloads) != 0 {
+			return errors.New("packaged demo verification uses installed configuration, not scenario-supplied targets or identities")
+		}
+		if step.TimeoutSeconds < 30 {
+			return errors.New("packaged demo verification requires timeout_seconds of at least 30")
+		}
 	case "verify_multinode_runtime":
 		if cleanup || organization.Runtime.Driver != "docker-multinode" || organization.Runtime.Topology != "multi-node" || len(organization.Runtime.Nodes) < 2 {
 			return errors.New("runtime verification requires a multi-node docker-multinode organization and cannot be cleanup")
@@ -913,6 +924,12 @@ func waitForStressServiceFleet(ctx context.Context, machineID, serviceAddress, s
 
 func simulatorScenarioExecutorForManifest(ctx context.Context, manifest simulatorManifest, step simulatorScenarioStep) (string, error) {
 	switch step.Action {
+	case "verify_packaged_demo":
+		script := strings.TrimSpace(os.Getenv("SIMULATION_PACKAGED_DEMO_SCRIPT"))
+		if script == "" {
+			return "", errors.New("packaged demo probe script is not configured")
+		}
+		return runPackagedDemoProbe(ctx, script)
 	case "verify_multinode_runtime":
 		return verifyMultinodeRuntime(ctx, manifest)
 	case "start_machine":

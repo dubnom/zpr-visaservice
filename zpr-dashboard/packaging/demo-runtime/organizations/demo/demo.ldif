@@ -1,0 +1,6 @@
+dn: dc=demo,dc=test
+objectClass: top
+objectClass: dcObject
+objectClass: organization
+dc: demo
+o: Unprovisioned ZPR Demo
