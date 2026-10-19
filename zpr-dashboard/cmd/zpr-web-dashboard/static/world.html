@@ -1,0 +1,56 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>ZPR Simulator Demo world</title>
+  <link rel="stylesheet" href="/app.css?v=105">
+  <link rel="stylesheet" href="/simulator.css?v=36">
+  <link rel="stylesheet" href="/sidebar.css?v=9">
+  <link rel="stylesheet" href="/world.css?v=1">
+  <script src="/page-runtime.js?v=1"></script>
+  <script src="/sidebar.js?v=43" defer></script>
+</head>
+<body>
+  <div class="app-shell">
+    <aside class="sidebar">
+      <a class="brand" data-simulator-nav href="/agents.html" aria-label="ZPR Simulator agents">
+        <span class="brand-mark"><i></i><i></i><i></i></span>
+        <span><strong>ZPR</strong><small>SIMULATOR</small></span>
+      </a>
+      <nav class="primary-nav" aria-label="Simulator navigation">
+        <a class="nav-link" data-simulator-nav href="/agents.html">Agents</a>
+        <a class="nav-link" data-simulator-nav href="/organizations.html">Organizations</a>
+        <a class="nav-link active" data-simulator-nav href="/world.html">Demo world</a>
+        <a class="nav-link" data-simulator-nav href="/activity.html">Activity</a>
+      </nav>
+      <div class="sidebar-foot"><span class="tiny-dot"></span><span>SIMULATION CONTROL</span></div>
+    </aside>
+    <main class="main-content">
+      <header class="topbar"><div class="topbar-status"></div></header>
+      <section class="world-page" aria-labelledby="world-title">
+        <div class="section-heading world-heading">
+          <div>
+            <p class="eyebrow">PAIRED DEMO</p>
+            <h1 id="world-title">Demo world</h1>
+            <p class="world-intro">Inspect and control the paired Alice-to-Oci-Web demonstration.</p>
+          </div>
+          <button id="world-refresh" class="button button-refresh" type="button">Refresh state</button>
+        </div>
+        <p id="world-status" class="world-status" role="status" aria-live="polite">Loading actual runtime state…</p>
+        <p id="world-error" class="world-error" role="alert" hidden></p>
+        <p class="world-beta">
+          <strong>Beta:</strong> Alice is a simulation persona using an approved demo adapter key.
+          She is not a named human authentication or a production enrollment. This page covers
+          only the paired demo; it does not configure or imply that the unprovisioned 20-machine
+          fixture is ready.
+        </p>
+        <p id="world-release" class="world-release">Release: —</p>
+        <div id="world-content" class="world-content" aria-busy="true"></div>
+      </section>
+    </main>
+  </div>
+  <script src="/simulator-nav.js?v=20"></script>
+  <script src="/world.js?v=1"></script>
+</body>
+</html>

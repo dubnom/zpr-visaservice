@@ -9,8 +9,112 @@ The command makes bounded TCP connection attempts, sends one ICMP echo per
 target, looks up reverse names, and exports a versioned JSON inventory.
 Optional imported adapter data can enrich
 that inventory with host-local listeners, process names and service labels.
-Live adapter collection, Control Room integration, migration policy generation,
-UDP probing and automatic adapter installation are **not implemented**.
+Saved inventories can be converted offline into deny-by-default ZPL service
+drafts. Live adapter collection, Control Room integration, UDP probing and
+automatic adapter installation are **not implemented**.
+
+## Generate a deny-by-default policy draft
+
+After exporting a scan, run:
+
+```sh
+bin/zpr-discover policy -input inventory.json -output migration.zpl
+```
+
+This subcommand does not scan, contact any service, require Simulator, compile
+or sign a policy, modify DNS, or activate anything. Output is a reviewable ZPL
+source file, created privately (mode `0600`) without overwriting an existing
+path. Omit `-output` or use `-output -` for stdout.
+
+- Only **observed open TCP endpoints** become services, one per IP/port pair.
+  Closed, timed-out, unreachable, cancelled, unattempted and failed endpoints
+  do not. Ping-only clients, PTR names and imported listeners (including UDP)
+  do not create service declarations or permissions.
+- Service classes and proposed names under `discovered.svc.zpr` are deterministic
+  from the organization label, literal address and port. Report ordering and
+  scanner labels do not change them. These names are proposals, not registered
+  DNS records. Rescanning creates another independent draft, not a policy merge.
+- Known TCP ports use readable service names such as `ssh`, `https` and
+  `postgresql`; unknown ports use `tcp<port>`. DNS proposals prefix the unique
+  endpoint identity with that name, so different hosts never share a service
+  merely because both offer HTTPS. Names use the bundled IANA TCP registry, not
+  untrusted report labels or the machine's services database. Metadata marks
+  known names as `tcp_port_number_only` hints, not verified application protocols.
+  This naming replaces the earlier opaque-only draft names; regenerate drafts
+  for the new names rather than automatically merging old and new identities.
+
+- Each service has a `provide` declaration for its TCP port and JSON metadata
+  retaining the observed address, port and timestamp. Scanner/organization
+  provenance and partial status appear in the header. Unverified evidence is
+  not converted into authenticated identities.
+- **No communication `allow` rules are generated.** ZPR denies communication
+  when there is no matching allow; this is default-deny, not an explicit
+  `never allow` that would override later reviewed permissions.
+- The compiler requires provider attributes, so each draft class requires the
+  presence of an authenticated `device.zpr.adapter.cn`. This is **not a binding
+  to a particular provider**. Before adding access rules, replace that broad
+  presence condition with the reviewed provider identity, choose the real
+  service DNS name, and verify the port. Neither the scanned IP, a PTR record
+  nor an imported adapter ID proves that identity.
+- Default-deny describes the generated standalone service draft, not a firewall
+  change on the scanned network. Do not merge it into a policy with existing
+  broad allows without reviewing the resulting access. Keep production
+  bootstrap/management policy separately controlled.
+
+Input must be a saved version-2 TCP report, at most 64 MiB, with consistent
+scope, endpoint states and counters. Dry-run plans, adapter-only inventories,
+unknown fields, unsupported schemas and malformed reports are rejected.
+Incomplete/error-bearing reports require explicit acceptance:
+
+```sh
+bin/zpr-discover policy -input interrupted.json -allow-partial -output partial.zpl
+```
+
+That output and stderr carry a partial-inventory warning. It includes only
+known open endpoints; missing services are never evidence of absence. A valid
+report with no open endpoints produces a header-only draft and reports zero
+services.
+
+To run the optional real compiler/evaluator integration test, set
+`ZPR_ZPLC_BIN` and `ZPR_ZPT_BIN` to local executable paths:
+
+```sh
+ZPR_ZPLC_BIN=/path/to/zplc ZPR_ZPT_BIN=/path/to/zpt \
+  go test ./internal/discovery -run TestPolicyDraftCompilerAndEvaluator -v
+```
+
+The test compiles an IPv4/IPv6 multi-service draft and checks actual denied
+communication decisions for every generated service with Simulator unavailable.
+
+### Service-name registry
+
+The executable includes 5,890 named TCP port assignments from the official
+[IANA Service Name and Transport Protocol Port Number Registry](https://www.iana.org/assignments/service-names-port-numbers/service-names-port-numbers.xhtml),
+retrieved on 2026-10-19. Both well-known (1-1023) and registered (1024-49151)
+named TCP ports are included; unnamed, non-TCP and private/dynamic ports are not.
+No registry download, system services database or external dependency is needed
+at runtime. These factual assignments are stored without contact information
+or descriptions.
+
+When a port has multiple registered names, the first registry entry supplies
+the lowercase name. Two explicit familiar/current aliases are used: TCP/53
+is `dns` (IANA `domain`) and TCP/465 is `submissions` rather than historical `urd`.
+Original registry names/aliases are retained in draft metadata as
+`iana_service_names`. Legacy punctuation is normalized only for ZPL identifiers
+and DNS labels. Registry names can differ from popular application conventions:
+TCP/1521 is `ncube-lm`, and TCP/9200 is `wap-wsp`; a port alone does not prove
+Oracle or Elasticsearch is running.
+
+To refresh the bundled snapshot from the dashboard module, download the official
+CSV and run the standard-library generator, then review the data and test changes:
+
+```sh
+curl --fail --location \
+  https://www.iana.org/assignments/service-names-port-numbers/service-names-port-numbers.csv \
+  -o /tmp/iana-services.csv
+go run ./internal/discovery/servicegen /tmp/iana-services.csv \
+  internal/discovery/service_registry.go
+```
 
 ## Build and preview
 

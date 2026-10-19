@@ -141,7 +141,100 @@ release_id=$(printf '%s\n' "$package_metadata" | sed -n '1p')
 image_reference=$(printf '%s\n' "$package_metadata" | sed -n '2p')
 expected_image_id=$(printf '%s\n' "$package_metadata" | sed -n '3p')
 container_name="zpr-simulator-demo-$release_id"
+host_port=${ZPR_SIMULATOR_PORT:-8788}
+case "$host_port" in
+    ""|*[!0-9]*|??????*) fail "ZPR_SIMULATOR_PORT must be a decimal port from 1024 through 65535" ;;
+esac
+[ "$host_port" -ge 1024 ] && [ "$host_port" -le 65535 ] ||
+    fail "ZPR_SIMULATOR_PORT must be a decimal port from 1024 through 65535"
 state_dir=$ZPR_SIMULATOR_STATE_DIR
+demo_project=
+demo_image=
+demo_release=
+if [ -n "${ZPR_DEMO_PACKAGE_DIR:-}" ]; then
+    demo_metadata=$(
+        python3 - "$package_dir" "$ZPR_DEMO_PACKAGE_DIR" "$release_id" <<'PY'
+import hashlib
+import json
+import os
+from pathlib import Path
+import re
+import sys
+
+
+def fail(message):
+    raise SystemExit("simulator-demo-runtime: " + message)
+
+
+simulator_path = Path(sys.argv[1])
+zpr_path = Path(sys.argv[2])
+release_id = sys.argv[3]
+if (
+    not zpr_path.is_absolute()
+    or os.path.normpath(zpr_path) != str(zpr_path)
+    or os.path.realpath(zpr_path) != str(zpr_path)
+    or zpr_path.name != "zpr-demo"
+    or zpr_path.parent != simulator_path.parent
+    or not zpr_path.is_dir()
+):
+    fail("paired ZPR package must be the canonical sibling installed release")
+
+def read_manifest(package, role):
+    manifest_path = package / "manifest.json"
+    reference_path = package / "runtime/image-reference"
+    if manifest_path.is_symlink() or reference_path.is_symlink():
+        fail("paired package metadata must not be symlinks")
+    try:
+        manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+        reference = reference_path.read_bytes()
+    except (OSError, UnicodeError, ValueError) as exc:
+        fail("cannot read paired " + role + " package metadata: " + str(exc))
+    return manifest, reference
+
+
+simulator, simulator_reference = read_manifest(simulator_path, "Simulator")
+zpr, zpr_reference = read_manifest(zpr_path, "ZPR")
+simulator_component = simulator.get("component") if isinstance(simulator, dict) else None
+zpr_component = zpr.get("component") if isinstance(zpr, dict) else None
+image_pattern = re.compile(r"sha256:[0-9a-f]{64}")
+if (
+    not isinstance(zpr, dict)
+    or zpr.get("schema") != "zpr.demo.runtime-package.v2"
+    or zpr.get("status") != "demo-unqualified-runtime-package"
+    or zpr.get("platform") != "linux/amd64"
+    or zpr.get("package_id") != "zpr-demo-image"
+    or zpr.get("required_peer_package_id") != "simulator-image"
+    or zpr.get("release_id") != release_id
+    or not isinstance(zpr_component, dict)
+    or zpr_component.get("id") != "zpr-demo-image"
+    or not isinstance(zpr_component.get("image_reference"), str)
+    or not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9._/:@+-]{0,254}", zpr_component["image_reference"])
+    or not isinstance(zpr_component.get("docker_image_id"), str)
+    or not image_pattern.fullmatch(zpr_component["docker_image_id"])
+    or not isinstance(zpr_component.get("image_id"), str)
+    or not image_pattern.fullmatch(zpr_component["image_id"])
+    or not isinstance(simulator_component, dict)
+    or simulator.get("release_id") != release_id
+    or simulator.get("peer_image_id") != zpr_component["image_id"]
+    or simulator.get("peer_docker_image_id") != zpr_component["docker_image_id"]
+    or zpr.get("peer_image_id") != simulator_component.get("image_id")
+    or zpr.get("peer_docker_image_id") != simulator_component.get("docker_image_id")
+    or not isinstance(simulator_component.get("image_reference"), str)
+    or simulator_reference != (simulator_component["image_reference"] + "\n").encode("ascii")
+    or zpr_reference != (zpr_component["image_reference"] + "\n").encode("ascii")
+):
+    fail("paired ZPR package does not match the installed Simulator release")
+
+print(
+    "zprdemo-" + hashlib.sha256(release_id.encode("ascii")).hexdigest()[:12]
+    + "|" + zpr_component["docker_image_id"] + "|" + release_id
+)
+PY
+    ) || fail "paired ZPR runtime validation failed"
+    IFS='|' read -r demo_project demo_image demo_release <<EOF
+$demo_metadata
+EOF
+fi
 
 validate_state_path() {
     state_dir=$(python3 - "$state_dir" "$package_dir" <<'PY'
@@ -174,7 +267,7 @@ PY
 
 inspect_container() {
     docker container inspect --format \
-        '{{index .Config.Labels "zpr.demo.package"}}|{{index .Config.Labels "zpr.demo.release"}}|{{.Image}}|{{.State.Status}}' \
+        '{{index .Config.Labels "zpr.demo.package"}}|{{index .Config.Labels "zpr.demo.release"}}|{{.Image}}|{{range $port, $bindings := .HostConfig.PortBindings}}{{range $bindings}}{{.HostIp}}:{{.HostPort}}{{end}}{{end}}|{{.State.Status}}' \
         "$container_name"
 }
 
@@ -216,7 +309,7 @@ resolve_docker_socket() {
 
 verify_container() {
     metadata=$1
-    expected_prefix="simulator|$release_id|$expected_image_id|"
+    expected_prefix="simulator|$release_id|$expected_image_id|127.0.0.1:$host_port|"
     case "$metadata" in
         "$expected_prefix"*) ;;
         *) fail "container name is occupied by a different or modified container: $container_name" ;;
@@ -228,7 +321,7 @@ print_status() {
     verify_container "$metadata"
     container_state=${metadata##*|}
     case "$container_state" in
-        running) echo "Simulator container running (UI endpoint http://127.0.0.1:8788; application readiness not checked)" ;;
+        running) echo "Simulator container running (UI endpoint http://127.0.0.1:$host_port; application readiness not checked)" ;;
         *) echo "Simulator stopped (container $container_name; state $container_state)" ;;
     esac
 }
@@ -271,7 +364,7 @@ case "$command_name" in
                 fail "cannot create Simulator state directory: $state_dir"
         fi
         validate_state_path || fail "invalid Simulator state directory"
-        for subdirectory in workspace-db published-directories scenarios; do
+        for subdirectory in workspace-db published-directories scenarios provisioning; do
             if ! python3 - "$state_dir/$subdirectory" <<'PY'
 import os
 import sys
@@ -307,6 +400,20 @@ PY
         [ "$image_metadata" = "$expected_image_id|linux|amd64" ] ||
             fail "loaded Simulator image does not match the package's pinned Linux/amd64 image identity"
 
+        enable_provisioning=${ZPR_SIMULATOR_ENABLE_PROVISIONING:-0}
+        case "$enable_provisioning" in
+            0) ;;
+            1)
+                [ -n "$demo_project" ] ||
+                    fail "provisioning requires the validated paired ZPR package"
+                capability=$(docker image inspect --format '{{index .Config.Labels "zpr.simulator.packaged-provisioning"}}' "$expected_image_id") ||
+                    fail "cannot inspect packaged provisioning capability"
+                [ "$capability" = 1 ] ||
+                    fail "this Simulator image does not support packaged machine provisioning"
+                ;;
+            *) fail "ZPR_SIMULATOR_ENABLE_PROVISIONING must be 0 or 1" ;;
+        esac
+
         lookup_container
         if [ -n "$existing_container" ]; then
             container_state=${existing_container##*|}
@@ -323,6 +430,14 @@ PY
                 --label "zpr.demo.release=$release_id" \
                 --restart unless-stopped \
                 --user "$user_id:$group_id"
+            if [ "$enable_provisioning" = 1 ]; then
+                set -- "$@" \
+                    --mount "type=bind,source=$ZPR_DEMO_PACKAGE_DIR,target=$ZPR_DEMO_PACKAGE_DIR,readonly" \
+                    --mount "type=bind,source=$state_dir/provisioning,target=$state_dir/provisioning" \
+                    -e SIMULATION_PROVISION_PACKAGE="$ZPR_DEMO_PACKAGE_DIR" \
+                    -e SIMULATION_PROVISION_ROOT="$state_dir/provisioning" \
+                    -e SIMULATION_PROVISION_RELEASE_ID="$release_id"
+            fi
             if [ "$socket_gid" != "$group_id" ]; then
                 set -- "$@" --group-add "$socket_gid"
             fi
@@ -330,13 +445,16 @@ PY
                 --read-only \
                 --security-opt no-new-privileges:true \
                 --tmpfs /tmp:rw,noexec,nosuid,size=16777216 \
-                -p 127.0.0.1:8788:8788 \
+                -p "127.0.0.1:$host_port:8788" \
                 -v "$docker_socket:/var/run/docker.sock" \
                 -v "$runtime_dir:/opt/zpr-simulator/runtime:ro" \
                 -v "$state_dir:/var/lib/zpr-simulator" \
                 --workdir /opt/zpr-simulator/runtime \
                 -e SIMULATION_MANIFEST=/opt/zpr-simulator/runtime/simulation-environment.json \
                 -e SIMULATION_ORGANIZATION_ID=demo \
+                -e SIMULATION_DEMO_PROJECT="$demo_project" \
+                -e SIMULATION_DEMO_IMAGE="$demo_image" \
+                -e SIMULATION_DEMO_RELEASE_ID="$demo_release" \
                 -e SIMULATION_ORGANIZATIONS_DIR=/opt/zpr-simulator/runtime/organizations \
                 -e SIMULATION_SCENARIOS_DIR=/var/lib/zpr-simulator/scenarios \
                 -e SIMULATION_ACTIVE_ORGANIZATION_FILE=/var/lib/zpr-simulator/active-organization.txt \

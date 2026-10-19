@@ -41,8 +41,16 @@ func main() {
 }
 
 func run(ctx context.Context, args []string, stdout, stderr io.Writer) int {
+	if len(args) > 0 && args[0] == "policy" {
+		return runPolicy(args[1:], stdout, stderr)
+	}
 	flags := flag.NewFlagSet("zpr-discover", flag.ContinueOnError)
 	flags.SetOutput(stderr)
+	flags.Usage = func() {
+		fmt.Fprintln(stderr, "Usage: zpr-discover [scan options]")
+		fmt.Fprintln(stderr, "       zpr-discover policy -input inventory.json [-output draft.zpl] [-allow-partial]")
+		flags.PrintDefaults()
+	}
 	configFile := flags.String("config", "", "optional JSON config; explicitly supplied CLI flags override config values")
 	scannerID := flags.String("scanner-id", "", "operator-assigned label for the machine running this command (required)")
 	organization := flags.String("organization", "", "operator-assigned organization label (required; not an authentication claim)")
@@ -187,13 +195,19 @@ func run(ctx context.Context, args []string, stdout, stderr io.Writer) int {
 }
 
 func writeJSON(stdout io.Writer, path string, value any) error {
-	encode := func(writer io.Writer) error {
+	return writeOutput(stdout, path, func(writer io.Writer) error {
 		encoder := json.NewEncoder(writer)
 		encoder.SetIndent("", "  ")
 		return encoder.Encode(value)
-	}
+	})
+}
+
+func writeOutput(stdout io.Writer, path string, encode func(io.Writer) error) error {
 	if path == "-" {
 		return encode(stdout)
+	}
+	if path == "" {
+		return errors.New("output must be '-' or a new file path")
 	}
 	file, err := os.CreateTemp(filepath.Dir(path), ".zpr-discover-*")
 	if err != nil {

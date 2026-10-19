@@ -85,16 +85,6 @@ type Endpoint struct {
 	Error            string     `json:"error,omitempty"`
 }
 
-var serviceHints = map[uint16]string{
-	21: "ftp", 22: "ssh", 25: "smtp", 53: "dns", 80: "http", 88: "kerberos",
-	110: "pop3", 135: "msrpc", 139: "netbios-session", 143: "imap", 389: "ldap",
-	443: "https", 445: "smb", 465: "smtps", 587: "smtp-submission", 636: "ldaps",
-	853: "dns-over-tls", 993: "imaps", 995: "pop3s", 1433: "mssql",
-	2049: "nfs", 2379: "etcd", 3306: "mysql", 3389: "rdp", 5432: "postgresql",
-	5672: "amqp", 5900: "vnc", 6379: "redis", 8080: "http-alt", 8443: "https-alt",
-	9092: "kafka", 9200: "elasticsearch", 11211: "memcached", 27017: "mongodb",
-}
-
 func (options Options) Validate() error {
 	if strings.TrimSpace(options.ScannerID) == "" || len(options.ScannerID) > 256 ||
 		strings.TrimSpace(options.Organization) == "" || len(options.Organization) > 256 {

@@ -44,8 +44,8 @@ case "$name" in
     simulator-demo-runtime.sh)
         [ "$ZPR_SIMULATOR_PACKAGE_DIR" = "$ZPR_DEMO_RELEASE_ROOT/simulator" ]
         [ "$ZPR_SIMULATOR_STATE_DIR" = "$ZPR_DEMO_STATE_ROOT/simulator" ]
-        [ "${ZPR_DEMO_PACKAGE_DIR+x}" != x ]
-        [ "${ZPR_DEMO_STATE_DIR+x}" != x ]
+        [ "$ZPR_DEMO_PACKAGE_DIR" = "$ZPR_DEMO_RELEASE_ROOT/zpr-demo" ]
+        [ "$ZPR_DEMO_STATE_DIR" = "$ZPR_DEMO_STATE_ROOT/zpr-demo" ]
         ;;
     *) exit 99 ;;
 esac
@@ -122,8 +122,9 @@ expect_no_calls() {
 }
 
 run --help
-grep -F "BOOTSTRAP-ONLY" "$temp_dir/output" >/dev/null
-grep -F "not a runnable paired scenario" "$temp_dir/output" >/dev/null
+grep -F "paired Simulator companion" "$temp_dir/output" >/dev/null
+grep -F "demo resources" "$temp_dir/output" >/dev/null
+grep -F "20-machine Simulator fixture remains unprovisioned" "$temp_dir/output" >/dev/null
 expect_no_calls
 export PAIRED_FAKE_UID=1000
 for action in start stop status; do
@@ -134,12 +135,12 @@ done
 unset PAIRED_FAKE_UID
 run start
 expect_calls "init-demo-identities.sh prepare" "zpr-demo-runtime.sh start" "simulator-demo-runtime.sh start"
-grep -F "no scenario or application readiness is established" "$temp_dir/output" >/dev/null
+grep -F "packaged scenario checks to observe runtime readiness" "$temp_dir/output" >/dev/null
 [ -d "$ZPR_DEMO_STATE_ROOT" ] || fail "state root was not created"
 printf '%s\n' sentinel >"$ZPR_DEMO_STATE_ROOT/retained"
 run status
 expect_calls "zpr-demo-runtime.sh status" "simulator-demo-runtime.sh status"
-grep -F "Application readiness is not checked" "$temp_dir/output" >/dev/null
+grep -F "Simulator component (status):" "$temp_dir/output" >/dev/null
 run stop
 expect_calls "simulator-demo-runtime.sh stop" "zpr-demo-runtime.sh stop"
 [ "$(cat "$ZPR_DEMO_STATE_ROOT/retained")" = sentinel ] || fail "stop changed persistent state"

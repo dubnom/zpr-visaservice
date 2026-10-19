@@ -8,9 +8,10 @@ usage: paired-demo-runtime.sh start|stop|status
 Requires explicit canonical ZPR_DEMO_RELEASE_ROOT pointing to the installed
 <install-dir>/<release-id>, and absolute persistent ZPR_DEMO_STATE_ROOT.
 
-BOOTSTRAP-ONLY: starts the ZPR demo and an unprovisioned Simulator UI.
-The current Simulator profile has empty agents/services and no scenario.
-This is not a runnable paired scenario or an application-readiness check.
+Starts the ZPR demo and the paired Simulator companion. Runtime identity
+is limited to the installed Alice and OciWeb demo resources; the separate
+20-machine Simulator fixture remains unprovisioned. This is not production
+enrollment or an application-readiness check.
 All lifecycle commands require sudo on an isolated disposable demo host because
 the persistent state and container workloads are root-owned. start prepares
 identities, starts ZPR, then starts Simulator.
@@ -178,15 +179,16 @@ zpr_command() (
 )
 
 simulator_command() (
-    unset ZPR_DEMO_PACKAGE_DIR ZPR_DEMO_STATE_DIR
+    unset ZPR_SIMULATOR_PACKAGE_DIR ZPR_SIMULATOR_STATE_DIR
     export ZPR_SIMULATOR_PACKAGE_DIR="$simulator_package"
     export ZPR_SIMULATOR_STATE_DIR="$simulator_state"
+    export ZPR_DEMO_PACKAGE_DIR="$zpr_package"
+    export ZPR_DEMO_STATE_DIR="$zpr_state"
     "$simulator_package/runtime/simulator-demo-runtime.sh" "$1"
 )
 
 printf '%s\n' \
-    "BOOTSTRAP-ONLY: ZPR demo plus unprovisioned Simulator UI (empty agents/services; no scenario)." \
-    "Not a runnable paired scenario. Application readiness is not checked."
+    "Paired demo runtime: installed ZPR package and Simulator; Simulator world actions are limited to verified Alice and OciWeb demo resources."
 
 case "$action" in
     start)
@@ -202,7 +204,7 @@ case "$action" in
         if ! simulator_command start; then
             fail "Simulator start failed; ZPR is not automatically stopped; state is retained; use status/stop to inspect or stop components"
         fi
-        printf '%s\n' "Bootstrap-only start commands completed; no scenario or application readiness is established."
+        printf '%s\n' "Paired start commands completed; use the packaged scenario checks to observe runtime readiness."
         ;;
     stop|status)
         result=0

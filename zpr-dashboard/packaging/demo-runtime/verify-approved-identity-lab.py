@@ -46,6 +46,8 @@ class IdentityLab:
         self.network_requested = False
         self.containers = []
         self.pending_containers = []
+        self.identity_volume = None
+        self.volume_requested = False
         self.image = json.loads((package / "manifest.json").read_text())["component"]["docker_image_id"]
         self.identity = "approved-" + self.token
         self.state = self.directory / "state"
@@ -75,12 +77,47 @@ class IdentityLab:
                 or [cap.removeprefix("CAP_") for cap in host["CapAdd"]] != ["NET_ADMIN"]
                 or "no-new-privileges:true" not in host["SecurityOpt"]):
             raise RuntimeError("created lab container violates isolation contract")
-        if role in ("endpoint", "wrong-key") and (
-                host.get("Mounts") or host["Binds"] or host["VolumesFrom"]
-                or host["Tmpfs"] != {"/run/zpr": "rw,noexec,nosuid,size=4m,mode=0700"}):
-            raise RuntimeError("endpoint must have only private-key tmpfs, no host mounts")
+        if role == "wrong-key" or role.startswith("endpoint"):
+            self.check_endpoint_storage(config, persistent=role.startswith("endpoint"))
         self.docker("start", container)
         return container
+
+    def check_endpoint_storage(self, config, *, persistent, identity_volume=None):
+        host = config["HostConfig"]
+        mounts = config.get("Mounts", [])
+        expected_mounts = host.get("Mounts") or []
+        if (host["Binds"] or host["VolumesFrom"]
+                or host["Tmpfs"] != {"/run/zpr": "rw,noexec,nosuid,size=4m,mode=0700"}):
+            raise RuntimeError("endpoint has unexpected host mounts or tmpfs")
+        if persistent:
+            identity_volume = identity_volume or self.identity_volume
+            volume_options = expected_mounts[0].get("VolumeOptions", {}) if len(expected_mounts) == 1 else {}
+            if (len(expected_mounts) != 1
+                    or expected_mounts[0].get("Type") != "volume"
+                    or expected_mounts[0].get("Source") != identity_volume
+                    or expected_mounts[0].get("Target") != "/var/lib/zpr-identity"
+                    or expected_mounts[0].get("ReadOnly", False)
+                    or volume_options.get("NoCopy") is not True
+                    or set(volume_options) - {"NoCopy", "DriverConfig"}
+                    or volume_options.get("DriverConfig")
+                    or len(mounts) != 1
+                    or mounts[0].get("Type") != "volume"
+                    or mounts[0].get("Name") != identity_volume
+                    or mounts[0].get("Destination") != "/var/lib/zpr-identity"
+                    or mounts[0].get("RW") is not True):
+                raise RuntimeError("endpoint must mount only its owned identity volume")
+            self.check_identity_volume(identity_volume)
+        elif expected_mounts or mounts:
+            raise RuntimeError("wrong-key endpoint must have only tmpfs, no volumes")
+
+    def check_identity_volume(self, identity_volume=None):
+        identity_volume = identity_volume or self.identity_volume
+        volume = json.loads(self.docker("volume", "inspect", identity_volume))[0]
+        if (not re.fullmatch(re.escape(self.token) + r"-identity(?:-[a-z0-9-]+)?",
+                             volume.get("Name", ""))
+                or volume.get("Driver") != "local" or volume.get("Options")
+                or (volume.get("Labels") or {}).get("zpr.simulator.identity-lab") != self.token):
+            raise RuntimeError("lab identity volume ownership or storage configuration changed")
 
     def execute(self, container, *args, **kwargs):
         return self.docker("exec", container, *args, **kwargs)
@@ -117,42 +154,133 @@ class IdentityLab:
         else:
             entrypoint = ["/bin/sh", "/entrypoint.sh"]
             mounts = ["--mount", f"type=bind,source={self.package / 'runtime/assets/entrypoints' / ('entrypoint-' + service + '.sh')},target=/entrypoint.sh,readonly"]
-        return self.create(
+        container = self.create(
             service, "--ip", address, "--cap-add", "NET_ADMIN", "--device", "/dev/net/tun",
             "--tmpfs", "/var/run/zpr:rw,noexec,nosuid,size=4m,mode=0700",
             "--tmpfs", "/tmp:rw,nosuid,size=16m",
             "--tmpfs", "/root:rw,noexec,nosuid,size=4m,mode=0700",
             "--tmpfs", "/state:rw,nosuid,size=16m",
-            "--mount", f"type=bind,source={config},target=/conf,readonly",
-            "--mount", f"type=bind,source={self.state / 'logs'},target=/logs",
-            *mounts, "--entrypoint", "/usr/bin/timeout", self.image,
-            "-k", "2s", "600s", *entrypoint)
+            "--tmpfs", "/conf:rw,noexec,nosuid,size=8m,mode=0700",
+            "--tmpfs", "/logs:rw,noexec,nosuid,size=16m,mode=0700",
+            *mounts, *self.container_process(entrypoint))
+        for path in sorted(config.rglob("*")):
+            if path.is_symlink():
+                raise RuntimeError("service configuration must not contain symlinks")
+            relative = path.relative_to(config).as_posix()
+            destination = "/conf/" + relative
+            if path.is_dir():
+                self.execute(container, "mkdir", "-p", destination)
+            elif path.is_file():
+                self.write_container_file(container, destination, path.read_bytes())
+            else:
+                raise RuntimeError("service configuration contains a non-file entry: " + str(path))
+        return container
+
+    def container_process(self, args):
+        return ["--entrypoint", "/usr/bin/timeout", self.image,
+                "-k", "2s", "600s", *args]
 
     def launch(self, container, name, args):
         self.docker("exec", "-d", "-w", "/conf", container, "sh", "-ec",
                     'exec "$@" > /logs/' + name + ".log 2>&1", "launch", *args)
 
-    def endpoint(self, role):
+    def sync_service_file(self, container, name):
+        source = self.state / "conf/vs" / name
+        pending = "/conf/" + name + ".pending"
+        target = "/conf/" + name
+        self.write_container_file(container, pending, source.read_bytes())
+        self.execute(container, "mv", pending, target)
+
+    def write_container_file(self, container, destination, contents):
+        self.docker(
+            "exec", "-i", container, "sh", "-ec",
+            'umask 077; mkdir -p "$(dirname "$1")"; cat > "$1"',
+            "stage", destination, data=contents)
+
+    def service_log(self, container, name):
+        return self.execute(container, "cat", "/logs/" + name)
+
+    def endpoint(self, role, identity_volume=None):
+        persistent = role.startswith("endpoint")
+        mounts = []
+        key_directory = "/run/zpr/identity"
+        if persistent:
+            if identity_volume is None:
+                self.volume_requested = True
+                identity_volume = self.docker(
+                    "volume", "create", "--driver", "local", "--label",
+                    "zpr.simulator.identity-lab=" + self.token,
+                    self.token + "-identity").decode().strip()
+            self.identity_volume = identity_volume
+            self.check_identity_volume()
+            mounts = ["--mount",
+                      "type=volume,source=" + identity_volume +
+                      ",target=/var/lib/zpr-identity,volume-nocopy"]
+            key_directory = "/var/lib/zpr-identity"
         endpoint = self.create(
             role, "--cap-add", "NET_ADMIN", "--device", "/dev/net/tun",
             "--tmpfs", "/run/zpr:rw,noexec,nosuid,size=4m,mode=0700",
-            "--entrypoint", "/usr/bin/timeout", self.image, "-k", "2s", "600s",
-            "/bin/sh", "-ec", "umask 077; openssl genrsa -out /run/zpr/key.pem 2048; "
+            *mounts,
+            *self.container_process([
+            "/bin/sh", "-ec", "umask 077; mkdir -p " + key_directory + "; "
+            "chmod 700 " + key_directory + "; "
+            "test ! -L " + key_directory + "/key.pem; "
+            "if [ ! -e " + key_directory + "/key.pem ]; then "
+            "openssl genrsa -out " + key_directory + "/key.new 2048; "
+            "chmod 600 " + key_directory + "/key.new; "
+            "mv " + key_directory + "/key.new " + key_directory + "/key.pem; fi; "
+            "test -f " + key_directory + "/key.pem; "
+            "ln -s " + key_directory + "/key.pem /run/zpr/key.pem; "
             "openssl pkey -in /run/zpr/key.pem -pubout -out /run/zpr/public.pem; "
-            "touch /run/zpr/ready; exec sleep infinity")
+            "touch /run/zpr/ready; exec sleep infinity"]))
+        self.prepare_endpoint(endpoint)
+        return endpoint
+
+    def prepare_endpoint(self, endpoint):
         wait_for("fresh endpoint public key", lambda: self.execute(
             endpoint, "sh", "-c", "test ! -e /run/zpr/ready || echo ready").strip())
         self.docker("exec", "-i", endpoint, "sh", "-ec",
                     "umask 077; cat > /run/zpr/ca.crt",
                     data=(self.state / "include/auth-ca.crt").read_bytes())
-        return endpoint
 
-    def start_adapter(self, endpoint, node_ip):
-        self.docker("exec", "-d", endpoint, "/usr/bin/timeout", "-k", "2s", "180s",
-                    "/app/bin/ph", "adapter", "--logging", "all=INFO",
+    def restart_endpoint(self, endpoint, visa, node_ip, public_key):
+        config = self.inspect(endpoint)
+        if (config["Config"]["Labels"].get("zpr.simulator.identity-lab") != self.token
+                or config["Image"] != self.image):
+            raise RuntimeError("endpoint ownership or image changed before restart")
+        self.check_endpoint_storage(config, persistent=True)
+        policy = self.execute(visa, "redis-cli", "-e", "--json", "HGETALL", "policy:current")
+        self.docker("stop", "--time", "2", endpoint)
+        if self.inspect(endpoint)["State"]["Running"]:
+            raise RuntimeError("endpoint did not stop")
+        self.docker("start", endpoint)
+        self.prepare_endpoint(endpoint)
+        if self.execute(endpoint, "cat", "/run/zpr/public.pem") != public_key:
+            raise RuntimeError("endpoint identity changed across container restart")
+        self.start_adapter(endpoint, node_ip)
+        wait_for("restarted adapter link", lambda: b"(Active)" in self.execute(
+            endpoint, "sh", "-c",
+            'test ! -S /run/zpr/control.sock || /app/bin/ph-cli -p /run/zpr/control.sock link show'))
+        actor = self.actor(visa)
+        if actor.get("cn") != self.identity or actor.get("node"):
+            raise RuntimeError("restarted endpoint was not admitted as its retained identity")
+        for _ in range(6):
+            self.fetch(endpoint)
+            time.sleep(1)
+        if policy != self.execute(visa, "redis-cli", "-e", "--json", "HGETALL", "policy:current"):
+            raise RuntimeError("lab policy changed across endpoint restart")
+        print("PASS: endpoint restart retained its endpoint-owned key; six HTTP samples passed without policy replacement or reapproval",
+              flush=True)
+
+    def start_adapter(self, endpoint, node_ip, identity=None):
+        self.docker("exec", "-d", endpoint, *self.adapter_process(),
+                    "--logging", "all=INFO",
                     "--control-path", "/run/zpr/control.sock", "--capture-path", "/run/zpr/capture.sock",
                     "--ca-file", "/run/zpr/ca.crt", "--bootstrap-key", "/run/zpr/key.pem",
-                    "--name", self.identity, "--node-addr", node_ip + ":5000", "--tun-if", "tun0")
+                    "--name", identity or self.identity, "--node-addr", node_ip + ":5000", "--tun-if", "tun0")
+
+    def adapter_process(self):
+        return ["/usr/bin/timeout", "-k", "2s", "180s", "/app/bin/ph", "adapter"]
 
     def fetch(self, endpoint):
         response = self.execute(
@@ -186,12 +314,11 @@ class IdentityLab:
         original = path.read_bytes()
         attributes = json.loads(original)
         attributes["device.zpr.adapter.cn"][self.identity]["access"] = []
-        # Replace inside the mounted directory so the service sees a complete file.
         updated = path.with_suffix(".pending")
         updated.write_text(json.dumps(attributes))
         updated.replace(path)
-        log = self.state / "logs/vs.log"
-        offset = log.stat().st_size
+        self.sync_service_file(visa, "attrfile.json")
+        offset = len(self.service_log(visa, "vs.log"))
         self.admin(visa, "services", "--id", "attrfile", "--flush", write=True)
         wait_for("HTTP visa revocations acknowledged by lab node", lambda: node_settled(True))
         current = self.actor(visa)
@@ -206,9 +333,7 @@ class IdentityLab:
                 raise
         else:
             raise RuntimeError("withdrawn endpoint still fetched protected HTTP")
-        with log.open("rb") as source:
-            source.seek(offset)
-            evidence = source.read().decode()
+        evidence = self.service_log(visa, "vs.log")[offset:].decode()
         prefix = "eval denied (no match) for flow " + actor["zpr_addr"] + " -> fd5a:5052:8888::8 "
         if not any(prefix in line and "dest_port: 80 }" in line
                    and "no matching policy" in line for line in evidence.splitlines()):
@@ -219,6 +344,7 @@ class IdentityLab:
 
         updated.write_bytes(original)
         updated.replace(path)
+        self.sync_service_file(visa, "attrfile.json")
         self.admin(visa, "services", "--id", "attrfile", "--flush", write=True)
 
         def restored():
@@ -237,7 +363,7 @@ class IdentityLab:
             raise RuntimeError("restored access changed actor address or failed to restore trusted attribute")
         print("PASS: trusted access restored; same approved actor fetched protected HTTP without policy replacement or service restart", flush=True)
 
-    def run(self):
+    def prepare(self):
         if not re.fullmatch(r"sha256:[0-9a-f]{64}", self.image):
             raise RuntimeError("invalid pinned ZPR image")
         actual = self.docker("image", "inspect", "--format", "{{.Id}} {{.Os}}/{{.Architecture}}",
@@ -253,12 +379,11 @@ class IdentityLab:
         if subnet.version != 4 or subnet.num_addresses < 32 or not network["Internal"]:
             raise RuntimeError("lab requires an automatically allocated IPv4 subnet")
         node_ip, visa_ip, web_ip = str(subnet[13]), str(subnet[11]), str(subnet[14])
-        environment = dict(os.environ, ZPR_DEMO_PACKAGE_DIR=str(self.package))
-        subprocess.run(["bash", str(self.package / "runtime/init-demo-identities.sh"),
-                        "prepare", str(self.state)], env=environment, check=True, timeout=180)
+        self.initialize_state()
         node_config = self.state / "conf/node0/node0-conf.toml"
         node_source = node_config.read_text()
-        node_source = node_source[:node_source.index("[node.peer_noise_certificates]")]
+        if "[node.peer_noise_certificates]" in node_source:
+            node_source = node_source[:node_source.index("[node.peer_noise_certificates]")]
         node_config.write_text(node_source.replace("172.30.0.13", node_ip))
         adapter_config = self.state / "conf/vs/adapter-vs-conf.toml"
         adapter_config.write_text(adapter_config.read_text().replace("172.30.0.13", node_ip))
@@ -274,23 +399,27 @@ class IdentityLab:
         (self.state / "include/approved-public-key.pem").write_bytes(public_key)
         compiler = self.state / "admin/multinode-demo.zplc"
         source = compiler.read_text()
-        start = source.index("[nodes.n1]")
-        end = source.index("[trusted_services.default]")
-        source = source[:start] + source[end:]
-        source = source.replace("172.30.0.13", node_ip).replace(
-            "[bootstrap]", '[bootstrap]\n"' + self.identity + '" = "../include/approved-public-key.pem"')
+        if "[nodes.n1]" in source:
+            start = source.index("[nodes.n1]")
+            end = source.index("[trusted_services.default]")
+            source = source[:start] + source[end:]
+        source = source.replace("172.30.0.13", node_ip)
+        if '"' + self.identity + '"' not in source:
+            source = source.replace(
+                "[bootstrap]", '[bootstrap]\n"' + self.identity + '" = "../include/approved-public-key.pem"')
         compiler.write_text(source)
         attributes_path = self.state / "conf/vs/attrfile.json"
         attributes = json.loads(attributes_path.read_text())
         attributes["device.zpr.adapter.cn"][self.identity] = {"location": ["cloud"], "access": ["cloud"]}
         attributes_path.write_text(json.dumps(attributes))
         public_include = self.directory / "compiler-public"
-        public_include.mkdir(mode=0o700)
+        public_include.mkdir(mode=0o700, exist_ok=True)
         for path in (self.state / "include").glob("*-public-key.pem"):
             shutil.copyfile(path, public_include / path.name)
         self.docker(
             "run", "--rm", "--pull", "never", "--network", "none", "--read-only",
             "--cap-drop", "ALL", "--security-opt", "no-new-privileges:true",
+            "--user", f"{os.getuid()}:{os.getgid()}",
             "--mount", f"type=bind,source={self.state / 'admin'},target=/admin",
             "--mount", f"type=bind,source={public_include},target=/include,readonly",
             "--workdir", "/admin", "--entrypoint", "/app/bin/zplc", self.image,
@@ -299,6 +428,16 @@ class IdentityLab:
         visa = self.plane("vs", visa_ip)
         node = self.plane("node0", node_ip)
         web = self.plane("web0", web_ip)
+        actor = self.start_runtime(visa, node, web, endpoint, node_ip)
+        return visa, node, web, endpoint, node_ip, actor, public_key
+
+    def initialize_state(self):
+        environment = dict(os.environ, ZPR_DEMO_PACKAGE_DIR=str(self.package))
+        subprocess.run(["bash", str(self.package / "runtime/init-demo-identities.sh"),
+                        "prepare", str(self.state)], env=environment, check=True, timeout=180,
+                       stdout=sys.stderr)
+
+    def start_runtime(self, visa, node, web, endpoint, node_ip):
         wait_for("lab Redis", lambda: self.execute(
             visa, "sh", "-c", 'test "$(redis-cli --raw PING 2>/dev/null)" != PONG || echo ready').strip())
         self.launch(visa, "vs", ["/app/bin/vs", "multinode-demo.bin2"])
@@ -314,7 +453,7 @@ class IdentityLab:
         if actor.get("cn") != self.identity or actor.get("node"):
             raise RuntimeError("Visa did not report the exact approved adapter: " + json.dumps(actor))
         print("PASS: separate Visa admitted fresh approved bootstrap identity " + self.identity, flush=True)
-        print("PASS: endpoint private key generated in tmpfs; only public key supplied to lab compiler", flush=True)
+        print("PASS: endpoint private key generated in its own private volume; only public key supplied to lab compiler", flush=True)
         attributes = {entry["key"]: entry["value"] for entry in actor["attrs"]}
         if attributes.get("user.access") != ["cloud"]:
             raise RuntimeError("approved adapter lacks expected trusted access attribute")
@@ -328,17 +467,21 @@ class IdentityLab:
             'test ! -S /var/run/zpr/control.sock || /app/bin/ph-cli -p /var/run/zpr/control.sock link show'))
         self.fetch(endpoint)
         print("PASS: independently approved adapter fetched lab OciWeb through attribute-based policy", flush=True)
+        return actor
+
+    def run(self):
+        visa, node, web, endpoint, node_ip, actor, public_key = self.prepare()
         policy = self.execute(visa, "redis-cli", "-e", "--json", "HGETALL", "policy:current")
         impostor = self.endpoint("wrong-key")
         if self.execute(impostor, "cat", "/run/zpr/public.pem") == public_key:
             raise RuntimeError("wrong-key test did not generate an independent key")
-        log = self.state / "logs/vs.log"
-        offset = log.stat().st_size
+        offset = len(self.service_log(visa, "vs.log"))
         self.start_adapter(impostor, node_ip)
+
         def signature_rejected():
-            with log.open("rb") as source:
-                source.seek(offset)
-                return ("blob signature verification failed for cn " + self.identity).encode() in source.read()
+            return ("blob signature verification failed for cn " + self.identity).encode() in \
+                self.service_log(visa, "vs.log")[offset:]
+
         wait_for("explicit wrong-key signature rejection", signature_rejected, attempts=30)
         self.fetch(endpoint)
         if self.actor(visa)["zpr_addr"] != actor["zpr_addr"]:
@@ -349,6 +492,7 @@ class IdentityLab:
         self.authorization_cycle(visa, endpoint, web, actor)
         if policy != self.execute(visa, "redis-cli", "-e", "--json", "HGETALL", "policy:current"):
             raise RuntimeError("lab policy changed during attribute authorization lifecycle")
+        self.restart_endpoint(endpoint, visa, node_ip, public_key)
 
     def cleanup(self):
         failures = []
@@ -370,6 +514,19 @@ class IdentityLab:
                 if config["Config"]["Labels"].get("zpr.simulator.identity-lab") != self.token:
                     raise RuntimeError("lab ownership changed; refusing removal: " + container)
                 self.docker("rm", "-f", container)
+            except (subprocess.SubprocessError, RuntimeError) as exc:
+                failures.append(str(exc))
+        if self.identity_volume is None and self.volume_requested:
+            ids = self.docker("volume", "ls", "--filter",
+                              "label=zpr.simulator.identity-lab=" + self.token,
+                              "--format", "{{.Name}}").decode().split()
+            if ids != [] and ids != [self.token + "-identity"]:
+                raise RuntimeError("unexpected identity volumes claim lab ownership; refusing cleanup")
+            self.identity_volume = ids[0] if ids else None
+        if self.identity_volume is not None and not failures:
+            try:
+                self.check_identity_volume()
+                self.docker("volume", "rm", self.identity_volume)
             except (subprocess.SubprocessError, RuntimeError) as exc:
                 failures.append(str(exc))
         if self.network is not None and not failures:
@@ -412,7 +569,7 @@ def main():
         if not completed:
             print("Failed lab evidence retained privately: " + str(lab.directory), flush=True)
     shutil.rmtree(lab.directory)
-    print("PASS: isolated lab containers, network and generated identity state removed")
+    print("PASS: isolated lab containers, network, identity volume and generated identity state removed")
 
 
 if __name__ == "__main__":

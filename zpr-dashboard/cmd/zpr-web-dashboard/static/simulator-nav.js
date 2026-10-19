@@ -252,7 +252,24 @@
       nav.insertBefore(logsLink, nav.querySelector('a[href="/activity.html"]'));
     }
     logsLink.textContent = "Workers";
+    let worldLink = nav.querySelector('a[href="/world.html"]');
+    if (!worldLink) {
+      worldLink = document.createElement("a");
+      worldLink.className = "nav-link";
+      worldLink.dataset.simulatorNav = "";
+      worldLink.href = "/world.html";
+      worldLink.textContent = "Demo world";
+      nav.insertBefore(worldLink, nav.querySelector('a[href="/activity.html"]'));
+    }
     nav.querySelector('a[href="/agents.html"]')?.remove();
+    if (!nav.querySelector('a[href="/simulator-provisioning.html"]')) {
+      const link = document.createElement("a");
+      link.className = "nav-link";
+      link.dataset.simulatorNav = "";
+      link.href = "/simulator-provisioning.html";
+      link.textContent = "Machine provisioning";
+      nav.insertBefore(link, nav.querySelector('a[href="/activity.html"]'));
+    }
     const brand = document.querySelector(".brand[data-simulator-nav]");
     if (brand) {
       brand.href = "/organizations.html";
@@ -261,7 +278,7 @@
     nav.querySelector('a[href="/scenarios.html"]')?.remove();
     nav.querySelector('a[href="/trusted-source.html"]')?.remove();
     for (const [label, paths] of [
-      ["MONITORING", ["/scenarios.html#simulate", "/activity.html", "/machine-logs.html"]],
+      ["MONITORING", ["/scenarios.html#simulate", "/world.html", "/simulator-provisioning.html", "/activity.html", "/machine-logs.html"]],
       ["CONFIGURATION", ["/organizations.html"]],
     ]) {
       let group = nav.querySelector(`[data-simulator-nav-group="${label}"]`);

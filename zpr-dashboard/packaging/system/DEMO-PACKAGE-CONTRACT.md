@@ -1,8 +1,10 @@
 # ZPR and Simulator demo package contract
 
-Status: approved demo target; implementation and fresh-host acceptance remain
-open. This is deliberately less strict than the production contract. A passing
-demo is not a production release or a supported customer installation.
+Status: the requested two-member provisioning slice has passed acceptance on the
+existing Ubuntu workbench. Clean-host downloaded-artifact acceptance and the
+remaining full-demo scenarios are still open. This is deliberately less strict
+than the production contract. A passing demo is not a production release or a
+supported customer installation.
 
 ## Goal
 
@@ -138,6 +140,87 @@ and configuration on the target host and supply a source-independent runtime
 with start/stop/status commands. Do not rebuild images merely to repeat the
 completed image-import step, and do not describe image loading as service
 installation or startup.
+
+### Paired Simulator-world source implementation
+
+The source package runtime now passes the installed ZPR package and persistent
+state paths to the paired Simulator launcher. The Simulator launcher validates
+both package manifests and their reciprocal immutable image IDs, derives the
+Compose project name from the shared release ID, and passes the exact project,
+ZPR image ID, and release ID to the Simulator container. The package-builder
+test verifies these launcher assets are present in the installed package.
+
+The Simulator now exposes a fixed, versioned world-state API and an operator
+page for the observed Alice and OciWeb containers, adapter sessions, OciWeb
+HTTP service, and demo persona. Machine start/stop acts only on pre-existing,
+ownership-checked containers; machine start restores the corresponding fixed
+adapter session from packaged configuration. Service actions target only the
+OciWeb HTTP process and require its adapter session to remain running. The
+packaged web0 entrypoint keeps the container supervisor alive if Nginx stops,
+separating HTTP service stop from adapter/container stop. Adapter state means
+the fixed process session is present; it is not proof of an active peer link.
+The paired Compose configuration marks this supervisor capability in the
+container environment, and the API verifies exactly one matching marker before
+service start/stop. Containers from older packages without the marker remain
+observable and machine-controllable, but service actions fail closed until the
+updated paired runtime recreates web0.
+Alice is reported as a bootstrap-approved demo principal, not a
+human-authenticated user or production enrollment.
+
+This is a source implementation, not fresh-host acceptance. The separate
+20-machine Simulator fixture remains unprovisioned. Package/runtime, API, and
+authorization tests do not prove container behavior on Ubuntu. The Simulator
+image must be rebuilt from the updated Go and embedded UI sources, and the
+paired runtime archives must be rebuilt to include the web0 supervisor
+entrypoint. No image has been built or published from this implementation,
+and the designated Ubuntu host has not been changed.
+
+### Opt-in persistent organization machine candidate
+
+The separate `organization-provisioning-20261019-r4` candidate adds real
+provisioning for `demo/demo-machine-01`, not only lifecycle of existing paired
+containers. Its verified pair was installed on the existing Ubuntu workbench,
+and the installed Simulator launcher was tested with
+`ZPR_SIMULATOR_ENABLE_PROVISIONING=1`. This is not a fresh-OS qualification or a
+published release.
+
+The organization profile explicitly selects the fixed isolated bootstrap driver.
+The machine receives an endpoint-generated persistent key and an independent
+node/Visa/OciWeb plane; it does not use the reference topology placeholders.
+Real protected HTTP, attribute withdrawal with explicit denial and acknowledged
+visa revocation, access recovery, identity-retaining stop/start, Simulator
+replacement with persistent inventory, and cancellation followed by retry were
+verified. Retry creates replacement partial containers without replacing the
+endpoint key. The main Simulator container-state map recognizes the real machine,
+while incompatible legacy fixture login/workload controls remain unavailable.
+
+The existing paired runtime was not replaced: its configuration and active policy
+must remain unchanged, and its Alice/OciWeb service-supervision acceptance is still
+a separate outstanding item.
+See the [provisioning scope and commands](../simulator/README.md#packaged-organization-machine-provisioning).
+
+### Two-member workbench acceptance (October 21, 2026)
+
+The unqualified paired candidate
+`organization-shared-topology-20261021-r7` was installed and exercised on the
+existing Ubuntu workbench, alongside the preserved baseline. Both configured
+members reached `ready` with successful protected HTTP. They retained distinct
+endpoint fingerprints and Docker identity volumes while reporting the same
+Visa, node, and OciWeb container IDs. A same-name wrong-key attempt for
+`demo-machine-02` was rejected in the Visa log; the approved actor, policy, and
+traffic checks remained intact.
+
+Each member was stopped and started independently through the Simulator UI.
+The stopped member's fingerprint remained unchanged, the other endpoint and
+shared services stayed online, and each restarted endpoint returned to `ready`
+with protected HTTP. No duplicate endpoint containers were created. After
+separate UI authorization, both members also passed policy withdrawal and
+recovery: fresh protected HTTP was denied, two installed visas were revoked and
+acknowledged for each member, and the same approved actor regained HTTP access
+after its attribute was restored without restarting the shared service.
+Host-reboot recovery, the full 20-fixture inventory, clean-OS installation, and
+production enrollment remain unqualified. The downloaded pair remains
+`demo-unqualified`; it was not published.
 
 ## Runtime and lifecycle boundary
 

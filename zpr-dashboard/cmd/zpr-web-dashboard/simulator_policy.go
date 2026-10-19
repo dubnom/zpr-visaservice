@@ -36,6 +36,14 @@ func simulatorAPIPermission(method, requestPath string) (permission, explicitOrg
 	}
 	if organization != "" {
 		switch {
+		case len(parts) == 7 && parts[4] == "machines" && parts[6] == "provisioning" && method == http.MethodGet:
+			return "simulator.read", organization, true
+		case len(parts) == 8 && parts[4] == "machines" && parts[6] == "provisioning" && method == http.MethodPost &&
+			(parts[7] == "approve-and-provision" || parts[7] == "start" || parts[7] == "stop" || parts[7] == "verify"):
+			if parts[7] == "approve-and-provision" {
+				return "organization.activate", organization, true
+			}
+			return "device.lifecycle", organization, true
 		case len(parts) == 6 && parts[4] == "scenario-reset" && parts[5] == "status" && method == http.MethodGet,
 			len(parts) == 6 && parts[4] == "scenario-reset" && parts[5] == "intents" && method == http.MethodPost,
 			len(parts) == 7 && parts[4] == "scenario-reset" && parts[5] == "operations" && method == http.MethodGet,
@@ -131,6 +139,20 @@ func simulatorAPIPermission(method, requestPath string) (permission, explicitOrg
 	}
 	if len(parts) == 4 && parts[2] == "scenarios" && parts[3] == "cancel" && method == http.MethodPost {
 		return "scenario.cancel", "", true
+	}
+	if len(parts) == 3 && parts[2] == "world" && method == http.MethodGet {
+		return "simulator.read", "", true
+	}
+	if len(parts) == 6 && parts[2] == "world" && method == http.MethodPost {
+		if parts[3] == "machines" &&
+			(parts[4] == "alice" || parts[4] == "oci-web") &&
+			(parts[5] == "start" || parts[5] == "stop") {
+			return "device.lifecycle", "", true
+		}
+		if parts[3] == "services" && parts[4] == "oci-web" &&
+			(parts[5] == "start" || parts[5] == "stop") {
+			return "device.lifecycle", "", true
+		}
 	}
 	if len(parts) == 5 {
 		switch {

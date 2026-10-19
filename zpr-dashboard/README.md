@@ -29,6 +29,14 @@ identity after container recreation passed arm64 engineering tests without
 Simulator. See the [same-host startup instructions](packaging/simulator/README.md#same-host-independent-identity-stack);
 Ubuntu amd64 release images and complete paired packages remain unfinished.
 
+The Linux demo candidate also supports opt-in
+[persistent organization-machine provisioning](packaging/simulator/README.md#packaged-organization-machine-provisioning)
+for two explicitly enabled organization members, each with an endpoint-generated
+retained key, sharing one isolated node/Visa/OciWeb plane. The current r4
+workbench installation still demonstrates one machine; shared-topology source
+qualification is in progress. This does not provision all 20 records, qualify
+production enrollment, or update previously published downloads.
+
 # Development
 
 To setup your development environment, run `go mod download` to install the local dependencies. Finally, run `make run` to start the TUI.
@@ -330,8 +338,15 @@ There is no host-count cap: scopes are compact and iterated lazily. Version-2
 exports retain the full scope and exact planned counts, with host records only
 for reached/imported targets. Rate, worker and time limits remain enforced.
 Imported adapter listener inventory stays separate and explicitly unverified.
+The offline `zpr-discover policy -input inventory.json -output migration.zpl`
+subcommand converts observed open TCP endpoints into reviewable ZPL service
+drafts with stable proposed DNS names and no communication allow rules.
+It never activates policy, registers DNS or infers provider identities;
+provider bindings must be reviewed before granting access. Partial/error-bearing
+reports require explicit acceptance. See the
+[discovery guide](cmd/zpr-discover/README.md#generate-a-deny-by-default-policy-draft).
 There is no live adapter collector, remote scanner control, Control Room page,
-UDP scan, automatic installation or policy generation in this first version.
+UDP scan or automatic installation.
 
 ## Backend package reorganization
 

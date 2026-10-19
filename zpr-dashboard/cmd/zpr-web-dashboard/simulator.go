@@ -236,6 +236,13 @@ func runSimulator(listen string) (runErr error) {
 	mux.HandleFunc("POST /api/simulator/organizations/{organization}/activate", handleSimulatorOrganizationActivate)
 	mux.HandleFunc("POST /api/simulator/organizations/{organization}/restore-base", handleSimulatorOrganizationRestoreBase)
 	mux.HandleFunc("GET /api/simulator/status", handleSimulatorStatus)
+	worldHandler := newSimulatorWorldHandler()
+	mux.Handle("GET /api/simulator/world", worldHandler)
+	mux.Handle("POST /api/simulator/world/machines/{machine}/{action}", worldHandler)
+	mux.Handle("POST /api/simulator/world/services/{service}/{action}", worldHandler)
+	provisionHandler := newSimulatorProvisionHandler()
+	mux.Handle("GET /api/simulator/organizations/{organization}/machines/{machine}/provisioning", provisionHandler)
+	mux.Handle("POST /api/simulator/organizations/{organization}/machines/{machine}/provisioning/{action}", provisionHandler)
 	mux.HandleFunc("GET /api/simulator/machine-logs", handleSimulatorMachineLogs)
 	mux.HandleFunc("GET /api/simulator/adapter-logs", handleSimulatorAdapterLogs)
 	mux.Handle("GET /api/simulator/trusted-source", simulatorTrustedSourceHandler(readAssertionLDAP))
@@ -431,6 +438,22 @@ func handleSimulatorStatus(w http.ResponseWriter, _ *http.Request) {
 	sessions := simulatorSessions.snapshot(machineIDs)
 	dockerStates := simulatorDockerContainerStates()
 	containers := simulatorMachineContainerStatesFromDocker(machineIDs, dockerStates)
+	if os.Getenv("SIMULATION_PROVISION_ROOT") != "" && organization.PackagedProvisioning != nil {
+		releaseID := os.Getenv("SIMULATION_PROVISION_RELEASE_ID")
+		if !simulatorProvisionReleaseIdentifier.MatchString(releaseID) {
+			http.Error(w, "organization provisioning release configuration unavailable", http.StatusServiceUnavailable)
+			return
+		}
+		provisioning := organization.PackagedProvisioning
+		for _, machine := range provisioning.Machines {
+			state := dockerStates[simulatorPackagedContainerName(
+				organization.ID, provisioning.PrimaryMachineID, machine, releaseID)]
+			if state == "" {
+				state = "missing"
+			}
+			containers[machine] = state
+		}
+	}
 	componentStates := simulatorRuntimeComponentStates(manifest, nil, simulatorSelectedAgentLinkStates(manifest, sessions))
 	status := simulatorStatus{Manifest: manifest, Organization: organization, Stack: simulatorStackRuntimeStatus(machineIDs, containers), Agents: map[string]string{}, Logs: map[string]string{}, Components: componentStates, Controllers: simulatorControllers.snapshot(machineIDs, time.Now()), Containers: containers, Sessions: sessions}
 	for _, name := range []string{"zpr-local-linux-node", "zpr-auth-sandbox", "zpr-dns-bind9"} {
@@ -509,6 +532,15 @@ func handleSimulatorMachineSession(w http.ResponseWriter, r *http.Request) {
 	}
 	if !manifestHasMachine(manifest, machineID) {
 		http.Error(w, "unknown machine", http.StatusNotFound)
+		return
+	}
+	packaged, packagedErr := simulatorUsesPackagedMachine(manifest, machineID)
+	if packagedErr != nil {
+		http.Error(w, "organization provisioning configuration unavailable", http.StatusServiceUnavailable)
+		return
+	}
+	if packaged {
+		http.Error(w, "this machine uses packaged provisioning; use Machine provisioning controls (legacy login/workload controller is not available)", http.StatusConflict)
 		return
 	}
 	if action == "start" || action == "stop" {

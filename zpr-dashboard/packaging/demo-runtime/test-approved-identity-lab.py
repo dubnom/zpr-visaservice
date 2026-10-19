@@ -97,6 +97,32 @@ class IdentityLabTests(unittest.TestCase):
             self.assertEqual(lab.containers, ["created-id"])
             self.assertEqual(lab.docker.call_count, 1)
 
+    def test_plane_stages_private_configuration_in_container_tmpfs(self):
+        with tempfile.TemporaryDirectory() as directory:
+            lab = self.make_lab(directory)
+            config = lab.state / "conf/vs"
+            (config / "include").mkdir(parents=True)
+            include = lab.state / "include"
+            include.mkdir()
+            for name in (
+                    "auth-ca.crt", "vs-noise.crt", "vs-noise.key", "vs-private-key.pem",
+                    "node0-noise-pub.pem", "admin-tls-cert.pem", "admin-tls-key.pem"):
+                (include / name).write_text(name)
+            lab.create = Mock(return_value="container-id")
+            lab.docker = Mock()
+            lab.container_process = Mock(return_value=[])
+            lab.plane("vs", "172.30.0.11")
+            args = lab.create.call_args.args
+            self.assertIn("/conf:rw,noexec,nosuid,size=8m,mode=0700", args)
+            self.assertIn("/logs:rw,noexec,nosuid,size=16m,mode=0700", args)
+            self.assertFalse(any(str(config) in arg for arg in args))
+            self.assertEqual(lab.docker.call_count, 8)
+            self.assertEqual(lab.docker.call_args_list[0].args[:3],
+                             ("exec", "container-id", "mkdir"))
+            for call in lab.docker.call_args_list[1:]:
+                self.assertEqual(call.args[:3], ("exec", "-i", "container-id"))
+                self.assertTrue(call.kwargs["data"])
+
     def test_private_directory_refuses_symlinks_and_unsafe_modes(self):
         with tempfile.TemporaryDirectory() as directory:
             path = Path(directory)
@@ -109,6 +135,14 @@ class IdentityLabTests(unittest.TestCase):
             with self.assertRaises(RuntimeError):
                 lab_module.private_directory(path)
             path.chmod(0o700)
+
+    def test_initialize_state_keeps_script_output_off_the_json_channel(self):
+        with tempfile.TemporaryDirectory() as directory:
+            lab = self.make_lab(directory)
+            with patch.object(lab_module.subprocess, "run") as run:
+                lab.initialize_state()
+            run.assert_called_once()
+            self.assertIs(run.call_args.kwargs["stdout"], lab_module.sys.stderr)
 
     def test_success_removes_only_its_fresh_directory(self):
         with tempfile.TemporaryDirectory() as directory:
@@ -199,6 +233,8 @@ class IdentityLabTests(unittest.TestCase):
 
         lab.admin = Mock(side_effect=admin)
         lab.fetch = Mock(side_effect=fetch)
+        lab.sync_service_file = Mock()
+        lab.service_log = Mock(side_effect=lambda container, name: log.read_bytes())
         return lab, actor, path, original, refreshes
 
     def test_authorization_withdraws_and_restores_only_fresh_attribute_data(self):
@@ -303,6 +339,156 @@ class IdentityLabTests(unittest.TestCase):
                     lab_module.main()
             lab.cleanup.assert_called_once_with()
             self.assertTrue(lab.directory.is_dir())
+
+    def endpoint_config(self, lab):
+        return {
+            "Image": lab.image,
+            "Config": {"Labels": {"zpr.simulator.identity-lab": lab.token}},
+            "HostConfig": {
+                "Binds": None, "VolumesFrom": None,
+                "Tmpfs": {"/run/zpr": "rw,noexec,nosuid,size=4m,mode=0700"},
+                "Mounts": [{"Type": "volume", "Source": lab.identity_volume,
+                            "Target": "/var/lib/zpr-identity",
+                            "VolumeOptions": {"NoCopy": True}}],
+            },
+            "Mounts": [{"Type": "volume", "Name": lab.identity_volume,
+                        "Destination": "/var/lib/zpr-identity", "RW": True}],
+        }
+
+    def test_endpoint_storage_rejects_foreign_extra_or_readonly_mounts(self):
+        for change in ("foreign", "extra", "readonly", "host", "copy"):
+            with self.subTest(change=change), tempfile.TemporaryDirectory() as directory:
+                lab = self.make_lab(directory)
+                lab.identity_volume = lab.token + "-identity"
+                lab.check_identity_volume = Mock()
+                config = self.endpoint_config(lab)
+                if change == "foreign":
+                    config["Mounts"][0]["Name"] = "foreign"
+                elif change == "extra":
+                    config["Mounts"].append(dict(config["Mounts"][0]))
+                elif change == "readonly":
+                    config["Mounts"][0]["RW"] = False
+                elif change == "host":
+                    config["HostConfig"]["Binds"] = ["/host:/secrets"]
+                else:
+                    config["HostConfig"]["Mounts"][0]["VolumeOptions"] = {}
+                with self.assertRaises(RuntimeError):
+                    lab.check_endpoint_storage(config, persistent=True)
+                lab.check_identity_volume.assert_not_called()
+
+    def test_restart_requires_same_public_key_and_policy_and_six_fetches(self):
+        with tempfile.TemporaryDirectory() as directory:
+            lab = self.make_lab(directory)
+            lab.identity_volume = lab.token + "-identity"
+            lab.inspect = Mock(side_effect=[
+                self.endpoint_config(lab), {"State": {"Running": False}}])
+            lab.check_identity_volume = Mock()
+            lab.docker = Mock()
+            lab.prepare_endpoint = Mock()
+            lab.start_adapter = Mock()
+            lab.actor = Mock(return_value={"cn": lab.identity, "node": False})
+            lab.fetch = Mock()
+            lab.execute = Mock(side_effect=[b"policy", b"public", b"(Active)", b"policy"])
+            with patch.object(lab_module.time, "sleep"):
+                lab.restart_endpoint("endpoint", "visa", "172.19.0.13", b"public")
+            self.assertEqual(lab.docker.call_args_list, [
+                unittest.mock.call("stop", "--time", "2", "endpoint"),
+                unittest.mock.call("start", "endpoint")])
+            lab.start_adapter.assert_called_once_with("endpoint", "172.19.0.13")
+            self.assertEqual(lab.fetch.call_count, 6)
+
+    def test_empty_driver_configuration_from_docker_cli_is_accepted(self):
+        with tempfile.TemporaryDirectory() as directory:
+            lab = self.make_lab(directory)
+            lab.identity_volume = lab.token + "-identity"
+            lab.check_identity_volume = Mock()
+            config = self.endpoint_config(lab)
+            config["HostConfig"]["Mounts"][0]["VolumeOptions"]["DriverConfig"] = {}
+            lab.check_endpoint_storage(config, persistent=True)
+            config["HostConfig"]["Mounts"][0]["VolumeOptions"]["DriverConfig"] = {"Name": "foreign"}
+            with self.assertRaisesRegex(RuntimeError, "owned identity volume"):
+                lab.check_endpoint_storage(config, persistent=True)
+
+    def test_restart_identity_change_fails_before_adapter_admission(self):
+        with tempfile.TemporaryDirectory() as directory:
+            lab = self.make_lab(directory)
+            lab.identity_volume = lab.token + "-identity"
+            lab.inspect = Mock(side_effect=[
+                self.endpoint_config(lab), {"State": {"Running": False}}])
+            lab.check_identity_volume = Mock()
+            lab.docker = Mock()
+            lab.prepare_endpoint = Mock()
+            lab.start_adapter = Mock()
+            lab.execute = Mock(side_effect=[b"policy", b"different-public"])
+            with self.assertRaisesRegex(RuntimeError, "identity changed"):
+                lab.restart_endpoint("endpoint", "visa", "172.19.0.13", b"public")
+            lab.start_adapter.assert_not_called()
+
+    def test_restart_rejects_changed_owner_before_stopping_container(self):
+        with tempfile.TemporaryDirectory() as directory:
+            lab = self.make_lab(directory)
+            config = self.endpoint_config(lab)
+            config["Config"]["Labels"] = {}
+            lab.inspect = Mock(return_value=config)
+            lab.docker = Mock()
+            with self.assertRaisesRegex(RuntimeError, "ownership or image changed"):
+                lab.restart_endpoint("endpoint", "visa", "172.19.0.13", b"public")
+            lab.docker.assert_not_called()
+
+    def test_restart_rejects_policy_change_even_when_traffic_works(self):
+        with tempfile.TemporaryDirectory() as directory:
+            lab = self.make_lab(directory)
+            lab.identity_volume = lab.token + "-identity"
+            lab.inspect = Mock(side_effect=[
+                self.endpoint_config(lab), {"State": {"Running": False}}])
+            lab.check_identity_volume = Mock()
+            lab.docker = Mock()
+            lab.prepare_endpoint = Mock()
+            lab.start_adapter = Mock()
+            lab.actor = Mock(return_value={"cn": lab.identity, "node": False})
+            lab.fetch = Mock()
+            lab.execute = Mock(side_effect=[b"policy", b"public", b"(Active)", b"changed"])
+            with patch.object(lab_module.time, "sleep"):
+                with self.assertRaisesRegex(RuntimeError, "policy changed"):
+                    lab.restart_endpoint("endpoint", "visa", "172.19.0.13", b"public")
+            self.assertEqual(lab.fetch.call_count, 6)
+
+    def test_volume_cleanup_checks_owner_and_driver_before_removal(self):
+        for changed in ("none", "owner", "driver", "options", "name"):
+            with self.subTest(changed=changed), tempfile.TemporaryDirectory() as directory:
+                lab = self.make_lab(directory)
+                lab.identity_volume = lab.token + "-identity"
+                volume = {"Name": lab.identity_volume, "Driver": "local", "Options": None,
+                          "Labels": {"zpr.simulator.identity-lab": lab.token}}
+                if changed == "owner":
+                    volume["Labels"] = {}
+                elif changed == "driver":
+                    volume["Driver"] = "plugin"
+                elif changed == "options":
+                    volume["Options"] = {"device": "/host"}
+                elif changed == "name":
+                    volume["Name"] = "foreign"
+                lab.docker = Mock(return_value=json.dumps([volume]).encode())
+                if changed == "none":
+                    lab.cleanup()
+                    lab.docker.assert_any_call("volume", "rm", lab.identity_volume)
+                else:
+                    with self.assertRaisesRegex(RuntimeError, "ownership or storage"):
+                        lab.cleanup()
+                    self.assertEqual(lab.docker.call_count, 1)
+
+    def test_interrupted_volume_create_recovers_only_exact_owned_name(self):
+        with tempfile.TemporaryDirectory() as directory:
+            lab = self.make_lab(directory)
+            lab.volume_requested = True
+            name = lab.token + "-identity"
+            lab.docker = Mock(side_effect=[
+                (name + "\n").encode(),
+                json.dumps([{"Name": name, "Driver": "local", "Options": None,
+                             "Labels": {"zpr.simulator.identity-lab": lab.token}}]).encode(),
+                b""])
+            lab.cleanup()
+            lab.docker.assert_any_call("volume", "rm", name)
 
 
 if __name__ == "__main__":

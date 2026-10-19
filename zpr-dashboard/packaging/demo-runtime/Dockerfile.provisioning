@@ -1,0 +1,7 @@
+ARG SIMULATOR_BASE=zpr-simulator:world-live-runtime-20261019-r2
+FROM ${SIMULATOR_BASE}
+RUN apk add --no-cache python3
+LABEL zpr.simulator.packaged-provisioning="1"
+COPY zpr-web-dashboard /usr/local/bin/zpr-web-dashboard
+COPY verify-approved-identity-lab.py packaged-machine-runtime.py /opt/zpr-simulator/provisioning/
+ENV SIMULATION_PROVISION_SCRIPT=/opt/zpr-simulator/provisioning/packaged-machine-runtime.py

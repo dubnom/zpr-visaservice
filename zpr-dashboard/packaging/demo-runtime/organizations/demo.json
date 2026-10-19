@@ -1,7 +1,14 @@
 {
   "id": "demo",
-  "name": "ZPR Demo UI Bootstrap",
-  "description": "Unprovisioned UI-only profile; no paired ZPR runtime or scenario is configured.",
+  "name": "ZPR Demo",
+  "description": "Unprovisioned UI-only profile with opt-in shared-topology provisioning for two explicitly enabled demo machines. Other machine records and the reference topology are not provisioned.",
+  "packaged_provisioning": {
+    "version": 2,
+    "driver": "shared-approved-bootstrap",
+    "primary_machine_id": "demo-machine-01",
+    "machines": ["demo-machine-01", "demo-machine-02"],
+    "service": "OciWeb"
+  },
   "runtime": {
     "driver": "docker-multinode",
     "topology": "multi-node",

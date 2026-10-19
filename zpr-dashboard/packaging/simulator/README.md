@@ -158,6 +158,111 @@ BIND9 has separate bootstrap and ZPR service roles; do not route setup/login
 DNS through a network that has not yet been admitted. See the
 [combined acceptance target](../../../System%20release%20plan.md#simulator-companion-package).
 
+## Packaged organization machine provisioning
+
+The provisioning-capable candidate adds `/simulator-provisioning.html` and
+organization-scoped APIs for the explicitly configured
+`demo-machine-01` and `demo-machine-02` members. This is distinct from the
+temporary acceptance lab below. Both endpoints share one node/Visa/OciWeb
+plane, while each has its own container and endpoint-owned identity volume.
+The other 18 fixture records remain unprovisioned.
+The published CLI and previous images do not acquire this capability
+automatically; use a verified pair built with `Dockerfile.provisioning`.
+
+The image adds Python 3 and the two standard-library runtime helpers.
+Build its context with the Linux/amd64 `zpr-web-dashboard` binary,
+`verify-approved-identity-lab.py`, and `packaged-machine-runtime.py`, then build
+and verify the paired archives through the existing package builder.
+No source checkout, compiler, or package installation is needed on the runtime
+host.
+
+After installing the pair, opt in through the installed Simulator launcher:
+
+```sh
+sudo env \
+  ZPR_DEMO_PACKAGE_DIR=/opt/zpr-demo/RELEASE/zpr-demo \
+  ZPR_SIMULATOR_PACKAGE_DIR=/opt/zpr-demo/RELEASE/simulator \
+  ZPR_SIMULATOR_STATE_DIR=/var/lib/zpr-demo-state/simulator \
+  ZPR_SIMULATOR_PORT=8789 \
+  ZPR_SIMULATOR_ENABLE_PROVISIONING=1 \
+  sh /opt/zpr-demo/RELEASE/simulator/runtime/simulator-demo-runtime.sh start
+```
+
+Replace `RELEASE` with the verified installed release ID. Port 8788 must be
+available by default. Set `ZPR_SIMULATOR_PORT` to another available
+loopback port when running a candidate beside an existing Simulator release.
+On an existing workbench, this starts only Simulator; do not launch a second
+paired ZPR network over the already-running installation.
+The launcher verifies the paired package and provisioning image capability,
+creates private persistent state, and binds the package and provisioning root
+at their exact host paths so nested Docker mounts do not depend on a checkout.
+Docker-socket access remains root-equivalent and is approved only on an isolated
+disposable demo host.
+
+Choose **Machine provisioning**, select one of the two profile-enabled members,
+refresh, select the explicit demo-key approval checkbox, and provision.
+Policy verification has a separate access-withdrawal authorization checkbox.
+Both confirmations reset after their operation. The profile's optional
+`packaged_provisioning` entry must list unique machine IDs present in the matching
+organization manifest, put its primary machine first, and select the fixed
+`shared-approved-bootstrap` driver and `OciWeb` service. Each endpoint generates
+its own key in a separate local Docker volume; only the public keys enter the
+shared demo policy. The endpoints use one independently provisioned node,
+Visa Service and HTTP service. Stopping one member leaves the shared plane and
+other member running. This does not use the reference topology's placeholder
+addresses or change the installed Alice/OciWeb policy.
+
+The API prefix is
+`/api/simulator/organizations/{organization}/machines/{machine}/provisioning`:
+
+- `GET` returns persistent inventory and observed state. `ready` requires the
+  retained key fingerprint and a successful protected HTTP response.
+- `POST /approve-and-provision` explicitly approves and provisions, or retries
+  a failed operation without replacing the endpoint key. Named-operator mode
+  requires `organization.activate` for that organization.
+- `POST /stop` stops only this machine's endpoint, retaining its identity and
+  resource mappings; shared services and other members remain running.
+- `POST /start` starts this retained endpoint against the shared services,
+  readmits the same identity, and requires six successful HTTP samples.
+- `POST /verify` exercises trusted-access withdrawal, exact-flow policy denial,
+  revocation acknowledgement, and access restoration.
+- Other mutations require organization-scoped `device.lifecycle`; reads require
+  `simulator.read`. Bodies, query parameters, and arbitrary command inputs are
+  rejected. Existing localhost auth-disabled demo behavior is not human login.
+
+The `organization-shared-topology-20261021-r7` unqualified candidate passed
+two-member acceptance on the existing Ubuntu workbench: both members reached
+`ready` with protected HTTP, had different endpoint fingerprints and identity
+volumes, and shared the same Visa/node/OciWeb containers. A same-name wrong-key
+attempt for the second member was rejected without replacing its approved
+actor. Stopping and restarting each member independently retained its key and
+left the other member and shared services running. This is workbench evidence,
+not a clean-host package qualification. After separate UI authorization, both
+members also passed policy withdrawal and recovery: fresh protected HTTP was
+denied, two installed visas were revoked and acknowledged for each member, and
+protected HTTP returned for the same approved identity after its attribute was
+restored without restarting the shared service.
+
+Operations serialize with an on-disk advisory lock, including across Simulator
+restarts. Interrupted operations retain an explicit failed state. Retry removes
+only inspected, owned partial containers, never the endpoint identity volume.
+Foreign name/image/network ownership and key changes are refused rather than
+adopted or reapproved. Incomplete identity initialization requires inspection;
+it is not automatically rotated. The legacy fixture login/workload controls are
+not supported for this endpoint and cannot start a duplicate fixture container.
+
+Stopping Simulator itself does not delete or stop the independently provisioned
+resources; use the machine's Stop control when those resources should be stopped.
+Unlike the temporary acceptance lab, persistent resources have no timeout lease.
+Host-reboot recovery, all-machine provisioning, general organization topology
+deployment, production enrollment, human login, and identity/key revocation are
+not qualified by this slice.
+
+Run `python3 test-packaged-machine-runtime.py` and
+`python3 test-approved-identity-lab.py` in `packaging/demo-runtime` on Linux
+as root (the acceptance suite checks root-owned private directories).
+Go provisioning/permission regressions live beside the handler.
+
 ## Independent approved-bootstrap acceptance
 
 The separately downloaded ZPR CLI exposes
@@ -168,7 +273,7 @@ Simulator or Control Room and is not yet a Simulator UI action.
 
 The command creates an internal, automatically addressed Docker network,
 independent node/Visa/service identities, policy and Redis. An endpoint creates
-its own private key inside tmpfs and exports only the public key for explicit
+its own private key inside a run-owned local Docker volume and exports only the public key for explicit
 lab bootstrap-policy approval. Acceptance requires the exact Visa actor and
 trusted access attribute, a known HTTP response under attribute policy, and
 fresh Visa rejection of another key claiming the same name without replacing
@@ -186,14 +291,21 @@ the same admitted actor, with no policy replacement or service restart.
 This is authorization withdrawal/recovery, not identity/key revocation;
 the actor/auth-revocation API endpoints remain placeholders.
 
+Acceptance also stops and starts the approved endpoint container. Its private
+identity volume survives the stop; transient adapter sockets and configuration
+are recreated. The public key must be unchanged, the adapter must be admitted
+again, and six consecutive HTTP requests must succeed without policy replacement
+or reapproval. This proves an identity-retaining endpoint restart, not yet
+organization-driven provisioning or host-reboot recovery.
+
 All lab containers are read-only, resource-bounded, no-new-privileges and
 NET_ADMIN/TUN-only; there are no published ports. Endpoints have no host mounts.
 Node/Visa/service mounts contain only their required freshly generated keys,
 not the CA signing key or existing baseline credentials. Normal completion or
-SIGTERM removes recorded container/network IDs only after matching run-label
+SIGTERM removes recorded container/network IDs and the identity volume only after matching run-label
 checks; successful runs delete only their exact temporary state directory.
 Failures retain private state under `/var/lib/zpr-demo-state/identity-labs/`.
-SIGKILL may leave exited containers, network and state; the ten-minute process
+SIGKILL may leave exited containers, network, identity volume and state; the ten-minute process
 leases are not an automatic cleanup mechanism. Inspect ownership before recovery.
 
 Run `python3 test-approved-identity-lab.py` from `packaging/demo-runtime` for
