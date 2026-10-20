@@ -29,6 +29,7 @@ type Handlers struct {
 	Enrollment, Gateways, Snapshot, Diagnostics, ActorVisas           http.Handler
 	AdapterLogs, DNSRecords, DNSStats, DNSStylesheet                  http.Handler
 	PolicyAssistant, GatewayAssistantStatus, GatewayAssistant, Policy http.Handler
+	BudgetAuthorityCurrent, BudgetAuthorityOperator                   http.Handler
 	Assertions                                                        Assertions
 	TrustedChanges                                                    TrustedChanges
 }
@@ -37,8 +38,18 @@ type Handlers struct {
 // Authentication, security headers and server lifetime remain caller-owned.
 func NewMux(handlers Handlers) *http.ServeMux {
 	mux := http.NewServeMux()
+	budgetCurrent := handlers.BudgetAuthorityCurrent
+	if budgetCurrent == nil {
+		budgetCurrent = http.HandlerFunc(unavailableBudgetAuthority)
+	}
+	budgetOperator := handlers.BudgetAuthorityOperator
+	if budgetOperator == nil {
+		budgetOperator = http.HandlerFunc(unavailableBudgetAuthority)
+	}
 	mux.Handle("/api/enrollment/", handlers.Enrollment)
 	mux.Handle("/api/operator-enrollment/", handlers.Enrollment)
+	mux.Handle("POST /api/budget-authority/current", budgetCurrent)
+	mux.Handle("/api/operator-enrollment/v1/budget-authority/", budgetOperator)
 	handlers.Assertions.Register(mux)
 	handlers.TrustedChanges.Register(mux)
 	mux.Handle("/api/gateways/", handlers.Gateways)
@@ -55,4 +66,10 @@ func NewMux(handlers Handlers) *http.ServeMux {
 	mux.Handle("/api/policy", handlers.Policy)
 	mux.Handle("/api/policy/", handlers.Policy)
 	return mux
+}
+
+// unavailableBudgetAuthority provides the explicit fail-closed default for budget routes.
+func unavailableBudgetAuthority(w http.ResponseWriter, _ *http.Request) {
+	w.Header().Set("Cache-Control", "no-store")
+	http.Error(w, "budget authority is unavailable", http.StatusServiceUnavailable)
 }

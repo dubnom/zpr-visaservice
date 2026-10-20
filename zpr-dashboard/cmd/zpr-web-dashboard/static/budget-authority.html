@@ -1,0 +1,78 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Budget Authority - ZPR Control Room</title>
+  <link rel="stylesheet" href="/change-review.css?v=1">
+  <script src="/budget-authority.js?v=1" defer></script>
+</head>
+<body>
+  <header><a href="/">Control Room</a><h1>Budget Authority</h1><span id="budget-identity"></span></header>
+  <main>
+    <p class="boundary">This form records or revokes source-backed budget evidence for an exact operator-supplied scope. It does not query the Simulator, start a run, provision hosts, or deploy services.</p>
+    <p id="budget-session-status" role="status" aria-live="polite" aria-atomic="true">Checking operator session</p>
+    <p id="budget-error" role="alert" aria-live="assertive" aria-atomic="true" hidden></p>
+    <form id="budget-login" method="post" action="/auth/operator/login" hidden>
+      <button type="submit">Sign in</button>
+    </form>
+    <fieldset id="budget-workspace" disabled>
+      <legend>Organization-scoped budget authority</legend>
+      <p id="budget-permission-status">An authorized named-user session with budget.approve for the exact organization is required.</p>
+      <form id="budget-approval-form">
+        <label for="budget-organization">Organization ID</label>
+        <input id="budget-organization" name="organization_id" required maxlength="256" autocomplete="off">
+        <label for="budget-scenario">Scenario ID</label>
+        <input id="budget-scenario" name="scenario_id" required maxlength="256" autocomplete="off">
+        <label for="budget-authorization-scope-digest">Authorization scope digest</label>
+        <input id="budget-authorization-scope-digest" name="authorization_scope_digest" required maxlength="256" autocomplete="off" aria-describedby="budget-digest-help">
+        <small id="budget-digest-help">Enter the exact digest supplied by the approved authorization-scope contract. This form does not look up Simulator plans.</small>
+        <label for="budget-expires-at">Approval expiry</label>
+        <input id="budget-expires-at" name="expires_at" type="datetime-local" required aria-describedby="budget-expiry-help">
+        <small id="budget-expiry-help">Choose an explicit future time no more than one hour from now.</small>
+        <button id="budget-approve" type="submit" disabled>Review budget approval</button>
+      </form>
+
+      <section id="budget-evidence" aria-labelledby="budget-evidence-title" hidden>
+        <h2 id="budget-evidence-title">Returned budget evidence</h2>
+        <dl>
+          <dt>Approval ID</dt><dd id="budget-evidence-approval-id"></dd>
+          <dt>Organization</dt><dd id="budget-evidence-organization"></dd>
+          <dt>Scenario</dt><dd id="budget-evidence-scenario"></dd>
+          <dt>Scope digest</dt><dd id="budget-evidence-digest"></dd>
+          <dt>Decision</dt><dd id="budget-evidence-decision"></dd>
+          <dt>Approved by</dt><dd id="budget-evidence-approved-by"></dd>
+          <dt>Version</dt><dd id="budget-evidence-version"></dd>
+          <dt>Checked at</dt><dd id="budget-evidence-checked-at"></dd>
+          <dt>Valid from</dt><dd id="budget-evidence-valid-from"></dd>
+          <dt>Expires at</dt><dd id="budget-evidence-expires-at"></dd>
+          <dt>Revoked</dt><dd id="budget-evidence-revoked"></dd>
+        </dl>
+      </section>
+
+      <section aria-labelledby="budget-revoke-title">
+        <h2 id="budget-revoke-title">Revoke identified approval</h2>
+        <p>No approval lookup is performed. Supply an exact approval ID and organization; a successful grant in this page may prefill these values.</p>
+        <form id="budget-revoke-form">
+          <label for="budget-revoke-organization">Organization ID</label>
+          <input id="budget-revoke-organization" name="organization_id" required maxlength="256" autocomplete="off">
+          <label for="budget-revoke-approval-id">Approval ID</label>
+          <input id="budget-revoke-approval-id" name="approval_id" required maxlength="256" autocomplete="off">
+          <button id="budget-revoke" type="submit" disabled>Review revocation</button>
+        </form>
+      </section>
+    </fieldset>
+
+    <dialog id="budget-confirm-dialog" aria-labelledby="budget-confirm-title" aria-describedby="budget-confirm-description">
+      <h2 id="budget-confirm-title" tabindex="-1">Confirm budget authority action</h2>
+      <p id="budget-confirm-description"></p>
+      <dl id="budget-confirm-details"></dl>
+      <label><input id="budget-explicit-confirm" type="checkbox"> I explicitly confirm this exact budget authority action.</label>
+      <div>
+        <button id="budget-confirm-cancel" type="button">Cancel</button>
+        <button id="budget-confirm-submit" type="button" disabled>Confirm action</button>
+      </div>
+    </dialog>
+  </main>
+</body>
+</html>

@@ -52,8 +52,11 @@ func runControlRoom(listen string) error {
 		DNSStylesheet: security.assetProxy(os.Getenv("ZPR_CONTROL_ROOM_ORGANIZATION_ID"), proxy),
 		Static:        revalidateStatic(http.FileServer(http.FS(staticRoot))),
 	})
+	controlRoomMux := http.NewServeMux()
+	controlRoomMux.Handle("/api/budget-authority/", budgetAuthorityOperatorProxy(security.auth, signer, proxy))
+	controlRoomMux.Handle("/", mux)
 	server := &http.Server{
-		Addr: listen, Handler: securityHeaders(security.protect(mux)), ReadHeaderTimeout: 5 * time.Second, IdleTimeout: 60 * time.Second,
+		Addr: listen, Handler: securityHeaders(security.protect(controlRoomMux)), ReadHeaderTimeout: 5 * time.Second, IdleTimeout: 60 * time.Second,
 		TLSConfig: security.tls, MaxHeaderBytes: 32768,
 	}
 	if security.tls != nil {
@@ -127,6 +130,12 @@ func runControlService() error {
 			log.Printf("Close enrollment registry failed: %T", err)
 		}
 	}()
+	budgetAuthorityAPI, closeBudgetAuthority := configuredBudgetAuthority()
+	defer func() {
+		if err := closeBudgetAuthority(); err != nil {
+			log.Printf("Close budget authority store failed: %T", err)
+		}
+	}()
 	admin, configErr := newAdminClient()
 	trustedChanges, err := newTrustedSourceChanges(strings.TrimSpace(os.Getenv("ZPR_TRUSTED_CHANGE_FEEDS_FILE")))
 	if err != nil {
@@ -173,7 +182,9 @@ func runControlService() error {
 	}
 	mux := httpapi.NewMux(httpapi.Handlers{
 		Enrollment: enrollmentAPI, Gateways: gatewayAPI,
-		Assertions: assertions.handlers(), TrustedChanges: trustedChanges.handlers(),
+		BudgetAuthorityCurrent:  http.HandlerFunc(budgetAuthorityAPI.Current),
+		BudgetAuthorityOperator: http.HandlerFunc(budgetAuthorityAPI.Operator),
+		Assertions:              assertions.handlers(), TrustedChanges: trustedChanges.handlers(),
 		Snapshot:    http.HandlerFunc(app.handleSnapshot),
 		Diagnostics: newDiagnosticsHandler(readDiagnosticsSnapshot, diagnostics, diagnosticsErr, diagnosticsStaleAfter),
 		ActorVisas:  http.HandlerFunc(app.handleActorVisas), AdapterLogs: newAdapterLogsHandler(),

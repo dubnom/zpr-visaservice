@@ -12,10 +12,16 @@ import (
 
 type simulatorOrganizationResolver func(*http.Request) (string, error)
 type simulatorIdentityContextKey struct{}
+type simulatorAuthorizedOrganizationContextKey struct{}
 
 func simulatorOperatorIdentity(ctx context.Context) (operatorauth.Identity, bool) {
 	identity, ok := ctx.Value(simulatorIdentityContextKey{}).(operatorauth.Identity)
 	return identity, ok
+}
+
+func simulatorAuthorizedOrganization(ctx context.Context) (string, bool) {
+	organization, ok := ctx.Value(simulatorAuthorizedOrganizationContextKey{}).(string)
+	return organization, ok
 }
 
 func simulatorAPIPermission(method, requestPath string) (permission, explicitOrganization string, ok bool) {
@@ -26,6 +32,14 @@ func simulatorAPIPermission(method, requestPath string) (permission, explicitOrg
 	parts := strings.Split(strings.Trim(requestPath, "/"), "/")
 	if len(parts) < 3 || parts[0] != "api" || parts[1] != "simulator" {
 		return "", "", false
+	}
+	if len(parts) == 4 && parts[2] == "scenario-plans" && method == http.MethodPost {
+		switch parts[3] {
+		case "preflight":
+			return "scenario.read", "", true
+		case "approve":
+			return "scenario.run", "", true
+		}
 	}
 	if len(parts) == 7 && parts[2] == "policy-operations" && parts[3] == "status" && method == http.MethodGet {
 		return "organization.read", parts[4], true
@@ -224,7 +238,9 @@ func simulatorAPIProxy(auth operatorRequestAuthorizer, resolveOrganization simul
 					return
 				}
 			}
-			r = r.WithContext(context.WithValue(r.Context(), simulatorIdentityContextKey{}, identity))
+			ctx := context.WithValue(r.Context(), simulatorIdentityContextKey{}, identity)
+			ctx = context.WithValue(ctx, simulatorAuthorizedOrganizationContextKey{}, organization)
+			r = r.WithContext(ctx)
 			next.ServeHTTP(w, r)
 		})
 	}

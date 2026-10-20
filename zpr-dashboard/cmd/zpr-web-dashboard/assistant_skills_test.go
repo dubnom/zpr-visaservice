@@ -20,7 +20,7 @@ func TestAssistantSkillsEmbeddedAndTaskSpecific(t *testing.T) {
 		{"zpr-config", "zpr-config", configAssistantSkill, []string{"TOML syntax", "versioned draft only", "Simulator"}},
 		{"gateway", "zpr-gateway", gatewayAssistantSkill, []string{"installed gateway contract", "organization_id", "`GET`", "`HEAD`", "draft revision only"}},
 		{"directory-ldif", "zpr-directory-ldif", directoryAssistantSkill, []string{"existing base DN", "LDIF", "Simulator seed draft"}},
-		{"scenario", "zpr-scenario-design", scenarioAssistantSkill, []string{"no markdown", `"scenario"`, "proposal to null", "unsaved draft", "must not contain shell commands"}},
+		{"scenario", "zpr-scenario-design", scenarioAssistantSkill, []string{"no markdown", `"scenario"`, `"proposal":null`, "unsaved draft", "must not contain shell commands"}},
 		{"organization", "zpr-organization-design", organizationAssistantSkill, []string{"no markdown", `"directory_ldif"`, "proposal null", "complete replacement LDIF", "existing base DN"}},
 	}
 	for _, test := range tests {

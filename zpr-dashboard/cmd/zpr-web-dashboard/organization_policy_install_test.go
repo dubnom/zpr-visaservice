@@ -58,7 +58,8 @@ if [ "$CASE" != missing-output ]; then printf 'fresh bundle' > "$directory/runti
 				"binary="+filepath.Join(directory, "merge"),
 				"compiler="+filepath.Join(directory, "compiler"),
 				"policy_config="+filepath.Join(directory, "organization.zplc"),
-				"pregen="+directory, "multinode_dir="+directory)
+				"pregen="+directory, "multinode_dir="+directory,
+				"ZPR_MULTINODE_PLATFORM=linux/amd64", "ZPR_MULTINODE_IMAGE=zpr-multinode:test")
 			output, err := command.CombinedOutput()
 			if (err == nil) != (name == "success") {
 				t.Fatalf("install result=%v: %s", err, output)

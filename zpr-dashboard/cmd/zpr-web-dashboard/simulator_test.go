@@ -220,6 +220,12 @@ func TestSimulatorStackServiceState(t *testing.T) {
 	if got := simulatorStackServiceState(runtimeDir, "control-room"); got != "stopped" {
 		t.Fatalf("missing PID state = %q, want stopped", got)
 	}
+	dockerDir := t.TempDir()
+	dockerPath := filepath.Join(dockerDir, "docker")
+	if err := os.WriteFile(dockerPath, []byte("#!/bin/sh\n[ \"$1\" = inspect ] || exit 1\nprintf 'running\\n'\n"), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("PATH", dockerDir+string(os.PathListSeparator)+os.Getenv("PATH"))
 	t.Setenv("SIMULATOR_DOCKER_CONTAINER", "zpr-simulator")
 	if got := simulatorStackServiceState(runtimeDir, "simulator"); got != "running" {
 		t.Fatalf("containerized Simulator state = %q, want running", got)

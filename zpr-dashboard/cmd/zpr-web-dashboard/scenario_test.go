@@ -1,16 +1,21 @@
 package main
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
+	"net/http"
+	"net/http/httptest"
 	"os"
 	"path/filepath"
 	"reflect"
 	"strings"
 	"testing"
 	"time"
+
+	"neboagency.com/zpr-dashborad/internal/budgetauthority"
 )
 
 func scenarioTestManifest() simulatorManifest {
@@ -926,6 +931,114 @@ func TestSimulatorScenarioManagerCancelsAndRunsCleanup(t *testing.T) {
 	}
 }
 
+func TestSimulatorScenarioManagerApprovedCancellationConsumesApprovalAndRunsScopedCleanup(t *testing.T) {
+	manager := newSimulatorScenarioManager()
+	approvalStore := newSimulatorScenarioPlanApprovalStore()
+	previousApprovalStore := simulatorScenarioPlanApprovals
+	simulatorScenarioPlanApprovals = approvalStore
+	t.Cleanup(func() { simulatorScenarioPlanApprovals = previousApprovalStore })
+
+	scenario := simulatorScenario{
+		ID:             "approved-cancellable",
+		OrganizationID: "approved-org",
+		Name:           "Approved cancellable scenario",
+		Description:    "Cancellation consumes approval and still runs cleanup.",
+		Steps:          []simulatorScenarioStep{{Action: "wait-for-cancel", Machine: "machine-03"}},
+		Cleanup:        []simulatorScenarioStep{{Action: "cleanup-after-cancel", Machine: "machine-03"}},
+	}
+	manifest := scenarioTestManifest()
+	manifest.Name = "approved-manifest"
+	manifest.OrganizationID = scenario.OrganizationID
+	organization := simulatorOrganization{ID: scenario.OrganizationID}
+	approvalID, planDigest := issueApprovedSimulatorScenarioPlan(t, approvalStore, scenario, manifest, organization)
+	setCurrentSimulatorBudgetEvidenceResolver(manager)
+
+	runStarted := make(chan struct{})
+	runCalls, cleanupCalls := 0, 0
+	execute := func(ctx context.Context, _ simulatorManifest, step simulatorScenarioStep) (string, error) {
+		switch step.Action {
+		case "wait-for-cancel":
+			runCalls++
+			close(runStarted)
+			<-ctx.Done()
+			return "", ctx.Err()
+		case "cleanup-after-cancel":
+			cleanupCalls++
+			return "cleanup complete", nil
+		default:
+			return "", fmt.Errorf("unexpected action %q", step.Action)
+		}
+	}
+
+	if err := manager.startApprovedVersioned(
+		scenario, manifest, organization, execute,
+		scenario.OrganizationID, 1, approvalID, planDigest,
+	); err != nil {
+		t.Fatalf("start approved run: %v", err)
+	}
+	approvalStore.mu.Lock()
+	_, approvalAvailable := approvalStore.byID[approvalID]
+	_, approvalPending := approvalStore.pendingByScope[simulatorScenarioPlanApprovalScope(scenario.OrganizationID, scenario.ID, planDigest)]
+	approvalStore.mu.Unlock()
+	if approvalAvailable || approvalPending {
+		t.Fatal("approval remained available after approved run started")
+	}
+	select {
+	case <-runStarted:
+	case <-time.After(time.Second):
+		t.Fatal("approved scenario did not begin its run step")
+	}
+
+	active := manager.snapshot()
+	if active.State != "running" ||
+		active.RunID == "" ||
+		active.RunNamespace != "approved-org/approved-cancellable/"+active.RunID ||
+		active.PlanDigest != planDigest ||
+		!reflect.DeepEqual(active.MachineIDs, []string{"machine-03"}) {
+		t.Fatalf("active approved run identity/scope = %+v", active)
+	}
+	if !manager.cancelRun() {
+		t.Fatal("approved scenario could not be cancelled")
+	}
+	waitScenario(t, manager)
+
+	cancelled := manager.snapshot()
+	if cancelled.State != "cancelled" ||
+		cancelled.RunID != active.RunID ||
+		cancelled.RunNamespace != active.RunNamespace ||
+		cancelled.PlanDigest != planDigest ||
+		!reflect.DeepEqual(cancelled.MachineIDs, []string{"machine-03"}) ||
+		len(cancelled.Steps) != 2 ||
+		cancelled.Steps[0].Phase != "run" ||
+		cancelled.Steps[0].Status != "failed" ||
+		cancelled.Steps[1].Phase != "cleanup" ||
+		cancelled.Steps[1].Status != "completed" ||
+		runCalls != 1 ||
+		cleanupCalls != 1 {
+		t.Fatalf("approved cancellation/cleanup state = %+v runCalls=%d cleanupCalls=%d",
+			cancelled, runCalls, cleanupCalls)
+	}
+
+	if err := manager.startApprovedVersioned(
+		scenario, manifest, organization, execute,
+		scenario.OrganizationID, 1, approvalID, planDigest,
+	); !errors.Is(err, errSimulatorScenarioApprovalUnknown) {
+		t.Fatalf("replay after cancellation error = %v", err)
+	}
+	afterReplay := manager.snapshot()
+	if afterReplay.State != cancelled.State ||
+		afterReplay.Generation != cancelled.Generation ||
+		afterReplay.RunID != cancelled.RunID ||
+		afterReplay.RunNamespace != cancelled.RunNamespace ||
+		afterReplay.PlanDigest != cancelled.PlanDigest ||
+		!reflect.DeepEqual(afterReplay.MachineIDs, cancelled.MachineIDs) ||
+		len(afterReplay.Steps) != len(cancelled.Steps) ||
+		runCalls != 1 ||
+		cleanupCalls != 1 {
+		t.Fatalf("cancelled approval replay restarted or mutated run: %+v", afterReplay)
+	}
+}
+
 func TestSimulatorScenarioManagerRejectsConcurrentRunAndRecordsFailure(t *testing.T) {
 	manager := newSimulatorScenarioManager()
 	started := make(chan struct{})
@@ -959,6 +1072,678 @@ func TestSimulatorScenarioManagerRejectsConcurrentRunAndRecordsFailure(t *testin
 	if run := manager.snapshot(); run.State != "failed" || len(run.Steps) != 2 || run.Steps[1].Phase != "cleanup" {
 		t.Fatalf("unexpected failed run: %+v", run)
 	}
+}
+
+func TestSimulatorScenarioManagerRecordsVersionedRunAndCleanupState(t *testing.T) {
+	manager := newSimulatorScenarioManager()
+	approvalStore := newSimulatorScenarioPlanApprovalStore()
+	previousApprovalStore := simulatorScenarioPlanApprovals
+	simulatorScenarioPlanApprovals = approvalStore
+	t.Cleanup(func() { simulatorScenarioPlanApprovals = previousApprovalStore })
+	cleanupStarted := make(chan struct{})
+	releaseCleanup := make(chan struct{})
+	released := false
+	defer func() {
+		if !released {
+			close(releaseCleanup)
+		}
+	}()
+
+	scenario := simulatorScenario{
+		ID:             "approved-scenario",
+		OrganizationID: "approved-org",
+		Name:           "Approved scenario",
+		Steps: []simulatorScenarioStep{
+			{Action: "run-step", Machine: "machine-03"},
+		},
+		Cleanup: []simulatorScenarioStep{
+			{Action: "cleanup-step", Machine: "machine-03"},
+		},
+	}
+	execute := func(ctx context.Context, _ simulatorManifest, step simulatorScenarioStep) (string, error) {
+		if step.Action == "cleanup-step" {
+			close(cleanupStarted)
+			select {
+			case <-ctx.Done():
+				return "", ctx.Err()
+			case <-releaseCleanup:
+				return "cleanup complete", nil
+			}
+		}
+		return "run complete", nil
+	}
+
+	manifest := scenarioTestManifest()
+	manifest.Name = "approved-manifest"
+	manifest.OrganizationID = scenario.OrganizationID
+	organization := simulatorOrganization{ID: scenario.OrganizationID}
+	expectedMachineIDs := []string{"machine-03"}
+	if len(manifest.Machines) <= len(expectedMachineIDs) {
+		t.Fatalf("test manifest must contain machines outside the approved explicit scope: %d", len(manifest.Machines))
+	}
+	approvalID, planDigest := issueApprovedSimulatorScenarioPlan(t, approvalStore, scenario, manifest, organization)
+	setCurrentSimulatorBudgetEvidenceResolver(manager)
+	if err := manager.startApprovedVersioned(
+		scenario, manifest, organization, execute, scenario.OrganizationID, 7, approvalID, planDigest,
+	); err != nil {
+		t.Fatalf("startApprovedVersioned returned an error: %v", err)
+	}
+	select {
+	case <-cleanupStarted:
+	case <-time.After(time.Second):
+		t.Fatal("cleanup did not start")
+	}
+
+	cleaning := manager.snapshot()
+	if cleaning.State != "cleaning" ||
+		cleaning.OrganizationID != "approved-org" ||
+		cleaning.ScenarioID != "approved-scenario" ||
+		cleaning.WorkspaceRevision != 7 ||
+		cleaning.RunID == "" ||
+		cleaning.RunNamespace != "approved-org/approved-scenario/"+cleaning.RunID ||
+		cleaning.PlanDigest != planDigest ||
+		!reflect.DeepEqual(cleaning.MachineIDs, expectedMachineIDs) {
+		t.Fatalf("versioned cleanup run identity/state = %+v", cleaning)
+	}
+	if len(cleaning.Steps) != 1 ||
+		cleaning.Steps[0].Phase != "run" ||
+		cleaning.Steps[0].Status != "completed" ||
+		len(cleaning.ActiveSteps) != 1 ||
+		cleaning.ActiveSteps[0] != 2 ||
+		cleaning.CurrentStep != 2 {
+		t.Fatalf("cleanup-in-progress was not recorded: %+v", cleaning.Steps)
+	}
+
+	if err := manager.startApprovedVersioned(
+		scenario, manifest, organization, execute, scenario.OrganizationID, 7, approvalID, planDigest,
+	); !errors.Is(err, errScenarioAlreadyRunning) {
+		t.Fatalf("concurrent start during cleanup error = %v", err)
+	}
+
+	close(releaseCleanup)
+	released = true
+	waitScenario(t, manager)
+	completed := manager.snapshot()
+	if completed.State != "completed" ||
+		len(completed.Steps) != 2 ||
+		completed.Steps[1].Phase != "cleanup" ||
+		completed.Steps[1].Status != "completed" ||
+		!reflect.DeepEqual(completed.MachineIDs, expectedMachineIDs) ||
+		completed.RunID != cleaning.RunID ||
+		completed.RunNamespace != cleaning.RunNamespace ||
+		completed.PlanDigest != planDigest {
+		t.Fatalf("cleanup completion was not recorded: %+v", completed)
+	}
+	if err := manager.startApprovedVersioned(
+		scenario, manifest, organization, execute, scenario.OrganizationID, 7, approvalID, planDigest,
+	); !errors.Is(err, errSimulatorScenarioApprovalUnknown) {
+		t.Fatalf("reused approval error = %v", err)
+	}
+}
+
+func TestSimulatorScenarioManagerFailureAfterApprovalConsumesTokenAndRunsCleanup(t *testing.T) {
+	manager := newSimulatorScenarioManager()
+	approvalStore := newSimulatorScenarioPlanApprovalStore()
+	previousApprovalStore := simulatorScenarioPlanApprovals
+	simulatorScenarioPlanApprovals = approvalStore
+	t.Cleanup(func() { simulatorScenarioPlanApprovals = previousApprovalStore })
+
+	scenario := simulatorScenario{
+		ID:             "failing-approved-scenario",
+		OrganizationID: "approved-org",
+		Name:           "Failing approved scenario",
+		Description:    "Run and cleanup executor failures are recorded.",
+		Steps:          []simulatorScenarioStep{{Action: "fail-run"}},
+		Cleanup:        []simulatorScenarioStep{{Action: "fail-cleanup"}},
+	}
+	manifest := scenarioTestManifest()
+	manifest.Name = "approved-manifest"
+	manifest.OrganizationID = scenario.OrganizationID
+	organization := simulatorOrganization{ID: scenario.OrganizationID}
+	approvalID, planDigest := issueApprovedSimulatorScenarioPlan(t, approvalStore, scenario, manifest, organization)
+	setCurrentSimulatorBudgetEvidenceResolver(manager)
+	runCalls, cleanupCalls := 0, 0
+	execute := func(_ context.Context, _ simulatorManifest, step simulatorScenarioStep) (string, error) {
+		switch step.Action {
+		case "fail-run":
+			runCalls++
+			return "run output", errors.New("run executor failed")
+		case "fail-cleanup":
+			cleanupCalls++
+			return "cleanup output", errors.New("cleanup executor failed")
+		default:
+			return "", fmt.Errorf("unexpected action %q", step.Action)
+		}
+	}
+
+	if err := manager.startApprovedVersioned(
+		scenario, manifest, organization, execute,
+		scenario.OrganizationID, 1, approvalID, planDigest,
+	); err != nil {
+		t.Fatalf("start approved run: %v", err)
+	}
+	approvalStore.mu.Lock()
+	_, approvalAvailable := approvalStore.byID[approvalID]
+	_, approvalPending := approvalStore.pendingByScope[simulatorScenarioPlanApprovalScope(scenario.OrganizationID, scenario.ID, planDigest)]
+	approvalStore.mu.Unlock()
+	if approvalAvailable || approvalPending {
+		t.Fatal("approval remained available after run transition consumed it")
+	}
+
+	waitScenario(t, manager)
+	failedRun := manager.snapshot()
+	if failedRun.State != "failed" ||
+		failedRun.Error != "run executor failed" ||
+		len(failedRun.Steps) != 2 ||
+		failedRun.Steps[0].Phase != "run" ||
+		failedRun.Steps[0].Status != "failed" ||
+		failedRun.Steps[0].Error != "run executor failed" ||
+		failedRun.Steps[1].Phase != "cleanup" ||
+		failedRun.Steps[1].Status != "failed" ||
+		failedRun.Steps[1].Error != "cleanup executor failed" ||
+		runCalls != 1 ||
+		cleanupCalls != 1 {
+		t.Fatalf("approved run/cleanup failure state = %+v runCalls=%d cleanupCalls=%d",
+			failedRun, runCalls, cleanupCalls)
+	}
+
+	if err := manager.startApprovedVersioned(
+		scenario, manifest, organization, execute,
+		scenario.OrganizationID, 1, approvalID, planDigest,
+	); !errors.Is(err, errSimulatorScenarioApprovalUnknown) {
+		t.Fatalf("replay after failed approved run error = %v", err)
+	}
+	afterReplay := manager.snapshot()
+	if afterReplay.State != failedRun.State ||
+		afterReplay.Generation != failedRun.Generation ||
+		afterReplay.RunID != failedRun.RunID ||
+		afterReplay.RunNamespace != failedRun.RunNamespace ||
+		afterReplay.PlanDigest != failedRun.PlanDigest ||
+		len(afterReplay.Steps) != len(failedRun.Steps) ||
+		runCalls != 1 ||
+		cleanupCalls != 1 {
+		t.Fatalf("failed approval replay restarted or mutated run: %+v", afterReplay)
+	}
+}
+
+func TestHandleWorkspaceScenarioRunRequiresApproval(t *testing.T) {
+	request := httptest.NewRequest(http.MethodPost, "/api/simulator/scenarios/demo/run", bytes.NewReader([]byte("{}")))
+	response := httptest.NewRecorder()
+
+	handleWorkspaceScenarioRun(response, request)
+
+	if response.Code != http.StatusBadRequest || !strings.Contains(response.Body.String(), "approval_id and plan_digest are required") {
+		t.Fatalf("run request without approval returned %d: %s", response.Code, response.Body.String())
+	}
+}
+
+func TestSimulatorScenarioManagerRequiresMatchingOneUseApproval(t *testing.T) {
+	manager := newSimulatorScenarioManager()
+	approvalStore := newSimulatorScenarioPlanApprovalStore()
+	previousApprovalStore := simulatorScenarioPlanApprovals
+	simulatorScenarioPlanApprovals = approvalStore
+	t.Cleanup(func() { simulatorScenarioPlanApprovals = previousApprovalStore })
+
+	scenario := simulatorScenario{
+		ID:             "approved-scenario",
+		OrganizationID: "approved-org",
+		Name:           "Approved scenario",
+		Steps:          []simulatorScenarioStep{{Action: "run-step", Machine: "machine-03"}},
+	}
+	manifest := scenarioTestManifest()
+	manifest.Name = "approved-manifest"
+	manifest.OrganizationID = scenario.OrganizationID
+	organization := simulatorOrganization{ID: scenario.OrganizationID}
+	approvalID, planDigest := issueApprovedSimulatorScenarioPlan(t, approvalStore, scenario, manifest, organization)
+	setCurrentSimulatorBudgetEvidenceResolver(manager)
+	execute := func(context.Context, simulatorManifest, simulatorScenarioStep) (string, error) {
+		return "run complete", nil
+	}
+
+	if err := manager.startApprovedVersioned(
+		scenario, manifest, organization, execute, scenario.OrganizationID, 1, "", planDigest,
+	); !errors.Is(err, errSimulatorScenarioApprovalRequired) {
+		t.Fatalf("missing approval error = %v", err)
+	}
+	if err := manager.startApprovedVersioned(
+		scenario, manifest, organization, execute, scenario.OrganizationID, 1, "unknown", planDigest,
+	); !errors.Is(err, errSimulatorScenarioApprovalUnknown) {
+		t.Fatalf("unknown approval error = %v", err)
+	}
+	if err := manager.startApprovedVersioned(
+		scenario, manifest, organization, execute, "other-org", 1, approvalID, planDigest,
+	); !errors.Is(err, errSimulatorScenarioApprovalScopeMismatch) {
+		t.Fatalf("wrong organization error = %v", err)
+	}
+	otherScenario := scenario
+	otherScenario.ID = "other-scenario"
+	if err := manager.startApprovedVersioned(
+		otherScenario, manifest, organization, execute, scenario.OrganizationID, 1, approvalID, planDigest,
+	); !errors.Is(err, errSimulatorScenarioApprovalScopeMismatch) {
+		t.Fatalf("wrong scenario error = %v", err)
+	}
+	if err := manager.startApprovedVersioned(
+		scenario, manifest, organization, execute, scenario.OrganizationID, 1, approvalID, "sha256:wrong",
+	); !errors.Is(err, errSimulatorScenarioApprovalScopeMismatch) {
+		t.Fatalf("wrong digest error = %v", err)
+	}
+	if run := manager.snapshot(); run.State != "idle" || run.RunID != "" || run.RunNamespace != "" {
+		t.Fatalf("failed approval checks mutated run state: %+v", run)
+	}
+
+	if err := manager.startApprovedVersioned(
+		scenario, manifest, organization, execute, scenario.OrganizationID, 1, approvalID, planDigest,
+	); err != nil {
+		t.Fatalf("matching approval was unavailable after mismatches: %v", err)
+	}
+	waitScenario(t, manager)
+	run := manager.snapshot()
+	if run.State != "completed" ||
+		run.MachineIDs == nil ||
+		!reflect.DeepEqual(run.MachineIDs, []string{"machine-03"}) ||
+		run.RunNamespace != "approved-org/approved-scenario/"+run.RunID {
+		t.Fatalf("approved run identity = %+v", run)
+	}
+}
+
+func TestSimulatorScenarioManagerActiveRunGuardPreservesSecondApproval(t *testing.T) {
+	manager := newSimulatorScenarioManager()
+	approvalStore := newSimulatorScenarioPlanApprovalStore()
+	previousApprovalStore := simulatorScenarioPlanApprovals
+	simulatorScenarioPlanApprovals = approvalStore
+	t.Cleanup(func() { simulatorScenarioPlanApprovals = previousApprovalStore })
+
+	organizationID := "approved-org"
+	manifest := scenarioTestManifest()
+	manifest.Name = "approved-manifest"
+	manifest.OrganizationID = organizationID
+	organization := simulatorOrganization{ID: organizationID}
+	firstScenario := simulatorScenario{
+		ID:             "first-scenario",
+		OrganizationID: organizationID,
+		Name:           "First scenario",
+		Steps:          []simulatorScenarioStep{{Action: "first-step"}},
+	}
+	secondScenario := simulatorScenario{
+		ID:             "second-scenario",
+		OrganizationID: organizationID,
+		Name:           "Second scenario",
+		Steps:          []simulatorScenarioStep{{Action: "second-step"}},
+	}
+	firstApprovalID, firstDigest := issueApprovedSimulatorScenarioPlan(
+		t, approvalStore, firstScenario, manifest, organization,
+	)
+	secondApprovalID, secondDigest := issueApprovedSimulatorScenarioPlan(
+		t, approvalStore, secondScenario, manifest, organization,
+	)
+
+	firstStarted := make(chan struct{})
+	releaseFirst := make(chan struct{})
+	released := false
+	resolverCalls := 0
+	setSimulatorBudgetEvidenceResolver(manager, simulatorBudgetEvidenceResolverFunc(
+		func(_ context.Context, scope budgetauthority.Scope) (budgetauthority.Evidence, error) {
+			resolverCalls++
+			return validSimulatorBudgetEvidence(scope, time.Now()), nil
+		},
+	))
+	defer func() {
+		if !released {
+			close(releaseFirst)
+		}
+	}()
+	firstExecutor := func(ctx context.Context, _ simulatorManifest, _ simulatorScenarioStep) (string, error) {
+		close(firstStarted)
+		select {
+		case <-ctx.Done():
+			return "", ctx.Err()
+		case <-releaseFirst:
+			return "first run complete", nil
+		}
+	}
+	if err := manager.startApprovedVersioned(
+		firstScenario, manifest, organization, firstExecutor,
+		organizationID, 1, firstApprovalID, firstDigest,
+	); err != nil {
+		t.Fatalf("start first approved run: %v", err)
+	}
+	select {
+	case <-firstStarted:
+	case <-time.After(time.Second):
+		t.Fatal("first scenario did not start")
+	}
+	firstRun := manager.snapshot()
+	if firstRun.State != "running" || firstRun.ScenarioID != firstScenario.ID {
+		t.Fatalf("first run is not active: %+v", firstRun)
+	}
+
+	secondExecutorCalls := 0
+	secondExecutor := func(context.Context, simulatorManifest, simulatorScenarioStep) (string, error) {
+		secondExecutorCalls++
+		return "second run complete", nil
+	}
+	if err := manager.startApprovedVersioned(
+		secondScenario, manifest, organization, secondExecutor,
+		organizationID, 2, secondApprovalID, secondDigest,
+	); !errors.Is(err, errScenarioAlreadyRunning) {
+		t.Fatalf("second start during active run error = %v", err)
+	}
+	if resolverCalls != 1 {
+		t.Fatalf("busy-run guard resolver calls = %d, want only the first start", resolverCalls)
+	}
+	approvalStore.mu.Lock()
+	_, secondApprovalAvailable := approvalStore.byID[secondApprovalID]
+	_, secondApprovalPending := approvalStore.pendingByScope[simulatorScenarioPlanApprovalScope(organizationID, secondScenario.ID, secondDigest)]
+	approvalStore.mu.Unlock()
+	if !secondApprovalAvailable || !secondApprovalPending {
+		t.Fatal("active-run guard consumed the second scenario approval")
+	}
+	afterRejectedStart := manager.snapshot()
+	if afterRejectedStart.State != firstRun.State ||
+		afterRejectedStart.Generation != firstRun.Generation ||
+		afterRejectedStart.ScenarioID != firstRun.ScenarioID ||
+		afterRejectedStart.RunID != firstRun.RunID ||
+		afterRejectedStart.RunNamespace != firstRun.RunNamespace ||
+		afterRejectedStart.PlanDigest != firstRun.PlanDigest ||
+		secondExecutorCalls != 0 {
+		t.Fatalf("rejected second start changed active run or executed: %+v", afterRejectedStart)
+	}
+
+	close(releaseFirst)
+	released = true
+	waitScenario(t, manager)
+	if run := manager.snapshot(); run.State != "completed" || run.ScenarioID != firstScenario.ID {
+		t.Fatalf("first run did not complete before retry: %+v", run)
+	}
+	if err := manager.startApprovedVersioned(
+		secondScenario, manifest, organization, secondExecutor,
+		organizationID, 2, secondApprovalID, secondDigest,
+	); err != nil {
+		t.Fatalf("second approval was unavailable after first run completed: %v", err)
+	}
+	waitScenario(t, manager)
+	secondRun := manager.snapshot()
+	if secondRun.State != "completed" ||
+		secondRun.ScenarioID != secondScenario.ID ||
+		secondRun.RunID == "" ||
+		secondRun.RunNamespace != organizationID+"/"+secondScenario.ID+"/"+secondRun.RunID ||
+		secondRun.PlanDigest != secondDigest ||
+		secondExecutorCalls != 1 {
+		t.Fatalf("second approved run did not execute exactly once: %+v calls=%d", secondRun, secondExecutorCalls)
+	}
+
+	if err := manager.startApprovedVersioned(
+		secondScenario, manifest, organization, secondExecutor,
+		organizationID, 2, secondApprovalID, secondDigest,
+	); !errors.Is(err, errSimulatorScenarioApprovalUnknown) {
+		t.Fatalf("reusing second approval error = %v", err)
+	}
+	if secondExecutorCalls != 1 {
+		t.Fatalf("reused approval executed second scenario again: calls=%d", secondExecutorCalls)
+	}
+}
+
+func TestSimulatorScenarioManagerRejectsStaleApprovedRunInputs(t *testing.T) {
+	tests := []struct {
+		name   string
+		mutate func(*simulatorScenario, *simulatorManifest, *simulatorOrganization)
+	}{
+		{
+			name: "manifest identity",
+			mutate: func(_ *simulatorScenario, manifest *simulatorManifest, _ *simulatorOrganization) {
+				manifest.Name = "updated-manifest"
+			},
+		},
+		{
+			name: "topology",
+			mutate: func(scenario *simulatorScenario, _ *simulatorManifest, _ *simulatorOrganization) {
+				scenario.Topology.Nodes[0].ZPRAddress = "10.0.0.3"
+			},
+		},
+		{
+			name: "workload declaration",
+			mutate: func(_ *simulatorScenario, manifest *simulatorManifest, _ *simulatorOrganization) {
+				manifest.Components[0].Agent = "operations-client"
+			},
+		},
+		{
+			name: "fanout budget input",
+			mutate: func(scenario *simulatorScenario, _ *simulatorManifest, _ *simulatorOrganization) {
+				scenario.Steps[1].ClientCount++
+			},
+		},
+		{
+			name: "service budget input",
+			mutate: func(_ *simulatorScenario, _ *simulatorManifest, organization *simulatorOrganization) {
+				organization.LoadTest.ServiceCount++
+			},
+		},
+		{
+			name: "explicit machine references",
+			mutate: func(scenario *simulatorScenario, _ *simulatorManifest, _ *simulatorOrganization) {
+				scenario.Steps[0].Machine = "machine-04"
+			},
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			manager := newSimulatorScenarioManager()
+			approvalStore := newSimulatorScenarioPlanApprovalStore()
+			previousApprovalStore := simulatorScenarioPlanApprovals
+			simulatorScenarioPlanApprovals = approvalStore
+			t.Cleanup(func() { simulatorScenarioPlanApprovals = previousApprovalStore })
+
+			scenario := simulatorScenario{
+				ID:             "approved-scenario",
+				OrganizationID: "approved-org",
+				Name:           "Approved scenario",
+				Description:    "Scenario for stale-plan revalidation tests.",
+				Topology: &simulatorScenarioTopology{
+					Nodes: []simulatorTopologyNode{{
+						ID: "node-1", ZPRAddress: "10.0.0.1", Substrate: "10.0.0.2",
+					}},
+					Links: []simulatorTopologyLink{},
+				},
+				Steps: []simulatorScenarioStep{
+					{Action: "start_workload", Machine: "machine-03", Component: "finance-client"},
+					{Action: "stress_traffic", Machine: "machine-03", Component: "finance-client", ClientCount: 4},
+				},
+			}
+			manifest := scenarioTestManifest()
+			manifest.Name = "approved-manifest"
+			manifest.OrganizationID = scenario.OrganizationID
+			organization := simulatorOrganization{
+				ID: scenario.OrganizationID,
+				LoadTest: &simulatorLoadTestProfile{
+					ClientCount:  4,
+					ServiceCount: 2,
+				},
+			}
+			approvalID, planDigest := issueApprovedSimulatorScenarioPlan(t, approvalStore, scenario, manifest, organization)
+
+			test.mutate(&scenario, &manifest, &organization)
+			err := manager.startApprovedVersioned(
+				scenario, manifest, organization,
+				func(context.Context, simulatorManifest, simulatorScenarioStep) (string, error) {
+					return "unexpected execution", nil
+				},
+				scenario.OrganizationID, 7, approvalID, planDigest,
+			)
+			if !errors.Is(err, errSimulatorScenarioApprovalPlanMismatch) {
+				t.Fatalf("stale approved run input error = %v, want plan mismatch", err)
+			}
+
+			run := manager.snapshot()
+			if run.State != "idle" ||
+				run.Generation != 1 ||
+				run.RunID != "" ||
+				run.RunNamespace != "" ||
+				run.PlanDigest != "" ||
+				run.MachineIDs != nil ||
+				run.StartedAt != nil ||
+				len(run.Steps) != 0 {
+				t.Fatalf("stale approved run input mutated run state: %+v", run)
+			}
+		})
+	}
+}
+
+func TestSimulatorScenarioBlockedByOtherInputsCannotIssueRunApproval(t *testing.T) {
+	approvalStore := newSimulatorScenarioPlanApprovalStore()
+	previousApprovalStore := simulatorScenarioPlanApprovals
+	simulatorScenarioPlanApprovals = approvalStore
+	t.Cleanup(func() { simulatorScenarioPlanApprovals = previousApprovalStore })
+
+	plan := simulatorScenarioPlanTestPlan("acme", "demo")
+	plan.Status = simulatorRuntimePlanBlocked
+	plan.Blockers = []string{"policy resolution is required"}
+	manager := simulatorScenarioPlanTestManager()
+	handler := &simulatorScenarioPlanHandler{
+		resolveOrganization: func(*http.Request) (string, error) { return "acme", nil },
+		buildPlan: func(string, string) (simulatorRuntimePlan, error) {
+			return plan, nil
+		},
+		approvals: approvalStore,
+		manager:   manager,
+	}
+
+	preflightResponse := httptest.NewRecorder()
+	handler.Preflight(preflightResponse, makeSimulatorScenarioPlanHTTPRequest(
+		http.MethodPost,
+		"/api/simulator/scenario-plans/preflight",
+		simulatorScenarioPlanRequest{OrganizationID: "acme", ScenarioID: "demo"},
+	))
+	if preflightResponse.Code != http.StatusOK {
+		t.Fatalf("preflight status=%d body=%s", preflightResponse.Code, preflightResponse.Body)
+	}
+	var preflight simulatorScenarioPlanResponse
+	if err := json.Unmarshal(preflightResponse.Body.Bytes(), &preflight); err != nil {
+		t.Fatalf("decode preflight response: %v", err)
+	}
+	if preflight.Status != simulatorRuntimePlanBlocked ||
+		preflight.BudgetStatus != simulatorRuntimeBudgetApproved ||
+		!reflect.DeepEqual(preflight.Blockers, []string{"policy resolution is required"}) {
+		t.Fatalf("unresolved policy blocker was bypassed: %+v", preflight)
+	}
+
+	approvalResponse := httptest.NewRecorder()
+	handler.Approve(approvalResponse, makeSimulatorScenarioPlanHTTPRequest(
+		http.MethodPost,
+		"/api/simulator/scenario-plans/approve",
+		simulatorScenarioPlanApprovalRequest{
+			OrganizationID: "acme", ScenarioID: "demo",
+			PlanDigest: preflight.PlanDigest, Approved: true,
+		},
+	))
+	if approvalResponse.Code != http.StatusConflict ||
+		len(approvalStore.byID) != 0 || len(approvalStore.pendingByScope) != 0 {
+		t.Fatalf("blocked plan produced approval: status=%d stored=%d pending=%d body=%s",
+			approvalResponse.Code, len(approvalStore.byID), len(approvalStore.pendingByScope), approvalResponse.Body)
+	}
+
+	scenario := simulatorScenario{
+		ID: "demo", OrganizationID: "acme", Name: "Demo scenario",
+		Description: "In-memory approval regression fixture.",
+		Steps:       []simulatorScenarioStep{{Action: "run-step"}},
+	}
+	manifest := simulatorManifest{Name: "synthetic-manifest", OrganizationID: "acme"}
+	organization := simulatorOrganization{ID: "acme"}
+	err := manager.startApprovedVersioned(
+		scenario, manifest, organization,
+		func(context.Context, simulatorManifest, simulatorScenarioStep) (string, error) {
+			t.Error("executor ran without a local run approval")
+			return "", nil
+		},
+		"acme", 1, "not-issued", preflight.PlanDigest,
+	)
+	if !errors.Is(err, errSimulatorScenarioApprovalUnknown) {
+		t.Fatalf("run without issued approval error = %v", err)
+	}
+	run := manager.snapshot()
+	if run.State != "idle" || run.Generation != 1 || run.RunID != "" ||
+		run.RunNamespace != "" || run.PlanDigest != "" || run.MachineIDs != nil ||
+		run.StartedAt != nil || len(run.Steps) != 0 {
+		t.Fatalf("ineligible plan mutated manager run state: %+v", run)
+	}
+}
+
+func TestSimulatorScenarioManagerSeparatesApprovedRunNamespaces(t *testing.T) {
+	manager := newSimulatorScenarioManager()
+	setCurrentSimulatorBudgetEvidenceResolver(manager)
+	approvalStore := newSimulatorScenarioPlanApprovalStore()
+	previousApprovalStore := simulatorScenarioPlanApprovals
+	simulatorScenarioPlanApprovals = approvalStore
+	t.Cleanup(func() { simulatorScenarioPlanApprovals = previousApprovalStore })
+	execute := func(context.Context, simulatorManifest, simulatorScenarioStep) (string, error) {
+		return "run complete", nil
+	}
+
+	runNamespaces := make([]string, 0, 2)
+	for _, organizationID := range []string{"approved-org", "other-org"} {
+		scenario := simulatorScenario{
+			ID:             "approved-scenario",
+			OrganizationID: organizationID,
+			Name:           "Approved scenario",
+			Steps:          []simulatorScenarioStep{{Action: "run-step"}},
+		}
+		manifest := scenarioTestManifest()
+		manifest.Name = "approved-manifest"
+		manifest.OrganizationID = organizationID
+		organization := simulatorOrganization{ID: organizationID}
+		approvalID, planDigest := issueApprovedSimulatorScenarioPlan(t, approvalStore, scenario, manifest, organization)
+		if err := manager.startApprovedVersioned(
+			scenario, manifest, organization, execute, organizationID, 1, approvalID, planDigest,
+		); err != nil {
+			t.Fatalf("startApprovedVersioned for %s returned an error: %v", organizationID, err)
+		}
+		run := manager.snapshot()
+		if run.RunID == "" || run.RunNamespace != organizationID+"/"+scenario.ID+"/"+run.RunID {
+			t.Fatalf("invalid run namespace for %s: %+v", organizationID, run)
+		}
+		runNamespaces = append(runNamespaces, run.RunNamespace)
+		waitScenario(t, manager)
+	}
+	if runNamespaces[0] == runNamespaces[1] {
+		t.Fatalf("different approved run identities collided: %q", runNamespaces[0])
+	}
+}
+
+func issueApprovedSimulatorScenarioPlan(
+	t *testing.T,
+	store *simulatorScenarioPlanApprovalStore,
+	scenario simulatorScenario,
+	manifest simulatorManifest,
+	organization simulatorOrganization,
+) (string, string) {
+	t.Helper()
+	topologyResolved := scenario.Topology != nil &&
+		validateSimulatorScenarioTopology(*scenario.Topology) == nil
+	input := simulatorRuntimePlanInput{
+		OrganizationID:   scenario.OrganizationID,
+		Organization:     organization,
+		Scenario:         scenario,
+		Manifest:         manifest,
+		TopologyResolved: topologyResolved,
+	}
+	scopeDigest, err := simulatorScenarioAuthorizationScopeDigest(input)
+	if err != nil {
+		t.Fatalf("digest approved test authorization scope: %v", err)
+	}
+	input.AuthorizationScopeDigest = scopeDigest
+	plan := buildSimulatorRuntimePlan(input)
+	plan.Status = simulatorRuntimePlanOnly
+	plan.BudgetStatus = simulatorRuntimeBudgetApproved
+	plan.Blockers = []string{}
+	planDigest, err := simulatorScenarioPlanDigest(plan)
+	if err != nil {
+		t.Fatalf("digest approved test plan: %v", err)
+	}
+	approvalID, err := store.issue(plan)
+	if err != nil {
+		t.Fatalf("issue in-memory approved test plan: %v", err)
+	}
+	return approvalID, planDigest
 }
 
 func waitScenario(t *testing.T, manager *simulatorScenarioManager) {

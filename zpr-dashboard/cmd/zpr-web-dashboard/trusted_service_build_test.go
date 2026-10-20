@@ -25,7 +25,9 @@ while [ "$#" -gt 0 ]; do
     if [ "$1" = -o ]; then shift; output=$1; fi
     shift
 done
-printf 'candidate' > "$output"
+printf '\177ELF\002\001' > "$output"
+dd if=/dev/zero bs=12 count=1 2>/dev/null >> "$output"
+printf '\076\000' >> "$output"
 exit "$BUILD_EXIT"
 `
 	if err := os.WriteFile(fakeGo, []byte(script), 0755); err != nil {
@@ -54,8 +56,8 @@ exit "$BUILD_EXIT"
 	}
 	run("0")
 	data, err = os.ReadFile(binary)
-	if err != nil || string(data) != "candidate" {
-		t.Fatalf("successful build not published: %q, %v", data, err)
+	if err != nil || len(data) < 20 || string(data[:6]) != "\x7fELF\x02\x01" || data[18] != 62 || data[19] != 0 {
+		t.Fatalf("successful Linux amd64 ELF build not published: %v", err)
 	}
 	if info, err := os.Stat(binary); err != nil || info.Mode().Perm() != 0755 {
 		t.Fatalf("artifact executable permissions: %v, %v", info, err)

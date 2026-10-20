@@ -27,6 +27,21 @@ let scenarioResetStatusOrganization = "";
 let scenarioResetFlow = null;
 let scenarioResetRequestSerial = 0;
 let scenarioResetExpiryTimer = null;
+const scenarioPlanState = {
+  organizations: [],
+  organizationID: "",
+  scenarios: [],
+  scenarioID: "",
+  plan: null,
+  approval: null,
+  run: null,
+  runAttempted: false,
+  catalogRequestID: 0,
+  planRequestID: 0,
+  runRequestID: 0,
+  busy: false,
+};
+let scenarioPlanDialogReturnFocus = null;
 const scenarioResetPath = (organization) =>
   `/api/simulator/organizations/${encodeURIComponent(organization)}/scenario-reset`;
 const scenarioResetRequest = (path, options = {}) => {
@@ -39,6 +54,500 @@ const scenarioResetRequest = (path, options = {}) => {
     { cache: "no-store", ...options },
   );
 };
+
+function scenarioPlanIsObject(value) {
+  return value !== null && typeof value === "object" && !Array.isArray(value);
+}
+
+function scenarioPlanSetStatus(message) {
+  document.getElementById("scenario-plan-workflow-status").textContent = message;
+}
+
+function scenarioPlanSetError(message) {
+  const error = document.getElementById("scenario-plan-error");
+  error.textContent = message;
+  error.hidden = !message;
+}
+
+function scenarioPlanAppendOption(select, value, label) {
+  const option = document.createElement("option");
+  option.value = value;
+  option.textContent = label;
+  select.append(option);
+}
+
+function scenarioPlanRenderControls() {
+  const busy = scenarioPlanState.busy;
+  const organization = document.getElementById("scenario-plan-organization");
+  const scenario = document.getElementById("scenario-plan-scenario");
+  organization.disabled = busy || scenarioPlanState.organizations.length === 0;
+  scenario.disabled = busy || !scenarioPlanState.organizationID || scenarioPlanState.scenarios.length === 0;
+  document.getElementById("scenario-plan-preflight").disabled =
+    busy || !scenarioPlanState.organizationID || !scenarioPlanState.scenarioID || Boolean(scenarioPlanState.approval);
+  const approve = document.getElementById("scenario-plan-approve");
+  const canApprove = scenarioPlanCanApprove();
+  approve.disabled = busy || !canApprove || Boolean(scenarioPlanState.approval);
+  if (scenarioPlanState.approval) {
+    approve.textContent = "Plan approved";
+  } else {
+    approve.textContent = "Approve plan…";
+  }
+  const explicitConfirmation = document.getElementById("scenario-plan-explicit-confirm").checked;
+  document.getElementById("scenario-plan-confirm-approval").disabled =
+    busy || !explicitConfirmation || !canApprove || Boolean(scenarioPlanState.approval);
+  const runButton = document.getElementById("scenario-plan-run-button");
+  runButton.disabled = busy || !scenarioPlanCanRun() || scenarioPlanState.runAttempted;
+  runButton.textContent = scenarioPlanState.run
+    ? "Scenario run submitted"
+    : scenarioPlanState.runAttempted ? "Run request attempted" : "Run approved scenario";
+}
+
+function scenarioPlanInvalidate(message = "") {
+  scenarioPlanState.planRequestID += 1;
+  scenarioPlanState.runRequestID += 1;
+  scenarioPlanState.busy = false;
+  scenarioPlanState.plan = null;
+  scenarioPlanState.approval = null;
+  scenarioPlanState.run = null;
+  scenarioPlanState.runAttempted = false;
+  document.getElementById("scenario-plan-preview").hidden = true;
+  document.getElementById("scenario-plan-run").hidden = true;
+  document.getElementById("scenario-plan-run-status").textContent = "";
+  document.getElementById("scenario-plan-run-details").hidden = true;
+  document.getElementById("scenario-plan-approval-status").textContent = "";
+  scenarioPlanSetError("");
+  const dialog = document.getElementById("scenario-plan-approval-dialog");
+  if (dialog.open) dialog.close();
+  document.getElementById("scenario-plan-explicit-confirm").checked = false;
+  document.getElementById("scenario-plan-approval-dialog-status").textContent = "";
+  const dialogError = document.getElementById("scenario-plan-approval-dialog-error");
+  dialogError.textContent = "";
+  dialogError.hidden = true;
+  scenarioPlanSetStatus(message);
+  scenarioPlanRenderControls();
+}
+
+function scenarioPlanValidateResponse(plan, organizationID, scenarioID) {
+  const requiredStringFields = [
+    "status", "organization_id", "scenario_id", "manifest_name", "budget_status",
+    "topology_status", "policy_status", "northstar_assets_status", "package_contract_status",
+    "plan_digest",
+  ];
+  if (!scenarioPlanIsObject(plan) || requiredStringFields.some(field => typeof plan[field] !== "string") ||
+      !["blocked", "plan-only"].includes(plan.status) ||
+      !["absent", "unverified", "approved", "unapproved"].includes(plan.budget_status) ||
+      plan.organization_id !== organizationID || plan.scenario_id !== scenarioID ||
+      !/^sha256:[0-9a-f]{64}$/.test(plan.plan_digest) ||
+      !Array.isArray(plan.machine_ids) || plan.machine_ids.some(id => typeof id !== "string") ||
+      !Array.isArray(plan.workloads) || plan.workloads.some(workload =>
+        !scenarioPlanIsObject(workload) || typeof workload.machine_id !== "string" ||
+        typeof workload.component_id !== "string" || typeof workload.agent !== "string") ||
+      !Array.isArray(plan.budget_inputs) || plan.budget_inputs.some(input =>
+        !scenarioPlanIsObject(input) || typeof input.phase !== "string" ||
+        !Number.isSafeInteger(input.step) || typeof input.action !== "string" ||
+        input.fanout_count !== undefined && (!Number.isFinite(input.fanout_count) || input.fanout_count < 0) ||
+        input.service_count !== undefined && (!Number.isFinite(input.service_count) || input.service_count < 0)) ||
+      !Array.isArray(plan.blockers) || plan.blockers.some(blocker => typeof blocker !== "string") ||
+      plan.topology !== undefined && !scenarioPlanIsObject(plan.topology)) {
+    throw new Error("Preflight returned an invalid or mismatched scenario plan.");
+  }
+  return plan;
+}
+
+function scenarioPlanApprovalBlockers(plan) {
+  if (!plan) return ["Run preflight before requesting approval."];
+  const blockers = [];
+  if (plan.status !== "plan-only") blockers.push("The plan is blocked.");
+  if (plan.budget_status !== "approved") blockers.push(`Budget status is ${plan.budget_status}.`);
+  if (plan.blockers.length) blockers.push("Preflight reported blockers.");
+  if (!plan.machine_ids.length) blockers.push("Preflight returned no machine IDs; no organization inventory fallback is allowed.");
+  return blockers;
+}
+
+function scenarioPlanCanApprove() {
+  return scenarioPlanApprovalBlockers(scenarioPlanState.plan).length === 0;
+}
+
+function scenarioPlanCanRun() {
+  const { approval, plan, organizationID, scenarioID } = scenarioPlanState;
+  return Boolean(approval && plan && approval.approved === true &&
+    typeof approval.approval_id === "string" && approval.approval_id &&
+    approval.organization_id === organizationID && approval.scenario_id === scenarioID &&
+    approval.plan_digest === plan.plan_digest && plan.organization_id === organizationID &&
+    plan.scenario_id === scenarioID && !scenarioPlanApprovalBlockers(plan).length);
+}
+
+function scenarioPlanValidateRun(run, organizationID, scenarioID, planDigest) {
+  if (!scenarioPlanIsObject(run) || typeof run.run_id !== "string" || !run.run_id ||
+      typeof run.run_namespace !== "string" || !run.run_namespace ||
+      typeof run.state !== "string" || !run.state ||
+      run.organization_id !== organizationID || run.scenario_id !== scenarioID ||
+      run.plan_digest !== planDigest) {
+    throw new Error("Run endpoint returned an invalid or mismatched scenario run.");
+  }
+  return run;
+}
+
+function scenarioPlanRenderRun(run) {
+  const section = document.getElementById("scenario-plan-run");
+  const details = document.getElementById("scenario-plan-run-details");
+  if (!run) {
+    details.hidden = true;
+    return;
+  }
+  document.getElementById("scenario-plan-run-id").textContent = run.run_id;
+  document.getElementById("scenario-plan-run-namespace").textContent = run.run_namespace;
+  document.getElementById("scenario-plan-run-state").textContent = run.state;
+  details.hidden = false;
+  section.hidden = false;
+  scenarioPlanState.run = run;
+  scenarioPlanRenderControls();
+}
+
+function scenarioPlanRenderTable(container, headers, rows, emptyMessage) {
+  container.replaceChildren();
+  if (!rows.length) {
+    const empty = document.createElement("p");
+    empty.textContent = emptyMessage;
+    container.append(empty);
+    return;
+  }
+  const table = document.createElement("table");
+  const head = document.createElement("thead");
+  const headerRow = document.createElement("tr");
+  for (const label of headers) {
+    const cell = document.createElement("th");
+    cell.scope = "col";
+    cell.textContent = label;
+    headerRow.append(cell);
+  }
+  head.append(headerRow);
+  const body = document.createElement("tbody");
+  for (const row of rows) {
+    const tableRow = document.createElement("tr");
+    for (const value of row) {
+      const cell = document.createElement("td");
+      cell.textContent = value;
+      tableRow.append(cell);
+    }
+    body.append(tableRow);
+  }
+  table.append(head, body);
+  container.append(table);
+}
+
+function scenarioPlanRender(plan) {
+  const preview = document.getElementById("scenario-plan-preview");
+  const summary = document.getElementById("scenario-plan-summary");
+  summary.replaceChildren();
+  for (const [label, value] of [
+    ["Status", plan.status],
+    ["Organization", plan.organization_id],
+    ["Scenario", plan.scenario_id],
+    ["Manifest", plan.manifest_name],
+    ["Budget status", plan.budget_status],
+    ["Topology status", plan.topology_status],
+    ["Policy status", plan.policy_status],
+    ["Northstar assets status", plan.northstar_assets_status],
+    ["Package contract status", plan.package_contract_status],
+    ["Plan digest", plan.plan_digest],
+  ]) {
+    const term = document.createElement("dt");
+    term.textContent = label;
+    const description = document.createElement("dd");
+    description.textContent = value;
+    summary.append(term, description);
+  }
+  const machines = document.getElementById("scenario-plan-machines");
+  machines.replaceChildren();
+  if (plan.machine_ids.length) {
+    for (const id of plan.machine_ids) {
+      const item = document.createElement("li");
+      item.textContent = id;
+      machines.append(item);
+    }
+  } else {
+    const item = document.createElement("li");
+    item.textContent = "None returned by preflight.";
+    machines.append(item);
+  }
+  document.getElementById("scenario-plan-topology").textContent =
+    plan.topology === undefined ? "Not included in the preflight response." : JSON.stringify(plan.topology, null, 2);
+  scenarioPlanRenderTable(
+    document.getElementById("scenario-plan-workloads"),
+    ["Machine ID", "Component ID", "Agent"],
+    plan.workloads.map(workload => [workload.machine_id, workload.component_id, workload.agent]),
+    "No workloads returned.",
+  );
+  scenarioPlanRenderTable(
+    document.getElementById("scenario-plan-budget-inputs"),
+    ["Phase", "Step", "Action", "Fanout count", "Service count"],
+    plan.budget_inputs.map(input => [
+      input.phase, String(input.step), input.action,
+      input.fanout_count === undefined ? "—" : String(input.fanout_count),
+      input.service_count === undefined ? "—" : String(input.service_count),
+    ]),
+    "No budget inputs returned.",
+  );
+  const blockers = document.getElementById("scenario-plan-blockers");
+  blockers.replaceChildren();
+  for (const blocker of plan.blockers.length ? plan.blockers : ["None reported by preflight."]) {
+    const item = document.createElement("li");
+    item.textContent = blocker;
+    blockers.append(item);
+  }
+  const approvalStatus = document.getElementById("scenario-plan-approval-status");
+  const reasons = scenarioPlanApprovalBlockers(plan);
+  approvalStatus.textContent = reasons.length
+    ? `Approval unavailable: ${reasons.join(" ")}`
+    : "Preflight permits requesting approval; a separate explicit confirmation is required.";
+  preview.hidden = false;
+  scenarioPlanRenderControls();
+}
+
+async function loadScenarioPlanCatalog(organizationID) {
+  const requestID = ++scenarioPlanState.catalogRequestID;
+  scenarioPlanState.scenarios = [];
+  scenarioPlanState.scenarioID = "";
+  const scenarioSelect = document.getElementById("scenario-plan-scenario");
+  scenarioSelect.replaceChildren();
+  scenarioPlanAppendOption(scenarioSelect, "", organizationID ? "Loading scenarios…" : "Select an organization first");
+  scenarioPlanInvalidate(organizationID
+    ? "Loading scenarios for the selected organization…"
+    : "Select an organization to load its scenarios.");
+  scenarioPlanRenderControls();
+  if (!organizationID) return;
+  try {
+    const data = await scenarioResetRequest(
+      `/api/simulator/scenarios?organization_id=${encodeURIComponent(organizationID)}`,
+    );
+    if (requestID !== scenarioPlanState.catalogRequestID || organizationID !== scenarioPlanState.organizationID) return;
+    if (!scenarioPlanIsObject(data) || data.organization?.id !== organizationID || !Array.isArray(data.scenarios) ||
+        data.scenarios.some(item => !scenarioPlanIsObject(item) ||
+          typeof item.id !== "string" || typeof item.name !== "string" ||
+          item.organization_id !== organizationID)) {
+      throw new Error("Scenario catalog did not match the selected organization.");
+    }
+    const seen = new Set();
+    for (const item of data.scenarios) {
+      if (seen.has(item.id)) throw new Error("Scenario catalog contains duplicate scenario IDs.");
+      seen.add(item.id);
+    }
+    scenarioPlanState.scenarios = data.scenarios;
+    scenarioSelect.replaceChildren();
+    scenarioPlanAppendOption(scenarioSelect, "", data.scenarios.length ? "Select a scenario" : "No scenarios available");
+    for (const item of data.scenarios) scenarioPlanAppendOption(scenarioSelect, item.id, item.name);
+    scenarioPlanSetStatus(data.scenarios.length
+      ? "Choose a scenario, then preview its plan."
+      : "No scenarios are available for this organization.");
+  } catch (error) {
+    if (requestID !== scenarioPlanState.catalogRequestID) return;
+    scenarioSelect.replaceChildren();
+    scenarioPlanAppendOption(scenarioSelect, "", "Scenario catalog unavailable");
+    scenarioPlanSetError(error.message || "Could not load scenarios for the selected organization.");
+    scenarioPlanSetStatus("Scenario catalog is unavailable; approval remains disabled.");
+  }
+  scenarioPlanRenderControls();
+}
+
+async function initializeScenarioPlanWorkflow() {
+  const organizationSelect = document.getElementById("scenario-plan-organization");
+  try {
+    const data = await scenarioResetRequest("/api/simulator/organizations");
+    if (!scenarioPlanIsObject(data) || !Array.isArray(data.organizations) ||
+        typeof data.active_id !== "string" ||
+        data.organizations.some(item => !scenarioPlanIsObject(item) ||
+          typeof item.id !== "string" || typeof item.name !== "string")) {
+      throw new Error("Organization catalog has an invalid response.");
+    }
+    const seen = new Set();
+    for (const item of data.organizations) {
+      if (seen.has(item.id)) throw new Error("Organization catalog contains duplicate IDs.");
+      seen.add(item.id);
+    }
+    if (data.active_id && !seen.has(data.active_id)) throw new Error("Active organization is missing from the catalog.");
+    scenarioPlanState.organizations = data.organizations;
+    scenarioPlanState.organizationID = data.active_id;
+    organizationSelect.replaceChildren();
+    scenarioPlanAppendOption(organizationSelect, "", "Select an organization");
+    for (const item of data.organizations) scenarioPlanAppendOption(organizationSelect, item.id, item.name);
+    organizationSelect.value = data.active_id;
+    if (data.active_id) await loadScenarioPlanCatalog(data.active_id);
+    else {
+      scenarioPlanSetStatus("Select an organization to load its scenarios.");
+      scenarioPlanRenderControls();
+    }
+  } catch (error) {
+    organizationSelect.replaceChildren();
+    scenarioPlanAppendOption(organizationSelect, "", "Organization catalog unavailable");
+    scenarioPlanSetError(error.message || "Could not load organizations.");
+    scenarioPlanSetStatus("Organization catalog is unavailable; approval remains disabled.");
+    scenarioPlanRenderControls();
+  }
+}
+
+async function preflightSelectedScenarioPlan() {
+  const organizationID = scenarioPlanState.organizationID;
+  const scenarioID = scenarioPlanState.scenarioID;
+  if (!organizationID || !scenarioID || scenarioPlanState.busy) return;
+  scenarioPlanInvalidate("");
+  const requestID = ++scenarioPlanState.planRequestID;
+  scenarioPlanState.busy = true;
+  scenarioPlanSetError("");
+  scenarioPlanSetStatus("Requesting read-only scenario preflight…");
+  scenarioPlanRenderControls();
+  try {
+    const response = await scenarioResetRequest("/api/simulator/scenario-plans/preflight", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ organization_id: organizationID, scenario_id: scenarioID }),
+    });
+    if (requestID !== scenarioPlanState.planRequestID ||
+        organizationID !== scenarioPlanState.organizationID || scenarioID !== scenarioPlanState.scenarioID) return;
+    scenarioPlanState.plan = scenarioPlanValidateResponse(response, organizationID, scenarioID);
+    scenarioPlanRender(scenarioPlanState.plan);
+    scenarioPlanSetStatus(
+      `Preflight ${response.status}; budget ${response.budget_status}; ` +
+      `${response.machine_ids.length} machine references and ${response.blockers.length} blockers. Review the plan below.`,
+    );
+    document.getElementById("scenario-plan-preview-title").focus();
+  } catch (error) {
+    if (requestID !== scenarioPlanState.planRequestID) return;
+    scenarioPlanState.plan = null;
+    scenarioPlanState.approval = null;
+    document.getElementById("scenario-plan-preview").hidden = true;
+    document.getElementById("scenario-plan-run").hidden = true;
+    scenarioPlanSetError(error.message || "Preflight failed; no approval was requested.");
+    scenarioPlanSetStatus("Preflight failed; approval remains unavailable.");
+  } finally {
+    if (requestID === scenarioPlanState.planRequestID) {
+      scenarioPlanState.busy = false;
+      scenarioPlanRenderControls();
+    }
+  }
+}
+
+function openScenarioPlanApprovalDialog() {
+  if (!scenarioPlanCanApprove() || scenarioPlanState.busy || scenarioPlanState.approval) return;
+  document.getElementById("scenario-plan-approval-organization").textContent = scenarioPlanState.plan.organization_id;
+  document.getElementById("scenario-plan-approval-scenario").textContent = scenarioPlanState.plan.scenario_id;
+  document.getElementById("scenario-plan-approval-digest").textContent = scenarioPlanState.plan.plan_digest;
+  document.getElementById("scenario-plan-explicit-confirm").checked = false;
+  document.getElementById("scenario-plan-confirm-approval").disabled = true;
+  document.getElementById("scenario-plan-approval-dialog-status").textContent = "";
+  const dialogError = document.getElementById("scenario-plan-approval-dialog-error");
+  dialogError.textContent = "";
+  dialogError.hidden = true;
+  scenarioPlanDialogReturnFocus = document.activeElement;
+  document.getElementById("scenario-plan-approval-dialog").showModal();
+  document.getElementById("scenario-plan-approval-title").focus();
+}
+
+async function confirmScenarioPlanApproval() {
+  const plan = scenarioPlanState.plan;
+  const confirmation = document.getElementById("scenario-plan-explicit-confirm");
+  if (!scenarioPlanCanApprove() || scenarioPlanState.busy || scenarioPlanState.approval || !confirmation.checked) return;
+  scenarioPlanState.busy = true;
+  const requestID = scenarioPlanState.planRequestID;
+  document.getElementById("scenario-plan-approval-dialog-status").textContent = "Submitting explicit approval…";
+  scenarioPlanRenderControls();
+  try {
+    const response = await scenarioResetRequest("/api/simulator/scenario-plans/approve", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        organization_id: plan.organization_id,
+        scenario_id: plan.scenario_id,
+        plan_digest: plan.plan_digest,
+        approved: true,
+      }),
+    });
+    if (requestID !== scenarioPlanState.planRequestID || plan !== scenarioPlanState.plan) return;
+    if (!scenarioPlanIsObject(response) || response.approved !== true ||
+        typeof response.approval_id !== "string" || !response.approval_id ||
+        response.organization_id !== plan.organization_id || response.scenario_id !== plan.scenario_id ||
+        response.plan_digest !== plan.plan_digest || !Array.isArray(response.machine_ids) ||
+        response.machine_ids.some(id => typeof id !== "string") ||
+        response.machine_ids.length !== plan.machine_ids.length ||
+        response.machine_ids.some((id, index) => id !== plan.machine_ids[index])) {
+      throw new Error("Approval endpoint returned an invalid or mismatched response.");
+    }
+    scenarioPlanState.approval = response;
+    document.getElementById("scenario-plan-run").hidden = false;
+    document.getElementById("scenario-plan-run-status").textContent =
+      "Approval is recorded for this selected plan. You may explicitly start its scenario run.";
+    document.getElementById("scenario-plan-approval-status").textContent =
+      `Approval recorded (${response.approval_id}).`;
+    scenarioPlanSetStatus("Scenario plan approval recorded. No run has been started.");
+    document.getElementById("scenario-plan-approval-dialog").close();
+  } catch (error) {
+    if (requestID !== scenarioPlanState.planRequestID) return;
+    scenarioPlanState.plan = null;
+    scenarioPlanState.approval = null;
+    document.getElementById("scenario-plan-preview").hidden = true;
+    document.getElementById("scenario-plan-explicit-confirm").checked = false;
+    document.getElementById("scenario-plan-approval-dialog-status").textContent =
+      "Approval was not confirmed. The preflight plan was cleared.";
+    const dialogError = document.getElementById("scenario-plan-approval-dialog-error");
+    dialogError.textContent =
+      `${error.message || "Approval failed."} Run preflight again before requesting approval.`;
+    dialogError.hidden = false;
+    scenarioPlanSetStatus("Approval was not confirmed; the plan was cleared.");
+  } finally {
+    if (requestID === scenarioPlanState.planRequestID) {
+      scenarioPlanState.busy = false;
+      scenarioPlanRenderControls();
+    }
+  }
+}
+
+async function runApprovedScenario() {
+  if (!scenarioPlanCanRun() || scenarioPlanState.busy || scenarioPlanState.runAttempted) return;
+  const { approval, plan, organizationID, scenarioID } = scenarioPlanState;
+  scenarioPlanState.busy = true;
+  scenarioPlanState.runAttempted = true;
+  const requestID = ++scenarioPlanState.runRequestID;
+  document.getElementById("scenario-plan-run").hidden = false;
+  document.getElementById("scenario-plan-run-status").textContent = "Submitting the approved scenario run…";
+  scenarioPlanSetError("");
+  scenarioPlanRenderControls();
+  try {
+    const response = await scenarioResetRequest(
+      `/api/simulator/scenarios/${encodeURIComponent(scenarioID)}/run`,
+      {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          approval_id: approval.approval_id,
+          plan_digest: plan.plan_digest,
+        }),
+      },
+    );
+    if (requestID !== scenarioPlanState.runRequestID ||
+        organizationID !== scenarioPlanState.organizationID || scenarioID !== scenarioPlanState.scenarioID ||
+        approval !== scenarioPlanState.approval || plan !== scenarioPlanState.plan) return;
+    scenarioPlanRenderRun(scenarioPlanValidateRun(
+      response, organizationID, scenarioID, plan.plan_digest,
+    ));
+    document.getElementById("scenario-plan-run-status").textContent =
+      "Approved scenario run accepted. Status will refresh from the scenario catalog.";
+    void refreshScenariosNow();
+  } catch (error) {
+    if (requestID !== scenarioPlanState.runRequestID) return;
+    scenarioPlanState.plan = null;
+    scenarioPlanState.approval = null;
+    document.getElementById("scenario-plan-preview").hidden = true;
+    document.getElementById("scenario-plan-run-status").textContent =
+      "The run request was not confirmed. Its approval was cleared; preview and approve again before another request.";
+    scenarioPlanSetError(error.message || "Could not confirm the approved scenario run.");
+  } finally {
+    if (requestID === scenarioPlanState.runRequestID) {
+      scenarioPlanState.busy = false;
+      scenarioPlanRenderControls();
+    }
+  }
+}
+
 const scenarioEditorController = scenarioEditorPage.createController({
   source: document.getElementById("scenario-editor-source"),
   status: document.getElementById("scenario-editor-status"),
@@ -163,24 +672,6 @@ function renderScenarioList(scenarios) {
 function renderSelectedScenario() {
   const scenario = scenarioById.get(selectedScenarioID);
   document.getElementById("scenario-edit-selected").disabled = !scenario;
-  const selection = document.getElementById("scenario-run-selection");
-  selection.innerHTML = [...scenarioById.values()].map(item =>
-    `<option value="${scenarioEscape(item.id)}">${scenarioEscape(item.name)}${Number(item.published_revision || 0) > 0 ? "" : " (unpublished)"}</option>`).join("");
-  selection.value = selectedScenarioID;
-  const busy = ["running", "cleaning"].includes(scenarioRun?.state);
-  selection.disabled = busy || !scenario;
-  const start = document.getElementById("scenario-start");
-  start.disabled = !scenario || scenario.organization_id !== activeScenarioOrganization ||
-    Number(scenario.published_revision || 0) <= 0 || busy;
-  if (scenario) {
-    start.dataset.runScenario = scenario.id;
-    start.dataset.runOrganization = scenario.organization_id;
-    start.dataset.runPublished = Number(scenario.published_revision || 0) > 0;
-  } else {
-    delete start.dataset.runScenario;
-    delete start.dataset.runOrganization;
-    delete start.dataset.runPublished;
-  }
   const list = document.getElementById("scenario-list");
   if (!scenario) {
     list.innerHTML = `<p class="scenario-empty">No scenarios in this organization. Create one from File... to get started.</p>`;
@@ -190,9 +681,52 @@ function renderSelectedScenario() {
   list.innerHTML = `<article class="scenario-card selected"><div><h3>${scenarioEscape(scenario.name)}</h3><p>${scenarioEscape(scenario.description)}</p><span class="scenario-step-count">${scenarioEscape(scenario.folder || "Unfiled")} · ${(scenario.steps || []).length} steps${published ? "" : " · Unpublished draft"}</span></div><a class="button" href="/scenarios.html#simulate">Simulate</a></article>`;
 }
 
-document.getElementById("scenario-run-selection").addEventListener("change", event => {
-  selectedScenarioID = event.target.value;
-  renderSelectedScenario();
+document.getElementById("scenario-plan-organization").addEventListener("change", event => {
+  scenarioPlanState.organizationID = event.target.value;
+  scenarioPlanState.scenarios = [];
+  scenarioPlanState.scenarioID = "";
+  void loadScenarioPlanCatalog(scenarioPlanState.organizationID);
+});
+document.getElementById("scenario-plan-scenario").addEventListener("change", event => {
+  const selected = event.target.value;
+  scenarioPlanState.scenarioID = scenarioPlanState.scenarios.some(item => item.id === selected) ? selected : "";
+  scenarioPlanInvalidate(scenarioPlanState.scenarioID
+    ? "Scenario selection changed. Preview the selected scenario before requesting approval."
+    : "Select a scenario to preview its plan.");
+});
+document.getElementById("scenario-plan-preflight").addEventListener("click", () => {
+  void preflightSelectedScenarioPlan();
+});
+document.getElementById("scenario-plan-approve").addEventListener("click", openScenarioPlanApprovalDialog);
+document.getElementById("scenario-plan-explicit-confirm").addEventListener("change", scenarioPlanRenderControls);
+document.getElementById("scenario-plan-confirm-approval").addEventListener("click", () => {
+  void confirmScenarioPlanApproval();
+});
+document.getElementById("scenario-plan-run-button").addEventListener("click", () => {
+  void runApprovedScenario();
+});
+for (const id of ["scenario-plan-approval-cancel", "scenario-plan-approval-close-icon"]) {
+  document.getElementById(id).addEventListener("click", () => {
+    document.getElementById("scenario-plan-approval-dialog").close();
+  });
+}
+document.getElementById("scenario-plan-approval-dialog").addEventListener("close", () => {
+  document.getElementById("scenario-plan-explicit-confirm").checked = false;
+  document.getElementById("scenario-plan-approval-dialog-status").textContent = "";
+  const dialogError = document.getElementById("scenario-plan-approval-dialog-error");
+  dialogError.textContent = "";
+  dialogError.hidden = true;
+  scenarioPlanRenderControls();
+  const focusTarget = scenarioPlanState.approval
+    ? document.getElementById("scenario-plan-approval-status")
+    : scenarioPlanDialogReturnFocus;
+  scenarioPlanDialogReturnFocus = null;
+  if (focusTarget?.isConnected && !focusTarget.disabled && !focusTarget.closest("[hidden]")) {
+    focusTarget.focus();
+    return;
+  }
+  const scenarioSelect = document.getElementById("scenario-plan-scenario");
+  (scenarioSelect.disabled ? document.getElementById("scenario-plan-organization") : scenarioSelect).focus();
 });
 window.addEventListener("hashchange", updateScenarioTrackScroll);
 document.addEventListener("simulator:activate", event => {
@@ -901,8 +1435,22 @@ async function refreshScenarios({ signal, isCurrent }) {
   const error = document.getElementById("scenario-error");
   error.hidden = true;
   const organization = data.active_organization_id || activeScenarioOrganization;
+  if (organization !== activeScenarioOrganization &&
+      (scenarioPlanState.plan || scenarioPlanState.approval || scenarioPlanState.run ||
+        scenarioPlanState.runAttempted || scenarioPlanState.busy) &&
+      scenarioPlanState.organizationID !== organization) {
+    scenarioPlanInvalidate("Active Simulator organization changed; the previous plan and approval view were cleared. Preview again before requesting approval.");
+  }
   const runSignature = JSON.stringify(data.run || {});
   const run = data.run || {};
+  if (scenarioPlanState.run && run.run_id === scenarioPlanState.run.run_id &&
+      run.organization_id === scenarioPlanState.organizationID &&
+      run.scenario_id === scenarioPlanState.scenarioID &&
+      run.plan_digest === scenarioPlanState.plan?.plan_digest) {
+    scenarioPlanRenderRun(run);
+    document.getElementById("scenario-plan-run-status").textContent =
+      `Scenario run status refreshed: ${run.state}.`;
+  }
   const resetRunSignature = JSON.stringify({
     organization,
     scenario: run.scenario_id || "",
@@ -1533,20 +2081,6 @@ document.getElementById("scenario-list").addEventListener("click", async (event)
     return;
   }
 });
-document.getElementById("scenario-start").addEventListener("click", async (event) => {
-  const button = event.currentTarget;
-  if (button.disabled || !button.dataset.runScenario) return;
-  button.disabled = true;
-  try {
-    await postScenarioAction(`/api/simulator/scenarios/${encodeURIComponent(button.dataset.runScenario)}/run`);
-  } catch (error) {
-    const message = document.getElementById("scenario-error");
-    message.textContent = error.message || "Could not start scenario";
-    message.hidden = false;
-  } finally {
-    await refreshScenariosNow();
-  }
-});
 document.getElementById("scenario-cancel").addEventListener("click", async (event) => {
   const button = event.currentTarget;
   button.disabled = true;
@@ -1593,3 +2127,4 @@ window.addEventListener("operator-session-cleared", () => {
   scenarioResetIdentity = null;
   invalidateScenarioReset("Sign in again to check reset availability.");
 });
+void initializeScenarioPlanWorkflow();

@@ -10,6 +10,14 @@ spec = importlib.util.spec_from_file_location(
 module = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(module)
 
+EXAMPLE_ORGANIZATIONS = (
+    Path(__file__).resolve().parents[2]
+    / "cmd/zpr-web-dashboard/examples/organizations"
+)
+PACKAGED_DEMO_PROFILE = (
+    Path(__file__).resolve().with_name("organizations") / "demo.json"
+)
+
 
 class PackagedMachineTests(unittest.TestCase):
     def runtime(self, directory):
@@ -199,6 +207,131 @@ class PackagedMachineTests(unittest.TestCase):
                 (root / "demo.json").write_text(json.dumps(profile))
                 with self.assertRaisesRegex(RuntimeError, "not enabled"):
                     module.configuration("demo", "demo-machine-01")
+
+    def test_example_profiles_without_packaged_contract_are_not_enabled(self):
+        for organization in (
+            "northstar", "redwood", "velocity", "great-lakes", "load-lab",
+        ):
+            with self.subTest(organization=organization), tempfile.TemporaryDirectory() as directory:
+                root = Path(directory)
+                organizations = root / "organizations"
+                organizations.mkdir()
+                profile = json.loads(
+                    (EXAMPLE_ORGANIZATIONS / f"{organization}.json").read_text()
+                )
+                self.assertEqual(profile["id"], organization)
+                self.assertNotIn("packaged_provisioning", profile)
+                (organizations / f"{organization}.json").write_text(json.dumps(profile))
+                manifest = root / "simulation.json"
+                manifest.write_text(json.dumps({
+                    "organization_id": organization, "machines": [],
+                }))
+                with patch.dict(module.os.environ, {
+                    "SIMULATION_ORGANIZATIONS_DIR": str(organizations),
+                    "SIMULATION_MANIFEST": str(manifest),
+                }):
+                    with self.assertRaisesRegex(RuntimeError, "not enabled"):
+                        module.configuration(organization, "machine-01")
+
+    def packaged_demo_fixture(self, root, *, manifest_organization="demo"):
+        root = Path(root).resolve()
+        organizations = root / "organizations"
+        organizations.mkdir()
+        profile = json.loads(PACKAGED_DEMO_PROFILE.read_text())
+        (organizations / "demo.json").write_text(json.dumps(profile))
+        machine_ids = profile["packaged_provisioning"]["machines"]
+        simulation_manifest = root / "simulation.json"
+        simulation_manifest.write_text(json.dumps({
+            "organization_id": manifest_organization,
+            "machines": [{"id": machine_id} for machine_id in machine_ids],
+        }))
+        package = root / "package"
+        package.mkdir()
+        (package / "manifest.json").write_text(json.dumps({
+            "schema": "zpr.demo.runtime-package.v2",
+            "package_id": "zpr-demo-image",
+            "platform": "linux/amd64",
+            "release_id": "test-release",
+            "component": {"docker_image_id": "sha256:" + "a" * 64},
+        }))
+        state = root / "state"
+        state.mkdir(mode=0o700)
+        environment = {
+            "SIMULATION_ORGANIZATIONS_DIR": str(organizations),
+            "SIMULATION_MANIFEST": str(simulation_manifest),
+            "SIMULATION_PROVISION_PACKAGE": str(package),
+            "SIMULATION_PROVISION_ROOT": str(state),
+            "SIMULATION_PROVISION_RELEASE_ID": "test-release",
+        }
+        return profile, simulation_manifest, environment
+
+    def test_checked_in_demo_profile_requires_v2_contract_and_matching_machine_ids(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            profile, _, environment = self.packaged_demo_fixture(root)
+            with patch.dict(module.os.environ, environment):
+                package, state, image, provisioning = module.configuration(
+                    "demo", "demo-machine-02"
+                )
+            contract = profile["packaged_provisioning"]
+            self.assertEqual(contract["version"], 2)
+            self.assertEqual(contract["driver"], "shared-approved-bootstrap")
+            self.assertEqual(contract["service"], "OciWeb")
+            self.assertEqual(contract["primary_machine_id"], contract["machines"][0])
+            self.assertEqual(package, root.resolve() / "package")
+            self.assertEqual(state, root.resolve() / "state")
+            self.assertEqual(image, "sha256:" + "a" * 64)
+            self.assertEqual(provisioning["machines"], contract["machines"])
+
+    def test_checked_in_demo_profile_rejects_contract_or_organization_mismatch(self):
+        mutations = (
+            ("version", 1),
+            ("driver", "docker-multinode"),
+            ("service", "OtherService"),
+        )
+        for field, value in mutations:
+            with self.subTest(field=field), tempfile.TemporaryDirectory() as directory:
+                root = Path(directory)
+                profile, _, environment = self.packaged_demo_fixture(root)
+                profile["packaged_provisioning"][field] = value
+                (root / "organizations/demo.json").write_text(json.dumps(profile))
+                with patch.dict(module.os.environ, environment):
+                    with self.assertRaisesRegex(RuntimeError, "not enabled"):
+                        module.configuration("demo", "demo-machine-01")
+
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            profile, _, environment = self.packaged_demo_fixture(root)
+            profile["id"] = "another-org"
+            (root / "organizations/demo.json").write_text(json.dumps(profile))
+            with patch.dict(module.os.environ, environment):
+                with self.assertRaisesRegex(RuntimeError, "not enabled"):
+                    module.configuration("demo", "demo-machine-01")
+
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            _, _, environment = self.packaged_demo_fixture(
+                root, manifest_organization="another-org"
+            )
+            with patch.dict(module.os.environ, environment):
+                with self.assertRaisesRegex(RuntimeError, "not enabled"):
+                    module.configuration("demo", "demo-machine-01")
+
+    def test_checked_in_demo_profile_rejects_missing_or_duplicate_manifest_machine_ids(self):
+        for machine_ids in (
+            ["demo-machine-01"],
+            ["demo-machine-01", "demo-machine-02", "demo-machine-02"],
+        ):
+            with self.subTest(machine_ids=machine_ids), tempfile.TemporaryDirectory() as directory:
+                root = Path(directory)
+                _, simulation_manifest, environment = self.packaged_demo_fixture(root)
+                simulation_manifest.write_text(json.dumps({
+                    "organization_id": "demo",
+                    "machines": [{"id": machine_id} for machine_id in machine_ids],
+                }))
+                with patch.dict(module.os.environ, environment):
+                    with self.assertRaisesRegex(RuntimeError, "not enabled"):
+                        module.configuration("demo", "demo-machine-01")
 
     def test_second_member_uses_shared_inventory_without_overwriting_primary_identity(self):
         with tempfile.TemporaryDirectory() as directory:

@@ -95,6 +95,48 @@ func TestScenarioResetPermissionRequiresExplicitSessionGrant(t *testing.T) {
 	}
 }
 
+func TestBudgetApprovalPermissionRequiresExplicitOrganizationAndCSRF(t *testing.T) {
+	if !ValidPermission("budget.approve") {
+		t.Fatal("budget.approve is not configurable through operator auth")
+	}
+	now := time.Now()
+	for _, test := range []struct {
+		name          string
+		organizations []string
+		permissions   []string
+		csrf          string
+		wantAllowed   bool
+	}{
+		{name: "missing permission", organizations: []string{"production"}, permissions: []string{"approve"}, csrf: "csrf-proof"},
+		{name: "wrong organization", organizations: []string{"other"}, permissions: []string{"budget.approve"}, csrf: "csrf-proof"},
+		{name: "missing csrf", organizations: []string{"production"}, permissions: []string{"budget.approve"}},
+		{name: "exact scope and csrf", organizations: []string{"production"}, permissions: []string{"budget.approve"}, csrf: "csrf-proof", wantAllowed: true},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			auth := &Auth{
+				origin: "https://room.example", cookie: "session",
+				now: func() time.Time { return now },
+				sessions: map[string]session{"fixture": {
+					grant: Grant{
+						Issuer: "https://idp.example", Subject: "admin",
+						Organizations: test.organizations, Permissions: test.permissions,
+					},
+					csrf: "csrf-proof", expires: now.Add(time.Hour),
+				}},
+			}
+			request := authRequest(http.MethodPost, "/api/budget-authority/approvals")
+			request.AddCookie(&http.Cookie{Name: "session", Value: "fixture"})
+			if test.csrf != "" {
+				request.Header.Set("X-ZPR-CSRF", test.csrf)
+			}
+			_, err := auth.Authorize(request, "production", "budget.approve")
+			if (err == nil) != test.wantAllowed {
+				t.Fatalf("Authorize() error = %v, wantAllowed %t", err, test.wantAllowed)
+			}
+		})
+	}
+}
+
 func newProvider(t *testing.T) *providerFixture {
 	t.Helper()
 	key, err := rsa.GenerateKey(rand.Reader, 2048)

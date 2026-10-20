@@ -11,10 +11,12 @@ import (
 	"log"
 	"net/http"
 	"os"
+	"path"
 	"slices"
 	"strings"
 	"time"
 
+	"neboagency.com/zpr-dashborad/internal/budgetauthority"
 	"neboagency.com/zpr-dashborad/internal/controlroom"
 	"neboagency.com/zpr-dashborad/internal/enrollment"
 	"neboagency.com/zpr-dashborad/internal/operatorauth"
@@ -75,6 +77,44 @@ func configuredOperatorSigner(security *controlRoomSecurity) (*operatordelegatio
 		return nil, errors.New("operator delegation key must be Ed25519")
 	}
 	return operatordelegation.NewSigner(config, private)
+}
+
+// configuredBudgetAuthority opens only the explicitly configured persistent authority store.
+func configuredBudgetAuthority() (*budgetauthority.Handler, func() error) {
+	unavailable := func() (*budgetauthority.Handler, func() error) {
+		return budgetauthority.NewHandler(nil, nil, time.Now), func() error { return nil }
+	}
+	databasePath := strings.TrimSpace(os.Getenv("ZPR_BUDGET_AUTHORITY_DB_PATH"))
+	if databasePath == "" {
+		log.Print("Budget authority is disabled: ZPR_BUDGET_AUTHORITY_DB_PATH is not configured")
+		return unavailable()
+	}
+	store, err := budgetauthority.Open(databasePath)
+	if err != nil {
+		log.Printf("Budget authority database is unavailable: %T", err)
+		return unavailable()
+	}
+	trustPath := strings.TrimSpace(os.Getenv("ZPR_OPERATOR_DELEGATION_TRUST_FILE"))
+	if trustPath == "" {
+		log.Print("Budget authority mutations are disabled: operator delegation trust is not configured")
+		return budgetauthority.NewHandler(store, nil, time.Now), store.Close
+	}
+	data, err := readOperatorFile(trustPath, 65536, false)
+	if err != nil {
+		log.Printf("Budget authority mutations are disabled: delegation trust is unavailable (%T)", err)
+		return budgetauthority.NewHandler(store, nil, time.Now), store.Close
+	}
+	var trust operatordelegation.Config
+	if err := decodeOperatorConfig(data, &trust); err != nil {
+		log.Printf("Budget authority mutations are disabled: delegation trust is invalid (%T)", err)
+		return budgetauthority.NewHandler(store, nil, time.Now), store.Close
+	}
+	verifier, err := operatordelegation.NewVerifier(trust, store)
+	if err != nil {
+		log.Printf("Budget authority mutations are disabled: delegation verifier is unavailable (%T)", err)
+		return budgetauthority.NewHandler(store, nil, time.Now), store.Close
+	}
+	return budgetauthority.NewHandler(store, verifier, time.Now), store.Close
 }
 
 func configuredOperatorEnrollment(store *enrollment.Store, config enrollment.Config) (http.Handler, error) {
@@ -164,6 +204,93 @@ func operatorEnrollmentProxy(auth *operatorauth.Auth, signer *operatordelegation
 		token, err := signer.Sign(request, body, identity, time.Now())
 		if err != nil {
 			deny(http.StatusBadRequest, "Enrollment delegation could not be created for this request.")
+			return
+		}
+		request = controlroom.WithOperatorDelegation(request, token)
+		request.Header.Del(operatordelegation.Header)
+		proxy.ServeHTTP(w, request)
+	})
+}
+
+// budgetAuthorityOperatorProxy authorizes and delegates Control Room budget mutations.
+func budgetAuthorityOperatorProxy(
+	auth operatorRequestAuthorizer,
+	signer *operatordelegation.Signer,
+	proxy http.Handler,
+) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Cache-Control", "no-store")
+		deny := func(status int, message string) {
+			log.Printf("Control Room budget authority denied (HTTP %d)", status)
+			writePolicyError(w, status, message)
+		}
+		if operatorAuthorizationDisabled(auth) || signer == nil || proxy == nil {
+			deny(http.StatusForbidden, "Budget authority requires configured named-user authorization and backend delegation.")
+			return
+		}
+		if r.Method != http.MethodPost || r.URL.RawPath != "" || r.URL.RawQuery != "" ||
+			r.URL.ForceQuery || path.Clean(r.URL.Path) != r.URL.Path {
+			deny(http.StatusBadRequest, "Use a canonical budget authority mutation route.")
+			return
+		}
+		const prefix = "/api/budget-authority/"
+		remainder := strings.TrimPrefix(r.URL.Path, prefix)
+		parts := strings.Split(remainder, "/")
+		approvalRoute := r.URL.Path == prefix+"approvals"
+		revokeRoute := len(parts) == 3 && parts[0] == "approvals" && parts[1] != "" && parts[2] == "revoke"
+		if !approvalRoute && !revokeRoute {
+			deny(http.StatusNotFound, "Unknown budget authority operation.")
+			return
+		}
+		body, err := io.ReadAll(http.MaxBytesReader(w, r.Body, operatordelegation.MaxBody))
+		if err != nil {
+			deny(http.StatusRequestEntityTooLarge, "Budget authority request exceeds 8192 bytes or could not be read.")
+			return
+		}
+		organization := ""
+		if approvalRoute {
+			var input struct {
+				Scope     budgetauthority.ScopeRequest `json:"scope"`
+				Decision  budgetauthority.Decision     `json:"decision"`
+				ExpiresAt time.Time                    `json:"expires_at"`
+			}
+			if err := decodeOperatorConfig(body, &input); err != nil {
+				deny(http.StatusBadRequest, "Budget approval request must be strict JSON.")
+				return
+			}
+			scope, err := input.Scope.Scope()
+			if err != nil || input.Decision != budgetauthority.DecisionApproved || input.ExpiresAt.IsZero() {
+				deny(http.StatusBadRequest, "Explicit approval, exact scope, and expiry are required.")
+				return
+			}
+			organization = scope.OrganizationID
+		} else {
+			var input struct {
+				OrganizationID string `json:"organization_id"`
+			}
+			if err := decodeOperatorConfig(body, &input); err != nil {
+				deny(http.StatusBadRequest, "Budget revocation request must be strict JSON.")
+				return
+			}
+			organization = input.OrganizationID
+		}
+		if organization == "" || strings.TrimSpace(organization) != organization {
+			deny(http.StatusBadRequest, "An explicit organization is required.")
+			return
+		}
+		identity, err := auth.Authorize(r, organization, "budget.approve")
+		if err != nil || !slices.Contains(identity.Organizations, organization) ||
+			!slices.Contains(identity.Permissions, "budget.approve") {
+			deny(http.StatusForbidden, "An active same-origin session, organization scope, budget.approve permission, and CSRF proof are required.")
+			return
+		}
+		request := r.Clone(r.Context())
+		request.URL.Path = operatordelegation.Prefix + strings.TrimPrefix(r.URL.Path, "/api/")
+		request.URL.RawPath = ""
+		request.Body = io.NopCloser(bytes.NewReader(body))
+		token, err := signer.Sign(request, body, identity, time.Now())
+		if err != nil {
+			deny(http.StatusBadRequest, "Budget authority delegation could not be created.")
 			return
 		}
 		request = controlroom.WithOperatorDelegation(request, token)

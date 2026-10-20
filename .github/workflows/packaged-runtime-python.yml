@@ -1,0 +1,34 @@
+name: Packaged runtime Python tests
+
+on:
+  pull_request:
+    paths:
+      - .github/workflows/packaged-runtime-python.yml
+      - zpr-dashboard/packaging/demo-runtime/verify-approved-identity-lab.py
+      - zpr-dashboard/packaging/demo-runtime/test-approved-identity-lab.py
+      - zpr-dashboard/packaging/demo-runtime/packaged-machine-runtime.py
+      - zpr-dashboard/packaging/demo-runtime/test-packaged-machine-runtime.py
+  push:
+    paths:
+      - .github/workflows/packaged-runtime-python.yml
+      - zpr-dashboard/packaging/demo-runtime/verify-approved-identity-lab.py
+      - zpr-dashboard/packaging/demo-runtime/test-approved-identity-lab.py
+      - zpr-dashboard/packaging/demo-runtime/packaged-machine-runtime.py
+      - zpr-dashboard/packaging/demo-runtime/test-packaged-machine-runtime.py
+
+permissions:
+  contents: read
+
+jobs:
+  packaged-runtime-python:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - name: Test approved identity lab
+        working-directory: zpr-dashboard
+        run: PYTHONDONTWRITEBYTECODE=1 python3 packaging/demo-runtime/test-approved-identity-lab.py
+      - name: Test packaged machine runtime
+        working-directory: zpr-dashboard
+        run: PYTHONDONTWRITEBYTECODE=1 python3 packaging/demo-runtime/test-packaged-machine-runtime.py

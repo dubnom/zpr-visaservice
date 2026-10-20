@@ -25,7 +25,10 @@ func TestControlHTTPCommandHandlerBindings(t *testing.T) {
 			"Static":        "revalidateStatic(http.FileServer(http.FS(staticRoot)))",
 		}},
 		{"control_service.go", "runControlService", "httpapi.Handlers", map[string]string{
-			"Enrollment": "enrollmentAPI", "Gateways": "gatewayAPI", "Assertions": "assertions.handlers()", "TrustedChanges": "trustedChanges.handlers()",
+			"Enrollment": "enrollmentAPI", "Gateways": "gatewayAPI",
+			"BudgetAuthorityCurrent":  "http.HandlerFunc(budgetAuthorityAPI.Current)",
+			"BudgetAuthorityOperator": "http.HandlerFunc(budgetAuthorityAPI.Operator)",
+			"Assertions":              "assertions.handlers()", "TrustedChanges": "trustedChanges.handlers()",
 			"Snapshot":    "http.HandlerFunc(app.handleSnapshot)",
 			"Diagnostics": "newDiagnosticsHandler(readDiagnosticsSnapshot, diagnostics, diagnosticsErr, diagnosticsStaleAfter)",
 			"ActorVisas":  "http.HandlerFunc(app.handleActorVisas)", "AdapterLogs": "newAdapterLogsHandler()",

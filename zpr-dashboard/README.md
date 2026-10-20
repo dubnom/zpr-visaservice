@@ -3020,6 +3020,69 @@ go test -race ./internal/operatordelegation ./internal/enrollment ./internal/ope
 go test -race ./cmd/zpr-web-dashboard -run 'Operator|Delegation|ControlRoom|Enrollment'
 ```
 
+### Independent budget authority (provisional; not production-ready)
+
+Control-Service can host a Simulator-independent budget authority backed by an
+explicit SQLite file. It is **disabled by default**: without
+`ZPR_BUDGET_AUTHORITY_DB_PATH`, the authority returns unavailable (HTTP 503);
+there is no in-memory fallback, seeded approval, or automatic grant. When
+configured, the file is created with restrictive permissions. This API stores
+approval decisions, not budget amounts.
+
+Control-Service mode already requires
+`ZPR_CONTROL_SERVICE_CERT_FILE`, `ZPR_CONTROL_SERVICE_KEY_FILE`, and
+`ZPR_CONTROL_SERVICE_CLIENT_CA_FILE`; its TLS 1.3 listener requires a verified
+client certificate. A Control Room client must configure
+`ZPR_CONTROL_SERVICE_URL` as an HTTPS origin plus
+`ZPR_CONTROL_CLIENT_CERT_FILE`, `ZPR_CONTROL_CLIENT_KEY_FILE`, and
+`ZPR_CONTROL_SERVICE_CA_FILE` to verify the service and present its mTLS
+identity. The optional `ZPR_CONTROL_SERVICE_TLS_SERVER_NAME` overrides the
+server-name check. Direct Control Room HTTPS and OIDC must also be enabled;
+configure `ZPR_OPERATOR_OIDC_CONFIG_FILE` and
+`ZPR_OPERATOR_OIDC_SECRET_FILE` (plus `ZPR_OPERATOR_OIDC_CA_FILE` when using
+an additional IdP CA). For mutations, configure
+`ZPR_OPERATOR_DELEGATION_SIGNER_FILE`,
+`ZPR_OPERATOR_DELEGATION_KEY_FILE`, and the Control-Service
+`ZPR_OPERATOR_DELEGATION_TRUST_FILE` as described above. The signer
+configuration's audience must exactly equal `ZPR_CONTROL_SERVICE_URL`;
+`ZPR_OPERATOR_DELEGATION_AUDIENCE`, when set, must match it too.
+
+The only implemented mutations are explicit approval and revocation; these are
+API routes, not an approval UI. Add `budget.approve` for the intended exact
+organization to both the named-user OIDC grant and the independent
+Control-Service delegation grant. Control Room requires a same-origin OIDC
+session and CSRF proof, then signs a short-lived request. Control-Service
+verifies its signature, organization/permission grant, mTLS client certificate
+pin, and replay state. Missing database configuration disables all authority
+operations; missing signer/trust disables mutations.
+
+- `POST /api/budget-authority/approvals` (Control Room) accepts strict JSON
+  with `scope` (`organization_id`, `scenario_id`, `plan_digest`), the explicit
+  `decision: "approved"`, and an `expires_at` timestamp in the future and no
+  more than one hour away. Unknown fields and trailing JSON are rejected.
+- `POST /api/budget-authority/approvals/{approval_id}/revoke` (Control Room)
+  accepts only `organization_id`; the caller must still have `budget.approve`
+  for that organization.
+- `POST /api/budget-authority/current` (Control-Service mTLS only) accepts
+  exactly `organization_id`, `scenario_id`, and `plan_digest`. A successful
+  response contains `approval_id`, those exact scope fields, `decision`,
+  `approved_by`, `version`, `checked_at`, `valid_from`, `expires_at`, and
+  `revoked`; timestamps use RFC3339Nano JSON. Responses are `no-store`.
+
+Current evidence is keyed to the exact organization/scenario/plan digest and
+timestamped at the authority check. No matching record returns non-2xx; a
+persisted revoked record can return `revoked: true`, and the consumer rejects
+revoked, expired, mismatched, or stale evidence. The consumer allows at most
+five seconds between `checked_at` and its check. This is current-at-check-time
+authorization, not atomic protection against a revocation after the source
+check.
+
+Production use remains blocked pending an assigned authority owner and final
+organization approver roster, certificate trust and rotation procedures,
+database backup and retention policy, and an audit/operations process. This
+documentation describes implemented local code only; it does not establish
+deployment, operational controls, or production readiness.
+
 ### Control Room provisioning invitations and read-only registry
 
 Provisioning > Adapters now offers a memory-only invitation worksheet and

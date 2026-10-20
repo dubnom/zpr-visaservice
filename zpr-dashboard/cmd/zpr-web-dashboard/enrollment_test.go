@@ -108,13 +108,35 @@ func TestEnrollmentAdministrationOverVerifiedTLSWithoutSimulator(t *testing.T) {
 		return &http.Client{Transport: transport}
 	}
 	admin := client(adminCert)
+	preflight := enrollment.PreflightAttestation{
+		Organization: "production", Mode: "pilot", HostLabel: "test-host", HostAddress: "10.0.0.2",
+		DeliveryChannel: "pilot-verified-handoff", DNSVerified: true, ACMEVerified: true,
+		TLSVerified: true, NetworkVerified: true, DockerVerified: true, ListenersVerified: true,
+		PackageVerified: true, RecoveryVerified: true,
+	}
+	preflightBody, err := json.Marshal(preflight)
+	if err != nil {
+		t.Fatal(err)
+	}
+	response, err := admin.Post(server.URL+enrollment.APIPrefix+"preflight", "application/json", bytes.NewReader(preflightBody))
+	if err != nil {
+		t.Fatal(err)
+	}
+	preflightResult, err := io.ReadAll(response.Body)
+	response.Body.Close()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if response.StatusCode != http.StatusOK {
+		t.Fatalf("preflight creation = %d %s", response.StatusCode, preflightResult)
+	}
 	asset := enrollment.Asset{Organization: "production", AssetID: "asset-1", Name: "Office laptop",
 		Owner: "team", Type: "laptop", Profile: "managed-linux", Recipient: "user@example.test"}
 	body, err := json.Marshal(asset)
 	if err != nil {
 		t.Fatal(err)
 	}
-	response, err := admin.Post(server.URL+enrollment.APIPrefix+"invitations", "application/json", bytes.NewReader(body))
+	response, err = admin.Post(server.URL+enrollment.APIPrefix+"invitations", "application/json", bytes.NewReader(body))
 	if err != nil {
 		t.Fatal(err)
 	}

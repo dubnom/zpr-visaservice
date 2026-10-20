@@ -13,7 +13,11 @@ import (
 
 func stackFunctionForTest(t *testing.T, name string) string {
 	t.Helper()
-	content, err := os.ReadFile("../../scripts/dashboard-stack.sh")
+	scriptPath := "../../scripts/dashboard-stack.sh"
+	if name == "resolve_machine_placement" {
+		scriptPath = "../../scripts/machine-runtime.sh"
+	}
+	content, err := os.ReadFile(scriptPath)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -152,13 +156,14 @@ func TestScenarioPlacementPreflightMatchesLauncher(t *testing.T) {
 		organization simulatorOrganization
 		machine      string
 		valid        bool
+		nodeIP       string
 	}{
-		{"single-node manifest owner", single, "machine-03", true},
-		{"single-node remote manifest owner", single, "machine-11", true},
-		{"multi-node mapped owner", multi, "machine-03", true},
-		{"missing multi-node owner", missingOwner, "machine-03", false},
-		{"missing owner location", missingLocation, "machine-03", false},
-		{"ambiguous node location", ambiguous, "machine-03", false},
+		{"single-node manifest owner", single, "machine-03", true, "172.30.0.13"},
+		{"single-node remote manifest owner", single, "machine-11", true, "172.30.0.13"},
+		{"multi-node mapped owner", multi, "machine-03", true, "172.31.0.13"},
+		{"missing multi-node owner", missingOwner, "machine-03", false, ""},
+		{"missing owner location", missingLocation, "machine-03", false, ""},
+		{"ambiguous node location", ambiguous, "machine-03", false, ""},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			err := validateScenarioMachinePlacement(tc.organization, tc.machine)
@@ -185,7 +190,7 @@ func TestScenarioPlacementPreflightMatchesLauncher(t *testing.T) {
 			if (err == nil) != tc.valid {
 				t.Fatalf("launcher error = %v: %s; valid = %v", err, output, tc.valid)
 			}
-			if tc.valid && strings.TrimSpace(string(output)) != "172.30.0.13" {
+			if tc.valid && strings.TrimSpace(string(output)) != tc.nodeIP {
 				t.Fatalf("unexpected docking node: %s", output)
 			}
 		})

@@ -2,6 +2,8 @@ package main
 
 import (
 	"context"
+	"crypto/rand"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -12,11 +14,14 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"reflect"
 	"sort"
 	"strconv"
 	"strings"
 	"sync"
 	"time"
+
+	"neboagency.com/zpr-dashborad/internal/budgetauthority"
 )
 
 const (
@@ -25,6 +30,9 @@ const (
 )
 
 var errScenarioAlreadyRunning = errors.New("a scenario is already running")
+var errSimulatorOrganizationActivationInProgress = errors.New("organization activation is in progress")
+var errSimulatorScenarioApprovalRequired = errors.New("an approved scenario plan is required")
+var errSimulatorScenarioApprovalPlanMismatch = errors.New("approved scenario plan does not match the requested run")
 
 type simulatorScenario struct {
 	ID             string                     `json:"id"`
@@ -90,6 +98,10 @@ type simulatorScenarioRun struct {
 	ScenarioName      string                        `json:"scenario_name,omitempty"`
 	Scenario          *simulatorScenario            `json:"scenario,omitempty"`
 	OrganizationID    string                        `json:"organization_id,omitempty"`
+	RunID             string                        `json:"run_id,omitempty"`
+	RunNamespace      string                        `json:"run_namespace,omitempty"`
+	PlanDigest        string                        `json:"plan_digest,omitempty"`
+	MachineIDs        []string                      `json:"machine_ids,omitempty"`
 	WorkspaceRevision int                           `json:"workspace_revision,omitempty"`
 	State             string                        `json:"state"`
 	Generation        uint64                        `json:"generation"`
@@ -105,19 +117,21 @@ type simulatorScenarioRun struct {
 type simulatorScenarioExecutor func(context.Context, simulatorManifest, simulatorScenarioStep) (string, error)
 
 type simulatorScenarioManager struct {
-	mu         sync.RWMutex
-	run        simulatorScenarioRun
-	cancel     context.CancelFunc
-	done       chan struct{}
-	generation uint64
+	mu                     sync.RWMutex
+	run                    simulatorScenarioRun
+	cancel                 context.CancelFunc
+	done                   chan struct{}
+	generation             uint64
+	budgetEvidenceResolver budgetauthority.Resolver
 }
 
 var activeSimulatorScenario = newSimulatorScenarioManager()
 
 func newSimulatorScenarioManager() *simulatorScenarioManager {
 	return &simulatorScenarioManager{
-		run:        simulatorScenarioRun{State: "idle", Generation: 1, Steps: []simulatorScenarioStepResult{}},
-		generation: 1,
+		run:                    simulatorScenarioRun{State: "idle", Generation: 1, Steps: []simulatorScenarioStepResult{}},
+		generation:             1,
+		budgetEvidenceResolver: budgetauthority.ResolverFromEnv(),
 	}
 }
 
@@ -483,8 +497,196 @@ func (manager *simulatorScenarioManager) start(scenario simulatorScenario, manif
 func (manager *simulatorScenarioManager) startVersioned(scenario simulatorScenario, manifest simulatorManifest, execute simulatorScenarioExecutor, organizationID string, revision int) error {
 	manager.mu.Lock()
 	defer manager.mu.Unlock()
+	if err := manager.validateStartLocked(); err != nil {
+		return err
+	}
+	manager.startLocked(scenario, manifest, execute, organizationID, revision, nil)
+	return nil
+}
+
+func (manager *simulatorScenarioManager) startApprovedVersioned(
+	scenario simulatorScenario,
+	manifest simulatorManifest,
+	organization simulatorOrganization,
+	execute simulatorScenarioExecutor,
+	organizationID string,
+	revision int,
+	approvalID string,
+	planDigest string,
+) error {
+	return manager.startApprovedVersionedContext(
+		context.Background(), scenario, manifest, organization, execute,
+		organizationID, revision, approvalID, planDigest,
+	)
+}
+
+func (manager *simulatorScenarioManager) startApprovedVersionedContext(
+	ctx context.Context,
+	scenario simulatorScenario,
+	manifest simulatorManifest,
+	organization simulatorOrganization,
+	execute simulatorScenarioExecutor,
+	organizationID string,
+	revision int,
+	approvalID string,
+	planDigest string,
+) error {
+	if ctx == nil {
+		return errors.New("scenario run context is required")
+	}
+	manager.mu.RLock()
+	if err := manager.validateStartLocked(); err != nil {
+		manager.mu.RUnlock()
+		return err
+	}
+	manager.mu.RUnlock()
+	if approvalID == "" || planDigest == "" {
+		return errSimulatorScenarioApprovalRequired
+	}
+	plan, err := lookupSimulatorScenarioApproval(approvalID, organizationID, scenario.ID, planDigest)
+	if err != nil {
+		return err
+	}
+	if !simulatorScenarioApprovedPlanMatchesRun(plan, planDigest, organizationID, scenario, manifest, organization) {
+		return errSimulatorScenarioApprovalPlanMismatch
+	}
+	scope := budgetauthority.Scope{
+		OrganizationID: organizationID,
+		ScenarioID:     scenario.ID,
+		PlanDigest:     plan.AuthorizationScopeDigest,
+	}
+	_, err = manager.resolveCurrentBudgetEvidence(ctx, scope)
+	if err != nil {
+		return err
+	}
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+
+	manager.mu.Lock()
+	defer manager.mu.Unlock()
+	if err := manager.validateStartLocked(); err != nil {
+		return err
+	}
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	consumedPlan, err := consumeSimulatorScenarioApproval(approvalID, organizationID, scenario.ID, planDigest)
+	if err != nil {
+		return err
+	}
+	if !reflect.DeepEqual(consumedPlan, plan) {
+		return errSimulatorScenarioApprovalPlanMismatch
+	}
+	runID, err := newSimulatorScenarioRunID()
+	if err != nil {
+		return fmt.Errorf("generate simulator run ID: %w", err)
+	}
+	namespace, err := NewSimulatorRunNamespace(organizationID, scenario.ID, runID)
+	if err != nil {
+		return fmt.Errorf("create simulator run namespace: %w", err)
+	}
+	approval := &simulatorScenarioRunApproval{
+		runID: runID, namespace: namespace.Canonical(), planDigest: planDigest,
+		machineIDs: append([]string(nil), consumedPlan.MachineIDs...),
+	}
+	manager.startLocked(scenario, manifest, execute, organizationID, revision, approval)
+	return nil
+}
+
+func (manager *simulatorScenarioManager) resolveCurrentBudgetEvidence(
+	ctx context.Context,
+	scope budgetauthority.Scope,
+) (budgetauthority.Evidence, error) {
+	if ctx == nil {
+		return budgetauthority.Evidence{}, errors.New("budget evidence request context is required")
+	}
+	if manager == nil {
+		return budgetauthority.Evidence{}, budgetauthority.ErrUnavailable
+	}
+	manager.mu.RLock()
+	resolver := manager.budgetEvidenceResolver
+	manager.mu.RUnlock()
+	if resolver == nil {
+		resolver = budgetauthority.UnavailableResolver{}
+	}
+	evidence, err := resolver.ResolveCurrent(ctx, scope)
+	if err != nil {
+		return budgetauthority.Evidence{}, fmt.Errorf("resolve current scenario budget evidence: %w", err)
+	}
+	if err := ctx.Err(); err != nil {
+		return budgetauthority.Evidence{}, err
+	}
+	if err := budgetauthority.ValidateCurrent(evidence, scope, time.Now()); err != nil {
+		return budgetauthority.Evidence{}, fmt.Errorf("current scenario budget evidence is invalid: %w", err)
+	}
+	return evidence, nil
+}
+
+type simulatorScenarioRunApproval struct {
+	runID      string
+	namespace  string
+	planDigest string
+	machineIDs []string
+}
+
+func simulatorScenarioApprovedPlanMatchesRun(
+	plan simulatorRuntimePlan,
+	planDigest string,
+	organizationID string,
+	scenario simulatorScenario,
+	manifest simulatorManifest,
+	organization simulatorOrganization,
+) bool {
+	if plan.OrganizationID != organizationID ||
+		plan.ScenarioID != scenario.ID ||
+		plan.ManifestName != manifest.Name ||
+		plan.Status != simulatorRuntimePlanOnly ||
+		plan.BudgetStatus != simulatorRuntimeBudgetApproved ||
+		len(plan.Blockers) != 0 ||
+		scenario.OrganizationID != organizationID ||
+		manifest.OrganizationID != organizationID {
+		return false
+	}
+	digest, err := simulatorScenarioPlanDigest(plan)
+	if err != nil || digest != planDigest {
+		return false
+	}
+	scopeDigest, err := simulatorScenarioAuthorizationScopeDigest(simulatorRuntimePlanInput{
+		OrganizationID: organizationID,
+		Organization:   organization,
+		Scenario:       scenario,
+		Manifest:       manifest,
+	})
+	if err != nil || scopeDigest != plan.AuthorizationScopeDigest {
+		return false
+	}
+	topologyResolved := scenario.Topology != nil &&
+		validateSimulatorScenarioTopology(*scenario.Topology) == nil
+	currentPlan := buildSimulatorRuntimePlan(simulatorRuntimePlanInput{
+		OrganizationID:   organizationID,
+		Organization:     organization,
+		Scenario:         scenario,
+		Manifest:         manifest,
+		TopologyResolved: topologyResolved,
+	})
+	return reflect.DeepEqual(plan.MachineIDs, currentPlan.MachineIDs) &&
+		reflect.DeepEqual(plan.Topology, currentPlan.Topology) &&
+		reflect.DeepEqual(plan.Workloads, currentPlan.Workloads) &&
+		reflect.DeepEqual(plan.BudgetInputs, currentPlan.BudgetInputs)
+}
+
+func newSimulatorScenarioRunID() (string, error) {
+	var entropy [16]byte
+	if _, err := rand.Read(entropy[:]); err != nil {
+		return "", err
+	}
+	return "run-" + hex.EncodeToString(entropy[:]), nil
+}
+
+func (manager *simulatorScenarioManager) validateStartLocked() error {
 	if activeOrganizationActivation.snapshot().State == "resetting" {
-		return errors.New("organization activation is in progress")
+		return errSimulatorOrganizationActivationInProgress
 	}
 	if manager.run.State == "running" || manager.run.State == "cleaning" {
 		return errScenarioAlreadyRunning
@@ -492,6 +694,17 @@ func (manager *simulatorScenarioManager) startVersioned(scenario simulatorScenar
 	if manager.generation == math.MaxUint64 {
 		return errors.New("scenario generation is outside the supported range")
 	}
+	return nil
+}
+
+func (manager *simulatorScenarioManager) startLocked(
+	scenario simulatorScenario,
+	manifest simulatorManifest,
+	execute simulatorScenarioExecutor,
+	organizationID string,
+	revision int,
+	approval *simulatorScenarioRunApproval,
+) {
 	manager.generation++
 	ctx, cancel := context.WithCancel(context.Background())
 	if scenario.Topology != nil && scenario.Topology.Components != nil {
@@ -506,8 +719,13 @@ func (manager *simulatorScenarioManager) startVersioned(scenario simulatorScenar
 		TotalSteps: len(scenario.Steps) + len(scenario.Cleanup), StartedAt: &now,
 		Steps: []simulatorScenarioStepResult{},
 	}
+	if approval != nil {
+		manager.run.RunID = approval.runID
+		manager.run.RunNamespace = approval.namespace
+		manager.run.PlanDigest = approval.planDigest
+		manager.run.MachineIDs = append([]string(nil), approval.machineIDs...)
+	}
 	go manager.execute(ctx, scenario, manifest, execute, manager.done)
-	return nil
 }
 
 func (manager *simulatorScenarioManager) cancelRun() bool {
@@ -573,6 +791,7 @@ func (manager *simulatorScenarioManager) snapshot() simulatorScenarioRun {
 	run := manager.run
 	run.Steps = append([]simulatorScenarioStepResult(nil), manager.run.Steps...)
 	run.ActiveSteps = append([]int(nil), manager.run.ActiveSteps...)
+	run.MachineIDs = append([]string(nil), manager.run.MachineIDs...)
 	return run
 }
 

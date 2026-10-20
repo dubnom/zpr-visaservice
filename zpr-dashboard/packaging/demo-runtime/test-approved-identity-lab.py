@@ -151,9 +151,10 @@ class IdentityLabTests(unittest.TestCase):
             lab.cleanup = Mock()
             with patch.object(lab_module.sys, "argv", ["lab", "--disposable-host"]), \
                     patch.dict(lab_module.os.environ, {
-                        "ZPR_DEMO_PACKAGE_DIR": str(lab.package),
-                        "ZPR_IDENTITY_LAB_ROOT": directory}), \
-                    patch.object(lab_module.os, "geteuid", return_value=0), \
+                        "ZPR_DEMO_PACKAGE_DIR": str(lab.package.resolve()),
+                        "ZPR_IDENTITY_LAB_ROOT": str(Path(directory).resolve())}), \
+                    patch.object(lab_module.os, "geteuid",
+                                 side_effect=[0, lab_module.os.getuid()]), \
                     patch.object(lab_module, "IdentityLab", return_value=lab):
                 lab_module.main()
             lab.run.assert_called_once_with()
@@ -168,9 +169,10 @@ class IdentityLabTests(unittest.TestCase):
             lab.cleanup = Mock()
             with patch.object(lab_module.sys, "argv", ["lab", "--disposable-host"]), \
                     patch.dict(lab_module.os.environ, {
-                        "ZPR_DEMO_PACKAGE_DIR": str(lab.package),
-                        "ZPR_IDENTITY_LAB_ROOT": directory}), \
-                    patch.object(lab_module.os, "geteuid", return_value=0), \
+                        "ZPR_DEMO_PACKAGE_DIR": str(lab.package.resolve()),
+                        "ZPR_IDENTITY_LAB_ROOT": str(Path(directory).resolve())}), \
+                    patch.object(lab_module.os, "geteuid",
+                                 side_effect=[0, lab_module.os.getuid()]), \
                     patch.object(lab_module, "IdentityLab", return_value=lab):
                 with self.assertRaisesRegex(RuntimeError, "traffic failed"):
                     lab_module.main()
@@ -331,9 +333,10 @@ class IdentityLabTests(unittest.TestCase):
             lab.cleanup = Mock()
             with patch.object(lab_module.sys, "argv", ["lab", "--disposable-host"]), \
                     patch.dict(lab_module.os.environ, {
-                        "ZPR_DEMO_PACKAGE_DIR": str(lab.package),
-                        "ZPR_IDENTITY_LAB_ROOT": directory}), \
-                    patch.object(lab_module.os, "geteuid", return_value=0), \
+                        "ZPR_DEMO_PACKAGE_DIR": str(lab.package.resolve()),
+                        "ZPR_IDENTITY_LAB_ROOT": str(Path(directory).resolve())}), \
+                    patch.object(lab_module.os, "geteuid",
+                                 side_effect=[0, lab_module.os.getuid()]), \
                     patch.object(lab_module, "IdentityLab", return_value=lab):
                 with self.assertRaisesRegex(RuntimeError, "lab interrupted by signal"):
                     lab_module.main()

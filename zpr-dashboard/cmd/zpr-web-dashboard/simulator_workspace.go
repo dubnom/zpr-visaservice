@@ -23,6 +23,11 @@ type workspacePublishRequest struct {
 	ExpectedRevision int `json:"expected_revision"`
 }
 
+type workspaceScenarioRunRequest struct {
+	ApprovalID string `json:"approval_id"`
+	PlanDigest string `json:"plan_digest"`
+}
+
 type workspaceScenarioListEntry struct {
 	simulatorScenario
 	CurrentRevision   int                `json:"current_revision"`
@@ -359,19 +364,34 @@ func handleWorkspaceScenarioArchive(w http.ResponseWriter, r *http.Request) {
 }
 
 func handleWorkspaceScenarioRun(w http.ResponseWriter, r *http.Request) {
+	var request workspaceScenarioRunRequest
+	if !decodeSimulatorScenarioPlanRequest(w, r, &request) {
+		return
+	}
+	if request.ApprovalID == "" || request.PlanDigest == "" {
+		writeWorkspaceError(w, http.StatusBadRequest, "approval_id and plan_digest are required")
+		return
+	}
 	manifest, err := readSimulatorManifest()
 	if err != nil {
 		writeWorkspaceError(w, http.StatusServiceUnavailable, "simulation manifest unavailable")
 		return
 	}
 	organizationID := manifest.OrganizationID
+	organization, err := loadSimulatorOrganization(simulatorOrganizationsDirectory(), organizationID)
+	if err != nil {
+		writeWorkspaceError(w, http.StatusServiceUnavailable, "organization profile unavailable")
+		return
+	}
+	manifest.OrganizationID = organizationID
 	store, err := openSimulatorWorkspace(organizationID)
 	if err != nil {
 		writeWorkspaceError(w, http.StatusInternalServerError, "workspace unavailable")
 		return
 	}
 	defer store.Close()
-	artifact, err := store.Get(r.Context(), organizationID, workspaceScenarioKind, r.PathValue("scenario"))
+	scenarioID := r.PathValue("scenario")
+	artifact, err := store.Get(r.Context(), organizationID, workspaceScenarioKind, scenarioID)
 	if err != nil {
 		writeWorkspaceNotFoundOrError(w, err)
 		return
@@ -390,12 +410,31 @@ func handleWorkspaceScenarioRun(w http.ResponseWriter, r *http.Request) {
 		writeWorkspaceError(w, http.StatusInternalServerError, "published scenario is invalid")
 		return
 	}
+	if scenario.ID != artifact.ID || scenario.OrganizationID != organizationID {
+		writeWorkspaceError(w, http.StatusConflict, "published scenario identity does not match the requested organization")
+		return
+	}
 	if err := validateSimulatorScenario(scenario, manifest); err != nil {
 		writeWorkspaceError(w, http.StatusUnprocessableEntity, err.Error())
 		return
 	}
-	if err := activeSimulatorScenario.startVersioned(scenario, manifest, simulatorScenarioExecutorForManifest, organizationID, revision.Revision); err != nil {
-		writeWorkspaceError(w, http.StatusConflict, err.Error())
+	if err := activeSimulatorScenario.startApprovedVersionedContext(
+		r.Context(),
+		scenario, manifest, organization, simulatorScenarioExecutorForManifest,
+		organizationID, revision.Revision, request.ApprovalID, request.PlanDigest,
+	); err != nil {
+		switch {
+		case errors.Is(err, errSimulatorScenarioApprovalRequired):
+			writeWorkspaceError(w, http.StatusBadRequest, "approval_id and plan_digest are required")
+		case errors.Is(err, errScenarioAlreadyRunning),
+			errors.Is(err, errSimulatorOrganizationActivationInProgress),
+			errors.Is(err, errSimulatorScenarioApprovalUnknown),
+			errors.Is(err, errSimulatorScenarioApprovalScopeMismatch),
+			errors.Is(err, errSimulatorScenarioApprovalPlanMismatch):
+			writeWorkspaceError(w, http.StatusConflict, "scenario run could not be started with this approval")
+		default:
+			writeWorkspaceError(w, http.StatusInternalServerError, "scenario run could not be started")
+		}
 		return
 	}
 	w.WriteHeader(http.StatusAccepted)
