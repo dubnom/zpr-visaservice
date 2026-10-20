@@ -461,15 +461,16 @@ Configure and operate the two services separately:
    `scenario.run`. Run start rechecks current inputs and current authority
    evidence before consuming the local token or allocating run state.
 
-**First-approval bootstrap limitation:** the current preflight handler resolves
-authority evidence before returning its plan response. With no matching
-authority record, it returns `503` and does not return
-`authorization_scope_digest`; the public routes documented here do not provide
-a budget-independent digest preview. Therefore step 4 requires that an
-authorized approver already obtain the exact digest from a separately
-approved/trusted plan-input source. Do not guess or hand-edit it. Until a
-supported digest-discovery/bootstrap process is provided, the documented
-HTTP-only sequence cannot initiate the first approval for a new scope.
+**First-approval bootstrap:** With no matching authority record, authenticated
+`scenario.read` preflight returns the `503` scope-only response described above,
+including the exact `authorization_scope_digest` for that organization and
+scenario. An authorized approver may submit that digest to the independent
+Budget Authority for the exact scope. This response contains no full
+`plan_digest` and cannot approve or run a scenario. After the authority grant
+exists, repeat preflight and continue only if the full plan is `plan-only`,
+budget-approved, and blocker-free. Never guess or hand-edit either digest. If
+the handler cannot safely build the scope digest, it returns an error without
+one.
 
 Any unavailable source, resolver error, malformed response, scope mismatch,
 unapproved/revoked decision, expired/not-yet-valid evidence, or evidence older

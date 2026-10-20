@@ -401,13 +401,9 @@ func positiveSimulatorRuntimePlanCount(count int) *int {
 }
 
 func simulatorRuntimePlanComponent(input simulatorRuntimePlanInput, name string) (simulatorComponent, bool) {
-	components := input.Manifest.Components
-	if input.Scenario.Topology != nil && input.Scenario.Topology.Components != nil {
-		components = input.Scenario.Topology.Components
-	}
 	var result simulatorComponent
 	found := false
-	for _, component := range components {
+	for _, component := range simulatorRuntimePlanComponents(input) {
 		if component.Name != name {
 			continue
 		}
@@ -419,11 +415,43 @@ func simulatorRuntimePlanComponent(input simulatorRuntimePlanInput, name string)
 	return result, found
 }
 
-func simulatorRuntimePlanWorkloads(input simulatorRuntimePlanInput, addBlocker func(string)) []simulatorRuntimePlanWorkload {
+func simulatorRuntimePlanComponents(input simulatorRuntimePlanInput) []simulatorComponent {
 	components := input.Manifest.Components
 	if input.Scenario.Topology != nil && input.Scenario.Topology.Components != nil {
 		components = input.Scenario.Topology.Components
 	}
+	return simulatorRuntimePlanOrganizationComponents(input.Organization, components)
+}
+
+func simulatorRuntimePlanOrganizationComponents(
+	organization simulatorOrganization,
+	components []simulatorComponent,
+) []simulatorComponent {
+	result := append([]simulatorComponent(nil), components...)
+	known := make(map[string]struct{}, len(components))
+	for _, component := range components {
+		known[component.Name] = struct{}{}
+	}
+
+	workloadNames := make([]string, 0, len(organization.WorkloadServices))
+	for name := range organization.WorkloadServices {
+		workloadNames = append(workloadNames, name)
+	}
+	sort.Strings(workloadNames)
+	for _, name := range workloadNames {
+		if _, exists := known[name]; exists {
+			continue
+		}
+		if component, ok := businessComponent(organization, name); ok {
+			result = append(result, component)
+			known[name] = struct{}{}
+		}
+	}
+	return result
+}
+
+func simulatorRuntimePlanWorkloads(input simulatorRuntimePlanInput, addBlocker func(string)) []simulatorRuntimePlanWorkload {
+	components := simulatorRuntimePlanComponents(input)
 	componentByName := make(map[string]simulatorComponent, len(components))
 	duplicateNames := make(map[string]struct{})
 	for _, component := range components {

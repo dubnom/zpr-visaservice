@@ -1,0 +1,104 @@
+dn: cn=FinanceReaders,ou=Roles,dc=northstar,dc=test
+objectClass: top
+objectClass: groupOfNames
+cn: FinanceReaders
+member: uid=elena.park,ou=People,dc=northstar,dc=test
+member: uid=taylor.hale,ou=People,dc=northstar,dc=test
+
+dn: cn=OperationsAdmins,ou=Roles,dc=northstar,dc=test
+objectClass: top
+objectClass: groupOfNames
+cn: OperationsAdmins
+member: uid=nina.ross,ou=People,dc=northstar,dc=test
+member: uid=ben.torres,ou=People,dc=northstar,dc=test
+
+dn: cn=SecurityReviewers,ou=Roles,dc=northstar,dc=test
+objectClass: top
+objectClass: groupOfNames
+cn: SecurityReviewers
+member: uid=hana.kim,ou=People,dc=northstar,dc=test
+member: uid=daniel.okafor,ou=People,dc=northstar,dc=test
+
+dn: cn=Approver,ou=Roles,dc=northstar,dc=test
+objectClass: top
+objectClass: groupOfNames
+cn: Approver
+member: uid=taylor.hale,ou=People,dc=northstar,dc=test
+
+dn: cn=Incident Responder,ou=Roles,dc=northstar,dc=test
+objectClass: top
+objectClass: groupOfNames
+cn: Incident Responder
+member: uid=hana.kim,ou=People,dc=northstar,dc=test
+
+dn: cn=Security Reviewer,ou=Roles,dc=northstar,dc=test
+objectClass: top
+objectClass: groupOfNames
+cn: Security Reviewer
+member: uid=hana.kim,ou=People,dc=northstar,dc=test
+
+dn: cn=Accounting Manager,ou=Roles,dc=northstar,dc=test
+objectClass: top
+objectClass: groupOfNames
+cn: Accounting Manager
+member: uid=taylor.hale,ou=People,dc=northstar,dc=test
+
+dn: cn=HR Partner,ou=Roles,dc=northstar,dc=test
+objectClass: top
+objectClass: groupOfNames
+cn: HR Partner
+member: uid=riley.stone,ou=People,dc=northstar,dc=test
+
+dn: cn=IT Administrator,ou=Roles,dc=northstar,dc=test
+objectClass: top
+objectClass: groupOfNames
+cn: IT Administrator
+member: uid=nina.ross,ou=People,dc=northstar,dc=test
+
+dn: cn=Legal Reviewer,ou=Roles,dc=northstar,dc=test
+objectClass: top
+objectClass: groupOfNames
+cn: Legal Reviewer
+member: uid=avery.wong,ou=People,dc=northstar,dc=test
+
+dn: cn=Platform Engineer,ou=Roles,dc=northstar,dc=test
+objectClass: top
+objectClass: groupOfNames
+cn: Platform Engineer
+member: uid=elena.park,ou=People,dc=northstar,dc=test
+
+dn: cn=Product Engineer,ou=Roles,dc=northstar,dc=test
+objectClass: top
+objectClass: groupOfNames
+cn: Product Engineer
+member: uid=arjun.patel,ou=People,dc=northstar,dc=test
+
+dn: cn=Recruiter,ou=Roles,dc=northstar,dc=test
+objectClass: top
+objectClass: groupOfNames
+cn: Recruiter
+member: uid=casey.morgan,ou=People,dc=northstar,dc=test
+
+dn: cn=Sales Lead,ou=Roles,dc=northstar,dc=test
+objectClass: top
+objectClass: groupOfNames
+cn: Sales Lead
+member: uid=parker.ellis,ou=People,dc=northstar,dc=test
+
+dn: cn=Data Analyst,ou=Roles,dc=northstar,dc=test
+objectClass: top
+objectClass: groupOfNames
+cn: Data Analyst
+member: uid=quinn.baker,ou=People,dc=northstar,dc=test
+
+dn: cn=Executive,ou=Roles,dc=northstar,dc=test
+objectClass: top
+objectClass: groupOfNames
+cn: Executive
+member: uid=jordan.reed,ou=People,dc=northstar,dc=test
+
+dn: cn=People Manager,ou=Roles,dc=northstar,dc=test
+objectClass: top
+objectClass: groupOfNames
+cn: People Manager
+member: uid=alexis.gray,ou=People,dc=northstar,dc=test

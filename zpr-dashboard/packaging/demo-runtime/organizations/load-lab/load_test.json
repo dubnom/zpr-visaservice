@@ -1,0 +1,16 @@
+{
+  "client_machine": "machine-03",
+  "service_machine": "machine-05",
+  "client_workload": "finance-client",
+  "service_workload": "echo-service",
+  "client_count": 200,
+  "service_count": 200,
+  "base_port": 10000,
+  "duration_seconds": 120,
+  "request_delay_min_ms": 1000,
+  "request_delay_max_ms": 3000,
+  "restart_interval_min_seconds": 30,
+  "restart_interval_max_seconds": 90,
+  "restart_pause_min_seconds": 1,
+  "restart_pause_max_seconds": 5
+}

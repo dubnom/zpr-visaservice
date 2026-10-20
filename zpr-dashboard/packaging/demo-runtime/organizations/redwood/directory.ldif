@@ -1,0 +1,227 @@
+dn: dc=redwood,dc=test
+objectClass: top
+objectClass: dcObject
+objectClass: organization
+dc: redwood
+o: Redwood Freight Cooperative
+
+dn: ou=People,dc=redwood,dc=test
+objectClass: top
+objectClass: organizationalUnit
+ou: People
+
+dn: ou=Departments,dc=redwood,dc=test
+objectClass: top
+objectClass: organizationalUnit
+ou: Departments
+
+dn: ou=Roles,dc=redwood,dc=test
+objectClass: top
+objectClass: organizationalUnit
+ou: Roles
+
+dn: ou=Machines,dc=redwood,dc=test
+objectClass: top
+objectClass: organizationalUnit
+ou: Machines
+
+dn: ou=Service Accounts,dc=redwood,dc=test
+objectClass: top
+objectClass: organizationalUnit
+ou: Service Accounts
+
+dn: ou=Operations,ou=Departments,dc=redwood,dc=test
+objectClass: top
+objectClass: organizationalUnit
+ou: Operations
+
+dn: ou=Dispatch,ou=Operations,ou=Departments,dc=redwood,dc=test
+objectClass: top
+objectClass: organizationalUnit
+ou: Dispatch
+
+dn: ou=Fleet,ou=Operations,ou=Departments,dc=redwood,dc=test
+objectClass: top
+objectClass: organizationalUnit
+ou: Fleet
+
+dn: ou=Partners,ou=Departments,dc=redwood,dc=test
+objectClass: top
+objectClass: organizationalUnit
+ou: Partners
+
+dn: ou=Auditors,ou=Partners,ou=Departments,dc=redwood,dc=test
+objectClass: top
+objectClass: organizationalUnit
+ou: Auditors
+
+dn: uid=marisol.vega,ou=People,dc=redwood,dc=test
+objectClass: inetOrgPerson
+uid: marisol.vega
+cn: Marisol Vega
+sn: Vega
+givenName: Marisol
+mail: marisol.vega@redwood.example
+ou: Dispatch
+title: Regional Dispatcher
+l: North Hub
+
+dn: uid=darius.cole,ou=People,dc=redwood,dc=test
+objectClass: inetOrgPerson
+uid: darius.cole
+cn: Darius Cole
+sn: Cole
+givenName: Darius
+mail: darius.cole@redwood.example
+ou: Fleet
+title: Fleet Operations Lead
+l: Regional Yard
+
+dn: uid=priya.shah,ou=People,dc=redwood,dc=test
+objectClass: inetOrgPerson
+uid: priya.shah
+cn: Priya Shah
+sn: Shah
+givenName: Priya
+mail: priya.shah@redwood.example
+ou: Auditors
+title: Partner Auditor
+l: Regional Yard
+
+dn: uid=machine-01,ou=Machines,dc=redwood,dc=test
+objectClass: inetOrgPerson
+objectClass: zprMachine
+uid: machine-01
+cn: machine-01
+sn: Endpoint
+zprMachineId: machine-01
+zprMachineType: laptop
+zprMachineModel: FreightBook 14
+zprMachineLocation: North Hub
+zprMachineOwner: marisol.vega
+zprMachineSecure: TRUE
+
+dn: uid=machine-02,ou=Machines,dc=redwood,dc=test
+objectClass: inetOrgPerson
+objectClass: zprMachine
+uid: machine-02
+cn: machine-02
+sn: Endpoint
+zprMachineId: machine-02
+zprMachineType: laptop
+zprMachineLocation: Regional Yard
+zprMachineOwner: darius.cole
+zprMachineSecure: TRUE
+
+dn: uid=machine-03,ou=Machines,dc=redwood,dc=test
+objectClass: inetOrgPerson
+objectClass: zprMachine
+uid: machine-03
+cn: machine-03
+sn: Endpoint
+zprMachineId: machine-03
+zprMachineType: desktop
+zprMachineModel: Yard Terminal R2
+zprMachineLocation: Regional Yard
+zprMachineOwner: priya.shah
+zprMachineSecure: TRUE
+
+dn: cn=DispatchOperators,ou=Roles,dc=redwood,dc=test
+objectClass: top
+objectClass: groupOfNames
+cn: DispatchOperators
+member: uid=marisol.vega,ou=People,dc=redwood,dc=test
+member: uid=north.dispatch.01,ou=People,dc=redwood,dc=test
+member: uid=north.dispatch.02,ou=People,dc=redwood,dc=test
+member: uid=north.dispatch.03,ou=People,dc=redwood,dc=test
+member: uid=north.dispatch.04,ou=People,dc=redwood,dc=test
+member: uid=north.dispatch.05,ou=People,dc=redwood,dc=test
+member: uid=north.dispatch.06,ou=People,dc=redwood,dc=test
+member: uid=north.dispatch.07,ou=People,dc=redwood,dc=test
+member: uid=north.dispatch.08,ou=People,dc=redwood,dc=test
+member: uid=north.dispatch.09,ou=People,dc=redwood,dc=test
+member: uid=yard.dispatch.01,ou=People,dc=redwood,dc=test
+member: uid=yard.dispatch.02,ou=People,dc=redwood,dc=test
+member: uid=yard.dispatch.03,ou=People,dc=redwood,dc=test
+member: uid=yard.dispatch.04,ou=People,dc=redwood,dc=test
+member: uid=yard.dispatch.05,ou=People,dc=redwood,dc=test
+member: uid=yard.dispatch.06,ou=People,dc=redwood,dc=test
+member: uid=yard.dispatch.07,ou=People,dc=redwood,dc=test
+member: uid=yard.dispatch.08,ou=People,dc=redwood,dc=test
+member: uid=yard.dispatch.09,ou=People,dc=redwood,dc=test
+member: uid=yard.dispatch.01,ou=People,dc=redwood,dc=test
+member: uid=yard.dispatch.02,ou=People,dc=redwood,dc=test
+member: uid=yard.dispatch.03,ou=People,dc=redwood,dc=test
+member: uid=yard.dispatch.04,ou=People,dc=redwood,dc=test
+member: uid=yard.dispatch.05,ou=People,dc=redwood,dc=test
+member: uid=yard.dispatch.06,ou=People,dc=redwood,dc=test
+member: uid=yard.dispatch.07,ou=People,dc=redwood,dc=test
+member: uid=yard.dispatch.08,ou=People,dc=redwood,dc=test
+member: uid=yard.dispatch.09,ou=People,dc=redwood,dc=test
+
+dn: cn=FleetManagers,ou=Roles,dc=redwood,dc=test
+objectClass: top
+objectClass: groupOfNames
+cn: FleetManagers
+member: uid=darius.cole,ou=People,dc=redwood,dc=test
+member: uid=north.fleet.01,ou=People,dc=redwood,dc=test
+member: uid=north.fleet.02,ou=People,dc=redwood,dc=test
+member: uid=north.fleet.03,ou=People,dc=redwood,dc=test
+member: uid=north.fleet.04,ou=People,dc=redwood,dc=test
+member: uid=north.fleet.05,ou=People,dc=redwood,dc=test
+member: uid=north.fleet.06,ou=People,dc=redwood,dc=test
+member: uid=north.fleet.07,ou=People,dc=redwood,dc=test
+member: uid=north.fleet.08,ou=People,dc=redwood,dc=test
+member: uid=yard.fleet.01,ou=People,dc=redwood,dc=test
+member: uid=yard.fleet.02,ou=People,dc=redwood,dc=test
+member: uid=yard.fleet.03,ou=People,dc=redwood,dc=test
+member: uid=yard.fleet.04,ou=People,dc=redwood,dc=test
+member: uid=yard.fleet.05,ou=People,dc=redwood,dc=test
+member: uid=yard.fleet.06,ou=People,dc=redwood,dc=test
+member: uid=yard.fleet.07,ou=People,dc=redwood,dc=test
+member: uid=yard.fleet.08,ou=People,dc=redwood,dc=test
+member: uid=yard.fleet.01,ou=People,dc=redwood,dc=test
+member: uid=yard.fleet.02,ou=People,dc=redwood,dc=test
+member: uid=yard.fleet.03,ou=People,dc=redwood,dc=test
+member: uid=yard.fleet.04,ou=People,dc=redwood,dc=test
+member: uid=yard.fleet.05,ou=People,dc=redwood,dc=test
+member: uid=yard.fleet.06,ou=People,dc=redwood,dc=test
+member: uid=yard.fleet.07,ou=People,dc=redwood,dc=test
+member: uid=yard.fleet.08,ou=People,dc=redwood,dc=test
+
+dn: cn=PartnerAuditors,ou=Roles,dc=redwood,dc=test
+objectClass: top
+objectClass: groupOfNames
+cn: PartnerAuditors
+member: uid=priya.shah,ou=People,dc=redwood,dc=test
+member: uid=north.auditor.01,ou=People,dc=redwood,dc=test
+member: uid=north.auditor.02,ou=People,dc=redwood,dc=test
+member: uid=north.auditor.03,ou=People,dc=redwood,dc=test
+member: uid=north.auditor.04,ou=People,dc=redwood,dc=test
+member: uid=north.auditor.05,ou=People,dc=redwood,dc=test
+member: uid=north.auditor.06,ou=People,dc=redwood,dc=test
+member: uid=north.auditor.07,ou=People,dc=redwood,dc=test
+member: uid=north.auditor.08,ou=People,dc=redwood,dc=test
+member: uid=yard.auditor.01,ou=People,dc=redwood,dc=test
+member: uid=yard.auditor.02,ou=People,dc=redwood,dc=test
+member: uid=yard.auditor.03,ou=People,dc=redwood,dc=test
+member: uid=yard.auditor.04,ou=People,dc=redwood,dc=test
+member: uid=yard.auditor.05,ou=People,dc=redwood,dc=test
+member: uid=yard.auditor.06,ou=People,dc=redwood,dc=test
+member: uid=yard.auditor.07,ou=People,dc=redwood,dc=test
+member: uid=yard.auditor.08,ou=People,dc=redwood,dc=test
+member: uid=yard.auditor.01,ou=People,dc=redwood,dc=test
+member: uid=yard.auditor.02,ou=People,dc=redwood,dc=test
+member: uid=yard.auditor.03,ou=People,dc=redwood,dc=test
+member: uid=yard.auditor.04,ou=People,dc=redwood,dc=test
+member: uid=yard.auditor.05,ou=People,dc=redwood,dc=test
+member: uid=yard.auditor.06,ou=People,dc=redwood,dc=test
+member: uid=yard.auditor.07,ou=People,dc=redwood,dc=test
+member: uid=yard.auditor.08,ou=People,dc=redwood,dc=test
+
+dn: cn=zpr-reader,ou=Service Accounts,dc=redwood,dc=test
+objectClass: top
+objectClass: simpleSecurityObject
+objectClass: organizationalRole
+cn: zpr-reader
+userPassword: DEMO_BIND_PASSWORD_HASH

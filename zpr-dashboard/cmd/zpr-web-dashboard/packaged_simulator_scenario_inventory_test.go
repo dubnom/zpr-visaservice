@@ -7,6 +7,7 @@ import (
 	"path/filepath"
 	"reflect"
 	"sort"
+	"strings"
 	"testing"
 )
 
@@ -26,7 +27,8 @@ func TestPackagedSimulatorScenarioInventory(t *testing.T) {
 	}
 	var scenarioFiles []string
 	for _, entry := range entries {
-		if !entry.IsDir() && filepath.Ext(entry.Name()) == ".json" {
+		if !entry.IsDir() && filepath.Ext(entry.Name()) == ".json" &&
+			strings.HasPrefix(entry.Name(), "packaged-") {
 			scenarioFiles = append(scenarioFiles, entry.Name())
 		}
 	}

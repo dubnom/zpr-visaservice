@@ -1,0 +1,288 @@
+dn: uid=machine-01,ou=Machines,dc=northstar,dc=test
+objectClass: top
+objectClass: inetOrgPerson
+objectClass: zprMachine
+uid: machine-01
+cn: machine-01
+sn: Endpoint
+zprMachineId: machine-01
+zprMachineType: laptop
+zprMachineModel: Unprovisioned Fixture
+zprMachineLocation: North Campus
+zprMachineSecure: FALSE
+ou: Platform
+zprMachineOwner: elena.park
+
+dn: uid=machine-02,ou=Machines,dc=northstar,dc=test
+objectClass: top
+objectClass: inetOrgPerson
+objectClass: zprMachine
+uid: machine-02
+cn: machine-02
+sn: Endpoint
+zprMachineId: machine-02
+zprMachineType: laptop
+zprMachineModel: Unprovisioned Fixture
+zprMachineLocation: North Campus
+zprMachineSecure: FALSE
+ou: Platform
+zprMachineOwner: jamal.brooks
+
+dn: uid=machine-03,ou=Machines,dc=northstar,dc=test
+objectClass: top
+objectClass: inetOrgPerson
+objectClass: zprMachine
+uid: machine-03
+cn: machine-03
+sn: Endpoint
+zprMachineId: machine-03
+zprMachineType: laptop
+zprMachineModel: Unprovisioned Fixture
+zprMachineLocation: North Campus
+zprMachineSecure: FALSE
+ou: Platform
+zprMachineOwner: sophie.nguyen
+
+dn: uid=machine-04,ou=Machines,dc=northstar,dc=test
+objectClass: top
+objectClass: inetOrgPerson
+objectClass: zprMachine
+uid: machine-04
+cn: machine-04
+sn: Endpoint
+zprMachineId: machine-04
+zprMachineType: laptop
+zprMachineModel: Unprovisioned Fixture
+zprMachineLocation: North Campus
+zprMachineSecure: FALSE
+ou: Platform
+zprMachineOwner: theo.martin
+
+dn: uid=machine-05,ou=Machines,dc=northstar,dc=test
+objectClass: top
+objectClass: inetOrgPerson
+objectClass: zprMachine
+uid: machine-05
+cn: machine-05
+sn: Endpoint
+zprMachineId: machine-05
+zprMachineType: laptop
+zprMachineModel: Unprovisioned Fixture
+zprMachineLocation: North Campus
+zprMachineSecure: FALSE
+ou: Product
+zprMachineOwner: arjun.patel
+
+dn: uid=machine-06,ou=Machines,dc=northstar,dc=test
+objectClass: top
+objectClass: inetOrgPerson
+objectClass: zprMachine
+uid: machine-06
+cn: machine-06
+sn: Endpoint
+zprMachineId: machine-06
+zprMachineType: laptop
+zprMachineModel: Unprovisioned Fixture
+zprMachineLocation: North Campus
+zprMachineSecure: FALSE
+ou: Product
+zprMachineOwner: zoe.carter
+
+dn: uid=machine-07,ou=Machines,dc=northstar,dc=test
+objectClass: top
+objectClass: inetOrgPerson
+objectClass: zprMachine
+uid: machine-07
+cn: machine-07
+sn: Endpoint
+zprMachineId: machine-07
+zprMachineType: laptop
+zprMachineModel: Unprovisioned Fixture
+zprMachineLocation: North Campus
+zprMachineSecure: FALSE
+ou: Product
+zprMachineOwner: omar.hassan
+
+dn: uid=machine-08,ou=Machines,dc=northstar,dc=test
+objectClass: top
+objectClass: inetOrgPerson
+objectClass: zprMachine
+uid: machine-08
+cn: machine-08
+sn: Endpoint
+zprMachineId: machine-08
+zprMachineType: laptop
+zprMachineModel: Unprovisioned Fixture
+zprMachineLocation: North Campus
+zprMachineSecure: FALSE
+ou: IT
+zprMachineOwner: nina.ross
+
+dn: uid=machine-09,ou=Machines,dc=northstar,dc=test
+objectClass: top
+objectClass: inetOrgPerson
+objectClass: zprMachine
+uid: machine-09
+cn: machine-09
+sn: Endpoint
+zprMachineId: machine-09
+zprMachineType: laptop
+zprMachineModel: Unprovisioned Fixture
+zprMachineLocation: North Campus
+zprMachineSecure: FALSE
+ou: IT
+zprMachineOwner: ben.torres
+
+dn: uid=machine-10,ou=Machines,dc=northstar,dc=test
+objectClass: top
+objectClass: inetOrgPerson
+objectClass: zprMachine
+uid: machine-10
+cn: machine-10
+sn: Endpoint
+zprMachineId: machine-10
+zprMachineType: laptop
+zprMachineModel: Unprovisioned Fixture
+zprMachineLocation: North Campus
+zprMachineSecure: FALSE
+ou: IT
+zprMachineOwner: grace.lee
+
+dn: uid=machine-11,ou=Machines,dc=northstar,dc=test
+objectClass: top
+objectClass: inetOrgPerson
+objectClass: zprMachine
+uid: machine-11
+cn: machine-11
+sn: Endpoint
+zprMachineId: machine-11
+zprMachineType: desktop
+zprMachineModel: Unprovisioned Fixture
+zprMachineLocation: North Campus
+zprMachineSecure: FALSE
+ou: Security
+zprMachineOwner: hana.kim
+
+dn: uid=machine-12,ou=Machines,dc=northstar,dc=test
+objectClass: top
+objectClass: inetOrgPerson
+objectClass: zprMachine
+uid: machine-12
+cn: machine-12
+sn: Endpoint
+zprMachineId: machine-12
+zprMachineType: desktop
+zprMachineModel: Unprovisioned Fixture
+zprMachineLocation: North Campus
+zprMachineSecure: FALSE
+ou: Security
+zprMachineOwner: daniel.okafor
+
+dn: uid=machine-13,ou=Machines,dc=northstar,dc=test
+objectClass: top
+objectClass: inetOrgPerson
+objectClass: zprMachine
+uid: machine-13
+cn: machine-13
+sn: Endpoint
+zprMachineId: machine-13
+zprMachineType: desktop
+zprMachineModel: Unprovisioned Fixture
+zprMachineLocation: North Campus
+zprMachineSecure: FALSE
+
+dn: uid=machine-14,ou=Machines,dc=northstar,dc=test
+objectClass: top
+objectClass: inetOrgPerson
+objectClass: zprMachine
+uid: machine-14
+cn: machine-14
+sn: Endpoint
+zprMachineId: machine-14
+zprMachineType: desktop
+zprMachineModel: Unprovisioned Fixture
+zprMachineLocation: North Campus
+zprMachineSecure: FALSE
+
+dn: uid=machine-15,ou=Machines,dc=northstar,dc=test
+objectClass: top
+objectClass: inetOrgPerson
+objectClass: zprMachine
+uid: machine-15
+cn: machine-15
+sn: Endpoint
+zprMachineId: machine-15
+zprMachineType: desktop
+zprMachineModel: Unprovisioned Fixture
+zprMachineLocation: North Campus
+zprMachineSecure: FALSE
+
+dn: uid=machine-16,ou=Machines,dc=northstar,dc=test
+objectClass: top
+objectClass: inetOrgPerson
+objectClass: zprMachine
+uid: machine-16
+cn: machine-16
+sn: Endpoint
+zprMachineId: machine-16
+zprMachineType: desktop
+zprMachineModel: Unprovisioned Fixture
+zprMachineLocation: North Campus
+zprMachineSecure: FALSE
+
+dn: uid=machine-17,ou=Machines,dc=northstar,dc=test
+objectClass: top
+objectClass: inetOrgPerson
+objectClass: zprMachine
+uid: machine-17
+cn: machine-17
+sn: Endpoint
+zprMachineId: machine-17
+zprMachineType: desktop
+zprMachineModel: Unprovisioned Fixture
+zprMachineLocation: North Campus
+zprMachineSecure: FALSE
+
+dn: uid=machine-18,ou=Machines,dc=northstar,dc=test
+objectClass: top
+objectClass: inetOrgPerson
+objectClass: zprMachine
+uid: machine-18
+cn: machine-18
+sn: Endpoint
+zprMachineId: machine-18
+zprMachineType: desktop
+zprMachineModel: Unprovisioned Fixture
+zprMachineLocation: North Campus
+zprMachineSecure: FALSE
+
+dn: uid=machine-19,ou=Machines,dc=northstar,dc=test
+objectClass: top
+objectClass: inetOrgPerson
+objectClass: zprMachine
+uid: machine-19
+cn: machine-19
+sn: Endpoint
+zprMachineId: machine-19
+zprMachineType: desktop
+zprMachineModel: Unprovisioned Fixture
+zprMachineLocation: North Campus
+zprMachineSecure: FALSE
+
+dn: uid=machine-20,ou=Machines,dc=northstar,dc=test
+objectClass: top
+objectClass: inetOrgPerson
+objectClass: zprMachine
+uid: machine-20
+cn: machine-20
+sn: Endpoint
+zprMachineId: machine-20
+zprMachineType: desktop
+zprMachineModel: Unprovisioned Fixture
+zprMachineLocation: North Campus
+zprMachineSecure: FALSE
+
+dn: uid=adapter1,ou=Service Accounts,dc=northstar,dc=test
+objectClass: top
+objectClass: account
+uid: adapter1

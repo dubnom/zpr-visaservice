@@ -285,7 +285,37 @@ func simulatorRuntimePlanInventoryInput(scenario simulatorScenario) (simulatorRu
 		Organization:   organization,
 		Scenario:       scenario,
 		Manifest:       manifest,
+		NorthstarAssets: simulatorRuntimeNorthstarAssets(
+			organization,
+			filepath.Join("examples", "organizations"),
+		),
 	}, nil
+}
+
+func TestNorthstarRuntimeAssetEvidenceChecksConfiguredFiles(t *testing.T) {
+	for _, directory := range []string{
+		filepath.Join("examples", "organizations"),
+		filepath.Join("..", "..", "packaging", "demo-runtime", "organizations"),
+	} {
+		organization, err := loadSimulatorOrganization(directory, "northstar")
+		if err != nil {
+			t.Fatal(err)
+		}
+		evidence := simulatorRuntimeNorthstarAssets(organization, directory)
+		if !evidence.Resolved || len(evidence.Missing) != 0 {
+			t.Fatalf("Northstar assets in %q are not resolved: %+v", directory, evidence)
+		}
+	}
+
+	organization, err := loadSimulatorOrganization(filepath.Join("examples", "organizations"), "northstar")
+	if err != nil {
+		t.Fatal(err)
+	}
+	organization.Directory.LDIFFiles = append(organization.Directory.LDIFFiles, "missing.ldif")
+	evidence := simulatorRuntimeNorthstarAssets(organization, filepath.Join("examples", "organizations"))
+	if evidence.Resolved || !strings.Contains(strings.Join(evidence.Missing, ","), "directory/missing.ldif") {
+		t.Fatalf("missing Northstar directory asset was not reported: %+v", evidence)
+	}
 }
 
 func readSimulatorRuntimePlanScenario(path string) (simulatorScenario, error) {

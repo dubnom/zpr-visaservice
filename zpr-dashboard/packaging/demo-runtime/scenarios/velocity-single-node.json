@@ -1,0 +1,32 @@
+{
+  "id": "velocity-single-node",
+  "organization_id": "velocity",
+  "folder": "Performance/Single Node",
+  "name": "Single-node throughput and latency",
+  "description": "Two machines on the existing single forwarding node: 100 warmed HTTP round trips and a 16 MiB download. Visa grant time is not measured by HTTP timing.",
+  "parallel": true,
+  "steps": [
+    {"id": "client-machine", "action": "start_machine", "machine": "machine-03"},
+    {"id": "server-machine", "action": "start_machine", "machine": "machine-05"},
+    {"id": "client-controller", "action": "wait_controller", "machine": "machine-03"},
+    {"id": "server-controller", "action": "wait_controller", "machine": "machine-05"},
+    {"id": "client-login", "action": "login", "machine": "machine-03", "user": "alex.rivera"},
+    {"id": "server-login", "action": "login", "machine": "machine-05", "user": "sam.chen"},
+    {"id": "client-selection", "action": "select_workloads", "machine": "machine-03", "workloads": ["finance-client"]},
+    {"id": "server-selection", "action": "select_workloads", "machine": "machine-05", "workloads": ["echo-service"]},
+    {"id": "client-workload", "action": "start_workload", "machine": "machine-03", "component": "finance-client"},
+    {"id": "server-workload", "action": "start_workload", "machine": "machine-05", "component": "echo-service"},
+    {"id": "server-ready", "action": "start_test_service", "machine": "machine-05", "component": "echo-service"},
+    {"id": "server-health", "after": ["server-ready"], "action": "request_test_service", "machine": "machine-03", "component": "finance-client", "target": "echo-service"},
+    {"id": "benchmark", "action": "benchmark_test_service", "machine": "machine-03", "component": "finance-client", "target": "echo-service", "timeout_seconds": 75}
+  ],
+  "cleanup": [
+    {"action": "stop_test_service", "machine": "machine-05", "component": "echo-service"},
+    {"action": "stop_workload", "machine": "machine-03", "component": "finance-client"},
+    {"action": "stop_workload", "machine": "machine-05", "component": "echo-service"},
+    {"action": "logout", "machine": "machine-03"},
+    {"action": "logout", "machine": "machine-05"},
+    {"action": "stop_machine", "machine": "machine-03"},
+    {"action": "stop_machine", "machine": "machine-05"}
+  ]
+}

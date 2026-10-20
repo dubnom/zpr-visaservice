@@ -147,7 +147,155 @@ case "$host_port" in
 esac
 [ "$host_port" -ge 1024 ] && [ "$host_port" -le 65535 ] ||
     fail "ZPR_SIMULATOR_PORT must be a decimal port from 1024 through 65535"
+docker_network=${ZPR_SIMULATOR_DOCKER_NETWORK:-bridge}
+case "$docker_network" in
+    ""|*[!a-zA-Z0-9_.-]*|[!a-zA-Z0-9]*) fail "ZPR_SIMULATOR_DOCKER_NETWORK must be a Docker network name" ;;
+esac
 state_dir=$ZPR_SIMULATOR_STATE_DIR
+enable_provisioning=${ZPR_SIMULATOR_ENABLE_PROVISIONING:-0}
+case "$enable_provisioning" in
+    0|1) ;;
+    *) fail "ZPR_SIMULATOR_ENABLE_PROVISIONING must be 0 or 1" ;;
+esac
+operator_auth_dir=${ZPR_SIMULATOR_OPERATOR_AUTH_DIR:-}
+operator_origin=${ZPR_SIMULATOR_OPERATOR_ORIGIN:-}
+budget_authority_url=${ZPR_BUDGET_AUTHORITY_URL:-}
+budget_authority_tls_server_name=${ZPR_BUDGET_AUTHORITY_TLS_SERVER_NAME:-}
+simulator_operator_trusted_peer=${ZPR_SIMULATOR_OPERATOR_TRUSTED_PEER_IP:-}
+operator_config_digest=none
+validate_ipv4_address() {
+    python3 - "$1" <<'PY'
+import ipaddress
+import sys
+
+try:
+    address = ipaddress.ip_address(sys.argv[1])
+except ValueError as error:
+    raise SystemExit(f"invalid IPv4 address: {error}")
+if address.version != 4:
+    raise SystemExit("address must be IPv4")
+PY
+}
+if [ -n "$simulator_operator_trusted_peer" ]; then
+    validate_ipv4_address "$simulator_operator_trusted_peer" ||
+        fail "Simulator trusted proxy peer must be an IPv4 address"
+fi
+if [ -n "$operator_auth_dir$operator_origin$budget_authority_url" ]; then
+    [ -n "$operator_auth_dir" ] && [ -n "$operator_origin" ] && [ -n "$budget_authority_url" ] ||
+        fail "protected Simulator access requires OIDC auth files, an HTTPS origin, and an independent budget-authority URL"
+    operator_config_digest=$(
+        python3 - "$operator_auth_dir" "$operator_origin" "$budget_authority_url" \
+            "$budget_authority_tls_server_name" "$simulator_operator_trusted_peer" <<'PY'
+import hashlib
+import json
+import os
+from pathlib import Path
+import re
+import stat
+import sys
+from urllib.parse import urlsplit
+
+directory, origin, authority_url, server_name, trusted_peer = sys.argv[1:]
+safe_path = re.compile(r"^[A-Za-z0-9_./-]+$")
+
+def https_origin(value):
+    try:
+        parsed = urlsplit(value)
+        return (
+            parsed.scheme == "https"
+            and bool(parsed.hostname)
+            and parsed.port is not None
+            and parsed.path in ("", "/")
+            and not parsed.username
+            and not parsed.password
+            and not parsed.query
+            and not parsed.fragment
+        )
+    except ValueError:
+        return False
+
+if not https_origin(origin) or origin.endswith("/"):
+    raise SystemExit("Simulator operator origin must be an HTTPS origin without a trailing slash")
+if not https_origin(authority_url) or authority_url.endswith("/"):
+    raise SystemExit("budget authority URL must be an HTTPS origin without a trailing slash")
+path = Path(directory)
+if (
+    not path.is_absolute()
+    or os.path.normpath(path) != str(path)
+    or not safe_path.fullmatch(str(path))
+    or os.path.realpath(path) != str(path)
+):
+    raise SystemExit("Simulator operator auth directory must be a canonical absolute path")
+try:
+    directory_info = os.lstat(path)
+except OSError as error:
+    raise SystemExit(f"cannot inspect Simulator operator auth directory: {error}")
+if (
+    not stat.S_ISDIR(directory_info.st_mode)
+    or directory_info.st_uid != os.geteuid()
+    or stat.S_IMODE(directory_info.st_mode) != 0o700
+):
+    raise SystemExit("Simulator operator auth directory must be owned by the invoking user with mode 0700")
+
+required_files = {
+    "simulator.crt",
+    "simulator.key",
+    "oidc.json",
+    "client.secret",
+    "oidc-ca.crt",
+    "budget-client.crt",
+    "budget-client.key",
+    "budget-ca.crt",
+}
+try:
+    entries = set(os.listdir(path))
+except OSError as error:
+    raise SystemExit(f"cannot list Simulator operator auth directory: {error}")
+if entries != required_files:
+    raise SystemExit("Simulator operator auth directory must contain exactly the documented OIDC and authority files")
+
+digest = hashlib.sha256()
+for name in sorted(required_files):
+    file_path = path / name
+    try:
+        info = os.lstat(file_path)
+    except OSError as error:
+        raise SystemExit(f"cannot inspect Simulator operator auth file {name}: {error}")
+    if (
+        not stat.S_ISREG(info.st_mode)
+        or stat.S_ISLNK(info.st_mode)
+        or info.st_uid != os.geteuid()
+        or stat.S_IMODE(info.st_mode) != 0o600
+        or not safe_path.fullmatch(str(file_path))
+    ):
+        raise SystemExit(f"Simulator operator auth file {name} must be a regular invoking-user-owned mode-0600 file")
+    data = file_path.read_bytes()
+    if name == "oidc.json":
+        try:
+            config = json.loads(data)
+        except (UnicodeDecodeError, json.JSONDecodeError) as error:
+            raise SystemExit(f"Simulator OIDC config is invalid JSON: {error}")
+        if (
+            not isinstance(config, dict)
+            or config.get("version") != 1
+            or config.get("redirect_url") != origin + "/auth/operator/callback"
+        ):
+            raise SystemExit("Simulator OIDC config callback must match the exact HTTPS origin")
+    digest.update(name.encode())
+    digest.update(b"\0")
+    digest.update(data)
+    digest.update(b"\0")
+digest.update(origin.encode())
+digest.update(b"\0")
+digest.update(authority_url.encode())
+digest.update(b"\0")
+digest.update(server_name.encode())
+digest.update(b"\0")
+digest.update(trusted_peer.encode())
+print(digest.hexdigest())
+PY
+    ) || fail "invalid protected Simulator operator or budget-authority configuration"
+fi
 demo_project=
 demo_image=
 demo_release=
@@ -267,7 +415,7 @@ PY
 
 inspect_container() {
     docker container inspect --format \
-        '{{index .Config.Labels "zpr.demo.package"}}|{{index .Config.Labels "zpr.demo.release"}}|{{.Image}}|{{range $port, $bindings := .HostConfig.PortBindings}}{{range $bindings}}{{.HostIp}}:{{.HostPort}}{{end}}{{end}}|{{.State.Status}}' \
+        '{{index .Config.Labels "zpr.demo.package"}}|{{index .Config.Labels "zpr.demo.release"}}|{{.Image}}|{{range $port, $bindings := .HostConfig.PortBindings}}{{range $bindings}}{{.HostIp}}:{{.HostPort}}{{end}}{{end}}|{{index .Config.Labels "zpr.simulator.operator-config-sha256"}}|{{index .Config.Labels "zpr.simulator.packaged-provisioning-enabled"}}|{{index .Config.Labels "zpr.simulator.docker-network"}}|{{.State.Status}}' \
         "$container_name"
 }
 
@@ -309,7 +457,7 @@ resolve_docker_socket() {
 
 verify_container() {
     metadata=$1
-    expected_prefix="simulator|$release_id|$expected_image_id|127.0.0.1:$host_port|"
+    expected_prefix="simulator|$release_id|$expected_image_id|127.0.0.1:$host_port|$operator_config_digest|$enable_provisioning|$docker_network|"
     case "$metadata" in
         "$expected_prefix"*) ;;
         *) fail "container name is occupied by a different or modified container: $container_name" ;;
@@ -320,8 +468,13 @@ print_status() {
     metadata=$1
     verify_container "$metadata"
     container_state=${metadata##*|}
+    if [ -n "$operator_origin" ]; then
+        ui_origin=$operator_origin
+    else
+        ui_origin="http://127.0.0.1:$host_port"
+    fi
     case "$container_state" in
-        running) echo "Simulator container running (UI endpoint http://127.0.0.1:$host_port; application readiness not checked)" ;;
+        running) echo "Simulator container running (UI endpoint $ui_origin; application readiness not checked)" ;;
         *) echo "Simulator stopped (container $container_name; state $container_state)" ;;
     esac
 }
@@ -342,6 +495,7 @@ case "$command_name" in
         resolve_docker_socket
         lookup_container
         if [ -n "$existing_container" ]; then
+            verify_container "$existing_container"
             container_state=${existing_container##*|}
             case "$container_state" in
                 running|paused|restarting)
@@ -400,9 +554,7 @@ PY
         [ "$image_metadata" = "$expected_image_id|linux|amd64" ] ||
             fail "loaded Simulator image does not match the package's pinned Linux/amd64 image identity"
 
-        enable_provisioning=${ZPR_SIMULATOR_ENABLE_PROVISIONING:-0}
         case "$enable_provisioning" in
-            0) ;;
             1)
                 [ -n "$demo_project" ] ||
                     fail "provisioning requires the validated paired ZPR package"
@@ -411,11 +563,26 @@ PY
                 [ "$capability" = 1 ] ||
                     fail "this Simulator image does not support packaged machine provisioning"
                 ;;
-            *) fail "ZPR_SIMULATOR_ENABLE_PROVISIONING must be 0 or 1" ;;
+            0) ;;
         esac
+
+        network_metadata=$(docker network inspect "$docker_network" \
+            --format '{{.Driver}}|{{.Internal}}|{{.Scope}}|{{(index .IPAM.Config 0).Gateway}}') ||
+            fail "Simulator Docker network is unavailable: $docker_network"
+        network_driver=${network_metadata%%|*}
+        network_details=${network_metadata#*|}
+        network_internal=${network_details%%|*}
+        network_details=${network_details#*|}
+        network_scope=${network_details%%|*}
+        network_gateway=${network_details#*|}
+        [ "$network_driver" = bridge ] && [ "$network_internal" = false ] && [ "$network_scope" = local ] ||
+            fail "Simulator requires a non-internal local bridge network"
+        [ -n "$network_gateway" ] ||
+            fail "Simulator Docker network has no gateway address"
 
         lookup_container
         if [ -n "$existing_container" ]; then
+            verify_container "$existing_container"
             container_state=${existing_container##*|}
             if [ "$container_state" = running ]; then
                 print_status "$existing_container"
@@ -424,12 +591,30 @@ PY
             docker container start "$container_name" >/dev/null ||
                 fail "Docker could not start the existing Simulator container"
         else
+            if [ -n "$operator_auth_dir" ]; then
+                if [ ! -e "$state_dir/operator-auth" ]; then
+                    mkdir -m 700 "$state_dir/operator-auth" ||
+                        fail "cannot create Simulator operator auth mountpoint"
+                fi
+                [ -d "$state_dir/operator-auth" ] && [ ! -L "$state_dir/operator-auth" ] ||
+                    fail "Simulator operator auth mountpoint is not a private directory"
+                if [ -z "$simulator_operator_trusted_peer" ]; then
+                    simulator_operator_trusted_peer=$network_gateway
+                fi
+                validate_ipv4_address "$simulator_operator_trusted_peer" ||
+                    fail "Simulator trusted proxy peer must be an IPv4 address"
+            fi
+
             set -- container run -d \
                 --name "$container_name" \
                 --label zpr.demo.package=simulator \
                 --label "zpr.demo.release=$release_id" \
+                --label "zpr.simulator.operator-config-sha256=$operator_config_digest" \
+                --label "zpr.simulator.packaged-provisioning-enabled=$enable_provisioning" \
+                --label "zpr.simulator.docker-network=$docker_network" \
                 --restart unless-stopped \
-                --user "$user_id:$group_id"
+                --user "$user_id:$group_id" \
+                --network "$docker_network"
             if [ "$enable_provisioning" = 1 ]; then
                 set -- "$@" \
                     --mount "type=bind,source=$ZPR_DEMO_PACKAGE_DIR,target=$ZPR_DEMO_PACKAGE_DIR,readonly" \
@@ -448,7 +633,30 @@ PY
                 -p "127.0.0.1:$host_port:8788" \
                 -v "$docker_socket:/var/run/docker.sock" \
                 -v "$runtime_dir:/opt/zpr-simulator/runtime:ro" \
-                -v "$state_dir:/var/lib/zpr-simulator" \
+                -v "$state_dir:/var/lib/zpr-simulator"
+            if [ -n "$operator_auth_dir" ]; then
+                set -- "$@" \
+                    --mount "type=bind,source=$operator_auth_dir,target=/var/lib/zpr-simulator/operator-auth,readonly"
+                if [ "$docker_network" = bridge ]; then
+                    set -- "$@" --add-host "zpr-id.localhost:host-gateway"
+                fi
+                set -- "$@" \
+                    -e ZPR_SIMULATOR_OPERATOR_ORIGIN="$operator_origin" \
+                    -e ZPR_SIMULATOR_OPERATOR_CERT_FILE=/var/lib/zpr-simulator/operator-auth/simulator.crt \
+                    -e ZPR_SIMULATOR_OPERATOR_KEY_FILE=/var/lib/zpr-simulator/operator-auth/simulator.key \
+                    -e ZPR_SIMULATOR_OPERATOR_OIDC_CONFIG_FILE=/var/lib/zpr-simulator/operator-auth/oidc.json \
+                    -e ZPR_SIMULATOR_OPERATOR_OIDC_SECRET_FILE=/var/lib/zpr-simulator/operator-auth/client.secret \
+                    -e ZPR_SIMULATOR_OPERATOR_OIDC_CA_FILE=/var/lib/zpr-simulator/operator-auth/oidc-ca.crt \
+                    -e ZPR_SIMULATOR_OPERATOR_TRUSTED_PEER_IP="$simulator_operator_trusted_peer" \
+                    -e ZPR_BUDGET_AUTHORITY_URL="$budget_authority_url" \
+                    -e ZPR_BUDGET_AUTHORITY_CLIENT_CERT_FILE=/var/lib/zpr-simulator/operator-auth/budget-client.crt \
+                    -e ZPR_BUDGET_AUTHORITY_CLIENT_KEY_FILE=/var/lib/zpr-simulator/operator-auth/budget-client.key \
+                    -e ZPR_BUDGET_AUTHORITY_CA_FILE=/var/lib/zpr-simulator/operator-auth/budget-ca.crt
+                if [ -n "$budget_authority_tls_server_name" ]; then
+                    set -- "$@" -e ZPR_BUDGET_AUTHORITY_TLS_SERVER_NAME="$budget_authority_tls_server_name"
+                fi
+            fi
+            set -- "$@" \
                 --workdir /opt/zpr-simulator/runtime \
                 -e SIMULATION_MANIFEST=/opt/zpr-simulator/runtime/simulation-environment.json \
                 -e SIMULATION_ORGANIZATION_ID=demo \

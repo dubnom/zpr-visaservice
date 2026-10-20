@@ -1,12 +1,15 @@
 # Simulator companion packaging
 
 Status: **Engineering slices only**. Linux/amd64 paired runtime archives now
-provide an installed ZPR demo and an unprovisioned Simulator UI. They are not
-a full Simulator lab. A separate acceptance candidate described below runs a
-bounded traffic scenario against the installed demo. The immediate target is a
-version-matched Simulator companion archive paired with the ZPR demo package,
-not a production companion release. Full lab provisioning and clean-host scenario
-acceptance remain unfinished. See the [demo package
+provide an installed ZPR demo and an unprovisioned Simulator UI. The package
+includes five organization profiles and their 17 bundled scenarios alongside
+the separate demo bootstrap profile and three packaged acceptance scenarios.
+Those catalog assets do not mean their organizations are provisioned or that
+their scenarios are run-ready. A separate acceptance candidate described below
+runs a bounded traffic scenario against the installed demo. The immediate target
+is a version-matched Simulator companion archive paired with the ZPR demo
+package, not a production companion release. Full lab provisioning and clean-host
+scenario acceptance remain unfinished. See the [demo package
 contract](../system/DEMO-PACKAGE-CONTRACT.md) for its allowed shortcuts, exact
 acceptance test and current blockers, and the
 [approved production companion scope](../../../System%20release%20plan.md#simulator-companion-package)
@@ -198,6 +201,41 @@ creates private persistent state, and binds the package and provisioning root
 at their exact host paths so nested Docker mounts do not depend on a checkout.
 Docker-socket access remains root-equivalent and is approved only on an isolated
 disposable demo host.
+
+Protected operator login and scenario-budget approval are configured together;
+the launcher refuses partial configuration and does not enable an auth-disabled
+fallback. The auth directory must be a canonical absolute, invoking-user-owned
+`0700` directory containing exactly these regular invoking-user-owned `0600`
+files: `simulator.crt`, `simulator.key`, `oidc.json`, `client.secret`,
+`oidc-ca.crt`, `budget-client.crt`, `budget-client.key`, and `budget-ca.crt`.
+The OIDC JSON must be version 1 and its `redirect_url` must exactly equal the
+configured HTTPS Simulator origin plus `/auth/operator/callback`. Configure an
+explicit HTTPS origin and independent HTTPS budget-authority origin, each with
+its port and no path, query, fragment, or trailing slash. The authority mTLS
+client identity is separate from the Simulator OIDC identity; the authority
+must validate the approved operator and exact requested scope itself.
+
+For a protected launch, add these values to the `sudo env` command above:
+
+```sh
+  ZPR_SIMULATOR_OPERATOR_AUTH_DIR=/absolute/private/operator-auth \
+  ZPR_SIMULATOR_OPERATOR_ORIGIN=https://simulator.lab.example.test:8789 \
+  ZPR_BUDGET_AUTHORITY_URL=https://control-service.lab.example.test:8790 \
+  ZPR_BUDGET_AUTHORITY_TLS_SERVER_NAME=control-service.lab.example.test \
+```
+
+The trusted proxy peer defaults to the selected Docker bridge gateway; explicitly set
+`ZPR_SIMULATOR_OPERATOR_TRUSTED_PEER_IP` only when the deployment uses a
+different verified proxy peer. `ZPR_SIMULATOR_DOCKER_NETWORK` may select an
+existing non-internal local bridge network shared with the OIDC provider and
+independent Control-Service; on a user-defined network, provide the
+`zpr-id.localhost` DNS alias and authority-service DNS name there. The launcher
+does not connect or reconfigure other containers. Credential files are mounted read-only and
+excluded from the configuration digest output; changing the files or endpoints
+causes the launcher to refuse an existing container rather than silently
+reconfigure it. An HTTPS URL in launcher output is only the configured UI
+origin, not evidence that DNS, TLS, OIDC login, budget authority, or protected
+scenario execution is ready.
 
 Choose **Machine provisioning**, select one of the two profile-enabled members,
 refresh, select the explicit demo-key approval checkbox, and provision.

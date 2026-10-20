@@ -334,6 +334,151 @@ func TestGreatLakesLDIFMatchesPeopleSiteAttributesAndGroups(t *testing.T) {
 	}
 }
 
+func TestNorthstarLDIFMatchesProfileAndPackagedFixtures(t *testing.T) {
+	exampleDirectory := filepath.Join("examples", "organizations")
+	packageDirectory := filepath.Join("..", "..", "packaging", "demo-runtime", "organizations")
+	organization, err := loadSimulatorOrganization(exampleDirectory, "northstar")
+	if err != nil {
+		t.Fatal(err)
+	}
+	packagedOrganization, err := loadSimulatorOrganization(packageDirectory, "northstar")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if organization.Directory.BaseDN != packagedOrganization.Directory.BaseDN ||
+		organization.PolicyConfig != packagedOrganization.PolicyConfig ||
+		organization.PolicyCatalog != packagedOrganization.PolicyCatalog {
+		t.Fatal("Northstar example and packaged organization profiles differ")
+	}
+
+	var seed strings.Builder
+	for _, filename := range organization.Directory.LDIFFiles {
+		examplePath := filepath.Join(exampleDirectory, "northstar", filename)
+		packagedPath := filepath.Join(packageDirectory, "northstar", filename)
+		exampleContent, err := os.ReadFile(examplePath)
+		if err != nil {
+			t.Fatal(err)
+		}
+		packagedContent, err := os.ReadFile(packagedPath)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if string(exampleContent) != string(packagedContent) {
+			t.Errorf("Northstar LDIF %q differs from its packaged copy", filename)
+		}
+		seed.Write(exampleContent)
+		seed.WriteByte('\n')
+	}
+
+	directory, err := parseAssertionLDAPAttributes(seed.String(), []string{
+		"cn", "mail", "ou", "title", "zprMachineId", "zprMachineLocation",
+		"zprMachineOwner", "zprMachineSecure",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(directory.People) != len(organization.Directory.People) {
+		t.Fatalf("Northstar assertion people = %d, want %d", len(directory.People), len(organization.Directory.People))
+	}
+	for _, person := range organization.Directory.People {
+		attributes, exists := directory.PersonAttributes[person.UID]
+		if !exists {
+			t.Errorf("Northstar person %q is missing from LDIF", person.UID)
+			continue
+		}
+		for name, want := range map[string]string{
+			"cn": person.Name, "mail": person.Email, "ou": person.Department, "title": person.Title,
+		} {
+			if values := attributes[name]; len(values) != 1 || values[0] != want {
+				t.Errorf("Northstar person %q %s = %v, want %q", person.UID, name, values, want)
+			}
+		}
+	}
+	for _, group := range organization.Directory.Groups {
+		actual := make(map[string]bool)
+		for _, member := range directory.Groups[group.Name] {
+			actual[member] = true
+		}
+		if len(actual) != len(group.Members) {
+			t.Errorf("Northstar group %q has %d LDIF members, want %d", group.Name, len(actual), len(group.Members))
+		}
+		for _, member := range group.Members {
+			if !actual[member] {
+				t.Errorf("Northstar group %q is missing member %q in LDIF", group.Name, member)
+			}
+		}
+	}
+
+	manifestContent, err := os.ReadFile(filepath.Join("..", "..", "packaging", "demo-runtime", "simulation-environment.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var manifest struct {
+		Machines []struct {
+			ID       string `json:"id"`
+			Owner    string `json:"owner"`
+			Secure   bool   `json:"secure"`
+			Location string `json:"location"`
+		} `json:"machines"`
+	}
+	if err := json.Unmarshal(manifestContent, &manifest); err != nil {
+		t.Fatal(err)
+	}
+	if len(manifest.Machines) != 20 {
+		t.Fatalf("Northstar simulation manifest has %d machines, want 20", len(manifest.Machines))
+	}
+	seenMachines := make(map[string]bool)
+	for _, machine := range manifest.Machines {
+		if seenMachines[machine.ID] {
+			t.Errorf("Northstar simulation manifest repeats machine %q", machine.ID)
+		}
+		seenMachines[machine.ID] = true
+		attributes, exists := directory.PersonAttributes[machine.ID]
+		if !exists {
+			t.Errorf("Northstar machine %q is missing from LDIF", machine.ID)
+			continue
+		}
+		if values := attributes["zprMachineId"]; len(values) != 1 || values[0] != machine.ID {
+			t.Errorf("Northstar machine %q identity = %v", machine.ID, values)
+		}
+		location := machine.Location
+		if location == "" || location == "Not provisioned" {
+			location = "North Campus"
+		}
+		if values := attributes["zprMachineLocation"]; len(values) != 1 || values[0] != location {
+			t.Errorf("Northstar machine %q location = %v, want %q", machine.ID, values, location)
+		}
+		secure := "FALSE"
+		if machine.Secure {
+			secure = "TRUE"
+		}
+		if values := attributes["zprMachineSecure"]; len(values) != 1 || values[0] != secure {
+			t.Errorf("Northstar machine %q secure state = %v, want %q", machine.ID, values, secure)
+		}
+		if machine.Owner == "" {
+			if len(attributes["zprMachineOwner"]) != 0 {
+				t.Errorf("unowned Northstar machine %q has an invented owner %v", machine.ID, attributes["zprMachineOwner"])
+			}
+		} else if values := attributes["zprMachineOwner"]; len(values) != 1 || values[0] != machine.Owner {
+			t.Errorf("Northstar machine %q owner = %v, want %q", machine.ID, values, machine.Owner)
+		}
+	}
+
+	for _, filename := range []string{"README.md", "demo-policy-catalog.json", "policy-demo.zplc"} {
+		exampleContent, err := os.ReadFile(filepath.Join("examples", "northstar", filename))
+		if err != nil {
+			t.Fatal(err)
+		}
+		packagedContent, err := os.ReadFile(filepath.Join(packageDirectory, "northstar", filename))
+		if err != nil {
+			t.Fatal(err)
+		}
+		if string(exampleContent) != string(packagedContent) {
+			t.Errorf("Northstar asset %q differs from its packaged copy", filename)
+		}
+	}
+}
+
 func TestBundledOrganizationSeedsHaveSingleValuedLocations(t *testing.T) {
 	organizations, err := loadSimulatorOrganizations(filepath.Join("examples", "organizations"))
 	if err != nil {

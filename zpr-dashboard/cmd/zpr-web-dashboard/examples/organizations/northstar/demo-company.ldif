@@ -1,0 +1,121 @@
+dn: dc=northstar,dc=test
+objectClass: top
+objectClass: dcObject
+objectClass: organization
+dc: northstar
+o: Northstar Labs
+
+dn: ou=People,dc=northstar,dc=test
+objectClass: top
+objectClass: organizationalUnit
+ou: People
+
+dn: ou=Machines,dc=northstar,dc=test
+objectClass: top
+objectClass: organizationalUnit
+ou: Machines
+
+dn: ou=Roles,dc=northstar,dc=test
+objectClass: top
+objectClass: organizationalUnit
+ou: Roles
+
+dn: ou=Departments,dc=northstar,dc=test
+objectClass: top
+objectClass: organizationalUnit
+ou: Departments
+
+dn: ou=Service Accounts,dc=northstar,dc=test
+objectClass: top
+objectClass: organizationalUnit
+ou: Service Accounts
+
+dn: ou=Engineering,ou=Departments,dc=northstar,dc=test
+objectClass: top
+objectClass: organizationalUnit
+ou: Engineering
+
+dn: ou=Platform,ou=Engineering,ou=Departments,dc=northstar,dc=test
+objectClass: top
+objectClass: organizationalUnit
+ou: Platform
+
+dn: ou=Product,ou=Engineering,ou=Departments,dc=northstar,dc=test
+objectClass: top
+objectClass: organizationalUnit
+ou: Product
+
+dn: ou=Operations,ou=Departments,dc=northstar,dc=test
+objectClass: top
+objectClass: organizationalUnit
+ou: Operations
+
+dn: ou=IT,ou=Operations,ou=Departments,dc=northstar,dc=test
+objectClass: top
+objectClass: organizationalUnit
+ou: IT
+
+dn: ou=Support,ou=Operations,ou=Departments,dc=northstar,dc=test
+objectClass: top
+objectClass: organizationalUnit
+ou: Support
+
+dn: ou=Research,ou=Departments,dc=northstar,dc=test
+objectClass: top
+objectClass: organizationalUnit
+ou: Research
+
+dn: ou=Security,ou=Research,ou=Departments,dc=northstar,dc=test
+objectClass: top
+objectClass: organizationalUnit
+ou: Security
+
+dn: ou=Data Science,ou=Research,ou=Departments,dc=northstar,dc=test
+objectClass: top
+objectClass: organizationalUnit
+ou: Data Science
+
+dn: ou=Finance,ou=Departments,dc=northstar,dc=test
+objectClass: top
+objectClass: organizationalUnit
+ou: Finance
+
+dn: ou=Accounting,ou=Finance,ou=Departments,dc=northstar,dc=test
+objectClass: top
+objectClass: organizationalUnit
+ou: Accounting
+
+dn: ou=Payroll,ou=Finance,ou=Departments,dc=northstar,dc=test
+objectClass: top
+objectClass: organizationalUnit
+ou: Payroll
+
+dn: ou=Sales,ou=Departments,dc=northstar,dc=test
+objectClass: top
+objectClass: organizationalUnit
+ou: Sales
+
+dn: ou=Field,ou=Sales,ou=Departments,dc=northstar,dc=test
+objectClass: top
+objectClass: organizationalUnit
+ou: Field
+
+dn: ou=People Operations,ou=Departments,dc=northstar,dc=test
+objectClass: top
+objectClass: organizationalUnit
+ou: People Operations
+
+dn: ou=Talent,ou=People Operations,ou=Departments,dc=northstar,dc=test
+objectClass: top
+objectClass: organizationalUnit
+ou: Talent
+
+dn: ou=HR,ou=People Operations,ou=Departments,dc=northstar,dc=test
+objectClass: top
+objectClass: organizationalUnit
+ou: HR
+
+dn: ou=Compliance,ou=Research,ou=Departments,dc=northstar,dc=test
+objectClass: top
+objectClass: organizationalUnit
+ou: Compliance

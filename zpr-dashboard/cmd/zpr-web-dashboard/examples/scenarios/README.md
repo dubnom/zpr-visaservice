@@ -108,8 +108,8 @@ must include both `EchoWeb` and `MetricsWeb` TCP grants for these calls to succe
 The runner routes client traffic through its selected PH link using the ZPR
 address granted to that client, and routes service replies through the service
 PH link rather than the machine-control link.
-Scenario files may reference at most ten distinct machines, and the runner also
-refuses to start a machine if that would put the live fleet above ten.
+Scenario files may reference at most twelve distinct machines, and the runner
+also refuses to start a machine if that would put the live fleet above twelve.
 
 The `load-lab-fanout-50.json`, `load-lab-fanout-100.json`,
 `load-lab-fanout-150.json`, and `load-lab-fanout.json` scenarios start the same

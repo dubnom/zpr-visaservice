@@ -611,7 +611,7 @@ func buildCurrentSimulatorScenarioPlan(organizationID, scenarioID string) (simul
 		OrganizationID: organizationID, Organization: organization,
 		Scenario: scenario, Manifest: manifest, TopologyResolved: topologyResolved,
 		Policy:          simulatorRuntimePolicyEvidence{OrganizationID: organizationID},
-		NorthstarAssets: simulatorRuntimeNorthstarAssetEvidence{},
+		NorthstarAssets: simulatorRuntimeNorthstarAssets(organization, simulatorOrganizationsDirectory()),
 	}
 	scopeDigest, err := simulatorScenarioAuthorizationScopeDigest(input)
 	if err != nil {
@@ -625,6 +625,44 @@ func buildCurrentSimulatorScenarioPlan(organizationID, scenarioID string) (simul
 		addSimulatorRuntimePlanBlocker(&plan, "scenario validation failed: "+err.Error())
 	}
 	return plan, nil
+}
+
+func simulatorRuntimeNorthstarAssets(organization simulatorOrganization, organizationsDirectory string) simulatorRuntimeNorthstarAssetEvidence {
+	if organization.ID != "northstar" {
+		return simulatorRuntimeNorthstarAssetEvidence{}
+	}
+
+	missing := make([]string, 0)
+	directoryRoot := filepath.Join(organizationsDirectory, organization.ID)
+	for _, filename := range organization.Directory.LDIFFiles {
+		if _, err := readOrganizationDefinition(directoryRoot, filename); err != nil {
+			missing = append(missing, "directory/"+filename)
+		}
+	}
+
+	assetRoots := []string{organizationsDirectory, filepath.Dir(organizationsDirectory)}
+	for _, asset := range []struct {
+		name string
+		path string
+	}{
+		{name: "policy-config", path: organization.PolicyConfig},
+		{name: "policy-catalog", path: organization.PolicyCatalog},
+	} {
+		found := false
+		for _, root := range assetRoots {
+			if _, err := readOrganizationDefinition(root, asset.path); err == nil {
+				found = true
+				break
+			}
+		}
+		if !found {
+			missing = append(missing, asset.name)
+		}
+	}
+	return simulatorRuntimeNorthstarAssetEvidence{
+		Resolved: len(missing) == 0,
+		Missing:  missing,
+	}
 }
 
 func readExplicitSimulatorScenario(scenarioID string) (simulatorScenario, error) {

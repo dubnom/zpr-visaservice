@@ -1,0 +1,272 @@
+dn: uid=elena.park,ou=People,dc=northstar,dc=test
+objectClass: top
+objectClass: person
+objectClass: organizationalPerson
+objectClass: inetOrgPerson
+uid: elena.park
+cn: Elena Park
+sn: Park
+givenName: Elena
+mail: elena.park@northstar.example
+ou: Platform
+title: Platform Engineering Manager
+
+dn: uid=jamal.brooks,ou=People,dc=northstar,dc=test
+objectClass: top
+objectClass: person
+objectClass: organizationalPerson
+objectClass: inetOrgPerson
+uid: jamal.brooks
+cn: Jamal Brooks
+sn: Brooks
+givenName: Jamal
+mail: jamal.brooks@northstar.example
+ou: Platform
+title: Site Reliability Engineer
+
+dn: uid=sophie.nguyen,ou=People,dc=northstar,dc=test
+objectClass: top
+objectClass: person
+objectClass: organizationalPerson
+objectClass: inetOrgPerson
+uid: sophie.nguyen
+cn: Sophie Nguyen
+sn: Nguyen
+givenName: Sophie
+mail: sophie.nguyen@northstar.example
+ou: Platform
+title: Infrastructure Engineer
+
+dn: uid=theo.martin,ou=People,dc=northstar,dc=test
+objectClass: top
+objectClass: person
+objectClass: organizationalPerson
+objectClass: inetOrgPerson
+uid: theo.martin
+cn: Theo Martin
+sn: Martin
+givenName: Theo
+mail: theo.martin@northstar.example
+ou: Platform
+title: Systems Engineer
+
+dn: uid=arjun.patel,ou=People,dc=northstar,dc=test
+objectClass: top
+objectClass: person
+objectClass: organizationalPerson
+objectClass: inetOrgPerson
+uid: arjun.patel
+cn: Arjun Patel
+sn: Patel
+givenName: Arjun
+mail: arjun.patel@northstar.example
+ou: Product
+title: Product Engineering Lead
+
+dn: uid=zoe.carter,ou=People,dc=northstar,dc=test
+objectClass: top
+objectClass: person
+objectClass: organizationalPerson
+objectClass: inetOrgPerson
+uid: zoe.carter
+cn: Zoe Carter
+sn: Carter
+givenName: Zoe
+mail: zoe.carter@northstar.example
+ou: Product
+title: Frontend Engineer
+
+dn: uid=omar.hassan,ou=People,dc=northstar,dc=test
+objectClass: top
+objectClass: person
+objectClass: organizationalPerson
+objectClass: inetOrgPerson
+uid: omar.hassan
+cn: Omar Hassan
+sn: Hassan
+givenName: Omar
+mail: omar.hassan@northstar.example
+ou: Product
+title: Backend Engineer
+
+dn: uid=nina.ross,ou=People,dc=northstar,dc=test
+objectClass: top
+objectClass: person
+objectClass: organizationalPerson
+objectClass: inetOrgPerson
+uid: nina.ross
+cn: Nina Ross
+sn: Ross
+givenName: Nina
+mail: nina.ross@northstar.example
+ou: IT
+title: IT Manager
+
+dn: uid=ben.torres,ou=People,dc=northstar,dc=test
+objectClass: top
+objectClass: person
+objectClass: organizationalPerson
+objectClass: inetOrgPerson
+uid: ben.torres
+cn: Ben Torres
+sn: Torres
+givenName: Ben
+mail: ben.torres@northstar.example
+ou: IT
+title: Systems Administrator
+
+dn: uid=grace.lee,ou=People,dc=northstar,dc=test
+objectClass: top
+objectClass: person
+objectClass: organizationalPerson
+objectClass: inetOrgPerson
+uid: grace.lee
+cn: Grace Lee
+sn: Lee
+givenName: Grace
+mail: grace.lee@northstar.example
+ou: IT
+title: Network Administrator
+
+dn: uid=hana.kim,ou=People,dc=northstar,dc=test
+objectClass: top
+objectClass: person
+objectClass: organizationalPerson
+objectClass: inetOrgPerson
+uid: hana.kim
+cn: Hana Kim
+sn: Kim
+givenName: Hana
+mail: hana.kim@northstar.example
+ou: Security
+title: Security Research Lead
+
+dn: uid=daniel.okafor,ou=People,dc=northstar,dc=test
+objectClass: top
+objectClass: person
+objectClass: organizationalPerson
+objectClass: inetOrgPerson
+uid: daniel.okafor
+cn: Daniel Okafor
+sn: Okafor
+givenName: Daniel
+mail: daniel.okafor@northstar.example
+ou: Security
+title: Threat Researcher
+
+dn: uid=taylor.hale,ou=People,dc=northstar,dc=test
+objectClass: top
+objectClass: person
+objectClass: organizationalPerson
+objectClass: inetOrgPerson
+uid: taylor.hale
+cn: Taylor Hale
+sn: Hale
+givenName: Taylor
+mail: taylor.hale@northstar.example
+ou: Accounting
+title: Accounting Manager
+
+dn: uid=riley.stone,ou=People,dc=northstar,dc=test
+objectClass: top
+objectClass: person
+objectClass: organizationalPerson
+objectClass: inetOrgPerson
+uid: riley.stone
+cn: Riley Stone
+sn: Stone
+givenName: Riley
+mail: riley.stone@northstar.example
+ou: HR
+title: HR Partner
+
+dn: uid=avery.wong,ou=People,dc=northstar,dc=test
+objectClass: top
+objectClass: person
+objectClass: organizationalPerson
+objectClass: inetOrgPerson
+uid: avery.wong
+cn: Avery Wong
+sn: Wong
+givenName: Avery
+mail: avery.wong@northstar.example
+ou: Legal
+title: Legal Reviewer
+
+dn: uid=casey.morgan,ou=People,dc=northstar,dc=test
+objectClass: top
+objectClass: person
+objectClass: organizationalPerson
+objectClass: inetOrgPerson
+uid: casey.morgan
+cn: Casey Morgan
+sn: Morgan
+givenName: Casey
+mail: casey.morgan@northstar.example
+ou: Talent
+title: Technical Recruiter
+
+dn: uid=parker.ellis,ou=People,dc=northstar,dc=test
+objectClass: top
+objectClass: person
+objectClass: organizationalPerson
+objectClass: inetOrgPerson
+uid: parker.ellis
+cn: Parker Ellis
+sn: Ellis
+givenName: Parker
+mail: parker.ellis@northstar.example
+ou: Sales
+title: Sales Lead
+
+dn: uid=quinn.baker,ou=People,dc=northstar,dc=test
+objectClass: top
+objectClass: person
+objectClass: organizationalPerson
+objectClass: inetOrgPerson
+uid: quinn.baker
+cn: Quinn Baker
+sn: Baker
+givenName: Quinn
+mail: quinn.baker@northstar.example
+ou: Data Science
+title: Data Analyst
+
+dn: uid=jordan.reed,ou=People,dc=northstar,dc=test
+objectClass: top
+objectClass: person
+objectClass: organizationalPerson
+objectClass: inetOrgPerson
+uid: jordan.reed
+cn: Jordan Reed
+sn: Reed
+givenName: Jordan
+mail: jordan.reed@northstar.example
+ou: Operations
+title: Executive Director
+
+dn: uid=alexis.gray,ou=People,dc=northstar,dc=test
+objectClass: top
+objectClass: person
+objectClass: organizationalPerson
+objectClass: inetOrgPerson
+uid: alexis.gray
+cn: Alexis Gray
+sn: Gray
+givenName: Alexis
+mail: alexis.gray@northstar.example
+ou: People Operations
+title: People Manager
+
+dn: uid=devon.price,ou=People,dc=northstar,dc=test
+objectClass: top
+objectClass: person
+objectClass: organizationalPerson
+objectClass: inetOrgPerson
+uid: devon.price
+cn: Devon Price
+sn: Price
+givenName: Devon
+mail: devon.price@northstar.example
+ou: Compliance
+title: Compliance Analyst

@@ -5,8 +5,8 @@
   "packaged_provisioning": {
     "version": 2,
     "driver": "shared-approved-bootstrap",
-    "primary_machine_id": "demo-machine-01",
-    "machines": ["demo-machine-01", "demo-machine-02"],
+    "primary_machine_id": "machine-01",
+    "machines": ["machine-01", "machine-02"],
     "service": "OciWeb"
   },
   "runtime": {

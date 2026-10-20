@@ -1,0 +1,30 @@
+{
+  "id": "internet-gateway-egress",
+  "organization_id": "northstar",
+  "name": "Policy-governed internet gateway",
+  "description": "Send an authorized Finance request through the InternetGateway ZPR service to its fixed HTTPS origin.",
+  "parallel": true,
+  "steps": [
+    {"id": "client-machine", "action": "start_machine", "machine": "machine-03"},
+    {"id": "gateway-machine", "action": "start_machine", "machine": "machine-07"},
+    {"id": "client-controller", "action": "wait_controller", "machine": "machine-03", "timeout_seconds": 90},
+    {"id": "gateway-controller", "action": "wait_controller", "machine": "machine-07", "timeout_seconds": 90},
+    {"id": "client-login", "action": "login", "machine": "machine-03", "user": "sophie.nguyen"},
+    {"id": "gateway-login", "action": "login", "machine": "machine-07", "user": "omar.hassan"},
+    {"id": "client-selection", "action": "select_workloads", "machine": "machine-03", "workloads": ["finance-client"]},
+    {"id": "gateway-selection", "action": "select_workloads", "machine": "machine-07", "workloads": ["internet-gateway"]},
+    {"id": "client-workload", "action": "start_workload", "machine": "machine-03", "component": "finance-client"},
+    {"id": "gateway-workload", "action": "start_workload", "machine": "machine-07", "component": "internet-gateway"},
+    {"id": "gateway-ready", "action": "start_test_service", "machine": "machine-07", "component": "internet-gateway"},
+    {"id": "external-health", "after": ["gateway-ready"], "action": "request_test_service", "machine": "machine-03", "component": "finance-client", "target": "internet-gateway"}
+  ],
+  "cleanup": [
+    {"action": "stop_test_service", "machine": "machine-07", "component": "internet-gateway"},
+    {"action": "stop_workload", "machine": "machine-03", "component": "finance-client"},
+    {"action": "stop_workload", "machine": "machine-07", "component": "internet-gateway"},
+    {"action": "logout", "machine": "machine-03"},
+    {"action": "logout", "machine": "machine-07"},
+    {"action": "stop_machine", "machine": "machine-03"},
+    {"action": "stop_machine", "machine": "machine-07"}
+  ]
+}

@@ -1,5 +1,18 @@
 # Northstar Policy Studio Demo
 
+Northstar's organization profile and `simulation-environment.json` use fictional
+people and unprovisioned endpoint fixtures. Generate the four LDIF seed files
+from those inputs, then verify that the packaged copies and policy assets match:
+
+```sh
+python3 packaging/demo-runtime/generate-northstar-directory.py
+python3 packaging/demo-runtime/generate-northstar-directory.py --check
+```
+
+The generated directory preserves machines with no assigned owner as unowned;
+`North Campus` is a synthetic fixture location, and all generated endpoint
+fixtures remain explicitly insecure until provisioned.
+
 This fixture seeds nine ZPL policy examples into the Policy Repository. Their
 ten embedded JSON service definitions are illustrative; they are not deployed
 endpoints or services in the running ZPR test network.

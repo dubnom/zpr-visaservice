@@ -1,0 +1,54 @@
+{
+  "categories": [
+    "Redwood/Policies/Dispatch",
+    "Redwood/Policies/Fleet",
+    "Redwood/Policies/Partners"
+  ],
+  "records": [
+    {
+      "category": "Redwood/Policies/Dispatch",
+      "name": "Regional dispatch routing",
+      "kind": "policy",
+      "content_type": "text/vnd.zpr.zpl",
+      "metadata": {
+        "demo": true,
+        "ldap_attributes": [
+          "ou -> device.redwood.department"
+        ],
+        "live": false
+      },
+      "content": "define DispatchOperators as a device with redwood.department:Dispatch.\ndefine RouteExchange as a service with device.zpr.adapter.cn:route-exchange.\n\nservice RouteExchange as json {\"service_class\":\"RouteExchange\",\"actor_cn\":\"route-exchange\",\"summary\":\"Regional route coordination.\",\"endpoint\":\"zpr://route-exchange\",\"status\":\"example only; not deployed\"}.\n  allow DispatchOperators.",
+      "summary": "Dispatch access to regional route coordination"
+    },
+    {
+      "category": "Redwood/Policies/Fleet",
+      "name": "Fleet telemetry",
+      "kind": "policy",
+      "content_type": "text/vnd.zpr.zpl",
+      "metadata": {
+        "demo": true,
+        "ldap_attributes": [
+          "ou -> device.redwood.department"
+        ],
+        "live": false
+      },
+      "content": "define FleetManagers as a device with redwood.department:Fleet.\ndefine FleetTelemetry as a service with device.zpr.adapter.cn:fleet-telemetry.\n\nservice FleetTelemetry as json {\"service_class\":\"FleetTelemetry\",\"actor_cn\":\"fleet-telemetry\",\"summary\":\"Vehicle telemetry ingestion.\",\"endpoint\":\"zpr://fleet-telemetry\",\"status\":\"example only; not deployed\"}.\n  allow FleetManagers.",
+      "summary": "Fleet operator access to vehicle telemetry"
+    },
+    {
+      "category": "Redwood/Policies/Partners",
+      "name": "Partner audit",
+      "kind": "policy",
+      "content_type": "text/vnd.zpr.zpl",
+      "metadata": {
+        "demo": true,
+        "ldap_attributes": [
+          "role -> device.redwood.role"
+        ],
+        "live": false
+      },
+      "content": "define PartnerAuditors as a device with redwood.role:PartnerAuditors.\ndefine ShipmentLedger as a service with device.zpr.adapter.cn:shipment-ledger.\n\nservice ShipmentLedger as json {\"service_class\":\"ShipmentLedger\",\"actor_cn\":\"shipment-ledger\",\"summary\":\"Partner shipment records.\",\"endpoint\":\"zpr://shipment-ledger\",\"status\":\"example only; not deployed\"}.\n  allow PartnerAuditors.",
+      "summary": "Partner auditor access to shipment records"
+    }
+  ]
+}

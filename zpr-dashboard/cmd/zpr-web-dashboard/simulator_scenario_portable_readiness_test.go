@@ -63,6 +63,10 @@ func TestSimulatorScenarioPortableReadinessPreflightMatrix(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
+			input.Manifest.Components = simulatorRuntimePlanOrganizationComponents(
+				input.Organization,
+				input.Manifest.Components,
+			)
 			input.Manifest.Name = "portable-readiness-synthetic-manifest"
 			input.TopologyResolved = input.Scenario.Topology != nil &&
 				validateSimulatorScenarioTopology(*input.Scenario.Topology) == nil
@@ -229,6 +233,9 @@ func TestSimulatorScenarioPortableReadinessPreflightMatrix(t *testing.T) {
 					t.Fatalf("HQ's machine-13 portable mapping gap changed unexpectedly: org package=%+v plan=%+v",
 						input.Organization.PackagedProvisioning, actual)
 				}
+				if len(actual.Workloads) != 7 {
+					t.Fatalf("HQ planned %d business workloads, want all 7: %+v", len(actual.Workloads), actual.Workloads)
+				}
 				for _, component := range []string{
 					"assembly-mes",
 					"engineering-build-farm",
@@ -238,8 +245,8 @@ func TestSimulatorScenarioPortableReadinessPreflightMatrix(t *testing.T) {
 					"shipping-portal",
 					"support-desk-app",
 				} {
-					if !slices.Contains(actual.Blockers, `workload component "`+component+`" is missing`) {
-						t.Errorf("HQ workload mapping gap %q is not exposed: %v", component, actual.Blockers)
+					if slices.Contains(actual.Blockers, `workload component "`+component+`" is missing`) {
+						t.Errorf("configured HQ workload %q was not resolved: %v", component, actual.Blockers)
 					}
 				}
 			}
