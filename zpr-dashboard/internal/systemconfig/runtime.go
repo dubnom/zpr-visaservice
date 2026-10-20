@@ -5,6 +5,7 @@ import (
 	"errors"
 	"net"
 	"net/url"
+	"path"
 	"slices"
 )
 
@@ -18,12 +19,19 @@ type RuntimeFileMount struct {
 }
 
 type ControlRoomRuntime struct {
-	ListenAddress  string             `json:"listen_address"`
-	Environment    map[string]string  `json:"environment"`
-	OIDCConfigPath string             `json:"operator_oidc_config_path"`
-	OIDCConfigMode uint32             `json:"operator_oidc_config_mode"`
-	OIDCConfig     json.RawMessage    `json:"operator_oidc_config"`
-	FileMounts     []RuntimeFileMount `json:"file_mounts"`
+	ListenAddress  string                 `json:"listen_address"`
+	Environment    map[string]string      `json:"environment"`
+	OIDCConfigPath string                 `json:"operator_oidc_config_path"`
+	OIDCConfigMode uint32                 `json:"operator_oidc_config_mode"`
+	OIDCConfig     json.RawMessage        `json:"operator_oidc_config"`
+	FileMounts     []RuntimeFileMount     `json:"file_mounts"`
+	ControlService *ControlServiceRuntime `json:"control_service,omitempty"`
+}
+
+type ControlServiceRuntime struct {
+	ListenAddress string             `json:"listen_address"`
+	Environment   map[string]string  `json:"environment"`
+	FileMounts    []RuntimeFileMount `json:"file_mounts"`
 }
 
 // RenderControlRoomRuntime maps validated company inputs to the existing
@@ -56,16 +64,6 @@ func RenderControlRoomRuntime(config Config) (ControlRoomRuntime, error) {
 		"ZPR_CONTROL_CLIENT_KEY_FILE":      config.ControlService.ClientKeyFile,
 		"ZPR_CONTROL_SERVICE_CA_FILE":      config.ControlService.CAFile,
 	}
-	if config.OIDC.CAFile != "" {
-		environment["ZPR_OPERATOR_OIDC_CA_FILE"] = config.OIDC.CAFile
-	}
-	if config.ControlService.TLSServerName != "" {
-		environment["ZPR_CONTROL_SERVICE_TLS_SERVER_NAME"] = config.ControlService.TLSServerName
-	}
-	oidcConfig, err := json.MarshalIndent(config.OIDC.Config, "", "  ")
-	if err != nil {
-		return ControlRoomRuntime{}, errors.New("cannot encode operator OIDC runtime configuration")
-	}
 	paths := []string{
 		config.ControlRoom.CertificateFile,
 		config.ControlRoom.KeyFile,
@@ -75,7 +73,42 @@ func RenderControlRoomRuntime(config Config) (ControlRoomRuntime, error) {
 		config.ControlService.CAFile,
 	}
 	if config.OIDC.CAFile != "" {
+		environment["ZPR_OPERATOR_OIDC_CA_FILE"] = config.OIDC.CAFile
 		paths = append(paths, config.OIDC.CAFile)
+	}
+	if config.ControlService.TLSServerName != "" {
+		environment["ZPR_CONTROL_SERVICE_TLS_SERVER_NAME"] = config.ControlService.TLSServerName
+	}
+	var authorityRuntime *ControlServiceRuntime
+	if config.BudgetAuthority != nil {
+		authority := config.BudgetAuthority
+		environment["ZPR_OPERATOR_DELEGATION_SIGNER_FILE"] = authority.ControlRoomSignerFile
+		environment["ZPR_OPERATOR_DELEGATION_KEY_FILE"] = authority.ControlRoomSignerKeyFile
+		environment["ZPR_OPERATOR_DELEGATION_AUDIENCE"] = authority.ControlRoomSignerAudience
+
+		authorityRuntime = &ControlServiceRuntime{
+			ListenAddress: authority.ServiceListenAddress,
+			Environment: map[string]string{
+				"ZPR_CONTROL_SERVICE_LISTEN":         authority.ServiceListenAddress,
+				"ZPR_CONTROL_SERVICE_CERT_FILE":      authority.ServiceCertificateFile,
+				"ZPR_CONTROL_SERVICE_KEY_FILE":       authority.ServiceKeyFile,
+				"ZPR_CONTROL_SERVICE_CLIENT_CA_FILE": authority.ServiceClientCAFile,
+				"ZPR_BUDGET_AUTHORITY_DB_PATH":       authority.DatabaseFile,
+				"ZPR_OPERATOR_DELEGATION_TRUST_FILE": authority.DelegationTrustFile,
+			},
+			FileMounts: []RuntimeFileMount{
+				{Source: path.Dir(authority.DatabaseFile), Destination: path.Dir(authority.DatabaseFile), ReadOnly: false},
+				{Source: authority.DelegationTrustFile, Destination: authority.DelegationTrustFile, ReadOnly: true},
+				{Source: authority.ServiceCertificateFile, Destination: authority.ServiceCertificateFile, ReadOnly: true},
+				{Source: authority.ServiceKeyFile, Destination: authority.ServiceKeyFile, ReadOnly: true},
+				{Source: authority.ServiceClientCAFile, Destination: authority.ServiceClientCAFile, ReadOnly: true},
+			},
+		}
+		paths = append(paths, authority.ControlRoomSignerFile, authority.ControlRoomSignerKeyFile)
+	}
+	oidcConfig, err := json.MarshalIndent(config.OIDC.Config, "", "  ")
+	if err != nil {
+		return ControlRoomRuntime{}, errors.New("cannot encode operator OIDC runtime configuration")
 	}
 	slices.Sort(paths)
 	mounts := make([]RuntimeFileMount, 0, len(paths))
@@ -89,5 +122,6 @@ func RenderControlRoomRuntime(config Config) (ControlRoomRuntime, error) {
 		OIDCConfigMode: operatorOIDCRuntimeConfigMode,
 		OIDCConfig:     oidcConfig,
 		FileMounts:     mounts,
+		ControlService: authorityRuntime,
 	}, nil
 }

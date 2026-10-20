@@ -8,6 +8,8 @@ import (
 	"errors"
 	"fmt"
 	"net/url"
+	"os"
+	"path"
 	"strings"
 	"time"
 
@@ -22,6 +24,11 @@ func (config Config) CheckFiles(now time.Time) error {
 	}
 	if config.ControlService != nil {
 		if err := config.ControlService.checkFiles(); err != nil {
+			return err
+		}
+	}
+	if config.BudgetAuthority != nil {
+		if err := config.BudgetAuthority.checkFileMetadata(); err != nil {
 			return err
 		}
 	}
@@ -68,6 +75,33 @@ func (config Config) CheckFiles(now time.Time) error {
 				return errors.New("oidc.ca_file requires currently valid certificate-signing CA certificates")
 			}
 		}
+	}
+	return nil
+}
+
+func (authority BudgetAuthority) checkFileMetadata() error {
+	for _, file := range []struct {
+		name    string
+		path    string
+		private bool
+	}{
+		{"budget_authority.delegation_trust_file", authority.DelegationTrustFile, false},
+		{"budget_authority.service_certificate_file", authority.ServiceCertificateFile, false},
+		{"budget_authority.service_key_file", authority.ServiceKeyFile, true},
+		{"budget_authority.service_client_ca_file", authority.ServiceClientCAFile, false},
+		{"budget_authority.control_room_signer_file", authority.ControlRoomSignerFile, false},
+		{"budget_authority.control_room_signer_key_file", authority.ControlRoomSignerKeyFile, true},
+	} {
+		info, err := os.Lstat(file.path)
+		if err != nil || !info.Mode().IsRegular() || info.Mode().Perm()&0o022 != 0 ||
+			(file.private && info.Mode().Perm()&0o077 != 0) {
+			return fmt.Errorf("%s must reference an existing regular file with protected permissions", file.name)
+		}
+	}
+	databaseDirectory := path.Dir(authority.DatabaseFile)
+	info, err := os.Lstat(databaseDirectory)
+	if err != nil || !info.IsDir() || info.Mode()&os.ModeSymlink != 0 || info.Mode().Perm()&0o077 != 0 {
+		return errors.New("budget_authority.database_file parent must be an existing private non-symlink directory")
 	}
 	return nil
 }

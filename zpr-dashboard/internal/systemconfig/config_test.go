@@ -160,6 +160,24 @@ func validControlServiceConfig() Config {
 	return config
 }
 
+func validBudgetAuthorityConfig() Config {
+	config := validControlServiceConfig()
+	config.ControlRoom.ManagementIP = "10.20.30.40"
+	config.BudgetAuthority = &BudgetAuthority{
+		DatabaseFile:              "/var/lib/zpr/control-service/budget-authority.db",
+		DelegationTrustFile:       "/etc/zpr/config/operator-delegation-trust.json",
+		ServiceListenAddress:      "10.20.30.41:8790",
+		ServiceCertificateFile:    "/etc/zpr/tls/control-service-server-chain.pem",
+		ServiceKeyFile:            "/etc/zpr/secrets/control-service-server-key.pem",
+		ServiceClientCAFile:       "/etc/zpr/tls/control-service-client-ca.pem",
+		ControlRoomSignerFile:     "/etc/zpr/config/control-room-delegation-signer.json",
+		ControlRoomSignerKeyFile:  "/etc/zpr/secrets/control-room-delegation-key.pem",
+		ControlRoomSignerAudience: config.ControlService.URL,
+	}
+	config.OIDC.Config.Grants[0].Permissions = append(config.OIDC.Config.Grants[0].Permissions, "budget.approve")
+	return config
+}
+
 func TestCompanyControlServiceConfiguration(t *testing.T) {
 	tests := []struct {
 		name string
@@ -188,6 +206,7 @@ func TestCompanyControlServiceConfiguration(t *testing.T) {
 		{"padded-server-name", func(c *Config) { c.ControlService.TLSServerName = " service.example.com" }},
 		{"control-server-name", func(c *Config) { c.ControlService.TLSServerName = "service\n.example.com" }},
 	}
+
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
 			config := validControlServiceConfig()
@@ -361,3 +380,40 @@ func TestCompanyConfigurationStrictJSONAndBounds(t *testing.T) {
 type brokenReader struct{}
 
 func (brokenReader) Read([]byte) (int, error) { return 0, errors.New("private-value") }
+
+func TestBudgetAuthorityConfiguration(t *testing.T) {
+	if err := validBudgetAuthorityConfig().Validate(); err != nil {
+		t.Fatalf("valid budget authority configuration rejected: %v", err)
+	}
+	tests := []struct {
+		name string
+		edit func(*Config)
+	}{
+		{"legacy schema", func(c *Config) { c.SchemaVersion = 1 }},
+		{"missing control service", func(c *Config) { c.ControlService = nil }},
+		{"missing database path", func(c *Config) { c.BudgetAuthority.DatabaseFile = "" }},
+		{"relative database path", func(c *Config) { c.BudgetAuthority.DatabaseFile = "state.db" }},
+		{"database at root", func(c *Config) { c.BudgetAuthority.DatabaseFile = "/state.db" }},
+		{"missing trust", func(c *Config) { c.BudgetAuthority.DelegationTrustFile = "" }},
+		{"wildcard listener", func(c *Config) { c.BudgetAuthority.ServiceListenAddress = "0.0.0.0:8790" }},
+		{"public listener", func(c *Config) { c.BudgetAuthority.ServiceListenAddress = "203.0.113.4:8790" }},
+		{"listener port mismatch", func(c *Config) { c.BudgetAuthority.ServiceListenAddress = "10.20.30.41:8791" }},
+		{"signer audience mismatch", func(c *Config) { c.BudgetAuthority.ControlRoomSignerAudience = "https://other.example:8790" }},
+		{"duplicate authority file", func(c *Config) { c.BudgetAuthority.ServiceKeyFile = c.BudgetAuthority.ServiceCertificateFile }},
+		{"database directory overlaps key files", func(c *Config) { c.BudgetAuthority.DatabaseFile = "/etc/zpr/secrets/authority.db" }},
+		{"missing budget grant", func(c *Config) { c.OIDC.Config.Grants[0].Permissions = []string{"monitor.read"} }},
+		{"budget grant without authority", func(c *Config) {
+			c.BudgetAuthority = nil
+			c.OIDC.Config.Grants[0].Permissions = append(c.OIDC.Config.Grants[0].Permissions, "budget.approve")
+		}},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			config := validBudgetAuthorityConfig()
+			test.edit(&config)
+			if err := config.Validate(); err == nil {
+				t.Fatal("invalid budget authority configuration accepted")
+			}
+		})
+	}
+}

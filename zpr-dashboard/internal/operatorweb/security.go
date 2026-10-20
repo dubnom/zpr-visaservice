@@ -27,6 +27,7 @@ type Config struct {
 	ConfigPath, SecretPath, CAPath         string
 	TrustedPeerIP                          string
 	ManagementIP, Organization             string
+	BudgetApprovalAccess                   *systemconfig.BudgetApprovalAccess
 }
 
 type Security struct {
@@ -174,7 +175,9 @@ func Load(ctx context.Context, listen string, config Config, newAuth AuthFactory
 		return nil, errors.New("OIDC callback must match the configured direct HTTPS origin exactly")
 	}
 	if management {
-		if err := systemconfig.ValidateOperatorAccess(config.Organization, origin, authConfig); err != nil {
+		if err := systemconfig.ValidateOperatorAccessWithBudgetAuthority(
+			config.Organization, origin, authConfig, config.BudgetApprovalAccess,
+		); err != nil {
 			return nil, err
 		}
 	}

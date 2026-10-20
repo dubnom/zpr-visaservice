@@ -274,7 +274,7 @@ the offline checks below; it still does not mean the appliance is ready.
 | `control_room.certificate_file`, `key_file` | Separate absolute canonical Linux file references; company supplies a current hostname-matching server certificate chain and its private key |
 | `oidc.config` | Existing operator OIDC version-1 shape: HTTPS issuer, client ID, exact callback, explicit 60-3600 second session lifetime and issuer/subject grants |
 | `oidc.config.redirect_url` | Exactly `control_room.origin` plus `/auth/operator/callback`; register this exact URI with the company provider |
-| `oidc.config.grants` | Each grant names an exact issuer/subject and scopes only this company. Production monitor/policy/gateway/change-review and enrollment permissions only, validated against existing operator permission names |
+| `oidc.config.grants` | Each grant names an exact issuer/subject and scopes only this company. Production monitor/policy/gateway/change-review and enrollment permissions are validated. `budget.approve` is accepted only when the complete optional `budget_authority` section is configured; no grants are generated |
 | `oidc.client_secret_file` | Separate absolute canonical Linux file reference, never an inline client secret |
 | `oidc.ca_file` | Optional separate CA file reference for company IdP trust; omission means the existing system-root behavior, not disabled TLS verification |
 | `control_service.url` | Required in v2: exact HTTPS origin with a DNS host or IP and optional canonical port 1-65535; no credentials, path (including trailing `/`), query or fragment |
@@ -298,6 +298,42 @@ subject is a placeholder that must be replaced with the provider's exact `sub`.
 Email/display name never substitutes for an identity. Select additional grants
 explicitly and configure independent backend enrollment delegation permissions;
 this file does not bypass those controls or implement first-admin recovery.
+
+### Control-Service budget authority inputs
+
+The optional schema-v2 `budget_authority` object in
+[`company.example.json`](company.example.json) is additive to the Control Room
+connection above. It supplies independent launch inputs for the existing
+`zpr-web-dashboard -mode control-service` and `-mode control-room` processes:
+
+| Field | Rendered use |
+| --- | --- |
+| `database_file` | Persistent SQLite path for `ZPR_BUDGET_AUTHORITY_DB_PATH`. Its parent directory must already exist, be private, and be writable by the Control-Service identity. The existing store creates/opens the database with private permissions. |
+| `delegation_trust_file` | Operator-supplied verifier trust JSON mounted read-only as `ZPR_OPERATOR_DELEGATION_TRUST_FILE`. It is validated by Control-Service at startup; this renderer checks only file metadata. |
+| `service_listen_address` | Explicit private, non-wildcard IP and port for `ZPR_CONTROL_SERVICE_LISTEN`; its port must match `control_service.url`. This renderer does not choose interfaces, routes, firewall rules, or published ports. |
+| `service_certificate_file`, `service_key_file`, `service_client_ca_file` | Control-Service mTLS server identity and client trust inputs, mounted read-only and rendered to their corresponding `ZPR_CONTROL_SERVICE_*` environment names. The private key must have mode `0600`-equivalent permissions. |
+| `control_room_signer_file`, `control_room_signer_key_file` | Operator-supplied delegation signer config and private key, mounted read-only and rendered to `ZPR_OPERATOR_DELEGATION_SIGNER_FILE` and `ZPR_OPERATOR_DELEGATION_KEY_FILE`. The private key must have mode `0600`-equivalent permissions. |
+| `control_room_signer_audience` | Must exactly equal `control_service.url`; rendered as `ZPR_OPERATOR_DELEGATION_AUDIENCE`. The signer JSON's own audience must independently match. |
+
+When this section is present, the rendered Control-Service block includes
+`ZPR_BUDGET_AUTHORITY_DB_PATH` and `ZPR_OPERATOR_DELEGATION_TRUST_FILE`;
+its writable mount is the database parent directory so SQLite WAL files can
+persist. The Control Room block includes the signer environment and the OIDC
+configuration supplied in `oidc.config`. At least one exact-company operator
+grant must explicitly contain both `monitor.read` and `budget.approve`.
+Without the complete section, `budget.approve` is rejected by this company
+configuration validator. This does not create or approve a grant, signer,
+delegation trust, TLS identity, database, or approval record.
+
+Offline `-check-files` checks only metadata for these additional references:
+regular non-symlink file types, no group/other write bits, and no group/other
+permissions on private keys; the database parent must already be a private,
+non-symlink directory. It does not read or parse these referenced files,
+compare certificate/key pairs, validate trust contents, establish service
+reachability, or create the database. Runtime service checks remain mandatory.
+The emitted Control-Service and Control Room settings are independent role
+blocks for an installer or operator to apply; this renderer is not a launcher,
+Compose definition, or production installer.
 
 The reader rejects unknown/miscased fields, duplicate object keys at every
 level, nulls, trailing documents, oversized input (64 KiB) and nesting above
@@ -388,6 +424,74 @@ files, generate identities, validate Control-Service certificate/key matching
 or remote CA trust, build Compose configuration, start services or apply
 settings. It is a configuration-rendering slice, not an installer or complete
 runtime configuration.
+
+On the intended Linux host, after supplying the operator-owned configuration
+and referenced files, run the structural/offline validation and render into a
+new private output path:
+
+```sh
+go run ./cmd/zpr-system-config -config /etc/zpr/config/company.json -check-files
+go run ./cmd/zpr-system-config-render \
+  -config /etc/zpr/config/company.json \
+  -output /etc/zpr/config/runtime-inputs.json
+```
+
+The renderer itself creates the output with mode `0600` and refuses to
+overwrite. Read its JSON and have the independently managed service launcher
+apply the Control Room and, when configured, Control-Service blocks with their
+declared read-only file mounts and writable SQLite parent mount. Do not source
+the JSON as shell text or place private values in environment variables.
+`-check-files` is an offline file check, not a live TLS trust or service
+readiness test.
+
+The clean-directory process-level acceptance fixture can be reproduced from
+the module root without Simulator, Docker, network access, or customer
+credentials:
+
+```sh
+GOPROXY=off GOSUMDB=off GOTOOLCHAIN=local \
+  go test ./cmd/zpr-system-config-render \
+  -run '^TestPackagedRoleConfigurationCLIIntegration$' -count=1
+```
+
+It creates a disposable synthetic test certificate, test-only OIDC grant and
+metadata fixtures beneath the test temporary directory, builds and invokes the
+actual renderer executable, checks role outputs/modes and Simulator
+independence, and checks explicit refusal with no output for missing or partial
+files/settings and unsafe key permissions. These are test fixtures, not
+deployable credentials or grants.
+
+### Separate Simulator budget-client inputs
+
+Simulator's HTTPS/mTLS resolver uses a separate schema and renderer; neither
+the company configuration nor the production Control Room/Control-Service
+renderer reads Simulator files or requires Simulator availability. The
+operator supplies the authority HTTPS origin, client certificate and key,
+CA trust file, and optional TLS server name in
+[`simulator-budget-client.example.json`](simulator-budget-client.example.json).
+The certificate and key must be provisioned for the Simulator client and
+trusted by the authority's Control-Service client CA. No credential is
+generated, copied, or embedded in rendered output.
+
+From the dashboard module directory, build and run the standalone renderer
+from source:
+
+```sh
+go build -o /tmp/zpr-simulator-budget-config-render ./cmd/zpr-simulator-budget-config-render
+/tmp/zpr-simulator-budget-config-render \
+  -config packaging/system/simulator-budget-client.example.json \
+  -output /path/to/new/simulator-budget-runtime-inputs.json
+```
+
+The input must reference existing files; `-output` must not already exist.
+Offline checks inspect file type and permissions only and do not read
+certificate/key/CA contents or contact the authority. Output is created with
+mode `0600` and contains only resolver environment names/path references and
+read-only file-mount descriptors. Apply that output only to the separately
+launched Simulator process. This standalone engineering command is not yet in
+the customer bundle, existing Simulator launcher, or production startup path.
+No service is contacted or started, no grants are generated, and successful
+rendering does not establish mTLS or authority availability.
 
 ### Remote HTTPS and identity implementation contract
 

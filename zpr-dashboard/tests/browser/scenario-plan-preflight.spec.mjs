@@ -29,6 +29,7 @@ const scenarios = [
 ];
 const assets = fileURLToPath(new URL("../../cmd/zpr-web-dashboard/static/", import.meta.url));
 const digest = `sha256:${"a".repeat(64)}`;
+const authorizationScopeDigest = `sha256:${"b".repeat(64)}`;
 
 function plan(scenarioID, overrides = {}) {
   return {
@@ -47,6 +48,17 @@ function plan(scenarioID, overrides = {}) {
     package_contract_status: "verified",
     blockers: [],
     plan_digest: digest,
+    authorization_scope_digest: authorizationScopeDigest,
+    ...overrides,
+  };
+}
+
+function unavailableBudget(scenarioID, overrides = {}) {
+  return {
+    organization_id: organization.id,
+    scenario_id: scenarioID,
+    authorization_scope_digest: authorizationScopeDigest,
+    blockers: ["current approved budget evidence is unavailable or invalid"],
     ...overrides,
   };
 }
@@ -60,7 +72,15 @@ async function setup(page, context, options = {}) {
     catalogRunIDs: [],
     runSnapshot: null,
     releaseRun: null,
+    authorityGranted: false,
+    budgetAuthorityRequests: [],
   };
+  await context.addInitScript(() => {
+    Object.defineProperty(navigator, "clipboard", {
+      configurable: true,
+      value: { writeText: async text => { window.__copiedGrantScope = text; } },
+    });
+  });
 
   await context.route("**/*", async route => {
     const request = route.request();
@@ -99,6 +119,20 @@ async function setup(page, context, options = {}) {
     if (url.pathname === "/api/simulator/scenario-plans/preflight") {
       const body = request.postDataJSON();
       state.preflightRequests.push({ method: request.method(), body });
+      if (options.firstGrant && !state.authorityGranted) {
+        return route.fulfill({
+          status: 503,
+          json: options.unavailableBudgetResponse
+            ? options.unavailableBudgetResponse(body)
+            : unavailableBudget(body.scenario_id),
+        });
+      }
+      if (options.preflightStatus && options.preflightStatus !== 200) {
+        return route.fulfill({
+          status: options.preflightStatus,
+          json: options.preflightErrorResponse || { error: "Preflight service unavailable." },
+        });
+      }
       const response = options.preflightResponse
         ? options.preflightResponse(body)
         : plan(body.scenario_id);
@@ -123,6 +157,10 @@ async function setup(page, context, options = {}) {
           machine_ids: ["machine-03"],
         },
       });
+    }
+    if (url.pathname.startsWith("/api/budget-authority/")) {
+      state.budgetAuthorityRequests.push({ method: request.method(), path: url.pathname });
+      return route.fulfill({ status: 403, json: { error: "Simulator must not call production budget mutations." } });
     }
     const runPath = url.pathname.match(/^\/api\/simulator\/scenarios\/([^/]+)\/run$/);
     if (runPath) {
@@ -182,7 +220,11 @@ async function setup(page, context, options = {}) {
 
 async function previewPlan(page) {
   await page.getByRole("button", { name: "Preview plan", exact: true }).click();
-  await expect(page.locator("#scenario-plan-preview")).toBeVisible();
+  await Promise.race([
+    page.locator("#scenario-plan-preview").waitFor({ state: "visible" }),
+    page.locator("#scenario-plan-budget-handoff").waitFor({ state: "visible" }),
+    page.locator("#scenario-plan-error").waitFor({ state: "visible" }),
+  ]);
 }
 
 async function confirmApproval(page) {
@@ -215,26 +257,155 @@ async function approveSelectedPlan(page) {
   await expect(page.locator("#scenario-plan-run-button")).toBeEnabled();
 }
 
-test("blocked budget keeps scenario-plan approval disabled", async ({ page, context }) => {
-  const state = await setup(page, context, {
-    preflightResponse: body => plan(body.scenario_id, {
-      status: "blocked",
-      budget_status: "absent",
-      blockers: ["Approved budget evidence is absent."],
-    }),
-  });
-
+test("unavailable budget response previews only a validated scope and keeps approval and run disabled", async ({ page, context }) => {
+  const state = await setup(page, context, { firstGrant: true });
   await previewPlan(page);
-  await expect(page.locator("#scenario-plan-summary")).toContainText("Budget status");
-  await expect(page.locator("#scenario-plan-summary")).toContainText("absent");
-  await expect(page.locator("#scenario-plan-blockers")).toContainText("Approved budget evidence is absent.");
+  const handoff = page.locator("#scenario-plan-budget-handoff");
+  await expect(handoff).toBeVisible();
+  await expect(handoff).toContainText("does not establish that evidence is absent");
+  await expect(page.locator("#scenario-plan-handoff-organization")).toHaveText(organization.id);
+  await expect(page.locator("#scenario-plan-handoff-scenario")).toHaveText("sample-flow");
+  await expect(page.locator("#scenario-plan-handoff-digest")).toHaveText(authorizationScopeDigest);
+  await expect(page.locator("#scenario-plan-handoff-blockers")).toContainText(
+    "current approved budget evidence is unavailable or invalid",
+  );
+  await expect(page.locator("#scenario-plan-preview")).toBeHidden();
   await expect(page.locator("#scenario-plan-approve")).toBeDisabled();
+  await expect(page.locator("#scenario-plan-run-button")).toBeDisabled();
   expect(state.preflightRequests).toEqual([{
     method: "POST",
     body: { organization_id: organization.id, scenario_id: "sample-flow" },
   }]);
   expect(state.approvalRequests).toEqual([]);
   expect(state.runRequests).toEqual([]);
+  expect(state.budgetAuthorityRequests).toEqual([]);
+});
+
+test("malformed authorization-scope digest is never shown or copied for a grant handoff", async ({ page, context }) => {
+  const state = await setup(page, context, {
+    firstGrant: true,
+    unavailableBudgetResponse: body => unavailableBudget(body.scenario_id, {
+      authorization_scope_digest: "sha256:not-a-valid-digest",
+    }),
+  });
+  await previewPlan(page);
+  await expect(page.locator("#scenario-plan-budget-handoff")).toBeHidden();
+  await expect(page.locator("#scenario-plan-error")).toContainText("invalid or mismatched");
+  await expect(page.locator("#scenario-plan-handoff-digest")).toBeEmpty();
+  await expect(page.locator("#scenario-plan-approve")).toBeDisabled();
+  await expect(page.locator("#scenario-plan-run-button")).toBeDisabled();
+  expect(state.approvalRequests).toEqual([]);
+  expect(state.runRequests).toEqual([]);
+  expect(state.budgetAuthorityRequests).toEqual([]);
+});
+
+test("first grant handoff requires an external authenticated grant and refreshed preflight before local approval and run", async ({ page, context }) => {
+  const state = await setup(page, context, { firstGrant: true });
+  await previewPlan(page);
+  await expect(page.locator("#scenario-plan-approve")).toBeDisabled();
+  await expect(page.locator("#scenario-plan-run-button")).toBeDisabled();
+  await page.locator("#scenario-plan-copy-handoff").click();
+  await expect(page.locator("#scenario-plan-copy-status")).toContainText("Manually enter it");
+  const copiedScope = JSON.parse(await page.evaluate(() => window.__copiedGrantScope));
+  expect(copiedScope).toEqual({
+    organization_id: organization.id,
+    scenario_id: "sample-flow",
+    authorization_scope_digest: authorizationScopeDigest,
+  });
+  expect(state.approvalRequests).toEqual([]);
+  expect(state.runRequests).toEqual([]);
+  expect(state.preflightRequests).toHaveLength(1);
+
+  // The grant is an external Control Room action; this fixture records only its completion.
+  state.authorityGranted = true;
+  await page.getByRole("button", { name: "Preview plan", exact: true }).click();
+  await expect(page.locator("#scenario-plan-budget-handoff")).toBeHidden();
+  await expect(page.locator("#scenario-plan-preview")).toBeVisible();
+  await expect(page.locator("#scenario-plan-summary")).toContainText("Budget status");
+  await expect(page.locator("#scenario-plan-summary")).toContainText("approved");
+  await expect(page.locator("#scenario-plan-summary")).toContainText(authorizationScopeDigest);
+  await expect(page.locator("#scenario-plan-approve")).toBeEnabled();
+  expect(state.preflightRequests).toHaveLength(2);
+  expect(state.approvalRequests).toEqual([]);
+  expect(state.runRequests).toEqual([]);
+
+  await confirmApproval(page);
+  await expect(page.locator("#scenario-plan-approval-status")).toContainText("Approval recorded");
+  await expect(page.locator("#scenario-plan-run-button")).toBeEnabled();
+  expect(state.approvalRequests).toEqual([{
+    method: "POST",
+    body: {
+      organization_id: organization.id,
+      scenario_id: "sample-flow",
+      plan_digest: digest,
+      approved: true,
+    },
+  }]);
+  await page.locator("#scenario-plan-run-button").click();
+  await expect(page.locator("#scenario-plan-run-id")).toHaveText("run-1");
+  expect(state.runRequests).toEqual([{
+    method: "POST",
+    path: "/api/simulator/scenarios/sample-flow/run",
+    body: { approval_id: "approval-1", plan_digest: digest },
+  }]);
+  await page.locator("#scenario-plan-run-button").evaluate(button =>
+    button.dispatchEvent(new MouseEvent("click", { bubbles: true })),
+  );
+  expect(state.runRequests).toHaveLength(1);
+  await page.locator("#scenario-plan-approve").evaluate(button =>
+    button.dispatchEvent(new MouseEvent("click", { bubbles: true })),
+  );
+  expect(state.approvalRequests).toHaveLength(1);
+  expect(state.budgetAuthorityRequests).toEqual([]);
+});
+
+test("malformed or mismatched unavailable-budget response is not presented as a grantable scope", async ({ page, context }) => {
+  const state = await setup(page, context, {
+    firstGrant: true,
+    unavailableBudgetResponse: body => unavailableBudget(body.scenario_id, {
+      scenario_id: "another-scenario",
+    }),
+  });
+  await previewPlan(page);
+  await expect(page.locator("#scenario-plan-budget-handoff")).toBeHidden();
+  await expect(page.locator("#scenario-plan-error")).toBeVisible();
+  await expect(page.locator("#scenario-plan-error")).toContainText("invalid or mismatched");
+  await expect(page.locator("#scenario-plan-approve")).toBeDisabled();
+  await expect(page.locator("#scenario-plan-run-button")).toBeDisabled();
+  expect(state.approvalRequests).toEqual([]);
+  expect(state.runRequests).toEqual([]);
+  expect(state.budgetAuthorityRequests).toEqual([]);
+});
+
+test("preflight server errors remain errors and do not imply absent budget evidence", async ({ page, context }) => {
+  const state = await setup(page, context, {
+    preflightStatus: 500,
+    preflightErrorResponse: { error: "Budget authority resolver timed out." },
+  });
+  await previewPlan(page);
+  await expect(page.locator("#scenario-plan-budget-handoff")).toBeHidden();
+  await expect(page.locator("#scenario-plan-error")).toBeVisible();
+  await expect(page.locator("#scenario-plan-error")).toContainText("Budget authority resolver timed out.");
+  await expect(page.locator("#scenario-plan-error")).not.toContainText("evidence is absent");
+  await expect(page.locator("#scenario-plan-approve")).toBeDisabled();
+  await expect(page.locator("#scenario-plan-run-button")).toBeDisabled();
+  expect(state.approvalRequests).toEqual([]);
+  expect(state.runRequests).toEqual([]);
+  expect(state.budgetAuthorityRequests).toEqual([]);
+});
+
+test("changing scenario invalidates the unavailable budget-scope handoff", async ({ page, context }) => {
+  const state = await setup(page, context, { firstGrant: true });
+  await previewPlan(page);
+  await expect(page.locator("#scenario-plan-budget-handoff")).toBeVisible();
+  await page.locator("#scenario-plan-scenario").selectOption("second-flow");
+  await expect(page.locator("#scenario-plan-budget-handoff")).toBeHidden();
+  await expect(page.locator("#scenario-plan-handoff-digest")).toBeEmpty();
+  await expect(page.locator("#scenario-plan-approve")).toBeDisabled();
+  await expect(page.locator("#scenario-plan-run-button")).toBeDisabled();
+  expect(state.approvalRequests).toEqual([]);
+  expect(state.runRequests).toEqual([]);
+  expect(state.budgetAuthorityRequests).toEqual([]);
 });
 
 test("scenario-plan approval requires explicit confirmation and sends the returned digest", async ({ page, context }) => {

@@ -94,3 +94,54 @@ func TestRenderControlRoomRuntimeRequiresCompleteRuntimeInputs(t *testing.T) {
 		})
 	}
 }
+
+func TestRenderBudgetAuthorityForIndependentOperatorServices(t *testing.T) {
+	t.Setenv("ZPR_BUDGET_AUTHORITY_URL", "https://simulator-only.invalid")
+	t.Setenv("SIMULATION_MANIFEST", "/simulator-only/manifest.json")
+	config := validBudgetAuthorityConfig()
+	runtime, err := RenderControlRoomRuntime(config)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if runtime.ControlService == nil {
+		t.Fatal("Control-Service budget authority inputs were not rendered")
+	}
+	wantServiceEnvironment := map[string]string{
+		"ZPR_CONTROL_SERVICE_LISTEN":         config.BudgetAuthority.ServiceListenAddress,
+		"ZPR_CONTROL_SERVICE_CERT_FILE":      config.BudgetAuthority.ServiceCertificateFile,
+		"ZPR_CONTROL_SERVICE_KEY_FILE":       config.BudgetAuthority.ServiceKeyFile,
+		"ZPR_CONTROL_SERVICE_CLIENT_CA_FILE": config.BudgetAuthority.ServiceClientCAFile,
+		"ZPR_BUDGET_AUTHORITY_DB_PATH":       config.BudgetAuthority.DatabaseFile,
+		"ZPR_OPERATOR_DELEGATION_TRUST_FILE": config.BudgetAuthority.DelegationTrustFile,
+	}
+	if !reflect.DeepEqual(runtime.ControlService.Environment, wantServiceEnvironment) {
+		t.Fatalf("Control-Service environment = %#v, want %#v", runtime.ControlService.Environment, wantServiceEnvironment)
+	}
+	wantRoomEnvironment := map[string]string{
+		"ZPR_OPERATOR_DELEGATION_SIGNER_FILE": config.BudgetAuthority.ControlRoomSignerFile,
+		"ZPR_OPERATOR_DELEGATION_KEY_FILE":    config.BudgetAuthority.ControlRoomSignerKeyFile,
+		"ZPR_OPERATOR_DELEGATION_AUDIENCE":    config.BudgetAuthority.ControlRoomSignerAudience,
+	}
+	for name, value := range wantRoomEnvironment {
+		if runtime.Environment[name] != value {
+			t.Errorf("Control Room %s = %q, want %q", name, runtime.Environment[name], value)
+		}
+	}
+	if _, exists := runtime.Environment["ZPR_BUDGET_AUTHORITY_URL"]; exists {
+		t.Fatal("production Control Room renderer included Simulator resolver settings")
+	}
+	if _, exists := runtime.ControlService.Environment["ZPR_BUDGET_AUTHORITY_URL"]; exists {
+		t.Fatal("production Control-Service renderer included Simulator resolver settings")
+	}
+	if len(runtime.ControlService.FileMounts) != 5 ||
+		runtime.ControlService.FileMounts[0] != (RuntimeFileMount{
+			Source: "/var/lib/zpr/control-service", Destination: "/var/lib/zpr/control-service", ReadOnly: false,
+		}) {
+		t.Fatalf("Control-Service authority mounts = %#v", runtime.ControlService.FileMounts)
+	}
+	for _, mount := range runtime.FileMounts {
+		if mount.Source == config.BudgetAuthority.ControlRoomSignerKeyFile && !mount.ReadOnly {
+			t.Fatal("Control Room signer key mount must be read-only")
+		}
+	}
+}

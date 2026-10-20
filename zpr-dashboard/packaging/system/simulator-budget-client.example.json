@@ -1,0 +1,8 @@
+{
+  "schema_version": 1,
+  "url": "https://control-service.example.com:8790",
+  "client_certificate_file": "/etc/zpr-simulator/tls/budget-client-chain.pem",
+  "client_key_file": "/etc/zpr-simulator/secrets/budget-client-key.pem",
+  "ca_file": "/etc/zpr-simulator/tls/control-service-ca.pem",
+  "tls_server_name": "control-service.example.com"
+}

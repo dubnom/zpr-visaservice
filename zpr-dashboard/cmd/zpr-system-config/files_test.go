@@ -36,6 +36,16 @@ func TestCompanyConfigCommandOfflineFiles(t *testing.T) {
 	config.ControlService.ClientCertificateFile = filepath.Join(directory, "control-service-client.pem")
 	config.ControlService.ClientKeyFile = filepath.Join(directory, "control-service-client.key")
 	config.ControlService.CAFile = filepath.Join(directory, "control-service-ca.pem")
+	config.BudgetAuthority.DatabaseFile = filepath.Join(directory, "budget-authority", "authority.db")
+	config.BudgetAuthority.DelegationTrustFile = filepath.Join(directory, "delegation-trust.json")
+	config.BudgetAuthority.ServiceCertificateFile = filepath.Join(directory, "budget-authority-server.pem")
+	config.BudgetAuthority.ServiceKeyFile = filepath.Join(directory, "budget-authority-server.key")
+	config.BudgetAuthority.ServiceClientCAFile = filepath.Join(directory, "budget-authority-client-ca.pem")
+	config.BudgetAuthority.ControlRoomSignerFile = filepath.Join(directory, "control-room-signer.json")
+	config.BudgetAuthority.ControlRoomSignerKeyFile = filepath.Join(directory, "control-room-signer.key")
+	if err := os.Mkdir(filepath.Dir(config.BudgetAuthority.DatabaseFile), 0o700); err != nil {
+		t.Fatal(err)
+	}
 	public, key, err := ed25519.GenerateKey(rand.Reader)
 	if err != nil {
 		t.Fatal(err)
@@ -59,13 +69,19 @@ func TestCompanyConfigCommandOfflineFiles(t *testing.T) {
 		t.Fatal(err)
 	}
 	files := map[string][]byte{
-		configFile:                                  data,
-		config.ControlRoom.CertificateFile:          pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: der}),
-		config.ControlRoom.KeyFile:                  pem.EncodeToMemory(&pem.Block{Type: "PRIVATE KEY", Bytes: keyDER}),
-		config.OIDC.ClientSecretFile:                []byte("private-value\n"),
-		config.ControlService.ClientCertificateFile: []byte("control-service certificate fixture\n"),
-		config.ControlService.ClientKeyFile:         []byte("control-service key fixture\n"),
-		config.ControlService.CAFile:                []byte("control-service CA fixture\n"),
+		configFile:                                      data,
+		config.ControlRoom.CertificateFile:              pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: der}),
+		config.ControlRoom.KeyFile:                      pem.EncodeToMemory(&pem.Block{Type: "PRIVATE KEY", Bytes: keyDER}),
+		config.OIDC.ClientSecretFile:                    []byte("private-value\n"),
+		config.ControlService.ClientCertificateFile:     []byte("control-service certificate fixture\n"),
+		config.ControlService.ClientKeyFile:             []byte("control-service key fixture\n"),
+		config.ControlService.CAFile:                    []byte("control-service CA fixture\n"),
+		config.BudgetAuthority.DelegationTrustFile:      []byte("delegation trust fixture\n"),
+		config.BudgetAuthority.ServiceCertificateFile:   []byte("budget authority certificate fixture\n"),
+		config.BudgetAuthority.ServiceKeyFile:           []byte("budget authority key fixture\n"),
+		config.BudgetAuthority.ServiceClientCAFile:      []byte("budget authority client CA fixture\n"),
+		config.BudgetAuthority.ControlRoomSignerFile:    []byte("Control Room signer fixture\n"),
+		config.BudgetAuthority.ControlRoomSignerKeyFile: []byte("Control Room signer key fixture\n"),
 	}
 	for path, contents := range files {
 		if err := os.WriteFile(path, contents, 0o600); err != nil {

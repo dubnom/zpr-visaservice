@@ -17,6 +17,17 @@
     "ca_file": "/etc/zpr/tls/control-service-ca.pem",
     "tls_server_name": "control-service.example.com"
   },
+  "budget_authority": {
+    "database_file": "/var/lib/zpr/control-service/budget-authority.db",
+    "delegation_trust_file": "/etc/zpr/config/operator-delegation-trust.json",
+    "service_listen_address": "10.20.30.41:8790",
+    "service_certificate_file": "/etc/zpr/tls/control-service-server-chain.pem",
+    "service_key_file": "/etc/zpr/secrets/control-service-server-key.pem",
+    "service_client_ca_file": "/etc/zpr/tls/control-service-client-ca.pem",
+    "control_room_signer_file": "/etc/zpr/config/control-room-delegation-signer.json",
+    "control_room_signer_key_file": "/etc/zpr/secrets/control-room-delegation-key.pem",
+    "control_room_signer_audience": "https://control-service.example.com:8790"
+  },
   "oidc": {
     "config": {
       "version": 1,
@@ -29,7 +40,7 @@
           "issuer": "https://login.example.com",
           "subject": "replace-with-exact-oidc-subject",
           "organizations": ["example-company"],
-          "permissions": ["monitor.read"]
+          "permissions": ["monitor.read", "budget.approve"]
         }
       ]
     },

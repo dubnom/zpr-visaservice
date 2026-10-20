@@ -33,6 +33,7 @@ const scenarioPlanState = {
   scenarios: [],
   scenarioID: "",
   plan: null,
+  unavailableBudget: null,
   approval: null,
   run: null,
   runAttempted: false,
@@ -107,10 +108,17 @@ function scenarioPlanInvalidate(message = "") {
   scenarioPlanState.runRequestID += 1;
   scenarioPlanState.busy = false;
   scenarioPlanState.plan = null;
+  scenarioPlanState.unavailableBudget = null;
   scenarioPlanState.approval = null;
   scenarioPlanState.run = null;
   scenarioPlanState.runAttempted = false;
   document.getElementById("scenario-plan-preview").hidden = true;
+  document.getElementById("scenario-plan-budget-handoff").hidden = true;
+  document.getElementById("scenario-plan-handoff-organization").textContent = "";
+  document.getElementById("scenario-plan-handoff-scenario").textContent = "";
+  document.getElementById("scenario-plan-handoff-digest").textContent = "";
+  document.getElementById("scenario-plan-handoff-blockers").replaceChildren();
+  document.getElementById("scenario-plan-copy-status").textContent = "";
   document.getElementById("scenario-plan-run").hidden = true;
   document.getElementById("scenario-plan-run-status").textContent = "";
   document.getElementById("scenario-plan-run-details").hidden = true;
@@ -131,13 +139,14 @@ function scenarioPlanValidateResponse(plan, organizationID, scenarioID) {
   const requiredStringFields = [
     "status", "organization_id", "scenario_id", "manifest_name", "budget_status",
     "topology_status", "policy_status", "northstar_assets_status", "package_contract_status",
-    "plan_digest",
+    "plan_digest", "authorization_scope_digest",
   ];
   if (!scenarioPlanIsObject(plan) || requiredStringFields.some(field => typeof plan[field] !== "string") ||
       !["blocked", "plan-only"].includes(plan.status) ||
       !["absent", "unverified", "approved", "unapproved"].includes(plan.budget_status) ||
       plan.organization_id !== organizationID || plan.scenario_id !== scenarioID ||
       !/^sha256:[0-9a-f]{64}$/.test(plan.plan_digest) ||
+      !/^sha256:[0-9a-f]{64}$/.test(plan.authorization_scope_digest) ||
       !Array.isArray(plan.machine_ids) || plan.machine_ids.some(id => typeof id !== "string") ||
       !Array.isArray(plan.workloads) || plan.workloads.some(workload =>
         !scenarioPlanIsObject(workload) || typeof workload.machine_id !== "string" ||
@@ -152,6 +161,65 @@ function scenarioPlanValidateResponse(plan, organizationID, scenarioID) {
     throw new Error("Preflight returned an invalid or mismatched scenario plan.");
   }
   return plan;
+}
+
+function scenarioPlanValidateUnavailableBudget(response, organizationID, scenarioID) {
+  if (!scenarioPlanIsObject(response) ||
+      response.organization_id !== organizationID ||
+      response.scenario_id !== scenarioID ||
+      typeof response.authorization_scope_digest !== "string" ||
+      !/^sha256:[0-9a-f]{64}$/.test(response.authorization_scope_digest) ||
+      !Array.isArray(response.blockers) ||
+      response.blockers.length === 0 ||
+      response.blockers.some(blocker => typeof blocker !== "string" || !blocker)) {
+    throw new Error("Budget authority returned an invalid or mismatched unavailable-evidence response.");
+  }
+  return response;
+}
+
+async function scenarioPlanPreflightRequest(organizationID, scenarioID) {
+  if (typeof window.zprOperatorFetch !== "function") {
+    throw new Error("Authenticated Simulator operator requests are unavailable.");
+  }
+  const response = await window.zprOperatorFetch("/api/simulator/scenario-plans/preflight", {
+    method: "POST",
+    cache: "no-store",
+    headers: { "Content-Type": "application/json", Accept: "application/json" },
+    body: JSON.stringify({ organization_id: organizationID, scenario_id: scenarioID }),
+  });
+  let body;
+  try {
+    body = await response.json();
+  } catch (error) {
+    if (!(error instanceof SyntaxError)) throw error;
+    throw new Error(`Preflight returned invalid JSON (HTTP ${response.status}).`);
+  }
+  if (response.status !== 200 && response.status !== 503) {
+    const message = scenarioPlanIsObject(body) && typeof body.error === "string"
+      ? body.error
+      : `HTTP ${response.status}`;
+    throw new Error(`Preflight failed: ${message}`);
+  }
+  return { status: response.status, body };
+}
+
+function scenarioPlanRenderUnavailableBudget(response) {
+  document.getElementById("scenario-plan-handoff-organization").textContent = response.organization_id;
+  document.getElementById("scenario-plan-handoff-scenario").textContent = response.scenario_id;
+  document.getElementById("scenario-plan-handoff-digest").textContent = response.authorization_scope_digest;
+  const blockers = document.getElementById("scenario-plan-handoff-blockers");
+  blockers.replaceChildren();
+  for (const blocker of response.blockers) {
+    const item = document.createElement("li");
+    item.textContent = blocker;
+    blockers.append(item);
+  }
+  document.getElementById("scenario-plan-budget-handoff").hidden = false;
+  document.getElementById("scenario-plan-approval-status").textContent =
+    "Approval unavailable: obtain a valid Control Room budget-authority grant, then refresh preflight.";
+  scenarioPlanSetStatus(
+    "Budget evidence is unavailable or invalid. No local approval or run can be requested.",
+  );
 }
 
 function scenarioPlanApprovalBlockers(plan) {
@@ -251,6 +319,7 @@ function scenarioPlanRender(plan) {
     ["Northstar assets status", plan.northstar_assets_status],
     ["Package contract status", plan.package_contract_status],
     ["Plan digest", plan.plan_digest],
+    ["Authorization-scope digest", plan.authorization_scope_digest],
   ]) {
     const term = document.createElement("dt");
     term.textContent = label;
@@ -397,18 +466,21 @@ async function preflightSelectedScenarioPlan() {
   scenarioPlanSetStatus("Requesting read-only scenario preflight…");
   scenarioPlanRenderControls();
   try {
-    const response = await scenarioResetRequest("/api/simulator/scenario-plans/preflight", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ organization_id: organizationID, scenario_id: scenarioID }),
-    });
+    const result = await scenarioPlanPreflightRequest(organizationID, scenarioID);
     if (requestID !== scenarioPlanState.planRequestID ||
         organizationID !== scenarioPlanState.organizationID || scenarioID !== scenarioPlanState.scenarioID) return;
-    scenarioPlanState.plan = scenarioPlanValidateResponse(response, organizationID, scenarioID);
+    if (result.status === 503) {
+      scenarioPlanState.unavailableBudget = scenarioPlanValidateUnavailableBudget(
+        result.body, organizationID, scenarioID,
+      );
+      scenarioPlanRenderUnavailableBudget(scenarioPlanState.unavailableBudget);
+      return;
+    }
+    scenarioPlanState.plan = scenarioPlanValidateResponse(result.body, organizationID, scenarioID);
     scenarioPlanRender(scenarioPlanState.plan);
     scenarioPlanSetStatus(
-      `Preflight ${response.status}; budget ${response.budget_status}; ` +
-      `${response.machine_ids.length} machine references and ${response.blockers.length} blockers. Review the plan below.`,
+      `Preflight ${result.body.status}; budget ${result.body.budget_status}; ` +
+      `${result.body.machine_ids.length} machine references and ${result.body.blockers.length} blockers. Review the plan below.`,
     );
     document.getElementById("scenario-plan-preview-title").focus();
   } catch (error) {
@@ -696,6 +768,22 @@ document.getElementById("scenario-plan-scenario").addEventListener("change", eve
 });
 document.getElementById("scenario-plan-preflight").addEventListener("click", () => {
   void preflightSelectedScenarioPlan();
+});
+document.getElementById("scenario-plan-copy-handoff").addEventListener("click", async () => {
+  const handoff = scenarioPlanState.unavailableBudget;
+  if (!handoff || handoff.organization_id !== scenarioPlanState.organizationID ||
+      handoff.scenario_id !== scenarioPlanState.scenarioID) return;
+  const status = document.getElementById("scenario-plan-copy-status");
+  try {
+    await navigator.clipboard.writeText(JSON.stringify({
+      organization_id: handoff.organization_id,
+      scenario_id: handoff.scenario_id,
+      authorization_scope_digest: handoff.authorization_scope_digest,
+    }, null, 2));
+    status.textContent = "Exact grant scope copied. Manually enter it in the authenticated Control Room budget-authority workflow.";
+  } catch (error) {
+    status.textContent = `Could not copy the grant scope: ${error.message || "clipboard access is unavailable"}.`;
+  }
 });
 document.getElementById("scenario-plan-approve").addEventListener("click", openScenarioPlanApprovalDialog);
 document.getElementById("scenario-plan-explicit-confirm").addEventListener("change", scenarioPlanRenderControls);

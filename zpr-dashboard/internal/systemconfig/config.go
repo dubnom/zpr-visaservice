@@ -20,11 +20,12 @@ const MaxConfigBytes = 64 << 10
 
 // Config is the management bootstrap input, not a complete runtime configuration.
 type Config struct {
-	SchemaVersion  int             `json:"schema_version"`
-	Organization   Organization    `json:"organization"`
-	ControlRoom    ControlRoom     `json:"control_room"`
-	ControlService *ControlService `json:"control_service,omitempty"`
-	OIDC           OIDC            `json:"oidc"`
+	SchemaVersion   int              `json:"schema_version"`
+	Organization    Organization     `json:"organization"`
+	ControlRoom     ControlRoom      `json:"control_room"`
+	ControlService  *ControlService  `json:"control_service,omitempty"`
+	BudgetAuthority *BudgetAuthority `json:"budget_authority,omitempty"`
+	OIDC            OIDC             `json:"oidc"`
 }
 
 type Organization struct {
@@ -45,6 +46,25 @@ type ControlService struct {
 	ClientKeyFile         string `json:"client_key_file"`
 	CAFile                string `json:"ca_file"`
 	TLSServerName         string `json:"tls_server_name,omitempty"`
+}
+
+type BudgetAuthority struct {
+	DatabaseFile              string `json:"database_file"`
+	DelegationTrustFile       string `json:"delegation_trust_file"`
+	ServiceListenAddress      string `json:"service_listen_address"`
+	ServiceCertificateFile    string `json:"service_certificate_file"`
+	ServiceKeyFile            string `json:"service_key_file"`
+	ServiceClientCAFile       string `json:"service_client_ca_file"`
+	ControlRoomSignerFile     string `json:"control_room_signer_file"`
+	ControlRoomSignerKeyFile  string `json:"control_room_signer_key_file"`
+	ControlRoomSignerAudience string `json:"control_room_signer_audience"`
+}
+
+type BudgetApprovalAccess struct {
+	ControlServiceURL string
+	SignerConfigFile  string
+	SignerKeyFile     string
+	SignerAudience    string
 }
 
 type OIDC struct {
@@ -155,13 +175,25 @@ func (config Config) Validate() error {
 			return errors.New("control_service.tls_server_name must be a host-only DNS name or unbracketed IP literal without a port, zone or URL components")
 		}
 	}
+	if config.BudgetAuthority != nil {
+		if config.SchemaVersion != 2 || config.ControlService == nil {
+			return errors.New("budget_authority requires schema_version 2 and control_service")
+		}
+		if err := config.BudgetAuthority.Validate(config.ControlService.URL); err != nil {
+			return err
+		}
+	}
 	if !organizationID.MatchString(config.Organization.ID) || !plainText(config.Organization.Name, 256) {
 		return errors.New("organization requires a 1-64 character lowercase alphanumeric/hyphen ID and a nonempty name")
 	}
 	if err := ValidateManagementEndpoint(config.ControlRoom.Origin, config.ControlRoom.ManagementIP); err != nil {
 		return err
 	}
-	if err := ValidateOperatorAccess(config.Organization.ID, config.ControlRoom.Origin, config.OIDC.Config); err != nil {
+	var budgetApprovalAccess *BudgetApprovalAccess
+	if config.BudgetAuthority != nil {
+		budgetApprovalAccess = config.BudgetAuthority.operatorAccess(config.ControlService.URL)
+	}
+	if err := ValidateOperatorAccessWithBudgetAuthority(config.Organization.ID, config.ControlRoom.Origin, config.OIDC.Config, budgetApprovalAccess); err != nil {
 		return err
 	}
 	files := []string{config.ControlRoom.CertificateFile, config.ControlRoom.KeyFile, config.OIDC.ClientSecretFile}
@@ -170,6 +202,17 @@ func (config Config) Validate() error {
 	}
 	if config.ControlService != nil {
 		files = append(files, config.ControlService.ClientCertificateFile, config.ControlService.ClientKeyFile, config.ControlService.CAFile)
+	}
+	if config.BudgetAuthority != nil {
+		files = append(files,
+			config.BudgetAuthority.DatabaseFile,
+			config.BudgetAuthority.DelegationTrustFile,
+			config.BudgetAuthority.ServiceCertificateFile,
+			config.BudgetAuthority.ServiceKeyFile,
+			config.BudgetAuthority.ServiceClientCAFile,
+			config.BudgetAuthority.ControlRoomSignerFile,
+			config.BudgetAuthority.ControlRoomSignerKeyFile,
+		)
 	}
 	seen := map[string]bool{}
 	for _, file := range files {
@@ -199,10 +242,27 @@ func ValidateManagementEndpoint(origin, managementIP string) error {
 	return nil
 }
 
-// ValidateOperatorAccess keeps production bootstrap and runtime grant scopes aligned.
+// ValidateOperatorAccess preserves the baseline production permission contract.
 func ValidateOperatorAccess(organization, origin string, config operatorauth.Config) error {
+	return ValidateOperatorAccessWithBudgetAuthority(organization, origin, config, nil)
+}
+
+// ValidateOperatorAccessWithBudgetAuthority accepts budget.approve only when
+// the actual Control Room signer and service audience are configured.
+func ValidateOperatorAccessWithBudgetAuthority(
+	organization, origin string,
+	config operatorauth.Config,
+	budget *BudgetApprovalAccess,
+) error {
 	if !organizationID.MatchString(organization) {
 		return errors.New("Control Room requires an explicit company organization ID")
+	}
+	if budget != nil {
+		if !canonicalAbsoluteFile(budget.SignerConfigFile) || !canonicalAbsoluteFile(budget.SignerKeyFile) ||
+			budget.SignerConfigFile == budget.SignerKeyFile ||
+			!exactHTTPSOrigin(budget.ControlServiceURL) || budget.SignerAudience != budget.ControlServiceURL {
+			return errors.New("budget approval requires signer files and an exact matching Control-Service audience")
+		}
 	}
 	if err := config.Validate(); err != nil {
 		return errors.New("oidc.config does not satisfy the operator OIDC configuration contract")
@@ -215,12 +275,18 @@ func ValidateOperatorAccess(organization, origin string, config operatorauth.Con
 		return errors.New("OIDC redirect_url must exactly match control_room.origin plus /auth/operator/callback")
 	}
 	monitoringGrant := false
+	budgetApprovalGrant := false
 	for _, grant := range config.Grants {
 		if len(grant.Organizations) != 1 || grant.Organizations[0] != organization {
 			return errors.New("each operator grant must scope exactly the configured organization")
 		}
 		for _, permission := range grant.Permissions {
-			if !slices.Contains([]string{
+			if permission == "budget.approve" {
+				if budget == nil {
+					return errors.New("budget.approve requires configured Control Room delegation signing")
+				}
+				budgetApprovalGrant = true
+			} else if !slices.Contains([]string{
 				"read", "create", "cancel", "approve", "reject",
 				"monitor.read", "policy.read", "policy.analyze", "policy.edit",
 				"gateway.read", "gateway.analyze", "gateway.edit",
@@ -234,7 +300,15 @@ func ValidateOperatorAccess(organization, origin string, config operatorauth.Con
 	if !monitoringGrant {
 		return errors.New("at least one explicitly named operator must have monitor.read for the configured organization")
 	}
+	if budget != nil && !budgetApprovalGrant {
+		return errors.New("configured budget approval requires an explicit exact-organization budget.approve operator grant")
+	}
 	return nil
+}
+
+func exactHTTPSOrigin(value string) bool {
+	address, err := url.Parse(value)
+	return err == nil && httpsAddress(address) && address.Path == "" && value == "https://"+address.Host
 }
 
 func httpsAddress(address *url.URL) bool {
