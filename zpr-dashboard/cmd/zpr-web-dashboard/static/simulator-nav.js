@@ -80,6 +80,7 @@
   let bannerSnapshot;
   let bannerError;
   let bannerOrganizationID;
+  let operatorOrganizationScopes = [];
   const renderBanner = () => {
     const status = document.querySelector(".main-content > .topbar .topbar-status");
     if (!status) return;
@@ -112,7 +113,10 @@
     }
     const setValue = (key, text) => { banner.querySelector(`[data-banner-value="${key}"]`).textContent = text; };
     banner.dataset.state = bannerError ? "disconnected" : bannerSnapshot ? "connected" : "loading";
-    setValue("backend", bannerError ? "Unavailable" : bannerSnapshot ? "Connected" : "Connecting");
+    const errorStatus = bannerError?.status;
+    const errorLabel = errorStatus === 401 ? "Sign-in required"
+      : errorStatus === 403 ? "Access restricted" : "Unavailable";
+    setValue("backend", bannerError ? errorLabel : bannerSnapshot ? "Connected" : "Connecting");
     banner.title = bannerError?.message || "";
     setValue("organization", bannerSnapshot?.organization?.name || bannerSnapshot?.active_organization_id || "Unavailable");
     const run = bannerSnapshot?.run;
@@ -124,10 +128,22 @@
   const bannerPoller = window.ZPRPageRuntime.createPoller({
     interval: 3000,
     run: async ({ signal, isCurrent }) => {
-      const data = await window.ZPRPageRuntime.requestJSON(window.fetch.bind(window), "/api/simulator/scenarios", { signal });
+      let scopedOrganizationID = "";
+      if (!operatorOrganizationScopes.includes("*")) {
+        if (operatorOrganizationScopes.includes(bannerOrganizationID)) {
+          scopedOrganizationID = bannerOrganizationID;
+        } else if (operatorOrganizationScopes.length === 1) {
+          scopedOrganizationID = operatorOrganizationScopes[0];
+        }
+      }
+      const path = scopedOrganizationID
+        ? `/api/simulator/organizations/${encodeURIComponent(scopedOrganizationID)}/scenarios`
+        : "/api/simulator/scenarios";
+      const data = await window.ZPRPageRuntime.requestJSON(window.fetch.bind(window), path, { signal });
       if (!isCurrent()) return;
-      if (typeof data?.active_organization_id !== "string" || !data.active_organization_id ||
-          !data.organization || data.organization.id !== data.active_organization_id ||
+      const expectedOrganizationID = scopedOrganizationID || data?.active_organization_id;
+      if (typeof expectedOrganizationID !== "string" || !expectedOrganizationID ||
+          !data.organization || data.organization.id !== expectedOrganizationID ||
           !Array.isArray(data.scenarios) || typeof data.run?.state !== "string") {
         throw new Error("Invalid simulator status response.");
       }
@@ -370,8 +386,15 @@
     renderBanner();
     bannerPoller.start();
   });
-  window.addEventListener("operator-session-ready", () => { void bannerPoller.refresh(); });
+  window.addEventListener("operator-session-ready", (event) => {
+    const organizations = event.detail?.identity?.organizations;
+    operatorOrganizationScopes = Array.isArray(organizations)
+      ? organizations.filter(value => typeof value === "string" && value.length > 0)
+      : [];
+    void bannerPoller.refresh();
+  });
   window.addEventListener("operator-session-cleared", () => {
+    operatorOrganizationScopes = [];
     bannerPoller.stop();
     bannerSnapshot = null;
     bannerError = null;

@@ -134,7 +134,15 @@ func handleWorkspaceScenarioCatalog(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	activeOrganizationID := manifest.OrganizationID
-	organizationID := strings.TrimSpace(r.URL.Query().Get("organization_id"))
+	organizationID := strings.TrimSpace(r.PathValue("organization"))
+	queryOrganizationID := strings.TrimSpace(r.URL.Query().Get("organization_id"))
+	if organizationID != "" && queryOrganizationID != "" && organizationID != queryOrganizationID {
+		writeWorkspaceError(w, http.StatusBadRequest, "organization path and query do not match")
+		return
+	}
+	if organizationID == "" {
+		organizationID = queryOrganizationID
+	}
 	if organizationID == "" {
 		organizationID = manifest.OrganizationID
 	}
@@ -377,7 +385,14 @@ func handleWorkspaceScenarioRun(w http.ResponseWriter, r *http.Request) {
 		writeWorkspaceError(w, http.StatusServiceUnavailable, "simulation manifest unavailable")
 		return
 	}
-	organizationID := manifest.OrganizationID
+	organizationID := strings.TrimSpace(r.PathValue("organization"))
+	if organizationID == "" {
+		organizationID = manifest.OrganizationID
+	}
+	if authorized, ok := simulatorAuthorizedOrganization(r.Context()); ok && authorized != organizationID {
+		writeWorkspaceError(w, http.StatusForbidden, "requested organization is outside the authorized scope")
+		return
+	}
 	organization, err := loadSimulatorOrganization(simulatorOrganizationsDirectory(), organizationID)
 	if err != nil {
 		writeWorkspaceError(w, http.StatusServiceUnavailable, "organization profile unavailable")

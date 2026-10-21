@@ -36,6 +36,10 @@ func TestSimulatorAPIPermissionMap(t *testing.T) {
 		{http.MethodGet, "/api/simulator/organizations/acme/directory", "directory.read", "acme", true},
 		{http.MethodPut, "/api/simulator/organizations/acme/directory", "directory.edit", "acme", true},
 		{http.MethodPost, "/api/simulator/organizations/acme/directory/publish", "directory.publish", "acme", true},
+		{http.MethodGet, "/api/simulator/organizations/acme/scenarios", "scenario.read", "acme", true},
+		{http.MethodPost, "/api/simulator/organizations/acme/scenario-plans/preflight", "scenario.read", "acme", true},
+		{http.MethodPost, "/api/simulator/organizations/acme/scenario-plans/approve", "scenario.run", "acme", true},
+		{http.MethodPost, "/api/simulator/organizations/acme/scenarios/allow-web/run", "scenario.run", "acme", true},
 		{http.MethodGet, "/api/simulator/organizations/acme/scenarios/allow-web", "scenario.read", "acme", true},
 		{http.MethodPost, "/api/simulator/organizations/acme/scenarios", "scenario.edit", "acme", true},
 		{http.MethodPost, "/api/simulator/organizations/acme/scenario-check", "scenario.analyze", "acme", true},
@@ -116,6 +120,45 @@ func TestSimulatorAPIProxyAuthorizationAndOrganizationBinding(t *testing.T) {
 	missingOrganization.ServeHTTP(response, newRequest(http.MethodGet, "/api/simulator/status"))
 	if response.Code != http.StatusServiceUnavailable || proxyCalls != 2 {
 		t.Fatalf("missing organization status=%d proxy=%d", response.Code, proxyCalls)
+	}
+}
+
+func TestScopedScenarioRoutesAuthorizeRequestedOrganizationInsteadOfActiveOrganization(t *testing.T) {
+	authorizer := &testOperatorAuthorizer{}
+	proxyCalls := 0
+	handler := simulatorAPIProxy(
+		authorizer,
+		func(*http.Request) (string, error) { return "demo", nil },
+		http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			organization, ok := simulatorAuthorizedOrganization(r.Context())
+			if !ok || organization != "northstar" {
+				t.Errorf("authorized organization=%q present=%t, want northstar", organization, ok)
+			}
+			proxyCalls++
+			w.WriteHeader(http.StatusNoContent)
+		}),
+	)
+	for _, test := range []struct {
+		method, path, permission string
+	}{
+		{http.MethodGet, "/api/simulator/organizations/northstar/scenarios", "scenario.read"},
+		{http.MethodPost, "/api/simulator/organizations/northstar/scenario-plans/preflight", "scenario.read"},
+		{http.MethodPost, "/api/simulator/organizations/northstar/scenario-plans/approve", "scenario.run"},
+		{http.MethodPost, "/api/simulator/organizations/northstar/scenarios/deny-machine-policy/run", "scenario.run"},
+	} {
+		t.Run(test.method+" "+test.path, func(t *testing.T) {
+			request := httptest.NewRequest(test.method, "http://127.0.0.1:8788"+test.path, nil)
+			response := httptest.NewRecorder()
+			handler.ServeHTTP(response, request)
+			if response.Code != http.StatusNoContent || authorizer.organization != "northstar" ||
+				authorizer.permission != test.permission {
+				t.Fatalf("status=%d scope=%q/%q, want northstar/%s",
+					response.Code, authorizer.organization, authorizer.permission, test.permission)
+			}
+		})
+	}
+	if proxyCalls != 4 {
+		t.Fatalf("proxy calls=%d, want 4", proxyCalls)
 	}
 }
 

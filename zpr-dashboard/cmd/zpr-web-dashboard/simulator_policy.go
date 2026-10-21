@@ -33,6 +33,23 @@ func simulatorAPIPermission(method, requestPath string) (permission, explicitOrg
 	if len(parts) < 3 || parts[0] != "api" || parts[1] != "simulator" {
 		return "", "", false
 	}
+	if len(parts) == 5 && parts[2] == "organizations" && parts[4] == "scenarios" &&
+		method == http.MethodGet {
+		return "scenario.read", parts[3], true
+	}
+	if len(parts) == 6 && parts[2] == "organizations" && parts[4] == "scenario-plans" &&
+		method == http.MethodPost {
+		switch parts[5] {
+		case "preflight":
+			return "scenario.read", parts[3], true
+		case "approve":
+			return "scenario.run", parts[3], true
+		}
+	}
+	if len(parts) == 7 && parts[2] == "organizations" && parts[4] == "scenarios" &&
+		parts[6] == "run" && method == http.MethodPost {
+		return "scenario.run", parts[3], true
+	}
 	if len(parts) == 4 && parts[2] == "scenario-plans" && method == http.MethodPost {
 		switch parts[3] {
 		case "preflight":
@@ -112,6 +129,17 @@ func simulatorAPIPermission(method, requestPath string) (permission, explicitOrg
 			return "directory.edit", organization, true
 		case len(parts) == 6 && parts[4] == "directory" && parts[5] == "publish" && method == http.MethodPost:
 			return "directory.publish", organization, true
+		case len(parts) == 5 && parts[4] == "scenarios" && method == http.MethodGet:
+			return "scenario.read", organization, true
+		case len(parts) == 6 && parts[4] == "scenario-plans" && method == http.MethodPost:
+			switch parts[5] {
+			case "preflight":
+				return "scenario.read", organization, true
+			case "approve":
+				return "scenario.run", organization, true
+			}
+		case len(parts) == 7 && parts[4] == "scenarios" && parts[6] == "run" && method == http.MethodPost:
+			return "scenario.run", organization, true
 		case len(parts) == 5 && parts[4] == "scenarios" && method == http.MethodPost:
 			return "scenario.edit", organization, true
 		case len(parts) == 5 && parts[4] == "scenario-check" && method == http.MethodPost:

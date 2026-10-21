@@ -181,12 +181,15 @@ async function scenarioPlanPreflightRequest(organizationID, scenarioID) {
   if (typeof window.zprOperatorFetch !== "function") {
     throw new Error("Authenticated Simulator operator requests are unavailable.");
   }
-  const response = await window.zprOperatorFetch("/api/simulator/scenario-plans/preflight", {
-    method: "POST",
-    cache: "no-store",
-    headers: { "Content-Type": "application/json", Accept: "application/json" },
-    body: JSON.stringify({ organization_id: organizationID, scenario_id: scenarioID }),
-  });
+  const response = await window.zprOperatorFetch(
+    `/api/simulator/organizations/${encodeURIComponent(organizationID)}/scenario-plans/preflight`,
+    {
+      method: "POST",
+      cache: "no-store",
+      headers: { "Content-Type": "application/json", Accept: "application/json" },
+      body: JSON.stringify({ organization_id: organizationID, scenario_id: scenarioID }),
+    },
+  );
   let body;
   try {
     body = await response.json();
@@ -388,7 +391,7 @@ async function loadScenarioPlanCatalog(organizationID) {
   if (!organizationID) return;
   try {
     const data = await scenarioResetRequest(
-      `/api/simulator/scenarios?organization_id=${encodeURIComponent(organizationID)}`,
+      `/api/simulator/organizations/${encodeURIComponent(organizationID)}/scenarios`,
     );
     if (requestID !== scenarioPlanState.catalogRequestID || organizationID !== scenarioPlanState.organizationID) return;
     if (!scenarioPlanIsObject(data) || data.organization?.id !== organizationID || !Array.isArray(data.scenarios) ||
@@ -436,12 +439,13 @@ async function initializeScenarioPlanWorkflow() {
     }
     if (data.active_id && !seen.has(data.active_id)) throw new Error("Active organization is missing from the catalog.");
     scenarioPlanState.organizations = data.organizations;
-    scenarioPlanState.organizationID = data.active_id;
+    scenarioPlanState.organizationID = data.active_id ||
+      (data.organizations.length === 1 ? data.organizations[0].id : "");
     organizationSelect.replaceChildren();
     scenarioPlanAppendOption(organizationSelect, "", "Select an organization");
     for (const item of data.organizations) scenarioPlanAppendOption(organizationSelect, item.id, item.name);
-    organizationSelect.value = data.active_id;
-    if (data.active_id) await loadScenarioPlanCatalog(data.active_id);
+    organizationSelect.value = scenarioPlanState.organizationID;
+    if (scenarioPlanState.organizationID) await loadScenarioPlanCatalog(scenarioPlanState.organizationID);
     else {
       scenarioPlanSetStatus("Select an organization to load its scenarios.");
       scenarioPlanRenderControls();
@@ -524,16 +528,19 @@ async function confirmScenarioPlanApproval() {
   document.getElementById("scenario-plan-approval-dialog-status").textContent = "Submitting explicit approval…";
   scenarioPlanRenderControls();
   try {
-    const response = await scenarioResetRequest("/api/simulator/scenario-plans/approve", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        organization_id: plan.organization_id,
-        scenario_id: plan.scenario_id,
-        plan_digest: plan.plan_digest,
-        approved: true,
-      }),
-    });
+    const response = await scenarioResetRequest(
+      `/api/simulator/organizations/${encodeURIComponent(plan.organization_id)}/scenario-plans/approve`,
+      {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          organization_id: plan.organization_id,
+          scenario_id: plan.scenario_id,
+          plan_digest: plan.plan_digest,
+          approved: true,
+        }),
+      },
+    );
     if (requestID !== scenarioPlanState.planRequestID || plan !== scenarioPlanState.plan) return;
     if (!scenarioPlanIsObject(response) || response.approved !== true ||
         typeof response.approval_id !== "string" || !response.approval_id ||
@@ -585,7 +592,7 @@ async function runApprovedScenario() {
   scenarioPlanRenderControls();
   try {
     const response = await scenarioResetRequest(
-      `/api/simulator/scenarios/${encodeURIComponent(scenarioID)}/run`,
+      `/api/simulator/organizations/${encodeURIComponent(organizationID)}/scenarios/${encodeURIComponent(scenarioID)}/run`,
       {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -1517,12 +1524,33 @@ async function confirmScenarioReset() {
   renderScenarioResetDialog();
 }
 
+function scenarioCatalogOrganization() {
+  const allowed = scenarioResetIdentity?.organizations;
+  if (Array.isArray(allowed) && !allowed.includes("*")) {
+    if (scenarioPlanState.organizationID && allowed.includes(scenarioPlanState.organizationID)) {
+      return scenarioPlanState.organizationID;
+    }
+    if (activeScenarioOrganization && allowed.includes(activeScenarioOrganization)) {
+      return activeScenarioOrganization;
+    }
+    return allowed.length === 1 ? allowed[0] : "";
+  }
+  return scenarioPlanState.organizationID || activeScenarioOrganization;
+}
+
 async function refreshScenarios({ signal, isCurrent }) {
-  const data = await scenarioRequest("/api/simulator/scenarios", { cache: "no-store", signal });
+  const requestedOrganizationID = scenarioCatalogOrganization();
+  const path = requestedOrganizationID
+    ? `/api/simulator/organizations/${encodeURIComponent(requestedOrganizationID)}/scenarios`
+    : "/api/simulator/scenarios";
+  const data = await scenarioRequest(path, { cache: "no-store", signal });
   if (!isCurrent()) return;
   const error = document.getElementById("scenario-error");
   error.hidden = true;
-  const organization = data.active_organization_id || activeScenarioOrganization;
+  const organization = requestedOrganizationID || data.active_organization_id || activeScenarioOrganization;
+  if (requestedOrganizationID && data.organization?.id !== requestedOrganizationID) {
+    throw new Error("Scenario catalog did not match the authorized organization.");
+  }
   if (organization !== activeScenarioOrganization &&
       (scenarioPlanState.plan || scenarioPlanState.approval || scenarioPlanState.run ||
         scenarioPlanState.runAttempted || scenarioPlanState.busy) &&
@@ -2203,6 +2231,7 @@ window.addEventListener("operator-session-ready", event => {
     issuer: scenarioResetIdentity.issuer, subject: scenarioResetIdentity.subject,
   })) invalidateScenarioReset("The signed-in operator changed; the previous reset intent was discarded.");
   scenarioResetIdentity = identity;
+  void refreshScenariosNow();
   if (scenarioResetFlow &&
       !scenarioResetHasPermission(identity, scenarioResetFlow.organization)) {
     invalidateScenarioReset("The signed-in identity is not authorized for this reset target.");
