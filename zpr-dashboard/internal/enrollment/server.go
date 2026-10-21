@@ -119,6 +119,13 @@ func (c ServerConfig) Validate() error {
 }
 
 func newDeviceServer(config ServerConfig) (*http.Server, *Store, error) {
+	return newDeviceServerWithRuntimeCredentialIssuer(config, nil)
+}
+
+func newDeviceServerWithRuntimeCredentialIssuer(
+	config ServerConfig,
+	runtimeCredentialIssuer RuntimeCredentialIssuer,
+) (*http.Server, *Store, error) {
 	if err := config.Validate(); err != nil {
 		return nil, nil, err
 	}
@@ -147,9 +154,10 @@ func newDeviceServer(config ServerConfig) (*http.Server, *Store, error) {
 		return nil, nil, err
 	}
 	service, err := NewDeviceService(store, DeviceConfig{Audience: config.Audience,
-		ChallengeLifetime:    time.Duration(config.ChallengeLifetimeSeconds) * time.Second,
-		ApprovalLifetime:     time.Duration(config.ApprovalLifetimeSeconds) * time.Second,
-		ImportApprovalIssuer: issuer})
+		ChallengeLifetime:       time.Duration(config.ChallengeLifetimeSeconds) * time.Second,
+		ApprovalLifetime:        time.Duration(config.ApprovalLifetimeSeconds) * time.Second,
+		ImportApprovalIssuer:    issuer,
+		RuntimeCredentialIssuer: runtimeCredentialIssuer})
 	if err != nil {
 		_ = store.Close()
 		return nil, nil, err
@@ -168,7 +176,8 @@ func newDeviceServer(config ServerConfig) (*http.Server, *Store, error) {
 			apiError(w, http.StatusMisdirectedRequest, "Enrollment host does not match the configured service.")
 			return
 		}
-		if r.URL.Path != DeviceAPIPrefix+"challenges" && r.URL.Path != DeviceAPIPrefix+"proofs" {
+		if r.URL.Path != DeviceAPIPrefix+"challenges" && r.URL.Path != DeviceAPIPrefix+"proofs" &&
+			r.URL.Path != DeviceAPIPrefix+"results" {
 			apiError(w, http.StatusNotFound, "Enrollment route not found.")
 			return
 		}

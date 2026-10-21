@@ -76,6 +76,17 @@ def regular_file(path, executable=False):
         fail("package entrypoint is not executable: " + str(path))
 
 
+def state_owner_uids():
+    effective_uid = os.geteuid()
+    owners = {0, effective_uid}
+    sudo_uid = os.environ.get("SUDO_UID")
+    if effective_uid == 0 and sudo_uid is not None:
+        if not re.fullmatch(r"(?:0|[1-9][0-9]*)", sudo_uid):
+            fail("SUDO_UID must be a canonical non-negative user ID")
+        owners.add(int(sudo_uid))
+    return owners
+
+
 release_root = canonical_path(sys.argv[1], "ZPR_DEMO_RELEASE_ROOT")
 state_root = canonical_path(sys.argv[2], "ZPR_DEMO_STATE_ROOT")
 if not release_root.is_dir():
@@ -85,6 +96,7 @@ if release_root == state_root or release_root in state_root.parents or state_roo
 if not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9._-]{0,79}", release_root.name):
     fail("invalid installed release directory name")
 
+allowed_state_owners = state_owner_uids()
 for directory in [state_root, *state_root.parents]:
     if not directory.exists():
         if directory == state_root:
@@ -93,8 +105,8 @@ for directory in [state_root, *state_root.parents]:
     info = directory.lstat()
     if not stat.S_ISDIR(info.st_mode) or directory.is_symlink():
         fail("state path contains a non-directory or symlink")
-    if info.st_uid not in (0, os.geteuid()):
-        fail("state ancestors must be owned by root or the invoking user")
+    if info.st_uid not in allowed_state_owners:
+        fail("state ancestors must be owned by root, the invoking user, or SUDO_UID")
     if info.st_mode & 0o022 and not (info.st_uid == 0 and info.st_mode & stat.S_ISVTX):
         fail("state ancestors must not be writable by other users")
     if directory == state_root and (info.st_uid != os.geteuid() or stat.S_IMODE(info.st_mode) != 0o700):

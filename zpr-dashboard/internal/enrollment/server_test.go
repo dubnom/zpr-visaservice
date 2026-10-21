@@ -166,6 +166,146 @@ func TestDeviceServerTLSClaimApprovalStatusAndIsolation(t *testing.T) {
 	}
 }
 
+func TestDeviceServerRuntimeCredentialIssuerInjectionAndDefaultDenial(t *testing.T) {
+	for _, test := range []struct {
+		name   string
+		inject bool
+	}{
+		{name: "injected issuer serves result"},
+		{name: "default server has no issuer"},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			config, roots := serverConfig(t)
+			issuer := &fakeRuntimeCredentialIssuer{}
+			var server *http.Server
+			var store *Store
+			var err error
+			if test.inject {
+				server, store, err = newDeviceServerWithRuntimeCredentialIssuer(config, issuer)
+			} else {
+				server, store, err = newDeviceServer(config)
+			}
+			if err != nil {
+				t.Fatal(err)
+			}
+			defer store.Close()
+
+			tlsServer := httptest.NewUnstartedServer(server.Handler)
+			tlsServer.TLS = server.TLSConfig
+			tlsServer.StartTLS()
+			defer tlsServer.Close()
+			client := &http.Client{Timeout: 5 * time.Second, Transport: &http.Transport{
+				TLSClientConfig: &tls.Config{
+					RootCAs: roots, ServerName: "localhost", MinVersion: tls.VersionTLS13,
+				},
+			}}
+			defer client.CloseIdleConnections()
+			call := func(path string, input any) (int, []byte) {
+				t.Helper()
+				body, err := json.Marshal(input)
+				if err != nil {
+					t.Fatal(err)
+				}
+				request, err := http.NewRequest(http.MethodPost, tlsServer.URL+path, bytes.NewReader(body))
+				if err != nil {
+					t.Fatal(err)
+				}
+				request.Host = "localhost:9443"
+				request.Header.Set("Content-Type", "application/json")
+				response, err := client.Do(request)
+				if err != nil {
+					t.Fatal(err)
+				}
+				defer response.Body.Close()
+				data, err := io.ReadAll(response.Body)
+				if err != nil {
+					t.Fatal(err)
+				}
+				return response.StatusCode, data
+			}
+
+			now := time.Now().UTC().Truncate(time.Second)
+			invitation, code := createInvitation(t, store, now)
+			enrollmentKey, runtimeKey := deviceKey(t), deviceKey(t)
+			status, data := call(DeviceAPIPrefix+"challenges", ChallengeRequest{
+				Organization:     invitation.Asset.Organization,
+				InvitationID:     invitation.ID,
+				Purpose:          "claim",
+				Code:             code,
+				PublicKey:        encodedKey(t, enrollmentKey),
+				RuntimePublicKey: encodedKey(t, runtimeKey),
+			})
+			if status != http.StatusCreated {
+				t.Fatalf("claim challenge=%d %s", status, data)
+			}
+			var challenge Challenge
+			if err := json.Unmarshal(data, &challenge); err != nil {
+				t.Fatal(err)
+			}
+			status, data = call(DeviceAPIPrefix+"proofs", signedProof(t, enrollmentKey, challenge, runtimeKey))
+			if status != http.StatusOK {
+				t.Fatalf("claim proof=%d %s", status, data)
+			}
+
+			adminStore, err := Open(config.DatabaseFile)
+			if err != nil {
+				t.Fatal(err)
+			}
+			defer adminStore.Close()
+			claimed, err := adminStore.Get(context.Background(), invitation.Asset.Organization, invitation.ID, now)
+			if err != nil {
+				t.Fatal(err)
+			}
+			approved, err := adminStore.DecideWithRuntimeKey(context.Background(), invitation.Asset.Organization,
+				invitation.ID, "admin", "approved", "Verified device", claimed.KeyFingerprint,
+				claimed.RuntimeKeyFingerprint, claimed.Revision, now.Add(time.Second))
+			if err != nil {
+				t.Fatal(err)
+			}
+			if test.inject {
+				issuer.raw = runtimeCredentialEnvelopeJSON(t, runtimeCredentialRequest(approved), runtimeKey, now)
+			}
+			status, data = call(DeviceAPIPrefix+"challenges", ChallengeRequest{
+				Organization:     invitation.Asset.Organization,
+				InvitationID:     invitation.ID,
+				Purpose:          RuntimeCredentialPurpose,
+				PublicKey:        encodedKey(t, enrollmentKey),
+				RuntimePublicKey: encodedKey(t, runtimeKey),
+			})
+			if !test.inject {
+				if status != http.StatusForbidden {
+					t.Fatalf("default server result challenge=%d body=%s", status, data)
+				}
+				if issuer.calls != 0 {
+					t.Fatalf("default server invoked issuer %d times", issuer.calls)
+				}
+				return
+			}
+			if status != http.StatusCreated {
+				t.Fatalf("result challenge=%d %s", status, data)
+			}
+			if err := json.Unmarshal(data, &challenge); err != nil {
+				t.Fatal(err)
+			}
+			status, data = call(DeviceAPIPrefix+"results", signedProof(t, enrollmentKey, challenge, runtimeKey))
+			if status != http.StatusOK {
+				t.Fatalf("result delivery=%d %s", status, data)
+			}
+			var result RuntimeCredentialEnvelope
+			if err := decodeJSON(bytes.NewReader(data), &result); err != nil {
+				t.Fatalf("decode server result: %v body=%s", err, data)
+			}
+			if result.InvitationID != invitation.ID || result.OrganizationID != invitation.Asset.Organization ||
+				result.AssetID != invitation.Asset.AssetID || result.Profile != invitation.Asset.Profile ||
+				result.InvitationRevision != approved.Revision ||
+				result.RuntimePublicKeyFingerprint != approved.RuntimeKeyFingerprint ||
+				issuer.calls != 1 {
+				t.Fatalf("server result=%+v issuer calls=%d", result, issuer.calls)
+			}
+		})
+	}
+}
+
 func TestDeviceServerConfigurationAndTLSFailClosed(t *testing.T) {
 	config, _ := serverConfig(t)
 	for _, mutate := range []func(*ServerConfig){

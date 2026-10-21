@@ -8,6 +8,7 @@ import (
 	"errors"
 	"fmt"
 	"net/url"
+	"strconv"
 	"strings"
 
 	"gopkg.in/yaml.v3"
@@ -27,15 +28,33 @@ func (config providerConfig) validate(domain string) error {
 		"room": config.RoomOrigin, "simulator": config.SimulatorOrigin, "oidc": config.OIDCOrigin,
 	} {
 		address, err := url.Parse(origin)
-		if err != nil || systemconfig.ValidateManagementEndpoint(origin, "") != nil ||
+		if err != nil || address == nil {
+			return errors.New("identity services require exact HTTPS origins for the generated lab hosts or Simulator localhost")
+		}
+		if host == "simulator" && address.Hostname() == "localhost" {
+			if !validLocalSimulatorOrigin(origin, address) {
+				return errors.New("Simulator localhost origin must be an exact HTTPS origin with an explicit valid port")
+			}
+			continue
+		}
+		if systemconfig.ValidateManagementEndpoint(origin, "") != nil ||
 			address.Hostname() != host+"."+domain {
-			return errors.New("identity services require exact HTTPS room/simulator/oidc origins matching generated lab hostnames")
+			return errors.New("identity services require exact HTTPS origins for the generated lab hosts or Simulator localhost")
 		}
 	}
 	if config.Deployment != nil {
 		return config.Deployment.validate(config)
 	}
 	return nil
+}
+
+func validLocalSimulatorOrigin(origin string, address *url.URL) bool {
+	port, err := strconv.Atoi(address.Port())
+	return err == nil && port > 0 && port <= 65535 &&
+		address.Scheme == "https" && address.Host == "localhost:"+strconv.Itoa(port) &&
+		address.User == nil && address.Path == "" && address.RawPath == "" &&
+		address.RawQuery == "" && !address.ForceQuery && address.Fragment == "" &&
+		address.Opaque == "" && origin == "https://"+address.Host
 }
 
 func (config providerConfig) render(domain string, files map[string][]byte) error {

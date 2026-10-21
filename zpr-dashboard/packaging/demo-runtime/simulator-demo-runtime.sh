@@ -162,6 +162,10 @@ operator_origin=${ZPR_SIMULATOR_OPERATOR_ORIGIN:-}
 budget_authority_url=${ZPR_BUDGET_AUTHORITY_URL:-}
 budget_authority_tls_server_name=${ZPR_BUDGET_AUTHORITY_TLS_SERVER_NAME:-}
 simulator_operator_trusted_peer=${ZPR_SIMULATOR_OPERATOR_TRUSTED_PEER_IP:-}
+container_port=8788
+if [ -n "$operator_origin" ]; then
+    container_port=$host_port
+fi
 operator_config_digest=none
 validate_ipv4_address() {
     python3 - "$1" <<'PY'
@@ -415,7 +419,7 @@ PY
 
 inspect_container() {
     docker container inspect --format \
-        '{{index .Config.Labels "zpr.demo.package"}}|{{index .Config.Labels "zpr.demo.release"}}|{{.Image}}|{{range $port, $bindings := .HostConfig.PortBindings}}{{range $bindings}}{{.HostIp}}:{{.HostPort}}{{end}}{{end}}|{{index .Config.Labels "zpr.simulator.operator-config-sha256"}}|{{index .Config.Labels "zpr.simulator.packaged-provisioning-enabled"}}|{{index .Config.Labels "zpr.simulator.docker-network"}}|{{.State.Status}}' \
+        '{{index .Config.Labels "zpr.demo.package"}}|{{index .Config.Labels "zpr.demo.release"}}|{{.Image}}|{{range $port, $bindings := .HostConfig.PortBindings}}{{range $bindings}}{{.HostIp}}:{{.HostPort}}->{{$port}}{{end}}{{end}}|{{index .Config.Labels "zpr.simulator.operator-config-sha256"}}|{{index .Config.Labels "zpr.simulator.packaged-provisioning-enabled"}}|{{index .Config.Labels "zpr.simulator.docker-network"}}|{{.State.Status}}' \
         "$container_name"
 }
 
@@ -457,7 +461,7 @@ resolve_docker_socket() {
 
 verify_container() {
     metadata=$1
-    expected_prefix="simulator|$release_id|$expected_image_id|127.0.0.1:$host_port|$operator_config_digest|$enable_provisioning|$docker_network|"
+    expected_prefix="simulator|$release_id|$expected_image_id|127.0.0.1:$host_port->$container_port/tcp|$operator_config_digest|$enable_provisioning|$docker_network|"
     case "$metadata" in
         "$expected_prefix"*) ;;
         *) fail "container name is occupied by a different or modified container: $container_name" ;;
@@ -626,11 +630,14 @@ PY
             if [ "$socket_gid" != "$group_id" ]; then
                 set -- "$@" --group-add "$socket_gid"
             fi
+            if [ -n "$operator_origin" ]; then
+                set -- "$@" --entrypoint /usr/local/bin/zpr-web-dashboard
+            fi
             set -- "$@" \
                 --read-only \
                 --security-opt no-new-privileges:true \
                 --tmpfs /tmp:rw,noexec,nosuid,size=16777216 \
-                -p "127.0.0.1:$host_port:8788" \
+                -p "127.0.0.1:$host_port:$container_port" \
                 -v "$docker_socket:/var/run/docker.sock" \
                 -v "$runtime_dir:/opt/zpr-simulator/runtime:ro" \
                 -v "$state_dir:/var/lib/zpr-simulator"
@@ -670,6 +677,9 @@ PY
                 -e SIMULATION_PUBLISHED_DIRECTORY_DIR=/var/lib/zpr-simulator/published-directories \
                 -e ZPR_WEB_DASHBOARD_BIN=/usr/local/bin/zpr-web-dashboard \
                 "$image_reference"
+            if [ -n "$operator_origin" ]; then
+                set -- "$@" -mode simulator -listen "0.0.0.0:$container_port"
+            fi
             docker "$@" >/dev/null ||
                 fail "Docker could not create the Simulator container"
         fi

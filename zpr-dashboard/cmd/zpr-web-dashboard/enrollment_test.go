@@ -21,6 +21,8 @@ import (
 func TestEnrollmentConfigurationDisabledOrIncomplete(t *testing.T) {
 	t.Setenv("ZPR_ENROLLMENT_CONFIG_FILE", "")
 	t.Setenv("ZPR_ENROLLMENT_DATABASE_FILE", "")
+	t.Setenv("ZPR_ENROLLMENT_SERVICE_URL", "")
+	t.Setenv("ZPR_OPERATOR_DELEGATION_TRUST_FILE", filepath.Join(t.TempDir(), "budget-delegation-trust.json"))
 	handler, closeStore, err := configuredEnrollmentHandler()
 	if err != nil {
 		t.Fatal(err)

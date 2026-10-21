@@ -236,6 +236,8 @@ causes the launcher to refuse an existing container rather than silently
 reconfigure it. An HTTPS URL in launcher output is only the configured UI
 origin, not evidence that DNS, TLS, OIDC login, budget authority, or protected
 scenario execution is ready.
+For protected HTTPS, the container listener uses the same fixed port as the
+configured origin while the host publishes that port only on loopback.
 
 Choose **Machine provisioning**, select one of the two profile-enabled members,
 refresh, select the explicit demo-key approval checkbox, and provision.
@@ -644,6 +646,49 @@ Trusted attribute-service mappings, device records, policy attributes/change
 feeds and the full real-package configuration handoff remain unfinished.
 No Simulator API, profile, manifest or runtime state is needed by LDAP or Dex.
 
+### Demo-only human OIDC subject inspection
+
+`cmd/zpr-lab-oidc-subject` performs a one-time human login against an explicitly
+configured Dex issuer and prints only the verified issuer (`iss`) and subject
+(`sub`). It creates no session, grant, enrollment, or production credential and
+does not change Control Room, Control-Service, Dex, or LDAP behavior. It does not
+read `lab-operator.secret`; enter that human password only in the browser.
+The protected `oidc-room-client.secret` is supplied by file path for the
+existing OIDC client's code exchange and is never printed.
+
+For the phase-1 identity output at
+`/home/dubnom/.local/state/zpr-r6-identity-20261021`, the generated
+Control Room client ID is `zpr-control-room` and its exact registered callback
+is `https://room.10.0.1.160.nip.io:8888/auth/operator/callback`. Run the
+inspector on the host with the assigned private address `10.0.1.160`; the
+callback hostname must resolve to that address, the browser must trust the lab
+CA, and TCP port 8888 must be available. The inspector binds only that explicit
+private address and port and fails if another listener already occupies it; it
+does not stop or replace a service.
+
+```sh
+go run ./cmd/zpr-lab-oidc-subject \
+  -issuer https://oidc.10.0.1.160.nip.io:8891 \
+  -client-id zpr-control-room \
+  -redirect-uri https://room.10.0.1.160.nip.io:8888/auth/operator/callback \
+  -listen-ip 10.0.1.160 \
+  -port 8888 \
+  -tls-cert /home/dubnom/.local/state/zpr-r6-identity-20261021/room-chain.pem \
+  -tls-key /home/dubnom/.local/state/zpr-r6-identity-20261021/room-key.pem \
+  -ca-file /home/dubnom/.local/state/zpr-r6-identity-20261021/lab-ca.pem \
+  -client-secret-file /home/dubnom/.local/state/zpr-r6-identity-20261021/oidc-room-client.secret \
+  -timeout 2m
+```
+
+Open the authorization URL printed by the command in the browser, sign in as
+the named lab user using `lab-operator.secret` only in the browser, and allow
+the redirect to return to the callback. The callback page is generic and does
+not display the authorization code or state. After TLS, discovery, PKCE, ID
+token signature, issuer, audience, expiry, and nonce verification, the terminal
+prints only `iss` and `sub`. Tokens and codes are not saved. This is a
+demo-only identity inspection aid, not proof of any ZPR grant or production
+authorization.
+
 ### Same-host independent identity stack
 
 The approved initial topology is **one Ubuntu server, separate stacks and
@@ -685,6 +730,12 @@ This generates files only. The default platform is `linux/amd64`;
 address must be an assigned private IPv4 on the host, never wildcard/loopback.
 LDAP publishes TCP 1636; OIDC publishes its exact issuer port. Room, Simulator,
 LDAP and OIDC require distinct same-host ports, including implicit HTTPS 443.
+The identity bootstrap may use `https://simulator.<domain>:<port>` for its
+initial client registration. Final protected Simulator runtime output must use
+`https://localhost:8890`; it generates an exact-localhost TLS CA/certificate
+and a new-only Dex Compose override that replaces only the Simulator callback.
+The Simulator host listener remains loopback-only; do not change the operator
+origin guard or use a nip.io origin for that listener.
 When generating DNS records too, the companion record address must match the
 identity bind address. Apply the records through existing network DNS and
 authorize firewall access explicitly; there is no host network/DNS change.
@@ -729,6 +780,55 @@ There is no destructive reset/uninstall or backup/restore workflow in this slice
 Services use individual read-only config mounts, read-only root filesystems,
 dropped capabilities and no Docker socket. No real-package state, Simulator
 state, lab CA private key or unrelated service keys are mounted.
+
+## Protected runtime output for R6
+
+After initialized LDAP and Dex are healthy and a human has completed the
+demo-only subject-inspection flow above, generate a **new** runtime output
+directory on Ubuntu as the same service-state owner. Use the exact verified
+issuer and subject, an explicit organization ID/name, and
+`-operator-identity-verified`; this flag is an operator confirmation only.
+The offline generator does not contact or verify the IdP.
+
+For the current demo, configure the Simulator origin as
+`https://localhost:8890` while keeping Room and Dex on their explicit lab
+origins. When the existing phase-1 identity inventory uses the
+`simulator.<domain>` origin, phase 2 creates a separately constrained
+localhost-only Simulator CA and leaf, an updated Dex config and a
+read-only `identity-overlay/compose.override.json`. Applying that override
+replaces only Dex's Simulator callback and preserves LDAP/Dex databases and
+other clients. Never rerun the LDAP initializer. Validate the merged Compose
+configuration before applying it, then restart only the existing Dex service
+with both Compose files; retain the prior configuration for rollback.
+
+The generated `simulator-loopback-ca.pem` is public but must be explicitly
+trusted for SSL by the human's local browser before using the Simulator.
+Its private key is not written to disk or included in the runtime bundle.
+`simulator-operator-auth/oidc.json` is a complete named-user configuration
+scoped to the selected organization with only `organization.read`,
+`scenario.read`, and `scenario.run`. Control Room receives its separate
+`monitor.read` and `budget.approve` grant. Neither grant is derived from LDAP
+group membership, and neither uses a wildcard organization.
+
+Example phase-2 invocation (replace placeholders only with verified values):
+
+```sh
+go run ./cmd/zpr-lab-bootstrap \
+  -domain 10.0.1.160.nip.io \
+  -output /home/dubnom/.local/state/new-r6-runtime \
+  -runtime-outputs \
+  -identity-input-dir /home/dubnom/.local/state/zpr-r6-identity-20261021 \
+  -room-origin https://room.10.0.1.160.nip.io:8888 \
+  -simulator-origin https://localhost:8890 \
+  -oidc-origin https://oidc.10.0.1.160.nip.io:8891 \
+  -control-service-origin https://control.10.0.1.160.nip.io:8889 \
+  -runtime-bind-ip 10.0.1.160 \
+  -organization-id northstar \
+  -organization-name "Northstar Labs" \
+  -operator-issuer https://oidc.10.0.1.160.nip.io:8891 \
+  -operator-subject '<verified-subject>' \
+  -operator-identity-verified
+```
 
 ## Verification
 

@@ -147,6 +147,11 @@ CREATE TABLE IF NOT EXISTS audit (
  organization TEXT NOT NULL, principal TEXT NOT NULL,
  action TEXT NOT NULL, occurred_at INTEGER NOT NULL
 );
+CREATE TABLE IF NOT EXISTS runtime_credential_results (
+ organization TEXT NOT NULL, invitation_id TEXT NOT NULL, revision INTEGER NOT NULL,
+ envelope_json BLOB NOT NULL, created_at INTEGER NOT NULL,
+ PRIMARY KEY(organization, invitation_id, revision)
+);
 CREATE TABLE IF NOT EXISTS operator_delegation_replay (
  token_hash TEXT PRIMARY KEY,
  expires_at INTEGER NOT NULL

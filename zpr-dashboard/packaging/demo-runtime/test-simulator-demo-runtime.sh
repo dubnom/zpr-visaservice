@@ -128,6 +128,7 @@ case "$1" in
                 operator_digest=none
                 provisioning=0
                 network=bridge
+                container_port=${FAKE_DOCKER_CONTAINER_PORT:-8788}
                 socket_mount=no
                 runtime_mount=no
                 state_mount=no
@@ -188,13 +189,13 @@ case "$1" in
                 done
                 [ "$mounts" -eq 3 ] && [ "$socket_mount" = yes ] &&
                     [ "$runtime_mount" = yes ] && [ "$state_mount" = yes ] &&
-                    [ "$published" = "127.0.0.1:$FAKE_DOCKER_PORT:8788" ] &&
+                    [ "$published" = "127.0.0.1:$FAKE_DOCKER_PORT:$container_port" ] &&
                     [ "$privileged" = no ] || {
                         echo "Simulator container request violated the fake-Docker test contract: mounts=$mounts socket=$socket_mount runtime=$runtime_mount state=$state_mount published=$published privileged=$privileged" >&2
                         exit 1
                     }
-                printf 'simulator|test-release|%s|127.0.0.1:%s|%s|%s|%s|running\n' \
-                    "$FAKE_DOCKER_IMAGE_ID" "$FAKE_DOCKER_PORT" "$operator_digest" "$provisioning" "$network" \
+                printf 'simulator|test-release|%s|127.0.0.1:%s->%s/tcp|%s|%s|%s|running\n' \
+                    "$FAKE_DOCKER_IMAGE_ID" "$FAKE_DOCKER_PORT" "$container_port" "$operator_digest" "$provisioning" "$network" \
                     >"$FAKE_DOCKER_CONTAINER_STATE"
                 if [ "$operator_digest" != none ]; then
                     [ "$operator_auth_mount" = yes ] || {
@@ -383,6 +384,7 @@ grep -F "occupied by a different or modified container" "$temp_dir/stale-start.o
 
 auth_dir=$temp_dir/operator-auth
 export FAKE_DOCKER_PORT=8790
+export FAKE_DOCKER_CONTAINER_PORT=8790
 mkdir -m 700 "$auth_dir"
 printf '%s\n' '{"version":1,"redirect_url":"https://simulator.example.test:8790/auth/operator/callback"}' >"$auth_dir/oidc.json"
 for name in simulator.crt simulator.key client.secret oidc-ca.crt budget-client.crt budget-client.key budget-ca.crt; do
@@ -406,6 +408,10 @@ case "$output" in
 esac
 grep -F -- "--mount type=bind,source=$auth_dir,target=/var/lib/zpr-simulator/operator-auth,readonly" "$FAKE_DOCKER_LOG" >/dev/null
 grep -F -- "--network zpr-demo-operator" "$FAKE_DOCKER_LOG" >/dev/null
+grep -F -- "-p 127.0.0.1:8790:8790" "$FAKE_DOCKER_LOG" >/dev/null
+grep -F -- "--entrypoint /usr/local/bin/zpr-web-dashboard" "$FAKE_DOCKER_LOG" >/dev/null
+grep -F -- "-mode simulator" "$FAKE_DOCKER_LOG" >/dev/null
+grep -F -- "-listen 0.0.0.0:8790" "$FAKE_DOCKER_LOG" >/dev/null
 if grep -F -- "zpr-id.localhost:host-gateway" "$FAKE_DOCKER_LOG" >/dev/null; then
     echo "custom Simulator network unexpectedly bypassed Docker DNS aliases" >&2
     exit 1

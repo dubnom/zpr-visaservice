@@ -141,6 +141,51 @@ printf '%s\n' sentinel >"$ZPR_DEMO_STATE_ROOT/retained"
 run status
 expect_calls "zpr-demo-runtime.sh status" "simulator-demo-runtime.sh status"
 grep -F "Simulator component (status):" "$temp_dir/output" >/dev/null
+python_shim=$temp_dir/python-shim
+mkdir -m 700 "$python_shim"
+cat >"$python_shim/sitecustomize.py" <<'PY'
+import os
+from pathlib import Path
+
+real_euid = os.geteuid()
+real_lstat = Path.lstat
+state_root = os.environ["ZPR_DEMO_STATE_ROOT"]
+
+
+class StatProxy:
+    def __init__(self, result, uid):
+        self.result = result
+        self.st_uid = uid
+        self.st_mode = result.st_mode
+
+    def __getattr__(self, name):
+        return getattr(self.result, name)
+
+
+def simulated_lstat(path):
+    result = real_lstat(path)
+    if str(path) == state_root:
+        return StatProxy(result, 0)
+    if result.st_uid == real_euid:
+        return StatProxy(result, 1000)
+    return result
+
+
+os.geteuid = lambda: 0
+Path.lstat = simulated_lstat
+PY
+export PYTHONPATH=$python_shim SUDO_UID=1000
+run status
+expect_calls "zpr-demo-runtime.sh status" "simulator-demo-runtime.sh status"
+unset SUDO_UID
+expect_failure status
+expect_no_calls
+grep -F "state ancestors must be owned by root, the invoking user, or SUDO_UID" "$temp_dir/error" >/dev/null
+export SUDO_UID=invalid
+expect_failure status
+expect_no_calls
+grep -F "SUDO_UID must be a canonical non-negative user ID" "$temp_dir/error" >/dev/null
+unset PYTHONPATH SUDO_UID
 run stop
 expect_calls "simulator-demo-runtime.sh stop" "zpr-demo-runtime.sh stop"
 [ "$(cat "$ZPR_DEMO_STATE_ROOT/retained")" = sentinel ] || fail "stop changed persistent state"

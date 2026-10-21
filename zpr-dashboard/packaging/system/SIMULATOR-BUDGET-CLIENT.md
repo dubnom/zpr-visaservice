@@ -74,3 +74,47 @@ GOPROXY=off GOSUMDB=off GOTOOLCHAIN=local go test \
   ./cmd/zpr-simulator-budget-config-render \
   -count=1
 ```
+
+## Render a Simulator Compose override
+
+`zpr-simulator-compose-render` consumes only the JSON produced by the
+Simulator budget-client renderer and emits a merge-safe Compose fragment for
+one caller-named, existing Simulator service. It does not guess the service
+name or read the base Compose file. Supply the exact service key and a new
+output path:
+
+```sh
+go build -trimpath -buildvcs=false \
+  -o /tmp/zpr-simulator-compose-render ./cmd/zpr-simulator-compose-render
+/tmp/zpr-simulator-compose-render \
+  -runtime-inputs /path/to/simulator-budget-runtime-inputs.json \
+  -service <exact-existing-simulator-service-name> \
+  -output /new/private/path/simulator-budget.override.yaml
+```
+
+The fragment contains only `services.<service>.environment` with the approved
+`ZPR_BUDGET_AUTHORITY_*` resolver variables and `volumes` with the three
+read-only TLS file bind mounts. It contains no image, entrypoint, command,
+network, port, dependency, or production service fields. In particular, the
+authority HTTPS URL is the resolver's only service-to-production connection;
+the production renderer and Control-Service do not consume this fragment or
+depend on Simulator.
+
+The output is JSON-formatted Compose data (valid YAML syntax), mode `0600`,
+created only at a new path. Compose's normal multi-file merge retains the base
+service's network and published-port settings because the fragment omits
+those fields. Volumes merge by target, so inspect the base service and ensure
+the three TLS target paths do not conflict with unrelated mounts before
+applying. The renderer does not inspect or apply either Compose file and
+invokes no Docker or Compose command. It does not launch the Simulator,
+inspect credential paths, validate live TLS trust, or alter host state.
+
+Run the focused offline unit and process-acceptance checks from the module
+directory:
+
+```sh
+GOPROXY=off GOSUMDB=off GOTOOLCHAIN=local go test \
+  ./internal/simulatorruntimecompose \
+  ./cmd/zpr-simulator-compose-render \
+  -count=1
+```

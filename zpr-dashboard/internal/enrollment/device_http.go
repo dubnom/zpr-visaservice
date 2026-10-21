@@ -31,6 +31,7 @@ func NewDeviceHandler(service *DeviceService) (http.Handler, error) {
 	mux := http.NewServeMux()
 	mux.HandleFunc("POST "+DeviceAPIPrefix+"challenges", api.challenge)
 	mux.HandleFunc("POST "+DeviceAPIPrefix+"proofs", api.proof)
+	mux.HandleFunc("POST "+DeviceAPIPrefix+"results", api.result)
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Cache-Control", "no-store")
 		w.Header().Set("Content-Type", "application/json")
@@ -104,6 +105,19 @@ func (api *deviceAPI) proof(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	result, err := api.service.Verify(r.Context(), input, time.Now().UTC())
+	if err != nil {
+		deviceError(w, err)
+		return
+	}
+	apiJSON(w, http.StatusOK, result)
+}
+
+func (api *deviceAPI) result(w http.ResponseWriter, r *http.Request) {
+	var input Proof
+	if !readBody(w, r, &input) {
+		return
+	}
+	result, err := api.service.DeliverRuntimeCredential(r.Context(), input, time.Now().UTC())
 	if err != nil {
 		deviceError(w, err)
 		return

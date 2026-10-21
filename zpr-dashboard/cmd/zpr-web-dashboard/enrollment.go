@@ -20,9 +20,6 @@ func configuredEnrollmentHandler() (http.Handler, func() error, error) {
 	configPath := strings.TrimSpace(os.Getenv("ZPR_ENROLLMENT_CONFIG_FILE"))
 	databasePath := strings.TrimSpace(os.Getenv("ZPR_ENROLLMENT_DATABASE_FILE"))
 	if configPath == "" && databasePath == "" {
-		if strings.TrimSpace(os.Getenv("ZPR_OPERATOR_DELEGATION_TRUST_FILE")) != "" {
-			return nil, nil, errors.New("operator delegation requires configured enrollment registry/catalogs")
-		}
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			w.Header().Set("Cache-Control", "no-store")
 			writePolicyError(w, http.StatusServiceUnavailable, "Device enrollment administration is not configured.")

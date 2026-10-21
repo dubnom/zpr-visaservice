@@ -13,6 +13,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"net/url"
 	"time"
 )
@@ -20,10 +21,11 @@ import (
 var ErrChallengeLimit = errors.New("enrollment challenge capacity reached")
 
 type DeviceConfig struct {
-	Audience             string
-	ChallengeLifetime    time.Duration
-	ApprovalLifetime     time.Duration
-	ImportApprovalIssuer *ApprovalIssuer
+	Audience                string
+	ChallengeLifetime       time.Duration
+	ApprovalLifetime        time.Duration
+	ImportApprovalIssuer    *ApprovalIssuer
+	RuntimeCredentialIssuer RuntimeCredentialIssuer
 }
 
 type DeviceService struct {
@@ -70,6 +72,7 @@ type challengePayload struct {
 	Organization          string    `json:"organization"`
 	InvitationID          string    `json:"invitation_id"`
 	Purpose               string    `json:"purpose"`
+	InvitationRevision    int       `json:"invitation_revision,omitempty"`
 	KeyFingerprint        string    `json:"key_fingerprint"`
 	RuntimeKeyFingerprint string    `json:"runtime_key_fingerprint,omitempty"`
 	Nonce                 string    `json:"nonce"`
@@ -163,7 +166,8 @@ func parseDeviceKey(encoded string) (*rsa.PublicKey, []byte, string, error) {
 
 func (s *DeviceService) Challenge(ctx context.Context, input ChallengeRequest, now time.Time) (Challenge, error) {
 	if !validText(input.Organization) || !validText(input.InvitationID) || now.IsZero() ||
-		(input.Purpose != "claim" && input.Purpose != "status" && input.Purpose != RuntimeImportPurpose) {
+		(input.Purpose != "claim" && input.Purpose != "status" &&
+			input.Purpose != RuntimeImportPurpose && input.Purpose != RuntimeCredentialPurpose) {
 		return Challenge{}, ErrInvalid
 	}
 	_, der, fingerprint, err := parseDeviceKey(input.PublicKey)
@@ -195,6 +199,12 @@ func (s *DeviceService) Challenge(ctx context.Context, input ChallengeRequest, n
 		i.State != "approved" || runtimeFingerprint == "") {
 		return Challenge{}, ErrUnavailable
 	}
+	if input.Purpose == RuntimeCredentialPurpose &&
+		(s.config.RuntimeCredentialIssuer == nil || !runtimeCredentialInvitationApproved(i, now) ||
+			fingerprint != i.KeyFingerprint || runtimeFingerprint != i.RuntimeKeyFingerprint ||
+			runtimeFingerprint == "" || !validFingerprint(fingerprint) || !validFingerprint(runtimeFingerprint)) {
+		return Challenge{}, ErrUnavailable
+	}
 	if input.Purpose == "claim" {
 		if len(input.Code) != 26 || i.State != "invited" {
 			return Challenge{}, ErrUnavailable
@@ -210,7 +220,9 @@ func (s *DeviceService) Challenge(ctx context.Context, input ChallengeRequest, n
 		}
 	} else if input.Code != "" || i.KeyFingerprint != fingerprint ||
 		i.RuntimeKeyFingerprint != runtimeFingerprint ||
-		(i.State != "pending_approval" && i.State != "approved" && i.State != "rejected" &&
+		(input.Purpose == RuntimeCredentialPurpose && i.State != "approved") ||
+		(input.Purpose != RuntimeCredentialPurpose &&
+			i.State != "pending_approval" && i.State != "approved" && i.State != "rejected" &&
 			i.State != "cancelled" && i.State != "approval_expired") {
 		return Challenge{}, ErrUnavailable
 	}
@@ -226,13 +238,21 @@ func (s *DeviceService) Challenge(ctx context.Context, input ChallengeRequest, n
 		return Challenge{}, ErrChallengeLimit
 	}
 	expires := now.Add(s.config.ChallengeLifetime).UTC()
+	invitationRevision := 0
 	if input.Purpose == "claim" && expires.After(i.ExpiresAt) {
 		expires = i.ExpiresAt
+	}
+	if input.Purpose == RuntimeCredentialPurpose {
+		invitationRevision = i.Revision
+		if expires.After(*i.ApprovalExpiresAt) {
+			expires = *i.ApprovalExpiresAt
+		}
 	}
 	id := rand.Text()
 	payload, err := json.Marshal(challengePayload{Version: 1, Audience: s.config.Audience,
 		ID: id, Organization: input.Organization, InvitationID: i.ID, Purpose: input.Purpose,
-		KeyFingerprint: fingerprint, RuntimeKeyFingerprint: runtimeFingerprint,
+		InvitationRevision: invitationRevision,
+		KeyFingerprint:     fingerprint, RuntimeKeyFingerprint: runtimeFingerprint,
 		Nonce: rand.Text(), ExpiresAt: expires})
 	if err != nil {
 		return Challenge{}, err
@@ -250,24 +270,45 @@ func (s *DeviceService) Challenge(ctx context.Context, input ChallengeRequest, n
 }
 
 func (s *DeviceService) Verify(ctx context.Context, proof Proof, now time.Time) (DeviceStatus, error) {
+	status, _, err := s.verifyProof(ctx, proof, now, false)
+	return status, err
+}
+
+func (s *DeviceService) DeliverRuntimeCredential(ctx context.Context, proof Proof, now time.Time) (RuntimeCredentialEnvelope, error) {
+	_, envelope, err := s.verifyProof(ctx, proof, now, true)
+	if err != nil {
+		return RuntimeCredentialEnvelope{}, err
+	}
+	if envelope == nil {
+		return RuntimeCredentialEnvelope{}, ErrUnavailable
+	}
+	return *envelope, nil
+}
+
+func (s *DeviceService) verifyProof(
+	ctx context.Context,
+	proof Proof,
+	now time.Time,
+	deliverCredential bool,
+) (DeviceStatus, *RuntimeCredentialEnvelope, error) {
 	if !validText(proof.ChallengeID) || len(proof.Signature) > 1024 ||
 		len(proof.RuntimeSignature) > 1024 || now.IsZero() {
-		return DeviceStatus{}, ErrInvalid
+		return DeviceStatus{}, nil, ErrInvalid
 	}
 	signature, err := base64.StdEncoding.Strict().DecodeString(proof.Signature)
 	if err != nil {
-		return DeviceStatus{}, ErrInvalid
+		return DeviceStatus{}, nil, ErrInvalid
 	}
 	var runtimeSignature []byte
 	if proof.RuntimeSignature != "" {
 		runtimeSignature, err = base64.StdEncoding.Strict().DecodeString(proof.RuntimeSignature)
 		if err != nil {
-			return DeviceStatus{}, ErrInvalid
+			return DeviceStatus{}, nil, ErrInvalid
 		}
 	}
 	tx, err := s.store.db.BeginTx(ctx, nil)
 	if err != nil {
-		return DeviceStatus{}, err
+		return DeviceStatus{}, nil, err
 	}
 	defer tx.Rollback()
 	var organization, invitation, purpose, codeHash string
@@ -277,43 +318,46 @@ func (s *DeviceService) Verify(ctx context.Context, proof Proof, now time.Time) 
 	err = tx.QueryRowContext(ctx, `SELECT organization,invitation_id,purpose,public_key,payload,code_hash,expires_at,consumed,runtime_public_key
  FROM device_challenges WHERE id=?`, proof.ChallengeID).Scan(&organization, &invitation, &purpose, &der, &payload, &codeHash, &expires, &consumed, &runtimeDER)
 	if errors.Is(err, sql.ErrNoRows) || (err == nil && (consumed != 0 || now.UnixNano() >= expires)) {
-		return DeviceStatus{}, ErrUnavailable
+		return DeviceStatus{}, nil, ErrUnavailable
 	}
 	if err != nil {
-		return DeviceStatus{}, err
+		return DeviceStatus{}, nil, err
+	}
+	if (purpose == RuntimeCredentialPurpose) != deliverCredential {
+		return DeviceStatus{}, nil, ErrUnavailable
 	}
 	key, _, fingerprint, err := parseDeviceKey(base64.StdEncoding.EncodeToString(der))
 	if err != nil {
-		return DeviceStatus{}, err
+		return DeviceStatus{}, nil, err
 	}
 	var binding challengePayload
 	if err := json.Unmarshal(payload, &binding); err != nil {
-		return DeviceStatus{}, err
+		return DeviceStatus{}, nil, err
 	}
 	runtimeFingerprint := ""
 	if len(runtimeDER) > 0 {
 		_, _, runtimeFingerprint, err = parseDeviceKey(base64.StdEncoding.EncodeToString(runtimeDER))
 		if err != nil {
-			return DeviceStatus{}, err
+			return DeviceStatus{}, nil, err
 		}
 	}
 	if binding.Audience != s.config.Audience || binding.KeyFingerprint != fingerprint ||
 		binding.RuntimeKeyFingerprint != runtimeFingerprint ||
 		(len(runtimeDER) > 0 && len(runtimeSignature) == 0) ||
 		(len(runtimeDER) == 0 && len(runtimeSignature) > 0) {
-		return DeviceStatus{}, ErrUnavailable
+		return DeviceStatus{}, nil, ErrUnavailable
 	}
 	hash := sha256.Sum256(payload)
 	if err := rsa.VerifyPKCS1v15(key, crypto.SHA256, hash[:], signature); err != nil {
-		return DeviceStatus{}, ErrUnavailable
+		return DeviceStatus{}, nil, ErrUnavailable
 	}
 	if len(runtimeDER) > 0 {
 		runtimeKey, _, _, err := parseDeviceKey(base64.StdEncoding.EncodeToString(runtimeDER))
 		if err != nil {
-			return DeviceStatus{}, err
+			return DeviceStatus{}, nil, err
 		}
 		if err := rsa.VerifyPKCS1v15(runtimeKey, crypto.SHA256, hash[:], runtimeSignature); err != nil {
-			return DeviceStatus{}, ErrUnavailable
+			return DeviceStatus{}, nil, ErrUnavailable
 		}
 	}
 	var i Invitation
@@ -335,26 +379,98 @@ func (s *DeviceService) Verify(ctx context.Context, proof Proof, now time.Time) 
 		}
 	}
 	if err != nil {
-		return DeviceStatus{}, err
+		return DeviceStatus{}, nil, err
+	}
+	var credentialEnvelope *RuntimeCredentialEnvelope
+	if purpose == RuntimeCredentialPurpose {
+		if !runtimeCredentialChallengeMatches(binding, proof.ChallengeID, organization, invitation, expires, fingerprint, runtimeFingerprint, i, now) ||
+			s.config.RuntimeCredentialIssuer == nil {
+			return DeviceStatus{}, nil, ErrUnavailable
+		}
+		request := runtimeCredentialRequest(i)
+		var stored []byte
+		err := tx.QueryRowContext(ctx, `SELECT envelope_json FROM runtime_credential_results
+ WHERE organization=? AND invitation_id=? AND revision=?`,
+			i.Asset.Organization, i.ID, i.Revision).Scan(&stored)
+		switch {
+		case err == nil:
+			envelope, validationErr := validateRuntimeCredentialEnvelope(stored, request)
+			if validationErr != nil {
+				return DeviceStatus{}, nil, validationErr
+			}
+			credentialEnvelope = &envelope
+		case errors.Is(err, sql.ErrNoRows):
+			raw, issueErr := s.config.RuntimeCredentialIssuer.IssueRuntimeCredential(ctx, request)
+			if issueErr != nil {
+				return DeviceStatus{}, nil, fmt.Errorf("runtime credential issuer failed: %w", issueErr)
+			}
+			envelope, validationErr := validateRuntimeCredentialEnvelope(raw, request)
+			if validationErr != nil {
+				return DeviceStatus{}, nil, validationErr
+			}
+			stored, err = json.Marshal(envelope)
+			if err != nil {
+				return DeviceStatus{}, nil, err
+			}
+			if _, err := tx.ExecContext(ctx, `INSERT INTO runtime_credential_results
+ (organization,invitation_id,revision,envelope_json,created_at) VALUES(?,?,?,?,?)`,
+				i.Asset.Organization, i.ID, i.Revision, stored, now.UnixNano()); err != nil {
+				return DeviceStatus{}, nil, err
+			}
+			if err := audit(ctx, tx, i, "runtime-credential-issuer", "runtime_credential_issued", now); err != nil {
+				return DeviceStatus{}, nil, err
+			}
+			credentialEnvelope = &envelope
+		default:
+			return DeviceStatus{}, nil, err
+		}
 	}
 	var receipt *ApprovalReceipt
 	if purpose == RuntimeImportPurpose {
 		if s.config.ImportApprovalIssuer == nil {
-			return DeviceStatus{}, ErrUnavailable
+			return DeviceStatus{}, nil, ErrUnavailable
 		}
 		approved, err := s.config.ImportApprovalIssuer.receipt(ctx, tx, i, s.config.Audience, now)
 		if err != nil {
-			return DeviceStatus{}, err
+			return DeviceStatus{}, nil, err
 		}
 		receipt = &approved
 	}
 	if _, err := tx.ExecContext(ctx, `UPDATE device_challenges SET consumed=1 WHERE id=?`, proof.ChallengeID); err != nil {
-		return DeviceStatus{}, err
+		return DeviceStatus{}, nil, err
 	}
 	if err := tx.Commit(); err != nil {
-		return DeviceStatus{}, err
+		return DeviceStatus{}, nil, err
 	}
 	return DeviceStatus{InvitationID: i.ID, State: i.State, Revision: i.Revision,
 		KeyFingerprint: i.KeyFingerprint, RuntimeKeyFingerprint: i.RuntimeKeyFingerprint,
-		ApprovalExpiresAt: i.ApprovalExpiresAt, CredentialsIssued: false, ImportApproval: receipt}, nil
+		ApprovalExpiresAt: i.ApprovalExpiresAt, CredentialsIssued: credentialEnvelope != nil,
+		ImportApproval: receipt}, credentialEnvelope, nil
+}
+
+func runtimeCredentialInvitationApproved(item Invitation, now time.Time) bool {
+	return item.State == "approved" && item.DecisionBy != "" && item.DecidedAt != nil &&
+		item.ApprovalExpiresAt != nil && now.Before(*item.ApprovalExpiresAt) &&
+		validFingerprint(item.KeyFingerprint) && validFingerprint(item.RuntimeKeyFingerprint) &&
+		item.KeyFingerprint != item.RuntimeKeyFingerprint
+}
+
+func runtimeCredentialChallengeMatches(
+	binding challengePayload,
+	challengeID, organization, invitation string,
+	expires int64,
+	keyFingerprint, runtimeFingerprint string,
+	item Invitation,
+	now time.Time,
+) bool {
+	return binding.Version == 1 && binding.ID == challengeID &&
+		binding.Organization == organization && binding.InvitationID == invitation &&
+		binding.Purpose == RuntimeCredentialPurpose &&
+		binding.InvitationRevision == item.Revision &&
+		binding.ExpiresAt.UnixNano() == expires &&
+		binding.KeyFingerprint == keyFingerprint &&
+		binding.RuntimeKeyFingerprint == runtimeFingerprint &&
+		organization == item.Asset.Organization && invitation == item.ID &&
+		item.KeyFingerprint == keyFingerprint && item.RuntimeKeyFingerprint == runtimeFingerprint &&
+		runtimeCredentialInvitationApproved(item, now)
 }

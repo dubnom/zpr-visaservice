@@ -34,6 +34,8 @@ func TestLabIdentityValidation(t *testing.T) {
 		{"missing-issuer", func(c *providerConfig) { c.OIDCOrigin = "" }},
 		{"http", func(c *providerConfig) { c.OIDCOrigin = "http://oidc.lab.example.test:5556" }},
 		{"foreign", func(c *providerConfig) { c.RoomOrigin = "https://foreign.example.test" }},
+		{"simulator-foreign", func(c *providerConfig) { c.SimulatorOrigin = "https://simulator.foreign.test:8890" }},
+		{"simulator-loopback-ip", func(c *providerConfig) { c.SimulatorOrigin = "https://127.0.0.1:8890" }},
 		{"path", func(c *providerConfig) { c.OIDCOrigin += "/dex" }},
 		{"fragment", func(c *providerConfig) { c.SimulatorOrigin += "#" }},
 		{"query", func(c *providerConfig) { c.SimulatorOrigin += "?x=y" }},
@@ -183,6 +185,27 @@ func TestLabIdentityGeneratedConfiguration(t *testing.T) {
 				}
 			}
 		}
+	}
+}
+
+func TestLabIdentityLoopbackSimulatorCertificate(t *testing.T) {
+	config := testProviderConfig()
+	config.SimulatorOrigin = runtimeSimulatorOrigin
+	now := time.Now().UTC()
+	files, err := generateConfigured("lab.example.test", now, nil, &config)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var record inventory
+	if err := json.Unmarshal(files["lab-bootstrap.json"], &record); err != nil {
+		t.Fatal(err)
+	}
+	if record.Identities["simulator"].Hostname != "localhost" ||
+		validateLoopbackSimulatorCertificate(files["simulator-chain.pem"], files["simulator-loopback-ca.pem"], now) != nil {
+		t.Fatal("loopback Simulator identity does not use an exact localhost certificate and CA")
+	}
+	if len(files["simulator-loopback-ca.pem"]) == 0 {
+		t.Fatal("loopback Simulator public CA was not emitted")
 	}
 }
 

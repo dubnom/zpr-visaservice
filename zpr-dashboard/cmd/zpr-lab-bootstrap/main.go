@@ -61,9 +61,18 @@ func run(args []string, stdout, stderr io.Writer) int {
 	roomOrigin := flags.String("room-origin", "", "Control Room HTTPS origin for identity setup")
 	simulatorOrigin := flags.String("simulator-origin", "", "Simulator HTTPS origin for identity setup")
 	oidcOrigin := flags.String("oidc-origin", "", "Dex HTTPS issuer origin for identity setup")
+	runtimeOutputs := flags.Bool("runtime-outputs", false, "generate final protected runtime configuration from an existing identity bootstrap; Linux only")
+	identityInputDir := flags.String("identity-input-dir", "", "existing protected identity bootstrap output created and initialized on Ubuntu")
+	controlServiceOrigin := flags.String("control-service-origin", "", "exact Control-Service HTTPS origin for runtime outputs")
+	runtimeBindIP := flags.String("runtime-bind-ip", "", "private IPv4 address for Control Room and Control-Service runtime bindings")
+	organizationID := flags.String("organization-id", "", "explicit organization ID for runtime operator grants")
+	organizationName := flags.String("organization-name", "", "explicit organization name for runtime configuration")
+	operatorIssuer := flags.String("operator-issuer", "", "exact verified issuer from a successful named IdP login")
+	operatorSubject := flags.String("operator-subject", "", "exact verified subject from a successful named IdP login")
+	operatorIdentityVerified := flags.Bool("operator-identity-verified", false, "confirm issuer and subject were verified from a successful named IdP login")
 	identityCompose := flags.Bool("identity-compose", false, "also generate independent LDAP/Dex Compose and private state directories (requires identity-services, bind-ip and pinned images)")
 	bindIP := flags.String("bind-ip", "", "explicit private IPv4 for LDAP/Dex host ports")
-	ldapImage := flags.String("ldap-image", "", "immutable local image ID or repository@sha256 digest for Debian-layout OpenLDAP")
+	ldapImage := flags.String("ldap-image", "", "immutable local image ID or repository@sha256 digest for demo-only, unqualified OpenLDAP")
 	dexImage := flags.String("dex-image", "", "immutable local image ID or repository@sha256 digest for Dex")
 	platform := flags.String("identity-platform", "linux/amd64", "identity container platform; linux/arm64 is engineering validation only")
 	if err := flags.Parse(args); err != nil {
@@ -74,6 +83,38 @@ func run(args []string, stdout, stderr io.Writer) int {
 	}
 	if *domain == "" || *output == "" || flags.NArg() != 0 {
 		fmt.Fprintln(stderr, "usage: zpr-lab-bootstrap -domain lab.example.test -output /protected/parent/new-lab [DNS options; see -h]")
+		return 2
+	}
+	if *runtimeOutputs {
+		if *identityInputDir == "" || *identityServices || *identityCompose || *bootstrapIP != "" ||
+			*roomIP != "" || *zprDNSIP != "" || *zprClients != "" || *hostBootstrapDNS ||
+			*bindIP != "" || *ldapImage != "" || *dexImage != "" || *platform != "linux/amd64" {
+			fmt.Fprintln(stderr, "zpr-lab-bootstrap: runtime-outputs requires an existing identity-input-dir and cannot regenerate or initialize identity services")
+			return 2
+		}
+		providers := &providerConfig{RoomOrigin: *roomOrigin, SimulatorOrigin: *simulatorOrigin, OIDCOrigin: *oidcOrigin}
+		runtimeConfig := &runtimeOutputConfig{
+			ControlServiceOrigin:     *controlServiceOrigin,
+			BindIP:                   *runtimeBindIP,
+			OrganizationID:           *organizationID,
+			OrganizationName:         *organizationName,
+			OperatorIssuer:           *operatorIssuer,
+			OperatorSubject:          *operatorSubject,
+			OperatorIdentityVerified: *operatorIdentityVerified,
+		}
+		if err := runtimeOutputsConfigured(*identityInputDir, *output, *domain, time.Now().UTC(), *providers, *runtimeConfig); err != nil {
+			fmt.Fprintf(stderr, "zpr-lab-bootstrap: %v\n", err)
+			return 1
+		}
+		if _, err := fmt.Fprintln(stdout, "Protected runtime configuration created from the existing Ubuntu identity bootstrap. The identity source and initialized LDAP/Dex state were not changed.\nThe caller-confirmed issuer/subject are embedded in scoped grants; the offline generator did not contact or verify the IdP. No IdP, Docker or Compose action was performed."); err != nil {
+			fmt.Fprintln(stderr, "zpr-lab-bootstrap: cannot write result; files may already be complete, inspect the output directory before retrying")
+			return 1
+		}
+		return 0
+	}
+	if *identityInputDir != "" || *controlServiceOrigin != "" || *runtimeBindIP != "" ||
+		*organizationID != "" || *organizationName != "" || *operatorIssuer != "" || *operatorSubject != "" || *operatorIdentityVerified {
+		fmt.Fprintln(stderr, "zpr-lab-bootstrap: runtime configuration inputs require explicit -runtime-outputs")
 		return 2
 	}
 	var dns *dnsConfig
@@ -103,7 +144,12 @@ func run(args []string, stdout, stderr io.Writer) int {
 		fmt.Fprintf(stderr, "zpr-lab-bootstrap: %v\n", err)
 		return 1
 	}
-	if _, err := fmt.Fprintln(stdout, "Lab-only TLS identities and service secrets created; lab-bootstrap.json is the completion inventory.\nExisting network DNS is the default; underlay record requests and protected ZPR DNS files are generated independently when selected. Companion bootstrap BIND requires explicit -host-bootstrap-dns.\nWith -identity-services, protected OpenLDAP/Dex configuration and initial directory data are generated, not applied. Named operator grants still require verified issuer/subject identities.\nWith -identity-compose, pinned identity services and private state directories are generated for separate initialization/startup; nothing is launched.\nNo services, DNS records, users, OIDC clients or system trust were configured. This is NOT an installable companion package.\nExisting directories are never reused or overwritten. Keep the CA private key offline; distribute only the public CA to explicitly authorized lab clients."); err != nil {
+	message := "Lab-only TLS identities and service secrets created; lab-bootstrap.json is the completion inventory.\nExisting network DNS is the default; underlay record requests and protected ZPR DNS files are generated independently when selected. Companion bootstrap BIND requires explicit -host-bootstrap-dns.\nWith -identity-services, protected OpenLDAP/Dex configuration and initial directory data are generated, not applied. Named operator grants still require verified issuer/subject identities.\nWith -identity-compose, pinned identity services and private state directories are generated for separate initialization/startup; nothing is launched."
+	if providers != nil && providers.Deployment != nil {
+		message += "\nGenerate identity-compose service keys on Ubuntu as the intended service-state owner. OpenLDAP remains demo-only and unqualified; image digest syntax is checked, but local image identity/platform are not inspected."
+	}
+	message += "\nNo services, DNS records, users, OIDC clients or system trust were configured. This is NOT an installable companion package.\nExisting directories are never reused or overwritten. Keep the CA private key offline; distribute only the public CA to explicitly authorized lab clients."
+	if _, err := fmt.Fprintln(stdout, message); err != nil {
 		fmt.Fprintln(stderr, "zpr-lab-bootstrap: cannot write result; files may already be complete, inspect the output directory before retrying")
 		return 1
 	}
@@ -216,12 +262,30 @@ func generateConfigured(domain string, now time.Time, dns *dnsConfig, providers 
 	}
 	for _, service := range []string{"room", "simulator", "ldap", "oidc"} {
 		host := service + "." + domain
-		_, _, certPEM, keyPEM, err := certificate(host, host, now, ca, caKey)
+		if service == "simulator" && providers != nil {
+			simulatorOrigin, _ := url.Parse(providers.SimulatorOrigin)
+			host = simulatorOrigin.Hostname()
+		}
+		identityCA, identityCAKey, identityCAPEM := ca, caKey, caPEM
+		if service == "simulator" && host == "localhost" {
+			var loopbackCAKeyPEM []byte
+			identityCA, identityCAKey, identityCAPEM, loopbackCAKeyPEM, err =
+				certificate("ZPR Simulator loopback CA", "localhost", now, nil, nil)
+			if err != nil {
+				return nil, err
+			}
+			clear(loopbackCAKeyPEM)
+			files["simulator-loopback-ca.pem"] = append([]byte(nil), identityCAPEM...)
+		}
+		_, _, certPEM, keyPEM, err := certificate(host, host, now, identityCA, identityCAKey)
+		if service == "simulator" && host == "localhost" {
+			identityCAKey.D.SetInt64(0)
+		}
 		if err != nil {
 			return nil, err
 		}
 		certFile, keyFile := service+"-chain.pem", service+"-key.pem"
-		files[certFile] = append(certPEM, caPEM...)
+		files[certFile] = append(certPEM, identityCAPEM...)
 		files[keyFile] = keyPEM
 		record.Identities[service] = identity{Hostname: host, CertificateFile: certFile, KeyFile: keyFile}
 	}
@@ -261,6 +325,10 @@ func generateConfigured(domain string, now time.Time, dns *dnsConfig, providers 
 }
 
 func certificate(commonName, hostname string, now time.Time, parent *x509.Certificate, signer *ecdsa.PrivateKey) (*x509.Certificate, *ecdsa.PrivateKey, []byte, []byte, error) {
+	return certificateWithUsage(commonName, hostname, now, parent, signer, x509.ExtKeyUsageServerAuth)
+}
+
+func certificateWithUsage(commonName, hostname string, now time.Time, parent *x509.Certificate, signer *ecdsa.PrivateKey, usage x509.ExtKeyUsage) (*x509.Certificate, *ecdsa.PrivateKey, []byte, []byte, error) {
 	key, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
 	if err != nil {
 		return nil, nil, nil, nil, err
@@ -281,13 +349,17 @@ func certificate(commonName, hostname string, now time.Time, parent *x509.Certif
 		template.MaxPathLenZero = true
 		template.KeyUsage |= x509.KeyUsageCertSign | x509.KeyUsageCRLSign
 		template.NotAfter = now.Add(365 * 24 * time.Hour)
-		// Limit DNS trust to this installation's lab suffix.
+		// Limit DNS trust to this installation's lab suffix or exact loopback host.
 		template.PermittedDNSDomainsCritical = true
-		template.PermittedDNSDomains = []string{"." + hostname}
+		if hostname == "localhost" {
+			template.PermittedDNSDomains = []string{hostname}
+		} else {
+			template.PermittedDNSDomains = []string{"." + hostname}
+		}
 		parent, signer = template, key
 	} else {
 		template.DNSNames = []string{hostname}
-		template.ExtKeyUsage = []x509.ExtKeyUsage{x509.ExtKeyUsageServerAuth}
+		template.ExtKeyUsage = []x509.ExtKeyUsage{usage}
 	}
 	der, err := x509.CreateCertificate(rand.Reader, template, parent, &key.PublicKey, signer)
 	if err != nil {

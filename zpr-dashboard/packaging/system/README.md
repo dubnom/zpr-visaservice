@@ -324,6 +324,10 @@ grant must explicitly contain both `monitor.read` and `budget.approve`.
 Without the complete section, `budget.approve` is rejected by this company
 configuration validator. This does not create or approve a grant, signer,
 delegation trust, TLS identity, database, or approval record.
+The budget-authority trust file does not configure device enrollment. If the
+Control-Service enrollment registry and catalog are not configured separately,
+enrollment endpoints remain unavailable with HTTP 503; the budget authority can
+still start and use its own delegation trust.
 
 Offline `-check-files` checks only metadata for these additional references:
 regular non-symlink file types, no group/other write bits, and no group/other
@@ -460,6 +464,63 @@ actual renderer executable, checks role outputs/modes and Simulator
 independence, and checks explicit refusal with no output for missing or partial
 files/settings and unsafe key permissions. These are test fixtures, not
 deployable credentials or grants.
+
+### Render a non-starting operator-pair Compose plan
+
+`zpr-system-compose-render` consumes the runtime-input JSON above and emits a
+Docker Compose plan for only Control-Service and Control Room. Both services
+use the caller-pinned operator image and the existing
+`/usr/local/bin/zpr-web-dashboard` process contracts. Because the rendered
+listeners are explicit host addresses, the plan uses `network_mode: host` for
+both services, preserves those addresses and the Control-Service HTTPS URL,
+and publishes no Compose ports. It does not include or depend on Simulator.
+
+The renderer also writes the embedded operator OIDC runtime JSON as a new
+mode-`0600` file at the caller-selected host path. Existing output files are
+refused; the OIDC path is mounted read-only at the runtime-configured
+container destination. For Control-Service, all runtime file mounts are
+read-only except the configured parent directory of the persistent SQLite
+authority database. Compose bind mounts use `create_host_path: false`, so
+applying the plan will not silently create absent mount sources.
+
+Build the plan renderer and render from the output of
+`zpr-system-config-render`:
+
+```sh
+go build -trimpath -buildvcs=false \
+  -o /tmp/zpr-system-compose-render ./cmd/zpr-system-compose-render
+/tmp/zpr-system-compose-render \
+  -runtime-inputs /path/to/runtime-inputs.json \
+  -image registry.example.com/zpr/operator@sha256:<64-lowercase-hex-digest> \
+  -compose-output /new/private/path/operator-pair.compose.yaml \
+  -oidc-output /new/private/path/operator-oidc.json
+```
+
+The `-image` argument accepts either a repository reference pinned to a full
+lowercase SHA-256 digest or a local Docker image ID in the exact
+`sha256:<64-lowercase-hex>` form. Tags alone are refused. For a local image ID,
+the generated services retain that exact ID as `image` and set
+`pull_policy: never`; the renderer does not convert it to a tag or pull it.
+After loading an offline archive on the target, verify the installed
+`runtime/image-reference` value resolves to the manifest's
+`component.docker_image_id` (for example, compare
+`docker image inspect <runtime-image-reference> --format '{{.Id}}'` with that
+manifest field), then pass the verified `sha256:...` value to `-image`. This
+local-ID option is not a RepoDigest and does not qualify an otherwise
+demo-unqualified image for production use.
+
+The output plan is JSON-formatted Compose data (valid YAML syntax), and the
+renderer never invokes Docker or Compose, starts services, inspects the host,
+opens ports, or changes host or network state.
+
+Before applying a generated plan, the operator must independently verify that
+the exact configured Control Room management IP and Control-Service private IP
+are assigned on the target and that both configured listener ports are free.
+The renderer cannot observe, infer, or change those conditions. Host networking
+shares the host network namespace; this plan does not establish firewall rules,
+service isolation, reachability, TLS readiness, or production installer/release
+readiness. Do not change the configured listener addresses or replace them
+with wildcard binds to make a plan apply.
 
 ### Separate Simulator budget-client inputs
 

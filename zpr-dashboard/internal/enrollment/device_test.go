@@ -433,6 +433,71 @@ func TestDeviceHTTPClaimRoundTripAndAdminRouteIsolation(t *testing.T) {
 	}
 }
 
+func TestDeviceHTTPReturnsExactRuntimeCredentialEnvelope(t *testing.T) {
+	ctx := context.Background()
+	store := testStore(t)
+	now := time.Now().UTC().Truncate(time.Second)
+	issuer := &fakeRuntimeCredentialIssuer{}
+	service := credentialTestService(t, store, issuer)
+	item, enrollmentKey, runtimeKey := runtimeCredentialPendingInvitation(t, store, service, now)
+	item = approveRuntimeCredentialInvitation(t, store, item, now.Add(3*time.Second))
+	issuer.raw = runtimeCredentialEnvelopeJSON(t, runtimeCredentialRequest(item), runtimeKey, now)
+
+	handler, err := NewDeviceHandler(service)
+	if err != nil {
+		t.Fatal(err)
+	}
+	call := func(path string, body any) *httptest.ResponseRecorder {
+		t.Helper()
+		data, err := json.Marshal(body)
+		if err != nil {
+			t.Fatal(err)
+		}
+		request := httptest.NewRequest(http.MethodPost, path, bytes.NewReader(data))
+		request.TLS = &tls.ConnectionState{}
+		request.RemoteAddr = "192.0.2.10:12345"
+		request.Header.Set("Content-Type", "application/json")
+		response := httptest.NewRecorder()
+		handler.ServeHTTP(response, request)
+		return response
+	}
+	challengeResponse := call(DeviceAPIPrefix+"challenges", ChallengeRequest{
+		Organization:     item.Asset.Organization,
+		InvitationID:     item.ID,
+		Purpose:          RuntimeCredentialPurpose,
+		PublicKey:        encodedKey(t, enrollmentKey),
+		RuntimePublicKey: encodedKey(t, runtimeKey),
+	})
+	if challengeResponse.Code != http.StatusCreated {
+		t.Fatalf("credential challenge HTTP=%d %s", challengeResponse.Code, challengeResponse.Body.String())
+	}
+	var challenge Challenge
+	if err := json.Unmarshal(challengeResponse.Body.Bytes(), &challenge); err != nil {
+		t.Fatal(err)
+	}
+	response := call(DeviceAPIPrefix+"results", signedProof(t, enrollmentKey, challenge, runtimeKey))
+	if response.Code != http.StatusOK {
+		t.Fatalf("credential result HTTP=%d %s", response.Code, response.Body.String())
+	}
+	var envelope RuntimeCredentialEnvelope
+	if err := decodeJSON(bytes.NewReader(response.Body.Bytes()), &envelope); err != nil {
+		t.Fatalf("decode result envelope: %v body=%s", err, response.Body.String())
+	}
+	if envelope.InvitationID != item.ID || envelope.OrganizationID != item.Asset.Organization ||
+		envelope.AssetID != item.Asset.AssetID || envelope.Profile != item.Asset.Profile ||
+		envelope.InvitationRevision != item.Revision ||
+		envelope.RuntimePublicKeyFingerprint != item.RuntimeKeyFingerprint {
+		t.Fatalf("wrong HTTP envelope binding: %+v", envelope)
+	}
+	fields, err := runtimeCredentialObjectFields(bytes.TrimSpace(response.Body.Bytes()))
+	if err != nil || len(fields) != 8 {
+		t.Fatalf("HTTP response is not the exact v1 envelope fields=%v err=%v", fields, err)
+	}
+	if _, err := service.Verify(ctx, signedProof(t, enrollmentKey, challenge, runtimeKey), now.Add(5*time.Second)); err == nil {
+		t.Fatal("result challenge was accepted by the status/proof endpoint")
+	}
+}
+
 func TestDeviceAuditFailureRollsBackClaimAndChallengeConsumption(t *testing.T) {
 	store := testStore(t)
 	service := deviceService(t, store)
