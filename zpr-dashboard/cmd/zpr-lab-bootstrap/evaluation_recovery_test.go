@@ -17,6 +17,18 @@ import (
 	"golang.org/x/crypto/bcrypt"
 )
 
+func recoveryTempDir(t *testing.T) string {
+	t.Helper()
+	directory, err := filepath.EvalSymlinks(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Chmod(directory, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	return directory
+}
+
 func recoveryFixture(t *testing.T) (string, evaluationInventory) {
 	t.Helper()
 	config := testEvaluationConfig()
@@ -33,7 +45,7 @@ func recoveryFixture(t *testing.T) (string, evaluationInventory) {
 	for _, listener := range listeners {
 		listener.Close()
 	}
-	state := filepath.Join(t.TempDir(), "install")
+	state := filepath.Join(recoveryTempDir(t), "install")
 	inventory, err := prepareEvaluation(state, config, time.Now())
 	if err != nil {
 		t.Fatal(err)
@@ -43,11 +55,7 @@ func recoveryFixture(t *testing.T) (string, evaluationInventory) {
 
 func recoveryDeliveryPath(t *testing.T) string {
 	t.Helper()
-	directory := t.TempDir()
-	if err := os.Chmod(directory, 0o700); err != nil {
-		t.Fatal(err)
-	}
-	return filepath.Join(directory, "password")
+	return filepath.Join(recoveryTempDir(t), "password")
 }
 
 func readRecoveryDex(t *testing.T, state string) (string, string, string) {
@@ -298,7 +306,7 @@ func TestEvaluationAdminRecoveryInterruptedStateFailsClosed(t *testing.T) {
 
 func TestEvaluationAdminRecoveryDeliveryGuardrails(t *testing.T) {
 	state, _ := recoveryFixture(t)
-	parent := t.TempDir()
+	parent := recoveryTempDir(t)
 	if err := os.Chmod(parent, 0o755); err != nil {
 		t.Fatal(err)
 	}
@@ -308,9 +316,9 @@ func TestEvaluationAdminRecoveryDeliveryGuardrails(t *testing.T) {
 			t.Fatal("unsafe delivery accepted")
 		}
 	}
-	private := t.TempDir()
+	private := recoveryTempDir(t)
 	link := filepath.Join(private, "alias")
-	if err := os.Symlink(t.TempDir(), link); err != nil {
+	if err := os.Symlink(recoveryTempDir(t), link); err != nil {
 		t.Fatal(err)
 	}
 	if file, err := createRecoveryDelivery(filepath.Join(link, "password"), state); err == nil {
@@ -318,7 +326,7 @@ func TestEvaluationAdminRecoveryDeliveryGuardrails(t *testing.T) {
 		t.Fatal("symlinked delivery parent accepted")
 	}
 	var stdout, stderr bytes.Buffer
-	missing := filepath.Join(t.TempDir(), "missing")
+	missing := filepath.Join(recoveryTempDir(t), "missing")
 	output := recoveryDeliveryPath(t)
 	if runEvaluationAdminRecovery(missing, output, &stdout, &stderr) != 1 {
 		t.Fatal("missing install accepted")
@@ -333,6 +341,7 @@ func TestEvaluationAdminRecoveryDeliveryGuardrails(t *testing.T) {
 
 func TestEvaluationAdminRecoveryPartialReplacementFailsClosed(t *testing.T) {
 	state, inventory := recoveryFixture(t)
+	oldHash, _, _ := readRecoveryDex(t, state)
 	// Force failure after dex.json replacement, before the secret/inventory commit.
 	if err := os.WriteFile(filepath.Join(state, "operator-admin.secret.admin-recovery-new"), []byte("conflict"), 0o600); err != nil {
 		t.Fatal(err)
@@ -345,8 +354,15 @@ func TestEvaluationAdminRecoveryPartialReplacementFailsClosed(t *testing.T) {
 	if _, err := os.Stat(output); !os.IsNotExist(err) {
 		t.Fatal("failed reset delivered credential")
 	}
-	if _, err := readEvaluation(state, inventory.Config); err == nil {
-		t.Fatal("partial replacement accepted for startup")
+	if _, err := os.Stat(filepath.Join(state, "admin-recovery.pending")); err != nil {
+		t.Fatalf("reset failed before reaching partial replacement: %v; stderr: %s", err, &stderr)
+	}
+	newHash, _, _ := readRecoveryDex(t, state)
+	if newHash == oldHash {
+		t.Fatal("failure injection did not replace Dex configuration")
+	}
+	if _, err := readEvaluation(state, inventory.Config); err == nil || !strings.Contains(err.Error(), "interrupted admin recovery") {
+		t.Fatalf("partial replacement did not fail closed at interruption gate: %v", err)
 	}
 	if _, err := resetEvaluationAdmin(state, time.Now()); err == nil {
 		t.Fatal("partial reset silently retried")
