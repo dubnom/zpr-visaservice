@@ -6,6 +6,41 @@ not production sign-off. C03/C06 resolves the three HIGH launcher seams; C05
 resolves the production asset seam. Both packet-local evidence records remain
 below. No Simulator runtime, Docker stack, deployment or live provider was started.
 
+## Wave 2 integration reconciliation (2026-10-23)
+
+The configuration, asset and trusted-source UI packets are now combined. Strict
+`python3 scripts/check-control-room-boundary.py` exits **1 with exactly 2 references**:
+`cmd/zpr-web-dashboard/inventory.go:70` (`demo_ldap` / `rest/1` special case) and
+`:71` (`return localLDAPEditorURL()`). No allowlist or suppression was added.
+The **3** and **11** counts in the packet evidence below are historical,
+configuration-only and asset-only results respectively, not integrated counts.
+
+All eight production package suites and focused command guards/configuration/
+assets/trusted-source Go checks pass, including race checks and production-tag
+checks. Operator configuration tests: **11 passed**; asset audit mutations:
+**5 passed**. Production embeds **68 files** (64 static + 4 skills), versus **97**
+in the default build; production rejects Simulator mode before configuration.
+Default-build Simulator HTTP asset tests pass and its 26 lab static assets return
+200 in browser fixtures. This does not close independent command extraction.
+
+Integrated desktop/tablet Playwright is **20 passed, 6 failed**: all 16 trusted-
+source GUI and four production-asset cases pass. All four boundary cases fail:
+the new source UI requires `/api/assertions` organization/source metadata, absent
+from the old fixture; the fixture still expects an unscoped
+`/api/assertions/source` read. Both Simulator navigation cases fail at keyboard
+activation of `/activity.html` (URL remains `/organizations.html`), after static
+asset availability checks pass. No acceptance tests or product behavior were
+changed to hide these blockers; semantic reconciliation is deferred per the
+integration stop condition. Passing source tests do not establish a green
+combined boundary/browser gate.
+
+Node launcher regressions: **22 passed, 4 failed**, all four requiring absent
+sibling `zpr-demo/multinode-demo` fixtures. Full `make test` remains nonzero in
+`cmd/zpr-web-dashboard`, `internal/enrollment`, and `internal/simulatorreset`:
+missing lab/Rust fixtures, isolated shell helper, observability readiness,
+macOS socket length and protected reset-directory constraints. No repairs,
+allowlists, live provider/runtime mutation, push or deployment were performed.
+
 ## Inventory and replacement owners
 
 Severity describes architectural impact, not a security vulnerability rating.
