@@ -6,10 +6,11 @@ const { execFileSync } = require("node:child_process");
 
 const [build, output, context, daemon, ...extra] = process.argv.slice(2);
 assert.ok(build && output && context && daemon &&
-  (!extra.length || (extra.length === 1 && ["--adapter", "--peer-node", "--peer-node-early"].includes(extra[0]))),
-  "Usage: node probe-node-image.cjs /absolute/image-build /absolute/new-evidence context daemon [--adapter | --peer-node | --peer-node-early]");
+  (!extra.length || (extra.length === 1 && ["--adapter", "--peer-node", "--peer-node-early", "--peer-node-reset"].includes(extra[0]))),
+  "Usage: node probe-node-image.cjs /absolute/image-build /absolute/new-evidence context daemon [--adapter | --peer-node | --peer-node-early | --peer-node-reset]");
 const adapterMode = extra[0] === "--adapter";
-const earlyMode = extra[0] === "--peer-node-early";
+const resetMode = extra[0] === "--peer-node-reset";
+const earlyMode = extra[0] === "--peer-node-early" || resetMode;
 const peerMode = extra[0] === "--peer-node" || earlyMode;
 assert.ok(path.isAbsolute(build) && path.isAbsolute(output));
 const hash = file => crypto.createHash("sha256").update(fs.readFileSync(file)).digest("hex");
@@ -417,6 +418,20 @@ cat "/proc/$(cat /state/node.pid)/status" > /state/ph-status.txt`);
   assert.equal(summary.node_details.pending_install, 0);
   assert.equal(summary.node_details.in_sync, true);
   phase = peerMode ? "peer-process-restart" : "node-process-restart";
+  let survivorLinkId;
+  if (earlyMode) {
+    const links = exec(peer, "ph-cli --socket /state/peer/node-control.sock link show > /state/initial-peer-links.txt; cat /state/initial-peer-links.txt");
+    const matches = [...links.matchAll(/^\s*(\d+): \[fd00:5a::2\]:5000 \([A-Za-z]+\)$/gm)];
+    assert.equal(matches.length, 1, "Exactly one initial configured node identity is required");
+    survivorLinkId = matches[0][1];
+    copy(peer, "/state/initial-peer-links.txt", "initial-peer-links.txt");
+  }
+  if (resetMode) {
+    phase = "explicit-peer-reset";
+    exec(node, "ph-cli --socket /state/first/node-control.sock link reset 3 > /state/local-reset.txt");
+    exec(peer, `timeout 10 sh -ec 'until grep -q "Received terminate for link 3 with reason Reset" /state/peer.log; do sleep 0.1; done'`);
+    copy(node, "/state/local-reset.txt", "local-reset.txt");
+  }
   stop(node, "node");
   if (earlyMode) {
     phase = "early-peer-identity-retention";
@@ -426,6 +441,7 @@ cat "/proc/$(cat /state/node.pid)/status" > /state/ph-status.txt`);
     const links = exec(peer, "cat /state/retained-peer-links.txt");
     const matches = [...links.matchAll(/^\s*(\d+): \[fd00:5a::2\]:5000 \([A-Za-z]+\)$/gm)];
     assert.equal(matches.length, 1, "Remote Reset must retain exactly one configured node identity before the node returns");
+    assert.equal(matches[0][1], survivorLinkId, "Remote Reset must retain the original node identity, not create a replacement");
     const detail = exec(peer, `ph-cli --socket /state/peer/node-control.sock link show ${matches[0][1]}`);
     assert.match(detail, /Type: NodeToNode/);
     copy(peer, "/state/retained-peer-links.txt", "retained-peer-links.txt");
@@ -492,7 +508,10 @@ done`);
     acceptance.peer_live_link_stability_samples = 10;
     acceptance.peer_stability_checked_before_restart = !earlyMode;
     acceptance.peer_early_restart_tested = earlyMode;
+    acceptance.peer_explicit_reset_tested = resetMode;
+    if (earlyMode) acceptance.peer_survivor_link_id = survivorLinkId;
     if (earlyMode) acceptance.remote_reset_delivery_observed = remoteResetObserved;
+    acceptance.received_remote_reset_reconnect_verified = resetMode && remoteResetObserved;
     acceptance.peer_live_link_sample_interval_seconds = 1;
     acceptance.peer_node_links_active_after_restart = true;
     acceptance.peer_tcp_policy_rechecked_after_restart = true;

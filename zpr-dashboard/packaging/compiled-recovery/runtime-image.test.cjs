@@ -100,6 +100,7 @@ test("wrong daemon refuses before acquisition, build or probe", t => {
     ["probe-node-image.cjs", [f.build, f.output, "test-context", "wrong"]],
     ["probe-node-image.cjs", [f.build, f.output, "test-context", "wrong", "--peer-node"]],
     ["probe-node-image.cjs", [f.build, f.output, "test-context", "wrong", "--peer-node-early"]],
+    ["probe-node-image.cjs", [f.build, f.output, "test-context", "wrong", "--peer-node-reset"]],
   ]) {
     const result = f.run(script, args);
     assert.notEqual(result.status, 0);
@@ -144,7 +145,8 @@ test("node probe rejects unknown or combined modes before Docker", t => {
   const f = fixture(t);
   for (const flags of [["--unknown"], ["--adapter", "--adapter"], ["--peer-node", "--peer-node"],
     ["--adapter", "--peer-node"], ["--peer-node-early", "--peer-node-early"],
-    ["--peer-node", "--peer-node-early"]]) {
+    ["--peer-node", "--peer-node-early"], ["--peer-node-reset", "--peer-node-reset"],
+    ["--peer-node-reset", "--peer-node-early"]]) {
     const result = f.run("probe-node-image.cjs", [f.build, f.output, "test-context", "test-daemon", ...flags]);
     assert.notEqual(result.status, 0);
     assert.match(result.stderr, /Usage:/);

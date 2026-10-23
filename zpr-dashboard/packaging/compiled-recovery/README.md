@@ -627,3 +627,19 @@ first-run setup with optional AI disclosure/key storage, and clean-install plus
 full scenario/browser acceptance. Go build information is not a complete SBOM.
 The included notices do not establish redistribution rights for all modules.
 No public upload or main promotion is authorized by an engineering smoke pass.
+### Explicit received-Reset regression
+
+`probe-node-image.cjs` also accepts the mutually exclusive `--peer-node-reset`
+mode. Like the early-restart probe, it skips pre-restart stability sampling and
+traffic warmup. It explicitly issues a local reset while the sender is alive,
+requires the other node to log receipt of authenticated `TerminateLink(Reset)`,
+then stops the sender, verifies retained pinned peer identity and restarts it.
+The post-restart stability and allowed/denied TCP checks remain mandatory.
+Unlike ordinary early restart, missing Reset delivery fails this mode.
+
+Core local reset retains its session until reliable acknowledgement or the
+existing one-second deadline; failed or unacknowledged delivery is logged before
+bounded local cleanup. The paused-time source regression exercises an
+unresponsive peer as well as received-Reset identity retention and local removal.
+These are focused lifecycle regressions, not arbitrary-time lifecycle or
+production-readiness certification.
