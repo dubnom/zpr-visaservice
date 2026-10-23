@@ -100,12 +100,15 @@ test("Simulator build keeps its own documents, redirect and navigation", async (
   await page.goto(origin);
   await expect(page).toHaveURL(`${origin}/organizations.html`);
   await expect(page).toHaveTitle("ZPR Simulator Organizations");
+  await expect(page.locator("#operator-login-status")).toHaveText("User: Not signed in");
+  await expect(page.locator("body")).not.toHaveClass(/operator-auth-gated/);
   const navigation = page.locator('nav[aria-label="Simulator navigation"]');
   await expect(navigation).toBeAttached();
   const activity = page.locator('nav a[href="/activity.html"]').first();
   if (!await activity.isVisible()) await page.locator(".sidebar-toggle").click();
   await expect(activity).toBeVisible();
   await activity.focus();
+  await expect(activity).toBeFocused();
   await page.keyboard.press("Enter");
   await expect(page).toHaveURL(`${origin}/activity.html`);
   await page.goto(`${origin}/activity.html`);
