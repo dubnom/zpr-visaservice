@@ -3,7 +3,6 @@ package main
 import (
 	"context"
 	"crypto/sha256"
-	"embed"
 	"encoding/base64"
 	"encoding/json"
 	"errors"
@@ -21,9 +20,6 @@ import (
 
 	"neboagency.com/zpr-dashborad/internal/gateway"
 )
-
-//go:embed static/*
-var staticFiles embed.FS
 
 const (
 	defaultListen       = "127.0.0.1:8787"

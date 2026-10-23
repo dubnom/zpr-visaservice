@@ -29,11 +29,21 @@ def violations(root=ROOT):
         if re.search(r'"demo_ldap"|localLDAPEditorURL\(', line):
             findings.append(f"{inventory.relative_to(root)}:{number}: production inventory has demo-source special case: {line.strip()}")
     composition = root / "cmd/zpr-web-dashboard/control_service.go"
-    if 'http.FileServer(http.FS(staticRoot))' in composition.read_text():
-        assets = root / "cmd/zpr-web-dashboard/static"
-        pages = [name for name in ("scenarios.html", "organizations.html", "activity.html", "machine-logs.html", "simulator-provisioning.html") if (assets / name).exists()]
-        if pages:
-            findings.append(f"{composition.relative_to(root)}: unfiltered shared static filesystem exposes Simulator pages: {', '.join(pages)}")
+    if 'fs.Sub(controlRoomFiles, "static")' not in composition.read_text() or 'fs.Sub(staticFiles, "static")' in composition.read_text():
+        findings.append(f"{composition.relative_to(root)}: production static handler must use its independent embedded filesystem")
+    bundle = root / "cmd/zpr-web-dashboard/assets_control_room.go"
+    manifest = root / "packaging/control-room/assets.txt"
+    if not bundle.exists() or not manifest.exists():
+        findings.append("production embedded asset bundle or packaging manifest is missing")
+    else:
+        embedded = re.findall(r"^//go:embed (.+)$", bundle.read_text(), re.M)
+        names = [name.removeprefix("static/") for line in embedded for name in line.split()]
+        expected = manifest.read_text().split()
+        if sorted(names) != sorted(expected) or any("*" in name for name in names):
+            findings.append("production embedded files differ from the explicit packaging asset manifest")
+        for name in names:
+            if re.search(r"^(?:simulator|scenario|organization|activity|agents|world|workers-redirect|ldap-org-graph|design-assistant)|^(?:machine-logs|trusted-source)\.html$", name):
+                findings.append(f"production bundle includes Simulator-owned asset: {name}")
     return findings
 
 

@@ -198,6 +198,9 @@ func simulatorScript() string {
 }
 
 func runSimulator(listen string) (runErr error) {
+	if productionAssetsOnly {
+		return errors.New("Simulator mode is unavailable in the production build; use the Simulator build")
+	}
 	securityContext, cancelSecurity := context.WithTimeout(context.Background(), 20*time.Second)
 	security, err := configuredSimulatorSecurity(securityContext, listen)
 	cancelSecurity()
@@ -327,28 +330,10 @@ func runSimulator(listen string) (runErr error) {
 	mux.HandleFunc("GET /api/simulator/logs/{machine}/{workload}", handleSimulatorWorkloadLogs)
 	mux.HandleFunc("POST /api/simulator/scenarios/cancel", handleSimulatorScenarioCancel)
 	mux.HandleFunc("POST /api/simulator/scenarios/{scenario}/run", handleWorkspaceScenarioRun)
-	mux.HandleFunc("/agents.html", func(w http.ResponseWriter, r *http.Request) {
-		http.Redirect(w, r, "/machine-logs.html", http.StatusFound)
-	})
-	mux.HandleFunc("/activity.html", func(w http.ResponseWriter, r *http.Request) { serveStaticPage(staticRoot, "activity.html", w) })
-	mux.HandleFunc("/machine-logs.html", func(w http.ResponseWriter, r *http.Request) { serveStaticPage(staticRoot, "machine-logs.html", w) })
-	mux.HandleFunc("/trusted-source.html", func(w http.ResponseWriter, r *http.Request) { serveStaticPage(staticRoot, "trusted-source.html", w) })
-	mux.HandleFunc("/scenarios.html", func(w http.ResponseWriter, r *http.Request) { serveStaticPage(staticRoot, "scenarios.html", w) })
 	mux.HandleFunc("POST /api/simulator/action/{action}", simulatorRuntimeMutationGuard(handleSimulatorAction))
 	mux.HandleFunc("POST /api/simulator/machines/{machine}/{action}", simulatorRuntimeMutationGuard(handleSimulatorMachineSession))
 	mux.HandleFunc("PUT /api/simulator/machines/{machine}/workloads", simulatorRuntimeMutationGuard(handleSimulatorMachineWorkloads))
-	staticServer := revalidateStatic(http.FileServer(http.FS(staticRoot)))
-	mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
-		if r.URL.Path == "/" {
-			target := "/organizations.html"
-			if result := r.URL.Query().Get("operator_login"); result == "failed" || result == "denied" || result == "expired" {
-				target += "?operator_login=" + result
-			}
-			http.Redirect(w, r, target, http.StatusFound)
-			return
-		}
-		staticServer.ServeHTTP(w, r)
-	})
+	mux.Handle("/", simulatorStaticHandler(staticRoot))
 	handler := simulatorAPIProxy(security.auth, currentSimulatorOrganization, mux)
 	server := &http.Server{Addr: listen, Handler: securityHeaders(security.protect(handler)), ReadHeaderTimeout: 5 * time.Second, TLSConfig: security.tls}
 	controlCert := strings.TrimSpace(os.Getenv("SIMULATOR_CONTROL_TLS_CERT"))
@@ -1298,4 +1283,28 @@ func writeSimulatorJSON(w http.ResponseWriter, value any) {
 	w.Header().Set("Cache-Control", "no-store")
 	w.Header().Set("Content-Type", "application/json; charset=utf-8")
 	_ = json.NewEncoder(w).Encode(value)
+}
+
+func simulatorStaticHandler(root fs.FS) http.Handler {
+	mux := http.NewServeMux()
+	mux.HandleFunc("/agents.html", func(w http.ResponseWriter, r *http.Request) {
+		http.Redirect(w, r, "/machine-logs.html", http.StatusFound)
+	})
+	mux.HandleFunc("/activity.html", func(w http.ResponseWriter, r *http.Request) { serveStaticPage(root, "activity.html", w) })
+	mux.HandleFunc("/machine-logs.html", func(w http.ResponseWriter, r *http.Request) { serveStaticPage(root, "machine-logs.html", w) })
+	mux.HandleFunc("/trusted-source.html", func(w http.ResponseWriter, r *http.Request) { serveStaticPage(root, "trusted-source.html", w) })
+	mux.HandleFunc("/scenarios.html", func(w http.ResponseWriter, r *http.Request) { serveStaticPage(root, "scenarios.html", w) })
+	staticServer := revalidateStatic(http.FileServer(http.FS(root)))
+	mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/" {
+			target := "/organizations.html"
+			if result := r.URL.Query().Get("operator_login"); result == "failed" || result == "denied" || result == "expired" {
+				target += "?operator_login=" + result
+			}
+			http.Redirect(w, r, target, http.StatusFound)
+			return
+		}
+		staticServer.ServeHTTP(w, r)
+	})
+	return mux
 }
