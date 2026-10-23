@@ -113,7 +113,8 @@ people. Nested groups, unresolved members, duplicate identities, unsupported
 LDIF URL values, incomplete searches, and malformed snapshots produce errors.
 No simulator profile/LDIF seed is used as evaluation data.
 
-LDAP output is limited to 4 MiB and 20000 entries, with a 10-second read timeout.
+Container LDAP output is limited to 4 MiB and 20000 entries, with a 10-second read timeout.
+Network LDAP uses the stricter limits documented below.
 Each run reads a fresh snapshot. Results include revision, draft/saved status,
 timestamps, per-rule checked/violation counts, and at most 100 subject examples.
 Source failure clears the current run's results and cannot appear as a pass.
@@ -263,11 +264,75 @@ duplicate that name in the configuration. Without a source file, existing
 single-reader LDAP behavior remains unchanged and expressions may reference
 `source("ldap")`.
 
-LDAP readers inherit the active organization's base/bind DN. A reader may instead
+Container LDAP readers inherit the active organization's base/bind DN. A reader may instead
 provide an `organizations` map of organization IDs to `base_dn` and `bind_dn`.
 If that map is present, organizations not listed cannot use the reader. The LDAP
 connector uses the existing container-local LDAPS endpoint, verified CA, and
 server-side password file; it does not read simulation data.
+
+#### Production network LDAP and source identity (packet A)
+
+The existing Control-Service assertion runtime owns this read configuration;
+`ZPR_ASSERTION_SOURCES_FILE` remains the only assertion source registry. The
+operator owns the persistent file and secret references. Policy-Service supplies
+the authenticated active organization, not a browser-supplied organization ID.
+No Simulator environment, manifest, directory, container or service is consulted.
+
+Use `kind: "ldap"` with an `ldaps://host[:port]` origin **instead of** `container`.
+Explicit `attributes` and a nonempty `organizations` map are mandatory. Each map
+value requires valid nonempty `base_dn`, `bind_dn` and `bind_password_file`.
+A credential reference must resolve to a regular file with no group/other
+permissions (0600 or stricter), containing a nonempty password up to 4096 bytes
+with at most one trailing line ending. Files are validated at startup and reread
+on every connection, so rotation needs no password in configuration or API data.
+Protect the configuration, credential directories and CA files from untrusted
+writers. Missing/unprotected credentials fail closed. `ca_file` adds a private CA
+to system roots; hostname verification and TLS 1.2+ are mandatory. No insecure
+mode, URL credentials, URL paths/queries/fragments, StartTLS/plain LDAP downgrade,
+organization URL override or HTTPS token configuration is accepted.
+
+Only simple bind and subtree search are sent. The bind account must be granted
+**read-only** directory ACLs by the directory owner; this client never sends LDAP
+writes but cannot prove that the account lacks write privileges. No alias
+following, referral chasing, paging or partial/size-limited result acceptance is
+implemented. The complete response is bounded to 4 MiB of decrypted wire data,
+2000 entries and 10 seconds (5-second connect, 8-second server search limit).
+Returned entry DNs must remain within the configured base. Existing `uid` person,
+`cn` group and direct membership semantics/attribute exclusions are reused; only
+approved attribute values are returned. Structural membership attributes are
+requested for validation but not exposed unless approved. Directory ACLs must
+provide a complete snapshot; silent server filtering remains undetectable.
+
+Stable identity is the pair **(`organization_id`, `source_id`)**, where
+`source_id` is the existing case-sensitive `name`, not a new generated ID. Names
+remain unique within the source file (16 readers total); a name may have separate
+organization scopes. Preserve source-qualified identities and attributes even
+when two sources return the same UID/DN. Cross-source correlation is explicit in
+assertion expressions, never an automatic identity merge.
+
+| Existing surface | Identity / compatibility rule |
+| --- | --- |
+| Operator registration/read configuration | `sources[].name` is the stable source ID; optional `display_name` is presentation only. No registration mutation route is added. |
+| Assertion expressions and results | Existing `from "name"` / `source("name")` references and source catalogs retain the same name. |
+| Browser status | `GET /api/assertions/status` adds `source_id`, `organization_id`, `display_name` alongside existing `name`, `kind` in `sources`. Scoped readers for other organizations are omitted. Endpoints, bind DNs, secret/CA paths and passwords are not source metadata. |
+| Browser read | `GET /api/assertions/source?source=name` reads only that source and returns existing `directory`/summary fields plus `source_id`, `source_name`, `kind`, `organization_id`. It retains existing loopback/authenticated Control-Service access controls and rejects unknown/out-of-scope IDs (404), invalid selectors (400), provider failure (502), and changed organization context. Omitting the selector preserves the aggregate/default contract. |
+| Visa Service inventory | `/admin/trusted-services[].name` and trusted service `name` remain runtime registration names; `provider` (e.g. `rest/1`) is a kind, `actor_cn` an actor identity. Operators should align the registration name with the source ID when they represent the same provider. This slice neither rewrites registrations nor infers a join from kind, actor, display name or URL. Inventory remains scoped by its existing admin-service organization context. |
+| Change feeds | Existing feed `name` and `/api/trusted-sources/change-feeds/{source}/changes` keep their contract. Align a feed name only for the same explicitly configured source in the same organization/deployment; this slice does not add organization scoping to feeds or auto-register a feed for LDAP. Unmatched feed/inventory names remain separate, not guessed aliases. |
+
+Selected-source reads do not contact an unrelated failed reader. An aggregate
+read/evaluation fails if any applicable reader fails; defaults are not failover,
+and stale snapshots never substitute for required data. LDAP alone provides no
+Updates capability; consumers must not synthesize a successful empty feed or
+assume every identity reader has a change feed. Revisioned registration, dynamic
+disable/removal, feed scoping/capability joins and inventory reconciliation remain
+future M1/M2 work, not claimed by this increment.
+
+Consumer fixtures under `cmd/zpr-web-dashboard/testdata/trusted-sources/` include
+`sources.json` (two network LDAP registrations with placeholder endpoints and
+protected credential references), `source-status.json`,
+`source-read-company.json` (stable response subsets; timestamps/additive summary
+fields omitted), and both source LDIFs. Local TLS protocol tests execute these
+fixtures with Simulator variables unset and invalid, without Docker/live LDAP.
 
 HTTPS readers require a Bearer-token file and verified TLS (system roots plus
 an optional `ca_file`). URL credentials, query strings, fragments and redirects
@@ -293,7 +358,10 @@ snapshots are rejected. The allowlist, entry/value limits, and 4 MiB snapshot
 limit also apply to HTTPS. The provider must return complete authorized data;
 the client cannot detect silent server-side filtering.
 
-Every run reads all configured sources once under a shared 10-second deadline.
+Every run reads all sources configured for the active organization once under a
+shared 10-second deadline. The configured default must be available to that
+organization; an inaccessible default is an error, never a reason to substitute
+another source.
 A reader outage makes the whole run an error with no rule results, even if an
 expression would otherwise succeed. Snapshots are fresh but are not a distributed
 transaction across providers. Catalogs expose source names and approved attribute

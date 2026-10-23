@@ -18,18 +18,22 @@ import (
 )
 
 type assertionNamedSource struct {
-	kind string
-	read func(context.Context, string, string, string) (assertionDirectory, error)
+	kind          string
+	displayName   string
+	organizations map[string]assertionSourceScope
+	read          func(context.Context, string, string, string) (assertionDirectory, error)
 }
 
 type assertionSourceScope struct {
-	BaseDN string `json:"base_dn,omitempty"`
-	BindDN string `json:"bind_dn,omitempty"`
-	URL    string `json:"url,omitempty"`
+	BaseDN           string `json:"base_dn,omitempty"`
+	BindDN           string `json:"bind_dn,omitempty"`
+	URL              string `json:"url,omitempty"`
+	BindPasswordFile string `json:"bind_password_file,omitempty"`
 }
 
 type assertionSourceConfig struct {
 	Name          string                          `json:"name"`
+	DisplayName   string                          `json:"display_name,omitempty"`
 	Kind          string                          `json:"kind"`
 	Container     string                          `json:"container,omitempty"`
 	URL           string                          `json:"url,omitempty"`
@@ -80,8 +84,20 @@ func (runtime *assertionRuntime) configureSources(filePath string) error {
 		var read func(context.Context, string, string, string) (assertionDirectory, error)
 		switch entry.Kind {
 		case "ldap":
+			if entry.URL != "" && entry.Container == "" {
+				read, err = networkAssertionLDAPReader(entry, attributes)
+				if err != nil {
+					return err
+				}
+				break
+			}
 			if entry.Container == "" || entry.URL != "" || entry.TokenFile != "" || entry.CAFile != "" {
 				return errors.New("LDAP assertion sources require a container and cannot contain HTTPS configuration")
+			}
+			for _, scope := range entry.Organizations {
+				if scope.BindPasswordFile != "" {
+					return errors.New("Container LDAP sources cannot contain network bind credentials")
+				}
 			}
 			read = func(ctx context.Context, organizationID, baseDN, bindDN string) (assertionDirectory, error) {
 				if scope, exists := entry.Organizations[organizationID]; exists {
@@ -102,7 +118,7 @@ func (runtime *assertionRuntime) configureSources(filePath string) error {
 				return errors.New("HTTPS source URL must be HTTPS and contain {organization}")
 			}
 			for _, scope := range entry.Organizations {
-				if !validAssertionSourceURL(scope.URL) {
+				if scope.BindPasswordFile != "" || !validAssertionSourceURL(scope.URL) {
 					return errors.New("HTTPS organization source URL is invalid")
 				}
 			}
@@ -134,7 +150,7 @@ func (runtime *assertionRuntime) configureSources(filePath string) error {
 		default:
 			return errors.New("Assertion source kind must be ldap or https-json")
 		}
-		sources[entry.Name] = assertionNamedSource{kind: entry.Kind, read: read}
+		sources[entry.Name] = assertionNamedSource{kind: entry.Kind, displayName: entry.DisplayName, organizations: entry.Organizations, read: read}
 	}
 	if len(sources) > 16 || sources[config.DefaultSource].read == nil {
 		return errors.New("Default assertion source must name a configured source; at most 16 sources are allowed")
@@ -251,8 +267,18 @@ func (runtime *assertionRuntime) readDirectory(ctx context.Context, organization
 		return runtime.reader(ctx, baseDN, bindDN)
 	}
 	names := make([]string, 0, len(runtime.sources))
-	for name := range runtime.sources {
+	defaultAvailable := false
+	for name, source := range runtime.sources {
+		if len(source.organizations) > 0 {
+			if _, exists := source.organizations[organizationID]; !exists {
+				continue
+			}
+		}
 		names = append(names, name)
+		defaultAvailable = defaultAvailable || name == runtime.defaultSource
+	}
+	if !defaultAvailable {
+		return assertionDirectory{}, errors.New("Default trusted source is not configured for this organization")
 	}
 	sort.Strings(names)
 	snapshots := make(map[string]assertionDirectory)
@@ -291,10 +317,20 @@ func (runtime *assertionRuntime) sourceMetadata() []map[string]string {
 	sort.Strings(names)
 	result := make([]map[string]string, 0, len(names))
 	for _, name := range names {
-		result = append(result, map[string]string{"name": name, "kind": runtime.sources[name].kind})
+		source := runtime.sources[name]
+		if len(source.organizations) > 0 {
+			if _, exists := source.organizations[runtime.organizationID]; !exists {
+				continue
+			}
+		}
+		displayName := source.displayName
+		if displayName == "" {
+			displayName = name
+		}
+		result = append(result, map[string]string{"name": name, "source_id": name, "organization_id": runtime.organizationID, "display_name": displayName, "kind": source.kind})
 	}
 	if len(result) == 0 && runtime.reader != nil {
-		result = append(result, map[string]string{"name": "ldap", "kind": "ldap"})
+		result = append(result, map[string]string{"name": "ldap", "source_id": "ldap", "organization_id": runtime.organizationID, "display_name": "ldap", "kind": "ldap"})
 	}
 	return result
 }

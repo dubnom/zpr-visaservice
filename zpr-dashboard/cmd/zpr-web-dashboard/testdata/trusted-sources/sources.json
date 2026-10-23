@@ -1,0 +1,43 @@
+{
+  "default_source": "company_directory",
+  "sources": [
+    {
+      "name": "company_directory",
+      "display_name": "Company directory",
+      "kind": "ldap",
+      "url": "ldaps://company.example.test:636",
+      "ca_file": "/etc/zpr/company-ca.pem",
+      "attributes": [
+        "uid",
+        "cn",
+        "salary"
+      ],
+      "organizations": {
+        "northstar": {
+          "base_dn": "dc=company",
+          "bind_dn": "cn=zpr-reader,dc=company",
+          "bind_password_file": "/etc/zpr/secrets/company-bind"
+        }
+      }
+    },
+    {
+      "name": "lab_directory",
+      "display_name": "Lab directory",
+      "kind": "ldap",
+      "url": "ldaps://lab.example.test:636",
+      "ca_file": "/etc/zpr/lab-ca.pem",
+      "attributes": [
+        "uid",
+        "cn",
+        "salary"
+      ],
+      "organizations": {
+        "northstar": {
+          "base_dn": "dc=lab",
+          "bind_dn": "cn=zpr-reader,dc=lab",
+          "bind_password_file": "/etc/zpr/secrets/lab-bind"
+        }
+      }
+    }
+  ]
+}

@@ -3727,6 +3727,12 @@ attribute presence/value/integer checks. Manual draft
 evaluation and opt-in periodic checks are available; source failures and missing
 groups are errors, never successful checks. See [ASSERTIONS.md](ASSERTIONS.md)
 for syntax, source configuration, API contracts, and current limits.
+Named readers also support production network LDAPS with explicit organization
+base DNs, approved attributes, verified TLS and protected bind-password file
+references, without Docker or Simulator. Source identity is the existing name
+paired with the organization ID; `GET /api/assertions/source?source=name` reads
+one configured source without fallback. See the network LDAP/source-identity
+contract and reusable consumer fixtures in [ASSERTIONS.md](ASSERTIONS.md).
 Source-located assertion lint warnings appear as clickable yellow `WARN`
 markers on their source lines; clicking a marker opens its details. The Analyze
 button turns yellow when a successful evaluation includes warnings. Warnings
