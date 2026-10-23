@@ -1,3 +1,86 @@
+# Authorized scoped-source reconciliation — 24 cases repaired; full acceptance still blocked
+
+**Branch:** `maturing/w4-source-contract-browser`. **Starting commit:** `430a46355dda8fd3df09f609b103ce86572ce038`.
+**Scope:** only the 12 titles / 24 desktop+tablet IDs classified as `new_maturing_contract_drift` in the unchanged `failure-comparison.json` inventory were authorized for fixture/expectation updates.
+
+## Contract reconciliation
+
+- Each authorized case now installs a case-local production-source fixture. Multi-source catalogs register `staff` and `hr` through `/api/assertions`, with `organization_id` and stable `source_id`, and return only the requested source from `/api/assertions/source?source=…`; the old aggregate `assertionSource.sources` response is no longer used by those cases.
+- All 24 cases assert that source reads are GETs carrying exactly the selected registered `source` query parameter, that registry entries belong to the selected organization, that each exercised source was read, and that no Simulator API was requested. Successful read fixtures bind both response identity fields to the selected organization/source.
+- Insertion, replacement, undo/redo, analysis invalidation, author/save/evaluate, typed results, sorting, exact counts, change highlighting, keyboard behavior, filtering, read-only controls, last-good retention, navigation aborts, and stale-success/failure rejection remain asserted. No assertions were deleted; the source-level inventory records unchanged assertion counts in dashboard/workflow tests and three additional assertion occurrences in page-runtime tests, besides the new shared fixture checks.
+- Single-source inserted rules explicitly qualify `great_lakes_ldap`. Evaluation fixtures reflect that qualification. Titles use canonical registered display metadata (`Great Lakes LDAP`); record-table selectors are scoped to `.trusted-source-results`, not the new source registry table.
+- Delayed runtime reads intercept the scoped URL and preserve stable response identity. Because the title is now canonical registry metadata rather than provider response text, the stale-response discriminator is also asserted in Alice's displayed name (`Current directory`, never `Obsolete directory`), retaining both canonical-title assertions and stale-data rejection.
+- No production files, dependency manifests, existing test titles, timeouts, skips, Simulator dependencies, or other test bodies were changed. The helper is invoked only from the authorized title definitions. No push, deployment, authenticated storage state, live opt-in, or live mutation was performed.
+
+## Verified results
+
+Pinned dependencies were restored only after `playwright: command not found`. Runs used the unchanged Playwright configuration, two workers, desktop and tablet, CI unset, and worktree-local `TMPDIR`.
+
+| Validation | Passed | Failed | Skipped | Did not run | Exit |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| All 12 authorized titles, desktop + tablet | 24 | 0 | 0 | 0 | 0 |
+| All boundary + Trusted Sources GUI cases, desktop + tablet | 26 | 0 | 0 | 0 | 0 |
+| Full suite / desktop | 731 | 50 | 32 | 3 | — |
+| Full suite / tablet | 729 | 52 | 32 | 3 | — |
+| Full suite / all | 1460 | 102 | 64 | 6 | 1 |
+
+Unchanged strict audit: `python3 zpr-dashboard/scripts/check-control-room-boundary.py` **PASS**, exit 0. Boundary tests cover production providers available/unavailable and missing organization/source context, with Simulator unavailable and forbidden reverse requests.
+
+All **24 exact authorized IDs** pass both the focused run and the full 1,632-case discovery. No product defect was exposed in the authorized cases.
+
+### Exact-ID delta: additional outcome variation remains a blocker
+
+**The requested “only 24 failing IDs changed” full-suite proof is NOT established.** The comparison verifier deliberately exits 1 and records `exactly_authorized_failure_delta: false`; this is not waived or described as a clean full-suite acceptance.
+
+Compared with the original 120 maturing failures:
+
+- 26 prior failures now pass: the 24 authorized cases and **two unmodified cases** listed below.
+- 94 original failure IDs still fail.
+- Eight additional IDs fail this run, producing **102 current failures** rather than the exact-delta expectation of 96.
+- Four additional IDs were already recorded as exact beta-only failures. The other four share a failing title with the opposite project in the prior inventory; that is context, **not** exact-ID baseline reproduction or proof of a fix/regression. Three additional failures report `style-src-attr` CSP violations. None of these eight cases was edited, suppressed, or given a broader timeout; further investigation/fixes require separate authorization.
+
+Unmodified previously failing IDs that pass this run:
+
+| Project | ID | Test |
+| --- | --- | --- |
+| tablet | `cc3070f185481daa6f24-10bc69e8c681940787d4` | Policy runtime cancellation cannot release a newer pre-save evaluation request |
+| desktop | `cc3070f185481daa6f24-f9d4bda33a2de34a9120` | Scenario JSON transport keeps failed creation unsaved and preserves explicit creation payloads |
+
+Additional failing IDs outside the original 120-case maturing failure set:
+
+| Project | ID | Test | Prior inventory context |
+| --- | --- | --- | --- |
+| desktop | `ba07e228bcb3aecf4d27-59cb9cddaa1f81692883` | World Map Fit reframes the current viewport after manual zoom and resize | Exact beta-only failure ID |
+| tablet | `cc3070f185481daa6f24-086595e0f8ea7af946fc` | Gateway analysis scope rejects delayed error after editing back to the original source | Same title failed in opposite project; this exact ID not previously failing |
+| tablet | `cc3070f185481daa6f24-3466b56273f4f71cdf83` | Policy runtime cancellation cannot release a newer pre-save fixtures request | Exact beta-only failure ID |
+| tablet | `cc3070f185481daa6f24-5486e71cd297f6cb868d` | GUI shared programmatic edits keep policy completion and Scenario indentation undoable | Same title failed in opposite project; this exact ID not previously failing |
+| tablet | `cc3070f185481daa6f24-823cc6ef42d23c7a4742` | Scenario JSON transport keeps failed creation unsaved and preserves explicit creation payloads | Exact beta-only failure ID |
+| tablet | `cc3070f185481daa6f24-8d7dcd12e1769238f863` | Gateway analysis scope rejects delayed success after editing back to the original source | Exact beta-only failure ID |
+| tablet | `cc3070f185481daa6f24-b0952dd568f4f7e00c45` | GUI raw scenario analysis ignores delayed errors for an edited source | Same title failed in opposite project; this exact ID not previously failing |
+| desktop | `cc3070f185481daa6f24-f779cd8e5f8d23340312` | Policy runtime cancellation cannot release a newer pre-save fixtures request | Same title failed in opposite project; this exact ID not previously failing |
+
+Remaining acceptance blockers include the 94 retained original failures, the eight additional outcomes above, the authenticated live-state gate, six serial-dependent cases that did not run, and explicit live/compiled-production-assets opt-ins not enabled in this run. Passing focused source-contract cases does not clear those gates or certify production readiness.
+
+## Persistent evidence and reproduction
+
+Evidence is committed in [`source-contract/`](source-contract/):
+
+- `focused.json` / `focused.log`: exact 24-case source-contract selection, all passing.
+- `boundary-trusted-source.json` / `.log`: all 26 boundary/trusted-source cases, all passing.
+- `strict-audit.log`: unchanged strict boundary audit output.
+- `full.json` / `full.log`: complete full-suite reporter evidence, including all remaining failure messages.
+- `comparison.json`: raw-report SHA-256 values, counts by project, all authorized IDs, expected/actual remaining failure sets, every resolved/new failure ID, and prior inventory context without reclassification.
+- `assertion-inventory.json`: before/after source-level assertion and test-definition counts.
+- `compare-results.py`: reproducible exact-ID comparison against the immutable original inventory. From the repository root, run `python3 browser-triage/source-contract/compare-results.py`. It exits **1** for this observed non-exact full-suite delta, while independently requiring all 24 authorized IDs to pass and requiring unchanged full-suite discovery.
+
+Browser commands are preserved verbatim in the logs; trailing line whitespace was normalized for repository hygiene. Raw JSON reporter evidence remains unmodified. Full suite: `TMPDIR="$PWD/../.browser-runtime" PLAYWRIGHT_JSON_OUTPUT_FILE="$PWD/../browser-triage/source-contract/full.json" npm run test:browser -- --workers=2 --reporter=json,list` from `zpr-dashboard`, after creating `.browser-runtime` in the worktree root. No failing case outside the explicit 24-case authorization was changed.
+
+---
+
+# Historical baseline triage (retained as originally recorded)
+
+The following baseline report predates the authorized fixture repair above. Its counts, classifications, and statements that no tests were changed describe those historical runs, not this follow-up.
+
 # Maturing browser triage — baseline established; acceptance remains blocked
 
 **Compared HEAD:** `4fc460fa57398cb2f211f8984a58c444f82ec0c8` on `maturing/w4-browser-triage`.

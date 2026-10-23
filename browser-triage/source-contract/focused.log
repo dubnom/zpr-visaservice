@@ -1,0 +1,33 @@
+
+> test:browser
+> playwright test --workers=2 --reporter=json,list --grep Control Room trusted source panel browses records read-only|GUI Trusted Source insertion participates in undo redo and clears obsolete analysis|Trusted Sources omits explanatory headings, counts, and the top table filter|Trusted Sources tables sort, split group cn/objectClass and condense people rows|assertion attribute catalog inserts rules and renders typed comparisons|assertion catalogs insert named sources and expression results show their text|organization assertions author, save and evaluate without policy compilation|Shared page runtime rejects obsolete Trusted Sources (failure|success) after navigation and manual return|Shared page runtime retains Trusted Sources directory data on a failed manual read|workflow assertion catalogs sort exact counts and retain source-qualified insertion
+
+
+Running 24 tests using 2 workers
+
+  ✓   2 [desktop] › tests/browser/dashboard.spec.mjs:117:3 › GUI Trusted Source insertion participates in undo redo and clears obsolete analysis (native) (1.1s)
+  ✓   1 [desktop] › tests/browser/dashboard.spec.mjs:117:3 › GUI Trusted Source insertion participates in undo redo and clears obsolete analysis (fallback) (1.1s)
+  ✓   4 [desktop] › tests/browser/dashboard.spec.mjs:539:1 › assertion attribute catalog inserts rules and renders typed comparisons (1.1s)
+  ✓   3 [desktop] › tests/browser/dashboard.spec.mjs:423:1 › organization assertions author, save and evaluate without policy compilation (1.1s)
+  ✓   6 [desktop] › tests/browser/page-runtime.mjs:4:3 › Shared page runtime retains Trusted Sources directory data on a failed manual read (476ms)
+  ✓   5 [desktop] › tests/browser/dashboard.spec.mjs:583:1 › assertion catalogs insert named sources and expression results show their text (857ms)
+  ✓   7 [desktop] › tests/browser/page-runtime.mjs:20:5 › Shared page runtime rejects obsolete Trusted Sources success after navigation and manual return (760ms)
+  ✓   8 [desktop] › tests/browser/page-runtime.mjs:20:5 › Shared page runtime rejects obsolete Trusted Sources failure after navigation and manual return (666ms)
+  ✓  10 [desktop] › tests/browser/dashboard.spec.mjs:5397:1 › Trusted Sources omits explanatory headings, counts, and the top table filter (352ms)
+  ✓  11 [desktop] › tests/browser/dashboard.spec.mjs:5458:1 › Control Room trusted source panel browses records read-only (491ms)
+  ✓   9 [desktop] › tests/browser/workflow-guidelines.mjs:102:3 › workflow assertion catalogs sort exact counts and retain source-qualified insertion (1.3s)
+  ✓  12 [desktop] › tests/browser/dashboard.spec.mjs:5509:1 › Trusted Sources tables sort, split group cn/objectClass and condense people rows (953ms)
+  ✓  13 [tablet] › tests/browser/dashboard.spec.mjs:117:3 › GUI Trusted Source insertion participates in undo redo and clears obsolete analysis (native) (1.1s)
+  ✓  14 [tablet] › tests/browser/dashboard.spec.mjs:117:3 › GUI Trusted Source insertion participates in undo redo and clears obsolete analysis (fallback) (1.1s)
+  ✓  15 [tablet] › tests/browser/dashboard.spec.mjs:423:1 › organization assertions author, save and evaluate without policy compilation (1.3s)
+  ✓  16 [tablet] › tests/browser/dashboard.spec.mjs:539:1 › assertion attribute catalog inserts rules and renders typed comparisons (1.1s)
+  ✓  17 [tablet] › tests/browser/dashboard.spec.mjs:583:1 › assertion catalogs insert named sources and expression results show their text (957ms)
+  ✓  18 [tablet] › tests/browser/page-runtime.mjs:4:3 › Shared page runtime retains Trusted Sources directory data on a failed manual read (534ms)
+  ✓  19 [tablet] › tests/browser/page-runtime.mjs:20:5 › Shared page runtime rejects obsolete Trusted Sources success after navigation and manual return (842ms)
+  ✓  20 [tablet] › tests/browser/page-runtime.mjs:20:5 › Shared page runtime rejects obsolete Trusted Sources failure after navigation and manual return (844ms)
+  ✓  22 [tablet] › tests/browser/dashboard.spec.mjs:5397:1 › Trusted Sources omits explanatory headings, counts, and the top table filter (396ms)
+  ✓  23 [tablet] › tests/browser/dashboard.spec.mjs:5458:1 › Control Room trusted source panel browses records read-only (547ms)
+  ✓  21 [tablet] › tests/browser/workflow-guidelines.mjs:102:3 › workflow assertion catalogs sort exact counts and retain source-qualified insertion (1.5s)
+  ✓  24 [tablet] › tests/browser/dashboard.spec.mjs:5509:1 › Trusted Sources tables sort, split group cn/objectClass and condense people rows (1.0s)
+
+  24 passed (13.3s)

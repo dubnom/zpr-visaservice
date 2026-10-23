@@ -1,0 +1,23 @@
+[
+  {
+    "file": "zpr-dashboard/tests/browser/dashboard.spec.mjs",
+    "before_expect_calls": 3138,
+    "after_expect_calls": 3138,
+    "before_test_definitions": 321,
+    "after_test_definitions": 321
+  },
+  {
+    "file": "zpr-dashboard/tests/browser/page-runtime.mjs",
+    "before_expect_calls": 38,
+    "after_expect_calls": 41,
+    "before_test_definitions": 7,
+    "after_test_definitions": 7
+  },
+  {
+    "file": "zpr-dashboard/tests/browser/workflow-guidelines.mjs",
+    "before_expect_calls": 65,
+    "after_expect_calls": 65,
+    "before_test_definitions": 4,
+    "after_test_definitions": 4
+  }
+]

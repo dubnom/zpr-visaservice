@@ -1,0 +1,35 @@
+
+> test:browser
+> playwright test --workers=2 --reporter=json,list --grep Control Room browser has no reverse requests|Trusted Sources GUI
+
+
+Running 26 tests using 2 workers
+
+  ✓   1 [desktop] › tests/browser/control-room-boundary.spec.mjs:36:3 › Control Room browser has no reverse requests with production sources unavailable (696ms)
+  ✓   2 [desktop] › tests/browser/control-room-boundary.spec.mjs:36:3 › Control Room browser has no reverse requests with production sources available (729ms)
+  ✓   3 [desktop] › tests/browser/control-room-boundary.spec.mjs:36:3 › Control Room browser has no reverse requests with production sources provider unavailable with metadata (608ms)
+  ✓   4 [desktop] › tests/browser/control-room-boundary.spec.mjs:36:3 › Control Room browser has no reverse requests with production sources missing organization metadata (614ms)
+  ✓   5 [desktop] › tests/browser/control-room-boundary.spec.mjs:36:3 › Control Room browser has no reverse requests with production sources no configured sources (677ms)
+  ✓   6 [desktop] › tests/browser/trusted-source-gui.mjs:6:3 › Trusted Sources GUI names the source and gives known managers a dedicated button (677ms)
+  ✓   8 [desktop] › tests/browser/trusted-source-gui.mjs:162:3 › Trusted Sources GUI resets source data when organization scope changes or has no sources (437ms)
+  ✓   9 [desktop] › tests/browser/trusted-source-gui.mjs:186:5 › Trusted Sources GUI uses a single feed name as its heading without redundant controls (695ms)
+  ✓   7 [desktop] › tests/browser/trusted-source-gui.mjs:52:3 › Trusted Sources GUI keeps source selection coherent, isolates delayed reads, and scopes updates (1.3s)
+  ✓  10 [desktop] › tests/browser/trusted-source-gui.mjs:209:3 › Trusted Sources GUI selects multiple feeds in the heading and resets cursor on source changes (710ms)
+  ✓  11 [desktop] › tests/browser/trusted-source-gui.mjs:253:3 › Trusted Sources GUI keeps empty feeds explicit and never refreshes LDAP on snapshot polls (641ms)
+  ✓  12 [desktop] › tests/browser/trusted-source-gui.mjs:269:3 › Trusted Sources GUI preserves source identity on failed and expired reads and recovers with manual Refresh (644ms)
+  ✓  13 [desktop] › tests/browser/trusted-source-gui.mjs:292:3 › Trusted Sources GUI keeps a delayed update response from replacing a directory tab (656ms)
+  ✓  14 [tablet] › tests/browser/control-room-boundary.spec.mjs:36:3 › Control Room browser has no reverse requests with production sources available (792ms)
+  ✓  15 [tablet] › tests/browser/control-room-boundary.spec.mjs:36:3 › Control Room browser has no reverse requests with production sources unavailable (781ms)
+  ✓  16 [tablet] › tests/browser/control-room-boundary.spec.mjs:36:3 › Control Room browser has no reverse requests with production sources provider unavailable with metadata (756ms)
+  ✓  17 [tablet] › tests/browser/control-room-boundary.spec.mjs:36:3 › Control Room browser has no reverse requests with production sources missing organization metadata (721ms)
+  ✓  18 [tablet] › tests/browser/control-room-boundary.spec.mjs:36:3 › Control Room browser has no reverse requests with production sources no configured sources (767ms)
+  ✓  19 [tablet] › tests/browser/trusted-source-gui.mjs:6:3 › Trusted Sources GUI names the source and gives known managers a dedicated button (788ms)
+  ✓  21 [tablet] › tests/browser/trusted-source-gui.mjs:162:3 › Trusted Sources GUI resets source data when organization scope changes or has no sources (582ms)
+  ✓  20 [tablet] › tests/browser/trusted-source-gui.mjs:52:3 › Trusted Sources GUI keeps source selection coherent, isolates delayed reads, and scopes updates (1.4s)
+  ✓  22 [tablet] › tests/browser/trusted-source-gui.mjs:186:5 › Trusted Sources GUI uses a single feed name as its heading without redundant controls (741ms)
+  ✓  23 [tablet] › tests/browser/trusted-source-gui.mjs:209:3 › Trusted Sources GUI selects multiple feeds in the heading and resets cursor on source changes (797ms)
+  ✓  24 [tablet] › tests/browser/trusted-source-gui.mjs:253:3 › Trusted Sources GUI keeps empty feeds explicit and never refreshes LDAP on snapshot polls (780ms)
+  ✓  25 [tablet] › tests/browser/trusted-source-gui.mjs:269:3 › Trusted Sources GUI preserves source identity on failed and expired reads and recovers with manual Refresh (757ms)
+  ✓  26 [tablet] › tests/browser/trusted-source-gui.mjs:292:3 › Trusted Sources GUI keeps a delayed update response from replacing a directory tab (731ms)
+
+  26 passed (12.4s)
