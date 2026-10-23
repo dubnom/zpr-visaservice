@@ -1,0 +1,15 @@
+{
+  "source_id": "lab_directory",
+  "source_name": "lab_directory",
+  "kind": "ldap",
+  "organization_id": "northstar",
+  "base_dn": "dc=lab",
+  "default_source": "company_directory",
+  "directory": {
+    "people": ["alice"],
+    "groups": {"Operators": ["alice", "bob"]},
+    "attributes": ["cn", "uid", "salary"],
+    "person_attributes": {"alice": {"uid": ["alice"], "cn": ["Alice Lab"], "salary": ["70000"]}},
+    "group_attributes": {"Operators": {"cn": ["Operators"]}}
+  }
+}

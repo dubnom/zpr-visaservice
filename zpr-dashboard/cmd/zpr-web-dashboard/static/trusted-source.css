@@ -49,7 +49,7 @@ trusted-source-browser { display: block; }
 .trusted-source-tree summary { cursor: pointer; font: 12px var(--mono); padding: 4px; }
 .trusted-source-tree summary:focus-visible { outline: 2px solid var(--forest); }
 .trusted-source-tree .trusted-source-attributes { padding: 10px; }
-@media (max-width: 700px) {
+@media (max-width: 900px) {
   .trusted-source-browser-tools { align-items: stretch; flex-wrap: wrap; gap: 8px; }
   .trusted-source-tabs { width: 100%; }
   .trusted-source-filter { order: 2; width: 100%; margin: 0 0 9px; }
@@ -59,3 +59,20 @@ trusted-source-browser { display: block; }
   .trusted-source-table { min-width: 640px; }
   .trusted-source-browser-head { align-items: flex-start; }
 }
+
+.trusted-source-read-only-note { margin: 12px 0 4px; color: var(--muted); font-size: 12px; }
+
+.trusted-source-tabs button:focus-visible, .trusted-source-heading-select:focus-visible { outline: 2px solid var(--forest); outline-offset: 2px; }
+#page-sources, #page-sources > .section-block, #page-sources .table-scroll { min-width: 0; max-width: 100%; }
+#page-sources .table-scroll { overflow-x: auto; }
+
+.trusted-source-registry { margin: 16px 0; }
+.trusted-source-registry h4 { margin: 0 0 8px; font-size: 13px; }
+.trusted-source-registry-scroll { min-width: 0; max-width: 100%; }
+.trusted-source-registry-table { min-width: 660px; }
+.trusted-source-source-identity { min-width: 190px; }
+.trusted-source-source-select { padding: 3px 5px; border: 0; background: transparent; color: var(--ink); font: inherit; font-weight: 600; text-align: left; cursor: pointer; }
+.trusted-source-source-select[aria-pressed="true"] { border-radius: 3px; background: var(--leaf-wash); color: var(--forest); }
+.trusted-source-source-select:focus-visible { outline: 2px solid var(--forest); outline-offset: 2px; }
+.trusted-source-health.is-working { color: var(--forest); }
+.trusted-source-health.is-failed { color: var(--red); }
