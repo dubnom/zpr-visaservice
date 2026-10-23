@@ -100,10 +100,52 @@ Visa/Compiler/Policy Tester additionally use OpenSSL 3; all seven use the
 platform dynamic loader, glibc and GCC runtime. Exact observed package versions
 and CLI receipts are private validation evidence, not a supported ABI matrix.
 The earlier Rust build logs identify development builds (some later stripped),
-not release-profile builds. A proper release rebuild and source-to-artifact
-mapping are still required before these tools enter a public package.
+not release-profile builds. The separate release builder below has subsequently
+passed source/profile/hash verification and this same native runtime probe.
+Those candidate release outputs remain private and separate from the original
+engineering archive; service/bootstrap qualification and dependency/license
+review are still required before public packaging.
 
 ## Remaining release gates
+
+The [native Rust release builder](build-rust-release.sh) builds only the seven
+required Rust binaries from committed source archives, with locked dependencies,
+offline Cargo, two build jobs, release optimization and debug-information
+stripping. It records toolchain, lockfile hashes, Cargo artifact/profile JSON,
+compiler warnings and output hashes. Run it inside a pinned, network-disabled
+ARM64 builder with source mounted read-only and separate writable Cargo-cache
+and output directories. Do not mount credentials, host sockets or live state.
+
+```sh
+sh build-rust-release.sh /input/sources /build/new-release
+```
+
+The source root must contain the preserved Core, shared Common (including its
+policy/VS API gitlinks), Visa Service and Compiler repositories. A prepared
+offline Cargo registry/Git cache and native build prerequisites are required;
+missing dependencies fail rather than download. The calling harness must record
+the exact source revisions/archive hashes and builder image digest; this script
+cannot establish Git provenance from arbitrary directories. Existing output
+is refused; failed builds leave their diagnostics/cache for investigation.
+Successful compilation is not yet runtime or end-to-end qualification.
+
+Before runtime testing, verify the copied output against the external input
+receipt:
+
+```sh
+node packaging/compiled-recovery/verify-rust-release.cjs \
+  /absolute/copied-release /absolute/release-inputs.json
+node --test packaging/compiled-recovery/verify-rust-release.test.cjs
+```
+
+The verifier requires all seven named binaries, ARM64 ELF headers and matching
+output hashes, successful Cargo completion, optimization level `3`, disabled
+debug assertions, non-test executable profiles, expected release output paths
+and lockfile hashes matching the source input receipt. It rejects missing or
+altered evidence rather than inferring release mode from stripped symbols.
+The input receipt must be independently generated from the exact committed
+archives supplied to the build; it is engineering evidence, not signed supply
+chain attestation. Runtime/library and policy-build probes remain separate.
 
 The full compiled download still needs node/adapter/Visa/compiler binaries and
 runtime images, license/provenance review for every dependency, a complete

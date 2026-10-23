@@ -281,6 +281,60 @@ No test listeners, ZPR network or workload containers were started.
 This gate confirms executable prerequisites and fresh-key compilation, not
 full service bootstrap, trust admission or end-to-end scenario behavior.
 
+### Locked offline Rust release rebuild
+
+The [native release builder](zpr-dashboard/packaging/compiled-recovery/build-rust-release.sh)
+has now rebuilt all seven required Rust tools with `--locked --offline --release`,
+two build jobs and release debug-information stripping. No Rust source,
+manifest, lockfile or preserved worktree was edited.
+
+Builds ran on the separate validation VM in the pinned local image
+`sha256:c209d2289c90084a2fea03e67f2c500a2a3dca9bc392fec8a0f9ba7356d7860a`,
+with networking disabled, a read-only root filesystem and source mounts,
+all capabilities dropped, no Docker socket, and writable build/cache directories
+separate from the source. Only committed archives and offline registry/Git
+dependency caches were supplied. Source archive digests cover the four primary
+repositories, sibling policy/VS API dependencies and Common's exact gitlinks.
+The private input receipt records the builder identity, script digest,
+source revisions/archive digests and lockfile hashes.
+
+The [release receipt verifier](zpr-dashboard/packaging/compiled-recovery/verify-rust-release.cjs)
+confirmed all seven executable digests, ARM64 ELF headers, successful Cargo build
+completion, optimization level `3`, disabled debug assertions and non-test
+profiles at the expected release paths. Lockfile digests match the independent
+input receipt. Its regression test rejects debug/test profiles, altered binaries,
+wrong architecture and mismatched lockfiles.
+
+The exact release-built binaries then passed the native runtime probe:
+seven CLI/loader checks, all five fresh-key signed policy compilations, and
+invalid-policy rejection with no bundle. All eight runtime executable digests
+(including the previously validated compiled Go composer) match their inputs.
+The two example-policy warnings remain unchanged: unenforced Visa docking
+and missing default trusted-service certificate. Compiler builds also retain
+the existing Core dead-code/workspace-profile and Visa dead-code warnings.
+
+Measured seven-tool totals:
+
+| Inputs | File bytes |
+|---|---:|
+| Earlier development-profile tools | 135,224,312 |
+| Verified release-profile tools | 52,973,408 |
+
+This is a 60.8% reduction in these seven executable files only, not an archive,
+image, total installation size or performance benchmark. Rebuilt outputs and
+nonsecret receipts are retained privately under validation; they have not been
+added to a public archive, installed into services or substituted for live tools.
+The legacy Go-only engineering archive remains unchanged.
+
+Temporary runtime inputs, signing keys and generated policy bundles were removed
+from the test VM after receipt verification. The offline build/cache directory
+is retained there for repeatable follow-up builds; no build container remains
+running, and the VM is stopped. Existing Docker context selection is unchanged.
+Clean committed source mapping is now established for these candidate builds;
+it still does not prove equivalence to the historical deployment. Full generated
+runtime bootstrap, dependency/license review, service trust admission and
+seventeen-scenario/browser acceptance remain promotion/publication gates.
+
 ## Adapter retention and main promotion
 
 Core is a separate repository. Its adapter development is preserved at
