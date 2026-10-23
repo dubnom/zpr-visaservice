@@ -6,9 +6,49 @@ not production sign-off. C03/C06 resolves the three HIGH launcher seams; C05
 resolves the production asset seam. Both packet-local evidence records remain
 below. No Simulator runtime, Docker stack, deployment or live provider was started.
 
+## Wave 3 source metadata repair (2026-10-23)
+
+Base `f20bf5441fe55823d361f41b5d247020d458b4ff`, exclusive
+`maturing/w3-source-metadata`. The final two strict-audit references are removed:
+production inventory uses only the existing production-owned per-source
+`ZPR_PROVIDER_MANAGER_URLS` mapping. The stable source ID is the exact Admin API
+`name`, not a display label or provider discriminator. This is manager metadata,
+not a second registration registry. Starter, company and synthetic sources use
+one contract. There is no special source name, Simulator discovery, legacy
+editor setting or implicit loopback fallback. The optional Simulator adapter
+retains its explicit registry/override translation into the same mapping.
+
+- Strict `python3 scripts/check-control-room-boundary.py`: **exit 0, zero
+  references**; no audit or allowlist changes. This closes this lexical check,
+  not the broader M0-M6 or production acceptance gates.
+- All **eight** extracted `internal/controlroom/...` and
+  `internal/controlservice/...` package suites pass with `go test -race`.
+- Focused command race tests pass for manager URL validation, absent/invalid
+  configuration, legacy-setting rejection, exact source isolation and
+  provider-independent lookup; snapshot, inventory compatibility, selected
+  source/LDAP, trusted changes and Simulator-unavailable production guards also
+  pass. Focused `-race -tags production` checks pass.
+- The existing Simulator adapter's registry/explicit-override merge passes an
+  isolated local configuration check. HTTPS is accepted; HTTP requires explicit
+  loopback configuration. Credentials, query/fragment, invalid ports, relative
+  URLs and non-web schemes are rejected without substituting another URL.
+- `gofmt` on changed Go files and `git diff --check` pass.
+- Required full `make test`: **not green, 38 top-level failures in the same three
+  packages** recorded in Wave 2 (`cmd/zpr-web-dashboard`, `internal/enrollment`,
+  `internal/simulatorreset`). Eleven operator-stack configuration tests pass.
+  Failures remain missing lab/Rust fixtures, isolated shell helper,
+  observability readiness, macOS socket path length and protected reset paths.
+  None was changed, skipped or weakened.
+
+No trusted-source JavaScript, browser boundary fixtures, production assets or
+navigation changed; browser suites were not rerun for this server-only repair.
+No live provider, shared runtime, push or deployment was performed. See
+`zpr-dashboard/README.md` for the operator configuration contract.
+
 ## Wave 2 integration reconciliation (2026-10-23)
 
-The configuration, asset and trusted-source UI packets are now combined. Strict
+Historical Wave 2 result (superseded for the source seam by Wave 3 below):
+the configuration, asset and trusted-source UI packets were combined. Strict
 `python3 scripts/check-control-room-boundary.py` exits **1 with exactly 2 references**:
 `cmd/zpr-web-dashboard/inventory.go:70` (`demo_ldap` / `rest/1` special case) and
 `:71` (`return localLDAPEditorURL()`). No allowlist or suppression was added.
@@ -55,7 +95,7 @@ Paths below are relative to `zpr-dashboard/`.
 | **Resolved — profiles and runtime files/mounts (C03/C06)** | Only explicit existing absolute mounts and mounted `_FILE`/`_DIR` references are accepted. No runtime/demo tree, Docker socket, profile, generated TSIG key or local DNS relay is discovered. DNS transfer needs explicit address and mounted key. | Operators own named configuration/secrets/state mounts, Admin/Policy-Service endpoints and TLS, providers and optional DNS. Legacy lab translation is exclusively `scripts/simulator-control-adapter.sh`. |
 | **Resolved — default launch lifecycle (C03/C06)** | Default start/restart/stop/status manage only explicit ownership-labelled operator containers; Service then Room, stop reversed. No Simulator, policy/bootstrap, local login, LDAP, DNS or observability lifecycle. Bare policy lifecycle fails with an independent-deployment instruction. Lab control/policy commands have explicit `simulator-*` names and refuse operator-owned containers. | Independent Policy-Service/provider deployment is a prerequisite, never automatically provisioned. Simulator activation calls lab commands only. Full M3 reset/package qualification remains open. |
 | **Medium — residual artifact/build coupling** | Production no longer calls `ensure_simulator_image` or uses `$SIMULATOR_IMAGE`: images must be operator-selected and are never built by startup. The shared `cmd/zpr-web-dashboard` package still includes all modes in its build graph. | Packaging still owns independent production artifacts/entrypoints; explicit image selection does not prove a Simulator-free image/build graph. |
-| **Medium — synthetic source-name branch** | Production `/api/snapshot` → `application.fetchSnapshot` → `inventory.Fetch(... TrustedEditorURL: trustedEditorURL)` → `inventory.go:70-71` special-cases `demo_ldap`/`rest/1` → `main.go:localLDAPEditorURL` reads `ZPR_DEMO_LDAP_EDITOR_URL`. There is no implicit URL default and the launcher does not forward this setting, but direct production startup can enable the branch. | Source/provider packet (B02/S01/C03): provider-owned registration/manager metadata, no lab-name special case. Preserve ordinary clients' actual display names. |
+| **Resolved — synthetic source-name branch (Wave 3)** | Production `/api/snapshot` → `application.fetchSnapshot` → `inventory.Fetch(... TrustedEditorURL: trustedEditorURL)` now resolves only explicit `ZPR_PROVIDER_MANAGER_URLS` metadata by stable, case-sensitive Admin API source `name`. No source-name/provider special case, legacy editor variable, Simulator discovery or localhost fallback remains. URL validation rejects credentials, query/fragment, non-web schemes, non-loopback HTTP and invalid ports; missing/invalid entries have no manager link. | Operators configure `services.control-service.env.ZPR_PROVIDER_MANAGER_URLS` in their independent stack configuration. Starter, company and synthetic sources use the same contract; the optional Simulator adapter continues supplying its own explicit registry/override mapping. Actual client names are preserved. |
 | **Clear — Simulator assets on production origin (C05 asset seam)** | `runControlRoom` now serves only `fs.Sub(controlRoomFiles, "static")`, an explicit production embed bundle checked against `packaging/control-room/assets.txt`. All 26 Simulator-only static files (including the trusted-source/log/world standalone lab pages and navigation) are absent on the production origin. `-tags production` also excludes them from the executable and excludes the three Simulator assistant skill artifacts. | C05 asset packet resolved this seam: default and production-build HTTP/desktop/tablet tests assert GET/HEAD absence and independent navigation. Simulator default build retains its own static registration, pages and redirects. Shared production rendering keeps independent operator endpoints; full compiled-command extraction and launch configuration remain separate gates. |
 | **Clear — production routes** | `internal/controlroom/httpapi/routes.go`: login, change review, enrollment, `/api/` proxy, DNS stylesheet and static. `runControlRoom` also composes budget authority. `internal/controlservice/httpapi/routes.go`: snapshot, diagnostics, actor visas, adapter logs, DNS, policy/assistant, gateways, assertions, trusted change feeds, enrollment and budget authority. No Simulator API registration; actual process test verifies `/api/simulator/scenarios` is 404. | Existing operator/service owners; preserve explicit production route/authorization contracts. The broad proxy is not a Simulator contract. |
 | **Clear — extracted imports / direct callers** | Transitive `go list -deps` for `internal/controlroom/...` and `internal/controlservice/...` contains no `internal/simulator*`. New AST guards inspect first-party transitive literals and selected command composition files for Simulator-owned functions/types/imports/configuration. | Control-Service/Control Room owners. New seams must receive ownership coverage; the guard is not a whole-program dynamic call graph. |
@@ -95,8 +135,8 @@ Paths below are relative to `zpr-dashboard/`.
   launcher/inventory/shared-asset audit. **Packet B baseline exited 1: 12 references**.
   C03/C06 removes nine launcher references; C05 removes the shared-asset reference.
   No skips or expected-failure allowlist. C05 adds explicit filesystem/manifest
-  checks and mutation tests. This remains a failing acceptance
-  command, not a claim that passing focused tests close the boundary. Its
+  checks and mutation tests. The packet B/C05 command was a failing acceptance
+  check; Wave 3 now passes this audit without claiming the broader boundary is closed. Its
   lexical scope is the named launcher functions, legacy inventory branch and
   shared static mount; it is not a universal shell/data-flow analyzer.
 
@@ -108,7 +148,7 @@ mkdir -p .boundary-validation
 TMPDIR="$PWD/.boundary-validation" go test ./internal/controlroom/... ./internal/controlservice/... -count=1
 TMPDIR="$PWD/.boundary-validation" go test ./cmd/zpr-web-dashboard -run '^(TestControl|TestProduction|TestDiagnostics|TestNode(DisplayNames|Enrichment)|TestPolicyProxy|TestAssertionMultipleLiveSources)' -count=1
 TMPDIR="$PWD/.boundary-validation" npm run test:browser -- control-room-boundary.spec.mjs dashboard.spec.mjs --grep 'Control Room browser|GUI header guideline|Trusted Sources GUI' --workers=1
-python3 scripts/check-control-room-boundary.py # deliberately nonzero until violations are removed
+python3 scripts/check-control-room-boundary.py # Wave 3: exit 0 for this lexical check
 rm -rf .boundary-validation
 ```
 
@@ -119,7 +159,7 @@ with the existing lockfile (`npm ci --ignore-scripts`); no manifest/lockfile cha
 Mutation checks confirmed that the production dependency guard rejects an
 injected Simulator configuration reference and the strict audit rejects
 manifest/demo/shared-page references and a missing audited function.
-No shared stack was started. The strict audit fails as documented; **C06 and the
+No shared stack was started. The historical strict-audit failures are superseded by Wave 3; **C06 and the
 M0/M2 production acceptance gates remain open**.
 
 ## Recommended next packets
@@ -130,8 +170,9 @@ M0/M2 production acceptance gates remain open**.
 2. **Production UI boundary (C05 assets resolved):** independent entry bundle and
    forbidden-page HTTP/browser rejection checks are now implemented; retain
    remaining source/configuration work in its owning packets.
-3. **Source packet (B02/S01/S02/C03):** remove `demo_ldap` name branching through
-   provider metadata; external organization LDAP and coherent source provenance.
+3. **Source packet (B02/S01/S02/C03):** source-name branching is resolved by
+   Wave 3 explicit metadata; revisioned registration and coherent source
+   provenance remain broader acceptance work.
 4. **Integrated C06/V01/V13:** after remediation, require the strict audit to pass
    and test named-user startup plus real production providers with Simulator
    absent and its directories/mounts inaccessible. Do not infer this from the

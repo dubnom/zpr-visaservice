@@ -75,19 +75,51 @@ func TestActorVisasDoesNotReportFetchFailureAsEmpty(t *testing.T) {
 	}
 }
 
-func TestDemoLDAPEditorURL(t *testing.T) {
-	services := []service{{Name: "demo_ldap", Kind: `Trusted("rest/1")`}}
-	statuses := []trustedStatus{{Name: "demo_ldap", Health: "working"}, {Name: "other", Health: "unverified"}}
-	for _, raw := range []string{"https://example.com/editor", "http://localhost:8788/", "http://127.0.0.1:8788@evil.test/"} {
-		t.Setenv("ZPR_DEMO_LDAP_EDITOR_URL", raw)
-		if got := trustedSourcesFromStatus(statuses, services)[0].EditorURL; got != "" {
-			t.Fatalf("unsafe editor URL %q accepted as %q", raw, got)
+func TestTrustedEditorURLsUseOnlyExplicitSourceConfiguration(t *testing.T) {
+	unavailableSimulatorForProductionContract(t)
+	t.Setenv("ZPR_DEMO_LDAP_EDITOR_URL", "http://127.0.0.1:8788/phpldapadmin/")
+	services := []service{
+		{Name: "demo_ldap", Kind: `Trusted("rest/1")`},
+		{Name: "starter_directory", Kind: `Trusted("ldap")`},
+		{Name: "synthetic_directory", Kind: `Trusted("rest/1")`},
+		{Name: "company_directory", Kind: `Trusted("ldap")`},
+	}
+	statuses := make([]trustedStatus, 0, len(services)+1)
+	for _, item := range services {
+		statuses = append(statuses, trustedStatus{Name: item.Name, Health: "working"})
+	}
+	statuses = append(statuses, trustedStatus{Name: "unconfigured", Health: "unverified"})
+	for _, raw := range []string{"", "{}", "null", "invalid", `{"demo_ldap":42}`} {
+		t.Setenv("ZPR_PROVIDER_MANAGER_URLS", raw)
+		for _, item := range trustedSourcesFromStatus(statuses, services) {
+			if item.EditorURL != "" {
+				t.Fatalf("source %q invented a manager URL with missing/invalid configuration: %q", item.Name, item.EditorURL)
+			}
 		}
 	}
-	t.Setenv("ZPR_DEMO_LDAP_EDITOR_URL", "http://127.0.0.1:8788/phpldapadmin/")
-	items := trustedSourcesFromStatus(statuses, services)
-	if !strings.HasPrefix(items[0].EditorURL, "http://127.0.0.1:8788/") || items[1].EditorURL != "" {
-		t.Fatalf("editor link leaked to another source: %+v", items)
+	managers := map[string]string{
+		"demo_ldap":           "https://legacy.example.test/manage",
+		"starter_directory":   "https://starter.example.test/manage",
+		"synthetic_directory": "http://127.0.0.1:8797/manage",
+		"company_directory":   "https://company.example.test/manage",
+	}
+	config, err := json.Marshal(managers)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("ZPR_PROVIDER_MANAGER_URLS", string(config))
+	for _, item := range trustedSourcesFromStatus(statuses, services) {
+		if item.EditorURL != managers[item.Name] {
+			t.Errorf("source %q: manager URL = %q; want %q", item.Name, item.EditorURL, managers[item.Name])
+		}
+	}
+	if got := trustedEditorURL("Starter_directory", "ldap"); got != "" {
+		t.Fatalf("source IDs must match exactly: %q", got)
+	}
+	for _, provider := range []string{"ldap", "file", "rest/1", "trusted source"} {
+		if got := trustedEditorURL("starter_directory", provider); got != managers["starter_directory"] {
+			t.Fatalf("provider %q changed configured manager URL: %q", provider, got)
+		}
 	}
 }
 
@@ -99,10 +131,37 @@ func TestProviderManagerURLsAreServerConfiguredAndScoped(t *testing.T) {
 	if items[0].EditorURL != "https://auth.example.test/admin" || items[1].EditorURL != "http://127.0.0.1:8797/" {
 		t.Fatalf("configured provider manager links = %+v", items)
 	}
-	for _, raw := range []string{`{"authentication":"javascript:alert(1)"}`, `{"authentication":"http://example.test/admin"}`, `{"authentication":"https://user:pass@example.test/admin"}`} {
-		t.Setenv("ZPR_PROVIDER_MANAGER_URLS", raw)
+	for _, endpoint := range []string{
+		"", "/manage", "//example.test/manage", "javascript:alert(1)",
+		"http://example.test/admin", "https://user@example.test/admin",
+		"https://@example.test/admin", "https:///manage", "https://:443/manage",
+		"https://example.test:/manage", "https://example.test:0/manage",
+		"https://example.test:65536/manage", "https://example.test:invalid/manage",
+		"https://example.test/manage?token=example", "https://example.test/manage?",
+		"https://example.test/manage#example", "https://example.test/manage#",
+		"https://example.test/\\evil", " https://example.test/manage",
+		"https://example.test/\nmanage",
+	} {
+		config, err := json.Marshal(map[string]string{"authentication": endpoint})
+		if err != nil {
+			t.Fatal(err)
+		}
+		t.Setenv("ZPR_PROVIDER_MANAGER_URLS", string(config))
 		if got := providerManagerURL("authentication"); got != "" {
-			t.Errorf("unsafe provider manager URL %q accepted as %q", raw, got)
+			t.Errorf("unsafe provider manager URL accepted: %q", got)
+		}
+	}
+	for _, endpoint := range []string{
+		"https://manager.example.test/admin", "https://manager.example.test:8443/admin",
+		"http://127.0.0.1:8797/", "http://localhost:8797/manage", "http://[::1]:8797/manage",
+	} {
+		config, err := json.Marshal(map[string]string{"authentication": endpoint})
+		if err != nil {
+			t.Fatal(err)
+		}
+		t.Setenv("ZPR_PROVIDER_MANAGER_URLS", string(config))
+		if got := providerManagerURL("authentication"); got != endpoint {
+			t.Errorf("explicit provider manager URL = %q; want %q", got, endpoint)
 		}
 	}
 }
@@ -144,6 +203,7 @@ func TestFetchSnapshotAggregatesLiveAdminData(t *testing.T) {
 	defer server.Close()
 
 	t.Setenv("SIMULATOR_STATUS_URL", server.URL+"/api/simulator/status")
+	t.Setenv("ZPR_PROVIDER_MANAGER_URLS", `{"directory":"https://directory.example.test/manage"}`)
 	app := &application{admin: &adminClient{baseURL: server.URL, apiKey: "test-key", http: server.Client()}}
 	data := app.fetchSnapshot(context.Background())
 	if data.APIStatus != "connected" {
@@ -160,6 +220,9 @@ func TestFetchSnapshotAggregatesLiveAdminData(t *testing.T) {
 	}
 	if len(data.Trusted) != 2 || data.Trusted[0].Provider != "file" || data.Trusted[0].Health != "working" || data.Trusted[0].LastSuccessMS == nil || data.Trusted[0].ActorCN != "directory-service" || data.Trusted[0].Endpoints != "ldaps://directory:636" || data.Trusted[1].Name != "remote" || data.Trusted[1].Health != "unverified" {
 		t.Fatalf("trusted source status is misleading or missing: %+v", data.Trusted)
+	}
+	if data.Trusted[0].EditorURL != "https://directory.example.test/manage" || data.Trusted[1].EditorURL != "" {
+		t.Fatalf("snapshot lost source-specific manager metadata: %+v", data.Trusted)
 	}
 	select {
 	case <-simulatorRequests:
