@@ -50,3 +50,8 @@ TMPDIR="$PWD/.asset-validation" ZPR_ASSET_BROWSER_TEST_BINARY="$PWD/.asset-valid
 python3 scripts/test-control-room-assets.py
 python3 scripts/check-control-room-boundary.py # may still fail for other packets
 ```
+
+For a separately supervised **evaluation-only** local Control Room/Control-Service
+instance with unique TLS/IdP/LDAP/logging state, use the
+[B1 evaluation runbook](../evaluation/README.md). It builds this production-tagged
+command; Simulator assets/services are not needed. It is not the appliance BOM.

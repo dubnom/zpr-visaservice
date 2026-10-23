@@ -2,6 +2,12 @@
 
 This repository contains the Zero-Trust Packet Routing (ZPR) Terminal User Interface application. The dashboard application allows you to manage your ZPR infrastructure quickly through an easy-to-understand and easy-to-use interface.
 
+The separate [B1 local evaluation bootstrap](packaging/evaluation/README.md)
+starts production Control Room/Control-Service plus isolated packaged OpenLDAP,
+OpenObserve and named-operator Dex with unique protected state and verified TLS.
+It never starts/requires Simulator and does not implement source registration,
+log ingestion or the complete production BOM.
+
 Production appliance work is tracked in the
 [system packaging foundation](packaging/system/README.md). The new
 `zpr-system-config` command validates only company management-bootstrap input;
@@ -15,8 +21,9 @@ optional explicit network inputs also generate separate bootstrap/ZPR BIND
 configuration, zones and TSIG credentials. Existing network DNS is the default:
 underlay addresses generate record requests, while a bootstrap BIND server
 requires explicit `-host-bootstrap-dns`; protected ZPR DNS is independent.
-It does not apply configuration or
-start services, and no companion bundle is ready.
+The original lab/companion modes do not apply configuration or
+start services, and no complete companion bundle is ready; the independent
+`-evaluation` mode has its own explicitly evaluation-only lifecycle.
 Optional `-identity-services` now also renders protected OpenLDAP/Dex config,
 per-install lab users/groups, separate safe initialization/startup scripts and
 an integration inventory. Real LDAP-backed OIDC/PKCE was verified in isolated

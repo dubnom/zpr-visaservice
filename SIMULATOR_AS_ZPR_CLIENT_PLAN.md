@@ -72,18 +72,53 @@ affected source/policy references, preserve or deliberately migrate state, and
 show the impact before applying. There is no automatic identity merge, default-
 source switch, or silent fallback between starter, Simulator and company data.
 
-All B milestones below are **pending design/implementation acceptance**, separate
-from the existing M0-M6 ordinary-client and production-boundary gates:
+The B1 local implementation is available through the
+[evaluation bootstrap runbook](zpr-dashboard/packaging/evaluation/README.md).
+Its render/unit and isolated runtime evidence do not accept B2-B6 or a clean-host
+production release. B milestones retain separate release/visual acceptance from
+the existing M0-M6 ordinary-client and production-boundary gates:
 
 | Milestone | Scope and exit evidence |
 | --- | --- |
 | **B0 — Inventory and profile contract** | Record current package/image/script behavior and gaps in the [system release plan](System%20release%20plan.md#evaluation-only-bootstrap-profile-2026-10-23); freeze the evaluation-only label, state/secret ownership and independent service lifecycle. |
-| **B1 — One-command bootstrap** | A clean supported host can run one documented command to initialize unique per-install protected secrets/state, render and start required ZPR plus LDAP/logging services, wait on protocol health, and report actionable status. Repeat/restart preserves identity and data; Simulator is unavailable. |
+| **B1 — One-command bootstrap** | Local implementation: `sh packaging/evaluation/bootstrap.sh -state "$PWD/.zpr-evaluation-local"` from `zpr-dashboard` (add `-render-only` for offline rendering). Starts production-tagged operator services plus current packaged LDAP/OpenObserve/Dex, foreground supervised with verified TLS/readiness and preserved install identity. Clean-host/platform and browser release acceptance remain separate. A clean supported host can run one documented command to initialize unique per-install protected secrets/state, render and start required ZPR plus LDAP/logging services, wait on protocol health, and report actionable status. Repeat/restart preserves identity and data; Simulator is unavailable. |
 | **B2 — Register starter source** | Bootstrap registers the bundled LDAP as a named, organization-scoped trusted source; Control Room can read and attribute results to it. Verify isolation, restart persistence and no implicit default/fallback behavior. |
 | **B3 — Register starter logging** | Bootstrap configures the OpenObserve-based evaluation logging source/collector and authorized query path. Verify actual ingestion, visible source identity, persistent storage, access-control boundaries and explicit unavailable/error state. |
-| **B4 — Independent LDAP push feed** | Run the existing RFC 4533 syncrepl watcher and accesslog feed for the bundled LDAP outside Simulator lifecycle. Demonstrate refresh/add/modify/delete and disconnect/reconnect behavior with private metadata and no attribute values/secrets. This does **not** claim that feed events refresh ZPR attribute caches or revoke visas; implement and accept those consumers separately unless independently verified already. |
+| **B4 — Independent LDAP push feed** | Run the existing RFC 4533 syncrepl watcher and accesslog feed for the bundled LDAP outside Simulator lifecycle. **Control-Service owns durable per-source watcher checkpoints**, reconnect/resync health and private metadata retention. Demonstrate refresh/add/modify/delete and disconnect/reconnect behavior with private metadata and no attribute values/secrets. This does **not** claim that feed events refresh ZPR attribute caches or revoke visas; implement and accept those consumers separately unless independently verified already. |
 | **B5 — Add Simulator companion** | Add Simulator without replacing/reseeding the starter source. Register its own isolated synthetic directory as a second source, exercise ordinary production contracts, then stop Simulator and prove starter LDAP/logging/Control Room remain available. |
-| **B6 — Link company source/logging and retire starter explicitly** | Link company LDAP and logging alongside the running starter; show provenance and independent failures. A separate reviewed retirement flow rebinding identities/policies before stopping starter services; no automatic merge or fallback. |
+| **B6 — Link company source/logging and retire starter explicitly** | Link company LDAP and logging alongside the running starter; show provenance and independent failures. An explicit wizard: **link company source → rebind policies → verify → disable bundled**; preview affected identity/source/policy/logging state and require authorized confirmation/recovery before stopping starter services; no automatic merge or fallback. |
+
+### B1 decisions recorded (2026-10-23)
+
+- Use the **current packaged OpenLDAP image**, evaluation-only:
+  `osixia/openldap@sha256:0de3850635911109f0daf8f5957808ec4f4eb827fbaaa339100b5f1bab925745`
+  (`linux/amd64`). This is not production image qualification. The current
+  OpenObserve/Dex package pins and mixed-platform requirements are in the runbook.
+- OpenObserve **AGPL-3.0 accepted for evaluation**, **7-day global retention**,
+  **administrator-only access**; verify unauthenticated queries fail and preserve
+  TLS verification. B3 still owns actual collection/ingestion and named-source
+  registration/authorized Control Room querying.
+- **B1-RECOVERY (design/task, not implemented):** local CLI reset generates a
+  unique one-time password into a new protected file, never stdout/logs; verify
+  local ownership, lock, supported provider update, invalidate sessions and require
+  replacement on first use. Include expiry/replay/rollback and independent logging
+  admin tests. Dex static credentials cannot enforce this safely as a small reset
+  script; do not claim editing a hash or deleting state is admin recovery.
+- **B4 decision:** Control-Service owns durable **per-source** change-watcher
+  checkpoints/resync health. B1 neither runs watchers nor claims cache refresh or
+  visa revocation.
+- **B6 decision:** explicit retirement wizard **link company source → rebind
+  policies → verify → disable bundled**, with authorized impact preview, recovery
+  and no implicit identity merge/default switch/fallback.
+- Optional Simulator is an **add-later, separately installed companion only**.
+  Give it independent state/credentials and a separate synthetic source through
+  production contracts; it is never a requirement or startup action of B1.
+
+B1 engineering evidence (2026-10-23): focused race/unit tests, vet, shellcheck,
+Python syntax, strict boundary audit and the two-cycle isolated mixed-image
+startup/restart test passed. Broader `make test` remains non-green on unrelated
+missing fixtures/Rust dependencies and existing launcher/macOS path assumptions;
+see the runbook. No B-V1/B2-B6/production acceptance is implied.
 
 ### Wave 2 visual acceptance
 
@@ -396,7 +431,16 @@ activation date, removal gate and verification evidence in the demo handoff.
 | X07 | Begin with synthetic LDAP and a small deterministic traffic set. | Report it as synthetic; actual organization LDAP remains a distinct acceptance gate; no load/scale claims. | Approved real integrations, representative volume, freshness and sustained outage testing. |
 | X08 | Use the current bundled OpenLDAP/Dex and OpenObserve starter profile for beta/evaluation bootstrap. | Mark **EVALUATION-ONLY / NOT PRODUCTION SUPPORTED**; generate unique per-install secrets/state; never use shared/default passwords; keep Simulator's directory separate. | Company-owned trusted identity and logging integrations must be linked and verified before the evaluation starter is retired; production qualification of bundled providers remains governed by the 2026-10-17 requirement. |
 | X09 | Run starter and company LDAP/logging in parallel during evaluation migration. | Independent source IDs, credentials, health and provenance; no automatic identity merge, fallback or default-source switch. | Explicit reviewed source/policy rebinding, retirement approval, state retention/removal plan and recovery test. |
+| X11 | Use a dedicated static-password Dex administrator and local password grant only to discover/verify the bootstrap operator subject. | Active B1, evaluation bootstrap maintainers, 2026-10-23: unique per-install 256-bit credential, loopback verified TLS, signed ID-token verification, organization-scoped read-only grants; no tokens/passwords in output, no shared sessions; upstream container output disabled. | Replace static/password-grant bootstrap with qualified administrator enrollment, one-time local CLI recovery/session invalidation and managed credentials; prove real browser OIDC/PKCE and forced-change/expiry/replay recovery gates. |
 | X10 | Keep push-feed consumption at metadata-only observation in this wave. | Syncrepl/accesslog produces private source-change metadata only; do not imply that visa attributes refresh or visas revoke on each change. | Separate implementation and acceptance for cache refresh, assertion reevaluation and visa revocation semantics. |
+
+**B1 activation ledger (2026-10-23):** X01/X02/X06/X08/X11 are active for
+`-evaluation` only, owned by the evaluation-bootstrap/package maintainers. Exact
+image/port/state/TLS/retention configuration and removal gaps are in the
+[evaluation runbook](zpr-dashboard/packaging/evaluation/README.md); focused
+`evaluation_test.go` and the opt-in isolated startup/restart test are evidence,
+not production qualification. X03/X04/X05/X07/X09/X10 are not newly activated
+by B1; no source migration, synthetic users, watchers or traffic are provisioned.
 
 **Not shortcuts:** disabling TLS/certificate verification, trusting self-asserted
 actors, bypassing authorization/approval, treating a staged policy as applied,
