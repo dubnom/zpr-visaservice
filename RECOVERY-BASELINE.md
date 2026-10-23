@@ -677,6 +677,72 @@ service decomposition, full installation or public distribution. Next gates
 are PH/adapter launch permissions, peer trust and forwarding, then remaining
 setup/licensing/full-demo acceptance. No registry push or zpr.net upload occurred.
 
+### Preconfigured PH container permissions and process restart
+
+Packaging commit `2553f3d` qualifies the next engineering slice with the unchanged
+saved runtime image (download SHA-256
+`f4630f498754704362d5f611f6a07d773d056bec9294e8726338572d10233612`,
+image ID `sha256:4bdafbaeaf1bfe7d8a3aedce0c940b3b05d560605b615b9e2a821c4053829396`).
+The committed probe hash is
+`d88dbdbd7d904a509f9924785784ad13b3899f18f7ab3fd186ed6465b53c393f`.
+No binary, runtime image, Go or Rust source changed.
+
+The separate Visa and PH containers use a unique internal IPv6-only Docker
+bridge with engineering-only subnet `fd00:5a::/64`. No default route, published
+port, host/source/socket mount, external network or Simulator is configured.
+Short-lived root helpers receive only NET_ADMIN, join only owned namespaces,
+and install private routes/addresses plus a multiqueue TUN owned by UID 501.
+They do not receive credentials/state mounts or SYS_ADMIN. PH receives
+`/dev/net/tun:rw`; Visa does not.
+
+The running PH, Visa and Redis processes all verify as UID 501/GID 1000,
+effective capabilities zero and no-new-privileges. Runtime containers have
+read-only roots, one private state volume each, PID limit 128, memory limit
+512 MiB and CPU quota 1. The node volume contains only node-specific credentials
+and configuration; administrator/API keys, CA private key and database remain
+in the separate Visa volume. A network-disabled unprivileged transfer helper
+copies an explicit node file allowlist. A foreign RSA key is present only for
+the negative test.
+
+Required checks passed against the exact saved image:
+
+- Missing TUN device: explicit TUN-create failure, no-such-file reason, exit 134.
+- TUN owned by UID 502: explicit TUN-create failure, operation-not-permitted
+  reason, exit 134. No runtime capability or world-writable ownership workaround.
+- Foreign RSA bootstrap key: Visa's exact signature rejection and empty node
+  inventory, not a generic network/authentication failure.
+- Matching fresh key: PH grant and VSS registration; exact CN `node`, address
+  `fd5a:5052::2`, synchronized state and zero pending installs; exactly one node.
+- PH process stopped by exact captured PID and verified exited, then restarted
+  in the same namespace/state: new grant/VSS receipts, identical selected
+  synchronized summary and still exactly one accepted node.
+- Exercised PH/Visa/admin hashes match the archived Rust manifest. All 23 focused
+  preparation/provenance/runtime rejection tests pass, including wrong daemon,
+  changed image/sidecar, invalid identity/target and existing-evidence refusal.
+
+The negative harness initially assumed Rust's unwind exit 101; these preserved
+release binaries abort with exit 134, which the final probe checks explicitly.
+Attempting to change an existing persistent TUN's owner through `ip tuntap add`
+returned busy; the final harness deletes/recreates only its own wrong-owned TUN
+inside the disposable node namespace. No production behavior was weakened.
+The inherited PH panic on unusable TUN remains a future setup diagnostic concern,
+not a polished user-facing prerequisite check.
+
+Reviewed selected receipts persist in
+`validation/node-image-final-20261023` in the private recovery workspace.
+Raw logs, generated keys and databases never left disposable volumes. Every
+attempt's containers, private volumes and internal network were removed; zero
+remaining containers/volumes/labeled test networks was independently verified.
+The validation VM is stopped. Original/fallback VMs remain running, main and
+original worktrees unchanged, default Docker context still `desktop-linux`.
+
+This proves a **preconfigured node** can run without elevated runtime capabilities,
+plus PH process re-admission. It does not prove adapter dynamic-address permission
+requirements, Noise peer trust, allowed/denied forwarding, revocation, container/VM
+restart or full-demo acceptance. Those networking/adapter tests remain next;
+no claim is made that all networking gates are complete. The release skill now
+includes this reusable probe. No public upload, deployment or main promotion.
+
 ## Adapter retention and main promotion
 
 Core is a separate repository. Its adapter development is preserved at
