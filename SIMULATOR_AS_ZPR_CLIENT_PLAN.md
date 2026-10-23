@@ -377,6 +377,57 @@ harness. Existing tests are prior art, not execution evidence for this plan.
 Screenshots verify presentation; backend, traffic and lifecycle assertions verify
 that the separation is real.
 
+### Wave 5 V02/V06 production registration slice (2026-10-23)
+
+Base `315c10650b510911ab1b1516b699ab5a72df6adf`, exclusive
+`maturing/w5-source-registration`. **Implemented and locally verified**, not a
+claim of live-company provider or whole-migration acceptance:
+
+- The production Sources page registers multiple LDAPS/HTTPS sources, edits
+  display/configuration without changing organization/source IDs, validates
+  approved mappings/attributes and protected secret-file references, and shows
+  separate read-only connection-test success/failure. Saving is explicitly not
+  verified connectivity; edited/late/other-organization results cannot become
+  success evidence. No insecure TLS, raw credentials, fallback or reverse runtime
+  dependency was introduced.
+- `GET/POST/PUT /api/assertions/sources` and
+  `POST /api/assertions/sources/test` are ordinary production contracts. The
+  authenticated Policy Repository organization is authoritative. The sole
+  registry remains `ZPR_ASSERTION_SOURCES_FILE`, now atomically replaced/synced
+  with revision guards; empty-file seeding is supported. Registrations survive
+  service restart. There is no session-only configuration fallback. Existing
+  container/shared-scope sources remain file-managed. Contract/runbook:
+  `zpr-dashboard/ASSERTIONS.md` and `zpr-dashboard/README.md`.
+- Focused Go `-race`: **33 top-level / 79 including subtests pass**, separately
+  in default and `production` builds; includes **seven new registry tests**,
+  real local verified-TLS LDAP/HTTPS protocol fixtures, rejected bad bind,
+  untrusted TLS, invalid/out-of-scope mapping, unsafe credential permissions,
+  revision/identity/organization guards, restart persistence and concurrent
+  immutable reader snapshots. All **eight** extracted production package suites
+  pass with `-race`.
+- Playwright desktop + tablet: **34 passed** (eight new registration cases,
+  16 existing Trusted Sources GUI cases, ten Simulator-absent production browser
+  boundary cases). New screenshots capture edit, TLS/bind/mapping failure,
+  separate source results and HTTPS/unconfigured persistence layouts, with
+  overflow assertions. Browser APIs are deterministic contract fixtures; actual
+  network and persistence behavior is exercised by Go protocol tests, not a live
+  company directory. Simulator was not started.
+- Strict boundary audit: **exit 0 / zero references**, unchanged checker and no
+  allowlist. Go formatting, JavaScript syntax and `git diff --check` pass.
+  Required `make test` remains **exit 2 / 38 known baseline top-level failures**
+  (24 command, one enrollment, 13 reset), from missing lab/Rust/shell fixtures,
+  observability readiness, macOS IPC path length and protected reset directories.
+  New route/handler ownership expectations were extended, not weakened; unrelated
+  failures were neither repaired nor skipped.
+
+**Still pending:** authorized real-company LDAP/HTTPS acceptance, directory ACL
+least-privilege/completeness proof, credential lifecycle/rotation and HA writer
+coordination. Configuration is durable but connection-test observations are
+session-only evidence, not persisted healthy certification. X02/X07 remain
+active; X11 records the single-writer local-config provisioning limit. No source
+retirement, default-source reassignment, live LDAP mutation, push or deployment
+was performed. M1/M4/M5 and the full V01-V15 gate are not declared complete.
+
 ## 7. Demo shortcuts and pre-production register
 
 Reduce **credential ceremony**, not the trust boundary. Prefer generating or
@@ -397,6 +448,7 @@ activation date, removal gate and verification evidence in the demo handoff.
 | X08 | Use the current bundled OpenLDAP/Dex and OpenObserve starter profile for beta/evaluation bootstrap. | Mark **EVALUATION-ONLY / NOT PRODUCTION SUPPORTED**; generate unique per-install secrets/state; never use shared/default passwords; keep Simulator's directory separate. | Company-owned trusted identity and logging integrations must be linked and verified before the evaluation starter is retired; production qualification of bundled providers remains governed by the 2026-10-17 requirement. |
 | X09 | Run starter and company LDAP/logging in parallel during evaluation migration. | Independent source IDs, credentials, health and provenance; no automatic identity merge, fallback or default-source switch. | Explicit reviewed source/policy rebinding, retirement approval, state retention/removal plan and recovery test. |
 | X10 | Keep push-feed consumption at metadata-only observation in this wave. | Syncrepl/accesslog produces private source-change metadata only; do not imply that visa attributes refresh or visas revoke on each change. | Separate implementation and acceptance for cache refresh, assertion reevaluation and visa revocation semantics. |
+| X11 | Provision one protected, operator-owned `ZPR_ASSERTION_SOURCES_FILE` per Control-Service and use a single service writer for registration/editing. | Durable atomic replacement, revision/external-edit conflicts, stable organization/source IDs, verified TLS and secret file references; no session-only fallback or test-as-health claim. V02/V06 local acceptance uses protocol fixtures, not live company LDAP. | Managed configuration/secret lifecycle, cross-process/HA writer coordination and authorized real-provider outage/recovery qualification. |
 
 **Not shortcuts:** disabling TLS/certificate verification, trusting self-asserted
 actors, bypassing authorization/approval, treating a staged policy as applied,

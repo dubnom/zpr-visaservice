@@ -26,6 +26,9 @@ type assertionSettings struct {
 }
 
 type assertionRuntime struct {
+	sourcesPath      string
+	sourcesConfig    assertionSourcesConfig
+	sourcesRevision  string
 	sources          map[string]assertionNamedSource
 	defaultSource    string
 	mu               sync.Mutex
@@ -408,7 +411,8 @@ func (runtime *assertionRuntime) handlers() httpapi.Assertions {
 	return httpapi.Assertions{
 		Analyze: http.HandlerFunc(handleAssertionSourceTools), Format: http.HandlerFunc(handleAssertionSourceTools),
 		Source: http.HandlerFunc(runtime.handleSource), Status: http.HandlerFunc(runtime.handleStatus),
-		Save: http.HandlerFunc(runtime.handleSave), Evaluate: http.HandlerFunc(runtime.handleEvaluate),
+		Registry: http.HandlerFunc(runtime.handleSourceRegistry),
+		Save:     http.HandlerFunc(runtime.handleSave), Evaluate: http.HandlerFunc(runtime.handleEvaluate),
 	}
 }
 
@@ -487,6 +491,7 @@ func (runtime *assertionRuntime) handleSource(w http.ResponseWriter, r *http.Req
 		runtime.lastSource = assertionSourceSummary(directory, observedAt)
 	}
 	organizationID, organizationName := runtime.organizationID, runtime.organizationName
+	defaultSource := runtime.defaultSource
 	runtime.mu.Unlock()
 	if err != nil {
 		writeJSON(w, http.StatusBadGateway, map[string]string{"error": err.Error()})
@@ -495,7 +500,7 @@ func (runtime *assertionRuntime) handleSource(w http.ResponseWriter, r *http.Req
 	w.Header().Set("Cache-Control", "no-store")
 	response := trustedSourceBrowserResponse("Trusted sources", organizationID, organizationName, baseDN, directory, observedAt)
 	response["sources"] = assertionSourceSummaries(directory, observedAt)
-	response["default_source"] = runtime.defaultSource
+	response["default_source"] = defaultSource
 	if selected != "" {
 		response["source_id"] = selected
 		response["source_name"] = selected

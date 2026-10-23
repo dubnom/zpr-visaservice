@@ -114,6 +114,7 @@
           <p class="trusted-source-message" data-source-message role="status" aria-live="polite">Loading trusted source…</p>
           <div class="trusted-source-results" data-source-results hidden></div>
         </section>`;
+      if (!this.simulatorPage) this.initializeRegistration();
       this.querySelector(".trusted-source-tabs").addEventListener("keydown", event => {
         if (!["ArrowLeft", "ArrowRight", "Home", "End"].includes(event.key)) return;
         const tabs = [...this.querySelectorAll("[data-source-tab]")];
@@ -234,6 +235,150 @@
           }
         },
       });
+    }
+
+    initializeRegistration() {
+      const section = element("section", "trusted-source-registration");
+      section.setAttribute("aria-label", "Trusted source registration");
+      section.innerHTML = `
+        <div class="trusted-source-registration-actions">
+          <button type="button" class="button" data-register-source>Register source</button>
+          <button type="button" class="button" data-edit-source>Edit selected source</button>
+        </div>
+        <form data-registration-form hidden>
+          <h4 data-registration-heading>Register trusted source</h4>
+          <p>Organization and source IDs are stable. Credentials must be protected server file references, never passwords or tokens.</p>
+          <div class="trusted-source-registration-fields">
+            <label>Organization ID<input name="organization_id" readonly required></label>
+            <label>Source ID<input name="source_id" required pattern="[a-zA-Z][a-zA-Z0-9_-]{0,63}" maxlength="64"></label>
+            <label>Display name<input name="display_name" maxlength="200"></label>
+            <label>Source kind<select name="kind" aria-label="Source kind"><option value="ldap">LDAP (verified TLS)</option><option value="https-json">HTTPS JSON (verified TLS)</option></select></label>
+            <label>Source URL<input name="url" required placeholder="ldaps://directory.company.example:636"></label>
+            <label>CA file reference (optional)<input name="ca_file" autocomplete="off"></label>
+            <label>Approved attributes (comma separated)<input name="attributes" required placeholder="cn,mail,departmentNumber"></label>
+            <label data-ldap-field>Base DN<input name="base_dn"></label>
+            <label data-ldap-field>Read-only bind DN<input name="bind_dn"></label>
+            <label data-ldap-field>Password file reference<input name="bind_password_file" autocomplete="off"></label>
+            <label data-https-field hidden>Token file reference<input name="token_file" autocomplete="off"></label>
+          </div>
+          <div class="trusted-source-registration-actions">
+            <button type="button" class="button" data-test-source>Test connection (read-only)</button>
+            <button type="submit" class="button" data-save-source>Save configuration</button>
+            <button type="button" class="button" data-close-registration>Close</button>
+          </div>
+        </form>
+        <p data-registration-storage></p>
+        <p data-registration-message role="status" aria-live="polite"></p>
+        <ul data-connection-results aria-label="Source connection test results"></ul>`;
+      this.querySelector(".trusted-source-registry").append(section);
+      this.registrationForm = section.querySelector("form");
+      this.connectionResults = new Map();
+      this.registrationGeneration = 0;
+      section.querySelector("[data-register-source]").addEventListener("click", () => this.openRegistration(false));
+      section.querySelector("[data-edit-source]").addEventListener("click", () => this.openRegistration(true));
+      section.querySelector("[data-close-registration]").addEventListener("click", () => {
+        this.registrationGeneration++;
+        this.registrationForm.hidden = true;
+      });
+      this.registrationForm.addEventListener("input", () => {
+        this.registrationGeneration++;
+        const fields = this.registrationForm.elements;
+        if (this.connectionResults.has(`${fields.organization_id.value}/${fields.source_id.value}`)) this.recordConnectionResult(fields.organization_id.value, fields.source_id.value, "Configuration changed; connection is not verified for these values");
+        section.querySelector("[data-registration-message]").textContent = "Configuration changed; connection has not been tested for these values.";
+      });
+      this.registrationForm.elements.kind.addEventListener("change", () => this.renderRegistrationKind());
+      section.querySelector("[data-test-source]").addEventListener("click", () => this.submitRegistration(true));
+      this.registrationForm.addEventListener("submit", event => { event.preventDefault(); this.submitRegistration(false); });
+    }
+
+    renderRegistrationKind() {
+      const ldap = this.registrationForm.elements.kind.value === "ldap";
+      for (const field of this.registrationForm.querySelectorAll("[data-ldap-field]")) { field.hidden = !ldap; field.querySelector("input").required = ldap; }
+      for (const field of this.registrationForm.querySelectorAll("[data-https-field]")) { field.hidden = ldap; field.querySelector("input").required = !ldap; }
+    }
+
+    async openRegistration(editing) {
+      const generation = ++this.registrationGeneration;
+      const message = this.querySelector("[data-registration-message]");
+      this.registrationForm.hidden = true;
+      message.textContent = "Loading production source configuration…";
+      try {
+        const registry = await window.ZPRPageRuntime.requestJSON(window.zprOperatorFetch, "/api/assertions/sources", { headers: { Accept: "application/json" } });
+        if (generation !== this.registrationGeneration) return;
+        const current = selection.get();
+        if (!registry.organization_id || registry.organization_id !== current.organizationID) throw new Error("Organization changed; refresh before configuring a source");
+        const selected = editing && registry.sources.find(source => source.source_id === current.sourceID);
+        if (editing && !selected?.editable) throw new Error("Selected source is not editable here; use its operator-managed configuration file");
+        this.registrationRegistry = registry;
+        this.registrationEditing = editing;
+        this.registrationForm.reset();
+        const fields = this.registrationForm.elements;
+        fields.organization_id.value = registry.organization_id;
+        fields.source_id.readOnly = editing;
+        const config = selected?.config || {};
+        const scope = config.organizations?.[registry.organization_id] || {};
+        for (const name of ["display_name", "kind", "url", "ca_file", "token_file"]) fields[name].value = config[name] || (name === "kind" ? "ldap" : "");
+        fields.source_id.value = config.name || "";
+        fields.attributes.value = (config.attributes || []).join(",");
+        for (const name of ["base_dn", "bind_dn", "bind_password_file"]) fields[name].value = scope[name] || "";
+        if (config.kind === "https-json") fields.url.value = scope.url || "";
+        this.querySelector("[data-registration-heading]").textContent = editing ? "Edit trusted source (identity is fixed)" : "Register trusted source";
+        this.querySelector("[data-save-source]").disabled = !registry.durable;
+        this.renderRegistrationKind();
+        this.registrationForm.hidden = false;
+        this.querySelector("[data-registration-storage]").textContent = registry.durable ? "Changes are saved to the production source configuration file. Saving does not verify connectivity." : "Registration is unavailable: configure a protected ZPR_ASSERTION_SOURCES_FILE. No session-only registrations are saved.";
+        message.textContent = "Configuration loaded; use Test connection for read-only verification.";
+        fields.source_id.focus();
+      } catch (error) { if (generation === this.registrationGeneration) message.textContent = error.message || "Source configuration could not be loaded"; }
+    }
+
+    async submitRegistration(testing) {
+      if (!this.registrationForm.reportValidity()) return;
+      const fields = this.registrationForm.elements;
+      const organizationID = fields.organization_id.value;
+      const sourceID = fields.source_id.value;
+      const scope = fields.kind.value === "ldap" ? { base_dn: fields.base_dn.value, bind_dn: fields.bind_dn.value, bind_password_file: fields.bind_password_file.value } : { url: fields.url.value };
+      const config = { name: sourceID, display_name: fields.display_name.value, kind: fields.kind.value, ca_file: fields.ca_file.value,
+        attributes: fields.attributes.value.split(",").map(value => value.trim()).filter(Boolean), organizations: { [organizationID]: scope } };
+      if (config.kind === "ldap") config.url = fields.url.value;
+      else config.token_file = fields.token_file.value;
+      const generation = ++this.registrationGeneration;
+      const message = this.querySelector("[data-registration-message]");
+      const buttons = [...this.registrationForm.querySelectorAll("[data-test-source], [data-save-source]")];
+      buttons.forEach(button => { button.disabled = true; });
+      message.textContent = `${sourceID}: ${testing ? "Testing connection (read-only)…" : "Saving configuration…"}`;
+      try {
+        const result = await window.ZPRPageRuntime.requestJSON(window.zprOperatorFetch, `/api/assertions/sources${testing ? "/test" : ""}`, {
+          method: testing || !this.registrationEditing ? "POST" : "PUT", headers: { "Content-Type": "application/json", Accept: "application/json" },
+          body: JSON.stringify({ organization_id: organizationID, source_id: sourceID, revision: this.registrationRegistry.revision, config }),
+        });
+        if (generation !== this.registrationGeneration || selection.get().organizationID !== organizationID) return;
+        if (result.organization_id !== organizationID || result.source_id !== sourceID || result.status !== (testing ? "success" : "saved")) throw new Error("Source operation response did not match the requested identity or result");
+        message.textContent = `${sourceID}: ${result.message}`;
+        if (testing) this.recordConnectionResult(organizationID, sourceID, "Connection test succeeded (read-only)");
+        else {
+          this.registrationRegistry.revision = result.revision;
+          this.registrationEditing = true;
+          fields.source_id.readOnly = true;
+          this.recordConnectionResult(organizationID, sourceID, "Configuration saved; test the saved configuration to verify connectivity");
+          this.load();
+        }
+      } catch (error) {
+        if (generation !== this.registrationGeneration || selection.get().organizationID !== organizationID) return;
+        message.textContent = `${sourceID}: ${error.message || "Source operation failed"}`;
+        if (testing) this.recordConnectionResult(organizationID, sourceID, "Connection test failed; source is not verified");
+      } finally {
+        buttons.forEach(button => { button.disabled = button.hasAttribute("data-save-source") && !this.registrationRegistry?.durable; });
+      }
+    }
+
+    recordConnectionResult(organizationID, sourceID, text) {
+      this.connectionResults.set(`${organizationID}/${sourceID}`, text);
+      const list = this.querySelector("[data-connection-results]");
+      list.replaceChildren();
+      for (const [identity, result] of this.connectionResults) {
+        if (identity.startsWith(`${selection.get().organizationID}/`)) list.append(element("li", "", `${identity}: ${result}`));
+      }
     }
 
     load() {
@@ -431,6 +576,13 @@
 
     onSelectionChanged(context, { keepDirectoryRequest = false } = {}) {
       if (this.simulatorPage || this.settingSelectionContext) return;
+      if (this.registrationForm && this.registrationForm.elements.organization_id.value !== context.organizationID) {
+        this.registrationGeneration++;
+        this.registrationForm.hidden = true;
+        this.querySelector("[data-registration-message]").textContent = "";
+        this.querySelector("[data-registration-storage]").textContent = "";
+        this.querySelector("[data-connection-results]").replaceChildren();
+      }
       if (!keepDirectoryRequest) this.directoryPoller.stop();
       this.updatesPoller.stop();
       this.updateSources = null;

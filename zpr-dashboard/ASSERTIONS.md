@@ -85,7 +85,8 @@ subjects violating the assertion but do not print their observed values.
 ## Trusted Source
 
 Server-configured live LDAP or authenticated HTTPS JSON readers supply data. Browsers cannot submit
-snapshots, provider URLs, credentials, or source configuration. The initial
+snapshots or raw credentials. Authorized operators may register and edit network
+source configuration through the production registration contract below. The initial
 connector reads the existing local rig's LDAPS endpoint from its `zpr-vs`
 namespace using the CA and password file associated with the running `slapd`.
 TLS certificate verification is mandatory. The configured bind identity must
@@ -241,7 +242,8 @@ Expressions allow at most 64 nested parser levels and 2048 nodes across a file.
 ### Reader Configuration
 
 Set `ZPR_ASSERTION_SOURCES_FILE` on Control-Service to an operator-owned JSON
-file. It accepts 1-16 named readers and a required `default_source`:
+file. It accepts up to 16 named readers and a required `default_source` when
+nonempty. An empty registry uses `{"default_source":"","sources":[]}`:
 
 ```json
 {
@@ -269,6 +271,82 @@ provide an `organizations` map of organization IDs to `base_dn` and `bind_dn`.
 If that map is present, organizations not listed cannot use the reader. The LDAP
 connector uses the existing container-local LDAPS endpoint, verified CA, and
 server-side password file; it does not read simulation data.
+
+#### Operator registration, editing and connection tests (V02/V06)
+
+Control Room **Trusted Sources → Register source / Edit selected source** uses
+only production Control-Service contracts. No provider manager or other client
+needs to be running. The organization comes from the authenticated Policy
+Repository context; requests repeat it only as a stale-context guard. Existing
+operator authentication and same-origin/local/proxy checks apply to all routes.
+An ordinary authorized API client can use the same contract.
+
+Provision `ZPR_ASSERTION_SOURCES_FILE` before startup, optionally with the empty
+registry above, in a private operator-owned directory. Use mode **0600** for the
+file and protect the directory and CA files against untrusted writers. The
+service must have replacement/write permission on its directory. There is no
+second database, implicit discovery or session-only registration. An unset,
+missing, unprotected or unwritable file fails saves explicitly. Existing legacy
+container/shared-organization definitions remain readable but file-managed, not
+editable through this scoped workflow.
+
+| Request | Contract |
+| --- | --- |
+| `GET /api/assertions/sources` | Returns current `organization_id`, opaque `revision`, `durable` (a file is configured), and scoped `sources` entries with `source_id`, `editable`, and editable `config`. Only file references, never credential contents, are returned. |
+| `POST /api/assertions/sources` | Create a new stable source ID; duplicate IDs conflict. |
+| `PUT /api/assertions/sources` | Replace an existing source configuration, keeping source and organization IDs fixed. A missing ID conflicts, never silently creates/renames a source. |
+| `POST /api/assertions/sources/test` | Validate an unsaved candidate and perform a bounded read-only bind/search or HTTPS snapshot read. Success returns `status: "success"`; validation/connection failures return non-2xx with a source-specific, redacted error. Nothing is saved and no fallback is attempted. |
+
+Mutation/test bodies are strict JSON:
+
+```json
+{
+  "organization_id": "northstar",
+  "source_id": "company_directory",
+  "revision": "revision-from-GET",
+  "config": {
+    "name": "company_directory",
+    "display_name": "Company directory",
+    "kind": "ldap",
+    "url": "ldaps://directory.company.example:636",
+    "ca_file": "/etc/zpr/company-ca.pem",
+    "attributes": ["cn", "mail"],
+    "organizations": {
+      "northstar": {
+        "base_dn": "dc=company",
+        "bind_dn": "cn=reader,dc=company",
+        "bind_password_file": "/etc/zpr/company-bind-password"
+      }
+    }
+  }
+}
+```
+
+For HTTPS, use `kind: "https-json"`, `token_file` and exactly one organization
+scope containing `url: "https://provider.company.example/directory"` instead of
+LDAP URL/DNs/password reference. Both protocols use verified TLS with system
+roots plus optional private CA, never an insecure toggle. Approved attributes
+are mandatory. A connection test is not a proof of LDAP ACL completeness or
+least-privilege bind-account grants; provision a read-only account externally.
+
+Successful saves return `status: "saved"`, the same organization/source identity
+and a new revision. They atomically replace and sync the same protected JSON
+file and directory, then publish an immutable in-memory reader snapshot. The
+first registration sets the default; later registrations/edits never switch it.
+Saving explicitly **does not verify connectivity**. Configuration edits clear
+prior connection evidence in the UI; test failures cannot produce a healthy
+badge. Per-source connection observations are browser-session evidence only,
+not durable health certification. Recheck after reload or configuration changes.
+
+Stale revisions, organization changes, active evaluations/tests and external
+file edits fail closed. The file is a **single-Control-Service-writer** registry,
+not a cross-process coordination/HA store; edit externally only while the service
+is stopped, then restart. If file/directory sync fails after replacement, the
+response reports uncertain durability: restart/read back before retrying. No
+credential values, directory snapshots or backend exception details are emitted
+by test responses. Protect and rotate file references through the operator's
+secret-management process (shortcut X02); local single-writer provisioning is
+recorded as X11, not production HA qualification.
 
 #### Production network LDAP and source identity (packet A)
 
@@ -335,7 +413,8 @@ fields omitted), and both source LDIFs. Local TLS protocol tests execute these
 fixtures with Simulator variables unset and invalid, without Docker/live LDAP.
 
 HTTPS readers require a Bearer-token file and verified TLS (system roots plus
-an optional `ca_file`). URL credentials, query strings, fragments and redirects
+an optional `ca_file`). Token references must resolve to protected regular files
+(0600 or stricter), checked again on every read. URL credentials, query strings, fragments and redirects
 are rejected. The URL template must include `{organization}`; alternatively
 provide an `organizations` map whose values contain organization-specific `url`
 fields. Unlisted organizations then fail closed. Token files are reread on each

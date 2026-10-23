@@ -6,6 +6,26 @@ not production sign-off. C03/C06 resolves the three HIGH launcher seams; C05
 resolves the production asset seam. Both packet-local evidence records remain
 below. No Simulator runtime, Docker stack, deployment or live provider was started.
 
+## Wave 5 source registration boundary evidence (2026-10-23)
+
+Exclusive `maturing/w5-source-registration`, base
+`315c10650b510911ab1b1516b699ab5a72df6adf`: registration/edit/test routes are
+owned by production Control-Service and persist the existing operator-configured
+`ZPR_ASSERTION_SOURCES_FILE`. Organization identity is obtained from the Policy
+Repository, not discovered from another runtime. Verified-TLS LDAP/HTTPS reads
+use protected credential files; tests never return provider data or secrets.
+
+Strict `python3 scripts/check-control-room-boundary.py`: **exit 0, zero
+references**, unchanged checker/no allowlist. Default and production-tag focused
+source race checks each pass **33 top-level / 79 including subtests**; all eight
+extracted production package race suites pass. Desktop/tablet impacted browser
+cases: **34 passed**, including eight new registration cases and all ten
+Simulator-absent boundary cases. Local protocol fixtures validate network and
+restart persistence; browser contracts are mocked, not live-company acceptance.
+Full `make test` remains the documented **38** baseline top-level failures.
+No runtime, live-provider mutation, push or deployment was performed. See the
+Wave 5 V02/V06 evidence and active X11 limit in the client plan.
+
 ## Wave 3 integrated evidence (2026-10-23)
 
 Exclusive branch `maturing/integration`, verified starting HEAD

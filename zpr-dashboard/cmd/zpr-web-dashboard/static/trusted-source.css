@@ -76,3 +76,11 @@ trusted-source-browser { display: block; }
 .trusted-source-source-select:focus-visible { outline: 2px solid var(--forest); outline-offset: 2px; }
 .trusted-source-health.is-working { color: var(--forest); }
 .trusted-source-health.is-failed { color: var(--red); }
+
+.trusted-source-registration { margin-top: 1rem; }
+.trusted-source-registration-actions { display: flex; flex-wrap: wrap; gap: .5rem; margin: .75rem 0; }
+.trusted-source-registration-fields { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 260px), 1fr)); gap: .75rem; }
+.trusted-source-registration-fields label { display: flex; flex-direction: column; gap: .25rem; min-width: 0; }
+.trusted-source-registration-fields input, .trusted-source-registration-fields select { width: 100%; min-width: 0; box-sizing: border-box; }
+.trusted-source-registration [data-registration-message], .trusted-source-registration li { overflow-wrap: anywhere; }
+.trusted-source-registration [hidden] { display: none !important; }
