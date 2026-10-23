@@ -190,11 +190,15 @@ All generated keys, database files and full evidence remain **private**.
 The enclosing harness must remove private test state after preserving only
 reviewed nonsecret receipts.
 
-The recovered `vs-admin` client currently disables server-certificate validation;
-its successful calls are **not** TLS evidence. The probe independently uses curl
-without insecure flags for verified HTTPS and a wrong-CA negative check, and
-compares its policy/network responses with CLI results. Correcting and rebuilding
-that client remains a publication gate. Node trust admission, policy-signature
+The repaired `vs-admin` client requires HTTPS and verifies server trust, expiry
+and endpoint identity. Its local TLS regressions cover every request method,
+including credential non-disclosure on rejected handshakes. The native probe
+requires foreign-CA, hostname, plaintext and foreign-API-key CLI failures to
+return exit 1 with empty stdout. It also independently uses curl without
+insecure flags and compares verified policy/network responses with CLI results.
+Only newly release-rebuilt verified client inputs satisfy these checks; older
+seven-tool inputs with the insecure client must not be published.
+Node trust admission, policy-signature
 enforcement, a runtime image and full service/bootstrap acceptance are not proved
 by this engineering probe.
 

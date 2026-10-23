@@ -107,6 +107,7 @@ fn main() {
     }
     .unwrap_or_else(|e| {
         eprintln!("{} {}", "Error: ".red(), e);
+        std::process::exit(1);
     })
 }
 

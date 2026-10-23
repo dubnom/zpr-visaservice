@@ -44,7 +44,7 @@ impl VsClient {
     fn build_client(&self) -> Result<reqwest::blocking::Client, VsaError> {
         let cb = reqwest::blocking::ClientBuilder::new()
             .add_root_certificate(self.cert.clone())
-            .danger_accept_invalid_certs(true)
+            .https_only(true)
             .timeout(HTTP_TIMEOUT);
         let client = cb.build()?;
         Ok(client)
@@ -403,6 +403,174 @@ fn denies_url(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use openssl::asn1::Asn1Time;
+    use openssl::bn::BigNum;
+    use openssl::hash::MessageDigest;
+    use openssl::pkey::{PKey, Private};
+    use openssl::rsa::Rsa;
+    use openssl::ssl::{SslAcceptor, SslMethod};
+    use openssl::x509::extension::{BasicConstraints, KeyUsage, SubjectAlternativeName};
+    use openssl::x509::{X509, X509NameBuilder};
+    use std::io::{Read, Write};
+    use std::net::TcpListener;
+    use std::thread;
+    use std::time::Instant;
+
+    fn test_certificate(
+        host: Option<&str>,
+        authority: Option<(&X509, &PKey<Private>)>,
+        expired: bool,
+    ) -> (X509, PKey<Private>) {
+        let key = PKey::from_rsa(Rsa::generate(2048).unwrap()).unwrap();
+        let mut name = X509NameBuilder::new().unwrap();
+        name.append_entry_by_text("CN", host.unwrap_or("test authority"))
+            .unwrap();
+        let name = name.build();
+        let mut builder = X509::builder().unwrap();
+        builder.set_version(2).unwrap();
+        builder
+            .set_serial_number(&BigNum::from_u32(1).unwrap().to_asn1_integer().unwrap())
+            .unwrap();
+        builder.set_subject_name(&name).unwrap();
+        builder
+            .set_issuer_name(authority.map_or(&*name, |(ca, _)| ca.subject_name()))
+            .unwrap();
+        builder.set_pubkey(&key).unwrap();
+        builder
+            .set_not_before(&Asn1Time::from_unix(0).unwrap())
+            .unwrap();
+        let not_after = if expired {
+            Asn1Time::from_unix(1).unwrap()
+        } else {
+            Asn1Time::days_from_now(1).unwrap()
+        };
+        builder.set_not_after(&not_after).unwrap();
+        if let Some(host) = host {
+            let san = SubjectAlternativeName::new()
+                .ip(host)
+                .build(&builder.x509v3_context(authority.map(|(ca, _)| ca.as_ref()), None))
+                .unwrap();
+            builder.append_extension(san).unwrap();
+        } else {
+            builder
+                .append_extension(BasicConstraints::new().critical().ca().build().unwrap())
+                .unwrap();
+            builder
+                .append_extension(KeyUsage::new().key_cert_sign().crl_sign().build().unwrap())
+                .unwrap();
+        }
+        builder
+            .sign(
+                authority.map_or(&key, |(_, key)| key),
+                MessageDigest::sha256(),
+            )
+            .unwrap();
+        (builder.build(), key)
+    }
+
+    fn tls_request(method: &str, trusted: bool, matching_host: bool, expired: bool) {
+        let (ca, ca_key) = test_certificate(None, None, false);
+        let (leaf, key) = test_certificate(
+            Some(if matching_host {
+                "127.0.0.1"
+            } else {
+                "127.0.0.2"
+            }),
+            Some((&ca, &ca_key)),
+            expired,
+        );
+        let mut acceptor = SslAcceptor::mozilla_intermediate(SslMethod::tls()).unwrap();
+        acceptor.set_private_key(&key).unwrap();
+        acceptor.set_certificate(&leaf).unwrap();
+        let acceptor = acceptor.build();
+        let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+        listener.set_nonblocking(true).unwrap();
+        let address = listener.local_addr().unwrap();
+        let server = thread::spawn(move || {
+            let deadline = Instant::now() + Duration::from_secs(5);
+            let stream = loop {
+                match listener.accept() {
+                    Ok((stream, _)) => break stream,
+                    Err(error) if error.kind() == std::io::ErrorKind::WouldBlock => {
+                        assert!(Instant::now() < deadline, "TLS client never connected");
+                        thread::sleep(Duration::from_millis(10));
+                    }
+                    Err(error) => panic!("TLS test listener failed: {error}"),
+                }
+            };
+            stream
+                .set_read_timeout(Some(Duration::from_secs(5)))
+                .unwrap();
+            stream
+                .set_write_timeout(Some(Duration::from_secs(5)))
+                .unwrap();
+            let Ok(mut stream) = acceptor.accept(stream) else {
+                return false;
+            };
+            let mut bytes = [0; 4096];
+            let count = stream.read(&mut bytes).unwrap_or(0);
+            if count == 0 {
+                return false;
+            }
+            let request = String::from_utf8_lossy(&bytes[..count]).to_lowercase();
+            assert!(request.contains("x-api-key: test-only-api-key"));
+            stream
+                .write_all(b"HTTP/1.1 200 OK\r\nContent-Length: 2\r\nConnection: close\r\n\r\n{}")
+                .unwrap();
+            true
+        });
+        let trusted_ca = if trusted {
+            ca
+        } else {
+            test_certificate(None, None, false).0
+        };
+        let url = format!("https://{address}/admin/test");
+        let client = VsClient::new(
+            url.clone(),
+            Certificate::from_pem(&trusted_ca.to_pem().unwrap()).unwrap(),
+            "test-only-api-key".into(),
+            true,
+        );
+        let result = match method {
+            "GET" => client.ht_get(&url),
+            "POST" => client.ht_post(&url),
+            "JSON" => client.ht_post_json(&url, &serde_json::json!({})),
+            "DELETE" => client.ht_delete(&url),
+            _ => unreachable!(),
+        };
+        let expected = trusted && matching_host && !expired;
+        assert_eq!(result.is_ok(), expected, "{method}: {result:?}");
+        assert_eq!(
+            server.join().unwrap(),
+            expected,
+            "credentials sent before TLS validation"
+        );
+    }
+
+    #[test]
+    fn tls_checks_every_request_method_before_sending_credentials() {
+        for method in ["GET", "POST", "JSON", "DELETE"] {
+            tls_request(method, true, true, false);
+            tls_request(method, false, true, false);
+            tls_request(method, true, false, false);
+            tls_request(method, true, true, true);
+        }
+    }
+
+    #[test]
+    fn plaintext_admin_requests_are_rejected() {
+        let ca = test_certificate(None, None, false).0;
+        let client = VsClient::new(
+            "http://127.0.0.1:1".into(),
+            Certificate::from_pem(&ca.to_pem().unwrap()).unwrap(),
+            "test-only-api-key".into(),
+            true,
+        );
+        let error = client
+            .ht_get("http://127.0.0.1:1/admin/network")
+            .unwrap_err();
+        assert!(matches!(error, VsaError::HttpRequest(error) if error.is_builder()));
+    }
 
     /// `since`/`limit` are passed through verbatim, and omitted entirely when None.
     #[test]

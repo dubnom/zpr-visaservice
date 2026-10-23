@@ -3920,6 +3920,7 @@ dependencies = [
  "colored",
  "flate2",
  "futures-io",
+ "openssl",
  "reqwest",
  "serde",
  "serde_json",

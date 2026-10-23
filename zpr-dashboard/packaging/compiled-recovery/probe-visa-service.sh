@@ -93,6 +93,25 @@ start_visa "$state/bootstrap.bin2"
 admin network > "$evidence/network.json"
 admin actors > "$evidence/actors.json"
 admin policies --curr > "$evidence/policy.json"
+reject_cli() {
+    label=$1
+    shift
+    if timeout 20 "$bin/vs-admin" "$@" --format compact policies --curr \
+        > "$evidence/$label-output.txt" 2> "$evidence/$label-error.txt"; then
+        fail "CLI accepted $label"
+    else
+        [ "$?" -eq 1 ] || fail "CLI $label did not report request failure with exit 1"
+    fi
+    [ ! -s "$evidence/$label-output.txt" ] || fail "CLI $label produced success-shaped output"
+}
+reject_cli foreign-ca --svc-url 'https://[::1]:8182' \
+    --ca-cert "$evidence/second/authority.pem" --api-key-file "$state/administrator.key"
+reject_cli hostname-mismatch --svc-url 'https://localhost:8182' \
+    --ca-cert "$state/authority.pem" --api-key-file "$state/administrator.key"
+reject_cli plaintext --svc-url 'http://[::1]:8182' \
+    --ca-cert "$state/authority.pem" --api-key-file "$state/administrator.key"
+reject_cli foreign-api-key --svc-url 'https://[::1]:8182' \
+    --ca-cert "$state/authority.pem" --api-key-file "$evidence/second/administrator.key"
 printf 'X-API-Key: %s\n' "$(cat "$state/administrator.key")" > "$evidence/administrator-header"
 request --fail -H "@$evidence/administrator-header" \
     'https://[::1]:8182/admin/network' > "$evidence/verified-tls-network.json"
@@ -141,6 +160,7 @@ admin network > "$evidence/restarted-network.json"
 cmp "$evidence/policy.json" "$evidence/restarted-policy.json" || fail "policy did not persist across restart"
 cmp "$evidence/network.json" "$evidence/restarted-network.json" || fail "network changed across restart"
 printf '%s\n' 'PASS: two fresh bootstraps, non-overwrite, owner-only state, verified HTTPS, anonymous/foreign rejection, observer read-only, policy installation and database restart.' \
+    'CLI rejects foreign CA, hostname mismatch, plaintext and foreign API key with exit 1 and empty stdout.' \
     'Simulator unavailable; no external network, node, adapter, demo workload or production service configured.' \
     'Private evidence contains generated credentials and must never be published.' > "$evidence/result.txt"
 cat "$evidence/result.txt"
