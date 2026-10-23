@@ -132,6 +132,19 @@ func TestControlRoomBoundaryProcessStartup(t *testing.T) {
 		{roomClient, "http://" + roomAddress + "/api/trusted-sources/change-feeds", `"sources":[]`, 200},
 		{roomClient, "http://" + roomAddress + "/api/adapter-logs", "ZPR_ADAPTER_LOG_CONFIG_FILE", 503},
 		{roomClient, "http://" + roomAddress + "/api/simulator/scenarios", "404 page not found", 404},
+		{roomClient, "http://" + roomAddress + "/scenarios.html", "404 page not found", 404},
+		{roomClient, "http://" + roomAddress + "/organizations.html", "404 page not found", 404},
+		{roomClient, "http://" + roomAddress + "/activity.html", "404 page not found", 404},
+		{roomClient, "http://" + roomAddress + "/agents.html", "404 page not found", 404},
+		{roomClient, "http://" + roomAddress + "/machine-logs.html", "404 page not found", 404},
+		{roomClient, "http://" + roomAddress + "/trusted-source.html", "404 page not found", 404},
+		{roomClient, "http://" + roomAddress + "/world.html", "404 page not found", 404},
+		{roomClient, "http://" + roomAddress + "/simulator-provisioning.html", "404 page not found", 404},
+		{roomClient, "http://" + roomAddress + "/simulator-nav.js", "404 page not found", 404},
+		{roomClient, "http://" + roomAddress + "/simulator.css", "404 page not found", 404},
+		{roomClient, "http://" + roomAddress + "/scenarios.js", "404 page not found", 404},
+		{roomClient, "http://" + roomAddress + "/organizations.js", "404 page not found", 404},
+		{roomClient, "http://" + roomAddress + "/simulator-navigation.json", "404 page not found", 404},
 	} {
 		deadline := time.Now().Add(10 * time.Second)
 		for {

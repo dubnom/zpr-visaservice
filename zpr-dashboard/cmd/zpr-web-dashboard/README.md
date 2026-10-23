@@ -9,6 +9,12 @@ owns its REST listener, SQLite journal, and ZPLC configuration. All three
 processes use the same Go executable with different `-mode` values and remain
 separate processes and trust boundaries.
 
+Control Room always serves an explicit production-only static bundle. For a
+packaged executable that embeds no Simulator pages/assets and rejects Simulator
+mode, see [production asset packaging](../../packaging/control-room/README.md).
+The default build retains Simulator's own pages for its separate `-mode simulator`
+process; it does not expose them from Control Room.
+
 Service CA loading and mTLS client transport now live in
 [`internal/servicehttp`](../../internal/servicehttp/). Callers retain their
 endpoint validation, environment settings, authorization, proxy behavior, and

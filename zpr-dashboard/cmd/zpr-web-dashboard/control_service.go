@@ -34,7 +34,7 @@ func runControlRoom(listen string) error {
 	if proxy == nil {
 		return errors.New(message)
 	}
-	staticRoot, err := fs.Sub(staticFiles, "static")
+	staticRoot, err := fs.Sub(controlRoomFiles, "static")
 	if err != nil {
 		return err
 	}

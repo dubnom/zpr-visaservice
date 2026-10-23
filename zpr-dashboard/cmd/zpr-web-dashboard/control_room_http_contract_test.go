@@ -16,7 +16,7 @@ func TestControlRoomHTTPRealHandlersWithoutSimulator(t *testing.T) {
 	unavailableSimulatorForProductionContract(t)
 	t.Setenv("ZPR_CONTROL_ROOM_PROXY_IP", "")
 	t.Setenv("ZPR_CHANGE_REVIEW_CONFIG_FILE", "")
-	staticRoot, err := fs.Sub(staticFiles, "static")
+	staticRoot, err := fs.Sub(controlRoomFiles, "static")
 	if err != nil {
 		t.Fatal(err)
 	}
