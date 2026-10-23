@@ -1,0 +1,359 @@
+dn: uid=elena.park,ou=People,dc=northstar,dc=test
+objectClass: inetOrgPerson
+uid: elena.park
+cn: Elena Park
+sn: Park
+givenName: Elena
+mail: elena.park@northstar.example
+ou: Platform
+title: Platform Engineering Manager
+
+dn: uid=jamal.brooks,ou=People,dc=northstar,dc=test
+objectClass: inetOrgPerson
+uid: jamal.brooks
+cn: Jamal Brooks
+sn: Brooks
+givenName: Jamal
+mail: jamal.brooks@northstar.example
+ou: Platform
+title: Site Reliability Engineer
+
+dn: uid=sophie.nguyen,ou=People,dc=northstar,dc=test
+objectClass: inetOrgPerson
+uid: sophie.nguyen
+cn: Sophie Nguyen
+sn: Nguyen
+givenName: Sophie
+mail: sophie.nguyen@northstar.example
+ou: Platform
+title: Infrastructure Engineer
+
+dn: uid=theo.martin,ou=People,dc=northstar,dc=test
+objectClass: inetOrgPerson
+uid: theo.martin
+cn: Theo Martin
+sn: Martin
+givenName: Theo
+mail: theo.martin@northstar.example
+ou: Platform
+title: Systems Engineer
+
+dn: uid=arjun.patel,ou=People,dc=northstar,dc=test
+objectClass: inetOrgPerson
+uid: arjun.patel
+cn: Arjun Patel
+sn: Patel
+givenName: Arjun
+mail: arjun.patel@northstar.example
+ou: Product
+title: Product Engineering Lead
+
+dn: uid=zoe.carter,ou=People,dc=northstar,dc=test
+objectClass: inetOrgPerson
+uid: zoe.carter
+cn: Zoe Carter
+sn: Carter
+givenName: Zoe
+mail: zoe.carter@northstar.example
+ou: Product
+title: Frontend Engineer
+
+dn: uid=omar.hassan,ou=People,dc=northstar,dc=test
+objectClass: inetOrgPerson
+uid: omar.hassan
+cn: Omar Hassan
+sn: Hassan
+givenName: Omar
+mail: omar.hassan@northstar.example
+ou: Product
+title: Backend Engineer
+
+dn: uid=nina.ross,ou=People,dc=northstar,dc=test
+objectClass: inetOrgPerson
+uid: nina.ross
+cn: Nina Ross
+sn: Ross
+givenName: Nina
+mail: nina.ross@northstar.example
+ou: IT
+title: IT Manager
+
+dn: uid=ben.torres,ou=People,dc=northstar,dc=test
+objectClass: inetOrgPerson
+uid: ben.torres
+cn: Ben Torres
+sn: Torres
+givenName: Ben
+mail: ben.torres@northstar.example
+ou: IT
+title: Systems Administrator
+
+dn: uid=grace.lee,ou=People,dc=northstar,dc=test
+objectClass: inetOrgPerson
+uid: grace.lee
+cn: Grace Lee
+sn: Lee
+givenName: Grace
+mail: grace.lee@northstar.example
+ou: IT
+title: Network Administrator
+
+dn: uid=marcus.bell,ou=People,dc=northstar,dc=test
+objectClass: inetOrgPerson
+uid: marcus.bell
+cn: Marcus Bell
+sn: Bell
+givenName: Marcus
+mail: marcus.bell@northstar.example
+ou: Support
+title: Support Team Lead
+
+dn: uid=ava.wilson,ou=People,dc=northstar,dc=test
+objectClass: inetOrgPerson
+uid: ava.wilson
+cn: Ava Wilson
+sn: Wilson
+givenName: Ava
+mail: ava.wilson@northstar.example
+ou: Support
+title: Technical Support Specialist
+
+dn: uid=hana.kim,ou=People,dc=northstar,dc=test
+objectClass: inetOrgPerson
+uid: hana.kim
+cn: Hana Kim
+sn: Kim
+givenName: Hana
+mail: hana.kim@northstar.example
+ou: Security
+title: Security Research Lead
+
+dn: uid=daniel.okafor,ou=People,dc=northstar,dc=test
+objectClass: inetOrgPerson
+uid: daniel.okafor
+cn: Daniel Okafor
+sn: Okafor
+givenName: Daniel
+mail: daniel.okafor@northstar.example
+ou: Security
+title: Threat Researcher
+
+dn: uid=iris.hoffman,ou=People,dc=northstar,dc=test
+objectClass: inetOrgPerson
+uid: iris.hoffman
+cn: Iris Hoffman
+sn: Hoffman
+givenName: Iris
+mail: iris.hoffman@northstar.example
+ou: Security
+title: Security Analyst
+
+dn: uid=noah.reed,ou=People,dc=northstar,dc=test
+objectClass: inetOrgPerson
+uid: noah.reed
+cn: Noah Reed
+sn: Reed
+givenName: Noah
+mail: noah.reed@northstar.example
+ou: Data Science
+title: Data Scientist
+
+dn: uid=leila.rahman,ou=People,dc=northstar,dc=test
+objectClass: inetOrgPerson
+uid: leila.rahman
+cn: Leila Rahman
+sn: Rahman
+givenName: Leila
+mail: leila.rahman@northstar.example
+ou: Data Science
+title: Applied Research Scientist
+
+dn: uid=olivia.price,ou=People,dc=northstar,dc=test
+objectClass: inetOrgPerson
+uid: olivia.price
+cn: Olivia Price
+sn: Price
+givenName: Olivia
+mail: olivia.price@northstar.example
+ou: Accounting
+title: Accounting Manager
+
+dn: uid=ethan.moore,ou=People,dc=northstar,dc=test
+objectClass: inetOrgPerson
+uid: ethan.moore
+cn: Ethan Moore
+sn: Moore
+givenName: Ethan
+mail: ethan.moore@northstar.example
+ou: Accounting
+title: Accounts Payable Manager
+
+dn: uid=fatima.ali,ou=People,dc=northstar,dc=test
+objectClass: inetOrgPerson
+uid: fatima.ali
+cn: Fatima Ali
+sn: Ali
+givenName: Fatima
+mail: fatima.ali@northstar.example
+ou: Accounting
+title: Senior Accountant
+
+dn: uid=chloe.davis,ou=People,dc=northstar,dc=test
+objectClass: inetOrgPerson
+uid: chloe.davis
+cn: Chloe Davis
+sn: Davis
+givenName: Chloe
+mail: chloe.davis@northstar.example
+ou: Payroll
+title: Payroll Specialist
+
+dn: uid=raj.mehta,ou=People,dc=northstar,dc=test
+objectClass: inetOrgPerson
+uid: raj.mehta
+cn: Raj Mehta
+sn: Mehta
+givenName: Raj
+mail: raj.mehta@northstar.example
+ou: Finance
+title: Financial Analyst
+
+dn: uid=isabel.santos,ou=People,dc=northstar,dc=test
+objectClass: inetOrgPerson
+uid: isabel.santos
+cn: Isabel Santos
+sn: Santos
+givenName: Isabel
+mail: isabel.santos@northstar.example
+ou: Finance
+title: FP&A Analyst
+
+dn: uid=mia.robinson,ou=People,dc=northstar,dc=test
+objectClass: inetOrgPerson
+uid: mia.robinson
+cn: Mia Robinson
+sn: Robinson
+givenName: Mia
+mail: mia.robinson@northstar.example
+ou: Field
+title: Regional Sales Manager
+
+dn: uid=lucas.green,ou=People,dc=northstar,dc=test
+objectClass: inetOrgPerson
+uid: lucas.green
+cn: Lucas Green
+sn: Green
+givenName: Lucas
+mail: lucas.green@northstar.example
+ou: Field
+title: Account Executive
+
+dn: uid=sara.ibrahim,ou=People,dc=northstar,dc=test
+objectClass: inetOrgPerson
+uid: sara.ibrahim
+cn: Sara Ibrahim
+sn: Ibrahim
+givenName: Sara
+mail: sara.ibrahim@northstar.example
+ou: Field
+title: Solutions Consultant
+
+dn: uid=owen.foster,ou=People,dc=northstar,dc=test
+objectClass: inetOrgPerson
+uid: owen.foster
+cn: Owen Foster
+sn: Foster
+givenName: Owen
+mail: owen.foster@northstar.example
+ou: Customer Success
+title: Customer Success Manager
+
+dn: uid=emily.wong,ou=People,dc=northstar,dc=test
+objectClass: inetOrgPerson
+uid: emily.wong
+cn: Emily Wong
+sn: Wong
+givenName: Emily
+mail: emily.wong@northstar.example
+ou: Customer Success
+title: Customer Support Advocate
+
+dn: uid=claire.hughes,ou=People,dc=northstar,dc=test
+objectClass: inetOrgPerson
+uid: claire.hughes
+cn: Claire Hughes
+sn: Hughes
+givenName: Claire
+mail: claire.hughes@northstar.example
+ou: Talent
+title: Talent Acquisition Lead
+
+dn: uid=ibrahim.yusuf,ou=People,dc=northstar,dc=test
+objectClass: inetOrgPerson
+uid: ibrahim.yusuf
+cn: Ibrahim Yusuf
+sn: Yusuf
+givenName: Ibrahim
+mail: ibrahim.yusuf@northstar.example
+ou: Talent
+title: Recruiter
+
+dn: uid=ella.murphy,ou=People,dc=northstar,dc=test
+objectClass: inetOrgPerson
+uid: ella.murphy
+cn: Ella Murphy
+sn: Murphy
+givenName: Ella
+mail: ella.murphy@northstar.example
+ou: HR
+title: HR Business Partner
+
+dn: uid=david.cho,ou=People,dc=northstar,dc=test
+objectClass: inetOrgPerson
+uid: david.cho
+cn: David Cho
+sn: Cho
+givenName: David
+mail: david.cho@northstar.example
+ou: HR
+title: Benefits Coordinator
+
+dn: uid=amelia.gray,ou=People,dc=northstar,dc=test
+objectClass: inetOrgPerson
+uid: amelia.gray
+cn: Amelia Gray
+sn: Gray
+givenName: Amelia
+mail: amelia.gray@northstar.example
+ou: Compliance
+title: Compliance Counsel
+
+dn: uid=victor.hayes,ou=People,dc=northstar,dc=test
+objectClass: inetOrgPerson
+uid: victor.hayes
+cn: Victor Hayes
+sn: Hayes
+givenName: Victor
+mail: victor.hayes@northstar.example
+ou: Legal
+title: Corporate Counsel
+
+dn: uid=naomi.bennett,ou=People,dc=northstar,dc=test
+objectClass: inetOrgPerson
+uid: naomi.bennett
+cn: Naomi Bennett
+sn: Bennett
+givenName: Naomi
+mail: naomi.bennett@northstar.example
+ou: Executive
+title: Chief Executive Officer
+
+dn: uid=henry.wallace,ou=People,dc=northstar,dc=test
+objectClass: inetOrgPerson
+uid: henry.wallace
+cn: Henry Wallace
+sn: Wallace
+givenName: Henry
+mail: henry.wallace@northstar.example
+ou: Executive
+title: Chief Technology Officer

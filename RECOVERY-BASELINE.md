@@ -24,8 +24,7 @@ source as of October 22. Only 21 files differ from the checkpoint:
 - Regression tests for those changes.
 
 The browser editor bundle and dependency manifests are unchanged. No credential,
-private snapshot, executable image, runtime database, or recovered directory is
-added to Git.
+private snapshot, executable image or runtime database is added to Git.
 
 ## What the source does not reproduce yet
 
@@ -83,12 +82,36 @@ After restoring these files, the complete Go suite has nine failing top-level
 tests, down from fifteen. Six organization duplication/profile/archive/import
 test groups now pass. Focused asset and duplicate/import tests also pass.
 
+### Portable Northstar directory
+
+Bundled the four original fictional Northstar LDIF files and changed the profile
+from external `pregen` to the existing `ldif` mode. Identity DNs, role memberships,
+machine attributes and file contents are unchanged. The reader's
+`DEMO_BIND_PASSWORD_HASH` is a provisioning placeholder, not a password or hash;
+the existing LDAP launcher replaces it with a freshly generated password hash.
+It must remain for the `simpleSecurityObject` schema and authenticated reader.
+The existing dashboard definition reader strips it from definition bundles;
+the directory seed loader retains it for provisioning.
+
+The new regression checks run with nonexistent external manifest/pregen paths.
+They verify that all profile people, twenty machines and key roles are present,
+all DNs use the fictional test base, no credential attributes exist other than
+the one provisioning placeholder, and sanitization removes that placeholder.
+The existing seed-location and directory-assistant tests now pass.
+
+The scenario assistant now explicitly returns `proposal: null` for questions
+or missing essential prerequisites, rather than inventing executable changes.
+Its embedded skill contract test passes. No existing tests were modified.
+
+After these changes the complete Go suite has six failing top-level tests, down
+from nine. Focused seed/asset/design-assistant/skill tests pass with `-race`;
+all Go commands build and the web runtime cross-compiles for Linux ARM64.
+These are source-level checks, not a fresh LDAP deployment or scenario run.
+
 Remaining blockers, with no test suppression:
 
 | Area | Evidence / next action |
 |---|---|
-| Scenario AI prompt | Embedded skill lacks the test's expected instruction `proposal to null`; reconcile intended structured-output contract. |
-| Northstar directory | Profile references pre-generated LDIF outside Git; review seeds and generation provenance before bundling sanitized demo data. Also blocks design-assistant test. |
 | Enrollment | Verified-TLS test expects invitation creation without the readiness preflight now required by the implementation; preserve the production readiness gate and reconcile test intent separately. |
 | Policy installation fixture | Extracted shell function omits platform initialization provided by its normal caller; standalone fixture lacks `ZPR_MULTINODE_PLATFORM`. |
 | Organization catalog | Test reads an absent external `simulation-environment.json`; define a reviewed distributable manifest/bootstrap contract. |

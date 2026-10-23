@@ -1,0 +1,115 @@
+dn: cn=Accounting Manager,ou=Roles,dc=northstar,dc=test
+objectClass: top
+objectClass: groupOfNames
+cn: Accounting Manager
+member: uid=olivia.price,ou=People,dc=northstar,dc=test
+member: uid=ethan.moore,ou=People,dc=northstar,dc=test
+
+dn: cn=Approver,ou=Roles,dc=northstar,dc=test
+objectClass: top
+objectClass: groupOfNames
+cn: Approver
+member: uid=olivia.price,ou=People,dc=northstar,dc=test
+member: uid=ethan.moore,ou=People,dc=northstar,dc=test
+member: uid=maya.chen,ou=People,dc=northstar,dc=test
+member: uid=adapter2,ou=People,dc=northstar,dc=test
+
+dn: cn=Platform Engineer,ou=Roles,dc=northstar,dc=test
+objectClass: top
+objectClass: groupOfNames
+cn: Platform Engineer
+member: uid=adapter1,ou=People,dc=northstar,dc=test
+member: uid=elena.park,ou=People,dc=northstar,dc=test
+member: uid=jamal.brooks,ou=People,dc=northstar,dc=test
+member: uid=sophie.nguyen,ou=People,dc=northstar,dc=test
+member: uid=theo.martin,ou=People,dc=northstar,dc=test
+
+dn: cn=Product Engineer,ou=Roles,dc=northstar,dc=test
+objectClass: top
+objectClass: groupOfNames
+cn: Product Engineer
+member: uid=arjun.patel,ou=People,dc=northstar,dc=test
+member: uid=zoe.carter,ou=People,dc=northstar,dc=test
+member: uid=omar.hassan,ou=People,dc=northstar,dc=test
+
+dn: cn=IT Administrator,ou=Roles,dc=northstar,dc=test
+objectClass: top
+objectClass: groupOfNames
+cn: IT Administrator
+member: uid=nina.ross,ou=People,dc=northstar,dc=test
+member: uid=ben.torres,ou=People,dc=northstar,dc=test
+member: uid=grace.lee,ou=People,dc=northstar,dc=test
+
+dn: cn=Incident Responder,ou=Roles,dc=northstar,dc=test
+objectClass: top
+objectClass: groupOfNames
+cn: Incident Responder
+member: uid=adapter2,ou=People,dc=northstar,dc=test
+member: uid=adapter3,ou=People,dc=northstar,dc=test
+member: uid=jamal.brooks,ou=People,dc=northstar,dc=test
+member: uid=hana.kim,ou=People,dc=northstar,dc=test
+
+dn: cn=Security Reviewer,ou=Roles,dc=northstar,dc=test
+objectClass: top
+objectClass: groupOfNames
+cn: Security Reviewer
+member: uid=adapter3,ou=People,dc=northstar,dc=test
+member: uid=hana.kim,ou=People,dc=northstar,dc=test
+member: uid=daniel.okafor,ou=People,dc=northstar,dc=test
+member: uid=iris.hoffman,ou=People,dc=northstar,dc=test
+member: uid=amelia.gray,ou=People,dc=northstar,dc=test
+
+dn: cn=Data Analyst,ou=Roles,dc=northstar,dc=test
+objectClass: top
+objectClass: groupOfNames
+cn: Data Analyst
+member: uid=noah.reed,ou=People,dc=northstar,dc=test
+member: uid=leila.rahman,ou=People,dc=northstar,dc=test
+member: uid=raj.mehta,ou=People,dc=northstar,dc=test
+member: uid=isabel.santos,ou=People,dc=northstar,dc=test
+
+dn: cn=Sales Lead,ou=Roles,dc=northstar,dc=test
+objectClass: top
+objectClass: groupOfNames
+cn: Sales Lead
+member: uid=mia.robinson,ou=People,dc=northstar,dc=test
+member: uid=owen.foster,ou=People,dc=northstar,dc=test
+member: uid=lucas.green,ou=People,dc=northstar,dc=test
+
+dn: cn=People Manager,ou=Roles,dc=northstar,dc=test
+objectClass: top
+objectClass: groupOfNames
+cn: People Manager
+member: uid=elena.park,ou=People,dc=northstar,dc=test
+member: uid=nina.ross,ou=People,dc=northstar,dc=test
+member: uid=mia.robinson,ou=People,dc=northstar,dc=test
+member: uid=claire.hughes,ou=People,dc=northstar,dc=test
+
+dn: cn=Recruiter,ou=Roles,dc=northstar,dc=test
+objectClass: top
+objectClass: groupOfNames
+cn: Recruiter
+member: uid=claire.hughes,ou=People,dc=northstar,dc=test
+member: uid=ibrahim.yusuf,ou=People,dc=northstar,dc=test
+
+dn: cn=HR Partner,ou=Roles,dc=northstar,dc=test
+objectClass: top
+objectClass: groupOfNames
+cn: HR Partner
+member: uid=ella.murphy,ou=People,dc=northstar,dc=test
+member: uid=david.cho,ou=People,dc=northstar,dc=test
+
+dn: cn=Legal Reviewer,ou=Roles,dc=northstar,dc=test
+objectClass: top
+objectClass: groupOfNames
+cn: Legal Reviewer
+member: uid=amelia.gray,ou=People,dc=northstar,dc=test
+member: uid=victor.hayes,ou=People,dc=northstar,dc=test
+
+dn: cn=Executive,ou=Roles,dc=northstar,dc=test
+objectClass: top
+objectClass: groupOfNames
+cn: Executive
+member: uid=naomi.bennett,ou=People,dc=northstar,dc=test
+member: uid=henry.wallace,ou=People,dc=northstar,dc=test
+member: uid=maya.chen,ou=People,dc=northstar,dc=test

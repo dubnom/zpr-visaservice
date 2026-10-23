@@ -70,6 +70,9 @@ from production Control Room or Control-Service to Simulator.
 
 ## Response contract
 
+For questions or missing essential prerequisites, set proposal to null and
+explain what is needed instead of inventing an executable change.
+
 Return exactly one JSON object, with no markdown. For an existing scenario with
 steps, return
 `{"answer":"concise design guidance","proposal":{"scenario_patch":{"name":"","description":"","append_step":{"action":"traffic","machine":"","user":"","workloads":[],"component":"","target":"","expected":"deny","timeout_seconds":1,"client_count":0},"concurrent_after_step":-1}}}`.

@@ -1,0 +1,264 @@
+dn: ou=Machines,dc=northstar,dc=test
+objectClass: top
+objectClass: organizationalUnit
+ou: Machines
+
+dn: uid=machine-01,ou=Machines,dc=northstar,dc=test
+objectClass: inetOrgPerson
+objectClass: zprMachine
+uid: machine-01
+cn: machine-01
+sn: Endpoint
+zprMachineId: machine-01
+zprMachineType: laptop
+zprMachineModel: ThinkPad T14
+zprMachineLocation: North Campus
+zprMachineOwner: elena.park
+zprMachineSecure: TRUE
+
+dn: uid=machine-02,ou=Machines,dc=northstar,dc=test
+objectClass: inetOrgPerson
+objectClass: zprMachine
+uid: machine-02
+cn: machine-02
+sn: Endpoint
+zprMachineId: machine-02
+zprMachineType: laptop
+zprMachineModel: MacBook Pro 14
+zprMachineLocation: North Campus
+zprMachineOwner: jamal.brooks
+zprMachineSecure: TRUE
+
+dn: uid=machine-03,ou=Machines,dc=northstar,dc=test
+objectClass: inetOrgPerson
+objectClass: zprMachine
+uid: machine-03
+cn: machine-03
+sn: Endpoint
+zprMachineId: machine-03
+zprMachineType: laptop
+zprMachineModel: Dell Latitude 7440
+zprMachineLocation: North Campus
+zprMachineOwner: sophie.nguyen
+zprMachineSecure: TRUE
+
+dn: uid=machine-04,ou=Machines,dc=northstar,dc=test
+objectClass: inetOrgPerson
+objectClass: zprMachine
+uid: machine-04
+cn: machine-04
+sn: Endpoint
+zprMachineId: machine-04
+zprMachineType: laptop
+zprMachineModel: ThinkPad X1 Carbon
+zprMachineLocation: North Campus
+zprMachineOwner: theo.martin
+zprMachineSecure: TRUE
+
+dn: uid=machine-05,ou=Machines,dc=northstar,dc=test
+objectClass: inetOrgPerson
+objectClass: zprMachine
+uid: machine-05
+cn: machine-05
+sn: Endpoint
+zprMachineId: machine-05
+zprMachineType: laptop
+zprMachineModel: MacBook Air 15
+zprMachineLocation: North Campus
+zprMachineOwner: arjun.patel
+zprMachineSecure: TRUE
+
+dn: uid=machine-06,ou=Machines,dc=northstar,dc=test
+objectClass: inetOrgPerson
+objectClass: zprMachine
+uid: machine-06
+cn: machine-06
+sn: Endpoint
+zprMachineId: machine-06
+zprMachineType: laptop
+zprMachineModel: HP EliteBook 840
+zprMachineLocation: North Campus
+zprMachineOwner: zoe.carter
+zprMachineSecure: TRUE
+
+dn: uid=machine-07,ou=Machines,dc=northstar,dc=test
+objectClass: inetOrgPerson
+objectClass: zprMachine
+uid: machine-07
+cn: machine-07
+sn: Endpoint
+zprMachineId: machine-07
+zprMachineType: laptop
+zprMachineModel: Dell Latitude 5440
+zprMachineLocation: South Campus
+zprMachineOwner: omar.hassan
+zprMachineSecure: TRUE
+
+dn: uid=machine-08,ou=Machines,dc=northstar,dc=test
+objectClass: inetOrgPerson
+objectClass: zprMachine
+uid: machine-08
+cn: machine-08
+sn: Endpoint
+zprMachineId: machine-08
+zprMachineType: laptop
+zprMachineModel: ThinkPad T14
+zprMachineLocation: South Campus
+zprMachineOwner: nina.ross
+zprMachineSecure: TRUE
+
+dn: uid=machine-09,ou=Machines,dc=northstar,dc=test
+objectClass: inetOrgPerson
+objectClass: zprMachine
+uid: machine-09
+cn: machine-09
+sn: Endpoint
+zprMachineId: machine-09
+zprMachineType: laptop
+zprMachineModel: MacBook Pro 14
+zprMachineLocation: South Campus
+zprMachineOwner: ben.torres
+zprMachineSecure: TRUE
+
+dn: uid=machine-10,ou=Machines,dc=northstar,dc=test
+objectClass: inetOrgPerson
+objectClass: zprMachine
+uid: machine-10
+cn: machine-10
+sn: Endpoint
+zprMachineId: machine-10
+zprMachineType: laptop
+zprMachineModel: Dell Latitude 7440
+zprMachineLocation: South Campus
+zprMachineOwner: grace.lee
+zprMachineSecure: TRUE
+
+dn: uid=machine-11,ou=Machines,dc=northstar,dc=test
+objectClass: inetOrgPerson
+objectClass: zprMachine
+uid: machine-11
+cn: machine-11
+sn: Endpoint
+zprMachineId: machine-11
+zprMachineType: laptop
+zprMachineModel: ThinkPad X1 Carbon
+zprMachineLocation: Remote
+zprMachineOwner: hana.kim
+zprMachineSecure: TRUE
+
+dn: uid=machine-12,ou=Machines,dc=northstar,dc=test
+objectClass: inetOrgPerson
+objectClass: zprMachine
+uid: machine-12
+cn: machine-12
+sn: Endpoint
+zprMachineId: machine-12
+zprMachineType: laptop
+zprMachineModel: HP EliteBook 840
+zprMachineLocation: Remote
+zprMachineOwner: daniel.okafor
+zprMachineSecure: FALSE
+
+dn: uid=machine-13,ou=Machines,dc=northstar,dc=test
+objectClass: inetOrgPerson
+objectClass: zprMachine
+uid: machine-13
+cn: machine-13
+sn: Endpoint
+zprMachineId: machine-13
+zprMachineType: desktop
+zprMachineModel: Dell OptiPlex 7010
+zprMachineLocation: North Campus
+zprMachineOwner: it-pool
+zprMachineSecure: TRUE
+
+dn: uid=machine-14,ou=Machines,dc=northstar,dc=test
+objectClass: inetOrgPerson
+objectClass: zprMachine
+uid: machine-14
+cn: machine-14
+sn: Endpoint
+zprMachineId: machine-14
+zprMachineType: desktop
+zprMachineModel: HP EliteDesk 800
+zprMachineLocation: North Campus
+zprMachineOwner: it-pool
+zprMachineSecure: TRUE
+
+dn: uid=machine-15,ou=Machines,dc=northstar,dc=test
+objectClass: inetOrgPerson
+objectClass: zprMachine
+uid: machine-15
+cn: machine-15
+sn: Endpoint
+zprMachineId: machine-15
+zprMachineType: desktop
+zprMachineModel: ThinkCentre M90q
+zprMachineLocation: North Campus
+zprMachineOwner: it-pool
+zprMachineSecure: TRUE
+
+dn: uid=machine-16,ou=Machines,dc=northstar,dc=test
+objectClass: inetOrgPerson
+objectClass: zprMachine
+uid: machine-16
+cn: machine-16
+sn: Endpoint
+zprMachineId: machine-16
+zprMachineType: desktop
+zprMachineModel: Dell OptiPlex 7010
+zprMachineLocation: South Campus
+zprMachineOwner: it-pool
+zprMachineSecure: TRUE
+
+dn: uid=machine-17,ou=Machines,dc=northstar,dc=test
+objectClass: inetOrgPerson
+objectClass: zprMachine
+uid: machine-17
+cn: machine-17
+sn: Endpoint
+zprMachineId: machine-17
+zprMachineType: desktop
+zprMachineModel: HP EliteDesk 800
+zprMachineLocation: South Campus
+zprMachineOwner: it-pool
+zprMachineSecure: TRUE
+
+dn: uid=machine-18,ou=Machines,dc=northstar,dc=test
+objectClass: inetOrgPerson
+objectClass: zprMachine
+uid: machine-18
+cn: machine-18
+sn: Endpoint
+zprMachineId: machine-18
+zprMachineType: desktop
+zprMachineModel: ThinkCentre M90q
+zprMachineLocation: South Campus
+zprMachineOwner: it-pool
+zprMachineSecure: TRUE
+
+dn: uid=machine-19,ou=Machines,dc=northstar,dc=test
+objectClass: inetOrgPerson
+objectClass: zprMachine
+uid: machine-19
+cn: machine-19
+sn: Endpoint
+zprMachineId: machine-19
+zprMachineType: desktop
+zprMachineModel: Dell OptiPlex 7010
+zprMachineLocation: Remote
+zprMachineOwner: it-pool
+zprMachineSecure: FALSE
+
+dn: uid=machine-20,ou=Machines,dc=northstar,dc=test
+objectClass: inetOrgPerson
+objectClass: zprMachine
+uid: machine-20
+cn: machine-20
+sn: Endpoint
+zprMachineId: machine-20
+zprMachineType: desktop
+zprMachineModel: HP EliteDesk 800
+zprMachineLocation: Remote
+zprMachineOwner: it-pool
+zprMachineSecure: FALSE

@@ -10,7 +10,7 @@
   },
   "directory": {
     "base_dn": "dc=northstar,dc=test",
-    "seed_mode": "pregen",
+    "seed_mode": "ldif",
     "ldif_files": ["demo-company.ldif", "demo-employees.ldif", "demo-roles.ldif", "demo-machines.ldif"],
     "health_uid": "adapter1",
     "identity_mappings": {"device.zpr.adapter.cn": "uid"},

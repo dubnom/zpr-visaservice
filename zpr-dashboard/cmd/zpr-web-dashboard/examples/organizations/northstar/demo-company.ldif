@@ -1,0 +1,196 @@
+dn: dc=northstar,dc=test
+objectClass: top
+objectClass: dcObject
+objectClass: organization
+dc: northstar
+o: Northstar Labs (fictional demo)
+
+dn: ou=People,dc=northstar,dc=test
+objectClass: top
+objectClass: organizationalUnit
+ou: People
+
+dn: ou=Departments,dc=northstar,dc=test
+objectClass: top
+objectClass: organizationalUnit
+ou: Departments
+
+dn: ou=Roles,dc=northstar,dc=test
+objectClass: top
+objectClass: organizationalUnit
+ou: Roles
+
+dn: ou=Engineering,ou=Departments,dc=northstar,dc=test
+objectClass: top
+objectClass: organizationalUnit
+ou: Engineering
+
+dn: ou=Platform,ou=Engineering,ou=Departments,dc=northstar,dc=test
+objectClass: top
+objectClass: organizationalUnit
+ou: Platform
+
+dn: ou=Product,ou=Engineering,ou=Departments,dc=northstar,dc=test
+objectClass: top
+objectClass: organizationalUnit
+ou: Product
+
+dn: ou=Operations,ou=Departments,dc=northstar,dc=test
+objectClass: top
+objectClass: organizationalUnit
+ou: Operations
+
+dn: ou=IT,ou=Operations,ou=Departments,dc=northstar,dc=test
+objectClass: top
+objectClass: organizationalUnit
+ou: IT
+
+dn: ou=Support,ou=Operations,ou=Departments,dc=northstar,dc=test
+objectClass: top
+objectClass: organizationalUnit
+ou: Support
+
+dn: ou=Research,ou=Departments,dc=northstar,dc=test
+objectClass: top
+objectClass: organizationalUnit
+ou: Research
+
+dn: ou=Security,ou=Research,ou=Departments,dc=northstar,dc=test
+objectClass: top
+objectClass: organizationalUnit
+ou: Security
+
+dn: ou=Data Science,ou=Research,ou=Departments,dc=northstar,dc=test
+objectClass: top
+objectClass: organizationalUnit
+ou: Data Science
+
+dn: ou=Finance,ou=Departments,dc=northstar,dc=test
+objectClass: top
+objectClass: organizationalUnit
+ou: Finance
+
+dn: ou=Accounting,ou=Finance,ou=Departments,dc=northstar,dc=test
+objectClass: top
+objectClass: organizationalUnit
+ou: Accounting
+
+dn: ou=Managers,ou=Accounting,ou=Finance,ou=Departments,dc=northstar,dc=test
+objectClass: top
+objectClass: organizationalUnit
+ou: Managers
+
+dn: ou=Payroll,ou=Finance,ou=Departments,dc=northstar,dc=test
+objectClass: top
+objectClass: organizationalUnit
+ou: Payroll
+
+dn: ou=Sales,ou=Departments,dc=northstar,dc=test
+objectClass: top
+objectClass: organizationalUnit
+ou: Sales
+
+dn: ou=Field,ou=Sales,ou=Departments,dc=northstar,dc=test
+objectClass: top
+objectClass: organizationalUnit
+ou: Field
+
+dn: ou=Customer Success,ou=Sales,ou=Departments,dc=northstar,dc=test
+objectClass: top
+objectClass: organizationalUnit
+ou: Customer Success
+
+dn: ou=People Operations,ou=Departments,dc=northstar,dc=test
+objectClass: top
+objectClass: organizationalUnit
+ou: People Operations
+
+dn: ou=Talent,ou=People Operations,ou=Departments,dc=northstar,dc=test
+objectClass: top
+objectClass: organizationalUnit
+ou: Talent
+
+dn: ou=HR,ou=People Operations,ou=Departments,dc=northstar,dc=test
+objectClass: top
+objectClass: organizationalUnit
+ou: HR
+
+dn: ou=Legal,ou=Departments,dc=northstar,dc=test
+objectClass: top
+objectClass: organizationalUnit
+ou: Legal
+
+dn: ou=Compliance,ou=Legal,ou=Departments,dc=northstar,dc=test
+objectClass: top
+objectClass: organizationalUnit
+ou: Compliance
+
+dn: ou=Executive,ou=Departments,dc=northstar,dc=test
+objectClass: top
+objectClass: organizationalUnit
+ou: Executive
+
+dn: ou=Service Accounts,dc=northstar,dc=test
+objectClass: top
+objectClass: organizationalUnit
+ou: Service Accounts
+
+dn: cn=zpr-reader,ou=Service Accounts,dc=northstar,dc=test
+objectClass: top
+objectClass: organizationalRole
+objectClass: simpleSecurityObject
+cn: zpr-reader
+description: Read-only directory identity for the ZPR demo
+userPassword: DEMO_BIND_PASSWORD_HASH
+
+dn: uid=adapter1,ou=People,dc=northstar,dc=test
+objectClass: top
+objectClass: person
+objectClass: organizationalPerson
+objectClass: inetOrgPerson
+uid: adapter1
+cn: Alex Morgan
+sn: Morgan
+givenName: Alex
+mail: alex.morgan@northstar.example
+ou: Engineering
+title: Platform Engineer
+
+dn: uid=adapter2,ou=People,dc=northstar,dc=test
+objectClass: top
+objectClass: person
+objectClass: organizationalPerson
+objectClass: inetOrgPerson
+uid: adapter2
+cn: Priya Shah
+sn: Shah
+givenName: Priya
+mail: priya.shah@northstar.example
+ou: Operations
+title: Incident Lead
+
+dn: uid=adapter3,ou=People,dc=northstar,dc=test
+objectClass: top
+objectClass: person
+objectClass: organizationalPerson
+objectClass: inetOrgPerson
+uid: adapter3
+cn: Luis Ortega
+sn: Ortega
+givenName: Luis
+mail: luis.ortega@northstar.example
+ou: Research
+title: Security Analyst
+
+dn: uid=maya.chen,ou=People,dc=northstar,dc=test
+objectClass: top
+objectClass: person
+objectClass: organizationalPerson
+objectClass: inetOrgPerson
+uid: maya.chen
+cn: Maya Chen
+sn: Chen
+givenName: Maya
+mail: maya.chen@northstar.example
+ou: Finance
+title: Finance Director
