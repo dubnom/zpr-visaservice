@@ -5,12 +5,19 @@ import "net/http"
 
 type Assertions struct {
 	Analyze, Format, Source, Status, Save, Evaluate http.Handler
+	Registry                                        http.Handler
 }
 
 func (handlers Assertions) Register(mux *http.ServeMux) {
 	mux.Handle("POST /api/assertions/analyze", handlers.Analyze)
 	mux.Handle("POST /api/assertions/format", handlers.Format)
 	mux.Handle("GET /api/assertions/source", handlers.Source)
+	if handlers.Registry != nil {
+		mux.Handle("GET /api/assertions/sources", handlers.Registry)
+		mux.Handle("POST /api/assertions/sources", handlers.Registry)
+		mux.Handle("PUT /api/assertions/sources", handlers.Registry)
+		mux.Handle("POST /api/assertions/sources/test", handlers.Registry)
+	}
 	mux.Handle("GET /api/assertions", handlers.Status)
 	mux.Handle("PUT /api/assertions", handlers.Save)
 	mux.Handle("POST /api/assertions/evaluate", handlers.Evaluate)

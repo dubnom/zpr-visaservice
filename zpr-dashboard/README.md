@@ -3849,6 +3849,18 @@ references, without Docker or Simulator. Source identity is the existing name
 paired with the organization ID; `GET /api/assertions/source?source=name` reads
 one configured source without fallback. See the network LDAP/source-identity
 contract and reusable consumer fixtures in [ASSERTIONS.md](ASSERTIONS.md).
+Trusted Sources now offers **Register source**, **Edit selected source** and
+**Test connection (read-only)** for organization-scoped LDAPS/HTTPS readers.
+Stable organization/source IDs cannot be renamed during editing. Configure a
+protected writable `ZPR_ASSERTION_SOURCES_FILE` (0600; empty seed
+`{"default_source":"","sources":[]}` is supported); saves atomically persist
+there and survive restart, with no session-only fallback or second registry.
+Credentials are protected server-side file references only, with verified TLS,
+explicit source-specific failures and no fallback to another source. Saving is
+not a connectivity success. The public production registration/test API and
+single-writer provisioning limits are documented in
+[ASSERTIONS.md](ASSERTIONS.md#operator-registration-editing-and-connection-tests-v02v06).
+This workflow runs with Simulator absent; it creates no live LDAP entries.
 Source-located assertion lint warnings appear as clickable yellow `WARN`
 markers on their source lines; clicking a marker opens its details. The Analyze
 button turns yellow when a successful evaluation includes warnings. Warnings

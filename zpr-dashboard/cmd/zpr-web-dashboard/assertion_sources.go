@@ -13,6 +13,7 @@ import (
 	"os"
 	"regexp"
 	"sort"
+	"strconv"
 	"strings"
 	"time"
 )
@@ -58,14 +59,27 @@ func (runtime *assertionRuntime) configureSources(filePath string) error {
 	if err != nil || len(data) > 64<<10 {
 		return errors.New("Assertion source configuration exceeds limits")
 	}
-	var config struct {
-		DefaultSource string                  `json:"default_source"`
-		Sources       []assertionSourceConfig `json:"sources"`
-	}
+	var config assertionSourcesConfig
 	decoder := json.NewDecoder(strings.NewReader(string(data)))
 	decoder.DisallowUnknownFields()
-	if err := decoder.Decode(&config); err != nil || decoder.Decode(new(any)) != io.EOF || len(config.Sources) == 0 || len(config.Sources) > 16 {
-		return errors.New("Invalid assertion source configuration; configure 1 to 16 sources")
+	if err := decoder.Decode(&config); err != nil || decoder.Decode(new(any)) != io.EOF {
+		return errors.New("Invalid assertion source configuration")
+	}
+	if err := runtime.buildSources(config); err != nil {
+		return err
+	}
+	runtime.sourcesPath, runtime.sourcesConfig, runtime.sourcesRevision = filePath, config, sourceConfigRevision(data)
+	return nil
+}
+
+type assertionSourcesConfig struct {
+	DefaultSource string                  `json:"default_source"`
+	Sources       []assertionSourceConfig `json:"sources"`
+}
+
+func (runtime *assertionRuntime) buildSources(config assertionSourcesConfig) error {
+	if len(config.Sources) > 16 || len(config.Sources) == 0 && config.DefaultSource != "" {
+		return errors.New("Invalid assertion source configuration; configure at most 16 sources")
 	}
 	sources := make(map[string]assertionNamedSource)
 	if runtime.reader != nil {
@@ -152,7 +166,7 @@ func (runtime *assertionRuntime) configureSources(filePath string) error {
 		}
 		sources[entry.Name] = assertionNamedSource{kind: entry.Kind, displayName: entry.DisplayName, organizations: entry.Organizations, read: read}
 	}
-	if len(sources) > 16 || sources[config.DefaultSource].read == nil {
+	if len(sources) > 16 || len(sources) > 0 && sources[config.DefaultSource].read == nil {
 		return errors.New("Default assertion source must name a configured source; at most 16 sources are allowed")
 	}
 	runtime.sources, runtime.defaultSource = sources, config.DefaultSource
@@ -161,13 +175,31 @@ func (runtime *assertionRuntime) configureSources(filePath string) error {
 
 func validAssertionSourceURL(endpoint string) bool {
 	parsed, err := url.Parse(endpoint)
-	return err == nil && parsed.Scheme == "https" && parsed.Hostname() != "" && parsed.User == nil && parsed.RawQuery == "" && parsed.Fragment == ""
+	if err != nil || parsed.Scheme != "https" || parsed.Hostname() == "" || parsed.User != nil || parsed.RawQuery != "" || parsed.ForceQuery || parsed.Fragment != "" || strings.HasSuffix(parsed.Host, ":") {
+		return false
+	}
+	if port := parsed.Port(); port != "" {
+		number, err := strconv.Atoi(port)
+		if err != nil || number < 1 || number > 65535 {
+			return false
+		}
+	}
+	return true
 }
 
 func readAssertionHTTPS(ctx context.Context, client *http.Client, endpoint, tokenFile string, attributes []string) (assertionDirectory, error) {
+	info, err := os.Stat(tokenFile)
+	if err != nil || !info.Mode().IsRegular() || info.Mode().Perm()&0077 != 0 {
+		return assertionDirectory{}, errors.New("Trusted source credential must be an available protected regular file (0600 or stricter)")
+	}
 	file, err := os.Open(tokenFile)
 	if err != nil {
 		return assertionDirectory{}, errors.New("Trusted source credential is unavailable")
+	}
+	info, err = file.Stat()
+	if err != nil || !info.Mode().IsRegular() || info.Mode().Perm()&0077 != 0 {
+		_ = file.Close()
+		return assertionDirectory{}, errors.New("Trusted source credential must be a protected regular file (0600 or stricter)")
 	}
 	data, err := io.ReadAll(io.LimitReader(file, 4097))
 	_ = file.Close()
@@ -263,19 +295,25 @@ func validateAssertionDirectory(directory assertionDirectory, attributes []strin
 }
 
 func (runtime *assertionRuntime) readDirectory(ctx context.Context, organizationID, baseDN, bindDN string) (assertionDirectory, error) {
-	if len(runtime.sources) == 0 {
-		return runtime.reader(ctx, baseDN, bindDN)
+	runtime.mu.Lock()
+	sources, defaultSource, reader := runtime.sources, runtime.defaultSource, runtime.reader
+	runtime.mu.Unlock()
+	if len(sources) == 0 {
+		if reader == nil {
+			return assertionDirectory{}, errors.New("No trusted source is configured")
+		}
+		return reader(ctx, baseDN, bindDN)
 	}
-	names := make([]string, 0, len(runtime.sources))
+	names := make([]string, 0, len(sources))
 	defaultAvailable := false
-	for name, source := range runtime.sources {
+	for name, source := range sources {
 		if len(source.organizations) > 0 {
 			if _, exists := source.organizations[organizationID]; !exists {
 				continue
 			}
 		}
 		names = append(names, name)
-		defaultAvailable = defaultAvailable || name == runtime.defaultSource
+		defaultAvailable = defaultAvailable || name == defaultSource
 	}
 	if !defaultAvailable {
 		return assertionDirectory{}, errors.New("Default trusted source is not configured for this organization")
@@ -283,13 +321,13 @@ func (runtime *assertionRuntime) readDirectory(ctx context.Context, organization
 	sort.Strings(names)
 	snapshots := make(map[string]assertionDirectory)
 	for _, name := range names {
-		directory, err := runtime.sources[name].read(ctx, organizationID, baseDN, bindDN)
+		directory, err := sources[name].read(ctx, organizationID, baseDN, bindDN)
 		if err != nil {
 			return assertionDirectory{}, fmt.Errorf("Trusted source %s is unavailable; no assertions were evaluated", name)
 		}
 		snapshots[name] = directory
 	}
-	directory := snapshots[runtime.defaultSource]
+	directory := snapshots[defaultSource]
 	directory.Sources = snapshots
 	return directory, nil
 }

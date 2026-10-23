@@ -40,6 +40,7 @@ func TestControlHTTPCommandHandlerBindings(t *testing.T) {
 			"Analyze": "http.HandlerFunc(handleAssertionSourceTools)", "Format": "http.HandlerFunc(handleAssertionSourceTools)",
 			"Source": "http.HandlerFunc(runtime.handleSource)", "Status": "http.HandlerFunc(runtime.handleStatus)",
 			"Save": "http.HandlerFunc(runtime.handleSave)", "Evaluate": "http.HandlerFunc(runtime.handleEvaluate)",
+			"Registry": "http.HandlerFunc(runtime.handleSourceRegistry)",
 		}},
 		{"trusted_changes.go", "handlers", "httpapi.TrustedChanges", map[string]string{
 			"List": "http.HandlerFunc(service.listFeeds)", "Read": "http.HandlerFunc(service.readChanges)",
