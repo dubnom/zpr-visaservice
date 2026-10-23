@@ -341,6 +341,28 @@ display, unavailable/malformed responses and safe text rendering. These are
 mocked browser fixtures, not real Policy-Service/VS interoperability, native
 Keychain, connected-adapter admission or production acceptance.
 
+## Simulator ordinary-client setup preflight (blocked, opt-in)
+
+The [packet C U01 inventory](../SIMULATOR_CLIENT_U01_INVENTORY.md) maps the
+remaining activation/Restore, assertion export, LDAP/provider, policy,
+enrollment, runtime-file and service-lifecycle bypasses to replacement owners.
+It does not claim that Simulator setup is an ordinary production client yet.
+
+From this directory, run the dependency-free, read-only compatibility report:
+
+```sh
+sh scripts/activate-organization.sh preflight-ordinary-client
+```
+
+Expected exit is **1** with explicit `U01-*` blockers, before helpers, locks,
+profile/runtime reads, compiler, Docker or network calls. Setting
+`SIMULATION_SETUP_MODE=ordinary-client` also blocks any invocation of this legacy
+launcher before side effects. Unknown modes and malformed preflight arguments
+exit 2. The absent/empty default and explicit `legacy-launcher` mode preserve the
+old setup behavior; they are not ordinary-client acceptance. This guard does not
+cover other Simulator entrypoints or authorize live operations. Test it offline
+with `sh scripts/test-ordinary-client-preflight.sh` (17 cases).
+
 ## Migration discovery CLI
 
 [`zpr-discover`](cmd/zpr-discover/README.md) is a standalone, production-independent
