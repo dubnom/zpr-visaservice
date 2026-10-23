@@ -18,7 +18,7 @@ let scenarioEditorSummary = "";
 let scenarioEditorViewing = 0;
 const scenarioEditorPage = window.ZPREditorPage;
 const scenarioRequest = (path, options) => scenarioEditorPage.requestJSON(
-  (...args) => window.fetch(...args), path, options,
+  (...args) => window.zprOperatorFetch(...args), path, options,
 );
 const scenarioEditorController = scenarioEditorPage.createController({
   source: document.getElementById("scenario-editor-source"),
@@ -823,7 +823,7 @@ async function loadScenarioRevision(number) {
 async function archiveScenario(scenarioID, organizationID, revision) {
   const scenario = scenarioById.get(scenarioID);
   if (!scenario || !window.confirm(`Delete “${scenario.name}” from this folder? Its revision history will be retained.`)) return;
-  const response = await fetch(`/api/simulator/organizations/${encodeURIComponent(organizationID)}/scenarios/${encodeURIComponent(scenarioID)}`, {
+  const response = await window.zprOperatorFetch(`/api/simulator/organizations/${encodeURIComponent(organizationID)}/scenarios/${encodeURIComponent(scenarioID)}`, {
     method: "DELETE",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ expected_revision: Number(revision) }),

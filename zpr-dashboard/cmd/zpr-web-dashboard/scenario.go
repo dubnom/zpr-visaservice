@@ -985,15 +985,42 @@ func simulatorScenarioExecutorForManifest(ctx context.Context, manifest simulato
 			}
 		}
 		address := net.JoinHostPort(serviceAddress, testServicePorts[step.Component])
-		mode, gatewayArguments, err := simulatorTestServiceLaunch(manifest, component)
+		mode, _, err := simulatorTestServiceLaunch(manifest, component)
 		if err != nil {
 			return "", err
 		}
-		arguments := []string{"exec", "-d", machineContainerName(step.Machine), "/usr/local/bin/zpr-machine-controller"}
-		arguments = append(arguments, "-mode", mode, "-listen", address, "-log-workload", step.Component)
-		arguments = append(arguments, gatewayArguments...)
-		if _, err := scenarioCommand(ctx, "docker", arguments...); err != nil {
-			return "", err
+		if mode == "business-service" {
+			if _, err := simulatorMachineCommands.enqueueAndWait(ctx, step.Machine, machineControlCommand{
+				Action: "start-business-service", Workload: step.Component, Listen: address,
+			}); err != nil {
+				return "", err
+			}
+		} else if mode == "test-service" {
+			if _, err := simulatorMachineCommands.enqueueAndWait(ctx, step.Machine, machineControlCommand{
+				Action: "start-test-service", Workload: step.Component, Listen: address,
+			}); err != nil {
+				return "", err
+			}
+		} else if mode == "gateway-service" {
+			if _, err := simulatorMachineCommands.enqueueAndWait(ctx, step.Machine, machineControlCommand{
+				Action: "start-gateway-service", Workload: step.Component, Listen: address,
+				GatewayUpstream: component.GatewayUpstream,
+			}); err != nil {
+				return "", err
+			}
+		} else if mode == "web-gateway-service" {
+			gateway, err := simulatorWebGatewayForManifest(manifest)
+			if err != nil || gateway == nil {
+				return "", errors.New("organization web gateway is unavailable")
+			}
+			if _, err := simulatorMachineCommands.enqueueAndWait(ctx, step.Machine, machineControlCommand{
+				Action: "start-web-gateway-service", Workload: step.Component, Listen: address,
+				GatewayAllowedHosts: gateway.AllowedHosts,
+			}); err != nil {
+				return "", err
+			}
+		} else {
+			return "", fmt.Errorf("unsupported owned test-service mode %q", mode)
 		}
 		if mode == "business-service" {
 			if _, err := scenarioCommand(ctx, "docker", "exec", machineContainerName(step.Machine),
@@ -1023,12 +1050,37 @@ func simulatorScenarioExecutorForManifest(ctx context.Context, manifest simulato
 		if err != nil {
 			return "", err
 		}
-		output, err := scenarioCommand(ctx, "docker", "exec", machineContainerName(step.Machine), "pkill", "-f", "[z]pr-machine-controller -mode "+mode+" .* -log-workload "+step.Component)
-		var exitError *exec.ExitError
-		if errors.As(err, &exitError) && exitError.ExitCode() == 1 {
-			return "test service already stopped", nil
+		if mode == "business-service" {
+			response, err := simulatorMachineCommands.enqueueAndWait(ctx, step.Machine, machineControlCommand{
+				Action: "stop-business-service", Workload: step.Component,
+			})
+			return response.Output, err
 		}
-		return output, err
+		if mode == "test-service" {
+			response, err := simulatorMachineCommands.enqueueAndWait(ctx, step.Machine, machineControlCommand{
+				Action: "stop-test-service", Workload: step.Component,
+			})
+			return response.Output, err
+		}
+		if mode == "gateway-service" || mode == "web-gateway-service" {
+			action := "stop-gateway-service"
+			command := machineControlCommand{Action: action, Workload: step.Component}
+			if mode == "web-gateway-service" {
+				action = "stop-web-gateway-service"
+				gateway, err := simulatorWebGatewayForManifest(manifest)
+				if err != nil || gateway == nil {
+					return "", errors.New("organization web gateway is unavailable")
+				}
+				command.GatewayAllowedHosts = gateway.AllowedHosts
+			} else {
+				component, _ := readSimulatorComponent(manifest, step.Component)
+				command.GatewayUpstream = component.GatewayUpstream
+			}
+			command.Action = action
+			response, err := simulatorMachineCommands.enqueueAndWait(ctx, step.Machine, command)
+			return response.Output, err
+		}
+		return "", fmt.Errorf("unsupported owned test-service mode %q", mode)
 	case "start_service_fleet":
 		profile, ok, err := simulatorLoadTestProfileForManifest(manifest)
 		if err != nil || !ok {
@@ -1047,7 +1099,10 @@ func simulatorScenarioExecutorForManifest(ctx context.Context, manifest simulato
 		}
 		serviceCount := strconv.Itoa(profile.ServiceCount)
 		basePort := strconv.Itoa(profile.BasePort)
-		if _, err := scenarioCommand(ctx, "docker", "exec", "-d", machineContainerName(step.Machine), "/usr/local/bin/zpr-machine-controller", "-mode", "stress-service-fleet", "-listen", serviceAddress, "-log-workload", profile.ServiceWorkload, "-service-count", serviceCount, "-base-port", basePort); err != nil {
+		if _, err := simulatorMachineCommands.enqueueAndWait(ctx, profile.ServiceMachine, machineControlCommand{
+			Action: "start-stress-service-fleet", Workload: profile.ServiceWorkload, Listen: serviceAddress,
+			ServiceCount: profile.ServiceCount, BasePort: profile.BasePort,
+		}); err != nil {
 			return "", err
 		}
 		if err := waitForStressServiceFleet(ctx, step.Machine, serviceAddress, serviceCount, basePort); err != nil {
@@ -1066,12 +1121,11 @@ func simulatorScenarioExecutorForManifest(ctx context.Context, manifest simulato
 		if !running {
 			return "service fleet machine already stopped", nil
 		}
-		output, err := scenarioCommand(ctx, "docker", "exec", machineContainerName(step.Machine), "pkill", "-TERM", "-f", "[z]pr-machine-controller -mode stress-service-fleet .* -log-workload "+profile.ServiceWorkload)
-		var exitError *exec.ExitError
-		if errors.As(err, &exitError) && exitError.ExitCode() == 1 {
-			return "service fleet already stopped", nil
-		}
-		return output, err
+		response, err := simulatorMachineCommands.enqueueAndWait(ctx, profile.ServiceMachine, machineControlCommand{
+			Action: "stop-stress-service-fleet", Workload: profile.ServiceWorkload,
+			ServiceCount: profile.ServiceCount, BasePort: profile.BasePort,
+		})
+		return response.Output, err
 	case "stress_traffic":
 		profile, ok, err := simulatorLoadTestProfileForManifest(manifest)
 		if err != nil || !ok {
@@ -1367,7 +1421,7 @@ func publishScenarioServiceDNSRecord(ctx context.Context, manifest simulatorMani
 		return fmt.Errorf("service %q has invalid ZPR IPv6 address %q", workload, address)
 	}
 	update := fmt.Sprintf("server %s\nzone svc.zpr.\nupdate delete %s AAAA\nupdate add %s 30 AAAA %s\nsend\n", manifest.DNSServer, dnsName, dnsName, address)
-	output, err := scenarioCommand(ctx, "docker", "exec", "zpr-dns-bind9", "sh", "-c", `printf '%s' "$1" | nsupdate -v -k /run/secrets/zpr-vs-publisher.key`, "zpr-dns-update", update)
+	output, err := scenarioCommand(ctx, "docker", "exec", envOr("ZPR_RECOVERY_DNS_CONTAINER", "zpr-dns-bind9"), "sh", "-c", `printf '%s' "$1" | nsupdate -v -k /run/secrets/zpr-vs-publisher.key`, "zpr-dns-update", update)
 	if err != nil {
 		return fmt.Errorf("publish %s in ZPR DNS: %s: %w", dnsName, output, err)
 	}

@@ -42,12 +42,17 @@ type machineControllerRegistry struct {
 var simulatorControllers = machineControllerRegistry{lastSeen: make(map[string]time.Time)}
 
 type machineControlCommand struct {
-	ID       string   `json:"id"`
-	Action   string   `json:"action"`
-	User     string   `json:"user,omitempty"`
-	Workload string   `json:"workload,omitempty"`
-	Services []string `json:"services,omitempty"`
-	Expires  int64    `json:"expires_unix_ms"`
+	ID                  string   `json:"id"`
+	Action              string   `json:"action"`
+	User                string   `json:"user,omitempty"`
+	Workload            string   `json:"workload,omitempty"`
+	Services            []string `json:"services,omitempty"`
+	Listen              string   `json:"listen,omitempty"`
+	GatewayUpstream     string   `json:"gateway_upstream,omitempty"`
+	GatewayAllowedHosts []string `json:"gateway_allowed_hosts,omitempty"`
+	ServiceCount        int      `json:"service_count,omitempty"`
+	BasePort            int      `json:"base_port,omitempty"`
+	Expires             int64    `json:"expires_unix_ms"`
 }
 
 type machineControlCommandResult struct {
@@ -362,6 +367,54 @@ func executeMachineControlCommand(machineID string, command machineControlComman
 		return result
 	}
 	switch command.Action {
+	case "start-business-service", "start-test-service", "start-gateway-service", "start-web-gateway-service":
+		mode := map[string]string{
+			"start-business-service":    "business-service",
+			"start-test-service":        "test-service",
+			"start-gateway-service":     "gateway-service",
+			"start-web-gateway-service": "web-gateway-service",
+		}[command.Action]
+		service, err := recoveryServiceCommandWithOptions(mode, command.Workload, command.Listen, command.GatewayUpstream, command.GatewayAllowedHosts)
+		if err != nil {
+			result.Error = err.Error()
+			return result
+		}
+		if _, err := recoveryWorkloads.start("service:"+command.Workload, service); err != nil {
+			result.Error = err.Error()
+		} else {
+			result.Output = "owned " + mode + " started"
+		}
+	case "stop-business-service", "stop-test-service", "stop-gateway-service", "stop-web-gateway-service":
+		if err := validateOwnedService(strings.TrimPrefix(command.Action, "stop-"), command.Workload, command.GatewayUpstream, command.GatewayAllowedHosts); err != nil {
+			result.Error = err.Error()
+			return result
+		}
+		if err := recoveryWorkloads.stop("service:" + command.Workload); err != nil {
+			result.Error = err.Error()
+		} else {
+			result.Output = "owned service stopped"
+		}
+	case "start-stress-service-fleet":
+		service, err := recoveryStressServiceCommand(command.Workload, command.Listen, command.ServiceCount, command.BasePort)
+		if err != nil {
+			result.Error = err.Error()
+			return result
+		}
+		if _, err := recoveryWorkloads.start("fleet:"+command.Workload, service); err != nil {
+			result.Error = err.Error()
+		} else {
+			result.Output = "owned stress service fleet started"
+		}
+	case "stop-stress-service-fleet":
+		if err := validateStressServiceFleet(command.Workload, command.ServiceCount, command.BasePort); err != nil {
+			result.Error = err.Error()
+			return result
+		}
+		if err := recoveryWorkloads.stop("fleet:" + command.Workload); err != nil {
+			result.Error = err.Error()
+		} else {
+			result.Output = "owned stress service fleet stopped"
+		}
 	case "probe":
 		result.Output = command.ID
 	case "login":
@@ -473,7 +526,9 @@ func startMachineWorkload(agent string, serviceNames []string) error {
 			return err
 		}
 	}
-	_ = exec.Command("pkill", "-TERM", "-f", "[p]h adapter.*--name "+agent).Run()
+	if err := recoveryWorkloads.stop(agent); err != nil {
+		return err
+	}
 	_ = os.Remove(socket)
 	_ = os.Remove(filepath.Join(runtimeDir, agent+"_cap.sock"))
 	addresses, err := net.InterfaceByName("eth0")
@@ -506,12 +561,13 @@ func startMachineWorkload(agent string, serviceNames []string) error {
 	}
 	command.Env = append(os.Environ(), "ZPR_ADAPTER_SERVICES="+registeredServices)
 	command.Stdout, command.Stderr = logFile, logFile
-	if err := command.Start(); err != nil {
+	done, err := recoveryWorkloads.start(agent, command)
+	if err != nil {
 		_ = logFile.Close()
 		return err
 	}
 	go func() {
-		_ = command.Wait()
+		<-done
 		_ = logFile.Close()
 	}()
 	return startTestLogServer(agent)
@@ -534,7 +590,9 @@ func stopMachineWorkload(agent string) error {
 			break
 		}
 	}
-	_ = exec.Command("pkill", "-TERM", "-f", "[p]h adapter.*--name "+agent).Run()
+	if err := recoveryWorkloads.stop(agent); err != nil {
+		return err
+	}
 	_ = os.Remove(socket)
 	_ = os.Remove(filepath.Join(runtimeDir, agent+"_cap.sock"))
 	return nil

@@ -136,3 +136,8 @@ packages a third-party open-source log and metrics server behind a dedicated
 ZPR adapter. It specifies OTLP/HTTP ingestion, authenticated reader access,
 and the required Visa Service exporter interfaces. The profile does not
 provision an adapter, install policy, or export existing metrics automatically.
+# Baseline recovery candidate
+
+This branch starts from the October 16 checkpoint with tested dashboard
+recovery repairs. See [recovery scope and acceptance gates](RECOVERY-BASELINE.md)
+before treating it as a reproducible release or promoting it to main.

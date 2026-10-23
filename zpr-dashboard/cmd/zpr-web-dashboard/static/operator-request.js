@@ -1,4 +1,5 @@
 (() => {
+  if (window.zprOperatorFetch) return;
   let csrf = "";
   let ready;
   let sessionRefresh = null;

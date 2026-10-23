@@ -188,12 +188,8 @@
         status.textContent = humanLabel ? `User: ${humanLabel}` : "User";
         setGate(false);
         scope.hidden = false;
-        const suffix = widget.dataset.operatorApplication === "simulator"
-          ? " Simulator access is limited to the listed scopes."
-          : " Enrollment actions also require backend delegation.";
-        const label = humanLabel || "Display name unavailable";
-        const email = identity.email && identity.email !== humanLabel ? ` (${identity.email})` : "";
-        scope.textContent = `${label}${email} · Issuer: ${identity.issuer}. Configured organizations: ${identity.organizations.join(", ")}. Permissions: ${identity.permissions.join(", ")}.${suffix}`;
+        scope.style.display = "none";
+        scope.textContent = "";
         window.dispatchEvent(new CustomEvent("operator-session-ready", { detail: { identity, csrf } }));
       } catch (error) {
         if (current !== generation) return;

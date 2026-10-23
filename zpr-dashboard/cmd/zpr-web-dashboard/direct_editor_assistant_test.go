@@ -46,6 +46,17 @@ func TestDirectEditorAssistantPromptAndScope(t *testing.T) {
 		if response.Code != http.StatusOK || !strings.Contains(system, directEditorAssistantGuardrails) || !strings.Contains(system, "original draft") {
 			t.Fatalf("%s: %d %s, system=%q", editor, response.Code, response.Body, system)
 		}
+		for _, instruction := range []string{
+			"authorized immediate unsaved draft changes",
+			"do not ask for confirmation",
+			"preserve existing access semantics",
+			"Only ask a focused clarification when essential information is unavailable",
+			"Never save, publish, stage, deploy, activate or execute anything",
+		} {
+			if !strings.Contains(system, instruction) {
+				t.Errorf("%s: missing direct-edit instruction %q", editor, instruction)
+			}
+		}
 		var result assistantReply
 		if err := json.Unmarshal(response.Body.Bytes(), &result); err != nil || result.Answer != `{"answer":"No change needed.","edits":[]}` {
 			t.Fatalf("structured edit response lost: %+v %v", result, err)

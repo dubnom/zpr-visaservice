@@ -151,13 +151,20 @@
       return;
     }
     if (!operatorLoginScriptLoading) {
-      operatorLoginScriptLoading = new Promise((resolve, reject) => {
+      const requestScriptLoading = window.zprOperatorFetch ? Promise.resolve() : new Promise((resolve, reject) => {
         const script = document.createElement("script");
-        script.src = "/operator-login.js?v=12";
+        script.src = "/operator-request.js?v=3";
         script.addEventListener("load", resolve, { once: true });
         script.addEventListener("error", reject, { once: true });
         document.head.append(script);
       });
+      operatorLoginScriptLoading = requestScriptLoading.then(() => new Promise((resolve, reject) => {
+        const script = document.createElement("script");
+        script.src = "/operator-login.js?v=14";
+        script.addEventListener("load", resolve, { once: true });
+        script.addEventListener("error", reject, { once: true });
+        document.head.append(script);
+      }));
     }
     operatorLoginScriptLoading.then(() => window.initializeOperatorLogin?.()).catch(() => {
       const status = document.getElementById("operator-login-status");

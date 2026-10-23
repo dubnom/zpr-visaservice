@@ -165,7 +165,7 @@ document.addEventListener("simulator:activate", event => {
 
 const directoryEditorPage = window.ZPREditorPage;
 const directoryRequest = (path, options) => directoryEditorPage.requestJSON(
-  (...args) => window.fetch(...args), path, options,
+  (...args) => window.zprOperatorFetch(...args), path, options,
 );
 async function selectOrganizationDraft(draft, { closeBrowser = false } = {}) {
   const generation = ++organizationDraftSelectionGeneration;

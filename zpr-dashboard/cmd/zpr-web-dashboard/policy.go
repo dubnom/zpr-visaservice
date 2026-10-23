@@ -1068,7 +1068,7 @@ func (a *application) handlePolicyAssistant(w http.ResponseWriter, r *http.Reque
 			system, _ = editorAssistantSystem(request.Editor, request.Source, attributes)
 		}
 		client := assistant.Client{APIKey: a.assistant.apiKey, URL: a.assistant.url, HTTP: a.assistant.http}
-		answer, err = client.CompleteEditorEdits(r.Context(), system+"\n\n"+directEditorAssistantGuardrails, request.Messages, request.Model, request.MaxTokens)
+		answer, err = completeDirectEditorEdits(r.Context(), &client, system+"\n\n"+directEditorAssistantGuardrails, request)
 	} else if request.Editor == "" || request.Editor == "policy" {
 		answer, err = a.assistant.reply(r.Context(), request.Source, attributes, request.Messages, request.Model, request.MaxTokens)
 	} else {
@@ -1084,7 +1084,7 @@ func (a *application) handlePolicyAssistant(w http.ResponseWriter, r *http.Reque
 				OutputTokens int    `json:"output_tokens"`
 			}{message, answer.InputTokens, answer.OutputTokens})
 		}
-		if request.DirectEdits && answer.OutputTokens > request.MaxTokens {
+		if request.DirectEdits && errors.Is(err, assistant.ErrEditorOutputLimit) && answer.OutputTokens > request.MaxTokens {
 			fail(fmt.Sprintf("The provider reported %d output tokens despite the requested %d limit. No changes were applied. Provider-reported usage is shown; this limit is not a billing guarantee.", answer.OutputTokens, request.MaxTokens))
 			return
 		}
