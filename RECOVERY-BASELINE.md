@@ -461,6 +461,74 @@ runtime images, independent operator configuration, licensing, setup/AI
 disclosure and seventeen-scenario/browser qualification remain open. Main,
 preserved dirty worktrees and both live recovered environments are unchanged.
 
+### Verified administration TLS repair and rebuilt archive
+
+The candidate admin client no longer disables certificate validation. Its shared
+HTTP client requires HTTPS, validates the server's trust chain, validity and
+endpoint identity, and returns exit 1 for request failures rather than printing
+an error with a successful process status. There is no insecure fallback.
+The default platform trust roots remain enabled alongside the supplied CA.
+
+Ten targeted Rust tests pass on both macOS and native Linux ARM64, including
+every request method (GET, POST, JSON POST and DELETE) against freshly generated
+trusted, foreign-authority, wrong-host and expired certificates. Rejected TLS
+handshakes do not deliver the test API credential; plaintext requests are
+rejected. Only the existing workspace OpenSSL dependency was added for tests;
+no dependency version was upgraded. Changed Rust files pass rustfmt, and the
+packaging regression tests pass.
+
+Targeted Clippy completes with four inherited warnings: two redundant imports,
+a needless return and a redundant conversion. `-D warnings` therefore fails;
+all four sites were verified unchanged against the preserved checkpoint.
+No lint suppression or unrelated cleanup was included.
+
+With explicit user authorization, exact committed source archives were prepared
+again, recording the repaired Visa source revision `4ebc2c0`, updated lockfile
+hash, all other source/gitlink archive hashes and the unchanged builder/script
+identities. All seven Rust tools were rebuilt locked/offline/release inside the
+same pinned ARM64 builder, with no network, read-only source/root filesystem,
+no capabilities/socket, unprivileged UID 501 and separate writable cache/output.
+The strict Cargo/profile/hash verifier passes. Six executable hashes are
+identical to the previous release build; only `vs-admin` changed:
+
+| Executable | Bytes | SHA-256 |
+|---|---:|---|
+| `vs-admin` | 9,209,648 | `99b287a805540eedd79ad226e6f5db9c2f6493ec78c4775c2acbc481d0810ea5` |
+
+The exact newly assembled archive passed all eight offline checks, seven native
+CLI checks, five signed example-policy builds and invalid-policy rejection.
+Its freshly prepared Visa service also passed the existing trust/permission
+and durable Redis/Visa restart checks. Additional native CLI checks require
+exit 1 and empty stdout for a foreign CA, mismatched hostname, plaintext HTTP
+and another installation's API key. All pass using only the exact extracted
+tools. curl's independent TLS/CA checks still pass; the fixed client now also
+validates TLS itself.
+
+| Final engineering archive | Result |
+|---|---|
+| Source revision | `4ebc2c00d0506f897f7f461fe8c1bcdc0c5681fc` |
+| Compressed bytes | 33,536,199 |
+| Extracted regular-file bytes | 87,931,660 |
+| SHA-256 | `1f48287d36f0c68a2545a798265c69a8587bfac39de4a2254473fb813ca49fd4` |
+
+Independent source receipts and exact release outputs remain private under
+`validation/rust-tls-inputs-20261023` and `rust-tls-release-20261023`; native test
+and build logs are retained separately. Exact archive acceptance receipts live
+under `validation/compiled-tls-fixed-20261023/service-receipts` and
+`policy-receipts`. The archived preparation helper and exercised executables
+were digest-matched before deleting generated test keys, API headers, private
+databases and temporary policies. No container remains running in validation;
+the VM is stopped. Build/cache inputs are retained under guest `/var/tmp`
+for future offline work.
+
+The admin TLS publication blocker is fixed in this candidate and its new
+verified archive; older archives remain historical engineering evidence only.
+This does not qualify the complete installation. Runtime images, node/service
+trust admission, policy-signature enforcement, complete organization bootstrap,
+independent operator configuration, licenses, setup/AI disclosure and all
+seventeen scenarios/browser acceptance remain open. Nothing was published or
+deployed, and main, dirty worktrees and both running demos remain unchanged.
+
 ## Adapter retention and main promotion
 
 Core is a separate repository. Its adapter development is preserved at
