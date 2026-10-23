@@ -5,6 +5,12 @@ download, a supported installer, or a public release. The initial target is
 Linux ARM64. Build and smoke validation must not change the working recovery
 VM or use its credentials.
 
+The project-level [zpr-compiled-release skill](../../../.github/skills/zpr-compiled-release/SKILL.md)
+guides reproduction and resumption of this workflow, with safety boundaries,
+gate dependencies, evidence handling and completion criteria. Open this
+repository as a workspace for skill discovery. The skill delegates execution
+to these scripts; it does not authorize publication or main promotion.
+
 From a clean committed candidate, with cached Go dependencies:
 
 ```sh
