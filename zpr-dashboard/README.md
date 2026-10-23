@@ -56,6 +56,10 @@ identities, provision services, install binaries, configure AI keys, start
 containers or restore the frozen VM. The compiled distribution and first-run
 setup remain unfinished.
 
+The [compiled recovery engineering slice](packaging/compiled-recovery/README.md)
+builds a source-free Linux ARM64 archive and provides an isolated offline
+executable/asset smoke test. It is not the complete demo download or installer.
+
 To setup your development environment, run `go mod download` to install the local dependencies. Finally, run `make run` to start the TUI.
 
 ## Migration discovery CLI
