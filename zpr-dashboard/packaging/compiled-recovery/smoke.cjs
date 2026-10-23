@@ -103,8 +103,14 @@ function run(name, args, success = true) {
   containers.push(id);
   const result = spawnSync("docker", ["--context", context, "start", "-a", id], { encoding: "utf8" });
   if (result.error) throw result.error;
-  const exit = Number(docker(["inspect", "--format", "{{.State.ExitCode}}", id]));
+  const state = JSON.parse(docker(["inspect", "--format", "{{json .State}}", id]));
+  assert.equal(state.Error, "", `${name} must start the compiled executable`);
+  const exit = state.ExitCode;
   assert.equal(exit === 0, success, `${name} exit ${exit}: ${result.stderr}${result.stdout}`);
+  if (!success) {
+    assert.match(result.stderr + result.stdout, /existing directories, files and symlinks are never reused or overwritten/,
+      "The negative check must fail because existing output was refused");
+  }
   checks.push({ name, exit_code: exit });
   return id;
 }
@@ -142,6 +148,7 @@ try {
 }
 const report = {
   schema_version: 1, source_revision: metadata.source_revision, archive_sha256: expectedHash.slice(0, 64),
+  smoke_harness_sha256: digest(fs.readFileSync(__filename)),
   docker_context: context, docker_daemon: expectedDaemon, target: "linux/arm64",
   network: "none", source_mounts: false, complete_installation: false, checks,
   archive_bytes: fs.statSync(archive).size,

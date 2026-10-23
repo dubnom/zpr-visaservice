@@ -188,6 +188,45 @@ validation does not establish runtime packaging completeness.
 Private full-suite logs are preserved outside Git. The production recovery and
 original working trees remain unchanged.
 
+## Source-free compiled engineering validation
+
+The [compiled recovery engineering slice](zpr-dashboard/packaging/compiled-recovery/README.md)
+now builds four stripped static Linux ARM64 tools plus reviewed runtime assets,
+revision/toolchain metadata and checksums from clean committed source.
+It is explicitly marked incomplete and non-public. Dependency license review,
+complete node/Visa/compiler packaging, first-run setup and full installation
+acceptance remain open.
+
+An exact archive built from `3ff39b7` was extracted and checksum-verified, then
+imported into an empty Docker filesystem on a newly created ARM64 VM:
+`zpr-compiled-validation-20261023`. This VM has no host directory mounts;
+the active Docker context stayed `desktop-linux`. Neither the original nor the
+older fallback VM was reused or modified.
+
+Eight offline checks passed in read-only, capability-free, network-disabled
+containers with only a new private generated-state volume:
+
+1. Composed runtime policy for each of the five bundled organizations.
+2. Ran the compiled lab trust generator twice, proving distinct public CAs.
+3. Confirmed existing trust output is refused rather than overwritten.
+
+No source checkout, compiler, shell, build cache, host bind mount or Docker socket
+was available inside those containers. The first attempt exposed build-UID-only
+archive permissions; normal public runtime modes (`0755` directories/binaries,
+`0644` assets) fixed that without granting container capabilities or exposing the
+enclosing private build directory/archive.
+
+Measured engineering slice: 13,925,524 compressed bytes and 34,938,506 extracted
+file bytes. This is **not the full demo's download size**. It excludes runtime
+images and node/adapter/Visa/compiler binaries. The archive was not published.
+Test containers, generated-secret volume and imported image were removed.
+Public CA/policy receipts and digest evidence remain privately under validation.
+The test VM is stopped after validation and retained for future isolated work.
+
+This proves offline execution/asset portability for the included slice only.
+It does not prove a complete installation, LDAP/OIDC/DNS initialization,
+policy compilation/install, UI login, AI setup or seventeen-scenario acceptance.
+
 ## Adapter retention and main promotion
 
 Core is a separate repository. Its adapter development is preserved at
