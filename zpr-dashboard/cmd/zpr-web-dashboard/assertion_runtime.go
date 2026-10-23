@@ -26,6 +26,7 @@ type assertionSettings struct {
 }
 
 type assertionRuntime struct {
+	watchers         []trustedWatcher
 	sourcesPath      string
 	sourcesConfig    assertionSourcesConfig
 	sourcesRevision  string
@@ -145,7 +146,7 @@ func (runtime *assertionRuntime) status() map[string]any {
 	return map[string]any{
 		"scope": "organization", "organization_id": runtime.organizationID, "organization_name": runtime.organizationName,
 		"configured": runtime.ldapConfigured(), "source_kind": sourceKind, "base_dn": runtime.baseDN, "default_source": runtime.defaultSource, "sources": runtime.sourceMetadata(),
-		"settings": runtime.settings, "settings_error": runtime.settingsError, "running": runtime.running,
+		"change_watchers": runtime.watcherStatus(), "settings": runtime.settings, "settings_error": runtime.settingsError, "running": runtime.running,
 		"last_run": runtime.lastRun, "source_summary": runtime.lastSource,
 	}
 }

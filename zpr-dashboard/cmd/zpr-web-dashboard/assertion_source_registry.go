@@ -28,7 +28,7 @@ func sourceConfigRevision(data []byte) string {
 
 func editableAssertionSource(entry assertionSourceConfig, organizationID string) bool {
 	_, scoped := entry.Organizations[organizationID]
-	return scoped && len(entry.Organizations) == 1 && entry.Container == "" && (entry.Kind == "ldap" && entry.URL != "" || entry.Kind == "https-json")
+	return !entry.WatchChanges && scoped && len(entry.Organizations) == 1 && entry.Container == "" && (entry.Kind == "ldap" && entry.URL != "" || entry.Kind == "https-json")
 }
 
 func (runtime *assertionRuntime) handleSourceRegistry(w http.ResponseWriter, r *http.Request) {

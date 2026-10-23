@@ -26,6 +26,7 @@ type assertionNamedSource struct {
 }
 
 type assertionSourceScope struct {
+	VisaServiceID    string `json:"visa_service_id,omitempty"`
 	BaseDN           string `json:"base_dn,omitempty"`
 	BindDN           string `json:"bind_dn,omitempty"`
 	URL              string `json:"url,omitempty"`
@@ -33,6 +34,7 @@ type assertionSourceScope struct {
 }
 
 type assertionSourceConfig struct {
+	WatchChanges  bool                            `json:"watch_changes,omitempty"`
 	Name          string                          `json:"name"`
 	DisplayName   string                          `json:"display_name,omitempty"`
 	Kind          string                          `json:"kind"`
@@ -90,6 +92,11 @@ func (runtime *assertionRuntime) buildSources(config assertionSourcesConfig) err
 	for _, entry := range config.Sources {
 		if !assertionSourceName.MatchString(entry.Name) || sources[entry.Name].read != nil {
 			return errors.New("Assertion source names must be unique identifiers")
+		}
+		if entry.WatchChanges {
+			if err := validateWatchedSource(entry); err != nil {
+				return err
+			}
 		}
 		attributes, err := approvedAssertionAttributes(strings.Join(entry.Attributes, ","))
 		if err != nil {

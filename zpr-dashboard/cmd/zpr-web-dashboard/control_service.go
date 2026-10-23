@@ -160,6 +160,12 @@ func runControlService() error {
 	}
 	assertionContext, stopAssertions := context.WithCancel(context.Background())
 	defer stopAssertions()
+	stopWatchers, err := assertions.startTrustedWatchers(assertionContext, strings.TrimSpace(os.Getenv("ZPR_TRUSTED_WATCH_STATE_DIR")), admin)
+	if err != nil {
+		return err
+	}
+	defer stopWatchers()
+	trustedChanges.watcherStatus = assertions.allWatcherStatus
 	assertions.start(assertionContext)
 	policyAPI, policyErr := newPolicyServiceProxy()
 	diagnostics, diagnosticsStaleAfter, diagnosticsErr := newOpenObserveDiagnosticsProvider()

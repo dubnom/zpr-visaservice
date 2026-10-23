@@ -403,6 +403,13 @@ Load more continues only the selected feed. Switching back to directory tabs
 restores the directory heading and records without rereading LDAP. Directory
 metadata is hidden while viewing another feed to avoid misattribution.
 
+For independent RFC 4533 push supervision, configure production source
+`watch_changes`, per-organization `visa_service_id`, and
+`ZPR_TRUSTED_WATCH_STATE_DIR`; see [B4 configuration, durable restart semantics,
+health and revocation-completion limits](../../ASSERTIONS.md#production-ldap-push-watcher-b4).
+No Simulator or evaluation bootstrap is involved. The change-feed list exposes
+metadata-only watcher health even without a separate accesslog feed.
+
 Configure `ZPR_TRUSTED_CHANGE_FEEDS_FILE` on Control-Service with feed identifiers
 matching the names in `ZPR_ASSERTION_SOURCES_FILE`:
 

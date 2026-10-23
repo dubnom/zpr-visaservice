@@ -159,17 +159,22 @@ and deduplicate by UUID; this is not an exactly-once audit log.
 
 Connections resume with an in-memory cookie after disconnects, with retries
 backing off from one to 30 seconds. Rejected cookies trigger a new refresh.
-Process restart also starts a full refresh; there is no durable checkpoint or
-retained event queue. Cookies advance after output succeeds; an output error
+Standalone process restart also starts a full refresh; the stdout mode has no
+durable checkpoint or retained event queue. Control-Service now embeds this same
+consumer with private per-organization/source durable checkpoints; see
+[production LDAP push watcher](../../ASSERTIONS.md#production-ldap-push-watcher-b4).
+Cookies advance after output succeeds; an output error
 stops the process. SIGINT/SIGTERM cancels the stream. A blocked output pipe
 requires its reader to drain or close it; supervisors must bound shutdown.
 
 The simulator bootstrap starts a separate watcher alongside the lookup APIs
 and writes private `demo-directory/changes.jsonl` and `change-consumer.log`
 files. These files are demo diagnostics without rotation, not a production
-event journal. This phase does not refresh cached ZPR attributes, evaluate
-assertions, or revoke existing visas. Those consumers are a subsequent
-trusted-source integration step.
+event journal. The standalone metadata stream does not refresh cached ZPR
+attributes, evaluate
+assertions, or revoke existing visas. The independent Control-Service supervisor
+can now opt into approved-attribute refresh and the existing Visa Service cache
+invalidation/reconciliation API; the stdout/demo stream remains diagnostic only.
 
 Run unit tests with `go test ./cmd/zpr-trusted-service -run TestLDAPSync`.
 On Linux with OpenLDAP and openssl installed, the following creates an isolated
@@ -183,6 +188,9 @@ ZPR_TEST_LDAP_SYNC=1 go test ./cmd/zpr-trusted-service -run TestLDAPSyncLiveOpen
 The [local evaluation launcher](../../packaging/evaluation/README.md) starts an
 independent, empty starter OpenLDAP directory. B1 does not register it with this
 provider or start its change watcher; those are B2/B4 tasks, not evidence that
-attributes refresh or visas revoke. Control-Service will own durable per-source
-watcher checkpoints/resync health in B4. Simulator is neither required nor started
+attributes refresh or visas revoke. Control-Service owns opt-in durable
+per-organization/source watcher checkpoints
+and resync health independently of bootstrap; B4 does not add registration or
+start a watcher without explicit production source configuration. Simulator is
+neither required nor started
 and must keep its synthetic directory separate.

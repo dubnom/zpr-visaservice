@@ -450,3 +450,113 @@ rules and preserves the selected catalog across refreshes.
 
 Current limits: direct person memberships and scalar expression attributes.
 Nested-group expansion, notifications, and blocking activation are not implemented.
+
+## Production LDAP push watcher (B4)
+
+Control-Service can supervise RFC 4533 refresh-and-persist directly from the
+same `ZPR_ASSERTION_SOURCES_FILE` used by production source readers. This does
+not start or discover a directory, configure LDAP overlays, register a Visa
+Service trusted service, or depend on Simulator or Policy-Service availability.
+Enable `syncprov` on the operator's LDAP server separately, with an explicitly
+scoped read-only account authorized to read the approved attributes and sync
+metadata. No LDAP writes are made by the watcher.
+
+Example operator-owned source configuration (paths are server/container-visible):
+
+```json
+{
+  "default_source": "company_ldap",
+  "sources": [{
+    "name": "company_ldap",
+    "kind": "ldap",
+    "url": "ldaps://directory.example:636",
+    "ca_file": "/secure/directory-ca.pem",
+    "attributes": ["uid", "cn", "mail", "title", "member"],
+    "watch_changes": true,
+    "organizations": {
+      "company": {
+        "base_dn": "dc=company,dc=example",
+        "bind_dn": "cn=reader,dc=company,dc=example",
+        "bind_password_file": "/secure/directory-reader-password",
+        "visa_service_id": "company_ldap"
+      }
+    }
+  }]
+}
+```
+
+Set `ZPR_TRUSTED_WATCH_STATE_DIR` to a persistent directory owned by
+Control-Service (0700). Bind-password and source-config files must remain
+protected (0600). Mount this directory and the explicit CA/credential files
+when running Control-Service in a container. Configure its ordinary `ZPR_ADMIN_*`
+production Visa Service connection with a **write-capable** Admin API key.
+`visa_service_id` is an explicit mapping to the already registered Visa Service
+trusted-service identifier, not an inferred directory/source name. Watchers are
+opt-in and network-LDAP-only; missing mappings, state, TLS/credentials or Admin
+configuration fail closed. Sources with `watch_changes` are operator-file managed,
+not editable through source registration; stop Control-Service before rebinding
+or disabling them, edit its source file, then restart.
+
+Each `(organization ID, source ID)` owns one locked checkpoint; cookies and the
+upstream/scope/consumer fingerprint are atomically replaced and fsynced after
+successful processing. Checkpoint and lock files are 0600 with hashed filenames.
+No attribute values, DNs, bind passwords or event journal are persisted. Only the
+latest opaque cookie is retained (64 KiB maximum); it is private, never an API
+field. A second owner, malformed/public/symlinked checkpoint, or changed source
+binding is rejected rather than silently resumed or reset. For a deliberate
+rebind, stop the owner, securely retire its checkpoint, then restart for a full
+refresh; do not copy cookies between sources. Retired sources' private files
+remain until explicitly removed by the operator.
+
+A restart passes the committed cookie on the first LDAP subscription. Transport
+loss reconnects with exponential backoff (1–30 seconds). A rejected cookie is
+cleared durably before full resync. Entry add/present/modify/delete (including
+UUID-only deletion sets) and refresh-complete cause a fresh approved-attribute
+source read and `DELETE /admin/services/{visa_service_id}/cache`. The existing
+Visa Service implementation reloads file-backed attributes or bumps an HTTP
+provider's revision, then queues `TrustedServiceChange` to refresh actors and
+reconcile/revoke affected live visas. Refresh-complete also handles deletions
+missed while disconnected, without assuming a present set is a deletion set.
+Repeated events intentionally repeat the source-wide read/invalidation: the
+operation is idempotent, not an exactly-once change log. LDAP cookies are opaque,
+not sortable event sequence numbers. Invalid versions, UUIDs, DNs, source scopes
+and out-of-order lifecycle transitions stop processing; stale/replayed writes
+cannot roll attributes back because each refresh reads current source state.
+
+A failed read, Admin response other than 202, malformed event or checkpoint write
+stops that watcher and never acknowledges the failed processing with a new
+cookie. No source/default fallback is attempted; restart resumes from the last
+safe cookie after the operator fixes the fault. Other sources remain independent.
+This is fail-closed consumption, **not** a guarantee that every previously issued
+visa is immediately revoked during a provider/control-plane outage.
+
+`GET /api/trusted-sources/change-feeds` adds a `watchers` array containing only
+organization/source IDs and health (`starting`, `refreshing`, `resuming`,
+`healthy`, `disconnected`, `resync_required`, `failed`, `stopped`), event count,
+last successful refresh time and a sanitized failure description. This operator
+endpoint works without Policy-Service settings, even when no accesslog feed is
+configured. Existing authenticated/mTLS and Control Room `policy.read` guards
+apply. `GET /api/assertions` also includes organization-filtered
+`change_watchers` when assertion settings are available. No UI behavior changed.
+The separate HTTPS accesslog reader remains explicitly configured through
+`ZPR_TRUSTED_CHANGE_FEEDS_FILE`; it does not own the syncrepl checkpoint.
+
+Acceptance uses deterministic RFC/control fixtures and a local TLS Admin fixture,
+with Simulator unavailable: restart/first-dial resume, organization/source
+isolation, refresh/add/modify/delete, duplicate/malformed/out-of-order events,
+disconnect/reconnect, rejected-cookie reset and read/Admin/persistence failures.
+No live LDAP was changed. **Remaining integration gap:** real LDAP → running
+Visa Service revocation was not exercised here. The existing Admin endpoint's
+202 is asynchronous acceptance, not a reconciliation completion receipt; it can
+also log an enqueue failure while still returning 202. Watcher health therefore
+means refresh/invalidation accepted, not proof of visa revocation completion.
+Monitor Visa Service reconciliation logs separately; no new completion/retry
+protocol or bootstrap registration is claimed.
+
+Focused validation (from `zpr-dashboard`):
+
+```sh
+go test -race ./internal/controlservice/changewatcher ./cmd/zpr-trusted-service \
+  ./cmd/zpr-web-dashboard -run 'TestCheckpoint|TestWorker|TestConsumer|TestMalformedSync|TestLDAPSync|TestTrustedWatcher|TestTrustedSourceChanges|TestAssertionSource' -count=1
+python3 scripts/check-control-room-boundary.py
+```
