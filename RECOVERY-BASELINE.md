@@ -596,6 +596,87 @@ Runtime images, full service trust/bootstrap, policy-signature enforcement,
 operator configuration, licensing, setup/AI disclosure and all seventeen
 scenarios/browser acceptance remain release gates. No public upload occurred.
 
+### Offline runtime image and unprivileged Visa launch
+
+Packaging commit `6e13d2a` adds explicit public dependency acquisition,
+offline runtime assembly and exact-export acceptance. The new source-free
+all-tools image contains the previously accepted archive from `a531bd4`,
+an immutable Ubuntu 24.04 ARM64 base and 37 individually hash/size/version
+recorded distribution packages. The saved base and package files are retained
+for repeatable offline assembly; a future online acquisition may select newer
+packages and requires new review. This is not a byte-identical-build claim.
+There is no source, compiler, recovered credential or generated runtime state.
+Copyright notices remain in the distribution's standard package paths.
+Licensing/SBOM qualification remains open.
+
+| Measurement | Result |
+|---|---|
+| Runtime gzip download bytes | 71,815,670 |
+| Pristine rootfs regular-file payload bytes | 211,950,942 |
+| Pristine exported rootfs tar bytes | 215,080,960 |
+| Runtime download SHA-256 | `f4630f498754704362d5f611f6a07d773d056bec9294e8726338572d10233612` |
+| Image ID | `sha256:4bdafbaeaf1bfe7d8a3aedce0c940b3b05d560605b615b9e2a821c4053829396` |
+| Base image | `ubuntu@sha256:68ee22004a9109b44973313b02ff7b1de250f1de0f5ecb628d73f579aaff33ac` |
+| Offline dependency receipt SHA-256 | `3aa324c2cca59f71ac8d4552a3209c9d940a8c98ef03108b34d6ca054e76931e` |
+
+Rootfs measurement uses an unstarted container export before any state is
+generated; regular-file payload excludes hardlinks/filesystem overhead. Docker's
+engine-reported image size uses different layer accounting and is not presented
+as extracted installation size. Whole-demo peak installation disk and a final
+size budget are still unqualified.
+
+The build loads the saved base, verifies its identity, assigns a local
+digest-derived tag and installs the exact recorded `.deb` files with build
+network `none`. No repository access is needed for assembly. Bind-mounted
+package inputs do not enter image layers, and maintainer-script service startup
+is disabled. The image defaults to printing Visa help, not silently starting
+services. It exposes no port and uses UID 501/GID 1000 with initialized private
+`/state` ownership.
+
+The built image was removed and confirmed absent before loading the exact
+saved gzip export. All three contract/policy/service checks then passed:
+
+- UID 501/GID 1000, effective capabilities zero, no-new-privileges enabled.
+- Read-only root, network `none`/loopback only, no published port, no host
+  source/socket mount, no TUN and no privileged volume initializer.
+- One private state volume per probe, PID limit 128, memory limit 512 MiB
+  and CPU quota 1. These test limits are not whole-demo resource promises.
+- All eleven executable hashes match the compiled archive. All seven Rust CLIs,
+  five fresh-key signed policies and invalid-policy rejection pass.
+- Two fresh Visa identities, verified TLS, foreign CA/hostname/plaintext/API-key
+  rejection, observer read-only enforcement, authorized policy installation,
+  non-overwrite and durable Redis/Visa restart all pass.
+
+Acquisition initially exposed APT cache permission needs with all capabilities
+dropped. The public-only temporary downloader now explicitly receives CHOWN,
+DAC_OVERRIDE and FOWNER, without private mounts/socket/published ports. No such
+capability is needed by the tested runtime. A stopped-container metadata read
+was fixed by gathering package fields before exit. Dockerfile `FROM sha256:...`
+was incorrectly interpreted as a repository name; the final build uses the
+identity-checked local tag instead. None of these failures changed live demos.
+
+Seventeen focused preparation/provenance/runtime rejection tests pass, including
+wrong daemon, mutable base, changed base/package/archive, wrong architecture,
+unsafe/symlink inputs and missing/failed archive acceptance. No Go/Rust source
+changed. Builder, recipe, archive, dependency/smoke receipts and probe scripts
+are digest-bound in the retained evidence.
+
+The private recovery workspace retains `validation/runtime-inputs-final-20261023`,
+`runtime-image-final-20261023` and `runtime-image-final-acceptance-20261023`.
+Only allowlisted receipts were exported; all test credentials/databases lived
+on disposable volumes. All owned containers/volumes were removed and their
+absence verified. The validation VM is stopped; original/fallback VMs remain
+running, main and original worktrees unchanged, default context `desktop-linux`.
+
+This qualifies the loopback Visa/Redis engineering launch contract without
+elevated runtime capabilities. It does **not** qualify PH container permissions,
+TUN/network setup, Noise peers, Visa/service adapters, forwarding, node lifecycle,
+public TLS, service supervision or production backup/restore. The earlier native
+root-only node gate remains separate. This is one all-tools image, not final
+service decomposition, full installation or public distribution. Next gates
+are PH/adapter launch permissions, peer trust and forwarding, then remaining
+setup/licensing/full-demo acceptance. No registry push or zpr.net upload occurred.
+
 ## Adapter retention and main promotion
 
 Core is a separate repository. Its adapter development is preserved at
