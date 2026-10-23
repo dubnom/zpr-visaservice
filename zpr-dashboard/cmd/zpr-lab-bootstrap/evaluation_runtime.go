@@ -65,15 +65,14 @@ type evaluationProcess struct {
 }
 
 func startEvaluation(state string, inventory evaluationInventory, out io.Writer) error {
-	lock, err := os.OpenFile(filepath.Join(state, "runtime.lock"), os.O_CREATE|os.O_RDWR, 0o600)
+	lock, err := lockEvaluation(state)
 	if err != nil {
-		return errors.New("cannot open install lifecycle lock")
+		return err
 	}
 	defer lock.Close()
-	if err := syscall.Flock(int(lock.Fd()), syscall.LOCK_EX|syscall.LOCK_NB); err != nil {
-		return errors.New("this install is already running; stop its foreground bootstrap first")
+	if _, err := readEvaluation(state, inventory.Config); err != nil {
+		return err
 	}
-	defer syscall.Flock(int(lock.Fd()), syscall.LOCK_UN)
 	ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer cancel()
 	compose := func(commandContext context.Context, args ...string) error {

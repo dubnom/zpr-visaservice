@@ -92,7 +92,7 @@ Keep this command in the foreground. **Ctrl-C** stops its native operator
 processes and removes only the random install's containers/network, retaining
 LDAP, Dex and logging state. Rerun the **same command and flags** to restart.
 A per-install lifecycle lock prevents duplicate supervisors. Images/config/
-secret checksums are frozen; missing, changed, symlinked or partial state fails
+secret checksums are frozen except for the explicit stopped-host admin reset below; missing, changed, symlinked or partial state fails
 closed rather than reseeding or silently switching credentials. A failed start
 cleans up its own runtime and retains state for inspection. If cleanup is
 interrupted, run `docker compose -p zpr-evaluation-<install-id> -f compose.json down`
@@ -108,6 +108,86 @@ Process failures report the component and next action, not request bodies,
 credentials or backend responses. Browser/OS trust removal and secure disposal
 of the private directory are explicit operator actions after stopping.
 
+## Local bundled-login admin recovery (evaluation only)
+
+Run on the **same evaluation host**, as the OS account that owns the protected
+install directory. This is not a remote HTTP endpoint, Control Room button,
+production break-glass mechanism, or a reset for company identity providers.
+Stop the foreground bootstrap first and verify its containers/processes stopped.
+Make a **complete offline backup** of the private state before resetting; keep
+that backup private and outside the install directory. Do not use a recorded or
+shared terminal session.
+
+For a single terminal disclosure (redirection/pipes are refused):
+
+```sh
+sh packaging/evaluation/bootstrap.sh -state "$PWD/.zpr-evaluation-local" -reset-admin
+```
+
+Alternatively, deliver only to a **new** `0600` file under a real, owned `0700`
+directory outside the install state (existing files/symlinks are never replaced):
+
+```sh
+mkdir -m 700 .zpr-evaluation-recovery-delivery
+sh packaging/evaluation/bootstrap.sh -state "$PWD/.zpr-evaluation-local" \
+  -reset-admin -password-file "$PWD/.zpr-evaluation-recovery-delivery/admin-once.secret"
+```
+
+Use a protected password manager/workflow to collect this credential. No password
+is accepted as an argument or environment variable. Never `cat` it into a log,
+commit it, or pass it to another CLI as an argument. Securely dispose of the
+delivery file after handoff; filesystem deletion is not a secure-erasure promise.
+The normal private `operator-admin.secret` remains necessary for bootstrap's
+signed-token health check; “once” refers to **command disclosure**, not removal
+of bootstrap's protected credential storage.
+
+The reset validates ownership, canonical non-symlink paths, private top-level
+state/config/audit/lock permissions, checksums, and no hard links, special files
+or group/other-writable state. Private top-level provider directories may contain
+ordinary upstream-created readable files; their `0700` ancestor still prevents
+other-user traversal. It acquires the **same exclusive lifecycle lock** as normal
+startup and reserves all install ports, refusing a running/orphaned stack rather
+than resetting files beneath services. It uses the stored install configuration,
+not default ports/image flags, and never creates a missing install or contacts
+Docker, Simulator or a network service.
+
+A fresh 256-bit random password replaces the bundled Dex static credential
+through Dex's supported static configuration (not a database edit). The OIDC
+client secret and administrator subject also rotate; the install ID, certificates,
+read-only permissions, LDAP, logging and Dex provider data remain unchanged.
+Old operator grant configuration is removed. Restart with the **original launch
+command/flags**: Dex loads the new static password/client configuration and
+bootstrap verifies the new signed subject before creating its grants. Native
+Control Room sessions are in memory and were discarded when its process stopped;
+old subjects are not granted access after restart. This is intentionally a new
+subject for the same local evaluation administrator, not identity merging.
+
+`admin-recovery.audit.jsonl` records started/committed events, UTC time, install ID,
+local UID, account, evaluation scope and capability gaps, **never the credential,
+client secret or password hash**. File replacements and the inventory are synced;
+`admin-recovery.pending` makes interrupted/failed multi-file changes fail closed.
+There is no crash-atomic multi-file transaction or automatic rollback: if that
+marker remains, preserve the private non-secret audit, keep the stack stopped,
+restore the **entire** offline backup (not individual hashes), and perform a fresh
+reset before starting. Restoring a backup also restores its old credential; guard
+backup access accordingly. Do not remove the marker to bypass validation. A
+successful reset with failed terminal/file delivery can simply be reset again
+while stopped, with a new delivery file; the previous recovery password is then
+invalidated. No command reprints a previously delivered secret.
+
+**Capability gaps (active X12):** Dex static-password login has no forced-change,
+expiry or enforced single-use interface. The disclosed recovery password remains
+valid until another local reset; it is **not an enforced one-time login**. Replace
+it through another local reset after secure handoff. Rotating the confidential
+client secret blocks use of that previous client credential, but does not erase
+Dex's existing token records or cryptographically revoke already-issued signed
+JWTs; such JWTs retain their upstream expiry. Old subjects have no new Control
+Room grants, and the old Control Room cookies do not survive the required process
+restart. OpenObserve's separate password/sessions are unaffected. Full upstream
+token/session revocation, forced change, expiry/replay enforcement and independent
+logging-admin recovery need a qualified credential-management interface before
+production use; none is claimed here.
+
 ## Decisions and deliberately unfinished work
 
 - **B1 only:** named-operator bootstrap, persistent starter directory, persistent
@@ -115,15 +195,12 @@ of the private directory are explicit operator actions after stopping.
   registration code is changed. B2 registers the starter LDAP; B3 configures
   collection/ingestion, a named logging source and the authorized operator query
   path. Merely starting OpenObserve does not mean any application logs are ingested.
-- **Admin recovery design/task (not implemented):** a local CLI reset command
-  must prove local state ownership and acquire this lifecycle lock, generate a
-  unique one-time password into a new `0600` file (never stdout/arguments/logs),
-  update the IdP's supported credential interface atomically, invalidate existing
-  sessions, and require password replacement on the next successful login.
-  It must cover OpenObserve's independent administrator and preserve provider
-  data, with expiry/replay/rollback tests. Dex's static password mode has no
-  forced-change/one-time guarantee; editing a hash/file is **not** an acceptable
-  recovery implementation. Do not delete persistent state as a password reset.
+- **Bundled login recovery:** the local, stopped-host command below rotates only
+  the evaluation Dex operator. X12 records the deliberately unfinished
+  forced-change, expiry, single-use and upstream-token revocation guarantees.
+  OpenObserve's independent administrator is not recovered by this command;
+  its supported credential/session recovery remains unfinished. Never delete
+  provider state or change `openobserve.env` to claim a logging password reset.
 - **B4:** Control-Service owns durable **per-source** change-watcher checkpoints,
   source IDs, resync/failure state and private metadata retention, independently
   of Simulator. B1 does not start syncrepl/accesslog watchers or claim cache
@@ -141,14 +218,14 @@ of the private directory are explicit operator actions after stopping.
   signing, full BOM/platform qualification, HA, encrypted backup, production
   resource sizing and a browser visual-acceptance matrix are not B1 claims.
 
-Active shortcut ownership/removal gates are recorded as **X01/X02/X06/X08/X11**
+Active shortcut ownership/removal gates are recorded as **X01/X02/X06/X08/X11/X12**
 in the [plan's shortcut register](../../../SIMULATOR_AS_ZPR_CLIENT_PLAN.md#7-demo-shortcuts-and-pre-production-register).
 
 ## Focused validation
 
 ```sh
 mkdir -p .evaluation-build
-TMPDIR="$PWD/.evaluation-build" go test ./cmd/zpr-lab-bootstrap
+TMPDIR="$PWD/.evaluation-build" go test -race ./cmd/zpr-lab-bootstrap ./internal/operatorauth
 TMPDIR="$PWD/.evaluation-build" go vet ./cmd/zpr-lab-bootstrap
 shellcheck packaging/evaluation/bootstrap.sh
 python3 -m py_compile packaging/evaluation/test-live.py
@@ -180,3 +257,22 @@ existing simulator launcher/observability expectations, and macOS long Unix-sock
 or protected-path checks under this worktree. It is **not** a full-suite green or
 clean-host/browser/production qualification claim. No failing existing tests were
 changed to obtain the focused result.
+
+### Admin recovery evidence (2026-10-23)
+
+Focused recovery tests cover 256-bit generation, old-password rejection after
+rotation, distinct subsequent recovery credentials, subject/client rotation,
+private file-only delivery and redirected-output refusal, non-secret auditing,
+provider-data retention, unsafe permissions/links/tampering, missing-state
+refusal, lifecycle concurrency/orphan-port refusal and interruption fail-closed
+behavior. These are local configuration/unit/race checks, not a live bundled-IdP
+or browser recovery qualification. Unsupported forced-change/expiry/single-use
+and issued-token revocation remain X12 gaps, not passed acceptance cases.
+
+Validation for this change: `go test -race ./cmd/zpr-lab-bootstrap
+./internal/operatorauth`, targeted `go vet`, gofmt/diff checks, wrapper shellcheck,
+the strict boundary audit and its five mutation checks passed. `make test` was
+attempted: existing unrelated Simulator organization/launcher tests, missing
+Northstar/Rust dependency fixtures and macOS enrollment/reset protected-path
+checks failed; no existing failing tests were altered. No live stack was
+started or deployed for this recovery change.
