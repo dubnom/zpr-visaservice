@@ -3856,6 +3856,12 @@ references, without Docker or Simulator. Source identity is the existing name
 paired with the organization ID; `GET /api/assertions/source?source=name` reads
 one configured source without fallback. See the network LDAP/source-identity
 contract and reusable consumer fixtures in [ASSERTIONS.md](ASSERTIONS.md).
+Opt-in production RFC 4533 watchers now run under Control-Service, with durable
+organization/source checkpoints, independent health and explicit Visa Service
+cache-invalidation/reconciliation mappings. See [B4 configuration and acceptance
+limits](ASSERTIONS.md#production-ldap-push-watcher-b4); watched sources remain
+operator-file managed, and asynchronous acceptance does not prove revocation
+completion. No Simulator or bootstrap registration is required.
 Trusted Sources now offers **Register source**, **Edit selected source** and
 **Test connection (read-only)** for organization-scoped LDAPS/HTTPS readers.
 Stable organization/source IDs cannot be renamed during editing. Configure a

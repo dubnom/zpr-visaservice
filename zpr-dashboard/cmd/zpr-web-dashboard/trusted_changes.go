@@ -45,7 +45,8 @@ type trustedChangeFeed struct {
 }
 
 type trustedSourceChanges struct {
-	feeds map[string]trustedChangeFeed
+	watcherStatus func() []map[string]any
+	feeds         map[string]trustedChangeFeed
 }
 
 type trustedChange struct {
@@ -171,7 +172,11 @@ func (service *trustedSourceChanges) listFeeds(w http.ResponseWriter, _ *http.Re
 		feed := service.feeds[name]
 		summaries = append(summaries, feedSummary{Name: feed.name, DisplayName: feed.displayName})
 	}
-	writeJSON(w, http.StatusOK, map[string]any{"sources": summaries})
+	watchers := []map[string]any{}
+	if service.watcherStatus != nil {
+		watchers = service.watcherStatus()
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"sources": summaries, "watchers": watchers})
 }
 
 func (service *trustedSourceChanges) readChanges(w http.ResponseWriter, r *http.Request) {

@@ -105,8 +105,12 @@ the existing M0-M6 ordinary-client and production-boundary gates:
   admin tests. Dex static credentials cannot enforce this safely as a small reset
   script; do not claim editing a hash or deleting state is admin recovery.
 - **B4 decision:** Control-Service owns durable **per-source** change-watcher
-  checkpoints/resync health. B1 neither runs watchers nor claims cache refresh or
-  visa revocation.
+  checkpoints/resync health. B4 now embeds the existing RFC 4533 consumer with
+  production-source opt-in, restart resume, metadata-only health and the existing
+  Visa Service cache/reconciliation API. Deterministic race-tested acceptance is
+  documented in [ASSERTIONS.md](zpr-dashboard/ASSERTIONS.md#production-ldap-push-watcher-b4);
+  live LDAP-to-visa revocation and asynchronous completion receipts remain gaps.
+  B1 neither registers nor starts these watchers.
 - **B6 decision:** explicit retirement wizard **link company source → rebind
   policies → verify → disable bundled**, with authorized impact preview, recovery
   and no implicit identity merge/default switch/fallback.
