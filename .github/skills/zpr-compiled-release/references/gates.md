@@ -6,6 +6,13 @@ current private paths, daemon IDs, credentials or moving artifact hashes here.
 
 ## Gate dependencies and proof
 
+The immediate product goal is a small invite-only downloadable Linux ARM64
+technical preview, with the broader five-organization/seventeen-scenario
+release still later. A preview is not exempt from rights review, fresh
+identities, clean-host install, exact tested workflow claims, safe teardown,
+or separate approval for participant distribution. The selected preview scope
+is tested workflows only; AI is out of scope.
+
 | Gate | Prerequisite | Required proof | Does not establish |
 |---|---|---|---|
 | Private baseline freeze | Authorized inventory/pause/storage | Consistent backup and verified checksums; preserved Git branches/worktrees; restoration path | Sanitized release or encryption unless separately verified |

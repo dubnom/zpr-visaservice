@@ -13,6 +13,15 @@ scripts as the executable implementation. Do not duplicate their logic here or
 replace verified checks with agent judgment. An engineering slice is not the
 complete demo, a supported installer, or an approved public release.
 
+The current delivery goal is the staged, invite-only, downloadable Linux ARM64
+technical preview in the compiled download plan. Treat it as a separate narrow
+acceptance target; the full five-organization/seventeen-scenario product remains
+the later broad-release goal. The selected preview scope is only explicitly
+tested workflows, with AI disabled/out of scope. Preview participant handoff
+requires an exact artifact, redistribution review, second-clean-host acceptance,
+participant instructions, and separate approval. Do not upload or publish while
+preparing it.
+
 This skill belongs to the Visa Service repository. Resolve its root relative to
 this file (`../../..`), not from an assumed terminal directory. Read repository
 instructions before changing code. Commands below run from `zpr-dashboard/`

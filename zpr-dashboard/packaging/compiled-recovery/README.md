@@ -5,6 +5,14 @@ download, a supported installer, or a public release. The initial target is
 Linux ARM64. Build and smoke validation must not change the working recovery
 VM or use its credentials.
 
+The next product milestone is a separate invite-only, downloadable Linux ARM64
+technical preview. This artifact has not passed the preview's clean-host setup,
+redistribution, participant documentation, or named-workflow gates and must
+not be handed to participants as an installer. The preview scope is only
+explicitly tested workflows, with AI disabled/out of scope; this is not the
+completed five-organization/seventeen-scenario release. See the staged-delivery
+section in the [compiled download plan](../../../../COMPILED-DOWNLOAD-PLAN.md).
+
 The project-level [zpr-compiled-release skill](../../../.github/skills/zpr-compiled-release/SKILL.md)
 guides reproduction and resumption of this workflow, with safety boundaries,
 gate dependencies, evidence handling and completion criteria. Open this
