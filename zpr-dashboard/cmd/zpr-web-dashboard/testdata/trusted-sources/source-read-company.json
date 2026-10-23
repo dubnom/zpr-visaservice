@@ -1,0 +1,71 @@
+{
+  "source_id": "company_directory",
+  "source_name": "company_directory",
+  "kind": "ldap",
+  "organization_id": "northstar",
+  "base_dn": "dc=company",
+  "default_source": "company_directory",
+  "directory": {
+    "people": [
+      "alice"
+    ],
+    "groups": {
+      "Operators": [
+        "alice"
+      ]
+    },
+    "attributes": [
+      "cn",
+      "salary",
+      "uid"
+    ],
+    "person_attributes": {
+      "alice": {
+        "uid": [
+          "alice"
+        ],
+        "cn": [
+          "Alice"
+        ],
+        "salary": [
+          "50000"
+        ]
+      }
+    },
+    "group_attributes": {
+      "Operators": {
+        "cn": [
+          "Operators"
+        ],
+        "salary": [],
+        "uid": []
+      }
+    },
+    "entries": [
+      {
+        "dn": "cn=Operators,dc=company",
+        "attributes": {
+          "cn": [
+            "Operators"
+          ],
+          "salary": [],
+          "uid": []
+        }
+      },
+      {
+        "dn": "uid=alice,dc=company",
+        "attributes": {
+          "uid": [
+            "alice"
+          ],
+          "cn": [
+            "Alice"
+          ],
+          "salary": [
+            "50000"
+          ]
+        }
+      }
+    ]
+  }
+}

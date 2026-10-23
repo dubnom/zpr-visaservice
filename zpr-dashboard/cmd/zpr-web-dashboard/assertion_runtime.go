@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"net/url"
 	"os"
 	"path/filepath"
 	"sort"
@@ -412,6 +413,7 @@ func (runtime *assertionRuntime) handlers() httpapi.Assertions {
 }
 
 func (runtime *assertionRuntime) handleSource(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Cache-Control", "no-store")
 	if !localEditorRequest(w, r) {
 		return
 	}
@@ -425,15 +427,59 @@ func (runtime *assertionRuntime) handleSource(w http.ResponseWriter, r *http.Req
 		writeJSON(w, http.StatusConflict, map[string]string{"error": "Trusted sources are unavailable or an evaluation is already running"})
 		return
 	}
+	query, queryErr := url.ParseQuery(r.URL.RawQuery)
+	if queryErr != nil {
+		runtime.mu.Unlock()
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "Invalid trusted source selection"})
+		return
+	}
+	selected := query.Get("source")
+	for key, values := range query {
+		if key != "source" || len(values) != 1 || selected == "" {
+			runtime.mu.Unlock()
+			writeJSON(w, http.StatusBadRequest, map[string]string{"error": "Invalid trusted source selection"})
+			return
+		}
+	}
+	selectedSource, exists := runtime.sources[selected]
+	if selected == "ldap" && len(runtime.sources) == 0 && runtime.reader != nil {
+		selectedSource = assertionNamedSource{kind: "ldap", read: func(ctx context.Context, _, baseDN, bindDN string) (assertionDirectory, error) {
+			return runtime.reader(ctx, baseDN, bindDN)
+		}}
+		exists = true
+	}
+	if selected != "" {
+		_, scoped := selectedSource.organizations[runtime.organizationID]
+		if !exists || len(selectedSource.organizations) > 0 && !scoped {
+			runtime.mu.Unlock()
+			writeJSON(w, http.StatusNotFound, map[string]string{"error": "Trusted source is not configured for this organization"})
+			return
+		}
+	}
 	readOrganizationID, baseDN, bindDN := runtime.organizationID, runtime.baseDN, runtime.bindDN
+	contextBaseDN := runtime.baseDN
+	if selected != "" {
+		if scope, ok := selectedSource.organizations[readOrganizationID]; ok && scope.BaseDN != "" {
+			baseDN = scope.BaseDN
+		}
+	}
 	runtime.running = true
 	runtime.mu.Unlock()
 	ctx, cancel := context.WithTimeout(r.Context(), 10*time.Second)
 	defer cancel()
-	directory, err := runtime.readDirectory(ctx, readOrganizationID, baseDN, bindDN)
+	var directory assertionDirectory
+	var err error
+	if selected == "" {
+		directory, err = runtime.readDirectory(ctx, readOrganizationID, baseDN, bindDN)
+	} else {
+		directory, err = selectedSource.read(ctx, readOrganizationID, baseDN, bindDN)
+		if err != nil {
+			err = errors.New("Trusted source is unavailable; no fallback was attempted")
+		}
+	}
 	runtime.mu.Lock()
 	runtime.running = false
-	if err == nil && (runtime.organizationID != readOrganizationID || runtime.baseDN != baseDN || runtime.bindDN != bindDN) {
+	if err == nil && (runtime.organizationID != readOrganizationID || runtime.baseDN != contextBaseDN || runtime.bindDN != bindDN) {
 		err = errors.New("Organization changed during source read; reload and try again")
 	}
 	observedAt := time.Now().UTC()
@@ -450,6 +496,11 @@ func (runtime *assertionRuntime) handleSource(w http.ResponseWriter, r *http.Req
 	response := trustedSourceBrowserResponse("Trusted sources", organizationID, organizationName, baseDN, directory, observedAt)
 	response["sources"] = assertionSourceSummaries(directory, observedAt)
 	response["default_source"] = runtime.defaultSource
+	if selected != "" {
+		response["source_id"] = selected
+		response["source_name"] = selected
+		response["kind"] = selectedSource.kind
+	}
 	writeJSON(w, http.StatusOK, response)
 }
 

@@ -1,0 +1,18 @@
+{
+  "sources": [
+    {
+      "name": "company_directory",
+      "source_id": "company_directory",
+      "organization_id": "northstar",
+      "kind": "ldap",
+      "display_name": "Company directory"
+    },
+    {
+      "name": "lab_directory",
+      "source_id": "lab_directory",
+      "organization_id": "northstar",
+      "kind": "ldap",
+      "display_name": "Lab directory"
+    }
+  ]
+}

@@ -85,6 +85,18 @@ func parseAssertionLDAPAttributes(source string, attributes []string) (assertion
 	if err != nil || len(data.Entries) > 20000 {
 		return assertionDirectory{}, errors.New("LDAP snapshot is malformed or exceeds the entry limit")
 	}
+	entries := make([]*ldap.Entry, 0, len(data.Entries))
+	for _, record := range data.Entries {
+		if record.Entry == nil {
+			return assertionDirectory{}, errors.New("LDAP snapshot must contain entries, not change records")
+		}
+		entries = append(entries, record.Entry)
+	}
+	return assertionLDAPDirectory(entries, attributes)
+}
+
+func assertionLDAPDirectory(records []*ldap.Entry, attributes []string) (assertionDirectory, error) {
+	var err error
 	peopleByDN := make(map[string]string)
 	people := make(map[string]bool)
 	allUIDs := make(map[string]bool)
@@ -92,11 +104,7 @@ func parseAssertionLDAPAttributes(source string, attributes []string) (assertion
 	personAttributes := make(map[string]map[string][]string)
 	groupEntries := make(map[string]*ldap.Entry)
 	var entries []assertionDirectoryEntry
-	for _, record := range data.Entries {
-		entry := record.Entry
-		if entry == nil {
-			return assertionDirectory{}, errors.New("LDAP snapshot must contain entries, not change records")
-		}
+	for _, entry := range records {
 		for _, attribute := range entry.Attributes {
 			name, options, found := strings.Cut(strings.ToLower(attribute.Name), ";")
 			if found && options != "" && (name == "member" || name == "uniquemember" || name == "memberuid" || name == "uid") {

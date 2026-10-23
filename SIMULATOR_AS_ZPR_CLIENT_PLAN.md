@@ -6,6 +6,21 @@ Status: proposed functional/demo delivery plan. All tasks and acceptance tests
 below are pending; this document does not claim implementation, execution,
 deployment or production readiness.
 
+## Packet A implementation record (2026-10-23)
+
+B02's production ownership/name mapping and the smallest network LDAP/read-path
+increment are documented in
+[zpr-dashboard/ASSERTIONS.md](zpr-dashboard/ASSERTIONS.md#production-network-ldap-and-source-identity-packet-a).
+The existing Control-Service assertion source registry now supports explicit
+organization-scoped LDAPS without containers, protected bind-file references,
+verified TLS, approved attributes and independent selected-source reads. Local
+TLS protocol/consumer fixtures cover two simultaneous sources, isolation,
+no fallback, credential/certificate failures and Simulator-unavailable inputs.
+No live LDAP access, deployment or runtime registration change is implied.
+This does **not** close M0/M1: review/approval, revisioned registration,
+feed/inventory joins, capability/freshness lifecycle and integrated UI acceptance
+remain pending. The milestone checkboxes below retain that distinction.
+
 ## 1. Target outcome
 
 **Control Room does not know that Simulator exists.** Simulator is one more

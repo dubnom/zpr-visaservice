@@ -1,0 +1,12 @@
+dn: uid=alice,dc=company
+objectClass: inetOrgPerson
+uid: alice
+cn: Alice
+sn: Example
+salary: 50000
+userPassword: fixture-must-not-leak
+
+dn: cn=Operators,dc=company
+objectClass: posixGroup
+cn: Operators
+memberUid: alice
