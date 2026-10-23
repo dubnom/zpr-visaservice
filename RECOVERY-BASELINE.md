@@ -529,6 +529,73 @@ independent operator configuration, licenses, setup/AI disclosure and all
 seventeen scenarios/browser acceptance remain open. Nothing was published or
 deployed, and main, dirty worktrees and both running demos remain unchanged.
 
+### Fresh real-node admission without Simulator
+
+The packaged preparation helper now accepts explicit `--node` for an isolated
+engineering node configuration. Default service-only behavior is unchanged.
+It adds a fresh X25519 Noise key and CA-signed certificate using OpenSSL 3,
+preserving the separate RSA bootstrap identity already bound by public key in
+the minimal policy. No extra PKI executable or source checkout is needed.
+It writes explicit fixed test addresses/configuration, but starts no processes
+and changes no network or host trust. State still remains owner-only,
+non-overwriting and excluded from archives.
+
+The extended native probe starts a real release-built PH node in a temporary
+second network namespace, joined to the isolated Visa namespace by a private
+veth pair. Only namespace-local IPv6 routes and a TUN are created; no default
+route, external interface, published port or globally named namespace is used.
+This optional namespace/TUN gate runs as root; the previous service-only gate
+still passes as unprivileged UID 501. Simulator is unavailable throughout.
+Redis and Visa continue to use fresh private state only.
+
+The test first runs PH with a different installation's RSA private key while
+claiming the same node CN/address. It requires Visa's exact
+`blob signature verification failed for cn node` receipt and an empty node
+inventory, not merely a failed process or timeout. PH is then started using the
+matching fresh key. Both PH's grant/VSS-registration messages and Visa's
+authenticated actor are required: CN `node`, address `fd5a:5052::2`,
+`node: true`, `in_sync: true`, zero pending installs and VSS port 8183.
+Exactly one node is present afterward.
+
+Initial experiments sharing a namespace were correctly rejected by Visa's
+source-address check; separate namespaces fixed the harness, without changing
+or bypassing that check. The preserved Core also loads config authentication
+keys after CLI arguments, so a CLI override did not select the intended
+negative-test key. The final probe explicitly writes a separate foreign-key
+configuration and verifies actual RSA rejection. Core was not edited; that
+inherited CLI-precedence issue remains documented.
+
+The exact final archive was built from clean committed candidate `a531bd4`:
+
+| Measurement | Result |
+|---|---|
+| Compressed bytes | 33,536,541 |
+| Extracted regular-file bytes | 87,936,044 |
+| SHA-256 | `810ff05d27f35c9f92c27a110f1384c4a0dd60399b68f7f28b6b7f4f1e900c69` |
+
+The extracted preparation helper and six exercised node/service executables
+were digest-matched to the archive. Both the root node gate and unprivileged
+service-only gate pass, as do all eight scratch checks, seven Rust CLI checks,
+five signed example policies, invalid-policy rejection, admin TLS/permission
+negatives and durable Visa/Redis restart. Focused preparation/release-verifier
+regressions and shell syntax checks pass. No Go or Rust source changed.
+
+Only reviewed nonsecret receipts were retained under
+`validation/compiled-node-admission-20261023/node-receipts`, `service-receipts`
+and `policy-receipts` in the private recovery workspace. The node summary
+excludes identity tokens/attributes; raw private logs/state were not exported.
+Generated state and logs from every attempt were removed after receipt
+verification. Owned processes and temporary namespace anchor were stopped;
+the guest has no remaining test links/named namespaces or running containers.
+The validation VM is stopped. Main, live demos and dirty worktrees are unchanged.
+
+This proves direct RSA node admission and VSS synchronization, **not** Noise
+peer handshakes, a Visa/service adapter, inter-node forwarding, node
+restart/revocation, workloads or a production least-privilege launch contract.
+Runtime images, full service trust/bootstrap, policy-signature enforcement,
+operator configuration, licensing, setup/AI disclosure and all seventeen
+scenarios/browser acceptance remain release gates. No public upload occurred.
+
 ## Adapter retention and main promotion
 
 Core is a separate repository. Its adapter development is preserved at
