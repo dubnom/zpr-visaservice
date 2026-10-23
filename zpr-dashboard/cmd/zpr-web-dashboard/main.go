@@ -49,28 +49,28 @@ func platformServices() []service {
 	return services
 }
 
-func localLDAPEditorURL() string {
-	raw := os.Getenv("ZPR_DEMO_LDAP_EDITOR_URL")
-	if raw == "" {
-		return ""
-	}
-	parsed, err := url.Parse(raw)
-	if err != nil || parsed.Scheme != "http" || parsed.Hostname() != "127.0.0.1" || parsed.Port() == "" || parsed.User != nil || parsed.Fragment != "" {
-		return ""
-	}
-	return parsed.String()
-}
-
-func providerManagerURL(name string) string {
+func providerManagerURL(sourceID string) string {
 	var managers map[string]string
 	if json.Unmarshal([]byte(os.Getenv("ZPR_PROVIDER_MANAGER_URLS")), &managers) != nil {
 		return ""
 	}
-	parsed, err := url.Parse(managers[name])
-	if err != nil || parsed.Host == "" || parsed.User != nil {
+	raw := managers[sourceID]
+	if strings.ContainsAny(raw, "\\?#") || strings.IndexFunc(raw, func(r rune) bool { return r <= ' ' || r >= 127 }) >= 0 {
+		return ""
+	}
+	parsed, err := url.Parse(raw)
+	if err != nil || parsed.Hostname() == "" || parsed.User != nil || parsed.Opaque != "" {
 		return ""
 	}
 	if parsed.Scheme != "https" && !(parsed.Scheme == "http" && (parsed.Hostname() == "127.0.0.1" || parsed.Hostname() == "localhost" || parsed.Hostname() == "::1")) {
+		return ""
+	}
+	if port := parsed.Port(); port != "" {
+		number, err := strconv.Atoi(port)
+		if err != nil || number < 1 || number > 65535 {
+			return ""
+		}
+	} else if strings.HasSuffix(parsed.Host, ":") {
 		return ""
 	}
 	return parsed.String()

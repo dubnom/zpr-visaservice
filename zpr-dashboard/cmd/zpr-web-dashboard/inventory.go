@@ -63,12 +63,6 @@ func trustedSourcesFromStatus(statuses []trustedStatus, services []service) []tr
 	return inventory.TrustedSourcesFromStatus(statuses, services, trustedEditorURL)
 }
 
-func trustedEditorURL(name, provider string) string {
-	if manager := providerManagerURL(name); manager != "" {
-		return manager
-	}
-	if name == "demo_ldap" && provider == "rest/1" {
-		return localLDAPEditorURL()
-	}
-	return ""
+func trustedEditorURL(sourceID, _ string) string {
+	return providerManagerURL(sourceID)
 }

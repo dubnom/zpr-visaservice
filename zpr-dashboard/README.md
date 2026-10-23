@@ -3693,16 +3693,33 @@ and underline are rendered using the vendored MIT-licensed `ansi_up` 6.0.6
 browser module. Log text is HTML-escaped, terminal hyperlinks stay inert, and
 only approved color and text-emphasis styles are applied without relaxing CSP.
 
-Trusted Sources **Manage** links are configured per trusted-service name, not
-as one shared LDAP editor. The local launcher merges the operator registry
-`dashboard-stack/provider-managers.json` with `ZPR_PROVIDER_MANAGER_URLS`;
-explicit environment entries take precedence. Override the registry path with
-`ZPR_PROVIDER_MANAGER_URLS_FILE` and restart Control-Service after updates.
-Organization deployments provision their own loopback-only directory managers
-and register links for their actual Visa-configured source names. Control Room
-uses only the resulting operator configuration and does not query Simulator.
-The browser authenticates directly to the manager with a separate LDAP admin
-login; Control Room does not receive the LDAP admin password.
+Trusted Sources **Manage** links use explicit production-owned metadata:
+`ZPR_PROVIDER_MANAGER_URLS` is a JSON object mapping each stable, case-sensitive
+trusted-source ID (the Visa Admin API `name`, not a display label or provider
+kind) to its manager/editor URL. For independent operator startup, set this in
+`services.control-service.env` of `ZPR_OPERATOR_STACK_CONFIG`, for example:
+
+```json
+"ZPR_PROVIDER_MANAGER_URLS": "{\"starter_directory\":\"https://starter.example.test/manage\",\"company_directory\":\"https://directory.example.test/manage\"}"
+```
+
+Use the IDs registered with the configured Admin API/organization; this mapping
+does not register sources or change their identity. Bundled evaluation, synthetic
+and company sources use the identical contract. Only explicitly configured
+absolute HTTPS URLs are accepted; explicit HTTP is allowed only for `localhost`,
+`127.0.0.1` or `[::1]`. Credentials, query strings, fragments, malformed ports and
+non-web schemes are rejected. Missing, malformed or invalid configuration leaves
+the source without a Manage link, never a localhost or other-source fallback.
+`ZPR_DEMO_LDAP_EDITOR_URL` is not used. Restart Control-Service after updates.
+Control Room does not discover configuration from Simulator.
+
+The optional Simulator adapter supplies this same explicit JSON contract by
+merging its `dashboard-stack/provider-managers.json` registry with
+`ZPR_PROVIDER_MANAGER_URLS`; explicit entries take precedence. Its registry path
+can be overridden with `ZPR_PROVIDER_MANAGER_URLS_FILE`. The independent operator
+launcher does not read that registry. The browser authenticates directly to each
+manager with a separate admin login; do not put passwords or access tokens in
+manager URLs. Control Room does not receive the LDAP admin password.
 
 Control Room's **Nodes** page includes the selected node's production source
 health, sortable source metrics and logs below its statistics. Health shows
