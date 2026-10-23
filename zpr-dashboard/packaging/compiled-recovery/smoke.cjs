@@ -49,7 +49,7 @@ function verifyDirectory(directory, relative = "") {
       const content = fs.readFileSync(path.join(directory, entry.name));
       assert.equal(digest(content), inventory.get(name), `Digest mismatch: ${name}`);
       assert.ok(name.startsWith("bin/") || name.startsWith("share/examples/") ||
-        name.startsWith("licenses/") || ["build.json", "go-build-info.txt", "README.md"].includes(name),
+        name.startsWith("licenses/") || ["build.json", "rust-release.json", "go-build-info.txt", "README.md"].includes(name),
       `Unexpected archive surface: ${name}`);
       if (name.startsWith("bin/")) {
         assert.equal(fs.statSync(path.join(directory, entry.name)).mode & 0o777, 0o755);
@@ -73,12 +73,31 @@ function verifyDirectory(directory, relative = "") {
 verifyDirectory(extracted);
 assert.equal(inventory.size, 0, "File inventory references missing files");
 const binaries = fs.readdirSync(path.join(extracted, "bin")).sort();
-assert.deepEqual(binaries, ["zpr-lab-bootstrap", "zpr-system-config", "zpr-trusted-service", "zpr-web-dashboard"]);
+const metadata = JSON.parse(fs.readFileSync(path.join(extracted, "build.json")));
+const expectedBinaries = ["zpr-lab-bootstrap", "zpr-system-config", "zpr-trusted-service", "zpr-web-dashboard"];
+if (metadata.rust_release) {
+  assert.equal(metadata.rust_release.manifest, "rust-release.json");
+  assert.equal(metadata.rust_release.binary_count, 7);
+  const rust = JSON.parse(fs.readFileSync(path.join(extracted, "rust-release.json")));
+  assert.equal(rust.kind, "verified-rust-release-build");
+  assert.equal(rust.profile, "release");
+  assert.equal(rust.locked, true);
+  const rustNames = ["ph", "ph-cli", "vs", "vs-admin", "vsapikey", "zplc", "zpt"];
+  assert.deepEqual(rust.binaries.map(binary => binary.name).sort(), rustNames);
+  for (const binary of rust.binaries) {
+    const content = fs.readFileSync(path.join(extracted, "bin", binary.name));
+    assert.equal(digest(content), binary.sha256);
+    assert.equal(content.length, binary.bytes);
+  }
+  expectedBinaries.push(...rustNames);
+} else {
+  assert.ok(!fs.existsSync(path.join(extracted, "rust-release.json")), "Undeclared Rust assembly");
+}
+assert.deepEqual(binaries, expectedBinaries.sort());
 const examples = path.join(extracted, "share/examples");
 const organizations = fs.readdirSync(path.join(examples, "organizations")).filter(name => name.endsWith(".json")).sort();
 assert.deepEqual(organizations, ["great-lakes.json", "load-lab.json", "northstar.json", "redwood.json", "velocity.json"]);
 assert.equal(fs.readdirSync(path.join(examples, "scenarios")).filter(name => name.endsWith(".json")).length, 17);
-const metadata = JSON.parse(fs.readFileSync(path.join(extracted, "build.json")));
 assert.equal(metadata.public_release, false);
 assert.equal(metadata.complete_installation, false);
 assert.equal(metadata.target, "linux/arm64");
@@ -151,6 +170,7 @@ const report = {
   smoke_harness_sha256: digest(fs.readFileSync(__filename)),
   docker_context: context, docker_daemon: expectedDaemon, target: "linux/arm64",
   network: "none", source_mounts: false, complete_installation: false, checks,
+  rust_binaries_included: Boolean(metadata.rust_release), rust_runtime_tested: false,
   archive_bytes: fs.statSync(archive).size,
   extracted_bytes: fs.readdirSync(extracted, { recursive: true, withFileTypes: true })
     .filter(entry => entry.isFile()).reduce((size, entry) => size + fs.statSync(path.join(entry.parentPath, entry.name)).size, 0),

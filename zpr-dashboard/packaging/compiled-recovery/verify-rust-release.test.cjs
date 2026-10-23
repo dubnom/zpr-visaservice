@@ -4,6 +4,7 @@ const fs = require("node:fs");
 const os = require("node:os");
 const path = require("node:path");
 const { test } = require("node:test");
+const { spawnSync } = require("node:child_process");
 const { verifyRelease } = require("./verify-rust-release.cjs");
 
 test("release verifier requires optimized receipts, exact hashes and ARM64 binaries", t => {
@@ -42,6 +43,25 @@ test("release verifier requires optimized receipts, exact hashes and ARM64 binar
   fs.writeFileSync(path.join(root, "receipts/lockfiles.sha256"), inputs.repositories.map(x =>
     `${x.lockfile_sha256}  /input/sources/${x.repository}/Cargo.lock`).join("\n"));
   assert.equal(verifyRelease(root, inputs).length, 7);
+  const stage = path.join(root, "stage");
+  fs.mkdirSync(stage);
+  fs.mkdirSync(path.join(stage, "bin"));
+  const metadata = { kind: "compiled-recovery-engineering-slice", public_release: false, complete_installation: false };
+  fs.writeFileSync(path.join(stage, "build.json"), JSON.stringify(metadata));
+  const inputFile = path.join(root, "inputs.json");
+  inputs.private_runtime_file = "/private/do-not-copy";
+  fs.writeFileSync(inputFile, JSON.stringify(inputs));
+  const assemble = () => spawnSync(process.execPath,
+    [path.join(__dirname, "assemble-rust-release.cjs"), root, inputFile, stage], { encoding: "utf8" });
+  const assembly = assemble();
+  assert.equal(assembly.status, 0, assembly.stderr);
+  assert.deepEqual(fs.readdirSync(path.join(stage, "bin")).sort(),
+    ["ph", "ph-cli", "vs", "vs-admin", "vsapikey", "zplc", "zpt"]);
+  const report = JSON.parse(fs.readFileSync(path.join(stage, "rust-release.json")));
+  assert.equal(report.binaries.length, 7);
+  assert.equal(report.private_runtime_file, undefined);
+  assert.equal(report.complete_installation, false);
+  assert.equal(assemble().status, 1, "Existing assembly must be refused");
 
   const receiptPath = path.join(root, "receipts/zpr-core-artifacts.jsonl");
   const original = fs.readFileSync(receiptPath, "utf8");

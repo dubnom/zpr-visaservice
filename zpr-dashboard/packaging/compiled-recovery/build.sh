@@ -1,8 +1,8 @@
 #!/bin/sh
 set -eu
 
-if [ "$#" -ne 1 ]; then
-    echo "Usage: sh packaging/compiled-recovery/build.sh /absolute/new-output-directory" >&2
+if [ "$#" -ne 1 ] && [ "$#" -ne 3 ]; then
+    echo "Usage: sh packaging/compiled-recovery/build.sh /absolute/new-output-directory [/absolute/rust-release /absolute/release-inputs.json]" >&2
     exit 2
 fi
 case "$1" in
@@ -26,6 +26,10 @@ GO=${GO:-go}
 for tool in "$GO" git jq tar gzip shasum; do
     command -v "$tool" >/dev/null 2>&1 || { echo "Required build tool unavailable: $tool" >&2; exit 1; }
 done
+if [ "$#" -eq 3 ]; then
+    command -v node >/dev/null 2>&1 || { echo "Rust assembly requires Node.js" >&2; exit 1; }
+    node "$script_dir/verify-rust-release.cjs" "$2" "$3" >/dev/null
+fi
 umask 077
 mkdir -- "$1"
 output=$(CDPATH='' cd -- "$1" && pwd)
@@ -60,6 +64,9 @@ jq -n --arg revision "$(git rev-parse HEAD)" --arg toolchain "$("$GO" version)" 
       source_revision:$revision,go_toolchain:$toolchain,public_release:false,
       complete_installation:false,dependency_license_review:"pending"}' > "$stage/build.json"
 "$GO" version -m "$stage/bin/zpr-web-dashboard" > "$stage/go-build-info.txt"
+if [ "$#" -eq 3 ]; then
+    node "$script_dir/assemble-rust-release.cjs" "$2" "$3" "$stage"
+fi
 find "$stage" -type d -exec chmod 755 {} +
 find "$stage" -type f -exec chmod 644 {} +
 chmod 755 "$stage/bin/"*

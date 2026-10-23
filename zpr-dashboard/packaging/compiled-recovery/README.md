@@ -16,6 +16,23 @@ The builder needs Go, Git, jq, tar, gzip and shasum. It refuses dirty source
 and existing output paths. Failed builds leave their explicit output directory
 for diagnosis; choose a new directory after correcting the error.
 
+To include the seven separately verified Rust release tools, supply their
+release directory and independent input receipt explicitly (requires Node.js):
+
+```sh
+GOPROXY=off GO=/absolute/path/to/go \
+  sh packaging/compiled-recovery/build.sh /absolute/private/new-assembled-build \
+  /absolute/verified-rust-release /absolute/release-inputs.json
+```
+
+The assembler validates the complete release receipts before creating output,
+then revalidates and digest-checks the copied executables. Only the seven
+allowlisted tools and a selected-field public provenance manifest are included;
+Cargo logs, source, cache, private runtime evidence and signing keys are not.
+Existing binaries and assemblies are refused. `build.json` declares the optional
+`rust-release.json` manifest. Invalid/missing evidence blocks assembly.
+This remains an engineering artifact, not a service installer.
+
 ## Included
 
 - Stripped, statically built Linux ARM64 web runtime (including embedded browser
@@ -29,13 +46,17 @@ for diagnosis; choose a new directory after correcting the error.
 
 The archive root contains `bin/`, `share/examples/`, `licenses/`, `build.json`,
 `go-build-info.txt`, this document and `SHA256SUMS`. It contains no source
-checkout, Go/Rust tools, node_modules, caches, database, generated identity,
+checkout, Go/Rust toolchains, node_modules, caches, database, generated identity,
 operator credential, AI key or recovered runtime snapshot. The Northstar LDIF
 reader password field is only the existing `DEMO_BIND_PASSWORD_HASH` placeholder;
 real passwords must be generated during provisioning.
 Packaged directories/executables use mode `0755` and public assets use `0644`,
 so runtime access does not require the builder's UID or extra capabilities.
 The enclosing output directory and archive remain owner-only.
+With explicit Rust inputs it additionally includes seven dynamically linked
+Linux ARM64 tools and `rust-release.json`. They require a compatible Linux
+loader, glibc/GCC runtime, OpenSSL 3 and libpcap; no shared-library tree or base
+image is silently copied from the recovery VM.
 
 ## Offline smoke validation
 
@@ -68,6 +89,12 @@ provisioning, runnable ZPR nodes/adapters, policy compilation/install, UI login,
 all seventeen scenarios, AI setup, or supported minimum resources. It does not
 run an HTTP server or expose ports. No generated trust material is a public
 release artifact.
+When Rust tools are included, the scratch harness checks their membership,
+architecture, file size and recorded release hashes, but does **not** execute
+them without their dynamic libraries. Its receipt explicitly records
+`rust_runtime_tested: false`. Native runtime acceptance below must run the
+binaries and assets extracted from the exact archive, not the input staging
+directory, before claiming the assembled Rust contents were exercised.
 
 ## Native Rust prerequisite and policy probe
 
@@ -80,7 +107,8 @@ sh probe-rust-runtime.sh /absolute/compiled-bin /absolute/examples /absolute/new
 
 It requires the seven separately built `ph`, `ph-cli`, `vs`, `vs-admin`,
 `vsapikey`, `zplc`, `zpt` executables plus the compiled `zpr-web-dashboard`.
-These Rust binaries are **not yet part of this engineering archive**.
+These Rust binaries are included only when the explicit Rust assembly inputs
+above are supplied.
 Only run reviewed locally built executables; `ldd` is not a safe scanner for
 untrusted executables. ELF/CLI probes do not prove binary source equivalence.
 Inputs and the evidence parent must be in operator-protected directories.
@@ -147,8 +175,9 @@ The input receipt must be independently generated from the exact committed
 archives supplied to the build; it is engineering evidence, not signed supply
 chain attestation. Runtime/library and policy-build probes remain separate.
 
-The full compiled download still needs node/adapter/Visa/compiler binaries and
-runtime images, license/provenance review for every dependency, a complete
+The full compiled download still needs runtime images and service launch
+integration for the now optionally assembled binaries, license/provenance
+review for every dependency, a complete
 fresh-identity/service bootstrap, independent operator configuration, safe
 first-run setup with optional AI disclosure/key storage, and clean-install plus
 full scenario/browser acceptance. Go build information is not a complete SBOM.
