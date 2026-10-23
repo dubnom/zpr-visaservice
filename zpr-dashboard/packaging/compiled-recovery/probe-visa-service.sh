@@ -54,16 +54,18 @@ sha256sum -c "$evidence/before-refusal.sha256" > "$evidence/nonoverwrite.txt"
     fail "generated files are readable outside the owner"
 [ -z "$(find "$evidence" -type d \( -perm -007 -o -perm -070 \) -print)" ] ||
     fail "generated directories are accessible outside the owner"
-redis-server --port 0 --unixsocket "$state/database/redis.sock" --unixsocketperm 700 \
-    --dir "$state/database" --save '' --appendonly yes --appendfsync always > "$evidence/redis.log" 2>&1 &
-redis_pid=$!
-attempt=0
-until [ "$(redis-cli -s "$state/database/redis.sock" --raw PING 2>/dev/null)" = PONG ]; do
-    kill -0 "$redis_pid" || fail "private Redis process exited"
-    [ "$attempt" -lt 50 ] || fail "private Redis readiness timed out"
-    attempt=$((attempt + 1))
-    sleep 0.2
-done
+start_redis() {
+    redis-server --port 0 --unixsocket "$state/database/redis.sock" --unixsocketperm 700 \
+        --dir "$state/database" --save '' --appendonly yes --appendfsync always >> "$evidence/redis.log" 2>&1 &
+    redis_pid=$!
+    attempt=0
+    until [ "$(redis-cli -s "$state/database/redis.sock" --raw PING 2>/dev/null)" = PONG ]; do
+        kill -0 "$redis_pid" || fail "private Redis process exited"
+        [ "$attempt" -lt 50 ] || fail "private Redis readiness timed out"
+        attempt=$((attempt + 1))
+        sleep 0.2
+    done
+}
 start_visa() {
     "$bin/vs" --config "$state/vs.toml" "$@" >> "$evidence/visa.log" 2>&1 &
     visa_pid=$!
@@ -86,6 +88,7 @@ request() {
     curl --silent --show-error --noproxy '*' --connect-timeout 1 --max-time 5 \
         --cacert "$state/authority.pem" "$@"
 }
+start_redis
 start_visa "$state/bootstrap.bin2"
 admin network > "$evidence/network.json"
 admin actors > "$evidence/actors.json"
@@ -128,6 +131,10 @@ request --fail -H "@$evidence/administrator-header" -H 'Content-Type: applicatio
 kill "$visa_pid"
 wait "$visa_pid"
 visa_pid=
+kill "$redis_pid"
+wait "$redis_pid"
+redis_pid=
+start_redis
 start_visa
 admin policies --curr > "$evidence/restarted-policy.json"
 admin network > "$evidence/restarted-network.json"

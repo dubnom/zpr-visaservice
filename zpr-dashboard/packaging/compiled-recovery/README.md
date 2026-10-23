@@ -183,7 +183,8 @@ and non-overwrite behavior, starts its own Redis via a private Unix socket
 (no TCP listener), then starts Visa on namespace loopback. It verifies TLS
 using curl and requires rejection of another installation's CA/API key,
 anonymous rejection, read-only observer enforcement, successful administrator
-policy installation and persisted policy/network state after Visa restart.
+policy installation and persisted policy/network state after both Visa and
+Redis are stopped and restarted (without supplying the initial policy again).
 Owned child PIDs are stopped on exit; no shared database is cleared or reused.
 All generated keys, database files and full evidence remain **private**.
 The enclosing harness must remove private test state after preserving only
