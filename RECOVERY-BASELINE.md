@@ -957,6 +957,39 @@ behavior, production setup or complete demo acceptance.
 Superseded raw failure outputs were removed after preserving selected JSON
 receipts in `validation/peer-reset-development-20261023`.
 
+### Limited preview goal and rights-review status
+
+The next product goal is an invite-only, self-hosted Linux ARM64 download for
+only explicitly tested workflows; optional AI is disabled and out of scope.
+This does not assert five-organization/seventeen-scenario completion. No
+participant distribution, public download, website change, or promotion has
+been authorized or performed. The exact staged gates are in the external
+`COMPILED-DOWNLOAD-PLAN.md`.
+
+Initial component inventory for the current archive
+(`4b98f53618e1c5534b6e5bff45b19d2cec8febb8fec2c7c83b6d5ac874df816a`) is
+retained under `validation/limited-preview-license-review-20261023` and is
+**not** redistribution clearance:
+
+- 526 Rust ARM64 normal/build dependency package versions; 31 declared license
+  expressions; four crates have no Cargo license field, though their exact
+  source roots have Apache-2.0 license files. MPL-2.0 packages are present and
+  their notice/source obligations need review.
+- 20 Go module versions linked into the four release binaries. Twenty-eight
+  license/notice files exist in the local module cache, but none of these Go
+  dependency notices are in the compiled archive. Offline module-graph listing
+  also encounters a missing go.sum entry for `gopkg.in/check.v1`.
+- 129 installed OS packages (37 retained `.deb` inputs); each maps to a
+  `/usr/share/doc/<package>/copyright` path in the image, including shared
+  notices and symlinks. The pinned Ubuntu base and package notices still need
+  review and bundling.
+- The archive currently includes only four project/frontend notice files, not
+  the full Go/Rust/OS third-party notice set. Demo asset provenance is also
+  unresolved.
+
+The rights-review task remains active. No release rights are inferred from
+build success, package metadata, or the presence of a license file alone.
+
 ## Adapter retention and main promotion
 
 Core is a separate repository. Its adapter development is preserved at
