@@ -356,7 +356,78 @@ This proves direct RSA node admission and VSS synchronization. It does **not**
 prove Noise peer handshakes, a Visa adapter, inter-node forwarding, workloads,
 node restart/revocation or the production least-privilege/runtime-image contract.
 
-## Remaining release gates
+## PH container launch and process restart
+
+The [node image probe](probe-node-image.cjs) qualifies an additional narrow
+launch contract using the **unchanged exact saved runtime image**:
+
+```sh
+node packaging/compiled-recovery/probe-node-image.cjs \
+  /absolute/private/image-build /absolute/private/new-node-evidence \
+  explicit-isolated-context expected-daemon-id
+```
+
+The image build must retain `context/runtime/rust-release.json` for independent
+binary-hash comparisons. Inputs/checksums, daemon identity and ARM64 architecture
+are verified before creating resources; existing evidence is refused.
+Docker must support internal IPv6-only bridge networks and the guest must
+already expose `/dev/net/tun`. Missing prerequisites fail explicitly.
+
+The probe creates a unique internal IPv6-only Docker bridge and exactly two
+runtime namespaces, Visa at `fd00:5a::3` and PH at `fd00:5a::2`. The fixed
+`fd00:5a::/64` subnet is engineering-only and overlap is an error, never a reason
+to alter another network. Neither namespace has an IPv4/IPv6 default route;
+no port is published and no host/source/socket directory is mounted. This is
+an internal Docker bridge, **not** the `--network none` service-only gate.
+The Docker daemon necessarily creates the bridge in the isolated guest.
+
+Short-lived setup containers join only those owned namespaces, run as root
+with **NET_ADMIN only**, and create the private addresses/routes plus a persistent
+multiqueue TUN owned by UID 501. They have read-only roots, no-new-privileges,
+no private state mounts and no SYS_ADMIN/privileged mode. The PH container
+receives `/dev/net/tun:rw`; Visa does not. Persistent-TUN ownership lets the
+existing PH binary open its queues/set carrier without NET_ADMIN at runtime.
+The exact preconfigured node address is intentional; this does not qualify an
+adapter dynamically assigning addresses or changing network routes.
+
+Both runtime containers use UID 501/GID 1000, cap-drop ALL, read-only roots,
+no-new-privileges, PID limit 128, memory limit 512 MiB and CPU quota 1.
+Effective capabilities are verified on the running PH, Visa and Redis processes,
+not inferred solely from Docker flags. No root volume initializer is needed.
+Visa/Redis state and PH state occupy separate disposable volumes. An unprivileged,
+network-disabled transfer container copies only the node's authority certificate,
+Noise certificate/private key, RSA node key and config; administrator/API keys,
+CA private key and database are not exposed to PH. A second RSA key exists in
+PH state solely for the explicit negative test.
+
+Before admission, missing TUN device and a TUN owned by UID 502 must each cause
+the release-built PH to abort with exit 134 and the exact TUN-create reason:
+missing file vs operation not permitted. This inherited panic/abort behavior
+is recorded, not presented as a polished setup diagnostic. No Rust source is
+changed. A wrong-owned TUN is removed/recreated inside the disposable namespace,
+not reassigned by weakening permissions or adding runtime capabilities.
+
+Next, a foreign RSA key must produce Visa's explicit signature rejection and
+an empty node inventory. The matching fresh PH must be granted access, register
+VSS, and appear under the exact CN/address with synchronized state/zero pending
+installs. PH is stopped by its exact captured PID, verified exited, restarted
+with the same node state, and must again receive its own grant/VSS registration.
+Visa must still show exactly one synchronized node. This tests a **PH process
+restart**, not a container/VM restart, revocation or full lifecycle recovery.
+
+Only selected public node summaries, inventories, grant/rejection lines, process
+status/route receipts and binary hashes leave the volumes. Raw logs/credentials
+and Redis data never leave them. Containers (including helpers), both private
+volumes and the internal network are removed in dependency order on exit.
+Success is recorded only after cleanup succeeds.
+
+This proves a capability-free, preconfigured **node** launch and re-admission.
+It does not prove Noise peer handshakes, adapter admission/dynamic addressing,
+allowed/denied workload forwarding, revocation or production network supervision.
+Those are the next gates; no privileged runtime container is justified by this
+engineering probe.
+
+## Remaining product gates
 
 The [native Rust release builder](build-rust-release.sh) builds only the seven
 required Rust binaries from committed source archives, with locked dependencies,

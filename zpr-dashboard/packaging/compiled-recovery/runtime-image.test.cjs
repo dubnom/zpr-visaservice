@@ -97,6 +97,7 @@ test("wrong daemon refuses before acquisition, build or probe", t => {
     ["acquire-runtime-inputs.cjs", [f.output, "test-context", "wrong", `ubuntu@sha256:${"a".repeat(64)}`]],
     ["build-runtime-image.cjs", [f.build, f.inputs, f.output, "test-context", "wrong"]],
     ["probe-runtime-image.cjs", [f.build, f.output, "test-context", "wrong"]],
+    ["probe-node-image.cjs", [f.build, f.output, "test-context", "wrong"]],
   ]) {
     const result = f.run(script, args);
     assert.notEqual(result.status, 0);
@@ -104,6 +105,31 @@ test("wrong daemon refuses before acquisition, build or probe", t => {
     assert.equal(fs.existsSync(f.output), false);
   }
 });
+
+for (const [label, change] of [
+  ["changed image bytes", f => fs.appendFileSync(path.join(f.build, "runtime-image.tar.gz"), "changed")],
+  ["wrong image target", (f, image) => { image.target = "linux/amd64"; }],
+  ["wrong image kind", (f, image) => { image.kind = "unknown"; }],
+  ["invalid image identity", (f, image) => { image.image_id = "moving:tag"; }],
+  ["wrong checksum sidecar", f => fs.writeFileSync(path.join(f.build, "runtime-image.tar.gz.sha256"), "wrong")],
+  ["existing evidence", f => { fs.mkdirSync(f.output); fs.writeFileSync(path.join(f.output, "sentinel"), "unchanged"); }],
+]) {
+  test(`node container probe refuses ${label} before image load or resource creation`, t => {
+    const f = fixture(t);
+    const image = { kind: "compiled-runtime-image", target: "linux/arm64", public_release: false,
+      image_id: `sha256:${"a".repeat(64)}`, download_sha256: hash("image") };
+    fs.writeFileSync(path.join(f.build, "runtime-image.tar.gz"), "image");
+    fs.writeFileSync(path.join(f.build, "runtime-image.tar.gz.sha256"), `${image.download_sha256}  runtime-image.tar.gz\n`);
+    change(f, image);
+    fs.writeFileSync(path.join(f.build, "image.json"), JSON.stringify(image));
+    const result = f.run("probe-node-image.cjs", [f.build, f.output, "test-context", "test-daemon"]);
+    assert.notEqual(result.status, 0);
+    const calls = fs.readFileSync(f.log, "utf8").trim().split("\n").map(line => JSON.parse(line));
+    assert.ok(calls.every(args => args[2] === "info"));
+    if (label === "existing evidence") assert.equal(fs.readFileSync(path.join(f.output, "sentinel"), "utf8"), "unchanged");
+    else assert.equal(fs.existsSync(f.output), false);
+  });
+}
 
 test("input acquisition refuses mutable tags before invoking Docker", t => {
   const f = fixture(t);

@@ -191,6 +191,21 @@ Removing its last tag may already remove the image; inspect before another remov
 This all-tools image qualifies loopback Visa/Redis only. PH networking, service
 decomposition, supervision, backup/restore and full installer remain separate.
 
+For the additional preconfigured PH node container contract:
+
+```sh
+node packaging/compiled-recovery/probe-node-image.cjs \
+  "$IMAGE_BUILD" "$EVIDENCE" "$CONTEXT" "$DAEMON"
+```
+
+Use new evidence. This requires an isolated Docker target with internal IPv6
+network support and existing Linux TUN. Short-lived setup helpers receive
+NET_ADMIN only inside owned container namespaces; PH itself runs nonroot with
+zero capabilities, a preowned TUN and separate node-only credentials. Require
+missing-device/wrong-owner failures, foreign RSA rejection, synchronized admission
+and PH process restart/re-admission. Do not count it as adapter dynamic-address
+permissions, Noise peer trust, forwarding or container/VM restart acceptance.
+
 ## 7. Verify, sanitize, persist and report
 
 For packaging changes run the focused suite from `zpr-dashboard/`:
