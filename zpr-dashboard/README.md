@@ -41,6 +41,78 @@ production enrollment, or update previously published downloads.
 
 To setup your development environment, run `go mod download` to install the local dependencies. Finally, run `make run` to start the TUI.
 
+## Independent operator startup (C03/C06)
+
+`scripts/dashboard-stack.sh` now defaults to **production operator startup**.
+It dispatches before loading any lab helpers or resolving lab runtime paths.
+It never starts Simulator, Policy-Service, LDAP, DNS, relays, observability or
+local login infrastructure. Provision those independently; Policy-Service owns
+organization/configuration revisions. The explicit organization ID is an operator
+request scope, not a source of authoritative organization state.
+
+```sh
+# Copy/edit this template into an operator-owned protected configuration location.
+# It deliberately has no usable credentials or automatically selected image.
+export ZPR_OPERATOR_STACK_CONFIG=/etc/zpr/operator/stack.json
+sh scripts/dashboard-stack.sh check    # read-only local validation; no Docker/API calls
+sh scripts/dashboard-stack.sh start
+sh scripts/dashboard-stack.sh status
+sh scripts/dashboard-stack.sh restart-control-room
+sh scripts/dashboard-stack.sh restart-control-service
+sh scripts/dashboard-stack.sh stop     # only the two configured, ownership-labelled containers
+```
+
+Contract: Python 3 and Docker CLI; version-1 JSON, as shown in
+[`examples/operator-stack.json`](examples/operator-stack.json). All images,
+container names, host-loopback port publications, environment values and mounts
+are explicit. Both service entries are required and their organization scopes
+must match. No shell evaluation, environment interpolation, image build or
+inherited `ZPR_*`/lab settings occur. Missing/unknown fields, absent required
+production settings/files, unmounted `_FILE`/`_DIR` references and invalid HTTPS origins
+fail before container mutation. `check` checks local shape/path availability,
+not credential validity, named-user login, provider readiness or image contents.
+Use approved operator images providing `/usr/local/bin/zpr-web-dashboard`;
+this launcher does not yet prove a Simulator-free binary/package build graph.
+
+Control-Service requires its listener and server/client-CA TLS files, explicit
+Admin URL/CA/key, Policy-Service URL/mTLS files and organization scope. Control
+Room requires its explicit listener, service URL/mTLS files, organization,
+HTTPS origin/server TLS, OIDC configuration/secret and delegation signer/key.
+Configure any custom OIDC CA, enrollment/trust, source/feed, log, diagnostics,
+provider-manager, budget or store inputs through additional explicit environment
+values **and named mounts**. Configuration and secret mounts should be read-only;
+only named operator state directories should be writable. No runtime tree,
+Docker socket, demo directory or network is mounted/discovered by default.
+Network names are optional explicit `networks` lists; the launcher never creates
+networks or providers. Optional DNS transfer is disabled unless both
+`ZPR_DNS_TRANSFER_ADDR` and `ZPR_DNS_TRANSFER_TSIG_KEY_FILE` are explicitly set;
+`ZPR_DNS_STATS_URL` is also independent, without an automatic local relay.
+Missing optional sources keep the service's explicit unavailable behavior.
+
+Start order is Control-Service then Control Room; stop order is reversed.
+`restart`/`stop` inspect **all** targets' deployment/service ownership labels
+before mutation and refuse foreign containers. Simulator lab lifecycle also refuses ownership-labelled operator containers,
+even if an operator deliberately reuses a legacy lab container name.
+Startup verifies that each
+launched container remains running, not that its external providers are healthy.
+Operators must verify readiness/login against their production endpoints.
+The existing direct-binary loopback/degraded-provider behavior is unchanged.
+
+Legacy disposable-lab orchestration is explicitly Simulator-owned:
+`simulator-start`, `simulator-restart`, `simulator-stop`, `simulator-status`,
+`simulator-restart-control-room`, `simulator-restart-control-service` and
+`simulator-stop-control-service`, `simulator-restart-policy-service` and
+`simulator-stop-policy-service`. Bare policy lifecycle commands fail with an
+independent-deployment instruction rather than selecting a lab profile.
+Its profile/session/runtime translation lives
+in `scripts/simulator-control-adapter.sh`; organization activation uses only these
+lab commands. These are not production deployment commands. Other explicitly
+lab-specific commands (DNS, machines, Simulator UI) retain their old names.
+This separation does not claim production static-asset isolation, elimination of
+the legacy synthetic source-name branch, full named-user/provider acceptance or
+C06 completion.
+
+
 ## Guarded policy composition (contract-verified; disabled by default)
 
 Change Review captures an optional immutable staged candidate alongside the saved
@@ -2824,7 +2896,7 @@ Restart Control-Service using its existing operator environment (retain configur
 LDAP/admin/diagnostics settings), then run:
 
 ```sh
-sh scripts/dashboard-stack.sh restart-control-room
+sh scripts/dashboard-stack.sh simulator-restart-control-room
 ```
 
 The launcher mounts only the Room certificate/key, OIDC config/client secret,

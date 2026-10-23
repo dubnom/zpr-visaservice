@@ -105,14 +105,12 @@ func TestControlServiceDNSStatsHasNoSimulatorRelayDefault(t *testing.T) {
 	if strings.Contains(launch, "$DNS_STATS_RELAY_PORT") {
 		t.Fatal("Control-Service defaults to Simulator-owned statistics relay")
 	}
-	for _, required := range []string{
-		"control_dns_stats_url=${ZPR_DNS_STATS_URL:-}",
-		`sh "$SCRIPT_DIR/control-dns-stats.sh" start "$control_dns_stats_config"`,
-		"control_dns_stats_url=http://zpr-dns-stats-relay:8054",
-		`docker network connect "$control_dns_stats_network" "$CONTROL_CONTAINER"`,
-	} {
-		if !strings.Contains(launch, required) {
-			t.Fatalf("missing operator DNS statistics configuration %q", required)
+	if !strings.Contains(launch, `python3 "$SCRIPT_DIR/control-stack.py" start-control-service`) {
+		t.Fatal("Control-Service must use independent operator configuration")
+	}
+	for _, forbidden := range []string{"control-dns-stats.sh", "zpr-dns-stats-relay", "STATE_DIR", "start_local_observability"} {
+		if strings.Contains(launch, forbidden) {
+			t.Fatalf("Control-Service starts or discovers an implicit DNS/observability dependency: %s", forbidden)
 		}
 	}
 }

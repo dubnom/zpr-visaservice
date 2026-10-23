@@ -340,7 +340,7 @@ func TestChangeReviewLauncherPreflightKeepsOperatorSecretsOutsideDatabaseMount(t
 	if !found {
 		t.Fatal("launcher preflight is missing")
 	}
-	helper, _, found = strings.Cut(helper, "\nstart_control_room() {")
+	helper, _, found = strings.Cut(helper, "\n}\n")
 	if !found {
 		t.Fatal("launcher preflight boundary is missing")
 	}
@@ -354,7 +354,7 @@ func TestChangeReviewLauncherPreflightKeepsOperatorSecretsOutsideDatabaseMount(t
 	}
 	configPath := filepath.Join(directory, "config.json")
 	scriptPath := filepath.Join(directory, "preflight.sh")
-	script := "set -eu\nOPERATOR_DIR=$1\nZPR_CHANGE_REVIEW_CONFIG_FILE=$2\nconfigure_change_review() {" + helper + "\nconfigure_change_review\n"
+	script := "set -eu\nOPERATOR_DIR=$1\nZPR_CHANGE_REVIEW_CONFIG_FILE=$2\nconfigure_change_review() {" + helper + "\n}\nconfigure_change_review\n"
 	if err := os.WriteFile(scriptPath, []byte(script), 0600); err != nil {
 		t.Fatal(err)
 	}
