@@ -1,0 +1,2034 @@
+{
+  "config": {
+    "argv": [
+      "/opt/homebrew/Cellar/node/26.10.0_2/bin/node",
+      "/Volumes/Storage/dubnom/zipsquat/ZPR Docs/zpr-visaservice.worktrees/maturing-w5-browser-stability/zpr-dashboard/node_modules/.bin/playwright",
+      "test",
+      "dashboard.spec.mjs",
+      "geography.spec.mjs",
+      "--project=desktop",
+      "--grep=(?:Scenario\\ JSON\\ transport\\ keeps\\ failed\\ creation\\ unsaved\\ and\\ preserves\\ explicit\\ creation\\ payloads|Policy\\ runtime\\ cancellation\\ cannot\\ release\\ a\\ newer\\ pre\\-save\\ fixtures\\ request|World\\ Map\\ Fit\\ reframes\\ the\\ current\\ viewport\\ after\\ manual\\ zoom\\ and\\ resize)$",
+      "--repeat-each=10",
+      "--workers=2",
+      "--retries=0",
+      "--trace=off",
+      "--reporter=json,list"
+    ],
+    "configFile": "/Volumes/Storage/dubnom/zipsquat/ZPR Docs/zpr-visaservice.worktrees/maturing-w5-browser-stability/zpr-dashboard/playwright.config.mjs",
+    "rootDir": "/Volumes/Storage/dubnom/zipsquat/ZPR Docs/zpr-visaservice.worktrees/maturing-w5-browser-stability/zpr-dashboard/tests/browser",
+    "failOnFlakyTests": false,
+    "forbidOnly": false,
+    "fullyParallel": true,
+    "globalSetup": null,
+    "globalTeardown": null,
+    "globalTimeout": 0,
+    "grep": {},
+    "grepInvert": null,
+    "maxFailures": 0,
+    "metadata": {
+      "actualWorkers": 2
+    },
+    "preserveOutput": "always",
+    "projects": [
+      {
+        "outputDir": "/Volumes/Storage/dubnom/zipsquat/ZPR Docs/zpr-visaservice.worktrees/maturing-w5-browser-stability/zpr-dashboard/test-results",
+        "repeatEach": 10,
+        "retries": 0,
+        "metadata": {
+          "actualWorkers": 2
+        },
+        "id": "desktop",
+        "name": "desktop",
+        "testDir": "/Volumes/Storage/dubnom/zipsquat/ZPR Docs/zpr-visaservice.worktrees/maturing-w5-browser-stability/zpr-dashboard/tests/browser",
+        "testIgnore": [],
+        "testMatch": [
+          "**/*.@(spec|test).?(c|m)[jt]s?(x)"
+        ],
+        "timeout": 30000
+      },
+      {
+        "outputDir": "/Volumes/Storage/dubnom/zipsquat/ZPR Docs/zpr-visaservice.worktrees/maturing-w5-browser-stability/zpr-dashboard/test-results",
+        "repeatEach": 1,
+        "retries": 0,
+        "metadata": {
+          "actualWorkers": 2
+        },
+        "id": "tablet",
+        "name": "tablet",
+        "testDir": "/Volumes/Storage/dubnom/zipsquat/ZPR Docs/zpr-visaservice.worktrees/maturing-w5-browser-stability/zpr-dashboard/tests/browser",
+        "testIgnore": [],
+        "testMatch": [
+          "**/*.@(spec|test).?(c|m)[jt]s?(x)"
+        ],
+        "timeout": 30000
+      }
+    ],
+    "quiet": false,
+    "reporter": [
+      [
+        "json"
+      ],
+      [
+        "list"
+      ]
+    ],
+    "reportSlowTests": {
+      "max": 5,
+      "threshold": 300000
+    },
+    "shard": null,
+    "tags": [],
+    "updateSnapshots": "missing",
+    "updateSourceMethod": "patch",
+    "version": "1.63.0",
+    "workers": 2,
+    "webServer": null
+  },
+  "suites": [
+    {
+      "title": "dashboard.spec.mjs",
+      "file": "dashboard.spec.mjs",
+      "column": 0,
+      "line": 0,
+      "specs": [
+        {
+          "title": "Scenario JSON transport keeps failed creation unsaved and preserves explicit creation payloads",
+          "ok": false,
+          "tags": [],
+          "tests": [
+            {
+              "timeout": 30000,
+              "annotations": [],
+              "expectedStatus": "passed",
+              "projectId": "desktop",
+              "projectName": "desktop",
+              "results": [
+                {
+                  "workerIndex": 0,
+                  "parallelIndex": 0,
+                  "status": "failed",
+                  "duration": 725,
+                  "error": {
+                    "message": "Error: \u001b[2mexpect(\u001b[22m\u001b[31mreceived\u001b[39m\u001b[2m).\u001b[22mtoEqual\u001b[2m(\u001b[22m\u001b[32mexpected\u001b[39m\u001b[2m) // deep equality\u001b[22m\n\n\u001b[32m- Expected  - 0\u001b[39m\n\u001b[31m+ Received  + 1\u001b[39m\n\n\u001b[33m@@ -33,6 +33,7 @@\u001b[39m\n\u001b[2m          },\u001b[22m\n\u001b[2m        ],\u001b[22m\n\u001b[2m      },\u001b[22m\n\u001b[2m      \"summary\": \"Initial version\",\u001b[22m\n\u001b[2m    },\u001b[22m\n\u001b[31m+   null,\u001b[39m\n\u001b[2m  ]\u001b[22m",
+                    "stack": "Error: \u001b[2mexpect(\u001b[22m\u001b[31mreceived\u001b[39m\u001b[2m).\u001b[22mtoEqual\u001b[2m(\u001b[22m\u001b[32mexpected\u001b[39m\u001b[2m) // deep equality\u001b[22m\n\n\u001b[32m- Expected  - 0\u001b[39m\n\u001b[31m+ Received  + 1\u001b[39m\n\n\u001b[33m@@ -33,6 +33,7 @@\u001b[39m\n\u001b[2m          },\u001b[22m\n\u001b[2m        ],\u001b[22m\n\u001b[2m      },\u001b[22m\n\u001b[2m      \"summary\": \"Initial version\",\u001b[22m\n\u001b[2m    },\u001b[22m\n\u001b[31m+   null,\u001b[39m\n\u001b[2m  ]\u001b[22m\n    at /Volumes/Storage/dubnom/zipsquat/ZPR Docs/zpr-visaservice.worktrees/maturing-w5-browser-stability/zpr-dashboard/tests/browser/dashboard.spec.mjs:1940:18",
+                    "location": {
+                      "file": "/Volumes/Storage/dubnom/zipsquat/ZPR Docs/zpr-visaservice.worktrees/maturing-w5-browser-stability/zpr-dashboard/tests/browser/dashboard.spec.mjs",
+                      "column": 18,
+                      "line": 1940
+                    },
+                    "snippet": "  1938 |   await page.locator(\"#scenario-editor-save\").click();\n  1939 |   await expect(page.locator(\"#scenario-editor-status\")).toHaveText(\"Saved version 1. Publish it to enable runs.\");\n> 1940 |   expect(writes).toEqual(Array.from({ length: 2 }, () => ({ scenario, summary: \"Initial version\", expected_revision: 0 })));\n       |                  ^\n  1941 |   expect(api.counts.get(endpoint + \"/created-transport/publish\") || 0).toBe(0);\n  1942 |   expect(api.counts.get(\"/api/simulator/scenarios/run\") || 0).toBe(0);\n  1943 | });"
+                  },
+                  "errors": [
+                    {
+                      "location": {
+                        "file": "/Volumes/Storage/dubnom/zipsquat/ZPR Docs/zpr-visaservice.worktrees/maturing-w5-browser-stability/zpr-dashboard/tests/browser/dashboard.spec.mjs",
+                        "column": 18,
+                        "line": 1940
+                      },
+                      "message": "Error: \u001b[2mexpect(\u001b[22m\u001b[31mreceived\u001b[39m\u001b[2m).\u001b[22mtoEqual\u001b[2m(\u001b[22m\u001b[32mexpected\u001b[39m\u001b[2m) // deep equality\u001b[22m\n\n\u001b[32m- Expected  - 0\u001b[39m\n\u001b[31m+ Received  + 1\u001b[39m\n\n\u001b[33m@@ -33,6 +33,7 @@\u001b[39m\n\u001b[2m          },\u001b[22m\n\u001b[2m        ],\u001b[22m\n\u001b[2m      },\u001b[22m\n\u001b[2m      \"summary\": \"Initial version\",\u001b[22m\n\u001b[2m    },\u001b[22m\n\u001b[31m+   null,\u001b[39m\n\u001b[2m  ]\u001b[22m\n\n  1938 |   await page.locator(\"#scenario-editor-save\").click();\n  1939 |   await expect(page.locator(\"#scenario-editor-status\")).toHaveText(\"Saved version 1. Publish it to enable runs.\");\n> 1940 |   expect(writes).toEqual(Array.from({ length: 2 }, () => ({ scenario, summary: \"Initial version\", expected_revision: 0 })));\n       |                  ^\n  1941 |   expect(api.counts.get(endpoint + \"/created-transport/publish\") || 0).toBe(0);\n  1942 |   expect(api.counts.get(\"/api/simulator/scenarios/run\") || 0).toBe(0);\n  1943 | });\n    at /Volumes/Storage/dubnom/zipsquat/ZPR Docs/zpr-visaservice.worktrees/maturing-w5-browser-stability/zpr-dashboard/tests/browser/dashboard.spec.mjs:1940:18"
+                    }
+                  ],
+                  "stdout": [],
+                  "stderr": [],
+                  "retry": 0,
+                  "startTime": "2026-10-23T21:27:31.609Z",
+                  "annotations": [],
+                  "attachments": [
+                    {
+                      "name": "screenshot",
+                      "contentType": "image/png",
+                      "path": "/Volumes/Storage/dubnom/zipsquat/ZPR Docs/zpr-visaservice.worktrees/maturing-w5-browser-stability/zpr-dashboard/test-results/dashboard-Scenario-JSON-tr-077ed--explicit-creation-payloads-desktop/test-failed-1.png"
+                    },
+                    {
+                      "name": "error-context",
+                      "contentType": "text/markdown",
+                      "path": "/Volumes/Storage/dubnom/zipsquat/ZPR Docs/zpr-visaservice.worktrees/maturing-w5-browser-stability/zpr-dashboard/test-results/dashboard-Scenario-JSON-tr-077ed--explicit-creation-payloads-desktop/error-context.md"
+                    }
+                  ],
+                  "errorLocation": {
+                    "file": "/Volumes/Storage/dubnom/zipsquat/ZPR Docs/zpr-visaservice.worktrees/maturing-w5-browser-stability/zpr-dashboard/tests/browser/dashboard.spec.mjs",
+                    "column": 18,
+                    "line": 1940
+                  }
+                }
+              ],
+              "status": "unexpected"
+            }
+          ],
+          "id": "cc3070f185481daa6f24-f9d4bda33a2de34a9120",
+          "file": "dashboard.spec.mjs",
+          "line": 1917,
+          "column": 1
+        },
+        {
+          "title": "Policy runtime cancellation cannot release a newer pre-save fixtures request",
+          "ok": false,
+          "tags": [],
+          "tests": [
+            {
+              "timeout": 30000,
+              "annotations": [],
+              "expectedStatus": "passed",
+              "projectId": "desktop",
+              "projectName": "desktop",
+              "results": [
+                {
+                  "workerIndex": 1,
+                  "parallelIndex": 1,
+                  "status": "timedOut",
+                  "duration": 30090,
+                  "error": {
+                    "message": "\u001b[31mTest timeout of 30000ms exceeded.\u001b[39m",
+                    "stack": "\u001b[31mTest timeout of 30000ms exceeded.\u001b[39m"
+                  },
+                  "errors": [
+                    {
+                      "message": "\u001b[31mTest timeout of 30000ms exceeded.\u001b[39m"
+                    },
+                    {
+                      "location": {
+                        "file": "/Volumes/Storage/dubnom/zipsquat/ZPR Docs/zpr-visaservice.worktrees/maturing-w5-browser-stability/zpr-dashboard/tests/browser/dashboard.spec.mjs",
+                        "column": 40,
+                        "line": 7261
+                      },
+                      "message": "Error: locator.click: Test timeout of 30000ms exceeded.\nCall log:\n\u001b[2m  - waiting for locator('#policy-save')\u001b[22m\n\u001b[2m    - locator resolved to <button disabled type=\"button\" role=\"menuitem\" id=\"policy-save\" class=\"button button-save-next\">Save</button>\u001b[22m\n\u001b[2m  - attempting click action\u001b[22m\n\u001b[2m    2 × waiting for element to be visible, enabled and stable\u001b[22m\n\u001b[2m      - element is not enabled\u001b[22m\n\u001b[2m    - retrying click action\u001b[22m\n\u001b[2m    - waiting 20ms\u001b[22m\n\u001b[2m    2 × waiting for element to be visible, enabled and stable\u001b[22m\n\u001b[2m      - element is not enabled\u001b[22m\n\u001b[2m    - retrying click action\u001b[22m\n\u001b[2m      - waiting 100ms\u001b[22m\n\u001b[2m    57 × waiting for element to be visible, enabled and stable\u001b[22m\n\u001b[2m       - element is not enabled\u001b[22m\n\u001b[2m     - retrying click action\u001b[22m\n\u001b[2m       - waiting 500ms\u001b[22m\n\n\n  7259 |     await codeEditor(page, \"policy-source\").fill(draft);\n  7260 |     await openPolicyFiles(page);\n> 7261 |     await page.locator(\"#policy-save\").click();\n       |                                        ^\n  7262 |     await expect.poll(() => completions.length).toBe(2);\n  7263 |     completions[0]();\n  7264 |     await expect.poll(() => oldFinished).toBe(true);\n    at /Volumes/Storage/dubnom/zipsquat/ZPR Docs/zpr-visaservice.worktrees/maturing-w5-browser-stability/zpr-dashboard/tests/browser/dashboard.spec.mjs:7261:40"
+                    }
+                  ],
+                  "stdout": [],
+                  "stderr": [],
+                  "retry": 0,
+                  "startTime": "2026-10-23T21:27:31.617Z",
+                  "annotations": [],
+                  "attachments": [
+                    {
+                      "name": "screenshot",
+                      "contentType": "image/png",
+                      "path": "/Volumes/Storage/dubnom/zipsquat/ZPR Docs/zpr-visaservice.worktrees/maturing-w5-browser-stability/zpr-dashboard/test-results/dashboard-Policy-runtime-c-bc411-r-pre-save-fixtures-request-desktop/test-failed-1.png"
+                    },
+                    {
+                      "name": "error-context",
+                      "contentType": "text/markdown",
+                      "path": "/Volumes/Storage/dubnom/zipsquat/ZPR Docs/zpr-visaservice.worktrees/maturing-w5-browser-stability/zpr-dashboard/test-results/dashboard-Policy-runtime-c-bc411-r-pre-save-fixtures-request-desktop/error-context.md"
+                    }
+                  ]
+                }
+              ],
+              "status": "unexpected"
+            }
+          ],
+          "id": "cc3070f185481daa6f24-f779cd8e5f8d23340312",
+          "file": "dashboard.spec.mjs",
+          "line": 7232,
+          "column": 3
+        },
+        {
+          "title": "Scenario JSON transport keeps failed creation unsaved and preserves explicit creation payloads",
+          "ok": false,
+          "tags": [],
+          "tests": [
+            {
+              "timeout": 30000,
+              "annotations": [],
+              "expectedStatus": "passed",
+              "projectId": "desktop",
+              "projectName": "desktop",
+              "results": [
+                {
+                  "workerIndex": 2,
+                  "parallelIndex": 0,
+                  "status": "failed",
+                  "duration": 668,
+                  "error": {
+                    "message": "Error: \u001b[2mexpect(\u001b[22m\u001b[31mreceived\u001b[39m\u001b[2m).\u001b[22mtoEqual\u001b[2m(\u001b[22m\u001b[32mexpected\u001b[39m\u001b[2m) // deep equality\u001b[22m\n\n\u001b[32m- Expected  - 0\u001b[39m\n\u001b[31m+ Received  + 1\u001b[39m\n\n\u001b[33m@@ -33,6 +33,7 @@\u001b[39m\n\u001b[2m          },\u001b[22m\n\u001b[2m        ],\u001b[22m\n\u001b[2m      },\u001b[22m\n\u001b[2m      \"summary\": \"Initial version\",\u001b[22m\n\u001b[2m    },\u001b[22m\n\u001b[31m+   null,\u001b[39m\n\u001b[2m  ]\u001b[22m",
+                    "stack": "Error: \u001b[2mexpect(\u001b[22m\u001b[31mreceived\u001b[39m\u001b[2m).\u001b[22mtoEqual\u001b[2m(\u001b[22m\u001b[32mexpected\u001b[39m\u001b[2m) // deep equality\u001b[22m\n\n\u001b[32m- Expected  - 0\u001b[39m\n\u001b[31m+ Received  + 1\u001b[39m\n\n\u001b[33m@@ -33,6 +33,7 @@\u001b[39m\n\u001b[2m          },\u001b[22m\n\u001b[2m        ],\u001b[22m\n\u001b[2m      },\u001b[22m\n\u001b[2m      \"summary\": \"Initial version\",\u001b[22m\n\u001b[2m    },\u001b[22m\n\u001b[31m+   null,\u001b[39m\n\u001b[2m  ]\u001b[22m\n    at /Volumes/Storage/dubnom/zipsquat/ZPR Docs/zpr-visaservice.worktrees/maturing-w5-browser-stability/zpr-dashboard/tests/browser/dashboard.spec.mjs:1940:18",
+                    "location": {
+                      "file": "/Volumes/Storage/dubnom/zipsquat/ZPR Docs/zpr-visaservice.worktrees/maturing-w5-browser-stability/zpr-dashboard/tests/browser/dashboard.spec.mjs",
+                      "column": 18,
+                      "line": 1940
+                    },
+                    "snippet": "  1938 |   await page.locator(\"#scenario-editor-save\").click();\n  1939 |   await expect(page.locator(\"#scenario-editor-status\")).toHaveText(\"Saved version 1. Publish it to enable runs.\");\n> 1940 |   expect(writes).toEqual(Array.from({ length: 2 }, () => ({ scenario, summary: \"Initial version\", expected_revision: 0 })));\n       |                  ^\n  1941 |   expect(api.counts.get(endpoint + \"/created-transport/publish\") || 0).toBe(0);\n  1942 |   expect(api.counts.get(\"/api/simulator/scenarios/run\") || 0).toBe(0);\n  1943 | });"
+                  },
+                  "errors": [
+                    {
+                      "location": {
+                        "file": "/Volumes/Storage/dubnom/zipsquat/ZPR Docs/zpr-visaservice.worktrees/maturing-w5-browser-stability/zpr-dashboard/tests/browser/dashboard.spec.mjs",
+                        "column": 18,
+                        "line": 1940
+                      },
+                      "message": "Error: \u001b[2mexpect(\u001b[22m\u001b[31mreceived\u001b[39m\u001b[2m).\u001b[22mtoEqual\u001b[2m(\u001b[22m\u001b[32mexpected\u001b[39m\u001b[2m) // deep equality\u001b[22m\n\n\u001b[32m- Expected  - 0\u001b[39m\n\u001b[31m+ Received  + 1\u001b[39m\n\n\u001b[33m@@ -33,6 +33,7 @@\u001b[39m\n\u001b[2m          },\u001b[22m\n\u001b[2m        ],\u001b[22m\n\u001b[2m      },\u001b[22m\n\u001b[2m      \"summary\": \"Initial version\",\u001b[22m\n\u001b[2m    },\u001b[22m\n\u001b[31m+   null,\u001b[39m\n\u001b[2m  ]\u001b[22m\n\n  1938 |   await page.locator(\"#scenario-editor-save\").click();\n  1939 |   await expect(page.locator(\"#scenario-editor-status\")).toHaveText(\"Saved version 1. Publish it to enable runs.\");\n> 1940 |   expect(writes).toEqual(Array.from({ length: 2 }, () => ({ scenario, summary: \"Initial version\", expected_revision: 0 })));\n       |                  ^\n  1941 |   expect(api.counts.get(endpoint + \"/created-transport/publish\") || 0).toBe(0);\n  1942 |   expect(api.counts.get(\"/api/simulator/scenarios/run\") || 0).toBe(0);\n  1943 | });\n    at /Volumes/Storage/dubnom/zipsquat/ZPR Docs/zpr-visaservice.worktrees/maturing-w5-browser-stability/zpr-dashboard/tests/browser/dashboard.spec.mjs:1940:18"
+                    }
+                  ],
+                  "stdout": [],
+                  "stderr": [],
+                  "retry": 0,
+                  "startTime": "2026-10-23T21:27:32.894Z",
+                  "annotations": [],
+                  "attachments": [
+                    {
+                      "name": "screenshot",
+                      "contentType": "image/png",
+                      "path": "/Volumes/Storage/dubnom/zipsquat/ZPR Docs/zpr-visaservice.worktrees/maturing-w5-browser-stability/zpr-dashboard/test-results/dashboard-Scenario-JSON-tr-077ed--explicit-creation-payloads-desktop-repeat1/test-failed-1.png"
+                    },
+                    {
+                      "name": "error-context",
+                      "contentType": "text/markdown",
+                      "path": "/Volumes/Storage/dubnom/zipsquat/ZPR Docs/zpr-visaservice.worktrees/maturing-w5-browser-stability/zpr-dashboard/test-results/dashboard-Scenario-JSON-tr-077ed--explicit-creation-payloads-desktop-repeat1/error-context.md"
+                    }
+                  ],
+                  "errorLocation": {
+                    "file": "/Volumes/Storage/dubnom/zipsquat/ZPR Docs/zpr-visaservice.worktrees/maturing-w5-browser-stability/zpr-dashboard/tests/browser/dashboard.spec.mjs",
+                    "column": 18,
+                    "line": 1940
+                  }
+                }
+              ],
+              "status": "unexpected"
+            }
+          ],
+          "id": "cc3070f185481daa6f24-49d8609f416a4476d53a",
+          "file": "dashboard.spec.mjs",
+          "line": 1917,
+          "column": 1
+        },
+        {
+          "title": "Policy runtime cancellation cannot release a newer pre-save fixtures request",
+          "ok": false,
+          "tags": [],
+          "tests": [
+            {
+              "timeout": 30000,
+              "annotations": [],
+              "expectedStatus": "passed",
+              "projectId": "desktop",
+              "projectName": "desktop",
+              "results": [
+                {
+                  "workerIndex": 3,
+                  "parallelIndex": 0,
+                  "status": "timedOut",
+                  "duration": 30080,
+                  "error": {
+                    "message": "\u001b[31mTest timeout of 30000ms exceeded.\u001b[39m",
+                    "stack": "\u001b[31mTest timeout of 30000ms exceeded.\u001b[39m"
+                  },
+                  "errors": [
+                    {
+                      "message": "\u001b[31mTest timeout of 30000ms exceeded.\u001b[39m"
+                    },
+                    {
+                      "location": {
+                        "file": "/Volumes/Storage/dubnom/zipsquat/ZPR Docs/zpr-visaservice.worktrees/maturing-w5-browser-stability/zpr-dashboard/tests/browser/dashboard.spec.mjs",
+                        "column": 40,
+                        "line": 7261
+                      },
+                      "message": "Error: locator.click: Test timeout of 30000ms exceeded.\nCall log:\n\u001b[2m  - waiting for locator('#policy-save')\u001b[22m\n\u001b[2m    - locator resolved to <button disabled type=\"button\" role=\"menuitem\" id=\"policy-save\" class=\"button button-save-next\">Save</button>\u001b[22m\n\u001b[2m  - attempting click action\u001b[22m\n\u001b[2m    2 × waiting for element to be visible, enabled and stable\u001b[22m\n\u001b[2m      - element is not enabled\u001b[22m\n\u001b[2m    - retrying click action\u001b[22m\n\u001b[2m    - waiting 20ms\u001b[22m\n\u001b[2m    2 × waiting for element to be visible, enabled and stable\u001b[22m\n\u001b[2m      - element is not enabled\u001b[22m\n\u001b[2m    - retrying click action\u001b[22m\n\u001b[2m      - waiting 100ms\u001b[22m\n\u001b[2m    57 × waiting for element to be visible, enabled and stable\u001b[22m\n\u001b[2m       - element is not enabled\u001b[22m\n\u001b[2m     - retrying click action\u001b[22m\n\u001b[2m       - waiting 500ms\u001b[22m\n\n\n  7259 |     await codeEditor(page, \"policy-source\").fill(draft);\n  7260 |     await openPolicyFiles(page);\n> 7261 |     await page.locator(\"#policy-save\").click();\n       |                                        ^\n  7262 |     await expect.poll(() => completions.length).toBe(2);\n  7263 |     completions[0]();\n  7264 |     await expect.poll(() => oldFinished).toBe(true);\n    at /Volumes/Storage/dubnom/zipsquat/ZPR Docs/zpr-visaservice.worktrees/maturing-w5-browser-stability/zpr-dashboard/tests/browser/dashboard.spec.mjs:7261:40"
+                    }
+                  ],
+                  "stdout": [],
+                  "stderr": [],
+                  "retry": 0,
+                  "startTime": "2026-10-23T21:27:34.098Z",
+                  "annotations": [],
+                  "attachments": [
+                    {
+                      "name": "screenshot",
+                      "contentType": "image/png",
+                      "path": "/Volumes/Storage/dubnom/zipsquat/ZPR Docs/zpr-visaservice.worktrees/maturing-w5-browser-stability/zpr-dashboard/test-results/dashboard-Policy-runtime-c-bc411-r-pre-save-fixtures-request-desktop-repeat1/test-failed-1.png"
+                    },
+                    {
+                      "name": "error-context",
+                      "contentType": "text/markdown",
+                      "path": "/Volumes/Storage/dubnom/zipsquat/ZPR Docs/zpr-visaservice.worktrees/maturing-w5-browser-stability/zpr-dashboard/test-results/dashboard-Policy-runtime-c-bc411-r-pre-save-fixtures-request-desktop-repeat1/error-context.md"
+                    }
+                  ]
+                }
+              ],
+              "status": "unexpected"
+            }
+          ],
+          "id": "cc3070f185481daa6f24-4c96ca11c8615fe67aec",
+          "file": "dashboard.spec.mjs",
+          "line": 7232,
+          "column": 3
+        },
+        {
+          "title": "Scenario JSON transport keeps failed creation unsaved and preserves explicit creation payloads",
+          "ok": false,
+          "tags": [],
+          "tests": [
+            {
+              "timeout": 30000,
+              "annotations": [],
+              "expectedStatus": "passed",
+              "projectId": "desktop",
+              "projectName": "desktop",
+              "results": [
+                {
+                  "workerIndex": 4,
+                  "parallelIndex": 1,
+                  "status": "failed",
+                  "duration": 637,
+                  "error": {
+                    "message": "Error: \u001b[2mexpect(\u001b[22m\u001b[31mreceived\u001b[39m\u001b[2m).\u001b[22mtoEqual\u001b[2m(\u001b[22m\u001b[32mexpected\u001b[39m\u001b[2m) // deep equality\u001b[22m\n\n\u001b[32m- Expected  - 0\u001b[39m\n\u001b[31m+ Received  + 1\u001b[39m\n\n\u001b[33m@@ -33,6 +33,7 @@\u001b[39m\n\u001b[2m          },\u001b[22m\n\u001b[2m        ],\u001b[22m\n\u001b[2m      },\u001b[22m\n\u001b[2m      \"summary\": \"Initial version\",\u001b[22m\n\u001b[2m    },\u001b[22m\n\u001b[31m+   null,\u001b[39m\n\u001b[2m  ]\u001b[22m",
+                    "stack": "Error: \u001b[2mexpect(\u001b[22m\u001b[31mreceived\u001b[39m\u001b[2m).\u001b[22mtoEqual\u001b[2m(\u001b[22m\u001b[32mexpected\u001b[39m\u001b[2m) // deep equality\u001b[22m\n\n\u001b[32m- Expected  - 0\u001b[39m\n\u001b[31m+ Received  + 1\u001b[39m\n\n\u001b[33m@@ -33,6 +33,7 @@\u001b[39m\n\u001b[2m          },\u001b[22m\n\u001b[2m        ],\u001b[22m\n\u001b[2m      },\u001b[22m\n\u001b[2m      \"summary\": \"Initial version\",\u001b[22m\n\u001b[2m    },\u001b[22m\n\u001b[31m+   null,\u001b[39m\n\u001b[2m  ]\u001b[22m\n    at /Volumes/Storage/dubnom/zipsquat/ZPR Docs/zpr-visaservice.worktrees/maturing-w5-browser-stability/zpr-dashboard/tests/browser/dashboard.spec.mjs:1940:18",
+                    "location": {
+                      "file": "/Volumes/Storage/dubnom/zipsquat/ZPR Docs/zpr-visaservice.worktrees/maturing-w5-browser-stability/zpr-dashboard/tests/browser/dashboard.spec.mjs",
+                      "column": 18,
+                      "line": 1940
+                    },
+                    "snippet": "  1938 |   await page.locator(\"#scenario-editor-save\").click();\n  1939 |   await expect(page.locator(\"#scenario-editor-status\")).toHaveText(\"Saved version 1. Publish it to enable runs.\");\n> 1940 |   expect(writes).toEqual(Array.from({ length: 2 }, () => ({ scenario, summary: \"Initial version\", expected_revision: 0 })));\n       |                  ^\n  1941 |   expect(api.counts.get(endpoint + \"/created-transport/publish\") || 0).toBe(0);\n  1942 |   expect(api.counts.get(\"/api/simulator/scenarios/run\") || 0).toBe(0);\n  1943 | });"
+                  },
+                  "errors": [
+                    {
+                      "location": {
+                        "file": "/Volumes/Storage/dubnom/zipsquat/ZPR Docs/zpr-visaservice.worktrees/maturing-w5-browser-stability/zpr-dashboard/tests/browser/dashboard.spec.mjs",
+                        "column": 18,
+                        "line": 1940
+                      },
+                      "message": "Error: \u001b[2mexpect(\u001b[22m\u001b[31mreceived\u001b[39m\u001b[2m).\u001b[22mtoEqual\u001b[2m(\u001b[22m\u001b[32mexpected\u001b[39m\u001b[2m) // deep equality\u001b[22m\n\n\u001b[32m- Expected  - 0\u001b[39m\n\u001b[31m+ Received  + 1\u001b[39m\n\n\u001b[33m@@ -33,6 +33,7 @@\u001b[39m\n\u001b[2m          },\u001b[22m\n\u001b[2m        ],\u001b[22m\n\u001b[2m      },\u001b[22m\n\u001b[2m      \"summary\": \"Initial version\",\u001b[22m\n\u001b[2m    },\u001b[22m\n\u001b[31m+   null,\u001b[39m\n\u001b[2m  ]\u001b[22m\n\n  1938 |   await page.locator(\"#scenario-editor-save\").click();\n  1939 |   await expect(page.locator(\"#scenario-editor-status\")).toHaveText(\"Saved version 1. Publish it to enable runs.\");\n> 1940 |   expect(writes).toEqual(Array.from({ length: 2 }, () => ({ scenario, summary: \"Initial version\", expected_revision: 0 })));\n       |                  ^\n  1941 |   expect(api.counts.get(endpoint + \"/created-transport/publish\") || 0).toBe(0);\n  1942 |   expect(api.counts.get(\"/api/simulator/scenarios/run\") || 0).toBe(0);\n  1943 | });\n    at /Volumes/Storage/dubnom/zipsquat/ZPR Docs/zpr-visaservice.worktrees/maturing-w5-browser-stability/zpr-dashboard/tests/browser/dashboard.spec.mjs:1940:18"
+                    }
+                  ],
+                  "stdout": [],
+                  "stderr": [],
+                  "retry": 0,
+                  "startTime": "2026-10-23T21:28:02.265Z",
+                  "annotations": [],
+                  "attachments": [
+                    {
+                      "name": "screenshot",
+                      "contentType": "image/png",
+                      "path": "/Volumes/Storage/dubnom/zipsquat/ZPR Docs/zpr-visaservice.worktrees/maturing-w5-browser-stability/zpr-dashboard/test-results/dashboard-Scenario-JSON-tr-077ed--explicit-creation-payloads-desktop-repeat2/test-failed-1.png"
+                    },
+                    {
+                      "name": "error-context",
+                      "contentType": "text/markdown",
+                      "path": "/Volumes/Storage/dubnom/zipsquat/ZPR Docs/zpr-visaservice.worktrees/maturing-w5-browser-stability/zpr-dashboard/test-results/dashboard-Scenario-JSON-tr-077ed--explicit-creation-payloads-desktop-repeat2/error-context.md"
+                    }
+                  ],
+                  "errorLocation": {
+                    "file": "/Volumes/Storage/dubnom/zipsquat/ZPR Docs/zpr-visaservice.worktrees/maturing-w5-browser-stability/zpr-dashboard/tests/browser/dashboard.spec.mjs",
+                    "column": 18,
+                    "line": 1940
+                  }
+                }
+              ],
+              "status": "unexpected"
+            }
+          ],
+          "id": "cc3070f185481daa6f24-5f565158eff93113adfd",
+          "file": "dashboard.spec.mjs",
+          "line": 1917,
+          "column": 1
+        },
+        {
+          "title": "Policy runtime cancellation cannot release a newer pre-save fixtures request",
+          "ok": false,
+          "tags": [],
+          "tests": [
+            {
+              "timeout": 30000,
+              "annotations": [],
+              "expectedStatus": "passed",
+              "projectId": "desktop",
+              "projectName": "desktop",
+              "results": [
+                {
+                  "workerIndex": 5,
+                  "parallelIndex": 1,
+                  "status": "timedOut",
+                  "duration": 30088,
+                  "error": {
+                    "message": "\u001b[31mTest timeout of 30000ms exceeded.\u001b[39m",
+                    "stack": "\u001b[31mTest timeout of 30000ms exceeded.\u001b[39m"
+                  },
+                  "errors": [
+                    {
+                      "message": "\u001b[31mTest timeout of 30000ms exceeded.\u001b[39m"
+                    },
+                    {
+                      "location": {
+                        "file": "/Volumes/Storage/dubnom/zipsquat/ZPR Docs/zpr-visaservice.worktrees/maturing-w5-browser-stability/zpr-dashboard/tests/browser/dashboard.spec.mjs",
+                        "column": 40,
+                        "line": 7261
+                      },
+                      "message": "Error: locator.click: Test timeout of 30000ms exceeded.\nCall log:\n\u001b[2m  - waiting for locator('#policy-save')\u001b[22m\n\u001b[2m    - locator resolved to <button disabled type=\"button\" role=\"menuitem\" id=\"policy-save\" class=\"button button-save-next\">Save</button>\u001b[22m\n\u001b[2m  - attempting click action\u001b[22m\n\u001b[2m    2 × waiting for element to be visible, enabled and stable\u001b[22m\n\u001b[2m      - element is not enabled\u001b[22m\n\u001b[2m    - retrying click action\u001b[22m\n\u001b[2m    - waiting 20ms\u001b[22m\n\u001b[2m    2 × waiting for element to be visible, enabled and stable\u001b[22m\n\u001b[2m      - element is not enabled\u001b[22m\n\u001b[2m    - retrying click action\u001b[22m\n\u001b[2m      - waiting 100ms\u001b[22m\n\u001b[2m    57 × waiting for element to be visible, enabled and stable\u001b[22m\n\u001b[2m       - element is not enabled\u001b[22m\n\u001b[2m     - retrying click action\u001b[22m\n\u001b[2m       - waiting 500ms\u001b[22m\n\n\n  7259 |     await codeEditor(page, \"policy-source\").fill(draft);\n  7260 |     await openPolicyFiles(page);\n> 7261 |     await page.locator(\"#policy-save\").click();\n       |                                        ^\n  7262 |     await expect.poll(() => completions.length).toBe(2);\n  7263 |     completions[0]();\n  7264 |     await expect.poll(() => oldFinished).toBe(true);\n    at /Volumes/Storage/dubnom/zipsquat/ZPR Docs/zpr-visaservice.worktrees/maturing-w5-browser-stability/zpr-dashboard/tests/browser/dashboard.spec.mjs:7261:40"
+                    }
+                  ],
+                  "stdout": [],
+                  "stderr": [],
+                  "retry": 0,
+                  "startTime": "2026-10-23T21:28:03.439Z",
+                  "annotations": [],
+                  "attachments": [
+                    {
+                      "name": "screenshot",
+                      "contentType": "image/png",
+                      "path": "/Volumes/Storage/dubnom/zipsquat/ZPR Docs/zpr-visaservice.worktrees/maturing-w5-browser-stability/zpr-dashboard/test-results/dashboard-Policy-runtime-c-bc411-r-pre-save-fixtures-request-desktop-repeat2/test-failed-1.png"
+                    },
+                    {
+                      "name": "error-context",
+                      "contentType": "text/markdown",
+                      "path": "/Volumes/Storage/dubnom/zipsquat/ZPR Docs/zpr-visaservice.worktrees/maturing-w5-browser-stability/zpr-dashboard/test-results/dashboard-Policy-runtime-c-bc411-r-pre-save-fixtures-request-desktop-repeat2/error-context.md"
+                    }
+                  ]
+                }
+              ],
+              "status": "unexpected"
+            }
+          ],
+          "id": "cc3070f185481daa6f24-d09e020654b4bc564ca2",
+          "file": "dashboard.spec.mjs",
+          "line": 7232,
+          "column": 3
+        },
+        {
+          "title": "Scenario JSON transport keeps failed creation unsaved and preserves explicit creation payloads",
+          "ok": true,
+          "tags": [],
+          "tests": [
+            {
+              "timeout": 30000,
+              "annotations": [],
+              "expectedStatus": "passed",
+              "projectId": "desktop",
+              "projectName": "desktop",
+              "results": [
+                {
+                  "workerIndex": 6,
+                  "parallelIndex": 0,
+                  "status": "passed",
+                  "duration": 603,
+                  "errors": [],
+                  "stdout": [],
+                  "stderr": [],
+                  "retry": 0,
+                  "startTime": "2026-10-23T21:28:04.718Z",
+                  "annotations": [],
+                  "attachments": []
+                }
+              ],
+              "status": "expected"
+            }
+          ],
+          "id": "cc3070f185481daa6f24-fb7af3979dde327da266",
+          "file": "dashboard.spec.mjs",
+          "line": 1917,
+          "column": 1
+        },
+        {
+          "title": "Policy runtime cancellation cannot release a newer pre-save fixtures request",
+          "ok": false,
+          "tags": [],
+          "tests": [
+            {
+              "timeout": 30000,
+              "annotations": [],
+              "expectedStatus": "passed",
+              "projectId": "desktop",
+              "projectName": "desktop",
+              "results": [
+                {
+                  "workerIndex": 6,
+                  "parallelIndex": 0,
+                  "status": "timedOut",
+                  "duration": 30072,
+                  "error": {
+                    "message": "\u001b[31mTest timeout of 30000ms exceeded.\u001b[39m",
+                    "stack": "\u001b[31mTest timeout of 30000ms exceeded.\u001b[39m"
+                  },
+                  "errors": [
+                    {
+                      "message": "\u001b[31mTest timeout of 30000ms exceeded.\u001b[39m"
+                    },
+                    {
+                      "location": {
+                        "file": "/Volumes/Storage/dubnom/zipsquat/ZPR Docs/zpr-visaservice.worktrees/maturing-w5-browser-stability/zpr-dashboard/tests/browser/dashboard.spec.mjs",
+                        "column": 40,
+                        "line": 7261
+                      },
+                      "message": "Error: locator.click: Test timeout of 30000ms exceeded.\nCall log:\n\u001b[2m  - waiting for locator('#policy-save')\u001b[22m\n\u001b[2m    - locator resolved to <button disabled type=\"button\" role=\"menuitem\" id=\"policy-save\" class=\"button button-save-next\">Save</button>\u001b[22m\n\u001b[2m  - attempting click action\u001b[22m\n\u001b[2m    2 × waiting for element to be visible, enabled and stable\u001b[22m\n\u001b[2m      - element is not enabled\u001b[22m\n\u001b[2m    - retrying click action\u001b[22m\n\u001b[2m    - waiting 20ms\u001b[22m\n\u001b[2m    2 × waiting for element to be visible, enabled and stable\u001b[22m\n\u001b[2m      - element is not enabled\u001b[22m\n\u001b[2m    - retrying click action\u001b[22m\n\u001b[2m      - waiting 100ms\u001b[22m\n\u001b[2m    57 × waiting for element to be visible, enabled and stable\u001b[22m\n\u001b[2m       - element is not enabled\u001b[22m\n\u001b[2m     - retrying click action\u001b[22m\n\u001b[2m       - waiting 500ms\u001b[22m\n\n\n  7259 |     await codeEditor(page, \"policy-source\").fill(draft);\n  7260 |     await openPolicyFiles(page);\n> 7261 |     await page.locator(\"#policy-save\").click();\n       |                                        ^\n  7262 |     await expect.poll(() => completions.length).toBe(2);\n  7263 |     completions[0]();\n  7264 |     await expect.poll(() => oldFinished).toBe(true);\n    at /Volumes/Storage/dubnom/zipsquat/ZPR Docs/zpr-visaservice.worktrees/maturing-w5-browser-stability/zpr-dashboard/tests/browser/dashboard.spec.mjs:7261:40"
+                    }
+                  ],
+                  "stdout": [],
+                  "stderr": [],
+                  "retry": 0,
+                  "startTime": "2026-10-23T21:28:05.435Z",
+                  "annotations": [],
+                  "attachments": [
+                    {
+                      "name": "screenshot",
+                      "contentType": "image/png",
+                      "path": "/Volumes/Storage/dubnom/zipsquat/ZPR Docs/zpr-visaservice.worktrees/maturing-w5-browser-stability/zpr-dashboard/test-results/dashboard-Policy-runtime-c-bc411-r-pre-save-fixtures-request-desktop-repeat3/test-failed-1.png"
+                    },
+                    {
+                      "name": "error-context",
+                      "contentType": "text/markdown",
+                      "path": "/Volumes/Storage/dubnom/zipsquat/ZPR Docs/zpr-visaservice.worktrees/maturing-w5-browser-stability/zpr-dashboard/test-results/dashboard-Policy-runtime-c-bc411-r-pre-save-fixtures-request-desktop-repeat3/error-context.md"
+                    }
+                  ]
+                }
+              ],
+              "status": "unexpected"
+            }
+          ],
+          "id": "cc3070f185481daa6f24-61c3659e3ac96331114b",
+          "file": "dashboard.spec.mjs",
+          "line": 7232,
+          "column": 3
+        },
+        {
+          "title": "Scenario JSON transport keeps failed creation unsaved and preserves explicit creation payloads",
+          "ok": false,
+          "tags": [],
+          "tests": [
+            {
+              "timeout": 30000,
+              "annotations": [],
+              "expectedStatus": "passed",
+              "projectId": "desktop",
+              "projectName": "desktop",
+              "results": [
+                {
+                  "workerIndex": 7,
+                  "parallelIndex": 1,
+                  "status": "failed",
+                  "duration": 731,
+                  "error": {
+                    "message": "Error: \u001b[2mexpect(\u001b[22m\u001b[31mreceived\u001b[39m\u001b[2m).\u001b[22mtoEqual\u001b[2m(\u001b[22m\u001b[32mexpected\u001b[39m\u001b[2m) // deep equality\u001b[22m\n\n\u001b[32m- Expected  - 0\u001b[39m\n\u001b[31m+ Received  + 1\u001b[39m\n\n\u001b[33m@@ -33,6 +33,7 @@\u001b[39m\n\u001b[2m          },\u001b[22m\n\u001b[2m        ],\u001b[22m\n\u001b[2m      },\u001b[22m\n\u001b[2m      \"summary\": \"Initial version\",\u001b[22m\n\u001b[2m    },\u001b[22m\n\u001b[31m+   null,\u001b[39m\n\u001b[2m  ]\u001b[22m",
+                    "stack": "Error: \u001b[2mexpect(\u001b[22m\u001b[31mreceived\u001b[39m\u001b[2m).\u001b[22mtoEqual\u001b[2m(\u001b[22m\u001b[32mexpected\u001b[39m\u001b[2m) // deep equality\u001b[22m\n\n\u001b[32m- Expected  - 0\u001b[39m\n\u001b[31m+ Received  + 1\u001b[39m\n\n\u001b[33m@@ -33,6 +33,7 @@\u001b[39m\n\u001b[2m          },\u001b[22m\n\u001b[2m        ],\u001b[22m\n\u001b[2m      },\u001b[22m\n\u001b[2m      \"summary\": \"Initial version\",\u001b[22m\n\u001b[2m    },\u001b[22m\n\u001b[31m+   null,\u001b[39m\n\u001b[2m  ]\u001b[22m\n    at /Volumes/Storage/dubnom/zipsquat/ZPR Docs/zpr-visaservice.worktrees/maturing-w5-browser-stability/zpr-dashboard/tests/browser/dashboard.spec.mjs:1940:18",
+                    "location": {
+                      "file": "/Volumes/Storage/dubnom/zipsquat/ZPR Docs/zpr-visaservice.worktrees/maturing-w5-browser-stability/zpr-dashboard/tests/browser/dashboard.spec.mjs",
+                      "column": 18,
+                      "line": 1940
+                    },
+                    "snippet": "  1938 |   await page.locator(\"#scenario-editor-save\").click();\n  1939 |   await expect(page.locator(\"#scenario-editor-status\")).toHaveText(\"Saved version 1. Publish it to enable runs.\");\n> 1940 |   expect(writes).toEqual(Array.from({ length: 2 }, () => ({ scenario, summary: \"Initial version\", expected_revision: 0 })));\n       |                  ^\n  1941 |   expect(api.counts.get(endpoint + \"/created-transport/publish\") || 0).toBe(0);\n  1942 |   expect(api.counts.get(\"/api/simulator/scenarios/run\") || 0).toBe(0);\n  1943 | });"
+                  },
+                  "errors": [
+                    {
+                      "location": {
+                        "file": "/Volumes/Storage/dubnom/zipsquat/ZPR Docs/zpr-visaservice.worktrees/maturing-w5-browser-stability/zpr-dashboard/tests/browser/dashboard.spec.mjs",
+                        "column": 18,
+                        "line": 1940
+                      },
+                      "message": "Error: \u001b[2mexpect(\u001b[22m\u001b[31mreceived\u001b[39m\u001b[2m).\u001b[22mtoEqual\u001b[2m(\u001b[22m\u001b[32mexpected\u001b[39m\u001b[2m) // deep equality\u001b[22m\n\n\u001b[32m- Expected  - 0\u001b[39m\n\u001b[31m+ Received  + 1\u001b[39m\n\n\u001b[33m@@ -33,6 +33,7 @@\u001b[39m\n\u001b[2m          },\u001b[22m\n\u001b[2m        ],\u001b[22m\n\u001b[2m      },\u001b[22m\n\u001b[2m      \"summary\": \"Initial version\",\u001b[22m\n\u001b[2m    },\u001b[22m\n\u001b[31m+   null,\u001b[39m\n\u001b[2m  ]\u001b[22m\n\n  1938 |   await page.locator(\"#scenario-editor-save\").click();\n  1939 |   await expect(page.locator(\"#scenario-editor-status\")).toHaveText(\"Saved version 1. Publish it to enable runs.\");\n> 1940 |   expect(writes).toEqual(Array.from({ length: 2 }, () => ({ scenario, summary: \"Initial version\", expected_revision: 0 })));\n       |                  ^\n  1941 |   expect(api.counts.get(endpoint + \"/created-transport/publish\") || 0).toBe(0);\n  1942 |   expect(api.counts.get(\"/api/simulator/scenarios/run\") || 0).toBe(0);\n  1943 | });\n    at /Volumes/Storage/dubnom/zipsquat/ZPR Docs/zpr-visaservice.worktrees/maturing-w5-browser-stability/zpr-dashboard/tests/browser/dashboard.spec.mjs:1940:18"
+                    }
+                  ],
+                  "stdout": [],
+                  "stderr": [],
+                  "retry": 0,
+                  "startTime": "2026-10-23T21:28:34.066Z",
+                  "annotations": [],
+                  "attachments": [
+                    {
+                      "name": "screenshot",
+                      "contentType": "image/png",
+                      "path": "/Volumes/Storage/dubnom/zipsquat/ZPR Docs/zpr-visaservice.worktrees/maturing-w5-browser-stability/zpr-dashboard/test-results/dashboard-Scenario-JSON-tr-077ed--explicit-creation-payloads-desktop-repeat4/test-failed-1.png"
+                    },
+                    {
+                      "name": "error-context",
+                      "contentType": "text/markdown",
+                      "path": "/Volumes/Storage/dubnom/zipsquat/ZPR Docs/zpr-visaservice.worktrees/maturing-w5-browser-stability/zpr-dashboard/test-results/dashboard-Scenario-JSON-tr-077ed--explicit-creation-payloads-desktop-repeat4/error-context.md"
+                    }
+                  ],
+                  "errorLocation": {
+                    "file": "/Volumes/Storage/dubnom/zipsquat/ZPR Docs/zpr-visaservice.worktrees/maturing-w5-browser-stability/zpr-dashboard/tests/browser/dashboard.spec.mjs",
+                    "column": 18,
+                    "line": 1940
+                  }
+                }
+              ],
+              "status": "unexpected"
+            }
+          ],
+          "id": "cc3070f185481daa6f24-459ae1b712e6e7499ecb",
+          "file": "dashboard.spec.mjs",
+          "line": 1917,
+          "column": 1
+        },
+        {
+          "title": "Policy runtime cancellation cannot release a newer pre-save fixtures request",
+          "ok": false,
+          "tags": [],
+          "tests": [
+            {
+              "timeout": 30000,
+              "annotations": [],
+              "expectedStatus": "passed",
+              "projectId": "desktop",
+              "projectName": "desktop",
+              "results": [
+                {
+                  "workerIndex": 8,
+                  "parallelIndex": 1,
+                  "status": "timedOut",
+                  "duration": 30088,
+                  "error": {
+                    "message": "\u001b[31mTest timeout of 30000ms exceeded.\u001b[39m",
+                    "stack": "\u001b[31mTest timeout of 30000ms exceeded.\u001b[39m"
+                  },
+                  "errors": [
+                    {
+                      "message": "\u001b[31mTest timeout of 30000ms exceeded.\u001b[39m"
+                    },
+                    {
+                      "location": {
+                        "file": "/Volumes/Storage/dubnom/zipsquat/ZPR Docs/zpr-visaservice.worktrees/maturing-w5-browser-stability/zpr-dashboard/tests/browser/dashboard.spec.mjs",
+                        "column": 40,
+                        "line": 7261
+                      },
+                      "message": "Error: locator.click: Test timeout of 30000ms exceeded.\nCall log:\n\u001b[2m  - waiting for locator('#policy-save')\u001b[22m\n\u001b[2m    - locator resolved to <button disabled type=\"button\" role=\"menuitem\" id=\"policy-save\" class=\"button button-save-next\">Save</button>\u001b[22m\n\u001b[2m  - attempting click action\u001b[22m\n\u001b[2m    2 × waiting for element to be visible, enabled and stable\u001b[22m\n\u001b[2m      - element is not enabled\u001b[22m\n\u001b[2m    - retrying click action\u001b[22m\n\u001b[2m    - waiting 20ms\u001b[22m\n\u001b[2m    2 × waiting for element to be visible, enabled and stable\u001b[22m\n\u001b[2m      - element is not enabled\u001b[22m\n\u001b[2m    - retrying click action\u001b[22m\n\u001b[2m      - waiting 100ms\u001b[22m\n\u001b[2m    57 × waiting for element to be visible, enabled and stable\u001b[22m\n\u001b[2m       - element is not enabled\u001b[22m\n\u001b[2m     - retrying click action\u001b[22m\n\u001b[2m       - waiting 500ms\u001b[22m\n\n\n  7259 |     await codeEditor(page, \"policy-source\").fill(draft);\n  7260 |     await openPolicyFiles(page);\n> 7261 |     await page.locator(\"#policy-save\").click();\n       |                                        ^\n  7262 |     await expect.poll(() => completions.length).toBe(2);\n  7263 |     completions[0]();\n  7264 |     await expect.poll(() => oldFinished).toBe(true);\n    at /Volumes/Storage/dubnom/zipsquat/ZPR Docs/zpr-visaservice.worktrees/maturing-w5-browser-stability/zpr-dashboard/tests/browser/dashboard.spec.mjs:7261:40"
+                    }
+                  ],
+                  "stdout": [],
+                  "stderr": [],
+                  "retry": 0,
+                  "startTime": "2026-10-23T21:28:35.324Z",
+                  "annotations": [],
+                  "attachments": [
+                    {
+                      "name": "screenshot",
+                      "contentType": "image/png",
+                      "path": "/Volumes/Storage/dubnom/zipsquat/ZPR Docs/zpr-visaservice.worktrees/maturing-w5-browser-stability/zpr-dashboard/test-results/dashboard-Policy-runtime-c-bc411-r-pre-save-fixtures-request-desktop-repeat4/test-failed-1.png"
+                    },
+                    {
+                      "name": "error-context",
+                      "contentType": "text/markdown",
+                      "path": "/Volumes/Storage/dubnom/zipsquat/ZPR Docs/zpr-visaservice.worktrees/maturing-w5-browser-stability/zpr-dashboard/test-results/dashboard-Policy-runtime-c-bc411-r-pre-save-fixtures-request-desktop-repeat4/error-context.md"
+                    }
+                  ]
+                }
+              ],
+              "status": "unexpected"
+            }
+          ],
+          "id": "cc3070f185481daa6f24-93f439307cecfc97c63d",
+          "file": "dashboard.spec.mjs",
+          "line": 7232,
+          "column": 3
+        },
+        {
+          "title": "Scenario JSON transport keeps failed creation unsaved and preserves explicit creation payloads",
+          "ok": false,
+          "tags": [],
+          "tests": [
+            {
+              "timeout": 30000,
+              "annotations": [],
+              "expectedStatus": "passed",
+              "projectId": "desktop",
+              "projectName": "desktop",
+              "results": [
+                {
+                  "workerIndex": 9,
+                  "parallelIndex": 0,
+                  "status": "failed",
+                  "duration": 749,
+                  "error": {
+                    "message": "Error: \u001b[2mexpect(\u001b[22m\u001b[31mreceived\u001b[39m\u001b[2m).\u001b[22mtoEqual\u001b[2m(\u001b[22m\u001b[32mexpected\u001b[39m\u001b[2m) // deep equality\u001b[22m\n\n\u001b[32m- Expected  - 0\u001b[39m\n\u001b[31m+ Received  + 1\u001b[39m\n\n\u001b[33m@@ -33,6 +33,7 @@\u001b[39m\n\u001b[2m          },\u001b[22m\n\u001b[2m        ],\u001b[22m\n\u001b[2m      },\u001b[22m\n\u001b[2m      \"summary\": \"Initial version\",\u001b[22m\n\u001b[2m    },\u001b[22m\n\u001b[31m+   null,\u001b[39m\n\u001b[2m  ]\u001b[22m",
+                    "stack": "Error: \u001b[2mexpect(\u001b[22m\u001b[31mreceived\u001b[39m\u001b[2m).\u001b[22mtoEqual\u001b[2m(\u001b[22m\u001b[32mexpected\u001b[39m\u001b[2m) // deep equality\u001b[22m\n\n\u001b[32m- Expected  - 0\u001b[39m\n\u001b[31m+ Received  + 1\u001b[39m\n\n\u001b[33m@@ -33,6 +33,7 @@\u001b[39m\n\u001b[2m          },\u001b[22m\n\u001b[2m        ],\u001b[22m\n\u001b[2m      },\u001b[22m\n\u001b[2m      \"summary\": \"Initial version\",\u001b[22m\n\u001b[2m    },\u001b[22m\n\u001b[31m+   null,\u001b[39m\n\u001b[2m  ]\u001b[22m\n    at /Volumes/Storage/dubnom/zipsquat/ZPR Docs/zpr-visaservice.worktrees/maturing-w5-browser-stability/zpr-dashboard/tests/browser/dashboard.spec.mjs:1940:18",
+                    "location": {
+                      "file": "/Volumes/Storage/dubnom/zipsquat/ZPR Docs/zpr-visaservice.worktrees/maturing-w5-browser-stability/zpr-dashboard/tests/browser/dashboard.spec.mjs",
+                      "column": 18,
+                      "line": 1940
+                    },
+                    "snippet": "  1938 |   await page.locator(\"#scenario-editor-save\").click();\n  1939 |   await expect(page.locator(\"#scenario-editor-status\")).toHaveText(\"Saved version 1. Publish it to enable runs.\");\n> 1940 |   expect(writes).toEqual(Array.from({ length: 2 }, () => ({ scenario, summary: \"Initial version\", expected_revision: 0 })));\n       |                  ^\n  1941 |   expect(api.counts.get(endpoint + \"/created-transport/publish\") || 0).toBe(0);\n  1942 |   expect(api.counts.get(\"/api/simulator/scenarios/run\") || 0).toBe(0);\n  1943 | });"
+                  },
+                  "errors": [
+                    {
+                      "location": {
+                        "file": "/Volumes/Storage/dubnom/zipsquat/ZPR Docs/zpr-visaservice.worktrees/maturing-w5-browser-stability/zpr-dashboard/tests/browser/dashboard.spec.mjs",
+                        "column": 18,
+                        "line": 1940
+                      },
+                      "message": "Error: \u001b[2mexpect(\u001b[22m\u001b[31mreceived\u001b[39m\u001b[2m).\u001b[22mtoEqual\u001b[2m(\u001b[22m\u001b[32mexpected\u001b[39m\u001b[2m) // deep equality\u001b[22m\n\n\u001b[32m- Expected  - 0\u001b[39m\n\u001b[31m+ Received  + 1\u001b[39m\n\n\u001b[33m@@ -33,6 +33,7 @@\u001b[39m\n\u001b[2m          },\u001b[22m\n\u001b[2m        ],\u001b[22m\n\u001b[2m      },\u001b[22m\n\u001b[2m      \"summary\": \"Initial version\",\u001b[22m\n\u001b[2m    },\u001b[22m\n\u001b[31m+   null,\u001b[39m\n\u001b[2m  ]\u001b[22m\n\n  1938 |   await page.locator(\"#scenario-editor-save\").click();\n  1939 |   await expect(page.locator(\"#scenario-editor-status\")).toHaveText(\"Saved version 1. Publish it to enable runs.\");\n> 1940 |   expect(writes).toEqual(Array.from({ length: 2 }, () => ({ scenario, summary: \"Initial version\", expected_revision: 0 })));\n       |                  ^\n  1941 |   expect(api.counts.get(endpoint + \"/created-transport/publish\") || 0).toBe(0);\n  1942 |   expect(api.counts.get(\"/api/simulator/scenarios/run\") || 0).toBe(0);\n  1943 | });\n    at /Volumes/Storage/dubnom/zipsquat/ZPR Docs/zpr-visaservice.worktrees/maturing-w5-browser-stability/zpr-dashboard/tests/browser/dashboard.spec.mjs:1940:18"
+                    }
+                  ],
+                  "stdout": [],
+                  "stderr": [],
+                  "retry": 0,
+                  "startTime": "2026-10-23T21:28:35.964Z",
+                  "annotations": [],
+                  "attachments": [
+                    {
+                      "name": "screenshot",
+                      "contentType": "image/png",
+                      "path": "/Volumes/Storage/dubnom/zipsquat/ZPR Docs/zpr-visaservice.worktrees/maturing-w5-browser-stability/zpr-dashboard/test-results/dashboard-Scenario-JSON-tr-077ed--explicit-creation-payloads-desktop-repeat5/test-failed-1.png"
+                    },
+                    {
+                      "name": "error-context",
+                      "contentType": "text/markdown",
+                      "path": "/Volumes/Storage/dubnom/zipsquat/ZPR Docs/zpr-visaservice.worktrees/maturing-w5-browser-stability/zpr-dashboard/test-results/dashboard-Scenario-JSON-tr-077ed--explicit-creation-payloads-desktop-repeat5/error-context.md"
+                    }
+                  ],
+                  "errorLocation": {
+                    "file": "/Volumes/Storage/dubnom/zipsquat/ZPR Docs/zpr-visaservice.worktrees/maturing-w5-browser-stability/zpr-dashboard/tests/browser/dashboard.spec.mjs",
+                    "column": 18,
+                    "line": 1940
+                  }
+                }
+              ],
+              "status": "unexpected"
+            }
+          ],
+          "id": "cc3070f185481daa6f24-c15e6f296e739b70f43d",
+          "file": "dashboard.spec.mjs",
+          "line": 1917,
+          "column": 1
+        },
+        {
+          "title": "Policy runtime cancellation cannot release a newer pre-save fixtures request",
+          "ok": false,
+          "tags": [],
+          "tests": [
+            {
+              "timeout": 30000,
+              "annotations": [],
+              "expectedStatus": "passed",
+              "projectId": "desktop",
+              "projectName": "desktop",
+              "results": [
+                {
+                  "workerIndex": 10,
+                  "parallelIndex": 0,
+                  "status": "timedOut",
+                  "duration": 30097,
+                  "error": {
+                    "message": "\u001b[31mTest timeout of 30000ms exceeded.\u001b[39m",
+                    "stack": "\u001b[31mTest timeout of 30000ms exceeded.\u001b[39m"
+                  },
+                  "errors": [
+                    {
+                      "message": "\u001b[31mTest timeout of 30000ms exceeded.\u001b[39m"
+                    },
+                    {
+                      "location": {
+                        "file": "/Volumes/Storage/dubnom/zipsquat/ZPR Docs/zpr-visaservice.worktrees/maturing-w5-browser-stability/zpr-dashboard/tests/browser/dashboard.spec.mjs",
+                        "column": 40,
+                        "line": 7261
+                      },
+                      "message": "Error: locator.click: Test timeout of 30000ms exceeded.\nCall log:\n\u001b[2m  - waiting for locator('#policy-save')\u001b[22m\n\u001b[2m    - locator resolved to <button disabled type=\"button\" role=\"menuitem\" id=\"policy-save\" class=\"button button-save-next\">Save</button>\u001b[22m\n\u001b[2m  - attempting click action\u001b[22m\n\u001b[2m    2 × waiting for element to be visible, enabled and stable\u001b[22m\n\u001b[2m      - element is not enabled\u001b[22m\n\u001b[2m    - retrying click action\u001b[22m\n\u001b[2m    - waiting 20ms\u001b[22m\n\u001b[2m    2 × waiting for element to be visible, enabled and stable\u001b[22m\n\u001b[2m      - element is not enabled\u001b[22m\n\u001b[2m    - retrying click action\u001b[22m\n\u001b[2m      - waiting 100ms\u001b[22m\n\u001b[2m    57 × waiting for element to be visible, enabled and stable\u001b[22m\n\u001b[2m       - element is not enabled\u001b[22m\n\u001b[2m     - retrying click action\u001b[22m\n\u001b[2m       - waiting 500ms\u001b[22m\n\n\n  7259 |     await codeEditor(page, \"policy-source\").fill(draft);\n  7260 |     await openPolicyFiles(page);\n> 7261 |     await page.locator(\"#policy-save\").click();\n       |                                        ^\n  7262 |     await expect.poll(() => completions.length).toBe(2);\n  7263 |     completions[0]();\n  7264 |     await expect.poll(() => oldFinished).toBe(true);\n    at /Volumes/Storage/dubnom/zipsquat/ZPR Docs/zpr-visaservice.worktrees/maturing-w5-browser-stability/zpr-dashboard/tests/browser/dashboard.spec.mjs:7261:40"
+                    }
+                  ],
+                  "stdout": [],
+                  "stderr": [],
+                  "retry": 0,
+                  "startTime": "2026-10-23T21:28:37.232Z",
+                  "annotations": [],
+                  "attachments": [
+                    {
+                      "name": "screenshot",
+                      "contentType": "image/png",
+                      "path": "/Volumes/Storage/dubnom/zipsquat/ZPR Docs/zpr-visaservice.worktrees/maturing-w5-browser-stability/zpr-dashboard/test-results/dashboard-Policy-runtime-c-bc411-r-pre-save-fixtures-request-desktop-repeat5/test-failed-1.png"
+                    },
+                    {
+                      "name": "error-context",
+                      "contentType": "text/markdown",
+                      "path": "/Volumes/Storage/dubnom/zipsquat/ZPR Docs/zpr-visaservice.worktrees/maturing-w5-browser-stability/zpr-dashboard/test-results/dashboard-Policy-runtime-c-bc411-r-pre-save-fixtures-request-desktop-repeat5/error-context.md"
+                    }
+                  ]
+                }
+              ],
+              "status": "unexpected"
+            }
+          ],
+          "id": "cc3070f185481daa6f24-15a594b37aa98577e687",
+          "file": "dashboard.spec.mjs",
+          "line": 7232,
+          "column": 3
+        },
+        {
+          "title": "Scenario JSON transport keeps failed creation unsaved and preserves explicit creation payloads",
+          "ok": true,
+          "tags": [],
+          "tests": [
+            {
+              "timeout": 30000,
+              "annotations": [],
+              "expectedStatus": "passed",
+              "projectId": "desktop",
+              "projectName": "desktop",
+              "results": [
+                {
+                  "workerIndex": 11,
+                  "parallelIndex": 1,
+                  "status": "passed",
+                  "duration": 619,
+                  "errors": [],
+                  "stdout": [],
+                  "stderr": [],
+                  "retry": 0,
+                  "startTime": "2026-10-23T21:29:05.956Z",
+                  "annotations": [],
+                  "attachments": []
+                }
+              ],
+              "status": "expected"
+            }
+          ],
+          "id": "cc3070f185481daa6f24-1ec6c002e0455fc3be87",
+          "file": "dashboard.spec.mjs",
+          "line": 1917,
+          "column": 1
+        },
+        {
+          "title": "Policy runtime cancellation cannot release a newer pre-save fixtures request",
+          "ok": false,
+          "tags": [],
+          "tests": [
+            {
+              "timeout": 30000,
+              "annotations": [],
+              "expectedStatus": "passed",
+              "projectId": "desktop",
+              "projectName": "desktop",
+              "results": [
+                {
+                  "workerIndex": 11,
+                  "parallelIndex": 1,
+                  "status": "timedOut",
+                  "duration": 30068,
+                  "error": {
+                    "message": "\u001b[31mTest timeout of 30000ms exceeded.\u001b[39m",
+                    "stack": "\u001b[31mTest timeout of 30000ms exceeded.\u001b[39m"
+                  },
+                  "errors": [
+                    {
+                      "message": "\u001b[31mTest timeout of 30000ms exceeded.\u001b[39m"
+                    },
+                    {
+                      "location": {
+                        "file": "/Volumes/Storage/dubnom/zipsquat/ZPR Docs/zpr-visaservice.worktrees/maturing-w5-browser-stability/zpr-dashboard/tests/browser/dashboard.spec.mjs",
+                        "column": 40,
+                        "line": 7261
+                      },
+                      "message": "Error: locator.click: Test timeout of 30000ms exceeded.\nCall log:\n\u001b[2m  - waiting for locator('#policy-save')\u001b[22m\n\u001b[2m    - locator resolved to <button disabled type=\"button\" role=\"menuitem\" id=\"policy-save\" class=\"button button-save-next\">Save</button>\u001b[22m\n\u001b[2m  - attempting click action\u001b[22m\n\u001b[2m    2 × waiting for element to be visible, enabled and stable\u001b[22m\n\u001b[2m      - element is not enabled\u001b[22m\n\u001b[2m    - retrying click action\u001b[22m\n\u001b[2m    - waiting 20ms\u001b[22m\n\u001b[2m    2 × waiting for element to be visible, enabled and stable\u001b[22m\n\u001b[2m      - element is not enabled\u001b[22m\n\u001b[2m    - retrying click action\u001b[22m\n\u001b[2m      - waiting 100ms\u001b[22m\n\u001b[2m    57 × waiting for element to be visible, enabled and stable\u001b[22m\n\u001b[2m       - element is not enabled\u001b[22m\n\u001b[2m     - retrying click action\u001b[22m\n\u001b[2m       - waiting 500ms\u001b[22m\n\n\n  7259 |     await codeEditor(page, \"policy-source\").fill(draft);\n  7260 |     await openPolicyFiles(page);\n> 7261 |     await page.locator(\"#policy-save\").click();\n       |                                        ^\n  7262 |     await expect.poll(() => completions.length).toBe(2);\n  7263 |     completions[0]();\n  7264 |     await expect.poll(() => oldFinished).toBe(true);\n    at /Volumes/Storage/dubnom/zipsquat/ZPR Docs/zpr-visaservice.worktrees/maturing-w5-browser-stability/zpr-dashboard/tests/browser/dashboard.spec.mjs:7261:40"
+                    }
+                  ],
+                  "stdout": [],
+                  "stderr": [],
+                  "retry": 0,
+                  "startTime": "2026-10-23T21:29:06.691Z",
+                  "annotations": [],
+                  "attachments": [
+                    {
+                      "name": "screenshot",
+                      "contentType": "image/png",
+                      "path": "/Volumes/Storage/dubnom/zipsquat/ZPR Docs/zpr-visaservice.worktrees/maturing-w5-browser-stability/zpr-dashboard/test-results/dashboard-Policy-runtime-c-bc411-r-pre-save-fixtures-request-desktop-repeat6/test-failed-1.png"
+                    },
+                    {
+                      "name": "error-context",
+                      "contentType": "text/markdown",
+                      "path": "/Volumes/Storage/dubnom/zipsquat/ZPR Docs/zpr-visaservice.worktrees/maturing-w5-browser-stability/zpr-dashboard/test-results/dashboard-Policy-runtime-c-bc411-r-pre-save-fixtures-request-desktop-repeat6/error-context.md"
+                    }
+                  ]
+                }
+              ],
+              "status": "unexpected"
+            }
+          ],
+          "id": "cc3070f185481daa6f24-8bd94bb3b5271076f041",
+          "file": "dashboard.spec.mjs",
+          "line": 7232,
+          "column": 3
+        },
+        {
+          "title": "Scenario JSON transport keeps failed creation unsaved and preserves explicit creation payloads",
+          "ok": false,
+          "tags": [],
+          "tests": [
+            {
+              "timeout": 30000,
+              "annotations": [],
+              "expectedStatus": "passed",
+              "projectId": "desktop",
+              "projectName": "desktop",
+              "results": [
+                {
+                  "workerIndex": 12,
+                  "parallelIndex": 0,
+                  "status": "failed",
+                  "duration": 650,
+                  "error": {
+                    "message": "Error: \u001b[2mexpect(\u001b[22m\u001b[31mreceived\u001b[39m\u001b[2m).\u001b[22mtoEqual\u001b[2m(\u001b[22m\u001b[32mexpected\u001b[39m\u001b[2m) // deep equality\u001b[22m\n\n\u001b[32m- Expected  - 0\u001b[39m\n\u001b[31m+ Received  + 1\u001b[39m\n\n\u001b[33m@@ -33,6 +33,7 @@\u001b[39m\n\u001b[2m          },\u001b[22m\n\u001b[2m        ],\u001b[22m\n\u001b[2m      },\u001b[22m\n\u001b[2m      \"summary\": \"Initial version\",\u001b[22m\n\u001b[2m    },\u001b[22m\n\u001b[31m+   null,\u001b[39m\n\u001b[2m  ]\u001b[22m",
+                    "stack": "Error: \u001b[2mexpect(\u001b[22m\u001b[31mreceived\u001b[39m\u001b[2m).\u001b[22mtoEqual\u001b[2m(\u001b[22m\u001b[32mexpected\u001b[39m\u001b[2m) // deep equality\u001b[22m\n\n\u001b[32m- Expected  - 0\u001b[39m\n\u001b[31m+ Received  + 1\u001b[39m\n\n\u001b[33m@@ -33,6 +33,7 @@\u001b[39m\n\u001b[2m          },\u001b[22m\n\u001b[2m        ],\u001b[22m\n\u001b[2m      },\u001b[22m\n\u001b[2m      \"summary\": \"Initial version\",\u001b[22m\n\u001b[2m    },\u001b[22m\n\u001b[31m+   null,\u001b[39m\n\u001b[2m  ]\u001b[22m\n    at /Volumes/Storage/dubnom/zipsquat/ZPR Docs/zpr-visaservice.worktrees/maturing-w5-browser-stability/zpr-dashboard/tests/browser/dashboard.spec.mjs:1940:18",
+                    "location": {
+                      "file": "/Volumes/Storage/dubnom/zipsquat/ZPR Docs/zpr-visaservice.worktrees/maturing-w5-browser-stability/zpr-dashboard/tests/browser/dashboard.spec.mjs",
+                      "column": 18,
+                      "line": 1940
+                    },
+                    "snippet": "  1938 |   await page.locator(\"#scenario-editor-save\").click();\n  1939 |   await expect(page.locator(\"#scenario-editor-status\")).toHaveText(\"Saved version 1. Publish it to enable runs.\");\n> 1940 |   expect(writes).toEqual(Array.from({ length: 2 }, () => ({ scenario, summary: \"Initial version\", expected_revision: 0 })));\n       |                  ^\n  1941 |   expect(api.counts.get(endpoint + \"/created-transport/publish\") || 0).toBe(0);\n  1942 |   expect(api.counts.get(\"/api/simulator/scenarios/run\") || 0).toBe(0);\n  1943 | });"
+                  },
+                  "errors": [
+                    {
+                      "location": {
+                        "file": "/Volumes/Storage/dubnom/zipsquat/ZPR Docs/zpr-visaservice.worktrees/maturing-w5-browser-stability/zpr-dashboard/tests/browser/dashboard.spec.mjs",
+                        "column": 18,
+                        "line": 1940
+                      },
+                      "message": "Error: \u001b[2mexpect(\u001b[22m\u001b[31mreceived\u001b[39m\u001b[2m).\u001b[22mtoEqual\u001b[2m(\u001b[22m\u001b[32mexpected\u001b[39m\u001b[2m) // deep equality\u001b[22m\n\n\u001b[32m- Expected  - 0\u001b[39m\n\u001b[31m+ Received  + 1\u001b[39m\n\n\u001b[33m@@ -33,6 +33,7 @@\u001b[39m\n\u001b[2m          },\u001b[22m\n\u001b[2m        ],\u001b[22m\n\u001b[2m      },\u001b[22m\n\u001b[2m      \"summary\": \"Initial version\",\u001b[22m\n\u001b[2m    },\u001b[22m\n\u001b[31m+   null,\u001b[39m\n\u001b[2m  ]\u001b[22m\n\n  1938 |   await page.locator(\"#scenario-editor-save\").click();\n  1939 |   await expect(page.locator(\"#scenario-editor-status\")).toHaveText(\"Saved version 1. Publish it to enable runs.\");\n> 1940 |   expect(writes).toEqual(Array.from({ length: 2 }, () => ({ scenario, summary: \"Initial version\", expected_revision: 0 })));\n       |                  ^\n  1941 |   expect(api.counts.get(endpoint + \"/created-transport/publish\") || 0).toBe(0);\n  1942 |   expect(api.counts.get(\"/api/simulator/scenarios/run\") || 0).toBe(0);\n  1943 | });\n    at /Volumes/Storage/dubnom/zipsquat/ZPR Docs/zpr-visaservice.worktrees/maturing-w5-browser-stability/zpr-dashboard/tests/browser/dashboard.spec.mjs:1940:18"
+                    }
+                  ],
+                  "stdout": [],
+                  "stderr": [],
+                  "retry": 0,
+                  "startTime": "2026-10-23T21:29:07.863Z",
+                  "annotations": [],
+                  "attachments": [
+                    {
+                      "name": "screenshot",
+                      "contentType": "image/png",
+                      "path": "/Volumes/Storage/dubnom/zipsquat/ZPR Docs/zpr-visaservice.worktrees/maturing-w5-browser-stability/zpr-dashboard/test-results/dashboard-Scenario-JSON-tr-077ed--explicit-creation-payloads-desktop-repeat7/test-failed-1.png"
+                    },
+                    {
+                      "name": "error-context",
+                      "contentType": "text/markdown",
+                      "path": "/Volumes/Storage/dubnom/zipsquat/ZPR Docs/zpr-visaservice.worktrees/maturing-w5-browser-stability/zpr-dashboard/test-results/dashboard-Scenario-JSON-tr-077ed--explicit-creation-payloads-desktop-repeat7/error-context.md"
+                    }
+                  ],
+                  "errorLocation": {
+                    "file": "/Volumes/Storage/dubnom/zipsquat/ZPR Docs/zpr-visaservice.worktrees/maturing-w5-browser-stability/zpr-dashboard/tests/browser/dashboard.spec.mjs",
+                    "column": 18,
+                    "line": 1940
+                  }
+                }
+              ],
+              "status": "unexpected"
+            }
+          ],
+          "id": "cc3070f185481daa6f24-9907388f896974b739ab",
+          "file": "dashboard.spec.mjs",
+          "line": 1917,
+          "column": 1
+        },
+        {
+          "title": "Policy runtime cancellation cannot release a newer pre-save fixtures request",
+          "ok": false,
+          "tags": [],
+          "tests": [
+            {
+              "timeout": 30000,
+              "annotations": [],
+              "expectedStatus": "passed",
+              "projectId": "desktop",
+              "projectName": "desktop",
+              "results": [
+                {
+                  "workerIndex": 13,
+                  "parallelIndex": 0,
+                  "status": "timedOut",
+                  "duration": 30075,
+                  "error": {
+                    "message": "\u001b[31mTest timeout of 30000ms exceeded.\u001b[39m",
+                    "stack": "\u001b[31mTest timeout of 30000ms exceeded.\u001b[39m"
+                  },
+                  "errors": [
+                    {
+                      "message": "\u001b[31mTest timeout of 30000ms exceeded.\u001b[39m"
+                    },
+                    {
+                      "location": {
+                        "file": "/Volumes/Storage/dubnom/zipsquat/ZPR Docs/zpr-visaservice.worktrees/maturing-w5-browser-stability/zpr-dashboard/tests/browser/dashboard.spec.mjs",
+                        "column": 40,
+                        "line": 7261
+                      },
+                      "message": "Error: locator.click: Test timeout of 30000ms exceeded.\nCall log:\n\u001b[2m  - waiting for locator('#policy-save')\u001b[22m\n\u001b[2m    - locator resolved to <button disabled type=\"button\" role=\"menuitem\" id=\"policy-save\" class=\"button button-save-next\">Save</button>\u001b[22m\n\u001b[2m  - attempting click action\u001b[22m\n\u001b[2m    2 × waiting for element to be visible, enabled and stable\u001b[22m\n\u001b[2m      - element is not enabled\u001b[22m\n\u001b[2m    - retrying click action\u001b[22m\n\u001b[2m    - waiting 20ms\u001b[22m\n\u001b[2m    2 × waiting for element to be visible, enabled and stable\u001b[22m\n\u001b[2m      - element is not enabled\u001b[22m\n\u001b[2m    - retrying click action\u001b[22m\n\u001b[2m      - waiting 100ms\u001b[22m\n\u001b[2m    57 × waiting for element to be visible, enabled and stable\u001b[22m\n\u001b[2m       - element is not enabled\u001b[22m\n\u001b[2m     - retrying click action\u001b[22m\n\u001b[2m       - waiting 500ms\u001b[22m\n\n\n  7259 |     await codeEditor(page, \"policy-source\").fill(draft);\n  7260 |     await openPolicyFiles(page);\n> 7261 |     await page.locator(\"#policy-save\").click();\n       |                                        ^\n  7262 |     await expect.poll(() => completions.length).toBe(2);\n  7263 |     completions[0]();\n  7264 |     await expect.poll(() => oldFinished).toBe(true);\n    at /Volumes/Storage/dubnom/zipsquat/ZPR Docs/zpr-visaservice.worktrees/maturing-w5-browser-stability/zpr-dashboard/tests/browser/dashboard.spec.mjs:7261:40"
+                    }
+                  ],
+                  "stdout": [],
+                  "stderr": [],
+                  "retry": 0,
+                  "startTime": "2026-10-23T21:29:09.054Z",
+                  "annotations": [],
+                  "attachments": [
+                    {
+                      "name": "screenshot",
+                      "contentType": "image/png",
+                      "path": "/Volumes/Storage/dubnom/zipsquat/ZPR Docs/zpr-visaservice.worktrees/maturing-w5-browser-stability/zpr-dashboard/test-results/dashboard-Policy-runtime-c-bc411-r-pre-save-fixtures-request-desktop-repeat7/test-failed-1.png"
+                    },
+                    {
+                      "name": "error-context",
+                      "contentType": "text/markdown",
+                      "path": "/Volumes/Storage/dubnom/zipsquat/ZPR Docs/zpr-visaservice.worktrees/maturing-w5-browser-stability/zpr-dashboard/test-results/dashboard-Policy-runtime-c-bc411-r-pre-save-fixtures-request-desktop-repeat7/error-context.md"
+                    }
+                  ]
+                }
+              ],
+              "status": "unexpected"
+            }
+          ],
+          "id": "cc3070f185481daa6f24-c800a89ca1c434fcd693",
+          "file": "dashboard.spec.mjs",
+          "line": 7232,
+          "column": 3
+        },
+        {
+          "title": "Scenario JSON transport keeps failed creation unsaved and preserves explicit creation payloads",
+          "ok": false,
+          "tags": [],
+          "tests": [
+            {
+              "timeout": 30000,
+              "annotations": [],
+              "expectedStatus": "passed",
+              "projectId": "desktop",
+              "projectName": "desktop",
+              "results": [
+                {
+                  "workerIndex": 14,
+                  "parallelIndex": 1,
+                  "status": "failed",
+                  "duration": 714,
+                  "error": {
+                    "message": "Error: \u001b[2mexpect(\u001b[22m\u001b[31mreceived\u001b[39m\u001b[2m).\u001b[22mtoEqual\u001b[2m(\u001b[22m\u001b[32mexpected\u001b[39m\u001b[2m) // deep equality\u001b[22m\n\n\u001b[32m- Expected  - 0\u001b[39m\n\u001b[31m+ Received  + 1\u001b[39m\n\n\u001b[33m@@ -33,6 +33,7 @@\u001b[39m\n\u001b[2m          },\u001b[22m\n\u001b[2m        ],\u001b[22m\n\u001b[2m      },\u001b[22m\n\u001b[2m      \"summary\": \"Initial version\",\u001b[22m\n\u001b[2m    },\u001b[22m\n\u001b[31m+   null,\u001b[39m\n\u001b[2m  ]\u001b[22m",
+                    "stack": "Error: \u001b[2mexpect(\u001b[22m\u001b[31mreceived\u001b[39m\u001b[2m).\u001b[22mtoEqual\u001b[2m(\u001b[22m\u001b[32mexpected\u001b[39m\u001b[2m) // deep equality\u001b[22m\n\n\u001b[32m- Expected  - 0\u001b[39m\n\u001b[31m+ Received  + 1\u001b[39m\n\n\u001b[33m@@ -33,6 +33,7 @@\u001b[39m\n\u001b[2m          },\u001b[22m\n\u001b[2m        ],\u001b[22m\n\u001b[2m      },\u001b[22m\n\u001b[2m      \"summary\": \"Initial version\",\u001b[22m\n\u001b[2m    },\u001b[22m\n\u001b[31m+   null,\u001b[39m\n\u001b[2m  ]\u001b[22m\n    at /Volumes/Storage/dubnom/zipsquat/ZPR Docs/zpr-visaservice.worktrees/maturing-w5-browser-stability/zpr-dashboard/tests/browser/dashboard.spec.mjs:1940:18",
+                    "location": {
+                      "file": "/Volumes/Storage/dubnom/zipsquat/ZPR Docs/zpr-visaservice.worktrees/maturing-w5-browser-stability/zpr-dashboard/tests/browser/dashboard.spec.mjs",
+                      "column": 18,
+                      "line": 1940
+                    },
+                    "snippet": "  1938 |   await page.locator(\"#scenario-editor-save\").click();\n  1939 |   await expect(page.locator(\"#scenario-editor-status\")).toHaveText(\"Saved version 1. Publish it to enable runs.\");\n> 1940 |   expect(writes).toEqual(Array.from({ length: 2 }, () => ({ scenario, summary: \"Initial version\", expected_revision: 0 })));\n       |                  ^\n  1941 |   expect(api.counts.get(endpoint + \"/created-transport/publish\") || 0).toBe(0);\n  1942 |   expect(api.counts.get(\"/api/simulator/scenarios/run\") || 0).toBe(0);\n  1943 | });"
+                  },
+                  "errors": [
+                    {
+                      "location": {
+                        "file": "/Volumes/Storage/dubnom/zipsquat/ZPR Docs/zpr-visaservice.worktrees/maturing-w5-browser-stability/zpr-dashboard/tests/browser/dashboard.spec.mjs",
+                        "column": 18,
+                        "line": 1940
+                      },
+                      "message": "Error: \u001b[2mexpect(\u001b[22m\u001b[31mreceived\u001b[39m\u001b[2m).\u001b[22mtoEqual\u001b[2m(\u001b[22m\u001b[32mexpected\u001b[39m\u001b[2m) // deep equality\u001b[22m\n\n\u001b[32m- Expected  - 0\u001b[39m\n\u001b[31m+ Received  + 1\u001b[39m\n\n\u001b[33m@@ -33,6 +33,7 @@\u001b[39m\n\u001b[2m          },\u001b[22m\n\u001b[2m        ],\u001b[22m\n\u001b[2m      },\u001b[22m\n\u001b[2m      \"summary\": \"Initial version\",\u001b[22m\n\u001b[2m    },\u001b[22m\n\u001b[31m+   null,\u001b[39m\n\u001b[2m  ]\u001b[22m\n\n  1938 |   await page.locator(\"#scenario-editor-save\").click();\n  1939 |   await expect(page.locator(\"#scenario-editor-status\")).toHaveText(\"Saved version 1. Publish it to enable runs.\");\n> 1940 |   expect(writes).toEqual(Array.from({ length: 2 }, () => ({ scenario, summary: \"Initial version\", expected_revision: 0 })));\n       |                  ^\n  1941 |   expect(api.counts.get(endpoint + \"/created-transport/publish\") || 0).toBe(0);\n  1942 |   expect(api.counts.get(\"/api/simulator/scenarios/run\") || 0).toBe(0);\n  1943 | });\n    at /Volumes/Storage/dubnom/zipsquat/ZPR Docs/zpr-visaservice.worktrees/maturing-w5-browser-stability/zpr-dashboard/tests/browser/dashboard.spec.mjs:1940:18"
+                    }
+                  ],
+                  "stdout": [],
+                  "stderr": [],
+                  "retry": 0,
+                  "startTime": "2026-10-23T21:29:37.191Z",
+                  "annotations": [],
+                  "attachments": [
+                    {
+                      "name": "screenshot",
+                      "contentType": "image/png",
+                      "path": "/Volumes/Storage/dubnom/zipsquat/ZPR Docs/zpr-visaservice.worktrees/maturing-w5-browser-stability/zpr-dashboard/test-results/dashboard-Scenario-JSON-tr-077ed--explicit-creation-payloads-desktop-repeat8/test-failed-1.png"
+                    },
+                    {
+                      "name": "error-context",
+                      "contentType": "text/markdown",
+                      "path": "/Volumes/Storage/dubnom/zipsquat/ZPR Docs/zpr-visaservice.worktrees/maturing-w5-browser-stability/zpr-dashboard/test-results/dashboard-Scenario-JSON-tr-077ed--explicit-creation-payloads-desktop-repeat8/error-context.md"
+                    }
+                  ],
+                  "errorLocation": {
+                    "file": "/Volumes/Storage/dubnom/zipsquat/ZPR Docs/zpr-visaservice.worktrees/maturing-w5-browser-stability/zpr-dashboard/tests/browser/dashboard.spec.mjs",
+                    "column": 18,
+                    "line": 1940
+                  }
+                }
+              ],
+              "status": "unexpected"
+            }
+          ],
+          "id": "cc3070f185481daa6f24-3ef032e58502bc3ec125",
+          "file": "dashboard.spec.mjs",
+          "line": 1917,
+          "column": 1
+        },
+        {
+          "title": "Policy runtime cancellation cannot release a newer pre-save fixtures request",
+          "ok": false,
+          "tags": [],
+          "tests": [
+            {
+              "timeout": 30000,
+              "annotations": [],
+              "expectedStatus": "passed",
+              "projectId": "desktop",
+              "projectName": "desktop",
+              "results": [
+                {
+                  "workerIndex": 15,
+                  "parallelIndex": 1,
+                  "status": "timedOut",
+                  "duration": 30070,
+                  "error": {
+                    "message": "\u001b[31mTest timeout of 30000ms exceeded.\u001b[39m",
+                    "stack": "\u001b[31mTest timeout of 30000ms exceeded.\u001b[39m"
+                  },
+                  "errors": [
+                    {
+                      "message": "\u001b[31mTest timeout of 30000ms exceeded.\u001b[39m"
+                    },
+                    {
+                      "location": {
+                        "file": "/Volumes/Storage/dubnom/zipsquat/ZPR Docs/zpr-visaservice.worktrees/maturing-w5-browser-stability/zpr-dashboard/tests/browser/dashboard.spec.mjs",
+                        "column": 40,
+                        "line": 7261
+                      },
+                      "message": "Error: locator.click: Test timeout of 30000ms exceeded.\nCall log:\n\u001b[2m  - waiting for locator('#policy-save')\u001b[22m\n\u001b[2m    - locator resolved to <button disabled type=\"button\" role=\"menuitem\" id=\"policy-save\" class=\"button button-save-next\">Save</button>\u001b[22m\n\u001b[2m  - attempting click action\u001b[22m\n\u001b[2m    2 × waiting for element to be visible, enabled and stable\u001b[22m\n\u001b[2m      - element is not enabled\u001b[22m\n\u001b[2m    - retrying click action\u001b[22m\n\u001b[2m    - waiting 20ms\u001b[22m\n\u001b[2m    2 × waiting for element to be visible, enabled and stable\u001b[22m\n\u001b[2m      - element is not enabled\u001b[22m\n\u001b[2m    - retrying click action\u001b[22m\n\u001b[2m      - waiting 100ms\u001b[22m\n\u001b[2m    57 × waiting for element to be visible, enabled and stable\u001b[22m\n\u001b[2m       - element is not enabled\u001b[22m\n\u001b[2m     - retrying click action\u001b[22m\n\u001b[2m       - waiting 500ms\u001b[22m\n\n\n  7259 |     await codeEditor(page, \"policy-source\").fill(draft);\n  7260 |     await openPolicyFiles(page);\n> 7261 |     await page.locator(\"#policy-save\").click();\n       |                                        ^\n  7262 |     await expect.poll(() => completions.length).toBe(2);\n  7263 |     completions[0]();\n  7264 |     await expect.poll(() => oldFinished).toBe(true);\n    at /Volumes/Storage/dubnom/zipsquat/ZPR Docs/zpr-visaservice.worktrees/maturing-w5-browser-stability/zpr-dashboard/tests/browser/dashboard.spec.mjs:7261:40"
+                    }
+                  ],
+                  "stdout": [],
+                  "stderr": [],
+                  "retry": 0,
+                  "startTime": "2026-10-23T21:29:38.437Z",
+                  "annotations": [],
+                  "attachments": [
+                    {
+                      "name": "screenshot",
+                      "contentType": "image/png",
+                      "path": "/Volumes/Storage/dubnom/zipsquat/ZPR Docs/zpr-visaservice.worktrees/maturing-w5-browser-stability/zpr-dashboard/test-results/dashboard-Policy-runtime-c-bc411-r-pre-save-fixtures-request-desktop-repeat8/test-failed-1.png"
+                    },
+                    {
+                      "name": "error-context",
+                      "contentType": "text/markdown",
+                      "path": "/Volumes/Storage/dubnom/zipsquat/ZPR Docs/zpr-visaservice.worktrees/maturing-w5-browser-stability/zpr-dashboard/test-results/dashboard-Policy-runtime-c-bc411-r-pre-save-fixtures-request-desktop-repeat8/error-context.md"
+                    }
+                  ]
+                }
+              ],
+              "status": "unexpected"
+            }
+          ],
+          "id": "cc3070f185481daa6f24-6fab2ac4fbcec4fcfda6",
+          "file": "dashboard.spec.mjs",
+          "line": 7232,
+          "column": 3
+        },
+        {
+          "title": "Scenario JSON transport keeps failed creation unsaved and preserves explicit creation payloads",
+          "ok": false,
+          "tags": [],
+          "tests": [
+            {
+              "timeout": 30000,
+              "annotations": [],
+              "expectedStatus": "passed",
+              "projectId": "desktop",
+              "projectName": "desktop",
+              "results": [
+                {
+                  "workerIndex": 16,
+                  "parallelIndex": 0,
+                  "status": "failed",
+                  "duration": 750,
+                  "error": {
+                    "message": "Error: \u001b[2mexpect(\u001b[22m\u001b[31mreceived\u001b[39m\u001b[2m).\u001b[22mtoEqual\u001b[2m(\u001b[22m\u001b[32mexpected\u001b[39m\u001b[2m) // deep equality\u001b[22m\n\n\u001b[32m- Expected  - 0\u001b[39m\n\u001b[31m+ Received  + 1\u001b[39m\n\n\u001b[33m@@ -33,6 +33,7 @@\u001b[39m\n\u001b[2m          },\u001b[22m\n\u001b[2m        ],\u001b[22m\n\u001b[2m      },\u001b[22m\n\u001b[2m      \"summary\": \"Initial version\",\u001b[22m\n\u001b[2m    },\u001b[22m\n\u001b[31m+   null,\u001b[39m\n\u001b[2m  ]\u001b[22m",
+                    "stack": "Error: \u001b[2mexpect(\u001b[22m\u001b[31mreceived\u001b[39m\u001b[2m).\u001b[22mtoEqual\u001b[2m(\u001b[22m\u001b[32mexpected\u001b[39m\u001b[2m) // deep equality\u001b[22m\n\n\u001b[32m- Expected  - 0\u001b[39m\n\u001b[31m+ Received  + 1\u001b[39m\n\n\u001b[33m@@ -33,6 +33,7 @@\u001b[39m\n\u001b[2m          },\u001b[22m\n\u001b[2m        ],\u001b[22m\n\u001b[2m      },\u001b[22m\n\u001b[2m      \"summary\": \"Initial version\",\u001b[22m\n\u001b[2m    },\u001b[22m\n\u001b[31m+   null,\u001b[39m\n\u001b[2m  ]\u001b[22m\n    at /Volumes/Storage/dubnom/zipsquat/ZPR Docs/zpr-visaservice.worktrees/maturing-w5-browser-stability/zpr-dashboard/tests/browser/dashboard.spec.mjs:1940:18",
+                    "location": {
+                      "file": "/Volumes/Storage/dubnom/zipsquat/ZPR Docs/zpr-visaservice.worktrees/maturing-w5-browser-stability/zpr-dashboard/tests/browser/dashboard.spec.mjs",
+                      "column": 18,
+                      "line": 1940
+                    },
+                    "snippet": "  1938 |   await page.locator(\"#scenario-editor-save\").click();\n  1939 |   await expect(page.locator(\"#scenario-editor-status\")).toHaveText(\"Saved version 1. Publish it to enable runs.\");\n> 1940 |   expect(writes).toEqual(Array.from({ length: 2 }, () => ({ scenario, summary: \"Initial version\", expected_revision: 0 })));\n       |                  ^\n  1941 |   expect(api.counts.get(endpoint + \"/created-transport/publish\") || 0).toBe(0);\n  1942 |   expect(api.counts.get(\"/api/simulator/scenarios/run\") || 0).toBe(0);\n  1943 | });"
+                  },
+                  "errors": [
+                    {
+                      "location": {
+                        "file": "/Volumes/Storage/dubnom/zipsquat/ZPR Docs/zpr-visaservice.worktrees/maturing-w5-browser-stability/zpr-dashboard/tests/browser/dashboard.spec.mjs",
+                        "column": 18,
+                        "line": 1940
+                      },
+                      "message": "Error: \u001b[2mexpect(\u001b[22m\u001b[31mreceived\u001b[39m\u001b[2m).\u001b[22mtoEqual\u001b[2m(\u001b[22m\u001b[32mexpected\u001b[39m\u001b[2m) // deep equality\u001b[22m\n\n\u001b[32m- Expected  - 0\u001b[39m\n\u001b[31m+ Received  + 1\u001b[39m\n\n\u001b[33m@@ -33,6 +33,7 @@\u001b[39m\n\u001b[2m          },\u001b[22m\n\u001b[2m        ],\u001b[22m\n\u001b[2m      },\u001b[22m\n\u001b[2m      \"summary\": \"Initial version\",\u001b[22m\n\u001b[2m    },\u001b[22m\n\u001b[31m+   null,\u001b[39m\n\u001b[2m  ]\u001b[22m\n\n  1938 |   await page.locator(\"#scenario-editor-save\").click();\n  1939 |   await expect(page.locator(\"#scenario-editor-status\")).toHaveText(\"Saved version 1. Publish it to enable runs.\");\n> 1940 |   expect(writes).toEqual(Array.from({ length: 2 }, () => ({ scenario, summary: \"Initial version\", expected_revision: 0 })));\n       |                  ^\n  1941 |   expect(api.counts.get(endpoint + \"/created-transport/publish\") || 0).toBe(0);\n  1942 |   expect(api.counts.get(\"/api/simulator/scenarios/run\") || 0).toBe(0);\n  1943 | });\n    at /Volumes/Storage/dubnom/zipsquat/ZPR Docs/zpr-visaservice.worktrees/maturing-w5-browser-stability/zpr-dashboard/tests/browser/dashboard.spec.mjs:1940:18"
+                    }
+                  ],
+                  "stdout": [],
+                  "stderr": [],
+                  "retry": 0,
+                  "startTime": "2026-10-23T21:29:39.657Z",
+                  "annotations": [],
+                  "attachments": [
+                    {
+                      "name": "screenshot",
+                      "contentType": "image/png",
+                      "path": "/Volumes/Storage/dubnom/zipsquat/ZPR Docs/zpr-visaservice.worktrees/maturing-w5-browser-stability/zpr-dashboard/test-results/dashboard-Scenario-JSON-tr-077ed--explicit-creation-payloads-desktop-repeat9/test-failed-1.png"
+                    },
+                    {
+                      "name": "error-context",
+                      "contentType": "text/markdown",
+                      "path": "/Volumes/Storage/dubnom/zipsquat/ZPR Docs/zpr-visaservice.worktrees/maturing-w5-browser-stability/zpr-dashboard/test-results/dashboard-Scenario-JSON-tr-077ed--explicit-creation-payloads-desktop-repeat9/error-context.md"
+                    }
+                  ],
+                  "errorLocation": {
+                    "file": "/Volumes/Storage/dubnom/zipsquat/ZPR Docs/zpr-visaservice.worktrees/maturing-w5-browser-stability/zpr-dashboard/tests/browser/dashboard.spec.mjs",
+                    "column": 18,
+                    "line": 1940
+                  }
+                }
+              ],
+              "status": "unexpected"
+            }
+          ],
+          "id": "cc3070f185481daa6f24-c61ff9dca6eaf42f7764",
+          "file": "dashboard.spec.mjs",
+          "line": 1917,
+          "column": 1
+        },
+        {
+          "title": "Policy runtime cancellation cannot release a newer pre-save fixtures request",
+          "ok": false,
+          "tags": [],
+          "tests": [
+            {
+              "timeout": 30000,
+              "annotations": [],
+              "expectedStatus": "passed",
+              "projectId": "desktop",
+              "projectName": "desktop",
+              "results": [
+                {
+                  "workerIndex": 17,
+                  "parallelIndex": 0,
+                  "status": "timedOut",
+                  "duration": 30075,
+                  "error": {
+                    "message": "\u001b[31mTest timeout of 30000ms exceeded.\u001b[39m",
+                    "stack": "\u001b[31mTest timeout of 30000ms exceeded.\u001b[39m"
+                  },
+                  "errors": [
+                    {
+                      "message": "\u001b[31mTest timeout of 30000ms exceeded.\u001b[39m"
+                    },
+                    {
+                      "location": {
+                        "file": "/Volumes/Storage/dubnom/zipsquat/ZPR Docs/zpr-visaservice.worktrees/maturing-w5-browser-stability/zpr-dashboard/tests/browser/dashboard.spec.mjs",
+                        "column": 40,
+                        "line": 7261
+                      },
+                      "message": "Error: locator.click: Test timeout of 30000ms exceeded.\nCall log:\n\u001b[2m  - waiting for locator('#policy-save')\u001b[22m\n\u001b[2m    - locator resolved to <button disabled type=\"button\" role=\"menuitem\" id=\"policy-save\" class=\"button button-save-next\">Save</button>\u001b[22m\n\u001b[2m  - attempting click action\u001b[22m\n\u001b[2m    2 × waiting for element to be visible, enabled and stable\u001b[22m\n\u001b[2m      - element is not enabled\u001b[22m\n\u001b[2m    - retrying click action\u001b[22m\n\u001b[2m    - waiting 20ms\u001b[22m\n\u001b[2m    2 × waiting for element to be visible, enabled and stable\u001b[22m\n\u001b[2m      - element is not enabled\u001b[22m\n\u001b[2m    - retrying click action\u001b[22m\n\u001b[2m      - waiting 100ms\u001b[22m\n\u001b[2m    57 × waiting for element to be visible, enabled and stable\u001b[22m\n\u001b[2m       - element is not enabled\u001b[22m\n\u001b[2m     - retrying click action\u001b[22m\n\u001b[2m       - waiting 500ms\u001b[22m\n\n\n  7259 |     await codeEditor(page, \"policy-source\").fill(draft);\n  7260 |     await openPolicyFiles(page);\n> 7261 |     await page.locator(\"#policy-save\").click();\n       |                                        ^\n  7262 |     await expect.poll(() => completions.length).toBe(2);\n  7263 |     completions[0]();\n  7264 |     await expect.poll(() => oldFinished).toBe(true);\n    at /Volumes/Storage/dubnom/zipsquat/ZPR Docs/zpr-visaservice.worktrees/maturing-w5-browser-stability/zpr-dashboard/tests/browser/dashboard.spec.mjs:7261:40"
+                    }
+                  ],
+                  "stdout": [],
+                  "stderr": [],
+                  "retry": 0,
+                  "startTime": "2026-10-23T21:29:40.937Z",
+                  "annotations": [],
+                  "attachments": [
+                    {
+                      "name": "screenshot",
+                      "contentType": "image/png",
+                      "path": "/Volumes/Storage/dubnom/zipsquat/ZPR Docs/zpr-visaservice.worktrees/maturing-w5-browser-stability/zpr-dashboard/test-results/dashboard-Policy-runtime-c-bc411-r-pre-save-fixtures-request-desktop-repeat9/test-failed-1.png"
+                    },
+                    {
+                      "name": "error-context",
+                      "contentType": "text/markdown",
+                      "path": "/Volumes/Storage/dubnom/zipsquat/ZPR Docs/zpr-visaservice.worktrees/maturing-w5-browser-stability/zpr-dashboard/test-results/dashboard-Policy-runtime-c-bc411-r-pre-save-fixtures-request-desktop-repeat9/error-context.md"
+                    }
+                  ]
+                }
+              ],
+              "status": "unexpected"
+            }
+          ],
+          "id": "cc3070f185481daa6f24-32a31336d7382e3cf218",
+          "file": "dashboard.spec.mjs",
+          "line": 7232,
+          "column": 3
+        }
+      ]
+    },
+    {
+      "title": "geography.spec.mjs",
+      "file": "geography.spec.mjs",
+      "column": 0,
+      "line": 0,
+      "specs": [
+        {
+          "title": "World Map Fit reframes the current viewport after manual zoom and resize",
+          "ok": false,
+          "tags": [],
+          "tests": [
+            {
+              "timeout": 30000,
+              "annotations": [],
+              "expectedStatus": "passed",
+              "projectId": "desktop",
+              "projectName": "desktop",
+              "results": [
+                {
+                  "workerIndex": 18,
+                  "parallelIndex": 1,
+                  "status": "failed",
+                  "duration": 504,
+                  "error": {
+                    "message": "Error: Fit\n\n\u001b[2mexpect(\u001b[22m\u001b[31mreceived\u001b[39m\u001b[2m).\u001b[22mtoBeLessThan\u001b[2m(\u001b[22m\u001b[32mexpected\u001b[39m\u001b[2m)\u001b[22m\n\nExpected: < \u001b[32m0.95\u001b[39m\nReceived:   \u001b[31m1.1249999094275789\u001b[39m",
+                    "stack": "Error: Fit\n\n\u001b[2mexpect(\u001b[22m\u001b[31mreceived\u001b[39m\u001b[2m).\u001b[22mtoBeLessThan\u001b[2m(\u001b[22m\u001b[32mexpected\u001b[39m\u001b[2m)\u001b[22m\n\nExpected: < \u001b[32m0.95\u001b[39m\nReceived:   \u001b[31m1.1249999094275789\u001b[39m\n    at /Volumes/Storage/dubnom/zipsquat/ZPR Docs/zpr-visaservice.worktrees/maturing-w5-browser-stability/zpr-dashboard/tests/browser/geography.spec.mjs:897:36",
+                    "location": {
+                      "file": "/Volumes/Storage/dubnom/zipsquat/ZPR Docs/zpr-visaservice.worktrees/maturing-w5-browser-stability/zpr-dashboard/tests/browser/geography.spec.mjs",
+                      "column": 36,
+                      "line": 897
+                    },
+                    "snippet": "  895 |     expect(frame.aspect, action).toBeCloseTo(frame.viewportAspect, 4);\n  896 |     expect(frame.coverage, action).toBeGreaterThan(0.75);\n> 897 |     expect(frame.coverage, action).toBeLessThan(0.95);\n      |                                    ^\n  898 |     expect(frame.contained, action).toBe(true);\n  899 |   }\n  900 |   await page.setViewportSize({ width: 1280, height: 800 });"
+                  },
+                  "errors": [
+                    {
+                      "location": {
+                        "file": "/Volumes/Storage/dubnom/zipsquat/ZPR Docs/zpr-visaservice.worktrees/maturing-w5-browser-stability/zpr-dashboard/tests/browser/geography.spec.mjs",
+                        "column": 36,
+                        "line": 897
+                      },
+                      "message": "Error: Fit\n\n\u001b[2mexpect(\u001b[22m\u001b[31mreceived\u001b[39m\u001b[2m).\u001b[22mtoBeLessThan\u001b[2m(\u001b[22m\u001b[32mexpected\u001b[39m\u001b[2m)\u001b[22m\n\nExpected: < \u001b[32m0.95\u001b[39m\nReceived:   \u001b[31m1.1249999094275789\u001b[39m\n\n  895 |     expect(frame.aspect, action).toBeCloseTo(frame.viewportAspect, 4);\n  896 |     expect(frame.coverage, action).toBeGreaterThan(0.75);\n> 897 |     expect(frame.coverage, action).toBeLessThan(0.95);\n      |                                    ^\n  898 |     expect(frame.contained, action).toBe(true);\n  899 |   }\n  900 |   await page.setViewportSize({ width: 1280, height: 800 });\n    at /Volumes/Storage/dubnom/zipsquat/ZPR Docs/zpr-visaservice.worktrees/maturing-w5-browser-stability/zpr-dashboard/tests/browser/geography.spec.mjs:897:36"
+                    }
+                  ],
+                  "stdout": [],
+                  "stderr": [],
+                  "retry": 0,
+                  "startTime": "2026-10-23T21:30:08.922Z",
+                  "annotations": [],
+                  "attachments": [
+                    {
+                      "name": "screenshot",
+                      "contentType": "image/png",
+                      "path": "/Volumes/Storage/dubnom/zipsquat/ZPR Docs/zpr-visaservice.worktrees/maturing-w5-browser-stability/zpr-dashboard/test-results/geography-World-Map-Fit-re-3c7ae-fter-manual-zoom-and-resize-desktop/test-failed-1.png"
+                    },
+                    {
+                      "name": "error-context",
+                      "contentType": "text/markdown",
+                      "path": "/Volumes/Storage/dubnom/zipsquat/ZPR Docs/zpr-visaservice.worktrees/maturing-w5-browser-stability/zpr-dashboard/test-results/geography-World-Map-Fit-re-3c7ae-fter-manual-zoom-and-resize-desktop/error-context.md"
+                    }
+                  ],
+                  "errorLocation": {
+                    "file": "/Volumes/Storage/dubnom/zipsquat/ZPR Docs/zpr-visaservice.worktrees/maturing-w5-browser-stability/zpr-dashboard/tests/browser/geography.spec.mjs",
+                    "column": 36,
+                    "line": 897
+                  }
+                }
+              ],
+              "status": "unexpected"
+            }
+          ],
+          "id": "ba07e228bcb3aecf4d27-59cb9cddaa1f81692883",
+          "file": "geography.spec.mjs",
+          "line": 870,
+          "column": 1
+        },
+        {
+          "title": "World Map Fit reframes the current viewport after manual zoom and resize",
+          "ok": false,
+          "tags": [],
+          "tests": [
+            {
+              "timeout": 30000,
+              "annotations": [],
+              "expectedStatus": "passed",
+              "projectId": "desktop",
+              "projectName": "desktop",
+              "results": [
+                {
+                  "workerIndex": 19,
+                  "parallelIndex": 1,
+                  "status": "failed",
+                  "duration": 475,
+                  "error": {
+                    "message": "Error: Fit\n\n\u001b[2mexpect(\u001b[22m\u001b[31mreceived\u001b[39m\u001b[2m).\u001b[22mtoBeLessThan\u001b[2m(\u001b[22m\u001b[32mexpected\u001b[39m\u001b[2m)\u001b[22m\n\nExpected: < \u001b[32m0.95\u001b[39m\nReceived:   \u001b[31m1.1249999094275789\u001b[39m",
+                    "stack": "Error: Fit\n\n\u001b[2mexpect(\u001b[22m\u001b[31mreceived\u001b[39m\u001b[2m).\u001b[22mtoBeLessThan\u001b[2m(\u001b[22m\u001b[32mexpected\u001b[39m\u001b[2m)\u001b[22m\n\nExpected: < \u001b[32m0.95\u001b[39m\nReceived:   \u001b[31m1.1249999094275789\u001b[39m\n    at /Volumes/Storage/dubnom/zipsquat/ZPR Docs/zpr-visaservice.worktrees/maturing-w5-browser-stability/zpr-dashboard/tests/browser/geography.spec.mjs:897:36",
+                    "location": {
+                      "file": "/Volumes/Storage/dubnom/zipsquat/ZPR Docs/zpr-visaservice.worktrees/maturing-w5-browser-stability/zpr-dashboard/tests/browser/geography.spec.mjs",
+                      "column": 36,
+                      "line": 897
+                    },
+                    "snippet": "  895 |     expect(frame.aspect, action).toBeCloseTo(frame.viewportAspect, 4);\n  896 |     expect(frame.coverage, action).toBeGreaterThan(0.75);\n> 897 |     expect(frame.coverage, action).toBeLessThan(0.95);\n      |                                    ^\n  898 |     expect(frame.contained, action).toBe(true);\n  899 |   }\n  900 |   await page.setViewportSize({ width: 1280, height: 800 });"
+                  },
+                  "errors": [
+                    {
+                      "location": {
+                        "file": "/Volumes/Storage/dubnom/zipsquat/ZPR Docs/zpr-visaservice.worktrees/maturing-w5-browser-stability/zpr-dashboard/tests/browser/geography.spec.mjs",
+                        "column": 36,
+                        "line": 897
+                      },
+                      "message": "Error: Fit\n\n\u001b[2mexpect(\u001b[22m\u001b[31mreceived\u001b[39m\u001b[2m).\u001b[22mtoBeLessThan\u001b[2m(\u001b[22m\u001b[32mexpected\u001b[39m\u001b[2m)\u001b[22m\n\nExpected: < \u001b[32m0.95\u001b[39m\nReceived:   \u001b[31m1.1249999094275789\u001b[39m\n\n  895 |     expect(frame.aspect, action).toBeCloseTo(frame.viewportAspect, 4);\n  896 |     expect(frame.coverage, action).toBeGreaterThan(0.75);\n> 897 |     expect(frame.coverage, action).toBeLessThan(0.95);\n      |                                    ^\n  898 |     expect(frame.contained, action).toBe(true);\n  899 |   }\n  900 |   await page.setViewportSize({ width: 1280, height: 800 });\n    at /Volumes/Storage/dubnom/zipsquat/ZPR Docs/zpr-visaservice.worktrees/maturing-w5-browser-stability/zpr-dashboard/tests/browser/geography.spec.mjs:897:36"
+                    }
+                  ],
+                  "stdout": [],
+                  "stderr": [],
+                  "retry": 0,
+                  "startTime": "2026-10-23T21:30:09.838Z",
+                  "annotations": [],
+                  "attachments": [
+                    {
+                      "name": "screenshot",
+                      "contentType": "image/png",
+                      "path": "/Volumes/Storage/dubnom/zipsquat/ZPR Docs/zpr-visaservice.worktrees/maturing-w5-browser-stability/zpr-dashboard/test-results/geography-World-Map-Fit-re-3c7ae-fter-manual-zoom-and-resize-desktop-repeat1/test-failed-1.png"
+                    },
+                    {
+                      "name": "error-context",
+                      "contentType": "text/markdown",
+                      "path": "/Volumes/Storage/dubnom/zipsquat/ZPR Docs/zpr-visaservice.worktrees/maturing-w5-browser-stability/zpr-dashboard/test-results/geography-World-Map-Fit-re-3c7ae-fter-manual-zoom-and-resize-desktop-repeat1/error-context.md"
+                    }
+                  ],
+                  "errorLocation": {
+                    "file": "/Volumes/Storage/dubnom/zipsquat/ZPR Docs/zpr-visaservice.worktrees/maturing-w5-browser-stability/zpr-dashboard/tests/browser/geography.spec.mjs",
+                    "column": 36,
+                    "line": 897
+                  }
+                }
+              ],
+              "status": "unexpected"
+            }
+          ],
+          "id": "ba07e228bcb3aecf4d27-2d9345ddaa4fe6422286",
+          "file": "geography.spec.mjs",
+          "line": 870,
+          "column": 1
+        },
+        {
+          "title": "World Map Fit reframes the current viewport after manual zoom and resize",
+          "ok": false,
+          "tags": [],
+          "tests": [
+            {
+              "timeout": 30000,
+              "annotations": [],
+              "expectedStatus": "passed",
+              "projectId": "desktop",
+              "projectName": "desktop",
+              "results": [
+                {
+                  "workerIndex": 20,
+                  "parallelIndex": 1,
+                  "status": "failed",
+                  "duration": 513,
+                  "error": {
+                    "message": "Error: Fit\n\n\u001b[2mexpect(\u001b[22m\u001b[31mreceived\u001b[39m\u001b[2m).\u001b[22mtoBeLessThan\u001b[2m(\u001b[22m\u001b[32mexpected\u001b[39m\u001b[2m)\u001b[22m\n\nExpected: < \u001b[32m0.95\u001b[39m\nReceived:   \u001b[31m1.1249999094275789\u001b[39m",
+                    "stack": "Error: Fit\n\n\u001b[2mexpect(\u001b[22m\u001b[31mreceived\u001b[39m\u001b[2m).\u001b[22mtoBeLessThan\u001b[2m(\u001b[22m\u001b[32mexpected\u001b[39m\u001b[2m)\u001b[22m\n\nExpected: < \u001b[32m0.95\u001b[39m\nReceived:   \u001b[31m1.1249999094275789\u001b[39m\n    at /Volumes/Storage/dubnom/zipsquat/ZPR Docs/zpr-visaservice.worktrees/maturing-w5-browser-stability/zpr-dashboard/tests/browser/geography.spec.mjs:897:36",
+                    "location": {
+                      "file": "/Volumes/Storage/dubnom/zipsquat/ZPR Docs/zpr-visaservice.worktrees/maturing-w5-browser-stability/zpr-dashboard/tests/browser/geography.spec.mjs",
+                      "column": 36,
+                      "line": 897
+                    },
+                    "snippet": "  895 |     expect(frame.aspect, action).toBeCloseTo(frame.viewportAspect, 4);\n  896 |     expect(frame.coverage, action).toBeGreaterThan(0.75);\n> 897 |     expect(frame.coverage, action).toBeLessThan(0.95);\n      |                                    ^\n  898 |     expect(frame.contained, action).toBe(true);\n  899 |   }\n  900 |   await page.setViewportSize({ width: 1280, height: 800 });"
+                  },
+                  "errors": [
+                    {
+                      "location": {
+                        "file": "/Volumes/Storage/dubnom/zipsquat/ZPR Docs/zpr-visaservice.worktrees/maturing-w5-browser-stability/zpr-dashboard/tests/browser/geography.spec.mjs",
+                        "column": 36,
+                        "line": 897
+                      },
+                      "message": "Error: Fit\n\n\u001b[2mexpect(\u001b[22m\u001b[31mreceived\u001b[39m\u001b[2m).\u001b[22mtoBeLessThan\u001b[2m(\u001b[22m\u001b[32mexpected\u001b[39m\u001b[2m)\u001b[22m\n\nExpected: < \u001b[32m0.95\u001b[39m\nReceived:   \u001b[31m1.1249999094275789\u001b[39m\n\n  895 |     expect(frame.aspect, action).toBeCloseTo(frame.viewportAspect, 4);\n  896 |     expect(frame.coverage, action).toBeGreaterThan(0.75);\n> 897 |     expect(frame.coverage, action).toBeLessThan(0.95);\n      |                                    ^\n  898 |     expect(frame.contained, action).toBe(true);\n  899 |   }\n  900 |   await page.setViewportSize({ width: 1280, height: 800 });\n    at /Volumes/Storage/dubnom/zipsquat/ZPR Docs/zpr-visaservice.worktrees/maturing-w5-browser-stability/zpr-dashboard/tests/browser/geography.spec.mjs:897:36"
+                    }
+                  ],
+                  "stdout": [],
+                  "stderr": [],
+                  "retry": 0,
+                  "startTime": "2026-10-23T21:30:10.732Z",
+                  "annotations": [],
+                  "attachments": [
+                    {
+                      "name": "screenshot",
+                      "contentType": "image/png",
+                      "path": "/Volumes/Storage/dubnom/zipsquat/ZPR Docs/zpr-visaservice.worktrees/maturing-w5-browser-stability/zpr-dashboard/test-results/geography-World-Map-Fit-re-3c7ae-fter-manual-zoom-and-resize-desktop-repeat2/test-failed-1.png"
+                    },
+                    {
+                      "name": "error-context",
+                      "contentType": "text/markdown",
+                      "path": "/Volumes/Storage/dubnom/zipsquat/ZPR Docs/zpr-visaservice.worktrees/maturing-w5-browser-stability/zpr-dashboard/test-results/geography-World-Map-Fit-re-3c7ae-fter-manual-zoom-and-resize-desktop-repeat2/error-context.md"
+                    }
+                  ],
+                  "errorLocation": {
+                    "file": "/Volumes/Storage/dubnom/zipsquat/ZPR Docs/zpr-visaservice.worktrees/maturing-w5-browser-stability/zpr-dashboard/tests/browser/geography.spec.mjs",
+                    "column": 36,
+                    "line": 897
+                  }
+                }
+              ],
+              "status": "unexpected"
+            }
+          ],
+          "id": "ba07e228bcb3aecf4d27-c430380ff25ef06975ad",
+          "file": "geography.spec.mjs",
+          "line": 870,
+          "column": 1
+        },
+        {
+          "title": "World Map Fit reframes the current viewport after manual zoom and resize",
+          "ok": false,
+          "tags": [],
+          "tests": [
+            {
+              "timeout": 30000,
+              "annotations": [],
+              "expectedStatus": "passed",
+              "projectId": "desktop",
+              "projectName": "desktop",
+              "results": [
+                {
+                  "workerIndex": 21,
+                  "parallelIndex": 0,
+                  "status": "failed",
+                  "duration": 749,
+                  "error": {
+                    "message": "Error: Fit\n\n\u001b[2mexpect(\u001b[22m\u001b[31mreceived\u001b[39m\u001b[2m).\u001b[22mtoBeLessThan\u001b[2m(\u001b[22m\u001b[32mexpected\u001b[39m\u001b[2m)\u001b[22m\n\nExpected: < \u001b[32m0.95\u001b[39m\nReceived:   \u001b[31m1.1249999094275789\u001b[39m",
+                    "stack": "Error: Fit\n\n\u001b[2mexpect(\u001b[22m\u001b[31mreceived\u001b[39m\u001b[2m).\u001b[22mtoBeLessThan\u001b[2m(\u001b[22m\u001b[32mexpected\u001b[39m\u001b[2m)\u001b[22m\n\nExpected: < \u001b[32m0.95\u001b[39m\nReceived:   \u001b[31m1.1249999094275789\u001b[39m\n    at /Volumes/Storage/dubnom/zipsquat/ZPR Docs/zpr-visaservice.worktrees/maturing-w5-browser-stability/zpr-dashboard/tests/browser/geography.spec.mjs:897:36",
+                    "location": {
+                      "file": "/Volumes/Storage/dubnom/zipsquat/ZPR Docs/zpr-visaservice.worktrees/maturing-w5-browser-stability/zpr-dashboard/tests/browser/geography.spec.mjs",
+                      "column": 36,
+                      "line": 897
+                    },
+                    "snippet": "  895 |     expect(frame.aspect, action).toBeCloseTo(frame.viewportAspect, 4);\n  896 |     expect(frame.coverage, action).toBeGreaterThan(0.75);\n> 897 |     expect(frame.coverage, action).toBeLessThan(0.95);\n      |                                    ^\n  898 |     expect(frame.contained, action).toBe(true);\n  899 |   }\n  900 |   await page.setViewportSize({ width: 1280, height: 800 });"
+                  },
+                  "errors": [
+                    {
+                      "location": {
+                        "file": "/Volumes/Storage/dubnom/zipsquat/ZPR Docs/zpr-visaservice.worktrees/maturing-w5-browser-stability/zpr-dashboard/tests/browser/geography.spec.mjs",
+                        "column": 36,
+                        "line": 897
+                      },
+                      "message": "Error: Fit\n\n\u001b[2mexpect(\u001b[22m\u001b[31mreceived\u001b[39m\u001b[2m).\u001b[22mtoBeLessThan\u001b[2m(\u001b[22m\u001b[32mexpected\u001b[39m\u001b[2m)\u001b[22m\n\nExpected: < \u001b[32m0.95\u001b[39m\nReceived:   \u001b[31m1.1249999094275789\u001b[39m\n\n  895 |     expect(frame.aspect, action).toBeCloseTo(frame.viewportAspect, 4);\n  896 |     expect(frame.coverage, action).toBeGreaterThan(0.75);\n> 897 |     expect(frame.coverage, action).toBeLessThan(0.95);\n      |                                    ^\n  898 |     expect(frame.contained, action).toBe(true);\n  899 |   }\n  900 |   await page.setViewportSize({ width: 1280, height: 800 });\n    at /Volumes/Storage/dubnom/zipsquat/ZPR Docs/zpr-visaservice.worktrees/maturing-w5-browser-stability/zpr-dashboard/tests/browser/geography.spec.mjs:897:36"
+                    }
+                  ],
+                  "stdout": [],
+                  "stderr": [],
+                  "retry": 0,
+                  "startTime": "2026-10-23T21:30:11.440Z",
+                  "annotations": [],
+                  "attachments": [
+                    {
+                      "name": "screenshot",
+                      "contentType": "image/png",
+                      "path": "/Volumes/Storage/dubnom/zipsquat/ZPR Docs/zpr-visaservice.worktrees/maturing-w5-browser-stability/zpr-dashboard/test-results/geography-World-Map-Fit-re-3c7ae-fter-manual-zoom-and-resize-desktop-repeat3/test-failed-1.png"
+                    },
+                    {
+                      "name": "error-context",
+                      "contentType": "text/markdown",
+                      "path": "/Volumes/Storage/dubnom/zipsquat/ZPR Docs/zpr-visaservice.worktrees/maturing-w5-browser-stability/zpr-dashboard/test-results/geography-World-Map-Fit-re-3c7ae-fter-manual-zoom-and-resize-desktop-repeat3/error-context.md"
+                    }
+                  ],
+                  "errorLocation": {
+                    "file": "/Volumes/Storage/dubnom/zipsquat/ZPR Docs/zpr-visaservice.worktrees/maturing-w5-browser-stability/zpr-dashboard/tests/browser/geography.spec.mjs",
+                    "column": 36,
+                    "line": 897
+                  }
+                }
+              ],
+              "status": "unexpected"
+            }
+          ],
+          "id": "ba07e228bcb3aecf4d27-30504805927ae719bf74",
+          "file": "geography.spec.mjs",
+          "line": 870,
+          "column": 1
+        },
+        {
+          "title": "World Map Fit reframes the current viewport after manual zoom and resize",
+          "ok": false,
+          "tags": [],
+          "tests": [
+            {
+              "timeout": 30000,
+              "annotations": [],
+              "expectedStatus": "passed",
+              "projectId": "desktop",
+              "projectName": "desktop",
+              "results": [
+                {
+                  "workerIndex": 22,
+                  "parallelIndex": 1,
+                  "status": "failed",
+                  "duration": 547,
+                  "error": {
+                    "message": "Error: Fit\n\n\u001b[2mexpect(\u001b[22m\u001b[31mreceived\u001b[39m\u001b[2m).\u001b[22mtoBeLessThan\u001b[2m(\u001b[22m\u001b[32mexpected\u001b[39m\u001b[2m)\u001b[22m\n\nExpected: < \u001b[32m0.95\u001b[39m\nReceived:   \u001b[31m1.1249999094275789\u001b[39m",
+                    "stack": "Error: Fit\n\n\u001b[2mexpect(\u001b[22m\u001b[31mreceived\u001b[39m\u001b[2m).\u001b[22mtoBeLessThan\u001b[2m(\u001b[22m\u001b[32mexpected\u001b[39m\u001b[2m)\u001b[22m\n\nExpected: < \u001b[32m0.95\u001b[39m\nReceived:   \u001b[31m1.1249999094275789\u001b[39m\n    at /Volumes/Storage/dubnom/zipsquat/ZPR Docs/zpr-visaservice.worktrees/maturing-w5-browser-stability/zpr-dashboard/tests/browser/geography.spec.mjs:897:36",
+                    "location": {
+                      "file": "/Volumes/Storage/dubnom/zipsquat/ZPR Docs/zpr-visaservice.worktrees/maturing-w5-browser-stability/zpr-dashboard/tests/browser/geography.spec.mjs",
+                      "column": 36,
+                      "line": 897
+                    },
+                    "snippet": "  895 |     expect(frame.aspect, action).toBeCloseTo(frame.viewportAspect, 4);\n  896 |     expect(frame.coverage, action).toBeGreaterThan(0.75);\n> 897 |     expect(frame.coverage, action).toBeLessThan(0.95);\n      |                                    ^\n  898 |     expect(frame.contained, action).toBe(true);\n  899 |   }\n  900 |   await page.setViewportSize({ width: 1280, height: 800 });"
+                  },
+                  "errors": [
+                    {
+                      "location": {
+                        "file": "/Volumes/Storage/dubnom/zipsquat/ZPR Docs/zpr-visaservice.worktrees/maturing-w5-browser-stability/zpr-dashboard/tests/browser/geography.spec.mjs",
+                        "column": 36,
+                        "line": 897
+                      },
+                      "message": "Error: Fit\n\n\u001b[2mexpect(\u001b[22m\u001b[31mreceived\u001b[39m\u001b[2m).\u001b[22mtoBeLessThan\u001b[2m(\u001b[22m\u001b[32mexpected\u001b[39m\u001b[2m)\u001b[22m\n\nExpected: < \u001b[32m0.95\u001b[39m\nReceived:   \u001b[31m1.1249999094275789\u001b[39m\n\n  895 |     expect(frame.aspect, action).toBeCloseTo(frame.viewportAspect, 4);\n  896 |     expect(frame.coverage, action).toBeGreaterThan(0.75);\n> 897 |     expect(frame.coverage, action).toBeLessThan(0.95);\n      |                                    ^\n  898 |     expect(frame.contained, action).toBe(true);\n  899 |   }\n  900 |   await page.setViewportSize({ width: 1280, height: 800 });\n    at /Volumes/Storage/dubnom/zipsquat/ZPR Docs/zpr-visaservice.worktrees/maturing-w5-browser-stability/zpr-dashboard/tests/browser/geography.spec.mjs:897:36"
+                    }
+                  ],
+                  "stdout": [],
+                  "stderr": [],
+                  "retry": 0,
+                  "startTime": "2026-10-23T21:30:11.722Z",
+                  "annotations": [],
+                  "attachments": [
+                    {
+                      "name": "screenshot",
+                      "contentType": "image/png",
+                      "path": "/Volumes/Storage/dubnom/zipsquat/ZPR Docs/zpr-visaservice.worktrees/maturing-w5-browser-stability/zpr-dashboard/test-results/geography-World-Map-Fit-re-3c7ae-fter-manual-zoom-and-resize-desktop-repeat4/test-failed-1.png"
+                    },
+                    {
+                      "name": "error-context",
+                      "contentType": "text/markdown",
+                      "path": "/Volumes/Storage/dubnom/zipsquat/ZPR Docs/zpr-visaservice.worktrees/maturing-w5-browser-stability/zpr-dashboard/test-results/geography-World-Map-Fit-re-3c7ae-fter-manual-zoom-and-resize-desktop-repeat4/error-context.md"
+                    }
+                  ],
+                  "errorLocation": {
+                    "file": "/Volumes/Storage/dubnom/zipsquat/ZPR Docs/zpr-visaservice.worktrees/maturing-w5-browser-stability/zpr-dashboard/tests/browser/geography.spec.mjs",
+                    "column": 36,
+                    "line": 897
+                  }
+                }
+              ],
+              "status": "unexpected"
+            }
+          ],
+          "id": "ba07e228bcb3aecf4d27-b9b090c1c260248c8f79",
+          "file": "geography.spec.mjs",
+          "line": 870,
+          "column": 1
+        },
+        {
+          "title": "World Map Fit reframes the current viewport after manual zoom and resize",
+          "ok": false,
+          "tags": [],
+          "tests": [
+            {
+              "timeout": 30000,
+              "annotations": [],
+              "expectedStatus": "passed",
+              "projectId": "desktop",
+              "projectName": "desktop",
+              "results": [
+                {
+                  "workerIndex": 23,
+                  "parallelIndex": 0,
+                  "status": "failed",
+                  "duration": 526,
+                  "error": {
+                    "message": "Error: Fit\n\n\u001b[2mexpect(\u001b[22m\u001b[31mreceived\u001b[39m\u001b[2m).\u001b[22mtoBeLessThan\u001b[2m(\u001b[22m\u001b[32mexpected\u001b[39m\u001b[2m)\u001b[22m\n\nExpected: < \u001b[32m0.95\u001b[39m\nReceived:   \u001b[31m1.1249999094275789\u001b[39m",
+                    "stack": "Error: Fit\n\n\u001b[2mexpect(\u001b[22m\u001b[31mreceived\u001b[39m\u001b[2m).\u001b[22mtoBeLessThan\u001b[2m(\u001b[22m\u001b[32mexpected\u001b[39m\u001b[2m)\u001b[22m\n\nExpected: < \u001b[32m0.95\u001b[39m\nReceived:   \u001b[31m1.1249999094275789\u001b[39m\n    at /Volumes/Storage/dubnom/zipsquat/ZPR Docs/zpr-visaservice.worktrees/maturing-w5-browser-stability/zpr-dashboard/tests/browser/geography.spec.mjs:897:36",
+                    "location": {
+                      "file": "/Volumes/Storage/dubnom/zipsquat/ZPR Docs/zpr-visaservice.worktrees/maturing-w5-browser-stability/zpr-dashboard/tests/browser/geography.spec.mjs",
+                      "column": 36,
+                      "line": 897
+                    },
+                    "snippet": "  895 |     expect(frame.aspect, action).toBeCloseTo(frame.viewportAspect, 4);\n  896 |     expect(frame.coverage, action).toBeGreaterThan(0.75);\n> 897 |     expect(frame.coverage, action).toBeLessThan(0.95);\n      |                                    ^\n  898 |     expect(frame.contained, action).toBe(true);\n  899 |   }\n  900 |   await page.setViewportSize({ width: 1280, height: 800 });"
+                  },
+                  "errors": [
+                    {
+                      "location": {
+                        "file": "/Volumes/Storage/dubnom/zipsquat/ZPR Docs/zpr-visaservice.worktrees/maturing-w5-browser-stability/zpr-dashboard/tests/browser/geography.spec.mjs",
+                        "column": 36,
+                        "line": 897
+                      },
+                      "message": "Error: Fit\n\n\u001b[2mexpect(\u001b[22m\u001b[31mreceived\u001b[39m\u001b[2m).\u001b[22mtoBeLessThan\u001b[2m(\u001b[22m\u001b[32mexpected\u001b[39m\u001b[2m)\u001b[22m\n\nExpected: < \u001b[32m0.95\u001b[39m\nReceived:   \u001b[31m1.1249999094275789\u001b[39m\n\n  895 |     expect(frame.aspect, action).toBeCloseTo(frame.viewportAspect, 4);\n  896 |     expect(frame.coverage, action).toBeGreaterThan(0.75);\n> 897 |     expect(frame.coverage, action).toBeLessThan(0.95);\n      |                                    ^\n  898 |     expect(frame.contained, action).toBe(true);\n  899 |   }\n  900 |   await page.setViewportSize({ width: 1280, height: 800 });\n    at /Volumes/Storage/dubnom/zipsquat/ZPR Docs/zpr-visaservice.worktrees/maturing-w5-browser-stability/zpr-dashboard/tests/browser/geography.spec.mjs:897:36"
+                    }
+                  ],
+                  "stdout": [],
+                  "stderr": [],
+                  "retry": 0,
+                  "startTime": "2026-10-23T21:30:12.644Z",
+                  "annotations": [],
+                  "attachments": [
+                    {
+                      "name": "screenshot",
+                      "contentType": "image/png",
+                      "path": "/Volumes/Storage/dubnom/zipsquat/ZPR Docs/zpr-visaservice.worktrees/maturing-w5-browser-stability/zpr-dashboard/test-results/geography-World-Map-Fit-re-3c7ae-fter-manual-zoom-and-resize-desktop-repeat5/test-failed-1.png"
+                    },
+                    {
+                      "name": "error-context",
+                      "contentType": "text/markdown",
+                      "path": "/Volumes/Storage/dubnom/zipsquat/ZPR Docs/zpr-visaservice.worktrees/maturing-w5-browser-stability/zpr-dashboard/test-results/geography-World-Map-Fit-re-3c7ae-fter-manual-zoom-and-resize-desktop-repeat5/error-context.md"
+                    }
+                  ],
+                  "errorLocation": {
+                    "file": "/Volumes/Storage/dubnom/zipsquat/ZPR Docs/zpr-visaservice.worktrees/maturing-w5-browser-stability/zpr-dashboard/tests/browser/geography.spec.mjs",
+                    "column": 36,
+                    "line": 897
+                  }
+                }
+              ],
+              "status": "unexpected"
+            }
+          ],
+          "id": "ba07e228bcb3aecf4d27-ef7a8c97bd3b0875f229",
+          "file": "geography.spec.mjs",
+          "line": 870,
+          "column": 1
+        },
+        {
+          "title": "World Map Fit reframes the current viewport after manual zoom and resize",
+          "ok": false,
+          "tags": [],
+          "tests": [
+            {
+              "timeout": 30000,
+              "annotations": [],
+              "expectedStatus": "passed",
+              "projectId": "desktop",
+              "projectName": "desktop",
+              "results": [
+                {
+                  "workerIndex": 24,
+                  "parallelIndex": 1,
+                  "status": "failed",
+                  "duration": 531,
+                  "error": {
+                    "message": "Error: Fit\n\n\u001b[2mexpect(\u001b[22m\u001b[31mreceived\u001b[39m\u001b[2m).\u001b[22mtoBeLessThan\u001b[2m(\u001b[22m\u001b[32mexpected\u001b[39m\u001b[2m)\u001b[22m\n\nExpected: < \u001b[32m0.95\u001b[39m\nReceived:   \u001b[31m1.1249999094275789\u001b[39m",
+                    "stack": "Error: Fit\n\n\u001b[2mexpect(\u001b[22m\u001b[31mreceived\u001b[39m\u001b[2m).\u001b[22mtoBeLessThan\u001b[2m(\u001b[22m\u001b[32mexpected\u001b[39m\u001b[2m)\u001b[22m\n\nExpected: < \u001b[32m0.95\u001b[39m\nReceived:   \u001b[31m1.1249999094275789\u001b[39m\n    at /Volumes/Storage/dubnom/zipsquat/ZPR Docs/zpr-visaservice.worktrees/maturing-w5-browser-stability/zpr-dashboard/tests/browser/geography.spec.mjs:897:36",
+                    "location": {
+                      "file": "/Volumes/Storage/dubnom/zipsquat/ZPR Docs/zpr-visaservice.worktrees/maturing-w5-browser-stability/zpr-dashboard/tests/browser/geography.spec.mjs",
+                      "column": 36,
+                      "line": 897
+                    },
+                    "snippet": "  895 |     expect(frame.aspect, action).toBeCloseTo(frame.viewportAspect, 4);\n  896 |     expect(frame.coverage, action).toBeGreaterThan(0.75);\n> 897 |     expect(frame.coverage, action).toBeLessThan(0.95);\n      |                                    ^\n  898 |     expect(frame.contained, action).toBe(true);\n  899 |   }\n  900 |   await page.setViewportSize({ width: 1280, height: 800 });"
+                  },
+                  "errors": [
+                    {
+                      "location": {
+                        "file": "/Volumes/Storage/dubnom/zipsquat/ZPR Docs/zpr-visaservice.worktrees/maturing-w5-browser-stability/zpr-dashboard/tests/browser/geography.spec.mjs",
+                        "column": 36,
+                        "line": 897
+                      },
+                      "message": "Error: Fit\n\n\u001b[2mexpect(\u001b[22m\u001b[31mreceived\u001b[39m\u001b[2m).\u001b[22mtoBeLessThan\u001b[2m(\u001b[22m\u001b[32mexpected\u001b[39m\u001b[2m)\u001b[22m\n\nExpected: < \u001b[32m0.95\u001b[39m\nReceived:   \u001b[31m1.1249999094275789\u001b[39m\n\n  895 |     expect(frame.aspect, action).toBeCloseTo(frame.viewportAspect, 4);\n  896 |     expect(frame.coverage, action).toBeGreaterThan(0.75);\n> 897 |     expect(frame.coverage, action).toBeLessThan(0.95);\n      |                                    ^\n  898 |     expect(frame.contained, action).toBe(true);\n  899 |   }\n  900 |   await page.setViewportSize({ width: 1280, height: 800 });\n    at /Volumes/Storage/dubnom/zipsquat/ZPR Docs/zpr-visaservice.worktrees/maturing-w5-browser-stability/zpr-dashboard/tests/browser/geography.spec.mjs:897:36"
+                    }
+                  ],
+                  "stdout": [],
+                  "stderr": [],
+                  "retry": 0,
+                  "startTime": "2026-10-23T21:30:12.700Z",
+                  "annotations": [],
+                  "attachments": [
+                    {
+                      "name": "screenshot",
+                      "contentType": "image/png",
+                      "path": "/Volumes/Storage/dubnom/zipsquat/ZPR Docs/zpr-visaservice.worktrees/maturing-w5-browser-stability/zpr-dashboard/test-results/geography-World-Map-Fit-re-3c7ae-fter-manual-zoom-and-resize-desktop-repeat6/test-failed-1.png"
+                    },
+                    {
+                      "name": "error-context",
+                      "contentType": "text/markdown",
+                      "path": "/Volumes/Storage/dubnom/zipsquat/ZPR Docs/zpr-visaservice.worktrees/maturing-w5-browser-stability/zpr-dashboard/test-results/geography-World-Map-Fit-re-3c7ae-fter-manual-zoom-and-resize-desktop-repeat6/error-context.md"
+                    }
+                  ],
+                  "errorLocation": {
+                    "file": "/Volumes/Storage/dubnom/zipsquat/ZPR Docs/zpr-visaservice.worktrees/maturing-w5-browser-stability/zpr-dashboard/tests/browser/geography.spec.mjs",
+                    "column": 36,
+                    "line": 897
+                  }
+                }
+              ],
+              "status": "unexpected"
+            }
+          ],
+          "id": "ba07e228bcb3aecf4d27-b42b0424749120089717",
+          "file": "geography.spec.mjs",
+          "line": 870,
+          "column": 1
+        },
+        {
+          "title": "World Map Fit reframes the current viewport after manual zoom and resize",
+          "ok": false,
+          "tags": [],
+          "tests": [
+            {
+              "timeout": 30000,
+              "annotations": [],
+              "expectedStatus": "passed",
+              "projectId": "desktop",
+              "projectName": "desktop",
+              "results": [
+                {
+                  "workerIndex": 25,
+                  "parallelIndex": 0,
+                  "status": "failed",
+                  "duration": 569,
+                  "error": {
+                    "message": "Error: Fit\n\n\u001b[2mexpect(\u001b[22m\u001b[31mreceived\u001b[39m\u001b[2m).\u001b[22mtoBeLessThan\u001b[2m(\u001b[22m\u001b[32mexpected\u001b[39m\u001b[2m)\u001b[22m\n\nExpected: < \u001b[32m0.95\u001b[39m\nReceived:   \u001b[31m1.1249999094275789\u001b[39m",
+                    "stack": "Error: Fit\n\n\u001b[2mexpect(\u001b[22m\u001b[31mreceived\u001b[39m\u001b[2m).\u001b[22mtoBeLessThan\u001b[2m(\u001b[22m\u001b[32mexpected\u001b[39m\u001b[2m)\u001b[22m\n\nExpected: < \u001b[32m0.95\u001b[39m\nReceived:   \u001b[31m1.1249999094275789\u001b[39m\n    at /Volumes/Storage/dubnom/zipsquat/ZPR Docs/zpr-visaservice.worktrees/maturing-w5-browser-stability/zpr-dashboard/tests/browser/geography.spec.mjs:897:36",
+                    "location": {
+                      "file": "/Volumes/Storage/dubnom/zipsquat/ZPR Docs/zpr-visaservice.worktrees/maturing-w5-browser-stability/zpr-dashboard/tests/browser/geography.spec.mjs",
+                      "column": 36,
+                      "line": 897
+                    },
+                    "snippet": "  895 |     expect(frame.aspect, action).toBeCloseTo(frame.viewportAspect, 4);\n  896 |     expect(frame.coverage, action).toBeGreaterThan(0.75);\n> 897 |     expect(frame.coverage, action).toBeLessThan(0.95);\n      |                                    ^\n  898 |     expect(frame.contained, action).toBe(true);\n  899 |   }\n  900 |   await page.setViewportSize({ width: 1280, height: 800 });"
+                  },
+                  "errors": [
+                    {
+                      "location": {
+                        "file": "/Volumes/Storage/dubnom/zipsquat/ZPR Docs/zpr-visaservice.worktrees/maturing-w5-browser-stability/zpr-dashboard/tests/browser/geography.spec.mjs",
+                        "column": 36,
+                        "line": 897
+                      },
+                      "message": "Error: Fit\n\n\u001b[2mexpect(\u001b[22m\u001b[31mreceived\u001b[39m\u001b[2m).\u001b[22mtoBeLessThan\u001b[2m(\u001b[22m\u001b[32mexpected\u001b[39m\u001b[2m)\u001b[22m\n\nExpected: < \u001b[32m0.95\u001b[39m\nReceived:   \u001b[31m1.1249999094275789\u001b[39m\n\n  895 |     expect(frame.aspect, action).toBeCloseTo(frame.viewportAspect, 4);\n  896 |     expect(frame.coverage, action).toBeGreaterThan(0.75);\n> 897 |     expect(frame.coverage, action).toBeLessThan(0.95);\n      |                                    ^\n  898 |     expect(frame.contained, action).toBe(true);\n  899 |   }\n  900 |   await page.setViewportSize({ width: 1280, height: 800 });\n    at /Volumes/Storage/dubnom/zipsquat/ZPR Docs/zpr-visaservice.worktrees/maturing-w5-browser-stability/zpr-dashboard/tests/browser/geography.spec.mjs:897:36"
+                    }
+                  ],
+                  "stdout": [],
+                  "stderr": [],
+                  "retry": 0,
+                  "startTime": "2026-10-23T21:30:13.603Z",
+                  "annotations": [],
+                  "attachments": [
+                    {
+                      "name": "screenshot",
+                      "contentType": "image/png",
+                      "path": "/Volumes/Storage/dubnom/zipsquat/ZPR Docs/zpr-visaservice.worktrees/maturing-w5-browser-stability/zpr-dashboard/test-results/geography-World-Map-Fit-re-3c7ae-fter-manual-zoom-and-resize-desktop-repeat7/test-failed-1.png"
+                    },
+                    {
+                      "name": "error-context",
+                      "contentType": "text/markdown",
+                      "path": "/Volumes/Storage/dubnom/zipsquat/ZPR Docs/zpr-visaservice.worktrees/maturing-w5-browser-stability/zpr-dashboard/test-results/geography-World-Map-Fit-re-3c7ae-fter-manual-zoom-and-resize-desktop-repeat7/error-context.md"
+                    }
+                  ],
+                  "errorLocation": {
+                    "file": "/Volumes/Storage/dubnom/zipsquat/ZPR Docs/zpr-visaservice.worktrees/maturing-w5-browser-stability/zpr-dashboard/tests/browser/geography.spec.mjs",
+                    "column": 36,
+                    "line": 897
+                  }
+                }
+              ],
+              "status": "unexpected"
+            }
+          ],
+          "id": "ba07e228bcb3aecf4d27-91b696b814a773e3a263",
+          "file": "geography.spec.mjs",
+          "line": 870,
+          "column": 1
+        },
+        {
+          "title": "World Map Fit reframes the current viewport after manual zoom and resize",
+          "ok": false,
+          "tags": [],
+          "tests": [
+            {
+              "timeout": 30000,
+              "annotations": [],
+              "expectedStatus": "passed",
+              "projectId": "desktop",
+              "projectName": "desktop",
+              "results": [
+                {
+                  "workerIndex": 26,
+                  "parallelIndex": 1,
+                  "status": "failed",
+                  "duration": 520,
+                  "error": {
+                    "message": "Error: Fit\n\n\u001b[2mexpect(\u001b[22m\u001b[31mreceived\u001b[39m\u001b[2m).\u001b[22mtoBeLessThan\u001b[2m(\u001b[22m\u001b[32mexpected\u001b[39m\u001b[2m)\u001b[22m\n\nExpected: < \u001b[32m0.95\u001b[39m\nReceived:   \u001b[31m1.1249999094275789\u001b[39m",
+                    "stack": "Error: Fit\n\n\u001b[2mexpect(\u001b[22m\u001b[31mreceived\u001b[39m\u001b[2m).\u001b[22mtoBeLessThan\u001b[2m(\u001b[22m\u001b[32mexpected\u001b[39m\u001b[2m)\u001b[22m\n\nExpected: < \u001b[32m0.95\u001b[39m\nReceived:   \u001b[31m1.1249999094275789\u001b[39m\n    at /Volumes/Storage/dubnom/zipsquat/ZPR Docs/zpr-visaservice.worktrees/maturing-w5-browser-stability/zpr-dashboard/tests/browser/geography.spec.mjs:897:36",
+                    "location": {
+                      "file": "/Volumes/Storage/dubnom/zipsquat/ZPR Docs/zpr-visaservice.worktrees/maturing-w5-browser-stability/zpr-dashboard/tests/browser/geography.spec.mjs",
+                      "column": 36,
+                      "line": 897
+                    },
+                    "snippet": "  895 |     expect(frame.aspect, action).toBeCloseTo(frame.viewportAspect, 4);\n  896 |     expect(frame.coverage, action).toBeGreaterThan(0.75);\n> 897 |     expect(frame.coverage, action).toBeLessThan(0.95);\n      |                                    ^\n  898 |     expect(frame.contained, action).toBe(true);\n  899 |   }\n  900 |   await page.setViewportSize({ width: 1280, height: 800 });"
+                  },
+                  "errors": [
+                    {
+                      "location": {
+                        "file": "/Volumes/Storage/dubnom/zipsquat/ZPR Docs/zpr-visaservice.worktrees/maturing-w5-browser-stability/zpr-dashboard/tests/browser/geography.spec.mjs",
+                        "column": 36,
+                        "line": 897
+                      },
+                      "message": "Error: Fit\n\n\u001b[2mexpect(\u001b[22m\u001b[31mreceived\u001b[39m\u001b[2m).\u001b[22mtoBeLessThan\u001b[2m(\u001b[22m\u001b[32mexpected\u001b[39m\u001b[2m)\u001b[22m\n\nExpected: < \u001b[32m0.95\u001b[39m\nReceived:   \u001b[31m1.1249999094275789\u001b[39m\n\n  895 |     expect(frame.aspect, action).toBeCloseTo(frame.viewportAspect, 4);\n  896 |     expect(frame.coverage, action).toBeGreaterThan(0.75);\n> 897 |     expect(frame.coverage, action).toBeLessThan(0.95);\n      |                                    ^\n  898 |     expect(frame.contained, action).toBe(true);\n  899 |   }\n  900 |   await page.setViewportSize({ width: 1280, height: 800 });\n    at /Volumes/Storage/dubnom/zipsquat/ZPR Docs/zpr-visaservice.worktrees/maturing-w5-browser-stability/zpr-dashboard/tests/browser/geography.spec.mjs:897:36"
+                    }
+                  ],
+                  "stdout": [],
+                  "stderr": [],
+                  "retry": 0,
+                  "startTime": "2026-10-23T21:30:13.645Z",
+                  "annotations": [],
+                  "attachments": [
+                    {
+                      "name": "screenshot",
+                      "contentType": "image/png",
+                      "path": "/Volumes/Storage/dubnom/zipsquat/ZPR Docs/zpr-visaservice.worktrees/maturing-w5-browser-stability/zpr-dashboard/test-results/geography-World-Map-Fit-re-3c7ae-fter-manual-zoom-and-resize-desktop-repeat8/test-failed-1.png"
+                    },
+                    {
+                      "name": "error-context",
+                      "contentType": "text/markdown",
+                      "path": "/Volumes/Storage/dubnom/zipsquat/ZPR Docs/zpr-visaservice.worktrees/maturing-w5-browser-stability/zpr-dashboard/test-results/geography-World-Map-Fit-re-3c7ae-fter-manual-zoom-and-resize-desktop-repeat8/error-context.md"
+                    }
+                  ],
+                  "errorLocation": {
+                    "file": "/Volumes/Storage/dubnom/zipsquat/ZPR Docs/zpr-visaservice.worktrees/maturing-w5-browser-stability/zpr-dashboard/tests/browser/geography.spec.mjs",
+                    "column": 36,
+                    "line": 897
+                  }
+                }
+              ],
+              "status": "unexpected"
+            }
+          ],
+          "id": "ba07e228bcb3aecf4d27-459a4faeb13d68acbcee",
+          "file": "geography.spec.mjs",
+          "line": 870,
+          "column": 1
+        },
+        {
+          "title": "World Map Fit reframes the current viewport after manual zoom and resize",
+          "ok": false,
+          "tags": [],
+          "tests": [
+            {
+              "timeout": 30000,
+              "annotations": [],
+              "expectedStatus": "passed",
+              "projectId": "desktop",
+              "projectName": "desktop",
+              "results": [
+                {
+                  "workerIndex": 27,
+                  "parallelIndex": 0,
+                  "status": "failed",
+                  "duration": 476,
+                  "error": {
+                    "message": "Error: Fit\n\n\u001b[2mexpect(\u001b[22m\u001b[31mreceived\u001b[39m\u001b[2m).\u001b[22mtoBeLessThan\u001b[2m(\u001b[22m\u001b[32mexpected\u001b[39m\u001b[2m)\u001b[22m\n\nExpected: < \u001b[32m0.95\u001b[39m\nReceived:   \u001b[31m1.1249999094275789\u001b[39m",
+                    "stack": "Error: Fit\n\n\u001b[2mexpect(\u001b[22m\u001b[31mreceived\u001b[39m\u001b[2m).\u001b[22mtoBeLessThan\u001b[2m(\u001b[22m\u001b[32mexpected\u001b[39m\u001b[2m)\u001b[22m\n\nExpected: < \u001b[32m0.95\u001b[39m\nReceived:   \u001b[31m1.1249999094275789\u001b[39m\n    at /Volumes/Storage/dubnom/zipsquat/ZPR Docs/zpr-visaservice.worktrees/maturing-w5-browser-stability/zpr-dashboard/tests/browser/geography.spec.mjs:897:36",
+                    "location": {
+                      "file": "/Volumes/Storage/dubnom/zipsquat/ZPR Docs/zpr-visaservice.worktrees/maturing-w5-browser-stability/zpr-dashboard/tests/browser/geography.spec.mjs",
+                      "column": 36,
+                      "line": 897
+                    },
+                    "snippet": "  895 |     expect(frame.aspect, action).toBeCloseTo(frame.viewportAspect, 4);\n  896 |     expect(frame.coverage, action).toBeGreaterThan(0.75);\n> 897 |     expect(frame.coverage, action).toBeLessThan(0.95);\n      |                                    ^\n  898 |     expect(frame.contained, action).toBe(true);\n  899 |   }\n  900 |   await page.setViewportSize({ width: 1280, height: 800 });"
+                  },
+                  "errors": [
+                    {
+                      "location": {
+                        "file": "/Volumes/Storage/dubnom/zipsquat/ZPR Docs/zpr-visaservice.worktrees/maturing-w5-browser-stability/zpr-dashboard/tests/browser/geography.spec.mjs",
+                        "column": 36,
+                        "line": 897
+                      },
+                      "message": "Error: Fit\n\n\u001b[2mexpect(\u001b[22m\u001b[31mreceived\u001b[39m\u001b[2m).\u001b[22mtoBeLessThan\u001b[2m(\u001b[22m\u001b[32mexpected\u001b[39m\u001b[2m)\u001b[22m\n\nExpected: < \u001b[32m0.95\u001b[39m\nReceived:   \u001b[31m1.1249999094275789\u001b[39m\n\n  895 |     expect(frame.aspect, action).toBeCloseTo(frame.viewportAspect, 4);\n  896 |     expect(frame.coverage, action).toBeGreaterThan(0.75);\n> 897 |     expect(frame.coverage, action).toBeLessThan(0.95);\n      |                                    ^\n  898 |     expect(frame.contained, action).toBe(true);\n  899 |   }\n  900 |   await page.setViewportSize({ width: 1280, height: 800 });\n    at /Volumes/Storage/dubnom/zipsquat/ZPR Docs/zpr-visaservice.worktrees/maturing-w5-browser-stability/zpr-dashboard/tests/browser/geography.spec.mjs:897:36"
+                    }
+                  ],
+                  "stdout": [],
+                  "stderr": [],
+                  "retry": 0,
+                  "startTime": "2026-10-23T21:30:14.594Z",
+                  "annotations": [],
+                  "attachments": [
+                    {
+                      "name": "screenshot",
+                      "contentType": "image/png",
+                      "path": "/Volumes/Storage/dubnom/zipsquat/ZPR Docs/zpr-visaservice.worktrees/maturing-w5-browser-stability/zpr-dashboard/test-results/geography-World-Map-Fit-re-3c7ae-fter-manual-zoom-and-resize-desktop-repeat9/test-failed-1.png"
+                    },
+                    {
+                      "name": "error-context",
+                      "contentType": "text/markdown",
+                      "path": "/Volumes/Storage/dubnom/zipsquat/ZPR Docs/zpr-visaservice.worktrees/maturing-w5-browser-stability/zpr-dashboard/test-results/geography-World-Map-Fit-re-3c7ae-fter-manual-zoom-and-resize-desktop-repeat9/error-context.md"
+                    }
+                  ],
+                  "errorLocation": {
+                    "file": "/Volumes/Storage/dubnom/zipsquat/ZPR Docs/zpr-visaservice.worktrees/maturing-w5-browser-stability/zpr-dashboard/tests/browser/geography.spec.mjs",
+                    "column": 36,
+                    "line": 897
+                  }
+                }
+              ],
+              "status": "unexpected"
+            }
+          ],
+          "id": "ba07e228bcb3aecf4d27-3cedbcead9a7d18bd336",
+          "file": "geography.spec.mjs",
+          "line": 870,
+          "column": 1
+        }
+      ]
+    }
+  ],
+  "errors": [],
+  "stats": {
+    "startTime": "2026-10-23T21:27:30.994Z",
+    "duration": 164225.395,
+    "expected": 2,
+    "skipped": 0,
+    "unexpected": 28,
+    "flaky": 0
+  }
+}

@@ -1,0 +1,51 @@
+Validated 400 executions: 10 exact IDs × 10 repetitions × 2 commits × 2 worker counts.
+cc3070f185481daa6f24-f9d4bda33a2de34a9120 Scenario JSON transport keeps failed creation unsaved and preserves explicit creation payloads
+  maturing-w1-desktop {'failed': 9, 'passed': 1} errors: {'Error: expect(received).toEqual(expected) // deep equality\n\n- Expected  - 0\n+ Received  + 1\n\n@@ -33,6 +33,7 @@': 9}
+  maturing-w2-desktop {'failed': 8, 'passed': 2} errors: {'Error: expect(received).toEqual(expected) // deep equality\n\n- Expected  - 0\n+ Received  + 1\n\n@@ -33,6 +33,7 @@': 8}
+  beta-w1-desktop {'failed': 7, 'passed': 3} errors: {'Error: expect(received).toEqual(expected) // deep equality\n\n- Expected  - 0\n+ Received  + 1\n\n@@ -33,6 +33,7 @@': 7}
+  beta-w2-desktop {'failed': 9, 'passed': 1} errors: {'Error: expect(received).toEqual(expected) // deep equality\n\n- Expected  - 0\n+ Received  + 1\n\n@@ -33,6 +33,7 @@': 9}
+cc3070f185481daa6f24-f779cd8e5f8d23340312 Policy runtime cancellation cannot release a newer pre-save fixtures request
+  maturing-w1-desktop {'timedOut': 9, 'passed': 1} errors: {'Test timeout of 30000ms exceeded.': 9, 'Error: locator.click: Test timeout of 30000ms exceeded.': 9}
+  maturing-w2-desktop {'timedOut': 10} errors: {'Test timeout of 30000ms exceeded.': 10, 'Error: locator.click: Test timeout of 30000ms exceeded.': 10}
+  beta-w1-desktop {'timedOut': 10} errors: {'Test timeout of 30000ms exceeded.': 10, 'Error: locator.click: Test timeout of 30000ms exceeded.': 10}
+  beta-w2-desktop {'timedOut': 8, 'passed': 2} errors: {'Test timeout of 30000ms exceeded.': 8, 'Error: locator.click: Test timeout of 30000ms exceeded.': 8}
+cc3070f185481daa6f24-5486e71cd297f6cb868d GUI shared programmatic edits keep policy completion and Scenario indentation undoable
+  maturing-w1-tablet {'failed': 10} errors: {"Error: expect(locator).toHaveValue(expected) failed\n\nLocator: locator('#policy-source')\nTimeout: 5000ms\n- Expected  - 1\n+ Received  + 2\n": 10}
+  maturing-w2-tablet {'failed': 10} errors: {"Error: expect(locator).toHaveValue(expected) failed\n\nLocator: locator('#policy-source')\nTimeout: 5000ms\n- Expected  - 1\n+ Received  + 2\n": 10}
+  beta-w1-tablet {'failed': 10} errors: {"Error: expect(locator).toHaveValue(expected) failed\n\nLocator: locator('#policy-source')\nTimeout: 5000ms\n- Expected  - 1\n+ Received  + 2\n": 10}
+  beta-w2-tablet {'failed': 10} errors: {"Error: expect(locator).toHaveValue(expected) failed\n\nLocator: locator('#policy-source')\nTimeout: 5000ms\n- Expected  - 1\n+ Received  + 2\n": 10}
+cc3070f185481daa6f24-823cc6ef42d23c7a4742 Scenario JSON transport keeps failed creation unsaved and preserves explicit creation payloads
+  maturing-w1-tablet {'passed': 6, 'failed': 4} errors: {'Error: expect(received).toEqual(expected) // deep equality\n\n- Expected  - 0\n+ Received  + 1\n\n@@ -33,6 +33,7 @@': 4}
+  maturing-w2-tablet {'failed': 7, 'passed': 3} errors: {'Error: expect(received).toEqual(expected) // deep equality\n\n- Expected  - 0\n+ Received  + 1\n\n@@ -33,6 +33,7 @@': 7}
+  beta-w1-tablet {'failed': 5, 'passed': 5} errors: {'Error: expect(received).toEqual(expected) // deep equality\n\n- Expected  - 0\n+ Received  + 1\n\n@@ -33,6 +33,7 @@': 5}
+  beta-w2-tablet {'failed': 5, 'passed': 5} errors: {'Error: expect(received).toEqual(expected) // deep equality\n\n- Expected  - 0\n+ Received  + 1\n\n@@ -33,6 +33,7 @@': 5}
+cc3070f185481daa6f24-b0952dd568f4f7e00c45 GUI raw scenario analysis ignores delayed errors for an edited source
+  maturing-w1-tablet {'failed': 10} errors: {'Error: Unexpected CSP violations\n\nexpect(received).toEqual(expected) // deep equality\n\n- Expected  - 1\n+ Received  + 3\n\n- Array []\n+ Array [\n+   "style-src-attr",\n+ ]\n': 10}
+  maturing-w2-tablet {'failed': 10} errors: {'Error: Unexpected CSP violations\n\nexpect(received).toEqual(expected) // deep equality\n\n- Expected  - 1\n+ Received  + 3\n\n- Array []\n+ Array [\n+   "style-src-attr",\n+ ]\n': 10}
+  beta-w1-tablet {'failed': 10} errors: {'Error: Unexpected CSP violations\n\nexpect(received).toEqual(expected) // deep equality\n\n- Expected  - 1\n+ Received  + 3\n\n- Array []\n+ Array [\n+   "style-src-attr",\n+ ]\n': 10}
+  beta-w2-tablet {'failed': 10} errors: {'Error: Unexpected CSP violations\n\nexpect(received).toEqual(expected) // deep equality\n\n- Expected  - 1\n+ Received  + 3\n\n- Array []\n+ Array [\n+   "style-src-attr",\n+ ]\n': 10}
+cc3070f185481daa6f24-8d7dcd12e1769238f863 Gateway analysis scope rejects delayed success after editing back to the original source
+  maturing-w1-tablet {'failed': 9, 'passed': 1} errors: {'Error: Unexpected CSP violations\n\nexpect(received).toEqual(expected) // deep equality\n\n- Expected  - 1\n+ Received  + 3\n\n- Array []\n+ Array [\n+   "style-src-attr",\n+ ]\n': 9}
+  maturing-w2-tablet {'failed': 10} errors: {'Error: Unexpected CSP violations\n\nexpect(received).toEqual(expected) // deep equality\n\n- Expected  - 1\n+ Received  + 3\n\n- Array []\n+ Array [\n+   "style-src-attr",\n+ ]\n': 10}
+  beta-w1-tablet {'failed': 10} errors: {'Error: Unexpected CSP violations\n\nexpect(received).toEqual(expected) // deep equality\n\n- Expected  - 1\n+ Received  + 3\n\n- Array []\n+ Array [\n+   "style-src-attr",\n+ ]\n': 10}
+  beta-w2-tablet {'failed': 10} errors: {'Error: Unexpected CSP violations\n\nexpect(received).toEqual(expected) // deep equality\n\n- Expected  - 1\n+ Received  + 3\n\n- Array []\n+ Array [\n+   "style-src-attr",\n+ ]\n': 10}
+cc3070f185481daa6f24-086595e0f8ea7af946fc Gateway analysis scope rejects delayed error after editing back to the original source
+  maturing-w1-tablet {'failed': 10} errors: {'Error: Unexpected CSP violations\n\nexpect(received).toEqual(expected) // deep equality\n\n- Expected  - 1\n+ Received  + 3\n\n- Array []\n+ Array [\n+   "style-src-attr",\n+ ]\n': 10}
+  maturing-w2-tablet {'failed': 10} errors: {'Error: Unexpected CSP violations\n\nexpect(received).toEqual(expected) // deep equality\n\n- Expected  - 1\n+ Received  + 3\n\n- Array []\n+ Array [\n+   "style-src-attr",\n+ ]\n': 10}
+  beta-w1-tablet {'failed': 10} errors: {'Error: Unexpected CSP violations\n\nexpect(received).toEqual(expected) // deep equality\n\n- Expected  - 1\n+ Received  + 3\n\n- Array []\n+ Array [\n+   "style-src-attr",\n+ ]\n': 10}
+  beta-w2-tablet {'failed': 10} errors: {'Error: Unexpected CSP violations\n\nexpect(received).toEqual(expected) // deep equality\n\n- Expected  - 1\n+ Received  + 3\n\n- Array []\n+ Array [\n+   "style-src-attr",\n+ ]\n': 10}
+cc3070f185481daa6f24-3466b56273f4f71cdf83 Policy runtime cancellation cannot release a newer pre-save fixtures request
+  maturing-w1-tablet {'timedOut': 10} errors: {'Test timeout of 30000ms exceeded.': 10, 'Error: locator.click: Test timeout of 30000ms exceeded.': 10}
+  maturing-w2-tablet {'passed': 1, 'timedOut': 9} errors: {'Test timeout of 30000ms exceeded.': 9, 'Error: locator.click: Test timeout of 30000ms exceeded.': 9}
+  beta-w1-tablet {'timedOut': 10} errors: {'Test timeout of 30000ms exceeded.': 10, 'Error: locator.click: Test timeout of 30000ms exceeded.': 10}
+  beta-w2-tablet {'timedOut': 9, 'passed': 1} errors: {'Test timeout of 30000ms exceeded.': 9, 'Error: locator.click: Test timeout of 30000ms exceeded.': 9}
+cc3070f185481daa6f24-10bc69e8c681940787d4 Policy runtime cancellation cannot release a newer pre-save evaluation request
+  maturing-w1-tablet {'timedOut': 10} errors: {'Test timeout of 30000ms exceeded.': 10, 'Error: locator.click: Test timeout of 30000ms exceeded.': 10}
+  maturing-w2-tablet {'passed': 1, 'timedOut': 9} errors: {'Test timeout of 30000ms exceeded.': 9, 'Error: locator.click: Test timeout of 30000ms exceeded.': 9}
+  beta-w1-tablet {'timedOut': 9, 'passed': 1} errors: {'Test timeout of 30000ms exceeded.': 9, 'Error: locator.click: Test timeout of 30000ms exceeded.': 9}
+  beta-w2-tablet {'timedOut': 10} errors: {'Test timeout of 30000ms exceeded.': 10, 'Error: locator.click: Test timeout of 30000ms exceeded.': 10}
+ba07e228bcb3aecf4d27-59cb9cddaa1f81692883 World Map Fit reframes the current viewport after manual zoom and resize
+  maturing-w1-desktop {'failed': 10} errors: {'Error: Fit\n\nexpect(received).toBeLessThan(expected)\n\nExpected: < 0.95\nReceived:   1.1249999094275789\n': 10}
+  maturing-w2-desktop {'failed': 10} errors: {'Error: Fit\n\nexpect(received).toBeLessThan(expected)\n\nExpected: < 0.95\nReceived:   1.1249999094275789\n': 10}
+  beta-w1-desktop {'failed': 10} errors: {'Error: Fit\n\nexpect(received).toBeLessThan(expected)\n\nExpected: < 0.95\nReceived:   1.1249999094275789\n': 9, 'Error: Fit\n\nexpect(received).toBeCloseTo(expected, precision)\n\nExpected: 0.6149764150943396\nReceived: 0.6163521828172815\n\nExpected precision:    4\nExpected difference: < 0.00005\nReceived difference:   0.0013757677229419008\n': 1}
+  beta-w2-desktop {'failed': 10} errors: {'Error: Fit\n\nexpect(received).toBeLessThan(expected)\n\nExpected: < 0.95\nReceived:   1.1249999094275789\n': 10}

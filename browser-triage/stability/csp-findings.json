@@ -1,0 +1,403 @@
+[
+  {
+    "name": "maturing-csp-diagnostic",
+    "stats": {
+      "startTime": "2026-10-23T22:00:48.863Z",
+      "duration": 33815.132999999994,
+      "expected": 17,
+      "skipped": 0,
+      "unexpected": 13,
+      "flaky": 0
+    },
+    "tests": {
+      "GUI raw scenario analysis ignores delayed errors for an edited source": {
+        "failed": 6,
+        "passed": 4
+      },
+      "Gateway analysis scope rejects delayed success after editing back to the original source": {
+        "passed": 7,
+        "failed": 3
+      },
+      "Gateway analysis scope rejects delayed error after editing back to the original source": {
+        "failed": 4,
+        "passed": 6
+      }
+    },
+    "browser_versions": [
+      "153.0.8010.12"
+    ],
+    "observed_violation_events": 13,
+    "observed_cdp_audits": 13,
+    "rejected_inline_styles": {
+      "color: rgb(186, 201, 191); background-color: rgba(50, 140, 130, 0.32);": 6
+    },
+    "observed_line_style_mutations": {},
+    "representative_native_inputs": []
+  },
+  {
+    "name": "beta-csp-diagnostic",
+    "stats": {
+      "startTime": "2026-10-23T22:01:23.336Z",
+      "duration": 35067.974,
+      "expected": 16,
+      "skipped": 0,
+      "unexpected": 14,
+      "flaky": 0
+    },
+    "tests": {
+      "GUI raw scenario analysis ignores delayed errors for an edited source": {
+        "failed": 10
+      },
+      "Gateway analysis scope rejects delayed success after editing back to the original source": {
+        "passed": 8,
+        "failed": 2
+      },
+      "Gateway analysis scope rejects delayed error after editing back to the original source": {
+        "passed": 8,
+        "failed": 2
+      }
+    },
+    "browser_versions": [
+      "153.0.8010.12"
+    ],
+    "observed_violation_events": 14,
+    "observed_cdp_audits": 14,
+    "rejected_inline_styles": {
+      "color: rgb(186, 201, 191); background-color: rgba(50, 140, 130, 0.32);": 10
+    },
+    "observed_line_style_mutations": {},
+    "representative_native_inputs": []
+  },
+  {
+    "name": "maturing-csp-input-probe",
+    "stats": {
+      "startTime": "2026-10-23T22:02:22.056Z",
+      "duration": 11120.907000000001,
+      "expected": 0,
+      "skipped": 0,
+      "unexpected": 10,
+      "flaky": 0
+    },
+    "tests": {
+      "GUI raw scenario analysis ignores delayed errors for an edited source": {
+        "failed": 10
+      }
+    },
+    "browser_versions": [
+      "153.0.8010.12"
+    ],
+    "observed_violation_events": 10,
+    "observed_cdp_audits": 10,
+    "rejected_inline_styles": {
+      "color: rgb(186, 201, 191); background-color: rgba(50, 140, 130, 0.32);": 10
+    },
+    "observed_line_style_mutations": {},
+    "representative_native_inputs": [
+      {
+        "inputType": "insertText",
+        "isTrusted": true,
+        "anchor": "<span class=\"cm-matchingBracket\">{</span>",
+        "focus": "<span class=\"cm-matchingBracket\">}</span>",
+        "matchingBrackets": [
+          {
+            "html": "<span class=\"cm-matchingBracket\">{</span>",
+            "color": "rgb(186, 201, 191)",
+            "backgroundColor": "rgba(0, 0, 0, 0)"
+          },
+          {
+            "html": "<span class=\"cm-matchingBracket\">}</span>",
+            "color": "rgb(186, 201, 191)",
+            "backgroundColor": "rgba(0, 0, 0, 0)"
+          }
+        ]
+      },
+      {
+        "inputType": "insertText",
+        "isTrusted": true,
+        "anchor": "<span class=\"cm-matchingBracket\">{</span>",
+        "focus": "<span class=\"cm-matchingBracket\">}</span>",
+        "matchingBrackets": [
+          {
+            "html": "<span class=\"cm-matchingBracket\">{</span>",
+            "color": "rgb(186, 201, 191)",
+            "backgroundColor": "rgba(50, 140, 130, 0.32)"
+          },
+          {
+            "html": "<span class=\"cm-matchingBracket\">}</span>",
+            "color": "rgb(186, 201, 191)",
+            "backgroundColor": "rgba(50, 140, 130, 0.32)"
+          }
+        ]
+      },
+      {
+        "inputType": "insertText",
+        "isTrusted": true,
+        "anchor": "<span class=\"cm-matchingBracket\">{</span>",
+        "focus": "<span class=\"cm-matchingBracket\">}</span>",
+        "matchingBrackets": [
+          {
+            "html": "<span class=\"cm-matchingBracket\">{</span>",
+            "color": "rgb(186, 201, 191)",
+            "backgroundColor": "rgba(0, 0, 0, 0)"
+          },
+          {
+            "html": "<span class=\"cm-matchingBracket\">}</span>",
+            "color": "rgb(186, 201, 191)",
+            "backgroundColor": "rgba(0, 0, 0, 0)"
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "name": "beta-csp-input-probe",
+    "stats": {
+      "startTime": "2026-10-23T22:02:33.806Z",
+      "duration": 11115.669,
+      "expected": 0,
+      "skipped": 0,
+      "unexpected": 10,
+      "flaky": 0
+    },
+    "tests": {
+      "GUI raw scenario analysis ignores delayed errors for an edited source": {
+        "failed": 10
+      }
+    },
+    "browser_versions": [
+      "153.0.8010.12"
+    ],
+    "observed_violation_events": 10,
+    "observed_cdp_audits": 10,
+    "rejected_inline_styles": {
+      "color: rgb(186, 201, 191); background-color: rgba(50, 140, 130, 0.32);": 10
+    },
+    "observed_line_style_mutations": {},
+    "representative_native_inputs": [
+      {
+        "inputType": "insertText",
+        "isTrusted": true,
+        "anchor": "<span class=\"cm-matchingBracket\">{</span>",
+        "focus": "<span class=\"cm-matchingBracket\">}</span>",
+        "matchingBrackets": [
+          {
+            "html": "<span class=\"cm-matchingBracket\">{</span>",
+            "color": "rgb(186, 201, 191)",
+            "backgroundColor": "rgba(0, 0, 0, 0)"
+          },
+          {
+            "html": "<span class=\"cm-matchingBracket\">}</span>",
+            "color": "rgb(186, 201, 191)",
+            "backgroundColor": "rgba(0, 0, 0, 0)"
+          }
+        ]
+      },
+      {
+        "inputType": "insertText",
+        "isTrusted": true,
+        "anchor": "<span class=\"cm-matchingBracket\">{</span>",
+        "focus": "<span class=\"cm-matchingBracket\">}</span>",
+        "matchingBrackets": [
+          {
+            "html": "<span class=\"cm-matchingBracket\">{</span>",
+            "color": "rgb(186, 201, 191)",
+            "backgroundColor": "rgba(50, 140, 130, 0.32)"
+          },
+          {
+            "html": "<span class=\"cm-matchingBracket\">}</span>",
+            "color": "rgb(186, 201, 191)",
+            "backgroundColor": "rgba(50, 140, 130, 0.32)"
+          }
+        ]
+      },
+      {
+        "inputType": "insertText",
+        "isTrusted": true,
+        "anchor": "<span class=\"cm-matchingBracket\">{</span>",
+        "focus": "<span class=\"cm-matchingBracket\">}</span>",
+        "matchingBrackets": [
+          {
+            "html": "<span class=\"cm-matchingBracket\">{</span>",
+            "color": "rgb(186, 201, 191)",
+            "backgroundColor": "rgba(0, 0, 0, 0)"
+          },
+          {
+            "html": "<span class=\"cm-matchingBracket\">}</span>",
+            "color": "rgb(186, 201, 191)",
+            "backgroundColor": "rgba(0, 0, 0, 0)"
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "name": "maturing-csp-gateway-probe",
+    "stats": {
+      "startTime": "2026-10-23T22:03:34.240Z",
+      "duration": 21190.689000000002,
+      "expected": 0,
+      "skipped": 0,
+      "unexpected": 20,
+      "flaky": 0
+    },
+    "tests": {
+      "Gateway analysis scope rejects delayed success after editing back to the original source": {
+        "failed": 10
+      },
+      "Gateway analysis scope rejects delayed error after editing back to the original source": {
+        "failed": 10
+      }
+    },
+    "browser_versions": [
+      "153.0.8010.12"
+    ],
+    "observed_violation_events": 20,
+    "observed_cdp_audits": 20,
+    "rejected_inline_styles": {},
+    "observed_line_style_mutations": {
+      "color: rgb(186, 201, 191);": 80,
+      "color: rgb(186, 201, 191); background-color: rgba(50, 140, 130, 0.32);": 40
+    },
+    "representative_native_inputs": [
+      {
+        "inputType": "insertText",
+        "isTrusted": true,
+        "anchor": "<span class=\"cm-matchingBracket\">{</span>",
+        "focus": "<span class=\"cm-matchingBracket\">}</span>",
+        "matchingBrackets": [
+          {
+            "html": "<span class=\"cm-matchingBracket\">{</span>",
+            "color": "rgb(186, 201, 191)",
+            "backgroundColor": "rgba(50, 140, 130, 0.32)"
+          },
+          {
+            "html": "<span class=\"cm-matchingBracket\">}</span>",
+            "color": "rgb(186, 201, 191)",
+            "backgroundColor": "rgba(50, 140, 130, 0.32)"
+          }
+        ]
+      },
+      {
+        "inputType": "insertText",
+        "isTrusted": true,
+        "anchor": "<span class=\"cm-matchingBracket\">{</span>",
+        "focus": "<span class=\"cm-matchingBracket\">}</span>",
+        "matchingBrackets": [
+          {
+            "html": "<span class=\"cm-matchingBracket\">{</span>",
+            "color": "rgb(186, 201, 191)",
+            "backgroundColor": "rgba(50, 140, 130, 0.32)"
+          },
+          {
+            "html": "<span class=\"cm-matchingBracket\">}</span>",
+            "color": "rgb(186, 201, 191)",
+            "backgroundColor": "rgba(50, 140, 130, 0.32)"
+          }
+        ]
+      },
+      {
+        "inputType": "insertText",
+        "isTrusted": true,
+        "anchor": "<span class=\"cm-matchingBracket\">{</span>",
+        "focus": "<span class=\"cm-matchingBracket\">}</span>",
+        "matchingBrackets": [
+          {
+            "html": "<span class=\"cm-matchingBracket\">{</span>",
+            "color": "rgb(186, 201, 191)",
+            "backgroundColor": "rgba(50, 140, 130, 0.32)"
+          },
+          {
+            "html": "<span class=\"cm-matchingBracket\">}</span>",
+            "color": "rgb(186, 201, 191)",
+            "backgroundColor": "rgba(50, 140, 130, 0.32)"
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "name": "beta-csp-gateway-probe",
+    "stats": {
+      "startTime": "2026-10-23T22:03:56.053Z",
+      "duration": 21420.872,
+      "expected": 0,
+      "skipped": 0,
+      "unexpected": 20,
+      "flaky": 0
+    },
+    "tests": {
+      "Gateway analysis scope rejects delayed success after editing back to the original source": {
+        "failed": 10
+      },
+      "Gateway analysis scope rejects delayed error after editing back to the original source": {
+        "failed": 10
+      }
+    },
+    "browser_versions": [
+      "153.0.8010.12"
+    ],
+    "observed_violation_events": 20,
+    "observed_cdp_audits": 20,
+    "rejected_inline_styles": {},
+    "observed_line_style_mutations": {
+      "color: rgb(186, 201, 191);": 80,
+      "color: rgb(186, 201, 191); background-color: rgba(50, 140, 130, 0.32);": 40
+    },
+    "representative_native_inputs": [
+      {
+        "inputType": "insertText",
+        "isTrusted": true,
+        "anchor": "<span class=\"cm-matchingBracket\">{</span>",
+        "focus": "<span class=\"cm-matchingBracket\">}</span>",
+        "matchingBrackets": [
+          {
+            "html": "<span class=\"cm-matchingBracket\">{</span>",
+            "color": "rgb(186, 201, 191)",
+            "backgroundColor": "rgba(50, 140, 130, 0.32)"
+          },
+          {
+            "html": "<span class=\"cm-matchingBracket\">}</span>",
+            "color": "rgb(186, 201, 191)",
+            "backgroundColor": "rgba(50, 140, 130, 0.32)"
+          }
+        ]
+      },
+      {
+        "inputType": "insertText",
+        "isTrusted": true,
+        "anchor": "<span class=\"cm-matchingBracket\">{</span>",
+        "focus": "<span class=\"cm-matchingBracket\">}</span>",
+        "matchingBrackets": [
+          {
+            "html": "<span class=\"cm-matchingBracket\">{</span>",
+            "color": "rgb(186, 201, 191)",
+            "backgroundColor": "rgba(50, 140, 130, 0.32)"
+          },
+          {
+            "html": "<span class=\"cm-matchingBracket\">}</span>",
+            "color": "rgb(186, 201, 191)",
+            "backgroundColor": "rgba(50, 140, 130, 0.32)"
+          }
+        ]
+      },
+      {
+        "inputType": "insertText",
+        "isTrusted": true,
+        "anchor": "<span class=\"cm-matchingBracket\">{</span>",
+        "focus": "<span class=\"cm-matchingBracket\">}</span>",
+        "matchingBrackets": [
+          {
+            "html": "<span class=\"cm-matchingBracket\">{</span>",
+            "color": "rgb(186, 201, 191)",
+            "backgroundColor": "rgba(50, 140, 130, 0.32)"
+          },
+          {
+            "html": "<span class=\"cm-matchingBracket\">}</span>",
+            "color": "rgb(186, 201, 191)",
+            "backgroundColor": "rgba(50, 140, 130, 0.32)"
+          }
+        ]
+      }
+    ]
+  }
+]

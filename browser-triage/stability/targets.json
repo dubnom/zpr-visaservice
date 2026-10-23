@@ -1,0 +1,72 @@
+[
+  {
+    "id": "cc3070f185481daa6f24-f9d4bda33a2de34a9120",
+    "file": "dashboard.spec.mjs",
+    "title": "Scenario JSON transport keeps failed creation unsaved and preserves explicit creation payloads",
+    "project": "desktop",
+    "prior_delta": "unmodified_now_passing"
+  },
+  {
+    "id": "cc3070f185481daa6f24-f779cd8e5f8d23340312",
+    "file": "dashboard.spec.mjs",
+    "title": "Policy runtime cancellation cannot release a newer pre-save fixtures request",
+    "project": "desktop",
+    "prior_delta": "additional_failure"
+  },
+  {
+    "id": "cc3070f185481daa6f24-5486e71cd297f6cb868d",
+    "file": "dashboard.spec.mjs",
+    "title": "GUI shared programmatic edits keep policy completion and Scenario indentation undoable",
+    "project": "tablet",
+    "prior_delta": "additional_failure"
+  },
+  {
+    "id": "cc3070f185481daa6f24-823cc6ef42d23c7a4742",
+    "file": "dashboard.spec.mjs",
+    "title": "Scenario JSON transport keeps failed creation unsaved and preserves explicit creation payloads",
+    "project": "tablet",
+    "prior_delta": "additional_failure"
+  },
+  {
+    "id": "cc3070f185481daa6f24-b0952dd568f4f7e00c45",
+    "file": "dashboard.spec.mjs",
+    "title": "GUI raw scenario analysis ignores delayed errors for an edited source",
+    "project": "tablet",
+    "prior_delta": "additional_failure"
+  },
+  {
+    "id": "cc3070f185481daa6f24-8d7dcd12e1769238f863",
+    "file": "dashboard.spec.mjs",
+    "title": "Gateway analysis scope rejects delayed success after editing back to the original source",
+    "project": "tablet",
+    "prior_delta": "additional_failure"
+  },
+  {
+    "id": "cc3070f185481daa6f24-086595e0f8ea7af946fc",
+    "file": "dashboard.spec.mjs",
+    "title": "Gateway analysis scope rejects delayed error after editing back to the original source",
+    "project": "tablet",
+    "prior_delta": "additional_failure"
+  },
+  {
+    "id": "cc3070f185481daa6f24-3466b56273f4f71cdf83",
+    "file": "dashboard.spec.mjs",
+    "title": "Policy runtime cancellation cannot release a newer pre-save fixtures request",
+    "project": "tablet",
+    "prior_delta": "additional_failure"
+  },
+  {
+    "id": "cc3070f185481daa6f24-10bc69e8c681940787d4",
+    "file": "dashboard.spec.mjs",
+    "title": "Policy runtime cancellation cannot release a newer pre-save evaluation request",
+    "project": "tablet",
+    "prior_delta": "unmodified_now_passing"
+  },
+  {
+    "id": "ba07e228bcb3aecf4d27-59cb9cddaa1f81692883",
+    "file": "geography.spec.mjs",
+    "title": "World Map Fit reframes the current viewport after manual zoom and resize",
+    "project": "desktop",
+    "prior_delta": "additional_failure"
+  }
+]

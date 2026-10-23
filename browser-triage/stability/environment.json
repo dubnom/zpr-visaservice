@@ -1,0 +1,11 @@
+{
+  "platform": "macOS-26.7.1-arm64-arm-64bit",
+  "machine": "arm64",
+  "python": "3.10.14",
+  "node": "v26.10.0",
+  "npm": "11.19.1",
+  "playwright": "Version 1.63.0",
+  "git": "git version 2.54.0 (Apple Git-157)",
+  "macos": "ProductName:\t\tmacOS\nProductVersion:\t\t26.7.1\nBuildVersion:\t\t25G313",
+  "geography_assets_override_present": false
+}

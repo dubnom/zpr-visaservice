@@ -1,0 +1,106 @@
+[
+  {
+    "file": "zpr-dashboard/cmd/zpr-web-dashboard/static/app.js",
+    "sha256": {
+      "beta": "9f2e9180bf1a33f106cb60e8d28a25260763f3130b25b7fb249f28f8b1b7d6f4",
+      "maturing": "9f2e9180bf1a33f106cb60e8d28a25260763f3130b25b7fb249f28f8b1b7d6f4"
+    },
+    "identical": true
+  },
+  {
+    "file": "zpr-dashboard/cmd/zpr-web-dashboard/static/code-editor.js",
+    "sha256": {
+      "beta": "2051f0a1407fe1d7fc0ab6ccb49ad2c0155e56b41ad24544238483ff58024419",
+      "maturing": "2051f0a1407fe1d7fc0ab6ccb49ad2c0155e56b41ad24544238483ff58024419"
+    },
+    "identical": true
+  },
+  {
+    "file": "zpr-dashboard/cmd/zpr-web-dashboard/static/vendor/code-editor.js",
+    "sha256": {
+      "beta": "852736dc57467017abc5b2531e79127277e34fbddec5ee8911332023620929d1",
+      "maturing": "852736dc57467017abc5b2531e79127277e34fbddec5ee8911332023620929d1"
+    },
+    "identical": true
+  },
+  {
+    "file": "zpr-dashboard/cmd/zpr-web-dashboard/static/geography.js",
+    "sha256": {
+      "beta": "a1c51cb18f9de751aee97e1c20e17938409ebc0310c680b4a7aabf0d055719cb",
+      "maturing": "a1c51cb18f9de751aee97e1c20e17938409ebc0310c680b4a7aabf0d055719cb"
+    },
+    "identical": true
+  },
+  {
+    "file": "zpr-dashboard/cmd/zpr-web-dashboard/static/geography.css",
+    "sha256": {
+      "beta": "027d05c74a92d691a02cc915976efe71a7c4bdf46151edf4f098a4d1125577bd",
+      "maturing": "027d05c74a92d691a02cc915976efe71a7c4bdf46151edf4f098a4d1125577bd"
+    },
+    "identical": true
+  },
+  {
+    "file": "zpr-dashboard/cmd/zpr-web-dashboard/static/scenarios.js",
+    "sha256": {
+      "beta": "5572a3057e0de3db03efa15a1bc224014d98c33a2b758cb5fbdae80536957378",
+      "maturing": "5572a3057e0de3db03efa15a1bc224014d98c33a2b758cb5fbdae80536957378"
+    },
+    "identical": true
+  },
+  {
+    "file": "zpr-dashboard/cmd/zpr-web-dashboard/static/scenario-source-editor.js",
+    "sha256": {
+      "beta": "4f5e5b9ff6874b8cfdc94c782608e22f87e7a635124eb2f7ba6a76512a01e5c6",
+      "maturing": "4f5e5b9ff6874b8cfdc94c782608e22f87e7a635124eb2f7ba6a76512a01e5c6"
+    },
+    "identical": true
+  },
+  {
+    "file": "zpr-dashboard/cmd/zpr-web-dashboard/static/page-runtime.js",
+    "sha256": {
+      "beta": "401bcf86ee2a9a2219c2898de43878d5717c250e3f4ae1392b5f06e5b95e303d",
+      "maturing": "401bcf86ee2a9a2219c2898de43878d5717c250e3f4ae1392b5f06e5b95e303d"
+    },
+    "identical": true
+  },
+  {
+    "file": "zpr-dashboard/tests/browser/geography.spec.mjs",
+    "sha256": {
+      "beta": "f3fc6e6a888e170812b362f1f8164261682f755ebb1f780bad0bc1af7f47031d",
+      "maturing": "f3fc6e6a888e170812b362f1f8164261682f755ebb1f780bad0bc1af7f47031d"
+    },
+    "identical": true
+  },
+  {
+    "file": "zpr-dashboard/tests/browser/code-editor.mjs",
+    "sha256": {
+      "beta": "6005f33cf611c7e18aabbe3c4f247661d9a37b9339a73cefc5c760d791fade00",
+      "maturing": "6005f33cf611c7e18aabbe3c4f247661d9a37b9339a73cefc5c760d791fade00"
+    },
+    "identical": true
+  },
+  {
+    "file": "zpr-dashboard/package-lock.json",
+    "sha256": {
+      "beta": "de8b99fa1b0c32b2f56df6dc87e9f679fea6b8c1581c8904db08382c7eaa3fb6",
+      "maturing": "de8b99fa1b0c32b2f56df6dc87e9f679fea6b8c1581c8904db08382c7eaa3fb6"
+    },
+    "identical": true
+  },
+  {
+    "file": "zpr-dashboard/playwright.config.mjs",
+    "sha256": {
+      "beta": "e1d04481eb22f2d63cb1d483bbf082052ba7dd662e146ee7ba3fe3fc57fb3bae",
+      "maturing": "e1d04481eb22f2d63cb1d483bbf082052ba7dd662e146ee7ba3fe3fc57fb3bae"
+    },
+    "identical": true
+  },
+  {
+    "file": "zpr-dashboard/browser/code-editor.js",
+    "sha256": {
+      "beta": "c473b8a075ece6b6ad4e6571f39ca865d9e92688161f62e2ca5a336ced05fdf8",
+      "maturing": "c473b8a075ece6b6ad4e6571f39ca865d9e92688161f62e2ca5a336ced05fdf8"
+    },
+    "identical": true
+  }
+]

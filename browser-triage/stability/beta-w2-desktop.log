@@ -1,0 +1,894 @@
+cwd: /Volumes/Storage/dubnom/zipsquat/ZPR Docs/zpr-visaservice.worktrees/maturing-w5-stability-beta-4627e4c/zpr-dashboard
+command: ["npm", "run", "test:browser", "--", "dashboard.spec.mjs", "geography.spec.mjs", "--project=desktop", "--grep=(?:Scenario\\ JSON\\ transport\\ keeps\\ failed\\ creation\\ unsaved\\ and\\ preserves\\ explicit\\ creation\\ payloads|Policy\\ runtime\\ cancellation\\ cannot\\ release\\ a\\ newer\\ pre\\-save\\ fixtures\\ request|World\\ Map\\ Fit\\ reframes\\ the\\ current\\ viewport\\ after\\ manual\\ zoom\\ and\\ resize)$", "--repeat-each=10", "--workers=2", "--retries=0", "--trace=off", "--reporter=json,list"]
+CI/live/Simulator opt-ins unset; TMPDIR=/Volumes/Storage/dubnom/zipsquat/ZPR Docs/zpr-visaservice.worktrees/maturing-w5-stability-beta-4627e4c/.browser-runtime
+
+> test:browser
+> playwright test dashboard.spec.mjs geography.spec.mjs --project=desktop --grep=(?:Scenario\ JSON\ transport\ keeps\ failed\ creation\ unsaved\ and\ preserves\ explicit\ creation\ payloads|Policy\ runtime\ cancellation\ cannot\ release\ a\ newer\ pre\-save\ fixtures\ request|World\ Map\ Fit\ reframes\ the\ current\ viewport\ after\ manual\ zoom\ and\ resize)$ --repeat-each=10 --workers=2 --retries=0 --trace=off --reporter=json,list
+
+
+Running 30 tests using 2 workers
+
+  ✘   1 [desktop] › tests/browser/dashboard.spec.mjs:1906:1 › Scenario JSON transport keeps failed creation unsaved and preserves explicit creation payloads (672ms)
+  ✘   3 [desktop] › tests/browser/dashboard.spec.mjs:1906:1 › Scenario JSON transport keeps failed creation unsaved and preserves explicit creation payloads (665ms)
+  ✘   2 [desktop] › tests/browser/dashboard.spec.mjs:7215:3 › Policy runtime cancellation cannot release a newer pre-save fixtures request (30.1s)
+  ✘   5 [desktop] › tests/browser/dashboard.spec.mjs:1906:1 › Scenario JSON transport keeps failed creation unsaved and preserves explicit creation payloads (644ms)
+  ✘   4 [desktop] › tests/browser/dashboard.spec.mjs:7215:3 › Policy runtime cancellation cannot release a newer pre-save fixtures request (30.1s)
+  ✘   7 [desktop] › tests/browser/dashboard.spec.mjs:1906:1 › Scenario JSON transport keeps failed creation unsaved and preserves explicit creation payloads (661ms)
+  ✘   6 [desktop] › tests/browser/dashboard.spec.mjs:7215:3 › Policy runtime cancellation cannot release a newer pre-save fixtures request (30.1s)
+  ✘   9 [desktop] › tests/browser/dashboard.spec.mjs:1906:1 › Scenario JSON transport keeps failed creation unsaved and preserves explicit creation payloads (717ms)
+  ✘   8 [desktop] › tests/browser/dashboard.spec.mjs:7215:3 › Policy runtime cancellation cannot release a newer pre-save fixtures request (30.1s)
+  ✘  11 [desktop] › tests/browser/dashboard.spec.mjs:1906:1 › Scenario JSON transport keeps failed creation unsaved and preserves explicit creation payloads (692ms)
+  ✘  10 [desktop] › tests/browser/dashboard.spec.mjs:7215:3 › Policy runtime cancellation cannot release a newer pre-save fixtures request (30.1s)
+  ✓  13 [desktop] › tests/browser/dashboard.spec.mjs:1906:1 › Scenario JSON transport keeps failed creation unsaved and preserves explicit creation payloads (715ms)
+  ✓  14 [desktop] › tests/browser/dashboard.spec.mjs:7215:3 › Policy runtime cancellation cannot release a newer pre-save fixtures request (835ms)
+  ✘  12 [desktop] › tests/browser/dashboard.spec.mjs:7215:3 › Policy runtime cancellation cannot release a newer pre-save fixtures request (30.1s)
+  ✘  15 [desktop] › tests/browser/dashboard.spec.mjs:1906:1 › Scenario JSON transport keeps failed creation unsaved and preserves explicit creation payloads (661ms)
+  ✘  17 [desktop] › tests/browser/dashboard.spec.mjs:1906:1 › Scenario JSON transport keeps failed creation unsaved and preserves explicit creation payloads (664ms)
+  ✘  16 [desktop] › tests/browser/dashboard.spec.mjs:7215:3 › Policy runtime cancellation cannot release a newer pre-save fixtures request (30.1s)
+  ✘  19 [desktop] › tests/browser/dashboard.spec.mjs:1906:1 › Scenario JSON transport keeps failed creation unsaved and preserves explicit creation payloads (663ms)
+  ✘  18 [desktop] › tests/browser/dashboard.spec.mjs:7215:3 › Policy runtime cancellation cannot release a newer pre-save fixtures request (30.1s)
+  ✓  20 [desktop] › tests/browser/dashboard.spec.mjs:7215:3 › Policy runtime cancellation cannot release a newer pre-save fixtures request (869ms)
+  ✘  21 [desktop] › tests/browser/geography.spec.mjs:870:1 › World Map Fit reframes the current viewport after manual zoom and resize (500ms)
+  ✘  22 [desktop] › tests/browser/geography.spec.mjs:870:1 › World Map Fit reframes the current viewport after manual zoom and resize (511ms)
+  ✘  23 [desktop] › tests/browser/geography.spec.mjs:870:1 › World Map Fit reframes the current viewport after manual zoom and resize (496ms)
+  ✘  24 [desktop] › tests/browser/geography.spec.mjs:870:1 › World Map Fit reframes the current viewport after manual zoom and resize (485ms)
+  ✘  25 [desktop] › tests/browser/geography.spec.mjs:870:1 › World Map Fit reframes the current viewport after manual zoom and resize (486ms)
+  ✘  26 [desktop] › tests/browser/geography.spec.mjs:870:1 › World Map Fit reframes the current viewport after manual zoom and resize (521ms)
+  ✘  27 [desktop] › tests/browser/geography.spec.mjs:870:1 › World Map Fit reframes the current viewport after manual zoom and resize (494ms)
+  ✘  28 [desktop] › tests/browser/geography.spec.mjs:870:1 › World Map Fit reframes the current viewport after manual zoom and resize (482ms)
+  ✘  29 [desktop] › tests/browser/geography.spec.mjs:870:1 › World Map Fit reframes the current viewport after manual zoom and resize (552ms)
+  ✘  30 [desktop] › tests/browser/geography.spec.mjs:870:1 › World Map Fit reframes the current viewport after manual zoom and resize (496ms)
+
+
+  1) [desktop] › tests/browser/dashboard.spec.mjs:1906:1 › Scenario JSON transport keeps failed creation unsaved and preserves explicit creation payloads
+
+    Error: expect(received).toEqual(expected) // deep equality
+
+    - Expected  - 0
+    + Received  + 1
+
+    @@ -33,6 +33,7 @@
+              },
+            ],
+          },
+          "summary": "Initial version",
+        },
+    +   null,
+      ]
+
+      1927 |   await page.locator("#scenario-editor-save").click();
+      1928 |   await expect(page.locator("#scenario-editor-status")).toHaveText("Saved version 1. Publish it to enable runs.");
+    > 1929 |   expect(writes).toEqual(Array.from({ length: 2 }, () => ({ scenario, summary: "Initial version", expected_revision: 0 })));
+           |                  ^
+      1930 |   expect(api.counts.get(endpoint + "/created-transport/publish") || 0).toBe(0);
+      1931 |   expect(api.counts.get("/api/simulator/scenarios/run") || 0).toBe(0);
+      1932 | });
+        at /Volumes/Storage/dubnom/zipsquat/ZPR Docs/zpr-visaservice.worktrees/maturing-w5-stability-beta-4627e4c/zpr-dashboard/tests/browser/dashboard.spec.mjs:1929:18
+
+    attachment #1: screenshot (image/png) ──────────────────────────────────────────────────────────
+    test-results/dashboard-Scenario-JSON-tr-077ed--explicit-creation-payloads-desktop/test-failed-1.png
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+    Error Context: test-results/dashboard-Scenario-JSON-tr-077ed--explicit-creation-payloads-desktop/error-context.md
+
+  2) [desktop] › tests/browser/dashboard.spec.mjs:7215:3 › Policy runtime cancellation cannot release a newer pre-save fixtures request
+
+    Test timeout of 30000ms exceeded.
+
+    Error: locator.click: Test timeout of 30000ms exceeded.
+    Call log:
+      - waiting for locator('#policy-save')
+        - locator resolved to <button disabled type="button" role="menuitem" id="policy-save" class="button button-save-next">Save</button>
+      - attempting click action
+        2 × waiting for element to be visible, enabled and stable
+          - element is not enabled
+        - retrying click action
+        - waiting 20ms
+        2 × waiting for element to be visible, enabled and stable
+          - element is not enabled
+        - retrying click action
+          - waiting 100ms
+        57 × waiting for element to be visible, enabled and stable
+           - element is not enabled
+         - retrying click action
+           - waiting 500ms
+
+
+      7242 |     await codeEditor(page, "policy-source").fill(draft);
+      7243 |     await openPolicyFiles(page);
+    > 7244 |     await page.locator("#policy-save").click();
+           |                                        ^
+      7245 |     await expect.poll(() => completions.length).toBe(2);
+      7246 |     completions[0]();
+      7247 |     await expect.poll(() => oldFinished).toBe(true);
+        at /Volumes/Storage/dubnom/zipsquat/ZPR Docs/zpr-visaservice.worktrees/maturing-w5-stability-beta-4627e4c/zpr-dashboard/tests/browser/dashboard.spec.mjs:7244:40
+
+    attachment #1: screenshot (image/png) ──────────────────────────────────────────────────────────
+    test-results/dashboard-Policy-runtime-c-bc411-r-pre-save-fixtures-request-desktop/test-failed-1.png
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+    Error Context: test-results/dashboard-Policy-runtime-c-bc411-r-pre-save-fixtures-request-desktop/error-context.md
+
+  3) [desktop] › tests/browser/dashboard.spec.mjs:1906:1 › Scenario JSON transport keeps failed creation unsaved and preserves explicit creation payloads
+
+    Error: expect(received).toEqual(expected) // deep equality
+
+    - Expected  - 0
+    + Received  + 1
+
+    @@ -33,6 +33,7 @@
+              },
+            ],
+          },
+          "summary": "Initial version",
+        },
+    +   null,
+      ]
+
+      1927 |   await page.locator("#scenario-editor-save").click();
+      1928 |   await expect(page.locator("#scenario-editor-status")).toHaveText("Saved version 1. Publish it to enable runs.");
+    > 1929 |   expect(writes).toEqual(Array.from({ length: 2 }, () => ({ scenario, summary: "Initial version", expected_revision: 0 })));
+           |                  ^
+      1930 |   expect(api.counts.get(endpoint + "/created-transport/publish") || 0).toBe(0);
+      1931 |   expect(api.counts.get("/api/simulator/scenarios/run") || 0).toBe(0);
+      1932 | });
+        at /Volumes/Storage/dubnom/zipsquat/ZPR Docs/zpr-visaservice.worktrees/maturing-w5-stability-beta-4627e4c/zpr-dashboard/tests/browser/dashboard.spec.mjs:1929:18
+
+    attachment #1: screenshot (image/png) ──────────────────────────────────────────────────────────
+    test-results/dashboard-Scenario-JSON-tr-077ed--explicit-creation-payloads-desktop-repeat1/test-failed-1.png
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+    Error Context: test-results/dashboard-Scenario-JSON-tr-077ed--explicit-creation-payloads-desktop-repeat1/error-context.md
+
+  4) [desktop] › tests/browser/dashboard.spec.mjs:7215:3 › Policy runtime cancellation cannot release a newer pre-save fixtures request
+
+    Test timeout of 30000ms exceeded.
+
+    Error: locator.click: Test timeout of 30000ms exceeded.
+    Call log:
+      - waiting for locator('#policy-save')
+        - locator resolved to <button disabled type="button" role="menuitem" id="policy-save" class="button button-save-next">Save</button>
+      - attempting click action
+        2 × waiting for element to be visible, enabled and stable
+          - element is not enabled
+        - retrying click action
+        - waiting 20ms
+        2 × waiting for element to be visible, enabled and stable
+          - element is not enabled
+        - retrying click action
+          - waiting 100ms
+        56 × waiting for element to be visible, enabled and stable
+           - element is not enabled
+         - retrying click action
+           - waiting 500ms
+
+
+      7242 |     await codeEditor(page, "policy-source").fill(draft);
+      7243 |     await openPolicyFiles(page);
+    > 7244 |     await page.locator("#policy-save").click();
+           |                                        ^
+      7245 |     await expect.poll(() => completions.length).toBe(2);
+      7246 |     completions[0]();
+      7247 |     await expect.poll(() => oldFinished).toBe(true);
+        at /Volumes/Storage/dubnom/zipsquat/ZPR Docs/zpr-visaservice.worktrees/maturing-w5-stability-beta-4627e4c/zpr-dashboard/tests/browser/dashboard.spec.mjs:7244:40
+
+    attachment #1: screenshot (image/png) ──────────────────────────────────────────────────────────
+    test-results/dashboard-Policy-runtime-c-bc411-r-pre-save-fixtures-request-desktop-repeat1/test-failed-1.png
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+    Error Context: test-results/dashboard-Policy-runtime-c-bc411-r-pre-save-fixtures-request-desktop-repeat1/error-context.md
+
+  5) [desktop] › tests/browser/dashboard.spec.mjs:1906:1 › Scenario JSON transport keeps failed creation unsaved and preserves explicit creation payloads
+
+    Error: expect(received).toEqual(expected) // deep equality
+
+    - Expected  - 0
+    + Received  + 1
+
+    @@ -33,6 +33,7 @@
+              },
+            ],
+          },
+          "summary": "Initial version",
+        },
+    +   null,
+      ]
+
+      1927 |   await page.locator("#scenario-editor-save").click();
+      1928 |   await expect(page.locator("#scenario-editor-status")).toHaveText("Saved version 1. Publish it to enable runs.");
+    > 1929 |   expect(writes).toEqual(Array.from({ length: 2 }, () => ({ scenario, summary: "Initial version", expected_revision: 0 })));
+           |                  ^
+      1930 |   expect(api.counts.get(endpoint + "/created-transport/publish") || 0).toBe(0);
+      1931 |   expect(api.counts.get("/api/simulator/scenarios/run") || 0).toBe(0);
+      1932 | });
+        at /Volumes/Storage/dubnom/zipsquat/ZPR Docs/zpr-visaservice.worktrees/maturing-w5-stability-beta-4627e4c/zpr-dashboard/tests/browser/dashboard.spec.mjs:1929:18
+
+    attachment #1: screenshot (image/png) ──────────────────────────────────────────────────────────
+    test-results/dashboard-Scenario-JSON-tr-077ed--explicit-creation-payloads-desktop-repeat2/test-failed-1.png
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+    Error Context: test-results/dashboard-Scenario-JSON-tr-077ed--explicit-creation-payloads-desktop-repeat2/error-context.md
+
+  6) [desktop] › tests/browser/dashboard.spec.mjs:7215:3 › Policy runtime cancellation cannot release a newer pre-save fixtures request
+
+    Test timeout of 30000ms exceeded.
+
+    Error: locator.click: Test timeout of 30000ms exceeded.
+    Call log:
+      - waiting for locator('#policy-save')
+        - locator resolved to <button disabled type="button" role="menuitem" id="policy-save" class="button button-save-next">Save</button>
+      - attempting click action
+        2 × waiting for element to be visible, enabled and stable
+          - element is not enabled
+        - retrying click action
+        - waiting 20ms
+        2 × waiting for element to be visible, enabled and stable
+          - element is not enabled
+        - retrying click action
+          - waiting 100ms
+        57 × waiting for element to be visible, enabled and stable
+           - element is not enabled
+         - retrying click action
+           - waiting 500ms
+
+
+      7242 |     await codeEditor(page, "policy-source").fill(draft);
+      7243 |     await openPolicyFiles(page);
+    > 7244 |     await page.locator("#policy-save").click();
+           |                                        ^
+      7245 |     await expect.poll(() => completions.length).toBe(2);
+      7246 |     completions[0]();
+      7247 |     await expect.poll(() => oldFinished).toBe(true);
+        at /Volumes/Storage/dubnom/zipsquat/ZPR Docs/zpr-visaservice.worktrees/maturing-w5-stability-beta-4627e4c/zpr-dashboard/tests/browser/dashboard.spec.mjs:7244:40
+
+    attachment #1: screenshot (image/png) ──────────────────────────────────────────────────────────
+    test-results/dashboard-Policy-runtime-c-bc411-r-pre-save-fixtures-request-desktop-repeat2/test-failed-1.png
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+    Error Context: test-results/dashboard-Policy-runtime-c-bc411-r-pre-save-fixtures-request-desktop-repeat2/error-context.md
+
+  7) [desktop] › tests/browser/dashboard.spec.mjs:1906:1 › Scenario JSON transport keeps failed creation unsaved and preserves explicit creation payloads
+
+    Error: expect(received).toEqual(expected) // deep equality
+
+    - Expected  - 0
+    + Received  + 1
+
+    @@ -33,6 +33,7 @@
+              },
+            ],
+          },
+          "summary": "Initial version",
+        },
+    +   null,
+      ]
+
+      1927 |   await page.locator("#scenario-editor-save").click();
+      1928 |   await expect(page.locator("#scenario-editor-status")).toHaveText("Saved version 1. Publish it to enable runs.");
+    > 1929 |   expect(writes).toEqual(Array.from({ length: 2 }, () => ({ scenario, summary: "Initial version", expected_revision: 0 })));
+           |                  ^
+      1930 |   expect(api.counts.get(endpoint + "/created-transport/publish") || 0).toBe(0);
+      1931 |   expect(api.counts.get("/api/simulator/scenarios/run") || 0).toBe(0);
+      1932 | });
+        at /Volumes/Storage/dubnom/zipsquat/ZPR Docs/zpr-visaservice.worktrees/maturing-w5-stability-beta-4627e4c/zpr-dashboard/tests/browser/dashboard.spec.mjs:1929:18
+
+    attachment #1: screenshot (image/png) ──────────────────────────────────────────────────────────
+    test-results/dashboard-Scenario-JSON-tr-077ed--explicit-creation-payloads-desktop-repeat3/test-failed-1.png
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+    Error Context: test-results/dashboard-Scenario-JSON-tr-077ed--explicit-creation-payloads-desktop-repeat3/error-context.md
+
+  8) [desktop] › tests/browser/dashboard.spec.mjs:7215:3 › Policy runtime cancellation cannot release a newer pre-save fixtures request
+
+    Test timeout of 30000ms exceeded.
+
+    Error: locator.click: Test timeout of 30000ms exceeded.
+    Call log:
+      - waiting for locator('#policy-save')
+        - locator resolved to <button disabled type="button" role="menuitem" id="policy-save" class="button button-save-next">Save</button>
+      - attempting click action
+        2 × waiting for element to be visible, enabled and stable
+          - element is not enabled
+        - retrying click action
+        - waiting 20ms
+        2 × waiting for element to be visible, enabled and stable
+          - element is not enabled
+        - retrying click action
+          - waiting 100ms
+        57 × waiting for element to be visible, enabled and stable
+           - element is not enabled
+         - retrying click action
+           - waiting 500ms
+
+
+      7242 |     await codeEditor(page, "policy-source").fill(draft);
+      7243 |     await openPolicyFiles(page);
+    > 7244 |     await page.locator("#policy-save").click();
+           |                                        ^
+      7245 |     await expect.poll(() => completions.length).toBe(2);
+      7246 |     completions[0]();
+      7247 |     await expect.poll(() => oldFinished).toBe(true);
+        at /Volumes/Storage/dubnom/zipsquat/ZPR Docs/zpr-visaservice.worktrees/maturing-w5-stability-beta-4627e4c/zpr-dashboard/tests/browser/dashboard.spec.mjs:7244:40
+
+    attachment #1: screenshot (image/png) ──────────────────────────────────────────────────────────
+    test-results/dashboard-Policy-runtime-c-bc411-r-pre-save-fixtures-request-desktop-repeat3/test-failed-1.png
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+    Error Context: test-results/dashboard-Policy-runtime-c-bc411-r-pre-save-fixtures-request-desktop-repeat3/error-context.md
+
+  9) [desktop] › tests/browser/dashboard.spec.mjs:1906:1 › Scenario JSON transport keeps failed creation unsaved and preserves explicit creation payloads
+
+    Error: expect(received).toEqual(expected) // deep equality
+
+    - Expected  - 0
+    + Received  + 1
+
+    @@ -33,6 +33,7 @@
+              },
+            ],
+          },
+          "summary": "Initial version",
+        },
+    +   null,
+      ]
+
+      1927 |   await page.locator("#scenario-editor-save").click();
+      1928 |   await expect(page.locator("#scenario-editor-status")).toHaveText("Saved version 1. Publish it to enable runs.");
+    > 1929 |   expect(writes).toEqual(Array.from({ length: 2 }, () => ({ scenario, summary: "Initial version", expected_revision: 0 })));
+           |                  ^
+      1930 |   expect(api.counts.get(endpoint + "/created-transport/publish") || 0).toBe(0);
+      1931 |   expect(api.counts.get("/api/simulator/scenarios/run") || 0).toBe(0);
+      1932 | });
+        at /Volumes/Storage/dubnom/zipsquat/ZPR Docs/zpr-visaservice.worktrees/maturing-w5-stability-beta-4627e4c/zpr-dashboard/tests/browser/dashboard.spec.mjs:1929:18
+
+    attachment #1: screenshot (image/png) ──────────────────────────────────────────────────────────
+    test-results/dashboard-Scenario-JSON-tr-077ed--explicit-creation-payloads-desktop-repeat4/test-failed-1.png
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+    Error Context: test-results/dashboard-Scenario-JSON-tr-077ed--explicit-creation-payloads-desktop-repeat4/error-context.md
+
+  10) [desktop] › tests/browser/dashboard.spec.mjs:7215:3 › Policy runtime cancellation cannot release a newer pre-save fixtures request
+
+    Test timeout of 30000ms exceeded.
+
+    Error: locator.click: Test timeout of 30000ms exceeded.
+    Call log:
+      - waiting for locator('#policy-save')
+        - locator resolved to <button disabled type="button" role="menuitem" id="policy-save" class="button button-save-next">Save</button>
+      - attempting click action
+        2 × waiting for element to be visible, enabled and stable
+          - element is not enabled
+        - retrying click action
+        - waiting 20ms
+        2 × waiting for element to be visible, enabled and stable
+          - element is not enabled
+        - retrying click action
+          - waiting 100ms
+        57 × waiting for element to be visible, enabled and stable
+           - element is not enabled
+         - retrying click action
+           - waiting 500ms
+
+
+      7242 |     await codeEditor(page, "policy-source").fill(draft);
+      7243 |     await openPolicyFiles(page);
+    > 7244 |     await page.locator("#policy-save").click();
+           |                                        ^
+      7245 |     await expect.poll(() => completions.length).toBe(2);
+      7246 |     completions[0]();
+      7247 |     await expect.poll(() => oldFinished).toBe(true);
+        at /Volumes/Storage/dubnom/zipsquat/ZPR Docs/zpr-visaservice.worktrees/maturing-w5-stability-beta-4627e4c/zpr-dashboard/tests/browser/dashboard.spec.mjs:7244:40
+
+    attachment #1: screenshot (image/png) ──────────────────────────────────────────────────────────
+    test-results/dashboard-Policy-runtime-c-bc411-r-pre-save-fixtures-request-desktop-repeat4/test-failed-1.png
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+    Error Context: test-results/dashboard-Policy-runtime-c-bc411-r-pre-save-fixtures-request-desktop-repeat4/error-context.md
+
+  11) [desktop] › tests/browser/dashboard.spec.mjs:1906:1 › Scenario JSON transport keeps failed creation unsaved and preserves explicit creation payloads
+
+    Error: expect(received).toEqual(expected) // deep equality
+
+    - Expected  - 0
+    + Received  + 1
+
+    @@ -33,6 +33,7 @@
+              },
+            ],
+          },
+          "summary": "Initial version",
+        },
+    +   null,
+      ]
+
+      1927 |   await page.locator("#scenario-editor-save").click();
+      1928 |   await expect(page.locator("#scenario-editor-status")).toHaveText("Saved version 1. Publish it to enable runs.");
+    > 1929 |   expect(writes).toEqual(Array.from({ length: 2 }, () => ({ scenario, summary: "Initial version", expected_revision: 0 })));
+           |                  ^
+      1930 |   expect(api.counts.get(endpoint + "/created-transport/publish") || 0).toBe(0);
+      1931 |   expect(api.counts.get("/api/simulator/scenarios/run") || 0).toBe(0);
+      1932 | });
+        at /Volumes/Storage/dubnom/zipsquat/ZPR Docs/zpr-visaservice.worktrees/maturing-w5-stability-beta-4627e4c/zpr-dashboard/tests/browser/dashboard.spec.mjs:1929:18
+
+    attachment #1: screenshot (image/png) ──────────────────────────────────────────────────────────
+    test-results/dashboard-Scenario-JSON-tr-077ed--explicit-creation-payloads-desktop-repeat5/test-failed-1.png
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+    Error Context: test-results/dashboard-Scenario-JSON-tr-077ed--explicit-creation-payloads-desktop-repeat5/error-context.md
+
+  12) [desktop] › tests/browser/dashboard.spec.mjs:7215:3 › Policy runtime cancellation cannot release a newer pre-save fixtures request
+
+    Test timeout of 30000ms exceeded.
+
+    Error: locator.click: Test timeout of 30000ms exceeded.
+    Call log:
+      - waiting for locator('#policy-save')
+        - locator resolved to <button disabled type="button" role="menuitem" id="policy-save" class="button button-save-next">Save</button>
+      - attempting click action
+        2 × waiting for element to be visible, enabled and stable
+          - element is not enabled
+        - retrying click action
+        - waiting 20ms
+        2 × waiting for element to be visible, enabled and stable
+          - element is not enabled
+        - retrying click action
+          - waiting 100ms
+        56 × waiting for element to be visible, enabled and stable
+           - element is not enabled
+         - retrying click action
+           - waiting 500ms
+
+
+      7242 |     await codeEditor(page, "policy-source").fill(draft);
+      7243 |     await openPolicyFiles(page);
+    > 7244 |     await page.locator("#policy-save").click();
+           |                                        ^
+      7245 |     await expect.poll(() => completions.length).toBe(2);
+      7246 |     completions[0]();
+      7247 |     await expect.poll(() => oldFinished).toBe(true);
+        at /Volumes/Storage/dubnom/zipsquat/ZPR Docs/zpr-visaservice.worktrees/maturing-w5-stability-beta-4627e4c/zpr-dashboard/tests/browser/dashboard.spec.mjs:7244:40
+
+    attachment #1: screenshot (image/png) ──────────────────────────────────────────────────────────
+    test-results/dashboard-Policy-runtime-c-bc411-r-pre-save-fixtures-request-desktop-repeat5/test-failed-1.png
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+    Error Context: test-results/dashboard-Policy-runtime-c-bc411-r-pre-save-fixtures-request-desktop-repeat5/error-context.md
+
+  13) [desktop] › tests/browser/dashboard.spec.mjs:1906:1 › Scenario JSON transport keeps failed creation unsaved and preserves explicit creation payloads
+
+    Error: expect(received).toEqual(expected) // deep equality
+
+    - Expected  - 0
+    + Received  + 1
+
+    @@ -33,6 +33,7 @@
+              },
+            ],
+          },
+          "summary": "Initial version",
+        },
+    +   null,
+      ]
+
+      1927 |   await page.locator("#scenario-editor-save").click();
+      1928 |   await expect(page.locator("#scenario-editor-status")).toHaveText("Saved version 1. Publish it to enable runs.");
+    > 1929 |   expect(writes).toEqual(Array.from({ length: 2 }, () => ({ scenario, summary: "Initial version", expected_revision: 0 })));
+           |                  ^
+      1930 |   expect(api.counts.get(endpoint + "/created-transport/publish") || 0).toBe(0);
+      1931 |   expect(api.counts.get("/api/simulator/scenarios/run") || 0).toBe(0);
+      1932 | });
+        at /Volumes/Storage/dubnom/zipsquat/ZPR Docs/zpr-visaservice.worktrees/maturing-w5-stability-beta-4627e4c/zpr-dashboard/tests/browser/dashboard.spec.mjs:1929:18
+
+    attachment #1: screenshot (image/png) ──────────────────────────────────────────────────────────
+    test-results/dashboard-Scenario-JSON-tr-077ed--explicit-creation-payloads-desktop-repeat7/test-failed-1.png
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+    Error Context: test-results/dashboard-Scenario-JSON-tr-077ed--explicit-creation-payloads-desktop-repeat7/error-context.md
+
+  14) [desktop] › tests/browser/dashboard.spec.mjs:7215:3 › Policy runtime cancellation cannot release a newer pre-save fixtures request
+
+    Test timeout of 30000ms exceeded.
+
+    Error: locator.click: Test timeout of 30000ms exceeded.
+    Call log:
+      - waiting for locator('#policy-save')
+        - locator resolved to <button disabled type="button" role="menuitem" id="policy-save" class="button button-save-next">Save</button>
+      - attempting click action
+        2 × waiting for element to be visible, enabled and stable
+          - element is not enabled
+        - retrying click action
+        - waiting 20ms
+        2 × waiting for element to be visible, enabled and stable
+          - element is not enabled
+        - retrying click action
+          - waiting 100ms
+        57 × waiting for element to be visible, enabled and stable
+           - element is not enabled
+         - retrying click action
+           - waiting 500ms
+
+
+      7242 |     await codeEditor(page, "policy-source").fill(draft);
+      7243 |     await openPolicyFiles(page);
+    > 7244 |     await page.locator("#policy-save").click();
+           |                                        ^
+      7245 |     await expect.poll(() => completions.length).toBe(2);
+      7246 |     completions[0]();
+      7247 |     await expect.poll(() => oldFinished).toBe(true);
+        at /Volumes/Storage/dubnom/zipsquat/ZPR Docs/zpr-visaservice.worktrees/maturing-w5-stability-beta-4627e4c/zpr-dashboard/tests/browser/dashboard.spec.mjs:7244:40
+
+    attachment #1: screenshot (image/png) ──────────────────────────────────────────────────────────
+    test-results/dashboard-Policy-runtime-c-bc411-r-pre-save-fixtures-request-desktop-repeat7/test-failed-1.png
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+    Error Context: test-results/dashboard-Policy-runtime-c-bc411-r-pre-save-fixtures-request-desktop-repeat7/error-context.md
+
+  15) [desktop] › tests/browser/dashboard.spec.mjs:1906:1 › Scenario JSON transport keeps failed creation unsaved and preserves explicit creation payloads
+
+    Error: expect(received).toEqual(expected) // deep equality
+
+    - Expected  - 0
+    + Received  + 1
+
+    @@ -33,6 +33,7 @@
+              },
+            ],
+          },
+          "summary": "Initial version",
+        },
+    +   null,
+      ]
+
+      1927 |   await page.locator("#scenario-editor-save").click();
+      1928 |   await expect(page.locator("#scenario-editor-status")).toHaveText("Saved version 1. Publish it to enable runs.");
+    > 1929 |   expect(writes).toEqual(Array.from({ length: 2 }, () => ({ scenario, summary: "Initial version", expected_revision: 0 })));
+           |                  ^
+      1930 |   expect(api.counts.get(endpoint + "/created-transport/publish") || 0).toBe(0);
+      1931 |   expect(api.counts.get("/api/simulator/scenarios/run") || 0).toBe(0);
+      1932 | });
+        at /Volumes/Storage/dubnom/zipsquat/ZPR Docs/zpr-visaservice.worktrees/maturing-w5-stability-beta-4627e4c/zpr-dashboard/tests/browser/dashboard.spec.mjs:1929:18
+
+    attachment #1: screenshot (image/png) ──────────────────────────────────────────────────────────
+    test-results/dashboard-Scenario-JSON-tr-077ed--explicit-creation-payloads-desktop-repeat8/test-failed-1.png
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+    Error Context: test-results/dashboard-Scenario-JSON-tr-077ed--explicit-creation-payloads-desktop-repeat8/error-context.md
+
+  16) [desktop] › tests/browser/dashboard.spec.mjs:7215:3 › Policy runtime cancellation cannot release a newer pre-save fixtures request
+
+    Test timeout of 30000ms exceeded.
+
+    Error: locator.click: Test timeout of 30000ms exceeded.
+    Call log:
+      - waiting for locator('#policy-save')
+        - locator resolved to <button disabled type="button" role="menuitem" id="policy-save" class="button button-save-next">Save</button>
+      - attempting click action
+        2 × waiting for element to be visible, enabled and stable
+          - element is not enabled
+        - retrying click action
+        - waiting 20ms
+        2 × waiting for element to be visible, enabled and stable
+          - element is not enabled
+        - retrying click action
+          - waiting 100ms
+        57 × waiting for element to be visible, enabled and stable
+           - element is not enabled
+         - retrying click action
+           - waiting 500ms
+
+
+      7242 |     await codeEditor(page, "policy-source").fill(draft);
+      7243 |     await openPolicyFiles(page);
+    > 7244 |     await page.locator("#policy-save").click();
+           |                                        ^
+      7245 |     await expect.poll(() => completions.length).toBe(2);
+      7246 |     completions[0]();
+      7247 |     await expect.poll(() => oldFinished).toBe(true);
+        at /Volumes/Storage/dubnom/zipsquat/ZPR Docs/zpr-visaservice.worktrees/maturing-w5-stability-beta-4627e4c/zpr-dashboard/tests/browser/dashboard.spec.mjs:7244:40
+
+    attachment #1: screenshot (image/png) ──────────────────────────────────────────────────────────
+    test-results/dashboard-Policy-runtime-c-bc411-r-pre-save-fixtures-request-desktop-repeat8/test-failed-1.png
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+    Error Context: test-results/dashboard-Policy-runtime-c-bc411-r-pre-save-fixtures-request-desktop-repeat8/error-context.md
+
+  17) [desktop] › tests/browser/dashboard.spec.mjs:1906:1 › Scenario JSON transport keeps failed creation unsaved and preserves explicit creation payloads
+
+    Error: expect(received).toEqual(expected) // deep equality
+
+    - Expected  - 0
+    + Received  + 1
+
+    @@ -33,6 +33,7 @@
+              },
+            ],
+          },
+          "summary": "Initial version",
+        },
+    +   null,
+      ]
+
+      1927 |   await page.locator("#scenario-editor-save").click();
+      1928 |   await expect(page.locator("#scenario-editor-status")).toHaveText("Saved version 1. Publish it to enable runs.");
+    > 1929 |   expect(writes).toEqual(Array.from({ length: 2 }, () => ({ scenario, summary: "Initial version", expected_revision: 0 })));
+           |                  ^
+      1930 |   expect(api.counts.get(endpoint + "/created-transport/publish") || 0).toBe(0);
+      1931 |   expect(api.counts.get("/api/simulator/scenarios/run") || 0).toBe(0);
+      1932 | });
+        at /Volumes/Storage/dubnom/zipsquat/ZPR Docs/zpr-visaservice.worktrees/maturing-w5-stability-beta-4627e4c/zpr-dashboard/tests/browser/dashboard.spec.mjs:1929:18
+
+    attachment #1: screenshot (image/png) ──────────────────────────────────────────────────────────
+    test-results/dashboard-Scenario-JSON-tr-077ed--explicit-creation-payloads-desktop-repeat9/test-failed-1.png
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+    Error Context: test-results/dashboard-Scenario-JSON-tr-077ed--explicit-creation-payloads-desktop-repeat9/error-context.md
+
+  18) [desktop] › tests/browser/geography.spec.mjs:870:1 › World Map Fit reframes the current viewport after manual zoom and resize
+
+    Error: Fit
+
+    expect(received).toBeLessThan(expected)
+
+    Expected: < 0.95
+    Received:   1.1249999094275789
+
+      895 |     expect(frame.aspect, action).toBeCloseTo(frame.viewportAspect, 4);
+      896 |     expect(frame.coverage, action).toBeGreaterThan(0.75);
+    > 897 |     expect(frame.coverage, action).toBeLessThan(0.95);
+          |                                    ^
+      898 |     expect(frame.contained, action).toBe(true);
+      899 |   }
+      900 |   await page.setViewportSize({ width: 1280, height: 800 });
+        at /Volumes/Storage/dubnom/zipsquat/ZPR Docs/zpr-visaservice.worktrees/maturing-w5-stability-beta-4627e4c/zpr-dashboard/tests/browser/geography.spec.mjs:897:36
+
+    attachment #1: screenshot (image/png) ──────────────────────────────────────────────────────────
+    test-results/geography-World-Map-Fit-re-3c7ae-fter-manual-zoom-and-resize-desktop/test-failed-1.png
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+    Error Context: test-results/geography-World-Map-Fit-re-3c7ae-fter-manual-zoom-and-resize-desktop/error-context.md
+
+  19) [desktop] › tests/browser/geography.spec.mjs:870:1 › World Map Fit reframes the current viewport after manual zoom and resize
+
+    Error: Fit
+
+    expect(received).toBeLessThan(expected)
+
+    Expected: < 0.95
+    Received:   1.1249999094275789
+
+      895 |     expect(frame.aspect, action).toBeCloseTo(frame.viewportAspect, 4);
+      896 |     expect(frame.coverage, action).toBeGreaterThan(0.75);
+    > 897 |     expect(frame.coverage, action).toBeLessThan(0.95);
+          |                                    ^
+      898 |     expect(frame.contained, action).toBe(true);
+      899 |   }
+      900 |   await page.setViewportSize({ width: 1280, height: 800 });
+        at /Volumes/Storage/dubnom/zipsquat/ZPR Docs/zpr-visaservice.worktrees/maturing-w5-stability-beta-4627e4c/zpr-dashboard/tests/browser/geography.spec.mjs:897:36
+
+    attachment #1: screenshot (image/png) ──────────────────────────────────────────────────────────
+    test-results/geography-World-Map-Fit-re-3c7ae-fter-manual-zoom-and-resize-desktop-repeat1/test-failed-1.png
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+    Error Context: test-results/geography-World-Map-Fit-re-3c7ae-fter-manual-zoom-and-resize-desktop-repeat1/error-context.md
+
+  20) [desktop] › tests/browser/geography.spec.mjs:870:1 › World Map Fit reframes the current viewport after manual zoom and resize
+
+    Error: Fit
+
+    expect(received).toBeLessThan(expected)
+
+    Expected: < 0.95
+    Received:   1.1249999094275789
+
+      895 |     expect(frame.aspect, action).toBeCloseTo(frame.viewportAspect, 4);
+      896 |     expect(frame.coverage, action).toBeGreaterThan(0.75);
+    > 897 |     expect(frame.coverage, action).toBeLessThan(0.95);
+          |                                    ^
+      898 |     expect(frame.contained, action).toBe(true);
+      899 |   }
+      900 |   await page.setViewportSize({ width: 1280, height: 800 });
+        at /Volumes/Storage/dubnom/zipsquat/ZPR Docs/zpr-visaservice.worktrees/maturing-w5-stability-beta-4627e4c/zpr-dashboard/tests/browser/geography.spec.mjs:897:36
+
+    attachment #1: screenshot (image/png) ──────────────────────────────────────────────────────────
+    test-results/geography-World-Map-Fit-re-3c7ae-fter-manual-zoom-and-resize-desktop-repeat2/test-failed-1.png
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+    Error Context: test-results/geography-World-Map-Fit-re-3c7ae-fter-manual-zoom-and-resize-desktop-repeat2/error-context.md
+
+  21) [desktop] › tests/browser/geography.spec.mjs:870:1 › World Map Fit reframes the current viewport after manual zoom and resize
+
+    Error: Fit
+
+    expect(received).toBeLessThan(expected)
+
+    Expected: < 0.95
+    Received:   1.1249999094275789
+
+      895 |     expect(frame.aspect, action).toBeCloseTo(frame.viewportAspect, 4);
+      896 |     expect(frame.coverage, action).toBeGreaterThan(0.75);
+    > 897 |     expect(frame.coverage, action).toBeLessThan(0.95);
+          |                                    ^
+      898 |     expect(frame.contained, action).toBe(true);
+      899 |   }
+      900 |   await page.setViewportSize({ width: 1280, height: 800 });
+        at /Volumes/Storage/dubnom/zipsquat/ZPR Docs/zpr-visaservice.worktrees/maturing-w5-stability-beta-4627e4c/zpr-dashboard/tests/browser/geography.spec.mjs:897:36
+
+    attachment #1: screenshot (image/png) ──────────────────────────────────────────────────────────
+    test-results/geography-World-Map-Fit-re-3c7ae-fter-manual-zoom-and-resize-desktop-repeat3/test-failed-1.png
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+    Error Context: test-results/geography-World-Map-Fit-re-3c7ae-fter-manual-zoom-and-resize-desktop-repeat3/error-context.md
+
+  22) [desktop] › tests/browser/geography.spec.mjs:870:1 › World Map Fit reframes the current viewport after manual zoom and resize
+
+    Error: Fit
+
+    expect(received).toBeLessThan(expected)
+
+    Expected: < 0.95
+    Received:   1.1249999094275789
+
+      895 |     expect(frame.aspect, action).toBeCloseTo(frame.viewportAspect, 4);
+      896 |     expect(frame.coverage, action).toBeGreaterThan(0.75);
+    > 897 |     expect(frame.coverage, action).toBeLessThan(0.95);
+          |                                    ^
+      898 |     expect(frame.contained, action).toBe(true);
+      899 |   }
+      900 |   await page.setViewportSize({ width: 1280, height: 800 });
+        at /Volumes/Storage/dubnom/zipsquat/ZPR Docs/zpr-visaservice.worktrees/maturing-w5-stability-beta-4627e4c/zpr-dashboard/tests/browser/geography.spec.mjs:897:36
+
+    attachment #1: screenshot (image/png) ──────────────────────────────────────────────────────────
+    test-results/geography-World-Map-Fit-re-3c7ae-fter-manual-zoom-and-resize-desktop-repeat4/test-failed-1.png
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+    Error Context: test-results/geography-World-Map-Fit-re-3c7ae-fter-manual-zoom-and-resize-desktop-repeat4/error-context.md
+
+  23) [desktop] › tests/browser/geography.spec.mjs:870:1 › World Map Fit reframes the current viewport after manual zoom and resize
+
+    Error: Fit
+
+    expect(received).toBeLessThan(expected)
+
+    Expected: < 0.95
+    Received:   1.1249999094275789
+
+      895 |     expect(frame.aspect, action).toBeCloseTo(frame.viewportAspect, 4);
+      896 |     expect(frame.coverage, action).toBeGreaterThan(0.75);
+    > 897 |     expect(frame.coverage, action).toBeLessThan(0.95);
+          |                                    ^
+      898 |     expect(frame.contained, action).toBe(true);
+      899 |   }
+      900 |   await page.setViewportSize({ width: 1280, height: 800 });
+        at /Volumes/Storage/dubnom/zipsquat/ZPR Docs/zpr-visaservice.worktrees/maturing-w5-stability-beta-4627e4c/zpr-dashboard/tests/browser/geography.spec.mjs:897:36
+
+    attachment #1: screenshot (image/png) ──────────────────────────────────────────────────────────
+    test-results/geography-World-Map-Fit-re-3c7ae-fter-manual-zoom-and-resize-desktop-repeat5/test-failed-1.png
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+    Error Context: test-results/geography-World-Map-Fit-re-3c7ae-fter-manual-zoom-and-resize-desktop-repeat5/error-context.md
+
+  24) [desktop] › tests/browser/geography.spec.mjs:870:1 › World Map Fit reframes the current viewport after manual zoom and resize
+
+    Error: Fit
+
+    expect(received).toBeLessThan(expected)
+
+    Expected: < 0.95
+    Received:   1.1249999094275789
+
+      895 |     expect(frame.aspect, action).toBeCloseTo(frame.viewportAspect, 4);
+      896 |     expect(frame.coverage, action).toBeGreaterThan(0.75);
+    > 897 |     expect(frame.coverage, action).toBeLessThan(0.95);
+          |                                    ^
+      898 |     expect(frame.contained, action).toBe(true);
+      899 |   }
+      900 |   await page.setViewportSize({ width: 1280, height: 800 });
+        at /Volumes/Storage/dubnom/zipsquat/ZPR Docs/zpr-visaservice.worktrees/maturing-w5-stability-beta-4627e4c/zpr-dashboard/tests/browser/geography.spec.mjs:897:36
+
+    attachment #1: screenshot (image/png) ──────────────────────────────────────────────────────────
+    test-results/geography-World-Map-Fit-re-3c7ae-fter-manual-zoom-and-resize-desktop-repeat6/test-failed-1.png
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+    Error Context: test-results/geography-World-Map-Fit-re-3c7ae-fter-manual-zoom-and-resize-desktop-repeat6/error-context.md
+
+  25) [desktop] › tests/browser/geography.spec.mjs:870:1 › World Map Fit reframes the current viewport after manual zoom and resize
+
+    Error: Fit
+
+    expect(received).toBeLessThan(expected)
+
+    Expected: < 0.95
+    Received:   1.1249999094275789
+
+      895 |     expect(frame.aspect, action).toBeCloseTo(frame.viewportAspect, 4);
+      896 |     expect(frame.coverage, action).toBeGreaterThan(0.75);
+    > 897 |     expect(frame.coverage, action).toBeLessThan(0.95);
+          |                                    ^
+      898 |     expect(frame.contained, action).toBe(true);
+      899 |   }
+      900 |   await page.setViewportSize({ width: 1280, height: 800 });
+        at /Volumes/Storage/dubnom/zipsquat/ZPR Docs/zpr-visaservice.worktrees/maturing-w5-stability-beta-4627e4c/zpr-dashboard/tests/browser/geography.spec.mjs:897:36
+
+    attachment #1: screenshot (image/png) ──────────────────────────────────────────────────────────
+    test-results/geography-World-Map-Fit-re-3c7ae-fter-manual-zoom-and-resize-desktop-repeat7/test-failed-1.png
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+    Error Context: test-results/geography-World-Map-Fit-re-3c7ae-fter-manual-zoom-and-resize-desktop-repeat7/error-context.md
+
+  26) [desktop] › tests/browser/geography.spec.mjs:870:1 › World Map Fit reframes the current viewport after manual zoom and resize
+
+    Error: Fit
+
+    expect(received).toBeLessThan(expected)
+
+    Expected: < 0.95
+    Received:   1.1249999094275789
+
+      895 |     expect(frame.aspect, action).toBeCloseTo(frame.viewportAspect, 4);
+      896 |     expect(frame.coverage, action).toBeGreaterThan(0.75);
+    > 897 |     expect(frame.coverage, action).toBeLessThan(0.95);
+          |                                    ^
+      898 |     expect(frame.contained, action).toBe(true);
+      899 |   }
+      900 |   await page.setViewportSize({ width: 1280, height: 800 });
+        at /Volumes/Storage/dubnom/zipsquat/ZPR Docs/zpr-visaservice.worktrees/maturing-w5-stability-beta-4627e4c/zpr-dashboard/tests/browser/geography.spec.mjs:897:36
+
+    attachment #1: screenshot (image/png) ──────────────────────────────────────────────────────────
+    test-results/geography-World-Map-Fit-re-3c7ae-fter-manual-zoom-and-resize-desktop-repeat8/test-failed-1.png
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+    Error Context: test-results/geography-World-Map-Fit-re-3c7ae-fter-manual-zoom-and-resize-desktop-repeat8/error-context.md
+
+  27) [desktop] › tests/browser/geography.spec.mjs:870:1 › World Map Fit reframes the current viewport after manual zoom and resize
+
+    Error: Fit
+
+    expect(received).toBeLessThan(expected)
+
+    Expected: < 0.95
+    Received:   1.1249999094275789
+
+      895 |     expect(frame.aspect, action).toBeCloseTo(frame.viewportAspect, 4);
+      896 |     expect(frame.coverage, action).toBeGreaterThan(0.75);
+    > 897 |     expect(frame.coverage, action).toBeLessThan(0.95);
+          |                                    ^
+      898 |     expect(frame.contained, action).toBe(true);
+      899 |   }
+      900 |   await page.setViewportSize({ width: 1280, height: 800 });
+        at /Volumes/Storage/dubnom/zipsquat/ZPR Docs/zpr-visaservice.worktrees/maturing-w5-stability-beta-4627e4c/zpr-dashboard/tests/browser/geography.spec.mjs:897:36
+
+    attachment #1: screenshot (image/png) ──────────────────────────────────────────────────────────
+    test-results/geography-World-Map-Fit-re-3c7ae-fter-manual-zoom-and-resize-desktop-repeat9/test-failed-1.png
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+    Error Context: test-results/geography-World-Map-Fit-re-3c7ae-fter-manual-zoom-and-resize-desktop-repeat9/error-context.md
+
+  27 failed
+    [desktop] › tests/browser/dashboard.spec.mjs:1906:1 › Scenario JSON transport keeps failed creation unsaved and preserves explicit creation payloads
+    [desktop] › tests/browser/dashboard.spec.mjs:7215:3 › Policy runtime cancellation cannot release a newer pre-save fixtures request
+    [desktop] › tests/browser/dashboard.spec.mjs:1906:1 › Scenario JSON transport keeps failed creation unsaved and preserves explicit creation payloads
+    [desktop] › tests/browser/dashboard.spec.mjs:7215:3 › Policy runtime cancellation cannot release a newer pre-save fixtures request
+    [desktop] › tests/browser/dashboard.spec.mjs:1906:1 › Scenario JSON transport keeps failed creation unsaved and preserves explicit creation payloads
+    [desktop] › tests/browser/dashboard.spec.mjs:7215:3 › Policy runtime cancellation cannot release a newer pre-save fixtures request
+    [desktop] › tests/browser/dashboard.spec.mjs:1906:1 › Scenario JSON transport keeps failed creation unsaved and preserves explicit creation payloads
+    [desktop] › tests/browser/dashboard.spec.mjs:7215:3 › Policy runtime cancellation cannot release a newer pre-save fixtures request
+    [desktop] › tests/browser/dashboard.spec.mjs:1906:1 › Scenario JSON transport keeps failed creation unsaved and preserves explicit creation payloads
+    [desktop] › tests/browser/dashboard.spec.mjs:7215:3 › Policy runtime cancellation cannot release a newer pre-save fixtures request
+    [desktop] › tests/browser/dashboard.spec.mjs:1906:1 › Scenario JSON transport keeps failed creation unsaved and preserves explicit creation payloads
+    [desktop] › tests/browser/dashboard.spec.mjs:7215:3 › Policy runtime cancellation cannot release a newer pre-save fixtures request
+    [desktop] › tests/browser/dashboard.spec.mjs:1906:1 › Scenario JSON transport keeps failed creation unsaved and preserves explicit creation payloads
+    [desktop] › tests/browser/dashboard.spec.mjs:7215:3 › Policy runtime cancellation cannot release a newer pre-save fixtures request
+    [desktop] › tests/browser/dashboard.spec.mjs:1906:1 › Scenario JSON transport keeps failed creation unsaved and preserves explicit creation payloads
+    [desktop] › tests/browser/dashboard.spec.mjs:7215:3 › Policy runtime cancellation cannot release a newer pre-save fixtures request
+    [desktop] › tests/browser/dashboard.spec.mjs:1906:1 › Scenario JSON transport keeps failed creation unsaved and preserves explicit creation payloads
+    [desktop] › tests/browser/geography.spec.mjs:870:1 › World Map Fit reframes the current viewport after manual zoom and resize
+    [desktop] › tests/browser/geography.spec.mjs:870:1 › World Map Fit reframes the current viewport after manual zoom and resize
+    [desktop] › tests/browser/geography.spec.mjs:870:1 › World Map Fit reframes the current viewport after manual zoom and resize
+    [desktop] › tests/browser/geography.spec.mjs:870:1 › World Map Fit reframes the current viewport after manual zoom and resize
+    [desktop] › tests/browser/geography.spec.mjs:870:1 › World Map Fit reframes the current viewport after manual zoom and resize
+    [desktop] › tests/browser/geography.spec.mjs:870:1 › World Map Fit reframes the current viewport after manual zoom and resize
+    [desktop] › tests/browser/geography.spec.mjs:870:1 › World Map Fit reframes the current viewport after manual zoom and resize
+    [desktop] › tests/browser/geography.spec.mjs:870:1 › World Map Fit reframes the current viewport after manual zoom and resize
+    [desktop] › tests/browser/geography.spec.mjs:870:1 › World Map Fit reframes the current viewport after manual zoom and resize
+    [desktop] › tests/browser/geography.spec.mjs:870:1 › World Map Fit reframes the current viewport after manual zoom and resize
+  3 passed (2.2m)
