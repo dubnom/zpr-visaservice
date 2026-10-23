@@ -817,6 +817,84 @@ node-to-node Noise, Visa/service adapters, adapter-to-adapter/inter-node traffic
 revocation, full container/VM lifecycle, production setup or whole-demo acceptance.
 These remain release gates, not implied successes. No upload/deployment/promotion.
 
+### Settled node peers and policy-controlled inter-node TCP
+
+Commit `19c964b` adds mutually exclusive `--peer-node` mode to the exact-image
+probe and a fresh private peer fixture. No Rust/Go source, executable, archive
+or runtime image changed. Accepted runtime download remains SHA-256
+`f4630f498754704362d5f611f6a07d773d056bec9294e8726338572d10233612`,
+image ID `sha256:4bdafbaeaf1bfe7d8a3aedce0c940b3b05d560605b615b9e2a821c4053829396`.
+Committed harness SHA-256:
+`8d678c5171886f4b5845f9970fa0cb6eef4e44b64ece214a98975f92ec553994`;
+peer fixture SHA-256:
+`2aa3e536911dbf7b2cf7d37f1e0de93cb4e5021e31903954bb9023de7073e02f`.
+
+The fixture generates a separate RSA bootstrap key, X25519 key and CA-signed
+`peer` certificate, declares both nodes/substrate addresses and the policy link,
+and pins the other node's Noise certificate at each end. A network-disabled,
+unprivileged helper copies only node-specific keys/configuration and public
+trust material into the peer volume; API credentials, authority private key and
+database remain in Visa's volume. All three runtime containers run UID 501/
+GID 1000, zero effective capabilities, read-only root and no-new-privileges.
+The existing isolated internal IPv6 network and root NET_ADMIN-only namespace
+setup contract remain unchanged.
+
+The committed exact-image probe passed:
+
+- Deliberately wrong peer Noise pin: exact certificate-exchange
+  `KeyMismatchError`, without a verified peer name.
+- Correct pins: verified CN `peer` at `node` and CN `node` at `peer`; both
+  Hello directions complete and the same configured link becomes active.
+- Exactly the two expected node actors at `fd5a:5052::2` and `fd5a:5052::3`,
+  both synchronized with zero pending installs.
+- Live `ph-cli` queries require exactly one active peer at the expected substrate
+  and `Type: NodeToNode`, ten consecutive one-second samples at each end.
+  Historical handshake logs or actor inventory alone are insufficient.
+- Allowed TCP Redis PING on peer port 16379 returns PONG across the node link.
+  Port 16380 times out with no PONG and explicit policy `NoMatch`; the denied
+  listener still responds locally. Inter-node ZPR routes point only at TUN,
+  not the substrate bridge.
+- Restart of only the first PH process after settled-link qualification:
+  VSS registration and synchronization return, both live node links pass the
+  same stability checks, and both allowed/denied TCP checks pass again.
+- Default node-only and adapter modes both pass with the same committed harness,
+  including the shared TCP helper's stricter exact `NoMatch` assertion.
+  All 26 focused bootstrap/runtime rejection/failure-receipt tests pass.
+
+**Unresolved lifecycle limitation:** an earlier development probe restarted
+immediately after initial actor synchronization, without live-link stability
+qualification. It exposed a timing-dependent failure: the surviving peer receives
+`TerminateLink(Reset)`, removes its node-peer entry and creates an ordinary
+adapter tether for the returning node. Node Hello handling then fails and Visa
+reports `NoRoute` during VSS initialization; restart timed out with exit 124.
+The settled-link result is not a source fix for that earlier timing window.
+Acceptance explicitly records `early_restart_race_resolved: false`.
+General node lifecycle remains open; never interpret this as arbitrary-time
+restart, container/VM restart or revocation qualification.
+
+Selected diagnostics persist in
+`validation/peer-early-restart-failure-20261023`. Its receipt explicitly identifies
+the uncommitted development-harness provenance limitation rather than inventing
+an exact harness hash or presenting it as accepted release evidence.
+Exact committed-harness acceptance is separately retained in
+`validation/peer-image-final-20261023`, with regressions in
+`adapter-image-peer-regression-20261023` and `node-image-peer-regression-20261023`.
+Image/harness/fixture digests, route receipts, mutual trust and before/after
+traffic results were independently verified. Raw failed-attempt logs and all
+superseded probe outputs were reviewed and removed; generated private keys and
+databases stayed on disposable volumes. No containers, volumes or labeled test
+networks remained before stopping validation. The validation VM is stopped;
+both live recovery VMs remain running, main and original worktrees unchanged,
+default context still `desktop-linux`.
+
+Scope is **node local actor to peer node local actor over one pinned Noise
+link**, with engineering-only direct Visa transport routes and
+`local_vs_dock = true` on both nodes. This does not qualify remote Visa/service
+adapters, adapter-to-adapter transit, early-restart behavior, revocation,
+production setup or full-demo acceptance. No upload, deployment, registry push
+or main promotion occurred. The packaging README and repeatable skill document
+both the qualified slice and unresolved timing window.
+
 ## Adapter retention and main promotion
 
 Core is a separate repository. Its adapter development is preserved at
