@@ -765,6 +765,11 @@ explicit organization-switch approval/cancellation and stale-approval handling.
 These are deterministic UI regressions, not live network or multi-node acceptance
 tests; unfinished protocol, teardown, and recovery work remains separate.
 
+The compiled production-asset browser fixture serves Simulator operator-auth
+configuration with authentication disabled. Its keyboard-navigation check waits
+for that configuration before focusing Activity; a static-only server without
+the auth contract correctly leaves the UI gated and cannot exercise navigation.
+
 ### Simulator top banner
 
 Every Simulator page shares a top banner showing backend connectivity, the active

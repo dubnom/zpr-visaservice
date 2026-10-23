@@ -49,7 +49,10 @@ func TestProductionAssetBrowserFixture(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		simulator := httptest.NewServer(securityHeaders(simulatorStaticHandler(all)))
+		simulatorMux := http.NewServeMux()
+		simulatorMux.Handle("GET /auth/operator/config", auth)
+		simulatorMux.Handle("/", simulatorStaticHandler(all))
+		simulator := httptest.NewServer(securityHeaders(simulatorMux))
 		defer simulator.Close()
 		ready["simulator"] = simulator.URL
 	}
