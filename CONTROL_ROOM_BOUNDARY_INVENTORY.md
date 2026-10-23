@@ -6,6 +6,58 @@ not production sign-off. C03/C06 resolves the three HIGH launcher seams; C05
 resolves the production asset seam. Both packet-local evidence records remain
 below. No Simulator runtime, Docker stack, deployment or live provider was started.
 
+## Wave 3 integrated evidence (2026-10-23)
+
+Exclusive branch `maturing/integration`, verified starting HEAD
+`f20bf5441fe55823d361f41b5d247020d458b4ff`. The requested commits were
+merged in order with `--no-ff`, without conflicts:
+
+| Input | Integration merge |
+| --- | --- |
+| `754aef46115df70fdce1e2d0aa2d9994108e898b` — scoped boundary fixtures | `318f070b66b719268f651f827e0bff98bcce4089` |
+| `32aa5532406fac654c9b473d66dc2e60665ec7aa` — Simulator navigation fixture readiness | `ed37826c4668f743a87b77bce7a2e5402dc1c5fb` |
+| `9cbcf405dc848c665fd60839ba06a5169d65c1c4` — explicit manager source metadata | `c3bacda860f7aecfcb6aa2e4f0fb1b27eac90c5e` |
+
+- Strict `python3 scripts/check-control-room-boundary.py`: **exit 0, zero
+  references**, unchanged checker and no allowlist.
+- Real default/production asset fixture binaries plus boundary browser cases:
+  **16 passed**, desktop and tablet (ten scoped-source boundary cases, six
+  asset/navigation cases). The Wave 2 boundary and Simulator navigation fixture
+  blockers are resolved for this focused gate.
+- The **entire** discovered Playwright suite (`npm run test:browser -- --workers=2`):
+  **1,437 passed, 125 failed, 64 skipped, six did not run**, 1,632 cases, 17 minutes.
+  Failures: desktop **62**, tablet **63**. All ten boundary cases pass. The six
+  asset cases skip in this invocation because their opt-in binaries are unset;
+  all six pass in the separate real-fixture run above. This is not a green full
+  browser acceptance gate. Failures include assertion/source and Scenario contract
+  expectations, hidden reset controls (28 cases), editor/navigation/layout checks,
+  local enrollment fixture startup and expired-login callbacks. Two explicit
+  live acceptance cases fail before network access because
+  `ZPR_LIVE_STORAGE_STATE` is unset. No live credentials were supplied or live
+  acceptance claimed; no unrelated tests were repaired, skipped or weakened.
+- Focused command/configuration/assets/source/trusted-source race tests:
+  **124 passed**, one opt-in browser-harness test skipped; all nine selected
+  package suites pass. Complete extracted production-package race suites:
+  **56 passed across eight packages**. Supplemental inventory/snapshot race
+  checks: **seven passed**. Production-tag race guards: **24 passed**, one
+  opt-in browser-harness test skipped.
+- Actual production package build and Simulator-mode rejection: **passed**;
+  compiler-selected embeds remain **68 production / 97 default**.
+- Python operator-stack and asset checks: **11 + five passed**. All Node script
+  suites: **53 passed, four failed**, the same missing sibling
+  `zpr-demo/multinode-demo` Compose/deployment fixtures; no sibling files added.
+- `make test`: **exit 2, exactly 38 top-level failures**, with precisely the same
+  failing test names as the stored baseline: command **24**, enrollment **one**,
+  reset **13**; **48 package suites pass**. Missing lab/Rust fixtures, isolated
+  shell helper, observability readiness, macOS socket path length and protected
+  reset directories remain environmental/baseline blockers, not repaired here.
+- Dashboard Go formatting, package/launcher shell syntax and `git diff --check`:
+  **passed**. Test/compiler scratch stayed inside this exclusive worktree.
+
+No push, deployment, live LDAP or shared runtime mutation. This integrated
+result supersedes the focused Wave 2 fixture/audit failures below, but does not
+close full-browser, live-provider or independent executable extraction gates.
+
 ## Wave 3 source metadata repair (2026-10-23)
 
 Base `f20bf5441fe55823d361f41b5d247020d458b4ff`, exclusive
@@ -47,7 +99,7 @@ No live provider, shared runtime, push or deployment was performed. See
 
 ## Wave 2 integration reconciliation (2026-10-23)
 
-Historical Wave 2 result (superseded for the source seam by Wave 3 below):
+Historical Wave 2 result (superseded by the Wave 3 integration evidence above):
 the configuration, asset and trusted-source UI packets were combined. Strict
 `python3 scripts/check-control-room-boundary.py` exits **1 with exactly 2 references**:
 `cmd/zpr-web-dashboard/inventory.go:70` (`demo_ldap` / `rest/1` special case) and
