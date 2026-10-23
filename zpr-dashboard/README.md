@@ -772,6 +772,15 @@ explicit organization-switch approval/cancellation and stale-approval handling.
 These are deterministic UI regressions, not live network or multi-node acceptance
 tests; unfinished protocol, teardown, and recovery work remains separate.
 
+The shared CodeMirror editor uses outline-only matching and nonmatching bracket
+feedback, including while focused. This deliberately overrides CodeMirror's focused
+bracket backgrounds: Chromium's native contenteditable replacements can copy those
+backgrounds into inline styles, which the strict color-only `style-src-attr` policy
+rejects. Native editing, keyboard shortcuts, and CodeMirror undo/redo remain intact;
+do not add background-style hashes or relax CSP to accommodate rich-text copying.
+After changing `browser/code-editor.js`, run `npm run build:editor` to regenerate
+the embedded editor bundle and run the desktop/tablet editor browser regressions.
+
 The compiled production-asset browser fixture serves Simulator operator-auth
 configuration with authentication disabled. Its keyboard-navigation check waits
 for that configuration before focusing Activity; a static-only server without
