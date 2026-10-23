@@ -743,6 +743,80 @@ restart or full-demo acceptance. Those networking/adapter tests remain next;
 no claim is made that all networking gates are complete. The release skill now
 includes this reusable probe. No public upload, deployment or main promotion.
 
+### Adapter-to-node Noise trust and policy-controlled TCP
+
+Commit `b271fad` adds explicit `--adapter` to the saved-image node probe, with a
+test-only private fixture. It exercises the unchanged accepted runtime image
+(`f4630f498754704362d5f611f6a07d773d056bec9294e8726338572d10233612`),
+not another build or recovered deployment. Harness SHA-256:
+`f1cee89e6c6fc80a19a0f38db9187ab7b1ad6442118c853b30153f83153d4a5a`;
+fixture SHA-256:
+`e48dda1ca65c4c5f29554d262d8f8312b2eb92c302343c0336caf0e50fe3d6aa`.
+No Go/Rust source or executable changed.
+
+A third owned container/volume joins the same internal IPv6-only bridge.
+The fixture creates fresh RSA and X25519 material and a CA-signed `client`
+certificate, extends the bootstrap policy and copies only adapter-specific
+keys/configuration into that volume. Administrator/API keys, CA private key,
+database and node keys are not exposed to the adapter.
+
+The exact-image committed-harness gate passes:
+
+- Unrelated CA rejects the node's Noise certificate with explicit signature
+  verification failure and no `client` actor.
+- Valid Noise certificate with foreign RSA bootstrap key produces Visa's exact
+  signature rejection for CN `client`, still without an admitted client.
+- Matching fresh material verifies CN `node` at the adapter and CN `client`
+  at the node, reaches active dock, and registers a non-node actor.
+- Visa's dynamic `fd5a:5052:adda:` address is actually present on the adapter TUN.
+  No static claimed address is used.
+- Two live ephemeral Redis TCP listeners on the node local actor both return
+  PONG locally. Policy permits client only on 16379; that path returns PONG
+  through the Noise adapter/node link. Port 16380 returns no PONG within five
+  seconds, while the node records explicit policy `NoMatch` and the listener
+  still returns PONG locally. A timeout alone is not treated as denial proof.
+- Original node-only admission/TUN-negative/process-restart mode passes again.
+  All 24 focused packaging/provenance/argument regressions pass.
+
+The privilege boundary is deliberately different from a static node. The adapter
+dynamically updates its TUN using `/usr/sbin/ip`; zero-capability execution fails.
+Adding Docker NET_ADMIN to UID 501 did not retain permission across that exec
+path; a nonroot ambient-capability attempt was also explicitly denied. The
+qualified engineering adapter uses **UID 0 with NET_ADMIN only**, read-only root,
+no-new-privileges, TUN device access, no default route/host mount/published port
+and no privileged mode. Process-level UID/effective-capability checks pass.
+Visa, Redis and node remain UID 501 with zero capabilities.
+The separate network-disabled selected-file provisioning helper uses root
+CHOWN/DAC_OVERRIDE only to populate its protected root-owned adapter volume.
+A nonroot dynamic-address adapter solution is not claimed.
+
+The first explicit IPv6 adapter bind omitted its interface scope, causing
+incoming packet-info lookup to create a duplicate tether and Noise decryption
+failure. The final fixture resolves its container's actual `eth0` interface
+index and scopes the bind accordingly, without changing Core or trust checks.
+Preassigning a claimed static address also left Linux choosing that rejected
+claim as traffic source. The final fixture requests no static address and uses
+the actual Visa grant; node source-identity enforcement remains intact.
+An explicit private return route to the dynamic prefix completes local-actor
+traffic. The Admin API omits the node flag on ordinary adapters; the probe checks
+non-node semantics and normalizes only its selected summary.
+
+Selected trust/traffic/process receipts persist in
+`validation/adapter-image-final-20261023`; unchanged-mode regression receipts
+are in `validation/node-image-regression-20261023`. Raw failed-attempt logs
+were reviewed privately, never used as distributable evidence, and removed
+with superseded outputs. Generated keys/databases stayed on disposable volumes.
+All attempts' containers/helpers/workloads, private volumes and networks were
+removed; zero remaining test resources independently verified. Validation VM
+is stopped; both live demos, main, original worktrees and default context are
+unchanged. The repeatable release skill and packaging README include this gate.
+
+This proves **adapter-to-node** Noise trust, RSA admission, dynamic addressing
+and one allowed/denied TCP path to the node's local actor. It does not qualify
+node-to-node Noise, Visa/service adapters, adapter-to-adapter/inter-node traffic,
+revocation, full container/VM lifecycle, production setup or whole-demo acceptance.
+These remain release gates, not implied successes. No upload/deployment/promotion.
+
 ## Adapter retention and main promotion
 
 Core is a separate repository. Its adapter development is preserved at
