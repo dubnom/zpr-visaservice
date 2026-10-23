@@ -1,0 +1,54 @@
+[
+  {
+    "name": "maturing-csp-input-probe",
+    "command": [
+      "npm",
+      "run",
+      "test:browser",
+      "--",
+      "dashboard.spec.mjs",
+      "--project=tablet",
+      "--grep=(?:GUI\\ raw\\ scenario\\ analysis\\ ignores\\ delayed\\ errors\\ for\\ an\\ edited\\ source)$",
+      "--repeat-each=10",
+      "--workers=1",
+      "--retries=0",
+      "--reporter=json,list",
+      "--trace=off"
+    ],
+    "exit_code": 1,
+    "stats": {
+      "startTime": "2026-10-23T22:02:22.056Z",
+      "duration": 11120.907000000001,
+      "expected": 0,
+      "skipped": 0,
+      "unexpected": 10,
+      "flaky": 0
+    }
+  },
+  {
+    "name": "beta-csp-input-probe",
+    "command": [
+      "npm",
+      "run",
+      "test:browser",
+      "--",
+      "dashboard.spec.mjs",
+      "--project=tablet",
+      "--grep=(?:GUI\\ raw\\ scenario\\ analysis\\ ignores\\ delayed\\ errors\\ for\\ an\\ edited\\ source)$",
+      "--repeat-each=10",
+      "--workers=1",
+      "--retries=0",
+      "--reporter=json,list",
+      "--trace=off"
+    ],
+    "exit_code": 1,
+    "stats": {
+      "startTime": "2026-10-23T22:02:33.806Z",
+      "duration": 11115.669,
+      "expected": 0,
+      "skipped": 0,
+      "unexpected": 10,
+      "flaky": 0
+    }
+  }
+]

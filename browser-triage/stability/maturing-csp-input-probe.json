@@ -1,0 +1,985 @@
+{
+  "config": {
+    "argv": [
+      "/opt/homebrew/Cellar/node/26.10.0_2/bin/node",
+      "/Volumes/Storage/dubnom/zipsquat/ZPR Docs/zpr-visaservice.worktrees/maturing-w5-browser-stability/zpr-dashboard/node_modules/.bin/playwright",
+      "test",
+      "dashboard.spec.mjs",
+      "--project=tablet",
+      "--grep=(?:GUI\\ raw\\ scenario\\ analysis\\ ignores\\ delayed\\ errors\\ for\\ an\\ edited\\ source)$",
+      "--repeat-each=10",
+      "--workers=1",
+      "--retries=0",
+      "--reporter=json,list",
+      "--trace=off"
+    ],
+    "configFile": "/Volumes/Storage/dubnom/zipsquat/ZPR Docs/zpr-visaservice.worktrees/maturing-w5-browser-stability/zpr-dashboard/playwright.config.mjs",
+    "rootDir": "/Volumes/Storage/dubnom/zipsquat/ZPR Docs/zpr-visaservice.worktrees/maturing-w5-browser-stability/zpr-dashboard/tests/browser",
+    "failOnFlakyTests": false,
+    "forbidOnly": false,
+    "fullyParallel": true,
+    "globalSetup": null,
+    "globalTeardown": null,
+    "globalTimeout": 0,
+    "grep": {},
+    "grepInvert": null,
+    "maxFailures": 0,
+    "metadata": {
+      "actualWorkers": 1
+    },
+    "preserveOutput": "always",
+    "projects": [
+      {
+        "outputDir": "/Volumes/Storage/dubnom/zipsquat/ZPR Docs/zpr-visaservice.worktrees/maturing-w5-browser-stability/zpr-dashboard/test-results",
+        "repeatEach": 1,
+        "retries": 0,
+        "metadata": {
+          "actualWorkers": 1
+        },
+        "id": "desktop",
+        "name": "desktop",
+        "testDir": "/Volumes/Storage/dubnom/zipsquat/ZPR Docs/zpr-visaservice.worktrees/maturing-w5-browser-stability/zpr-dashboard/tests/browser",
+        "testIgnore": [],
+        "testMatch": [
+          "**/*.@(spec|test).?(c|m)[jt]s?(x)"
+        ],
+        "timeout": 30000
+      },
+      {
+        "outputDir": "/Volumes/Storage/dubnom/zipsquat/ZPR Docs/zpr-visaservice.worktrees/maturing-w5-browser-stability/zpr-dashboard/test-results",
+        "repeatEach": 10,
+        "retries": 0,
+        "metadata": {
+          "actualWorkers": 1
+        },
+        "id": "tablet",
+        "name": "tablet",
+        "testDir": "/Volumes/Storage/dubnom/zipsquat/ZPR Docs/zpr-visaservice.worktrees/maturing-w5-browser-stability/zpr-dashboard/tests/browser",
+        "testIgnore": [],
+        "testMatch": [
+          "**/*.@(spec|test).?(c|m)[jt]s?(x)"
+        ],
+        "timeout": 30000
+      }
+    ],
+    "quiet": false,
+    "reporter": [
+      [
+        "json"
+      ],
+      [
+        "list"
+      ]
+    ],
+    "reportSlowTests": {
+      "max": 5,
+      "threshold": 300000
+    },
+    "shard": null,
+    "tags": [],
+    "updateSnapshots": "missing",
+    "updateSourceMethod": "patch",
+    "version": "1.63.0",
+    "workers": 1,
+    "webServer": null
+  },
+  "suites": [
+    {
+      "title": "dashboard.spec.mjs",
+      "file": "dashboard.spec.mjs",
+      "column": 0,
+      "line": 0,
+      "specs": [
+        {
+          "title": "GUI raw scenario analysis ignores delayed errors for an edited source",
+          "ok": false,
+          "tags": [],
+          "tests": [
+            {
+              "timeout": 30000,
+              "annotations": [],
+              "expectedStatus": "passed",
+              "projectId": "tablet",
+              "projectName": "tablet",
+              "results": [
+                {
+                  "workerIndex": 0,
+                  "parallelIndex": 0,
+                  "status": "failed",
+                  "duration": 494,
+                  "error": {
+                    "message": "Error: Unexpected CSP violations\n\n\u001b[2mexpect(\u001b[22m\u001b[31mreceived\u001b[39m\u001b[2m).\u001b[22mtoEqual\u001b[2m(\u001b[22m\u001b[32mexpected\u001b[39m\u001b[2m) // deep equality\u001b[22m\n\n\u001b[32m- Expected  - 1\u001b[39m\n\u001b[31m+ Received  + 3\u001b[39m\n\n\u001b[32m- Array []\u001b[39m\n\u001b[31m+ Array [\u001b[39m\n\u001b[31m+   \"style-src-attr\",\u001b[39m\n\u001b[31m+ ]\u001b[39m",
+                    "stack": "Error: Unexpected CSP violations\n\n\u001b[2mexpect(\u001b[22m\u001b[31mreceived\u001b[39m\u001b[2m).\u001b[22mtoEqual\u001b[2m(\u001b[22m\u001b[32mexpected\u001b[39m\u001b[2m) // deep equality\u001b[22m\n\n\u001b[32m- Expected  - 1\u001b[39m\n\u001b[31m+ Received  + 3\u001b[39m\n\n\u001b[32m- Array []\u001b[39m\n\u001b[31m+ Array [\u001b[39m\n\u001b[31m+   \"style-src-attr\",\u001b[39m\n\u001b[31m+ ]\u001b[39m\n    at Object.api (/Volumes/Storage/dubnom/zipsquat/ZPR Docs/zpr-visaservice.worktrees/maturing-w5-browser-stability/zpr-dashboard/tests/browser/dashboard.spec.mjs:995:100)",
+                    "location": {
+                      "file": "/Volumes/Storage/dubnom/zipsquat/ZPR Docs/zpr-visaservice.worktrees/maturing-w5-browser-stability/zpr-dashboard/tests/browser/dashboard.spec.mjs",
+                      "column": 100,
+                      "line": 995
+                    },
+                    "snippet": "  993 |     await use(data);\n  994 |     expect(errors, \"Unexpected browser JavaScript errors\").toEqual([]);\n> 995 |     expect(await page.evaluate(() => window.testCSPViolations || []), \"Unexpected CSP violations\").toEqual([]);\n      |                                                                                                    ^\n  996 |   },\n  997 | });\n  998 |"
+                  },
+                  "errors": [
+                    {
+                      "location": {
+                        "file": "/Volumes/Storage/dubnom/zipsquat/ZPR Docs/zpr-visaservice.worktrees/maturing-w5-browser-stability/zpr-dashboard/tests/browser/dashboard.spec.mjs",
+                        "column": 100,
+                        "line": 995
+                      },
+                      "message": "Error: Unexpected CSP violations\n\n\u001b[2mexpect(\u001b[22m\u001b[31mreceived\u001b[39m\u001b[2m).\u001b[22mtoEqual\u001b[2m(\u001b[22m\u001b[32mexpected\u001b[39m\u001b[2m) // deep equality\u001b[22m\n\n\u001b[32m- Expected  - 1\u001b[39m\n\u001b[31m+ Received  + 3\u001b[39m\n\n\u001b[32m- Array []\u001b[39m\n\u001b[31m+ Array [\u001b[39m\n\u001b[31m+   \"style-src-attr\",\u001b[39m\n\u001b[31m+ ]\u001b[39m\n\n  993 |     await use(data);\n  994 |     expect(errors, \"Unexpected browser JavaScript errors\").toEqual([]);\n> 995 |     expect(await page.evaluate(() => window.testCSPViolations || []), \"Unexpected CSP violations\").toEqual([]);\n      |                                                                                                    ^\n  996 |   },\n  997 | });\n  998 |\n    at Object.api (/Volumes/Storage/dubnom/zipsquat/ZPR Docs/zpr-visaservice.worktrees/maturing-w5-browser-stability/zpr-dashboard/tests/browser/dashboard.spec.mjs:995:100)"
+                    }
+                  ],
+                  "stdout": [
+                    {
+                      "text": "CSP_DIAGNOSTIC {\"browserVersion\":\"153.0.8010.12\"}\n"
+                    },
+                    {
+                      "text": "CSP_DIAGNOSTIC {\"input\":{\"inputType\":\"insertText\",\"isTrusted\":true,\"anchor\":\"<span class=\\\"cm-matchingBracket\\\">{</span>\",\"focus\":\"<span class=\\\"cm-matchingBracket\\\">}</span>\",\"matchingBrackets\":[{\"html\":\"<span class=\\\"cm-matchingBracket\\\">{</span>\",\"color\":\"rgb(186, 201, 191)\",\"backgroundColor\":\"rgba(0, 0, 0, 0)\"},{\"html\":\"<span class=\\\"cm-matchingBracket\\\">}</span>\",\"color\":\"rgb(186, 201, 191)\",\"backgroundColor\":\"rgba(0, 0, 0, 0)\"}]}}\n"
+                    },
+                    {
+                      "text": "CSP_DIAGNOSTIC {\"input\":{\"inputType\":\"insertText\",\"isTrusted\":true,\"anchor\":\"<span class=\\\"cm-matchingBracket\\\">{</span>\",\"focus\":\"<span class=\\\"cm-matchingBracket\\\">}</span>\",\"matchingBrackets\":[{\"html\":\"<span class=\\\"cm-matchingBracket\\\">{</span>\",\"color\":\"rgb(186, 201, 191)\",\"backgroundColor\":\"rgba(50, 140, 130, 0.32)\"},{\"html\":\"<span class=\\\"cm-matchingBracket\\\">}</span>\",\"color\":\"rgb(186, 201, 191)\",\"backgroundColor\":\"rgba(50, 140, 130, 0.32)\"}]}}\n"
+                    },
+                    {
+                      "text": "Applying inline style violates the following Content Security Policy directive 'style-src-attr 'unsafe-hashes' 'sha256-oigCRQkUqLTBT/iGV1m+QngJV81i5XnXK2Tqug35uv4=' 'sha256-aclShzi5pb37RVXCTZWjIpErvTKw4ZP5CP0uGElzep8=' 'sha256-4/pw1d+w1lz5Ri4VUKQA+q6RkE8WVUgS8RoWVJelsIc=' 'sha256-Uj30wiv7J7g8585Uq15gmjXSwWQPRsGQIltXA7nwA8c=' 'sha256-XULlUqRgJj7XM0YpE77T8GZIztKZH8v1q9I1RszevwU=' 'sha256-bBwmnfAGpFRITldiXE4CJSfik8WcyLglu0IIQaAeQcM=' 'sha256-Z/SIp+PpH+wAAdAtFE7QzDd5popsZzGYaA67vycs5W0=' 'sha256-21WTnssUMRUwXU7hXN5mIXcd+G7R9ET74mxhhtCbWx8=' 'sha256-s3FV3UofgzVQbDoixaKwU6+LJOB7HRh6xvCMbCLBNAk=''. Either the 'unsafe-inline' keyword, a hash ('sha256-RfUFKnbePlOBd0Q8chM3Nmbjxc5P7cFC/sf0mwzb2S0='), or a nonce ('nonce-...') is required to enable inline execution. The action has been blocked.\n"
+                    },
+                    {
+                      "text": "CSP_DIAGNOSTIC {\"audit\":{\"violatedDirective\":\"style-src-attr\",\"isReportOnly\":false,\"contentSecurityPolicyViolationType\":\"kInlineViolation\",\"sourceCodeLocation\":{\"url\":\"http://127.0.0.1:51819/scenarios.html\",\"lineNumber\":-1,\"columnNumber\":0},\"violatingNodeId\":45},\"node\":{\"nodeId\":0,\"backendNodeId\":45,\"nodeType\":1,\"nodeName\":\"DIV\",\"localName\":\"div\",\"nodeValue\":\"\",\"childNodeCount\":14,\"attributes\":[\"class\",\"cm-line\",\"style\",\"color: rgb(186, 201, 191); background-color: rgba(50, 140, 130, 0.32);\"]}}\n"
+                    },
+                    {
+                      "text": "CSP_DIAGNOSTIC {\"directive\":\"style-src-attr\",\"blockedURI\":\"inline\",\"sourceFile\":\"\",\"lineNumber\":0,\"columnNumber\":0,\"sample\":\"\",\"activeElement\":\"<div class=\\\"code-editor-host\\\" data-source=\\\"scenario-editor-source\\\"></div>\",\"mutations\":[{\"kind\":\"input\",\"inputType\":\"insertText\",\"html\":\"<div class=\\\"cm-line\\\" style=\\\"color: rgb(186, 201, 191); background-color: rgba(50, 140, 130, 0.32);\\\">{\\\"id\\\":\\\"new-scenario\\\",\\\"name\\\":\\\"Current\\\",\\\"steps\\\":[]}</div>\"},{\"kind\":\"attribute\",\"html\":\"<div class=\\\"cm-line\\\" style=\\\"color: rgb(186, 201, 191); background-color: rgba(50, 140, 130, 0.32);\\\">{\\\"id\\\":\\\"new-scenario\\\",\\\"name\\\":\\\"Current\\\",\\\"steps\\\":[]}</div>\"},{\"kind\":\"input\",\"inputType\":\"insertText\",\"html\":\"<div class=\\\"cm-line\\\" style=\\\"color: rgb(186, 201, 191); background-color: rgba(50, 140, 130, 0.32);\\\"><span class=\\\"cm-token-punctuation\\\"><span class=\\\"cm-matchingBracket\\\">{</span></span>\\\"<span class=\\\"cm-token-attribute\\\">id\\\":\\\"</span><span class=\\\"cm-token-punctuation\\\">n</span>e<span class=\\\"cm-token-punctuation\\\">w</span>-scenario\\\",\\\"name\\\":\\\"Current\\\",\\\"steps\\\":[]<span class=\\\"cm-matchingBracket\\\">}</span></div>\"},{\"kind\":\"insert\",\"html\":\"<div class=\\\"cm-gutters cm-gutters-before\\\" style=\\\"min-height: 43.7969px; position: sticky;\\\"><div class=\\\"cm-gutter cm-lineNumbers\\\"><div class=\\\"cm-gutterElement\\\" style=\\\"height: 0px; visibility: hidden; pointer-events: none;\\\">9</div><div class=\\\"cm-gutterElement\\\" style=\\\"height: 19.7969px; margin-top: 12px;\\\">1</div></div><div class=\\\"cm-gutter cm-result-gutter\\\"></div></div>\"},{\"kind\":\"attribute\",\"html\":\"<div class=\\\"cm-gutters cm-gutters-before\\\" style=\\\"min-height: 43.7969px; position: sticky;\\\"><div class=\\\"cm-gutter cm-lineNumbers\\\"><div class=\\\"cm-gutterElement\\\" style=\\\"height: 0px; visibility: hidden; pointer-events: none;\\\">9</div><div class=\\\"cm-gutterElement\\\" style=\\\"height: 19.7969px; margin-top: 12px;\\\">1</div></div><div class=\\\"cm-gutter cm-result-gutter\\\"></div></div>\"},{\"kind\":\"attribute\",\"html\":\"<div class=\\\"cm-layer cm-layer-above cm-cursorLayer\\\" aria-hidden=\\\"true\\\" style=\\\"z-index: 150; animation-duration: 1200ms; animation-name: cm-blink2;\\\"><div class=\\\"cm-cursor cm-cursor-primary\\\" style=\\\"left: 86.625px; top: 33.7969px; height: 14px;\\\"></div></div>\"},{\"kind\":\"attribute\",\"html\":\"<div spellcheck=\\\"false\\\" autocorrect=\\\"off\\\" autocapitalize=\\\"off\\\" writingsuggestions=\\\"false\\\" translate=\\\"no\\\" contenteditable=\\\"true\\\" class=\\\"cm-content\\\" role=\\\"textbox\\\" aria-multiline=\\\"true\\\" aria-label=\\\"Raw scenario JSON\\\" aria-describedby=\\\"\\\" style=\\\"tab-size: 4;\\\" aria-autocomplete=\\\"list\\\"><div class=\\\"cm-line\\\" style=\\\"color: rgb(186, 201, 191); background-color: rgba(50, 140, 130, 0.32);\\\"><span class=\\\"cm-token-punctuation\\\"><span class=\\\"cm-matchingBracket\\\">{</span></span>\\\"<span class=\\\"cm-token-attribute\\\">id\\\":\\\"</span><span class=\\\"cm-token-punctuation\\\">n</span>e<span class=\\\"cm-token-punctuation\\\">w</span>-scenario\\\",\\\"name\\\":\\\"Current\\\",\\\"steps\\\":[]<span class=\\\"cm-matchingBracket\\\">}</span></div></div>\"},{\"kind\":\"attribute\",\"html\":\"<div spellcheck=\\\"false\\\" autocorrect=\\\"off\\\" autocapitalize=\\\"off\\\" writingsuggestions=\\\"false\\\" translate=\\\"no\\\" contenteditable=\\\"true\\\" class=\\\"cm-content\\\" role=\\\"textbox\\\" aria-multiline=\\\"true\\\" aria-label=\\\"Raw scenario JSON\\\" aria-describedby=\\\"\\\" style=\\\"tab-size: 4;\\\" aria-autocomplete=\\\"list\\\"><div class=\\\"cm-line\\\" style=\\\"color: rgb(186, 201, 191); background-color: rgba(50, 140, 130, 0.32);\\\"><span class=\\\"cm-token-punctuation\\\"><span class=\\\"cm-matchingBracket\\\">{</span></span>\\\"<span class=\\\"cm-token-attribute\\\">id\\\":\\\"</span><span class=\\\"cm-token-punctuation\\\">n</span>e<span class=\\\"cm-token-punctuation\\\">w</span>-scenario\\\",\\\"name\\\":\\\"Current\\\",\\\"steps\\\":[]<span class=\\\"cm-matchingBracket\\\">}</span></div></div>\"},{\"kind\":\"attribute\",\"html\":\"<div spellcheck=\\\"false\\\" autocorrect=\\\"off\\\" autocapitalize=\\\"off\\\" writingsuggestions=\\\"false\\\" translate=\\\"no\\\" contenteditable=\\\"true\\\" class=\\\"cm-content\\\" role=\\\"textbox\\\" aria-multiline=\\\"true\\\" aria-label=\\\"Raw scenario JSON\\\" aria-describedby=\\\"\\\" style=\\\"tab-size: 4;\\\" aria-autocomplete=\\\"list\\\"><div class=\\\"cm-line\\\" style=\\\"color: rgb(186, 201, 191); background-color: rgba(50, 140, 130, 0.32);\\\"><span class=\\\"cm-token-punctuation\\\"><span class=\\\"cm-matchingBracket\\\">{</span></span><span class=\\\"cm-token-attribute\\\">\\\"id\\\"</span><span class=\\\"cm-token-punctuation\\\">:</span><span class=\\\"cm-token-string\\\">\\\"new-scenario\\\"</span><span class=\\\"cm-token-punctuation\\\">,</span><span class=\\\"cm-token-attribute\\\">\\\"name\\\"</span><span class=\\\"cm-token-punctuation\\\">:</span><span class=\\\"cm-token-string\\\">\\\"Current\\\"</span><span class=\\\"cm-token-punctuation\\\">,</span><span class=\\\"cm-token-attribute\\\">\\\"steps\\\"</span><span class=\\\"cm-token-punctuation\\\">:</span><span class=\\\"cm-token-punctuation\\\">[</span><span class=\\\"cm-token-punctuation\\\">]</span><span class=\\\"cm-token-punctuation\\\"><span class=\\\"cm-matchingBracket\\\">}</span></span></div></div>\"},{\"kind\":\"attribute\",\"html\":\"<div spellcheck=\\\"false\\\" autocorrect=\\\"off\\\" autocapitalize=\\\"off\\\" writingsuggestions=\\\"false\\\" translate=\\\"no\\\" contenteditable=\\\"true\\\" class=\\\"cm-content\\\" role=\\\"textbox\\\" aria-multiline=\\\"true\\\" aria-label=\\\"Raw scenario JSON\\\" aria-describedby=\\\"\\\" style=\\\"tab-size: 4;\\\" aria-autocomplete=\\\"list\\\"><div class=\\\"cm-line\\\" style=\\\"color: rgb(186, 201, 191); background-color: rgba(50, 140, 130, 0.32);\\\"><span class=\\\"cm-token-punctuation\\\"><span class=\\\"cm-matchingBracket\\\">{</span></span><span class=\\\"cm-token-attribute\\\">\\\"id\\\"</span><span class=\\\"cm-token-punctuation\\\">:</span><span class=\\\"cm-token-string\\\">\\\"new-scenario\\\"</span><span class=\\\"cm-token-punctuation\\\">,</span><span class=\\\"cm-token-attribute\\\">\\\"name\\\"</span><span class=\\\"cm-token-punctuation\\\">:</span><span class=\\\"cm-token-string\\\">\\\"Current\\\"</span><span class=\\\"cm-token-punctuation\\\">,</span><span class=\\\"cm-token-attribute\\\">\\\"steps\\\"</span><span class=\\\"cm-token-punctuation\\\">:</span><span class=\\\"cm-token-punctuation\\\">[</span><span class=\\\"cm-token-punctuation\\\">]</span><span class=\\\"cm-token-punctuation\\\"><span class=\\\"cm-matchingBracket\\\">}</span></span></div></div>\"},{\"kind\":\"attribute\",\"html\":\"<div class=\\\"cm-cursor cm-cursor-primary\\\" style=\\\"left: 381.922px; top: 14px; height: 14px;\\\"></div>\"},{\"kind\":\"attribute\",\"html\":\"<div class=\\\"cm-cursor cm-cursor-primary\\\" style=\\\"left: 381.922px; top: 14px; height: 14px;\\\"></div>\"}]}\n"
+                    }
+                  ],
+                  "stderr": [],
+                  "retry": 0,
+                  "startTime": "2026-10-23T22:02:22.647Z",
+                  "annotations": [],
+                  "attachments": [
+                    {
+                      "name": "screenshot",
+                      "contentType": "image/png",
+                      "path": "/Volumes/Storage/dubnom/zipsquat/ZPR Docs/zpr-visaservice.worktrees/maturing-w5-browser-stability/zpr-dashboard/test-results/dashboard-GUI-raw-scenario-8a31c-errors-for-an-edited-source-tablet/test-failed-1.png"
+                    },
+                    {
+                      "name": "error-context",
+                      "contentType": "text/markdown",
+                      "path": "/Volumes/Storage/dubnom/zipsquat/ZPR Docs/zpr-visaservice.worktrees/maturing-w5-browser-stability/zpr-dashboard/test-results/dashboard-GUI-raw-scenario-8a31c-errors-for-an-edited-source-tablet/error-context.md"
+                    }
+                  ],
+                  "errorLocation": {
+                    "file": "/Volumes/Storage/dubnom/zipsquat/ZPR Docs/zpr-visaservice.worktrees/maturing-w5-browser-stability/zpr-dashboard/tests/browser/dashboard.spec.mjs",
+                    "column": 100,
+                    "line": 995
+                  }
+                }
+              ],
+              "status": "unexpected"
+            }
+          ],
+          "id": "cc3070f185481daa6f24-b0952dd568f4f7e00c45",
+          "file": "dashboard.spec.mjs",
+          "line": 2243,
+          "column": 1
+        },
+        {
+          "title": "GUI raw scenario analysis ignores delayed errors for an edited source",
+          "ok": false,
+          "tags": [],
+          "tests": [
+            {
+              "timeout": 30000,
+              "annotations": [],
+              "expectedStatus": "passed",
+              "projectId": "tablet",
+              "projectName": "tablet",
+              "results": [
+                {
+                  "workerIndex": 1,
+                  "parallelIndex": 0,
+                  "status": "failed",
+                  "duration": 525,
+                  "error": {
+                    "message": "Error: Unexpected CSP violations\n\n\u001b[2mexpect(\u001b[22m\u001b[31mreceived\u001b[39m\u001b[2m).\u001b[22mtoEqual\u001b[2m(\u001b[22m\u001b[32mexpected\u001b[39m\u001b[2m) // deep equality\u001b[22m\n\n\u001b[32m- Expected  - 1\u001b[39m\n\u001b[31m+ Received  + 3\u001b[39m\n\n\u001b[32m- Array []\u001b[39m\n\u001b[31m+ Array [\u001b[39m\n\u001b[31m+   \"style-src-attr\",\u001b[39m\n\u001b[31m+ ]\u001b[39m",
+                    "stack": "Error: Unexpected CSP violations\n\n\u001b[2mexpect(\u001b[22m\u001b[31mreceived\u001b[39m\u001b[2m).\u001b[22mtoEqual\u001b[2m(\u001b[22m\u001b[32mexpected\u001b[39m\u001b[2m) // deep equality\u001b[22m\n\n\u001b[32m- Expected  - 1\u001b[39m\n\u001b[31m+ Received  + 3\u001b[39m\n\n\u001b[32m- Array []\u001b[39m\n\u001b[31m+ Array [\u001b[39m\n\u001b[31m+   \"style-src-attr\",\u001b[39m\n\u001b[31m+ ]\u001b[39m\n    at Object.api (/Volumes/Storage/dubnom/zipsquat/ZPR Docs/zpr-visaservice.worktrees/maturing-w5-browser-stability/zpr-dashboard/tests/browser/dashboard.spec.mjs:995:100)",
+                    "location": {
+                      "file": "/Volumes/Storage/dubnom/zipsquat/ZPR Docs/zpr-visaservice.worktrees/maturing-w5-browser-stability/zpr-dashboard/tests/browser/dashboard.spec.mjs",
+                      "column": 100,
+                      "line": 995
+                    },
+                    "snippet": "  993 |     await use(data);\n  994 |     expect(errors, \"Unexpected browser JavaScript errors\").toEqual([]);\n> 995 |     expect(await page.evaluate(() => window.testCSPViolations || []), \"Unexpected CSP violations\").toEqual([]);\n      |                                                                                                    ^\n  996 |   },\n  997 | });\n  998 |"
+                  },
+                  "errors": [
+                    {
+                      "location": {
+                        "file": "/Volumes/Storage/dubnom/zipsquat/ZPR Docs/zpr-visaservice.worktrees/maturing-w5-browser-stability/zpr-dashboard/tests/browser/dashboard.spec.mjs",
+                        "column": 100,
+                        "line": 995
+                      },
+                      "message": "Error: Unexpected CSP violations\n\n\u001b[2mexpect(\u001b[22m\u001b[31mreceived\u001b[39m\u001b[2m).\u001b[22mtoEqual\u001b[2m(\u001b[22m\u001b[32mexpected\u001b[39m\u001b[2m) // deep equality\u001b[22m\n\n\u001b[32m- Expected  - 1\u001b[39m\n\u001b[31m+ Received  + 3\u001b[39m\n\n\u001b[32m- Array []\u001b[39m\n\u001b[31m+ Array [\u001b[39m\n\u001b[31m+   \"style-src-attr\",\u001b[39m\n\u001b[31m+ ]\u001b[39m\n\n  993 |     await use(data);\n  994 |     expect(errors, \"Unexpected browser JavaScript errors\").toEqual([]);\n> 995 |     expect(await page.evaluate(() => window.testCSPViolations || []), \"Unexpected CSP violations\").toEqual([]);\n      |                                                                                                    ^\n  996 |   },\n  997 | });\n  998 |\n    at Object.api (/Volumes/Storage/dubnom/zipsquat/ZPR Docs/zpr-visaservice.worktrees/maturing-w5-browser-stability/zpr-dashboard/tests/browser/dashboard.spec.mjs:995:100)"
+                    }
+                  ],
+                  "stdout": [
+                    {
+                      "text": "CSP_DIAGNOSTIC {\"browserVersion\":\"153.0.8010.12\"}\n"
+                    },
+                    {
+                      "text": "CSP_DIAGNOSTIC {\"input\":{\"inputType\":\"insertText\",\"isTrusted\":true,\"anchor\":\"<span class=\\\"cm-matchingBracket\\\">{</span>\",\"focus\":\"<span class=\\\"cm-matchingBracket\\\">}</span>\",\"matchingBrackets\":[{\"html\":\"<span class=\\\"cm-matchingBracket\\\">{</span>\",\"color\":\"rgb(186, 201, 191)\",\"backgroundColor\":\"rgba(0, 0, 0, 0)\"},{\"html\":\"<span class=\\\"cm-matchingBracket\\\">}</span>\",\"color\":\"rgb(186, 201, 191)\",\"backgroundColor\":\"rgba(0, 0, 0, 0)\"}]}}\n"
+                    },
+                    {
+                      "text": "CSP_DIAGNOSTIC {\"input\":{\"inputType\":\"insertText\",\"isTrusted\":true,\"anchor\":\"<span class=\\\"cm-matchingBracket\\\">{</span>\",\"focus\":\"<span class=\\\"cm-matchingBracket\\\">}</span>\",\"matchingBrackets\":[{\"html\":\"<span class=\\\"cm-matchingBracket\\\">{</span>\",\"color\":\"rgb(186, 201, 191)\",\"backgroundColor\":\"rgba(50, 140, 130, 0.32)\"},{\"html\":\"<span class=\\\"cm-matchingBracket\\\">}</span>\",\"color\":\"rgb(186, 201, 191)\",\"backgroundColor\":\"rgba(50, 140, 130, 0.32)\"}]}}\n"
+                    },
+                    {
+                      "text": "Applying inline style violates the following Content Security Policy directive 'style-src-attr 'unsafe-hashes' 'sha256-oigCRQkUqLTBT/iGV1m+QngJV81i5XnXK2Tqug35uv4=' 'sha256-aclShzi5pb37RVXCTZWjIpErvTKw4ZP5CP0uGElzep8=' 'sha256-4/pw1d+w1lz5Ri4VUKQA+q6RkE8WVUgS8RoWVJelsIc=' 'sha256-Uj30wiv7J7g8585Uq15gmjXSwWQPRsGQIltXA7nwA8c=' 'sha256-XULlUqRgJj7XM0YpE77T8GZIztKZH8v1q9I1RszevwU=' 'sha256-bBwmnfAGpFRITldiXE4CJSfik8WcyLglu0IIQaAeQcM=' 'sha256-Z/SIp+PpH+wAAdAtFE7QzDd5popsZzGYaA67vycs5W0=' 'sha256-21WTnssUMRUwXU7hXN5mIXcd+G7R9ET74mxhhtCbWx8=' 'sha256-s3FV3UofgzVQbDoixaKwU6+LJOB7HRh6xvCMbCLBNAk=''. Either the 'unsafe-inline' keyword, a hash ('sha256-RfUFKnbePlOBd0Q8chM3Nmbjxc5P7cFC/sf0mwzb2S0='), or a nonce ('nonce-...') is required to enable inline execution. The action has been blocked.\n"
+                    },
+                    {
+                      "text": "CSP_DIAGNOSTIC {\"directive\":\"style-src-attr\",\"blockedURI\":\"inline\",\"sourceFile\":\"\",\"lineNumber\":0,\"columnNumber\":0,\"sample\":\"\",\"activeElement\":\"<div class=\\\"code-editor-host\\\" data-source=\\\"scenario-editor-source\\\"></div>\",\"mutations\":[{\"kind\":\"input\",\"inputType\":\"insertText\",\"html\":\"<div class=\\\"cm-line\\\" style=\\\"color: rgb(186, 201, 191); background-color: rgba(50, 140, 130, 0.32);\\\">{\\\"id\\\":\\\"new-scenario\\\",\\\"name\\\":\\\"Current\\\",\\\"steps\\\":[]}</div>\"},{\"kind\":\"attribute\",\"html\":\"<div class=\\\"cm-line\\\" style=\\\"color: rgb(186, 201, 191); background-color: rgba(50, 140, 130, 0.32);\\\">{\\\"id\\\":\\\"new-scenario\\\",\\\"name\\\":\\\"Current\\\",\\\"steps\\\":[]}</div>\"},{\"kind\":\"input\",\"inputType\":\"insertText\",\"html\":\"<div class=\\\"cm-line\\\" style=\\\"color: rgb(186, 201, 191); background-color: rgba(50, 140, 130, 0.32);\\\"><span class=\\\"cm-token-punctuation\\\"><span class=\\\"cm-matchingBracket\\\">{</span></span>\\\"<span class=\\\"cm-token-attribute\\\">id\\\":\\\"</span><span class=\\\"cm-token-punctuation\\\">n</span>e<span class=\\\"cm-token-punctuation\\\">w</span>-scenario\\\",\\\"name\\\":\\\"Current\\\",\\\"steps\\\":[]<span class=\\\"cm-matchingBracket\\\">}</span></div>\"},{\"kind\":\"insert\",\"html\":\"<div class=\\\"cm-gutters cm-gutters-before\\\" style=\\\"min-height: 43.7969px; position: sticky;\\\"><div class=\\\"cm-gutter cm-lineNumbers\\\"><div class=\\\"cm-gutterElement\\\" style=\\\"height: 0px; visibility: hidden; pointer-events: none;\\\">9</div><div class=\\\"cm-gutterElement\\\" style=\\\"height: 19.7969px; margin-top: 12px;\\\">1</div></div><div class=\\\"cm-gutter cm-result-gutter\\\"></div></div>\"},{\"kind\":\"attribute\",\"html\":\"<div class=\\\"cm-gutters cm-gutters-before\\\" style=\\\"min-height: 43.7969px; position: sticky;\\\"><div class=\\\"cm-gutter cm-lineNumbers\\\"><div class=\\\"cm-gutterElement\\\" style=\\\"height: 0px; visibility: hidden; pointer-events: none;\\\">9</div><div class=\\\"cm-gutterElement\\\" style=\\\"height: 19.7969px; margin-top: 12px;\\\">1</div></div><div class=\\\"cm-gutter cm-result-gutter\\\"></div></div>\"},{\"kind\":\"attribute\",\"html\":\"<div class=\\\"cm-layer cm-layer-above cm-cursorLayer\\\" aria-hidden=\\\"true\\\" style=\\\"z-index: 150; animation-duration: 1200ms; animation-name: cm-blink2;\\\"><div class=\\\"cm-cursor cm-cursor-primary\\\" style=\\\"left: 86.625px; top: 33.7969px; height: 14px;\\\"></div></div>\"},{\"kind\":\"attribute\",\"html\":\"<div spellcheck=\\\"false\\\" autocorrect=\\\"off\\\" autocapitalize=\\\"off\\\" writingsuggestions=\\\"false\\\" translate=\\\"no\\\" contenteditable=\\\"true\\\" class=\\\"cm-content\\\" role=\\\"textbox\\\" aria-multiline=\\\"true\\\" aria-label=\\\"Raw scenario JSON\\\" aria-describedby=\\\"\\\" style=\\\"tab-size: 4;\\\" aria-autocomplete=\\\"list\\\"><div class=\\\"cm-line\\\" style=\\\"color: rgb(186, 201, 191); background-color: rgba(50, 140, 130, 0.32);\\\"><span class=\\\"cm-token-punctuation\\\"><span class=\\\"cm-matchingBracket\\\">{</span></span>\\\"<span class=\\\"cm-token-attribute\\\">id\\\":\\\"</span><span class=\\\"cm-token-punctuation\\\">n</span>e<span class=\\\"cm-token-punctuation\\\">w</span>-scenario\\\",\\\"name\\\":\\\"Current\\\",\\\"steps\\\":[]<span class=\\\"cm-matchingBracket\\\">}</span></div></div>\"},{\"kind\":\"attribute\",\"html\":\"<div spellcheck=\\\"false\\\" autocorrect=\\\"off\\\" autocapitalize=\\\"off\\\" writingsuggestions=\\\"false\\\" translate=\\\"no\\\" contenteditable=\\\"true\\\" class=\\\"cm-content\\\" role=\\\"textbox\\\" aria-multiline=\\\"true\\\" aria-label=\\\"Raw scenario JSON\\\" aria-describedby=\\\"\\\" style=\\\"tab-size: 4;\\\" aria-autocomplete=\\\"list\\\"><div class=\\\"cm-line\\\" style=\\\"color: rgb(186, 201, 191); background-color: rgba(50, 140, 130, 0.32);\\\"><span class=\\\"cm-token-punctuation\\\"><span class=\\\"cm-matchingBracket\\\">{</span></span>\\\"<span class=\\\"cm-token-attribute\\\">id\\\":\\\"</span><span class=\\\"cm-token-punctuation\\\">n</span>e<span class=\\\"cm-token-punctuation\\\">w</span>-scenario\\\",\\\"name\\\":\\\"Current\\\",\\\"steps\\\":[]<span class=\\\"cm-matchingBracket\\\">}</span></div></div>\"},{\"kind\":\"attribute\",\"html\":\"<div spellcheck=\\\"false\\\" autocorrect=\\\"off\\\" autocapitalize=\\\"off\\\" writingsuggestions=\\\"false\\\" translate=\\\"no\\\" contenteditable=\\\"true\\\" class=\\\"cm-content\\\" role=\\\"textbox\\\" aria-multiline=\\\"true\\\" aria-label=\\\"Raw scenario JSON\\\" aria-describedby=\\\"\\\" style=\\\"tab-size: 4;\\\" aria-autocomplete=\\\"list\\\"><div class=\\\"cm-line\\\" style=\\\"color: rgb(186, 201, 191); background-color: rgba(50, 140, 130, 0.32);\\\"><span class=\\\"cm-token-punctuation\\\"><span class=\\\"cm-matchingBracket\\\">{</span></span><span class=\\\"cm-token-attribute\\\">\\\"id\\\"</span><span class=\\\"cm-token-punctuation\\\">:</span><span class=\\\"cm-token-string\\\">\\\"new-scenario\\\"</span><span class=\\\"cm-token-punctuation\\\">,</span><span class=\\\"cm-token-attribute\\\">\\\"name\\\"</span><span class=\\\"cm-token-punctuation\\\">:</span><span class=\\\"cm-token-string\\\">\\\"Current\\\"</span><span class=\\\"cm-token-punctuation\\\">,</span><span class=\\\"cm-token-attribute\\\">\\\"steps\\\"</span><span class=\\\"cm-token-punctuation\\\">:</span><span class=\\\"cm-token-punctuation\\\">[</span><span class=\\\"cm-token-punctuation\\\">]</span><span class=\\\"cm-token-punctuation\\\"><span class=\\\"cm-matchingBracket\\\">}</span></span></div></div>\"},{\"kind\":\"attribute\",\"html\":\"<div spellcheck=\\\"false\\\" autocorrect=\\\"off\\\" autocapitalize=\\\"off\\\" writingsuggestions=\\\"false\\\" translate=\\\"no\\\" contenteditable=\\\"true\\\" class=\\\"cm-content\\\" role=\\\"textbox\\\" aria-multiline=\\\"true\\\" aria-label=\\\"Raw scenario JSON\\\" aria-describedby=\\\"\\\" style=\\\"tab-size: 4;\\\" aria-autocomplete=\\\"list\\\"><div class=\\\"cm-line\\\" style=\\\"color: rgb(186, 201, 191); background-color: rgba(50, 140, 130, 0.32);\\\"><span class=\\\"cm-token-punctuation\\\"><span class=\\\"cm-matchingBracket\\\">{</span></span><span class=\\\"cm-token-attribute\\\">\\\"id\\\"</span><span class=\\\"cm-token-punctuation\\\">:</span><span class=\\\"cm-token-string\\\">\\\"new-scenario\\\"</span><span class=\\\"cm-token-punctuation\\\">,</span><span class=\\\"cm-token-attribute\\\">\\\"name\\\"</span><span class=\\\"cm-token-punctuation\\\">:</span><span class=\\\"cm-token-string\\\">\\\"Current\\\"</span><span class=\\\"cm-token-punctuation\\\">,</span><span class=\\\"cm-token-attribute\\\">\\\"steps\\\"</span><span class=\\\"cm-token-punctuation\\\">:</span><span class=\\\"cm-token-punctuation\\\">[</span><span class=\\\"cm-token-punctuation\\\">]</span><span class=\\\"cm-token-punctuation\\\"><span class=\\\"cm-matchingBracket\\\">}</span></span></div></div>\"},{\"kind\":\"attribute\",\"html\":\"<div class=\\\"cm-cursor cm-cursor-primary\\\" style=\\\"left: 381.922px; top: 14px; height: 14px;\\\"></div>\"},{\"kind\":\"attribute\",\"html\":\"<div class=\\\"cm-cursor cm-cursor-primary\\\" style=\\\"left: 381.922px; top: 14px; height: 14px;\\\"></div>\"}]}\n"
+                    },
+                    {
+                      "text": "CSP_DIAGNOSTIC {\"audit\":{\"violatedDirective\":\"style-src-attr\",\"isReportOnly\":false,\"contentSecurityPolicyViolationType\":\"kInlineViolation\",\"sourceCodeLocation\":{\"url\":\"http://127.0.0.1:51827/scenarios.html\",\"lineNumber\":-1,\"columnNumber\":0},\"violatingNodeId\":42},\"node\":{\"nodeId\":0,\"backendNodeId\":42,\"nodeType\":1,\"nodeName\":\"DIV\",\"localName\":\"div\",\"nodeValue\":\"\",\"childNodeCount\":14,\"attributes\":[\"class\",\"cm-line\",\"style\",\"color: rgb(186, 201, 191); background-color: rgba(50, 140, 130, 0.32);\"]}}\n"
+                    }
+                  ],
+                  "stderr": [],
+                  "retry": 0,
+                  "startTime": "2026-10-23T22:02:23.698Z",
+                  "annotations": [],
+                  "attachments": [
+                    {
+                      "name": "screenshot",
+                      "contentType": "image/png",
+                      "path": "/Volumes/Storage/dubnom/zipsquat/ZPR Docs/zpr-visaservice.worktrees/maturing-w5-browser-stability/zpr-dashboard/test-results/dashboard-GUI-raw-scenario-8a31c-errors-for-an-edited-source-tablet-repeat1/test-failed-1.png"
+                    },
+                    {
+                      "name": "error-context",
+                      "contentType": "text/markdown",
+                      "path": "/Volumes/Storage/dubnom/zipsquat/ZPR Docs/zpr-visaservice.worktrees/maturing-w5-browser-stability/zpr-dashboard/test-results/dashboard-GUI-raw-scenario-8a31c-errors-for-an-edited-source-tablet-repeat1/error-context.md"
+                    }
+                  ],
+                  "errorLocation": {
+                    "file": "/Volumes/Storage/dubnom/zipsquat/ZPR Docs/zpr-visaservice.worktrees/maturing-w5-browser-stability/zpr-dashboard/tests/browser/dashboard.spec.mjs",
+                    "column": 100,
+                    "line": 995
+                  }
+                }
+              ],
+              "status": "unexpected"
+            }
+          ],
+          "id": "cc3070f185481daa6f24-588508a793e8ad2b531b",
+          "file": "dashboard.spec.mjs",
+          "line": 2243,
+          "column": 1
+        },
+        {
+          "title": "GUI raw scenario analysis ignores delayed errors for an edited source",
+          "ok": false,
+          "tags": [],
+          "tests": [
+            {
+              "timeout": 30000,
+              "annotations": [],
+              "expectedStatus": "passed",
+              "projectId": "tablet",
+              "projectName": "tablet",
+              "results": [
+                {
+                  "workerIndex": 2,
+                  "parallelIndex": 0,
+                  "status": "failed",
+                  "duration": 511,
+                  "error": {
+                    "message": "Error: Unexpected CSP violations\n\n\u001b[2mexpect(\u001b[22m\u001b[31mreceived\u001b[39m\u001b[2m).\u001b[22mtoEqual\u001b[2m(\u001b[22m\u001b[32mexpected\u001b[39m\u001b[2m) // deep equality\u001b[22m\n\n\u001b[32m- Expected  - 1\u001b[39m\n\u001b[31m+ Received  + 3\u001b[39m\n\n\u001b[32m- Array []\u001b[39m\n\u001b[31m+ Array [\u001b[39m\n\u001b[31m+   \"style-src-attr\",\u001b[39m\n\u001b[31m+ ]\u001b[39m",
+                    "stack": "Error: Unexpected CSP violations\n\n\u001b[2mexpect(\u001b[22m\u001b[31mreceived\u001b[39m\u001b[2m).\u001b[22mtoEqual\u001b[2m(\u001b[22m\u001b[32mexpected\u001b[39m\u001b[2m) // deep equality\u001b[22m\n\n\u001b[32m- Expected  - 1\u001b[39m\n\u001b[31m+ Received  + 3\u001b[39m\n\n\u001b[32m- Array []\u001b[39m\n\u001b[31m+ Array [\u001b[39m\n\u001b[31m+   \"style-src-attr\",\u001b[39m\n\u001b[31m+ ]\u001b[39m\n    at Object.api (/Volumes/Storage/dubnom/zipsquat/ZPR Docs/zpr-visaservice.worktrees/maturing-w5-browser-stability/zpr-dashboard/tests/browser/dashboard.spec.mjs:995:100)",
+                    "location": {
+                      "file": "/Volumes/Storage/dubnom/zipsquat/ZPR Docs/zpr-visaservice.worktrees/maturing-w5-browser-stability/zpr-dashboard/tests/browser/dashboard.spec.mjs",
+                      "column": 100,
+                      "line": 995
+                    },
+                    "snippet": "  993 |     await use(data);\n  994 |     expect(errors, \"Unexpected browser JavaScript errors\").toEqual([]);\n> 995 |     expect(await page.evaluate(() => window.testCSPViolations || []), \"Unexpected CSP violations\").toEqual([]);\n      |                                                                                                    ^\n  996 |   },\n  997 | });\n  998 |"
+                  },
+                  "errors": [
+                    {
+                      "location": {
+                        "file": "/Volumes/Storage/dubnom/zipsquat/ZPR Docs/zpr-visaservice.worktrees/maturing-w5-browser-stability/zpr-dashboard/tests/browser/dashboard.spec.mjs",
+                        "column": 100,
+                        "line": 995
+                      },
+                      "message": "Error: Unexpected CSP violations\n\n\u001b[2mexpect(\u001b[22m\u001b[31mreceived\u001b[39m\u001b[2m).\u001b[22mtoEqual\u001b[2m(\u001b[22m\u001b[32mexpected\u001b[39m\u001b[2m) // deep equality\u001b[22m\n\n\u001b[32m- Expected  - 1\u001b[39m\n\u001b[31m+ Received  + 3\u001b[39m\n\n\u001b[32m- Array []\u001b[39m\n\u001b[31m+ Array [\u001b[39m\n\u001b[31m+   \"style-src-attr\",\u001b[39m\n\u001b[31m+ ]\u001b[39m\n\n  993 |     await use(data);\n  994 |     expect(errors, \"Unexpected browser JavaScript errors\").toEqual([]);\n> 995 |     expect(await page.evaluate(() => window.testCSPViolations || []), \"Unexpected CSP violations\").toEqual([]);\n      |                                                                                                    ^\n  996 |   },\n  997 | });\n  998 |\n    at Object.api (/Volumes/Storage/dubnom/zipsquat/ZPR Docs/zpr-visaservice.worktrees/maturing-w5-browser-stability/zpr-dashboard/tests/browser/dashboard.spec.mjs:995:100)"
+                    }
+                  ],
+                  "stdout": [
+                    {
+                      "text": "CSP_DIAGNOSTIC {\"browserVersion\":\"153.0.8010.12\"}\n"
+                    },
+                    {
+                      "text": "CSP_DIAGNOSTIC {\"input\":{\"inputType\":\"insertText\",\"isTrusted\":true,\"anchor\":\"<span class=\\\"cm-matchingBracket\\\">{</span>\",\"focus\":\"<span class=\\\"cm-matchingBracket\\\">}</span>\",\"matchingBrackets\":[{\"html\":\"<span class=\\\"cm-matchingBracket\\\">{</span>\",\"color\":\"rgb(186, 201, 191)\",\"backgroundColor\":\"rgba(0, 0, 0, 0)\"},{\"html\":\"<span class=\\\"cm-matchingBracket\\\">}</span>\",\"color\":\"rgb(186, 201, 191)\",\"backgroundColor\":\"rgba(0, 0, 0, 0)\"}]}}\n"
+                    },
+                    {
+                      "text": "CSP_DIAGNOSTIC {\"input\":{\"inputType\":\"insertText\",\"isTrusted\":true,\"anchor\":\"<span class=\\\"cm-matchingBracket\\\">{</span>\",\"focus\":\"<span class=\\\"cm-matchingBracket\\\">}</span>\",\"matchingBrackets\":[{\"html\":\"<span class=\\\"cm-matchingBracket\\\">{</span>\",\"color\":\"rgb(186, 201, 191)\",\"backgroundColor\":\"rgba(50, 140, 130, 0.32)\"},{\"html\":\"<span class=\\\"cm-matchingBracket\\\">}</span>\",\"color\":\"rgb(186, 201, 191)\",\"backgroundColor\":\"rgba(50, 140, 130, 0.32)\"}]}}\n"
+                    },
+                    {
+                      "text": "Applying inline style violates the following Content Security Policy directive 'style-src-attr 'unsafe-hashes' 'sha256-oigCRQkUqLTBT/iGV1m+QngJV81i5XnXK2Tqug35uv4=' 'sha256-aclShzi5pb37RVXCTZWjIpErvTKw4ZP5CP0uGElzep8=' 'sha256-4/pw1d+w1lz5Ri4VUKQA+q6RkE8WVUgS8RoWVJelsIc=' 'sha256-Uj30wiv7J7g8585Uq15gmjXSwWQPRsGQIltXA7nwA8c=' 'sha256-XULlUqRgJj7XM0YpE77T8GZIztKZH8v1q9I1RszevwU=' 'sha256-bBwmnfAGpFRITldiXE4CJSfik8WcyLglu0IIQaAeQcM=' 'sha256-Z/SIp+PpH+wAAdAtFE7QzDd5popsZzGYaA67vycs5W0=' 'sha256-21WTnssUMRUwXU7hXN5mIXcd+G7R9ET74mxhhtCbWx8=' 'sha256-s3FV3UofgzVQbDoixaKwU6+LJOB7HRh6xvCMbCLBNAk=''. Either the 'unsafe-inline' keyword, a hash ('sha256-RfUFKnbePlOBd0Q8chM3Nmbjxc5P7cFC/sf0mwzb2S0='), or a nonce ('nonce-...') is required to enable inline execution. The action has been blocked.\n"
+                    },
+                    {
+                      "text": "CSP_DIAGNOSTIC {\"directive\":\"style-src-attr\",\"blockedURI\":\"inline\",\"sourceFile\":\"\",\"lineNumber\":0,\"columnNumber\":0,\"sample\":\"\",\"activeElement\":\"<div class=\\\"code-editor-host\\\" data-source=\\\"scenario-editor-source\\\"></div>\",\"mutations\":[{\"kind\":\"input\",\"inputType\":\"insertText\",\"html\":\"<div class=\\\"cm-line\\\" style=\\\"color: rgb(186, 201, 191); background-color: rgba(50, 140, 130, 0.32);\\\">{\\\"id\\\":\\\"new-scenario\\\",\\\"name\\\":\\\"Current\\\",\\\"steps\\\":[]}</div>\"},{\"kind\":\"attribute\",\"html\":\"<div class=\\\"cm-line\\\" style=\\\"color: rgb(186, 201, 191); background-color: rgba(50, 140, 130, 0.32);\\\">{\\\"id\\\":\\\"new-scenario\\\",\\\"name\\\":\\\"Current\\\",\\\"steps\\\":[]}</div>\"},{\"kind\":\"input\",\"inputType\":\"insertText\",\"html\":\"<div class=\\\"cm-line\\\" style=\\\"color: rgb(186, 201, 191); background-color: rgba(50, 140, 130, 0.32);\\\"><span class=\\\"cm-token-punctuation\\\"><span class=\\\"cm-matchingBracket\\\">{</span></span>\\\"<span class=\\\"cm-token-attribute\\\">id\\\":\\\"</span><span class=\\\"cm-token-punctuation\\\">n</span>e<span class=\\\"cm-token-punctuation\\\">w</span>-scenario\\\",\\\"name\\\":\\\"Current\\\",\\\"steps\\\":[]<span class=\\\"cm-matchingBracket\\\">}</span></div>\"},{\"kind\":\"insert\",\"html\":\"<div class=\\\"cm-gutters cm-gutters-before\\\" style=\\\"min-height: 43.7969px; position: sticky;\\\"><div class=\\\"cm-gutter cm-lineNumbers\\\"><div class=\\\"cm-gutterElement\\\" style=\\\"height: 0px; visibility: hidden; pointer-events: none;\\\">9</div><div class=\\\"cm-gutterElement\\\" style=\\\"height: 19.7969px; margin-top: 12px;\\\">1</div></div><div class=\\\"cm-gutter cm-result-gutter\\\"></div></div>\"},{\"kind\":\"attribute\",\"html\":\"<div class=\\\"cm-gutters cm-gutters-before\\\" style=\\\"min-height: 43.7969px; position: sticky;\\\"><div class=\\\"cm-gutter cm-lineNumbers\\\"><div class=\\\"cm-gutterElement\\\" style=\\\"height: 0px; visibility: hidden; pointer-events: none;\\\">9</div><div class=\\\"cm-gutterElement\\\" style=\\\"height: 19.7969px; margin-top: 12px;\\\">1</div></div><div class=\\\"cm-gutter cm-result-gutter\\\"></div></div>\"},{\"kind\":\"attribute\",\"html\":\"<div class=\\\"cm-layer cm-layer-above cm-cursorLayer\\\" aria-hidden=\\\"true\\\" style=\\\"z-index: 150; animation-duration: 1200ms; animation-name: cm-blink2;\\\"><div class=\\\"cm-cursor cm-cursor-primary\\\" style=\\\"left: 86.625px; top: 33.7969px; height: 14px;\\\"></div></div>\"},{\"kind\":\"attribute\",\"html\":\"<div spellcheck=\\\"false\\\" autocorrect=\\\"off\\\" autocapitalize=\\\"off\\\" writingsuggestions=\\\"false\\\" translate=\\\"no\\\" contenteditable=\\\"true\\\" class=\\\"cm-content\\\" role=\\\"textbox\\\" aria-multiline=\\\"true\\\" aria-label=\\\"Raw scenario JSON\\\" aria-describedby=\\\"\\\" style=\\\"tab-size: 4;\\\" aria-autocomplete=\\\"list\\\"><div class=\\\"cm-line\\\" style=\\\"color: rgb(186, 201, 191); background-color: rgba(50, 140, 130, 0.32);\\\"><span class=\\\"cm-token-punctuation\\\"><span class=\\\"cm-matchingBracket\\\">{</span></span>\\\"<span class=\\\"cm-token-attribute\\\">id\\\":\\\"</span><span class=\\\"cm-token-punctuation\\\">n</span>e<span class=\\\"cm-token-punctuation\\\">w</span>-scenario\\\",\\\"name\\\":\\\"Current\\\",\\\"steps\\\":[]<span class=\\\"cm-matchingBracket\\\">}</span></div></div>\"},{\"kind\":\"attribute\",\"html\":\"<div spellcheck=\\\"false\\\" autocorrect=\\\"off\\\" autocapitalize=\\\"off\\\" writingsuggestions=\\\"false\\\" translate=\\\"no\\\" contenteditable=\\\"true\\\" class=\\\"cm-content\\\" role=\\\"textbox\\\" aria-multiline=\\\"true\\\" aria-label=\\\"Raw scenario JSON\\\" aria-describedby=\\\"\\\" style=\\\"tab-size: 4;\\\" aria-autocomplete=\\\"list\\\"><div class=\\\"cm-line\\\" style=\\\"color: rgb(186, 201, 191); background-color: rgba(50, 140, 130, 0.32);\\\"><span class=\\\"cm-token-punctuation\\\"><span class=\\\"cm-matchingBracket\\\">{</span></span>\\\"<span class=\\\"cm-token-attribute\\\">id\\\":\\\"</span><span class=\\\"cm-token-punctuation\\\">n</span>e<span class=\\\"cm-token-punctuation\\\">w</span>-scenario\\\",\\\"name\\\":\\\"Current\\\",\\\"steps\\\":[]<span class=\\\"cm-matchingBracket\\\">}</span></div></div>\"},{\"kind\":\"attribute\",\"html\":\"<div spellcheck=\\\"false\\\" autocorrect=\\\"off\\\" autocapitalize=\\\"off\\\" writingsuggestions=\\\"false\\\" translate=\\\"no\\\" contenteditable=\\\"true\\\" class=\\\"cm-content\\\" role=\\\"textbox\\\" aria-multiline=\\\"true\\\" aria-label=\\\"Raw scenario JSON\\\" aria-describedby=\\\"\\\" style=\\\"tab-size: 4;\\\" aria-autocomplete=\\\"list\\\"><div class=\\\"cm-line\\\" style=\\\"color: rgb(186, 201, 191); background-color: rgba(50, 140, 130, 0.32);\\\"><span class=\\\"cm-token-punctuation\\\"><span class=\\\"cm-matchingBracket\\\">{</span></span><span class=\\\"cm-token-attribute\\\">\\\"id\\\"</span><span class=\\\"cm-token-punctuation\\\">:</span><span class=\\\"cm-token-string\\\">\\\"new-scenario\\\"</span><span class=\\\"cm-token-punctuation\\\">,</span><span class=\\\"cm-token-attribute\\\">\\\"name\\\"</span><span class=\\\"cm-token-punctuation\\\">:</span><span class=\\\"cm-token-string\\\">\\\"Current\\\"</span><span class=\\\"cm-token-punctuation\\\">,</span><span class=\\\"cm-token-attribute\\\">\\\"steps\\\"</span><span class=\\\"cm-token-punctuation\\\">:</span><span class=\\\"cm-token-punctuation\\\">[</span><span class=\\\"cm-token-punctuation\\\">]</span><span class=\\\"cm-token-punctuation\\\"><span class=\\\"cm-matchingBracket\\\">}</span></span></div></div>\"},{\"kind\":\"attribute\",\"html\":\"<div spellcheck=\\\"false\\\" autocorrect=\\\"off\\\" autocapitalize=\\\"off\\\" writingsuggestions=\\\"false\\\" translate=\\\"no\\\" contenteditable=\\\"true\\\" class=\\\"cm-content\\\" role=\\\"textbox\\\" aria-multiline=\\\"true\\\" aria-label=\\\"Raw scenario JSON\\\" aria-describedby=\\\"\\\" style=\\\"tab-size: 4;\\\" aria-autocomplete=\\\"list\\\"><div class=\\\"cm-line\\\" style=\\\"color: rgb(186, 201, 191); background-color: rgba(50, 140, 130, 0.32);\\\"><span class=\\\"cm-token-punctuation\\\"><span class=\\\"cm-matchingBracket\\\">{</span></span><span class=\\\"cm-token-attribute\\\">\\\"id\\\"</span><span class=\\\"cm-token-punctuation\\\">:</span><span class=\\\"cm-token-string\\\">\\\"new-scenario\\\"</span><span class=\\\"cm-token-punctuation\\\">,</span><span class=\\\"cm-token-attribute\\\">\\\"name\\\"</span><span class=\\\"cm-token-punctuation\\\">:</span><span class=\\\"cm-token-string\\\">\\\"Current\\\"</span><span class=\\\"cm-token-punctuation\\\">,</span><span class=\\\"cm-token-attribute\\\">\\\"steps\\\"</span><span class=\\\"cm-token-punctuation\\\">:</span><span class=\\\"cm-token-punctuation\\\">[</span><span class=\\\"cm-token-punctuation\\\">]</span><span class=\\\"cm-token-punctuation\\\"><span class=\\\"cm-matchingBracket\\\">}</span></span></div></div>\"},{\"kind\":\"attribute\",\"html\":\"<div class=\\\"cm-cursor cm-cursor-primary\\\" style=\\\"left: 381.922px; top: 14px; height: 14px;\\\"></div>\"},{\"kind\":\"attribute\",\"html\":\"<div class=\\\"cm-cursor cm-cursor-primary\\\" style=\\\"left: 381.922px; top: 14px; height: 14px;\\\"></div>\"}]}\n"
+                    },
+                    {
+                      "text": "CSP_DIAGNOSTIC {\"audit\":{\"violatedDirective\":\"style-src-attr\",\"isReportOnly\":false,\"contentSecurityPolicyViolationType\":\"kInlineViolation\",\"sourceCodeLocation\":{\"url\":\"http://127.0.0.1:51834/scenarios.html\",\"lineNumber\":-1,\"columnNumber\":0},\"violatingNodeId\":42},\"node\":{\"nodeId\":0,\"backendNodeId\":42,\"nodeType\":1,\"nodeName\":\"DIV\",\"localName\":\"div\",\"nodeValue\":\"\",\"childNodeCount\":14,\"attributes\":[\"class\",\"cm-line\",\"style\",\"color: rgb(186, 201, 191); background-color: rgba(50, 140, 130, 0.32);\"]}}\n"
+                    }
+                  ],
+                  "stderr": [],
+                  "retry": 0,
+                  "startTime": "2026-10-23T22:02:24.765Z",
+                  "annotations": [],
+                  "attachments": [
+                    {
+                      "name": "screenshot",
+                      "contentType": "image/png",
+                      "path": "/Volumes/Storage/dubnom/zipsquat/ZPR Docs/zpr-visaservice.worktrees/maturing-w5-browser-stability/zpr-dashboard/test-results/dashboard-GUI-raw-scenario-8a31c-errors-for-an-edited-source-tablet-repeat2/test-failed-1.png"
+                    },
+                    {
+                      "name": "error-context",
+                      "contentType": "text/markdown",
+                      "path": "/Volumes/Storage/dubnom/zipsquat/ZPR Docs/zpr-visaservice.worktrees/maturing-w5-browser-stability/zpr-dashboard/test-results/dashboard-GUI-raw-scenario-8a31c-errors-for-an-edited-source-tablet-repeat2/error-context.md"
+                    }
+                  ],
+                  "errorLocation": {
+                    "file": "/Volumes/Storage/dubnom/zipsquat/ZPR Docs/zpr-visaservice.worktrees/maturing-w5-browser-stability/zpr-dashboard/tests/browser/dashboard.spec.mjs",
+                    "column": 100,
+                    "line": 995
+                  }
+                }
+              ],
+              "status": "unexpected"
+            }
+          ],
+          "id": "cc3070f185481daa6f24-a6603fefc2520a741f35",
+          "file": "dashboard.spec.mjs",
+          "line": 2243,
+          "column": 1
+        },
+        {
+          "title": "GUI raw scenario analysis ignores delayed errors for an edited source",
+          "ok": false,
+          "tags": [],
+          "tests": [
+            {
+              "timeout": 30000,
+              "annotations": [],
+              "expectedStatus": "passed",
+              "projectId": "tablet",
+              "projectName": "tablet",
+              "results": [
+                {
+                  "workerIndex": 3,
+                  "parallelIndex": 0,
+                  "status": "failed",
+                  "duration": 521,
+                  "error": {
+                    "message": "Error: Unexpected CSP violations\n\n\u001b[2mexpect(\u001b[22m\u001b[31mreceived\u001b[39m\u001b[2m).\u001b[22mtoEqual\u001b[2m(\u001b[22m\u001b[32mexpected\u001b[39m\u001b[2m) // deep equality\u001b[22m\n\n\u001b[32m- Expected  - 1\u001b[39m\n\u001b[31m+ Received  + 3\u001b[39m\n\n\u001b[32m- Array []\u001b[39m\n\u001b[31m+ Array [\u001b[39m\n\u001b[31m+   \"style-src-attr\",\u001b[39m\n\u001b[31m+ ]\u001b[39m",
+                    "stack": "Error: Unexpected CSP violations\n\n\u001b[2mexpect(\u001b[22m\u001b[31mreceived\u001b[39m\u001b[2m).\u001b[22mtoEqual\u001b[2m(\u001b[22m\u001b[32mexpected\u001b[39m\u001b[2m) // deep equality\u001b[22m\n\n\u001b[32m- Expected  - 1\u001b[39m\n\u001b[31m+ Received  + 3\u001b[39m\n\n\u001b[32m- Array []\u001b[39m\n\u001b[31m+ Array [\u001b[39m\n\u001b[31m+   \"style-src-attr\",\u001b[39m\n\u001b[31m+ ]\u001b[39m\n    at Object.api (/Volumes/Storage/dubnom/zipsquat/ZPR Docs/zpr-visaservice.worktrees/maturing-w5-browser-stability/zpr-dashboard/tests/browser/dashboard.spec.mjs:995:100)",
+                    "location": {
+                      "file": "/Volumes/Storage/dubnom/zipsquat/ZPR Docs/zpr-visaservice.worktrees/maturing-w5-browser-stability/zpr-dashboard/tests/browser/dashboard.spec.mjs",
+                      "column": 100,
+                      "line": 995
+                    },
+                    "snippet": "  993 |     await use(data);\n  994 |     expect(errors, \"Unexpected browser JavaScript errors\").toEqual([]);\n> 995 |     expect(await page.evaluate(() => window.testCSPViolations || []), \"Unexpected CSP violations\").toEqual([]);\n      |                                                                                                    ^\n  996 |   },\n  997 | });\n  998 |"
+                  },
+                  "errors": [
+                    {
+                      "location": {
+                        "file": "/Volumes/Storage/dubnom/zipsquat/ZPR Docs/zpr-visaservice.worktrees/maturing-w5-browser-stability/zpr-dashboard/tests/browser/dashboard.spec.mjs",
+                        "column": 100,
+                        "line": 995
+                      },
+                      "message": "Error: Unexpected CSP violations\n\n\u001b[2mexpect(\u001b[22m\u001b[31mreceived\u001b[39m\u001b[2m).\u001b[22mtoEqual\u001b[2m(\u001b[22m\u001b[32mexpected\u001b[39m\u001b[2m) // deep equality\u001b[22m\n\n\u001b[32m- Expected  - 1\u001b[39m\n\u001b[31m+ Received  + 3\u001b[39m\n\n\u001b[32m- Array []\u001b[39m\n\u001b[31m+ Array [\u001b[39m\n\u001b[31m+   \"style-src-attr\",\u001b[39m\n\u001b[31m+ ]\u001b[39m\n\n  993 |     await use(data);\n  994 |     expect(errors, \"Unexpected browser JavaScript errors\").toEqual([]);\n> 995 |     expect(await page.evaluate(() => window.testCSPViolations || []), \"Unexpected CSP violations\").toEqual([]);\n      |                                                                                                    ^\n  996 |   },\n  997 | });\n  998 |\n    at Object.api (/Volumes/Storage/dubnom/zipsquat/ZPR Docs/zpr-visaservice.worktrees/maturing-w5-browser-stability/zpr-dashboard/tests/browser/dashboard.spec.mjs:995:100)"
+                    }
+                  ],
+                  "stdout": [
+                    {
+                      "text": "CSP_DIAGNOSTIC {\"browserVersion\":\"153.0.8010.12\"}\n"
+                    },
+                    {
+                      "text": "CSP_DIAGNOSTIC {\"input\":{\"inputType\":\"insertText\",\"isTrusted\":true,\"anchor\":\"<span class=\\\"cm-matchingBracket\\\">{</span>\",\"focus\":\"<span class=\\\"cm-matchingBracket\\\">}</span>\",\"matchingBrackets\":[{\"html\":\"<span class=\\\"cm-matchingBracket\\\">{</span>\",\"color\":\"rgb(186, 201, 191)\",\"backgroundColor\":\"rgba(0, 0, 0, 0)\"},{\"html\":\"<span class=\\\"cm-matchingBracket\\\">}</span>\",\"color\":\"rgb(186, 201, 191)\",\"backgroundColor\":\"rgba(0, 0, 0, 0)\"}]}}\n"
+                    },
+                    {
+                      "text": "CSP_DIAGNOSTIC {\"input\":{\"inputType\":\"insertText\",\"isTrusted\":true,\"anchor\":\"<span class=\\\"cm-matchingBracket\\\">{</span>\",\"focus\":\"<span class=\\\"cm-matchingBracket\\\">}</span>\",\"matchingBrackets\":[{\"html\":\"<span class=\\\"cm-matchingBracket\\\">{</span>\",\"color\":\"rgb(186, 201, 191)\",\"backgroundColor\":\"rgba(50, 140, 130, 0.32)\"},{\"html\":\"<span class=\\\"cm-matchingBracket\\\">}</span>\",\"color\":\"rgb(186, 201, 191)\",\"backgroundColor\":\"rgba(50, 140, 130, 0.32)\"}]}}\n"
+                    },
+                    {
+                      "text": "Applying inline style violates the following Content Security Policy directive 'style-src-attr 'unsafe-hashes' 'sha256-oigCRQkUqLTBT/iGV1m+QngJV81i5XnXK2Tqug35uv4=' 'sha256-aclShzi5pb37RVXCTZWjIpErvTKw4ZP5CP0uGElzep8=' 'sha256-4/pw1d+w1lz5Ri4VUKQA+q6RkE8WVUgS8RoWVJelsIc=' 'sha256-Uj30wiv7J7g8585Uq15gmjXSwWQPRsGQIltXA7nwA8c=' 'sha256-XULlUqRgJj7XM0YpE77T8GZIztKZH8v1q9I1RszevwU=' 'sha256-bBwmnfAGpFRITldiXE4CJSfik8WcyLglu0IIQaAeQcM=' 'sha256-Z/SIp+PpH+wAAdAtFE7QzDd5popsZzGYaA67vycs5W0=' 'sha256-21WTnssUMRUwXU7hXN5mIXcd+G7R9ET74mxhhtCbWx8=' 'sha256-s3FV3UofgzVQbDoixaKwU6+LJOB7HRh6xvCMbCLBNAk=''. Either the 'unsafe-inline' keyword, a hash ('sha256-RfUFKnbePlOBd0Q8chM3Nmbjxc5P7cFC/sf0mwzb2S0='), or a nonce ('nonce-...') is required to enable inline execution. The action has been blocked.\n"
+                    },
+                    {
+                      "text": "CSP_DIAGNOSTIC {\"directive\":\"style-src-attr\",\"blockedURI\":\"inline\",\"sourceFile\":\"\",\"lineNumber\":0,\"columnNumber\":0,\"sample\":\"\",\"activeElement\":\"<div class=\\\"code-editor-host\\\" data-source=\\\"scenario-editor-source\\\"></div>\",\"mutations\":[{\"kind\":\"input\",\"inputType\":\"insertText\",\"html\":\"<div class=\\\"cm-line\\\" style=\\\"color: rgb(186, 201, 191); background-color: rgba(50, 140, 130, 0.32);\\\">{\\\"id\\\":\\\"new-scenario\\\",\\\"name\\\":\\\"Current\\\",\\\"steps\\\":[]}</div>\"},{\"kind\":\"attribute\",\"html\":\"<div class=\\\"cm-line\\\" style=\\\"color: rgb(186, 201, 191); background-color: rgba(50, 140, 130, 0.32);\\\">{\\\"id\\\":\\\"new-scenario\\\",\\\"name\\\":\\\"Current\\\",\\\"steps\\\":[]}</div>\"},{\"kind\":\"input\",\"inputType\":\"insertText\",\"html\":\"<div class=\\\"cm-line\\\" style=\\\"color: rgb(186, 201, 191); background-color: rgba(50, 140, 130, 0.32);\\\"><span class=\\\"cm-token-punctuation\\\"><span class=\\\"cm-matchingBracket\\\">{</span></span>\\\"<span class=\\\"cm-token-attribute\\\">id\\\":\\\"</span><span class=\\\"cm-token-punctuation\\\">n</span>e<span class=\\\"cm-token-punctuation\\\">w</span>-scenario\\\",\\\"name\\\":\\\"Current\\\",\\\"steps\\\":[]<span class=\\\"cm-matchingBracket\\\">}</span></div>\"},{\"kind\":\"insert\",\"html\":\"<div class=\\\"cm-gutters cm-gutters-before\\\" style=\\\"min-height: 43.7969px; position: sticky;\\\"><div class=\\\"cm-gutter cm-lineNumbers\\\"><div class=\\\"cm-gutterElement\\\" style=\\\"height: 0px; visibility: hidden; pointer-events: none;\\\">9</div><div class=\\\"cm-gutterElement\\\" style=\\\"height: 19.7969px; margin-top: 12px;\\\">1</div></div><div class=\\\"cm-gutter cm-result-gutter\\\"></div></div>\"},{\"kind\":\"attribute\",\"html\":\"<div class=\\\"cm-gutters cm-gutters-before\\\" style=\\\"min-height: 43.7969px; position: sticky;\\\"><div class=\\\"cm-gutter cm-lineNumbers\\\"><div class=\\\"cm-gutterElement\\\" style=\\\"height: 0px; visibility: hidden; pointer-events: none;\\\">9</div><div class=\\\"cm-gutterElement\\\" style=\\\"height: 19.7969px; margin-top: 12px;\\\">1</div></div><div class=\\\"cm-gutter cm-result-gutter\\\"></div></div>\"},{\"kind\":\"attribute\",\"html\":\"<div class=\\\"cm-layer cm-layer-above cm-cursorLayer\\\" aria-hidden=\\\"true\\\" style=\\\"z-index: 150; animation-duration: 1200ms; animation-name: cm-blink2;\\\"><div class=\\\"cm-cursor cm-cursor-primary\\\" style=\\\"left: 86.625px; top: 33.7969px; height: 14px;\\\"></div></div>\"},{\"kind\":\"attribute\",\"html\":\"<div spellcheck=\\\"false\\\" autocorrect=\\\"off\\\" autocapitalize=\\\"off\\\" writingsuggestions=\\\"false\\\" translate=\\\"no\\\" contenteditable=\\\"true\\\" class=\\\"cm-content\\\" role=\\\"textbox\\\" aria-multiline=\\\"true\\\" aria-label=\\\"Raw scenario JSON\\\" aria-describedby=\\\"\\\" style=\\\"tab-size: 4;\\\" aria-autocomplete=\\\"list\\\"><div class=\\\"cm-line\\\" style=\\\"color: rgb(186, 201, 191); background-color: rgba(50, 140, 130, 0.32);\\\"><span class=\\\"cm-token-punctuation\\\"><span class=\\\"cm-matchingBracket\\\">{</span></span>\\\"<span class=\\\"cm-token-attribute\\\">id\\\":\\\"</span><span class=\\\"cm-token-punctuation\\\">n</span>e<span class=\\\"cm-token-punctuation\\\">w</span>-scenario\\\",\\\"name\\\":\\\"Current\\\",\\\"steps\\\":[]<span class=\\\"cm-matchingBracket\\\">}</span></div></div>\"},{\"kind\":\"attribute\",\"html\":\"<div spellcheck=\\\"false\\\" autocorrect=\\\"off\\\" autocapitalize=\\\"off\\\" writingsuggestions=\\\"false\\\" translate=\\\"no\\\" contenteditable=\\\"true\\\" class=\\\"cm-content\\\" role=\\\"textbox\\\" aria-multiline=\\\"true\\\" aria-label=\\\"Raw scenario JSON\\\" aria-describedby=\\\"\\\" style=\\\"tab-size: 4;\\\" aria-autocomplete=\\\"list\\\"><div class=\\\"cm-line\\\" style=\\\"color: rgb(186, 201, 191); background-color: rgba(50, 140, 130, 0.32);\\\"><span class=\\\"cm-token-punctuation\\\"><span class=\\\"cm-matchingBracket\\\">{</span></span>\\\"<span class=\\\"cm-token-attribute\\\">id\\\":\\\"</span><span class=\\\"cm-token-punctuation\\\">n</span>e<span class=\\\"cm-token-punctuation\\\">w</span>-scenario\\\",\\\"name\\\":\\\"Current\\\",\\\"steps\\\":[]<span class=\\\"cm-matchingBracket\\\">}</span></div></div>\"},{\"kind\":\"attribute\",\"html\":\"<div spellcheck=\\\"false\\\" autocorrect=\\\"off\\\" autocapitalize=\\\"off\\\" writingsuggestions=\\\"false\\\" translate=\\\"no\\\" contenteditable=\\\"true\\\" class=\\\"cm-content\\\" role=\\\"textbox\\\" aria-multiline=\\\"true\\\" aria-label=\\\"Raw scenario JSON\\\" aria-describedby=\\\"\\\" style=\\\"tab-size: 4;\\\" aria-autocomplete=\\\"list\\\"><div class=\\\"cm-line\\\" style=\\\"color: rgb(186, 201, 191); background-color: rgba(50, 140, 130, 0.32);\\\"><span class=\\\"cm-token-punctuation\\\"><span class=\\\"cm-matchingBracket\\\">{</span></span><span class=\\\"cm-token-attribute\\\">\\\"id\\\"</span><span class=\\\"cm-token-punctuation\\\">:</span><span class=\\\"cm-token-string\\\">\\\"new-scenario\\\"</span><span class=\\\"cm-token-punctuation\\\">,</span><span class=\\\"cm-token-attribute\\\">\\\"name\\\"</span><span class=\\\"cm-token-punctuation\\\">:</span><span class=\\\"cm-token-string\\\">\\\"Current\\\"</span><span class=\\\"cm-token-punctuation\\\">,</span><span class=\\\"cm-token-attribute\\\">\\\"steps\\\"</span><span class=\\\"cm-token-punctuation\\\">:</span><span class=\\\"cm-token-punctuation\\\">[</span><span class=\\\"cm-token-punctuation\\\">]</span><span class=\\\"cm-token-punctuation\\\"><span class=\\\"cm-matchingBracket\\\">}</span></span></div></div>\"},{\"kind\":\"attribute\",\"html\":\"<div spellcheck=\\\"false\\\" autocorrect=\\\"off\\\" autocapitalize=\\\"off\\\" writingsuggestions=\\\"false\\\" translate=\\\"no\\\" contenteditable=\\\"true\\\" class=\\\"cm-content\\\" role=\\\"textbox\\\" aria-multiline=\\\"true\\\" aria-label=\\\"Raw scenario JSON\\\" aria-describedby=\\\"\\\" style=\\\"tab-size: 4;\\\" aria-autocomplete=\\\"list\\\"><div class=\\\"cm-line\\\" style=\\\"color: rgb(186, 201, 191); background-color: rgba(50, 140, 130, 0.32);\\\"><span class=\\\"cm-token-punctuation\\\"><span class=\\\"cm-matchingBracket\\\">{</span></span><span class=\\\"cm-token-attribute\\\">\\\"id\\\"</span><span class=\\\"cm-token-punctuation\\\">:</span><span class=\\\"cm-token-string\\\">\\\"new-scenario\\\"</span><span class=\\\"cm-token-punctuation\\\">,</span><span class=\\\"cm-token-attribute\\\">\\\"name\\\"</span><span class=\\\"cm-token-punctuation\\\">:</span><span class=\\\"cm-token-string\\\">\\\"Current\\\"</span><span class=\\\"cm-token-punctuation\\\">,</span><span class=\\\"cm-token-attribute\\\">\\\"steps\\\"</span><span class=\\\"cm-token-punctuation\\\">:</span><span class=\\\"cm-token-punctuation\\\">[</span><span class=\\\"cm-token-punctuation\\\">]</span><span class=\\\"cm-token-punctuation\\\"><span class=\\\"cm-matchingBracket\\\">}</span></span></div></div>\"},{\"kind\":\"attribute\",\"html\":\"<div class=\\\"cm-cursor cm-cursor-primary\\\" style=\\\"left: 381.922px; top: 14px; height: 14px;\\\"></div>\"},{\"kind\":\"attribute\",\"html\":\"<div class=\\\"cm-cursor cm-cursor-primary\\\" style=\\\"left: 381.922px; top: 14px; height: 14px;\\\"></div>\"}]}\n"
+                    },
+                    {
+                      "text": "CSP_DIAGNOSTIC {\"audit\":{\"violatedDirective\":\"style-src-attr\",\"isReportOnly\":false,\"contentSecurityPolicyViolationType\":\"kInlineViolation\",\"sourceCodeLocation\":{\"url\":\"http://127.0.0.1:51843/scenarios.html\",\"lineNumber\":-1,\"columnNumber\":0},\"violatingNodeId\":45},\"node\":{\"nodeId\":0,\"backendNodeId\":45,\"nodeType\":1,\"nodeName\":\"DIV\",\"localName\":\"div\",\"nodeValue\":\"\",\"childNodeCount\":14,\"attributes\":[\"class\",\"cm-line\",\"style\",\"color: rgb(186, 201, 191); background-color: rgba(50, 140, 130, 0.32);\"]}}\n"
+                    }
+                  ],
+                  "stderr": [],
+                  "retry": 0,
+                  "startTime": "2026-10-23T22:02:25.819Z",
+                  "annotations": [],
+                  "attachments": [
+                    {
+                      "name": "screenshot",
+                      "contentType": "image/png",
+                      "path": "/Volumes/Storage/dubnom/zipsquat/ZPR Docs/zpr-visaservice.worktrees/maturing-w5-browser-stability/zpr-dashboard/test-results/dashboard-GUI-raw-scenario-8a31c-errors-for-an-edited-source-tablet-repeat3/test-failed-1.png"
+                    },
+                    {
+                      "name": "error-context",
+                      "contentType": "text/markdown",
+                      "path": "/Volumes/Storage/dubnom/zipsquat/ZPR Docs/zpr-visaservice.worktrees/maturing-w5-browser-stability/zpr-dashboard/test-results/dashboard-GUI-raw-scenario-8a31c-errors-for-an-edited-source-tablet-repeat3/error-context.md"
+                    }
+                  ],
+                  "errorLocation": {
+                    "file": "/Volumes/Storage/dubnom/zipsquat/ZPR Docs/zpr-visaservice.worktrees/maturing-w5-browser-stability/zpr-dashboard/tests/browser/dashboard.spec.mjs",
+                    "column": 100,
+                    "line": 995
+                  }
+                }
+              ],
+              "status": "unexpected"
+            }
+          ],
+          "id": "cc3070f185481daa6f24-dd6fefc7468ac87b1915",
+          "file": "dashboard.spec.mjs",
+          "line": 2243,
+          "column": 1
+        },
+        {
+          "title": "GUI raw scenario analysis ignores delayed errors for an edited source",
+          "ok": false,
+          "tags": [],
+          "tests": [
+            {
+              "timeout": 30000,
+              "annotations": [],
+              "expectedStatus": "passed",
+              "projectId": "tablet",
+              "projectName": "tablet",
+              "results": [
+                {
+                  "workerIndex": 4,
+                  "parallelIndex": 0,
+                  "status": "failed",
+                  "duration": 540,
+                  "error": {
+                    "message": "Error: Unexpected CSP violations\n\n\u001b[2mexpect(\u001b[22m\u001b[31mreceived\u001b[39m\u001b[2m).\u001b[22mtoEqual\u001b[2m(\u001b[22m\u001b[32mexpected\u001b[39m\u001b[2m) // deep equality\u001b[22m\n\n\u001b[32m- Expected  - 1\u001b[39m\n\u001b[31m+ Received  + 3\u001b[39m\n\n\u001b[32m- Array []\u001b[39m\n\u001b[31m+ Array [\u001b[39m\n\u001b[31m+   \"style-src-attr\",\u001b[39m\n\u001b[31m+ ]\u001b[39m",
+                    "stack": "Error: Unexpected CSP violations\n\n\u001b[2mexpect(\u001b[22m\u001b[31mreceived\u001b[39m\u001b[2m).\u001b[22mtoEqual\u001b[2m(\u001b[22m\u001b[32mexpected\u001b[39m\u001b[2m) // deep equality\u001b[22m\n\n\u001b[32m- Expected  - 1\u001b[39m\n\u001b[31m+ Received  + 3\u001b[39m\n\n\u001b[32m- Array []\u001b[39m\n\u001b[31m+ Array [\u001b[39m\n\u001b[31m+   \"style-src-attr\",\u001b[39m\n\u001b[31m+ ]\u001b[39m\n    at Object.api (/Volumes/Storage/dubnom/zipsquat/ZPR Docs/zpr-visaservice.worktrees/maturing-w5-browser-stability/zpr-dashboard/tests/browser/dashboard.spec.mjs:995:100)",
+                    "location": {
+                      "file": "/Volumes/Storage/dubnom/zipsquat/ZPR Docs/zpr-visaservice.worktrees/maturing-w5-browser-stability/zpr-dashboard/tests/browser/dashboard.spec.mjs",
+                      "column": 100,
+                      "line": 995
+                    },
+                    "snippet": "  993 |     await use(data);\n  994 |     expect(errors, \"Unexpected browser JavaScript errors\").toEqual([]);\n> 995 |     expect(await page.evaluate(() => window.testCSPViolations || []), \"Unexpected CSP violations\").toEqual([]);\n      |                                                                                                    ^\n  996 |   },\n  997 | });\n  998 |"
+                  },
+                  "errors": [
+                    {
+                      "location": {
+                        "file": "/Volumes/Storage/dubnom/zipsquat/ZPR Docs/zpr-visaservice.worktrees/maturing-w5-browser-stability/zpr-dashboard/tests/browser/dashboard.spec.mjs",
+                        "column": 100,
+                        "line": 995
+                      },
+                      "message": "Error: Unexpected CSP violations\n\n\u001b[2mexpect(\u001b[22m\u001b[31mreceived\u001b[39m\u001b[2m).\u001b[22mtoEqual\u001b[2m(\u001b[22m\u001b[32mexpected\u001b[39m\u001b[2m) // deep equality\u001b[22m\n\n\u001b[32m- Expected  - 1\u001b[39m\n\u001b[31m+ Received  + 3\u001b[39m\n\n\u001b[32m- Array []\u001b[39m\n\u001b[31m+ Array [\u001b[39m\n\u001b[31m+   \"style-src-attr\",\u001b[39m\n\u001b[31m+ ]\u001b[39m\n\n  993 |     await use(data);\n  994 |     expect(errors, \"Unexpected browser JavaScript errors\").toEqual([]);\n> 995 |     expect(await page.evaluate(() => window.testCSPViolations || []), \"Unexpected CSP violations\").toEqual([]);\n      |                                                                                                    ^\n  996 |   },\n  997 | });\n  998 |\n    at Object.api (/Volumes/Storage/dubnom/zipsquat/ZPR Docs/zpr-visaservice.worktrees/maturing-w5-browser-stability/zpr-dashboard/tests/browser/dashboard.spec.mjs:995:100)"
+                    }
+                  ],
+                  "stdout": [
+                    {
+                      "text": "CSP_DIAGNOSTIC {\"browserVersion\":\"153.0.8010.12\"}\n"
+                    },
+                    {
+                      "text": "CSP_DIAGNOSTIC {\"input\":{\"inputType\":\"insertText\",\"isTrusted\":true,\"anchor\":\"<span class=\\\"cm-matchingBracket\\\">{</span>\",\"focus\":\"<span class=\\\"cm-matchingBracket\\\">}</span>\",\"matchingBrackets\":[{\"html\":\"<span class=\\\"cm-matchingBracket\\\">{</span>\",\"color\":\"rgb(186, 201, 191)\",\"backgroundColor\":\"rgba(0, 0, 0, 0)\"},{\"html\":\"<span class=\\\"cm-matchingBracket\\\">}</span>\",\"color\":\"rgb(186, 201, 191)\",\"backgroundColor\":\"rgba(0, 0, 0, 0)\"}]}}\n"
+                    },
+                    {
+                      "text": "CSP_DIAGNOSTIC {\"input\":{\"inputType\":\"insertText\",\"isTrusted\":true,\"anchor\":\"<span class=\\\"cm-matchingBracket\\\">{</span>\",\"focus\":\"<span class=\\\"cm-matchingBracket\\\">}</span>\",\"matchingBrackets\":[{\"html\":\"<span class=\\\"cm-matchingBracket\\\">{</span>\",\"color\":\"rgb(186, 201, 191)\",\"backgroundColor\":\"rgba(50, 140, 130, 0.32)\"},{\"html\":\"<span class=\\\"cm-matchingBracket\\\">}</span>\",\"color\":\"rgb(186, 201, 191)\",\"backgroundColor\":\"rgba(50, 140, 130, 0.32)\"}]}}\n"
+                    },
+                    {
+                      "text": "Applying inline style violates the following Content Security Policy directive 'style-src-attr 'unsafe-hashes' 'sha256-oigCRQkUqLTBT/iGV1m+QngJV81i5XnXK2Tqug35uv4=' 'sha256-aclShzi5pb37RVXCTZWjIpErvTKw4ZP5CP0uGElzep8=' 'sha256-4/pw1d+w1lz5Ri4VUKQA+q6RkE8WVUgS8RoWVJelsIc=' 'sha256-Uj30wiv7J7g8585Uq15gmjXSwWQPRsGQIltXA7nwA8c=' 'sha256-XULlUqRgJj7XM0YpE77T8GZIztKZH8v1q9I1RszevwU=' 'sha256-bBwmnfAGpFRITldiXE4CJSfik8WcyLglu0IIQaAeQcM=' 'sha256-Z/SIp+PpH+wAAdAtFE7QzDd5popsZzGYaA67vycs5W0=' 'sha256-21WTnssUMRUwXU7hXN5mIXcd+G7R9ET74mxhhtCbWx8=' 'sha256-s3FV3UofgzVQbDoixaKwU6+LJOB7HRh6xvCMbCLBNAk=''. Either the 'unsafe-inline' keyword, a hash ('sha256-RfUFKnbePlOBd0Q8chM3Nmbjxc5P7cFC/sf0mwzb2S0='), or a nonce ('nonce-...') is required to enable inline execution. The action has been blocked.\n"
+                    },
+                    {
+                      "text": "CSP_DIAGNOSTIC {\"directive\":\"style-src-attr\",\"blockedURI\":\"inline\",\"sourceFile\":\"\",\"lineNumber\":0,\"columnNumber\":0,\"sample\":\"\",\"activeElement\":\"<div class=\\\"code-editor-host\\\" data-source=\\\"scenario-editor-source\\\"></div>\",\"mutations\":[{\"kind\":\"input\",\"inputType\":\"insertText\",\"html\":\"<div class=\\\"cm-line\\\" style=\\\"color: rgb(186, 201, 191); background-color: rgba(50, 140, 130, 0.32);\\\">{\\\"id\\\":\\\"new-scenario\\\",\\\"name\\\":\\\"Current\\\",\\\"steps\\\":[]}</div>\"},{\"kind\":\"attribute\",\"html\":\"<div class=\\\"cm-line\\\" style=\\\"color: rgb(186, 201, 191); background-color: rgba(50, 140, 130, 0.32);\\\">{\\\"id\\\":\\\"new-scenario\\\",\\\"name\\\":\\\"Current\\\",\\\"steps\\\":[]}</div>\"},{\"kind\":\"input\",\"inputType\":\"insertText\",\"html\":\"<div class=\\\"cm-line\\\" style=\\\"color: rgb(186, 201, 191); background-color: rgba(50, 140, 130, 0.32);\\\"><span class=\\\"cm-token-punctuation\\\"><span class=\\\"cm-matchingBracket\\\">{</span></span>\\\"<span class=\\\"cm-token-attribute\\\">id\\\":\\\"</span><span class=\\\"cm-token-punctuation\\\">n</span>e<span class=\\\"cm-token-punctuation\\\">w</span>-scenario\\\",\\\"name\\\":\\\"Current\\\",\\\"steps\\\":[]<span class=\\\"cm-matchingBracket\\\">}</span></div>\"},{\"kind\":\"insert\",\"html\":\"<div class=\\\"cm-gutters cm-gutters-before\\\" style=\\\"min-height: 43.7969px; position: sticky;\\\"><div class=\\\"cm-gutter cm-lineNumbers\\\"><div class=\\\"cm-gutterElement\\\" style=\\\"height: 0px; visibility: hidden; pointer-events: none;\\\">9</div><div class=\\\"cm-gutterElement\\\" style=\\\"height: 19.7969px; margin-top: 12px;\\\">1</div></div><div class=\\\"cm-gutter cm-result-gutter\\\"></div></div>\"},{\"kind\":\"attribute\",\"html\":\"<div class=\\\"cm-gutters cm-gutters-before\\\" style=\\\"min-height: 43.7969px; position: sticky;\\\"><div class=\\\"cm-gutter cm-lineNumbers\\\"><div class=\\\"cm-gutterElement\\\" style=\\\"height: 0px; visibility: hidden; pointer-events: none;\\\">9</div><div class=\\\"cm-gutterElement\\\" style=\\\"height: 19.7969px; margin-top: 12px;\\\">1</div></div><div class=\\\"cm-gutter cm-result-gutter\\\"></div></div>\"},{\"kind\":\"attribute\",\"html\":\"<div class=\\\"cm-layer cm-layer-above cm-cursorLayer\\\" aria-hidden=\\\"true\\\" style=\\\"z-index: 150; animation-duration: 1200ms; animation-name: cm-blink2;\\\"><div class=\\\"cm-cursor cm-cursor-primary\\\" style=\\\"left: 86.625px; top: 33.7969px; height: 14px;\\\"></div></div>\"},{\"kind\":\"attribute\",\"html\":\"<div spellcheck=\\\"false\\\" autocorrect=\\\"off\\\" autocapitalize=\\\"off\\\" writingsuggestions=\\\"false\\\" translate=\\\"no\\\" contenteditable=\\\"true\\\" class=\\\"cm-content\\\" role=\\\"textbox\\\" aria-multiline=\\\"true\\\" aria-label=\\\"Raw scenario JSON\\\" aria-describedby=\\\"\\\" style=\\\"tab-size: 4;\\\" aria-autocomplete=\\\"list\\\"><div class=\\\"cm-line\\\" style=\\\"color: rgb(186, 201, 191); background-color: rgba(50, 140, 130, 0.32);\\\"><span class=\\\"cm-token-punctuation\\\"><span class=\\\"cm-matchingBracket\\\">{</span></span>\\\"<span class=\\\"cm-token-attribute\\\">id\\\":\\\"</span><span class=\\\"cm-token-punctuation\\\">n</span>e<span class=\\\"cm-token-punctuation\\\">w</span>-scenario\\\",\\\"name\\\":\\\"Current\\\",\\\"steps\\\":[]<span class=\\\"cm-matchingBracket\\\">}</span></div></div>\"},{\"kind\":\"attribute\",\"html\":\"<div spellcheck=\\\"false\\\" autocorrect=\\\"off\\\" autocapitalize=\\\"off\\\" writingsuggestions=\\\"false\\\" translate=\\\"no\\\" contenteditable=\\\"true\\\" class=\\\"cm-content\\\" role=\\\"textbox\\\" aria-multiline=\\\"true\\\" aria-label=\\\"Raw scenario JSON\\\" aria-describedby=\\\"\\\" style=\\\"tab-size: 4;\\\" aria-autocomplete=\\\"list\\\"><div class=\\\"cm-line\\\" style=\\\"color: rgb(186, 201, 191); background-color: rgba(50, 140, 130, 0.32);\\\"><span class=\\\"cm-token-punctuation\\\"><span class=\\\"cm-matchingBracket\\\">{</span></span>\\\"<span class=\\\"cm-token-attribute\\\">id\\\":\\\"</span><span class=\\\"cm-token-punctuation\\\">n</span>e<span class=\\\"cm-token-punctuation\\\">w</span>-scenario\\\",\\\"name\\\":\\\"Current\\\",\\\"steps\\\":[]<span class=\\\"cm-matchingBracket\\\">}</span></div></div>\"},{\"kind\":\"attribute\",\"html\":\"<div spellcheck=\\\"false\\\" autocorrect=\\\"off\\\" autocapitalize=\\\"off\\\" writingsuggestions=\\\"false\\\" translate=\\\"no\\\" contenteditable=\\\"true\\\" class=\\\"cm-content\\\" role=\\\"textbox\\\" aria-multiline=\\\"true\\\" aria-label=\\\"Raw scenario JSON\\\" aria-describedby=\\\"\\\" style=\\\"tab-size: 4;\\\" aria-autocomplete=\\\"list\\\"><div class=\\\"cm-line\\\" style=\\\"color: rgb(186, 201, 191); background-color: rgba(50, 140, 130, 0.32);\\\"><span class=\\\"cm-token-punctuation\\\"><span class=\\\"cm-matchingBracket\\\">{</span></span><span class=\\\"cm-token-attribute\\\">\\\"id\\\"</span><span class=\\\"cm-token-punctuation\\\">:</span><span class=\\\"cm-token-string\\\">\\\"new-scenario\\\"</span><span class=\\\"cm-token-punctuation\\\">,</span><span class=\\\"cm-token-attribute\\\">\\\"name\\\"</span><span class=\\\"cm-token-punctuation\\\">:</span><span class=\\\"cm-token-string\\\">\\\"Current\\\"</span><span class=\\\"cm-token-punctuation\\\">,</span><span class=\\\"cm-token-attribute\\\">\\\"steps\\\"</span><span class=\\\"cm-token-punctuation\\\">:</span><span class=\\\"cm-token-punctuation\\\">[</span><span class=\\\"cm-token-punctuation\\\">]</span><span class=\\\"cm-token-punctuation\\\"><span class=\\\"cm-matchingBracket\\\">}</span></span></div></div>\"},{\"kind\":\"attribute\",\"html\":\"<div spellcheck=\\\"false\\\" autocorrect=\\\"off\\\" autocapitalize=\\\"off\\\" writingsuggestions=\\\"false\\\" translate=\\\"no\\\" contenteditable=\\\"true\\\" class=\\\"cm-content\\\" role=\\\"textbox\\\" aria-multiline=\\\"true\\\" aria-label=\\\"Raw scenario JSON\\\" aria-describedby=\\\"\\\" style=\\\"tab-size: 4;\\\" aria-autocomplete=\\\"list\\\"><div class=\\\"cm-line\\\" style=\\\"color: rgb(186, 201, 191); background-color: rgba(50, 140, 130, 0.32);\\\"><span class=\\\"cm-token-punctuation\\\"><span class=\\\"cm-matchingBracket\\\">{</span></span><span class=\\\"cm-token-attribute\\\">\\\"id\\\"</span><span class=\\\"cm-token-punctuation\\\">:</span><span class=\\\"cm-token-string\\\">\\\"new-scenario\\\"</span><span class=\\\"cm-token-punctuation\\\">,</span><span class=\\\"cm-token-attribute\\\">\\\"name\\\"</span><span class=\\\"cm-token-punctuation\\\">:</span><span class=\\\"cm-token-string\\\">\\\"Current\\\"</span><span class=\\\"cm-token-punctuation\\\">,</span><span class=\\\"cm-token-attribute\\\">\\\"steps\\\"</span><span class=\\\"cm-token-punctuation\\\">:</span><span class=\\\"cm-token-punctuation\\\">[</span><span class=\\\"cm-token-punctuation\\\">]</span><span class=\\\"cm-token-punctuation\\\"><span class=\\\"cm-matchingBracket\\\">}</span></span></div></div>\"},{\"kind\":\"attribute\",\"html\":\"<div class=\\\"cm-cursor cm-cursor-primary\\\" style=\\\"left: 381.922px; top: 14px; height: 14px;\\\"></div>\"},{\"kind\":\"attribute\",\"html\":\"<div class=\\\"cm-cursor cm-cursor-primary\\\" style=\\\"left: 381.922px; top: 14px; height: 14px;\\\"></div>\"}]}\n"
+                    },
+                    {
+                      "text": "CSP_DIAGNOSTIC {\"audit\":{\"violatedDirective\":\"style-src-attr\",\"isReportOnly\":false,\"contentSecurityPolicyViolationType\":\"kInlineViolation\",\"sourceCodeLocation\":{\"url\":\"http://127.0.0.1:51852/scenarios.html\",\"lineNumber\":-1,\"columnNumber\":0},\"violatingNodeId\":45},\"node\":{\"nodeId\":0,\"backendNodeId\":45,\"nodeType\":1,\"nodeName\":\"DIV\",\"localName\":\"div\",\"nodeValue\":\"\",\"childNodeCount\":14,\"attributes\":[\"class\",\"cm-line\",\"style\",\"color: rgb(186, 201, 191); background-color: rgba(50, 140, 130, 0.32);\"]}}\n"
+                    }
+                  ],
+                  "stderr": [],
+                  "retry": 0,
+                  "startTime": "2026-10-23T22:02:26.881Z",
+                  "annotations": [],
+                  "attachments": [
+                    {
+                      "name": "screenshot",
+                      "contentType": "image/png",
+                      "path": "/Volumes/Storage/dubnom/zipsquat/ZPR Docs/zpr-visaservice.worktrees/maturing-w5-browser-stability/zpr-dashboard/test-results/dashboard-GUI-raw-scenario-8a31c-errors-for-an-edited-source-tablet-repeat4/test-failed-1.png"
+                    },
+                    {
+                      "name": "error-context",
+                      "contentType": "text/markdown",
+                      "path": "/Volumes/Storage/dubnom/zipsquat/ZPR Docs/zpr-visaservice.worktrees/maturing-w5-browser-stability/zpr-dashboard/test-results/dashboard-GUI-raw-scenario-8a31c-errors-for-an-edited-source-tablet-repeat4/error-context.md"
+                    }
+                  ],
+                  "errorLocation": {
+                    "file": "/Volumes/Storage/dubnom/zipsquat/ZPR Docs/zpr-visaservice.worktrees/maturing-w5-browser-stability/zpr-dashboard/tests/browser/dashboard.spec.mjs",
+                    "column": 100,
+                    "line": 995
+                  }
+                }
+              ],
+              "status": "unexpected"
+            }
+          ],
+          "id": "cc3070f185481daa6f24-6bc08548bbcb66838338",
+          "file": "dashboard.spec.mjs",
+          "line": 2243,
+          "column": 1
+        },
+        {
+          "title": "GUI raw scenario analysis ignores delayed errors for an edited source",
+          "ok": false,
+          "tags": [],
+          "tests": [
+            {
+              "timeout": 30000,
+              "annotations": [],
+              "expectedStatus": "passed",
+              "projectId": "tablet",
+              "projectName": "tablet",
+              "results": [
+                {
+                  "workerIndex": 5,
+                  "parallelIndex": 0,
+                  "status": "failed",
+                  "duration": 523,
+                  "error": {
+                    "message": "Error: Unexpected CSP violations\n\n\u001b[2mexpect(\u001b[22m\u001b[31mreceived\u001b[39m\u001b[2m).\u001b[22mtoEqual\u001b[2m(\u001b[22m\u001b[32mexpected\u001b[39m\u001b[2m) // deep equality\u001b[22m\n\n\u001b[32m- Expected  - 1\u001b[39m\n\u001b[31m+ Received  + 3\u001b[39m\n\n\u001b[32m- Array []\u001b[39m\n\u001b[31m+ Array [\u001b[39m\n\u001b[31m+   \"style-src-attr\",\u001b[39m\n\u001b[31m+ ]\u001b[39m",
+                    "stack": "Error: Unexpected CSP violations\n\n\u001b[2mexpect(\u001b[22m\u001b[31mreceived\u001b[39m\u001b[2m).\u001b[22mtoEqual\u001b[2m(\u001b[22m\u001b[32mexpected\u001b[39m\u001b[2m) // deep equality\u001b[22m\n\n\u001b[32m- Expected  - 1\u001b[39m\n\u001b[31m+ Received  + 3\u001b[39m\n\n\u001b[32m- Array []\u001b[39m\n\u001b[31m+ Array [\u001b[39m\n\u001b[31m+   \"style-src-attr\",\u001b[39m\n\u001b[31m+ ]\u001b[39m\n    at Object.api (/Volumes/Storage/dubnom/zipsquat/ZPR Docs/zpr-visaservice.worktrees/maturing-w5-browser-stability/zpr-dashboard/tests/browser/dashboard.spec.mjs:995:100)",
+                    "location": {
+                      "file": "/Volumes/Storage/dubnom/zipsquat/ZPR Docs/zpr-visaservice.worktrees/maturing-w5-browser-stability/zpr-dashboard/tests/browser/dashboard.spec.mjs",
+                      "column": 100,
+                      "line": 995
+                    },
+                    "snippet": "  993 |     await use(data);\n  994 |     expect(errors, \"Unexpected browser JavaScript errors\").toEqual([]);\n> 995 |     expect(await page.evaluate(() => window.testCSPViolations || []), \"Unexpected CSP violations\").toEqual([]);\n      |                                                                                                    ^\n  996 |   },\n  997 | });\n  998 |"
+                  },
+                  "errors": [
+                    {
+                      "location": {
+                        "file": "/Volumes/Storage/dubnom/zipsquat/ZPR Docs/zpr-visaservice.worktrees/maturing-w5-browser-stability/zpr-dashboard/tests/browser/dashboard.spec.mjs",
+                        "column": 100,
+                        "line": 995
+                      },
+                      "message": "Error: Unexpected CSP violations\n\n\u001b[2mexpect(\u001b[22m\u001b[31mreceived\u001b[39m\u001b[2m).\u001b[22mtoEqual\u001b[2m(\u001b[22m\u001b[32mexpected\u001b[39m\u001b[2m) // deep equality\u001b[22m\n\n\u001b[32m- Expected  - 1\u001b[39m\n\u001b[31m+ Received  + 3\u001b[39m\n\n\u001b[32m- Array []\u001b[39m\n\u001b[31m+ Array [\u001b[39m\n\u001b[31m+   \"style-src-attr\",\u001b[39m\n\u001b[31m+ ]\u001b[39m\n\n  993 |     await use(data);\n  994 |     expect(errors, \"Unexpected browser JavaScript errors\").toEqual([]);\n> 995 |     expect(await page.evaluate(() => window.testCSPViolations || []), \"Unexpected CSP violations\").toEqual([]);\n      |                                                                                                    ^\n  996 |   },\n  997 | });\n  998 |\n    at Object.api (/Volumes/Storage/dubnom/zipsquat/ZPR Docs/zpr-visaservice.worktrees/maturing-w5-browser-stability/zpr-dashboard/tests/browser/dashboard.spec.mjs:995:100)"
+                    }
+                  ],
+                  "stdout": [
+                    {
+                      "text": "CSP_DIAGNOSTIC {\"browserVersion\":\"153.0.8010.12\"}\n"
+                    },
+                    {
+                      "text": "CSP_DIAGNOSTIC {\"input\":{\"inputType\":\"insertText\",\"isTrusted\":true,\"anchor\":\"<span class=\\\"cm-matchingBracket\\\">{</span>\",\"focus\":\"<span class=\\\"cm-matchingBracket\\\">}</span>\",\"matchingBrackets\":[{\"html\":\"<span class=\\\"cm-matchingBracket\\\">{</span>\",\"color\":\"rgb(186, 201, 191)\",\"backgroundColor\":\"rgba(0, 0, 0, 0)\"},{\"html\":\"<span class=\\\"cm-matchingBracket\\\">}</span>\",\"color\":\"rgb(186, 201, 191)\",\"backgroundColor\":\"rgba(0, 0, 0, 0)\"}]}}\n"
+                    },
+                    {
+                      "text": "CSP_DIAGNOSTIC {\"input\":{\"inputType\":\"insertText\",\"isTrusted\":true,\"anchor\":\"<span class=\\\"cm-matchingBracket\\\">{</span>\",\"focus\":\"<span class=\\\"cm-matchingBracket\\\">}</span>\",\"matchingBrackets\":[{\"html\":\"<span class=\\\"cm-matchingBracket\\\">{</span>\",\"color\":\"rgb(186, 201, 191)\",\"backgroundColor\":\"rgba(50, 140, 130, 0.32)\"},{\"html\":\"<span class=\\\"cm-matchingBracket\\\">}</span>\",\"color\":\"rgb(186, 201, 191)\",\"backgroundColor\":\"rgba(50, 140, 130, 0.32)\"}]}}\n"
+                    },
+                    {
+                      "text": "Applying inline style violates the following Content Security Policy directive 'style-src-attr 'unsafe-hashes' 'sha256-oigCRQkUqLTBT/iGV1m+QngJV81i5XnXK2Tqug35uv4=' 'sha256-aclShzi5pb37RVXCTZWjIpErvTKw4ZP5CP0uGElzep8=' 'sha256-4/pw1d+w1lz5Ri4VUKQA+q6RkE8WVUgS8RoWVJelsIc=' 'sha256-Uj30wiv7J7g8585Uq15gmjXSwWQPRsGQIltXA7nwA8c=' 'sha256-XULlUqRgJj7XM0YpE77T8GZIztKZH8v1q9I1RszevwU=' 'sha256-bBwmnfAGpFRITldiXE4CJSfik8WcyLglu0IIQaAeQcM=' 'sha256-Z/SIp+PpH+wAAdAtFE7QzDd5popsZzGYaA67vycs5W0=' 'sha256-21WTnssUMRUwXU7hXN5mIXcd+G7R9ET74mxhhtCbWx8=' 'sha256-s3FV3UofgzVQbDoixaKwU6+LJOB7HRh6xvCMbCLBNAk=''. Either the 'unsafe-inline' keyword, a hash ('sha256-RfUFKnbePlOBd0Q8chM3Nmbjxc5P7cFC/sf0mwzb2S0='), or a nonce ('nonce-...') is required to enable inline execution. The action has been blocked.\n"
+                    },
+                    {
+                      "text": "CSP_DIAGNOSTIC {\"directive\":\"style-src-attr\",\"blockedURI\":\"inline\",\"sourceFile\":\"\",\"lineNumber\":0,\"columnNumber\":0,\"sample\":\"\",\"activeElement\":\"<div class=\\\"code-editor-host\\\" data-source=\\\"scenario-editor-source\\\"></div>\",\"mutations\":[{\"kind\":\"input\",\"inputType\":\"insertText\",\"html\":\"<div class=\\\"cm-line\\\" style=\\\"color: rgb(186, 201, 191); background-color: rgba(50, 140, 130, 0.32);\\\">{\\\"id\\\":\\\"new-scenario\\\",\\\"name\\\":\\\"Current\\\",\\\"steps\\\":[]}</div>\"},{\"kind\":\"attribute\",\"html\":\"<div class=\\\"cm-line\\\" style=\\\"color: rgb(186, 201, 191); background-color: rgba(50, 140, 130, 0.32);\\\">{\\\"id\\\":\\\"new-scenario\\\",\\\"name\\\":\\\"Current\\\",\\\"steps\\\":[]}</div>\"},{\"kind\":\"input\",\"inputType\":\"insertText\",\"html\":\"<div class=\\\"cm-line\\\" style=\\\"color: rgb(186, 201, 191); background-color: rgba(50, 140, 130, 0.32);\\\"><span class=\\\"cm-token-punctuation\\\"><span class=\\\"cm-matchingBracket\\\">{</span></span>\\\"<span class=\\\"cm-token-attribute\\\">id\\\":\\\"</span><span class=\\\"cm-token-punctuation\\\">n</span>e<span class=\\\"cm-token-punctuation\\\">w</span>-scenario\\\",\\\"name\\\":\\\"Current\\\",\\\"steps\\\":[]<span class=\\\"cm-matchingBracket\\\">}</span></div>\"},{\"kind\":\"insert\",\"html\":\"<div class=\\\"cm-gutters cm-gutters-before\\\" style=\\\"min-height: 43.7969px; position: sticky;\\\"><div class=\\\"cm-gutter cm-lineNumbers\\\"><div class=\\\"cm-gutterElement\\\" style=\\\"height: 0px; visibility: hidden; pointer-events: none;\\\">9</div><div class=\\\"cm-gutterElement\\\" style=\\\"height: 19.7969px; margin-top: 12px;\\\">1</div></div><div class=\\\"cm-gutter cm-result-gutter\\\"></div></div>\"},{\"kind\":\"attribute\",\"html\":\"<div class=\\\"cm-gutters cm-gutters-before\\\" style=\\\"min-height: 43.7969px; position: sticky;\\\"><div class=\\\"cm-gutter cm-lineNumbers\\\"><div class=\\\"cm-gutterElement\\\" style=\\\"height: 0px; visibility: hidden; pointer-events: none;\\\">9</div><div class=\\\"cm-gutterElement\\\" style=\\\"height: 19.7969px; margin-top: 12px;\\\">1</div></div><div class=\\\"cm-gutter cm-result-gutter\\\"></div></div>\"},{\"kind\":\"attribute\",\"html\":\"<div class=\\\"cm-layer cm-layer-above cm-cursorLayer\\\" aria-hidden=\\\"true\\\" style=\\\"z-index: 150; animation-duration: 1200ms; animation-name: cm-blink2;\\\"><div class=\\\"cm-cursor cm-cursor-primary\\\" style=\\\"left: 86.625px; top: 33.7969px; height: 14px;\\\"></div></div>\"},{\"kind\":\"attribute\",\"html\":\"<div spellcheck=\\\"false\\\" autocorrect=\\\"off\\\" autocapitalize=\\\"off\\\" writingsuggestions=\\\"false\\\" translate=\\\"no\\\" contenteditable=\\\"true\\\" class=\\\"cm-content\\\" role=\\\"textbox\\\" aria-multiline=\\\"true\\\" aria-label=\\\"Raw scenario JSON\\\" aria-describedby=\\\"\\\" style=\\\"tab-size: 4;\\\" aria-autocomplete=\\\"list\\\"><div class=\\\"cm-line\\\" style=\\\"color: rgb(186, 201, 191); background-color: rgba(50, 140, 130, 0.32);\\\"><span class=\\\"cm-token-punctuation\\\"><span class=\\\"cm-matchingBracket\\\">{</span></span>\\\"<span class=\\\"cm-token-attribute\\\">id\\\":\\\"</span><span class=\\\"cm-token-punctuation\\\">n</span>e<span class=\\\"cm-token-punctuation\\\">w</span>-scenario\\\",\\\"name\\\":\\\"Current\\\",\\\"steps\\\":[]<span class=\\\"cm-matchingBracket\\\">}</span></div></div>\"},{\"kind\":\"attribute\",\"html\":\"<div spellcheck=\\\"false\\\" autocorrect=\\\"off\\\" autocapitalize=\\\"off\\\" writingsuggestions=\\\"false\\\" translate=\\\"no\\\" contenteditable=\\\"true\\\" class=\\\"cm-content\\\" role=\\\"textbox\\\" aria-multiline=\\\"true\\\" aria-label=\\\"Raw scenario JSON\\\" aria-describedby=\\\"\\\" style=\\\"tab-size: 4;\\\" aria-autocomplete=\\\"list\\\"><div class=\\\"cm-line\\\" style=\\\"color: rgb(186, 201, 191); background-color: rgba(50, 140, 130, 0.32);\\\"><span class=\\\"cm-token-punctuation\\\"><span class=\\\"cm-matchingBracket\\\">{</span></span>\\\"<span class=\\\"cm-token-attribute\\\">id\\\":\\\"</span><span class=\\\"cm-token-punctuation\\\">n</span>e<span class=\\\"cm-token-punctuation\\\">w</span>-scenario\\\",\\\"name\\\":\\\"Current\\\",\\\"steps\\\":[]<span class=\\\"cm-matchingBracket\\\">}</span></div></div>\"},{\"kind\":\"attribute\",\"html\":\"<div spellcheck=\\\"false\\\" autocorrect=\\\"off\\\" autocapitalize=\\\"off\\\" writingsuggestions=\\\"false\\\" translate=\\\"no\\\" contenteditable=\\\"true\\\" class=\\\"cm-content\\\" role=\\\"textbox\\\" aria-multiline=\\\"true\\\" aria-label=\\\"Raw scenario JSON\\\" aria-describedby=\\\"\\\" style=\\\"tab-size: 4;\\\" aria-autocomplete=\\\"list\\\"><div class=\\\"cm-line\\\" style=\\\"color: rgb(186, 201, 191); background-color: rgba(50, 140, 130, 0.32);\\\"><span class=\\\"cm-token-punctuation\\\"><span class=\\\"cm-matchingBracket\\\">{</span></span><span class=\\\"cm-token-attribute\\\">\\\"id\\\"</span><span class=\\\"cm-token-punctuation\\\">:</span><span class=\\\"cm-token-string\\\">\\\"new-scenario\\\"</span><span class=\\\"cm-token-punctuation\\\">,</span><span class=\\\"cm-token-attribute\\\">\\\"name\\\"</span><span class=\\\"cm-token-punctuation\\\">:</span><span class=\\\"cm-token-string\\\">\\\"Current\\\"</span><span class=\\\"cm-token-punctuation\\\">,</span><span class=\\\"cm-token-attribute\\\">\\\"steps\\\"</span><span class=\\\"cm-token-punctuation\\\">:</span><span class=\\\"cm-token-punctuation\\\">[</span><span class=\\\"cm-token-punctuation\\\">]</span><span class=\\\"cm-token-punctuation\\\"><span class=\\\"cm-matchingBracket\\\">}</span></span></div></div>\"},{\"kind\":\"attribute\",\"html\":\"<div spellcheck=\\\"false\\\" autocorrect=\\\"off\\\" autocapitalize=\\\"off\\\" writingsuggestions=\\\"false\\\" translate=\\\"no\\\" contenteditable=\\\"true\\\" class=\\\"cm-content\\\" role=\\\"textbox\\\" aria-multiline=\\\"true\\\" aria-label=\\\"Raw scenario JSON\\\" aria-describedby=\\\"\\\" style=\\\"tab-size: 4;\\\" aria-autocomplete=\\\"list\\\"><div class=\\\"cm-line\\\" style=\\\"color: rgb(186, 201, 191); background-color: rgba(50, 140, 130, 0.32);\\\"><span class=\\\"cm-token-punctuation\\\"><span class=\\\"cm-matchingBracket\\\">{</span></span><span class=\\\"cm-token-attribute\\\">\\\"id\\\"</span><span class=\\\"cm-token-punctuation\\\">:</span><span class=\\\"cm-token-string\\\">\\\"new-scenario\\\"</span><span class=\\\"cm-token-punctuation\\\">,</span><span class=\\\"cm-token-attribute\\\">\\\"name\\\"</span><span class=\\\"cm-token-punctuation\\\">:</span><span class=\\\"cm-token-string\\\">\\\"Current\\\"</span><span class=\\\"cm-token-punctuation\\\">,</span><span class=\\\"cm-token-attribute\\\">\\\"steps\\\"</span><span class=\\\"cm-token-punctuation\\\">:</span><span class=\\\"cm-token-punctuation\\\">[</span><span class=\\\"cm-token-punctuation\\\">]</span><span class=\\\"cm-token-punctuation\\\"><span class=\\\"cm-matchingBracket\\\">}</span></span></div></div>\"},{\"kind\":\"attribute\",\"html\":\"<div class=\\\"cm-cursor cm-cursor-primary\\\" style=\\\"left: 381.922px; top: 14px; height: 14px;\\\"></div>\"},{\"kind\":\"attribute\",\"html\":\"<div class=\\\"cm-cursor cm-cursor-primary\\\" style=\\\"left: 381.922px; top: 14px; height: 14px;\\\"></div>\"}]}\n"
+                    },
+                    {
+                      "text": "CSP_DIAGNOSTIC {\"audit\":{\"violatedDirective\":\"style-src-attr\",\"isReportOnly\":false,\"contentSecurityPolicyViolationType\":\"kInlineViolation\",\"sourceCodeLocation\":{\"url\":\"http://127.0.0.1:51859/scenarios.html\",\"lineNumber\":-1,\"columnNumber\":0},\"violatingNodeId\":45},\"node\":{\"nodeId\":0,\"backendNodeId\":45,\"nodeType\":1,\"nodeName\":\"DIV\",\"localName\":\"div\",\"nodeValue\":\"\",\"childNodeCount\":14,\"attributes\":[\"class\",\"cm-line\",\"style\",\"color: rgb(186, 201, 191); background-color: rgba(50, 140, 130, 0.32);\"]}}\n"
+                    }
+                  ],
+                  "stderr": [],
+                  "retry": 0,
+                  "startTime": "2026-10-23T22:02:27.980Z",
+                  "annotations": [],
+                  "attachments": [
+                    {
+                      "name": "screenshot",
+                      "contentType": "image/png",
+                      "path": "/Volumes/Storage/dubnom/zipsquat/ZPR Docs/zpr-visaservice.worktrees/maturing-w5-browser-stability/zpr-dashboard/test-results/dashboard-GUI-raw-scenario-8a31c-errors-for-an-edited-source-tablet-repeat5/test-failed-1.png"
+                    },
+                    {
+                      "name": "error-context",
+                      "contentType": "text/markdown",
+                      "path": "/Volumes/Storage/dubnom/zipsquat/ZPR Docs/zpr-visaservice.worktrees/maturing-w5-browser-stability/zpr-dashboard/test-results/dashboard-GUI-raw-scenario-8a31c-errors-for-an-edited-source-tablet-repeat5/error-context.md"
+                    }
+                  ],
+                  "errorLocation": {
+                    "file": "/Volumes/Storage/dubnom/zipsquat/ZPR Docs/zpr-visaservice.worktrees/maturing-w5-browser-stability/zpr-dashboard/tests/browser/dashboard.spec.mjs",
+                    "column": 100,
+                    "line": 995
+                  }
+                }
+              ],
+              "status": "unexpected"
+            }
+          ],
+          "id": "cc3070f185481daa6f24-479baa421e7cfd47885f",
+          "file": "dashboard.spec.mjs",
+          "line": 2243,
+          "column": 1
+        },
+        {
+          "title": "GUI raw scenario analysis ignores delayed errors for an edited source",
+          "ok": false,
+          "tags": [],
+          "tests": [
+            {
+              "timeout": 30000,
+              "annotations": [],
+              "expectedStatus": "passed",
+              "projectId": "tablet",
+              "projectName": "tablet",
+              "results": [
+                {
+                  "workerIndex": 6,
+                  "parallelIndex": 0,
+                  "status": "failed",
+                  "duration": 579,
+                  "error": {
+                    "message": "Error: Unexpected CSP violations\n\n\u001b[2mexpect(\u001b[22m\u001b[31mreceived\u001b[39m\u001b[2m).\u001b[22mtoEqual\u001b[2m(\u001b[22m\u001b[32mexpected\u001b[39m\u001b[2m) // deep equality\u001b[22m\n\n\u001b[32m- Expected  - 1\u001b[39m\n\u001b[31m+ Received  + 3\u001b[39m\n\n\u001b[32m- Array []\u001b[39m\n\u001b[31m+ Array [\u001b[39m\n\u001b[31m+   \"style-src-attr\",\u001b[39m\n\u001b[31m+ ]\u001b[39m",
+                    "stack": "Error: Unexpected CSP violations\n\n\u001b[2mexpect(\u001b[22m\u001b[31mreceived\u001b[39m\u001b[2m).\u001b[22mtoEqual\u001b[2m(\u001b[22m\u001b[32mexpected\u001b[39m\u001b[2m) // deep equality\u001b[22m\n\n\u001b[32m- Expected  - 1\u001b[39m\n\u001b[31m+ Received  + 3\u001b[39m\n\n\u001b[32m- Array []\u001b[39m\n\u001b[31m+ Array [\u001b[39m\n\u001b[31m+   \"style-src-attr\",\u001b[39m\n\u001b[31m+ ]\u001b[39m\n    at Object.api (/Volumes/Storage/dubnom/zipsquat/ZPR Docs/zpr-visaservice.worktrees/maturing-w5-browser-stability/zpr-dashboard/tests/browser/dashboard.spec.mjs:995:100)",
+                    "location": {
+                      "file": "/Volumes/Storage/dubnom/zipsquat/ZPR Docs/zpr-visaservice.worktrees/maturing-w5-browser-stability/zpr-dashboard/tests/browser/dashboard.spec.mjs",
+                      "column": 100,
+                      "line": 995
+                    },
+                    "snippet": "  993 |     await use(data);\n  994 |     expect(errors, \"Unexpected browser JavaScript errors\").toEqual([]);\n> 995 |     expect(await page.evaluate(() => window.testCSPViolations || []), \"Unexpected CSP violations\").toEqual([]);\n      |                                                                                                    ^\n  996 |   },\n  997 | });\n  998 |"
+                  },
+                  "errors": [
+                    {
+                      "location": {
+                        "file": "/Volumes/Storage/dubnom/zipsquat/ZPR Docs/zpr-visaservice.worktrees/maturing-w5-browser-stability/zpr-dashboard/tests/browser/dashboard.spec.mjs",
+                        "column": 100,
+                        "line": 995
+                      },
+                      "message": "Error: Unexpected CSP violations\n\n\u001b[2mexpect(\u001b[22m\u001b[31mreceived\u001b[39m\u001b[2m).\u001b[22mtoEqual\u001b[2m(\u001b[22m\u001b[32mexpected\u001b[39m\u001b[2m) // deep equality\u001b[22m\n\n\u001b[32m- Expected  - 1\u001b[39m\n\u001b[31m+ Received  + 3\u001b[39m\n\n\u001b[32m- Array []\u001b[39m\n\u001b[31m+ Array [\u001b[39m\n\u001b[31m+   \"style-src-attr\",\u001b[39m\n\u001b[31m+ ]\u001b[39m\n\n  993 |     await use(data);\n  994 |     expect(errors, \"Unexpected browser JavaScript errors\").toEqual([]);\n> 995 |     expect(await page.evaluate(() => window.testCSPViolations || []), \"Unexpected CSP violations\").toEqual([]);\n      |                                                                                                    ^\n  996 |   },\n  997 | });\n  998 |\n    at Object.api (/Volumes/Storage/dubnom/zipsquat/ZPR Docs/zpr-visaservice.worktrees/maturing-w5-browser-stability/zpr-dashboard/tests/browser/dashboard.spec.mjs:995:100)"
+                    }
+                  ],
+                  "stdout": [
+                    {
+                      "text": "CSP_DIAGNOSTIC {\"browserVersion\":\"153.0.8010.12\"}\n"
+                    },
+                    {
+                      "text": "CSP_DIAGNOSTIC {\"input\":{\"inputType\":\"insertText\",\"isTrusted\":true,\"anchor\":\"<span class=\\\"cm-matchingBracket\\\">{</span>\",\"focus\":\"<span class=\\\"cm-matchingBracket\\\">}</span>\",\"matchingBrackets\":[{\"html\":\"<span class=\\\"cm-matchingBracket\\\">{</span>\",\"color\":\"rgb(186, 201, 191)\",\"backgroundColor\":\"rgba(0, 0, 0, 0)\"},{\"html\":\"<span class=\\\"cm-matchingBracket\\\">}</span>\",\"color\":\"rgb(186, 201, 191)\",\"backgroundColor\":\"rgba(0, 0, 0, 0)\"}]}}\n"
+                    },
+                    {
+                      "text": "CSP_DIAGNOSTIC {\"input\":{\"inputType\":\"insertText\",\"isTrusted\":true,\"anchor\":\"<span class=\\\"cm-matchingBracket\\\">{</span>\",\"focus\":\"<span class=\\\"cm-matchingBracket\\\">}</span>\",\"matchingBrackets\":[{\"html\":\"<span class=\\\"cm-matchingBracket\\\">{</span>\",\"color\":\"rgb(186, 201, 191)\",\"backgroundColor\":\"rgba(50, 140, 130, 0.32)\"},{\"html\":\"<span class=\\\"cm-matchingBracket\\\">}</span>\",\"color\":\"rgb(186, 201, 191)\",\"backgroundColor\":\"rgba(50, 140, 130, 0.32)\"}]}}\n"
+                    },
+                    {
+                      "text": "Applying inline style violates the following Content Security Policy directive 'style-src-attr 'unsafe-hashes' 'sha256-oigCRQkUqLTBT/iGV1m+QngJV81i5XnXK2Tqug35uv4=' 'sha256-aclShzi5pb37RVXCTZWjIpErvTKw4ZP5CP0uGElzep8=' 'sha256-4/pw1d+w1lz5Ri4VUKQA+q6RkE8WVUgS8RoWVJelsIc=' 'sha256-Uj30wiv7J7g8585Uq15gmjXSwWQPRsGQIltXA7nwA8c=' 'sha256-XULlUqRgJj7XM0YpE77T8GZIztKZH8v1q9I1RszevwU=' 'sha256-bBwmnfAGpFRITldiXE4CJSfik8WcyLglu0IIQaAeQcM=' 'sha256-Z/SIp+PpH+wAAdAtFE7QzDd5popsZzGYaA67vycs5W0=' 'sha256-21WTnssUMRUwXU7hXN5mIXcd+G7R9ET74mxhhtCbWx8=' 'sha256-s3FV3UofgzVQbDoixaKwU6+LJOB7HRh6xvCMbCLBNAk=''. Either the 'unsafe-inline' keyword, a hash ('sha256-RfUFKnbePlOBd0Q8chM3Nmbjxc5P7cFC/sf0mwzb2S0='), or a nonce ('nonce-...') is required to enable inline execution. The action has been blocked.\n"
+                    },
+                    {
+                      "text": "CSP_DIAGNOSTIC {\"directive\":\"style-src-attr\",\"blockedURI\":\"inline\",\"sourceFile\":\"\",\"lineNumber\":0,\"columnNumber\":0,\"sample\":\"\",\"activeElement\":\"<div class=\\\"code-editor-host\\\" data-source=\\\"scenario-editor-source\\\"></div>\",\"mutations\":[{\"kind\":\"input\",\"inputType\":\"insertText\",\"html\":\"<div class=\\\"cm-line\\\" style=\\\"color: rgb(186, 201, 191); background-color: rgba(50, 140, 130, 0.32);\\\">{\\\"id\\\":\\\"new-scenario\\\",\\\"name\\\":\\\"Current\\\",\\\"steps\\\":[]}</div>\"},{\"kind\":\"attribute\",\"html\":\"<div class=\\\"cm-line\\\" style=\\\"color: rgb(186, 201, 191); background-color: rgba(50, 140, 130, 0.32);\\\">{\\\"id\\\":\\\"new-scenario\\\",\\\"name\\\":\\\"Current\\\",\\\"steps\\\":[]}</div>\"},{\"kind\":\"input\",\"inputType\":\"insertText\",\"html\":\"<div class=\\\"cm-line\\\" style=\\\"color: rgb(186, 201, 191); background-color: rgba(50, 140, 130, 0.32);\\\"><span class=\\\"cm-token-punctuation\\\"><span class=\\\"cm-matchingBracket\\\">{</span></span>\\\"<span class=\\\"cm-token-attribute\\\">id\\\":\\\"</span><span class=\\\"cm-token-punctuation\\\">n</span>e<span class=\\\"cm-token-punctuation\\\">w</span>-scenario\\\",\\\"name\\\":\\\"Current\\\",\\\"steps\\\":[]<span class=\\\"cm-matchingBracket\\\">}</span></div>\"},{\"kind\":\"insert\",\"html\":\"<div class=\\\"cm-gutters cm-gutters-before\\\" style=\\\"min-height: 43.7969px; position: sticky;\\\"><div class=\\\"cm-gutter cm-lineNumbers\\\"><div class=\\\"cm-gutterElement\\\" style=\\\"height: 0px; visibility: hidden; pointer-events: none;\\\">9</div><div class=\\\"cm-gutterElement\\\" style=\\\"height: 19.7969px; margin-top: 12px;\\\">1</div></div><div class=\\\"cm-gutter cm-result-gutter\\\"></div></div>\"},{\"kind\":\"attribute\",\"html\":\"<div class=\\\"cm-gutters cm-gutters-before\\\" style=\\\"min-height: 43.7969px; position: sticky;\\\"><div class=\\\"cm-gutter cm-lineNumbers\\\"><div class=\\\"cm-gutterElement\\\" style=\\\"height: 0px; visibility: hidden; pointer-events: none;\\\">9</div><div class=\\\"cm-gutterElement\\\" style=\\\"height: 19.7969px; margin-top: 12px;\\\">1</div></div><div class=\\\"cm-gutter cm-result-gutter\\\"></div></div>\"},{\"kind\":\"attribute\",\"html\":\"<div class=\\\"cm-layer cm-layer-above cm-cursorLayer\\\" aria-hidden=\\\"true\\\" style=\\\"z-index: 150; animation-duration: 1200ms; animation-name: cm-blink2;\\\"><div class=\\\"cm-cursor cm-cursor-primary\\\" style=\\\"left: 86.625px; top: 33.7969px; height: 14px;\\\"></div></div>\"},{\"kind\":\"attribute\",\"html\":\"<div spellcheck=\\\"false\\\" autocorrect=\\\"off\\\" autocapitalize=\\\"off\\\" writingsuggestions=\\\"false\\\" translate=\\\"no\\\" contenteditable=\\\"true\\\" class=\\\"cm-content\\\" role=\\\"textbox\\\" aria-multiline=\\\"true\\\" aria-label=\\\"Raw scenario JSON\\\" aria-describedby=\\\"\\\" style=\\\"tab-size: 4;\\\" aria-autocomplete=\\\"list\\\"><div class=\\\"cm-line\\\" style=\\\"color: rgb(186, 201, 191); background-color: rgba(50, 140, 130, 0.32);\\\"><span class=\\\"cm-token-punctuation\\\"><span class=\\\"cm-matchingBracket\\\">{</span></span>\\\"<span class=\\\"cm-token-attribute\\\">id\\\":\\\"</span><span class=\\\"cm-token-punctuation\\\">n</span>e<span class=\\\"cm-token-punctuation\\\">w</span>-scenario\\\",\\\"name\\\":\\\"Current\\\",\\\"steps\\\":[]<span class=\\\"cm-matchingBracket\\\">}</span></div></div>\"},{\"kind\":\"attribute\",\"html\":\"<div spellcheck=\\\"false\\\" autocorrect=\\\"off\\\" autocapitalize=\\\"off\\\" writingsuggestions=\\\"false\\\" translate=\\\"no\\\" contenteditable=\\\"true\\\" class=\\\"cm-content\\\" role=\\\"textbox\\\" aria-multiline=\\\"true\\\" aria-label=\\\"Raw scenario JSON\\\" aria-describedby=\\\"\\\" style=\\\"tab-size: 4;\\\" aria-autocomplete=\\\"list\\\"><div class=\\\"cm-line\\\" style=\\\"color: rgb(186, 201, 191); background-color: rgba(50, 140, 130, 0.32);\\\"><span class=\\\"cm-token-punctuation\\\"><span class=\\\"cm-matchingBracket\\\">{</span></span>\\\"<span class=\\\"cm-token-attribute\\\">id\\\":\\\"</span><span class=\\\"cm-token-punctuation\\\">n</span>e<span class=\\\"cm-token-punctuation\\\">w</span>-scenario\\\",\\\"name\\\":\\\"Current\\\",\\\"steps\\\":[]<span class=\\\"cm-matchingBracket\\\">}</span></div></div>\"},{\"kind\":\"attribute\",\"html\":\"<div spellcheck=\\\"false\\\" autocorrect=\\\"off\\\" autocapitalize=\\\"off\\\" writingsuggestions=\\\"false\\\" translate=\\\"no\\\" contenteditable=\\\"true\\\" class=\\\"cm-content\\\" role=\\\"textbox\\\" aria-multiline=\\\"true\\\" aria-label=\\\"Raw scenario JSON\\\" aria-describedby=\\\"\\\" style=\\\"tab-size: 4;\\\" aria-autocomplete=\\\"list\\\"><div class=\\\"cm-line\\\" style=\\\"color: rgb(186, 201, 191); background-color: rgba(50, 140, 130, 0.32);\\\"><span class=\\\"cm-token-punctuation\\\"><span class=\\\"cm-matchingBracket\\\">{</span></span><span class=\\\"cm-token-attribute\\\">\\\"id\\\"</span><span class=\\\"cm-token-punctuation\\\">:</span><span class=\\\"cm-token-string\\\">\\\"new-scenario\\\"</span><span class=\\\"cm-token-punctuation\\\">,</span><span class=\\\"cm-token-attribute\\\">\\\"name\\\"</span><span class=\\\"cm-token-punctuation\\\">:</span><span class=\\\"cm-token-string\\\">\\\"Current\\\"</span><span class=\\\"cm-token-punctuation\\\">,</span><span class=\\\"cm-token-attribute\\\">\\\"steps\\\"</span><span class=\\\"cm-token-punctuation\\\">:</span><span class=\\\"cm-token-punctuation\\\">[</span><span class=\\\"cm-token-punctuation\\\">]</span><span class=\\\"cm-token-punctuation\\\"><span class=\\\"cm-matchingBracket\\\">}</span></span></div></div>\"},{\"kind\":\"attribute\",\"html\":\"<div spellcheck=\\\"false\\\" autocorrect=\\\"off\\\" autocapitalize=\\\"off\\\" writingsuggestions=\\\"false\\\" translate=\\\"no\\\" contenteditable=\\\"true\\\" class=\\\"cm-content\\\" role=\\\"textbox\\\" aria-multiline=\\\"true\\\" aria-label=\\\"Raw scenario JSON\\\" aria-describedby=\\\"\\\" style=\\\"tab-size: 4;\\\" aria-autocomplete=\\\"list\\\"><div class=\\\"cm-line\\\" style=\\\"color: rgb(186, 201, 191); background-color: rgba(50, 140, 130, 0.32);\\\"><span class=\\\"cm-token-punctuation\\\"><span class=\\\"cm-matchingBracket\\\">{</span></span><span class=\\\"cm-token-attribute\\\">\\\"id\\\"</span><span class=\\\"cm-token-punctuation\\\">:</span><span class=\\\"cm-token-string\\\">\\\"new-scenario\\\"</span><span class=\\\"cm-token-punctuation\\\">,</span><span class=\\\"cm-token-attribute\\\">\\\"name\\\"</span><span class=\\\"cm-token-punctuation\\\">:</span><span class=\\\"cm-token-string\\\">\\\"Current\\\"</span><span class=\\\"cm-token-punctuation\\\">,</span><span class=\\\"cm-token-attribute\\\">\\\"steps\\\"</span><span class=\\\"cm-token-punctuation\\\">:</span><span class=\\\"cm-token-punctuation\\\">[</span><span class=\\\"cm-token-punctuation\\\">]</span><span class=\\\"cm-token-punctuation\\\"><span class=\\\"cm-matchingBracket\\\">}</span></span></div></div>\"},{\"kind\":\"attribute\",\"html\":\"<div class=\\\"cm-cursor cm-cursor-primary\\\" style=\\\"left: 381.922px; top: 14px; height: 14px;\\\"></div>\"},{\"kind\":\"attribute\",\"html\":\"<div class=\\\"cm-cursor cm-cursor-primary\\\" style=\\\"left: 381.922px; top: 14px; height: 14px;\\\"></div>\"}]}\n"
+                    },
+                    {
+                      "text": "CSP_DIAGNOSTIC {\"audit\":{\"violatedDirective\":\"style-src-attr\",\"isReportOnly\":false,\"contentSecurityPolicyViolationType\":\"kInlineViolation\",\"sourceCodeLocation\":{\"url\":\"http://127.0.0.1:51866/scenarios.html\",\"lineNumber\":-1,\"columnNumber\":0},\"violatingNodeId\":44},\"node\":{\"nodeId\":0,\"backendNodeId\":44,\"nodeType\":1,\"nodeName\":\"DIV\",\"localName\":\"div\",\"nodeValue\":\"\",\"childNodeCount\":14,\"attributes\":[\"class\",\"cm-line\",\"style\",\"color: rgb(186, 201, 191); background-color: rgba(50, 140, 130, 0.32);\"]}}\n"
+                    }
+                  ],
+                  "stderr": [],
+                  "retry": 0,
+                  "startTime": "2026-10-23T22:02:29.062Z",
+                  "annotations": [],
+                  "attachments": [
+                    {
+                      "name": "screenshot",
+                      "contentType": "image/png",
+                      "path": "/Volumes/Storage/dubnom/zipsquat/ZPR Docs/zpr-visaservice.worktrees/maturing-w5-browser-stability/zpr-dashboard/test-results/dashboard-GUI-raw-scenario-8a31c-errors-for-an-edited-source-tablet-repeat6/test-failed-1.png"
+                    },
+                    {
+                      "name": "error-context",
+                      "contentType": "text/markdown",
+                      "path": "/Volumes/Storage/dubnom/zipsquat/ZPR Docs/zpr-visaservice.worktrees/maturing-w5-browser-stability/zpr-dashboard/test-results/dashboard-GUI-raw-scenario-8a31c-errors-for-an-edited-source-tablet-repeat6/error-context.md"
+                    }
+                  ],
+                  "errorLocation": {
+                    "file": "/Volumes/Storage/dubnom/zipsquat/ZPR Docs/zpr-visaservice.worktrees/maturing-w5-browser-stability/zpr-dashboard/tests/browser/dashboard.spec.mjs",
+                    "column": 100,
+                    "line": 995
+                  }
+                }
+              ],
+              "status": "unexpected"
+            }
+          ],
+          "id": "cc3070f185481daa6f24-ee3b76f3f7995c7975ba",
+          "file": "dashboard.spec.mjs",
+          "line": 2243,
+          "column": 1
+        },
+        {
+          "title": "GUI raw scenario analysis ignores delayed errors for an edited source",
+          "ok": false,
+          "tags": [],
+          "tests": [
+            {
+              "timeout": 30000,
+              "annotations": [],
+              "expectedStatus": "passed",
+              "projectId": "tablet",
+              "projectName": "tablet",
+              "results": [
+                {
+                  "workerIndex": 7,
+                  "parallelIndex": 0,
+                  "status": "failed",
+                  "duration": 579,
+                  "error": {
+                    "message": "Error: Unexpected CSP violations\n\n\u001b[2mexpect(\u001b[22m\u001b[31mreceived\u001b[39m\u001b[2m).\u001b[22mtoEqual\u001b[2m(\u001b[22m\u001b[32mexpected\u001b[39m\u001b[2m) // deep equality\u001b[22m\n\n\u001b[32m- Expected  - 1\u001b[39m\n\u001b[31m+ Received  + 3\u001b[39m\n\n\u001b[32m- Array []\u001b[39m\n\u001b[31m+ Array [\u001b[39m\n\u001b[31m+   \"style-src-attr\",\u001b[39m\n\u001b[31m+ ]\u001b[39m",
+                    "stack": "Error: Unexpected CSP violations\n\n\u001b[2mexpect(\u001b[22m\u001b[31mreceived\u001b[39m\u001b[2m).\u001b[22mtoEqual\u001b[2m(\u001b[22m\u001b[32mexpected\u001b[39m\u001b[2m) // deep equality\u001b[22m\n\n\u001b[32m- Expected  - 1\u001b[39m\n\u001b[31m+ Received  + 3\u001b[39m\n\n\u001b[32m- Array []\u001b[39m\n\u001b[31m+ Array [\u001b[39m\n\u001b[31m+   \"style-src-attr\",\u001b[39m\n\u001b[31m+ ]\u001b[39m\n    at Object.api (/Volumes/Storage/dubnom/zipsquat/ZPR Docs/zpr-visaservice.worktrees/maturing-w5-browser-stability/zpr-dashboard/tests/browser/dashboard.spec.mjs:995:100)",
+                    "location": {
+                      "file": "/Volumes/Storage/dubnom/zipsquat/ZPR Docs/zpr-visaservice.worktrees/maturing-w5-browser-stability/zpr-dashboard/tests/browser/dashboard.spec.mjs",
+                      "column": 100,
+                      "line": 995
+                    },
+                    "snippet": "  993 |     await use(data);\n  994 |     expect(errors, \"Unexpected browser JavaScript errors\").toEqual([]);\n> 995 |     expect(await page.evaluate(() => window.testCSPViolations || []), \"Unexpected CSP violations\").toEqual([]);\n      |                                                                                                    ^\n  996 |   },\n  997 | });\n  998 |"
+                  },
+                  "errors": [
+                    {
+                      "location": {
+                        "file": "/Volumes/Storage/dubnom/zipsquat/ZPR Docs/zpr-visaservice.worktrees/maturing-w5-browser-stability/zpr-dashboard/tests/browser/dashboard.spec.mjs",
+                        "column": 100,
+                        "line": 995
+                      },
+                      "message": "Error: Unexpected CSP violations\n\n\u001b[2mexpect(\u001b[22m\u001b[31mreceived\u001b[39m\u001b[2m).\u001b[22mtoEqual\u001b[2m(\u001b[22m\u001b[32mexpected\u001b[39m\u001b[2m) // deep equality\u001b[22m\n\n\u001b[32m- Expected  - 1\u001b[39m\n\u001b[31m+ Received  + 3\u001b[39m\n\n\u001b[32m- Array []\u001b[39m\n\u001b[31m+ Array [\u001b[39m\n\u001b[31m+   \"style-src-attr\",\u001b[39m\n\u001b[31m+ ]\u001b[39m\n\n  993 |     await use(data);\n  994 |     expect(errors, \"Unexpected browser JavaScript errors\").toEqual([]);\n> 995 |     expect(await page.evaluate(() => window.testCSPViolations || []), \"Unexpected CSP violations\").toEqual([]);\n      |                                                                                                    ^\n  996 |   },\n  997 | });\n  998 |\n    at Object.api (/Volumes/Storage/dubnom/zipsquat/ZPR Docs/zpr-visaservice.worktrees/maturing-w5-browser-stability/zpr-dashboard/tests/browser/dashboard.spec.mjs:995:100)"
+                    }
+                  ],
+                  "stdout": [
+                    {
+                      "text": "CSP_DIAGNOSTIC {\"browserVersion\":\"153.0.8010.12\"}\n"
+                    },
+                    {
+                      "text": "CSP_DIAGNOSTIC {\"input\":{\"inputType\":\"insertText\",\"isTrusted\":true,\"anchor\":\"<span class=\\\"cm-token-punctuation\\\">{</span>\",\"focus\":\"<span class=\\\"cm-token-punctuation\\\">}</span>\",\"matchingBrackets\":[]}}\n"
+                    },
+                    {
+                      "text": "CSP_DIAGNOSTIC {\"input\":{\"inputType\":\"insertText\",\"isTrusted\":true,\"anchor\":\"<span class=\\\"cm-matchingBracket\\\">{</span>\",\"focus\":\"<span class=\\\"cm-matchingBracket\\\">}</span>\",\"matchingBrackets\":[{\"html\":\"<span class=\\\"cm-matchingBracket\\\">{</span>\",\"color\":\"rgb(186, 201, 191)\",\"backgroundColor\":\"rgba(50, 140, 130, 0.32)\"},{\"html\":\"<span class=\\\"cm-matchingBracket\\\">}</span>\",\"color\":\"rgb(186, 201, 191)\",\"backgroundColor\":\"rgba(50, 140, 130, 0.32)\"}]}}\n"
+                    },
+                    {
+                      "text": "Applying inline style violates the following Content Security Policy directive 'style-src-attr 'unsafe-hashes' 'sha256-oigCRQkUqLTBT/iGV1m+QngJV81i5XnXK2Tqug35uv4=' 'sha256-aclShzi5pb37RVXCTZWjIpErvTKw4ZP5CP0uGElzep8=' 'sha256-4/pw1d+w1lz5Ri4VUKQA+q6RkE8WVUgS8RoWVJelsIc=' 'sha256-Uj30wiv7J7g8585Uq15gmjXSwWQPRsGQIltXA7nwA8c=' 'sha256-XULlUqRgJj7XM0YpE77T8GZIztKZH8v1q9I1RszevwU=' 'sha256-bBwmnfAGpFRITldiXE4CJSfik8WcyLglu0IIQaAeQcM=' 'sha256-Z/SIp+PpH+wAAdAtFE7QzDd5popsZzGYaA67vycs5W0=' 'sha256-21WTnssUMRUwXU7hXN5mIXcd+G7R9ET74mxhhtCbWx8=' 'sha256-s3FV3UofgzVQbDoixaKwU6+LJOB7HRh6xvCMbCLBNAk=''. Either the 'unsafe-inline' keyword, a hash ('sha256-RfUFKnbePlOBd0Q8chM3Nmbjxc5P7cFC/sf0mwzb2S0='), or a nonce ('nonce-...') is required to enable inline execution. The action has been blocked.\n"
+                    },
+                    {
+                      "text": "CSP_DIAGNOSTIC {\"audit\":{\"violatedDirective\":\"style-src-attr\",\"isReportOnly\":false,\"contentSecurityPolicyViolationType\":\"kInlineViolation\",\"sourceCodeLocation\":{\"url\":\"http://127.0.0.1:51873/scenarios.html\",\"lineNumber\":-1,\"columnNumber\":0},\"violatingNodeId\":42},\"node\":{\"nodeId\":0,\"backendNodeId\":42,\"nodeType\":1,\"nodeName\":\"DIV\",\"localName\":\"div\",\"nodeValue\":\"\",\"childNodeCount\":14,\"attributes\":[\"class\",\"cm-line\",\"style\",\"color: rgb(186, 201, 191); background-color: rgba(50, 140, 130, 0.32);\"]}}\n"
+                    },
+                    {
+                      "text": "CSP_DIAGNOSTIC {\"directive\":\"style-src-attr\",\"blockedURI\":\"inline\",\"sourceFile\":\"\",\"lineNumber\":0,\"columnNumber\":0,\"sample\":\"\",\"activeElement\":\"<div class=\\\"code-editor-host\\\" data-source=\\\"scenario-editor-source\\\"></div>\",\"mutations\":[{\"kind\":\"input\",\"inputType\":\"insertText\",\"html\":\"<div class=\\\"cm-line\\\" style=\\\"color: rgb(186, 201, 191); background-color: rgba(50, 140, 130, 0.32);\\\">{\\\"id\\\":\\\"new-scenario\\\",\\\"name\\\":\\\"Current\\\",\\\"steps\\\":[]}</div>\"},{\"kind\":\"attribute\",\"html\":\"<div class=\\\"cm-line\\\" style=\\\"color: rgb(186, 201, 191); background-color: rgba(50, 140, 130, 0.32);\\\">{\\\"id\\\":\\\"new-scenario\\\",\\\"name\\\":\\\"Current\\\",\\\"steps\\\":[]}</div>\"},{\"kind\":\"input\",\"inputType\":\"insertText\",\"html\":\"<div class=\\\"cm-line\\\" style=\\\"color: rgb(186, 201, 191); background-color: rgba(50, 140, 130, 0.32);\\\"><span class=\\\"cm-token-punctuation\\\"><span class=\\\"cm-matchingBracket\\\">{</span></span>\\\"<span class=\\\"cm-token-attribute\\\">id\\\":\\\"</span><span class=\\\"cm-token-punctuation\\\">n</span>e<span class=\\\"cm-token-punctuation\\\">w</span>-scenario\\\",\\\"name\\\":\\\"Current\\\",\\\"steps\\\":[]<span class=\\\"cm-matchingBracket\\\">}</span></div>\"},{\"kind\":\"insert\",\"html\":\"<div class=\\\"cm-gutters cm-gutters-before\\\" style=\\\"min-height: 43.7969px; position: sticky;\\\"><div class=\\\"cm-gutter cm-lineNumbers\\\"><div class=\\\"cm-gutterElement\\\" style=\\\"height: 0px; visibility: hidden; pointer-events: none;\\\">9</div><div class=\\\"cm-gutterElement\\\" style=\\\"height: 19.7969px; margin-top: 12px;\\\">1</div></div><div class=\\\"cm-gutter cm-result-gutter\\\"></div></div>\"},{\"kind\":\"attribute\",\"html\":\"<div class=\\\"cm-gutters cm-gutters-before\\\" style=\\\"min-height: 43.7969px; position: sticky;\\\"><div class=\\\"cm-gutter cm-lineNumbers\\\"><div class=\\\"cm-gutterElement\\\" style=\\\"height: 0px; visibility: hidden; pointer-events: none;\\\">9</div><div class=\\\"cm-gutterElement\\\" style=\\\"height: 19.7969px; margin-top: 12px;\\\">1</div></div><div class=\\\"cm-gutter cm-result-gutter\\\"></div></div>\"},{\"kind\":\"attribute\",\"html\":\"<div class=\\\"cm-layer cm-layer-above cm-cursorLayer\\\" aria-hidden=\\\"true\\\" style=\\\"z-index: 150; animation-duration: 1200ms; animation-name: cm-blink;\\\"><div class=\\\"cm-cursor cm-cursor-primary\\\" style=\\\"left: 86.625px; top: 33.7969px; height: 14px;\\\"></div></div>\"},{\"kind\":\"attribute\",\"html\":\"<div spellcheck=\\\"false\\\" autocorrect=\\\"off\\\" autocapitalize=\\\"off\\\" writingsuggestions=\\\"false\\\" translate=\\\"no\\\" contenteditable=\\\"true\\\" class=\\\"cm-content\\\" role=\\\"textbox\\\" aria-multiline=\\\"true\\\" aria-label=\\\"Raw scenario JSON\\\" aria-describedby=\\\"\\\" style=\\\"tab-size: 4;\\\" aria-autocomplete=\\\"list\\\"><div class=\\\"cm-line\\\" style=\\\"color: rgb(186, 201, 191); background-color: rgba(50, 140, 130, 0.32);\\\"><span class=\\\"cm-token-punctuation\\\"><span class=\\\"cm-matchingBracket\\\">{</span></span>\\\"<span class=\\\"cm-token-attribute\\\">id\\\":\\\"</span><span class=\\\"cm-token-punctuation\\\">n</span>e<span class=\\\"cm-token-punctuation\\\">w</span>-scenario\\\",\\\"name\\\":\\\"Current\\\",\\\"steps\\\":[]<span class=\\\"cm-matchingBracket\\\">}</span></div></div>\"},{\"kind\":\"attribute\",\"html\":\"<div spellcheck=\\\"false\\\" autocorrect=\\\"off\\\" autocapitalize=\\\"off\\\" writingsuggestions=\\\"false\\\" translate=\\\"no\\\" contenteditable=\\\"true\\\" class=\\\"cm-content\\\" role=\\\"textbox\\\" aria-multiline=\\\"true\\\" aria-label=\\\"Raw scenario JSON\\\" aria-describedby=\\\"\\\" style=\\\"tab-size: 4;\\\" aria-autocomplete=\\\"list\\\"><div class=\\\"cm-line\\\" style=\\\"color: rgb(186, 201, 191); background-color: rgba(50, 140, 130, 0.32);\\\"><span class=\\\"cm-token-punctuation\\\"><span class=\\\"cm-matchingBracket\\\">{</span></span>\\\"<span class=\\\"cm-token-attribute\\\">id\\\":\\\"</span><span class=\\\"cm-token-punctuation\\\">n</span>e<span class=\\\"cm-token-punctuation\\\">w</span>-scenario\\\",\\\"name\\\":\\\"Current\\\",\\\"steps\\\":[]<span class=\\\"cm-matchingBracket\\\">}</span></div></div>\"},{\"kind\":\"attribute\",\"html\":\"<div spellcheck=\\\"false\\\" autocorrect=\\\"off\\\" autocapitalize=\\\"off\\\" writingsuggestions=\\\"false\\\" translate=\\\"no\\\" contenteditable=\\\"true\\\" class=\\\"cm-content\\\" role=\\\"textbox\\\" aria-multiline=\\\"true\\\" aria-label=\\\"Raw scenario JSON\\\" aria-describedby=\\\"\\\" style=\\\"tab-size: 4;\\\" aria-autocomplete=\\\"list\\\"><div class=\\\"cm-line\\\" style=\\\"color: rgb(186, 201, 191); background-color: rgba(50, 140, 130, 0.32);\\\"><span class=\\\"cm-token-punctuation\\\"><span class=\\\"cm-matchingBracket\\\">{</span></span><span class=\\\"cm-token-attribute\\\">\\\"id\\\"</span><span class=\\\"cm-token-punctuation\\\">:</span><span class=\\\"cm-token-string\\\">\\\"new-scenario\\\"</span><span class=\\\"cm-token-punctuation\\\">,</span><span class=\\\"cm-token-attribute\\\">\\\"name\\\"</span><span class=\\\"cm-token-punctuation\\\">:</span><span class=\\\"cm-token-string\\\">\\\"Current\\\"</span><span class=\\\"cm-token-punctuation\\\">,</span><span class=\\\"cm-token-attribute\\\">\\\"steps\\\"</span><span class=\\\"cm-token-punctuation\\\">:</span><span class=\\\"cm-token-punctuation\\\">[</span><span class=\\\"cm-token-punctuation\\\">]</span><span class=\\\"cm-token-punctuation\\\"><span class=\\\"cm-matchingBracket\\\">}</span></span></div></div>\"},{\"kind\":\"attribute\",\"html\":\"<div spellcheck=\\\"false\\\" autocorrect=\\\"off\\\" autocapitalize=\\\"off\\\" writingsuggestions=\\\"false\\\" translate=\\\"no\\\" contenteditable=\\\"true\\\" class=\\\"cm-content\\\" role=\\\"textbox\\\" aria-multiline=\\\"true\\\" aria-label=\\\"Raw scenario JSON\\\" aria-describedby=\\\"\\\" style=\\\"tab-size: 4;\\\" aria-autocomplete=\\\"list\\\"><div class=\\\"cm-line\\\" style=\\\"color: rgb(186, 201, 191); background-color: rgba(50, 140, 130, 0.32);\\\"><span class=\\\"cm-token-punctuation\\\"><span class=\\\"cm-matchingBracket\\\">{</span></span><span class=\\\"cm-token-attribute\\\">\\\"id\\\"</span><span class=\\\"cm-token-punctuation\\\">:</span><span class=\\\"cm-token-string\\\">\\\"new-scenario\\\"</span><span class=\\\"cm-token-punctuation\\\">,</span><span class=\\\"cm-token-attribute\\\">\\\"name\\\"</span><span class=\\\"cm-token-punctuation\\\">:</span><span class=\\\"cm-token-string\\\">\\\"Current\\\"</span><span class=\\\"cm-token-punctuation\\\">,</span><span class=\\\"cm-token-attribute\\\">\\\"steps\\\"</span><span class=\\\"cm-token-punctuation\\\">:</span><span class=\\\"cm-token-punctuation\\\">[</span><span class=\\\"cm-token-punctuation\\\">]</span><span class=\\\"cm-token-punctuation\\\"><span class=\\\"cm-matchingBracket\\\">}</span></span></div></div>\"},{\"kind\":\"attribute\",\"html\":\"<div class=\\\"cm-cursor cm-cursor-primary\\\" style=\\\"left: 381.922px; top: 14px; height: 14px;\\\"></div>\"},{\"kind\":\"attribute\",\"html\":\"<div class=\\\"cm-cursor cm-cursor-primary\\\" style=\\\"left: 381.922px; top: 14px; height: 14px;\\\"></div>\"}]}\n"
+                    }
+                  ],
+                  "stderr": [],
+                  "retry": 0,
+                  "startTime": "2026-10-23T22:02:30.196Z",
+                  "annotations": [],
+                  "attachments": [
+                    {
+                      "name": "screenshot",
+                      "contentType": "image/png",
+                      "path": "/Volumes/Storage/dubnom/zipsquat/ZPR Docs/zpr-visaservice.worktrees/maturing-w5-browser-stability/zpr-dashboard/test-results/dashboard-GUI-raw-scenario-8a31c-errors-for-an-edited-source-tablet-repeat7/test-failed-1.png"
+                    },
+                    {
+                      "name": "error-context",
+                      "contentType": "text/markdown",
+                      "path": "/Volumes/Storage/dubnom/zipsquat/ZPR Docs/zpr-visaservice.worktrees/maturing-w5-browser-stability/zpr-dashboard/test-results/dashboard-GUI-raw-scenario-8a31c-errors-for-an-edited-source-tablet-repeat7/error-context.md"
+                    }
+                  ],
+                  "errorLocation": {
+                    "file": "/Volumes/Storage/dubnom/zipsquat/ZPR Docs/zpr-visaservice.worktrees/maturing-w5-browser-stability/zpr-dashboard/tests/browser/dashboard.spec.mjs",
+                    "column": 100,
+                    "line": 995
+                  }
+                }
+              ],
+              "status": "unexpected"
+            }
+          ],
+          "id": "cc3070f185481daa6f24-6227c436272afa88fb8c",
+          "file": "dashboard.spec.mjs",
+          "line": 2243,
+          "column": 1
+        },
+        {
+          "title": "GUI raw scenario analysis ignores delayed errors for an edited source",
+          "ok": false,
+          "tags": [],
+          "tests": [
+            {
+              "timeout": 30000,
+              "annotations": [],
+              "expectedStatus": "passed",
+              "projectId": "tablet",
+              "projectName": "tablet",
+              "results": [
+                {
+                  "workerIndex": 8,
+                  "parallelIndex": 0,
+                  "status": "failed",
+                  "duration": 558,
+                  "error": {
+                    "message": "Error: Unexpected CSP violations\n\n\u001b[2mexpect(\u001b[22m\u001b[31mreceived\u001b[39m\u001b[2m).\u001b[22mtoEqual\u001b[2m(\u001b[22m\u001b[32mexpected\u001b[39m\u001b[2m) // deep equality\u001b[22m\n\n\u001b[32m- Expected  - 1\u001b[39m\n\u001b[31m+ Received  + 3\u001b[39m\n\n\u001b[32m- Array []\u001b[39m\n\u001b[31m+ Array [\u001b[39m\n\u001b[31m+   \"style-src-attr\",\u001b[39m\n\u001b[31m+ ]\u001b[39m",
+                    "stack": "Error: Unexpected CSP violations\n\n\u001b[2mexpect(\u001b[22m\u001b[31mreceived\u001b[39m\u001b[2m).\u001b[22mtoEqual\u001b[2m(\u001b[22m\u001b[32mexpected\u001b[39m\u001b[2m) // deep equality\u001b[22m\n\n\u001b[32m- Expected  - 1\u001b[39m\n\u001b[31m+ Received  + 3\u001b[39m\n\n\u001b[32m- Array []\u001b[39m\n\u001b[31m+ Array [\u001b[39m\n\u001b[31m+   \"style-src-attr\",\u001b[39m\n\u001b[31m+ ]\u001b[39m\n    at Object.api (/Volumes/Storage/dubnom/zipsquat/ZPR Docs/zpr-visaservice.worktrees/maturing-w5-browser-stability/zpr-dashboard/tests/browser/dashboard.spec.mjs:995:100)",
+                    "location": {
+                      "file": "/Volumes/Storage/dubnom/zipsquat/ZPR Docs/zpr-visaservice.worktrees/maturing-w5-browser-stability/zpr-dashboard/tests/browser/dashboard.spec.mjs",
+                      "column": 100,
+                      "line": 995
+                    },
+                    "snippet": "  993 |     await use(data);\n  994 |     expect(errors, \"Unexpected browser JavaScript errors\").toEqual([]);\n> 995 |     expect(await page.evaluate(() => window.testCSPViolations || []), \"Unexpected CSP violations\").toEqual([]);\n      |                                                                                                    ^\n  996 |   },\n  997 | });\n  998 |"
+                  },
+                  "errors": [
+                    {
+                      "location": {
+                        "file": "/Volumes/Storage/dubnom/zipsquat/ZPR Docs/zpr-visaservice.worktrees/maturing-w5-browser-stability/zpr-dashboard/tests/browser/dashboard.spec.mjs",
+                        "column": 100,
+                        "line": 995
+                      },
+                      "message": "Error: Unexpected CSP violations\n\n\u001b[2mexpect(\u001b[22m\u001b[31mreceived\u001b[39m\u001b[2m).\u001b[22mtoEqual\u001b[2m(\u001b[22m\u001b[32mexpected\u001b[39m\u001b[2m) // deep equality\u001b[22m\n\n\u001b[32m- Expected  - 1\u001b[39m\n\u001b[31m+ Received  + 3\u001b[39m\n\n\u001b[32m- Array []\u001b[39m\n\u001b[31m+ Array [\u001b[39m\n\u001b[31m+   \"style-src-attr\",\u001b[39m\n\u001b[31m+ ]\u001b[39m\n\n  993 |     await use(data);\n  994 |     expect(errors, \"Unexpected browser JavaScript errors\").toEqual([]);\n> 995 |     expect(await page.evaluate(() => window.testCSPViolations || []), \"Unexpected CSP violations\").toEqual([]);\n      |                                                                                                    ^\n  996 |   },\n  997 | });\n  998 |\n    at Object.api (/Volumes/Storage/dubnom/zipsquat/ZPR Docs/zpr-visaservice.worktrees/maturing-w5-browser-stability/zpr-dashboard/tests/browser/dashboard.spec.mjs:995:100)"
+                    }
+                  ],
+                  "stdout": [
+                    {
+                      "text": "CSP_DIAGNOSTIC {\"browserVersion\":\"153.0.8010.12\"}\n"
+                    },
+                    {
+                      "text": "CSP_DIAGNOSTIC {\"input\":{\"inputType\":\"insertText\",\"isTrusted\":true,\"anchor\":\"<span class=\\\"cm-matchingBracket\\\">{</span>\",\"focus\":\"<span class=\\\"cm-matchingBracket\\\">}</span>\",\"matchingBrackets\":[{\"html\":\"<span class=\\\"cm-matchingBracket\\\">{</span>\",\"color\":\"rgb(186, 201, 191)\",\"backgroundColor\":\"rgba(0, 0, 0, 0)\"},{\"html\":\"<span class=\\\"cm-matchingBracket\\\">}</span>\",\"color\":\"rgb(186, 201, 191)\",\"backgroundColor\":\"rgba(0, 0, 0, 0)\"}]}}\n"
+                    },
+                    {
+                      "text": "CSP_DIAGNOSTIC {\"input\":{\"inputType\":\"insertText\",\"isTrusted\":true,\"anchor\":\"<span class=\\\"cm-matchingBracket\\\">{</span>\",\"focus\":\"<span class=\\\"cm-matchingBracket\\\">}</span>\",\"matchingBrackets\":[{\"html\":\"<span class=\\\"cm-matchingBracket\\\">{</span>\",\"color\":\"rgb(186, 201, 191)\",\"backgroundColor\":\"rgba(50, 140, 130, 0.32)\"},{\"html\":\"<span class=\\\"cm-matchingBracket\\\">}</span>\",\"color\":\"rgb(186, 201, 191)\",\"backgroundColor\":\"rgba(50, 140, 130, 0.32)\"}]}}\n"
+                    },
+                    {
+                      "text": "Applying inline style violates the following Content Security Policy directive 'style-src-attr 'unsafe-hashes' 'sha256-oigCRQkUqLTBT/iGV1m+QngJV81i5XnXK2Tqug35uv4=' 'sha256-aclShzi5pb37RVXCTZWjIpErvTKw4ZP5CP0uGElzep8=' 'sha256-4/pw1d+w1lz5Ri4VUKQA+q6RkE8WVUgS8RoWVJelsIc=' 'sha256-Uj30wiv7J7g8585Uq15gmjXSwWQPRsGQIltXA7nwA8c=' 'sha256-XULlUqRgJj7XM0YpE77T8GZIztKZH8v1q9I1RszevwU=' 'sha256-bBwmnfAGpFRITldiXE4CJSfik8WcyLglu0IIQaAeQcM=' 'sha256-Z/SIp+PpH+wAAdAtFE7QzDd5popsZzGYaA67vycs5W0=' 'sha256-21WTnssUMRUwXU7hXN5mIXcd+G7R9ET74mxhhtCbWx8=' 'sha256-s3FV3UofgzVQbDoixaKwU6+LJOB7HRh6xvCMbCLBNAk=''. Either the 'unsafe-inline' keyword, a hash ('sha256-RfUFKnbePlOBd0Q8chM3Nmbjxc5P7cFC/sf0mwzb2S0='), or a nonce ('nonce-...') is required to enable inline execution. The action has been blocked.\n"
+                    },
+                    {
+                      "text": "CSP_DIAGNOSTIC {\"directive\":\"style-src-attr\",\"blockedURI\":\"inline\",\"sourceFile\":\"\",\"lineNumber\":0,\"columnNumber\":0,\"sample\":\"\",\"activeElement\":\"<div class=\\\"code-editor-host\\\" data-source=\\\"scenario-editor-source\\\"></div>\",\"mutations\":[{\"kind\":\"input\",\"inputType\":\"insertText\",\"html\":\"<div class=\\\"cm-line\\\" style=\\\"color: rgb(186, 201, 191); background-color: rgba(50, 140, 130, 0.32);\\\">{\\\"id\\\":\\\"new-scenario\\\",\\\"name\\\":\\\"Current\\\",\\\"steps\\\":[]}</div>\"},{\"kind\":\"attribute\",\"html\":\"<div class=\\\"cm-line\\\" style=\\\"color: rgb(186, 201, 191); background-color: rgba(50, 140, 130, 0.32);\\\">{\\\"id\\\":\\\"new-scenario\\\",\\\"name\\\":\\\"Current\\\",\\\"steps\\\":[]}</div>\"},{\"kind\":\"input\",\"inputType\":\"insertText\",\"html\":\"<div class=\\\"cm-line\\\" style=\\\"color: rgb(186, 201, 191); background-color: rgba(50, 140, 130, 0.32);\\\"><span class=\\\"cm-token-punctuation\\\"><span class=\\\"cm-matchingBracket\\\">{</span></span>\\\"<span class=\\\"cm-token-attribute\\\">id\\\":\\\"</span><span class=\\\"cm-token-punctuation\\\">n</span>e<span class=\\\"cm-token-punctuation\\\">w</span>-scenario\\\",\\\"name\\\":\\\"Current\\\",\\\"steps\\\":[]<span class=\\\"cm-matchingBracket\\\">}</span></div>\"},{\"kind\":\"insert\",\"html\":\"<div class=\\\"cm-gutters cm-gutters-before\\\" style=\\\"min-height: 43.7969px; position: sticky;\\\"><div class=\\\"cm-gutter cm-lineNumbers\\\"><div class=\\\"cm-gutterElement\\\" style=\\\"height: 0px; visibility: hidden; pointer-events: none;\\\">9</div><div class=\\\"cm-gutterElement\\\" style=\\\"height: 19.7969px; margin-top: 12px;\\\">1</div></div><div class=\\\"cm-gutter cm-result-gutter\\\"></div></div>\"},{\"kind\":\"attribute\",\"html\":\"<div class=\\\"cm-gutters cm-gutters-before\\\" style=\\\"min-height: 43.7969px; position: sticky;\\\"><div class=\\\"cm-gutter cm-lineNumbers\\\"><div class=\\\"cm-gutterElement\\\" style=\\\"height: 0px; visibility: hidden; pointer-events: none;\\\">9</div><div class=\\\"cm-gutterElement\\\" style=\\\"height: 19.7969px; margin-top: 12px;\\\">1</div></div><div class=\\\"cm-gutter cm-result-gutter\\\"></div></div>\"},{\"kind\":\"attribute\",\"html\":\"<div class=\\\"cm-layer cm-layer-above cm-cursorLayer\\\" aria-hidden=\\\"true\\\" style=\\\"z-index: 150; animation-duration: 1200ms; animation-name: cm-blink2;\\\"><div class=\\\"cm-cursor cm-cursor-primary\\\" style=\\\"left: 86.625px; top: 33.7969px; height: 14px;\\\"></div></div>\"},{\"kind\":\"attribute\",\"html\":\"<div spellcheck=\\\"false\\\" autocorrect=\\\"off\\\" autocapitalize=\\\"off\\\" writingsuggestions=\\\"false\\\" translate=\\\"no\\\" contenteditable=\\\"true\\\" class=\\\"cm-content\\\" role=\\\"textbox\\\" aria-multiline=\\\"true\\\" aria-label=\\\"Raw scenario JSON\\\" aria-describedby=\\\"\\\" style=\\\"tab-size: 4;\\\" aria-autocomplete=\\\"list\\\"><div class=\\\"cm-line\\\" style=\\\"color: rgb(186, 201, 191); background-color: rgba(50, 140, 130, 0.32);\\\"><span class=\\\"cm-token-punctuation\\\"><span class=\\\"cm-matchingBracket\\\">{</span></span>\\\"<span class=\\\"cm-token-attribute\\\">id\\\":\\\"</span><span class=\\\"cm-token-punctuation\\\">n</span>e<span class=\\\"cm-token-punctuation\\\">w</span>-scenario\\\",\\\"name\\\":\\\"Current\\\",\\\"steps\\\":[]<span class=\\\"cm-matchingBracket\\\">}</span></div></div>\"},{\"kind\":\"attribute\",\"html\":\"<div spellcheck=\\\"false\\\" autocorrect=\\\"off\\\" autocapitalize=\\\"off\\\" writingsuggestions=\\\"false\\\" translate=\\\"no\\\" contenteditable=\\\"true\\\" class=\\\"cm-content\\\" role=\\\"textbox\\\" aria-multiline=\\\"true\\\" aria-label=\\\"Raw scenario JSON\\\" aria-describedby=\\\"\\\" style=\\\"tab-size: 4;\\\" aria-autocomplete=\\\"list\\\"><div class=\\\"cm-line\\\" style=\\\"color: rgb(186, 201, 191); background-color: rgba(50, 140, 130, 0.32);\\\"><span class=\\\"cm-token-punctuation\\\"><span class=\\\"cm-matchingBracket\\\">{</span></span>\\\"<span class=\\\"cm-token-attribute\\\">id\\\":\\\"</span><span class=\\\"cm-token-punctuation\\\">n</span>e<span class=\\\"cm-token-punctuation\\\">w</span>-scenario\\\",\\\"name\\\":\\\"Current\\\",\\\"steps\\\":[]<span class=\\\"cm-matchingBracket\\\">}</span></div></div>\"},{\"kind\":\"attribute\",\"html\":\"<div spellcheck=\\\"false\\\" autocorrect=\\\"off\\\" autocapitalize=\\\"off\\\" writingsuggestions=\\\"false\\\" translate=\\\"no\\\" contenteditable=\\\"true\\\" class=\\\"cm-content\\\" role=\\\"textbox\\\" aria-multiline=\\\"true\\\" aria-label=\\\"Raw scenario JSON\\\" aria-describedby=\\\"\\\" style=\\\"tab-size: 4;\\\" aria-autocomplete=\\\"list\\\"><div class=\\\"cm-line\\\" style=\\\"color: rgb(186, 201, 191); background-color: rgba(50, 140, 130, 0.32);\\\"><span class=\\\"cm-token-punctuation\\\"><span class=\\\"cm-matchingBracket\\\">{</span></span><span class=\\\"cm-token-attribute\\\">\\\"id\\\"</span><span class=\\\"cm-token-punctuation\\\">:</span><span class=\\\"cm-token-string\\\">\\\"new-scenario\\\"</span><span class=\\\"cm-token-punctuation\\\">,</span><span class=\\\"cm-token-attribute\\\">\\\"name\\\"</span><span class=\\\"cm-token-punctuation\\\">:</span><span class=\\\"cm-token-string\\\">\\\"Current\\\"</span><span class=\\\"cm-token-punctuation\\\">,</span><span class=\\\"cm-token-attribute\\\">\\\"steps\\\"</span><span class=\\\"cm-token-punctuation\\\">:</span><span class=\\\"cm-token-punctuation\\\">[</span><span class=\\\"cm-token-punctuation\\\">]</span><span class=\\\"cm-token-punctuation\\\"><span class=\\\"cm-matchingBracket\\\">}</span></span></div></div>\"},{\"kind\":\"attribute\",\"html\":\"<div spellcheck=\\\"false\\\" autocorrect=\\\"off\\\" autocapitalize=\\\"off\\\" writingsuggestions=\\\"false\\\" translate=\\\"no\\\" contenteditable=\\\"true\\\" class=\\\"cm-content\\\" role=\\\"textbox\\\" aria-multiline=\\\"true\\\" aria-label=\\\"Raw scenario JSON\\\" aria-describedby=\\\"\\\" style=\\\"tab-size: 4;\\\" aria-autocomplete=\\\"list\\\"><div class=\\\"cm-line\\\" style=\\\"color: rgb(186, 201, 191); background-color: rgba(50, 140, 130, 0.32);\\\"><span class=\\\"cm-token-punctuation\\\"><span class=\\\"cm-matchingBracket\\\">{</span></span><span class=\\\"cm-token-attribute\\\">\\\"id\\\"</span><span class=\\\"cm-token-punctuation\\\">:</span><span class=\\\"cm-token-string\\\">\\\"new-scenario\\\"</span><span class=\\\"cm-token-punctuation\\\">,</span><span class=\\\"cm-token-attribute\\\">\\\"name\\\"</span><span class=\\\"cm-token-punctuation\\\">:</span><span class=\\\"cm-token-string\\\">\\\"Current\\\"</span><span class=\\\"cm-token-punctuation\\\">,</span><span class=\\\"cm-token-attribute\\\">\\\"steps\\\"</span><span class=\\\"cm-token-punctuation\\\">:</span><span class=\\\"cm-token-punctuation\\\">[</span><span class=\\\"cm-token-punctuation\\\">]</span><span class=\\\"cm-token-punctuation\\\"><span class=\\\"cm-matchingBracket\\\">}</span></span></div></div>\"},{\"kind\":\"attribute\",\"html\":\"<div class=\\\"cm-cursor cm-cursor-primary\\\" style=\\\"left: 381.922px; top: 14px; height: 14px;\\\"></div>\"},{\"kind\":\"attribute\",\"html\":\"<div class=\\\"cm-cursor cm-cursor-primary\\\" style=\\\"left: 381.922px; top: 14px; height: 14px;\\\"></div>\"}]}\n"
+                    },
+                    {
+                      "text": "CSP_DIAGNOSTIC {\"audit\":{\"violatedDirective\":\"style-src-attr\",\"isReportOnly\":false,\"contentSecurityPolicyViolationType\":\"kInlineViolation\",\"sourceCodeLocation\":{\"url\":\"http://127.0.0.1:51883/scenarios.html\",\"lineNumber\":-1,\"columnNumber\":0},\"violatingNodeId\":45},\"node\":{\"nodeId\":0,\"backendNodeId\":45,\"nodeType\":1,\"nodeName\":\"DIV\",\"localName\":\"div\",\"nodeValue\":\"\",\"childNodeCount\":14,\"attributes\":[\"class\",\"cm-line\",\"style\",\"color: rgb(186, 201, 191); background-color: rgba(50, 140, 130, 0.32);\"]}}\n"
+                    }
+                  ],
+                  "stderr": [],
+                  "retry": 0,
+                  "startTime": "2026-10-23T22:02:31.324Z",
+                  "annotations": [],
+                  "attachments": [
+                    {
+                      "name": "screenshot",
+                      "contentType": "image/png",
+                      "path": "/Volumes/Storage/dubnom/zipsquat/ZPR Docs/zpr-visaservice.worktrees/maturing-w5-browser-stability/zpr-dashboard/test-results/dashboard-GUI-raw-scenario-8a31c-errors-for-an-edited-source-tablet-repeat8/test-failed-1.png"
+                    },
+                    {
+                      "name": "error-context",
+                      "contentType": "text/markdown",
+                      "path": "/Volumes/Storage/dubnom/zipsquat/ZPR Docs/zpr-visaservice.worktrees/maturing-w5-browser-stability/zpr-dashboard/test-results/dashboard-GUI-raw-scenario-8a31c-errors-for-an-edited-source-tablet-repeat8/error-context.md"
+                    }
+                  ],
+                  "errorLocation": {
+                    "file": "/Volumes/Storage/dubnom/zipsquat/ZPR Docs/zpr-visaservice.worktrees/maturing-w5-browser-stability/zpr-dashboard/tests/browser/dashboard.spec.mjs",
+                    "column": 100,
+                    "line": 995
+                  }
+                }
+              ],
+              "status": "unexpected"
+            }
+          ],
+          "id": "cc3070f185481daa6f24-32405610c936708baab1",
+          "file": "dashboard.spec.mjs",
+          "line": 2243,
+          "column": 1
+        },
+        {
+          "title": "GUI raw scenario analysis ignores delayed errors for an edited source",
+          "ok": false,
+          "tags": [],
+          "tests": [
+            {
+              "timeout": 30000,
+              "annotations": [],
+              "expectedStatus": "passed",
+              "projectId": "tablet",
+              "projectName": "tablet",
+              "results": [
+                {
+                  "workerIndex": 9,
+                  "parallelIndex": 0,
+                  "status": "failed",
+                  "duration": 607,
+                  "error": {
+                    "message": "Error: Unexpected CSP violations\n\n\u001b[2mexpect(\u001b[22m\u001b[31mreceived\u001b[39m\u001b[2m).\u001b[22mtoEqual\u001b[2m(\u001b[22m\u001b[32mexpected\u001b[39m\u001b[2m) // deep equality\u001b[22m\n\n\u001b[32m- Expected  - 1\u001b[39m\n\u001b[31m+ Received  + 3\u001b[39m\n\n\u001b[32m- Array []\u001b[39m\n\u001b[31m+ Array [\u001b[39m\n\u001b[31m+   \"style-src-attr\",\u001b[39m\n\u001b[31m+ ]\u001b[39m",
+                    "stack": "Error: Unexpected CSP violations\n\n\u001b[2mexpect(\u001b[22m\u001b[31mreceived\u001b[39m\u001b[2m).\u001b[22mtoEqual\u001b[2m(\u001b[22m\u001b[32mexpected\u001b[39m\u001b[2m) // deep equality\u001b[22m\n\n\u001b[32m- Expected  - 1\u001b[39m\n\u001b[31m+ Received  + 3\u001b[39m\n\n\u001b[32m- Array []\u001b[39m\n\u001b[31m+ Array [\u001b[39m\n\u001b[31m+   \"style-src-attr\",\u001b[39m\n\u001b[31m+ ]\u001b[39m\n    at Object.api (/Volumes/Storage/dubnom/zipsquat/ZPR Docs/zpr-visaservice.worktrees/maturing-w5-browser-stability/zpr-dashboard/tests/browser/dashboard.spec.mjs:995:100)",
+                    "location": {
+                      "file": "/Volumes/Storage/dubnom/zipsquat/ZPR Docs/zpr-visaservice.worktrees/maturing-w5-browser-stability/zpr-dashboard/tests/browser/dashboard.spec.mjs",
+                      "column": 100,
+                      "line": 995
+                    },
+                    "snippet": "  993 |     await use(data);\n  994 |     expect(errors, \"Unexpected browser JavaScript errors\").toEqual([]);\n> 995 |     expect(await page.evaluate(() => window.testCSPViolations || []), \"Unexpected CSP violations\").toEqual([]);\n      |                                                                                                    ^\n  996 |   },\n  997 | });\n  998 |"
+                  },
+                  "errors": [
+                    {
+                      "location": {
+                        "file": "/Volumes/Storage/dubnom/zipsquat/ZPR Docs/zpr-visaservice.worktrees/maturing-w5-browser-stability/zpr-dashboard/tests/browser/dashboard.spec.mjs",
+                        "column": 100,
+                        "line": 995
+                      },
+                      "message": "Error: Unexpected CSP violations\n\n\u001b[2mexpect(\u001b[22m\u001b[31mreceived\u001b[39m\u001b[2m).\u001b[22mtoEqual\u001b[2m(\u001b[22m\u001b[32mexpected\u001b[39m\u001b[2m) // deep equality\u001b[22m\n\n\u001b[32m- Expected  - 1\u001b[39m\n\u001b[31m+ Received  + 3\u001b[39m\n\n\u001b[32m- Array []\u001b[39m\n\u001b[31m+ Array [\u001b[39m\n\u001b[31m+   \"style-src-attr\",\u001b[39m\n\u001b[31m+ ]\u001b[39m\n\n  993 |     await use(data);\n  994 |     expect(errors, \"Unexpected browser JavaScript errors\").toEqual([]);\n> 995 |     expect(await page.evaluate(() => window.testCSPViolations || []), \"Unexpected CSP violations\").toEqual([]);\n      |                                                                                                    ^\n  996 |   },\n  997 | });\n  998 |\n    at Object.api (/Volumes/Storage/dubnom/zipsquat/ZPR Docs/zpr-visaservice.worktrees/maturing-w5-browser-stability/zpr-dashboard/tests/browser/dashboard.spec.mjs:995:100)"
+                    }
+                  ],
+                  "stdout": [
+                    {
+                      "text": "CSP_DIAGNOSTIC {\"browserVersion\":\"153.0.8010.12\"}\n"
+                    },
+                    {
+                      "text": "CSP_DIAGNOSTIC {\"input\":{\"inputType\":\"insertText\",\"isTrusted\":true,\"anchor\":\"<span class=\\\"cm-matchingBracket\\\">{</span>\",\"focus\":\"<span class=\\\"cm-matchingBracket\\\">}</span>\",\"matchingBrackets\":[{\"html\":\"<span class=\\\"cm-matchingBracket\\\">{</span>\",\"color\":\"rgb(186, 201, 191)\",\"backgroundColor\":\"rgba(0, 0, 0, 0)\"},{\"html\":\"<span class=\\\"cm-matchingBracket\\\">}</span>\",\"color\":\"rgb(186, 201, 191)\",\"backgroundColor\":\"rgba(0, 0, 0, 0)\"}]}}\n"
+                    },
+                    {
+                      "text": "CSP_DIAGNOSTIC {\"input\":{\"inputType\":\"insertText\",\"isTrusted\":true,\"anchor\":\"<span class=\\\"cm-matchingBracket\\\">{</span>\",\"focus\":\"<span class=\\\"cm-matchingBracket\\\">}</span>\",\"matchingBrackets\":[{\"html\":\"<span class=\\\"cm-matchingBracket\\\">{</span>\",\"color\":\"rgb(186, 201, 191)\",\"backgroundColor\":\"rgba(50, 140, 130, 0.32)\"},{\"html\":\"<span class=\\\"cm-matchingBracket\\\">}</span>\",\"color\":\"rgb(186, 201, 191)\",\"backgroundColor\":\"rgba(50, 140, 130, 0.32)\"}]}}\n"
+                    },
+                    {
+                      "text": "Applying inline style violates the following Content Security Policy directive 'style-src-attr 'unsafe-hashes' 'sha256-oigCRQkUqLTBT/iGV1m+QngJV81i5XnXK2Tqug35uv4=' 'sha256-aclShzi5pb37RVXCTZWjIpErvTKw4ZP5CP0uGElzep8=' 'sha256-4/pw1d+w1lz5Ri4VUKQA+q6RkE8WVUgS8RoWVJelsIc=' 'sha256-Uj30wiv7J7g8585Uq15gmjXSwWQPRsGQIltXA7nwA8c=' 'sha256-XULlUqRgJj7XM0YpE77T8GZIztKZH8v1q9I1RszevwU=' 'sha256-bBwmnfAGpFRITldiXE4CJSfik8WcyLglu0IIQaAeQcM=' 'sha256-Z/SIp+PpH+wAAdAtFE7QzDd5popsZzGYaA67vycs5W0=' 'sha256-21WTnssUMRUwXU7hXN5mIXcd+G7R9ET74mxhhtCbWx8=' 'sha256-s3FV3UofgzVQbDoixaKwU6+LJOB7HRh6xvCMbCLBNAk=''. Either the 'unsafe-inline' keyword, a hash ('sha256-RfUFKnbePlOBd0Q8chM3Nmbjxc5P7cFC/sf0mwzb2S0='), or a nonce ('nonce-...') is required to enable inline execution. The action has been blocked.\n"
+                    },
+                    {
+                      "text": "CSP_DIAGNOSTIC {\"directive\":\"style-src-attr\",\"blockedURI\":\"inline\",\"sourceFile\":\"\",\"lineNumber\":0,\"columnNumber\":0,\"sample\":\"\",\"activeElement\":\"<div class=\\\"code-editor-host\\\" data-source=\\\"scenario-editor-source\\\"></div>\",\"mutations\":[{\"kind\":\"input\",\"inputType\":\"insertText\",\"html\":\"<div class=\\\"cm-line\\\" style=\\\"color: rgb(186, 201, 191); background-color: rgba(50, 140, 130, 0.32);\\\">{\\\"id\\\":\\\"new-scenario\\\",\\\"name\\\":\\\"Current\\\",\\\"steps\\\":[]}</div>\"},{\"kind\":\"attribute\",\"html\":\"<div class=\\\"cm-line\\\" style=\\\"color: rgb(186, 201, 191); background-color: rgba(50, 140, 130, 0.32);\\\">{\\\"id\\\":\\\"new-scenario\\\",\\\"name\\\":\\\"Current\\\",\\\"steps\\\":[]}</div>\"},{\"kind\":\"input\",\"inputType\":\"insertText\",\"html\":\"<div class=\\\"cm-line\\\" style=\\\"color: rgb(186, 201, 191); background-color: rgba(50, 140, 130, 0.32);\\\"><span class=\\\"cm-token-punctuation\\\"><span class=\\\"cm-matchingBracket\\\">{</span></span>\\\"<span class=\\\"cm-token-attribute\\\">id\\\":\\\"</span><span class=\\\"cm-token-punctuation\\\">n</span>e<span class=\\\"cm-token-punctuation\\\">w</span>-scenario\\\",\\\"name\\\":\\\"Current\\\",\\\"steps\\\":[]<span class=\\\"cm-matchingBracket\\\">}</span></div>\"},{\"kind\":\"insert\",\"html\":\"<div class=\\\"cm-gutters cm-gutters-before\\\" style=\\\"min-height: 43.7969px; position: sticky;\\\"><div class=\\\"cm-gutter cm-lineNumbers\\\"><div class=\\\"cm-gutterElement\\\" style=\\\"height: 0px; visibility: hidden; pointer-events: none;\\\">9</div><div class=\\\"cm-gutterElement\\\" style=\\\"height: 19.7969px; margin-top: 12px;\\\">1</div></div><div class=\\\"cm-gutter cm-result-gutter\\\"></div></div>\"},{\"kind\":\"attribute\",\"html\":\"<div class=\\\"cm-gutters cm-gutters-before\\\" style=\\\"min-height: 43.7969px; position: sticky;\\\"><div class=\\\"cm-gutter cm-lineNumbers\\\"><div class=\\\"cm-gutterElement\\\" style=\\\"height: 0px; visibility: hidden; pointer-events: none;\\\">9</div><div class=\\\"cm-gutterElement\\\" style=\\\"height: 19.7969px; margin-top: 12px;\\\">1</div></div><div class=\\\"cm-gutter cm-result-gutter\\\"></div></div>\"},{\"kind\":\"attribute\",\"html\":\"<div class=\\\"cm-layer cm-layer-above cm-cursorLayer\\\" aria-hidden=\\\"true\\\" style=\\\"z-index: 150; animation-duration: 1200ms; animation-name: cm-blink2;\\\"><div class=\\\"cm-cursor cm-cursor-primary\\\" style=\\\"left: 86.625px; top: 33.7969px; height: 14px;\\\"></div></div>\"},{\"kind\":\"attribute\",\"html\":\"<div spellcheck=\\\"false\\\" autocorrect=\\\"off\\\" autocapitalize=\\\"off\\\" writingsuggestions=\\\"false\\\" translate=\\\"no\\\" contenteditable=\\\"true\\\" class=\\\"cm-content\\\" role=\\\"textbox\\\" aria-multiline=\\\"true\\\" aria-label=\\\"Raw scenario JSON\\\" aria-describedby=\\\"\\\" style=\\\"tab-size: 4;\\\" aria-autocomplete=\\\"list\\\"><div class=\\\"cm-line\\\" style=\\\"color: rgb(186, 201, 191); background-color: rgba(50, 140, 130, 0.32);\\\"><span class=\\\"cm-token-punctuation\\\"><span class=\\\"cm-matchingBracket\\\">{</span></span>\\\"<span class=\\\"cm-token-attribute\\\">id\\\":\\\"</span><span class=\\\"cm-token-punctuation\\\">n</span>e<span class=\\\"cm-token-punctuation\\\">w</span>-scenario\\\",\\\"name\\\":\\\"Current\\\",\\\"steps\\\":[]<span class=\\\"cm-matchingBracket\\\">}</span></div></div>\"},{\"kind\":\"attribute\",\"html\":\"<div spellcheck=\\\"false\\\" autocorrect=\\\"off\\\" autocapitalize=\\\"off\\\" writingsuggestions=\\\"false\\\" translate=\\\"no\\\" contenteditable=\\\"true\\\" class=\\\"cm-content\\\" role=\\\"textbox\\\" aria-multiline=\\\"true\\\" aria-label=\\\"Raw scenario JSON\\\" aria-describedby=\\\"\\\" style=\\\"tab-size: 4;\\\" aria-autocomplete=\\\"list\\\"><div class=\\\"cm-line\\\" style=\\\"color: rgb(186, 201, 191); background-color: rgba(50, 140, 130, 0.32);\\\"><span class=\\\"cm-token-punctuation\\\"><span class=\\\"cm-matchingBracket\\\">{</span></span>\\\"<span class=\\\"cm-token-attribute\\\">id\\\":\\\"</span><span class=\\\"cm-token-punctuation\\\">n</span>e<span class=\\\"cm-token-punctuation\\\">w</span>-scenario\\\",\\\"name\\\":\\\"Current\\\",\\\"steps\\\":[]<span class=\\\"cm-matchingBracket\\\">}</span></div></div>\"},{\"kind\":\"attribute\",\"html\":\"<div spellcheck=\\\"false\\\" autocorrect=\\\"off\\\" autocapitalize=\\\"off\\\" writingsuggestions=\\\"false\\\" translate=\\\"no\\\" contenteditable=\\\"true\\\" class=\\\"cm-content\\\" role=\\\"textbox\\\" aria-multiline=\\\"true\\\" aria-label=\\\"Raw scenario JSON\\\" aria-describedby=\\\"\\\" style=\\\"tab-size: 4;\\\" aria-autocomplete=\\\"list\\\"><div class=\\\"cm-line\\\" style=\\\"color: rgb(186, 201, 191); background-color: rgba(50, 140, 130, 0.32);\\\"><span class=\\\"cm-token-punctuation\\\"><span class=\\\"cm-matchingBracket\\\">{</span></span><span class=\\\"cm-token-attribute\\\">\\\"id\\\"</span><span class=\\\"cm-token-punctuation\\\">:</span><span class=\\\"cm-token-string\\\">\\\"new-scenario\\\"</span><span class=\\\"cm-token-punctuation\\\">,</span><span class=\\\"cm-token-attribute\\\">\\\"name\\\"</span><span class=\\\"cm-token-punctuation\\\">:</span><span class=\\\"cm-token-string\\\">\\\"Current\\\"</span><span class=\\\"cm-token-punctuation\\\">,</span><span class=\\\"cm-token-attribute\\\">\\\"steps\\\"</span><span class=\\\"cm-token-punctuation\\\">:</span><span class=\\\"cm-token-punctuation\\\">[</span><span class=\\\"cm-token-punctuation\\\">]</span><span class=\\\"cm-token-punctuation\\\"><span class=\\\"cm-matchingBracket\\\">}</span></span></div></div>\"},{\"kind\":\"attribute\",\"html\":\"<div spellcheck=\\\"false\\\" autocorrect=\\\"off\\\" autocapitalize=\\\"off\\\" writingsuggestions=\\\"false\\\" translate=\\\"no\\\" contenteditable=\\\"true\\\" class=\\\"cm-content\\\" role=\\\"textbox\\\" aria-multiline=\\\"true\\\" aria-label=\\\"Raw scenario JSON\\\" aria-describedby=\\\"\\\" style=\\\"tab-size: 4;\\\" aria-autocomplete=\\\"list\\\"><div class=\\\"cm-line\\\" style=\\\"color: rgb(186, 201, 191); background-color: rgba(50, 140, 130, 0.32);\\\"><span class=\\\"cm-token-punctuation\\\"><span class=\\\"cm-matchingBracket\\\">{</span></span><span class=\\\"cm-token-attribute\\\">\\\"id\\\"</span><span class=\\\"cm-token-punctuation\\\">:</span><span class=\\\"cm-token-string\\\">\\\"new-scenario\\\"</span><span class=\\\"cm-token-punctuation\\\">,</span><span class=\\\"cm-token-attribute\\\">\\\"name\\\"</span><span class=\\\"cm-token-punctuation\\\">:</span><span class=\\\"cm-token-string\\\">\\\"Current\\\"</span><span class=\\\"cm-token-punctuation\\\">,</span><span class=\\\"cm-token-attribute\\\">\\\"steps\\\"</span><span class=\\\"cm-token-punctuation\\\">:</span><span class=\\\"cm-token-punctuation\\\">[</span><span class=\\\"cm-token-punctuation\\\">]</span><span class=\\\"cm-token-punctuation\\\"><span class=\\\"cm-matchingBracket\\\">}</span></span></div></div>\"},{\"kind\":\"attribute\",\"html\":\"<div class=\\\"cm-cursor cm-cursor-primary\\\" style=\\\"left: 381.922px; top: 14px; height: 14px;\\\"></div>\"},{\"kind\":\"attribute\",\"html\":\"<div class=\\\"cm-cursor cm-cursor-primary\\\" style=\\\"left: 381.922px; top: 14px; height: 14px;\\\"></div>\"}]}\n"
+                    },
+                    {
+                      "text": "CSP_DIAGNOSTIC {\"audit\":{\"violatedDirective\":\"style-src-attr\",\"isReportOnly\":false,\"contentSecurityPolicyViolationType\":\"kInlineViolation\",\"sourceCodeLocation\":{\"url\":\"http://127.0.0.1:51890/scenarios.html\",\"lineNumber\":-1,\"columnNumber\":0},\"violatingNodeId\":42},\"node\":{\"nodeId\":0,\"backendNodeId\":42,\"nodeType\":1,\"nodeName\":\"DIV\",\"localName\":\"div\",\"nodeValue\":\"\",\"childNodeCount\":14,\"attributes\":[\"class\",\"cm-line\",\"style\",\"color: rgb(186, 201, 191); background-color: rgba(50, 140, 130, 0.32);\"]}}\n"
+                    }
+                  ],
+                  "stderr": [],
+                  "retry": 0,
+                  "startTime": "2026-10-23T22:02:32.429Z",
+                  "annotations": [],
+                  "attachments": [
+                    {
+                      "name": "screenshot",
+                      "contentType": "image/png",
+                      "path": "/Volumes/Storage/dubnom/zipsquat/ZPR Docs/zpr-visaservice.worktrees/maturing-w5-browser-stability/zpr-dashboard/test-results/dashboard-GUI-raw-scenario-8a31c-errors-for-an-edited-source-tablet-repeat9/test-failed-1.png"
+                    },
+                    {
+                      "name": "error-context",
+                      "contentType": "text/markdown",
+                      "path": "/Volumes/Storage/dubnom/zipsquat/ZPR Docs/zpr-visaservice.worktrees/maturing-w5-browser-stability/zpr-dashboard/test-results/dashboard-GUI-raw-scenario-8a31c-errors-for-an-edited-source-tablet-repeat9/error-context.md"
+                    }
+                  ],
+                  "errorLocation": {
+                    "file": "/Volumes/Storage/dubnom/zipsquat/ZPR Docs/zpr-visaservice.worktrees/maturing-w5-browser-stability/zpr-dashboard/tests/browser/dashboard.spec.mjs",
+                    "column": 100,
+                    "line": 995
+                  }
+                }
+              ],
+              "status": "unexpected"
+            }
+          ],
+          "id": "cc3070f185481daa6f24-6bb11b17967cbc1eda39",
+          "file": "dashboard.spec.mjs",
+          "line": 2243,
+          "column": 1
+        }
+      ]
+    }
+  ],
+  "errors": [],
+  "stats": {
+    "startTime": "2026-10-23T22:02:22.056Z",
+    "duration": 11120.907000000001,
+    "expected": 0,
+    "skipped": 0,
+    "unexpected": 10,
+    "flaky": 0
+  }
+}

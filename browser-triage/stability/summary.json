@@ -1,0 +1,1517 @@
+{
+  "total_executions": 400,
+  "reports": [
+    {
+      "name": "maturing-w1-desktop",
+      "commit": "315c10650b510911ab1b1516b699ab5a72df6adf",
+      "workers": 1,
+      "stats": {
+        "startTime": "2026-10-23T21:10:33.617Z",
+        "duration": 298368.004,
+        "expected": 2,
+        "skipped": 0,
+        "unexpected": 28,
+        "flaky": 0
+      },
+      "sha256": "ccc4666612b99d570ac77706fbdc2b47d828e9d840145aeab941ddfbea9857c8"
+    },
+    {
+      "name": "maturing-w1-tablet",
+      "commit": "315c10650b510911ab1b1516b699ab5a72df6adf",
+      "workers": 1,
+      "stats": {
+        "startTime": "2026-10-23T21:15:32.443Z",
+        "duration": 718061.301,
+        "expected": 7,
+        "skipped": 0,
+        "unexpected": 63,
+        "flaky": 0
+      },
+      "sha256": "82f4dee11b28297e68db37c96a76120f940d3ccb6e0bfaedf7515c77fb896255"
+    },
+    {
+      "name": "maturing-w2-desktop",
+      "commit": "315c10650b510911ab1b1516b699ab5a72df6adf",
+      "workers": 2,
+      "stats": {
+        "startTime": "2026-10-23T21:27:30.994Z",
+        "duration": 164225.395,
+        "expected": 2,
+        "skipped": 0,
+        "unexpected": 28,
+        "flaky": 0
+      },
+      "sha256": "e1208eb347419b48ad8fb233483b1203b54b59257e30ef64cc5c2b686b95e212"
+    },
+    {
+      "name": "maturing-w2-tablet",
+      "commit": "315c10650b510911ab1b1516b699ab5a72df6adf",
+      "workers": 2,
+      "stats": {
+        "startTime": "2026-10-23T21:30:15.709Z",
+        "duration": 330688.303,
+        "expected": 5,
+        "skipped": 0,
+        "unexpected": 65,
+        "flaky": 0
+      },
+      "sha256": "7f36eb60eb3921012a3ecd061c41211a427cca68d254deb3499ba842c66aa19b"
+    },
+    {
+      "name": "beta-w1-desktop",
+      "commit": "4627e4cd99f15e1ee227f788574ab5055ee7a353",
+      "workers": 1,
+      "stats": {
+        "startTime": "2026-10-23T21:35:47.125Z",
+        "duration": 326514.001,
+        "expected": 3,
+        "skipped": 0,
+        "unexpected": 27,
+        "flaky": 0
+      },
+      "sha256": "26026556933accdc13d6d61882dac968078a1d400c4f60efb1a65eb8e94ab4df"
+    },
+    {
+      "name": "beta-w1-tablet",
+      "commit": "4627e4cd99f15e1ee227f788574ab5055ee7a353",
+      "workers": 1,
+      "stats": {
+        "startTime": "2026-10-23T21:41:14.110Z",
+        "duration": 686643.43,
+        "expected": 6,
+        "skipped": 0,
+        "unexpected": 64,
+        "flaky": 0
+      },
+      "sha256": "b62d08f912163e33846ba2e5a735088e050fa8d53fbbcf2ab5963269ac79123f"
+    },
+    {
+      "name": "beta-w2-desktop",
+      "commit": "4627e4cd99f15e1ee227f788574ab5055ee7a353",
+      "workers": 2,
+      "stats": {
+        "startTime": "2026-10-23T21:52:41.233Z",
+        "duration": 134648.024,
+        "expected": 3,
+        "skipped": 0,
+        "unexpected": 27,
+        "flaky": 0
+      },
+      "sha256": "16e1afa44c6361d2faca475463b26ad374bb58e8d744114db75969dfc7c44829"
+    },
+    {
+      "name": "beta-w2-tablet",
+      "commit": "4627e4cd99f15e1ee227f788574ab5055ee7a353",
+      "workers": 2,
+      "stats": {
+        "startTime": "2026-10-23T21:54:56.357Z",
+        "duration": 344234.565,
+        "expected": 6,
+        "skipped": 0,
+        "unexpected": 64,
+        "flaky": 0
+      },
+      "sha256": "6af8b55f15ac126d39d08800e7228c5e0c7f5046b1b969d70e1ac17195939a60"
+    }
+  ],
+  "targets": [
+    {
+      "id": "cc3070f185481daa6f24-f9d4bda33a2de34a9120",
+      "file": "dashboard.spec.mjs",
+      "title": "Scenario JSON transport keeps failed creation unsaved and preserves explicit creation payloads",
+      "project": "desktop",
+      "prior_delta": "unmodified_now_passing",
+      "runs": {
+        "maturing-w1-desktop": {
+          "status": {
+            "failed": 9,
+            "passed": 1
+          },
+          "errors": {
+            "Error: expect(received).toEqual(expected) // deep equality\n\n- Expected  - 0\n+ Received  + 1\n\n@@ -33,6 +33,7 @@": 9
+          },
+          "duration_ms": [
+            687,
+            662,
+            648,
+            653,
+            650,
+            652,
+            653,
+            689,
+            675,
+            643
+          ],
+          "observed_repeat_ids": [
+            "cc3070f185481daa6f24-1ec6c002e0455fc3be87",
+            "cc3070f185481daa6f24-3ef032e58502bc3ec125",
+            "cc3070f185481daa6f24-459ae1b712e6e7499ecb",
+            "cc3070f185481daa6f24-49d8609f416a4476d53a",
+            "cc3070f185481daa6f24-5f565158eff93113adfd",
+            "cc3070f185481daa6f24-9907388f896974b739ab",
+            "cc3070f185481daa6f24-c15e6f296e739b70f43d",
+            "cc3070f185481daa6f24-c61ff9dca6eaf42f7764",
+            "cc3070f185481daa6f24-f9d4bda33a2de34a9120",
+            "cc3070f185481daa6f24-fb7af3979dde327da266"
+          ]
+        },
+        "maturing-w2-desktop": {
+          "status": {
+            "failed": 8,
+            "passed": 2
+          },
+          "errors": {
+            "Error: expect(received).toEqual(expected) // deep equality\n\n- Expected  - 0\n+ Received  + 1\n\n@@ -33,6 +33,7 @@": 8
+          },
+          "duration_ms": [
+            725,
+            668,
+            637,
+            603,
+            731,
+            749,
+            619,
+            650,
+            714,
+            750
+          ],
+          "observed_repeat_ids": [
+            "cc3070f185481daa6f24-1ec6c002e0455fc3be87",
+            "cc3070f185481daa6f24-3ef032e58502bc3ec125",
+            "cc3070f185481daa6f24-459ae1b712e6e7499ecb",
+            "cc3070f185481daa6f24-49d8609f416a4476d53a",
+            "cc3070f185481daa6f24-5f565158eff93113adfd",
+            "cc3070f185481daa6f24-9907388f896974b739ab",
+            "cc3070f185481daa6f24-c15e6f296e739b70f43d",
+            "cc3070f185481daa6f24-c61ff9dca6eaf42f7764",
+            "cc3070f185481daa6f24-f9d4bda33a2de34a9120",
+            "cc3070f185481daa6f24-fb7af3979dde327da266"
+          ]
+        },
+        "beta-w1-desktop": {
+          "status": {
+            "failed": 7,
+            "passed": 3
+          },
+          "errors": {
+            "Error: expect(received).toEqual(expected) // deep equality\n\n- Expected  - 0\n+ Received  + 1\n\n@@ -33,6 +33,7 @@": 7
+          },
+          "duration_ms": [
+            732,
+            629,
+            696,
+            660,
+            730,
+            683,
+            623,
+            637,
+            630,
+            599
+          ],
+          "observed_repeat_ids": [
+            "cc3070f185481daa6f24-1ec6c002e0455fc3be87",
+            "cc3070f185481daa6f24-3ef032e58502bc3ec125",
+            "cc3070f185481daa6f24-459ae1b712e6e7499ecb",
+            "cc3070f185481daa6f24-49d8609f416a4476d53a",
+            "cc3070f185481daa6f24-5f565158eff93113adfd",
+            "cc3070f185481daa6f24-9907388f896974b739ab",
+            "cc3070f185481daa6f24-c15e6f296e739b70f43d",
+            "cc3070f185481daa6f24-c61ff9dca6eaf42f7764",
+            "cc3070f185481daa6f24-f9d4bda33a2de34a9120",
+            "cc3070f185481daa6f24-fb7af3979dde327da266"
+          ]
+        },
+        "beta-w2-desktop": {
+          "status": {
+            "failed": 9,
+            "passed": 1
+          },
+          "errors": {
+            "Error: expect(received).toEqual(expected) // deep equality\n\n- Expected  - 0\n+ Received  + 1\n\n@@ -33,6 +33,7 @@": 9
+          },
+          "duration_ms": [
+            672,
+            665,
+            644,
+            661,
+            717,
+            692,
+            715,
+            661,
+            664,
+            663
+          ],
+          "observed_repeat_ids": [
+            "cc3070f185481daa6f24-1ec6c002e0455fc3be87",
+            "cc3070f185481daa6f24-3ef032e58502bc3ec125",
+            "cc3070f185481daa6f24-459ae1b712e6e7499ecb",
+            "cc3070f185481daa6f24-49d8609f416a4476d53a",
+            "cc3070f185481daa6f24-5f565158eff93113adfd",
+            "cc3070f185481daa6f24-9907388f896974b739ab",
+            "cc3070f185481daa6f24-c15e6f296e739b70f43d",
+            "cc3070f185481daa6f24-c61ff9dca6eaf42f7764",
+            "cc3070f185481daa6f24-f9d4bda33a2de34a9120",
+            "cc3070f185481daa6f24-fb7af3979dde327da266"
+          ]
+        }
+      }
+    },
+    {
+      "id": "cc3070f185481daa6f24-f779cd8e5f8d23340312",
+      "file": "dashboard.spec.mjs",
+      "title": "Policy runtime cancellation cannot release a newer pre-save fixtures request",
+      "project": "desktop",
+      "prior_delta": "additional_failure",
+      "runs": {
+        "maturing-w1-desktop": {
+          "status": {
+            "timedOut": 9,
+            "passed": 1
+          },
+          "errors": {
+            "Test timeout of 30000ms exceeded.": 9,
+            "Error: locator.click: Test timeout of 30000ms exceeded.": 9
+          },
+          "duration_ms": [
+            30084,
+            30066,
+            30074,
+            30095,
+            30089,
+            30095,
+            30091,
+            938,
+            30068,
+            30076
+          ],
+          "observed_repeat_ids": [
+            "cc3070f185481daa6f24-15a594b37aa98577e687",
+            "cc3070f185481daa6f24-32a31336d7382e3cf218",
+            "cc3070f185481daa6f24-4c96ca11c8615fe67aec",
+            "cc3070f185481daa6f24-61c3659e3ac96331114b",
+            "cc3070f185481daa6f24-6fab2ac4fbcec4fcfda6",
+            "cc3070f185481daa6f24-8bd94bb3b5271076f041",
+            "cc3070f185481daa6f24-93f439307cecfc97c63d",
+            "cc3070f185481daa6f24-c800a89ca1c434fcd693",
+            "cc3070f185481daa6f24-d09e020654b4bc564ca2",
+            "cc3070f185481daa6f24-f779cd8e5f8d23340312"
+          ]
+        },
+        "maturing-w2-desktop": {
+          "status": {
+            "timedOut": 10
+          },
+          "errors": {
+            "Test timeout of 30000ms exceeded.": 10,
+            "Error: locator.click: Test timeout of 30000ms exceeded.": 10
+          },
+          "duration_ms": [
+            30090,
+            30080,
+            30088,
+            30072,
+            30088,
+            30097,
+            30068,
+            30075,
+            30070,
+            30075
+          ],
+          "observed_repeat_ids": [
+            "cc3070f185481daa6f24-15a594b37aa98577e687",
+            "cc3070f185481daa6f24-32a31336d7382e3cf218",
+            "cc3070f185481daa6f24-4c96ca11c8615fe67aec",
+            "cc3070f185481daa6f24-61c3659e3ac96331114b",
+            "cc3070f185481daa6f24-6fab2ac4fbcec4fcfda6",
+            "cc3070f185481daa6f24-8bd94bb3b5271076f041",
+            "cc3070f185481daa6f24-93f439307cecfc97c63d",
+            "cc3070f185481daa6f24-c800a89ca1c434fcd693",
+            "cc3070f185481daa6f24-d09e020654b4bc564ca2",
+            "cc3070f185481daa6f24-f779cd8e5f8d23340312"
+          ]
+        },
+        "beta-w1-desktop": {
+          "status": {
+            "timedOut": 10
+          },
+          "errors": {
+            "Test timeout of 30000ms exceeded.": 10,
+            "Error: locator.click: Test timeout of 30000ms exceeded.": 10
+          },
+          "duration_ms": [
+            30093,
+            30089,
+            30096,
+            30086,
+            30096,
+            30107,
+            30096,
+            30095,
+            30084,
+            30085
+          ],
+          "observed_repeat_ids": [
+            "cc3070f185481daa6f24-15a594b37aa98577e687",
+            "cc3070f185481daa6f24-32a31336d7382e3cf218",
+            "cc3070f185481daa6f24-4c96ca11c8615fe67aec",
+            "cc3070f185481daa6f24-61c3659e3ac96331114b",
+            "cc3070f185481daa6f24-6fab2ac4fbcec4fcfda6",
+            "cc3070f185481daa6f24-8bd94bb3b5271076f041",
+            "cc3070f185481daa6f24-93f439307cecfc97c63d",
+            "cc3070f185481daa6f24-c800a89ca1c434fcd693",
+            "cc3070f185481daa6f24-d09e020654b4bc564ca2",
+            "cc3070f185481daa6f24-f779cd8e5f8d23340312"
+          ]
+        },
+        "beta-w2-desktop": {
+          "status": {
+            "timedOut": 8,
+            "passed": 2
+          },
+          "errors": {
+            "Test timeout of 30000ms exceeded.": 8,
+            "Error: locator.click: Test timeout of 30000ms exceeded.": 8
+          },
+          "duration_ms": [
+            30066,
+            30077,
+            30099,
+            30062,
+            30086,
+            30068,
+            835,
+            30091,
+            30088,
+            869
+          ],
+          "observed_repeat_ids": [
+            "cc3070f185481daa6f24-15a594b37aa98577e687",
+            "cc3070f185481daa6f24-32a31336d7382e3cf218",
+            "cc3070f185481daa6f24-4c96ca11c8615fe67aec",
+            "cc3070f185481daa6f24-61c3659e3ac96331114b",
+            "cc3070f185481daa6f24-6fab2ac4fbcec4fcfda6",
+            "cc3070f185481daa6f24-8bd94bb3b5271076f041",
+            "cc3070f185481daa6f24-93f439307cecfc97c63d",
+            "cc3070f185481daa6f24-c800a89ca1c434fcd693",
+            "cc3070f185481daa6f24-d09e020654b4bc564ca2",
+            "cc3070f185481daa6f24-f779cd8e5f8d23340312"
+          ]
+        }
+      }
+    },
+    {
+      "id": "cc3070f185481daa6f24-5486e71cd297f6cb868d",
+      "file": "dashboard.spec.mjs",
+      "title": "GUI shared programmatic edits keep policy completion and Scenario indentation undoable",
+      "project": "tablet",
+      "prior_delta": "additional_failure",
+      "runs": {
+        "maturing-w1-tablet": {
+          "status": {
+            "failed": 10
+          },
+          "errors": {
+            "Error: expect(locator).toHaveValue(expected) failed\n\nLocator: locator('#policy-source')\nTimeout: 5000ms\n- Expected  - 1\n+ Received  + 2\n": 10
+          },
+          "duration_ms": [
+            5540,
+            5539,
+            5580,
+            5959,
+            5538,
+            5563,
+            5540,
+            5597,
+            5505,
+            5513
+          ],
+          "observed_repeat_ids": [
+            "cc3070f185481daa6f24-0d81879b2d3760e70a87",
+            "cc3070f185481daa6f24-3fa9b76e5ecd708569b3",
+            "cc3070f185481daa6f24-5486e71cd297f6cb868d",
+            "cc3070f185481daa6f24-5721ead1690fe90ca9fb",
+            "cc3070f185481daa6f24-7852df2dec6383652cbb",
+            "cc3070f185481daa6f24-c38336dfd17cdb2ee03b",
+            "cc3070f185481daa6f24-c6a1a16cc99a2a027924",
+            "cc3070f185481daa6f24-dae3f31934659e18af10",
+            "cc3070f185481daa6f24-e0f816e515ba7ce353d5",
+            "cc3070f185481daa6f24-fa5c43103bbf82fa5600"
+          ]
+        },
+        "maturing-w2-tablet": {
+          "status": {
+            "failed": 10
+          },
+          "errors": {
+            "Error: expect(locator).toHaveValue(expected) failed\n\nLocator: locator('#policy-source')\nTimeout: 5000ms\n- Expected  - 1\n+ Received  + 2\n": 10
+          },
+          "duration_ms": [
+            5584,
+            5513,
+            5525,
+            5771,
+            5515,
+            5526,
+            5544,
+            5547,
+            5543,
+            5553
+          ],
+          "observed_repeat_ids": [
+            "cc3070f185481daa6f24-0d81879b2d3760e70a87",
+            "cc3070f185481daa6f24-3fa9b76e5ecd708569b3",
+            "cc3070f185481daa6f24-5486e71cd297f6cb868d",
+            "cc3070f185481daa6f24-5721ead1690fe90ca9fb",
+            "cc3070f185481daa6f24-7852df2dec6383652cbb",
+            "cc3070f185481daa6f24-c38336dfd17cdb2ee03b",
+            "cc3070f185481daa6f24-c6a1a16cc99a2a027924",
+            "cc3070f185481daa6f24-dae3f31934659e18af10",
+            "cc3070f185481daa6f24-e0f816e515ba7ce353d5",
+            "cc3070f185481daa6f24-fa5c43103bbf82fa5600"
+          ]
+        },
+        "beta-w1-tablet": {
+          "status": {
+            "failed": 10
+          },
+          "errors": {
+            "Error: expect(locator).toHaveValue(expected) failed\n\nLocator: locator('#policy-source')\nTimeout: 5000ms\n- Expected  - 1\n+ Received  + 2\n": 10
+          },
+          "duration_ms": [
+            5516,
+            5539,
+            5564,
+            5521,
+            5549,
+            5554,
+            5525,
+            5520,
+            5538,
+            5544
+          ],
+          "observed_repeat_ids": [
+            "cc3070f185481daa6f24-0d81879b2d3760e70a87",
+            "cc3070f185481daa6f24-3fa9b76e5ecd708569b3",
+            "cc3070f185481daa6f24-5486e71cd297f6cb868d",
+            "cc3070f185481daa6f24-5721ead1690fe90ca9fb",
+            "cc3070f185481daa6f24-7852df2dec6383652cbb",
+            "cc3070f185481daa6f24-c38336dfd17cdb2ee03b",
+            "cc3070f185481daa6f24-c6a1a16cc99a2a027924",
+            "cc3070f185481daa6f24-dae3f31934659e18af10",
+            "cc3070f185481daa6f24-e0f816e515ba7ce353d5",
+            "cc3070f185481daa6f24-fa5c43103bbf82fa5600"
+          ]
+        },
+        "beta-w2-tablet": {
+          "status": {
+            "failed": 10
+          },
+          "errors": {
+            "Error: expect(locator).toHaveValue(expected) failed\n\nLocator: locator('#policy-source')\nTimeout: 5000ms\n- Expected  - 1\n+ Received  + 2\n": 10
+          },
+          "duration_ms": [
+            5807,
+            5510,
+            5523,
+            5554,
+            5527,
+            5528,
+            5571,
+            5491,
+            5591,
+            5527
+          ],
+          "observed_repeat_ids": [
+            "cc3070f185481daa6f24-0d81879b2d3760e70a87",
+            "cc3070f185481daa6f24-3fa9b76e5ecd708569b3",
+            "cc3070f185481daa6f24-5486e71cd297f6cb868d",
+            "cc3070f185481daa6f24-5721ead1690fe90ca9fb",
+            "cc3070f185481daa6f24-7852df2dec6383652cbb",
+            "cc3070f185481daa6f24-c38336dfd17cdb2ee03b",
+            "cc3070f185481daa6f24-c6a1a16cc99a2a027924",
+            "cc3070f185481daa6f24-dae3f31934659e18af10",
+            "cc3070f185481daa6f24-e0f816e515ba7ce353d5",
+            "cc3070f185481daa6f24-fa5c43103bbf82fa5600"
+          ]
+        }
+      }
+    },
+    {
+      "id": "cc3070f185481daa6f24-823cc6ef42d23c7a4742",
+      "file": "dashboard.spec.mjs",
+      "title": "Scenario JSON transport keeps failed creation unsaved and preserves explicit creation payloads",
+      "project": "tablet",
+      "prior_delta": "additional_failure",
+      "runs": {
+        "maturing-w1-tablet": {
+          "status": {
+            "passed": 6,
+            "failed": 4
+          },
+          "errors": {
+            "Error: expect(received).toEqual(expected) // deep equality\n\n- Expected  - 0\n+ Received  + 1\n\n@@ -33,6 +33,7 @@": 4
+          },
+          "duration_ms": [
+            680,
+            818,
+            759,
+            759,
+            777,
+            768,
+            719,
+            800,
+            713,
+            704
+          ],
+          "observed_repeat_ids": [
+            "cc3070f185481daa6f24-02d20a380f5aad6cc14b",
+            "cc3070f185481daa6f24-3f60db63e96c0a45328e",
+            "cc3070f185481daa6f24-811ec6e7a4f0730f0439",
+            "cc3070f185481daa6f24-823cc6ef42d23c7a4742",
+            "cc3070f185481daa6f24-8954e7edb43b82facd9b",
+            "cc3070f185481daa6f24-9742e49c878ed4bf38d9",
+            "cc3070f185481daa6f24-a7e7b896e5657f2b7e01",
+            "cc3070f185481daa6f24-cc4be0b2edfff802c388",
+            "cc3070f185481daa6f24-db43529d67fa978b790a",
+            "cc3070f185481daa6f24-ffc43d6a2fb8ccdcc60b"
+          ]
+        },
+        "maturing-w2-tablet": {
+          "status": {
+            "failed": 7,
+            "passed": 3
+          },
+          "errors": {
+            "Error: expect(received).toEqual(expected) // deep equality\n\n- Expected  - 0\n+ Received  + 1\n\n@@ -33,6 +33,7 @@": 7
+          },
+          "duration_ms": [
+            801,
+            688,
+            754,
+            721,
+            727,
+            715,
+            749,
+            774,
+            757,
+            698
+          ],
+          "observed_repeat_ids": [
+            "cc3070f185481daa6f24-02d20a380f5aad6cc14b",
+            "cc3070f185481daa6f24-3f60db63e96c0a45328e",
+            "cc3070f185481daa6f24-811ec6e7a4f0730f0439",
+            "cc3070f185481daa6f24-823cc6ef42d23c7a4742",
+            "cc3070f185481daa6f24-8954e7edb43b82facd9b",
+            "cc3070f185481daa6f24-9742e49c878ed4bf38d9",
+            "cc3070f185481daa6f24-a7e7b896e5657f2b7e01",
+            "cc3070f185481daa6f24-cc4be0b2edfff802c388",
+            "cc3070f185481daa6f24-db43529d67fa978b790a",
+            "cc3070f185481daa6f24-ffc43d6a2fb8ccdcc60b"
+          ]
+        },
+        "beta-w1-tablet": {
+          "status": {
+            "failed": 5,
+            "passed": 5
+          },
+          "errors": {
+            "Error: expect(received).toEqual(expected) // deep equality\n\n- Expected  - 0\n+ Received  + 1\n\n@@ -33,6 +33,7 @@": 5
+          },
+          "duration_ms": [
+            768,
+            771,
+            770,
+            663,
+            750,
+            758,
+            709,
+            790,
+            788,
+            797
+          ],
+          "observed_repeat_ids": [
+            "cc3070f185481daa6f24-02d20a380f5aad6cc14b",
+            "cc3070f185481daa6f24-3f60db63e96c0a45328e",
+            "cc3070f185481daa6f24-811ec6e7a4f0730f0439",
+            "cc3070f185481daa6f24-823cc6ef42d23c7a4742",
+            "cc3070f185481daa6f24-8954e7edb43b82facd9b",
+            "cc3070f185481daa6f24-9742e49c878ed4bf38d9",
+            "cc3070f185481daa6f24-a7e7b896e5657f2b7e01",
+            "cc3070f185481daa6f24-cc4be0b2edfff802c388",
+            "cc3070f185481daa6f24-db43529d67fa978b790a",
+            "cc3070f185481daa6f24-ffc43d6a2fb8ccdcc60b"
+          ]
+        },
+        "beta-w2-tablet": {
+          "status": {
+            "failed": 5,
+            "passed": 5
+          },
+          "errors": {
+            "Error: expect(received).toEqual(expected) // deep equality\n\n- Expected  - 0\n+ Received  + 1\n\n@@ -33,6 +33,7 @@": 5
+          },
+          "duration_ms": [
+            751,
+            724,
+            714,
+            741,
+            754,
+            856,
+            736,
+            775,
+            802,
+            741
+          ],
+          "observed_repeat_ids": [
+            "cc3070f185481daa6f24-02d20a380f5aad6cc14b",
+            "cc3070f185481daa6f24-3f60db63e96c0a45328e",
+            "cc3070f185481daa6f24-811ec6e7a4f0730f0439",
+            "cc3070f185481daa6f24-823cc6ef42d23c7a4742",
+            "cc3070f185481daa6f24-8954e7edb43b82facd9b",
+            "cc3070f185481daa6f24-9742e49c878ed4bf38d9",
+            "cc3070f185481daa6f24-a7e7b896e5657f2b7e01",
+            "cc3070f185481daa6f24-cc4be0b2edfff802c388",
+            "cc3070f185481daa6f24-db43529d67fa978b790a",
+            "cc3070f185481daa6f24-ffc43d6a2fb8ccdcc60b"
+          ]
+        }
+      }
+    },
+    {
+      "id": "cc3070f185481daa6f24-b0952dd568f4f7e00c45",
+      "file": "dashboard.spec.mjs",
+      "title": "GUI raw scenario analysis ignores delayed errors for an edited source",
+      "project": "tablet",
+      "prior_delta": "additional_failure",
+      "runs": {
+        "maturing-w1-tablet": {
+          "status": {
+            "failed": 10
+          },
+          "errors": {
+            "Error: Unexpected CSP violations\n\nexpect(received).toEqual(expected) // deep equality\n\n- Expected  - 1\n+ Received  + 3\n\n- Array []\n+ Array [\n+   \"style-src-attr\",\n+ ]\n": 10
+          },
+          "duration_ms": [
+            511,
+            490,
+            525,
+            566,
+            490,
+            568,
+            525,
+            571,
+            575,
+            506
+          ],
+          "observed_repeat_ids": [
+            "cc3070f185481daa6f24-32405610c936708baab1",
+            "cc3070f185481daa6f24-479baa421e7cfd47885f",
+            "cc3070f185481daa6f24-588508a793e8ad2b531b",
+            "cc3070f185481daa6f24-6227c436272afa88fb8c",
+            "cc3070f185481daa6f24-6bb11b17967cbc1eda39",
+            "cc3070f185481daa6f24-6bc08548bbcb66838338",
+            "cc3070f185481daa6f24-a6603fefc2520a741f35",
+            "cc3070f185481daa6f24-b0952dd568f4f7e00c45",
+            "cc3070f185481daa6f24-dd6fefc7468ac87b1915",
+            "cc3070f185481daa6f24-ee3b76f3f7995c7975ba"
+          ]
+        },
+        "maturing-w2-tablet": {
+          "status": {
+            "failed": 10
+          },
+          "errors": {
+            "Error: Unexpected CSP violations\n\nexpect(received).toEqual(expected) // deep equality\n\n- Expected  - 1\n+ Received  + 3\n\n- Array []\n+ Array [\n+   \"style-src-attr\",\n+ ]\n": 10
+          },
+          "duration_ms": [
+            530,
+            530,
+            551,
+            493,
+            608,
+            575,
+            525,
+            552,
+            503,
+            489
+          ],
+          "observed_repeat_ids": [
+            "cc3070f185481daa6f24-32405610c936708baab1",
+            "cc3070f185481daa6f24-479baa421e7cfd47885f",
+            "cc3070f185481daa6f24-588508a793e8ad2b531b",
+            "cc3070f185481daa6f24-6227c436272afa88fb8c",
+            "cc3070f185481daa6f24-6bb11b17967cbc1eda39",
+            "cc3070f185481daa6f24-6bc08548bbcb66838338",
+            "cc3070f185481daa6f24-a6603fefc2520a741f35",
+            "cc3070f185481daa6f24-b0952dd568f4f7e00c45",
+            "cc3070f185481daa6f24-dd6fefc7468ac87b1915",
+            "cc3070f185481daa6f24-ee3b76f3f7995c7975ba"
+          ]
+        },
+        "beta-w1-tablet": {
+          "status": {
+            "failed": 10
+          },
+          "errors": {
+            "Error: Unexpected CSP violations\n\nexpect(received).toEqual(expected) // deep equality\n\n- Expected  - 1\n+ Received  + 3\n\n- Array []\n+ Array [\n+   \"style-src-attr\",\n+ ]\n": 10
+          },
+          "duration_ms": [
+            504,
+            539,
+            541,
+            512,
+            588,
+            520,
+            505,
+            520,
+            572,
+            558
+          ],
+          "observed_repeat_ids": [
+            "cc3070f185481daa6f24-32405610c936708baab1",
+            "cc3070f185481daa6f24-479baa421e7cfd47885f",
+            "cc3070f185481daa6f24-588508a793e8ad2b531b",
+            "cc3070f185481daa6f24-6227c436272afa88fb8c",
+            "cc3070f185481daa6f24-6bb11b17967cbc1eda39",
+            "cc3070f185481daa6f24-6bc08548bbcb66838338",
+            "cc3070f185481daa6f24-a6603fefc2520a741f35",
+            "cc3070f185481daa6f24-b0952dd568f4f7e00c45",
+            "cc3070f185481daa6f24-dd6fefc7468ac87b1915",
+            "cc3070f185481daa6f24-ee3b76f3f7995c7975ba"
+          ]
+        },
+        "beta-w2-tablet": {
+          "status": {
+            "failed": 10
+          },
+          "errors": {
+            "Error: Unexpected CSP violations\n\nexpect(received).toEqual(expected) // deep equality\n\n- Expected  - 1\n+ Received  + 3\n\n- Array []\n+ Array [\n+   \"style-src-attr\",\n+ ]\n": 10
+          },
+          "duration_ms": [
+            572,
+            507,
+            506,
+            526,
+            521,
+            552,
+            489,
+            506,
+            510,
+            514
+          ],
+          "observed_repeat_ids": [
+            "cc3070f185481daa6f24-32405610c936708baab1",
+            "cc3070f185481daa6f24-479baa421e7cfd47885f",
+            "cc3070f185481daa6f24-588508a793e8ad2b531b",
+            "cc3070f185481daa6f24-6227c436272afa88fb8c",
+            "cc3070f185481daa6f24-6bb11b17967cbc1eda39",
+            "cc3070f185481daa6f24-6bc08548bbcb66838338",
+            "cc3070f185481daa6f24-a6603fefc2520a741f35",
+            "cc3070f185481daa6f24-b0952dd568f4f7e00c45",
+            "cc3070f185481daa6f24-dd6fefc7468ac87b1915",
+            "cc3070f185481daa6f24-ee3b76f3f7995c7975ba"
+          ]
+        }
+      }
+    },
+    {
+      "id": "cc3070f185481daa6f24-8d7dcd12e1769238f863",
+      "file": "dashboard.spec.mjs",
+      "title": "Gateway analysis scope rejects delayed success after editing back to the original source",
+      "project": "tablet",
+      "prior_delta": "additional_failure",
+      "runs": {
+        "maturing-w1-tablet": {
+          "status": {
+            "failed": 9,
+            "passed": 1
+          },
+          "errors": {
+            "Error: Unexpected CSP violations\n\nexpect(received).toEqual(expected) // deep equality\n\n- Expected  - 1\n+ Received  + 3\n\n- Array []\n+ Array [\n+   \"style-src-attr\",\n+ ]\n": 9
+          },
+          "duration_ms": [
+            537,
+            464,
+            494,
+            519,
+            539,
+            506,
+            502,
+            529,
+            530,
+            498
+          ],
+          "observed_repeat_ids": [
+            "cc3070f185481daa6f24-0e5fdf96adbbc55308ec",
+            "cc3070f185481daa6f24-17c4dc9463d59619e88c",
+            "cc3070f185481daa6f24-4d17a950f1b9c205d52b",
+            "cc3070f185481daa6f24-4ecc69182a774630e19f",
+            "cc3070f185481daa6f24-8cb90ff09ee3adbcdfea",
+            "cc3070f185481daa6f24-8d7dcd12e1769238f863",
+            "cc3070f185481daa6f24-91f9f02a86ada3c8dd56",
+            "cc3070f185481daa6f24-a104f507515252aab5dd",
+            "cc3070f185481daa6f24-a7d85deee08234ff9c1d",
+            "cc3070f185481daa6f24-a96dbc094f283b68de9e"
+          ]
+        },
+        "maturing-w2-tablet": {
+          "status": {
+            "failed": 10
+          },
+          "errors": {
+            "Error: Unexpected CSP violations\n\nexpect(received).toEqual(expected) // deep equality\n\n- Expected  - 1\n+ Received  + 3\n\n- Array []\n+ Array [\n+   \"style-src-attr\",\n+ ]\n": 10
+          },
+          "duration_ms": [
+            544,
+            477,
+            515,
+            492,
+            484,
+            495,
+            523,
+            481,
+            510,
+            512
+          ],
+          "observed_repeat_ids": [
+            "cc3070f185481daa6f24-0e5fdf96adbbc55308ec",
+            "cc3070f185481daa6f24-17c4dc9463d59619e88c",
+            "cc3070f185481daa6f24-4d17a950f1b9c205d52b",
+            "cc3070f185481daa6f24-4ecc69182a774630e19f",
+            "cc3070f185481daa6f24-8cb90ff09ee3adbcdfea",
+            "cc3070f185481daa6f24-8d7dcd12e1769238f863",
+            "cc3070f185481daa6f24-91f9f02a86ada3c8dd56",
+            "cc3070f185481daa6f24-a104f507515252aab5dd",
+            "cc3070f185481daa6f24-a7d85deee08234ff9c1d",
+            "cc3070f185481daa6f24-a96dbc094f283b68de9e"
+          ]
+        },
+        "beta-w1-tablet": {
+          "status": {
+            "failed": 10
+          },
+          "errors": {
+            "Error: Unexpected CSP violations\n\nexpect(received).toEqual(expected) // deep equality\n\n- Expected  - 1\n+ Received  + 3\n\n- Array []\n+ Array [\n+   \"style-src-attr\",\n+ ]\n": 10
+          },
+          "duration_ms": [
+            494,
+            477,
+            479,
+            510,
+            491,
+            465,
+            506,
+            510,
+            526,
+            491
+          ],
+          "observed_repeat_ids": [
+            "cc3070f185481daa6f24-0e5fdf96adbbc55308ec",
+            "cc3070f185481daa6f24-17c4dc9463d59619e88c",
+            "cc3070f185481daa6f24-4d17a950f1b9c205d52b",
+            "cc3070f185481daa6f24-4ecc69182a774630e19f",
+            "cc3070f185481daa6f24-8cb90ff09ee3adbcdfea",
+            "cc3070f185481daa6f24-8d7dcd12e1769238f863",
+            "cc3070f185481daa6f24-91f9f02a86ada3c8dd56",
+            "cc3070f185481daa6f24-a104f507515252aab5dd",
+            "cc3070f185481daa6f24-a7d85deee08234ff9c1d",
+            "cc3070f185481daa6f24-a96dbc094f283b68de9e"
+          ]
+        },
+        "beta-w2-tablet": {
+          "status": {
+            "failed": 10
+          },
+          "errors": {
+            "Error: Unexpected CSP violations\n\nexpect(received).toEqual(expected) // deep equality\n\n- Expected  - 1\n+ Received  + 3\n\n- Array []\n+ Array [\n+   \"style-src-attr\",\n+ ]\n": 10
+          },
+          "duration_ms": [
+            484,
+            511,
+            480,
+            496,
+            508,
+            529,
+            529,
+            548,
+            508,
+            482
+          ],
+          "observed_repeat_ids": [
+            "cc3070f185481daa6f24-0e5fdf96adbbc55308ec",
+            "cc3070f185481daa6f24-17c4dc9463d59619e88c",
+            "cc3070f185481daa6f24-4d17a950f1b9c205d52b",
+            "cc3070f185481daa6f24-4ecc69182a774630e19f",
+            "cc3070f185481daa6f24-8cb90ff09ee3adbcdfea",
+            "cc3070f185481daa6f24-8d7dcd12e1769238f863",
+            "cc3070f185481daa6f24-91f9f02a86ada3c8dd56",
+            "cc3070f185481daa6f24-a104f507515252aab5dd",
+            "cc3070f185481daa6f24-a7d85deee08234ff9c1d",
+            "cc3070f185481daa6f24-a96dbc094f283b68de9e"
+          ]
+        }
+      }
+    },
+    {
+      "id": "cc3070f185481daa6f24-086595e0f8ea7af946fc",
+      "file": "dashboard.spec.mjs",
+      "title": "Gateway analysis scope rejects delayed error after editing back to the original source",
+      "project": "tablet",
+      "prior_delta": "additional_failure",
+      "runs": {
+        "maturing-w1-tablet": {
+          "status": {
+            "failed": 10
+          },
+          "errors": {
+            "Error: Unexpected CSP violations\n\nexpect(received).toEqual(expected) // deep equality\n\n- Expected  - 1\n+ Received  + 3\n\n- Array []\n+ Array [\n+   \"style-src-attr\",\n+ ]\n": 10
+          },
+          "duration_ms": [
+            484,
+            527,
+            523,
+            507,
+            477,
+            484,
+            512,
+            483,
+            550,
+            494
+          ],
+          "observed_repeat_ids": [
+            "cc3070f185481daa6f24-086595e0f8ea7af946fc",
+            "cc3070f185481daa6f24-3bd7bca92bf70151cbc4",
+            "cc3070f185481daa6f24-58574b886111233ed356",
+            "cc3070f185481daa6f24-7d2885ee24767ecfa684",
+            "cc3070f185481daa6f24-857c4b4ff11cbefb22e8",
+            "cc3070f185481daa6f24-8f0af331bbbac89f3ecb",
+            "cc3070f185481daa6f24-90c2655deabadfc0f6d8",
+            "cc3070f185481daa6f24-b4590c2063fae1883c3d",
+            "cc3070f185481daa6f24-bdfb9bb6d1c6830f9314",
+            "cc3070f185481daa6f24-ed3563d96cd4f3d5d76f"
+          ]
+        },
+        "maturing-w2-tablet": {
+          "status": {
+            "failed": 10
+          },
+          "errors": {
+            "Error: Unexpected CSP violations\n\nexpect(received).toEqual(expected) // deep equality\n\n- Expected  - 1\n+ Received  + 3\n\n- Array []\n+ Array [\n+   \"style-src-attr\",\n+ ]\n": 10
+          },
+          "duration_ms": [
+            792,
+            498,
+            484,
+            530,
+            495,
+            478,
+            531,
+            500,
+            492,
+            516
+          ],
+          "observed_repeat_ids": [
+            "cc3070f185481daa6f24-086595e0f8ea7af946fc",
+            "cc3070f185481daa6f24-3bd7bca92bf70151cbc4",
+            "cc3070f185481daa6f24-58574b886111233ed356",
+            "cc3070f185481daa6f24-7d2885ee24767ecfa684",
+            "cc3070f185481daa6f24-857c4b4ff11cbefb22e8",
+            "cc3070f185481daa6f24-8f0af331bbbac89f3ecb",
+            "cc3070f185481daa6f24-90c2655deabadfc0f6d8",
+            "cc3070f185481daa6f24-b4590c2063fae1883c3d",
+            "cc3070f185481daa6f24-bdfb9bb6d1c6830f9314",
+            "cc3070f185481daa6f24-ed3563d96cd4f3d5d76f"
+          ]
+        },
+        "beta-w1-tablet": {
+          "status": {
+            "failed": 10
+          },
+          "errors": {
+            "Error: Unexpected CSP violations\n\nexpect(received).toEqual(expected) // deep equality\n\n- Expected  - 1\n+ Received  + 3\n\n- Array []\n+ Array [\n+   \"style-src-attr\",\n+ ]\n": 10
+          },
+          "duration_ms": [
+            526,
+            464,
+            483,
+            493,
+            493,
+            471,
+            498,
+            511,
+            510,
+            508
+          ],
+          "observed_repeat_ids": [
+            "cc3070f185481daa6f24-086595e0f8ea7af946fc",
+            "cc3070f185481daa6f24-3bd7bca92bf70151cbc4",
+            "cc3070f185481daa6f24-58574b886111233ed356",
+            "cc3070f185481daa6f24-7d2885ee24767ecfa684",
+            "cc3070f185481daa6f24-857c4b4ff11cbefb22e8",
+            "cc3070f185481daa6f24-8f0af331bbbac89f3ecb",
+            "cc3070f185481daa6f24-90c2655deabadfc0f6d8",
+            "cc3070f185481daa6f24-b4590c2063fae1883c3d",
+            "cc3070f185481daa6f24-bdfb9bb6d1c6830f9314",
+            "cc3070f185481daa6f24-ed3563d96cd4f3d5d76f"
+          ]
+        },
+        "beta-w2-tablet": {
+          "status": {
+            "failed": 10
+          },
+          "errors": {
+            "Error: Unexpected CSP violations\n\nexpect(received).toEqual(expected) // deep equality\n\n- Expected  - 1\n+ Received  + 3\n\n- Array []\n+ Array [\n+   \"style-src-attr\",\n+ ]\n": 10
+          },
+          "duration_ms": [
+            512,
+            481,
+            527,
+            475,
+            520,
+            498,
+            498,
+            510,
+            478,
+            480
+          ],
+          "observed_repeat_ids": [
+            "cc3070f185481daa6f24-086595e0f8ea7af946fc",
+            "cc3070f185481daa6f24-3bd7bca92bf70151cbc4",
+            "cc3070f185481daa6f24-58574b886111233ed356",
+            "cc3070f185481daa6f24-7d2885ee24767ecfa684",
+            "cc3070f185481daa6f24-857c4b4ff11cbefb22e8",
+            "cc3070f185481daa6f24-8f0af331bbbac89f3ecb",
+            "cc3070f185481daa6f24-90c2655deabadfc0f6d8",
+            "cc3070f185481daa6f24-b4590c2063fae1883c3d",
+            "cc3070f185481daa6f24-bdfb9bb6d1c6830f9314",
+            "cc3070f185481daa6f24-ed3563d96cd4f3d5d76f"
+          ]
+        }
+      }
+    },
+    {
+      "id": "cc3070f185481daa6f24-3466b56273f4f71cdf83",
+      "file": "dashboard.spec.mjs",
+      "title": "Policy runtime cancellation cannot release a newer pre-save fixtures request",
+      "project": "tablet",
+      "prior_delta": "additional_failure",
+      "runs": {
+        "maturing-w1-tablet": {
+          "status": {
+            "timedOut": 10
+          },
+          "errors": {
+            "Test timeout of 30000ms exceeded.": 10,
+            "Error: locator.click: Test timeout of 30000ms exceeded.": 10
+          },
+          "duration_ms": [
+            30140,
+            30139,
+            30135,
+            30150,
+            30141,
+            30140,
+            30132,
+            30149,
+            30145,
+            30119
+          ],
+          "observed_repeat_ids": [
+            "cc3070f185481daa6f24-0e341f89b1cda9800fba",
+            "cc3070f185481daa6f24-0f3191144d4971be7c7e",
+            "cc3070f185481daa6f24-3466b56273f4f71cdf83",
+            "cc3070f185481daa6f24-86c2066bc06e7d50d7f5",
+            "cc3070f185481daa6f24-b863e188876f6013b990",
+            "cc3070f185481daa6f24-b9f3f8053ffb5fd89e38",
+            "cc3070f185481daa6f24-c45035ab2f3567d55b3e",
+            "cc3070f185481daa6f24-d2a40dc29124a0aac828",
+            "cc3070f185481daa6f24-db1bbb030cfd79ca6a04",
+            "cc3070f185481daa6f24-dd41a7a40e2005c3a087"
+          ]
+        },
+        "maturing-w2-tablet": {
+          "status": {
+            "passed": 1,
+            "timedOut": 9
+          },
+          "errors": {
+            "Test timeout of 30000ms exceeded.": 9,
+            "Error: locator.click: Test timeout of 30000ms exceeded.": 9
+          },
+          "duration_ms": [
+            927,
+            30152,
+            30134,
+            30132,
+            30144,
+            30140,
+            30133,
+            30151,
+            30139,
+            30127
+          ],
+          "observed_repeat_ids": [
+            "cc3070f185481daa6f24-0e341f89b1cda9800fba",
+            "cc3070f185481daa6f24-0f3191144d4971be7c7e",
+            "cc3070f185481daa6f24-3466b56273f4f71cdf83",
+            "cc3070f185481daa6f24-86c2066bc06e7d50d7f5",
+            "cc3070f185481daa6f24-b863e188876f6013b990",
+            "cc3070f185481daa6f24-b9f3f8053ffb5fd89e38",
+            "cc3070f185481daa6f24-c45035ab2f3567d55b3e",
+            "cc3070f185481daa6f24-d2a40dc29124a0aac828",
+            "cc3070f185481daa6f24-db1bbb030cfd79ca6a04",
+            "cc3070f185481daa6f24-dd41a7a40e2005c3a087"
+          ]
+        },
+        "beta-w1-tablet": {
+          "status": {
+            "timedOut": 10
+          },
+          "errors": {
+            "Test timeout of 30000ms exceeded.": 10,
+            "Error: locator.click: Test timeout of 30000ms exceeded.": 10
+          },
+          "duration_ms": [
+            30142,
+            30136,
+            30149,
+            30154,
+            30118,
+            30141,
+            30138,
+            30150,
+            30153,
+            30134
+          ],
+          "observed_repeat_ids": [
+            "cc3070f185481daa6f24-0e341f89b1cda9800fba",
+            "cc3070f185481daa6f24-0f3191144d4971be7c7e",
+            "cc3070f185481daa6f24-3466b56273f4f71cdf83",
+            "cc3070f185481daa6f24-86c2066bc06e7d50d7f5",
+            "cc3070f185481daa6f24-b863e188876f6013b990",
+            "cc3070f185481daa6f24-b9f3f8053ffb5fd89e38",
+            "cc3070f185481daa6f24-c45035ab2f3567d55b3e",
+            "cc3070f185481daa6f24-d2a40dc29124a0aac828",
+            "cc3070f185481daa6f24-db1bbb030cfd79ca6a04",
+            "cc3070f185481daa6f24-dd41a7a40e2005c3a087"
+          ]
+        },
+        "beta-w2-tablet": {
+          "status": {
+            "timedOut": 9,
+            "passed": 1
+          },
+          "errors": {
+            "Test timeout of 30000ms exceeded.": 9,
+            "Error: locator.click: Test timeout of 30000ms exceeded.": 9
+          },
+          "duration_ms": [
+            30149,
+            913,
+            30135,
+            30126,
+            30144,
+            30144,
+            30144,
+            30136,
+            30153,
+            30120
+          ],
+          "observed_repeat_ids": [
+            "cc3070f185481daa6f24-0e341f89b1cda9800fba",
+            "cc3070f185481daa6f24-0f3191144d4971be7c7e",
+            "cc3070f185481daa6f24-3466b56273f4f71cdf83",
+            "cc3070f185481daa6f24-86c2066bc06e7d50d7f5",
+            "cc3070f185481daa6f24-b863e188876f6013b990",
+            "cc3070f185481daa6f24-b9f3f8053ffb5fd89e38",
+            "cc3070f185481daa6f24-c45035ab2f3567d55b3e",
+            "cc3070f185481daa6f24-d2a40dc29124a0aac828",
+            "cc3070f185481daa6f24-db1bbb030cfd79ca6a04",
+            "cc3070f185481daa6f24-dd41a7a40e2005c3a087"
+          ]
+        }
+      }
+    },
+    {
+      "id": "cc3070f185481daa6f24-10bc69e8c681940787d4",
+      "file": "dashboard.spec.mjs",
+      "title": "Policy runtime cancellation cannot release a newer pre-save evaluation request",
+      "project": "tablet",
+      "prior_delta": "unmodified_now_passing",
+      "runs": {
+        "maturing-w1-tablet": {
+          "status": {
+            "timedOut": 10
+          },
+          "errors": {
+            "Test timeout of 30000ms exceeded.": 10,
+            "Error: locator.click: Test timeout of 30000ms exceeded.": 10
+          },
+          "duration_ms": [
+            30139,
+            30144,
+            30307,
+            30124,
+            30154,
+            30118,
+            30154,
+            30161,
+            30151,
+            30133
+          ],
+          "observed_repeat_ids": [
+            "cc3070f185481daa6f24-10bc69e8c681940787d4",
+            "cc3070f185481daa6f24-26401108155eadf43e83",
+            "cc3070f185481daa6f24-38c3288f5180ed62963a",
+            "cc3070f185481daa6f24-56880041fe4dee822c62",
+            "cc3070f185481daa6f24-5c917bc1f7fdd4ce4815",
+            "cc3070f185481daa6f24-8aab829ac757eb9fa5f7",
+            "cc3070f185481daa6f24-aa25d650b0fa57a6867f",
+            "cc3070f185481daa6f24-bab7d07e62fba006c4dc",
+            "cc3070f185481daa6f24-ddc0d32bb11b88ad3a85",
+            "cc3070f185481daa6f24-fe67ffd48522936b41de"
+          ]
+        },
+        "maturing-w2-tablet": {
+          "status": {
+            "passed": 1,
+            "timedOut": 9
+          },
+          "errors": {
+            "Test timeout of 30000ms exceeded.": 9,
+            "Error: locator.click: Test timeout of 30000ms exceeded.": 9
+          },
+          "duration_ms": [
+            947,
+            30128,
+            30149,
+            30125,
+            30123,
+            30120,
+            30125,
+            30122,
+            30144,
+            30120
+          ],
+          "observed_repeat_ids": [
+            "cc3070f185481daa6f24-10bc69e8c681940787d4",
+            "cc3070f185481daa6f24-26401108155eadf43e83",
+            "cc3070f185481daa6f24-38c3288f5180ed62963a",
+            "cc3070f185481daa6f24-56880041fe4dee822c62",
+            "cc3070f185481daa6f24-5c917bc1f7fdd4ce4815",
+            "cc3070f185481daa6f24-8aab829ac757eb9fa5f7",
+            "cc3070f185481daa6f24-aa25d650b0fa57a6867f",
+            "cc3070f185481daa6f24-bab7d07e62fba006c4dc",
+            "cc3070f185481daa6f24-ddc0d32bb11b88ad3a85",
+            "cc3070f185481daa6f24-fe67ffd48522936b41de"
+          ]
+        },
+        "beta-w1-tablet": {
+          "status": {
+            "timedOut": 9,
+            "passed": 1
+          },
+          "errors": {
+            "Test timeout of 30000ms exceeded.": 9,
+            "Error: locator.click: Test timeout of 30000ms exceeded.": 9
+          },
+          "duration_ms": [
+            30155,
+            30137,
+            30147,
+            30155,
+            30138,
+            915,
+            30153,
+            30154,
+            30141,
+            30145
+          ],
+          "observed_repeat_ids": [
+            "cc3070f185481daa6f24-10bc69e8c681940787d4",
+            "cc3070f185481daa6f24-26401108155eadf43e83",
+            "cc3070f185481daa6f24-38c3288f5180ed62963a",
+            "cc3070f185481daa6f24-56880041fe4dee822c62",
+            "cc3070f185481daa6f24-5c917bc1f7fdd4ce4815",
+            "cc3070f185481daa6f24-8aab829ac757eb9fa5f7",
+            "cc3070f185481daa6f24-aa25d650b0fa57a6867f",
+            "cc3070f185481daa6f24-bab7d07e62fba006c4dc",
+            "cc3070f185481daa6f24-ddc0d32bb11b88ad3a85",
+            "cc3070f185481daa6f24-fe67ffd48522936b41de"
+          ]
+        },
+        "beta-w2-tablet": {
+          "status": {
+            "timedOut": 10
+          },
+          "errors": {
+            "Test timeout of 30000ms exceeded.": 10,
+            "Error: locator.click: Test timeout of 30000ms exceeded.": 10
+          },
+          "duration_ms": [
+            30135,
+            30147,
+            30144,
+            30118,
+            30129,
+            30145,
+            30135,
+            30115,
+            30153,
+            30143
+          ],
+          "observed_repeat_ids": [
+            "cc3070f185481daa6f24-10bc69e8c681940787d4",
+            "cc3070f185481daa6f24-26401108155eadf43e83",
+            "cc3070f185481daa6f24-38c3288f5180ed62963a",
+            "cc3070f185481daa6f24-56880041fe4dee822c62",
+            "cc3070f185481daa6f24-5c917bc1f7fdd4ce4815",
+            "cc3070f185481daa6f24-8aab829ac757eb9fa5f7",
+            "cc3070f185481daa6f24-aa25d650b0fa57a6867f",
+            "cc3070f185481daa6f24-bab7d07e62fba006c4dc",
+            "cc3070f185481daa6f24-ddc0d32bb11b88ad3a85",
+            "cc3070f185481daa6f24-fe67ffd48522936b41de"
+          ]
+        }
+      }
+    },
+    {
+      "id": "ba07e228bcb3aecf4d27-59cb9cddaa1f81692883",
+      "file": "geography.spec.mjs",
+      "title": "World Map Fit reframes the current viewport after manual zoom and resize",
+      "project": "desktop",
+      "prior_delta": "additional_failure",
+      "runs": {
+        "maturing-w1-desktop": {
+          "status": {
+            "failed": 10
+          },
+          "errors": {
+            "Error: Fit\n\nexpect(received).toBeLessThan(expected)\n\nExpected: < 0.95\nReceived:   1.1249999094275789\n": 10
+          },
+          "duration_ms": [
+            470,
+            495,
+            490,
+            480,
+            528,
+            676,
+            492,
+            477,
+            473,
+            520
+          ],
+          "observed_repeat_ids": [
+            "ba07e228bcb3aecf4d27-2d9345ddaa4fe6422286",
+            "ba07e228bcb3aecf4d27-30504805927ae719bf74",
+            "ba07e228bcb3aecf4d27-3cedbcead9a7d18bd336",
+            "ba07e228bcb3aecf4d27-459a4faeb13d68acbcee",
+            "ba07e228bcb3aecf4d27-59cb9cddaa1f81692883",
+            "ba07e228bcb3aecf4d27-91b696b814a773e3a263",
+            "ba07e228bcb3aecf4d27-b42b0424749120089717",
+            "ba07e228bcb3aecf4d27-b9b090c1c260248c8f79",
+            "ba07e228bcb3aecf4d27-c430380ff25ef06975ad",
+            "ba07e228bcb3aecf4d27-ef7a8c97bd3b0875f229"
+          ]
+        },
+        "maturing-w2-desktop": {
+          "status": {
+            "failed": 10
+          },
+          "errors": {
+            "Error: Fit\n\nexpect(received).toBeLessThan(expected)\n\nExpected: < 0.95\nReceived:   1.1249999094275789\n": 10
+          },
+          "duration_ms": [
+            504,
+            475,
+            513,
+            749,
+            547,
+            526,
+            531,
+            569,
+            520,
+            476
+          ],
+          "observed_repeat_ids": [
+            "ba07e228bcb3aecf4d27-2d9345ddaa4fe6422286",
+            "ba07e228bcb3aecf4d27-30504805927ae719bf74",
+            "ba07e228bcb3aecf4d27-3cedbcead9a7d18bd336",
+            "ba07e228bcb3aecf4d27-459a4faeb13d68acbcee",
+            "ba07e228bcb3aecf4d27-59cb9cddaa1f81692883",
+            "ba07e228bcb3aecf4d27-91b696b814a773e3a263",
+            "ba07e228bcb3aecf4d27-b42b0424749120089717",
+            "ba07e228bcb3aecf4d27-b9b090c1c260248c8f79",
+            "ba07e228bcb3aecf4d27-c430380ff25ef06975ad",
+            "ba07e228bcb3aecf4d27-ef7a8c97bd3b0875f229"
+          ]
+        },
+        "beta-w1-desktop": {
+          "status": {
+            "failed": 10
+          },
+          "errors": {
+            "Error: Fit\n\nexpect(received).toBeLessThan(expected)\n\nExpected: < 0.95\nReceived:   1.1249999094275789\n": 9,
+            "Error: Fit\n\nexpect(received).toBeCloseTo(expected, precision)\n\nExpected: 0.6149764150943396\nReceived: 0.6163521828172815\n\nExpected precision:    4\nExpected difference: < 0.00005\nReceived difference:   0.0013757677229419008\n": 1
+          },
+          "duration_ms": [
+            477,
+            474,
+            511,
+            456,
+            672,
+            462,
+            488,
+            472,
+            481,
+            520
+          ],
+          "observed_repeat_ids": [
+            "ba07e228bcb3aecf4d27-2d9345ddaa4fe6422286",
+            "ba07e228bcb3aecf4d27-30504805927ae719bf74",
+            "ba07e228bcb3aecf4d27-3cedbcead9a7d18bd336",
+            "ba07e228bcb3aecf4d27-459a4faeb13d68acbcee",
+            "ba07e228bcb3aecf4d27-59cb9cddaa1f81692883",
+            "ba07e228bcb3aecf4d27-91b696b814a773e3a263",
+            "ba07e228bcb3aecf4d27-b42b0424749120089717",
+            "ba07e228bcb3aecf4d27-b9b090c1c260248c8f79",
+            "ba07e228bcb3aecf4d27-c430380ff25ef06975ad",
+            "ba07e228bcb3aecf4d27-ef7a8c97bd3b0875f229"
+          ]
+        },
+        "beta-w2-desktop": {
+          "status": {
+            "failed": 10
+          },
+          "errors": {
+            "Error: Fit\n\nexpect(received).toBeLessThan(expected)\n\nExpected: < 0.95\nReceived:   1.1249999094275789\n": 10
+          },
+          "duration_ms": [
+            500,
+            511,
+            496,
+            485,
+            486,
+            521,
+            494,
+            482,
+            552,
+            496
+          ],
+          "observed_repeat_ids": [
+            "ba07e228bcb3aecf4d27-2d9345ddaa4fe6422286",
+            "ba07e228bcb3aecf4d27-30504805927ae719bf74",
+            "ba07e228bcb3aecf4d27-3cedbcead9a7d18bd336",
+            "ba07e228bcb3aecf4d27-459a4faeb13d68acbcee",
+            "ba07e228bcb3aecf4d27-59cb9cddaa1f81692883",
+            "ba07e228bcb3aecf4d27-91b696b814a773e3a263",
+            "ba07e228bcb3aecf4d27-b42b0424749120089717",
+            "ba07e228bcb3aecf4d27-b9b090c1c260248c8f79",
+            "ba07e228bcb3aecf4d27-c430380ff25ef06975ad",
+            "ba07e228bcb3aecf4d27-ef7a8c97bd3b0875f229"
+          ]
+        }
+      }
+    }
+  ]
+}

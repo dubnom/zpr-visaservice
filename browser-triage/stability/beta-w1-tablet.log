@@ -1,0 +1,2276 @@
+cwd: /Volumes/Storage/dubnom/zipsquat/ZPR Docs/zpr-visaservice.worktrees/maturing-w5-stability-beta-4627e4c/zpr-dashboard
+command: ["npm", "run", "test:browser", "--", "dashboard.spec.mjs", "--project=tablet", "--grep=(?:GUI\\ shared\\ programmatic\\ edits\\ keep\\ policy\\ completion\\ and\\ Scenario\\ indentation\\ undoable|Scenario\\ JSON\\ transport\\ keeps\\ failed\\ creation\\ unsaved\\ and\\ preserves\\ explicit\\ creation\\ payloads|GUI\\ raw\\ scenario\\ analysis\\ ignores\\ delayed\\ errors\\ for\\ an\\ edited\\ source|Gateway\\ analysis\\ scope\\ rejects\\ delayed\\ success\\ after\\ editing\\ back\\ to\\ the\\ original\\ source|Gateway\\ analysis\\ scope\\ rejects\\ delayed\\ error\\ after\\ editing\\ back\\ to\\ the\\ original\\ source|Policy\\ runtime\\ cancellation\\ cannot\\ release\\ a\\ newer\\ pre\\-save\\ fixtures\\ request|Policy\\ runtime\\ cancellation\\ cannot\\ release\\ a\\ newer\\ pre\\-save\\ evaluation\\ request)$", "--repeat-each=10", "--workers=1", "--retries=0", "--trace=off", "--reporter=json,list"]
+CI/live/Simulator opt-ins unset; TMPDIR=/Volumes/Storage/dubnom/zipsquat/ZPR Docs/zpr-visaservice.worktrees/maturing-w5-stability-beta-4627e4c/.browser-runtime
+
+> test:browser
+> playwright test dashboard.spec.mjs --project=tablet --grep=(?:GUI\ shared\ programmatic\ edits\ keep\ policy\ completion\ and\ Scenario\ indentation\ undoable|Scenario\ JSON\ transport\ keeps\ failed\ creation\ unsaved\ and\ preserves\ explicit\ creation\ payloads|GUI\ raw\ scenario\ analysis\ ignores\ delayed\ errors\ for\ an\ edited\ source|Gateway\ analysis\ scope\ rejects\ delayed\ success\ after\ editing\ back\ to\ the\ original\ source|Gateway\ analysis\ scope\ rejects\ delayed\ error\ after\ editing\ back\ to\ the\ original\ source|Policy\ runtime\ cancellation\ cannot\ release\ a\ newer\ pre\-save\ fixtures\ request|Policy\ runtime\ cancellation\ cannot\ release\ a\ newer\ pre\-save\ evaluation\ request)$ --repeat-each=10 --workers=1 --retries=0 --trace=off --reporter=json,list
+
+
+Running 70 tests using 1 worker
+
+  ✘   1 [tablet] › tests/browser/dashboard.spec.mjs:199:1 › GUI shared programmatic edits keep policy completion and Scenario indentation undoable (5.5s)
+  ✘   2 [tablet] › tests/browser/dashboard.spec.mjs:1906:1 › Scenario JSON transport keeps failed creation unsaved and preserves explicit creation payloads (768ms)
+  ✘   3 [tablet] › tests/browser/dashboard.spec.mjs:2232:1 › GUI raw scenario analysis ignores delayed errors for an edited source (504ms)
+  ✘   4 [tablet] › tests/browser/dashboard.spec.mjs:2787:3 › Gateway analysis scope rejects delayed success after editing back to the original source (494ms)
+  ✘   5 [tablet] › tests/browser/dashboard.spec.mjs:2787:3 › Gateway analysis scope rejects delayed error after editing back to the original source (526ms)
+  ✘   6 [tablet] › tests/browser/dashboard.spec.mjs:7215:3 › Policy runtime cancellation cannot release a newer pre-save fixtures request (30.1s)
+  ✘   7 [tablet] › tests/browser/dashboard.spec.mjs:7215:3 › Policy runtime cancellation cannot release a newer pre-save evaluation request (30.2s)
+  ✘   8 [tablet] › tests/browser/dashboard.spec.mjs:199:1 › GUI shared programmatic edits keep policy completion and Scenario indentation undoable (5.5s)
+  ✓   9 [tablet] › tests/browser/dashboard.spec.mjs:1906:1 › Scenario JSON transport keeps failed creation unsaved and preserves explicit creation payloads (771ms)
+  ✘  10 [tablet] › tests/browser/dashboard.spec.mjs:2232:1 › GUI raw scenario analysis ignores delayed errors for an edited source (539ms)
+  ✘  11 [tablet] › tests/browser/dashboard.spec.mjs:2787:3 › Gateway analysis scope rejects delayed success after editing back to the original source (477ms)
+  ✘  12 [tablet] › tests/browser/dashboard.spec.mjs:2787:3 › Gateway analysis scope rejects delayed error after editing back to the original source (464ms)
+  ✘  13 [tablet] › tests/browser/dashboard.spec.mjs:7215:3 › Policy runtime cancellation cannot release a newer pre-save fixtures request (30.1s)
+  ✘  14 [tablet] › tests/browser/dashboard.spec.mjs:7215:3 › Policy runtime cancellation cannot release a newer pre-save evaluation request (30.1s)
+  ✘  15 [tablet] › tests/browser/dashboard.spec.mjs:199:1 › GUI shared programmatic edits keep policy completion and Scenario indentation undoable (5.6s)
+  ✓  16 [tablet] › tests/browser/dashboard.spec.mjs:1906:1 › Scenario JSON transport keeps failed creation unsaved and preserves explicit creation payloads (770ms)
+  ✘  17 [tablet] › tests/browser/dashboard.spec.mjs:2232:1 › GUI raw scenario analysis ignores delayed errors for an edited source (541ms)
+  ✘  18 [tablet] › tests/browser/dashboard.spec.mjs:2787:3 › Gateway analysis scope rejects delayed success after editing back to the original source (479ms)
+  ✘  19 [tablet] › tests/browser/dashboard.spec.mjs:2787:3 › Gateway analysis scope rejects delayed error after editing back to the original source (483ms)
+  ✘  20 [tablet] › tests/browser/dashboard.spec.mjs:7215:3 › Policy runtime cancellation cannot release a newer pre-save fixtures request (30.1s)
+  ✘  21 [tablet] › tests/browser/dashboard.spec.mjs:7215:3 › Policy runtime cancellation cannot release a newer pre-save evaluation request (30.1s)
+  ✘  22 [tablet] › tests/browser/dashboard.spec.mjs:199:1 › GUI shared programmatic edits keep policy completion and Scenario indentation undoable (5.5s)
+  ✓  23 [tablet] › tests/browser/dashboard.spec.mjs:1906:1 › Scenario JSON transport keeps failed creation unsaved and preserves explicit creation payloads (663ms)
+  ✘  24 [tablet] › tests/browser/dashboard.spec.mjs:2232:1 › GUI raw scenario analysis ignores delayed errors for an edited source (512ms)
+  ✘  25 [tablet] › tests/browser/dashboard.spec.mjs:2787:3 › Gateway analysis scope rejects delayed success after editing back to the original source (510ms)
+  ✘  26 [tablet] › tests/browser/dashboard.spec.mjs:2787:3 › Gateway analysis scope rejects delayed error after editing back to the original source (493ms)
+  ✘  27 [tablet] › tests/browser/dashboard.spec.mjs:7215:3 › Policy runtime cancellation cannot release a newer pre-save fixtures request (30.2s)
+  ✘  28 [tablet] › tests/browser/dashboard.spec.mjs:7215:3 › Policy runtime cancellation cannot release a newer pre-save evaluation request (30.2s)
+  ✘  29 [tablet] › tests/browser/dashboard.spec.mjs:199:1 › GUI shared programmatic edits keep policy completion and Scenario indentation undoable (5.5s)
+  ✘  30 [tablet] › tests/browser/dashboard.spec.mjs:1906:1 › Scenario JSON transport keeps failed creation unsaved and preserves explicit creation payloads (750ms)
+  ✘  31 [tablet] › tests/browser/dashboard.spec.mjs:2232:1 › GUI raw scenario analysis ignores delayed errors for an edited source (588ms)
+  ✘  32 [tablet] › tests/browser/dashboard.spec.mjs:2787:3 › Gateway analysis scope rejects delayed success after editing back to the original source (491ms)
+  ✘  33 [tablet] › tests/browser/dashboard.spec.mjs:2787:3 › Gateway analysis scope rejects delayed error after editing back to the original source (493ms)
+  ✘  34 [tablet] › tests/browser/dashboard.spec.mjs:7215:3 › Policy runtime cancellation cannot release a newer pre-save fixtures request (30.1s)
+  ✘  35 [tablet] › tests/browser/dashboard.spec.mjs:7215:3 › Policy runtime cancellation cannot release a newer pre-save evaluation request (30.1s)
+  ✘  36 [tablet] › tests/browser/dashboard.spec.mjs:199:1 › GUI shared programmatic edits keep policy completion and Scenario indentation undoable (5.6s)
+  ✓  37 [tablet] › tests/browser/dashboard.spec.mjs:1906:1 › Scenario JSON transport keeps failed creation unsaved and preserves explicit creation payloads (758ms)
+  ✘  38 [tablet] › tests/browser/dashboard.spec.mjs:2232:1 › GUI raw scenario analysis ignores delayed errors for an edited source (520ms)
+  ✘  39 [tablet] › tests/browser/dashboard.spec.mjs:2787:3 › Gateway analysis scope rejects delayed success after editing back to the original source (465ms)
+  ✘  40 [tablet] › tests/browser/dashboard.spec.mjs:2787:3 › Gateway analysis scope rejects delayed error after editing back to the original source (471ms)
+  ✘  41 [tablet] › tests/browser/dashboard.spec.mjs:7215:3 › Policy runtime cancellation cannot release a newer pre-save fixtures request (30.1s)
+  ✓  42 [tablet] › tests/browser/dashboard.spec.mjs:7215:3 › Policy runtime cancellation cannot release a newer pre-save evaluation request (915ms)
+  ✘  43 [tablet] › tests/browser/dashboard.spec.mjs:199:1 › GUI shared programmatic edits keep policy completion and Scenario indentation undoable (5.5s)
+  ✘  44 [tablet] › tests/browser/dashboard.spec.mjs:1906:1 › Scenario JSON transport keeps failed creation unsaved and preserves explicit creation payloads (709ms)
+  ✘  45 [tablet] › tests/browser/dashboard.spec.mjs:2232:1 › GUI raw scenario analysis ignores delayed errors for an edited source (505ms)
+  ✘  46 [tablet] › tests/browser/dashboard.spec.mjs:2787:3 › Gateway analysis scope rejects delayed success after editing back to the original source (506ms)
+  ✘  47 [tablet] › tests/browser/dashboard.spec.mjs:2787:3 › Gateway analysis scope rejects delayed error after editing back to the original source (498ms)
+  ✘  48 [tablet] › tests/browser/dashboard.spec.mjs:7215:3 › Policy runtime cancellation cannot release a newer pre-save fixtures request (30.1s)
+  ✘  49 [tablet] › tests/browser/dashboard.spec.mjs:7215:3 › Policy runtime cancellation cannot release a newer pre-save evaluation request (30.2s)
+  ✘  50 [tablet] › tests/browser/dashboard.spec.mjs:199:1 › GUI shared programmatic edits keep policy completion and Scenario indentation undoable (5.5s)
+  ✘  51 [tablet] › tests/browser/dashboard.spec.mjs:1906:1 › Scenario JSON transport keeps failed creation unsaved and preserves explicit creation payloads (790ms)
+  ✘  52 [tablet] › tests/browser/dashboard.spec.mjs:2232:1 › GUI raw scenario analysis ignores delayed errors for an edited source (520ms)
+  ✘  53 [tablet] › tests/browser/dashboard.spec.mjs:2787:3 › Gateway analysis scope rejects delayed success after editing back to the original source (510ms)
+  ✘  54 [tablet] › tests/browser/dashboard.spec.mjs:2787:3 › Gateway analysis scope rejects delayed error after editing back to the original source (511ms)
+  ✘  55 [tablet] › tests/browser/dashboard.spec.mjs:7215:3 › Policy runtime cancellation cannot release a newer pre-save fixtures request (30.1s)
+  ✘  56 [tablet] › tests/browser/dashboard.spec.mjs:7215:3 › Policy runtime cancellation cannot release a newer pre-save evaluation request (30.2s)
+  ✘  57 [tablet] › tests/browser/dashboard.spec.mjs:199:1 › GUI shared programmatic edits keep policy completion and Scenario indentation undoable (5.5s)
+  ✘  58 [tablet] › tests/browser/dashboard.spec.mjs:1906:1 › Scenario JSON transport keeps failed creation unsaved and preserves explicit creation payloads (788ms)
+  ✘  59 [tablet] › tests/browser/dashboard.spec.mjs:2232:1 › GUI raw scenario analysis ignores delayed errors for an edited source (572ms)
+  ✘  60 [tablet] › tests/browser/dashboard.spec.mjs:2787:3 › Gateway analysis scope rejects delayed success after editing back to the original source (526ms)
+  ✘  61 [tablet] › tests/browser/dashboard.spec.mjs:2787:3 › Gateway analysis scope rejects delayed error after editing back to the original source (510ms)
+  ✘  62 [tablet] › tests/browser/dashboard.spec.mjs:7215:3 › Policy runtime cancellation cannot release a newer pre-save fixtures request (30.2s)
+  ✘  63 [tablet] › tests/browser/dashboard.spec.mjs:7215:3 › Policy runtime cancellation cannot release a newer pre-save evaluation request (30.1s)
+  ✘  64 [tablet] › tests/browser/dashboard.spec.mjs:199:1 › GUI shared programmatic edits keep policy completion and Scenario indentation undoable (5.5s)
+  ✓  65 [tablet] › tests/browser/dashboard.spec.mjs:1906:1 › Scenario JSON transport keeps failed creation unsaved and preserves explicit creation payloads (797ms)
+  ✘  66 [tablet] › tests/browser/dashboard.spec.mjs:2232:1 › GUI raw scenario analysis ignores delayed errors for an edited source (558ms)
+  ✘  67 [tablet] › tests/browser/dashboard.spec.mjs:2787:3 › Gateway analysis scope rejects delayed success after editing back to the original source (491ms)
+  ✘  68 [tablet] › tests/browser/dashboard.spec.mjs:2787:3 › Gateway analysis scope rejects delayed error after editing back to the original source (508ms)
+  ✘  69 [tablet] › tests/browser/dashboard.spec.mjs:7215:3 › Policy runtime cancellation cannot release a newer pre-save fixtures request (30.1s)
+  ✘  70 [tablet] › tests/browser/dashboard.spec.mjs:7215:3 › Policy runtime cancellation cannot release a newer pre-save evaluation request (30.1s)
+
+
+  1) [tablet] › tests/browser/dashboard.spec.mjs:199:1 › GUI shared programmatic edits keep policy completion and Scenario indentation undoable
+
+    Error: expect(locator).toHaveValue(expected) failed
+
+    Locator: locator('#policy-source')
+    Timeout: 5000ms
+    - Expected  - 1
+    + Received  + 2
+
+      define Employee as user
+    -   with user.department:
+    +   with dep
+    +
+
+    Call log:
+      - Expect "toHaveValue" locator('#policy-source') with timeout 5000ms
+      - waiting for locator('#policy-source')
+        14 × locator resolved to <textarea wrap="off" autocorrect="off" id="policy-source" spellcheck="false" autocomplete="off" autocapitalize="off" aria-expanded="false" aria-readonly="false" data-word-wrap="false" aria-autocomplete="list" aria-label="ZPL policy source" aria-controls="policy-completions" aria-describedby="policy-editor-help"></textarea>
+           - unexpected value "define Employee as user
+      with dep
+      "
+
+
+      206 |   await expect(completionMenu(page)).toBeVisible();
+      207 |   await codeEditor(page, "policy-source").press("Enter");
+    > 208 |   await expect(policy).toHaveValue("define Employee as user\n  with user.department:");
+          |                        ^
+      209 |   await codeEditor(page, "policy-source").press("ControlOrMeta+z");
+      210 |   await expect(policy).toHaveValue(original);
+      211 |   await codeEditor(page, "policy-source").press("ControlOrMeta+Shift+Z");
+        at /Volumes/Storage/dubnom/zipsquat/ZPR Docs/zpr-visaservice.worktrees/maturing-w5-stability-beta-4627e4c/zpr-dashboard/tests/browser/dashboard.spec.mjs:208:24
+
+    attachment #1: screenshot (image/png) ──────────────────────────────────────────────────────────
+    test-results/dashboard-GUI-shared-progr-1c89d-enario-indentation-undoable-tablet/test-failed-1.png
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+    Error Context: test-results/dashboard-GUI-shared-progr-1c89d-enario-indentation-undoable-tablet/error-context.md
+
+  2) [tablet] › tests/browser/dashboard.spec.mjs:1906:1 › Scenario JSON transport keeps failed creation unsaved and preserves explicit creation payloads
+
+    Error: expect(received).toEqual(expected) // deep equality
+
+    - Expected  - 0
+    + Received  + 1
+
+    @@ -33,6 +33,7 @@
+              },
+            ],
+          },
+          "summary": "Initial version",
+        },
+    +   null,
+      ]
+
+      1927 |   await page.locator("#scenario-editor-save").click();
+      1928 |   await expect(page.locator("#scenario-editor-status")).toHaveText("Saved version 1. Publish it to enable runs.");
+    > 1929 |   expect(writes).toEqual(Array.from({ length: 2 }, () => ({ scenario, summary: "Initial version", expected_revision: 0 })));
+           |                  ^
+      1930 |   expect(api.counts.get(endpoint + "/created-transport/publish") || 0).toBe(0);
+      1931 |   expect(api.counts.get("/api/simulator/scenarios/run") || 0).toBe(0);
+      1932 | });
+        at /Volumes/Storage/dubnom/zipsquat/ZPR Docs/zpr-visaservice.worktrees/maturing-w5-stability-beta-4627e4c/zpr-dashboard/tests/browser/dashboard.spec.mjs:1929:18
+
+    attachment #1: screenshot (image/png) ──────────────────────────────────────────────────────────
+    test-results/dashboard-Scenario-JSON-tr-077ed--explicit-creation-payloads-tablet/test-failed-1.png
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+    Error Context: test-results/dashboard-Scenario-JSON-tr-077ed--explicit-creation-payloads-tablet/error-context.md
+
+  3) [tablet] › tests/browser/dashboard.spec.mjs:2232:1 › GUI raw scenario analysis ignores delayed errors for an edited source
+
+    Error: Unexpected CSP violations
+
+    expect(received).toEqual(expected) // deep equality
+
+    - Expected  - 1
+    + Received  + 3
+
+    - Array []
+    + Array [
+    +   "style-src-attr",
+    + ]
+
+      982 |     await use(data);
+      983 |     expect(errors, "Unexpected browser JavaScript errors").toEqual([]);
+    > 984 |     expect(await page.evaluate(() => window.testCSPViolations || []), "Unexpected CSP violations").toEqual([]);
+          |                                                                                                    ^
+      985 |   },
+      986 | });
+      987 |
+        at Object.api (/Volumes/Storage/dubnom/zipsquat/ZPR Docs/zpr-visaservice.worktrees/maturing-w5-stability-beta-4627e4c/zpr-dashboard/tests/browser/dashboard.spec.mjs:984:100)
+
+    attachment #1: screenshot (image/png) ──────────────────────────────────────────────────────────
+    test-results/dashboard-GUI-raw-scenario-8a31c-errors-for-an-edited-source-tablet/test-failed-1.png
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+    Error Context: test-results/dashboard-GUI-raw-scenario-8a31c-errors-for-an-edited-source-tablet/error-context.md
+
+  4) [tablet] › tests/browser/dashboard.spec.mjs:2787:3 › Gateway analysis scope rejects delayed success after editing back to the original source
+
+    Error: Unexpected CSP violations
+
+    expect(received).toEqual(expected) // deep equality
+
+    - Expected  - 1
+    + Received  + 3
+
+    - Array []
+    + Array [
+    +   "style-src-attr",
+    + ]
+
+      982 |     await use(data);
+      983 |     expect(errors, "Unexpected browser JavaScript errors").toEqual([]);
+    > 984 |     expect(await page.evaluate(() => window.testCSPViolations || []), "Unexpected CSP violations").toEqual([]);
+          |                                                                                                    ^
+      985 |   },
+      986 | });
+      987 |
+        at Object.api (/Volumes/Storage/dubnom/zipsquat/ZPR Docs/zpr-visaservice.worktrees/maturing-w5-stability-beta-4627e4c/zpr-dashboard/tests/browser/dashboard.spec.mjs:984:100)
+
+    attachment #1: screenshot (image/png) ──────────────────────────────────────────────────────────
+    test-results/dashboard-Gateway-analysis-c872e-back-to-the-original-source-tablet/test-failed-1.png
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+    Error Context: test-results/dashboard-Gateway-analysis-c872e-back-to-the-original-source-tablet/error-context.md
+
+  5) [tablet] › tests/browser/dashboard.spec.mjs:2787:3 › Gateway analysis scope rejects delayed error after editing back to the original source
+
+    Error: Unexpected CSP violations
+
+    expect(received).toEqual(expected) // deep equality
+
+    - Expected  - 1
+    + Received  + 3
+
+    - Array []
+    + Array [
+    +   "style-src-attr",
+    + ]
+
+      982 |     await use(data);
+      983 |     expect(errors, "Unexpected browser JavaScript errors").toEqual([]);
+    > 984 |     expect(await page.evaluate(() => window.testCSPViolations || []), "Unexpected CSP violations").toEqual([]);
+          |                                                                                                    ^
+      985 |   },
+      986 | });
+      987 |
+        at Object.api (/Volumes/Storage/dubnom/zipsquat/ZPR Docs/zpr-visaservice.worktrees/maturing-w5-stability-beta-4627e4c/zpr-dashboard/tests/browser/dashboard.spec.mjs:984:100)
+
+    attachment #1: screenshot (image/png) ──────────────────────────────────────────────────────────
+    test-results/dashboard-Gateway-analysis-51e70-back-to-the-original-source-tablet/test-failed-1.png
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+    Error Context: test-results/dashboard-Gateway-analysis-51e70-back-to-the-original-source-tablet/error-context.md
+
+  6) [tablet] › tests/browser/dashboard.spec.mjs:7215:3 › Policy runtime cancellation cannot release a newer pre-save fixtures request
+
+    Test timeout of 30000ms exceeded.
+
+    Error: locator.click: Test timeout of 30000ms exceeded.
+    Call log:
+      - waiting for locator('#policy-save')
+        - locator resolved to <button disabled type="button" role="menuitem" id="policy-save" class="button button-save-next">Save</button>
+      - attempting click action
+        2 × waiting for element to be visible, enabled and stable
+          - element is not enabled
+        - retrying click action
+        - waiting 20ms
+        2 × waiting for element to be visible, enabled and stable
+          - element is not enabled
+        - retrying click action
+          - waiting 100ms
+        57 × waiting for element to be visible, enabled and stable
+           - element is not enabled
+         - retrying click action
+           - waiting 500ms
+
+
+      7242 |     await codeEditor(page, "policy-source").fill(draft);
+      7243 |     await openPolicyFiles(page);
+    > 7244 |     await page.locator("#policy-save").click();
+           |                                        ^
+      7245 |     await expect.poll(() => completions.length).toBe(2);
+      7246 |     completions[0]();
+      7247 |     await expect.poll(() => oldFinished).toBe(true);
+        at /Volumes/Storage/dubnom/zipsquat/ZPR Docs/zpr-visaservice.worktrees/maturing-w5-stability-beta-4627e4c/zpr-dashboard/tests/browser/dashboard.spec.mjs:7244:40
+
+    attachment #1: screenshot (image/png) ──────────────────────────────────────────────────────────
+    test-results/dashboard-Policy-runtime-c-bc411-r-pre-save-fixtures-request-tablet/test-failed-1.png
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+    Error Context: test-results/dashboard-Policy-runtime-c-bc411-r-pre-save-fixtures-request-tablet/error-context.md
+
+  7) [tablet] › tests/browser/dashboard.spec.mjs:7215:3 › Policy runtime cancellation cannot release a newer pre-save evaluation request
+
+    Test timeout of 30000ms exceeded.
+
+    Error: locator.click: Test timeout of 30000ms exceeded.
+    Call log:
+      - waiting for locator('#policy-save')
+        - locator resolved to <button disabled type="button" role="menuitem" id="policy-save" class="button button-save-next">Save</button>
+      - attempting click action
+        2 × waiting for element to be visible, enabled and stable
+          - element is not enabled
+        - retrying click action
+        - waiting 20ms
+        2 × waiting for element to be visible, enabled and stable
+          - element is not enabled
+        - retrying click action
+          - waiting 100ms
+        57 × waiting for element to be visible, enabled and stable
+           - element is not enabled
+         - retrying click action
+           - waiting 500ms
+
+
+      7242 |     await codeEditor(page, "policy-source").fill(draft);
+      7243 |     await openPolicyFiles(page);
+    > 7244 |     await page.locator("#policy-save").click();
+           |                                        ^
+      7245 |     await expect.poll(() => completions.length).toBe(2);
+      7246 |     completions[0]();
+      7247 |     await expect.poll(() => oldFinished).toBe(true);
+        at /Volumes/Storage/dubnom/zipsquat/ZPR Docs/zpr-visaservice.worktrees/maturing-w5-stability-beta-4627e4c/zpr-dashboard/tests/browser/dashboard.spec.mjs:7244:40
+
+    attachment #1: screenshot (image/png) ──────────────────────────────────────────────────────────
+    test-results/dashboard-Policy-runtime-c-253ca-pre-save-evaluation-request-tablet/test-failed-1.png
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+    Error Context: test-results/dashboard-Policy-runtime-c-253ca-pre-save-evaluation-request-tablet/error-context.md
+
+  8) [tablet] › tests/browser/dashboard.spec.mjs:199:1 › GUI shared programmatic edits keep policy completion and Scenario indentation undoable
+
+    Error: expect(locator).toHaveValue(expected) failed
+
+    Locator: locator('#policy-source')
+    Timeout: 5000ms
+    - Expected  - 1
+    + Received  + 2
+
+      define Employee as user
+    -   with user.department:
+    +   with dep
+    +
+
+    Call log:
+      - Expect "toHaveValue" locator('#policy-source') with timeout 5000ms
+      - waiting for locator('#policy-source')
+        14 × locator resolved to <textarea wrap="off" autocorrect="off" id="policy-source" spellcheck="false" autocomplete="off" autocapitalize="off" aria-expanded="false" aria-readonly="false" data-word-wrap="false" aria-autocomplete="list" aria-label="ZPL policy source" aria-controls="policy-completions" aria-describedby="policy-editor-help"></textarea>
+           - unexpected value "define Employee as user
+      with dep
+      "
+
+
+      206 |   await expect(completionMenu(page)).toBeVisible();
+      207 |   await codeEditor(page, "policy-source").press("Enter");
+    > 208 |   await expect(policy).toHaveValue("define Employee as user\n  with user.department:");
+          |                        ^
+      209 |   await codeEditor(page, "policy-source").press("ControlOrMeta+z");
+      210 |   await expect(policy).toHaveValue(original);
+      211 |   await codeEditor(page, "policy-source").press("ControlOrMeta+Shift+Z");
+        at /Volumes/Storage/dubnom/zipsquat/ZPR Docs/zpr-visaservice.worktrees/maturing-w5-stability-beta-4627e4c/zpr-dashboard/tests/browser/dashboard.spec.mjs:208:24
+
+    attachment #1: screenshot (image/png) ──────────────────────────────────────────────────────────
+    test-results/dashboard-GUI-shared-progr-1c89d-enario-indentation-undoable-tablet-repeat1/test-failed-1.png
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+    Error Context: test-results/dashboard-GUI-shared-progr-1c89d-enario-indentation-undoable-tablet-repeat1/error-context.md
+
+  9) [tablet] › tests/browser/dashboard.spec.mjs:2232:1 › GUI raw scenario analysis ignores delayed errors for an edited source
+
+    Error: Unexpected CSP violations
+
+    expect(received).toEqual(expected) // deep equality
+
+    - Expected  - 1
+    + Received  + 3
+
+    - Array []
+    + Array [
+    +   "style-src-attr",
+    + ]
+
+      982 |     await use(data);
+      983 |     expect(errors, "Unexpected browser JavaScript errors").toEqual([]);
+    > 984 |     expect(await page.evaluate(() => window.testCSPViolations || []), "Unexpected CSP violations").toEqual([]);
+          |                                                                                                    ^
+      985 |   },
+      986 | });
+      987 |
+        at Object.api (/Volumes/Storage/dubnom/zipsquat/ZPR Docs/zpr-visaservice.worktrees/maturing-w5-stability-beta-4627e4c/zpr-dashboard/tests/browser/dashboard.spec.mjs:984:100)
+
+    attachment #1: screenshot (image/png) ──────────────────────────────────────────────────────────
+    test-results/dashboard-GUI-raw-scenario-8a31c-errors-for-an-edited-source-tablet-repeat1/test-failed-1.png
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+    Error Context: test-results/dashboard-GUI-raw-scenario-8a31c-errors-for-an-edited-source-tablet-repeat1/error-context.md
+
+  10) [tablet] › tests/browser/dashboard.spec.mjs:2787:3 › Gateway analysis scope rejects delayed success after editing back to the original source
+
+    Error: Unexpected CSP violations
+
+    expect(received).toEqual(expected) // deep equality
+
+    - Expected  - 1
+    + Received  + 3
+
+    - Array []
+    + Array [
+    +   "style-src-attr",
+    + ]
+
+      982 |     await use(data);
+      983 |     expect(errors, "Unexpected browser JavaScript errors").toEqual([]);
+    > 984 |     expect(await page.evaluate(() => window.testCSPViolations || []), "Unexpected CSP violations").toEqual([]);
+          |                                                                                                    ^
+      985 |   },
+      986 | });
+      987 |
+        at Object.api (/Volumes/Storage/dubnom/zipsquat/ZPR Docs/zpr-visaservice.worktrees/maturing-w5-stability-beta-4627e4c/zpr-dashboard/tests/browser/dashboard.spec.mjs:984:100)
+
+    attachment #1: screenshot (image/png) ──────────────────────────────────────────────────────────
+    test-results/dashboard-Gateway-analysis-c872e-back-to-the-original-source-tablet-repeat1/test-failed-1.png
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+    Error Context: test-results/dashboard-Gateway-analysis-c872e-back-to-the-original-source-tablet-repeat1/error-context.md
+
+  11) [tablet] › tests/browser/dashboard.spec.mjs:2787:3 › Gateway analysis scope rejects delayed error after editing back to the original source
+
+    Error: Unexpected CSP violations
+
+    expect(received).toEqual(expected) // deep equality
+
+    - Expected  - 1
+    + Received  + 3
+
+    - Array []
+    + Array [
+    +   "style-src-attr",
+    + ]
+
+      982 |     await use(data);
+      983 |     expect(errors, "Unexpected browser JavaScript errors").toEqual([]);
+    > 984 |     expect(await page.evaluate(() => window.testCSPViolations || []), "Unexpected CSP violations").toEqual([]);
+          |                                                                                                    ^
+      985 |   },
+      986 | });
+      987 |
+        at Object.api (/Volumes/Storage/dubnom/zipsquat/ZPR Docs/zpr-visaservice.worktrees/maturing-w5-stability-beta-4627e4c/zpr-dashboard/tests/browser/dashboard.spec.mjs:984:100)
+
+    attachment #1: screenshot (image/png) ──────────────────────────────────────────────────────────
+    test-results/dashboard-Gateway-analysis-51e70-back-to-the-original-source-tablet-repeat1/test-failed-1.png
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+    Error Context: test-results/dashboard-Gateway-analysis-51e70-back-to-the-original-source-tablet-repeat1/error-context.md
+
+  12) [tablet] › tests/browser/dashboard.spec.mjs:7215:3 › Policy runtime cancellation cannot release a newer pre-save fixtures request
+
+    Test timeout of 30000ms exceeded.
+
+    Error: locator.click: Test timeout of 30000ms exceeded.
+    Call log:
+      - waiting for locator('#policy-save')
+        - locator resolved to <button disabled type="button" role="menuitem" id="policy-save" class="button button-save-next">Save</button>
+      - attempting click action
+        2 × waiting for element to be visible, enabled and stable
+          - element is not enabled
+        - retrying click action
+        - waiting 20ms
+        2 × waiting for element to be visible, enabled and stable
+          - element is not enabled
+        - retrying click action
+          - waiting 100ms
+        56 × waiting for element to be visible, enabled and stable
+           - element is not enabled
+         - retrying click action
+           - waiting 500ms
+
+
+      7242 |     await codeEditor(page, "policy-source").fill(draft);
+      7243 |     await openPolicyFiles(page);
+    > 7244 |     await page.locator("#policy-save").click();
+           |                                        ^
+      7245 |     await expect.poll(() => completions.length).toBe(2);
+      7246 |     completions[0]();
+      7247 |     await expect.poll(() => oldFinished).toBe(true);
+        at /Volumes/Storage/dubnom/zipsquat/ZPR Docs/zpr-visaservice.worktrees/maturing-w5-stability-beta-4627e4c/zpr-dashboard/tests/browser/dashboard.spec.mjs:7244:40
+
+    attachment #1: screenshot (image/png) ──────────────────────────────────────────────────────────
+    test-results/dashboard-Policy-runtime-c-bc411-r-pre-save-fixtures-request-tablet-repeat1/test-failed-1.png
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+    Error Context: test-results/dashboard-Policy-runtime-c-bc411-r-pre-save-fixtures-request-tablet-repeat1/error-context.md
+
+  13) [tablet] › tests/browser/dashboard.spec.mjs:7215:3 › Policy runtime cancellation cannot release a newer pre-save evaluation request
+
+    Test timeout of 30000ms exceeded.
+
+    Error: locator.click: Test timeout of 30000ms exceeded.
+    Call log:
+      - waiting for locator('#policy-save')
+        - locator resolved to <button disabled type="button" role="menuitem" id="policy-save" class="button button-save-next">Save</button>
+      - attempting click action
+        2 × waiting for element to be visible, enabled and stable
+          - element is not enabled
+        - retrying click action
+        - waiting 20ms
+        2 × waiting for element to be visible, enabled and stable
+          - element is not enabled
+        - retrying click action
+          - waiting 100ms
+        56 × waiting for element to be visible, enabled and stable
+           - element is not enabled
+         - retrying click action
+           - waiting 500ms
+
+
+      7242 |     await codeEditor(page, "policy-source").fill(draft);
+      7243 |     await openPolicyFiles(page);
+    > 7244 |     await page.locator("#policy-save").click();
+           |                                        ^
+      7245 |     await expect.poll(() => completions.length).toBe(2);
+      7246 |     completions[0]();
+      7247 |     await expect.poll(() => oldFinished).toBe(true);
+        at /Volumes/Storage/dubnom/zipsquat/ZPR Docs/zpr-visaservice.worktrees/maturing-w5-stability-beta-4627e4c/zpr-dashboard/tests/browser/dashboard.spec.mjs:7244:40
+
+    attachment #1: screenshot (image/png) ──────────────────────────────────────────────────────────
+    test-results/dashboard-Policy-runtime-c-253ca-pre-save-evaluation-request-tablet-repeat1/test-failed-1.png
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+    Error Context: test-results/dashboard-Policy-runtime-c-253ca-pre-save-evaluation-request-tablet-repeat1/error-context.md
+
+  14) [tablet] › tests/browser/dashboard.spec.mjs:199:1 › GUI shared programmatic edits keep policy completion and Scenario indentation undoable
+
+    Error: expect(locator).toHaveValue(expected) failed
+
+    Locator: locator('#policy-source')
+    Timeout: 5000ms
+    - Expected  - 1
+    + Received  + 2
+
+      define Employee as user
+    -   with user.department:
+    +   with dep
+    +
+
+    Call log:
+      - Expect "toHaveValue" locator('#policy-source') with timeout 5000ms
+      - waiting for locator('#policy-source')
+        14 × locator resolved to <textarea wrap="off" autocorrect="off" id="policy-source" spellcheck="false" autocomplete="off" autocapitalize="off" aria-expanded="false" aria-readonly="false" data-word-wrap="false" aria-autocomplete="list" aria-label="ZPL policy source" aria-controls="policy-completions" aria-describedby="policy-editor-help"></textarea>
+           - unexpected value "define Employee as user
+      with dep
+      "
+
+
+      206 |   await expect(completionMenu(page)).toBeVisible();
+      207 |   await codeEditor(page, "policy-source").press("Enter");
+    > 208 |   await expect(policy).toHaveValue("define Employee as user\n  with user.department:");
+          |                        ^
+      209 |   await codeEditor(page, "policy-source").press("ControlOrMeta+z");
+      210 |   await expect(policy).toHaveValue(original);
+      211 |   await codeEditor(page, "policy-source").press("ControlOrMeta+Shift+Z");
+        at /Volumes/Storage/dubnom/zipsquat/ZPR Docs/zpr-visaservice.worktrees/maturing-w5-stability-beta-4627e4c/zpr-dashboard/tests/browser/dashboard.spec.mjs:208:24
+
+    attachment #1: screenshot (image/png) ──────────────────────────────────────────────────────────
+    test-results/dashboard-GUI-shared-progr-1c89d-enario-indentation-undoable-tablet-repeat2/test-failed-1.png
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+    Error Context: test-results/dashboard-GUI-shared-progr-1c89d-enario-indentation-undoable-tablet-repeat2/error-context.md
+
+  15) [tablet] › tests/browser/dashboard.spec.mjs:2232:1 › GUI raw scenario analysis ignores delayed errors for an edited source
+
+    Error: Unexpected CSP violations
+
+    expect(received).toEqual(expected) // deep equality
+
+    - Expected  - 1
+    + Received  + 3
+
+    - Array []
+    + Array [
+    +   "style-src-attr",
+    + ]
+
+      982 |     await use(data);
+      983 |     expect(errors, "Unexpected browser JavaScript errors").toEqual([]);
+    > 984 |     expect(await page.evaluate(() => window.testCSPViolations || []), "Unexpected CSP violations").toEqual([]);
+          |                                                                                                    ^
+      985 |   },
+      986 | });
+      987 |
+        at Object.api (/Volumes/Storage/dubnom/zipsquat/ZPR Docs/zpr-visaservice.worktrees/maturing-w5-stability-beta-4627e4c/zpr-dashboard/tests/browser/dashboard.spec.mjs:984:100)
+
+    attachment #1: screenshot (image/png) ──────────────────────────────────────────────────────────
+    test-results/dashboard-GUI-raw-scenario-8a31c-errors-for-an-edited-source-tablet-repeat2/test-failed-1.png
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+    Error Context: test-results/dashboard-GUI-raw-scenario-8a31c-errors-for-an-edited-source-tablet-repeat2/error-context.md
+
+  16) [tablet] › tests/browser/dashboard.spec.mjs:2787:3 › Gateway analysis scope rejects delayed success after editing back to the original source
+
+    Error: Unexpected CSP violations
+
+    expect(received).toEqual(expected) // deep equality
+
+    - Expected  - 1
+    + Received  + 3
+
+    - Array []
+    + Array [
+    +   "style-src-attr",
+    + ]
+
+      982 |     await use(data);
+      983 |     expect(errors, "Unexpected browser JavaScript errors").toEqual([]);
+    > 984 |     expect(await page.evaluate(() => window.testCSPViolations || []), "Unexpected CSP violations").toEqual([]);
+          |                                                                                                    ^
+      985 |   },
+      986 | });
+      987 |
+        at Object.api (/Volumes/Storage/dubnom/zipsquat/ZPR Docs/zpr-visaservice.worktrees/maturing-w5-stability-beta-4627e4c/zpr-dashboard/tests/browser/dashboard.spec.mjs:984:100)
+
+    attachment #1: screenshot (image/png) ──────────────────────────────────────────────────────────
+    test-results/dashboard-Gateway-analysis-c872e-back-to-the-original-source-tablet-repeat2/test-failed-1.png
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+    Error Context: test-results/dashboard-Gateway-analysis-c872e-back-to-the-original-source-tablet-repeat2/error-context.md
+
+  17) [tablet] › tests/browser/dashboard.spec.mjs:2787:3 › Gateway analysis scope rejects delayed error after editing back to the original source
+
+    Error: Unexpected CSP violations
+
+    expect(received).toEqual(expected) // deep equality
+
+    - Expected  - 1
+    + Received  + 3
+
+    - Array []
+    + Array [
+    +   "style-src-attr",
+    + ]
+
+      982 |     await use(data);
+      983 |     expect(errors, "Unexpected browser JavaScript errors").toEqual([]);
+    > 984 |     expect(await page.evaluate(() => window.testCSPViolations || []), "Unexpected CSP violations").toEqual([]);
+          |                                                                                                    ^
+      985 |   },
+      986 | });
+      987 |
+        at Object.api (/Volumes/Storage/dubnom/zipsquat/ZPR Docs/zpr-visaservice.worktrees/maturing-w5-stability-beta-4627e4c/zpr-dashboard/tests/browser/dashboard.spec.mjs:984:100)
+
+    attachment #1: screenshot (image/png) ──────────────────────────────────────────────────────────
+    test-results/dashboard-Gateway-analysis-51e70-back-to-the-original-source-tablet-repeat2/test-failed-1.png
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+    Error Context: test-results/dashboard-Gateway-analysis-51e70-back-to-the-original-source-tablet-repeat2/error-context.md
+
+  18) [tablet] › tests/browser/dashboard.spec.mjs:7215:3 › Policy runtime cancellation cannot release a newer pre-save fixtures request
+
+    Test timeout of 30000ms exceeded.
+
+    Error: locator.click: Test timeout of 30000ms exceeded.
+    Call log:
+      - waiting for locator('#policy-save')
+        - locator resolved to <button disabled type="button" role="menuitem" id="policy-save" class="button button-save-next">Save</button>
+      - attempting click action
+        2 × waiting for element to be visible, enabled and stable
+          - element is not enabled
+        - retrying click action
+        - waiting 20ms
+        2 × waiting for element to be visible, enabled and stable
+          - element is not enabled
+        - retrying click action
+          - waiting 100ms
+        57 × waiting for element to be visible, enabled and stable
+           - element is not enabled
+         - retrying click action
+           - waiting 500ms
+
+
+      7242 |     await codeEditor(page, "policy-source").fill(draft);
+      7243 |     await openPolicyFiles(page);
+    > 7244 |     await page.locator("#policy-save").click();
+           |                                        ^
+      7245 |     await expect.poll(() => completions.length).toBe(2);
+      7246 |     completions[0]();
+      7247 |     await expect.poll(() => oldFinished).toBe(true);
+        at /Volumes/Storage/dubnom/zipsquat/ZPR Docs/zpr-visaservice.worktrees/maturing-w5-stability-beta-4627e4c/zpr-dashboard/tests/browser/dashboard.spec.mjs:7244:40
+
+    attachment #1: screenshot (image/png) ──────────────────────────────────────────────────────────
+    test-results/dashboard-Policy-runtime-c-bc411-r-pre-save-fixtures-request-tablet-repeat2/test-failed-1.png
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+    Error Context: test-results/dashboard-Policy-runtime-c-bc411-r-pre-save-fixtures-request-tablet-repeat2/error-context.md
+
+  19) [tablet] › tests/browser/dashboard.spec.mjs:7215:3 › Policy runtime cancellation cannot release a newer pre-save evaluation request
+
+    Test timeout of 30000ms exceeded.
+
+    Error: locator.click: Test timeout of 30000ms exceeded.
+    Call log:
+      - waiting for locator('#policy-save')
+        - locator resolved to <button disabled type="button" role="menuitem" id="policy-save" class="button button-save-next">Save</button>
+      - attempting click action
+        2 × waiting for element to be visible, enabled and stable
+          - element is not enabled
+        - retrying click action
+        - waiting 20ms
+        2 × waiting for element to be visible, enabled and stable
+          - element is not enabled
+        - retrying click action
+          - waiting 100ms
+        57 × waiting for element to be visible, enabled and stable
+           - element is not enabled
+         - retrying click action
+           - waiting 500ms
+
+
+      7242 |     await codeEditor(page, "policy-source").fill(draft);
+      7243 |     await openPolicyFiles(page);
+    > 7244 |     await page.locator("#policy-save").click();
+           |                                        ^
+      7245 |     await expect.poll(() => completions.length).toBe(2);
+      7246 |     completions[0]();
+      7247 |     await expect.poll(() => oldFinished).toBe(true);
+        at /Volumes/Storage/dubnom/zipsquat/ZPR Docs/zpr-visaservice.worktrees/maturing-w5-stability-beta-4627e4c/zpr-dashboard/tests/browser/dashboard.spec.mjs:7244:40
+
+    attachment #1: screenshot (image/png) ──────────────────────────────────────────────────────────
+    test-results/dashboard-Policy-runtime-c-253ca-pre-save-evaluation-request-tablet-repeat2/test-failed-1.png
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+    Error Context: test-results/dashboard-Policy-runtime-c-253ca-pre-save-evaluation-request-tablet-repeat2/error-context.md
+
+  20) [tablet] › tests/browser/dashboard.spec.mjs:199:1 › GUI shared programmatic edits keep policy completion and Scenario indentation undoable
+
+    Error: expect(locator).toHaveValue(expected) failed
+
+    Locator: locator('#policy-source')
+    Timeout: 5000ms
+    - Expected  - 1
+    + Received  + 2
+
+      define Employee as user
+    -   with user.department:
+    +   with dep
+    +
+
+    Call log:
+      - Expect "toHaveValue" locator('#policy-source') with timeout 5000ms
+      - waiting for locator('#policy-source')
+        14 × locator resolved to <textarea wrap="off" autocorrect="off" id="policy-source" spellcheck="false" autocomplete="off" autocapitalize="off" aria-expanded="false" aria-readonly="false" data-word-wrap="false" aria-autocomplete="list" aria-label="ZPL policy source" aria-controls="policy-completions" aria-describedby="policy-editor-help"></textarea>
+           - unexpected value "define Employee as user
+      with dep
+      "
+
+
+      206 |   await expect(completionMenu(page)).toBeVisible();
+      207 |   await codeEditor(page, "policy-source").press("Enter");
+    > 208 |   await expect(policy).toHaveValue("define Employee as user\n  with user.department:");
+          |                        ^
+      209 |   await codeEditor(page, "policy-source").press("ControlOrMeta+z");
+      210 |   await expect(policy).toHaveValue(original);
+      211 |   await codeEditor(page, "policy-source").press("ControlOrMeta+Shift+Z");
+        at /Volumes/Storage/dubnom/zipsquat/ZPR Docs/zpr-visaservice.worktrees/maturing-w5-stability-beta-4627e4c/zpr-dashboard/tests/browser/dashboard.spec.mjs:208:24
+
+    attachment #1: screenshot (image/png) ──────────────────────────────────────────────────────────
+    test-results/dashboard-GUI-shared-progr-1c89d-enario-indentation-undoable-tablet-repeat3/test-failed-1.png
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+    Error Context: test-results/dashboard-GUI-shared-progr-1c89d-enario-indentation-undoable-tablet-repeat3/error-context.md
+
+  21) [tablet] › tests/browser/dashboard.spec.mjs:2232:1 › GUI raw scenario analysis ignores delayed errors for an edited source
+
+    Error: Unexpected CSP violations
+
+    expect(received).toEqual(expected) // deep equality
+
+    - Expected  - 1
+    + Received  + 3
+
+    - Array []
+    + Array [
+    +   "style-src-attr",
+    + ]
+
+      982 |     await use(data);
+      983 |     expect(errors, "Unexpected browser JavaScript errors").toEqual([]);
+    > 984 |     expect(await page.evaluate(() => window.testCSPViolations || []), "Unexpected CSP violations").toEqual([]);
+          |                                                                                                    ^
+      985 |   },
+      986 | });
+      987 |
+        at Object.api (/Volumes/Storage/dubnom/zipsquat/ZPR Docs/zpr-visaservice.worktrees/maturing-w5-stability-beta-4627e4c/zpr-dashboard/tests/browser/dashboard.spec.mjs:984:100)
+
+    attachment #1: screenshot (image/png) ──────────────────────────────────────────────────────────
+    test-results/dashboard-GUI-raw-scenario-8a31c-errors-for-an-edited-source-tablet-repeat3/test-failed-1.png
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+    Error Context: test-results/dashboard-GUI-raw-scenario-8a31c-errors-for-an-edited-source-tablet-repeat3/error-context.md
+
+  22) [tablet] › tests/browser/dashboard.spec.mjs:2787:3 › Gateway analysis scope rejects delayed success after editing back to the original source
+
+    Error: Unexpected CSP violations
+
+    expect(received).toEqual(expected) // deep equality
+
+    - Expected  - 1
+    + Received  + 3
+
+    - Array []
+    + Array [
+    +   "style-src-attr",
+    + ]
+
+      982 |     await use(data);
+      983 |     expect(errors, "Unexpected browser JavaScript errors").toEqual([]);
+    > 984 |     expect(await page.evaluate(() => window.testCSPViolations || []), "Unexpected CSP violations").toEqual([]);
+          |                                                                                                    ^
+      985 |   },
+      986 | });
+      987 |
+        at Object.api (/Volumes/Storage/dubnom/zipsquat/ZPR Docs/zpr-visaservice.worktrees/maturing-w5-stability-beta-4627e4c/zpr-dashboard/tests/browser/dashboard.spec.mjs:984:100)
+
+    attachment #1: screenshot (image/png) ──────────────────────────────────────────────────────────
+    test-results/dashboard-Gateway-analysis-c872e-back-to-the-original-source-tablet-repeat3/test-failed-1.png
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+    Error Context: test-results/dashboard-Gateway-analysis-c872e-back-to-the-original-source-tablet-repeat3/error-context.md
+
+  23) [tablet] › tests/browser/dashboard.spec.mjs:2787:3 › Gateway analysis scope rejects delayed error after editing back to the original source
+
+    Error: Unexpected CSP violations
+
+    expect(received).toEqual(expected) // deep equality
+
+    - Expected  - 1
+    + Received  + 3
+
+    - Array []
+    + Array [
+    +   "style-src-attr",
+    + ]
+
+      982 |     await use(data);
+      983 |     expect(errors, "Unexpected browser JavaScript errors").toEqual([]);
+    > 984 |     expect(await page.evaluate(() => window.testCSPViolations || []), "Unexpected CSP violations").toEqual([]);
+          |                                                                                                    ^
+      985 |   },
+      986 | });
+      987 |
+        at Object.api (/Volumes/Storage/dubnom/zipsquat/ZPR Docs/zpr-visaservice.worktrees/maturing-w5-stability-beta-4627e4c/zpr-dashboard/tests/browser/dashboard.spec.mjs:984:100)
+
+    attachment #1: screenshot (image/png) ──────────────────────────────────────────────────────────
+    test-results/dashboard-Gateway-analysis-51e70-back-to-the-original-source-tablet-repeat3/test-failed-1.png
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+    Error Context: test-results/dashboard-Gateway-analysis-51e70-back-to-the-original-source-tablet-repeat3/error-context.md
+
+  24) [tablet] › tests/browser/dashboard.spec.mjs:7215:3 › Policy runtime cancellation cannot release a newer pre-save fixtures request
+
+    Test timeout of 30000ms exceeded.
+
+    Error: locator.click: Test timeout of 30000ms exceeded.
+    Call log:
+      - waiting for locator('#policy-save')
+        - locator resolved to <button disabled type="button" role="menuitem" id="policy-save" class="button button-save-next">Save</button>
+      - attempting click action
+        2 × waiting for element to be visible, enabled and stable
+          - element is not enabled
+        - retrying click action
+        - waiting 20ms
+        2 × waiting for element to be visible, enabled and stable
+          - element is not enabled
+        - retrying click action
+          - waiting 100ms
+        57 × waiting for element to be visible, enabled and stable
+           - element is not enabled
+         - retrying click action
+           - waiting 500ms
+
+
+      7242 |     await codeEditor(page, "policy-source").fill(draft);
+      7243 |     await openPolicyFiles(page);
+    > 7244 |     await page.locator("#policy-save").click();
+           |                                        ^
+      7245 |     await expect.poll(() => completions.length).toBe(2);
+      7246 |     completions[0]();
+      7247 |     await expect.poll(() => oldFinished).toBe(true);
+        at /Volumes/Storage/dubnom/zipsquat/ZPR Docs/zpr-visaservice.worktrees/maturing-w5-stability-beta-4627e4c/zpr-dashboard/tests/browser/dashboard.spec.mjs:7244:40
+
+    attachment #1: screenshot (image/png) ──────────────────────────────────────────────────────────
+    test-results/dashboard-Policy-runtime-c-bc411-r-pre-save-fixtures-request-tablet-repeat3/test-failed-1.png
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+    Error Context: test-results/dashboard-Policy-runtime-c-bc411-r-pre-save-fixtures-request-tablet-repeat3/error-context.md
+
+  25) [tablet] › tests/browser/dashboard.spec.mjs:7215:3 › Policy runtime cancellation cannot release a newer pre-save evaluation request
+
+    Test timeout of 30000ms exceeded.
+
+    Error: locator.click: Test timeout of 30000ms exceeded.
+    Call log:
+      - waiting for locator('#policy-save')
+        - locator resolved to <button disabled type="button" role="menuitem" id="policy-save" class="button button-save-next">Save</button>
+      - attempting click action
+        2 × waiting for element to be visible, enabled and stable
+          - element is not enabled
+        - retrying click action
+        - waiting 20ms
+        2 × waiting for element to be visible, enabled and stable
+          - element is not enabled
+        - retrying click action
+          - waiting 100ms
+        57 × waiting for element to be visible, enabled and stable
+           - element is not enabled
+         - retrying click action
+           - waiting 500ms
+
+
+      7242 |     await codeEditor(page, "policy-source").fill(draft);
+      7243 |     await openPolicyFiles(page);
+    > 7244 |     await page.locator("#policy-save").click();
+           |                                        ^
+      7245 |     await expect.poll(() => completions.length).toBe(2);
+      7246 |     completions[0]();
+      7247 |     await expect.poll(() => oldFinished).toBe(true);
+        at /Volumes/Storage/dubnom/zipsquat/ZPR Docs/zpr-visaservice.worktrees/maturing-w5-stability-beta-4627e4c/zpr-dashboard/tests/browser/dashboard.spec.mjs:7244:40
+
+    attachment #1: screenshot (image/png) ──────────────────────────────────────────────────────────
+    test-results/dashboard-Policy-runtime-c-253ca-pre-save-evaluation-request-tablet-repeat3/test-failed-1.png
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+    Error Context: test-results/dashboard-Policy-runtime-c-253ca-pre-save-evaluation-request-tablet-repeat3/error-context.md
+
+  26) [tablet] › tests/browser/dashboard.spec.mjs:199:1 › GUI shared programmatic edits keep policy completion and Scenario indentation undoable
+
+    Error: expect(locator).toHaveValue(expected) failed
+
+    Locator: locator('#policy-source')
+    Timeout: 5000ms
+    - Expected  - 1
+    + Received  + 2
+
+      define Employee as user
+    -   with user.department:
+    +   with dep
+    +
+
+    Call log:
+      - Expect "toHaveValue" locator('#policy-source') with timeout 5000ms
+      - waiting for locator('#policy-source')
+        14 × locator resolved to <textarea wrap="off" autocorrect="off" id="policy-source" spellcheck="false" autocomplete="off" autocapitalize="off" aria-expanded="false" aria-readonly="false" data-word-wrap="false" aria-autocomplete="list" aria-label="ZPL policy source" aria-controls="policy-completions" aria-describedby="policy-editor-help"></textarea>
+           - unexpected value "define Employee as user
+      with dep
+      "
+
+
+      206 |   await expect(completionMenu(page)).toBeVisible();
+      207 |   await codeEditor(page, "policy-source").press("Enter");
+    > 208 |   await expect(policy).toHaveValue("define Employee as user\n  with user.department:");
+          |                        ^
+      209 |   await codeEditor(page, "policy-source").press("ControlOrMeta+z");
+      210 |   await expect(policy).toHaveValue(original);
+      211 |   await codeEditor(page, "policy-source").press("ControlOrMeta+Shift+Z");
+        at /Volumes/Storage/dubnom/zipsquat/ZPR Docs/zpr-visaservice.worktrees/maturing-w5-stability-beta-4627e4c/zpr-dashboard/tests/browser/dashboard.spec.mjs:208:24
+
+    attachment #1: screenshot (image/png) ──────────────────────────────────────────────────────────
+    test-results/dashboard-GUI-shared-progr-1c89d-enario-indentation-undoable-tablet-repeat4/test-failed-1.png
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+    Error Context: test-results/dashboard-GUI-shared-progr-1c89d-enario-indentation-undoable-tablet-repeat4/error-context.md
+
+  27) [tablet] › tests/browser/dashboard.spec.mjs:1906:1 › Scenario JSON transport keeps failed creation unsaved and preserves explicit creation payloads
+
+    Error: expect(received).toEqual(expected) // deep equality
+
+    - Expected  - 0
+    + Received  + 1
+
+    @@ -33,6 +33,7 @@
+              },
+            ],
+          },
+          "summary": "Initial version",
+        },
+    +   null,
+      ]
+
+      1927 |   await page.locator("#scenario-editor-save").click();
+      1928 |   await expect(page.locator("#scenario-editor-status")).toHaveText("Saved version 1. Publish it to enable runs.");
+    > 1929 |   expect(writes).toEqual(Array.from({ length: 2 }, () => ({ scenario, summary: "Initial version", expected_revision: 0 })));
+           |                  ^
+      1930 |   expect(api.counts.get(endpoint + "/created-transport/publish") || 0).toBe(0);
+      1931 |   expect(api.counts.get("/api/simulator/scenarios/run") || 0).toBe(0);
+      1932 | });
+        at /Volumes/Storage/dubnom/zipsquat/ZPR Docs/zpr-visaservice.worktrees/maturing-w5-stability-beta-4627e4c/zpr-dashboard/tests/browser/dashboard.spec.mjs:1929:18
+
+    attachment #1: screenshot (image/png) ──────────────────────────────────────────────────────────
+    test-results/dashboard-Scenario-JSON-tr-077ed--explicit-creation-payloads-tablet-repeat4/test-failed-1.png
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+    Error Context: test-results/dashboard-Scenario-JSON-tr-077ed--explicit-creation-payloads-tablet-repeat4/error-context.md
+
+  28) [tablet] › tests/browser/dashboard.spec.mjs:2232:1 › GUI raw scenario analysis ignores delayed errors for an edited source
+
+    Error: Unexpected CSP violations
+
+    expect(received).toEqual(expected) // deep equality
+
+    - Expected  - 1
+    + Received  + 3
+
+    - Array []
+    + Array [
+    +   "style-src-attr",
+    + ]
+
+      982 |     await use(data);
+      983 |     expect(errors, "Unexpected browser JavaScript errors").toEqual([]);
+    > 984 |     expect(await page.evaluate(() => window.testCSPViolations || []), "Unexpected CSP violations").toEqual([]);
+          |                                                                                                    ^
+      985 |   },
+      986 | });
+      987 |
+        at Object.api (/Volumes/Storage/dubnom/zipsquat/ZPR Docs/zpr-visaservice.worktrees/maturing-w5-stability-beta-4627e4c/zpr-dashboard/tests/browser/dashboard.spec.mjs:984:100)
+
+    attachment #1: screenshot (image/png) ──────────────────────────────────────────────────────────
+    test-results/dashboard-GUI-raw-scenario-8a31c-errors-for-an-edited-source-tablet-repeat4/test-failed-1.png
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+    Error Context: test-results/dashboard-GUI-raw-scenario-8a31c-errors-for-an-edited-source-tablet-repeat4/error-context.md
+
+  29) [tablet] › tests/browser/dashboard.spec.mjs:2787:3 › Gateway analysis scope rejects delayed success after editing back to the original source
+
+    Error: Unexpected CSP violations
+
+    expect(received).toEqual(expected) // deep equality
+
+    - Expected  - 1
+    + Received  + 3
+
+    - Array []
+    + Array [
+    +   "style-src-attr",
+    + ]
+
+      982 |     await use(data);
+      983 |     expect(errors, "Unexpected browser JavaScript errors").toEqual([]);
+    > 984 |     expect(await page.evaluate(() => window.testCSPViolations || []), "Unexpected CSP violations").toEqual([]);
+          |                                                                                                    ^
+      985 |   },
+      986 | });
+      987 |
+        at Object.api (/Volumes/Storage/dubnom/zipsquat/ZPR Docs/zpr-visaservice.worktrees/maturing-w5-stability-beta-4627e4c/zpr-dashboard/tests/browser/dashboard.spec.mjs:984:100)
+
+    attachment #1: screenshot (image/png) ──────────────────────────────────────────────────────────
+    test-results/dashboard-Gateway-analysis-c872e-back-to-the-original-source-tablet-repeat4/test-failed-1.png
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+    Error Context: test-results/dashboard-Gateway-analysis-c872e-back-to-the-original-source-tablet-repeat4/error-context.md
+
+  30) [tablet] › tests/browser/dashboard.spec.mjs:2787:3 › Gateway analysis scope rejects delayed error after editing back to the original source
+
+    Error: Unexpected CSP violations
+
+    expect(received).toEqual(expected) // deep equality
+
+    - Expected  - 1
+    + Received  + 3
+
+    - Array []
+    + Array [
+    +   "style-src-attr",
+    + ]
+
+      982 |     await use(data);
+      983 |     expect(errors, "Unexpected browser JavaScript errors").toEqual([]);
+    > 984 |     expect(await page.evaluate(() => window.testCSPViolations || []), "Unexpected CSP violations").toEqual([]);
+          |                                                                                                    ^
+      985 |   },
+      986 | });
+      987 |
+        at Object.api (/Volumes/Storage/dubnom/zipsquat/ZPR Docs/zpr-visaservice.worktrees/maturing-w5-stability-beta-4627e4c/zpr-dashboard/tests/browser/dashboard.spec.mjs:984:100)
+
+    attachment #1: screenshot (image/png) ──────────────────────────────────────────────────────────
+    test-results/dashboard-Gateway-analysis-51e70-back-to-the-original-source-tablet-repeat4/test-failed-1.png
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+    Error Context: test-results/dashboard-Gateway-analysis-51e70-back-to-the-original-source-tablet-repeat4/error-context.md
+
+  31) [tablet] › tests/browser/dashboard.spec.mjs:7215:3 › Policy runtime cancellation cannot release a newer pre-save fixtures request
+
+    Test timeout of 30000ms exceeded.
+
+    Error: locator.click: Test timeout of 30000ms exceeded.
+    Call log:
+      - waiting for locator('#policy-save')
+        - locator resolved to <button disabled type="button" role="menuitem" id="policy-save" class="button button-save-next">Save</button>
+      - attempting click action
+        2 × waiting for element to be visible, enabled and stable
+          - element is not enabled
+        - retrying click action
+        - waiting 20ms
+        2 × waiting for element to be visible, enabled and stable
+          - element is not enabled
+        - retrying click action
+          - waiting 100ms
+        56 × waiting for element to be visible, enabled and stable
+           - element is not enabled
+         - retrying click action
+           - waiting 500ms
+
+
+      7242 |     await codeEditor(page, "policy-source").fill(draft);
+      7243 |     await openPolicyFiles(page);
+    > 7244 |     await page.locator("#policy-save").click();
+           |                                        ^
+      7245 |     await expect.poll(() => completions.length).toBe(2);
+      7246 |     completions[0]();
+      7247 |     await expect.poll(() => oldFinished).toBe(true);
+        at /Volumes/Storage/dubnom/zipsquat/ZPR Docs/zpr-visaservice.worktrees/maturing-w5-stability-beta-4627e4c/zpr-dashboard/tests/browser/dashboard.spec.mjs:7244:40
+
+    attachment #1: screenshot (image/png) ──────────────────────────────────────────────────────────
+    test-results/dashboard-Policy-runtime-c-bc411-r-pre-save-fixtures-request-tablet-repeat4/test-failed-1.png
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+    Error Context: test-results/dashboard-Policy-runtime-c-bc411-r-pre-save-fixtures-request-tablet-repeat4/error-context.md
+
+  32) [tablet] › tests/browser/dashboard.spec.mjs:7215:3 › Policy runtime cancellation cannot release a newer pre-save evaluation request
+
+    Test timeout of 30000ms exceeded.
+
+    Error: locator.click: Test timeout of 30000ms exceeded.
+    Call log:
+      - waiting for locator('#policy-save')
+        - locator resolved to <button disabled type="button" role="menuitem" id="policy-save" class="button button-save-next">Save</button>
+      - attempting click action
+        2 × waiting for element to be visible, enabled and stable
+          - element is not enabled
+        - retrying click action
+        - waiting 20ms
+        2 × waiting for element to be visible, enabled and stable
+          - element is not enabled
+        - retrying click action
+          - waiting 100ms
+        57 × waiting for element to be visible, enabled and stable
+           - element is not enabled
+         - retrying click action
+           - waiting 500ms
+
+
+      7242 |     await codeEditor(page, "policy-source").fill(draft);
+      7243 |     await openPolicyFiles(page);
+    > 7244 |     await page.locator("#policy-save").click();
+           |                                        ^
+      7245 |     await expect.poll(() => completions.length).toBe(2);
+      7246 |     completions[0]();
+      7247 |     await expect.poll(() => oldFinished).toBe(true);
+        at /Volumes/Storage/dubnom/zipsquat/ZPR Docs/zpr-visaservice.worktrees/maturing-w5-stability-beta-4627e4c/zpr-dashboard/tests/browser/dashboard.spec.mjs:7244:40
+
+    attachment #1: screenshot (image/png) ──────────────────────────────────────────────────────────
+    test-results/dashboard-Policy-runtime-c-253ca-pre-save-evaluation-request-tablet-repeat4/test-failed-1.png
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+    Error Context: test-results/dashboard-Policy-runtime-c-253ca-pre-save-evaluation-request-tablet-repeat4/error-context.md
+
+  33) [tablet] › tests/browser/dashboard.spec.mjs:199:1 › GUI shared programmatic edits keep policy completion and Scenario indentation undoable
+
+    Error: expect(locator).toHaveValue(expected) failed
+
+    Locator: locator('#policy-source')
+    Timeout: 5000ms
+    - Expected  - 1
+    + Received  + 2
+
+      define Employee as user
+    -   with user.department:
+    +   with dep
+    +
+
+    Call log:
+      - Expect "toHaveValue" locator('#policy-source') with timeout 5000ms
+      - waiting for locator('#policy-source')
+        14 × locator resolved to <textarea wrap="off" autocorrect="off" id="policy-source" spellcheck="false" autocomplete="off" autocapitalize="off" aria-expanded="false" aria-readonly="false" data-word-wrap="false" aria-autocomplete="list" aria-label="ZPL policy source" aria-controls="policy-completions" aria-describedby="policy-editor-help"></textarea>
+           - unexpected value "define Employee as user
+      with dep
+      "
+
+
+      206 |   await expect(completionMenu(page)).toBeVisible();
+      207 |   await codeEditor(page, "policy-source").press("Enter");
+    > 208 |   await expect(policy).toHaveValue("define Employee as user\n  with user.department:");
+          |                        ^
+      209 |   await codeEditor(page, "policy-source").press("ControlOrMeta+z");
+      210 |   await expect(policy).toHaveValue(original);
+      211 |   await codeEditor(page, "policy-source").press("ControlOrMeta+Shift+Z");
+        at /Volumes/Storage/dubnom/zipsquat/ZPR Docs/zpr-visaservice.worktrees/maturing-w5-stability-beta-4627e4c/zpr-dashboard/tests/browser/dashboard.spec.mjs:208:24
+
+    attachment #1: screenshot (image/png) ──────────────────────────────────────────────────────────
+    test-results/dashboard-GUI-shared-progr-1c89d-enario-indentation-undoable-tablet-repeat5/test-failed-1.png
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+    Error Context: test-results/dashboard-GUI-shared-progr-1c89d-enario-indentation-undoable-tablet-repeat5/error-context.md
+
+  34) [tablet] › tests/browser/dashboard.spec.mjs:2232:1 › GUI raw scenario analysis ignores delayed errors for an edited source
+
+    Error: Unexpected CSP violations
+
+    expect(received).toEqual(expected) // deep equality
+
+    - Expected  - 1
+    + Received  + 3
+
+    - Array []
+    + Array [
+    +   "style-src-attr",
+    + ]
+
+      982 |     await use(data);
+      983 |     expect(errors, "Unexpected browser JavaScript errors").toEqual([]);
+    > 984 |     expect(await page.evaluate(() => window.testCSPViolations || []), "Unexpected CSP violations").toEqual([]);
+          |                                                                                                    ^
+      985 |   },
+      986 | });
+      987 |
+        at Object.api (/Volumes/Storage/dubnom/zipsquat/ZPR Docs/zpr-visaservice.worktrees/maturing-w5-stability-beta-4627e4c/zpr-dashboard/tests/browser/dashboard.spec.mjs:984:100)
+
+    attachment #1: screenshot (image/png) ──────────────────────────────────────────────────────────
+    test-results/dashboard-GUI-raw-scenario-8a31c-errors-for-an-edited-source-tablet-repeat5/test-failed-1.png
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+    Error Context: test-results/dashboard-GUI-raw-scenario-8a31c-errors-for-an-edited-source-tablet-repeat5/error-context.md
+
+  35) [tablet] › tests/browser/dashboard.spec.mjs:2787:3 › Gateway analysis scope rejects delayed success after editing back to the original source
+
+    Error: Unexpected CSP violations
+
+    expect(received).toEqual(expected) // deep equality
+
+    - Expected  - 1
+    + Received  + 3
+
+    - Array []
+    + Array [
+    +   "style-src-attr",
+    + ]
+
+      982 |     await use(data);
+      983 |     expect(errors, "Unexpected browser JavaScript errors").toEqual([]);
+    > 984 |     expect(await page.evaluate(() => window.testCSPViolations || []), "Unexpected CSP violations").toEqual([]);
+          |                                                                                                    ^
+      985 |   },
+      986 | });
+      987 |
+        at Object.api (/Volumes/Storage/dubnom/zipsquat/ZPR Docs/zpr-visaservice.worktrees/maturing-w5-stability-beta-4627e4c/zpr-dashboard/tests/browser/dashboard.spec.mjs:984:100)
+
+    attachment #1: screenshot (image/png) ──────────────────────────────────────────────────────────
+    test-results/dashboard-Gateway-analysis-c872e-back-to-the-original-source-tablet-repeat5/test-failed-1.png
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+    Error Context: test-results/dashboard-Gateway-analysis-c872e-back-to-the-original-source-tablet-repeat5/error-context.md
+
+  36) [tablet] › tests/browser/dashboard.spec.mjs:2787:3 › Gateway analysis scope rejects delayed error after editing back to the original source
+
+    Error: Unexpected CSP violations
+
+    expect(received).toEqual(expected) // deep equality
+
+    - Expected  - 1
+    + Received  + 3
+
+    - Array []
+    + Array [
+    +   "style-src-attr",
+    + ]
+
+      982 |     await use(data);
+      983 |     expect(errors, "Unexpected browser JavaScript errors").toEqual([]);
+    > 984 |     expect(await page.evaluate(() => window.testCSPViolations || []), "Unexpected CSP violations").toEqual([]);
+          |                                                                                                    ^
+      985 |   },
+      986 | });
+      987 |
+        at Object.api (/Volumes/Storage/dubnom/zipsquat/ZPR Docs/zpr-visaservice.worktrees/maturing-w5-stability-beta-4627e4c/zpr-dashboard/tests/browser/dashboard.spec.mjs:984:100)
+
+    attachment #1: screenshot (image/png) ──────────────────────────────────────────────────────────
+    test-results/dashboard-Gateway-analysis-51e70-back-to-the-original-source-tablet-repeat5/test-failed-1.png
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+    Error Context: test-results/dashboard-Gateway-analysis-51e70-back-to-the-original-source-tablet-repeat5/error-context.md
+
+  37) [tablet] › tests/browser/dashboard.spec.mjs:7215:3 › Policy runtime cancellation cannot release a newer pre-save fixtures request
+
+    Test timeout of 30000ms exceeded.
+
+    Error: locator.click: Test timeout of 30000ms exceeded.
+    Call log:
+      - waiting for locator('#policy-save')
+        - locator resolved to <button disabled type="button" role="menuitem" id="policy-save" class="button button-save-next">Save</button>
+      - attempting click action
+        2 × waiting for element to be visible, enabled and stable
+          - element is not enabled
+        - retrying click action
+        - waiting 20ms
+        2 × waiting for element to be visible, enabled and stable
+          - element is not enabled
+        - retrying click action
+          - waiting 100ms
+        56 × waiting for element to be visible, enabled and stable
+           - element is not enabled
+         - retrying click action
+           - waiting 500ms
+        - waiting for element to be visible, enabled and stable
+
+
+      7242 |     await codeEditor(page, "policy-source").fill(draft);
+      7243 |     await openPolicyFiles(page);
+    > 7244 |     await page.locator("#policy-save").click();
+           |                                        ^
+      7245 |     await expect.poll(() => completions.length).toBe(2);
+      7246 |     completions[0]();
+      7247 |     await expect.poll(() => oldFinished).toBe(true);
+        at /Volumes/Storage/dubnom/zipsquat/ZPR Docs/zpr-visaservice.worktrees/maturing-w5-stability-beta-4627e4c/zpr-dashboard/tests/browser/dashboard.spec.mjs:7244:40
+
+    attachment #1: screenshot (image/png) ──────────────────────────────────────────────────────────
+    test-results/dashboard-Policy-runtime-c-bc411-r-pre-save-fixtures-request-tablet-repeat5/test-failed-1.png
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+    Error Context: test-results/dashboard-Policy-runtime-c-bc411-r-pre-save-fixtures-request-tablet-repeat5/error-context.md
+
+  38) [tablet] › tests/browser/dashboard.spec.mjs:199:1 › GUI shared programmatic edits keep policy completion and Scenario indentation undoable
+
+    Error: expect(locator).toHaveValue(expected) failed
+
+    Locator: locator('#policy-source')
+    Timeout: 5000ms
+    - Expected  - 1
+    + Received  + 2
+
+      define Employee as user
+    -   with user.department:
+    +   with dep
+    +
+
+    Call log:
+      - Expect "toHaveValue" locator('#policy-source') with timeout 5000ms
+      - waiting for locator('#policy-source')
+        14 × locator resolved to <textarea wrap="off" autocorrect="off" id="policy-source" spellcheck="false" autocomplete="off" autocapitalize="off" aria-expanded="false" aria-readonly="false" data-word-wrap="false" aria-autocomplete="list" aria-label="ZPL policy source" aria-controls="policy-completions" aria-describedby="policy-editor-help"></textarea>
+           - unexpected value "define Employee as user
+      with dep
+      "
+
+
+      206 |   await expect(completionMenu(page)).toBeVisible();
+      207 |   await codeEditor(page, "policy-source").press("Enter");
+    > 208 |   await expect(policy).toHaveValue("define Employee as user\n  with user.department:");
+          |                        ^
+      209 |   await codeEditor(page, "policy-source").press("ControlOrMeta+z");
+      210 |   await expect(policy).toHaveValue(original);
+      211 |   await codeEditor(page, "policy-source").press("ControlOrMeta+Shift+Z");
+        at /Volumes/Storage/dubnom/zipsquat/ZPR Docs/zpr-visaservice.worktrees/maturing-w5-stability-beta-4627e4c/zpr-dashboard/tests/browser/dashboard.spec.mjs:208:24
+
+    attachment #1: screenshot (image/png) ──────────────────────────────────────────────────────────
+    test-results/dashboard-GUI-shared-progr-1c89d-enario-indentation-undoable-tablet-repeat6/test-failed-1.png
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+    Error Context: test-results/dashboard-GUI-shared-progr-1c89d-enario-indentation-undoable-tablet-repeat6/error-context.md
+
+  39) [tablet] › tests/browser/dashboard.spec.mjs:1906:1 › Scenario JSON transport keeps failed creation unsaved and preserves explicit creation payloads
+
+    Error: expect(received).toEqual(expected) // deep equality
+
+    - Expected  - 0
+    + Received  + 1
+
+    @@ -33,6 +33,7 @@
+              },
+            ],
+          },
+          "summary": "Initial version",
+        },
+    +   null,
+      ]
+
+      1927 |   await page.locator("#scenario-editor-save").click();
+      1928 |   await expect(page.locator("#scenario-editor-status")).toHaveText("Saved version 1. Publish it to enable runs.");
+    > 1929 |   expect(writes).toEqual(Array.from({ length: 2 }, () => ({ scenario, summary: "Initial version", expected_revision: 0 })));
+           |                  ^
+      1930 |   expect(api.counts.get(endpoint + "/created-transport/publish") || 0).toBe(0);
+      1931 |   expect(api.counts.get("/api/simulator/scenarios/run") || 0).toBe(0);
+      1932 | });
+        at /Volumes/Storage/dubnom/zipsquat/ZPR Docs/zpr-visaservice.worktrees/maturing-w5-stability-beta-4627e4c/zpr-dashboard/tests/browser/dashboard.spec.mjs:1929:18
+
+    attachment #1: screenshot (image/png) ──────────────────────────────────────────────────────────
+    test-results/dashboard-Scenario-JSON-tr-077ed--explicit-creation-payloads-tablet-repeat6/test-failed-1.png
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+    Error Context: test-results/dashboard-Scenario-JSON-tr-077ed--explicit-creation-payloads-tablet-repeat6/error-context.md
+
+  40) [tablet] › tests/browser/dashboard.spec.mjs:2232:1 › GUI raw scenario analysis ignores delayed errors for an edited source
+
+    Error: Unexpected CSP violations
+
+    expect(received).toEqual(expected) // deep equality
+
+    - Expected  - 1
+    + Received  + 3
+
+    - Array []
+    + Array [
+    +   "style-src-attr",
+    + ]
+
+      982 |     await use(data);
+      983 |     expect(errors, "Unexpected browser JavaScript errors").toEqual([]);
+    > 984 |     expect(await page.evaluate(() => window.testCSPViolations || []), "Unexpected CSP violations").toEqual([]);
+          |                                                                                                    ^
+      985 |   },
+      986 | });
+      987 |
+        at Object.api (/Volumes/Storage/dubnom/zipsquat/ZPR Docs/zpr-visaservice.worktrees/maturing-w5-stability-beta-4627e4c/zpr-dashboard/tests/browser/dashboard.spec.mjs:984:100)
+
+    attachment #1: screenshot (image/png) ──────────────────────────────────────────────────────────
+    test-results/dashboard-GUI-raw-scenario-8a31c-errors-for-an-edited-source-tablet-repeat6/test-failed-1.png
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+    Error Context: test-results/dashboard-GUI-raw-scenario-8a31c-errors-for-an-edited-source-tablet-repeat6/error-context.md
+
+  41) [tablet] › tests/browser/dashboard.spec.mjs:2787:3 › Gateway analysis scope rejects delayed success after editing back to the original source
+
+    Error: Unexpected CSP violations
+
+    expect(received).toEqual(expected) // deep equality
+
+    - Expected  - 1
+    + Received  + 3
+
+    - Array []
+    + Array [
+    +   "style-src-attr",
+    + ]
+
+      982 |     await use(data);
+      983 |     expect(errors, "Unexpected browser JavaScript errors").toEqual([]);
+    > 984 |     expect(await page.evaluate(() => window.testCSPViolations || []), "Unexpected CSP violations").toEqual([]);
+          |                                                                                                    ^
+      985 |   },
+      986 | });
+      987 |
+        at Object.api (/Volumes/Storage/dubnom/zipsquat/ZPR Docs/zpr-visaservice.worktrees/maturing-w5-stability-beta-4627e4c/zpr-dashboard/tests/browser/dashboard.spec.mjs:984:100)
+
+    attachment #1: screenshot (image/png) ──────────────────────────────────────────────────────────
+    test-results/dashboard-Gateway-analysis-c872e-back-to-the-original-source-tablet-repeat6/test-failed-1.png
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+    Error Context: test-results/dashboard-Gateway-analysis-c872e-back-to-the-original-source-tablet-repeat6/error-context.md
+
+  42) [tablet] › tests/browser/dashboard.spec.mjs:2787:3 › Gateway analysis scope rejects delayed error after editing back to the original source
+
+    Error: Unexpected CSP violations
+
+    expect(received).toEqual(expected) // deep equality
+
+    - Expected  - 1
+    + Received  + 3
+
+    - Array []
+    + Array [
+    +   "style-src-attr",
+    + ]
+
+      982 |     await use(data);
+      983 |     expect(errors, "Unexpected browser JavaScript errors").toEqual([]);
+    > 984 |     expect(await page.evaluate(() => window.testCSPViolations || []), "Unexpected CSP violations").toEqual([]);
+          |                                                                                                    ^
+      985 |   },
+      986 | });
+      987 |
+        at Object.api (/Volumes/Storage/dubnom/zipsquat/ZPR Docs/zpr-visaservice.worktrees/maturing-w5-stability-beta-4627e4c/zpr-dashboard/tests/browser/dashboard.spec.mjs:984:100)
+
+    attachment #1: screenshot (image/png) ──────────────────────────────────────────────────────────
+    test-results/dashboard-Gateway-analysis-51e70-back-to-the-original-source-tablet-repeat6/test-failed-1.png
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+    Error Context: test-results/dashboard-Gateway-analysis-51e70-back-to-the-original-source-tablet-repeat6/error-context.md
+
+  43) [tablet] › tests/browser/dashboard.spec.mjs:7215:3 › Policy runtime cancellation cannot release a newer pre-save fixtures request
+
+    Test timeout of 30000ms exceeded.
+
+    Error: locator.click: Test timeout of 30000ms exceeded.
+    Call log:
+      - waiting for locator('#policy-save')
+        - locator resolved to <button disabled type="button" role="menuitem" id="policy-save" class="button button-save-next">Save</button>
+      - attempting click action
+        2 × waiting for element to be visible, enabled and stable
+          - element is not enabled
+        - retrying click action
+        - waiting 20ms
+        2 × waiting for element to be visible, enabled and stable
+          - element is not enabled
+        - retrying click action
+          - waiting 100ms
+        57 × waiting for element to be visible, enabled and stable
+           - element is not enabled
+         - retrying click action
+           - waiting 500ms
+
+
+      7242 |     await codeEditor(page, "policy-source").fill(draft);
+      7243 |     await openPolicyFiles(page);
+    > 7244 |     await page.locator("#policy-save").click();
+           |                                        ^
+      7245 |     await expect.poll(() => completions.length).toBe(2);
+      7246 |     completions[0]();
+      7247 |     await expect.poll(() => oldFinished).toBe(true);
+        at /Volumes/Storage/dubnom/zipsquat/ZPR Docs/zpr-visaservice.worktrees/maturing-w5-stability-beta-4627e4c/zpr-dashboard/tests/browser/dashboard.spec.mjs:7244:40
+
+    attachment #1: screenshot (image/png) ──────────────────────────────────────────────────────────
+    test-results/dashboard-Policy-runtime-c-bc411-r-pre-save-fixtures-request-tablet-repeat6/test-failed-1.png
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+    Error Context: test-results/dashboard-Policy-runtime-c-bc411-r-pre-save-fixtures-request-tablet-repeat6/error-context.md
+
+  44) [tablet] › tests/browser/dashboard.spec.mjs:7215:3 › Policy runtime cancellation cannot release a newer pre-save evaluation request
+
+    Test timeout of 30000ms exceeded.
+
+    Error: locator.click: Test timeout of 30000ms exceeded.
+    Call log:
+      - waiting for locator('#policy-save')
+        - locator resolved to <button disabled type="button" role="menuitem" id="policy-save" class="button button-save-next">Save</button>
+      - attempting click action
+        2 × waiting for element to be visible, enabled and stable
+          - element is not enabled
+        - retrying click action
+        - waiting 20ms
+        2 × waiting for element to be visible, enabled and stable
+          - element is not enabled
+        - retrying click action
+          - waiting 100ms
+        57 × waiting for element to be visible, enabled and stable
+           - element is not enabled
+         - retrying click action
+           - waiting 500ms
+
+
+      7242 |     await codeEditor(page, "policy-source").fill(draft);
+      7243 |     await openPolicyFiles(page);
+    > 7244 |     await page.locator("#policy-save").click();
+           |                                        ^
+      7245 |     await expect.poll(() => completions.length).toBe(2);
+      7246 |     completions[0]();
+      7247 |     await expect.poll(() => oldFinished).toBe(true);
+        at /Volumes/Storage/dubnom/zipsquat/ZPR Docs/zpr-visaservice.worktrees/maturing-w5-stability-beta-4627e4c/zpr-dashboard/tests/browser/dashboard.spec.mjs:7244:40
+
+    attachment #1: screenshot (image/png) ──────────────────────────────────────────────────────────
+    test-results/dashboard-Policy-runtime-c-253ca-pre-save-evaluation-request-tablet-repeat6/test-failed-1.png
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+    Error Context: test-results/dashboard-Policy-runtime-c-253ca-pre-save-evaluation-request-tablet-repeat6/error-context.md
+
+  45) [tablet] › tests/browser/dashboard.spec.mjs:199:1 › GUI shared programmatic edits keep policy completion and Scenario indentation undoable
+
+    Error: expect(locator).toHaveValue(expected) failed
+
+    Locator: locator('#policy-source')
+    Timeout: 5000ms
+    - Expected  - 1
+    + Received  + 2
+
+      define Employee as user
+    -   with user.department:
+    +   with dep
+    +
+
+    Call log:
+      - Expect "toHaveValue" locator('#policy-source') with timeout 5000ms
+      - waiting for locator('#policy-source')
+        14 × locator resolved to <textarea wrap="off" autocorrect="off" id="policy-source" spellcheck="false" autocomplete="off" autocapitalize="off" aria-expanded="false" aria-readonly="false" data-word-wrap="false" aria-autocomplete="list" aria-label="ZPL policy source" aria-controls="policy-completions" aria-describedby="policy-editor-help"></textarea>
+           - unexpected value "define Employee as user
+      with dep
+      "
+
+
+      206 |   await expect(completionMenu(page)).toBeVisible();
+      207 |   await codeEditor(page, "policy-source").press("Enter");
+    > 208 |   await expect(policy).toHaveValue("define Employee as user\n  with user.department:");
+          |                        ^
+      209 |   await codeEditor(page, "policy-source").press("ControlOrMeta+z");
+      210 |   await expect(policy).toHaveValue(original);
+      211 |   await codeEditor(page, "policy-source").press("ControlOrMeta+Shift+Z");
+        at /Volumes/Storage/dubnom/zipsquat/ZPR Docs/zpr-visaservice.worktrees/maturing-w5-stability-beta-4627e4c/zpr-dashboard/tests/browser/dashboard.spec.mjs:208:24
+
+    attachment #1: screenshot (image/png) ──────────────────────────────────────────────────────────
+    test-results/dashboard-GUI-shared-progr-1c89d-enario-indentation-undoable-tablet-repeat7/test-failed-1.png
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+    Error Context: test-results/dashboard-GUI-shared-progr-1c89d-enario-indentation-undoable-tablet-repeat7/error-context.md
+
+  46) [tablet] › tests/browser/dashboard.spec.mjs:1906:1 › Scenario JSON transport keeps failed creation unsaved and preserves explicit creation payloads
+
+    Error: expect(received).toEqual(expected) // deep equality
+
+    - Expected  - 0
+    + Received  + 1
+
+    @@ -33,6 +33,7 @@
+              },
+            ],
+          },
+          "summary": "Initial version",
+        },
+    +   null,
+      ]
+
+      1927 |   await page.locator("#scenario-editor-save").click();
+      1928 |   await expect(page.locator("#scenario-editor-status")).toHaveText("Saved version 1. Publish it to enable runs.");
+    > 1929 |   expect(writes).toEqual(Array.from({ length: 2 }, () => ({ scenario, summary: "Initial version", expected_revision: 0 })));
+           |                  ^
+      1930 |   expect(api.counts.get(endpoint + "/created-transport/publish") || 0).toBe(0);
+      1931 |   expect(api.counts.get("/api/simulator/scenarios/run") || 0).toBe(0);
+      1932 | });
+        at /Volumes/Storage/dubnom/zipsquat/ZPR Docs/zpr-visaservice.worktrees/maturing-w5-stability-beta-4627e4c/zpr-dashboard/tests/browser/dashboard.spec.mjs:1929:18
+
+    attachment #1: screenshot (image/png) ──────────────────────────────────────────────────────────
+    test-results/dashboard-Scenario-JSON-tr-077ed--explicit-creation-payloads-tablet-repeat7/test-failed-1.png
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+    Error Context: test-results/dashboard-Scenario-JSON-tr-077ed--explicit-creation-payloads-tablet-repeat7/error-context.md
+
+  47) [tablet] › tests/browser/dashboard.spec.mjs:2232:1 › GUI raw scenario analysis ignores delayed errors for an edited source
+
+    Error: Unexpected CSP violations
+
+    expect(received).toEqual(expected) // deep equality
+
+    - Expected  - 1
+    + Received  + 3
+
+    - Array []
+    + Array [
+    +   "style-src-attr",
+    + ]
+
+      982 |     await use(data);
+      983 |     expect(errors, "Unexpected browser JavaScript errors").toEqual([]);
+    > 984 |     expect(await page.evaluate(() => window.testCSPViolations || []), "Unexpected CSP violations").toEqual([]);
+          |                                                                                                    ^
+      985 |   },
+      986 | });
+      987 |
+        at Object.api (/Volumes/Storage/dubnom/zipsquat/ZPR Docs/zpr-visaservice.worktrees/maturing-w5-stability-beta-4627e4c/zpr-dashboard/tests/browser/dashboard.spec.mjs:984:100)
+
+    attachment #1: screenshot (image/png) ──────────────────────────────────────────────────────────
+    test-results/dashboard-GUI-raw-scenario-8a31c-errors-for-an-edited-source-tablet-repeat7/test-failed-1.png
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+    Error Context: test-results/dashboard-GUI-raw-scenario-8a31c-errors-for-an-edited-source-tablet-repeat7/error-context.md
+
+  48) [tablet] › tests/browser/dashboard.spec.mjs:2787:3 › Gateway analysis scope rejects delayed success after editing back to the original source
+
+    Error: Unexpected CSP violations
+
+    expect(received).toEqual(expected) // deep equality
+
+    - Expected  - 1
+    + Received  + 3
+
+    - Array []
+    + Array [
+    +   "style-src-attr",
+    + ]
+
+      982 |     await use(data);
+      983 |     expect(errors, "Unexpected browser JavaScript errors").toEqual([]);
+    > 984 |     expect(await page.evaluate(() => window.testCSPViolations || []), "Unexpected CSP violations").toEqual([]);
+          |                                                                                                    ^
+      985 |   },
+      986 | });
+      987 |
+        at Object.api (/Volumes/Storage/dubnom/zipsquat/ZPR Docs/zpr-visaservice.worktrees/maturing-w5-stability-beta-4627e4c/zpr-dashboard/tests/browser/dashboard.spec.mjs:984:100)
+
+    attachment #1: screenshot (image/png) ──────────────────────────────────────────────────────────
+    test-results/dashboard-Gateway-analysis-c872e-back-to-the-original-source-tablet-repeat7/test-failed-1.png
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+    Error Context: test-results/dashboard-Gateway-analysis-c872e-back-to-the-original-source-tablet-repeat7/error-context.md
+
+  49) [tablet] › tests/browser/dashboard.spec.mjs:2787:3 › Gateway analysis scope rejects delayed error after editing back to the original source
+
+    Error: Unexpected CSP violations
+
+    expect(received).toEqual(expected) // deep equality
+
+    - Expected  - 1
+    + Received  + 3
+
+    - Array []
+    + Array [
+    +   "style-src-attr",
+    + ]
+
+      982 |     await use(data);
+      983 |     expect(errors, "Unexpected browser JavaScript errors").toEqual([]);
+    > 984 |     expect(await page.evaluate(() => window.testCSPViolations || []), "Unexpected CSP violations").toEqual([]);
+          |                                                                                                    ^
+      985 |   },
+      986 | });
+      987 |
+        at Object.api (/Volumes/Storage/dubnom/zipsquat/ZPR Docs/zpr-visaservice.worktrees/maturing-w5-stability-beta-4627e4c/zpr-dashboard/tests/browser/dashboard.spec.mjs:984:100)
+
+    attachment #1: screenshot (image/png) ──────────────────────────────────────────────────────────
+    test-results/dashboard-Gateway-analysis-51e70-back-to-the-original-source-tablet-repeat7/test-failed-1.png
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+    Error Context: test-results/dashboard-Gateway-analysis-51e70-back-to-the-original-source-tablet-repeat7/error-context.md
+
+  50) [tablet] › tests/browser/dashboard.spec.mjs:7215:3 › Policy runtime cancellation cannot release a newer pre-save fixtures request
+
+    Test timeout of 30000ms exceeded.
+
+    Error: locator.click: Test timeout of 30000ms exceeded.
+    Call log:
+      - waiting for locator('#policy-save')
+        - locator resolved to <button disabled type="button" role="menuitem" id="policy-save" class="button button-save-next">Save</button>
+      - attempting click action
+        2 × waiting for element to be visible, enabled and stable
+          - element is not enabled
+        - retrying click action
+        - waiting 20ms
+        2 × waiting for element to be visible, enabled and stable
+          - element is not enabled
+        - retrying click action
+          - waiting 100ms
+        57 × waiting for element to be visible, enabled and stable
+           - element is not enabled
+         - retrying click action
+           - waiting 500ms
+
+
+      7242 |     await codeEditor(page, "policy-source").fill(draft);
+      7243 |     await openPolicyFiles(page);
+    > 7244 |     await page.locator("#policy-save").click();
+           |                                        ^
+      7245 |     await expect.poll(() => completions.length).toBe(2);
+      7246 |     completions[0]();
+      7247 |     await expect.poll(() => oldFinished).toBe(true);
+        at /Volumes/Storage/dubnom/zipsquat/ZPR Docs/zpr-visaservice.worktrees/maturing-w5-stability-beta-4627e4c/zpr-dashboard/tests/browser/dashboard.spec.mjs:7244:40
+
+    attachment #1: screenshot (image/png) ──────────────────────────────────────────────────────────
+    test-results/dashboard-Policy-runtime-c-bc411-r-pre-save-fixtures-request-tablet-repeat7/test-failed-1.png
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+    Error Context: test-results/dashboard-Policy-runtime-c-bc411-r-pre-save-fixtures-request-tablet-repeat7/error-context.md
+
+  51) [tablet] › tests/browser/dashboard.spec.mjs:7215:3 › Policy runtime cancellation cannot release a newer pre-save evaluation request
+
+    Test timeout of 30000ms exceeded.
+
+    Error: locator.click: Test timeout of 30000ms exceeded.
+    Call log:
+      - waiting for locator('#policy-save')
+        - locator resolved to <button disabled type="button" role="menuitem" id="policy-save" class="button button-save-next">Save</button>
+      - attempting click action
+        2 × waiting for element to be visible, enabled and stable
+          - element is not enabled
+        - retrying click action
+        - waiting 20ms
+        2 × waiting for element to be visible, enabled and stable
+          - element is not enabled
+        - retrying click action
+          - waiting 100ms
+        57 × waiting for element to be visible, enabled and stable
+           - element is not enabled
+         - retrying click action
+           - waiting 500ms
+
+
+      7242 |     await codeEditor(page, "policy-source").fill(draft);
+      7243 |     await openPolicyFiles(page);
+    > 7244 |     await page.locator("#policy-save").click();
+           |                                        ^
+      7245 |     await expect.poll(() => completions.length).toBe(2);
+      7246 |     completions[0]();
+      7247 |     await expect.poll(() => oldFinished).toBe(true);
+        at /Volumes/Storage/dubnom/zipsquat/ZPR Docs/zpr-visaservice.worktrees/maturing-w5-stability-beta-4627e4c/zpr-dashboard/tests/browser/dashboard.spec.mjs:7244:40
+
+    attachment #1: screenshot (image/png) ──────────────────────────────────────────────────────────
+    test-results/dashboard-Policy-runtime-c-253ca-pre-save-evaluation-request-tablet-repeat7/test-failed-1.png
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+    Error Context: test-results/dashboard-Policy-runtime-c-253ca-pre-save-evaluation-request-tablet-repeat7/error-context.md
+
+  52) [tablet] › tests/browser/dashboard.spec.mjs:199:1 › GUI shared programmatic edits keep policy completion and Scenario indentation undoable
+
+    Error: expect(locator).toHaveValue(expected) failed
+
+    Locator: locator('#policy-source')
+    Timeout: 5000ms
+    - Expected  - 1
+    + Received  + 2
+
+      define Employee as user
+    -   with user.department:
+    +   with dep
+    +
+
+    Call log:
+      - Expect "toHaveValue" locator('#policy-source') with timeout 5000ms
+      - waiting for locator('#policy-source')
+        14 × locator resolved to <textarea wrap="off" autocorrect="off" id="policy-source" spellcheck="false" autocomplete="off" autocapitalize="off" aria-expanded="false" aria-readonly="false" data-word-wrap="false" aria-autocomplete="list" aria-label="ZPL policy source" aria-controls="policy-completions" aria-describedby="policy-editor-help"></textarea>
+           - unexpected value "define Employee as user
+      with dep
+      "
+
+
+      206 |   await expect(completionMenu(page)).toBeVisible();
+      207 |   await codeEditor(page, "policy-source").press("Enter");
+    > 208 |   await expect(policy).toHaveValue("define Employee as user\n  with user.department:");
+          |                        ^
+      209 |   await codeEditor(page, "policy-source").press("ControlOrMeta+z");
+      210 |   await expect(policy).toHaveValue(original);
+      211 |   await codeEditor(page, "policy-source").press("ControlOrMeta+Shift+Z");
+        at /Volumes/Storage/dubnom/zipsquat/ZPR Docs/zpr-visaservice.worktrees/maturing-w5-stability-beta-4627e4c/zpr-dashboard/tests/browser/dashboard.spec.mjs:208:24
+
+    attachment #1: screenshot (image/png) ──────────────────────────────────────────────────────────
+    test-results/dashboard-GUI-shared-progr-1c89d-enario-indentation-undoable-tablet-repeat8/test-failed-1.png
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+    Error Context: test-results/dashboard-GUI-shared-progr-1c89d-enario-indentation-undoable-tablet-repeat8/error-context.md
+
+  53) [tablet] › tests/browser/dashboard.spec.mjs:1906:1 › Scenario JSON transport keeps failed creation unsaved and preserves explicit creation payloads
+
+    Error: expect(received).toEqual(expected) // deep equality
+
+    - Expected  - 0
+    + Received  + 1
+
+    @@ -33,6 +33,7 @@
+              },
+            ],
+          },
+          "summary": "Initial version",
+        },
+    +   null,
+      ]
+
+      1927 |   await page.locator("#scenario-editor-save").click();
+      1928 |   await expect(page.locator("#scenario-editor-status")).toHaveText("Saved version 1. Publish it to enable runs.");
+    > 1929 |   expect(writes).toEqual(Array.from({ length: 2 }, () => ({ scenario, summary: "Initial version", expected_revision: 0 })));
+           |                  ^
+      1930 |   expect(api.counts.get(endpoint + "/created-transport/publish") || 0).toBe(0);
+      1931 |   expect(api.counts.get("/api/simulator/scenarios/run") || 0).toBe(0);
+      1932 | });
+        at /Volumes/Storage/dubnom/zipsquat/ZPR Docs/zpr-visaservice.worktrees/maturing-w5-stability-beta-4627e4c/zpr-dashboard/tests/browser/dashboard.spec.mjs:1929:18
+
+    attachment #1: screenshot (image/png) ──────────────────────────────────────────────────────────
+    test-results/dashboard-Scenario-JSON-tr-077ed--explicit-creation-payloads-tablet-repeat8/test-failed-1.png
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+    Error Context: test-results/dashboard-Scenario-JSON-tr-077ed--explicit-creation-payloads-tablet-repeat8/error-context.md
+
+  54) [tablet] › tests/browser/dashboard.spec.mjs:2232:1 › GUI raw scenario analysis ignores delayed errors for an edited source
+
+    Error: Unexpected CSP violations
+
+    expect(received).toEqual(expected) // deep equality
+
+    - Expected  - 1
+    + Received  + 3
+
+    - Array []
+    + Array [
+    +   "style-src-attr",
+    + ]
+
+      982 |     await use(data);
+      983 |     expect(errors, "Unexpected browser JavaScript errors").toEqual([]);
+    > 984 |     expect(await page.evaluate(() => window.testCSPViolations || []), "Unexpected CSP violations").toEqual([]);
+          |                                                                                                    ^
+      985 |   },
+      986 | });
+      987 |
+        at Object.api (/Volumes/Storage/dubnom/zipsquat/ZPR Docs/zpr-visaservice.worktrees/maturing-w5-stability-beta-4627e4c/zpr-dashboard/tests/browser/dashboard.spec.mjs:984:100)
+
+    attachment #1: screenshot (image/png) ──────────────────────────────────────────────────────────
+    test-results/dashboard-GUI-raw-scenario-8a31c-errors-for-an-edited-source-tablet-repeat8/test-failed-1.png
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+    Error Context: test-results/dashboard-GUI-raw-scenario-8a31c-errors-for-an-edited-source-tablet-repeat8/error-context.md
+
+  55) [tablet] › tests/browser/dashboard.spec.mjs:2787:3 › Gateway analysis scope rejects delayed success after editing back to the original source
+
+    Error: Unexpected CSP violations
+
+    expect(received).toEqual(expected) // deep equality
+
+    - Expected  - 1
+    + Received  + 3
+
+    - Array []
+    + Array [
+    +   "style-src-attr",
+    + ]
+
+      982 |     await use(data);
+      983 |     expect(errors, "Unexpected browser JavaScript errors").toEqual([]);
+    > 984 |     expect(await page.evaluate(() => window.testCSPViolations || []), "Unexpected CSP violations").toEqual([]);
+          |                                                                                                    ^
+      985 |   },
+      986 | });
+      987 |
+        at Object.api (/Volumes/Storage/dubnom/zipsquat/ZPR Docs/zpr-visaservice.worktrees/maturing-w5-stability-beta-4627e4c/zpr-dashboard/tests/browser/dashboard.spec.mjs:984:100)
+
+    attachment #1: screenshot (image/png) ──────────────────────────────────────────────────────────
+    test-results/dashboard-Gateway-analysis-c872e-back-to-the-original-source-tablet-repeat8/test-failed-1.png
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+    Error Context: test-results/dashboard-Gateway-analysis-c872e-back-to-the-original-source-tablet-repeat8/error-context.md
+
+  56) [tablet] › tests/browser/dashboard.spec.mjs:2787:3 › Gateway analysis scope rejects delayed error after editing back to the original source
+
+    Error: Unexpected CSP violations
+
+    expect(received).toEqual(expected) // deep equality
+
+    - Expected  - 1
+    + Received  + 3
+
+    - Array []
+    + Array [
+    +   "style-src-attr",
+    + ]
+
+      982 |     await use(data);
+      983 |     expect(errors, "Unexpected browser JavaScript errors").toEqual([]);
+    > 984 |     expect(await page.evaluate(() => window.testCSPViolations || []), "Unexpected CSP violations").toEqual([]);
+          |                                                                                                    ^
+      985 |   },
+      986 | });
+      987 |
+        at Object.api (/Volumes/Storage/dubnom/zipsquat/ZPR Docs/zpr-visaservice.worktrees/maturing-w5-stability-beta-4627e4c/zpr-dashboard/tests/browser/dashboard.spec.mjs:984:100)
+
+    attachment #1: screenshot (image/png) ──────────────────────────────────────────────────────────
+    test-results/dashboard-Gateway-analysis-51e70-back-to-the-original-source-tablet-repeat8/test-failed-1.png
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+    Error Context: test-results/dashboard-Gateway-analysis-51e70-back-to-the-original-source-tablet-repeat8/error-context.md
+
+  57) [tablet] › tests/browser/dashboard.spec.mjs:7215:3 › Policy runtime cancellation cannot release a newer pre-save fixtures request
+
+    Test timeout of 30000ms exceeded.
+
+    Error: locator.click: Test timeout of 30000ms exceeded.
+    Call log:
+      - waiting for locator('#policy-save')
+        - locator resolved to <button disabled type="button" role="menuitem" id="policy-save" class="button button-save-next">Save</button>
+      - attempting click action
+        2 × waiting for element to be visible, enabled and stable
+          - element is not enabled
+        - retrying click action
+        - waiting 20ms
+        2 × waiting for element to be visible, enabled and stable
+          - element is not enabled
+        - retrying click action
+          - waiting 100ms
+        57 × waiting for element to be visible, enabled and stable
+           - element is not enabled
+         - retrying click action
+           - waiting 500ms
+
+
+      7242 |     await codeEditor(page, "policy-source").fill(draft);
+      7243 |     await openPolicyFiles(page);
+    > 7244 |     await page.locator("#policy-save").click();
+           |                                        ^
+      7245 |     await expect.poll(() => completions.length).toBe(2);
+      7246 |     completions[0]();
+      7247 |     await expect.poll(() => oldFinished).toBe(true);
+        at /Volumes/Storage/dubnom/zipsquat/ZPR Docs/zpr-visaservice.worktrees/maturing-w5-stability-beta-4627e4c/zpr-dashboard/tests/browser/dashboard.spec.mjs:7244:40
+
+    attachment #1: screenshot (image/png) ──────────────────────────────────────────────────────────
+    test-results/dashboard-Policy-runtime-c-bc411-r-pre-save-fixtures-request-tablet-repeat8/test-failed-1.png
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+    Error Context: test-results/dashboard-Policy-runtime-c-bc411-r-pre-save-fixtures-request-tablet-repeat8/error-context.md
+
+  58) [tablet] › tests/browser/dashboard.spec.mjs:7215:3 › Policy runtime cancellation cannot release a newer pre-save evaluation request
+
+    Test timeout of 30000ms exceeded.
+
+    Error: locator.click: Test timeout of 30000ms exceeded.
+    Call log:
+      - waiting for locator('#policy-save')
+        - locator resolved to <button disabled type="button" role="menuitem" id="policy-save" class="button button-save-next">Save</button>
+      - attempting click action
+        2 × waiting for element to be visible, enabled and stable
+          - element is not enabled
+        - retrying click action
+        - waiting 20ms
+        2 × waiting for element to be visible, enabled and stable
+          - element is not enabled
+        - retrying click action
+          - waiting 100ms
+        56 × waiting for element to be visible, enabled and stable
+           - element is not enabled
+         - retrying click action
+           - waiting 500ms
+
+
+      7242 |     await codeEditor(page, "policy-source").fill(draft);
+      7243 |     await openPolicyFiles(page);
+    > 7244 |     await page.locator("#policy-save").click();
+           |                                        ^
+      7245 |     await expect.poll(() => completions.length).toBe(2);
+      7246 |     completions[0]();
+      7247 |     await expect.poll(() => oldFinished).toBe(true);
+        at /Volumes/Storage/dubnom/zipsquat/ZPR Docs/zpr-visaservice.worktrees/maturing-w5-stability-beta-4627e4c/zpr-dashboard/tests/browser/dashboard.spec.mjs:7244:40
+
+    attachment #1: screenshot (image/png) ──────────────────────────────────────────────────────────
+    test-results/dashboard-Policy-runtime-c-253ca-pre-save-evaluation-request-tablet-repeat8/test-failed-1.png
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+    Error Context: test-results/dashboard-Policy-runtime-c-253ca-pre-save-evaluation-request-tablet-repeat8/error-context.md
+
+  59) [tablet] › tests/browser/dashboard.spec.mjs:199:1 › GUI shared programmatic edits keep policy completion and Scenario indentation undoable
+
+    Error: expect(locator).toHaveValue(expected) failed
+
+    Locator: locator('#policy-source')
+    Timeout: 5000ms
+    - Expected  - 1
+    + Received  + 2
+
+      define Employee as user
+    -   with user.department:
+    +   with dep
+    +
+
+    Call log:
+      - Expect "toHaveValue" locator('#policy-source') with timeout 5000ms
+      - waiting for locator('#policy-source')
+        14 × locator resolved to <textarea wrap="off" autocorrect="off" id="policy-source" spellcheck="false" autocomplete="off" autocapitalize="off" aria-expanded="false" aria-readonly="false" data-word-wrap="false" aria-autocomplete="list" aria-label="ZPL policy source" aria-controls="policy-completions" aria-describedby="policy-editor-help"></textarea>
+           - unexpected value "define Employee as user
+      with dep
+      "
+
+
+      206 |   await expect(completionMenu(page)).toBeVisible();
+      207 |   await codeEditor(page, "policy-source").press("Enter");
+    > 208 |   await expect(policy).toHaveValue("define Employee as user\n  with user.department:");
+          |                        ^
+      209 |   await codeEditor(page, "policy-source").press("ControlOrMeta+z");
+      210 |   await expect(policy).toHaveValue(original);
+      211 |   await codeEditor(page, "policy-source").press("ControlOrMeta+Shift+Z");
+        at /Volumes/Storage/dubnom/zipsquat/ZPR Docs/zpr-visaservice.worktrees/maturing-w5-stability-beta-4627e4c/zpr-dashboard/tests/browser/dashboard.spec.mjs:208:24
+
+    attachment #1: screenshot (image/png) ──────────────────────────────────────────────────────────
+    test-results/dashboard-GUI-shared-progr-1c89d-enario-indentation-undoable-tablet-repeat9/test-failed-1.png
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+    Error Context: test-results/dashboard-GUI-shared-progr-1c89d-enario-indentation-undoable-tablet-repeat9/error-context.md
+
+  60) [tablet] › tests/browser/dashboard.spec.mjs:2232:1 › GUI raw scenario analysis ignores delayed errors for an edited source
+
+    Error: Unexpected CSP violations
+
+    expect(received).toEqual(expected) // deep equality
+
+    - Expected  - 1
+    + Received  + 3
+
+    - Array []
+    + Array [
+    +   "style-src-attr",
+    + ]
+
+      982 |     await use(data);
+      983 |     expect(errors, "Unexpected browser JavaScript errors").toEqual([]);
+    > 984 |     expect(await page.evaluate(() => window.testCSPViolations || []), "Unexpected CSP violations").toEqual([]);
+          |                                                                                                    ^
+      985 |   },
+      986 | });
+      987 |
+        at Object.api (/Volumes/Storage/dubnom/zipsquat/ZPR Docs/zpr-visaservice.worktrees/maturing-w5-stability-beta-4627e4c/zpr-dashboard/tests/browser/dashboard.spec.mjs:984:100)
+
+    attachment #1: screenshot (image/png) ──────────────────────────────────────────────────────────
+    test-results/dashboard-GUI-raw-scenario-8a31c-errors-for-an-edited-source-tablet-repeat9/test-failed-1.png
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+    Error Context: test-results/dashboard-GUI-raw-scenario-8a31c-errors-for-an-edited-source-tablet-repeat9/error-context.md
+
+  61) [tablet] › tests/browser/dashboard.spec.mjs:2787:3 › Gateway analysis scope rejects delayed success after editing back to the original source
+
+    Error: Unexpected CSP violations
+
+    expect(received).toEqual(expected) // deep equality
+
+    - Expected  - 1
+    + Received  + 3
+
+    - Array []
+    + Array [
+    +   "style-src-attr",
+    + ]
+
+      982 |     await use(data);
+      983 |     expect(errors, "Unexpected browser JavaScript errors").toEqual([]);
+    > 984 |     expect(await page.evaluate(() => window.testCSPViolations || []), "Unexpected CSP violations").toEqual([]);
+          |                                                                                                    ^
+      985 |   },
+      986 | });
+      987 |
+        at Object.api (/Volumes/Storage/dubnom/zipsquat/ZPR Docs/zpr-visaservice.worktrees/maturing-w5-stability-beta-4627e4c/zpr-dashboard/tests/browser/dashboard.spec.mjs:984:100)
+
+    attachment #1: screenshot (image/png) ──────────────────────────────────────────────────────────
+    test-results/dashboard-Gateway-analysis-c872e-back-to-the-original-source-tablet-repeat9/test-failed-1.png
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+    Error Context: test-results/dashboard-Gateway-analysis-c872e-back-to-the-original-source-tablet-repeat9/error-context.md
+
+  62) [tablet] › tests/browser/dashboard.spec.mjs:2787:3 › Gateway analysis scope rejects delayed error after editing back to the original source
+
+    Error: Unexpected CSP violations
+
+    expect(received).toEqual(expected) // deep equality
+
+    - Expected  - 1
+    + Received  + 3
+
+    - Array []
+    + Array [
+    +   "style-src-attr",
+    + ]
+
+      982 |     await use(data);
+      983 |     expect(errors, "Unexpected browser JavaScript errors").toEqual([]);
+    > 984 |     expect(await page.evaluate(() => window.testCSPViolations || []), "Unexpected CSP violations").toEqual([]);
+          |                                                                                                    ^
+      985 |   },
+      986 | });
+      987 |
+        at Object.api (/Volumes/Storage/dubnom/zipsquat/ZPR Docs/zpr-visaservice.worktrees/maturing-w5-stability-beta-4627e4c/zpr-dashboard/tests/browser/dashboard.spec.mjs:984:100)
+
+    attachment #1: screenshot (image/png) ──────────────────────────────────────────────────────────
+    test-results/dashboard-Gateway-analysis-51e70-back-to-the-original-source-tablet-repeat9/test-failed-1.png
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+    Error Context: test-results/dashboard-Gateway-analysis-51e70-back-to-the-original-source-tablet-repeat9/error-context.md
+
+  63) [tablet] › tests/browser/dashboard.spec.mjs:7215:3 › Policy runtime cancellation cannot release a newer pre-save fixtures request
+
+    Test timeout of 30000ms exceeded.
+
+    Error: locator.click: Test timeout of 30000ms exceeded.
+    Call log:
+      - waiting for locator('#policy-save')
+        - locator resolved to <button disabled type="button" role="menuitem" id="policy-save" class="button button-save-next">Save</button>
+      - attempting click action
+        2 × waiting for element to be visible, enabled and stable
+          - element is not enabled
+        - retrying click action
+        - waiting 20ms
+        2 × waiting for element to be visible, enabled and stable
+          - element is not enabled
+        - retrying click action
+          - waiting 100ms
+        57 × waiting for element to be visible, enabled and stable
+           - element is not enabled
+         - retrying click action
+           - waiting 500ms
+
+
+      7242 |     await codeEditor(page, "policy-source").fill(draft);
+      7243 |     await openPolicyFiles(page);
+    > 7244 |     await page.locator("#policy-save").click();
+           |                                        ^
+      7245 |     await expect.poll(() => completions.length).toBe(2);
+      7246 |     completions[0]();
+      7247 |     await expect.poll(() => oldFinished).toBe(true);
+        at /Volumes/Storage/dubnom/zipsquat/ZPR Docs/zpr-visaservice.worktrees/maturing-w5-stability-beta-4627e4c/zpr-dashboard/tests/browser/dashboard.spec.mjs:7244:40
+
+    attachment #1: screenshot (image/png) ──────────────────────────────────────────────────────────
+    test-results/dashboard-Policy-runtime-c-bc411-r-pre-save-fixtures-request-tablet-repeat9/test-failed-1.png
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+    Error Context: test-results/dashboard-Policy-runtime-c-bc411-r-pre-save-fixtures-request-tablet-repeat9/error-context.md
+
+  64) [tablet] › tests/browser/dashboard.spec.mjs:7215:3 › Policy runtime cancellation cannot release a newer pre-save evaluation request
+
+    Test timeout of 30000ms exceeded.
+
+    Error: locator.click: Test timeout of 30000ms exceeded.
+    Call log:
+      - waiting for locator('#policy-save')
+        - locator resolved to <button disabled type="button" role="menuitem" id="policy-save" class="button button-save-next">Save</button>
+      - attempting click action
+        2 × waiting for element to be visible, enabled and stable
+          - element is not enabled
+        - retrying click action
+        - waiting 20ms
+        2 × waiting for element to be visible, enabled and stable
+          - element is not enabled
+        - retrying click action
+          - waiting 100ms
+        57 × waiting for element to be visible, enabled and stable
+           - element is not enabled
+         - retrying click action
+           - waiting 500ms
+
+
+      7242 |     await codeEditor(page, "policy-source").fill(draft);
+      7243 |     await openPolicyFiles(page);
+    > 7244 |     await page.locator("#policy-save").click();
+           |                                        ^
+      7245 |     await expect.poll(() => completions.length).toBe(2);
+      7246 |     completions[0]();
+      7247 |     await expect.poll(() => oldFinished).toBe(true);
+        at /Volumes/Storage/dubnom/zipsquat/ZPR Docs/zpr-visaservice.worktrees/maturing-w5-stability-beta-4627e4c/zpr-dashboard/tests/browser/dashboard.spec.mjs:7244:40
+
+    attachment #1: screenshot (image/png) ──────────────────────────────────────────────────────────
+    test-results/dashboard-Policy-runtime-c-253ca-pre-save-evaluation-request-tablet-repeat9/test-failed-1.png
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+    Error Context: test-results/dashboard-Policy-runtime-c-253ca-pre-save-evaluation-request-tablet-repeat9/error-context.md
+
+  64 failed
+    [tablet] › tests/browser/dashboard.spec.mjs:199:1 › GUI shared programmatic edits keep policy completion and Scenario indentation undoable
+    [tablet] › tests/browser/dashboard.spec.mjs:1906:1 › Scenario JSON transport keeps failed creation unsaved and preserves explicit creation payloads
+    [tablet] › tests/browser/dashboard.spec.mjs:2232:1 › GUI raw scenario analysis ignores delayed errors for an edited source
+    [tablet] › tests/browser/dashboard.spec.mjs:2787:3 › Gateway analysis scope rejects delayed success after editing back to the original source
+    [tablet] › tests/browser/dashboard.spec.mjs:2787:3 › Gateway analysis scope rejects delayed error after editing back to the original source
+    [tablet] › tests/browser/dashboard.spec.mjs:7215:3 › Policy runtime cancellation cannot release a newer pre-save fixtures request
+    [tablet] › tests/browser/dashboard.spec.mjs:7215:3 › Policy runtime cancellation cannot release a newer pre-save evaluation request
+    [tablet] › tests/browser/dashboard.spec.mjs:199:1 › GUI shared programmatic edits keep policy completion and Scenario indentation undoable
+    [tablet] › tests/browser/dashboard.spec.mjs:2232:1 › GUI raw scenario analysis ignores delayed errors for an edited source
+    [tablet] › tests/browser/dashboard.spec.mjs:2787:3 › Gateway analysis scope rejects delayed success after editing back to the original source
+    [tablet] › tests/browser/dashboard.spec.mjs:2787:3 › Gateway analysis scope rejects delayed error after editing back to the original source
+    [tablet] › tests/browser/dashboard.spec.mjs:7215:3 › Policy runtime cancellation cannot release a newer pre-save fixtures request
+    [tablet] › tests/browser/dashboard.spec.mjs:7215:3 › Policy runtime cancellation cannot release a newer pre-save evaluation request
+    [tablet] › tests/browser/dashboard.spec.mjs:199:1 › GUI shared programmatic edits keep policy completion and Scenario indentation undoable
+    [tablet] › tests/browser/dashboard.spec.mjs:2232:1 › GUI raw scenario analysis ignores delayed errors for an edited source
+    [tablet] › tests/browser/dashboard.spec.mjs:2787:3 › Gateway analysis scope rejects delayed success after editing back to the original source
+    [tablet] › tests/browser/dashboard.spec.mjs:2787:3 › Gateway analysis scope rejects delayed error after editing back to the original source
+    [tablet] › tests/browser/dashboard.spec.mjs:7215:3 › Policy runtime cancellation cannot release a newer pre-save fixtures request
+    [tablet] › tests/browser/dashboard.spec.mjs:7215:3 › Policy runtime cancellation cannot release a newer pre-save evaluation request
+    [tablet] › tests/browser/dashboard.spec.mjs:199:1 › GUI shared programmatic edits keep policy completion and Scenario indentation undoable
+    [tablet] › tests/browser/dashboard.spec.mjs:2232:1 › GUI raw scenario analysis ignores delayed errors for an edited source
+    [tablet] › tests/browser/dashboard.spec.mjs:2787:3 › Gateway analysis scope rejects delayed success after editing back to the original source
+    [tablet] › tests/browser/dashboard.spec.mjs:2787:3 › Gateway analysis scope rejects delayed error after editing back to the original source
+    [tablet] › tests/browser/dashboard.spec.mjs:7215:3 › Policy runtime cancellation cannot release a newer pre-save fixtures request
+    [tablet] › tests/browser/dashboard.spec.mjs:7215:3 › Policy runtime cancellation cannot release a newer pre-save evaluation request
+    [tablet] › tests/browser/dashboard.spec.mjs:199:1 › GUI shared programmatic edits keep policy completion and Scenario indentation undoable
+    [tablet] › tests/browser/dashboard.spec.mjs:1906:1 › Scenario JSON transport keeps failed creation unsaved and preserves explicit creation payloads
+    [tablet] › tests/browser/dashboard.spec.mjs:2232:1 › GUI raw scenario analysis ignores delayed errors for an edited source
+    [tablet] › tests/browser/dashboard.spec.mjs:2787:3 › Gateway analysis scope rejects delayed success after editing back to the original source
+    [tablet] › tests/browser/dashboard.spec.mjs:2787:3 › Gateway analysis scope rejects delayed error after editing back to the original source
+    [tablet] › tests/browser/dashboard.spec.mjs:7215:3 › Policy runtime cancellation cannot release a newer pre-save fixtures request
+    [tablet] › tests/browser/dashboard.spec.mjs:7215:3 › Policy runtime cancellation cannot release a newer pre-save evaluation request
+    [tablet] › tests/browser/dashboard.spec.mjs:199:1 › GUI shared programmatic edits keep policy completion and Scenario indentation undoable
+    [tablet] › tests/browser/dashboard.spec.mjs:2232:1 › GUI raw scenario analysis ignores delayed errors for an edited source
+    [tablet] › tests/browser/dashboard.spec.mjs:2787:3 › Gateway analysis scope rejects delayed success after editing back to the original source
+    [tablet] › tests/browser/dashboard.spec.mjs:2787:3 › Gateway analysis scope rejects delayed error after editing back to the original source
+    [tablet] › tests/browser/dashboard.spec.mjs:7215:3 › Policy runtime cancellation cannot release a newer pre-save fixtures request
+    [tablet] › tests/browser/dashboard.spec.mjs:199:1 › GUI shared programmatic edits keep policy completion and Scenario indentation undoable
+    [tablet] › tests/browser/dashboard.spec.mjs:1906:1 › Scenario JSON transport keeps failed creation unsaved and preserves explicit creation payloads
+    [tablet] › tests/browser/dashboard.spec.mjs:2232:1 › GUI raw scenario analysis ignores delayed errors for an edited source
+    [tablet] › tests/browser/dashboard.spec.mjs:2787:3 › Gateway analysis scope rejects delayed success after editing back to the original source
+    [tablet] › tests/browser/dashboard.spec.mjs:2787:3 › Gateway analysis scope rejects delayed error after editing back to the original source
+    [tablet] › tests/browser/dashboard.spec.mjs:7215:3 › Policy runtime cancellation cannot release a newer pre-save fixtures request
+    [tablet] › tests/browser/dashboard.spec.mjs:7215:3 › Policy runtime cancellation cannot release a newer pre-save evaluation request
+    [tablet] › tests/browser/dashboard.spec.mjs:199:1 › GUI shared programmatic edits keep policy completion and Scenario indentation undoable
+    [tablet] › tests/browser/dashboard.spec.mjs:1906:1 › Scenario JSON transport keeps failed creation unsaved and preserves explicit creation payloads
+    [tablet] › tests/browser/dashboard.spec.mjs:2232:1 › GUI raw scenario analysis ignores delayed errors for an edited source
+    [tablet] › tests/browser/dashboard.spec.mjs:2787:3 › Gateway analysis scope rejects delayed success after editing back to the original source
+    [tablet] › tests/browser/dashboard.spec.mjs:2787:3 › Gateway analysis scope rejects delayed error after editing back to the original source
+    [tablet] › tests/browser/dashboard.spec.mjs:7215:3 › Policy runtime cancellation cannot release a newer pre-save fixtures request
+    [tablet] › tests/browser/dashboard.spec.mjs:7215:3 › Policy runtime cancellation cannot release a newer pre-save evaluation request
+    [tablet] › tests/browser/dashboard.spec.mjs:199:1 › GUI shared programmatic edits keep policy completion and Scenario indentation undoable
+    [tablet] › tests/browser/dashboard.spec.mjs:1906:1 › Scenario JSON transport keeps failed creation unsaved and preserves explicit creation payloads
+    [tablet] › tests/browser/dashboard.spec.mjs:2232:1 › GUI raw scenario analysis ignores delayed errors for an edited source
+    [tablet] › tests/browser/dashboard.spec.mjs:2787:3 › Gateway analysis scope rejects delayed success after editing back to the original source
+    [tablet] › tests/browser/dashboard.spec.mjs:2787:3 › Gateway analysis scope rejects delayed error after editing back to the original source
+    [tablet] › tests/browser/dashboard.spec.mjs:7215:3 › Policy runtime cancellation cannot release a newer pre-save fixtures request
+    [tablet] › tests/browser/dashboard.spec.mjs:7215:3 › Policy runtime cancellation cannot release a newer pre-save evaluation request
+    [tablet] › tests/browser/dashboard.spec.mjs:199:1 › GUI shared programmatic edits keep policy completion and Scenario indentation undoable
+    [tablet] › tests/browser/dashboard.spec.mjs:2232:1 › GUI raw scenario analysis ignores delayed errors for an edited source
+    [tablet] › tests/browser/dashboard.spec.mjs:2787:3 › Gateway analysis scope rejects delayed success after editing back to the original source
+    [tablet] › tests/browser/dashboard.spec.mjs:2787:3 › Gateway analysis scope rejects delayed error after editing back to the original source
+    [tablet] › tests/browser/dashboard.spec.mjs:7215:3 › Policy runtime cancellation cannot release a newer pre-save fixtures request
+    [tablet] › tests/browser/dashboard.spec.mjs:7215:3 › Policy runtime cancellation cannot release a newer pre-save evaluation request
+  6 passed (11.4m)

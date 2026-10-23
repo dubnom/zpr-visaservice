@@ -1,0 +1,54 @@
+[
+  {
+    "name": "maturing-csp-gateway-probe",
+    "command": [
+      "npm",
+      "run",
+      "test:browser",
+      "--",
+      "dashboard.spec.mjs",
+      "--project=tablet",
+      "--grep=(?:Gateway\\ analysis\\ scope\\ rejects\\ delayed\\ success\\ after\\ editing\\ back\\ to\\ the\\ original\\ source|Gateway\\ analysis\\ scope\\ rejects\\ delayed\\ error\\ after\\ editing\\ back\\ to\\ the\\ original\\ source)$",
+      "--repeat-each=10",
+      "--workers=1",
+      "--retries=0",
+      "--reporter=json,list",
+      "--trace=off"
+    ],
+    "exit_code": 1,
+    "stats": {
+      "startTime": "2026-10-23T22:03:34.240Z",
+      "duration": 21190.689000000002,
+      "expected": 0,
+      "skipped": 0,
+      "unexpected": 20,
+      "flaky": 0
+    }
+  },
+  {
+    "name": "beta-csp-gateway-probe",
+    "command": [
+      "npm",
+      "run",
+      "test:browser",
+      "--",
+      "dashboard.spec.mjs",
+      "--project=tablet",
+      "--grep=(?:Gateway\\ analysis\\ scope\\ rejects\\ delayed\\ success\\ after\\ editing\\ back\\ to\\ the\\ original\\ source|Gateway\\ analysis\\ scope\\ rejects\\ delayed\\ error\\ after\\ editing\\ back\\ to\\ the\\ original\\ source)$",
+      "--repeat-each=10",
+      "--workers=1",
+      "--retries=0",
+      "--reporter=json,list",
+      "--trace=off"
+    ],
+    "exit_code": 1,
+    "stats": {
+      "startTime": "2026-10-23T22:03:56.053Z",
+      "duration": 21420.872,
+      "expected": 0,
+      "skipped": 0,
+      "unexpected": 20,
+      "flaky": 0
+    }
+  }
+]

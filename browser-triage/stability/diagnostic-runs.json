@@ -1,0 +1,52 @@
+[
+  {
+    "name": "maturing-csp-diagnostic",
+    "command": [
+      "npm",
+      "run",
+      "test:browser",
+      "--",
+      "dashboard.spec.mjs",
+      "--project=tablet",
+      "--grep=(?:GUI\\ raw\\ scenario\\ analysis\\ ignores\\ delayed\\ errors\\ for\\ an\\ edited\\ source|Gateway\\ analysis\\ scope\\ rejects\\ delayed\\ success\\ after\\ editing\\ back\\ to\\ the\\ original\\ source|Gateway\\ analysis\\ scope\\ rejects\\ delayed\\ error\\ after\\ editing\\ back\\ to\\ the\\ original\\ source)$",
+      "--repeat-each=10",
+      "--workers=1",
+      "--retries=0",
+      "--reporter=json,list"
+    ],
+    "exit_code": 1,
+    "stats": {
+      "startTime": "2026-10-23T22:00:48.863Z",
+      "duration": 33815.132999999994,
+      "expected": 17,
+      "skipped": 0,
+      "unexpected": 13,
+      "flaky": 0
+    }
+  },
+  {
+    "name": "beta-csp-diagnostic",
+    "command": [
+      "npm",
+      "run",
+      "test:browser",
+      "--",
+      "dashboard.spec.mjs",
+      "--project=tablet",
+      "--grep=(?:GUI\\ raw\\ scenario\\ analysis\\ ignores\\ delayed\\ errors\\ for\\ an\\ edited\\ source|Gateway\\ analysis\\ scope\\ rejects\\ delayed\\ success\\ after\\ editing\\ back\\ to\\ the\\ original\\ source|Gateway\\ analysis\\ scope\\ rejects\\ delayed\\ error\\ after\\ editing\\ back\\ to\\ the\\ original\\ source)$",
+      "--repeat-each=10",
+      "--workers=1",
+      "--retries=0",
+      "--reporter=json,list"
+    ],
+    "exit_code": 1,
+    "stats": {
+      "startTime": "2026-10-23T22:01:23.336Z",
+      "duration": 35067.974,
+      "expected": 16,
+      "skipped": 0,
+      "unexpected": 14,
+      "flaky": 0
+    }
+  }
+]
