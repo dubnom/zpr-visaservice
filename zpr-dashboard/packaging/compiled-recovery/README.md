@@ -200,7 +200,53 @@ Only newly release-rebuilt verified client inputs satisfy these checks; older
 seven-tool inputs with the insecure client must not be published.
 Node trust admission, policy-signature
 enforcement, a runtime image and full service/bootstrap acceptance are not proved
-by this engineering probe.
+by the service-only mode.
+
+### Explicit native node-admission gate
+
+Adding `--node` to preparation also generates a fresh X25519 Noise key and
+authority-signed certificate with CN `node`, plus a PH node configuration that
+uses the separately generated RSA node bootstrap key. OpenSSL 3 creates these
+standard PKCS#8/X.509 files; no source tree or extra PKI executable is required.
+Visa's transport endpoint becomes `[fd5a:5052::1]:5002`; HTTPS administration
+remains `[::1]:8182`.
+The node configuration uses `fd5a:5052::2` for its ZPR address, `zprtest0` for
+its TUN and `[fd00:5a::2]:5000` for the isolated substrate. These are fixed
+**engineering-test addresses**, not host setup or production defaults. Ordinary
+two-argument preparation retains its previous loopback-only behavior.
+
+The service probe's optional `--node` gate requires root **inside a new isolated
+network namespace**, Linux TUN, `nsenter`, `unshare` and jq. It creates a second,
+temporary node namespace and a private veth pair between the two; neither
+namespace has an external interface or default route. For example:
+
+```sh
+sudo unshare --net sh -c 'set -eu; ip link set lo up
+  exec sh /absolute/probe-visa-service.sh /absolute/extracted/bin \
+    /absolute/extracted/libexec/prepare-visa-service.sh /protected/new-evidence --node'
+```
+
+The probe first requires explicit RSA signature rejection when a real PH node
+uses another installation's bootstrap private key, with no node in Visa's
+inventory. It then starts PH using the matching fresh key, requires Visa's actor
+to have the exact CN/address, `in_sync: true` and zero pending installs, and
+requires PH's own access-grant and VSS-registration receipts. The negative
+configuration explicitly selects the foreign key: the preserved Core version
+loads config-file authentication keys after CLI arguments, so the probe does
+not rely on a CLI override. That inherited precedence behavior is unchanged.
+Visa's source-address check remains enabled; separate namespaces provide the
+real expected connection source rather than weakening the check.
+
+Both PH attempts, the temporary namespace anchor, Visa and Redis are stopped
+by exact owned PIDs on exit. The calling outer namespace's lifetime removes
+the private link; no named global namespace, host route, Docker network,
+image pull, listener publication or host TUN is created. The test runs as root
+for namespace/TUN operations, not as the unprivileged service-only probe.
+Treat all generated state/logs as private; only the selected node summary,
+grant/rejection lines and inventories are suitable for reviewed receipts.
+This proves direct RSA node admission and VSS synchronization. It does **not**
+prove Noise peer handshakes, a Visa adapter, inter-node forwarding, workloads,
+node restart/revocation or the production least-privilege/runtime-image contract.
 
 ## Remaining release gates
 

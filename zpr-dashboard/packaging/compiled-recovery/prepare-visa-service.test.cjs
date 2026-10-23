@@ -16,6 +16,10 @@ test("Visa preparation rejects unsafe state paths without overwriting anything",
   const prepare = (...args) => spawnSync("sh", [path.join(__dirname, "prepare-visa-service.sh"), ...args],
     { encoding: "utf8" });
   assert.equal(prepare().status, 2);
+  assert.equal(prepare(bin, path.join(root, "wrong-flag"), "--unknown").status, 2);
+  assert.match(prepare(bin, path.join(root, "missing-node"), "--node").stderr,
+    /missing regular compiled executable: ph/);
+  assert.equal(fs.existsSync(path.join(root, "missing-node")), false);
   for (const output of ["relative", `${root}/../escape`, `${root}/bad\npath`, `${root}/trailing/`]) {
     assert.equal(prepare(bin, output).status, 1);
   }
