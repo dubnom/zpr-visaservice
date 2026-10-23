@@ -206,6 +206,20 @@ missing-device/wrong-owner failures, foreign RSA rejection, synchronized admissi
 and PH process restart/re-admission. Do not count it as adapter dynamic-address
 permissions, Noise peer trust, forwarding or container/VM restart acceptance.
 
+Add explicit `--adapter` to that probe for fresh adapter-to-node Noise/RSA trust
+and allowed/denied TCP to the node local actor. It needs the test-only
+`prepare-adapter-probe.sh` fixture alongside the harness. Require foreign CA/RSA
+rejection with no client actor, a Visa-granted dynamic address installed on TUN,
+mutually verified peer names, allowed PONG and explicit policy NoMatch plus a
+live denied listener. The current adapter runs root with NET_ADMIN only for
+dynamic address updates; node/Visa remain nonroot/capability-free. Provisioning
+also uses a temporary root CHOWN/DAC_OVERRIDE-only file transfer helper. Record
+those privileges honestly. Resolve the actual namespace interface index for
+the adapter's scoped IPv6 bind. This is not node-to-node or adapter-to-adapter
+forwarding, a nonroot dynamic-adapter solution, or a Visa/service adapter gate.
+Failed probes may save raw logs under private-failure; review and remove them,
+never publish them as selected acceptance evidence.
+
 ## 7. Verify, sanitize, persist and report
 
 For packaging changes run the focused suite from `zpr-dashboard/`:

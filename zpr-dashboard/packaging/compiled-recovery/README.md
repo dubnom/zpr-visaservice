@@ -427,6 +427,79 @@ allowed/denied workload forwarding, revocation or production network supervision
 Those are the next gates; no privileged runtime container is justified by this
 engineering probe.
 
+### Optional adapter trust and traffic gate
+
+Add `--adapter` to the same node image probe to exercise an additional real PH
+adapter. Default node-only behavior is unchanged:
+
+```sh
+node packaging/compiled-recovery/probe-node-image.cjs \
+  /absolute/private/image-build /absolute/private/new-adapter-evidence \
+  explicit-isolated-context expected-daemon-id --adapter
+```
+
+The [adapter fixture](prepare-adapter-probe.sh) extends fresh private Visa state
+inside its container with a new RSA bootstrap key, X25519 key/certificate signed
+by the new authority, and a minimal compiled traffic policy. It is a test-only
+fixture, not packaged first-run setup, and does not modify the image or binaries.
+An additional private volume holds only the adapter's allowlisted configuration
+and keys, including deliberately foreign CA/RSA material for negative tests.
+No administrator/API key, CA private key or database is copied there.
+
+The adapter joins the same internal IPv6-only bridge at `fd00:5a::4`, with no
+default route or published port. It verifies the node's certificate and the node
+verifies the adapter's certificate during Noise XX. An unrelated CA must produce
+the exact certificate-signature rejection and no `client` actor. The matching
+certificate with a foreign bootstrap RSA key must then produce Visa's exact
+signature rejection and still no client actor. Finally the correct keys must
+yield an active dock and a non-node `client` actor with a dynamically assigned
+`fd5a:5052:adda:` address actually present on its TUN. The probe does not preassign
+a claimed adapter ZPR address.
+
+Unlike the statically preconfigured node, the adapter updates its TUN during
+docking. The preserved Linux implementation invokes `/usr/sbin/ip`. Nonroot
+zero-capability execution fails with operation-not-permitted; merely adding
+Docker NET_ADMIN for the nonroot process does not preserve that capability through
+its subprocess exec path. The tested engineering adapter therefore runs as
+**UID 0 with NET_ADMIN only**, not privileged mode, with read-only root,
+no-new-privileges and only `/dev/net/tun:rw`. Process status must confirm exactly
+that effective capability, UID and no-new-privileges. Visa/Redis/node remain
+nonroot/capability-free. A nonroot dynamic-address adapter design is not qualified
+by this gate; no code or enforcement check was weakened to manufacture one.
+
+The adapter's selected-file transfer helper needs root with CHOWN/DAC_OVERRIDE
+only to read protected source files and initialize its private root-owned volume.
+It has network `none`, read-only source volume/root, no socket/host mounts and is
+removed afterward. These are explicit provisioning privileges, not additional
+adapter runtime capabilities.
+
+IPv6 packet-info reception includes the local interface index. The preserved PH
+looks up adapter tethers by local scoped address; an unscoped explicit IPv6 bind
+created a second tether and handshake decryption failure. The fixture resolves
+the owned container's actual `eth0` index and uses that scope in the adapter bind,
+without changing Core. Treat this as an explicit launch-contract requirement,
+not a claim that arbitrary IPv6 binding is qualified.
+
+For traffic, two ephemeral TCP Redis PING listeners run on the node's local ZPR
+actor at ports 16379 and 16380, with persistence disabled. Both must return PONG
+locally before the remote test. Policy permits `client` only on 16379; 16380's
+service permits only the node. The adapter must receive PONG from 16379, while
+16380 times out with no PONG **and** the node records explicit
+`visa request denied: Denied { code: NoMatch, ... }`. The denied listener must
+still return PONG locally afterward. A timeout alone is insufficient proof.
+The namespace-only return route to the dynamic adapter prefix is installed by
+the setup helper, not added to a live host.
+
+This proves adapter-to-node Noise trust/admission and one allowed/denied TCP path
+to the node's local actor. It does **not** prove node-to-node Noise, service/Visa
+adapters, adapter-to-adapter or inter-node forwarding, revocation or full-demo
+acceptance. Successful receipts contain only selected summaries, address/process
+status, grant/rejection lines and traffic results. If an attempt fails, its raw
+runtime logs are saved under owner-only `private-failure/` for diagnosis; they
+are never public evidence and must be removed after review. Generated keys and
+database always stay on disposable volumes. Cleanup covers all three runtime
+containers, every helper/workload, private volume and internal network.
+
 ## Remaining product gates
 
 The [native Rust release builder](build-rust-release.sh) builds only the seven

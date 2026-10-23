@@ -137,3 +137,18 @@ test("input acquisition refuses mutable tags before invoking Docker", t => {
   assert.notEqual(result.status, 0);
   assert.equal(fs.existsSync(f.log), false);
 });
+
+test("node probe rejects unknown optional modes before Docker; adapter fixture rejects arguments", t => {
+  const f = fixture(t);
+  for (const flags of [["--unknown"], ["--adapter", "--adapter"]]) {
+    const result = f.run("probe-node-image.cjs", [f.build, f.output, "test-context", "test-daemon", ...flags]);
+    assert.notEqual(result.status, 0);
+    assert.match(result.stderr, /Usage:/);
+    assert.equal(fs.existsSync(f.log), false);
+  }
+  const script = path.join(__dirname, "prepare-adapter-probe.sh");
+  assert.equal(spawnSync("sh", ["-n", script]).status, 0);
+  const result = spawnSync("sh", [script, "--unknown"], { encoding: "utf8" });
+  assert.equal(result.status, 2);
+  assert.match(result.stderr, /no arguments expected/);
+});
