@@ -335,6 +335,56 @@ it still does not prove equivalence to the historical deployment. Full generated
 runtime bootstrap, dependency/license review, service trust admission and
 seventeen-scenario/browser acceptance remain promotion/publication gates.
 
+### Exact assembled eleven-tool archive
+
+The engineering builder now optionally consumes the verified Rust release
+directory and its independent input receipt. The Go-only mode remains supported.
+Assembly refuses missing/mismatched release evidence, debug/test profiles and
+existing executable outputs. It copies only the seven allowlisted Rust tools,
+rechecks their staged hashes, and emits a selected-field public provenance
+manifest. Cargo logs, caches, source trees and private runtime evidence are not
+release inputs. Regression coverage includes profile/digest/lockfile rejection,
+missing receipts, existing-assembly refusal and private-field exclusion.
+
+The final archive was built from clean committed candidate `763d6e7`:
+
+| Measurement | Result |
+|---|---|
+| Target | Linux ARM64 |
+| Executables | Four static Go tools and seven release-profile Rust tools |
+| Compressed bytes | 33,532,068 |
+| Extracted regular-file bytes | 87,922,656 |
+| Archive SHA-256 | `581cd17b03ea7604746a1b910979d29bd047d5131c111979e65023d882d83905` |
+
+Exact archive member, checksum, executable/mode and asset checks passed, together
+with all eight existing offline scratch checks. The Rust hashes and sizes were
+also checked there, without falsely claiming their dynamic binaries execute in
+scratch. Host extended attributes are now excluded from archive creation; a
+final native extraction produced no host-provenance header warnings.
+
+The same final archive and checksum were transferred to the mount-free
+validation VM, verified again, extracted, and all member hashes checked.
+Only these extracted executables and example assets were used for the native
+probe. As UID 501 in an isolated network namespace (`unshare --net`), all seven
+Rust CLI/loader checks passed, all five policies compiled using a fresh RSA
+signing key, and invalid syntax returned exit 1 without a bundle. The eight
+executable digests in the native receipts match the exact archive's contents.
+The previously documented two compiler warnings remain visible.
+
+Only allowlisted nonsecret receipts were copied back to
+`validation/compiled-assembled-clean-20261023/runtime-receipts` in the private
+recovery workspace. Both attempts' temporary private signing keys and generated
+policy files/bundles were removed; the VM is stopped. No service or workload was
+started, no policy installed, no live environment modified, and no public
+artifact uploaded. The prior guest `/tmp` release-build cache did not survive
+restart; host-side verified release inputs remain available.
+
+This is a measured, tested compiled engineering archive, **not** a complete
+installation or public release. Compatible dynamic libraries remain documented
+prerequisites; service images, fresh service trust/bootstrap, independent
+operator configuration, license review, setup/optional AI disclosure and all
+seventeen scenarios/browser acceptance remain required.
+
 ## Adapter retention and main promotion
 
 Core is a separate repository. Its adapter development is preserved at
