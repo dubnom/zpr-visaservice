@@ -60,6 +60,9 @@ func readAdapterLogInventory(path string) (adapterLogInventory, error) {
 }
 
 func readAdapterLogSource(ctx context.Context, source adapterLogSourceConfig) (string, error) {
+	if source.URL != "" {
+		return adapterlogs.Query(ctx, source)
+	}
 	if source.File != "" {
 		file, err := os.Open(source.File)
 		if err != nil {
@@ -119,6 +122,13 @@ func newAdapterLogsHandler() http.Handler {
 				}
 				output, err := readAdapterLogSource(ctx, source)
 				log := adapterLogOutput{Name: source.Name, Kind: source.Kind, State: state, Lines: []string{}}
+				if source.URL != "" {
+					state = "running"
+					if err != nil {
+						state = "unavailable"
+					}
+					log.State = state
+				}
 				if err != nil {
 					log.Error = "Log source unavailable"
 				} else {

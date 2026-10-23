@@ -71,10 +71,18 @@ func APIPermission(method, path string) (string, bool) {
 // AuthorizeAPI requires configured named-user authorization. The command owns
 // the separate local-development fallback and supplies its error formatter.
 func AuthorizeAPI(auth Authorizer, organization string, next http.Handler, writeError func(http.ResponseWriter, int, string)) http.Handler {
+	return AuthorizeAPIWithLogPermission(auth, organization, "", next, writeError)
+}
+
+// AuthorizeAPIWithLogPermission can independently restrict configured log access.
+func AuthorizeAPIWithLogPermission(auth Authorizer, organization, logPermission string, next http.Handler, writeError func(http.ResponseWriter, int, string)) http.Handler {
 	organization = strings.TrimSpace(organization)
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Cache-Control", "no-store")
 		permission, ok := APIPermission(r.Method, r.URL.Path)
+		if r.URL.Path == "/api/adapter-logs" && logPermission != "" {
+			permission = logPermission
+		}
 		if !ok {
 			writeError(w, http.StatusForbidden, "No operator policy is defined for this Control Room API route.")
 			return

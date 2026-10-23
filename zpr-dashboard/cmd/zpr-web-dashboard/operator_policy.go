@@ -2,6 +2,7 @@ package main
 
 import (
 	"net/http"
+	"os"
 
 	"neboagency.com/zpr-dashborad/internal/controlroom"
 	"neboagency.com/zpr-dashborad/internal/operatorauth"
@@ -23,7 +24,7 @@ func controlRoomAPIProxy(auth operatorRequestAuthorizer, organization string, pr
 	if operatorAuthorizationDisabled(auth) {
 		return localProxy
 	}
-	return controlroom.AuthorizeAPI(auth, organization, localProxy, writePolicyError)
+	return controlroom.AuthorizeAPIWithLogPermission(auth, organization, os.Getenv("ZPR_CONTROL_ROOM_LOG_PERMISSION"), localProxy, writePolicyError)
 }
 
 func (s *controlRoomSecurity) apiProxy(organization string, proxy http.Handler) http.Handler {
@@ -46,5 +47,5 @@ func managementControlRoomProxy(auth operatorRequestAuthorizer, organization str
 			writePolicyError(w, http.StatusForbidden, "Management access requires named-user authorization.")
 		})
 	}
-	return controlroom.AuthorizeAPI(auth, organization, proxy, writePolicyError)
+	return controlroom.AuthorizeAPIWithLogPermission(auth, organization, os.Getenv("ZPR_CONTROL_ROOM_LOG_PERMISSION"), proxy, writePolicyError)
 }

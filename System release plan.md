@@ -254,7 +254,7 @@ The following user decisions are frozen for the evaluation profile only:
   and independent OpenObserve admin; never reset by deleting/reseeding data.
 - **Logging:** OpenObserve **AGPL-3.0 accepted, evaluation-only, 7-day global
   retention, administrator-only access**. B1 verifies authenticated/unauthenticated
-  boundaries and TLS; B3 still supplies actual ingestion, named source identity
+  boundaries and TLS; B3 now supplies allowlisted lifecycle ingestion, named source identity
   and authorized Control Room querying. Resource/disk/backup and production
   retention/legal/runtime qualification remain separate gates.
 - **B4:** Control-Service owns **per-source** change-watcher checkpoints, resync

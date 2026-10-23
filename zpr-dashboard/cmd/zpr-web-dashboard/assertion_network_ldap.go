@@ -149,6 +149,9 @@ func readNetworkAssertionLDAP(ctx context.Context, address string, tlsConfig *tl
 		}
 	}
 	directory, err := assertionLDAPDirectory(result.Entries, attributes)
+	if errors.Is(err, errAssertionLDAPEmpty) {
+		return directory, err
+	}
 	if err != nil {
 		return assertionDirectory{}, unavailable
 	}

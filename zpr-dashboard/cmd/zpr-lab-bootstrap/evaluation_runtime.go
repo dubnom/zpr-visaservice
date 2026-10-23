@@ -37,12 +37,16 @@ func evaluationEnvironment(state string, inventory evaluationInventory, mode str
 	file := func(name string) string { return filepath.Join(state, name) }
 	if mode == "control-service" {
 		return append(env,
+			"ZPR_TRUSTED_SOURCE_ORGANIZATION_ID=evaluation-"+inventory.InstallID,
+			"ZPR_ASSERTION_SOURCES_FILE="+file("assertion-sources.json"),
+			"ZPR_ADAPTER_LOG_CONFIG_FILE="+file("adapter-logs.json"),
 			"ZPR_CONTROL_SERVICE_LISTEN="+fmt.Sprintf("127.0.0.1:%d", config.ServicePort),
 			"ZPR_CONTROL_SERVICE_CERT_FILE="+file("server-chain.pem"),
 			"ZPR_CONTROL_SERVICE_KEY_FILE="+file("server-key.pem"),
 			"ZPR_CONTROL_SERVICE_CLIENT_CA_FILE="+file("ca.pem"))
 	}
 	return append(env,
+		"ZPR_CONTROL_ROOM_LOG_PERMISSION=logs.read",
 		"ZPR_OPERATOR_OIDC_CONFIG_FILE="+file("operator-oidc.json"),
 		"ZPR_OPERATOR_OIDC_SECRET_FILE="+file("oidc-room-client.secret"),
 		"ZPR_OPERATOR_OIDC_CA_FILE="+file("ca.pem"),
@@ -205,8 +209,14 @@ func startEvaluation(state string, inventory evaluationInventory, out io.Writer)
 			return err
 		}
 	}
-	fmt.Fprintf(out, "%s\nREADY (B1 transport only): https://localhost:%d\nOpenObserve administrator: admin@evaluation.invalid at https://localhost:%d (password: private logging-admin.secret).\nTrust ONLY this install's ca.pem in your evaluation browser; never disable certificate checks.\n", evaluationBanner, inventory.Config.RoomPort, inventory.Config.LogPort)
-	fmt.Fprintln(out, "Operator login: admin@evaluation.invalid (password: private operator-admin.secret). Read-only evaluation grants; no shared sessions.\nSource registration, log ingestion and upstream Visa/Policy services are NOT configured by B1. Control Room reports unavailable dependencies explicitly.")
+	if err := registerEvaluationSource(startup, state, inventory); err != nil {
+		return err
+	}
+	if err := waitEvaluation(startup, "evaluation lifecycle ingestion/query", out, func() error { return collectEvaluationLog(startup, state, inventory, "bootstrap_ready") }); err != nil {
+		return err
+	}
+	fmt.Fprintf(out, "%s\nREADY (B1-B3 evaluation): https://localhost:%d\nOpenObserve administrator: admin@evaluation.invalid at https://localhost:%d (password: private logging-admin.secret).\nTrust ONLY this install's ca.pem in your evaluation browser; never disable certificate checks.\n", evaluationBanner, inventory.Config.RoomPort, inventory.Config.LogPort)
+	fmt.Fprintln(out, "Operator login: admin@evaluation.invalid (password: private operator-admin.secret). Administrator-scoped evaluation grants; no shared sessions.\nStarter directory registered; lifecycle events ingested into evaluation logging. Upstream Visa/Policy services are NOT configured. Control Room reports unavailable dependencies explicitly.")
 	fmt.Fprintln(out, "Foreground supervision active. Ctrl-C stops this install's services/containers; rerun the SAME command to preserve identity and directory/log data.")
 	ticker := time.NewTicker(5 * time.Second)
 	defer ticker.Stop()
@@ -216,6 +226,12 @@ func startEvaluation(state string, inventory evaluationInventory, out io.Writer)
 			fmt.Fprintln(out, "Stopping evaluation services; private state retained.")
 			return nil
 		case <-ticker.C:
+			if err := collectEvaluationLog(ctx, state, inventory, "bootstrap_heartbeat"); err != nil {
+				if ctx.Err() != nil {
+					return nil
+				}
+				return err
+			}
 			for _, process := range processes {
 				select {
 				case <-process.done:
@@ -379,7 +395,7 @@ func configureEvaluationOperator(ctx context.Context, state string, inventory ev
 		return errors.New("OIDC identity verification failed")
 	}
 	config := operatorauth.Config{Version: 1, Issuer: issuer, ClientID: "zpr-control-room", RedirectURL: fmt.Sprintf("https://localhost:%d/auth/operator/callback", inventory.Config.RoomPort), SessionLifetimeSeconds: 3600,
-		Grants: []operatorauth.Grant{{Issuer: issuer, Subject: identity.Subject, Organizations: []string{"evaluation-" + inventory.InstallID}, Permissions: []string{"monitor.read", "policy.read"}}}}
+		Grants: []operatorauth.Grant{{Issuer: issuer, Subject: identity.Subject, Organizations: []string{"evaluation-" + inventory.InstallID}, Permissions: []string{"monitor.read", "logs.read", "policy.read", "policy.edit", "policy.analyze"}}}}
 	if err := config.Validate(); err != nil {
 		return errors.New("verified bootstrap operator grant is invalid")
 	}

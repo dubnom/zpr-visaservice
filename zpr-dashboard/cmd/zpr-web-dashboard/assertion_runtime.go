@@ -26,30 +26,32 @@ type assertionSettings struct {
 }
 
 type assertionRuntime struct {
-	watchers         []trustedWatcher
-	sourcesPath      string
-	sourcesConfig    assertionSourcesConfig
-	sourcesRevision  string
-	sources          map[string]assertionNamedSource
-	defaultSource    string
-	mu               sync.Mutex
-	settingsSyncMu   sync.Mutex
-	settings         assertionSettings
-	settingsStore    assertionSettingsStore
-	legacyPath       string
-	legacySettings   *assertionSettings
-	settingsReady    bool
-	settingsError    string
-	lastSettingsSync time.Time
-	organizationID   string
-	organizationName string
-	baseDN           string
-	bindDN           string
-	reader           func(context.Context, string, string) (assertionDirectory, error)
-	running          bool
-	nextRun          time.Time
-	lastRun          *assertionRun
-	lastSource       map[string]any
+	watchers             []trustedWatcher
+	sourceScopeConflict  bool
+	sourceOrganizationID string
+	sourcesPath          string
+	sourcesConfig        assertionSourcesConfig
+	sourcesRevision      string
+	sources              map[string]assertionNamedSource
+	defaultSource        string
+	mu                   sync.Mutex
+	settingsSyncMu       sync.Mutex
+	settings             assertionSettings
+	settingsStore        assertionSettingsStore
+	legacyPath           string
+	legacySettings       *assertionSettings
+	settingsReady        bool
+	settingsError        string
+	lastSettingsSync     time.Time
+	organizationID       string
+	organizationName     string
+	baseDN               string
+	bindDN               string
+	reader               func(context.Context, string, string) (assertionDirectory, error)
+	running              bool
+	nextRun              time.Time
+	lastRun              *assertionRun
+	lastSource           map[string]any
 }
 
 var errAssertionBusy = errors.New("An assertion evaluation is already running")
@@ -61,7 +63,7 @@ func (runtime *assertionRuntime) ldapConfigured() bool {
 }
 
 func newAssertionRuntime() (*assertionRuntime, error) {
-	runtime := &assertionRuntime{settings: assertionSettings{IntervalSeconds: 60}, defaultSource: "ldap"}
+	runtime := &assertionRuntime{sourceOrganizationID: strings.TrimSpace(os.Getenv("ZPR_TRUSTED_SOURCE_ORGANIZATION_ID")), settings: assertionSettings{IntervalSeconds: 60}, defaultSource: "ldap"}
 	runtime.legacyPath = strings.TrimSpace(os.Getenv("ZPR_ASSERTION_STORE_FILE"))
 	if runtime.legacyPath != "" {
 		file, err := os.Open(runtime.legacyPath)
@@ -164,6 +166,10 @@ func (runtime *assertionRuntime) refreshSettings(ctx context.Context) error {
 		runtime.settingsReady = false
 		runtime.settingsError = "Policy Repository assertion settings are unavailable"
 		return err
+	}
+	runtime.sourceScopeConflict = runtime.sourceOrganizationID != "" && response.OrganizationID != runtime.sourceOrganizationID
+	if runtime.sourceScopeConflict {
+		return errors.New("Policy Repository organization conflicts with configured trusted source scope")
 	}
 	runtime.applySettingsLocked(response)
 	return nil
@@ -417,12 +423,27 @@ func (runtime *assertionRuntime) handlers() httpapi.Assertions {
 	}
 }
 
+// Source administration can be scoped independently of Policy-Service. This does
+// not make policy settings/evaluation available when Policy-Service is down.
+func (runtime *assertionRuntime) refreshSourceOrganization(ctx context.Context) error {
+	if runtime.sourceOrganizationID == "" {
+		return runtime.refreshSettings(ctx)
+	}
+	runtime.mu.Lock()
+	defer runtime.mu.Unlock()
+	if runtime.sourceScopeConflict || runtime.organizationID != "" && runtime.organizationID != runtime.sourceOrganizationID {
+		return errors.New("Configured trusted source organization conflicts with Policy Repository")
+	}
+	runtime.organizationID = runtime.sourceOrganizationID
+	return nil
+}
+
 func (runtime *assertionRuntime) handleSource(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Cache-Control", "no-store")
 	if !localEditorRequest(w, r) {
 		return
 	}
-	if err := runtime.refreshSettings(r.Context()); err != nil {
+	if err := runtime.refreshSourceOrganization(r.Context()); err != nil {
 		writeJSON(w, http.StatusBadGateway, map[string]string{"error": "Policy Repository assertion settings are unavailable"})
 		return
 	}
@@ -478,6 +499,11 @@ func (runtime *assertionRuntime) handleSource(w http.ResponseWriter, r *http.Req
 		directory, err = runtime.readDirectory(ctx, readOrganizationID, baseDN, bindDN)
 	} else {
 		directory, err = selectedSource.read(ctx, readOrganizationID, baseDN, bindDN)
+		// A successful LDAP search can be browsed/tested before people/groups exist.
+		// Assertion evaluation still rejects this sentinel and cannot pass vacuously.
+		if errors.Is(err, errAssertionLDAPEmpty) {
+			err = nil
+		}
 		if err != nil {
 			err = errors.New("Trusted source is unavailable; no fallback was attempted")
 		}

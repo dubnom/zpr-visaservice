@@ -10,7 +10,6 @@ import (
 	"errors"
 	"flag"
 	"fmt"
-	"golang.org/x/crypto/bcrypt"
 	"io"
 	"os"
 	"path/filepath"
@@ -18,6 +17,9 @@ import (
 	"slices"
 	"strings"
 	"time"
+
+	"golang.org/x/crypto/bcrypt"
+	"neboagency.com/zpr-dashborad/internal/controlservice/adapterlogs"
 )
 
 const evaluationBanner = "EVALUATION ONLY — NOT PRODUCTION SUPPORTED. Local administrators only; no Simulator dependency."
@@ -161,7 +163,7 @@ func prepareEvaluation(output string, config evaluationConfig, now time.Time) (e
 	} else if !errors.Is(err, os.ErrNotExist) {
 		return empty, errors.New("cannot inspect state directory")
 	}
-	files, inventory, err := generateEvaluation(config, now)
+	files, inventory, err := generateEvaluation(output, config, now)
 	if err != nil {
 		return empty, err
 	}
@@ -194,6 +196,23 @@ func prepareEvaluation(output string, config evaluationConfig, now time.Time) (e
 	}
 	if err := writePrivate(root, "evaluation.json", append(data, '\n')); err != nil {
 		return empty, err
+	}
+	// Mutable operator registries are deliberately not frozen in the inventory.
+	mutable := map[string]any{
+		"assertion-sources.json": map[string]any{"default_source": "", "sources": []any{}},
+		"adapter-logs.json": adapterlogs.Inventory{Adapters: []adapterlogs.Target{{
+			ID: "logs_" + inventory.InstallID, Name: "OpenObserve (EVALUATION ONLY)",
+			Sources: []adapterlogs.SourceConfig{evaluationLogSource(output, inventory)},
+		}}},
+	}
+	for name, value := range mutable {
+		data, err := json.MarshalIndent(value, "", "  ")
+		if err != nil {
+			return empty, err
+		}
+		if err := writePrivate(root, name, append(data, '\n')); err != nil {
+			return empty, err
+		}
 	}
 	return inventory, nil
 }
@@ -228,7 +247,13 @@ func readEvaluation(output string, config evaluationConfig) (evaluationInventory
 	if !reflect.DeepEqual(inventory.Config, config) {
 		return inventory, errors.New("existing install configuration differs; reuse original image/port flags or choose a NEW state directory")
 	}
-	required := []string{"ca.pem", "ca-key.pem", "server-chain.pem", "server-key.pem", "client-chain.pem", "client-key.pem", "ldap-admin.secret", "ldap-reader.secret", "logging-admin.secret", "openobserve.env", "slapd.conf", "directory.ldif", "serve-directory.sh", "compose.json", "dex.json", "operator-admin.secret", "oidc-room-client.secret", "EVALUATION.txt"}
+	for _, name := range []string{"assertion-sources.json", "adapter-logs.json"} {
+		info, err := os.Lstat(filepath.Join(output, name))
+		if err != nil || !info.Mode().IsRegular() || info.Mode().Perm() != 0600 {
+			return inventory, errors.New("operator registry missing or unprotected; refuse reseed")
+		}
+	}
+	required := []string{"ca.pem", "ca-key.pem", "server-chain.pem", "server-key.pem", "client-chain.pem", "client-key.pem", "ldap-admin.secret", "ldap-reader.secret", "logging-admin.secret", "openobserve.env", "slapd.conf", "directory.ldif", "serve-directory.sh", "compose.json", "dex.json", "operator-admin.secret", "oidc-room-client.secret", "EVALUATION.txt", "source-registration.json"}
 	if len(inventory.Files) != len(required) {
 		return inventory, errors.New("evaluation inventory is missing required files")
 	}
@@ -250,7 +275,7 @@ func readEvaluation(output string, config evaluationConfig) (evaluationInventory
 	return inventory, nil
 }
 
-func generateEvaluation(config evaluationConfig, now time.Time) (map[string][]byte, evaluationInventory, error) {
+func generateEvaluation(state string, config evaluationConfig, now time.Time) (map[string][]byte, evaluationInventory, error) {
 	files := map[string][]byte{}
 	inventory := evaluationInventory{Version: 1, Kind: "zpr-evaluation-only", Config: config, Files: map[string]string{}}
 	random := make([]byte, 12)
@@ -411,7 +436,13 @@ ZO_LOG_LEVEL=warn
 		return nil, inventory, err
 	}
 	files["compose.json"] = append(data, '\n')
-	files["EVALUATION.txt"] = []byte(evaluationBanner + "\nOpenObserve AGPL-3.0 accepted for evaluation; 7-day retention; admin-only loopback access.\nB1 readiness is not source registration, ingestion, policy enforcement or a production install.\n")
+	files["EVALUATION.txt"] = []byte(evaluationBanner + "\nOpenObserve AGPL-3.0 accepted for evaluation; 7-day retention; admin-only loopback access.\nRegistration and lifecycle logging use ordinary production contracts. No policy enforcement or production install is claimed.\n")
+	registration := evaluationSourceRegistration(state, inventory)
+	data, err = json.MarshalIndent(registration, "", "  ")
+	if err != nil {
+		return nil, inventory, err
+	}
+	files["source-registration.json"] = append(data, '\n')
 	for name, data := range files {
 		sum := sha256.Sum256(data)
 		inventory.Files[name] = hex.EncodeToString(sum[:])

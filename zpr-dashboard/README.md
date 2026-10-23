@@ -2,11 +2,13 @@
 
 This repository contains the Zero-Trust Packet Routing (ZPR) Terminal User Interface application. The dashboard application allows you to manage your ZPR infrastructure quickly through an easy-to-understand and easy-to-use interface.
 
-The separate [B1 local evaluation bootstrap](packaging/evaluation/README.md)
+The separate [B1–B3 local evaluation bootstrap](packaging/evaluation/README.md)
 starts production Control Room/Control-Service plus isolated packaged OpenLDAP,
 OpenObserve and named-operator Dex with unique protected state and verified TLS.
-It never starts/requires Simulator and does not implement source registration,
-log ingestion or the complete production BOM.
+It registers the starter directory through ordinary production source contracts
+and ingests/query-verifies bounded lifecycle logs through the production log
+inventory. It never starts/requires Simulator or implements the complete
+production BOM; arbitrary raw application-log collection remains unimplemented.
 
 Production appliance work is tracked in the
 [system packaging foundation](packaging/system/README.md). The new
