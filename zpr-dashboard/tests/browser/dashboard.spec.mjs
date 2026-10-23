@@ -1,3 +1,5 @@
+import { scopedSourceFixture } from "./scoped-source-fixture.mjs";
+
 // CodeMirror replaces the visible source textarea; its value and selection stay bridged to the textarea.
 function codeEditor(page, sourceID) {
   return page.locator(`.code-editor-host[data-source="${sourceID}"] .cm-content`);
@@ -113,6 +115,7 @@ test("GUI editor gutters follow newline edits and undo redo in assertion policy 
 
 for (const fallback of [false, true]) {
   test(`GUI Trusted Source insertion participates in undo redo and clears obsolete analysis (${fallback ? "fallback" : "native"})`, async ({ page, appURL, api }) => {
+    const verifyScopedSources = scopedSourceFixture(page, api, expect);
     api.handlers.set("/api/assertions/evaluate", route => route.fulfill({ json: {
       revision: 0, status: "pass", finished_at: "2026-10-05T12:00:00Z",
       results: [{ rule: { line: 1, kind: "group", group: "Original", operator: ">=", limit: 1 }, status: "pass", subjects: [] }],
@@ -129,7 +132,7 @@ for (const fallback of [false, true]) {
     await source.evaluate(element => element.setSelectionRange(element.value.length, element.value.length));
     if (fallback) await page.evaluate(() => { document.execCommand = () => false; });
     await insert.click();
-    const inserted = original + 'group "Operators" members >= 2;\n';
+    const inserted = original + 'group "Operators" from "great_lakes_ldap" members >= 2;\n';
     await expect(source).toHaveValue(inserted);
     await expect(page.locator("#assertion-result-lines > div")).toHaveCount(3);
     await expect(page.locator("#assertion-analyze")).not.toHaveAttribute("data-analysis-state", "success");
@@ -142,12 +145,13 @@ for (const fallback of [false, true]) {
     await page.getByRole("tab", { name: "Attributes", exact: true }).click();
     await source.evaluate(element => element.setSelectionRange(0, element.value.indexOf("\n") + 1));
     await page.getByRole("button", { name: "Insert presence assertion for mail", exact: true }).click();
-    await expect(source).toHaveValue('people attribute "mail" present;\ngroup "Operators" members >= 2;\n');
+    await expect(source).toHaveValue('people from "great_lakes_ldap" attribute "mail" present;\ngroup "Operators" from "great_lakes_ldap" members >= 2;\n');
     await codeEditor(page, "assertion-source").press("ControlOrMeta+z");
     await expect(source).toHaveValue(inserted);
     await codeEditor(page, "assertion-source").press("ControlOrMeta+Shift+Z");
-    await expect(source).toHaveValue('people attribute "mail" present;\ngroup "Operators" members >= 2;\n');
+    await expect(source).toHaveValue('people from "great_lakes_ldap" attribute "mail" present;\ngroup "Operators" from "great_lakes_ldap" members >= 2;\n');
     expect(api.counts.get("/api/policy/records/test-assertions/save") || 0).toBe(0);
+    verifyScopedSources();
   });
 }
 
@@ -417,6 +421,7 @@ test("assertion lint warns on complexity without changing a passing result", asy
 });
 
 test("organization assertions author, save and evaluate without policy compilation", async ({ page, appURL, api }) => {
+  const verifyScopedSources = scopedSourceFixture(page, api, expect);
   api.handlers.set("/api/assertions", async (route) => {
     if (route.request().method() === "PUT") {
       const request = route.request().postDataJSON();
@@ -434,7 +439,7 @@ test("organization assertions author, save and evaluate without policy compilati
     api.assertions.last_run = {
       revision: request.expected_revision, draft: request.source !== api.assertions.settings.source,
       status: "pass", finished_at: "2026-10-02T12:00:00Z",
-      results: [{ rule: { line: 1, kind: "group", group: "Operators", operator: ">=", limit: 2 }, status: "pass", checked: 1, violations: 0, subjects: [], message: "1 checked; 0 violations" }],
+      results: [{ rule: { line: 1, kind: "group", group: "Operators", source: "great_lakes_ldap", operator: ">=", limit: 2 }, status: "pass", checked: 1, violations: 0, subjects: [], message: "1 checked; 0 violations" }],
     };
     await route.fulfill({ json: api.assertions.last_run });
   });
@@ -446,7 +451,7 @@ test("organization assertions author, save and evaluate without policy compilati
   await page.getByRole("button", { name: "Read source", exact: true }).click();
   await expect(page.locator("#assertion-group-rows")).toContainText("Operators");
   await page.getByRole("button", { name: "Insert a cardinality assertion for Operators", exact: true }).click();
-  await expect(editor).toHaveValue('group "Operators" members >= 2;\n');
+  await expect(editor).toHaveValue('group "Operators" from "great_lakes_ldap" members >= 2;\n');
   await page.locator("#assertion-analyze").click();
   await expect(page.locator("#assertion-run-status")).toContainText("Draft r0");
   const resultGutterStyle = await resultGutter(page, "assertion-source").evaluate((gutter) => ({
@@ -461,7 +466,7 @@ test("organization assertions author, save and evaluate without policy compilati
   await expect(passMarker).toHaveAttribute("data-state", "pass");
   await passMarker.click();
   const passDetails = page.getByRole("dialog", { name: "Assertion pass" });
-  await expect(passDetails).toContainText('group "Operators" members >= 2');
+  await expect(passDetails).toContainText('group "Operators" from "great_lakes_ldap" members >= 2');
   await expect(passDetails).toContainText("1 checked; 0 violations");
   await passDetails.locator(".dialog-actions .button").click();
   await expect(editor).toBeEditable();
@@ -476,6 +481,7 @@ test("organization assertions author, save and evaluate without policy compilati
   await page.locator("#assertion-analyze").click();
   expect(api.counts.get("/api/policy/test") || 0).toBe(0);
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBeTruthy();
+  verifyScopedSources();
 });
 
 test("assertion result gutter clips long documents and follows editor scroll", async ({ page, appURL, api }) => {
@@ -531,6 +537,7 @@ test("policy and assertion editors fill the available page height", async ({ pag
 });
 
 test("assertion attribute catalog inserts rules and renders typed comparisons", async ({ page, appURL, api }) => {
+  const verifyScopedSources = scopedSourceFixture(page, api, expect);
   api.assertionSource.attributes = [{ name: "mail", people: 2, groups: 0 }, { name: "gidnumber", people: 2, groups: 1 }];
   api.handlers.set("/api/assertions/evaluate", async (route) => {
     const request = route.request().postDataJSON();
@@ -538,7 +545,7 @@ test("assertion attribute catalog inserts rules and renders typed comparisons", 
     const numeric = request.source.includes("gidNumber");
     api.assertions.last_run = {
       revision: 0, draft: true, status: numeric ? "pass" : "fail", finished_at: "2026-10-02T12:00:00Z",
-      results: [{ rule: numeric ? { line: 1, kind: "each_group_attribute", attribute: "gidnumber", operator: ">=", number: 1000 } : { line: 1, kind: "people_attribute", attribute: "mail", operator: "present" }, status: numeric ? "pass" : "fail", checked: 2, violations: numeric ? 0 : 1, subjects: numeric ? [] : ["bob"], message: numeric ? "2 checked; 0 violations" : "2 checked; 1 violations" }],
+      results: [{ rule: numeric ? { line: 1, kind: "each_group_attribute", attribute: "gidnumber", operator: ">=", number: 1000 } : { line: 1, kind: "people_attribute", source: "great_lakes_ldap", attribute: "mail", operator: "present" }, status: numeric ? "pass" : "fail", checked: 2, violations: numeric ? 0 : 1, subjects: numeric ? [] : ["bob"], message: numeric ? "2 checked; 0 violations" : "2 checked; 1 violations" }],
     };
     await route.fulfill({ json: api.assertions.last_run });
   });
@@ -548,9 +555,9 @@ test("assertion attribute catalog inserts rules and renders typed comparisons", 
   await page.getByRole("tab", { name: "Attributes", exact: true }).click();
   await expect(page.locator("#assertion-attribute-rows tr")).toHaveCount(2);
   await page.getByRole("button", { name: "Insert presence assertion for mail", exact: true }).click();
-  await expect(page.locator("#assertion-source")).toHaveValue('people attribute "mail" present;\n');
+  await expect(page.locator("#assertion-source")).toHaveValue('people from "great_lakes_ldap" attribute "mail" present;\n');
   await page.locator("#assertion-analyze").click();
-  await expect(page.locator("#assertion-result-rows")).toContainText('people attribute "mail" present');
+  await expect(page.locator("#assertion-result-rows")).toContainText('people from "great_lakes_ldap" attribute "mail" present');
   await expect(page.locator("#assertion-result-rows")).toContainText("bob");
   const failMarker = gutterMarker(page, "assertion-source", 1, ".assertion-result-marker");
   await expect(failMarker).toHaveAttribute("data-state", "fail");
@@ -570,14 +577,15 @@ test("assertion attribute catalog inserts rules and renders typed comparisons", 
   await expect(page.getByRole("tab", { name: "Groups", exact: true })).toHaveAttribute("aria-selected", "true");
   await expect(page.locator("#assertion-attributes-panel")).toBeHidden();
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBeTruthy();
+  verifyScopedSources();
 });
 
 test("assertion catalogs insert named sources and expression results show their text", async ({ page, appURL, api }) => {
-  api.assertionSource.sources = [
+  const catalogs = [
     { name: "staff", people: 2, groups: [{ name: "Operators", members: 2 }], attributes: [{ name: "mail", people: 2, groups: 0 }], observed_at: "2026-10-05T12:00:00Z" },
     { name: "hr", people: 2, groups: [{ name: "Employees", members: 2 }], attributes: [{ name: "salary", people: 2, groups: 0 }], observed_at: "2026-10-05T12:00:00Z" },
   ];
-  api.assertionSource.default_source = "staff";
+  const verifyScopedSources = scopedSourceFixture(page, api, expect, catalogs);
   api.handlers.set("/api/assertions/evaluate", async (route) => {
     await route.fulfill({ json: { revision: 0, draft: true, status: "pass", finished_at: "2026-10-05T12:00:00Z", results: [{ rule: { line: 1, kind: "expression", expression: 'source("staff").group("Operators").members == source("hr").group("Employees").members' }, status: "pass", checked: 1, violations: 0, subjects: [], message: "1 checked; 0 violations" }] } });
   });
@@ -593,6 +601,7 @@ test("assertion catalogs insert named sources and expression results show their 
   await expect(page.locator("#assertion-result-rows")).toContainText('assert source("staff").group("Operators").members == source("hr").group("Employees").members');
   await gutterMarker(page, "assertion-source", undefined, ".assertion-result-marker").click();
   await expect(page.getByRole("dialog", { name: "Assertion pass" })).toContainText('source("hr").group("Employees").members');
+  verifyScopedSources();
 });
 
 test("assertion source failures are errors and never successful checks", async ({ page, appURL, api }) => {
@@ -5386,6 +5395,7 @@ test("sortable tables show defaults and clicks select then reverse a column", as
 });
 
 test("Trusted Sources omits explanatory headings, counts, and the top table filter", async ({ page, appURL, api }) => {
+  const verifyScopedSources = scopedSourceFixture(page, api, expect);
   api.snapshot.trusted_sources = [
     { name: "Primary LDAP", provider: "LDAP", actor_cn: "directory-a", health: "working", last_lookup_ms: 1780000000000 },
     { name: "Secondary Directory", provider: "LDAP", actor_cn: "directory-b", health: "unverified", last_lookup_ms: null },
@@ -5402,7 +5412,8 @@ test("Trusted Sources omits explanatory headings, counts, and the top table filt
   await expect(sources.locator("table[data-sort-page=sources]")).toBeVisible();
   await expect(sources.locator("#trusted-list tr[data-inspect-source]")).toHaveCount(2);
   const browser = sources.locator("trusted-source-browser");
-  await expect(browser.locator("[data-source-title]")).toHaveText("Trusted LDAP");
+  await expect(browser.locator("[data-source-title]")).toHaveText("Great Lakes LDAP");
+  verifyScopedSources();
 });
 
 test("GUI raw scenario editor switches to YAML and analyzes before saving", async ({ page, appURL, api }) => {
@@ -5445,20 +5456,22 @@ test("Control Room sidebar links Adapter Logs internally and promotes external m
 });
 
 test("Control Room trusted source panel browses records read-only", async ({ page, appURL, api }) => {
+  const verifyScopedSources = scopedSourceFixture(page, api, expect);
   await page.goto(appURL + "/#sources");
   const browser = page.locator("trusted-source-browser");
-  await expect(browser.locator("[data-source-title]")).toHaveText("Trusted LDAP");
+  await expect(browser.locator("[data-source-title]")).toHaveText("Great Lakes LDAP");
   await expect(browser.locator("[data-source-meta]")).toContainText("dc=alpha,dc=test");
-  await expect(browser.locator(".trusted-source-table")).toContainText("alice");
+  await expect(browser.locator(".trusted-source-results .trusted-source-table")).toContainText("alice");
   await browser.getByRole("tab", { name: "Groups" }).click();
-  await expect(browser.locator(".trusted-source-table")).toContainText("Operators");
+  await expect(browser.locator(".trusted-source-results .trusted-source-table")).toContainText("Operators");
   await browser.getByRole("tab", { name: "Attributes" }).click();
   const filter = browser.getByRole("searchbox", { name: "Filter trusted source records" });
   await filter.fill("mail");
-  await expect(browser.locator(".trusted-source-table")).toContainText("mail");
-  await expect(browser.locator(".trusted-source-table")).not.toContainText("title");
+  await expect(browser.locator(".trusted-source-results .trusted-source-table")).toContainText("mail");
+  await expect(browser.locator(".trusted-source-results .trusted-source-table")).not.toContainText("title");
   await expect(browser.getByRole("button", { name: /Save|Edit|Delete|Publish/ })).toHaveCount(0);
   expect(api.counts.get("/api/assertions/source")).toBeGreaterThan(0);
+  verifyScopedSources();
 });
 
 test("Control Room Trusted Sources shows one-day metadata-only updates with cursor paging", async ({ page, appURL, api }) => {
@@ -5494,6 +5507,7 @@ test("Control Room Trusted Sources can continue through an empty update page", a
 });
 
 test("Trusted Sources tables sort, split group cn/objectClass and condense people rows", async ({ page, appURL, api }) => {
+  const verifyScopedSources = scopedSourceFixture(page, api, expect);
   const directory = api.assertionSource.directory;
   directory.person_attributes.alice.cn = ["Alice Adams"];
   directory.person_attributes.alice.ou = ["Engineering"];
@@ -5504,7 +5518,7 @@ test("Trusted Sources tables sort, split group cn/objectClass and condense peopl
   directory.group_attributes.Admins = { cn: ["Admins"], objectclass: ["groupOfNames"] };
   await page.goto(appURL + "/#sources");
   const browser = page.locator("trusted-source-browser");
-  const table = browser.locator(".trusted-source-table");
+  const table = browser.locator(".trusted-source-results .trusted-source-table");
   await expect(table.locator("thead th")).toHaveText(["IDENTITY", "NAME", "TITLE", "UNIT", "MAIL"]);
   await expect(table.locator("thead th.sortable-heading .sort-button")).toHaveCount(5);
   await expect(table.locator('thead th[aria-sort="ascending"]')).toHaveText("IDENTITY");
@@ -5550,6 +5564,7 @@ test("Trusted Sources tables sort, split group cn/objectClass and condense peopl
   await table.getByRole("button", { name: /Sort by PEOPLE/ }).click();
   await table.getByRole("button", { name: /Sort by PEOPLE/ }).click();
   await expect(table.locator("tbody th").last()).toHaveText("description");
+  verifyScopedSources();
 });
 
 test("Simulator trusted source page uses the same read-only browser", async ({ page, appURL, api }) => {

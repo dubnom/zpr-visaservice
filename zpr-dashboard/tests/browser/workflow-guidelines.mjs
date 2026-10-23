@@ -1,3 +1,5 @@
+import { scopedSourceFixture } from "./scoped-source-fixture.mjs";
+
 export function registerWorkflowGuidelineTests(test, expect) {
   async function openAssertionRecord(page, appURL) {
     await page.goto(appURL + "/#policy");
@@ -98,7 +100,7 @@ export function registerWorkflowGuidelineTests(test, expect) {
   });
 
   test("workflow assertion catalogs sort exact counts and retain source-qualified insertion", async ({ page, appURL, api }) => {
-    api.assertionSource.sources = [
+    const catalogs = [
       {
         name: "staff", people: 1001, observed_at: "2026-10-07T12:00:00Z",
         groups: [{ name: "Zeta", members: 10 }, { name: "Alpha", members: 1001 }, { name: "Beta", members: 2 }],
@@ -106,7 +108,7 @@ export function registerWorkflowGuidelineTests(test, expect) {
       },
       { name: "hr", people: 10, observed_at: "2026-10-07T12:00:00Z", groups: [{ name: "HR Z", members: 10 }, { name: "HR A", members: 2 }], attributes: [] },
     ];
-    api.assertionSource.default_source = "staff";
+    const verifyScopedSources = scopedSourceFixture(page, api, expect, catalogs);
     await openAssertionRecord(page, appURL);
     await page.locator('.code-editor-host[data-source="assertion-source"] .cm-content').fill("");
     await page.locator("#assertion-read-source").click();
@@ -139,7 +141,7 @@ export function registerWorkflowGuidelineTests(test, expect) {
     await page.getByRole("button", { name: "Insert presence assertion for beta", exact: true }).click();
     await expect(page.locator("#assertion-source")).toHaveValue('people from "staff" attribute "beta" present;\n');
     expect(api.counts.get("/api/assertions/source")).toBe(sourceReads);
-    api.assertionSource.sources[0].groups[1].members = 1002;
+    catalogs[0].groups[1].members = 1002;
     await page.locator("#assertion-read-source").click();
     await expect(page.locator("#assertion-group-rows td:nth-child(2)").first()).toHaveText("1002");
     await expect(page.locator("#assertion-group-rows td:nth-child(2)").first().locator(".poll-changed")).toHaveCount(1);
@@ -151,6 +153,7 @@ export function registerWorkflowGuidelineTests(test, expect) {
     await page.locator('.code-editor-host[data-source="assertion-source"] .cm-content').fill("");
     await page.getByRole("button", { name: "Insert a cardinality assertion for HR A", exact: true }).click();
     await expect(page.locator("#assertion-source")).toHaveValue('group "HR A" from "hr" members >= 2;\n');
+    verifyScopedSources();
   });
 
   test("workflow assertion result sorting leaves evaluation source, errors and gutter ownership intact", async ({ page, appURL, api }) => {

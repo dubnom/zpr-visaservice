@@ -1,32 +1,41 @@
+import { scopedSourceFixture } from "./scoped-source-fixture.mjs";
+
 export function registerPageRuntimeTests(test, expect) {
   test("Shared page runtime retains Trusted Sources directory data on a failed manual read", async ({ page, appURL, api }) => {
+    const verifyScopedSources = scopedSourceFixture(page, api, expect);
     await page.goto(appURL + "/#sources");
     const browser = page.locator("trusted-source-browser");
-    await expect(browser.locator(".trusted-source-table")).toContainText("alice");
+    await expect(browser.locator(".trusted-source-results .trusted-source-table")).toContainText("alice");
     await page.locator("#pause-poll").click();
     api.handlers.set("/api/assertions/source", route => route.fulfill({ status: 503, json: { error: "Directory provider unavailable" } }));
     await page.locator("#refresh-now").click();
     await expect(browser.locator("[data-source-message]")).toContainText("Directory provider unavailable");
     await expect(browser.locator("[data-source-message]")).toContainText("last known");
-    await expect(browser.locator(".trusted-source-table")).toContainText("alice");
+    await expect(browser.locator(".trusted-source-results .trusted-source-table")).toContainText("alice");
     expect([...api.counts.keys()].some(path => path.startsWith("/api/simulator/"))).toBe(false);
+    verifyScopedSources();
   });
 
   for (const completion of ["success", "failure"]) {
     test(`Shared page runtime rejects obsolete Trusted Sources ${completion} after navigation and manual return`, async ({ page, appURL, api }) => {
+      const verifyScopedSources = scopedSourceFixture(page, api, expect);
       await page.goto(appURL + "/#sources");
       const browser = page.locator("trusted-source-browser");
-      await expect(browser.locator(".trusted-source-table")).toContainText("alice");
+      await expect(browser.locator(".trusted-source-results .trusted-source-table")).toContainText("alice");
       await page.locator("#pause-poll").click();
       await page.evaluate(async () => {
         const original = window.zprOperatorFetch;
-        const data = await (await original("/api/assertions/source")).json();
+        const data = await (await original("/api/assertions/source?source=great_lakes_ldap")).json();
         window.delayedDirectory = [];
         window.zprOperatorFetch = (url, options) => {
-          if (url !== "/api/assertions/source") return original(url, options);
+          if (url !== "/api/assertions/source?source=great_lakes_ldap") return original(url, options);
           return new Promise((resolve, reject) => window.delayedDirectory.push({
             signal: options.signal,
-            finish(name) { resolve(new Response(JSON.stringify({ ...data, default_source: name, source_name: name }), { status: 200 })); },
+            finish(name) {
+              const current = structuredClone(data);
+              current.directory.person_attributes.alice.cn = [name];
+              resolve(new Response(JSON.stringify(current), { status: 200 }));
+            },
             fail() { reject(new Error("Obsolete directory failure")); },
           }));
         };
@@ -36,18 +45,22 @@ export function registerPageRuntimeTests(test, expect) {
       await page.evaluate(() => { location.hash = "#map"; });
       await expect.poll(() => page.evaluate(() => window.delayedDirectory[0].signal.aborted)).toBe(true);
       await page.evaluate(() => { location.hash = "#sources"; });
-      await expect(browser.locator(".trusted-source-table")).toContainText("alice");
+      await expect(browser.locator(".trusted-source-results .trusted-source-table")).toContainText("alice");
       expect(await page.evaluate(() => window.delayedDirectory.length)).toBe(1);
       await page.locator("#refresh-now").click();
       await expect.poll(() => page.evaluate(() => window.delayedDirectory.length)).toBe(2);
       await page.evaluate(() => window.delayedDirectory[1].finish("Current directory"));
-      await expect(browser.locator("[data-source-title]")).toHaveText("Current directory");
+      await expect(browser.locator("[data-source-title]")).toHaveText("Great Lakes LDAP");
+      await expect(browser.locator(".trusted-source-results .trusted-source-table")).toContainText("Current directory");
       await page.evaluate(result => {
         if (result === "success") window.delayedDirectory[0].finish("Obsolete directory");
         else window.delayedDirectory[0].fail();
       }, completion);
-      await expect(browser.locator("[data-source-title]")).toHaveText("Current directory");
+      await expect(browser.locator("[data-source-title]")).toHaveText("Great Lakes LDAP");
+      await expect(browser.locator(".trusted-source-results .trusted-source-table")).toContainText("Current directory");
       await expect(browser.locator("[data-source-message]")).toBeHidden();
+      await expect(browser.locator(".trusted-source-results .trusted-source-table")).not.toContainText("Obsolete directory");
+      verifyScopedSources();
     });
   }
 
