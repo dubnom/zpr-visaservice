@@ -5,9 +5,11 @@ const path = require("node:path");
 const { execFileSync } = require("node:child_process");
 
 const [build, output, context, daemon, ...extra] = process.argv.slice(2);
-assert.ok(build && output && context && daemon && (!extra.length || (extra.length === 1 && extra[0] === "--adapter")),
-  "Usage: node probe-node-image.cjs /absolute/image-build /absolute/new-evidence context daemon [--adapter]");
+assert.ok(build && output && context && daemon &&
+  (!extra.length || (extra.length === 1 && ["--adapter", "--peer-node"].includes(extra[0]))),
+  "Usage: node probe-node-image.cjs /absolute/image-build /absolute/new-evidence context daemon [--adapter | --peer-node]");
 const adapterMode = extra[0] === "--adapter";
+const peerMode = extra[0] === "--peer-node";
 assert.ok(path.isAbsolute(build) && path.isAbsolute(output));
 const hash = file => crypto.createHash("sha256").update(fs.readFileSync(file)).digest("hex");
 const docker = args => execFileSync("docker", ["--context", context, ...args], {
@@ -35,6 +37,9 @@ const volumes = [];
 let network;
 let acceptance;
 let adapter;
+let peer;
+let phase = "preparation";
+let failure;
 const exec = (id, script) => docker(["exec", id, "sh", "-ec", script]);
 const admin = "vs-admin --svc-url 'https://[::1]:8182' --ca-cert /state/first/authority.pem " +
   "--api-key-file /state/first/administrator.key --format compact";
@@ -102,10 +107,48 @@ grep -F '${reason}' /state/${label}.txt`]);
   assert.equal(docker(["inspect", "--format", "{{.State.ExitCode}}", id]), "0", `${label} did not fail at TUN with exit 134`);
   copy(node, `/state/${label}.txt`, `${label}.txt`);
 }
-function waitSync(visa) {
-  exec(visa, `timeout 45 sh -ec 'until ${admin} actors --cn node > /state/actor.json 2>/state/query.log &&
-jq -e '\\''.cn == "node" and .node == true and .zpr_addr == "fd5a:5052::2" and .node_details.in_sync == true and .node_details.pending_install == 0'\\'' /state/actor.json >/dev/null; do sleep 0.2; done'
+function waitSync(visa, name = "node", address = "fd5a:5052::2") {
+  exec(visa, `timeout 45 sh -ec 'until ${admin} actors --cn ${name} > /state/actor.json 2>/state/query.log &&
+jq -e '\\''.cn == "${name}" and .node == true and .zpr_addr == "${address}" and .node_details.in_sync == true and .node_details.pending_install == 0'\\'' /state/actor.json >/dev/null; do sleep 0.2; done'
 jq '{cn, node, zpr_addr, node_details: {in_sync: .node_details.in_sync, pending_install: .node_details.pending_install, vss_port: .node_details.vss_port}}' /state/actor.json > /state/summary.json`);
+}
+function peerLinkStatus(id, directory, remote, label) {
+  const cli = `ph-cli --socket /state/${directory}/node-control.sock link show`;
+  exec(id, `timeout 30 sh -ec 'until ${cli} > /state/links.txt &&
+grep -Eq "^[[:space:]]+[0-9]+: \\\\[${remote}\\\\]:5000 \\\\(Active\\\\)$" /state/links.txt; do sleep 0.2; done'`);
+  for (let sample = 0; sample < 10; sample++) {
+    const links = exec(id, cli);
+    const matches = [...links.matchAll(new RegExp(`^\\s*(\\d+): \\[${remote}\\]:5000 \\(Active\\)$`, "gm"))];
+    assert.equal(matches.length, 1, "Exactly one active peer link is required");
+    const detail = exec(id, `${cli} ${matches[0][1]}`);
+    assert.match(detail, /Type: NodeToNode/);
+    assert.match(detail, /State: Active /);
+    exec(id, "sleep 1");
+  }
+  exec(id, `${cli} > /state/${label}.txt`);
+  copy(id, `/state/${label}.txt`, `${directory}/${label}.txt`);
+}
+function tcpTraffic(source, destination, address, enforcer, logName = "node", evidence = "") {
+  launch(destination, "allowed-workload", `redis-server --bind ${address} --port 16379 --protected-mode no --save '' --appendonly no --dir /state`);
+  launch(destination, "denied-workload", `redis-server --bind ${address} --port 16380 --protected-mode no --save '' --appendonly no --dir /state`);
+  exec(destination, `timeout 15 sh -ec 'until [ "$(redis-cli -h ${address} -p 16379 --raw PING 2>/dev/null)" = PONG ] &&
+[ "$(redis-cli -h ${address} -p 16380 --raw PING 2>/dev/null)" = PONG ]; do sleep 0.2; done'`);
+  exec(source, `timeout 30 sh -ec 'until [ "$(timeout 3 redis-cli -h ${address} -p 16379 --raw PING 2>/dev/null)" = PONG ]; do sleep 0.2; done'
+timeout 5 redis-cli -h ${address} -p 16379 --raw PING > /state/allowed-traffic.txt
+set +e
+timeout 5 redis-cli -h ${address} -p 16380 --raw PING > /state/denied-traffic.txt 2>/state/denied-traffic-error.txt
+status=$?
+set -e
+test "$status" = 124
+test ! -s /state/denied-traffic.txt
+printf 'denied TCP workload timed out with exit 124; no PONG\\n' > /state/denied-result.txt`);
+  exec(enforcer, `grep -E 'visa request denied: Denied \\{ code: NoMatch,' /state/${logName}.log > /state/traffic-policy-denial.txt`);
+  exec(destination, `test "$(redis-cli -h ${address} -p 16380 --raw PING)" = PONG`);
+  copy(enforcer, "/state/traffic-policy-denial.txt", path.join(evidence, "traffic-policy-denial.txt"));
+  copy(source, "/state/allowed-traffic.txt", path.join(evidence, "allowed-traffic.txt"));
+  copy(source, "/state/denied-result.txt", path.join(evidence, "denied-traffic.txt"));
+  stop(destination, "allowed-workload");
+  stop(destination, "denied-workload");
 }
 try {
   const visaVolume = volume();
@@ -121,6 +164,30 @@ try {
   exec(visa, `umask 077
 sh /opt/zpr/libexec/prepare-visa-service.sh /opt/zpr/bin /state/first --node > /state/prepare.log 2>&1
 sh /opt/zpr/libexec/prepare-visa-service.sh /opt/zpr/bin /state/second --node > /state/prepare-second.log 2>&1`);
+  if (peerMode) {
+    execFileSync("docker", ["--context", context, "exec", "-i", visa, "sh", "-s"], {
+      input: fs.readFileSync(path.join(__dirname, "prepare-peer-probe.sh")),
+      encoding: "utf8", maxBuffer: 8 * 1024 * 1024,
+    });
+    const peerVolume = volume();
+    peer = create("peer", [`type=volume,src=${peerVolume},dst=/state`], network, "fd00:5a::5", true);
+    const helper = docker(["create", "--network", "none", "--read-only", "--cap-drop", "ALL",
+      "--security-opt", "no-new-privileges:true",
+      "--mount", `type=volume,src=${visaVolume},dst=/input,readonly`,
+      "--mount", `type=volume,src=${peerVolume},dst=/state`, image.image_id, "sh", "-ec", `umask 077
+mkdir /state/peer
+for file in authority.pem node-noise.key node-noise.pem node.key node.toml remote-noise.pem; do
+  cp "/input/peer/$file" "/state/peer/$file"
+done`]);
+    containers.push(helper);
+    docker(["start", "-a", helper]);
+    assert.equal(docker(["inspect", "--format", "{{.State.ExitCode}}", helper]), "0");
+    setup(peer, `ip tuntap add name zprtest0 mode tun multi_queue user 501
+ip link set zprtest0 mtu 1400 up
+ip -6 addr add fd5a:5052::3/128 dev zprtest0 nodad
+ip -6 route add fd5a:5052::2/128 dev zprtest0
+ip -6 route add fd5a:5052::1/128 via fd00:5a::3 dev eth0 src fd5a:5052::3`, true);
+  }
   if (adapterMode) {
     execFileSync("docker", ["--context", context, "exec", "-i", visa, "sh", "-s"], {
       input: fs.readFileSync(path.join(__dirname, "prepare-adapter-probe.sh")),
@@ -162,12 +229,22 @@ for file in authority.pem node-noise.key node-noise.pem node.key node.toml; do
   cp "/input/first/$file" "/state/first/$file"
 done
 cp /input/second/node.key /state/foreign.key
-sed 's|^auth_private_key = .*|auth_private_key = "/state/foreign.key"|' /state/first/node.toml > /state/foreign.toml`]);
+sed 's|^auth_private_key = .*|auth_private_key = "/state/foreign.key"|' /state/first/node.toml > /state/foreign.toml
+${peerMode ? "for file in remote-noise.pem wrong-noise.pem; do cp /input/first/$file /state/first/$file; done" : ""}`]);
   containers.push(transfer);
   docker(["start", "-a", transfer]);
   assert.equal(docker(["inspect", "--format", "{{.State.ExitCode}}", transfer]), "0");
+  if (peerMode) {
+    for (const [id, directory, address] of [[node, "first", "fd00:5a::2"], [peer, "peer", "fd00:5a::5"]]) {
+      exec(id, `index=$(cat /sys/class/net/eth0/ifindex)
+sed "s|self_addr = \\"\\[${address}\\]:5000\\"|self_addr = \\"[${address}%$index]:5000\\"|" /state/${directory}/node.toml > /state/${directory}/scoped.toml
+mv /state/${directory}/scoped.toml /state/${directory}/node.toml`);
+    }
+    exec(node, `sed 's|/state/first/remote-noise.pem|/state/first/wrong-noise.pem|' /state/first/node.toml > /state/first/wrong-pin.toml`);
+  }
   setup(visa, `ip -6 addr add fd5a:5052::1/128 dev lo nodad
-ip -6 route add fd5a:5052::2/128 via fd00:5a::2 dev eth0 src fd5a:5052::1`);
+ip -6 route add fd5a:5052::2/128 via fd00:5a::2 dev eth0 src fd5a:5052::1
+${peerMode ? "ip -6 route add fd5a:5052::3/128 via fd00:5a::5 dev eth0 src fd5a:5052::1" : ""}`);
   setup(node, `ip tuntap add name zprtest0 mode tun multi_queue user 502
 ip link set zprtest0 mtu 1400 up
 ip -6 addr add fd5a:5052::2/128 dev zprtest0 nodad
@@ -179,7 +256,8 @@ ip tuntap add name zprtest0 mode tun multi_queue user 501
 ip link set zprtest0 mtu 1400 up
 ip -6 addr add fd5a:5052::2/128 dev zprtest0 nodad`, true);
   if (adapterMode) setup(node, "ip -6 route add fd5a:5052:adda::/48 dev zprtest0");
-  for (const [name, id] of [["visa", visa], ["node", node]]) {
+  if (peerMode) setup(node, "ip -6 route add fd5a:5052::3/128 dev zprtest0");
+  for (const [name, id] of [["visa", visa], ["node", node], ...(peerMode ? [["peer", peer]] : [])]) {
     const config = JSON.parse(docker(["inspect", id]))[0];
     assert.equal(config.Config.User, "501:1000");
     assert.equal(config.HostConfig.Privileged, false);
@@ -190,9 +268,9 @@ ip -6 addr add fd5a:5052::2/128 dev zprtest0 nodad`, true);
     assert.ok(!config.HostConfig.PortBindings || !Object.keys(config.HostConfig.PortBindings).length);
     assert.equal(config.Mounts.length, 1);
     assert.equal(config.Mounts[0].Type, "volume");
-    assert.equal(config.Mounts[0].Name, name === "visa" ? visaVolume : nodeVolume);
+    if (name !== "peer") assert.equal(config.Mounts[0].Name, name === "visa" ? visaVolume : nodeVolume);
     assert.equal(config.Mounts[0].Destination, "/state");
-    assert.equal(config.HostConfig.Devices?.length || 0, name === "node" ? 1 : 0);
+    assert.equal(config.HostConfig.Devices?.length || 0, name === "visa" ? 0 : 1);
     exec(id, `umask 077
 test "$(id -u)" = 501
 grep -Eq '^CapEff:[[:space:]]+0+$' /proc/self/status
@@ -207,20 +285,58 @@ cat /proc/self/status > /state/launch-status.txt`);
     for (const file of ["routes.txt", "addresses.txt", "binaries.sha256", "launch-status.txt"]) {
       copy(id, `/state/${file}`, `${name}/${file}`);
     }
-    exec(node, "test ! -e /state/first/administrator.key; test ! -e /state/first/vs_keys.toml; test ! -e /state/first/database; test ! -e /input");
+    if (name !== "visa") exec(id, "test ! -e /state/first/administrator.key; test ! -e /state/first/vs_keys.toml; test ! -e /state/first/database; test ! -e /input");
   }
   launch(visa, "redis", "redis-server --port 0 --unixsocket /state/first/database/redis.sock " +
     "--unixsocketperm 700 --dir /state/first/database --save '' --appendonly yes --appendfsync always");
   exec(visa, `timeout 15 sh -ec 'until [ "$(redis-cli -s /state/first/database/redis.sock --raw PING 2>/dev/null)" = PONG ]; do sleep 0.2; done'`);
-  launch(visa, "visa", `vs --config /state/first/vs.toml /state/${adapterMode ? "adapter" : "first"}/bootstrap.bin2`);
+  launch(visa, "visa", `vs --config /state/first/vs.toml /state/${adapterMode ? "adapter" : peerMode ? "peer" : "first"}/bootstrap.bin2`);
   exec(visa, `timeout 30 sh -ec 'until [ "$(curl --silent --noproxy "*" --cacert /state/first/authority.pem -o /dev/null -w "%{http_code}" "https://[::1]:8182/admin/policies")" = 401 ]; do sleep 0.2; done'`);
   launch(node, "foreign", "ph node -c /state/foreign.toml --logging all=INFO");
   exec(visa, `timeout 30 sh -ec 'until grep -q "blob signature verification failed for cn node" /state/visa.log; do sleep 0.2; done'
 ${admin} actors --nodes > /state/rejected.json
 jq -e 'type == "array" and length == 0' /state/rejected.json >/dev/null`);
   stop(node, "foreign");
-  launch(node, "node", `ph node -c /state/first/node.toml --logging all=INFO${adapterMode ? " flow_mgmt=DEBUG" : ""}`);
+  if (peerMode) {
+    phase = "peer-pin-rejection";
+    launch(peer, "peer-negative", "ph node -c /state/peer/node.toml --logging all=INFO link_state=DEBUG");
+    launch(node, "wrong-pin", "ph node -c /state/first/wrong-pin.toml --logging all=INFO link_state=DEBUG");
+    exec(node, `timeout 30 sh -ec 'until grep -q "certificate exchange payload: KeyMismatchError" /state/wrong-pin.log; do sleep 0.2; done'
+! grep -q 'has verified name CN=peer' /state/wrong-pin.log
+grep 'certificate exchange payload: KeyMismatchError' /state/wrong-pin.log > /state/wrong-pin-rejection.txt`);
+    copy(node, "/state/wrong-pin-rejection.txt", "wrong-pin-rejection.txt");
+    stop(node, "wrong-pin");
+    stop(peer, "peer-negative");
+    launch(peer, "peer", "ph node -c /state/peer/node.toml --logging all=INFO link_state=DEBUG");
+  }
+  launch(node, "node", `ph node -c /state/first/node.toml --logging all=INFO${adapterMode || peerMode ? " flow_mgmt=DEBUG" : ""}${peerMode ? " link_state=DEBUG" : ""}`);
+  phase = "node-synchronization";
   waitSync(visa);
+  if (peerMode) {
+    phase = "peer-synchronization";
+    copy(visa, "/state/summary.json", "node-summary.json");
+    waitSync(visa, "peer", "fd5a:5052::3");
+    copy(visa, "/state/summary.json", "peer-summary.json");
+    waitSync(visa);
+    phase = "peer-mutual-noise";
+    for (const [id, name, remote] of [[node, "node", "peer"], [peer, "peer", "node"]]) {
+      exec(id, `timeout 30 sh -ec 'until grep -q "link 3 has verified name CN=${remote}" /state/${name}.log &&
+grep -q "link 3 completed both Hello directions" /state/${name}.log &&
+grep -q "link 3 entering active state" /state/${name}.log; do sleep 0.2; done'
+grep -E 'link 3 (has verified name CN=${remote}|completed both Hello directions|entering active state)' /state/${name}.log > /state/peer-events.txt
+grep -Eq '^CapEff:[[:space:]]+0+$' "/proc/$(cat /state/${name}.pid)/status"
+grep -Eq '^Uid:[[:space:]]+501[[:space:]]+501[[:space:]]+501[[:space:]]+501$' "/proc/$(cat /state/${name}.pid)/status"
+grep -Eq '^NoNewPrivs:[[:space:]]+1$' "/proc/$(cat /state/${name}.pid)/status"
+cat "/proc/$(cat /state/${name}.pid)/status" > /state/peer-status.txt`);
+      copy(id, "/state/peer-events.txt", `${name}/peer-events.txt`);
+      copy(id, "/state/peer-status.txt", `${name}/peer-status.txt`);
+    }
+    phase = "peer-live-link-stability";
+    peerLinkStatus(node, "first", "fd00:5a::5", "live-peer-link");
+    peerLinkStatus(peer, "peer", "fd00:5a::2", "live-peer-link");
+    phase = "peer-tcp-policy";
+    tcpTraffic(node, peer, "fd5a:5052::3", node, "node", "peer-before-restart");
+  }
   if (adapterMode) {
     const config = JSON.parse(docker(["inspect", adapter]))[0];
     assert.equal(config.Config.User, "0:0");
@@ -276,30 +392,11 @@ cat /proc/$(cat /state/adapter.pid)/status > /state/adapter-status.txt`);
     const addresses = JSON.parse(fs.readFileSync(path.join(root, "adapter-addresses.json")));
     assert.ok(addresses[0].addr_info.some(address => address.local === client.zpr_addr),
       "Visa-granted dynamic adapter address must actually be assigned on TUN");
-    launch(node, "allowed-workload", "redis-server --bind fd5a:5052::2 --port 16379 --protected-mode no --save '' --appendonly no --dir /state");
-    launch(node, "denied-workload", "redis-server --bind fd5a:5052::2 --port 16380 --protected-mode no --save '' --appendonly no --dir /state");
-    exec(node, `timeout 15 sh -ec 'until [ "$(redis-cli -h fd5a:5052::2 -p 16379 --raw PING 2>/dev/null)" = PONG ] &&
-[ "$(redis-cli -h fd5a:5052::2 -p 16380 --raw PING 2>/dev/null)" = PONG ]; do sleep 0.2; done'`);
-    exec(adapter, `timeout 30 sh -ec 'until [ "$(timeout 3 redis-cli -h fd5a:5052::2 -p 16379 --raw PING 2>/dev/null)" = PONG ]; do sleep 0.2; done'
-timeout 5 redis-cli -h fd5a:5052::2 -p 16379 --raw PING > /state/allowed-traffic.txt
-set +e
-timeout 5 redis-cli -h fd5a:5052::2 -p 16380 --raw PING > /state/denied-traffic.txt 2>/state/denied-traffic-error.txt
-status=$?
-set -e
-test "$status" = 124
-test ! -s /state/denied-traffic.txt
-printf 'denied TCP workload timed out with exit 124; no PONG\\n' > /state/denied-result.txt`);
-    exec(node, `grep -E 'visa request denied: (NoMatch|Denied)' /state/node.log > /state/traffic-policy-denial.txt
-test "$(redis-cli -h fd5a:5052::2 -p 16380 --raw PING)" = PONG`);
-    copy(node, "/state/traffic-policy-denial.txt", "traffic-policy-denial.txt");
-    copy(adapter, "/state/allowed-traffic.txt", "allowed-traffic.txt");
-    copy(adapter, "/state/denied-result.txt", "denied-traffic.txt");
-    stop(node, "allowed-workload");
-    stop(node, "denied-workload");
+    tcpTraffic(adapter, node, "fd5a:5052::2", node);
     stop(adapter, "adapter");
   }
   exec(visa, `${admin} actors --nodes > /state/accepted.json
-jq -e 'length == 1 and .[0].cn == "node"' /state/accepted.json >/dev/null
+jq -e '${peerMode ? 'length == 2 and ([.[].cn] | sort) == ["node","peer"]' : 'length == 1 and .[0].cn == "node"'}' /state/accepted.json >/dev/null
 grep 'blob signature verification failed for cn node' /state/visa.log > /state/rejection.txt`);
   exec(node, `grep -E 'node access granted to visa service|registered VSS' /state/node.log > /state/grant.txt
 grep -q 'node access granted to visa service' /state/grant.txt
@@ -315,16 +412,27 @@ cat "/proc/$(cat /state/node.pid)/status" > /state/ph-status.txt`);
   const summary = JSON.parse(fs.readFileSync(path.join(root, "summary.json")));
   assert.equal(summary.node_details.pending_install, 0);
   assert.equal(summary.node_details.in_sync, true);
+  phase = peerMode ? "peer-process-restart" : "node-process-restart";
   stop(node, "node");
-  launch(node, "restarted-node", "ph node -c /state/first/node.toml --logging all=INFO");
+  launch(node, "restarted-node", `ph node -c /state/first/node.toml --logging all=INFO${peerMode ? " link_state=DEBUG flow_mgmt=DEBUG" : ""}`);
   exec(node, `timeout 45 sh -ec 'until grep -q "registered VSS" /state/restarted-node.log; do
 kill -0 "$(cat /state/restarted-node.pid)"; sleep 0.2; done'
 grep -q 'node access granted to visa service' /state/restarted-node.log
 grep -Eq '^CapEff:[[:space:]]+0+$' "/proc/$(cat /state/restarted-node.pid)/status"
 grep -E 'node access granted to visa service|registered VSS' /state/restarted-node.log > /state/restarted-grant.txt`);
   waitSync(visa);
+  if (peerMode) {
+    phase = "peer-link-after-restart";
+    peerLinkStatus(node, "first", "fd00:5a::5", "restarted-peer-link");
+    peerLinkStatus(peer, "peer", "fd00:5a::2", "restarted-peer-link");
+    waitSync(visa, "peer", "fd5a:5052::3");
+    copy(visa, "/state/summary.json", "restarted-peer-summary.json");
+    waitSync(visa);
+    phase = "peer-tcp-after-restart";
+    tcpTraffic(node, peer, "fd5a:5052::3", node, "restarted-node", "peer-after-restart");
+  }
   exec(visa, `${admin} actors --nodes > /state/restarted-accepted.json
-jq -e 'length == 1 and .[0].cn == "node"' /state/restarted-accepted.json >/dev/null
+jq -e '${peerMode ? 'length == 2 and ([.[].cn] | sort) == ["node","peer"]' : 'length == 1 and .[0].cn == "node"'}' /state/restarted-accepted.json >/dev/null
 for process in visa redis; do
   grep -Eq '^CapEff:[[:space:]]+0+$' "/proc/$(cat /state/$process.pid)/status"
   cat "/proc/$(cat /state/$process.pid)/status" > "/state/$process-status.txt"
@@ -334,13 +442,14 @@ done`);
     ["restarted-accepted.json", "restarted-accepted.json"], ["visa-status.txt", "visa/visa-status.txt"],
     ["redis-status.txt", "visa/redis-status.txt"]]) copy(visa, `/state/${source}`, target);
   const expected = JSON.parse(fs.readFileSync(path.join(build, "context/runtime/rust-release.json")));
-  for (const role of ["visa", "node"]) {
+  for (const role of ["visa", "node", ...(peerMode ? ["peer"] : [])]) {
     for (const line of fs.readFileSync(path.join(root, role, "binaries.sha256"), "utf8").trim().split("\n")) {
       const [digest, file] = line.split(/\s+/);
       assert.equal(digest, expected.binaries.find(binary => binary.name === path.basename(file)).sha256);
     }
   }
   stop(node, "restarted-node");
+  if (peerMode) stop(peer, "peer");
   stop(visa, "visa");
   stop(visa, "redis");
   acceptance = { schema_version: 1, kind: "compiled-node-container-acceptance",
@@ -352,8 +461,24 @@ done`);
     foreign_key_signature_rejection: true, admitted_node: summary,
     missing_device_rejected: true, wrong_tun_owner_rejected: true, node_restart_resynchronized: true,
     node_restart_scope: "PH process only; same container, namespace and state",
-    noise_peer_tested: adapterMode, node_to_node_noise_tested: false,
+    noise_peer_tested: adapterMode || peerMode, node_to_node_noise_tested: peerMode,
     forwarding_tested: false, complete_installation: false };
+  if (peerMode) {
+    acceptance.peer_node = JSON.parse(fs.readFileSync(path.join(root, "peer-summary.json")));
+    acceptance.peer_wrong_noise_pin_rejected = true;
+    acceptance.noise_node_mutual_certificates_verified = true;
+    acceptance.peer_live_link_stability_samples = 10;
+    acceptance.peer_live_link_sample_interval_seconds = 1;
+    acceptance.peer_node_links_active_after_restart = true;
+    acceptance.peer_tcp_policy_rechecked_after_restart = true;
+    acceptance.forwarding_tested = true;
+    acceptance.forwarding_scope = "Node local actor to peer node local actor across one pinned Noise link";
+    acceptance.allowed_tcp_workload = "16379: PONG";
+    acceptance.denied_tcp_workload = "16380: timeout, no PONG, explicit NoMatch, healthy local listener";
+    acceptance.early_restart_race_resolved = false;
+    acceptance.noise_scope = "Two statically configured nodes with pinned Noise keys and independent local Visa docks";
+    acceptance.peer_fixture_sha256 = hash(path.join(__dirname, "prepare-peer-probe.sh"));
+  }
   if (adapterMode) {
     acceptance.adapter = JSON.parse(fs.readFileSync(path.join(root, "adapter-summary.json")));
     acceptance.adapter_runtime_user = "0:0";
@@ -375,11 +500,22 @@ done`);
   for (const [id, name] of diagnostics) {
     copy(id, `/state/${name}.log`, `private-failure/${name}.log`);
   }
-  throw error;
+  failure = error;
 } finally {
   for (const id of containers.reverse()) docker(["rm", "-f", id]);
   for (const name of volumes.reverse()) docker(["volume", "rm", name]);
   if (network) docker(["network", "rm", network]);
+}
+if (failure) {
+  fs.writeFileSync(path.join(root, "failure.json"), `${JSON.stringify({
+    schema_version: 1, kind: "compiled-node-container-failure", accepted: false,
+    mode: extra[0] || "node-only", phase, exit_status: failure.status ?? null,
+    image_id: image.image_id, download_sha256: image.download_sha256,
+    harness_sha256: hash(__filename),
+    ...(peerMode ? { peer_fixture_sha256: hash(path.join(__dirname, "prepare-peer-probe.sh")) } : {}),
+    cleanup_verified: true, complete_installation: false,
+  }, null, 2)}\n`, { mode: 0o600 });
+  throw failure;
 }
 acceptance.cleanup_verified = true;
 fs.writeFileSync(path.join(root, "result.json"), `${JSON.stringify(acceptance, null, 2)}\n`, { mode: 0o600 });

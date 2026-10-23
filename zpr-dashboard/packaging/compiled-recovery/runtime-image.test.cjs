@@ -98,6 +98,7 @@ test("wrong daemon refuses before acquisition, build or probe", t => {
     ["build-runtime-image.cjs", [f.build, f.inputs, f.output, "test-context", "wrong"]],
     ["probe-runtime-image.cjs", [f.build, f.output, "test-context", "wrong"]],
     ["probe-node-image.cjs", [f.build, f.output, "test-context", "wrong"]],
+    ["probe-node-image.cjs", [f.build, f.output, "test-context", "wrong", "--peer-node"]],
   ]) {
     const result = f.run(script, args);
     assert.notEqual(result.status, 0);
@@ -138,17 +139,52 @@ test("input acquisition refuses mutable tags before invoking Docker", t => {
   assert.equal(fs.existsSync(f.log), false);
 });
 
-test("node probe rejects unknown optional modes before Docker; adapter fixture rejects arguments", t => {
+test("node probe rejects unknown or combined modes before Docker", t => {
   const f = fixture(t);
-  for (const flags of [["--unknown"], ["--adapter", "--adapter"]]) {
+  for (const flags of [["--unknown"], ["--adapter", "--adapter"], ["--peer-node", "--peer-node"],
+    ["--adapter", "--peer-node"]]) {
     const result = f.run("probe-node-image.cjs", [f.build, f.output, "test-context", "test-daemon", ...flags]);
     assert.notEqual(result.status, 0);
     assert.match(result.stderr, /Usage:/);
     assert.equal(fs.existsSync(f.log), false);
   }
-  const script = path.join(__dirname, "prepare-adapter-probe.sh");
-  assert.equal(spawnSync("sh", ["-n", script]).status, 0);
-  const result = spawnSync("sh", [script, "--unknown"], { encoding: "utf8" });
-  assert.equal(result.status, 2);
-  assert.match(result.stderr, /no arguments expected/);
+});
+
+for (const helper of ["prepare-adapter-probe.sh", "prepare-peer-probe.sh"]) {
+  test(`${helper} has valid shell syntax and rejects arguments before touching state`, () => {
+    const script = path.join(__dirname, helper);
+    assert.equal(spawnSync("sh", ["-n", script]).status, 0);
+    const result = spawnSync("sh", [script, "--unknown"], { encoding: "utf8" });
+    assert.equal(result.status, 2);
+    assert.match(result.stderr, /no arguments expected/);
+  });
+}
+
+test("node probe records failed phase and cleanup without successful acceptance", t => {
+  const f = fixture(t);
+  const image = { kind: "compiled-runtime-image", target: "linux/arm64", public_release: false,
+    image_id: `sha256:${"a".repeat(64)}`, download_sha256: hash("image") };
+  fs.writeFileSync(path.join(f.build, "runtime-image.tar.gz"), "image");
+  fs.writeFileSync(path.join(f.build, "runtime-image.tar.gz.sha256"), `${image.download_sha256}  runtime-image.tar.gz\n`);
+  fs.writeFileSync(path.join(f.build, "image.json"), JSON.stringify(image));
+  fs.writeFileSync(path.join(f.root, "bin/docker"), `#!${process.execPath}
+const args = process.argv.slice(2);
+if (args[2] === "info") console.log(args[4] === "{{.ID}}" ? "test-daemon" : "aarch64");
+else if (args[2] === "image" && args[3] === "load") process.exit(0);
+else if (args[2] === "volume" && args[3] === "create") process.exit(47);
+else process.exit(99);
+`, { mode: 0o755 });
+  const result = f.run("probe-node-image.cjs", [f.build, f.output, "test-context", "test-daemon", "--peer-node"]);
+  assert.notEqual(result.status, 0);
+  const failure = JSON.parse(fs.readFileSync(path.join(f.output, "failure.json")));
+  assert.equal(failure.kind, "compiled-node-container-failure");
+  assert.equal(failure.accepted, false);
+  assert.equal(failure.mode, "--peer-node");
+  assert.equal(failure.phase, "preparation");
+  assert.equal(failure.exit_status, 47);
+  assert.equal(failure.cleanup_verified, true);
+  assert.equal(failure.image_id, image.image_id);
+  assert.match(failure.harness_sha256, /^[a-f0-9]{64}$/);
+  assert.match(failure.peer_fixture_sha256, /^[a-f0-9]{64}$/);
+  assert.equal(fs.existsSync(path.join(f.output, "result.json")), false);
 });

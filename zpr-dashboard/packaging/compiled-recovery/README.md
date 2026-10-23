@@ -500,6 +500,65 @@ are never public evidence and must be removed after review. Generated keys and
 database always stay on disposable volumes. Cleanup covers all three runtime
 containers, every helper/workload, private volume and internal network.
 
+### Experimental node-peer regression gate
+
+The separate `--peer-node` mode extends the exact-image probe with two fresh
+nodes and an explicitly compiled topology:
+
+```sh
+node packaging/compiled-recovery/probe-node-image.cjs \
+  /absolute/private/image-build /absolute/private/new-peer-evidence \
+  explicit-isolated-context expected-daemon-id --peer-node
+```
+
+This mode is mutually exclusive with `--adapter`. The
+[peer fixture](prepare-peer-probe.sh) generates a second RSA bootstrap key,
+X25519 key and authority-signed certificate, declares both substrate addresses
+and their policy link, and provisions each node with the other's pinned Noise
+certificate. It copies only node-specific keys/configuration and public trust
+material to separate private volumes. The authority private key, API credentials
+and database remain only in Visa's volume. Both nodes use UID 501/GID 1000,
+zero effective capabilities, read-only roots and UID-owned persistent TUNs;
+only short-lived namespace setup helpers have NET_ADMIN. Both nodes have
+engineering-only direct Visa transport routes and `local_vs_dock = true`.
+This is not the final remote Visa-adapter topology.
+
+First the initiating node is deliberately given an unrelated Noise pin.
+`KeyMismatchError` must occur with no verified peer name. After replacing only
+the selected pin, both nodes must synchronize with zero pending installs and
+exactly the two expected node actors. The configured peer link must log the
+expected verified CN, both Hello directions and active state at each end.
+An admitted actor alone is not proof of Noise success. Live `ph-cli` queries
+require exactly one active link to the expected substrate and `Type: NodeToNode`
+for ten consecutive one-second samples at each end, both before and after
+single-node process restart. TCP PING across the peer link must succeed on the
+allowed port 16379 and fail on 16380 with explicit `NoMatch`, no PONG and a
+still-healthy destination listener. Both policy checks run again after restart.
+The only kernel route between node ZPR addresses is through each node's TUN,
+not the shared substrate bridge.
+
+**Unresolved early-restart race:** an earlier probe restarted immediately after
+initial actor synchronization, without the live-link stability qualification.
+That exposed a timing-dependent failure in the unchanged accepted PH binary.
+The surviving node receives
+`TerminateLink(Reset)`, removes its node-peer entry and subsequently creates an
+ordinary adapter tether for the returning node. That node cannot complete the
+node Hello exchange or re-register VSS; Visa reports `NoRoute`. Settled-link
+restart succeeding does not fix or qualify this earlier timing window.
+Receipts explicitly record `early_restart_race_resolved: false`; this is not
+general node lifecycle acceptance. Do not restart both nodes, omit a failing
+assertion or weaken pinned trust to claim the race fixed. A source fix and new
+verified binaries/image would require fresh affected-gate qualification.
+
+Failure receipts identify the exact image, harness/fixture hashes, failing
+phase, exit status and completed resource cleanup; failures exit nonzero and
+never produce a successful `result.json`. Raw logs under protected
+`private-failure/` remain private diagnostic material: inspect them, preserve
+only reviewed failure lines, then remove those exact owned raw logs.
+This slice covers node-local actor traffic across one pinned peer link, not
+adapter-to-adapter transit, remote service/Visa adapters, revocation,
+container/VM restart or complete installation.
+
 ## Remaining product gates
 
 The [native Rust release builder](build-rust-release.sh) builds only the seven

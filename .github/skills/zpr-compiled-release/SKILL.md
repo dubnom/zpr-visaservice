@@ -25,6 +25,14 @@ for current script interfaces and prerequisites. Read
 [the recovery baseline](../../../RECOVERY-BASELINE.md) for historical acceptance,
 not for reusable machine paths, daemon IDs, credentials or artifact hashes.
 
+For the experimental node-peer regression, use the packaging README's explicit
+`--peer-node` mode and inspect its unresolved early-restart race before execution. A nonzero
+restart failure is not acceptance even if initial pinned Noise/Hello succeeds.
+Never restart both nodes or omit lifecycle checks to conceal a single-node
+restart failure. Settled-link restart/traffic acceptance does not qualify the
+early timing window. Source changes require new verified binary/image receipts and
+the directly affected regression gates before any updated acceptance claim.
+
 ## Non-negotiable boundaries
 
 - Do not alter running recovery/demo environments or original dirty worktrees.
