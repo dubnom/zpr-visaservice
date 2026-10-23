@@ -1,5 +1,31 @@
 #!/bin/sh
 set -eu
+
+# Check before sourcing helpers: even lock acquisition is a legacy side effect.
+setup_mode=${SIMULATION_SETUP_MODE:-legacy-launcher}
+case "$setup_mode" in
+    legacy-launcher|ordinary-client) ;;
+    *) printf '%s\n' "invalid SIMULATION_SETUP_MODE: expected legacy-launcher or ordinary-client" >&2; exit 2 ;;
+esac
+if [ "${1:-}" = preflight-ordinary-client ] && [ "$#" -ne 1 ]; then
+    printf '%s\n' "usage: $0 preflight-ordinary-client" >&2
+    exit 2
+fi
+if [ "$setup_mode" = ordinary-client ] || [ "${1:-}" = preflight-ordinary-client ]; then
+    printf '%s\n' \
+        'ordinary-client setup blocked: legacy activation/Restore is not a public client contract' \
+        'U01-ACTIVATION: launcher-owned organization switching and service restarts remain' \
+        'U01-ASSERTIONS: assertion/fixture export still injects production startup inputs' \
+        'U01-SOURCES: trusted-source/LDAP configuration still derives from simulation profiles' \
+        'U01-POLICY: local compile/sign/install is not the guarded production apply workflow' \
+        'U01-ADMISSION: packaged bootstrap policy injection is not ordinary enrollment' \
+        'U01-CONFIG: generated production runtime files and privileged mounts remain' \
+        'U01-RESTORE: Restore deletes production repository/directory state' \
+        'U01-RECONCILE: launcher rollback is not durable operation/readback reconciliation' \
+        'See SIMULATOR_CLIENT_U01_INVENTORY.md; prepare production through its authorized APIs.' \
+        'No setup, source probe, lock, runtime read or mutation was attempted.' >&2
+    exit 1
+fi
 script_dir=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
 . "$script_dir/multinode-admin.sh"
 . "$script_dir/machine-runtime.sh"
