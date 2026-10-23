@@ -895,6 +895,68 @@ production setup or full-demo acceptance. No upload, deployment, registry push
 or main promotion occurred. The packaging README and repeatable skill document
 both the qualified slice and unresolved timing window.
 
+### Received-Reset source fix and rebuilt image follow-up
+
+Core source now preserves configured node identity on remote Reset/Shutdown,
+waits up to the existing one-second terminate deadline for local reset
+acknowledgement, and keeps local removal authoritative if a remote terminate
+arrives while local reset cleanup is in progress. This shipped in isolated Core
+revision `bdfc1f98745ba758dbf03646f2551ffe0c250b3e` after host PH library and
+state-machine tests passed (`273 passed`, `2 ignored`, plus `9` focused link
+tests in both lib and binary targets on native Linux ARM64).
+
+The candidate probe now supports explicit `--peer-node-reset` in addition to
+settled `--peer-node` and immediate `--peer-node-early`. Reset mode discovers
+the configured live peer link IDs (no hardcoded link number), requires an
+authenticated `Received terminate ... Reset` log while the sender is still
+alive, then proves retained survivor identity, post-restart synchronization,
+live NodeToNode stability and allowed/denied TCP rechecks.
+
+Rebuilt exact artifacts:
+
+- Rust release inputs: `validation/rust-reset-final-inputs-20261023`
+  (`zpr-core` archive SHA-256
+  `4522a3e6f16ebce87125c4ec73be537f99d4c6cdc32231784a2e3a23957cae3c`).
+- Verified Rust release: `validation/rust-reset-final-release-20261023`;
+  verifier receipt in `validation/rust-reset-final-release-verified.json`.
+  Core binaries changed to `ph` SHA-256
+  `e0fb74d842d761cb94831ac22c6a5d041dcb15c12b02af2b0083ba44a693c5a2`
+  and `ph-cli` SHA-256
+  `eb0ddedc434946ef857ed1849bcf68eece844195d7c5976830fee371678d5c71`.
+- Compiled archive: `validation/compiled-reset-final-20261023/compiled-recovery-linux-arm64.tar.gz`,
+  SHA-256 `4b98f53618e1c5534b6e5bff45b19d2cec8febb8fec2c7c83b6d5ac874df816a`,
+  `33,543,789` compressed bytes and `87,955,600` extracted bytes.
+- Runtime image: `validation/runtime-image-reset-final-20261023/image.json`,
+  image ID `sha256:fed06250805e8a1c30734f07471d9f521c61db2df276d364645ae7aa00627658`,
+  download SHA-256
+  `a247c5b855907f32303d82981a8fd4ec7700942dcc185797d75b97647aa519d5`.
+
+Final exact-image gates all passed with committed harness SHA-256
+`0f89a8d646c973baf66993e34e9317857b5349a62c5446b5b63ae4a3e1dc8d8e`:
+
+- Runtime contract/policy/service/durable restart:
+  `validation/runtime-reset-final-attempt1-20261023`.
+- Default node and adapter regressions:
+  `validation/node-reset-final-attempt1-20261023`,
+  `validation/adapter-reset-final-attempt1-20261023`.
+- Settled peer restart: `validation/peer-settled-reset-final-attempt1-20261023`.
+- Immediate restart with observed remote Reset:
+  `validation/peer-early-reset-final-attempt1-20261023`
+  (`remote_reset_delivery_observed: true`).
+- Explicit received-Reset reconnect proof:
+  `validation/peer-reset-reset-final-attempt1-20261023`
+  (`peer_explicit_reset_tested: true`,
+  `received_remote_reset_reconnect_verified: true`,
+  retained survivor link ID `3`).
+
+`early_restart_race_resolved` intentionally remains `false`; this engineering
+slice still does not claim arbitrary-time lifecycle, revocation, remote
+Visa/service adapters, adapter-to-adapter transit, container/VM restart
+behavior, production setup or complete demo acceptance.
+
+Superseded raw failure outputs were removed after preserving selected JSON
+receipts in `validation/peer-reset-development-20261023`.
+
 ## Adapter retention and main promotion
 
 Core is a separate repository. Its adapter development is preserved at
