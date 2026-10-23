@@ -1,0 +1,50 @@
+[resolver]
+order = ["hosts", "dns"]
+
+[resolver.hosts]
+"n0.zpr" = "fd5a:5052::2"
+
+[nodes."node"]
+provider = [["device.zpr.adapter.cn", "node"]]
+zpr_address = "n0.zpr"
+
+[visa_service]
+dock_node = "node"
+
+[trusted_services.default]
+cert_path = ""
+
+[protocols.ping]
+l4protocol = "iana.ICMP6"
+icmp_type = "request-response"
+icmp_codes = [128, 129]
+
+[services.PingableVs]
+protocol = "ping"
+
+[services.PingableNode]
+protocol = "ping"
+
+[services.A1Svc]
+protocol = "ping"
+
+[services.A2Svc]
+protocol = "ping"
+
+[services.A3Svc]
+protocol = "ping"
+
+[services.PolicyService]
+protocol = "ping"
+
+[services.ControlService]
+protocol = "ping"
+
+[services.ControlRoom]
+protocol = "ping"
+
+[services.AuthService]
+protocol = "ping"
+
+[services.AttributeService]
+protocol = "ping"

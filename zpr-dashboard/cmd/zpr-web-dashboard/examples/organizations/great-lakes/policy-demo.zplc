@@ -1,0 +1,145 @@
+[resolver]
+order = ["hosts", "dns"]
+
+[resolver.hosts]
+"mke.zpr" = "fd00:1:10::1"
+"shenzhen.zpr" = "fd00:1:20::1"
+"tijuana.zpr" = "fd00:1:30::1"
+
+[nodes."milwaukee-hq"]
+provider = [["device.zpr.adapter.cn", "milwaukee-hq"]]
+zpr_address = "mke.zpr"
+
+[nodes."shenzhen-office"]
+provider = [["device.zpr.adapter.cn", "shenzhen-office"]]
+zpr_address = "shenzhen.zpr"
+
+[nodes."tijuana-plant"]
+provider = [["device.zpr.adapter.cn", "tijuana-plant"]]
+zpr_address = "tijuana.zpr"
+
+[visa_service]
+dock_node = "milwaukee-hq"
+
+[protocols.tcp_443]
+l4protocol = "iana.TCP"
+port = 443
+
+[services.VisaService]
+protocol = "tcp_443"
+
+[trusted_services.great_lakes_ldap]
+api = "rest/1"
+returns_attributes = ["ou -> device.greatlakes.department", "zprMachineLocation -> device.greatlakes.location"]
+expiration_seconds = 3600
+
+[protocols.tcp_8443]
+l4protocol = "iana.TCP"
+port = 8443
+
+[protocols.tcp_8444]
+l4protocol = "iana.TCP"
+port = 8444
+
+[protocols.tcp_8445]
+l4protocol = "iana.TCP"
+port = 8445
+
+[protocols.tcp_8446]
+l4protocol = "iana.TCP"
+port = 8446
+
+[protocols.tcp_8447]
+l4protocol = "iana.TCP"
+port = 8447
+
+[protocols.tcp_8448]
+l4protocol = "iana.TCP"
+port = 8448
+
+[protocols.tcp_8449]
+l4protocol = "iana.TCP"
+port = 8449
+
+[protocols.tcp_8080]
+l4protocol = "iana.TCP"
+port = 8080
+
+[protocols.tcp_8081]
+l4protocol = "iana.TCP"
+port = 8081
+
+[protocols.tcp_8082]
+l4protocol = "iana.TCP"
+port = 8082
+
+[services.CustomerSupportDesk]
+protocol = "tcp_8443"
+
+[services.EngineeringBuildFarm]
+protocol = "tcp_8444"
+
+[services.FinanceWorkspace]
+protocol = "tcp_8445"
+
+[services.ShippingPortal]
+protocol = "tcp_8446"
+
+[services.ReceivingPortal]
+protocol = "tcp_8447"
+
+[services.AssemblyExecution]
+protocol = "tcp_8448"
+
+[services.QualityTestBench]
+protocol = "tcp_8449"
+
+[services.WorkdayEcho]
+protocol = "tcp_8080"
+
+[services.WorkdayMetrics]
+protocol = "tcp_8081"
+
+[services.gateway]
+protocol = "tcp_8082"
+
+[services.internet-gateway]
+protocol = "tcp_8082"
+
+[services.InternetGatewayWeb]
+protocol = "tcp_8082"
+
+[protocols.ping]
+l4protocol = "iana.ICMP6"
+icmp_type = "request-response"
+icmp_codes = [128, 129]
+
+[services.PingableVs]
+protocol = "ping"
+
+[services.PingableNode]
+protocol = "ping"
+
+[services.A1Svc]
+protocol = "ping"
+
+[services.A2Svc]
+protocol = "ping"
+
+[services.A3Svc]
+protocol = "ping"
+
+[services.PolicyService]
+protocol = "ping"
+
+[services.ControlService]
+protocol = "ping"
+
+[services.ControlRoom]
+protocol = "ping"
+
+[services.AuthService]
+protocol = "ping"
+
+[services.AttributeService]
+protocol = "ping"

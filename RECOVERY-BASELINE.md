@@ -64,6 +64,41 @@ failures must be dispositioned before promoting this candidate. The candidate
 binary has not replaced any live executable and has not passed the full
 seventeen-scenario/browser suite in a fresh environment.
 
+### Self-contained policy assets
+
+Restored the credential-free Great Lakes and Load Lab example compiler inputs
+from the original host's corresponding example files. The Great Lakes content
+is unchanged; Load Lab differs only by adding the final newline.
+The broad dashboard `*.zplc` ignore rule had omitted both files; explicit
+exceptions now include these reviewed paths without allowing arbitrary local
+compiler configuration into Git.
+
+`TestBundledPolicyAssetsAreSelfContained` reads all five profile references
+through the existing bounded, no-symlink, credential-checking definition reader.
+It checks compiler configuration TOML, policy catalog JSON and runtime-policy
+availability. This is an asset completeness/format gate, not proof of compiler
+acceptance or a runtime deployment.
+
+After restoring these files, the complete Go suite has nine failing top-level
+tests, down from fifteen. Six organization duplication/profile/archive/import
+test groups now pass. Focused asset and duplicate/import tests also pass.
+
+Remaining blockers, with no test suppression:
+
+| Area | Evidence / next action |
+|---|---|
+| Scenario AI prompt | Embedded skill lacks the test's expected instruction `proposal to null`; reconcile intended structured-output contract. |
+| Northstar directory | Profile references pre-generated LDIF outside Git; review seeds and generation provenance before bundling sanitized demo data. Also blocks design-assistant test. |
+| Enrollment | Verified-TLS test expects invitation creation without the readiness preflight now required by the implementation; preserve the production readiness gate and reconcile test intent separately. |
+| Policy installation fixture | Extracted shell function omits platform initialization provided by its normal caller; standalone fixture lacks `ZPR_MULTINODE_PLATFORM`. |
+| Organization catalog | Test reads an absent external `simulation-environment.json`; define a reviewed distributable manifest/bootstrap contract. |
+| Placement fixture | Launcher helper moved to sourced `machine-runtime.sh`; test extracts only `dashboard-stack.sh`. Do not duplicate production logic to satisfy an outdated extractor. |
+| Simulator container state | Container-state fixture expects running but receives exited; investigate environment-independent state contract. |
+| Trusted service build | Artifact validation expects Linux amd64 ELF; fixture/environment currently produces an incompatible artifact. |
+
+Private full-suite logs are preserved outside Git. The production recovery and
+original working trees remain unchanged.
+
 ## Adapter retention and main promotion
 
 Core is a separate repository. Its adapter development is preserved at

@@ -8,6 +8,8 @@ bin/*
 *.zpt
 !cmd/zpr-web-dashboard/examples/policy-layers/*.zpl
 !cmd/zpr-web-dashboard/examples/organizations/*/runtime-policy.zpl
+!cmd/zpr-web-dashboard/examples/organizations/great-lakes/policy-demo.zplc
+!cmd/zpr-web-dashboard/examples/organizations/load-lab/policy-demo.zplc
 
 config.toml
 policy-records.db*
