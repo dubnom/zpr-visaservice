@@ -123,6 +123,40 @@ func TestEnrollmentAdministrationOverVerifiedTLSWithoutSimulator(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	if response.StatusCode != http.StatusConflict || !strings.Contains(string(result), "preflight") {
+		t.Fatalf("TLS creation without readiness = %d %s", response.StatusCode, result)
+	}
+	attestation := enrollment.PreflightAttestation{
+		Organization: "production", Mode: "pilot", HostLabel: "test-host",
+		HostAddress: "192.168.1.20", DeliveryChannel: "pilot-secure-share",
+		DNSVerified: true, ACMEVerified: true, TLSVerified: true, NetworkVerified: true,
+		DockerVerified: true, ListenersVerified: true, PackageVerified: true, RecoveryVerified: true,
+	}
+	preflight, err := json.Marshal(attestation)
+	if err != nil {
+		t.Fatal(err)
+	}
+	response, err = admin.Post(server.URL+enrollment.APIPrefix+"preflight", "application/json", bytes.NewReader(preflight))
+	if err != nil {
+		t.Fatal(err)
+	}
+	result, err = io.ReadAll(response.Body)
+	response.Body.Close()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if response.StatusCode != http.StatusOK || !strings.Contains(string(result), `"revision":1`) {
+		t.Fatalf("TLS readiness attestation = %d %s", response.StatusCode, result)
+	}
+	response, err = admin.Post(server.URL+enrollment.APIPrefix+"invitations", "application/json", bytes.NewReader(body))
+	if err != nil {
+		t.Fatal(err)
+	}
+	result, err = io.ReadAll(response.Body)
+	response.Body.Close()
+	if err != nil {
+		t.Fatal(err)
+	}
 	if response.StatusCode != http.StatusCreated || !strings.Contains(string(result), `"created_by":"test-admin"`) {
 		t.Fatalf("TLS creation = %d %s", response.StatusCode, result)
 	}

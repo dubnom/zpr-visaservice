@@ -19,6 +19,10 @@ func TestOrganizationPolicyInstallNeverUploadsStaleBundle(t *testing.T) {
 		t.Fatal("policy installation function not found")
 	}
 	function := string(script[start:end])
+	platformScript, err := filepath.Abs("../../scripts/multinode-platform.sh")
+	if err != nil {
+		t.Fatal(err)
+	}
 	for _, name := range []string{"merge-failure", "compiler-failure", "missing-output", "success"} {
 		t.Run(name, func(t *testing.T) {
 			directory := t.TempDir()
@@ -49,7 +53,7 @@ if [ "$CASE" != missing-output ]; then printf 'fresh bundle' > "$directory/runti
 				}
 			}
 			// Match the caller's conditional: errexit is disabled throughout the function.
-			command := exec.Command("sh", "-c", "set -eu\n"+function+"\nif ! install_multinode_policy; then exit 1; fi\n")
+			command := exec.Command("sh", "-c", "set -eu\n. \"$1\"\nconfigure_multinode_platform\n"+function+"\nif ! install_multinode_policy; then exit 1; fi\n", "sh", platformScript)
 			upload := filepath.Join(directory, "uploaded")
 			command.Env = append(os.Environ(),
 				"PATH="+directory+string(os.PathListSeparator)+os.Getenv("PATH"),
@@ -58,6 +62,7 @@ if [ "$CASE" != missing-output ]; then printf 'fresh bundle' > "$directory/runti
 				"binary="+filepath.Join(directory, "merge"),
 				"compiler="+filepath.Join(directory, "compiler"),
 				"policy_config="+filepath.Join(directory, "organization.zplc"),
+				"ZPR_MULTINODE_PLATFORM=linux/amd64", "ZPR_MULTINODE_IMAGE=test-multinode",
 				"pregen="+directory, "multinode_dir="+directory)
 			output, err := command.CombinedOutput()
 			if (err == nil) != (name == "success") {

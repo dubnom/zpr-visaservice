@@ -41,6 +41,14 @@ configuration, independent setup, and clean-machine installation acceptance.
 
 ## Validation
 
+Current candidate: the full `GOPROXY=off make test GO=/opt/homebrew/bin/go`
+suite passes after the explicitly approved inherited-fixture repairs described
+below. Targeted repaired tests pass with `-race`; Go builds, Linux ARM64
+cross-compilation and the Node operator-request regression pass.
+This is not a clean-install or full live-scenario acceptance claim.
+
+### Initial checkpoint comparison
+
 On macOS ARM64 with cached dependencies:
 
 - `GOPROXY=off make test GO=/opt/homebrew/bin/go` was run for both this candidate
@@ -58,8 +66,8 @@ On macOS ARM64 with cached dependencies:
 - `go build ./...` passes; the web runtime cross-compiles for Linux ARM64.
 - `git diff --check` passes.
 
-No tests were weakened or rewritten to hide the inherited failures. All test
-failures must be dispositioned before promoting this candidate. The candidate
+No tests were weakened or rewritten to hide the inherited failures. The
+subsequent authorized fixture repairs are recorded below. The candidate
 binary has not replaced any live executable and has not passed the full
 seventeen-scenario/browser suite in a fresh environment.
 
@@ -108,7 +116,8 @@ from nine. Focused seed/asset/design-assistant/skill tests pass with `-race`;
 all Go commands build and the web runtime cross-compiles for Linux ARM64.
 These are source-level checks, not a fresh LDAP deployment or scenario run.
 
-Remaining blockers, with no test suppression:
+Inherited blockers at the portable-seed checkpoint (subsequently resolved by
+the approved fixture repairs below, with no test suppression):
 
 | Area | Evidence / next action |
 |---|---|
@@ -145,6 +154,36 @@ The full suite still has the same six inherited failures above. In particular,
 no hidden runtime manifest was created to satisfy the historical hardcoded
 fixture. No existing tests were changed. The compiled distribution still needs
 fresh identity/service provisioning and clean-install/scenario acceptance.
+
+### Approved isolated fixture repairs
+
+The user explicitly approved updates to the six existing failing tests after
+the portable-manifest checkpoint. Production behavior was not changed:
+
+- Verified-mTLS enrollment still rejects invitation creation without readiness.
+  The test now submits a scoped readiness attestation over the authenticated
+  API, then verifies invitation creation; shared/unverified certificates
+  remain rejected with Simulator unavailable.
+- The policy-install test sources and configures the actual platform helper,
+  preserving merge/compile/missing-output failure, stale-bundle retention,
+  no-upload and cleanup assertions.
+- The organization catalog test reads the reviewed bundled manifest instead
+  of an absent external runtime file.
+- Placement tests source the actual machine-runtime helper. Expected node
+  addresses distinguish Northstar (`172.30.0.13`) and Great Lakes
+  (`172.31.0.13`); missing owner/location and ambiguous placement still fail.
+- Container-state tests use a strict local Docker double, not the shared
+  daemon. Running, exited and missing-container states are checked, along
+  with the original live/missing PID cases.
+- Trusted-service build tests provide a representative ELF header matching
+  the shell validator, not a runnable executable. Plain text and wrong
+  architecture remain rejected without replacing the old artifact, temporary
+  files are cleaned, successful publication retains executable permissions,
+  and a failing compiler double proves fresh artifacts are not rebuilt.
+
+The full Go suite now passes. No tests were skipped, assertions removed or
+production readiness/artifact gates relaxed to obtain this result. Source-level
+validation does not establish runtime packaging completeness.
 
 Private full-suite logs are preserved outside Git. The production recovery and
 original working trees remain unchanged.

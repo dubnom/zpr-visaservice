@@ -130,6 +130,10 @@ func TestMachineControllerInstallReplacesOnlyInvalidDestinations(t *testing.T) {
 }
 
 func TestScenarioPlacementPreflightMatchesLauncher(t *testing.T) {
+	runtimeScript, err := filepath.Abs("../../scripts/machine-runtime.sh")
+	if err != nil {
+		t.Fatal(err)
+	}
 	single, err := loadSimulatorOrganization(filepath.Join("examples", "organizations"), "northstar")
 	if err != nil {
 		t.Fatal(err)
@@ -152,13 +156,14 @@ func TestScenarioPlacementPreflightMatchesLauncher(t *testing.T) {
 		organization simulatorOrganization
 		machine      string
 		valid        bool
+		node         string
 	}{
-		{"single-node manifest owner", single, "machine-03", true},
-		{"single-node remote manifest owner", single, "machine-11", true},
-		{"multi-node mapped owner", multi, "machine-03", true},
-		{"missing multi-node owner", missingOwner, "machine-03", false},
-		{"missing owner location", missingLocation, "machine-03", false},
-		{"ambiguous node location", ambiguous, "machine-03", false},
+		{"single-node manifest owner", single, "machine-03", true, "172.30.0.13"},
+		{"single-node remote manifest owner", single, "machine-11", true, "172.30.0.13"},
+		{"multi-node mapped owner", multi, "machine-03", true, "172.31.0.13"},
+		{"missing multi-node owner", missingOwner, "machine-03", false, ""},
+		{"missing owner location", missingLocation, "machine-03", false, ""},
+		{"ambiguous node location", ambiguous, "machine-03", false, ""},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			err := validateScenarioMachinePlacement(tc.organization, tc.machine)
@@ -179,13 +184,13 @@ func TestScenarioPlacementPreflightMatchesLauncher(t *testing.T) {
 					t.Fatal(err)
 				}
 			}
-			cmd := exec.Command("sh", "-c", "set -eu\n"+stackFunctionForTest(t, "resolve_machine_placement")+"\nresolve_machine_placement\nprintf '%s' \"$machine_node_ip\"\n")
+			cmd := exec.Command("sh", "-c", "set -eu\n. \"$1\"\nresolve_machine_placement\nprintf '%s' \"$machine_node_ip\"\n", "sh", runtimeScript)
 			cmd.Env = append(os.Environ(), "machine="+tc.machine, "machine_profile="+filepath.Join(dir, "profile.json"), "SIMULATION_MANIFEST="+filepath.Join(dir, "manifest.json"), "machine_runtime_driver=docker-multinode")
 			output, err := cmd.CombinedOutput()
 			if (err == nil) != tc.valid {
 				t.Fatalf("launcher error = %v: %s; valid = %v", err, output, tc.valid)
 			}
-			if tc.valid && strings.TrimSpace(string(output)) != "172.30.0.13" {
+			if tc.valid && strings.TrimSpace(string(output)) != tc.node {
 				t.Fatalf("unexpected docking node: %s", output)
 			}
 		})

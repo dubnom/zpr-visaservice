@@ -368,7 +368,7 @@ func TestBundledOrganizationSeedsHaveSingleValuedLocations(t *testing.T) {
 }
 
 func TestSimulatorOrganizationsEndpointReturnsActiveCatalog(t *testing.T) {
-	manifestPath, err := filepath.Abs(filepath.Join("..", "..", "..", "..", ".local-runtime", "simulation-environment.json"))
+	manifestPath, err := filepath.Abs(filepath.Join("examples", "simulation-environment.json"))
 	if err != nil {
 		t.Fatal(err)
 	}

@@ -217,12 +217,26 @@ func TestSimulatorStackRuntimeStatusKeepsMissingMachinesIndependent(t *testing.T
 
 func TestSimulatorStackServiceState(t *testing.T) {
 	runtimeDir := t.TempDir()
+	t.Setenv("ZPR_CONTROL_ROOM_CONTAINER", "")
+	t.Setenv("SIMULATOR_DOCKER_CONTAINER", "")
+	docker := filepath.Join(runtimeDir, "docker")
+	if err := os.WriteFile(docker, []byte("#!/bin/sh\n[ \"$#\" -eq 4 ] && [ \"$1\" = inspect ] && [ \"$2\" = -f ] && [ \"$3\" = '{{.State.Status}}' ] && [ \"$4\" = test-simulator ] || exit 2\n[ \"$TEST_DOCKER_STATUS\" != missing ] || exit 1\nprintf '%s\\n' \"$TEST_DOCKER_STATUS\"\n"), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("PATH", runtimeDir+string(os.PathListSeparator)+os.Getenv("PATH"))
 	if got := simulatorStackServiceState(runtimeDir, "control-room"); got != "stopped" {
 		t.Fatalf("missing PID state = %q, want stopped", got)
 	}
-	t.Setenv("SIMULATOR_DOCKER_CONTAINER", "zpr-simulator")
-	if got := simulatorStackServiceState(runtimeDir, "simulator"); got != "running" {
-		t.Fatalf("containerized Simulator state = %q, want running", got)
+	t.Setenv("SIMULATOR_DOCKER_CONTAINER", "test-simulator")
+	for _, status := range []string{"running", "exited", "missing"} {
+		t.Setenv("TEST_DOCKER_STATUS", status)
+		want := status
+		if status == "missing" {
+			want = "stopped"
+		}
+		if got := simulatorStackServiceState(runtimeDir, "simulator"); got != want {
+			t.Fatalf("containerized Simulator state = %q, want %s", got, want)
+		}
 	}
 	t.Setenv("SIMULATOR_DOCKER_CONTAINER", "")
 	if err := os.WriteFile(filepath.Join(runtimeDir, "control-room.pid"), []byte(fmt.Sprint(os.Getpid())), 0o600); err != nil {
