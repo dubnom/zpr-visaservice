@@ -60,6 +60,7 @@ test("release verifier requires optimized receipts, exact hashes and ARM64 binar
   const report = JSON.parse(fs.readFileSync(path.join(stage, "rust-release.json")));
   assert.equal(report.binaries.length, 7);
   assert.equal(report.private_runtime_file, undefined);
+  assert.ok(!JSON.stringify(report).includes("/private/do-not-copy"));
   assert.equal(report.complete_installation, false);
   assert.equal(assemble().status, 1, "Existing assembly must be refused");
 
@@ -70,11 +71,13 @@ test("release verifier requires optimized receipts, exact hashes and ARM64 binar
     messages[0].profile[field] = value;
     fs.writeFileSync(receiptPath, messages.map(x => JSON.stringify(x)).join("\n"));
     assert.throws(() => verifyRelease(root, inputs));
+    assert.equal(assemble().status, 1, `Assembly must reject ${field} without copying`);
   }
   fs.writeFileSync(receiptPath, original);
   const executable = path.join(root, "bin/ph");
   fs.appendFileSync(executable, "tampered");
   assert.throws(() => verifyRelease(root, inputs), /digest mismatch/);
+  assert.match(assemble().stderr, /digest mismatch/);
   fs.writeFileSync(executable, binary);
   const wrongArch = Buffer.from(binary);
   wrongArch.writeUInt16LE(62, 18);
@@ -83,4 +86,10 @@ test("release verifier requires optimized receipts, exact hashes and ARM64 binar
   fs.writeFileSync(executable, binary);
   inputs.repositories[0].lockfile_sha256 = "d".repeat(64);
   assert.throws(() => verifyRelease(root, inputs), /Lockfile mismatch/);
+  fs.writeFileSync(inputFile, JSON.stringify(inputs));
+  assert.match(assemble().stderr, /Lockfile mismatch/);
+  inputs.repositories[0].lockfile_sha256 = "c".repeat(64);
+  fs.writeFileSync(inputFile, JSON.stringify(inputs));
+  fs.unlinkSync(receiptPath);
+  assert.match(assemble().stderr, /ENOENT/);
 });

@@ -52,7 +52,8 @@ reader password field is only the existing `DEMO_BIND_PASSWORD_HASH` placeholder
 real passwords must be generated during provisioning.
 Packaged directories/executables use mode `0755` and public assets use `0644`,
 so runtime access does not require the builder's UID or extra capabilities.
-The enclosing output directory and archive remain owner-only.
+The enclosing output directory and archive remain owner-only. Archive creation
+excludes host filesystem extended attributes (requires tar `--no-xattrs` support).
 With explicit Rust inputs it additionally includes seven dynamically linked
 Linux ARM64 tools and `rust-release.json`. They require a compatible Linux
 loader, glibc/GCC runtime, OpenSSL 3 and libpcap; no shared-library tree or base

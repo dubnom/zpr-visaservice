@@ -75,7 +75,7 @@ find . -type f ! -name SHA256SUMS | LC_ALL=C sort | while IFS= read -r file; do
     shasum -a 256 "$file"
 done > SHA256SUMS
 chmod 644 SHA256SUMS
-COPYFILE_DISABLE=1 tar --numeric-owner -czf "$output/compiled-recovery-linux-arm64.tar.gz" .
+COPYFILE_DISABLE=1 tar --no-xattrs --numeric-owner -czf "$output/compiled-recovery-linux-arm64.tar.gz" .
 cd "$output"
 shasum -a 256 compiled-recovery-linux-arm64.tar.gz > compiled-recovery-linux-arm64.tar.gz.sha256
 printf 'Engineering artifact: %s/compiled-recovery-linux-arm64.tar.gz\n' "$output"
