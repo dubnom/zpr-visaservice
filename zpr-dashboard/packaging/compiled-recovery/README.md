@@ -69,6 +69,40 @@ all seventeen scenarios, AI setup, or supported minimum resources. It does not
 run an HTTP server or expose ports. No generated trust material is a public
 release artifact.
 
+## Native Rust prerequisite and policy probe
+
+The separate [Rust runtime probe](probe-rust-runtime.sh) runs on an explicitly
+isolated Linux ARM64 host, not against a running deployment:
+
+```sh
+sh probe-rust-runtime.sh /absolute/compiled-bin /absolute/examples /absolute/new-evidence
+```
+
+It requires the seven separately built `ph`, `ph-cli`, `vs`, `vs-admin`,
+`vsapikey`, `zplc`, `zpt` executables plus the compiled `zpr-web-dashboard`.
+These Rust binaries are **not yet part of this engineering archive**.
+Only run reviewed locally built executables; `ldd` is not a safe scanner for
+untrusted executables. ELF/CLI probes do not prove binary source equivalence.
+Inputs and the evidence parent must be in operator-protected directories.
+
+The probe checks ELF architecture and actual dynamic loader resolution, records
+hashes and CLI output, creates a new private RSA signing key, composes and
+signs all five organizations' policies, and checks invalid syntax is rejected
+without producing a bundle. Warnings are retained in each compiler log.
+No daemon, listener, network scenario, policy installation or service reset is
+performed. Existing evidence paths are refused; partial evidence remains after
+failure for diagnosis. The new private signing key stays in the evidence
+directory and **must never be bundled or published**.
+
+On the fresh Ubuntu 24.04 ARM64 validation VM, initial PH/PH-CLI startup failed
+because `libpcap.so.0.8` was absent. Installing `libpcap0.8t64` resolved it.
+Visa/Compiler/Policy Tester additionally use OpenSSL 3; all seven use the
+platform dynamic loader, glibc and GCC runtime. Exact observed package versions
+and CLI receipts are private validation evidence, not a supported ABI matrix.
+The earlier Rust build logs identify development builds (some later stripped),
+not release-profile builds. A proper release rebuild and source-to-artifact
+mapping are still required before these tools enter a public package.
+
 ## Remaining release gates
 
 The full compiled download still needs node/adapter/Visa/compiler binaries and

@@ -227,6 +227,60 @@ This proves offline execution/asset portability for the included slice only.
 It does not prove a complete installation, LDAP/OIDC/DNS initialization,
 policy compilation/install, UI login, AI setup or seventeen-scenario acceptance.
 
+### Rust runtime and fresh-key compilation gate
+
+The separate [native runtime probe](zpr-dashboard/packaging/compiled-recovery/probe-rust-runtime.sh)
+now exercises the recovered locally built Rust tools on the fresh Ubuntu
+24.04.4 ARM64 validation VM. Only compiled executables, public example assets
+and the probe were transferred; no old runtime directory, credential, source
+tree or generated policy was reused.
+
+Initial PH/PH-CLI startup correctly exposed a missing `libpcap.so.0.8`.
+Installing only the missing `libpcap0.8t64` runtime package and its package-manager
+dependencies fixed both. Observed runtime versions:
+
+| Component | Observed CLI / runtime |
+|---|---|
+| PH and PH CLI | `0.7.0` |
+| Visa Service and Admin | `0.19.0` |
+| VS API-key tool | Help works; no `--version` option |
+| Compiler | `zpc 0.16.0` (historical CLI spelling) |
+| Policy Tester | `0.19.0` |
+| glibc | `2.39-0ubuntu8.7` |
+| OpenSSL runtime | `3.0.13-0ubuntu3.9` |
+| libpcap runtime | `1.10.4-4.1ubuntu3.1` |
+| GCC runtime | `14.2.0-4ubuntu2~24.04.1` |
+
+The checked-in probe validates ARM64 ELF headers, dynamic loader resolution,
+seven CLI invocations and binary hashes. It composes all five current example
+policies using the compiled web command and builds each with the actual compiler
+and a newly generated private RSA signing key. All five produced nonempty
+signed policy bundles. Invalid syntax was rejected with compiler exit `1`
+and no output bundle. Existing evidence and missing executables are refused.
+
+Compiler warnings remain visible: Visa docking is set but not enforced, and
+the default trusted service has no certificate. These example builds do not
+contain the generated production runtime bootstrap overlay. They were not
+uploaded or installed, and signature acceptance by a configured Visa Service
+has not been tested. Neither warnings nor transport/bootstrap requirements
+were suppressed to obtain a build result.
+
+The preserved source candidates are Core `561fa7351795a723b74b5d1e57761d870722c77c`,
+Compiler `6f0de17fd9052567394ad306552bc435efc3ed3f`, and Visa Service checkpoint
+`b49842bded73fe581b5a67383fd18734bad55b58`. Their existing build logs identify
+development-profile builds (some later stripped), not release-profile builds.
+These source candidates are not proof of correspondence to the historical
+live binaries, and source-equivalence/release rebuild gates remain open.
+The Rust tools have therefore not been silently added to the compiled archive.
+
+Only allowlisted public compiler logs, hashes and the generated public signing
+key were copied back as private validation receipts. Temporary probe executables,
+the private signing key and generated bundles were removed from the test VM
+after digest verification; none became release inputs. The test VM was stopped.
+No test listeners, ZPR network or workload containers were started.
+This gate confirms executable prerequisites and fresh-key compilation, not
+full service bootstrap, trust admission or end-to-end scenario behavior.
+
 ## Adapter retention and main promotion
 
 Core is a separate repository. Its adapter development is preserved at
