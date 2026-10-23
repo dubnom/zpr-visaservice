@@ -164,6 +164,43 @@ export function registerCodeEditorTests(test, expect) {
     return page.locator('.code-editor-host[data-source="assertion-source"] .cm-content');
   }
 
+  test("CodeMirror focused bracket replacements stay CSP-safe and undoable", async ({ page, appURL, api }) => {
+    await enable(page, appURL);
+    const source = page.locator("#policy-source");
+    const editor = content(page);
+    for (const [original, bracketClass, outline] of [
+      ["{\n}", "cm-matchingBracket", "rgb(126, 166, 91)"],
+      ["{", "cm-nonmatchingBracket", "rgb(255, 180, 158)"],
+    ]) {
+      await editor.fill(original);
+      await source.evaluate(source => source.setSelectionRange(0, 0));
+      await editor.focus();
+      const bracket = host(page).locator(`.cm-focused .${bracketClass}`).first();
+      await expect(bracket).toHaveText("{");
+      await expect(bracket).toHaveCSS("background-color", "rgba(0, 0, 0, 0)");
+      await expect(bracket).toHaveCSS("outline-color", outline);
+      await expect(bracket).toHaveCSS("outline-style", "solid");
+      // fill and keyboard insertion both use Chromium's native replacement path.
+      await editor.fill("replacement");
+      await expect(source).toHaveValue("replacement");
+      await editor.press("ControlOrMeta+z");
+      await expect(source).toHaveValue(original);
+      await editor.press("ControlOrMeta+Shift+Z");
+      await expect(source).toHaveValue("replacement");
+      await editor.press("ControlOrMeta+z");
+      await expect(source).toHaveValue(original);
+      await source.evaluate(source => source.setSelectionRange(0, 0));
+      await expect(bracket).toHaveText("{");
+      await editor.press("ControlOrMeta+a");
+      await page.keyboard.insertText("typed");
+      await expect(source).toHaveValue("typed");
+      await editor.press("ControlOrMeta+z");
+      await expect(source).toHaveValue(original);
+      await editor.press("ControlOrMeta+Shift+Z");
+      await expect(source).toHaveValue("typed");
+    }
+  });
+
   function assistantReady(api) {
     Object.assign(api.policy, { assistant_ready: true, assistant_model: "test-model", assistant_models: ["test-model"] });
   }

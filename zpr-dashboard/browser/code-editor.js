@@ -24,8 +24,10 @@ const theme = EditorView.theme({
   ".cm-tooltip": { backgroundColor: "#23362b", color: "#e6eee8", border: "1px solid #6c8671" },
   ".cm-tooltip-autocomplete ul li[aria-selected]": { backgroundColor: "#36543f", color: "#fff" },
   ".cm-source-error": { borderBottom: "2px dotted #ffb49e" },
-  ".cm-matchingBracket": { color: "inherit", backgroundColor: "transparent", outline: "1px solid #7ea65b" },
-  ".cm-nonmatchingBracket": { color: "inherit", outline: "1px solid #ffb49e" },
+  // Native Chromium replacements copy bracket backgrounds into CSP-blocked inline styles.
+  // Match the language extension's focused selectors; keep feedback outline-only.
+  ".cm-matchingBracket, &.cm-focused .cm-matchingBracket": { color: "inherit", backgroundColor: "transparent", outline: "1px solid #7ea65b" },
+  ".cm-nonmatchingBracket, &.cm-focused .cm-nonmatchingBracket": { color: "inherit", backgroundColor: "transparent", outline: "1px solid #ffb49e" },
 }, { dark: true });
 
 class ResultMarker extends GutterMarker {
