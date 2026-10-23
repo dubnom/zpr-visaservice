@@ -2,7 +2,8 @@
 
 Status: **In progress (M1 inventory; M2 host preflight, configuration and
 bundle-manifest validation, Control Room input renderer, and approved runtime
-contract)**, created 2026-10-15 and updated 2026-10-17. Installation
+contract)**, created 2026-10-15, updated 2026-10-17 and clarified 2026-10-23.
+The Wave 2 evaluation-only starter is a design target; installation
 implementation remains open. This document defines implementation milestones
 and the recurring process for real system releases. It does not certify the
 current system, authorize deployment, or claim an installer exists.
@@ -194,6 +195,61 @@ restriction; it does not approve substituting lab/demo services for production.
   restart/recovery and explicit dependency failures, with Simulator unavailable.
 
 This is an approved requirement, not an implemented installer feature.
+
+### Evaluation-only bootstrap profile (2026-10-23)
+
+The 2026-10-17 decision above remains the production requirement: a production
+company installation must offer supported company-provider or qualified bundled
+identity/attribute and logging services. The 2026-10-23 direction adds a narrower
+**EVALUATION-ONLY** beta starter profile using current lab packages so an operator
+can boot a usable ZPR before linking company services. This is an explicit,
+profile-scoped exception to production qualification, not a reversal of the
+production requirement or evidence that an installer is already complete.
+
+The evaluation starter brings up LDAP and logging with the ZPR installation and
+its own persistent state. It is visibly labeled **not production supported**;
+all secrets are unique per install, protected and never default/shared. Company
+LDAP and logging are linked alongside the starter. Retirement happens only in a
+later explicit operator action after source/policy bindings are reviewed and
+rebound; there is no automatic identity merge, silent source switch or fallback.
+The evaluation milestone sequence and visual acceptance are tracked in the
+[Wave 2 bootstrap plan](SIMULATOR_AS_ZPR_CLIENT_PLAN.md#2-wave-2-bootstrap-evaluation-only-starter-profile-2026-10-23).
+
+#### Current package, image and script inventory
+
+| Capability / current artifacts | Verified capability now | Gap before the evaluation profile can claim completion |
+| --- | --- | --- |
+| Lab bootstrap: `zpr-dashboard/cmd/zpr-lab-bootstrap`, including `-identity-services`, `-identity-compose`, and `-runtime-outputs`; `zpr-dashboard/packaging/simulator/README.md` | Generates protected lab configuration, synthetic LDAP data, and a separate LDAP/Dex Compose file and private state directories when explicitly requested. The command generates files; it does not initialize/start services. `identity-compose` requires explicit private bind IP and immutable LDAP/Dex image IDs/digests. LDAP is explicitly demo-only/unqualified; image digest syntax is checked but image contents/platform are not inspected. | Adapt the generator/output for the evaluation ZPR instance (not Simulator profile ownership); generate stable unique install secrets with retry-safe persistence; integrate service registry and startup/health transaction into one-command installer; supply supported image pins and source/ license qualification. |
+| Bundled identity candidates: `zpr-dashboard/scripts/Dockerfile.operator-idp` (Dex v2.44.0 digest), `zpr-lab-bootstrap` LDAP renderer and `identity-compose` output | Dex base image reference is digest-qualified. The caller supplies an immutable OpenLDAP image reference; generated LDAP/Dex state uses dedicated directories and restricted Compose settings. | No OpenLDAP release image/digest is selected or qualified; no production support claim, company-source linking/retirement path or integrated registration into an installed ZPR package. Bootstrap profile is lab/companion oriented and does not yet provide a production/evaluation installer lifecycle. |
+| LDAP provider and push feed: `zpr-dashboard/cmd/zpr-trusted-service`; `scripts/ldap-syncprov.conf`, `scripts/enable-ldap-sync.sh`; `-ldap-watch` and `-ldap-changes-base` | The service has a read-only LDAPS attribute provider, an mTLS HTTP accesslog change feed returning metadata, and a separate read-only RFC 4533 syncrepl consumer emitting metadata-only JSONL with reconnect/resync behavior. The syncprov helper validates/enables one data database and the consumer tests include isolated OpenLDAP cases. | The watcher is started only by the Simulator bootstrap today, writing demo diagnostics; no installed ZPR evaluation supervisor wires it to bundled LDAP. No durable cookie/checkpoint/journal is provided by the watcher. The existing consumer does **not** refresh cached attributes, reevaluate assertions or revoke visas; those remain separate future integration work. Need end-to-end source registration, accesslog/syncprov config, private bounded logs/state, health and restart tests independent of Simulator. |
+| Starter logging: `observability/openobserve/` profile, `zpr-dashboard/diagnostics/openobserve-provider.example.json`, dashboard OpenObserve provider | Existing optional OpenObserve profile uses a digest-pinned upstream image and a ZPR adapter-bound access path; configured diagnostics can query a named OpenObserve endpoint. | The profile is not a turnkey installation logging source: it requires an already provisioned adapter/identity/policy and separate setup. Operator logging role, startup, authentication/authorization, retention, bounded storage, persistence, health and registration are not integrated. OpenObserve is AGPL-3.0; complete license/runtime/data-handling review is still required. |
+| Runtime composition and test surfaces: `zpr-dashboard/internal/systemruntimecompose`, `cmd/zpr-system-compose-render`, packaging/system preflight/config/manifest tools, `packaging/demo-runtime` and `packaging/simulator` | Read-only preflight, schema/config validation/rendering, Compose renderers, profile renderers and paired demo/simulator artifacts exist as engineering slices. | They do not currently compose/start the complete production/evaluation service set or qualify a fresh-host bootstrap. The simulator package is separate; no evaluation single-command install, starter source registration, complete logging bootstrap, company link/retirement flow, or integrated clean-host acceptance exists. |
+
+**Push-feed scope:** bundled LDAP must enable both the existing accesslog-backed
+change feed and the RFC 4533 syncrepl watcher in the independent ZPR evaluation
+stack, not only when Simulator bootstrap is running. Verify refresh/add/modify/
+delete, disconnect/reconnect, cookie rejection/resync, and feed health with
+Simulator absent. This is metadata change observation only. The current code has
+no consumer that refreshes ZPR attributes or revokes visas from these events;
+that behavior is a distinct future milestone and must not be claimed as shipped.
+
+**Simulator companion:** adding Simulator registers its own isolated synthetic
+directory as a separate trusted source. It does not populate or mutate bundled
+starter LDAP. The companion and starter must have separate credentials, state,
+Compose lifecycle and health. Company LDAP/logging are added alongside both;
+only explicit source/policy rebinding and a separately confirmed retirement can
+stop the starter.
+
+#### Remaining implementation decisions
+
+The profile boundary and evaluation-only label are decided. Before implementation
+is released, still select/qualify the OpenLDAP image and exact synthetic data/
+source mappings; establish Dex/bootstrap administrator creation and recovery;
+close OpenObserve license, authentication/authorization, retention and resource
+limits; assign ownership for persistent syncrepl checkpoints/metadata health; and
+define the explicit source/policy rebind preview, authorization and recovery
+contract for starter retirement. These are implementation gates, not permission
+to widen the evaluation profile into a production support claim.
 
 ### First-install BOM scope and provisional candidates
 
@@ -434,6 +490,17 @@ company. The companion supplies external integration endpoints through ordinary
 documented configuration and protocols, not an alternate ZPR build or a hidden
 Simulator-aware mode. Simulator may configure and exercise ZPR through supported
 service contracts; Control Room and Control-Service never read Simulator state.
+
+For the 2026-10-23 evaluation bootstrap, the bundled starter LDAP is a separate
+ZPR-owned service, not the companion's lab directory. Simulator add-on setup
+registers its own synthetic directory as another trusted source and never
+populates or reseeds the bundled source. Both sources and logging remain up when
+Simulator stops. The 2026-10-17 companion request remains valid as the separate
+Simulator/lab-services deliverable; it does not authorize substituting companion
+state for the starter or change the production/evaluation distinction above.
+Company LDAP and logging can be linked alongside the starter and companion. Any
+later starter retirement requires an explicit, reviewed source/policy rebind and
+operator confirmation; there is no silent identity merge or fallback.
 
 ### Simulator methodology: act as a ZPR administrator
 

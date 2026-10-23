@@ -47,7 +47,59 @@ The first functional demonstration must include **two simultaneously configured
 trusted sources**, including a read-only organization LDAP connection, with
 source-specific provenance and no dependency on a Simulator directory.
 
-## 2. Relationship to existing work
+## 2. Wave 2 bootstrap: evaluation-only starter profile (2026-10-23)
+
+This wave adds an **EVALUATION-ONLY** path for a bootstrappable out-of-box ZPR:
+one supported command brings up the ZPR evaluation stack with a unique bundled
+LDAP directory and logging service, using the current lab bootstrap, identity-
+compose/OpenLDAP/Dex, OpenObserve and `zpr-trusted-service` packages. Every
+installation gets distinct secrets and persistent state; there are no shared or
+default passwords. The UI, package and operator instructions must label these
+starter services **not production supported**. This narrows the 2026-10-17
+bundled-or-existing production decision only for the beta/evaluation profile;
+it does not erase or satisfy the separate production requirement below.
+
+The starter LDAP source is a real, registered trusted source in the evaluation
+organization and must support the existing LDAP push-change facility. The
+RFC 4533 syncrepl watcher and OpenLDAP accesslog change feed run with the ZPR
+stack whether or not Simulator is installed or running. Simulator's optional
+add-on registers its **own separate synthetic directory** as another trusted
+source; it never writes its directory into or populates the bundled starter.
+
+A company can link its LDAP and logging while the starter services continue to
+run side by side. A later, explicit retirement action must identify and rebind
+affected source/policy references, preserve or deliberately migrate state, and
+show the impact before applying. There is no automatic identity merge, default-
+source switch, or silent fallback between starter, Simulator and company data.
+
+All B milestones below are **pending design/implementation acceptance**, separate
+from the existing M0-M6 ordinary-client and production-boundary gates:
+
+| Milestone | Scope and exit evidence |
+| --- | --- |
+| **B0 — Inventory and profile contract** | Record current package/image/script behavior and gaps in the [system release plan](System%20release%20plan.md#evaluation-only-bootstrap-profile-2026-10-23); freeze the evaluation-only label, state/secret ownership and independent service lifecycle. |
+| **B1 — One-command bootstrap** | A clean supported host can run one documented command to initialize unique per-install protected secrets/state, render and start required ZPR plus LDAP/logging services, wait on protocol health, and report actionable status. Repeat/restart preserves identity and data; Simulator is unavailable. |
+| **B2 — Register starter source** | Bootstrap registers the bundled LDAP as a named, organization-scoped trusted source; Control Room can read and attribute results to it. Verify isolation, restart persistence and no implicit default/fallback behavior. |
+| **B3 — Register starter logging** | Bootstrap configures the OpenObserve-based evaluation logging source/collector and authorized query path. Verify actual ingestion, visible source identity, persistent storage, access-control boundaries and explicit unavailable/error state. |
+| **B4 — Independent LDAP push feed** | Run the existing RFC 4533 syncrepl watcher and accesslog feed for the bundled LDAP outside Simulator lifecycle. Demonstrate refresh/add/modify/delete and disconnect/reconnect behavior with private metadata and no attribute values/secrets. This does **not** claim that feed events refresh ZPR attribute caches or revoke visas; implement and accept those consumers separately unless independently verified already. |
+| **B5 — Add Simulator companion** | Add Simulator without replacing/reseeding the starter source. Register its own isolated synthetic directory as a second source, exercise ordinary production contracts, then stop Simulator and prove starter LDAP/logging/Control Room remain available. |
+| **B6 — Link company source/logging and retire starter explicitly** | Link company LDAP and logging alongside the running starter; show provenance and independent failures. A separate reviewed retirement flow rebinding identities/policies before stopping starter services; no automatic merge or fallback. |
+
+### Wave 2 visual acceptance
+
+Add browser and clean-host acceptance for each release of this profile. Exercise
+desktop and tablet, keyboard-only navigation, readable failure states and no
+horizontal overflow. Capture screenshots, but also assert source IDs, API
+requests, service health and persistent state:
+
+| ID | Setup/action | Required visible result and independent proof |
+| --- | --- | --- |
+| **B-V1** | Fresh host, one-command bootstrap, Simulator absent/unreachable. | Login, source, logging and health views are usable; LDAP and logging are healthy, unique install identity is retained after restart, and the evaluation-only/not-production label is visible. No Simulator request or dependency. |
+| **B-V2** | Add a Simulator companion with a distinct synthetic directory. | Two named sources coexist with distinct organization/source identities and provenance; synthetic records do not appear in starter LDAP. Stop Simulator; starter source, logging and operator UI remain healthy. |
+| **B-V3** | Change a starter LDAP entry and disconnect/reconnect the directory. | Updates feed reflects metadata-only add/modify/delete and explicit reconnect/resync state; no attribute values, passwords or cookies leak. No visa/attribute refresh or revocation claim is shown. |
+| **B-V4** | Link company LDAP and logging while starter services remain up; then preview explicit retirement. | Company and starter sources are visibly distinct; failures stay source-specific without fallback. Retirement lists affected bindings and requires explicit approval/rebinding; no silent merge, source switch or loss of state. |
+
+## 3. Relationship to existing work
 
 This is a demo-first task and acceptance list, not a replacement for the
 historical implementation/approval ledger in the
@@ -68,7 +120,7 @@ Relevant starting points:
 | [Change feeds](zpr-dashboard/cmd/zpr-web-dashboard/trusted_changes.go) have separate named configuration, and [browser tests](zpr-dashboard/tests/browser/trusted-source-gui.mjs) cover multiple feed selection. | Preserve working feed behavior, but extend coherent source selection to People, Groups, Attributes and assertions. Multiple feeds alone do not establish multiple usable identity sources. |
 | [Source reorganization](REDIRECTORY.md) records incremental extraction with remaining application/package boundaries. | Inventory current code and dirty worktree before implementation; do not treat historical milestones as current release acceptance. |
 
-## 3. Ownership and dependency rules
+## 4. Ownership and dependency rules
 
 ```text
 Control Room -> Control-Service -> production services / configured providers
@@ -96,7 +148,7 @@ Production provider ------------> organization LDAP or independent lab LDAP
   an organization, change policy or restart shared services are separate,
   authorized operations.
 
-## 4. Milestones and task list
+## 5. Milestones and task list
 
 Delivery order: **M0 -> M1 -> M2 -> M3 -> M4 -> M5**. M6 is the separate
 pre-production gate, not a prerequisite for a clearly labeled lab demonstration.
@@ -287,7 +339,7 @@ Not required for the isolated functional demo; required before production use.
 
 **Exit:** production release gates pass; no demo exception is enabled by default.
 
-## 5. Visual acceptance tests
+## 6. Visual acceptance tests
 
 Use the existing [Playwright configuration](zpr-dashboard/playwright.config.mjs):
 desktop Chromium and tablet Chromium, reduced motion, traces and screenshots.
@@ -325,7 +377,7 @@ harness. Existing tests are prior art, not execution evidence for this plan.
 Screenshots verify presentation; backend, traffic and lifecycle assertions verify
 that the separation is real.
 
-## 6. Demo shortcuts and pre-production register
+## 7. Demo shortcuts and pre-production register
 
 Reduce **credential ceremony**, not the trust boundary. Prefer generating or
 pre-provisioning valid credentials once over disabling checks. These are
@@ -342,13 +394,16 @@ activation date, removal gate and verification evidence in the demo handoff.
 | X05 | Keep policy-signing/service credentials locally provisioned for the disposable lab rather than completing automated custody/rotation. | Preserve actual signing/verification, named approvals and applied-state readback; protect signing keys. | Qualified custody, rollover, revocation, audit and disaster recovery. |
 | X06 | Use a single-host/small isolated stack and manual startup/runbook instead of a finished installer or HA. | Production, Simulator and providers still have independent configuration/storage/lifecycle. Demo is labeled non-production. | Installer/upgrades, backup/restore, HA/capacity and platform/network qualification. |
 | X07 | Begin with synthetic LDAP and a small deterministic traffic set. | Report it as synthetic; actual organization LDAP remains a distinct acceptance gate; no load/scale claims. | Approved real integrations, representative volume, freshness and sustained outage testing. |
+| X08 | Use the current bundled OpenLDAP/Dex and OpenObserve starter profile for beta/evaluation bootstrap. | Mark **EVALUATION-ONLY / NOT PRODUCTION SUPPORTED**; generate unique per-install secrets/state; never use shared/default passwords; keep Simulator's directory separate. | Company-owned trusted identity and logging integrations must be linked and verified before the evaluation starter is retired; production qualification of bundled providers remains governed by the 2026-10-17 requirement. |
+| X09 | Run starter and company LDAP/logging in parallel during evaluation migration. | Independent source IDs, credentials, health and provenance; no automatic identity merge, fallback or default-source switch. | Explicit reviewed source/policy rebinding, retirement approval, state retention/removal plan and recovery test. |
+| X10 | Keep push-feed consumption at metadata-only observation in this wave. | Syncrepl/accesslog produces private source-change metadata only; do not imply that visa attributes refresh or visas revoke on each change. | Separate implementation and acceptance for cache refresh, assertion reevaluation and visa revocation semantics. |
 
 **Not shortcuts:** disabling TLS/certificate verification, trusting self-asserted
 actors, bypassing authorization/approval, treating a staged policy as applied,
 granting from failed/stale sources, silently falling back to lab LDAP, exposing
 secrets, direct database setup or allowing Simulator to own company services.
 
-## 7. First deliverable and completion evidence
+## 8. First deliverable and completion evidence
 
 The smallest useful vertical slice is:
 
