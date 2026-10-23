@@ -50,6 +50,8 @@ func runEvaluation(args []string, stdout, stderr io.Writer) int {
 	flags := flag.NewFlagSet("zpr-lab-bootstrap -evaluation", flag.ContinueOnError)
 	flags.SetOutput(stderr)
 	state := flags.String("state", "", "protected persistent install directory (required)")
+	resetAdmin := flags.Bool("reset-admin", false, "EVALUATION ONLY: reset the bundled operator login while stopped")
+	passwordFile := flags.String("password-file", "", "reset only: exclusively create a private 0600 password delivery file instead of terminal output")
 	renderOnly := flags.Bool("render-only", false, "render/validate protected files only; no builds, Docker or services")
 	config := evaluationConfig{}
 	flags.StringVar(&config.LDAPImage, "ldap-image", evaluationLDAPImage, "current packaged OpenLDAP immutable image")
@@ -69,7 +71,24 @@ func runEvaluation(args []string, stdout, stderr io.Writer) int {
 		return 2
 	}
 	if *state == "" || flags.NArg() != 0 {
-		fmt.Fprintln(stderr, "usage: zpr-lab-bootstrap -evaluation -state DIRECTORY [-render-only]")
+		fmt.Fprintln(stderr, "usage: zpr-lab-bootstrap -evaluation -state DIRECTORY [-render-only | -reset-admin [-password-file FILE]]")
+		return 2
+	}
+	if *resetAdmin {
+		invalid := false
+		flags.Visit(func(f *flag.Flag) {
+			if f.Name != "reset-admin" && f.Name != "state" && f.Name != "password-file" {
+				invalid = true
+			}
+		})
+		if invalid {
+			fmt.Fprintln(stderr, "Reset accepts only -state and optional -password-file; stop the install first.")
+			return 2
+		}
+		return runEvaluationAdminRecovery(*state, *passwordFile, stdout, stderr)
+	}
+	if *passwordFile != "" {
+		fmt.Fprintln(stderr, "-password-file requires -reset-admin")
 		return 2
 	}
 	fmt.Fprintln(stdout, evaluationBanner)
@@ -181,6 +200,9 @@ func prepareEvaluation(output string, config evaluationConfig, now time.Time) (e
 
 func readEvaluation(output string, config evaluationConfig) (evaluationInventory, error) {
 	inventory := evaluationInventory{}
+	if _, err := os.Lstat(filepath.Join(output, "admin-recovery.pending")); !errors.Is(err, os.ErrNotExist) {
+		return inventory, errors.New("interrupted admin recovery: keep stopped and restore the complete offline backup; never reseed")
+	}
 	if err := filepath.WalkDir(output, func(path string, entry os.DirEntry, err error) error {
 		if err != nil {
 			return err
