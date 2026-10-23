@@ -23,8 +23,12 @@ $(BIN): $(shell find . -name '*.go') go.mod go.sum
 run:
 	$(GO) run $(CMD_PATH)
 
+.PHONY: test-operator-stack
+test-operator-stack:
+	PYTHONDONTWRITEBYTECODE=1 python3 scripts/control-stack.test.py
+
 .PHONY: test
-test:
+test: test-operator-stack
 	$(GO) test ./...
 
 .PHONY: test-browser

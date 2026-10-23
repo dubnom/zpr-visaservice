@@ -221,7 +221,7 @@ restore_organization_base() {
     published_directory="$runtime_dir/published-directories/$organization.ldif"
     mkdir -m 700 -p "$backup_directory"
 
-    "$script_dir/dashboard-stack.sh" stop-policy-service
+    "$script_dir/dashboard-stack.sh" simulator-stop-policy-service
     for file_path in "$policy_database" "$policy_database-wal" "$policy_database-shm" "$published_directory"; do
         if [ -f "$file_path" ]; then
             cp -p "$file_path" "$backup_directory/$(basename "$file_path")"
@@ -309,13 +309,13 @@ rollback() {
                 ZPR_ADMIN_CA_FILE="$multinode_dir/zpr-conf/include/admin-tls-cert.pem" \
                 ZPR_ADMIN_KEY_FILE="$previous_runtime/bob/web-monitor.key" \
                 ZPR_TRUSTED_CHANGE_FEEDS_DISABLED="$trusted_change_feeds_disabled" \
-                    "$script_dir/dashboard-stack.sh" restart-control-service || true
+                    "$script_dir/dashboard-stack.sh" simulator-restart-control-service || true
             else
                 SIMULATION_ORGANIZATION_ID="$previous_organization" \
                 ZPR_ASSERTION_LDAP_BASE_DN="$previous_base_dn" \
                 ZPR_ASSERTION_LDAP_BIND_DN="$previous_bind_dn" \
                 ZPR_TRUSTED_CHANGE_FEEDS_DISABLED="$trusted_change_feeds_disabled" \
-                    "$script_dir/dashboard-stack.sh" restart-control-service || true
+                    "$script_dir/dashboard-stack.sh" simulator-restart-control-service || true
             fi
         fi
         if [ "$previous_driver" = docker-multinode ]; then
@@ -353,7 +353,7 @@ rm -f "$runtime_dir/dashboard-stack/multinode-machine-control-address.txt"
 if [ "$previous_driver" = "docker-multinode" ]; then
     control_changed=yes
     report_activation_status "Stopping Control Service before removing previous ZPR network"
-    "$script_dir/dashboard-stack.sh" stop-control-service
+    "$script_dir/dashboard-stack.sh" simulator-stop-control-service
 fi
 stop_runtime "$previous_organization"
 if [ "$action" = "restore-base" ]; then
@@ -389,7 +389,7 @@ if [ "$organization_driver" = linux-one-node ]; then
     SIMULATION_ORGANIZATION_ID="$organization" \
     ZPR_ASSERTION_LDAP_BASE_DN="$organization_base_dn" \
     ZPR_ASSERTION_LDAP_BIND_DN="$organization_bind_dn" \
-        "$script_dir/dashboard-stack.sh" restart-control-service
+        "$script_dir/dashboard-stack.sh" simulator-restart-control-service
     report_activation_status "Waiting for ZPR node and company LDAP"
     echo "Waiting for company LDAP and one-node ZPR bootstrap"
     attempt=0
@@ -436,7 +436,7 @@ if [ "$organization_driver" = docker-multinode ]; then
     ZPR_ADMIN_CA_FILE="$multinode_dir/zpr-conf/include/admin-tls-cert.pem" \
     ZPR_ADMIN_KEY_FILE="$multinode_runtime/bob/web-monitor.key" \
     ZPR_TRUSTED_CHANGE_FEEDS_DISABLED="$trusted_change_feeds_disabled" \
-        "$script_dir/dashboard-stack.sh" restart-control-service
+        "$script_dir/dashboard-stack.sh" simulator-restart-control-service
 fi
 control_room_curl -fsS --max-time 10 "$control_room_url/api/policy/context" | jq -e --arg id "$organization" '.organization_id==$id' >/dev/null
 report_activation_status "Checking Control Service readiness"
@@ -460,7 +460,7 @@ else
     SIMULATION_ORGANIZATION_ID="$organization" \
     ZPR_ASSERTION_LDAP_BASE_DN="$organization_base_dn" \
     ZPR_ASSERTION_LDAP_BIND_DN="$organization_bind_dn" \
-        "$script_dir/dashboard-stack.sh" restart-control-service
+        "$script_dir/dashboard-stack.sh" simulator-restart-control-service
     control_room_curl -fsS --max-time 15 "$control_room_url/api/assertions/source" >/dev/null
 fi
 if [ "$organization_driver" = docker-multinode ]; then

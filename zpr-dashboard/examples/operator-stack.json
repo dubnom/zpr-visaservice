@@ -1,0 +1,138 @@
+{
+  "version": 1,
+  "deployment": "company",
+  "services": {
+    "control-service": {
+      "image": "company/control-operator:REPLACE_WITH_APPROVED_VERSION",
+      "container": "company-control-service",
+      "env": {
+        "ZPR_CONTROL_SERVICE_LISTEN": "0.0.0.0:8790",
+        "ZPR_GATEWAY_ORGANIZATION_ID": "company",
+        "ZPR_CONTROL_SERVICE_CERT_FILE": "/etc/zpr/operator/control-service-cert",
+        "ZPR_CONTROL_SERVICE_KEY_FILE": "/etc/zpr/operator/control-service-key",
+        "ZPR_CONTROL_SERVICE_CLIENT_CA_FILE": "/etc/zpr/operator/control-service-client-ca",
+        "ZPR_ADMIN_URL": "https://visa-admin.company.example:8443",
+        "ZPR_ADMIN_CA_FILE": "/etc/zpr/operator/admin-ca",
+        "ZPR_ADMIN_KEY_FILE": "/etc/zpr/operator/admin-key",
+        "ZPR_POLICY_SERVICE_URL": "https://policy.company.example:8789",
+        "ZPR_POLICY_SERVICE_CA_FILE": "/etc/zpr/operator/policy-service-ca",
+        "ZPR_POLICY_CLIENT_CERT_FILE": "/etc/zpr/operator/policy-client-cert",
+        "ZPR_POLICY_CLIENT_KEY_FILE": "/etc/zpr/operator/policy-client-key"
+      },
+      "mounts": [
+        {
+          "source": "/etc/zpr/operator/control-service-cert",
+          "target": "/etc/zpr/operator/control-service-cert",
+          "read_only": true
+        },
+        {
+          "source": "/etc/zpr/operator/control-service-key",
+          "target": "/etc/zpr/operator/control-service-key",
+          "read_only": true
+        },
+        {
+          "source": "/etc/zpr/operator/control-service-client-ca",
+          "target": "/etc/zpr/operator/control-service-client-ca",
+          "read_only": true
+        },
+        {
+          "source": "/etc/zpr/operator/admin-ca",
+          "target": "/etc/zpr/operator/admin-ca",
+          "read_only": true
+        },
+        {
+          "source": "/etc/zpr/operator/admin-key",
+          "target": "/etc/zpr/operator/admin-key",
+          "read_only": true
+        },
+        {
+          "source": "/etc/zpr/operator/policy-service-ca",
+          "target": "/etc/zpr/operator/policy-service-ca",
+          "read_only": true
+        },
+        {
+          "source": "/etc/zpr/operator/policy-client-cert",
+          "target": "/etc/zpr/operator/policy-client-cert",
+          "read_only": true
+        },
+        {
+          "source": "/etc/zpr/operator/policy-client-key",
+          "target": "/etc/zpr/operator/policy-client-key",
+          "read_only": true
+        }
+      ],
+      "publish": [
+        "127.0.0.1:8790:8790"
+      ]
+    },
+    "control-room": {
+      "image": "company/control-operator:REPLACE_WITH_APPROVED_VERSION",
+      "container": "company-control-room",
+      "env": {
+        "ZPR_CONTROL_SERVICE_URL": "https://control-service.company.example:8790",
+        "ZPR_CONTROL_SERVICE_CA_FILE": "/etc/zpr/operator/control-service-ca",
+        "ZPR_CONTROL_CLIENT_CERT_FILE": "/etc/zpr/operator/control-client-cert",
+        "ZPR_CONTROL_CLIENT_KEY_FILE": "/etc/zpr/operator/control-client-key",
+        "ZPR_CONTROL_ROOM_ORGANIZATION_ID": "company",
+        "ZPR_CONTROL_ROOM_ORIGIN": "https://control.company.example:8787",
+        "ZPR_CONTROL_ROOM_CERT_FILE": "/etc/zpr/operator/control-room-cert",
+        "ZPR_CONTROL_ROOM_KEY_FILE": "/etc/zpr/operator/control-room-key",
+        "ZPR_OPERATOR_OIDC_CONFIG_FILE": "/etc/zpr/operator/operator-oidc-config",
+        "ZPR_OPERATOR_OIDC_SECRET_FILE": "/etc/zpr/operator/operator-oidc-secret",
+        "ZPR_OPERATOR_DELEGATION_SIGNER_FILE": "/etc/zpr/operator/operator-delegation-signer",
+        "ZPR_OPERATOR_DELEGATION_KEY_FILE": "/etc/zpr/operator/operator-delegation-key"
+      },
+      "mounts": [
+        {
+          "source": "/etc/zpr/operator/control-service-ca",
+          "target": "/etc/zpr/operator/control-service-ca",
+          "read_only": true
+        },
+        {
+          "source": "/etc/zpr/operator/control-client-cert",
+          "target": "/etc/zpr/operator/control-client-cert",
+          "read_only": true
+        },
+        {
+          "source": "/etc/zpr/operator/control-client-key",
+          "target": "/etc/zpr/operator/control-client-key",
+          "read_only": true
+        },
+        {
+          "source": "/etc/zpr/operator/control-room-cert",
+          "target": "/etc/zpr/operator/control-room-cert",
+          "read_only": true
+        },
+        {
+          "source": "/etc/zpr/operator/control-room-key",
+          "target": "/etc/zpr/operator/control-room-key",
+          "read_only": true
+        },
+        {
+          "source": "/etc/zpr/operator/operator-oidc-config",
+          "target": "/etc/zpr/operator/operator-oidc-config",
+          "read_only": true
+        },
+        {
+          "source": "/etc/zpr/operator/operator-oidc-secret",
+          "target": "/etc/zpr/operator/operator-oidc-secret",
+          "read_only": true
+        },
+        {
+          "source": "/etc/zpr/operator/operator-delegation-signer",
+          "target": "/etc/zpr/operator/operator-delegation-signer",
+          "read_only": true
+        },
+        {
+          "source": "/etc/zpr/operator/operator-delegation-key",
+          "target": "/etc/zpr/operator/operator-delegation-key",
+          "read_only": true
+        }
+      ],
+      "publish": [
+        "127.0.0.1:8787:8787"
+      ],
+      "listen": "0.0.0.0:8787"
+    }
+  }
+}

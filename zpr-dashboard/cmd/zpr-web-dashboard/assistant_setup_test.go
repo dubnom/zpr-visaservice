@@ -8,8 +8,8 @@ import (
 	"testing"
 )
 
-func TestAssistantSetupForwardsKeyToControlService(t *testing.T) {
-	content, err := os.ReadFile("../../scripts/dashboard-stack.sh")
+func TestSimulatorAssistantSetupForwardsKeyToControlService(t *testing.T) {
+	content, err := os.ReadFile("../../scripts/simulator-control-adapter.sh")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -17,16 +17,7 @@ func TestAssistantSetupForwardsKeyToControlService(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	script := string(content)
-	start := strings.Index(script, "start_control_service() {")
-	if start < 0 {
-		t.Fatal("Control-Service launch function missing")
-	}
-	end := strings.Index(script[start:], "\n}\n")
-	if end < 0 {
-		t.Fatal("Control-Service launch function incomplete")
-	}
-	launch := script[start : start+end+3]
+	launch := string(content)
 	for _, configured := range []bool{false, true} {
 		t.Run(map[bool]string{false: "unconfigured", true: "configured"}[configured], func(t *testing.T) {
 			harness := `
@@ -64,7 +55,7 @@ docker() {
 
 `
 			cmd := exec.Command("sh")
-			cmd.Stdin = strings.NewReader(harness + stackFunctionForTest(t, "control_platform_services") + "\n" + launch + "\nstart_control_service\n")
+			cmd.Stdin = strings.NewReader(harness + stackFunctionForTest(t, "control_platform_services") + "\n" + launch + "\nsimulator_start_control_service\n")
 			cmd.Env = append(cmd.Env, "SCRIPT_DIR="+scriptDir)
 			for _, entry := range os.Environ() {
 				if strings.HasPrefix(entry, "ANTHROPIC_API_KEY=") || strings.HasPrefix(entry, "EXPECTED_KEY=") {

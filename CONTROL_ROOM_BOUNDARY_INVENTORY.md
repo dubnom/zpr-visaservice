@@ -1,8 +1,9 @@
-# Control Room / Control-Service boundary — packet B
+# Control Room / Control-Service boundary — packets B and C03/C06
 
 2026-10-23; base `4627e4cd99f15e1ee227f788574ab5055ee7a353`.
-Scope: B01 inventory and executable C06 regression evidence, not remediation or
-production sign-off. No Simulator, Docker stack, deployment or live provider was
+Original packet B scope: B01 inventory and executable C06 regression evidence,
+not production sign-off. The C03/C06 operator-configuration delta below resolves
+the three HIGH launcher seams; unrelated packet B findings remain open. No Simulator, Docker stack, deployment or live provider was
 started. Source-packet implementation files and Simulator implementation are unchanged.
 
 ## Inventory and replacement owners
@@ -15,10 +16,10 @@ Paths below are relative to `zpr-dashboard/`.
 
 | Severity / seam | Evidence and current dependency | Owner / replacement |
 | --- | --- | --- |
-| **High — organization/session selection** | `scripts/dashboard-stack.sh:1040-1044`: `start_control_service` falls back from `ZPR_GATEWAY_ORGANIZATION_ID` to `SIMULATION_ORGANIZATION_ID`, then reads `ACTIVE_ORGANIZATION_FILE`; the global default is Simulator's `active-organization.txt` (line 42). | Operator deployment packet: require an explicit production organization; obtain authoritative context through Policy-Service, never the selected scenario/session. |
-| **High — profiles and runtime files/mounts** | Same function, lines 1047-1052, reads `$ORGANIZATIONS_DIR/<organization>.json` and `.runtime.driver` to choose `$RUNTIME_DIR/multinode/<organization>/dns/...`. Lines 1078-1079 mount all shared runtime and the multinode demo tree into Control-Service. | Operator deployment + DNS owners: explicit DNS transfer endpoint/key; mount only named operator secrets/configuration/stores. Remove profile reads and Simulator-owned paths. |
-| **High — default launch lifecycle** | `start_stack` (1869 onward) starts Simulator before production services and derives organization, LDAP container/base/bind, Admin URL/key/CA and DNS setup from the manifest/active profile; `start_policy_service` (1814 onward) also selects a simulation profile and generated runtime policy. Not exercised by this packet. | Deployment/Policy-Service packet: independent service startup, operator-owned policy/configuration revisions and production bootstrap contracts. Simulator remains optional setup/workload automation, not the operator launcher. |
-| **Medium — artifact/build coupling** | `start_control_room` calls `ensure_simulator_image` (421); both production containers use `$SIMULATOR_IMAGE` (466, 1116). `cmd/zpr-web-dashboard` is one `package main` containing all modes, so its build-time transitive graph includes Simulator even though extracted production packages do not. | Packaging packet: independent production artifacts/entrypoints and explicit configuration. A shared binary alone is not evidence of a runtime API call; it is not an independent production package boundary either. |
+| **Resolved — organization/session selection (C03/C06)** | Production dispatch precedes lab helper sourcing/path resolution and uses `scripts/control-stack.py`. Explicit `ZPR_GATEWAY_ORGANIZATION_ID` / `ZPR_CONTROL_ROOM_ORGANIZATION_ID` scopes are required and must match; no ambient environment/profile/session fallback. | Operators own version-1 `ZPR_OPERATOR_STACK_CONFIG`; Policy-Service remains authoritative. Missing config and poisoned lab settings are tested. |
+| **Resolved — profiles and runtime files/mounts (C03/C06)** | Only explicit existing absolute mounts and mounted `_FILE`/`_DIR` references are accepted. No runtime/demo tree, Docker socket, profile, generated TSIG key or local DNS relay is discovered. DNS transfer needs explicit address and mounted key. | Operators own named configuration/secrets/state mounts, Admin/Policy-Service endpoints and TLS, providers and optional DNS. Legacy lab translation is exclusively `scripts/simulator-control-adapter.sh`. |
+| **Resolved — default launch lifecycle (C03/C06)** | Default start/restart/stop/status manage only explicit ownership-labelled operator containers; Service then Room, stop reversed. No Simulator, policy/bootstrap, local login, LDAP, DNS or observability lifecycle. Bare policy lifecycle fails with an independent-deployment instruction. Lab control/policy commands have explicit `simulator-*` names and refuse operator-owned containers. | Independent Policy-Service/provider deployment is a prerequisite, never automatically provisioned. Simulator activation calls lab commands only. Full M3 reset/package qualification remains open. |
+| **Medium — residual artifact/build coupling** | Production no longer calls `ensure_simulator_image` or uses `$SIMULATOR_IMAGE`: images must be operator-selected and are never built by startup. The shared `cmd/zpr-web-dashboard` package still includes all modes in its build graph. | Packaging still owns independent production artifacts/entrypoints; explicit image selection does not prove a Simulator-free image/build graph. |
 | **Medium — synthetic source-name branch** | Production `/api/snapshot` → `application.fetchSnapshot` → `inventory.Fetch(... TrustedEditorURL: trustedEditorURL)` → `inventory.go:70-71` special-cases `demo_ldap`/`rest/1` → `main.go:localLDAPEditorURL` reads `ZPR_DEMO_LDAP_EDITOR_URL`. There is no implicit URL default and the launcher does not forward this setting, but direct production startup can enable the branch. | Source/provider packet (B02/S01/C03): provider-owned registration/manager metadata, no lab-name special case. Preserve ordinary clients' actual display names. |
 | **Medium — Simulator assets on production origin** | `runControlRoom` mounts `fs.Sub(staticFiles, "static")` through an unfiltered `http.FileServer`; embedded `scenarios.html`, `organizations.html`, `activity.html`, `machine-logs.html` and `simulator-provisioning.html` remain directly addressable. Their scripts can request Simulator APIs on the Control Room origin; root-page navigation does not load them. Production does not register those APIs. | UI boundary packet (C05): production-owned asset allowlist/bundle or separate filesystem, without breaking shared render utilities. Then test direct forbidden page URLs as well as normal navigation. |
 | **Clear — production routes** | `internal/controlroom/httpapi/routes.go`: login, change review, enrollment, `/api/` proxy, DNS stylesheet and static. `runControlRoom` also composes budget authority. `internal/controlservice/httpapi/routes.go`: snapshot, diagnostics, actor visas, adapter logs, DNS, policy/assistant, gateways, assertions, trusted change feeds, enrollment and budget authority. No Simulator API registration; actual process test verifies `/api/simulator/scenarios` is 404. | Existing operator/service owners; preserve explicit production route/authorization contracts. The broad proxy is not a Simulator contract. |
@@ -56,7 +57,7 @@ Paths below are relative to `zpr-dashboard/`.
   navigation/directory/log requests and rejects Simulator/external requests.
   It does not mock away server-side calls: those are tested separately above.
 - `scripts/check-control-room-boundary.py`: strict read-only supplementary
-  launcher/inventory/shared-asset audit. **Currently exits 1: 12 references**
+  launcher/inventory/shared-asset audit. **Packet B baseline exited 1: 12 references**
   across the unresolved violation groups above. No skips, expected-failure
   allowlist or changed product behavior. It is an explicit failing acceptance
   command, not a claim that passing focused tests close the boundary. Its
@@ -87,9 +88,9 @@ M0/M2 production acceptance gates remain open**.
 
 ## Recommended next packets
 
-1. **Operator deployment (C03/C06):** remove organization/profile/session and
-   runtime-path fallback, separate production bootstrap/artifacts, explicit
-   production DNS/Admin/policy/provider configuration and least-scope mounts.
+1. **Operator deployment (C03/C06):** launcher/configuration seams resolved below;
+   independent artifact/build-graph closure and named-user/provider deployment
+   qualification remain for packaging/bootstrap acceptance.
 2. **Production UI boundary (C05):** separate entry assets, remove direct
    Simulator pages from the Control Room origin; add forbidden-page HTTP/browser
    rejection tests and an operator-configured log destination.
@@ -99,3 +100,70 @@ M0/M2 production acceptance gates remain open**.
    and test named-user startup plus real production providers with Simulator
    absent and its directories/mounts inaccessible. Do not infer this from the
    loopback/mocked-provider results here.
+
+## C03/C06 operator configuration and startup delta (2026-10-23)
+
+The three HIGH launcher rows above are resolved. The strict audit and all
+allowlists are **unchanged**: baseline **12**, current **3**, **9 actual production
+launcher references removed**. Remaining findings are exactly:
+
+- `cmd/zpr-web-dashboard/inventory.go:70-71`: two synthetic source-name/editor
+  branch references (source-ui packet).
+- `cmd/zpr-web-dashboard/control_service.go`: one shared unfiltered static mount
+  finding (production-assets packet).
+
+Lab translation moved to an explicitly Simulator-owned adapter, not a production
+fallback. `start` without operator configuration fails before lab runtime access,
+helper sourcing or Docker. No production command loads the adapter. Organization
+activation explicitly uses lab-prefixed control/policy lifecycle commands.
+Ownership checks prevent operator commands from touching foreign containers and
+lab control lifecycle from touching independent operator containers. The neutral
+platform annotation validator remains for lab compatibility; production optional
+annotations must be explicitly supplied through deployment JSON.
+
+The contract and intentionally unprovisioned template are documented in
+`zpr-dashboard/README.md#independent-operator-startup-c03c06` and
+`zpr-dashboard/examples/operator-stack.json`. `ZPR_OPERATOR_STACK_CONFIG` is the
+only environment variable read by the production configuration loader; container
+environment values come from that file. Endpoint/TLS, organization, named-user
+login and delegation settings are explicit. Missing settings/files, unknown
+fields, incompatible scopes or foreign containers fail before mutation. Optional
+DNS/log/provider inputs have no lab defaults. External Policy-Service/identity/
+provider provisioning is not owned by this launcher. Existing direct-binary
+loopback/degraded-provider behavior is preserved.
+
+Validation uses local isolated fixtures, mocked Docker and private child HTTP/TLS
+services only. No shared stack, live provider, deployment or image mutation was
+performed. This evidence does not close C06/M4 or establish named-user/provider
+production acceptance:
+
+- **11 Python tests pass** (`make test-operator-stack`): missing configuration
+  before Docker/lab reads, required/invalid/unmounted settings, organization
+  mismatch, poisoned lab environment, explicit mounts, check-without-network,
+  foreign-container refusal, scoped restart/stop, lab ownership protection and
+  bare-policy fail-closed and failed-startup detection. Included in the standard `make test` target.
+- Focused command production/assistant/change-review tests and all eight extracted
+  Control Room/Control-Service package suites pass with **`go test -race`**.
+  Related legacy launcher tests now inspect the Simulator adapter when that is
+  their ownership; production DNS startup asserts no relay lifecycle/default.
+- Playwright `control-room-boundary.spec.mjs`: **4 passed**, desktop/tablet and
+  production sources available/unavailable. Existing lockfile dependencies were
+  restored only after missing Playwright; no manifest/lockfile changes.
+- Simulator adapter Node regressions: **22 passed** (machine-runtime/admin and
+  available platform cases). Four additional platform cases lack sibling
+  `zpr-demo/multinode-demo` fixtures in this exclusive worktree; no shared sibling
+  paths were populated or changed.
+- Full `make test` was also run; it is **not green**. Unowned failures include
+  missing external demo/organization fixtures, an existing isolated machine
+  harness missing `machine_docker_network_for_org`, missing Rust workspace member
+  `vs`, macOS Unix-socket path-length limits under the exclusive worktree, and
+  Simulator reset-store protected-directory constraints. Failing packages are
+  `cmd/zpr-web-dashboard`, `internal/enrollment`, and `internal/simulatorreset`.
+  No unrelated failing tests or security/path restrictions were relaxed.
+- Shell syntax checks and `gofmt` on changed Go tests pass. Strict audit remains
+  nonzero with exactly the three out-of-packet findings listed above.
+
+No `main.go`, production shared-route/composition Go implementation, source
+implementation, plan or release ledger changed. Integration overlaps are launcher
+wiring, lab organization activation, README/Makefile, and three directly related
+Go test contracts; there is no production-assets/source-ui route hunk to merge.
