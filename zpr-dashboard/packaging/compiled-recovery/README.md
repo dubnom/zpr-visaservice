@@ -537,7 +537,7 @@ still-healthy destination listener. Both policy checks run again after restart.
 The only kernel route between node ZPR addresses is through each node's TUN,
 not the shared substrate bridge.
 
-**Unresolved early-restart race:** an earlier probe restarted immediately after
+**Earlier early-restart race:** an earlier probe restarted immediately after
 initial actor synchronization, without the live-link stability qualification.
 That exposed a timing-dependent failure in the unchanged accepted PH binary.
 The surviving node receives
@@ -545,10 +545,29 @@ The surviving node receives
 ordinary adapter tether for the returning node. That node cannot complete the
 node Hello exchange or re-register VSS; Visa reports `NoRoute`. Settled-link
 restart succeeding does not fix or qualify this earlier timing window.
-Receipts explicitly record `early_restart_race_resolved: false`; this is not
+Historical receipts explicitly record `early_restart_race_resolved: false`; this is not
 general node lifecycle acceptance. Do not restart both nodes, omit a failing
 assertion or weaken pinned trust to claim the race fixed. A source fix and new
 verified binaries/image would require fresh affected-gate qualification.
+
+The isolated Core fix separates remote session teardown from local node-peer
+authorization: received Reset/Shutdown clears the session but retains its pinned
+identity, whereas local reset/topology removal still deletes the peer.
+Its received-termination dispatch regression must fail with the old behavior
+and pass with the fix, including local deletion and unchanged adapter semantics.
+Do not infer that a saved image contains this fix from a newer harness revision:
+check its archived Core source and binary receipts.
+
+Use `--peer-node-early` instead of `--peer-node` for immediate PH restart after
+initial synchronization and mutual Hello, with no pre-restart stability interval
+or TCP warmup. Before starting the returning node it requires exactly one
+retained NodeToNode identity at the survivor, then requires live link stability,
+both synchronized actors and allowed/denied TCP after restart. The receipt
+records whether the remote Reset was actually observed. Delivery is not
+guaranteed by the old shutdown path; an unobserved Reset emits an explicit scope
+warning and does not qualify received-Reset handling. Native dispatch tests and
+runtime restart results are separate evidence, not interchangeable proxies.
+General arbitrary-time/stress lifecycle remains unqualified.
 
 Failure receipts identify the exact image, harness/fixture hashes, failing
 phase, exit status and completed resource cleanup; failures exit nonzero and

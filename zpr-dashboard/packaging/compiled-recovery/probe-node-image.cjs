@@ -6,10 +6,11 @@ const { execFileSync } = require("node:child_process");
 
 const [build, output, context, daemon, ...extra] = process.argv.slice(2);
 assert.ok(build && output && context && daemon &&
-  (!extra.length || (extra.length === 1 && ["--adapter", "--peer-node"].includes(extra[0]))),
-  "Usage: node probe-node-image.cjs /absolute/image-build /absolute/new-evidence context daemon [--adapter | --peer-node]");
+  (!extra.length || (extra.length === 1 && ["--adapter", "--peer-node", "--peer-node-early"].includes(extra[0]))),
+  "Usage: node probe-node-image.cjs /absolute/image-build /absolute/new-evidence context daemon [--adapter | --peer-node | --peer-node-early]");
 const adapterMode = extra[0] === "--adapter";
-const peerMode = extra[0] === "--peer-node";
+const earlyMode = extra[0] === "--peer-node-early";
+const peerMode = extra[0] === "--peer-node" || earlyMode;
 assert.ok(path.isAbsolute(build) && path.isAbsolute(output));
 const hash = file => crypto.createHash("sha256").update(fs.readFileSync(file)).digest("hex");
 const docker = args => execFileSync("docker", ["--context", context, ...args], {
@@ -40,6 +41,7 @@ let adapter;
 let peer;
 let phase = "preparation";
 let failure;
+let remoteResetObserved = false;
 const exec = (id, script) => docker(["exec", id, "sh", "-ec", script]);
 const admin = "vs-admin --svc-url 'https://[::1]:8182' --ca-cert /state/first/authority.pem " +
   "--api-key-file /state/first/administrator.key --format compact";
@@ -331,11 +333,13 @@ cat "/proc/$(cat /state/${name}.pid)/status" > /state/peer-status.txt`);
       copy(id, "/state/peer-events.txt", `${name}/peer-events.txt`);
       copy(id, "/state/peer-status.txt", `${name}/peer-status.txt`);
     }
-    phase = "peer-live-link-stability";
-    peerLinkStatus(node, "first", "fd00:5a::5", "live-peer-link");
-    peerLinkStatus(peer, "peer", "fd00:5a::2", "live-peer-link");
-    phase = "peer-tcp-policy";
-    tcpTraffic(node, peer, "fd5a:5052::3", node, "node", "peer-before-restart");
+    if (!earlyMode) {
+      phase = "peer-live-link-stability";
+      peerLinkStatus(node, "first", "fd00:5a::5", "live-peer-link");
+      peerLinkStatus(peer, "peer", "fd00:5a::2", "live-peer-link");
+      phase = "peer-tcp-policy";
+      tcpTraffic(node, peer, "fd5a:5052::3", node, "node", "peer-before-restart");
+    }
   }
   if (adapterMode) {
     const config = JSON.parse(docker(["inspect", adapter]))[0];
@@ -414,6 +418,24 @@ cat "/proc/$(cat /state/node.pid)/status" > /state/ph-status.txt`);
   assert.equal(summary.node_details.in_sync, true);
   phase = peerMode ? "peer-process-restart" : "node-process-restart";
   stop(node, "node");
+  if (earlyMode) {
+    phase = "early-peer-identity-retention";
+    remoteResetObserved = exec(peer,
+      `awk '/Received terminate for link 3 with reason Reset/ {found=1} END {print found+0}' /state/peer.log`) === "1";
+    exec(peer, "ph-cli --socket /state/peer/node-control.sock link show > /state/retained-peer-links.txt");
+    const links = exec(peer, "cat /state/retained-peer-links.txt");
+    const matches = [...links.matchAll(/^\s*(\d+): \[fd00:5a::2\]:5000 \([A-Za-z]+\)$/gm)];
+    assert.equal(matches.length, 1, "Remote Reset must retain exactly one configured node identity before the node returns");
+    const detail = exec(peer, `ph-cli --socket /state/peer/node-control.sock link show ${matches[0][1]}`);
+    assert.match(detail, /Type: NodeToNode/);
+    copy(peer, "/state/retained-peer-links.txt", "retained-peer-links.txt");
+    if (remoteResetObserved) {
+      exec(peer, "grep 'Received terminate for link 3 with reason Reset' /state/peer.log > /state/remote-reset.txt");
+      copy(peer, "/state/remote-reset.txt", "remote-reset.txt");
+    } else {
+      console.error("Early-restart scope: remote Reset delivery was not observed; this run does not qualify received-Reset handling.");
+    }
+  }
   launch(node, "restarted-node", `ph node -c /state/first/node.toml --logging all=INFO${peerMode ? " link_state=DEBUG flow_mgmt=DEBUG" : ""}`);
   exec(node, `timeout 45 sh -ec 'until grep -q "registered VSS" /state/restarted-node.log; do
 kill -0 "$(cat /state/restarted-node.pid)"; sleep 0.2; done'
@@ -468,6 +490,9 @@ done`);
     acceptance.peer_wrong_noise_pin_rejected = true;
     acceptance.noise_node_mutual_certificates_verified = true;
     acceptance.peer_live_link_stability_samples = 10;
+    acceptance.peer_stability_checked_before_restart = !earlyMode;
+    acceptance.peer_early_restart_tested = earlyMode;
+    if (earlyMode) acceptance.remote_reset_delivery_observed = remoteResetObserved;
     acceptance.peer_live_link_sample_interval_seconds = 1;
     acceptance.peer_node_links_active_after_restart = true;
     acceptance.peer_tcp_policy_rechecked_after_restart = true;
