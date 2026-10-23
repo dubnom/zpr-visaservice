@@ -428,15 +428,22 @@ cat "/proc/$(cat /state/node.pid)/status" > /state/ph-status.txt`);
   }
   if (resetMode) {
     phase = "explicit-peer-reset";
-    exec(node, "ph-cli --socket /state/first/node-control.sock link reset 3 > /state/local-reset.txt");
-    exec(peer, `timeout 10 sh -ec 'until grep -q "Received terminate for link 3 with reason Reset" /state/peer.log; do sleep 0.1; done'`);
+    exec(node,
+      `ph-cli --socket /state/first/node-control.sock link show > /state/initial-node-links.txt
+awk '/\\[fd00:5a::5\\]:5000 \\(/ {print $1}' /state/initial-node-links.txt | tr -d ':' > /state/reset-link-id.txt
+test -s /state/reset-link-id.txt
+ph-cli --socket /state/first/node-control.sock link reset "$(cat /state/reset-link-id.txt)" > /state/local-reset.txt`);
+    const resetLinkId = exec(node, "cat /state/reset-link-id.txt");
+    assert.equal(resetLinkId, survivorLinkId, "Reset must target the configured peer link");
+    exec(peer, `timeout 10 sh -ec 'until grep -q "Received terminate for link ${survivorLinkId} with reason Reset" /state/peer.log; do sleep 0.1; done'`);
     copy(node, "/state/local-reset.txt", "local-reset.txt");
+    copy(node, "/state/initial-node-links.txt", "initial-node-links.txt");
   }
   stop(node, "node");
   if (earlyMode) {
     phase = "early-peer-identity-retention";
     remoteResetObserved = exec(peer,
-      `awk '/Received terminate for link 3 with reason Reset/ {found=1} END {print found+0}' /state/peer.log`) === "1";
+      `awk '/Received terminate for link ${survivorLinkId} with reason Reset/ {found=1} END {print found+0}' /state/peer.log`) === "1";
     exec(peer, "ph-cli --socket /state/peer/node-control.sock link show > /state/retained-peer-links.txt");
     const links = exec(peer, "cat /state/retained-peer-links.txt");
     const matches = [...links.matchAll(/^\s*(\d+): \[fd00:5a::2\]:5000 \([A-Za-z]+\)$/gm)];
@@ -446,7 +453,7 @@ cat "/proc/$(cat /state/node.pid)/status" > /state/ph-status.txt`);
     assert.match(detail, /Type: NodeToNode/);
     copy(peer, "/state/retained-peer-links.txt", "retained-peer-links.txt");
     if (remoteResetObserved) {
-      exec(peer, "grep 'Received terminate for link 3 with reason Reset' /state/peer.log > /state/remote-reset.txt");
+      exec(peer, `grep 'Received terminate for link ${survivorLinkId} with reason Reset' /state/peer.log > /state/remote-reset.txt`);
       copy(peer, "/state/remote-reset.txt", "remote-reset.txt");
     } else {
       console.error("Early-restart scope: remote Reset delivery was not observed; this run does not qualify received-Reset handling.");
