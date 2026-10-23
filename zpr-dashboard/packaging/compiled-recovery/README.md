@@ -59,7 +59,109 @@ Linux ARM64 tools and `rust-release.json`. They require a compatible Linux
 loader, glibc/GCC runtime, OpenSSL 3 and libpcap; no shared-library tree or base
 image is silently copied from the recovery VM.
 
-## Offline smoke validation
+## Source-free runtime image engineering gate
+
+The archive by itself deliberately omits Linux shared libraries. The separate
+runtime image adds an immutable Ubuntu 24.04 ARM64 base, recorded distribution
+packages and **the exact accepted compiled archive**, not a source checkout.
+It is a single all-tools engineering image, not the final per-service image
+layout, installer, supported minimum platform or public release.
+
+Dependency acquisition is an explicit online step using only public Ubuntu
+inputs in a temporary container. Supply a reviewed immutable base digest,
+an isolated Docker context and its expected daemon ID:
+
+```sh
+node packaging/compiled-recovery/acquire-runtime-inputs.cjs \
+  /absolute/private/new-runtime-inputs explicit-context expected-daemon-id \
+  ubuntu@sha256:REVIEWED_ARM64_DIGEST
+```
+
+Acquisition saves the base image, all downloaded `.deb` files, package names,
+versions, architectures, byte sizes and SHA-256 hashes. APT verifies repository
+metadata/package hashes; the saved input receipt binds subsequent offline
+assembly to those files. Updates require explicit reacquisition/review; the
+first acquisition does not pretend that a moving APT repository is reproducible.
+Retain the entire protected input directory, not just its receipt.
+The temporary downloader has network access and only CHOWN, DAC_OVERRIDE and
+FOWNER capabilities for APT's cache ownership/permissions; it has no private
+source/state mount, Docker socket or published port. It is removed afterward.
+These acquisition privileges are **not** runtime requirements.
+
+The dependency set includes glibc/GCC runtime inherited from the base, OpenSSL 3,
+libpcap, CA certificates, Redis, shell/core utilities, iproute2, curl, jq and
+util-linux for engineering launch/readiness diagnostics. No compiler, SDK,
+source checkout or recovered configuration is installed. Package copyright
+notices remain under the distribution's standard `/usr/share/doc/` paths; the
+complete installed-package inventory is `/opt/zpr/runtime-packages.txt`.
+Distribution/package license review and a release SBOM remain separate gates.
+
+Final assembly is offline, using the saved base plus exact package files:
+
+```sh
+node packaging/compiled-recovery/build-runtime-image.cjs \
+  /absolute/accepted-compiled-build /absolute/private/runtime-inputs \
+  /absolute/private/new-image-build explicit-context expected-daemon-id
+```
+
+The compiled build must have a matching eight-check `smoke-evidence/result.json`
+receipt. Changed archive/base/package hashes, unsafe members, missing files,
+wrong architecture and failed/missing acceptance block assembly.
+An existing output is refused. Failures retain partial output for diagnosis.
+The builder loads the saved base, verifies its identity and assigns a local
+digest-derived tag because Dockerfile `FROM sha256:...` is interpreted as a
+repository name, not a local image ID. No registry resolution is needed for
+the loaded tag. Build RUN instructions have network `none`; dependency packages
+are bind-mounted into the build step, not copied into final image layers.
+No package manager contacts a repository during assembly. Maintainer-script
+service startup is disabled explicitly.
+
+Outputs are `runtime-image.tar.gz`, its digest/size in `image.json`, and the
+reviewable generated context/recipe. The receipt binds archive, offline smoke
+receipt, dependency receipt, builder script, Dockerfile and image identity.
+The source archive's revision remains explicit even if packaging scripts have
+advanced. This establishes repeatable offline inputs, not byte-identical builds:
+package maintainer scripts and image timestamps are not normalized.
+Docker/BuildKit with local Docker driver and bind-mount RUN support is required.
+Nothing is pushed to a registry.
+
+Validate the exact saved image, loading it back through Docker:
+
+```sh
+node packaging/compiled-recovery/probe-runtime-image.cjs \
+  /absolute/private/image-build /absolute/private/new-evidence \
+  explicit-context expected-daemon-id
+```
+
+The three disposable containers run as UID 501/GID 1000, read-only root,
+`--network none`, `--cap-drop ALL`, no-new-privileges, PID limit 128, memory limit
+512 MiB and CPU quota 1. These are observed engineering test limits, not a
+supported whole-demo sizing claim. Each has only its own private `/state` volume;
+no host/source/socket mount, TUN device or published port is present. The image
+initializes `/state` ownership so no privileged volume initializer is needed.
+All immutable release content lives under `/opt/zpr`; default command only
+prints Visa help and never silently starts a deployment.
+
+The contract probe verifies all eleven binary/archive digests, effective UID,
+zero capabilities, no-new-privileges, loopback-only networking and absence of
+build tools/source/Docker socket. The other probes execute all seven Rust CLIs,
+five fresh-key signed example policies, invalid-policy rejection, two independent
+Visa preparations, TLS/API-key/observer rejection checks, admin policy install,
+non-overwrite and durable Redis/Visa restart. Visa and Redis need **no** elevated
+capabilities for this loopback HTTPS/private-Unix-socket contract.
+Reviewed public receipts are copied out; generated signing keys, service
+credentials, raw service logs and databases remain only on disposable volumes.
+Owned containers and volumes are removed on success or failure; cleanup errors
+fail the command.
+
+This does not qualify PH container privileges, TUN/network setup, Noise peer
+handshakes, Visa/service adapters, forwarding, public TLS, production volume
+backup/restore, multi-service supervision or a whole-demo installer. The separate
+native `--node` gate below still has its explicit root-only namespace boundary.
+Never use a privileged container as an implicit workaround for these remaining
+launch-contract gates.
+
+## Offline scratch smoke validation
 
 ```sh
 node packaging/compiled-recovery/smoke.cjs \
