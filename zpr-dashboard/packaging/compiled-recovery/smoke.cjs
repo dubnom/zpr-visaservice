@@ -49,7 +49,8 @@ function verifyDirectory(directory, relative = "") {
       const content = fs.readFileSync(path.join(directory, entry.name));
       assert.equal(digest(content), inventory.get(name), `Digest mismatch: ${name}`);
       assert.ok(name.startsWith("bin/") || name.startsWith("share/examples/") ||
-        name.startsWith("licenses/") || ["build.json", "rust-release.json", "go-build-info.txt", "README.md"].includes(name),
+        name.startsWith("licenses/") || name === "libexec/prepare-visa-service.sh" ||
+        ["build.json", "rust-release.json", "go-build-info.txt", "README.md"].includes(name),
       `Unexpected archive surface: ${name}`);
       if (name.startsWith("bin/")) {
         assert.equal(fs.statSync(path.join(directory, entry.name)).mode & 0o777, 0o755);

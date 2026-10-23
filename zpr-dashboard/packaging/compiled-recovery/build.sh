@@ -35,6 +35,8 @@ mkdir -- "$1"
 output=$(CDPATH='' cd -- "$1" && pwd)
 stage="$output/runtime"
 mkdir -p "$stage/bin" "$stage/share/examples" "$stage/licenses"
+mkdir "$stage/libexec"
+cp "$script_dir/prepare-visa-service.sh" "$stage/libexec/"
 cd "$dashboard_dir"
 for name in zpr-web-dashboard zpr-trusted-service zpr-lab-bootstrap zpr-system-config; do
     CGO_ENABLED=0 GOOS=linux GOARCH=arm64 "$GO" build -trimpath -ldflags '-s -w' -o "$stage/bin/$name" "./cmd/$name"

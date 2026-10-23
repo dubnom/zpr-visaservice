@@ -44,7 +44,7 @@ This remains an engineering artifact, not a service installer.
   project license, Go web-runtime module build information and SHA-256 file and
   archive inventories.
 
-The archive root contains `bin/`, `share/examples/`, `licenses/`, `build.json`,
+The archive root contains `bin/`, `libexec/`, `share/examples/`, `licenses/`, `build.json`,
 `go-build-info.txt`, this document and `SHA256SUMS`. It contains no source
 checkout, Go/Rust toolchains, node_modules, caches, database, generated identity,
 operator credential, AI key or recovered runtime snapshot. The Northstar LDIF
@@ -134,6 +134,68 @@ passed source/profile/hash verification and this same native runtime probe.
 Those candidate release outputs remain private and separate from the original
 engineering archive; service/bootstrap qualification and dependency/license
 review are still required before public packaging.
+
+## Fresh isolated Visa bootstrap
+
+The archive includes [prepare-visa-service.sh](prepare-visa-service.sh) under
+`libexec/`. It consumes the release-built tools, not a source checkout:
+
+```sh
+sh /absolute/extracted/libexec/prepare-visa-service.sh \
+  /absolute/extracted/bin /protected/parent/new-visa
+```
+
+This **engineering-only** generator creates a fresh RSA authority, loopback
+HTTPS leaf certificate, node/Visa bootstrap public-key pairs, policy-signing
+key, distinct read/write and read-only API keys, a fresh service identity,
+minimal compiled policy and explicit Visa configuration. A completed
+`visa-bootstrap.json` is written last. No service is started or trusted by the
+host; no recovered keys or Simulator manifests, profiles or APIs are consulted.
+It requires OpenSSL and the verified release tools. Paths must be canonical
+absolute paths using ASCII letters/digits, slash, dot, underscore or hyphen,
+with an existing protected nonsymlink parent. Existing state is refused,
+including symlinks. Directories are owner-only and files are private through
+`umask 077`. Failures retain partial private output with no completion inventory.
+
+The generated state is tied to its output path (including its private Redis
+Unix socket), not relocatable after generation. The minimal policy and
+loopback-only configuration do not deploy an organization or node. They are
+not production defaults. The compiler warning about no policy granting fabric
+admin access remains visible; authenticated HTTPS administration is separately
+tested. This state must never be added to the engineering archive.
+
+The separate [native service probe](probe-visa-service.sh) requires Linux ARM64,
+Redis server/tools, curl, OpenSSL, timeout and iproute2 on an isolated test host.
+Run it as an unprivileged user inside a caller-created network namespace with
+only loopback enabled; it refuses ordinary network interfaces. For example,
+using explicit test UID/GID, protected paths and the namespace setup below:
+
+```sh
+sudo unshare --net sh -c 'set -eu; ip link set lo up
+  exec setpriv --reuid=TEST_UID --regid=TEST_GID --clear-groups \
+    sh /absolute/probe-visa-service.sh /absolute/extracted/bin \
+    /absolute/extracted/libexec/prepare-visa-service.sh /protected/new-evidence'
+node --test packaging/compiled-recovery/prepare-visa-service.test.cjs
+```
+
+The probe creates two independent installations, verifies owner-only permissions
+and non-overwrite behavior, starts its own Redis via a private Unix socket
+(no TCP listener), then starts Visa on namespace loopback. It verifies TLS
+using curl and requires rejection of another installation's CA/API key,
+anonymous rejection, read-only observer enforcement, successful administrator
+policy installation and persisted policy/network state after Visa restart.
+Owned child PIDs are stopped on exit; no shared database is cleared or reused.
+All generated keys, database files and full evidence remain **private**.
+The enclosing harness must remove private test state after preserving only
+reviewed nonsecret receipts.
+
+The recovered `vs-admin` client currently disables server-certificate validation;
+its successful calls are **not** TLS evidence. The probe independently uses curl
+without insecure flags for verified HTTPS and a wrong-CA negative check, and
+compares its policy/network responses with CLI results. Correcting and rebuilding
+that client remains a publication gate. Node trust admission, policy-signature
+enforcement, a runtime image and full service/bootstrap acceptance are not proved
+by this engineering probe.
 
 ## Remaining release gates
 
