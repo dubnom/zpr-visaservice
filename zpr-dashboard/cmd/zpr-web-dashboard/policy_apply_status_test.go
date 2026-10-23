@@ -263,6 +263,71 @@ func TestPolicyStatusAuthorizationCanonicalURIAndGate(t *testing.T) {
 	}
 }
 
+func TestPolicyCurrentReadbackIsScopedFreshAndReadOnly(t *testing.T) {
+	f, resources, workspace, _, posts := policyApplyServiceFixture(t)
+	peer, pin := policyStatusPeer(t)
+	resources.statusReaders = []policyStatusReader{{pin, f.trust.Organization, f.trust.TargetID}}
+	current := operatordelegation.PolicyCurrentState{
+		TargetID: f.trust.TargetID, Organization: f.trust.Organization,
+		CurrentDigest: strings.Repeat("a", 64), CurrentVinst: 4,
+	}
+	reads := 0
+	resources.client.http = &http.Client{Transport: policyApplyTransport(func(r *http.Request) (*http.Response, error) {
+		reads++
+		if r.Method != http.MethodGet || r.URL.Path != policyApplyCurrentRoute ||
+			r.Header.Get("X-API-Key") != "synthetic" {
+			t.Fatal("current policy lookup mutated or bypassed Visa Service authentication")
+		}
+		if deadline, ok := r.Context().Deadline(); !ok || time.Until(deadline) > 10*time.Second {
+			t.Fatal("current policy lookup is missing a bounded context")
+		}
+		return policyApplyResponse(t, current), nil
+	})}
+	handler := policyServiceHandler(workspace, resources)
+	path := policyCurrentPrefix + f.trust.Organization + "/" + f.trust.TargetID
+	request := httptest.NewRequest(http.MethodGet, path, nil)
+	request.TLS = peer
+	response := httptest.NewRecorder()
+	handler.ServeHTTP(response, request)
+	if response.Code != http.StatusOK || response.Header().Get("Cache-Control") != "no-store" ||
+		reads != 1 || *posts != 0 {
+		t.Fatalf("current policy lookup returned %d %s; reads=%d posts=%d", response.Code, response.Body, reads, *posts)
+	}
+	var got operatordelegation.PolicyCurrentState
+	if err := json.Unmarshal(response.Body.Bytes(), &got); err != nil || !reflect.DeepEqual(got, current) {
+		t.Fatalf("current policy response = %+v, decode error = %v", got, err)
+	}
+
+	for _, test := range []struct {
+		name, method, path string
+		peer               *tls.ConnectionState
+		body               string
+		want               int
+	}{
+		{"no TLS", http.MethodGet, path, nil, "", http.StatusForbidden},
+		{"wrong organization", http.MethodGet, strings.Replace(path, f.trust.Organization, "other", 1), peer, "", http.StatusForbidden},
+		{"wrong target", http.MethodGet, strings.Replace(path, f.trust.TargetID, "other", 1), peer, "", http.StatusForbidden},
+		{"post", http.MethodPost, path, peer, "", http.StatusMethodNotAllowed},
+		{"query", http.MethodGet, path + "?target=other", peer, "", http.StatusBadRequest},
+		{"escaped", http.MethodGet, strings.Replace(path, f.trust.Organization, "%6c"+f.trust.Organization[1:], 1), peer, "", http.StatusBadRequest},
+		{"body", http.MethodGet, path, peer, "{}", http.StatusBadRequest},
+		{"missing target", http.MethodGet, policyCurrentPrefix + f.trust.Organization + "/", peer, "", http.StatusBadRequest},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			request := httptest.NewRequest(test.method, test.path, strings.NewReader(test.body))
+			request.TLS = test.peer
+			response := httptest.NewRecorder()
+			handler.ServeHTTP(response, request)
+			if response.Code != test.want || response.Header().Get("Cache-Control") != "no-store" {
+				t.Fatalf("current policy request = %d %s", response.Code, response.Body)
+			}
+		})
+	}
+	if reads != 1 || *posts != 0 {
+		t.Fatalf("invalid current policy requests reached Visa Service: reads=%d posts=%d", reads, *posts)
+	}
+}
+
 func TestPolicyStatusProtectedReaderConfig(t *testing.T) {
 	for _, name := range []string{"valid", "wrong-org", "wrong-target", "malformed-pin", "duplicate"} {
 		t.Run(name, func(t *testing.T) {

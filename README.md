@@ -62,6 +62,10 @@ planned clean-company installation milestones and the recurring qualification,
 signing, publication, rollout and recovery process for real system releases.
 The plan is not a claim that a production installer is currently available.
 
+See the [Simulator as an ordinary ZPR client plan](SIMULATOR_AS_ZPR_CLIENT_PLAN.md)
+for a proposed demo-first task list, milestones, visual acceptance tests,
+multi-source/organization LDAP work and tracked pre-production shortcuts.
+
 ## Crates / Packages / Libraries
 
 Policy evaluations use a fresh Cap'n Proto reader traversal budget for each

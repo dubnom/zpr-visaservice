@@ -71,6 +71,23 @@ resolve_machine_runtime() {
     MACHINE_WORKLOAD_DIR="$STATE_DIR/machine-runtimes/$machine_organization/$machine_generation"
 }
 
+machine_docker_network_for_org() {
+    machine_network_organization=$1
+    machine_network_name="zpr-$machine_network_organization"
+    if [ "$machine_network_organization" = northstar ] &&
+       [ -n "${SIMULATION_NORTHSTAR_DOCKER_NETWORK:-}" ]; then
+        machine_network_name=$SIMULATION_NORTHSTAR_DOCKER_NETWORK
+    fi
+    case "$machine_network_name" in
+        zpr-[a-zA-Z0-9]*) ;;
+        *) echo "invalid multi-node Docker network name" >&2; return 1 ;;
+    esac
+    case "$machine_network_name" in
+        *[!a-zA-Z0-9_.-]*) echo "invalid multi-node Docker network name" >&2; return 1 ;;
+    esac
+    printf '%s\n' "$machine_network_name"
+}
+
 resolve_machine_placement() {
     machine_owner=$(jq -r --arg id "$machine" '.machine_owners[$id][0] // empty' "$machine_profile") || return 1
     if [ -n "$machine_owner" ]; then

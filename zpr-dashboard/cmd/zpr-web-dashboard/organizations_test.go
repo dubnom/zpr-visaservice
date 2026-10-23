@@ -77,6 +77,57 @@ func TestBundledOrganizationsHaveSeparateIdentityAndPolicyCatalogs(t *testing.T)
 	}
 }
 
+func TestSyntheticLabOnlyProfileRequiresNorthstarAndCompletePolicyIdentity(t *testing.T) {
+	northstar, err := loadSimulatorOrganization(filepath.Join("examples", "organizations"), "northstar")
+	if err != nil {
+		t.Fatal(err)
+	}
+	northstar.SyntheticLabOnly = true
+	if err := validateSimulatorOrganization(northstar); err == nil || !strings.Contains(err.Error(), "requires an active policy target and digest") {
+		t.Fatalf("synthetic Northstar profile without policy identity error = %v", err)
+	}
+	northstar.ActivePolicyTargetID = "northstar-lab-policy"
+	northstar.ActivePolicyDigest = strings.Repeat("a", 64)
+	if err := validateSimulatorOrganization(northstar); err == nil || !strings.Contains(err.Error(), "single-machine machine-01 package contract") {
+		t.Fatalf("synthetic Northstar profile without package contract error = %v", err)
+	}
+	northstar.PackagedProvisioning = &simulatorPackagedProvisioning{
+		Version: 2, Driver: "shared-approved-bootstrap", PrimaryMachineID: "machine-01",
+		Machines: []string{"machine-01"}, Service: "OciWeb",
+	}
+	if err := validateSimulatorOrganization(northstar); err == nil || !strings.Contains(err.Error(), "finance-client tun0 workload") {
+		t.Fatalf("synthetic Northstar profile without workload error = %v", err)
+	}
+	northstar.SyntheticWorkload = &simulatorSyntheticWorkload{
+		Version: 1, MachineID: "machine-01", Name: "finance-client", Interface: "tun0",
+	}
+	if err := validateSimulatorOrganization(northstar); err != nil {
+		t.Fatalf("valid Northstar synthetic lab policy identity was rejected: %v", err)
+	}
+	northstar.SyntheticLabOnly = false
+	northstar.ActivePolicyTargetID = ""
+	northstar.ActivePolicyDigest = ""
+	if err := validateSimulatorOrganization(northstar); err == nil || !strings.Contains(err.Error(), "requires a synthetic lab-only profile") {
+		t.Fatalf("synthetic workload on non-synthetic profile error = %v", err)
+	}
+
+	redwood, err := loadSimulatorOrganization(filepath.Join("examples", "organizations"), "redwood")
+	if err != nil {
+		t.Fatal(err)
+	}
+	redwood.SyntheticLabOnly = true
+	if err := validateSimulatorOrganization(redwood); err == nil || !strings.Contains(err.Error(), "restricted to the northstar organization") {
+		t.Fatalf("non-Northstar synthetic profile error = %v; want Northstar restriction", err)
+	}
+
+	northstar.SyntheticLabOnly = true
+	northstar.ActivePolicyTargetID = "northstar-lab-policy"
+	northstar.ActivePolicyDigest = ""
+	if err := validateSimulatorOrganization(northstar); err == nil || !strings.Contains(err.Error(), "valid target ID and SHA-256 digest") {
+		t.Fatalf("incomplete active policy identity error = %v; want target/digest validation", err)
+	}
+}
+
 func TestSimulatorRuntimeDriverComesFromOrganizationProfile(t *testing.T) {
 	for _, test := range []struct {
 		organizationID string

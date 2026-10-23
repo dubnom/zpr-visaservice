@@ -1,0 +1,349 @@
+# Simulator as an Ordinary ZPR Client
+
+Date: 2026-10-23
+
+Status: proposed functional/demo delivery plan. All tasks and acceptance tests
+below are pending; this document does not claim implementation, execution,
+deployment or production readiness.
+
+## 1. Target outcome
+
+**Control Room does not know that Simulator exists.** Simulator is one more
+client of the ZPR system, alongside real users, adapters and applications.
+Control Room sees ordinary identities, services, topology, policies, trusted
+sources and activity through production-owned contracts.
+
+"Unknown" means no special Simulator dependency, configuration, API, data model,
+authorization bypass or operational workflow. It does not mean hiding an actor's
+real name from audit records. An ordinary client may have "Simulator" in its
+display name; production must not branch on that name or require a client-type
+flag. There is no production "simulation mode."
+
+Simulator has two separate roles:
+
+- **Workload client:** exercises ZPR with ordinary endpoint/user identities and
+  permissions. It receives the same allow/deny decisions as another client.
+- **Optional setup automation:** uses ordinary, explicitly granted operator
+  APIs to prepare a disposable organization. Workloads do not inherit those
+  operator permissions. A human can perform the same setup without Simulator.
+
+The first functional demonstration must include **two simultaneously configured
+trusted sources**, including a read-only organization LDAP connection, with
+source-specific provenance and no dependency on a Simulator directory.
+
+## 2. Relationship to existing work
+
+This is a demo-first task and acceptance list, not a replacement for the
+historical implementation/approval ledger in the
+[administrator migration plan](SIMULATOR_ADMIN_MIGRATION_PLAN.md).
+It proposes deferring advanced credential lifecycle and platform qualification,
+not weakening existing authorization, TLS verification or named-approval rules.
+Any implementation that changes an earlier approved decision needs that decision
+reconciled explicitly first. Nothing here authorizes live company mutations.
+
+Relevant starting points:
+
+| Existing evidence | Implication for this plan |
+| --- | --- |
+| [Control Room boundary](AGENTS.repo.md#control-room-boundary) requires production-owned data and Simulator-independent operation. | Preserve this as the architectural acceptance gate, not just a UI naming change. |
+| [Source configuration](zpr-dashboard/cmd/zpr-web-dashboard/assertion_sources.go) supports named `ldap` and `https-json` assertion sources, organization scopes and a configured default, bounded to 16 total sources. | Reuse this work and its explicit-source semantics; do not build a competing source registry. Reconcile assertion, inventory and feed identifiers. |
+| [Multi-source runtime tests](zpr-dashboard/cmd/zpr-web-dashboard/assertion_runtime_test.go) exercise two HTTPS sources with Simulator inputs unavailable. | Multi-source capability is partially present. This is not proof of external organization LDAP registration or end-to-end UI readiness. |
+| The existing LDAP source configuration requires a container; [Simulator's source handler](zpr-dashboard/cmd/zpr-web-dashboard/trusted_source.go) reads the active simulation organization. | Implement a production-owned external LDAP/provider path. Do not reuse the Simulator handler as the production contract. |
+| [Change feeds](zpr-dashboard/cmd/zpr-web-dashboard/trusted_changes.go) have separate named configuration, and [browser tests](zpr-dashboard/tests/browser/trusted-source-gui.mjs) cover multiple feed selection. | Preserve working feed behavior, but extend coherent source selection to People, Groups, Attributes and assertions. Multiple feeds alone do not establish multiple usable identity sources. |
+| [Source reorganization](REDIRECTORY.md) records incremental extraction with remaining application/package boundaries. | Inventory current code and dirty worktree before implementation; do not treat historical milestones as current release acceptance. |
+
+## 3. Ownership and dependency rules
+
+```text
+Control Room -> Control-Service -> production services / configured providers
+Simulator ----------------------> supported production APIs
+Simulated endpoints ------------> ordinary enrollment/authentication/ZPR traffic
+Production provider ------------> organization LDAP or independent lab LDAP
+```
+
+- Visa Service owns authoritative runtime identity, topology and visa state.
+- Policy-Service owns policy/configuration revisions, validation, apply
+  operations and authoritative application status through its production APIs.
+- The production provider/configuration owner owns trusted-source registration,
+  scope, mappings, connection status and credentials. Control-Service exposes
+  authorized operator access; settle the existing service owner in M0.
+- Operator configuration owns log/inventory inputs. Real service telemetry,
+  not scenario plans, supplies observed activity.
+- Independent companion services may host lab LDAP/OIDC/DNS. Simulator may use
+  them, but stopping Simulator must not stop them.
+- Simulator alone owns scenarios, synthetic machine definitions, workloads,
+  faults, expected outcomes and scenario execution state.
+- Control Room/Control-Service must not call Simulator APIs, read its files or
+  discover its containers. Production service configuration must not be loaded
+  from a simulation manifest or exported into a Simulator-owned runtime path.
+- A scenario reset stops/resets scenario work only. Revoke, re-enroll, delete
+  an organization, change policy or restart shared services are separate,
+  authorized operations.
+
+## 4. Milestones and task list
+
+Delivery order: **M0 -> M1 -> M2 -> M3 -> M4 -> M5**. M6 is the separate
+pre-production gate, not a prerequisite for a clearly labeled lab demonstration.
+UI work can proceed against agreed contracts after M0; a milestone closes only
+when its integrated exit criteria pass.
+
+### M0 - Agree and enforce the ordinary-client boundary
+
+- [ ] **B01:** Inventory production routes, transitive imports, configuration,
+  startup scripts, filesystem mounts, inventory/log enrichment and browser
+  requests for Simulator coupling. Record each occurrence and its replacement
+  owner; distinguish Simulator-only code from production dependencies.
+- [ ] **B02:** Map existing source names across provider registration, Visa
+  Service inventory, assertion configuration, change feeds and browser DTOs.
+  Select one stable organization-scoped source identity and an existing
+  production owner; document API/configuration shapes before adding routes.
+- [ ] **B03:** Define supported ordinary-client operations and permissions:
+  source registration/read/test, configuration save/test/stage/apply/readback,
+  enrollment, telemetry and workload traffic. Preserve named human approval
+  for privileged operations; no new Simulator-only endpoint or grant.
+- [ ] **B04:** Establish two disposable test organizations, two independent
+  sources and an ordinary non-Simulator comparison client. Arrange explicit
+  read-only consent and a test account before touching organization LDAP.
+- [ ] **B05:** Capture the current targeted test baseline and deployment
+  versions separately. Agree the measurable refresh/outage budget used below.
+
+**Exit:** dependency/ownership map and public contracts are reviewed; executable
+negative tests can detect reverse dependencies. No live credentials required.
+
+### M1 - Multiple trusted sources and real organization LDAP
+
+Depends on M0.
+
+- [ ] **S01:** Extend the existing production source configuration into a
+  durable, revisioned registration workflow: stable ID, organization, display
+  name, provider kind/endpoint, base DN, read-only bind reference, approved
+  attributes/mappings, enabled state and optional capabilities. Never persist
+  a password in browser-visible configuration.
+- [ ] **S02:** Support organization LDAP independently of Docker/Simulator.
+  Reuse an existing production LDAP integration where suitable; otherwise add
+  the smallest network LDAP adapter or independently deployed provider needed.
+  Use verified LDAPS/StartTLS and protected credentials. A provider bridge
+  using the existing HTTPS-source contract is acceptable if it preserves the
+  required identity/attribute semantics; no new identity platform is required.
+- [ ] **S03:** Register two concurrent sources, for example `company_directory`
+  and `lab_directory`, using the same contract. Do not change the selected
+  organization's production configuration when a scenario is selected.
+- [ ] **S04:** Add independent connection tests, bounded timeouts, last-success
+  timestamps and clear not-configured/unavailable/stale states per source.
+  A read-only directory without a change-feed API remains a valid source;
+  show Updates as unsupported, not broken or silently empty.
+- [ ] **S05:** Carry source identity and provenance through people, groups,
+  attributes, mappings, assertion results and applicable policy inputs.
+  Preserve source-qualified references. Matching usernames/DNs across sources
+  must not silently merge identities or overwrite attributes; any cross-source
+  correlation must be explicit and reviewed.
+- [ ] **S06:** Make defaults explicit; a default selects a source, not a
+  failover authority. If a required source fails, report evaluation unavailable/
+  error and do not grant on substituted or stale attributes. An unrelated
+  source remains browsable and usable where it is not a dependency.
+- [ ] **S07:** Test source/organization isolation, duplicate IDs, invalid
+  mappings, revision conflicts, missing secrets, wrong credentials/certificates,
+  source disable/removal and restart persistence. Block or explicitly resolve
+  references before removing a source used by a policy/assertion.
+
+**Exit:** two sources can be registered and read concurrently, including the
+approved LDAP/provider path, with Simulator never started. LDAP receives no
+write requests. Visual tests V02-V07 and V13 pass.
+
+### M2 - Production-owned Control Room workflows
+
+Depends on M1's source contract and M0's service ownership.
+
+- [ ] **C01:** Provide source list/detail and authorized registration/edit/test/
+  disable workflows through production APIs. Use the existing Trusted Sources
+  presentation and permission patterns; do not embed Simulator editors.
+- [ ] **C02:** Keep source selection coherent across People, Groups, Attributes,
+  Updates and assertion tooling. Cancel/reject stale responses on source or
+  organization changes; reset pagination and source-specific diagnostics.
+- [ ] **C03:** Obtain topology/identity from Visa Service, policy/organization
+  context from Policy-Service, attributes from registered providers and logs
+  from operator-configured sources. Remove production manifest/profile,
+  synthetic-label and machine-log discovery dependencies.
+- [ ] **C04:** Ensure a human can configure, validate, stage and explicitly
+  apply an ordinary organization without Simulator. Display saved, tested,
+  staged, approved, applied, failed and unknown/reconciling states honestly;
+  application success requires authoritative readback.
+- [ ] **C05:** Retain independent Control Room login/navigation. No scenario
+  controls, Simulator status lamps, shared browser sessions, Simulator target
+  handoff or automatic lab defaults in production.
+- [ ] **C06:** Verify direct Control Room startup and normal usage with
+  Simulator absent, its URL unreachable, its environment unset or invalid,
+  and its files/mounts inaccessible.
+
+**Exit:** V01-V08, V13 and V15 pass; production request/file-access evidence
+shows no reverse dependency. A screenshot without Simulator labels is not
+sufficient evidence.
+
+### M3 - Simulator uses the same ZPR contracts as another client
+
+Depends on M1 and the required M2 operator contracts.
+
+- [ ] **U01:** Replace direct database writes, private service calls, generated
+  production runtime configuration and launcher-only setup with ordinary
+  supported APIs. Remove hidden fallback paths, not merely their menu entries.
+- [ ] **U02:** Separate optional setup automation identity/permissions from
+  workload/endpoint identities. Use existing grants and approval paths; a
+  separate-tab Control Room link may retain the earlier approved navigation
+  contract without passing sessions or organization selection.
+- [ ] **U03:** Let a scenario select existing permitted organization/source
+  references without owning their lifecycle. Real LDAP is read-only; scenario
+  changes/fault injection may mutate only explicitly owned disposable lab data.
+  Missing source/setup becomes an actionable preflight error, not auto-create
+  or silent selection of another directory.
+- [ ] **U04:** Use ordinary endpoint enrollment/authentication and unique
+  endpoint identities. For the demo, pre-enroll a small fixed set through
+  existing supported tools rather than making native key/helper development a
+  prerequisite. Persist each identity; do not clone endpoint keys.
+- [ ] **U05:** Run normal allow/deny workloads against services. Compare one
+  generated client and one non-Simulator client under equivalent policy.
+  Scenario intent/expected outcomes stay in Simulator; Control Room reports
+  only independently observed production events.
+- [ ] **U06:** Reconcile setup/apply retries by durable operation identity and
+  readback. Scenario reset preserves registrations, policy, directory data and
+  enrollment; destructive cleanup is separately scoped, confirmed and audited.
+
+**Exit:** V09-V12 and V14 pass. Simulator can exercise an independently prepared
+ZPR installation; stopping it does not remove services or their configuration.
+
+### M4 - Enforce separation in builds, configuration and lifecycle
+
+Depends on M2 and M3. This closes deployable boundaries, not just code naming.
+
+- [ ] **P01:** Give production and Simulator separate entrypoints/configuration,
+  startup and shutdown ownership. Finish the minimal package/import extraction
+  needed to prevent production importing Simulator code; reuse neutral helpers.
+- [ ] **P02:** Produce a production deployment with no Simulator executable,
+  routes, static pages, manifests, scenario mounts or lab defaults. Reject
+  missing explicit operator configuration rather than discovering demo values.
+- [ ] **P03:** Independently supervise lab LDAP/OIDC/DNS. Document which
+  disposable resources belong to the lab and which services are shared.
+- [ ] **P04:** Add CI import/configuration/route checks and runtime boundary
+  tests. Capture browser and server egress plus file-access evidence; browser
+  request interception alone cannot detect server-side reverse dependencies.
+- [ ] **P05:** Test cold start, independent restart and client disconnects.
+  Stopping Simulator may naturally stop its workload traffic and disconnect its
+  endpoints, but must not cause production dependency errors or erase state.
+
+**Exit:** V01, V11, V13 and V15 pass from the production-only deployment, then
+again after adding/removing Simulator. Independent startup is reproducible.
+
+### M5 - Reproducible functional demonstration
+
+Depends on M1-M4.
+
+- [ ] **D01:** Prepare a short runbook: production-only login; two-source
+  registration/read; start ordinary and generated clients; allow/deny traffic;
+  source outage/recovery; stop Simulator; continue operating Control Room.
+- [ ] **D02:** Use synthetic identities first. Run approved organization LDAP
+  acceptance separately with read-only scope; use redacted screenshots and no
+  sensitive directory exports. Synthetic LDAP proves the adapter behavior, not
+  actual company connectivity.
+- [ ] **D03:** Execute the visual matrix below plus integration/boundary tests.
+  Retain build IDs, configuration revisions, browser traces/screenshots,
+  operation IDs and sanitized service/network evidence.
+- [ ] **D04:** Document completed behavior, unsupported capabilities and every
+  active shortcut. Record failures separately from passes; no blanket green
+  status from fixture-only tests.
+
+**Exit:** all V01-V15 pass in the agreed lab; the approved organization LDAP
+connection passes its separate read-only test. If unavailable, label that
+acceptance blocked rather than substituting a synthetic pass.
+
+### M6 - Pre-production closure
+
+Not required for the isolated functional demo; required before production use.
+
+- [ ] **R01:** Close every active item in the shortcut register with an owner,
+  replacement implementation and passing qualification evidence.
+- [ ] **R02:** Complete credential rotation/revocation, native protected-key
+  qualification, least-privilege operator lifecycle and recovery.
+- [ ] **R03:** Qualify installation, upgrade/rollback, backup/restore, audit
+  retention, source scaling, outage semantics and real deployment platforms
+  under the existing [system release plan](System%20release%20plan.md).
+
+**Exit:** production release gates pass; no demo exception is enabled by default.
+
+## 5. Visual acceptance tests
+
+Use the existing [Playwright configuration](zpr-dashboard/playwright.config.mjs):
+desktop Chromium and tablet Chromium, reduced motion, traces and screenshots.
+For each row, exercise both layouts, keyboard navigation, readable errors and
+no page-level horizontal overflow. Fixture tests cover deterministic states;
+live isolated-stack tests establish the architecture and real behavior.
+
+Proposed demo observation budget: changed health/activity is visible within
+**10 seconds** after a manual refresh or normal polling, measured from the
+injected event. Confirm this budget at B05. Tests must not hide failures with
+arbitrary sleeps or screenshot updates.
+
+| ID | Setup/action | Required visible result | Additional proof / milestone |
+| --- | --- | --- | --- |
+| V01 | Cold-start production; Simulator not installed or reachable; open every operator page. | Login, topology, policies, sources, logs and available editors operate; no Simulator warning, scenario selector or setup prerequisite. Missing production integrations are named explicitly. | No Simulator browser/server requests or file reads; M2/M4. |
+| V02 | Register company LDAP/provider and an independent lab source. | Both appear together with stable IDs/names and separate connection results. No "active simulation organization" is needed. | Production registrations survive restart; read-only LDAP access; M1. |
+| V03 | Select each source across People, Groups, Attributes, Updates and assertions. Delay an old response while switching. | Every view/result identifies its source; late results never overwrite the new selection. Unsupported Updates is explicit. | Requests include correct source/organization; cursors and diagnostics do not bleed; M1/M2. |
+| V04 | Put the same username in both sources with different memberships/attributes. | Source-qualified identities/values stay distinct; no accidental union or overwrite. | Assertion/policy evidence identifies the configured authority/correlation; M1. |
+| V05 | Disconnect one source, then restore it. | Affected source shows unavailable/stale and last success within the budget; other source stays usable; recovery is visible. | Required-source evaluations error, never silently pass/fail over; M1. |
+| V06 | Test wrong bind credential, untrusted certificate and invalid base DN/mapping. | Clear source-specific error; no healthy badge, leaked secret or silent fallback. | Failed test cannot be presented as verified connectivity; M1. |
+| V07 | Switch organizations, including one unauthorized or without registered sources. | Lists, results, counts and errors belong only to the selected authorized organization; explicit empty/forbidden state. | Backend scope checks and stale-response rejection, not just hidden UI; M1/M2. |
+| V08 | Human saves/tests/stages/applies a policy with Simulator absent; inject failed apply/lost response. | Revisions and approval are distinct from applied state; failure/reconciling is visible until readback resolves it. | Durable operation ID, named approval and authoritative policy readback; M2. |
+| V09 | Start one pre-enrolled generated client and one ordinary comparison client. | Both appear as ordinary actors/adapters/services; no special Simulator panel or badges are required. | Same endpoint contracts; distinct identities and expected permissions; M3. |
+| V10 | Generate allowed and denied traffic from both clients. | Actual visas/denials/logs identify the real actors and policy; scenario expectations do not populate observed activity. | Compare independent service telemetry and actual traffic outcome; M3. |
+| V11 | Stop/restart Simulator while leaving clients/services independently controlled. | Control Room stays usable; production identities/policies/sources remain. Ordinary disconnects are acceptable, dependency errors are not. | No provider/service restart or erased state; production requests succeed; M3/M4. |
+| V12 | Reset a scenario and retry a setup action after losing its response. | Reset confirmation states its scope; retained configuration is unchanged; retry resolves the same operation without duplicate resources. | Compare source, policy, enrollment and directory state before/after; M3. |
+| V13 | Restart production services and independently restart LDAP/provider with Simulator off. | Registrations/defaults persist, outage is explicit and recovery returns to the same source identities. | Production storage and independent lifecycle, not regenerated manifests; M1/M4. |
+| V14 | Use workload-only credentials to attempt source registration, apply, approval or cross-organization access. | Honest forbidden/read-only state; no privileged action succeeds. | Production enforcement and named audit evidence; M3. |
+| V15 | Use a fresh browser and production-only package/configuration. Inspect routes and unavailable integrations. | No Simulator navigation, lab defaults, scenario status or credential fields in operator payloads; production errors remain accurate. | Package/import/route checks and sanitized browser/server/file-access traces; M4. |
+
+Extend the existing
+[Trusted Sources tests](zpr-dashboard/tests/browser/trusted-source-gui.mjs)
+and ordinary-client fixtures rather than creating another unrelated browser
+harness. Existing tests are prior art, not execution evidence for this plan.
+Screenshots verify presentation; backend, traffic and lifecycle assertions verify
+that the separation is real.
+
+## 6. Demo shortcuts and pre-production register
+
+Reduce **credential ceremony**, not the trust boundary. Prefer generating or
+pre-provisioning valid credentials once over disabling checks. These are
+proposed permitted approaches for an isolated lab, not claims they are active.
+Every shortcut used must record its ID, owner, exact scope/configuration,
+activation date, removal gate and verification evidence in the demo handoff.
+
+| ID | Demo shortcut | Guardrail now | Required before production |
+| --- | --- | --- | --- |
+| X01 | Generate one dedicated per-install lab CA and valid service certificates with existing bootstrap tooling; install trust once. | Keep hostname/chain verification and existing mTLS authorization; protect private files; no public/shared private keys. | Managed trust issuance, expiry monitoring, rotation, revocation and recovery qualification. |
+| X02 | Provision read-only bind passwords/service tokens once into protected local files. | Use references, restrictive permissions and log/UI redaction; no repository/browser secrets, default passwords or company admin binds. | Managed secret storage/delivery, rotation, access review and recovery. |
+| X03 | Pre-create a few named demo users and explicitly grant a restricted automation identity. | Preserve ordinary authentication and organization/action checks; no blanket admin or shared Control Room session. | Full provisioning/deprovisioning, access review and operator lifecycle acceptance. |
+| X04 | Pre-enroll a fixed small set of endpoints through existing supported tools; retain their unique credentials. | Each endpoint owns its key; no key cloning/export to Simulator, fabricated identity or bypassed approval. | Full enrollment/revocation/re-enrollment, platform protected-key/helper and recovery qualification. |
+| X05 | Keep policy-signing/service credentials locally provisioned for the disposable lab rather than completing automated custody/rotation. | Preserve actual signing/verification, named approvals and applied-state readback; protect signing keys. | Qualified custody, rollover, revocation, audit and disaster recovery. |
+| X06 | Use a single-host/small isolated stack and manual startup/runbook instead of a finished installer or HA. | Production, Simulator and providers still have independent configuration/storage/lifecycle. Demo is labeled non-production. | Installer/upgrades, backup/restore, HA/capacity and platform/network qualification. |
+| X07 | Begin with synthetic LDAP and a small deterministic traffic set. | Report it as synthetic; actual organization LDAP remains a distinct acceptance gate; no load/scale claims. | Approved real integrations, representative volume, freshness and sustained outage testing. |
+
+**Not shortcuts:** disabling TLS/certificate verification, trusting self-asserted
+actors, bypassing authorization/approval, treating a staged policy as applied,
+granting from failed/stale sources, silently falling back to lab LDAP, exposing
+secrets, direct database setup or allowing Simulator to own company services.
+
+## 7. First deliverable and completion evidence
+
+The smallest useful vertical slice is:
+
+1. Start production without Simulator.
+2. Register/read two independent trusted sources through production contracts.
+3. Browse their source-qualified data and test an assertion.
+4. Start a pre-enrolled generated client and an ordinary comparison client.
+5. Observe policy-driven allowed/denied traffic in Control Room.
+6. Stop Simulator and keep operating Control Room with both sources intact.
+
+Do this before expanding scenario catalogs, polishing native key helpers or
+building installers. Do not call the migration complete until M4's production
+package/lifecycle boundary and M5's integrated evidence also pass.
+
+The final handoff should report each task/test as pending, passed, failed or
+blocked; link the exact build/revision and evidence; enumerate active X-items;
+and state **functional demo accepted** separately from **production qualified**.

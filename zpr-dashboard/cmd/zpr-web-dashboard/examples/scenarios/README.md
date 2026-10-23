@@ -11,7 +11,10 @@ policy or reseed LDAP; provision those separately before running a new company.
 Each `.json` file in this directory is one selectable simulator scenario. The
 file's `id` must match its filename. Scenarios are loaded from
 `SIMULATION_SCENARIOS_DIR`; the dashboard stack points that setting at this
-directory.
+directory. The supported demo launcher copies packaged scenario JSON files
+into its private persistent scenario directory when they are missing, without
+overwriting existing files, so bundled scenarios are available on first start
+while local scenario seeds survive restarts.
 
 Supported step actions are `start_machine`, `wait_controller`, `login`,
 `select_workloads`, `start_workload`, `traffic`, `resolve_dns`, `stop_workload`, `logout`,
@@ -19,7 +22,10 @@ Supported step actions are `start_machine`, `wait_controller`, `login`,
 `stop_test_service`, `start_service_fleet`, `stop_service_fleet`,
 `request_web_gateway`, `stress_traffic`, `benchmark_test_service`, and `delay`. Steps are run in order. `traffic` probes the
 component's manifest namespace and target, or an explicit IPv6 `target`, and
-requires `expected` to be `allow` or `deny`.
+requires `expected` to be `allow` or `deny`. An expected denial is accepted only
+when Visa Service records a fresh matching IPv6 denial (`Denied` or `NoMatch`)
+for the source, destination, and ICMPv6 code. The service record does not include
+ICMP type, and a generic ping failure is not policy-denial evidence.
 
 `resolve_dns` requires an authenticated machine with the selected client workload,
 a configured resolver in the simulation manifest, and a `.zpr` target name. It

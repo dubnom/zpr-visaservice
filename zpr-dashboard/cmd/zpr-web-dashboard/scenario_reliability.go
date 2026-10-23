@@ -22,6 +22,28 @@ func scenarioMachineRunning(ctx context.Context, machineID string) (bool, error)
 	}
 }
 
+func scenarioMachineRunningForManifest(ctx context.Context, manifest simulatorManifest, machineID string) (bool, error) {
+	container, packaged, err := simulatorScenarioMachineContainerName(manifest, machineID)
+	if err != nil {
+		return false, err
+	}
+	if !packaged {
+		return scenarioMachineRunning(ctx, machineID)
+	}
+	state, err := simulatorScenarioContainerState(ctx, container)
+	if err != nil {
+		return false, err
+	}
+	switch state {
+	case "running":
+		return true, nil
+	case "missing", "exited", "created":
+		return false, nil
+	default:
+		return false, fmt.Errorf("%s container is %q; stop the machine to terminate its workloads", machineID, state)
+	}
+}
+
 func validateScenarioMachinePlacement(organization simulatorOrganization, machineID string) error {
 	if organization.Runtime.Driver != "docker-multinode" {
 		return nil

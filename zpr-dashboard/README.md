@@ -253,6 +253,13 @@ are not authorization. This identity needs neither a signing key nor `policy.app
 Absent readers leave the endpoint unregistered; invalid readers fail startup.
 No reader credentials, trust or runtime configuration are provisioned here.
 
+The same scoped readers also enable
+`GET /api/policy/operations/current/{organization}/{target_id}`. This endpoint
+performs a fresh read through the configured Visa Service client and returns only
+the current organization, target, digest and version with
+`Cache-Control: no-store`. It supports preflight binding without exposing
+operation proofs or requiring Simulator to hold Visa Service credentials.
+
 Segments are literal `[A-Za-z0-9_-]{1,128}`; queries, escapes and bodies are rejected.
 The response contains `operation` (existing exact operation ID/target/source
 revision/candidate digest/expected digest/version), `organization`,
@@ -280,7 +287,7 @@ at 16 KiB with a 10-second context deadline. Existing protected VS TLS/API-key
 transport performs only its authoritative current-state GET. This is synthetic
 verification, not deployment readiness or live qualification.
 
-## Simulator read-only policy status
+## Simulator read-only policy status and active-policy readback
 
 The Simulator Organizations page can reconcile a human-supplied organization,
 target and operation ID through
@@ -290,7 +297,7 @@ for that organization. The browser never receives Policy-Service credentials.
 
 Configure all four values explicitly before starting Simulator:
 
-- `SIMULATION_POLICY_STATUS_URL`: exact HTTPS Policy-Service origin with no path.
+- `SIMULATION_POLICY_STATUS_URL`: exact HTTPS policy-operations origin with no path.
 - `SIMULATION_POLICY_STATUS_CLIENT_CERT_FILE`: protected scoped read-identity
   certificate.
 - `SIMULATION_POLICY_STATUS_CLIENT_KEY_FILE`: its protected private key.
@@ -310,6 +317,18 @@ means this exact operation's recorded receipt and fresh current readback agree;
 `superseded` remains distinct even when the current digest is identical at a
 higher version. This is a read-only fixture-verified client, not provisioned
 runtime identity or live-service qualification.
+
+For an explicitly synthetic Northstar lab profile, preflight and the run route
+also require an exact active-policy readback from
+`GET /api/policy/operations/current/{organization}/{target_id}` at the same
+configured origin. The status-reader certificate must be pinned to that
+organization and target. Control Room performs the upstream read with its
+protected Policy-Service configuration and returns only the current target,
+organization, digest and version with `Cache-Control: no-store`. The profile's
+`synthetic_lab_only`, `active_policy_target_id` and `active_policy_digest`
+fields declare the expected lab identity; a missing, stale or mismatched live
+readback blocks approval and execution. This read path does not install or
+approve policy.
 
 Browser fixture verification (2026-10-16): 34 policy-status cases plus the 38
 existing D2 navigation cases pass across desktop and tablet (72 total), using

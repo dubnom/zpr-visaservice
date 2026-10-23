@@ -18,12 +18,23 @@ trap cleanup EXIT HUP INT TERM
 
 package_dir=$temp_dir/install/test-release/simulator
 zpr_package_dir=$temp_dir/install/test-release/zpr-demo
+northstar_package_dir=$temp_dir/northstar-install/test-release/simulator
+northstar_zpr_package_dir=$temp_dir/northstar-install/test-release/zpr-demo
+northstar_package_runtime_dir=$northstar_package_dir/runtime
+northstar_root=$temp_dir/northstar-synthetic
+northstar_lab_root=$northstar_root/lab
+northstar_runtime_dir=$northstar_lab_root/runtime
+northstar_route_output=$northstar_root/node-route
 state_dir=$temp_dir/state
 stub_dir=$temp_dir/bin
-mkdir -p "$package_dir/runtime/organizations" "$stub_dir"
+mkdir -p "$package_dir/runtime/organizations" "$package_dir/runtime/scenarios" \
+    "$northstar_package_runtime_dir" "$northstar_root" "$northstar_route_output" \
+    "$northstar_zpr_package_dir/runtime" "$stub_dir"
+printf '%s\n' 'owned by W2' >"$northstar_route_output/route-output.txt"
 mkdir -p "$zpr_package_dir/runtime"
 cp "$source_runtime_script" "$script_dir/config.toml" "$script_dir/simulation-environment.json" "$package_dir/runtime/"
 cp "$script_dir/organizations/demo.json" "$package_dir/runtime/organizations/"
+printf '%s\n' '{"id":"fixture-scenario"}' >"$package_dir/runtime/scenarios/fixture-scenario.json"
 runtime_script=$package_dir/runtime/simulator-demo-runtime.sh
 printf '%s\n' 'zpr-simulator:test-release' >"$package_dir/runtime/image-reference"
 printf '%s\n' 'zpr-demo:test-release' >"$zpr_package_dir/runtime/image-reference"
@@ -66,6 +77,21 @@ cat >"$zpr_package_dir/manifest.json" <<EOF
   }
 }
 EOF
+cp "$package_dir/manifest.json" "$northstar_package_dir/manifest.json"
+cp "$zpr_package_dir/manifest.json" "$northstar_zpr_package_dir/manifest.json"
+cp -R "$package_dir/runtime/." "$northstar_package_runtime_dir/"
+cp "$package_dir/runtime/image-reference" "$northstar_package_runtime_dir/image-reference"
+cp "$zpr_package_dir/runtime/image-reference" "$northstar_zpr_package_dir/runtime/image-reference"
+python3 "$script_dir/prepare_northstar_synthetic_runtime.py" \
+    --lab-root "$northstar_lab_root" >/dev/null
+
+snapshot_dir=$temp_dir/package-snapshots
+mkdir "$snapshot_dir"
+cp "$northstar_package_dir/manifest.json" "$snapshot_dir/simulator-manifest.json"
+cp "$northstar_package_runtime_dir/image-reference" "$snapshot_dir/simulator-image-reference"
+cp "$northstar_package_runtime_dir/config.toml" "$snapshot_dir/simulator-config.toml"
+cp "$northstar_package_runtime_dir/simulation-environment.json" "$snapshot_dir/demo-manifest.json"
+cp "$northstar_package_runtime_dir/organizations/demo.json" "$snapshot_dir/demo-organization.json"
 
 docker_socket=$temp_dir/docker.sock
 python3 -c 'import socket,sys,time; s=socket.socket(socket.AF_UNIX); s.bind(sys.argv[1]); time.sleep(300)' "$docker_socket" &
@@ -95,6 +121,10 @@ case "$1" in
     network)
         [ "$2" = inspect ] || exit 2
         case "$*" in
+            *zpr-northstar-synthetic*Driver*)
+                printf 'bridge|%s|local|172.30.0.1\n' "${FAKE_DOCKER_NORTHSTAR_NETWORK_INTERNAL:-true}"
+                ;;
+            *zpr-northstar-synthetic*) printf '%s\n' 172.30.0.1 ;;
             *Driver*) printf '%s\n' 'bridge|false|local|172.17.0.1' ;;
             *) printf '%s\n' 172.17.0.1 ;;
         esac
@@ -110,29 +140,37 @@ case "$1" in
         case "$2" in
             ls)
                 if [ -f "$FAKE_DOCKER_CONTAINER_STATE" ]; then
-                    printf '%s\n' zpr-simulator-demo-test-release
+                    printf '%s\n' "$FAKE_DOCKER_CONTAINER_NAME"
                 fi
                 ;;
             inspect)
                 if [ ! -f "$FAKE_DOCKER_CONTAINER_STATE" ]; then
                     exit 1
                 fi
-                IFS='|' read -r package release image published operator_digest provisioning network state <"$FAKE_DOCKER_CONTAINER_STATE"
-                printf '%s|%s|%s|%s|%s|%s|%s|%s\n' \
-                    "$package" "$release" "$image" "$published" "$operator_digest" "$provisioning" "$network" "$state"
+                IFS='|' read -r package release image published operator_digest control_digest runtime_digest provisioning_digest provisioning network state <"$FAKE_DOCKER_CONTAINER_STATE"
+                printf '%s|%s|%s|%s|%s|%s|%s|%s|%s|%s|%s\n' \
+                    "$package" "$release" "$image" "$published" "$operator_digest" "$control_digest" "$runtime_digest" "$provisioning_digest" "$provisioning" "$network" "$state"
                 ;;
             run)
                 [ "$3" = -d ] || exit 2
                 mounts=0
                 published=
                 operator_digest=none
+                control_digest=none
+                runtime_digest=none
+                provisioning_digest=none
                 provisioning=0
                 network=bridge
+                restart=
                 container_port=${FAKE_DOCKER_CONTAINER_PORT:-8788}
                 socket_mount=no
                 runtime_mount=no
                 state_mount=no
                 operator_auth_mount=no
+                control_tls_mount=no
+                provisioning_source_mount=no
+                northstar_machine_cert_mount=no
+                northstar_workload_mount=no
                 privileged=no
                 shift 3
                 while [ "$#" -gt 0 ]; do
@@ -142,6 +180,15 @@ case "$1" in
                             case "$1" in
                                 zpr.simulator.operator-config-sha256=*)
                                     operator_digest=${1#*=}
+                                    ;;
+                                zpr.simulator.machine-control-config-sha256=*)
+                                    control_digest=${1#*=}
+                                    ;;
+                                zpr.simulator.runtime-config-sha256=*)
+                                    runtime_digest=${1#*=}
+                                    ;;
+                                zpr.simulator.northstar-provisioning-config-sha256=*)
+                                    provisioning_digest=${1#*=}
                                     ;;
                                 zpr.simulator.packaged-provisioning-enabled=*)
                                     provisioning=${1#*=}
@@ -156,6 +203,18 @@ case "$1" in
                             case "$1" in
                                 *target=/var/lib/zpr-simulator/operator-auth,readonly)
                                     operator_auth_mount=yes
+                                    ;;
+                                *target=/run/zpr-simulator/machine-control,readonly)
+                                    control_tls_mount=yes
+                                    ;;
+                                "type=bind,source=${ZPR_SIMULATOR_PROVISIONING_SOURCE_DIR:-},target=/opt/zpr-simulator/northstar-provisioning-source,readonly")
+                                    provisioning_source_mount=yes
+                                    ;;
+                                "type=bind,source=${SIMULATION_NORTHSTAR_MACHINE_CERT_DIR:-},target=${SIMULATION_NORTHSTAR_MACHINE_CERT_DIR:-},readonly")
+                                    northstar_machine_cert_mount=yes
+                                    ;;
+                                "type=bind,source=${SIMULATION_NORTHSTAR_WORKLOAD_DIR:-},target=${SIMULATION_NORTHSTAR_WORKLOAD_DIR:-},readonly")
+                                    northstar_workload_mount=yes
                                     ;;
                                 *target=/var/lib/zpr-simulator/provisioning)
                                     ;;
@@ -183,6 +242,10 @@ case "$1" in
                             shift
                             network=$1
                             ;;
+                        --restart)
+                            shift
+                            restart=$1
+                            ;;
                         --privileged) privileged=yes ;;
                     esac
                     shift
@@ -194,8 +257,8 @@ case "$1" in
                         echo "Simulator container request violated the fake-Docker test contract: mounts=$mounts socket=$socket_mount runtime=$runtime_mount state=$state_mount published=$published privileged=$privileged" >&2
                         exit 1
                     }
-                printf 'simulator|test-release|%s|127.0.0.1:%s->%s/tcp|%s|%s|%s|running\n' \
-                    "$FAKE_DOCKER_IMAGE_ID" "$FAKE_DOCKER_PORT" "$container_port" "$operator_digest" "$provisioning" "$network" \
+                printf 'simulator|test-release|%s|127.0.0.1:%s->%s/tcp|%s|%s|%s|%s|%s|%s|running\n' \
+                    "$FAKE_DOCKER_IMAGE_ID" "$FAKE_DOCKER_PORT" "$container_port" "$operator_digest" "$control_digest" "$runtime_digest" "$provisioning_digest" "$provisioning" "$network" \
                     >"$FAKE_DOCKER_CONTAINER_STATE"
                 if [ "$operator_digest" != none ]; then
                     [ "$operator_auth_mount" = yes ] || {
@@ -203,21 +266,36 @@ case "$1" in
                         exit 1
                     }
                 fi
+                if [ "$control_digest" != none ]; then
+                    [ "$control_tls_mount" = yes ] && [ "$restart" = no ] || {
+                        echo "Northstar machine-control TLS mount or non-persistent restart policy missing" >&2
+                        exit 1
+                    }
+                fi
+                if [ "$control_digest" != none ] && [ "$provisioning" = 1 ]; then
+                    [ "$provisioning_source_mount" = yes ] &&
+                        [ "$northstar_machine_cert_mount" = yes ] &&
+                        [ "$northstar_workload_mount" = yes ] &&
+                        [ "$provisioning_digest" != none ] || {
+                            echo "Northstar provisioning sources or protected input mounts are missing" >&2
+                            exit 1
+                        }
+                fi
                 printf '%s\n' fake-container-id
                 ;;
             stop)
                 [ -f "$FAKE_DOCKER_CONTAINER_STATE" ] || exit 1
-                IFS='|' read -r package release image published operator_digest provisioning network state <"$FAKE_DOCKER_CONTAINER_STATE"
-                printf '%s|%s|%s|%s|%s|%s|%s|exited\n' \
-                    "$package" "$release" "$image" "$published" "$operator_digest" "$provisioning" "$network" \
+                IFS='|' read -r package release image published operator_digest control_digest runtime_digest provisioning_digest provisioning network state <"$FAKE_DOCKER_CONTAINER_STATE"
+                printf '%s|%s|%s|%s|%s|%s|%s|%s|%s|%s|exited\n' \
+                    "$package" "$release" "$image" "$published" "$operator_digest" "$control_digest" "$runtime_digest" "$provisioning_digest" "$provisioning" "$network" \
                     >"$FAKE_DOCKER_CONTAINER_STATE"
                 printf '%s\n' "$4"
                 ;;
             start)
                 [ -f "$FAKE_DOCKER_CONTAINER_STATE" ] || exit 1
-                IFS='|' read -r package release image published operator_digest provisioning network state <"$FAKE_DOCKER_CONTAINER_STATE"
-                printf '%s|%s|%s|%s|%s|%s|%s|running\n' \
-                    "$package" "$release" "$image" "$published" "$operator_digest" "$provisioning" "$network" \
+                IFS='|' read -r package release image published operator_digest control_digest runtime_digest provisioning_digest provisioning network state <"$FAKE_DOCKER_CONTAINER_STATE"
+                printf '%s|%s|%s|%s|%s|%s|%s|%s|%s|%s|running\n' \
+                    "$package" "$release" "$image" "$published" "$operator_digest" "$control_digest" "$runtime_digest" "$provisioning_digest" "$provisioning" "$network" \
                     >"$FAKE_DOCKER_CONTAINER_STATE"
                 printf '%s\n' "$3"
                 ;;
@@ -238,7 +316,8 @@ SH
 chmod +x "$stub_dir/stat"
 
 export PATH="$stub_dir:$PATH"
-unset ZPR_SIMULATOR_PACKAGE_DIR DOCKER_CONTEXT DOCKER_HOST
+unset ZPR_SIMULATOR_PACKAGE_DIR ZPR_SIMULATOR_PROFILE ZPR_SIMULATOR_PORT \
+    ZPR_SIMULATOR_RUNTIME_DIR DOCKER_CONTEXT DOCKER_HOST
 export ZPR_SIMULATOR_STATE_DIR="$state_dir"
 export ZPR_DEMO_PACKAGE_DIR="$zpr_package_dir"
 export FAKE_DOCKER_LOG="$temp_dir/docker.log"
@@ -249,6 +328,7 @@ export FAKE_DOCKER_IMAGE_METADATA="$image_id|linux|amd64"
 fake_docker_socket_gid=$(id -g)
 export FAKE_DOCKER_SOCKET_GID="$fake_docker_socket_gid"
 export FAKE_DOCKER_CONTAINER_STATE="$temp_dir/container-state"
+export FAKE_DOCKER_CONTAINER_NAME=zpr-simulator-demo-test-release
 : >"$FAKE_DOCKER_LOG"
 
 output=$("$runtime_script" status)
@@ -282,6 +362,15 @@ grep -F -- "-e SIMULATION_DEMO_RELEASE_ID=test-release" "$FAKE_DOCKER_LOG" >/dev
         echo "Simulator state directories were not created" >&2
         exit 1
     }
+cmp "$package_dir/runtime/scenarios/fixture-scenario.json" "$state_dir/scenarios/fixture-scenario.json"
+python3 - "$state_dir/scenarios/fixture-scenario.json" <<'PY'
+import os
+import stat
+import sys
+
+if stat.S_IMODE(os.stat(sys.argv[1]).st_mode) != 0o600:
+    raise SystemExit("seeded Simulator scenario file is not private")
+PY
 
 run_count=$(grep -c "container run" "$FAKE_DOCKER_LOG")
 "$runtime_script" start >/dev/null 2>&1
@@ -316,9 +405,14 @@ test -d "$state_dir" || {
     echo "stop removed persistent Simulator state" >&2
     exit 1
 }
+printf '%s\n' '{"id":"fixture-scenario","operator-edit":true}' >"$state_dir/scenarios/fixture-scenario.json"
 "$runtime_script" start >/dev/null 2>&1
 [ "$(grep -c "container run" "$FAKE_DOCKER_LOG")" -eq "$run_count" ] || {
     echo "start recreated rather than restarted the stopped container" >&2
+    exit 1
+}
+grep -F '"operator-edit":true' "$state_dir/scenarios/fixture-scenario.json" >/dev/null || {
+    echo "start overwrote an existing Simulator scenario seed" >&2
     exit 1
 }
 
@@ -453,4 +547,300 @@ if ZPR_SIMULATOR_OPERATOR_AUTH_DIR="$auth_dir" \
 fi
 grep -F "trusted proxy peer must be an IPv4 address" "$temp_dir/invalid-peer.out" >/dev/null
 
-echo "Simulator demo runtime shell tests passed (Docker fully stubbed; no services started)."
+run_count=$(grep -c "container run" "$FAKE_DOCKER_LOG")
+if ZPR_SIMULATOR_RUNTIME_DIR="$northstar_runtime_dir" \
+    "$runtime_script" start >"$temp_dir/demo-runtime-override.out" 2>&1; then
+    echo "Demo profile unexpectedly accepted a Northstar runtime override" >&2
+    exit 1
+fi
+grep -F "ZPR_SIMULATOR_RUNTIME_DIR is supported only by the northstar-synthetic profile" \
+    "$temp_dir/demo-runtime-override.out" >/dev/null
+[ "$(grep -c "container run" "$FAKE_DOCKER_LOG")" -eq "$run_count" ] || {
+    echo "Demo runtime override invoked Docker" >&2
+    exit 1
+}
+
+ln -s "$northstar_runtime_dir" "$temp_dir/northstar-runtime-link"
+if ZPR_SIMULATOR_PROFILE=northstar-synthetic \
+    ZPR_SIMULATOR_RUNTIME_DIR="$temp_dir/northstar-runtime-link" \
+    ZPR_SIMULATOR_PACKAGE_DIR="$northstar_package_dir" \
+    "$runtime_script" start >"$temp_dir/northstar-symlink-runtime.out" 2>&1; then
+    echo "Northstar runtime override unexpectedly accepted a symlink" >&2
+    exit 1
+fi
+grep -F "must be an existing non-symlink directory" "$temp_dir/northstar-symlink-runtime.out" >/dev/null
+[ "$(grep -c "container run" "$FAKE_DOCKER_LOG")" -eq "$run_count" ] || {
+    echo "symlinked Northstar runtime override invoked Docker" >&2
+    exit 1
+}
+export ZPR_SIMULATOR_RUNTIME_DIR="$northstar_runtime_dir"
+
+run_count=$(grep -c "container run" "$FAKE_DOCKER_LOG")
+if ZPR_SIMULATOR_PROFILE=northstar-synthetic \
+    ZPR_SIMULATOR_RUNTIME_DIR="$northstar_runtime_dir/../runtime" \
+    ZPR_SIMULATOR_PACKAGE_DIR="$northstar_package_dir" \
+    "$runtime_script" start >"$temp_dir/northstar-noncanonical-runtime.out" 2>&1; then
+    echo "Northstar runtime override unexpectedly accepted a non-canonical path" >&2
+    exit 1
+fi
+grep -F "must be canonical and must not traverse symlinks" \
+    "$temp_dir/northstar-noncanonical-runtime.out" >/dev/null
+[ "$(grep -c "container run" "$FAKE_DOCKER_LOG")" -eq "$run_count" ] || {
+    echo "non-canonical Northstar runtime override invoked Docker" >&2
+    exit 1
+}
+
+ln -s simulation-environment.json "$northstar_runtime_dir/untrusted-input"
+if ZPR_SIMULATOR_PROFILE=northstar-synthetic \
+    ZPR_SIMULATOR_RUNTIME_DIR="$northstar_runtime_dir" \
+    ZPR_SIMULATOR_PACKAGE_DIR="$northstar_package_dir" \
+    "$runtime_script" start >"$temp_dir/northstar-runtime-tree-symlink.out" 2>&1; then
+    echo "Northstar runtime tree unexpectedly accepted a symlinked input" >&2
+    exit 1
+fi
+grep -F "Northstar runtime tree must not contain symbolic links" \
+    "$temp_dir/northstar-runtime-tree-symlink.out" >/dev/null
+[ "$(grep -c "container run" "$FAKE_DOCKER_LOG")" -eq "$run_count" ] || {
+    echo "symlinked Northstar runtime input invoked Docker" >&2
+    exit 1
+}
+rm "$northstar_runtime_dir/untrusted-input"
+
+python3 - "$northstar_runtime_dir/scenarios/machine-policy-deny.json" <<'PY'
+import json
+from pathlib import Path
+import sys
+
+path = Path(sys.argv[1])
+scenario = json.loads(path.read_text())
+scenario["topology"]["components"][1]["address"] = "fd00:1:2::99"
+path.write_text(json.dumps(scenario) + "\n")
+PY
+northstar_auth_dir=$temp_dir/northstar-auth
+mkdir -m 700 "$northstar_auth_dir"
+northstar_control_dir=$temp_dir/northstar-control
+mkdir -m 700 "$northstar_control_dir"
+for name in control-ca.crt simulator.crt simulator.key; do
+    printf '%s\n' test-material >"$northstar_control_dir/$name"
+done
+chmod 600 "$northstar_control_dir"/*
+source_overlay_dir=$temp_dir/northstar-source-overlay
+northstar_machine_cert_dir=$temp_dir/northstar-machine-control
+northstar_workload_dir=$temp_dir/northstar-workload
+mkdir -m 700 "$source_overlay_dir" "$northstar_machine_cert_dir" "$northstar_workload_dir"
+cp "$source_runtime_script" "$source_overlay_dir/simulator-demo-runtime.sh"
+cp "$script_dir/packaged-machine-runtime.py" "$script_dir/verify-approved-identity-lab.py" \
+    "$source_overlay_dir/"
+chmod 600 "$source_overlay_dir"/*
+for name in control-ca.crt client.crt client.key; do
+    printf '%s\n' test-material >"$northstar_machine_cert_dir/$name"
+done
+for name in ca.crt client-finance-rsa.key machine-controller-machine-01.key; do
+    printf '%s\n' test-material >"$northstar_workload_dir/$name"
+done
+chmod 600 "$northstar_machine_cert_dir"/* "$northstar_workload_dir"/*
+printf '%s\n' '{"version":1,"redirect_url":"https://northstar.example.test:8789/auth/operator/callback"}' \
+    >"$northstar_auth_dir/oidc.json"
+for name in simulator.crt simulator.key client.secret oidc-ca.crt budget-client.crt budget-client.key budget-ca.crt; do
+    printf '%s\n' test-material >"$northstar_auth_dir/$name"
+done
+chmod 600 "$northstar_auth_dir"/*
+run_count=$(grep -c "container run" "$FAKE_DOCKER_LOG")
+if ZPR_SIMULATOR_PROFILE=northstar-synthetic \
+    ZPR_SIMULATOR_PACKAGE_DIR="$northstar_package_dir" \
+    ZPR_SIMULATOR_RUNTIME_DIR="$northstar_runtime_dir" \
+    ZPR_DEMO_PACKAGE_DIR="$northstar_zpr_package_dir" \
+    ZPR_SIMULATOR_DOCKER_NETWORK=zpr-northstar-synthetic \
+    ZPR_SIMULATOR_OPERATOR_AUTH_DIR="$northstar_auth_dir" \
+    ZPR_SIMULATOR_OPERATOR_ORIGIN=https://northstar.example.test:8789 \
+    ZPR_BUDGET_AUTHORITY_URL=https://budget.example.test:8790 \
+    ZPR_SIMULATOR_CONTROL_TLS_DIR="$northstar_control_dir" \
+    "$runtime_script" start >"$temp_dir/northstar-invalid.out" 2>&1; then
+    echo "Northstar synthetic package with a mismatched destination unexpectedly accepted" >&2
+    exit 1
+fi
+grep -F "invalid Northstar synthetic Simulator configuration" "$temp_dir/northstar-invalid.out" >/dev/null || {
+    cat "$temp_dir/northstar-invalid.out" >&2
+    exit 1
+}
+[ "$(grep -c "container run" "$FAKE_DOCKER_LOG")" -eq "$run_count" ] || {
+    echo "invalid Northstar synthetic package invoked Docker" >&2
+    exit 1
+}
+python3 - "$northstar_runtime_dir/scenarios/machine-policy-deny.json" <<'PY'
+import json
+from pathlib import Path
+import sys
+
+path = Path(sys.argv[1])
+scenario = json.loads(path.read_text())
+scenario["topology"]["components"][1]["address"] = "fd00:1:2::1"
+path.write_text(json.dumps(scenario) + "\n")
+PY
+run_count=$(grep -c "container run" "$FAKE_DOCKER_LOG")
+if ZPR_SIMULATOR_PROFILE=northstar-synthetic \
+    ZPR_SIMULATOR_PACKAGE_DIR="$northstar_package_dir" \
+    ZPR_SIMULATOR_RUNTIME_DIR="$northstar_runtime_dir" \
+    ZPR_DEMO_PACKAGE_DIR="$northstar_zpr_package_dir" \
+    ZPR_SIMULATOR_DOCKER_NETWORK=zpr-northstar-synthetic \
+    "$runtime_script" start >"$temp_dir/northstar-unprotected.out" 2>&1; then
+    echo "Northstar synthetic profile unexpectedly allowed an auth-disabled launch" >&2
+    exit 1
+fi
+grep -F "Northstar synthetic requires protected operator login, an independent budget-authority URL, and machine-control TLS assets" \
+    "$temp_dir/northstar-unprotected.out" >/dev/null || {
+    cat "$temp_dir/northstar-unprotected.out" >&2
+    exit 1
+}
+[ "$(grep -c "container run" "$FAKE_DOCKER_LOG")" -eq "$run_count" ] || {
+    echo "unprotected Northstar synthetic profile invoked Docker" >&2
+    exit 1
+}
+run_count=$(grep -c "container run" "$FAKE_DOCKER_LOG")
+if FAKE_DOCKER_NORTHSTAR_NETWORK_INTERNAL=false \
+    ZPR_SIMULATOR_PROFILE=northstar-synthetic \
+    ZPR_SIMULATOR_PACKAGE_DIR="$northstar_package_dir" \
+    ZPR_SIMULATOR_RUNTIME_DIR="$northstar_runtime_dir" \
+    ZPR_DEMO_PACKAGE_DIR="$northstar_zpr_package_dir" \
+    ZPR_SIMULATOR_DOCKER_NETWORK=zpr-northstar-synthetic \
+    ZPR_SIMULATOR_OPERATOR_AUTH_DIR="$northstar_auth_dir" \
+    ZPR_SIMULATOR_OPERATOR_ORIGIN=https://northstar.example.test:8789 \
+    ZPR_BUDGET_AUTHORITY_URL=https://budget.example.test:8790 \
+    ZPR_SIMULATOR_CONTROL_TLS_DIR="$northstar_control_dir" \
+    "$runtime_script" start >"$temp_dir/northstar-external-network.out" 2>&1; then
+    echo "Northstar synthetic accepted a non-internal network" >&2
+    exit 1
+fi
+grep -F "Northstar synthetic requires an internal local bridge network" \
+    "$temp_dir/northstar-external-network.out" >/dev/null || {
+    cat "$temp_dir/northstar-external-network.out" >&2
+    exit 1
+}
+[ "$(grep -c "container run" "$FAKE_DOCKER_LOG")" -eq "$run_count" ] || {
+    echo "Northstar synthetic with a non-internal network invoked Docker" >&2
+    exit 1
+}
+chmod 644 "$northstar_control_dir/simulator.key"
+if ZPR_SIMULATOR_PROFILE=northstar-synthetic \
+    ZPR_SIMULATOR_PACKAGE_DIR="$northstar_package_dir" \
+    ZPR_SIMULATOR_RUNTIME_DIR="$northstar_runtime_dir" \
+    ZPR_DEMO_PACKAGE_DIR="$northstar_zpr_package_dir" \
+    ZPR_SIMULATOR_DOCKER_NETWORK=zpr-northstar-synthetic \
+    ZPR_SIMULATOR_OPERATOR_AUTH_DIR="$northstar_auth_dir" \
+    ZPR_SIMULATOR_OPERATOR_ORIGIN=https://northstar.example.test:8789 \
+    ZPR_BUDGET_AUTHORITY_URL=https://budget.example.test:8790 \
+    ZPR_SIMULATOR_CONTROL_TLS_DIR="$northstar_control_dir" \
+    "$runtime_script" start >"$temp_dir/northstar-invalid-control-mode.out" 2>&1; then
+    echo "Northstar synthetic accepted a machine-control key with broad permissions" >&2
+    exit 1
+fi
+grep -F "invalid Simulator machine-control TLS configuration" \
+    "$temp_dir/northstar-invalid-control-mode.out" >/dev/null || {
+    cat "$temp_dir/northstar-invalid-control-mode.out" >&2
+    exit 1
+}
+[ "$(grep -c "container run" "$FAKE_DOCKER_LOG")" -eq "$run_count" ] || {
+    echo "invalid machine-control TLS permissions invoked Docker" >&2
+    exit 1
+}
+chmod 600 "$northstar_control_dir/simulator.key"
+run_count=$(grep -c "container run" "$FAKE_DOCKER_LOG")
+if ZPR_SIMULATOR_PROFILE=northstar-synthetic \
+    ZPR_SIMULATOR_ENABLE_PROVISIONING=1 \
+    ZPR_SIMULATOR_PACKAGE_DIR="$northstar_package_dir" \
+    ZPR_SIMULATOR_RUNTIME_DIR="$northstar_runtime_dir" \
+    ZPR_DEMO_PACKAGE_DIR="$northstar_zpr_package_dir" \
+    ZPR_SIMULATOR_DOCKER_NETWORK=zpr-northstar-synthetic \
+    ZPR_SIMULATOR_OPERATOR_AUTH_DIR="$northstar_auth_dir" \
+    ZPR_SIMULATOR_OPERATOR_ORIGIN=https://northstar.example.test:8789 \
+    ZPR_BUDGET_AUTHORITY_URL=https://budget.example.test:8790 \
+    ZPR_SIMULATOR_CONTROL_TLS_DIR="$northstar_control_dir" \
+    SIMULATION_NORTHSTAR_MACHINE_CERT_DIR="$northstar_machine_cert_dir" \
+    SIMULATION_NORTHSTAR_WORKLOAD_DIR="$northstar_workload_dir" \
+    SIMULATION_NORTHSTAR_MACHINE_IMAGE=sha256:2222222222222222222222222222222222222222222222222222222222222222 \
+    SIMULATION_NORTHSTAR_NODE_ADDRESS=172.30.0.10:5000 \
+    SIMULATION_NORTHSTAR_CONTROL_URL=https://host.docker.internal:8792 \
+    SIMULATION_RUNTIME_GENERATION=scopefix2-test \
+    "$runtime_script" start >"$temp_dir/northstar-missing-source.out" 2>&1; then
+    echo "Northstar provisioning unexpectedly accepted a missing source overlay" >&2
+    exit 1
+fi
+grep -F "Northstar packaged provisioning requires ZPR_SIMULATOR_PROVISIONING_SOURCE_DIR" \
+    "$temp_dir/northstar-missing-source.out" >/dev/null || {
+    cat "$temp_dir/northstar-missing-source.out" >&2
+    exit 1
+}
+[ "$(grep -c "container run" "$FAKE_DOCKER_LOG")" -eq "$run_count" ] || {
+    echo "missing Northstar source overlay invoked Docker" >&2
+    exit 1
+}
+rm -f "$FAKE_DOCKER_CONTAINER_STATE"
+export FAKE_DOCKER_PORT=8789
+export FAKE_DOCKER_CONTAINER_PORT=8789
+export FAKE_DOCKER_CONTAINER_NAME=zpr-simulator-northstar-synthetic-test-release
+output=$(
+    ZPR_SIMULATOR_PROFILE=northstar-synthetic \
+    ZPR_SIMULATOR_ENABLE_PROVISIONING=1 \
+    ZPR_SIMULATOR_PACKAGE_DIR="$northstar_package_dir" \
+    ZPR_SIMULATOR_RUNTIME_DIR="$northstar_runtime_dir" \
+    ZPR_SIMULATOR_PROVISIONING_SOURCE_DIR="$source_overlay_dir" \
+    ZPR_DEMO_PACKAGE_DIR="$northstar_zpr_package_dir" \
+    ZPR_SIMULATOR_DOCKER_NETWORK=zpr-northstar-synthetic \
+    ZPR_SIMULATOR_OPERATOR_AUTH_DIR="$northstar_auth_dir" \
+    ZPR_SIMULATOR_OPERATOR_ORIGIN=https://northstar.example.test:8789 \
+    ZPR_BUDGET_AUTHORITY_URL=https://budget.example.test:8790 \
+    ZPR_SIMULATOR_CONTROL_TLS_DIR="$northstar_control_dir" \
+    SIMULATION_NORTHSTAR_MACHINE_CERT_DIR="$northstar_machine_cert_dir" \
+    SIMULATION_NORTHSTAR_WORKLOAD_DIR="$northstar_workload_dir" \
+    SIMULATION_NORTHSTAR_MACHINE_IMAGE=sha256:2222222222222222222222222222222222222222222222222222222222222222 \
+    SIMULATION_NORTHSTAR_NODE_ADDRESS=172.30.0.10:5000 \
+    SIMULATION_NORTHSTAR_CONTROL_URL=https://host.docker.internal:8792 \
+    SIMULATION_RUNTIME_GENERATION=scopefix2-test \
+    sh "$source_overlay_dir/simulator-demo-runtime.sh" start
+)
+case "$output" in
+    "Simulator container running (UI endpoint https://northstar.example.test:8789; application readiness not checked)") ;;
+    *) echo "Northstar synthetic profile did not use its isolated default port: $output" >&2; exit 1 ;;
+esac
+grep -F -- "--name zpr-simulator-northstar-synthetic-test-release" "$FAKE_DOCKER_LOG" >/dev/null
+grep -F -- "-e SIMULATION_MANIFEST=/opt/zpr-simulator/runtime/simulation-environment.json" "$FAKE_DOCKER_LOG" >/dev/null
+grep -F -- "-v $northstar_runtime_dir:/opt/zpr-simulator/runtime:ro" "$FAKE_DOCKER_LOG" >/dev/null
+grep -F -- "zpr-simulator:test-release" "$FAKE_DOCKER_LOG" >/dev/null
+grep -F -- "-e SIMULATION_ORGANIZATION_ID=northstar" "$FAKE_DOCKER_LOG" >/dev/null
+grep -F -- "-e SIMULATION_ORGANIZATIONS_DIR=/opt/zpr-simulator/runtime/organizations" "$FAKE_DOCKER_LOG" >/dev/null
+grep -F -- "-e SIMULATION_SCENARIOS_DIR=/var/lib/zpr-simulator/scenarios" "$FAKE_DOCKER_LOG" >/dev/null
+grep -F -- "-p 127.0.0.1:8789:8789" "$FAKE_DOCKER_LOG" >/dev/null
+grep -F -- "--network zpr-northstar-synthetic" "$FAKE_DOCKER_LOG" >/dev/null
+grep -F -- "-e SIMULATOR_CONTROL_TLS_CERT=/run/zpr-simulator/machine-control/simulator.crt" "$FAKE_DOCKER_LOG" >/dev/null
+grep -F -- "-e SIMULATOR_CONTROL_TLS_KEY=/run/zpr-simulator/machine-control/simulator.key" "$FAKE_DOCKER_LOG" >/dev/null
+grep -F -- "-e SIMULATOR_CONTROL_CLIENT_CA=/run/zpr-simulator/machine-control/control-ca.crt" "$FAKE_DOCKER_LOG" >/dev/null
+grep -F -- "-e SIMULATOR_CONTROL_LISTEN=0.0.0.0:8791" "$FAKE_DOCKER_LOG" >/dev/null
+grep -F -- "--mount type=bind,source=$source_overlay_dir,target=/opt/zpr-simulator/northstar-provisioning-source,readonly" "$FAKE_DOCKER_LOG" >/dev/null
+grep -F -- "--mount type=bind,source=$northstar_machine_cert_dir,target=$northstar_machine_cert_dir,readonly" "$FAKE_DOCKER_LOG" >/dev/null
+grep -F -- "--mount type=bind,source=$northstar_workload_dir,target=$northstar_workload_dir,readonly" "$FAKE_DOCKER_LOG" >/dev/null
+grep -F -- "-e SIMULATION_PROVISION_SCRIPT=/opt/zpr-simulator/northstar-provisioning-source/packaged-machine-runtime.py" "$FAKE_DOCKER_LOG" >/dev/null
+grep -F -- "-e SIMULATION_NORTHSTAR_MACHINE_IMAGE=sha256:2222222222222222222222222222222222222222222222222222222222222222" "$FAKE_DOCKER_LOG" >/dev/null
+grep -F -- "-e SIMULATION_NORTHSTAR_DOCKER_NETWORK=zpr-northstar-synthetic" "$FAKE_DOCKER_LOG" >/dev/null
+grep -F -- "-e SIMULATION_NORTHSTAR_NODE_ADDRESS=172.30.0.10:5000" "$FAKE_DOCKER_LOG" >/dev/null
+grep -F -- "-e SIMULATION_NORTHSTAR_CONTROL_URL=https://host.docker.internal:8792" "$FAKE_DOCKER_LOG" >/dev/null
+grep -F -- "-e SIMULATION_RUNTIME_GENERATION=scopefix2-test" "$FAKE_DOCKER_LOG" >/dev/null
+[ ! -e "$northstar_runtime_dir/organizations/demo.json" ] || {
+    echo "Northstar runtime root was merged with the Demo profile" >&2
+    exit 1
+}
+[ -f "$state_dir/northstar-synthetic/scenarios/machine-policy-deny.json" ] || {
+    echo "Northstar synthetic scenario was not seeded into isolated state" >&2
+    exit 1
+}
+[ ! -e "$state_dir/scenarios/machine-policy-deny.json" ] || {
+    echo "Northstar synthetic scenario leaked into Demo state" >&2
+    exit 1
+}
+cmp "$snapshot_dir/simulator-manifest.json" "$northstar_package_dir/manifest.json"
+cmp "$snapshot_dir/simulator-image-reference" "$northstar_package_runtime_dir/image-reference"
+cmp "$snapshot_dir/simulator-config.toml" "$northstar_package_runtime_dir/config.toml"
+cmp "$snapshot_dir/demo-manifest.json" "$northstar_package_runtime_dir/simulation-environment.json"
+cmp "$snapshot_dir/demo-organization.json" "$northstar_package_runtime_dir/organizations/demo.json"
+grep -Fx "owned by W2" "$northstar_route_output/route-output.txt" >/dev/null
+
+echo "Simulator runtime shell tests passed (Docker fully stubbed; no services started)."

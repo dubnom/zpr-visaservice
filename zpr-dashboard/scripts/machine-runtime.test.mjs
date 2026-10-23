@@ -42,6 +42,32 @@ test("activation request wins over the old active selection and scopes assets by
     assert.match(conflict.stderr, /does not match/);
   } finally { rmSync(root, { recursive: true }); }
 });
+test("Northstar machine networking honors the selected synthetic network only when configured", () => {
+  const root = fixture();
+  try {
+    const defaultNetwork = run(root, 'machine_docker_network_for_org northstar');
+    assert.equal(defaultNetwork.status, 0, defaultNetwork.stderr);
+    assert.equal(defaultNetwork.stdout.trim(), "zpr-northstar");
+
+    const syntheticNetwork = run(root, 'machine_docker_network_for_org northstar', {
+      SIMULATION_NORTHSTAR_DOCKER_NETWORK: "zpr-northstar-synthetic",
+    });
+    assert.equal(syntheticNetwork.status, 0, syntheticNetwork.stderr);
+    assert.equal(syntheticNetwork.stdout.trim(), "zpr-northstar-synthetic");
+
+    const otherOrganization = run(root, 'machine_docker_network_for_org great-lakes', {
+      SIMULATION_NORTHSTAR_DOCKER_NETWORK: "zpr-northstar-synthetic",
+    });
+    assert.equal(otherOrganization.status, 0, otherOrganization.stderr);
+    assert.equal(otherOrganization.stdout.trim(), "zpr-great-lakes");
+
+    const invalidNetwork = run(root, 'machine_docker_network_for_org northstar', {
+      SIMULATION_NORTHSTAR_DOCKER_NETWORK: "host;docker",
+    });
+    assert.notEqual(invalidNetwork.status, 0);
+    assert.match(invalidNetwork.stderr, /invalid multi-node Docker network name/);
+  } finally { rmSync(root, { recursive: true }); }
+});
 test("invalid generations and corrupted requests cannot reuse old state", () => {
   const root = fixture();
   try {
@@ -76,6 +102,7 @@ test("activation checks real controllers before publishing context and verifies 
   assert.ok(activation.indexOf('"$script_dir/dashboard-stack.sh" stop-runtime-machines', activation.indexOf('report_activation_status "Stopping previous runtime"')) < activation.indexOf('stop_runtime "$previous_organization"'));
   assert.match(stack, /existing_scope.*zpr\.organization\.id/);
   assert.match(stack, /SIMULATION_RUNTIME_GENERATION=\$machine_generation/);
+  assert.match(stack, /machine_network=\$\(machine_docker_network_for_org "\$machine_organization"\)/);
 });
 
 test("readiness uses actual launch placement at every node in all five organizations", () => {

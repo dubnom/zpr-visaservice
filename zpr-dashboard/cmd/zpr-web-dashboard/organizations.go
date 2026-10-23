@@ -1,6 +1,7 @@
 package main
 
 import (
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -36,7 +37,18 @@ type simulatorOrganization struct {
 	WebGateway           *simulatorWebGatewayProfile    `json:"web_gateway,omitempty"`
 	LoadTest             *simulatorLoadTestProfile      `json:"load_test,omitempty"`
 	BusinessSimulation   bool                           `json:"business_simulation,omitempty"`
+	SyntheticLabOnly     bool                           `json:"synthetic_lab_only,omitempty"`
+	SyntheticWorkload    *simulatorSyntheticWorkload    `json:"synthetic_workload,omitempty"`
+	ActivePolicyTargetID string                         `json:"active_policy_target_id,omitempty"`
+	ActivePolicyDigest   string                         `json:"active_policy_digest,omitempty"`
 	PackagedProvisioning *simulatorPackagedProvisioning `json:"packaged_provisioning,omitempty"`
+}
+
+type simulatorSyntheticWorkload struct {
+	Version   int    `json:"version"`
+	MachineID string `json:"machine_id"`
+	Name      string `json:"name"`
+	Interface string `json:"interface"`
 }
 
 type simulatorWebGatewayProfile struct {
@@ -298,6 +310,34 @@ func validateOrganizationDefinition(organization simulatorOrganization, incomple
 	if err := validatePackagedProvisioning(organization.PackagedProvisioning); err != nil {
 		return err
 	}
+	if organization.SyntheticLabOnly && organization.ID != "northstar" {
+		return errors.New("synthetic lab-only runtime is restricted to the northstar organization")
+	}
+	if organization.SyntheticLabOnly && organization.ActivePolicyTargetID == "" {
+		return errors.New("synthetic Northstar runtime requires an active policy target and digest")
+	}
+	if !organization.SyntheticLabOnly &&
+		(organization.ActivePolicyTargetID != "" || organization.ActivePolicyDigest != "") {
+		return errors.New("active policy identity fields require a synthetic lab-only profile")
+	}
+	if (organization.ActivePolicyTargetID == "") != (organization.ActivePolicyDigest == "") ||
+		organization.ActivePolicyTargetID != "" && (!validScenarioID(organization.ActivePolicyTargetID) || !validOrganizationPolicyDigest(organization.ActivePolicyDigest)) {
+		return errors.New("active policy readback requires a valid target ID and SHA-256 digest")
+	}
+	if organization.SyntheticLabOnly {
+		provisioning := organization.PackagedProvisioning
+		if provisioning == nil || provisioning.PrimaryMachineID != "machine-01" ||
+			len(provisioning.Machines) != 1 || provisioning.Machines[0] != "machine-01" {
+			return errors.New("synthetic Northstar runtime requires the single-machine machine-01 package contract")
+		}
+		workload := organization.SyntheticWorkload
+		if workload == nil || workload.Version != 1 || workload.MachineID != "machine-01" ||
+			workload.Name != "finance-client" || workload.Interface != "tun0" {
+			return errors.New("synthetic Northstar runtime requires the version 1 finance-client tun0 workload")
+		}
+	} else if organization.SyntheticWorkload != nil {
+		return errors.New("synthetic workload configuration requires a synthetic lab-only profile")
+	}
 	if err := validateBusinessSimulationOrganization(organization); err != nil {
 		return err
 	}
@@ -496,6 +536,14 @@ func validateOrganizationDefinition(organization simulatorOrganization, incomple
 		}
 	}
 	return nil
+}
+
+func validOrganizationPolicyDigest(digest string) bool {
+	if len(digest) != 64 || strings.ToLower(digest) != digest {
+		return false
+	}
+	decoded, err := hex.DecodeString(digest)
+	return err == nil && len(decoded) == 32 && hex.EncodeToString(decoded) == digest
 }
 
 func materializeSimulatorLoadTestServices(organization *simulatorOrganization) {

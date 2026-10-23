@@ -233,6 +233,42 @@ func (c *simulatorPolicyStatusClient) lookup(ctx context.Context, organization, 
 	return result, http.StatusOK, nil
 }
 
+func (c *simulatorPolicyStatusClient) current(ctx context.Context, organization, target string) (operatordelegation.PolicyCurrentState, error) {
+	if c == nil || c.origin == nil || c.client == nil ||
+		!simulatorPolicyStatusSegment.MatchString(organization) ||
+		!simulatorPolicyStatusSegment.MatchString(target) {
+		return operatordelegation.PolicyCurrentState{}, errors.New("policy current-state client is unavailable")
+	}
+	endpoint := *c.origin
+	endpoint.Path = policyCurrentPrefix + organization + "/" + target
+	request, err := http.NewRequestWithContext(ctx, http.MethodGet, endpoint.String(), nil)
+	if err != nil {
+		return operatordelegation.PolicyCurrentState{}, err
+	}
+	request.Header.Set("Accept", "application/json")
+	request.Header.Set("Cache-Control", "no-cache")
+	response, err := c.client.Do(request)
+	if err != nil {
+		return operatordelegation.PolicyCurrentState{}, err
+	}
+	defer response.Body.Close()
+	if !hasNoStore(response.Header.Get("Cache-Control")) {
+		return operatordelegation.PolicyCurrentState{}, errors.New("Policy-Service current-state response is cacheable")
+	}
+	body, err := io.ReadAll(io.LimitReader(response.Body, policyStatusMaxResponse+1))
+	if err != nil || len(body) > policyStatusMaxResponse {
+		return operatordelegation.PolicyCurrentState{}, errors.New("Policy-Service current-state response exceeds its bound")
+	}
+	if response.StatusCode != http.StatusOK {
+		return operatordelegation.PolicyCurrentState{}, errors.New("Policy-Service current-state lookup failed")
+	}
+	var current operatordelegation.PolicyCurrentState
+	if strictStatusJSON(body, &current) != nil || !validPolicyCurrentState(current, organization, target) {
+		return operatordelegation.PolicyCurrentState{}, errors.New("Policy-Service current-state evidence is invalid")
+	}
+	return current, nil
+}
+
 func strictStatusJSON(body []byte, destination any) error {
 	decoder := json.NewDecoder(bytes.NewReader(body))
 	decoder.DisallowUnknownFields()

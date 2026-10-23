@@ -72,12 +72,14 @@ type simulatorScenarioPlanApprovalResponse struct {
 
 type simulatorScenarioPlanBuilder func(organizationID, scenarioID string) (simulatorRuntimePlan, error)
 type simulatorScenarioPlanOrganizationResolver func(*http.Request) (string, error)
+type simulatorScenarioCurrentPolicyResolver func(context.Context, string, string) (simulatorRuntimePolicyEvidence, error)
 
 type simulatorScenarioPlanHandler struct {
-	buildPlan           simulatorScenarioPlanBuilder
-	resolveOrganization simulatorScenarioPlanOrganizationResolver
-	approvals           *simulatorScenarioPlanApprovalStore
-	manager             *simulatorScenarioManager
+	buildPlan            simulatorScenarioPlanBuilder
+	resolveOrganization  simulatorScenarioPlanOrganizationResolver
+	resolveCurrentPolicy simulatorScenarioCurrentPolicyResolver
+	approvals            *simulatorScenarioPlanApprovalStore
+	manager              *simulatorScenarioManager
 }
 
 type simulatorScenarioPlanApproval struct {
@@ -131,6 +133,7 @@ func (h *simulatorScenarioPlanHandler) Preflight(w http.ResponseWriter, r *http.
 		http.Error(w, "preflight returned mismatched organization or scenario identity", http.StatusConflict)
 		return
 	}
+	h.resolveNorthstarPolicyReadback(r.Context(), &plan)
 	if err := h.resolvePlanBudgetEvidence(r.Context(), &plan); err != nil {
 		writeSimulatorScenarioBudgetEvidenceUnavailable(w, plan)
 		return
@@ -208,6 +211,7 @@ func (h *simulatorScenarioPlanHandler) Approve(w http.ResponseWriter, r *http.Re
 		http.Error(w, "preflight returned mismatched organization or scenario identity", http.StatusConflict)
 		return
 	}
+	h.resolveNorthstarPolicyReadback(r.Context(), &plan)
 	if err := h.resolvePlanBudgetEvidence(r.Context(), &plan); err != nil {
 		http.Error(w, "current approved budget evidence is unavailable or invalid", http.StatusServiceUnavailable)
 		return
@@ -273,6 +277,117 @@ func (h *simulatorScenarioPlanHandler) resolvePlanBudgetEvidence(
 		plan.Status = simulatorRuntimePlanBlocked
 	}
 	return nil
+}
+
+func (h *simulatorScenarioPlanHandler) resolveNorthstarPolicyReadback(ctx context.Context, plan *simulatorRuntimePlan) {
+	if plan == nil || plan.OrganizationID != "northstar" {
+		return
+	}
+	organization, err := loadSimulatorOrganization(simulatorOrganizationsDirectory(), plan.OrganizationID)
+	if err != nil || !organization.SyntheticLabOnly {
+		return
+	}
+	var resolver simulatorScenarioCurrentPolicyResolver
+	if h != nil {
+		resolver = h.resolveCurrentPolicy
+	}
+	resolveSimulatorNorthstarPolicyReadback(ctx, plan, organization, resolver)
+}
+
+func resolveSimulatorNorthstarPolicyReadback(
+	ctx context.Context,
+	plan *simulatorRuntimePlan,
+	organization simulatorOrganization,
+	resolver simulatorScenarioCurrentPolicyResolver,
+) {
+	if plan == nil || !organization.SyntheticLabOnly || organization.ID != "northstar" {
+		return
+	}
+	if err := validateSimulatorOrganization(organization); err != nil {
+		setSimulatorRuntimePolicyReadback(plan, "mismatched", "Northstar synthetic lab policy identity is invalid")
+		return
+	}
+	if resolver == nil {
+		setSimulatorRuntimePolicyReadback(plan, "unresolved", "active Northstar policy readback is unavailable")
+		return
+	}
+	evidence, err := resolver(ctx, organization.ID, organization.ActivePolicyTargetID)
+	if err != nil {
+		setSimulatorRuntimePolicyReadback(plan, "unresolved", "active Northstar policy readback is unavailable")
+		return
+	}
+	if !simulatorNorthstarPolicyReadbackMatches(organization, evidence) {
+		setSimulatorRuntimePolicyReadback(plan, "mismatched", "active policy readback does not match the Northstar lab identity")
+		return
+	}
+	setSimulatorRuntimePolicyReadback(plan, "resolved", "")
+}
+
+func simulatorNorthstarPolicyReadbackMatches(
+	organization simulatorOrganization,
+	evidence simulatorRuntimePolicyEvidence,
+) bool {
+	return organization.SyntheticLabOnly && evidence.Resolved &&
+		evidence.OrganizationID == organization.ID &&
+		evidence.TargetID == organization.ActivePolicyTargetID &&
+		evidence.Digest == organization.ActivePolicyDigest
+}
+
+func verifySimulatorNorthstarPolicyReadback(ctx context.Context, organization simulatorOrganization) error {
+	if !organization.SyntheticLabOnly {
+		return nil
+	}
+	if organization.ID != "northstar" || validateSimulatorOrganization(organization) != nil {
+		return errors.New("synthetic Northstar policy identity is invalid")
+	}
+	client, err := newSimulatorPolicyStatusClientFromEnv()
+	if err != nil {
+		return err
+	}
+	if client == nil {
+		return errors.New("Simulator policy current-state client is unavailable")
+	}
+	defer client.client.CloseIdleConnections()
+	current, err := client.current(ctx, organization.ID, organization.ActivePolicyTargetID)
+	if err != nil {
+		return err
+	}
+	evidence := simulatorRuntimePolicyEvidence{
+		Resolved: true, OrganizationID: current.Organization,
+		TargetID: current.TargetID, Digest: current.CurrentDigest,
+	}
+	if !simulatorNorthstarPolicyReadbackMatches(organization, evidence) {
+		return errors.New("active policy readback does not match the Northstar lab identity")
+	}
+	return nil
+}
+
+func setSimulatorRuntimePolicyReadback(plan *simulatorRuntimePlan, status, blocker string) {
+	if plan == nil {
+		return
+	}
+	plan.PolicyStatus = status
+	filtered := make([]string, 0, len(plan.Blockers)+1)
+	for _, existing := range plan.Blockers {
+		switch existing {
+		case "policy resolution is required",
+			"active Northstar policy readback is unavailable",
+			"active policy readback does not match the Northstar lab identity",
+			"Northstar synthetic lab policy identity is invalid":
+		default:
+			filtered = append(filtered, existing)
+		}
+	}
+	if blocker != "" {
+		filtered = append(filtered, blocker)
+	}
+	sort.Strings(filtered)
+	plan.Blockers = filtered
+	if len(plan.Blockers) == 0 {
+		plan.Status = simulatorRuntimePlanOnly
+	} else {
+		plan.Status = simulatorRuntimePlanBlocked
+	}
 }
 
 func withoutSimulatorRuntimeBudgetEvidenceBlockers(blockers []string) []string {
@@ -594,6 +709,7 @@ func buildCurrentSimulatorScenarioPlan(organizationID, scenarioID string) (simul
 			status: http.StatusServiceUnavailable, message: "organization profile is unavailable",
 		}
 	}
+	manifest.OrganizationID = organizationID
 	scenario, err := readExplicitSimulatorScenario(scenarioID)
 	if err != nil {
 		var failure *simulatorScenarioPlanBuildFailure

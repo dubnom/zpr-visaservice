@@ -1284,7 +1284,14 @@ start_machine_container() {
     machine_control_url="https://[fd5a:5052:adda:1:ffff:ffff:ffff:fffe]:8792"
     if [ "$machine_runtime_driver" = docker-multinode ]; then
         machine_node_address="$machine_node_ip:5000"
-        machine_network="zpr-$machine_organization"
+        machine_network=$(machine_docker_network_for_org "$machine_organization") || return 1
+        if [ "$machine_organization" = northstar ] &&
+           [ -n "${SIMULATION_NORTHSTAR_DOCKER_NETWORK:-}" ]; then
+            docker network inspect "$machine_network" >/dev/null 2>&1 || {
+                echo "Northstar synthetic machine network is unavailable: $machine_network" >&2
+                return 1
+            }
+        fi
         refresh_multinode_services_if_idle "$machine_organization"
         start_zpr_machine_control_service
         machine_control_address=$(cat "$MACHINE_CONTROL_ADDRESS_FILE")
@@ -1390,7 +1397,43 @@ start_zpr_machine_control_service() {
     resolve_machine_runtime
     if [ "$machine_runtime_driver" = docker-multinode ]; then
         node_container="$machine_organization-node0"
-        node_ip=$(jq -er '.runtime.nodes[0].substrate_address' "$machine_profile")
+        if [ "$machine_organization" = northstar ] &&
+           [ -n "${SIMULATION_NORTHSTAR_DOCKER_NETWORK:-}" ]; then
+            [ "$SIMULATION_NORTHSTAR_DOCKER_NETWORK" = zpr-northstar-synthetic ] || {
+                echo "Northstar machine-control route requires zpr-northstar-synthetic" >&2
+                return 1
+            }
+            node_ip=$(
+                python3 - "${SIMULATION_NORTHSTAR_NODE_ADDRESS:-}" <<'PY'
+import ipaddress
+import sys
+
+value = sys.argv[1]
+host, separator, port = value.rpartition(":")
+try:
+    address = ipaddress.ip_address(host)
+except ValueError:
+    raise SystemExit("SIMULATION_NORTHSTAR_NODE_ADDRESS must be a reachable IPv4 endpoint on port 5000")
+if (
+    not separator
+    or port != "5000"
+    or address.version != 4
+    or address.is_loopback
+    or address.is_link_local
+    or address.is_multicast
+    or address.is_unspecified
+    or address.is_reserved
+    or any(address in ipaddress.ip_network(network) for network in (
+        "192.0.2.0/24", "198.51.100.0/24", "203.0.113.0/24"
+    ))
+):
+    raise SystemExit("SIMULATION_NORTHSTAR_NODE_ADDRESS must be a reachable IPv4 endpoint on port 5000")
+print(address)
+PY
+            ) || return 1
+        else
+            node_ip=$(jq -er '.runtime.nodes[0].substrate_address' "$machine_profile")
+        fi
         case "${ZPR_MULTINODE_PLATFORM:-linux/amd64}" in
             linux/arm64)
                 proxy_in_node=/tmp/zpr-machine-control-proxy-linux-arm64

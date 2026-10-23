@@ -333,6 +333,10 @@ func validateSimulatorScenarioStep(step simulatorScenarioStep, manifest simulato
 	if step.ClientCount != 0 && step.Action != "stress_traffic" {
 		return errors.New("client count override is only valid for stress traffic")
 	}
+	if organization.SyntheticLabOnly && step.Machine != "" &&
+		(organization.SyntheticWorkload == nil || step.Machine != organization.SyntheticWorkload.MachineID) {
+		return errors.New("Northstar synthetic runtime only supports its configured machine")
+	}
 	switch step.Action {
 	case "verify_packaged_demo":
 		if cleanup || strings.TrimSpace(os.Getenv("SIMULATION_PACKAGED_DEMO_SCRIPT")) == "" {
@@ -1163,7 +1167,12 @@ func simulatorScenarioExecutorForManifest(ctx context.Context, manifest simulato
 			select {
 			case <-ctx.Done():
 				diagnosticsContext, cancel := context.WithTimeout(context.Background(), 2*time.Second)
-				output, logsErr := scenarioCommand(diagnosticsContext, "docker", "logs", "--tail", "6", machineContainerName(step.Machine))
+				container, _, containerErr := simulatorScenarioMachineContainerName(manifest, step.Machine)
+				if containerErr != nil {
+					cancel()
+					return "", containerErr
+				}
+				output, logsErr := scenarioCommand(diagnosticsContext, "docker", "logs", "--tail", "6", container)
 				cancel()
 				if logsErr != nil {
 					output += "\ncontroller logs unavailable: " + logsErr.Error()
@@ -1204,7 +1213,7 @@ func simulatorScenarioExecutorForManifest(ctx context.Context, manifest simulato
 		return fmt.Sprintf("selected %d workload(s)", len(step.Workloads)), nil
 	case "start_workload", "stop_workload":
 		if step.Action == "stop_workload" {
-			running, err := scenarioMachineRunning(ctx, step.Machine)
+			running, err := scenarioMachineRunningForManifest(ctx, manifest, step.Machine)
 			if err != nil {
 				return "", err
 			}
@@ -1242,7 +1251,7 @@ func simulatorScenarioExecutorForManifest(ctx context.Context, manifest simulato
 			return "", err
 		}
 		if step.Action == "start_workload" {
-			if err := waitForMachineWorkloadLink(ctx, step.Machine, agent, true); err != nil {
+			if err := waitForMachineWorkloadLink(ctx, manifest, step.Machine, agent, true); err != nil {
 				return "", err
 			}
 		}
@@ -1471,46 +1480,7 @@ func simulatorScenarioExecutorForManifest(ctx context.Context, manifest simulato
 		}
 		return output, fmt.Errorf("DNS lookup returned no IPv6 address for %s", step.Target)
 	case "traffic":
-		component, _ := readSimulatorComponent(manifest, step.Component)
-		target := component.Target
-		if step.Target != "" {
-			target = step.Target
-		}
-		var output string
-		var err error
-		if step.Machine != "" {
-			session := simulatorSessions.snapshot([]string{step.Machine})[step.Machine]
-			if !session.Authenticated {
-				return "", errors.New("log in before sending traffic from a machine")
-			}
-			selected := false
-			for _, name := range session.Workloads {
-				selected = selected || name == step.Component
-			}
-			if !selected {
-				return "", fmt.Errorf("traffic workload %q is not selected on %s", step.Component, step.Machine)
-			}
-			output, err = scenarioCommand(ctx, "docker", "exec", machineContainerName(step.Machine), "ping6", "-c", "2", "-W", "1", target)
-		} else {
-			container := strings.TrimSpace(os.Getenv("SIMULATION_CONTAINER"))
-			if container == "" {
-				container = "zpr-local-linux-node"
-			}
-			output, err = scenarioCommand(ctx, "docker", "exec", container, "ip", "netns", "exec", component.Namespace, "ping6", "-c", "2", "-W", "1", target)
-		}
-		if err != nil && step.Expected == "deny" {
-			var exitError *exec.ExitError
-			if errors.As(err, &exitError) && exitError.ExitCode() == 1 {
-				return output + "\ntraffic denied as expected", nil
-			}
-		}
-		if err != nil {
-			return output, err
-		}
-		if step.Expected == "deny" {
-			return output, errors.New("traffic was allowed, but the scenario expected denial")
-		}
-		return output + "\ntraffic allowed as expected", nil
+		return executeScenarioTrafficStep(ctx, manifest, step, scenarioCommand, readBusinessDenials)
 	case "logout":
 		session := simulatorSessions.snapshot([]string{step.Machine})[step.Machine]
 		if !session.Authenticated {
@@ -1522,7 +1492,7 @@ func simulatorScenarioExecutorForManifest(ctx context.Context, manifest simulato
 		simulatorSessions.clear(step.Machine)
 		return "logged out", nil
 	case "stop_machine":
-		return stopScenarioMachine(ctx, step.Machine)
+		return stopScenarioMachine(ctx, manifest, step.Machine)
 	case "delay":
 		timer := time.NewTimer(time.Duration(step.TimeoutSeconds) * time.Second)
 		defer timer.Stop()
@@ -1715,10 +1685,13 @@ func requireScenarioWorkload(machineID, component string) error {
 	return fmt.Errorf("test workload %q is not selected on %s", component, machineID)
 }
 
-func waitForMachineWorkloadLink(ctx context.Context, machineID, agent string, active bool) error {
+func waitForMachineWorkloadLink(ctx context.Context, manifest simulatorManifest, machineID, agent string, active bool) error {
 	ticker := time.NewTicker(250 * time.Millisecond)
 	defer ticker.Stop()
-	container := machineContainerName(machineID)
+	container, _, err := simulatorScenarioMachineContainerName(manifest, machineID)
+	if err != nil {
+		return err
+	}
 	socket := "/run/zpr-workloads/" + agent + ".sock"
 	workloadConfig, configured := machineWorkload(agent)
 	for {
@@ -1798,9 +1771,15 @@ func withScenarioMachineStart(ctx context.Context, execute func() (string, error
 }
 
 func startScenarioMachine(ctx context.Context, manifest simulatorManifest, machineID string) (string, error) {
+	container, packaged, err := simulatorScenarioMachineContainerName(manifest, machineID)
+	if err != nil {
+		return "", err
+	}
+	if packaged {
+		return startPackagedScenarioMachine(ctx, manifest, machineID, container)
+	}
 	states := simulatorMachineContainerStates([]string{machineID})
 	var output string
-	var err error
 	startCommand, err := simulatorMachineStartCommand(manifest, machineID, states[machineID])
 	if err != nil {
 		return "", err
@@ -1847,6 +1826,60 @@ func startScenarioMachine(ctx context.Context, manifest simulatorManifest, machi
 	return strings.TrimSpace(output + "\n" + routeOutput), nil
 }
 
+func startPackagedScenarioMachine(ctx context.Context, manifest simulatorManifest, machineID, container string) (string, error) {
+	state, err := simulatorScenarioContainerState(ctx, container)
+	if err != nil {
+		return "", err
+	}
+	if state == "running" {
+		return "machine already running", nil
+	}
+	machineIDs := make([]string, 0, len(manifest.Machines))
+	for _, machine := range manifest.Machines {
+		if machine.ID != machineID {
+			machineIDs = append(machineIDs, machine.ID)
+		}
+	}
+	states := simulatorMachineContainerStates(machineIDs)
+	running := 0
+	for _, candidate := range states {
+		if candidate == "running" {
+			running++
+		}
+	}
+	if err := validateScenarioMachineCapacity(running, true); err != nil {
+		return "", err
+	}
+	simulatorControllers.clear(machineID)
+	simulatorMachineCommands.clear(machineID)
+	state, err = simulatorScenarioProvisioningAction(ctx, manifest, machineID, "start")
+	if err != nil {
+		return "", err
+	}
+	if state != "running" && state != "ready" {
+		return "", fmt.Errorf("packaged runtime start returned unexpected state %q", state)
+	}
+	return "packaged machine started", nil
+}
+
+func simulatorScenarioContainerState(ctx context.Context, container string) (string, error) {
+	output, err := scenarioCommand(ctx, "docker", "inspect", "-f", "{{.State.Status}}", container)
+	if err != nil {
+		var exitError *exec.ExitError
+		if errors.As(err, &exitError) && exitError.ExitCode() == 1 {
+			return "missing", nil
+		}
+		return "", fmt.Errorf("inspect packaged machine container: %w", err)
+	}
+	state := strings.TrimSpace(output)
+	switch state {
+	case "created", "running", "paused", "restarting", "removing", "exited", "dead":
+		return state, nil
+	default:
+		return "", fmt.Errorf("packaged machine container returned invalid state %q", state)
+	}
+}
+
 func ensureScenarioMachineCapacity(manifest simulatorManifest, starting bool) error {
 	machineIDs := make([]string, 0, len(manifest.Machines))
 	for _, machine := range manifest.Machines {
@@ -1869,7 +1902,39 @@ func validateScenarioMachineCapacity(running int, starting bool) error {
 	return nil
 }
 
-func stopScenarioMachine(ctx context.Context, machineID string) (string, error) {
+func stopScenarioMachine(ctx context.Context, manifest simulatorManifest, machineID string) (string, error) {
+	container, packaged, err := simulatorScenarioMachineContainerName(manifest, machineID)
+	if err != nil {
+		return "", err
+	}
+	if packaged {
+		state, err := simulatorScenarioContainerState(ctx, container)
+		if err != nil {
+			return "", err
+		}
+		if state == "missing" || state == "exited" || state == "created" {
+			simulatorSessions.clear(machineID)
+			simulatorControllers.clear(machineID)
+			simulatorMachineCommands.clear(machineID)
+			return "machine already stopped", nil
+		}
+		if simulatorSessions.snapshot([]string{machineID})[machineID].Authenticated {
+			logoutCtx, cancel := context.WithTimeout(ctx, 2*time.Second)
+			_, _ = simulatorMachineCommands.enqueueAndWait(logoutCtx, machineID, machineControlCommand{Action: "logout"})
+			cancel()
+		}
+		state, err = simulatorScenarioProvisioningAction(ctx, manifest, machineID, "stop")
+		if err != nil {
+			return "", err
+		}
+		if state != "stopped" && state != "exited" && state != "missing" {
+			return "", fmt.Errorf("packaged runtime stop returned unexpected state %q", state)
+		}
+		simulatorSessions.clear(machineID)
+		simulatorControllers.clear(machineID)
+		simulatorMachineCommands.clear(machineID)
+		return "packaged machine stopped", nil
+	}
 	states := simulatorMachineContainerStates([]string{machineID})
 	if states[machineID] == "missing" || states[machineID] == "exited" {
 		simulatorSessions.clear(machineID)

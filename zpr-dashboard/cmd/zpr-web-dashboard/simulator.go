@@ -296,6 +296,20 @@ func runSimulator(listen string) (runErr error) {
 	mux.HandleFunc("GET /api/simulator/scenarios", handleWorkspaceScenarioCatalog)
 	mux.HandleFunc("GET /api/simulator/organizations/{organization}/scenarios", handleWorkspaceScenarioCatalog)
 	scenarioPlanHandler := newSimulatorScenarioPlanHandler()
+	if policyStatusClient != nil {
+		scenarioPlanHandler.resolveCurrentPolicy = func(
+			ctx context.Context, organizationID, targetID string,
+		) (simulatorRuntimePolicyEvidence, error) {
+			current, err := policyStatusClient.current(ctx, organizationID, targetID)
+			if err != nil {
+				return simulatorRuntimePolicyEvidence{}, err
+			}
+			return simulatorRuntimePolicyEvidence{
+				Resolved: true, OrganizationID: current.Organization,
+				TargetID: current.TargetID, Digest: current.CurrentDigest,
+			}, nil
+		}
+	}
 	mux.HandleFunc("POST /api/simulator/scenario-plans/preflight", scenarioPlanHandler.Preflight)
 	mux.HandleFunc("POST /api/simulator/scenario-plans/approve", scenarioPlanHandler.Approve)
 	mux.HandleFunc("POST /api/simulator/organizations/{organization}/scenario-plans/preflight", scenarioPlanHandler.Preflight)
@@ -1173,14 +1187,17 @@ func simulatorSelectedAgentLinkStates(manifest simulatorManifest, sessions map[s
 			if agent == "" {
 				agent = component.Name
 			}
-			states[agent] = simulatorMachineAgentLinkState(machineID, agent)
+			states[agent] = simulatorMachineAgentLinkState(manifest, machineID, agent)
 		}
 	}
 	return states
 }
 
-func simulatorMachineAgentLinkState(machineID, agent string) string {
-	container := machineContainerName(machineID)
+func simulatorMachineAgentLinkState(manifest simulatorManifest, machineID, agent string) string {
+	container, _, err := simulatorScenarioMachineContainerName(manifest, machineID)
+	if err != nil {
+		return "unknown"
+	}
 	socket := "/run/zpr-workloads/" + agent + ".sock"
 	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
 	defer cancel()

@@ -1,5 +1,5 @@
 use crate::actor::Actor;
-use crate::attribute::{Attribute, NEVER_EXPIRES, ROLE_ADAPTER, ROLE_NODE, key};
+use crate::attribute::{key, Attribute, NEVER_EXPIRES, ROLE_ADAPTER, ROLE_NODE};
 use crate::error::EvalError;
 use crate::eval_result::{Direction, FinalDeny, Hit, PartialEvalResult, Signal};
 use crate::joinpolicy::JFlag;
@@ -7,8 +7,8 @@ use crate::logging::targets::EVAL;
 use crate::policy::{CommunicationPolicySummary, Policy};
 use crate::visa::VisaProps;
 
-use zpr::vsapi_types::PacketDesc;
 use zpr::vsapi_types::vsapi_ip_number as ip_proto;
+use zpr::vsapi_types::PacketDesc;
 
 use enumset::EnumSet;
 use std::collections::HashSet;
@@ -735,7 +735,10 @@ mod test {
     use bytes::{Buf, Bytes};
     use std::net::IpAddr;
     use std::time::{Duration, SystemTime};
-    use std::{path::Path, sync::Once};
+    use std::{
+        path::{Path, PathBuf},
+        sync::Once,
+    };
     use tracing::Level;
     use tracing_subscriber::{filter::LevelFilter, fmt, prelude::*};
 
@@ -758,6 +761,10 @@ mod test {
             .join("tests")
             .join("zpl")
             .join(pname);
+        load_policy_from_path(&pname)
+    }
+
+    fn load_policy_from_path(pname: &Path) -> Policy {
         let encoded = std::fs::read(pname).unwrap();
         let encoded_container_bytes = Bytes::from(encoded);
         let container_reader = capnp::serialize::read_message(
@@ -819,6 +826,147 @@ mod test {
                 assert!(hits[0].direction == Direction::Forward);
             }
             _ => panic!("expected deny decision, not {:?}", decision),
+        }
+    }
+
+    #[test]
+    fn test_northstar_finance_identity_allow_baseline_and_denial() {
+        setup();
+        let fixture_dir = std::env::var_os("ZPR_NORTHSTAR_POLICY_FIXTURE_DIR")
+            .map(PathBuf::from)
+            .unwrap_or_else(|| {
+                Path::new(env!("CARGO_MANIFEST_DIR"))
+                    .join("tests")
+                    .join("zpl")
+            });
+        let policy_path = fixture_dir.join("northstar-machine-policy-deny-lab.bin2");
+        let identity_path = policy_path.with_extension("identity");
+        let policy_bytes = std::fs::read(&policy_path).unwrap();
+        let policy_digest = openssl::sha::sha256(&policy_bytes);
+        let policy_digest = policy_digest
+            .iter()
+            .map(|byte| format!("{byte:02x}"))
+            .collect::<String>();
+        let identity = std::fs::read_to_string(identity_path).unwrap();
+        assert!(identity
+            .lines()
+            .any(|line| line == "organization=northstar"));
+        assert!(identity
+            .lines()
+            .any(|line| line == "target_id=northstar-machine-policy-deny-lab-v4"));
+        assert!(identity
+            .lines()
+            .any(|line| line == "synthetic_lab_only=true"));
+        assert!(identity
+            .lines()
+            .any(|line| line == "production_authorized=false"));
+        assert!(identity
+            .lines()
+            .any(|line| line == format!("policy_sha256={policy_digest}")));
+        for field in [
+            "finance_workspace_cn=finance-workspace",
+            "finance_workspace_service=FinanceWorkspace",
+            "finance_workspace_policy_service_id=NorthstarLabFinanceWorkspace",
+            "finance_workspace_target=fd00:1:2::1",
+            "finance_workspace_bootstrap_path=include/finance-workspace-public-key.pem",
+            "node0_zpr_address=fd5a:5052:90de::10",
+            "isolated_network=zpr-northstar-synthetic",
+            "target_host=workbench.local",
+            "zpr_image_ref=zpr-multinode:isolated-w5-r6-full-catalog-20261020-0a7f183a38cf",
+            "zpr_image_digest=sha256:302b59ef9f5450c5a2cc4ffc76c9fe9226b8e89827690efebf225c947111b150",
+            "simulator_image_ref=zpr-simulator:isolated-w5-r6-full-catalog-20261021-scopefix2",
+            "simulator_image_digest=sha256:c633c0a2d773ccb8b0e39ae23a15b24a4ca00f748598dbe199660a88eccb5655",
+        ] {
+            assert!(identity.lines().any(|line| line == field));
+        }
+
+        let public_key_path = fixture_dir.join("include/finance-workspace-public-key.pem");
+        let public_key_bytes = std::fs::read(&public_key_path).unwrap();
+        let public_key_digest = openssl::sha::sha256(&public_key_bytes)
+            .iter()
+            .map(|byte| format!("{byte:02x}"))
+            .collect::<String>();
+        assert!(identity.lines().any(|line| {
+            line == format!("finance_workspace_public_key_sha256={public_key_digest}")
+        }));
+
+        let pol = load_policy_from_path(&policy_path);
+        let input_key = openssl::rsa::Rsa::public_key_from_pem(&public_key_bytes).unwrap();
+        let compiled_key = pol
+            .get_bootstrap_key_by_cn("finance-workspace")
+            .expect("compiled policy is missing FinanceWorkspace bootstrap key");
+        assert_eq!(
+            compiled_key.public_key_to_der().unwrap(),
+            input_key.public_key_to_der().unwrap()
+        );
+        let ctx = EvalContext::new(Arc::new(pol));
+
+        let mut finance_workspace = Actor::new();
+        finance_workspace
+            .add_attr_from_parts(
+                key::SERVICES,
+                "NorthstarLabFinanceWorkspace",
+                Duration::from_secs(60),
+            )
+            .unwrap();
+        finance_workspace
+            .add_attr_from_parts(key::CN, "finance-workspace", Duration::from_secs(60))
+            .unwrap();
+
+        let mut baseline_client = Actor::new();
+        baseline_client
+            .add_attr_from_parts(
+                key::CN,
+                "northstar-lab-baseline-client",
+                Duration::from_secs(60),
+            )
+            .unwrap();
+        // The policy compiler requires device authority for an allow-device rule.
+        baseline_client
+            .add_attr_from_parts(
+                key::DEVICE_AUTHORITY,
+                "synthetic-evaluator-fixture",
+                Duration::from_secs(60),
+            )
+            .unwrap();
+        let baseline_packet = PacketDesc::new_icmp("fd00:1:4::2", "fd00:1:2::1", 128, 0).unwrap();
+        match ctx
+            .eval_request(&baseline_client, &finance_workspace, &baseline_packet)
+            .unwrap()
+        {
+            PartialEvalResult::AllowWithoutRoute(hits) => {
+                assert_eq!(hits.len(), 1);
+                assert_eq!(hits[0].direction, Direction::Forward);
+                let source = hits[0].zpl_source.as_deref().unwrap();
+                assert!(source.contains("allow NorthstarLabBaselineClient"));
+            }
+            other => panic!("expected allowed baseline flow, got {other:?}"),
+        }
+
+        for source_addr in ["fd5a:5052:3000::1", "fd00:1:4::1"] {
+            let mut machine_01_finance_client = Actor::new();
+            machine_01_finance_client
+                .add_attr_from_parts(key::CN, "finance-client", Duration::from_secs(60))
+                .unwrap();
+            machine_01_finance_client
+                .add_attr_from_parts(key::ZPR_ADDR, source_addr, Duration::from_secs(60))
+                .unwrap();
+
+            let packet = PacketDesc::new_icmp(source_addr, "fd00:1:2::1", 128, 0).unwrap();
+            let decision = ctx
+                .eval_request(&machine_01_finance_client, &finance_workspace, &packet)
+                .unwrap();
+            match decision {
+                PartialEvalResult::Deny(FinalDeny::Deny(hits)) => {
+                    assert_eq!(hits.len(), 1);
+                    assert_eq!(hits[0].direction, Direction::Forward);
+                    let source = hits[0].zpl_source.as_deref().unwrap();
+                    assert!(source.contains("never allow Machine01FinanceClient"));
+                }
+                other => {
+                    panic!("expected a matched policy denial for {source_addr}, got {other:?}")
+                }
+            }
         }
     }
 

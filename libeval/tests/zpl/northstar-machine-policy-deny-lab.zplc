@@ -1,0 +1,23 @@
+# SYNTHETIC LAB FIXTURE ONLY. The one-node topology is for offline policy compilation.
+
+[nodes.machine-01]
+zpr_address = "fd00:1:4::1"
+provider = [["device.zpr.adapter.cn", "finance-client"]]
+
+[visa_service]
+dock_node = "machine-01"
+
+[trusted_services.default]
+cert_path = ""
+
+[bootstrap]
+"finance-workspace" = "include/finance-workspace-public-key.pem"
+
+[protocols.ping]
+l4protocol = "ICMP6"
+icmp_type = "request-response"
+icmp_codes = [128, 129]
+
+[services.NorthstarLabFinanceWorkspace]
+protocol = "ping"
+provider = [["device.zpr.adapter.cn", "finance-workspace"]]

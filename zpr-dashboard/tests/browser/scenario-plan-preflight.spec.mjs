@@ -53,9 +53,9 @@ function plan(scenarioID, overrides = {}) {
   };
 }
 
-function unavailableBudget(scenarioID, overrides = {}) {
+function unavailableBudget(scenarioID, overrides = {}, organizationID = organization.id) {
   return {
-    organization_id: organization.id,
+    organization_id: organizationID,
     scenario_id: scenarioID,
     authorization_scope_digest: authorizationScopeDigest,
     blockers: ["current approved budget evidence is unavailable or invalid"],
@@ -64,8 +64,18 @@ function unavailableBudget(scenarioID, overrides = {}) {
 }
 
 async function setup(page, context, options = {}) {
+  const fixtureOrganization = options.organization || organization;
+  const fixtureOrganizations = options.organizations || [fixtureOrganization];
+  const fixtureScenarios = options.scenarios || scenarios;
+  const fixtureScenariosByOrganization = options.scenariosByOrganization || {
+    [fixtureOrganization.id]: fixtureScenarios,
+  };
+  const activeOrganizationID = options.activeOrganizationID || fixtureOrganization.id;
+  const selectedScenarioID = options.selectedScenarioID || "sample-flow";
   const state = {
     preflightRequests: [],
+    preflightPaths: [],
+    scenarioCatalogPaths: [],
     approvalRequests: [],
     runRequests: [],
     catalogReads: 0,
@@ -97,11 +107,20 @@ async function setup(page, context, options = {}) {
     }
     if (url.pathname === "/api/simulator/organizations") {
       return route.fulfill({
-        json: { active_id: organization.id, organizations: [organization] },
+        json: { active_id: activeOrganizationID, organizations: fixtureOrganizations },
       });
     }
-    if (url.pathname === "/api/simulator/scenarios") {
+    const scopedScenarioCatalog = url.pathname.match(
+      /^\/api\/simulator\/organizations\/([^/]+)\/scenarios$/,
+    );
+    if (url.pathname === "/api/simulator/scenarios" || scopedScenarioCatalog) {
       state.catalogReads++;
+      const catalogOrganizationID = scopedScenarioCatalog
+        ? decodeURIComponent(scopedScenarioCatalog[1])
+        : fixtureOrganization.id;
+      const catalogOrganization = fixtureOrganizations.find(item => item.id === catalogOrganizationID);
+      const catalogScenarios = fixtureScenariosByOrganization[catalogOrganizationID] || [];
+      if (scopedScenarioCatalog) state.scenarioCatalogPaths.push(url.pathname);
       const run = state.runSnapshot && options.polledRunResponse
         ? options.polledRunResponse(state.runSnapshot, state.catalogReads)
         : state.runSnapshot || { state: "idle", steps: [] };
@@ -109,22 +128,26 @@ async function setup(page, context, options = {}) {
       state.catalogRunIDs.push(run.run_id || "");
       return route.fulfill({
         json: {
-          active_organization_id: organization.id,
-          organization,
-          scenarios,
+          active_organization_id: activeOrganizationID,
+          organization: catalogOrganization,
+          scenarios: catalogScenarios,
           run,
         },
       });
     }
-    if (url.pathname === "/api/simulator/scenario-plans/preflight") {
+    const scopedPreflight = url.pathname.match(
+      /^\/api\/simulator\/organizations\/([^/]+)\/scenario-plans\/preflight$/,
+    );
+    if (url.pathname === "/api/simulator/scenario-plans/preflight" || scopedPreflight) {
       const body = request.postDataJSON();
       state.preflightRequests.push({ method: request.method(), body });
+      state.preflightPaths.push(url.pathname);
       if (options.firstGrant && !state.authorityGranted) {
         return route.fulfill({
           status: 503,
           json: options.unavailableBudgetResponse
             ? options.unavailableBudgetResponse(body)
-            : unavailableBudget(body.scenario_id),
+            : unavailableBudget(body.scenario_id, {}, fixtureOrganization.id),
         });
       }
       if (options.preflightStatus && options.preflightStatus !== 200) {
@@ -135,10 +158,11 @@ async function setup(page, context, options = {}) {
       }
       const response = options.preflightResponse
         ? options.preflightResponse(body)
-        : plan(body.scenario_id);
+        : plan(body.scenario_id, { organization_id: fixtureOrganization.id });
       return route.fulfill({ json: response });
     }
-    if (url.pathname === "/api/simulator/scenario-plans/approve") {
+    if (url.pathname === "/api/simulator/scenario-plans/approve" ||
+        /^\/api\/simulator\/organizations\/[^/]+\/scenario-plans\/approve$/.test(url.pathname)) {
       const body = request.postDataJSON();
       state.approvalRequests.push({ method: request.method(), body });
       if (options.approvalResponse) {
@@ -162,20 +186,29 @@ async function setup(page, context, options = {}) {
       state.budgetAuthorityRequests.push({ method: request.method(), path: url.pathname });
       return route.fulfill({ status: 403, json: { error: "Simulator must not call production budget mutations." } });
     }
-    const runPath = url.pathname.match(/^\/api\/simulator\/scenarios\/([^/]+)\/run$/);
-    if (runPath) {
+    const scopedRunPath = url.pathname.match(
+      /^\/api\/simulator\/organizations\/([^/]+)\/scenarios\/([^/]+)\/run$/,
+    );
+    const legacyRunPath = url.pathname.match(/^\/api\/simulator\/scenarios\/([^/]+)\/run$/);
+    if (scopedRunPath || legacyRunPath) {
       const body = request.postDataJSON();
       state.runRequests.push({ method: request.method(), path: url.pathname, body });
       if (options.deferRunResponse) {
         await new Promise(resolve => { state.releaseRun = resolve; });
       }
+      const runOrganizationID = scopedRunPath
+        ? decodeURIComponent(scopedRunPath[1])
+        : fixtureOrganization.id;
+      const runScenarioID = scopedRunPath
+        ? decodeURIComponent(scopedRunPath[2])
+        : legacyRunPath[1];
       const response = options.runResponse
-        ? options.runResponse({ scenarioID: runPath[1], body })
+        ? options.runResponse({ scenarioID: runScenarioID, body })
         : {
           run_id: "run-1",
-          run_namespace: `${organization.id}/${runPath[1]}/run-1`,
-          organization_id: organization.id,
-          scenario_id: runPath[1],
+          run_namespace: `${runOrganizationID}/${runScenarioID}/run-1`,
+          organization_id: runOrganizationID,
+          scenario_id: runScenarioID,
           plan_digest: body.plan_digest,
           state: "running",
           steps: [],
@@ -211,9 +244,13 @@ async function setup(page, context, options = {}) {
   });
 
   await page.goto(`${origin}/scenarios.html#simulate`);
-  await expect(page.locator("#scenario-plan-organization")).toHaveValue(organization.id);
-  await expect(page.locator("#scenario-plan-scenario option[value='sample-flow']")).toHaveCount(1);
-  await page.locator("#scenario-plan-scenario").selectOption("sample-flow");
+  const organizationSelect = page.locator("#scenario-plan-organization");
+  await expect(organizationSelect).toHaveValue(activeOrganizationID);
+  if (activeOrganizationID !== fixtureOrganization.id) {
+    await organizationSelect.selectOption(fixtureOrganization.id);
+  }
+  await expect(page.locator(`#scenario-plan-scenario option[value="${selectedScenarioID}"]`)).toHaveCount(1);
+  await page.locator("#scenario-plan-scenario").selectOption(selectedScenarioID);
   await expect(page.getByRole("button", { name: "Preview plan", exact: true })).toBeEnabled();
   return state;
 }
@@ -275,6 +312,85 @@ test("unavailable budget response previews only a validated scope and keeps appr
   expect(state.preflightRequests).toEqual([{
     method: "POST",
     body: { organization_id: organization.id, scenario_id: "sample-flow" },
+  }]);
+  expect(state.approvalRequests).toEqual([]);
+  expect(state.runRequests).toEqual([]);
+  expect(state.budgetAuthorityRequests).toEqual([]);
+});
+
+test("Northstar scoped 503 preflight shows its exact scope and blockers without enabling approval or run", async ({ page, context }) => {
+  const demoOrganization = { id: "demo", name: "Demo" };
+  const northstarOrganization = { id: "northstar", name: "Northstar" };
+  const northstarScenario = {
+    id: "machine-policy-deny",
+    name: "Machine policy deny",
+    description: "Northstar scoped scenario fixture.",
+    organization_id: northstarOrganization.id,
+    current_revision: 1,
+    published_revision: 1,
+    steps: [{ action: "delay", timeout_seconds: 1 }],
+    cleanup: [],
+  };
+  const northstarBlockers = [
+    "No approved budget is present for Northstar.",
+    "Manifest organization demo does not match Northstar.",
+    "Organization policy resolution is required.",
+    "Topology evidence is missing.",
+    "Package contract evidence is missing.",
+    "Budget evidence is unavailable.",
+  ];
+  const state = await setup(page, context, {
+    organization: northstarOrganization,
+    organizations: [demoOrganization, northstarOrganization],
+    activeOrganizationID: demoOrganization.id,
+    scenariosByOrganization: {
+      [demoOrganization.id]: [{
+        id: "demo-flow",
+        name: "Demo flow",
+        organization_id: demoOrganization.id,
+        current_revision: 1,
+        published_revision: 1,
+        steps: [],
+        cleanup: [],
+      }],
+      [northstarOrganization.id]: [northstarScenario],
+    },
+    selectedScenarioID: northstarScenario.id,
+    firstGrant: true,
+    unavailableBudgetResponse: body => unavailableBudget(
+      body.scenario_id,
+      { blockers: northstarBlockers },
+      northstarOrganization.id,
+    ),
+  });
+
+  await expect(page.locator("#scenario-plan-organization")).toHaveValue(northstarOrganization.id);
+  await expect(page.locator("#scenario-plan-scenario")).toHaveValue(northstarScenario.id);
+  await previewPlan(page);
+
+  const handoff = page.locator("#scenario-plan-budget-handoff");
+  await expect(handoff).toBeVisible();
+  await expect(page.locator("#scenario-plan-handoff-organization")).toHaveText(northstarOrganization.id);
+  await expect(page.locator("#scenario-plan-handoff-scenario")).toHaveText(northstarScenario.id);
+  await expect(page.locator("#scenario-plan-handoff-digest")).toHaveText(authorizationScopeDigest);
+  await expect(page.locator("#scenario-plan-handoff-blockers li")).toHaveText(northstarBlockers);
+  await expect(handoff).not.toContainText(/csrf|token/i);
+  await expect(page.locator("#scenario-plan-error")).toBeHidden();
+  await expect(page.locator("#scenario-plan-approve")).toBeDisabled();
+  await expect(page.locator("#scenario-plan-run-button")).toBeDisabled();
+
+  expect(state.scenarioCatalogPaths).toContain(
+    `/api/simulator/organizations/${northstarOrganization.id}/scenarios`,
+  );
+  expect(state.preflightPaths).toEqual([
+    `/api/simulator/organizations/${northstarOrganization.id}/scenario-plans/preflight`,
+  ]);
+  expect(state.preflightRequests).toEqual([{
+    method: "POST",
+    body: {
+      organization_id: northstarOrganization.id,
+      scenario_id: northstarScenario.id,
+    },
   }]);
   expect(state.approvalRequests).toEqual([]);
   expect(state.runRequests).toEqual([]);
@@ -345,7 +461,7 @@ test("first grant handoff requires an external authenticated grant and refreshed
   await expect(page.locator("#scenario-plan-run-id")).toHaveText("run-1");
   expect(state.runRequests).toEqual([{
     method: "POST",
-    path: "/api/simulator/scenarios/sample-flow/run",
+    path: "/api/simulator/organizations/alpha/scenarios/sample-flow/run",
     body: { approval_id: "approval-1", plan_digest: digest },
   }]);
   await page.locator("#scenario-plan-run-button").evaluate(button =>
@@ -481,7 +597,7 @@ test("approved run uses the selected scenario and exact approval payload only af
   await expect.poll(() => state.runRequests.length).toBe(1);
   expect(state.runRequests).toEqual([{
     method: "POST",
-    path: "/api/simulator/scenarios/second-flow/run",
+    path: "/api/simulator/organizations/alpha/scenarios/second-flow/run",
     body: { approval_id: "approval-1", plan_digest: digest },
   }]);
   await expect(page.locator("#scenario-plan-run-id")).toHaveText("run-1");
@@ -528,7 +644,7 @@ test("stale approved-run token reports the server conflict and clears unusable a
   expect(state.runSnapshot).toBeNull();
   expect(state.runRequests).toEqual([{
     method: "POST",
-    path: "/api/simulator/scenarios/sample-flow/run",
+    path: "/api/simulator/organizations/alpha/scenarios/sample-flow/run",
     body: { approval_id: "approval-1", plan_digest: digest },
   }]);
 });

@@ -63,12 +63,20 @@ func simulatorPackagedContainerName(organization, primaryMachine, machine, relea
 }
 
 func simulatorUsesPackagedMachine(manifest simulatorManifest, machine string) (bool, error) {
-	if os.Getenv("SIMULATION_PROVISION_ROOT") == "" {
-		return false, nil
-	}
 	organization, err := loadSimulatorOrganization(simulatorOrganizationsDirectory(), manifest.OrganizationID)
 	if err != nil {
 		return false, err
+	}
+	if organization.SyntheticLabOnly {
+		if organization.SyntheticWorkload == nil || machine != organization.SyntheticWorkload.MachineID {
+			return false, errors.New("Northstar synthetic runtime only supports its configured machine")
+		}
+		if os.Getenv("SIMULATION_PROVISION_ROOT") == "" {
+			return false, errors.New("Northstar synthetic runtime requires packaged provisioning")
+		}
+	}
+	if os.Getenv("SIMULATION_PROVISION_ROOT") == "" {
+		return false, nil
 	}
 	if organization.PackagedProvisioning == nil {
 		return false, nil
@@ -79,6 +87,100 @@ func simulatorUsesPackagedMachine(manifest simulatorManifest, machine string) (b
 		}
 	}
 	return false, nil
+}
+
+func simulatorScenarioMachineContainerName(manifest simulatorManifest, machineID string) (string, bool, error) {
+	if !manifestHasMachine(manifest, machineID) {
+		return "", false, errors.New("unknown machine")
+	}
+	packaged, err := simulatorUsesPackagedMachine(manifest, machineID)
+	if err != nil {
+		return "", false, err
+	}
+	if !packaged {
+		return machineContainerName(machineID), false, nil
+	}
+	organization, err := loadSimulatorOrganization(simulatorOrganizationsDirectory(), manifest.OrganizationID)
+	if err != nil {
+		return "", true, err
+	}
+	if !organization.SyntheticLabOnly {
+		return machineContainerName(machineID), false, nil
+	}
+	workload := organization.SyntheticWorkload
+	provisioning := organization.PackagedProvisioning
+	if workload == nil || provisioning == nil || workload.MachineID != machineID {
+		return "", true, errors.New("packaged machine scenario execution requires a synthetic workload contract")
+	}
+	releaseID := strings.TrimSpace(os.Getenv("SIMULATION_PROVISION_RELEASE_ID"))
+	if !simulatorProvisionReleaseIdentifier.MatchString(releaseID) {
+		return "", true, errors.New("packaged machine runtime release configuration is unavailable")
+	}
+	if !filepath.IsAbs(strings.TrimSpace(os.Getenv("SIMULATION_PROVISION_SCRIPT"))) ||
+		strings.TrimSpace(os.Getenv("SIMULATION_PROVISION_PACKAGE")) == "" ||
+		strings.TrimSpace(os.Getenv("SIMULATION_PROVISION_ROOT")) == "" {
+		return "", true, errors.New("packaged machine runtime configuration is incomplete")
+	}
+	return simulatorPackagedContainerName(
+		organization.ID,
+		provisioning.PrimaryMachineID,
+		machineID,
+		releaseID,
+	), true, nil
+}
+
+func simulatorScenarioProvisioningAction(
+	ctx context.Context,
+	manifest simulatorManifest,
+	machineID, action string,
+) (string, error) {
+	return simulatorScenarioProvisioningActionWithRunner(
+		ctx, manifest, machineID, action, runSimulatorProvisionCommand,
+	)
+}
+
+func simulatorScenarioProvisioningActionWithRunner(
+	ctx context.Context,
+	manifest simulatorManifest,
+	machineID, action string,
+	run simulatorProvisionRunner,
+) (string, error) {
+	if action != "start" && action != "stop" && action != "verify" {
+		return "", errors.New("unsupported packaged scenario lifecycle action")
+	}
+	container, packaged, err := simulatorScenarioMachineContainerName(manifest, machineID)
+	if err != nil {
+		return "", err
+	}
+	if !packaged {
+		return "", errors.New("machine does not use packaged provisioning")
+	}
+	organization, err := loadSimulatorOrganization(simulatorOrganizationsDirectory(), manifest.OrganizationID)
+	if err != nil {
+		return "", err
+	}
+	output, err := run(
+		ctx,
+		strings.TrimSpace(os.Getenv("SIMULATION_PROVISION_SCRIPT")),
+		action,
+		organization.ID,
+		machineID,
+	)
+	if err != nil {
+		return "", err
+	}
+	var response struct {
+		Version      int    `json:"version"`
+		Organization string `json:"organization_id"`
+		Machine      string `json:"machine_id"`
+		State        string `json:"state"`
+	}
+	if err := json.Unmarshal(output, &response); err != nil ||
+		response.Version != 1 || response.Organization != organization.ID ||
+		response.Machine != machineID || strings.TrimSpace(response.State) == "" {
+		return "", fmt.Errorf("packaged runtime returned an invalid or mismatched response for %s", container)
+	}
+	return response.State, nil
 }
 
 type simulatorProvisionRunner func(context.Context, string, string, string, string) ([]byte, error)

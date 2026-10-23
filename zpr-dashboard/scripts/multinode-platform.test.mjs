@@ -211,7 +211,10 @@ test("native machine-control proxy replaces an old x86 process with ARM64", () =
         shift 2
         case "$1" in
           mkdir) return ;;
-          /app/bin/ph-cli) printf '(Active)\\n' ;;
+          /app/bin/ph-cli)
+            marker="$RUNTIME_DIR/$SIMULATION_ORGANIZATION_ID-ph-cli-checked"
+            if [ ! -e "$marker" ]; then : >"$marker"; printf '(Inactive)\\n'; else printf '(Active)\\n'; fi
+            ;;
           ip) printf '12: tun5 inet6 fd5a:5052::1/32 scope global\\n' ;;
           ps) printf '42 /tmp/zpr-machine-control-proxy-linux-amd64 --proxy-upstream 172.17.0.3:8791\\n' ;;
           kill) [ "$2" != -0 ] || return 1; printf 'kill %s\\n' "$2" ;;
@@ -226,6 +229,8 @@ test("native machine-control proxy replaces an old x86 process with ARM64", () =
     const result = run(script, {
       ZPR_MULTINODE_PLATFORM: "linux/arm64", RUNTIME_DIR: directory, STATE_DIR: directory,
       SIMULATION_ORGANIZATION_ID: "northstar", SIMULATION_EXPECTED_ORGANIZATION: "",
+      SIMULATION_NORTHSTAR_DOCKER_NETWORK: "zpr-northstar-synthetic",
+      SIMULATION_NORTHSTAR_NODE_ADDRESS: "172.30.0.42:5000",
       ORGANIZATIONS_DIR: fileURLToPath(new URL("../cmd/zpr-web-dashboard/examples/organizations", import.meta.url)),
       ACTIVE_ORGANIZATION_FILE: join(directory, "absent"),
       MACHINE_CONTROL_ADDRESS_FILE: join(directory, "address"),
@@ -236,6 +241,39 @@ test("native machine-control proxy replaces an old x86 process with ARM64", () =
     assert.match(result.stdout, /kill 42/);
     assert.match(result.stdout, /copy \/test\/native-proxy/);
     assert.match(result.stdout, /launch .*\/tmp\/zpr-machine-control-proxy-linux-arm64/);
+    assert.match(result.stdout, /172\.30\.0\.42/);
+    assert.doesNotMatch(result.stdout, /172\.30\.0\.13/);
+
+    const legacy = run(script, {
+      ZPR_MULTINODE_PLATFORM: "linux/arm64", RUNTIME_DIR: directory, STATE_DIR: directory,
+      SIMULATION_ORGANIZATION_ID: "great-lakes", SIMULATION_EXPECTED_ORGANIZATION: "",
+      SIMULATION_NORTHSTAR_DOCKER_NETWORK: "", SIMULATION_NORTHSTAR_NODE_ADDRESS: "",
+      ORGANIZATIONS_DIR: fileURLToPath(new URL("../cmd/zpr-web-dashboard/examples/organizations", import.meta.url)),
+      ACTIVE_ORGANIZATION_FILE: join(directory, "absent"),
+      MACHINE_CONTROL_ADDRESS_FILE: join(directory, "legacy-address"),
+      SIMULATOR_DOCKER_CONTAINER: "test-simulator",
+      MACHINE_CONTROL_PROXY_BIN: "/test/native-proxy",
+    });
+    assert.equal(legacy.status, 0, legacy.stderr);
+    assert.match(legacy.stdout, /172\.31\.0\.13/);
+    assert.doesNotMatch(legacy.stdout, /172\.30\.0\.42/);
+
+    for (const nodeAddress of ["", "172.30.0.42:8792", "not-an-ip:5000", "192.0.2.10:5000"]) {
+      const invalid = run(script, {
+        ZPR_MULTINODE_PLATFORM: "linux/arm64", RUNTIME_DIR: directory, STATE_DIR: directory,
+        SIMULATION_ORGANIZATION_ID: "northstar", SIMULATION_EXPECTED_ORGANIZATION: "",
+        SIMULATION_NORTHSTAR_DOCKER_NETWORK: "zpr-northstar-synthetic",
+        SIMULATION_NORTHSTAR_NODE_ADDRESS: nodeAddress,
+        ORGANIZATIONS_DIR: fileURLToPath(new URL("../cmd/zpr-web-dashboard/examples/organizations", import.meta.url)),
+        ACTIVE_ORGANIZATION_FILE: join(directory, "absent"),
+        MACHINE_CONTROL_ADDRESS_FILE: join(directory, "invalid-address"),
+        SIMULATOR_DOCKER_CONTAINER: "test-simulator",
+        MACHINE_CONTROL_PROXY_BIN: "/test/native-proxy",
+      });
+      assert.notEqual(invalid.status, 0, `unexpectedly accepted ${nodeAddress}`);
+      assert.equal(invalid.stdout, "");
+      assert.match(invalid.stderr, /SIMULATION_NORTHSTAR_NODE_ADDRESS must be a reachable IPv4 endpoint on port 5000/);
+    }
   } finally {
     rmSync(directory, { recursive: true });
   }

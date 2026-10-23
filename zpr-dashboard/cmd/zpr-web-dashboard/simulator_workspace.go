@@ -398,6 +398,10 @@ func handleWorkspaceScenarioRun(w http.ResponseWriter, r *http.Request) {
 		writeWorkspaceError(w, http.StatusServiceUnavailable, "organization profile unavailable")
 		return
 	}
+	if err := verifySimulatorNorthstarPolicyReadback(r.Context(), organization); err != nil {
+		writeWorkspaceError(w, http.StatusServiceUnavailable, "active Northstar policy readback is unavailable or mismatched")
+		return
+	}
 	manifest.OrganizationID = organizationID
 	store, err := openSimulatorWorkspace(organizationID)
 	if err != nil {

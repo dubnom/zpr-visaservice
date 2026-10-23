@@ -30,6 +30,8 @@ type simulatorRuntimeBudgetEvidence struct {
 type simulatorRuntimePolicyEvidence struct {
 	Resolved       bool
 	OrganizationID string
+	TargetID       string
+	Digest         string
 }
 
 type simulatorRuntimeNorthstarAssetEvidence struct {

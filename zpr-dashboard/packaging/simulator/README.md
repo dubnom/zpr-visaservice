@@ -202,6 +202,28 @@ at their exact host paths so nested Docker mounts do not depend on a checkout.
 Docker-socket access remains root-equivalent and is approved only on an isolated
 disposable demo host.
 
+The Demo profile remains the default and keeps its existing manifest and
+validation gate. A separately packaged, explicitly synthetic Northstar profile
+is opt-in with `ZPR_SIMULATOR_PROFILE=northstar-synthetic`; it uses
+the caller-selected `--simulator-runtime-dir` as a separate runtime root, with
+`runtime/simulation-environment.json`,
+`runtime/organizations/northstar.json`, and
+`runtime/scenarios/machine-policy-deny.json`. The runtime root is not merged
+with the default Demo runtime. The scenario uses the existing inline `topology`
+JSON (`nodes`, `links`, and `components`):
+`finance-client` on `machine-01` targets the `FinanceWorkspace` service at
+`fd00:1:2::1`. The launcher validates that identity, the one-member v2
+`shared-approved-bootstrap`/`OciWeb` profile, and the explicit synthetic-only
+policy identity before creating a container. It isolates persistent state under
+`$ZPR_SIMULATOR_STATE_DIR/northstar-synthetic` and defaults to loopback port
+8789, leaving the Demo profile and its state untouched. The host launcher must
+receive `ZPR_SIMULATOR_PACKAGE_DIR` pointing at that separate installed package
+and uses the selected runtime root for `SIMULATION_MANIFEST`,
+`SIMULATION_ORGANIZATIONS_DIR`, and `SIMULATION_SCENARIOS_DIR`. A Core `.zplc`
+topology artifact is not itself a Simulator runtime input; the packaged
+scenario must carry the existing JSON topology representation. The opt-in mode
+refuses to start until all of these Northstar assets are present and valid.
+
 Protected operator login and scenario-budget approval are configured together;
 the launcher refuses partial configuration and does not enable an auth-disabled
 fallback. The auth directory must be a canonical absolute, invoking-user-owned
@@ -226,16 +248,71 @@ For a protected launch, add these values to the `sudo env` command above:
 
 The trusted proxy peer defaults to the selected Docker bridge gateway; explicitly set
 `ZPR_SIMULATOR_OPERATOR_TRUSTED_PEER_IP` only when the deployment uses a
-different verified proxy peer. `ZPR_SIMULATOR_DOCKER_NETWORK` may select an
-existing non-internal local bridge network shared with the OIDC provider and
-independent Control-Service; on a user-defined network, provide the
-`zpr-id.localhost` DNS alias and authority-service DNS name there. The launcher
-does not connect or reconfigure other containers. Credential files are mounted read-only and
-excluded from the configuration digest output; changing the files or endpoints
-causes the launcher to refuse an existing container rather than silently
-reconfigure it. An HTTPS URL in launcher output is only the configured UI
-origin, not evidence that DNS, TLS, OIDC login, budget authority, or protected
-scenario execution is ready.
+different verified proxy peer. The Demo profile may select an existing
+non-internal local bridge network shared with the OIDC provider and independent
+Control-Service; on a user-defined network, provide the `zpr-id.localhost` DNS
+alias and authority-service DNS name there. Northstar synthetic instead
+requires the exact `zpr-northstar-synthetic` local bridge with Docker's
+`Internal` flag enabled. The OIDC provider and budget authority must already be
+reachable from that isolated network; the launcher does not connect or
+reconfigure other containers or provide a route out of the internal network.
+
+For Northstar synthetic, also provide
+`ZPR_SIMULATOR_CONTROL_TLS_DIR=/absolute/private/machine-control-tls`. This
+invoking-user-owned `0700` directory must contain only non-empty regular files
+`control-ca.crt`, `simulator.crt`, and `simulator.key`, each invoking-user-owned
+and mode `0600`. The launcher mounts this directory read-only, fingerprints its
+contents for safe container reuse, and configures the Simulator mTLS control
+listener on `0.0.0.0:8791` inside the isolated network. That port is not
+published on the host. Northstar containers use restart policy `no`; the
+default Demo restart behavior is unchanged. Keep the private TLS directory
+available until the container is stopped. Credential files are excluded from
+configuration digest output; changing files or endpoints causes the launcher
+to refuse an existing container rather than silently reconfigure it. An HTTPS
+URL in launcher output is only the configured UI origin, not evidence that
+DNS, TLS, OIDC login, budget authority, machine control, or protected scenario
+execution is ready.
+
+The authorized Ubuntu target uses the owner-only root
+`/home/dubnom/.local/state/zpr-r6-runtime-outputs-20261021/northstar-synthetic`;
+its `zpr-private/` and `runtime-inputs/` children are separate. The FinanceWorkspace
+identity has been generated under this root, but node0/Visa and machine-control
+credentials remain unconfirmed. The selected server TLS directory is
+`zpr-private/simulator-control/`; machine-client TLS files are separate under
+`zpr-private/machine-01/control/`; workload credentials are under
+`zpr-private/machine-01/workload/`. The machine expects HTTPS control on port
+8792 through the `SimulatorControlService` ZPR route, while the Simulator
+listener is on 8791. The server certificate must include DNS SAN
+`host.docker.internal` and chain to `control-ca.crt`; the machine client
+certificate must have CN `machine-01` and chain to that same
+CA. No control certificates, machine-client certificates, workload
+credentials, or network route have been generated.
+
+The separate Northstar-only producer
+`prepare-northstar-finance-workspace-identity.py` creates the RSA-2048
+FinanceWorkspace adapter bootstrap key at
+`zpr-private/finance-workspace/finance-workspace-private-key.pem` and writes only its
+matching public key to
+`runtime-inputs/finance-workspace-public-key.pem`. Both files are owner-only
+mode 0600; reruns verify and preserve the pair, and partial pairs fail closed.
+The tested producer generated the pair on the authorized Ubuntu host; no
+Mac-local private key was copied. The matching Noise certificate and CA
+certificate are staged separately under `runtime-inputs/`; the CA private key
+remains only at `zpr-private/identity-ca/auth-ca.key`.
+The public PEM SHA-256 is
+`27146e028849905c79c647a3ceffd3a7d2ba2af5355d93cb0aa0b531c0a4998e`. This is
+the Ubuntu-generated public PEM; do not substitute the earlier Mac-local key.
+W3 v4 references this fingerprint, but no policy apply or adapter authorization
+is implied. The mTLS ping is diagnostic only; the scoped controller heartbeat
+still requires the existing `wait_controller` check. To verify or preserve
+this pair without rotation, run from the `ZPR Docs/zpr-demo` repository root:
+
+```sh
+northstar_root=/home/dubnom/.local/state/zpr-r6-runtime-outputs-20261021/northstar-synthetic
+python3 multinode-demo/packaging/runtime/prepare-northstar-finance-workspace-identity.py \
+  --runtime-root "$northstar_root/zpr-private" \
+  --public-key-output "$northstar_root/runtime-inputs/finance-workspace-public-key.pem"
+```
 For protected HTTPS, the container listener uses the same fixed port as the
 configured origin while the host publishes that port only on loopback.
 
@@ -909,3 +986,160 @@ Room login/authorization, endpoint admission or ZPR packet transport.
 The combined focused race suite (including all three real provider validators),
 vet, formatting and Linux amd64 bootstrap build pass. Required full `make test`
 retains the same four recorded dashboard failure groups listed above.
+
+## Northstar synthetic machine-policy-deny runtime root
+
+Fast-loop decision record: `demo-fast-loop-20261021-2339`. Scope is limited to
+the synthetic `northstar` / `machine-01` path and one `FinanceWorkspace`
+target at `fd00:1:2::1`; the existing node configuration supplies node ZPR
+address `fd5a:5052:90de::10`. These are selected/configured lab addresses, not
+observed runtime state. The client `tun0` address and node substrate IPv4 stay
+dynamic and must be observed after startup. The selected package images are
+R8 ZPR `zpr-multinode:isolated-full-catalog-r8-20261021-81b8fd2ccb0d`
+(`sha256:c9c0e1ac769661a0ae3927059be752c80ea83b3affa7459cdf467083ead652eb`)
+and Simulator `zpr-simulator:isolated-full-catalog-r8-20261021-81b8fd2ccb0d`
+(`sha256:2b81b497ffa416447e2954864418265baa84f24bcc9cd692ff5fb5cd32693b1c`).
+The separate machine image is
+`zpr-northstar-machine:synthetic-local-20261021-c0`
+(`sha256:c827f8a5b94458b5d572f5b6a9406d9327e7f795c8d7b593dd10200005298a67`).
+The internal Docker bridge `zpr-northstar-synthetic` was created with subnet
+`172.30.0.0/24` after checking current Docker networks and host IPv4 routes;
+its Docker network ID is
+`35157025cea653d78ab9bb82d1fac4fd8760ec61424bbfa17e9e052475950505`.
+The existing `zpr-policy-service` owns host port 8789, so the Northstar
+Simulator host port is selected as `ZPR_SIMULATOR_PORT=8889` with operator
+origin `https://localhost:8889`; the dedicated server certificate and OIDC
+redirect must match that origin. Its private-network control listener remains
+`:8791`, and machine clients require the separate
+`https://host.docker.internal:8792` route. Node port 5000 is unpublished. Use
+`ZPR_SIMULATOR_PROFILE=northstar-synthetic` and a separate installed Simulator
+package directory; the Demo default remains unchanged.
+The existing machine-control probe is a readiness gate only. Acceptance uses
+the existing protected API flow:
+`POST /api/simulator/scenario-plans/preflight`,
+`POST /api/simulator/scenario-plans/approve`, then
+`POST /api/simulator/scenarios/machine-policy-deny/run`. It must capture actual
+allow-baseline and deny traffic evidence, protected policy readback, and
+uniquely scoped cleanup; no new runner/framework is introduced.
+The current offline evaluator check
+`cargo test --manifest-path 'ZPR Docs/zpr-visaservice/Cargo.toml' -p libeval test_northstar_finance_identity_allow_baseline_and_denial`
+passes 1/1. Its allowed baseline actor is the synthetic
+`northstar-lab-baseline-client`, not the runtime `machine-01` client; this test
+is not live allow evidence or proof of an immutable candidate release.
+No separate installed Simulator package directory is present in the workspace;
+the launcher requires one and the local image tags alone are insufficient.
+The existing private operator-login config is for OIDC client
+`zpr-control-room` with redirect `https://localhost:8787/auth/operator/callback`,
+not the selected Simulator origin on port 8889. The existing
+`zpr-control-service` container mounts `/var/run/docker.sock` read-write, so it
+will not be connected to the synthetic network. A dedicated approved Simulator
+client bundle and a narrowly reachable independent budget-authority endpoint
+are required; no credential values were read or reused.
+At 23:53, User Control confirmed no usable installed-package path, auth bundle,
+or budget-authority origin was available. C0 therefore stops before starting
+Simulator, node, Visa, or machine containers. C0 removed the unattached
+`zpr-northstar-synthetic` network it created after verifying it had no
+containers attached. Do not build deferred release archives or reconfigure
+existing shared services to bypass this prerequisite.
+
+The existing `start_zpr_machine_control_service` provider in
+[`dashboard-stack.sh`](../../scripts/dashboard-stack.sh) obtains the active
+`SimulatorControlService` adapter address and starts a node-local `[::]:8792`
+proxy to the Simulator's actual `:8791` address, with TLS SNI
+`host.docker.internal`. C0 has now aligned the source contract: the overlay
+assigns node container `northstar-node0`, and the Northstar machine runtime
+honors `SIMULATION_NORTHSTAR_DOCKER_NETWORK` while preserving
+`zpr-<organization>` defaults for other organizations. The override validates
+the network name and checks an explicitly selected Northstar network exists
+before machine attachment. Focused route-generator tests pass 7/7 and
+machine-runtime tests pass 12/12. This is source/test evidence only: no
+provider or container is running, and route readiness is not established. The
+provider also requires
+`linux-integration/pregen/machine-control/simulator-control.key` and
+`MACHINE_CONTROL_PROXY_AMD64_BIN`, whose approved producer/path and
+availability are unverified. A metadata-only check of the
+protected Northstar root found only the FinanceWorkspace RSA bootstrap pair;
+the separate Noise identity and machine/control TLS and workload assets are
+absent. No service or host lifecycle was started.
+
+`packaging/demo-runtime/prepare_northstar_synthetic_runtime.py <new-output-dir>`
+creates a separate runtime input root for the explicitly synthetic
+`northstar` / `machine-policy-deny` scenario. Pass that root to the Demo
+packager's `--simulator-runtime-dir` option. The root contains
+`simulation-environment.json`, `organizations/northstar.json`, the isolated
+`organizations/northstar/` assets, and `scenarios/machine-policy-deny.json`,
+alongside the runtime launcher. The packaged archive preserves these paths
+under `runtime/`. The manifest is derived from the Northstar machine LDIF; the
+Visa scenario carries the inline topology. It does not merge or relabel the
+default Demo manifest.
+
+The fixture provisions only `machine-01`; the remaining manifest entries are
+inert. `FinanceWorkspace` is synthetic target metadata, not a provisioned
+service. The JSON topology is a projection of the Core `.zplc` source into the
+existing Simulator `nodes`, `links`, and `components` fields. Its node ZPR
+addresses are synthetic topology metadata, and its `192.0.2.10` / `192.0.2.11`
+substrate addresses are documentation-only endpoints, not live reachability
+evidence. The `finance-client` component deliberately has no pinned source
+address: runtime traffic reads the active `tun0` address, prefers a granted
+`fd5a:5052:*` address when present, and retains the `fd00:1:4::1` fallback.
+The policy profile's target and digest are expected identity values for
+protected current-policy readback, not proof that the candidate is active. The
+packaged candidate identity explicitly has
+`production_authorized=false`; this staging step does not apply or deploy it.
+The dashboard scenario bridge resolves the synthetic profile's sole
+`machine-01` endpoint from the package release identity and routes its
+lifecycle, workload-link and traffic operations to that endpoint; it rejects
+other manifest machines rather than falling back to legacy containers. This
+dashboard wiring does not establish packaged controller or workload readiness.
+The Go scenario executor already contains the machine lifecycle, controller
+heartbeat, simulated-directory session, workload command, and packaged traffic
+dispatch paths; focused tests validate these code paths, not a live controller
+connection. W2's current offline Compose generator emits node0, Visa, and a
+distinct FinanceWorkspace adapter, binds them to the externally created
+internal `zpr-northstar-synthetic` network, and gates Visa and FinanceWorkspace
+behind the `after-w3-policy-release` profile. C0 created the network with
+subnet `172.30.0.0/24`; no service is attached yet. C0's latest generator test
+run was 6/7 with one `/private/var` versus `/var` expected-path mismatch; W2
+reported an independent 7/7 pass. The generated node IPv4:5000 address remains
+planned until actual container attachment is confirmed, and the generator
+creates no keys or runtime state. It does not yet provide the machine-control
+service route required below.
+
+The machine expects an HTTPS control URL on port 8792, reached through the
+`SimulatorControlService` ZPR adapter and node-side proxy. The packaged
+Simulator listener itself is on 8791; the new node-route Compose generator does
+not currently render the adapter/proxy path between those endpoints. W4's
+read-only probe pins TLS SNI to `host.docker.internal`: the Simulator server
+certificate must contain that DNS SAN and chain to the control CA, while the
+machine client certificate must have CN `machine-01` and chain to the same CA.
+The probe sends TLS 1.3 mTLS `GET /internal/ping`, but that endpoint bypasses
+organization/generation scope and does not prove a controller heartbeat.
+Confirm the scoped heartbeat with the existing `wait_controller` check.
+Reachable node:5000 and control:8792 endpoints, private control/workload
+assets, and a working scoped controller heartbeat are not currently
+established. Live execution also requires real scoped operator authorization,
+valid budget evidence, protected current-policy readback, normal scenario
+preflight, and fresh matching traffic evidence.
+
+The Core topology source working-tree SHA-256 (not a released runtime-artifact
+checksum) is
+`6de1760000216008d76c964213af7a248cfd86b39930f94e744521aedf2de4d5`; that
+`.zplc` is provenance only; there is no standalone Visa runtime loader/exporter
+for it.
+
+### Synthetic execution decisions and shortcuts
+
+| Decision | Rationale and affected inputs | Limits and evidence | Rollback | Production follow-up |
+|---|---|---|---|---|
+| Project the Core topology fixture into the existing inline Simulator JSON schema. | Reuse `TOPOLOGY` in `prepare_northstar_synthetic_runtime.py` and the generated `scenarios/machine-policy-deny.json`; retain the source component's dynamic address behavior. | W2 supplied the projection and source working-tree SHA above. Generator tests pass 3/3; the Go address and synthetic traffic-path tests pass. `fd00:5a17:2026:104::1` is topology metadata only; `192.0.2.10` and `.11` are documentation-only substrate endpoints. The source component has no `address`, so runtime reads `tun0`, prefers a granted `fd5a:5052:*` address, then uses the existing `fd00:1:4::1` fallback. This is not live topology or policy evidence, and no runtime execution is implied. | Generate a new separate `LAB_ROOT` from the generator after reverting this projection. No installed package, default Demo input, or deployed runtime is changed by this source-only decision. | Do not use fixture addresses as production endpoints or client grants. Require authoritative topology provenance, protected current-policy readback, normal preflight, scoped budget authorization, and independent production service contracts before production use. |
+| Include `finance-client` in the generated manifest without a fixed source address. | `readSimulatorComponent` resolves runner components from the manifest first; the generated `simulation-environment.json` now includes the Northstar client component (`kind=client`, `agent=finance-client`, target `fd00:1:2::1`) without an `address`. | The generator test asserts the exact component and omitted address. Focused Go runtime-plan and traffic-path tests pass. This enables component lookup only; it does not establish a live `tun0` grant, endpoint reachability, active policy or traffic result. | Regenerate a separate `LAB_ROOT` after reverting the manifest component addition; no default Demo manifest or installed package is changed. | Preserve the dynamic Visa-granted source-address path; require authoritative current-policy and live scenario evidence before any production or candidate-acceptance claim. |
+| Require protected operator and independent budget-authority configuration for Northstar launch. | `simulator-demo-runtime.sh` now rejects Northstar synthetic start/status/stop configuration without operator auth directory, HTTPS origin, and independent budget-authority URL. | Stubbed launcher tests use dummy auth-file bytes and a fake Docker CLI only to validate fail-closed launch and argument plumbing; they are not credentials, a grant, approval, or authentication evidence. The guard rejects launch before Docker `container run`; the default Demo profile remains unchanged. | Do not remove the guard while exposing the Northstar synthetic profile; that would permit an auth-disabled UI. Disable the synthetic profile instead if protected inputs are unavailable. | Configure real scoped OIDC/operator credentials and independent budget-authority trust. Continue to require an actual valid grant, scenario-specific approval, protected current-policy readback, and normal preflight. |
+| Configure the Northstar-only machine-control listener on the isolated network. | `simulator-demo-runtime.sh` requires `ZPR_SIMULATOR_CONTROL_TLS_DIR` and the exact internal local bridge `zpr-northstar-synthetic`; it mounts only the dedicated server CA/certificate/key directory read-only, fingerprints it for safe container reuse, listens on `0.0.0.0:8791` inside that network, publishes no control port to the host, and sets restart policy `no`. | Fake-Docker tests validate required TLS assets, owner/mode checks, internal-network enforcement, read-only mount and environment wiring. The selected Ubuntu server TLS files and machine-01 client certificate files have not been provisioned; no key, certificate, or proxy binary is assumed. No listener or container was started; internal-network reachability, mTLS and heartbeat remain unverified. | Stop only the uniquely named Northstar container with the same package, network and private configuration; preserve its TLS directory until stop. Remove the isolated network only after verifying that no owned runtime remains attached. | Use the source-backed node/Visa overlay and :8792 control route. Verify the control listener from the machine with mTLS before scenario preflight; keep production Control Room/Control-Service independent of Simulator. |
+| Generate a dedicated Northstar FinanceWorkspace bootstrap and Noise identity. | The `prepare-northstar-finance-workspace-identity.py` producer writes the RSA-2048 bootstrap private key and X25519 Noise private key to service-specific files under `zpr-private/finance-workspace/`; it exports the matching RSA public key and CA-signed `CN=finance-workspace` Noise certificate to separate owner-only runtime staging. The existing Demo identity initializer and `web0` identity remain unchanged. | Producer tests pass 4/4, including key/certificate binding, CA verification, mode-0600 files, idempotent preservation, and refusal to rotate a partial Noise identity. The Ubuntu-generated public PEM SHA-256 is `27146e028849905c79c647a3ceffd3a7d2ba2af5355d93cb0aa0b531c0a4998e`; its matching RSA and Noise private files remain mode 0600 under `zpr-private/finance-workspace/`, while the CA private key remains under `zpr-private/identity-ca/`. The public CA certificate, Noise certificate and RSA public PEM are staged separately under `runtime-inputs/`. W3 v4 references this public identity fingerprint, but no policy has been applied and adapter authorization is not implied. | Keep the identity stable until the W3 candidate and lab runtime are retired. Do not silently rotate it; remove only exact files after verifying no runtime or candidate depends on them. | Move credentials only through an approved persistent secret store for a production flow; register public identities through the approved policy lifecycle and never reuse `web0`/`OciWeb`. |
+| Render a source-backed isolated node/Visa/FinanceWorkspace network configuration. | W2's `packaging/northstar-node-route/generate.py` emits node0, Visa, and FinanceWorkspace service configs; it binds the externally managed `zpr-northstar-synthetic` network and uses per-service include and private-root mounts. Visa and FinanceWorkspace are gated behind the `after-w3-policy-release` Compose profile. The generator does not create credentials or start services. | The focused route-generator suite passes 7/7; machine-runtime suite passes 12/12. The generated node is named `northstar-node0`, and `route.env` supplies `SIMULATION_NORTHSTAR_DOCKER_NETWORK`; the existing machine-runtime helper uses that override only for Northstar and preserves defaults elsewhere. The FinanceWorkspace identity is present under the authorized Ubuntu root. Node0/Visa assets and the machine-control public key/private key/proxy remain unconfirmed. The isolated network was removed unattached; no node address, service attachment, route readiness, or policy authorization is observed. | Remove only the unique generated output directory after confirming the path; do not remove or alter existing demo Compose state. Remove the isolated network only after confirming no containers are attached. | Once the immutable package inputs and W3 candidate are available, source `route.env` and invoke the existing provider; verify node/service attachments and route before machine readiness. Keep Visa startup gated on W3's frozen candidate and separately authorized policy lifecycle; do not use host-gateway or published-port shortcuts. |
+| Match packaged workload readiness to the dynamic Visa-granted client address. | `packaged-machine-runtime.py` now selects an active global `fd5a:5052:*` address on `tun0` first, matching `grantedScenarioClientAddress`, and uses `fd00:1:4::1` only as the existing global-address fallback. | Focused offline packaged-runtime tests pass 33/33, including granted-address preference, fallback and missing-address cases. No live `tun0` address was observed; no Northstar workload was provisioned or run. | Revert only the helper and its focused test if the source-side grant-selection contract changes; do not pin a profile address as a client grant. | Preserve dynamic client-address selection and require an observed workload address plus fresh traffic evidence for runtime acceptance. |
+| Keep the browser blocker regressions mock-only. | W1's Northstar-scoped blocker specs exercise profile selection, catalog, auth/budget failures and blocked preflight without invoking approve/run in blocked cases. | Focused desktop/tablet browser suite passes 16/16. Any simulated positive plan/approval/run flow is UI fixture coverage only, not authorization, budget or traffic evidence. | Remove or update only the scoped fixture regressions if the API contract changes; do not change the Demo default. | Add positive behavior only against real scoped authorization and independent budget/policy services when those test inputs are available; preserve production Control Room independence from Simulator. |
+| Reuse the locally available isolated ZPR image as the base for a lab-only machine image. | The documented default W4 base image was absent. Built `zpr-northstar-machine:synthetic-local-20261021-c0` from `zpr-multinode:isolated-full-catalog-r8-20261021-81b8fd2ccb0d`, after verifying its base image ID was `sha256:c9c0e1ac769661a0ae3927059be752c80ea83b3affa7459cdf467083ead652eb`; output image ID is `sha256:c827f8a5b94458b5d572f5b6a9406d9327e7f795c8d7b593dd10200005298a67`. | Offline build with `--network=none` succeeded and output is Linux/amd64. The digest-form build reference was not resolved locally by BuildKit; retrying with the local tag after verifying its exact image ID worked. An ephemeral `docker run --network none` confirmed `ph 0.7.0`; the entrypoint failed closed without runtime scope. These checks prove image command compatibility only; no persistent service or runtime container was started and node/controller/workload/policy readiness is not established. The base is a local demo candidate, not a release-qualified image. | If unused, verify no container refers to this exact output image, then remove only its unique tag/image ID. No persistent runtime state or existing service was changed. | Replace the base with an approved release-pinned image through the supported packaging process; never treat the local image as production-qualified. |
+| Select the matching local R8 ZPR/Simulator package pair for offline validation. | The selected ZPR image is `zpr-multinode:isolated-full-catalog-r8-20261021-81b8fd2ccb0d` (`sha256:c9c0e1ac769661a0ae3927059be752c80ea83b3affa7459cdf467083ead652eb`); the matching Simulator image is `zpr-simulator:isolated-full-catalog-r8-20261021-81b8fd2ccb0d` (`sha256:2b81b497ffa416447e2954864418265baa84f24bcc9cd692ff5fb5cd32693b1c`). The separate Northstar machine image uses the same R8 ZPR image ID as its base. | W5 re-inspected both tags, IDs, and Linux/amd64 platforms and confirmed the supplied metadata. `test-package-demo-images.py` passes 20/20 with fake Docker, validating package transport only. Both repositories pass `git diff --check`. This is metadata compatibility, not release qualification. No package archive has been built or saved. W5's offline generator is blocked because W3's source tree and four policy hashes are still changing. | Do not retag or overwrite the image pair. If unused, remove only after verifying no container or package refers to these exact IDs. | Resume package assembly only from W3's immutable candidate root and matching `.zpl`, `.zplc`, `.bin2`, `.identity` hashes plus identity metadata; no live `current_digest` is needed for offline byte validation, and no active-policy claim follows from packaging. |
+| Do not substitute missing node/control services or policy evidence with fixture readiness. | W4's Northstar-only packaged machine entrypoint requires node and HTTPS mTLS control endpoints plus private control/workload assets. The launcher now has a Northstar-only listener/network configuration path. The Go scenario executor dispatches the nine lifecycle/session/workload/traffic actions through the existing controller protocol. | Offline packaged-runtime tests pass 33/33 and focused Go package/controller/traffic tests pass. These validate configuration and code paths only. The dedicated internal network exists, but W2's route, reachable node endpoint, machine-control private assets, and service readiness remain unestablished; no Northstar workload or traffic scenario has run. A no-match denial is not candidate-policy acceptance. | No container or service was started. After stopping only uniquely owned synthetic resources and confirming no attachments, remove the exact network ID recorded above; preserve the private root until runtime/candidate retirement. Preserve all existing services and default Demo. | Establish source-backed isolated node/control connectivity and private assets; then use real scoped operator authorization, valid budget evidence, protected current-policy readback, normal preflight, and fresh matching traffic evidence before any acceptance claim. |
+| Execute one isolated Northstar fast loop (`demo-fast-loop-20261021-2339`). | User authorized one synthetic `northstar` / `machine-01` allow-baseline plus machine-policy-deny run and cleanup. The primary target is Ubuntu `workbench.local`; Mac-local paths and the earlier R8 selection are superseded. The installed R6 scopefix2 pair is ZPR `zpr-multinode:isolated-w5-r6-full-catalog-20261020-0a7f183a38cf` (`sha256:302b59ef9f5450c5a2cc4ffc76c9fe9226b8e89827690efebf225c947111b150`) and Simulator `zpr-simulator:isolated-w5-r6-full-catalog-20261021-scopefix2` (`sha256:c633c0a2d773ccb8b0e39ae23a15b24a4ca00f748598dbe199660a88eccb5655`), both Linux/amd64. The active Simulator remains on 8890; keep the independent budget authority on 8889. Protected root: `/home/dubnom/.local/state/zpr-r6-runtime-outputs-20261021/northstar-synthetic`, with `zpr-private/` and `runtime-inputs/` beneath it. Node ZPR address is `fd5a:5052:90de::10`, FinanceWorkspace target `fd00:1:2::1`; node substrate and machine `tun0` addresses remain dynamic. | C0 created owner-only private/runtime-input directories and generated the FinanceWorkspace RSA bootstrap and Noise identities with the tested producer; files are 0600, directories 0700, and pair binding was verified. The fresh lab CA private key remains Ubuntu-only. Only the public bootstrap PEM was copied to the W3 candidate workspace (SHA-256 `27146e028849905c79c647a3ceffd3a7d2ba2af5355d93cb0aa0b531c0a4998e`). W3 froze the package-aligned Ubuntu-key candidate v4, synthetic-only and production-authorized=false: `.zpl` `66bb850d27a5f1db57630973f664e2d492c85196bc014acd11a7eb1f3fa0ed01`, `.zplc` `fd660894a390c3f567c58e9a474238c35edf8385525e83bda9f1e145e1381d26`, `.bin2` `9a3e2715a05bd2cd57561bae2aa76b93e1f6b9115aa4e161319240ef288ee783`, `.identity` `573b8cf650d94b9a0809dc7993ffe4d6eefdc082cab86f120cd2f0365eb58bff`; offline `cargo test -p libeval` passes 131/131. The earlier v3 root remains immutable and is not package-aligned. No Northstar service/network was started and no policy was applied. The active R6 Demo state root is root-owned mode 0700 and inaccessible to the invoking account; no `sudo` or reuse of its credentials was attempted. | Do not change the active scopefix2 Simulator, default Demo, operator services, or budget authority; do not use Mac/R7 credentials or bypass the protected-state permission boundary. Remove only uniquely created synthetic runtime artifacts after confirming no consumers remain; keep the protected private root until all candidate/runtime references are retired. | W2/W4 must finish the source-backed node/route and machine/controller input contract; W5 must confirm v4 producer-consumer alignment. Then use the existing authenticated operator and independent budget flow, verify active-policy readback, run scoped preflight and observed allow/deny traffic, and record cleanup. This remains a synthetic lab candidate; no production authorization or readiness is implied. |

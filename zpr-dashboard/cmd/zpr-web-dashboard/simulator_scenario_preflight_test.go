@@ -6,6 +6,8 @@ import (
 	"errors"
 	"net/http"
 	"net/http/httptest"
+	"os"
+	"path/filepath"
 	"reflect"
 	"testing"
 
@@ -142,6 +144,53 @@ func TestSimulatorScenarioPreflightBindsOrganizationAndPlanIdentity(t *testing.T
 		simulatorScenarioPlanRequest{OrganizationID: "acme", ScenarioID: "demo"}))
 	if response.Code != http.StatusConflict || buildCalls != 1 {
 		t.Fatalf("mismatched scenario status=%d build calls=%d", response.Code, buildCalls)
+	}
+}
+
+func TestCurrentScenarioPlanUsesRequestedOrganization(t *testing.T) {
+	tempDir := t.TempDir()
+	manifest := scenarioTestManifest()
+	manifest.OrganizationID = "demo"
+	manifestData, err := json.Marshal(manifest)
+	if err != nil {
+		t.Fatal(err)
+	}
+	manifestPath := filepath.Join(tempDir, "simulation-environment.json")
+	if err := os.WriteFile(manifestPath, manifestData, 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	t.Setenv("SIMULATION_MANIFEST", manifestPath)
+	t.Setenv("SIMULATION_ORGANIZATION_ID", "demo")
+	t.Setenv("SIMULATION_ACTIVE_ORGANIZATION_FILE", filepath.Join(tempDir, "active-organization.txt"))
+	t.Setenv("SIMULATION_ORGANIZATIONS_DIR", filepath.Join("..", "..", "packaging", "demo-runtime", "organizations"))
+	t.Setenv("SIMULATION_SCENARIOS_DIR", filepath.Join("examples", "scenarios"))
+
+	loadedManifest, err := readSimulatorManifest()
+	if err != nil {
+		t.Fatalf("read demo manifest fixture: %v", err)
+	}
+	if loadedManifest.OrganizationID != "demo" {
+		t.Fatalf("loaded manifest organization = %q, want demo", loadedManifest.OrganizationID)
+	}
+	plan, err := buildCurrentSimulatorScenarioPlan("northstar", "machine-policy-deny")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if plan.OrganizationID != "northstar" || plan.ScenarioID != "machine-policy-deny" {
+		t.Fatalf("plan identity = %s/%s", plan.OrganizationID, plan.ScenarioID)
+	}
+	if hasSimulatorRuntimePlanBlocker(plan, `scenario validation failed: scenario belongs to organization "northstar", not "demo"`) {
+		t.Fatalf("plan used the default demo manifest scope: %v", plan.Blockers)
+	}
+	for _, blocker := range []string{
+		"policy resolution is required",
+		"scenario topology is missing",
+		"version 2 shared-approved-bootstrap OciWeb package contract is required",
+	} {
+		if !hasSimulatorRuntimePlanBlocker(plan, blocker) {
+			t.Fatalf("plan did not preserve unresolved runtime blocker %q: %v", blocker, plan.Blockers)
+		}
 	}
 }
 

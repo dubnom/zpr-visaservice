@@ -17,6 +17,7 @@ import (
 )
 
 const policyStatusPrefix = "/api/policy/operations/status/"
+const policyCurrentPrefix = "/api/policy/operations/current/"
 
 var policyStatusSegment = regexp.MustCompile(`^[A-Za-z0-9_-]{1,128}$`)
 
@@ -26,9 +27,14 @@ func policyStatusMux(fallback http.Handler, workspace *policyWorkspace) http.Han
 		return fallback
 	}
 	handler := workspace.guardedApply.statusHandler()
+	currentHandler := workspace.guardedApply.currentHandler()
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path == strings.TrimSuffix(policyStatusPrefix, "/") || strings.HasPrefix(r.URL.Path, policyStatusPrefix) {
 			handler.ServeHTTP(w, r)
+			return
+		}
+		if r.URL.Path == strings.TrimSuffix(policyCurrentPrefix, "/") || strings.HasPrefix(r.URL.Path, policyCurrentPrefix) {
+			currentHandler.ServeHTTP(w, r)
 			return
 		}
 		fallback.ServeHTTP(w, r)
@@ -156,4 +162,52 @@ func (p *policyApplyResources) statusHandler() http.Handler {
 		w.WriteHeader(200)
 		_, _ = w.Write(data)
 	})
+}
+
+func (p *policyApplyResources) currentHandler() http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Cache-Control", "no-store")
+		fail := func(code int, status string) { writeJSON(w, code, map[string]string{"status": status}) }
+		organization, target, ok := policyCurrentRequest(r)
+		if !ok || r.ContentLength != 0 || len(r.TransferEncoding) > 0 {
+			fail(http.StatusBadRequest, "invalid_request")
+			return
+		}
+		if r.Method != http.MethodGet {
+			w.Header().Set("Allow", http.MethodGet)
+			fail(http.StatusMethodNotAllowed, "method_not_allowed")
+			return
+		}
+		if !p.statusReader(r, organization, target) {
+			fail(http.StatusForbidden, "unauthorized")
+			return
+		}
+		ctx, cancel := context.WithTimeout(r.Context(), 10*time.Second)
+		defer cancel()
+		current, err := p.client.current(ctx, time.Now())
+		if err != nil {
+			fail(http.StatusServiceUnavailable, "unavailable")
+			return
+		}
+		data, err := json.Marshal(current)
+		if err != nil || len(data)+1 > 16<<10 {
+			fail(http.StatusServiceUnavailable, "unavailable")
+			return
+		}
+		w.Header().Set("Content-Type", "application/json; charset=utf-8")
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write(append(data, '\n'))
+	})
+}
+
+func policyCurrentRequest(r *http.Request) (organization, target string, ok bool) {
+	if r.URL.RawPath != "" || strings.Contains(r.RequestURI, "%") || r.URL.RawQuery != "" || r.URL.ForceQuery ||
+		!strings.HasPrefix(r.URL.Path, policyCurrentPrefix) {
+		return "", "", false
+	}
+	parts := strings.Split(strings.TrimPrefix(r.URL.Path, policyCurrentPrefix), "/")
+	if len(parts) != 2 || !policyStatusSegment.MatchString(parts[0]) || !policyStatusSegment.MatchString(parts[1]) {
+		return "", "", false
+	}
+	return parts[0], parts[1], true
 }

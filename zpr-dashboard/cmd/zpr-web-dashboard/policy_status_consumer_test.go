@@ -15,6 +15,7 @@ import (
 	"math/big"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"os"
 	"path/filepath"
 	"strings"
@@ -252,6 +253,42 @@ func TestSimulatorPolicyStatusClientConfigurationIsExplicitAndProtected(t *testi
 	t.Setenv("SIMULATION_POLICY_STATUS_URL", "https://policy.example/path")
 	if _, err = newSimulatorPolicyStatusClientFromEnv(); err == nil {
 		t.Fatal("status URL with a path must fail")
+	}
+}
+
+func TestSimulatorPolicyStatusClientReadsExactCurrentPolicyIdentity(t *testing.T) {
+	current := operatordelegation.PolicyCurrentState{
+		Organization: "lab-one", TargetID: "visa-target",
+		CurrentDigest: strings.Repeat("b", 64), CurrentVinst: 7,
+	}
+	requests := make(chan string, 2)
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		requests <- strings.Join([]string{
+			r.Method, r.URL.Path, r.Header.Get("Authorization"),
+			r.Header.Get("X-API-Key"), r.Header.Get("X-ZPR-Policy-Approval"),
+		}, "|")
+		w.Header().Set("Cache-Control", "private, no-store")
+		w.Header().Set("Content-Type", "application/json")
+		_ = json.NewEncoder(w).Encode(current)
+	}))
+	defer server.Close()
+	origin, err := url.Parse(server.URL)
+	if err != nil {
+		t.Fatal(err)
+	}
+	client := &simulatorPolicyStatusClient{origin: origin, client: server.Client()}
+	got, err := client.current(context.Background(), "lab-one", "visa-target")
+	if err != nil || got != current {
+		t.Fatalf("current policy readback = %+v, err=%v", got, err)
+	}
+	if request := <-requests; request != "GET|"+policyCurrentPrefix+"lab-one/visa-target|||" {
+		t.Fatalf("current policy request = %q", request)
+	}
+	if _, err = client.current(context.Background(), "lab-one", "other-target"); err == nil {
+		t.Fatal("mismatched target was accepted")
+	}
+	if request := <-requests; request != "GET|"+policyCurrentPrefix+"lab-one/other-target|||" {
+		t.Fatalf("mismatched target request = %q", request)
 	}
 }
 

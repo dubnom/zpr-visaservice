@@ -1,0 +1,22 @@
+ARG SIMULATOR_BASE=zpr-simulator:world-live-runtime-20261019-r2
+FROM ${SIMULATOR_BASE}
+
+RUN mkdir -p /opt/zpr-workloads /run/zpr-machine \
+    && ln -s /app/bin/ph /opt/zpr-workloads/ph \
+    && ln -s /app/bin/ph-cli /opt/zpr-workloads/ph-cli \
+    && touch /opt/zpr-workloads/ca.crt \
+        /opt/zpr-workloads/client-finance-rsa.key \
+        /opt/zpr-workloads/machine-controller-machine-01.key \
+        /run/zpr-machine/control-ca.crt \
+        /run/zpr-machine/client.crt \
+        /run/zpr-machine/client.key \
+    && chmod 0600 /opt/zpr-workloads/client-finance-rsa.key \
+        /opt/zpr-workloads/machine-controller-machine-01.key \
+        /run/zpr-machine/client.key
+
+LABEL zpr.simulator.packaged-machine="northstar-finance-client-v1"
+COPY zpr-web-dashboard /usr/local/bin/zpr-web-dashboard
+COPY northstar-machine-entrypoint.sh /usr/local/bin/northstar-machine-entrypoint
+RUN chmod 0755 /usr/local/bin/zpr-web-dashboard /usr/local/bin/northstar-machine-entrypoint
+
+ENTRYPOINT ["/usr/local/bin/northstar-machine-entrypoint"]
