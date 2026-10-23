@@ -385,6 +385,82 @@ prerequisites; service images, fresh service trust/bootstrap, independent
 operator configuration, license review, setup/optional AI disclosure and all
 seventeen scenarios/browser acceptance remain required.
 
+### Fresh source-free Visa bootstrap and durable restart
+
+The archive now includes a
+[private-state preparation helper](zpr-dashboard/packaging/compiled-recovery/prepare-visa-service.sh).
+It consumes only compiled tools, generates fresh RSA authority/admin TLS,
+node/Visa bootstrap pairs, a signing key, service identity and separate
+read/write/read-only API credentials, then compiles a minimal bootstrap policy.
+No recovered state, Simulator topology/configuration or external provider is
+used. It does not start a service or change host trust.
+
+State is owner-only under a protected nonsymlink parent, never overwrites an
+existing path, and writes its completion inventory last. Its intentionally
+restricted path syntax and path-bound Unix socket are documented. Failed
+generation leaves private diagnostics, not a success inventory. Focused
+regression tests cover unsafe/noncanonical paths, insecure parents, symlink
+state/parents, existing-state preservation and missing executable rejection.
+The release-verifier regression suite also remains green. No Go or Rust
+source/manifests changed in this gate.
+
+The [service probe](zpr-dashboard/packaging/compiled-recovery/probe-visa-service.sh)
+ran as UID 501 in a new network namespace with only loopback, no Simulator and
+no host source mounts. Redis `7.0.15` was installed only on the validation VM
+after confirming it was absent; its system service was masked so only
+probe-owned Redis processes could start. Redis listened on a private Unix
+socket, and Visa listened only on namespace loopback.
+
+Verified against the exact final extracted archive:
+
+- Two preparations have different service identities, TLS authorities and
+  administrator credentials; generated files/directories are owner-only.
+- Existing-state refusal preserves the API credentials and hashed-key database.
+- Anonymous and foreign-installation API credentials are rejected.
+- Read-only credentials can retrieve policy but receive HTTP 403 for a valid
+  policy-write request; administrator policy installation succeeds.
+- curl verifies the real server certificate and rejects the other preparation's
+  CA. Verified policy/network responses match the compiled admin CLI's output.
+- Both Visa and Redis stop and restart; Redis loads its AOF from disk and Visa
+  restores policy without receiving the initial bundle again. Policy and
+  network responses match the pre-restart state.
+- The API returns an empty topology and only the self-authorized `vs.zpr`
+  actor: no node, adapter or workload was implied by this startup test.
+- All eight scratch checks, seven Rust CLI checks, five fresh-key example
+  policy builds and invalid-policy rejection still pass.
+
+Final artifact built from clean committed `6662c11`:
+
+| Measurement | Result |
+|---|---|
+| Compressed bytes | 33,536,591 |
+| Extracted regular-file bytes | 87,931,329 |
+| SHA-256 | `4f4539e4dfdfecd024ad7fc578455f566de558c920749b13ee312a85f23a6ae1` |
+
+Reviewed nonsecret receipts are retained under
+`validation/compiled-visa-durable-20261023/service-receipts` and
+`policy-receipts` in the private recovery workspace. Receipt assertions verify
+API shapes, the distinct identities, both Redis startups/AOF reload, and hashes
+of the exact archived executables/preparation helper. Generated private keys,
+API header files, databases and temporary policies from every probe attempt
+were removed after preserving the allowlisted receipts. Probe-owned children
+were stopped, and the validation VM is stopped.
+
+An inherited issue was discovered while tracing the native admin client:
+`vs-admin` disables server-certificate validation. Its calls are **not** used
+as TLS proof; curl independently validates CA trust, with a wrong-CA negative
+test. Correcting and release-rebuilding the client remains an explicit
+publication gate, not a claim that the client is safe for distribution.
+The minimal bootstrap emits a visible warning that no fabric policy grants
+VisaService admin access; HTTPS API-key administration is a different contract.
+The existing example-policy warnings remain visible as well.
+
+The archive remains private engineering output, not an installer. Node trust
+admission, policy-signature enforcement, full organization/service generation,
+runtime images, independent operator configuration, licensing, setup/AI
+disclosure and seventeen-scenario/browser qualification remain open. Main,
+preserved dirty worktrees and both live recovered environments are unchanged.
+
 ## Adapter retention and main promotion
 
 Core is a separate repository. Its adapter development is preserved at
