@@ -1,0 +1,323 @@
+{
+  "name": "local-linux-zpr",
+  "dns_server": "fd00:1:1::1",
+  "trusted_services": [
+    {
+      "name": "default",
+      "api": "file",
+      "role": "base-attribute-authority"
+    }
+  ],
+  "agents": [
+    {
+      "name": "visa-service",
+      "artifact": "zpr-visaservice/vs",
+      "boot_order": 10
+    },
+    {
+      "name": "zpr-node",
+      "artifact": "zpr-core/adapter/ph",
+      "boot_order": 20
+    },
+    {
+      "name": "control-room",
+      "artifact": "zpr-visaservice/zpr-dashboard",
+      "boot_order": 30
+    }
+  ],
+  "services": [
+    {
+      "name": "PolicyService",
+      "kind": "Policy",
+      "endpoint": "HTTPS/8789",
+      "command": "dashboard-stack"
+    },
+    {
+      "name": "ControlService",
+      "kind": "Control",
+      "endpoint": "HTTPS/8790",
+      "command": "dashboard-stack"
+    },
+    {
+      "name": "SimulatorControlService",
+      "kind": "MachineControl",
+      "endpoint": "ZPR/TCP/8792",
+      "command": "simulator-control",
+      "provider": "simulator-control",
+      "address": "fd5a:5052:adda:1:ffff:ffff:ffff:fffe"
+    },
+    {
+      "name": "InternetGatewayWeb",
+      "kind": "Gateway",
+      "endpoint": "ZPR/TCP/8082",
+      "command": "machine-07 workload",
+      "provider": "internet-gateway",
+      "address": "fd00:1:9::1",
+      "external_network_connection": "public-internet"
+    },
+    {
+      "name": "ControlRoom",
+      "kind": "ControlRoom",
+      "endpoint": "HTTP/8787",
+      "command": "dashboard-stack"
+    },
+    {
+      "name": "AuthService",
+      "kind": "Auth",
+      "endpoint": "HTTPS/8183",
+      "command": "auth-sandbox"
+    },
+    {
+      "name": "AttributeService",
+      "kind": "Attribute",
+      "endpoint": "HTTPS/8443",
+      "command": "trusted-service"
+    }
+  ],
+  "machines": [
+    {
+      "id": "machine-01",
+      "type": "laptop",
+      "model": "ThinkPad T14",
+      "location": "North Campus",
+      "owner": "elena.park",
+      "secure": true
+    },
+    {
+      "id": "machine-02",
+      "type": "laptop",
+      "model": "MacBook Pro 14",
+      "location": "North Campus",
+      "owner": "jamal.brooks",
+      "secure": true
+    },
+    {
+      "id": "machine-03",
+      "type": "laptop",
+      "model": "Dell Latitude 7440",
+      "location": "North Campus",
+      "owner": "sophie.nguyen",
+      "secure": true
+    },
+    {
+      "id": "machine-04",
+      "type": "laptop",
+      "model": "ThinkPad X1 Carbon",
+      "location": "North Campus",
+      "owner": "theo.martin",
+      "secure": true
+    },
+    {
+      "id": "machine-05",
+      "type": "laptop",
+      "model": "MacBook Air 15",
+      "location": "North Campus",
+      "owner": "arjun.patel",
+      "secure": true
+    },
+    {
+      "id": "machine-06",
+      "type": "laptop",
+      "model": "HP EliteBook 840",
+      "location": "North Campus",
+      "owner": "zoe.carter",
+      "secure": true
+    },
+    {
+      "id": "machine-07",
+      "type": "laptop",
+      "model": "Dell Latitude 5440",
+      "location": "South Campus",
+      "owner": "omar.hassan",
+      "secure": true
+    },
+    {
+      "id": "machine-08",
+      "type": "laptop",
+      "model": "ThinkPad T14",
+      "location": "South Campus",
+      "owner": "nina.ross",
+      "secure": true
+    },
+    {
+      "id": "machine-09",
+      "type": "laptop",
+      "model": "MacBook Pro 14",
+      "location": "South Campus",
+      "owner": "ben.torres",
+      "secure": true
+    },
+    {
+      "id": "machine-10",
+      "type": "laptop",
+      "model": "Dell Latitude 7440",
+      "location": "South Campus",
+      "owner": "grace.lee",
+      "secure": true
+    },
+    {
+      "id": "machine-11",
+      "type": "laptop",
+      "model": "ThinkPad X1 Carbon",
+      "location": "Remote",
+      "owner": "hana.kim",
+      "secure": true
+    },
+    {
+      "id": "machine-12",
+      "type": "laptop",
+      "model": "HP EliteBook 840",
+      "location": "Remote",
+      "owner": "daniel.okafor",
+      "secure": false
+    },
+    {
+      "id": "machine-13",
+      "type": "desktop",
+      "model": "Dell OptiPlex 7010",
+      "location": "North Campus",
+      "owner": "it-pool",
+      "secure": true
+    },
+    {
+      "id": "machine-14",
+      "type": "desktop",
+      "model": "HP EliteDesk 800",
+      "location": "North Campus",
+      "owner": "it-pool",
+      "secure": true
+    },
+    {
+      "id": "machine-15",
+      "type": "desktop",
+      "model": "ThinkCentre M90q",
+      "location": "North Campus",
+      "owner": "it-pool",
+      "secure": true
+    },
+    {
+      "id": "machine-16",
+      "type": "desktop",
+      "model": "Dell OptiPlex 7010",
+      "location": "South Campus",
+      "owner": "it-pool",
+      "secure": true
+    },
+    {
+      "id": "machine-17",
+      "type": "desktop",
+      "model": "HP EliteDesk 800",
+      "location": "South Campus",
+      "owner": "it-pool",
+      "secure": true
+    },
+    {
+      "id": "machine-18",
+      "type": "desktop",
+      "model": "ThinkCentre M90q",
+      "location": "South Campus",
+      "owner": "it-pool",
+      "secure": true
+    },
+    {
+      "id": "machine-19",
+      "type": "desktop",
+      "model": "Dell OptiPlex 7010",
+      "location": "Remote",
+      "owner": "it-pool",
+      "secure": false
+    },
+    {
+      "id": "machine-20",
+      "type": "desktop",
+      "model": "HP EliteDesk 800",
+      "location": "Remote",
+      "owner": "it-pool",
+      "secure": false
+    }
+  ],
+  "components": [
+    {
+      "name": "finance-client",
+      "kind": "client",
+      "namespace": "zpr-a",
+      "node_substrate": "10.0.0.1",
+      "address": "fd00:1:4::1",
+      "agent": "finance-client",
+      "target": "adapter2.svc.zpr.",
+      "identities": [
+        {
+          "name": "alice",
+          "auth": "rsa/alice"
+        },
+        {
+          "name": "finance-reader",
+          "auth": "auth-code/finance-reader"
+        }
+      ]
+    },
+    {
+      "name": "operations-client",
+      "kind": "client",
+      "namespace": "zpr-b",
+      "node_substrate": "10.0.0.1",
+      "address": "fd00:1:5::1",
+      "agent": "operations-client",
+      "target": "adapter3.svc.zpr.",
+      "identities": [
+        {
+          "name": "bob",
+          "auth": "rsa/bob"
+        },
+        {
+          "name": "operations-admin",
+          "auth": "auth-code/operations-admin"
+        }
+      ]
+    },
+    {
+      "name": "telemetry-client",
+      "kind": "client",
+      "namespace": "zpr-c",
+      "node_substrate": "10.0.0.1",
+      "address": "fd00:1:6::1",
+      "agent": "telemetry-client",
+      "target": "dns.svc.zpr.",
+      "identities": [
+        {
+          "name": "carol",
+          "auth": "rsa/carol"
+        },
+        {
+          "name": "telemetry-reader",
+          "auth": "auth-code/telemetry-reader"
+        }
+      ]
+    },
+    {
+      "name": "echo-service",
+      "kind": "service",
+      "node_substrate": "10.0.0.1",
+      "address": "fd00:1:7::1",
+      "agent": "echo-service",
+      "target": "adapter2.svc.zpr."
+    },
+    {
+      "name": "metrics-service",
+      "kind": "service",
+      "node_substrate": "10.0.0.1",
+      "address": "fd00:1:8::1",
+      "agent": "metrics-service",
+      "target": "adapter3.svc.zpr."
+    },
+    {
+      "name": "internet-gateway",
+      "kind": "service",
+      "machine": "machine-07",
+      "address": "fd00:1:9::1",
+      "agent": "internet-gateway",
+      "gateway_upstream": "https://example.com/"
+    }
+  ],
+  "organization_id": "northstar"
+}

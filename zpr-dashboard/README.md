@@ -31,6 +31,31 @@ Ubuntu amd64 release images and complete paired packages remain unfinished.
 
 # Development
 
+## Recovered Simulator topology
+
+The reviewed [demo manifest](cmd/zpr-web-dashboard/examples/simulation-environment.json)
+contains the fictional Northstar topology: twenty machines, six base components,
+seven services and three agent descriptors. It excludes the historical
+source-build bootstrap metadata and contains no generated credentials.
+Prepare an owner-only copy in a **new** directory under an existing protected
+parent:
+
+```sh
+sh scripts/prepare-simulator-manifest.sh /absolute/protected/new-simulator
+export SIMULATION_MANIFEST=/absolute/protected/new-simulator/simulation-environment.json
+```
+
+The [preparation script](scripts/prepare-simulator-manifest.sh) refuses existing
+directories, files or symlinks. Use this environment variable for Simulator
+processes only; Control Room and Control-Service retain independent production
+configuration. Profile/scenario assets still come from their configured example
+directories. No automatic fallback or existing runtime files are changed.
+
+This prepares topology only, not a working installation. It does not generate
+identities, provision services, install binaries, configure AI keys, start
+containers or restore the frozen VM. The compiled distribution and first-run
+setup remain unfinished.
+
 To setup your development environment, run `go mod download` to install the local dependencies. Finally, run `make run` to start the TUI.
 
 ## Migration discovery CLI

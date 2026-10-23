@@ -114,10 +114,37 @@ Remaining blockers, with no test suppression:
 |---|---|
 | Enrollment | Verified-TLS test expects invitation creation without the readiness preflight now required by the implementation; preserve the production readiness gate and reconcile test intent separately. |
 | Policy installation fixture | Extracted shell function omits platform initialization provided by its normal caller; standalone fixture lacks `ZPR_MULTINODE_PLATFORM`. |
-| Organization catalog | Test reads an absent external `simulation-environment.json`; define a reviewed distributable manifest/bootstrap contract. |
+| Organization catalog | Portable topology and five-organization catalog checks now pass; inherited test still hardcodes an absent external `.local-runtime/simulation-environment.json`. Requires an explicit fixture update, not private-state restoration. |
 | Placement fixture | Launcher helper moved to sourced `machine-runtime.sh`; test extracts only `dashboard-stack.sh`. Do not duplicate production logic to satisfy an outdated extractor. |
-| Simulator container state | Container-state fixture expects running but receives exited; investigate environment-independent state contract. |
-| Trusted service build | Artifact validation expects Linux amd64 ELF; fixture/environment currently produces an incompatible artifact. |
+| Simulator container state | Test invokes real Docker against `zpr-simulator` and expects it to be running. Current context reports exited. Mock Docker deterministically rather than altering shared containers. |
+| Trusted service build | Artifact validation expects Linux amd64 ELF; fake Go compiler writes the text `candidate`. Replace the fixture with a valid representative artifact while retaining invalid-artifact rejection coverage. |
+
+### Explicit topology preparation
+
+The reviewed `examples/simulation-environment.json` retains the original
+twenty-machine, six-component, seven-service, three-agent topology and explicitly
+selects Northstar. It excludes only historical `bootstrap` source-build inputs
+and the `extends` descriptor, neither of which the runtime resolves.
+It contains descriptors, fictional identities, private topology addresses and
+the public `https://example.com/` gateway target, not generated identity files,
+live state or service secrets.
+
+`scripts/prepare-simulator-manifest.sh` copies this topology into an explicit new
+owner-only directory. It refuses existing paths and output symlinks; missing
+parents and copy failures fail explicitly. It never starts services or changes
+production configuration. Runtime path defaults and legacy commands are
+unchanged; `SIMULATION_MANIFEST` is the explicit Simulator-only input.
+
+New tests invoke preparation from an unrelated working directory, verify
+owner-only permissions and non-overwrite behavior, check the manifest through
+the existing credential-safe definition reader and runtime validator, and
+exercise the actual catalog handler for all five selected organizations with
+temporary state. These tests pass with `-race`.
+
+The full suite still has the same six inherited failures above. In particular,
+no hidden runtime manifest was created to satisfy the historical hardcoded
+fixture. No existing tests were changed. The compiled distribution still needs
+fresh identity/service provisioning and clean-install/scenario acceptance.
 
 Private full-suite logs are preserved outside Git. The production recovery and
 original working trees remain unchanged.
