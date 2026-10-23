@@ -36,7 +36,7 @@ func (runtime *assertionRuntime) handleSourceRegistry(w http.ResponseWriter, r *
 	if !localEditorRequest(w, r) {
 		return
 	}
-	if err := runtime.refreshSettings(r.Context()); err != nil {
+	if err := runtime.refreshSourceOrganization(r.Context()); err != nil {
 		writeJSON(w, http.StatusBadGateway, map[string]string{"error": "Policy Repository assertion settings are unavailable"})
 		return
 	}
@@ -151,7 +151,7 @@ func (runtime *assertionRuntime) handleSourceRegistry(w http.ResponseWriter, r *
 			fail(http.StatusConflict, "Organization changed during connection test; discard the result")
 			return
 		}
-		if err != nil {
+		if err != nil && !errors.Is(err, errAssertionLDAPEmpty) {
 			fail(http.StatusBadGateway, "Connection test failed for "+entry.Name+"; check TLS trust, credentials and organization mapping. No fallback was attempted.")
 			return
 		}

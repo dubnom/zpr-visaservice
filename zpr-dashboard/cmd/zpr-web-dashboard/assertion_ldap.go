@@ -95,6 +95,8 @@ func parseAssertionLDAPAttributes(source string, attributes []string) (assertion
 	return assertionLDAPDirectory(entries, attributes)
 }
 
+var errAssertionLDAPEmpty = errors.New("Trusted LDAP returned no people or groups; no assertions were evaluated")
+
 func assertionLDAPDirectory(records []*ldap.Entry, attributes []string) (assertionDirectory, error) {
 	var err error
 	peopleByDN := make(map[string]string)
@@ -199,7 +201,7 @@ func assertionLDAPDirectory(records []*ldap.Entry, attributes []string) (asserti
 		sort.Strings(directory.Groups[name])
 	}
 	if len(directory.People) == 0 || len(directory.Groups) == 0 {
-		return assertionDirectory{}, errors.New("Trusted LDAP returned no people or groups; no assertions were evaluated")
+		return directory, errAssertionLDAPEmpty
 	}
 	return directory, nil
 }

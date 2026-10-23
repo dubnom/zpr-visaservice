@@ -74,7 +74,8 @@ source switch, or silent fallback between starter, Simulator and company data.
 
 The B1 local implementation is available through the
 [evaluation bootstrap runbook](zpr-dashboard/packaging/evaluation/README.md).
-Its render/unit and isolated runtime evidence do not accept B2-B6 or a clean-host
+B2/B3 now use ordinary source/log contracts; see the runbook verification matrix.
+Its focused race and two-cycle disposable runtime evidence does not accept B4-B6 or a clean-host
 production release. B milestones retain separate release/visual acceptance from
 the existing M0-M6 ordinary-client and production-boundary gates:
 
@@ -82,8 +83,8 @@ the existing M0-M6 ordinary-client and production-boundary gates:
 | --- | --- |
 | **B0 — Inventory and profile contract** | Record current package/image/script behavior and gaps in the [system release plan](System%20release%20plan.md#evaluation-only-bootstrap-profile-2026-10-23); freeze the evaluation-only label, state/secret ownership and independent service lifecycle. |
 | **B1 — One-command bootstrap** | Local implementation: `sh packaging/evaluation/bootstrap.sh -state "$PWD/.zpr-evaluation-local"` from `zpr-dashboard` (add `-render-only` for offline rendering). Starts production-tagged operator services plus current packaged LDAP/OpenObserve/Dex, foreground supervised with verified TLS/readiness and preserved install identity. Clean-host/platform and browser release acceptance remain separate. A clean supported host can run one documented command to initialize unique per-install protected secrets/state, render and start required ZPR plus LDAP/logging services, wait on protocol health, and report actionable status. Repeat/restart preserves identity and data; Simulator is unavailable. |
-| **B2 — Register starter source** | Bootstrap registers the bundled LDAP as a named, organization-scoped trusted source; Control Room can read and attribute results to it. Verify isolation, restart persistence and no implicit default/fallback behavior. |
-| **B3 — Register starter logging** | Bootstrap configures the OpenObserve-based evaluation logging source/collector and authorized query path. Verify actual ingestion, visible source identity, persistent storage, access-control boundaries and explicit unavailable/error state. |
+| **B2 — Register starter source** | Local implementation and automated V02/V06/isolation/restart evidence: `directory_<install-id>` via the public registration/test/read API, explicit server organization scope, no reserved source name. See evaluation runbook; browser/clean-host release acceptance remains separate. Bootstrap registers the bundled LDAP as a named, organization-scoped trusted source; Control Room can read and attribute results to it. Verify isolation, restart persistence and no implicit default/fallback behavior. |
+| **B3 — Register starter logging** | Local implementation and focused race/disposable evidence: ordinary production log inventory, HTTPS OpenObserve, administrator-only `logs.read`, 7-day retention and queryable allowlisted lifecycle events. Raw application logs/lossless collection, live company backends and elapsed retention acceptance remain gaps. Bootstrap configures the OpenObserve-based evaluation logging source/collector and authorized query path. Verify actual ingestion, visible source identity, persistent storage, access-control boundaries and explicit unavailable/error state. |
 | **B4 — Independent LDAP push feed** | Run the existing RFC 4533 syncrepl watcher and accesslog feed for the bundled LDAP outside Simulator lifecycle. **Control-Service owns durable per-source watcher checkpoints**, reconnect/resync health and private metadata retention. Demonstrate refresh/add/modify/delete and disconnect/reconnect behavior with private metadata and no attribute values/secrets. This does **not** claim that feed events refresh ZPR attribute caches or revoke visas; implement and accept those consumers separately unless independently verified already. |
 | **B5 — Add Simulator companion** | Add Simulator without replacing/reseeding the starter source. Register its own isolated synthetic directory as a second source, exercise ordinary production contracts, then stop Simulator and prove starter LDAP/logging/Control Room remain available. |
 | **B6 — Link company source/logging and retire starter explicitly** | Link company LDAP and logging alongside the running starter; show provenance and independent failures. An explicit wizard: **link company source → rebind policies → verify → disable bundled**; preview affected identity/source/policy/logging state and require authorized confirmation/recovery before stopping starter services; no automatic merge or fallback. |
@@ -96,8 +97,9 @@ the existing M0-M6 ordinary-client and production-boundary gates:
   OpenObserve/Dex package pins and mixed-platform requirements are in the runbook.
 - OpenObserve **AGPL-3.0 accepted for evaluation**, **7-day global retention**,
   **administrator-only access**; verify unauthenticated queries fail and preserve
-  TLS verification. B3 still owns actual collection/ingestion and named-source
-  registration/authorized Control Room querying.
+  TLS verification. B3 now supplies ordinary named-source configuration,
+  allowlisted lifecycle ingestion and authorized Control Room querying; raw
+  application-log collection and release acceptance remain separate.
 - **B1-RECOVERY (design/task, not implemented):** local CLI reset generates a
   unique one-time password into a new protected file, never stdout/logs; verify
   local ownership, lock, supported provider update, invalidate sessions and require

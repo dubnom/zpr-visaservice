@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Opt-in, isolated B1 startup/restart check. No company LDAP or Simulator use."""
+"""Opt-in, isolated B1-B3 startup/restart check. No company LDAP or Simulator use."""
 import argparse
 import base64
 import json
@@ -83,7 +83,7 @@ def main():
                 process = subprocess.Popen(command, cwd=ROOT, env=environment,
                                            stdout=stream, stderr=subprocess.STDOUT)
                 deadline = time.monotonic() + 180
-                while "READY (B1 transport only)" not in output.read_text():
+                while "READY (B1-B3 evaluation)" not in output.read_text():
                     if process.poll() is not None or time.monotonic() > deadline:
                         raise RuntimeError("startup not ready: " + output.read_text()[-1800:])
                     time.sleep(0.3)
@@ -95,6 +95,17 @@ def main():
                 inventory = current
                 context = ssl.create_default_context(cafile=str(state / "ca.pem"))
                 assert request(room, "/", context) == 200
+                assert request(room, "/api/adapter-logs", context) == 403
+                service_context = ssl.create_default_context(cafile=str(state / "ca.pem"))
+                service_context.load_cert_chain(str(state / "client-chain.pem"), str(state / "client-key.pem"))
+                source_id = "directory_" + inventory["install_id"]
+                assert request(service, "/api/assertions/source?source=" + source_id, service_context) == 200
+                assert request(service, "/api/adapter-logs", service_context) == 200
+                registry = json.loads((state / "assertion-sources.json").read_text())
+                assert registry["default_source"] == source_id
+                assert len(registry["sources"]) == 1
+                assert registry["sources"][0]["name"] == source_id
+                assert registry["sources"][0]["display_name"].endswith("(EVALUATION ONLY)")
                 assert request(logging, "/api/default/streams", context) in (401, 403)
                 password = (state / "logging-admin.secret").read_text().strip()
                 basic = base64.b64encode(f"admin@evaluation.invalid:{password}".encode()).decode()
@@ -129,7 +140,7 @@ def main():
         ], text=True)
         assert not containers.strip(), "disposable stack containers were not cleaned up"
         print("PASS: two independent starts, retained identity/data, verified TLS/mTLS, "
-              "admin-only logging, invalid Simulator/inherited config, no secret output, cleanup")
+              "ordinary scoped source registration/read, admin-only logging and ingestion, invalid Simulator/inherited config, no secret output, cleanup")
     finally:
         if process is not None and process.poll() is None:
             process.send_signal(signal.SIGINT)

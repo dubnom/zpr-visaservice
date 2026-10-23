@@ -4,9 +4,11 @@ import (
 	"encoding/json"
 	"errors"
 	"io"
+	"net/url"
 	"os"
 	"path/filepath"
 	"regexp"
+	"strings"
 )
 
 type Inventory struct {
@@ -20,6 +22,12 @@ type Target struct {
 }
 
 type SourceConfig struct {
+	URL              string `json:"url,omitempty"`
+	CAFile           string `json:"ca_file,omitempty"`
+	PasswordFile     string `json:"password_file,omitempty"`
+	Username         string `json:"username,omitempty"`
+	Organization     string `json:"organization,omitempty"`
+	Stream           string `json:"stream,omitempty"`
 	Name             string `json:"name"`
 	Kind             string `json:"kind"`
 	File             string `json:"file,omitempty"`
@@ -27,6 +35,8 @@ type SourceConfig struct {
 	Path             string `json:"path,omitempty"`
 	RuntimeContainer string `json:"runtime_container,omitempty"`
 }
+
+var streamIdentifier = regexp.MustCompile(`^[A-Za-z_][A-Za-z0-9_]{0,63}$`)
 
 var containerName = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9_.-]{0,127}$`)
 
@@ -59,7 +69,14 @@ func ReadInventory(path string) (Inventory, error) {
 			if source.Name == "" || source.Kind != "adapter" && source.Kind != "controller" {
 				return inventory, errors.New("invalid adapter log source")
 			}
-			if source.File != "" {
+			if source.URL != "" {
+				endpoint, err := url.Parse(source.URL)
+				if err != nil || endpoint.Scheme != "https" || endpoint.Hostname() == "" || endpoint.User != nil || endpoint.Path != "" || endpoint.RawQuery != "" || endpoint.Fragment != "" || endpoint.ForceQuery || strings.Contains(source.URL, "#") || source.Username == "" || !filepath.IsAbs(source.PasswordFile) || !streamIdentifier.MatchString(source.Organization) || !streamIdentifier.MatchString(source.Stream) || source.File != "" || source.Container != "" || source.Path != "" || source.RuntimeContainer != "" {
+					return inventory, errors.New("invalid OpenObserve log source")
+				}
+			} else if source.PasswordFile != "" || source.Username != "" || source.Organization != "" || source.Stream != "" || source.CAFile != "" {
+				return inventory, errors.New("network log fields require an HTTPS source")
+			} else if source.File != "" {
 				if !filepath.IsAbs(source.File) || source.Container != "" || source.Path != "" {
 					return inventory, errors.New("invalid file log source")
 				}

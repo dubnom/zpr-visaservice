@@ -276,8 +276,14 @@ server-side password file; it does not read simulation data.
 
 Control Room **Trusted Sources → Register source / Edit selected source** uses
 only production Control-Service contracts. No provider manager or other client
-needs to be running. The organization comes from the authenticated Policy
-Repository context; requests repeat it only as a stale-context guard. Existing
+needs to be running. By default the organization comes from authenticated Policy Repository context;
+requests repeat it only as a stale-context guard. An operator can explicitly set
+`ZPR_TRUSTED_SOURCE_ORGANIZATION_ID` on Control-Service for source registry,
+connection-test and selected-source read contracts without Policy-Service.
+This is server configuration, never a browser-chosen scope or an availability
+fallback. Conflicting already-loaded Policy context fails closed. Policy settings
+and assertion evaluation still require Policy-Service and are not enabled by
+this setting. Use the same organization in Control Room authorization grants. Existing
 operator authentication and same-origin/local/proxy checks apply to all routes.
 An ordinary authorized API client can use the same contract.
 
@@ -333,7 +339,9 @@ Successful saves return `status: "saved"`, the same organization/source identity
 and a new revision. They atomically replace and sync the same protected JSON
 file and directory, then publish an immutable in-memory reader snapshot. The
 first registration sets the default; later registrations/edits never switch it.
-Saving explicitly **does not verify connectivity**. Configuration edits clear
+Saving explicitly **does not verify connectivity**. Connection tests and
+selected-source browsing accept a successful LDAP search with no people/groups;
+assertion evaluation still rejects that empty snapshot and cannot pass vacuously. Configuration edits clear
 prior connection evidence in the UI; test failures cannot produce a healthy
 badge. Per-source connection observations are browser-session evidence only,
 not durable health certification. Recheck after reload or configuration changes.
@@ -450,3 +458,13 @@ rules and preserves the selected catalog across refreshes.
 
 Current limits: direct person memberships and scalar expression attributes.
 Nested-group expansion, notifications, and blocking activation are not implemented.
+### Evaluation bootstrap as an ordinary client (B2/B3)
+
+The evaluation launcher registers `directory_<install-id>` under
+`evaluation-<install-id>` through the documented public API, with a protected
+password-file reference, verified LDAPS and an explicit EVALUATION ONLY display
+name. No source name is reserved in the production reader/registry. Company
+sources coexist with separate identities; first-registration default behavior
+is unchanged and bootstrap never switches an existing default or overwrites an
+existing entry on restart. See [the B2/B3 runbook and V02/V06 verification
+matrix](packaging/evaluation/README.md#b2b3-verification-matrix).

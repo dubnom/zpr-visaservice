@@ -1,4 +1,4 @@
-# Local evaluation bootstrap (B1 only)
+# Local evaluation bootstrap (B1–B3)
 
 **EVALUATION ONLY — NOT PRODUCTION SUPPORTED.** This is a foreground,
 single-host engineering evaluation launcher, not the production appliance BOM,
@@ -58,9 +58,10 @@ Every install receives a random install/Compose-project ID, its own CA and
 service/client certificates, and independent 256-bit random LDAP admin/reader,
 OpenObserve admin, operator and OIDC client secrets. A fixed complexity suffix
 satisfies the packaged OpenObserve password policy without reducing random
-entropy. There are **no shared/default passwords**. LDAP starts with an empty
-People/Groups tree and one read-only service account; no synthetic users or
-Simulator directory are copied into it.
+entropy. There are **no shared/default passwords**. LDAP starts with an empty People/Groups tree and one read-only service
+account. No synthetic people or Simulator data are copied. A verified empty LDAP
+search is valid for connection tests and selected-source browsing, but remains
+an error for assertion evaluation (no vacuous policy success).
 
 Open `https://localhost:18787`. Import **only this install's `ca.pem`** into the
 evaluation browser's trust store. Never disable certificate or hostname checks.
@@ -69,7 +70,9 @@ The username is `admin@evaluation.invalid`; obtain its password locally from
 terminal/log. Named-user login is served by the install's Dex. Bootstrap verifies
 an actual signed ID token from that issuer before writing `operator-oidc.json`;
 it does not invent an OIDC subject from an email. Grants are limited to
-`monitor.read` and `policy.read` for `evaluation-<install-id>`.
+`monitor.read`, `logs.read`, `policy.read`, `policy.edit` and `policy.analyze`
+for `evaluation-<install-id>`. The last two allow ordinary source registration
+and read-only connection tests; they do not provision Policy-Service.
 
 OpenObserve is at `https://localhost:15080`, with the same username and a
 **different** password in `logging-admin.secret`. It has one administrator only;
@@ -83,9 +86,9 @@ memory/2 CPU cap; data-disk capacity monitoring remains an operator responsibili
 `WAIT`/`HEALTHY` output covers a verified LDAPS reader bind/base search,
 OpenObserve TLS plus authenticated query/unauthenticated denial, verified OIDC
 identity, Control-Service mTLS route and Control Room HTTPS. The supervisor also
-checks dependent services while running. Readiness means **B1 transport/auth
-readiness only**, not a functioning upstream Visa/Policy installation or source
-registration/ingestion. Missing upstreams remain visibly unavailable. No service
+checks dependent services and sends bounded lifecycle heartbeats while running.
+Readiness includes **ordinary LDAP registration/read and acknowledged, queryable
+lifecycle log ingestion**, not a functioning upstream Visa/Policy installation. Missing upstreams remain visibly unavailable. No service
 uses a Docker socket, simulation manifest, profile, session or workload.
 
 Keep this command in the foreground. **Ctrl-C** stops its native operator
@@ -108,13 +111,69 @@ Process failures report the component and next action, not request bodies,
 credentials or backend responses. Browser/OS trust removal and secure disposal
 of the private directory are explicit operator actions after stopping.
 
+## Ordinary source/log configuration (B2/B3)
+
+Bootstrap uses mTLS to call `GET /api/assertions/sources`, the public read-only
+connection test, `POST /api/assertions/sources` on first registration, and an
+explicit selected-source read. Organization `evaluation-<install-id>` and source
+`directory_<install-id>` remain stable. The source has no reserved name or
+production evaluation code path: its normal `ldap` configuration uses verified
+LDAPS, `ca.pem`, and a protected `ldap-reader.secret` file reference. The immutable
+`source-registration.json` records the initial request template, not a password.
+`ZPR_TRUSTED_SOURCE_ORGANIZATION_ID` explicitly scopes source administration/read
+independently of unavailable Policy-Service; policy evaluation/settings still
+fail unavailable. Conflicting Policy organization context fails closed.
+
+The mutable **0600** `assertion-sources.json` remains the ordinary, single-writer
+production source registry. Add company sources through the same API/UI. Restart
+retests/reads the existing starter entry without replacing operator edits or
+switching the existing default, merging identities or choosing a fallback.
+Missing/invalid registries fail rather than reseed. An old B1-only inventory is
+not silently migrated; use a new private state directory for this version.
+
+The mutable **0600** `adapter-logs.json` is the existing production log inventory
+(`ZPR_ADAPTER_LOG_CONFIG_FILE`), now accepting HTTPS OpenObserve sources alongside
+file/container/company log sources. Target `logs_<install-id>` and stream
+`lifecycle_<install-id>` carry explicit evaluation identity; company targets and
+streams remain separate. Network source fields are `url` (HTTPS origin),
+`ca_file`, `username`, `password_file` (absolute protected file reference),
+`organization` (backend tenant) and `stream` (identifier, not SQL). TLS verification
+is mandatory, redirects are rejected, backend errors are redacted, and queries
+are bounded to 100 entries from the past 7 days. Inventory edits are picked up on
+subsequent queries/collection; edit only while the supervisor is stopped.
+
+Only `bootstrap_ready`/`bootstrap_heartbeat` events with timestamp, install/source/
+organization IDs and an EVALUATION ONLY label are collected. Startup waits for
+acknowledged ingestion and a query containing this install's ID. A failed source
+has explicit unavailable/error state, never a company-source fallback. Storage
+is persistent; backend global retention remains 7 days. There is no arbitrary
+raw application-log collector or guaranteed-lossless delivery/outbox.
+
+Control Room sets `ZPR_CONTROL_ROOM_LOG_PERMISSION=logs.read`; only the named
+administrator receives that independent log permission. An ordinary monitor
+without it cannot query logs. Other operator installations preserve their existing
+`monitor.read` behavior unless they explicitly set this production access policy;
+set it and grant only intended administrators when adding sensitive log sinks.
+Direct Control-Service clients still require the protected administrator mTLS
+identity; never distribute its private key. OpenObserve's independent admin
+credential is never sent to browsers or returned through source APIs.
+
+### B2/B3 verification matrix
+
+| Gate | Automated evidence / remaining acceptance |
+| --- | --- |
+| V02/V06 | Explicit production organization with Policy/Simulator unavailable; public registration/test/read, revision and cross-organization guards; durable registry/restart; selected-source provenance. Existing registry race tests plus `TestExplicitProductionSourceScopeWithoutPolicyOrSimulator` and bootstrap contract/render tests. |
+| B2 isolation/coexistence | Real two-cycle disposable bootstrap; company/starter fixture coexistence; existing default preserved by ordinary registry contract; no source-name branch in production. |
+| B3 access/identity | `TestIndependentLogPermissionAdminOnly`, OpenObserve TLS/credential/unsafe-config tests, and `TestOpenObserveLogRenderingCoexistsAndFailsExplicitly` verify admin boundary, visible evaluation identity, company coexistence and independent failure. |
+| B3 ingestion/persistence | Disposable smoke verifies queryable lifecycle ingestion, verified TLS/mTLS, no unauthenticated access, restart with retained identity/data and no secret output. 7-day retention is backend configuration, not a seven-day elapsed-time test. |
+| Visual/platform release | Browser screenshots, multiple-company-backend live acceptance, clean-host/platform packaging and extended retention/delivery qualification remain separate. |
+
 ## Decisions and deliberately unfinished work
 
-- **B1 only:** named-operator bootstrap, persistent starter directory, persistent
-  logging backend and independent operator runtime. No trusted-source UI or
-  registration code is changed. B2 registers the starter LDAP; B3 configures
-  collection/ingestion, a named logging source and the authorized operator query
-  path. Merely starting OpenObserve does not mean any application logs are ingested.
+- **B1–B3:** named-operator bootstrap, ordinary scoped source registration/read,
+  persistent logging with lifecycle ingestion and authorized Control Room queries.
+  Arbitrary application/stdout collection is deliberately not enabled: upstream
+  output may contain credentials. Only allowlisted launcher metadata is ingested.
 - **Admin recovery design/task (not implemented):** a local CLI reset command
   must prove local state ownership and acquire this lifecycle lock, generate a
   unique one-time password into a new `0600` file (never stdout/arguments/logs),
@@ -135,7 +194,7 @@ of the private directory are explicit operator actions after stopping.
 - **Optional add-later hook (B5):** install the existing separate Simulator package
   only after this stack is healthy. Give it a different directory, credentials,
   ports and lifecycle, and explicitly register its synthetic source through
-  production contracts when B2/B5 are available. There is intentionally no
+  production contracts (B5 lifecycle acceptance is still separate). There is intentionally no
   Simulator flag, auto-start, endpoint or Control Room dependency in this launcher.
 - Certificates expire after 90 days (CA: one year); rotation/upgrade, installer
   signing, full BOM/platform qualification, HA, encrypted backup, production
@@ -157,7 +216,8 @@ python3 scripts/check-control-room-boundary.py
 
 Optional, **disposable local containers only**, random project/ports and guaranteed
 cleanup attempts; validates two starts, retained identity/data, TLS/mTLS,
-admin-only logging and invalid inherited Simulator configuration:
+ordinary source registration/read, lifecycle ingestion/query, admin-only logging
+and invalid inherited Simulator configuration:
 
 ```sh
 python3 packaging/evaluation/test-live.py --run-disposable
