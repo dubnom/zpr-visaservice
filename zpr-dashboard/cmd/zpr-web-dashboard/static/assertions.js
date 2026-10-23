@@ -167,14 +167,22 @@
 
   function renderSummary(summary) {
     catalogSummary = summary;
-    const previous = catalogSource.value;
-    const catalogs = summary?.sources || [];
-    catalogSource.replaceChildren(...catalogs.map((catalog) => new Option(catalog.name, catalog.name)));
-    catalogSource.hidden = !catalogs.length;
-    catalogSource.value = catalogs.some((catalog) => catalog.name === previous) ? previous : summary?.default_source || status?.default_source || catalogs[0]?.name || "";
-    const selected = catalogs.find((catalog) => catalog.name === catalogSource.value);
-    const qualifier = selected ? ` from ${JSON.stringify(selected.name)}` : "";
-    summary = selected || summary;
+    const context = window.ZPRTrustedSourceSelection?.get();
+    const catalogs = status?.sources?.length ? status.sources : summary?.sources || [];
+    catalogSource.replaceChildren(...catalogs.map((catalog) => {
+      const id = catalog.source_id || catalog.name;
+      return new Option(`${catalog.display_name || id} · ${id}`, id);
+    }));
+    catalogSource.hidden = catalogs.length < 2;
+    const preferred = context?.organizationID === status?.organization_id ? context.sourceID : "";
+    catalogSource.value = catalogs.some(catalog => (catalog.source_id || catalog.name) === preferred)
+      ? preferred
+      : status?.default_source || summary?.default_source || catalogs[0]?.source_id || catalogs[0]?.name || "";
+    const selected = summary?.source_id === catalogSource.value
+      ? summary
+      : (summary?.sources || []).find((catalog) => (catalog.source_id || catalog.name) === catalogSource.value);
+    const qualifier = catalogSource.value ? ` from ${JSON.stringify(catalogSource.value)}` : "";
+    summary = selected || (summary?.source_id === catalogSource.value ? summary : null);
     element("assertion-source-summary").textContent = summary ? `${summary.people} people / ${summary.groups.length} groups / ${window.ZPRSafeDisplay.formatDateTime(summary.observed_at)}` : "Not read";
     const rows = element("assertion-group-rows");
     rows.replaceChildren();
@@ -452,12 +460,49 @@
   const request = (path, options) => window.ZPREditorPage.requestJSON(
     (...args) => window.zprOperatorFetch(...args), path, options,
   );
+  let catalogReadGeneration = 0;
+  let catalogReadAbort;
+  let catalogLoadedOrganizationID = "";
+  let catalogLoadedSourceID = "";
+  async function readCatalogSource(sourceID = window.ZPRTrustedSourceSelection?.get().sourceID || catalogSource.value) {
+    const organizationID = status?.organization_id || "";
+    const generation = ++catalogReadGeneration;
+    catalogReadAbort?.abort();
+    catalogReadAbort = new AbortController();
+    renderSummary(null);
+    if (!organizationID || !sourceID) return;
+    element("assertion-source-summary").textContent = `Reading ${sourceID} for ${organizationID}…`;
+    try {
+      const query = new URLSearchParams({ source: sourceID });
+      const data = await request(`/api/assertions/source?${query}`, { signal: catalogReadAbort.signal });
+      const context = window.ZPRTrustedSourceSelection?.get();
+      if (generation !== catalogReadGeneration || context?.organizationID !== organizationID || context?.sourceID !== sourceID) return;
+      if (data.organization_id !== organizationID || data.source_id !== sourceID) throw new Error("Trusted source response did not match the selected source and organization");
+      catalogLoadedOrganizationID = organizationID;
+      catalogLoadedSourceID = sourceID;
+      renderSummary({
+        source_id: sourceID,
+        observed_at: data.observed_at,
+        people: data.people,
+        groups: data.groups || [],
+        attributes: data.attributes || [],
+      });
+    } catch (error) {
+      if (error.name !== "AbortError" && generation === catalogReadGeneration) {
+        catalogLoadedOrganizationID = organizationID;
+        catalogLoadedSourceID = sourceID;
+        renderSummary(null);
+        element("assertion-source-summary").textContent = `${sourceID} unavailable for ${organizationID}: ${error.message}`;
+      }
+    }
+  }
 
   function applyStatus(data, replace = false) {
     const organizationChanged = Boolean(loadedOrganizationID && data.organization_id && loadedOrganizationID !== data.organization_id);
     if (organizationChanged && testPending) stopTest();
     const keepDraft = organizationChanged && dirty() && !replace;
     status = data;
+    window.ZPRTrustedSourceSelection?.setContext(data.organization_id || "", data.sources || [], data.default_source || "");
     if (replace || !keepDraft && (organizationChanged || !source.dataset.loaded)) {
       loadedRevision = data.settings.revision;
       savedSource = source.value = data.settings.source;
@@ -473,12 +518,15 @@
     }
     element("assertion-source-status").textContent = data.configured ? data.sources?.length ? data.sources.map((source) => `${source.name} / ${source.kind}`).join(" · ") : `Live LDAP / ${data.base_dn}` : "Trusted sources not configured";
     renderSummary(data.source_summary);
+    const catalogContext = window.ZPRTrustedSourceSelection?.get();
+    if (catalogLoadedOrganizationID !== data.organization_id || catalogLoadedSourceID !== catalogContext?.sourceID) void readCatalogSource(catalogContext?.sourceID);
     renderRun(data.last_run);
     actions();
   }
 
   async function loadRecordStatus(data, replace = false) {
     status = data;
+    window.ZPRTrustedSourceSelection?.setContext(data.organization_id || "", data.sources || [], data.default_source || "");
     let record = selectedRecord;
     if (record && !record.isDraft) record = await request(`/api/policy/records/${encodeURIComponent(record.id)}`);
     if (!record) return;
@@ -508,6 +556,8 @@
     loadedOrganizationID = data.organization_id || "";
     element("assertion-source-status").textContent = data.configured ? data.sources?.length ? data.sources.map((source) => `${source.name} / ${source.kind}`).join(" · ") : `Live LDAP / ${data.base_dn}` : "Trusted sources not configured";
     renderSummary(data.source_summary);
+    const catalogContext = window.ZPRTrustedSourceSelection?.get();
+    if (catalogLoadedOrganizationID !== data.organization_id || catalogLoadedSourceID !== catalogContext?.sourceID) void readCatalogSource(catalogContext?.sourceID);
     renderRun(recordLastRun);
     actions();
   }
@@ -585,7 +635,7 @@
           await load();
         }
       } else {
-        renderSummary(await request("/api/assertions/source"));
+        await readCatalogSource();
       }
     } catch (error) {
       message(error.message, "error");
@@ -678,7 +728,14 @@
     navigation();
   });
   const catalogTabs = [...document.querySelectorAll("[data-assertion-catalog-tab]")];
-  catalogSource.addEventListener("change", () => renderSummary(catalogSummary));
+  catalogSource.addEventListener("change", () => window.ZPRTrustedSourceSelection?.select(catalogSource.value));
+  document.addEventListener("trusted-source:selection-changed", event => {
+    if (!status || event.detail.organizationID !== status.organization_id) return;
+    if (testPending) stopTest();
+    renderRun(null);
+    catalogSource.value = event.detail.sourceID;
+    void readCatalogSource(event.detail.sourceID);
+  });
   const selectCatalog = (selected) => {
     for (const tab of catalogTabs) {
       const active = tab === selected;

@@ -903,11 +903,13 @@ const test = base.extend({
       },
       assertions: {
         scope: "organization", organization_id: "alpha", organization_name: "Alpha Labs", configured: true, source_kind: "ldap", base_dn: "dc=alpha,dc=test",
+        default_source: "great_lakes_ldap",
+        sources: [{ name: "great_lakes_ldap", source_id: "great_lakes_ldap", organization_id: "alpha", display_name: "Great Lakes LDAP", kind: "ldap" }],
         settings: { revision: 0, source: "", enabled: false, interval_seconds: 60 },
         running: false, last_run: null, source_summary: null,
       },
       assertionSource: {
-        source_name: "Trusted LDAP", organization_id: "alpha", organization_name: "Alpha Labs", base_dn: "dc=alpha,dc=test",
+        source_id: "great_lakes_ldap", source_name: "Trusted LDAP", kind: "ldap", organization_id: "alpha", organization_name: "Alpha Labs", base_dn: "dc=alpha,dc=test",
         observed_at: "2026-10-02T12:00:00Z", people: 2,
         groups: [{ name: "Operators", members: 2 }],
         attributes: [{ name: "description", people: 0, groups: 1 }, { name: "mail", people: 2, groups: 0 }, { name: "title", people: 2, groups: 0 }],
@@ -917,7 +919,7 @@ const test = base.extend({
           group_attributes: { Operators: { description: ["Directory operators"] } },
         },
       },
-      trustedChangeFeeds: [{ name: "great_lakes_ldap", display_name: "Great Lakes LDAP" }],
+      trustedChangeFeeds: [{ name: "great_lakes_ldap", source_id: "great_lakes_ldap", display_name: "Great Lakes LDAP" }],
       trustedChanges: {
         changes: [{
           cursor: "change-1", time: "2026-10-07T14:00:00Z", type: "modify",
