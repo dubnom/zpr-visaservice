@@ -219,10 +219,10 @@ The evaluation milestone sequence and visual acceptance are tracked in the
 
 | Capability / current artifacts | Verified capability now | Gap before the evaluation profile can claim completion |
 | --- | --- | --- |
-| Lab bootstrap: `zpr-dashboard/cmd/zpr-lab-bootstrap`, including `-identity-services`, `-identity-compose`, and `-runtime-outputs`; `zpr-dashboard/packaging/simulator/README.md` | Generates protected lab configuration, synthetic LDAP data, and a separate LDAP/Dex Compose file and private state directories when explicitly requested. The command generates files; it does not initialize/start services. `identity-compose` requires explicit private bind IP and immutable LDAP/Dex image IDs/digests. LDAP is explicitly demo-only/unqualified; image digest syntax is checked but image contents/platform are not inspected. | Adapt the generator/output for the evaluation ZPR instance (not Simulator profile ownership); generate stable unique install secrets with retry-safe persistence; integrate service registry and startup/health transaction into one-command installer; supply supported image pins and source/ license qualification. |
-| Bundled identity candidates: `zpr-dashboard/scripts/Dockerfile.operator-idp` (Dex v2.44.0 digest), `zpr-lab-bootstrap` LDAP renderer and `identity-compose` output | Dex base image reference is digest-qualified. The caller supplies an immutable OpenLDAP image reference; generated LDAP/Dex state uses dedicated directories and restricted Compose settings. | No OpenLDAP release image/digest is selected or qualified; no production support claim, company-source linking/retirement path or integrated registration into an installed ZPR package. Bootstrap profile is lab/companion oriented and does not yet provide a production/evaluation installer lifecycle. |
-| LDAP provider and push feed: `zpr-dashboard/cmd/zpr-trusted-service`; `scripts/ldap-syncprov.conf`, `scripts/enable-ldap-sync.sh`; `-ldap-watch` and `-ldap-changes-base` | The service has a read-only LDAPS attribute provider, an mTLS HTTP accesslog change feed returning metadata, and a separate read-only RFC 4533 syncrepl consumer emitting metadata-only JSONL with reconnect/resync behavior. The syncprov helper validates/enables one data database and the consumer tests include isolated OpenLDAP cases. | The watcher is started only by the Simulator bootstrap today, writing demo diagnostics; no installed ZPR evaluation supervisor wires it to bundled LDAP. No durable cookie/checkpoint/journal is provided by the watcher. The existing consumer does **not** refresh cached attributes, reevaluate assertions or revoke visas; those remain separate future integration work. Need end-to-end source registration, accesslog/syncprov config, private bounded logs/state, health and restart tests independent of Simulator. |
-| Starter logging: `observability/openobserve/` profile, `zpr-dashboard/diagnostics/openobserve-provider.example.json`, dashboard OpenObserve provider | Existing optional OpenObserve profile uses a digest-pinned upstream image and a ZPR adapter-bound access path; configured diagnostics can query a named OpenObserve endpoint. | The profile is not a turnkey installation logging source: it requires an already provisioned adapter/identity/policy and separate setup. Operator logging role, startup, authentication/authorization, retention, bounded storage, persistence, health and registration are not integrated. OpenObserve is AGPL-3.0; complete license/runtime/data-handling review is still required. |
+| Lab bootstrap: independent `-evaluation` B1 mode plus original `zpr-dashboard/cmd/zpr-lab-bootstrap`, including `-identity-services`, `-identity-compose`, and `-runtime-outputs`; `zpr-dashboard/packaging/simulator/README.md` | Generates protected lab configuration, synthetic LDAP data, and a separate LDAP/Dex Compose file and private state directories when explicitly requested. The command generates files; it does not initialize/start services. `identity-compose` requires explicit private bind IP and immutable LDAP/Dex image IDs/digests. LDAP is explicitly demo-only/unqualified; image digest syntax is checked but image contents/platform are not inspected. | B1 now separately renders/starts native production-tagged Control Room/Control-Service and current LDAP/OpenObserve/Dex with private unique stable state, lifecycle locking, verified protocol health and foreground cleanup. See the evaluation runbook. Service/source registration, complete installer/clean-host qualification and production pins remain pending. |
+| Bundled identity candidates: `zpr-dashboard/scripts/Dockerfile.operator-idp` (Dex v2.44.0 digest), `zpr-lab-bootstrap` LDAP renderer and `identity-compose` output | Dex base image reference is digest-qualified. The caller supplies an immutable OpenLDAP image reference; generated LDAP/Dex state uses dedicated directories and restricted Compose settings. | Evaluation now selects the current packaged `osixia/openldap@sha256:0de3850635911109f0daf8f5957808ec4f4eb827fbaaa339100b5f1bab925745` (`linux/amd64`); no production OpenLDAP release image is selected or qualified; no production support claim, company-source linking/retirement path or integrated registration into an installed ZPR package. Bootstrap profile is lab/companion oriented and does not yet provide a production/evaluation installer lifecycle. |
+| LDAP provider and push feed: `zpr-dashboard/cmd/zpr-trusted-service`; `scripts/ldap-syncprov.conf`, `scripts/enable-ldap-sync.sh`; `-ldap-watch` and `-ldap-changes-base` | The service has a read-only LDAPS attribute provider, an mTLS HTTP accesslog change feed returning metadata, and a separate read-only RFC 4533 syncrepl consumer emitting metadata-only JSONL with reconnect/resync behavior. The syncprov helper validates/enables one data database and the consumer tests include isolated OpenLDAP cases. | The watcher is started only by the Simulator bootstrap today, writing demo diagnostics; no installed ZPR evaluation supervisor wires it to bundled LDAP. No durable cookie/checkpoint/journal is provided by the watcher. **B4 ownership decision: Control-Service owns durable per-source checkpoints and reconnect/resync health**, independent of Simulator. The existing consumer does **not** refresh cached attributes, reevaluate assertions or revoke visas; those remain separate future integration work. Need end-to-end source registration, accesslog/syncprov config, private bounded logs/state, health and restart tests independent of Simulator. |
+| Starter logging: `observability/openobserve/` profile, `zpr-dashboard/diagnostics/openobserve-provider.example.json`, dashboard OpenObserve provider | Existing optional OpenObserve profile uses a digest-pinned upstream image and a ZPR adapter-bound access path; configured diagnostics can query a named OpenObserve endpoint. | The profile is not a turnkey installation logging source: it requires an already provisioned adapter/identity/policy and separate setup. Operator logging role, startup, authentication/authorization, retention, bounded storage, persistence, health and registration are not integrated. OpenObserve AGPL-3.0 is accepted for this evaluation profile only, with 7-day global retention and admin-only loopback TLS access. B1 starts the backend but not collectors/source registration. Production license/runtime/data-handling qualification remains required. |
 | Runtime composition and test surfaces: `zpr-dashboard/internal/systemruntimecompose`, `cmd/zpr-system-compose-render`, packaging/system preflight/config/manifest tools, `packaging/demo-runtime` and `packaging/simulator` | Read-only preflight, schema/config validation/rendering, Compose renderers, profile renderers and paired demo/simulator artifacts exist as engineering slices. | They do not currently compose/start the complete production/evaluation service set or qualify a fresh-host bootstrap. The simulator package is separate; no evaluation single-command install, starter source registration, complete logging bootstrap, company link/retirement flow, or integrated clean-host acceptance exists. |
 
 **Push-feed scope:** bundled LDAP must enable both the existing accesslog-backed
@@ -242,14 +242,41 @@ stop the starter.
 
 #### Remaining implementation decisions
 
-The profile boundary and evaluation-only label are decided. Before implementation
-is released, still select/qualify the OpenLDAP image and exact synthetic data/
-source mappings; establish Dex/bootstrap administrator creation and recovery;
-close OpenObserve license, authentication/authorization, retention and resource
-limits; assign ownership for persistent syncrepl checkpoints/metadata health; and
-define the explicit source/policy rebind preview, authorization and recovery
-contract for starter retirement. These are implementation gates, not permission
-to widen the evaluation profile into a production support claim.
+The following user decisions are frozen for the evaluation profile only:
+
+- **Directory:** use the current packaged immutable OpenLDAP image above; do not
+  imply production support or copy Simulator's synthetic directory into it.
+- **Admin recovery:** a local CLI reset must generate a unique one-time password,
+  write it only to a new `0600` local file, invalidate prior sessions and force
+  replacement on first use. **B1-RECOVERY is a design/task, not shipped:** static
+  Dex password mode lacks forced-change/one-time semantics. Implement supported
+  provider updates with ownership/lock/expiry/replay/rollback tests for the operator
+  and independent OpenObserve admin; never reset by deleting/reseeding data.
+- **Logging:** OpenObserve **AGPL-3.0 accepted, evaluation-only, 7-day global
+  retention, administrator-only access**. B1 verifies authenticated/unauthenticated
+  boundaries and TLS; B3 still supplies actual ingestion, named source identity
+  and authorized Control Room querying. Resource/disk/backup and production
+  retention/legal/runtime qualification remain separate gates.
+- **B4:** Control-Service owns **per-source** change-watcher checkpoints, resync
+  and metadata health; the watcher is not Simulator-owned. B1 does not start it.
+- **B6:** explicit retirement wizard: **link company source → rebind policies →
+  verify → disable bundled**. Show affected state and source/policy/logging
+  references, require authorized confirmation and offer recovery. No automatic
+  merge, fallback, source switch or disabling on company-source connection.
+
+B1's supported local command, image platforms, protected restart/cleanup contract,
+protocol-readiness scope, active demo shortcuts and gaps are documented in
+[`packaging/evaluation/README.md`](zpr-dashboard/packaging/evaluation/README.md).
+The local implementation is not a complete first-install BOM or production
+installer; it does not change source-registration UI/handlers. Clean-host,
+platform and browser qualification remain release acceptance work.
+
+**BOM/companion reconciliation:** these current evaluation LDAP/logging/IdP
+packages are an evaluation-only subset, not a qualification of the production
+bundled-or-existing choices or a replacement for required Visa/Policy/Enrollment/
+Gateway artifacts. Simulator remains a separately installable optional add-later
+companion with separate state, credentials, source and lifecycle. No Control Room
+or Control-Service path depends on it; stopping/omitting it must not affect B1.
 
 ### First-install BOM scope and provisional candidates
 
@@ -956,7 +983,9 @@ contract](zpr-dashboard/packaging/system/INSTALLER-RUNTIME-CONTRACT.md). The
 profile is one Ubuntu 24.04 x86-64 host with local Docker Compose, an explicitly
 configured HTTP/HTTPS proxy Gateway (not transparent interception), and
 bundled Dex/OpenLDAP identity candidates and an OpenObserve logging candidate.
-Dex's image reference is provisional; OpenLDAP is unpinned, and OpenObserve
+For production qualification Dex's image reference is provisional and OpenLDAP
+remains unselected (the separate B1 evaluation profile now uses the current
+packaged immutable OpenLDAP image above); OpenObserve
 still requires AGPL-3.0, image/runtime and data-handling review. Protected DNS
 and Gateway are required; Simulator remains a separate companion and is not a
 production dependency. Internal service mTLS uses per-install CA/service

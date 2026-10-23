@@ -1,3 +1,7 @@
 target/
 build-release/
 
+# Local evaluation bootstrap state and compiler scratch (contains secrets).
+/zpr-dashboard/.zpr-evaluation*/
+/zpr-dashboard/.evaluation-build/
+/zpr-dashboard/.evaluation-test/

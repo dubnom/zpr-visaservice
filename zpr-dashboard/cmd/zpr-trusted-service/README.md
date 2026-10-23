@@ -178,3 +178,11 @@ temporary LDAPS server and verifies refresh plus add/modify/delete:
 ```sh
 ZPR_TEST_LDAP_SYNC=1 go test ./cmd/zpr-trusted-service -run TestLDAPSyncLiveOpenLDAP -count=1
 ```
+## Evaluation bootstrap boundary (B1)
+
+The [local evaluation launcher](../../packaging/evaluation/README.md) starts an
+independent, empty starter OpenLDAP directory. B1 does not register it with this
+provider or start its change watcher; those are B2/B4 tasks, not evidence that
+attributes refresh or visas revoke. Control-Service will own durable per-source
+watcher checkpoints/resync health in B4. Simulator is neither required nor started
+and must keep its synthetic directory separate.

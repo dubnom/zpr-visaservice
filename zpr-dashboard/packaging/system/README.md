@@ -1,5 +1,14 @@
 # System packaging
 
+## B1 local evaluation subset
+
+The [one-command local evaluation bootstrap](../evaluation/README.md) separately
+starts current production-tagged Control Room/Control-Service plus unique
+OpenLDAP/OpenObserve/Dex state, verified TLS and protocol readiness. It does not
+start/require Simulator, register sources, ingest logs or implement the complete
+first-install BOM. Its mixed-platform package set is evaluation-only, not a
+qualified Ubuntu/amd64 appliance or a replacement for the contracts below.
+
 ## Current objective: paired demo packages
 
 The immediate goal is a working ZPR demo archive and a separate, version-matched

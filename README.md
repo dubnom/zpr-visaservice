@@ -2,6 +2,10 @@
 
 ZPR visa service implementation (under active development).
 
+For the B1 **evaluation-only**, Simulator-independent local operator/LDAP/logging
+bootstrap, see [the one-command evaluation runbook](zpr-dashboard/packaging/evaluation/README.md).
+This is not the complete production appliance or source-registration milestone.
+
 On a state-preserving restart, retained node identities are not evidence of a
 live node session. Policy-authorized peer bootstrap visas remain available until
 the peer authenticates in the current Visa Service process, allowing remote

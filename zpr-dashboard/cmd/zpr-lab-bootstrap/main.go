@@ -48,6 +48,9 @@ func main() {
 }
 
 func run(args []string, stdout, stderr io.Writer) int {
+	if len(args) > 0 && args[0] == "-evaluation" {
+		return runEvaluation(args[1:], stdout, stderr)
+	}
 	flags := flag.NewFlagSet("zpr-lab-bootstrap", flag.ContinueOnError)
 	flags.SetOutput(stderr)
 	domain := flags.String("domain", "", "explicit lab DNS suffix (required; no DNS changes)")
@@ -329,6 +332,10 @@ func certificate(commonName, hostname string, now time.Time, parent *x509.Certif
 }
 
 func certificateWithUsage(commonName, hostname string, now time.Time, parent *x509.Certificate, signer *ecdsa.PrivateKey, usage x509.ExtKeyUsage) (*x509.Certificate, *ecdsa.PrivateKey, []byte, []byte, error) {
+	return certificateWithOrganization(commonName, hostname, "ZPR simulator lab only", now, parent, signer, usage)
+}
+
+func certificateWithOrganization(commonName, hostname, organization string, now time.Time, parent *x509.Certificate, signer *ecdsa.PrivateKey, usage x509.ExtKeyUsage) (*x509.Certificate, *ecdsa.PrivateKey, []byte, []byte, error) {
 	key, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
 	if err != nil {
 		return nil, nil, nil, nil, err
@@ -340,7 +347,7 @@ func certificateWithUsage(commonName, hostname string, now time.Time, parent *x5
 	serial.Add(serial, big.NewInt(1))
 	template := &x509.Certificate{
 		SerialNumber: serial,
-		Subject:      pkix.Name{CommonName: commonName, Organization: []string{"ZPR simulator lab only"}},
+		Subject:      pkix.Name{CommonName: commonName, Organization: []string{organization}},
 		NotBefore:    now.Add(-5 * time.Minute), NotAfter: now.Add(90 * 24 * time.Hour),
 		KeyUsage: x509.KeyUsageDigitalSignature, BasicConstraintsValid: true,
 	}
