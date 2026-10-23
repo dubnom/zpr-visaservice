@@ -60,11 +60,15 @@ jq -n --arg revision "$(git rev-parse HEAD)" --arg toolchain "$("$GO" version)" 
       source_revision:$revision,go_toolchain:$toolchain,public_release:false,
       complete_installation:false,dependency_license_review:"pending"}' > "$stage/build.json"
 "$GO" version -m "$stage/bin/zpr-web-dashboard" > "$stage/go-build-info.txt"
+find "$stage" -type d -exec chmod 755 {} +
+find "$stage" -type f -exec chmod 644 {} +
+chmod 755 "$stage/bin/"*
 cd "$stage"
 find . -type f ! -name SHA256SUMS | LC_ALL=C sort | while IFS= read -r file; do
     shasum -a 256 "$file"
 done > SHA256SUMS
-COPYFILE_DISABLE=1 tar -czf "$output/compiled-recovery-linux-arm64.tar.gz" .
+chmod 644 SHA256SUMS
+COPYFILE_DISABLE=1 tar --numeric-owner -czf "$output/compiled-recovery-linux-arm64.tar.gz" .
 cd "$output"
 shasum -a 256 compiled-recovery-linux-arm64.tar.gz > compiled-recovery-linux-arm64.tar.gz.sha256
 printf 'Engineering artifact: %s/compiled-recovery-linux-arm64.tar.gz\n' "$output"

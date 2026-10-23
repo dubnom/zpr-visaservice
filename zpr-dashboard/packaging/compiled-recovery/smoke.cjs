@@ -40,6 +40,7 @@ function verifyDirectory(directory, relative = "") {
   for (const entry of fs.readdirSync(directory, { withFileTypes: true })) {
     const name = relative + entry.name;
     if (entry.isDirectory()) {
+      assert.equal(fs.statSync(path.join(directory, entry.name)).mode & 0o777, 0o755);
       verifyDirectory(path.join(directory, entry.name), `${name}/`);
     } else {
       assert.ok(entry.isFile(), "Extracted tree contains a non-regular file");
@@ -51,9 +52,11 @@ function verifyDirectory(directory, relative = "") {
         name.startsWith("licenses/") || ["build.json", "go-build-info.txt", "README.md"].includes(name),
       `Unexpected archive surface: ${name}`);
       if (name.startsWith("bin/")) {
+        assert.equal(fs.statSync(path.join(directory, entry.name)).mode & 0o777, 0o755);
         assert.ok(content.subarray(0, 6).equals(Buffer.from([127, 69, 76, 70, 2, 1])));
         assert.equal(content.readUInt16LE(18), 183, "Binary must target Linux ARM64");
       } else {
+        assert.equal(fs.statSync(path.join(directory, entry.name)).mode & 0o777, 0o644);
         const text = content.toString("utf8");
         assert.ok(!/-----BEGIN [A-Z ]*PRIVATE KEY-----/.test(text), `Private key in ${name}`);
         for (const line of text.split("\n")) {

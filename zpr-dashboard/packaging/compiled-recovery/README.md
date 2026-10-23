@@ -33,6 +33,9 @@ checkout, Go/Rust tools, node_modules, caches, database, generated identity,
 operator credential, AI key or recovered runtime snapshot. The Northstar LDIF
 reader password field is only the existing `DEMO_BIND_PASSWORD_HASH` placeholder;
 real passwords must be generated during provisioning.
+Packaged directories/executables use mode `0755` and public assets use `0644`,
+so runtime access does not require the builder's UID or extra capabilities.
+The enclosing output directory and archive remain owner-only.
 
 ## Offline smoke validation
 
