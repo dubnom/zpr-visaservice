@@ -276,3 +276,10 @@ attempted: existing unrelated Simulator organization/launcher tests, missing
 Northstar/Rust dependency fixtures and macOS enrollment/reset protected-path
 checks failed; no existing failing tests were altered. No live stack was
 started or deployed for this recovery change.
+
+Recovery test fixtures resolve the OS temporary parent through `EvalSymlinks`
+and explicitly protect it with `0700`; production symlink rejection is unchanged.
+Both `go test -race ./cmd/zpr-lab-bootstrap -run Recovery -count=1` and the full
+bootstrap package race suite pass with the default macOS `TMPDIR`. The partial
+replacement test proves Dex configuration changed and the pending marker blocks
+startup, rather than confusing an earlier path-validation refusal with a reset.
