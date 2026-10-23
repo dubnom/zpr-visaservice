@@ -2,9 +2,10 @@
 
 Date: 2026-10-23
 
-Status: proposed functional/demo delivery plan. All tasks and acceptance tests
-below are pending; this document does not claim implementation, execution,
-deployment or production readiness.
+Status: proposed functional/demo delivery plan. Packet B completed the B01
+inventory and added targeted C06 regression evidence; production boundary
+violations remain open. Other tasks/acceptance gates remain pending; this
+document does not claim deployment or production readiness.
 
 ## 1. Target outcome
 
@@ -89,10 +90,11 @@ when its integrated exit criteria pass.
 
 ### M0 - Agree and enforce the ordinary-client boundary
 
-- [ ] **B01:** Inventory production routes, transitive imports, configuration,
+- [x] **B01:** Inventory production routes, transitive imports, configuration,
   startup scripts, filesystem mounts, inventory/log enrichment and browser
   requests for Simulator coupling. Record each occurrence and its replacement
-  owner; distinguish Simulator-only code from production dependencies.
+  owner; distinguish Simulator-only code from production dependencies. See
+  [packet B inventory and failing acceptance audit](CONTROL_ROOM_BOUNDARY_INVENTORY.md).
 - [ ] **B02:** Map existing source names across provider registration, Visa
   Service inventory, assertion configuration, change feeds and browser DTOs.
   Select one stable organization-scoped source identity and an existing
@@ -173,7 +175,9 @@ Depends on M1's source contract and M0's service ownership.
   handoff or automatic lab defaults in production.
 - [ ] **C06:** Verify direct Control Room startup and normal usage with
   Simulator absent, its URL unreachable, its environment unset or invalid,
-  and its files/mounts inaccessible.
+  and its files/mounts inaccessible. Packet B adds passing isolated Go/browser
+  guards, but this gate remains open: the strict launcher/shared-asset audit
+  still fails. See [scope, results and remaining violations](CONTROL_ROOM_BOUNDARY_INVENTORY.md).
 
 **Exit:** V01-V08, V13 and V15 pass; production request/file-access evidence
 shows no reverse dependency. A screenshot without Simulator labels is not

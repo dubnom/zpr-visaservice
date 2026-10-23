@@ -466,6 +466,13 @@ may provision and exercise the normal ZPR services, but operator dependencies
 must never point back to Simulator. Test new operator features with Simulator
 unavailable; shared UI utilities must keep independent endpoints/data contracts.
 
+The [packet B boundary inventory](../../../CONTROL_ROOM_BOUNDARY_INVENTORY.md)
+records remaining launcher/profile, legacy source-name and shared-static-page
+violations, their replacement owners and executable Go/browser guards. The
+strict `python3 scripts/check-control-room-boundary.py` audit (from
+`zpr-dashboard`) currently fails; targeted passing tests are not production
+boundary sign-off.
+
 Adapter Logs reads `ZPR_ADAPTER_LOG_CONFIG_FILE` on Control-Service. This is an
 operator-owned JSON inventory, independent of any test environment:
 
@@ -585,8 +592,9 @@ OTLP producers can export the same resource contract. See
 the Go provider interface; the Control Room contract contains no OpenObserve
 query fields or Simulator data.
 
-The Control-Service launcher does not read Simulator manifests or profiles.
-Optional gateway annotations come from the operator-owned
+The Control-Service Go startup uses explicit production configuration, but the
+shared lab launcher still has organization/profile/runtime-path fallbacks; see
+the packet B inventory above. Optional gateway annotations come from the operator-owned
 `ZPR_PLATFORM_SERVICES` JSON setting, or the local stack's persistent
 `dashboard-stack/platform-services.json` file (override its location with
 `ZPR_PLATFORM_SERVICES_FILE`). An explicit JSON setting takes precedence;
