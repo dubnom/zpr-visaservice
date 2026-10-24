@@ -307,7 +307,7 @@ func inspect(ctx context.Context, api contract, state string, inv inventory) (re
 	payload.Revision = current.Revision
 	for _, entry := range current.Sources {
 		if entry.Source == inv.Source {
-			if !entry.Editable || !reflect.DeepEqual(entry.Config, payload.Config) {
+			if !entry.Editable || !reflect.DeepEqual(withoutServerVersion(entry.Config), withoutServerVersion(payload.Config)) {
 				return payload, false, errors.New("source identity collision or changed ownership/configuration; refusing mutation")
 			}
 			return payload, true, nil
@@ -315,6 +315,19 @@ func inspect(ctx context.Context, api contract, state string, inv inventory) (re
 	}
 	return payload, false, nil
 }
+
+// withoutServerVersion drops the registry-owned identity version so readback
+// compares only operator-supplied configuration.
+func withoutServerVersion(config map[string]any) map[string]any {
+	out := make(map[string]any, len(config))
+	for key, value := range config {
+		if key != "version" {
+			out[key] = value
+		}
+	}
+	return out
+}
+
 func reconcile(ctx context.Context, api contract, state string, inv inventory, remove bool) error {
 	payload, exists, err := inspect(ctx, api, state, inv)
 	if err != nil {
