@@ -117,6 +117,38 @@ func (runtime *assertionRuntime) handleSourceRegistry(w http.ResponseWriter, r *
 		fail(http.StatusForbidden, "Source belongs to another organization or is operator-file managed")
 		return
 	}
+	if r.Method == http.MethodDelete {
+		if index < 0 {
+			fail(http.StatusNotFound, "Source identity no longer exists; reload before removing")
+			return
+		}
+		if config.DefaultSource == entry.Name {
+			fail(http.StatusConflict, "Default source retirement is not supported; no replacement or fallback was selected")
+			return
+		}
+		// Deletion must refer to the exact reviewed configuration, not just its name.
+		existing, _ := json.Marshal(config.Sources[index])
+		requested, _ := json.Marshal(entry)
+		if string(existing) != string(requested) {
+			fail(http.StatusConflict, "Source configuration changed; reload before removing")
+			return
+		}
+		config.Sources = append(config.Sources[:index], config.Sources[index+1:]...)
+		if err := runtime.persistSources(config); err != nil {
+			fail(http.StatusConflict, err.Error())
+			return
+		}
+		sources := make(map[string]assertionNamedSource, len(runtime.sources))
+		for name, source := range runtime.sources {
+			if name != entry.Name {
+				sources[name] = source
+			}
+		}
+		runtime.sources, runtime.sourcesConfig = sources, config
+		runtime.lastRun, runtime.lastSource = nil, nil
+		writeJSON(w, http.StatusOK, map[string]any{"organization_id": request.OrganizationID, "source_id": entry.Name, "revision": runtime.sourcesRevision, "status": "removed"})
+		return
+	}
 	if !testing && (r.Method == http.MethodPost && index >= 0 || r.Method == http.MethodPut && index < 0) {
 		fail(http.StatusConflict, "Source identity already exists or no longer exists; reload before editing")
 		return

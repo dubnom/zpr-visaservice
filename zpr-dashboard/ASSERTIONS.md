@@ -301,6 +301,7 @@ editable through this scoped workflow.
 | `GET /api/assertions/sources` | Returns current `organization_id`, opaque `revision`, `durable` (a file is configured), and scoped `sources` entries with `source_id`, `editable`, and editable `config`. Only file references, never credential contents, are returned. |
 | `POST /api/assertions/sources` | Create a new stable source ID; duplicate IDs conflict. |
 | `PUT /api/assertions/sources` | Replace an existing source configuration, keeping source and organization IDs fixed. A missing ID conflicts, never silently creates/renames a source. |
+| `DELETE /api/assertions/sources` | Explicitly remove an existing non-default editable source using the same exact `organization_id`, `source_id`, current `revision` and reviewed `config` payload as save/test. Rejects changed config, active operations, default/watched/shared/file-managed sources, stale revision and other organizations. Atomic protected persistence, immutable reader snapshots and cache invalidation are preserved. No default switch, fallback, policy rewrite or cascade; remove references explicitly first. Default-source retirement is not supported. |
 | `POST /api/assertions/sources/test` | Validate an unsaved candidate and perform a bounded read-only bind/search or HTTPS snapshot read. Success returns `status: "success"`; validation/connection failures return non-2xx with a source-specific, redacted error. Nothing is saved and no fallback is attempted. |
 
 Mutation/test bodies are strict JSON:

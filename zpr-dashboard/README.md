@@ -10,6 +10,12 @@ and ingests/query-verifies bounded lifecycle logs through the production log
 inventory. It never starts/requires Simulator or implements the complete
 production BOM; arbitrary raw application-log collection remains unimplemented.
 
+The optional [B5 Simulator companion](packaging/simulator-companion/README.md)
+can be added afterward as an ordinary authenticated client in the same evaluation
+organization, with a separate synthetic HTTPS directory/source ID and explicit
+own-source removal. It never seeds bundled LDAP or changes policies; production
+operator services remain unaware and work without it.
+
 Production appliance work is tracked in the
 [system packaging foundation](packaging/system/README.md). The new
 `zpr-system-config` command validates only company management-bootstrap input;
