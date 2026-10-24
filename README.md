@@ -70,6 +70,19 @@ See the [Simulator as an ordinary ZPR client plan](SIMULATOR_AS_ZPR_CLIENT_PLAN.
 for a proposed demo-first task list, milestones, visual acceptance tests,
 multi-source/organization LDAP work and tracked pre-production shortcuts.
 
+Trusted-source cache refresh (`DELETE /admin/services/{id}/cache`) returns 202
+only after reconciliation is recorded in the state database. This acknowledges
+acceptance, not completion or relay revocation delivery. Pending generations
+survive Visa Service worker/process restarts and are retried every five seconds;
+duplicate refreshes coalesce and repeat the existing convergent reconciliation.
+`GET` on the same authenticated resource reports each source's pending/failed
+state and requested/completed generations. Database write failures return 503;
+operators must configure durable Redis persistence for the state database.
+Control-Service watchers retain their previous durable LDAP checkpoint on rejected
+acceptance and replay on restart. Watcher health reports `accepted_pending`
+separately from source-stream health; use the Visa Service resource for definitive
+completion/failure, not the watcher's last refresh timestamp.
+
 ## Crates / Packages / Libraries
 
 Policy evaluations use a fresh Cap'n Proto reader traversal budget for each

@@ -39,6 +39,7 @@ mod policy_mgr;
 mod router;
 mod signal_worker;
 mod topology_mgr;
+mod trusted_reconciliation;
 mod trusted_services;
 mod visa_bootstrap;
 mod visa_mgr;

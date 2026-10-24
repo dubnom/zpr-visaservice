@@ -45,11 +45,13 @@ pub(crate) enum SweepReason {
 /// the ungated [VisaMgr::mark_visa_revoked], and does nothing at all on allow —
 /// a revoke queued by an earlier attribute sweep stays queued, and the node simply
 /// re-requests to get a fresh decision.
+/// Returns false if any visa could not be checked or its verdict recorded, so
+/// durable attribute reconciliation can retry without changing policy semantics.
 pub(crate) async fn revalidate_visas(
     asm: &Arc<Assembly>,
     psnap: &PolicySnapshot,
     reason: SweepReason,
-) {
+) -> bool {
     let target_vinst = psnap.vinst();
     let snapshot = asm.visa_mgr.list_visa_metadata().await;
 
@@ -60,6 +62,7 @@ pub(crate) async fn revalidate_visas(
     let mut skipped_stale = 0u32;
     let mut skipped_unresolved = 0u32;
     let mut skipped_current = 0u32;
+    let mut failed = 0u32;
 
     for (visa_id, metadata) in snapshot {
         // Only a policy sweep can skip on generation: an attribute change leaves the
@@ -98,6 +101,7 @@ pub(crate) async fn revalidate_visas(
                 {
                     Ok(_) => allowed += 1,
                     Err(e) => {
+                        failed += 1;
                         warn!(target: VISA, "visa sweep: failed to record allow for visa {visa_id}: {e}")
                     }
                 }
@@ -123,11 +127,13 @@ pub(crate) async fn revalidate_visas(
                 match res {
                     Ok(_) => revoked += 1,
                     Err(e) => {
+                        failed += 1;
                         warn!(target: VISA, "visa sweep: failed to record deny for visa {visa_id}: {e}")
                     }
                 }
             }
             Err(e) => {
+                failed += 1;
                 warn!(target: VISA, "visa sweep: error re-checking visa {visa_id}: {e}");
             }
         }
@@ -139,6 +145,7 @@ pub(crate) async fn revalidate_visas(
         target: VISA,
         "visa sweep reason={reason:?} vinst={target_vinst}: total={total} allowed={allowed} revoked={revoked} skipped_stale={skipped_stale} skipped_unresolved={skipped_unresolved} skipped_current={skipped_current}"
     );
+    failed == 0 && skipped_unresolved == 0 && skipped_stale == 0
 }
 
 #[cfg(test)]

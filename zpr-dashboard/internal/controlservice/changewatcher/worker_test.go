@@ -234,3 +234,54 @@ func TestConsumerRejectedCookieDurablyResets(t *testing.T) {
 		t.Fatalf("reset=%v err=%v", reset, err)
 	}
 }
+
+func TestWorkerRejectedAcceptanceRestartRetryAndDuplicate(t *testing.T) {
+	dir := filepath.Join(t.TempDir(), "state")
+	store, _, err := OpenStore(dir, "org", "ldap", "binding")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := store.Save([]byte("before")); err != nil {
+		t.Fatal(err)
+	}
+	store.Close()
+	for _, accepted := range []bool{false, true} {
+		store, cookie, err := OpenStore(dir, "org", "ldap", "binding")
+		if err != nil {
+			t.Fatal(err)
+		}
+		calls := 0
+		worker, _ := NewWorker("dc=test", func(context.Context) error {
+			calls++
+			if !accepted {
+				return errors.New("HTTP 503: enqueue rejected")
+			}
+			return nil
+		})
+		worker.Run(context.Background(), store, cookie, func(ctx context.Context, initial []byte, sink Sink, save func([]byte) error) error {
+			if string(initial) != "before" {
+				t.Fatalf("unsafe restart checkpoint: %q", initial)
+			}
+			for _, e := range []Event{event("resume_start"), entryEvent("modify"), entryEvent("modify")} {
+				if err := sink(e); err != nil {
+					return err
+				}
+			}
+			return save([]byte("after"))
+		})
+		status := worker.Status()
+		if accepted {
+			if calls != 2 || status.Reconciliation != "accepted_pending" {
+				t.Fatalf("duplicate acceptance: %d %+v", calls, status)
+			}
+		} else if calls != 1 || status.State != "failed" || status.Reconciliation != "failed" {
+			t.Fatalf("rejection not visible: %d %+v", calls, status)
+		}
+		store.Close()
+	}
+	store, cookie, err := OpenStore(dir, "org", "ldap", "binding")
+	if err != nil || string(cookie) != "after" {
+		t.Fatalf("successful retry not checkpointed: %q %v", cookie, err)
+	}
+	store.Close()
+}

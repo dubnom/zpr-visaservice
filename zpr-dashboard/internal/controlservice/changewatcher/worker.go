@@ -11,10 +11,11 @@ import (
 )
 
 type Status struct {
-	State       string    `json:"state"`
-	Error       string    `json:"error,omitempty"`
-	Events      uint64    `json:"events"`
-	LastRefresh time.Time `json:"last_refresh,omitempty"`
+	Reconciliation string    `json:"reconciliation,omitempty"`
+	State          string    `json:"state"`
+	Error          string    `json:"error,omitempty"`
+	Events         uint64    `json:"events"`
+	LastRefresh    time.Time `json:"last_refresh,omitempty"`
 }
 
 type Stream func(context.Context, []byte, Sink, func([]byte) error) error
@@ -116,14 +117,17 @@ func (worker *Worker) accept(ctx context.Context, event Event) error {
 		return invalid()
 	}
 	if refresh {
-		// Do not acknowledge even the opaque cookie until refresh and invalidation
-		// both succeed. Duplicate/replayed events intentionally repeat the refresh.
+		// Do not acknowledge even the opaque cookie until refresh and durable
+		// reconciliation acceptance both succeed. Acceptance is not completion. Duplicate/replayed events intentionally repeat the refresh.
+		worker.status.Reconciliation = "pending"
 		worker.mu.Unlock()
 		err := worker.refresh(ctx)
 		worker.mu.Lock()
 		if err != nil {
-			return errors.New("trusted source refresh or visa invalidation failed")
+			worker.status.Reconciliation = "failed"
+			return errors.New("trusted source refresh or reconciliation acceptance failed")
 		}
+		worker.status.Reconciliation = "accepted_pending"
 		worker.status.LastRefresh = time.Now().UTC()
 		if event.Type == "refresh_complete" {
 			worker.phase = "live"
