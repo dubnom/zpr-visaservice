@@ -536,7 +536,7 @@ fn admin_app(state: SharedState) -> Router {
         .route("/admin/services/{capture}", get(get_service))
         .route(
             "/admin/services/{capture}/cache",
-            delete(flush_service_cache),
+            delete(flush_service_cache).get(trusted_reconciliation_status),
         )
         .route("/admin/authrevoke", get(get_revokes))
         .route("/admin/authrevoke/{capture}", get(get_revoke))
@@ -1259,8 +1259,8 @@ async fn get_service(
 /// re-checked, so no visa keeps relying on the old data.
 ///
 /// The reload is synchronous (its failure is reported to the caller); the reconciliation
-/// runs on the event worker, so success returns `202 Accepted` and the outcome shows up
-/// in the log rather than the response.
+/// runs from a durable outbox on the event worker. `202 Accepted` acknowledges
+/// persistence, not completion; GET on this resource reports per-source progress.
 async fn flush_service_cache(
     Extension(perm): Extension<Permission>,
     State(state): State<SharedState>,
@@ -1271,22 +1271,18 @@ async fn flush_service_cache(
     }
     debug!(target: ADMIN, "DELETE /admin/services/{}/cache", svc_id);
 
-    // Clone the Arcs and drop the read guard before awaiting the flush.
-    let (ts_mgr, event_mgr) = {
-        let rstate = state.read().await;
-        (rstate.asm.ts_mgr.clone(), rstate.asm.event_mgr.clone())
-    };
-
-    match ts_mgr.flush_one(&svc_id).await {
+    let asm = state.read().await.asm.clone();
+    match asm.ts_mgr.flush_one(&svc_id).await {
         Ok(()) => {
-            // The flush itself is done. If the event cannot be queued we lose only the
-            // sweep of existing visas -- new visa decisions are still protected by the
-            // per-actor revision check. The event carries no source id (the reconcile
-            // is unscoped), so name the source here where it is known.
-            info!(target: ADMIN, "flushed trusted service {}, queueing revalidation", svc_id);
-            if let Err(e) = event_mgr.record_event(VsEvent::TrustedServiceChange).await {
-                error!(target: ADMIN, "flushed trusted service {} but could not queue revalidation: {}", svc_id, e);
+            if let Err(error) =
+                crate::trusted_reconciliation::enqueue(asm.state_db.as_ref(), &svc_id).await
+            {
+                error!(target: ADMIN, "could not durably accept reconciliation for {}: {}", svc_id, error);
+                return StatusCode::SERVICE_UNAVAILABLE;
             }
+            // The queue is only a wake-up hint. The durable request is retried by
+            // the event worker's timer, including after a process restart.
+            asm.event_mgr.notify_trusted_service_change();
             StatusCode::ACCEPTED
         }
         Err(ServiceError::TrustedServiceNotFound(_)) => StatusCode::NOT_FOUND,
@@ -1295,6 +1291,17 @@ async fn flush_service_cache(
             StatusCode::INTERNAL_SERVER_ERROR
         }
     }
+}
+
+async fn trusted_reconciliation_status(
+    State(state): State<SharedState>,
+    EPath(svc_id): EPath<String>,
+) -> Result<Json<crate::trusted_reconciliation::Status>, StatusCode> {
+    let asm = state.read().await.asm.clone();
+    crate::trusted_reconciliation::status(asm.state_db.as_ref(), &svc_id)
+        .await
+        .map(Json)
+        .map_err(|_| StatusCode::SERVICE_UNAVAILABLE)
 }
 
 fn service_endpoints_to_string(endpoints: &[Scope]) -> String {
@@ -3397,6 +3404,97 @@ mod tests {
             Ok(VsEvent::TrustedServiceChange) => {}
             other => panic!("expected TrustedServiceChange event, got {other:?}"),
         }
+    }
+
+    #[tokio::test]
+    async fn test_flush_service_cache_durable_retry_after_worker_restart() {
+        let (asm, event_rx) = new_assembly_with_event_rx(None).await;
+        let asm = Arc::new(asm);
+        let svc = register_flush_counting_service(&asm);
+        let api_key = setup_test_api_rw_key(&asm);
+        let app = admin_app(Arc::new(tokio::sync::RwLock::new(AdminState::new(
+            asm.clone(),
+        ))));
+        drop(event_rx); // Lost wake-up / dead worker must not lose accepted work.
+        for _ in 0..2 {
+            let response = app
+                .clone()
+                .oneshot(
+                    Request::builder()
+                        .method("DELETE")
+                        .uri(format!("/admin/services/{FLUSH_TS_ID}/cache"))
+                        .header("X-API-Key", &api_key)
+                        .body(Body::empty())
+                        .unwrap(),
+                )
+                .await
+                .unwrap();
+            assert_eq!(response.status(), StatusCode::ACCEPTED);
+        }
+        let read_status = || async {
+            let response = app
+                .clone()
+                .oneshot(
+                    Request::builder()
+                        .uri(format!("/admin/services/{FLUSH_TS_ID}/cache"))
+                        .header("X-API-Key", &api_key)
+                        .body(Body::empty())
+                        .unwrap(),
+                )
+                .await
+                .unwrap();
+            assert_eq!(response.status(), StatusCode::OK);
+            serde_json::from_slice::<serde_json::Value>(
+                &response.into_body().collect().await.unwrap().to_bytes(),
+            )
+            .unwrap()
+        };
+        assert_eq!(read_status().await["state"], "pending");
+        asm.ts_mgr.update_services(vec![]);
+        crate::trusted_reconciliation::process_pending(&asm).await;
+        assert_eq!(read_status().await["state"], "failed");
+        // A new processor has no in-memory queue or retry state; it discovers the
+        // persisted request, reloads and completes the coalesced duplicates.
+        asm.ts_mgr.update_services(vec![svc.clone()]);
+        crate::trusted_reconciliation::process_pending(&asm).await;
+        let status = read_status().await;
+        assert_eq!(status["state"], "idle");
+        assert_eq!(status["completed"], 2);
+        assert_eq!(svc.flushes.load(std::sync::atomic::Ordering::SeqCst), 3);
+        crate::trusted_reconciliation::process_pending(&asm).await;
+        assert_eq!(svc.flushes.load(std::sync::atomic::Ordering::SeqCst), 3);
+    }
+
+    #[tokio::test]
+    async fn test_flush_service_cache_enqueue_failure_returns_unavailable() {
+        let (asm, mut event_rx) = new_assembly_with_event_rx(None).await;
+        let asm = Arc::new(asm);
+        register_flush_counting_service(&asm);
+        let encoded =
+            percent_encoding::utf8_percent_encode(FLUSH_TS_ID, percent_encoding::NON_ALPHANUMERIC);
+        asm.state_db
+            .hset(
+                &format!("trusted-reconciliation:requested:{encoded}"),
+                "invalid",
+                "value",
+            )
+            .await
+            .unwrap();
+        let api_key = setup_test_api_rw_key(&asm);
+        let app = admin_app(Arc::new(tokio::sync::RwLock::new(AdminState::new(asm))));
+        let response = app
+            .oneshot(
+                Request::builder()
+                    .method("DELETE")
+                    .uri(format!("/admin/services/{FLUSH_TS_ID}/cache"))
+                    .header("X-API-Key", &api_key)
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(response.status(), StatusCode::SERVICE_UNAVAILABLE);
+        assert!(event_rx.try_recv().is_err());
     }
 
     /// DELETE /admin/services/{id}/cache for an unregistered service returns NOT_FOUND.

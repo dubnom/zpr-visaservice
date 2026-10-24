@@ -248,19 +248,39 @@ DELETE /admin/services/{id}/cache
   Request
     (none)
   Response
-    202: accepted (reload succeeded, reconciliation queued)
+    202: accepted (reload succeeded, reconciliation durably recorded)
     403: permission denied (read-only key)
     404: no such trusted service
     500: reload failed (e.g. the attribute file is missing or unparseable)
+    503: reconciliation could not be durably accepted; retry without advancing the source checkpoint
   Notes
     The reload is synchronous, so a 202 means the new data is live. The
     reconciliation that follows is asynchronous: the actors behind live visas are
     refreshed from the service and their visas re-checked against current policy,
-    with visas no longer allowed queued for revocation. Its outcome is logged, not
-    returned.
+    with visas no longer allowed queued for revocation. Acceptance is not completion
+    or confirmation that relays have applied revocations. Reconciliation requests
+    persist in the state database and retry every five seconds, including after
+    restart. Duplicate requests coalesce; requests arriving during a pass remain
+    pending for another pass. Configure Redis persistence for crash durability.
     Actors with no live visa are not touched here -- they refresh on their next
     visa request.
     Note that passed {id} must be url path encoded.
+
+GET /admin/services/{id}/cache
+---------------------------------
+  Summary
+    Read per-source durable reconciliation progress (read or read-write API key).
+  Response
+    200: {source_id, state, requested, completed, error}
+      state: idle (no pending requests), pending, or failed (retry pending).
+      requested/completed: monotonically increasing accepted/pass generations.
+      error: sanitized last failure, null after success.
+    503: state database unavailable or reconciliation state unreadable.
+  Notes
+    A failed pass never advances completed. Every retry reloads the source before
+    refreshing actors and sweeping visas. Idle means reconciliation desired state
+    was recorded, not that asynchronous relay revocation delivery has completed.
+    A never-requested source has idle state and zero generations.
 
 GET /admin/visas
 ----------------

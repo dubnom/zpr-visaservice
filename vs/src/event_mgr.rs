@@ -42,11 +42,9 @@ pub enum VsEvent {
     /// Indicates that policy has been successfully updated. Pass the new `vinst`.
     PolicyUpdated(u64),
 
-    /// The attribute data behind a trusted service changed (an admin refreshed it).
-    /// Handler reconciles *all* stale or TTL-expired trusted attributes on the actors
-    /// behind live visas, then re-checks those visas. Deliberately not scoped to the
-    /// source that changed: `stale_sources_for_actor` already narrows the fetch to
-    /// sources whose revision actually moved, so a source id would buy nothing.
+    /// Wake-up hint for durable trusted-service reconciliation requests. The
+    /// outbox retains per-source progress; the existing sweep still refreshes
+    /// all stale or TTL-expired attributes on actors behind live visas.
     TrustedServiceChange,
 }
 
@@ -58,6 +56,10 @@ pub struct EventMgr {
 impl EventMgr {
     pub fn new(event_queue: mpsc::Sender<VsEvent>) -> Self {
         EventMgr { event_queue }
+    }
+
+    pub fn notify_trusted_service_change(&self) {
+        let _ = self.event_queue.try_send(VsEvent::TrustedServiceChange);
     }
 
     pub async fn record_event(&self, event: VsEvent) -> Result<(), ServiceError> {
@@ -74,8 +76,14 @@ pub async fn launch(asm: Arc<Assembly>, mut event_rx: mpsc::Receiver<VsEvent>) {
     debug!(target: EVENT, "event manager worker started");
     let mut dns_refresh = tokio::time::interval(std::time::Duration::from_secs(30));
     dns_refresh.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
+    let mut trusted_refresh = tokio::time::interval(std::time::Duration::from_secs(5));
+    trusted_refresh.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
     loop {
         let event = tokio::select! {
+            _ = trusted_refresh.tick() => {
+                crate::trusted_reconciliation::process_pending(&asm).await;
+                continue;
+            }
             event = event_rx.recv() => match event { Some(event) => event, None => break },
             _ = dns_refresh.tick(), if asm.config.dns_update.is_some() => {
                 if let Err(error) = reconcile_dns_providers(&asm).await {
@@ -106,7 +114,7 @@ pub async fn launch(asm: Arc<Assembly>, mut event_rx: mpsc::Receiver<VsEvent>) {
                 }
             }
             VsEvent::TrustedServiceChange => {
-                handle_trusted_service_change(&asm).await;
+                crate::trusted_reconciliation::process_pending(&asm).await;
             }
         }
     }
@@ -423,7 +431,7 @@ async fn handle_policy_updated(asm: &Arc<Assembly>, vinst: u64) -> Result<(), Se
 /// Note this only reconciles actors that hold a live visa. Everyone else is
 /// handled lazily on their next visa request by the revision check in
 /// `refresh_expired_attributes`.
-async fn handle_trusted_service_change(asm: &Arc<Assembly>) {
+pub(crate) async fn handle_trusted_service_change(asm: &Arc<Assembly>) -> bool {
     // One snapshot for the whole pass, same as the policy handler.
     let psnap = asm.policy_mgr.get_current_snapshot();
 
@@ -434,7 +442,8 @@ async fn handle_trusted_service_change(asm: &Arc<Assembly>) {
         "trusted service changed: actors refreshed={refreshed} unresolved={unresolved} failed={failed}"
     );
 
-    revalidate_visas(asm, &psnap, SweepReason::AttributeChange).await;
+    let swept = revalidate_visas(asm, &psnap, SweepReason::AttributeChange).await;
+    swept && unresolved == 0 && failed == 0
 }
 
 /// The distinct actor addresses referenced by a live visa (both ends of every visa's

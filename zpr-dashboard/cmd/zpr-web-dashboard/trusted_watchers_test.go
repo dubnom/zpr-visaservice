@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"path/filepath"
@@ -240,5 +241,19 @@ func TestTrustedWatcherAdminRedirectAndFailure(t *testing.T) {
 	admin := &adminClient{baseURL: server.URL, http: server.Client(), apiKey: "secret"}
 	if err := admin.refreshTrustedService(context.Background(), "ldap"); err == nil {
 		t.Fatal("redirect counted as successful cache invalidation")
+	}
+}
+
+func TestTrustedWatcherOnlyDurableAcceptanceAdvancesProcessing(t *testing.T) {
+	for _, code := range []int{http.StatusOK, http.StatusNoContent, http.StatusAccepted, http.StatusServiceUnavailable, http.StatusInternalServerError} {
+		t.Run(fmt.Sprint(code), func(t *testing.T) {
+			server := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { w.WriteHeader(code) }))
+			defer server.Close()
+			admin := &adminClient{baseURL: server.URL, http: server.Client()}
+			err := admin.refreshTrustedService(context.Background(), "ldap")
+			if (err == nil) != (code == http.StatusAccepted) {
+				t.Fatalf("HTTP %d accepted=%v", code, err == nil)
+			}
+		})
 	}
 }
