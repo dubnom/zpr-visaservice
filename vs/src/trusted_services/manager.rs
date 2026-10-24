@@ -362,4 +362,91 @@ mod tests {
         manager.update_services(Vec::new());
         assert!(manager.statuses().is_empty());
     }
+
+    #[tokio::test]
+    async fn test_multisource_same_subject_is_queried_in_both_stores() {
+        use libeval::actor::Actor;
+
+        let company_path = write_fixture(
+            "multisource-company.json",
+            r#"{"user.sub":{"alice":{"color":["red"],"lazy":[""]}}}"#,
+        );
+        let lab_path = write_fixture(
+            "multisource-lab.json",
+            r#"{"user.sub":{"alice":{"color":["blue"],"roles":["reviewer"]}}}"#,
+        );
+        let company = Arc::new(
+            FileAttributeStore::new(
+                "company".into(),
+                test_mapper(),
+                Duration::from_secs(3600),
+                &company_path,
+            )
+            .unwrap(),
+        );
+        let lab = Arc::new(
+            FileAttributeStore::new(
+                "lab".into(),
+                test_mapper(),
+                Duration::from_secs(3600),
+                &lab_path,
+            )
+            .unwrap(),
+        );
+        let manager = TrustedServicesMgr::new();
+        manager.update_services(vec![company.clone(), lab.clone()]);
+        let identities = [("user.sub".into(), "alice".into())];
+        let results = manager.get_attributes_for_actor(&identities).await;
+        assert_eq!(results.len(), 2);
+        let mut actor = Actor::new();
+        for (source, result) in results {
+            let attrs = result.unwrap();
+            assert!(attrs.iter().all(|attr| attr.get_source() == source));
+            for attr in attrs {
+                actor.add_attribute(attr).unwrap();
+            }
+        }
+        assert_eq!(
+            actor.get_attribute("user.color").unwrap().get_source(),
+            "lab"
+        );
+        assert_eq!(
+            actor.get_attribute("user.color").unwrap().get_value(),
+            &["blue".to_string()]
+        );
+        assert_eq!(
+            actor.get_attribute("user.role").unwrap().get_value(),
+            &["reviewer".to_string()]
+        );
+        assert_eq!(
+            actor
+                .get_attribute("user.zpr.tag.lazy")
+                .unwrap()
+                .get_source(),
+            "company"
+        );
+
+        let addr: IpAddr = "fd5a:5052::a1".parse().unwrap();
+        manager.record_revision(&addr, "company", company.current_revision());
+        manager.record_revision(&addr, "lab", lab.current_revision());
+        company.flush().await.unwrap();
+        assert_eq!(
+            manager.stale_sources_for_actor(&addr),
+            vec![("company".into(), company.current_revision())]
+        );
+        assert!(
+            manager
+                .get_attributes_from_source_for_actor("company", &identities)
+                .await[0]
+                .is_ok()
+        );
+        assert!(
+            manager
+                .get_attributes_from_source_for_actor("missing", &identities)
+                .await[0]
+                .is_err()
+        );
+        fs::remove_file(company_path).unwrap();
+        fs::remove_file(lab_path).unwrap();
+    }
 }
