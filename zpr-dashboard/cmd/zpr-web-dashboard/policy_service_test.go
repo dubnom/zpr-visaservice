@@ -145,9 +145,9 @@ func TestControlServiceProxiesPolicyRepositoryOverMutualTLS(t *testing.T) {
 func TestPolicyServiceMuxRescansLDAPAttributeCatalog(t *testing.T) {
 	workspace := &policyWorkspace{
 		attributeMappings: []policyAttributeMapping{
-			{policyAttribute: policyAttribute{Source: "ou", Attribute: "device.demo.department"}, requiresLDAP: true},
-			{policyAttribute: policyAttribute{Source: "title", Attribute: "device.demo.title"}, requiresLDAP: true},
-			{policyAttribute: policyAttribute{Source: "sub", Attribute: "user.sub"}},
+			{policyAttribute: policyAttribute{Source: "company", Attribute: "device.demo.department__source__company"}, providerAttribute: "ou", requiresLDAP: true},
+			{policyAttribute: policyAttribute{Source: "company", Attribute: "device.demo.title__source__company"}, providerAttribute: "title", requiresLDAP: true},
+			{policyAttribute: policyAttribute{Source: "company", Attribute: "user.sub__source__company"}, providerAttribute: "sub", unqualifiedAttribute: "user.sub"},
 		},
 		ldapAttributeScanner: func(context.Context) (map[string]struct{}, error) {
 			return map[string]struct{}{"ou": {}, "cn": {}}, nil
@@ -164,8 +164,8 @@ func TestPolicyServiceMuxRescansLDAPAttributeCatalog(t *testing.T) {
 		t.Fatal(err)
 	}
 	want := []policyAttribute{
-		{Source: "ou", Attribute: "device.demo.department"},
-		{Source: "sub", Attribute: "user.sub"},
+		{Source: "company", Attribute: "device.demo.department__source__company"},
+		{Source: "company", Attribute: "user.sub__source__company"},
 	}
 	if !reflect.DeepEqual(catalog.Attributes, want) || catalog.LDAPAttributeCount != 2 || catalog.Error != "" {
 		t.Fatalf("rescan catalog = %+v, want attributes %#v and 2 LDAP names", catalog, want)

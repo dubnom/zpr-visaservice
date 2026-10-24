@@ -1,0 +1,22 @@
+[nodes.n0]
+provider = [["device.zpr.adapter.cn", "node.zpr.org"]]
+zpr_address = "fd5a:5052:90de::1"
+
+[trusted_services.corp-1_a]
+api = "file"
+expiration_seconds = 3600
+returns_attributes = [
+  "cleared -> #user.cleared",
+  "department -> user.department",
+  "content -> service.content",
+]
+
+[trusted_services.lab-2_b]
+api = "file"
+expiration_seconds = 3600
+returns_attributes = [
+  "cleared -> #user.cleared",
+  "department -> user.department",
+  "role -> device.role",
+  "groups -> device.groups{}",
+]

@@ -8,6 +8,7 @@ import (
 	"io"
 	"net/http"
 	"os"
+	"reflect"
 	"time"
 
 	"neboagency.com/zpr-dashborad/internal/changereview"
@@ -153,8 +154,11 @@ func (p *policyApplyResources) stagedCandidate(ctx context.Context, workspace *p
 	if policyContainerDigest(config) != stage.ConfigSHA256 {
 		return stage, nil, errors.New("compiler configuration changed since staging")
 	}
+	if err := validatePolicySourceBindings(stage, workspace.stageConfigPath); err != nil {
+		return stage, nil, err
+	}
 	workspace.mu.Lock()
-	same := workspace.stagedCandidate != nil && *workspace.stagedCandidate == stage
+	same := workspace.stagedCandidate != nil && reflect.DeepEqual(*workspace.stagedCandidate, stage)
 	workspace.mu.Unlock()
 	if !same {
 		return stage, nil, errors.New("stage replaced during capture")

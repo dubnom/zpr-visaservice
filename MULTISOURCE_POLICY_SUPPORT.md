@@ -1,98 +1,197 @@
-# Multiple trusted sources: current policy support
+# Multiple trusted sources: source-qualified policy support
 
-## Verdict: partly, not source-isolated authorization
+## Verified result (source-policy completion)
 
-At baseline `7ad56caca5ca08435ad46fa1c7637dc1a9ed2e50`, multiple trusted
-sources can be registered and browsed, and Go **assertions** can compare their
-snapshots. This does **not** establish that permission policies isolate source A
-from source B. Permission evaluation uses an unqualified attribute-key map;
-same-key claims from different sources replace one another. Do not represent
-multiple source registration, a successful assertion, or the browser's selected
-source as proof that a visa is restricted to that source.
+The source-built ZPLC in the exclusive `maturing/source-qualified-attrs` compiler
+worktree accepts `x__source__id` in tag, key, scalar-value, set/group-member and
+class/group-name positions. No lexer/grammar relaxation was necessary. A missing
+semantic step was fixed: qualified conditions now resolve against the named
+source's **raw** `returns_attributes` declarations. The compiler keeps those raw
+provider mappings in the binary, so VS ingestion qualifies the keys exactly once.
 
-No permission-language, persisted-policy or identity-linking semantics have
-been changed by this investigation. Source-qualified authorization requires a
-product/contract decision before implementation.
+The VS ignored interoperability test
+`test_source_built_compiler_to_stores_to_real_evaluation` actually invokes that
+compiler, loads its Cap'n Proto output, constructs both real file stores through
+the production factory, ingests colliding claims, and evaluates the resulting
+actors with libeval: company-qualified Alice grants and lab-only Bob denies.
+The same grant/deny proof runs again with unqualified tag/key authoring explicitly
+bound to the company default, under strict compiler source-qualification mode.
+This is not merely a hand-built condition test. The fixtures also compile tags,
+source-qualified class names and multi-valued group/set references. Group-member
+values are ordinary literal values: ZPLC does not invent/append group membership
+values or authorize cross-source subject joins.
 
-## Evidence trace
+Source IDs consistently use `[A-Za-z0-9_-]{1,64}`, excluding the reserved
+`__source__` marker. Base return mappings cannot contain the marker. The suffix
+preserves the stable source ID; a display rename does not rename keys.
 
-| Layer | Actual binding and evidence |
-| --- | --- |
-| Control Room permission editor | `policyclient.Attribute` contains `source` and `attribute`, but `loadPolicyAttributeMappings` in `policy.go` sets `source` to the **provider attribute name** before `->`, not a trusted source ID. Identical mappings across services are deduplicated. `policy_attributes.go` scans one configured LDAP container/base DN, not the selected source registry. |
-| Editor analysis | `policyWorkspace.checkUnlocked` runs configured ZPLC with `--parse-only --lint --config`. The registry's selected source is not supplied. Record/source diagnostic ownership remains unchanged. |
-| Policy-Service storage and compilation | `policy_store.go` versions source content/metadata in SQLite. `policy_staging.go:compileAndStagePolicyRecord` invokes ZPLC with the configured compiler configuration and signing key. Source registry entries are not compiled into source-qualified condition identities. `policy_test_api.go` delegates compiled permission testing to `zpt`; it is not an independent Go authorization evaluator. |
-| Compiled contract | `zpr-common/zpr-policy/policy.capnp:AttrExpr` has only `key`, `op`, `value`. `TrustedService` has `serviceId`, `returnsAttrs`, and `identityAttrs`; the attribute mapping target can be a manually distinct ZPR key, but conditions do not carry `(organization_id, source_id)`. These sibling sources were inspected read-only because they define this workspace's compiler/runtime contract. |
-| Rust permission evaluation | `libeval/src/actor.rs:Actor.attrs` is `HashMap<String, Attribute>`. `add_attribute` inserts by key only (last writer wins). `eval.rs:match_condition_to_actor` matches key/value/expiry, not `Attribute.source`. The latter is lifecycle provenance, not a condition selector. |
-| Go assertion evaluation | `assertion_expressions.go:assertionExpressionDirectory` resolves `source("id")` by the configured `Name`/source ID in the current organization. Display name is not the selector. Legacy `ldap` works only without a named-snapshot map. Unqualified simple assertions use the explicit configured default snapshot, not an arbitrary first source. Cross-source current-person expressions look up the same textual subject in the other snapshot; there is no verified identity-linking relation. |
-| Source registry and failure | `assertion_source_registry.go` validates organization, source ID and revision. Display edits preserve ID. Backend URL/base-DN edits may change what an unchanged ID resolves to. `assertion_sources.go:readDirectory` reads **all** organization-applicable sources and requires the default; any read failure aborts the whole assertion run. Single-source browsing remains independent. |
-| Trusted-service identity resolution | `vs/src/trusted_services/manager.rs:get_attributes_for_actor` queries every configured service with the same `(identity key, identity value)` set. `file_attribute_store.rs` distinguishes identity keys within a source but adds no cross-source subject namespace. `connection_control.rs` combines successful returned claims; a failed provider blocks connection admission. Distinct keys from two providers can coexist, but their presence is not an explicit subject-linking decision. |
-| Visa issuance and refresh | `connection_control.rs` calls `EvalContext::approve_connection` over combined claims. `actor_attributes.rs` refreshes by source revisions, adds returned attributes into the same key map and derives a single `user.zpr.authority` key; that authority is not provenance for every key. Revision-stale failures are indeterminate and deny requests, including requests whose policy might not need that provider. `visa_policy.rs` evaluates stored actors and `visa_mgr.rs` creates/rechecks visas. |
-| Revocation and change events | Watchers flush a named source through the Admin API. Per-actor revision tracking narrows provider refreshes. However, `event_mgr.rs:TrustedServiceChange` carries no source ID, refreshes actors behind all live visas and calls a global `revalidate_visas` sweep. There is no per-grant source-dependency set; source-A-only reevaluation is not promised. |
-| Control Room UI | Registry, browser selectors and snapshot responses retain organization/source IDs, isolate delayed reads and show independent provider failures. These are operator/read-path guarantees, not permission compiler or visa guarantees. Control Room remains independent of Simulator. |
+## Explicit organization policy defaults
 
-## Requested scenario support matrix
+The protected `ZPR_ASSERTION_SOURCES_FILE` registry now persists:
 
-“Partial” distinguishes real implemented behavior from the stronger requested
-permission guarantee. Tests characterize the current contract, not approval of
-its unsafe collision behavior.
+```json
+{
+  "default_source": "company_directory",
+  "policy_defaults": {"northstar": "company_directory"},
+  "sources": [{"name": "company_directory", "version": 1}]
+}
+```
 
-| # | Scenario | Assertion/operator path | Permission/visa guarantee |
-| --- | --- | --- | --- |
-| 1 | Same org, two LDAPs, same names/different values; A-only policy | Explicit `from`/`source(...)` distinguishes 50000 vs 60000 for the same `alice`. | **No source-isolated guarantee.** Unqualified condition accepts an attribute from either source; same-key values overwrite. |
-| 2 | Combine A and B attributes | Supported explicit comparison of the two snapshots, with same-text subject lookup. | **Partial:** disjoint mapped ZPR keys coexist and ordinary conditions can combine them; no first-class source-qualified condition or verified identity link. |
-| 3 | A unavailable, B-only policy still works | B-only browsing works. **B-only assertion evaluation does not**: reads include A. | **Not supported as an independence guarantee:** failed admission/stale refresh is fail-closed for the whole actor, not only dependent policies. |
-| 4 | Rename/edit cannot silently rebind | Display rename retains ID and old assertions keep working. Display name is not syntax. **Backend edit can rebind** an unchanged source ID. | No persisted provider-binding/version pin in a permission condition. Product rule needed for identity-changing edits. |
-| 5 | Same subject in A/B not implicitly merged | Snapshots remain separate; an explicit cross-source expression uses the same subject string. | **Not guaranteed:** all stores receive the same identity set; claims from different sources populate one actor, including overwriting matching keys. |
-| 6 | Bundled evaluation + company source coexist | Generic independent same-org sources coexist; browser and LDAPS tests prove this without Simulator. Actual organization scopes must match; this is not proof of an installer migration/linking lifecycle. | Multiple configured trusted services work with disjoint mappings; collision/subject/failure limitations still apply. No automatic bundled/company identity link is justified. |
-| 7 | A change affects only A-based grants | Named flush + per-source revision checks are supported. | **Not supported for selective reevaluation:** global visa sweep; unchanged B may survive, but it is still rechecked. Cross-source key collisions also prevent dependable grant attribution. |
+This abbreviated example omits required provider/scope fields. `default_source`
+retains its existing **assertion** semantics; `policy_defaults` is an explicit
+organization-to-source designation, not an implicit first-source preference or
+failover. Its single-valued map permits at most one policy default per org; each
+selection must name a source scoped to that org. An org may deliberately have no
+default, in which case ambiguous/unqualified multi-source policy input is rejected.
+Exactly one configured source preserves legacy unqualified authoring.
 
-## Automated and visual evidence
+Control Room's trusted-source registration/editor has a persistent default
+checkbox. Saving it replaces that organization's prior designation; unchecking
+it clears that designation only. Editing a different source does not clear it.
+Requests retain organization identity and optimistic registry revision checks.
+Default-source retirement is blocked until its designation is removed/replaced.
 
-- `multisource_policy_contract_test.go`: real authenticated registry operations,
-  durable restart, two actual local LDAPS protocol listeners, independent
-  snapshots, explicit cross-source evaluation, display rename, peer outage,
-  recovery and accepted backend rebinding. This is a composed operator/assertion
-  end-to-end test, **not** an LDAP-to-visa integration claim.
-- The same file characterizes permission authoring catalog deduplication and
-  proves that source snapshots do not union same-named subjects implicitly.
-- `libeval/src/eval.rs:test_multisource_*`: existing compiled policy evaluated
-  against source-stamped attributes; either source can satisfy an unqualified
-  policy, and insertion order changes a same-key authorization result.
-- `vs/src/trusted_services/manager.rs:test_multisource_*`: real file-backed stores,
-  same `user.sub` in both sources, key collision, distinct-key coexistence and
-  source-specific revision invalidation. Existing actor refresh and event tests
-  exercise indeterminate failures, persistence, pruning and visa sweeps.
-- `tests/browser/multisource-policy-contract.spec.mjs`: new desktop/tablet
-  screenshots of company/evaluation source catalogs with the same `alice` and
-  distinct salary values, scoped read requests, no cross-source display values,
-  no horizontal overflow, and no Simulator requests. Browser API responses are
-  fixtures; real LDAP behavior is tested separately in Go.
-- Existing `source-registration.spec.mjs` and `control-room-boundary.spec.mjs`
-  cover editing, delayed responses, credential-reference hygiene and unavailable
-  production integrations without Simulator.
+Policy-Service reads the same protected registry independently (no Control Room
+or Simulator callback), uses `ZPR_POLICY_ORGANIZATION_ID`, refreshes catalog
+aliases on catalog refresh, and supplies `--default-source ID` to ZPLC for
+analysis, policy tests and staging. Those paths also always request
+`--require-source-qualification`, which enforces the multi-source rule on parsed
+attributes/tags/groups, including shorthand tags the catalog text precheck cannot
+recognize. ZPLC emits **qualified condition keys** even
+when authoring used an unqualified tag/key/group attribute. No runtime default
+alias is required. Raw compiler callers retain legacy noncolliding-name behavior;
+Control Room's multi-source authoring gate is deliberately stricter.
 
-## Decisions required before implementing source-isolated permissions
+## Version binding and invalidation
 
-1. **Binding contract:** choose immutable `(organization_id, source_id)` condition
-   identities (compiler/schema/runtime/editor changes), or formally support
-   operator-managed disjoint ZPR attribute namespaces with compiler validation
-   rejecting ambiguous mappings. Do not invent a `source(...)` permission syntax
-   merely because the assertion language has it.
-2. **Unqualified policies:** choose reject-on-ambiguity, an explicit source binding
-   at authoring/installation, or retained documented unqualified semantics.
-   Early-release database migration is not required here, but policy compatibility
-   and reinstall behavior still need an explicit decision.
-3. **Subject correlation:** require explicit issuer/source-qualified subjects and
-   approved links for cross-source joins, or intentionally authorize same-text
-   subject correlation. A single mutable `user.zpr.authority` is insufficient
-   to qualify all accumulated claims.
-4. **Edits and availability:** define whether endpoint/base-DN/identity mapping
-   changes create a new identity/version and invalidate policy/grants. Establish
-   dependency-aware unknown/negation semantics before relaxing whole-actor
-   failure closure; simply skipping an unavailable source can grant access.
-5. **Selective reconciliation:** retain conservative global sweeps explicitly or
-   introduce persisted per-grant source dependencies, including absence checks,
-   before claiming only-A grants are re-evaluated.
+New registrations start at version 1. Identity-bearing edits (endpoint, kind,
+organization/base-DN/bind configuration, approved attributes, trust/file-reference
+configuration) advance the server-owned version; display-only changes do not.
+The registry revision also changes on default designation and persists over
+restart. Assertions still support explicitly selected multiple sources.
 
-Stop at this decision gate. No syntax, migration, fail-open shortcut, or implicit
-identity merge has been introduced as a “fix”.
+Staging stores `source_versions`, `default_source`, and
+`source_binding_sha256` beside the record/config/bundle digests in `latest.json`.
+Bindings include source config fingerprints and registry identity fingerprints as
+well as version counters, catching externally edited configurations even when an
+operator fails to advance a counter. For safety this iteration binds **all**
+configured sources rather than claiming minimal positive-only dependencies.
+
+When a mutable registry is configured, Policy-Service supplies
+`--source-binding SHA256` to the source-built compiler. ZPLC includes that digest
+inside the existing **signed policy metadata**, so a version/default change
+changes the artifact digest and cannot reuse an old artifact approval merely
+because compilation happened in the same second. A real Go integration test
+stages signed policies with the built compiler and verifies this distinction.
+
+Guarded apply capture checks bindings again before prepare/commit. Registry
+outage, identity/version/default mismatch or an old unbound artifact requires
+restaging; no registry fallback is used. This is a Policy-Service metadata gate,
+**not** live VS source-version enforcement. Already installed policies/issued
+visas do not independently compare registry versions. Propagating an authenticated
+version manifest into VS and revoking/revalidating existing grants remains a
+production gate. No shared schema file was edited.
+
+## Seven-scenario matrix
+
+| # | Scenario | Outcome / evidence |
+| --- | --- | --- |
+| 1 | Colliding A/B attribute names; A-only policy | **Verified:** source-built ZPLC → production VS store factory → namespaced actors → real libeval grant/deny. Unqualified Control Room input requires one source or explicit org default. |
+| 2 | Combine A/B attributes/groups | Both key namespaces survive; compiler accepts qualified tag/key/group/class/set spellings. **Not an approved subject correlation:** shared lookup identity behavior remains. |
+| 3 | A unavailable; B-only policy works | **Not implemented:** current whole-actor closure remains conservative; no fail-open skipping introduced. See precise design below. |
+| 4 | Rename/edit cannot silently rebind | Display-only rename preserves version/key; identity edit advances version and invalidates staged candidates, including signed artifact binding. **Installed policy/visa invalidation remains open.** |
+| 5 | Same-text A/B subjects not implicitly merged | **Not implemented:** key namespacing prevents overwrites, not implicit subject fan-out. Explicit link enforcement remains mandatory before production. |
+| 6 | Bundled/company providers coexist | Distinct qualified keys and default selections work without Simulator. Approved identity-link/bootstrap lifecycle remains open. |
+| 7 | A change affects only A grants | **Not implemented:** global conservative demo revalidation is intentionally retained (X13); staging conservatively binds all configured sources. |
+
+## Dependency-aware outage: precise stop/design
+
+Qualified `AttrExpr.key` values can identify source dependencies without changing
+Cap'n Proto, but extracting only positive conditions is unsafe. VS currently
+returns a whole-actor lookup error, and an absent attribute is not an unavailable
+source. Simply dropping failed-source claims can grant a negation/absence rule.
+Expiration guards do not represent a source that never returned attributes.
+
+A safe follow-up must:
+
+1. Track per-actor `(source ID, version, availability)` independently of claims;
+   revoke cached claims on failed refresh and record unknown even for empty stores.
+2. Derive complete dependencies from compiled client/service/link conditions,
+   join/admission requirements and authority identities; include negative/absence
+   operators, deny policies and expanded classes. Mark legacy unqualified or
+   otherwise unresolvable dependencies conservatively, never as dependency-free.
+3. Before evaluating a condition/policy, treat an unavailable dependency as
+   indeterminate: it cannot satisfy any allow (including NOT/absence); an
+   indeterminate deny must continue vetoing overlapping traffic. Only unrelated
+   policies with fully available dependencies may grant.
+4. Change whole-actor admission/refresh error handling only together with those
+   evaluator and cached-visa guards. Persist grant dependency/epoch information,
+   then verify positive/negative/deny, empty-source, expiry, recovery and concurrent
+   version-change cases before claiming selective revalidation.
+
+No unsafe partial outage implementation was added. An in-memory evaluator model
+could avoid a schema change initially, but durable visa/version dependencies and
+restart enforcement still need an authenticated contract. `zpr-common` remains
+read-only; any schema addition must be separately reviewed.
+
+## Explicit subject links: required follow-up
+
+Do not infer an approved link from matching usernames, DNs, mail, or attribute
+values. The minimal next configuration must identify organization, both immutable
+source IDs/versions, issuer-qualified subject IDs, approval identity/time and
+revocation state. VS lookup must start with the authenticated issuer/subject and
+fan out **only** through approved active links, invalidating dependent visas when
+links are revoked or sources change. A config file alone without that lookup and
+visa enforcement would provide false assurance, so none was added. Existing
+explicit cross-source assertions remain available and are not permission links.
+
+Authentication `validation/2` claim mapping remains separate from manager-backed
+file/REST enrichment; this new end-to-end proof covers the latter, not a claim
+that every authentication ingestion path has source-qualified aliases. Full
+issuer-qualified auth claim/identity handling belongs with the link contract.
+
+## Validation and operator UI evidence
+
+- Compiler: `cargo test` passes (296 unit + 14 integration tests); source-built
+  binary used for both VS evaluation and signed Policy-Service staging tests.
+- VS: `cargo test --workspace` passes (687 passed, 9 ignored); optional source-built interoperability
+  test explicitly executed with `ZPR_TEST_ZPLC` and `--ignored` and passes.
+- Focused Go `-race` tests cover registry defaults, durable identity versions,
+  staging binding/default changes, actual signed compiler staging, existing
+  assertions and colliding catalogs; pass with Simulator deliberately unavailable.
+- Browser: source-registration and multi-source catalog specs pass on desktop and
+  tablet (12 tests), including persisted default replacement/clearing and
+  `explicit-policy-default.png` screenshots. Browser APIs are fixtures.
+- Strict Control Room boundary audit: **0 findings**; assets: 5 tests pass.
+- Both Cargo formatting checks, changed Go `gofmt`, and both diff checks pass.
+- Optional compiler `cargo clippy --all-targets -- -D warnings` fails existing
+  style-lint baselines (99 library / 136 library-test diagnostics); unrelated
+  lint cleanup was not mixed into this feature.
+- Broader `make test` was executed and fails in existing fixture/environment
+  areas (organization seeds/LDIF/policy-demo assets, isolated launcher, protected
+  reset ancestry, Rust sibling dependency path, route contract baseline and macOS
+  enrollment IPC). The final native-compiler-enabled run also exposes absent
+  organization `.zplc` fixtures and old unqualified multi-source example policies;
+  those samples need an explicit default or qualified references before use.
+  No unrelated tests were patched or hidden.
+- Worktree Cargo dependency path temporarily points at the existing
+  `../../zpr-common` only during Rust commands, then is restored. No dependency
+  manifest/schema changes are committed. Test scratch stays inside this worktree.
+
+Reproduce native compiler-to-VS proof from this worktree after resolving the local
+Cargo sibling path:
+
+```sh
+ZPR_TEST_ZPLC=/absolute/path/to/source-built/zplc cargo test -p vs \
+  test_source_built_compiler_to_stores_to_real_evaluation -- --ignored
+```
+
+`SIMULATOR_AS_ZPR_CLIENT_PLAN.md` tracks V16/V17 visual gates and X13/X14
+pre-production limitations. Defaults/staging verification does not close the live
+visa, selective-outage or approved-link production gates.
+
+## Exclusive-worktree compiler reference
+
+Compiler result: `maturing/source-qualified-attrs` commit `0834bc1`.
+Only the two assigned worktrees were changed; no push/deployment or shared-schema
+mutation was performed.

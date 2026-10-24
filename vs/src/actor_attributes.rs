@@ -20,7 +20,7 @@ use crate::assembly::Assembly;
 use crate::error::ServiceError;
 use crate::logging::targets::VREQ;
 use crate::trusted_services::{
-    REVISION_NEVER, TrustedServicesMgr, derive_user_authority, lookup_identities,
+    REVISION_NEVER, TrustedServicesMgr, derive_user_authority_attributes, lookup_identities,
 };
 
 /// What a refresh pass found. Kept separate from the act of applying it so the caller
@@ -163,9 +163,8 @@ async fn refresh_expired_attributes(
                     // attribute the source stopped vending).
                     let ts_attrs = {
                         let mut ts_attrs = ts_attrs;
-                        if let Some(authority) = derive_user_authority(source, &ts_attrs) {
-                            ts_attrs.push(authority);
-                        }
+                        let authorities = derive_user_authority_attributes(source, &ts_attrs);
+                        ts_attrs.extend(authorities);
                         ts_attrs
                     };
                     let returned: HashSet<String> =

@@ -12,6 +12,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"regexp"
 	"sort"
 	"strings"
 	"sync"
@@ -77,7 +78,11 @@ type policyAttribute = policyclient.Attribute
 
 type policyAttributeMapping struct {
 	policyAttribute
-	requiresLDAP bool
+	providerAttribute     string
+	unqualifiedAttribute  string
+	requiresLDAP          bool
+	legacyAlias           bool
+	configuredSourceCount int
 }
 
 type policyAttributeCatalog struct {
@@ -255,19 +260,20 @@ func loadPolicyAttributeMappings(configPath string) []policyAttributeMapping {
 	sort.Strings(serviceNames)
 	mappings := make([]policyAttributeMapping, 0)
 	indices := make(map[string]int)
+	keySources := make(map[string]map[string]struct{})
 	for _, serviceName := range serviceNames {
 		service := config.TrustedServices[serviceName]
 		for _, mapping := range service.ReturnsAttributes {
-			source, attribute, ok := strings.Cut(mapping, "->")
+			providerAttribute, attribute, ok := strings.Cut(mapping, "->")
 			if !ok {
 				continue
 			}
-			source = strings.TrimSpace(source)
+			providerAttribute = strings.TrimSpace(providerAttribute)
 			attribute = strings.TrimSpace(attribute)
-			if source == "" || attribute == "" {
+			if providerAttribute == "" || attribute == "" {
 				continue
 			}
-			key := source + "\x00" + attribute
+			key := serviceName + "\x00" + providerAttribute + "\x00" + attribute
 			requiresLDAP := strings.EqualFold(strings.TrimSpace(service.API), "rest/1")
 			if index, exists := indices[key]; exists {
 				if !requiresLDAP {
@@ -275,14 +281,80 @@ func loadPolicyAttributeMappings(configPath string) []policyAttributeMapping {
 				}
 				continue
 			}
+			qualified, err := sourceQualifiedAttribute(attribute, serviceName)
+			if err != nil {
+				continue
+			}
+			unqualified := strings.TrimSuffix(attribute, "{}")
 			indices[key] = len(mappings)
+			if keySources[unqualified] == nil {
+				keySources[unqualified] = make(map[string]struct{})
+			}
+			keySources[unqualified][serviceName] = struct{}{}
 			mappings = append(mappings, policyAttributeMapping{
-				policyAttribute: policyAttribute{Source: source, Attribute: attribute},
-				requiresLDAP:    requiresLDAP,
+				policyAttribute:       policyAttribute{Source: serviceName, Attribute: qualified},
+				providerAttribute:     providerAttribute,
+				unqualifiedAttribute:  unqualified,
+				requiresLDAP:          requiresLDAP,
+				configuredSourceCount: len(serviceNames),
 			})
 		}
 	}
+	defaultSource := configuredPolicyDefaultSource()
+	for index := range mappings {
+		mappings[index].legacyAlias = len(serviceNames) == 1 && len(keySources[mappings[index].unqualifiedAttribute]) == 1 || mappings[index].Source == defaultSource
+	}
 	return mappings
+}
+
+const sourceAttributeSeparator = "__source__"
+
+var policySourceName = regexp.MustCompile(`^[A-Za-z0-9_-]{1,64}$`)
+
+func sourceQualifiedAttribute(attribute, source string) (string, error) {
+	multiValueSuffix := ""
+	if strings.HasSuffix(attribute, "{}") {
+		attribute = strings.TrimSuffix(attribute, "{}")
+		multiValueSuffix = "{}"
+	}
+	if !strings.Contains(attribute, ".") || strings.Contains(attribute, sourceAttributeSeparator) ||
+		!policySourceName.MatchString(source) || strings.Contains(source, sourceAttributeSeparator) {
+		return "", errors.New("invalid source-qualified attribute name")
+	}
+	return attribute + sourceAttributeSeparator + source + multiValueSuffix, nil
+}
+
+func sourceQualifiedConfigurationError(configPath string) string {
+	if _, err := policySourceRegistry(); err != nil {
+		return err.Error()
+	}
+	if strings.TrimSpace(configPath) == "" {
+		return ""
+	}
+	var config struct {
+		TrustedServices map[string]struct {
+			ReturnsAttributes []string `toml:"returns_attributes"`
+		} `toml:"trusted_services"`
+	}
+	if _, err := toml.DecodeFile(configPath, &config); err != nil {
+		return ""
+	}
+	for source, service := range config.TrustedServices {
+		if !policySourceName.MatchString(source) || strings.Contains(source, sourceAttributeSeparator) {
+			return fmt.Sprintf("Trusted source name %q is invalid for a source-qualified policy key; use ASCII letters, digits, '_' or '-' and do not use %q.", source, sourceAttributeSeparator)
+		}
+		for _, declaration := range service.ReturnsAttributes {
+			_, attribute, ok := strings.Cut(declaration, "->")
+			if !ok {
+				continue
+			}
+			attribute = strings.TrimSpace(attribute)
+			if strings.Contains(attribute, sourceAttributeSeparator) {
+				return fmt.Sprintf("Mapped attribute %q uses the reserved source-key separator %q.", attribute, sourceAttributeSeparator)
+			}
+		}
+	}
+	return ""
 }
 
 func seedDemoPolicyCatalog(ctx context.Context, workspace *policyWorkspace) error {
@@ -926,7 +998,56 @@ func (p *policyWorkspace) policyConfigPaths() []string {
 	return paths
 }
 
+func validateSourceQualifiedPolicy(source string, mappings []policyAttributeMapping) string {
+	sources := make(map[string]struct{})
+	sourceCount := 0
+	for _, mapping := range mappings {
+		sources[mapping.Source] = struct{}{}
+		if mapping.configuredSourceCount > sourceCount {
+			sourceCount = mapping.configuredSourceCount
+		}
+	}
+	if sourceCount == 0 {
+		sourceCount = len(sources)
+	}
+	if sourceCount < 2 {
+		return ""
+	}
+	aliases := make(map[string]bool)
+	for _, mapping := range mappings {
+		if mapping.legacyAlias {
+			aliases[mapping.unqualifiedAttribute] = true
+		}
+	}
+	checked := make(map[string]struct{})
+	for _, mapping := range mappings {
+		key := mapping.unqualifiedAttribute
+		if key == "" || aliases[key] {
+			continue
+		}
+		if _, done := checked[key]; done {
+			continue
+		}
+		checked[key] = struct{}{}
+		pattern := regexp.MustCompile(`(^|[^A-Za-z0-9_.])` + regexp.QuoteMeta(key) + `($|[^A-Za-z0-9_.])`)
+		if pattern.MatchString(source) {
+			return fmt.Sprintf("Unqualified attribute %q is ambiguous across trusted sources; use a source-qualified name such as %q.", key, mapping.Attribute)
+		}
+	}
+	return ""
+}
+
 func (p *policyWorkspace) checkUnlocked(ctx context.Context, source string) policyCheckResponse {
+	if diagnostic := sourceQualifiedConfigurationError(p.configPath); diagnostic != "" {
+		return policyCheckResponse{Diagnostics: diagnostic}
+	}
+	mappings := p.attributeMappings
+	if p.configPath != "" {
+		mappings = loadPolicyAttributeMappings(p.configPath)
+	}
+	if diagnostic := validateSourceQualifiedPolicy(source, mappings); diagnostic != "" {
+		return policyCheckResponse{Diagnostics: diagnostic}
+	}
 	if p.checkSource != nil {
 		return p.checkSource(ctx, source)
 	}
@@ -955,6 +1076,7 @@ func (p *policyWorkspace) checkUnlocked(ctx context.Context, source string) poli
 	warnings := []lintDiagnostic{}
 	for _, configPath := range p.policyConfigPaths() {
 		command := exec.CommandContext(commandCtx, p.compiler, "--parse-only", "--lint", "--config", configPath, temporaryPath)
+		command.Args = appendPolicyDefaultArgs(command.Args)
 		command.Dir = filepath.Dir(configPath)
 		output := &limitedBuffer{limit: maxPolicyOutputBytes}
 		command.Stdout, command.Stderr = output, output

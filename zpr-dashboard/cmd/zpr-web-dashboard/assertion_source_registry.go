@@ -15,6 +15,7 @@ import (
 )
 
 type assertionSourceRegistration struct {
+	PolicyDefault  *bool                 `json:"policy_default,omitempty"`
 	OrganizationID string                `json:"organization_id"`
 	SourceID       string                `json:"source_id"`
 	Revision       string                `json:"revision"`
@@ -60,7 +61,7 @@ func (runtime *assertionRuntime) handleSourceRegistry(w http.ResponseWriter, r *
 			}
 			sources = append(sources, item)
 		}
-		writeJSON(w, http.StatusOK, map[string]any{"organization_id": runtime.organizationID, "revision": runtime.sourcesRevision, "durable": runtime.sourcesPath != "", "sources": sources})
+		writeJSON(w, http.StatusOK, map[string]any{"organization_id": runtime.organizationID, "revision": runtime.sourcesRevision, "durable": runtime.sourcesPath != "", "sources": sources, "policy_default_source": runtime.sourcesConfig.PolicyDefaults[runtime.organizationID]})
 		return
 	}
 	var request assertionSourceRegistration
@@ -83,7 +84,7 @@ func (runtime *assertionRuntime) handleSourceRegistry(w http.ResponseWriter, r *
 		return
 	}
 	entry := request.Config
-	if request.SourceID != entry.Name || !assertionSourceName.MatchString(entry.Name) || len(entry.DisplayName) > 200 || strings.ContainsAny(entry.DisplayName, "\r\n") || len(entry.Attributes) == 0 || len(entry.Organizations) != 1 || !editableAssertionSource(entry, request.OrganizationID) || entry.Container != "" {
+	if request.SourceID != entry.Name || !assertionSourceName.MatchString(entry.Name) || strings.Contains(entry.Name, sourceAttributeSeparator) || len(entry.DisplayName) > 200 || strings.ContainsAny(entry.DisplayName, "\r\n") || len(entry.Attributes) == 0 || len(entry.Organizations) != 1 || !editableAssertionSource(entry, request.OrganizationID) || entry.Container != "" {
 		fail(http.StatusBadRequest, "Source and organization identity must remain fixed; specify one organization, network LDAP/HTTPS and approved attributes")
 		return
 	}
@@ -122,12 +123,13 @@ func (runtime *assertionRuntime) handleSourceRegistry(w http.ResponseWriter, r *
 			fail(http.StatusNotFound, "Source identity no longer exists; reload before removing")
 			return
 		}
-		if config.DefaultSource == entry.Name {
+		if config.DefaultSource == entry.Name || config.PolicyDefaults[request.OrganizationID] == entry.Name {
 			fail(http.StatusConflict, "Default source retirement is not supported; no replacement or fallback was selected")
 			return
 		}
 		// Deletion must refer to the exact reviewed configuration, not just its name.
 		existing, _ := json.Marshal(config.Sources[index])
+		entry.Version = config.Sources[index].Version // Server-owned; concurrency is guarded by the registry revision.
 		requested, _ := json.Marshal(entry)
 		if string(existing) != string(requested) {
 			fail(http.StatusConflict, "Source configuration changed; reload before removing")
@@ -154,9 +156,32 @@ func (runtime *assertionRuntime) handleSourceRegistry(w http.ResponseWriter, r *
 		return
 	}
 	if index < 0 {
+		entry.Version = 1
 		config.Sources = append(config.Sources, entry)
 	} else {
+		previous := config.Sources[index]
+		entry.Version = previous.Version
+		if entry.Version == 0 {
+			entry.Version = 1
+		}
+		if sourceIdentityDigest(previous) != sourceIdentityDigest(entry) {
+			if entry.Version == ^uint64(0) {
+				fail(http.StatusConflict, "Source version exhausted; register a new immutable source ID")
+				return
+			}
+			entry.Version++
+		}
 		config.Sources[index] = entry
+	}
+	if request.PolicyDefault != nil {
+		if config.PolicyDefaults == nil {
+			config.PolicyDefaults = make(map[string]string)
+		}
+		if *request.PolicyDefault {
+			config.PolicyDefaults[request.OrganizationID] = entry.Name
+		} else if config.PolicyDefaults[request.OrganizationID] == entry.Name {
+			delete(config.PolicyDefaults, request.OrganizationID)
+		}
 	}
 	if config.DefaultSource == "" {
 		config.DefaultSource = entry.Name
@@ -201,7 +226,7 @@ func (runtime *assertionRuntime) handleSourceRegistry(w http.ResponseWriter, r *
 	sources[entry.Name] = candidate.sources[entry.Name]
 	runtime.sources, runtime.defaultSource, runtime.sourcesConfig = sources, config.DefaultSource, config
 	runtime.lastRun, runtime.lastSource = nil, nil
-	writeJSON(w, http.StatusOK, map[string]any{"organization_id": request.OrganizationID, "source_id": entry.Name, "revision": runtime.sourcesRevision, "status": "saved", "message": "Configuration saved durably; connectivity is not verified by saving"})
+	writeJSON(w, http.StatusOK, map[string]any{"organization_id": request.OrganizationID, "source_id": entry.Name, "revision": runtime.sourcesRevision, "status": "saved", "source_version": entry.Version, "policy_default_source": config.PolicyDefaults[request.OrganizationID], "message": "Configuration saved durably; connectivity is not verified by saving"})
 }
 
 func (runtime *assertionRuntime) persistSources(config assertionSourcesConfig) error {

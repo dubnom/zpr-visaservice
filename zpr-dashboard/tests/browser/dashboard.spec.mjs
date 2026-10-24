@@ -200,6 +200,34 @@ test("GUI Trusted Source insertion respects read-only and size limits without ch
   await expect(page.locator("#assertion-result-lines > div")).toHaveCount(1);
 });
 
+test("Policy completion shows source-qualified names and ambiguity diagnostics", async ({ page, appURL, api }, testInfo) => {
+  api.policy.attributes = [
+    { attribute: "user.salary__source__company", source: "company" },
+    { attribute: "user.salary__source__evaluation", source: "evaluation" },
+  ];
+  api.handlers.set("/api/policy/check", route => route.fulfill({ json: {
+    valid: false,
+    diagnostics: 'Unqualified attribute "user.salary" is ambiguous across trusted sources; use "user.salary__source__company".',
+  } }));
+  await page.goto(appURL + "/#policy");
+  await openPolicyPicker(page);
+  await page.locator('[data-record-id="test-policy"]').click();
+  await requestCompletion(page, "define Employee as user\n  with sal");
+  const menu = completionMenu(page);
+  await expect(menu).toContainText("user.salary__source__company");
+  await expect(menu).toContainText("user.salary__source__evaluation");
+  await expect(menu).toContainText("company");
+  await expect(menu).toContainText("evaluation");
+  const policy = page.locator("#policy-source");
+  await codeEditor(page, "policy-source").fill("allow user.salary == 50000;");
+  await page.locator("#policy-check").click();
+  await expect(page.locator("#policy-test-status")).toContainText("ambiguous across trusted sources");
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth + 1)).toBe(true);
+  const screenshot = testInfo.outputPath("source-qualified-policy-completions.png");
+  await page.screenshot({ path: screenshot, fullPage: true });
+  await testInfo.attach("source-qualified-policy-completions", { path: screenshot, contentType: "image/png" });
+});
+
 test("GUI shared programmatic edits keep policy completion and Scenario indentation undoable", async ({ page, appURL, api }) => {
   await page.goto(appURL + "/#policy");
   await openPolicyPicker(page);

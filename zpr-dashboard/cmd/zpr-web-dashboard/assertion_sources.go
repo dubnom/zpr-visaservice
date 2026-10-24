@@ -34,6 +34,7 @@ type assertionSourceScope struct {
 }
 
 type assertionSourceConfig struct {
+	Version       uint64                          `json:"version,omitempty"`
 	WatchChanges  bool                            `json:"watch_changes,omitempty"`
 	Name          string                          `json:"name"`
 	DisplayName   string                          `json:"display_name,omitempty"`
@@ -46,7 +47,7 @@ type assertionSourceConfig struct {
 	Organizations map[string]assertionSourceScope `json:"organizations,omitempty"`
 }
 
-var assertionSourceName = regexp.MustCompile(`^[a-zA-Z][a-zA-Z0-9_-]{0,63}$`)
+var assertionSourceName = regexp.MustCompile(`^[A-Za-z0-9_-]{1,64}$`)
 
 func (runtime *assertionRuntime) configureSources(filePath string) error {
 	if filePath == "" {
@@ -75,8 +76,9 @@ func (runtime *assertionRuntime) configureSources(filePath string) error {
 }
 
 type assertionSourcesConfig struct {
-	DefaultSource string                  `json:"default_source"`
-	Sources       []assertionSourceConfig `json:"sources"`
+	PolicyDefaults map[string]string       `json:"policy_defaults,omitempty"`
+	DefaultSource  string                  `json:"default_source"`
+	Sources        []assertionSourceConfig `json:"sources"`
 }
 
 func (runtime *assertionRuntime) buildSources(config assertionSourcesConfig) error {
@@ -90,7 +92,7 @@ func (runtime *assertionRuntime) buildSources(config assertionSourcesConfig) err
 		}}
 	}
 	for _, entry := range config.Sources {
-		if !assertionSourceName.MatchString(entry.Name) || sources[entry.Name].read != nil {
+		if !assertionSourceName.MatchString(entry.Name) || strings.Contains(entry.Name, sourceAttributeSeparator) || sources[entry.Name].read != nil {
 			return errors.New("Assertion source names must be unique identifiers")
 		}
 		if entry.WatchChanges {
@@ -175,6 +177,12 @@ func (runtime *assertionRuntime) buildSources(config assertionSourcesConfig) err
 	}
 	if len(sources) > 16 || len(sources) > 0 && sources[config.DefaultSource].read == nil {
 		return errors.New("Default assertion source must name a configured source; at most 16 sources are allowed")
+	}
+	for organization, name := range config.PolicyDefaults {
+		source, exists := sources[name]
+		if _, scoped := source.organizations[organization]; organization == "" || !exists || !scoped {
+			return errors.New("Policy default must name exactly one source scoped to its organization")
+		}
 	}
 	runtime.sources, runtime.defaultSource = sources, config.DefaultSource
 	return nil

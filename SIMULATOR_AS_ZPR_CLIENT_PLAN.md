@@ -251,6 +251,9 @@ Depends on M0.
   failover authority. If a required source fails, report evaluation unavailable/
   error and do not grant on substituted or stale attributes. An unrelated
   source remains browsable and usable where it is not a dependency.
+  Source-policy completion now persists explicit per-org policy defaults and
+  proves default binding with the source-built compiler; dependency-aware visa
+  outage handling remains open, so S06 is not marked complete.
 - [ ] **S07:** Test source/organization isolation, duplicate IDs, invalid
   mappings, revision conflicts, missing secrets, wrong credentials/certificates,
   source disable/removal and restart persistence. Block or explicitly resolve
@@ -410,6 +413,9 @@ arbitrary sleeps or screenshot updates.
 | V13 | Restart production services and independently restart LDAP/provider with Simulator off. | Registrations/defaults persist, outage is explicit and recovery returns to the same source identities. | Production storage and independent lifecycle, not regenerated manifests; M1/M4. |
 | V14 | Use workload-only credentials to attempt source registration, apply, approval or cross-organization access. | Honest forbidden/read-only state; no privileged action succeeds. | Production enforcement and named audit evidence; M3. |
 | V15 | Use a fresh browser and production-only package/configuration. Inspect routes and unavailable integrations. | No Simulator navigation, lab defaults, scenario status or credential fields in operator payloads; production errors remain accurate. | Package/import/route checks and sanitized browser/server/file-access traces; M4. |
+| V16 | Open the policy editor with two trusted sources returning the same attribute name, then choose each completion on desktop and tablet. | Completion labels show stable source IDs and insert distinct `attribute__source__source-id` keys; unqualified mapped conditions show a clear ambiguity diagnostic. | Verify keyboard completion, exact submitted source, analysis/staging rejection, and no horizontal overflow; source keys must match runtime ingestion. |
+| V17 | Exercise default-source selection, an approved/revoked cross-source subject link, source outage during positive and absence/negated checks, and identity-changing source edits. | Explicit default/link/version states are visible; only dependent grants deny on outage; changed source versions visibly invalidate dependent grants. | Default persistence and signed staging version binding are locally verified; installed-visa invalidation, selective outage and link lifecycle remain open. |
+| V18 | In trusted-source registration, replace the org policy default, reload, then explicitly clear it; edit source identity and attempt to apply an old stage. | Exactly one explicit default is restored; clearing restores unqualified ambiguity errors; stale stage requires restage/new approval. | Desktop/tablet `source-registration.spec.mjs` V03 screenshots verify default replacement/clearing with Simulator unavailable. Go race + actual signed ZPLC stage tests verify identity-version invalidation; full live-visa/browser invalidation remains pending. |
 
 Extend the existing
 [Trusted Sources tests](zpr-dashboard/tests/browser/trusted-source-gui.mjs)
@@ -493,13 +499,16 @@ activation date, removal gate and verification evidence in the demo handoff.
 | X11 | Provision one protected, operator-owned `ZPR_ASSERTION_SOURCES_FILE` per Control-Service and use a single service writer for registration/editing. | Durable atomic replacement, revision/external-edit conflicts, stable organization/source IDs, verified TLS and secret file references; no session-only fallback or test-as-health claim. V02/V06 local acceptance uses protocol fixtures, not live company LDAP. | Managed configuration/secret lifecycle, cross-process/HA writer coordination and authorized real-provider outage/recovery qualification. |
 
 | X12 | Recover the bundled evaluation login administrator through a stopped-host local CLI and Dex static configuration. | Active 2026-10-23; owner: evaluation-bootstrap/package maintainers. `-evaluation -reset-admin -state DIR` requires state ownership, private permissions, checksums, lifecycle lock and idle ports; generates 256-bit credentials, rotates password/client secret/admin subject, removes old grants and audits without secrets. One terminal disclosure or new 0600 file; provider data retained. Evidence: focused recovery race/unit tests and the evaluation runbook. | Qualify actual one-time login, forced change, expiry/replay enforcement, upstream token/session revocation, independent OpenObserve-admin recovery and crash-atomic recovery/rollback. Static Dex passwords remain reusable until another reset; issued JWTs remain signed until expiry. Interrupted multi-file changes require a complete protected offline backup restore and fresh reset; no production recovery claim. |
+| X13 | Defer per-grant selective visa revalidation; use the existing conservative global visa sweep in the demo. | Global revalidation is intentionally retained and fail-closed; this is not a claim that only grants depending on the changed source were reevaluated. | Before production, persist positive and absence/negation source dependencies per grant, then qualify source-scoped refresh/revalidation and unknown-as-deny behavior. |
+
+| X14 | Bind staged policies conservatively to all configured source identities/versions and pin the canonical binding into existing signed policy metadata. | Active source-policy completion; owner: Policy-Service/VS maintainers. Protected registry, optimistic revisions, identity fingerprints, explicit org defaults and apply-time restage checks prevent stale staged artifacts from rebinding. Display-only changes preserve identity versions; no Simulator dependency. | Authenticate and enforce source version manifests at VS runtime, invalidate installed policies/issued visas, qualify approved issuer/subject links and minimal full-condition dependency sets. Metadata-only restaging is not live-grant invalidation; `validation/2` issuer-qualified ingestion remains a separate gate. |
 
 **B1 activation ledger (2026-10-23):** X01/X02/X06/X08/X11/X12 are active for
 `-evaluation` only, owned by the evaluation-bootstrap/package maintainers. Exact
 image/port/state/TLS/retention configuration and removal gaps are in the
 [evaluation runbook](zpr-dashboard/packaging/evaluation/README.md); focused
 `evaluation_test.go` and the opt-in isolated startup/restart test are evidence,
-not production qualification. X03/X04/X05/X07/X09/X10 are not newly activated
+not production qualification. X03/X04/X05/X07/X09/X10/X13 are not newly activated
 by B1; no source migration, synthetic users, watchers or traffic are provisioned.
 
 **Not shortcuts:** disabling TLS/certificate verification, trusting self-asserted

@@ -33,6 +33,9 @@ func loadPolicyAttributes(configPath string) []policyAttribute {
 	attributes := make([]policyAttribute, 0, len(mappings))
 	for _, mapping := range mappings {
 		attributes = append(attributes, mapping.policyAttribute)
+		if mapping.legacyAlias {
+			attributes = append(attributes, policyAttribute{Source: mapping.Source, Attribute: mapping.unqualifiedAttribute})
+		}
 	}
 	return attributes
 }
@@ -45,11 +48,14 @@ func filterPolicyAttributeMappings(mappings []policyAttributeMapping, ldapNames 
 	attributes := make([]policyAttribute, 0, len(mappings))
 	for _, mapping := range mappings {
 		if mapping.requiresLDAP {
-			if _, exists := normalizedNames[strings.ToLower(mapping.Source)]; !exists {
+			if _, exists := normalizedNames[strings.ToLower(mapping.providerAttribute)]; !exists {
 				continue
 			}
 		}
 		attributes = append(attributes, mapping.policyAttribute)
+		if mapping.legacyAlias {
+			attributes = append(attributes, policyAttribute{Source: mapping.Source, Attribute: mapping.unqualifiedAttribute})
+		}
 	}
 	return attributes
 }
@@ -74,6 +80,9 @@ func (workspace *policyWorkspace) refreshLDAPAttributes(ctx context.Context) (po
 	workspace.mu.Lock()
 	scanner := workspace.ldapAttributeScanner
 	mappings := append([]policyAttributeMapping(nil), workspace.attributeMappings...)
+	if workspace.configPath != "" {
+		mappings = loadPolicyAttributeMappings(workspace.configPath)
+	}
 	configError := workspace.ldapScanConfigError
 	workspace.mu.Unlock()
 

@@ -10,11 +10,12 @@ use std::time::{SystemTime, UNIX_EPOCH};
 
 use serde::Serialize;
 
-use libeval::attribute::Attribute;
+use libeval::attribute::{Attribute, AttributeSource};
 
 use crate::error::ServiceError;
 
 use super::TrustedServiceInterface;
+use super::attribute_mapper::source_qualified_key;
 
 /// Coordinates concurrent access to the configured trusted-service implementations.
 pub struct TrustedServicesMgr {
@@ -40,6 +41,29 @@ struct LookupOutcome {
     succeeded: bool,
     last_lookup_ms: u64,
     last_success_ms: Option<u64>,
+}
+
+fn qualify_source_attributes(
+    attrs: Vec<Attribute>,
+    source: &str,
+    allow_unqualified: bool,
+) -> Vec<Attribute> {
+    let source_attributes = AttributeSource::new(source.to_string());
+    let mut qualified = Vec::with_capacity(attrs.len() * if allow_unqualified { 2 } else { 1 });
+    for attr in attrs {
+        let key = attr.get_key().to_string();
+        let namespaced_key = source_qualified_key(&key, source);
+        qualified.push(
+            source_attributes
+                .builder(namespaced_key)
+                .expires(attr.get_expires())
+                .values(attr.get_value()),
+        );
+        if allow_unqualified {
+            qualified.push(attr);
+        }
+    }
+    qualified
 }
 
 impl TrustedServicesMgr {
@@ -154,11 +178,15 @@ impl TrustedServicesMgr {
         identities: &[(String, String)],
     ) -> Vec<(String, Result<Vec<Attribute>, ServiceError>)> {
         let snapshot = self.services.load_full();
+        let allow_unqualified = snapshot.len() == 1;
         let futures = snapshot.iter().map(|service| {
             let service = service.clone();
             async move {
                 let name = service.get_source_id().to_string();
-                let result = service.get_attributes_for_actor(identities).await;
+                let result = service
+                    .get_attributes_for_actor(identities)
+                    .await
+                    .map(|attrs| qualify_source_attributes(attrs, &name, allow_unqualified));
                 self.record_lookup(&name, result.is_ok());
                 (name, result)
             }
@@ -181,7 +209,11 @@ impl TrustedServicesMgr {
             .find(|service| service.get_source_id() == source_ident)
         {
             let service = service.clone();
-            let result = service.get_attributes_for_actor(identities).await;
+            let allow_unqualified = snapshot.len() == 1;
+            let result = service
+                .get_attributes_for_actor(identities)
+                .await
+                .map(|attrs| qualify_source_attributes(attrs, source_ident, allow_unqualified));
             self.record_lookup(source_ident, result.is_ok());
             return vec![result];
         }
@@ -363,6 +395,22 @@ mod tests {
         assert!(manager.statuses().is_empty());
     }
 
+    #[test]
+    fn test_single_source_keeps_qualified_and_legacy_attribute_keys() {
+        let attrs = qualify_source_attributes(
+            vec![Attribute::builder("user.department").value("staff")],
+            "directory",
+            true,
+        );
+        assert_eq!(attrs.len(), 2);
+        assert!(attrs.iter().any(|attr| attr.get_key() == "user.department"));
+        assert!(
+            attrs
+                .iter()
+                .any(|attr| attr.get_key() == "user.department__source__directory")
+        );
+    }
+
     #[tokio::test]
     async fn test_multisource_same_subject_is_queried_in_both_stores() {
         use libeval::actor::Actor;
@@ -406,24 +454,33 @@ mod tests {
                 actor.add_attribute(attr).unwrap();
             }
         }
+        assert!(actor.get_attribute("user.color").is_none());
         assert_eq!(
-            actor.get_attribute("user.color").unwrap().get_source(),
-            "lab"
-        );
-        assert_eq!(
-            actor.get_attribute("user.color").unwrap().get_value(),
-            &["blue".to_string()]
-        );
-        assert_eq!(
-            actor.get_attribute("user.role").unwrap().get_value(),
-            &["reviewer".to_string()]
+            actor
+                .get_attribute("user.color__source__company")
+                .unwrap()
+                .get_value(),
+            &["red".to_string()]
         );
         assert_eq!(
             actor
-                .get_attribute("user.zpr.tag.lazy")
+                .get_attribute("user.color__source__lab")
                 .unwrap()
-                .get_source(),
-            "company"
+                .get_value(),
+            &["blue".to_string()]
+        );
+        assert_eq!(
+            actor
+                .get_attribute("user.role__source__lab")
+                .unwrap()
+                .get_value(),
+            &["reviewer".to_string()]
+        );
+        assert!(actor.get_attribute("user.zpr.tag.lazy").is_none());
+        assert!(
+            actor
+                .get_attribute("user.zpr.tag.lazy__source__company")
+                .is_some()
         );
 
         let addr: IpAddr = "fd5a:5052::a1".parse().unwrap();
@@ -448,5 +505,114 @@ mod tests {
         );
         fs::remove_file(company_path).unwrap();
         fs::remove_file(lab_path).unwrap();
+    }
+    #[tokio::test]
+    #[ignore = "requires source-built ZPR_TEST_ZPLC; run the documented compiler interop command"]
+    async fn test_source_built_compiler_to_stores_to_real_evaluation() {
+        use crate::trusted_services::factory::{build_services, trusted_service_definitions};
+        use bytes::{Buf, Bytes};
+        use libeval::{
+            actor::Actor, attribute::key, eval::EvalContext, eval_result::PartialEvalResult,
+            policy::Policy,
+        };
+        use zpr::{policy::v1 as policy_capnp, vsapi_types::PacketDesc};
+
+        let compiler =
+            std::env::var("ZPR_TEST_ZPLC").expect("set ZPR_TEST_ZPLC to the source-built compiler");
+        let directory = std::env::temp_dir().join(format!("source-interop-{}", std::process::id()));
+        fs::create_dir_all(&directory).unwrap();
+        let fixture = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../libeval/tests/zpl");
+        for use_default in [false, true] {
+            let source = if use_default {
+                let text = fs::read_to_string(fixture.join("source-qualified.zpl"))
+                    .unwrap()
+                    .replace("user.department__source__corp-1_a:", "user.department:")
+                    .replace("tag cleared__source__corp-1_a", "tag cleared");
+                let path = directory.join("default.zpl");
+                fs::write(&path, text).unwrap();
+                path
+            } else {
+                fixture.join("source-qualified.zpl")
+            };
+            let bundle = directory.join("source-qualified.bin2");
+            let mut command = std::process::Command::new(&compiler);
+            command
+                .args(["--require-source-qualification", "-c"])
+                .arg(fixture.join("source-qualified.zplc"))
+                .arg("-o")
+                .arg(&bundle)
+                .arg(source);
+            if use_default {
+                command.args(["--default-source", "corp-1_a"]);
+            }
+            let output = command.output().unwrap();
+            assert!(
+                output.status.success(),
+                "{}",
+                String::from_utf8_lossy(&output.stderr)
+            );
+            let encoded = Bytes::from(fs::read(bundle).unwrap());
+            let message = capnp::serialize::read_message(
+                encoded.reader(),
+                capnp::message::ReaderOptions::new(),
+            )
+            .unwrap();
+            let container = message
+                .get_root::<policy_capnp::policy_container::Reader>()
+                .unwrap();
+            let policy = Arc::new(
+                Policy::new_from_policy_bytes(Bytes::copy_from_slice(
+                    container.get_policy().unwrap(),
+                ))
+                .unwrap(),
+            );
+            // Real factory decoding must accept the compiler's raw provider mappings.
+            let definitions = trusted_service_definitions(&policy).unwrap();
+            assert_eq!(definitions.len(), 2);
+            fs::write(directory.join("corp-1_a.json"), r#"{"user.sub":{"alice":{"cleared":[""],"department":["engineering__source__corp-1_a"],"content":["red__source__corp-1_a"]},"bob":{"cleared":[""],"department":["contractor"],"content":["red__source__corp-1_a"]}}}"#).unwrap();
+            fs::write(directory.join("lab-2_b.json"), r#"{"user.sub":{"alice":{"department":["contractor"]},"bob":{"cleared":[""],"department":["engineering__source__corp-1_a"]}}}"#).unwrap();
+            let manager = TrustedServicesMgr::new();
+            manager.update_services(build_services(&definitions, &directory).unwrap());
+            let evaluator = EvalContext::new(policy);
+            let packet =
+                PacketDesc::new_tcp("fd5a:5052:3000::1", "fd5a:5052:3000::2", 12345, 80).unwrap();
+            for (subject, expected_grant) in [("alice", true), ("bob", false)] {
+                let mut actor = Actor::new();
+                for (_, result) in manager
+                    .get_attributes_for_actor(&[("user.sub".into(), subject.into())])
+                    .await
+                {
+                    for attr in result.unwrap() {
+                        actor.add_attribute(attr).unwrap();
+                    }
+                }
+                actor
+                    .add_attribute(Attribute::builder(key::SERVICES).value("database.svc.zpr"))
+                    .unwrap();
+                actor
+                    .add_attribute(
+                        Attribute::builder("user.zpr.authority").value("test-authenticated"),
+                    )
+                    .unwrap();
+                assert!(actor.get_attribute("user.department").is_none());
+                assert!(
+                    actor
+                        .get_attribute("user.department__source__corp-1_a")
+                        .is_some()
+                );
+                assert!(
+                    actor
+                        .get_attribute("user.department__source__lab-2_b")
+                        .is_some()
+                );
+                let result = evaluator.eval_request(&actor, &actor, &packet).unwrap();
+                assert_eq!(
+                    matches!(result, PartialEvalResult::AllowWithoutRoute(_)),
+                    expected_grant,
+                    "{subject}: {result:?}"
+                );
+            }
+        }
+        fs::remove_dir_all(directory).unwrap();
     }
 }
