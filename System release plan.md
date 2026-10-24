@@ -1254,3 +1254,28 @@ supported upgrades and recovery pass, the evidence/approval is retained and
 the authorized pilot rollout is accepted or explicitly recorded as not yet
 deployed. **Built**, **Verified**, **Published**, **Deployed** and
 **Customer accepted** remain separate recorded facts.
+
+
+### Multiple trusted sources: authorization decision gate (wave 7)
+
+Status: **partly supported; source-isolated permission authorization blocked on
+contract decisions**, not completed by multi-source registration work.
+See [MULTISOURCE_POLICY_SUPPORT.md](MULTISOURCE_POLICY_SUPPORT.md) for the complete
+trace, seven requested scenarios, implemented support and demonstrated limits.
+
+- [x] Characterize same-org two-LDAP snapshots, duplicate subject/attribute names,
+  cross-source assertions, independent browsing, peer outage/recovery, display
+  rename and backend rebinding with real composed tests, without Simulator.
+- [x] Characterize compiled permission evaluation, last-writer source collisions,
+  same-subject lookup fanout and source-specific revision invalidation.
+- [x] Add desktop/tablet visual source-isolation screenshots with identical
+  subjects/different values and verify production boundary/registration tests.
+- [ ] Decide source-qualified condition contract versus validated disjoint
+  namespaces; define handling of unqualified policies and explicit subject links.
+- [ ] Decide identity-changing source edit behavior and dependency-aware outage
+  semantics; keep conservative failure closure until approved.
+- [ ] Decide global versus dependency-indexed reconciliation; current global
+  sweeps do not meet “only source-A-based grants are re-evaluated”.
+- [ ] After the contract decision, add a complete LDAP-to-visa authorization
+  acceptance test for all seven guarantees. Current composed tests deliberately
+  do not imply that unsupported source-qualified permission syntax exists.

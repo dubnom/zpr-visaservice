@@ -157,3 +157,13 @@ packages a third-party open-source log and metrics server behind a dedicated
 ZPR adapter. It specifies OTLP/HTTP ingestion, authenticated reader access,
 and the required Visa Service exporter interfaces. The profile does not
 provision an adapter, install policy, or export existing metrics automatically.
+
+
+## Multiple trusted sources and policy limitations
+
+Multiple sources can be registered/browsed and compared in assertions. Permission
+policies are currently **unqualified by trusted source**: same-key attributes can
+replace one another, and one unavailable source can block unrelated evaluation.
+See [the evidence trace and seven-scenario support matrix](MULTISOURCE_POLICY_SUPPORT.md)
+before relying on source-isolated grants or selective revocation. Registration
+and a passing assertion are not evidence of a source-qualified visa policy.

@@ -1762,4 +1762,95 @@ mod test {
             );
         }
     }
+
+    // Characterization of the current unqualified contract, not a source-isolation guarantee.
+    #[test]
+    fn test_multisource_permission_conditions_ignore_provenance() {
+        use crate::attribute::AttributeSource;
+
+        let ctx = EvalContext::new(Arc::new(load_policy("basic.bin2")));
+        let mut service = Actor::new();
+        service
+            .add_attribute(Attribute::builder(key::SERVICES).value("database"))
+            .unwrap();
+        service
+            .add_attribute(Attribute::builder("service.content").value("red"))
+            .unwrap();
+        let packet =
+            PacketDesc::new_tcp("fd5a:5052:3000::1", "fd5a:5052:3000::2", 12345, 80).unwrap();
+
+        for source in ["company_directory", "lab_directory"] {
+            let mut user = Actor::new();
+            user.add_attribute(
+                AttributeSource::new(source)
+                    .builder("user.zpr.tag.red")
+                    .value(""),
+            )
+            .unwrap();
+            assert!(
+                matches!(
+                    ctx.eval_request(&user, &service, &packet).unwrap(),
+                    PartialEvalResult::AllowWithoutRoute(_)
+                ),
+                "the unqualified red-user policy currently accepts attributes from either source"
+            );
+        }
+    }
+
+    #[test]
+    fn test_multisource_same_key_last_writer_controls_permission() {
+        use crate::attribute::AttributeSource;
+
+        let ctx = EvalContext::new(Arc::new(load_policy("basic.bin2")));
+        let mut user = Actor::new();
+        user.add_attribute(
+            AttributeSource::new("company_directory")
+                .builder("user.zpr.tag.red")
+                .value(""),
+        )
+        .unwrap();
+        let packet =
+            PacketDesc::new_tcp("fd5a:5052:3000::1", "fd5a:5052:3000::2", 12345, 80).unwrap();
+        for (sources, allowed) in [
+            (
+                [("company_directory", "red"), ("lab_directory", "blue")],
+                false,
+            ),
+            (
+                [("lab_directory", "blue"), ("company_directory", "red")],
+                true,
+            ),
+        ] {
+            let mut service = Actor::new();
+            service
+                .add_attribute(Attribute::builder(key::SERVICES).value("database"))
+                .unwrap();
+            for (source, value) in sources {
+                service
+                    .add_attribute(
+                        AttributeSource::new(source)
+                            .builder("service.content")
+                            .value(value),
+                    )
+                    .unwrap();
+            }
+            let winner = service.get_attribute("service.content").unwrap();
+            assert_eq!(winner.get_source(), sources[1].0);
+            assert_eq!(winner.get_value(), &[sources[1].1.to_string()]);
+            assert_eq!(
+                service
+                    .attrs_iter()
+                    .filter(|attr| attr.get_key() == "service.content")
+                    .count(),
+                1
+            );
+            assert_eq!(
+                matches!(
+                    ctx.eval_request(&user, &service, &packet).unwrap(),
+                    PartialEvalResult::AllowWithoutRoute(_)
+                ),
+                allowed
+            );
+        }
+    }
 }
