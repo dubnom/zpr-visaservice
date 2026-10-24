@@ -201,6 +201,14 @@ func (a *application) handlePolicyTest(w http.ResponseWriter, r *http.Request) {
 		writePolicyError(w, http.StatusServiceUnavailable, "Policy testing is unavailable.")
 		return
 	}
+	if diagnostic := sourceQualifiedConfigurationError(a.policy.configPath); diagnostic != "" {
+		writePolicyError(w, http.StatusUnprocessableEntity, diagnostic)
+		return
+	}
+	if diagnostic := validateSourceQualifiedPolicy(request.Source, a.policy.attributeMappings); diagnostic != "" {
+		writePolicyError(w, http.StatusUnprocessableEntity, diagnostic)
+		return
+	}
 	ctx, cancel := context.WithTimeout(r.Context(), policyTestTimeout)
 	defer cancel()
 	result, err := a.policy.testCandidate(ctx, request)

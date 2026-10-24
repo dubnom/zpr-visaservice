@@ -11,7 +11,7 @@ use zpr::policy_types::{ServiceType, TrustedService};
 use crate::error::ServiceError;
 
 use super::TrustedServiceInterface;
-use super::attribute_mapper::AttributeMapper;
+use super::attribute_mapper::{AttributeMapper, SOURCE_ATTRIBUTE_SEPARATOR};
 use super::file_attribute_store::FileAttributeStore;
 use super::http_attribute_store::HttpAttributeStore;
 use crate::config::TrustedServiceHttpConfig;
@@ -53,9 +53,15 @@ pub fn trusted_service_definitions(
                 service.id
             )));
         }
-        if service.id.contains('/') || service.id.contains("..") {
+        if service.id.is_empty()
+            || service.id.contains(SOURCE_ATTRIBUTE_SEPARATOR)
+            || !service
+                .id
+                .bytes()
+                .all(|byte| byte.is_ascii_alphanumeric() || byte == b'_' || byte == b'-')
+        {
             return Err(ServiceError::Param(format!(
-                "trusted service '{}': id is not a plain filename",
+                "trusted service '{}': id must use only ASCII letters, digits, '_' or '-', and may not contain the reserved source-key separator",
                 service.id
             )));
         }
@@ -65,6 +71,16 @@ pub fn trusted_service_definitions(
                 service.id
             )));
         };
+        if trusted_service
+            .returns_attrs
+            .iter()
+            .any(|mapping| mapping.attr.zpl_key().contains(SOURCE_ATTRIBUTE_SEPARATOR))
+        {
+            return Err(ServiceError::Param(format!(
+                "trusted service '{}': mapped attribute uses the reserved source-key separator",
+                service.id
+            )));
+        }
 
         definitions.push(TrustedServiceDefinition {
             id: service.id.clone(),
@@ -202,6 +218,13 @@ mod tests {
                 "expected failure for id={id} api={api} seconds={seconds:?}"
             );
         }
+        let policy = policy_from_container(make_trusted_service_policy(
+            "attrfile",
+            "file",
+            Some(3600),
+            &["color -> user.color__source__invalid"],
+        ));
+        assert!(trusted_service_definitions(&policy).is_err());
 
         std::fs::remove_dir_all(&dir).unwrap();
     }

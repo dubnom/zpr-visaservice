@@ -7,6 +7,8 @@ use libeval::attribute::{Attribute, AttributeSource, key};
 
 use crate::error::ServiceError;
 
+use self::attribute_mapper::source_qualified_key;
+
 mod attribute_mapper;
 mod factory;
 mod file_attribute_store;
@@ -73,20 +75,60 @@ const USER_NAMESPACE_PREFIX: &str = "user.";
 /// `user.zpr.authority` itself (it is asserting the authority directly; nothing to
 /// derive).
 pub(crate) fn derive_user_authority(source_id: &str, ts_attrs: &[Attribute]) -> Option<Attribute> {
-    if ts_attrs.iter().any(|a| a.get_key() == key::USER_AUTHORITY) {
-        return None;
+    derive_user_authority_attributes(source_id, ts_attrs)
+        .into_iter()
+        .next()
+}
+
+pub(crate) fn derive_user_authority_attributes(
+    source_id: &str,
+    ts_attrs: &[Attribute],
+) -> Vec<Attribute> {
+    let qualified_authority_key = source_qualified_key(key::USER_AUTHORITY, source_id);
+    if ts_attrs
+        .iter()
+        .any(|a| a.get_key() == key::USER_AUTHORITY || a.get_key() == qualified_authority_key)
+    {
+        return Vec::new();
     }
+    let source_suffix = format!("__source__{source_id}");
+    let has_legacy_user_attrs = ts_attrs.iter().any(|a| {
+        a.get_key().starts_with(USER_NAMESPACE_PREFIX) && !a.get_key().contains("__source__")
+    });
+    let has_qualified_user_attrs = ts_attrs.iter().any(|a| {
+        a.get_key().starts_with(USER_NAMESPACE_PREFIX) && a.get_key().ends_with(&source_suffix)
+    });
     let expires = ts_attrs
         .iter()
-        .filter(|a| a.get_key().starts_with(USER_NAMESPACE_PREFIX))
+        .filter(|a| {
+            a.get_key().starts_with(USER_NAMESPACE_PREFIX)
+                && (a.get_key().ends_with(&source_suffix) || !a.get_key().contains("__source__"))
+        })
         .map(|a| a.get_expires())
-        .min()?;
-    Some(
-        AttributeSource::new(source_id)
-            .builder(key::USER_AUTHORITY)
-            .expires(expires)
-            .value(source_id),
-    )
+        .min();
+    let Some(expires) = expires else {
+        return Vec::new();
+    };
+
+    let source_attributes = AttributeSource::new(source_id.to_string());
+    let mut authorities = Vec::new();
+    if has_legacy_user_attrs {
+        authorities.push(
+            source_attributes
+                .builder(key::USER_AUTHORITY)
+                .expires(expires)
+                .value(source_id),
+        );
+    }
+    if has_qualified_user_attrs {
+        authorities.push(
+            source_attributes
+                .builder(qualified_authority_key)
+                .expires(expires)
+                .value(source_id),
+        );
+    }
+    authorities
 }
 
 /// Interface for trusted services that can provide attributes for actors.

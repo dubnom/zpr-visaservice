@@ -68,9 +68,15 @@ func (workspace *policyWorkspace) compileAndStagePolicyRecord(ctx context.Contex
 	if record.Kind != "policy" || record.CurrentRevision <= 0 || strings.TrimSpace(record.Content) == "" {
 		return nil, errors.New("A saved, non-empty policy record is required for staging.")
 	}
+	if diagnostic := validateSourceQualifiedPolicy(record.Content, loadPolicyAttributeMappings(workspace.stageConfigPath)); diagnostic != "" {
+		return nil, errors.New(diagnostic)
+	}
 	configPath, err := resolvedRegularFile(workspace.stageConfigPath)
 	if err != nil {
 		return nil, errors.New("Runtime ZPLC config is unavailable for staging.")
+	}
+	if diagnostic := sourceQualifiedConfigurationError(configPath); diagnostic != "" {
+		return nil, errors.New(diagnostic)
 	}
 	signingKeyPath, err := resolvedRegularFile(workspace.stageSigningKeyPath)
 	if err != nil {

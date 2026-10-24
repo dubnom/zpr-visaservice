@@ -37,7 +37,9 @@ use crate::auth;
 use crate::config;
 use crate::error::ServiceError;
 use crate::logging::targets::CC;
-use crate::trusted_services::{derive_user_authority, lookup_identities};
+use crate::trusted_services::{
+    derive_user_authority, derive_user_authority_attributes, lookup_identities,
+};
 
 // TODO: move to libeval
 const CLASS_DEVICE: &str = "device";
@@ -513,9 +515,7 @@ impl ConnectionControl {
                     // that user identity, so it installs `user.zpr.authority = <source id>`
                     // alongside them (#324 follow-up); see [derive_user_authority]. The
                     // identity-key registration below then picks it up unchanged.
-                    if let Some(authority) = derive_user_authority(&source_id, &ts_attrs) {
-                        authd_claims.push(authority);
-                    }
+                    authd_claims.extend(derive_user_authority_attributes(&source_id, &ts_attrs));
                     for attr in ts_attrs {
                         authd_claims.push(attr);
                     }
@@ -938,7 +938,10 @@ mod tests {
 
         let scrubbed = scrub_adapter_claims(claims).expect("scrub should succeed");
 
-        assert_eq!(keys(&scrubbed), vec![key::SERVICES, key::ZPR_ADDR, "device.label"]);
+        assert_eq!(
+            keys(&scrubbed),
+            vec![key::SERVICES, key::ZPR_ADDR, "device.label"]
+        );
     }
 
     #[test]
@@ -1792,10 +1795,10 @@ mod tests {
         );
     }
 
-    /// #324 follow-up (3): with two sources of which only one vends user attributes,
-    /// exactly that source's id becomes the (single) authority value.
+    /// A multi-source user authority is qualified by the source that vended user
+    /// attributes; a peer source cannot overwrite it with its own authority value.
     #[tokio::test]
-    async fn ts_two_sources_one_user_authority_value() {
+    async fn ts_two_sources_keep_user_authority_source_qualified() {
         let asm = Arc::new(crate::assembly::tests::new_assembly_for_tests(None).await);
         let cc = make_cc("test-vs");
         let policy = policy_from_container(crate::test_helpers::make_trusted_service_policy(
@@ -1816,13 +1819,10 @@ mod tests {
             .expect("connection should authorize");
 
         let authority = actor
-            .get_attribute(key::USER_AUTHORITY)
-            .expect("user.zpr.authority should be installed");
-        assert_eq!(
-            authority.get_value(),
-            ["bas".to_string()],
-            "exactly the user-vending source names the authority"
-        );
+            .get_attribute("user.zpr.authority__source__bas")
+            .expect("source-qualified user authority should be installed");
+        assert_eq!(authority.get_value(), ["bas".to_string()]);
+        assert!(actor.get_attribute(key::USER_AUTHORITY).is_none());
     }
 
     /// Disconnect purges recorded trusted-service revisions for the actor AND for every

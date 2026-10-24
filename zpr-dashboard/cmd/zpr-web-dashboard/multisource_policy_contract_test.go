@@ -71,8 +71,9 @@ func TestMultisourcePolicyContractComposed(t *testing.T) {
 	}
 }
 
-func TestMultisourcePermissionAuthoringCatalogDropsProviderIdentity(t *testing.T) {
-	path := filepath.Join(packetADirectory(t), "providers.zplc")
+func TestMultisourcePermissionAuthoringCatalogQualifiesProviderIdentity(t *testing.T) {
+	directory := packetADirectory(t)
+	path := filepath.Join(directory, "providers.zplc")
 	config := `[trusted_services.company]
 api = "rest/1"
 returns_attributes = ["salary -> user.salary"]
@@ -84,8 +85,51 @@ returns_attributes = ["salary -> user.salary"]
 		t.Fatal(err)
 	}
 	attributes := loadPolicyAttributeMappings(path)
-	if len(attributes) != 1 || attributes[0].Source != "salary" || attributes[0].Attribute != "user.salary" {
-		t.Fatalf("current unqualified authoring catalog: %+v", attributes)
+	if len(attributes) != 2 {
+		t.Fatalf("source-qualified authoring catalog has %d entries: %+v", len(attributes), attributes)
+	}
+	if qualified, err := sourceQualifiedAttribute("user.groups{}", "staff"); err != nil || qualified != "user.groups__source__staff{}" {
+		t.Fatalf("multi-value qualification = %q, %v", qualified, err)
+	}
+	if _, err := sourceQualifiedAttribute("user.department__source__unsafe", "staff"); err == nil {
+		t.Fatal("reserved source-key separator in the base name was accepted")
+	}
+	for index, source := range []string{"company", "evaluation"} {
+		want := "user.salary" + sourceAttributeSeparator + source
+		if attributes[index].Source != source || attributes[index].Attribute != want {
+			t.Fatalf("catalog[%d]=%+v, want source=%q attribute=%q", index, attributes[index], source, want)
+		}
+		if attributes[index].legacyAlias {
+			t.Fatalf("multi-source catalog unexpectedly permits unqualified alias: %+v", attributes[index])
+		}
+	}
+	if diagnostic := validateSourceQualifiedPolicy("allow user.salary == 50000", attributes); diagnostic == "" || !strings.Contains(diagnostic, "ambiguous") {
+		t.Fatalf("unqualified policy did not fail clearly: %q", diagnostic)
+	}
+	if diagnostic := validateSourceQualifiedPolicy("allow user.salary__source__company == 50000", attributes); diagnostic != "" {
+		t.Fatalf("qualified policy was rejected: %q", diagnostic)
+	}
+	workspace := &policyWorkspace{
+		attributeMappings: attributes,
+		checkSource: func(context.Context, string) policyCheckResponse {
+			return policyCheckResponse{Valid: true}
+		},
+	}
+	if result := workspace.check(context.Background(), "allow user.salary == 50000"); result.Valid || !strings.Contains(result.Diagnostics, "ambiguous") {
+		t.Fatalf("analysis did not reject ambiguous condition: %+v", result)
+	}
+
+	singlePath := filepath.Join(directory, "single.zplc")
+	if err := os.WriteFile(singlePath, []byte(`[trusted_services.company]
+api = "rest/1"
+returns_attributes = ["salary -> user.salary"]
+`), 0600); err != nil {
+		t.Fatal(err)
+	}
+	singleMappings := loadPolicyAttributeMappings(singlePath)
+	catalog := filterPolicyAttributeMappings(singleMappings, map[string]struct{}{"salary": {}})
+	if len(catalog) != 2 || catalog[0].Attribute != "user.salary__source__company" || catalog[1].Attribute != "user.salary" {
+		t.Fatalf("single-source compatibility aliases=%+v", catalog)
 	}
 }
 

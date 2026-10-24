@@ -1,5 +1,5 @@
 use crate::actor::Actor;
-use crate::attribute::{key, Attribute, NEVER_EXPIRES, ROLE_ADAPTER, ROLE_NODE};
+use crate::attribute::{Attribute, NEVER_EXPIRES, ROLE_ADAPTER, ROLE_NODE, key};
 use crate::error::EvalError;
 use crate::eval_result::{Direction, FinalDeny, Hit, PartialEvalResult, Signal};
 use crate::joinpolicy::JFlag;
@@ -7,8 +7,8 @@ use crate::logging::targets::EVAL;
 use crate::policy::{CommunicationPolicySummary, Policy};
 use crate::visa::VisaProps;
 
-use zpr::vsapi_types::vsapi_ip_number as ip_proto;
 use zpr::vsapi_types::PacketDesc;
+use zpr::vsapi_types::vsapi_ip_number as ip_proto;
 
 use enumset::EnumSet;
 use std::collections::HashSet;
@@ -848,21 +848,31 @@ mod test {
             .map(|byte| format!("{byte:02x}"))
             .collect::<String>();
         let identity = std::fs::read_to_string(identity_path).unwrap();
-        assert!(identity
-            .lines()
-            .any(|line| line == "organization=northstar"));
-        assert!(identity
-            .lines()
-            .any(|line| line == "target_id=northstar-machine-policy-deny-lab-v4"));
-        assert!(identity
-            .lines()
-            .any(|line| line == "synthetic_lab_only=true"));
-        assert!(identity
-            .lines()
-            .any(|line| line == "production_authorized=false"));
-        assert!(identity
-            .lines()
-            .any(|line| line == format!("policy_sha256={policy_digest}")));
+        assert!(
+            identity
+                .lines()
+                .any(|line| line == "organization=northstar")
+        );
+        assert!(
+            identity
+                .lines()
+                .any(|line| line == "target_id=northstar-machine-policy-deny-lab-v4")
+        );
+        assert!(
+            identity
+                .lines()
+                .any(|line| line == "synthetic_lab_only=true")
+        );
+        assert!(
+            identity
+                .lines()
+                .any(|line| line == "production_authorized=false")
+        );
+        assert!(
+            identity
+                .lines()
+                .any(|line| line == format!("policy_sha256={policy_digest}"))
+        );
         for field in [
             "finance_workspace_cn=finance-workspace",
             "finance_workspace_service=FinanceWorkspace",
@@ -1763,94 +1773,62 @@ mod test {
         }
     }
 
-    // Characterization of the current unqualified contract, not a source-isolation guarantee.
     #[test]
-    fn test_multisource_permission_conditions_ignore_provenance() {
+    fn test_multisource_policy_conditions_use_source_qualified_keys() {
         use crate::attribute::AttributeSource;
 
         let ctx = EvalContext::new(Arc::new(load_policy("basic.bin2")));
-        let mut service = Actor::new();
-        service
-            .add_attribute(Attribute::builder(key::SERVICES).value("database"))
-            .unwrap();
-        service
-            .add_attribute(Attribute::builder("service.content").value("red"))
-            .unwrap();
-        let packet =
-            PacketDesc::new_tcp("fd5a:5052:3000::1", "fd5a:5052:3000::2", 12345, 80).unwrap();
-
-        for source in ["company_directory", "lab_directory"] {
-            let mut user = Actor::new();
-            user.add_attribute(
-                AttributeSource::new(source)
-                    .builder("user.zpr.tag.red")
+        let mut actor = Actor::new();
+        actor
+            .add_attribute(
+                AttributeSource::new("company_directory")
+                    .builder("user.zpr.tag.red__source__company_directory")
                     .value(""),
             )
             .unwrap();
-            assert!(
-                matches!(
-                    ctx.eval_request(&user, &service, &packet).unwrap(),
-                    PartialEvalResult::AllowWithoutRoute(_)
-                ),
-                "the unqualified red-user policy currently accepts attributes from either source"
-            );
-        }
+        let condition = |key: &str| {
+            let msg = cond_message(key, policy_capnp::AttrOp::Has, &[]);
+            let cond = msg
+                .get_root_as_reader::<policy_capnp::attr_expr::Reader>()
+                .unwrap();
+            ctx.match_condition_to_actor(&cond, &actor, true)
+        };
+
+        assert!(condition("user.zpr.tag.red__source__company_directory"));
+        assert!(!condition("user.zpr.tag.red__source__lab_directory"));
+        assert!(!condition("user.zpr.tag.red"));
     }
 
     #[test]
-    fn test_multisource_same_key_last_writer_controls_permission() {
+    fn test_multisource_same_key_values_no_longer_overwrite() {
         use crate::attribute::AttributeSource;
 
-        let ctx = EvalContext::new(Arc::new(load_policy("basic.bin2")));
-        let mut user = Actor::new();
-        user.add_attribute(
-            AttributeSource::new("company_directory")
-                .builder("user.zpr.tag.red")
-                .value(""),
-        )
-        .unwrap();
-        let packet =
-            PacketDesc::new_tcp("fd5a:5052:3000::1", "fd5a:5052:3000::2", 12345, 80).unwrap();
-        for (sources, allowed) in [
-            (
-                [("company_directory", "red"), ("lab_directory", "blue")],
-                false,
-            ),
-            (
-                [("lab_directory", "blue"), ("company_directory", "red")],
-                true,
-            ),
-        ] {
-            let mut service = Actor::new();
-            service
-                .add_attribute(Attribute::builder(key::SERVICES).value("database"))
-                .unwrap();
-            for (source, value) in sources {
-                service
-                    .add_attribute(
-                        AttributeSource::new(source)
-                            .builder("service.content")
-                            .value(value),
-                    )
-                    .unwrap();
-            }
-            let winner = service.get_attribute("service.content").unwrap();
-            assert_eq!(winner.get_source(), sources[1].0);
-            assert_eq!(winner.get_value(), &[sources[1].1.to_string()]);
-            assert_eq!(
-                service
-                    .attrs_iter()
-                    .filter(|attr| attr.get_key() == "service.content")
-                    .count(),
-                1
-            );
-            assert_eq!(
-                matches!(
-                    ctx.eval_request(&user, &service, &packet).unwrap(),
-                    PartialEvalResult::AllowWithoutRoute(_)
-                ),
-                allowed
-            );
-        }
+        let company_key = "service.content__source__company_directory";
+        let lab_key = "service.content__source__lab_directory";
+        let mut service = Actor::new();
+        service
+            .add_attribute(
+                AttributeSource::new("company_directory")
+                    .builder(company_key)
+                    .value("red"),
+            )
+            .unwrap();
+        service
+            .add_attribute(
+                AttributeSource::new("lab_directory")
+                    .builder(lab_key)
+                    .value("blue"),
+            )
+            .unwrap();
+
+        assert!(service.get_attribute("service.content").is_none());
+        assert_eq!(
+            service.get_attribute(company_key).unwrap().get_value(),
+            &["red"]
+        );
+        assert_eq!(
+            service.get_attribute(lab_key).unwrap().get_value(),
+            &["blue"]
+        );
     }
 }

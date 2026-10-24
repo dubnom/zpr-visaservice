@@ -161,9 +161,11 @@ provision an adapter, install policy, or export existing metrics automatically.
 
 ## Multiple trusted sources and policy limitations
 
-Multiple sources can be registered/browsed and compared in assertions. Permission
-policies are currently **unqualified by trusted source**: same-key attributes can
-replace one another, and one unavailable source can block unrelated evaluation.
-See [the evidence trace and seven-scenario support matrix](MULTISOURCE_POLICY_SUPPORT.md)
-before relying on source-isolated grants or selective revocation. Registration
-and a passing assertion are not evidence of a source-qualified visa policy.
+Multiple trusted-service attributes are now exposed as source-qualified policy
+keys (`attribute__source__source-id`); multi-source authoring rejects mapped
+unqualified references and runtime ingestion namespaces claims before evaluation.
+Single-source policies retain unqualified aliases. This does not yet provide
+approved cross-source subject links, dependency-aware outage handling, identity
+version invalidation, or selective per-grant revalidation. See the
+[evidence trace and seven-scenario support matrix](MULTISOURCE_POLICY_SUPPORT.md)
+before relying on those guarantees.

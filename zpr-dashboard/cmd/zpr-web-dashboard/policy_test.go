@@ -630,13 +630,14 @@ returns_attributes = ["role -> device.demo.role", "ou -> device.demo.department"
 	}
 
 	attributes := loadPolicyAttributes(configPath)
-	if len(attributes) != 3 {
-		t.Fatalf("got %d attributes, want 3: %#v", len(attributes), attributes)
+	if len(attributes) != 4 {
+		t.Fatalf("got %d attributes, want 4: %#v", len(attributes), attributes)
 	}
 	want := []policyAttribute{
-		{Source: "ou", Attribute: "device.demo.department"},
-		{Source: "title", Attribute: "device.demo.title"},
-		{Source: "role", Attribute: "device.demo.role"},
+		{Source: "demo_ldap", Attribute: "device.demo.department__source__demo_ldap"},
+		{Source: "demo_ldap", Attribute: "device.demo.title__source__demo_ldap"},
+		{Source: "demo_rest", Attribute: "device.demo.role__source__demo_rest"},
+		{Source: "demo_rest", Attribute: "device.demo.department__source__demo_rest"},
 	}
 	for index, attribute := range want {
 		if attributes[index] != attribute {
@@ -700,14 +701,14 @@ func TestCompileAndStagePolicyRecordStagesSignedCandidateWithoutPush(t *testing.
 
 func TestFilterPolicyAttributeMappingsUsesScannedLDAPNames(t *testing.T) {
 	mappings := []policyAttributeMapping{
-		{policyAttribute: policyAttribute{Source: "ou", Attribute: "device.demo.department"}, requiresLDAP: true},
-		{policyAttribute: policyAttribute{Source: "title", Attribute: "device.demo.title"}, requiresLDAP: true},
-		{policyAttribute: policyAttribute{Source: "sub", Attribute: "user.sub"}},
+		{policyAttribute: policyAttribute{Source: "company", Attribute: "device.demo.department__source__company"}, providerAttribute: "ou", requiresLDAP: true},
+		{policyAttribute: policyAttribute{Source: "company", Attribute: "device.demo.title__source__company"}, providerAttribute: "title", requiresLDAP: true},
+		{policyAttribute: policyAttribute{Source: "company", Attribute: "user.sub__source__company"}, unqualifiedAttribute: "user.sub"},
 	}
 	got := filterPolicyAttributeMappings(mappings, map[string]struct{}{"OU": {}})
 	want := []policyAttribute{
-		{Source: "ou", Attribute: "device.demo.department"},
-		{Source: "sub", Attribute: "user.sub"},
+		{Source: "company", Attribute: "device.demo.department__source__company"},
+		{Source: "company", Attribute: "user.sub__source__company"},
 	}
 	if !reflect.DeepEqual(got, want) {
 		t.Fatalf("filtered attributes = %#v, want %#v", got, want)

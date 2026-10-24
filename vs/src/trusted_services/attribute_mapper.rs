@@ -2,6 +2,12 @@
 
 use zpr::policy_types::AttrMapping;
 
+pub(super) const SOURCE_ATTRIBUTE_SEPARATOR: &str = "__source__";
+
+pub(super) fn source_qualified_key(key: &str, source: &str) -> String {
+    format!("{key}{SOURCE_ATTRIBUTE_SEPARATOR}{source}")
+}
+
 /// Maps attributes returned by a trusted service into their ZPR representation.
 #[derive(Debug)]
 pub(super) struct AttributeMapper {

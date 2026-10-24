@@ -10,11 +10,12 @@ use std::time::{SystemTime, UNIX_EPOCH};
 
 use serde::Serialize;
 
-use libeval::attribute::Attribute;
+use libeval::attribute::{Attribute, AttributeSource};
 
 use crate::error::ServiceError;
 
 use super::TrustedServiceInterface;
+use super::attribute_mapper::source_qualified_key;
 
 /// Coordinates concurrent access to the configured trusted-service implementations.
 pub struct TrustedServicesMgr {
@@ -40,6 +41,29 @@ struct LookupOutcome {
     succeeded: bool,
     last_lookup_ms: u64,
     last_success_ms: Option<u64>,
+}
+
+fn qualify_source_attributes(
+    attrs: Vec<Attribute>,
+    source: &str,
+    allow_unqualified: bool,
+) -> Vec<Attribute> {
+    let source_attributes = AttributeSource::new(source.to_string());
+    let mut qualified = Vec::with_capacity(attrs.len() * if allow_unqualified { 2 } else { 1 });
+    for attr in attrs {
+        let key = attr.get_key().to_string();
+        let namespaced_key = source_qualified_key(&key, source);
+        qualified.push(
+            source_attributes
+                .builder(namespaced_key)
+                .expires(attr.get_expires())
+                .values(attr.get_value()),
+        );
+        if allow_unqualified {
+            qualified.push(attr);
+        }
+    }
+    qualified
 }
 
 impl TrustedServicesMgr {
@@ -154,11 +178,15 @@ impl TrustedServicesMgr {
         identities: &[(String, String)],
     ) -> Vec<(String, Result<Vec<Attribute>, ServiceError>)> {
         let snapshot = self.services.load_full();
+        let allow_unqualified = snapshot.len() == 1;
         let futures = snapshot.iter().map(|service| {
             let service = service.clone();
             async move {
                 let name = service.get_source_id().to_string();
-                let result = service.get_attributes_for_actor(identities).await;
+                let result = service
+                    .get_attributes_for_actor(identities)
+                    .await
+                    .map(|attrs| qualify_source_attributes(attrs, &name, allow_unqualified));
                 self.record_lookup(&name, result.is_ok());
                 (name, result)
             }
@@ -181,7 +209,11 @@ impl TrustedServicesMgr {
             .find(|service| service.get_source_id() == source_ident)
         {
             let service = service.clone();
-            let result = service.get_attributes_for_actor(identities).await;
+            let allow_unqualified = snapshot.len() == 1;
+            let result = service
+                .get_attributes_for_actor(identities)
+                .await
+                .map(|attrs| qualify_source_attributes(attrs, source_ident, allow_unqualified));
             self.record_lookup(source_ident, result.is_ok());
             return vec![result];
         }
@@ -363,6 +395,22 @@ mod tests {
         assert!(manager.statuses().is_empty());
     }
 
+    #[test]
+    fn test_single_source_keeps_qualified_and_legacy_attribute_keys() {
+        let attrs = qualify_source_attributes(
+            vec![Attribute::builder("user.department").value("staff")],
+            "directory",
+            true,
+        );
+        assert_eq!(attrs.len(), 2);
+        assert!(attrs.iter().any(|attr| attr.get_key() == "user.department"));
+        assert!(
+            attrs
+                .iter()
+                .any(|attr| attr.get_key() == "user.department__source__directory")
+        );
+    }
+
     #[tokio::test]
     async fn test_multisource_same_subject_is_queried_in_both_stores() {
         use libeval::actor::Actor;
@@ -406,24 +454,33 @@ mod tests {
                 actor.add_attribute(attr).unwrap();
             }
         }
+        assert!(actor.get_attribute("user.color").is_none());
         assert_eq!(
-            actor.get_attribute("user.color").unwrap().get_source(),
-            "lab"
-        );
-        assert_eq!(
-            actor.get_attribute("user.color").unwrap().get_value(),
-            &["blue".to_string()]
-        );
-        assert_eq!(
-            actor.get_attribute("user.role").unwrap().get_value(),
-            &["reviewer".to_string()]
+            actor
+                .get_attribute("user.color__source__company")
+                .unwrap()
+                .get_value(),
+            &["red".to_string()]
         );
         assert_eq!(
             actor
-                .get_attribute("user.zpr.tag.lazy")
+                .get_attribute("user.color__source__lab")
                 .unwrap()
-                .get_source(),
-            "company"
+                .get_value(),
+            &["blue".to_string()]
+        );
+        assert_eq!(
+            actor
+                .get_attribute("user.role__source__lab")
+                .unwrap()
+                .get_value(),
+            &["reviewer".to_string()]
+        );
+        assert!(actor.get_attribute("user.zpr.tag.lazy").is_none());
+        assert!(
+            actor
+                .get_attribute("user.zpr.tag.lazy__source__company")
+                .is_some()
         );
 
         let addr: IpAddr = "fd5a:5052::a1".parse().unwrap();
