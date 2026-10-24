@@ -136,7 +136,7 @@ requests, service health and persistent state:
 | ID | Setup/action | Required visible result and independent proof |
 | --- | --- | --- |
 | **B-V1** | Fresh host, one-command bootstrap, Simulator absent/unreachable. | Login, source, logging and health views are usable; LDAP and logging are healthy, unique install identity is retained after restart, and the evaluation-only/not-production label is visible. No Simulator request or dependency. |
-| **B-V2** | Add a Simulator companion with a distinct synthetic directory. | Two named sources coexist with distinct organization/source identities and provenance; synthetic records do not appear in starter LDAP. Stop Simulator; starter source, logging and operator UI remain healthy. |
+| **B-V2** | Add a Simulator companion with a distinct synthetic directory. | Two named sources coexist in the same runtime evaluation organization with distinct source identities and provenance; synthetic records do not appear in starter LDAP. Stop Simulator; starter source, logging and operator UI remain healthy. |
 | **B-V3** | Change a starter LDAP entry and disconnect/reconnect the directory. | Updates feed reflects metadata-only add/modify/delete and explicit reconnect/resync state; no attribute values, passwords or cookies leak. No visa/attribute refresh or revocation claim is shown. |
 | **B-V4** | Link company LDAP and logging while starter services remain up; then preview explicit retirement. | Company and starter sources are visibly distinct; failures stay source-specific without fallback. Retirement lists affected bindings and requires explicit approval/rebinding; no silent merge, source switch or loss of state. |
 
@@ -525,3 +525,17 @@ package/lifecycle boundary and M5's integrated evidence also pass.
 The final handoff should report each task/test as pending, passed, failed or
 blocked; link the exact build/revision and evidence; enumerate active X-items;
 and state **functional demo accepted** separately from **production qualified**.
+
+### B5 optional companion implementation note (2026-10-23)
+
+Per the evaluation decision, the companion uses the **same runtime evaluation
+organization**, discovered via authenticated public source registry, with its own
+stable, distinct synthetic source ID (not a second organization).
+`zpr-dashboard/packaging/simulator-companion/README.md` documents separate local
+state and foreground lifecycle, ordinary-client-only setup/test/registration,
+and explicit guarded own-source DELETE. No bundled LDAP, operator configuration,
+default source, watcher acknowledgment or policy semantics are changed.
+The disposable verified-mTLS real-command smoke and Simulator-absent operator
+tests are isolated evidence only; full B-V2 deployment/browser and multi-source
+policy/workload acceptance remain separate. This does not complete U01–U06 or
+authorize the legacy Simulator activation paths.

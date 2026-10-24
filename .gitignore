@@ -5,3 +5,7 @@ build-release/
 /zpr-dashboard/.zpr-evaluation*/
 /zpr-dashboard/.evaluation-build/
 /zpr-dashboard/.evaluation-test/
+
+# Optional companion private synthetic data, credentials and compiler scratch.
+/zpr-dashboard/.zpr-companion*/
+/zpr-dashboard/.companion-build/

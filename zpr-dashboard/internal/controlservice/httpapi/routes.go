@@ -16,6 +16,7 @@ func (handlers Assertions) Register(mux *http.ServeMux) {
 		mux.Handle("GET /api/assertions/sources", handlers.Registry)
 		mux.Handle("POST /api/assertions/sources", handlers.Registry)
 		mux.Handle("PUT /api/assertions/sources", handlers.Registry)
+		mux.Handle("DELETE /api/assertions/sources", handlers.Registry)
 		mux.Handle("POST /api/assertions/sources/test", handlers.Registry)
 	}
 	mux.Handle("GET /api/assertions", handlers.Status)

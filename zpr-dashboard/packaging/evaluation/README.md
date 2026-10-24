@@ -361,3 +361,14 @@ Both `go test -race ./cmd/zpr-lab-bootstrap -run Recovery -count=1` and the full
 bootstrap package race suite pass with the default macOS `TMPDIR`. The partial
 replacement test proves Dex configuration changed and the pending marker blocks
 startup, rather than confusing an earlier path-validation refusal with a reset.
+
+## Optional add-later synthetic companion (B5)
+
+After bootstrap is healthy, use the separate [Simulator companion runbook](../simulator-companion/README.md)
+to add an isolated synthetic directory in the **same runtime evaluation organization**
+with a distinct stable source ID. Bootstrap never starts it, reads its state or
+requires its availability. Companion setup/test/registration/removal use only
+ordinary authenticated public source contracts. Bundled LDAP, logging, operator
+configuration and default source are not replaced or reseeded. Stopping or removing
+the companion leaves the evaluation install running. This is not legacy Simulator
+scenario activation, multi-source policy acceptance or B6 starter retirement.
