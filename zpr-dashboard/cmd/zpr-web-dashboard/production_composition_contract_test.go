@@ -106,6 +106,7 @@ func TestProductionCompositionRouteRegistrations(t *testing.T) {
 			"GET /api/assertions/sources":       "handlers.Registry",
 			"POST /api/assertions/sources":      "handlers.Registry",
 			"PUT /api/assertions/sources":       "handlers.Registry",
+			"DELETE /api/assertions/sources":    "handlers.Registry",
 			"POST /api/assertions/sources/test": "handlers.Registry",
 			"GET /api/assertions":               "handlers.Status",
 			"PUT /api/assertions":               "handlers.Save",
