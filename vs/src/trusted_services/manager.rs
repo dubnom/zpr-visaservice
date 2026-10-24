@@ -506,4 +506,113 @@ mod tests {
         fs::remove_file(company_path).unwrap();
         fs::remove_file(lab_path).unwrap();
     }
+    #[tokio::test]
+    #[ignore = "requires source-built ZPR_TEST_ZPLC; run the documented compiler interop command"]
+    async fn test_source_built_compiler_to_stores_to_real_evaluation() {
+        use crate::trusted_services::factory::{build_services, trusted_service_definitions};
+        use bytes::{Buf, Bytes};
+        use libeval::{
+            actor::Actor, attribute::key, eval::EvalContext, eval_result::PartialEvalResult,
+            policy::Policy,
+        };
+        use zpr::{policy::v1 as policy_capnp, vsapi_types::PacketDesc};
+
+        let compiler =
+            std::env::var("ZPR_TEST_ZPLC").expect("set ZPR_TEST_ZPLC to the source-built compiler");
+        let directory = std::env::temp_dir().join(format!("source-interop-{}", std::process::id()));
+        fs::create_dir_all(&directory).unwrap();
+        let fixture = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../libeval/tests/zpl");
+        for use_default in [false, true] {
+            let source = if use_default {
+                let text = fs::read_to_string(fixture.join("source-qualified.zpl"))
+                    .unwrap()
+                    .replace("user.department__source__corp-1_a:", "user.department:")
+                    .replace("tag cleared__source__corp-1_a", "tag cleared");
+                let path = directory.join("default.zpl");
+                fs::write(&path, text).unwrap();
+                path
+            } else {
+                fixture.join("source-qualified.zpl")
+            };
+            let bundle = directory.join("source-qualified.bin2");
+            let mut command = std::process::Command::new(&compiler);
+            command
+                .args(["--require-source-qualification", "-c"])
+                .arg(fixture.join("source-qualified.zplc"))
+                .arg("-o")
+                .arg(&bundle)
+                .arg(source);
+            if use_default {
+                command.args(["--default-source", "corp-1_a"]);
+            }
+            let output = command.output().unwrap();
+            assert!(
+                output.status.success(),
+                "{}",
+                String::from_utf8_lossy(&output.stderr)
+            );
+            let encoded = Bytes::from(fs::read(bundle).unwrap());
+            let message = capnp::serialize::read_message(
+                encoded.reader(),
+                capnp::message::ReaderOptions::new(),
+            )
+            .unwrap();
+            let container = message
+                .get_root::<policy_capnp::policy_container::Reader>()
+                .unwrap();
+            let policy = Arc::new(
+                Policy::new_from_policy_bytes(Bytes::copy_from_slice(
+                    container.get_policy().unwrap(),
+                ))
+                .unwrap(),
+            );
+            // Real factory decoding must accept the compiler's raw provider mappings.
+            let definitions = trusted_service_definitions(&policy).unwrap();
+            assert_eq!(definitions.len(), 2);
+            fs::write(directory.join("corp-1_a.json"), r#"{"user.sub":{"alice":{"cleared":[""],"department":["engineering__source__corp-1_a"],"content":["red__source__corp-1_a"]},"bob":{"cleared":[""],"department":["contractor"],"content":["red__source__corp-1_a"]}}}"#).unwrap();
+            fs::write(directory.join("lab-2_b.json"), r#"{"user.sub":{"alice":{"department":["contractor"]},"bob":{"cleared":[""],"department":["engineering__source__corp-1_a"]}}}"#).unwrap();
+            let manager = TrustedServicesMgr::new();
+            manager.update_services(build_services(&definitions, &directory).unwrap());
+            let evaluator = EvalContext::new(policy);
+            let packet =
+                PacketDesc::new_tcp("fd5a:5052:3000::1", "fd5a:5052:3000::2", 12345, 80).unwrap();
+            for (subject, expected_grant) in [("alice", true), ("bob", false)] {
+                let mut actor = Actor::new();
+                for (_, result) in manager
+                    .get_attributes_for_actor(&[("user.sub".into(), subject.into())])
+                    .await
+                {
+                    for attr in result.unwrap() {
+                        actor.add_attribute(attr).unwrap();
+                    }
+                }
+                actor
+                    .add_attribute(Attribute::builder(key::SERVICES).value("database.svc.zpr"))
+                    .unwrap();
+                actor
+                    .add_attribute(
+                        Attribute::builder("user.zpr.authority").value("test-authenticated"),
+                    )
+                    .unwrap();
+                assert!(actor.get_attribute("user.department").is_none());
+                assert!(
+                    actor
+                        .get_attribute("user.department__source__corp-1_a")
+                        .is_some()
+                );
+                assert!(
+                    actor
+                        .get_attribute("user.department__source__lab-2_b")
+                        .is_some()
+                );
+                let result = evaluator.eval_request(&actor, &actor, &packet).unwrap();
+                assert_eq!(
+                    matches!(result, PartialEvalResult::AllowWithoutRoute(_)),
+                    expected_grant,
+                    "{subject}: {result:?}"
+                );
+            }
+        }
+        fs::remove_dir_all(directory).unwrap();
+    }
 }

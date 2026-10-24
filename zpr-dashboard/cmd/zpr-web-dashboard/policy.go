@@ -300,15 +300,16 @@ func loadPolicyAttributeMappings(configPath string) []policyAttributeMapping {
 			})
 		}
 	}
+	defaultSource := configuredPolicyDefaultSource()
 	for index := range mappings {
-		mappings[index].legacyAlias = len(serviceNames) == 1 && len(keySources[mappings[index].unqualifiedAttribute]) == 1
+		mappings[index].legacyAlias = len(serviceNames) == 1 && len(keySources[mappings[index].unqualifiedAttribute]) == 1 || mappings[index].Source == defaultSource
 	}
 	return mappings
 }
 
 const sourceAttributeSeparator = "__source__"
 
-var policySourceName = regexp.MustCompile(`^[A-Za-z0-9_-]+$`)
+var policySourceName = regexp.MustCompile(`^[A-Za-z0-9_-]{1,64}$`)
 
 func sourceQualifiedAttribute(attribute, source string) (string, error) {
 	multiValueSuffix := ""
@@ -324,6 +325,9 @@ func sourceQualifiedAttribute(attribute, source string) (string, error) {
 }
 
 func sourceQualifiedConfigurationError(configPath string) string {
+	if _, err := policySourceRegistry(); err != nil {
+		return err.Error()
+	}
 	if strings.TrimSpace(configPath) == "" {
 		return ""
 	}
@@ -1009,10 +1013,16 @@ func validateSourceQualifiedPolicy(source string, mappings []policyAttributeMapp
 	if sourceCount < 2 {
 		return ""
 	}
+	aliases := make(map[string]bool)
+	for _, mapping := range mappings {
+		if mapping.legacyAlias {
+			aliases[mapping.unqualifiedAttribute] = true
+		}
+	}
 	checked := make(map[string]struct{})
 	for _, mapping := range mappings {
 		key := mapping.unqualifiedAttribute
-		if key == "" {
+		if key == "" || aliases[key] {
 			continue
 		}
 		if _, done := checked[key]; done {
@@ -1031,7 +1041,11 @@ func (p *policyWorkspace) checkUnlocked(ctx context.Context, source string) poli
 	if diagnostic := sourceQualifiedConfigurationError(p.configPath); diagnostic != "" {
 		return policyCheckResponse{Diagnostics: diagnostic}
 	}
-	if diagnostic := validateSourceQualifiedPolicy(source, p.attributeMappings); diagnostic != "" {
+	mappings := p.attributeMappings
+	if p.configPath != "" {
+		mappings = loadPolicyAttributeMappings(p.configPath)
+	}
+	if diagnostic := validateSourceQualifiedPolicy(source, mappings); diagnostic != "" {
 		return policyCheckResponse{Diagnostics: diagnostic}
 	}
 	if p.checkSource != nil {
@@ -1062,6 +1076,7 @@ func (p *policyWorkspace) checkUnlocked(ctx context.Context, source string) poli
 	warnings := []lintDiagnostic{}
 	for _, configPath := range p.policyConfigPaths() {
 		command := exec.CommandContext(commandCtx, p.compiler, "--parse-only", "--lint", "--config", configPath, temporaryPath)
+		command.Args = appendPolicyDefaultArgs(command.Args)
 		command.Dir = filepath.Dir(configPath)
 		output := &limitedBuffer{limit: maxPolicyOutputBytes}
 		command.Stdout, command.Stderr = output, output

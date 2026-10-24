@@ -205,7 +205,11 @@ func (a *application) handlePolicyTest(w http.ResponseWriter, r *http.Request) {
 		writePolicyError(w, http.StatusUnprocessableEntity, diagnostic)
 		return
 	}
-	if diagnostic := validateSourceQualifiedPolicy(request.Source, a.policy.attributeMappings); diagnostic != "" {
+	mappings := a.policy.attributeMappings
+	if a.policy.configPath != "" {
+		mappings = loadPolicyAttributeMappings(a.policy.configPath)
+	}
+	if diagnostic := validateSourceQualifiedPolicy(request.Source, mappings); diagnostic != "" {
 		writePolicyError(w, http.StatusUnprocessableEntity, diagnostic)
 		return
 	}
@@ -383,6 +387,7 @@ func (workspace *policyWorkspace) compilePolicyTestCandidate(ctx context.Context
 			return "", errors.New("Unable to reset the candidate policy output.")
 		}
 		command := exec.CommandContext(compileContext, workspace.compiler, "-c", configPath, "-k", keyPath, "-f", "v2", "-o", candidatePath, sourcePath)
+		command.Args = appendPolicyDefaultArgs(command.Args)
 		command.Dir = filepath.Dir(configPath)
 		output := &limitedBuffer{limit: maxPolicyOutputBytes}
 		command.Stdout, command.Stderr = output, output

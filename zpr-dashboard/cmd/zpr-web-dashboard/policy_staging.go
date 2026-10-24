@@ -20,16 +20,19 @@ const (
 )
 
 type stagedPolicyCandidate struct {
-	ID             string    `json:"id"`
-	RecordID       string    `json:"record_id"`
-	RecordName     string    `json:"record_name"`
-	RecordRevision int       `json:"record_revision"`
-	SourceSHA256   string    `json:"source_sha256"`
-	ConfigSHA256   string    `json:"config_sha256"`
-	BundleSHA256   string    `json:"bundle_sha256"`
-	BundleSize     int64     `json:"bundle_size"`
-	StagedAt       time.Time `json:"staged_at"`
-	bundlePath     string
+	SourceBindingSHA256 string            `json:"source_binding_sha256,omitempty"`
+	SourceVersions      map[string]string `json:"source_versions"`
+	DefaultSource       string            `json:"default_source,omitempty"`
+	ID                  string            `json:"id"`
+	RecordID            string            `json:"record_id"`
+	RecordName          string            `json:"record_name"`
+	RecordRevision      int               `json:"record_revision"`
+	SourceSHA256        string            `json:"source_sha256"`
+	ConfigSHA256        string            `json:"config_sha256"`
+	BundleSHA256        string            `json:"bundle_sha256"`
+	BundleSize          int64             `json:"bundle_size"`
+	StagedAt            time.Time         `json:"staged_at"`
+	bundlePath          string
 }
 
 func (workspace *policyWorkspace) configurePolicyStaging() {
@@ -78,6 +81,10 @@ func (workspace *policyWorkspace) compileAndStagePolicyRecord(ctx context.Contex
 	if diagnostic := sourceQualifiedConfigurationError(configPath); diagnostic != "" {
 		return nil, errors.New(diagnostic)
 	}
+	bindings, defaultSource, err := policySourceBindings(configPath)
+	if err != nil {
+		return nil, err
+	}
 	signingKeyPath, err := resolvedRegularFile(workspace.stageSigningKeyPath)
 	if err != nil {
 		return nil, errors.New("Policy signing key is unavailable for staging.")
@@ -112,7 +119,13 @@ func (workspace *policyWorkspace) compileAndStagePolicyRecord(ctx context.Contex
 	compileContext, cancel := context.WithTimeout(ctx, policyStageTimeout)
 	defer cancel()
 	command := exec.CommandContext(compileContext, workspace.compiler, "-c", configPath, "-k", signingKeyPath, "-f", "v2", "-o", bundlePath, sourcePath)
+	command.Args = policyCompilerSourceArgs(command.Args, defaultSource)
 	command.Dir = filepath.Dir(configPath)
+	bindingDigest := ""
+	if os.Getenv("ZPR_ASSERTION_SOURCES_FILE") != "" {
+		bindingDigest = policySourceBindingDigest(bindings, defaultSource)
+		command.Args = append([]string{command.Args[0], "--source-binding", bindingDigest}, command.Args[1:]...)
+	}
 	output := &limitedBuffer{limit: maxPolicyOutputBytes}
 	command.Stdout, command.Stderr = output, output
 	if err := command.Run(); err != nil {
@@ -135,10 +148,15 @@ func (workspace *policyWorkspace) compileAndStagePolicyRecord(ctx context.Contex
 	bundleHash := sha256.Sum256(bundle)
 	bundleSHA256 := hex.EncodeToString(bundleHash[:])
 	candidate := &stagedPolicyCandidate{
+		SourceBindingSHA256: bindingDigest,
+		SourceVersions:      bindings, DefaultSource: defaultSource,
 		ID: bundleSHA256, RecordID: record.ID, RecordName: record.Name,
 		RecordRevision: record.CurrentRevision, SourceSHA256: hex.EncodeToString(sourceHash[:]), ConfigSHA256: hex.EncodeToString(configHash[:]),
 		BundleSHA256: bundleSHA256, BundleSize: int64(len(bundle)), StagedAt: time.Now().UTC(),
 		bundlePath: filepath.Join(stageDirectory, "candidate-"+bundleSHA256+".bin2"),
+	}
+	if err := validatePolicySourceBindings(*candidate, configPath); err != nil {
+		return nil, err
 	}
 	if err := os.Rename(bundlePath, candidate.bundlePath); err != nil {
 		if !errors.Is(err, os.ErrExist) {

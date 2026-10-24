@@ -80,6 +80,9 @@ func (workspace *policyWorkspace) refreshLDAPAttributes(ctx context.Context) (po
 	workspace.mu.Lock()
 	scanner := workspace.ldapAttributeScanner
 	mappings := append([]policyAttributeMapping(nil), workspace.attributeMappings...)
+	if workspace.configPath != "" {
+		mappings = loadPolicyAttributeMappings(workspace.configPath)
+	}
 	configError := workspace.ldapScanConfigError
 	workspace.mu.Unlock()
 

@@ -250,8 +250,9 @@
           <p>Organization and source IDs are stable. Credentials must be protected server file references, never passwords or tokens.</p>
           <div class="trusted-source-registration-fields">
             <label>Organization ID<input name="organization_id" readonly required></label>
-            <label>Source ID<input name="source_id" required pattern="[a-zA-Z][a-zA-Z0-9_-]{0,63}" maxlength="64"></label>
+            <label>Source ID<input name="source_id" required pattern="[A-Za-z0-9_-]{1,64}" maxlength="64"></label>
             <label>Display name<input name="display_name" maxlength="200"></label>
+            <label><input type="checkbox" name="policy_default">Default source for unqualified policy attributes and groups in this organization</label>
             <label>Source kind<select name="kind" aria-label="Source kind"><option value="ldap">LDAP (verified TLS)</option><option value="https-json">HTTPS JSON (verified TLS)</option></select></label>
             <label>Source URL<input name="url" required placeholder="ldaps://directory.company.example:636"></label>
             <label>CA file reference (optional)<input name="ca_file" autocomplete="off"></label>
@@ -319,6 +320,7 @@
         const scope = config.organizations?.[registry.organization_id] || {};
         for (const name of ["display_name", "kind", "url", "ca_file", "token_file"]) fields[name].value = config[name] || (name === "kind" ? "ldap" : "");
         fields.source_id.value = config.name || "";
+        fields.policy_default.checked = registry.policy_default_source === config.name;
         fields.attributes.value = (config.attributes || []).join(",");
         for (const name of ["base_dn", "bind_dn", "bind_password_file"]) fields[name].value = scope[name] || "";
         if (config.kind === "https-json") fields.url.value = scope.url || "";
@@ -350,7 +352,7 @@
       try {
         const result = await window.ZPRPageRuntime.requestJSON(window.zprOperatorFetch, `/api/assertions/sources${testing ? "/test" : ""}`, {
           method: testing || !this.registrationEditing ? "POST" : "PUT", headers: { "Content-Type": "application/json", Accept: "application/json" },
-          body: JSON.stringify({ organization_id: organizationID, source_id: sourceID, revision: this.registrationRegistry.revision, config }),
+          body: JSON.stringify({ organization_id: organizationID, source_id: sourceID, revision: this.registrationRegistry.revision, policy_default: fields.policy_default.checked, config }),
         });
         if (generation !== this.registrationGeneration || selection.get().organizationID !== organizationID) return;
         if (result.organization_id !== organizationID || result.source_id !== sourceID || result.status !== (testing ? "success" : "saved")) throw new Error("Source operation response did not match the requested identity or result");
@@ -358,6 +360,7 @@
         if (testing) this.recordConnectionResult(organizationID, sourceID, "Connection test succeeded (read-only)");
         else {
           this.registrationRegistry.revision = result.revision;
+          this.registrationRegistry.policy_default_source = result.policy_default_source || "";
           this.registrationEditing = true;
           fields.source_id.readOnly = true;
           this.recordConnectionResult(organizationID, sourceID, "Configuration saved; test the saved configuration to verify connectivity");

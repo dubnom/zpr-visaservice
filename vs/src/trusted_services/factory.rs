@@ -53,7 +53,8 @@ pub fn trusted_service_definitions(
                 service.id
             )));
         }
-        if service.id.is_empty()
+        if service.id.len() > 64
+            || service.id.is_empty()
             || service.id.contains(SOURCE_ATTRIBUTE_SEPARATOR)
             || !service
                 .id

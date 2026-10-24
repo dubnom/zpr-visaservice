@@ -38,11 +38,13 @@ async function registrationFixture(page, context) {
         }
         return route.fulfill({ json: { organization_id: registry.organization_id, source_id: body.source_id, status: "success", message: "Connection test succeeded (read-only); configuration was not saved" } });
       }
+      if (body.policy_default) registry.policy_default_source = body.source_id;
+      else if (registry.policy_default_source === body.source_id) registry.policy_default_source = "";
       const old = registry.sources.find(source => source.source_id === body.source_id);
       if (old) old.config = config;
       else registry.sources.push({ source_id: body.source_id, editable: true, config });
       registry.revision = `revision-${++revision}`;
-      return route.fulfill({ json: { organization_id: registry.organization_id, source_id: body.source_id, revision: registry.revision, status: "saved", message: "Configuration saved durably; connectivity is not verified by saving" } });
+      return route.fulfill({ json: { organization_id: registry.organization_id, source_id: body.source_id, revision: registry.revision, policy_default_source: registry.policy_default_source || "", status: "saved", message: "Configuration saved durably; connectivity is not verified by saving" } });
     }
     if (url.pathname === "/api/assertions/source") {
       const sourceID = url.searchParams.get("source");
@@ -186,5 +188,30 @@ test("Source registration discards delayed connection evidence after organizatio
   await expect(fixture.browser.locator("[data-registration-message]")).not.toContainText("succeeded");
   await expect(fixture.browser.locator("[data-connection-results]")).toBeEmpty();
   expect(fixture.registry.sources).toHaveLength(0);
+  fixture.verify();
+});
+
+
+test("Source registration V03 explicitly designates one durable policy default", async ({ page, context }, testInfo) => {
+  const fixture = await registrationFixture(page, context);
+  const { browser, registry } = fixture;
+  for (const name of ["company_directory", "lab_directory"]) {
+    const form = await fillLDAP(browser, name);
+    await form.getByLabel("Default source for unqualified policy attributes and groups in this organization").check();
+    await form.getByRole("button", { name: "Save configuration", exact: true }).click();
+    await expect(browser.locator("[data-registration-message]")).toContainText("saved durably");
+    expect(registry.policy_default_source).toBe(name);
+  }
+  await page.reload();
+  await browser.locator("[data-source-selector]").selectOption("lab_directory");
+  await browser.getByRole("button", { name: "Edit selected source", exact: true }).click();
+  const form = browser.locator("[data-registration-form]");
+  await expect(form.getByLabel("Default source for unqualified policy attributes and groups in this organization")).toBeChecked();
+  await visualEvidence(page, browser, testInfo, "explicit-policy-default");
+  await form.getByLabel("Default source for unqualified policy attributes and groups in this organization").uncheck();
+  await form.getByRole("button", { name: "Save configuration", exact: true }).click();
+  await expect(browser.locator("[data-registration-message]")).toContainText("saved durably");
+  expect(registry.policy_default_source).toBe("");
+  expect(fixture.operations.filter(operation => operation.body.policy_default === true)).toHaveLength(2);
   fixture.verify();
 });

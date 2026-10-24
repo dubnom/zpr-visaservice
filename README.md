@@ -162,10 +162,14 @@ provision an adapter, install policy, or export existing metrics automatically.
 ## Multiple trusted sources and policy limitations
 
 Multiple trusted-service attributes are now exposed as source-qualified policy
-keys (`attribute__source__source-id`); multi-source authoring rejects mapped
-unqualified references and runtime ingestion namespaces claims before evaluation.
-Single-source policies retain unqualified aliases. This does not yet provide
-approved cross-source subject links, dependency-aware outage handling, identity
-version invalidation, or selective per-grant revalidation. See the
+keys (`attribute__source__source-id`); the source-built ZPLC resolves them against
+raw provider mappings, with a real compiler → VS stores → libeval grant/deny test.
+Single-source policies retain unqualified aliases; multiple sources require an
+explicit organization policy default or qualified references. Control Room can
+persist that default. Identity-changing registry edits advance source versions;
+staging pins source versions/defaults into signed metadata and guarded apply
+requires restaging when they change. This does not yet provide installed-visa
+version enforcement, approved cross-source subject links, dependency-aware outage
+handling or selective per-grant revalidation. See the
 [evidence trace and seven-scenario support matrix](MULTISOURCE_POLICY_SUPPORT.md)
 before relying on those guarantees.
