@@ -232,6 +232,39 @@ when its integrated exit criteria pass.
 **Exit:** dependency/ownership map and public contracts are reviewed; executable
 negative tests can detect reverse dependencies. No live credentials required.
 
+#### B05 targeted test baseline record (2026-10-25)
+
+Recorded on `maturing/integration` at `0b8a8c3` (macOS arm64; Go 1.27.1, Rust
+and Cargo 1.98.1, Node 26.10.0). The sibling `zpr-common` checkout is `2756e9a`
+(`main`). This is local source/test evidence, not a deployment version. The
+local evaluation stack was bootstrapped from this worktree at `08391e8`, before
+the internal signing gate; that gate is not called by any running service.
+
+| Suite | Result in a clean worktree |
+| --- | --- |
+| Operator-stack checks (`make test`, Python) | 11 passed |
+| Go (`make test` → `go test ./...`) | exit 2; exactly 13 failures, all in `cmd/zpr-web-dashboard` |
+| Go race + vet, `internal/changereview` and `internal/subjectsnapshot` | pass |
+| Rust (`cargo test --locked --offline`) | 1,008 passed, 23 ignored (needs the `zpr-common` sibling below) |
+
+Root causes of the 13 failures (diagnosis only; no tests were changed):
+
+| Cause | Failing tests | Kind |
+| --- | --- | --- |
+| Gitignored generated `policy-demo.zplc` files (`*.zplc` in `zpr-dashboard/.gitignore`) exist only in the main checkout: `packaging/.../northstar` and the `great-lakes`/`load-lab` examples. | Northstar LDIF/runtime-asset evidence, organization portable/duplicate/bundle/profile/draft-archive (8) | Local generated input |
+| Tests resolve `../../../../.local-runtime` (Northstar pregen LDIF, simulation manifest) and the Cargo workspace resolves `../zpr-common`; in a worktree these sit one directory too deep. | Bundled seed locations, Simulator design assistant, Simulator organizations catalog, Rust policy-apply crash-window interop (4) | Worktree layout |
+| Since `4627e4c`, `start_machine_container` calls `machine_docker_network_for_org` (`scripts/machine-runtime.sh`), which the isolated launcher harness neither sources nor stubs. | `TestBusinessMachineStateBindIsPersistentAndGenerationScoped` (1) | **Real test drift** |
+
+Verification: temporarily providing the three gitignored `.zplc` files (copied
+from the main checkout) and sibling `zpr-common`/`.local-runtime` links made 12
+of the 13 pass. Full `make test` then failed only the launcher harness test. All
+temporary inputs were removed afterward. Repairing the stale harness belongs to
+its owner. Browser (Playwright) suites were not run for this record.
+
+Still open for B05: confirm the proposed 10-second observation budget in
+section 6, and record deployment versions once an integrated stack is
+qualified. The checkbox stays open until then.
+
 ### M1 - Multiple trusted sources and real organization LDAP
 
 Depends on M0.
