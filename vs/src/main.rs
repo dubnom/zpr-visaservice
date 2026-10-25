@@ -111,6 +111,11 @@ struct Cli {
     /// Emit a default configuration file and exit.
     #[arg(long)]
     gen_config: bool,
+
+    /// Explicitly create the subject snapshot checkpoint from the current signed
+    /// snapshot (fails if it already exists), report a receipt and exit.
+    #[arg(long)]
+    initialize_subject_snapshot: bool,
 }
 
 #[tokio::main]
@@ -147,6 +152,33 @@ async fn main() -> std::process::ExitCode {
             return std::process::ExitCode::FAILURE;
         }
     };
+
+    let subject_snapshot_fetcher = match cfg.subject_snapshot_fetch.as_ref() {
+        Some(fetch) => match vs::subject_snapshot::fetch::Fetcher::new(fetch) {
+            Ok(fetcher) => Some(fetcher),
+            Err(e) => {
+                error!(target: MAIN, "{}", e);
+                return std::process::ExitCode::FAILURE;
+            }
+        },
+        None => None,
+    };
+    if cli.initialize_subject_snapshot {
+        let Some(fetch) = cfg.subject_snapshot_fetch.as_ref() else {
+            error!(target: MAIN, "--initialize-subject-snapshot requires [subject_snapshot_fetch] configuration");
+            return std::process::ExitCode::FAILURE;
+        };
+        return match vs::subject_snapshot::fetch::initialize_from_config(fetch).await {
+            Ok(outcome) => {
+                info!(target: MAIN, "initialized subject snapshot checkpoint (not enforced): {:?}", outcome);
+                std::process::ExitCode::SUCCESS
+            }
+            Err(e) => {
+                error!(target: MAIN, "subject snapshot initialization failed: {}", e);
+                std::process::ExitCode::FAILURE
+            }
+        };
+    }
 
     let identity = match initialize_identity(
         &cfg.core.identity,
@@ -412,6 +444,10 @@ async fn main() -> std::process::ExitCode {
         vreq_rx,
         config::MAX_VISA_REQUEST_WORKERS,
     ));
+
+    if let Some(fetcher) = subject_snapshot_fetcher {
+        js.spawn_local(fetcher.run());
+    }
 
     // perform initial self-authorization
     if let Err(e) = self_authorize(asm.clone(), &cfg.get_vs_addr()).await {

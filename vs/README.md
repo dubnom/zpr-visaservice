@@ -56,6 +56,41 @@ Coordinates do not change identity, routing, policy evaluation or node
 connection state. Configuration changes take effect on service restart.
 Control Room consumes this production contract independently of Simulator.
 
+## Optional subject snapshot fetcher (not enforced)
+
+When configured, the VS pulls the current signed subject-link snapshot from
+the Control-Service delivery listener over pinned mTLS. It verifies the
+snapshot against the configured signing pins, installs it into a durable
+checkpoint and reports an install receipt. Snapshots are **not evaluated or
+enforced**; nothing in the VS reads them yet.
+
+```toml
+[subject_snapshot_fetch]
+url = "https://control.example:8443"   # https origin only
+ca_cert = "/etc/zpr/delivery-ca.pem"   # pinned server root
+client_cert = "/etc/zpr/vs-client.pem" # its SPKI must be pinned in recipients
+client_key = "/etc/zpr/vs-client.key"
+organization_id = "example-org"
+vs_id = "vs-1"
+epoch = "1"
+signing_pins_file = "/etc/zpr/subject-signing-pins.json"
+checkpoint_dir = "/var/lib/zpr/subject-snapshot"
+poll_seconds = 60                      # 10..=3600
+```
+
+The signing pins file uses the same JSON as the Control-Service signing
+configuration (`{"version":1,"key_id":…,"pins":[{"key_id":…,"public_key":…}]}`).
+Configuration is strict: unknown fields, relative paths, non-https or
+path-bearing URLs and out-of-range intervals fail VS startup.
+
+The first install is explicit. `vs --initialize-subject-snapshot` creates the
+checkpoint directory (which must not exist) from the current signed snapshot,
+reports a receipt and exits. The daemon never creates the checkpoint. Until it
+exists the fetcher logs an error on each poll. Once it exists, it installs only
+newer verified sequences and refuses rollback or replay, then reports one receipt per
+digest. Failed receipts are retried without undoing the install. Fetcher errors
+are logged and do not stop the VS.
+
 ## vsapikey
 
 This also builds the binary `vsapikey` which is used to generate API keys

@@ -6,6 +6,7 @@
 
 #[cfg(unix)]
 pub mod checkpoint;
+pub mod fetch;
 
 use std::collections::{HashMap, HashSet};
 

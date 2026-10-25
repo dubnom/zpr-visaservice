@@ -255,7 +255,8 @@ reads back history, and the Control Room **Subject-Link Publication** page drive
 it with browser-verified candidate digests. An optional separate
 Control-Service listener lets pinned-mTLS VS recipients pull the current
 signed snapshot and report immutable install receipts, shown read-only on that
-page. There is still no VS fetcher, push or enforcement.
+page. An optional VS fetcher pulls, verifies, durably checkpoints and reports
+receipts for that snapshot; there is still no push or enforcement.
 
 Expired lookup identities are indeterminate even if another identity on the
 actor is still live. They cannot fetch fresh enrichment or be silently dropped

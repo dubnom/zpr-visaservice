@@ -3151,8 +3151,38 @@ Tests use real TLS handshakes for pinned, unpinned, foreign-root and
 foreign-organization certificates. They cover exact-byte and verified delivery,
 expiry and revocation withdrawal, path and query rejection, strict receipt
 bodies, idempotency and conflicts, operator readback, and composition-contract
-coverage of the second server. Not included: the Rust VS fetcher, VS
-enforcement, push, or production certificate and pin provisioning.
+coverage of the second server. Not included: VS enforcement, push, or
+production certificate and pin provisioning.
+
+#### Implemented: VS pinned snapshot fetcher (not enforced)
+
+Scope approved as fetch, verify, checkpoint and receipt only. The optional
+`[subject_snapshot_fetch]` VS configuration (see `vs/README.md`) pulls
+`…/{epoch}/current` over TLS that trusts only the configured server CA, with
+the VS client identity whose SPKI the recipients file pins. Redirects are
+disabled, requests time out after 15 s and responses are size-capped.
+
+- Design choices: the first install is an explicit one-shot
+  `vs --initialize-subject-snapshot`; the daemon only opens existing state
+  and never auto-initializes. An invalid configuration fails VS startup.
+  Runtime fetch failures are logged and do not stop the VS, because no
+  component consumes snapshots.
+- Every pulled envelope is verified (Ed25519 signing pins, scope, expiry)
+  before `Checkpoint::install`. Rollback and replay are refused, and the
+  installed current digest must equal the fetched digest.
+- A receipt (`sequence`, `digest`) is posted after each new install. Its
+  response must echo the same scope, sequence and digest. A failed or
+  mismatched receipt is retried on the next poll without undoing the install,
+  and each digest is reported at most once per process after success.
+- After a checkpoint I/O failure the checkpoint is dropped and reopened.
+
+Tests use rcgen certificates and a real tokio-rustls server that requires
+client certificates. They cover explicit initialization, advance, unchanged
+and withheld polls, rollback refusal, receipt retry and mismatch, oversized
+bodies, a wrong server root, an untrusted client certificate, and strict
+configuration. Not included: evaluation or enforcement of snapshots, push,
+envelopes for partial release, or production provisioning.
+
 
 ### S05 minimal subject-link contract: review proposal (2026-10-24)
 

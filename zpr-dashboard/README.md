@@ -433,7 +433,8 @@ the organization and VS ID. The VS names only the epoch:
 
 Query strings, extra path segments and other methods return 404. Responses are
 `no-store`. A receipt is the recipient's own report that it accepted bytes; it
-is not enforcement evidence. No VS enforcement or push exists.
+is not enforcement evidence. The optional VS fetcher (`vs/README.md`) is the
+intended client; no VS enforcement or push exists.
 
 #### Subject-Link Review operator page
 

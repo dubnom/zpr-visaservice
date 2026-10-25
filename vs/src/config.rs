@@ -120,6 +120,9 @@ pub struct VSConfig {
     /// Presence enables guarded policy mode and disables legacy policy POST,
     /// including when this trust configuration is invalid or expired.
     pub guarded_policy: Option<GuardedPolicyConfig>,
+    /// Presence enables pinned pull, verification, checkpointing and receipts of
+    /// signed subject-link snapshots. Snapshots are not evaluated or enforced.
+    pub subject_snapshot_fetch: Option<vs::subject_snapshot::fetch::FetchConfig>,
 }
 
 #[derive(Deserialize, Serialize, Debug, Clone)]
@@ -280,6 +283,7 @@ impl Default for VSConfig {
             trusted_service_http: std::collections::BTreeMap::new(),
             dns_update: None,
             guarded_policy: None,
+            subject_snapshot_fetch: None,
         }
     }
 }
