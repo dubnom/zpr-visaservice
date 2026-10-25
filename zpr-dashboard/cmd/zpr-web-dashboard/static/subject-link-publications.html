@@ -20,7 +20,7 @@
       <button id="operator-logout" type="button" hidden>Sign out</button>
       <p id="operator-scope" hidden></p>
     </section>
-    <p class="boundary">Publication intent and signed snapshots are retained evidence only. Nothing here delivers a snapshot, installs it on a VS, changes enforcement or deploys anything. Approve reviews on <a href="/subject-links.html">Subject-Link Review</a>.</p>
+    <p class="boundary">Publication intent and signed snapshots are retained evidence. A pinned VS may pull the current signed snapshot over the separate delivery listener and report a receipt; receipts are the recipient's own report, not proof of enforcement. Nothing here pushes to a VS, changes enforcement or deploys anything. Approve reviews on <a href="/subject-links.html">Subject-Link Review</a>.</p>
     <p id="status" role="status" aria-live="polite">Sign in to begin.</p>
     <fieldset id="publication-workspace" disabled>
       <legend>Exact recipient stream</legend>
@@ -32,6 +32,7 @@
         <dt>Stream sequence</dt><dd id="publication-sequence">Not read</dd>
         <dt>Current candidate</dt><dd id="publication-current">Not read</dd>
         <dt>Signing key</dt><dd id="publication-key">Not read</dd>
+        <dt>Latest VS receipt</dt><dd id="publication-receipt">Not read</dd>
       </dl>
       <pre id="publication-state-evidence" aria-label="Stream state evidence"></pre>
       <section id="publication-pending" hidden>
@@ -85,7 +86,7 @@
       <section>
         <h2>Historical readback</h2>
         <form id="publication-history-form">
-          <label>Evidence <select id="publication-history-kind"><option value="events">Publication event</option><option value="candidates">Snapshot candidate</option><option value="signed">Signed envelope</option></select></label>
+          <label>Evidence <select id="publication-history-kind"><option value="events">Publication event</option><option value="candidates">Snapshot candidate</option><option value="signed">Signed envelope</option><option value="receipts">VS delivery receipt</option></select></label>
           <label>Sequence <input id="publication-history-sequence" required maxlength="20" autocomplete="off"></label>
           <button id="publication-history-read" type="submit" disabled>Read immutable evidence</button>
         </form>

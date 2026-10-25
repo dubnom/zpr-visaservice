@@ -50,6 +50,8 @@ func ParseSubjectLinkPublicationRoute(method, path string) (SubjectLinkPublicati
 		route.Action, route.Sequence, route.Permission = "candidate", parts[3], "subject-link.read"
 	case method == http.MethodGet && len(parts) == 4 && parts[2] == "signed" && publicationSequence(parts[3], false):
 		route.Action, route.Sequence, route.Permission = "signed", parts[3], "subject-link.read"
+	case method == http.MethodGet && len(parts) == 4 && parts[2] == "receipts" && publicationSequence(parts[3], false):
+		route.Action, route.Sequence, route.Permission = "receipt", parts[3], "subject-link.read"
 	case method == http.MethodPost && len(parts) == 3 && parts[2] == "provision":
 		route.Action, route.Permission = "provision", "subject-link.publish"
 	case method == http.MethodPost && len(parts) == 3 && parts[2] == "intents":

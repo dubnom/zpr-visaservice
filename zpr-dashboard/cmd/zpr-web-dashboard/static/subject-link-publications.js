@@ -48,7 +48,7 @@
     ++epoch;
     state = null;
     candidate = null;
-    for (const id of ["sequence", "current", "key"]) el(id).textContent = "Not read";
+    for (const id of ["sequence", "current", "key", "receipt"]) el(id).textContent = "Not read";
     for (const id of ["state-evidence", "candidate-evidence", "candidate-check", "history-evidence"]) el(id).textContent = "";
     update();
   }
@@ -84,12 +84,19 @@
     }
     return result;
   }
+  function validReceipt(receipt, request) {
+    if (receipt === null) return true;
+    return typeof receipt === "object" && sameScope(receipt.scope, request) &&
+      sequencePattern.test(receipt.sequence) && receipt.sequence !== "0" && digestPattern.test(receipt.digest) &&
+      typeof receipt.key_id === "string" && receipt.key_id !== "" && digestPattern.test(receipt.client_spki_sha256) && /^[0-9]{1,20}$/.test(receipt.received_at);
+  }
   function showState(result) {
     const request = currentScope();
     publication(result.publication, request);
     const current = result.current_candidate;
     if (typeof result.signing_key_id !== "string" || current !== null && (!sequencePattern.test(current?.sequence) ||
-        current.sequence !== result.publication.sequence || !digestPattern.test(current.digest) || typeof current.signed_key_id !== "string")) {
+        current.sequence !== result.publication.sequence || !digestPattern.test(current.digest) || typeof current.signed_key_id !== "string") ||
+        !validReceipt(result.latest_receipt, request)) {
       throw new Error("Invalid stream state response.");
     }
     state = result;
@@ -99,6 +106,8 @@
     el("sequence").textContent = result.publication.sequence;
     el("current").textContent = current ? `Sequence ${current.sequence}, digest ${current.digest}, ${current.signed_key_id ? `signed by ${current.signed_key_id}` : "unsigned"}` : "None at the current sequence";
     el("key").textContent = result.signing_key_id || "Signing not configured";
+    const receipt = result.latest_receipt;
+    el("receipt").textContent = receipt ? `Sequence ${receipt.sequence}, digest ${receipt.digest}, key ${receipt.key_id}, reported ${new Date(Number(receipt.received_at) * 1000).toISOString()} by client SPKI ${receipt.client_spki_sha256} (recipient report, not enforcement)` : "No receipt reported";
     el("state-evidence").textContent = JSON.stringify(result, null, 2);
   }
   function loadPending() {
@@ -290,7 +299,7 @@
     void run(async (current) => {
       el("history-evidence").textContent = "";
       const kind = value("history-kind"), sequence = value("history-sequence");
-      if (!["events", "candidates", "signed"].includes(kind) || !sequencePattern.test(sequence) || kind !== "events" && sequence === "0") {
+      if (!["events", "candidates", "signed", "receipts"].includes(kind) || !sequencePattern.test(sequence) || kind !== "events" && sequence === "0") {
         throw new Error("Enter a canonical sequence (0 is only valid for events).");
       }
       const result = await api(`${base()}/${kind}/${sequence}${query()}`);

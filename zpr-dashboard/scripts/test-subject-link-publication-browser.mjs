@@ -136,7 +136,12 @@ try {
   await readState("2");
   await expect(page.locator("#publication-current")).toContainText("signed by browser-key");
   await expect(page.locator("#publication-sign-save")).toBeDisabled();
-  for (const [kind, sequence, text] of [["events", "1", '"action": "promote"'], ["candidates", "2", signed.digest], ["signed", "2", '"key_id": "browser-key"']]) {
+  await expect(page.locator("#publication-receipt")).toHaveText("No receipt reported");
+  assert.equal(await page.evaluate(async () => (await fetch("/fixture/record-delivery-receipt", { method: "POST" })).status), 204);
+  await readState("2");
+  await expect(page.locator("#publication-receipt")).toContainText(`Sequence 2, digest ${signed.digest}, key browser-key`);
+  await expect(page.locator("#publication-receipt")).toContainText("recipient report, not enforcement");
+  for (const [kind, sequence, text] of [["events", "1", '"action": "promote"'], ["candidates", "2", signed.digest], ["signed", "2", '"key_id": "browser-key"'], ["receipts", "2", '"client_spki_sha256": "' + "c".repeat(64)]]) {
     await page.locator("#publication-history-kind").selectOption(kind);
     await page.locator("#publication-history-sequence").fill(sequence);
     await page.locator("#publication-history-read").click();
@@ -149,7 +154,7 @@ try {
   }
   assert.equal(mutations.length, 5);
   assert.deepEqual(errors, []);
-  console.log("SUBJECT_LINK_PUBLICATION_BROWSER ok: provision, promote, lost-response capture retry, browser digest check, separated signing, readback, desktop/tablet; no delivery or Simulator");
+  console.log("SUBJECT_LINK_PUBLICATION_BROWSER ok: provision, promote, lost-response capture retry, browser digest check, separated signing, receipt display and readback, desktop/tablet; no push, enforcement or Simulator");
   await context.close();
 } finally {
   await browser.close();

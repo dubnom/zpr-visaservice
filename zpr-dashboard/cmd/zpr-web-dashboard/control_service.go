@@ -217,6 +217,11 @@ func runControlService() error {
 		Addr: listen, Handler: securityHeaders(mux), ReadHeaderTimeout: 5 * time.Second, IdleTimeout: 60 * time.Second,
 		TLSConfig: &tls.Config{MinVersion: tls.VersionTLS13, ClientAuth: tls.RequireAndVerifyClientCert, ClientCAs: clientCAs},
 	}
+	reviewAPI, _ := subjectReviews.(*subjectReviewAPI)
+	delivery, err := configuredSubjectSnapshotDelivery(reviewAPI, certFile, keyFile)
+	if err != nil {
+		return err
+	}
 	log.Printf("ZPR Control Service listening with mutual TLS at %s", listen)
 	if configErr != "" {
 		log.Printf("Visa Service Admin API is not configured: %s", configErr)
@@ -224,5 +229,11 @@ func runControlService() error {
 	if policyErr != "" {
 		log.Printf("Policy Service is not configured: %s", policyErr)
 	}
-	return server.ListenAndServeTLS(certFile, keyFile)
+	if delivery == nil {
+		return server.ListenAndServeTLS(certFile, keyFile)
+	}
+	errs := make(chan error, 2)
+	go func() { errs <- server.ListenAndServeTLS(certFile, keyFile) }()
+	go func() { errs <- runSubjectSnapshotDelivery(delivery) }()
+	return <-errs
 }

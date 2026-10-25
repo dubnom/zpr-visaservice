@@ -3093,7 +3093,7 @@ workflow test. The operator page is described below.
 Publication**) is a separate Control Room page in the production embed and
 asset manifests. It calls only the routes above through the existing session
 widget, CSRF helper and Room proxy. It has no Simulator dependency and no
-delivery, installation or enforcement controls.
+push, installation or enforcement controls.
 
 - The exact organization, VS recipient and epoch are explicit. A state read
   shows sequence, current candidate digest/signature and the server key ID.
@@ -3117,6 +3117,42 @@ rejected validity, a dropped capture response with reload and exact retry,
 browser digest verification, signing, historical readback and desktop/tablet
 overflow. The Go side verifies the persisted envelope against the pins and the
 recorded signer. The test does not cover delivery or certify a deployed key.
+
+#### Implemented: pinned VS snapshot delivery and receipts
+
+Approved decisions: Visa Services **pull** over mTLS; each VS client key is
+pinned by SPKI SHA-256 to exactly one organization and VS ID (several pins per
+VS allow rotation); the current candidate is fetchable as soon as it is signed;
+receipts are recorded and shown read-only; delivery uses a separate
+Control-Service listener so the Room listener is unchanged.
+
+- Configuration is all-or-nothing (`ZPR_SUBJECT_SNAPSHOT_DELIVERY_LISTEN`,
+  `…_DELIVERY_CLIENT_CA_FILE`, `ZPR_SUBJECT_SNAPSHOT_RECIPIENTS_FILE`, absolute
+  paths) and requires the review store and signing pins. The strict versioned
+  recipients file rejects unknown fields, uppercase or short pins, invalid IDs
+  and duplicate pins.
+- TLS 1.3 requires a client certificate that chains to the VS CA *and* matches
+  a pin; unpinned or foreign-root certificates fail the handshake. Identity
+  comes only from the pin, and the request names only the epoch.
+- `GET /v1/subject-link-snapshots/{epoch}/current` returns the exact stored
+  envelope bytes for the stream's current sequence. Delivery also re-verifies
+  them against the signing pins at the current time, so unsigned, revoked,
+  wrong-epoch and expired snapshots are withheld (404).
+- `POST …/{epoch}/receipts` (strict `sequence`, `digest`; 4 KiB limit) records
+  an immutable `subject_link_delivery_receipts` row with key ID, client SPKI and
+  time. It must name a signed snapshot with that digest. Identical repeats from
+  the same key return the original, and another key or digest conflicts.
+  Update/delete triggers keep receipts immutable.
+- Operators see `latest_receipt` in the stream state and read
+  `…/receipts/{seq}` (`subject-link.read`) on the Publication page, labelled as
+  the recipient's own report.
+
+Tests use real TLS handshakes for pinned, unpinned, foreign-root and
+foreign-organization certificates. They cover exact-byte and verified delivery,
+expiry and revocation withdrawal, path and query rejection, strict receipt
+bodies, idempotency and conflicts, operator readback, and composition-contract
+coverage of the second server. Not included: the Rust VS fetcher, VS
+enforcement, push, or production certificate and pin provisioning.
 
 ### S05 minimal subject-link contract: review proposal (2026-10-24)
 

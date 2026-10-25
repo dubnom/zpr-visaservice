@@ -299,7 +299,12 @@ func TestProductionCompositionServerBoundaries(t *testing.T) {
 			"Addr": "listen", "Handler": "securityHeaders(mux)",
 			"ReadHeaderTimeout": "5 * time.Second", "IdleTimeout": "60 * time.Second",
 			"TLSConfig": "&tls.Config{MinVersion: tls.VersionTLS13, ClientAuth: tls.RequireAndVerifyClientCert, ClientCAs: clientCAs}",
-		}, []string{"server.ListenAndServeTLS(certFile, keyFile)"}},
+		}, []string{"server.ListenAndServeTLS(certFile, keyFile)", "server.ListenAndServeTLS(certFile, keyFile)"}},
+		{"subject_snapshot_delivery.go", "runSubjectSnapshotDelivery", map[string]string{
+			"Addr": "delivery.listen", "Handler": "securityHeaders(mux)",
+			"ReadHeaderTimeout": "5 * time.Second", "IdleTimeout": "60 * time.Second",
+			"TLSConfig": "delivery.tls", "MaxHeaderBytes": "16384",
+		}, []string{`server.ListenAndServeTLS("", "")`}},
 		{"policy_service.go", "runPolicyService", map[string]string{
 			"Addr": "listen", "Handler": "policyServiceMux(workspace)", "ReadHeaderTimeout": "5 * time.Second",
 			"TLSConfig": "&tls.Config{MinVersion: tls.VersionTLS13, ClientAuth: tls.RequireAndVerifyClientCert, ClientCAs: clientCAs}",

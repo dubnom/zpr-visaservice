@@ -61,6 +61,8 @@ type subjectPublicationState struct {
 	Publication changereview.SubjectLinkPublication `json:"publication"`
 	Current     *subjectPublicationCurrent          `json:"current_candidate"`
 	SigningKey  string                              `json:"signing_key_id"`
+	// LatestReceipt is the recipient's own highest reported install, possibly older than Current.
+	LatestReceipt *changereview.SubjectLinkDeliveryReceipt `json:"latest_receipt"`
 }
 
 type subjectPublicationCurrent struct {
@@ -170,6 +172,8 @@ func (api *subjectReviewAPI) servePublication(w http.ResponseWriter, r *http.Req
 		result, err = api.store.GetSubjectLinkSnapshotCandidate(ctx, scope, route.Sequence)
 	case "signed":
 		result, err = api.store.GetSubjectLinkSignedSnapshot(ctx, scope, route.Sequence)
+	case "receipt":
+		result, err = api.store.GetSubjectLinkDeliveryReceipt(ctx, scope, route.Sequence)
 	case "provision":
 		if err = api.store.ProvisionSubjectLinkPublication(ctx, scope, principal, request.provision.Reason); err == nil {
 			result, err = api.store.GetSubjectLinkPublication(ctx, scope)
@@ -224,6 +228,12 @@ func (api *subjectReviewAPI) publicationState(r *http.Request, scope changerevie
 		return state, err
 	}
 	state.Publication = publication
+	receipt, err := api.store.LatestSubjectLinkDeliveryReceipt(r.Context(), scope)
+	if err == nil {
+		state.LatestReceipt = &receipt
+	} else if !errors.Is(err, changereview.ErrNotFound) {
+		return state, err
+	}
 	if publication.Sequence == "0" {
 		return state, nil
 	}

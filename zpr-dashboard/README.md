@@ -339,7 +339,7 @@ these exact routes under `/api/subject-link-publications/{vs_id}/{epoch}`:
 | Route | Permission | Body / headers |
 |---|---|---|
 | `GET …?organization_id=` | `subject-link.read` | Stream state, current candidate digest and signing key ID |
-| `GET …/events/{seq}`, `…/candidates/{seq}`, `…/signed/{seq}` `?organization_id=` | `subject-link.read` | Historical readback |
+| `GET …/events/{seq}`, `…/candidates/{seq}`, `…/signed/{seq}`, `…/receipts/{seq}` `?organization_id=` | `subject-link.read` | Historical readback |
 | `POST …/provision` | `subject-link.publish` | `organization_id`, `reason`; no `Idempotency-Key` (a repeat conflicts) |
 | `POST …/intents` | `subject-link.publish` | promote: `organization_id`, `action`, `expected_sequence`, `review_id`, `review_digest`, `review_version`, `reason`; revoke replaces the review digest/version with `binding_version`; `Idempotency-Key` |
 | `POST …/candidates` | `subject-link.snapshot.capture` | `organization_id`, `expected_sequence`, `issued_at`, `expires_at` (Unix seconds as strings), `reason`; `Idempotency-Key` |
@@ -347,8 +347,9 @@ these exact routes under `/api/subject-link-publications/{vs_id}/{epoch}`:
 
 Proofs use a separate `subject-link-publication-v1` purpose, and review/registry
 permissions grant only reads here. Backend trust must grant each permission
-explicitly. Signing returns HTTP 503 while no signing key is configured. Signed
-existence is historical evidence, not delivery, VS installation or enforcement.
+explicitly. Signing returns HTTP 503 while no signing key is configured. Stream state
+includes `latest_receipt` (the most recent VS delivery receipt, or `null`).
+Signed existence and receipts are evidence, not VS enforcement.
 
 #### Subject-Link Publication operator page
 
@@ -370,15 +371,16 @@ entered organization.
 4. A signer reads the current candidate bytes. The browser recomputes SHA-256
    over the exact payload, displays it and only then enables signing of that
    digest. Signing is disabled for an already signed or non-current candidate.
-5. Anyone with `subject-link.read` can read historical events, candidates and
-   signed envelopes by sequence.
+5. Anyone with `subject-link.read` can read historical events, candidates,
+   signed envelopes and VS delivery receipts by sequence. The state read shows
+   the latest receipt, labelled as the recipient's own report, not enforcement.
 
 Intent, capture and sign use the same unconfirmed-request panel as the review
 page (separate `sessionStorage` key): the exact body and retry key are saved
 before sending, reload restores the stream scope but never replays, and retry
 is explicit and limited to the original identity and stream. After any change
-the page requires a fresh state read. There are no delivery, VS installation,
-enforcement or deployment controls.
+the page requires a fresh state read. There are no push, VS installation,
+enforcement or deployment controls; delivery is a pinned VS pull (below).
 
 ```sh
 ZPR_TEST_SUBJECT_LINK_BROWSER=1 \
@@ -388,9 +390,50 @@ ZPR_TEST_SUBJECT_LINK_BROWSER=1 \
 That Chromium acceptance signs in separate publisher, capturer and signer
 identities through the production Room proxy and mTLS Control-Service routes. It
 covers cancelled confirmation, invalid validity, a dropped capture response with
-reload and exact retry, browser digest verification, signing, historical
+reload and exact retry, browser digest verification, signing, receipt display, historical
 readback and desktop/tablet overflow. The test then verifies the retained
 envelope against the pinned key.
+
+#### Pinned VS subject snapshot delivery
+
+Control-Service can serve the current signed snapshot to Visa Services on a
+**separate** listener. The Room listener, Room routes and Room permissions are
+unchanged, and the delivery listener serves nothing else. It is disabled unless
+all three variables are set (a partial or relative setting fails startup):
+
+| Variable | Meaning |
+|---|---|
+| `ZPR_SUBJECT_SNAPSHOT_DELIVERY_LISTEN` | Delivery listen address, e.g. `0.0.0.0:8790` |
+| `ZPR_SUBJECT_SNAPSHOT_DELIVERY_CLIENT_CA_FILE` | Absolute PEM CA for VS client certificates |
+| `ZPR_SUBJECT_SNAPSHOT_RECIPIENTS_FILE` | Absolute recipients pin file (below) |
+
+It also requires the review database and snapshot signing configuration, and
+reuses the Control-Service server certificate and key. The recipients file
+binds each VS client key to one organization and VS ID (several pins may
+name the same VS for rotation; a pin may appear only once):
+
+```json
+{"version":1,"recipients":[
+  {"organization_id":"production","vs_id":"vs-1","client_spki_sha256":"<64 lowercase hex>"}
+]}
+```
+
+```sh
+openssl x509 -in vs-client.pem -pubkey -noout | openssl pkey -pubin -outform der | openssl dgst -sha256
+```
+
+TLS 1.3 is required, and the client certificate must chain to the VS CA **and**
+match a pin, otherwise the handshake fails. The pin, never the request, supplies
+the organization and VS ID. The VS names only the epoch:
+
+| Route | Result |
+|---|---|
+| `GET /v1/subject-link-snapshots/{epoch}/current` | The exact signed envelope bytes for the current candidate. 404 if the stream has no current signed candidate (unsigned, revoked, other epoch) or if it does not verify against the signing pins now (for example, expired) |
+| `POST /v1/subject-link-snapshots/{epoch}/receipts` | Strict `{"sequence","digest"}`. Records an immutable receipt for a signed snapshot with that digest. 409 for unknown or mismatched bytes. An identical repeat from the same key returns the original |
+
+Query strings, extra path segments and other methods return 404. Responses are
+`no-store`. A receipt is the recipient's own report that it accepted bytes; it
+is not enforcement evidence. No VS enforcement or push exists.
 
 #### Subject-Link Review operator page
 

@@ -139,6 +139,19 @@ func TestSubjectLinkPublicationBrowser(t *testing.T) {
 			http.Error(w, "fixture owner required", 403)
 			return
 		}
+		if r.Method == "POST" && r.URL.Path == "/fixture/record-delivery-receipt" {
+			scope := changereview.SubjectLinkPublicationScope{Organization: "production", Recipient: "vs-browser", Epoch: "epoch-1"}
+			current, err := f.api.store.CurrentSubjectLinkSignedSnapshot(r.Context(), scope)
+			if err == nil {
+				_, err = f.api.store.RecordSubjectLinkDeliveryReceipt(r.Context(), scope, current.Sequence, current.Digest, strings.Repeat("c", 64))
+			}
+			if err != nil {
+				http.Error(w, err.Error(), 409)
+				return
+			}
+			w.WriteHeader(http.StatusNoContent)
+			return
+		}
 		if r.Method == "POST" && r.URL.Path == "/fixture/drop-next-capture-response" {
 			drop.Store(true)
 			w.WriteHeader(http.StatusNoContent)

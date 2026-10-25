@@ -10,6 +10,7 @@ func TestSubjectLinkPublicationProofScopesAndIsolation(t *testing.T) {
 	for _, route := range []struct{ method, path, query, key, permission string }{
 		{"GET", prefix, "organization_id=company", "", "subject-link.read"},
 		{"GET", prefix + "/signed/3", "organization_id=company", "", "subject-link.read"},
+		{"GET", prefix + "/receipts/3", "organization_id=company", "", "subject-link.read"},
 		{"POST", prefix + "/provision", "", "", "subject-link.publish"},
 		{"POST", prefix + "/intents", "", "retry", "subject-link.publish"},
 		{"POST", prefix + "/candidates", "", "retry", "subject-link.snapshot.capture"},
