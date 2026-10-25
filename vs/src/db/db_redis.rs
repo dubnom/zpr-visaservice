@@ -3,7 +3,7 @@ use redis::Script;
 use std::collections::{HashMap, HashSet};
 use tokio::sync::Mutex;
 
-use crate::db::{DbConnection, DbOp, DbResult, LockDescriptor, PolicyCommit};
+use crate::db::{DbConnection, DbOp, DbResult, HashGuard, LockDescriptor, PolicyCommit};
 
 pub struct RedisDb {
     mgr: redis::aio::ConnectionManager,
@@ -129,6 +129,20 @@ impl DbConnection for RedisDb {
         Ok(())
     }
 
+    async fn hash_pair_snapshot(
+        &self,
+        first: &str,
+        second: &str,
+    ) -> DbResult<(HashMap<String, String>, HashMap<String, String>)> {
+        let mut conn = self.mgr.clone();
+        redis::pipe()
+            .atomic()
+            .hgetall(first)
+            .hgetall(second)
+            .query_async(&mut conn)
+            .await
+    }
+
     async fn hset_nx(&self, key: &str, field: &str, value: &str) -> DbResult<()> {
         let mut conn = self.mgr.clone();
         let _: () = conn.hset_nx(key, field, value).await?;
@@ -160,39 +174,86 @@ impl DbConnection for RedisDb {
     }
 
     async fn atomic_pipeline(&self, ops: &[DbOp]) -> DbResult<()> {
+        if ops.is_empty() {
+            return Ok(());
+        }
         let mut conn = self.mgr.clone();
         let mut piper = redis::pipe();
+        piper.atomic();
         for op in ops {
-            match op {
-                DbOp::Del(key) => {
-                    piper.del(key);
-                }
-                DbOp::SetBin { key, value } => {
-                    piper.set(key, value.as_slice());
-                }
-                DbOp::SRem { set_key, member } => {
-                    piper.srem(set_key, member);
-                }
-                DbOp::HSet {
-                    hash_key,
-                    field,
-                    value,
-                } => {
-                    piper.hset(hash_key, field, value);
-                }
-                DbOp::HSetMultiple {
-                    hash_key,
-                    field_values,
-                } => {
-                    piper.hset_multiple(hash_key, field_values);
-                }
-                DbOp::Expire { key, seconds } => {
-                    piper.expire(key, *seconds);
-                }
+            let (command, args) = op.command_parts();
+            piper.cmd(command);
+            for arg in args {
+                piper.arg(arg);
             }
         }
         let _: () = piper.query_async(&mut conn).await?;
         Ok(())
+    }
+
+    async fn atomic_pipeline_if_set_and_hash_match(
+        &self,
+        key: &str,
+        expected: &HashSet<String>,
+        hash_guard: Option<HashGuard<'_>>,
+        ops: &[DbOp],
+    ) -> DbResult<bool> {
+        let script = Script::new(
+            r"
+                if ARGV[1] == '1' then
+                    if redis.call('EXISTS', KEYS[2]) == 0 then return 0 end
+                    local current = redis.call('HGET', KEYS[2], ARGV[2])
+                    if ARGV[3] == '1' then
+                        if current ~= ARGV[4] then return 0 end
+                    elseif current ~= false then
+                        return 0
+                    end
+                end
+                local count = tonumber(ARGV[5])
+                local current = redis.call('SMEMBERS', KEYS[1])
+                if #current ~= count then return 0 end
+                local expected = {}
+                for i = 1, count do expected[ARGV[i + 5]] = true end
+                for _, member in ipairs(current) do
+                    if not expected[member] then return 0 end
+                end
+                local cursor = count + 6
+                while cursor <= #ARGV do
+                    local size = tonumber(ARGV[cursor])
+                    local command = {}
+                    for i = 1, size do command[i] = ARGV[cursor + i] end
+                    redis.call(unpack(command))
+                    cursor = cursor + size + 1
+                end
+                return 1
+            ",
+        );
+        let mut invocation = script.prepare_invoke();
+        invocation.key(key);
+        if let Some(guard) = hash_guard {
+            invocation
+                .key(guard.key)
+                .arg(1)
+                .arg(guard.field)
+                .arg(u8::from(guard.expected.is_some()))
+                .arg(guard.expected.unwrap_or(""));
+        } else {
+            invocation.arg(0).arg("").arg(0).arg("");
+        }
+        invocation.arg(expected.len());
+        for member in expected {
+            invocation.arg(member);
+        }
+        for op in ops {
+            let (command, args) = op.command_parts();
+            invocation.arg(args.len() + 1).arg(command);
+            for arg in args {
+                invocation.arg(arg);
+            }
+        }
+        let mut conn = self.mgr.clone();
+        let result: i64 = invocation.invoke_async(&mut conn).await?;
+        Ok(result == 1)
     }
 
     async fn begin_policy_operation(
@@ -465,7 +526,7 @@ impl DbConnection for RedisDb {
 #[cfg(unix)]
 mod redis_operation_tests {
     //! Opt in with `cargo test -p vs --bin vs redis_operation_tests -- --ignored`.
-    //! Redis transport/Lua tests only; proof signatures and expiry belong to receiver tests.
+    //! Redis transaction/transport/Lua tests; proof signatures and expiry belong to receiver tests.
 
     use super::*;
     use crate::db::{PolicyOperationReceipt, PolicyOperationStatus};
@@ -480,6 +541,617 @@ mod redis_operation_tests {
     const OPERATION: &str = "policy:operations:test";
     const CONTAINER: &str = "policies:test:container";
     const CANDIDATE: &[u8] = b"isolated policy candidate";
+
+    #[tokio::test]
+    #[ignore = "requires redis-server on PATH; starts and reaps a private loopback child"]
+    async fn trusted_source_control_persistence_contract() {
+        let (mut server, db, _) = PrivateRedis::start().await;
+        crate::trusted_services::control::assert_persistence_contract(&db).await;
+        server.stop().unwrap();
+    }
+
+    #[tokio::test]
+    #[ignore = "requires redis-server on PATH; starts and reaps a private loopback child"]
+    async fn session_guard_contract() {
+        let (mut server, db, _) = PrivateRedis::start().await;
+        crate::db::assert_session_guard_contract(&db).await;
+        server.stop().unwrap();
+    }
+
+    #[tokio::test]
+    #[ignore = "requires redis-server on PATH; starts and reaps a private loopback child"]
+    async fn device_authentication_roundtrips_refresh_and_reauthentication_on_redis() {
+        use crate::db::ActorRepo;
+        use crate::test_helpers::make_actor_with_services_defexp;
+        use libeval::actor::{DeviceAuthentication, DeviceAuthority};
+        use libeval::attribute::{Attribute, ROLE_ADAPTER, key};
+
+        let (mut server, db, client) = PrivateRedis::start().await;
+        let repo = ActorRepo::new(std::sync::Arc::new(db));
+        let mut actor = make_actor_with_services_defexp(
+            ROLE_ADAPTER,
+            "fd5a:5052::71",
+            &["directory"],
+            "verified-device",
+        );
+        let address = *actor.get_zpr_addr().unwrap();
+        let identity = DeviceAuthentication::new(
+            DeviceAuthority::AuthenticationService {
+                service_id: "bas".into(),
+                issuer: "zpr/bas".into(),
+            },
+            "verified-device".into(),
+            uuid::Uuid::new_v4().to_string(),
+            std::time::SystemTime::now() + Duration::from_secs(600),
+        )
+        .unwrap();
+        actor.set_device_authentication(identity.clone()).unwrap();
+        repo.add_actor(&actor).await.unwrap();
+        let restored = ActorRepo::new(std::sync::Arc::new(independent_db(&client).await));
+        let mut loaded = restored.get_actor_by_zpr_addr(&address).await.unwrap();
+        assert_eq!(loaded.device_authentication(), Some(&identity));
+        loaded
+            .add_attribute(Attribute::builder(key::CN).value("enriched-cn"))
+            .unwrap();
+        restored.update_actor(&loaded).await.unwrap();
+        let loaded = repo.get_actor_by_zpr_addr(&address).await.unwrap();
+        assert_eq!(loaded.device_authentication(), Some(&identity));
+        assert_eq!(loaded.get_cn(), Some("enriched-cn"));
+        let replacement = DeviceAuthentication::new(
+            DeviceAuthority::Bootstrap {
+                visa_service: "vs.zpr/test".into(),
+            },
+            "replacement-device".into(),
+            uuid::Uuid::new_v4().to_string(),
+            std::time::SystemTime::now() + Duration::from_secs(300),
+        )
+        .unwrap();
+        actor
+            .set_device_authentication(replacement.clone())
+            .unwrap();
+        repo.update_authenticated_actor(&actor).await.unwrap();
+        assert!(matches!(
+            restored.update_actor(&loaded).await,
+            Err(crate::error::StoreError::Conflict(_))
+        ));
+        let restarted = ActorRepo::new(std::sync::Arc::new(independent_db(&client).await));
+        assert_eq!(
+            restarted
+                .get_actor_by_zpr_addr(&address)
+                .await
+                .unwrap()
+                .device_authentication(),
+            Some(&replacement)
+        );
+        repo.rm_actor_by_zpr_addr(&address).await.unwrap();
+        assert!(restored.get_actor_by_zpr_addr(&address).await.is_err());
+        server.stop().unwrap();
+    }
+
+    #[tokio::test]
+    #[ignore = "requires redis-server on PATH; starts and reaps a private loopback child"]
+    async fn atomic_pipeline_queue_error_aborts_all_commands() {
+        let (mut server, db, _) = PrivateRedis::start().await;
+        db.set("pipeline:kept", "original").await.unwrap();
+        let result = db
+            .atomic_pipeline(&[
+                DbOp::Del("pipeline:kept".into()),
+                // Empty HSET is a Redis queue-time arity error, not an
+                // execution-time type error. EXEC must abort the entire batch.
+                DbOp::HSetMultiple {
+                    hash_key: "pipeline:invalid".into(),
+                    field_values: vec![],
+                },
+                DbOp::SetBin {
+                    key: "pipeline:not-created".into(),
+                    value: b"uncommitted".to_vec(),
+                },
+            ])
+            .await;
+        assert!(result.is_err());
+        assert_eq!(
+            db.get("pipeline:kept").await.unwrap().as_deref(),
+            Some("original")
+        );
+        assert!(!db.exists("pipeline:not-created").await.unwrap());
+        server.stop().unwrap();
+    }
+
+    #[tokio::test]
+    #[ignore = "requires redis-server on PATH; starts and reaps a private loopback child"]
+    async fn atomic_pipeline_commits_supported_operations_and_expiration() {
+        let (mut server, db, client) = PrivateRedis::start().await;
+        db.set("pipeline:deleted", "old").await.unwrap();
+        db.sadd("pipeline:set", "removed").await.unwrap();
+        db.sadd("pipeline:set", "kept").await.unwrap();
+        db.atomic_pipeline(&[
+            DbOp::Del("pipeline:deleted".into()),
+            DbOp::SetBin {
+                key: "pipeline:blob".into(),
+                value: vec![0, 255, 1],
+            },
+            DbOp::Expire {
+                key: "pipeline:blob".into(),
+                seconds: 120,
+            },
+            DbOp::SRem {
+                set_key: "pipeline:set".into(),
+                member: "removed".into(),
+            },
+            DbOp::SAdd {
+                set_key: "pipeline:set".into(),
+                member: "added".into(),
+            },
+            DbOp::HSet {
+                hash_key: "pipeline:hash".into(),
+                field: "one".into(),
+                value: "1".into(),
+            },
+            DbOp::HSetMultiple {
+                hash_key: "pipeline:hash".into(),
+                field_values: vec![("two".into(), "2".into()), ("three".into(), "3".into())],
+            },
+        ])
+        .await
+        .unwrap();
+        let reconnected = independent_db(&client).await;
+        assert!(!reconnected.exists("pipeline:deleted").await.unwrap());
+        assert_eq!(
+            reconnected.get_bin("pipeline:blob").await.unwrap(),
+            [0, 255, 1]
+        );
+        assert_eq!(
+            reconnected.smembers("pipeline:set").await.unwrap(),
+            std::collections::HashSet::from(["kept".into(), "added".into()])
+        );
+        for (field, value) in [("one", "1"), ("two", "2"), ("three", "3")] {
+            assert_eq!(
+                reconnected
+                    .hget("pipeline:hash", field)
+                    .await
+                    .unwrap()
+                    .as_deref(),
+                Some(value)
+            );
+        }
+        let mut connection = client.get_multiplexed_async_connection().await.unwrap();
+        let ttl: i64 = redis::cmd("TTL")
+            .arg("pipeline:blob")
+            .query_async(&mut connection)
+            .await
+            .unwrap();
+        assert!((1..=120).contains(&ttl));
+        reconnected.atomic_pipeline(&[]).await.unwrap();
+        server.stop().unwrap();
+    }
+
+    #[tokio::test]
+    #[ignore = "requires redis-server on PATH; starts and reaps a private loopback child"]
+    async fn atomic_pipeline_execution_error_is_not_a_rollback() {
+        let (mut server, db, _) = PrivateRedis::start().await;
+        db.set("pipeline:wrong-type", "string").await.unwrap();
+        let result = db
+            .atomic_pipeline(&[
+                DbOp::SetBin {
+                    key: "pipeline:before".into(),
+                    value: b"applied".to_vec(),
+                },
+                DbOp::HSet {
+                    hash_key: "pipeline:wrong-type".into(),
+                    field: "field".into(),
+                    value: "value".into(),
+                },
+                DbOp::SetBin {
+                    key: "pipeline:after".into(),
+                    value: b"also-applied".to_vec(),
+                },
+            ])
+            .await;
+        assert!(result.is_err());
+        assert_eq!(
+            db.get("pipeline:before").await.unwrap().as_deref(),
+            Some("applied")
+        );
+        assert_eq!(
+            db.get("pipeline:wrong-type").await.unwrap().as_deref(),
+            Some("string")
+        );
+        assert_eq!(
+            db.get("pipeline:after").await.unwrap().as_deref(),
+            Some("also-applied")
+        );
+        server.stop().unwrap();
+    }
+
+    #[tokio::test]
+    #[ignore = "requires redis-server on PATH; starts and reaps a private loopback child"]
+    async fn guarded_pipeline_rejects_equal_size_mismatch_and_preserves_binary_commands() {
+        let (mut server, db, _) = PrivateRedis::start().await;
+        db.sadd("guard:set", "a").await.unwrap();
+        let ops = [
+            DbOp::SetBin {
+                key: "guard:blob".into(),
+                value: vec![0, 255, 13, 10],
+            },
+            DbOp::Expire {
+                key: "guard:blob".into(),
+                seconds: 120,
+            },
+            DbOp::Del("guard:set".into()),
+            DbOp::SAdd {
+                set_key: "guard:set".into(),
+                member: "b".into(),
+            },
+            DbOp::HSet {
+                hash_key: "guard:hash".into(),
+                field: "first".into(),
+                value: "one".into(),
+            },
+            DbOp::HSetMultiple {
+                hash_key: "guard:hash".into(),
+                field_values: vec![("second".into(), "two".into())],
+            },
+            DbOp::SRem {
+                set_key: "guard:peer".into(),
+                member: "unused".into(),
+            },
+        ];
+        assert!(
+            !db.atomic_pipeline_if_set_matches(
+                "guard:set",
+                &HashSet::from(["different".into()]),
+                &ops,
+            )
+            .await
+            .unwrap()
+        );
+        assert!(!db.exists("guard:blob").await.unwrap());
+        assert!(
+            db.atomic_pipeline_if_set_matches("guard:set", &HashSet::from(["a".into()]), &ops,)
+                .await
+                .unwrap()
+        );
+        assert_eq!(db.get_bin("guard:blob").await.unwrap(), [0, 255, 13, 10]);
+        assert_eq!(
+            db.smembers("guard:set").await.unwrap(),
+            HashSet::from(["b".into()])
+        );
+        assert_eq!(
+            db.hget("guard:hash", "first").await.unwrap().as_deref(),
+            Some("one")
+        );
+        assert_eq!(
+            db.hget("guard:hash", "second").await.unwrap().as_deref(),
+            Some("two")
+        );
+        assert!(
+            !db.atomic_pipeline_if_set_matches(
+                "guard:set",
+                &HashSet::from(["a".into()]),
+                &[DbOp::Del("guard:blob".into())],
+            )
+            .await
+            .unwrap()
+        );
+        assert_eq!(db.get_bin("guard:blob").await.unwrap(), [0, 255, 13, 10]);
+        assert!(
+            db.atomic_pipeline_if_set_matches("guard:absent", &HashSet::new(), &[])
+                .await
+                .unwrap()
+        );
+        db.set("guard:wrong-type", "not a set").await.unwrap();
+        assert!(
+            db.atomic_pipeline_if_set_matches("guard:wrong-type", &HashSet::new(), &ops)
+                .await
+                .is_err()
+        );
+        assert_eq!(
+            db.smembers("guard:set").await.unwrap(),
+            HashSet::from(["b".into()])
+        );
+        server.stop().unwrap();
+    }
+
+    #[tokio::test]
+    #[ignore = "requires redis-server on PATH; starts and reaps a private loopback child"]
+    async fn guarded_pipeline_has_exactly_one_winner_across_connections() {
+        let (mut server, db, client) = PrivateRedis::start().await;
+        let peer = independent_db(&client).await;
+        db.sadd("race:set", "old").await.unwrap();
+        let expected = HashSet::from(["old".into()]);
+        let first = [
+            DbOp::Del("race:set".into()),
+            DbOp::SAdd {
+                set_key: "race:set".into(),
+                member: "first".into(),
+            },
+            DbOp::SetBin {
+                key: "race:winner".into(),
+                value: b"first".to_vec(),
+            },
+        ];
+        let second = [
+            DbOp::Del("race:set".into()),
+            DbOp::SAdd {
+                set_key: "race:set".into(),
+                member: "second".into(),
+            },
+            DbOp::SetBin {
+                key: "race:winner".into(),
+                value: b"second".to_vec(),
+            },
+        ];
+        let (a, b) = tokio::join!(
+            db.atomic_pipeline_if_set_matches("race:set", &expected, &first),
+            peer.atomic_pipeline_if_set_matches("race:set", &expected, &second),
+        );
+        let (a, b) = (a.unwrap(), b.unwrap());
+        assert_ne!(a, b);
+        let winner = if a { "first" } else { "second" };
+        assert_eq!(
+            db.smembers("race:set").await.unwrap(),
+            HashSet::from([winner.into()])
+        );
+        assert_eq!(
+            peer.get("race:winner").await.unwrap().as_deref(),
+            Some(winner)
+        );
+        let now = HashSet::from([winner.into()]);
+        let retry = if a { &second } else { &first };
+        assert!(
+            peer.atomic_pipeline_if_set_matches("race:set", &now, retry)
+                .await
+                .unwrap()
+        );
+        let final_winner = if a { "second" } else { "first" };
+        assert_eq!(
+            db.get("race:winner").await.unwrap().as_deref(),
+            Some(final_winner)
+        );
+        server.stop().unwrap();
+    }
+
+    #[tokio::test]
+    #[ignore = "requires redis-server on PATH; starts and reaps a private loopback child"]
+    async fn guarded_pipeline_execution_error_stops_without_rollback() {
+        let (mut server, db, _) = PrivateRedis::start().await;
+        db.set("guard:wrong-type", "string").await.unwrap();
+        let result = db
+            .atomic_pipeline_if_set_matches(
+                "guard:missing",
+                &HashSet::new(),
+                &[
+                    DbOp::SetBin {
+                        key: "guard:before".into(),
+                        value: b"applied".to_vec(),
+                    },
+                    DbOp::HSet {
+                        hash_key: "guard:wrong-type".into(),
+                        field: "field".into(),
+                        value: "value".into(),
+                    },
+                    DbOp::SetBin {
+                        key: "guard:after".into(),
+                        value: b"not-applied".to_vec(),
+                    },
+                ],
+            )
+            .await;
+        assert!(result.is_err());
+        assert_eq!(
+            db.get("guard:before").await.unwrap().as_deref(),
+            Some("applied")
+        );
+        assert_eq!(
+            db.get("guard:wrong-type").await.unwrap().as_deref(),
+            Some("string")
+        );
+        assert!(!db.exists("guard:after").await.unwrap());
+        server.stop().unwrap();
+    }
+
+    #[tokio::test]
+    #[ignore = "requires redis-server on PATH; starts and reaps a private loopback child"]
+    async fn hash_pair_snapshot_handles_missing_hashes_and_propagates_wrong_types() {
+        let (mut server, db, _) = PrivateRedis::start().await;
+        let (first, second) = db
+            .hash_pair_snapshot("snapshot:first", "snapshot:second")
+            .await
+            .unwrap();
+        assert!(first.is_empty());
+        assert!(second.is_empty());
+        db.hset("snapshot:first", "field", "value").await.unwrap();
+        let (first, second) = db
+            .hash_pair_snapshot("snapshot:first", "snapshot:second")
+            .await
+            .unwrap();
+        assert_eq!(first.get("field").map(String::as_str), Some("value"));
+        assert!(second.is_empty());
+        db.set("snapshot:second", "wrong-type").await.unwrap();
+        assert!(
+            db.hash_pair_snapshot("snapshot:first", "snapshot:second")
+                .await
+                .is_err()
+        );
+        assert!(
+            db.hash_pair_snapshot("snapshot:second", "snapshot:first")
+                .await
+                .is_err()
+        );
+        assert_eq!(
+            db.hget("snapshot:first", "field").await.unwrap().as_deref(),
+            Some("value")
+        );
+        server.stop().unwrap();
+    }
+
+    #[tokio::test]
+    #[ignore = "requires redis-server on PATH; starts and reaps a private loopback child"]
+    async fn hash_pair_snapshot_never_mixes_generations_across_connections() {
+        let (mut server, db, client) = PrivateRedis::start().await;
+        let writer = independent_db(&client).await;
+        let write = |generation: usize| {
+            [
+                DbOp::HSet {
+                    hash_key: "snapshot:metadata".into(),
+                    field: "generation".into(),
+                    value: generation.to_string(),
+                },
+                DbOp::HSet {
+                    hash_key: "snapshot:attrs".into(),
+                    field: "generation".into(),
+                    value: generation.to_string(),
+                },
+            ]
+        };
+        writer.atomic_pipeline(&write(0)).await.unwrap();
+        let ((), ()) = tokio::join!(
+            async {
+                for generation in 1..=200 {
+                    writer.atomic_pipeline(&write(generation)).await.unwrap();
+                }
+            },
+            async {
+                for _ in 0..200 {
+                    let (metadata, attrs) = db
+                        .hash_pair_snapshot("snapshot:metadata", "snapshot:attrs")
+                        .await
+                        .unwrap();
+                    assert!(metadata.contains_key("generation"));
+                    assert_eq!(metadata.get("generation"), attrs.get("generation"));
+                }
+            },
+        );
+        let (metadata, attrs) = db
+            .hash_pair_snapshot("snapshot:metadata", "snapshot:attrs")
+            .await
+            .unwrap();
+        assert_eq!(metadata.get("generation").map(String::as_str), Some("200"));
+        assert_eq!(metadata, attrs);
+        server.stop().unwrap();
+    }
+
+    #[tokio::test]
+    #[ignore = "requires redis-server on PATH; starts and reaps a private loopback child"]
+    async fn cn_lookup_snapshot_preserves_targeted_decode_on_redis() {
+        use crate::db::ActorRepo;
+        use crate::error::StoreError;
+        use crate::test_helpers::make_actor_with_services_defexp;
+        use libeval::attribute::ROLE_ADAPTER;
+        let (mut server, db, client) = PrivateRedis::start().await;
+        let db = std::sync::Arc::new(db);
+        let repo = ActorRepo::new(db.clone());
+        let address = "fd5a:5052::71".parse().unwrap();
+        repo.add_actor(&make_actor_with_services_defexp(
+            ROLE_ADAPTER,
+            "fd5a:5052::71",
+            &[],
+            "snapshot.example",
+        ))
+        .await
+        .unwrap();
+        let independent = ActorRepo::new(std::sync::Arc::new(independent_db(&client).await));
+        db.hset("actor:fd5a-5052--71:attrs", "unrelated", "bad JSON")
+            .await
+            .unwrap();
+        db.hset("actor:fd5a-5052--71", "identity_keys", "bad JSON")
+            .await
+            .unwrap();
+        assert_eq!(
+            independent.get_cn_by_zpr_addr(&address).await.unwrap(),
+            "snapshot.example"
+        );
+        assert!(independent.get_actor_by_zpr_addr(&address).await.is_err());
+        db.del("actor:fd5a-5052--71").await.unwrap();
+        assert!(matches!(
+            independent.get_cn_by_zpr_addr(&address).await,
+            Err(StoreError::NotFound(_))
+        ));
+        server.stop().unwrap();
+    }
+
+    #[tokio::test]
+    #[ignore = "requires redis-server on PATH; starts and reaps a private loopback child"]
+    async fn actor_service_update_roundtrips_indexes_on_redis() {
+        use crate::db::ActorRepo;
+        use crate::test_helpers::make_actor_with_services_defexp;
+        use libeval::attribute::ROLE_ADAPTER;
+
+        let (mut server, db, client) = PrivateRedis::start().await;
+        let repo = ActorRepo::new(std::sync::Arc::new(db));
+        let address: std::net::IpAddr = "fd5a:5052::61".parse().unwrap();
+        let peer: std::net::IpAddr = "fd5a:5052::62".parse().unwrap();
+        for (addr, cn) in [(address, "first"), (peer, "peer")] {
+            repo.add_actor(&make_actor_with_services_defexp(
+                ROLE_ADAPTER,
+                &addr.to_string(),
+                &["shared:svc", "old%svc"],
+                cn,
+            ))
+            .await
+            .unwrap();
+        }
+        let updated = make_actor_with_services_defexp(
+            ROLE_ADAPTER,
+            &address.to_string(),
+            &["new:svc", "shared:svc"],
+            "first",
+        );
+        repo.update_actor(&updated).await.unwrap();
+        let restored = ActorRepo::new(std::sync::Arc::new(independent_db(&client).await));
+        assert_eq!(
+            restored.get_zpr_addrs_for_service("old%svc").await.unwrap(),
+            [peer]
+        );
+        assert_eq!(
+            restored
+                .get_zpr_addrs_for_service("shared:svc")
+                .await
+                .unwrap(),
+            [address, peer]
+        );
+        assert_eq!(
+            restored.get_zpr_addrs_for_service("new:svc").await.unwrap(),
+            [address]
+        );
+        let mut names = restored.list_services_for_actor(&address).await.unwrap();
+        names.sort();
+        assert_eq!(names, ["new:svc", "shared:svc"]);
+        let loaded = restored.get_actor_by_zpr_addr(&address).await.unwrap();
+        assert!(loaded.provides("new:svc"));
+        assert!(!loaded.provides("old%svc"));
+        let empty =
+            make_actor_with_services_defexp(ROLE_ADAPTER, &address.to_string(), &[], "first");
+        restored.update_actor(&empty).await.unwrap();
+        assert!(
+            repo.list_services_for_actor(&address)
+                .await
+                .unwrap()
+                .is_empty()
+        );
+        assert!(
+            repo.get_zpr_addrs_for_service("new:svc")
+                .await
+                .unwrap()
+                .is_empty()
+        );
+        assert_eq!(
+            repo.get_zpr_addrs_for_service("shared:svc").await.unwrap(),
+            [peer]
+        );
+        assert_eq!(
+            repo.get_zpr_addrs_for_service("old%svc").await.unwrap(),
+            [peer]
+        );
+        assert!(
+            !repo
+                .get_actor_by_zpr_addr(&address)
+                .await
+                .unwrap()
+                .provides("shared:svc")
+        );
+        server.stop().unwrap();
+    }
 
     struct PrivateRedis {
         child: Child,

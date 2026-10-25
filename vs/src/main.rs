@@ -250,6 +250,10 @@ async fn main() -> std::process::ExitCode {
     // The policy manager builds the trusted service stores as part of every policy
     // transaction, so it needs the manager and the attribute file directory up front.
     let ts_mgr = Arc::new(TrustedServicesMgr::new());
+    if let Err(error) = trusted_services::control::restore(db_handle.as_ref(), &ts_mgr).await {
+        error!(target: MAIN, "could not restore trusted source controls: {}", error);
+        return std::process::ExitCode::FAILURE;
+    }
     let file_ts_dir = cfg
         .core
         .file_ts_dir

@@ -244,6 +244,9 @@ async fn process_visa_request(asm: Arc<Assembly>, job: &VisaRequestJob) -> VisaR
         }
     };
 
+    let policy = asm.policy_mgr.get_current();
+    let configuration = asm.ts_mgr.configuration();
+
     // If necessary, refresh any expired attributes
     if let Err(e) = refresh_and_persist_actor(&asm, &mut source_actor).await {
         error!(target: VREQ, "failed to update source actor after refreshing attributes: {}", e);
@@ -257,7 +260,12 @@ async fn process_visa_request(asm: Arc<Assembly>, job: &VisaRequestJob) -> VisaR
     // Docking-node resolution, routing, and policy eval all live in the shared
     // core (used by the Phase 2 sweep too). Actor resolution above stays
     // per-caller — the request path fabricates AAA and denies on missing.
-    let policy = asm.policy_mgr.get_current();
+    if asm.policy_mgr.get_current().vinst() != policy.vinst()
+        || !asm.ts_mgr.configuration_is_current(&configuration)
+    {
+        warn!(target: VREQ, "policy or trusted-source configuration changed while refreshing visa endpoints; retry required");
+        return Ok(VisaDecision::Deny(DenyCode::NoReason));
+    }
     let outcome = evaluate_against_policy(
         &asm,
         &source_actor,
@@ -269,16 +277,23 @@ async fn process_visa_request(asm: Arc<Assembly>, job: &VisaRequestJob) -> VisaR
     )
     .await?;
 
+    if asm.policy_mgr.get_current().vinst() != policy.vinst()
+        || !asm.ts_mgr.configuration_is_current(&configuration)
+    {
+        warn!(target: VREQ, "policy or trusted-source configuration changed during visa evaluation; retry required");
+        return Ok(VisaDecision::Deny(DenyCode::NoReason));
+    }
+
     match outcome {
         PolicyOutcome::Allow {
             hits,
             default_route,
         } => {
-            visa_from_allow(
+            visa_from_allow_for_configuration(
                 asm.clone(),
                 job,
                 &hits,
-                &policy,
+                (&policy, &configuration),
                 default_route,
                 &source_actor,
                 &dest_actor,
@@ -318,6 +333,29 @@ fn fabricate_aaa_actor(anon_addr: &IpAddr, expiration: SystemTime) -> Actor {
     anon_actor
 }
 
+#[cfg(test)]
+async fn visa_from_allow(
+    asm: Arc<Assembly>,
+    job: &VisaRequestJob,
+    hits: &[Hit],
+    policy: &Policy,
+    default_route: Option<Route>,
+    src_actor: &Actor,
+    dst_actor: &Actor,
+) -> Result<VisaDecision, ServiceError> {
+    let configuration = asm.ts_mgr.configuration();
+    visa_from_allow_for_configuration(
+        asm,
+        job,
+        hits,
+        (policy, &configuration),
+        default_route,
+        src_actor,
+        dst_actor,
+    )
+    .await
+}
+
 /// Given that we have an ALLOW decision, pass the hist list in here and we will pick the first
 /// hit and create a visa based on it.
 ///
@@ -333,16 +371,29 @@ fn fabricate_aaa_actor(anon_addr: &IpAddr, expiration: SystemTime) -> Actor {
 /// authentication or attribute expirations leave less than [config::MIN_VISA_LIFETIME] to
 /// work with, the visa would lapse before the nodes could install and use it, so we deny
 /// rather than issue it.
-async fn visa_from_allow(
+///
+/// An observed configuration change during storage queues revocation before
+/// denying, without starting this request's distribution task. Failure to persist
+/// that revocation propagates as an error; the stored visa is not rolled back.
+/// Initial storage is staged at all nodes; only successful activation makes it
+/// installable. Activation errors attempt to remove the uncertain record and
+/// propagate even if cleanup succeeds. Configuration is checked again after activation.
+async fn visa_from_allow_for_configuration(
     asm: Arc<Assembly>,
     job: &VisaRequestJob,
     hits: &[Hit],
-    policy: &Policy,
+    evaluated: (&Policy, &crate::trusted_services::ServiceConfiguration),
     default_route: Option<Route>,
     src_actor: &Actor,
     dst_actor: &Actor,
 ) -> Result<VisaDecision, ServiceError> {
     debug_assert!(!hits.is_empty(), "allow decision with no hits"); // should never happen.
+    let (policy, configuration) = evaluated;
+    if !asm.ts_mgr.configuration_is_current(configuration) {
+        warn!(target: VREQ, "trusted-source configuration changed after evaluation; retry required");
+        return Ok(VisaDecision::Deny(DenyCode::NoReason));
+    }
+    let live_vinst = asm.policy_mgr.get_current().vinst();
     let policy_version = policy.get_version().unwrap_or(0);
     let vinst = policy.vinst();
     // TODO: For now we pick the first hit.
@@ -367,7 +418,7 @@ async fn visa_from_allow(
 
     let visawmd = asm
         .visa_mgr
-        .create_visa(
+        .stage_visa(
             &asm,
             &job.requesting_node,
             &job.packet_desc,
@@ -379,6 +430,35 @@ async fn visa_from_allow(
             expiration,
         )
         .await?;
+
+    if asm.policy_mgr.get_current().vinst() != live_vinst
+        || !asm.ts_mgr.configuration_is_current(configuration)
+    {
+        warn!(target: VREQ, "configuration changed during storage of visa {}; queuing revocation and requiring retry", visawmd.visa.issuer_id);
+        if let Err(error) = asm.visa_mgr.mark_visa_revoked(visawmd.visa.issuer_id).await {
+            error!(target: VREQ, "failed to queue revocation of visa {} after configuration changed: {error}", visawmd.visa.issuer_id);
+            return Err(error);
+        }
+        return Ok(VisaDecision::Deny(DenyCode::NoReason));
+    }
+
+    if !asm
+        .visa_mgr
+        .activate_staged_visa(visawmd.visa.issuer_id)
+        .await?
+    {
+        warn!(target: VREQ, "staged visa {} is no longer eligible for activation; requiring retry", visawmd.visa.issuer_id);
+        return Ok(VisaDecision::Deny(DenyCode::NoReason));
+    }
+    if asm.policy_mgr.get_current().vinst() != live_vinst
+        || !asm.ts_mgr.configuration_is_current(configuration)
+    {
+        asm.visa_mgr
+            .mark_visa_revoked(visawmd.visa.issuer_id)
+            .await?;
+        warn!(target: VREQ, "configuration changed during activation of visa {}; queued revocation and requiring retry", visawmd.visa.issuer_id);
+        return Ok(VisaDecision::Deny(DenyCode::NoReason));
+    }
 
     // Clone the visa for the requesting node before moving visawmd into the background task.
     let visa_for_requester = visawmd.visa.clone();
@@ -395,11 +475,20 @@ async fn visa_from_allow(
     Ok(VisaDecision::Allow(visa, allowed_route))
 }
 
+#[cfg(test)]
+#[path = "visa_deadline_tests.rs"]
+mod deadline_tests;
+
+#[cfg(test)]
+#[path = "visa_issuance_configuration_tests.rs"]
+mod issuance_configuration_tests;
+
 /// Compute a visa expiration value. The expiration is set to the soonest of:
 /// - source actor authentication expiration.
 /// - dest actor authentication expiration.
 /// - soonest attribute expiration used in the policy conditions for the hit.
 /// - the [key::SERVICES] attribute on the providing actor, which selected the policy.
+/// - source-supplied observation validity, including empty results.
 /// - the maximum visa lifetime [config::MAX_VISA_LIFETIME].
 ///
 /// Note/(TODO?) that [key::SERVICES] holds every service id in a single attribute, so there is one
@@ -413,7 +502,7 @@ async fn visa_from_allow(
 /// - [ServiceError::Internal] if the hit does not name a communication policy in `policy`.
 ///   An allow hit always does, so this means policy state is inconsistent. We refuse to
 ///   guess an expiration rather than silently issue a visa with no attribute constraint.
-fn compute_expiration(
+pub(crate) fn compute_expiration(
     src_actor: &Actor,
     dst_actor: &Actor,
     policy: &Policy,
@@ -447,6 +536,18 @@ fn compute_expiration(
     let now = SystemTime::now();
     let mut soonest_expiration = now + libeval::attribute::NEVER_EXPIRES;
     let mut expiration_gate = String::from("(none)"); // for debugging
+
+    for actor in [src_actor, dst_actor] {
+        for attr in actor
+            .attrs_iter()
+            .filter(|attr| crate::trusted_services::is_source_freshness(attr))
+        {
+            if attr.get_expires() < soonest_expiration {
+                soonest_expiration = attr.get_expires();
+                expiration_gate = format!("source_freshness/{}", attr.get_source());
+            }
+        }
+    }
 
     for (keys, actor) in [(&client_keys, client_actor), (&service_keys, service_actor)] {
         for key in keys {
@@ -743,6 +844,183 @@ mod tests {
     use zpr::policy_types::{JoinPolicy, PFlags, Scope, Service, ServiceType};
     use zpr::write_to::WriteTo;
 
+    #[tokio::test]
+    async fn ttl_refresh_failure_denies_requests_for_either_endpoint_and_recovers() {
+        for expired_source in [true, false] {
+            let (asm, node, service) =
+                crate::test_helpers::build_ttl_refresh_asm(expired_source).await;
+            service
+                .fail
+                .store(true, std::sync::atomic::Ordering::SeqCst);
+            let packet =
+                PacketDesc::new_tcp("fd5a:5052:4000::a", "fd5a:5052:4000::b", 1234, 80).unwrap();
+            let (job, _rx) = VisaRequestJob::new(node, packet);
+            assert!(matches!(
+                process_visa_request(asm.clone(), &job).await.unwrap(),
+                VisaDecision::Deny(DenyCode::NoReason)
+            ));
+            assert!(asm.visa_mgr.list_all_visa_ids().await.unwrap().is_empty());
+
+            service
+                .fail
+                .store(false, std::sync::atomic::Ordering::SeqCst);
+            let packet =
+                PacketDesc::new_tcp("fd5a:5052:4000::a", "fd5a:5052:4000::b", 1234, 80).unwrap();
+            let (job, _rx) = VisaRequestJob::new(node, packet);
+            assert!(matches!(
+                process_visa_request(asm.clone(), &job).await.unwrap(),
+                VisaDecision::Allow(_, _)
+            ));
+        }
+    }
+
+    #[tokio::test]
+    async fn successful_ttl_refresh_persists_removed_unexpired_source_claims() {
+        for source_endpoint in [true, false] {
+            let (asm, node, _service) =
+                crate::test_helpers::build_ttl_refresh_asm(source_endpoint).await;
+            let addr: IpAddr = if source_endpoint {
+                "fd5a:5052:4000::a"
+            } else {
+                "fd5a:5052:4000::b"
+            }
+            .parse()
+            .unwrap();
+            let mut actor = asm
+                .actor_mgr
+                .get_actor_by_zpr_addr(&addr)
+                .await
+                .unwrap()
+                .unwrap();
+            actor
+                .add_attribute(
+                    libeval::attribute::AttributeSource::new(crate::test_helpers::TS_SOURCE)
+                        .builder("user.blocked__source__hr")
+                        .expires_in(Duration::from_secs(600))
+                        .value("true"),
+                )
+                .unwrap();
+            asm.actor_mgr.update_actor(&actor).await.unwrap();
+            let packet =
+                PacketDesc::new_tcp("fd5a:5052:4000::a", "fd5a:5052:4000::b", 1234, 80).unwrap();
+            let (job, _rx) = VisaRequestJob::new(node, packet);
+            assert!(matches!(
+                process_visa_request(asm.clone(), &job).await.unwrap(),
+                VisaDecision::Allow(_, _)
+            ));
+            let persisted = asm
+                .actor_mgr
+                .get_actor_by_zpr_addr(&addr)
+                .await
+                .unwrap()
+                .unwrap();
+            assert!(
+                persisted
+                    .get_attribute("user.blocked__source__hr")
+                    .is_none()
+            );
+            assert!(persisted.get_attribute("user.dept__source__hr").is_none());
+            assert!(persisted.get_attribute(key::CN).is_some());
+        }
+    }
+
+    #[tokio::test]
+    async fn expired_lookup_identity_denies_until_reauthenticated_at_either_endpoint() {
+        for expired_source in [true, false] {
+            let (asm, node, _service) =
+                crate::test_helpers::build_ttl_refresh_asm(expired_source).await;
+            let addr: IpAddr = if expired_source {
+                "fd5a:5052:4000::a"
+            } else {
+                "fd5a:5052:4000::b"
+            }
+            .parse()
+            .unwrap();
+            let mut actor = asm
+                .actor_mgr
+                .get_actor_by_zpr_addr(&addr)
+                .await
+                .unwrap()
+                .unwrap();
+            let authenticated_cn = actor.get_attribute(key::CN).unwrap().clone();
+            actor
+                .add_attribute(
+                    Attribute::builder(key::CN)
+                        .expires(SystemTime::now() - Duration::from_secs(1))
+                        .value(actor.get_cn().unwrap()),
+                )
+                .unwrap();
+            asm.actor_mgr.update_actor(&actor).await.unwrap();
+            let packet =
+                PacketDesc::new_tcp("fd5a:5052:4000::a", "fd5a:5052:4000::b", 1234, 80).unwrap();
+            let (job, _rx) = VisaRequestJob::new(node, packet);
+            assert!(matches!(
+                process_visa_request(asm.clone(), &job).await.unwrap(),
+                VisaDecision::Deny(DenyCode::NoReason)
+            ));
+            assert!(asm.visa_mgr.list_all_visa_ids().await.unwrap().is_empty());
+
+            actor.add_attribute(authenticated_cn).unwrap();
+            asm.actor_mgr.update_actor(&actor).await.unwrap();
+            let packet =
+                PacketDesc::new_tcp("fd5a:5052:4000::a", "fd5a:5052:4000::b", 1234, 80).unwrap();
+            let (job, _rx) = VisaRequestJob::new(node, packet);
+            assert!(matches!(
+                process_visa_request(asm.clone(), &job).await.unwrap(),
+                VisaDecision::Allow(_, _)
+            ));
+        }
+    }
+
+    #[tokio::test]
+    async fn source_validity_caps_issued_visas_and_enforces_minimum_lifetime() {
+        for source_endpoint in [true, false] {
+            for seconds in [20, 120] {
+                let (asm, node, _service) =
+                    crate::test_helpers::build_ttl_refresh_asm(source_endpoint).await;
+                let addr: IpAddr = if source_endpoint {
+                    "fd5a:5052:4000::a"
+                } else {
+                    "fd5a:5052:4000::b"
+                }
+                .parse()
+                .unwrap();
+                let mut actor = asm
+                    .actor_mgr
+                    .get_actor_by_zpr_addr(&addr)
+                    .await
+                    .unwrap()
+                    .unwrap();
+                refresh_and_persist_actor(&asm, &mut actor).await.unwrap();
+                let deadline = SystemTime::now() + Duration::from_secs(seconds);
+                actor
+                    .add_attribute(
+                        libeval::attribute::AttributeSource::new(crate::test_helpers::TS_SOURCE)
+                            .builder("zpr.source_freshness__source__hr")
+                            .expires(deadline)
+                            .values(Vec::<String>::new()),
+                    )
+                    .unwrap();
+                asm.actor_mgr.update_actor(&actor).await.unwrap();
+                let packet =
+                    PacketDesc::new_tcp("fd5a:5052:4000::a", "fd5a:5052:4000::b", 1234, 80)
+                        .unwrap();
+                let (job, _rx) = VisaRequestJob::new(node, packet);
+                let decision = process_visa_request(asm.clone(), &job).await.unwrap();
+                if seconds == 20 {
+                    assert!(matches!(decision, VisaDecision::Deny(DenyCode::NoReason)));
+                    assert!(asm.visa_mgr.list_all_visa_ids().await.unwrap().is_empty());
+                } else {
+                    let VisaDecision::Allow(visa, _) = decision else {
+                        panic!("valid source deadline must permit the absence-based policy");
+                    };
+                    assert!(visa.expires <= deadline);
+                    assert!(visa.expires >= deadline - Duration::from_secs(1));
+                }
+            }
+        }
+    }
+
     /// Builds a Policy that declares one Authentication service with the given id.
     fn make_policy_with_auth_service(service_id: &str) -> Vec<u8> {
         let mut msg = capnp::message::Builder::new_default();
@@ -931,6 +1209,49 @@ mod tests {
         let expected = src.get_attribute("user.role").unwrap().get_expires();
         let exp = compute_expiration(&src, &dst, &policy, &hit).unwrap();
         assert_eq!(exp, expected);
+    }
+
+    #[test]
+    fn compute_expiration_bounds_absence_by_all_source_observations() {
+        let policy = make_policy_with_com_conditions(&["user.blocked__source__company"], &[]);
+        let mut src = Actor::new();
+        let mut dst = Actor::new();
+        let source_expiration = SystemTime::now() + Duration::from_secs(120);
+        let other_expiration = SystemTime::now() + Duration::from_secs(600);
+        src.add_attribute(
+            libeval::attribute::AttributeSource::new("company")
+                .builder("zpr.source_freshness__source__company")
+                .expires(source_expiration)
+                .values(Vec::<String>::new()),
+        )
+        .unwrap();
+        dst.add_attribute(
+            libeval::attribute::AttributeSource::new("lab")
+                .builder("zpr.source_freshness__source__lab")
+                .expires(other_expiration)
+                .values(Vec::<String>::new()),
+        )
+        .unwrap();
+        let hit = Hit::new_no_signal(0, Direction::Forward);
+        for direction in [Direction::Forward, Direction::Reverse] {
+            let hit = Hit::new_no_signal(0, direction);
+            assert_eq!(
+                compute_expiration(&src, &dst, &policy, &hit).unwrap(),
+                source_expiration
+            );
+        }
+        // A newer observation from the other source cannot renew company's absence.
+        dst.add_attribute(
+            libeval::attribute::AttributeSource::new("lab")
+                .builder("zpr.source_freshness__source__lab")
+                .expires_in(Duration::from_secs(1800))
+                .values(Vec::<String>::new()),
+        )
+        .unwrap();
+        assert_eq!(
+            compute_expiration(&src, &dst, &policy, &hit).unwrap(),
+            source_expiration
+        );
     }
 
     // Client conditions apply to the source on a Forward hit and to the dest on a Reverse

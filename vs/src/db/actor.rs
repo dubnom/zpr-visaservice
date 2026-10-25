@@ -12,7 +12,7 @@
 //! - adapters                     - set of IP addresses  of all connected adapters.
 
 use dashmap::DashMap;
-use libeval::actor::Actor;
+use libeval::actor::{Actor, DeviceAuthentication};
 use libeval::attribute::Attribute;
 use libeval::attribute::key;
 use libeval::pubkey::decode_public_key;
@@ -22,7 +22,7 @@ use std::sync::Arc;
 use tracing::{debug, error, warn};
 use zpr::vsapi_types::PublicKey;
 
-use crate::db::{DbConnection, DbOp, KeyString, ZAddr, gen_timestamp};
+use crate::db::{DbConnection, DbOp, HashGuard, KeyString, ZAddr, gen_timestamp};
 use crate::error::StoreError;
 use crate::logging::targets::DB;
 
@@ -167,7 +167,29 @@ impl ActorRepo {
     /// Update existing actor data. The passed actor is authoritative: attributes it no
     /// longer carries are dropped from the store (an attribute refresh can remove
     /// attributes, and a stale copy left behind would resurface on the next load).
+    /// Attributes, identity metadata and service registrations are replaced in one
+    /// transaction guarded by the previously read service set and the actor's
+    /// authentication record. A conflict requires discarding the stale actor.
     pub async fn update_actor(&self, actor: &Actor) -> Result<(), StoreError> {
+        self.update_actor_guarded(actor, false).await
+    }
+
+    /// Only the successful authentication path may replace device identity.
+    /// Compare against the stored record captured at the start of this update.
+    pub async fn update_authenticated_actor(&self, actor: &Actor) -> Result<(), StoreError> {
+        if actor.device_authentication().is_none() {
+            return Err(StoreError::MissingRequired(
+                "authenticated actor update requires device authentication".into(),
+            ));
+        }
+        self.update_actor_guarded(actor, true).await
+    }
+
+    async fn update_actor_guarded(
+        &self,
+        actor: &Actor,
+        replace_authentication: bool,
+    ) -> Result<(), StoreError> {
         let zpraddr = match actor.get_zpr_addr() {
             Some(addr) => addr.clone(),
             None => {
@@ -185,6 +207,17 @@ impl ActorRepo {
         if !self.db.exists(&base_key).await? {
             return Err(StoreError::NotFound(format!(
                 "update called on non-existant actor: {zpraddr}"
+            )));
+        }
+
+        let stored_authentication = self.db.hget(&base_key, "device_authentication").await?;
+        let authentication_json = serde_json::to_string(&actor.device_authentication())?;
+        if !replace_authentication
+            && stored_authentication.as_deref().unwrap_or("null") != authentication_json
+        {
+            warn!(target: DB, "actor {zpraddr} authentication changed; discard stale actor and reload");
+            return Err(StoreError::Conflict(format!(
+                "actor {zpraddr} authentication changed; discard stale actor and reload"
             )));
         }
 
@@ -214,35 +247,34 @@ impl ActorRepo {
         // The hash is dropped first so removed attributes do not linger; the pipeline is
         // atomic, so no reader sees the actor without its attributes.
         let mut ops = vec![DbOp::Del(attrs_key.clone())];
-        ops.extend(actor.attrs_iter().map(|attr| DbOp::HSet {
-            hash_key: attrs_key.clone(),
-            field: attr.get_key().to_string(),
-            value: serde_json::to_string(attr).unwrap_or_default(),
-        }));
-        self.db.atomic_pipeline(&ops).await?;
-
-        //
-        // actor:<ZADDR>
-        //         |- identity_keys -> JSON(<IdentityKeysVec>)
-        //         |- ctime -> string
-        //         |- utime -> string
-        //
-
-        // Get the identity keys as a vec, write as JSON array
+        for attr in actor.attrs_iter() {
+            ops.push(DbOp::HSet {
+                hash_key: attrs_key.clone(),
+                field: attr.get_key().to_string(),
+                value: serde_json::to_string(attr)?,
+            });
+        }
         let identity_keys = actor
             .identity_keys_iter()
             .map(String::as_str)
             .collect::<Vec<_>>();
-        self.db
-            .hset(
-                &base_key,
-                "identity_keys",
-                &serde_json::to_string(&identity_keys)?,
-            )
-            .await?;
-        self.db.hset_nx(&base_key, "ctime", &ts).await?; // set create time only if not already there.
-        self.db.hset(&base_key, "utime", &ts).await?; // always set update time
-
+        // Identity keys must describe the same attribute image, even when a
+        // caller is canceled after Redis applies the pipeline.
+        ops.push(DbOp::HSet {
+            hash_key: base_key.clone(),
+            field: "identity_keys".into(),
+            value: serde_json::to_string(&identity_keys)?,
+        });
+        ops.push(DbOp::HSet {
+            hash_key: base_key.clone(),
+            field: "device_authentication".into(),
+            value: authentication_json,
+        });
+        ops.push(DbOp::HSet {
+            hash_key: base_key.clone(),
+            field: "utime".into(),
+            value: ts,
+        });
         //
         // service-providers:<NAME> -> SET[ <zpr_addr> ]
         //
@@ -251,24 +283,45 @@ impl ActorRepo {
 
         // Remove only this actor's previous registrations.
         let existing_services: HashSet<String> = self.db.smembers(&services_key).await?;
-        let remove_ops = existing_services
-            .iter()
-            .map(|service_name| DbOp::SRem {
+        for service_name in &existing_services {
+            ops.push(DbOp::SRem {
                 set_key: service_key_for(service_name),
-                member: zpraddr.to_string(),
-            })
-            .collect::<Vec<_>>();
-        if !remove_ops.is_empty() {
-            self.db.atomic_pipeline(&remove_ops).await?;
+                member: zpraddr_str.clone(),
+            });
         }
-        self.db.del(&services_key).await?;
+        ops.push(DbOp::Del(services_key.clone()));
 
         // Add services back based on what actor actually still has.
         for service_name in actor.services_iter() {
             debug!(target: DB, "adding service for actor: addr={zpraddr} service={service_name}");
             let svc_key_str = service_key_for(&service_name);
-            self.db.sadd(&svc_key_str, &zpraddr.to_string()).await?;
-            self.db.sadd(&services_key, &service_name).await?;
+            ops.push(DbOp::SAdd {
+                set_key: svc_key_str,
+                member: zpraddr_str.clone(),
+            });
+            ops.push(DbOp::SAdd {
+                set_key: services_key.clone(),
+                member: service_name.to_string(),
+            });
+        }
+        if !self
+            .db
+            .atomic_pipeline_if_set_and_hash_match(
+                &services_key,
+                &existing_services,
+                Some(HashGuard {
+                    key: &base_key,
+                    field: "device_authentication",
+                    expected: stored_authentication.as_deref(),
+                }),
+                &ops,
+            )
+            .await?
+        {
+            warn!(target: DB, "actor {zpraddr} authentication or services changed during update; discard stale actor and reload");
+            return Err(StoreError::Conflict(format!(
+                "actor {zpraddr} authentication or services changed during update; discard stale actor and reload"
+            )));
         }
 
         debug!(target: DB, "update actor in DB: addr={zpraddr} cn={:?} node?={}", actor.get_cn(), actor.is_node());
@@ -431,15 +484,19 @@ impl ActorRepo {
         //                |- <key> -> JSON(<Attribute>)
         //
         // Write the attributes. We write out the attributes in JSON.
+        let mut ops = Vec::new();
         for attr in actor.attrs_iter() {
-            self.db
-                .hset(&attrs_key, attr.get_key(), &serde_json::to_string(&attr)?)
-                .await?;
+            ops.push(DbOp::HSet {
+                hash_key: attrs_key.clone(),
+                field: attr.get_key().into(),
+                value: serde_json::to_string(&attr)?,
+            });
         }
 
         //
         // actor:<ZADDR>
         //         |- identity_keys -> JSON(<IdentityKeysVec>)
+        //         |- device_authentication -> JSON(<Option<DeviceAuthentication>>)
         //         |- ctime -> string
         //         |- utime -> string
         //
@@ -449,13 +506,17 @@ impl ActorRepo {
             .identity_keys_iter()
             .map(String::as_str)
             .collect::<Vec<_>>();
-        self.db
-            .hset(
-                &base_key,
-                "identity_keys",
-                &serde_json::to_string(&identity_keys)?,
-            )
-            .await?;
+        ops.push(DbOp::HSet {
+            hash_key: base_key.clone(),
+            field: "identity_keys".into(),
+            value: serde_json::to_string(&identity_keys)?,
+        });
+        ops.push(DbOp::HSet {
+            hash_key: base_key.clone(),
+            field: "device_authentication".into(),
+            value: serde_json::to_string(&actor.device_authentication())?,
+        });
+        self.db.atomic_pipeline(&ops).await?;
         self.db.hset_nx(&base_key, "ctime", &ts).await?; // set create time only if not already there.
         self.db.hset(&base_key, "utime", &ts).await?; // always set update time
 
@@ -523,6 +584,8 @@ impl ActorRepo {
     }
 
     /// Look up actor by ZPR address. Creates a new actor instance from the DB data if found.
+    /// Attributes and identity metadata are read from one database snapshot.
+    /// The snapshot can become stale immediately after that read.
     ///
     /// ## Errors
     /// - Returns `StoreError::NotFound` if no actor found for the given ZPR address.
@@ -531,8 +594,11 @@ impl ActorRepo {
         zpra: &std::net::IpAddr,
     ) -> Result<Actor, StoreError> {
         let base_key = actor_key_for(&zpra);
-        let exists: bool = self.db.exists(&base_key).await?;
-        if !exists {
+        let (metadata, attrs_map) = self
+            .db
+            .hash_pair_snapshot(&base_key, &attrs_key_for(zpra))
+            .await?;
+        if metadata.is_empty() {
             return Err(StoreError::NotFound(format!("actor not found: {}", zpra)));
         }
 
@@ -540,40 +606,45 @@ impl ActorRepo {
 
         // Load attributes from json.  The attributes are in 'actor:<ZADDR>:attrs' hash
         // each key is an attribute name, and the value is the JSON representation of the attribute.
-        let attrs_map: std::collections::HashMap<String, String> =
-            self.db.hgetall(format!("{base_key}:attrs")).await?;
         for (_key, attr_json) in attrs_map.iter() {
             let attr: Attribute = serde_json::from_str(attr_json)?;
             actor.add_attribute(attr)?;
         }
 
         // Then get the identity attribute key values.
-        let identity_keys_json: String = self
-            .db
-            .hget(&base_key, "identity_keys")
-            .await?
-            .unwrap_or_default();
-        let identity_keys: Vec<String> = serde_json::from_str(&identity_keys_json)?;
+        let identity_keys_json = metadata.get("identity_keys").ok_or_else(|| {
+            StoreError::InvalidData(format!("actor {zpra} missing identity_keys"))
+        })?;
+        let identity_keys: Vec<String> = serde_json::from_str(identity_keys_json)?;
         for idkey in identity_keys.iter() {
             actor.add_identity_key(usize::MAX, idkey)?; // 0 means no expiration
+        }
+        if let Some(json) = metadata.get("device_authentication") {
+            let identity: Option<DeviceAuthentication> = serde_json::from_str(json)?;
+            if let Some(identity) = identity {
+                actor.set_device_authentication(identity)?;
+            }
         }
         Ok(actor)
     }
 
-    /// Returns only the CN for the actor at the given ZPR address, without loading the full actor.
+    /// Returns only the CN from a consistent metadata/attribute snapshot without
+    /// decoding the full actor. Captured CNs may be stale after the read.
     ///
     /// Returns `StoreError::NotFound` if no actor exists for the address or the actor has no CN attribute.
     pub async fn get_cn_by_zpr_addr(&self, zpra: &IpAddr) -> Result<String, StoreError> {
         let base_key = actor_key_for(zpra);
-        let exists: bool = self.db.exists(&base_key).await?;
-        if !exists {
+        let (metadata, attrs) = self
+            .db
+            .hash_pair_snapshot(&base_key, &attrs_key_for(zpra))
+            .await?;
+        if metadata.is_empty() {
             return Err(StoreError::NotFound(format!("actor not found: {}", zpra)));
         }
-        let mut attrs = self.get_actor_attrs(zpra, &[key::CN]).await?;
-        if attrs.is_empty() {
-            return Err(StoreError::NotFound(format!("actor at {} has no CN", zpra)));
-        }
-        let cn_attr = attrs.remove(0);
+        let cn_json = attrs
+            .get(key::CN)
+            .ok_or_else(|| StoreError::NotFound(format!("actor at {} has no CN", zpra)))?;
+        let cn_attr: Attribute = serde_json::from_str(cn_json)?;
         match cn_attr.get_single_value() {
             Ok(cn_val) => Ok(cn_val.to_string()),
             Err(_) => Ok(cn_attr.get_value_as_string()),
@@ -681,6 +752,734 @@ mod test {
     use crate::db::db_fake::FakeDb;
     use crate::test_helpers::{make_actor_defexp, make_actor_with_services_defexp};
     use libeval::attribute::{ROLE_ADAPTER, ROLE_NODE, key};
+
+    fn authenticated_device(subject: &str) -> Actor {
+        let mut actor =
+            make_actor_with_services_defexp(ROLE_ADAPTER, "fd5a:5052::71", &["directory"], subject);
+        actor
+            .set_device_authentication(
+                DeviceAuthentication::new(
+                    libeval::actor::DeviceAuthority::AuthenticationService {
+                        service_id: "bas".into(),
+                        issuer: "zpr/bas".into(),
+                    },
+                    subject.into(),
+                    uuid::Uuid::new_v4().to_string(),
+                    std::time::SystemTime::now() + std::time::Duration::from_secs(600),
+                )
+                .unwrap(),
+            )
+            .unwrap();
+        actor
+    }
+
+    #[tokio::test]
+    async fn session_guard_rejects_stale_actor_after_reauthentication_and_repo_restart() {
+        let db = Arc::new(FakeDb::new());
+        let repo = ActorRepo::new(db.clone());
+        let first = authenticated_device("same-device");
+        let second = authenticated_device("same-device");
+        let address = *first.get_zpr_addr().unwrap();
+        repo.add_actor(&first).await.unwrap();
+        let stale = repo.get_actor_by_zpr_addr(&address).await.unwrap();
+        repo.update_authenticated_actor(&second).await.unwrap();
+        let restored = ActorRepo::new(db.clone());
+        let before = db.hgetall(actor_key_for(&address)).await.unwrap();
+        assert!(matches!(
+            restored.update_actor(&stale).await,
+            Err(StoreError::Conflict(_))
+        ));
+        assert_eq!(db.hgetall(actor_key_for(&address)).await.unwrap(), before);
+        assert_eq!(
+            restored
+                .get_actor_by_zpr_addr(&address)
+                .await
+                .unwrap()
+                .device_authentication(),
+            second.device_authentication()
+        );
+        restored.update_actor(&second).await.unwrap();
+    }
+
+    #[tokio::test]
+    async fn session_guard_checks_authentication_at_atomic_write_boundary() {
+        let db = Arc::new(FakeDb::new());
+        let repo = ActorRepo::new(db.clone());
+        let first = authenticated_device("old-device");
+        let second = authenticated_device("new-device");
+        let address = *first.get_zpr_addr().unwrap();
+        repo.add_actor(&first).await.unwrap();
+        let gate = db.hold_pipelines_for_test().await;
+        let update = tokio::task::unconstrained(repo.update_actor(&first));
+        tokio::pin!(update);
+        assert!(futures::poll!(&mut update).is_pending());
+        // Model a replacement publication after the update's preflight reads.
+        db.hset(
+            &actor_key_for(&address),
+            "device_authentication",
+            &serde_json::to_string(&second.device_authentication()).unwrap(),
+        )
+        .await
+        .unwrap();
+        db.hset(&actor_key_for(&address), "utime", "replacement-time")
+            .await
+            .unwrap();
+        let metadata = db.hgetall(actor_key_for(&address)).await.unwrap();
+        let attrs = db.hgetall(attrs_key_for(&address)).await.unwrap();
+        drop(gate);
+        assert!(matches!(update.await, Err(StoreError::Conflict(_))));
+        assert_eq!(db.hgetall(actor_key_for(&address)).await.unwrap(), metadata);
+        assert_eq!(db.hgetall(attrs_key_for(&address)).await.unwrap(), attrs);
+        assert_eq!(
+            repo.list_services_for_actor(&address).await.unwrap(),
+            ["directory"]
+        );
+    }
+
+    #[tokio::test]
+    async fn session_guard_prevents_resurrection_after_deletion_before_apply() {
+        let db = Arc::new(FakeDb::new());
+        let repo = ActorRepo::new(db.clone());
+        let actor = make_actor_with_services_defexp(ROLE_ADAPTER, "fd5a:5052::71", &[], "legacy");
+        let address = *actor.get_zpr_addr().unwrap();
+        repo.add_actor(&actor).await.unwrap();
+        let gate = db.hold_pipelines_for_test().await;
+        let update = tokio::task::unconstrained(repo.update_actor(&actor));
+        tokio::pin!(update);
+        assert!(futures::poll!(&mut update).is_pending());
+        db.del(&actor_key_for(&address)).await.unwrap();
+        db.del(&attrs_key_for(&address)).await.unwrap();
+        drop(gate);
+        assert!(matches!(update.await, Err(StoreError::Conflict(_))));
+        assert!(!db.exists(&actor_key_for(&address)).await.unwrap());
+        assert!(!db.exists(&attrs_key_for(&address)).await.unwrap());
+    }
+
+    #[tokio::test]
+    async fn session_guard_has_no_timestamp_write_after_atomic_reply() {
+        let db = Arc::new(FakeDb::new());
+        let repo = ActorRepo::new(db.clone());
+        let actor = authenticated_device("device");
+        let address = *actor.get_zpr_addr().unwrap();
+        repo.add_actor(&actor).await.unwrap();
+        let gate = db.hold_pipeline_replies_for_test().await;
+        let update = tokio::task::unconstrained(repo.update_actor(&actor));
+        tokio::pin!(update);
+        assert!(futures::poll!(&mut update).is_pending());
+        db.del(&actor_key_for(&address)).await.unwrap();
+        db.del(&attrs_key_for(&address)).await.unwrap();
+        drop(gate);
+        update.await.unwrap();
+        assert!(!db.exists(&actor_key_for(&address)).await.unwrap());
+        assert!(!db.exists(&attrs_key_for(&address)).await.unwrap());
+    }
+
+    #[tokio::test]
+    async fn session_guard_legacy_refresh_cannot_remove_or_create_authentication() {
+        let db = Arc::new(FakeDb::new());
+        let repo = ActorRepo::new(db);
+        let legacy = make_actor_with_services_defexp(ROLE_ADAPTER, "fd5a:5052::71", &[], "legacy");
+        let authenticated = authenticated_device("device");
+        let address = *legacy.get_zpr_addr().unwrap();
+        repo.add_actor(&legacy).await.unwrap();
+        assert!(matches!(
+            repo.update_actor(&authenticated).await,
+            Err(StoreError::Conflict(_))
+        ));
+        repo.update_authenticated_actor(&authenticated)
+            .await
+            .unwrap();
+        assert!(matches!(
+            repo.update_actor(&legacy).await,
+            Err(StoreError::Conflict(_))
+        ));
+        assert!(matches!(
+            repo.update_authenticated_actor(&legacy).await,
+            Err(StoreError::MissingRequired(_))
+        ));
+        assert_eq!(
+            repo.get_actor_by_zpr_addr(&address)
+                .await
+                .unwrap()
+                .device_authentication(),
+            authenticated.device_authentication()
+        );
+    }
+
+    #[tokio::test]
+    async fn session_guard_legacy_missing_field_remains_refreshable() {
+        let db = Arc::new(FakeDb::new());
+        let repo = ActorRepo::new(db.clone());
+        let actor = make_actor_with_services_defexp(ROLE_ADAPTER, "fd5a:5052::71", &[], "legacy");
+        let address = *actor.get_zpr_addr().unwrap();
+        repo.add_actor(&actor).await.unwrap();
+        let base = actor_key_for(&address);
+        let mut metadata = db.hgetall(base.clone()).await.unwrap();
+        metadata.remove("device_authentication");
+        metadata.insert("ctime".into(), "original-create-time".into());
+        db.del(&base).await.unwrap();
+        for (field, value) in metadata {
+            db.hset(&base, &field, &value).await.unwrap();
+        }
+        repo.update_actor(&actor).await.unwrap();
+        repo.update_actor(&actor).await.unwrap();
+        assert_eq!(
+            db.hget(&base, "ctime").await.unwrap().as_deref(),
+            Some("original-create-time")
+        );
+        assert_eq!(
+            db.hget(&base, "device_authentication")
+                .await
+                .unwrap()
+                .as_deref(),
+            Some("null")
+        );
+    }
+
+    #[tokio::test]
+    async fn session_guard_reauthentication_conflicts_with_concurrent_replacement() {
+        let db = Arc::new(FakeDb::new());
+        let repo = ActorRepo::new(db.clone());
+        let first = authenticated_device("device");
+        let second = authenticated_device("device");
+        let third = authenticated_device("device");
+        let address = *first.get_zpr_addr().unwrap();
+        repo.add_actor(&first).await.unwrap();
+        let gate = db.hold_pipelines_for_test().await;
+        let update = tokio::task::unconstrained(repo.update_authenticated_actor(&second));
+        tokio::pin!(update);
+        assert!(futures::poll!(&mut update).is_pending());
+        db.hset(
+            &actor_key_for(&address),
+            "device_authentication",
+            &serde_json::to_string(&third.device_authentication()).unwrap(),
+        )
+        .await
+        .unwrap();
+        drop(gate);
+        assert!(matches!(update.await, Err(StoreError::Conflict(_))));
+        assert_eq!(
+            repo.get_actor_by_zpr_addr(&address)
+                .await
+                .unwrap()
+                .device_authentication(),
+            third.device_authentication()
+        );
+    }
+
+    #[tokio::test]
+    async fn device_authentication_survives_repository_restart_and_claim_replacement() {
+        let db = Arc::new(FakeDb::new());
+        let repo = ActorRepo::new(db.clone());
+        let mut actor = authenticated_device("verified-device");
+        let address = *actor.get_zpr_addr().unwrap();
+        let identity = actor.device_authentication().unwrap().clone();
+        repo.add_actor(&actor).await.unwrap();
+        actor
+            .add_attribute(Attribute::builder(key::CN).value("enriched-cn"))
+            .unwrap();
+        actor
+            .add_attribute(Attribute::builder("device_authentication").value("forged-root"))
+            .unwrap();
+        repo.update_actor(&actor).await.unwrap();
+
+        let loaded = ActorRepo::new(db.clone())
+            .get_actor_by_zpr_addr(&address)
+            .await
+            .unwrap();
+        assert_eq!(loaded.device_authentication(), Some(&identity));
+        assert_eq!(loaded.get_cn(), Some("enriched-cn"));
+        assert!(
+            loaded
+                .attrs_iter()
+                .all(|attr| attr.get_value_as_string() != identity.session_id())
+        );
+        let json = serde_json::to_value(&loaded).unwrap();
+        assert!(json.get("device_authentication").is_none());
+        assert!(!json.to_string().contains(identity.session_id()));
+        assert_eq!(
+            serde_json::from_str::<DeviceAuthentication>(
+                &db.hget(&actor_key_for(&address), "device_authentication")
+                    .await
+                    .unwrap()
+                    .unwrap()
+            )
+            .unwrap(),
+            identity
+        );
+    }
+
+    #[tokio::test]
+    async fn device_authentication_missing_metadata_never_uses_claims_as_a_root() {
+        let db = Arc::new(FakeDb::new());
+        let repo = ActorRepo::new(db.clone());
+        let actor =
+            make_actor_with_services_defexp(ROLE_ADAPTER, "fd5a:5052::71", &[], "legacy-device");
+        let address = *actor.get_zpr_addr().unwrap();
+        repo.add_actor(&actor).await.unwrap();
+        assert!(
+            repo.get_actor_by_zpr_addr(&address)
+                .await
+                .unwrap()
+                .device_authentication()
+                .is_none()
+        );
+        let mut metadata = db.hgetall(actor_key_for(&address)).await.unwrap();
+        metadata.remove("device_authentication");
+        db.del(&actor_key_for(&address)).await.unwrap();
+        for (field, value) in metadata {
+            db.hset(&actor_key_for(&address), &field, &value)
+                .await
+                .unwrap();
+        }
+        assert!(
+            repo.get_actor_by_zpr_addr(&address)
+                .await
+                .unwrap()
+                .device_authentication()
+                .is_none()
+        );
+    }
+
+    #[tokio::test]
+    async fn device_authentication_malformed_metadata_is_an_explicit_read_error() {
+        let db = Arc::new(FakeDb::new());
+        let repo = ActorRepo::new(db.clone());
+        let actor = authenticated_device("verified-device");
+        let address = *actor.get_zpr_addr().unwrap();
+        repo.add_actor(&actor).await.unwrap();
+        for json in [
+            "invalid json".to_string(),
+            "{\"subject\":\"incomplete\"}".to_string(),
+            {
+                let mut value = serde_json::to_value(actor.device_authentication()).unwrap();
+                value["subject"] = "".into();
+                value.to_string()
+            },
+        ] {
+            db.hset(&actor_key_for(&address), "device_authentication", &json)
+                .await
+                .unwrap();
+            assert!(repo.get_actor_by_zpr_addr(&address).await.is_err());
+        }
+    }
+
+    #[tokio::test]
+    async fn device_authentication_replacement_and_removal_do_not_retain_old_session() {
+        let db = Arc::new(FakeDb::new());
+        let repo = ActorRepo::new(db);
+        let first = authenticated_device("device-one");
+        let second = authenticated_device("device-two");
+        let address = *first.get_zpr_addr().unwrap();
+        repo.add_actor(&first).await.unwrap();
+        repo.add_actor(&second).await.unwrap();
+        assert_eq!(
+            repo.get_actor_by_zpr_addr(&address)
+                .await
+                .unwrap()
+                .device_authentication(),
+            second.device_authentication()
+        );
+        repo.rm_actor_by_zpr_addr(&address).await.unwrap();
+        let legacy =
+            make_actor_with_services_defexp(ROLE_ADAPTER, "fd5a:5052::71", &[], "legacy-device");
+        repo.add_actor(&legacy).await.unwrap();
+        assert!(
+            repo.get_actor_by_zpr_addr(&address)
+                .await
+                .unwrap()
+                .device_authentication()
+                .is_none()
+        );
+    }
+
+    #[tokio::test]
+    async fn device_authentication_rejected_update_preserves_prior_identity_and_claims() {
+        let db = Arc::new(FakeDb::new());
+        let repo = ActorRepo::new(db.clone());
+        let first = authenticated_device("device-one");
+        let second = authenticated_device("device-two");
+        let address = *first.get_zpr_addr().unwrap();
+        repo.add_actor(&first).await.unwrap();
+        db.set_set_ex_fault(crate::db::FaultMode::Reject);
+        assert!(repo.update_authenticated_actor(&second).await.is_err());
+        let loaded = repo.get_actor_by_zpr_addr(&address).await.unwrap();
+        assert_eq!(loaded.get_cn(), first.get_cn());
+        assert_eq!(
+            loaded.device_authentication(),
+            first.device_authentication()
+        );
+    }
+
+    #[tokio::test]
+    async fn device_authentication_snapshot_does_not_mix_sessions_during_update() {
+        let db = Arc::new(FakeDb::new());
+        let repo = ActorRepo::new(db.clone());
+        let first = authenticated_device("device-one");
+        let second = authenticated_device("device-two");
+        let address = *first.get_zpr_addr().unwrap();
+        repo.add_actor(&first).await.unwrap();
+        let gate = db.hold_hash_replies_for_test().await;
+        let read = tokio::task::unconstrained(repo.get_actor_by_zpr_addr(&address));
+        tokio::pin!(read);
+        assert!(futures::poll!(&mut read).is_pending());
+        repo.update_authenticated_actor(&second).await.unwrap();
+        drop(gate);
+        let captured = read.await.unwrap();
+        assert_eq!(captured.get_cn(), first.get_cn());
+        assert_eq!(
+            captured.device_authentication(),
+            first.device_authentication()
+        );
+        let current = repo.get_actor_by_zpr_addr(&address).await.unwrap();
+        assert_eq!(current.get_cn(), second.get_cn());
+        assert_eq!(
+            current.device_authentication(),
+            second.device_authentication()
+        );
+    }
+
+    struct ServiceUpdateFixture {
+        db: Arc<FakeDb>,
+        repo: ActorRepo,
+        address: IpAddr,
+        peer: IpAddr,
+        updated: Actor,
+    }
+
+    impl ServiceUpdateFixture {
+        async fn new(services: &[&str]) -> Self {
+            let db = Arc::new(FakeDb::new());
+            let repo = ActorRepo::new(db.clone());
+            let address: IpAddr = "fd5a:5052::51".parse().unwrap();
+            let peer: IpAddr = "fd5a:5052::52".parse().unwrap();
+            for (addr, cn) in [(address, "first"), (peer, "peer")] {
+                repo.add_actor(&make_actor_with_services_defexp(
+                    ROLE_ADAPTER,
+                    &addr.to_string(),
+                    &["shared:svc", "old%svc"],
+                    cn,
+                ))
+                .await
+                .unwrap();
+            }
+            let updated = make_actor_with_services_defexp(
+                ROLE_ADAPTER,
+                &address.to_string(),
+                services,
+                "first",
+            );
+            Self {
+                db,
+                repo,
+                address,
+                peer,
+                updated,
+            }
+        }
+
+        async fn assert_services(&self, expected: &[&str]) {
+            let loaded = self
+                .repo
+                .get_actor_by_zpr_addr(&self.address)
+                .await
+                .unwrap();
+            let actual: HashSet<_> = loaded.services_iter().map(str::to_string).collect();
+            assert_eq!(actual, expected.iter().map(|s| s.to_string()).collect());
+            let indexed: HashSet<_> = self
+                .repo
+                .list_services_for_actor(&self.address)
+                .await
+                .unwrap()
+                .into_iter()
+                .collect();
+            assert_eq!(indexed, actual);
+            for service in ["shared:svc", "old%svc", "new:svc"] {
+                let mut providers = vec![];
+                if expected.contains(&service) {
+                    providers.push(self.address);
+                }
+                if service != "new:svc" {
+                    providers.push(self.peer);
+                }
+                providers.sort();
+                assert_eq!(
+                    self.repo.get_zpr_addrs_for_service(service).await.unwrap(),
+                    providers
+                );
+            }
+        }
+    }
+
+    #[tokio::test]
+    async fn concurrent_service_updates_reject_stale_indexes_across_repositories() {
+        let f = ServiceUpdateFixture::new(&["new:svc"]).await;
+        let second_repo = ActorRepo::new(f.db.clone());
+        let second_actor = make_actor_with_services_defexp(
+            ROLE_ADAPTER,
+            &f.address.to_string(),
+            &["shared:svc"],
+            "first",
+        );
+        let guard = f.db.hold_pipelines_for_test().await;
+        let mut first = Box::pin(tokio::task::unconstrained(f.repo.update_actor(&f.updated)));
+        let mut second = Box::pin(tokio::task::unconstrained(
+            second_repo.update_actor(&second_actor),
+        ));
+        assert!(futures::poll!(first.as_mut()).is_pending());
+        assert!(futures::poll!(second.as_mut()).is_pending());
+        drop(guard);
+        first.await.unwrap();
+        let error = second
+            .await
+            .expect_err("stale service-index snapshot must not commit");
+        assert!(matches!(error, StoreError::Conflict(_)));
+        assert!(error.to_string().contains("reload"));
+        f.assert_services(&["new:svc"]).await;
+        second_repo.update_actor(&second_actor).await.unwrap();
+        f.assert_services(&["shared:svc"]).await;
+    }
+
+    #[tokio::test]
+    async fn concurrent_service_removal_cannot_leave_new_provider_membership() {
+        let f = ServiceUpdateFixture::new(&["new:svc"]).await;
+        let empty =
+            make_actor_with_services_defexp(ROLE_ADAPTER, &f.address.to_string(), &[], "first");
+        let guard = f.db.hold_pipelines_for_test().await;
+        let mut first = Box::pin(tokio::task::unconstrained(f.repo.update_actor(&f.updated)));
+        let mut second = Box::pin(tokio::task::unconstrained(f.repo.update_actor(&empty)));
+        assert!(futures::poll!(first.as_mut()).is_pending());
+        assert!(futures::poll!(second.as_mut()).is_pending());
+        drop(guard);
+        first.await.unwrap();
+        assert!(second.await.is_err());
+        f.assert_services(&["new:svc"]).await;
+        f.repo.update_actor(&empty).await.unwrap();
+        f.assert_services(&[]).await;
+    }
+
+    #[tokio::test]
+    async fn concurrent_updates_with_unchanged_service_set_remain_compatible() {
+        let f = ServiceUpdateFixture::new(&["shared:svc", "old%svc"]).await;
+        let guard = f.db.hold_pipelines_for_test().await;
+        let mut first = Box::pin(tokio::task::unconstrained(f.repo.update_actor(&f.updated)));
+        let mut second = Box::pin(tokio::task::unconstrained(f.repo.update_actor(&f.updated)));
+        assert!(futures::poll!(first.as_mut()).is_pending());
+        assert!(futures::poll!(second.as_mut()).is_pending());
+        drop(guard);
+        first.await.unwrap();
+        second.await.unwrap();
+        f.assert_services(&["shared:svc", "old%svc"]).await;
+    }
+
+    #[tokio::test]
+    async fn cn_snapshot_survives_removal_after_capture() {
+        let f = ServiceUpdateFixture::new(&[]).await;
+        let guard = f.db.hold_hash_replies_for_test().await;
+        let mut read = Box::pin(tokio::task::unconstrained(
+            f.repo.get_cn_by_zpr_addr(&f.address),
+        ));
+        assert!(futures::poll!(read.as_mut()).is_pending());
+        f.repo.rm_actor_by_zpr_addr(&f.address).await.unwrap();
+        drop(guard);
+        assert_eq!(read.await.unwrap(), "first");
+        assert!(matches!(
+            f.repo.get_cn_by_zpr_addr(&f.address).await,
+            Err(StoreError::NotFound(_))
+        ));
+    }
+
+    #[tokio::test]
+    async fn cn_snapshot_does_not_switch_to_replacement_actor_after_capture() {
+        let f = ServiceUpdateFixture::new(&[]).await;
+        let guard = f.db.hold_hash_replies_for_test().await;
+        let mut read = Box::pin(tokio::task::unconstrained(
+            f.repo.get_cn_by_zpr_addr(&f.address),
+        ));
+        assert!(futures::poll!(read.as_mut()).is_pending());
+        f.repo.rm_actor_by_zpr_addr(&f.address).await.unwrap();
+        let replacement = make_actor_with_services_defexp(
+            ROLE_ADAPTER,
+            &f.address.to_string(),
+            &["new:svc"],
+            "replacement",
+        );
+        f.repo.add_actor(&replacement).await.unwrap();
+        drop(guard);
+        assert_eq!(read.await.unwrap(), "first");
+        assert_eq!(
+            f.repo.get_cn_by_zpr_addr(&f.address).await.unwrap(),
+            "replacement"
+        );
+    }
+
+    #[tokio::test]
+    async fn cn_snapshot_does_not_decode_unrelated_claims_or_identity_metadata() {
+        let f = ServiceUpdateFixture::new(&[]).await;
+        f.db.hset(&attrs_key_for(&f.address), "unrelated", "bad JSON")
+            .await
+            .unwrap();
+        f.db.hset(&actor_key_for(&f.address), "identity_keys", "bad JSON")
+            .await
+            .unwrap();
+        assert_eq!(
+            f.repo.get_cn_by_zpr_addr(&f.address).await.unwrap(),
+            "first"
+        );
+        assert!(f.repo.get_actor_by_zpr_addr(&f.address).await.is_err());
+    }
+
+    #[tokio::test]
+    async fn cn_snapshot_does_not_accept_orphaned_attributes_without_actor_metadata() {
+        let f = ServiceUpdateFixture::new(&[]).await;
+        f.db.del(&actor_key_for(&f.address)).await.unwrap();
+        assert!(matches!(
+            f.repo.get_cn_by_zpr_addr(&f.address).await,
+            Err(StoreError::NotFound(message)) if message.contains("actor not found")
+        ));
+    }
+
+    #[tokio::test]
+    async fn cn_snapshot_preserves_missing_cn_and_malformed_cn_errors() {
+        let f = ServiceUpdateFixture::new(&[]).await;
+        f.db.del(&attrs_key_for(&f.address)).await.unwrap();
+        assert!(matches!(
+            f.repo.get_cn_by_zpr_addr(&f.address).await,
+            Err(StoreError::NotFound(message)) if message.contains("has no CN")
+        ));
+        f.db.hset(&attrs_key_for(&f.address), key::CN, "bad JSON")
+            .await
+            .unwrap();
+        assert!(matches!(
+            f.repo.get_cn_by_zpr_addr(&f.address).await,
+            Err(StoreError::Serialization(_))
+        ));
+    }
+
+    #[tokio::test]
+    async fn actor_load_keeps_identity_metadata_with_its_attribute_snapshot() {
+        let f = ServiceUpdateFixture::new(&["new:svc"]).await;
+        let mut updated = f.updated.clone();
+        updated
+            .add_attribute(Attribute::builder("device.snapshot").value("new"))
+            .unwrap();
+        updated
+            .add_identity_key(usize::MAX, "device.snapshot")
+            .unwrap();
+        let guard = f.db.hold_hash_replies_for_test().await;
+        let mut read = Box::pin(tokio::task::unconstrained(
+            f.repo.get_actor_by_zpr_addr(&f.address),
+        ));
+        assert!(futures::poll!(read.as_mut()).is_pending());
+        f.repo.update_actor(&updated).await.unwrap();
+        drop(guard);
+        let old = read
+            .await
+            .expect("an intervening update must not mix identity metadata");
+        assert!(!old.provides("new:svc"));
+        assert!(old.get_attribute("device.snapshot").is_none());
+        assert!(!old.identity_keys_iter().any(|key| key == "device.snapshot"));
+        let new = f.repo.get_actor_by_zpr_addr(&f.address).await.unwrap();
+        assert!(new.provides("new:svc"));
+        assert!(new.identity_keys_iter().any(|key| key == "device.snapshot"));
+    }
+
+    #[tokio::test]
+    async fn actor_load_returns_complete_snapshot_when_removed_after_read() {
+        let f = ServiceUpdateFixture::new(&[]).await;
+        let guard = f.db.hold_hash_replies_for_test().await;
+        let mut read = Box::pin(tokio::task::unconstrained(
+            f.repo.get_actor_by_zpr_addr(&f.address),
+        ));
+        assert!(futures::poll!(read.as_mut()).is_pending());
+        f.repo.rm_actor_by_zpr_addr(&f.address).await.unwrap();
+        drop(guard);
+        let old = read
+            .await
+            .expect("a captured snapshot survives subsequent removal");
+        assert!(old.provides("shared:svc"));
+        assert!(matches!(
+            f.repo.get_actor_by_zpr_addr(&f.address).await,
+            Err(StoreError::NotFound(_))
+        ));
+    }
+
+    #[tokio::test]
+    async fn actor_load_missing_identity_metadata_is_explicit_invalid_data() {
+        let f = ServiceUpdateFixture::new(&[]).await;
+        f.db.del(&actor_key_for(&f.address)).await.unwrap();
+        f.db.hset(&actor_key_for(&f.address), "ctime", "present")
+            .await
+            .unwrap();
+        assert!(matches!(
+            f.repo.get_actor_by_zpr_addr(&f.address).await,
+            Err(StoreError::InvalidData(message)) if message.contains("missing identity_keys")
+        ));
+    }
+
+    #[tokio::test]
+    async fn actor_load_snapshot_preserves_type_and_json_errors() {
+        let f = ServiceUpdateFixture::new(&[]).await;
+        let attrs = attrs_key_for(&f.address);
+        f.db.set(&attrs, "not a hash").await.unwrap();
+        assert!(matches!(
+            f.repo.get_actor_by_zpr_addr(&f.address).await,
+            Err(StoreError::Redis(_))
+        ));
+        f.db.del(&attrs).await.unwrap();
+        f.db.hset(&attrs, "broken", "not JSON").await.unwrap();
+        assert!(matches!(
+            f.repo.get_actor_by_zpr_addr(&f.address).await,
+            Err(StoreError::Serialization(_))
+        ));
+    }
+
+    #[tokio::test]
+    async fn canceled_service_update_before_pipeline_preserves_claims_and_indexes() {
+        let f = ServiceUpdateFixture::new(&["new:svc"]).await;
+        let guard = f.db.hold_pipelines_for_test().await;
+        let mut update = Box::pin(tokio::task::unconstrained(f.repo.update_actor(&f.updated)));
+        assert!(futures::poll!(update.as_mut()).is_pending());
+        drop(update);
+        drop(guard);
+        f.assert_services(&["shared:svc", "old%svc"]).await;
+    }
+
+    #[tokio::test]
+    async fn canceled_service_update_after_pipeline_keeps_claims_and_indexes_consistent() {
+        let f = ServiceUpdateFixture::new(&["new:svc", "shared:svc"]).await;
+        let guard = f.db.hold_pipeline_replies_for_test().await;
+        let mut update = Box::pin(tokio::task::unconstrained(f.repo.update_actor(&f.updated)));
+        assert!(futures::poll!(update.as_mut()).is_pending());
+        f.assert_services(&["new:svc", "shared:svc"]).await;
+        drop(update);
+        drop(guard);
+        f.assert_services(&["new:svc", "shared:svc"]).await;
+        f.repo.update_actor(&f.updated).await.unwrap();
+        f.assert_services(&["new:svc", "shared:svc"]).await;
+    }
+
+    #[tokio::test]
+    async fn canceled_service_removal_after_pipeline_preserves_other_providers() {
+        let f = ServiceUpdateFixture::new(&[]).await;
+        let guard = f.db.hold_pipeline_replies_for_test().await;
+        let mut update = Box::pin(tokio::task::unconstrained(f.repo.update_actor(&f.updated)));
+        assert!(futures::poll!(update.as_mut()).is_pending());
+        drop(update);
+        drop(guard);
+        f.assert_services(&[]).await;
+    }
+
+    #[tokio::test]
+    async fn rejected_service_update_preserves_all_indexes_then_retries() {
+        let f = ServiceUpdateFixture::new(&["new:svc"]).await;
+        f.db.set_set_ex_fault(crate::db::FaultMode::Reject);
+        assert!(f.repo.update_actor(&f.updated).await.is_err());
+        f.assert_services(&["shared:svc", "old%svc"]).await;
+        f.db.set_set_ex_fault(crate::db::FaultMode::None);
+        f.repo.update_actor(&f.updated).await.unwrap();
+        f.assert_services(&["new:svc"]).await;
+    }
 
     #[tokio::test]
     async fn test_add_and_get_actor_roundtrip() {

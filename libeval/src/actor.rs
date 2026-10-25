@@ -1,4 +1,4 @@
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::hash::{Hash, Hasher};
 use std::net::IpAddr;
@@ -24,6 +24,77 @@ pub enum Role {
     Node,
 }
 
+/// Authentication evidence only; these authority labels are not versioned
+/// registrations and cannot authorize a directory-subject binding.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub enum DeviceAuthority {
+    AuthenticationService { service_id: String, issuer: String },
+    Bootstrap { visa_service: String },
+    LocalVisaService { visa_service: String },
+}
+
+/// Service-owned device identity, separate from policy-visible attributes.
+/// This does not establish a human identity or an organization/source binding.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct DeviceAuthentication {
+    authority: DeviceAuthority,
+    subject: String,
+    session_id: String,
+    expires_at: SystemTime,
+}
+
+impl DeviceAuthentication {
+    pub fn new(
+        authority: DeviceAuthority,
+        subject: String,
+        session_id: String,
+        expires_at: SystemTime,
+    ) -> Result<Self, AttributeError> {
+        let identity = Self {
+            authority,
+            subject,
+            session_id,
+            expires_at,
+        };
+        identity.validate()?;
+        Ok(identity)
+    }
+
+    fn validate(&self) -> Result<(), AttributeError> {
+        let authority_valid = match &self.authority {
+            DeviceAuthority::AuthenticationService { service_id, issuer } => {
+                !service_id.is_empty() && !issuer.is_empty()
+            }
+            DeviceAuthority::Bootstrap { visa_service }
+            | DeviceAuthority::LocalVisaService { visa_service } => !visa_service.is_empty(),
+        };
+        if !authority_valid || self.subject.is_empty() || self.session_id.is_empty() {
+            return Err(AttributeError::AttributeError(
+                "device authentication requires authority, subject and session identity".into(),
+            ));
+        }
+        Ok(())
+    }
+
+    pub fn authority(&self) -> &DeviceAuthority {
+        &self.authority
+    }
+
+    pub fn subject(&self) -> &str {
+        &self.subject
+    }
+
+    pub fn session_id(&self) -> &str {
+        &self.session_id
+    }
+
+    pub fn expires_at(&self) -> SystemTime {
+        self.expires_at
+    }
+}
+
 /// From the perspective of the evaluator, and actor is just a bunch of
 /// attributes and provided services.  The provided services is stored
 /// under the [Key::SERVICES] attribute key.
@@ -38,6 +109,9 @@ pub struct Actor {
 
     // Cache zpr_addr since we parse it.
     zpr_addr: Option<IpAddr>,
+
+    #[serde(skip)]
+    device_authentication: Option<DeviceAuthentication>,
 }
 
 /// Hand written because [HashMap] is not [Hash]. Attributes are hashed in key
@@ -55,6 +129,19 @@ impl Hash for Actor {
 impl Actor {
     pub fn new() -> Self {
         Self::default()
+    }
+
+    pub fn device_authentication(&self) -> Option<&DeviceAuthentication> {
+        self.device_authentication.as_ref()
+    }
+
+    pub fn set_device_authentication(
+        &mut self,
+        identity: DeviceAuthentication,
+    ) -> Result<(), AttributeError> {
+        identity.validate()?;
+        self.device_authentication = Some(identity);
+        Ok(())
     }
 
     pub fn attrs_iter(&self) -> impl Iterator<Item = &Attribute> {
@@ -257,6 +344,92 @@ impl Actor {
 mod tests {
     use super::*;
     use std::time::Duration;
+
+    #[test]
+    fn device_authentication_metadata_does_not_change_policy_identity_or_hash() {
+        use std::collections::hash_map::DefaultHasher;
+
+        let mut actor = Actor::new();
+        let mut before = DefaultHasher::new();
+        actor.hash(&mut before);
+        let identity = DeviceAuthentication::new(
+            DeviceAuthority::Bootstrap {
+                visa_service: "vs.zpr/test".into(),
+            },
+            "device".into(),
+            "session".into(),
+            SystemTime::now() + Duration::from_secs(600),
+        )
+        .unwrap();
+        actor.set_device_authentication(identity.clone()).unwrap();
+        let mut after = DefaultHasher::new();
+        actor.hash(&mut after);
+        assert_eq!(before.finish(), after.finish());
+        assert_eq!(actor.attrs_iter().count(), 0);
+        assert_eq!(actor.identity_keys_iter().count(), 0);
+        assert_eq!(actor.get_authentication_expiration(), None);
+        assert_eq!(actor.clone().device_authentication(), Some(&identity));
+    }
+
+    #[test]
+    fn device_authentication_requires_nonempty_authority_subject_and_session() {
+        for (authority, subject, session) in [
+            (
+                DeviceAuthority::AuthenticationService {
+                    service_id: "".into(),
+                    issuer: "zpr/bas".into(),
+                },
+                "device",
+                "session",
+            ),
+            (
+                DeviceAuthority::AuthenticationService {
+                    service_id: "bas".into(),
+                    issuer: "".into(),
+                },
+                "device",
+                "session",
+            ),
+            (
+                DeviceAuthority::Bootstrap {
+                    visa_service: "".into(),
+                },
+                "device",
+                "session",
+            ),
+            (
+                DeviceAuthority::LocalVisaService {
+                    visa_service: "".into(),
+                },
+                "device",
+                "session",
+            ),
+            (
+                DeviceAuthority::Bootstrap {
+                    visa_service: "vs.zpr/test".into(),
+                },
+                "",
+                "session",
+            ),
+            (
+                DeviceAuthority::Bootstrap {
+                    visa_service: "vs.zpr/test".into(),
+                },
+                "device",
+                "",
+            ),
+        ] {
+            assert!(
+                DeviceAuthentication::new(
+                    authority,
+                    subject.into(),
+                    session.into(),
+                    SystemTime::now()
+                )
+                .is_err()
+            );
+        }
+    }
 
     /// With both namespaced authority attributes present at different expiries,
     /// get_authentication_expiration returns the minimum of the two.

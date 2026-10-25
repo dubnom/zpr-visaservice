@@ -111,6 +111,10 @@ async fn process(asm: &Arc<Assembly>) -> DbResult<()> {
     Ok(())
 }
 #[cfg(test)]
+#[path = "trusted_reconciliation_lifecycle_tests.rs"]
+mod lifecycle_tests;
+
+#[cfg(test)]
 mod tests {
     use super::*;
     use crate::db::FakeDb;

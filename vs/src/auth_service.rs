@@ -7,6 +7,7 @@ use std::sync::Arc;
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 use jsonwebtoken::{Algorithm, DecodingKey, Validation, decode};
+use libeval::actor::{DeviceAuthentication, DeviceAuthority};
 use libeval::attribute::{Attribute, AttributeSource};
 use reqwest::redirect::Policy;
 use serde::{Deserialize, Serialize};
@@ -30,6 +31,7 @@ pub struct AuthenticatedAdapter {
     pub auth_service_id: String,
     pub expires_at: SystemTime,
     pub claims: Vec<Attribute>,
+    pub device_authentication: DeviceAuthentication,
 }
 
 #[derive(Serialize)]
@@ -150,18 +152,37 @@ pub async fn authenticate(
             "auth token has no remaining lifetime".into(),
         ));
     }
-    let claims = map_claims(
+    authenticated_adapter(
         &validation_service.id,
         &trusted_service.returns_attrs,
-        &claims.private,
+        claims,
+        expires_at,
+    )
+}
+
+fn authenticated_adapter(
+    service_id: &str,
+    mappings: &[AttrMapping],
+    claims: BasClaims,
+    expires_at: SystemTime,
+) -> Result<AuthenticatedAdapter, ServiceError> {
+    let device_authentication = DeviceAuthentication::new(
+        DeviceAuthority::AuthenticationService {
+            service_id: service_id.into(),
+            issuer: claims.iss.clone(),
+        },
+        claims.sub.clone(),
+        uuid::Uuid::new_v4().to_string(),
         expires_at,
     )?;
+    let claims = map_claims(service_id, mappings, &claims.private, expires_at)?;
 
     Ok(AuthenticatedAdapter {
-        client_id: auth_code.client_id.clone(),
-        auth_service_id: validation_service.id.clone(),
+        client_id: device_authentication.subject().into(),
+        auth_service_id: service_id.into(),
         expires_at,
         claims,
+        device_authentication,
     })
 }
 
@@ -506,6 +527,63 @@ mod tests {
             .is_err()
         );
         assert!(verify_token(&token, TEST_KEY, "adapter.two").is_err());
+    }
+
+    #[test]
+    fn device_authentication_uses_verified_subject_not_mapped_claims() {
+        let token = make_token("adapter.one", TEST_KEY);
+        let mut claims = verify_token(&token, TEST_KEY, "adapter.one").unwrap();
+        claims.private.insert(
+            "z/root".into(),
+            Value::String("different-human-subject".into()),
+        );
+        let expiry = UNIX_EPOCH + Duration::from_secs(claims.exp);
+        let authenticated = authenticated_adapter(
+            "bas-one",
+            &[parse_attribute_mapping("root -> user.identity").unwrap()],
+            claims,
+            expiry,
+        )
+        .unwrap();
+        let identity = &authenticated.device_authentication;
+        assert_eq!(identity.subject(), "adapter.one");
+        assert_eq!(identity.expires_at(), expiry);
+        assert_eq!(
+            identity.authority(),
+            &DeviceAuthority::AuthenticationService {
+                service_id: "bas-one".into(),
+                issuer: BAS_ISSUER.into(),
+            }
+        );
+        assert_eq!(
+            authenticated.claims[0].get_single_value().unwrap(),
+            "different-human-subject"
+        );
+        uuid::Uuid::parse_str(identity.session_id()).unwrap();
+
+        let second = authenticated_adapter(
+            "bas-two",
+            &[],
+            verify_token(&token, TEST_KEY, "adapter.one").unwrap(),
+            expiry,
+        )
+        .unwrap();
+        assert_ne!(
+            identity.authority(),
+            second.device_authentication.authority()
+        );
+        assert_ne!(
+            identity.session_id(),
+            second.device_authentication.session_id()
+        );
+    }
+
+    #[test]
+    fn device_authentication_rejects_empty_verified_subject() {
+        let token = make_token("", TEST_KEY);
+        let claims = verify_token(&token, TEST_KEY, "").unwrap();
+        let expiry = UNIX_EPOCH + Duration::from_secs(claims.exp);
+        assert!(authenticated_adapter("bas", &[], claims, expiry).is_err());
     }
 
     #[test]

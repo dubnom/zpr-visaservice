@@ -37,6 +37,107 @@ pub enum LockType {
 
 pub type DbResult<T> = redis::RedisResult<T>;
 
+pub struct HashGuard<'a> {
+    pub key: &'a str,
+    pub field: &'a str,
+    pub expected: Option<&'a str>,
+}
+
+#[cfg(test)]
+pub(crate) async fn assert_session_guard_contract(db: &dyn DbConnection) {
+    let ops = [DbOp::SetBin {
+        key: "session:result".into(),
+        value: vec![0, 255],
+    }];
+    db.sadd("session:services", "directory").await.unwrap();
+    let services = HashSet::from(["directory".into()]);
+    for expected in [None, Some(""), Some("session-one")] {
+        assert!(
+            !db.atomic_pipeline_if_set_and_hash_match(
+                "session:services",
+                &services,
+                Some(HashGuard {
+                    key: "session:metadata",
+                    field: "authentication",
+                    expected,
+                }),
+                &ops,
+            )
+            .await
+            .unwrap()
+        );
+        assert!(!db.exists("session:result").await.unwrap());
+    }
+    db.hset("session:metadata", "ctime", "original")
+        .await
+        .unwrap();
+    let binary_safe = "session:\0'\\\n";
+    for (stored, expected, matches) in [
+        (None, None, true),
+        (None, Some(""), false),
+        (Some(""), None, false),
+        (Some(""), Some(""), true),
+        (Some(binary_safe), Some("old"), false),
+        (Some(binary_safe), Some(binary_safe), true),
+    ] {
+        if let Some(value) = stored {
+            db.hset("session:metadata", "authentication", value)
+                .await
+                .unwrap();
+        }
+        db.del("session:result").await.unwrap();
+        assert_eq!(
+            db.atomic_pipeline_if_set_and_hash_match(
+                "session:services",
+                &services,
+                Some(HashGuard {
+                    key: "session:metadata",
+                    field: "authentication",
+                    expected,
+                }),
+                &ops,
+            )
+            .await
+            .unwrap(),
+            matches
+        );
+        assert_eq!(db.exists("session:result").await.unwrap(), matches);
+    }
+    db.del("session:result").await.unwrap();
+    assert!(
+        !db.atomic_pipeline_if_set_and_hash_match(
+            "session:services",
+            &HashSet::from(["wrong".into()]),
+            Some(HashGuard {
+                key: "session:metadata",
+                field: "authentication",
+                expected: Some(binary_safe),
+            }),
+            &ops,
+        )
+        .await
+        .unwrap()
+    );
+    assert!(!db.exists("session:result").await.unwrap());
+    db.del("session:metadata").await.unwrap();
+    db.set("session:metadata", "wrong-type").await.unwrap();
+    assert!(
+        db.atomic_pipeline_if_set_and_hash_match(
+            "session:services",
+            &services,
+            Some(HashGuard {
+                key: "session:metadata",
+                field: "authentication",
+                expected: None,
+            }),
+            &ops,
+        )
+        .await
+        .is_err()
+    );
+    assert!(!db.exists("session:result").await.unwrap());
+}
+
 pub struct PolicyCommit<'a> {
     pub operation_key: &'a str,
     pub current_key: &'a str,
@@ -72,6 +173,13 @@ pub trait DbConnection: Send + Sync {
     async fn sismember(&self, key: &str, member: &str) -> DbResult<bool>;
     async fn hget(&self, key: &str, field: &str) -> DbResult<Option<String>>;
     async fn hgetall(&self, key: String) -> DbResult<HashMap<String, String>>;
+    /// Read both hashes without interleaving writes. Missing hashes are empty;
+    /// wrong Redis types and transport failures propagate as errors.
+    async fn hash_pair_snapshot(
+        &self,
+        first: &str,
+        second: &str,
+    ) -> DbResult<(HashMap<String, String>, HashMap<String, String>)>;
     async fn hset(&self, key: &str, field: &str, value: &str) -> DbResult<()>;
     async fn hset_nx(&self, key: &str, field: &str, value: &str) -> DbResult<()>;
     async fn hset_multiple(&self, key: &str, field_values: &[(&str, &str)]) -> DbResult<()>;
@@ -79,7 +187,34 @@ pub trait DbConnection: Send + Sync {
     async fn incr(&self, key: &str, by: u64) -> DbResult<u64>;
     async fn expire(&self, key: &str, seconds: i64) -> DbResult<()>;
 
+    /// Execute without interleaving using Redis MULTI/EXEC. Empty batches are
+    /// no-ops. Queue-time errors abort the batch, but execution-time errors do
+    /// not roll back other commands; a transport error may hide an applied batch.
     async fn atomic_pipeline(&self, ops: &[DbOp]) -> DbResult<()>;
+
+    /// Compare the exact membership of `key` and execute the batch without
+    /// interleaving. False means conflict and no mutation. The Redis Lua path
+    /// stops at its first execution error without rolling back prior commands;
+    /// transport errors remain ambiguous. This guards a set, not actor identity.
+    async fn atomic_pipeline_if_set_matches(
+        &self,
+        key: &str,
+        expected: &HashSet<String>,
+        ops: &[DbOp],
+    ) -> DbResult<bool> {
+        self.atomic_pipeline_if_set_and_hash_match(key, expected, None, ops)
+            .await
+    }
+
+    /// Additionally require an existing hash and an exact field value (or
+    /// absence). All comparisons precede mutations under the same atomic boundary.
+    async fn atomic_pipeline_if_set_and_hash_match(
+        &self,
+        key: &str,
+        expected: &HashSet<String>,
+        hash_guard: Option<HashGuard<'_>>,
+        ops: &[DbOp],
+    ) -> DbResult<bool>;
 
     /// Atomically create a pending policy operation only if the operation ID is
     /// unused and the persisted current policy matches the expected digest and
@@ -194,6 +329,10 @@ pub enum DbOp {
         set_key: String,
         member: String,
     },
+    SAdd {
+        set_key: String,
+        member: String,
+    },
     HSet {
         hash_key: String,
         field: String,
@@ -207,6 +346,50 @@ pub enum DbOp {
         key: String,
         seconds: i64,
     },
+}
+
+impl DbOp {
+    fn command_parts(&self) -> (&'static str, Vec<Vec<u8>>) {
+        match self {
+            Self::Del(key) => ("DEL", vec![key.as_bytes().to_vec()]),
+            Self::SetBin { key, value } => ("SET", vec![key.as_bytes().to_vec(), value.clone()]),
+            Self::SRem { set_key, member } => (
+                "SREM",
+                vec![set_key.as_bytes().to_vec(), member.as_bytes().to_vec()],
+            ),
+            Self::SAdd { set_key, member } => (
+                "SADD",
+                vec![set_key.as_bytes().to_vec(), member.as_bytes().to_vec()],
+            ),
+            Self::HSet {
+                hash_key,
+                field,
+                value,
+            } => (
+                "HSET",
+                vec![
+                    hash_key.as_bytes().to_vec(),
+                    field.as_bytes().to_vec(),
+                    value.as_bytes().to_vec(),
+                ],
+            ),
+            Self::HSetMultiple {
+                hash_key,
+                field_values,
+            } => {
+                let mut args = vec![hash_key.as_bytes().to_vec()];
+                for (field, value) in field_values {
+                    args.push(field.as_bytes().to_vec());
+                    args.push(value.as_bytes().to_vec());
+                }
+                ("HSET", args)
+            }
+            Self::Expire { key, seconds } => (
+                "EXPIRE",
+                vec![key.as_bytes().to_vec(), seconds.to_string().into_bytes()],
+            ),
+        }
+    }
 }
 
 /// In the redis, we sometimes need to use a ZPR address as part of a key.

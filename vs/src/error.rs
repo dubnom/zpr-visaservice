@@ -102,6 +102,9 @@ pub enum CryptoError {
 
 #[derive(Debug, Error)]
 pub enum StoreError {
+    #[error("concurrent update conflict: {0}")]
+    Conflict(String),
+
     #[error("redis error: {0}")]
     Redis(#[from] redis::RedisError),
 

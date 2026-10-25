@@ -82,6 +82,7 @@ pub async fn launch(asm: Arc<Assembly>, mut event_rx: mpsc::Receiver<VsEvent>) {
         let event = tokio::select! {
             _ = trusted_refresh.tick() => {
                 crate::trusted_reconciliation::process_pending(&asm).await;
+                crate::trusted_services::control::process_pending(&asm).await;
                 continue;
             }
             event = event_rx.recv() => match event { Some(event) => event, None => break },
@@ -115,6 +116,7 @@ pub async fn launch(asm: Arc<Assembly>, mut event_rx: mpsc::Receiver<VsEvent>) {
             }
             VsEvent::TrustedServiceChange => {
                 crate::trusted_reconciliation::process_pending(&asm).await;
+                crate::trusted_services::control::process_pending(&asm).await;
             }
         }
     }

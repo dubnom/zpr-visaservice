@@ -694,6 +694,10 @@ async fn resolve_netaddr(
 }
 
 #[cfg(test)]
+#[path = "policy_source_lifecycle_tests.rs"]
+mod source_lifecycle_tests;
+
+#[cfg(test)]
 mod tests {
     use super::*;
 

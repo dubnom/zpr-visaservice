@@ -24,7 +24,7 @@ use std::time::{Duration, SystemTime};
 use std::usize;
 use tracing::{debug, error, info, warn};
 
-use libeval::actor::{Actor, Role};
+use libeval::actor::{Actor, DeviceAuthentication, DeviceAuthority, Role};
 use libeval::attribute::{Attribute, key};
 use libeval::eval::EvalContext;
 use libeval::policy::Policy;
@@ -40,6 +40,10 @@ use crate::logging::targets::CC;
 use crate::trusted_services::{
     derive_user_authority, derive_user_authority_attributes, lookup_identities,
 };
+
+#[cfg(test)]
+#[path = "connection_revision_lifecycle_tests.rs"]
+mod revision_lifecycle_tests;
 
 // TODO: move to libeval
 const CLASS_DEVICE: &str = "device";
@@ -287,6 +291,7 @@ impl ConnectionControl {
                         req.dock_interface,
                     )
                     .await?;
+                actor.set_device_authentication(authenticated.device_authentication)?;
                 let auth_lifetime = authenticated
                     .expires_at
                     .duration_since(SystemTime::now())
@@ -336,11 +341,12 @@ impl ConnectionControl {
         claims: Vec<Claim>,
     ) -> Result<Actor, ServiceError> {
         let mut authd_claims = Vec::new();
+        let expires_at = SystemTime::now() + config::VS_AUTH_EXPIRATION;
 
         // The VS authenticates itself by construction; that is the device authority.
         authd_claims.push(
             Attribute::builder(key::DEVICE_AUTHORITY)
-                .expires_in(config::VS_AUTH_EXPIRATION)
+                .expires(expires_at)
                 .value(key::AUTHORITY_METHOD_BOOTSTRAP),
         );
         // The VS authorizes itself: its own CN is authenticated by construction, so it
@@ -354,9 +360,18 @@ impl ConnectionControl {
         let policy = asm.policy_mgr.get_current();
 
         // Ok checks out -- now run through policy.
-        let vs_actor = self
+        let identity = DeviceAuthentication::new(
+            DeviceAuthority::LocalVisaService {
+                visa_service: self.authority.clone(),
+            },
+            config::VS_CN.to_string(),
+            uuid::Uuid::new_v4().to_string(),
+            expires_at,
+        )?;
+        let mut vs_actor = self
             .authorize_connection(asm, &policy, &config::VS_CN, Vec::new(), authd_claims, 0)
             .await?;
+        vs_actor.set_device_authentication(identity)?;
 
         // authorize_connection no longer stamps a blanket authority, so the
         // VS-expiration DEVICE_AUTHORITY pushed above survives as-is.
@@ -420,6 +435,28 @@ impl ConnectionControl {
         let mut authd_claims = authd_claims;
         authd_claims.push(Attribute::builder(key::CN).value(&ssb.cn));
 
+        let auth_expiration = if ssb.cn == config::VS_CN {
+            config::VS_AUTH_EXPIRATION
+        } else {
+            config::DEFAULT_AUTH_EXPIRATION
+        };
+        let expires_at = authd_claims
+            .iter()
+            .find(|claim| claim.get_key() == key::DEVICE_AUTHORITY)
+            .ok_or_else(|| {
+                ServiceError::Internal("RSA authentication missing device authority".into())
+            })?
+            .get_expires()
+            .min(SystemTime::now() + auth_expiration);
+        let identity = DeviceAuthentication::new(
+            DeviceAuthority::Bootstrap {
+                visa_service: self.authority.clone(),
+            },
+            ssb.cn.clone(),
+            uuid::Uuid::new_v4().to_string(),
+            expires_at,
+        )?;
+
         // Ok checks out -- now run through policy.
         let mut actor = self
             .authorize_connection(
@@ -434,11 +471,7 @@ impl ConnectionControl {
 
         // The visa service's own token gets the VS expiration. A 4 hour token would expire its
         // own authentication and it would start denying its own visas.
-        let auth_expiration = if ssb.cn == config::VS_CN {
-            config::VS_AUTH_EXPIRATION
-        } else {
-            config::DEFAULT_AUTH_EXPIRATION
-        };
+        actor.set_device_authentication(identity)?;
         let actor_jwt = if actor.is_node() {
             self.gen_jwt(format!("node/{}", ssb.cn), auth_expiration)?
         } else {
@@ -501,7 +534,7 @@ impl ConnectionControl {
         // keyed on the ZPR address, which does not exist yet); the first post-connect
         // refresh treats every source as stale and re-fetches once.
         let lookup_keys = current_policy.lookup_identity_keys();
-        let identities = lookup_identities(&lookup_keys, authd_claims.iter());
+        let identities = lookup_identities(&lookup_keys, authd_claims.iter())?;
 
         // A lookup failure is indeterminate, not "the actor has no such attribute", and
         // the two are indistinguishable once evaluation starts: a join policy can be
@@ -589,6 +622,9 @@ impl ConnectionControl {
     ///   "not found" — i.e. the DB is unreachable/misbehaving.
     /// - Removing a node record (`remove_node`) may fail on a backing-store error.
     ///
+    /// Failed actor cleanup retains its managed address and source revisions.
+    /// A later cleanup attempt must succeed before that address can be reused.
+    ///
     pub async fn disconnect(
         &self,
         asm: Arc<Assembly>,
@@ -602,16 +638,18 @@ impl ConnectionControl {
             warn!(target: CC, "disconnect for addr {zpr_addr} but no actor found in database");
         }
 
-        match asm.actor_mgr.remove_actor_by_zpr_addr(&zpr_addr).await {
+        let actor_removed = match asm.actor_mgr.remove_actor_by_zpr_addr(&zpr_addr).await {
             Ok(()) => {
                 // Purge recorded trusted-service revisions before the address returns to
                 // the pool: addresses are recycled, and a later actor at this address
                 // must not inherit them.
                 asm.ts_mgr.forget_actor_revisions(&zpr_addr);
+                true
             }
             Err(e) => {
                 // Caller can't do anything with this. So just log and continue.
-                error!(target: CC, "failed to remove disconnected actor with addr {zpr_addr} from actor db: {e}");
+                error!(target: CC, "failed to remove disconnected actor with addr {zpr_addr} from actor db; retaining address allocation: {e}");
+                false
             }
         };
 
@@ -646,17 +684,17 @@ impl ConnectionControl {
                             // adapter's address can be recycled.
                             asm.ts_mgr.forget_actor_revisions(&adapter_addr);
                             removed_zpr_addrs.push(adapter_addr);
+                            if asm.net_mgr.is_managed_address(&adapter_addr) {
+                                if let Err(s) = asm.net_mgr.release_zpr_addr(adapter_addr) {
+                                    error!(target: CC, "failed to release ZPR addr {adapter_addr} for orphaned adapter: {s}");
+                                }
+                            }
                         }
                         Err(e) => {
                             // Caller can't do anything with this. So just log and continue.
-                            error!(target: CC, "failed to remove disconnected adapter with addr {adapter_addr} from actor db: {e}");
+                            error!(target: CC, "failed to remove disconnected adapter with addr {adapter_addr} from actor db; retaining address allocation: {e}");
                         }
                     };
-                    if asm.net_mgr.is_managed_address(&adapter_addr) {
-                        if let Err(s) = asm.net_mgr.release_zpr_addr(adapter_addr) {
-                            error!(target: CC, "failed to release ZPR addr {adapter_addr} for orphaned adapter: {s}");
-                        }
-                    }
                 }
                 asm.actor_mgr.remove_node(&zpr_addr).await?;
                 if let Err(e) = asm.visa_mgr.remove_visas_for_node(&zpr_addr).await {
@@ -672,7 +710,7 @@ impl ConnectionControl {
             error!(target: CC, "failed to remove visas for disconnected actor at addr {zpr_addr}: {e}");
         }
 
-        if asm.net_mgr.is_managed_address(&zpr_addr) {
+        if actor_removed && asm.net_mgr.is_managed_address(&zpr_addr) {
             // De-allocating an address may error but it only indicates that the
             // address is not part of our pool.  We just log that if it occurs
             // and call the "disconnect" successful anyway.
@@ -1012,6 +1050,99 @@ mod tests {
     }
 
     // --- authenticate_node tests ---
+
+    #[tokio::test]
+    async fn device_authentication_bootstrap_preserves_signed_cn_and_fresh_session() {
+        let asm = Arc::new(crate::assembly::tests::new_assembly_for_tests(None).await);
+        let cn = "verified-device.zpr";
+        let (private_key, public_key) = gen_rsa_test_keypair();
+        asm.policy_mgr
+            .update_policy_from_container_bytes(make_policy_with_node_join_policy(cn, &public_key))
+            .await
+            .unwrap();
+        let cc = make_cc("identity-test");
+        let signature = sign_node_challenge(&private_key, 1234, cn, b"challenge");
+        let mut identities = Vec::new();
+        for addr in ["fd5a:5052::61", "fd5a:5052::62"] {
+            let actor = cc
+                .authenticate_node(
+                    asm.clone(),
+                    b"challenge",
+                    1234,
+                    cn,
+                    &signature,
+                    addr.parse().unwrap(),
+                    "127.0.0.1:1234".parse().unwrap(),
+                    None,
+                )
+                .await
+                .unwrap();
+            let identity = actor.device_authentication().unwrap();
+            assert_eq!(identity.subject(), cn);
+            assert_eq!(
+                identity.authority(),
+                &DeviceAuthority::Bootstrap {
+                    visa_service: cc.authority.clone()
+                }
+            );
+            assert!(identity.expires_at() > SystemTime::now());
+            assert!(
+                identity.expires_at()
+                    <= actor
+                        .get_attribute(key::DEVICE_AUTHORITY)
+                        .unwrap()
+                        .get_expires()
+            );
+            assert!(
+                identity.expires_at()
+                    <= actor
+                        .get_attribute(ATTR_KEY_VS_IDENT)
+                        .unwrap()
+                        .get_expires()
+            );
+            uuid::Uuid::parse_str(identity.session_id()).unwrap();
+            identities.push(identity.clone());
+        }
+        assert_ne!(identities[0].session_id(), identities[1].session_id());
+    }
+
+    #[tokio::test]
+    async fn device_authentication_self_authority_is_not_rsa_bootstrap() {
+        let asm = Arc::new(crate::assembly::tests::new_assembly_for_tests(None).await);
+        let cc = make_cc("identity-test");
+        let actor = cc.authenticate_visa_service(asm, Vec::new()).await.unwrap();
+        let identity = actor.device_authentication().unwrap();
+        assert_eq!(identity.subject(), config::VS_CN);
+        assert_eq!(
+            identity.authority(),
+            &DeviceAuthority::LocalVisaService {
+                visa_service: cc.authority.clone()
+            }
+        );
+    }
+
+    #[tokio::test]
+    async fn device_authentication_is_not_inferred_by_authorization() {
+        let asm = Arc::new(crate::assembly::tests::new_assembly_for_tests(None).await);
+        let cc = make_cc("identity-test");
+        let policy = asm.policy_mgr.get_current();
+        let actor = cc
+            .authorize_connection(
+                asm,
+                &policy,
+                config::VS_CN,
+                Vec::new(),
+                vec![
+                    Attribute::builder(key::CN).value(config::VS_CN),
+                    Attribute::builder(key::DEVICE_AUTHORITY).value("spoofed-authority"),
+                    Attribute::builder("device_authentication").value("spoofed-root"),
+                ],
+                0,
+            )
+            .await
+            .unwrap();
+        assert!(actor.device_authentication().is_none());
+    }
 
     #[tokio::test]
     async fn test_make_policy_with_bootstrap_key() {
@@ -1573,6 +1704,35 @@ mod tests {
         )
         .unwrap()
         .policy()
+    }
+
+    #[tokio::test]
+    async fn admission_rejects_expired_identity_before_trusted_source_lookup() {
+        let asm = Arc::new(crate::assembly::tests::new_assembly_for_tests(None).await);
+        let policy = policy_from_container(
+            crate::test_helpers::make_trusted_service_policy_with_identity(
+                "capture",
+                "file",
+                Some(3600),
+                &["sub -> user.sub"],
+                &["sub"],
+            ),
+        );
+        let service = register_capturing_ts(&asm, "former-user", &[("user.privileged", "yes")]);
+        let claims = vec![
+            Attribute::builder(key::CN).value("live-device"),
+            Attribute::builder("user.sub")
+                .expires(SystemTime::now() - Duration::from_secs(1))
+                .value("former-user"),
+        ];
+        let result = make_cc("test-vs")
+            .authorize_connection(asm, &policy, "live-device", Vec::new(), claims, 0)
+            .await;
+        assert!(matches!(
+            result,
+            Err(ServiceError::AttributesIndeterminate(_))
+        ));
+        assert!(service.calls.lock().unwrap().is_empty());
     }
 
     /// Regression test for the CN-claiming escalation (#310): a user-only actor whose

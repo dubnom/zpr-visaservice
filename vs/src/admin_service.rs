@@ -533,6 +533,10 @@ fn admin_app(state: SharedState) -> Router {
         .route("/admin/nodes/{capture}/visas", get(get_visas_on_node))
         .route("/admin/services", get(get_services))
         .route("/admin/trusted-services", get(get_trusted_services))
+        .route(
+            "/admin/trusted-services/{capture}/control",
+            get(get_trusted_source_control).put(set_trusted_source_control),
+        )
         .route("/admin/services/{capture}", get(get_service))
         .route(
             "/admin/services/{capture}/cache",
@@ -1202,6 +1206,85 @@ async fn get_trusted_services(
     }
     let asm = state.read().await.asm.clone();
     Ok(Json(asm.ts_mgr.statuses()))
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct TrustedSourceToggle {
+    enabled: bool,
+}
+
+#[derive(Serialize)]
+struct TrustedSourceControlStatus {
+    #[serde(flatten)]
+    control: crate::trusted_services::control::Control,
+    declared: bool,
+    effective_enabled: bool,
+}
+
+async fn get_trusted_source_control(
+    Extension(perm): Extension<Permission>,
+    State(state): State<SharedState>,
+    EPath(source): EPath<String>,
+) -> Result<Json<TrustedSourceControlStatus>, StatusCode> {
+    if !perm.can_read() {
+        return Err(StatusCode::FORBIDDEN);
+    }
+    let asm = state.read().await.asm.clone();
+    Ok(Json(trusted_source_control_status(&asm, &source).await?))
+}
+
+async fn trusted_source_control_status(
+    asm: &Assembly,
+    source: &str,
+) -> Result<TrustedSourceControlStatus, StatusCode> {
+    let control = crate::trusted_services::control::read(asm.state_db.as_ref(), source)
+        .await
+        .map_err(|error| {
+            error!(target: ADMIN, "cannot read trusted source control for {}: {}", source, error);
+            match error {
+                ServiceError::Param(_) => StatusCode::BAD_REQUEST,
+                _ => StatusCode::SERVICE_UNAVAILABLE,
+            }
+        })?;
+    let declared = asm.ts_mgr.declares_source(source);
+    if !declared && control.revision.is_empty() {
+        return Err(StatusCode::NOT_FOUND);
+    }
+    Ok(TrustedSourceControlStatus {
+        effective_enabled: declared && asm.ts_mgr.source_enabled(source),
+        declared,
+        control,
+    })
+}
+
+async fn set_trusted_source_control(
+    Extension(perm): Extension<Permission>,
+    State(state): State<SharedState>,
+    EPath(source): EPath<String>,
+    Json(toggle): Json<TrustedSourceToggle>,
+) -> Result<(StatusCode, Json<TrustedSourceControlStatus>), StatusCode> {
+    if !perm.can_write() {
+        return Err(StatusCode::FORBIDDEN);
+    }
+    let asm = state.read().await.asm.clone();
+    trusted_source_control_status(&asm, &source).await?;
+    let control = crate::trusted_services::control::set(
+        asm.state_db.as_ref(), &asm.ts_mgr, &source, toggle.enabled,
+    ).await.map_err(|error| {
+        error!(target: ADMIN, "cannot durably apply trusted source control for {}: {}", source, error);
+        StatusCode::SERVICE_UNAVAILABLE
+    })?;
+    asm.event_mgr.notify_trusted_service_change();
+    let declared = asm.ts_mgr.declares_source(&source);
+    Ok((
+        StatusCode::ACCEPTED,
+        Json(TrustedSourceControlStatus {
+            effective_enabled: declared && asm.ts_mgr.source_enabled(&source),
+            declared,
+            control,
+        }),
+    ))
 }
 
 async fn get_service(
@@ -2220,6 +2303,204 @@ mod tests {
         let body = response.into_body().collect().await.unwrap().to_bytes();
         let statuses: Vec<serde_json::Value> = serde_json::from_slice(&body).unwrap();
         assert!(statuses.is_empty());
+    }
+
+    #[tokio::test]
+    async fn trusted_source_control_auth_strict_json_and_durable_readback() {
+        let (asm, _, _) = crate::test_helpers::build_ttl_refresh_asm(true).await;
+        let app = admin_app(Arc::new(tokio::sync::RwLock::new(AdminState::new(
+            asm.clone(),
+        ))));
+        let uri = "/admin/trusted-services/hr/control";
+        let response = app
+            .clone()
+            .oneshot(Request::builder().uri(uri).body(Body::empty()).unwrap())
+            .await
+            .unwrap();
+        assert_eq!(response.status(), StatusCode::UNAUTHORIZED);
+        let read_key = setup_test_api_r_key(&asm);
+        let response = app
+            .clone()
+            .oneshot(
+                Request::builder()
+                    .uri(uri)
+                    .header("X-API-Key", &read_key)
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(response.status(), StatusCode::OK);
+        let body = response.into_body().collect().await.unwrap().to_bytes();
+        let default: serde_json::Value = serde_json::from_slice(&body).unwrap();
+        assert_eq!(default["enabled"], true);
+        assert_eq!(default["effective_enabled"], true);
+        assert_eq!(default["pending"], false);
+        assert_eq!(default["revision"], "");
+        let response = app
+            .clone()
+            .oneshot(
+                Request::builder()
+                    .method("PUT")
+                    .uri(uri)
+                    .header("X-API-Key", &read_key)
+                    .header("Content-Type", "application/json")
+                    .body(Body::from(r#"{"enabled":false}"#))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(response.status(), StatusCode::FORBIDDEN);
+        let write_key = setup_test_api_rw_key(&asm);
+        for body in [
+            r#"{}"#,
+            r#"{"enabled":"false"}"#,
+            r#"{"enabled":false,"other":1}"#,
+            r#"{"enabled":true,"enabled":false}"#,
+        ] {
+            let response = app
+                .clone()
+                .oneshot(
+                    Request::builder()
+                        .method("PUT")
+                        .uri(uri)
+                        .header("X-API-Key", &write_key)
+                        .header("Content-Type", "application/json")
+                        .body(Body::from(body))
+                        .unwrap(),
+                )
+                .await
+                .unwrap();
+            assert_eq!(
+                response.status(),
+                StatusCode::UNPROCESSABLE_ENTITY,
+                "{body}"
+            );
+        }
+        let response = app
+            .clone()
+            .oneshot(
+                Request::builder()
+                    .method("PUT")
+                    .uri(uri)
+                    .header("X-API-Key", &write_key)
+                    .header("Content-Type", "application/json")
+                    .body(Body::from(r#"{"enabled":false}"#))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(response.status(), StatusCode::ACCEPTED);
+        let body = response.into_body().collect().await.unwrap().to_bytes();
+        let accepted: serde_json::Value = serde_json::from_slice(&body).unwrap();
+        assert_eq!(accepted["enabled"], false);
+        assert_eq!(accepted["effective_enabled"], false);
+        assert_eq!(accepted["pending"], true);
+        assert_eq!(accepted["declared"], true);
+        let response = app
+            .clone()
+            .oneshot(
+                Request::builder()
+                    .uri(uri)
+                    .header("X-API-Key", &write_key)
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(response.status(), StatusCode::OK);
+        let body = response.into_body().collect().await.unwrap().to_bytes();
+        assert_eq!(
+            serde_json::from_slice::<serde_json::Value>(&body).unwrap(),
+            accepted
+        );
+        asm.ts_mgr.update_services(vec![]);
+        let response = app
+            .clone()
+            .oneshot(
+                Request::builder()
+                    .uri(uri)
+                    .header("X-API-Key", &write_key)
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(response.status(), StatusCode::OK);
+        let body = response.into_body().collect().await.unwrap().to_bytes();
+        let absent: serde_json::Value = serde_json::from_slice(&body).unwrap();
+        assert_eq!(absent["declared"], false);
+        assert_eq!(absent["enabled"], false);
+        let response = app
+            .oneshot(
+                Request::builder()
+                    .method("PUT")
+                    .uri("/admin/trusted-services/unknown/control")
+                    .header("X-API-Key", &write_key)
+                    .header("Content-Type", "application/json")
+                    .body(Body::from(r#"{"enabled":false}"#))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(response.status(), StatusCode::NOT_FOUND);
+    }
+
+    #[tokio::test]
+    async fn trusted_source_control_storage_errors_are_not_default_on_or_acceptance() {
+        let (asm, _, _) = crate::test_helpers::build_ttl_refresh_asm(true).await;
+        let key = setup_test_api_rw_key(&asm);
+        let app = admin_app(Arc::new(tokio::sync::RwLock::new(AdminState::new(
+            asm.clone(),
+        ))));
+        for malformed in [false, true] {
+            asm.state_db.del("trusted-source-controls").await.unwrap();
+            if malformed {
+                asm.state_db
+                    .hset(
+                        "trusted-source-controls",
+                        "hr",
+                        r#"{"enabled":false,"revision":"bad","pending":true}"#,
+                    )
+                    .await
+                    .unwrap();
+            } else {
+                asm.state_db
+                    .set("trusted-source-controls", "wrong type")
+                    .await
+                    .unwrap();
+            }
+            for method in ["GET", "PUT"] {
+                let response = app
+                    .clone()
+                    .oneshot(
+                        Request::builder()
+                            .method(method)
+                            .uri("/admin/trusted-services/hr/control")
+                            .header("X-API-Key", &key)
+                            .header("Content-Type", "application/json")
+                            .body(Body::from(r#"{"enabled":false}"#))
+                            .unwrap(),
+                    )
+                    .await
+                    .unwrap();
+                assert_eq!(response.status(), StatusCode::SERVICE_UNAVAILABLE);
+            }
+        }
+        for source in ["bad.id", "bad__source__id"] {
+            let response = app
+                .clone()
+                .oneshot(
+                    Request::builder()
+                        .uri(format!("/admin/trusted-services/{source}/control"))
+                        .header("X-API-Key", &key)
+                        .body(Body::empty())
+                        .unwrap(),
+                )
+                .await
+                .unwrap();
+            assert_eq!(response.status(), StatusCode::BAD_REQUEST);
+        }
     }
 
     /// GET /admin/policies/curr returns the current policy as a base64;zip PolicyBundle.

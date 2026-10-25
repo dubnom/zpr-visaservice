@@ -48,6 +48,8 @@ const PURGE_MIN_INTERVAL: Duration = Duration::from_millis(800);
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub enum NodeVisaState {
+    /// Persisted issuance intent, not yet eligible for installation.
+    Staged,
     PendingInstall,
     Installed,
     PendingRevoke,
@@ -199,6 +201,11 @@ impl VisaMetadata {
 }
 
 impl VisaRepo {
+    #[cfg(test)]
+    pub(crate) async fn hold_writes_for_test(&self) -> tokio::sync::MutexGuard<'_, ()> {
+        self.inner.backing.lock().await
+    }
+
     /// Set up and initialize the visa store, loading the in-memory image from
     /// Redis. We set `initial_visa_id` only if the key is not already present.
     pub async fn new(db: Arc<dyn DbConnection>, initial_visa_id: u64) -> Result<Self, StoreError> {
@@ -339,8 +346,8 @@ impl VisaRepo {
             return Ok(());
         }
 
-        // Build the per-node state map: requesting node gets `nstate`, other path
-        // nodes get PendingInstall.
+        // Staging applies to the entire path; otherwise only the requesting
+        // node's initial state is customized.
         let mut node_states = HashMap::new();
         node_states.insert(
             metadata.requesting_node,
@@ -357,7 +364,11 @@ impl VisaRepo {
                 node_states.insert(
                     *node,
                     NodeState {
-                        state: NodeVisaState::PendingInstall,
+                        state: if nstate == NodeVisaState::Staged {
+                            NodeVisaState::Staged
+                        } else {
+                            NodeVisaState::PendingInstall
+                        },
                         revoke_vinst: None,
                     },
                 );
@@ -406,10 +417,68 @@ impl VisaRepo {
             .collect()
     }
 
+    /// Publish a staged visa to all installation queues in one write.
+    ///
+    /// On a write error, attempt to delete the uncertain record before returning
+    /// the original error. Successful cleanup also removes memory and indexes;
+    /// failed cleanup retains staged memory for explicit repair. If activation
+    /// applied but cleanup failed, a restart can still expose PendingInstall.
+    pub(crate) async fn activate_staged_visa(&self, visa_id: u64) -> Result<bool, StoreError> {
+        let _backing = self.inner.backing.lock().await;
+        let (json, ttl, states) = {
+            let store = self.inner.store.read().unwrap();
+            let Some(entry) = live_entry(&store, visa_id) else {
+                return Ok(false);
+            };
+            if entry.node_states.is_empty()
+                || entry
+                    .node_states
+                    .values()
+                    .any(|ns| ns.state != NodeVisaState::Staged)
+            {
+                return Ok(false);
+            }
+            let mut states = entry.node_states.clone();
+            for ns in states.values_mut() {
+                ns.state = NodeVisaState::PendingInstall;
+            }
+            let record = build_record(&entry.visa, &entry.metadata, &states)?;
+            (
+                serde_json::to_string(&record)?,
+                remaining_secs(entry.deadline),
+                states,
+            )
+        };
+        let key = visa_key_for_visa(visa_id);
+        if let Err(error) = self.inner.db.set_ex(&key, &json, ttl).await {
+            // A failed reply does not prove activation failed to commit.
+            match self.inner.db.del(&key).await {
+                Ok(_) => {
+                    remove_entry(&mut self.inner.store.write().unwrap(), visa_id);
+                    warn!(target: DB, "activation of visa {visa_id} failed; removed uncertain record: {error}");
+                }
+                Err(cleanup_error) => {
+                    warn!(target: DB, "activation of visa {visa_id} failed: {error}; cleanup also failed: {cleanup_error}; durable activation is uncertain and requires repair");
+                }
+            }
+            return Err(error.into());
+        }
+        let mut store = self.inner.store.write().unwrap();
+        let Some(entry) = store
+            .visas
+            .get_mut(&visa_id)
+            .filter(|entry| remaining_secs(entry.deadline) > 0)
+        else {
+            return Ok(false);
+        };
+        entry.node_states = states;
+        Ok(true)
+    }
+
     /// Apply an allow verdict at policy generation `vinst`. This happens after a policy
     /// update and we are checking all existing visas.
     ///
-    /// No-ops (`Ok(false)`) when the visa is absent/expired or `vinst` is not
+    /// No-ops (`Ok(false)`) when the visa is absent/expired, still staged, or `vinst` is not
     /// newer than `checked_vinst` (never lowered). Otherwise bumps
     /// `checked_vinst` and cancels any queued revoke whose stamp predates
     /// `vinst` (`PendingRevoke -> PendingInstall`, stamp cleared) in one rewrite.
@@ -426,6 +495,13 @@ impl VisaRepo {
                 return Ok(false);
             };
             if vinst <= entry.metadata.checked_vinst {
+                return Ok(false);
+            }
+            if entry
+                .node_states
+                .values()
+                .any(|ns| ns.state == NodeVisaState::Staged)
+            {
                 return Ok(false);
             }
             let ttl = remaining_secs(entry.deadline);
@@ -467,7 +543,7 @@ impl VisaRepo {
     /// Apply a deny verdict at policy generation `vinst`. This happens after a
     /// policy update and we are checking all existing visas.
     ///
-    /// No-ops (`Ok(false)`) when the visa is absent/expired or `vinst` is not
+    /// No-ops (`Ok(false)`) when the visa is absent/expired, still staged, or `vinst` is not
     /// newer than `checked_vinst`. Otherwise marks every node `PendingRevoke`,
     /// stamping `revoke_vinst = vinst` only where it exceeds the existing stamp
     /// (a revoke decision overwrites `PendingInstall`/`Installed` freely). One
@@ -485,6 +561,13 @@ impl VisaRepo {
                 return Ok(false);
             };
             if vinst <= entry.metadata.checked_vinst {
+                return Ok(false);
+            }
+            if entry
+                .node_states
+                .values()
+                .any(|ns| ns.state == NodeVisaState::Staged)
+            {
                 return Ok(false);
             }
             let ttl = remaining_secs(entry.deadline);

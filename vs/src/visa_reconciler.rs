@@ -71,9 +71,18 @@ pub(crate) async fn revalidate_visas(
             skipped_current += 1;
             continue;
         }
+        let expires = match asm.visa_mgr.get_visa_with_metadata_by_id(visa_id).await {
+            Ok(Some(record)) => record.visa.expires,
+            Ok(None) => continue,
+            Err(error) => {
+                failed += 1;
+                warn!(target: VISA, "visa sweep: failed to read visa {visa_id} validity: {error}");
+                continue;
+            }
+        };
         match asm
             .visa_mgr
-            .recheck_visa_allowed(asm, &metadata, psnap)
+            .recheck_visa_allowed(asm, &metadata, psnap, expires)
             .await
         {
             Ok(VisaRecheck::SkipUnresolvedActor) => {
@@ -155,6 +164,284 @@ mod tests {
     use crate::assembly::tests::{make_policy, new_assembly_for_tests};
     use crate::test_helpers::{build_sweep_asm, create_sweep_visa};
     use std::net::IpAddr;
+
+    #[tokio::test]
+    async fn recheck_enforces_updated_grant_deadlines_without_extending_visas() {
+        use libeval::attribute::{Attribute, AttributeSource, key};
+        use std::time::{Duration, SystemTime};
+
+        for source_endpoint in [true, false] {
+            for changed_key in [
+                "user.blocked__source__hr",
+                key::CN,
+                key::DEVICE_AUTHORITY,
+                key::SERVICES,
+                "zpr.source_freshness__source__hr",
+                "user.unrelated__source__hr",
+            ] {
+                if source_endpoint && changed_key == key::SERVICES {
+                    continue;
+                }
+                for shorter in [true, false] {
+                    let (asm, node, _service) =
+                        crate::test_helpers::build_ttl_refresh_asm(source_endpoint).await;
+                    let addr: IpAddr = if source_endpoint {
+                        "fd5a:5052:4000::a"
+                    } else {
+                        "fd5a:5052:4000::b"
+                    }
+                    .parse()
+                    .unwrap();
+                    let mut actor = asm
+                        .actor_mgr
+                        .get_actor_by_zpr_addr(&addr)
+                        .await
+                        .unwrap()
+                        .unwrap();
+                    actor.add_identity_key(0, key::CN).unwrap();
+                    actor
+                        .add_attribute(
+                            Attribute::builder(key::DEVICE_AUTHORITY)
+                                .expires_in(Duration::from_secs(3600))
+                                .value("test-authority"),
+                        )
+                        .unwrap();
+                    asm.actor_mgr.update_actor(&actor).await.unwrap();
+                    let packet = zpr::vsapi_types::PacketDesc::new_tcp(
+                        "fd5a:5052:4000::a",
+                        "fd5a:5052:4000::b",
+                        1234,
+                        80,
+                    )
+                    .unwrap();
+                    let decision = crate::visareq_worker::process_visa_request_for_test(
+                        asm.clone(),
+                        node,
+                        packet,
+                    )
+                    .await;
+                    let crate::visareq_worker::VisaDecision::Allow(visa, _) = decision else {
+                        panic!("baseline request must allow");
+                    };
+                    let original_expiration = visa.expires;
+                    let mut actor = asm
+                        .actor_mgr
+                        .get_actor_by_zpr_addr(&addr)
+                        .await
+                        .unwrap()
+                        .unwrap();
+                    let expires = if shorter {
+                        SystemTime::now() + Duration::from_secs(120)
+                    } else {
+                        original_expiration + Duration::from_secs(600)
+                    };
+                    assert!(original_expiration > SystemTime::now() + Duration::from_secs(120));
+                    let attr = match changed_key {
+                        key::CN | key::DEVICE_AUTHORITY | key::SERVICES => {
+                            let old = actor.get_attribute(changed_key).unwrap();
+                            Attribute::builder(changed_key)
+                                .expires(expires)
+                                .values(old.get_value())
+                        }
+                        "zpr.source_freshness__source__hr" => {
+                            AttributeSource::new(crate::test_helpers::TS_SOURCE)
+                                .builder(changed_key)
+                                .expires(expires)
+                                .values(Vec::<String>::new())
+                        }
+                        _ => AttributeSource::new(crate::test_helpers::TS_SOURCE)
+                            .builder(changed_key)
+                            .expires(expires)
+                            .value("false"),
+                    };
+                    actor.add_attribute(attr).unwrap();
+                    asm.actor_mgr.update_actor(&actor).await.unwrap();
+
+                    let psnap = asm.policy_mgr.get_current_snapshot();
+                    assert!(revalidate_visas(&asm, &psnap, SweepReason::AttributeChange).await);
+                    let revoked = asm
+                        .visa_mgr
+                        .get_pending_revoke_visa_ids_for_node(&node)
+                        .await
+                        .unwrap();
+                    if shorter && changed_key != "user.unrelated__source__hr" {
+                        assert_eq!(
+                            revoked,
+                            vec![visa.issuer_id],
+                            "{source_endpoint}/{changed_key}"
+                        );
+                    } else {
+                        assert!(revoked.is_empty(), "{source_endpoint}/{changed_key}");
+                    }
+                    let stored = asm
+                        .visa_mgr
+                        .get_visa_with_metadata_by_id(visa.issuer_id)
+                        .await
+                        .unwrap()
+                        .unwrap();
+                    assert_eq!(stored.visa.expires, original_expiration);
+                }
+            }
+        }
+    }
+
+    #[tokio::test]
+    async fn source_validity_shortening_revokes_but_longer_validity_does_not() {
+        for seconds in [120, 1200] {
+            let (asm, node, _service) = crate::test_helpers::build_ttl_refresh_asm(true).await;
+            let peer: IpAddr = "fd5a:5052:3000::2".parse().unwrap();
+            let route = asm.topo_mgr.get_best_route(&node, &peer).unwrap();
+            let packet = zpr::vsapi_types::PacketDesc::new_tcp(
+                "fd5a:5052:4000::a",
+                "fd5a:5052:4000::b",
+                1234,
+                80,
+            )
+            .unwrap();
+            let psnap = asm.policy_mgr.get_current_snapshot();
+            let visa = asm
+                .visa_mgr
+                .create_visa(
+                    &asm,
+                    &node,
+                    &packet,
+                    &libeval::eval_result::Hit::new_no_signal(
+                        0,
+                        libeval::eval_result::Direction::Forward,
+                    ),
+                    &route,
+                    "",
+                    2,
+                    psnap.vinst(),
+                    std::time::SystemTime::now() + std::time::Duration::from_secs(600),
+                )
+                .await
+                .unwrap();
+            assert!(matches!(
+                asm.visa_mgr
+                    .recheck_visa_allowed(&asm, &visa.metadata, &psnap, visa.visa.expires)
+                    .await
+                    .unwrap(),
+                crate::visa_mgr::VisaRecheck::AllowSameRoute
+            ));
+            let addr: IpAddr = "fd5a:5052:4000::a".parse().unwrap();
+            let mut actor = asm
+                .actor_mgr
+                .get_actor_by_zpr_addr(&addr)
+                .await
+                .unwrap()
+                .unwrap();
+            actor
+                .add_attribute(
+                    libeval::attribute::AttributeSource::new(crate::test_helpers::TS_SOURCE)
+                        .builder("zpr.source_freshness__source__hr")
+                        .expires_in(std::time::Duration::from_secs(seconds))
+                        .values(Vec::<String>::new()),
+                )
+                .unwrap();
+            asm.actor_mgr.update_actor(&actor).await.unwrap();
+            assert!(revalidate_visas(&asm, &psnap, SweepReason::AttributeChange).await);
+            let revoked = asm
+                .visa_mgr
+                .get_pending_revoke_visa_ids_for_node(&node)
+                .await
+                .unwrap();
+            if seconds == 120 {
+                assert_eq!(revoked, vec![visa.visa.issuer_id]);
+            } else {
+                assert!(revoked.is_empty());
+            }
+        }
+    }
+
+    #[tokio::test]
+    async fn indeterminate_refresh_revokes_even_when_absence_policy_would_allow() {
+        for (expired_source, expired_identity) in
+            [(true, false), (false, false), (true, true), (false, true)]
+        {
+            let (asm, node, service) =
+                crate::test_helpers::build_ttl_refresh_asm(expired_source).await;
+            let peer: IpAddr = "fd5a:5052:3000::2".parse().unwrap();
+            let route = asm.topo_mgr.get_best_route(&node, &peer).unwrap();
+            let packet = zpr::vsapi_types::PacketDesc::new_tcp(
+                "fd5a:5052:4000::a",
+                "fd5a:5052:4000::b",
+                1234,
+                80,
+            )
+            .unwrap();
+            let psnap = asm.policy_mgr.get_current_snapshot();
+            let visa = asm
+                .visa_mgr
+                .create_visa(
+                    &asm,
+                    &node,
+                    &packet,
+                    &libeval::eval_result::Hit::new_no_signal(
+                        0,
+                        libeval::eval_result::Direction::Forward,
+                    ),
+                    &route,
+                    "",
+                    2,
+                    psnap.vinst(),
+                    std::time::SystemTime::now() + std::time::Duration::from_secs(600),
+                )
+                .await
+                .unwrap();
+            // With the source available, a missing "blocked" key genuinely permits
+            // this flow and the recorded route is unchanged.
+            assert!(matches!(
+                asm.visa_mgr
+                    .recheck_visa_allowed(&asm, &visa.metadata, &psnap, visa.visa.expires)
+                    .await
+                    .unwrap(),
+                crate::visa_mgr::VisaRecheck::AllowSameRoute
+            ));
+            // Re-expire the source after the successful baseline recheck.
+            let address = if expired_source {
+                "fd5a:5052:4000::a"
+            } else {
+                "fd5a:5052:4000::b"
+            };
+            let addr: IpAddr = address.parse().unwrap();
+            let mut actor = asm
+                .actor_mgr
+                .get_actor_by_zpr_addr(&addr)
+                .await
+                .unwrap()
+                .unwrap();
+            let expires = std::time::SystemTime::now() - std::time::Duration::from_secs(1);
+            let expired_attr = if expired_identity {
+                libeval::attribute::Attribute::builder(libeval::attribute::key::CN)
+                    .expires(expires)
+                    .value(actor.get_cn().unwrap())
+            } else {
+                libeval::attribute::AttributeSource::new(crate::test_helpers::TS_SOURCE)
+                    .builder(format!(
+                        "{}__source__{}",
+                        crate::test_helpers::TS_KEY,
+                        crate::test_helpers::TS_SOURCE
+                    ))
+                    .expires(expires)
+                    .value("engineering")
+            };
+            actor.add_attribute(expired_attr).unwrap();
+            asm.actor_mgr.update_actor(&actor).await.unwrap();
+            service
+                .fail
+                .store(!expired_identity, std::sync::atomic::Ordering::SeqCst);
+
+            assert!(!crate::event_mgr::handle_trusted_service_change(&asm).await);
+            assert_eq!(
+                asm.visa_mgr
+                    .get_pending_revoke_visa_ids_for_node(&node)
+                    .await
+                    .unwrap(),
+                vec![visa.visa.issuer_id]
+            );
+        }
+    }
 
     /// A denied visa is marked PendingRevoke on its holder node (target policy
     /// still live). Uses the no-route assembly so eval falls out as a deny.

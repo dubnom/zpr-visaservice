@@ -7,7 +7,7 @@ use std::collections::{HashMap, HashSet};
 use tokio::sync::RwLock;
 use tokio::time::Instant;
 
-use crate::db::{DbConnection, DbOp, DbResult, LockDescriptor, PolicyCommit};
+use crate::db::{DbConnection, DbOp, DbResult, HashGuard, LockDescriptor, PolicyCommit};
 
 /// Fault-injection mode for a specific write op, used by write-through tests.
 #[allow(dead_code)]
@@ -34,6 +34,12 @@ pub struct FakeDb {
     // fine: no await is held across it.
     set_ex_fault: std::sync::Mutex<FaultMode>,
     del_fault: std::sync::Mutex<FaultMode>,
+    #[cfg(test)]
+    pipeline_gate: tokio::sync::Mutex<()>,
+    #[cfg(test)]
+    pipeline_reply_gate: tokio::sync::Mutex<()>,
+    #[cfg(test)]
+    hash_reply_gate: tokio::sync::Mutex<()>,
 }
 
 #[allow(dead_code)]
@@ -51,6 +57,49 @@ enum FakeDbValue {
 }
 
 impl FakeDb {
+    async fn hash_with_lock(&self, key: &str) -> DbResult<HashMap<String, String>> {
+        if !self.exists_with_lock(key).await? {
+            return Ok(HashMap::new());
+        }
+        let entry = self.store.get(key).unwrap();
+        match &entry.value {
+            FakeDbValue::Hash(fields) => Ok(fields
+                .iter()
+                .map(|item| (item.key().clone(), item.value().clone()))
+                .collect()),
+            _ => Err(redis::RedisError::from((
+                redis::ErrorKind::UnexpectedReturnType,
+                "value is not a hash",
+            ))),
+        }
+    }
+
+    async fn apply_pipeline_with_lock(&self, ops: &[DbOp]) -> DbResult<()> {
+        for op in ops {
+            match op {
+                DbOp::Del(key) => self.del_with_lock(key).await?,
+                DbOp::SetBin { key, value } => self.set_bin_with_lock(key, value).await?,
+                DbOp::SRem { set_key, member } => self.srem_with_lock(set_key, member).await?,
+                DbOp::SAdd { set_key, member } => self.sadd_with_lock(set_key, member)?,
+                DbOp::HSet {
+                    hash_key,
+                    field,
+                    value,
+                } => {
+                    self.hset_with_lock(hash_key, field, value).await?;
+                }
+                DbOp::HSetMultiple {
+                    hash_key,
+                    field_values,
+                } => {
+                    self.hset_multiple_with_lock(hash_key, field_values).await?;
+                }
+                DbOp::Expire { key, seconds } => self.expire_with_lock(key, *seconds).await?,
+            }
+        }
+        Ok(())
+    }
+
     #[allow(dead_code)]
     pub fn new() -> Self {
         FakeDb {
@@ -58,6 +107,12 @@ impl FakeDb {
             lock: RwLock::new(()),
             set_ex_fault: std::sync::Mutex::new(FaultMode::None),
             del_fault: std::sync::Mutex::new(FaultMode::None),
+            #[cfg(test)]
+            pipeline_gate: tokio::sync::Mutex::new(()),
+            #[cfg(test)]
+            pipeline_reply_gate: tokio::sync::Mutex::new(()),
+            #[cfg(test)]
+            hash_reply_gate: tokio::sync::Mutex::new(()),
         }
     }
 
@@ -71,6 +126,21 @@ impl FakeDb {
     #[allow(dead_code)]
     pub fn set_del_fault(&self, mode: FaultMode) {
         *self.del_fault.lock().unwrap() = mode;
+    }
+
+    #[cfg(test)]
+    pub(crate) async fn hold_pipelines_for_test(&self) -> tokio::sync::MutexGuard<'_, ()> {
+        self.pipeline_gate.lock().await
+    }
+
+    #[cfg(test)]
+    pub(crate) async fn hold_pipeline_replies_for_test(&self) -> tokio::sync::MutexGuard<'_, ()> {
+        self.pipeline_reply_gate.lock().await
+    }
+
+    #[cfg(test)]
+    pub(crate) async fn hold_hash_replies_for_test(&self) -> tokio::sync::MutexGuard<'_, ()> {
+        self.hash_reply_gate.lock().await
     }
 }
 
@@ -99,6 +169,23 @@ impl Entry {
 
 #[allow(dead_code)]
 impl FakeDb {
+    fn sadd_with_lock(&self, key: &str, member: &str) -> DbResult<()> {
+        let entry = self
+            .store
+            .entry(key.to_string())
+            .or_insert_with(|| Entry::new(FakeDbValue::Set(DashSet::new())));
+        match &entry.value {
+            FakeDbValue::Set(s) => {
+                s.insert(member.to_string());
+                Ok(())
+            }
+            _ => Err(redis::RedisError::from((
+                redis::ErrorKind::UnexpectedReturnType,
+                "value is not a set",
+            ))),
+        }
+    }
+
     fn get_string_with_lock(&self, key: &str) -> DbResult<Option<String>> {
         let Some(entry) = self.store.get(key) else {
             return Ok(None);
@@ -434,32 +521,33 @@ impl DbConnection for FakeDb {
     /// Get all fields and values from a hash. Returns empty map if key does not exist.
     async fn hgetall(&self, key: String) -> DbResult<HashMap<String, String>> {
         let _rlock = self.lock.read().await;
-        if !self.exists(&key).await? {
-            return Ok(HashMap::new());
-        }
-        if let Some(entry) = self.store.get(&key) {
-            match &entry.value {
-                FakeDbValue::Hash(h) => {
-                    let mut result = HashMap::new();
-                    for item in h.iter() {
-                        result.insert(item.key().clone(), item.value().clone());
-                    }
-                    Ok(result)
-                }
-                _ => Err(redis::RedisError::from((
-                    redis::ErrorKind::UnexpectedReturnType,
-                    "value is not a hash",
-                ))),
-            }
-        } else {
-            Ok(HashMap::new())
-        }
+        let result = self.hash_with_lock(&key).await?;
+        drop(_rlock);
+        #[cfg(test)]
+        let _reply = self.hash_reply_gate.lock().await;
+        Ok(result)
     }
 
     /// Set a field in a hash.
     async fn hset(&self, key: &str, field: &str, value: &str) -> DbResult<()> {
         let _rlock = self.lock.read().await;
         self.hset_with_lock(key, field, value).await
+    }
+
+    async fn hash_pair_snapshot(
+        &self,
+        first: &str,
+        second: &str,
+    ) -> DbResult<(HashMap<String, String>, HashMap<String, String>)> {
+        let lock = self.lock.write().await;
+        let pair = (
+            self.hash_with_lock(first).await?,
+            self.hash_with_lock(second).await?,
+        );
+        drop(lock);
+        #[cfg(test)]
+        let _reply = self.hash_reply_gate.lock().await;
+        Ok(pair)
     }
 
     /// Set the hash field only if the field with that name does not already exist.
@@ -495,20 +583,7 @@ impl DbConnection for FakeDb {
     /// Add a member to a set, creating the set if it does not exist.
     async fn sadd(&self, key: &str, member: &str) -> DbResult<()> {
         let _rlock = self.lock.read().await;
-        let entry = self
-            .store
-            .entry(key.to_string())
-            .or_insert_with(|| Entry::new(FakeDbValue::Set(DashSet::new())));
-        match &entry.value {
-            FakeDbValue::Set(s) => {
-                s.insert(member.to_string());
-                Ok(())
-            }
-            _ => Err(redis::RedisError::from((
-                redis::ErrorKind::UnexpectedReturnType,
-                "value is not a set",
-            ))),
-        }
+        self.sadd_with_lock(key, member)
     }
 
     /// Increment number stored at key by `by` amount. If key does not exist, it is set to 0 before incrementing.
@@ -546,43 +621,65 @@ impl DbConnection for FakeDb {
     /// To simulate atomic we take a lock that prevents all the other operations
     /// from running.
     async fn atomic_pipeline(&self, ops: &[DbOp]) -> DbResult<()> {
+        #[cfg(test)]
+        let _gate = self.pipeline_gate.lock().await;
         // Models Redis MULTI/EXEC atomicity: a Reject fails the whole pipeline
         // before any op applies, so callers can test the all-or-nothing contract.
         if *self.set_ex_fault.lock().unwrap() == FaultMode::Reject {
             return Err(injected_fault_err());
         }
         let _wlock = self.lock.write().await;
-        for op in ops {
-            match op {
-                DbOp::Del(key) => {
-                    self.del_with_lock(key).await?;
-                }
-                DbOp::SetBin { key, value } => {
-                    self.set_bin_with_lock(key, value).await?;
-                }
-                DbOp::SRem { set_key, member } => {
-                    self.srem_with_lock(set_key, member).await?;
-                }
-                DbOp::HSet {
-                    hash_key,
-                    field,
-                    value,
-                } => {
-                    self.hset_with_lock(hash_key, field, value).await?;
-                }
-                DbOp::HSetMultiple {
-                    hash_key,
-                    field_values,
-                } => {
-                    self.hset_multiple_with_lock(hash_key, field_values).await?;
-                }
-                DbOp::Expire { key, seconds } => {
-                    self.expire_with_lock(key, *seconds).await?;
-                }
+        self.apply_pipeline_with_lock(ops).await?;
+
+        drop(_wlock);
+        #[cfg(test)]
+        let _reply = self.pipeline_reply_gate.lock().await;
+        Ok(())
+    }
+
+    async fn atomic_pipeline_if_set_and_hash_match(
+        &self,
+        key: &str,
+        expected: &HashSet<String>,
+        hash_guard: Option<HashGuard<'_>>,
+        ops: &[DbOp],
+    ) -> DbResult<bool> {
+        #[cfg(test)]
+        let _gate = self.pipeline_gate.lock().await;
+        let lock = self.lock.write().await;
+        if let Some(guard) = hash_guard {
+            let metadata = self.hash_with_lock(guard.key).await?;
+            if metadata.is_empty()
+                || metadata.get(guard.field).map(String::as_str) != guard.expected
+            {
+                return Ok(false);
             }
         }
-
-        Ok(())
+        let current: HashSet<String> = if self.exists_with_lock(key).await? {
+            let entry = self.store.get(key).unwrap();
+            match &entry.value {
+                FakeDbValue::Set(members) => members.iter().map(|s| s.key().clone()).collect(),
+                _ => {
+                    return Err(redis::RedisError::from((
+                        redis::ErrorKind::UnexpectedReturnType,
+                        "value is not a set",
+                    )));
+                }
+            }
+        } else {
+            HashSet::new()
+        };
+        if &current != expected {
+            return Ok(false);
+        }
+        if *self.set_ex_fault.lock().unwrap() == FaultMode::Reject {
+            return Err(injected_fault_err());
+        }
+        self.apply_pipeline_with_lock(ops).await?;
+        drop(lock);
+        #[cfg(test)]
+        let _reply = self.pipeline_reply_gate.lock().await;
+        Ok(true)
     }
 
     async fn begin_policy_operation(
@@ -915,6 +1012,96 @@ mod test {
         db.expire("temp", 0).await.unwrap();
         let exists = db.exists("temp").await.unwrap();
         assert!(!exists);
+    }
+
+    #[tokio::test]
+    async fn session_guard_contract() {
+        crate::db::assert_session_guard_contract(&FakeDb::new()).await;
+    }
+
+    #[tokio::test]
+    async fn guarded_pipeline_compares_exact_sets_before_mutating() {
+        let db = FakeDb::new();
+        db.sadd("guard:set", "a").await.unwrap();
+        let ops = [
+            DbOp::Del("guard:set".into()),
+            DbOp::SAdd {
+                set_key: "guard:set".into(),
+                member: "b".into(),
+            },
+            DbOp::SetBin {
+                key: "guard:blob".into(),
+                value: vec![0, 255],
+            },
+        ];
+        assert!(!db.atomic_pipeline_if_set_matches(
+            "guard:set", &HashSet::from(["other".into()]), &ops,
+        ).await.unwrap());
+        assert!(!db.exists("guard:blob").await.unwrap());
+        assert!(
+            db.atomic_pipeline_if_set_matches("guard:set", &HashSet::from(["a".into()]), &ops,)
+                .await
+                .unwrap()
+        );
+        assert_eq!(db.get_bin("guard:blob").await.unwrap(), [0, 255]);
+        assert!(
+            !db.atomic_pipeline_if_set_matches(
+                "guard:set",
+                &HashSet::from(["a".into()]),
+                &[DbOp::Del("guard:blob".into())],
+            )
+            .await
+            .unwrap()
+        );
+        assert_eq!(db.get_bin("guard:blob").await.unwrap(), [0, 255]);
+        assert!(
+            db.atomic_pipeline_if_set_matches("guard:missing", &HashSet::new(), &[])
+                .await
+                .unwrap()
+        );
+        db.set("guard:wrong-type", "string").await.unwrap();
+        assert!(
+            db.atomic_pipeline_if_set_matches("guard:wrong-type", &HashSet::new(), &ops,)
+                .await
+                .is_err()
+        );
+    }
+
+    #[tokio::test]
+    async fn guarded_pipeline_execution_error_stops_without_rollback() {
+        let db = FakeDb::new();
+        db.set("guard:wrong-type", "string").await.unwrap();
+        let result = db
+            .atomic_pipeline_if_set_matches(
+                "guard:missing",
+                &HashSet::new(),
+                &[
+                    DbOp::SetBin {
+                        key: "guard:before".into(),
+                        value: b"applied".to_vec(),
+                    },
+                    DbOp::HSet {
+                        hash_key: "guard:wrong-type".into(),
+                        field: "field".into(),
+                        value: "value".into(),
+                    },
+                    DbOp::SetBin {
+                        key: "guard:after".into(),
+                        value: b"not-applied".to_vec(),
+                    },
+                ],
+            )
+            .await;
+        assert!(result.is_err());
+        assert_eq!(
+            db.get("guard:before").await.unwrap().as_deref(),
+            Some("applied")
+        );
+        assert_eq!(
+            db.get("guard:wrong-type").await.unwrap().as_deref(),
+            Some("string")
+        );
+        assert!(!db.exists("guard:after").await.unwrap());
     }
 
     #[tokio::test]

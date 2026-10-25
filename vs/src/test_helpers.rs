@@ -465,6 +465,112 @@ pub fn register_ts(asm: &Arc<Assembly>, attrs: &[(&str, &str)]) -> Arc<MutableTr
     svc
 }
 
+struct HealthySiblingSource;
+
+#[async_trait]
+impl crate::trusted_services::TrustedServiceInterface for HealthySiblingSource {
+    async fn get_attributes_for_actor(
+        &self,
+        _identities: &[(String, String)],
+    ) -> Result<Vec<Attribute>, ServiceError> {
+        Ok(Vec::new())
+    }
+
+    async fn flush(&self) -> Result<(), ServiceError> {
+        Ok(())
+    }
+
+    fn current_revision(&self) -> u64 {
+        1
+    }
+
+    fn get_source_id(&self) -> &str {
+        "sibling"
+    }
+}
+
+pub async fn build_ttl_refresh_asm(
+    expired_source: bool,
+) -> (Arc<Assembly>, IpAddr, Arc<MutableTrustedService>) {
+    let (asm, node) = build_sweep_asm(true).await;
+    let mut msg = capnp::message::Builder::new_default();
+    {
+        let mut policy = msg.init_root::<capnp_policy::policy::Builder>();
+        policy.set_created("2026-10-24T00:00:00Z");
+        policy.set_version(2);
+        let mut coms = policy.reborrow().init_com_policies(1);
+        let mut com = coms.reborrow().get(0);
+        com.set_service_id("web");
+        com.set_allow(true);
+        let mut scopes = com.reborrow().init_scope(1);
+        let mut scope = scopes.reborrow().get(0);
+        scope.set_protocol(6);
+        scope.init_port().set_port_num(80);
+        let mut conditions = if expired_source {
+            com.reborrow().init_client_conds(1)
+        } else {
+            com.reborrow().init_service_conds(1)
+        };
+        let mut condition = conditions.reborrow().get(0);
+        condition.set_key("user.blocked__source__hr");
+        condition.set_op(capnp_policy::AttrOp::Ne);
+        condition.init_value(1).set(0, "true");
+    }
+    let mut bytes = Vec::new();
+    capnp::serialize::write_message(&mut bytes, &msg).unwrap();
+    asm.policy_mgr
+        .update_policy_from_container_bytes(make_container_bytes(
+            crate::config::POLICY_MIN_COMPILER_MAJOR,
+            crate::config::POLICY_MIN_COMPILER_MINOR,
+            crate::config::POLICY_MIN_COMPILER_PATCH,
+            &bytes,
+        ))
+        .await
+        .unwrap();
+    let dst_addr: IpAddr = "fd5a:5052:4000::b".parse().unwrap();
+    let mut dst = asm
+        .actor_mgr
+        .get_actor_by_zpr_addr(&dst_addr)
+        .await
+        .unwrap()
+        .unwrap();
+    dst.add_attribute(Attribute::builder(key::SERVICES).value("web"))
+        .unwrap();
+    asm.actor_mgr.update_actor(&dst).await.unwrap();
+    let service = register_ts(&asm, &[]);
+    asm.ts_mgr
+        .update_services(vec![service.clone(), Arc::new(HealthySiblingSource)]);
+    for address in ["fd5a:5052:4000::a", "fd5a:5052:4000::b"] {
+        for source in [TS_SOURCE, "sibling"] {
+            asm.ts_mgr
+                .record_revision(&address.parse().unwrap(), source, 1);
+        }
+    }
+    let expired_addr: IpAddr = if expired_source {
+        "fd5a:5052:4000::a"
+    } else {
+        "fd5a:5052:4000::b"
+    }
+    .parse()
+    .unwrap();
+    let mut actor = asm
+        .actor_mgr
+        .get_actor_by_zpr_addr(&expired_addr)
+        .await
+        .unwrap()
+        .unwrap();
+    actor
+        .add_attribute(
+            AttributeSource::new(TS_SOURCE)
+                .builder(format!("{TS_KEY}__source__{TS_SOURCE}"))
+                .expires(SystemTime::now() - Duration::from_secs(1))
+                .value("engineering"),
+        )
+        .unwrap();
+    asm.actor_mgr.update_actor(&actor).await.unwrap();
+    (asm, node, service)
+}
+
 /// Give the stored actor at `zpr_addr` an attribute from [TS_SOURCE], standing in for
 /// data the actor picked up from that source under the previous snapshot.
 pub async fn seed_source_attr(asm: &Arc<Assembly>, zpr_addr: &str, ts_key: &str, value: &str) {

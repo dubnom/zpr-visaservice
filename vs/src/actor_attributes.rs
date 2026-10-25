@@ -21,6 +21,7 @@ use crate::error::ServiceError;
 use crate::logging::targets::VREQ;
 use crate::trusted_services::{
     REVISION_NEVER, TrustedServicesMgr, derive_user_authority_attributes, lookup_identities,
+    source_unqualified_key,
 };
 
 /// What a refresh pass found. Kept separate from the act of applying it so the caller
@@ -31,8 +32,10 @@ struct RefreshOutcome {
     changed: bool,
     /// Source revisions to record once that write succeeds.
     revisions: Vec<(String, u64)>,
-    /// Revision-stale sources that could not be reached. Their attributes have been
-    /// stripped, so the actor's claim set is incomplete and must not be evaluated.
+    /// Retired source records to forget only after pruning is persisted.
+    removed_sources: HashSet<String>,
+    /// Reasons lookup is indeterminate (unavailable sources or expired identities).
+    /// The actor must not be evaluated, including conditions on absent cached keys.
     indeterminate: Vec<String>,
 }
 
@@ -42,8 +45,25 @@ impl RefreshOutcome {
     /// must never say "current" for an actor whose refreshed attributes did not reach
     /// the database, or the next request would trust the stale copy it loads.
     fn commit_revisions(&self, ts_mgr: &TrustedServicesMgr, zpr_addr: &IpAddr) {
+        for source in &self.removed_sources {
+            ts_mgr.forget_source_revision(zpr_addr, source);
+        }
         for (source, revision) in &self.revisions {
             ts_mgr.record_revision(zpr_addr, source, *revision);
+        }
+    }
+}
+
+struct PendingActorWrite<'a> {
+    manager: &'a TrustedServicesMgr,
+    address: Option<IpAddr>,
+}
+
+impl Drop for PendingActorWrite<'_> {
+    fn drop(&mut self) {
+        if let Some(address) = self.address {
+            self.manager.forget_actor_revisions(&address);
+            warn!(target: VREQ, "actor {address} refresh dropped during persistence; invalidated source revisions; reload required");
         }
     }
 }
@@ -53,25 +73,65 @@ impl RefreshOutcome {
 /// request path and by the attribute-change reconciliation in `event_mgr`.
 ///
 /// Returns TRUE if the actor was changed and written back.
+/// Dropping an in-flight write invalidates this actor's cached source revisions;
+/// it does not cancel a database mutation that has already been submitted.
 ///
 /// ### Errors
 /// - `StoreError` if the write back fails. No revision is recorded, so the next request
-///   retries the whole refresh.
-/// - `AttributesIndeterminate` if a revision-stale source could not be reached. The
-///   actor has been stripped of that source's attributes and persisted in that state,
-///   but callers must treat the result as a denial rather than evaluate it: absence is
+///   retries the whole refresh. The caller's actor may already be modified, and a
+///   late repository failure may occur after refreshed claims have been stored;
+///   this is not an atomic transaction across all actor records.
+/// - `AttributesIndeterminate` if a lookup identity expired or a source could not
+///   be reached. Revision-stale
+///   attributes are stripped and persisted; expired TTL attributes are retained.
+///   Callers must treat either result as a denial rather than evaluate it: absence is
 ///   not the same as "known to have no such attribute", and some policy conditions are
 ///   satisfied by a missing key.
+/// - `AttributesIndeterminate` if a configuration change is observed during
+///   refresh or persistence. Discard the working actor and retry from storage.
+///   These optimistic checks do not serialize publication with database writes.
 pub(crate) async fn refresh_and_persist_actor(
     asm: &Assembly,
     actor: &mut Actor,
 ) -> Result<bool, ServiceError> {
+    let configuration = asm.ts_mgr.configuration();
     let policy = asm.policy_mgr.get_current();
     let outcome =
         refresh_expired_attributes(&asm.ts_mgr, &policy.lookup_identity_keys(), actor).await;
-    if outcome.changed {
-        asm.actor_mgr.update_actor(actor).await?;
+    let configuration_is_current = || {
+        asm.ts_mgr.configuration_is_current(&configuration)
+            && asm.policy_mgr.get_current().vinst() == policy.vinst()
+    };
+    if !configuration_is_current() {
+        return Err(ServiceError::AttributesIndeterminate(
+            "policy or trusted-source configuration changed during actor refresh; retry required"
+                .into(),
+        ));
     }
+    let persisted = if outcome.changed {
+        let mut pending = PendingActorWrite {
+            manager: &asm.ts_mgr,
+            address: actor.get_zpr_addr().copied(),
+        };
+        let result = asm.actor_mgr.update_actor(actor).await;
+        pending.address = None;
+        result
+    } else {
+        Ok(())
+    };
+
+    if !configuration_is_current() {
+        if let Some(address) = actor.get_zpr_addr() {
+            // A write may have completed during publication. Its claims must be
+            // fetched again rather than certified by any previous revision.
+            asm.ts_mgr.forget_actor_revisions(address);
+        }
+        persisted?;
+        return Err(ServiceError::AttributesIndeterminate(
+            "policy or trusted-source configuration changed during actor persistence; retry required".into(),
+        ));
+    }
+    persisted?;
 
     // No ZPR address means refresh_expired_attributes did nothing at all (an actor
     // without an address has not completed a connection, so there is nothing to key
@@ -83,7 +143,7 @@ pub(crate) async fn refresh_and_persist_actor(
 
     if !outcome.indeterminate.is_empty() {
         return Err(ServiceError::AttributesIndeterminate(format!(
-            "actor {} could not be refreshed from source(s): {}",
+            "actor {} attribute refresh indeterminate: {}",
             zpr_addr,
             outcome.indeterminate.join(", ")
         )));
@@ -96,20 +156,23 @@ pub(crate) async fn refresh_and_persist_actor(
 /// whose snapshot revision differs from the actor's recorded one (revision
 /// path, e.g. after an admin flush).
 ///
+/// Claims owned by removed sources are pruned before lookup identity selection,
+/// using persisted source-qualified keys and their same-source legacy aliases.
+/// Removal is known absence, not an unavailable active source.
+///
 /// A successful lookup is authoritative for that source: anything the service
 /// did not vend is dropped.
 ///
-/// A failed TTL lookup changes nothing, so a service outage cannot strip
-/// attributes. The leftovers stay expired, and libeval already refuses to
-/// satisfy an allow condition from an expired attribute, so that path is
-/// fail-closed in this failure case.
+/// A failed TTL lookup retains expired attributes but reports the source as
+/// indeterminate. The evaluator's expired-key guard does not protect conditions
+/// on other keys that the unavailable source might now vend.
 ///
 /// A failed lookup for a revision-stale source (ie, source reports a new
 /// revision) is different: there is no expired copy to fall back on, so the
 /// source's attributes are stripped and the source is reported as
 /// *indeterminate*. The caller must deny rather than evaluate the remaining
-/// claims -- absence is not "known to have no such attribute". REVISION_NEVER
-/// is queued so the source stays stale and the next request retries.
+/// claims -- absence is not "known to have no such attribute". Either failure
+/// queues REVISION_NEVER so the next request retries even with an empty cache.
 ///
 /// Nothing is recorded with the trusted-service manager here; see
 /// [RefreshOutcome].
@@ -124,12 +187,40 @@ async fn refresh_expired_attributes(
     let Some(zpr_addr) = actor.get_zpr_addr().copied() else {
         return outcome;
     };
+
+    // Qualified keys identify persisted source ownership even after restart.
+    // Restrict alias removal to those keys: a source id can also be a built-in
+    // claim issuer, so the source stamp alone is not sufficient ownership proof.
+    let mut owned_keys: HashMap<String, HashSet<String>> = HashMap::new();
+    for attr in actor.attrs_iter() {
+        if let Some(key) = source_unqualified_key(attr) {
+            let keys = owned_keys.entry(attr.get_source().to_string()).or_default();
+            keys.insert(key.to_string());
+            keys.insert(attr.get_key().to_string());
+        }
+    }
+    outcome.removed_sources =
+        ts_mgr.removed_sources_for_actor(&zpr_addr, owned_keys.keys().map(String::as_str));
+    for source in &outcome.removed_sources {
+        if let Some(keys) = owned_keys.get(source) {
+            outcome.changed |=
+                prune_from_source(actor, source, |attr| keys.contains(attr.get_key()));
+        }
+    }
+
     // The lookup-identity (key, value) set: the policy's lookup-identity keys
     // intersected with the actor's attributes. Every attribute on the actor is either
     // an authenticated claim or validated by a join policy, so this cannot include a
     // self-asserted identity. May legitimately be empty (e.g. an actor with no CN and
     // no policy-declared identity attribute); sources then match nothing.
-    let identities = lookup_identities(lookup_keys, actor.attrs_iter());
+    let identities = match lookup_identities(lookup_keys, actor.attrs_iter()) {
+        Ok(identities) => identities,
+        Err(error) => {
+            warn!(target: VREQ, "attribute lookup rejected for actor {zpr_addr}: {error}");
+            outcome.indeterminate.push(error.to_string());
+            return outcome;
+        }
+    };
 
     let mut sources = HashSet::new();
     for attr in actor.attrs_iter() {
@@ -176,19 +267,12 @@ async fn refresh_expired_attributes(
                             outcome.changed = true;
                         }
                     }
+                    // Both TTL and revision lookups replace the source observation,
+                    // including fields whose old individual TTL has not elapsed.
+                    outcome.changed |=
+                        prune_from_source(actor, source, |a| !returned.contains(a.get_key()));
                     if let Some(&rev) = stale_rev {
-                        // Revision refresh: the old snapshot's data is invalid, so drop
-                        // everything the service did not just return. Queue the
-                        // revision even when zero attributes came back — that is what
-                        // detects both removed and newly added attributes.
-                        outcome.changed |=
-                            prune_from_source(actor, source, |a| !returned.contains(a.get_key()));
                         outcome.revisions.push((source.clone(), rev));
-                    } else {
-                        // TTL refresh: whatever the service did not just set for this
-                        // source is gone; drop the leftovers rather than carry a
-                        // permanently expired copy.
-                        outcome.changed |= prune_from_source(actor, source, |a| a.is_expired());
                     }
                 }
                 Err(e) => {
@@ -201,9 +285,9 @@ async fn refresh_expired_attributes(
                         // request retries (the strip would otherwise leave nothing
                         // marking it relevant).
                         outcome.changed |= prune_from_source(actor, source, |_| true);
-                        outcome.revisions.push((source.clone(), REVISION_NEVER));
-                        outcome.indeterminate.push(source.clone());
                     }
+                    outcome.revisions.push((source.clone(), REVISION_NEVER));
+                    outcome.indeterminate.push(source.clone());
                 }
             }
         }
@@ -261,6 +345,10 @@ pub(crate) async fn refresh_actors(asm: &Assembly, zpr_addrs: HashSet<IpAddr>) -
     }
     (refreshed, unresolved, failed)
 }
+
+#[cfg(test)]
+#[path = "actor_attributes_lifecycle_tests.rs"]
+mod lifecycle_tests;
 
 #[cfg(test)]
 mod tests {
@@ -479,6 +567,54 @@ mod tests {
         assert!(mgr.stale_sources_for_actor(&test_addr()).is_empty());
     }
 
+    #[tokio::test]
+    async fn refresh_does_not_forward_expired_subjects_alongside_live_identities() {
+        let (mgr, fake) = ts_mgr_with_fake();
+        let mut actor = actor_with_cn("device.example");
+        actor
+            .add_attribute(
+                AttributeSource::new("former-issuer")
+                    .builder("user.sub")
+                    .expires(SystemTime::now() - Duration::from_secs(1))
+                    .value("former-user"),
+            )
+            .unwrap();
+
+        let outcome = refresh_expired_attributes(&mgr, &[key::CN, "user.sub"], &mut actor).await;
+        assert!(!outcome.changed);
+        assert_eq!(outcome.indeterminate.len(), 1);
+        assert!(fake.calls.lock().unwrap().is_empty());
+        assert!(actor.get_attribute("user.sub").unwrap().is_expired());
+    }
+
+    #[tokio::test]
+    async fn empty_source_observation_expiry_forces_refresh_at_unchanged_revision() {
+        let (mgr, fake) = ts_mgr_with_fake();
+        let mut actor = actor_with_cn("device.example");
+        mgr.record_revision(&test_addr(), FAKE_SOURCE, fake.current_revision());
+        actor
+            .add_attribute(
+                AttributeSource::new(FAKE_SOURCE)
+                    .builder("zpr.source_freshness__source__fake")
+                    .expires(SystemTime::now() - Duration::from_secs(1))
+                    .values(Vec::<String>::new()),
+            )
+            .unwrap();
+        let outcome = refresh_expired_attributes(&mgr, &[key::CN], &mut actor).await;
+        assert!(outcome.changed);
+        assert!(outcome.indeterminate.is_empty());
+        assert_eq!(
+            *fake.calls.lock().unwrap(),
+            vec![cn_ident("device.example")]
+        );
+        assert!(actor.get_attribute(FAKE_ATTR_KEY).is_some());
+        assert!(
+            actor
+                .get_attribute("zpr.source_freshness__source__fake")
+                .is_none()
+        );
+    }
+
     /// A trusted service that knows nothing about any actor: every lookup succeeds and
     /// returns no attributes.
     struct EmptyTrustedService;
@@ -518,6 +654,97 @@ mod tests {
         assert!(actor.get_attribute(FAKE_ATTR_KEY).is_none());
         // The unexpired CN from another source is untouched.
         assert!(actor.get_attribute(key::CN).is_some());
+    }
+
+    #[tokio::test]
+    async fn ttl_refresh_replaces_full_source_observation_not_just_expired_fields() {
+        let mut message = capnp::message::Builder::new_default();
+        {
+            let mut policy = message.init_root::<zpr::policy::v1::policy::Builder>();
+            let mut policies = policy.reborrow().init_com_policies(1);
+            let mut com = policies.reborrow().get(0);
+            com.set_allow(true);
+            com.set_service_id("web");
+            let mut scopes = com.reborrow().init_scope(1);
+            let mut scope = scopes.reborrow().get(0);
+            scope.set_protocol(6);
+            scope.init_port().set_port_num(80);
+            let mut conditions = com.reborrow().init_client_conds(1);
+            let mut condition = conditions.reborrow().get(0);
+            condition.set_key("user.badge");
+            condition.set_op(zpr::policy::v1::AttrOp::Has);
+        }
+        let mut bytes = Vec::new();
+        capnp::serialize::write_message(&mut bytes, &message).unwrap();
+        let evaluator = libeval::eval::EvalContext::new(Arc::new(
+            libeval::policy::Policy::new_from_policy_bytes(bytes::Bytes::from(bytes)).unwrap(),
+        ));
+        let packet =
+            zpr::vsapi_types::PacketDesc::new_tcp(TEST_ADDR, "fd5a:5052::43", 1234, 80).unwrap();
+        for empty_result in [true, false] {
+            let (mgr, fake) = ts_mgr_with_fake();
+            if empty_result {
+                mgr.update_services(vec![Arc::new(EmptyTrustedService)]);
+            }
+            mgr.record_revision(&test_addr(), FAKE_SOURCE, 1);
+            let mut actor = actor_with_cn("device.example");
+            for (source, key, value) in [
+                (FAKE_SOURCE, "user.badge", "old-permission"),
+                (FAKE_SOURCE, key::USER_AUTHORITY, FAKE_SOURCE),
+                ("other", "device.location", "hq"),
+            ] {
+                actor
+                    .add_attribute(
+                        AttributeSource::new(source)
+                            .builder(key)
+                            .expires_in(Duration::from_secs(600))
+                            .value(value),
+                    )
+                    .unwrap();
+            }
+            actor.add_identity_key(usize::MAX, "user.badge").unwrap();
+            actor
+                .add_attribute(
+                    AttributeSource::new(FAKE_SOURCE)
+                        .builder("zpr.source_freshness__source__fake")
+                        .expires(SystemTime::now() - Duration::from_secs(1))
+                        .values(Vec::<String>::new()),
+                )
+                .unwrap();
+            actor
+                .add_attribute(Attribute::builder(key::SERVICES).value("web"))
+                .unwrap();
+            assert!(matches!(
+                evaluator.eval_request(&actor, &actor, &packet).unwrap(),
+                libeval::eval_result::PartialEvalResult::AllowWithoutRoute(_)
+            ));
+            let outcome = refresh_expired_attributes(&mgr, &[key::CN], &mut actor).await;
+            assert!(outcome.changed);
+            assert!(outcome.indeterminate.is_empty());
+            assert!(actor.get_attribute("user.badge").is_none());
+            assert!(!actor.identity_keys_iter().any(|key| key == "user.badge"));
+            assert!(
+                actor
+                    .get_attribute("zpr.source_freshness__source__fake")
+                    .is_none()
+            );
+            assert!(actor.get_attribute("device.location").is_some());
+            assert!(actor.get_attribute(key::CN).is_some());
+            assert!(matches!(
+                evaluator.eval_request(&actor, &actor, &packet).unwrap(),
+                libeval::eval_result::PartialEvalResult::Deny(_)
+            ));
+            assert_eq!(
+                actor.get_attribute(key::USER_AUTHORITY).is_none(),
+                empty_result
+            );
+            assert_eq!(actor.get_attribute(FAKE_ATTR_KEY).is_none(), empty_result);
+            if !empty_result {
+                assert_eq!(fake.calls.lock().unwrap().len(), 1);
+            }
+            outcome.commit_revisions(&mgr, &test_addr());
+            assert!(mgr.stale_sources_for_actor(&test_addr()).is_empty());
+        }
     }
 
     /// An unroutable source (no registered service) and an actor with no ZPR address
@@ -638,8 +865,7 @@ mod tests {
         assert_eq!(failing.calls.load(std::sync::atomic::Ordering::SeqCst), 2);
     }
 
-    /// A plain TTL-refresh failure keeps today's behavior: the expired attributes are
-    /// left in place (an outage cannot strip attributes on the TTL path).
+    /// TTL failures retain the expired cache but cannot establish absence of other keys.
     #[tokio::test]
     async fn test_refresh_ttl_failure_retains_attributes() {
         let mgr = TrustedServicesMgr::new();
@@ -656,9 +882,16 @@ mod tests {
         assert!(!outcome.changed);
         assert!(actor.get_attribute(FAKE_ATTR_KEY).unwrap().is_expired());
         assert_eq!(failing.calls.load(std::sync::atomic::Ordering::SeqCst), 1);
-        // The retained attributes are expired, and libeval will not satisfy an allow
-        // from an expired attribute, so there is nothing indeterminate to report.
-        assert!(outcome.indeterminate.is_empty());
+        assert_eq!(outcome.indeterminate, vec![FAKE_SOURCE.to_string()]);
+        assert_eq!(
+            outcome.revisions,
+            vec![(FAKE_SOURCE.to_string(), REVISION_NEVER)]
+        );
+        outcome.commit_revisions(&mgr, &test_addr());
+        assert_eq!(
+            mgr.stale_sources_for_actor(&test_addr()),
+            vec![(FAKE_SOURCE.to_string(), 1)]
+        );
     }
 
     /// TS-1: a revision-stale source that cannot be reached is reported as indeterminate,

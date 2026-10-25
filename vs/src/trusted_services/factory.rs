@@ -10,16 +10,25 @@ use zpr::policy_types::{ServiceType, TrustedService};
 
 use crate::error::ServiceError;
 
-use super::TrustedServiceInterface;
 use super::attribute_mapper::{AttributeMapper, SOURCE_ATTRIBUTE_SEPARATOR};
 use super::file_attribute_store::FileAttributeStore;
 use super::http_attribute_store::HttpAttributeStore;
+use super::{SOURCE_FRESHNESS_KEY, TrustedServiceInterface};
 use crate::config::TrustedServiceHttpConfig;
 
 /// API name used by file-backed trusted services.
 const TS_API_FILE: &str = "file";
 const TS_API_HTTP: &str = "rest/1";
 const TS_API_VALIDATION_2: &str = "validation/2";
+
+pub(super) fn valid_source_id(id: &str) -> bool {
+    !id.is_empty()
+        && id.len() <= 64
+        && !id.contains(SOURCE_ATTRIBUTE_SEPARATOR)
+        && id
+            .bytes()
+            .all(|byte| byte.is_ascii_alphanumeric() || byte == b'_' || byte == b'-')
+}
 
 /// One policy-declared trusted service, reduced to the inputs that determine its store
 /// instance. Comparing these across policies tells us whether the live stores are still
@@ -53,14 +62,7 @@ pub fn trusted_service_definitions(
                 service.id
             )));
         }
-        if service.id.len() > 64
-            || service.id.is_empty()
-            || service.id.contains(SOURCE_ATTRIBUTE_SEPARATOR)
-            || !service
-                .id
-                .bytes()
-                .all(|byte| byte.is_ascii_alphanumeric() || byte == b'_' || byte == b'-')
-        {
+        if !valid_source_id(&service.id) {
             return Err(ServiceError::Param(format!(
                 "trusted service '{}': id must use only ASCII letters, digits, '_' or '-', and may not contain the reserved source-key separator",
                 service.id
@@ -72,15 +74,44 @@ pub fn trusted_service_definitions(
                 service.id
             )));
         };
-        if trusted_service
-            .returns_attrs
-            .iter()
-            .any(|mapping| mapping.attr.zpl_key().contains(SOURCE_ATTRIBUTE_SEPARATOR))
-        {
+        if trusted_service.returns_attrs.iter().any(|mapping| {
+            let key = mapping.attr.zpl_key();
+            key.contains(SOURCE_ATTRIBUTE_SEPARATOR) || key == SOURCE_FRESHNESS_KEY
+        }) {
             return Err(ServiceError::Param(format!(
-                "trusted service '{}': mapped attribute uses the reserved source-key separator",
+                "trusted service '{}': mapped attribute uses reserved source metadata or source-key separator",
                 service.id
             )));
+        }
+        let mut raw_mappings = BTreeMap::new();
+        let mut canonical_shapes = BTreeMap::new();
+        for mapping in &trusted_service.returns_attrs {
+            if mapping.service_attr_key.trim().is_empty() {
+                return Err(ServiceError::Param(format!(
+                    "trusted service '{}': mapped service attribute name must not be blank",
+                    service.id
+                )));
+            }
+            if raw_mappings
+                .insert(&mapping.service_attr_key, &mapping.attr)
+                .is_some_and(|previous| previous != &mapping.attr)
+            {
+                return Err(ServiceError::Param(format!(
+                    "trusted service '{}': conflicting mappings for service attribute '{}'",
+                    service.id, mapping.service_attr_key
+                )));
+            }
+            let key = mapping.attr.zpl_key();
+            let shape = (mapping.attr.is_tag(), mapping.attr.is_multi_valued());
+            if canonical_shapes
+                .insert(key.clone(), shape)
+                .is_some_and(|previous| previous != shape)
+            {
+                return Err(ServiceError::Param(format!(
+                    "trusted service '{}': conflicting mapping cardinality for '{key}'",
+                    service.id
+                )));
+            }
         }
 
         definitions.push(TrustedServiceDefinition {
@@ -140,6 +171,10 @@ pub fn build_services_with_http(
         })
         .collect()
 }
+
+#[cfg(test)]
+#[path = "factory_mapping_tests.rs"]
+mod mapping_tests;
 
 #[cfg(test)]
 mod tests {

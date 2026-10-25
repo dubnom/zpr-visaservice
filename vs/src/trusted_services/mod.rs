@@ -10,6 +10,7 @@ use crate::error::ServiceError;
 use self::attribute_mapper::source_qualified_key;
 
 mod attribute_mapper;
+pub(crate) mod control;
 mod factory;
 mod file_attribute_store;
 mod http_attribute_store;
@@ -21,12 +22,27 @@ mod test_support;
 pub use factory::{
     TrustedServiceDefinition, build_services_with_http, trusted_service_definitions,
 };
+pub(crate) use manager::ServiceConfiguration;
 pub use manager::TrustedServiceStatus;
 pub use manager::TrustedServicesMgr;
 
 /// A revision no snapshot will ever carry (the counter starts at 1). Recording it for
 /// an actor keeps a source relevant-and-stale, forcing a retry on the next request.
 pub const REVISION_NEVER: u64 = 0;
+
+pub(crate) const SOURCE_FRESHNESS_KEY: &str = "zpr.source_freshness";
+
+pub(crate) fn source_unqualified_key(attr: &Attribute) -> Option<&str> {
+    let (key, source) = attr
+        .get_key()
+        .rsplit_once(attribute_mapper::SOURCE_ATTRIBUTE_SEPARATOR)?;
+    (!key.is_empty() && source == attr.get_source()).then_some(key)
+}
+
+pub(crate) fn is_source_freshness(attr: &Attribute) -> bool {
+    attr.get_key() == SOURCE_FRESHNESS_KEY
+        || attr.get_key() == source_qualified_key(SOURCE_FRESHNESS_KEY, attr.get_source())
+}
 
 /// Process-wide source of snapshot revisions. Revisions and actor records both reset
 /// on restart, while a missing actor record safely forces a refresh.
@@ -37,24 +53,67 @@ fn next_revision() -> u64 {
     REVISION_COUNTER.fetch_add(1, Ordering::Relaxed)
 }
 
+fn deserialize_unique_map<'de, D, V>(
+    deserializer: D,
+) -> Result<std::collections::BTreeMap<String, V>, D::Error>
+where
+    D: serde::Deserializer<'de>,
+    V: serde::Deserialize<'de>,
+{
+    struct UniqueMapVisitor<V>(std::marker::PhantomData<V>);
+
+    impl<'de, V: serde::Deserialize<'de>> serde::de::Visitor<'de> for UniqueMapVisitor<V> {
+        type Value = std::collections::BTreeMap<String, V>;
+
+        fn expecting(&self, formatter: &mut std::fmt::Formatter) -> std::fmt::Result {
+            formatter.write_str("an object with unique names")
+        }
+
+        fn visit_map<M: serde::de::MapAccess<'de>>(
+            self,
+            mut map: M,
+        ) -> Result<Self::Value, M::Error> {
+            let mut values = std::collections::BTreeMap::new();
+            while let Some((key, value)) = map.next_entry::<String, V>()? {
+                if values.insert(key, value).is_some() {
+                    return Err(serde::de::Error::custom(
+                        "duplicate trusted-source object name",
+                    ));
+                }
+            }
+            Ok(values)
+        }
+    }
+
+    deserializer.deserialize_map(UniqueMapVisitor(std::marker::PhantomData))
+}
+
 /// Intersect the policy's lookup-identity keys (see `Policy::lookup_identity_keys`)
 /// with a set of attributes -- authenticated claims at connect time, the actor's
 /// attributes at refresh time -- producing the (key, value) pairs to send to trusted
 /// services. Attributes that are not single-valued cannot name an identity and are
-/// skipped.
+/// skipped. An expired lookup identity makes the entire lookup indeterminate;
+/// dropping it would misrepresent unknown provider claims as known absence.
 pub(crate) fn lookup_identities<'a>(
     lookup_keys: &[&str],
     attrs: impl Iterator<Item = &'a Attribute>,
-) -> Vec<(String, String)> {
+) -> Result<Vec<(String, String)>, ServiceError> {
     let mut identities = Vec::new();
     for attr in attrs {
         if lookup_keys.contains(&attr.get_key()) {
             if let Ok(value) = attr.get_single_value() {
+                if attr.is_expired() {
+                    return Err(ServiceError::AttributesIndeterminate(format!(
+                        "lookup identity '{}' from '{}' has expired",
+                        attr.get_key(),
+                        attr.get_source()
+                    )));
+                }
                 identities.push((attr.get_key().to_string(), value.to_string()));
             }
         }
     }
-    identities
+    Ok(identities)
 }
 
 /// Prefix of attribute keys in the user identity namespace.
@@ -159,9 +218,41 @@ pub trait TrustedServiceInterface: Send + Sync {
 }
 
 #[cfg(test)]
+#[path = "authority_lifecycle_tests.rs"]
+mod authority_lifecycle_tests;
+
+#[cfg(test)]
+#[path = "identity_lifecycle_tests.rs"]
+mod identity_lifecycle_tests;
+
+#[cfg(test)]
 mod derive_tests {
     use super::*;
     use std::time::{Duration, SystemTime};
+
+    #[test]
+    fn lookup_identities_rejects_expired_and_excludes_non_identity_claims() {
+        let attrs = vec![
+            attr("issuer-a", "user.sub", "same-subject", 600),
+            AttributeSource::new("issuer-b")
+                .builder("user.other-sub")
+                .expires(SystemTime::now() - Duration::from_secs(1))
+                .value("same-subject"),
+            attr("issuer-a", "user.display-name", "not-an-identity", 600),
+            Attribute::builder("user.multi-sub").values(["a", "b"]),
+        ];
+        assert!(matches!(
+            lookup_identities(
+                &["user.sub", "user.other-sub", "user.multi-sub"],
+                attrs.iter()
+            ),
+            Err(ServiceError::AttributesIndeterminate(_))
+        ));
+        assert_eq!(
+            lookup_identities(&["user.sub", "user.multi-sub"], attrs.iter()).unwrap(),
+            vec![("user.sub".into(), "same-subject".into())]
+        );
+    }
 
     /// Build a source-stamped attribute expiring `secs` seconds from now.
     fn attr(source: &str, key: &str, value: &str, secs: u64) -> Attribute {

@@ -145,7 +145,12 @@ impl ActorMgr {
             self.actor_db.add_actor(actor).await?;
         } else {
             // Is a reconnect...
-            if let Err(e) = self.actor_db.update_actor(actor).await {
+            let update = if actor.device_authentication().is_some() {
+                self.actor_db.update_authenticated_actor(actor).await
+            } else {
+                self.actor_db.update_actor(actor).await
+            };
+            if let Err(e) = update {
                 // Update failed? Make the node try a fresh connect.
                 if let Err(ee) = self
                     .node_db
@@ -195,8 +200,8 @@ impl ActorMgr {
     }
 
     // TODO: This probably updates too much ... all we really need is to update the attributes.
-    // Only called from refresh_and_persist_actor, after an attribute refresh: from the
-    // visa request path and from the attribute reconcile sweep in event_mgr.
+    // Ordinary updates retain the authenticated session. Reauthentication uses
+    // the explicit repository replacement path in add_node instead.
     pub async fn update_actor(&self, actor: &Actor) -> Result<(), ServiceError> {
         self.actor_db.update_actor(actor).await?;
         Ok(())
@@ -710,6 +715,40 @@ mod test {
         let actor_repo = ActorRepo::new(db.clone());
         let node_repo = NodeRepo::new(db);
         ActorMgr::new(actor_repo, node_repo, Arc::new(Counters::default()))
+    }
+
+    #[tokio::test]
+    async fn session_guard_node_reconnect_installs_fresh_verified_session() {
+        use libeval::actor::{DeviceAuthentication, DeviceAuthority};
+        use std::time::Duration;
+
+        let mgr = make_mgr();
+        let mut actor = make_node_actor_defexp("fd5a:5052::71", "device", "127.0.0.1:1234");
+        let address = *actor.get_zpr_addr().unwrap();
+        for reconnect in [false, true] {
+            actor
+                .set_device_authentication(
+                    DeviceAuthentication::new(
+                        DeviceAuthority::Bootstrap {
+                            visa_service: "vs.zpr/test".into(),
+                        },
+                        "device".into(),
+                        uuid::Uuid::new_v4().to_string(),
+                        SystemTime::now() + Duration::from_secs(600),
+                    )
+                    .unwrap(),
+                )
+                .unwrap();
+            mgr.add_node(&actor, reconnect).await.unwrap();
+            assert_eq!(
+                mgr.get_actor_by_zpr_addr(&address)
+                    .await
+                    .unwrap()
+                    .unwrap()
+                    .device_authentication(),
+                actor.device_authentication()
+            );
+        }
     }
 
     /// Returns `(Policy, container_bytes)`

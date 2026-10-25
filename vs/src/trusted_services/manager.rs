@@ -3,7 +3,7 @@
 use arc_swap::ArcSwap;
 use dashmap::DashMap;
 use futures::future::join_all;
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::net::IpAddr;
 use std::sync::Arc;
 use std::time::{SystemTime, UNIX_EPOCH};
@@ -19,8 +19,8 @@ use super::attribute_mapper::source_qualified_key;
 
 /// Coordinates concurrent access to the configured trusted-service implementations.
 pub struct TrustedServicesMgr {
-    services: ArcSwap<Vec<Arc<dyn TrustedServiceInterface>>>,
-    lookup_outcomes: DashMap<String, LookupOutcome>,
+    services: ArcSwap<ServiceSnapshot>,
+    pub(crate) control_lock: tokio::sync::Mutex<()>,
     /// Per actor (keyed by ZPR address) and source, the revision from which attributes
     /// were last refreshed. ZPR addresses are recycled from a pool, so entries MUST be
     /// purged on disconnect ([TrustedServicesMgr::forget_actor_revisions]) before the
@@ -28,9 +28,20 @@ pub struct TrustedServicesMgr {
     actor_revisions: DashMap<IpAddr, HashMap<String, u64>>,
 }
 
+struct ServiceSnapshot {
+    services: Vec<Arc<dyn TrustedServiceInterface>>,
+    disabled: HashSet<String>,
+    // Retired lookups must not publish health into a replacement configuration.
+    lookup_outcomes: DashMap<String, LookupOutcome>,
+}
+
+/// Pins a publication so replacing and re-adding the same stores is detectable.
+pub(crate) struct ServiceConfiguration(Arc<ServiceSnapshot>);
+
 #[derive(Clone, Serialize)]
 pub struct TrustedServiceStatus {
     pub name: String,
+    pub enabled: bool,
     pub health: &'static str,
     pub last_lookup_ms: Option<u64>,
     pub last_success_ms: Option<u64>,
@@ -67,12 +78,24 @@ fn qualify_source_attributes(
 }
 
 impl TrustedServicesMgr {
+    pub(crate) fn configuration(&self) -> ServiceConfiguration {
+        ServiceConfiguration(self.services.load_full())
+    }
+
+    pub(crate) fn configuration_is_current(&self, configuration: &ServiceConfiguration) -> bool {
+        Arc::ptr_eq(&configuration.0, &self.services.load_full())
+    }
+
     /// Create a manager with no configured services.
     pub fn new() -> Self {
         Self {
-            services: ArcSwap::new(Arc::new(Vec::new())),
-            lookup_outcomes: DashMap::new(),
+            services: ArcSwap::from_pointee(ServiceSnapshot {
+                services: Vec::new(),
+                disabled: HashSet::new(),
+                lookup_outcomes: DashMap::new(),
+            }),
             actor_revisions: DashMap::new(),
+            control_lock: tokio::sync::Mutex::new(()),
         }
     }
 
@@ -86,12 +109,16 @@ impl TrustedServicesMgr {
         let services = self.services.load_full();
         let recorded = self.actor_revisions.get(zpr_addr);
         services
+            .services
             .iter()
             .filter_map(|service| {
                 let source_id = service.get_source_id();
                 let recorded_revision = recorded
                     .as_ref()
                     .and_then(|revisions| revisions.value().get(source_id).copied());
+                if services.disabled.contains(source_id) {
+                    return Some((source_id.to_string(), super::REVISION_NEVER));
+                }
                 let current_revision = service.current_revision();
                 (recorded_revision != Some(current_revision))
                     .then(|| (source_id.to_string(), current_revision))
@@ -107,6 +134,30 @@ impl TrustedServicesMgr {
             .insert(source.to_string(), revision);
     }
 
+    /// Identify removed sources from persisted claim ownership and revision memory.
+    pub(crate) fn removed_sources_for_actor<'a>(
+        &self,
+        zpr_addr: &IpAddr,
+        observed_sources: impl Iterator<Item = &'a str>,
+    ) -> HashSet<String> {
+        let snapshot = self.services.load_full();
+        let mut sources: HashSet<String> = observed_sources.map(str::to_string).collect();
+        if let Some(recorded) = self.actor_revisions.get(zpr_addr) {
+            sources.extend(recorded.keys().cloned());
+        }
+        for service in &snapshot.services {
+            sources.remove(service.get_source_id());
+        }
+        sources
+    }
+
+    /// Call only after the actor's removed-source cleanup has been persisted.
+    pub(crate) fn forget_source_revision(&self, zpr_addr: &IpAddr, source: &str) {
+        if let Some(mut recorded) = self.actor_revisions.get_mut(zpr_addr) {
+            recorded.remove(source);
+        }
+    }
+
     /// Drop all recorded per-source revisions for the actor at `zpr_addr`. Call before
     /// the address returns to the pool, so a recycled address cannot inherit them.
     pub fn forget_actor_revisions(&self, zpr_addr: &IpAddr) {
@@ -115,21 +166,54 @@ impl TrustedServicesMgr {
 
     /// Atomically replace the entire trusted-service list.
     pub fn update_services(&self, services: Vec<Arc<dyn TrustedServiceInterface>>) {
-        self.lookup_outcomes.clear();
-        self.services.store(Arc::new(services));
+        self.services.rcu(|previous| ServiceSnapshot {
+            services: services.clone(),
+            disabled: previous.disabled.clone(),
+            lookup_outcomes: DashMap::new(),
+        });
+    }
+
+    pub(crate) fn source_enabled(&self, source: &str) -> bool {
+        !self.services.load().disabled.contains(source)
+    }
+
+    pub(crate) fn set_source_enabled(&self, source: &str, enabled: bool) {
+        self.services.rcu(|previous| {
+            let mut disabled = previous.disabled.clone();
+            if enabled {
+                disabled.remove(source);
+            } else {
+                disabled.insert(source.to_string());
+            }
+            ServiceSnapshot {
+                services: previous.services.clone(),
+                disabled,
+                lookup_outcomes: DashMap::new(),
+            }
+        });
+    }
+
+    pub(crate) fn declares_source(&self, source: &str) -> bool {
+        self.services
+            .load()
+            .services
+            .iter()
+            .any(|service| service.get_source_id() == source)
     }
 
     pub fn statuses(&self) -> Vec<TrustedServiceStatus> {
-        let mut statuses: Vec<_> = self
+        let snapshot = self.services.load_full();
+        let mut statuses: Vec<_> = snapshot
             .services
-            .load()
             .iter()
             .map(|service| {
                 let name = service.get_source_id().to_string();
-                let outcome = self.lookup_outcomes.get(&name);
+                let outcome = snapshot.lookup_outcomes.get(&name);
                 TrustedServiceStatus {
+                    enabled: !snapshot.disabled.contains(&name),
                     name,
                     health: match outcome.as_ref() {
+                        _ if snapshot.disabled.contains(service.get_source_id()) => "disabled",
                         None => "unverified",
                         Some(value) if value.succeeded => "working",
                         Some(_) => "failed",
@@ -143,26 +227,26 @@ impl TrustedServicesMgr {
         statuses
     }
 
-    fn record_lookup(&self, name: &str, succeeded: bool) {
+    fn record_lookup(snapshot: &ServiceSnapshot, name: &str, succeeded: bool) {
         let now = SystemTime::now()
             .duration_since(UNIX_EPOCH)
             .map(|duration| u64::try_from(duration.as_millis()).unwrap_or(u64::MAX))
             .unwrap_or(0);
-        let last_success_ms = if succeeded {
-            Some(now)
-        } else {
-            self.lookup_outcomes
-                .get(name)
-                .and_then(|outcome| outcome.last_success_ms)
-        };
-        self.lookup_outcomes.insert(
-            name.to_string(),
-            LookupOutcome {
+        snapshot
+            .lookup_outcomes
+            .entry(name.to_string())
+            .and_modify(|outcome| {
+                outcome.succeeded = succeeded;
+                outcome.last_lookup_ms = now;
+                if succeeded {
+                    outcome.last_success_ms = Some(now);
+                }
+            })
+            .or_insert(LookupOutcome {
                 succeeded,
                 last_lookup_ms: now,
-                last_success_ms,
-            },
-        );
+                last_success_ms: succeeded.then_some(now),
+            });
     }
 
     /// Query every trusted service concurrently for an actor's attributes.
@@ -178,16 +262,25 @@ impl TrustedServicesMgr {
         identities: &[(String, String)],
     ) -> Vec<(String, Result<Vec<Attribute>, ServiceError>)> {
         let snapshot = self.services.load_full();
-        let allow_unqualified = snapshot.len() == 1;
-        let futures = snapshot.iter().map(|service| {
+        let allow_unqualified = snapshot.services.len() == 1;
+        let futures = snapshot.services.iter().map(|service| {
             let service = service.clone();
+            let snapshot = &snapshot;
             async move {
                 let name = service.get_source_id().to_string();
+                if snapshot.disabled.contains(&name) {
+                    return (
+                        name.clone(),
+                        Err(ServiceError::AttributesIndeterminate(format!(
+                            "trusted source '{name}' is disabled"
+                        ))),
+                    );
+                }
                 let result = service
                     .get_attributes_for_actor(identities)
                     .await
                     .map(|attrs| qualify_source_attributes(attrs, &name, allow_unqualified));
-                self.record_lookup(&name, result.is_ok());
+                Self::record_lookup(snapshot, &name, result.is_ok());
                 (name, result)
             }
         });
@@ -205,16 +298,22 @@ impl TrustedServicesMgr {
     ) -> Vec<Result<Vec<Attribute>, ServiceError>> {
         let snapshot = self.services.load_full();
         if let Some(service) = snapshot
+            .services
             .iter()
             .find(|service| service.get_source_id() == source_ident)
         {
+            if snapshot.disabled.contains(source_ident) {
+                return vec![Err(ServiceError::AttributesIndeterminate(format!(
+                    "trusted source '{source_ident}' is disabled"
+                )))];
+            }
             let service = service.clone();
-            let allow_unqualified = snapshot.len() == 1;
+            let allow_unqualified = snapshot.services.len() == 1;
             let result = service
                 .get_attributes_for_actor(identities)
                 .await
                 .map(|attrs| qualify_source_attributes(attrs, source_ident, allow_unqualified));
-            self.record_lookup(source_ident, result.is_ok());
+            Self::record_lookup(&snapshot, source_ident, result.is_ok());
             return vec![result];
         }
 
@@ -227,7 +326,7 @@ impl TrustedServicesMgr {
     #[allow(dead_code)]
     pub async fn flush_all(&self) -> Vec<Result<(), ServiceError>> {
         let snapshot = self.services.load_full();
-        let futures = snapshot.iter().map(|service| {
+        let futures = snapshot.services.iter().map(|service| {
             let service = service.clone();
             async move { service.flush().await }
         });
@@ -238,6 +337,7 @@ impl TrustedServicesMgr {
     pub async fn flush_one(&self, source_ident: &str) -> Result<(), ServiceError> {
         let snapshot = self.services.load_full();
         if let Some(service) = snapshot
+            .services
             .iter()
             .find(|service| service.get_source_id() == source_ident)
         {
@@ -252,6 +352,10 @@ impl TrustedServicesMgr {
 }
 
 #[cfg(test)]
+#[path = "manager_lifecycle_tests.rs"]
+mod lifecycle_tests;
+
+#[cfg(test)]
 mod tests {
     use super::*;
     use crate::trusted_services::file_attribute_store::FileAttributeStore;
@@ -261,6 +365,69 @@ mod tests {
     use std::time::Duration;
 
     struct FlakyService(AtomicBool);
+
+    #[tokio::test]
+    async fn expired_identity_cannot_refresh_claims_from_either_real_store() {
+        use libeval::attribute::AttributeSource;
+        use std::time::SystemTime;
+
+        let directory = tempfile::tempdir().unwrap();
+        let manager = TrustedServicesMgr::new();
+        let stores = ["company", "lab"]
+            .into_iter()
+            .map(|source| {
+                let path = directory.path().join(format!("{source}.json"));
+                fs::write(&path, r#"{"user.sub":{"same-subject":{"color":["red"]}}}"#).unwrap();
+                Arc::new(
+                    FileAttributeStore::new(
+                        source.into(),
+                        test_mapper(),
+                        Duration::from_secs(600),
+                        &path,
+                    )
+                    .unwrap(),
+                ) as Arc<dyn TrustedServiceInterface>
+            })
+            .collect();
+        manager.update_services(stores);
+
+        for expired in [true, false] {
+            let claim = AttributeSource::new("authenticated-issuer")
+                .builder("user.sub")
+                .expires(if expired {
+                    SystemTime::now() - Duration::from_secs(1)
+                } else {
+                    SystemTime::now() + Duration::from_secs(600)
+                })
+                .value("same-subject");
+            let identities = super::super::lookup_identities(&["user.sub"], [&claim].into_iter());
+            if expired {
+                assert!(matches!(
+                    identities,
+                    Err(ServiceError::AttributesIndeterminate(_))
+                ));
+                continue;
+            }
+            let identities = identities.unwrap();
+            for (source, result) in manager.get_attributes_for_actor(&identities).await {
+                let attrs = result.unwrap();
+                assert_eq!(attrs.is_empty(), expired, "{source}");
+                if !expired {
+                    assert_eq!(attrs.len(), 1);
+                    assert_eq!(attrs[0].get_key(), format!("user.color__source__{source}"));
+                }
+                let selected = manager
+                    .get_attributes_from_source_for_actor(&source, &identities)
+                    .await;
+                assert_eq!(selected.len(), 1);
+                assert_eq!(
+                    selected[0].as_ref().unwrap().is_empty(),
+                    expired,
+                    "{source}"
+                );
+            }
+        }
+    }
 
     #[async_trait::async_trait]
     impl TrustedServiceInterface for FlakyService {

@@ -532,6 +532,7 @@ impl VisaMgr {
     /// A path is created from the route using the direction inforation in the hit.
     ///
     /// This returns a FULL visa.
+    #[cfg(test)]
     pub async fn create_visa(
         &self,
         asm: &Assembly,
@@ -575,6 +576,69 @@ impl VisaMgr {
         vinst: u64,
         expiration_time: SystemTime,
         session_keys: SessionKeys,
+    ) -> Result<VisaWithMetadata, ServiceError> {
+        self.create_visa_with_initial_state(
+            asm,
+            requesting_node,
+            pdesc,
+            hit,
+            path,
+            source_zpl,
+            policy_version,
+            vinst,
+            expiration_time,
+            session_keys,
+            db::NodeVisaState::PendingInstall,
+        )
+        .await
+    }
+
+    pub(crate) async fn stage_visa(
+        &self,
+        asm: &Arc<Assembly>,
+        requesting_node: &IpAddr,
+        pdesc: &PacketDesc,
+        hit: &Hit,
+        route: &Route,
+        source_zpl: impl Into<String>,
+        policy_version: u64,
+        vinst: u64,
+        expiration_time: SystemTime,
+    ) -> Result<VisaWithMetadata, ServiceError> {
+        let path = path_for_flow(asm, &pdesc.five_tuple.source_addr, route).await?;
+        self.create_visa_with_initial_state(
+            asm,
+            requesting_node,
+            pdesc,
+            hit,
+            path,
+            source_zpl,
+            policy_version,
+            vinst,
+            expiration_time,
+            SessionKeys::AuthenticatedActors,
+            db::NodeVisaState::Staged,
+        )
+        .await
+    }
+
+    pub(crate) async fn activate_staged_visa(&self, visa_id: u64) -> Result<bool, ServiceError> {
+        Ok(self.repo.activate_staged_visa(visa_id).await?)
+    }
+
+    async fn create_visa_with_initial_state(
+        &self,
+        asm: &Assembly,
+        requesting_node: &IpAddr,
+        pdesc: &PacketDesc,
+        hit: &Hit,
+        path: Option<Vec<IpAddr>>,
+        source_zpl: impl Into<String>,
+        policy_version: u64,
+        vinst: u64,
+        expiration_time: SystemTime,
+        session_keys: SessionKeys,
+        initial_state: db::NodeVisaState,
     ) -> Result<VisaWithMetadata, ServiceError> {
         let (source_port, dest_port) = match pdesc.five_tuple.l4_protocol {
             ip_proto::TCP | ip_proto::UDP => {
@@ -674,10 +738,10 @@ impl VisaMgr {
 
         // The store also updates the visa state along the path.
         self.repo
-            .store_visa(&visa, metadata.clone(), db::NodeVisaState::PendingInstall)
+            .store_visa(&visa, metadata.clone(), initial_state)
             .await?;
 
-        info!("created visa {visa_id}");
+        info!("stored visa {visa_id} with initial state {initial_state:?}");
         Ok(VisaWithMetadata::new(visa, metadata))
     }
 
@@ -875,7 +939,8 @@ impl VisaMgr {
     /// - `SkipUnresolvedActor` = an actor could not be resolved (skip, don't bump)
     /// - `AllowSameRoute` = still allowed on the same route
     /// - `Revoke` = denied, or allowed but the selected route changed. Denial
-    ///   already folds in an undocked endpoint or missing route.
+    ///   includes unavailable trusted attributes, an earlier grant-supporting
+    ///   deadline than `expires`, an undocked endpoint or missing route.
     ///
     /// A still-allowed visa whose newly-selected route differs from the stored
     /// `metadata.path` is treated as a revoke: rather than migrate a single visa
@@ -886,6 +951,7 @@ impl VisaMgr {
         asm: &Assembly,
         metadata: &VisaMetadata,
         psnap: &PolicySnapshot,
+        expires: SystemTime,
     ) -> Result<VisaRecheck, ServiceError> {
         // TODO: comm_flags is not persisted; for now default to BiDirectional.
         let pkt = PacketDesc {
@@ -895,12 +961,23 @@ impl VisaMgr {
         let src_zpr = metadata.five_tuple.source_addr;
         let dst_zpr = metadata.five_tuple.dest_addr;
 
-        let (Ok(Some(src)), Ok(Some(dst))) = (
+        let (Ok(Some(mut src)), Ok(Some(mut dst))) = (
             asm.actor_mgr.get_actor_by_zpr_addr(&src_zpr).await,
             asm.actor_mgr.get_actor_by_zpr_addr(&dst_zpr).await,
         ) else {
             return Ok(VisaRecheck::SkipUnresolvedActor);
         };
+
+        for actor in [&mut src, &mut dst] {
+            match crate::actor_attributes::refresh_and_persist_actor(asm, actor).await {
+                Ok(_) => {}
+                Err(ServiceError::AttributesIndeterminate(error)) => {
+                    warn!(target: VISA, "visa recheck denied: {error}");
+                    return Ok(VisaRecheck::Revoke);
+                }
+                Err(error) => return Err(error),
+            }
+        }
 
         let policy = psnap.policy_arc();
         let (hits, default_route) =
@@ -913,6 +990,15 @@ impl VisaMgr {
                 } => (hits, default_route),
                 PolicyOutcome::Deny(_) => return Ok(VisaRecheck::Revoke),
             };
+
+        let hit = hits.first().ok_or_else(|| {
+            ServiceError::Internal("policy allowed visa recheck without a hit".into())
+        })?;
+        // Reuse issuance bounds: still matching now does not authorize the rest
+        // of the stored lifetime when the supporting observation expires sooner.
+        if crate::visareq_worker::compute_expiration(&src, &dst, &policy, hit)? < expires {
+            return Ok(VisaRecheck::Revoke);
+        }
 
         // Still allowed: revoke iff the newly-selected route differs from the
         // stored path. Derive the new path exactly as create_visa did so the
@@ -2554,7 +2640,12 @@ mod tests {
         let psnap = asm.policy_mgr.get_current_snapshot();
         let res = asm
             .visa_mgr
-            .recheck_visa_allowed(&asm, &md, &psnap)
+            .recheck_visa_allowed(
+                &asm,
+                &md,
+                &psnap,
+                SystemTime::now() + Duration::from_secs(60),
+            )
             .await
             .unwrap();
         assert_eq!(res, VisaRecheck::SkipUnresolvedActor);
@@ -2611,7 +2702,12 @@ mod tests {
         let psnap = asm.policy_mgr.get_current_snapshot();
         let res = asm
             .visa_mgr
-            .recheck_visa_allowed(&asm, &md, &psnap)
+            .recheck_visa_allowed(
+                &asm,
+                &md,
+                &psnap,
+                SystemTime::now() + Duration::from_secs(60),
+            )
             .await
             .unwrap();
         assert_eq!(res, VisaRecheck::Revoke);
