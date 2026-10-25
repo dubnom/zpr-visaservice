@@ -42,7 +42,7 @@ func ValidPermission(permission string) bool {
 		"scenario.read", "scenario.analyze", "scenario.edit", "scenario.publish", "scenario.archive", "scenario.run", "scenario.cancel", "scenario.reset",
 		"directory.read", "directory.edit", "directory.publish",
 		"device.lifecycle", "device.session", "device.workloads",
-		"subject-link.read", "subject-link.propose", "subject-link.approve", "subject-link.revoke",
+		"subject-link.read", "subject-link.propose", "subject-link.approve", "subject-link.revoke", "subject-link.registry.manage",
 	}, permission)
 }
 

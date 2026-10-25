@@ -221,13 +221,58 @@ a fresh proof through Room. Reconstruct/restart verifiers to apply grant edits.
 Historical responses do not renew review or bypass current operator permission.
 Review approval is never an active binding.
 
-This is a configured review transport, not a complete operator workflow:
-authority/source registrations and the coherent `registry_revision` must still
-be provisioned/captured through the internal owner APIs. Startup does not import,
-infer or change registrations. There is no registry provisioning command, context
-discovery endpoint, review UI, active publication or VS enforcement, and this
-does not synchronize the assertion-source file registry. Signed-snapshot format
-and timing/rollout remain approval gates.
+#### Subject-link registry administration
+
+The approved named-user administration path uses the same explicitly configured
+Control-Service database/provider/trust and dedicated Room proxy. No grants are
+added automatically. `subject-link.registry.manage` is a separate
+organization-scoped permission; it grants neither proposal nor approval/read
+permission. Ordinary review or policy permissions cannot edit registrations.
+Read/history/context operations require `subject-link.read`.
+
+- `PUT /api/subject-link-registry/authorities/{id}` and
+  `PUT /api/subject-link-registry/sources/{id}` accept exactly
+  `organization_id`, `expected_version`, `config`, `reason`. An empty version
+  string creates; any edit, including disable/re-enable, requires the exact
+  current decimal version string. Authority `config` requires `kind`
+  (`bas_device`), `service_id`, `issuer`, `enabled`. Source `config` requires
+  `provider_id`, `selector_kind` (`ldap_entry_uuid`), `enrichment_keys`, `enabled`.
+  Unknown/null/duplicate/aliased fields, inline credentials and caller-supplied
+  audit actors are rejected. Configurations record intent, not trust/ACL or
+  authentication evidence.
+- `GET /api/subject-link-registry/{authorities|sources}/{id}?organization_id={organization}`
+  returns the current registration, including disabled entries.
+- `GET /api/subject-link-registry/{authorities|sources}/{id}/versions/{version}?organization_id={organization}`
+  returns immutable historical configuration, verified operator principal,
+  reason and audit time. History does not prove current enablement.
+- `POST /api/subject-link-registry/context` accepts exactly `organization_id`,
+  `root`, `target` using the review root/target field shapes above. It returns a
+  coherent enabled exact-version authority/source capture with its
+  `revision` digest, without querying LDAP. Use that digest as
+  `registry_revision` in a proposal. This read-only POST still requires session
+  Origin/CSRF and a fresh proof.
+
+Registry requests deliberately reject `Idempotency-Key`: changes use exact CAS,
+not review retry receipts. After response loss, explicitly read current state
+and versioned audit evidence before deciding to issue another edit. A fresh
+proof is required on every attempt; a stale CAS returns 409, never success-shaped
+replay. Identical configuration at the exact current version is a no-op.
+Changes and immutable named-operator audit evidence commit atomically.
+Deletion/renaming are unavailable; retirement is an audited versioned disable.
+
+Registry proofs reuse the existing exact-request delegation envelope and signing
+algorithm with an isolated registry purpose. They cannot approve reviews,
+authorize publication or become signed VS snapshots. The service rechecks
+independent backend permissions before current/history/context reads or edits.
+Room strips browser credentials before mTLS forwarding. A source registration
+edit does not install provider transport: matching protected source-version
+mappings must be provisioned and the service reconstructed separately. New
+review attempts fail closed when that mapping is absent; historical review
+receipts remain historical.
+
+Startup does not import or infer registrations. There is no review UI, active
+publication or VS enforcement, and this does not synchronize the assertion-source
+file registry. Signed-snapshot format and timing/rollout remain approval gates.
 See [implementation and limits](../MULTISOURCE_POLICY_SUPPORT.md#approved-initial-direction-and-transactional-source-registry-2026-10-25).
 See also the
 [durable review foundation](../MULTISOURCE_POLICY_SUPPORT.md#s05-durable-subject-link-review-foundation-2026-10-24).

@@ -305,6 +305,17 @@ func subjectReviewServiceRoutes(handler http.Handler) http.Handler {
 
 func TestSubjectReviewRoomMutualTLSAndResponseLoss(t *testing.T) {
 	f := subjectReviewHTTP(t)
+	f.trust.Grants = append(f.trust.Grants, operatorauth.Grant{Issuer: "https://idp.example", Subject: "registry-admin",
+		Organizations: []string{"production"}, Permissions: []string{"subject-link.registry.manage", "subject-link.read"}})
+	if err := f.api.store.Close(); err != nil {
+		t.Fatal(err)
+	}
+	f.database = filepath.Join(t.TempDir(), "private", "empty-registry.sqlite")
+	var err error
+	f.api.store, err = changereview.Open(f.database)
+	if err != nil {
+		t.Fatal(err)
+	}
 	auth, sessions, provider := sourceLifecycleOperatorWithGrants(t, "https://room.example", func(issuer string) []operatorauth.Grant {
 		grants := append([]operatorauth.Grant{}, f.trust.Grants...)
 		for i := range grants {
@@ -409,6 +420,38 @@ func TestSubjectReviewRoomMutualTLSAndResponseLoss(t *testing.T) {
 	} {
 		subjectReviewResponse(t, unavailable, request(subjectReviewPrefix+"proposals", body), 403)
 	}
+	registry := func(method, path string, data any) *http.Request {
+		var encoded []byte
+		if data != nil {
+			encoded = subjectReviewJSON(t, data)
+		}
+		r := request(subjectRegistryPrefix+path, encoded)
+		r.Method = method
+		r.Header.Del("Idempotency-Key")
+		return r
+	}
+	subject = "registry-admin"
+	subjectReviewResponse(t, room, registry("PUT", "authorities/bas", subjectAuthorityEdit{
+		Organization: "production", Config: changereview.SubjectLinkAuthorityConfig{Kind: "bas_device", ServiceID: "bas-service",
+			Issuer: "zpr/bas", Enabled: true}, Reason: "Provision exact BAS authority"}), 200)
+	subjectReviewResponse(t, room, registry("PUT", "sources/company", subjectSourceEdit{
+		Organization: "production", Config: changereview.SubjectLinkSourceConfig{ProviderID: "directory", SelectorKind: "ldap_entry_uuid",
+			EnrichmentKeys: []string{"user.department"}, Enabled: true}, Reason: "Provision exact source"}), 200)
+	// Registry administration is not proposal permission, even in the same org.
+	subjectReviewResponse(t, room, request(subjectReviewPrefix+"proposals", body), 403)
+	subject = "reader"
+	captured := subjectReviewResponse(t, room, registry("POST", "context", subjectRegistryContext{
+		Organization: "production", Root: f.input.Root, Target: f.input.Target}), 200)
+	var capture changereview.SubjectLinkRegistryCapture
+	if err := json.Unmarshal(captured.Body.Bytes(), &capture); err != nil {
+		t.Fatal(err)
+	}
+	if capture.Revision == "" || capture.Authority.ID != "bas" || capture.Source.ID != "company" || f.searches.Load() != 0 {
+		t.Fatal("operator context is not coherent registry-only evidence", capture)
+	}
+	f.input.RegistryRevision = capture.Revision
+	body = subjectReviewJSON(t, f.input)
+	beforeCalls := calls
 	for _, denied := range []string{"reader", "foreign"} {
 		subject = denied
 		subjectReviewResponse(t, room, request(subjectReviewPrefix+"proposals", body), 403)
@@ -422,7 +465,7 @@ func TestSubjectReviewRoomMutualTLSAndResponseLoss(t *testing.T) {
 	crossOrigin := request(subjectReviewPrefix+"proposals", body)
 	crossOrigin.Header.Set("Origin", "https://foreign.example")
 	subjectReviewResponse(t, room, crossOrigin, 403)
-	if calls != 0 {
+	if calls != beforeCalls {
 		t.Fatal("denied Room session reached backend")
 	}
 	drop = true
@@ -432,7 +475,7 @@ func TestSubjectReviewRoomMutualTLSAndResponseLoss(t *testing.T) {
 	}
 	f.mode.Store(1)
 	record := subjectReviewRecord(t, subjectReviewResponse(t, room, request(subjectReviewPrefix+"proposals", body), 200))
-	if f.searches.Load() != 1 || record.State != "submitted" || calls != 2 {
+	if f.searches.Load() != 1 || record.State != "submitted" || calls != beforeCalls+2 {
 		t.Fatal("explicit fresh-proof retry repeated directory mutation", record, calls, f.searches.Load())
 	}
 	approval := subjectReviewJSON(t, subjectReviewApproval{"production", record.Digest, "1", f.input.RegistryRevision, "Independent review"})

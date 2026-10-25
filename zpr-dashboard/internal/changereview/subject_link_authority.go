@@ -132,6 +132,13 @@ SET version=?,kind=?,service_id=?,issuer=?,enabled=? WHERE organization=? AND id
 	return a, tx.Commit()
 }
 
+func (s *Store) GetSubjectLinkAuthority(ctx context.Context, org, id string) (SubjectLinkAuthority, error) {
+	if !identifier.MatchString(org) || !identifier.MatchString(id) {
+		return SubjectLinkAuthority{}, ErrInvalid
+	}
+	return readSubjectLinkAuthority(ctx, s.db, org, id)
+}
+
 // CaptureSubjectLinkAuthority reads one coherent current registration for review.
 // Its result is not an atomic guard for a later review/publication transaction.
 func (s *Store) CaptureSubjectLinkAuthority(ctx context.Context, org string, root SubjectLinkRoot) (SubjectLinkAuthority, error) {

@@ -6,6 +6,7 @@ import (
 	"log"
 	"net/http"
 	"slices"
+	"strings"
 	"time"
 
 	"neboagency.com/zpr-dashborad/internal/controlroom"
@@ -24,7 +25,16 @@ func subjectLinkReviewProxy(auth *operatorauth.Auth, signer *operatordelegation.
 			deny(http.StatusForbidden, "Subject-link review requires named-user authorization and configured delegation.")
 			return
 		}
-		input, err := parseSubjectReviewRequest(w, r)
+		registry := strings.HasPrefix(r.URL.Path, subjectRegistryPrefix)
+		var input subjectReviewRequest
+		var err error
+		if registry {
+			var parsed subjectRegistryRequest
+			parsed, err = parseSubjectRegistryRequest(w, r)
+			input.organization, input.permission, input.body = parsed.organization, parsed.permission, parsed.body
+		} else {
+			input, err = parseSubjectReviewRequest(w, r)
+		}
 		if err != nil {
 			deny(http.StatusBadRequest, "Use the canonical review route, organization and strict JSON request.")
 			return
@@ -36,7 +46,12 @@ func subjectLinkReviewProxy(auth *operatorauth.Auth, signer *operatordelegation.
 		}
 		request := r.Clone(r.Context())
 		request.Body = io.NopCloser(bytes.NewReader(input.body))
-		token, err := signer.SignSubjectLinkReview(request, input.body, identity, input.organization, time.Now())
+		var token string
+		if registry {
+			token, err = signer.SignSubjectLinkRegistry(request, input.body, identity, input.organization, time.Now())
+		} else {
+			token, err = signer.SignSubjectLinkReview(request, input.body, identity, input.organization, time.Now())
+		}
 		if err != nil {
 			deny(http.StatusBadRequest, "Subject-link review delegation could not be created.")
 			return

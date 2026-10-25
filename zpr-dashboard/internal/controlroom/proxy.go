@@ -43,7 +43,8 @@ func NewProxy(baseURL *url.URL, transport *http.Transport) *httputil.ReverseProx
 		request.Header.Del("Sec-Fetch-User")
 		request.Header.Del(operatordelegation.Header)
 		if token, ok := request.Context().Value(signedOperatorRequestKey{}).(string); ok &&
-			(strings.HasPrefix(request.URL.Path, operatordelegation.Prefix) || strings.HasPrefix(request.URL.Path, "/api/subject-link-reviews/")) {
+			(strings.HasPrefix(request.URL.Path, operatordelegation.Prefix) ||
+				strings.HasPrefix(request.URL.Path, "/api/subject-link-reviews/") || strings.HasPrefix(request.URL.Path, "/api/subject-link-registry/")) {
 			request.Header.Set(operatordelegation.Header, token)
 		}
 		request.Header.Del("X-Forwarded-Host")

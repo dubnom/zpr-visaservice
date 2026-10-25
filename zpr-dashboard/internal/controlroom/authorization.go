@@ -4,6 +4,7 @@ import (
 	"log"
 	"net/http"
 	"regexp"
+	"strconv"
 	"strings"
 
 	"neboagency.com/zpr-dashborad/internal/operatorauth"
@@ -16,6 +17,29 @@ type Authorizer interface {
 var subjectLinkRecordID = regexp.MustCompile(`^[A-Za-z0-9_-]{1,128}$`)
 
 func subjectLinkPermission(method, path string) (string, bool) {
+	if rest, ok := strings.CutPrefix(path, "/api/subject-link-registry/"); ok {
+		if method == http.MethodPost && rest == "context" {
+			return "subject-link.read", true
+		}
+		parts := strings.Split(rest, "/")
+		if len(parts) >= 2 && (parts[0] == "authorities" || parts[0] == "sources") && subjectLinkRecordID.MatchString(parts[1]) {
+			if method == http.MethodPut && len(parts) == 2 {
+				return "subject-link.registry.manage", true
+			}
+			if method == http.MethodGet {
+				if len(parts) == 2 {
+					return "subject-link.read", true
+				}
+				if len(parts) == 4 && parts[2] == "versions" {
+					version, err := strconv.ParseUint(parts[3], 10, 64)
+					if err == nil && version > 0 && strconv.FormatUint(version, 10) == parts[3] {
+						return "subject-link.read", true
+					}
+				}
+			}
+		}
+		return "", false
+	}
 	if rest, ok := strings.CutPrefix(path, "/api/subject-link-reviews/"); ok {
 		switch method {
 		case http.MethodGet:

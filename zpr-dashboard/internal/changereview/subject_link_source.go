@@ -55,6 +55,13 @@ type SubjectLinkSourceEvent struct {
 	At     time.Time         `json:"at"`
 }
 
+func (s *Store) GetSubjectLinkSource(ctx context.Context, org, id string) (SubjectLinkSource, error) {
+	if !identifier.MatchString(org) || !identifier.MatchString(id) {
+		return SubjectLinkSource{}, ErrInvalid
+	}
+	return readSubjectLinkSource(ctx, s.db, org, id)
+}
+
 func validSubjectLinkSourceConfig(config SubjectLinkSourceConfig) bool {
 	if !identifier.MatchString(config.ProviderID) || config.SelectorKind != "ldap_entry_uuid" ||
 		len(config.EnrichmentKeys) == 0 || len(config.EnrichmentKeys) > 128 {

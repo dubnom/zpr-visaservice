@@ -194,8 +194,11 @@ and a dedicated Control Room named-user signing proxy. They are disabled by
 default and require independent backend grants, mTLS, a protected review database
 and version-bound provider configuration. OIDC-to-LDAPS tests cover independent
 approval, lost replies, historical retries, source disable and logout. There is
-no review UI, registry provisioning workflow, active-link publication or VS
-enforcement. Snapshot format, timing bounds and rollout still require approval. See
+no review UI, active-link publication or VS enforcement. The approved separate
+`subject-link.registry.manage` permission now supports audited version-checked
+authority/source edits, current/historical reads and coherent review-context
+discovery over the same protected operator transport. Snapshot format, timing
+bounds and rollout still require approval. See
 [current implementation and gates](MULTISOURCE_POLICY_SUPPORT.md#approved-initial-direction-and-transactional-source-registry-2026-10-25).
 
 Expired lookup identities are indeterminate even if another identity on the

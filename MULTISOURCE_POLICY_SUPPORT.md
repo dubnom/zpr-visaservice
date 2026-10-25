@@ -2383,11 +2383,49 @@ Room sees 502 and an explicit fresh-proof/same-key retry returns the original
 record without a second LDAP read. Logout denies the old cookie; reconstructed
 backend grants deny removed principals even for historical receipts.
 
-This is not a deployed workflow or M1 completion. Registration provisioning,
-operator discovery of coherent review context and the review UI remain absent.
+This is not a deployed workflow or M1 completion. Registration provisioning and
+review-context discovery now have the approved operator HTTP path below; the
+review UI remains absent.
 Request root IDs are candidates for review, not verified authentication results
 or VS admission evidence. Signed snapshots, active binding/revoke/delivery,
 strict VS enforcement and gateway acknowledgements remain gated.
+
+#### Implemented: separately authorized registry administration
+
+The operator approved named-user administration with an explicit
+organization-scoped `subject-link.registry.manage` permission. The new
+`/api/subject-link-registry/` routes provide exact-CAS authority/source creation,
+versioned edits/disable, current reads, immutable versioned audit reads and a
+read-only coherent review-context POST. The
+[dashboard contract](zpr-dashboard/README.md#subject-link-registry-administration)
+defines their strict field shapes and recovery behavior.
+
+The existing exact-request signed envelope/algorithm is reused with a distinct
+registry purpose, not a new signed-snapshot or active-binding format. Registry
+management is independently checked at Room and backend, never inferred from
+`subject-link.propose`, `subject-link.approve`, generic policy editing or
+organization membership. Read/history/context requires `subject-link.read`;
+even an administrator needs an explicit read grant. Named proof identity supplies
+the immutable audit principal. No registration, provider, trust or permission is
+silently provisioned at startup.
+
+Registry edits deliberately do not implement review semantic receipts:
+`Idempotency-Key` is rejected. After a lost reply an operator must read current
+state and historical version evidence; stale CAS conflicts. An unchanged config
+at the exact current version remains a no-op. No LDAP call is made to edit/read
+registrations or capture context, so these operations do not pretend to certify
+directory subjects, uniqueness or ACLs. New reviews still require independently
+configured exact-version provider mapping and an exact directory presence check.
+
+Tests cover explicit management/read separation, foreign scopes, strict nested
+configuration fields, no-op/stale CAS, versioned disable/re-enable, immutable
+authorized audit evidence after reopen and changed context digests. The actual
+OIDC/mTLS/LDAP review chain now begins with an empty registry: a separately
+authorized administrator creates authority/source registrations, a reader obtains
+coherent context, and the independent proposer/reviewer use that context. The
+administrator cannot submit without a proposal grant. Missing version-bound
+transport fails a new review without a directory query. Registry/enrollment/
+review signing scopes remain isolated.
 
 #### Verification and next gates
 
@@ -2407,9 +2445,9 @@ race-enabled runs. Delegation, operator-auth and Control Room race tests and Go
 vet pass. Required `make test` passes 11 operator-stack checks and retains exactly
 the same 13 pre-existing Go failures. No dependency manifests or Rust changed.
 
-Next: authoritative registration provisioning, operator review-context
-discovery and review UI acceptance. Protected configuration, provider-reference
-resolution and review HTTP/proxy composition are implemented, not deployed.
+Next: review UI and real-browser acceptance. Protected configuration, named
+registry administration/context discovery, provider-reference resolution and
+review HTTP/proxy composition are implemented, not deployed.
 Active publication/revocation and VS delivery require a separately
 approved shared signed-snapshot format, key rotation/recovery rules and the
 still-unset timing/enforcement bounds. No numeric defaults are invented here.

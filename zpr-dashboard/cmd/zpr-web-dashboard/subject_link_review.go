@@ -63,6 +63,23 @@ func subjectReviewFields(data []byte, names ...string) error {
 	return nil
 }
 
+func subjectLinkJSONDocument(r *http.Request, body []byte) error {
+	invalid := errors.New("subject-link request requires unambiguous UTF-8 JSON")
+	media, params, err := mime.ParseMediaType(r.Header.Get("Content-Type"))
+	if err != nil || media != "application/json" || len(params) > 1 ||
+		(len(params) == 1 && !strings.EqualFold(params["charset"], "utf-8")) || !utf8.Valid(body) {
+		return invalid
+	}
+	decoder := json.NewDecoder(bytes.NewReader(body))
+	if err := validateDocumentJSON(decoder, 0); err != nil {
+		return invalid
+	}
+	if _, err := decoder.Token(); err != io.EOF {
+		return invalid
+	}
+	return nil
+}
+
 func parseSubjectReviewRequest(w http.ResponseWriter, r *http.Request) (subjectReviewRequest, error) {
 	var request subjectReviewRequest
 	invalid := errors.New("use a canonical subject-link review route, organization and strict JSON body")
@@ -92,17 +109,7 @@ func parseSubjectReviewRequest(w http.ResponseWriter, r *http.Request) (subjectR
 		return request, invalid
 	}
 	keys := r.Header.Values("Idempotency-Key")
-	media, params, err := mime.ParseMediaType(r.Header.Get("Content-Type"))
-	if err != nil || media != "application/json" || len(params) > 1 ||
-		(len(params) == 1 && !strings.EqualFold(params["charset"], "utf-8")) ||
-		len(keys) != 1 || !reviewIdentifier.MatchString(keys[0]) || !utf8.Valid(body) {
-		return request, invalid
-	}
-	decoder := json.NewDecoder(bytes.NewReader(body))
-	if err := validateDocumentJSON(decoder, 0); err != nil {
-		return request, invalid
-	}
-	if _, err := decoder.Token(); err != io.EOF {
+	if len(keys) != 1 || !reviewIdentifier.MatchString(keys[0]) || subjectLinkJSONDocument(r, body) != nil {
 		return request, invalid
 	}
 	if rest == "proposals" {
@@ -181,6 +188,10 @@ func (api *subjectReviewAPI) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Cache-Control", "no-store")
 	if api == nil || api.store == nil || api.verifier == nil || api.providers == nil {
 		subjectReviewError(w, errors.New("subject-link review is not configured"))
+		return
+	}
+	if strings.HasPrefix(r.URL.Path, subjectRegistryPrefix) {
+		api.serveRegistry(w, r)
 		return
 	}
 	request, err := parseSubjectReviewRequest(w, r)
