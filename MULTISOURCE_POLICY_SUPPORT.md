@@ -62,15 +62,25 @@ the independent Go provider and durable VS state in one automated chain:
    disabled requests must not add directory searches.
 9. Optionally set `ZPR_TEST_SOURCE_BROWSER=1` to run actual Chromium during the
    recovery phase. Serve the embedded production login widget, operator request
-   helper and runtime-source control component on a minimal fixture page. Import
-   the cookie obtained by the real OIDC handler flow; the widget reads the real
-   session endpoint and supplies mutation CSRF through the production helper.
+   helper and runtime-source control component on a minimal fixture page.
+   Begin with an empty browser cookie jar, navigate the widget's real OIDC login
+   redirect to the isolated HTTPS IdP, explicitly consent to the named fixture
+   writer identity, and follow the real callback. Require a secure HttpOnly
+   session cookie and the source-only permission scope. No session is imported
+   for sign-in. The widget reads the real session endpoint and supplies mutation
+   CSRF through the production helper.
    Cancel confirmation without any PUT, then confirm disable and verify the
    rendered desired/effective-off/pending state and stored revision. Confirm
    re-enable and require a different persisted revision. The real event worker
    then completes that browser-originated change and VS grants a fresh visa from
-   exactly two LDAP endpoint refreshes. Browser requests must stay on the
-   independent fixture origin without Simulator access; page errors fail.
+   exactly two LDAP endpoint refreshes. Then use the real logout button,
+   require 204, and leave the fresh IdP consent unaccepted. Replay the former
+   cookie and CSRF proof in a separate browser context: session read must return
+   401 and mutation must return 403 with `no-store`. Complete a new browser login
+   and require a different session cookie with the same stored source revision,
+   proving the rejected replay did not mutate state. Browser requests must stay
+   on the two independent loopback application/IdP origins without Simulator
+   access; page errors fail.
 
 Run from this repository's root:
 
@@ -88,8 +98,8 @@ ZPR_TEST_SOURCE_BROWSER=1 ZPR_TEST_ZPLC=/absolute/path/to/source-built/zplc \
 
 The browser option additionally requires the dashboard's existing Node/
 Playwright dependencies and its installed Chromium. It never installs them.
-The default remains browser-free. Chromium trusts only the ephemeral ingress
-certificate's exact SPKI via a process-scoped test flag; this is not a global
+The default remains browser-free. Chromium permits the ephemeral ingress and
+IdP certificates' exact SPKIs via a process-scoped test flag; this is not a global
 certificate-verification bypass or host trust-store modification. Admin and
 provider TLS continue verifying their configured roots normally. Browser
 contexts/processes close on success or failure; missing tools and missing
@@ -118,17 +128,19 @@ Redis AOF, production Admin TLS/router/authentication, real event worker,
 manager/evaluator/visa-worker and OS-process boundaries. The Admin listener
 shares the production connection-serving loop, not a substitute HTTP router.
 They are not full Visa Service daemon/startup, node authentication, Control-Service
-deployment or full Control Room browser/login acceptance. The optional
+deployment or full deployed Control Room acceptance. The optional
 component browser check uses real production assets and live APIs but a minimal
 fixture page, not the complete navigation/reverse-proxy deployment. The bridge's inbound
 listener is private CA-signed loopback HTTPS with real named-user/organization/
 CSRF authorization and an additional random test-owner token. It is not the
 production Control-Service mTLS listener or a deployed Control Room reverse
-proxy. OIDC login/callback requests are driven through the real auth handler
+proxy. The browser-free path provisions sessions through the real auth handler
 using HTTP test requests, with actual TLS discovery/token/JWKS traffic to a local
-identity-provider fixture; browser acceptance imports the resulting session
-cookie and does not navigate the IdP login flow. This is not a real browser
-login or production IdP.
+identity-provider fixture. The browser option instead navigates OIDC login,
+consent and callback without importing a session. The IdP's explicit consent
+button selects only the named synthetic writer: it is not password/MFA
+authentication, federation or a production IdP. Logout's automatic fresh
+sign-in is retained rather than changing production login UX.
 A test-only bootstrap route supplies each ephemeral Admin
 endpoint, key and CA; it is not source registration or a production configuration
 API. The actual production bridge and Admin transport handle runtime requests.
@@ -173,6 +185,10 @@ Validation for this acceptance increment:
   application-permission recognition: legitimate source-only operators now
   receive the session-ready event and mutation CSRF instead of being gated
   despite valid backend grants. Backend authorization rules are unchanged.
+- Browser-driven OIDC sign-in, actual logout, old-session/CSRF replay denial and
+  fresh sign-in also pass three consecutive race-enabled full-chain runs.
+  This increment changes fixture/browser code and documentation only; no Rust,
+  dependency manifests or production login/authentication logic changed.
 
 ## Operator controls, shared JSON documents and immutable LDAP provider
 

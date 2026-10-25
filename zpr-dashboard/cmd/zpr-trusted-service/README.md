@@ -147,14 +147,17 @@ server-owned credentials and explicit upstream-credential/trust failure recovery
 Its inbound CA-signed HTTPS fixture now applies real OIDC session, permission,
 organization and same-origin/CSRF authorization, including logout rejection.
 OIDC uses a signed-token fixture with actual TLS token/JWKS exchange, not a
-production IdP or browser login. This is not deployed Control-Service mTLS
+production IdP. This is not deployed Control-Service mTLS
 or full Control Room proxy acceptance. See
 [prerequisites, reproduction and evidence boundaries](../../../MULTISOURCE_POLICY_SUPPORT.md#repeatable-source-lifecycle-acceptance).
 The optional `ZPR_TEST_SOURCE_BROWSER=1` path also drives actual Chromium with
 the production source-control/login/request components against these live APIs.
 Browser disable/readback/re-enable completes before the real worker's fresh
-lookup and new visa. The cookie comes from fixture OIDC; no browser IdP login
-or full deployed Control Room is claimed.
+lookup and new visa. Chromium now starts without an imported session and
+navigates real OIDC login/fixture consent/callback. It confirms logout, proves
+old-session/CSRF replay cannot mutate state, and signs in with a new session and
+unchanged source revision. The named fixture identity is not password/MFA or a
+production IdP, and no full deployed Control Room is claimed.
 
 ### Optional source validity bound
 

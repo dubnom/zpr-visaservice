@@ -4,9 +4,12 @@ import (
 	"crypto/rand"
 	"crypto/rsa"
 	"crypto/sha256"
+	"crypto/tls"
+	"crypto/x509"
 	"encoding/base64"
 	"encoding/json"
 	"encoding/pem"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
@@ -26,10 +29,15 @@ type sourceOperatorSession struct {
 	csrf   string
 }
 
+type sourceOperatorProvider struct {
+	origin string
+	spki   string
+}
+
 func TestSourceLifecycleOperatorAuthorization(t *testing.T) {
 	server := httptest.NewUnstartedServer(nil)
 	origin := "https://" + server.Listener.Addr().String()
-	auth, sessions := sourceLifecycleOperator(t, origin)
+	auth, sessions, _ := sourceLifecycleOperator(t, origin)
 	var forwarded atomic.Int64
 	server.Config.Handler = controlroom.AuthorizeAPI(auth, "fixture-production", http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		forwarded.Add(1)
@@ -66,7 +74,7 @@ func TestSourceLifecycleOperatorAuthorization(t *testing.T) {
 	}
 }
 
-func sourceLifecycleOperator(t *testing.T, origin string) (*operatorauth.Auth, map[string]sourceOperatorSession) {
+func sourceLifecycleOperator(t *testing.T, origin string) (*operatorauth.Auth, map[string]sourceOperatorSession, sourceOperatorProvider) {
 	t.Helper()
 	key, err := rsa.GenerateKey(rand.Reader, 2048)
 	if err != nil {
@@ -79,10 +87,47 @@ func sourceLifecycleOperator(t *testing.T, origin string) (*operatorauth.Auth, m
 	type login struct{ subject, nonce, challenge string }
 	var mu sync.Mutex
 	codes := map[string]login{}
+	ca, caKey, err := createTestPolicyCA()
+	if err != nil {
+		t.Fatal(err)
+	}
+	certificate, _, err := createTestPolicyLeaf(ca, caKey, "source-fixture-idp", []x509.ExtKeyUsage{x509.ExtKeyUsageServerAuth}, true)
+	if err != nil {
+		t.Fatal(err)
+	}
 	var provider *httptest.Server
-	provider = httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	provider = httptest.NewUnstartedServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
+		w.Header().Set("Cache-Control", "no-store")
 		switch r.URL.Path {
+		case "/authorize":
+			query := r.URL.Query()
+			if query.Get("client_id") != "source-control-room" || query.Get("redirect_uri") != origin+"/auth/operator/callback" ||
+				query.Get("response_type") != "code" || query.Get("code_challenge_method") != "S256" ||
+				query.Get("state") == "" || query.Get("nonce") == "" || len(query.Get("code_challenge")) != 43 {
+				http.Error(w, "invalid fixture authorization request", http.StatusBadRequest)
+				return
+			}
+			if r.Method == http.MethodGet {
+				w.Header().Set("Content-Type", "text/html")
+				fmt.Fprint(w, `<h1>Isolated fixture identity provider</h1><p>Test-only identity: source-writer. No production credentials.</p><form method="post"><button type="submit">Continue as fixture source writer</button></form>`)
+				return
+			}
+			if r.Method != http.MethodPost || r.Header.Get("Origin") != provider.URL {
+				http.Error(w, "fixture same-origin consent required", http.StatusForbidden)
+				return
+			}
+			random := make([]byte, 32)
+			if _, err := rand.Read(random); err != nil {
+				t.Error(err)
+				http.Error(w, "fixture code unavailable", 500)
+				return
+			}
+			code := base64.RawURLEncoding.EncodeToString(random)
+			mu.Lock()
+			codes[code] = login{"source-writer", query.Get("nonce"), query.Get("code_challenge")}
+			mu.Unlock()
+			http.Redirect(w, r, origin+"/auth/operator/callback?state="+url.QueryEscape(query.Get("state"))+"&code="+url.QueryEscape(code), http.StatusSeeOther)
 		case "/.well-known/openid-configuration":
 			json.NewEncoder(w).Encode(map[string]any{
 				"issuer": provider.URL, "authorization_endpoint": provider.URL + "/authorize",
@@ -92,6 +137,10 @@ func sourceLifecycleOperator(t *testing.T, origin string) (*operatorauth.Auth, m
 		case "/keys":
 			json.NewEncoder(w).Encode(jose.JSONWebKeySet{Keys: []jose.JSONWebKey{{Key: &key.PublicKey, KeyID: "source-fixture", Algorithm: "RS256", Use: "sig"}}})
 		case "/token":
+			if r.Method != http.MethodPost {
+				http.Error(w, "fixture token POST required", http.StatusMethodNotAllowed)
+				return
+			}
 			if err := r.ParseForm(); err != nil {
 				http.Error(w, "invalid token request", http.StatusBadRequest)
 				return
@@ -101,7 +150,8 @@ func sourceLifecycleOperator(t *testing.T, origin string) (*operatorauth.Auth, m
 			delete(codes, r.Form.Get("code"))
 			mu.Unlock()
 			challenge := sha256.Sum256([]byte(r.Form.Get("code_verifier")))
-			if !ok || base64.RawURLEncoding.EncodeToString(challenge[:]) != flow.challenge {
+			if !ok || base64.RawURLEncoding.EncodeToString(challenge[:]) != flow.challenge ||
+				r.Form.Get("redirect_uri") != origin+"/auth/operator/callback" {
 				http.Error(w, "invalid code or PKCE", http.StatusBadRequest)
 				return
 			}
@@ -131,6 +181,8 @@ func sourceLifecycleOperator(t *testing.T, origin string) (*operatorauth.Auth, m
 			http.NotFound(w, r)
 		}
 	}))
+	provider.TLS = &tls.Config{MinVersion: tls.VersionTLS13, Certificates: []tls.Certificate{certificate}}
+	provider.StartTLS()
 	t.Cleanup(provider.Close)
 	grants := []operatorauth.Grant{
 		{Issuer: provider.URL, Subject: "source-writer", Organizations: []string{"fixture-production"}, Permissions: []string{"trusted-source.read", "trusted-source.control"}},
@@ -141,7 +193,7 @@ func sourceLifecycleOperator(t *testing.T, origin string) (*operatorauth.Auth, m
 	auth, err := operatorauth.NewWithCertificateAuthorities(t.Context(), operatorauth.Config{
 		Version: 1, Issuer: provider.URL, ClientID: "source-control-room", RedirectURL: origin + "/auth/operator/callback",
 		SessionLifetimeSeconds: 600, Grants: grants,
-	}, "ephemeral-fixture-client-secret", pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: provider.Certificate().Raw}))
+	}, "ephemeral-fixture-client-secret", pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: ca.Raw}))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -204,7 +256,12 @@ func sourceLifecycleOperator(t *testing.T, origin string) (*operatorauth.Auth, m
 	if loggedOut.Code != http.StatusNoContent {
 		t.Fatalf("operator logout: %d %s", loggedOut.Code, loggedOut.Body)
 	}
-	return auth, sessions
+	leaf, err := x509.ParseCertificate(certificate.Certificate[0])
+	if err != nil {
+		t.Fatal(err)
+	}
+	pin := sha256.Sum256(leaf.RawSubjectPublicKeyInfo)
+	return auth, sessions, sourceOperatorProvider{provider.URL, base64.StdEncoding.EncodeToString(pin[:])}
 }
 
 func assertSourceOperatorDenials(t *testing.T, server *httptest.Server, secret string, sessions map[string]sourceOperatorSession) {

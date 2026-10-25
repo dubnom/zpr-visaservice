@@ -1,8 +1,10 @@
 import assert from "node:assert/strict";
-import { chromium } from "@playwright/test";
+import { chromium, expect } from "@playwright/test";
 
 const origin = process.env.ZPR_TEST_SOURCE_BRIDGE;
+const idp = process.env.ZPR_TEST_SOURCE_IDP;
 assert.ok(origin?.startsWith("https://127.0.0.1:"));
+assert.ok(idp?.startsWith("https://127.0.0.1:"));
 const browser = await chromium.launch({
   args: [`--ignore-certificate-errors-spki-list=${process.env.ZPR_TEST_SOURCE_BROWSER_SPKI}`],
 });
@@ -10,8 +12,7 @@ try {
   const context = await browser.newContext({
     extraHTTPHeaders: { "X-Source-Fixture": process.env.ZPR_TEST_SOURCE_BRIDGE_TOKEN },
   });
-  const [name, ...value] = process.env.ZPR_TEST_SOURCE_OPERATOR_COOKIE.split("=");
-  await context.addCookies([{ name, value: value.join("="), url: origin, secure: true, httpOnly: true, sameSite: "Lax" }]);
+  assert.deepEqual(await context.cookies(), [], "browser must begin without an imported session");
   const page = await context.newPage();
   page.setDefaultTimeout(5000);
   const errors = [], requests = [], mutations = [];
@@ -22,6 +23,21 @@ try {
     if (request.method() === "PUT") mutations.push(request.postDataJSON());
   });
   await page.goto(`${origin}/fixture/ui`);
+  await page.getByRole("button", { name: "Continue as fixture source writer" }).click();
+  await expect(page).toHaveURL(`${origin}/fixture/ui`);
+  await expect(page.locator("#operator-scope")).toContainText("trusted-source.control");
+  assert.ok(requests.some(url => url.origin === idp && url.pathname === "/authorize"));
+  const callbacks = requests.filter(url => url.origin === origin && url.pathname === "/auth/operator/callback");
+  assert.equal(callbacks.length, 1, "browser must complete exactly one OIDC callback");
+  const session = await page.evaluate(async () => {
+    const response = await fetch("/auth/operator/session", { cache: "no-store" });
+    if (!response.ok) throw new Error(`Session read failed: ${response.status}`);
+    return response.json();
+  });
+  assert.equal(session.identity.subject, "source-writer");
+  const cookies = await context.cookies(origin);
+  const sessionCookie = cookies.find(cookie => cookie.httpOnly && cookie.value && cookie.expires > 0);
+  assert.ok(sessionCookie?.secure, "browser callback must set a secure HttpOnly session");
   const disable = page.getByRole("button", { name: "Disable runtime source company" });
   await disable.waitFor();
   assert.equal(await disable.isEnabled(), true);
@@ -36,7 +52,7 @@ try {
   } catch (error) {
     throw new Error(`Disable UI failed: ${await page.getByRole("status").last().textContent()}; page errors: ${errors.join("; ")}; mutations: ${JSON.stringify(mutations)}`, { cause: error });
   }
-  assert.match(await page.getByRole("status").last().textContent(), /Change accepted/);
+  await expect(page.getByRole("status").last()).toContainText("Change accepted");
   assert.match(await page.locator("tbody").textContent(), /Desired off \/ effective off \/ reconciliation pending/);
   const off = await page.evaluate(async () => {
     const response = await window.zprOperatorFetch("/api/trusted-sources/runtime/company/control");
@@ -55,9 +71,45 @@ try {
   assert.equal(on.effective_enabled, true);
   assert.notEqual(on.revision, off.revision);
   assert.deepEqual(mutations, [{ enabled: false }, { enabled: true }]);
+  const logout = page.waitForResponse(response => new URL(response.url()).pathname === "/auth/operator/logout");
+  await page.locator("#operator-logout").click();
+  assert.equal((await logout).status(), 204);
+  // Direct-sign-in intentionally starts a new login after logout. Leave the
+  // fixture consent unaccepted and replay the old cookie in a separate browser.
+  await page.getByRole("button", { name: "Continue as fixture source writer" }).waitFor();
+  const stale = await browser.newContext({
+    extraHTTPHeaders: { "X-Source-Fixture": process.env.ZPR_TEST_SOURCE_BRIDGE_TOKEN },
+  });
+  try {
+    await stale.addCookies([sessionCookie]);
+    const stalePage = await stale.newPage();
+    const response = await stalePage.goto(`${origin}/auth/operator/session`);
+    assert.equal(response.status(), 401, "logged-out cookie revived an operator session");
+    const rejected = await stalePage.evaluate(async csrf => {
+      const response = await fetch("/api/trusted-sources/runtime/company/control", {
+        method: "PUT", headers: { "Content-Type": "application/json", "X-ZPR-CSRF": csrf },
+        body: JSON.stringify({ enabled: false }),
+      });
+      return { status: response.status, cache: response.headers.get("Cache-Control") };
+    }, session.csrf);
+    assert.deepEqual(rejected, { status: 403, cache: "no-store" }, "stale cookie/CSRF authorized a mutation");
+  } finally {
+    await stale.close();
+  }
+  await page.getByRole("button", { name: "Continue as fixture source writer" }).click();
+  await expect(page).toHaveURL(`${origin}/fixture/ui`);
+  await expect(disable).toBeEnabled();
+  const afterLogout = await page.evaluate(async () => {
+    const response = await window.zprOperatorFetch("/api/trusted-sources/runtime/company/control");
+    return response.json();
+  });
+  assert.equal(afterLogout.enabled, true);
+  assert.equal(afterLogout.revision, on.revision, "stale-session denial changed durable revision");
+  const refreshed = (await context.cookies(origin)).find(cookie => cookie.name === sessionCookie.name);
+  assert.ok(refreshed && refreshed.value !== sessionCookie.value, "reauthentication reused logged-out session");
   assert.deepEqual(errors, []);
-  assert.ok(requests.every(url => url.origin === origin && !url.pathname.includes("simulator")));
-  console.log("SOURCE_LIFECYCLE browser: real Chromium, production login/request/control assets, confirmation cancel, durable disable/readback and re-enable passed");
+  assert.ok(requests.every(url => [origin, idp].includes(url.origin) && !url.pathname.includes("simulator")));
+  console.log("SOURCE_LIFECYCLE browser: real Chromium OIDC navigation/callback, source-only login/request/control assets, confirmation cancel, durable disable/readback/re-enable and logout/stale-session denial passed");
   await context.close();
 } finally {
   await browser.close();

@@ -87,7 +87,7 @@ func sourceLifecycleBridge(t *testing.T) {
 			browserRun.ServeHTTP(w, r)
 			return
 		}
-		if r.URL.Path == "/fixture/ui" || r.URL.Path == "/trusted-source.js" || r.URL.Path == "/operator-request.js" || r.URL.Path == "/operator-login.js" || strings.HasPrefix(r.URL.Path, "/auth/operator/") {
+		if r.URL.Path == "/" || r.URL.Path == "/fixture/ui" || r.URL.Path == "/trusted-source.js" || r.URL.Path == "/operator-request.js" || r.URL.Path == "/operator-login.js" || strings.HasPrefix(r.URL.Path, "/auth/operator/") {
 			assets.ServeHTTP(w, r)
 			return
 		}
@@ -97,12 +97,12 @@ func sourceLifecycleBridge(t *testing.T) {
 	// the real authorizer and per-session credentials are ready.
 	server.StartTLS()
 	t.Cleanup(server.Close)
-	auth, sessions := sourceLifecycleOperator(t, server.URL)
+	auth, sessions, provider := sourceLifecycleOperator(t, server.URL)
 	assets = http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
 		case "/auth/operator/config":
 			writeJSON(w, http.StatusOK, map[string]bool{"enabled": true})
-		case "/fixture/ui":
+		case "/", "/fixture/ui":
 			w.Header().Set("Content-Type", "text/html")
 			fmt.Fprint(w, `<script src="/operator-request.js"></script><div class="operator-login"><p id="operator-login-status"></p><form id="operator-login-form" method="post" action="/auth/operator/login"></form><button id="operator-logout" hidden>Sign out</button><span id="operator-scope" hidden></span></div><runtime-source-controls></runtime-source-controls><script src="/operator-login.js"></script><script src="/trusted-source.js"></script>`)
 		case "/trusted-source.js", "/operator-request.js", "/operator-login.js":
@@ -134,7 +134,10 @@ func sourceLifecycleBridge(t *testing.T) {
 		pin := sha256.Sum256(leaf.RawSubjectPublicKeyInfo)
 		command := exec.CommandContext(ctx, "node", "scripts/test-source-lifecycle-browser.mjs")
 		command.Dir = filepath.Join("..", "..")
-		command.Env = append(os.Environ(), "ZPR_TEST_SOURCE_BROWSER_SPKI="+base64.StdEncoding.EncodeToString(pin[:]))
+		command.Env = append(os.Environ(),
+			"ZPR_TEST_SOURCE_BROWSER_SPKI="+base64.StdEncoding.EncodeToString(pin[:])+","+provider.spki,
+			"ZPR_TEST_SOURCE_IDP="+provider.origin,
+		)
 		output, err := command.CombinedOutput()
 		if err != nil || !strings.Contains(string(output), "SOURCE_LIFECYCLE browser:") {
 			t.Errorf("real browser acceptance failed: %v\n%s", err, output)

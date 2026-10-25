@@ -142,12 +142,15 @@ authentication/Control-Service ingress/Control Room flow. The bridge's inbound
 test listener now uses CA-signed HTTPS and real OIDC-derived operator sessions
 with production permission, organization and same-origin CSRF checks, including
 logged-out-session rejection. OIDC uses an isolated signed-token provider and
-handler-driven login/callback requests, not a browser or production IdP. This
+handler-driven login/callback requests in the default browser-free run. This
 does not test the deployed Control-Service mTLS ingress or Control Room proxy.
 With `ZPR_TEST_SOURCE_BROWSER=1`, real Chromium also runs the embedded production
 login/request/source-control assets against those live APIs: cancel confirmation,
-disable/readback and re-enable precede fresh VS recovery. It imports a fixture
-OIDC session cookie rather than navigating browser login, and uses a minimal
+disable/readback and re-enable precede fresh VS recovery. Chromium starts
+without a session, navigates real OIDC login/fixture consent/callback, logs out,
+proves the old cookie/CSRF cannot mutate state, then signs in with a new session
+and unchanged source revision. The IdP selects a named synthetic identity; it
+does not test production password/MFA authentication. The browser uses a minimal
 component page rather than the full Control Room. Source-only operators are
 recognized by the login widget without unrelated monitor/policy/gateway grants.
 It does not activate subject links, provision production transport/credentials,

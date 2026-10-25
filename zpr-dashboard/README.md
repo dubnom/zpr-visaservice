@@ -108,15 +108,19 @@ CA-signed HTTPS and real OIDC-derived operator sessions with production API
 permission, organization and same-origin/CSRF authorization. Anonymous,
 read-only mutation, foreign-organization, malformed CSRF/origin and logged-out
 requests never reach the bridge. OIDC tokens/JWKS/PKCE come from an isolated
-TLS identity-provider fixture; login/callback handlers are driven without a
-browser. This is not the deployed Control-Service mTLS listener or Room proxy.
+TLS identity-provider fixture; the default run drives login/callback handlers
+without a browser. This is not deployed Control-Service mTLS or the Room proxy.
 Set `ZPR_TEST_SOURCE_BROWSER=1` when running the lifecycle script to additionally
 exercise the embedded production login/request/runtime-control assets in real
 Chromium against the live bridge/Admin/VS chain. Confirmation cancel makes no
 mutation; confirmed disable/readback and re-enable drive the final fresh-data
 recovery. This requires existing Playwright/Chromium, uses a minimal fixture
-page and imports the verified OIDC session cookie; it is not browser login or
-full navigation/deployed ingress acceptance. The login widget recognizes
+page and starts with an empty browser cookie jar. It follows real OIDC
+login/fixture-consent/callback navigation, confirms logout, rejects old
+cookie/CSRF replay, then signs in to a different session with the same source
+revision. The explicit fixture consent selects a synthetic identity; no
+production password/MFA/IdP or full navigation/deployed ingress acceptance is
+claimed. The login widget recognizes
 `trusted-source.*` application permissions, so source-only operators can use
 their explicit grants and receive mutation CSRF without unrelated privileges.
 This is component/process acceptance with explicitly synthetic identities,
