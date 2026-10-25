@@ -2,6 +2,15 @@
 
 ZPR visa service implementation (under active development).
 
+For external attribute-provider authors and deployment operators, see the
+[trusted-source integration guide](TRUSTED_SOURCE_INTEGRATION.md): lookup
+protocol, independent policy/transport configuration, failure semantics,
+operational controls and integration qualification.
+
+The [envelope and realm specification](ENVELOPE_REALM_SPEC.md) records deferred
+identity, administrative grant, parent-composition and delegated-source-access
+requirements. It is not implemented envelope support.
+
 For the B1 **evaluation-only**, Simulator-independent local operator/LDAP/logging
 bootstrap, see [the one-command evaluation runbook](zpr-dashboard/packaging/evaluation/README.md).
 This is not the complete production appliance or source-registration milestone.

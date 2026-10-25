@@ -1,5 +1,10 @@
 # Multiple trusted sources: source-qualified policy support
 
+Provider implementers should begin with the
+[trusted-source integration guide](TRUSTED_SOURCE_INTEGRATION.md).
+This document retains implementation history, acceptance evidence and deferred
+architecture requirements; historical proposals are not all current contracts.
+
 ## Repeatable source lifecycle acceptance
 
 The opt-in [runner](zpr-dashboard/scripts/test-source-lifecycle.sh) connects
@@ -3967,6 +3972,10 @@ behavior before enabling policy-associated credentials. Do not introduce an
 interim policy-identity protocol or broaden maturation into this work.
 
 #### Realm authority and parent-envelope composition
+
+The [envelope and realm specification](ENVELOPE_REALM_SPEC.md) consolidates these
+deferred requirements, open decisions and acceptance gates. Neither document
+introduces a wire format or changes current source/policy runtime behavior.
 
 Design requirements agreed on 2026-10-24; these do not introduce runtime
 behavior or settle the envelope wire format.

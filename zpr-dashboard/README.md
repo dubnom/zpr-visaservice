@@ -56,6 +56,11 @@ production enrollment, or update previously published downloads.
 
 ## Policy-owned source controls and provisional documents
 
+The [trusted-source integration guide](../TRUSTED_SOURCE_INTEGRATION.md)
+consolidates the external lookup protocol, provider provisioning, policy
+declarations and runtime-control boundaries. The details below describe current
+operator implementation and local acceptance evidence.
+
 Control Room's Trusted Sources page now separates runtime source enable/disable
 from directory registrations. Runtime controls use only the production VS Admin
 API through Control-Service; Simulator is not required. GET

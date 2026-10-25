@@ -1,5 +1,10 @@
 # Trusted-service REST provider
 
+Start with the [trusted-source integration guide](../../../TRUSTED_SOURCE_INTEGRATION.md)
+for the cross-service wire contract, policy/transport ownership, provisioning
+sequence and qualification checklist. This runbook documents the reference
+provider's modes and implementation-specific operational details.
+
 This command exposes one read-only, mutually authenticated HTTPS endpoint:
 
 `POST /v1/attributes` with `Content-Type: application/json`:
