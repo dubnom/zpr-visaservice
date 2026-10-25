@@ -130,6 +130,13 @@ their explicit grants and receive mutation CSRF without unrelated privileges.
 Browser acceptance also injects an unrelated service CA: a confirmed mutation
 and refresh fail visibly, stale controls stay disabled, and restored trust plus
 explicit refresh recovers with the same stored source revision.
+The chain uses both production route composers and the Room's direct-HTTPS/
+management protection and security headers. Another one-shot fault aborts a
+service response only after the real Admin API accepts and stores a disable.
+The UI reports 502, disables stale controls and does not retry automatically.
+Explicit refresh reveals the changed off revision; the operator then confirms
+re-enable. Other handlers are explicitly unavailable. This is response-loss
+acceptance, not full startup or deployed service crash/restart evidence.
 This is component/process acceptance with explicitly synthetic identities,
 not approved subject-link, full daemon/deployed ingress/UI or gateway-delivery
 acceptance. See [prerequisites and exact boundaries](../MULTISOURCE_POLICY_SUPPORT.md#repeatable-source-lifecycle-acceptance).

@@ -22,9 +22,16 @@ try {
     requests.push(url);
     if (request.method() === "PUT") mutations.push(request.postDataJSON());
   });
-  await page.goto(`${origin}/fixture/ui`);
-  await page.getByRole("button", { name: "Continue as fixture source writer" }).click();
-  await expect(page).toHaveURL(`${origin}/fixture/ui`);
+  const document = await page.goto(`${origin}/fixture/ui.html`);
+  assert.equal(document.headers()["referrer-policy"], "same-origin");
+  assert.equal(document.headers()["x-content-type-options"], "nosniff");
+  assert.ok(document.headers()["content-security-policy"]?.includes("script-src 'self'"));
+  try {
+    await page.getByRole("button", { name: "Continue as fixture source writer" }).click();
+  } catch (error) {
+    throw new Error(`Initial sign-in failed at ${new URL(page.url()).pathname}: ${await page.locator("body").innerText()}; page errors: ${errors.join("; ")}`, { cause: error });
+  }
+  await expect(page).toHaveURL(`${origin}/fixture/ui.html`);
   await expect(page.locator("#operator-scope")).toContainText("trusted-source.control");
   assert.ok(requests.some(url => url.origin === idp && url.pathname === "/authorize"));
   const callbacks = requests.filter(url => url.origin === origin && url.pathname === "/auth/operator/callback");
@@ -63,7 +70,7 @@ try {
   page.once("dialog", dialog => dialog.accept());
   await enable.click();
   await disable.waitFor();
-  const on = await page.evaluate(async () => {
+  let on = await page.evaluate(async () => {
     const response = await window.zprOperatorFetch("/api/trusted-sources/runtime/company/control");
     return response.json();
   });
@@ -107,6 +114,44 @@ try {
   assert.equal(recovered.enabled, true);
   assert.equal(recovered.revision, on.revision, "failed service TLS mutation changed durable source revision");
   assert.deepEqual(mutations, [{ enabled: false }, { enabled: true }, { enabled: false }]);
+  const armed = await page.evaluate(async () => (await fetch("/fixture/lose-response", { method: "POST" })).status);
+  assert.equal(armed, 204, "fixture failed to arm accepted-response loss");
+  const lost = page.waitForResponse(response => response.request().method() === "PUT" &&
+    new URL(response.url()).pathname === "/api/trusted-sources/runtime/company/control");
+  page.once("dialog", dialog => dialog.accept());
+  await disable.click();
+  const lostResponse = await lost;
+  assert.equal(lostResponse.status(), 502);
+  assert.equal(lostResponse.headers()["cache-control"], "no-store");
+  await expect(page.locator("[data-runtime-message]")).toContainText("HTTP 502");
+  await expect(disable).toBeDisabled();
+  assert.equal(mutations.length, 4, "ambiguous mutation was automatically retried");
+  await page.getByRole("button", { name: "Refresh runtime state" }).click();
+  await expect(enable).toBeEnabled();
+  assert.match(await page.locator("tbody").textContent(), /Desired off \/ effective off \/ reconciliation pending/);
+  const acceptedDespiteError = await page.evaluate(async () => {
+    const response = await window.zprOperatorFetch("/api/trusted-sources/runtime/company/control");
+    if (!response.ok) throw new Error(`Ambiguous mutation readback failed: ${response.status}`);
+    return response.json();
+  });
+  assert.equal(acceptedDespiteError.enabled, false, "lost response did not follow a stored disable");
+  assert.equal(acceptedDespiteError.effective_enabled, false);
+  assert.equal(acceptedDespiteError.pending, true);
+  assert.notEqual(acceptedDespiteError.revision, on.revision, "accepted mutation did not change durable revision");
+  assert.equal(mutations.length, 4, "explicit readback retried the ambiguous mutation");
+  page.once("dialog", dialog => dialog.accept());
+  await enable.click();
+  await expect(disable).toBeEnabled();
+  on = await page.evaluate(async () => {
+    const response = await window.zprOperatorFetch("/api/trusted-sources/runtime/company/control");
+    if (!response.ok) throw new Error(`Explicit recovery readback failed: ${response.status}`);
+    return response.json();
+  });
+  assert.equal(on.enabled, true);
+  assert.notEqual(on.revision, acceptedDespiteError.revision);
+  assert.deepEqual(mutations, [
+    { enabled: false }, { enabled: true }, { enabled: false }, { enabled: false }, { enabled: true },
+  ]);
   const logout = page.waitForResponse(response => new URL(response.url()).pathname === "/auth/operator/logout");
   await page.locator("#operator-logout").click();
   assert.equal((await logout).status(), 204);
@@ -133,7 +178,7 @@ try {
     await stale.close();
   }
   await page.getByRole("button", { name: "Continue as fixture source writer" }).click();
-  await expect(page).toHaveURL(`${origin}/fixture/ui`);
+  await expect(page).toHaveURL(`${origin}/fixture/ui.html`);
   await expect(disable).toBeEnabled();
   const afterLogout = await page.evaluate(async () => {
     const response = await window.zprOperatorFetch("/api/trusted-sources/runtime/company/control");
@@ -145,7 +190,7 @@ try {
   assert.ok(refreshed && refreshed.value !== sessionCookie.value, "reauthentication reused logged-out session");
   assert.deepEqual(errors, []);
   assert.ok(requests.every(url => [origin, idp].includes(url.origin) && !url.pathname.includes("simulator")));
-  console.log("SOURCE_LIFECYCLE browser: real Chromium OIDC navigation/callback, source-only login/request/control assets, confirmation cancel, durable disable/readback/re-enable, service-mTLS failure/recovery and logout/stale-session denial passed");
+  console.log("SOURCE_LIFECYCLE browser: real Chromium OIDC navigation/callback, source-only login/request/control assets, confirmation cancel, durable disable/readback/re-enable, service-mTLS failure/recovery, accepted-response-loss readback without retry and logout/stale-session denial passed");
   await context.close();
 } finally {
   await browser.close();

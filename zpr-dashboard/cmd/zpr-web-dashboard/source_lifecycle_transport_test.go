@@ -14,9 +14,49 @@ import (
 	"testing"
 	"time"
 
+	serviceapi "neboagency.com/zpr-dashborad/internal/controlservice/httpapi"
 	"neboagency.com/zpr-dashborad/internal/operatordelegation"
 	"neboagency.com/zpr-dashborad/internal/servicehttp"
 )
+
+func sourceLifecycleServiceRoutes(control http.Handler) http.Handler {
+	unavailable := http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		http.Error(w, "unrelated service not provisioned in source fixture", http.StatusServiceUnavailable)
+	})
+	return securityHeaders(serviceapi.NewMux(serviceapi.Handlers{
+		TrustedSourceControl: control,
+		Enrollment:           unavailable, Gateways: unavailable, Snapshot: unavailable,
+		Diagnostics: unavailable, ActorVisas: unavailable, AdapterLogs: unavailable,
+		DNSRecords: unavailable, DNSStats: unavailable, DNSStylesheet: unavailable,
+		PolicyAssistant: unavailable, GatewayAssistantStatus: unavailable,
+		GatewayAssistant: unavailable, Policy: unavailable,
+		Assertions: serviceapi.Assertions{
+			Analyze: unavailable, Format: unavailable, Source: unavailable,
+			Status: unavailable, Save: unavailable, Evaluate: unavailable,
+		},
+		TrustedChanges: serviceapi.TrustedChanges{List: unavailable, Read: unavailable},
+	}))
+}
+
+func sourceLifecycleLostResponse(t *testing.T, next http.Handler, armed *atomic.Bool, dropped *atomic.Int64) http.Handler {
+	t.Helper()
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPut || !armed.CompareAndSwap(true, false) {
+			next.ServeHTTP(w, r)
+			return
+		}
+		response := httptest.NewRecorder()
+		next.ServeHTTP(response, r)
+		if response.Code != http.StatusAccepted {
+			t.Errorf("response-loss fixture expected accepted mutation, got %d", response.Code)
+			http.Error(w, "fixture mutation was not accepted", 500)
+			return
+		}
+		dropped.Add(1)
+		// Abort only after the real handler has received the durable acceptance.
+		panic(http.ErrAbortHandler)
+	})
+}
 
 type sourceControlTransport struct {
 	proxy, untrustedProxy http.Handler
@@ -135,6 +175,7 @@ func TestSourceLifecycleControlTransport(t *testing.T) {
 			http.Error(w, "unexpected request", 400)
 			return
 		}
+
 		body, err := io.ReadAll(r.Body)
 		if err != nil || string(body) != `{"enabled":false}` {
 			t.Errorf("proxy changed request body: %v", err)
@@ -164,6 +205,40 @@ func TestSourceLifecycleControlTransport(t *testing.T) {
 		}
 		if test.status == http.StatusBadGateway && response.Body.String() != "{\"error\":\"Control Service is unavailable.\"}\n" {
 			t.Fatalf("unexpected transport failure response: %s", response.Body)
+		}
+	}
+}
+
+func TestSourceLifecycleAcceptedResponseLoss(t *testing.T) {
+	t.Setenv("SIMULATION_MANIFEST", "/unavailable/source-response-loss-manifest")
+	t.Setenv("ZPR_SIMULATOR_URL", "http://127.0.0.1:0")
+	var armed atomic.Bool
+	var writes, dropped atomic.Int64
+	transport := sourceLifecycleControlTransport(t, sourceLifecycleServiceRoutes(sourceLifecycleLostResponse(t,
+		http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			if r.PathValue("source") != "company" {
+				t.Error("production service route lost source ID")
+			}
+			if r.Method == http.MethodPut {
+				writes.Add(1)
+				w.WriteHeader(http.StatusAccepted)
+				return
+			}
+			w.WriteHeader(http.StatusOK)
+		}), &armed, &dropped)))
+	armed.Store(true)
+	for _, test := range []struct {
+		method string
+		status int
+		writes int64
+	}{
+		{"PUT", 502, 1}, {"GET", 200, 1}, {"PUT", 202, 2},
+	} {
+		request := httptest.NewRequest(test.method, "/api/trusted-sources/runtime/company/control", strings.NewReader(`{"enabled":false}`))
+		response := httptest.NewRecorder()
+		transport.proxy.ServeHTTP(response, request)
+		if response.Code != test.status || writes.Load() != test.writes || dropped.Load() != 1 {
+			t.Fatalf("lost-response delivery status=%d writes=%d dropped=%d", response.Code, writes.Load(), dropped.Load())
 		}
 	}
 }

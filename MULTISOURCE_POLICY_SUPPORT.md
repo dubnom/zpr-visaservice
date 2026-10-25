@@ -50,6 +50,11 @@ the independent Go provider and durable VS state in one automated chain:
    A valid writer/CSRF request through a proxy with unrelated service CA trust
    returns 502 with `no-store`, without reaching the bridge or Admin API.
    Correct service trust is retained for subsequent lifecycle operations.
+   Both hops use their production route composers, not hand-registered source
+   routes. Control Room also uses its production direct-HTTPS/management
+   protection and security headers, including same-origin referrer policy for
+   HTML login documents. Unrelated service handlers are explicitly unavailable;
+   Simulator routes are not installed.
 6. Disable the source through the bridge's HTTPS route, crossing real Admin
    HTTPS with the server-owned write key, and require a 202 response
    with declared/effective/desired state, pending work and a fresh UUID revision.
@@ -87,6 +92,14 @@ the independent Go provider and durable VS state in one automated chain:
    disable stale controls; refresh must also fail visibly. Restore correct trust,
    explicitly refresh, and require usable controls with the same enabled state
    and exact revision: the rejected mutation must not change durable state.
+   Next arm a one-shot response-loss fault. Execute a real disable through
+   Admin, wait for its valid 202 response inside the service handler, then abort
+   the service HTTP response before delivering it to the proxy. The browser
+   receives 502 even though the change is stored. Require visible failure and
+   disabled stale controls with no automatic retry. An explicit refresh must
+   show desired/effective off, reconciliation pending and a new stored revision.
+   Refresh must not send another mutation. Explicitly confirm re-enable and
+   require another revision before continuing.
    Then use the real logout button,
    require 204, and leave the fresh IdP consent unaccepted. Replay the former
    cookie and CSRF proof in a separate browser context: session read must return
@@ -151,8 +164,9 @@ listener is private CA-signed loopback HTTPS with real named-user/organization/
 CSRF authorization and an additional random test-owner token. Runtime API
 requests now cross the production reverse proxy and configured mTLS transport
 to a separate private listener with the production TLS 1.3/client-CA requirement.
-This runs the real source-control handler, not the full Control-Service startup
-command or complete service route composition. It is local transport evidence,
+This runs the real source-control handler and both production route composers,
+with unrelated features explicitly unavailable. It does not run full service
+startup commands or provision every production feature. It is local transport evidence,
 not a deployed ingress or proxy acceptance. The browser-free path provisions sessions through the real auth handler
 using HTTP test requests, with actual TLS discovery/token/JWKS traffic to a local
 identity-provider fixture. The browser option instead navigates OIDC login,
@@ -166,6 +180,10 @@ API. The actual production bridge and Admin transport handle runtime requests.
 The service-trust fault route is also owner-only, browser-opt-in and test-only;
 it selects an unrelated trust root without weakening certificate verification
 or changing production configuration.
+The response-loss arming route has those same restrictions and consumes exactly
+one accepted PUT response. It does not simulate a rejected write: real durable
+Admin acceptance must precede the abort. This covers response ambiguity, not a
+service crash/restart or gateway acknowledgement.
 Actor authority and UUID-valued device CNs
 are explicitly synthetic fixtures, not invented device/person subject links.
 The LDAP server is a bounded protocol fixture, not deployed OpenLDAP. The signed
@@ -219,6 +237,13 @@ Validation for this acceptance increment:
   good-trust/bad-trust/good-trust mutation delivery. These changes are confined
   to acceptance fixtures, browser harness and documentation; Rust and production
   transport/authentication code are unchanged.
+- Production Room/Service route composition and the Room HTTPS/header wrapper
+  now participate in three consecutive race-enabled browser lifecycle runs.
+  Each run drops exactly one response after real durable acceptance, proves
+  no blind retry and reads the changed off revision before explicit re-enable.
+  An ordinary non-opt-in regression verifies that an accepted PUT whose service
+  response is aborted returns 502 exactly once, GET still works and the next
+  explicit PUT succeeds. No production code or dependency manifests changed.
 
 ## Operator controls, shared JSON documents and immutable LDAP provider
 

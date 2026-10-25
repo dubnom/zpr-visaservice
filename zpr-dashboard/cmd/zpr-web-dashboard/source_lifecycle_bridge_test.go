@@ -24,6 +24,7 @@ import (
 	"time"
 
 	"neboagency.com/zpr-dashborad/internal/controlroom"
+	roomapi "neboagency.com/zpr-dashborad/internal/controlroom/httpapi"
 	"neboagency.com/zpr-dashborad/internal/controlservice/adminapi"
 )
 
@@ -40,6 +41,8 @@ func sourceLifecycleBridge(t *testing.T) {
 	var mu sync.RWMutex
 	var current *adminClient
 	var forwarded atomic.Int64
+	var loseResponse atomic.Bool
+	var dropped atomic.Int64
 	t.Cleanup(func() {
 		mu.Lock()
 		defer mu.Unlock()
@@ -54,10 +57,7 @@ func sourceLifecycleBridge(t *testing.T) {
 		mu.RUnlock()
 		trustedSourceControlHandler(admin).ServeHTTP(w, r)
 	})
-	mux := http.NewServeMux()
-	mux.Handle("GET /api/trusted-sources/runtime", bridge)
-	mux.Handle("GET /api/trusted-sources/runtime/{source}/control", bridge)
-	mux.Handle("PUT /api/trusted-sources/runtime/{source}/control", bridge)
+	mux := sourceLifecycleServiceRoutes(sourceLifecycleLostResponse(t, bridge, &loseResponse, &dropped))
 	transport := sourceLifecycleControlTransport(t, mux)
 	var trustService atomic.Bool
 	trustService.Store(true)
@@ -72,7 +72,7 @@ func sourceLifecycleBridge(t *testing.T) {
 	}
 	server.TLS = &tls.Config{MinVersion: tls.VersionTLS13, Certificates: []tls.Certificate{certificate}}
 	ready := make(chan struct{})
-	var runtime http.Handler
+	var room http.Handler
 	var configure http.HandlerFunc
 	var browserRun http.HandlerFunc
 	var assets http.Handler
@@ -108,11 +108,15 @@ func sourceLifecycleBridge(t *testing.T) {
 			w.WriteHeader(http.StatusNoContent)
 			return
 		}
-		if r.URL.Path == "/" || r.URL.Path == "/fixture/ui" || r.URL.Path == "/trusted-source.js" || r.URL.Path == "/operator-request.js" || r.URL.Path == "/operator-login.js" || strings.HasPrefix(r.URL.Path, "/auth/operator/") {
-			assets.ServeHTTP(w, r)
+		if r.URL.Path == "/fixture/lose-response" && r.Method == http.MethodPost {
+			if os.Getenv("ZPR_TEST_SOURCE_BROWSER") != "1" || !loseResponse.CompareAndSwap(false, true) {
+				http.Error(w, "browser response-loss fixture unavailable or already armed", 400)
+				return
+			}
+			w.WriteHeader(http.StatusNoContent)
 			return
 		}
-		runtime.ServeHTTP(w, r)
+		room.ServeHTTP(w, r)
 	})
 	// Publish the handler only after setup; no fixture address is exposed before
 	// the real authorizer and per-session credentials are ready.
@@ -121,9 +125,7 @@ func sourceLifecycleBridge(t *testing.T) {
 	auth, sessions, provider := sourceLifecycleOperator(t, server.URL)
 	assets = http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
-		case "/auth/operator/config":
-			writeJSON(w, http.StatusOK, map[string]bool{"enabled": true})
-		case "/", "/fixture/ui":
+		case "/", "/fixture/ui.html":
 			w.Header().Set("Content-Type", "text/html")
 			fmt.Fprint(w, `<script src="/operator-request.js"></script><div class="operator-login"><p id="operator-login-status"></p><form id="operator-login-form" method="post" action="/auth/operator/login"></form><button id="operator-logout" hidden>Sign out</button><span id="operator-scope" hidden></span></div><runtime-source-controls></runtime-source-controls><script src="/operator-login.js"></script><script src="/trusted-source.js"></script>`)
 		case "/trusted-source.js", "/operator-request.js", "/operator-login.js":
@@ -136,7 +138,7 @@ func sourceLifecycleBridge(t *testing.T) {
 			w.Header().Set("Content-Type", "application/javascript")
 			w.Write(data)
 		default:
-			auth.ServeHTTP(w, r)
+			http.NotFound(w, r)
 		}
 	})
 	browserRun = func(w http.ResponseWriter, r *http.Request) {
@@ -165,16 +167,31 @@ func sourceLifecycleBridge(t *testing.T) {
 			http.Error(w, "browser acceptance failed", 500)
 			return
 		}
+		if loseResponse.Load() || dropped.Load() != 1 {
+			t.Error("browser did not consume exactly one accepted-response-loss fault")
+			http.Error(w, "response-loss fixture not exercised exactly once", 500)
+			return
+		}
 		t.Logf("%s", output)
+		t.Log("SOURCE_LIFECYCLE response-loss: exactly one accepted mutation response aborted; browser read stored off revision without retry and explicitly restored on")
 		w.WriteHeader(http.StatusNoContent)
 	}
-	runtime = controlroom.AuthorizeAPI(auth, "fixture-production", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	runtime := controlroom.AuthorizeAPI(auth, "fixture-production", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		proxy := transport.proxy
 		if !trustService.Load() {
 			proxy = transport.untrustedProxy
 		}
 		proxy.ServeHTTP(w, r)
 	}), writePolicyError)
+	unavailable := http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		http.Error(w, "unrelated Room feature not provisioned in source fixture", http.StatusServiceUnavailable)
+	})
+	security := &controlRoomSecurity{origin: server.URL, tls: server.TLS, auth: auth, management: true}
+	web := security.boundary()
+	room = securityHeaders(security.protect(roomapi.NewMux(roomapi.Handlers{
+		AuthConfig: web.ConfigHandler(writeJSON), Auth: web.LoginHandler(writePolicyError), ChangeReview: unavailable, Enrollment: unavailable,
+		API: runtime, DNSStylesheet: unavailable, Static: assets,
+	})))
 	configure = func(w http.ResponseWriter, r *http.Request) {
 		var config struct {
 			URL string `json:"url"`

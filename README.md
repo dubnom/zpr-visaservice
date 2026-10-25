@@ -159,6 +159,12 @@ component page rather than the full Control Room. Source-only operators are
 recognized by the login widget without unrelated monitor/policy/gateway grants.
 It also confirms a service-TLS failure displays an error and disables stale
 controls; restoring trust and refreshing recovers the same source revision.
+Both service hops now use production route composition and the Room's HTTPS/
+security-header wrapper. A separate one-shot test drops the service response
+only after Admin stores a disable: the browser reports 502 without retrying,
+then explicit refresh reveals the changed off revision before confirmed
+re-enable. Unrelated handlers are explicitly unavailable; this is not full
+service startup or a deployed service crash/restart test.
 It does not activate subject links, provision production transport/credentials,
 prove gateway acknowledgement or establish deployed-directory acceptance.
 Final envelope syntax remains open. See the

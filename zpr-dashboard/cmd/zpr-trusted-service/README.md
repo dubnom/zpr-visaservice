@@ -164,6 +164,12 @@ production IdP, and no full deployed Control Room is claimed.
 Browser acceptance also rejects an actual UI mutation across a failed service
 TLS trust check, keeps stale controls disabled, then restores trust and refreshes
 without changing the durable source revision.
+Both hops use production route composition and the Room's production HTTPS/
+header wrapper. A separate fault aborts one service response after actual
+durable Admin acceptance: the UI shows 502 without automatically retrying,
+then explicit readback reveals the stored off revision before confirmed
+re-enable. This is local response-loss acceptance, not full service startup,
+service crash/restart or gateway acknowledgement.
 
 ### Optional source validity bound
 
