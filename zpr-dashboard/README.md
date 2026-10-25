@@ -350,6 +350,48 @@ permissions grant only reads here. Backend trust must grant each permission
 explicitly. Signing returns HTTP 503 while no signing key is configured. Signed
 existence is historical evidence, not delivery, VS installation or enforcement.
 
+#### Subject-Link Publication operator page
+
+Open `/subject-link-publications.html` from **Configuration > Subject-Link
+Publication**. It is in the production embed and both asset manifests, uses the
+same OIDC session widget and CSRF helper, and has no Simulator dependency.
+Controls are enabled only for the signed-in identity's exact permissions in the
+entered organization.
+
+1. Enter the exact organization, VS recipient ID and epoch, then read the
+   stream state (sequence, current candidate digest/signature and the server's
+   signing key ID). Changing any of the three clears all displayed evidence.
+2. A publisher can provision a new stream (sent once, never auto-retried) and
+   promote an independently approved review (ID, digest, review version) or
+   revoke a binding (binding version). The expected sequence always comes from
+   the last explicit state read.
+3. A capturer supplies explicit issued/expiry times and a reason. There are no
+   default lease durations; a renewal is another capture.
+4. A signer reads the current candidate bytes. The browser recomputes SHA-256
+   over the exact payload, displays it and only then enables signing of that
+   digest. Signing is disabled for an already signed or non-current candidate.
+5. Anyone with `subject-link.read` can read historical events, candidates and
+   signed envelopes by sequence.
+
+Intent, capture and sign use the same unconfirmed-request panel as the review
+page (separate `sessionStorage` key): the exact body and retry key are saved
+before sending, reload restores the stream scope but never replays, and retry
+is explicit and limited to the original identity and stream. After any change
+the page requires a fresh state read. There are no delivery, VS installation,
+enforcement or deployment controls.
+
+```sh
+ZPR_TEST_SUBJECT_LINK_BROWSER=1 \
+  go test -race ./cmd/zpr-web-dashboard -run '^TestSubjectLinkPublicationBrowser$' -count=3
+```
+
+That Chromium acceptance signs in separate publisher, capturer and signer
+identities through the production Room proxy and mTLS Control-Service routes. It
+covers cancelled confirmation, invalid validity, a dropped capture response with
+reload and exact retry, browser digest verification, signing, historical
+readback and desktop/tablet overflow. The test then verifies the retained
+envelope against the pinned key.
+
 #### Subject-Link Review operator page
 
 Open `/subject-links.html` from **Configuration > Subject-Link Review** in
@@ -394,7 +436,8 @@ receipt/queue discovery endpoint.
 
 Session loss, target changes and failed reads clear actionable stale evidence.
 Returned text is rendered with `textContent`, not HTML. There are no activation,
-snapshot, delivery, enforcement or deployment controls on this page.
+snapshot, delivery, enforcement or deployment controls on this page; snapshot
+capture and signing are on the Subject-Link Publication page.
 
 Real Chromium acceptance (existing `@playwright/test` and Chromium required):
 

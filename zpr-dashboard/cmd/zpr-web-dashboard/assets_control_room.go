@@ -19,6 +19,6 @@ import "embed"
 //go:embed static/policy-browser.js static/policy-record-icons.js static/polling-display.js static/provisioning-contract.js
 //go:embed static/provisioning-registry.js static/provisioning.css static/provisioning.js static/safe-display.js
 //go:embed static/security-review.css static/security-review.js static/sidebar.css static/sidebar.js
-//go:embed static/source-metrics.js static/subject-links.html static/subject-links.js static/table-sort.js static/trusted-source.css static/trusted-source.js
+//go:embed static/source-metrics.js static/subject-link-publications.html static/subject-link-publications.js static/subject-links.html static/subject-links.js static/table-sort.js static/trusted-source.css static/trusted-source.js
 //go:embed static/vendor/CODEMIRROR-LICENSES static/vendor/PLURALIZE-LICENSE static/vendor/code-editor.js static/vendor/pluralize.js
 var controlRoomFiles embed.FS

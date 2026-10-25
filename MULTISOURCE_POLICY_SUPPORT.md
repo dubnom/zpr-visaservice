@@ -3085,7 +3085,38 @@ mutual TLS. It checks that denials (wrong role, foreign organization, missing
 CSRF) never reach Control-Service and that browser credentials are replaced by
 the signed proof. It also checks that the signed actor is the verified
 named user. A mutation that mapped signing to the capture permission failed the
-workflow test. No Control Room screen calls these routes yet.
+workflow test. The operator page is described below.
+
+#### Implemented: publication capture/sign operator page
+
+`/subject-link-publications.html` (**Configuration > Subject-Link
+Publication**) is a separate Control Room page in the production embed and
+asset manifests. It calls only the routes above through the existing session
+widget, CSRF helper and Room proxy. It has no Simulator dependency and no
+delivery, installation or enforcement controls.
+
+- The exact organization, VS recipient and epoch are explicit. A state read
+  shows sequence, current candidate digest/signature and the server key ID.
+  Any scope change discards displayed evidence and actionable state.
+- Controls follow the session's exact permissions per organization. The
+  expected sequence for promote, revoke and capture comes from the last
+  explicit read, and every successful change requires a fresh read.
+- Capture takes explicit issued/expiry times with no default lease. Signing is
+  enabled only after the browser reads the current candidate, recomputes
+  SHA-256 over the exact payload bytes and matches the stream state. Signed or
+  non-current candidates cannot be signed.
+- Intent, capture and sign save the exact body and retry key before sending,
+  with the review page's unconfirmed-request rules: no replay on reload, and
+  explicit retry only for the original identity and stream. Provisioning is
+  sent once and never retried.
+
+The gated `TestSubjectLinkPublicationBrowser` runs real Chromium through native
+OIDC, the production Room proxy and mTLS Control-Service with separate
+publisher, capturer and signer identities. It covers a cancelled confirmation,
+rejected validity, a dropped capture response with reload and exact retry,
+browser digest verification, signing, historical readback and desktop/tablet
+overflow. The Go side verifies the persisted envelope against the pins and the
+recorded signer. The test does not cover delivery or certify a deployed key.
 
 ### S05 minimal subject-link contract: review proposal (2026-10-24)
 

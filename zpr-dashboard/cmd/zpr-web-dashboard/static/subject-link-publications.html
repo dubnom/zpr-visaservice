@@ -1,0 +1,98 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Subject-Link Publication - ZPR Control Room</title>
+  <link rel="stylesheet" href="/change-review.css?v=3">
+  <script src="/operator-request.js" defer></script>
+  <script src="/subject-link-publications.js" defer></script>
+  <script src="/operator-login.js" defer></script>
+</head>
+<body>
+  <header><a href="/">Control Room</a><h1>Subject-Link Publication</h1></header>
+  <main>
+    <section class="operator-login" aria-label="Operator session">
+      <h2 class="operator-login-title" id="operator-login-title">Sign in</h2>
+      <p class="operator-login-description" id="operator-login-description">Named-user permissions are required for each organization and operation.</p>
+      <p id="operator-login-status"></p>
+      <form id="operator-login-form" method="post" action="/auth/operator/login"><button type="submit">Sign in</button></form>
+      <button id="operator-logout" type="button" hidden>Sign out</button>
+      <p id="operator-scope" hidden></p>
+    </section>
+    <p class="boundary">Publication intent and signed snapshots are retained evidence only. Nothing here delivers a snapshot, installs it on a VS, changes enforcement or deploys anything. Approve reviews on <a href="/subject-links.html">Subject-Link Review</a>.</p>
+    <p id="status" role="status" aria-live="polite">Sign in to begin.</p>
+    <fieldset id="publication-workspace" disabled>
+      <legend>Exact recipient stream</legend>
+      <label>Organization ID <input id="publication-organization" required maxlength="128" autocomplete="off"></label>
+      <label>VS recipient ID <input id="publication-recipient" required maxlength="128" autocomplete="off"></label>
+      <label>Epoch <input id="publication-epoch" required maxlength="128" autocomplete="off"></label>
+      <button id="publication-read" type="button" disabled>Read current stream state</button>
+      <dl class="publication-summary">
+        <dt>Stream sequence</dt><dd id="publication-sequence">Not read</dd>
+        <dt>Current candidate</dt><dd id="publication-current">Not read</dd>
+        <dt>Signing key</dt><dd id="publication-key">Not read</dd>
+      </dl>
+      <pre id="publication-state-evidence" aria-label="Stream state evidence"></pre>
+      <section id="publication-pending" hidden>
+        <h2>Unconfirmed publication request</h2>
+        <p id="publication-pending-note"></p>
+        <button id="publication-retry" type="button" disabled>Retry exact request</button>
+        <button id="publication-discard" type="button">Discard local retry after checking state</button>
+      </section>
+      <details id="publication-provision">
+        <summary>Provision a new recipient stream</summary>
+        <p>Requires subject-link.publish. Provisioning creates sequence 0 once; it is not retried. After an uncertain result, read the stream state.</p>
+        <form id="publication-provision-form">
+          <label>Provision reason <textarea id="publication-provision-reason" required rows="2" maxlength="1024"></textarea></label>
+          <button id="publication-provision-save" type="submit" disabled>Confirm stream provisioning</button>
+        </form>
+      </details>
+      <section>
+        <h2>Publication intent</h2>
+        <p>Requires subject-link.publish. Promotion needs an independently approved review and runs a fresh exact-subject directory check. The expected sequence comes from the last stream read.</p>
+        <form id="publication-intent-form">
+          <label>Action <select id="publication-action"><option value="promote">Promote approved review</option><option value="revoke">Revoke publication intent</option></select></label>
+          <label>Review ID <input id="publication-review-id" required maxlength="128" autocomplete="off"></label>
+          <label id="publication-digest-label">Approved review digest <input id="publication-review-digest" maxlength="64" autocomplete="off"></label>
+          <label id="publication-review-version-label">Approved review version <input id="publication-review-version" maxlength="20" autocomplete="off" value="2"></label>
+          <label id="publication-binding-version-label" hidden>Binding version <input id="publication-binding-version" maxlength="20" autocomplete="off"></label>
+          <label>Intent reason <textarea id="publication-intent-reason" required rows="2" maxlength="1024"></textarea></label>
+          <button id="publication-intent-save" type="submit" disabled>Confirm publication intent change</button>
+        </form>
+      </section>
+      <section>
+        <h2>Capture snapshot candidate</h2>
+        <p>Requires subject-link.snapshot.capture. Captures the complete current registry and intent at a new sequence with the explicit validity below. A renewal is a new capture.</p>
+        <form id="publication-capture-form">
+          <label>Snapshot issued at <input id="publication-issued" type="datetime-local" step="1" required></label>
+          <label>Snapshot expires at <input id="publication-expires" type="datetime-local" step="1" required></label>
+          <label>Capture reason <textarea id="publication-capture-reason" required rows="2" maxlength="1024"></textarea></label>
+          <button id="publication-capture-save" type="submit" disabled>Confirm candidate capture</button>
+        </form>
+      </section>
+      <section>
+        <h2>Inspect and sign the current candidate</h2>
+        <p>Requires subject-link.snapshot.sign. Read the exact candidate bytes first; the browser recomputes their SHA-256 and signs only that digest with the server-side key. Signing does not advance the stream or deliver anything.</p>
+        <button id="publication-candidate-read" type="button" disabled>Read current candidate bytes</button>
+        <p id="publication-candidate-check"></p>
+        <pre id="publication-candidate-evidence" aria-label="Candidate payload"></pre>
+        <form id="publication-sign-form">
+          <label>Signing reason <textarea id="publication-sign-reason" required rows="2" maxlength="1024"></textarea></label>
+          <button id="publication-sign-save" type="submit" disabled>Confirm candidate signing</button>
+        </form>
+      </section>
+      <section>
+        <h2>Historical readback</h2>
+        <form id="publication-history-form">
+          <label>Evidence <select id="publication-history-kind"><option value="events">Publication event</option><option value="candidates">Snapshot candidate</option><option value="signed">Signed envelope</option></select></label>
+          <label>Sequence <input id="publication-history-sequence" required maxlength="20" autocomplete="off"></label>
+          <button id="publication-history-read" type="submit" disabled>Read immutable evidence</button>
+        </form>
+        <p>Historical evidence is not current, delivered or enforced state.</p>
+        <pre id="publication-history-evidence" aria-label="Historical evidence"></pre>
+      </section>
+    </fieldset>
+  </main>
+</body>
+</html>

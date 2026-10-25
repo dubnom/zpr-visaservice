@@ -251,7 +251,9 @@ one immutable envelope per sequence. Control-Service loads its key from a
 protected 0600 file with an explicit key ID and rotation pins. A separately
 authorized Control-Service/Room API (distinct publish, capture and sign
 permissions) provisions streams, promotes/revokes intent, captures, signs and
-reads back history. There is still no delivery, VS installation or enforcement.
+reads back history, and the Control Room **Subject-Link Publication** page drives
+it with browser-verified candidate digests. There is still no delivery, VS
+installation or enforcement.
 
 Expired lookup identities are indeterminate even if another identity on the
 actor is still live. They cannot fetch fresh enrichment or be silently dropped
