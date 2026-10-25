@@ -466,6 +466,7 @@ resolve_machine_runtime() {
     machine_profile=$PROFILE
 }
 resolve_machine_placement() { machine_node_ip=172.31.0.13; machine_location=Milwaukee; machine_owner=james.wu; }
+machine_docker_network_for_org() { printf 'zpr-%s\n' "$1"; }
 ensure_machine_runtime_arch() { :; }
 refresh_multinode_services_if_idle() { :; }
 start_zpr_machine_control_service() { :; }
@@ -505,6 +506,9 @@ start_machine_container machine-13
 	if !strings.Contains(first, firstPath+":/var/lib/zpr-business\n") ||
 		!strings.Contains(first, filepath.Join(directory, "assets")+":/opt/zpr-workloads:ro") {
 		t.Fatal("business state must be writable and workload assets must remain read-only")
+	}
+	if !strings.Contains(first, "--network\nzpr-great-lakes\n") {
+		t.Fatal("multi-node machine was not attached to its organization network")
 	}
 	record := filepath.Join(firstPath, "retained-test-record.json")
 	if err := os.WriteFile(record, []byte("retained"), 0600); err != nil {

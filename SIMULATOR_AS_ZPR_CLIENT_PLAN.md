@@ -258,12 +258,15 @@ Root causes of the 13 failures (diagnosis only; no tests were changed):
 Verification: temporarily providing the three gitignored `.zplc` files (copied
 from the main checkout) and sibling `zpr-common`/`.local-runtime` links made 12
 of the 13 pass. Full `make test` then failed only the launcher harness test. All
-temporary inputs were removed afterward. Repairing the stale harness belongs to
-its owner. Browser (Playwright) suites were not run for this record.
+temporary inputs were removed afterward. Browser (Playwright) suites were not
+run for this record.
 
-Still open for B05: confirm the proposed 10-second observation budget in
-section 6, and record deployment versions once an integrated stack is
-qualified. The checkbox stays open until then.
+**Update (2026-10-25, operator-approved):** the launcher harness now stubs
+`machine_docker_network_for_org` and asserts that the multi-node container is
+attached to `zpr-<organization>`. The clean-worktree baseline is therefore
+**12** failures, all missing local inputs. The operator **confirmed the
+10-second observation budget** in section 6. B05 stays open only until
+deployment versions are recorded for a qualified integrated stack.
 
 ### M1 - Multiple trusted sources and real organization LDAP
 
@@ -601,9 +604,9 @@ For each row, exercise both layouts, keyboard navigation, readable errors and
 no page-level horizontal overflow. Fixture tests cover deterministic states;
 live isolated-stack tests establish the architecture and real behavior.
 
-Proposed demo observation budget: changed health/activity is visible within
+Demo observation budget (**operator-confirmed 2026-10-25**): changed health/activity is visible within
 **10 seconds** after a manual refresh or normal polling, measured from the
-injected event. Confirm this budget at B05. Tests must not hide failures with
+injected event. Tests must not hide failures with
 arbitrary sleeps or screenshot updates.
 
 | ID | Setup/action | Required visible result | Additional proof / milestone |
