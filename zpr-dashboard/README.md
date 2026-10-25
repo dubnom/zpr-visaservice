@@ -109,7 +109,11 @@ permission, organization and same-origin/CSRF authorization. Anonymous,
 read-only mutation, foreign-organization, malformed CSRF/origin and logged-out
 requests never reach the bridge. OIDC tokens/JWKS/PKCE come from an isolated
 TLS identity-provider fixture; the default run drives login/callback handlers
-without a browser. This is not deployed Control-Service mTLS or the Room proxy.
+without a browser. Runtime requests now traverse the production Room reverse
+proxy and file-configured mTLS transport to a separate TLS 1.3 service listener.
+Missing/foreign clients fail TLS and browser credentials are stripped.
+Unrelated service trust returns 502 before reaching the bridge/Admin API.
+This is local transport acceptance, not full service startup or deployment.
 Set `ZPR_TEST_SOURCE_BROWSER=1` when running the lifecycle script to additionally
 exercise the embedded production login/request/runtime-control assets in real
 Chromium against the live bridge/Admin/VS chain. Confirmation cancel makes no
@@ -123,6 +127,9 @@ production password/MFA/IdP or full navigation/deployed ingress acceptance is
 claimed. The login widget recognizes
 `trusted-source.*` application permissions, so source-only operators can use
 their explicit grants and receive mutation CSRF without unrelated privileges.
+Browser acceptance also injects an unrelated service CA: a confirmed mutation
+and refresh fail visibly, stale controls stay disabled, and restored trust plus
+explicit refresh recovers with the same stored source revision.
 This is component/process acceptance with explicitly synthetic identities,
 not approved subject-link, full daemon/deployed ingress/UI or gateway-delivery
 acceptance. See [prerequisites and exact boundaries](../MULTISOURCE_POLICY_SUPPORT.md#repeatable-source-lifecycle-acceptance).

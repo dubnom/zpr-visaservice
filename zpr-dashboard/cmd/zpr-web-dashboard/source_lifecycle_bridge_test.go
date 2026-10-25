@@ -28,7 +28,7 @@ import (
 )
 
 // Only the test owner provisions upstream credentials. Runtime routes separately
-// enforce real OIDC sessions; this is not the Control-Service mTLS deployment.
+// enforce real OIDC sessions and cross the production proxy over service mTLS.
 func sourceLifecycleBridge(t *testing.T) {
 	t.Helper()
 	token := make([]byte, 32)
@@ -58,6 +58,9 @@ func sourceLifecycleBridge(t *testing.T) {
 	mux.Handle("GET /api/trusted-sources/runtime", bridge)
 	mux.Handle("GET /api/trusted-sources/runtime/{source}/control", bridge)
 	mux.Handle("PUT /api/trusted-sources/runtime/{source}/control", bridge)
+	transport := sourceLifecycleControlTransport(t, mux)
+	var trustService atomic.Bool
+	trustService.Store(true)
 	server := httptest.NewUnstartedServer(nil)
 	ca, caKey, err := createTestPolicyCA()
 	if err != nil {
@@ -85,6 +88,24 @@ func sourceLifecycleBridge(t *testing.T) {
 		}
 		if r.URL.Path == "/fixture/browser" && r.Method == http.MethodPost {
 			browserRun.ServeHTTP(w, r)
+			return
+		}
+		if r.URL.Path == "/fixture/service-trust" && r.Method == http.MethodPost {
+			if os.Getenv("ZPR_TEST_SOURCE_BROWSER") != "1" {
+				http.Error(w, "browser acceptance not enabled", 400)
+				return
+			}
+			var config struct {
+				Trusted *bool `json:"trusted"`
+			}
+			decoder := json.NewDecoder(http.MaxBytesReader(w, r.Body, 1024))
+			decoder.DisallowUnknownFields()
+			if err := decoder.Decode(&config); err != nil || config.Trusted == nil {
+				http.Error(w, "explicit fixture service trust required", 400)
+				return
+			}
+			trustService.Store(*config.Trusted)
+			w.WriteHeader(http.StatusNoContent)
 			return
 		}
 		if r.URL.Path == "/" || r.URL.Path == "/fixture/ui" || r.URL.Path == "/trusted-source.js" || r.URL.Path == "/operator-request.js" || r.URL.Path == "/operator-login.js" || strings.HasPrefix(r.URL.Path, "/auth/operator/") {
@@ -147,7 +168,13 @@ func sourceLifecycleBridge(t *testing.T) {
 		t.Logf("%s", output)
 		w.WriteHeader(http.StatusNoContent)
 	}
-	runtime = controlroom.AuthorizeAPI(auth, "fixture-production", mux, writePolicyError)
+	runtime = controlroom.AuthorizeAPI(auth, "fixture-production", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		proxy := transport.proxy
+		if !trustService.Load() {
+			proxy = transport.untrustedProxy
+		}
+		proxy.ServeHTTP(w, r)
+	}), writePolicyError)
 	configure = func(w http.ResponseWriter, r *http.Request) {
 		var config struct {
 			URL string `json:"url"`
@@ -188,12 +215,24 @@ func sourceLifecycleBridge(t *testing.T) {
 		current = &adminClient{baseURL: client.BaseURL, apiKey: client.APIKey, http: client.HTTP}
 		mu.Unlock()
 		before := forwarded.Load()
+		request := httptest.NewRequest(http.MethodPut, server.URL+"/api/trusted-sources/runtime/company/control", strings.NewReader(`{"enabled":false}`))
+		request.AddCookie(sessions["source-writer"].cookie)
+		request.Header.Set("Origin", server.URL)
+		request.Header.Set("X-ZPR-CSRF", sessions["source-writer"].csrf)
+		response := httptest.NewRecorder()
+		controlroom.AuthorizeAPI(auth, "fixture-production", transport.untrustedProxy, writePolicyError).ServeHTTP(response, request)
+		if response.Code != http.StatusBadGateway || response.Header().Get("Cache-Control") != "no-store" || forwarded.Load() != before {
+			t.Error("untrusted Control-Service transport failed to reject authorized mutation before the bridge")
+			http.Error(w, "service transport fixture failed", http.StatusInternalServerError)
+			return
+		}
 		assertSourceOperatorDenials(t, server, secret, sessions)
 		if forwarded.Load() != before {
 			t.Error("denied operator request reached the Control-Service bridge")
 			http.Error(w, "operator authorization fixture failed", http.StatusInternalServerError)
 			return
 		}
+		t.Log("SOURCE_LIFECYCLE service-mtls: verified Room client, browser credentials stripped, missing/foreign clients rejected and untrusted-service mutation denied before Admin")
 		w.WriteHeader(http.StatusNoContent)
 	}
 	close(ready)

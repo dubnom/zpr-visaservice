@@ -142,8 +142,12 @@ authentication/Control-Service ingress/Control Room flow. The bridge's inbound
 test listener now uses CA-signed HTTPS and real OIDC-derived operator sessions
 with production permission, organization and same-origin CSRF checks, including
 logged-out-session rejection. OIDC uses an isolated signed-token provider and
-handler-driven login/callback requests in the default browser-free run. This
-does not test the deployed Control-Service mTLS ingress or Control Room proxy.
+handler-driven login/callback requests in the default browser-free run.
+Runtime requests now cross the production Control Room reverse proxy and
+file-configured mTLS transport to a separate TLS 1.3 service listener.
+Missing/foreign client certificates fail TLS, browser credentials are stripped,
+and unrelated service trust fails before the bridge. This is local transport
+acceptance, not full Control-Service startup or deployed ingress acceptance.
 With `ZPR_TEST_SOURCE_BROWSER=1`, real Chromium also runs the embedded production
 login/request/source-control assets against those live APIs: cancel confirmation,
 disable/readback and re-enable precede fresh VS recovery. Chromium starts
@@ -153,6 +157,8 @@ and unchanged source revision. The IdP selects a named synthetic identity; it
 does not test production password/MFA authentication. The browser uses a minimal
 component page rather than the full Control Room. Source-only operators are
 recognized by the login widget without unrelated monitor/policy/gateway grants.
+It also confirms a service-TLS failure displays an error and disables stale
+controls; restoring trust and refreshing recovers the same source revision.
 It does not activate subject links, provision production transport/credentials,
 prove gateway acknowledgement or establish deployed-directory acceptance.
 Final envelope syntax remains open. See the

@@ -71,6 +71,42 @@ try {
   assert.equal(on.effective_enabled, true);
   assert.notEqual(on.revision, off.revision);
   assert.deepEqual(mutations, [{ enabled: false }, { enabled: true }]);
+  const setServiceTrust = async trusted => {
+    const status = await page.evaluate(async trusted => {
+      const response = await fetch("/fixture/service-trust", {
+        method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ trusted }),
+      });
+      return response.status;
+    }, trusted);
+    assert.equal(status, 204, "fixture failed to configure Control-Service trust");
+  };
+  await setServiceTrust(false);
+  try {
+    const failed = page.waitForResponse(response => response.request().method() === "PUT" &&
+      new URL(response.url()).pathname === "/api/trusted-sources/runtime/company/control");
+    page.once("dialog", dialog => dialog.accept());
+    await disable.click();
+    const response = await failed;
+    assert.equal(response.status(), 502);
+    assert.equal(response.headers()["cache-control"], "no-store");
+    await expect(page.locator("[data-runtime-message]")).toContainText("HTTP 502");
+    await expect(disable).toBeDisabled();
+    await page.getByRole("button", { name: "Refresh runtime state" }).click();
+    await expect(page.locator("[data-runtime-message]")).toContainText("HTTP 502");
+    await expect(disable).toBeDisabled();
+  } finally {
+    await setServiceTrust(true);
+  }
+  await page.getByRole("button", { name: "Refresh runtime state" }).click();
+  await expect(disable).toBeEnabled();
+  const recovered = await page.evaluate(async () => {
+    const response = await window.zprOperatorFetch("/api/trusted-sources/runtime/company/control");
+    if (!response.ok) throw new Error(`Recovered source read failed: ${response.status}`);
+    return response.json();
+  });
+  assert.equal(recovered.enabled, true);
+  assert.equal(recovered.revision, on.revision, "failed service TLS mutation changed durable source revision");
+  assert.deepEqual(mutations, [{ enabled: false }, { enabled: true }, { enabled: false }]);
   const logout = page.waitForResponse(response => new URL(response.url()).pathname === "/auth/operator/logout");
   await page.locator("#operator-logout").click();
   assert.equal((await logout).status(), 204);
@@ -109,7 +145,7 @@ try {
   assert.ok(refreshed && refreshed.value !== sessionCookie.value, "reauthentication reused logged-out session");
   assert.deepEqual(errors, []);
   assert.ok(requests.every(url => [origin, idp].includes(url.origin) && !url.pathname.includes("simulator")));
-  console.log("SOURCE_LIFECYCLE browser: real Chromium OIDC navigation/callback, source-only login/request/control assets, confirmation cancel, durable disable/readback/re-enable and logout/stale-session denial passed");
+  console.log("SOURCE_LIFECYCLE browser: real Chromium OIDC navigation/callback, source-only login/request/control assets, confirmation cancel, durable disable/readback/re-enable, service-mTLS failure/recovery and logout/stale-session denial passed");
   await context.close();
 } finally {
   await browser.close();

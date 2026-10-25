@@ -30,8 +30,15 @@ the independent Go provider and durable VS state in one automated chain:
    mutation, unknown sources return 404, and responses are `no-store`.
    Browser-supplied API keys/cookies/bearer values cannot select or replace the
    server-owned Admin key; no Admin key appears in returned JSON.
-5. Put that bridge behind CA-verified HTTPS and the real Control Room API
-   authorization wrapper. The existing operator-auth implementation obtains
+5. Put that bridge on a separate TLS 1.3 listener requiring a trusted client
+   certificate. Use the production Control Room proxy and its file-configured
+   mTLS client transport, with independent ephemeral service CA/server/Room
+   certificates. The fixture verifies the configured Room certificate and that
+   browser cookies, bearer credentials, origin, CSRF, forwarding headers and
+   forged operator delegation do not reach the service. Missing and foreign
+   client certificates fail during TLS before any HTTP bridge call.
+   The browser-facing ingress remains CA-verified HTTPS behind the real
+   Control Room API authorization wrapper. The existing operator-auth implementation obtains
    fixture sessions through OIDC discovery, PKCE token exchange, signed RS256
    ID-token/JWKS verification and nonce binding. Explicit fixture grants separate
    a reader, a writer and a foreign-organization writer. Writer requests carry
@@ -40,6 +47,9 @@ the independent Go provider and durable VS state in one automated chain:
    (including a forged organization query), missing/wrong CSRF, missing/foreign
    origin, forged identity headers and logged-out sessions must return 403 with
    `no-store` and never reach the bridge. Logout uses the real session revocation.
+   A valid writer/CSRF request through a proxy with unrelated service CA trust
+   returns 502 with `no-store`, without reaching the bridge or Admin API.
+   Correct service trust is retained for subsequent lifecycle operations.
 6. Disable the source through the bridge's HTTPS route, crossing real Admin
    HTTPS with the server-owned write key, and require a 202 response
    with declared/effective/desired state, pending work and a fresh UUID revision.
@@ -71,16 +81,22 @@ the independent Go provider and durable VS state in one automated chain:
    CSRF through the production helper.
    Cancel confirmation without any PUT, then confirm disable and verify the
    rendered desired/effective-off/pending state and stored revision. Confirm
-   re-enable and require a different persisted revision. The real event worker
-   then completes that browser-originated change and VS grants a fresh visa from
-   exactly two LDAP endpoint refreshes. Then use the real logout button,
+   re-enable and require a different persisted revision. Switch to an unrelated
+   service trust root through an owner-only, browser-opt-in fixture fault route.
+   A confirmed UI disable must return 502 with `no-store`, show the failure and
+   disable stale controls; refresh must also fail visibly. Restore correct trust,
+   explicitly refresh, and require usable controls with the same enabled state
+   and exact revision: the rejected mutation must not change durable state.
+   Then use the real logout button,
    require 204, and leave the fresh IdP consent unaccepted. Replay the former
    cookie and CSRF proof in a separate browser context: session read must return
    401 and mutation must return 403 with `no-store`. Complete a new browser login
    and require a different session cookie with the same stored source revision,
    proving the rejected replay did not mutate state. Browser requests must stay
    on the two independent loopback application/IdP origins without Simulator
-   access; page errors fail.
+   access; page errors fail. After the browser sequence returns, the real event
+   worker completes its accepted change and VS grants a fresh visa from exactly
+   two LDAP endpoint refreshes.
 
 Run from this repository's root:
 
@@ -101,7 +117,7 @@ Playwright dependencies and its installed Chromium. It never installs them.
 The default remains browser-free. Chromium permits the ephemeral ingress and
 IdP certificates' exact SPKIs via a process-scoped test flag; this is not a global
 certificate-verification bypass or host trust-store modification. Admin and
-provider TLS continue verifying their configured roots normally. Browser
+provider and Room-to-service TLS continue verifying their configured roots normally. Browser
 contexts/processes close on success or failure; missing tools and missing
 browser completion markers fail explicitly.
 
@@ -130,11 +146,14 @@ shares the production connection-serving loop, not a substitute HTTP router.
 They are not full Visa Service daemon/startup, node authentication, Control-Service
 deployment or full deployed Control Room acceptance. The optional
 component browser check uses real production assets and live APIs but a minimal
-fixture page, not the complete navigation/reverse-proxy deployment. The bridge's inbound
+fixture page, not the complete navigation/deployment. The browser-facing
 listener is private CA-signed loopback HTTPS with real named-user/organization/
-CSRF authorization and an additional random test-owner token. It is not the
-production Control-Service mTLS listener or a deployed Control Room reverse
-proxy. The browser-free path provisions sessions through the real auth handler
+CSRF authorization and an additional random test-owner token. Runtime API
+requests now cross the production reverse proxy and configured mTLS transport
+to a separate private listener with the production TLS 1.3/client-CA requirement.
+This runs the real source-control handler, not the full Control-Service startup
+command or complete service route composition. It is local transport evidence,
+not a deployed ingress or proxy acceptance. The browser-free path provisions sessions through the real auth handler
 using HTTP test requests, with actual TLS discovery/token/JWKS traffic to a local
 identity-provider fixture. The browser option instead navigates OIDC login,
 consent and callback without importing a session. The IdP's explicit consent
@@ -144,6 +163,9 @@ sign-in is retained rather than changing production login UX.
 A test-only bootstrap route supplies each ephemeral Admin
 endpoint, key and CA; it is not source registration or a production configuration
 API. The actual production bridge and Admin transport handle runtime requests.
+The service-trust fault route is also owner-only, browser-opt-in and test-only;
+it selects an unrelated trust root without weakening certificate verification
+or changing production configuration.
 Actor authority and UUID-valued device CNs
 are explicitly synthetic fixtures, not invented device/person subject links.
 The LDAP server is a bounded protocol fixture, not deployed OpenLDAP. The signed
@@ -189,6 +211,14 @@ Validation for this acceptance increment:
   fresh sign-in also pass three consecutive race-enabled full-chain runs.
   This increment changes fixture/browser code and documentation only; no Rust,
   dependency manifests or production login/authentication logic changed.
+- The real Room-to-service proxy/mTLS chain, including visible browser failure
+  and recovery from an unrelated service trust root with unchanged source
+  revision, passes three consecutive race-enabled full-chain runs. Missing and
+  foreign client certificates fail TLS; an ordinary non-opt-in regression checks
+  stripped browser credentials, exact method/path/query/body preservation and
+  good-trust/bad-trust/good-trust mutation delivery. These changes are confined
+  to acceptance fixtures, browser harness and documentation; Rust and production
+  transport/authentication code are unchanged.
 
 ## Operator controls, shared JSON documents and immutable LDAP provider
 
