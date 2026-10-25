@@ -38,6 +38,7 @@ type Handlers struct {
 	AdapterLogs, DNSRecords, DNSStats, DNSStylesheet                  http.Handler
 	PolicyAssistant, GatewayAssistantStatus, GatewayAssistant, Policy http.Handler
 	BudgetAuthorityCurrent, BudgetAuthorityOperator                   http.Handler
+	SubjectLinkReviews                                                http.Handler
 	Assertions                                                        Assertions
 	TrustedChanges                                                    TrustedChanges
 	TrustedSourceControl                                              http.Handler
@@ -57,6 +58,14 @@ func NewMux(handlers Handlers) *http.ServeMux {
 	}
 	mux.Handle("/api/enrollment/", handlers.Enrollment)
 	mux.Handle("/api/operator-enrollment/", handlers.Enrollment)
+	reviews := handlers.SubjectLinkReviews
+	if reviews == nil {
+		reviews = http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+			w.Header().Set("Cache-Control", "no-store")
+			http.Error(w, "subject-link review is unavailable", http.StatusServiceUnavailable)
+		})
+	}
+	mux.Handle("/api/subject-link-reviews/", reviews)
 	mux.Handle("POST /api/budget-authority/current", budgetCurrent)
 	mux.Handle("/api/operator-enrollment/v1/budget-authority/", budgetOperator)
 	handlers.Assertions.Register(mux)

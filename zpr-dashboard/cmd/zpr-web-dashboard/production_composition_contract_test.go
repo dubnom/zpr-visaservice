@@ -60,6 +60,7 @@ func TestProductionCompositionRouteRegistrations(t *testing.T) {
 			"/api/operator-enrollment/":                         "handlers.Enrollment",
 			"POST /api/budget-authority/current":                "budgetCurrent",
 			"/api/operator-enrollment/v1/budget-authority/":     "budgetOperator",
+			"/api/subject-link-reviews/":                        "reviews",
 			"GET /api/trusted-sources/runtime":                  "handlers.TrustedSourceControl",
 			"GET /api/trusted-sources/runtime/{source}/control": "handlers.TrustedSourceControl",
 			"PUT /api/trusted-sources/runtime/{source}/control": "handlers.TrustedSourceControl",

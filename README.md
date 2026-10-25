@@ -189,9 +189,13 @@ the exact organization/source/version/provider reference to independently
 provisioned LDAPS trust and credentials. Its read-only validator requires one
 exact canonical `entryUUID`, and live TLS fixture tests compose it with durable
 proposal/independent approval and historical retries after database reopen.
-These are internal APIs, not enabled review endpoints, active links or VS
-enforcement. Snapshot format, timing bounds
-and rollout still require approval. See
+The split Control-Service now has explicitly configured review-only HTTP routes
+and a dedicated Control Room named-user signing proxy. They are disabled by
+default and require independent backend grants, mTLS, a protected review database
+and version-bound provider configuration. OIDC-to-LDAPS tests cover independent
+approval, lost replies, historical retries, source disable and logout. There is
+no review UI, registry provisioning workflow, active-link publication or VS
+enforcement. Snapshot format, timing bounds and rollout still require approval. See
 [current implementation and gates](MULTISOURCE_POLICY_SUPPORT.md#approved-initial-direction-and-transactional-source-registry-2026-10-25).
 
 Expired lookup identities are indeterminate even if another identity on the

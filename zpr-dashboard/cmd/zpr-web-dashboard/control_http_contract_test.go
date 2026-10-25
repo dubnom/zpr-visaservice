@@ -26,6 +26,7 @@ func TestControlHTTPCommandHandlerBindings(t *testing.T) {
 		}},
 		{"control_service.go", "runControlService", "httpapi.Handlers", map[string]string{
 			"Enrollment": "enrollmentAPI", "Gateways": "gatewayAPI",
+			"SubjectLinkReviews":      "subjectReviews",
 			"BudgetAuthorityCurrent":  "http.HandlerFunc(budgetAuthorityAPI.Current)",
 			"BudgetAuthorityOperator": "http.HandlerFunc(budgetAuthorityAPI.Operator)",
 			"Assertions":              "assertions.handlers()", "TrustedChanges": "trustedChanges.handlers()",

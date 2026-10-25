@@ -155,7 +155,8 @@ The independent-reviewer check compares verified issuer/subject pairs, not
 display names. The existing protected SQLite review store now has isolated
 subject-link proposal/decision tables and checks the persisted proposer inside
 the approval transaction. `review-approved` is review evidence, not an active
-binding. There are no subject-link HTTP handlers or snapshot delivery yet.
+binding. Review-only HTTP is now available through the opt-in split-service
+configuration below; there is no active-binding or snapshot delivery.
 Enrollment delegation cannot sign these routes and no permissions are
 automatically granted. See the
 [S05 authorization scope](../MULTISOURCE_POLICY_SUPPORT.md#s05-operator-authorization-foundation-2026-10-24).
@@ -174,29 +175,81 @@ validator requests only `entryUUID`, requires one exact immutable subject, and
 fails closed on directory errors or ambiguous evidence. Live TLS LDAP fixture
 tests compose submission and independent approval with the real durable store,
 including source-disable fencing and historical approval retry after reopen.
-The loader is not wired to process startup or an environment variable.
-This does not yet enable service configuration, review HTTP/UI, active binding
-publication or VS enforcement, and does not synchronize the assertion-source
-file registry. Signed-snapshot format and timing/rollout remain approval gates.
+Split Control-Service startup can explicitly enable the provider loader and
+review-only HTTP using `ZPR_SUBJECT_LINK_REVIEW_DB_PATH`,
+`ZPR_SUBJECT_LINK_PROVIDERS_FILE` and `ZPR_OPERATOR_DELEGATION_TRUST_FILE`.
+All three paths must be absolute; partial/invalid configuration fails startup,
+while omitted review database/provider configuration leaves review unavailable.
+The provider file and SQLite directory/database must be private. The provider
+schema and absolute protected CA/password references are described in the
+[provider contract](../MULTISOURCE_POLICY_SUPPORT.md#implemented-protected-exact-subject-provider-resolution).
+Existing Room OIDC, delegation signer and service mTLS configuration is required;
+Room never opens this database or reads provider credentials. Backend trust must
+explicitly grant each named issuer/subject organization-scoped review permissions.
+
+The dedicated Room proxy exposes only these review operations:
+
+- `POST /api/subject-link-reviews/proposals`: strict JSON fields
+  `organization_id`, `registry_revision`, `root`, `target`, `enrichment_keys`,
+  `not_before`, `expires_at`, `reason`; permission `subject-link.propose`.
+  Root fields are `authority_id`, `authority_version`, `subject_kind`,
+  `subject_id`; target fields are `source_id`, `source_version`,
+  `selector_kind`, `subject_id`. Versions are decimal strings.
+- `GET /api/subject-link-reviews/{id}?organization_id={organization}`:
+  permission `subject-link.read`, no body or retry key.
+- `POST /api/subject-link-reviews/{id}/approve`: strict JSON fields
+  `organization_id`, `digest`, `version`, `registry_revision`, `reason`;
+  permission `subject-link.approve` and a different verified issuer/subject
+  from the persisted proposer. `version` is the observed review version string.
+
+POST requires `Content-Type: application/json` and exactly one
+`Idempotency-Key` (1-128 ASCII letters/digits, `_` or `-`). Input is bounded at
+8192 bytes; unknown/duplicate/aliased/null fields and caller-supplied authors or
+submission timestamps are rejected. `not_before`/`expires_at` are requested candidate
+validity, not an approved snapshot lease. They remain review-only data.
+Success returns the complete review record with HTTP 200 and `Cache-Control:
+no-store`, including on exact historical retries. Invalid input returns 400,
+authorization/self-review 403, missing scoped record/registration 404,
+changed context or retry content 409, and unavailable review/directory 503.
+Room transport failure returns 502. No response-loss retry is automatic.
+
+Every attempt, including a historical retry, requires a current Room session
+(same-origin and CSRF for mutations) and a fresh exact-request proof verified
+against the pinned mTLS Room certificate and independent backend grants.
+Reuse the original semantic retry key and body after a lost response, but obtain
+a fresh proof through Room. Reconstruct/restart verifiers to apply grant edits.
+Historical responses do not renew review or bypass current operator permission.
+Review approval is never an active binding.
+
+This is a configured review transport, not a complete operator workflow:
+authority/source registrations and the coherent `registry_revision` must still
+be provisioned/captured through the internal owner APIs. Startup does not import,
+infer or change registrations. There is no registry provisioning command, context
+discovery endpoint, review UI, active publication or VS enforcement, and this
+does not synchronize the assertion-source file registry. Signed-snapshot format
+and timing/rollout remain approval gates.
 See [implementation and limits](../MULTISOURCE_POLICY_SUPPORT.md#approved-initial-direction-and-transactional-source-registry-2026-10-25).
 See also the
 [durable review foundation](../MULTISOURCE_POLICY_SUPPORT.md#s05-durable-subject-link-review-foundation-2026-10-24).
 Its [keyed retry APIs](../MULTISOURCE_POLICY_SUPPORT.md#s05-durable-review-retry-receipts-2026-10-24)
 now replay original committed review responses after lost replies/reopen,
-without duplicating review records or audit decisions. This is internal
-persistence behavior, not an enabled subject-link HTTP workflow.
+without duplicating review records or audit decisions. The new opt-in review
+HTTP uses those same registry-bound receipt semantics.
 The [isolated review request-proof API](../MULTISOURCE_POLICY_SUPPORT.md#s05-isolated-review-request-proof-foundation-2026-10-24)
 also provides internal signing/verification with exact request, organization,
 permission and retry-key binding, independent grants and single-use nonces.
-It does not expand enrollment delegation or enable subject-link handlers.
+It does not expand enrollment delegation; the dedicated review handlers use
+this isolated proof API rather than enrollment proofs.
 The [durable proof/review batch](../MULTISOURCE_POLICY_SUPPORT.md#s05-durable-proof-and-review-composition-groundwork-2026-10-24)
 adds bounded persistent nonce consumption, exact review-only permission
-mappings and restart/concurrent-retry composition tests. No production handler,
-trust configuration, authority registration or active binding is enabled.
+mappings and restart/concurrent-retry composition tests. The opt-in handlers
+now compose this foundation; no authority registration or active binding is
+automatically enabled.
 An [internal BAS authority registry/capture API](../MULTISOURCE_POLICY_SUPPORT.md#s05-internal-bas-authority-registration-and-capture-2026-10-24)
 now persists organization-scoped exact service/issuer mappings with versioned
-edits and immutable history. It rejects disabled/stale root captures, but is
-not configured or exposed by a running service and does not authorize links.
+edits and immutable history. It rejects disabled/stale root captures, but
+registration editing is not exposed by a running service and does not authorize
+active links.
 The [guarded review variants](../MULTISOURCE_POLICY_SUPPORT.md#s05-transaction-guarded-authority-review-integration-2026-10-24)
 now check that authority inside new review transactions while preserving
 historical retry responses. They do not validate the separate source registry,

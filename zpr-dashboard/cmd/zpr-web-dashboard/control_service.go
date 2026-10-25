@@ -53,6 +53,7 @@ func runControlRoom(listen string) error {
 		Static:        revalidateStatic(http.FileServer(http.FS(staticRoot))),
 	})
 	controlRoomMux := http.NewServeMux()
+	controlRoomMux.Handle(subjectReviewPrefix, subjectLinkReviewProxy(security.auth, signer, proxy))
 	controlRoomMux.Handle("/api/budget-authority/", budgetAuthorityOperatorProxy(security.auth, signer, proxy))
 	controlRoomMux.Handle("/", mux)
 	server := &http.Server{
@@ -121,6 +122,15 @@ func runControlService() error {
 	if err != nil {
 		return err
 	}
+	subjectReviews, closeSubjectReviews, err := configuredSubjectLinkReviews()
+	if err != nil {
+		return err
+	}
+	defer func() {
+		if err := closeSubjectReviews(); err != nil {
+			log.Printf("Close subject-link review store failed: %T", err)
+		}
+	}()
 	enrollmentAPI, closeEnrollment, err := configuredEnrollmentHandler()
 	if err != nil {
 		return err
@@ -188,6 +198,7 @@ func runControlService() error {
 	}
 	mux := httpapi.NewMux(httpapi.Handlers{
 		Enrollment: enrollmentAPI, Gateways: gatewayAPI,
+		SubjectLinkReviews:      subjectReviews,
 		BudgetAuthorityCurrent:  http.HandlerFunc(budgetAuthorityAPI.Current),
 		BudgetAuthorityOperator: http.HandlerFunc(budgetAuthorityAPI.Operator),
 		Assertions:              assertions.handlers(), TrustedChanges: trustedChanges.handlers(),

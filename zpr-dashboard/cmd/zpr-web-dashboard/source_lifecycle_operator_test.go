@@ -76,6 +76,11 @@ func TestSourceLifecycleOperatorAuthorization(t *testing.T) {
 
 func sourceLifecycleOperator(t *testing.T, origin string) (*operatorauth.Auth, map[string]sourceOperatorSession, sourceOperatorProvider) {
 	t.Helper()
+	return sourceLifecycleOperatorWithGrants(t, origin, nil)
+}
+
+func sourceLifecycleOperatorWithGrants(t *testing.T, origin string, configuredGrants func(string) []operatorauth.Grant) (*operatorauth.Auth, map[string]sourceOperatorSession, sourceOperatorProvider) {
+	t.Helper()
 	key, err := rsa.GenerateKey(rand.Reader, 2048)
 	if err != nil {
 		t.Fatal(err)
@@ -190,6 +195,9 @@ func sourceLifecycleOperator(t *testing.T, origin string) (*operatorauth.Auth, m
 		{Issuer: provider.URL, Subject: "foreign-writer", Organizations: []string{"foreign-fixture"}, Permissions: []string{"trusted-source.read", "trusted-source.control"}},
 		{Issuer: provider.URL, Subject: "logged-out-writer", Organizations: []string{"fixture-production"}, Permissions: []string{"trusted-source.read", "trusted-source.control"}},
 	}
+	if configuredGrants != nil {
+		grants = configuredGrants(provider.URL)
+	}
 	auth, err := operatorauth.NewWithCertificateAuthorities(t.Context(), operatorauth.Config{
 		Version: 1, Issuer: provider.URL, ClientID: "source-control-room", RedirectURL: origin + "/auth/operator/callback",
 		SessionLifetimeSeconds: 600, Grants: grants,
@@ -247,14 +255,16 @@ func sourceLifecycleOperator(t *testing.T, origin string) (*operatorauth.Auth, m
 		}
 		sessions[grant.Subject] = sourceOperatorSession{cookies[0], csrf}
 	}
-	logout := httptest.NewRequest("POST", origin+"/auth/operator/logout", nil)
-	logout.Header.Set("Origin", origin)
-	logout.Header.Set("X-ZPR-CSRF", sessions["logged-out-writer"].csrf)
-	logout.AddCookie(sessions["logged-out-writer"].cookie)
-	loggedOut := httptest.NewRecorder()
-	auth.ServeHTTP(loggedOut, logout)
-	if loggedOut.Code != http.StatusNoContent {
-		t.Fatalf("operator logout: %d %s", loggedOut.Code, loggedOut.Body)
+	if session, ok := sessions["logged-out-writer"]; ok {
+		logout := httptest.NewRequest("POST", origin+"/auth/operator/logout", nil)
+		logout.Header.Set("Origin", origin)
+		logout.Header.Set("X-ZPR-CSRF", session.csrf)
+		logout.AddCookie(session.cookie)
+		loggedOut := httptest.NewRecorder()
+		auth.ServeHTTP(loggedOut, logout)
+		if loggedOut.Code != http.StatusNoContent {
+			t.Fatalf("operator logout: %d %s", loggedOut.Code, loggedOut.Body)
+		}
 	}
 	leaf, err := x509.ParseCertificate(certificate.Certificate[0])
 	if err != nil {

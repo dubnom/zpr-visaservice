@@ -2274,9 +2274,10 @@ source registration alongside its existing BAS authority registration:
   receipts have separate fingerprints from older authority-only and externally
   source-checked methods; neither can impersonate the other.
 
-This is internal production persistence code, not running service composition.
-No HTTP route, operator permission grant, registration file loader, active-link
-publication, source transport change or VS binding consumption is enabled.
+These are the production persistence primitives used by the opt-in review-only
+service composition below. No operator permission grant, registration file
+loader, active-link publication, source transport change or VS binding
+consumption is automatically enabled.
 Provider references now have the internal protected resolver described below;
 future Control-Service composition must explicitly select its configuration and
 preserve version-bound transport intent. Registry-only store tests use a fixture
@@ -2288,8 +2289,8 @@ No registry-file/SQLite atomicity or HA guarantee is claimed.
 
 #### Implemented: protected exact-subject provider resolution
 
-`loadSubjectLinkProviders` is an internal command-local loader, not a running
-service configuration switch. It requires an explicit absolute path to a
+`loadSubjectLinkProviders` is a command-local loader selected by opt-in split
+Control-Service startup. It requires an explicit absolute path to a
 private protected JSON file, at most 64 KiB, with exactly `version: 1` and
 `providers` (1-64 mappings). Each mapping requires all nine canonically named
 fields: `organization_id`, `source_id`, `source_version`, `provider_id`, `url`,
@@ -2325,13 +2326,68 @@ the semantic retry key, independent approval checks the directory, source
 disable fences a new approval before LDAP, and an identical historical approval
 retry after database reopen does not query the directory again.
 
-No review route/UI, startup loader, permission grant, active-link publication,
-snapshot delivery or VS enforcement is enabled. Future HTTP composition must
-authorize every attempt before receipt access and defer current-provider checks
-until after the historical-receipt lookup; a directory outage must not prevent
-retrieving already committed historical evidence. Production directory
-uniqueness/ACL provisioning, signed snapshot contract and timing/rollout decisions
-remain open gates.
+The review HTTP composition below authorizes every attempt before receipt
+access and defers current-provider validation errors until after historical
+receipt lookup; directory outage cannot prevent retrieving committed historical
+evidence. No review UI, permission grant, active-link publication, snapshot
+delivery or VS enforcement is enabled automatically. Production directory
+uniqueness/ACL provisioning, signed snapshot contract and timing/rollout remain
+open gates.
+
+#### Implemented: opt-in authenticated review transport
+
+Split Control-Service now composes the three isolated proof routes:
+`POST /api/subject-link-reviews/proposals`, `GET
+/api/subject-link-reviews/{id}?organization_id={organization}`, and `POST
+/api/subject-link-reviews/{id}/approve`. All responses are no-store. The
+[dashboard configuration and request contract](zpr-dashboard/README.md) describes
+the exact fields, response codes and explicit environment configuration.
+The database and providers are disabled by default; partial or invalid opt-in
+configuration fails startup. Existing delegated trust is loaded through the
+protected file reader. The service opens only its own review database, without
+reading Simulator or inferring registrations from another source registry.
+
+Strict bounded JSON rejects duplicate keys, field aliases, null/unknown fields
+and client-supplied review actors/submission times. The verified proof grant
+supplies the principal, not a browser field or header. Backend proof verification
+checks mTLS identity/pin, exact method/path/query/body/retry key, organization,
+permission and persistent one-use nonce before accessing review records or
+receipts. New decisions still atomically fence exact authority/source versions,
+captured pair digest and key scope through the required directory check.
+Independent approval checks the persisted author and creates `review-approved`
+evidence only.
+
+Current registry/provider resolution is performed outside the Store transaction
+to avoid reentering its single connection. Resolution failures are returned by
+the mandatory callback, not before invoking the retry-aware method. Consequently
+an authorized identical historical retry still returns its committed evidence
+after source disable, provider unavailability or database reopen, while new work
+fails closed. The store rechecks registry identity inside the transaction, so
+an intervening source edit cannot authorize a stale capture.
+
+Control Room has a dedicated named-user proxy for this prefix, with no local
+editor fallback. It authorizes the actual request organization and exact
+permission, requires mutation Origin/CSRF through the real session authorizer,
+and signs a fresh isolated review proof. The production mTLS proxy removes
+browser cookies, bearer credentials, Origin, CSRF and forged delegation before
+attaching only the server-signed proof. Generic enrollment signing remains
+unable to sign review routes. No automatic lost-response retry is introduced.
+
+Race tests exercise actual TLS OIDC token exchange/session verification,
+production review route composition, the production mTLS proxy, a real TLS LDAP
+protocol fixture and durable SQLite review/receipts. They deny missing sessions,
+wrong permission/organization, missing/cross-origin CSRF, self-review, missing
+or altered proof, nonce replay after reopen and wrong pinned Room certificate.
+The accepted-response-loss fixture aborts only after a successful backend commit:
+Room sees 502 and an explicit fresh-proof/same-key retry returns the original
+record without a second LDAP read. Logout denies the old cookie; reconstructed
+backend grants deny removed principals even for historical receipts.
+
+This is not a deployed workflow or M1 completion. Registration provisioning,
+operator discovery of coherent review context and the review UI remain absent.
+Request root IDs are candidates for review, not verified authentication results
+or VS admission evidence. Signed snapshots, active binding/revoke/delivery,
+strict VS enforcement and gateway acknowledgements remain gated.
 
 #### Verification and next gates
 
@@ -2343,17 +2399,18 @@ rollback and historical replay after source replacement and database reopen.
 Existing signed operator proofs plus persistent nonce consumption compose with
 the new review methods: old proof replay fails after reopen, fresh proof permits
 the original semantic retry, and reconstructed backend grants deny removed
-principals before receipt access. This is internal proof composition, not live
-HTTP/mTLS or production identity admission.
+principals before receipt access. The additional review transport tests above
+now cover HTTP/mTLS composition, not production identity admission.
 
 All changereview race tests pass; the six new registry tests pass ten consecutive
 race-enabled runs. Delegation, operator-auth and Control Room race tests and Go
 vet pass. Required `make test` passes 11 operator-stack checks and retains exactly
 the same 13 pre-existing Go failures. No dependency manifests or Rust changed.
 
-Next: protected Control-Service configuration/provisioning, authoritative
-provider-reference resolution and exact directory validation, then the review
-HTTP/UI path. Active publication/revocation and VS delivery require a separately
+Next: authoritative registration provisioning, operator review-context
+discovery and review UI acceptance. Protected configuration, provider-reference
+resolution and review HTTP/proxy composition are implemented, not deployed.
+Active publication/revocation and VS delivery require a separately
 approved shared signed-snapshot format, key rotation/recovery rules and the
 still-unset timing/enforcement bounds. No numeric defaults are invented here.
 
