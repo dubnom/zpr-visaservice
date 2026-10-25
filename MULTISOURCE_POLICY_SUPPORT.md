@@ -2696,6 +2696,31 @@ handling was added for transient inherited descriptors during child launch.
 The nested worktree's temporary sibling-dependency path correction was restored;
 no dependency or production startup manifests changed.
 
+**Cross-language durable lifecycle acceptance.** The live Go vector exporter is
+also consumed through the public Rust checkpoint API, not only the pure verifier.
+Every initial-install vector is checked against the same expected acceptance;
+invalid first snapshots must leave no checkpoint directory. Valid initial
+snapshots, including exact payload/envelope/record boundaries and independently
+pinned overlapping keys, are reopened and checked for identical payload digest
+and exact original envelope bytes. Replays leave the checkpoint bytes unchanged,
+and neither current readback nor retry succeeds at original expiry.
+
+The populated authority/source/binding transition vectors additionally exercise
+durable advance, updated binding, revocation, historical replay, same-sequence
+equivocation, registration/binding-version rollback, missing registrations,
+omission without tombstone, epoch reset, forgotten/lowered tombstones and
+prohibited resurrection. Rejected candidates leave the committed file unchanged
+and remain rejected after reopen. Successful candidates are retried after reopen
+as historical replay, while their older predecessor is rejected.
+
+A separate child process opens a Go-signed populated binding checkpoint,
+durably installs its Go-signed revocation and exits without destructors or
+returning an install result. The parent reopens it, checks the exact revoked
+binding ID/version tombstone and empty active set, retries the same candidate as
+historical replay and rejects the older active snapshot. This is lost-result
+recovery at the offline API boundary; it adds no network receipt, production
+publication or gateway withdrawal claim.
+
 ### S05 minimal subject-link contract: review proposal (2026-10-24)
 
 Status: **binding contract design only; not approved or implemented**. The M1 reconciliation

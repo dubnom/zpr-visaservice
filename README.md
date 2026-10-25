@@ -224,6 +224,12 @@ publication, network acknowledgement or enforcement; timing bounds, production
 recovery operations and rollout still require approval. See
 [current implementation and gates](MULTISOURCE_POLICY_SUPPORT.md#approved-initial-direction-and-transactional-source-registry-2026-10-25).
 
+Live Go-signed binding/revocation vectors now also pass through the Rust durable
+checkpoint and restart path: rejected transitions preserve committed bytes,
+successful installs recover as historical retries, and a revocation survives a
+child-process exit before its result reaches the caller. This is offline
+acceptance evidence, not production delivery or a new operator control.
+
 Expired lookup identities are indeterminate even if another identity on the
 actor is still live. They cannot fetch fresh enrichment or be silently dropped
 to permit absence-based rules; reauthentication is required. The same guard
