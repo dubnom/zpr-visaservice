@@ -10,6 +10,7 @@ import (
 	"encoding/json"
 	"encoding/pem"
 	"fmt"
+	"html"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
@@ -101,6 +102,7 @@ func sourceLifecycleOperatorWithGrants(t *testing.T, origin string, configuredGr
 		t.Fatal(err)
 	}
 	var provider *httptest.Server
+	var browserGrants []operatorauth.Grant
 	provider = httptest.NewUnstartedServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		w.Header().Set("Cache-Control", "no-store")
@@ -115,12 +117,36 @@ func sourceLifecycleOperatorWithGrants(t *testing.T, origin string, configuredGr
 			}
 			if r.Method == http.MethodGet {
 				w.Header().Set("Content-Type", "text/html")
-				fmt.Fprint(w, `<h1>Isolated fixture identity provider</h1><p>Test-only identity: source-writer. No production credentials.</p><form method="post"><button type="submit">Continue as fixture source writer</button></form>`)
+				if configuredGrants == nil {
+					fmt.Fprint(w, `<h1>Isolated fixture identity provider</h1><p>Test-only identity: source-writer. No production credentials.</p><form method="post"><button type="submit">Continue as fixture source writer</button></form>`)
+				} else {
+					fmt.Fprint(w, `<h1>Isolated fixture identity provider</h1><p>Test-only identities. No production credentials.</p><form method="post">`)
+					for _, grant := range browserGrants {
+						fmt.Fprintf(w, `<button type="submit" name="subject" value="%s">Continue as fixture %s</button>`, html.EscapeString(grant.Subject), html.EscapeString(grant.Subject))
+					}
+					fmt.Fprint(w, `</form>`)
+				}
 				return
 			}
 			if r.Method != http.MethodPost || r.Header.Get("Origin") != provider.URL {
 				http.Error(w, "fixture same-origin consent required", http.StatusForbidden)
 				return
+			}
+			subject := "source-writer"
+			if configuredGrants != nil {
+				if err := r.ParseForm(); err != nil {
+					http.Error(w, "invalid fixture consent", 400)
+					return
+				}
+				subject = r.PostForm.Get("subject")
+				known := false
+				for _, grant := range browserGrants {
+					known = known || grant.Subject == subject
+				}
+				if !known {
+					http.Error(w, "unknown fixture identity", 403)
+					return
+				}
 			}
 			random := make([]byte, 32)
 			if _, err := rand.Read(random); err != nil {
@@ -130,7 +156,7 @@ func sourceLifecycleOperatorWithGrants(t *testing.T, origin string, configuredGr
 			}
 			code := base64.RawURLEncoding.EncodeToString(random)
 			mu.Lock()
-			codes[code] = login{"source-writer", query.Get("nonce"), query.Get("code_challenge")}
+			codes[code] = login{subject, query.Get("nonce"), query.Get("code_challenge")}
 			mu.Unlock()
 			http.Redirect(w, r, origin+"/auth/operator/callback?state="+url.QueryEscape(query.Get("state"))+"&code="+url.QueryEscape(code), http.StatusSeeOther)
 		case "/.well-known/openid-configuration":
@@ -198,6 +224,7 @@ func sourceLifecycleOperatorWithGrants(t *testing.T, origin string, configuredGr
 	if configuredGrants != nil {
 		grants = configuredGrants(provider.URL)
 	}
+	browserGrants = grants
 	auth, err := operatorauth.NewWithCertificateAuthorities(t.Context(), operatorauth.Config{
 		Version: 1, Issuer: provider.URL, ClientID: "source-control-room", RedirectURL: origin + "/auth/operator/callback",
 		SessionLifetimeSeconds: 600, Grants: grants,

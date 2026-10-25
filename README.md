@@ -194,10 +194,14 @@ and a dedicated Control Room named-user signing proxy. They are disabled by
 default and require independent backend grants, mTLS, a protected review database
 and version-bound provider configuration. OIDC-to-LDAPS tests cover independent
 approval, lost replies, historical retries, source disable and logout. There is
-no review UI, active-link publication or VS enforcement. The approved separate
+no active-link publication or VS enforcement. The approved separate
 `subject-link.registry.manage` permission now supports audited version-checked
 authority/source edits, current/historical reads and coherent review-context
-discovery over the same protected operator transport. Snapshot format, timing
+discovery over the same protected operator transport. The production-packaged
+Subject-Link Review page now supports that workflow with explicit confirmation,
+independent digest review and tab-persisted exact-request recovery after a lost
+reply. Real Chromium OIDC/admin/proposer/reviewer tests cross mTLS to LDAP and
+verify reload, identity/scope changes and logout denial. Snapshot format, timing
 bounds and rollout still require approval. See
 [current implementation and gates](MULTISOURCE_POLICY_SUPPORT.md#approved-initial-direction-and-transactional-source-registry-2026-10-25).
 

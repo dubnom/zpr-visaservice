@@ -270,9 +270,75 @@ mappings must be provisioned and the service reconstructed separately. New
 review attempts fail closed when that mapping is absent; historical review
 receipts remain historical.
 
-Startup does not import or infer registrations. There is no review UI, active
-publication or VS enforcement, and this does not synchronize the assertion-source
-file registry. Signed-snapshot format and timing/rollout remain approval gates.
+Startup does not import or infer registrations. There is no active publication
+or VS enforcement, and this does not synchronize the assertion-source file
+registry. Signed-snapshot format and timing/rollout remain approval gates.
+
+#### Subject-Link Review operator page
+
+Open `/subject-links.html` from **Configuration > Subject-Link Review** in
+Control Room. The page is included in the production embed and both production
+asset manifests. It uses the existing named-user OIDC session widget and
+same-origin CSRF request helper, not a local editor identity or Simulator API.
+Subject-link-only roles are recognized by the login widget.
+
+1. A separately granted registry administrator selects the exact organization,
+   registration kind/ID, expected version, configuration JSON and audit reason.
+   Confirming an edit changes only registration intent. Current reads can fill
+   the version/config explicitly; historical audit reads never populate current
+   edit state. After an uncertain edit, further save is disabled until an
+   explicit current read or target change. There is no automatic edit retry.
+2. A reader/proposer enters exact authority/source IDs and versions, candidate
+   device subject and immutable LDAP UUID, then captures coherent registry
+   context. Changing candidate identity or organization invalidates it.
+   Enrichment keys, candidate validity and reason are explicit operator input,
+   with no invented lease/skew/rollout defaults.
+3. A proposer confirms the candidate. Before sending, its exact body and fresh
+   semantic retry key are persisted in this tab's `sessionStorage`, bound to
+   the current verified issuer/subject, organization and operation. Bodies
+   exceeding 8192 UTF-8 bytes are rejected before persistence/delivery.
+   A successful response displays the original immutable review evidence/ID.
+4. A different permitted reviewer explicitly loads that review ID, inspects
+   root/target/scope/validity/digest/audit, and supplies a reason before confirming
+   independent review approval. The action uses the displayed digest, observed
+   review version and registry revision. Self-review and stale/unloaded evidence
+   disable approval; backend enforcement remains authoritative.
+
+Lost mutation responses leave an **Unconfirmed review request** panel. Reload
+does not replay it. **Retry exact review request** sends only the persisted
+original body/key through a new current-session proof; it is disabled for another
+identity or organization. The original principal can sign back in and recover
+the historical receipt. Starting another review is blocked while a request is
+unconfirmed. Clearing local retry data requires explicit confirmation after
+checking server state and never cancels or undoes a backend operation. Invalid
+saved data blocks delivery rather than becoming an empty/default request.
+Closing the browser tab can lose this local recovery data; record the review ID
+and resolve an uncertain outcome before discarding the tab. There is no global
+receipt/queue discovery endpoint.
+
+Session loss, target changes and failed reads clear actionable stale evidence.
+Returned text is rendered with `textContent`, not HTML. There are no activation,
+snapshot, delivery, enforcement or deployment controls on this page.
+
+Real Chromium acceptance (existing `@playwright/test` and Chromium required):
+
+```sh
+ZPR_TEST_SUBJECT_LINK_BROWSER=1 \
+  go test -race ./cmd/zpr-web-dashboard -run '^TestSubjectLinkBrowser$' -count=3
+```
+
+The fixture starts with no browser cookies and an empty registry. Native OIDC
+navigation signs in separate admin/proposer/reviewer identities; actual
+production Room/Service routes and mTLS proxy reach a TLS LDAP protocol fixture
+and the durable review store. It covers cancelled confirmations, oversized
+requests, an aborted response after successful submission, exact recovery after
+reload and identity/organization changes, independent approval, desktop/tablet
+overflow checks, invalid retry data, stale read invalidation and logged-out
+cookie/CSRF denial. Exactly two LDAP searches occur: initial submission and
+independent approval. Neither registry/context reads nor receipt recovery query
+the directory. TLS allowances are limited to the ephemeral ingress/IdP SPKI pins
+in the test browser process; no system trust or global verification changes.
+The fixture does not certify deployed LDAP ACLs or real BAS device admission.
 See [implementation and limits](../MULTISOURCE_POLICY_SUPPORT.md#approved-initial-direction-and-transactional-source-registry-2026-10-25).
 See also the
 [durable review foundation](../MULTISOURCE_POLICY_SUPPORT.md#s05-durable-subject-link-review-foundation-2026-10-24).

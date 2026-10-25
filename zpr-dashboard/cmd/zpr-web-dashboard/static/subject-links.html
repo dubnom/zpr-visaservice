@@ -1,0 +1,88 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Subject-Link Review - ZPR Control Room</title>
+  <link rel="stylesheet" href="/change-review.css?v=3">
+  <script src="/operator-request.js" defer></script>
+  <script src="/subject-links.js" defer></script>
+  <script src="/operator-login.js" defer></script>
+</head>
+<body>
+  <header><a href="/">Control Room</a><h1>Subject-Link Review</h1></header>
+  <main>
+    <section class="operator-login" aria-label="Operator session">
+      <h2 class="operator-login-title" id="operator-login-title">Sign in</h2>
+      <p class="operator-login-description" id="operator-login-description">Named-user permissions are required for each organization and operation.</p>
+      <p id="operator-login-status"></p>
+      <form id="operator-login-form" method="post" action="/auth/operator/login"><button type="submit">Sign in</button></form>
+      <button id="operator-logout" type="button" hidden>Sign out</button>
+      <p id="operator-scope" hidden></p>
+    </section>
+    <p class="boundary">Review only. Registrations record configuration intent; candidate device IDs are not verified authentication evidence. Approval does not activate a binding, deliver a snapshot, change VS enforcement or deploy anything.</p>
+    <p id="status" role="status" aria-live="polite">Sign in to begin.</p>
+    <fieldset id="subject-workspace" disabled>
+      <legend>Exact organization scope</legend>
+      <label>Organization ID <input id="subject-organization" required maxlength="128" autocomplete="off"></label>
+      <section id="subject-pending" hidden>
+        <h2>Unconfirmed review request</h2>
+        <p id="subject-pending-note"></p>
+        <button id="subject-retry" type="button" disabled>Retry exact review request</button>
+        <button id="subject-discard" type="button">Discard local retry after checking state</button>
+      </section>
+      <details id="subject-registry">
+        <summary>Authority and source registration</summary>
+        <p>Editing requires subject-link.registry.manage. Read/history requires subject-link.read. After an uncertain edit, explicitly read current state and its audit version before editing again.</p>
+        <form id="subject-registry-form">
+          <label>Registration kind <select id="subject-registry-kind"><option value="authorities">BAS authority</option><option value="sources">LDAP source</option></select></label>
+          <label>Registration ID <input id="subject-registry-id" required maxlength="128" autocomplete="off"></label>
+          <label>Expected version (empty creates) <input id="subject-registry-version" maxlength="20" autocomplete="off"></label>
+          <label>Configuration JSON <textarea id="subject-registry-config" rows="5" cols="64" required spellcheck="false"></textarea></label>
+          <label>Edit reason <textarea id="subject-registry-reason" required rows="2" maxlength="1024"></textarea></label>
+          <button id="subject-registry-save" type="submit" disabled>Confirm registration edit</button>
+        </form>
+        <p>Authority fields: kind (bas_device), service_id, issuer, enabled. Source fields: provider_id, selector_kind (ldap_entry_uuid), enrichment_keys, enabled. Never enter credentials here.</p>
+        <button id="subject-registry-read" type="button" disabled>Read current registration</button>
+        <label>Historical version <input id="subject-history-version" maxlength="20" autocomplete="off"></label>
+        <button id="subject-registry-history" type="button" disabled>Read immutable audit version</button>
+        <pre id="subject-registry-evidence" aria-label="Registration evidence"></pre>
+      </details>
+      <section>
+        <h2>Prepare an exact candidate</h2>
+        <form id="subject-context-form">
+          <label>BAS authority ID <input id="subject-authority" required maxlength="128" autocomplete="off"></label>
+          <label>Authority version <input id="subject-authority-version" required maxlength="20" autocomplete="off"></label>
+          <label>Candidate device subject ID <input id="subject-device" required maxlength="256" autocomplete="off"></label>
+          <label>LDAP source ID <input id="subject-source" required maxlength="128" autocomplete="off"></label>
+          <label>Source version <input id="subject-source-version" required maxlength="20" autocomplete="off"></label>
+          <label>Immutable LDAP entryUUID <input id="subject-uuid" required maxlength="36" autocomplete="off"></label>
+          <button id="subject-context-load" type="submit" disabled>Capture current review context</button>
+        </form>
+        <pre id="subject-context-evidence" aria-label="Captured registry context"></pre>
+        <form id="subject-proposal-form">
+          <label>Enrichment keys (comma-separated) <input id="subject-keys" required maxlength="8192" autocomplete="off"></label>
+          <label>Candidate validity starts <input id="subject-not-before" type="datetime-local" required></label>
+          <label>Candidate validity expires <input id="subject-expires" type="datetime-local" required></label>
+          <label>Proposal reason <textarea id="subject-proposal-reason" required rows="2" maxlength="1024"></textarea></label>
+          <button id="subject-propose" type="submit" disabled>Confirm candidate submission</button>
+        </form>
+        <p>Validity is proposed review data, not a configured snapshot lease. Exact UUID presence is checked on submission and independent approval, not during registry-context capture.</p>
+      </section>
+      <section>
+        <h2>Read and independently review</h2>
+        <form id="subject-review-form">
+          <label>Review ID <input id="subject-review-id" required maxlength="128" autocomplete="off"></label>
+          <button id="subject-review-read" type="submit" disabled>Read review evidence</button>
+        </form>
+        <pre id="subject-review-evidence" aria-label="Immutable review evidence"></pre>
+        <form id="subject-approval-form">
+          <label>Independent review reason <textarea id="subject-approval-reason" required rows="2" maxlength="1024"></textarea></label>
+          <button id="subject-approve" type="submit" disabled>Confirm independent review approval</button>
+        </form>
+        <p>Approval binds the displayed immutable digest, observed review version and registry revision. The persisted proposer cannot approve their own review. There is no activation or revocation control here.</p>
+      </section>
+    </fieldset>
+  </main>
+</body>
+</html>

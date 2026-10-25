@@ -55,6 +55,8 @@ security-review.js
 sidebar.css
 sidebar.js
 source-metrics.js
+subject-links.html
+subject-links.js
 table-sort.js
 trusted-source.css
 trusted-source.js

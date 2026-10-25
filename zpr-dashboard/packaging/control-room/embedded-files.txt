@@ -59,6 +59,8 @@ static/security-review.js
 static/sidebar.css
 static/sidebar.js
 static/source-metrics.js
+static/subject-links.html
+static/subject-links.js
 static/table-sort.js
 static/trusted-source.css
 static/trusted-source.js

@@ -2384,8 +2384,8 @@ record without a second LDAP read. Logout denies the old cookie; reconstructed
 backend grants deny removed principals even for historical receipts.
 
 This is not a deployed workflow or M1 completion. Registration provisioning and
-review-context discovery now have the approved operator HTTP path below; the
-review UI remains absent.
+review-context discovery now have the approved operator HTTP path below, and
+the production-packaged review UI is described after it.
 Request root IDs are candidates for review, not verified authentication results
 or VS admission evidence. Signed snapshots, active binding/revoke/delivery,
 strict VS enforcement and gateway acknowledgements remain gated.
@@ -2427,6 +2427,48 @@ administrator cannot submit without a proposal grant. Missing version-bound
 transport fails a new review without a directory query. Registry/enrollment/
 review signing scopes remain isolated.
 
+#### Implemented: review-only operator UI and native-browser acceptance
+
+Control Room now packages `/subject-links.html` and its same-origin script,
+linked from Configuration. It reuses the existing login/CSRF helpers and review
+stylesheet; production embeds/manifests explicitly include both page assets.
+The page exposes exact registry edits/current/history, coherent context capture,
+explicit candidate submission and independent digest-bound review approval.
+It does not infer authenticated roots, directory relationships or active links.
+
+Each review mutation is saved before delivery with its original body, semantic
+key, issuer/subject, organization and operation in tab-local `sessionStorage`.
+No automatic retry occurs on failure, reload, login or scope changes. Only the
+original currently authorized identity/scope can explicitly resend that saved
+request through a fresh proof. A success must match the original candidate or
+reviewed decision before local recovery data is cleared. Unconfirmed operations
+block new review mutations, malformed recovery data fails closed, and explicit
+discard warns that it does not undo server state. Local recovery is not a durable
+cross-device queue and can be lost when the tab is closed.
+
+Candidate/organization changes invalidate captured context; unloaded, changed,
+failed-read or cleared-session evidence cannot authorize the UI approval action.
+The backend independently rechecks all permissions, review versions, identities,
+registry scope and directory evidence. Registry edits use CAS, not review retry
+receipts; uncertain saves disable further edit until an explicit current read
+or target change. All returned evidence is rendered as text, with no HTML
+interpretation or activation/deployment controls.
+
+The repeatable
+[Chromium acceptance command](zpr-dashboard/README.md#subject-link-review-operator-page)
+starts from an empty registry and zero imported browser cookies. Native OIDC
+logins for separate administrator/proposer/reviewer identities cross production
+Room/Service routing, actual mTLS, exact UUID LDAPS and durable review storage.
+An owner-only fixture fault aborts one reply only after actual successful backend
+submission. The browser sees 502, reloads without retry, cannot replay under
+another identity/scope, and explicitly recovers its original receipt after the
+original proposer signs back in. The independent reviewer then approves the
+displayed digest. Exactly two directory searches occur across the entire chain.
+Cancelled confirmations, the 8192-byte request guard, self-review controls,
+desktop/tablet layout, corrupt retry state, failed-read clearing and stale
+cookie/cached-CSRF denial after logout are also checked. Ephemeral exact SPKI
+allowlisting is process-local; no production trust is altered.
+
 #### Verification and next gates
 
 New race tests cover unsupported selectors/configurations, exact CAS and one
@@ -2445,9 +2487,9 @@ race-enabled runs. Delegation, operator-auth and Control Room race tests and Go
 vet pass. Required `make test` passes 11 operator-stack checks and retains exactly
 the same 13 pre-existing Go failures. No dependency manifests or Rust changed.
 
-Next: review UI and real-browser acceptance. Protected configuration, named
-registry administration/context discovery, provider-reference resolution and
-review HTTP/proxy composition are implemented, not deployed.
+Protected configuration, named registry administration/context discovery,
+provider-reference resolution, review HTTP/proxy composition and the review UI
+with native-browser acceptance are implemented, not deployed.
 Active publication/revocation and VS delivery require a separately
 approved shared signed-snapshot format, key rotation/recovery rules and the
 still-unset timing/enforcement bounds. No numeric defaults are invented here.
